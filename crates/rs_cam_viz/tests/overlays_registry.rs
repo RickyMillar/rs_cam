@@ -44,6 +44,35 @@ fn source(relative: &str) -> String {
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
 }
 
+/// The inspector's own source: every `.rs` file directly in
+/// `src/ui/properties/`, concatenated.
+///
+/// P4 (2026-09-17) split `properties/mod.rs` into `mod.rs` plus seven panel
+/// children beside it. The scans below read the inspector as one surface —
+/// a positive anchor may live in any child, and a negative scan is only
+/// honest over all of them — so the reader is the folder. `operations/` is
+/// a sub-folder and is not read; it carries its own sentries.
+fn inspector_source() -> String {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/ui/properties");
+    let mut paths: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read_dir {}: {e}", dir.display()))
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|e| e == "rs"))
+        .collect();
+    paths.sort();
+    assert!(!paths.is_empty(), "no source under {}", dir.display());
+    let mut out = String::new();
+    for path in paths {
+        out.push_str(
+            &std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("read {}: {e}", path.display())),
+        );
+        out.push('\n');
+    }
+    out
+}
+
 /// Every `pub <name>: bool` declared inside `struct <struct_name> {` in
 /// `state/viewport.rs`.
 fn declared_bool_fields(struct_name: &str) -> Vec<String> {
@@ -662,7 +691,7 @@ fn the_retired_controls_have_no_second_home() {
         "`RenderMode` is back; the model is a plain visibility row now"
     );
 
-    let properties = source("src/ui/properties/mod.rs");
+    let properties = inspector_source();
     assert!(
         !properties.contains("\"Cut\")"),
         "the duplicate per-toolpath Cut checkbox is back in the properties panel"
@@ -853,7 +882,7 @@ fn the_viewport_keeps_a_minimum_width() {
 /// notes exist to stop, surviving in the one place nobody re-read.
 #[test]
 fn every_reach_surface_quotes_the_shared_area_and_bias_notes() {
-    let inspector = source("src/ui/properties/mod.rs");
+    let inspector = inspector_source();
     let legend = source("src/ui/overlays/panel.rs");
 
     for (name, text) in [("inspector", &inspector), ("panel legend", &legend)] {
@@ -872,7 +901,7 @@ fn every_reach_surface_quotes_the_shared_area_and_bias_notes() {
 
     // And no surface in the crate rolls its own denominator sentence.
     for (file, text) in [
-        ("properties/mod.rs", &inspector),
+        ("ui/properties/", &inspector),
         ("overlays/panel.rs", &legend),
         ("app/mcp.rs", &source("src/app/mcp.rs")),
     ] {
