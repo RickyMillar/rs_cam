@@ -8,7 +8,10 @@ Constant-engagement clearing on a mesh surface. The entry point is
 - `mod.rs` — the public facade and `ClearingStrategy3d`.
 - `clearing.rs` — the Z-level clearing engine and its region detection.
 - `path.rs` — the loop over Z levels and the segment linking.
-- `search.rs` — direction search, engagement, entry-point finding.
+- `search.rs` — the material-remaining query, the clear-path test and two
+  3D path helpers. It holds no direction search and no entry-point finding;
+  those live in `clearing.rs` and `path.rs`. The sibling `adaptive/search.rs`
+  does hold them, so the two file names do different jobs.
 - `tests.rs` — the unit tests.
 
 ## Invariants

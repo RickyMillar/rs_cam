@@ -1,5 +1,9 @@
-//! 3D direction search, engagement computation, entry-point finding, and
-//! path-validation helpers for adaptive3d clearing.
+//! The material-remaining query, the clear-path test and the 3D path
+//! helpers for adaptive3d clearing.
+//!
+//! There is no direction search and no entry-point finding here. Those live
+//! in `clearing.rs` and `path.rs`. The sibling `adaptive/search.rs` does hold
+//! them, so the two file names do different jobs (CUT-12).
 
 use crate::dexel_stock::TriDexelStock;
 use crate::geo::{P2, P3};
