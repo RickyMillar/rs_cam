@@ -1,4 +1,5 @@
 use super::diagnostics::build_inspect_spans_response;
+use super::simulation::{CutTraceRequest, build_cut_trace_response};
 use super::*;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::session::{AddToolpathArgs, Command, RemoveToolpathArgs};

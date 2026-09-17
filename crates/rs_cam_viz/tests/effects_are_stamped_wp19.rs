@@ -674,7 +674,11 @@ fn every_justified_discard_still_names_a_real_site() {
 ///
 /// P4 split `app/mcp.rs` into `app/mcp/*.rs`. The negative property is
 /// about the whole surface, so a new child joins this list.
-const MCP_SURFACE: &[&str] = &["src/app/mcp.rs", "src/app/mcp/diagnostics.rs"];
+const MCP_SURFACE: &[&str] = &[
+    "src/app/mcp.rs",
+    "src/app/mcp/diagnostics.rs",
+    "src/app/mcp/simulation.rs",
+];
 
 /// The MCP route and the view route stamp through ONE helper.
 ///
