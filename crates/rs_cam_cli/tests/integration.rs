@@ -255,11 +255,11 @@ spindle_speed = 18000
 safe_z = 10.0
 
 [tools.flat_6mm]
-type = "flat"
+type = "end_mill"
 diameter = 6.35
 
 [tools.flat_3mm]
-type = "flat"
+type = "end_mill"
 diameter = 3.175
 
 [[operation]]
@@ -357,7 +357,7 @@ fn test_job_toml_missing_tool_detected() {
 output = "test.nc"
 
 [tools.flat_6mm]
-type = "flat"
+type = "end_mill"
 diameter = 6.35
 
 [[operation]]

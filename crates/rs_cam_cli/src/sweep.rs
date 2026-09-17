@@ -389,7 +389,8 @@ fn simulate_and_export(
 #[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::resolve_base_value;
-    use crate::job::{CliToolType, JobFile};
+    use crate::job::JobFile;
+    use rs_cam_core::compute::tool_config::ToolType;
 
     /// A job file with one adaptive3d operation. `min_region_cut_length_mm`
     /// is one of the fields the old hand-written reader did not cover.
@@ -399,7 +400,7 @@ mod tests {
 output = "part.nc"
 
 [tools.flat_6mm]
-type = "flat"
+type = "end_mill"
 diameter = 6.35
 
 [[operation]]
@@ -454,7 +455,7 @@ min_region_cut_length_mm = 4.0
 output = "part.nc"
 
 [tools.flat_6mm]
-type = "flat"
+type = "end_mill"
 diameter = 6.35
 
 [[operation]]
@@ -511,7 +512,7 @@ diagnostics = true
 diagnostics_json = "diag.json"
 
 [tools.flat_6mm]
-type = "flat"
+type = "end_mill"
 number = 3
 diameter = 6.35
 flute_count = 3
@@ -587,7 +588,7 @@ stay_down_clearance_mm = 0.75
         assert_eq!(tool.included_angle, Some(60.0));
         assert_eq!(tool.taper_angle, Some(4.0));
         assert_eq!(tool.shaft_diameter, Some(3.0));
-        assert!(matches!(tool.tool_type, CliToolType::Flat));
+        assert_eq!(tool.tool_type, ToolType::EndMill);
         assert_eq!(tool.diameter, 6.35);
 
         assert_eq!(back.job.view, base.job.view);
@@ -620,23 +621,23 @@ stay_down_clearance_mm = 0.75
 output = "part.nc"
 
 [tools.a]
-type = "flat"
+type = "end_mill"
 diameter = 6.0
 
 [tools.b]
-type = "ball"
+type = "ball_nose"
 diameter = 6.0
 
 [tools.c]
-type = "bullnose"
+type = "bull_nose"
 diameter = 6.0
 
 [tools.d]
-type = "vbit"
+type = "v_bit"
 diameter = 6.0
 
 [tools.e]
-type = "tapered_ball"
+type = "tapered_ball_nose"
 diameter = 6.0
 
 [[operation]]
@@ -650,14 +651,13 @@ tool = "a"
         for (name, tool) in &base.tools {
             let round = back.tools.get(name).unwrap();
             assert_eq!(
-                tool.tool_type.to_string(),
-                round.tool_type.to_string(),
+                tool.tool_type, round.tool_type,
                 "tool {name} changed type through the round trip"
             );
         }
-        assert!(matches!(
+        assert_eq!(
             back.tools.get("e").unwrap().tool_type,
-            CliToolType::TaperedBall
-        ));
+            ToolType::TaperedBallNose
+        );
     }
 }

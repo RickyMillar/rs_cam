@@ -11,11 +11,11 @@ simulate = true
 sim_resolution = 0.5
 
 [tools.flat_6mm]
-type = "flat"
+type = "end_mill"
 diameter = 6.35
 
 [tools.flat_3mm]
-type = "flat"
+type = "end_mill"
 diameter = 3.175
 
 # First: rough out the pocket with the bigger tool

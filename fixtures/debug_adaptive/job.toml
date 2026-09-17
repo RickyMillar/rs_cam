@@ -15,7 +15,7 @@ svg = "wanaka_toolpath.svg"
 view = "wanaka_3d.html"
 
 [tools.flat_6mm]
-type = "flat"
+type = "end_mill"
 diameter = 6.35
 flute_count = 2
 

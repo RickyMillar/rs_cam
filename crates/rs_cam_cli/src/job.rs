@@ -12,7 +12,7 @@
 //! safe_z = 10.0
 //!
 //! [tools.flat_6mm]
-//! type = "flat"
+//! type = "end_mill"
 //! diameter = 6.35
 //!
 //! [[operation]]
@@ -30,7 +30,6 @@
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use tracing::{debug, info, warn};
@@ -41,7 +40,7 @@ use rs_cam_core::{
     compute::config::{
         BoundaryConfig, DressupConfig, DressupEntryStyle, HeightsConfig, StockSource,
     },
-    compute::tool_config::{ToolConfig, ToolId},
+    compute::tool_config::{ToolConfig, ToolId, ToolType},
     dexel_stock::{StockCutDirection, TriDexelStock},
     gcode::{
         CoolantMode, GcodePhase, PhaseTool, ToolLoadExportPolicy, export_gcode_phases_checked,
@@ -60,44 +59,6 @@ use rs_cam_core::{
     trace::debug_trace::ToolpathDebugOptions,
     trace::semantic_trace::ToolpathTraceArtifact,
 };
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CliToolType {
-    Flat,
-    Ball,
-    #[serde(rename = "bullnose")]
-    BullNose,
-    #[serde(rename = "vbit")]
-    VBit,
-    TaperedBall,
-}
-
-impl fmt::Display for CliToolType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Flat => write!(f, "flat"),
-            Self::Ball => write!(f, "ball"),
-            Self::BullNose => write!(f, "bullnose"),
-            Self::VBit => write!(f, "vbit"),
-            Self::TaperedBall => write!(f, "tapered_ball"),
-        }
-    }
-}
-
-impl CliToolType {
-    /// Map the job-file tool vocabulary onto the core `ToolType`.
-    fn to_tool_type(self) -> rs_cam_core::compute::tool_config::ToolType {
-        use rs_cam_core::compute::tool_config::ToolType;
-        match self {
-            Self::Flat => ToolType::EndMill,
-            Self::Ball => ToolType::BallNose,
-            Self::BullNose => ToolType::BullNose,
-            Self::VBit => ToolType::VBit,
-            Self::TaperedBall => ToolType::TaperedBallNose,
-        }
-    }
-}
 
 // ── TOML types ─────────────────────────────────────────────────────────
 
@@ -159,8 +120,12 @@ fn default_sim_resolution() -> f64 {
 
 #[derive(Deserialize, Serialize)]
 pub struct ToolDef {
+    /// Cutter shape. CLI-08: one vocabulary for every surface — the
+    /// canonical [`ToolType`] serde token, the same token `run --tool`
+    /// and MCP `add_tool` take: `end_mill`, `ball_nose`, `bull_nose`,
+    /// `v_bit`, `tapered_ball_nose`.
     #[serde(rename = "type")]
-    pub tool_type: CliToolType,
+    pub tool_type: ToolType,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub number: Option<u32>,
     pub diameter: f64,
@@ -853,21 +818,21 @@ fn build_tool(def: &ToolDef) -> Result<rs_cam_core::tool::ToolDefinition> {
     let d = def.diameter;
     let cl = d * DEFAULT_CUTTING_LENGTH_FACTOR;
     let cutter: Box<dyn MillingCutter> = match def.tool_type {
-        CliToolType::Flat => Box::new(FlatEndmill::new(d, cl)),
-        CliToolType::Ball => Box::new(BallEndmill::new(d, cl)),
-        CliToolType::BullNose => {
+        ToolType::EndMill => Box::new(FlatEndmill::new(d, cl)),
+        ToolType::BallNose => Box::new(BallEndmill::new(d, cl)),
+        ToolType::BullNose => {
             let cr = def
                 .corner_radius
                 .context("Bull nose tool requires 'corner_radius'")?;
             Box::new(BullNoseEndmill::new(d, cr, cl))
         }
-        CliToolType::VBit => {
+        ToolType::VBit => {
             let angle = def
                 .included_angle
                 .context("V-bit tool requires 'included_angle'")?;
             Box::new(VBitEndmill::new(d, angle, cl))
         }
-        CliToolType::TaperedBall => {
+        ToolType::TaperedBallNose => {
             let taper = def
                 .taper_angle
                 .context("Tapered ball requires 'taper_angle'")?;
@@ -945,7 +910,7 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
         }));
         let next_tool_id = tool_ids.len();
         let tool_id = Some(*tool_ids.entry(op.tool.clone()).or_insert(next_tool_id));
-        debug!(tool = %op.tool, diameter_mm = tool_def.diameter, tool_type = %tool_def.tool_type, "Tool");
+        debug!(tool = %op.tool, diameter_mm = tool_def.diameter, tool_type = tool_def.tool_type.serde_token(), "Tool");
 
         let output = execute_op_via_session(job, job_dir, i, op, tool_def, debug_trace)
             .with_context(|| format!("operation {i} ({})", op.op_type))?;
@@ -965,7 +930,10 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
 
         let label = format!(
             "Op {} \u{2014} {} ({:.2}mm {})",
-            i, op.op_type, tool_def.diameter, tool_def.tool_type
+            i,
+            op.op_type,
+            tool_def.diameter,
+            tool_def.tool_type.serde_token()
         );
         let phase_cutter = build_tool(tool_def)?;
         let flute_count = tool_def.flute_count.unwrap_or(2);
@@ -1026,7 +994,7 @@ fn op_type_for(token: &str) -> Result<OperationType> {
 
 /// Build a session `ToolConfig` from a job-file tool definition.
 fn tool_config_from_def(def: &ToolDef, name: &str) -> ToolConfig {
-    let mut tc = ToolConfig::new_default(ToolId(0), def.tool_type.to_tool_type());
+    let mut tc = ToolConfig::new_default(ToolId(0), def.tool_type);
     tc.name = name.to_owned();
     tc.diameter = def.diameter;
     tc.cutting_length = def.diameter * DEFAULT_CUTTING_LENGTH_FACTOR;
@@ -1255,7 +1223,11 @@ fn execute_op_via_session(
     let trace = if debug_trace {
         let tp_name = format!("op_{}_{}", i, op_type.kind_str());
         let op_label = format!("Op {} \u{2014} {}", i, op.op_type);
-        let tool_summary = format!("{:.2}mm {}", tool_def.diameter, tool_def.tool_type);
+        let tool_summary = format!(
+            "{:.2}mm {}",
+            tool_def.diameter,
+            tool_def.tool_type.serde_token()
+        );
         let operation_json = session
             .get_toolpath_config(tp_index)
             .map(|tc| serde_json::to_value(&tc.operation).unwrap_or_default())
@@ -1473,7 +1445,7 @@ mod tests {
         // what the job executor would use (cutter.radius(), not diameter/2.0
         // from the TOML definition, which could differ for composite tools).
         let flat_def = ToolDef {
-            tool_type: CliToolType::Flat,
+            tool_type: ToolType::EndMill,
             number: None,
             diameter: 6.0,
             flute_count: None,
@@ -1490,7 +1462,7 @@ mod tests {
         assert!((cutter.radius() - 3.0).abs() < 1e-10);
 
         let ball_def = ToolDef {
-            tool_type: CliToolType::Ball,
+            tool_type: ToolType::BallNose,
             number: None,
             diameter: 10.0,
             flute_count: None,
@@ -1510,7 +1482,7 @@ mod tests {
         // returns shaft_diameter / 2.0, which is correct for the effective
         // cutting envelope.
         let tapered_def = ToolDef {
-            tool_type: CliToolType::TaperedBall,
+            tool_type: ToolType::TaperedBallNose,
             number: None,
             diameter: 6.0,
             flute_count: None,
@@ -1526,5 +1498,67 @@ mod tests {
         let tapered_cutter = build_tool(&tapered_def).unwrap();
         // radius() should return shaft_diameter / 2.0 = 6.0
         assert!((tapered_cutter.radius() - 6.0).abs() < 1e-10);
+    }
+
+    /// CLI-08 sentry: one tool-type vocabulary on every surface.
+    ///
+    /// The job file used to carry its own five tokens (`flat`, `ball`,
+    /// `bullnose`, `vbit`, `tapered_ball`) behind a `CliToolType` enum.
+    /// `run --tool` and MCP `add_tool` both read
+    /// [`ToolType::parse_lenient`], so a job TOML and an MCP call for the
+    /// same cutter had to spell it differently. This test walks
+    /// [`ToolType::ALL`] and asserts the ONE canonical token reaches all
+    /// three surfaces: the job parser takes it, and `parse_lenient` — the
+    /// parser `run` and `rs_cam_mcp::server::parse_tool_type` call — reads
+    /// it back as the same variant.
+    #[test]
+    fn every_tool_type_round_trips_through_the_job_file_on_one_token() {
+        for &expected in ToolType::ALL {
+            let token = expected.serde_token();
+            let source = format!("[tools.t]\ntype = \"{token}\"\ndiameter = 6.0\n");
+            #[derive(Deserialize)]
+            struct ToolsOnly {
+                tools: HashMap<String, ToolDef>,
+            }
+            let parsed: ToolsOnly = toml::from_str(&source)
+                .unwrap_or_else(|e| panic!("job file rejected the canonical token {token}: {e}"));
+            let def = parsed.tools.get("t").unwrap();
+            assert_eq!(def.tool_type, expected, "job TOML token {token}");
+
+            // The `run` / MCP door reads the same token as the same type.
+            assert_eq!(
+                ToolType::parse_lenient(token),
+                Some(expected),
+                "parse_lenient token {token}"
+            );
+
+            // And the job file emits the token it accepts.
+            let emitted = toml::to_string(&parsed.tools).unwrap();
+            assert!(
+                emitted.contains(&format!("type = \"{token}\"")),
+                "job TOML emitted {emitted:?}, expected the canonical token {token}"
+            );
+        }
+    }
+
+    /// CLI-08 teeth: the five job-only spellings are gone, not aliased.
+    ///
+    /// Operator ruling 2026-09-16 — no legacy support. A job file on the
+    /// old vocabulary must hear a refusal, not silently get an end mill.
+    #[test]
+    fn the_job_file_refuses_the_deleted_cli_tool_tokens() {
+        for token in ["flat", "ball", "bullnose", "vbit", "tapered_ball"] {
+            let source = format!("[tools.t]\ntype = \"{token}\"\ndiameter = 6.0\n");
+            #[derive(Deserialize)]
+            struct ToolsOnly {
+                #[allow(dead_code)]
+                tools: HashMap<String, ToolDef>,
+            }
+            let parsed: Result<ToolsOnly, _> = toml::from_str(&source);
+            assert!(
+                parsed.is_err(),
+                "the deleted token {token} still parses; the job file kept a second vocabulary"
+            );
+        }
     }
 }
