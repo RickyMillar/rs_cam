@@ -164,7 +164,6 @@ struct KinematicsAggregate {
     // Accumulated → LOOSE_REL.
     cutting_runtime_s: f64,
     average_radial_woc_fraction: f64,
-    average_leading_edge_speed_mm_min: f64,
     /// `None` means **not measured** — no sample in this class carried an
     /// arc. The None-ness is compared exactly; only the value is toleranced.
     average_arc_radians: Option<f64>,
@@ -185,7 +184,6 @@ fn kinematics_aggregates(
             sample_count: s.sample_count,
             cutting_runtime_s: s.cutting_runtime_s,
             average_radial_woc_fraction: s.average_radial_woc_fraction,
-            average_leading_edge_speed_mm_min: s.average_leading_edge_speed_mm_min,
             average_arc_radians: s.average_arc_radians,
             peak_radial_woc_fraction: s.peak_radial_woc_fraction,
             peak_axial_doc_mm: s.peak_axial_doc_mm,
@@ -909,11 +907,6 @@ fn compare_kinematics(
                 a.average_radial_woc_fraction,
                 g.average_radial_woc_fraction,
                 "average_radial_woc_fraction",
-            ),
-            (
-                a.average_leading_edge_speed_mm_min,
-                g.average_leading_edge_speed_mm_min,
-                "average_leading_edge_speed_mm_min",
             ),
         ] {
             close(av, gv, LOOSE_REL, &format!("{kt}.{name}"), f);

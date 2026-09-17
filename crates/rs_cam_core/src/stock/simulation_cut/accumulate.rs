@@ -61,7 +61,6 @@ impl KinematicsAccumulator {
             self.peak_chip_thickness_mm =
                 Some(self.peak_chip_thickness_mm.map_or(pct, |p| p.max(pct)));
         }
-        self.leading_edge_speed_time_weighted_sum += eng.leading_edge_speed_mm_min * dt;
     }
 
     pub fn finish(self) -> KinematicsSummary {
@@ -96,11 +95,6 @@ impl KinematicsAccumulator {
                 None
             },
             peak_chip_thickness_mm: self.peak_chip_thickness_mm,
-            average_leading_edge_speed_mm_min: if self.cutting_runtime_s > 1e-9 {
-                self.leading_edge_speed_time_weighted_sum / t
-            } else {
-                0.0
-            },
             sample_count: self.sample_count,
         }
     }

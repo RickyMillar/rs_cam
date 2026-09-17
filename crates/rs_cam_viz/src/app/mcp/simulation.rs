@@ -1141,7 +1141,6 @@ fn render_per_kinematics_json(
                 "average_arc_radians": summary.average_arc_radians,
                 "average_mean_chip_thickness_mm": summary.average_mean_chip_thickness_mm,
                 "peak_chip_thickness_mm": summary.peak_chip_thickness_mm,
-                "average_leading_edge_speed_mm_min": summary.average_leading_edge_speed_mm_min,
             }),
         );
     }

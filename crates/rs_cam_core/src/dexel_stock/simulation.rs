@@ -1116,12 +1116,6 @@ fn apply_subsegment_metrics(
         // their own names.
         mean_chip_thickness_mm: chip_stats.map(|stats| stats.mean_mm),
         peak_chip_thickness_mm: chip_stats.map(|stats| stats.peak_mm),
-        leading_edge_speed_mm_min: sample.feed_rate_mm_min,
-        // Step 2 carries direction as a substrate; climb/conventional
-        // discrimination needs perp-axis side info from stamping (which side of
-        // the engaged arc has fresh material) — to be threaded in a follow-up.
-        // `Mixed` is the safe fallback.
-        direction: crate::stock::simulation_cut::EngagementDirection::Mixed,
     };
     sample.removed_volume_est_mm3 = removed_volume_est_mm3;
     sample.mrr_mm3_s = if sample.segment_time_s <= 1e-9 {

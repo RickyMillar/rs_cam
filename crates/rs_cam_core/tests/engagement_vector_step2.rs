@@ -10,8 +10,8 @@
 //!   during the deprecation window).
 //! - The per-kinematics summary block appears on a toolpath that mixes
 //!   `Linear` and `Plunge` samples, and each block reports the axes that
-//!   apply (radial-WOC + leading-edge speed are non-zero for Linear;
-//!   peak_axial_doc_mm is non-zero for Plunge).
+//!   apply (radial-WOC is non-zero for Linear; peak_axial_doc_mm is non-zero
+//!   for Plunge).
 //! - `SummaryAccumulator::observe` accumulates per-kinematics correctly
 //!   when fed a mixed sample stream directly.
 //!
@@ -29,8 +29,8 @@ use rs_cam_core::{
     dexel_stock::{StockCutDirection, TriDexelStock},
     geo::{BoundingBox3, P3},
     stock::simulation_cut::{
-        CutKinematics, Engagement, EngagementDirection, SimulationCutSample, SimulationCutTrace,
-        SummaryAccumulator,
+        CutKinematics, Engagement, SIMULATION_CUT_TRACE_SCHEMA_VERSION, SimulationCutSample,
+        SimulationCutTrace, SummaryAccumulator,
     },
     tool::FlatEndmill,
     toolpath::{MoveIntent, Toolpath},
@@ -87,11 +87,6 @@ fn production_samples_carry_populated_engagement_vector() {
              (sample {:?})",
             s
         );
-        assert!(
-            s.engagement.leading_edge_speed_mm_min > 0.0,
-            "production sample must report non-zero leading-edge speed; got {}",
-            s.engagement.leading_edge_speed_mm_min
-        );
         // C2: the dexel emitter always measures this, so a production
         // sample must carry `Some` — `None` here would mean an emitter lost
         // its flute length.
@@ -144,8 +139,6 @@ fn mk_sample(
             // `tests/engagement_chip_thickness_labels_f4.rs`.
             mean_chip_thickness_mm: Some(0.018),
             peak_chip_thickness_mm: Some(0.02),
-            leading_edge_speed_mm_min: 1000.0,
-            direction: EngagementDirection::Mixed,
         },
         removed_volume_est_mm3: 1.0,
         mrr_mm3_s: 10.0,
@@ -211,10 +204,6 @@ fn summary_accumulator_separates_kinematics() {
         plunge.peak_axial_doc_fraction.is_some_and(|f| f > 0.0),
         "Plunge peak axial DOC fraction should be measured and > 0, got {:?}",
         plunge.peak_axial_doc_fraction
-    );
-    assert!(
-        lin.average_leading_edge_speed_mm_min > 0.0,
-        "Linear avg leading-edge speed should be > 0"
     );
 }
 
@@ -300,4 +289,57 @@ fn legacy_scalar_matches_engagement_radial_woc_for_all_samples() {
             s.sample_index
         );
     }
+}
+
+/// The `Engagement` wire, key for key.
+///
+/// STK-04 and STK-05 deleted two of its fields. `leading_edge_speed_mm_min`
+/// was an unconditional copy of `feed_rate_mm_min`, already published on the
+/// sample, and its doc named a chipload consumer that did not exist.
+/// `direction` was an `EngagementDirection` that production only ever set to
+/// `Mixed`, and that nothing read. Climb against conventional is a claim an
+/// operator acts on, so a type that only says "Mixed" is worse than no type.
+///
+/// This test pins the key set so neither field returns without a reading
+/// behind it, and pins the schema version that records the break.
+#[test]
+fn the_engagement_wire_carries_only_the_axes_it_measures() {
+    let value = serde_json::to_value(Engagement::default()).expect("Engagement serialises");
+    let mut keys: Vec<String> = value
+        .as_object()
+        .expect("Engagement is a JSON object")
+        .keys()
+        .cloned()
+        .collect();
+    keys.sort();
+    assert_eq!(
+        keys,
+        [
+            "arc_radians",
+            "axial_doc_fraction",
+            "mean_chip_thickness_mm",
+            "peak_chip_thickness_mm",
+            "radial_woc_fraction",
+        ],
+        "an Engagement field must carry a reading the emitter computes"
+    );
+
+    let mut acc = SummaryAccumulator::default();
+    acc.observe(&mk_sample(1, 0, CutKinematics::Linear, 0.5, 1.5, Some(0.8)));
+    let summary = acc.finish_toolpath(ToolpathId(1));
+    assert!(
+        summary.per_kinematics.contains_key(&CutKinematics::Linear),
+        "the assertion below reads a populated kinematics block, not an empty map"
+    );
+    let value = serde_json::to_value(summary).expect("the summary serialises");
+    let text = value.to_string();
+    assert!(
+        !text.contains("leading_edge_speed"),
+        "no summary field republishes the commanded feed under another name"
+    );
+
+    assert_eq!(
+        SIMULATION_CUT_TRACE_SCHEMA_VERSION, 6,
+        "the trace schema version records the STK-04 + STK-05 break"
+    );
 }

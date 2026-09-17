@@ -24,9 +24,13 @@ pub struct SimulationMetricOptions {
     pub capture_arc_engagement: bool,
 }
 
+// v6 (2026-09-17, STK-04 + STK-05): `Engagement` loses
+// `leading_edge_speed_mm_min` (an unconditional copy of `feed_rate_mm_min`)
+// and `direction` (an `EngagementDirection` that only ever said `Mixed`), and
+// `KinematicsSummary` loses `average_leading_edge_speed_mm_min`.
 // v5 (2026-06-10, F1): `DrillToolpathSummary` gains `chip_welding_dtd`
 // (evacuation-credited ratio the chip-welding risk is classified from).
-pub const SIMULATION_CUT_TRACE_SCHEMA_VERSION: u32 = 5;
+pub const SIMULATION_CUT_TRACE_SCHEMA_VERSION: u32 = 6;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -55,18 +59,6 @@ impl CutKinematics {
     pub const fn index(self) -> usize {
         self as usize
     }
-}
-
-/// Cutter-side engagement orientation relative to the feed direction.
-/// `Mixed` is the safe fallback when the sample emitter cannot determine
-/// orientation (e.g. plunges, helix entries with rapidly changing tangent).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum EngagementDirection {
-    Climb,
-    Conventional,
-    #[default]
-    Mixed,
 }
 
 /// Structured engagement vector carried per `SimulationCutSample`. Step 2
@@ -121,11 +113,6 @@ pub struct Engagement {
     /// No gate consumes it — the chipload gate is deliberately
     /// calibrated on the arc-average (`tests/chipload_formula_calibration.rs`).
     pub peak_chip_thickness_mm: Option<f64>,
-    /// Feed velocity at the engaged cutting edge (mm/min). For 3-axis
-    /// lateral moves this is `feed_rate_mm_min`. Used by the chipload gate.
-    pub leading_edge_speed_mm_min: f64,
-    /// Climb / conventional / mixed. `Mixed` when ambiguous.
-    pub direction: EngagementDirection,
 }
 
 impl Engagement {
@@ -385,8 +372,6 @@ pub struct KinematicsSummary {
     /// publish `None` for a measured zero, against the contract the sibling
     /// [`Self::peak_axial_doc_fraction`] already kept).
     pub peak_chip_thickness_mm: Option<f64>,
-    /// Time-weighted mean of `engagement.leading_edge_speed_mm_min`.
-    pub average_leading_edge_speed_mm_min: f64,
     /// Number of cutting samples that landed in this kinematics class.
     pub sample_count: usize,
 }
@@ -886,7 +871,6 @@ pub struct KinematicsAccumulator {
     /// `Option`-preserving accumulation `peak_axial_doc_fraction` uses, so a
     /// measured zero stays `Some(0.0)` (STK-08).
     pub peak_chip_thickness_mm: Option<f64>,
-    pub leading_edge_speed_time_weighted_sum: f64,
     pub sample_count: usize,
 }
 
