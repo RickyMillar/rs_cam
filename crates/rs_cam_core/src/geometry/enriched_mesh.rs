@@ -335,6 +335,30 @@ impl EnrichedMesh {
     }
 }
 
+/// The most face groups an [`EnrichedMesh`] can carry, because
+/// [`FaceGroupId`] is a `u16`.
+pub const MAX_FACE_GROUPS: usize = u16::MAX as usize + 1;
+
+/// Why [`build_enriched_mesh`] refused.
+///
+/// FLD-06: this was a `String`. The cause is data now, so a caller maps each
+/// variant to its own error instead of carrying a formatted sentence in a
+/// free-text field.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum EnrichedMeshError {
+    /// The tessellation produced no face at all.
+    #[error("no faces to build an enriched mesh from")]
+    NoFaces,
+    /// More faces than [`FaceGroupId`] can number.
+    #[error("too many faces ({faces}) — the limit is {limit}")]
+    TooManyFaces {
+        /// Faces the caller handed over.
+        faces: usize,
+        /// [`MAX_FACE_GROUPS`].
+        limit: usize,
+    },
+}
+
 /// Build an `EnrichedMesh` from per-face tessellation results.
 ///
 /// This is the constructor used by the STEP import pipeline. Each face's
@@ -344,9 +368,9 @@ pub fn build_enriched_mesh(
     face_data: Vec<FaceTessellation>,
     adjacency: Vec<(FaceGroupId, FaceGroupId)>,
     edges: Vec<BrepEdge>,
-) -> Result<EnrichedMesh, String> {
+) -> Result<EnrichedMesh, EnrichedMeshError> {
     if face_data.is_empty() {
-        return Err("No faces to build enriched mesh from".to_owned());
+        return Err(EnrichedMeshError::NoFaces);
     }
 
     let mut all_vertices: Vec<P3> = Vec::new();
@@ -354,12 +378,11 @@ pub fn build_enriched_mesh(
     let mut triangle_to_face: Vec<u16> = Vec::new();
     let mut face_groups: Vec<FaceGroup> = Vec::new();
 
-    if face_data.len() > u16::MAX as usize + 1 {
-        return Err(format!(
-            "Too many faces ({}) — maximum supported is {}",
-            face_data.len(),
-            u16::MAX as usize + 1
-        ));
+    if face_data.len() > MAX_FACE_GROUPS {
+        return Err(EnrichedMeshError::TooManyFaces {
+            faces: face_data.len(),
+            limit: MAX_FACE_GROUPS,
+        });
     }
 
     for (face_idx, face) in face_data.into_iter().enumerate() {
@@ -701,5 +724,56 @@ mod tests {
         assert!((top.bbox.max.z - 25.0).abs() < 1e-10);
         assert!((top.bbox.min.x - 0.0).abs() < 1e-10);
         assert!((top.bbox.max.x - 100.0).abs() < 1e-10);
+    }
+    // ── FLD-06: the refusal is data, not a sentence ─────────────────────
+
+    /// FLD-06. `build_enriched_mesh` refuses an empty face list with
+    /// [`EnrichedMeshError::NoFaces`], so `io::step_input` can map the cause
+    /// to its own variant instead of reading a formatted string.
+    ///
+    /// Teeth: the `is_empty` guard was deleted, and this test went red on the
+    /// `Ok` the constructor then returned. The guard was restored.
+    #[test]
+    fn no_faces_is_a_typed_refusal() {
+        let built = build_enriched_mesh(Vec::new(), Vec::new(), Vec::new());
+        assert_eq!(built.unwrap_err(), EnrichedMeshError::NoFaces);
+    }
+
+    /// FLD-06. One face more than [`FaceGroupId`] can number is
+    /// [`EnrichedMeshError::TooManyFaces`], and the variant carries both the
+    /// count and the limit.
+    ///
+    /// The limit itself is accepted, so the test pins the boundary and not
+    /// only the refusal.
+    ///
+    /// Teeth: the comparison was widened to `>=`, this test went red on the
+    /// `MAX_FACE_GROUPS` case it expects to succeed, and the comparison was
+    /// restored.
+    #[test]
+    fn too_many_faces_carries_the_count_and_the_limit() {
+        let blank = |count: usize| -> Vec<FaceTessellation> {
+            (0..count)
+                .map(|_| FaceTessellation {
+                    vertices: Vec::new(),
+                    triangles: Vec::new(),
+                    surface_type: SurfaceType::Unknown,
+                    surface_params: SurfaceParams::Unknown,
+                    boundary_loops: Vec::new(),
+                })
+                .collect()
+        };
+        let at_limit = build_enriched_mesh(blank(MAX_FACE_GROUPS), Vec::new(), Vec::new());
+        assert!(
+            at_limit.is_ok(),
+            "`MAX_FACE_GROUPS` faces still number inside a `u16`"
+        );
+        let over = build_enriched_mesh(blank(MAX_FACE_GROUPS + 1), Vec::new(), Vec::new());
+        assert_eq!(
+            over.unwrap_err(),
+            EnrichedMeshError::TooManyFaces {
+                faces: MAX_FACE_GROUPS + 1,
+                limit: MAX_FACE_GROUPS,
+            }
+        );
     }
 }

@@ -15,7 +15,8 @@ use truck_stepio::r#in::Table;
 
 use crate::geo::{BoundingBox3, P2, P3, V3};
 use crate::geometry::enriched_mesh::{
-    EnrichedMesh, FaceGroupId, FaceTessellation, SurfaceParams, SurfaceType, build_enriched_mesh,
+    EnrichedMesh, EnrichedMeshError, FaceGroupId, FaceTessellation, SurfaceParams, SurfaceType,
+    build_enriched_mesh,
 };
 
 #[derive(Error, Debug)]
@@ -26,8 +27,10 @@ pub enum StepImportError {
     ParseError,
     #[error("No shell or solid geometry found in STEP file")]
     NoSolidFound,
-    #[error("Tessellation failed for shell {shell_index}: {message}")]
-    TessellationFailed { shell_index: usize, message: String },
+    #[error("The tessellation produced no face")]
+    NoFaces,
+    #[error("The model has {faces} faces; the limit is {limit}")]
+    TooManyFaces { faces: usize, limit: usize },
     #[error("Failed to convert shell {shell_index} to compressed form: {message}")]
     ShellConversionFailed { shell_index: usize, message: String },
     #[error("Built mesh has no triangles")]
@@ -178,10 +181,13 @@ pub fn load_step(path: &Path, tolerance: f64) -> Result<EnrichedMesh, StepImport
         "Building enriched mesh"
     );
 
-    build_enriched_mesh(face_tessellations, adjacency_pairs, brep_edges).map_err(|e| {
-        StepImportError::TessellationFailed {
-            shell_index: 0,
-            message: e,
+    // FLD-06: each cause maps to its own variant. The old arm wrote the
+    // message into `TessellationFailed { shell_index: 0 }`, and that zero was
+    // a constant, not the shell that failed.
+    build_enriched_mesh(face_tessellations, adjacency_pairs, brep_edges).map_err(|e| match e {
+        EnrichedMeshError::NoFaces => StepImportError::NoFaces,
+        EnrichedMeshError::TooManyFaces { faces, limit } => {
+            StepImportError::TooManyFaces { faces, limit }
         }
     })
 }
