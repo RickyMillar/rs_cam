@@ -28,6 +28,7 @@ need a register.
 | T-12 | A depth recommendation is dropped for 14 of 24 operations, silently | **closed** `ad2f749b` |
 | T-13 | `F_edge` is applied per mm of depth to an edge that is longer than that | open — needs a literature anchor |
 | T-14 | A drop-cutter finishing pass measures 42.5 mm of axial engagement | open — R1 made it load-bearing |
+| T-15 | Pass 9 can raise a feed the power ladder just clamped | open — latent, and rigidity is what hides it |
 
 ---
 
@@ -683,6 +684,69 @@ specific to it rather than a shared axial-measurement change.
 flagged AS014 for this session. Verified here by aligning both baselines on
 their headers — September added a `resolution_mm` column, so a positional
 comparison would have compared the wrong fields.
+
+---
+
+## T-15 — pass 9 can raise a feed the power ladder just clamped
+
+`rescale_feed_to_final_geometry` re-derives the feed at the geometry the
+operation actually ships. It is wired in at `feeds::suggest::invariants`.
+
+Its geometry term is `geometry_feed_factor`, which **ignores its `ae`
+argument** and returns `depth_tier_multiplier(ap, diameter)` alone. That
+multiplier RISES as the depth falls:
+
+| `ap / D` | multiplier |
+|---|---|
+| over 3.0 | 0.45 |
+| over 2.0 | 0.50 |
+| over 1.0 | 0.75 |
+| 1.0 or less | **1.00** |
+
+So a clamp that lowers the depth across a tier boundary makes pass 9 **raise**
+the feed, by up to 2.22x.
+
+**Pass 9 does not re-check the power ceiling, and says why in its own doc:**
+
+> It is not re-checked here because `tests/power_ceiling_parity_f2.rs` measured
+> the power branch never firing at all ... peak utilisation 23.6 % ... On a
+> profile where power does bind this pass can over-feed.
+
+That is the same 23.6 % that justified deleting the power bar from the Feeds
+card, and it is stale for the same reason: it was measured before R1 rebuilt
+the power model about 8.6x higher. Re-measured after R1 across 162 recipes the
+spread is median 17.8 %, p90 89.4 %, peak 100.0 %.
+
+**So the condition the author wrote down as the failure case is now met.** The
+power branch does bind. The power ladder added in this programme reduces `ap`
+and `ae` as rungs 2 and 3, which is exactly the input pass 9 re-reads.
+
+## What is verified, and what is not
+
+Verified: `geometry_feed_factor` ignores `ae`; the multiplier rises as depth
+falls; pass 9 is called; pass 9 does not re-check power; the 23.6 % is stale.
+
+**NOT verified: a shipped case where it actually over-feeds.** Three fixtures
+were built to force one and none crossed a tier boundary.
+
+The reason is worth more than the attempt. **The rigidity cap holds `ap / D`
+at about 0.20, far below the first tier boundary at 1.0.** So the multiplier
+is 1.00 before and after every clamp, the depth-tier term never moves, and the
+hazard stays latent.
+
+**Rigidity is what hides this.** And this programme's plan is to replace the
+rigidity cap with a measured stiffness, which would let the depth rise past
+`ap / D = 1.0` on a rigid machine. **Fixing rigidity would make T-15 live.**
+The two must land together, or the power ladder's work gets undone by a pass
+that was told power never binds.
+
+**Cost if left:** zero today, and a silent over-feed the moment the depth cap
+is loosened — on the one path the operator cannot see, because pass 9's
+rationale entry is declared but reports a rescale, not a power breach.
+
+**Fix:** re-check the power ceiling after the rescale, or make the rescale
+refuse to raise a feed on a recipe whose `FeedsDerates::power_limit` is below
+1.0. The second is cheaper and is enough.
 
 ---
 
