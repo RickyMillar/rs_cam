@@ -237,6 +237,25 @@ pub enum DexelAxis {
     Z,
 }
 
+impl DexelAxis {
+    /// Decompose a 3-D point `(x, y, z)` into `(grid_u, grid_v, ray_depth)`
+    /// for this axis.
+    ///
+    /// STK-02: this is the ONE axis permutation table. The grid constructor
+    /// ([`DexelGrid::from_bounds`]) and
+    /// [`crate::dexel_stock::StockCutDirection::decompose`] both read it, so
+    /// a grid's origin and a stamped point can never disagree about which
+    /// world component is `u`.
+    #[inline]
+    pub fn decompose(self, x: f64, y: f64, z: f64) -> (f64, f64, f64) {
+        match self {
+            Self::Z => (x, y, z), // Z-grid: u=X, v=Y, depth=Z
+            Self::Y => (x, z, y), // Y-grid: u=X, v=Z, depth=Y
+            Self::X => (y, z, x), // X-grid: u=Y, v=Z, depth=X
+        }
+    }
+}
+
 // ── Grid ────────────────────────────────────────────────────────────────
 
 /// A 2-D grid of dexel rays running along one axis.
@@ -365,78 +384,57 @@ impl DexelGrid {
         }
     }
 
-    /// Create a Z-grid from a bounding box.
+    /// Create a grid over `bbox` whose rays run along `axis`.
     ///
-    /// Every ray gets a single segment spanning `[z_min, z_max]`.
+    /// The axis permutation comes from [`DexelAxis::decompose`], the one
+    /// table [`crate::dexel_stock::StockCutDirection::decompose`] also reads.
+    /// Every ray gets a single segment that spans the box along `axis`, and
+    /// `conservative_top` starts at the high end of that span.
     /// `cell_size` is clamped to a minimum of 1e-6 if zero or negative.
-    pub fn z_grid_from_bounds(bbox: &BoundingBox3, cell_size: f64) -> Self {
-        let cell_size =
-            Self::clamp_cell_size(cell_size, bbox.max.x - bbox.min.x, bbox.max.y - bbox.min.y);
-        let cols = ((bbox.max.x - bbox.min.x) / cell_size).ceil() as usize + 1;
-        let rows = ((bbox.max.y - bbox.min.y) / cell_size).ceil() as usize + 1;
-        let seg = DexelSegment::new(bbox.min.z as f32, bbox.max.z as f32);
+    ///
+    /// STK-02: the three axis constructors below were three copies of this
+    /// body. They differed only in the permutation, and the permutation was
+    /// already written down in `decompose`.
+    pub fn from_bounds(bbox: &BoundingBox3, cell_size: f64, axis: DexelAxis) -> Self {
+        let (u_min, v_min, depth_min) = axis.decompose(bbox.min.x, bbox.min.y, bbox.min.z);
+        let (u_max, v_max, depth_max) = axis.decompose(bbox.max.x, bbox.max.y, bbox.max.z);
+        let cell_size = Self::clamp_cell_size(cell_size, u_max - u_min, v_max - v_min);
+        let cols = ((u_max - u_min) / cell_size).ceil() as usize + 1;
+        let rows = ((v_max - v_min) / cell_size).ceil() as usize + 1;
+        let seg = DexelSegment::new(depth_min as f32, depth_max as f32);
         let ray: DexelRay = SmallVec::from_buf([seg]);
         let rays = vec![ray; rows * cols];
         Self {
             rays,
             rows,
             cols,
-            origin_u: bbox.min.x,
-            origin_v: bbox.min.y,
+            origin_u: u_min,
+            origin_v: v_min,
             cell_size,
-            axis: DexelAxis::Z,
-            conservative_top: vec![bbox.max.z as f32; rows * cols],
+            axis,
+            conservative_top: vec![depth_max as f32; rows * cols],
         }
+    }
+
+    /// Create a Z-grid from a bounding box.
+    ///
+    /// Every ray gets a single segment spanning `[z_min, z_max]`.
+    pub fn z_grid_from_bounds(bbox: &BoundingBox3, cell_size: f64) -> Self {
+        Self::from_bounds(bbox, cell_size, DexelAxis::Z)
     }
 
     /// Create an X-grid from a bounding box.
     ///
     /// Rays run along X, indexed by (Y, Z).  `rows` = Z-cells, `cols` = Y-cells.
-    /// Every ray gets a single segment spanning `[x_min, x_max]`.
-    /// `cell_size` is clamped to a minimum of 1e-6 if zero or negative.
     pub fn x_grid_from_bounds(bbox: &BoundingBox3, cell_size: f64) -> Self {
-        let cell_size =
-            Self::clamp_cell_size(cell_size, bbox.max.y - bbox.min.y, bbox.max.z - bbox.min.z);
-        let cols = ((bbox.max.y - bbox.min.y) / cell_size).ceil() as usize + 1;
-        let rows = ((bbox.max.z - bbox.min.z) / cell_size).ceil() as usize + 1;
-        let seg = DexelSegment::new(bbox.min.x as f32, bbox.max.x as f32);
-        let ray: DexelRay = SmallVec::from_buf([seg]);
-        let rays = vec![ray; rows * cols];
-        Self {
-            rays,
-            rows,
-            cols,
-            origin_u: bbox.min.y,
-            origin_v: bbox.min.z,
-            cell_size,
-            axis: DexelAxis::X,
-            conservative_top: vec![bbox.max.x as f32; rows * cols],
-        }
+        Self::from_bounds(bbox, cell_size, DexelAxis::X)
     }
 
     /// Create a Y-grid from a bounding box.
     ///
     /// Rays run along Y, indexed by (X, Z).  `rows` = Z-cells, `cols` = X-cells.
-    /// Every ray gets a single segment spanning `[y_min, y_max]`.
-    /// `cell_size` is clamped to a minimum of 1e-6 if zero or negative.
     pub fn y_grid_from_bounds(bbox: &BoundingBox3, cell_size: f64) -> Self {
-        let cell_size =
-            Self::clamp_cell_size(cell_size, bbox.max.x - bbox.min.x, bbox.max.z - bbox.min.z);
-        let cols = ((bbox.max.x - bbox.min.x) / cell_size).ceil() as usize + 1;
-        let rows = ((bbox.max.z - bbox.min.z) / cell_size).ceil() as usize + 1;
-        let seg = DexelSegment::new(bbox.min.y as f32, bbox.max.y as f32);
-        let ray: DexelRay = SmallVec::from_buf([seg]);
-        let rays = vec![ray; rows * cols];
-        Self {
-            rays,
-            rows,
-            cols,
-            origin_u: bbox.min.x,
-            origin_v: bbox.min.z,
-            cell_size,
-            axis: DexelAxis::Y,
-            conservative_top: vec![bbox.max.y as f32; rows * cols],
-        }
+        Self::from_bounds(bbox, cell_size, DexelAxis::Y)
     }
 
     /// Convert world (u, v) to cell (row, col).  Returns `None` if outside.
