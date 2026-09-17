@@ -1666,7 +1666,7 @@
           "type": "integer"
         },
         "key": {
-          "description": "Dressup field name (e.g. \"link_moves\", \"arc_fitting\", \"retract_strategy\")",
+          "description": "Dressup field name (e.g. \"link_moves\", \"arc_fitting\")",
           "type": "string"
         },
         "value": {
@@ -1892,6 +1892,12 @@
         },
         "z_rotation": {
           "description": "In-plane rotation of the stock about Z for this setup. One of\n\"0\", \"90\", \"180\", \"270\" (degrees). Note a 90-degree rotation\ndoes not map a non-square stock onto itself — for a diagonal\nalignment-pin pair on a rectangular board, 180 is usually the\nphysical flip.",
+          "enum": [
+            "0",
+            "90",
+            "180",
+            "270"
+          ],
           "type": "string"
         }
       },
