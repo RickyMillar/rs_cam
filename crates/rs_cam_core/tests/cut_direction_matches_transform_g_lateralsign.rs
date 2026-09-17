@@ -170,3 +170,83 @@ fn the_derivation_reproduces_the_two_undisputed_faces() {
     assert_eq!(axis, DexelAxis::Z);
     assert!(sign < 0.0, "Bottom mirrors Z: local +Z is global −Z");
 }
+
+// ── STK-06: the group-stock rule has one home ────────────────────
+
+/// CONTRACT — STK-06. The `FromTop` group-stock rule is written once.
+///
+/// `session/compute/simulation.rs` and `session/compute.rs` each carried
+/// the same untitled two-arm map: `FaceUp::Bottom => FromBottom`, and a
+/// `_` wildcard for everything else. The scan below names
+/// `StockCutDirection::FromBottom`, not one spelling of the arm, so a
+/// second copy written with a fully qualified path is caught too. Two copies of a rule nobody named
+/// read as an oversight, and this is the exact table that has produced
+/// two recorded defects (G-LATERALSIGN, G-FRONTNAME).
+///
+/// The rule is now `session::compute::simulation::group_stock_cut_direction`,
+/// with its six arms written out and its reason in the doc comment. The
+/// in-crate tests `the_group_stock_rule_answers_for_every_face` and
+/// `the_group_rule_and_the_global_accessor_diverge_on_the_laterals` pin
+/// what it returns; this scan pins that nothing writes it again.
+///
+/// A source scan, because the defect is a SECOND copy. No value test can
+/// see a copy that agrees with the original today and drifts tomorrow.
+#[test]
+fn no_session_file_open_codes_the_group_stock_rule() {
+    let session = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/session");
+    assert!(session.is_dir(), "{} no longer exists", session.display());
+
+    let mut scanned = 0usize;
+    let mut offenders: Vec<String> = Vec::new();
+    let mut stack = vec![session];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).expect("read_dir session").flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if path.extension().is_none_or(|e| e != "rs") {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).expect("read a session source");
+            scanned += 1;
+            // A test module that PINS the rule must name the variant it
+            // pins. `compute/tests.rs` holds the two value tests.
+            if path.ends_with("compute/tests.rs") {
+                assert!(
+                    text.contains("the_group_stock_rule_answers_for_every_face"),
+                    "the exemption is for the rule's value tests. They are \
+                     not in {}",
+                    path.display()
+                );
+                continue;
+            }
+            // The named rule is allowed to write the arm. Nothing else is.
+            if path.ends_with("compute/simulation.rs") {
+                assert!(
+                    text.contains("pub(crate) fn group_stock_cut_direction"),
+                    "the named rule must live in {}",
+                    path.display()
+                );
+                continue;
+            }
+            // The name, not one spelling of the arm: a second copy
+            // written with a fully qualified path is the same defect.
+            if text.contains("StockCutDirection::FromBottom") {
+                offenders.push(path.display().to_string());
+            }
+        }
+    }
+
+    assert!(
+        scanned >= 8,
+        "the scan must read the session tree, not an empty one. I read \
+         {scanned} files"
+    );
+    assert!(
+        offenders.is_empty(),
+        "STK-06: these files open-code the group-stock cut-direction rule \
+         again. Call `group_stock_cut_direction` instead: {offenders:?}"
+    );
+}

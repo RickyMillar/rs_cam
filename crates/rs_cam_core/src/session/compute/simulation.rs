@@ -27,6 +27,43 @@ use super::{
     modulate_annotated_against_trace,
 };
 
+/// The cut direction a per-setup simulation GROUP stock is stamped with.
+///
+/// Two faces, not six. A group stock is built in the SETUP-LOCAL frame,
+/// where local −Z is always the tool axis, so the tool always arrives
+/// from local `FromTop`. `FaceUp::Bottom` is the one face whose local Z
+/// runs against the global Z the dexel columns are indexed on, so it is
+/// the one face that stamps `FromBottom`.
+///
+/// # Do not replace this with `SetupTransformInfo::cut_direction()`
+///
+/// That accessor answers a DIFFERENT question — which side the tool
+/// arrives from in the stock-relative GLOBAL frame — and returns
+/// `FromFront` / `FromBack` / `FromLeft` / `FromRight` for the four
+/// lateral faces. It feeds the global playback stock. This rule feeds the
+/// per-setup group stock, which every metric, gate, collision check and
+/// checkpoint mesh is computed on. The two agree on `Top` and `Bottom`
+/// and diverge on the four laterals, and that divergence is the design,
+/// not a defect. `compute/transform.rs:493` records two earlier defects
+/// in exactly this table (G-LATERALSIGN, G-FRONTNAME), both of which came
+/// from reading one question as the other.
+///
+/// STK-06 gave the rule this one home. It used to be an untitled `_` arm
+/// written out in two files, which read as an oversight rather than as a
+/// decision.
+///
+/// The S5 simulation prefix hash reads what this returns
+/// (`compute/sim_prefix.rs`), so the answer must not move for a lateral
+/// setup without a deliberate cache break.
+pub(crate) fn group_stock_cut_direction(face_up: FaceUp) -> StockCutDirection {
+    match face_up {
+        FaceUp::Top => StockCutDirection::FromTop,
+        FaceUp::Bottom => StockCutDirection::FromBottom,
+        // The tool axis is setup-local Z on a lateral face too.
+        FaceUp::Front | FaceUp::Back | FaceUp::Left | FaceUp::Right => StockCutDirection::FromTop,
+    }
+}
+
 /// Translate a triangle mesh by (dx, dy, dz) and rebuild bbox/faces.
 fn translate_mesh(mesh: &TriangleMesh, dx: f64, dy: f64, dz: f64) -> TriangleMesh {
     let verts: Vec<P3> = mesh
@@ -79,10 +116,7 @@ impl ProjectSession {
         // Build simulation groups from setups
         let mut groups = Vec::new();
         for setup in &self.setups {
-            let direction = match setup.face_up {
-                FaceUp::Bottom => StockCutDirection::FromBottom,
-                _ => StockCutDirection::FromTop,
-            };
+            let direction = group_stock_cut_direction(setup.face_up);
 
             let mut entries = Vec::new();
             // F.4: track whether this group's first pending (enabled,

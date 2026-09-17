@@ -11,8 +11,6 @@ use crate::compute::simulate::{
     SimGroupEntry, SimToolpathEntry, SimulationRequest, run_simulation,
 };
 use crate::compute::tool_config::ToolConfig;
-use crate::compute::transform::FaceUp;
-use crate::dexel_stock::StockCutDirection;
 use crate::geo::BoundingBox3;
 use crate::ids::ToolpathId;
 use crate::mesh::TriangleMesh;
@@ -1859,10 +1857,7 @@ fn simulate_candidate_isolated(
     }
     let stock_bbox = context.stock_bbox;
     let setup_ctx = &context.setup_ctx;
-    let direction = match setup_ctx.face_up {
-        FaceUp::Bottom => StockCutDirection::FromBottom,
-        _ => StockCutDirection::FromTop,
-    };
+    let direction = simulation::group_stock_cut_direction(setup_ctx.face_up);
 
     let entry = SimToolpathEntry {
         id: context.toolpath_id,

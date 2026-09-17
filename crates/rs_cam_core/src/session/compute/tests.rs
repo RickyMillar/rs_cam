@@ -2104,3 +2104,87 @@ fn apply_boundary_clip_multi_all_regions_collapsed_returns_original() {
         "the finding names how many source regions all collapsed"
     );
 }
+
+// ── STK-06: the group-stock cut-direction rule ───────────────────
+
+/// CONTRACT — STK-06. The rule answers for all six faces, from one home.
+///
+/// A group stock lives in the setup-local frame, where local −Z is the
+/// tool axis on every face. Only `FaceUp::Bottom` runs its local Z against
+/// the global Z the dexel columns index on.
+#[test]
+fn the_group_stock_rule_answers_for_every_face() {
+    use super::simulation::group_stock_cut_direction;
+    use crate::compute::transform::FaceUp;
+    use crate::dexel_stock::StockCutDirection;
+
+    let table = [
+        (FaceUp::Top, StockCutDirection::FromTop),
+        (FaceUp::Bottom, StockCutDirection::FromBottom),
+        (FaceUp::Front, StockCutDirection::FromTop),
+        (FaceUp::Back, StockCutDirection::FromTop),
+        (FaceUp::Left, StockCutDirection::FromTop),
+        (FaceUp::Right, StockCutDirection::FromTop),
+    ];
+    let mut checked = 0;
+    for (face_up, expected) in table {
+        assert_eq!(
+            group_stock_cut_direction(face_up),
+            expected,
+            "{face_up:?}: the group stock is stamped in the setup-local \
+             frame. The S5 prefix hash reads this value, so a change here \
+             is a cache break, not a rename."
+        );
+        checked += 1;
+    }
+    assert_eq!(
+        checked,
+        FaceUp::ALL.len(),
+        "every FaceUp variant is checked"
+    );
+}
+
+/// CONTRACT — STK-06. The group rule and `cut_direction()` answer two
+/// DIFFERENT questions, and their divergence is the design.
+///
+/// `SetupTransformInfo::cut_direction()` names the side the tool arrives
+/// from in the stock-relative GLOBAL frame; it feeds the global playback
+/// stock. The group rule names the side it arrives from in the
+/// SETUP-LOCAL frame; it feeds the per-setup stock every metric, gate and
+/// collision check reads.
+///
+/// This test goes red the day someone "repairs" the rule into a call to
+/// the accessor. `compute/transform.rs:493` records two defects that came
+/// from reading one of these questions as the other.
+#[test]
+fn the_group_rule_and_the_global_accessor_diverge_on_the_laterals() {
+    use super::simulation::group_stock_cut_direction;
+    use crate::compute::transform::{FaceUp, SetupTransformInfo, ZRotation};
+
+    let info = |face_up| SetupTransformInfo {
+        face_up,
+        z_rotation: ZRotation::Deg0,
+        stock_x: 40.0,
+        stock_y: 30.0,
+        stock_z: 25.0,
+        ..Default::default()
+    };
+
+    for face_up in [FaceUp::Top, FaceUp::Bottom] {
+        assert_eq!(
+            group_stock_cut_direction(face_up),
+            info(face_up).cut_direction(),
+            "{face_up:?}: local Z IS global Z on the two Z faces, so the \
+             two frames must agree"
+        );
+    }
+    for face_up in [FaceUp::Front, FaceUp::Back, FaceUp::Left, FaceUp::Right] {
+        assert_ne!(
+            group_stock_cut_direction(face_up),
+            info(face_up).cut_direction(),
+            "{face_up:?}: the accessor answers in the global frame and \
+             names a lateral variant. The group stock is local, so it \
+             stays FromTop. Do not collapse the two."
+        );
+    }
+}
