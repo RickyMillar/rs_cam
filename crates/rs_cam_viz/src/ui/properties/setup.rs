@@ -2,6 +2,7 @@ use super::PanelEdit;
 use crate::state::job::{FaceUp, ModelId, SetupId, ZRotation};
 use crate::state::selection::Selection;
 use crate::ui::AppEvent;
+use crate::ui::components::UiExt as _;
 use crate::ui_command::UiCommand;
 use rs_cam_core::session::{Corner, Fixture, FixtureKind, KeepOutZone, SetupData, XYDatum, ZDatum};
 
@@ -417,39 +418,35 @@ pub fn draw_fixture_properties(
             .strong()
             .color(crate::ui::tokens::TEXT_MUTED),
     );
-    egui::Grid::new("fixture_position")
-        .num_columns(2)
-        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-        .min_row_height(crate::ui::tokens::ROW_DENSE)
-        .show(ui, |ui| {
-            ui.label("X:");
-            edit.drag(
-                &ui.add(
-                    egui::DragValue::new(&mut fixture.origin_x)
-                        .speed(0.5)
-                        .suffix(" mm"),
-                ),
-            );
-            ui.end_row();
-            ui.label("Y:");
-            edit.drag(
-                &ui.add(
-                    egui::DragValue::new(&mut fixture.origin_y)
-                        .speed(0.5)
-                        .suffix(" mm"),
-                ),
-            );
-            ui.end_row();
-            ui.label("Z:");
-            edit.drag(
-                &ui.add(
-                    egui::DragValue::new(&mut fixture.origin_z)
-                        .speed(0.5)
-                        .suffix(" mm"),
-                ),
-            );
-            ui.end_row();
-        });
+    ui.param_grid("fixture_position", |ui| {
+        ui.label("X:");
+        edit.drag(
+            &ui.add(
+                egui::DragValue::new(&mut fixture.origin_x)
+                    .speed(0.5)
+                    .suffix(" mm"),
+            ),
+        );
+        ui.end_row();
+        ui.label("Y:");
+        edit.drag(
+            &ui.add(
+                egui::DragValue::new(&mut fixture.origin_y)
+                    .speed(0.5)
+                    .suffix(" mm"),
+            ),
+        );
+        ui.end_row();
+        ui.label("Z:");
+        edit.drag(
+            &ui.add(
+                egui::DragValue::new(&mut fixture.origin_z)
+                    .speed(0.5)
+                    .suffix(" mm"),
+            ),
+        );
+        ui.end_row();
+    });
 
     ui.add_space(4.0);
 
@@ -458,42 +455,38 @@ pub fn draw_fixture_properties(
             .strong()
             .color(crate::ui::tokens::TEXT_MUTED),
     );
-    egui::Grid::new("fixture_size")
-        .num_columns(2)
-        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-        .min_row_height(crate::ui::tokens::ROW_DENSE)
-        .show(ui, |ui| {
-            ui.label("X:");
-            edit.drag(
-                &ui.add(
-                    egui::DragValue::new(&mut fixture.size_x)
-                        .speed(0.5)
-                        .range(0.1..=10000.0)
-                        .suffix(" mm"),
-                ),
-            );
-            ui.end_row();
-            ui.label("Y:");
-            edit.drag(
-                &ui.add(
-                    egui::DragValue::new(&mut fixture.size_y)
-                        .speed(0.5)
-                        .range(0.1..=10000.0)
-                        .suffix(" mm"),
-                ),
-            );
-            ui.end_row();
-            ui.label("Z:");
-            edit.drag(
-                &ui.add(
-                    egui::DragValue::new(&mut fixture.size_z)
-                        .speed(0.5)
-                        .range(0.1..=10000.0)
-                        .suffix(" mm"),
-                ),
-            );
-            ui.end_row();
-        });
+    ui.param_grid("fixture_size", |ui| {
+        ui.label("X:");
+        edit.drag(
+            &ui.add(
+                egui::DragValue::new(&mut fixture.size_x)
+                    .speed(0.5)
+                    .range(0.1..=10000.0)
+                    .suffix(" mm"),
+            ),
+        );
+        ui.end_row();
+        ui.label("Y:");
+        edit.drag(
+            &ui.add(
+                egui::DragValue::new(&mut fixture.size_y)
+                    .speed(0.5)
+                    .range(0.1..=10000.0)
+                    .suffix(" mm"),
+            ),
+        );
+        ui.end_row();
+        ui.label("Z:");
+        edit.drag(
+            &ui.add(
+                egui::DragValue::new(&mut fixture.size_z)
+                    .speed(0.5)
+                    .range(0.1..=10000.0)
+                    .suffix(" mm"),
+            ),
+        );
+        ui.end_row();
+    });
 
     ui.add_space(4.0);
 
@@ -540,30 +533,26 @@ pub fn draw_keep_out_properties(
             .strong()
             .color(crate::ui::tokens::TEXT_MUTED),
     );
-    egui::Grid::new("keepout_position")
-        .num_columns(2)
-        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-        .min_row_height(crate::ui::tokens::ROW_DENSE)
-        .show(ui, |ui| {
-            ui.label("X:");
-            edit.drag(
-                &ui.add(
-                    egui::DragValue::new(&mut zone.origin_x)
-                        .speed(0.5)
-                        .suffix(" mm"),
-                ),
-            );
-            ui.end_row();
-            ui.label("Y:");
-            edit.drag(
-                &ui.add(
-                    egui::DragValue::new(&mut zone.origin_y)
-                        .speed(0.5)
-                        .suffix(" mm"),
-                ),
-            );
-            ui.end_row();
-        });
+    ui.param_grid("keepout_position", |ui| {
+        ui.label("X:");
+        edit.drag(
+            &ui.add(
+                egui::DragValue::new(&mut zone.origin_x)
+                    .speed(0.5)
+                    .suffix(" mm"),
+            ),
+        );
+        ui.end_row();
+        ui.label("Y:");
+        edit.drag(
+            &ui.add(
+                egui::DragValue::new(&mut zone.origin_y)
+                    .speed(0.5)
+                    .suffix(" mm"),
+            ),
+        );
+        ui.end_row();
+    });
 
     ui.add_space(4.0);
 
@@ -572,32 +561,28 @@ pub fn draw_keep_out_properties(
             .strong()
             .color(crate::ui::tokens::TEXT_MUTED),
     );
-    egui::Grid::new("keepout_size")
-        .num_columns(2)
-        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-        .min_row_height(crate::ui::tokens::ROW_DENSE)
-        .show(ui, |ui| {
-            ui.label("X:");
-            edit.drag(
-                &ui.add(
-                    egui::DragValue::new(&mut zone.size_x)
-                        .speed(0.5)
-                        .range(0.1..=10000.0)
-                        .suffix(" mm"),
-                ),
-            );
-            ui.end_row();
-            ui.label("Y:");
-            edit.drag(
-                &ui.add(
-                    egui::DragValue::new(&mut zone.size_y)
-                        .speed(0.5)
-                        .range(0.1..=10000.0)
-                        .suffix(" mm"),
-                ),
-            );
-            ui.end_row();
-        });
+    ui.param_grid("keepout_size", |ui| {
+        ui.label("X:");
+        edit.drag(
+            &ui.add(
+                egui::DragValue::new(&mut zone.size_x)
+                    .speed(0.5)
+                    .range(0.1..=10000.0)
+                    .suffix(" mm"),
+            ),
+        );
+        ui.end_row();
+        ui.label("Y:");
+        edit.drag(
+            &ui.add(
+                egui::DragValue::new(&mut zone.size_y)
+                    .speed(0.5)
+                    .range(0.1..=10000.0)
+                    .suffix(" mm"),
+            ),
+        );
+        ui.end_row();
+    });
 
     edit
 }

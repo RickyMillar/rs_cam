@@ -10,6 +10,7 @@
 
 use super::{AppEvent, theme};
 use crate::state::AppState;
+use crate::ui::components::UiExt as _;
 use crate::ui_command::{NoArgs, RenameMachineInLibraryArgs, UiCommand};
 
 /// Ephemeral view state, stashed in egui temp memory.
@@ -163,35 +164,31 @@ fn draw_detail_panel(ui: &mut egui::Ui, view: &mut MachineLibraryView, events: &
 
     ui.heading(&profile.name);
     ui.add_space(2.0);
-    egui::Grid::new("machinelib_preview")
-        .num_columns(2)
-        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-        .min_row_height(crate::ui::tokens::ROW_DENSE)
-        .show(ui, |ui| {
-            let (min_rpm, max_rpm) = profile.rpm_range();
-            row(ui, "RPM range", format!("{min_rpm:.0} – {max_rpm:.0}"));
-            row(
-                ui,
-                "Max feed",
-                format!("{:.0} mm/min", profile.max_feed_mm_min),
-            );
-            row(ui, "Max shank", format!("{:.1} mm", profile.max_shank_mm));
-            match &profile.kinematics {
-                Some(k) => {
-                    let accel = match k.acceleration_xyz_mm_s2 {
-                        Some([ax, ay, az]) => format!("{ax:.0} / {ay:.0} / {az:.0} mm/s²"),
-                        None => format!("{:.0} mm/s² (isotropic)", k.acceleration_mm_s2),
-                    };
-                    row(ui, "Accel X/Y/Z", accel);
-                    row(
-                        ui,
-                        "Junction dev",
-                        format!("{:.3} mm", k.junction_deviation_mm),
-                    );
-                }
-                None => row(ui, "Kinematics", "not set".to_owned()),
+    ui.param_grid("machinelib_preview", |ui| {
+        let (min_rpm, max_rpm) = profile.rpm_range();
+        row(ui, "RPM range", format!("{min_rpm:.0} – {max_rpm:.0}"));
+        row(
+            ui,
+            "Max feed",
+            format!("{:.0} mm/min", profile.max_feed_mm_min),
+        );
+        row(ui, "Max shank", format!("{:.1} mm", profile.max_shank_mm));
+        match &profile.kinematics {
+            Some(k) => {
+                let accel = match k.acceleration_xyz_mm_s2 {
+                    Some([ax, ay, az]) => format!("{ax:.0} / {ay:.0} / {az:.0} mm/s²"),
+                    None => format!("{:.0} mm/s² (isotropic)", k.acceleration_mm_s2),
+                };
+                row(ui, "Accel X/Y/Z", accel);
+                row(
+                    ui,
+                    "Junction dev",
+                    format!("{:.3} mm", k.junction_deviation_mm),
+                );
             }
-        });
+            None => row(ui, "Kinematics", "not set".to_owned()),
+        }
+    });
 
     ui.add_space(8.0);
     ui.horizontal(|ui| {

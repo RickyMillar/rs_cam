@@ -289,6 +289,7 @@ pub(super) fn draw_heights_params(
         None => BOTTOM_Z_TOOLTIP.to_owned(),
     };
 
+    // UI-02: 4 columns, so `param_grid` does not fit.
     egui::Grid::new("heights_p")
         .num_columns(4)
         .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])

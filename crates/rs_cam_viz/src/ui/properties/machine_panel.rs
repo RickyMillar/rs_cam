@@ -11,6 +11,7 @@ use super::panel_apply::{
 };
 use crate::state::AppState;
 use crate::ui::AppEvent;
+use crate::ui::components::UiExt as _;
 use crate::ui_command::{NoArgs, UiCommand};
 
 /// Machine-library UX (SNAPSHOT model, like the tool library): import a
@@ -144,51 +145,45 @@ pub(super) fn draw_machine_panel(
         None => state.session.machine().clone(),
     };
     let mut edit = PanelEdit::default();
-    egui::Grid::new("machine_specs")
-        .num_columns(2)
-        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-        .min_row_height(crate::ui::tokens::ROW_DENSE)
-        .show(ui, |ui| {
-            let (min_rpm, max_rpm) = state.session.machine().rpm_range();
-            ui.label("RPM Range:");
-            ui.label(format!("{:.0} - {:.0}", min_rpm, max_rpm));
-            ui.end_row();
+    ui.param_grid("machine_specs", |ui| {
+        let (min_rpm, max_rpm) = state.session.machine().rpm_range();
+        ui.label("RPM Range:");
+        ui.label(format!("{:.0} - {:.0}", min_rpm, max_rpm));
+        ui.end_row();
 
-            let max_power = match state.session.machine().power {
-                rs_cam_core::machine::PowerModel::VfdConstantTorque { rated_power_kw, .. } => {
-                    rated_power_kw
-                }
-                rs_cam_core::machine::PowerModel::ConstantPower { power_kw } => power_kw,
-            };
-            ui.label("Power:");
-            ui.label(format!("{:.2} kW", max_power));
-            ui.end_row();
+        let max_power = match state.session.machine().power {
+            rs_cam_core::machine::PowerModel::VfdConstantTorque { rated_power_kw, .. } => {
+                rated_power_kw
+            }
+            rs_cam_core::machine::PowerModel::ConstantPower { power_kw } => power_kw,
+        };
+        ui.label("Power:");
+        ui.label(format!("{:.2} kW", max_power));
+        ui.end_row();
 
-            ui.label("Max Feed:");
-            edit.drag(
-                &ui.add(
-                    egui::DragValue::new(&mut draft.max_feed_mm_min)
-                        .speed(50.0)
-                        .range(100.0..=30000.0)
-                        .suffix(" mm/min"),
-                )
-                .on_hover_text(
-                    "Travel/rapid rate ($110-class). Cutting feeds are capped separately.",
-                ),
-            );
-            ui.end_row();
+        ui.label("Max Feed:");
+        edit.drag(
+            &ui.add(
+                egui::DragValue::new(&mut draft.max_feed_mm_min)
+                    .speed(50.0)
+                    .range(100.0..=30000.0)
+                    .suffix(" mm/min"),
+            )
+            .on_hover_text("Travel/rapid rate ($110-class). Cutting feeds are capped separately."),
+        );
+        ui.end_row();
 
-            ui.label("Max Shank:");
-            edit.drag(
-                &ui.add(
-                    egui::DragValue::new(&mut draft.max_shank_mm)
-                        .speed(0.1)
-                        .range(1.0..=25.0)
-                        .suffix(" mm"),
-                ),
-            );
-            ui.end_row();
-        });
+        ui.label("Max Shank:");
+        edit.drag(
+            &ui.add(
+                egui::DragValue::new(&mut draft.max_shank_mm)
+                    .speed(0.1)
+                    .range(1.0..=25.0)
+                    .suffix(" mm"),
+            ),
+        );
+        ui.end_row();
+    });
 
     ui.add_space(8.0);
     // The kinematics grid keeps its own edit record: its row is
@@ -353,57 +348,53 @@ pub(super) fn draw_machine_kinematics(
         response
     };
 
-    egui::Grid::new("machine_kinematics")
-        .num_columns(2)
-        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-        .min_row_height(crate::ui::tokens::ROW_DENSE)
-        .show(ui, |ui| {
-            for (label, index, hint) in [
-                ("Accel X:", 0_usize, "GRBL $120"),
-                ("Accel Y:", 1, "GRBL $121"),
-                ("Accel Z:", 2, "GRBL $122"),
-            ] {
-                // SAFETY: the three indices are literals into a [f64; 3]
-                #[allow(clippy::indexing_slicing)]
-                let response = accel_row(ui, label, &mut axes[index], hint);
-                changed |= response.changed();
-                edit.drag(&response);
-            }
-
-            ui.label("Junction dev:");
-            let response = ui
-                .add(
-                    egui::DragValue::new(&mut delta)
-                        .speed(0.001)
-                        .range(0.001..=1.0)
-                        .max_decimals(4)
-                        .suffix(" mm"),
-                )
-                .on_hover_text("GRBL $11 — how far the cornering arc may bow from the vertex");
+    ui.param_grid("machine_kinematics", |ui| {
+        for (label, index, hint) in [
+            ("Accel X:", 0_usize, "GRBL $120"),
+            ("Accel Y:", 1, "GRBL $121"),
+            ("Accel Z:", 2, "GRBL $122"),
+        ] {
+            // SAFETY: the three indices are literals into a [f64; 3]
+            #[allow(clippy::indexing_slicing)]
+            let response = accel_row(ui, label, &mut axes[index], hint);
             changed |= response.changed();
             edit.drag(&response);
-            ui.end_row();
+        }
 
-            ui.label("Jerk limit:");
-            ui.horizontal(|ui| {
-                let response = ui.checkbox(&mut jerk_enabled, "");
+        ui.label("Junction dev:");
+        let response = ui
+            .add(
+                egui::DragValue::new(&mut delta)
+                    .speed(0.001)
+                    .range(0.001..=1.0)
+                    .max_decimals(4)
+                    .suffix(" mm"),
+            )
+            .on_hover_text("GRBL $11 — how far the cornering arc may bow from the vertex");
+        changed |= response.changed();
+        edit.drag(&response);
+        ui.end_row();
+
+        ui.label("Jerk limit:");
+        ui.horizontal(|ui| {
+            let response = ui.checkbox(&mut jerk_enabled, "");
+            changed |= response.changed();
+            edit.click(&response);
+            if jerk_enabled {
+                let response = ui.add(
+                    egui::DragValue::new(&mut jerk_val)
+                        .speed(10.0)
+                        .range(1.0..=100_000.0)
+                        .suffix(" mm/s³"),
+                );
                 changed |= response.changed();
-                edit.click(&response);
-                if jerk_enabled {
-                    let response = ui.add(
-                        egui::DragValue::new(&mut jerk_val)
-                            .speed(10.0)
-                            .range(1.0..=100_000.0)
-                            .suffix(" mm/s³"),
-                    );
-                    changed |= response.changed();
-                    edit.drag(&response);
-                } else {
-                    ui.label(egui::RichText::new("off (trapezoidal)").small().weak());
-                }
-            });
-            ui.end_row();
+                edit.drag(&response);
+            } else {
+                ui.label(egui::RichText::new("off (trapezoidal)").small().weak());
+            }
         });
+        ui.end_row();
+    });
 
     if changed {
         kin.acceleration_xyz_mm_s2 = Some(axes);

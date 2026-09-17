@@ -6,6 +6,7 @@ use crate::state::toolpath::{AlignmentPinDrillConfig, DrillConfig, DrillCycleTyp
 
 use super::super::{depth_caution_row, dv, dv_pill};
 use super::DepthBeyondStock;
+use crate::ui::components::UiExt as _;
 
 /// Match tolerance for comparing a picked hole to a target position (mm).
 ///
@@ -214,23 +215,19 @@ pub(in crate::ui::properties) fn draw_drill_params(
     // apply). DrillConfig has no plunge_rate or spindle_rpm slot of its
     // own, so this is the only LUT-driven field on the panel.
     let feed_sugg = pills.map(PillSuggestions::feed_rate);
-    egui::Grid::new("drill_p")
-        .num_columns(2)
-        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-        .min_row_height(crate::ui::tokens::ROW_DENSE)
-        .show(ui, |ui| {
-            draw_drill_cycle_combo(ui, "drill_cycle", &mut cfg.cycle);
-            dv(ui, "Depth:", &mut cfg.depth, " mm", 0.5, 0.5..=100.0);
-            depth_caution_row(ui, depth_caution);
-            draw_drill_feed_rows(ui, &mut cfg.feed_rate, &mut cfg.retract_z, feed_sugg);
-            draw_drill_cycle_rows(
-                ui,
-                cfg.cycle,
-                &mut cfg.peck_depth,
-                Some(&mut cfg.dwell_time),
-                Some(&mut cfg.retract_amount),
-            );
-        });
+    ui.param_grid("drill_p", |ui| {
+        draw_drill_cycle_combo(ui, "drill_cycle", &mut cfg.cycle);
+        dv(ui, "Depth:", &mut cfg.depth, " mm", 0.5, 0.5..=100.0);
+        depth_caution_row(ui, depth_caution);
+        draw_drill_feed_rows(ui, &mut cfg.feed_rate, &mut cfg.retract_z, feed_sugg);
+        draw_drill_cycle_rows(
+            ui,
+            cfg.cycle,
+            &mut cfg.peck_depth,
+            Some(&mut cfg.dwell_time),
+            Some(&mut cfg.retract_amount),
+        );
+    });
     draw_drill_target_selector(
         ui,
         &mut cfg.selected_holes,
@@ -254,23 +251,19 @@ pub(in crate::ui::properties) fn draw_alignment_pin_drill_params(
         "{} pin(s) + {extra} picked hole(s)",
         cfg.holes.len()
     ));
-    egui::Grid::new("pin_drill_p")
-        .num_columns(2)
-        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-        .min_row_height(crate::ui::tokens::ROW_DENSE)
-        .show(ui, |ui| {
-            dv(
-                ui,
-                "Spoilboard:",
-                &mut cfg.spoilboard_penetration,
-                " mm",
-                0.5,
-                0.5..=20.0,
-            );
-            draw_drill_cycle_combo(ui, "pin_drill_cycle", &mut cfg.cycle);
-            draw_drill_feed_rows(ui, &mut cfg.feed_rate, &mut cfg.retract_z, feed_sugg);
-            draw_drill_cycle_rows(ui, cfg.cycle, &mut cfg.peck_depth, None, None);
-        });
+    ui.param_grid("pin_drill_p", |ui| {
+        dv(
+            ui,
+            "Spoilboard:",
+            &mut cfg.spoilboard_penetration,
+            " mm",
+            0.5,
+            0.5..=20.0,
+        );
+        draw_drill_cycle_combo(ui, "pin_drill_cycle", &mut cfg.cycle);
+        draw_drill_feed_rows(ui, &mut cfg.feed_rate, &mut cfg.retract_z, feed_sugg);
+        draw_drill_cycle_rows(ui, cfg.cycle, &mut cfg.peck_depth, None, None);
+    });
     draw_drill_target_selector(
         ui,
         &mut cfg.selected_holes,

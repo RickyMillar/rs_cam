@@ -18,6 +18,7 @@
 use super::{AppEvent, theme};
 use crate::state::AppState;
 use crate::state::job::{ToolConfig, ToolType};
+use crate::ui::components::UiExt as _;
 use crate::ui_command::{
     DeleteLibraryToolArgs, MoveLibraryToolArgs, NoArgs, RenameToolCatalogArgs, UiCommand,
     UpdateLibraryToolArgs,
@@ -452,54 +453,50 @@ fn draw_detail_panel(
 }
 
 fn draw_readonly_grid(ui: &mut egui::Ui, tool: &ToolConfig) {
-    egui::Grid::new("toollib_detail_grid")
-        .num_columns(2)
-        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-        .min_row_height(crate::ui::tokens::ROW_DENSE)
-        .show(ui, |ui| {
-            row(ui, "Type", tool.tool_type.label().to_owned());
-            row(ui, "Diameter", format!("{:.3} mm", tool.diameter));
-            row(
-                ui,
-                "Cutting length",
-                format!("{:.2} mm", tool.cutting_length),
-            );
-            row(ui, "Flutes", tool.flute_count.to_string());
-            match tool.tool_type {
-                ToolType::VBit => {
-                    row(ui, "Included angle", format!("{:.1}°", tool.included_angle));
-                }
-                ToolType::TaperedBallNose => {
-                    row(
-                        ui,
-                        "Taper half-angle",
-                        format!("{:.2}°", tool.taper_half_angle),
-                    );
-                    row(
-                        ui,
-                        "Shaft diameter",
-                        format!("{:.3} mm", tool.shaft_diameter),
-                    );
-                }
-                ToolType::BullNose => {
-                    row(ui, "Corner radius", format!("{:.2} mm", tool.corner_radius));
-                }
-                _ => {}
+    ui.param_grid("toollib_detail_grid", |ui| {
+        row(ui, "Type", tool.tool_type.label().to_owned());
+        row(ui, "Diameter", format!("{:.3} mm", tool.diameter));
+        row(
+            ui,
+            "Cutting length",
+            format!("{:.2} mm", tool.cutting_length),
+        );
+        row(ui, "Flutes", tool.flute_count.to_string());
+        match tool.tool_type {
+            ToolType::VBit => {
+                row(ui, "Included angle", format!("{:.1}°", tool.included_angle));
             }
-            row(
-                ui,
-                "Shank diameter",
-                format!("{:.3} mm", tool.shank_diameter),
-            );
-            row(ui, "Material", tool.tool_material.label().to_owned());
-            row(ui, "Cut direction", tool.cut_direction.label().to_owned());
-            if !tool.vendor.is_empty() {
-                row(ui, "Vendor", tool.vendor.clone());
+            ToolType::TaperedBallNose => {
+                row(
+                    ui,
+                    "Taper half-angle",
+                    format!("{:.2}°", tool.taper_half_angle),
+                );
+                row(
+                    ui,
+                    "Shaft diameter",
+                    format!("{:.3} mm", tool.shaft_diameter),
+                );
             }
-            if !tool.product_id.is_empty() {
-                row(ui, "Product ID", tool.product_id.clone());
+            ToolType::BullNose => {
+                row(ui, "Corner radius", format!("{:.2} mm", tool.corner_radius));
             }
-        });
+            _ => {}
+        }
+        row(
+            ui,
+            "Shank diameter",
+            format!("{:.3} mm", tool.shank_diameter),
+        );
+        row(ui, "Material", tool.tool_material.label().to_owned());
+        row(ui, "Cut direction", tool.cut_direction.label().to_owned());
+        if !tool.vendor.is_empty() {
+            row(ui, "Vendor", tool.vendor.clone());
+        }
+        if !tool.product_id.is_empty() {
+            row(ui, "Product ID", tool.product_id.clone());
+        }
+    });
 }
 
 fn row(ui: &mut egui::Ui, label: &str, value: String) {

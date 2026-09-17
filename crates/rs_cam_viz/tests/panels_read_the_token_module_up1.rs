@@ -487,3 +487,131 @@ fn every_text_style_and_named_family_lays_out_up1() {
     });
     output.textures_delta.clear();
 }
+
+// ── UI-02: the kit owns the 2-column parameter grid ──────────────────────
+//
+// The audit found 82 raw `egui::Grid::new` chains against 2 `param_grid`
+// callers, and `boundary_2d.rs` alone repeated
+// `.num_columns(2).spacing([SPACE_3, SPACE_2]).min_row_height(ROW_DENSE)`
+// ten times. `ui/properties/CLAUDE.md` states the rule the count broke: "Do
+// not draw a raw egui widget where `ui/components/` has the renderer".
+//
+// UI-02 converted the 69 two-column grids to `UiExt::param_grid`. This arm
+// holds the line. A grid whose column count or striping differs is a
+// different element, so it keeps its raw builder and a named allowance here.
+
+/// The files that may still name `egui::Grid::new`, and how many times.
+///
+/// Every row is a grid the kit renderer does not fit: a different column
+/// count, striping, or both. The source carries the same reason as a
+/// comment above the call. **A number here only ever goes down.**
+const RAW_GRID_ALLOWANCE: &[(&str, usize)] = &[
+    // 4 columns, striped — the per-tool summary table.
+    ("ui/export_wizard.rs", 1),
+    // 7 columns, striped — the vendor LUT viewer.
+    ("ui/properties/feeds_speeds.rs", 1),
+    // 4 columns — the heights ladder.
+    ("ui/properties/operations/mod.rs", 1),
+    // 4 and 7 columns, both striped — the tool list and the tier list.
+    ("ui/multitool_planner.rs", 2),
+    // 9 columns, striped — the project feeds table.
+    ("ui/readiness_panel.rs", 1),
+    // 4 and 5 columns, both striped — attempted moves and candidates.
+    ("ui/optimize_modal.rs", 2),
+    // 5, 4 and a run-time column count, all striped.
+    ("ui/optimize_project.rs", 3),
+];
+
+/// The folder that OWNS the renderers. A grid written here is the kit.
+const GRID_HOME: &str = "ui/components/";
+
+/// The fewest raw grids the allow-list must still account for, so a sweep
+/// that deleted the tables rather than the duplication fails this arm.
+const MIN_ALLOWED_GRIDS: usize = 8;
+
+fn rel_path(path: &Path, root: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+/// Raw `Grid::new` call sites per file, comments stripped.
+fn raw_grid_sites() -> Vec<(String, usize)> {
+    let root = src_root();
+    let mut files = Vec::new();
+    collect_rs(&root, &mut files);
+    files.sort();
+
+    let mut out = Vec::new();
+    for path in &files {
+        let rel = rel_path(path, &root);
+        if rel.starts_with(GRID_HOME) {
+            continue;
+        }
+        let text = std::fs::read_to_string(path).unwrap();
+        let n: usize = text
+            .lines()
+            .map(|l| strip_comment(l).matches("Grid::new(").count())
+            .sum();
+        if n > 0 {
+            out.push((rel, n));
+        }
+    }
+    out
+}
+
+#[test]
+fn a_two_column_param_grid_uses_the_kit_renderer_ui02() {
+    let sites = raw_grid_sites();
+    let mut over: Vec<String> = Vec::new();
+
+    for (rel, count) in &sites {
+        let allowed = RAW_GRID_ALLOWANCE
+            .iter()
+            .find(|(f, _)| f == rel)
+            .map_or(0, |(_, n)| *n);
+        if *count > allowed {
+            over.push(format!("{rel} {count} (allowed {allowed})"));
+        }
+    }
+
+    assert!(
+        over.is_empty(),
+        "these files draw a raw egui::Grid the component kit already \
+         renders. A 2-column parameter grid is `ui.param_grid(id, |ui| …)`; \
+         a grid with a different column count or striping keeps its builder, \
+         states the reason in a comment, and is named in \
+         RAW_GRID_ALLOWANCE. Over budget: {}",
+        over.join(", ")
+    );
+}
+
+#[test]
+fn the_raw_grid_allowance_is_not_vacuous_ui02() {
+    let sites = raw_grid_sites();
+
+    let total_allowed: usize = RAW_GRID_ALLOWANCE.iter().map(|(_, n)| *n).sum();
+    assert!(
+        total_allowed >= MIN_ALLOWED_GRIDS,
+        "the allowance now covers only {total_allowed} grids, fewer than the \
+         {MIN_ALLOWED_GRIDS} the tables need. Either a table was deleted or \
+         the list was trimmed without the source following."
+    );
+
+    for (rel, allowed) in RAW_GRID_ALLOWANCE {
+        let found = sites.iter().find(|(f, _)| f == rel).map_or(0, |(_, n)| *n);
+        assert_eq!(
+            found, *allowed,
+            "{rel} is allowed {allowed} raw grids and holds {found}. An \
+             allowance that no longer matches the file lets a new grid in \
+             under an old number; lower it in the package that removes one."
+        );
+    }
+
+    assert!(
+        !sites.is_empty(),
+        "the scan found no raw grid at all. The walk broke, or `Grid::new` \
+         was renamed and this arm now guards nothing."
+    );
+}

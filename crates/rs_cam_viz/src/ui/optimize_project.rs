@@ -160,6 +160,7 @@ fn draw_ready(
         .show(ui, |ui| {
             if !apply_now.is_empty() {
                 draw_section_heading(ui, "APPLY NOW");
+                // UI-02: 5 columns and striped, so `param_grid` does not fit.
                 egui::Grid::new("optimize_apply_now_grid")
                     .num_columns(5)
                     .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
@@ -190,6 +191,7 @@ fn draw_ready(
 
             if !needs_call.is_empty() {
                 draw_section_heading(ui, "NEEDS YOUR CALL");
+                // UI-02: 4 columns and striped, so `param_grid` does not fit.
                 egui::Grid::new("optimize_needs_call_grid")
                     .num_columns(4)
                     .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
@@ -587,6 +589,7 @@ fn draw_report_table_readonly(
         .max_height(360.0)
         .show(ui, |ui| {
             let cols = if show_reconciled { 5 } else { 4 };
+            // UI-02: a run-time column count and striped, so `param_grid` does not fit.
             egui::Grid::new("optimize_project_readonly_grid")
                 .num_columns(cols)
                 .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])

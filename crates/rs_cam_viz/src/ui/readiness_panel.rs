@@ -578,6 +578,7 @@ fn draw_project_rollup(
 
     ui.add_space(4.0);
     egui::ScrollArea::vertical().show(ui, |ui| {
+        // UI-02: 9 columns and striped, so `param_grid` does not fit.
         egui::Grid::new("feeds_modal_project_table")
             .num_columns(9)
             .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])

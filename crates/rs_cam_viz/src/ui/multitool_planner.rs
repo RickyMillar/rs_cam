@@ -144,6 +144,7 @@ fn draw_tool_list(ui: &mut egui::Ui, planner: &mut MultitoolPlannerState) {
     );
     ui.add_space(4.0);
 
+    // UI-02: 4 columns and striped, so `param_grid` does not fit.
     egui::Grid::new("multitool_planner_tools")
         .num_columns(4)
         .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
@@ -576,6 +577,7 @@ fn draw_ready(ui: &mut egui::Ui, planner: &MultitoolPlannerState, preview: &Mult
     });
     ui.add_space(4.0);
 
+    // UI-02: 7 columns and striped, so `param_grid` does not fit.
     egui::Grid::new("multitool_planner_tiers")
         .num_columns(7)
         .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])

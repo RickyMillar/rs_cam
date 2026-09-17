@@ -96,64 +96,60 @@ pub(super) fn draw_speed_controls(
         OperationConfig::Drill(_) | OperationConfig::AlignmentPinDrill(_)
     );
     ui.named_section("Speed \u{2014} what this operation runs", |ui| {
-        egui::Grid::new("feeds_speed_controls")
-            .num_columns(2)
-            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-            .min_row_height(crate::ui::tokens::ROW_DENSE)
-            .show(ui, |ui| {
-                let mut feed = entry.operation.feed_rate();
-                if ValueRow::new("Feed:", &mut feed, " mm/min", 50.0, 1.0..=50_000.0)
+        ui.param_grid("feeds_speed_controls", |ui| {
+            let mut feed = entry.operation.feed_rate();
+            if ValueRow::new("Feed:", &mut feed, " mm/min", 50.0, 1.0..=50_000.0)
+                .show(ui)
+                .edited
+            {
+                entry.operation.set_feed_rate(feed);
+                entry.stale_since = Some(std::time::Instant::now());
+            }
+
+            if z_only {
+                ui.label("Plunge:");
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(format!("{feed:.0} mm/min"))
+                            .color(crate::ui::tokens::TEXT_FAINT),
+                    )
+                    .wrap(),
+                )
+                .on_hover_text(
+                    "A drilling operation moves in Z only, so its plunge rate IS \
+                         its feed rate. Set the feed above.",
+                );
+                ui.end_row();
+            } else {
+                let mut plunge = entry.operation.plunge_rate();
+                if ValueRow::new("Plunge:", &mut plunge, " mm/min", 10.0, 1.0..=10_000.0)
                     .show(ui)
                     .edited
                 {
-                    entry.operation.set_feed_rate(feed);
+                    entry.operation.set_plunge_rate(plunge);
                     entry.stale_since = Some(std::time::Instant::now());
                 }
+            }
 
-                if z_only {
-                    ui.label("Plunge:");
-                    ui.add(
-                        egui::Label::new(
-                            egui::RichText::new(format!("{feed:.0} mm/min"))
-                                .color(crate::ui::tokens::TEXT_FAINT),
-                        )
-                        .wrap(),
-                    )
-                    .on_hover_text(
-                        "A drilling operation moves in Z only, so its plunge rate IS \
-                         its feed rate. Set the feed above.",
-                    );
-                    ui.end_row();
-                } else {
-                    let mut plunge = entry.operation.plunge_rate();
-                    if ValueRow::new("Plunge:", &mut plunge, " mm/min", 10.0, 1.0..=10_000.0)
-                        .show(ui)
-                        .edited
-                    {
-                        entry.operation.set_plunge_rate(plunge);
-                        entry.stale_since = Some(std::time::Instant::now());
-                    }
-                }
-
-                // The project default stays visible beside the override, so
-                // the operator can see which value actually runs. The old
-                // widget hid it behind a hardcoded 18 000 (P1-005/P2-006).
-                let mut spindle = entry.operation.spindle_rpm();
-                if PrecedenceField::new("Spindle:", &mut spindle, project_default_rpm)
-                    .suffix(" RPM")
-                    .speed(100.0)
-                    .range(1_000..=60_000)
-                    .tooltip(
-                        "Override the project default spindle speed for this \
+            // The project default stays visible beside the override, so
+            // the operator can see which value actually runs. The old
+            // widget hid it behind a hardcoded 18 000 (P1-005/P2-006).
+            let mut spindle = entry.operation.spindle_rpm();
+            if PrecedenceField::new("Spindle:", &mut spindle, project_default_rpm)
+                .suffix(" RPM")
+                .speed(100.0)
+                .range(1_000..=60_000)
+                .tooltip(
+                    "Override the project default spindle speed for this \
                          operation. Leave it unchecked to follow the post-config \
                          spindle speed.",
-                    )
-                    .show(ui)
-                {
-                    entry.operation.set_spindle_rpm(spindle);
-                    entry.stale_since = Some(std::time::Instant::now());
-                }
-            });
+                )
+                .show(ui)
+            {
+                entry.operation.set_spindle_rpm(spindle);
+                entry.stale_since = Some(std::time::Instant::now());
+            }
+        });
     });
 }
 
@@ -308,35 +304,31 @@ fn draw_operating_point(ui: &mut egui::Ui, verdict: &rs_cam_core::tool_load::Too
                 .strong(),
             );
         }
-        egui::Grid::new("feeds_card_operating_point")
-            .num_columns(2)
-            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-            .min_row_height(crate::ui::tokens::ROW_DENSE)
-            .show(ui, |ui| {
-                ui.label("Feed vs commanded:");
-                let d = summary.median_feed_delta_pct;
-                let sign = if d >= 0.0 { "+" } else { "" };
-                ui.label(format!("{sign}{d:.0}% median"));
-                ui.end_row();
+        ui.param_grid("feeds_card_operating_point", |ui| {
+            ui.label("Feed vs commanded:");
+            let d = summary.median_feed_delta_pct;
+            let sign = if d >= 0.0 { "+" } else { "" };
+            ui.label(format!("{sign}{d:.0}% median"));
+            ui.end_row();
 
-                ui.label("Modulated:");
-                ui.label(format!(
-                    "{} / {} cuts",
-                    summary.moves_touched, summary.moves_total
-                ));
-                ui.end_row();
+            ui.label("Modulated:");
+            ui.label(format!(
+                "{} / {} cuts",
+                summary.moves_touched, summary.moves_total
+            ));
+            ui.end_row();
 
-                ui.label("Strategy:");
-                let strat = match summary.strategy {
-                    ModulationStrategyTag::ConstrainedMax => "constrained-max",
-                    ModulationStrategyTag::BandMid => "band-mid",
-                };
-                ui.label(format!(
-                    "{strat} \u{00b7} aggr {:.1}",
-                    summary.aggressiveness
-                ));
-                ui.end_row();
-            });
+            ui.label("Strategy:");
+            let strat = match summary.strategy {
+                ModulationStrategyTag::ConstrainedMax => "constrained-max",
+                ModulationStrategyTag::BandMid => "band-mid",
+            };
+            ui.label(format!(
+                "{strat} \u{00b7} aggr {:.1}",
+                summary.aggressiveness
+            ));
+            ui.end_row();
+        });
         // Full per-constraint breakdown, collapsed by default — only when more
         // than one constraint actually bound somewhere on the path.
         if summary.binding_constraint_distribution.len() > 1 {
@@ -397,89 +389,85 @@ fn draw_advance_per_tooth_card(
     let Some(explain) = verdict.feed_explanation.as_deref() else {
         return;
     };
-    egui::Grid::new("feeds_card_advance_per_tooth")
-        .num_columns(2)
-        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-        .min_row_height(crate::ui::tokens::ROW_DENSE)
-        .show(ui, |ui| {
-            ui.label(format!("{COMMANDED_ADVANCE_PER_TOOTH}:"));
-            // Checkpoint K (d2) — renderer 2 of 3. When the engine placed
-            // this number rather than the operator choosing it, say so on
-            // the face of the row, not only in the hover.
-            let commanded_text = match explain.commanded.clamped_to {
-                Some(_) => egui::RichText::new(format!(
-                    "{:.4} mm/tooth (clamped)",
-                    explain.commanded.feed_per_tooth_mm
-                ))
-                .color(theme::WARNING_MILD),
-                None => egui::RichText::new(format!(
-                    "{:.4} mm/tooth",
-                    explain.commanded.feed_per_tooth_mm
-                )),
-            };
-            let commanded_hover = format!(
-                "feed {:.0} mm/min \u{00f7} ({} RPM \u{00d7} {} flutes){}",
-                explain.commanded.feed_rate_mm_min,
-                explain.commanded.spindle_rpm,
-                explain.commanded.flute_count,
-                explain
-                    .commanded
-                    .clamped_to
-                    .map(|c| format!("\n\nNot freely chosen \u{2014} {}", c.label()))
-                    .unwrap_or_default(),
-            );
-            wrapped_cell(ui, commanded_text).on_hover_text(commanded_hover);
-            ui.end_row();
+    ui.param_grid("feeds_card_advance_per_tooth", |ui| {
+        ui.label(format!("{COMMANDED_ADVANCE_PER_TOOTH}:"));
+        // Checkpoint K (d2) — renderer 2 of 3. When the engine placed
+        // this number rather than the operator choosing it, say so on
+        // the face of the row, not only in the hover.
+        let commanded_text = match explain.commanded.clamped_to {
+            Some(_) => egui::RichText::new(format!(
+                "{:.4} mm/tooth (clamped)",
+                explain.commanded.feed_per_tooth_mm
+            ))
+            .color(theme::WARNING_MILD),
+            None => egui::RichText::new(format!(
+                "{:.4} mm/tooth",
+                explain.commanded.feed_per_tooth_mm
+            )),
+        };
+        let commanded_hover = format!(
+            "feed {:.0} mm/min \u{00f7} ({} RPM \u{00d7} {} flutes){}",
+            explain.commanded.feed_rate_mm_min,
+            explain.commanded.spindle_rpm,
+            explain.commanded.flute_count,
+            explain
+                .commanded
+                .clamped_to
+                .map(|c| format!("\n\nNot freely chosen \u{2014} {}", c.label()))
+                .unwrap_or_default(),
+        );
+        wrapped_cell(ui, commanded_text).on_hover_text(commanded_hover);
+        ui.end_row();
 
-            ui.label(format!("{ACHIEVED_ADVANCE_PER_TOOTH}:"));
-            let achieved = egui::RichText::new(format!("{:.4} mm/tooth", explain.gate.value_mm));
-            let ratio_note = match explain.achieved_feed.median_ratio {
-                Some(r) => format!(
-                    "effective feed \u{00f7} (RPM \u{00d7} flutes), over the {} \
+        ui.label(format!("{ACHIEVED_ADVANCE_PER_TOOTH}:"));
+        let achieved = egui::RichText::new(format!("{:.4} mm/tooth", explain.gate.value_mm));
+        let ratio_note = match explain.achieved_feed.median_ratio {
+            Some(r) => format!(
+                "effective feed \u{00f7} (RPM \u{00d7} flutes), over the {} \
                      {}. The machine reaches {:.0}% of the commanded feed \
                      (median) on this path.",
-                    explain.gate.sample_count,
-                    explain.gate.statistic.label(),
-                    r * 100.0,
-                ),
-                // No predicted-feed map: `effective_feed_for_sample` returns
-                // the commanded feed, so this row IS the commanded value and
-                // must say so rather than implying a measurement.
-                None => format!(
-                    "No kinematics prediction on this trace, so the effective \
+                explain.gate.sample_count,
+                explain.gate.statistic.label(),
+                r * 100.0,
+            ),
+            // No predicted-feed map: `effective_feed_for_sample` returns
+            // the commanded feed, so this row IS the commanded value and
+            // must say so rather than implying a measurement.
+            None => format!(
+                "No kinematics prediction on this trace, so the effective \
                      feed falls back to the commanded feed \u{2014} this row is \
                      not independent evidence. Over the {} {}.",
-                    explain.gate.sample_count,
-                    explain.gate.statistic.label(),
-                ),
-            };
-            wrapped_cell(ui, achieved).on_hover_text(ratio_note);
-            ui.end_row();
+                explain.gate.sample_count,
+                explain.gate.statistic.label(),
+            ),
+        };
+        wrapped_cell(ui, achieved).on_hover_text(ratio_note);
+        ui.end_row();
 
-            ui.label("Vendor band:");
-            let band = match explain.band.min_mm_per_tooth {
-                Some(lo) => format!(
-                    "{lo:.4}\u{2013}{:.4} mm/tooth",
-                    explain.band.max_mm_per_tooth
-                ),
-                None => format!("\u{2264} {:.4} mm/tooth", explain.band.max_mm_per_tooth),
-            };
-            let band_hover = format!(
-                "Vendor chipload column from row {} (calibrated d={:.3} mm), \
+        ui.label("Vendor band:");
+        let band = match explain.band.min_mm_per_tooth {
+            Some(lo) => format!(
+                "{lo:.4}\u{2013}{:.4} mm/tooth",
+                explain.band.max_mm_per_tooth
+            ),
+            None => format!("\u{2264} {:.4} mm/tooth", explain.band.max_mm_per_tooth),
+        };
+        let band_hover = format!(
+            "Vendor chipload column from row {} (calibrated d={:.3} mm), \
                  after DOC derate. Published as a linear advance per tooth \
                  \u{2014} the same quantity as the two rows above.",
-                explain.band.observation_id, explain.band.row_diameter_mm,
-            );
-            wrapped_cell(ui, band).on_hover_text(band_hover);
-            ui.end_row();
+            explain.band.observation_id, explain.band.row_diameter_mm,
+        );
+        wrapped_cell(ui, band).on_hover_text(band_hover);
+        ui.end_row();
 
-            ui.label("Gate verdict:");
-            let (text, color) = advance_gate_verdict_text(&verdict.chipload);
-            // The worst row on this tab: "CLAMPED to band ceiling — not
-            // exceeded" beside "Gate verdict:" is wider than the panel.
-            wrapped_cell(ui, egui::RichText::new(text).color(color));
-            ui.end_row();
-        });
+        ui.label("Gate verdict:");
+        let (text, color) = advance_gate_verdict_text(&verdict.chipload);
+        // The worst row on this tab: "CLAMPED to band ceiling — not
+        // exceeded" beside "Gate verdict:" is wider than the panel.
+        wrapped_cell(ui, egui::RichText::new(text).color(color));
+        ui.end_row();
+    });
     ui.add_space(4.0);
 }
 
@@ -612,6 +600,7 @@ pub(super) fn draw_vendor_lut_viewer(
                 .auto_shrink([false, false])
                 .max_width(ui.available_width())
                 .show(ui, |ui| {
+                    // UI-02: 7 columns and striped, so `param_grid` does not fit.
                     egui::Grid::new("vendor_lut_table")
                         .num_columns(7)
                         .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])

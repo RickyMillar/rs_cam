@@ -32,15 +32,19 @@ pub trait UiExt {
     ) -> egui::CollapsingResponse<()>;
 
     /// 2-column param grid with the canonical `[8.0, 4.0]` spacing.
-    fn param_grid(&mut self, id_salt: &str, add: impl FnOnce(&mut egui::Ui));
+    ///
+    /// UI-02: the id salt is any `Hash` value, not a `&str`, because two of
+    /// the 69 converted call sites name their grid with a tuple
+    /// (`("selected_metrics_grid", sid)`) or with `ui.next_auto_id()`.
+    /// A narrower parameter would have left those two as raw grids for a
+    /// reason that is about the id, not about the layout.
+    fn param_grid(&mut self, id_salt: impl egui::AsIdSalt, add: impl FnOnce(&mut egui::Ui));
 }
 
 impl UiExt for egui::Ui {
     fn named_section(&mut self, title: &str, add: impl FnOnce(&mut egui::Ui)) {
         // UP2: one implementation, in `components::card::SectionHeader`.
-        // These 10 call sites gain the treatment without being edited. The
-        // 41 hand-rolled `.small().strong()` headers do not, and
-        // `DESIGN_SPEC.md` §3.3 schedules them as hand work.
+        // Every call site gains the treatment without being edited.
         SectionHeader::new(title).show(self);
         add(self);
     }
@@ -58,11 +62,10 @@ impl UiExt for egui::Ui {
             .show(self, add)
     }
 
-    fn param_grid(&mut self, id_salt: &str, add: impl FnOnce(&mut egui::Ui)) {
+    fn param_grid(&mut self, id_salt: impl egui::AsIdSalt, add: impl FnOnce(&mut egui::Ui)) {
         egui::Grid::new(id_salt)
             .num_columns(2)
             .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-            .min_row_height(crate::ui::tokens::ROW_DENSE)
             .min_row_height(crate::ui::tokens::ROW_DENSE)
             .show(self, add);
     }

@@ -7,6 +7,7 @@ use super::sim_debug::{
 use crate::state::runtime::GuiState;
 use crate::state::simulation::{SimulationIssueKind, SimulationState};
 use crate::state::toolpath::ToolpathId;
+use crate::ui::components::UiExt as _;
 use crate::ui::theme;
 use crate::ui::tokens;
 use crate::ui_command::{SimJumpToMoveArgs, UiCommand};
@@ -490,40 +491,36 @@ fn draw_project_section(
                     .color(theme::TEXT_HEADING),
             );
 
-            egui::Grid::new("cut_overview_grid")
-                .num_columns(2)
-                .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-                .min_row_height(crate::ui::tokens::ROW_DENSE)
-                .show(ui, |ui| {
-                    ui.label(
-                        egui::RichText::new("Moves")
-                            .small()
-                            .color(theme::TEXT_MUTED),
-                    );
-                    ui.label(egui::RichText::new(format!("{}", sim.total_moves())).small());
-                    ui.end_row();
-                    ui.label(
-                        egui::RichText::new("Operations")
-                            .small()
-                            .color(theme::TEXT_MUTED),
-                    );
-                    ui.label(egui::RichText::new(format!("{}", sim.boundaries().len())).small());
-                    ui.end_row();
-                    ui.label(
-                        egui::RichText::new("Cut distance")
-                            .small()
-                            .color(theme::TEXT_MUTED),
-                    );
-                    ui.label(egui::RichText::new(format!("{:.0} mm", total_cutting)).small());
-                    ui.end_row();
-                    ui.label(
-                        egui::RichText::new("Rapid distance")
-                            .small()
-                            .color(theme::TEXT_MUTED),
-                    );
-                    ui.label(egui::RichText::new(format!("{:.0} mm", total_rapid)).small());
-                    ui.end_row();
-                });
+            ui.param_grid("cut_overview_grid", |ui| {
+                ui.label(
+                    egui::RichText::new("Moves")
+                        .small()
+                        .color(theme::TEXT_MUTED),
+                );
+                ui.label(egui::RichText::new(format!("{}", sim.total_moves())).small());
+                ui.end_row();
+                ui.label(
+                    egui::RichText::new("Operations")
+                        .small()
+                        .color(theme::TEXT_MUTED),
+                );
+                ui.label(egui::RichText::new(format!("{}", sim.boundaries().len())).small());
+                ui.end_row();
+                ui.label(
+                    egui::RichText::new("Cut distance")
+                        .small()
+                        .color(theme::TEXT_MUTED),
+                );
+                ui.label(egui::RichText::new(format!("{:.0} mm", total_cutting)).small());
+                ui.end_row();
+                ui.label(
+                    egui::RichText::new("Rapid distance")
+                        .small()
+                        .color(theme::TEXT_MUTED),
+                );
+                ui.label(egui::RichText::new(format!("{:.0} mm", total_rapid)).small());
+                ui.end_row();
+            });
 
             ui.add_space(4.0);
             ui.separator();
@@ -695,21 +692,17 @@ fn draw_project_section(
                         .strong()
                         .color(theme::ERROR),
                 );
-                egui::Grid::new("cut_overview_must_address")
-                    .num_columns(2)
-                    .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-                    .min_row_height(crate::ui::tokens::ROW_DENSE)
-                    .show(ui, |ui| {
-                        for (kind, count) in &must_address {
-                            ui.label(
-                                egui::RichText::new(issue_kind_label(*kind))
-                                    .small()
-                                    .color(theme::ERROR),
-                            );
-                            ui.label(egui::RichText::new(format!("{count}")).small());
-                            ui.end_row();
-                        }
-                    });
+                ui.param_grid("cut_overview_must_address", |ui| {
+                    for (kind, count) in &must_address {
+                        ui.label(
+                            egui::RichText::new(issue_kind_label(*kind))
+                                .small()
+                                .color(theme::ERROR),
+                        );
+                        ui.label(egui::RichText::new(format!("{count}")).small());
+                        ui.end_row();
+                    }
+                });
             }
             // Density pass V5 — informational rows report % of runtime from
             // the trace summary's time-weighted tallies, not raw per-sample
@@ -763,68 +756,64 @@ fn draw_project_section(
                         .small()
                         .color(theme::TEXT_MUTED),
                 );
-                egui::Grid::new("cut_overview_informational")
-                    .num_columns(2)
-                    .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-                    .min_row_height(crate::ui::tokens::ROW_DENSE)
-                    .show(ui, |ui| {
-                        let count_for = |kind: SimulationIssueKind| {
-                            informational
-                                .iter()
-                                .find(|(k, _)| *k == kind)
-                                .map(|(_, c)| *c)
-                                .unwrap_or(0)
-                        };
-                        let air_denominator_note = format!(
-                            "\nDenominator: TOTAL runtime (cutting + rapids) - the measure \
+                ui.param_grid("cut_overview_informational", |ui| {
+                    let count_for = |kind: SimulationIssueKind| {
+                        informational
+                            .iter()
+                            .find(|(k, _)| *k == kind)
+                            .map(|(_, c)| *c)
+                            .unwrap_or(0)
+                    };
+                    let air_denominator_note = format!(
+                        "\nDenominator: TOTAL runtime (cutting + rapids) - the measure \
                              the banner and the per-operation thresholds use. Over CUTTING \
                              time alone the same seconds read {air_pct_of_cutting:.0}%, \
                              which is what the MCP narration reports."
-                        );
-                        let rows = [
-                            (
-                                SimulationIssueKind::AirCut,
-                                air_pct,
-                                "Time the tool spends moving at cutting feed without \
+                    );
+                    let rows = [
+                        (
+                            SimulationIssueKind::AirCut,
+                            air_pct,
+                            "Time the tool spends moving at cutting feed without \
                                  removing material.",
-                                air_denominator_note.as_str(),
-                            ),
-                            (
-                                SimulationIssueKind::LowEngagement,
-                                low_eng_pct,
-                                // R-3 (census §3.5 D2): this said "< 2% of
-                                // diameter", which is the AIR-CUT trigger,
-                                // not this one. Low engagement is the band
-                                // ABOVE it — `0.02 <= radial_woc < 0.10`
-                                // (`simulation_cut.rs`). As written, the two
-                                // informational rows described the same
-                                // threshold and neither described this row.
-                                "Time spent cutting at light radial engagement \
+                            air_denominator_note.as_str(),
+                        ),
+                        (
+                            SimulationIssueKind::LowEngagement,
+                            low_eng_pct,
+                            // R-3 (census §3.5 D2): this said "< 2% of
+                            // diameter", which is the AIR-CUT trigger,
+                            // not this one. Low engagement is the band
+                            // ABOVE it — `0.02 <= radial_woc < 0.10`
+                            // (`simulation_cut.rs`). As written, the two
+                            // informational rows described the same
+                            // threshold and neither described this row.
+                            "Time spent cutting at light radial engagement \
                                  (2-10% of diameter). Below 2% counts as air cut, \
                                  on the row above.",
-                                "",
-                            ),
-                        ];
-                        for (kind, pct, what, denominator_note) in rows {
-                            ui.label(
-                                egui::RichText::new(issue_kind_label(kind))
-                                    .small()
-                                    .color(theme::TEXT_MUTED),
-                            );
-                            ui.label(
-                                egui::RichText::new(format!("{pct:.0}% of total runtime")).small(),
-                            )
-                            .on_hover_text(format!(
-                                "{what}\n{} flagged SAMPLES — a per-sample emission \
+                            "",
+                        ),
+                    ];
+                    for (kind, pct, what, denominator_note) in rows {
+                        ui.label(
+                            egui::RichText::new(issue_kind_label(kind))
+                                .small()
+                                .color(theme::TEXT_MUTED),
+                        );
+                        ui.label(
+                            egui::RichText::new(format!("{pct:.0}% of total runtime")).small(),
+                        )
+                        .on_hover_text(format!(
+                            "{what}\n{} flagged SAMPLES — a per-sample emission \
                                  tally, not a defect count, and not the same \
                                  population as the coalesced issue RUNS the MCP and \
                                  CLI report (on the census fixture the two differed \
                                  by 43x).{denominator_note}",
-                                count_for(kind)
-                            ));
-                            ui.end_row();
-                        }
-                    });
+                            count_for(kind)
+                        ));
+                        ui.end_row();
+                    }
+                });
             }
             // Roadmap C.4 — project-wide hotspot triage list. Source:
             // `cut_trace.hotspots`, sorted by `wasted_runtime_s` desc. The
@@ -1549,65 +1538,61 @@ fn draw_span_body(
     match agg {
         Some(agg) if agg.n_cutting > 0 => {
             ui.add_space(2.0);
-            egui::Grid::new(("selected_metrics_grid", sid))
-                .num_columns(2)
-                .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-                .min_row_height(crate::ui::tokens::ROW_DENSE)
-                .show(ui, |ui| {
-                    let row = |ui: &mut egui::Ui, label: &str, value: String| -> egui::Response {
-                        ui.label(egui::RichText::new(label).small().color(theme::TEXT_MUTED));
-                        ui.label(egui::RichText::new(value).small().monospace())
-                    };
-                    row(
-                        ui,
-                        "Samples",
-                        format!("{} ({} cutting)", agg.n_samples, agg.n_cutting),
-                    );
-                    ui.end_row();
-                    // Engagement as percent everywhere (INS-004) + provenance
-                    // hover (INS-006): comparative signal, not an absolute bar.
-                    row(
-                        ui,
-                        "Engagement",
-                        format!(
-                            "avg {:.0}% · peak {:.0}%",
-                            agg.avg_engagement() * 100.0,
-                            agg.peak_eng * 100.0
-                        ),
-                    )
-                    .on_hover_text(ENGAGEMENT_PROVENANCE_HOVER);
-                    ui.end_row();
-                    row(
-                        ui,
-                        rs_cam_core::feeds::ACHIEVED_ADVANCE_PER_TOOTH,
-                        format!(
-                            "avg {:.4} · peak {:.4} mm/tooth",
-                            agg.avg_advance_per_tooth(),
-                            agg.peak_advance
-                        ),
-                    )
-                    .on_hover_text(ACHIEVED_ADVANCE_HOVER);
-                    ui.end_row();
-                    row(
-                        ui,
-                        rs_cam_core::feeds::ARC_MEAN_CHIP_THICKNESS,
-                        format!(
-                            "avg {:.4} · peak {:.4} mm",
-                            agg.avg_chip_thickness(),
-                            agg.peak_chip
-                        ),
-                    )
-                    .on_hover_text(ARC_MEAN_CHIP_HOVER);
-                    ui.end_row();
-                    row(ui, "Axial DOC", format!("peak {:.2} mm", agg.peak_doc));
-                    ui.end_row();
-                    row(
-                        ui,
-                        "MRR",
-                        format!("avg {:.0} · peak {:.0} mm³/s", agg.avg_mrr(), agg.peak_mrr),
-                    );
-                    ui.end_row();
-                });
+            ui.param_grid(("selected_metrics_grid", sid), |ui| {
+                let row = |ui: &mut egui::Ui, label: &str, value: String| -> egui::Response {
+                    ui.label(egui::RichText::new(label).small().color(theme::TEXT_MUTED));
+                    ui.label(egui::RichText::new(value).small().monospace())
+                };
+                row(
+                    ui,
+                    "Samples",
+                    format!("{} ({} cutting)", agg.n_samples, agg.n_cutting),
+                );
+                ui.end_row();
+                // Engagement as percent everywhere (INS-004) + provenance
+                // hover (INS-006): comparative signal, not an absolute bar.
+                row(
+                    ui,
+                    "Engagement",
+                    format!(
+                        "avg {:.0}% · peak {:.0}%",
+                        agg.avg_engagement() * 100.0,
+                        agg.peak_eng * 100.0
+                    ),
+                )
+                .on_hover_text(ENGAGEMENT_PROVENANCE_HOVER);
+                ui.end_row();
+                row(
+                    ui,
+                    rs_cam_core::feeds::ACHIEVED_ADVANCE_PER_TOOTH,
+                    format!(
+                        "avg {:.4} · peak {:.4} mm/tooth",
+                        agg.avg_advance_per_tooth(),
+                        agg.peak_advance
+                    ),
+                )
+                .on_hover_text(ACHIEVED_ADVANCE_HOVER);
+                ui.end_row();
+                row(
+                    ui,
+                    rs_cam_core::feeds::ARC_MEAN_CHIP_THICKNESS,
+                    format!(
+                        "avg {:.4} · peak {:.4} mm",
+                        agg.avg_chip_thickness(),
+                        agg.peak_chip
+                    ),
+                )
+                .on_hover_text(ARC_MEAN_CHIP_HOVER);
+                ui.end_row();
+                row(ui, "Axial DOC", format!("peak {:.2} mm", agg.peak_doc));
+                ui.end_row();
+                row(
+                    ui,
+                    "MRR",
+                    format!("avg {:.0} · peak {:.0} mm³/s", agg.avg_mrr(), agg.peak_mrr),
+                );
+                ui.end_row();
+            });
         }
         _ => {
             ui.label(
@@ -1779,21 +1764,16 @@ fn draw_generator_item_disclosure(ui: &mut egui::Ui, sim: &mut SimulationState, 
                 }
                 if !active.item.params.values.is_empty() {
                     ui.add_space(4.0);
-                    egui::Grid::new("sim_selection_details_grid")
-                        .num_columns(2)
-                        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-                        .min_row_height(crate::ui::tokens::ROW_DENSE)
-                        .show(ui, |ui| {
-                            for (idx, (key, value)) in active.item.params.values.iter().enumerate()
-                            {
-                                if idx >= 6 {
-                                    break;
-                                }
-                                ui.label(egui::RichText::new(key).small().color(theme::TEXT_MUTED));
-                                ui.label(egui::RichText::new(format_json_value(value)).small());
-                                ui.end_row();
+                    ui.param_grid("sim_selection_details_grid", |ui| {
+                        for (idx, (key, value)) in active.item.params.values.iter().enumerate() {
+                            if idx >= 6 {
+                                break;
                             }
-                        });
+                            ui.label(egui::RichText::new(key).small().color(theme::TEXT_MUTED));
+                            ui.label(egui::RichText::new(format_json_value(value)).small());
+                            ui.end_row();
+                        }
+                    });
                 }
             } else {
                 ui.label(

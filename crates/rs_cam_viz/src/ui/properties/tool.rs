@@ -1,4 +1,5 @@
 use crate::state::job::{BitCutDirection, ToolConfig, ToolMaterial, ToolType};
+use crate::ui::components::UiExt as _;
 use crate::ui::theme;
 
 /// TOO-003 — what the operator asked the tool editor to do this frame.
@@ -156,121 +157,117 @@ pub(crate) fn draw_tool_fields(ui: &mut egui::Ui, tool: &mut ToolConfig) {
     ui.add_space(8.0);
 
     // Parameters grid
-    egui::Grid::new("tool_params")
-        .num_columns(2)
-        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-        .min_row_height(crate::ui::tokens::ROW_DENSE)
-        .show(ui, |ui| {
-            ui.label("Diameter:");
+    ui.param_grid("tool_params", |ui| {
+        ui.label("Diameter:");
+        ui.add(
+            egui::DragValue::new(&mut tool.diameter)
+                .suffix(" mm")
+                .speed(0.1)
+                .range(0.1..=100.0),
+        );
+        ui.end_row();
+
+        ui.label("Cutting Length:");
+        ui.add(
+            egui::DragValue::new(&mut tool.cutting_length)
+                .suffix(" mm")
+                .speed(0.5)
+                .range(0.1..=200.0),
+        );
+        ui.end_row();
+
+        // Flute count (critical for feeds calculation)
+        ui.label("Flutes:");
+        let mut flutes_i = tool.flute_count as i32;
+        if ui
+            .add(egui::DragValue::new(&mut flutes_i).range(1..=8))
+            .changed()
+        {
+            tool.flute_count = flutes_i.max(1) as u32;
+        }
+        ui.end_row();
+
+        ui.label("Helix:");
+        ui.add(
+            egui::DragValue::new(&mut tool.helix_deg)
+                .suffix(" deg")
+                .speed(1.0)
+                .range(0.0..=60.0),
+        );
+        ui.end_row();
+
+        if matches!(tool.tool_type, ToolType::EndMill) {
+            ui.label("Corner Radius:");
             ui.add(
-                egui::DragValue::new(&mut tool.diameter)
+                egui::DragValue::new(&mut tool.corner_radius_mm)
                     .suffix(" mm")
-                    .speed(0.1)
-                    .range(0.1..=100.0),
+                    .speed(0.01)
+                    .range(0.0..=tool.diameter / 2.0),
             );
             ui.end_row();
+        }
 
-            ui.label("Cutting Length:");
-            ui.add(
-                egui::DragValue::new(&mut tool.cutting_length)
-                    .suffix(" mm")
-                    .speed(0.5)
-                    .range(0.1..=200.0),
-            );
-            ui.end_row();
+        // Tool material
+        ui.label("Material:");
+        egui::ComboBox::from_id_salt("tool_material")
+            .selected_text(tool.tool_material.label())
+            .show_ui(ui, |ui| {
+                for &tm in ToolMaterial::ALL {
+                    ui.selectable_value(&mut tool.tool_material, tm, tm.label());
+                }
+            });
+        ui.end_row();
 
-            // Flute count (critical for feeds calculation)
-            ui.label("Flutes:");
-            let mut flutes_i = tool.flute_count as i32;
-            if ui
-                .add(egui::DragValue::new(&mut flutes_i).range(1..=8))
-                .changed()
-            {
-                tool.flute_count = flutes_i.max(1) as u32;
-            }
-            ui.end_row();
+        // Cut direction
+        ui.label("Cut Dir:");
+        egui::ComboBox::from_id_salt("cut_direction")
+            .selected_text(tool.cut_direction.label())
+            .show_ui(ui, |ui| {
+                for &cd in BitCutDirection::ALL {
+                    ui.selectable_value(&mut tool.cut_direction, cd, cd.label());
+                }
+            });
+        ui.end_row();
 
-            ui.label("Helix:");
-            ui.add(
-                egui::DragValue::new(&mut tool.helix_deg)
-                    .suffix(" deg")
-                    .speed(1.0)
-                    .range(0.0..=60.0),
-            );
-            ui.end_row();
-
-            if matches!(tool.tool_type, ToolType::EndMill) {
+        // Type-specific parameters
+        match tool.tool_type {
+            ToolType::BullNose => {
                 ui.label("Corner Radius:");
                 ui.add(
-                    egui::DragValue::new(&mut tool.corner_radius_mm)
+                    egui::DragValue::new(&mut tool.corner_radius)
                         .suffix(" mm")
-                        .speed(0.01)
-                        .range(0.0..=tool.diameter / 2.0),
+                        .speed(0.05)
+                        .range(0.01..=tool.diameter / 2.0),
                 );
                 ui.end_row();
             }
-
-            // Tool material
-            ui.label("Material:");
-            egui::ComboBox::from_id_salt("tool_material")
-                .selected_text(tool.tool_material.label())
-                .show_ui(ui, |ui| {
-                    for &tm in ToolMaterial::ALL {
-                        ui.selectable_value(&mut tool.tool_material, tm, tm.label());
-                    }
-                });
-            ui.end_row();
-
-            // Cut direction
-            ui.label("Cut Dir:");
-            egui::ComboBox::from_id_salt("cut_direction")
-                .selected_text(tool.cut_direction.label())
-                .show_ui(ui, |ui| {
-                    for &cd in BitCutDirection::ALL {
-                        ui.selectable_value(&mut tool.cut_direction, cd, cd.label());
-                    }
-                });
-            ui.end_row();
-
-            // Type-specific parameters
-            match tool.tool_type {
-                ToolType::BullNose => {
-                    ui.label("Corner Radius:");
-                    ui.add(
-                        egui::DragValue::new(&mut tool.corner_radius)
-                            .suffix(" mm")
-                            .speed(0.05)
-                            .range(0.01..=tool.diameter / 2.0),
-                    );
-                    ui.end_row();
-                }
-                ToolType::VBit => {
-                    ui.label("Included Angle:");
-                    ui.add(
-                        egui::DragValue::new(&mut tool.included_angle)
-                            .suffix(" deg")
-                            .speed(1.0)
-                            .range(1.0..=179.0),
-                    );
-                    ui.end_row();
-                }
-                ToolType::TaperedBallNose => {
-                    ui.label("Taper Half-Angle:");
-                    ui.add(
-                        egui::DragValue::new(&mut tool.taper_half_angle)
-                            .suffix(" deg")
-                            .speed(0.5)
-                            .range(0.5..=89.0),
-                    );
-                    ui.end_row();
-                    // TOO-005: the tapered "shaft diameter" (taper top) used to
-                    // sit here next to the holder "shank diameter", two near-
-                    // identical names for different geometry. It now lives in its
-                    // own "Cutter geometry" group below, distinct from Holder/Shank.
-                }
-                _ => {}
+            ToolType::VBit => {
+                ui.label("Included Angle:");
+                ui.add(
+                    egui::DragValue::new(&mut tool.included_angle)
+                        .suffix(" deg")
+                        .speed(1.0)
+                        .range(1.0..=179.0),
+                );
+                ui.end_row();
             }
-        });
+            ToolType::TaperedBallNose => {
+                ui.label("Taper Half-Angle:");
+                ui.add(
+                    egui::DragValue::new(&mut tool.taper_half_angle)
+                        .suffix(" deg")
+                        .speed(0.5)
+                        .range(0.5..=89.0),
+                );
+                ui.end_row();
+                // TOO-005: the tapered "shaft diameter" (taper top) used to
+                // sit here next to the holder "shank diameter", two near-
+                // identical names for different geometry. It now lives in its
+                // own "Cutter geometry" group below, distinct from Holder/Shank.
+            }
+            _ => {}
+        }
+    });
 
     // TOO-005 — "Cutter geometry" group: the tapered ball-nose upper-shaft
     // diameter (taper top), separated from the holder "Shank ⌀ (in collet)"
@@ -278,20 +275,16 @@ pub(crate) fn draw_tool_fields(ui: &mut egui::Ui, tool: &mut ToolConfig) {
     if matches!(tool.tool_type, ToolType::TaperedBallNose) {
         ui.add_space(8.0);
         ui.label(egui::RichText::new("Cutter geometry").strong());
-        egui::Grid::new("tool_cutter_geometry")
-            .num_columns(2)
-            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-            .min_row_height(crate::ui::tokens::ROW_DENSE)
-            .show(ui, |ui| {
-                ui.label("Upper shaft ⌀ (taper top):");
-                ui.add(
-                    egui::DragValue::new(&mut tool.shaft_diameter)
-                        .suffix(" mm")
-                        .speed(0.1)
-                        .range(tool.diameter..=100.0),
-                );
-                ui.end_row();
-            });
+        ui.param_grid("tool_cutter_geometry", |ui| {
+            ui.label("Upper shaft ⌀ (taper top):");
+            ui.add(
+                egui::DragValue::new(&mut tool.shaft_diameter)
+                    .suffix(" mm")
+                    .speed(0.1)
+                    .range(tool.diameter..=100.0),
+            );
+            ui.end_row();
+        });
     }
 
     // Cross-section preview
@@ -317,49 +310,45 @@ pub(crate) fn draw_tool_fields(ui: &mut egui::Ui, tool: &mut ToolConfig) {
     egui::CollapsingHeader::new(egui::RichText::new(header_text).color(header_color))
         .id_salt("tool_holder_shank")
         .show(ui, |ui| {
-            egui::Grid::new("holder_params")
-                .num_columns(2)
-                .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-                .min_row_height(crate::ui::tokens::ROW_DENSE)
-                .show(ui, |ui| {
-                    ui.label("Holder Diameter:");
-                    ui.add(
-                        egui::DragValue::new(&mut tool.holder_diameter)
-                            .suffix(" mm")
-                            .speed(0.5)
-                            .range(0.0..=200.0),
-                    );
-                    ui.end_row();
+            ui.param_grid("holder_params", |ui| {
+                ui.label("Holder Diameter:");
+                ui.add(
+                    egui::DragValue::new(&mut tool.holder_diameter)
+                        .suffix(" mm")
+                        .speed(0.5)
+                        .range(0.0..=200.0),
+                );
+                ui.end_row();
 
-                    // TOO-005: role-bearing label, distinct from the tapered
-                    // "Upper shaft ⌀" in the Cutter geometry group above.
-                    ui.label("Shank \u{2300} (in collet):");
-                    ui.add(
-                        egui::DragValue::new(&mut tool.shank_diameter)
-                            .suffix(" mm")
-                            .speed(0.1)
-                            .range(0.0..=100.0),
-                    );
-                    ui.end_row();
+                // TOO-005: role-bearing label, distinct from the tapered
+                // "Upper shaft ⌀" in the Cutter geometry group above.
+                ui.label("Shank \u{2300} (in collet):");
+                ui.add(
+                    egui::DragValue::new(&mut tool.shank_diameter)
+                        .suffix(" mm")
+                        .speed(0.1)
+                        .range(0.0..=100.0),
+                );
+                ui.end_row();
 
-                    ui.label("Shank Length:");
-                    ui.add(
-                        egui::DragValue::new(&mut tool.shank_length)
-                            .suffix(" mm")
-                            .speed(0.5)
-                            .range(0.0..=200.0),
-                    );
-                    ui.end_row();
+                ui.label("Shank Length:");
+                ui.add(
+                    egui::DragValue::new(&mut tool.shank_length)
+                        .suffix(" mm")
+                        .speed(0.5)
+                        .range(0.0..=200.0),
+                );
+                ui.end_row();
 
-                    ui.label("Stickout:");
-                    ui.add(
-                        egui::DragValue::new(&mut tool.stickout)
-                            .suffix(" mm")
-                            .speed(0.5)
-                            .range(0.0..=300.0),
-                    );
-                    ui.end_row();
-                });
+                ui.label("Stickout:");
+                ui.add(
+                    egui::DragValue::new(&mut tool.stickout)
+                        .suffix(" mm")
+                        .speed(0.5)
+                        .range(0.0..=300.0),
+                );
+                ui.end_row();
+            });
         });
 
     // TOO-004 — Catalog metadata: vendor / product-id are now editable (they
@@ -367,18 +356,14 @@ pub(crate) fn draw_tool_fields(ui: &mut egui::Ui, tool: &mut ToolConfig) {
     // this shared editor), so a tool can carry correctable source provenance.
     ui.add_space(12.0);
     ui.collapsing("Catalog metadata", |ui| {
-        egui::Grid::new("tool_catalog_metadata")
-            .num_columns(2)
-            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-            .min_row_height(crate::ui::tokens::ROW_DENSE)
-            .show(ui, |ui| {
-                ui.label("Vendor:");
-                ui.text_edit_singleline(&mut tool.vendor);
-                ui.end_row();
-                ui.label("Product ID:");
-                ui.text_edit_singleline(&mut tool.product_id);
-                ui.end_row();
-            });
+        ui.param_grid("tool_catalog_metadata", |ui| {
+            ui.label("Vendor:");
+            ui.text_edit_singleline(&mut tool.vendor);
+            ui.end_row();
+            ui.label("Product ID:");
+            ui.text_edit_singleline(&mut tool.product_id);
+            ui.end_row();
+        });
     });
 }
 

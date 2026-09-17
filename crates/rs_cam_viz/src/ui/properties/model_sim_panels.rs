@@ -3,6 +3,7 @@
 
 use crate::state::AppState;
 use crate::ui::AppEvent;
+use crate::ui::components::UiExt as _;
 
 pub(super) fn draw_model_properties(
     ui: &mut egui::Ui,
@@ -77,30 +78,26 @@ pub(super) fn draw_model_properties(
                 .strong()
                 .color(crate::ui::tokens::TEXT_STRONG),
         );
-        egui::Grid::new("mesh_dims")
-            .num_columns(2)
-            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-            .min_row_height(crate::ui::tokens::ROW_DENSE)
-            .show(ui, |ui| {
-                ui.label("X:");
-                ui.label(format!(
-                    "{:.3} mm  ({:.3} to {:.3})",
-                    dx, bb.min.x, bb.max.x
-                ));
-                ui.end_row();
-                ui.label("Y:");
-                ui.label(format!(
-                    "{:.3} mm  ({:.3} to {:.3})",
-                    dy, bb.min.y, bb.max.y
-                ));
-                ui.end_row();
-                ui.label("Z:");
-                ui.label(format!(
-                    "{:.3} mm  ({:.3} to {:.3})",
-                    dz, bb.min.z, bb.max.z
-                ));
-                ui.end_row();
-            });
+        ui.param_grid("mesh_dims", |ui| {
+            ui.label("X:");
+            ui.label(format!(
+                "{:.3} mm  ({:.3} to {:.3})",
+                dx, bb.min.x, bb.max.x
+            ));
+            ui.end_row();
+            ui.label("Y:");
+            ui.label(format!(
+                "{:.3} mm  ({:.3} to {:.3})",
+                dy, bb.min.y, bb.max.y
+            ));
+            ui.end_row();
+            ui.label("Z:");
+            ui.label(format!(
+                "{:.3} mm  ({:.3} to {:.3})",
+                dz, bb.min.z, bb.max.z
+            ));
+            ui.end_row();
+        });
 
         // Size hint
         let max_dim = dx.max(dy).max(dz);
@@ -200,18 +197,14 @@ pub(super) fn draw_model_properties(
                             .strong()
                             .color(crate::ui::tokens::TEXT_STRONG),
                     );
-                    egui::Grid::new("mesh_info")
-                        .num_columns(2)
-                        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-                        .min_row_height(crate::ui::tokens::ROW_DENSE)
-                        .show(ui, |ui| {
-                            ui.label("Vertices:");
-                            ui.label(format!("{}", mesh.vertices.len()));
-                            ui.end_row();
-                            ui.label("Triangles:");
-                            ui.label(format!("{}", mesh.triangles.len()));
-                            ui.end_row();
-                        });
+                    ui.param_grid("mesh_info", |ui| {
+                        ui.label("Vertices:");
+                        ui.label(format!("{}", mesh.vertices.len()));
+                        ui.end_row();
+                        ui.label("Triangles:");
+                        ui.label(format!("{}", mesh.triangles.len()));
+                        ui.end_row();
+                    });
                 }
 
                 // BREP face metadata (STEP only)
@@ -222,44 +215,40 @@ pub(super) fn draw_model_properties(
                             .strong()
                             .color(crate::ui::tokens::TEXT_STRONG),
                     );
-                    egui::Grid::new("brep_info")
-                        .num_columns(2)
-                        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-                        .min_row_height(crate::ui::tokens::ROW_DENSE)
-                        .show(ui, |ui| {
-                            ui.label("Faces:");
-                            ui.label(format!("{}", enriched.face_count()));
-                            ui.end_row();
-                            ui.label("Adjacency pairs:");
-                            ui.label(format!("{}", enriched.adjacency.len()));
-                            ui.end_row();
+                    ui.param_grid("brep_info", |ui| {
+                        ui.label("Faces:");
+                        ui.label(format!("{}", enriched.face_count()));
+                        ui.end_row();
+                        ui.label("Adjacency pairs:");
+                        ui.label(format!("{}", enriched.adjacency.len()));
+                        ui.end_row();
 
-                            // Surface type histogram
-                            use rs_cam_core::geometry::enriched_mesh::SurfaceType;
-                            let mut planes = 0;
-                            let mut cylinders = 0;
-                            let mut other = 0;
-                            for group in &enriched.face_groups {
-                                match group.surface_type {
-                                    SurfaceType::Plane => planes += 1,
-                                    SurfaceType::Cylinder => cylinders += 1,
-                                    _ => other += 1,
-                                }
+                        // Surface type histogram
+                        use rs_cam_core::geometry::enriched_mesh::SurfaceType;
+                        let mut planes = 0;
+                        let mut cylinders = 0;
+                        let mut other = 0;
+                        for group in &enriched.face_groups {
+                            match group.surface_type {
+                                SurfaceType::Plane => planes += 1,
+                                SurfaceType::Cylinder => cylinders += 1,
+                                _ => other += 1,
                             }
-                            ui.label("Surface types:");
-                            let mut parts = Vec::new();
-                            if planes > 0 {
-                                parts.push(format!("{planes} plane"));
-                            }
-                            if cylinders > 0 {
-                                parts.push(format!("{cylinders} cyl"));
-                            }
-                            if other > 0 {
-                                parts.push(format!("{other} other"));
-                            }
-                            ui.label(parts.join(", "));
-                            ui.end_row();
-                        });
+                        }
+                        ui.label("Surface types:");
+                        let mut parts = Vec::new();
+                        if planes > 0 {
+                            parts.push(format!("{planes} plane"));
+                        }
+                        if cylinders > 0 {
+                            parts.push(format!("{cylinders} cyl"));
+                        }
+                        if other > 0 {
+                            parts.push(format!("{other} other"));
+                        }
+                        ui.label(parts.join(", "));
+                        ui.end_row();
+                    });
                 }
 
                 if let Some(polys) = &model.polygons {
@@ -393,21 +382,17 @@ pub(super) fn draw_simulation_panel(
                 .strong()
                 .color(crate::ui::tokens::TEXT_STRONG),
         );
-        egui::Grid::new("sim_tool_pos")
-            .num_columns(2)
-            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-            .min_row_height(crate::ui::tokens::ROW_DENSE)
-            .show(ui, |ui| {
-                ui.label("X:");
-                ui.label(format!("{:.3} mm", pos[0]));
-                ui.end_row();
-                ui.label("Y:");
-                ui.label(format!("{:.3} mm", pos[1]));
-                ui.end_row();
-                ui.label("Z:");
-                ui.label(format!("{:.3} mm", pos[2]));
-                ui.end_row();
-            });
+        ui.param_grid("sim_tool_pos", |ui| {
+            ui.label("X:");
+            ui.label(format!("{:.3} mm", pos[0]));
+            ui.end_row();
+            ui.label("Y:");
+            ui.label(format!("{:.3} mm", pos[1]));
+            ui.end_row();
+            ui.label("Z:");
+            ui.label(format!("{:.3} mm", pos[2]));
+            ui.end_row();
+        });
     }
 
     ui.add_space(8.0);

@@ -4,6 +4,7 @@ use crate::state::job::ModelId;
 use crate::state::toolpath::{ProjectCurveConfig, ProjectCurveDirection, ProjectCurveSide};
 
 use super::super::dv;
+use crate::ui::components::UiExt as _;
 
 pub(in crate::ui::properties) fn draw_project_curve_params(
     ui: &mut egui::Ui,
@@ -86,30 +87,26 @@ pub(in crate::ui::properties) fn draw_project_curve_params(
             });
     });
 
-    egui::Grid::new("proj_p")
-        .num_columns(2)
-        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-        .min_row_height(crate::ui::tokens::ROW_DENSE)
-        .show(ui, |ui| {
-            dv(ui, "Depth:", &mut cfg.depth, " mm", 0.1, -20.0..=20.0);
-            dv(
-                ui,
-                "Point Spacing:",
-                &mut cfg.point_spacing,
-                " mm",
-                0.1,
-                0.1..=5.0,
-            );
-            // Chaining is OFF at 0.0 and ships that way — the hover text
-            // (registered on the label in `properties::tooltip_for`, which is
-            // where every `dv` row's tooltip lives) says so.
-            dv(
-                ui,
-                "Chain Distance:",
-                &mut cfg.chain_distance_mm,
-                " mm",
-                0.1,
-                0.0..=25.0,
-            );
-        });
+    ui.param_grid("proj_p", |ui| {
+        dv(ui, "Depth:", &mut cfg.depth, " mm", 0.1, -20.0..=20.0);
+        dv(
+            ui,
+            "Point Spacing:",
+            &mut cfg.point_spacing,
+            " mm",
+            0.1,
+            0.1..=5.0,
+        );
+        // Chaining is OFF at 0.0 and ships that way — the hover text
+        // (registered on the label in `properties::tooltip_for`, which is
+        // where every `dv` row's tooltip lives) says so.
+        dv(
+            ui,
+            "Chain Distance:",
+            &mut cfg.chain_distance_mm,
+            " mm",
+            0.1,
+            0.0..=25.0,
+        );
+    });
 }

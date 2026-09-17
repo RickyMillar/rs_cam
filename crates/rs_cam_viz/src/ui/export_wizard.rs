@@ -21,6 +21,7 @@ use super::AppEvent;
 use super::readiness::{self, CycleTimeBasisExt};
 use crate::state::AppState;
 use crate::state::wizard::OutputLayout;
+use crate::ui::components::UiExt as _;
 use crate::ui::components::format::slugify;
 use crate::ui::theme;
 use crate::ui_command::{NoArgs, UiCommand};
@@ -151,55 +152,51 @@ fn step_post(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     ui.add_space(10.0);
     let post_def = selected.definition();
 
-    egui::Grid::new("wizard_step_post_meta")
-        .num_columns(2)
-        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-        .min_row_height(crate::ui::tokens::ROW_DENSE)
-        .show(ui, |ui| {
-            ui.label("Name:");
-            ui.label(&post_def.name);
-            ui.end_row();
+    ui.param_grid("wizard_step_post_meta", |ui| {
+        ui.label("Name:");
+        ui.label(&post_def.name);
+        ui.end_row();
 
-            ui.label("Units:");
-            ui.label(post_def.units.as_word());
-            ui.end_row();
+        ui.label("Units:");
+        ui.label(post_def.units.as_word());
+        ui.end_row();
 
-            ui.label("Default WCS:");
-            let wcs_label = post_def
-                .wcs
-                .map(|w| w.as_word().to_owned())
-                .unwrap_or_else(|| "(none in preamble)".to_owned());
-            ui.label(wcs_label);
-            ui.end_row();
+        ui.label("Default WCS:");
+        let wcs_label = post_def
+            .wcs
+            .map(|w| w.as_word().to_owned())
+            .unwrap_or_else(|| "(none in preamble)".to_owned());
+        ui.label(wcs_label);
+        ui.end_row();
 
-            ui.label("XYZ decimals:");
-            ui.label(post_def.decimals.xyz.to_string());
-            ui.end_row();
+        ui.label("XYZ decimals:");
+        ui.label(post_def.decimals.xyz.to_string());
+        ui.end_row();
 
-            ui.label("Feed decimals:");
-            ui.label(post_def.decimals.feed.to_string());
-            ui.end_row();
+        ui.label("Feed decimals:");
+        ui.label(post_def.decimals.feed.to_string());
+        ui.end_row();
 
-            ui.label("Cutter comp:");
-            ui.label(if post_def.supports_cutter_comp {
-                "supported"
-            } else {
-                "not supported (lines dropped)"
-            });
-            ui.end_row();
-
-            ui.label("Arc linearise:");
-            let arc_lbl = if post_def.arc_linearize.enabled {
-                format!(
-                    "on (≤ {:.3} mm radius → G1 chord)",
-                    post_def.arc_linearize.threshold_mm
-                )
-            } else {
-                "off".to_owned()
-            };
-            ui.label(arc_lbl);
-            ui.end_row();
+        ui.label("Cutter comp:");
+        ui.label(if post_def.supports_cutter_comp {
+            "supported"
+        } else {
+            "not supported (lines dropped)"
         });
+        ui.end_row();
+
+        ui.label("Arc linearise:");
+        let arc_lbl = if post_def.arc_linearize.enabled {
+            format!(
+                "on (≤ {:.3} mm radius → G1 chord)",
+                post_def.arc_linearize.threshold_mm
+            )
+        } else {
+            "off".to_owned()
+        };
+        ui.label(arc_lbl);
+        ui.end_row();
+    });
 
     ui.add_space(10.0);
     draw_limit_warnings(ui, post_def, state.gui.post.spindle_speed);
@@ -257,15 +254,11 @@ fn step_output_layout(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppE
 
     ui.add_space(8.0);
     let preview = render_filename_preview(&wiz.filename_template, state, selected);
-    egui::Grid::new("wizard_filename_preview")
-        .num_columns(2)
-        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-        .min_row_height(crate::ui::tokens::ROW_DENSE)
-        .show(ui, |ui| {
-            ui.label("Preview:");
-            ui.label(egui::RichText::new(preview).monospace());
-            ui.end_row();
-        });
+    ui.param_grid("wizard_filename_preview", |ui| {
+        ui.label("Preview:");
+        ui.label(egui::RichText::new(preview).monospace());
+        ui.end_row();
+    });
 }
 
 /// The wizard's preview of the filename the save path will write.
@@ -485,6 +478,7 @@ fn step_tool_change(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
     for tc in &enabled_tcs {
         by_tool.entry(tc.tool_id).or_default().push(*tc);
     }
+    // UI-02: 4 columns and striped, so `param_grid` does not fit.
     egui::Grid::new("wizard_step_tool_summary")
         .num_columns(4)
         .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
@@ -622,20 +616,16 @@ fn step_tool_change(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
             counts[idx] += 1;
         }
     }
-    egui::Grid::new("wizard_step_coolant_summary")
-        .num_columns(2)
-        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-        .min_row_height(crate::ui::tokens::ROW_DENSE)
-        .show(ui, |ui| {
-            for (idx, &count) in counts.iter().enumerate() {
-                if count == 0 {
-                    continue;
-                }
-                ui.label(coolant_label(coolant_from_idx(idx)));
-                ui.label(format!("{count} toolpath(s)"));
-                ui.end_row();
+    ui.param_grid("wizard_step_coolant_summary", |ui| {
+        for (idx, &count) in counts.iter().enumerate() {
+            if count == 0 {
+                continue;
             }
-        });
+            ui.label(coolant_label(coolant_from_idx(idx)));
+            ui.label(format!("{count} toolpath(s)"));
+            ui.end_row();
+        }
+    });
     ui.label(
         egui::RichText::new("Coolant is per-toolpath; edit in the toolpath inspector.")
             .small()
@@ -943,70 +933,66 @@ fn step_save(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     // produced the number so the row can say so.
     let cycle = readiness::estimate_total_time(state);
 
-    egui::Grid::new("wizard_step_save_summary")
-        .num_columns(2)
-        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-        .min_row_height(crate::ui::tokens::ROW_DENSE)
-        .show(ui, |ui| {
-            ui.label("Post:");
-            ui.label(&post_def.name);
-            ui.end_row();
+    ui.param_grid("wizard_step_save_summary", |ui| {
+        ui.label("Post:");
+        ui.label(&post_def.name);
+        ui.end_row();
 
-            ui.label("Layout:");
-            ui.label(wiz.output_layout.label());
-            ui.end_row();
+        ui.label("Layout:");
+        ui.label(wiz.output_layout.label());
+        ui.end_row();
 
-            ui.label("Filename template:");
-            ui.label(egui::RichText::new(&wiz.filename_template).monospace());
-            ui.end_row();
+        ui.label("Filename template:");
+        ui.label(egui::RichText::new(&wiz.filename_template).monospace());
+        ui.end_row();
 
-            ui.label("G-code lines (preview build):");
-            ui.label(format!("{line_count}"));
-            ui.end_row();
+        ui.label("G-code lines (preview build):");
+        ui.label(format!("{line_count}"));
+        ui.end_row();
 
-            ui.label("Total moves:");
-            ui.label(format!("{total_moves}"));
-            ui.end_row();
+        ui.label("Total moves:");
+        ui.label(format!("{total_moves}"));
+        ui.end_row();
 
-            ui.label("Cutting distance:");
-            ui.label(format!("{cutting_dist:.0} mm"));
-            ui.end_row();
+        ui.label("Cutting distance:");
+        ui.label(format!("{cutting_dist:.0} mm"));
+        ui.end_row();
 
-            ui.label("Longest single-toolpath cut:");
-            ui.label(format!("{longest_cut:.0} mm"));
-            ui.end_row();
+        ui.label("Longest single-toolpath cut:");
+        ui.label(format!("{longest_cut:.0} mm"));
+        ui.end_row();
 
-            match cycle.basis {
-                Some(basis) => {
-                    ui.label(format!("Estimated cycle time ({}):", basis.qualifier()));
-                    ui.label(readiness::format_cycle_time(cycle.seconds))
-                        .on_hover_text(basis.caveat());
-                }
-                // No estimate is a dash, never a plausible-looking 0.0 min.
-                None => {
-                    ui.label("Estimated cycle time:");
-                    ui.label("\u{2014}");
-                }
+        match cycle.basis {
+            Some(basis) => {
+                ui.label(format!("Estimated cycle time ({}):", basis.qualifier()));
+                ui.label(readiness::format_cycle_time(cycle.seconds))
+                    .on_hover_text(basis.caveat());
             }
-            ui.end_row();
-
-            ui.label("Tool changes:");
-            ui.label(format!("{tool_changes}"));
-            ui.end_row();
-
-            if wiz.dry_run {
-                ui.label("Dry-run:");
-                ui.colored_label(
-                    crate::ui::tokens::CAUTION,
-                    "ON — cutting Z clamped to safe-Z",
-                );
-                ui.end_row();
+            // No estimate is a dash, never a plausible-looking 0.0 min.
+            None => {
+                ui.label("Estimated cycle time:");
+                ui.label("\u{2014}");
             }
+        }
+        ui.end_row();
 
-            ui.label("Validator findings:");
-            ui.label(format!("{errors} error / {warnings} warn / {infos} info"));
+        ui.label("Tool changes:");
+        ui.label(format!("{tool_changes}"));
+        ui.end_row();
+
+        if wiz.dry_run {
+            ui.label("Dry-run:");
+            ui.colored_label(
+                crate::ui::tokens::CAUTION,
+                "ON — cutting Z clamped to safe-Z",
+            );
             ui.end_row();
-        });
+        }
+
+        ui.label("Validator findings:");
+        ui.label(format!("{errors} error / {warnings} warn / {infos} info"));
+        ui.end_row();
+    });
 
     // Below the grid, not inside it — the caveat is a paragraph and a grid
     // cell will not wrap one. This is the last screen before Save, so the

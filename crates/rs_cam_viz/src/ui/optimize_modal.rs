@@ -633,6 +633,7 @@ fn draw_attempted(ui: &mut egui::Ui, candidates: &[OptimizeCandidate], events: &
     );
     ui.add_space(4.0);
 
+    // UI-02: 4 columns and striped, so `param_grid` does not fit.
     egui::Grid::new("optimize_attempted_grid")
         .num_columns(4)
         .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
@@ -800,6 +801,7 @@ fn draw_ranked(
     let recommended_index =
         recommended.and_then(|r| candidates.iter().position(|c| std::ptr::eq(c, r)));
 
+    // UI-02: 5 columns and striped, so `param_grid` does not fit.
     egui::Grid::new("optimize_candidates_grid")
         .num_columns(5)
         .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
@@ -839,38 +841,32 @@ fn draw_ranked(
 fn draw_baseline_card(ui: &mut egui::Ui, baseline: &OptimizeCandidate) {
     ui.label(egui::RichText::new("Current").small().strong());
     let cycle_min = format_cycle(baseline.cycle_time_s);
-    egui::Grid::new("optimize_baseline_grid")
-        .num_columns(2)
-        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-        .min_row_height(crate::ui::tokens::ROW_DENSE)
-        .show(ui, |ui| {
-            ui.label(egui::RichText::new("Cycle:").small());
-            ui.label(egui::RichText::new(cycle_min).small());
+    ui.param_grid("optimize_baseline_grid", |ui| {
+        ui.label(egui::RichText::new("Cycle:").small());
+        ui.label(egui::RichText::new(cycle_min).small());
+        ui.end_row();
+        ui.label(egui::RichText::new("Feed:").small());
+        ui.label(egui::RichText::new(format!("{:.0} mm/min", baseline.params.feed_rate())).small());
+        ui.end_row();
+        if let Some(rpm) = baseline.params.spindle_rpm() {
+            ui.label(egui::RichText::new("RPM:").small());
+            ui.label(egui::RichText::new(format!("{rpm}")).small());
             ui.end_row();
-            ui.label(egui::RichText::new("Feed:").small());
-            ui.label(
-                egui::RichText::new(format!("{:.0} mm/min", baseline.params.feed_rate())).small(),
-            );
+        }
+        if let Some(stepover) = baseline.params.stepover() {
+            ui.label(egui::RichText::new("Stepover:").small());
+            ui.label(egui::RichText::new(format!("{stepover:.2} mm")).small());
             ui.end_row();
-            if let Some(rpm) = baseline.params.spindle_rpm() {
-                ui.label(egui::RichText::new("RPM:").small());
-                ui.label(egui::RichText::new(format!("{rpm}")).small());
-                ui.end_row();
-            }
-            if let Some(stepover) = baseline.params.stepover() {
-                ui.label(egui::RichText::new("Stepover:").small());
-                ui.label(egui::RichText::new(format!("{stepover:.2} mm")).small());
-                ui.end_row();
-            }
-            if let Some(doc) = baseline.params.depth_per_pass() {
-                ui.label(egui::RichText::new("DOC:").small());
-                ui.label(egui::RichText::new(format!("{doc:.2} mm")).small());
-                ui.end_row();
-            }
-            ui.label(egui::RichText::new("Verdict:").small());
-            draw_verdict_badges(ui, &baseline.verdict);
+        }
+        if let Some(doc) = baseline.params.depth_per_pass() {
+            ui.label(egui::RichText::new("DOC:").small());
+            ui.label(egui::RichText::new(format!("{doc:.2} mm")).small());
             ui.end_row();
-        });
+        }
+        ui.label(egui::RichText::new("Verdict:").small());
+        draw_verdict_badges(ui, &baseline.verdict);
+        ui.end_row();
+    });
 }
 
 fn draw_candidate_row(

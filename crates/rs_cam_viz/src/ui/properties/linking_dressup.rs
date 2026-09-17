@@ -9,6 +9,7 @@ use super::operations::{draw_dogbone_diagram, draw_lead_in_out_diagram};
 use super::{operations, pills};
 use crate::state::toolpath::{DressupConfig, DressupEntryStyle, HeightContext, ToolpathEntry};
 use crate::ui::automation;
+use crate::ui::components::UiExt as _;
 use crate::ui::components::ValueRow;
 
 // --- Parameter grid helpers ---
@@ -342,37 +343,29 @@ pub(super) fn draw_linking_params(
     });
     match cfg.entry_style {
         DressupEntryStyle::Ramp => {
-            egui::Grid::new("ramp_p")
-                .num_columns(2)
-                .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-                .min_row_height(crate::ui::tokens::ROW_DENSE)
-                .show(ui, |ui| {
-                    dv(
-                        ui,
-                        "  Max Angle:",
-                        &mut cfg.ramp_angle,
-                        " deg",
-                        0.5,
-                        0.5..=15.0,
-                    );
-                });
+            ui.param_grid("ramp_p", |ui| {
+                dv(
+                    ui,
+                    "  Max Angle:",
+                    &mut cfg.ramp_angle,
+                    " deg",
+                    0.5,
+                    0.5..=15.0,
+                );
+            });
         }
         DressupEntryStyle::Helix => {
-            egui::Grid::new("helix_p")
-                .num_columns(2)
-                .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-                .min_row_height(crate::ui::tokens::ROW_DENSE)
-                .show(ui, |ui| {
-                    dv(
-                        ui,
-                        "  Radius:",
-                        &mut cfg.helix_radius,
-                        " mm",
-                        0.1,
-                        0.5..=20.0,
-                    );
-                    dv(ui, "  Pitch:", &mut cfg.helix_pitch, " mm", 0.1, 0.2..=10.0);
-                });
+            ui.param_grid("helix_p", |ui| {
+                dv(
+                    ui,
+                    "  Radius:",
+                    &mut cfg.helix_radius,
+                    " mm",
+                    0.1,
+                    0.5..=20.0,
+                );
+                dv(ui, "  Pitch:", &mut cfg.helix_pitch, " mm", 0.1, 0.2..=10.0);
+            });
         }
         DressupEntryStyle::None => {}
     }
@@ -392,20 +385,16 @@ pub(super) fn draw_linking_params(
         }
     });
     if cfg.lead_in_out && op_incompatible_msg.is_none() {
-        egui::Grid::new("lead_p")
-            .num_columns(2)
-            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-            .min_row_height(crate::ui::tokens::ROW_DENSE)
-            .show(ui, |ui| {
-                dv(
-                    ui,
-                    "  Radius:",
-                    &mut cfg.lead_radius,
-                    " mm",
-                    0.1,
-                    0.5..=20.0,
-                );
-            });
+        ui.param_grid("lead_p", |ui| {
+            dv(
+                ui,
+                "  Radius:",
+                &mut cfg.lead_radius,
+                " mm",
+                0.1,
+                0.5..=20.0,
+            );
+        });
         draw_lead_in_out_diagram(ui, cfg.lead_radius);
     }
 
@@ -428,28 +417,24 @@ pub(super) fn draw_linking_params(
         }
     });
     if cfg.link_moves && op_incompatible_msg.is_none() {
-        egui::Grid::new("link_p")
-            .num_columns(2)
-            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-            .min_row_height(crate::ui::tokens::ROW_DENSE)
-            .show(ui, |ui| {
-                dv(
-                    ui,
-                    "  Max Distance:",
-                    &mut cfg.link_max_distance,
-                    " mm",
-                    0.5,
-                    1.0..=50.0,
-                );
-                dv(
-                    ui,
-                    "  Feed Rate:",
-                    &mut cfg.link_feed_rate,
-                    " mm/min",
-                    10.0,
-                    50.0..=5000.0,
-                );
-            });
+        ui.param_grid("link_p", |ui| {
+            dv(
+                ui,
+                "  Max Distance:",
+                &mut cfg.link_max_distance,
+                " mm",
+                0.5,
+                1.0..=50.0,
+            );
+            dv(
+                ui,
+                "  Feed Rate:",
+                &mut cfg.link_feed_rate,
+                " mm/min",
+                10.0,
+                50.0..=5000.0,
+            );
+        });
     }
 
     let feed_opt_reason = crate::state::toolpath::feed_optimization_unavailable_reason(
@@ -473,28 +458,24 @@ pub(super) fn draw_linking_params(
             .on_hover_text("Dynamically adjust feed rate based on stock engagement. Higher feed in light cuts, lower in heavy cuts. Only available for fresh-stock 2D operations.");
     }
     if cfg.feed_optimization && feed_opt_reason.is_none() {
-        egui::Grid::new("fopt_p")
-            .num_columns(2)
-            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-            .min_row_height(crate::ui::tokens::ROW_DENSE)
-            .show(ui, |ui| {
-                dv(
-                    ui,
-                    "  Max Rate:",
-                    &mut cfg.feed_max_rate,
-                    " mm/min",
-                    50.0,
-                    500.0..=20000.0,
-                );
-                dv(
-                    ui,
-                    "  Ramp Rate:",
-                    &mut cfg.feed_ramp_rate,
-                    " mm/min/mm",
-                    10.0,
-                    10.0..=2000.0,
-                );
-            });
+        ui.param_grid("fopt_p", |ui| {
+            dv(
+                ui,
+                "  Max Rate:",
+                &mut cfg.feed_max_rate,
+                " mm/min",
+                50.0,
+                500.0..=20000.0,
+            );
+            dv(
+                ui,
+                "  Ramp Rate:",
+                &mut cfg.feed_ramp_rate,
+                " mm/min/mm",
+                10.0,
+                10.0..=2000.0,
+            );
+        });
     }
 
     ui.checkbox(&mut cfg.optimize_rapid_order, "Optimize rapid travel order")
@@ -518,39 +499,31 @@ pub(super) fn draw_dressup_params(ui: &mut egui::Ui, cfg: &mut DressupConfig) {
     ui.checkbox(&mut cfg.arc_fitting, "Arc fitting (G2/G3)")
         .on_hover_text("Convert sequences of linear segments into smooth G2/G3 arcs. Reduces file size, improves surface finish, and produces smoother machine motion. Safe for all operations.");
     if cfg.arc_fitting {
-        egui::Grid::new("arc_p")
-            .num_columns(2)
-            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-            .min_row_height(crate::ui::tokens::ROW_DENSE)
-            .show(ui, |ui| {
-                dv(
-                    ui,
-                    "  Tolerance:",
-                    &mut cfg.arc_tolerance,
-                    " mm",
-                    0.01,
-                    0.01..=0.5,
-                );
-            });
+        ui.param_grid("arc_p", |ui| {
+            dv(
+                ui,
+                "  Tolerance:",
+                &mut cfg.arc_tolerance,
+                " mm",
+                0.01,
+                0.01..=0.5,
+            );
+        });
     }
 
     ui.checkbox(&mut cfg.dogbone, "Dogbone overcuts")
         .on_hover_text("Add circular overcuts at inside corners so parts fit together. Essential for joints, inlays, and press-fit assemblies. Not needed for open pockets or 3D surfaces.");
     if cfg.dogbone {
-        egui::Grid::new("dog_p")
-            .num_columns(2)
-            .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-            .min_row_height(crate::ui::tokens::ROW_DENSE)
-            .show(ui, |ui| {
-                dv(
-                    ui,
-                    "  Max Angle:",
-                    &mut cfg.dogbone_angle,
-                    " deg",
-                    1.0,
-                    45.0..=135.0,
-                );
-            });
+        ui.param_grid("dog_p", |ui| {
+            dv(
+                ui,
+                "  Max Angle:",
+                &mut cfg.dogbone_angle,
+                " deg",
+                1.0,
+                45.0..=135.0,
+            );
+        });
         draw_dogbone_diagram(ui, cfg.dogbone_angle);
     }
 }

@@ -5,6 +5,7 @@ use rs_cam_core::compute::alignment_pins::{
 use super::PanelEdit;
 use crate::state::job::{AlignmentPin, FaceUp, FlipAxis, StockConfig};
 use crate::ui::AppEvent;
+use crate::ui::components::UiExt as _;
 
 /// Draw the stock panel over a SCRATCH copy of the stock configuration.
 ///
@@ -36,11 +37,7 @@ pub fn draw(
     }
 
     // Show material properties (read-only)
-    egui::Grid::new("material_info")
-        .num_columns(2)
-        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-            .min_row_height(crate::ui::tokens::ROW_DENSE)
-        .show(ui, |ui| {
+    ui.param_grid("material_info", |ui| {
             ui.label(
                 egui::RichText::new("Hardness Index:")
                     .small()
@@ -77,82 +74,74 @@ pub fn draw(
     ui.add_space(8.0);
 
     ui.label("Dimensions:");
-    egui::Grid::new("stock_dims")
-        .num_columns(2)
-        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-        .min_row_height(crate::ui::tokens::ROW_DENSE)
-        .show(ui, |ui| {
-            ui.label("X:");
-            edit.drag(
-                &ui.add(
-                    egui::DragValue::new(&mut stock.x)
-                        .suffix(" mm")
-                        .speed(0.5)
-                        .range(0.1..=10000.0),
-                ),
-            );
-            ui.end_row();
+    ui.param_grid("stock_dims", |ui| {
+        ui.label("X:");
+        edit.drag(
+            &ui.add(
+                egui::DragValue::new(&mut stock.x)
+                    .suffix(" mm")
+                    .speed(0.5)
+                    .range(0.1..=10000.0),
+            ),
+        );
+        ui.end_row();
 
-            ui.label("Y:");
-            edit.drag(
-                &ui.add(
-                    egui::DragValue::new(&mut stock.y)
-                        .suffix(" mm")
-                        .speed(0.5)
-                        .range(0.1..=10000.0),
-                ),
-            );
-            ui.end_row();
+        ui.label("Y:");
+        edit.drag(
+            &ui.add(
+                egui::DragValue::new(&mut stock.y)
+                    .suffix(" mm")
+                    .speed(0.5)
+                    .range(0.1..=10000.0),
+            ),
+        );
+        ui.end_row();
 
-            ui.label("Z:");
-            edit.drag(
-                &ui.add(
-                    egui::DragValue::new(&mut stock.z)
-                        .suffix(" mm")
-                        .speed(0.5)
-                        .range(0.1..=10000.0),
-                ),
-            );
-            ui.end_row();
-        });
+        ui.label("Z:");
+        edit.drag(
+            &ui.add(
+                egui::DragValue::new(&mut stock.z)
+                    .suffix(" mm")
+                    .speed(0.5)
+                    .range(0.1..=10000.0),
+            ),
+        );
+        ui.end_row();
+    });
 
     ui.add_space(8.0);
     ui.label("Origin:");
-    egui::Grid::new("stock_origin")
-        .num_columns(2)
-        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-        .min_row_height(crate::ui::tokens::ROW_DENSE)
-        .show(ui, |ui| {
-            ui.label("X:");
-            edit.drag(
-                &ui.add(
-                    egui::DragValue::new(&mut stock.origin_x)
-                        .suffix(" mm")
-                        .speed(0.5),
-                ),
-            );
-            ui.end_row();
+    ui.param_grid("stock_origin", |ui| {
+        ui.label("X:");
+        edit.drag(
+            &ui.add(
+                egui::DragValue::new(&mut stock.origin_x)
+                    .suffix(" mm")
+                    .speed(0.5),
+            ),
+        );
+        ui.end_row();
 
-            ui.label("Y:");
-            edit.drag(
-                &ui.add(
-                    egui::DragValue::new(&mut stock.origin_y)
-                        .suffix(" mm")
-                        .speed(0.5),
-                ),
-            );
-            ui.end_row();
+        ui.label("Y:");
+        edit.drag(
+            &ui.add(
+                egui::DragValue::new(&mut stock.origin_y)
+                    .suffix(" mm")
+                    .speed(0.5),
+            ),
+        );
+        ui.end_row();
 
-            ui.label("Z:");
-            edit.drag(
-                &ui.add(
-                    egui::DragValue::new(&mut stock.origin_z)
-                        .suffix(" mm")
-                        .speed(0.5),
-                ),
-            );
-            ui.end_row();
-        });
+        ui.label("Z:");
+        edit.drag(
+            &ui.add(
+                egui::DragValue::new(&mut stock.origin_z)
+                    .suffix(" mm")
+                    .speed(0.5),
+            ),
+        );
+        ui.end_row();
+    });
 
     ui.add_space(8.0);
     edit.click(&ui.checkbox(&mut stock.auto_from_model, "Auto from model"));
