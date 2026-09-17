@@ -1018,18 +1018,18 @@ fn clearing_regions_for(
 /// # The seven phases
 ///
 /// The detector runs in the order its phase numbers state. Phases 1, 2, 2b
-/// and 7 are named functions above and below; phase 3 is one call to
-/// [`chamfer_distance`]; phases 4, 5 and 6 stay here, because they share the
+/// and 7 are named private functions in this module; phase 3 is one call to
+/// `chamfer_distance`; phases 4, 5 and 6 stay here, because they share the
 /// per-branch local state that routing decides on.
 ///
-/// - 1 — [`sample_rest_field`]: drop the pencil per cell, build the masks.
-/// - 2 — [`label_rest_components`]: flood fill, drop the small components.
-/// - 2b — [`machining_region_polygons`]: the dilated region loops.
-/// - 3 — [`chamfer_distance`] over the cleaned mask: local half-width.
+/// - 1 — `sample_rest_field`: drop the pencil per cell, build the masks.
+/// - 2 — `label_rest_components`: flood fill, drop the small components.
+/// - 2b — `machining_region_polygons`: the dilated region loops.
+/// - 3 — `chamfer_distance` over the cleaned mask: local half-width.
 /// - 4 — ridge extraction: smooth, non-max-suppress, hysteresis, thin.
 /// - 5 — skeleton tracing to polylines, then graph cleanup.
 /// - 6 — route each polyline by coverage.
-/// - 7 — [`clearing_regions_for`]: the regions the routing handed over.
+/// - 7 — `clearing_regions_for`: the regions the routing handed over.
 pub fn detect_rest_valleys(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
