@@ -3,8 +3,10 @@
 //!
 //! `Workspace` has four variants. The switcher bar named all four; the
 //! Workspace menu named three, because each surface wrote its own list by
-//! hand (`ui/menu_bar.rs`, `ui/workspace_bar.rs`, `app/mcp.rs`'s key mapping
-//! and its round-trip test — four copies of one enumeration). Readiness had
+//! hand (`ui/menu_bar.rs`, `ui/workspace_bar.rs`, the key mapping in
+//! `app/mcp.rs` and its round-trip test — four copies of one
+//! enumeration). P4 moved the mapping into `app/mcp/view.rs` and the test
+//! into `app/mcp/tests.rs`; the rule is the same. Readiness had
 //! been on the tab bar since W3.8 and was never added to the menu. Nothing
 //! was unreachable, and `IA/CURRENT_MAP.md` §1 says so explicitly; it is a
 //! consistency defect, and the interesting half of the fix is the rule, not

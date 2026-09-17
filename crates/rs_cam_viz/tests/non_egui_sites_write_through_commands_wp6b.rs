@@ -39,10 +39,11 @@
 //! - `crates/rs_cam_viz/src/compute/**` and
 //!   `crates/rs_cam_viz/src/controller/events/compute.rs` belong to WP10
 //!   and WP11b (§15), not to this package.
-//! - `crates/rs_cam_viz/src/app/mcp.rs` may still name
+//! - `crates/rs_cam_viz/src/app/mcp/generation.rs` may still name
 //!   `toolpath_configs_mut` ONCE, in the generate arm that writes the
 //!   debug-capture flag. That site is WP11b's. The allowance is a
-//!   ceiling, so WP11b removing it keeps this scan green.
+//!   ceiling, so WP11b removing it keeps this scan green. P4 moved the
+//!   arm out of `app/mcp.rs` into that child.
 //!
 //! Red before the fix: scan 1 reports every remaining hatch call, scan 2
 //! reports `wizard_mut`, and scan 3 reports the rows the CLI does not
@@ -80,9 +81,10 @@ const HATCHES: &[&str] = &[
 /// The one file that may still name a hatch, the hatch it may name, and
 /// how many times.
 ///
-/// `app/mcp.rs`'s generate arm writes `debug_options.enabled` before it
-/// queues the compute. §15 moved that site to WP10, and WP11b removes
-/// it. The count is a CEILING, so this scan stays green when it goes.
+/// The generate arm writes `debug_options.enabled` before it queues the
+/// compute. §15 moved that site to WP10, and WP11b removes it. P4 moved
+/// the arm into `app/mcp/generation.rs`. The count is a CEILING, so this
+/// scan stays green when it goes.
 const MCP_GENERATE_ARM_ALLOWANCE: usize = 1;
 
 /// The wire name of every registry row WP6b flips to `cli: Reached`.
@@ -209,7 +211,7 @@ fn no_production_site_names_a_session_hatch() {
     let mut scanned = 0_usize;
     for path in scanned_sources() {
         let display = path.to_string_lossy().replace('\\', "/");
-        let is_mcp = display.ends_with("/app/mcp.rs");
+        let is_mcp = display.ends_with("/app/mcp/generation.rs");
         let source = read(&path);
         for (number, line) in production_lines(&source) {
             scanned += 1;
@@ -231,7 +233,7 @@ fn no_production_site_names_a_session_hatch() {
     );
     assert!(
         allowed <= MCP_GENERATE_ARM_ALLOWANCE,
-        "app/mcp.rs names `toolpath_configs_mut` {allowed} times. Only the \
+        "app/mcp/generation.rs names `toolpath_configs_mut` {allowed} times. Only the \
          generate arm's debug-capture write is allowed, and WP11b removes it."
     );
     assert!(
