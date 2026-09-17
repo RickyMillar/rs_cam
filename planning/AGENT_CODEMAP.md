@@ -44,6 +44,10 @@ Graph caveat: Rust `mod`/crate dependency extraction is sparse in the current gr
 | `gcode/`, `export/` | G-code emit and post; SVG/HTML preview, fingerprints, validator |
 | `feeds/`, `tool_load/` | Feeds and speeds, cutting load model, optimiser |
 | `compute/`, `session/`, `diagnostics/`, `metrology/`, `util/` | Dispatch, project state, diagnostics, measurement instruments, helpers |
+- Each folder that owns an invariant carries a `CLAUDE.md` beside its code
+  (`crates/rs_cam_core/src/<folder>/CLAUDE.md`, and the same under
+  `crates/rs_cam_viz/src/`). Read that file for the folder's invariants and
+  sentries; this codemap stays an orientation map only.
 - Operation modules are mostly one file per operation: `ops/pocket.rs`, `ops/profile.rs`, `adaptive/`, `adaptive3d/`, `surface/dropcutter.rs`, `ops/waterline.rs`, `finish/scallop.rs`, etc.
 
 ### Data model and operation catalog

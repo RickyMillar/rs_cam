@@ -171,11 +171,11 @@ Entries that are not test binaries (`tests/common/shim.rs`,
 
 ## 10. The parents after the trim
 
-| File | Before | Target |
-|---|---:|---:|
-| `crates/rs_cam_core/CLAUDE.md` | 121 | ≤ 60 |
-| `crates/rs_cam_viz/CLAUDE.md` | 68 | ≤ 40 |
-| root `CLAUDE.md` | 74 | 74 + 1 sentence |
+| File | Before | Target | After |
+|---|---:|---:|---:|
+| `crates/rs_cam_core/CLAUDE.md` | 121 | ≤ 60 | 59 |
+| `crates/rs_cam_viz/CLAUDE.md` | 68 | ≤ 40 | 40 |
+| root `CLAUDE.md` | 88 | +1 paragraph | 93 |
 
 The core parent keeps the spine paragraph, the folder table with a
 `→ <folder>/CLAUDE.md` pointer on each row that has one, the crate-wide
@@ -192,7 +192,7 @@ pointer line. Neither duplicates a folder file's content.
 ## 11. Commits
 
 1. This plan.
-2. The 32 folder files.
+2. The 32 folder files (commit `HEAD~1` at the time of writing).
 3. The two trimmed parents, the root sentence, the codemap line and the skill
    line.
 

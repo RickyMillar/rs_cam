@@ -16,6 +16,11 @@
 Read the relevant child file before changing that area. Do not load every
 package instruction speculatively.
 
+Folder-level `CLAUDE.md` files also exist under
+`crates/rs_cam_core/src/<folder>/` and `crates/rs_cam_viz/src/<dir>/`. Read
+the one for the folder you edit; each is 40 lines or fewer and holds that
+folder's file map, invariants, sentries and traps.
+
 ## Workspace shape
 
 - `crates/rs_cam_core`: CAM engine and shared data model.

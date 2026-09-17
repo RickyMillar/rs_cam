@@ -43,6 +43,10 @@ Note: the 12 heaviest core binaries sit behind the `heavy-tests` feature (75% of
 
 ## Module Map
 
+Each folder with an invariant carries a `CLAUDE.md` beside its code
+(`crates/rs_cam_core/src/<folder>/CLAUDE.md`, and the same under
+`crates/rs_cam_viz/src/`). Read it for that folder's invariants and sentries.
+
 ### rs_cam_core — CAM engine (folders since 2026-09-17)
 
 The crate root holds `lib.rs` and the spine only: `geo.rs`, `polygon.rs`,
