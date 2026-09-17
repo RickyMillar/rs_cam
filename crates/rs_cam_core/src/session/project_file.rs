@@ -1253,16 +1253,14 @@ fn normalise_rest_analysis_demand(
         .toolpath_configs
         .iter()
         .enumerate()
-        .filter(|(_, tc)| {
-            !matches!(&tc.operation, OperationConfig::Pencil(cfg)
+        .filter_map(|(index, tc)| {
+            if matches!(&tc.operation, OperationConfig::Pencil(cfg)
                 if cfg.detector == crate::finish::pencil::PencilDetector::RestDepth)
-        })
-        .map(|(index, tc)| (index, !session.rest_region_consumers(tc.id).is_empty()))
-        .filter(|(index, demand)| {
-            session
-                .toolpath_configs
-                .get(*index)
-                .is_some_and(|tc| tc.rest_analysis.enabled != *demand)
+            {
+                return None;
+            }
+            let demand = !session.rest_region_consumers(tc.id).is_empty();
+            (tc.rest_analysis.enabled != demand).then_some((index, demand))
         })
         .collect();
 
