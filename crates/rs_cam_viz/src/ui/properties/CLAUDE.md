@@ -1,22 +1,20 @@
 # `ui/properties/` — the inspector
 
-The right-hand inspector: the tabs that edit a setup, a tool, the stock, the
-post and one operation. The entry point is `ui::properties::mod`.
+The tabs that edit a setup, a tool, the stock, the post and one operation.
+The entry point is `ui::properties::mod`.
 
 ## Files
 
-- `mod.rs` — `draw`, `PanelEdit`, `ToolpathTab`, the snapshot API; children
-  beside it: `panel_apply.rs` (apply/flush, the command door),
-  `model_sim_panels.rs`, `machine_panel.rs`, `feeds_speeds.rs` (Feeds tab,
-  LUT viewer), `tab_badges.rs`, `linking_dressup.rs` (+ `dv` grid helpers),
-  `toolpath_panel.rs` (`draw_toolpath_panel`, one function), `tests.rs`.
+- `mod.rs` — `draw`, `PanelEdit`, `ToolpathTab`, the snapshot API; beside it
+  `panel_apply.rs` (apply/flush, the command door), `model_sim_panels.rs`,
+  `machine_panel.rs`, `feeds_speeds.rs` (Feeds tab, LUT viewer),
+  `tab_badges.rs`, `linking_dressup.rs` (+ `dv` grid helpers), `tests.rs`,
+  `toolpath_panel.rs` (`draw_toolpath_panel`, one function).
 - `operations/` — one editor per operation family: 2D boundary, drilling,
-  engraving, finishing, 3D surface, project curve.
-  Its children beside `mod.rs`: `shape_diagrams.rs` (the thirteen parameter
-  minimaps, `StepoverPattern`), `height_diagram.rs` (height-versus-stock
-  profile), `validate.rs` (toolpath validation, inspector diagnostics).
-- `setup.rs`, `stock.rs`, `tool.rs`, `post.rs` — the four resource tabs.
-- `pills.rs` — `PillSuggestions`, what the per-field pills offer.
+  engraving, finishing, 3D surface, project curve; beside its `mod.rs`
+  `shape_diagrams.rs` (`StepoverPattern`), `height_diagram.rs`, `validate.rs`.
+- `setup.rs`, `stock.rs`, `tool.rs`, `post.rs` — the four resource tabs;
+  `pills.rs` — `PillSuggestions`, what the per-field pills offer.
 
 ## Invariants
 
@@ -24,6 +22,7 @@ post and one operation. The entry point is `ui::properties::mod`.
   a place to hold a value.
 - The inspector nests ONCE. A tab does not open a second scroll area.
 - The inspector width does not depend on the selected tab.
+- A panel door marks the project edited on success; `app.rs` guards on it.
 - A pinned Bottom Z note must say which operations honour it; the core answer
   is `OperationType::honors_pinned_bottom_z()`.
 
@@ -34,6 +33,7 @@ post and one operation. The entry point is `ui::properties::mod`.
 - `cargo test -p rs_cam_viz -q --test the_inspector_nests_once_dc5`
 - `cargo test -p rs_cam_viz -q --test inspector_width_is_tab_independent_up4`
 - `cargo test -p rs_cam_viz -q --test depth_beyond_stock_cautions_g_depthstock`
+- `cargo test -p rs_cam_viz -q --test a_post_edit_marks_the_project_dirty_ui08`
 
 ## Do not
 

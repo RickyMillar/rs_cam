@@ -236,7 +236,15 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                         post: Box::new(session_post),
                     },
                 );
-                let _ = apply_panel_command(state, command);
+                // UI-08: the Post tab is a panel door, so it marks the
+                // project edited exactly as the other seven doors do. Without
+                // this the operator changes Safe Z, closes the window, and the
+                // `app.rs` close guard reads a clean project and asks nothing.
+                // The compare above already gates on a real change, so an idle
+                // frame still dirties nothing.
+                if apply_panel_command(state, command) {
+                    state.gui.mark_edited();
+                }
             }
         }
         Selection::Machine => {
