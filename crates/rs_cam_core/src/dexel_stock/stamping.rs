@@ -14,7 +14,8 @@ use super::tile_mip::TileMaxTop;
 use crate::geo::P3;
 use crate::ids::ToolpathId;
 use crate::stock::dexel::{
-    DexelGrid, ray_blend_above, ray_blend_below, ray_material_length, ray_material_length_above,
+    DexelGrid, DexelRay, ray_blend_above, ray_blend_below, ray_material_length,
+    ray_material_length_above,
 };
 use crate::stock::radial_profile::RadialProfileLUT;
 use crate::stock::simulation_cut::{CutKinematics, SimulationCutSample};
@@ -525,6 +526,186 @@ pub(super) struct CuttingCaptureParams<'a> {
 
 // ── Grid-generic stamp helpers ───────────────────────────────────────────
 
+// ── STK-01: one cell-scan driver ────────────────────────────────────────
+
+/// What a cell-scan writes into. `DexelGrid` and `GridBand` implement it.
+///
+/// STK-01: the two differ only in `local(row, col)` against
+/// `row * cols + col`, which is exactly what this trait names.
+pub(super) trait StampTarget {
+    fn origin_u(&self) -> f64;
+    fn origin_v(&self) -> f64;
+    /// Flat index for a GLOBAL `(row, col)`.
+    fn cell_index(&self, row: usize, col: usize) -> usize;
+    fn top_at_index(&self, idx: usize) -> f32;
+    fn ray_at_index(&mut self, idx: usize) -> &mut DexelRay;
+    fn lower_top(&mut self, idx: usize, surface: f32);
+}
+
+impl StampTarget for DexelGrid {
+    #[inline]
+    fn origin_u(&self) -> f64 {
+        self.origin_u
+    }
+    #[inline]
+    fn origin_v(&self) -> f64 {
+        self.origin_v
+    }
+    #[inline]
+    fn cell_index(&self, row: usize, col: usize) -> usize {
+        row * self.cols + col
+    }
+    #[inline]
+    #[allow(clippy::indexing_slicing)] // caller derives idx from clamped bounds
+    fn top_at_index(&self, idx: usize) -> f32 {
+        self.conservative_top[idx]
+    }
+    #[inline]
+    #[allow(clippy::indexing_slicing)] // caller derives idx from clamped bounds
+    fn ray_at_index(&mut self, idx: usize) -> &mut DexelRay {
+        &mut self.rays[idx]
+    }
+    #[inline]
+    fn lower_top(&mut self, idx: usize, surface: f32) {
+        self.lower_conservative_top(idx, surface);
+    }
+}
+
+impl StampTarget for GridBand<'_> {
+    #[inline]
+    fn origin_u(&self) -> f64 {
+        self.origin_u
+    }
+    #[inline]
+    fn origin_v(&self) -> f64 {
+        self.origin_v
+    }
+    #[inline]
+    fn cell_index(&self, row: usize, col: usize) -> usize {
+        self.local(row, col)
+    }
+    #[inline]
+    #[allow(clippy::indexing_slicing)] // caller derives idx from clamped bounds
+    fn top_at_index(&self, idx: usize) -> f32 {
+        self.conservative_top[idx]
+    }
+    #[inline]
+    #[allow(clippy::indexing_slicing)] // caller derives idx from clamped bounds
+    fn ray_at_index(&mut self, idx: usize) -> &mut DexelRay {
+        &mut self.rays[idx]
+    }
+    #[inline]
+    fn lower_top(&mut self, idx: usize, surface: f32) {
+        self.lower_conservative_top(idx, surface);
+    }
+}
+
+/// What the driver hands one cell to the kernel's closure.
+pub(super) enum CellVisit {
+    /// The per-cell air-skip rejected this cell. The kernel writes nothing
+    /// here, but a metric kernel still has to account for the addend it did
+    /// not take — see `stamp_segment_with_metrics`.
+    Inert { idx: usize },
+    /// The cell is covered and the cutter height above it is known.
+    Covered {
+        idx: usize,
+        /// The cell centre, in the target's planar axes. The metric kernel
+        /// measures its engagement against the midpoint disk from here.
+        cell_u: f64,
+        cell_v: f64,
+        coverage: f32,
+        /// Where along the segment the cell's closest approach sits. Zero for
+        /// a point stamp.
+        t_center: f64,
+        /// Cutter height above the tip at `dist_sq`.
+        h: f64,
+    },
+}
+
+/// Everything the driver needs that is constant across the scan.
+pub(super) struct CellScan<'a> {
+    pub(super) lut: &'a RadialProfileLUT,
+    pub(super) cell_size: f64,
+    pub(super) from_high: bool,
+    pub(super) air_skip: bool,
+    /// Depth the per-cell air-skip compares `conservative_top` against.
+    pub(super) reject_depth: f64,
+    /// Depth `cell_upper_bound_surface` is evaluated at.
+    pub(super) ub_depth: f64,
+    pub(super) col_lo: usize,
+    pub(super) col_hi: usize,
+    pub(super) row_lo: usize,
+    pub(super) row_hi: usize,
+}
+
+/// Walk the scan box and call `visit` once per cell the cutter reaches.
+///
+/// STK-01: the six cell-scan loops in this file repeated the same five steps
+/// in the same order — the coverage reject, the flat index, the per-cell
+/// air-skip reject, the LUT height with its edge fallback, and the
+/// `coverage >= FULL_COVERAGE` conservative-top update. Six copies of a hot
+/// loop is six places a fix has to land, and this file is where every stamping
+/// defect has landed.
+///
+/// The driver owns those five steps. Each kernel supplies `coverage_of` —
+/// point or swept — and one `visit` closure that mutates the ray and keeps its
+/// own accumulators. `visit` is ONE closure rather than a covered/inert pair
+/// because the metric kernel's two arms mutate the same locals.
+///
+/// **The conservative-top update runs after `visit` returns.** In the metric
+/// swept kernel it used to run between the ray write and the engagement
+/// accumulation; the engagement block reads only locals, so the two commute
+/// and the grid is unchanged. `the_six_cell_loops_write_the_bits_they_wrote_before_the_driver`
+/// is what proves that.
+#[inline]
+pub(super) fn for_each_covered_cell<T, C, F>(
+    target: &mut T,
+    scan: &CellScan<'_>,
+    coverage_of: C,
+    mut visit: F,
+) where
+    T: StampTarget + ?Sized,
+    C: Fn(f64, f64) -> (f32, f64, f64),
+    F: FnMut(&mut T, CellVisit),
+{
+    let cs = scan.cell_size;
+    for row in scan.row_lo..=scan.row_hi {
+        let cell_v = target.origin_v() + row as f64 * cs;
+        for col in scan.col_lo..=scan.col_hi {
+            let cell_u = target.origin_u() + col as f64 * cs;
+            let (coverage, t_center, dist_sq) = coverage_of(cell_u, cell_v);
+            if coverage <= 0.0 {
+                continue;
+            }
+            let idx = target.cell_index(row, col);
+            if scan.air_skip && !cell_can_remove(target.top_at_index(idx), scan.reject_depth) {
+                visit(target, CellVisit::Inert { idx });
+                continue;
+            }
+            let Some(h) = lut_h_with_edge_fallback(scan.lut, dist_sq) else {
+                continue;
+            };
+            visit(
+                target,
+                CellVisit::Covered {
+                    idx,
+                    cell_u,
+                    cell_v,
+                    coverage,
+                    t_center,
+                    h,
+                },
+            );
+            if scan.from_high
+                && coverage >= FULL_COVERAGE
+                && let Some(ub) = cell_upper_bound_surface(scan.lut, dist_sq, cs, scan.ub_depth)
+            {
+                target.lower_top(idx, ub as f32);
+            }
+        }
+    }
+}
+
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Stamp a tool at a single position on a grid (axis-agnostic).
 ///
@@ -587,28 +768,42 @@ pub(super) fn stamp_point_on_grid(
 
     let r_sq = lut.radius_sq();
 
-    for row in row_lo..=row_hi {
-        let cell_v = grid.origin_v + row as f64 * cs;
-        let dv = cell_v - cv;
-        for col in col_lo..=col_hi {
-            let cell_u = grid.origin_u + col as f64 * cs;
+    // The driver owns the coverage reject, the air-skip reject, the LUT
+    // lookup and the A/M10 conservative-top update. §6.F gap 3: interior cells
+    // query h at the cell centre; annular cells (centre outside the disk) fall
+    // back to h at the cutter edge — `lut_h_with_edge_fallback`, in the driver.
+    let scan = CellScan {
+        lut,
+        cell_size: cs,
+        from_high,
+        air_skip,
+        reject_depth: tip_depth,
+        ub_depth: tip_depth,
+        col_lo,
+        col_hi,
+        row_lo,
+        row_hi,
+    };
+    for_each_covered_cell(
+        grid,
+        &scan,
+        |cell_u, cell_v| {
             let du = cell_u - cu;
-            let coverage = point_cell_coverage(du, dv, r_sq, cs);
-            if coverage <= 0.0 {
-                continue;
-            }
-            if air_skip && !cell_can_remove(grid.conservative_top_at(row, col), tip_depth) {
-                continue;
-            }
-            // §6.F gap 3: interior cells query h at the cell center; annular
-            // cells (where the center sits outside the disk) fall back to h
-            // at the cutter edge.
-            let dist_sq = du * du + dv * dv;
-            let Some(h) = lut_h_with_edge_fallback(lut, dist_sq) else {
-                continue;
+            let dv = cell_v - cv;
+            (
+                point_cell_coverage(du, dv, r_sq, cs),
+                0.0,
+                du * du + dv * dv,
+            )
+        },
+        |grid, visit| {
+            let CellVisit::Covered {
+                idx, coverage, h, ..
+            } = visit
+            else {
+                return;
             };
-            let idx = row * grid.cols + col;
-            let ray = &mut grid.rays[idx];
+            let ray = grid.ray_at_index(idx);
             if from_high {
                 let surface = (tip_depth + h) as f32;
                 ray_blend_above(ray, surface, coverage);
@@ -616,16 +811,8 @@ pub(super) fn stamp_point_on_grid(
                 let surface = (tip_depth - h) as f32;
                 ray_blend_below(ray, surface, coverage);
             }
-            // A/M10: only a cell swept end to end may lower the sliver-safe
-            // bound, and only to the cutter's highest point across that cell.
-            if from_high
-                && coverage >= FULL_COVERAGE
-                && let Some(ub) = cell_upper_bound_surface(lut, dist_sq, cs, tip_depth)
-            {
-                grid.lower_conservative_top(idx, ub as f32);
-            }
-        }
-    }
+        },
+    );
 }
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
@@ -702,11 +889,26 @@ pub(super) fn stamp_segment_on_grid(
         m.note_stamp_run(bbox_cells as u64, 0);
     }
 
-    for row in row_lo..=row_hi {
-        let cell_v = grid.origin_v + row as f64 * cs;
-        for col in col_lo..=col_hi {
-            let cell_u = grid.origin_u + col as f64 * cs;
-            let (coverage, t_center, center_d_sq) = segment_cell_coverage(
+    // A/M10 — see `stamp_point_on_grid`. The tip height is interpolated at the
+    // cell centre, so `ub_depth` takes the higher endpoint: a ramping segment
+    // must not be credited with the deeper end of its own travel.
+    let scan = CellScan {
+        lut,
+        cell_size: cs,
+        from_high,
+        air_skip,
+        reject_depth: tip_lo,
+        ub_depth: sd.max(ed),
+        col_lo,
+        col_hi,
+        row_lo,
+        row_hi,
+    };
+    for_each_covered_cell(
+        grid,
+        &scan,
+        |cell_u, cell_v| {
+            segment_cell_coverage(
                 cell_u,
                 cell_v,
                 su,
@@ -717,19 +919,21 @@ pub(super) fn stamp_segment_on_grid(
                 r_sq,
                 cs,
                 fast,
-            );
-            if coverage <= 0.0 {
-                continue;
-            }
-            if air_skip && !cell_can_remove(grid.conservative_top_at(row, col), tip_lo) {
-                continue;
-            }
-            let Some(h) = lut_h_with_edge_fallback(lut, center_d_sq) else {
-                continue;
+            )
+        },
+        |grid, visit| {
+            let CellVisit::Covered {
+                idx,
+                coverage,
+                t_center,
+                h,
+                ..
+            } = visit
+            else {
+                return;
             };
             let depth = sd + t_center * seg_dd;
-            let idx = row * grid.cols + col;
-            let ray = &mut grid.rays[idx];
+            let ray = grid.ray_at_index(idx);
             if from_high {
                 let surface = (depth + h) as f32;
                 ray_blend_above(ray, surface, coverage);
@@ -737,18 +941,8 @@ pub(super) fn stamp_segment_on_grid(
                 let surface = (depth - h) as f32;
                 ray_blend_below(ray, surface, coverage);
             }
-            // A/M10 — see `stamp_point_on_grid`. The tip height is
-            // interpolated at the cell centre, so the bound takes the higher
-            // endpoint: a ramping segment must not be credited with the
-            // deeper end of its own travel.
-            if from_high
-                && coverage >= FULL_COVERAGE
-                && let Some(ub) = cell_upper_bound_surface(lut, center_d_sq, cs, sd.max(ed))
-            {
-                grid.lower_conservative_top(idx, ub as f32);
-            }
-        }
-    }
+        },
+    );
 }
 
 /// One row band's share of a single **playback** stamp.
@@ -904,25 +1098,38 @@ pub(super) fn stamp_segment_on_band(
         out.bbox_cells = ((row_hi + 1 - row_lo) * (col_hi + 1 - col_lo)) as u64;
         out.stamp_skipped = false;
 
-        for row in row_lo..=row_hi {
-            let cell_v = band.origin_v + row as f64 * cs;
-            let dv = cell_v - sv;
-            for col in col_lo..=col_hi {
-                let cell_u = band.origin_u + col as f64 * cs;
+        let scan = CellScan {
+            lut,
+            cell_size: cs,
+            from_high,
+            air_skip,
+            reject_depth: d,
+            ub_depth: d,
+            col_lo,
+            col_hi,
+            row_lo,
+            row_hi,
+        };
+        for_each_covered_cell(
+            band,
+            &scan,
+            |cell_u, cell_v| {
                 let du = cell_u - su;
-                let coverage = point_cell_coverage(du, dv, r_sq, cs);
-                if coverage <= 0.0 {
-                    continue;
-                }
-                let idx = band.local(row, col);
-                if air_skip && !cell_can_remove(band.conservative_top[idx], d) {
-                    continue;
-                }
-                let dist_sq = du * du + dv * dv;
-                let Some(h) = lut_h_with_edge_fallback(lut, dist_sq) else {
-                    continue;
+                let dv = cell_v - sv;
+                (
+                    point_cell_coverage(du, dv, r_sq, cs),
+                    0.0,
+                    du * du + dv * dv,
+                )
+            },
+            |band, visit| {
+                let CellVisit::Covered {
+                    idx, coverage, h, ..
+                } = visit
+                else {
+                    return;
                 };
-                let ray = &mut band.rays[idx];
+                let ray = band.ray_at_index(idx);
                 if from_high {
                     let surface = (d + h) as f32;
                     ray_blend_above(ray, surface, coverage);
@@ -930,14 +1137,8 @@ pub(super) fn stamp_segment_on_band(
                     let surface = (d - h) as f32;
                     ray_blend_below(ray, surface, coverage);
                 }
-                if from_high
-                    && coverage >= FULL_COVERAGE
-                    && let Some(ub) = cell_upper_bound_surface(lut, dist_sq, cs, d)
-                {
-                    band.lower_conservative_top(idx, ub as f32);
-                }
-            }
-        }
+            },
+        );
         return out;
     }
 
@@ -978,11 +1179,23 @@ pub(super) fn stamp_segment_on_band(
     let inv_seg_len_sq = 1.0 / seg_len_sq;
     let r_sq = lut.radius_sq();
 
-    for row in row_lo..=row_hi {
-        let cell_v = band.origin_v + row as f64 * cs;
-        for col in col_lo..=col_hi {
-            let cell_u = band.origin_u + col as f64 * cs;
-            let (coverage, t_center, center_d_sq) = segment_cell_coverage(
+    let scan = CellScan {
+        lut,
+        cell_size: cs,
+        from_high,
+        air_skip,
+        reject_depth: tip_lo,
+        ub_depth: sd.max(ed),
+        col_lo,
+        col_hi,
+        row_lo,
+        row_hi,
+    };
+    for_each_covered_cell(
+        band,
+        &scan,
+        |cell_u, cell_v| {
+            segment_cell_coverage(
                 cell_u,
                 cell_v,
                 su,
@@ -993,19 +1206,21 @@ pub(super) fn stamp_segment_on_band(
                 r_sq,
                 cs,
                 fast,
-            );
-            if coverage <= 0.0 {
-                continue;
-            }
-            let idx = band.local(row, col);
-            if air_skip && !cell_can_remove(band.conservative_top[idx], tip_lo) {
-                continue;
-            }
-            let Some(h) = lut_h_with_edge_fallback(lut, center_d_sq) else {
-                continue;
+            )
+        },
+        |band, visit| {
+            let CellVisit::Covered {
+                idx,
+                coverage,
+                t_center,
+                h,
+                ..
+            } = visit
+            else {
+                return;
             };
             let depth = sd + t_center * seg_dd;
-            let ray = &mut band.rays[idx];
+            let ray = band.ray_at_index(idx);
             if from_high {
                 let surface = (depth + h) as f32;
                 ray_blend_above(ray, surface, coverage);
@@ -1013,14 +1228,8 @@ pub(super) fn stamp_segment_on_band(
                 let surface = (depth - h) as f32;
                 ray_blend_below(ray, surface, coverage);
             }
-            if from_high
-                && coverage >= FULL_COVERAGE
-                && let Some(ub) = cell_upper_bound_surface(lut, center_d_sq, cs, sd.max(ed))
-            {
-                band.lower_conservative_top(idx, ub as f32);
-            }
-        }
-    }
+        },
+    );
 
     out
 }
@@ -1364,26 +1573,41 @@ pub(super) fn stamp_segment_with_metrics(
         out.bbox_cells = ((row_hi + 1 - row_lo) * (col_hi + 1 - col_lo)) as u64;
         out.stamp_skipped = false;
 
-        for row in row_lo..=row_hi {
-            let cell_v = band.origin_v + row as f64 * cs;
-            let dv = cell_v - sv;
-            for col in col_lo..=col_hi {
-                let cell_u = band.origin_u + col as f64 * cs;
+        let scan = CellScan {
+            lut,
+            cell_size: cs,
+            from_high,
+            air_skip,
+            reject_depth: d,
+            ub_depth: d,
+            col_lo,
+            col_hi,
+            row_lo,
+            row_hi,
+        };
+        for_each_covered_cell(
+            band,
+            &scan,
+            |cell_u, cell_v| {
                 let du = cell_u - su;
-                let coverage = point_cell_coverage(du, dv, r_sq, cs);
-                if coverage <= 0.0 {
-                    continue;
-                }
-                let idx = band.local(row, col);
-                if air_skip && !cell_can_remove(band.conservative_top[idx], d) {
-                    out.cells_skipped += 1;
-                    continue;
-                }
-                let dist_sq = du * du + dv * dv;
-                let Some(h) = lut_h_with_edge_fallback(lut, dist_sq) else {
-                    continue;
+                let dv = cell_v - sv;
+                (
+                    point_cell_coverage(du, dv, r_sq, cs),
+                    0.0,
+                    du * du + dv * dv,
+                )
+            },
+            |band, visit| {
+                let (idx, coverage, h) = match visit {
+                    CellVisit::Inert { .. } => {
+                        out.cells_skipped += 1;
+                        return;
+                    }
+                    CellVisit::Covered {
+                        idx, coverage, h, ..
+                    } => (idx, coverage, h),
                 };
-                let ray = &mut band.rays[idx];
+                let ray = band.ray_at_index(idx);
                 if from_high {
                     let surface = (d + h) as f32;
                     let above = ray_material_length_above(ray, surface) as f64;
@@ -1402,15 +1626,8 @@ pub(super) fn stamp_segment_with_metrics(
                     let total_after = ray_material_length(ray) as f64;
                     out.removed_volume += (total_before - total_after) * cell_area;
                 }
-                // A/M10 — see `stamp_point_on_grid`.
-                if from_high
-                    && coverage >= FULL_COVERAGE
-                    && let Some(ub) = cell_upper_bound_surface(lut, dist_sq, cs, d)
-                {
-                    band.lower_conservative_top(idx, ub as f32);
-                }
-            }
-        }
+            },
+        );
 
         return out;
     }
@@ -1495,12 +1712,30 @@ pub(super) fn stamp_segment_with_metrics(
     // `FRESH_MATERIAL_THRESHOLD_MM` and the lateral-resolution gate
     // `PERP_COVERAGE_GATE` — are module-level constants; see their docs.
 
-    for row in row_lo..=row_hi {
-        let cell_v = band.origin_v + row as f64 * cs;
-        for col in col_lo..=col_hi {
-            let cell_u = band.origin_u + col as f64 * cs;
-
-            let (coverage, t_center, center_d_sq) = segment_cell_coverage(
+    // A/M10 — see `stamp_segment_on_grid`. This is the kernel the simulator
+    // actually runs, so it is the one that decides whether `prior_stocks`
+    // carries a sliver-safe bound at all. The driver applies it after the
+    // closure returns; the engagement block below reads only locals, so the
+    // two commute and the grid is unchanged (STK-01, and
+    // `the_six_cell_loops_write_the_bits_they_wrote_before_the_driver` is what
+    // proves it).
+    let scan = CellScan {
+        lut,
+        cell_size: cs,
+        from_high,
+        air_skip,
+        reject_depth: tip_lo,
+        ub_depth: sd.max(ed),
+        col_lo,
+        col_hi,
+        row_lo,
+        row_hi,
+    };
+    for_each_covered_cell(
+        band,
+        &scan,
+        |cell_u, cell_v| {
+            segment_cell_coverage(
                 cell_u,
                 cell_v,
                 su,
@@ -1511,26 +1746,32 @@ pub(super) fn stamp_segment_with_metrics(
                 radius_sq,
                 cs,
                 fast,
-            );
-            if coverage <= 0.0 {
-                continue;
-            }
-            let idx = band.local(row, col);
-            // S2 per-cell early-out. The two volume accumulators still take
-            // their (identical) addends — see the function docs for why
-            // dropping them would move `removed_volume_est_mm3`.
-            if air_skip && !cell_can_remove(band.conservative_top[idx], tip_lo) {
-                let inert = ray_material_length(&band.rays[idx]) as f64 * cell_area;
-                pre_volume += inert;
-                post_volume += inert;
-                out.cells_skipped += 1;
-                continue;
-            }
-            let Some(h) = lut_h_with_edge_fallback(lut, center_d_sq) else {
-                continue;
+            )
+        },
+        |band, visit| {
+            let (idx, cell_u, cell_v, coverage, t_center, h) = match visit {
+                // S2 per-cell early-out. The two volume accumulators still
+                // take their (identical) addends — see the function docs for
+                // why dropping them would move `removed_volume_est_mm3`.
+                CellVisit::Inert { idx } => {
+                    let inert = ray_material_length(band.ray_at_index(idx)) as f64 * cell_area;
+                    pre_volume += inert;
+                    post_volume += inert;
+                    out.cells_skipped += 1;
+                    return;
+                }
+                CellVisit::Covered {
+                    idx,
+                    cell_u,
+                    cell_v,
+                    coverage,
+                    t_center,
+                    h,
+                    ..
+                } => (idx, cell_u, cell_v, coverage, t_center, h),
             };
 
-            let ray = &mut band.rays[idx];
+            let ray = band.ray_at_index(idx);
 
             // 1. Pre-stamp material totals (read before mutation). pre_len
             //    is total material height; pre_fresh is material above the
@@ -1560,18 +1801,6 @@ pub(super) fn stamp_segment_with_metrics(
             let post_len = ray_material_length(ray) as f64;
             post_volume += post_len * cell_area;
 
-            // A/M10 — see `stamp_segment_on_grid`. This is the kernel the
-            // simulator actually runs, so it is the one that decides whether
-            // `prior_stocks` carries a sliver-safe bound at all. Placed
-            // after the last read of `ray`: the update takes `&mut band`,
-            // and the ray borrow is still live above it.
-            if from_high
-                && coverage >= FULL_COVERAGE
-                && let Some(ub) = cell_upper_bound_surface(lut, center_d_sq, cs, sd.max(ed))
-            {
-                band.lower_conservative_top(idx, ub as f32);
-            }
-
             // 4. Engagement metrics. The midpoint disk defines the
             //    reference footprint for both arc binning and the
             //    width-of-cut measurement. radial_engagement and
@@ -1599,8 +1828,8 @@ pub(super) fn stamp_segment_with_metrics(
                     max_penetration = max_penetration.max(removed_here);
                 }
             }
-        }
-    }
+        },
+    );
 
     out.pre_volume = pre_volume;
     out.post_volume = post_volume;

@@ -24,8 +24,8 @@ Stamps a tool along a toolpath into a tri-dexel stock. Entry point:
   They share `band_batch.rs` and differ only in what they record.
 - Production stamps the Z grid only; the side grids are test-reachable. Keep
   them: a global stock that shows every face needs them (STK-13).
-- One axis permutation table: `DexelAxis::decompose`. Both
-  `DexelGrid::from_bounds` and `StockCutDirection::decompose` read it (STK-02).
+- One axis permutation table, `DexelAxis::decompose` (STK-02), and one
+  cell-scan driver, `for_each_covered_cell` (STK-01). Nothing copies either.
 
 ## Sentries
 
