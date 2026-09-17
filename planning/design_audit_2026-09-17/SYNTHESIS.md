@@ -321,7 +321,22 @@ stay in their group files until a later pass.
 | UI-02, UI-03, UI-04, UI-05, UI-07, UI-09, UI-10, UI-12 | The component-kit sweep, the tooltip key, the per-op draw table, the post draft, the temp-memory drafts, the raw `DragValue` sites, the 23 long draw functions | M–L | one visual programme; needs the kit sentries first |
 | FLD-01, FLD-02, FLD-06 | Embed `GridSpec`; cut `detect_rest_valleys` on its seven phases; type the mesh error | M / M / S | FLD-01 re-paths viz overlays and two MCP handlers |
 | CUT-04, CUT-09, CUT-13, CUT-14 | Split `Adaptive3dParams`, cut `clear_z_level_agent_2d_slice`, `Option<Params>` dressups, one Z ladder | L / L / M / M | each moves emitted motion or needs a byte-compare rig |
-| STK-01, STK-03 + STK-07, STK-09, STK-12 | One stamping-cell driver, four duplicated scalars, one band dispatcher, one triage list | L / S–M / L / L | the hot loop and the operator-visible list; see `## Not now` |
+| STK-01, STK-03 + STK-07, STK-09, STK-12 | One stamping-cell driver, four duplicated scalars, one band dispatcher, one triage list | L / S–M / L / L | the hot loop and the operator-visible list; see `## Operator rulings — 2026-09-17 evening
+
+- **FIN-01** approved: feature-gate the research arms. Runs in wave 1 as a
+  seventh agent (finish folder, core `Cargo.toml`, six test targets).
+- **FIN-08** approved with a condition: the unified planner must keep a
+  plain two-band steep/shallow mode as a selectable preset, so an operator
+  can still ask for just steep and shallow. Paired A/B before the swap.
+  Scheduled after wave 3, not in wave 1.
+- **STK-13** not ruled; the operator asked whether the deletion limits future
+  code. Answer on record: yes for one future — a single global stock that
+  shows every face's cuts needs the side grids. Recommendation: keep the
+  engine capability, land STK-02 (one constructor) and note in
+  `dexel_stock/CLAUDE.md` that the side grids are reachable from tests only.
+- Feeds and tool_load rows stay with the power session.
+
+## Not now` |
 | SES-04, SES-06 | Cut `execute_job` and `plan_multitool_finishing` on their named phases | M each | every generated toolpath rides `execute_job` |
 | CMP-23, CMP-25 | A memo door for the CLI ladder; a stale-default row in the CLI JSON | M / S | CMP-23 needs the `SimulationOptions` decision first |
 | EDG-02, EDG-07 | Wood species library as data; one junction-walk integrator | M each | EDG-07 is the load-bearing cycle-time model |

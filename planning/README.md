@@ -56,6 +56,6 @@ test reads directly: `toolpath_acceptance/` (the CLI smoke CSV) and
 
 - Product-facing capability docs belong in the repo root (`README.md`,
   `FEATURE_CATALOG.md`, `CREDITS.md`), not here.
-- AI analysis reference: `AI_MACHINIST_ANALYSIS_REFERENCE.md` (root).
+- AI analysis reference: `research/AI_MACHINIST_ANALYSIS_REFERENCE.md`.
 - A dated report is evidence of what was measured then. It is not an
   evergreen instruction.
