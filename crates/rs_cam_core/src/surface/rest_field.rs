@@ -643,18 +643,58 @@ fn measure_cross_section(
     }
 }
 
-/// Build the rest field and extract routed valley centrelines + clearing regions.
+/// The sampled rest field — phase 1 of [`detect_rest_valleys`].
 ///
-/// `reference` is a [`RestReference`]: a bigger finish tool, the nominal ball, a
-/// degenerate bare-surface probe, or (R2) the actual machined stock the prior
-/// toolpaths left.
-pub fn detect_rest_valleys(
+/// One drop of the pencil (and of the reference, or a query of the stock) per
+/// cell centre, plus the three derived masks the later phases read. The
+/// detector's own phase numbering is the reason this is one function: every
+/// field here is produced by the same walk over the same grid.
+struct RestField {
+    /// The XY sampling grid.
+    spec: GridSpec,
+    /// `min_valley_depth`, clamped at zero — the rest depth a cell must clear.
+    threshold: f64,
+    /// How far in from the non-contact rim a reading is trusted, in cells.
+    erode_cells: f64,
+    /// How far past the rim a cross-section walk carries on, in cells (C9).
+    past_rim: usize,
+    /// Rest depth (mm) per cell; `0.0` where the sample is invalid.
+    rest: Grid2<f64>,
+    /// The pencil's drop Z (mm) per cell; `NaN` where it did not contact.
+    pencil_z: Grid2<f64>,
+    /// Whether both drops contacted at this cell.
+    contact: Grid2<bool>,
+    /// Chamfer distance (cells) from the non-contact rim.
+    boundary_dt: Grid2<f64>,
+    /// The threshold mask: contacted, inside the eroded band, and over the
+    /// threshold. Phase 2 clears the small components from it.
+    mask: Grid2<bool>,
+    /// The continuous field the GUI overlay draws.
+    grid: RestGrid,
+}
+
+/// The connected components of the threshold mask — phase 2 of
+/// [`detect_rest_valleys`].
+struct RestComponents {
+    /// Component id per cell, or `usize::MAX` outside every kept component.
+    id: Grid2<usize>,
+    /// Cell count per component.
+    cells: Vec<usize>,
+    /// Peak rest depth (mm) per component.
+    peak: Vec<f64>,
+    /// `[min_x, min_y, max_x, max_y]` (mm) per component.
+    bbox: Vec<[f64; 4]>,
+}
+
+/// PHASE 1. Drop the pencil at every cell centre and build the rest field,
+/// the trust mask and the GUI snapshot.
+fn sample_rest_field(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     pencil: &dyn MillingCutter,
     reference: RestReference<'_>,
     params: &RestFieldParams,
-) -> RestFieldResult {
+) -> RestField {
     let cell = params.cell_mm.max(1e-3);
     let bbox = &mesh.bbox;
     // Grid margin must exceed the pencil radius so the outer ring of cells is
@@ -774,7 +814,7 @@ pub fn detect_rest_valleys(
     // SAFETY: mask_data is built by zipping three grids all constructed with
     // the same nx*ny above, so the length always matches.
     #[allow(clippy::unwrap_used)]
-    let mut mask = Grid2::from_vec(nx, ny, mask_data).unwrap();
+    let mask = Grid2::from_vec(nx, ny, mask_data).unwrap();
 
     // Snapshot the continuous rest field for the GUI heatmap overlay. Trusted
     // cells (contact + inside the eroded boundary band) keep their rest depth
@@ -794,20 +834,42 @@ pub fn detect_rest_valleys(
             }
         })
         .unzip();
-    let rest_grid = RestGrid {
-        grid: GridSpec {
-            nx,
-            ny,
-            origin_x,
-            origin_y,
-            cell_mm: cell,
-        },
-        rest: grid_rest,
-        surface_z: grid_surface_z,
-        threshold,
+    let spec = GridSpec {
+        nx,
+        ny,
+        origin_x,
+        origin_y,
+        cell_mm: cell,
     };
+    RestField {
+        spec,
+        threshold,
+        erode_cells,
+        past_rim,
+        rest,
+        pencil_z,
+        contact,
+        boundary_dt,
+        mask,
+        grid: RestGrid {
+            grid: spec,
+            rest: grid_rest,
+            surface_z: grid_surface_z,
+            threshold,
+        },
+    }
+}
 
-    // --- 2. Components: 8-connected flood fill; drop tiny ones. ---
+/// PHASE 2. Label the threshold mask's 8-connected components, then clear the
+/// components under [`MIN_REGION_CELLS`] from both the mask and the labels.
+fn label_rest_components(
+    mask: &mut Grid2<bool>,
+    rest: &Grid2<f64>,
+    spec: GridSpec,
+) -> RestComponents {
+    let (nx, ny) = (spec.nx, spec.ny);
+    let (origin_x, origin_y, cell) = (spec.origin_x, spec.origin_y, spec.cell_mm);
+    let n = spec.cell_count();
     let mut comp_id: Grid2<usize> = Grid2::new_fill(nx, ny, usize::MAX);
     let mut comp_cells: Vec<usize> = Vec::new(); // cell count per component
     let mut comp_peak: Vec<f64> = Vec::new();
@@ -863,8 +925,8 @@ pub fn detect_rest_valleys(
     }
 
     // Rebuild the mask keeping only components ≥ MIN_REGION_CELLS. Cells in
-    // dropped components have their comp_id cleared so routing can't reference
-    // them.
+    // dropped components have their comp_id cleared so routing cannot
+    // reference them.
     for i in 0..n {
         if mask.at_index_or(i, false) {
             let cid = comp_id.at_index_or(i, usize::MAX);
@@ -875,38 +937,131 @@ pub fn detect_rest_valleys(
         }
     }
 
-    // --- 2b. Machining-region polygons: dilate the cleaned mask by the fine
-    // tool's CUSP (tip-sphere) radius + margin so a boundary-clipped op can
-    // reach the region edge, then extract closed loops via marching squares.
-    // See P2.2 `BoundarySource::DerivedRestRegions`.
-    //
-    // G-BULLCUSP (2026-09-10): `valley_radius_mm()` — see the note at the
-    // erosion site above for why this is not `cusp_radius()` any more.
-    //
-    // F1 (2026-08-23): the TIP, not `radius()`. The tip is what has
-    // to reach the region edge at depth; the shank is what the ENVELOPE
-    // describes, and on a Ø1-tip / Ø6-shank taper that is a 3.5 mm dilation
-    // that welds dendritic islands into one region. Same number on every
-    // non-tapered shape — see `RestFieldParams::region_margin_mm`.
-    let region_extraction = crate::geometry::region_mask::region_polygons_from_mask_reported(
-        &mask,
-        origin_x,
-        origin_y,
-        cell,
+    RestComponents {
+        id: comp_id,
+        cells: comp_cells,
+        peak: comp_peak,
+        bbox: comp_bbox,
+    }
+}
+
+/// PHASE 2b. Machining-region polygons: dilate the cleaned mask by the fine
+/// tool's CUSP (tip-sphere) radius + margin so a boundary-clipped op can
+/// reach the region edge, then extract closed loops via marching squares.
+/// See P2.2 `BoundarySource::DerivedRestRegions`.
+///
+/// G-BULLCUSP (2026-09-10): `valley_radius_mm()` — see the note at the
+/// erosion site in [`sample_rest_field`] for why this is not `cusp_radius()`
+/// any more.
+///
+/// F1 (2026-08-23): the TIP, not `radius()`. The tip is what has to reach the
+/// region edge at depth; the shank is what the ENVELOPE describes, and on a
+/// Ø1-tip / Ø6-shank taper that is a 3.5 mm dilation that welds dendritic
+/// islands into one region. Same number on every non-tapered shape — see
+/// [`RestFieldParams::region_margin_mm`].
+fn machining_region_polygons(
+    mask: &Grid2<bool>,
+    spec: GridSpec,
+    pencil: &dyn MillingCutter,
+    params: &RestFieldParams,
+) -> crate::geometry::region_mask::RegionExtraction {
+    crate::geometry::region_mask::region_polygons_from_mask_reported(
+        mask,
+        spec.origin_x,
+        spec.origin_y,
+        spec.cell_mm,
         pencil.valley_radius_mm() + params.region_margin_mm,
         None,
-    );
-    let region_cap = region_extraction.cap;
-    let region_polygons = region_extraction.polygons;
+    )
+}
 
-    // Total rest volume over the (cleaned) mask.
-    let cell_area = cell * cell;
-    let mut total_rest_volume = 0.0f64;
-    for i in 0..n {
+/// Total rest volume (mm³) over the cleaned mask: `Σ rest × cell²`.
+fn rest_volume_over_mask(mask: &Grid2<bool>, rest: &Grid2<f64>, spec: GridSpec) -> f64 {
+    let cell_area = spec.cell_mm * spec.cell_mm;
+    let mut total = 0.0f64;
+    for i in 0..spec.cell_count() {
         if mask.at_index_or(i, false) {
-            total_rest_volume += rest.at_index_or(i, 0.0) * cell_area;
+            total += rest.at_index_or(i, 0.0) * cell_area;
         }
     }
+    total
+}
+
+/// PHASE 7. The clearing regions the flagged components describe, deepest
+/// peak first.
+fn clearing_regions_for(
+    comps: &RestComponents,
+    flagged: &std::collections::BTreeSet<usize>,
+) -> Vec<ClearingRegion> {
+    let mut regions: Vec<ClearingRegion> = flagged
+        .iter()
+        .map(|&cid| ClearingRegion {
+            bbox: at(&comps.bbox, cid),
+            cell_count: at(&comps.cells, cid),
+            peak_rest_mm: at(&comps.peak, cid),
+        })
+        .collect();
+    regions.sort_by(|a, b| {
+        b.peak_rest_mm
+            .partial_cmp(&a.peak_rest_mm)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    regions
+}
+
+/// Build the rest field and extract routed valley centrelines + clearing regions.
+///
+/// `reference` is a [`RestReference`]: a bigger finish tool, the nominal ball, a
+/// degenerate bare-surface probe, or (R2) the actual machined stock the prior
+/// toolpaths left.
+///
+/// # The seven phases
+///
+/// The detector runs in the order its phase numbers state. Phases 1, 2, 2b
+/// and 7 are named functions above and below; phase 3 is one call to
+/// [`chamfer_distance`]; phases 4, 5 and 6 stay here, because they share the
+/// per-branch local state that routing decides on.
+///
+/// - 1 — [`sample_rest_field`]: drop the pencil per cell, build the masks.
+/// - 2 — [`label_rest_components`]: flood fill, drop the small components.
+/// - 2b — [`machining_region_polygons`]: the dilated region loops.
+/// - 3 — [`chamfer_distance`] over the cleaned mask: local half-width.
+/// - 4 — ridge extraction: smooth, non-max-suppress, hysteresis, thin.
+/// - 5 — skeleton tracing to polylines, then graph cleanup.
+/// - 6 — route each polyline by coverage.
+/// - 7 — [`clearing_regions_for`]: the regions the routing handed over.
+pub fn detect_rest_valleys(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    pencil: &dyn MillingCutter,
+    reference: RestReference<'_>,
+    params: &RestFieldParams,
+) -> RestFieldResult {
+    let bbox = &mesh.bbox;
+    // --- 1. Grid build. ---
+    let RestField {
+        spec,
+        threshold,
+        erode_cells,
+        past_rim,
+        rest,
+        pencil_z,
+        contact,
+        boundary_dt,
+        mut mask,
+        grid: rest_grid,
+    } = sample_rest_field(mesh, index, pencil, reference, params);
+    let (nx, ny) = (spec.nx, spec.ny);
+    let (origin_x, origin_y, cell) = (spec.origin_x, spec.origin_y, spec.cell_mm);
+
+    // --- 2. Components: 8-connected flood fill; drop tiny ones. ---
+    let comps = label_rest_components(&mut mask, &rest, spec);
+
+    // --- 2b. Machining-region polygons. ---
+    let region_extraction = machining_region_polygons(&mask, spec, pencil, params);
+    let region_cap = region_extraction.cap;
+    let region_polygons = region_extraction.polygons;
+    let total_rest_volume = rest_volume_over_mask(&mask, &rest, spec);
 
     // --- 3. Chamfer distance transform over the (cleaned) mask — local
     // half-width in cells. Used both for the pencil/clearing routing
@@ -1021,7 +1176,7 @@ pub fn detect_rest_valleys(
         let comp = poly
             .iter()
             .find(|&&i| mask.at_index_or(i, false))
-            .map(|&i| comp_id.at_index_or(i, usize::MAX))
+            .map(|&i| comps.id.at_index_or(i, usize::MAX))
             .unwrap_or(usize::MAX);
         // COVERAGE routing (PR-5, `CHECKPOINT_A_EVIDENCE.md` §8.3): compare
         // the REACHABLE band against the fan this operation can emit, not the
@@ -1056,24 +1211,12 @@ pub fn detect_rest_valleys(
     }
 
     // --- 7. Clearing regions from the flagged components. ---
-    let mut clearing_regions: Vec<ClearingRegion> = clearing_comps
-        .iter()
-        .map(|&cid| ClearingRegion {
-            bbox: at(&comp_bbox, cid),
-            cell_count: at(&comp_cells, cid),
-            peak_rest_mm: at(&comp_peak, cid),
-        })
-        .collect();
-    clearing_regions.sort_by(|a, b| {
-        b.peak_rest_mm
-            .partial_cmp(&a.peak_rest_mm)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    let clearing_regions = clearing_regions_for(&comps, &clearing_comps);
 
     let mut region_peaks: Vec<f64> = pencil_comps
         .iter()
         .chain(clearing_comps.iter())
-        .map(|&cid| at(&comp_peak, cid))
+        .map(|&cid| at(&comps.peak, cid))
         .collect();
     region_peaks.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
 
