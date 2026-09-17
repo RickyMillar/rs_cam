@@ -123,8 +123,10 @@ pub struct CutEfficiency {
     pub time_ratio_vs_band_mid: Option<f64>,
     /// `1 − predicted_δ / EXCEEDS_BOUND`. `None` when
     /// [`crate::feeds::predict::predict_peak_deflection_um`] refuses —
-    /// a drill, a V-bit, no `Kc`, no DPP or no stickout, each of which
-    /// the predictor reports as its "no constraint signal" zero.
+    /// a drill, no `Kc`, a custom material, no DPP or no stickout, each
+    /// of which the predictor now names through
+    /// [`crate::feeds::predict::DeflectionUnmodeled`]. Also `None` for a
+    /// V-bit, whose figure is a modelled floor rather than a bound.
     ///
     /// A **negative** value is a real finding, not an error: the
     /// predicted deflection is already past the bound. Do not clamp it
@@ -351,22 +353,31 @@ fn deflection_chipload_ceiling_mm(
 }
 
 /// `1 − predicted_δ / EXCEEDS_BOUND`, or `None` when the predictor
-/// refuses.
+/// refuses or its figure is a floor.
 ///
-/// [`crate::feeds::predict::predict_peak_deflection_um`] reports every
-/// refusal as `0.0 µm` — "no constraint signal", its documented
-/// contract. A zero therefore carries no headroom claim, and this
-/// function turns it back into the abstention it is rather than
-/// publishing a headroom of 100 %.
+/// [`crate::feeds::predict::predict_peak_deflection_um`] used to report
+/// every refusal as `0.0 µm`, and this function decoded that zero back
+/// into the abstention it was. Since T-4 the refusal is an `Err`, so the
+/// decode is a `match` and the reason survives to the edge of this
+/// function.
 fn force_headroom(
     operation: &OperationConfig,
     tool: &ToolConfig,
     material: &Material,
     machine: &MachineProfile,
 ) -> Option<f64> {
-    let predicted_um =
+    let prediction =
         crate::feeds::predict::predict_peak_deflection_um(operation, tool, material, machine)
-            .predicted_um;
+            .ok()?;
+    // A caveated figure is a modelled FLOOR, not a bound: a V-bit's cone
+    // is modelled and its flute relief is not, so the real deflection is
+    // larger than the number. A headroom computed from a floor would
+    // read as "this cut is inside the budget", which the floor does not
+    // show. Treat it the way a refusal is treated — not shown safe.
+    if prediction.caveat.is_some() {
+        return None;
+    }
+    let predicted_um = prediction.predicted_um;
     if !(predicted_um.is_finite() && predicted_um > 0.0) {
         return None;
     }

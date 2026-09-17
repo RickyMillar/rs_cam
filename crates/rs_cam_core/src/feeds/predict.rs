@@ -34,26 +34,165 @@
 //!
 //! `bending_diameter_mm` / `I_eff` are still computed and surfaced in the
 //! [`DeflectionBreakdown`] as a representative-section *diagnostic*, but
-//! no longer drive the deflection magnitude. V-bit geometry still returns
-//! zero (the post-sim integrator handles those).
+//! no longer drive the deflection magnitude. A V-bit has no representative
+//! section, so that diagnostic reads zero for one — the magnitude still
+//! comes from the integrator, which models a V-bit through
+//! `lookup_diameter_at`.
 //!
-//! ## Refusal cases (return `predicted_um == 0.0`)
+//! ## Refusal (T-4, 2026-09-18)
 //!
-//! - V-bit tool geometry (closed-form not modeled — use the post-sim
-//!   integrator).
-//! - Drill operation family (Z-only kinematics, no continuous engagement).
-//! - Material has no primary-source `kc_n_per_mm2()` (`Custom`,
-//!   out-of-band `SolidWoodByJanka`).
-//! - Zero stickout, zero diameter, zero feed (chipload), or unset DPP.
+//! Until T-4 every refusal returned `predicted_um == 0.0`. A modelled zero
+//! is unreachable, so that zero was always an absence written in a notation
+//! that cannot say so. The refusal is now a type:
+//! [`predict_peak_deflection_um`] returns
+//! `Result<DeflectionPrediction, DeflectionUnmodeled>`, and the `Ok` branch
+//! always carries a modelled figure.
 //!
-//! The 0.0 return is the contract for the back-off loop the next task
-//! delivers — "no constraint signal", caller treats as a pass-through.
+//! **Eleven exits refuse, and they map onto nine
+//! [`DeflectionUnmodeled`] variants:**
+//!
+//! - Drill operation family — Z-only kinematics, no continuous engagement
+//!   ([`DeflectionUnmodeled::NotApplicableForOp`]).
+//! - Material has no primary-source `kc_n_per_mm2()` — out-of-band
+//!   `SolidWoodByJanka`, fiberglass, nine of the ten shipped plastics
+//!   ([`DeflectionUnmodeled::MaterialUnvalidated`]).
+//! - `Material::Custom`, **including one carrying a positive `kc`** that
+//!   the `Kc` guard above lets through. The delegate refuses every custom
+//!   material ([`DeflectionUnmodeled::MaterialCustom`]).
+//! - A tool diameter that is zero, negative or not a number
+//!   ([`DeflectionUnmodeled::NoDiameter`]).
+//! - No depth per pass, or one that is not positive and finite
+//!   ([`DeflectionUnmodeled::NoDepthPerPass`]).
+//! - A resolved radial width of cut that is not positive
+//!   ([`DeflectionUnmodeled::NoRadialEngagement`]).
+//! - Feed, RPM or flute count resolving to a zero chipload
+//!   ([`DeflectionUnmodeled::NoChipload`]).
+//! - A tool stickout that is not positive and finite
+//!   ([`DeflectionUnmodeled::NoStickout`]).
+//! - An engagement deeper than twice the stickout, which puts the load
+//!   point at or below the tip ([`DeflectionUnmodeled::DegenerateCantilever`]).
+//!
+//! A V-bit is **no longer** a refusal. The predictor delegates to the
+//! integrator, and the integrator models a V-bit. It returns an `Ok` that
+//! carries [`DeflectionCaveat::FluteReliefUnmodeled`] — read the figure as
+//! a floor, not a bound.
 
 use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::compute::tool_config::ToolConfig;
 use crate::feeds::{CutterKind, OperationFamily as FeedsOperationFamily};
 use crate::machine::MachineProfile;
 use crate::material::Material;
+use crate::tool_load::verdict::UnmodeledReason;
+
+/// Why the closed-form predictor produced no deflection figure.
+///
+/// Every variant maps onto the post-simulation refusal vocabulary in
+/// [`UnmodeledReason`] through [`Self::as_unmodeled_reason`], so the
+/// pre-simulation abstention and the post-simulation abstention print the
+/// same words to the operator.
+///
+/// This is a pre-simulation type and it stays one: it carries no sample
+/// range, no population and no confidence tier, because a closed form
+/// evaluated at one operating point has none of those. See
+/// `feeds/profile.rs` §Boundaries — the feeds layer must not shadow
+/// `tool_load`'s taxonomy with a competing one, so it borrows the
+/// vocabulary and keeps its own shape.
+///
+/// The shape follows [`crate::feeds::force::DeflectionCapRefusal`] in this
+/// same folder. See `planning/TECH_DEBT_REGISTER.md` T-4.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeflectionUnmodeled {
+    /// Drill family — Z-only kinematics, no continuous radial engagement.
+    NotApplicableForOp(OperationType),
+    /// The material carries no primary-source `Kc`.
+    MaterialUnvalidated,
+    /// `Material::Custom`. The delegate refuses every custom material,
+    /// including one carrying a positive `kc` — a case the early `Kc`
+    /// guard lets through.
+    MaterialCustom,
+    /// The tool diameter is zero, negative or not a number.
+    NoDiameter,
+    /// The operation carries no depth per pass.
+    NoDepthPerPass,
+    /// The resolved radial width of cut is not positive.
+    NoRadialEngagement,
+    /// Feed, RPM or flute count resolved to a zero chipload.
+    NoChipload,
+    /// The tool reports no usable stickout.
+    NoStickout,
+    /// The engagement is deeper than the cantilever, so the load point
+    /// sits at or below the tool tip.
+    DegenerateCantilever,
+}
+
+impl DeflectionUnmodeled {
+    /// The post-simulation refusal this pre-simulation abstention
+    /// corresponds to. The operator reads one vocabulary, not two.
+    pub fn as_unmodeled_reason(&self) -> UnmodeledReason {
+        match self {
+            Self::NotApplicableForOp(op) => UnmodeledReason::NotApplicableForOp(format!(
+                "{} — no continuous radial engagement",
+                op.spec().label
+            )),
+            Self::MaterialUnvalidated | Self::MaterialCustom => {
+                UnmodeledReason::MaterialUnvalidated
+            }
+            Self::NoDiameter
+            | Self::NoDepthPerPass
+            | Self::NoRadialEngagement
+            | Self::NoChipload
+            | Self::NoStickout
+            | Self::DegenerateCantilever => {
+                UnmodeledReason::NotImplemented(self.clause().to_owned())
+            }
+        }
+    }
+
+    /// One operator-facing clause, identical on every surface, so the
+    /// wording cannot drift between the GUI, the CLI and the MCP bridge.
+    /// The same discipline `GatePopulation::vacuity_clause` applies to
+    /// the X-VAC marker.
+    pub fn clause(&self) -> &'static str {
+        match self {
+            Self::NotApplicableForOp(_) => "the deflection model does not apply to this operation",
+            Self::MaterialUnvalidated => "this material has no measured cutting coefficient",
+            Self::MaterialCustom => "a custom material carries no validated force model",
+            Self::NoDiameter => "the tool has no usable diameter",
+            Self::NoDepthPerPass => "the operation has no depth per pass",
+            Self::NoRadialEngagement => "the operation has no radial width of cut",
+            Self::NoChipload => "the feed, the speed or the flute count resolves to a zero chip",
+            Self::NoStickout => "the tool reports no usable stickout",
+            Self::DegenerateCantilever => "the cut is deeper than the tool stands out",
+        }
+    }
+}
+
+/// A modelled figure that is a floor rather than a bound.
+///
+/// A caveated [`DeflectionPrediction`] is a real number and a surface may
+/// display it. It is **not** proof that a cut is inside a bound. A
+/// consumer that compares `predicted_um` against a budget must treat a
+/// caveated value the way it treats a [`DeflectionUnmodeled`]: not shown
+/// safe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeflectionCaveat {
+    /// A V-bit's cone is modelled as a solid section. Its flute relief
+    /// is not. The real deflection is larger than the figure. This
+    /// error is NON-conservative; every other gap in this model errs safe.
+    FluteReliefUnmodeled,
+}
+
+impl DeflectionCaveat {
+    /// One operator-facing clause, in the same style as
+    /// [`DeflectionUnmodeled::clause`], so one surface words it once.
+    pub fn clause(&self) -> &'static str {
+        match self {
+            Self::FluteReliefUnmodeled => {
+                "a V-bit is modelled as a solid cone, so the real deflection is larger"
+            }
+        }
+    }
+}
 
 /// The **equivalent bending diameter** of a fluted cutter, as a fraction of
 /// its cutting diameter.
@@ -119,14 +258,6 @@ use crate::material::Material;
 /// [`bending_diameter_mm`], which marks that gap as non-conservative.
 pub const ENDMILL_EQUIVALENT_DIAMETER_FRACTION: f64 = 0.80;
 
-/// Stickout fallback when [`ToolConfig::stickout`] is non-positive
-/// (zero or NaN). Returning 0 deflection on a misconfigured stickout
-/// would make the predictor silently pass every back-off iteration —
-/// instead we use the cutting-length + a 5 mm collet exposure margin
-/// (matching the convention in `tool_load::deflection` test fixtures
-/// which build `stickout = cutting_length + 5 mm`).
-const COLLET_EXPOSURE_MARGIN_MM: f64 = 5.0;
-
 /// Radial WOC fallback fraction of tool diameter for non-Adaptive
 /// families when `operation.stepover()` is `None`. Matches the
 /// Pocket-roughing-equivalent stepover the calculator writes when no
@@ -171,25 +302,17 @@ const PREDICTOR_FALLBACK_RPM: f64 = 18_000.0;
 /// Closed-form prediction of peak tip deflection (µm) Suggest would
 /// produce at the given (operation, tool, material, machine).
 ///
-/// Returns `DeflectionPrediction { predicted_um: 0.0, .. }` for any
-/// refusal case (see module docs); callers downstream treat zero as
-/// "no constraint signal" rather than an error condition.
+/// `Ok` always carries a modelled figure. Every refusal is an `Err` that
+/// names itself — see [`DeflectionUnmodeled`] and the module docs. An
+/// `Ok` whose `caveat` is `Some(_)` carries a modelled FLOOR: the figure
+/// is real, and it does not show the cut inside a bound.
 #[tracing::instrument(level = "debug", skip_all, fields(op = ?operation.op_type()))]
 pub fn predict_peak_deflection_um(
     operation: &OperationConfig,
     tool: &ToolConfig,
     material: &Material,
     machine: &MachineProfile,
-) -> DeflectionPrediction {
-    let breakdown_zero = DeflectionBreakdown {
-        f_lateral_n: 0.0,
-        stickout_mm: 0.0,
-        i_eff_mm4: 0.0,
-        chipload_per_tooth_mm: 0.0,
-        axial_doc_mm: 0.0,
-        radial_woc_mm: 0.0,
-    };
-
+) -> Result<DeflectionPrediction, DeflectionUnmodeled> {
     let op_type = operation.op_type();
     let feeds_family = op_type.spec().feeds_family;
 
@@ -197,70 +320,63 @@ pub fn predict_peak_deflection_um(
     // the cantilever-deflection model doesn't apply. Mirrors the
     // `NotApplicableForOp` refusal in `tool_load::deflection::evaluate`.
     if feeds_family == FeedsOperationFamily::Drill || op_type == OperationType::Drill {
-        tracing::debug!(reason = "drill_not_applicable", "predictor returns 0 µm");
-        return DeflectionPrediction {
-            predicted_um: 0.0,
-            breakdown: breakdown_zero,
-        };
+        tracing::debug!(reason = "drill_not_applicable", "predictor abstains");
+        return Err(DeflectionUnmodeled::NotApplicableForOp(op_type));
     }
 
-    // V-bit closed-form is undefined (engaged-D grows linearly with DOC,
-    // and the "core" of a triangular profile isn't a bending section).
-    // The post-sim integrator with `lookup_diameter_at` handles V-bits;
-    // the closed-form predictor refuses.
-    if tool.tool_type.cutter_kind() == CutterKind::VBit {
-        tracing::debug!(
-            reason = "vbit_unsupported",
-            "predictor returns 0 µm — V-bit closed-form not modeled"
-        );
-        return DeflectionPrediction {
-            predicted_um: 0.0,
-            breakdown: breakdown_zero,
-        };
-    }
+    // A V-bit used to refuse here. It no longer does. The guard's own
+    // reason said "the post-sim integrator with `lookup_diameter_at`
+    // handles V-bits" — and since `3b0dc487` this predictor CALLS that
+    // integrator, so the guard refused before reaching the model that
+    // works. `feeds::cutter_constraints::invert_deflection` has computed
+    // a V-bit deflection bound from the same integrator throughout. The
+    // remaining gap is the flute relief, not the cone, and it rides out
+    // on `DeflectionCaveat::FluteReliefUnmodeled`. See T-4.
 
     // Material: only primary-source Kc materials get a numeric
-    // prediction. Custom / out-of-band SolidWoodByJanka return None
-    // and we route to 0 — matches the `MaterialUnvalidated` refusal in
-    // the post-sim gate. The force magnitude itself is recomputed inside
+    // prediction. Out-of-band SolidWoodByJanka, fiberglass and nine of
+    // the ten shipped plastics return None — matches the
+    // `MaterialUnvalidated` refusal in the post-sim gate. The force
+    // magnitude itself is recomputed inside
     // `feeds::force::lateral_cutting_force`; here we only need the
     // existence check for the early refusal.
     if material.kc_n_per_mm2().is_none() {
         tracing::debug!(
             reason = "material_unvalidated",
             material = %material.label(),
-            "predictor returns 0 µm — no primary-source Kc"
+            "predictor abstains — no primary-source Kc"
         );
-        return DeflectionPrediction {
-            predicted_um: 0.0,
-            breakdown: breakdown_zero,
-        };
+        return Err(DeflectionUnmodeled::MaterialUnvalidated);
+    }
+
+    // `Material::Custom` refuses even when `kc_n_per_mm2()` returned
+    // `Some` for a positive `kc`, because the delegate
+    // `tip_deflection_from_engagement` refuses every custom material.
+    // Before T-4 this exit hid inside the delegate's `None` and the
+    // module header did not list it. State it here instead.
+    if matches!(material, Material::Custom { .. }) {
+        tracing::debug!(
+            reason = "material_custom",
+            "predictor abstains — a custom material carries no validated force model"
+        );
+        return Err(DeflectionUnmodeled::MaterialCustom);
     }
 
     // --- Engagement geometry ---
     let diameter_mm = tool.diameter;
     if !(diameter_mm.is_finite() && diameter_mm > 0.0) {
-        return DeflectionPrediction {
-            predicted_um: 0.0,
-            breakdown: breakdown_zero,
-        };
+        return Err(DeflectionUnmodeled::NoDiameter);
     }
 
     let Some(axial_doc_mm) = operation.depth_per_pass() else {
         tracing::debug!(
             reason = "no_dpp",
-            "predictor returns 0 µm — operation has no DPP"
+            "predictor abstains — operation has no DPP"
         );
-        return DeflectionPrediction {
-            predicted_um: 0.0,
-            breakdown: breakdown_zero,
-        };
+        return Err(DeflectionUnmodeled::NoDepthPerPass);
     };
     if !(axial_doc_mm.is_finite() && axial_doc_mm > 0.0) {
-        return DeflectionPrediction {
-            predicted_um: 0.0,
-            breakdown: breakdown_zero,
-        };
+        return Err(DeflectionUnmodeled::NoDepthPerPass);
     }
 
     // Radial WOC: operation.stepover() if Some. For Adaptive ops with
@@ -279,10 +395,7 @@ pub fn predict_peak_deflection_um(
         }
     };
     if !(radial_woc_mm.is_finite() && radial_woc_mm > 0.0) {
-        return DeflectionPrediction {
-            predicted_um: 0.0,
-            breakdown: breakdown_zero,
-        };
+        return Err(DeflectionUnmodeled::NoRadialEngagement);
     }
 
     // Chipload — surfaced in the breakdown for the rationale tree the
@@ -304,35 +417,44 @@ pub fn predict_peak_deflection_um(
     };
 
     // Zero feed → zero chipload → the calling Suggest path will have
-    // already refused. Return 0 here so the back-off loop doesn't see
+    // already refused. Abstain here so the back-off loop doesn't see
     // a phantom deflection from an unconfigured op.
     if chipload_per_tooth_mm <= 0.0 {
         tracing::debug!(
             reason = "zero_chipload",
-            "predictor returns 0 µm — feed/RPM/flutes resolved to zero chipload"
+            "predictor abstains — feed/RPM/flutes resolved to zero chipload"
         );
-        return DeflectionPrediction {
-            predicted_um: 0.0,
-            breakdown: DeflectionBreakdown {
-                axial_doc_mm,
-                radial_woc_mm,
-                chipload_per_tooth_mm,
-                ..breakdown_zero
-            },
-        };
+        return Err(DeflectionUnmodeled::NoChipload);
     }
 
     // --- Cantilever geometry ---
-    let stickout_mm = if tool.stickout.is_finite() && tool.stickout > 0.0 {
-        tool.stickout
-    } else {
-        (tool.cutting_length + COLLET_EXPOSURE_MARGIN_MM).max(0.0)
-    };
-    if stickout_mm <= 0.0 {
-        return DeflectionPrediction {
-            predicted_um: 0.0,
-            breakdown: breakdown_zero,
-        };
+    //
+    // This reads `tool.stickout` and nothing else. `build_cutter` copies
+    // that same field into the `ToolDefinition` the delegate bends, so a
+    // fallback here would put a stickout in the breakdown that the model
+    // never used. Until T-4 there was one — `cutting_length + 5 mm` — and
+    // the refusal then came out of the delegate as a bare zero. One
+    // guard, one number, one exit.
+    let stickout_mm = tool.stickout;
+    if !(stickout_mm.is_finite() && stickout_mm > 0.0) {
+        tracing::debug!(
+            reason = "no_stickout",
+            "predictor abstains — the tool reports no usable stickout"
+        );
+        return Err(DeflectionUnmodeled::NoStickout);
+    }
+
+    // The load point sits at `stickout − axial/2` above the collet face.
+    // An engagement deeper than twice the stickout puts it at or below
+    // the tip and the cantilever has no length left to bend over. The
+    // integrator returns 0.0 mm there — the sentinel T-4 removes — so
+    // the predictor refuses before it calls.
+    if stickout_mm - axial_doc_mm * 0.5 <= 0.0 {
+        tracing::debug!(
+            reason = "degenerate_cantilever",
+            "predictor abstains — the cut is deeper than the tool stands out"
+        );
+        return Err(DeflectionUnmodeled::DegenerateCantilever);
     }
 
     // Effective core section — retained as a *breakdown diagnostic only*.
@@ -372,20 +494,34 @@ pub fn predict_peak_deflection_um(
     )
     .unwrap_or(0.0);
 
-    // Delegate the cantilever to the canonical integrated model. Returns
-    // None only for refusal cases the guards above already excluded
-    // (Custom material / non-positive stickout / inputs) or a degenerate
-    // engagement-deeper-than-stickout geometry — treat any None as "no
-    // constraint signal" (0 µm), matching the DeflectionPrediction contract.
+    // Delegate the cantilever to the canonical integrated model. The
+    // guards above cover every documented refusal of the delegate, so the
+    // arm below is a backstop: it keeps a non-positive or non-finite
+    // figure out of the `Ok` branch, which must always carry a modelled
+    // number. A figure of zero can only come from a load point at or
+    // below the tip, which is the degenerate cantilever.
     let tool_def = crate::compute::cutter::build_cutter(tool);
-    let predicted_um = tip_deflection_from_engagement(
+    let predicted_um = match tip_deflection_from_engagement(
         &tool_def,
         material,
         axial_doc_mm,
         immersion_rad,
         chipload_per_tooth_mm,
-    )
-    .map_or(0.0, |delta_mm| delta_mm * 1000.0);
+    ) {
+        Some(delta_mm) if delta_mm.is_finite() && delta_mm > 0.0 => delta_mm * 1000.0,
+        _ => return Err(DeflectionUnmodeled::DegenerateCantilever),
+    };
+
+    // A V-bit's cone is modelled; its flute relief is not, and that gap
+    // runs in the UNSAFE direction (see `bending_diameter_mm`). The
+    // figure is a floor. Every other fluted shape takes the measured
+    // equivalent-diameter fraction, so it carries no caveat. The match is
+    // exhaustive: a 6th cutter shape fails to compile here rather than
+    // inheriting a silence.
+    let caveat = match tool.tool_type.cutter_kind() {
+        CutterKind::VBit => Some(DeflectionCaveat::FluteReliefUnmodeled),
+        CutterKind::Flat | CutterKind::Ball | CutterKind::Bull | CutterKind::TaperedBall => None,
+    };
 
     tracing::debug!(
         predicted_um,
@@ -394,11 +530,13 @@ pub fn predict_peak_deflection_um(
         i_eff_mm4,
         axial_doc_mm,
         radial_woc_mm,
+        caveat = ?caveat,
         "deflection prediction (delegated to integrated two-section cantilever)"
     );
 
-    DeflectionPrediction {
+    Ok(DeflectionPrediction {
         predicted_um,
+        caveat,
         breakdown: DeflectionBreakdown {
             f_lateral_n,
             stickout_mm,
@@ -407,7 +545,7 @@ pub fn predict_peak_deflection_um(
             axial_doc_mm,
             radial_woc_mm,
         },
-    }
+    })
 }
 
 /// Effective bending-section diameter for the closed-form cantilever.
@@ -426,14 +564,20 @@ pub fn predict_peak_deflection_um(
 ///   local diameter. Exact for a proportional grind and conservative for a
 ///   constant-depth grind. The tip/shank weighting below is unchanged; only
 ///   the section fraction is new.
-/// - V-bit: returns 0. The caller refuses earlier.
+/// - V-bit: returns 0. A cone has no one representative section, and this
+///   value is a breakdown diagnostic only. The caller no longer refuses a
+///   V-bit — it takes its magnitude from the integrator, which reads the
+///   local diameter per step through `lookup_diameter_at`. Read the zero
+///   as "no representative section", not as "no deflection".
 ///
 /// **The V-bit gap is non-conservative.** A V-bit's flute is not an end-mill
 /// flute, and no source gives an equivalent diameter for one. Treating it as
 /// solid under-states deflection by `(1/f_V)^4` for an unknown `f_V`. It is
 /// left unmodelled rather than guessed, because a fabricated constant in a
-/// safety guard is worse than an absent one — but "unmodelled" must reach the
-/// operator rather than read as a clean zero. See T-4.
+/// safety guard is worse than an absent one. T-4 makes the gap reach the
+/// operator: the prediction carries
+/// [`DeflectionCaveat::FluteReliefUnmodeled`], so the figure reads as a
+/// floor rather than as a clean bound.
 ///
 /// Routes on [`CutterKind`] (Phase 3) — the bending-section model is a
 /// per-shape-class decision, so a 6th cutter shape fails to compile
@@ -497,13 +641,20 @@ pub fn tip_deflection_from_engagement(
     Some(tool.tip_deflection_mm(force_n, axial_mm, e))
 }
 
-/// Closed-form deflection prediction surfaced to the Suggest back-off
-/// loop. `predicted_um == 0.0` is the contract for "no constraint
-/// signal" — the caller treats it as a pass-through rather than a hard
-/// refusal (see module docs for the cases that route to zero).
+/// Closed-form deflection prediction. `predicted_um` is ALWAYS a
+/// modelled figure: the refusal cases return `Err` and name themselves.
+///
+/// Before T-4 this type carried the refusal as `predicted_um == 0.0`. A
+/// rigid cut and an unmodelled cut read the same, and the Suggest
+/// back-off treated the second as the first.
 #[derive(Debug, Clone)]
 pub struct DeflectionPrediction {
     pub predicted_um: f64,
+    /// `Some(_)` when the figure is a modelled FLOOR rather than a bound.
+    /// A surface may display a caveated figure. No consumer may read one
+    /// as proof that the cut sits inside a budget — see
+    /// [`DeflectionCaveat`].
+    pub caveat: Option<DeflectionCaveat>,
     /// Inputs the prediction consumed — surfaced so the rationale tree
     /// the back-off loop renders can show *why* a given iteration's
     /// δ landed where it did.
@@ -804,7 +955,9 @@ mod tests {
         let op = wanaka_adaptive_op(9.0, 1.2, 911.0, 16_000);
         let mat = hardwood();
         let machine = shapeoko();
-        let pred = predict_peak_deflection_um(&op, &tool, &mat, &machine);
+        let pred = predict_peak_deflection_um(&op, &tool, &mat, &machine)
+            .expect("a modelled roughing cut must produce a figure");
+        assert_eq!(pred.caveat, None, "a flat end mill carries no caveat");
         let um = pred.predicted_um;
         assert!(
             (30.0..=70.0).contains(&um),
@@ -832,7 +985,8 @@ mod tests {
         let op = wanaka_adaptive_op(3.0, 1.2, 911.0, 16_000);
         let mat = hardwood();
         let machine = shapeoko();
-        let pred = predict_peak_deflection_um(&op, &tool, &mat, &machine);
+        let pred = predict_peak_deflection_um(&op, &tool, &mat, &machine)
+            .expect("a modelled shallow cut must produce a figure");
         let um = pred.predicted_um;
         assert!(
             um < 200.0,
@@ -880,8 +1034,12 @@ mod tests {
         });
         let mat = hardwood();
         let machine = shapeoko();
-        let p_short = predict_peak_deflection_um(&op, &short, &mat, &machine).predicted_um;
-        let p_long = predict_peak_deflection_um(&op, &long, &mat, &machine).predicted_um;
+        let p_short = predict_peak_deflection_um(&op, &short, &mat, &machine)
+            .expect("short tool is modelled")
+            .predicted_um;
+        let p_long = predict_peak_deflection_um(&op, &long, &mat, &machine)
+            .expect("long tool is modelled")
+            .predicted_um;
         assert!(p_short > 0.0, "short-stickout prediction must be non-zero");
         let ratio = p_long / p_short;
         assert!(
@@ -892,35 +1050,35 @@ mod tests {
     }
 
     #[test]
-    fn zero_feed_returns_near_zero_deflection() {
-        // Feed=0 → chipload=0. The predictor's force formula doesn't
-        // include chipload directly, but the path refuses chipload≤0
-        // so callers don't see a phantom deflection signal on an
-        // unconfigured op. Per the contract, predicted_um stays at 0
-        // (well under the 1 µm bound the task specifies).
+    fn zero_feed_names_its_refusal() {
+        // Feed=0 → chipload=0. The predictor refuses so callers don't
+        // see a phantom deflection signal on an unconfigured op. Before
+        // T-4 the refusal was a 0.0 that read as a measurement.
         let tool = carbide_endmill(6.0, 45.0, 25.0);
         let op = wanaka_adaptive_op(9.0, 1.2, 0.0, 16_000);
         let mat = hardwood();
         let machine = shapeoko();
-        let pred = predict_peak_deflection_um(&op, &tool, &mat, &machine);
-        assert!(
-            pred.predicted_um <= 1.0,
-            "Zero-feed op should yield ≤1 µm prediction; got {:.4} µm",
-            pred.predicted_um
+        assert_eq!(
+            predict_peak_deflection_um(&op, &tool, &mat, &machine)
+                .expect_err("a zero chipload must refuse"),
+            DeflectionUnmodeled::NoChipload
         );
     }
 
     #[test]
-    fn drill_op_returns_zero() {
+    fn drill_op_names_its_refusal() {
         // Drill family is Z-only — the closed-form has no meaning for
         // it. Mirrors the `NotApplicableForOp` refusal in the post-sim
-        // gate.
+        // gate, and now says so in the same vocabulary.
         let tool = carbide_endmill(6.0, 45.0, 25.0);
         let op = OperationConfig::new_default(OperationType::Drill);
         let mat = hardwood();
         let machine = shapeoko();
-        let pred = predict_peak_deflection_um(&op, &tool, &mat, &machine);
-        assert_eq!(pred.predicted_um, 0.0);
+        assert_eq!(
+            predict_peak_deflection_um(&op, &tool, &mat, &machine)
+                .expect_err("a drill must refuse"),
+            DeflectionUnmodeled::NotApplicableForOp(OperationType::Drill)
+        );
     }
 
     /// v1.2 combined-Suggest: V-carve toolpaths are feature-driven —
@@ -974,11 +1132,13 @@ mod tests {
     // calculator_value`, which asserts Suggest ships the un-lifted feed.
 
     #[test]
-    fn vbit_returns_zero() {
-        // Closed-form intentionally refuses V-bits — engaged-D grows
-        // linearly with DOC and the bending-section "core" of a
-        // triangular profile isn't well defined. The post-sim
-        // integrator handles those.
+    fn vbit_is_modelled_and_carries_the_caveat() {
+        // T-4 deleted the blanket V-bit guard. Its stated reason — "the
+        // post-sim integrator handles V-bits" — stopped holding when
+        // this predictor started calling that integrator. The cone is
+        // modelled through `lookup_diameter_at`; the flute relief is
+        // not, and that gap is non-conservative, so the figure ships as
+        // a floor.
         let mut tool = carbide_endmill(6.35, 25.0, 12.0);
         tool.tool_type = ToolType::VBit;
         let op = OperationConfig::Pocket(PocketConfig {
@@ -990,7 +1150,17 @@ mod tests {
         });
         let mat = hardwood();
         let machine = shapeoko();
-        let pred = predict_peak_deflection_um(&op, &tool, &mat, &machine);
-        assert_eq!(pred.predicted_um, 0.0);
+        let pred = predict_peak_deflection_um(&op, &tool, &mat, &machine)
+            .expect("a V-bit is modelled since T-4");
+        assert!(
+            pred.predicted_um > 0.0 && pred.predicted_um.is_finite(),
+            "the V-bit figure must be a real number, got {} µm",
+            pred.predicted_um
+        );
+        assert_eq!(
+            pred.caveat,
+            Some(DeflectionCaveat::FluteReliefUnmodeled),
+            "the V-bit figure is a floor and must say so"
+        );
     }
 }

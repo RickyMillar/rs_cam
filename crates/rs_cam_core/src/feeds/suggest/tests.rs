@@ -1345,6 +1345,7 @@ fn deflection_machinery_caps_dpp_for_long_reach_tool() {
     // hair of binary-search tolerance).
     let predicted_after =
         crate::feeds::predict::predict_peak_deflection_um(&op, &tool, &material, &machine)
+            .expect("a modelled end mill in hard maple must produce a figure")
             .predicted_um;
     assert!(
         predicted_after <= 205.0,
@@ -1357,6 +1358,7 @@ fn deflection_machinery_caps_dpp_for_long_reach_tool() {
         let mut probe = op.clone();
         probe.set_depth_per_pass(9.0);
         crate::feeds::predict::predict_peak_deflection_um(&probe, &tool, &material, &machine)
+            .expect("the 9 mm probe is modelled")
             .predicted_um
     };
     assert!(
@@ -2029,6 +2031,7 @@ fn retired_lift_fires_no_cap_on_a_deflection_bound_fixture() {
         // that was never near the cap proves nothing about its removal.
         let pre_predicted =
             crate::feeds::predict::predict_peak_deflection_um(&op, &tool, &material, &machine)
+                .expect("the fixture's premise is a modelled operating point")
                 .predicted_um;
         assert!(
             (190.0..DEFLECTION_BACKOFF_TARGET_UM).contains(&pre_predicted),

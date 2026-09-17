@@ -17,7 +17,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::feeds::suggest::{FeedRecalibrationCap, SuggestWarning};
+use crate::feeds::suggest::{DEFLECTION_BACKOFF_TARGET_UM, FeedRecalibrationCap, SuggestWarning};
 
 /// **The report-tier label on the two chipload-recalibration entries**
 /// (`ChiploadTarget`, `ChiploadCapBound`).
@@ -98,6 +98,14 @@ pub enum RationaleReason {
     RuntimeFloor,
     /// Closed-form deflection predictor capped DPP.
     DeflectionPredict,
+    /// T-4: the closed-form deflection predictor abstained, so the DPP
+    /// back-off did not run. The entry reports a NON-change: `from_value`
+    /// and `to_value` are both `None`, because nothing was written.
+    DeflectionUnmodeled,
+    /// T-4: the deflection figure the back-off ran on is a modelled
+    /// floor, not a bound. The back-off still ran; the figure does not
+    /// show the cut inside the bound.
+    DeflectionFigureIsAFloor,
     /// Adaptive plunge entry unsafe at this DPP / diameter ratio.
     /// Warning-only — Suggest does not rewrite the strategy.
     PlungeEntryUnstable,
@@ -285,6 +293,45 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
             ),
             detail: Some(format!(
                 "Predicted {predicted_um_at_requested:.0} µm at requested {requested_mm:.2} mm; {iterations} back-off iterations"
+            )),
+        },
+        SuggestWarning::DeflectionBackoffUnmodeled { dpp_mm, reason } => RationaleEntry {
+            param: RationaleParam::Dpp,
+            reason: RationaleReason::DeflectionUnmodeled,
+            from_value: None,
+            to_value: None,
+            headline: format!(
+                "Deflection back-off did not run at DPP {dpp_mm:.2} mm — {}",
+                reason.clause()
+            ),
+            // Plain words only. `UnmodeledReason` carries no `Display`,
+            // so interpolating it would print a variant name at the
+            // operator. The headline already carries `reason.clause()`;
+            // the detail says what stands and what to do about it.
+            detail: Some(
+                "The depth per pass stands as the rigidity clamp and the axial envelope \
+                 left it. Simulate to measure the deflection, or pick a tool or a \
+                 material the model covers."
+                    .to_owned(),
+            ),
+        },
+        SuggestWarning::DeflectionBackoffFigureIsAFloor {
+            dpp_mm,
+            predicted_um,
+            caveat,
+        } => RationaleEntry {
+            param: RationaleParam::Dpp,
+            reason: RationaleReason::DeflectionFigureIsAFloor,
+            from_value: None,
+            to_value: None,
+            headline: format!(
+                "Deflection {predicted_um:.0} µm at DPP {dpp_mm:.2} mm is a floor, not a bound"
+            ),
+            detail: Some(format!(
+                "{} — the back-off ran on the figure, which is conservative, but the \
+                 figure does not show this cut inside the {DEFLECTION_BACKOFF_TARGET_UM:.0} \
+                 µm bound.",
+                caveat.clause()
             )),
         },
         SuggestWarning::StepoverRaisedForRuntime {

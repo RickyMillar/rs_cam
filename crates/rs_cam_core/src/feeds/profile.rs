@@ -5,8 +5,7 @@
 //! production Suggest surface uses —
 //! [`crate::feeds::suggest::feeds_explain_for_operation`] +
 //! [`crate::feeds::suggest::suggest_for_operation`] — and bundles their
-//! outputs with the closed-form predictors ([`crate::feeds::predict`])
-//! and the Phase-0 axial constraint envelope
+//! outputs with the Phase-0 axial constraint envelope
 //! ([`crate::feeds::cutter_constraints`]) into one preflight view of a
 //! cutter × operation × material × machine combination.
 //!
@@ -15,8 +14,7 @@
 //! - **Owns:** tool/op compatibility ([`FeedsError`] feasibility — NOT
 //!   a new refusal type; `tool_load::RefuseReason` is the post-sim
 //!   taxonomy and must not be shadowed), feeds result + explain
-//!   payload, pre-sim axial envelope, closed-form predictions, Suggest
-//!   warnings.
+//!   payload, pre-sim axial envelope, Suggest warnings.
 //! - **Must not own:** the post-sim `ToolpathLoadVerdict` — simulation
 //!   gate evaluation stays separate.
 //! - The profile **reads** chipload bounds off the feeds result; it
@@ -27,7 +25,6 @@ use crate::compute::catalog::{OperationConfig, OperationSpec, OperationType};
 use crate::compute::cutter::build_cutter;
 use crate::compute::tool_config::ToolConfig;
 use crate::feeds::cutter_constraints::CutterAxialConstraints;
-use crate::feeds::predict::{DeflectionPrediction, predict_move_count, predict_peak_deflection_um};
 use crate::feeds::suggest::{
     SuggestContext, SuggestForOperationInput, SuggestWarning, axial_envelope_for_operation,
     feeds_explain_for_operation, suggest_for_operation,
@@ -39,29 +36,17 @@ use crate::machine::MachineProfile;
 use crate::material::Material;
 use crate::tool::ToolDefinition;
 
-/// Aggregate over the three closed-form predictors in
-/// [`crate::feeds::predict`], evaluated at one operating point. Each
-/// predictor keeps its own refusal contract (zero = "no constraint
-/// signal") — see the per-field docs on the wrapped types.
-///
-/// Stays `pub`: it is the type of the `pub` field
-/// `CutterOpProfile::predictions`, so a crate-private form raises
-/// `private_interfaces`.
-#[derive(Debug, Clone)]
-pub struct Predictions {
-    /// Closed-form peak tip deflection (µm) — see
-    /// [`predict_peak_deflection_um`].
-    pub deflection: DeflectionPrediction,
-    // RETIRED 2026-08-13 (Checkpoint J-1/J-5): `observed_chipload:
-    // ObservedChiploadPrediction`. It was computed here on every profile
-    // and **never rendered** — A-5's census found no `observed_chipload`
-    // / `arc_fit_ratio` / `ArcFitRatioSource` reference in `rs_cam_viz`,
-    // `rs_cam_cli`, `rs_cam_mcp` or the MCP bridge. Its only behavioural
-    // consumer was Suggest pass 8, itself retired in the same commit.
-    /// Upper-bound move-count estimate — see [`predict_move_count`].
-    /// `0` when no model bbox was supplied or the op is feature-driven.
-    pub move_count: u64,
-}
+// RETIRED 2026-09-18 (T-4): `Predictions` and the `CutterOpProfile::
+// predictions` field. The struct held a `DeflectionPrediction` and a
+// move-count estimate, was written on every profile build, and had no
+// reader — production or test. `rg -n "\.predictions\b"` across
+// `crates/` returned the declaration and nothing else; the two consumers
+// of `CutterOpProfile` (`rs_cam_cli/src/project.rs` and
+// `rs_cam_viz/src/app/mcp/generation.rs`) read `feasibility`,
+// `suggested_operation`, `feeds` and `warnings` only. T-4 turned the
+// deflection predictor's signature into a `Result`, and migrating a
+// field nothing reads costs more than deleting it. `predict_move_count`
+// keeps its live caller in `feeds::suggest::invariants`.
 
 /// Pre-sim constraint envelopes for the combination. Currently the
 /// Phase-0 axial-DOC envelope; radial joins when a radial builder
@@ -100,8 +85,8 @@ pub struct CutterOpProfileInput<'a, 'ctx> {
 /// One preflight view of a cutter × operation combination — plan §3.2.
 ///
 /// Everything here is **pre-sim**: feasibility, the canonical Suggest
-/// recommendation, the explain payload, closed-form predictions, and
-/// the axial constraint envelope. The post-sim verdict
+/// recommendation, the explain payload and the axial constraint
+/// envelope. The post-sim verdict
 /// (`tool_load::ToolpathLoadVerdict`) is deliberately NOT part of the
 /// profile.
 ///
@@ -140,9 +125,6 @@ pub struct CutterOpProfile<'a> {
     /// Pre-sim constraint envelopes at the recommended operating point
     /// (or the input operating point when Suggest refused).
     pub constraints: ConstraintEnvelopes,
-    /// Closed-form predictions at the recommended operating point (or
-    /// the input operating point when Suggest refused).
-    pub predictions: Predictions,
     /// Suggest's invariant-pass warnings — identical to what the GUI
     /// Suggest button / `--apply-suggest` would surface. Empty when
     /// refused.
@@ -196,21 +178,12 @@ impl<'a> CutterOpProfile<'a> {
             Err(e) => (Err(e), None, None, Vec::new()),
         };
 
-        // Evaluate predictions + envelope at the recommended operating
-        // point when available (post-invariant feeds/RPM/stepover/DPP),
-        // else at the input operating point.
+        // Evaluate the envelope at the recommended operating point when
+        // available (post-invariant feeds/RPM/stepover/DPP), else at the
+        // input operating point.
         let eval_op = suggested_operation.as_ref().unwrap_or(input.operation);
         let matched_lut_row = feeds.as_ref().and_then(|f| f.matched_lut_row.as_ref());
 
-        let predictions = Predictions {
-            deflection: predict_peak_deflection_um(
-                eval_op,
-                input.tool,
-                input.material,
-                input.machine,
-            ),
-            move_count: predict_move_count(eval_op, input.context.model_bbox, input.tool),
-        };
         let constraints = ConstraintEnvelopes {
             axial: axial_envelope_for_operation(
                 eval_op,
@@ -234,7 +207,6 @@ impl<'a> CutterOpProfile<'a> {
             explain,
             suggested_operation,
             constraints,
-            predictions,
             warnings,
         }
     }

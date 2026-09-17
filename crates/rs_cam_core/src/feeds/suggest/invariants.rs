@@ -49,7 +49,7 @@ use super::{SuggestContext, SuggestWarning};
 /// has measured that residual. Do not treat this threshold as carrying a
 /// hidden safety margin. If a margin is wanted here, state it and source
 /// it; do not inherit one from a retired model.
-pub(super) const DEFLECTION_BACKOFF_TARGET_UM: f64 = 200.0;
+pub(crate) const DEFLECTION_BACKOFF_TARGET_UM: f64 = 200.0;
 
 /// v1.1 combined-Suggest step 2: minimum DPP the deflection back-off
 /// loop is allowed to write (mm). Prevents pathological cases where
@@ -383,9 +383,13 @@ fn clamp_dpp_to_cutting_length(
 /// already run shallow DPPs by design and the deflection envelope
 /// rarely threatens them.
 ///
-/// The predictor returns 0 µm for refusal cases (V-bit, drill, un-
-/// validated material, zero feed) — the loop's `> target` condition
-/// short-circuits trivially and no back-off occurs.
+/// The predictor abstains on a drill, an unvalidated or custom material,
+/// a zero feed and five other input-shaped cases. Since T-4 that
+/// abstention is an `Err` that names itself, and this pass reports it
+/// through [`SuggestWarning::DeflectionBackoffUnmodeled`] instead of
+/// passing through in silence. A V-bit no longer abstains: its figure is
+/// a modelled floor, the back-off runs on it, and
+/// [`SuggestWarning::DeflectionBackoffFigureIsAFloor`] says so.
 fn backoff_dpp_for_deflection(
     operation: &mut OperationConfig,
     tool: &ToolConfig,
@@ -400,24 +404,76 @@ fn backoff_dpp_for_deflection(
         && current > DEFLECTION_BACKOFF_DPP_FLOOR_MM
     {
         let pre_backoff_dpp = current;
-        let initial_prediction =
-            crate::feeds::predict::predict_peak_deflection_um(operation, tool, material, machine);
+        let initial_prediction = match crate::feeds::predict::predict_peak_deflection_um(
+            operation, tool, material, machine,
+        ) {
+            Ok(prediction) => prediction,
+            Err(reason) => {
+                // T-4: the back-off ACTS on the refusal. It changes no
+                // DPP — there is no figure to back off from — but it
+                // states the abstention on the channel Suggest already
+                // uses for a step it did not take.
+                tracing::debug!(
+                    dpp_mm = current,
+                    reason = ?reason,
+                    "Suggest deflection back-off did not run — the predictor abstained"
+                );
+                warnings.push(SuggestWarning::DeflectionBackoffUnmodeled {
+                    dpp_mm: current,
+                    reason,
+                });
+                return warnings;
+            }
+        };
+        // A caveated figure is a floor. The back-off runs on it, because
+        // backing a DPP off a floor is conservative, and the operator
+        // gets the clause as well, because a floor does not show the cut
+        // inside the bound. The cutter shape does not change inside the
+        // loop, so one report covers every iteration.
+        if let Some(caveat) = initial_prediction.caveat {
+            warnings.push(SuggestWarning::DeflectionBackoffFigureIsAFloor {
+                dpp_mm: current,
+                predicted_um: initial_prediction.predicted_um,
+                caveat,
+            });
+        }
         let predicted_initial_um = initial_prediction.predicted_um;
         let mut predicted_um = predicted_initial_um;
         let mut iterations: u8 = 0;
+        // The last DPP the model evaluated. The operation carries this
+        // value whenever the loop is not mid-step.
         let mut dpp = current;
 
         while predicted_um > DEFLECTION_BACKOFF_TARGET_UM
             && iterations < DEFLECTION_BACKOFF_MAX_ITERATIONS
             && dpp > DEFLECTION_BACKOFF_DPP_FLOOR_MM
         {
-            dpp = (dpp * DEFLECTION_BACKOFF_FACTOR).max(DEFLECTION_BACKOFF_DPP_FLOOR_MM);
-            operation.set_depth_per_pass(dpp);
-            let next = crate::feeds::predict::predict_peak_deflection_um(
+            let next_dpp = (dpp * DEFLECTION_BACKOFF_FACTOR).max(DEFLECTION_BACKOFF_DPP_FLOOR_MM);
+            operation.set_depth_per_pass(next_dpp);
+            match crate::feeds::predict::predict_peak_deflection_um(
                 operation, tool, material, machine,
-            );
-            predicted_um = next.predicted_um;
-            iterations = iterations.saturating_add(1);
+            ) {
+                Ok(next) => {
+                    dpp = next_dpp;
+                    predicted_um = next.predicted_um;
+                    iterations = iterations.saturating_add(1);
+                }
+                Err(reason) => {
+                    // Not reachable on today's model: the initial call
+                    // modelled this (operation, tool, material) and the
+                    // loop only lowers the DPP, which can only un-refuse
+                    // `DegenerateCantilever`. Handled rather than
+                    // assumed. Step back to the last DPP the model
+                    // evaluated, so the warning below cannot quote a
+                    // deflection at a depth the operation does not run.
+                    operation.set_depth_per_pass(dpp);
+                    warnings.push(SuggestWarning::DeflectionBackoffUnmodeled {
+                        dpp_mm: dpp,
+                        reason,
+                    });
+                    break;
+                }
+            }
         }
 
         if iterations > 0 {

@@ -41,12 +41,18 @@
 //!
 //! ## Why not reuse [`super::predict::predict_peak_deflection_um`]
 //!
-//! Two reasons documented in `planning/cutter_axial_constraints_2026-06-06.md`
-//! §7 "do NOT use":
-//! 1. It refuses V-bits (returns 0).
-//! 2. It returns 0 for operations whose `depth_per_pass()` is `None` —
-//!    the envelope predates the op-config because Suggest is *picking*
-//!    DPP, so a "needs DPP to compute" predictor is the wrong layer.
+//! One reason survives of the two in
+//! `planning/cutter_axial_constraints_2026-06-06.md` §7 "do NOT use": the
+//! predictor needs `depth_per_pass()`, and the envelope runs before the
+//! op-config carries one, because Suggest is *picking* the DPP. A "needs
+//! DPP to compute" predictor is the wrong layer.
+//!
+//! The second reason — "it refuses V-bits (returns 0)" — stopped holding
+//! under T-4 (2026-09-18). The predictor no longer refuses a V-bit; it
+//! returns a figure carrying
+//! [`super::predict::DeflectionCaveat::FluteReliefUnmodeled`]. This
+//! envelope has computed a V-bit bound from the shared integrator
+//! throughout, and the same flute-relief gap applies to it.
 //!
 //! Both paths now route through
 //! [`super::predict::tip_deflection_from_engagement`] for the underlying
@@ -714,9 +720,10 @@ mod tests {
     fn vbit_uses_deflection_bound_only() {
         // V-bit: no scallop bound. Vendor often label-only → None.
         // Deflection bound is computed via the canonical
-        // tip_deflection_from_engagement path, which works for V-bits
-        // (the post-sim integrator handles them; only the closed-form
-        // predict_peak_deflection_um refuses).
+        // tip_deflection_from_engagement path, which works for V-bits.
+        // Since T-4 the closed-form predictor reads the same path and no
+        // longer refuses one; its flute relief stays unmodelled and both
+        // consumers carry that gap.
         let tool = carbide_vbit();
         let env = cutter_axial_constraints(
             &tool,

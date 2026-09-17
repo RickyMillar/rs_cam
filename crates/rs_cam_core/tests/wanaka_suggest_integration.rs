@@ -225,7 +225,10 @@ fn assert_no_dpp_capped(warnings: &[SuggestWarning], context: &str) {
         !warnings
             .iter()
             .any(|w| matches!(w, SuggestWarning::DppCappedByDeflection { .. })),
-        "{context}: DppCappedByDeflection must NOT fire (drill / V-bit), got warnings: {warnings:?}"
+        // T-4 removed the "/ V-bit" clause this message used to carry. A
+        // V-bit is no longer a predictor refusal; the two call sites of
+        // this helper are both drill toolpaths and always were.
+        "{context}: DppCappedByDeflection must NOT fire (drill), got warnings: {warnings:?}"
     );
 }
 
@@ -791,6 +794,45 @@ fn wanaka_suggest_baseline() {
                 // is asserted in tests/suggest_feed_matches_final_geometry.rs.
                 SuggestWarning::FeedRescaledToFinalGeometry { .. }
                 | SuggestWarning::FeedClampedToChiploadFloor { .. } => {}
+                // T-4 (2026-09-18): the forcing arm fired when the
+                // deflection predictor's refusal became a type. Neither
+                // variant may fire on Wanaka, and the reason is
+                // structural rather than a tolerance:
+                //
+                //   * `DeflectionBackoffUnmodeled` needs the back-off to
+                //     run, and the back-off needs `depth_per_pass()`.
+                //     `DrillConfig`, `AlignmentPinDrillConfig` and
+                //     `ProjectCurveConfig` carry no such field, so the
+                //     drill and curve toolpaths never enter the loop.
+                //     Every remaining Wanaka toolpath cuts hard maple or
+                //     white oak with a real carbide cutter, and both
+                //     materials carry a measured `Kc`.
+                //   * `DeflectionBackoffFigureIsAFloor` needs a V-bit on
+                //     a ROUGHING operation. `VCarve` is `PassRole::
+                //     Finish`, so the natural V-bit operation never
+                //     enters the loop either.
+                //
+                // If one fires, the fixture gained a tool or a material
+                // the closed-form model does not cover. That is a real
+                // finding about the fixture; re-derive it rather than
+                // widening this arm.
+                SuggestWarning::DeflectionBackoffUnmodeled { dpp_mm, reason } => panic!(
+                    "tp {id} ({name}): DeflectionBackoffUnmodeled fired on Wanaka at DPP \
+                     {dpp_mm:.2} mm — {} ({reason:?}). Every Wanaka roughing toolpath runs a \
+                     modelled tool in a modelled material; a refusal here means the fixture \
+                     changed.",
+                    reason.clause()
+                ),
+                SuggestWarning::DeflectionBackoffFigureIsAFloor {
+                    dpp_mm,
+                    predicted_um,
+                    caveat,
+                } => panic!(
+                    "tp {id} ({name}): DeflectionBackoffFigureIsAFloor fired on Wanaka at DPP \
+                     {dpp_mm:.2} mm ({predicted_um:.0} µm) — {}. No Wanaka roughing toolpath \
+                     runs a V-bit.",
+                    caveat.clause()
+                ),
             }
             // Print a one-line breadcrumb when the catch-all fires
             // anything unexpected via the explicit-arms form above.

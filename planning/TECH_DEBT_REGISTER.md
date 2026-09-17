@@ -17,7 +17,7 @@ need a register.
 | T-1 | `enumerate_matching_rows` is dead; `pub` hides it | **closed** `d641996c` — deleted (feeds wave, 2026-09-17) |
 | T-2 | LH-1's guard is syntactic and a closure defeats it | open |
 | T-3 | Cross-crate sentries never run in a per-crate gate | open |
-| T-4 | `predict_peak_deflection_um` returns `0.0` for every refusal | open |
+| T-4 | `predict_peak_deflection_um` returns `0.0` for every refusal | **closed** 2026-09-18 — the refusal is `Result<_, DeflectionUnmodeled>`; a V-bit figure carries `DeflectionCaveat::FluteReliefUnmodeled`; the back-off states its abstention (load-model programme, see the entry) |
 | T-5 | `feeds/mod.rs` 4 144 lines, `suggest.rs` 5 667 | open — `calculate` (1 302 lines) has no mechanical seam: 16 `let mut` locals cross its 19 step banners and `effective_d` is rebound mid-way (FEEDS_WAVE FW-22, 2026-09-17) |
 | T-6 | Two implementations of one physical model | closed |
 | T-7 | Two definitions of "teeth in cut", differing by helix wrap | **withdrawn** — the premise fails |
@@ -122,6 +122,47 @@ caller may just as reasonably publish "100 % headroom".
 
 **Fix:** `Result<DeflectionPrediction, UnmodelledReason>`, matching the
 refusal vocabulary `tool_load` already uses.
+
+### Closed 2026-09-18
+
+The signature is now
+`Result<DeflectionPrediction, DeflectionUnmodeled>`. `DeflectionUnmodeled`
+carries nine variants and maps onto `tool_load::verdict::UnmodeledReason`
+through `as_unmodeled_reason()`, so the pre-simulation and post-simulation
+halves print one vocabulary. Each variant also carries a `clause()`, so one
+place words each finding.
+
+What changed beyond the type:
+
+- **The blanket V-bit guard is deleted.** Its stated reason was that the
+  post-simulation integrator handles V-bits, and since `3b0dc487` this
+  predictor CALLS that integrator; `cutter_constraints::invert_deflection`
+  has read the same path for a V-bit throughout. A V-bit now returns `Ok`
+  carrying `DeflectionCaveat::FluteReliefUnmodeled`. The figure is a
+  modelled FLOOR, not a bound: the cone is modelled and the flute relief is
+  not, and that gap is non-conservative. No consumer may read a caveated
+  value as proof that a cut is inside a budget.
+- **The two undocumented exits are stated.** `Material::Custom` refused
+  even with a positive `kc`, and a non-positive stickout refused, both
+  hidden inside a `.map_or(0.0, …)`. They are `MaterialCustom` and
+  `NoStickout` now, and the module header lists the full set.
+- **The back-off ACTS on the refusal.** `backoff_dpp_for_deflection` emits
+  `SuggestWarning::DeflectionBackoffUnmodeled { dpp_mm, reason }` instead of
+  passing through in silence, and
+  `SuggestWarning::DeflectionBackoffFigureIsAFloor` when the figure it ran
+  on is caveated. Both render through the existing rationale tree.
+- **`CutterOpProfile::predictions` is deleted**, not migrated. `rg` found
+  no reader in production or test.
+
+Sentry: `tests/a_refused_deflection_is_not_a_zero_g_t4.rs`, six arms, with
+a non-vacuity anchor and a 27-point sweep that no `Ok` may answer with a
+zero. Confirmed red by injection on two paths.
+
+Report: `planning/load_model_2026-09-16/T4_IMPLEMENTATION.md`.
+
+**Still open, and outside T-4:** `f_V`, the V-bit equivalent-diameter
+fraction, has no source. Under the no-bench-rig rule it stays unmodelled;
+the caveat makes the gap visible rather than closing it.
 
 ---
 

@@ -37,7 +37,10 @@ pub use feed_explanation::{
     ADVANCE_PER_TOOTH, AchievedFeedStage, ClampReason, CommandedStage, FeedExplanation,
     GateObservationStage, LutBandStage, ObservedStatistic,
 };
-pub use predict::{DeflectionBreakdown, DeflectionPrediction, predict_peak_deflection_um};
+pub use predict::{
+    DeflectionBreakdown, DeflectionCaveat, DeflectionPrediction, DeflectionUnmodeled,
+    predict_peak_deflection_um,
+};
 pub use provenance::{FeedsField, FeedsProvenance, ProvenanceSource, ValueProvenance};
 pub use quantities::{
     ACHIEVED_ADVANCE_PER_TOOTH, ADVANCE_PER_TOOTH_UNIT, ARC_MEAN_CHIP_THICKNESS, AchievedFeedMmMin,

@@ -27,6 +27,10 @@ pub use apply::{
     resolve_operation_invariants,
 };
 pub(crate) use axial_envelope::axial_envelope_for_operation;
+// The deflection back-off target, re-exported so `feeds::rationale` can
+// format the bound it renders from the constant the loop compares
+// against. The text cannot then drift from the number.
+pub(crate) use invariants::DEFLECTION_BACKOFF_TARGET_UM;
 
 /// Stock-derived values used by stock-aware operation defaults.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -296,6 +300,42 @@ pub enum SuggestWarning {
         predicted_um_at_requested: f64,
         predicted_um_at_capped: f64,
         iterations: u8,
+    },
+    /// T-4 (2026-09-18): the closed-form deflection predictor abstained,
+    /// so the DPP back-off did not run. Warning-only — Suggest keeps the
+    /// DPP the rigidity clamp and the axial envelope produced.
+    ///
+    /// The operator needs the distinction. Until T-4 the predictor
+    /// reported every refusal as `0.0 µm`, the loop's `> target` test
+    /// short-circuited, and nothing was said. A pass-through and a
+    /// clearance were the same event. The sharp case is an unvalidated
+    /// plastic on a roughing operation: nine of the ten shipped plastics
+    /// carry no measured `Kc`, the stock picker names them all, and the
+    /// operator had no way to know which ones the model covers.
+    DeflectionBackoffUnmodeled {
+        /// The DPP the operation carried when the predictor abstained.
+        dpp_mm: f64,
+        /// Which abstention. `reason.clause()` is the operator-facing
+        /// wording and `reason.as_unmodeled_reason()` is the same
+        /// vocabulary the post-simulation gate prints.
+        reason: crate::feeds::predict::DeflectionUnmodeled,
+    },
+    /// T-4 (2026-09-18): the deflection figure the back-off ran on is a
+    /// modelled FLOOR, not a bound.
+    ///
+    /// The back-off still runs, because backing a DPP off a floor is
+    /// conservative. It does not show the cut safe. A V-bit is the one
+    /// producer today: the integrator models its cone but not its flute
+    /// relief, and that gap runs in the UNSAFE direction.
+    DeflectionBackoffFigureIsAFloor {
+        /// The DPP the operation carried at the figure below.
+        dpp_mm: f64,
+        /// The modelled floor (µm) at `dpp_mm`. The real deflection is
+        /// larger.
+        predicted_um: f64,
+        /// Which part of the model is missing. `caveat.clause()` is the
+        /// operator-facing wording.
+        caveat: crate::feeds::predict::DeflectionCaveat,
     },
     /// v1.2 combined-Suggest: the closed-form move-count predictor (see
     /// [`crate::feeds::predict::predict_move_count`]) projected that the
