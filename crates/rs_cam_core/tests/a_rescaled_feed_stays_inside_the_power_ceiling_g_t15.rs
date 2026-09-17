@@ -108,7 +108,7 @@ const UNTOUCHED_DPP_MM: f64 = 12.0;
 
 /// The power model, restated rather than imported.
 ///
-/// `tool_load::power::PowerTerms` is `pub(crate)`, and both sibling power
+/// `tool_load::power::PowerTerms` was `pub(crate)` until S2 made it `pub`; both sibling power
 /// instruments make the same call deliberately: a test that imports the
 /// expression it checks can only prove the expression equals itself.
 ///
