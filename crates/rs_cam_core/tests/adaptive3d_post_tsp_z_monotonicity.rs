@@ -1,5 +1,5 @@
 use rs_cam_core::compute::catalog::OperationType;
-use rs_cam_core::compute::config::{DressupConfig, RetractStrategy};
+use rs_cam_core::compute::config::DressupConfig;
 use rs_cam_core::compute::execute::apply_dressups;
 use rs_cam_core::geo::P3;
 use rs_cam_core::toolpath::{MoveType, Toolpath};
@@ -63,7 +63,6 @@ mod tests {
 
         let cfg = DressupConfig {
             optimize_rapid_order: true,
-            retract_strategy: RetractStrategy::Full,
             ..DressupConfig::default()
         };
         let spans = vec![
@@ -115,7 +114,6 @@ mod tests {
 
         let cfg = DressupConfig {
             optimize_rapid_order: true,
-            retract_strategy: RetractStrategy::Full,
             ..DressupConfig::default()
         };
         let optimized = apply_dressups(

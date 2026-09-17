@@ -23,8 +23,8 @@ dexel and the simulated engagement. Add no fourth.
 
 ## Invariants
 
-- The retract-strategy dial is dead (G-RETRACTDIAL). The retract count is the
-  lever, not the dial. Do not build a feature on the dial.
+- G-RETRACTDIAL is closed: `RetractStrategy` was deleted on 2026-09-17 (CUT-03).
+  The retract COUNT is the lever. Do not add a retract-strategy dial again.
 - Every linking arm calls the shared `relink_fragments` kernel in
   `finish/surface_link.rs`. Do not add a second linking implementation.
 - Accel-friendly segment-merge conditioning is default-on for roughing. A

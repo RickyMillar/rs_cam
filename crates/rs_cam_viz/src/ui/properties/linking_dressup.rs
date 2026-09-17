@@ -7,9 +7,7 @@
 use super::feeds_speeds::draw_entry_preview_diagram;
 use super::operations::{draw_dogbone_diagram, draw_lead_in_out_diagram};
 use super::{operations, pills};
-use crate::state::toolpath::{
-    DressupConfig, DressupEntryStyle, HeightContext, RetractStrategy, ToolpathEntry,
-};
+use crate::state::toolpath::{DressupConfig, DressupEntryStyle, HeightContext, ToolpathEntry};
 use crate::ui::automation;
 use crate::ui::components::ValueRow;
 
@@ -275,14 +273,11 @@ pub(super) fn dressup_active_count(cfg: &DressupConfig) -> (usize, usize) {
     if cfg.optimize_rapid_order {
         active += 1;
     }
-    if matches!(cfg.retract_strategy, RetractStrategy::Minimum) {
-        active += 1;
-    }
     (active, total)
 }
 
-/// Linking tab (W3.2): how moves connect — Entry & Exit, Move Optimization,
-/// and Retract strategy. Split out of the old monolithic dressup panel; the
+/// Linking tab (W3.2): how moves connect — Entry & Exit and Move
+/// Optimization. Split out of the old monolithic dressup panel; the
 /// remaining edge-work (arc fitting / dogbone) stays in [`draw_dressup_params`].
 pub(super) fn draw_linking_params(
     ui: &mut egui::Ui,
@@ -501,35 +496,10 @@ pub(super) fn draw_linking_params(
 
     ui.checkbox(&mut cfg.optimize_rapid_order, "Optimize rapid travel order")
         .on_hover_text("Reorder disconnected toolpath segments to minimize total rapid travel distance (TSP heuristic). Pure optimization with no machining risk.");
-
-    ui.add_space(6.0);
-
-    // ── Safety ────────────────────────────────────────────────
-    ui.label(
-        egui::RichText::new("Safety")
-            .small()
-            .strong()
-            .color(section_color),
-    );
-
-    ui.horizontal(|ui| {
-        ui.label("Retract Strategy:");
-        egui::ComboBox::from_id_salt("retract_strat")
-            .selected_text(match cfg.retract_strategy {
-                RetractStrategy::Full => "Full",
-                RetractStrategy::Minimum => "Minimum",
-            })
-            .show_ui(ui, |ui| {
-                ui.selectable_value(&mut cfg.retract_strategy, RetractStrategy::Full, "Full")
-                    .on_hover_text("Always retract to retract height between cuts. Safest option \u{2014} use when unsure.");
-                ui.selectable_value(&mut cfg.retract_strategy, RetractStrategy::Minimum, "Minimum")
-                    .on_hover_text("Retract just above nearby path. Faster cycle time but risk of collision if geometry is complex.");
-            });
-    });
 }
 
 /// Dressup tab (W3.2): edge work / path quality — arc fitting and dogbone
-/// overcuts. Entry/exit + optimization + retract live on the Linking tab
+/// overcuts. Entry/exit + optimization live on the Linking tab
 /// ([`draw_linking_params`]); the machining boundary lives on Geometry.
 pub(super) fn draw_dressup_params(ui: &mut egui::Ui, cfg: &mut DressupConfig) {
     let section_color = crate::ui::tokens::TEXT_MUTED;

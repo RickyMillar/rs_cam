@@ -32,8 +32,7 @@ pub use catalog::{
 pub use config::{
     AwaitingPriorStock, BoundaryConfig, BoundaryContainment, BoundarySource, ComputeStatus,
     DressupConfig, DressupEntryStyle, HeightContext, HeightMode, HeightReference, HeightsConfig,
-    ReferenceOffset, ResolvedHeights, RetractStrategy, RetractTripCount, StockSource, ToolpathId,
-    ToolpathStats,
+    ReferenceOffset, ResolvedHeights, RetractTripCount, StockSource, ToolpathId, ToolpathStats,
 };
 
 pub use operation_configs::{

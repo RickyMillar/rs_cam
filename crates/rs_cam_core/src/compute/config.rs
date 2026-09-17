@@ -2033,16 +2033,6 @@ impl DressupEntryStyle {
     }
 }
 
-/// How the tool retracts between cutting passes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RetractStrategy {
-    /// Always retract to retract_z (safest, default).
-    Full,
-    /// Retract just above the highest Z on nearby path + 2mm (faster).
-    Minimum,
-}
-
 /// Default deviation budget (mm) for [`DressupConfig::segment_merge`].
 fn default_segment_merge_tolerance() -> f64 {
     0.3
@@ -2091,7 +2081,6 @@ pub struct DressupConfig {
     pub feed_max_rate: f64,
     pub feed_ramp_rate: f64,
     pub optimize_rapid_order: bool,
-    pub retract_strategy: RetractStrategy,
     /// When the air-cut filter may replace a run of in-air cutting with a
     /// retract bridge (`planning/unified_v3_design.md` §10).
     ///
@@ -2133,7 +2122,6 @@ impl Default for DressupConfig {
             feed_max_rate: 3000.0,
             feed_ramp_rate: 200.0,
             optimize_rapid_order: true,
-            retract_strategy: RetractStrategy::Full,
             air_bridge_policy: crate::dressup::AirBridgePolicy::default(),
         }
     }
