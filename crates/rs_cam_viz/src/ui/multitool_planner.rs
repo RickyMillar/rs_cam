@@ -121,13 +121,9 @@ fn draw_body(
 }
 
 fn section_heading(ui: &mut egui::Ui, text: &str) {
-    ui.label(
-        egui::RichText::new(text.to_owned())
-            .small()
-            .strong()
-            .color(theme::TEXT_MUTED),
-    );
-    ui.add_space(2.0);
+    // UI-03: the kit's header element. One renderer decides the rung, the
+    // colour and the spacing for every section title in the crate.
+    crate::ui::components::SectionHeader::new(text).show(ui);
 }
 
 // ── Tool ladder ─────────────────────────────────────────────────────────

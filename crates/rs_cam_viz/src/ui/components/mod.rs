@@ -7,10 +7,11 @@
 //! `feeds_modal.rs`. This module is the single home for each concept, so a
 //! concept has one implementation, therefore one behaviour and one look.
 //!
-//! This doc used to claim "105+ inline section headers". Measured 2026-09-13:
-//! `UiExt::named_section` has **10** call sites and there are **41**
-//! hand-rolled `.small().strong()` headers. The 10 gain UP2's treatment for
-//! free; the 41 are hand work and `DESIGN_SPEC.md` §3.3 schedules them.
+//! This doc used to claim "105+ inline section headers". UI-03 closed that
+//! count: every standalone section title now calls [`SectionHeader`] or
+//! `UiExt::named_section`. The `.small().strong()` chains that remain are
+//! grid column headers, notices and active-row emphasis — not headers —
+//! and `component_contracts_up2` names each one with its reason.
 //!
 //! Convention (matches the rest of the crate): leaf widgets impl
 //! [`egui::Widget`] so callers use `ui.add(Thing::new(..))`; layout helpers are

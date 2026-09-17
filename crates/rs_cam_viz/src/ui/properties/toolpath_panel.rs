@@ -801,13 +801,7 @@ fn draw_geometry_tab(
     // ── Machining Boundary ─────────────────────────────────────
     // W3.2: the boundary defines *what region to cut*, so it lives
     // under Geometry (was on the old Dressups tab).
-    ui.add_space(8.0);
-    ui.label(
-        egui::RichText::new("Machining Boundary")
-            .small()
-            .strong()
-            .color(crate::ui::tokens::TEXT_MUTED),
-    );
+    crate::ui::components::SectionHeader::new("Machining Boundary").show(ui);
     ui.checkbox(&mut entry.boundary.enabled, "Enable boundary")
         .on_hover_text(
             "Restrict toolpath to a boundary polygon. \
@@ -1057,12 +1051,7 @@ fn draw_geometry_tab(
                 .color(crate::ui::tokens::TEXT_MUTED),
         );
     } else {
-        ui.label(
-            egui::RichText::new("Rest Analysis")
-                .small()
-                .strong()
-                .color(crate::ui::tokens::TEXT_MUTED),
-        );
+        crate::ui::components::SectionHeader::new("Rest Analysis").show(ui);
         if rest_region_consumers.is_empty() {
             ui.checkbox(
                 &mut entry.rest_analysis.enabled,

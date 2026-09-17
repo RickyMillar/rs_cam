@@ -242,15 +242,11 @@ fn draw_ready(
     });
 }
 
-/// Small caps-style section heading for the role-grouped rollup tables.
+/// Section heading for the role-grouped rollup tables.
+///
+/// UI-03: the kit's header element, not a fourth hand-rolled rung.
 fn draw_section_heading(ui: &mut egui::Ui, text: &str) {
-    ui.label(
-        egui::RichText::new(text)
-            .small()
-            .strong()
-            .color(theme::TEXT_MUTED),
-    );
-    ui.add_space(2.0);
+    crate::ui::components::SectionHeader::new(text).show(ui);
 }
 
 fn draw_header(ui: &mut egui::Ui, report: &ProjectOptimizeReport, row_selected: &[bool]) {

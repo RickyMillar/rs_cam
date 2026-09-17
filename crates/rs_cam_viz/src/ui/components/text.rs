@@ -32,7 +32,8 @@ pub fn display(text: impl Into<String>) -> egui::RichText {
 
 /// A section header. 12 points, SemiBold.
 ///
-/// This is the rung the 41 hand-rolled `.small().strong()` headers become.
+/// This is the rung every section header reads, through
+/// [`crate::ui::components::SectionHeader`] (UI-03).
 #[must_use]
 pub fn subhead(text: impl Into<String>) -> egui::RichText {
     egui::RichText::new(text.into())

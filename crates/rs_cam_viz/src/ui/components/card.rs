@@ -3,10 +3,11 @@
 //! # SectionHeader
 //!
 //! The audit found the same header — `.small().strong()` in a grey — inlined
-//! 41 times, beside a `UiExt::named_section` helper that only 10 call sites
-//! actually use. `named_section` now calls into [`SectionHeader`], so those
-//! 10 gain the treatment with no edit. **The other 41 are hand work**, and
-//! §3.3 already schedules them.
+//! many times, beside a `UiExt::named_section` helper that few call sites
+//! used. `named_section` calls into [`SectionHeader`], and UI-03 converted
+//! the standalone titles that were still hand-rolled. A
+//! `.small().strong()` chain that survives is not a header;
+//! `component_contracts_up2` holds the list and the reason for each.
 //!
 //! # Card
 //!

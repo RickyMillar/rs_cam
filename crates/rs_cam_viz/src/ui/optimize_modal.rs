@@ -626,12 +626,7 @@ fn draw_attempted(ui: &mut egui::Ui, candidates: &[OptimizeCandidate], events: &
         return;
     }
 
-    ui.label(
-        egui::RichText::new("Candidates evaluated (none beat baseline)")
-            .small()
-            .strong(),
-    );
-    ui.add_space(4.0);
+    crate::ui::components::SectionHeader::new("Candidates evaluated (none beat baseline)").show(ui);
 
     // UI-02: 4 columns and striped, so `param_grid` does not fit.
     egui::Grid::new("optimize_attempted_grid")
@@ -791,12 +786,8 @@ fn draw_ranked(
         return;
     }
 
-    ui.label(
-        egui::RichText::new("Candidates (ranked by measured cycle time)")
-            .small()
-            .strong(),
-    );
-    ui.add_space(4.0);
+    crate::ui::components::SectionHeader::new("Candidates (ranked by measured cycle time)")
+        .show(ui);
 
     let recommended_index =
         recommended.and_then(|r| candidates.iter().position(|c| std::ptr::eq(c, r)));
@@ -839,7 +830,7 @@ fn draw_ranked(
 }
 
 fn draw_baseline_card(ui: &mut egui::Ui, baseline: &OptimizeCandidate) {
-    ui.label(egui::RichText::new("Current").small().strong());
+    crate::ui::components::SectionHeader::new("Current").show(ui);
     let cycle_min = format_cycle(baseline.cycle_time_s);
     ui.param_grid("optimize_baseline_grid", |ui| {
         ui.label(egui::RichText::new("Cycle:").small());

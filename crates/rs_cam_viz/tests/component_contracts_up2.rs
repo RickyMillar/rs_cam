@@ -586,3 +586,218 @@ fn a_count_pill_is_on_the_grid_up2() {
         let _ = ui.add(CountPill::observation("traces", 12).semantic(Role::Info));
     });
 }
+
+// ---------------------------------------------------------------------------
+// UI-03 — a section header is the kit's element
+// ---------------------------------------------------------------------------
+//
+// `components::SectionHeader` is the ONE renderer for a section title, and
+// `UiExt::named_section` calls it. The audit found the crate still writing
+// the header by hand as `.small().strong()`, and `card.rs` had recorded a
+// count of 41 that had grown since it was written. A hand-rolled header
+// decides its own rung, its own colour and its own spacing, which is how
+// one product ends up with four of each.
+//
+// UI-03 converted the standalone section titles. What is left is NOT a
+// header, and each allowance below says what it is instead. The count only
+// ever goes down.
+
+/// Files that may still write the `.small()` + `.strong()` chain, with the
+/// number of chains each one holds and the reason they are not headers.
+const HAND_ROLLED_EMPHASIS: &[(&str, usize, &str)] = &[
+    (
+        "ui/optimize_project.rs",
+        14,
+        "grid COLUMN headers; a SectionHeader draws a rule and its own \
+         vertical space, so it cannot sit in a grid cell",
+    ),
+    (
+        "ui/multitool_planner.rs",
+        12,
+        "11 grid column headers, plus the tier-cap warning sentence",
+    ),
+    (
+        "ui/optimize_modal.rs",
+        9,
+        "7 grid column headers, one CollapsingHeader title and the \
+         \"Try this\" notice",
+    ),
+    (
+        "ui/sim_op_list.rs",
+        4,
+        "one CollapsingHeader title and three ACTIVE-row emphases, which \
+         mark selection rather than name a section",
+    ),
+    (
+        "ui/feeds/compare.rs",
+        3,
+        "the feeds surfaces are the power session's; UI-03 does not edit them",
+    ),
+    (
+        "ui/sim_timeline.rs",
+        3,
+        "one playback notice and two active-track emphases",
+    ),
+    (
+        "ui/feeds/explore.rs",
+        2,
+        "the feeds surfaces are the power session's; UI-03 does not edit them",
+    ),
+    (
+        "ui/readiness_panel.rs",
+        2,
+        "one grid column-header loop and one inline lead-in inside a \
+         horizontal row",
+    ),
+    (
+        "ui/sim_diagnostics.rs",
+        2,
+        "\"Must address\" carries theme::ERROR, and the severity colour is \
+         meaning rather than styling; SectionHeader has no colour slot. The \
+         other is a sentence, not a title.",
+    ),
+    (
+        "ui/overlays/panel.rs",
+        1,
+        "the OVERLAYS title shares a horizontal row with the close and pin \
+         buttons; SectionHeader's trailing slot takes text, not a button",
+    ),
+    (
+        "ui/properties/machine_panel.rs",
+        1,
+        "\"Will apply:\" leads a bullet list inside the GRBL import preview",
+    ),
+    (
+        "ui/toolpath_panel.rs",
+        1,
+        "the rest badge's own text, not a section title",
+    ),
+    (
+        "app.rs",
+        1,
+        "the reduced-quality playback notice, a sentence rather than a title",
+    ),
+];
+
+/// The fewest `SectionHeader` / `named_section` call sites the crate must
+/// hold. A conversion that deleted headers rather than routing them fails.
+const MIN_KIT_HEADERS: usize = 20;
+
+fn ui_src_root() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src")
+}
+
+fn ui_rs_files() -> Vec<std::path::PathBuf> {
+    fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(dir).unwrap().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path, out);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                out.push(path);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(&ui_src_root(), &mut out);
+    out.sort();
+    out
+}
+
+/// `text` with every `//` comment removed, so a count quoted in a doc
+/// comment is not read as a call site.
+fn without_comments(text: &str) -> String {
+    text.lines()
+        .map(|l| match l.find("//") {
+            Some(i) => &l[..i],
+            None => l,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Hand-rolled `.small()` + `.strong()` chains per file, comments stripped.
+/// The chain is often split over two lines, so the scan reads the whole file.
+fn hand_rolled_sites() -> Vec<(String, usize)> {
+    let root = ui_src_root();
+    let mut out = Vec::new();
+    for path in ui_rs_files() {
+        let rel = path
+            .strip_prefix(&root)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let text = without_comments(&std::fs::read_to_string(&path).unwrap());
+        // Collapse whitespace so `.small()\n .strong()` reads as one chain.
+        let flat: String = text.split_whitespace().collect::<Vec<_>>().join("");
+        let n =
+            flat.matches(".small().strong()").count() + flat.matches(".strong().small()").count();
+        if n > 0 {
+            out.push((rel, n));
+        }
+    }
+    out
+}
+
+#[test]
+fn a_section_header_is_the_kit_element_ui03() {
+    let sites = hand_rolled_sites();
+    let mut over = Vec::new();
+
+    for (rel, count) in &sites {
+        let allowed = HAND_ROLLED_EMPHASIS
+            .iter()
+            .find(|(f, _, _)| f == rel)
+            .map_or(0, |(_, n, _)| *n);
+        if *count > allowed {
+            over.push(format!("{rel} {count} (allowed {allowed})"));
+        }
+    }
+
+    assert!(
+        over.is_empty(),
+        "these files hand-roll a header the component kit already renders. \
+         A section title is `components::SectionHeader::new(title).show(ui)` \
+         or `UiExt::named_section`. Emphasis that is NOT a header keeps its \
+         chain and is named in HAND_ROLLED_EMPHASIS with its reason. Over \
+         budget: {}",
+        over.join(", ")
+    );
+}
+
+#[test]
+fn the_hand_rolled_emphasis_list_is_not_vacuous_ui03() {
+    let sites = hand_rolled_sites();
+
+    for (rel, allowed, reason) in HAND_ROLLED_EMPHASIS {
+        assert!(
+            !reason.is_empty(),
+            "{rel} must say WHY its chains are not headers"
+        );
+        let found = sites.iter().find(|(f, _)| f == rel).map_or(0, |(_, n)| *n);
+        assert_eq!(
+            found, *allowed,
+            "{rel} is allowed {allowed} hand-rolled chains and holds \
+             {found}. An allowance that no longer matches its file lets a \
+             new hand-rolled header in under an old number."
+        );
+    }
+
+    let root = ui_src_root();
+    let mut kit_headers = 0usize;
+    for path in ui_rs_files() {
+        if path.ends_with("components/card.rs") {
+            continue;
+        }
+        let text = without_comments(&std::fs::read_to_string(&path).unwrap());
+        kit_headers += text.matches("SectionHeader::new(").count();
+        kit_headers += text.matches(".named_section(").count();
+    }
+    let _ = root;
+    assert!(
+        kit_headers >= MIN_KIT_HEADERS,
+        "the crate holds only {kit_headers} kit header call sites, fewer \
+         than the {MIN_KIT_HEADERS} it had after UI-03. A conversion that \
+         DELETES headers passes the budget arm without routing anything."
+    );
+}

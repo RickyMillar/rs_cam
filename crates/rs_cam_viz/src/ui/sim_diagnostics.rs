@@ -532,7 +532,7 @@ fn draw_project_section(
             // (fill-only pill). The exceeding pill is actionable (`… →` button) when
             // any TP exceeds — it jumps straight to the project-level Optimize,
             // replacing the separate ⚡ Optimize-all button (FINAL_DESIGN §5.1).
-            ui.label(egui::RichText::new("Findings").small().strong());
+            crate::ui::components::SectionHeader::new("Findings").show(ui);
             ui.horizontal_wrapped(|ui| {
                 ui.add(
                     CountPill::verdict("\u{2713} within", ok)
@@ -1642,13 +1642,7 @@ fn draw_span_body(
         return;
     }
 
-    ui.add_space(4.0);
-    ui.label(
-        egui::RichText::new("Findings in this span")
-            .small()
-            .strong()
-            .color(theme::TEXT_HEADING),
-    );
+    crate::ui::components::SectionHeader::new("Findings in this span").show(ui);
 
     const MAX_ROWS: usize = 8;
     for (h_idx, h) in in_scope_hotspots.iter().take(MAX_ROWS) {

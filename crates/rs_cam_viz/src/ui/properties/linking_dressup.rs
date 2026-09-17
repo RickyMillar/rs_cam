@@ -309,15 +309,9 @@ pub(super) fn draw_linking_params(
         .then_some("This operation sets its entry move directly — the dressup entry style isn't used here.")
     });
     let cfg = &mut entry.dressups;
-    let section_color = crate::ui::tokens::TEXT_MUTED;
 
     // ── Entry & Exit ──────────────────────────────────────────
-    ui.label(
-        egui::RichText::new("Entry & Exit")
-            .small()
-            .strong()
-            .color(section_color),
-    );
+    crate::ui::components::SectionHeader::new("Entry & Exit").show(ui);
 
     ui.horizontal(|ui| {
         ui.label("Entry Style:");
@@ -401,12 +395,7 @@ pub(super) fn draw_linking_params(
     ui.add_space(6.0);
 
     // ── Optimization ──────────────────────────────────────────
-    ui.label(
-        egui::RichText::new("Optimization")
-            .small()
-            .strong()
-            .color(section_color),
-    );
+    crate::ui::components::SectionHeader::new("Optimization").show(ui);
 
     ui.add_enabled_ui(op_incompatible_msg.is_none(), |ui| {
         let resp = ui
@@ -486,15 +475,8 @@ pub(super) fn draw_linking_params(
 /// overcuts. Entry/exit + optimization live on the Linking tab
 /// ([`draw_linking_params`]); the machining boundary lives on Geometry.
 pub(super) fn draw_dressup_params(ui: &mut egui::Ui, cfg: &mut DressupConfig) {
-    let section_color = crate::ui::tokens::TEXT_MUTED;
-
     // ── Path Quality ──────────────────────────────────────────
-    ui.label(
-        egui::RichText::new("Path Quality")
-            .small()
-            .strong()
-            .color(section_color),
-    );
+    crate::ui::components::SectionHeader::new("Path Quality").show(ui);
 
     ui.checkbox(&mut cfg.arc_fitting, "Arc fitting (G2/G3)")
         .on_hover_text("Convert sequences of linear segments into smooth G2/G3 arcs. Reduces file size, improves surface finish, and produces smoother machine motion. Safe for all operations.");

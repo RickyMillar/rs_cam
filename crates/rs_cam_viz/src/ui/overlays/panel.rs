@@ -158,13 +158,7 @@ fn body(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
 
     let legends = registry::active_legends(state);
     if !legends.is_empty() {
-        ui.separator();
-        ui.label(
-            egui::RichText::new("LEGEND")
-                .small()
-                .strong()
-                .color(theme::TEXT_HEADING),
-        );
+        crate::ui::components::SectionHeader::new("LEGEND").show(ui);
         for legend in legends {
             draw_legend(ui, state, legend);
         }
