@@ -235,16 +235,15 @@ pub struct OperationDef {
     pub stock_top_z: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stock_to_leave: Option<f64>,
-    /// Entry style for 3D ops. Accepts both `entry` and legacy `entry_style`.
-    #[serde(alias = "entry_style")]
+    /// Entry style for 3D ops. CLI-01: the `entry_style` alias is
+    /// deleted; the key is `entry_3d`, and the 2D `entry` key is still
+    /// the fallback.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entry_3d: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fine_stepdown: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detect_flat_areas: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_stay_down_dist: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_by: Option<String>,
     /// Clearing strategy: "agent" (default) or "contour"/"contour_parallel".
@@ -1333,8 +1332,8 @@ fn job_params_for(
                 "min_cutting_radius",
                 json!(op.min_cutting_radius.unwrap_or(0.0)),
             ));
-            // entry_3d (with legacy alias) falls back to the shared 2D
-            // `entry` field, matching the pre-T9 router.
+            // entry_3d falls back to the shared 2D `entry` field,
+            // matching the pre-T9 router.
             let entry = op
                 .entry_3d
                 .as_deref()
@@ -1388,7 +1387,7 @@ fn job_params_for(
                 "min_region_cut_length_mm",
                 json!(op.min_region_cut_length_mm.unwrap_or(15.0)),
             ));
-            if let Some(d) = op.max_stay_down_distance_mm.or(op.max_stay_down_dist) {
+            if let Some(d) = op.max_stay_down_distance_mm {
                 p.push(("max_stay_down_distance_mm", json!(d)));
             }
             p.push((
@@ -1539,6 +1538,65 @@ mod tests {
                 "job TOML emitted {emitted:?}, expected the canonical token {token}"
             );
         }
+    }
+
+    /// CLI-01 sentry: the job file has ONE stay-down key, and the
+    /// deleted one no longer feeds it.
+    ///
+    /// `OperationDef` carried both `max_stay_down_dist` and
+    /// `max_stay_down_distance_mm`, and `job_params_for` coalesced them
+    /// with `.or()`. A job file setting BOTH silently lost one of them,
+    /// with no warning. The same string also named an unrelated, dead
+    /// `Adaptive3dParams` field, so the two could not be told apart by
+    /// name. Only `max_stay_down_distance_mm` — the name every
+    /// `OperationConfig` registry, the GUI and MCP `set_toolpath_param`
+    /// use — reaches the core now.
+    #[test]
+    fn the_job_file_has_one_stay_down_key() {
+        let with_live_key: OperationDef = toml::from_str(
+            "type = \"adaptive3d\"\ninput = \"m.stl\"\ntool = \"a\"\nmax_stay_down_distance_mm = 18.0\n",
+        )
+        .unwrap();
+        let params = job_params_for(&with_live_key, OperationType::Adaptive3d, None, None).unwrap();
+        assert_eq!(
+            params
+                .iter()
+                .find(|(k, _)| *k == "max_stay_down_distance_mm")
+                .map(|(_, v)| v.clone()),
+            Some(serde_json::json!(18.0)),
+            "the live key must still reach the core"
+        );
+
+        // The deleted key is not a second door into the same param.
+        let with_deleted_key: OperationDef = toml::from_str(
+            "type = \"adaptive3d\"\ninput = \"m.stl\"\ntool = \"a\"\nmax_stay_down_dist = 30.0\n",
+        )
+        .unwrap();
+        let params =
+            job_params_for(&with_deleted_key, OperationType::Adaptive3d, None, None).unwrap();
+        assert!(
+            !params
+                .iter()
+                .any(|(k, _)| *k == "max_stay_down_distance_mm"),
+            "the deleted key still sets the param; the coalesce survived"
+        );
+    }
+
+    /// CLI-01 sentry: `entry_style` is not a second spelling of
+    /// `entry_3d` any more.
+    #[test]
+    fn the_entry_style_alias_is_gone() {
+        let op: OperationDef = toml::from_str(
+            "type = \"adaptive3d\"\ninput = \"m.stl\"\ntool = \"a\"\nentry_style = \"helix\"\n",
+        )
+        .unwrap();
+        assert_eq!(op.entry_3d, None, "the deleted alias still fills entry_3d");
+
+        let op: OperationDef = toml::from_str(
+            "type = \"adaptive3d\"\ninput = \"m.stl\"\ntool = \"a\"\nentry_3d = \"helix\"\n",
+        )
+        .unwrap();
+        assert_eq!(op.entry_3d.as_deref(), Some("helix"));
     }
 
     /// CLI-08 teeth: the five job-only spellings are gone, not aliased.

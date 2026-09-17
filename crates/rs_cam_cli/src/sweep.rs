@@ -492,6 +492,27 @@ tool = "flat_6mm"
         );
     }
 
+    /// CLI-01 sentry: the two deleted job keys refuse the sweep by name.
+    ///
+    /// `OperationDef` carried `max_stay_down_dist` beside
+    /// `max_stay_down_distance_mm` and coalesced them with `.or()`, and
+    /// it carried an `entry_style` alias for `entry_3d`. Both are gone
+    /// (operator ruling 2026-09-16, no legacy support). `OperationDef`
+    /// does not deny unknown keys, so the plain job loader ignores such
+    /// a key in silence; this door does not, and this test pins that.
+    #[test]
+    fn the_deleted_job_keys_refuse_the_sweep() {
+        let job = sweepable_job();
+        for field in ["max_stay_down_dist", "entry_style"] {
+            let err = resolve_base_value(&job, field, "1.0")
+                .expect_err("a deleted key must refuse the sweep, not repeat the baseline");
+            assert!(
+                err.to_string().contains(field),
+                "the refusal must name the field, got: {err}"
+            );
+        }
+    }
+
     /// I10 pair 4: the sweep baseline is a serialize-then-reparse round trip.
     /// Every field the parser knows must survive it. The hand-written mirror
     /// this replaced dropped the shank and holder geometry, so deflection and
@@ -562,7 +583,6 @@ stock_to_leave = 0.3
 entry_3d = "helix"
 fine_stepdown = 0.4
 detect_flat_areas = true
-max_stay_down_dist = 30.0
 order_by = "depth"
 strategy = "contour"
 mill_shallow_areas = true
