@@ -49,9 +49,12 @@ waves, a not-now list and a verification list. The top defects: a failed
 holder-collision check reads as zero collisions; MCP export drops the
 machine-safety findings the GUI shows; `apply_tabs` strips move intent; an
 unknown `face_up` loads as Top; a Post-tab edit never marks the project
-dirty. Wave 1 landed the same evening: 18 commits (`1a0a1ea5`..`3c691ac2`),
-see `SYNTHESIS.md` § Wave 1 outcome. Read `SYNTHESIS.md` before you start
-the next wave.
+dirty. All five waves landed overnight 2026-09-17/18: about 130 commits from
+`1a0a1ea5` to `32f7ca82`, every wave gated (`WAVE*_GATE.md`), nine
+sequential tail slots, no row landed without its sentry going red first.
+`SYNTHESIS.md` carries the per-wave outcomes, the skips with cause and the
+open operator items (STK-13, STK-12, FIN-08, the `tool_load/` lines, a
+live GUI look).
 
 ## Structure programme — 2026-09-17 (navigable repository; COMPLETE)
 

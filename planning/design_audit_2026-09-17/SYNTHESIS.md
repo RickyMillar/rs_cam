@@ -708,3 +708,39 @@ should move to `stock::collision`; the GUI's MCP project JSON lacks
 `collision_checks_failed`; `ramp_finish_toolpath` is a sixth FIN-11-shape
 wrapper; `feeds/suggest/apply.rs:92` names the deleted
 `DepthDistribution::Even` in a comment (power session's file).
+
+## Waves 4 + 5 outcome — 2026-09-18 morning
+
+Nine sequential slots, 60 commits (`8e3a6a83` .. `32f7ca82`), one agent at
+a time. Gate: `WAVE5_GATE.md`.
+
+| slot | rows landed | skipped with cause |
+|---|---|---|
+| 1 finish | FIN-14, FIN-02, FIN-12, FIN-13, FIN-05 + FIN-06, `ramp_finish_toolpath` | — |
+| 2 stock | STK-02, `HolderCollisionCheck` → `stock::collision`, STK-14, STK-10, STK-09, STK-01 (18 grid hashes bit-identical) | STK-11 and STK-03 + STK-07 need lines in the power session's `tool_load/` (patch for STK-11 in the orchestrator's scratchpad); STK-12 needs an operator ruling on the timeline (two GUI issue kinds have no core source); STK-13 not ruled |
+| 3 compute | CMP-12, CMP-21 + CMP-28, CMP-03 + -04 + -06 + -07 + -11 + -13, CMP-02, CMP-18, CMP-20 + CUT-06 + CUT-11, CMP-23 + CMP-25 | — (three compile-forced lines in `tool_load/` were edited) |
+| 4 viz-shell | CMP-19, SHL-02, SHL-06, SHL-03, `inspect_spans` keys, `collision_checks_failed` in the GUI JSON | — |
+| 5 viz-ui | UI-02, UI-03, UI-10, UI-04, UI-05, UI-07, UI-09, UI-12 | — (four landed narrower, each with a non-vacuity arm) |
+| 6 fields | FLD-01, FLD-02, FLD-06, 12 more test doors gated | — |
+| 7 cutting | CUT-04, CUT-13 (five of seven bools), CUT-14 (fallback form), CUT-09 | `feed_optimization` fold needs one `tool_load/` line |
+| 8 session | SES-04, SES-06, mesh-less fixture check, two folder files back to 40 lines | — |
+| 9 edges | EDG-02 (132 rows to `data/wood_species.toml`, hash-pinned), EDG-07, `material/CLAUDE.md` | — |
+
+Defects found by the slots' own sentries and fixed on the way: the S5
+memo never hit on a session ladder (the semantic trace was re-allocated
+per round, `b2b9bb8d`); the MCP collision JSON published a segment name
+with escaped quotes (STK-10); `ReachMap` fails its own JSON round trip
+(`NaN` floor cells, recorded, not fixed); `StepImportError::TessellationFailed`
+carried a hard-coded shell index (deleted).
+
+Add-an-operation cost: 4 decision files → 3 in core; the viz table
+`operations/registry.rs` holds draw, diagram and validate per operation
+with a completeness test.
+
+Open for the operator: STK-13 (side grids), STK-12 (timeline projection),
+FIN-08 (paired A/B, two-band preset), the `tool_load/` lines above, a
+live look at the GUI after the kit replacements (UI-02/03/10 change
+spacing and column widths), `io/CLAUDE.md` lists two `step`-feature
+sentries the default build does not run, the UI-04 help ratchet at 127
+unwritten lines, `adaptive3d_emission_byte_parity.rs` lacks a programme
+suffix, and the corridor test's `LONG_AND_THIN` fixture (power session).
