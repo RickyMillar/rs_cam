@@ -356,7 +356,15 @@ fn fixtures() -> Vec<Fixture> {
             // exactly `max`**. A hardwood ball tool cannot both clear chip
             // formation and stay inside its vendor window, which is the
             // FEEDS_CENSUS C-12 tradeoff, disclosed rather than hidden.
-            expected_suggest_feed: 881.0,
+            //
+            // **RE-PINNED 2026-09-18, T-9: 881.0 → 880.0** (−1 mm/min).
+            // `apply_feeds_subset` now calls `round_suggestion_value_down`,
+            // which FLOORS the feed instead of rounding it to the nearest, so
+            // a clamped feed can no longer ship above its ceiling. Pass 9
+            // does not fire on a DropCutter — no axial step, no mutated
+            // geometry — so this fixture ships the quantised value directly
+            // and moves by the full step. Measured, not adjusted.
+            expected_suggest_feed: 880.0,
         },
         // A small router: the ceiling binds on a DropCutter lift too.
         Fixture {
@@ -376,7 +384,10 @@ fn fixtures() -> Vec<Fixture> {
             // (÷1.613). Same rubbing-floor-at-the-band-ceiling outcome as
             // DC-1: band 0.00839–0.01679, commanded lands on **0.01679
             // mm/tooth, exactly `max`**.
-            expected_suggest_feed: 638.0,
+            //
+            // **RE-PINNED 2026-09-18, T-9: 638.0 → 637.0** (−1 mm/min), the
+            // same cause as DC-1 above: the apply path floors the feed.
+            expected_suggest_feed: 637.0,
         },
     ]
 }

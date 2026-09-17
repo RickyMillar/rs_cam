@@ -16,7 +16,7 @@ use crate::material::Material;
 use super::invariants::enforce_invariants;
 use super::{
     CalculatorOperatingPoint, StockContext, SuggestContext, SuggestWarning,
-    feeds_input_for_operation, round_suggestion_value,
+    feeds_input_for_operation, round_suggestion_value, round_suggestion_value_down,
 };
 
 /// Which dimensions of a [`FeedsResult`] an apply writes back to the operation.
@@ -76,13 +76,35 @@ fn apply_feeds_subset(
     speeds_explored: bool,
 ) -> Vec<SuggestWarning> {
     let mut scratch = operation.clone();
-    scratch.set_feed_rate(round_suggestion_value(result.feed_rate_mm_min, 1.0));
-    scratch.set_plunge_rate(round_suggestion_value(result.plunge_rate_mm_min, 1.0));
+    // T-9: the feed and the plunge round DOWN, not to the nearest.
+    //
+    // Every ceiling in `calculate` — the Step 6 spindle power gate and the
+    // Step 7 machine cutting-feed ceiling — is satisfied at the value
+    // `result` carries. A nearest rounding goes UP about half the time, and
+    // nothing below re-checks a limit, so the shipped recipe sat up to
+    // +0.5 mm/min above the ceiling the clamp exists to enforce. Measured
+    // before the fix: Generic Wood Router / Walnut, calculator 2562.5040
+    // -> shipped 2563.0000.
+    //
+    // The cost is stated where it lands: a feed the RUBBING FLOOR raised
+    // rounds AWAY from that floor by up to one mm/min. The floor is an
+    // advisory band and the power gate is a physical limit, so the trade is
+    // correct. `a_clamped_feed_ships_at_or_below_its_ceiling_g_feeddown`
+    // pins the direction and `rubbing_floor_never_exceeds_band` pins the
+    // band.
+    scratch.set_feed_rate(round_suggestion_value_down(result.feed_rate_mm_min, 1.0));
+    scratch.set_plunge_rate(round_suggestion_value_down(result.plunge_rate_mm_min, 1.0));
     // T-12: both setters return `bool` so the caller can refuse instead of
     // discarding the value — their doc comments say exactly that. Capture
     // the refusals here and report them below, but ONLY when this call was
     // asked to write the cut geometry. Under `ApplyScope::Speeds` not
     // writing the depth is the contract, not a dropped recommendation.
+    //
+    // The two geometry fields keep the NEAREST rounding. Their clamps sit in
+    // `enforce_invariants`, which runs BELOW this point and moves geometry
+    // downward, so neither value is bound from above here — the direction
+    // T-9 is about. The depth is then snapped to the reachable staircase
+    // anyway, which dominates a 0.0005 mm rounding step.
     let stepover_mm = round_suggestion_value(result.radial_width_mm, 0.001);
     let depth_mm = round_suggestion_value(result.axial_depth_mm, 0.001);
     let stepover_held = scratch.set_stepover(stepover_mm);

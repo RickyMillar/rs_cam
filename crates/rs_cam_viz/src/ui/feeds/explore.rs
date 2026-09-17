@@ -302,11 +302,18 @@ enum Ceiling {
     /// Modelled, and past the top of the plot. **Nothing is drawn.**
     ///
     /// This is the ORDINARY case, and it is not an error. Measured on the
-    /// reference fixture (6 mm two-flute flat, 4.20 DOC, 2.10 WOC, generic
-    /// softwood) the ceiling is 9.36 mm/tooth against a chart that draws
-    /// 0.1176 mm/tooth at most — about eighty times off scale. A stubby
-    /// carbide cutter in wood is not deflection-limited; the binding
-    /// constraints are the feed cap, the rubbing floor and rigidity.
+    /// reference fixture (6 mm two-flute flat, 45 mm stickout, 4.20 DOC,
+    /// 2.10 WOC, generic softwood) the ceiling is **2.4315 mm/tooth**
+    /// against a chart that draws **0.12353 mm/tooth** at most — about
+    /// twenty times off scale. A stubby carbide cutter in wood is not
+    /// deflection-limited; the binding constraints are the feed cap, the
+    /// rubbing floor and rigidity.
+    ///
+    /// This pair was 9.36 against 0.1176 until 2026-09-18. Neither number
+    /// reproduced: the ceiling was 3.85x the measured value, and 0.1176 is
+    /// the chart top at 18000 RPM while this cut runs 17000.
+    /// `the_corridor_bounds_the_band_g_corridor` measures the pair; the
+    /// derivation is in `planning/load_model_2026-09-16/CORRIDOR_REPAIR.md`.
     ///
     /// A wedge clamped to the top edge would read as *"you are near the
     /// force limit"*, false by two orders of magnitude. That is
@@ -321,8 +328,29 @@ enum Ceiling {
         chart_top_mm: f64,
     },
     /// Modelled and inside the plot's range, so the upper wedge IS drawn.
-    /// Compliance rises with the cube of stickout, so a long or a thin tool
-    /// brings the ceiling down onto the chart.
+    ///
+    /// **The diameter is the lever here, not the stickout.**
+    /// `ToolDefinition::tip_deflection_mm` models a STEPPED cantilever: a
+    /// fixed 25 mm flute section, below a 6.35 mm shank that fills the rest
+    /// of the stickout. Since T-17 the flute section bends on
+    /// `ENDMILL_EQUIVALENT_DIAMETER_FRACTION` (0.80) of the cutting
+    /// diameter, not on the raw diameter. `I` goes with the fourth power of
+    /// the diameter, so at Ø2 mm the shank is stiffer per unit length by
+    ///
+    /// ```text
+    /// (6.35 / (0.80 * 2.0))^4 = 3.96875^4 = 248.09
+    /// ```
+    ///
+    /// — about **248x**, not the 101x the raw 2 mm diameter would give. The
+    /// flute section therefore carries nearly all of the compliance, and its
+    /// length does not change with the stickout. Measured at Ø2 mm: 40 mm of
+    /// stickout gives 2.618e-2 mm/N and 120 mm gives 3.767e-2 mm/N — 3x the
+    /// length for 1.44x the compliance, not 27x.
+    ///
+    /// So a THIN tool brings the ceiling down onto the chart; a long one
+    /// barely moves it. Any prose that says the compliance goes with the
+    /// cube of stickout describes a plain cantilever, not this model.
+    /// Derivation: `planning/load_model_2026-09-16/CORRIDOR_REPAIR.md` §6.
     OnChart { ceiling_mm: f64 },
 }
 

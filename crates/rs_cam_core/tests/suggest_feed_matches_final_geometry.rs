@@ -326,13 +326,30 @@ fn a_raised_stepover_does_not_move_the_feed_at_all() {
     );
 
     // The feed the calculator produced, and the feed shipped after every
-    // invariant pass ran, must agree to the 1 mm/min the apply path rounds to.
+    // invariant pass ran, must agree to the quantisation the apply path
+    // applies — and nothing more.
+    //
+    // The bound is ONE whole step of 1 mm/min, and it is ONE-SIDED. Since T-9
+    // `apply_feeds_subset` calls `round_suggestion_value_down`, which FLOORS
+    // the feed, so the shipped feed is never above the calculator feed and
+    // the gap can reach a full step. The bound was `abs() <= 0.5` while the
+    // apply path rounded to the NEAREST, where the half-step is the whole
+    // error; that number is the wrong tolerance for a floor, not a slack that
+    // needs widening. Measured on this fixture after T-9: 404.759 → 404.000,
+    // a gap of 0.759 mm/min.
+    //
+    // The one-sided form is STRONGER than the old `abs()`: it also pins the
+    // direction, so a future change that raises a feed here fails even by
+    // half a step.
     let calculator_feed = case.suggested.feeds_result.feed_rate_mm_min;
     let shipped_feed = case.suggested.operation.feed_rate();
+    let quantisation_gap = calculator_feed - shipped_feed;
     assert!(
-        (shipped_feed - calculator_feed).abs() <= 0.5 + calculator_feed * 1e-9,
+        quantisation_gap >= 0.0 && quantisation_gap < 1.0 + calculator_feed * 1e-9,
         "{}: the stepover moved {:.5} → {:.5} mm and the feed moved with it, \
-         {calculator_feed:.4} → {shipped_feed:.4} mm/min.\n  Since G-CHIPTHIN-HALFFIX \
+         {calculator_feed:.4} → {shipped_feed:.4} mm/min, a gap of \
+         {quantisation_gap:.4}.\n  The apply path floors the feed to 1 mm/min (T-9), so \
+         the only licensed gap is one step DOWNWARD.\n  Since G-CHIPTHIN-HALFFIX \
          (2026-08-19) `ae` must not reach the feed: chip thinning was deleted from the \
          calculator, and the only surviving `ae` dependence is the Step 6 power ceiling, \
          which does not fire on shipped profiles. A feed that tracks stepover means a \
@@ -354,25 +371,24 @@ fn a_raised_stepover_does_not_move_the_feed_at_all() {
         .feeds_result
         .chipload_bounds
         .expect("wanaka's tapered-ball finish matches a vendor LUT row");
-    // The tolerance is the apply path's feed rounding, not slack: this
-    // fixture's whole derated band sits under the 0.025 mm/tooth
+    // This fixture's whole derated band sits under the 0.025 mm/tooth
     // chip-formation floor, so `effective_rubbing_floor` collapses to the band
-    // CEILING and Step 9b pins the advance exactly there — after which
-    // `apply_feeds_subset` rounds the feed to 1 mm/min and can push it a hair
-    // over. Measured 1.001×, which is 0.5 mm/min on a 405 mm/min feed.
-    let flutes = f64::from(case.tool.flute_count.max(1));
-    let rpm = f64::from(
-        case.suggested
-            .operation
-            .spindle_rpm()
-            .expect("Suggest writes the calculator RPM"),
-    );
-    let rounding = 0.5 / (rpm * flutes);
+    // CEILING and Step 9b pins the advance exactly there.
+    //
+    // The tolerance used to be `0.5 / (rpm · flutes)` — the half-step of the
+    // NEAREST feed rounding, which could push the pinned advance a hair OVER
+    // the ceiling (measured 1.001×). Since T-9 `apply_feeds_subset` FLOORS the
+    // feed, so the quantisation can only move the advance DOWN and buys no
+    // upward allowance at all. What is left is float noise in the pinning
+    // arithmetic, which is what this epsilon is. Measured after T-9: advance
+    // 0.010632 against a ceiling of 0.010652 — the advance sits BELOW the
+    // ceiling by 1.9e-5, four orders of magnitude clear of the epsilon.
+    let float_noise = band.max_mm_per_tooth * 1e-9;
     assert!(
-        advance <= band.max_mm_per_tooth + rounding,
+        advance <= band.max_mm_per_tooth + float_noise,
         "{}: commanded advance {advance:.8} mm/tooth exceeds the derated band maximum \
-         {:.8} by {:.3}×, which is more than the {rounding:.8} the 1 mm/min feed rounding \
-         can account for",
+         {:.8} by {:.3}×. Step 9b pins the advance AT the ceiling and the apply path \
+         only ever floors the feed from there, so nothing may sit above it.",
         case.name,
         band.max_mm_per_tooth,
         advance / band.max_mm_per_tooth

@@ -24,19 +24,31 @@ pub struct ExportedGcode {
 /// Run the machine-safety pass over freshly emitted G-code. Log the
 /// findings (non-blocking) and return them.
 ///
-/// Uses the post's safe-Z as the clearance plane; the depth-floor and
-/// feed-cap checks stay off until the machine profile is plumbed through
-/// (turning them on without correct limits would risk false positives).
+/// Uses the post's safe-Z as the clearance plane and the session machine's
+/// `max_feed_mm_min` as the feed cap.
+///
+/// **Which feed limit, and why that one.** `max_feed_mm_min` is the gantry
+/// TRAVEL rate — the kinematic maximum, GRBL's `$110`/`$111`. It is NOT
+/// `cutting_feed_ceiling_mm_min()`, which is the lower advisory cut-quality
+/// ceiling. The validator checks every `F` word, and
+/// `replace_rapids_with_feed` rewrites rapids as feeds at the travel rate,
+/// so the cutting ceiling would raise a finding on every rewritten rapid.
+/// The travel rate catches a true kinematic overrun and nothing else. See
+/// T-9 in `planning/TECH_DEBT_REGISTER.md`.
+///
+/// The depth-floor check stays off: no caller has a stock-bottom limit to
+/// hand it, and turning it on without one would risk false positives.
+///
 /// Runs before any high-feedrate rapid→feed rewrite so the rapid
 /// structure is still intact to check. A caller must therefore keep the
 /// findings this returns; the rewritten program has no G0 left to check.
-fn machine_safety_pass(gcode: &str, safe_z: f64) -> Vec<Finding> {
+fn machine_safety_pass(gcode: &str, safe_z: f64, max_feed_mm_min: f64) -> Vec<Finding> {
     let findings = validate_machine_safety(
         gcode,
         MachineSafety {
             clearance_z: safe_z,
             min_z: None,
-            max_feed_mm_min: None,
+            max_feed_mm_min: Some(max_feed_mm_min),
         },
     );
     if findings.is_empty() {
@@ -516,7 +528,8 @@ pub fn export_gcode_from_session_reporting(
     )
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
-    let machine_safety = machine_safety_pass(&gcode, gui.post.safe_z);
+    let machine_safety =
+        machine_safety_pass(&gcode, gui.post.safe_z, session.machine().max_feed_mm_min);
 
     if gui.post.high_feedrate_mode {
         gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate, post);
@@ -589,7 +602,7 @@ pub fn export_combined_gcode_from_session(
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
     // No reporting caller on this door yet: the pass logs, as it always did.
-    machine_safety_pass(&gcode, gui.post.safe_z);
+    machine_safety_pass(&gcode, gui.post.safe_z, session.machine().max_feed_mm_min);
 
     if gui.post.high_feedrate_mode {
         gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate, post);
@@ -652,7 +665,7 @@ pub fn export_single_toolpath_from_session(
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
     // No reporting caller on this door yet: the pass logs, as it always did.
-    machine_safety_pass(&gcode, gui.post.safe_z);
+    machine_safety_pass(&gcode, gui.post.safe_z, session.machine().max_feed_mm_min);
 
     if gui.post.high_feedrate_mode {
         gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate, post);
@@ -738,7 +751,8 @@ pub fn export_setup_gcode_from_session_reporting(
     )
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
-    let machine_safety = machine_safety_pass(&gcode, gui.post.safe_z);
+    let machine_safety =
+        machine_safety_pass(&gcode, gui.post.safe_z, session.machine().max_feed_mm_min);
 
     if gui.post.high_feedrate_mode {
         gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate, post);

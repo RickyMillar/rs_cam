@@ -25,7 +25,7 @@ use std::cell::Cell;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::feeds::suggest::{
     FieldApplyPreview, FieldApplyPreviews, SuggestContext, preview_field_applies,
-    round_suggestion_value,
+    round_suggestion_value, round_suggestion_value_down,
 };
 use rs_cam_core::feeds::{FeedsField, FeedsResult};
 
@@ -36,12 +36,18 @@ use crate::ui::components::{ProvKind, Suggestion};
 /// With a funnel preview the pill offers the as-applied value with the stamp
 /// the funnel would record. Without one the funnel does not write this field
 /// on this operation, so the pill offers the raw calculator value
-/// (`calculator`, rounded to `step`) coloured by the chipload source, marked
-/// `clamped: false` so the hover says so.
+/// (`calculator`, quantised by `round` to `step`) coloured by the chipload
+/// source, marked `clamped: false` so the hover says so.
+///
+/// `round` is the caller's choice of quantiser, because the direction is not
+/// the same for every field. T-9: a value a ceiling already bound takes
+/// `round_suggestion_value_down`, a value with no upper bound takes
+/// `round_suggestion_value`.
 pub(super) fn suggestion_for<'a>(
     preview: Option<&'a FieldApplyPreview>,
     calculator: f64,
     step: f64,
+    round: fn(f64, f64) -> f64,
     raw_source: (ProvKind, Option<&'a str>),
 ) -> Suggestion<'a> {
     match preview {
@@ -53,7 +59,7 @@ pub(super) fn suggestion_for<'a>(
             calculator: Some(calculator),
         },
         None => Suggestion {
-            recommended: round_suggestion_value(calculator, step),
+            recommended: round(calculator, step),
             source: raw_source.0,
             reference: raw_source.1,
             clamped: false,
@@ -159,15 +165,22 @@ impl<'a> PillSuggestions<'a> {
     }
 
     /// The funnel's preview for `field`, or the raw calculator value
-    /// (`calculator`, rounded to `step`) labelled as not clamped when the
-    /// funnel does not write this field on this operation.
-    fn suggestion(&self, field: FeedsField, calculator: f64, step: f64) -> PillSuggestion<'_> {
+    /// (`calculator`, quantised by `round` to `step`) labelled as not clamped
+    /// when the funnel does not write this field on this operation.
+    fn suggestion(
+        &self,
+        field: FeedsField,
+        calculator: f64,
+        step: f64,
+        round: fn(f64, f64) -> f64,
+    ) -> PillSuggestion<'_> {
         let preview = self.previews.get(field);
         PillSuggestion {
             suggestion: suggestion_for(
                 preview,
                 calculator,
                 step,
+                round,
                 super::prov_from_chipload(&self.result.chipload_source),
             ),
             field: preview.map(|p| p.field),
@@ -175,20 +188,42 @@ impl<'a> PillSuggestions<'a> {
         }
     }
 
-    /// Stepover / WOC pill.
+    /// Stepover / WOC pill. Rounds to the NEAREST: the geometry clamps run
+    /// below this point, so the value is not bound from above here.
     pub fn stepover(&self) -> PillSuggestion<'_> {
-        self.suggestion(FeedsField::Stepover, self.result.radial_width_mm, 0.001)
+        self.suggestion(
+            FeedsField::Stepover,
+            self.result.radial_width_mm,
+            0.001,
+            round_suggestion_value,
+        )
     }
 
     /// Depth-per-pass / DOC pill (also VCarve `Max Depth`, which the funnel
     /// does not write — that one falls back to the raw value, labelled).
+    /// Rounds to the NEAREST, for the same reason as [`Self::stepover`].
     pub fn depth_per_pass(&self) -> PillSuggestion<'_> {
-        self.suggestion(FeedsField::DepthPerPass, self.result.axial_depth_mm, 0.001)
+        self.suggestion(
+            FeedsField::DepthPerPass,
+            self.result.axial_depth_mm,
+            0.001,
+            round_suggestion_value,
+        )
     }
 
     /// Feed-rate pill (drill ops edit their single feed on the Geometry tab).
+    ///
+    /// The feed rounds DOWN. `calculate` already applied the Step 6 power
+    /// gate and the Step 7 machine ceiling, so the fallback branch below
+    /// quantises a value that is bound from above; a nearest rounding would
+    /// offer the operator a feed up to +0.5 mm/min past the ceiling. T-9.
     pub fn feed_rate(&self) -> PillSuggestion<'_> {
-        self.suggestion(FeedsField::FeedRate, self.result.feed_rate_mm_min, 1.0)
+        self.suggestion(
+            FeedsField::FeedRate,
+            self.result.feed_rate_mm_min,
+            1.0,
+            round_suggestion_value_down,
+        )
     }
 
     /// The field whose pill was clicked this frame, with the preview whose
@@ -263,6 +298,103 @@ mod tests {
         assert!(
             !near_match(1.2, result.axial_depth_mm),
             "pre-fix comparison stayed lit"
+        );
+    }
+
+    /// The two axes quantise in OPPOSITE directions, and both are pinned here
+    /// so an edit that unifies them fails.
+    ///
+    /// The feed floors (T-9): `calculate` already applied the Step 6 power
+    /// gate and the Step 7 machine ceiling, so the value is bound from above
+    /// and a nearest rounding would offer a feed past the ceiling. The depth
+    /// rounds to the nearest: its clamps run below this point, so it is not
+    /// bound from above here.
+    ///
+    /// Arm 1 goes through the real `feed_rate()` accessor, so it pins the
+    /// wiring and not just the helper. Arm 2 drives the fallback branch
+    /// directly, because the demo pocket has a funnel preview for the feed
+    /// and cannot reach that branch; it pins that `suggestion_for` honours
+    /// the quantiser it is handed, on both directions side by side.
+    #[test]
+    fn the_feed_floors_while_the_depth_rounds_to_the_nearest() {
+        // Arm 1 — end to end. Measured on the demo pocket: the calculator
+        // gives 1290.9375 mm/min and the pill offers 1290. Before T-9 it
+        // offered 1291, which is ABOVE the value every ceiling was satisfied
+        // at, so this arm is red on the old code.
+        let (session, tool, op, result) = demo_pocket();
+        let pills = PillSuggestions::new(
+            &op,
+            &result,
+            &tool,
+            session.machine(),
+            &session.stock_config().material,
+            None,
+        );
+        let feed_pill = pills.feed_rate();
+        let calculator = result.feed_rate_mm_min;
+        assert!(
+            (calculator - 1290.9375).abs() < 1e-9,
+            "fixture drift: raw feed {calculator}"
+        );
+        assert!(
+            feed_pill.suggestion.recommended <= calculator,
+            "the feed pill offers {} ABOVE the calculator's {calculator}, which the \
+             Step 6 power gate and the Step 7 machine ceiling already bound",
+            feed_pill.suggestion.recommended
+        );
+        assert!(
+            (feed_pill.suggestion.recommended - 1290.0).abs() < 1e-9,
+            "the feed pill offers {}, not the floor 1290.0",
+            feed_pill.suggestion.recommended
+        );
+        // Non-vacuity: the nearest rounding really does go up on this
+        // fixture, so the two assertions above are not an identity.
+        assert!(
+            round_suggestion_value(calculator, 1.0) > calculator,
+            "{calculator} no longer rounds UP at step 1, so arm 1 pins nothing"
+        );
+
+        // Arm 2 — the fallback branch, both directions side by side.
+        // 2562.504 is the worst case the T-9 core sweep measured, where the
+        // funnel shipped 2563 against a calculator 2562.504.
+        let raw = (ProvKind::Formula, None);
+
+        // The feed: a fraction of .5 or more, which is exactly where the
+        // nearest rounding goes UP.
+        let feed = 2562.504_f64;
+        let offered = suggestion_for(None, feed, 1.0, round_suggestion_value_down, raw);
+        assert!(!offered.clamped, "the fallback branch is the raw value");
+        assert!(
+            (offered.recommended - 2562.0).abs() < 1e-9,
+            "the feed pill offers {}, not the floor 2562.0",
+            offered.recommended
+        );
+        assert!(
+            offered.recommended <= feed,
+            "the feed pill offers {} ABOVE the calculator's {feed}, which the ceiling \
+             already bound",
+            offered.recommended
+        );
+        // The non-vacuity partner: the nearest rounding really does go up
+        // here, so the assertion above is not an identity.
+        assert!(
+            round_suggestion_value(feed, 1.0) > feed,
+            "2562.504 no longer rounds UP at step 1, so this test pins nothing"
+        );
+
+        // The depth, at the same kind of fraction on its own 0.001 step:
+        // 4.2005 sits half way between 4.200 and 4.201 and must go UP.
+        let depth = 4.2005_f64;
+        let offered_depth = suggestion_for(None, depth, 0.001, round_suggestion_value, raw);
+        assert!(
+            offered_depth.recommended > depth,
+            "the depth pill offers {}, which did not round to the nearest",
+            offered_depth.recommended
+        );
+        assert!(
+            (offered_depth.recommended - 4.201).abs() < 1e-9,
+            "the depth pill offers {}, not 4.201",
+            offered_depth.recommended
         );
     }
 

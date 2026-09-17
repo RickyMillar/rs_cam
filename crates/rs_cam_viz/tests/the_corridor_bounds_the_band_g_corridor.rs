@@ -20,10 +20,11 @@
 //! constraints on this class of machine are the feed cap, the rubbing floor
 //! and rigidity.
 //!
-//! `explore.rs`'s `Ceiling::OffScale` doc still prints 9.36 mm/tooth
-//! against 0.1176 for that same stated cut. This file measures 2.4315
-//! against 0.12353 and does not reproduce the pair. Re-derive that comment
-//! before citing it.
+//! `explore.rs`'s `Ceiling::OffScale` doc printed 9.36 mm/tooth against
+//! 0.1176 for that same stated cut. Neither number reproduced here, and the
+//! comment was corrected on 2026-09-18 (T-9): it now carries this file's
+//! measured pair, 2.4315 against 0.12353. The two are in agreement, so a
+//! change to either must move both.
 //!
 //! Arm 4 carries those numbers, so the threshold can be checked without
 //! reading pixels.

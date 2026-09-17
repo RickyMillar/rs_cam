@@ -908,11 +908,39 @@ pub fn feeds_explain_for_operation(
 /// Used by the Suggest path to produce UI-friendly numbers before
 /// clamping (e.g. round chipload to 0.005 mm, RPM to 100). When
 /// `step <= 0.0` the value is returned unchanged.
+///
+/// **Which of the two to call.** A value with no upper bound at the point
+/// of the call rounds to the NEAREST multiple, and takes this function. A
+/// value a clamp already bound from ABOVE takes
+/// [`round_suggestion_value_down`], because the nearest multiple is above
+/// the limit about half the time.
 pub fn round_suggestion_value(value: f64, step: f64) -> f64 {
     if step <= 0.0 {
         return value;
     }
     (value / step).round() * step
+}
+
+/// Round a suggestion value DOWN to a multiple of `step`.
+///
+/// [`round_suggestion_value`] snaps to the NEAREST multiple, which goes UP
+/// about half the time. That is right for a value the calculator left free.
+/// It is wrong for a value a ceiling already fixed: the shipped number then
+/// sits one part-step ABOVE the limit the clamp exists to enforce. The
+/// commanded feed is such a value — the Step 6 power gate and the Step 7
+/// machine ceiling both land the recommendation exactly on a limit, and
+/// nothing re-checks a limit after the quantisation. See T-9 in
+/// `planning/TECH_DEBT_REGISTER.md`.
+///
+/// `MachineProfile::next_rpm_at_or_below` is the same fix on the RPM axis.
+///
+/// Returns `value` unchanged when `step <= 0.0`.
+#[must_use]
+pub fn round_suggestion_value_down(value: f64, step: f64) -> f64 {
+    if step <= 0.0 {
+        return value;
+    }
+    (value / step).floor() * step
 }
 
 #[cfg(test)]
