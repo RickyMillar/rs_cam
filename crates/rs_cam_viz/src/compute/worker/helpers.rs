@@ -26,7 +26,7 @@ where
     let core_req = core_cc::CollisionCheckRequest {
         toolpath: &req.annotated.toolpath,
         tool: build_cutter(&req.tool),
-        mesh: &req.mesh,
+        mesh: Some(&req.mesh),
         obstacles: req.obstacles.clone(),
         // One toolpath, one index. The per-model hoist is the batch
         // sweep's concern (CMP-24).

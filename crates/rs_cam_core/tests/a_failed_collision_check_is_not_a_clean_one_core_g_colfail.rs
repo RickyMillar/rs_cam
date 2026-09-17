@@ -31,6 +31,17 @@
 //! cancel flag. `run_collision_check` returns `CollisionCheckError::Cancelled`
 //! when the flag is already set, which is a genuine failed check and not the
 //! expected 2D absence. So this file asserts the OUTPUT, not the source.
+//!
+//! ## The follow-up this file also pins
+//!
+//! The holder check has two halves and they need different things. The mesh
+//! half needs a mesh; the FIXTURE half needs only the setup's fixtures. The
+//! first fix read `NotApplicable` for every mesh-less toolpath, so a 2D job
+//! held down by a clamp never had its holder tested against that clamp
+//! either. `a_mesh_less_toolpath_still_meets_its_fixtures_g_colfail` pins
+//! the measured answer, and
+//! `a_mesh_less_toolpath_with_no_fixture_is_not_applicable_g_colfail` pins
+//! that the 2D `NotApplicable` case survives.
 
 #![allow(
     clippy::unwrap_used,
@@ -44,13 +55,19 @@ mod common;
 use std::sync::atomic::AtomicBool;
 
 use common::meshes::plateau;
-use common::session::{mesh_model, pinned_heights, stock_under, toolpath_config};
+use common::session::{
+    mesh_model, pinned_heights, polygon_model, square_polygon, stock_under, toolpath_config,
+};
 use common::tools::ball_tool_config;
 
 use rs_cam_core::compute::catalog::OperationConfig;
-use rs_cam_core::compute::operation_configs::DropCutterConfig;
+use rs_cam_core::compute::operation_configs::{DropCutterConfig, TraceConfig};
 use rs_cam_core::diagnostics::ids;
-use rs_cam_core::session::{ProjectEvidence, ProjectSession, ProjectSessionBuilder, VerdictKind};
+use rs_cam_core::ids::FixtureId;
+use rs_cam_core::session::{
+    AddFixtureArgs, Command, Fixture, FixtureKind, ProjectEvidence, ProjectSession,
+    ProjectSessionBuilder, VerdictKind,
+};
 use rs_cam_core::stock::collision::HolderCollisionCheck;
 
 const HALF: f64 = 20.0;
@@ -88,6 +105,113 @@ fn two_toolpaths_one_model() -> ProjectSession {
             .expect("generation must succeed");
     }
     session
+}
+
+/// A clamp standing where the holder sweeps.
+///
+/// The box spans the whole 2D cut in XY and reaches far above it in Z, so
+/// every shank and holder segment over the cut is inside it. That is
+/// deliberate: the sentry proves the fixture half RAN, so the geometry is
+/// chosen to make the answer unambiguous.
+fn clamp_over_the_cut() -> Fixture {
+    Fixture {
+        id: FixtureId(1),
+        name: "G-COLFAIL clamp".to_owned(),
+        kind: FixtureKind::Clamp,
+        enabled: true,
+        origin_x: -10.0,
+        origin_y: -10.0,
+        origin_z: -5.0,
+        size_x: 20.0,
+        size_y: 20.0,
+        size_z: 60.0,
+        clearance: 0.0,
+    }
+}
+
+/// ONE 2D toolpath over a POLYGON model — no mesh anywhere in the project.
+///
+/// The fixture, when there is one, is added BEFORE generation: adding a
+/// fixture invalidates the setup's results.
+fn one_2d_toolpath(fixture: Option<Fixture>) -> ProjectSession {
+    let mut builder = ProjectSessionBuilder::new().stock(stock_under(HALF, DEPTH));
+    let tool_idx = builder.add_tool(ball_tool_config(3.0));
+    let tool_id = builder.tools()[tool_idx].id.0;
+    let model_id = builder.add_model(polygon_model(vec![square_polygon(5.0)], "square"));
+
+    let op = OperationConfig::Trace(TraceConfig {
+        depth: 1.0,
+        depth_per_pass: 1.0,
+        ..TraceConfig::default()
+    });
+    builder
+        .add_toolpath(0, toolpath_config("2D trace", op, tool_id, model_id))
+        .expect("add toolpath to a fresh session");
+
+    let mut session = builder.build();
+    if let Some(fixture) = fixture {
+        let _ = session
+            .apply(Command::AddFixture(AddFixtureArgs {
+                setup_index: 0,
+                fixture: Box::new(fixture),
+            }))
+            .expect("add the fixture");
+    }
+    let cancel = AtomicBool::new(false);
+    session
+        .generate_toolpath(0, &cancel)
+        .expect("generation must succeed");
+    session
+}
+
+/// CMP-14 follow-up: a mesh-less toolpath still meets the setup's fixtures.
+///
+/// The defect this pins: `collision_check_with_index` refused the WHOLE
+/// check with `MissingGeometry` whenever the model carried no mesh, so the
+/// sweep read `NotApplicable` and the clamp was never tested. The obstacle
+/// half never needed a mesh.
+#[test]
+fn a_mesh_less_toolpath_still_meets_its_fixtures_g_colfail() {
+    let session = one_2d_toolpath(Some(clamp_over_the_cut()));
+    let no_cancel = AtomicBool::new(false);
+    let outcomes = session.holder_collision_counts(&no_cancel);
+
+    assert_eq!(outcomes.len(), 1, "the 2D toolpath carries a result");
+    let (id, outcome) = outcomes[0];
+    match outcome {
+        HolderCollisionCheck::Measured(n) => assert!(
+            n > 0,
+            "TP{id}: the clamp stands in the holder's path, so the fixture \
+             half must report hits; got Measured(0)"
+        ),
+        other => panic!(
+            "TP{id}: a mesh-less toolpath under a clamp must be MEASURED \
+             against that clamp, got {other:?}. The mesh half does not \
+             apply; the fixture half needs no mesh."
+        ),
+    }
+}
+
+/// The other half of the follow-up: with no mesh AND no fixture there is
+/// still nothing to check against, so `NotApplicable` must stay reachable.
+#[test]
+fn a_mesh_less_toolpath_with_no_fixture_is_not_applicable_g_colfail() {
+    let session = one_2d_toolpath(None);
+    let no_cancel = AtomicBool::new(false);
+    let outcomes = session.holder_collision_counts(&no_cancel);
+
+    assert_eq!(outcomes.len(), 1, "the 2D toolpath carries a result");
+    let (id, outcome) = outcomes[0];
+    assert_eq!(
+        outcome,
+        HolderCollisionCheck::NotApplicable,
+        "TP{id}: no mesh and no fixture is the 2D case the CLI expects"
+    );
+    assert_eq!(
+        outcome.count(),
+        Some(0),
+        "TP{id}: a not-applicable check publishes a true zero"
+    );
 }
 
 #[test]

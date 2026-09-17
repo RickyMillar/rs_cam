@@ -194,10 +194,20 @@ impl ProjectSession {
             .ok_or(SessionError::ToolpathNotFound(index))?;
         let model = self
             .find_model_by_raw_id(tc.model_id)
-            .and_then(|m| m.mesh.as_ref())
-            .ok_or_else(|| {
-                SessionError::MissingGeometry("Collision check requires a 3D mesh".to_owned())
-            })?;
+            .and_then(|m| m.mesh.as_deref());
+        let obstacles = self.collision_obstacles_for_toolpath(index);
+        // CMP-14 follow-up: the two halves of the check need different
+        // things. The mesh half needs a mesh; the fixture half needs only
+        // the fixtures. A 2D toolpath under a clamp used to refuse here and
+        // read as `NotApplicable`, so its holder was never tested against
+        // the clamp at all. Only a toolpath with NEITHER a mesh NOR an
+        // enabled fixture has nothing to answer, and that is the 2D case
+        // the CLI expects.
+        if model.is_none() && obstacles.is_empty() {
+            return Err(SessionError::MissingGeometry(
+                "Collision check requires a 3D mesh or an enabled fixture".to_owned(),
+            ));
+        }
 
         let tool = self
             .find_tool_by_raw_id(tc.tool_id)
@@ -208,7 +218,7 @@ impl ProjectSession {
             toolpath: result.toolpath(),
             tool: tool_def,
             mesh: model,
-            obstacles: self.collision_obstacles_for_toolpath(index),
+            obstacles,
             index: prebuilt_index,
         };
         let check_result = run_collision_check(&request, cancel)?;
@@ -370,8 +380,10 @@ impl ProjectSession {
     /// session's own answer to that cost was a doc line telling callers
     /// not to call it. This hoists the build instead.
     ///
-    /// A toolpath whose model carries no mesh contributes no entry, and
-    /// the sweep then reads [`HolderCollisionCheck::NotApplicable`] for it.
+    /// A toolpath whose model carries no mesh contributes no entry. The
+    /// sweep still runs the fixture half for it, and reads
+    /// [`HolderCollisionCheck::NotApplicable`] only when the setup has no
+    /// enabled fixture either.
     pub(crate) fn holder_collision_indices(
         &self,
     ) -> std::collections::BTreeMap<usize, crate::mesh::SpatialIndex> {
@@ -419,8 +431,8 @@ impl ProjectSession {
                         Ok(r) => {
                             HolderCollisionCheck::Measured(r.collision_report.collisions.len())
                         }
-                        // The 2D case the CLI calls expected: no mesh, so
-                        // nothing to check against.
+                        // The 2D case the CLI calls expected: no mesh AND
+                        // no enabled fixture, so nothing to check against.
                         Err(SessionError::MissingGeometry(_)) => {
                             HolderCollisionCheck::NotApplicable
                         }

@@ -215,11 +215,16 @@ impl CollisionReport {
 /// same shape in the CLI on the audit day; this is the core twin.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HolderCollisionCheck {
-    /// The toolpath binds no mesh — a 2D operation. The check does not
-    /// apply. [`Self::count`] reports `Some(0)`, which is the CLI's rule
+    /// The toolpath binds no mesh AND its setup has no enabled fixture —
+    /// a 2D operation with nothing around it. The check does not apply.
+    /// [`Self::count`] reports `Some(0)`, which is the CLI's rule
     /// (`SessionError::MissingGeometry` is the expected 2D case there):
-    /// with no model there is no model geometry to collide with, so the
-    /// count is a true zero rather than a withheld one.
+    /// with no model and no fixture there is no geometry to collide with,
+    /// so the count is a true zero rather than a withheld one.
+    ///
+    /// A mesh-less toolpath whose setup DOES carry a fixture is measured,
+    /// not skipped: the fixture half of the check needs no mesh (CMP-14
+    /// follow-up).
     NotApplicable,
     /// The check ran and could not finish — a cancellation, or a toolpath
     /// whose tool the project no longer defines. The count is UNKNOWN.

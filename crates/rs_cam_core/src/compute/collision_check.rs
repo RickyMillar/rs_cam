@@ -1,5 +1,6 @@
 //! Core collision checking wrapper -- runs holder/shank collision detection
-//! against a mesh without any GUI dependencies.
+//! against the workpiece mesh and the setup's fixtures, without any GUI
+//! dependencies.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -16,14 +17,18 @@ use crate::toolpath::Toolpath;
 pub struct CollisionCheckRequest<'a> {
     pub toolpath: &'a Toolpath,
     pub tool: ToolDefinition,
-    pub mesh: &'a TriangleMesh,
+    /// The workpiece. `None` for a toolpath that binds no mesh — a 2D
+    /// operation. The mesh half of the check is then skipped and the
+    /// fixture half below still runs, because a holder can crash a clamp
+    /// over a drawing as easily as over a model (CMP-14 follow-up).
+    pub mesh: Option<&'a TriangleMesh>,
     /// Workholding fixtures (clearance-expanded boxes, in the toolpath's
     /// frame) the assembly must also clear. Empty when the setup has no
     /// enabled fixtures. W0.1 / P6-003: without these, a holder crashing
     /// a clamp is never flagged.
     pub obstacles: Vec<CollisionObstacle>,
     /// A spatial index the caller already built over `mesh`. `None` makes
-    /// this call build its own.
+    /// this call build its own, and a `None` `mesh` ignores it.
     ///
     /// CMP-24: a sweep over N toolpaths that bind ONE model used to build
     /// the same index N times, because the only entry point built one per
@@ -62,11 +67,15 @@ impl From<Cancelled> for CollisionCheckError {
     }
 }
 
-/// Run a holder/shank collision check for a toolpath against a mesh.
+/// Run a holder/shank collision check for a toolpath.
 ///
 /// Builds a spatial index for the mesh, constructs the tool assembly from
 /// the tool definition, and checks each cutting move for collisions with
 /// 1mm interpolation along moves.
+///
+/// The two halves are independent. The mesh half needs a mesh; the fixture
+/// half does not, so a toolpath with no mesh is still tested against the
+/// setup's fixtures (CMP-14 follow-up).
 ///
 /// CMP-24: the result carries the report and nothing else. It used to
 /// flatten every `CollisionEvent::position` into `Vec<[f32; 3]>` — a
@@ -77,26 +86,37 @@ pub fn run_collision_check(
     request: &CollisionCheckRequest<'_>,
     cancel: &AtomicBool,
 ) -> Result<CollisionCheckResult, CollisionCheckError> {
-    let owned_index;
-    let index = match request.index {
-        Some(prebuilt) => prebuilt,
-        None => {
-            owned_index = SpatialIndex::build_auto(request.mesh);
-            &owned_index
-        }
-    };
     let assembly = request.tool.to_assembly();
     let cancel_check = || cancel.load(Ordering::SeqCst);
 
-    let mut report = check_collisions_interpolated_with_cancel(
-        request.toolpath,
-        &assembly,
-        request.mesh,
-        index,
-        1.0,
-        &cancel_check,
-    )
-    .map_err(|_cancelled| CollisionCheckError::Cancelled)?;
+    let mut report = match request.mesh {
+        Some(mesh) => {
+            let owned_index;
+            let index = match request.index {
+                Some(prebuilt) => prebuilt,
+                None => {
+                    owned_index = SpatialIndex::build_auto(mesh);
+                    &owned_index
+                }
+            };
+            check_collisions_interpolated_with_cancel(
+                request.toolpath,
+                &assembly,
+                mesh,
+                index,
+                1.0,
+                &cancel_check,
+            )
+            .map_err(|_cancelled| CollisionCheckError::Cancelled)?
+        }
+        // No workpiece, so no workpiece collision and no stickout the
+        // workpiece demands. A fixture hit below raises no stickout
+        // remedy either: a longer tool does not clear a clamp.
+        None => CollisionReport {
+            collisions: Vec::new(),
+            min_safe_stickout: assembly.stickout(),
+        },
+    };
 
     // W0.1 — also test the assembly against workholding fixtures. The mesh
     // check above can only see the workpiece, so a holder/shank crashing a
@@ -149,7 +169,7 @@ mod tests {
         let req = CollisionCheckRequest {
             toolpath: &tp,
             tool,
-            mesh: &mesh,
+            mesh: Some(&mesh),
             obstacles: Vec::new(),
             index: None,
         };
@@ -184,7 +204,7 @@ mod tests {
             &CollisionCheckRequest {
                 toolpath: &tp,
                 tool: tool(),
-                mesh: &mesh,
+                mesh: Some(&mesh),
                 obstacles: Vec::new(),
                 index: None,
             },
@@ -197,7 +217,7 @@ mod tests {
             &CollisionCheckRequest {
                 toolpath: &tp,
                 tool: tool(),
-                mesh: &mesh,
+                mesh: Some(&mesh),
                 obstacles: Vec::new(),
                 index: Some(&index),
             },
@@ -231,7 +251,7 @@ mod tests {
         let req = CollisionCheckRequest {
             toolpath: &tp,
             tool,
-            mesh: &mesh,
+            mesh: Some(&mesh),
             obstacles: Vec::new(),
             index: None,
         };
