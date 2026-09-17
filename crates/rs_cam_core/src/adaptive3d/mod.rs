@@ -95,68 +95,41 @@ pub enum EntryStyle3d {
     Ramp { max_angle_deg: f64 },
 }
 
-/// Parameters for 3D adaptive clearing.
-pub struct Adaptive3dParams {
-    /// Engagement radius — the cutter's actual contact radius at `depth_per_pass`
-    /// below the tip. Used for stepover, region detection, and material clearing
-    /// modeling. For flat/ball cutters this equals the nominal radius; for
-    /// tapered cutters it's narrower than the shank radius.
+/// The shallow-area tier: the slope threshold and the sub-pass stepdown.
+///
+/// CUT-04 folded three fields into this one option. `mill_shallow_areas`
+/// (a `bool`), `shallow_angle_rad` (`Option<f64>`) and `shallow_stepdown`
+/// (`Option<f64>`) encoded ONE mode in three places, so "milling shallow
+/// areas with no angle" and "an angle nothing mills" were both
+/// representable and both meant nothing. `Option<ShallowTier>` says the
+/// whole thing once.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ShallowTier {
+    /// Slope angle threshold (radians from horizontal). A cell whose
+    /// surface slope is below this angle is in the shallow mask.
+    /// Typical 30 degrees = ~0.524 rad.
+    pub angle_rad: f64,
+    /// Stepdown within the shallow regions. The planner ignores the tier
+    /// when this is not smaller than `Adaptive3dDepth::depth_per_pass`.
+    pub stepdown: f64,
+}
+
+/// The cutter and the XY frame it works in: what cuts, how wide it steps,
+/// and where it may not go.
+pub struct Adaptive3dGeometry {
+    /// Engagement radius — the cutter's actual contact radius at
+    /// `depth_per_pass` below the tip. Used for stepover, region detection,
+    /// and material clearing modeling. For flat/ball cutters this equals the
+    /// nominal radius; for tapered cutters it is narrower than the shank
+    /// radius.
     pub tool_radius: f64,
     /// Envelope radius — the widest extent of the cutter at any height (shank
     /// radius for tapered tools). Used only for keep-out / bbox margins so the
-    /// tool's shank doesn't overrun the workpiece footprint.
+    /// tool's shank does not overrun the workpiece footprint.
     pub envelope_radius: f64,
     pub stepover: f64,
-    pub depth_per_pass: f64,
-    /// Vertical (Z) leave-stock offset above the surface heightmap —
-    /// the only stock-to-leave axis this planner supports. All uses key
-    /// off `point_drop_cutter` / the surface heightmap in Z; there is no
-    /// wall-normal offset, so a distinct radial (sidewall) allowance
-    /// cannot be represented here. Adapter callers collapse a
-    /// user-facing axial/radial pair down to this single field — see
-    /// `compute::execute::adaptive3d_effective_stock_to_leave`.
-    pub stock_to_leave: f64,
-    pub feed_rate: f64,
-    pub plunge_rate: f64,
-    pub safe_z: f64,
     pub tolerance: f64,
     pub min_cutting_radius: f64,
-    pub stock_top_z: f64,
-    /// User-pinned floor for the Z-level plan (heights audit 2026-06-12,
-    /// finding 2). `Some(z)` clamps `z_bottom` — no pass is planned below
-    /// it, even where the surface heightmap reads deeper (e.g. through
-    /// holes in an open mesh). `None` (heights Auto) keeps the
-    /// surface-derived floor.
-    pub z_floor: Option<f64>,
-    /// Entry strategy (default: Plunge for backward compat).
-    pub entry_style: EntryStyle3d,
-    /// Fine stepdown: when set, insert intermediate Z levels at this interval.
-    pub fine_stepdown: Option<f64>,
-    /// Detect flat areas in the mesh and insert Z levels at shelf heights.
-    pub detect_flat_areas: bool,
-    /// Region ordering strategy (default: Global for backward compat).
-    pub region_ordering: RegionOrdering,
-    /// Pre-machined stock for two-sided machining.
-    /// When Some, used as starting material instead of a fresh block at stock_top_z.
-    pub initial_stock: Option<TriDexelStock>,
-    /// Clearing strategy per Z level (default: ContourParallel).
-    pub clearing_strategy: ClearingStrategy3d,
-    /// Trochoid trigger cap for the ContourSpiral slice path: relief loops
-    /// fire when predicted leading-arc engagement exceeds `target × this`.
-    /// Low (≈1.0–1.2) = flattest load + more travel; high (≈2.0–3.0) =
-    /// relaxed + less travel. Surfaced as the GUI "Nibble" dial; ignored
-    /// by the other strategies. See the cap sweep in
-    /// `planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md`.
-    pub trochoid_cap_mult: f64,
-    /// Engagement quantity the AgentSearch 2D sub-pass measures against
-    /// the α/2π target. See `crate::adaptive::EngagementMeasure` (F1,
-    /// algorithm review 2026-06-12). Ignored by ContourParallel/Adaptive.
-    pub engagement_measure: crate::adaptive::EngagementMeasure,
-    /// Blend Z toward terrain surface across contour offsets.
-    /// When true, outer contours stay near z_level and inner contours
-    /// progressively descend toward the surface. Best for terrain/relief.
-    /// When false (default), all contours cut at z_level. Best for pockets.
-    pub z_blend: bool,
     /// Optional 2D boundary polygon (e.g. model silhouette) the cutter
     /// center must stay inside. Cells outside this boundary are pre-cleared
     /// in the internal material stock so the bool-grid polygon at every
@@ -167,19 +140,6 @@ pub struct Adaptive3dParams {
     /// through fresh stock with full-depth axial DOC. See investigation
     /// log O5b for the wanaka repro.
     pub boundary: Option<crate::polygon::Polygon2>,
-    /// Mill shallow areas: insert fine sub-passes (at
-    /// `shallow_stepdown` increments) on cells whose surface slope is
-    /// below `shallow_angle_rad`, within each DPP descent. Steep cells
-    /// keep the normal DPP cadence. See planning doc
-    /// `ADAPTIVE3D_DPP_ISLANDS_AND_SHALLOW_MILL.md` Part B.
-    pub mill_shallow_areas: bool,
-    /// Slope angle threshold (radians from horizontal) for the shallow
-    /// mask. `None` ⇒ disabled. Typical 30° = ~0.524 rad.
-    pub shallow_angle_rad: Option<f64>,
-    /// Stepdown to use within shallow regions. `None` ⇒ disabled.
-    /// Should be < `depth_per_pass`; planner ignores the feature when
-    /// either is None or when stepdown >= depth_per_pass.
-    pub shallow_stepdown: Option<f64>,
     /// World stock XY bounds the simulator's per-setup dexel grid uses.
     /// When `Some((x_min, y_min, x_max, y_max))`, the planner's internal
     /// `material_stock` is widened so its XY extent encloses **both** the
@@ -193,19 +153,57 @@ pub struct Adaptive3dParams {
     /// downstream deflection gate. See finding F-027.
     ///
     /// `None` falls back to the mesh-bbox-only initialization for tests
-    /// and call sites that don't have a world stock bbox handy.
+    /// and call sites that do not have a world stock bbox handy.
     pub world_stock_xy_bbox: Option<(f64, f64, f64, f64)>,
+}
+
+/// The Z plan: how deep each pass goes and which extra levels join the
+/// ladder.
+pub struct Adaptive3dDepth {
+    pub depth_per_pass: f64,
+    /// Vertical (Z) leave-stock offset above the surface heightmap —
+    /// the only stock-to-leave axis this planner supports. All uses key
+    /// off `point_drop_cutter` / the surface heightmap in Z; there is no
+    /// wall-normal offset, so a distinct radial (sidewall) allowance
+    /// cannot be represented here. Adapter callers collapse a
+    /// user-facing axial/radial pair down to this single field — see
+    /// `compute::execute::adaptive3d_effective_stock_to_leave`.
+    pub stock_to_leave: f64,
+    pub stock_top_z: f64,
+    /// User-pinned floor for the Z-level plan (heights audit 2026-06-12,
+    /// finding 2). `Some(z)` clamps `z_bottom` — no pass is planned below
+    /// it, even where the surface heightmap reads deeper (e.g. through
+    /// holes in an open mesh). `None` (heights Auto) keeps the
+    /// surface-derived floor.
+    pub z_floor: Option<f64>,
+    /// Fine stepdown: when set, insert intermediate Z levels at this interval.
+    pub fine_stepdown: Option<f64>,
+    /// Detect flat areas in the mesh and insert Z levels at shelf heights.
+    pub detect_flat_areas: bool,
+    /// Mill shallow areas: insert fine sub-passes (at the tier's
+    /// `stepdown` increments) on cells whose surface slope is below the
+    /// tier's `angle_rad`, within each DPP descent. Steep cells keep the
+    /// normal DPP cadence. `None` turns the feature off. See planning doc
+    /// `ADAPTIVE3D_DPP_ISLANDS_AND_SHALLOW_MILL.md` Part B.
+    pub shallow_tier: Option<ShallowTier>,
+}
+
+/// What the planner does between cuts: the order it takes the regions in,
+/// which regions are worth an entry at all, and when it keeps the tool down.
+pub struct Adaptive3dLinking {
+    /// Region ordering strategy (default: Global for backward compat).
+    pub region_ordering: RegionOrdering,
     /// F-038: minimum total horizontal cutting length (mm) a marching-squares
     /// region must produce in its 2D adaptive sub-pass before the planner
     /// commits an entry plunge to it. AgentSearch strategy only. Regions
     /// whose forecast cut length (perimeter-sweep + 2D adaptive walk) is
     /// below this threshold are dropped at plan time, eliminating the
     /// "perimeter micro-plunge" fragmentation the Wanaka Back Rough .nc
-    /// exhibited (149 plunges, 90 of which cut ≤ 10 mm). Default 5.0 mm.
+    /// exhibited (149 plunges, 90 of which cut <= 10 mm). Default 5.0 mm.
     pub min_region_cut_length_mm: f64,
     /// F-038b: maximum XY distance to attempt a keep-tool-down link
     /// between cut groups instead of retract-rapid-plunge. `None` means
-    /// "use 8 × tool diameter computed at toolpath build time" — matches
+    /// "use 8 x tool diameter computed at toolpath build time" — matches
     /// Fusion HSM's typical "stay down distance" setting for roughing on
     /// hardwood. `Some(0.0)` disables the feature (every transition becomes
     /// a retract). Applied in `segments_to_toolpath` against the mesh
@@ -218,9 +216,51 @@ pub struct Adaptive3dParams {
     /// F-038b: vertical clearance added on top of the maximum heightfield
     /// sample along a stay-down link. 0.5 mm absorbs dexel/mesh
     /// discretisation noise (~0.5 mm at standard sim resolution) plus a
-    /// hair of safety margin so the rapid step over a low peak doesn't
+    /// hair of safety margin so the rapid step over a low peak does not
     /// scrape the surface. Default 0.5 mm.
     pub stay_down_clearance_mm: f64,
+}
+
+/// Parameters for 3D adaptive clearing.
+///
+/// CUT-04 grouped the thirty flat fields this struct used to carry into
+/// [`Adaptive3dGeometry`], [`Adaptive3dDepth`] and [`Adaptive3dLinking`].
+/// What stays at the top level is what belongs to no one group: the feeds,
+/// the entry and clearing strategies, and the starting material.
+pub struct Adaptive3dParams {
+    /// The cutter and the XY frame it works in.
+    pub geometry: Adaptive3dGeometry,
+    /// The Z plan.
+    pub depth: Adaptive3dDepth,
+    /// What the planner does between cuts.
+    pub linking: Adaptive3dLinking,
+    pub feed_rate: f64,
+    pub plunge_rate: f64,
+    pub safe_z: f64,
+    /// Entry strategy (default: Plunge for backward compat).
+    pub entry_style: EntryStyle3d,
+    /// Clearing strategy per Z level (default: ContourParallel).
+    pub clearing_strategy: ClearingStrategy3d,
+    /// Trochoid trigger cap for the ContourSpiral slice path: relief loops
+    /// fire when predicted leading-arc engagement exceeds `target x this`.
+    /// Low (~1.0-1.2) = flattest load + more travel; high (~2.0-3.0) =
+    /// relaxed + less travel. Surfaced as the GUI "Nibble" dial; ignored
+    /// by the other strategies. See the cap sweep in
+    /// `planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md`.
+    pub trochoid_cap_mult: f64,
+    /// Engagement quantity the AgentSearch 2D sub-pass measures against
+    /// the alpha/2pi target. See `crate::adaptive::EngagementMeasure` (F1,
+    /// algorithm review 2026-06-12). Ignored by ContourParallel/Adaptive.
+    pub engagement_measure: crate::adaptive::EngagementMeasure,
+    /// Blend Z toward terrain surface across contour offsets.
+    /// When true, outer contours stay near z_level and inner contours
+    /// progressively descend toward the surface. Best for terrain/relief.
+    /// When false (default), all contours cut at z_level. Best for pockets.
+    pub z_blend: bool,
+    /// Pre-machined stock for two-sided machining.
+    /// When Some, used as starting material instead of a fresh block at
+    /// `Adaptive3dDepth::stock_top_z`.
+    pub initial_stock: Option<TriDexelStock>,
 }
 
 // SurfaceHeightmap is now in crate::surface::slope (shared across finishing strategies)
@@ -402,7 +442,7 @@ pub struct Adaptive3dRuntimeAnnotation {
 /// Starting from flat stock at `stock_top_z`, roughs out material following
 /// the STL mesh surface with constant engagement control. Multi-level
 /// passes from top to bottom, waterline boundary cleanup at each level.
-#[tracing::instrument(skip(mesh, index, cutter, params), fields(tool_radius = params.tool_radius, stepover = params.stepover))]
+#[tracing::instrument(skip(mesh, index, cutter, params), fields(tool_radius = params.geometry.tool_radius, stepover = params.geometry.stepover))]
 pub fn adaptive_3d_toolpath(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -449,7 +489,7 @@ pub(crate) fn adaptive_3d_toolpath_traced_with_cancel(
 ///
 /// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
 /// only callers. No production path reads it.
-#[tracing::instrument(skip(mesh, index, cutter, params), fields(tool_radius = params.tool_radius, stepover = params.stepover))]
+#[tracing::instrument(skip(mesh, index, cutter, params), fields(tool_radius = params.geometry.tool_radius, stepover = params.geometry.stepover))]
 #[allow(clippy::expect_used)]
 pub fn adaptive_3d_toolpath_annotated(
     mesh: &TriangleMesh,

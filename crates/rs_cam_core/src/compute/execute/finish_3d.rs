@@ -100,87 +100,90 @@ pub(crate) fn generate_adaptive3d(
         .engagement_radius_mm(cfg.depth_per_pass)
         .max(0.01);
     let params = crate::adaptive3d::Adaptive3dParams {
-        tool_radius: engagement_radius,
-        envelope_radius: ctx.tool_def.envelope_radius_mm(),
-        stepover: cfg.stepover,
-        depth_per_pass: cfg.depth_per_pass,
-        stock_to_leave: adaptive3d_effective_stock_to_leave(cfg),
+        geometry: crate::adaptive3d::Adaptive3dGeometry {
+            tool_radius: engagement_radius,
+            envelope_radius: ctx.tool_def.envelope_radius_mm(),
+            stepover: cfg.stepover,
+            tolerance: cfg.tolerance,
+            min_cutting_radius: cfg.min_cutting_radius,
+            boundary: ctx.boundary.cloned(), // F-027: forward the world stock XY bounds so the planner's
+            // internal `material_stock` extends to cover every cell the
+            // simulator's per-setup dexel grid will look at. Pre-fix the
+            // planner was bounded by `mesh.bbox + tool_radius`, while the
+            // simulator's grid is bounded by the (auto-grown) world stock
+            // bbox; cells inside the simulator grid but outside the
+            // planner grid were never stamped, so the final pass carved
+            // through the full stock height in one shot at model-edge
+            // cells, blowing up `axial_engagement_mm` and the downstream
+            // deflection gate.
+            world_stock_xy_bbox: Some((
+                ctx.stock_bbox.min.x,
+                ctx.stock_bbox.min.y,
+                ctx.stock_bbox.max.x,
+                ctx.stock_bbox.max.y,
+            )),
+        },
+        depth: crate::adaptive3d::Adaptive3dDepth {
+            depth_per_pass: cfg.depth_per_pass,
+            stock_to_leave: adaptive3d_effective_stock_to_leave(cfg), // Heights audit 2026-06-12, finding 2: the rough always anchors
+            // its top on the stock bbox — a pinned `top_z` is deliberately
+            // NOT honored here. Roughing must start from the real material
+            // top: anchoring lower leaves the overhead band unplanned while
+            // the simulator still carries it, and the first pass would sweep
+            // the full pre-stamp ray in one bite (the F-027 failure shape).
+            // It would also rewrite tuned historical projects whose pinned
+            // tops were vacuous while heights were ignored (wanaka100 Back
+            // Rough pins `top_z = model_top` under an 18 mm overhead — the
+            // F-034 machine-calibration anchor measures that exact path).
+            stock_top_z: ctx.stock_bbox.max.z, // A user-pinned `bottom_z` IS honored: it floors the Z-level
+            // plan (raising the floor only removes deep passes — always
+            // safe; it's the lever that stops a rough descending through
+            // holes in open meshes). Auto leaves the floor to the surface
+            // heightmap (Auto resolves to `top - op_depth`, which has no
+            // meaning for surface-driven roughing).
+            z_floor: ctx.heights.bottom_pinned.then_some(ctx.heights.bottom_z),
+            fine_stepdown: if cfg.fine_stepdown > 0.0 {
+                Some(cfg.fine_stepdown)
+            } else {
+                None
+            },
+            detect_flat_areas: cfg.detect_flat_areas,
+            // CUT-04: one option instead of the bool plus two `Option`s. The
+            // tier exists only when the operation asks for it AND the stepdown
+            // it resolves to is a real sub-pass — smaller than the DPP and
+            // above zero. The old shape could carry an angle with no stepdown,
+            // which the planner then ignored.
+            shallow_tier: if cfg.mill_shallow_areas {
+                cfg.shallow_stepdown
+                    .or(Some(cfg.depth_per_pass * 0.5))
+                    .filter(|&s| s > 0.0 && s < cfg.depth_per_pass)
+                    .map(|stepdown| crate::adaptive3d::ShallowTier {
+                        angle_rad: cfg.shallow_angle_deg.unwrap_or(30.0).to_radians(),
+                        stepdown,
+                    })
+            } else {
+                None
+            },
+        },
+        linking: crate::adaptive3d::Adaptive3dLinking {
+            region_ordering, // F-038: drop marching-squares regions whose forecast cut
+            // length (perimeter + 2D adaptive walk) is below this floor.
+            // Only honored by the AgentSearch strategy.
+            min_region_cut_length_mm: cfg.min_region_cut_length_mm, // F-038b: keep-tool-down link policy. None lets the planner
+            // default to 8 × tool diameter; Some(0.0) disables the
+            // feature; Some(x) caps stay-down at x mm.
+            max_stay_down_distance_mm: cfg.max_stay_down_distance_mm,
+            stay_down_clearance_mm: cfg.stay_down_clearance_mm,
+        },
         feed_rate: op.feed_rate(),
         plunge_rate: op.plunge_rate(),
-        tolerance: cfg.tolerance,
-        min_cutting_radius: cfg.min_cutting_radius,
-        // Heights audit 2026-06-12, finding 2: the rough always anchors
-        // its top on the stock bbox — a pinned `top_z` is deliberately
-        // NOT honored here. Roughing must start from the real material
-        // top: anchoring lower leaves the overhead band unplanned while
-        // the simulator still carries it, and the first pass would sweep
-        // the full pre-stamp ray in one bite (the F-027 failure shape).
-        // It would also rewrite tuned historical projects whose pinned
-        // tops were vacuous while heights were ignored (wanaka100 Back
-        // Rough pins `top_z = model_top` under an 18 mm overhead — the
-        // F-034 machine-calibration anchor measures that exact path).
-        stock_top_z: ctx.stock_bbox.max.z,
-        // A user-pinned `bottom_z` IS honored: it floors the Z-level
-        // plan (raising the floor only removes deep passes — always
-        // safe; it's the lever that stops a rough descending through
-        // holes in open meshes). Auto leaves the floor to the surface
-        // heightmap (Auto resolves to `top - op_depth`, which has no
-        // meaning for surface-driven roughing).
-        z_floor: ctx.heights.bottom_pinned.then_some(ctx.heights.bottom_z),
         entry_style,
-        fine_stepdown: if cfg.fine_stepdown > 0.0 {
-            Some(cfg.fine_stepdown)
-        } else {
-            None
-        },
-        detect_flat_areas: cfg.detect_flat_areas,
-        region_ordering,
         initial_stock: ctx.initial_stock.cloned(),
         safe_z: ctx.heights.retract_z,
-        clearing_strategy,
-        // "Nibble" dial — forwarded to the ContourSpiral slice path.
+        clearing_strategy, // "Nibble" dial — forwarded to the ContourSpiral slice path.
         trochoid_cap_mult: cfg.trochoid_cap_mult,
         engagement_measure: cfg.engagement_measure,
         z_blend: cfg.z_blend,
-        boundary: ctx.boundary.cloned(),
-        mill_shallow_areas: cfg.mill_shallow_areas,
-        shallow_angle_rad: if cfg.mill_shallow_areas {
-            Some(cfg.shallow_angle_deg.unwrap_or(30.0).to_radians())
-        } else {
-            None
-        },
-        shallow_stepdown: if cfg.mill_shallow_areas {
-            cfg.shallow_stepdown
-                .or(Some(cfg.depth_per_pass * 0.5))
-                .filter(|&s| s > 0.0 && s < cfg.depth_per_pass)
-        } else {
-            None
-        },
-        // F-027: forward the world stock XY bounds so the planner's
-        // internal `material_stock` extends to cover every cell the
-        // simulator's per-setup dexel grid will look at. Pre-fix the
-        // planner was bounded by `mesh.bbox + tool_radius`, while the
-        // simulator's grid is bounded by the (auto-grown) world stock
-        // bbox; cells inside the simulator grid but outside the
-        // planner grid were never stamped, so the final pass carved
-        // through the full stock height in one shot at model-edge
-        // cells, blowing up `axial_engagement_mm` and the downstream
-        // deflection gate.
-        world_stock_xy_bbox: Some((
-            ctx.stock_bbox.min.x,
-            ctx.stock_bbox.min.y,
-            ctx.stock_bbox.max.x,
-            ctx.stock_bbox.max.y,
-        )),
-        // F-038: drop marching-squares regions whose forecast cut
-        // length (perimeter + 2D adaptive walk) is below this floor.
-        // Only honored by the AgentSearch strategy.
-        min_region_cut_length_mm: cfg.min_region_cut_length_mm,
-        // F-038b: keep-tool-down link policy. None lets the planner
-        // default to 8 × tool diameter; Some(0.0) disables the
-        // feature; Some(x) caps stay-down at x mm.
-        max_stay_down_distance_mm: cfg.max_stay_down_distance_mm,
-        stay_down_clearance_mm: cfg.stay_down_clearance_mm,
     };
     let (tp, annotations, planner_engagement) =
         crate::adaptive3d::adaptive_3d_toolpath_structured_annotated_traced_with_cancel(

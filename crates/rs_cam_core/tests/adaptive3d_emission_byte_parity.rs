@@ -56,8 +56,8 @@
 )]
 
 use rs_cam_core::adaptive3d::{
-    Adaptive3dParams, ClearingStrategy3d, EntryStyle3d, RegionOrdering,
-    adaptive_3d_toolpath_with_cancel,
+    Adaptive3dDepth, Adaptive3dGeometry, Adaptive3dLinking, Adaptive3dParams, ClearingStrategy3d,
+    EntryStyle3d, RegionOrdering, ShallowTier, adaptive_3d_toolpath_with_cancel,
 };
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere};
 use rs_cam_core::polygon::Polygon2;
@@ -80,35 +80,39 @@ fn hemisphere() -> (TriangleMesh, SpatialIndex) {
 /// switch the ones they measure back on.
 fn base_params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
     Adaptive3dParams {
-        tool_radius: TOOL_RADIUS,
-        envelope_radius: TOOL_RADIUS,
-        stepover: 1.5,
-        depth_per_pass: 3.0,
-        stock_to_leave: 0.5,
+        geometry: Adaptive3dGeometry {
+            tool_radius: TOOL_RADIUS,
+            envelope_radius: TOOL_RADIUS,
+            stepover: 1.5,
+            tolerance: 0.5,
+            min_cutting_radius: 0.0,
+            boundary: None,
+            world_stock_xy_bbox: Some((-13.0, -13.0, 13.0, 13.0)),
+        },
+        depth: Adaptive3dDepth {
+            depth_per_pass: 3.0,
+            stock_to_leave: 0.5,
+            stock_top_z: STOCK_TOP_Z,
+            z_floor: None,
+            fine_stepdown: None,
+            detect_flat_areas: false,
+            shallow_tier: None,
+        },
+        linking: Adaptive3dLinking {
+            region_ordering: RegionOrdering::Global,
+            min_region_cut_length_mm: 0.0,
+            max_stay_down_distance_mm: Some(0.0),
+            stay_down_clearance_mm: 0.5,
+        },
         feed_rate: 1000.0,
         plunge_rate: 500.0,
         safe_z: SAFE_Z,
-        tolerance: 0.5,
-        min_cutting_radius: 0.0,
-        stock_top_z: STOCK_TOP_Z,
-        z_floor: None,
         entry_style: EntryStyle3d::Plunge,
-        fine_stepdown: None,
-        detect_flat_areas: false,
-        region_ordering: RegionOrdering::Global,
         initial_stock: None,
         clearing_strategy: strategy,
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
         z_blend: false,
-        boundary: None,
-        mill_shallow_areas: false,
-        shallow_angle_rad: None,
-        shallow_stepdown: None,
-        world_stock_xy_bbox: Some((-13.0, -13.0, 13.0, 13.0)),
-        min_region_cut_length_mm: 0.0,
-        max_stay_down_distance_mm: Some(0.0),
-        stay_down_clearance_mm: 0.5,
     }
 }
 
@@ -117,24 +121,25 @@ fn case_params(case: &str) -> Adaptive3dParams {
         "contour_parallel" => base_params(ClearingStrategy3d::ContourParallel),
         "adaptive" => {
             let mut p = base_params(ClearingStrategy3d::Adaptive);
-            p.fine_stepdown = Some(1.5);
-            p.detect_flat_areas = true;
+            p.depth.fine_stepdown = Some(1.5);
+            p.depth.detect_flat_areas = true;
             p.z_blend = true;
             p
         }
         "agent_search" => {
             let mut p = base_params(ClearingStrategy3d::AgentSearch);
-            p.boundary = Some(Polygon2::rectangle(-12.0, -12.0, 6.0, 12.0));
-            p.mill_shallow_areas = true;
-            p.shallow_angle_rad = Some(30.0_f64.to_radians());
-            p.shallow_stepdown = Some(1.0);
-            p.max_stay_down_distance_mm = Some(8.0);
-            p.min_region_cut_length_mm = 3.0;
+            p.geometry.boundary = Some(Polygon2::rectangle(-12.0, -12.0, 6.0, 12.0));
+            p.depth.shallow_tier = Some(ShallowTier {
+                angle_rad: 30.0_f64.to_radians(),
+                stepdown: 1.0,
+            });
+            p.linking.max_stay_down_distance_mm = Some(8.0);
+            p.linking.min_region_cut_length_mm = 3.0;
             p
         }
         "contour_spiral" => {
             let mut p = base_params(ClearingStrategy3d::ContourSpiral);
-            p.region_ordering = RegionOrdering::ByArea;
+            p.linking.region_ordering = RegionOrdering::ByArea;
             p.trochoid_cap_mult = 2.0;
             p
         }

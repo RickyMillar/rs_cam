@@ -496,7 +496,8 @@ fn tridexel_simulation_two_toolpaths_carry_forward() {
 #[test]
 fn test_adaptive3d_rapids_lift_before_xy_traverse() {
     use rs_cam_core::adaptive3d::{
-        Adaptive3dParams, ClearingStrategy3d, EntryStyle3d, RegionOrdering, adaptive_3d_toolpath,
+        Adaptive3dDepth, Adaptive3dGeometry, Adaptive3dLinking, Adaptive3dParams,
+        ClearingStrategy3d, EntryStyle3d, RegionOrdering, adaptive_3d_toolpath,
     };
 
     let stl_path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -515,35 +516,39 @@ fn test_adaptive3d_rapids_lift_before_xy_traverse() {
     // Match the Phase 2 probe: 6.35mm flat, stepover=2, z_blend=true,
     // ContourParallel. Use stock_top_z just above the mesh top.
     let params = Adaptive3dParams {
+        geometry: Adaptive3dGeometry {
+            tool_radius: tool.radius(),
+            envelope_radius: tool.radius(),
+            stepover: 2.0,
+            tolerance: 0.1,
+            min_cutting_radius: 0.0,
+            boundary: None,
+            world_stock_xy_bbox: None,
+        },
+        depth: Adaptive3dDepth {
+            depth_per_pass: 3.0,
+            stock_to_leave: 0.5,
+            stock_top_z: mesh.bbox.max.z + 5.0,
+            z_floor: None,
+            fine_stepdown: None,
+            detect_flat_areas: false,
+            shallow_tier: None,
+        },
+        linking: Adaptive3dLinking {
+            region_ordering: RegionOrdering::Global,
+            min_region_cut_length_mm: 0.0,
+            max_stay_down_distance_mm: Some(0.0),
+            stay_down_clearance_mm: 0.5,
+        },
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
-        tool_radius: tool.radius(),
-        envelope_radius: tool.radius(),
-        stepover: 2.0,
-        depth_per_pass: 3.0,
-        stock_to_leave: 0.5,
         feed_rate: 1500.0,
         plunge_rate: 500.0,
         safe_z: 10.0,
-        tolerance: 0.1,
-        min_cutting_radius: 0.0,
-        stock_top_z: mesh.bbox.max.z + 5.0,
-        z_floor: None,
         entry_style: EntryStyle3d::Plunge,
-        fine_stepdown: None,
-        detect_flat_areas: false,
-        region_ordering: RegionOrdering::Global,
         initial_stock: None,
         clearing_strategy: ClearingStrategy3d::ContourParallel,
         z_blend: true,
-        boundary: None,
-        mill_shallow_areas: false,
-        shallow_angle_rad: None,
-        shallow_stepdown: None,
-        world_stock_xy_bbox: None,
-        min_region_cut_length_mm: 0.0,
-        max_stay_down_distance_mm: Some(0.0),
-        stay_down_clearance_mm: 0.5,
     };
 
     let tp = adaptive_3d_toolpath(&mesh, &index, &tool, &params);

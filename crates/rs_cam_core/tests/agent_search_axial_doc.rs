@@ -12,7 +12,8 @@
 )]
 
 use rs_cam_core::adaptive3d::{
-    Adaptive3dParams, ClearingStrategy3d, EntryStyle3d, RegionOrdering, adaptive_3d_toolpath,
+    Adaptive3dDepth, Adaptive3dGeometry, Adaptive3dLinking, Adaptive3dParams, ClearingStrategy3d,
+    EntryStyle3d, RegionOrdering, adaptive_3d_toolpath,
 };
 use rs_cam_core::compute::transform::{FaceUp, ZRotation};
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
@@ -86,35 +87,39 @@ fn agent_search_axial_doc_diag() {
     // Setup-local stock_top = effective_stock_bbox.max.z = stock_z = 25.
     let stock_top = stock_z;
     let params = Adaptive3dParams {
+        geometry: Adaptive3dGeometry {
+            tool_radius: 3.0,
+            envelope_radius: 3.0,
+            stepover: 0.84,
+            tolerance: 0.1,
+            min_cutting_radius: 0.0,
+            boundary: None,
+            world_stock_xy_bbox: None,
+        },
+        depth: Adaptive3dDepth {
+            depth_per_pass: 3.0,
+            stock_to_leave: 0.5,
+            stock_top_z: stock_top,
+            z_floor: None,
+            fine_stepdown: None,
+            detect_flat_areas: false,
+            shallow_tier: None,
+        },
+        linking: Adaptive3dLinking {
+            region_ordering: RegionOrdering::Global,
+            min_region_cut_length_mm: 0.0,
+            max_stay_down_distance_mm: Some(0.0),
+            stay_down_clearance_mm: 0.5,
+        },
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
-        tool_radius: 3.0,
-        envelope_radius: 3.0,
-        stepover: 0.84,
-        depth_per_pass: 3.0,
-        stock_to_leave: 0.5,
         feed_rate: 3150.0,
         plunge_rate: 750.0,
         safe_z: stock_top + 5.0,
-        tolerance: 0.1,
-        min_cutting_radius: 0.0,
-        stock_top_z: stock_top,
-        z_floor: None,
         entry_style: EntryStyle3d::Plunge,
-        fine_stepdown: None,
-        detect_flat_areas: false,
-        region_ordering: RegionOrdering::Global,
         initial_stock: None,
         clearing_strategy: ClearingStrategy3d::AgentSearch,
         z_blend: true,
-        boundary: None,
-        mill_shallow_areas: false,
-        shallow_angle_rad: None,
-        shallow_stepdown: None,
-        world_stock_xy_bbox: None,
-        min_region_cut_length_mm: 0.0,
-        max_stay_down_distance_mm: Some(0.0),
-        stay_down_clearance_mm: 0.5,
     };
 
     let tp = adaptive_3d_toolpath(&mesh, &index, &cutter, &params);
@@ -478,7 +483,7 @@ fn agent_search_axial_doc_diag() {
     // Threshold loosened to `mesh_height` (i.e. "the cutter doesn't
     // bite through the entire stock in one move") which is the bound
     // that actually matters for tool/spindle survival.
-    let mesh_height = params.stock_top_z - 0.0; // hemisphere from z=0
+    let mesh_height = params.depth.stock_top_z - 0.0; // hemisphere from z=0
     assert!(
         peak_axial_doc <= mesh_height + 1.0,
         "axial DOC regressed: peak {:.2}mm > mesh_height {:.1}mm + 1mm tolerance \

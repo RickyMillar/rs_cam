@@ -58,7 +58,8 @@
 )]
 
 use rs_cam_core::adaptive3d::{
-    Adaptive3dParams, ClearingStrategy3d, EntryStyle3d, RegionOrdering, adaptive_3d_toolpath,
+    Adaptive3dDepth, Adaptive3dGeometry, Adaptive3dLinking, Adaptive3dParams, ClearingStrategy3d,
+    EntryStyle3d, RegionOrdering, adaptive_3d_toolpath,
 };
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
@@ -143,38 +144,41 @@ fn micro_peak_terrain() -> TriangleMesh {
 
 fn make_params(tool_radius: f64, min_region_cut_length_mm: f64) -> Adaptive3dParams {
     Adaptive3dParams {
+        geometry: Adaptive3dGeometry {
+            tool_radius,
+            envelope_radius: tool_radius,
+            stepover: tool_radius * 0.5,
+            tolerance: 0.1,
+            min_cutting_radius: 0.0,
+            boundary: None,
+            world_stock_xy_bbox: None,
+        },
+        depth: Adaptive3dDepth {
+            depth_per_pass: 2.0,
+            stock_to_leave: 0.0,
+            stock_top_z: PEAK_Z,
+            z_floor: None,
+            fine_stepdown: None,
+            detect_flat_areas: false,
+            shallow_tier: None,
+        },
+        linking: Adaptive3dLinking {
+            region_ordering: RegionOrdering::Global,
+            min_region_cut_length_mm, // F-038b: keep the F-038 fixture's pre-F-038b behaviour (every
+            // entry remains a retract/rapid/plunge) so the entry-count
+            // regression net stays comparable across F-038 and F-038b.
+            max_stay_down_distance_mm: Some(0.0),
+            stay_down_clearance_mm: 0.5,
+        },
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
-        tool_radius,
-        envelope_radius: tool_radius,
-        stepover: tool_radius * 0.5,
-        depth_per_pass: 2.0,
-        stock_to_leave: 0.0,
         feed_rate: 1500.0,
         plunge_rate: 500.0,
         safe_z: PEAK_Z + 5.0,
-        tolerance: 0.1,
-        min_cutting_radius: 0.0,
-        stock_top_z: PEAK_Z,
-        z_floor: None,
         entry_style: EntryStyle3d::Plunge,
-        fine_stepdown: None,
-        detect_flat_areas: false,
-        region_ordering: RegionOrdering::Global,
         initial_stock: None,
         clearing_strategy: ClearingStrategy3d::AgentSearch,
         z_blend: false,
-        boundary: None,
-        mill_shallow_areas: false,
-        shallow_angle_rad: None,
-        shallow_stepdown: None,
-        world_stock_xy_bbox: None,
-        min_region_cut_length_mm,
-        // F-038b: keep the F-038 fixture's pre-F-038b behaviour (every
-        // entry remains a retract/rapid/plunge) so the entry-count
-        // regression net stays comparable across F-038 and F-038b.
-        max_stay_down_distance_mm: Some(0.0),
-        stay_down_clearance_mm: 0.5,
     }
 }
 

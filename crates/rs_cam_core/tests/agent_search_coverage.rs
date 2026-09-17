@@ -34,8 +34,8 @@
 
 use rs_cam_core::{
     adaptive3d::{
-        Adaptive3dParams, ClearingStrategy3d, EntryStyle3d, RegionOrdering,
-        adaptive_3d_toolpath_annotated,
+        Adaptive3dDepth, Adaptive3dGeometry, Adaptive3dLinking, Adaptive3dParams,
+        ClearingStrategy3d, EntryStyle3d, RegionOrdering, adaptive_3d_toolpath_annotated,
     },
     dexel_stock::{StockCutDirection, TriDexelStock},
     geo::P3,
@@ -216,35 +216,40 @@ fn agent_search_clears_concave_interior_at_every_z_level() {
     let depth_per_pass: f64 = 3.0;
     let stock_to_leave: f64 = 0.5;
     let params = Adaptive3dParams {
+        geometry: Adaptive3dGeometry {
+            tool_radius: cutter.radius(),
+            envelope_radius: cutter.radius(),
+            stepover: cutter.radius() * 0.28,
+            tolerance: 0.25,
+            min_cutting_radius: 0.0,
+            boundary: None,
+            world_stock_xy_bbox: None,
+        },
+        depth: Adaptive3dDepth {
+            // ~14% radial
+            depth_per_pass,
+            stock_to_leave,
+            stock_top_z,
+            z_floor: None,
+            fine_stepdown: None,
+            detect_flat_areas: false,
+            shallow_tier: None,
+        },
+        linking: Adaptive3dLinking {
+            region_ordering: RegionOrdering::Global,
+            min_region_cut_length_mm: 0.0,
+            max_stay_down_distance_mm: Some(0.0),
+            stay_down_clearance_mm: 0.5,
+        },
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
-        tool_radius: cutter.radius(),
-        envelope_radius: cutter.radius(),
-        stepover: cutter.radius() * 0.28, // ~14% radial
-        depth_per_pass,
-        stock_to_leave,
         feed_rate: 1500.0,
         plunge_rate: 500.0,
         safe_z: stock_top_z + 5.0,
-        tolerance: 0.25,
-        min_cutting_radius: 0.0,
-        stock_top_z,
-        z_floor: None,
         entry_style: EntryStyle3d::Plunge,
-        fine_stepdown: None,
-        detect_flat_areas: false,
-        region_ordering: RegionOrdering::Global,
         initial_stock: None,
         clearing_strategy: ClearingStrategy3d::AgentSearch,
         z_blend: false,
-        boundary: None,
-        mill_shallow_areas: false,
-        shallow_angle_rad: None,
-        shallow_stepdown: None,
-        world_stock_xy_bbox: None,
-        min_region_cut_length_mm: 0.0,
-        max_stay_down_distance_mm: Some(0.0),
-        stay_down_clearance_mm: 0.5,
     };
 
     // ── Generate (annotated) ──────────────────────────────────────────
@@ -266,14 +271,14 @@ fn agent_search_clears_concave_interior_at_every_z_level() {
     // ── Build base stock matching adaptive3d's grid ───────────────────
     let r = cutter.radius();
     let bbox = &mesh.bbox;
-    let cell_size = (params.tool_radius / 6.0).max(params.tolerance);
+    let cell_size = (params.geometry.tool_radius / 6.0).max(params.geometry.tolerance);
     let mut base_stock = TriDexelStock::from_stock(
         bbox.min.x - r,
         bbox.min.y - r,
         bbox.max.x + r,
         bbox.max.y + r,
         bbox.min.z,
-        params.stock_top_z,
+        params.depth.stock_top_z,
         cell_size,
     );
     let surface_hm = SurfaceHeightmap::from_mesh(
@@ -328,7 +333,7 @@ fn agent_search_clears_concave_interior_at_every_z_level() {
     // depth_per_pass is either stamp jitter or material a follow-up
     // pass will remove without overload.
     let interior_margin = cell_size * 2.0;
-    let epsilon = params.depth_per_pass;
+    let epsilon = params.depth.depth_per_pass;
 
     let mut total_failures = 0usize;
     let mut per_level_summary: Vec<(f64, usize, usize)> = Vec::new();

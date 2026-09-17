@@ -113,44 +113,45 @@ fn flat_cutter() -> FlatEndmill {
 
 fn default_params() -> Adaptive3dParams {
     Adaptive3dParams {
+        geometry: Adaptive3dGeometry {
+            tool_radius: 3.175,
+            envelope_radius: 3.175,
+            stepover: 2.0,
+            tolerance: 0.1,
+            min_cutting_radius: 0.0,
+            boundary: None,
+            world_stock_xy_bbox: None,
+        },
+        depth: Adaptive3dDepth {
+            depth_per_pass: 3.0,
+            stock_to_leave: 0.5,
+            stock_top_z: 25.0,
+            z_floor: None,
+            fine_stepdown: None,
+            detect_flat_areas: false,
+            shallow_tier: None,
+        },
+        linking: Adaptive3dLinking {
+            region_ordering: RegionOrdering::Global, // Disabled by default in tests — tests that need to exercise
+            // the F-038 fragmentation filter set this explicitly.
+            min_region_cut_length_mm: 0.0, // F-038b: tests opt out by default (None ⇒ 8×diam in production,
+            // but the unit-test fixtures here exercise the legacy code path
+            // unless they specifically target the keep-tool-down logic).
+            max_stay_down_distance_mm: Some(0.0),
+            stay_down_clearance_mm: 0.5,
+        },
         trochoid_cap_mult: 1.6,
-        tool_radius: 3.175,
-        envelope_radius: 3.175,
-        z_floor: None,
-        stepover: 2.0,
-        depth_per_pass: 3.0,
-        stock_to_leave: 0.5,
         feed_rate: 1000.0,
         plunge_rate: 500.0,
         safe_z: 30.0,
-        tolerance: 0.1,
-        min_cutting_radius: 0.0,
-        stock_top_z: 25.0,
         entry_style: EntryStyle3d::Plunge,
-        fine_stepdown: None,
-        detect_flat_areas: false,
-        region_ordering: RegionOrdering::Global,
         engagement_measure: crate::adaptive::EngagementMeasure::DiskArea,
-        initial_stock: None,
-        // Matches the GUI/MCP default (ContourParallel) so the bulk of
+        initial_stock: None, // Matches the GUI/MCP default (ContourParallel) so the bulk of
         // adaptive3d unit tests exercise the code path most users reach
         // in production. Tests that specifically validate AgentSearch
         // or Adaptive override this field explicitly.
         clearing_strategy: ClearingStrategy3d::ContourParallel,
         z_blend: false,
-        boundary: None,
-        mill_shallow_areas: false,
-        shallow_angle_rad: None,
-        shallow_stepdown: None,
-        world_stock_xy_bbox: None,
-        // Disabled by default in tests — tests that need to exercise
-        // the F-038 fragmentation filter set this explicitly.
-        min_region_cut_length_mm: 0.0,
-        // F-038b: tests opt out by default (None ⇒ 8×diam in production,
-        // but the unit-test fixtures here exercise the legacy code path
-        // unless they specifically target the keep-tool-down logic).
-        max_stay_down_distance_mm: Some(0.0),
-        stay_down_clearance_mm: 0.5,
     }
 }
 
@@ -270,12 +271,16 @@ fn test_simplify_path_3d() {
 fn test_adaptive_3d_flat_produces_toolpath() {
     let (mesh, si) = make_flat_mesh();
     let cutter = flat_cutter();
-    let params = Adaptive3dParams {
-        stock_top_z: 5.0,    // 5mm above flat mesh at z=0
-        depth_per_pass: 5.0, // Single level
-        stock_to_leave: 0.0,
-        tolerance: 0.5, // Coarse for speed
-        ..default_params()
+    let params = {
+        // Coarse for speed.
+        let mut p = default_params();
+        p.depth.stock_top_z = 5.0;
+        // 5mm above flat mesh at z=0
+        p.depth.depth_per_pass = 5.0;
+        // Single level
+        p.depth.stock_to_leave = 0.0;
+        p.geometry.tolerance = 0.5;
+        p
     };
 
     let tp = adaptive_3d_toolpath(&mesh, &si, &cutter, &params);
@@ -295,12 +300,15 @@ fn test_adaptive_3d_flat_produces_toolpath() {
 fn test_adaptive_3d_hemisphere_multi_level() {
     let (mesh, si) = make_hemisphere_mesh();
     let cutter = flat_cutter();
-    let params = Adaptive3dParams {
-        stock_top_z: 25.0, // Above hemisphere peak (~20)
-        depth_per_pass: 5.0,
-        stock_to_leave: 0.5,
-        tolerance: 0.5, // Coarse for speed
-        ..default_params()
+    let params = {
+        // Coarse for speed.
+        let mut p = default_params();
+        p.depth.stock_top_z = 25.0;
+        // Above hemisphere peak (~20)
+        p.depth.depth_per_pass = 5.0;
+        p.depth.stock_to_leave = 0.5;
+        p.geometry.tolerance = 0.5;
+        p
     };
 
     let tp = adaptive_3d_toolpath(&mesh, &si, &cutter, &params);
@@ -337,14 +345,15 @@ fn test_adaptive_3d_hemisphere_multi_level() {
 fn agent_search_z_drop_diag() {
     let (mesh, si) = make_hemisphere_mesh();
     let cutter = flat_cutter();
-    let params = Adaptive3dParams {
-        stock_top_z: 25.0,
-        depth_per_pass: 3.0,
-        stock_to_leave: 0.5,
-        tolerance: 0.5,
-        stepover: 1.0,
-        clearing_strategy: ClearingStrategy3d::AgentSearch,
-        ..default_params()
+    let params = {
+        let mut p = default_params();
+        p.depth.stock_top_z = 25.0;
+        p.depth.depth_per_pass = 3.0;
+        p.depth.stock_to_leave = 0.5;
+        p.geometry.tolerance = 0.5;
+        p.geometry.stepover = 1.0;
+        p.clearing_strategy = ClearingStrategy3d::AgentSearch;
+        p
     };
 
     let never_cancel = || false;
@@ -392,7 +401,7 @@ fn agent_search_z_drop_diag() {
                     path_max_contig_descent
                 );
             }
-            if path_total_descent > params.depth_per_pass {
+            if path_total_descent > params.depth.depth_per_pass {
                 paths_with_descent_gt_dpp += 1;
             }
         }
@@ -407,12 +416,12 @@ fn agent_search_z_drop_diag() {
     );
     println!(
         "paths with total descent > depth_per_pass ({:.1}): {}",
-        params.depth_per_pass, paths_with_descent_gt_dpp
+        params.depth.depth_per_pass, paths_with_descent_gt_dpp
     );
     println!("worst path: {}", largest_path_descent_summary);
 
     // The split fix should keep per-step |dz| under depth_per_pass × 1.1.
-    let threshold = params.depth_per_pass * 1.1;
+    let threshold = params.depth.depth_per_pass * 1.1;
     assert!(
         max_per_step_dz <= threshold + 0.01,
         "split fix failed: max per-step |dz| = {:.3} mm exceeds threshold {:.3} mm",
@@ -425,12 +434,13 @@ fn agent_search_z_drop_diag() {
 fn test_adaptive_3d_z_follows_surface() {
     let (mesh, si) = make_flat_mesh();
     let cutter = flat_cutter();
-    let params = Adaptive3dParams {
-        stock_top_z: 5.0,
-        depth_per_pass: 5.0,
-        stock_to_leave: 0.5,
-        tolerance: 0.5,
-        ..default_params()
+    let params = {
+        let mut p = default_params();
+        p.depth.stock_top_z = 5.0;
+        p.depth.depth_per_pass = 5.0;
+        p.depth.stock_to_leave = 0.5;
+        p.geometry.tolerance = 0.5;
+        p
     };
 
     let tp = adaptive_3d_toolpath(&mesh, &si, &cutter, &params);
@@ -441,10 +451,10 @@ fn test_adaptive_3d_z_follows_surface() {
             && m.target.z < params.safe_z - 1.0
         {
             assert!(
-                m.target.z >= params.stock_to_leave - 1.0,
+                m.target.z >= params.depth.stock_to_leave - 1.0,
                 "Cut Z ({:.2}) should be >= stock_to_leave ({:.1}) - tolerance",
                 m.target.z,
-                params.stock_to_leave
+                params.depth.stock_to_leave
             );
         }
     }
@@ -460,12 +470,13 @@ fn test_z_rate_clamp_limits_descent() {
     let (mesh, si) = make_hemisphere_mesh();
     let cutter = flat_cutter();
     let depth_per_pass = 3.0;
-    let params = Adaptive3dParams {
-        stock_top_z: 25.0,
-        depth_per_pass,
-        stock_to_leave: 0.5,
-        tolerance: 0.5,
-        ..default_params()
+    let params = {
+        let mut p = default_params();
+        p.depth.stock_top_z = 25.0;
+        p.depth.depth_per_pass = depth_per_pass;
+        p.depth.stock_to_leave = 0.5;
+        p.geometry.tolerance = 0.5;
+        p
     };
 
     let never_cancel = || false;
@@ -500,16 +511,17 @@ fn test_z_rate_clamp_limits_descent() {
 fn test_helix_entry_no_vertical_plunge() {
     let (mesh, si) = make_flat_mesh();
     let cutter = flat_cutter();
-    let params = Adaptive3dParams {
-        stock_top_z: 5.0,
-        depth_per_pass: 5.0,
-        stock_to_leave: 0.0,
-        tolerance: 0.5,
-        entry_style: EntryStyle3d::Helix {
+    let params = {
+        let mut p = default_params();
+        p.depth.stock_top_z = 5.0;
+        p.depth.depth_per_pass = 5.0;
+        p.depth.stock_to_leave = 0.0;
+        p.geometry.tolerance = 0.5;
+        p.entry_style = EntryStyle3d::Helix {
             radius: cutter.radius() * 0.8,
             pitch: 1.0,
-        },
-        ..default_params()
+        };
+        p
     };
 
     let tp = adaptive_3d_toolpath(&mesh, &si, &cutter, &params);
@@ -836,13 +848,14 @@ fn test_material_remaining_in_region() {
 fn test_adaptive_3d_by_area_flat() {
     let (mesh, si) = make_flat_mesh();
     let cutter = flat_cutter();
-    let params = Adaptive3dParams {
-        stock_top_z: 5.0,
-        depth_per_pass: 5.0,
-        stock_to_leave: 0.0,
-        tolerance: 0.5,
-        region_ordering: RegionOrdering::ByArea,
-        ..default_params()
+    let params = {
+        let mut p = default_params();
+        p.depth.stock_top_z = 5.0;
+        p.depth.depth_per_pass = 5.0;
+        p.depth.stock_to_leave = 0.0;
+        p.geometry.tolerance = 0.5;
+        p.linking.region_ordering = RegionOrdering::ByArea;
+        p
     };
 
     let tp = adaptive_3d_toolpath(&mesh, &si, &cutter, &params);
@@ -862,13 +875,14 @@ fn test_adaptive_3d_by_area_flat() {
 fn test_adaptive_3d_by_area_hemisphere() {
     let (mesh, si) = make_hemisphere_mesh();
     let cutter = flat_cutter();
-    let params = Adaptive3dParams {
-        stock_top_z: 25.0,
-        depth_per_pass: 5.0,
-        stock_to_leave: 0.5,
-        tolerance: 0.5,
-        region_ordering: RegionOrdering::ByArea,
-        ..default_params()
+    let params = {
+        let mut p = default_params();
+        p.depth.stock_top_z = 25.0;
+        p.depth.depth_per_pass = 5.0;
+        p.depth.stock_to_leave = 0.5;
+        p.geometry.tolerance = 0.5;
+        p.linking.region_ordering = RegionOrdering::ByArea;
+        p
     };
 
     let tp = adaptive_3d_toolpath(&mesh, &si, &cutter, &params);
@@ -990,12 +1004,14 @@ fn test_low_yield_bail() {
 
     // Stock barely above surface: 0.2mm of material (below thin_threshold)
     // Pre-stamp should eliminate this, so adaptive should do minimal work.
-    let params = Adaptive3dParams {
-        stock_top_z: 0.2, // Only 0.2mm above flat mesh at z=0
-        depth_per_pass: 3.0,
-        stock_to_leave: 0.0,
-        tolerance: 0.5,
-        ..default_params()
+    let params = {
+        let mut p = default_params();
+        p.depth.stock_top_z = 0.2;
+        // Only 0.2mm above flat mesh at z=0
+        p.depth.depth_per_pass = 3.0;
+        p.depth.stock_to_leave = 0.0;
+        p.geometry.tolerance = 0.5;
+        p
     };
 
     let never_cancel = || false;
@@ -1025,9 +1041,10 @@ fn traced_adaptive3d_emits_spans_hotspots_and_annotations() {
     // adaptive_pass spans and adaptive3d_pass hotspots are only
     // emitted by clear_z_level() (the AgentSearch path), not by
     // clear_z_level_contour_parallel or clear_z_level_adaptive.
-    let params = Adaptive3dParams {
-        clearing_strategy: ClearingStrategy3d::AgentSearch,
-        ..default_params()
+    let params = {
+        let mut p = default_params();
+        p.clearing_strategy = ClearingStrategy3d::AgentSearch;
+        p
     };
     let recorder = crate::trace::debug_trace::ToolpathDebugRecorder::new("Adaptive 3D", "3D Rough");
     let ctx = recorder.root_context();
@@ -1082,13 +1099,14 @@ fn traced_adaptive3d_emits_spans_hotspots_and_annotations() {
 fn test_contour_parallel_edt_flat_mesh() {
     let (mesh, si) = make_flat_mesh();
     let cutter = flat_cutter();
-    let params = Adaptive3dParams {
-        stock_top_z: 5.0,
-        depth_per_pass: 5.0,
-        stock_to_leave: 0.0,
-        tolerance: 0.5,
-        clearing_strategy: ClearingStrategy3d::ContourParallel,
-        ..default_params()
+    let params = {
+        let mut p = default_params();
+        p.depth.stock_top_z = 5.0;
+        p.depth.depth_per_pass = 5.0;
+        p.depth.stock_to_leave = 0.0;
+        p.geometry.tolerance = 0.5;
+        p.clearing_strategy = ClearingStrategy3d::ContourParallel;
+        p
     };
 
     let tp = adaptive_3d_toolpath(&mesh, &si, &cutter, &params);
@@ -1114,13 +1132,14 @@ fn test_contour_parallel_edt_flat_mesh() {
 fn test_contour_parallel_edt_hemisphere() {
     let (mesh, si) = make_hemisphere_mesh();
     let cutter = flat_cutter();
-    let params = Adaptive3dParams {
-        stock_top_z: 25.0,
-        depth_per_pass: 5.0,
-        stock_to_leave: 0.5,
-        tolerance: 0.5,
-        clearing_strategy: ClearingStrategy3d::ContourParallel,
-        ..default_params()
+    let params = {
+        let mut p = default_params();
+        p.depth.stock_top_z = 25.0;
+        p.depth.depth_per_pass = 5.0;
+        p.depth.stock_to_leave = 0.5;
+        p.geometry.tolerance = 0.5;
+        p.clearing_strategy = ClearingStrategy3d::ContourParallel;
+        p
     };
 
     let tp = adaptive_3d_toolpath(&mesh, &si, &cutter, &params);
@@ -1163,15 +1182,16 @@ fn test_contour_parallel_complete_clearing() {
     let stock_top_z = 5.0;
     let stock_to_leave = 0.0;
 
-    let params = Adaptive3dParams {
-        tool_radius,
-        stepover: 2.5,
-        depth_per_pass: 5.0,
-        stock_to_leave,
-        tolerance: 0.3,
-        stock_top_z,
-        clearing_strategy: ClearingStrategy3d::ContourParallel,
-        ..default_params()
+    let params = {
+        let mut p = default_params();
+        p.geometry.tool_radius = tool_radius;
+        p.geometry.stepover = 2.5;
+        p.depth.depth_per_pass = 5.0;
+        p.depth.stock_to_leave = stock_to_leave;
+        p.geometry.tolerance = 0.3;
+        p.depth.stock_top_z = stock_top_z;
+        p.clearing_strategy = ClearingStrategy3d::ContourParallel;
+        p
     };
 
     let tp = adaptive_3d_toolpath(&mesh, &si, &cutter, &params);
@@ -1210,15 +1230,16 @@ fn test_contour_parallel_complete_clearing_hemisphere() {
     let stock_top_z = 25.0;
     let stock_to_leave = 0.5;
 
-    let params = Adaptive3dParams {
-        tool_radius,
-        stepover: 2.5,
-        depth_per_pass: 3.0,
-        stock_to_leave,
-        tolerance: 0.3,
-        stock_top_z,
-        clearing_strategy: ClearingStrategy3d::ContourParallel,
-        ..default_params()
+    let params = {
+        let mut p = default_params();
+        p.geometry.tool_radius = tool_radius;
+        p.geometry.stepover = 2.5;
+        p.depth.depth_per_pass = 3.0;
+        p.depth.stock_to_leave = stock_to_leave;
+        p.geometry.tolerance = 0.3;
+        p.depth.stock_top_z = stock_top_z;
+        p.clearing_strategy = ClearingStrategy3d::ContourParallel;
+        p
     };
 
     let tp = adaptive_3d_toolpath(&mesh, &si, &cutter, &params);
@@ -1333,15 +1354,16 @@ fn test_small_dpp_hemisphere_clears_without_islands() {
     let stock_to_leave = 0.3;
     let depth_per_pass = 0.5;
 
-    let params = Adaptive3dParams {
-        tool_radius,
-        stepover: 2.0,
-        depth_per_pass,
-        stock_to_leave,
-        tolerance: 0.3,
-        stock_top_z,
-        clearing_strategy: ClearingStrategy3d::ContourParallel,
-        ..default_params()
+    let params = {
+        let mut p = default_params();
+        p.geometry.tool_radius = tool_radius;
+        p.geometry.stepover = 2.0;
+        p.depth.depth_per_pass = depth_per_pass;
+        p.depth.stock_to_leave = stock_to_leave;
+        p.geometry.tolerance = 0.3;
+        p.depth.stock_top_z = stock_top_z;
+        p.clearing_strategy = ClearingStrategy3d::ContourParallel;
+        p
     };
 
     let tp = adaptive_3d_toolpath(&mesh, &si, &cutter, &params);
@@ -1425,39 +1447,45 @@ fn test_small_dpp_hemisphere_clears_without_islands() {
 /// off entirely. Guards against accidental sub-pass insertion in the
 /// disabled branch.
 #[test]
-fn test_shallow_disabled_matches_baseline() {
+fn test_ignored_shallow_tier_matches_baseline() {
     let radius = 5.0_f64;
     let mesh = crate::mesh::make_test_hemisphere(radius, 12);
     let si = SpatialIndex::build(&mesh, 10.0);
     let cutter = flat_cutter();
     let tool_radius = cutter.radius();
 
-    let common = |mill_shallow_areas: bool,
-                  shallow_angle_rad: Option<f64>,
-                  shallow_stepdown: Option<f64>|
-     -> Adaptive3dParams {
-        Adaptive3dParams {
-            tool_radius,
-            stepover: 2.0,
-            depth_per_pass: 1.0,
-            stock_to_leave: 0.3,
-            tolerance: 0.3,
-            stock_top_z: 6.0,
-            clearing_strategy: ClearingStrategy3d::AgentSearch,
-            mill_shallow_areas,
-            shallow_angle_rad,
-            shallow_stepdown,
-            ..default_params()
-        }
+    let common = |shallow_tier: Option<crate::adaptive3d::ShallowTier>| -> Adaptive3dParams {
+        let mut p = default_params();
+        p.geometry.tool_radius = tool_radius;
+        p.geometry.stepover = 2.0;
+        p.depth.depth_per_pass = 1.0;
+        p.depth.stock_to_leave = 0.3;
+        p.geometry.tolerance = 0.3;
+        p.depth.stock_top_z = 6.0;
+        p.clearing_strategy = ClearingStrategy3d::AgentSearch;
+        p.depth.shallow_tier = shallow_tier;
+        p
     };
 
-    let tp_base = adaptive_3d_toolpath(&mesh, &si, &cutter, &common(false, None, None));
-    let tp_off = adaptive_3d_toolpath(&mesh, &si, &cutter, &common(false, Some(0.5), Some(0.25)));
+    let tp_base = adaptive_3d_toolpath(&mesh, &si, &cutter, &common(None));
+    // The tier the planner still ignores at run time: a stepdown that is not
+    // smaller than `depth_per_pass` buys no sub-pass. CUT-04 removed the OTHER
+    // "off" state this test used to cover — `mill_shallow_areas: false` beside
+    // a live angle and stepdown — by making it unrepresentable.
+    let tp_off = adaptive_3d_toolpath(
+        &mesh,
+        &si,
+        &cutter,
+        &common(Some(crate::adaptive3d::ShallowTier {
+            angle_rad: 0.5,
+            stepdown: 1.0,
+        })),
+    );
 
     assert_eq!(
         tp_base.moves.len(),
         tp_off.moves.len(),
-        "shallow=false with stale angle/step must match baseline; got {} vs {}",
+        "a tier whose stepdown is not below depth_per_pass must match baseline; got {} vs {}",
         tp_base.moves.len(),
         tp_off.moves.len()
     );
@@ -1465,7 +1493,7 @@ fn test_shallow_disabled_matches_baseline() {
     let cut_off = tp_off.total_cutting_distance();
     assert!(
         (cut_base - cut_off).abs() < 0.001,
-        "shallow=false cutting distance must match baseline; got {cut_base:.3} vs {cut_off:.3}"
+        "an ignored tier must match the baseline cutting distance; got {cut_base:.3} vs {cut_off:.3}"
     );
 }
 
@@ -1878,18 +1906,19 @@ fn run_planner_sim_parity_with_mesh(
         cell_size,
     );
 
-    let params = Adaptive3dParams {
-        initial_stock: Some(initial_stock.clone()),
-        clearing_strategy: strategy,
-        tool_radius,
-        envelope_radius: tool_radius,
-        stock_top_z,
-        depth_per_pass: 3.0,
-        stock_to_leave: 0.5,
-        stepover: 1.0,
-        tolerance: 0.5,
-        world_stock_xy_bbox: world_xy,
-        ..default_params()
+    let params = {
+        let mut p = default_params();
+        p.initial_stock = Some(initial_stock.clone());
+        p.clearing_strategy = strategy;
+        p.geometry.tool_radius = tool_radius;
+        p.geometry.envelope_radius = tool_radius;
+        p.depth.stock_top_z = stock_top_z;
+        p.depth.depth_per_pass = 3.0;
+        p.depth.stock_to_leave = 0.5;
+        p.geometry.stepover = 1.0;
+        p.geometry.tolerance = 0.5;
+        p.geometry.world_stock_xy_bbox = world_xy;
+        p
     };
 
     let never_cancel = || false;
@@ -2083,17 +2112,18 @@ fn agent_search_cut_path_point_spacing_probe() {
         stock_top_z,
         cell_size,
     );
-    let params = Adaptive3dParams {
-        initial_stock: Some(initial_stock),
-        clearing_strategy: ClearingStrategy3d::AgentSearch,
-        tool_radius,
-        envelope_radius: tool_radius,
-        stock_top_z,
-        depth_per_pass: 3.0,
-        stock_to_leave: 0.5,
-        stepover: 1.0,
-        tolerance: 0.5,
-        ..default_params()
+    let params = {
+        let mut p = default_params();
+        p.initial_stock = Some(initial_stock);
+        p.clearing_strategy = ClearingStrategy3d::AgentSearch;
+        p.geometry.tool_radius = tool_radius;
+        p.geometry.envelope_radius = tool_radius;
+        p.depth.stock_top_z = stock_top_z;
+        p.depth.depth_per_pass = 3.0;
+        p.depth.stock_to_leave = 0.5;
+        p.geometry.stepover = 1.0;
+        p.geometry.tolerance = 0.5;
+        p
     };
 
     let never_cancel = || false;
@@ -2252,17 +2282,18 @@ fn run_planner_sim_parity_cut_only(
         cell_size,
     );
 
-    let params = Adaptive3dParams {
-        initial_stock: Some(initial_stock.clone()),
-        clearing_strategy: strategy,
-        tool_radius,
-        envelope_radius: tool_radius,
-        stock_top_z,
-        depth_per_pass: 3.0,
-        stock_to_leave: 0.5,
-        stepover: 1.0,
-        tolerance: 0.5,
-        ..default_params()
+    let params = {
+        let mut p = default_params();
+        p.initial_stock = Some(initial_stock.clone());
+        p.clearing_strategy = strategy;
+        p.geometry.tool_radius = tool_radius;
+        p.geometry.envelope_radius = tool_radius;
+        p.depth.stock_top_z = stock_top_z;
+        p.depth.depth_per_pass = 3.0;
+        p.depth.stock_to_leave = 0.5;
+        p.geometry.stepover = 1.0;
+        p.geometry.tolerance = 0.5;
+        p
     };
 
     let never_cancel = || false;

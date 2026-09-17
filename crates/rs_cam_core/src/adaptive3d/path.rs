@@ -117,7 +117,7 @@ fn default_max_link_dist(tool_radius: f64, stepover: f64) -> f64 {
 }
 
 /// Peck the descent from `start_z` down to `entry.z` at constant XY.
-/// Each peck steps down by `params.depth_per_pass` and rapid-retracts a
+/// Each peck steps down by `params.depth.depth_per_pass` and rapid-retracts a
 /// small clearance for chip break before the next peck. Final feed
 /// completes the descent to exactly `entry.z`. No-op if `start_z <=
 /// entry.z` (already at or below the target).
@@ -160,13 +160,13 @@ fn default_max_link_dist(tool_radius: f64, stepover: f64) -> f64 {
 fn emit_peck_plunge(tp: &mut Toolpath, entry: &P3, start_z: f64, params: &Adaptive3dParams) {
     use crate::toolpath::MoveIntent;
     const PECK_CLEARANCE_MM: f64 = 0.5;
-    let dpp = params.depth_per_pass.max(0.1);
+    let dpp = params.depth.depth_per_pass.max(0.1);
 
     // G-PECKROOT. Never rapid below the shared stock guard, never below the
     // entry itself, and never *up* — `min(start_z)` keeps the
     // `RapidWithFloor` caller (which has already rapided down through
     // known-cleared air) from being lifted back to the stock top.
-    let safe_rapid_floor = params.stock_top_z + crate::dressup::ENTRY_CLEARANCE;
+    let safe_rapid_floor = params.depth.stock_top_z + crate::dressup::ENTRY_CLEARANCE;
     let ladder_start = entry.z.max(safe_rapid_floor).min(start_z);
     if start_z - ladder_start > 0.1 {
         tp.rapid_to_with_intent(P3::new(entry.x, entry.y, ladder_start), MoveIntent::Linking);
@@ -331,7 +331,7 @@ pub(super) fn adaptive_3d_segments(
     debug_ctx: Option<&ToolpathDebugContext>,
     cancel: &dyn CancelCheck,
 ) -> Result<Adaptive3dSegmentsResult, Cancelled> {
-    let tool_radius = params.tool_radius;
+    let tool_radius = params.geometry.tool_radius;
     let r = cutter.radius();
 
     // Grid geometry: expand mesh bbox by cutter radius. If a world stock
@@ -345,7 +345,7 @@ pub(super) fn adaptive_3d_segments(
     // Exceeds at the model-edge outliers. See finding F-027.
     let bbox = &mesh.bbox;
     let (origin_x, origin_y, extent_x, extent_y) =
-        if let Some((wx_min, wy_min, wx_max, wy_max)) = params.world_stock_xy_bbox {
+        if let Some((wx_min, wy_min, wx_max, wy_max)) = params.geometry.world_stock_xy_bbox {
             (
                 (bbox.min.x - r).min(wx_min),
                 (bbox.min.y - r).min(wy_min),
@@ -360,7 +360,7 @@ pub(super) fn adaptive_3d_segments(
                 bbox.max.y + r,
             )
         };
-    let cell_size = (tool_radius / 6.0).max(params.tolerance);
+    let cell_size = (tool_radius / 6.0).max(params.geometry.tolerance);
 
     // Initialize tri-dexel material stock
     let mut material_stock = match &params.initial_stock {
@@ -371,13 +371,13 @@ pub(super) fn adaptive_3d_segments(
             // it's clearly below the mesh — in that case the top of the
             // model won't be cut and the user probably forgot to set it.
             // See planning/adaptive_review_2026-04.md F-4.
-            if params.stock_top_z < bbox.max.z - 0.5 {
+            if params.depth.stock_top_z < bbox.max.z - 0.5 {
                 tracing::warn!(
-                    stock_top_z = params.stock_top_z,
+                    stock_top_z = params.depth.stock_top_z,
                     mesh_top_z = bbox.max.z,
                     "stock_top_z is below mesh top by {:.1}mm — that band of material will \
                      NOT be cut. Set stock_top_z to match your actual stock height.",
-                    bbox.max.z - params.stock_top_z
+                    bbox.max.z - params.depth.stock_top_z
                 );
             }
             TriDexelStock::from_stock(
@@ -386,7 +386,7 @@ pub(super) fn adaptive_3d_segments(
                 extent_x,
                 extent_y,
                 bbox.min.z,
-                params.stock_top_z,
+                params.depth.stock_top_z,
                 cell_size,
             )
         }
@@ -432,18 +432,18 @@ pub(super) fn adaptive_3d_segments(
     // Pre-compute the shallow-area mask once (it only depends on the
     // surface geometry, not on the running stock). Indexed row-major,
     // same layout as the surface heightmap / slope_map.angles. Cell is
-    // `true` when its surface slope < shallow_angle_rad. We toggle
+    // `true` when its surface slope < the tier angle. We toggle
     // ctx.shallow_mask between this and None at the per-Z-level loop
     // boundary: None for the main DPP clear, Some(mask) for shallow
     // sub-passes within each DPP descent.
-    let shallow_mask: Option<Vec<bool>> = match (
-        params.mill_shallow_areas,
-        params.shallow_angle_rad,
-        params.shallow_stepdown,
-    ) {
-        (true, Some(angle), Some(step)) if step > 0.0 && step < params.depth_per_pass => {
-            Some(slope_map.angles.iter().map(|&a| a < angle).collect())
-        }
+    let shallow_mask: Option<Vec<bool>> = match params.depth.shallow_tier {
+        Some(tier) if tier.stepdown > 0.0 && tier.stepdown < params.depth.depth_per_pass => Some(
+            slope_map
+                .angles
+                .iter()
+                .map(|&a| a < tier.angle_rad)
+                .collect(),
+        ),
         _ => None,
     };
 
@@ -475,7 +475,7 @@ pub(super) fn adaptive_3d_segments(
     // boundary cells the same way it does for in-mesh cells.
     let border_scope = debug_ctx.map(|ctx| ctx.start_span("border_clear", "Border clear"));
     let border_margin = r * 0.5;
-    let world_xy = params.world_stock_xy_bbox;
+    let world_xy = params.geometry.world_stock_xy_bbox;
     let mut border_cleared = 0u32;
     for row in 0..material_stock.z_grid.rows {
         if row % 16 == 0 {
@@ -537,7 +537,7 @@ pub(super) fn adaptive_3d_segments(
     // rapids, and the dexel for those cells is left unstamped — deeper
     // z-levels then bite through fresh stock with full-depth axial DOC.
     // See planning/AGENTSEARCH_INVESTIGATION_LOG.md O5b for repro details.
-    if let Some(ref boundary) = params.boundary {
+    if let Some(ref boundary) = params.geometry.boundary {
         let mut boundary_cleared = 0u32;
         for row in 0..material_stock.z_grid.rows {
             if row % 16 == 0 {
@@ -568,32 +568,32 @@ pub(super) fn adaptive_3d_segments(
     }
 
     // Compute Z levels: stock_top down to surface bottom + stock_to_leave.
-    // A user-pinned heights `bottom_z` (params.z_floor) clamps the plan —
+    // A user-pinned heights `bottom_z` (params.depth.z_floor) clamps the plan —
     // the surface heightmap reads the mesh-bbox floor through holes in
     // open meshes, and pre-clamp there was no lever to stop the final
     // level diving there (heights audit 2026-06-12, findings 2 + 3).
     let z_plan_scope = debug_ctx.map(|ctx| ctx.start_span("z_level_plan", "Compute Z levels"));
     let surface_bottom = surface_hm.min_z_or_bbox_floor();
-    let z_bottom =
-        (surface_bottom + params.stock_to_leave).max(params.z_floor.unwrap_or(f64::NEG_INFINITY));
+    let z_bottom = (surface_bottom + params.depth.stock_to_leave)
+        .max(params.depth.z_floor.unwrap_or(f64::NEG_INFINITY));
     let mut z_levels = Vec::new();
-    let mut z = params.stock_top_z - params.depth_per_pass;
+    let mut z = params.depth.stock_top_z - params.depth.depth_per_pass;
     while z > z_bottom {
         z_levels.push(z);
-        z -= params.depth_per_pass;
+        z -= params.depth.depth_per_pass;
     }
-    if z_bottom < params.stock_top_z {
+    if z_bottom < params.depth.stock_top_z {
         z_levels.push(z_bottom); // Always include final level at the surface
     }
 
     // Fix 5: Flat area detection — histogram surface Z, insert levels at shelves
-    if params.detect_flat_areas {
+    if params.depth.detect_flat_areas {
         let flat_levels = flat_shelf_levels(
             &surface_hm,
             surface_bottom,
-            params.stock_top_z,
-            params.tolerance,
-            params.stock_to_leave,
+            params.depth.stock_top_z,
+            params.geometry.tolerance,
+            params.depth.stock_to_leave,
             z_bottom,
             &z_levels,
         );
@@ -606,14 +606,14 @@ pub(super) fn adaptive_3d_segments(
     }
 
     // Fix 4: Fine stepdown — insert intermediate Z levels between major levels
-    if let Some(fine_step) = params.fine_stepdown
+    if let Some(fine_step) = params.depth.fine_stepdown
         && fine_step > 0.0
-        && fine_step < params.depth_per_pass
+        && fine_step < params.depth.depth_per_pass
     {
         let major_levels = z_levels.clone();
         let mut all_levels = Vec::new();
         // Insert intermediates between stock_top and first level
-        let first_start = params.stock_top_z;
+        let first_start = params.depth.stock_top_z;
         for window in std::iter::once(&first_start)
             .chain(major_levels.iter())
             .collect::<Vec<_>>()
@@ -643,7 +643,7 @@ pub(super) fn adaptive_3d_segments(
         count = z_levels.len(),
         z_top = z_levels.first().copied().unwrap_or(0.0),
         z_bottom = z_levels.last().copied().unwrap_or(0.0),
-        depth_per_pass = params.depth_per_pass,
+        depth_per_pass = params.depth.depth_per_pass,
         "Z levels computed"
     );
     if let Some(scope) = z_plan_scope.as_ref() {
@@ -652,14 +652,14 @@ pub(super) fn adaptive_3d_segments(
         scope.set_counter("z_bottom", z_levels.last().copied().unwrap_or(0.0));
     }
 
-    let target_frac = target_engagement_fraction(params.stepover, tool_radius);
+    let target_frac = target_engagement_fraction(params.geometry.stepover, tool_radius);
     let step_len = cell_size * 1.5;
-    let max_link_dist = default_max_link_dist(tool_radius, params.stepover);
+    let max_link_dist = default_max_link_dist(tool_radius, params.geometry.stepover);
 
     // Bbox margins use the envelope radius (full shank for tapered tools) so
     // the tool body can't overrun the working footprint. Engagement-related
     // computations below use tool_radius (effective contact radius at DOC).
-    let envelope_radius = params.envelope_radius;
+    let envelope_radius = params.geometry.envelope_radius;
     let bbox_x_min = origin_x + envelope_radius;
     let bbox_x_max = extent_x - envelope_radius;
     let bbox_y_min = origin_y + envelope_radius;
@@ -674,10 +674,10 @@ pub(super) fn adaptive_3d_segments(
         slope_map: &slope_map,
         debug: debug_ctx.cloned(),
         tool_radius,
-        stepover: params.stepover,
-        stock_to_leave: params.stock_to_leave,
-        depth_per_pass: params.depth_per_pass,
-        tolerance: params.tolerance,
+        stepover: params.geometry.stepover,
+        stock_to_leave: params.depth.stock_to_leave,
+        depth_per_pass: params.depth.depth_per_pass,
+        tolerance: params.geometry.tolerance,
         feed_rate: params.feed_rate,
         plunge_rate: params.plunge_rate,
         target_frac,
@@ -692,11 +692,11 @@ pub(super) fn adaptive_3d_segments(
         engagement_measure: params.engagement_measure,
         z_blend: params.z_blend,
         safe_z: params.safe_z,
-        min_cutting_radius: params.min_cutting_radius,
+        min_cutting_radius: params.geometry.min_cutting_radius,
         // Default to no mask. The per-Z-level loop toggles this to
         // Some(&shallow_mask) for the shallow sub-passes only.
         shallow_mask: None,
-        min_region_cut_length_mm: params.min_region_cut_length_mm,
+        min_region_cut_length_mm: params.linking.min_region_cut_length_mm,
     };
 
     let mut segments = Vec::new();
@@ -706,14 +706,14 @@ pub(super) fn adaptive_3d_segments(
     let mut planner_eng: Vec<(P3, f64)> = Vec::new();
     let mut last_pos: Option<P3> = None;
 
-    match params.region_ordering {
+    match params.linking.region_ordering {
         RegionOrdering::ByArea => {
             let region_scope =
                 debug_ctx.map(|ctx| ctx.start_span("region_detect", "Detect regions"));
             let regions = detect_material_regions(
                 &material_stock,
                 &surface_hm,
-                params.stock_to_leave,
+                params.depth.stock_to_leave,
                 tool_radius,
             );
             info!(
@@ -752,7 +752,7 @@ pub(super) fn adaptive_3d_segments(
                 let region_z_levels: Vec<f64> = z_levels
                     .iter()
                     .copied()
-                    .filter(|&z| z >= region.surface_z_min + params.stock_to_leave - 0.01)
+                    .filter(|&z| z >= region.surface_z_min + params.depth.stock_to_leave - 0.01)
                     .collect();
 
                 for (li, &z_level) in region_z_levels.iter().enumerate() {
@@ -840,11 +840,12 @@ pub(super) fn adaptive_3d_segments(
                     // agnostic. Restricted to low-slope cells via
                     // ctx.shallow_mask, then dispatched back into the same
                     // clear function the main pass used.
-                    if let (Some(mask), Some(step)) =
-                        (shallow_mask.as_deref(), params.shallow_stepdown)
-                    {
+                    if let (Some(mask), Some(step)) = (
+                        shallow_mask.as_deref(),
+                        params.depth.shallow_tier.map(|t| t.stepdown),
+                    ) {
                         ctx.shallow_mask = Some(mask);
-                        let next_main_z = z_level - params.depth_per_pass;
+                        let next_main_z = z_level - params.depth.depth_per_pass;
                         let mut sub_z = z_level - step;
                         while sub_z > next_main_z + 1e-3 {
                             check_cancel(cancel)?;
@@ -902,9 +903,9 @@ pub(super) fn adaptive_3d_segments(
                     tool_radius,
                     cell_size,
                     params.safe_z,
-                    params.tolerance,
-                    params.min_cutting_radius,
-                    params.stock_to_leave,
+                    params.geometry.tolerance,
+                    params.geometry.min_cutting_radius,
+                    params.depth.stock_to_leave,
                     &mut segments,
                     &mut last_pos,
                     debug_ctx,
@@ -985,10 +986,12 @@ pub(super) fn adaptive_3d_segments(
                 }
                 // Shallow sub-passes — strategy-agnostic, see ByArea branch
                 // for rationale.
-                if let (Some(mask), Some(step)) = (shallow_mask.as_deref(), params.shallow_stepdown)
-                {
+                if let (Some(mask), Some(step)) = (
+                    shallow_mask.as_deref(),
+                    params.depth.shallow_tier.map(|t| t.stepdown),
+                ) {
                     ctx.shallow_mask = Some(mask);
-                    let next_main_z = z_level - params.depth_per_pass;
+                    let next_main_z = z_level - params.depth.depth_per_pass;
                     let mut sub_z = z_level - step;
                     while sub_z > next_main_z + 1e-3 {
                         check_cancel(cancel)?;
@@ -1047,9 +1050,9 @@ pub(super) fn adaptive_3d_segments(
                     tool_radius,
                     cell_size,
                     params.safe_z,
-                    params.tolerance,
-                    params.min_cutting_radius,
-                    params.stock_to_leave,
+                    params.geometry.tolerance,
+                    params.geometry.min_cutting_radius,
+                    params.depth.stock_to_leave,
                     &mut segments,
                     &mut last_pos,
                     debug_ctx,
@@ -1198,7 +1201,7 @@ fn try_emit_stay_down_link(
 /// mesh-heightfield queries for the keep-tool-down planner. Call sites
 /// that don't have a real mesh handy (pure-unit tests of segment shape)
 /// can still build a trivial flat mesh via `crate::mesh::make_test_flat`
-/// — the F-038b probe is a no-op when `params.max_stay_down_distance_mm`
+/// — the F-038b probe is a no-op when `params.linking.max_stay_down_distance_mm`
 /// resolves to 0.0, so the cutter/mesh values don't affect behaviour in
 /// that case.
 /// Hold the stock-to-leave along a cut path ("drape" / gouge guard).
@@ -1302,9 +1305,10 @@ pub(super) fn segments_to_toolpath(
     // default of 8 × tool diameter (Fusion HSM roughing default). The
     // operator can override with `Some(x)` (incl. `Some(0.0)` to disable).
     let stay_down_dist = params
+        .linking
         .max_stay_down_distance_mm
         .unwrap_or_else(|| (cutter.radius() * 2.0) * 8.0);
-    let stay_down_clearance = params.stay_down_clearance_mm.max(0.0);
+    let stay_down_clearance = params.linking.stay_down_clearance_mm.max(0.0);
 
     // Lift the tool to safe_z above its current XY before any
     // traverse-then-plunge sequence. Without this, a Rapid segment
@@ -1345,7 +1349,7 @@ pub(super) fn segments_to_toolpath(
             mesh,
             index,
             cutter,
-            stock_to_leave: params.stock_to_leave,
+            stock_to_leave: params.depth.stock_to_leave,
             // Beyond the mesh footprint stands prism stock a 2.5D
             // rough may cut; the planned leg z stands there
             // (FINDINGS.md amendment 2).
@@ -1370,7 +1374,8 @@ pub(super) fn segments_to_toolpath(
                 // neighbouring material can't descend below `surface + leave`.
                 // Shadows the matched ref so every downstream use (stay-down
                 // link, plunge, annotations) sees the protected Z.
-                let entry_owned = drape_point(entry, mesh, index, cutter, params.stock_to_leave);
+                let entry_owned =
+                    drape_point(entry, mesh, index, cutter, params.depth.stock_to_leave);
                 let entry = &entry_owned;
                 let entry_start = tp.moves.len();
                 // F-038b: try a keep-tool-down feed link from the previous
@@ -1391,7 +1396,7 @@ pub(super) fn segments_to_toolpath(
                             cutter,
                             stay_down_dist,
                             stay_down_clearance,
-                            params.stock_to_leave,
+                            params.depth.stock_to_leave,
                             params.safe_z,
                             params.feed_rate,
                         )
@@ -1503,7 +1508,7 @@ pub(super) fn segments_to_toolpath(
                             cutter,
                             stay_down_dist,
                             stay_down_clearance,
-                            params.stock_to_leave,
+                            params.depth.stock_to_leave,
                             params.safe_z,
                             params.feed_rate,
                         )
@@ -1672,11 +1677,11 @@ pub(super) fn segments_to_toolpath(
                     mesh,
                     index,
                     cutter,
-                    params.stock_to_leave,
+                    params.depth.stock_to_leave,
                     cutter.radius(),
                 );
-                let simplified = simplify_path_3d(&draped, params.tolerance);
-                let blended = blend_corners_3d(&simplified, params.min_cutting_radius);
+                let simplified = simplify_path_3d(&draped, params.geometry.tolerance);
+                let blended = blend_corners_3d(&simplified, params.geometry.min_cutting_radius);
                 for pt in blended.iter().skip(1) {
                     tp.feed_to_with_intent(
                         *pt,
@@ -1784,39 +1789,42 @@ mod tests {
 
     fn minimal_params() -> Adaptive3dParams {
         Adaptive3dParams {
+            geometry: crate::adaptive3d::Adaptive3dGeometry {
+                tool_radius: 3.175,
+                envelope_radius: 3.175,
+                stepover: 2.0,
+                tolerance: 0.1,
+                min_cutting_radius: 0.0,
+                boundary: None,
+                world_stock_xy_bbox: None,
+            },
+            depth: crate::adaptive3d::Adaptive3dDepth {
+                depth_per_pass: 3.0,
+                stock_to_leave: 0.5,
+                stock_top_z: 5.0,
+                z_floor: None,
+                fine_stepdown: None,
+                detect_flat_areas: false,
+                shallow_tier: None,
+            },
+            linking: crate::adaptive3d::Adaptive3dLinking {
+                region_ordering: RegionOrdering::Global,
+                min_region_cut_length_mm: 0.0, // F-038b: legacy `segments_to_toolpath` unit tests expect the
+                // pre-F-038b retract-rapid-plunge sequence between Rapid
+                // segments. Disable stay-down explicitly (Some(0.0)) so those
+                // tests keep their existing structural assertions.
+                max_stay_down_distance_mm: Some(0.0),
+                stay_down_clearance_mm: 0.5,
+            },
             trochoid_cap_mult: 1.6,
-            tool_radius: 3.175,
-            envelope_radius: 3.175,
-            stepover: 2.0,
-            depth_per_pass: 3.0,
-            stock_to_leave: 0.5,
             feed_rate: 1500.0,
             plunge_rate: 500.0,
             safe_z: 10.0,
-            tolerance: 0.1,
-            min_cutting_radius: 0.0,
-            stock_top_z: 5.0,
-            z_floor: None,
             entry_style: EntryStyle3d::Plunge,
-            fine_stepdown: None,
-            detect_flat_areas: false,
-            region_ordering: RegionOrdering::Global,
             initial_stock: None,
-            boundary: None,
             clearing_strategy: ClearingStrategy3d::ContourParallel,
             engagement_measure: crate::adaptive::EngagementMeasure::DiskArea,
             z_blend: false,
-            mill_shallow_areas: false,
-            shallow_angle_rad: None,
-            shallow_stepdown: None,
-            world_stock_xy_bbox: None,
-            min_region_cut_length_mm: 0.0,
-            // F-038b: legacy `segments_to_toolpath` unit tests expect the
-            // pre-F-038b retract-rapid-plunge sequence between Rapid
-            // segments. Disable stay-down explicitly (Some(0.0)) so those
-            // tests keep their existing structural assertions.
-            max_stay_down_distance_mm: Some(0.0),
-            stay_down_clearance_mm: 0.5,
         }
     }
 
@@ -1845,7 +1853,7 @@ mod tests {
     fn peck_plunge_progresses_when_depth_per_pass_equals_retract_clearance() {
         let mut params = minimal_params();
         params.safe_z = 5.0;
-        params.depth_per_pass = PECK_CLEARANCE_MM;
+        params.depth.depth_per_pass = PECK_CLEARANCE_MM;
 
         // Surface 50 mm below the entry: the drape target is
         // -50 + 0.5 leave, far under z = 0, so `drape_point` cannot lift
@@ -1857,7 +1865,7 @@ mod tests {
         // Non-vacuity precondition: prove the drape is inert HERE rather
         // than assuming it. This is the assertion whose absence let the
         // old fixture rot silently for seven weeks.
-        let draped = drape_point(&entry, &mesh, &si, &cutter, params.stock_to_leave);
+        let draped = drape_point(&entry, &mesh, &si, &cutter, params.depth.stock_to_leave);
         assert!(
             (draped.z - entry.z).abs() < 1e-12,
             "fixture broken: drape moved the entry from {} to {} — the peck loop \
@@ -1897,7 +1905,7 @@ mod tests {
              EntryPlunge feeds; got {:?}",
             params.safe_z,
             entry.z,
-            params.depth_per_pass,
+            params.depth.depth_per_pass,
             EXPECTED_PLUNGES,
             plunges
         );
@@ -1932,12 +1940,12 @@ mod tests {
     fn peck_plunge_commits_the_cut_floor_not_the_retract_height() {
         let mut params = minimal_params();
         params.safe_z = 5.0;
-        params.depth_per_pass = 2.0 * PECK_CLEARANCE_MM;
+        params.depth.depth_per_pass = 2.0 * PECK_CLEARANCE_MM;
 
         let (mesh, si) = flat_mesh_at(100.0, -50.0);
         let cutter = legacy_test_cutter();
         let entry = P3::new(0.0, 0.0, 0.0);
-        let draped = drape_point(&entry, &mesh, &si, &cutter, params.stock_to_leave);
+        let draped = drape_point(&entry, &mesh, &si, &cutter, params.depth.stock_to_leave);
         assert!(
             (draped.z - entry.z).abs() < 1e-12,
             "fixture broken: drape moved the entry from {} to {}",
@@ -1964,9 +1972,9 @@ mod tests {
         );
         for w in plunges.windows(2) {
             assert!(
-                (w[0] - w[1] - params.depth_per_pass).abs() < 1e-9,
+                (w[0] - w[1] - params.depth.depth_per_pass).abs() < 1e-9,
                 "peck step should equal depth_per_pass {}, got ladder {:?}",
-                params.depth_per_pass,
+                params.depth.depth_per_pass,
                 plunges
             );
         }
@@ -2008,8 +2016,14 @@ mod tests {
         // Derived from the production helper rather than hard-coded, so a
         // drape-semantics change relocates the landmarks instead of
         // silently deleting them (which is how this test went red).
-        let cut1_end = drape_point(&cut1_end_raw, &mesh, &si, &cutter, params.stock_to_leave);
-        let entry = drape_point(&entry_raw, &mesh, &si, &cutter, params.stock_to_leave);
+        let cut1_end = drape_point(
+            &cut1_end_raw,
+            &mesh,
+            &si,
+            &cutter,
+            params.depth.stock_to_leave,
+        );
+        let entry = drape_point(&entry_raw, &mesh, &si, &cutter, params.depth.stock_to_leave);
 
         // Non-vacuity: each caller declares whether its surface is meant
         // to engage the drape, and we prove it did (or did not).

@@ -28,8 +28,8 @@ use std::path::Path;
 
 use rs_cam_core::{
     adaptive3d::{
-        Adaptive3dParams, ClearingStrategy3d, EntryStyle3d, RegionOrdering,
-        adaptive_3d_toolpath_annotated,
+        Adaptive3dDepth, Adaptive3dGeometry, Adaptive3dLinking, Adaptive3dParams,
+        ClearingStrategy3d, EntryStyle3d, RegionOrdering, adaptive_3d_toolpath_annotated,
     },
     mesh::{SpatialIndex, TriangleMesh},
     tool::{FlatEndmill, MillingCutter},
@@ -201,35 +201,39 @@ fn wanaka_back_rough_first_and_last_z_layers() {
     // multiple Z layers fit; the project's 4mm leaves only the topmost
     // layer for the back-rough roughing pass before the finishing op.
     let params = Adaptive3dParams {
+        geometry: Adaptive3dGeometry {
+            tool_radius: cutter.radius(),
+            envelope_radius: cutter.radius(),
+            stepover: 2.53,
+            tolerance: 0.1,
+            min_cutting_radius: 0.0,
+            boundary: None,
+            world_stock_xy_bbox: None,
+        },
+        depth: Adaptive3dDepth {
+            depth_per_pass: 1.5,
+            stock_to_leave: 0.5,
+            stock_top_z,
+            z_floor: None,
+            fine_stepdown: None,
+            detect_flat_areas: false,
+            shallow_tier: None,
+        },
+        linking: Adaptive3dLinking {
+            region_ordering: RegionOrdering::Global,
+            min_region_cut_length_mm: 0.0,
+            max_stay_down_distance_mm: Some(0.0),
+            stay_down_clearance_mm: 0.5,
+        },
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
-        tool_radius: cutter.radius(),
-        envelope_radius: cutter.radius(),
-        stepover: 2.53,
-        depth_per_pass: 1.5,
-        stock_to_leave: 0.5,
         feed_rate: 4000.0,
         plunge_rate: 750.0,
         safe_z: stock_top_z + 16.0,
-        tolerance: 0.1,
-        min_cutting_radius: 0.0,
-        stock_top_z,
-        z_floor: None,
         entry_style: EntryStyle3d::Plunge,
-        fine_stepdown: None,
-        detect_flat_areas: false,
-        region_ordering: RegionOrdering::Global,
         initial_stock: None,
         clearing_strategy: ClearingStrategy3d::AgentSearch,
         z_blend: false,
-        boundary: None,
-        mill_shallow_areas: false,
-        shallow_angle_rad: None,
-        shallow_stepdown: None,
-        world_stock_xy_bbox: None,
-        min_region_cut_length_mm: 0.0,
-        max_stay_down_distance_mm: Some(0.0),
-        stay_down_clearance_mm: 0.5,
     };
 
     let _ = stock_bottom_z;

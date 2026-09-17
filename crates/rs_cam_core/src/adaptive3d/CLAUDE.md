@@ -22,6 +22,10 @@ Constant-engagement clearing on a mesh surface. The entry point is
   tag alone misses them; see `../dressup/CLAUDE.md`.
 - `max_stay_down_distance_mm` is the ONE stay-down distance dial (CUT-05). The
   unset case takes `path.rs::default_max_link_dist`. Add no second name.
+- `Adaptive3dParams` carries three groups (CUT-04): `geometry` (the cutter and
+  the XY frame), `depth` (the Z plan) and `linking` (order, entry floor,
+  stay-down). A new dial joins the group it belongs to, not the top level.
+  The shallow tier is ONE `Option<ShallowTier>`; do not split it again.
 
 ## Sentries
 

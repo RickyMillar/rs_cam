@@ -57,7 +57,8 @@
 )]
 
 use rs_cam_core::adaptive3d::{
-    Adaptive3dParams, ClearingStrategy3d, EntryStyle3d, RegionOrdering, adaptive_3d_toolpath,
+    Adaptive3dDepth, Adaptive3dGeometry, Adaptive3dLinking, Adaptive3dParams, ClearingStrategy3d,
+    EntryStyle3d, RegionOrdering, adaptive_3d_toolpath,
 };
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
@@ -148,37 +149,40 @@ fn make_params(
     // the cutter, not the params.
     let _ = cutting_length_safe;
     Adaptive3dParams {
+        geometry: Adaptive3dGeometry {
+            tool_radius,
+            envelope_radius: tool_radius,
+            stepover: tool_radius * 0.6,
+            tolerance: 0.1,
+            min_cutting_radius: 0.0,
+            boundary: None,
+            world_stock_xy_bbox: None,
+        },
+        depth: Adaptive3dDepth {
+            depth_per_pass: 2.0,
+            stock_to_leave: 0.0,
+            stock_top_z: PEAK_Z,
+            z_floor: None,
+            fine_stepdown: None,
+            detect_flat_areas: false,
+            shallow_tier: None,
+        },
+        linking: Adaptive3dLinking {
+            region_ordering: RegionOrdering::Global, // Keep F-038's filter disabled so the two peaks both produce
+            // cut groups — F-038b's behaviour is what's under test.
+            min_region_cut_length_mm: 0.0,
+            max_stay_down_distance_mm,
+            stay_down_clearance_mm: 0.5,
+        },
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
-        tool_radius,
-        envelope_radius: tool_radius,
-        stepover: tool_radius * 0.6,
-        depth_per_pass: 2.0,
-        stock_to_leave: 0.0,
         feed_rate: 1500.0,
         plunge_rate: 500.0,
         safe_z: PEAK_Z + 5.0,
-        tolerance: 0.1,
-        min_cutting_radius: 0.0,
-        stock_top_z: PEAK_Z,
-        z_floor: None,
         entry_style: EntryStyle3d::Plunge,
-        fine_stepdown: None,
-        detect_flat_areas: false,
-        region_ordering: RegionOrdering::Global,
         initial_stock: None,
         clearing_strategy: ClearingStrategy3d::AgentSearch,
         z_blend: false,
-        boundary: None,
-        mill_shallow_areas: false,
-        shallow_angle_rad: None,
-        shallow_stepdown: None,
-        world_stock_xy_bbox: None,
-        // Keep F-038's filter disabled so the two peaks both produce
-        // cut groups — F-038b's behaviour is what's under test.
-        min_region_cut_length_mm: 0.0,
-        max_stay_down_distance_mm,
-        stay_down_clearance_mm: 0.5,
     }
 }
 

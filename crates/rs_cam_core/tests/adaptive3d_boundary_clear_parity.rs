@@ -15,7 +15,7 @@
 //!
 //! 1. **The pre-clear polygon and the clip polygon differ by one tool
 //!    radius.** `session::compute::resolve_containment_polygon` hands
-//!    adaptive3d the *un-inset* containment as `params.boundary`, and
+//!    adaptive3d the *un-inset* containment as `params.geometry.boundary`, and
 //!    `path.rs:408-436` clears the planner's internal stock outside it. The
 //!    post-generation clip (`session::compute::apply_boundary_clip`) instead
 //!    gates cutter **centres** against `containment ⊖ r`. The planner
@@ -28,7 +28,7 @@
 //!    takes no `boundary` parameter at all, so it traces mesh contours across
 //!    the full silhouette regardless of containment. Its segments are the
 //!    emitted cutting moves that land fully *outside* the containment — the
-//!    one emitter the `params.boundary` pre-clear does not reach, i.e. O5b
+//!    one emitter the `params.geometry.boundary` pre-clear does not reach, i.e. O5b
 //!    surviving in a corner (**bar B2**).
 //!
 //! ## Severity, so nobody over-reads a red here
@@ -67,8 +67,9 @@
 )]
 
 use rs_cam_core::adaptive3d::{
-    Adaptive3dParams, ClearingStrategy3d, EntryStyle3d, RegionOrdering,
-    adaptive_3d_toolpath_with_cancel, debug_adaptive_3d_segments_for_f029_probe,
+    Adaptive3dDepth, Adaptive3dGeometry, Adaptive3dLinking, Adaptive3dParams, ClearingStrategy3d,
+    EntryStyle3d, RegionOrdering, adaptive_3d_toolpath_with_cancel,
+    debug_adaptive_3d_segments_for_f029_probe,
 };
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::geo::P2;
@@ -110,35 +111,39 @@ fn half_stock_boundary() -> Polygon2 {
 
 fn base_params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
     Adaptive3dParams {
+        geometry: Adaptive3dGeometry {
+            tool_radius: TOOL_RADIUS,
+            envelope_radius: TOOL_RADIUS,
+            stepover: 1.0,
+            tolerance: 0.5,
+            min_cutting_radius: 0.0,
+            boundary: None,
+            world_stock_xy_bbox: None,
+        },
+        depth: Adaptive3dDepth {
+            depth_per_pass: 3.0,
+            stock_to_leave: 0.5,
+            stock_top_z: STOCK_TOP_Z,
+            z_floor: None,
+            fine_stepdown: None,
+            detect_flat_areas: false,
+            shallow_tier: None,
+        },
+        linking: Adaptive3dLinking {
+            region_ordering: RegionOrdering::Global,
+            min_region_cut_length_mm: 0.0,
+            max_stay_down_distance_mm: Some(0.0),
+            stay_down_clearance_mm: 0.5,
+        },
         trochoid_cap_mult: 1.6,
-        tool_radius: TOOL_RADIUS,
-        envelope_radius: TOOL_RADIUS,
-        z_floor: None,
-        stepover: 1.0,
-        depth_per_pass: 3.0,
-        stock_to_leave: 0.5,
         feed_rate: 1000.0,
         plunge_rate: 500.0,
         safe_z: SAFE_Z,
-        tolerance: 0.5,
-        min_cutting_radius: 0.0,
-        stock_top_z: STOCK_TOP_Z,
         entry_style: EntryStyle3d::Plunge,
-        fine_stepdown: None,
-        detect_flat_areas: false,
-        region_ordering: RegionOrdering::Global,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
         initial_stock: None,
         clearing_strategy: strategy,
         z_blend: false,
-        boundary: None,
-        mill_shallow_areas: false,
-        shallow_angle_rad: None,
-        shallow_stepdown: None,
-        world_stock_xy_bbox: None,
-        min_region_cut_length_mm: 0.0,
-        max_stay_down_distance_mm: Some(0.0),
-        stay_down_clearance_mm: 0.5,
     }
 }
 
@@ -285,11 +290,12 @@ fn measure(label: &str, strategy: ClearingStrategy3d, boundary: Option<&Polygon2
         cell_size,
     );
 
-    let params = Adaptive3dParams {
-        initial_stock: Some(initial_stock.clone()),
-        world_stock_xy_bbox: Some(WORLD_XY),
-        boundary: boundary.cloned(),
-        ..base_params(strategy)
+    let params = {
+        let mut p = base_params(strategy);
+        p.initial_stock = Some(initial_stock.clone());
+        p.geometry.world_stock_xy_bbox = Some(WORLD_XY);
+        p.geometry.boundary = boundary.cloned();
+        p
     };
 
     let never_cancel = || false;
@@ -556,7 +562,7 @@ fn assert_containment_parity_bars(m: &Measured) {
          (`adaptive3d/clearing.rs`), which take no `boundary` parameter at all — the count is \
          identical on both clearing strategies for exactly that reason. This is an EXACT bar: \
          change it only with a measurement, and a DROP to 0 means the D4 fix (F-B: pass \
-         `params.boundary` into `waterline_cleanup`) landed — un-ignore the arm below rather \
+         `params.geometry.boundary` into `waterline_cleanup`) landed — un-ignore the arm below rather \
          than re-baselining here.",
         m.cut_moves_outside_containment,
     );
@@ -628,7 +634,7 @@ fn boundary_clear_parity_agent_search() {
 /// Compares the PLANNER's own stock outside the containment with and without
 /// the boundary set, same params otherwise. If the pre-clear runs, the boundary
 /// run reads "cleared to the grid floor" on cells the control still carries as
-/// stock. Without this the whole file could pass with `params.boundary` silently
+/// stock. Without this the whole file could pass with `params.geometry.boundary` silently
 /// ignored: the post-generation clip alone reproduces most of the divergence.
 ///
 /// ("cleared to the grid floor" only counts cells with no mesh under them —
@@ -652,11 +658,12 @@ fn boundary_clear_preclear_engages_precondition() {
     );
     let never_cancel = || false;
     let probe = |boundary: Option<Polygon2>| {
-        let params = Adaptive3dParams {
-            initial_stock: Some(initial_stock.clone()),
-            world_stock_xy_bbox: Some(WORLD_XY),
-            boundary,
-            ..base_params(ClearingStrategy3d::ContourParallel)
+        let params = {
+            let mut p = base_params(ClearingStrategy3d::ContourParallel);
+            p.initial_stock = Some(initial_stock.clone());
+            p.geometry.world_stock_xy_bbox = Some(WORLD_XY);
+            p.geometry.boundary = boundary;
+            p
         };
         debug_adaptive_3d_segments_for_f029_probe(&mesh, &si, &cutter, &params, &never_cancel)
             .expect("planner probe should succeed")
@@ -712,7 +719,7 @@ fn boundary_clear_preclear_engages_precondition() {
 /// bound the clearing strategy's centre placement by `containment ⊖ r` while
 /// keeping the material grid at the containment.
 ///
-/// **F-B — pass `params.boundary` into `waterline_cleanup`** and drop contour
+/// **F-B — pass `params.geometry.boundary` into `waterline_cleanup`** and drop contour
 /// points outside it. Small and self-contained; takes bar B2 from 138 to 0.
 ///
 /// F-A is what takes B1 from 27.7% to 0; F-B alone does not (the leak is

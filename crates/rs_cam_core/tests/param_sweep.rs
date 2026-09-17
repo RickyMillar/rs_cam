@@ -21,7 +21,10 @@
 
 use rs_cam_core::{
     adaptive::AdaptiveParams,
-    adaptive3d::{Adaptive3dParams, ClearingStrategy3d, RegionOrdering},
+    adaptive3d::{
+        Adaptive3dDepth, Adaptive3dGeometry, Adaptive3dLinking, Adaptive3dParams,
+        ClearingStrategy3d, RegionOrdering,
+    },
     dexel_stock::{StockCutDirection, TriDexelStock},
     export::fingerprint::{
         FingerprintDiff, ParameterSweepResult, StockFingerprint, SweepArtifacts, SweepVariant,
@@ -1498,35 +1501,39 @@ fn sweep_rest_prev_tool_radius() {
 
 fn default_adaptive3d_params() -> Adaptive3dParams {
     Adaptive3dParams {
+        geometry: Adaptive3dGeometry {
+            tool_radius: 3.175,
+            envelope_radius: 3.175,
+            stepover: 2.0,
+            tolerance: 0.1,
+            min_cutting_radius: 0.0,
+            boundary: None,
+            world_stock_xy_bbox: None,
+        },
+        depth: Adaptive3dDepth {
+            depth_per_pass: 3.0,
+            stock_to_leave: 0.0,
+            stock_top_z: 22.0,
+            z_floor: None,
+            fine_stepdown: None,
+            detect_flat_areas: false,
+            shallow_tier: None,
+        },
+        linking: Adaptive3dLinking {
+            region_ordering: RegionOrdering::Global,
+            min_region_cut_length_mm: 0.0,
+            max_stay_down_distance_mm: Some(0.0),
+            stay_down_clearance_mm: 0.5,
+        },
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
-        tool_radius: 3.175,
-        envelope_radius: 3.175,
-        stepover: 2.0,
-        depth_per_pass: 3.0,
-        stock_to_leave: 0.0,
         feed_rate: 1500.0,
         plunge_rate: 500.0,
         safe_z: 30.0,
-        tolerance: 0.1,
-        min_cutting_radius: 0.0,
-        stock_top_z: 22.0,
-        z_floor: None,
         entry_style: rs_cam_core::adaptive3d::EntryStyle3d::Plunge,
-        fine_stepdown: None,
-        detect_flat_areas: false,
-        region_ordering: RegionOrdering::Global,
         initial_stock: None,
         clearing_strategy: ClearingStrategy3d::ContourParallel,
         z_blend: false,
-        boundary: None,
-        mill_shallow_areas: false,
-        shallow_angle_rad: None,
-        shallow_stepdown: None,
-        world_stock_xy_bbox: None,
-        min_region_cut_length_mm: 0.0,
-        max_stay_down_distance_mm: Some(0.0),
-        stay_down_clearance_mm: 0.5,
     }
 }
 
@@ -1543,7 +1550,7 @@ fn sweep_adaptive3d_stepover() {
         |ov| {
             let mut p = default_adaptive3d_params();
             if let Some(v) = ov {
-                p.stepover = v.as_f64().unwrap();
+                p.geometry.stepover = v.as_f64().unwrap();
             }
             rs_cam_core::adaptive3d::adaptive_3d_toolpath(&mesh, &index, &cutter, &p)
         },
@@ -1568,7 +1575,7 @@ fn sweep_adaptive3d_depth_per_pass() {
         |ov| {
             let mut p = default_adaptive3d_params();
             if let Some(v) = ov {
-                p.depth_per_pass = v.as_f64().unwrap();
+                p.depth.depth_per_pass = v.as_f64().unwrap();
             }
             rs_cam_core::adaptive3d::adaptive_3d_toolpath(&mesh, &index, &cutter, &p)
         },
