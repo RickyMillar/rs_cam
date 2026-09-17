@@ -416,7 +416,7 @@ fn every_name_the_setter_accepts_is_published() {
     // operation parameter. It must be published somewhere, and the
     // somewhere must not be `params`.
     let mut session = all_ops_session();
-    session
+    let _ = session
         .apply(Command::SetToolpathParam(SetToolpathParamArgs {
             index: 0,
             param: "debug_enabled".to_owned(),
