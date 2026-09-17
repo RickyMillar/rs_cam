@@ -141,11 +141,13 @@ const CRATE_PRIVATE_HELPERS: &[&str] = &[
     "bump_all_revisions",
     "drop_all_results",
     "drop_result",
+    "drop_results_and_their_dependents",
     "drop_setup_results",
     "drop_tool_results",
     "find_toolpath_config_by_id_mut",
     "insert_result",
     "invalidate_output_dependents",
+    "invalidate_output_dependents_of_set",
     "invalidate_result_chain",
     "set_toolpath_param_impl",
     "setups_mut",
@@ -162,7 +164,7 @@ const CRATE_PRIVATE_HELPERS: &[&str] = &[
 const MIN_SETTERS: usize = 40;
 
 /// The lowest number of `.rs` files the session directory must hold.
-const MIN_SESSION_FILES: usize = 8;
+const MIN_SESSION_FILES: usize = 20;
 
 /// This crate's root directory.
 fn core_root() -> PathBuf {
@@ -182,13 +184,20 @@ fn is_comment(line: &str) -> bool {
 fn session_sources() -> Vec<PathBuf> {
     let dir = core_root().join("src/session");
     assert!(dir.is_dir(), "{} no longer exists", dir.display());
-    let mut out = Vec::new();
-    for entry in std::fs::read_dir(&dir).expect("read_dir session").flatten() {
-        let path = entry.path();
-        if path.extension().is_some_and(|e| e == "rs") {
-            out.push(path);
+    // The setters moved into `mutation/` and `compute/` on 2026-09-17, so
+    // the scan walks the folder tree, not one flat directory.
+    fn walk(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
+        for entry in std::fs::read_dir(dir).expect("read_dir session").flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path, out);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                out.push(path);
+            }
         }
     }
+    let mut out = Vec::new();
+    walk(&dir, &mut out);
     out.sort();
     assert!(
         out.len() >= MIN_SESSION_FILES,
