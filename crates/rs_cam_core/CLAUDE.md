@@ -17,7 +17,7 @@ sentries and traps, which this file does not repeat.
 |---|---|---|
 | `io/` | Every door that reads a file: model, DXF, SVG, STEP, and the TOML tool and machine libraries | `io/CLAUDE.md` |
 | `tool/` | Cutter geometry, holder and shank envelope, vendor metadata | `tool/CLAUDE.md` |
-| `material/` | Material catalogue and the wood species library | — |
+| `material/` | Material catalogue and the wood species library | `material/CLAUDE.md` |
 | `machine/` | Machine profile, kinematics, utilisation, strategy advisor | `machine/CLAUDE.md` |
 | `geometry/` | Regions, grids, distance fields, contours, the machining boundary | `geometry/CLAUDE.md` |
 | `surface/` | Drop and push cutter, slope, rest field, flow routing, reach | `surface/CLAUDE.md` |
