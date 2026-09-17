@@ -42,8 +42,7 @@ sentries and traps, which this file does not repeat.
 
 - Keep the crate GUI-free. Render and controller state are not part of the
   core model.
-- The toolpath IR separates planning from dressups and export. Import, tool
-  modelling, generation, dressups, simulation and export stay distinct.
+- The toolpath IR separates planning from dressups and export.
 
 ## Tests and evidence
 
@@ -52,8 +51,5 @@ sentries and traps, which this file does not repeat.
   names the sentries for its own folder.
 - Current code and sentries outrank a historical description. Do not copy a
   retired measurement into a new product claim.
-- Many sentries name a `planning/…` document as their pre-registration. The
-  structure purge of 2026-09-17 deleted 103 of those documents and did **not**
-  rewrite the 293 citations. Retrieve one with
-  `git show planning-pre-purge-2026-09-17:<path>`. A dead path in a doc comment
-  is expected; it is not a defect to fix.
+- Many sentries name a `planning/…` document as their pre-registration. A
+  dead path there is expected; the root `CLAUDE.md` says how to retrieve it.

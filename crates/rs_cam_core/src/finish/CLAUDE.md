@@ -23,8 +23,8 @@ Every 3D finishing strategy and the unified planner. The entry point is
 
 - A finishing-strategy verdict recorded before 2026-08-04 is superseded. See
   `planning/review_2026-07-29/SUPERSEDED_CONCLUSIONS.md`.
-- The pencil NMS detector stands. `crate::surface::flow_accum` is kept on
-  purpose; it traces drainage, not a rest ridge.
+- The pencil NMS detector stands. Do not route pencil through a flow-accum
+  spine; see `../surface/CLAUDE.md`.
 - The iso-scallop `iso_field` dial is live; iso-scallop beats raster at a
   matched finish.
 

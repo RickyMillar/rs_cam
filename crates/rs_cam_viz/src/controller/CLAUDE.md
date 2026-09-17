@@ -21,8 +21,8 @@ result. The entry point is `../controller.rs`.
   toolpath is a wrong picture, not a cosmetic lag.
 - `OptimizeToolpath` is a `Job` over a cloned session. It does not mutate the
   live session while it runs.
-- Preserve the controller to worker to result-acceptance path. Do not add a
-  parallel one-off flow.
+- `generate_all` is a fixpoint over the rest-stock chain. Do not replace it
+  with a single pass over the toolpath list.
 
 ## Sentries
 
@@ -34,5 +34,4 @@ result. The entry point is `../controller.rs`.
 
 ## Do not
 
-- Do not mutate GUI state as an alternate data model. Route the write through
-  `ProjectSession::apply(Command)`.
+- Do not let a UI intent reach the core except through a handler in `events/`.

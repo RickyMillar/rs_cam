@@ -19,8 +19,8 @@ The single entry point for project state and compute. The mutation door is
 
 ## Invariants
 
-- A command returns `Effects`, and `Effects.stale` is the authoritative stale
-  set. Do not compute a narrower stale answer anywhere else.
+- A command returns `Effects`. `Effects.stale` is the authoritative stale set
+  for every caller.
 - A parameter, tool, model, stock or setup edit invalidates the affected
   cached result chain. Do not preserve an old result under new inputs.
 - There are no public `*_mut` escape hatches. `setups_mut` is `#[cfg(test)]`

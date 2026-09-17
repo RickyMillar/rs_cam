@@ -24,8 +24,8 @@ project. The entry point is `state::AppState` in `mod.rs`.
   revision. Do not reintroduce a mutable stale boolean, and do not clear it
   on an un-stamped, cancelled or failed result.
 - Freshness is derived. A stored freshness flag drifts from the core answer.
-- When GUI state gains a field, audit the setup sheet, project IO, the
-  controller fixtures and the MCP and UI initialisers.
+- Selection, viewport and overlay state are view state. They never decide
+  what the core generates.
 
 ## Sentries
 

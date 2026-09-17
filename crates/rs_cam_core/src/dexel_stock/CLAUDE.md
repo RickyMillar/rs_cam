@@ -35,5 +35,5 @@ entry point is `TriDexelStock::simulate_*` in `simulation.rs`.
 
 ## Do not
 
-- Do not infer the cut direction from the order of a hole's Z pair. Read the
-  supplied `StockCutDirection`.
+- Do not compare a metric run against a playback run. Only the metric route
+  records samples.

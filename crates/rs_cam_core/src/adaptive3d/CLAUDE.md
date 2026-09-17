@@ -15,9 +15,8 @@ Constant-engagement clearing on a mesh surface. The entry point is
 
 - All three `ClearingStrategy3d` variants are live. `clear_z_level` is not
   dead code. Do not propose a deletion of the AgentSearch arm.
-- The plunge guard classifies a vertical descent by its geometry, not by its
-  intent tag. This engine emits untagged vertical descents; a guard that
-  reads the tag alone misses them.
+- This engine emits UNTAGGED vertical descents. A guard that reads the intent
+  tag alone misses them; see `../dressup/CLAUDE.md`.
 
 ## Sentries
 

@@ -34,5 +34,4 @@ Every viewport pipeline. The entry point is `render::mod`, called from
 
 ## Do not
 
-- Do not draw every toolpath. The selected toolpath is the default draw set;
-  many drawn toolpaths make the viewport slow.
+- Draw cost scales with the drawn toolpath count. `ui/` decides the draw set.
