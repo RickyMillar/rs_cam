@@ -32,6 +32,7 @@
 //! grids would mean rebuilding them to do it.
 
 mod band;
+mod band_batch;
 mod cut_direction;
 mod playback;
 mod simulation;

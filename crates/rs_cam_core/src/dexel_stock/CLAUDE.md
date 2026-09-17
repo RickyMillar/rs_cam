@@ -8,9 +8,9 @@ Stamps a tool along a toolpath into a tri-dexel stock. Entry point:
 - `mod.rs` — the stock type and the public facade.
 - `simulation.rs` — the `simulate_*` methods.
 - `stamping.rs`, `swept.rs` — the stamping helpers and swept-volume stamping.
-- `band.rs`, `whole_path.rs`, `playback.rs` — row-band decomposition and the
-  two dispatch routes: the metric run and the non-metric playback replay.
-- `tile_mip.rs` — the coarse mip over the grid, for tile rejection.
+- `band.rs`, `band_batch.rs` — row bands, and the ONE batch dispatcher.
+- `whole_path.rs`, `playback.rs` — each route's caps, job shape and serial tail.
+- `tile_mip.rs` — the coarse mip, for tile rejection.
 - `cut_direction.rs` — `StockCutDirection`, the side the tool approaches from.
 
 ## Invariants
@@ -18,12 +18,12 @@ Stamps a tool along a toolpath into a tri-dexel stock. Entry point:
 - A 2D operation cuts at negative Z. `StockConfig.origin_z` in
   `compute/stock_config.rs` is therefore negative and the stock top sits at
   Z zero. A positive `origin_z` puts the retract plane inside the stock.
-- The simulation cell must be much smaller than the tool tip radius. A cell
-  near the tip radius cannot resolve the cut it is asked to measure.
+- The simulation cell must be much smaller than the tool tip radius. It cannot
+  resolve a cut at its own size.
 - The metric route and the playback route must agree on the stamped volume.
-  They differ only in what they record.
-- Production stamps the Z grid only; the X and Y side grids are test-reachable.
-  Keep them: a global stock that shows every face needs them (STK-13).
+  They share `band_batch.rs` and differ only in what they record.
+- Production stamps the Z grid only; the side grids are test-reachable. Keep
+  them: a global stock that shows every face needs them (STK-13).
 - One axis permutation table: `DexelAxis::decompose`. Both
   `DexelGrid::from_bounds` and `StockCutDirection::decompose` read it (STK-02).
 

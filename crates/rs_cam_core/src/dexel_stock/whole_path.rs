@@ -1,6 +1,10 @@
 //! Whole-toolpath row-band dispatch — `DELTA_sim_w2.md` §3f, the remaining
 //! lever of `PERF_REVIEW.md` **S3**.
 //!
+//! STK-09: the driver itself is `band_batch.rs`, shared with `playback.rs`.
+//! This file holds what is metric-specific: the [`StampDispatch`] dial, the
+//! caps, the [`StampJob`] shape and the serial tail that patches each sample.
+//!
 //! Wave 2 landed the row-band decomposition and dispatched it **per stamp**.
 //! That saturated at a measured **2.10× on four threads** and got worse past
 //! eight, for a structural reason: a stamp is tens of microseconds of work, so
@@ -57,12 +61,11 @@
 //! sized against the mip's own refresh budget rather than as large as memory
 //! allows.
 
-use rayon::prelude::*;
-
-use super::band::{self, BAND_ROWS};
+use super::band::BAND_ROWS;
+use super::band_batch::{BandBatch, BandJob, BandPartial, BatchCaps};
 use super::stamping::{StampPartial, stamp_segment_with_metrics};
 use super::tile_mip::TileMaxTop;
-use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
+use crate::interrupt::{CancelCheck, Cancelled};
 use crate::stock::dexel::DexelGrid;
 use crate::stock::radial_profile::RadialProfileLUT;
 use crate::tool::MillingCutter;
@@ -179,7 +182,7 @@ pub struct StampDispatchStats {
     /// Most stamps any one batch carried.
     pub max_jobs_in_a_batch: usize,
     /// Most `(band, stamp)` partials any one batch held at once — the figure
-    /// `MAX_PARTIALS_PER_BATCH` bounds.
+    /// `CAPS.max_partials` bounds.
     pub max_partials_in_a_batch: usize,
 }
 
@@ -188,41 +191,36 @@ pub struct StampDispatchStats {
 /// which declines to dispatch small stamps at all — is the better answer.
 const MIN_BANDS_FOR_WHOLE_PATH: usize = 4;
 
-/// Hard cap on jobs per batch. Bounds the job/reduced arrays independently of
-/// how few bands each stamp happens to touch.
-const MAX_JOBS_PER_BATCH: usize = 8_192;
-
-/// Hard cap on `(band, stamp)` partials per batch — the memory bound that
-/// matters, and the reason a batch exists at all.
+/// The metric route's batch caps.
 ///
-/// `DELTA_sim_w2.md` §3f sized the unchunked case at 64 bands × 70 k
-/// subsegments × 96 B ≈ **430 MB**. Batching replaces "the whole toolpath" with
-/// a fixed ceiling: at `size_of::<StampPartial>()` ≈ 80 B plus a 4 B job index,
-/// 262 144 partials is **≈ 22 MB**, and the job side adds
+/// `max_partials` is the memory bound that matters, and the reason a batch
+/// exists at all. `DELTA_sim_w2.md` §3f sized the unchunked case at 64 bands ×
+/// 70 k subsegments × 96 B ≈ **430 MB**. Batching replaces "the whole toolpath"
+/// with a fixed ceiling: at `size_of::<StampPartial>()` ≈ 80 B plus a 4 B job
+/// index, 262 144 partials is **≈ 22 MB**, and the job side adds
 /// 8 192 × (72 B job + 80 B reduced) ≈ **1.2 MB**. Total working set per batch
 /// is therefore bounded at **≈ 23 MB regardless of toolpath length, grid size
 /// or cutter diameter** — `partial_memory_bound_holds_at_the_documented_size`
 /// checks the arithmetic against the real `size_of`.
-const MAX_PARTIALS_PER_BATCH: usize = 262_144;
-
-/// Fewest jobs a batch takes before the visit budget may close it. Without a
-/// floor, a grid small enough that one stamp covers it would dispatch per
-/// stamp — which is the thing this module exists to stop doing.
-const MIN_JOBS_PER_BATCH: usize = 64;
-
-/// How much stamping a batch absorbs before it is closed, in whole grid-passes
-/// of estimated cell-visits.
 ///
-/// **This is the mip-freshness dial, not a memory one.** `TileMaxTop` allows
-/// itself one rebuild per grid-pass of stamped cell-visits
-/// (`REFRESH_VISIT_MULTIPLIER = 1`), and a rebuild can only happen between
-/// batches, so a batch of `N` grid-passes leaves the mip up to `N` passes
-/// stale and the whole-stamp early-out correspondingly less effective. Set
-/// against the plunge fixture, where the early-out is worth the most: the
-/// retract half of every plunge-and-retract cycle is pure air over ground the
-/// descent just cleared, and `DELTA_sim_w2.md` §1 measured that as more than
-/// half the stamp budget on that workload.
-const BATCH_VISIT_BUDGET_PASSES: u64 = 4;
+/// `min_jobs` is 64 here and 16 in `playback.rs`, and the difference is a UNIT
+/// change rather than a tuning preference: a metric job is one subsegment, a
+/// playback job is a whole move.
+///
+/// `visit_budget_passes` is the mip-freshness dial, not a memory one.
+/// `TileMaxTop` allows itself one rebuild per grid-pass of stamped cell-visits,
+/// and a rebuild can only happen between batches, so a batch of `N` grid-passes
+/// leaves the mip up to `N` passes stale. Set against the plunge fixture, where
+/// the early-out is worth the most: the retract half of every
+/// plunge-and-retract cycle is pure air over ground the descent just cleared,
+/// and `DELTA_sim_w2.md` §1 measured that as more than half the stamp budget on
+/// that workload.
+const CAPS: BatchCaps = BatchCaps {
+    max_jobs: 8_192,
+    max_partials: 262_144,
+    min_jobs: 64,
+    visit_budget_passes: 4,
+};
 
 /// One subsegment's geometry, deferred until its batch runs.
 ///
@@ -256,29 +254,27 @@ impl StampJob {
     }
 }
 
-/// The batching driver. One per simulation; reused across batches so the
-/// bucket and partial arrays are allocated once.
-pub(super) struct BandDispatch {
-    jobs: Vec<StampJob>,
-    /// Job indices per band, in job order.
-    buckets: Vec<Vec<u32>>,
-    /// Per-band partials, positionally aligned with `buckets`.
-    outs: Vec<Vec<StampPartial>>,
-    /// Per-job reduced partial.
-    reduced: Vec<StampPartial>,
-    /// Bands the arrays above are sized for.
-    bands: usize,
-    /// Union of the queued jobs' row spans — the only rows the batch can
-    /// touch, and therefore the only bands worth dispatching. `None` when
-    /// nothing in the queue reaches the grid.
-    active_rows: Option<(usize, usize)>,
-    pending_partials: usize,
-    pending_visits: u64,
-    visit_budget: u64,
-    /// Diagnostics. No production reader; the non-vacuity sentries and the
-    /// delta doc read them.
-    stats: StampDispatchStats,
+impl BandJob for StampJob {
+    fn start(&self) -> (f64, f64, f64) {
+        self.start
+    }
+    fn end(&self) -> (f64, f64, f64) {
+        self.end
+    }
 }
+
+impl BandPartial for StampPartial {
+    fn empty() -> Self {
+        StampPartial::empty()
+    }
+    fn merge(&mut self, other: &Self) {
+        StampPartial::merge(self, other);
+    }
+}
+
+/// The metric route's batching driver. The machinery is `band_batch.rs`; this
+/// file supplies the caps, the job shape and the serial tail.
+pub(super) type BandDispatch = BandBatch<StampJob, StampPartial>;
 
 impl BandDispatch {
     /// `None` when the grid has too few bands to be worth splitting, in which
@@ -308,119 +304,22 @@ impl BandDispatch {
         if !wanted || bands == 0 || grid.cols == 0 {
             return None;
         }
-        let cells = (grid.rows as u64).saturating_mul(grid.cols as u64).max(1);
-        Some(Self {
-            jobs: Vec::new(),
-            buckets: vec![Vec::new(); bands],
-            outs: vec![Vec::new(); bands],
-            reduced: Vec::new(),
-            bands,
-            active_rows: None,
-            pending_partials: 0,
-            pending_visits: 0,
-            visit_budget: cells.saturating_mul(BATCH_VISIT_BUDGET_PASSES),
-            stats: StampDispatchStats {
-                bands,
-                ..StampDispatchStats::default()
-            },
-        })
+        Some(BandBatch::new(grid, CAPS))
     }
 
-    /// Queue one subsegment, and account for what it will cost.
-    ///
-    /// Only the *counters* are computed here — the buckets themselves are
-    /// built in [`Self::run_batch`], against the grid that is about to be
-    /// stamped. Bucketing at push time would leave the band indices aliased to
-    /// whatever grid shape happened to be current when the job was queued, and
-    /// `zip` would then silently truncate rather than fail. It costs one extra
-    /// pass over the queue per batch, against a stamp kernel that is orders of
-    /// magnitude more expensive.
-    pub(super) fn push(&mut self, grid: &DexelGrid, radius: f64, job: StampJob) {
-        self.jobs.push(job);
-        if let Some((row_lo, row_hi)) = band::stamp_row_span(grid, radius, job.start, job.end) {
-            self.pending_partials += grid.band_span(row_lo, row_hi).1;
-        }
-        self.pending_visits = self
-            .pending_visits
-            .saturating_add(band::stamp_bbox_cells(grid, radius, job.start, job.end) as u64);
-    }
-
-    /// Fill `buckets` from the queued jobs against `grid`'s current shape.
-    ///
-    /// Job indices land in ascending order inside each bucket, which is what
-    /// makes a band replay its share of the batch in the original stamp
-    /// sequence.
-    fn build_buckets(&mut self, grid: &DexelGrid, radius: f64) {
-        let bands = grid.rows.div_ceil(BAND_ROWS);
-        if bands != self.bands {
-            self.buckets = vec![Vec::new(); bands];
-            self.outs = vec![Vec::new(); bands];
-            self.bands = bands;
-        } else {
-            for bucket in self.buckets.iter_mut() {
-                bucket.clear();
-            }
-        }
-        self.pending_partials = 0;
-        self.active_rows = None;
-        for (idx, job) in self.jobs.iter().enumerate() {
-            let Some((row_lo, row_hi)) = band::stamp_row_span(grid, radius, job.start, job.end)
-            else {
-                continue;
-            };
-            self.active_rows = Some(match self.active_rows {
-                None => (row_lo, row_hi),
-                Some((lo, hi)) => (lo.min(row_lo), hi.max(row_hi)),
-            });
-            let (skip, take) = grid.band_span(row_lo, row_hi);
-            for bucket in self.buckets.iter_mut().skip(skip).take(take) {
-                bucket.push(idx as u32);
-            }
-            self.pending_partials += take;
-        }
-    }
-
-    /// Is the queued batch full enough to run?
-    pub(super) fn batch_is_due(&self) -> bool {
-        self.jobs.len() >= MAX_JOBS_PER_BATCH
-            || self.pending_partials >= MAX_PARTIALS_PER_BATCH
-            || (self.jobs.len() >= MIN_JOBS_PER_BATCH && self.pending_visits >= self.visit_budget)
-    }
-
-    pub(super) fn is_empty(&self) -> bool {
-        self.jobs.is_empty()
-    }
-
+    /// The route's own view of what the driver did.
     pub(super) fn stats(&self) -> StampDispatchStats {
-        self.stats
+        let s = self.batch_stats();
+        StampDispatchStats {
+            batches: s.batches,
+            bands: s.bands,
+            max_jobs_in_a_batch: s.max_jobs_in_a_batch,
+            max_partials_in_a_batch: s.max_partials_in_a_batch,
+        }
     }
 
-    /// Run the queued batch: refresh the mip, replay every band in parallel,
-    /// reduce in band order, and hand each job's four published metrics to
-    /// `patch` **in job order**.
-    ///
-    /// # Cancellation granularity, stated
-    ///
-    /// The token is polled **once per batch**, serially, at the top of this
-    /// function — and the enumerating loop in `simulation.rs` still polls it
-    /// once per subsegment, unchanged. It is deliberately NOT polled inside the
-    /// parallel phase: `CancelCheck` carries no `Sync` bound, so reaching it
-    /// from a rayon worker would mean widening a signature the whole crate
-    /// depends on.
-    ///
-    /// What that bounds is not "once per 70 k subsegments". A batch closes at
-    /// [`BATCH_VISIT_BUDGET_PASSES`] grid-passes of estimated stamped
-    /// cell-visits, or [`MAX_JOBS_PER_BATCH`] stamps, or
-    /// [`MAX_PARTIALS_PER_BATCH`] partials — whichever comes first — so the
-    /// worst-case latency scales with the grid, not with the toolpath. On the
-    /// shipped 0.4 mm wanaka grid that is tens of milliseconds; on a 4 M-cell
-    /// grid, the largest this simulator is asked for, it is ~16 M cell-visits,
-    /// order half a second. Small fixtures close on the job cap instead, which
-    /// is tighter still.
-    ///
-    /// A `Sync` cancel token is the honest fix and would let the poll move
-    /// inside the band loop; it is a crate-wide signature change and is not
-    /// this wave's.
+    /// Run the queued batch and hand each job's four published metrics to
+    /// `patch`, **in job order**.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn run_batch(
         &mut self,
@@ -438,132 +337,27 @@ impl BandDispatch {
         cancel: &dyn CancelCheck,
         mut patch: impl FnMut(usize, (f64, f64, Option<f64>, f64)),
     ) -> Result<(), Cancelled> {
-        if self.jobs.is_empty() {
-            return Ok(());
-        }
-        check_cancel(cancel)?;
-
-        if let Some(m) = air_mip.as_mut() {
-            m.refresh_if_due(grid);
-        }
-
-        self.build_buckets(grid, radius);
-        self.stats.batches += 1;
-        self.stats.max_jobs_in_a_batch = self.stats.max_jobs_in_a_batch.max(self.jobs.len());
-        self.stats.max_partials_in_a_batch = self
-            .stats
-            .max_partials_in_a_batch
-            .max(self.pending_partials);
-
-        // ── Phase 2: one dispatch, every band, every stamp in the batch ──
-        //
-        // Disjoint field borrows, spelled out because the closure needs
-        // `jobs` immutably while `outs` is borrowed mutably.
-        let Self {
-            jobs,
-            buckets,
-            outs,
-            reduced,
-            active_rows,
-            ..
-        } = self;
-        let active_rows = *active_rows;
-        let mip = air_mip.as_ref();
-        // Dispatch ONLY the bands the batch can reach, not every band in the
-        // grid. This is wave 2 §3e's fan-out fix one level up, and it is
-        // worth more here than it was there: a batch's stamps are consecutive
-        // subsegments, so its active bands are a **contiguous** run — and
-        // rayon splits an indexed iterator by index range, which on a
-        // 40-band grid with a 16-band footprint left most of the pool holding
-        // empty bands while a few workers did all the stamping. Measured
-        // consequence before the fix: whole-path dispatch was a *loss* at two
-        // threads on the arms whose footprint sits in one half of the grid.
-        //
-        // Numerically free, as it was in wave 2: a band outside the range
-        // would have had an empty bucket and contributed nothing.
-        // `active_rows` is `None` only when no queued job reaches the grid at
-        // all, in which case every partial is `empty()` and the reduce below
-        // is already correct.
-        let dispatch_rows = active_rows.and_then(|(row_lo, row_hi)| {
-            let (skip, take) = grid.band_span(row_lo, row_hi);
-            // The slice is in range by construction — `build_buckets` sized
-            // `buckets` from this same grid and `band_span` bounds `skip+take`
-            // by that size. Widening to the whole grid rather than bailing on
-            // the `None` keeps a broken invariant SLOW instead of WRONG: a
-            // truncating `zip` would silently drop bands.
-            if skip + take <= buckets.len() && skip + take <= outs.len() && take > 0 {
-                Some((row_lo, row_hi, skip, take))
-            } else if grid.rows > 0 {
-                Some((0, grid.rows - 1, 0, buckets.len().min(outs.len())))
-            } else {
-                None
-            }
-        });
-        if let Some((row_lo, row_hi, skip, take)) = dispatch_rows {
-            let (Some(buckets), Some(outs)) = (
-                buckets.get(skip..skip + take),
-                outs.get_mut(skip..skip + take),
-            ) else {
-                return Ok(());
-            };
-            grid.par_bands(row_lo, row_hi)
-                .zip(buckets.par_iter())
-                .zip(outs.par_iter_mut())
-                .for_each(|((mut band, bucket), out)| {
-                    out.clear();
-                    out.reserve(bucket.len());
-                    for &j in bucket.iter() {
-                        let Some(job) = jobs.get(j as usize) else {
-                            continue;
-                        };
-                        out.push(stamp_segment_with_metrics(
-                            &mut band, lut, radius, job.start, job.end, job.mid_u, job.mid_v,
-                            from_high, mip,
-                        ));
-                    }
-                });
-        }
-
-        // ── Phase 3a: reduce, in ascending band order per job ──
-        //
-        // Which is the SAME order the per-stamp path merges in: it walks
-        // `band_span(row_lo, row_hi)` ascending, and a job's buckets were
-        // filled from exactly that range. So the volume sums are reassociated
-        // identically, not merely deterministically.
-        reduced.clear();
-        reduced.resize(jobs.len(), StampPartial::empty());
-        for (bucket, out) in buckets.iter().zip(outs.iter()) {
-            for (k, &j) in bucket.iter().enumerate() {
-                let (Some(slot), Some(partial)) = (reduced.get_mut(j as usize), out.get(k)) else {
-                    continue;
-                };
-                slot.merge(partial);
-            }
-        }
-
-        // ── Phase 3b: driver-side fixes, mip bookkeeping, patch ──
-        for (j, job) in jobs.iter().enumerate() {
-            let Some(r) = reduced.get_mut(j) else {
-                continue;
-            };
-            if job.planar_len_sq() < 1e-20 {
-                r.degenerate = true;
-                r.descent = (job.start.2 - job.end.2).abs();
-            }
-            if let Some(m) = air_mip.as_mut() {
-                m.absorb(r);
-            }
-            patch(job.sample_slot, r.finish(cutter, capture_arc_engagement));
-        }
-
-        self.clear_batch();
-        Ok(())
-    }
-
-    fn clear_batch(&mut self) {
-        self.jobs.clear();
-        self.pending_partials = 0;
-        self.pending_visits = 0;
+        self.run(
+            grid,
+            radius,
+            air_mip,
+            cancel,
+            |band, job, mip| {
+                stamp_segment_with_metrics(
+                    band, lut, radius, job.start, job.end, job.mid_u, job.mid_v, from_high, mip,
+                )
+            },
+            |job, r, air_mip| {
+                if job.planar_len_sq() < 1e-20 {
+                    r.degenerate = true;
+                    r.descent = (job.start.2 - job.end.2).abs();
+                }
+                if let Some(m) = air_mip.as_mut() {
+                    m.absorb(r);
+                }
+                patch(job.sample_slot, r.finish(cutter, capture_arc_engagement));
+            },
+        )
     }
 }
 
@@ -577,7 +371,7 @@ impl BandDispatch {
 mod tests {
     use super::*;
 
-    /// The memory bound in [`MAX_PARTIALS_PER_BATCH`]'s docs is arithmetic over
+    /// The memory bound in [`CAPS`]'s docs is arithmetic over
     /// two `size_of`s, and a `size_of` is exactly the kind of number that
     /// changes under someone adding a field.
     ///
@@ -595,14 +389,13 @@ mod tests {
         assert!(
             partial <= 80,
             "`StampPartial` is {partial} B; the batch bound is documented at 80 B \
-             per partial in `MAX_PARTIALS_PER_BATCH` and in `DELTA_sim_w4.md` §2c"
+             per partial in `CAPS` and in `DELTA_sim_w4.md` §2c"
         );
         assert!(
             job <= 72,
             "`StampJob` is {job} B; the batch bound is documented at 72 B per job"
         );
-        let bytes =
-            MAX_PARTIALS_PER_BATCH * (partial + index) + MAX_JOBS_PER_BATCH * (job + partial);
+        let bytes = CAPS.max_partials * (partial + index) + CAPS.max_jobs * (job + partial);
         assert!(
             bytes <= 24 * 1024 * 1024,
             "a batch's working set is {} MB (partial {partial} B, job {job} B) — \
