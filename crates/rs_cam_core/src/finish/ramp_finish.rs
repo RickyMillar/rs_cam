@@ -444,8 +444,16 @@ pub fn ramp_finish_generation_resolution(
 ///
 /// Produces continuous helical descent along steep walls instead of discrete
 /// Z-level waterline passes. Eliminates Z-level witness marks.
+///
+/// **Test-only (FIN-11, sixth wrapper).** The product path calls
+/// `ramp_finish_toolpath_structured_annotated_with_cancel` from
+/// `compute::execute::generate_ramp_finish`, because it needs the reach
+/// clamp the structured form returns. This wrapper only saved the module's
+/// own tests a `run_uncancellable` line, so it is `#[cfg(test)]` and no
+/// longer public API.
+#[cfg(test)]
 #[tracing::instrument(skip(mesh, index, cutter, params), fields(max_stepdown = params.max_stepdown))]
-pub fn ramp_finish_toolpath(
+fn ramp_finish_toolpath(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,

@@ -1905,7 +1905,13 @@ fn sweep_ramp_finish_max_stepdown() {
             if let Some(v) = ov {
                 p.max_stepdown = v.as_f64().unwrap();
             }
-            rs_cam_core::finish::ramp_finish::ramp_finish_toolpath(&mesh, &index, &cutter, &p)
+            rs_cam_core::interrupt::run_uncancellable(|cancel| {
+                rs_cam_core::finish::ramp_finish::
+                    ramp_finish_toolpath_structured_annotated_with_cancel(
+                        &mesh, &index, &cutter, &p, None, None, cancel,
+                    )
+                    .map(|(tp, _, _)| tp)
+            })
         },
     );
     for v in &result.variants {
@@ -1936,7 +1942,13 @@ fn sweep_ramp_finish_direction() {
                     _ => CutDirection::Climb,
                 };
             }
-            rs_cam_core::finish::ramp_finish::ramp_finish_toolpath(&mesh, &index, &cutter, &p)
+            rs_cam_core::interrupt::run_uncancellable(|cancel| {
+                rs_cam_core::finish::ramp_finish::
+                    ramp_finish_toolpath_structured_annotated_with_cancel(
+                        &mesh, &index, &cutter, &p, None, None, cancel,
+                    )
+                    .map(|(tp, _, _)| tp)
+            })
         },
     );
     for v in &result.variants {

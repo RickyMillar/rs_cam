@@ -41,7 +41,7 @@ use rs_cam_core::finish::finish_setup::{
     build_finish_surface_with_cell_size_and_cancel, build_finish_surface_with_policy_and_cancel,
 };
 use rs_cam_core::finish::ramp_finish::{
-    RampFinishParams, ramp_finish_generation_resolution, ramp_finish_toolpath,
+    RampFinishParams, ramp_finish_generation_resolution,
     ramp_finish_toolpath_structured_annotated_with_resolution,
 };
 use rs_cam_core::finish::scallop::{ScallopParams, scallop_generation_resolution};
@@ -63,7 +63,8 @@ use rs_cam_core::finish::unified_finish::{
 
 // ── FIN-11: the non-cancellable wrappers left the public API ─────────────
 //
-// `scallop_toolpath` and `steep_shallow_toolpath` are `#[cfg(test)]` inside
+// `scallop_toolpath`, `steep_shallow_toolpath` and `ramp_finish_toolpath`
+// are `#[cfg(test)]` inside
 // `rs_cam_core` now, because the product path calls the cancellable form.
 // These local helpers keep the harness's call shape and route through that
 // same cancellable form, so the pinned fingerprints below measure the same
@@ -93,6 +94,20 @@ fn steep_shallow_toolpath(
         rs_cam_core::finish::steep_shallow::steep_shallow_toolpath_with_cancel(
             mesh, index, cutter, params, None, cancel,
         )
+    })
+}
+
+fn ramp_finish_toolpath(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &RampFinishParams,
+) -> rs_cam_core::toolpath::Toolpath {
+    rs_cam_core::interrupt::run_uncancellable(|cancel| {
+        rs_cam_core::finish::ramp_finish::ramp_finish_toolpath_structured_annotated_with_cancel(
+            mesh, index, cutter, params, None, None, cancel,
+        )
+        .map(|(tp, _, _)| tp)
     })
 }
 
