@@ -270,6 +270,16 @@ hold the session, so the profile is reachable.
 
 ## 7. THEN: the limits surface — the original request
 
+**Implementation plan written 2026-09-18: `SURFACE_IMPL.md`.** Core half
+(S2 power at the shipped operating point → S1 gantry push row → S4 bound and
+typed `BoundSource` on `CriterionStatus`, with the export gate filtering on
+`gates_export()` → S3 depth of cut post-sim, non-gating) may start after
+T-15. Viz half (V1 no `≈` on the face → V2 rows read their own bound → V3
+Readiness replaces its pills → V4 the power bar returns, its ban sentry
+replaced by a test of the reason → V5 LOOK) waits for the
+`gen_sim_rest_ux_2026-09-18` wave's W2 on `ui/properties/`. The paragraphs
+below are the design record that plan was written from.
+
 **Do not start until the `rs_cam_viz` wave lands.** Design is in `PLAN.md`
 (§11 recommends Reading A: depth as a post-sim criterion, not gating
 initially), `SURVEY_UI.md` and `REVIEW_DESIGN.md`. The interactive prototype
