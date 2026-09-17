@@ -13,6 +13,24 @@ pub use crate::ops::face::FaceDirection;
 pub use crate::ops::profile::ProfileSide;
 pub use crate::ops::trace_path::TraceCompensation;
 
+/// The three runtime numbers every finishing `…Params` carries and no
+/// config holds (FIN-02).
+///
+/// The feed and plunge rates are the RESOLVED ones — `OperationConfig::
+/// feed_rate()` and `plunge_rate()`, which read the tool and the feeds
+/// model — not the `feed_rate` field on the config beside them. The retract
+/// height comes from the operation's resolved heights. Named fields, so a
+/// caller cannot swap two `f64`s without the compiler seeing it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OpMotion {
+    /// Resolved cutting feed (mm/min).
+    pub feed_rate: f64,
+    /// Resolved plunge feed (mm/min).
+    pub plunge_rate: f64,
+    /// Retract height (mm) links and rapids travel at.
+    pub safe_z: f64,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PocketPattern {
@@ -922,6 +940,56 @@ impl Default for PencilConfig {
     }
 }
 
+impl PencilConfig {
+    /// Build the [`crate::finish::pencil::PencilParams`] this operation
+    /// traces with — the ONE translation site (FIN-02).
+    ///
+    /// The two borrowed arguments are what the config cannot hold: the R1
+    /// reference cutter, resolved from the library tool the op names, and
+    /// the machine envelope the link stage costs against.
+    #[must_use]
+    pub fn params(
+        &self,
+        motion: OpMotion,
+        reference_cutter: Option<crate::tool::ToolDefinition>,
+        link_kinematics: Option<crate::machine::kinematics::LinkKinematics>,
+    ) -> crate::finish::pencil::PencilParams {
+        crate::finish::pencil::PencilParams {
+            bitangency_angle: self.bitangency_angle,
+            min_cut_length: self.min_cut_length,
+            hookup_distance: self.hookup_distance,
+            num_offset_passes: self.num_offset_passes,
+            offset_stepover: self.offset_stepover,
+            sampling: self.sampling,
+            feed_rate: motion.feed_rate,
+            plunge_rate: motion.plunge_rate,
+            safe_z: motion.safe_z,
+            stock_to_leave: self.stock_to_leave,
+            min_valley_depth: self.min_valley_depth,
+            bisector_strength: self.bisector_strength,
+            reference_tool_diameter: self.reference_tool_diameter,
+            detector: self.detector,
+            valley_saliency: self.valley_saliency,
+            curvature_smoothing: self.curvature_smoothing,
+            rest_cell_mm: self.rest_cell_mm,
+            // R1: real reference tool geometry when the op names one; else
+            // `None` → the pencil detectors fall back to the nominal
+            // `reference_tool_diameter`.
+            reference_cutter,
+            // P1 W4a: cost the surface-link-vs-retract emit decision against
+            // the real machine envelope when one is in scope.
+            link_kinematics,
+            // G-LINKSTAGE: the clearance-hop tier's own cap. `None` — the
+            // default — keeps the at-depth tier's cap, which is the shipped
+            // emission byte for byte. `Some(0.0)` refuses every hop and
+            // leaves the at-depth tier alone, which is the control arm the
+            // measured pair needs (`planning/pencil_linking_2026-09-04.md`,
+            // `planning/linking_2026-09-09/SPEC.md` §8).
+            link_hop_distance_mm: self.link_hop_distance_mm,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScallopConfig {
     pub scallop_height: f64,
@@ -998,6 +1066,34 @@ impl Default for ScallopConfig {
             spindle_rpm: None,
             intra_pass_hookup_mm: default_scallop_intra_pass_hookup_mm(),
             iso_field: false,
+        }
+    }
+}
+
+impl ScallopConfig {
+    /// Build the [`crate::finish::scallop::ScallopParams`] this operation
+    /// rings with — the ONE translation site (FIN-02).
+    #[must_use]
+    pub fn params(
+        &self,
+        motion: OpMotion,
+        link_kinematics: Option<crate::machine::kinematics::LinkKinematics>,
+    ) -> crate::finish::scallop::ScallopParams {
+        crate::finish::scallop::ScallopParams {
+            scallop_height: self.scallop_height,
+            tolerance: self.tolerance,
+            direction: self.direction,
+            continuous: self.continuous,
+            slope_from: self.slope_from,
+            slope_to: self.slope_to,
+            feed_rate: motion.feed_rate,
+            plunge_rate: motion.plunge_rate,
+            safe_z: motion.safe_z,
+            stock_to_leave: self.stock_to_leave,
+            // A/M7: the standalone all-over pass is where the unconditional
+            // ring retract actually costs — nothing above it relinks.
+            intra_pass_hookup_mm: self.intra_pass_hookup_mm,
+            link_kinematics,
         }
     }
 }
@@ -1307,6 +1403,32 @@ impl UnifiedFinishConfig {
         }
         planner
     }
+
+    /// Build the [`crate::finish::unified_finish::UnifiedFinishParams`] the
+    /// three band arms cut with — the ONE translation site (FIN-02), and the
+    /// sibling of [`Self::planner_params`].
+    ///
+    /// The config carries 23 fields and this takes 12. The rest are not
+    /// forgotten: [`Self::planner_params`] takes the decomposition dials,
+    /// and the claims dials are read by the operation adapter, which is the
+    /// only layer that can see the stock in scope.
+    #[must_use]
+    pub fn params(&self, motion: OpMotion) -> crate::finish::unified_finish::UnifiedFinishParams {
+        crate::finish::unified_finish::UnifiedFinishParams {
+            scallop_height: self.scallop_height,
+            tolerance: self.tolerance,
+            raster_stepover: self.raster_stepover,
+            z_step: self.z_step,
+            sampling: self.sampling,
+            stock_to_leave: self.stock_to_leave,
+            feed_rate: motion.feed_rate,
+            plunge_rate: motion.plunge_rate,
+            safe_z: motion.safe_z,
+            intra_region_hookup_mm: self.intra_region_hookup_mm,
+            classification_sampler: self.classification_sampler,
+            monotone_cell_decomposition: self.monotone_cell_decomposition,
+        }
+    }
 }
 
 fn default_unified_finish_pencil_claims() -> bool {
@@ -1433,6 +1555,28 @@ impl Default for SteepShallowConfig {
     }
 }
 
+impl SteepShallowConfig {
+    /// Build the [`crate::finish::steep_shallow::SteepShallowParams`] this
+    /// operation bands with — the ONE translation site (FIN-02).
+    #[must_use]
+    pub fn params(&self, motion: OpMotion) -> crate::finish::steep_shallow::SteepShallowParams {
+        crate::finish::steep_shallow::SteepShallowParams {
+            threshold_angle: self.threshold_angle,
+            overlap_distance: self.overlap_distance,
+            wall_clearance: self.wall_clearance,
+            steep_first: self.steep_first,
+            stepover: self.stepover,
+            z_step: self.z_step,
+            feed_rate: motion.feed_rate,
+            plunge_rate: motion.plunge_rate,
+            safe_z: motion.safe_z,
+            sampling: self.sampling,
+            stock_to_leave: self.stock_to_leave,
+            tolerance: self.tolerance,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RampFinishConfig {
     pub max_stepdown: f64,
@@ -1467,6 +1611,27 @@ impl Default for RampFinishConfig {
     }
 }
 
+impl RampFinishConfig {
+    /// Build the [`crate::finish::ramp_finish::RampFinishParams`] this
+    /// operation ramps with — the ONE translation site (FIN-02).
+    #[must_use]
+    pub fn params(&self, motion: OpMotion) -> crate::finish::ramp_finish::RampFinishParams {
+        crate::finish::ramp_finish::RampFinishParams {
+            max_stepdown: self.max_stepdown,
+            slope_from: self.slope_from,
+            slope_to: self.slope_to,
+            direction: self.direction,
+            order_bottom_up: self.order_bottom_up,
+            feed_rate: motion.feed_rate,
+            plunge_rate: motion.plunge_rate,
+            safe_z: motion.safe_z,
+            sampling: self.sampling,
+            stock_to_leave: self.stock_to_leave,
+            tolerance: self.tolerance,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpiralFinishConfig {
     pub stepover: f64,
@@ -1487,6 +1652,22 @@ impl Default for SpiralFinishConfig {
             plunge_rate: 500.0,
             stock_to_leave: 0.0,
             spindle_rpm: None,
+        }
+    }
+}
+
+impl SpiralFinishConfig {
+    /// Build the [`crate::finish::spiral_finish::SpiralFinishParams`] this
+    /// operation spirals with — the ONE translation site (FIN-02).
+    #[must_use]
+    pub fn params(&self, motion: OpMotion) -> crate::finish::spiral_finish::SpiralFinishParams {
+        crate::finish::spiral_finish::SpiralFinishParams {
+            stepover: self.stepover,
+            direction: self.direction,
+            feed_rate: motion.feed_rate,
+            plunge_rate: motion.plunge_rate,
+            safe_z: motion.safe_z,
+            stock_to_leave: self.stock_to_leave,
         }
     }
 }
@@ -1515,6 +1696,22 @@ impl Default for RadialFinishConfig {
     }
 }
 
+impl RadialFinishConfig {
+    /// Build the [`crate::finish::radial_finish::RadialFinishParams`] this
+    /// operation rays with — the ONE translation site (FIN-02).
+    #[must_use]
+    pub fn params(&self, motion: OpMotion) -> crate::finish::radial_finish::RadialFinishParams {
+        crate::finish::radial_finish::RadialFinishParams {
+            angular_step: self.angular_step,
+            point_spacing: self.point_spacing,
+            feed_rate: motion.feed_rate,
+            plunge_rate: motion.plunge_rate,
+            safe_z: motion.safe_z,
+            stock_to_leave: self.stock_to_leave,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HorizontalFinishConfig {
     pub angle_threshold: f64,
@@ -1535,6 +1732,26 @@ impl Default for HorizontalFinishConfig {
             plunge_rate: 500.0,
             stock_to_leave: 0.0,
             spindle_rpm: None,
+        }
+    }
+}
+
+impl HorizontalFinishConfig {
+    /// Build the
+    /// [`crate::finish::horizontal_finish::HorizontalFinishParams`] this
+    /// operation slices with — the ONE translation site (FIN-02).
+    #[must_use]
+    pub fn params(
+        &self,
+        motion: OpMotion,
+    ) -> crate::finish::horizontal_finish::HorizontalFinishParams {
+        crate::finish::horizontal_finish::HorizontalFinishParams {
+            angle_threshold: self.angle_threshold,
+            stepover: self.stepover,
+            feed_rate: motion.feed_rate,
+            plunge_rate: motion.plunge_rate,
+            safe_z: motion.safe_z,
+            stock_to_leave: self.stock_to_leave,
         }
     }
 }

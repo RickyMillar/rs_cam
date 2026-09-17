@@ -6,6 +6,7 @@
 use std::sync::atomic::Ordering;
 
 use crate::compute::catalog::{OperationConfig, OperationType};
+use crate::compute::operation_configs::OpMotion;
 use crate::polygon::Polygon2;
 use crate::tool::MillingCutter;
 
@@ -214,41 +215,17 @@ pub(crate) fn generate_pencil(
     let cfg = config_guard!(op, Pencil, "generate_pencil");
     let m = require_mesh(ctx.mesh)?;
     let idx = require_index(ctx.index, "Pencil")?;
-    let params = crate::finish::pencil::PencilParams {
-        bitangency_angle: cfg.bitangency_angle,
-        min_cut_length: cfg.min_cut_length,
-        hookup_distance: cfg.hookup_distance,
-        num_offset_passes: cfg.num_offset_passes,
-        offset_stepover: cfg.offset_stepover,
-        sampling: cfg.sampling,
-        feed_rate: op.feed_rate(),
-        plunge_rate: op.plunge_rate(),
-        safe_z: ctx.heights.retract_z,
-        stock_to_leave: cfg.stock_to_leave,
-        min_valley_depth: cfg.min_valley_depth,
-        bisector_strength: cfg.bisector_strength,
-        reference_tool_diameter: cfg.reference_tool_diameter,
-        detector: cfg.detector,
-        valley_saliency: cfg.valley_saliency,
-        curvature_smoothing: cfg.curvature_smoothing,
-        rest_cell_mm: cfg.rest_cell_mm,
-        // R1: real reference tool geometry when the op names one; else None →
-        // the pencil detectors fall back to the nominal `reference_tool_diameter`.
-        reference_cutter: ctx
-            .reference_tool_cfg
+    let params = cfg.params(
+        OpMotion {
+            feed_rate: op.feed_rate(),
+            plunge_rate: op.plunge_rate(),
+            safe_z: ctx.heights.retract_z,
+        },
+        ctx.reference_tool_cfg
             .as_ref()
             .map(crate::compute::cutter::build_cutter),
-        // P1 W4a: cost the surface-link-vs-retract emit decision against
-        // the real machine envelope when one is in scope.
-        link_kinematics: ctx.link_kinematics.clone(),
-        // G-LINKSTAGE: the clearance-hop tier's own cap. `None` — the
-        // default — keeps the at-depth tier's cap, which is the shipped
-        // emission byte for byte. `Some(0.0)` refuses every hop and leaves
-        // the at-depth tier alone, which is the control arm the measured
-        // pair needs (`planning/pencil_linking_2026-09-04.md`,
-        // `planning/linking_2026-09-09/SPEC.md` §8).
-        link_hop_distance_mm: cfg.link_hop_distance_mm,
-    };
+        ctx.link_kinematics.clone(),
+    );
     let mut rest_grid_out: Option<crate::surface::rest_field::RestGrid> = None;
     let mut rest_regions_out: Option<Vec<Polygon2>> = None;
     let mut tip_float_out: Option<crate::compute::config::TipFloatFinding> = None;
@@ -328,20 +305,11 @@ pub(crate) fn generate_unified_finish(
     }
     let m = require_mesh(ctx.mesh)?;
     let idx = require_index(ctx.index, "UnifiedFinish")?;
-    let params = crate::finish::unified_finish::UnifiedFinishParams {
-        scallop_height: cfg.scallop_height,
-        tolerance: cfg.tolerance,
-        raster_stepover: cfg.raster_stepover,
-        z_step: cfg.z_step,
-        sampling: cfg.sampling,
-        stock_to_leave: cfg.stock_to_leave,
+    let params = cfg.params(OpMotion {
         feed_rate: op.feed_rate(),
         plunge_rate: op.plunge_rate(),
         safe_z: ctx.heights.retract_z,
-        intra_region_hookup_mm: cfg.intra_region_hookup_mm,
-        classification_sampler: cfg.classification_sampler,
-        monotone_cell_decomposition: cfg.monotone_cell_decomposition,
-    };
+    });
     // F2: the `for_tool` derivation plus this op's own dials, built in ONE
     // place — `UnifiedFinishConfig::planner_params`, whose doc carries the
     // cusp-vs-envelope rule this line used to carry and the `None` =
@@ -634,20 +602,11 @@ pub(crate) fn generate_steep_shallow(
     let cfg = config_guard!(op, SteepShallow, "generate_steep_shallow");
     let m = require_mesh(ctx.mesh)?;
     let idx = require_index(ctx.index, "SteepShallow")?;
-    let params = crate::finish::steep_shallow::SteepShallowParams {
-        threshold_angle: cfg.threshold_angle,
-        overlap_distance: cfg.overlap_distance,
-        wall_clearance: cfg.wall_clearance,
-        steep_first: cfg.steep_first,
-        stepover: cfg.stepover,
-        z_step: cfg.z_step,
+    let params = cfg.params(OpMotion {
         feed_rate: op.feed_rate(),
         plunge_rate: op.plunge_rate(),
         safe_z: ctx.heights.retract_z,
-        sampling: cfg.sampling,
-        stock_to_leave: cfg.stock_to_leave,
-        tolerance: cfg.tolerance,
-    };
+    });
     let (tp, split) = crate::finish::steep_shallow::steep_shallow_toolpath_split_with_cancel(
         m,
         idx,
@@ -678,19 +637,11 @@ pub(crate) fn generate_ramp_finish(
     let cfg = config_guard!(op, RampFinish, "generate_ramp_finish");
     let m = require_mesh(ctx.mesh)?;
     let idx = require_index(ctx.index, "RampFinish")?;
-    let params = crate::finish::ramp_finish::RampFinishParams {
-        max_stepdown: cfg.max_stepdown,
-        slope_from: cfg.slope_from,
-        slope_to: cfg.slope_to,
-        direction: cfg.direction,
-        order_bottom_up: cfg.order_bottom_up,
+    let params = cfg.params(OpMotion {
         feed_rate: op.feed_rate(),
         plunge_rate: op.plunge_rate(),
         safe_z: ctx.heights.retract_z,
-        sampling: cfg.sampling,
-        stock_to_leave: cfg.stock_to_leave,
-        tolerance: cfg.tolerance,
-    };
+    });
     let (tp, annotations, reach_clamp) =
         crate::finish::ramp_finish::ramp_finish_toolpath_structured_annotated_with_cancel(
             m,
@@ -731,14 +682,11 @@ pub(crate) fn generate_spiral_finish(
     let cfg = config_guard!(op, SpiralFinish, "generate_spiral_finish");
     let m = require_mesh(ctx.mesh)?;
     let idx = require_index(ctx.index, "SpiralFinish")?;
-    let params = crate::finish::spiral_finish::SpiralFinishParams {
-        stepover: cfg.stepover,
-        direction: cfg.direction,
+    let params = cfg.params(OpMotion {
         feed_rate: op.feed_rate(),
         plunge_rate: op.plunge_rate(),
         safe_z: ctx.heights.retract_z,
-        stock_to_leave: cfg.stock_to_leave,
-    };
+    });
     let (tp, annotations) =
         crate::finish::spiral_finish::spiral_finish_toolpath_structured_annotated_with_cancel(
             m,
@@ -794,14 +742,11 @@ pub(crate) fn generate_radial_finish(
     }
     let m = require_mesh(ctx.mesh)?;
     let idx = require_index(ctx.index, "RadialFinish")?;
-    let params = crate::finish::radial_finish::RadialFinishParams {
-        angular_step: cfg.angular_step,
-        point_spacing: cfg.point_spacing,
+    let params = cfg.params(OpMotion {
         feed_rate: op.feed_rate(),
         plunge_rate: op.plunge_rate(),
         safe_z: ctx.heights.retract_z,
-        stock_to_leave: cfg.stock_to_leave,
-    };
+    });
     let tp = crate::finish::radial_finish::radial_finish_toolpath_with_cancel(
         m,
         idx,
@@ -827,14 +772,11 @@ pub(crate) fn generate_horizontal_finish(
     let cfg = config_guard!(op, HorizontalFinish, "generate_horizontal_finish");
     let m = require_mesh(ctx.mesh)?;
     let idx = require_index(ctx.index, "HorizontalFinish")?;
-    let params = crate::finish::horizontal_finish::HorizontalFinishParams {
-        angle_threshold: cfg.angle_threshold,
-        stepover: cfg.stepover,
+    let params = cfg.params(OpMotion {
         feed_rate: op.feed_rate(),
         plunge_rate: op.plunge_rate(),
         safe_z: ctx.heights.retract_z,
-        stock_to_leave: cfg.stock_to_leave,
-    };
+    });
     let tp = crate::finish::horizontal_finish::horizontal_finish_toolpath_with_cancel(
         m,
         idx,

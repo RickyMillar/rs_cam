@@ -6,6 +6,7 @@
 use std::sync::atomic::Ordering;
 
 use crate::compute::catalog::{OperationConfig, OperationType};
+use crate::compute::operation_configs::OpMotion;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tool::{MillingCutter, ToolDefinition};
 use crate::toolpath::Toolpath;
@@ -182,22 +183,14 @@ pub(crate) fn generate_scallop(
     }
     let m = require_mesh(ctx.mesh)?;
     let idx = require_index(ctx.index, "Scallop")?;
-    let params = crate::finish::scallop::ScallopParams {
-        scallop_height: cfg.scallop_height,
-        tolerance: cfg.tolerance,
-        direction: cfg.direction,
-        continuous: cfg.continuous,
-        slope_from: cfg.slope_from,
-        slope_to: cfg.slope_to,
-        feed_rate: op.feed_rate(),
-        plunge_rate: op.plunge_rate(),
-        safe_z: ctx.heights.retract_z,
-        stock_to_leave: cfg.stock_to_leave,
-        // A/M7: the standalone all-over pass is where the unconditional
-        // ring retract actually costs — nothing above it relinks.
-        intra_pass_hookup_mm: cfg.intra_pass_hookup_mm,
-        link_kinematics: ctx.link_kinematics.clone(),
-    };
+    let params = cfg.params(
+        OpMotion {
+            feed_rate: op.feed_rate(),
+            plunge_rate: op.plunge_rate(),
+            safe_z: ctx.heights.retract_z,
+        },
+        ctx.link_kinematics.clone(),
+    );
     let (tp, annotations, scallop_report) = if cfg.iso_field {
         // M8 iso-field rings — per-point spacing, cosine slope law,
         // completion by construction. See the wrapper's doc for evidence.
