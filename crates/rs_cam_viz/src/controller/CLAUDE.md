@@ -10,8 +10,9 @@ result. The entry point is `../controller.rs`.
   simulation, planner, undo.
 - `generate_all.rs` — `generate_all` as a fixpoint over the rest-stock chain.
 - `io.rs` — project open, save and import at the controller level.
-- `tests.rs`, `workflow_tests.rs`, `results_parity_tests.rs` and the named
-  `*_g_*.rs` sentries — the controller test suites.
+- `tests/` — the controller test suites, one child module per theme;
+  `tests/mod.rs` holds the fixtures they share. `workflow_tests.rs`,
+  `results_parity_tests.rs` and the named `*_g_*.rs` sentries sit beside it.
 
 ## Invariants
 

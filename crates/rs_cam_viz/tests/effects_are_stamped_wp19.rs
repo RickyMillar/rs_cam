@@ -140,7 +140,12 @@ const MIN_PRODUCERS: usize = 50;
 const MIN_FILES_WALKED: usize = 100;
 
 /// The highest number of files the `#[cfg(test)] mod` resolver may drop.
-const MAX_EXCLUDED_FILES: usize = 20;
+///
+/// The two crates declare nine such modules, and one of them —
+/// `controller::tests` — is a DIRECTORY module with eighteen theme
+/// children since SHL-03. The bar catches a resolver that starts
+/// excluding production code, not a new test file.
+const MAX_EXCLUDED_FILES: usize = 40;
 
 /// The lowest number of CLI sites the one path rule must exempt.
 ///
@@ -235,17 +240,34 @@ fn item_line_after_attributes(lines: &[&str], attribute: usize) -> Option<usize>
     None
 }
 
-/// The file a `#[cfg(test)] mod <name>;` declaration names.
-fn declared_module_file(declaring: &Path, name: &str) -> Option<PathBuf> {
-    let stem = declaring.file_stem()?.to_str()?;
-    let parent = declaring.parent()?;
+/// The files a `#[cfg(test)] mod <name>;` declaration names.
+///
+/// A one-file module names one file. A DIRECTORY module — `<name>/mod.rs`
+/// beside its children — names its whole subtree: `controller/tests.rs`
+/// became `controller/tests/` with eighteen theme children on 2026-09-18
+/// (SHL-03), and a resolver that read only the one-file form would have
+/// put all eighteen back into the production scan.
+fn declared_module_files(declaring: &Path, name: &str) -> Vec<PathBuf> {
+    let Some(stem) = declaring.file_stem().and_then(|s| s.to_str()) else {
+        return Vec::new();
+    };
+    let Some(parent) = declaring.parent() else {
+        return Vec::new();
+    };
     let dir = if stem == "mod" || stem == "lib" {
         parent.to_path_buf()
     } else {
         parent.join(stem)
     };
     let file = dir.join(format!("{name}.rs"));
-    file.is_file().then_some(file)
+    if file.is_file() {
+        return vec![file];
+    }
+    let module_dir = dir.join(name);
+    if module_dir.join("mod.rs").is_file() {
+        return collect_rs(&module_dir);
+    }
+    Vec::new()
 }
 
 /// Every file a `#[cfg(test)] mod <name>;` declaration excludes.
@@ -268,10 +290,7 @@ fn cfg_test_module_files(sources: &[PathBuf]) -> BTreeSet<PathBuf> {
             let Some(name) = rest.strip_suffix(';') else {
                 continue;
             };
-            let Some(file) = declared_module_file(path, name) else {
-                continue;
-            };
-            excluded.insert(file);
+            excluded.extend(declared_module_files(path, name));
         }
     }
     guard_excluded_files(&excluded);
@@ -290,10 +309,13 @@ fn guard_excluded_files(excluded: &BTreeSet<PathBuf>) {
     );
     for path in excluded {
         let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+        // `mod` is allowed: a DIRECTORY test module's own root is
+        // `<name>/mod.rs`, and excluding it is the point. A crate root
+        // never is.
         assert!(
-            !matches!(stem, "lib" | "main" | "mod"),
-            "the resolver excluded {}, which is a crate or module root. \
-             A root is never declared under `#[cfg(test)]`.",
+            !matches!(stem, "lib" | "main"),
+            "the resolver excluded {}, which is a crate root. A crate root \
+             is never declared under `#[cfg(test)]`.",
             path.display()
         );
     }

@@ -146,7 +146,10 @@ const MCP_SOURCES: &[&str] = &[
     "src/app/mcp/view.rs",
     "src/mcp_bridge.rs",
     "src/mcp_server.rs",
-    "src/controller/tests.rs",
+    // A DIRECTORY module since SHL-03: every theme child under it
+    // is a fixture file too, so the entry names the directory and
+    // the skip matches by prefix.
+    "src/controller/tests",
     "src/controller/workflow_tests.rs",
     "src/controller/results_parity_tests.rs",
     "src/controller/holder_clearance_staleness_g_holderstale.rs",
@@ -235,7 +238,7 @@ fn gui_source_text() -> String {
     let mut kept = 0_usize;
     let text = viz_sources()
         .into_iter()
-        .filter(|p| !skip.contains(p))
+        .filter(|p| !skip.iter().any(|s| p == s || p.starts_with(s)))
         .inspect(|_| kept += 1)
         .map(|p| {
             without_inline_test_modules(&strip_comments(
