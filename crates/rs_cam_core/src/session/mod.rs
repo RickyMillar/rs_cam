@@ -1183,7 +1183,13 @@ impl Default for SimulationOptions {
 }
 
 /// Per-toolpath diagnostic summary.
-#[derive(Debug, Clone)]
+///
+/// The derive IS the wire contract (SES-01): every field serialises under
+/// its own identifier, in declaration order, with `null` for a `None`.
+/// Add a field and it reaches the MCP and CLI wire; a hand-written impl
+/// used to drop it in silence. `tests/diagnostics_json_keys_ses01.rs`
+/// pins the bytes.
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct ToolpathDiagnostic {
     pub toolpath_id: ToolpathId,
     pub name: String,
@@ -1314,7 +1320,7 @@ impl VerdictKind {
 /// Backing evidence for a verdict — the move / Z that triggered the call.
 /// Optional because some verdicts (e.g. holder collision summed across a
 /// project) don't have a single representative move.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct VerdictEvidence {
     pub move_index: Option<usize>,
     pub z_value: Option<f64>,
@@ -1410,7 +1416,7 @@ impl<'a> ProjectEvidence<'a> {
 /// 2026-09-17) deleted from the struct and from the wire. Read
 /// [`ProjectDiagnostics::verdicts`]. The old single line is
 /// `verdicts[0].headline`, or `"OK"` when the list is empty.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct Verdict {
     pub severity: VerdictSeverity,
     pub kind: VerdictKind,
@@ -1425,7 +1431,9 @@ pub struct Verdict {
 }
 
 /// Project-level diagnostics summary.
-#[derive(Debug, Clone)]
+///
+/// The derive IS the wire contract — see [`ToolpathDiagnostic`].
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct ProjectDiagnostics {
     pub total_runtime_s: f64,
     /// Air-cut time ÷ **total runtime (cutting + rapids)** × 100.
@@ -2122,47 +2130,13 @@ impl ProjectSession {
     }
 }
 
-// ── Serde for ProjectDiagnostics (for JSON export) ─────────────────────
-
-impl serde::Serialize for ToolpathDiagnostic {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        use serde::ser::SerializeStruct;
-        let mut s = serializer.serialize_struct("ToolpathDiagnostic", 18)?;
-        s.serialize_field("toolpath_id", &self.toolpath_id)?;
-        s.serialize_field("name", &self.name)?;
-        s.serialize_field("operation_type", &self.operation_type)?;
-        s.serialize_field("op_kind", &self.op_kind)?;
-        s.serialize_field("tool_name", &self.tool_name)?;
-        s.serialize_field("move_count", &self.move_count)?;
-        s.serialize_field("cutting_distance_mm", &self.cutting_distance_mm)?;
-        s.serialize_field("rapid_distance_mm", &self.rapid_distance_mm)?;
-        // `null` = the check failed or never ran. Consumers must not
-        // coerce it to 0 (CMP-14).
-        s.serialize_field("collision_count", &self.collision_count)?;
-        s.serialize_field("rapid_collision_count", &self.rapid_collision_count)?;
-        // `null` = not measured (A/M9). Consumers must not coerce it to 0.
-        s.serialize_field("truncated_core_mm2", &self.truncated_core_mm2)?;
-        // B8: the untouched/standing split narration has carried since wave
-        // 15. `null` = not measured on both. `reached_uncut_estimate_mm2` is
-        // an ESTIMATOR of a DIFFERENT quantity — never sum it with the core.
-        s.serialize_field("untouched_material_mm2", &self.untouched_material_mm2)?;
-        s.serialize_field(
-            "reached_uncut_estimate_mm2",
-            &self.reached_uncut_estimate_mm2,
-        )?;
-        // Wave D1. Same contract: `null` = not measured / nothing found.
-        // Consumers must not coerce any of these three to 0.
-        s.serialize_field("unmachined_band_area_mm2", &self.unmachined_band_area_mm2)?;
-        s.serialize_field("tip_float_points", &self.tip_float_points)?;
-        s.serialize_field("max_tip_float_mm", &self.max_tip_float_mm)?;
-        // C2 follow-up 2. The whole struct or `null` — never flattened, and
-        // never coerced to a zeroed object: `null` is "the decomposition did
-        // not run", which is a different statement from "it ran and fell
-        // back nowhere".
-        s.serialize_field("monotone_cells", &self.monotone_cells)?;
-        s.end()
-    }
-}
+// ── Serde for the verdict enums ────────────────────────────────────────
+//
+// SES-01: the four diagnostic STRUCTS derive `Serialize`; their
+// hand-written impls wrote exactly what the derive writes and are gone.
+// These two enums stay hand-written. They are not the derive's output:
+// each writes a snake_case string tag, and `VerdictKind` reads `as_str`,
+// the one spelling every surface shares.
 
 impl serde::Serialize for VerdictSeverity {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -2178,58 +2152,6 @@ impl serde::Serialize for VerdictSeverity {
 impl serde::Serialize for VerdictKind {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(self.as_str())
-    }
-}
-
-impl serde::Serialize for VerdictEvidence {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        use serde::ser::SerializeStruct;
-        let mut s = serializer.serialize_struct("VerdictEvidence", 3)?;
-        s.serialize_field("move_index", &self.move_index)?;
-        s.serialize_field("z_value", &self.z_value)?;
-        s.serialize_field("count", &self.count)?;
-        s.end()
-    }
-}
-
-impl serde::Serialize for Verdict {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        use serde::ser::SerializeStruct;
-        let mut s = serializer.serialize_struct("Verdict", 6)?;
-        s.serialize_field("severity", &self.severity)?;
-        s.serialize_field("kind", &self.kind)?;
-        s.serialize_field("headline", &self.headline)?;
-        s.serialize_field("offender_toolpath_ids", &self.offender_toolpath_ids)?;
-        s.serialize_field("fix_hint", &self.fix_hint)?;
-        s.serialize_field("evidence", &self.evidence)?;
-        s.end()
-    }
-}
-
-impl serde::Serialize for ProjectDiagnostics {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        use serde::ser::SerializeStruct;
-        let mut s = serializer.serialize_struct("ProjectDiagnostics", 9)?;
-        s.serialize_field("total_runtime_s", &self.total_runtime_s)?;
-        // LH-1: each key names its own denominator, so a reader never
-        // has to guess. L10 retired the unnamed `air_cut_percentage`.
-        s.serialize_field(
-            "air_cut_pct_of_total_runtime",
-            &self.air_cut_pct_of_total_runtime,
-        )?;
-        s.serialize_field(
-            "air_cut_pct_of_cutting_time",
-            &self.air_cut_pct_of_cutting_time,
-        )?;
-        s.serialize_field("average_engagement", &self.average_engagement)?;
-        s.serialize_field("collision_count", &self.collision_count)?;
-        // CMP-14: the denominator for `collision_count`. Non-zero means
-        // that sum covers only part of the project.
-        s.serialize_field("collision_checks_failed", &self.collision_checks_failed)?;
-        s.serialize_field("rapid_collision_count", &self.rapid_collision_count)?;
-        s.serialize_field("per_toolpath", &self.per_toolpath)?;
-        s.serialize_field("verdicts", &self.verdicts)?;
-        s.end()
     }
 }
 
