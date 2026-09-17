@@ -517,7 +517,7 @@ pub enum Material {
     },
     /// Parametric solid-wood variant — `(janka_lbf, label, source_id)`.
     /// Lets the GUI surface the broader Wood Database + FPL Ch.5 species
-    /// libraries (~148 species in `WOOD_SPECIES_LIBRARY`) without
+    /// libraries (~148 species in `wood_species_library()`) without
     /// exploding the [`WoodSpecies`] enum to 150+ pattern-match arms.
     /// Added Phase E (completion plan 2026-05-31).
     ///
@@ -730,7 +730,7 @@ impl Default for Material {
 type MaterialPickerBuckets = Vec<(MaterialCategory, Vec<(String, Material)>)>;
 
 /// Process-lifetime cache for [`Material::materials_by_category`]. The
-/// merge of [`Material::catalog`] + [`wood_species_library::WOOD_SPECIES_LIBRARY`]
+/// merge of [`Material::catalog`] + [`wood_species_library::wood_species_library`]
 /// is fully static — recomputing it per GUI frame was the dominant
 /// cost on the setup page (~148 species × dedup walk × ~30 String
 /// allocations, all of which the GUI doesn't need until the menu is
@@ -1594,7 +1594,7 @@ impl Material {
 
     /// Selectable materials grouped by [`MaterialCategory`] for the
     /// hierarchical GUI picker. Merges the curated [`Material::catalog`]
-    /// entries with the parametric [`wood_species_library::WOOD_SPECIES_LIBRARY`]
+    /// entries with the parametric [`wood_species_library::wood_species_library`]
     /// so the picker has one entry point for everything.
     ///
     /// Dedup policy: when a library species shares a Janka anchor
@@ -1616,7 +1616,7 @@ impl Material {
     /// on first call and cached for the process lifetime via
     /// [`MATERIALS_BY_CATEGORY`]. The catalog + library are both static
     /// data — the result never changes — so we don't re-walk
-    /// `WOOD_SPECIES_LIBRARY` (~148 entries) per frame. Before the
+    /// `wood_species_library()` (~148 entries) per frame. Before the
     /// cache landed the GUI's setup page rebuilt this every frame in
     /// the hierarchical material picker; after Phase E added the
     /// library, that re-allocation became visible as setup-page lag.
@@ -1625,7 +1625,7 @@ impl Material {
     }
 
     fn build_materials_by_category() -> Vec<(MaterialCategory, Vec<(String, Material)>)> {
-        use wood_species_library::WOOD_SPECIES_LIBRARY;
+        use wood_species_library::wood_species_library;
 
         // Internal builder type keeps the sort_key alongside the entry
         // until the final strip. Aliased to keep clippy's
@@ -1674,7 +1674,7 @@ impl Material {
             })
             .collect();
 
-        for entry in WOOD_SPECIES_LIBRARY {
+        for entry in wood_species_library() {
             let already_curated = curated_jankas
                 .iter()
                 .any(|j| (j - entry.janka_lbf).abs() <= 2.0);
@@ -1690,8 +1690,8 @@ impl Material {
             let label = format!("{}  ({} lbf)", entry.display_name, entry.janka_lbf as i64);
             let mat = Material::SolidWoodByJanka {
                 janka_lbf: entry.janka_lbf,
-                label: entry.display_name.to_owned(),
-                source_id: entry.source_id.to_owned(),
+                label: entry.display_name.clone(),
+                source_id: entry.source_id.clone(),
             };
             push(&mut groups, label, mat, Some(entry.janka_lbf));
         }
@@ -1784,7 +1784,7 @@ impl Material {
             // janka_lbf so a from_key roundtrip can reconstruct the
             // variant (the per-species library is consulted at parse
             // time; if the source_id no longer exists in
-            // `WOOD_SPECIES_LIBRARY` we still recover label + janka
+            // `wood_species_library()` we still recover label + janka
             // from the key). Format:
             // `solid_wood_by_janka:{source_id}:{janka_lbf}:{label}`
             // The trailing label may contain ASCII punctuation

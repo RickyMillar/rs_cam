@@ -30,7 +30,7 @@ pub fn draw(
     // (flat list of variants) doesn't leak into the UX. Drills
     // Wood ▶ → Softwood/Hardwood ▶ → species; flat leaves for
     // Plywood / Sheet / Plastic / Aluminum / Foam. Wood category
-    // merges curated WoodSpecies + WOOD_SPECIES_LIBRARY (132
+    // merges curated WoodSpecies + wood_species_library() (132
     // additional species, FPL Ch.5 + Wood Database).
     ui.add_space(4.0);
     if draw_hierarchical_material_picker(ui, stock) {
@@ -496,7 +496,7 @@ fn mirror_pin(pin: &AlignmentPin, axis: FlipAxis, stock_x: f64, stock_y: f64) ->
 /// classes together. UX complaint from the first bench smoke.
 ///
 /// Backed by [`rs_cam_core::material::Material::materials_by_category`],
-/// which merges the curated catalog with `WOOD_SPECIES_LIBRARY` and
+/// which merges the curated catalog with `wood_species_library()` and
 /// dedups by Janka anchor. Per-leaf filter for the long Softwood /
 /// Hardwood lists (each has ~60+ species after dedup).
 ///

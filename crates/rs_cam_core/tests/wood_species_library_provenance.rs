@@ -1,6 +1,6 @@
 //! Wood species library provenance gate.
 //!
-//! Pins every `WOOD_SPECIES_LIBRARY` entry's `source_id` to an entry
+//! Pins every `wood_species_library()` entry's `source_id` to an entry
 //! in `crates/rs_cam_core/data/vendor_lut/source_manifest.json` so a
 //! library row that cites a missing/typo'd source can't slip in
 //! silently. Phase E (completion plan, 2026-05-31).
@@ -10,7 +10,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use rs_cam_core::material::wood_species_library::{WOOD_SPECIES_LIBRARY, find_by_display_name};
+use rs_cam_core::material::wood_species_library::{find_by_display_name, wood_species_library};
 
 fn manifest_path() -> PathBuf {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
@@ -41,16 +41,16 @@ fn manifest_source_ids() -> HashSet<String> {
 fn every_library_source_id_exists_in_manifest() {
     let manifest_ids = manifest_source_ids();
     let mut missing = Vec::new();
-    for entry in WOOD_SPECIES_LIBRARY {
-        if !manifest_ids.contains(entry.source_id) {
-            missing.push((entry.display_name, entry.source_id));
+    for entry in wood_species_library() {
+        if !manifest_ids.contains(entry.source_id.as_str()) {
+            missing.push((&entry.display_name, &entry.source_id));
         }
     }
     assert!(
         missing.is_empty(),
-        "WOOD_SPECIES_LIBRARY entries reference source_ids not present in \
+        "wood_species_library() entries reference source_ids not present in \
          source_manifest.json: {missing:?}. Add the missing manifest entries \
-         or fix the typo in wood_species_library.rs."
+         or fix the typo in data/wood_species.toml."
     );
 }
 
@@ -62,10 +62,10 @@ fn library_has_substantial_coverage() {
     // (>=100) so a curated trim — e.g. dropping suspect Wood Database
     // entries — doesn't fire this test, but a structural breakage does.
     assert!(
-        WOOD_SPECIES_LIBRARY.len() >= 100,
-        "WOOD_SPECIES_LIBRARY shrank to {} entries (expected >=100). \
+        wood_species_library().len() >= 100,
+        "wood_species_library() shrank to {} entries (expected >=100). \
          Check phaseE_2026-05-31.md for the expected size.",
-        WOOD_SPECIES_LIBRARY.len()
+        wood_species_library().len()
     );
 }
 
@@ -156,5 +156,60 @@ fn a_generic_species_is_a_band_midpoint_not_a_row() {
         WoodSpecies::WhiteOak.kc_provenance(),
         KcProvenance::FplTableRow,
         "White oak is the Quercus alba row of FPL Table 5-3a"
+    );
+}
+
+// ── The library is data, not code (EDG-02, 2026-09-17) ──────────────────
+//
+// The library moved out of an 841-line Rust const array into
+// `data/wood_species.toml`, embedded with `include_str!`. This case pins
+// the whole library to one hash so the move proves byte-identical: the
+// hash below was captured from the const array before the move, and the
+// parsed file must reproduce it exactly.
+//
+// The canonical form is row order, then per row the display name, the
+// scientific name, the RAW IEEE-754 BITS of `janka_lbf` and the source id.
+// Raw bits, not a decimal rendering: a TOML parse that lands one ULP away
+// from the Rust literal must fail here, which is the whole promise.
+
+/// FNV-1a 64. Spelled out because `DefaultHasher` is not stable across
+/// toolchains and a pinned hash must outlive a compiler upgrade.
+fn fnv1a64(bytes: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
+fn library_canonical_bytes() -> Vec<u8> {
+    let mut out = String::new();
+    for entry in wood_species_library() {
+        out.push_str(&entry.display_name);
+        out.push('\u{1f}');
+        out.push_str(entry.scientific_name.as_deref().unwrap_or(""));
+        out.push('\u{1f}');
+        out.push_str(&entry.janka_lbf.to_bits().to_string());
+        out.push('\u{1f}');
+        out.push_str(&entry.source_id);
+        out.push('\u{1e}');
+    }
+    out.into_bytes()
+}
+
+/// Captured 2026-09-17 from the `pub const WOOD_SPECIES_LIBRARY` Rust
+/// array, before EDG-02 moved the rows into `data/wood_species.toml`.
+const LIBRARY_CANONICAL_HASH: u64 = 0x4455_4d89_a8f2_f8ac;
+
+#[test]
+fn the_library_is_byte_identical_to_the_const_it_replaced() {
+    let got = fnv1a64(&library_canonical_bytes());
+    assert_eq!(
+        got, LIBRARY_CANONICAL_HASH,
+        "the wood species library changed: 132 rows of \
+         display_name/scientific_name/janka_lbf bits/source_id hash to \
+         {got:#018x}, not {LIBRARY_CANONICAL_HASH:#018x}. A deliberate data \
+         edit re-pins this constant; an accidental one does not."
     );
 }
