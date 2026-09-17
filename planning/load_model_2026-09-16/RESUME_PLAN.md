@@ -30,6 +30,8 @@ Shipped and verified:
 | `59822cab` | **T-4 — a refused deflection prediction is a type, not a zero** |
 | `d47a04d8` | **T-18 — every post-Step-9 feed lift caps on the COMMANDED cutting ceiling** |
 | `6a9330dc` | **T-9 — a clamped feed ships at or below its ceiling; the export validator gets the travel rate** |
+| `8a04754a` | **T-15 — pass 10 re-checks power at the operating point that ships** |
+| `6bca9bc8` | **S1 — gantry push is a visibly absent row (`CriterionKind::GantryPush`)** |
 
 T-17 verification: core lib 2503/0, sentry 5/5, `literature_matrix` 21/21,
 `literature_parity` 24/24, clippy clean, fmt clean.
@@ -270,7 +272,14 @@ hold the session, so the profile is reachable.
 
 ## 7. THEN: the limits surface — the original request
 
-**Implementation plan written 2026-09-18: `SURFACE_IMPL.md`.** Core half
+**Implementation plan written 2026-09-18: `SURFACE_IMPL.md`.** S1 landed at
+`6bca9bc8`; S2 in progress. Two findings from S1 that S4 must carry: (1)
+`CriterionStatus` is a borrowed DERIVED view and `mcp_get_tool_load_report`
+serialises the typed verdict struct, so the criteria list — and any bound or
+provenance on it — is not on the MCP wire until an owned row type exists;
+(2) "known absence" is keyed on the KIND (`is_unmodeled_by_design`), not on
+`NotImplemented`, because two shipped gates use that reason for faults an
+operator can fix. Core half
 (S2 power at the shipped operating point → S1 gantry push row → S4 bound and
 typed `BoundSource` on `CriterionStatus`, with the export gate filtering on
 `gates_export()` → S3 depth of cut post-sim, non-gating) may start after

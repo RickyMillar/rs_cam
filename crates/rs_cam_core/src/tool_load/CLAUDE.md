@@ -29,11 +29,10 @@ Independent gates over a simulated cut. The entry point is
   diameter; do not exonerate a tapered drill on these gates alone.
 
 ## Sentries
-
-- `cargo test -p rs_cam_core -q --test gate_population_vacuity_xvac`
-- `cargo test -p rs_cam_core -q --test chipload_boundary_g_chip_ulp`
-- `cargo test -p rs_cam_core -q --test predicted_feed_gates_f035`
-- `cargo test -p rs_cam_core -q --test drill_evidence_wording_d3`
+Run one with `cargo test -p rs_cam_core -q --test <name>`: `gate_population_vacuity_xvac`,
+`chipload_boundary_g_chip_ulp`, `predicted_feed_gates_f035`, `drill_evidence_wording_d3`,
+`an_absent_limit_is_visibly_absent_g_gantry` (the gantry-push row is `Unmodeled`, never a reading, and
+never a prompt).
 
 ## Do not
 
