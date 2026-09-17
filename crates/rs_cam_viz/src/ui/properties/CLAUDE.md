@@ -5,7 +5,11 @@ post and one operation. The entry point is `ui::properties::mod`.
 
 ## Files
 
-- `mod.rs` — the tab frame and the dispatch.
+- `mod.rs` — `draw`, `PanelEdit`, `ToolpathTab`, the snapshot API; children
+  beside it: `panel_apply.rs` (apply/flush, the command door),
+  `model_sim_panels.rs`, `machine_panel.rs`, `feeds_speeds.rs` (Feeds tab,
+  LUT viewer), `tab_badges.rs`, `linking_dressup.rs` (+ `dv` grid helpers),
+  `toolpath_panel.rs` (`draw_toolpath_panel`, one function), `tests.rs`.
 - `operations/` — one editor per operation family: 2D boundary, drilling,
   engraving, finishing, 3D surface, project curve.
   Its children beside `mod.rs`: `shape_diagrams.rs` (the thirteen parameter
