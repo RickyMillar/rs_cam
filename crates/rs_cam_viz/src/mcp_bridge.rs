@@ -14,6 +14,7 @@ pub use rs_cam_mcp::response::CutTraceCaps;
 use rs_cam_core::session::CommandId;
 use rs_cam_mcp::server::json_str;
 
+use crate::state::Workspace;
 use crate::state::toolpath::ToolpathId;
 use crate::ui_command::{UiCommand, UiQuery};
 
@@ -629,103 +630,164 @@ pub enum McpRequestKind {
     UiQuery(UiQuery),
 }
 
-/// One MCP mutation, as the wire sent it (WP4).
+/// Declare the MCP mutation surface from one table.
 ///
-/// Every variant names a `Command` row in
-/// [`rs_cam_core::session::Command`] and carries the `rs_cam_mcp`
-/// parameter struct the tool declared. The GUI thread turns the
-/// parameter struct into the row's core `*Args` payload and applies it
-/// through [`rs_cam_core::session::ProjectSession::apply`], the one
-/// mutation door.
+/// **SHL-02.** Adding one MCP command used to touch nine hand-written
+/// sites in five files. Four of them were this enum, its `CommandId`
+/// map, the GUI's workspace switch and the completeness sentry's own
+/// list of every variant — four restatements of one fact. They are one
+/// table row now, and the enum cannot gain a variant without one,
+/// because the enum IS the table.
 ///
-/// **Why the wire struct and not the core payload.** Twenty of these
-/// conversions read the session — the heights patch reads the current
-/// heights, the stock patch reads the current stock, the spindle policy
-/// reads the current post block, the library rows read a catalog, the
-/// import reads a file — and the MCP server thread holds no session. A
-/// conversion on that thread would also report a refusal in a different
-/// ORDER from the one the operator reads today, because every handler
-/// validates the index before it parses the value. So the wire struct
-/// crosses the channel and the conversion runs beside the session, in
-/// `RsCamApp::core_command_for`.
+/// Each row reads: the variant, the wire parameter struct it carries,
+/// the registry row it runs, and the workspace the GUI shows before it
+/// runs. `None` means the GUI stays where it is.
 ///
-/// Keeping the `rs_cam_mcp` structs where they are is also what holds the
-/// WP2a wire snapshot still: a schema title is the struct's own name.
-pub enum CoreRequest {
-    AddAlignmentPin(rs_cam_mcp::server::AddAlignmentPinParam),
-    RemoveAlignmentPin(rs_cam_mcp::server::RemoveAlignmentPinParam),
-    /// Row `AddModel`. The wire name is `import_model`: the surface reads
-    /// the file, and core adopts the geometry that import produced.
-    ImportModel(rs_cam_mcp::server::ImportModelParam),
-    AddSetup(rs_cam_mcp::server::AddSetupParam),
-    SetSetupFace(rs_cam_mcp::server::SetSetupFaceParam),
-    SetSetupRotation(rs_cam_mcp::server::SetSetupRotationParam),
-    MoveToolpathToSetup(rs_cam_mcp::server::MoveToolpathToSetupParam),
-    SaveProject(rs_cam_mcp::server::SaveProjectParam),
-    SetToolpathParam(rs_cam_mcp::server::SetToolpathParamInput),
-    SetToolParam(rs_cam_mcp::server::SetToolParamInput),
-    SetToolpathTool(rs_cam_mcp::server::SetToolpathToolParam),
-    SetToolpathModel(rs_cam_mcp::server::SetToolpathModelParam),
-    SetToolpathHeights(rs_cam_mcp::server::SetToolpathHeightsParam),
-    AddToolpath(rs_cam_mcp::server::AddToolpathParam),
-    RemoveToolpath(rs_cam_mcp::server::RemoveToolpathParam),
-    AddTool(rs_cam_mcp::server::AddToolParam),
-    AddToolFromLibrary(rs_cam_mcp::server::AddToolFromLibraryParam),
-    RemoveTool(rs_cam_mcp::server::RemoveToolParam),
-    SetStockConfig(rs_cam_mcp::server::SetStockConfigParam),
-    SetStockSource(rs_cam_mcp::server::SetStockSourceParam),
-    SetMachineKinematics(rs_cam_mcp::server::SetMachineKinematicsParam),
-    /// Row `ImportMachineSettings`. The GRBL parse stays on this surface.
-    ImportMachineSettings(rs_cam_mcp::server::ImportMachineSettingsParam),
-    /// Row `SetMachine`. The library READ stays on this surface; the
-    /// payload core receives is a whole machine profile.
-    LoadMachineFromLibrary(rs_cam_mcp::server::LoadMachineFromLibraryParam),
-    /// Row `SetPostConfig`. The wire writes one field of the post block.
-    SetSpindleStrategy(rs_cam_mcp::server::SetSpindleStrategyParam),
-    SetBoundaryConfig(rs_cam_mcp::server::SetBoundaryConfigParam),
-    SetRestAnalysisConfig(rs_cam_mcp::server::SetRestAnalysisConfigParam),
-    SetDressupConfig(rs_cam_mcp::server::SetDressupConfigParam),
-    SetDressupField(rs_cam_mcp::server::SetDressupFieldParam),
-    SetToolpathEnabled(rs_cam_mcp::server::SetToolpathEnabledParam),
+/// The four questions that are NOT here — which `Command` to build,
+/// which toast to raise, which reply shape to answer with, and which
+/// refusal sentence to write — stay as exhaustive matches in
+/// `app/mcp/commands.rs`. Each carries a body, not a value, and a
+/// closure column would read worse than the arm it replaced.
+macro_rules! declare_core_requests {
+    (
+        $(#[$enum_meta:meta])*
+        $name:ident {
+            $(
+                $(#[$meta:meta])*
+                $variant:ident($param:ty) => $row:ident, $workspace:expr;
+            )+
+        }
+    ) => {
+        $(#[$enum_meta])*
+        pub enum $name {
+            $(
+                $(#[$meta])*
+                $variant($param),
+            )+
+        }
+
+        impl $name {
+            /// The registry row this request runs.
+            ///
+            /// The describe step matches on this, so a row that loses its
+            /// arm does not compile.
+            pub fn id(&self) -> CommandId {
+                match self {
+                    $( Self::$variant(_) => CommandId::$row, )+
+                }
+            }
+
+            /// The workspace the GUI shows before this request runs.
+            ///
+            /// An MCP mutation moves the operator's view to the surface it
+            /// changes, so a watching human sees the edit land.
+            pub fn workspace_after(&self) -> Option<Workspace> {
+                match self {
+                    $( Self::$variant(_) => $workspace, )+
+                }
+            }
+
+            /// One default-built request per variant, in table order.
+            ///
+            /// The completeness sentry
+            /// (`tests/mcp_core_arm_describes_every_row.rs`) walks this
+            /// instead of a hand-written list. A new row reaches the sentry
+            /// on its own.
+            pub fn all_defaults() -> Vec<Self> {
+                vec![ $( Self::$variant(Default::default()), )+ ]
+            }
+        }
+    };
 }
 
-impl CoreRequest {
-    /// The registry row this request runs.
+declare_core_requests! {
+    /// One MCP mutation, as the wire sent it (WP4).
     ///
-    /// The describe step matches on this, so a row that loses its arm
-    /// does not compile.
-    pub fn id(&self) -> CommandId {
-        match self {
-            Self::AddAlignmentPin(_) => CommandId::AddAlignmentPin,
-            Self::RemoveAlignmentPin(_) => CommandId::RemoveAlignmentPin,
-            Self::ImportModel(_) => CommandId::AddModel,
-            Self::AddSetup(_) => CommandId::AddSetup,
-            Self::SetSetupFace(_) => CommandId::SetSetupFace,
-            Self::SetSetupRotation(_) => CommandId::SetSetupRotation,
-            Self::MoveToolpathToSetup(_) => CommandId::MoveToolpathToSetup,
-            Self::SaveProject(_) => CommandId::SaveProject,
-            Self::SetToolpathParam(_) => CommandId::SetToolpathParam,
-            Self::SetToolParam(_) => CommandId::SetToolParam,
-            Self::SetToolpathTool(_) => CommandId::SetToolpathTool,
-            Self::SetToolpathModel(_) => CommandId::SetToolpathModel,
-            Self::SetToolpathHeights(_) => CommandId::SetToolpathHeights,
-            Self::AddToolpath(_) => CommandId::AddToolpath,
-            Self::RemoveToolpath(_) => CommandId::RemoveToolpath,
-            Self::AddTool(_) => CommandId::AddTool,
-            Self::AddToolFromLibrary(_) => CommandId::AddToolFromLibrary,
-            Self::RemoveTool(_) => CommandId::RemoveTool,
-            Self::SetStockConfig(_) => CommandId::SetStockConfig,
-            Self::SetStockSource(_) => CommandId::SetStockSource,
-            Self::SetMachineKinematics(_) => CommandId::SetMachineKinematics,
-            Self::ImportMachineSettings(_) => CommandId::ImportMachineSettings,
-            Self::LoadMachineFromLibrary(_) => CommandId::SetMachine,
-            Self::SetSpindleStrategy(_) => CommandId::SetPostConfig,
-            Self::SetBoundaryConfig(_) => CommandId::SetBoundaryConfig,
-            Self::SetRestAnalysisConfig(_) => CommandId::SetRestAnalysisConfig,
-            Self::SetDressupConfig(_) => CommandId::SetDressupConfig,
-            Self::SetDressupField(_) => CommandId::SetDressupField,
-            Self::SetToolpathEnabled(_) => CommandId::SetToolpathEnabled,
-        }
+    /// Every variant names a `Command` row in
+    /// [`rs_cam_core::session::Command`] and carries the `rs_cam_mcp`
+    /// parameter struct the tool declared. The GUI thread turns the
+    /// parameter struct into the row's core `*Args` payload and applies it
+    /// through [`rs_cam_core::session::ProjectSession::apply`], the one
+    /// mutation door.
+    ///
+    /// **Why the wire struct and not the core payload.** Twenty of these
+    /// conversions read the session — the heights patch reads the current
+    /// heights, the stock patch reads the current stock, the spindle policy
+    /// reads the current post block, the library rows read a catalog, the
+    /// import reads a file — and the MCP server thread holds no session. A
+    /// conversion on that thread would also report a refusal in a different
+    /// ORDER from the one the operator reads today, because every handler
+    /// validates the index before it parses the value. So the wire struct
+    /// crosses the channel and the conversion runs beside the session, in
+    /// `RsCamApp::core_command_for`.
+    ///
+    /// Keeping the `rs_cam_mcp` structs where they are is also what holds the
+    /// WP2a wire snapshot still: a schema title is the struct's own name.
+    CoreRequest {
+        AddAlignmentPin(rs_cam_mcp::server::AddAlignmentPinParam)
+            => AddAlignmentPin, Some(Workspace::Setup);
+        RemoveAlignmentPin(rs_cam_mcp::server::RemoveAlignmentPinParam)
+            => RemoveAlignmentPin, None;
+        /// Row `AddModel`. The wire name is `import_model`: the surface reads
+        /// the file, and core adopts the geometry that import produced.
+        ImportModel(rs_cam_mcp::server::ImportModelParam)
+            => AddModel, None;
+        AddSetup(rs_cam_mcp::server::AddSetupParam)
+            => AddSetup, None;
+        SetSetupFace(rs_cam_mcp::server::SetSetupFaceParam)
+            => SetSetupFace, Some(Workspace::Setup);
+        SetSetupRotation(rs_cam_mcp::server::SetSetupRotationParam)
+            => SetSetupRotation, Some(Workspace::Setup);
+        MoveToolpathToSetup(rs_cam_mcp::server::MoveToolpathToSetupParam)
+            => MoveToolpathToSetup, None;
+        SaveProject(rs_cam_mcp::server::SaveProjectParam)
+            => SaveProject, None;
+        SetToolpathParam(rs_cam_mcp::server::SetToolpathParamInput)
+            => SetToolpathParam, Some(Workspace::Toolpaths);
+        SetToolParam(rs_cam_mcp::server::SetToolParamInput)
+            => SetToolParam, None;
+        SetToolpathTool(rs_cam_mcp::server::SetToolpathToolParam)
+            => SetToolpathTool, Some(Workspace::Toolpaths);
+        SetToolpathModel(rs_cam_mcp::server::SetToolpathModelParam)
+            => SetToolpathModel, Some(Workspace::Toolpaths);
+        SetToolpathHeights(rs_cam_mcp::server::SetToolpathHeightsParam)
+            => SetToolpathHeights, None;
+        AddToolpath(rs_cam_mcp::server::AddToolpathParam)
+            => AddToolpath, Some(Workspace::Toolpaths);
+        RemoveToolpath(rs_cam_mcp::server::RemoveToolpathParam)
+            => RemoveToolpath, None;
+        AddTool(rs_cam_mcp::server::AddToolParam)
+            => AddTool, None;
+        AddToolFromLibrary(rs_cam_mcp::server::AddToolFromLibraryParam)
+            => AddToolFromLibrary, None;
+        RemoveTool(rs_cam_mcp::server::RemoveToolParam)
+            => RemoveTool, None;
+        SetStockConfig(rs_cam_mcp::server::SetStockConfigParam)
+            => SetStockConfig, Some(Workspace::Setup);
+        SetStockSource(rs_cam_mcp::server::SetStockSourceParam)
+            => SetStockSource, None;
+        SetMachineKinematics(rs_cam_mcp::server::SetMachineKinematicsParam)
+            => SetMachineKinematics, Some(Workspace::Setup);
+        /// Row `ImportMachineSettings`. The GRBL parse stays on this surface.
+        ImportMachineSettings(rs_cam_mcp::server::ImportMachineSettingsParam)
+            => ImportMachineSettings, Some(Workspace::Setup);
+        /// Row `SetMachine`. The library READ stays on this surface; the
+        /// payload core receives is a whole machine profile.
+        LoadMachineFromLibrary(rs_cam_mcp::server::LoadMachineFromLibraryParam)
+            => SetMachine, Some(Workspace::Setup);
+        /// Row `SetPostConfig`. The wire writes one field of the post block.
+        SetSpindleStrategy(rs_cam_mcp::server::SetSpindleStrategyParam)
+            => SetPostConfig, None;
+        SetBoundaryConfig(rs_cam_mcp::server::SetBoundaryConfigParam)
+            => SetBoundaryConfig, None;
+        SetRestAnalysisConfig(rs_cam_mcp::server::SetRestAnalysisConfigParam)
+            => SetRestAnalysisConfig, None;
+        SetDressupConfig(rs_cam_mcp::server::SetDressupConfigParam)
+            => SetDressupConfig, None;
+        SetDressupField(rs_cam_mcp::server::SetDressupFieldParam)
+            => SetDressupField, None;
+        SetToolpathEnabled(rs_cam_mcp::server::SetToolpathEnabledParam)
+            => SetToolpathEnabled, None;
     }
 }
 

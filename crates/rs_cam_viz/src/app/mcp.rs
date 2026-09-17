@@ -1006,6 +1006,9 @@ impl super::RsCamApp {
     /// arm also records an `mcp_highlights` key for the param it changed,
     /// which a rebind has no equivalent of).
     fn select_toolpath_for_mcp(&mut self, index: usize) {
+        // The workspace switch is the caller's: SHL-02 moved it onto the
+        // `declare_core_requests!` table's workspace column, and both
+        // callers of this helper carry `Some(Workspace::Toolpaths)` there.
         let tp_id = self
             .controller
             .state()
@@ -1013,11 +1016,6 @@ impl super::RsCamApp {
             .toolpath_configs()
             .get(index)
             .map(|tc| tc.id);
-        self.controller
-            .events_mut()
-            .push(AppEvent::Ui(UiCommand::SwitchWorkspace(
-                Workspace::Toolpaths,
-            )));
         if let Some(tp_id) = tp_id {
             self.controller.state_mut().selection = Selection::Toolpath(tp_id);
         }

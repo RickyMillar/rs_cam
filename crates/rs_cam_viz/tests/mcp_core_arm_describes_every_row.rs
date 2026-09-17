@@ -34,41 +34,45 @@ const MCP_SRC: &str = include_str!("../src/app/mcp.rs");
 /// One request per row the wire reaches, built from each parameter
 /// struct's own `Default`.
 ///
-/// This table is the non-vacuity guard: a short list would make the rule
-/// below pass because it checked nothing, so the row count is asserted
-/// against the registry rather than against a number typed here.
+/// **SHL-02 (2026-09-18).** This was a hand-written list of all
+/// twenty-nine variants — a fifth file to edit when adding one MCP
+/// command, and the one an engineer forgets last, because forgetting it
+/// makes this file's rules measure LESS rather than fail. It now reads
+/// the `declare_core_requests!` table that generates the enum itself, so
+/// a new row reaches every rule here on its own.
+///
+/// The non-vacuity guard is below: the row count is asserted against the
+/// registry, never against a number typed here.
 fn wire_requests() -> Vec<CoreRequest> {
-    vec![
-        CoreRequest::AddAlignmentPin(Default::default()),
-        CoreRequest::RemoveAlignmentPin(Default::default()),
-        CoreRequest::ImportModel(Default::default()),
-        CoreRequest::AddSetup(Default::default()),
-        CoreRequest::SetSetupFace(Default::default()),
-        CoreRequest::SetSetupRotation(Default::default()),
-        CoreRequest::MoveToolpathToSetup(Default::default()),
-        CoreRequest::SaveProject(Default::default()),
-        CoreRequest::SetToolpathParam(Default::default()),
-        CoreRequest::SetToolParam(Default::default()),
-        CoreRequest::SetToolpathTool(Default::default()),
-        CoreRequest::SetToolpathModel(Default::default()),
-        CoreRequest::SetToolpathHeights(Default::default()),
-        CoreRequest::AddToolpath(Default::default()),
-        CoreRequest::RemoveToolpath(Default::default()),
-        CoreRequest::AddTool(Default::default()),
-        CoreRequest::AddToolFromLibrary(Default::default()),
-        CoreRequest::RemoveTool(Default::default()),
-        CoreRequest::SetStockConfig(Default::default()),
-        CoreRequest::SetStockSource(Default::default()),
-        CoreRequest::SetMachineKinematics(Default::default()),
-        CoreRequest::ImportMachineSettings(Default::default()),
-        CoreRequest::LoadMachineFromLibrary(Default::default()),
-        CoreRequest::SetSpindleStrategy(Default::default()),
-        CoreRequest::SetBoundaryConfig(Default::default()),
-        CoreRequest::SetRestAnalysisConfig(Default::default()),
-        CoreRequest::SetDressupConfig(Default::default()),
-        CoreRequest::SetDressupField(Default::default()),
-        CoreRequest::SetToolpathEnabled(Default::default()),
-    ]
+    CoreRequest::all_defaults()
+}
+
+/// Every variant of the table answers the workspace question.
+///
+/// The column is data, so this reads it rather than proving it. What it
+/// pins is the SHAPE: at least one row moves the view to each workspace
+/// the MCP surface uses, and at least one row leaves it alone. A table
+/// whose column collapsed to one answer would pass every other rule here
+/// and quietly stop moving the operator's view.
+#[test]
+fn the_table_answers_the_workspace_question_for_every_row_shl02() {
+    use rs_cam_viz::state::Workspace;
+
+    let rows = CoreRequest::all_defaults();
+    let answers: Vec<Option<Workspace>> = rows.iter().map(CoreRequest::workspace_after).collect();
+    assert_eq!(
+        answers.len(),
+        rows.len(),
+        "every row answers, because the column is not optional"
+    );
+    for expected in [Some(Workspace::Setup), Some(Workspace::Toolpaths), None] {
+        assert!(
+            answers.contains(&expected),
+            "no table row answers {expected:?}; the workspace column has \
+             collapsed and an MCP mutation no longer moves the view to the \
+             surface it changes"
+        );
+    }
 }
 
 /// Every row the registry says MCP reaches travels in the wrapper, and

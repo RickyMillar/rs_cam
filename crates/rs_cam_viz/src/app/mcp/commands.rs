@@ -57,7 +57,6 @@ use rs_cam_mcp::server::{
 
 use crate::app::RsCamApp;
 use crate::mcp_bridge::{CoreRequest, McpOutcome, mutation_error_json};
-use crate::state::Workspace;
 use crate::state::runtime::GuiState;
 use crate::state::selection::Selection;
 use crate::ui::AppEvent;
@@ -192,39 +191,23 @@ impl RsCamApp {
     /// Runs before the mutation, as every per-row arm did. A refused
     /// request therefore leaves the same view it left before WP4.
     pub(crate) fn mcp_before_core(&mut self, request: &CoreRequest) {
+        // SHL-02: the workspace an MCP mutation moves the view to is a
+        // column of the `declare_core_requests!` table, not an arm here.
+        // The enum is generated from that table, so a new command cannot
+        // reach this function without answering the question.
+        if let Some(workspace) = request.workspace_after() {
+            self.controller
+                .events_mut()
+                .push(AppEvent::Ui(UiCommand::SwitchWorkspace(workspace)));
+        }
+
+        // What is left is the five rows that ALSO highlight a field or
+        // select a row. Each reads the session, so each is a body.
         match request {
-            CoreRequest::AddAlignmentPin(_)
-            | CoreRequest::SetSetupFace(_)
-            | CoreRequest::SetSetupRotation(_)
-            | CoreRequest::SetMachineKinematics(_)
-            | CoreRequest::ImportMachineSettings(_)
-            | CoreRequest::LoadMachineFromLibrary(_) => {
-                self.controller
-                    .events_mut()
-                    .push(AppEvent::Ui(UiCommand::SwitchWorkspace(Workspace::Setup)));
-            }
             CoreRequest::SetStockConfig(_) => {
-                self.controller
-                    .events_mut()
-                    .push(AppEvent::Ui(UiCommand::SwitchWorkspace(Workspace::Setup)));
-                // Record highlight for stock dimensions.
-                let key = "stock_dimensions".to_owned();
-                self.controller
-                    .state_mut()
-                    .gui
-                    .mcp_highlights
-                    .insert(key, std::time::Instant::now());
-            }
-            CoreRequest::AddToolpath(_) => {
-                self.controller
-                    .events_mut()
-                    .push(AppEvent::Ui(UiCommand::SwitchWorkspace(
-                        Workspace::Toolpaths,
-                    )));
+                self.mcp_highlight("stock_dimensions".to_owned());
             }
             CoreRequest::SetToolpathParam(p) => {
-                // Record highlight for the changed parameter and select
-                // the toolpath.
                 let tp_id = self
                     .controller
                     .state()
@@ -232,57 +215,35 @@ impl RsCamApp {
                     .toolpath_configs()
                     .get(p.index)
                     .map(|tc| tc.id);
-                self.controller
-                    .events_mut()
-                    .push(AppEvent::Ui(UiCommand::SwitchWorkspace(
-                        Workspace::Toolpaths,
-                    )));
                 if let Some(tp_id) = tp_id {
-                    let key = format!("toolpath_{tp_id}_{}", p.param);
-                    self.controller
-                        .state_mut()
-                        .gui
-                        .mcp_highlights
-                        .insert(key, std::time::Instant::now());
+                    self.mcp_highlight(format!("toolpath_{tp_id}_{}", p.param));
                     self.controller.state_mut().selection = Selection::Toolpath(tp_id);
                 }
             }
             CoreRequest::SetToolParam(p) => {
-                // Record highlight for the changed parameter and select
-                // the tool. No workspace switch: the tool panel is not a
-                // workspace of its own.
+                // The tool panel is not a workspace of its own, so this
+                // row's table column is `None` and only the selection
+                // moves.
                 let tools = self.controller.state().session.list_tools();
                 let tool_id = tools.get(p.index).map(|t| t.id.0);
                 if let Some(tool_id) = tool_id {
-                    let key = format!("tool_{tool_id}_{}", p.param);
-                    self.controller
-                        .state_mut()
-                        .gui
-                        .mcp_highlights
-                        .insert(key, std::time::Instant::now());
+                    self.mcp_highlight(format!("tool_{tool_id}_{}", p.param));
                     self.controller.state_mut().selection = Selection::Tool(ToolId(tool_id));
                 }
             }
             CoreRequest::SetToolpathTool(p) => self.select_toolpath_for_mcp(p.index),
             CoreRequest::SetToolpathModel(p) => self.select_toolpath_for_mcp(p.index),
-            CoreRequest::RemoveAlignmentPin(_)
-            | CoreRequest::ImportModel(_)
-            | CoreRequest::AddSetup(_)
-            | CoreRequest::MoveToolpathToSetup(_)
-            | CoreRequest::SaveProject(_)
-            | CoreRequest::SetToolpathHeights(_)
-            | CoreRequest::RemoveToolpath(_)
-            | CoreRequest::AddTool(_)
-            | CoreRequest::AddToolFromLibrary(_)
-            | CoreRequest::RemoveTool(_)
-            | CoreRequest::SetStockSource(_)
-            | CoreRequest::SetSpindleStrategy(_)
-            | CoreRequest::SetBoundaryConfig(_)
-            | CoreRequest::SetRestAnalysisConfig(_)
-            | CoreRequest::SetDressupConfig(_)
-            | CoreRequest::SetDressupField(_)
-            | CoreRequest::SetToolpathEnabled(_) => {}
+            _ => {}
         }
+    }
+
+    /// Mark one GUI field as just-changed by MCP, so the panel can flash it.
+    fn mcp_highlight(&mut self, key: String) {
+        self.controller
+            .state_mut()
+            .gui
+            .mcp_highlights
+            .insert(key, std::time::Instant::now());
     }
 }
 
