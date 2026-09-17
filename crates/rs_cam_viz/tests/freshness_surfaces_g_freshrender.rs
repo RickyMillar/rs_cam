@@ -24,7 +24,34 @@
     clippy::indexing_slicing
 )]
 
-const PROPERTIES_SRC: &str = include_str!("../src/ui/properties/mod.rs");
+/// Every `.rs` file directly in `src/ui/properties/`, concatenated in
+/// file-name order.
+///
+/// P4 (2026-09-17) split `properties/mod.rs` into `mod.rs` plus seven panel
+/// children beside it. The header's status match moved into
+/// `toolpath_panel.rs`, and the export-wording scan below is only honest
+/// over the whole inspector, so the reader is the folder. `operations/` is
+/// a sub-folder and is not read; it carries its own sentries.
+fn properties_src() -> String {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/ui/properties");
+    let mut paths: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read_dir {}: {e}", dir.display()))
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|e| e == "rs"))
+        .collect();
+    paths.sort();
+    assert!(!paths.is_empty(), "no source under {}", dir.display());
+    let mut out = String::new();
+    for path in paths {
+        out.push_str(
+            &std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("read {}: {e}", path.display())),
+        );
+        out.push('\n');
+    }
+    out
+}
 const PANEL_SRC: &str = include_str!("../src/ui/toolpath_panel.rs");
 const RENDER_SRC: &str = include_str!("../src/render/mod.rs");
 const VIEWPORT_SRC: &str = include_str!("../src/app/viewport.rs");
@@ -40,10 +67,11 @@ const WORKSPACE_BAR_SRC: &str = include_str!("../src/ui/workspace_bar.rs");
 /// the fields the operator had just changed.
 #[test]
 fn the_inspector_header_reads_the_freshness_state() {
-    let at = PROPERTIES_SRC
+    let src = properties_src();
+    let at = src
         .find("// F2.2 — the same one state the card chip")
         .expect("the header's status match moved");
-    let block = &PROPERTIES_SRC[at..(at + 3000).min(PROPERTIES_SRC.len())];
+    let block = &src[at..(at + 3000).min(src.len())];
 
     assert!(
         block.contains("match freshness {"),
@@ -195,11 +223,12 @@ fn no_freshness_surface_writes_its_own_export_blocking_sentence() {
         "not be export",
     ];
 
+    let inspector = properties_src();
     for (label, src) in [
-        ("toolpath_panel.rs", PANEL_SRC),
+        ("ui/toolpath_panel.rs", PANEL_SRC),
         ("readiness_panel.rs", READINESS_PANEL_SRC),
         ("workspace_bar.rs", WORKSPACE_BAR_SRC),
-        ("properties/mod.rs", PROPERTIES_SRC),
+        ("ui/properties/", inspector.as_str()),
     ] {
         // A surface that calls the shared builder is using the one text by
         // construction; the rule is about surfaces that write their own.

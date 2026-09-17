@@ -7,7 +7,8 @@
     clippy::indexing_slicing
 )]
 
-use super::{ToolpathTab, merge_stateful_gate_rows};
+use super::ToolpathTab;
+use super::tab_badges::merge_stateful_gate_rows;
 
 /// The MCP `set_ui_view` tool documents these tab keys — every
 /// documented key must parse, every tab must be reachable, and
