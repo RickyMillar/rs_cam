@@ -218,7 +218,6 @@ fn wanaka_back_rough_first_and_last_z_layers() {
         entry_style: EntryStyle3d::Plunge,
         fine_stepdown: None,
         detect_flat_areas: false,
-        max_stay_down_dist: None,
         region_ordering: RegionOrdering::Global,
         initial_stock: None,
         clearing_strategy: ClearingStrategy3d::AgentSearch,

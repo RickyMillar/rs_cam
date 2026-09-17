@@ -88,10 +88,33 @@ use super::clearing::{
     waterline_cleanup,
 };
 use super::search::{blend_corners_3d, material_remaining_at_level_diag};
+
 use super::{
     Adaptive3dParams, Adaptive3dRuntimeAnnotation, Adaptive3dRuntimeEvent, ClearingStrategy3d,
     EntryStyle3d, RegionOrdering, ZLevelPlanMetrics,
 };
+
+/// The stay-down link distance this engine uses. There is no dial.
+///
+/// When a pass finishes and the next entry point is within this distance, the
+/// tool stays down and feeds between them (subject to `is_clear_path_3d`);
+/// otherwise it retracts to `safe_z`, rapids, and plunges.
+///
+/// The formula was once just `tool_radius * 6.0`, a magic constant that
+/// under-scaled when the operator chose a coarse stepover, because inter-pass
+/// gaps grow with stepover while the tool radius is fixed. The stepover term
+/// only takes effect when stepover exceeds the tool radius; for a typical
+/// stepover at or below the radius the value is unchanged. See
+/// `planning/adaptive_review_2026-04.md` F-6.
+///
+/// CUT-05: `Adaptive3dParams::max_stay_down_dist` used to sit in front of this
+/// value as an override. Its one production construction site always wrote
+/// `None`, so the override never applied. The live stay-down dial is
+/// `Adaptive3dParams::max_stay_down_distance_mm`, which
+/// `segments_to_toolpath` reads; the two names differed only by a unit suffix.
+fn default_max_link_dist(tool_radius: f64, stepover: f64) -> f64 {
+    (tool_radius * 6.0).max(stepover * 6.0)
+}
 
 /// Peck the descent from `start_z` down to `entry.z` at constant XY.
 /// Each peck steps down by `params.depth_per_pass` and rapid-retracts a
@@ -631,20 +654,7 @@ pub(super) fn adaptive_3d_segments(
 
     let target_frac = target_engagement_fraction(params.stepover, tool_radius);
     let step_len = cell_size * 1.5;
-    // Maximum stay-down link distance. When a pass finishes and the next
-    // entry point is within this distance, the tool stays down and feeds
-    // between them (subject to is_clear_path_3d); otherwise it retracts
-    // to safe_z, rapids, and plunges. The previous formula was just
-    // `tool_radius * 6.0` — a magic constant that under-scaled when the
-    // user chose a coarse stepover, because inter-pass gaps grow with
-    // stepover while the tool radius is fixed. The stepover term below
-    // only takes effect when stepover exceeds tool_radius (i.e. the
-    // operator is choosing an unusually coarse step); for typical
-    // stepover ≤ radius the formula is unchanged. See
-    // planning/adaptive_review_2026-04.md F-6.
-    let max_link_dist = params
-        .max_stay_down_dist
-        .unwrap_or_else(|| (tool_radius * 6.0).max(params.stepover * 6.0));
+    let max_link_dist = default_max_link_dist(tool_radius, params.stepover);
 
     // Bbox margins use the envelope radius (full shank for tapered tools) so
     // the tool body can't overrun the working footprint. Engagement-related
@@ -1790,7 +1800,6 @@ mod tests {
             entry_style: EntryStyle3d::Plunge,
             fine_stepdown: None,
             detect_flat_areas: false,
-            max_stay_down_dist: None,
             region_ordering: RegionOrdering::Global,
             initial_stock: None,
             boundary: None,

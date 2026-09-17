@@ -1515,7 +1515,6 @@ fn default_adaptive3d_params() -> Adaptive3dParams {
         entry_style: rs_cam_core::adaptive3d::EntryStyle3d::Plunge,
         fine_stepdown: None,
         detect_flat_areas: false,
-        max_stay_down_dist: None,
         region_ordering: RegionOrdering::Global,
         initial_stock: None,
         clearing_strategy: ClearingStrategy3d::ContourParallel,

@@ -160,7 +160,6 @@ fn make_params(tool_radius: f64, min_region_cut_length_mm: f64) -> Adaptive3dPar
         entry_style: EntryStyle3d::Plunge,
         fine_stepdown: None,
         detect_flat_areas: false,
-        max_stay_down_dist: None,
         region_ordering: RegionOrdering::Global,
         initial_stock: None,
         clearing_strategy: ClearingStrategy3d::AgentSearch,

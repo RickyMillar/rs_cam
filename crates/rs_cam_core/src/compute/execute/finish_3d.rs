@@ -134,7 +134,6 @@ pub(crate) fn generate_adaptive3d(
             None
         },
         detect_flat_areas: cfg.detect_flat_areas,
-        max_stay_down_dist: None,
         region_ordering,
         initial_stock: ctx.initial_stock.cloned(),
         safe_z: ctx.heights.retract_z,

@@ -134,8 +134,6 @@ pub struct Adaptive3dParams {
     pub fine_stepdown: Option<f64>,
     /// Detect flat areas in the mesh and insert Z levels at shelf heights.
     pub detect_flat_areas: bool,
-    /// Maximum distance to stay down between passes (default: tool_radius * 6).
-    pub max_stay_down_dist: Option<f64>,
     /// Region ordering strategy (default: Global for backward compat).
     pub region_ordering: RegionOrdering,
     /// Pre-machined stock for two-sided machining.

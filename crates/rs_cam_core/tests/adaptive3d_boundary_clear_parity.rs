@@ -126,7 +126,6 @@ fn base_params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
         entry_style: EntryStyle3d::Plunge,
         fine_stepdown: None,
         detect_flat_areas: false,
-        max_stay_down_dist: None,
         region_ordering: RegionOrdering::Global,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
         initial_stock: None,

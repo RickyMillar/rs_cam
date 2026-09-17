@@ -20,6 +20,8 @@ Constant-engagement clearing on a mesh surface. The entry point is
   dead code. Do not propose a deletion of the AgentSearch arm.
 - This engine emits UNTAGGED vertical descents. A guard that reads the intent
   tag alone misses them; see `../dressup/CLAUDE.md`.
+- `max_stay_down_distance_mm` is the ONE stay-down distance dial (CUT-05). The
+  unset case takes `path.rs::default_max_link_dist`. Add no second name.
 
 ## Sentries
 

@@ -532,7 +532,6 @@ fn test_adaptive3d_rapids_lift_before_xy_traverse() {
         entry_style: EntryStyle3d::Plunge,
         fine_stepdown: None,
         detect_flat_areas: false,
-        max_stay_down_dist: None,
         region_ordering: RegionOrdering::Global,
         initial_stock: None,
         clearing_strategy: ClearingStrategy3d::ContourParallel,

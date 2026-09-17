@@ -38,6 +38,15 @@
 //!
 //! The four tests run on synthetic flat-top peak meshes; they're fast
 //! (< 1 s each) and serve as the regression net for F-038b.
+//!
+//! ## One stay-down dial (CUT-05, 2026-09-17)
+//!
+//! `max_stay_down_distance_mm` is the ONLY stay-down distance dial. A second
+//! field, `Adaptive3dParams::max_stay_down_dist`, once sat in front of
+//! `path.rs`'s own default; its one production construction site always wrote
+//! `None`, so no surface could reach it and the default always applied. It is
+//! deleted. Test 3 below drives the default through the surviving dial, which
+//! is what `path.rs` reads.
 
 #![allow(
     clippy::unwrap_used,
@@ -156,7 +165,6 @@ fn make_params(
         entry_style: EntryStyle3d::Plunge,
         fine_stepdown: None,
         detect_flat_areas: false,
-        max_stay_down_dist: None,
         region_ordering: RegionOrdering::Global,
         initial_stock: None,
         clearing_strategy: ClearingStrategy3d::AgentSearch,
