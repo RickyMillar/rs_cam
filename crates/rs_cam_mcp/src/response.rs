@@ -77,6 +77,41 @@ pub(crate) const DEFAULT_MAX_DRILL_SAMPLES: usize = 500;
 /// Nothing here fixed an observed problem; it removes an unbounded array.
 pub const DEFAULT_MAX_TOP_LEVEL_SPANS: usize = 200;
 
+/// Default cap on `inspect_spans`' detail-mode `spans` array (CLI-04).
+///
+/// 50, which is the number `app/mcp/diagnostics.rs` used to write as a
+/// bare literal in its own `max_spans.unwrap_or(50)` — an undocumented
+/// magic number sitting 30 lines below the branch that reads
+/// [`DEFAULT_MAX_TOP_LEVEL_SPANS`] from here. The value is unchanged;
+/// what changes is that the cap now has a name and one home, so the
+/// two branches of one tool cannot drift apart again.
+///
+/// It is deliberately smaller than the summary cap. Detail mode answers
+/// a filter (`kind`, `parent_id`, `pass_index`, `region_id`), so the
+/// caller has already said which spans it wants; summary mode answers
+/// the whole toolpath and is the reader's index into it.
+pub const DEFAULT_MAX_DETAIL_SPANS: usize = 50;
+
+/// Default cap on `get_generation_debug_trace`'s `spans` array (CLI-04).
+///
+/// 100, the number `app/mcp/diagnostics.rs` wrote as a literal. This
+/// module's own doc already cites "`get_generation_debug_trace` at its
+/// 100-span default" as the reference for the 200-span caps above, so
+/// the value was load-bearing evidence with no name. `0` on the wire
+/// still means uncapped there.
+pub const DEFAULT_MAX_DEBUG_TRACE_SPANS: usize = 100;
+
+/// Default cap on `get_cut_trace`'s `hotspots` array (CLI-04).
+///
+/// 20, the number `app/mcp/simulation.rs` wrote as a literal. Hotspots
+/// arrive worst-first, so the first 20 are the 20 worst.
+pub const DEFAULT_MAX_HOTSPOTS: usize = 20;
+
+/// Default cap on `get_cut_trace`'s `issues` array (CLI-04).
+///
+/// 50, the number `app/mcp/simulation.rs` wrote as a literal.
+pub const DEFAULT_MAX_ISSUES: usize = 50;
+
 /// Documented ordering contract for `span_summaries` under a cap.
 ///
 /// Toolpath order is the project's own toolpath index ascending; within a

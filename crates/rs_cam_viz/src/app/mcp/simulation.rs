@@ -567,8 +567,14 @@ pub(crate) fn build_cut_trace_response(
         ));
     }
 
-    let max_h = req.max_hotspots.unwrap_or(20);
-    let max_i = req.max_issues.unwrap_or(50);
+    // CLI-04: both caps are named in `rs_cam_mcp::response`, beside
+    // the caps this same response already reads from there.
+    let max_h = req
+        .max_hotspots
+        .unwrap_or(rs_cam_mcp::response::DEFAULT_MAX_HOTSPOTS);
+    let max_i = req
+        .max_issues
+        .unwrap_or(rs_cam_mcp::response::DEFAULT_MAX_ISSUES);
 
     // Translate the span filter args into a per-toolpath set of accepted
     // SpanIds. A span_path matches when it contains any accepted SpanId

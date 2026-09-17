@@ -7,6 +7,10 @@
 
 use rs_cam_core::compute::config::ComputeStatus;
 
+use rs_cam_mcp::response::{
+    CappedArray, DEFAULT_MAX_DETAIL_SPANS, DEFAULT_MAX_TOP_LEVEL_SPANS, MAX_RESPONSE_BYTES,
+    ResponseBudget, cap_json_values,
+};
 use rs_cam_mcp::server::{json_str, text};
 
 use crate::app::RsCamApp;
@@ -281,7 +285,9 @@ impl RsCamApp {
                 Box::new(move |k: &str| synonyms.iter().any(|s| s == k))
             }
         };
-        let limit = max_spans.unwrap_or(100);
+        // CLI-04: the default is named in `rs_cam_mcp::response`. `0`
+        // still means uncapped on this tool's wire.
+        let limit = max_spans.unwrap_or(rs_cam_mcp::response::DEFAULT_MAX_DEBUG_TRACE_SPANS);
         let filtered: Vec<_> = trace
             .spans
             .iter()
@@ -449,7 +455,7 @@ impl RsCamApp {
             })
             .collect();
 
-        json_str(serde_json::json!({
+        let mut response = serde_json::json!({
             "summary": {
                 "schema_version": trace.schema_version,
                 "toolpath_name": trace.toolpath_name,
@@ -484,12 +490,20 @@ impl RsCamApp {
                     "avg_over_target_rate": if engagement_count > 0 { over_target_sum / engagement_count as f64 } else { 0.0 },
                 },
             },
-            "spans_returned": visible.len(),
-            "spans_total_matching": total_matching,
-            "spans": visible,
             "hotspots": trace.hotspots,
             "annotations": trace.annotations,
-        }))
+        });
+        // CLI-04: this response used to write `spans_returned` and
+        // `spans_total_matching` by hand and say nothing at all about
+        // truncation — an agent could not tell a short answer from a
+        // complete one. `CappedArray` reports all four keys.
+        let cap = if limit == 0 { usize::MAX } else { limit };
+        let capped = CappedArray::from_parts(visible, total_matching, cap);
+        if let serde_json::Value::Object(map) = &mut response {
+            capped.insert_keys("spans", map);
+            map.insert("spans".into(), capped.into_value());
+        }
+        json_str(response)
     }
 
     pub(super) fn mcp_inspect_spans(
@@ -803,16 +817,23 @@ pub(super) fn build_inspect_spans_response(
         // observed problem. What it removes is an unbounded array whose
         // `child_count` is additionally an O(top_level x spans) nested scan,
         // so both the byte count and the scan are now bounded by the cap.
-        let cap = max_spans.unwrap_or(rs_cam_mcp::response::DEFAULT_MAX_TOP_LEVEL_SPANS);
+        //
+        // CLI-04: the cap, the count and the `top_level_*` vocabulary all
+        // come from `rs_cam_mcp::response` now. This branch used to write
+        // the four keys by hand beside a `DEFAULT_MAX_TOP_LEVEL_SPANS` it
+        // imported from there — the same words, spelled twice.
+        let cap = max_spans.unwrap_or(DEFAULT_MAX_TOP_LEVEL_SPANS);
         let total_matching = spans
             .iter()
             .filter(|s| matches!(s.kind, SpanKind::Operation | SpanKind::DepthPass))
             .count();
-        let top_level: Vec<serde_json::Value> = spans
+        // A lazy iterator, not a collected Vec: `cap_json_values` stops at
+        // the cap or the byte budget, so nothing beyond it is ever built
+        // and the O(top_level x spans) child scan is bounded with it.
+        let rows = spans
             .iter()
             .enumerate()
             .filter(|(_, s)| matches!(s.kind, SpanKind::Operation | SpanKind::DepthPass))
-            .take(cap)
             .map(|(id, s)| {
                 let child_count = spans
                     .iter()
@@ -829,24 +850,13 @@ pub(super) fn build_inspect_spans_response(
                     map.insert("child_count".into(), serde_json::json!(child_count));
                 }
                 v
-            })
-            .collect();
+            });
+        let mut budget = ResponseBudget::new(MAX_RESPONSE_BYTES);
+        let top_level = cap_json_values(total_matching, rows, cap, &mut budget);
 
         if let serde_json::Value::Object(map) = &mut response {
-            map.insert(
-                "top_level_total_matching".into(),
-                serde_json::json!(total_matching),
-            );
-            map.insert(
-                "top_level_returned".into(),
-                serde_json::json!(top_level.len()),
-            );
-            map.insert(
-                "top_level_truncated".into(),
-                serde_json::json!(top_level.len() < total_matching),
-            );
-            map.insert("top_level_cap".into(), serde_json::json!(cap));
-            map.insert("top_level".into(), serde_json::Value::Array(top_level));
+            top_level.insert_keys("top_level", map);
+            map.insert("top_level".into(), top_level.into_value());
             map.insert(
                 "hint".into(),
                 serde_json::json!(
@@ -894,20 +904,35 @@ pub(super) fn build_inspect_spans_response(
         })
         .collect();
 
+    // CLI-04: the same bounded-array primitive the summary branch uses.
+    // The cap was the bare literal `50` here, 30 lines below a branch
+    // that read its own cap from `rs_cam_mcp::response`; it is
+    // `DEFAULT_MAX_DETAIL_SPANS` now, and the byte backstop applies to
+    // this array too.
     let total_matching = matching.len();
-    let cap = max_spans.unwrap_or(50);
-    let truncated = total_matching > cap;
-    let spans_json: Vec<serde_json::Value> = matching
-        .into_iter()
-        .take(cap)
-        .map(|(id, s)| span_to_json(id, s))
-        .collect();
+    let cap = max_spans.unwrap_or(DEFAULT_MAX_DETAIL_SPANS);
+    let mut budget = ResponseBudget::new(MAX_RESPONSE_BYTES);
+    let capped = cap_json_values(
+        total_matching,
+        matching.into_iter().map(|(id, s)| span_to_json(id, s)),
+        cap,
+        &mut budget,
+    );
 
     if let serde_json::Value::Object(map) = &mut response {
-        map.insert("total_matching".into(), serde_json::json!(total_matching));
-        map.insert("truncated".into(), serde_json::json!(truncated));
-        map.insert("max_spans".into(), serde_json::json!(cap));
-        map.insert("spans".into(), serde_json::Value::Array(spans_json));
+        // The key names stay as they shipped. `mcp_server.rs`'s
+        // `inspect_spans` description names `truncated` and
+        // `total_matching`, and this wave does not own that file — the
+        // `<prefix>_` vocabulary here needs that description to move with
+        // it, so it is a follow-up, not this commit.
+        map.insert(
+            "total_matching".into(),
+            serde_json::json!(capped.total_matching()),
+        );
+        map.insert("truncated".into(), serde_json::json!(capped.truncated()));
+        map.insert("max_spans".into(), serde_json::json!(capped.cap()));
+        map.insert("returned".into(), serde_json::json!(capped.returned()));
+        map.insert("spans".into(), capped.into_value());
     }
     Ok(response)
 }
