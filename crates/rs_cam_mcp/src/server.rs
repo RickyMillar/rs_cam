@@ -13,6 +13,7 @@ use serde::Deserialize;
 
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::compute::transform::ZRotation;
 use rs_cam_core::feeds::WorkholdingRigidity;
 use rs_cam_core::material::Material;
 
@@ -32,6 +33,59 @@ pub struct SetSetupFaceParam {
     pub face_up: String,
 }
 
+/// The four legal in-plane stock rotations, as a wire enum (CLI-09).
+///
+/// The wire used to carry a bare `String` here, so the published tool
+/// schema said only `"type": "string"` and a client had to read the
+/// doc comment to learn the four legal values. The viz server then
+/// hand-parsed the string with `trim_end_matches("deg")`. This enum is
+/// a thin mirror of [`ZRotation`], which cannot derive
+/// `schemars::JsonSchema` itself because `rs_cam_core` does not depend
+/// on schemars. The token of each variant is the token `ZRotation::
+/// to_key` already stores in a project file.
+/// `inline` keeps the four values IN the property that uses this type.
+/// Without it schemars emits a `$ref` into `$defs`, and the published
+/// tool schema carries no `$defs`, so the reference does not resolve for
+/// a client — the very discovery problem CLI-09 is about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
+#[schemars(inline)]
+pub enum ZRotationParam {
+    #[serde(rename = "0")]
+    #[default]
+    Deg0,
+    #[serde(rename = "90")]
+    Deg90,
+    #[serde(rename = "180")]
+    Deg180,
+    #[serde(rename = "270")]
+    Deg270,
+}
+
+impl From<ZRotationParam> for ZRotation {
+    fn from(p: ZRotationParam) -> Self {
+        match p {
+            ZRotationParam::Deg0 => ZRotation::Deg0,
+            ZRotationParam::Deg90 => ZRotation::Deg90,
+            ZRotationParam::Deg180 => ZRotation::Deg180,
+            ZRotationParam::Deg270 => ZRotation::Deg270,
+        }
+    }
+}
+
+impl std::fmt::Display for ZRotationParam {
+    /// The wire token, so a message that echoes the request reads the
+    /// same words the caller sent.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let token = match self {
+            ZRotationParam::Deg0 => "0",
+            ZRotationParam::Deg90 => "90",
+            ZRotationParam::Deg180 => "180",
+            ZRotationParam::Deg270 => "270",
+        };
+        f.write_str(token)
+    }
+}
+
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct SetSetupRotationParam {
     /// Setup index (0-based)
@@ -41,7 +95,7 @@ pub struct SetSetupRotationParam {
     /// does not map a non-square stock onto itself — for a diagonal
     /// alignment-pin pair on a rectangular board, 180 is usually the
     /// physical flip.
-    pub z_rotation: String,
+    pub z_rotation: ZRotationParam,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
@@ -2117,5 +2171,68 @@ mod tests {
         assert_eq!(p.max_rate_x_mm_min, Some(10000.0));
         assert_eq!(p.max_rate_z_mm_min, Some(1000.0));
         assert_eq!(p.acceleration_x_mm_s2, None);
+    }
+
+    /// CLI-09 sentry: `set_setup_rotation` publishes its four legal
+    /// values in the schema, and refuses everything else.
+    ///
+    /// The field used to be a bare `String`. `schemars` emitted an
+    /// unconstrained `"type": "string"`, so a client could not discover
+    /// the legal values from the schema at all — only from the prose of
+    /// the doc comment — and the viz server accepted `"90deg"` and
+    /// `"90 deg"` through a hand parse it had written itself.
+    #[test]
+    fn set_setup_rotation_publishes_its_four_values() {
+        let schema = schemars::schema_for!(SetSetupRotationParam);
+        let root = serde_json::to_value(&schema).unwrap();
+        let property = root
+            .pointer("/properties/z_rotation")
+            .expect("z_rotation must be a published property");
+
+        // schemars may either inline the enum or reference it from
+        // `$defs`. Follow the reference when there is one.
+        let resolved = match property.get("$ref").and_then(serde_json::Value::as_str) {
+            Some(reference) => {
+                let name = reference.rsplit('/').next().expect("a $ref names a def");
+                root.pointer(&format!("/$defs/{name}"))
+                    .expect("the $ref must resolve")
+            }
+            None => property,
+        };
+        let values = resolved
+            .get("enum")
+            .and_then(serde_json::Value::as_array)
+            .expect("z_rotation must publish an enum of its legal values");
+        let tokens: Vec<&str> = values
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .collect();
+        assert_eq!(tokens, ["0", "90", "180", "270"]);
+    }
+
+    /// CLI-09: the token maps to the core variant, and the lenient
+    /// spellings the hand parse used to accept are now refused on the
+    /// wire (operator ruling 2026-09-16, no legacy support).
+    #[test]
+    fn set_setup_rotation_takes_the_token_and_refuses_the_rest() {
+        for (token, expected) in [
+            ("0", ZRotation::Deg0),
+            ("90", ZRotation::Deg90),
+            ("180", ZRotation::Deg180),
+            ("270", ZRotation::Deg270),
+        ] {
+            let p: SetSetupRotationParam =
+                serde_json::from_value(serde_json::json!({"setup_index": 0, "z_rotation": token}))
+                    .unwrap_or_else(|e| panic!("the wire refused the legal token {token}: {e}"));
+            assert_eq!(ZRotation::from(p.z_rotation), expected, "token {token}");
+        }
+        for token in ["90deg", "90 deg", "Deg90", "", "45"] {
+            let parsed: Result<SetSetupRotationParam, _> =
+                serde_json::from_value(serde_json::json!({"setup_index": 0, "z_rotation": token}));
+            assert!(
+                parsed.is_err(),
+                "the wire still accepts {token:?}; the typed enum did not replace the hand parse"
+            );
+        }
     }
 }

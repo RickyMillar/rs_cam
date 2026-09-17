@@ -444,22 +444,10 @@ impl RsCamApp {
                         None,
                     ));
                 }
-                let normalized = p.z_rotation.trim().trim_end_matches("deg").trim();
-                let rotation = match normalized {
-                    "0" => ZRotation::Deg0,
-                    "90" => ZRotation::Deg90,
-                    "180" => ZRotation::Deg180,
-                    "270" => ZRotation::Deg270,
-                    other => {
-                        return CorePlan::Answered(mutation_error_json(
-                            &format!(
-                                "Error: Unknown Z rotation '{other}'. Use one of: 0, 90, 180, 270 \
-                                 (degrees). Nothing was written."
-                            ),
-                            Some("z_rotation"),
-                        ));
-                    }
-                };
+                // CLI-09: the wire type is the four-variant enum, so the
+                // token is already legal by the time it arrives. The hand
+                // parse that used to live here is gone.
+                let rotation = ZRotation::from(p.z_rotation);
                 before.index = Some(p.setup_index);
                 before.extra = serde_json::json!({ "z_rotation": rotation.label() });
                 CorePlan::Apply(
