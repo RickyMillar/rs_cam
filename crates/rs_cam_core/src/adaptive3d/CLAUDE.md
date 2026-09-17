@@ -1,0 +1,33 @@
+# `adaptive3d/` — 3D adaptive clearing
+
+Constant-engagement clearing on a mesh surface. The entry point is
+`adaptive3d::adaptive_3d_toolpath` in `mod.rs`.
+
+## Files
+
+- `mod.rs` — the public facade and `ClearingStrategy3d`.
+- `clearing.rs` — the Z-level clearing engine and its region detection.
+- `path.rs` — the loop over Z levels and the segment linking.
+- `search.rs` — direction search, engagement, entry-point finding.
+- `tests.rs` — the unit tests.
+
+## Invariants
+
+- All three `ClearingStrategy3d` variants are live. `clear_z_level` is not
+  dead code. Do not propose a deletion of the AgentSearch arm.
+- The plunge guard classifies a vertical descent by its geometry, not by its
+  intent tag. This engine emits untagged vertical descents; a guard that
+  reads the tag alone misses them.
+
+## Sentries
+
+- `cargo test -p rs_cam_core -q --test adaptive3d_boundary_clear_parity`
+- `cargo test -p rs_cam_core -q --test adaptive3d_keep_down_link_f038b`
+- `cargo test -p rs_cam_core -q --test adaptive3d_entry_coalescing_f038`
+- `cargo test -p rs_cam_core -q --test agent_search_coverage`
+- `cargo test -p rs_cam_core -q --test adaptive3d_subtool_channel_gouge`
+
+## Do not
+
+- Do not assume the 3D entry search has the 2D boundary walk. `find_entry_3d`
+  took a separate patch.

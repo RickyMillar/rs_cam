@@ -1,0 +1,38 @@
+# `controller/` — the bridge between the UI and the core
+
+Takes a UI intent, applies it to `ProjectSession`, and accepts the worker
+result. The entry point is `../controller.rs`.
+
+## Files
+
+- `../controller.rs` — the controller type and the apply path.
+- `events/` — the event handlers by area: compute, model, toolpath,
+  simulation, planner, undo.
+- `generate_all.rs` — `generate_all` as a fixpoint over the rest-stock chain.
+- `io.rs` — project open, save and import at the controller level.
+- `tests.rs`, `workflow_tests.rs`, `results_parity_tests.rs` and the named
+  `*_g_*.rs` sentries — the controller test suites.
+
+## Invariants
+
+- The view mirrors `Effects`. Use `Effects.stale`; do not compute a narrower
+  stale answer in the UI or in an MCP reply.
+- A toolpath edit clears the viewport simulation. A stale mesh beside a new
+  toolpath is a wrong picture, not a cosmetic lag.
+- `OptimizeToolpath` is a `Job` over a cloned session. It does not mutate the
+  live session while it runs.
+- Preserve the controller to worker to result-acceptance path. Do not add a
+  parallel one-off flow.
+
+## Sentries
+
+- `cargo test -p rs_cam_viz -q --test apply_contract_a3`
+- `cargo test -p rs_cam_viz -q --test effects_are_stamped_wp19`
+- `cargo test -p rs_cam_viz -q --test production_writes_go_through_apply_wp15a`
+- `cargo test -p rs_cam_viz -q --test generate_all_fixpoint_parity`
+- `cargo test -p rs_cam_viz -q --test feeds_apply_drops_result_n13`
+
+## Do not
+
+- Do not mutate GUI state as an alternate data model. Route the write through
+  `ProjectSession::apply(Command)`.
