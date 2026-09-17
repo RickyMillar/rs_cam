@@ -72,7 +72,14 @@ impl ProjectSession {
             .map_err(|e| SessionError::InvalidParam(format!("dressup serialize: {e}")))?;
         match merged.as_object_mut() {
             Some(obj) => {
-                if !obj.contains_key(key) {
+                // The field table decides what a legal key is. The serialized
+                // instance cannot: five `Option` fields carry
+                // `skip_serializing_if = "Option::is_none"`, so on a fresh
+                // config `lead_in_feed_rate` is absent from the object and
+                // a membership test on the object refused it (wave 3,
+                // 2026-09-18). The coercion arms below still read the
+                // instance; an absent optional takes the value as sent.
+                if !DressupConfig::FIELD_DEFS.iter().any(|d| d.name == key) {
                     return Err(SessionError::InvalidParam(format!(
                         "unknown dressup field '{key}'"
                     )));

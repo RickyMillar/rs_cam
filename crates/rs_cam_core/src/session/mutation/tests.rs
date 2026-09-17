@@ -199,6 +199,33 @@ fn set_dressup_invalidates_result_and_sim() {
     assert!(s.simulation.is_none());
 }
 
+/// The two F-040 lead feeds are `Option` fields that serde skips when
+/// `None`, so a fresh config's JSON object does not carry them. The setter
+/// used that object as its key list and refused both as unknown; the two
+/// feeds were unreachable over MCP and the CLI. The field table is the key
+/// list now.
+#[test]
+fn an_optional_dressup_field_is_settable_on_a_fresh_config() {
+    let mut s = make_session();
+    let _ = s.add_tool(make_tool());
+    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0, 0)).unwrap();
+    assert!(s.toolpath_configs()[0].dressups.lead_in_feed_rate.is_none());
+
+    for key in ["lead_in_feed_rate", "lead_out_feed_rate"] {
+        let _effects = s
+            .set_dressup_field(0, key, serde_json::json!(450.0))
+            .unwrap_or_else(|e| panic!("{key} must be settable on a fresh config: {e}"));
+    }
+    let d = &s.toolpath_configs()[0].dressups;
+    assert_eq!(d.lead_in_feed_rate, Some(450.0));
+    assert_eq!(d.lead_out_feed_rate, Some(450.0));
+
+    let err = s
+        .set_dressup_field(0, "no_such_dressup_field", serde_json::json!(1))
+        .expect_err("a name outside the field table is still refused");
+    assert!(err.to_string().contains("unknown dressup field"), "{err}");
+}
+
 #[test]
 fn set_heights_invalidates_result_and_sim() {
     let mut s = make_session();
