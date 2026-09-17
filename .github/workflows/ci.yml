@@ -24,7 +24,9 @@ jobs:
         run: cargo test -q --features rs_cam_core/heavy-tests
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets --features rs_cam_core/heavy-tests -- -D warnings
+        # `research` gates the three finish research arms; without it they are
+        # never linted. `heavy-tests` does the same for the 12 heavy binaries.
+        run: cargo clippy --workspace --all-targets --features rs_cam_core/heavy-tests,rs_cam_core/research -- -D warnings
 
       - name: Demo job smoke test
         run: |

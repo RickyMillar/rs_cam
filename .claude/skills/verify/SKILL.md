@@ -32,9 +32,9 @@ Fix: run failing test alone with `cargo test -p <crate> <name> -- --nocapture`.
 
 ### 3. Clippy (zero warnings)
 ```bash
-cargo clippy --workspace --all-targets --features rs_cam_core/heavy-tests -- -D warnings
+cargo clippy --workspace --all-targets --features rs_cam_core/heavy-tests,rs_cam_core/research -- -D warnings
 ```
-The feature belongs here too: without it the 12 heavy binaries are never linted and drift silently.
+Both features belong here: without `heavy-tests` the 12 heavy binaries are never linted, and without `research` the three `finish/` research arms (`conformal_spiral`, `direction_field`, `spiral_finish_compact`) and their eight harnesses are never linted. Either way the code drifts silently.
 Fix: address each warning — the project enforces `-D warnings`.
 
 ### 4. Demo job smoke test

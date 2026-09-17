@@ -91,13 +91,19 @@ impl Default for CrestParams {
 /// orientation across a triangle), both signed principal curvatures (κ₁ ≥ κ₂,
 /// for the concave-dominance test), and the minimal-curvature extremality.
 ///
-/// `pub(crate)` (with `pdir1` added) so [`crate::finish::direction_field`] can read the
+/// `pub(crate)` (with `pdir1` added) so `finish::direction_field` can read the
 /// same Rusinkiewicz tensor rather than duplicating it — the valley march
-/// itself needs only t₂, but a feed-direction field needs t₁.
+/// itself needs only t₂, but a feed-direction field needs t₁. The `research`
+/// feature gates `direction_field`, so the doc names it in plain text and
+/// not as an intra-doc link.
 pub(crate) struct Curvature {
     /// Maximal principal direction (t₁) per vertex — the direction of maximum
     /// **signed** normal curvature, paired with `k1`. Not read by the valley
-    /// march; carried for [`crate::finish::direction_field`].
+    /// march; carried for `finish::direction_field`.
+    // SAFETY: `finish::direction_field` is the only reader, and the `research`
+    // feature gates that module. The march computes t₁ on the way to t₂, so the
+    // field is free to keep and the research arm needs it.
+    #[cfg_attr(not(feature = "research"), allow(dead_code))]
     pub(crate) pdir1: Vec<V3>,
     /// Minimal principal direction (t₂) per vertex.
     pub(crate) pdir2: Vec<V3>,

@@ -16,6 +16,16 @@ step = ["truck-stepio", "truck-topology", "truck-meshalgo", "truck-geometry", "t
 # pass `--features heavy-tests` (or `--features rs_cam_core/heavy-tests` from
 # the workspace root) for both `cargo test` and `cargo clippy`.
 heavy-tests = []
+# Gates the three research arms in `finish/` — `conformal_spiral` (and its
+# `conformal_spiral/` folder), `direction_field` and `spiral_finish_compact`.
+# No product path calls them: they are measured candidates that lost their A/B
+# (see `src/finish/CLAUDE.md`), and they are 7.4k lines, 22 % of that folder.
+# Off by default, so a product build neither compiles nor lints them. The
+# eight `[[test]]` sections below name the evidence harnesses that read them.
+# Build and run one with, for example:
+#   cargo test -p rs_cam_core --features research --test spiral_finish_compact_c1
+# Most of their tests are `#[ignore]` evidence runs and need `-- --ignored`.
+research = []
 
 [dependencies]
 nalgebra = { workspace = true }
@@ -122,3 +132,39 @@ required-features = ["heavy-tests"]
 [[test]]
 name = "strategy_advisor_smoke" # 43 s
 required-features = ["heavy-tests"]
+
+# The research harnesses. Each one reads `finish::conformal_spiral`,
+# `finish::direction_field` or `finish::spiral_finish_compact`, so each one
+# needs the `research` feature to compile. The audit row FIN-01 listed six of
+# them; `rg` found eight.
+[[test]]
+name = "graded_raster_e1"
+required-features = ["research"]
+
+[[test]]
+name = "graded_raster_tier0_e2"
+required-features = ["research"]
+
+[[test]]
+name = "banded_raster_costed_f2"
+required-features = ["research"]
+
+[[test]]
+name = "valley_branch_falsifier_h1"
+required-features = ["research"]
+
+[[test]]
+name = "direction_field_wanaka_f1"
+required-features = ["research"]
+
+[[test]]
+name = "conformal_spiral_synthetic_f2"
+required-features = ["research"]
+
+[[test]]
+name = "spiral_finish_compact_c1"
+required-features = ["research"]
+
+[[test]]
+name = "whole_board_spiral_ledger_g1"
+required-features = ["research"]
