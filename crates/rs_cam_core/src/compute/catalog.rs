@@ -1355,14 +1355,12 @@ impl OperationConfig {
     /// Returns an empty `Vec` for operations that don't use standard depth
     /// stepping (3D ops, VCarve, Chamfer, Inlay, Drill).
     pub fn cutting_levels(&self, top_z: f64) -> Vec<f64> {
-        use crate::ops::depth::{DepthDistribution, DepthStepping};
+        use crate::ops::depth::DepthStepping;
         match self {
             Self::Pocket(cfg) => DepthStepping {
                 start_z: top_z,
                 final_z: top_z - cfg.depth.abs(),
                 max_step_down: cfg.depth_per_pass,
-                distribution: DepthDistribution::Even,
-                finish_allowance: 0.0,
                 finishing_passes: cfg.finishing_passes,
             }
             .all_levels(),
@@ -1370,8 +1368,6 @@ impl OperationConfig {
                 start_z: top_z,
                 final_z: top_z - cfg.depth.abs(),
                 max_step_down: cfg.depth_per_pass,
-                distribution: DepthDistribution::Even,
-                finish_allowance: 0.0,
                 finishing_passes: cfg.finishing_passes,
             }
             .all_levels(),

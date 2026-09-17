@@ -3,8 +3,8 @@
 //!
 //! ## The defect this pins
 //!
-//! Generation steps a 2.5D cut as `total / ceil(total / per_pass)` —
-//! `DepthDistribution::Even`, which no operation makes configurable. So the
+//! Generation steps a 2.5D cut as `total / ceil(total / per_pass)`, the one
+//! distribution `DepthStepping` has (CUT-15 deleted the other). So the
 //! realised depth is a STAIRCASE. On a 12 mm pocket only 4.00, 3.00, 2.40,
 //! 2.00, 1.71, 1.50 and 1.33 mm are reachable. Asking for 2.90 cuts 2.40, and
 //! asking for 2.60 also cuts 2.40.

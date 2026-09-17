@@ -513,8 +513,6 @@ mod tests {
             start_z: 0.0,
             final_z: -cfg.depth.abs(),
             max_step_down: cfg.depth_per_pass,
-            distribution: rs_cam_core::ops::depth::DepthDistribution::Even,
-            finish_allowance: 0.0,
             finishing_passes: cfg.finishing_passes,
         };
         let roughing_levels = depth_stepping.all_levels();

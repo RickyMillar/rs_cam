@@ -6,7 +6,7 @@
 
 use crate::geo::BoundingBox3;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
-use crate::ops::depth::{DepthDistribution, DepthStepping, depth_stepped_toolpath_with_cancel};
+use crate::ops::depth::{DepthStepping, depth_stepped_toolpath_with_cancel};
 use crate::ops::zigzag::{ZigzagParams, lines_to_toolpath, zigzag_lines};
 use crate::polygon::Polygon2;
 use crate::toolpath::Toolpath;
@@ -171,8 +171,6 @@ pub fn face_toolpath_with_cancel(
             start_z: params.stock_top_z,
             final_z: params.stock_top_z - params.depth,
             max_step_down: params.depth_per_pass,
-            distribution: DepthDistribution::Even,
-            finish_allowance: 0.0,
             finishing_passes: 0,
         };
 
@@ -304,8 +302,6 @@ mod tests {
                 start_z: params.stock_top_z,
                 final_z: params.stock_top_z - params.depth,
                 max_step_down: params.depth_per_pass,
-                distribution: DepthDistribution::Even,
-                finish_allowance: 0.0,
                 finishing_passes: 0,
             };
             let never = || false;

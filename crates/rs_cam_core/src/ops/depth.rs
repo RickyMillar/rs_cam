@@ -4,25 +4,29 @@
 //! would break or deflect. Depth stepping divides the total depth into
 //! multiple passes, each within the tool's axial depth-of-cut limit.
 //!
-//! Supports even distribution (equal passes, best for tool life) and
-//! constant stepping (max step + shallower final pass). Optional finish
-//! allowance leaves material for a separate finish pass at exact depth.
+//! Every pass is equally deep: the ladder divides the total depth by the pass
+//! count. CUT-15 (2026-09-17) deleted the second distribution and the finish
+//! allowance; see [`DepthStepping`].
 
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::toolpath::Toolpath;
 
-/// How to distribute depth across passes.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum DepthDistribution {
-    /// Distribute depth equally across passes. Better for consistent chip load
-    /// and tool life. E.g., 10mm total at 3mm max → 4 passes of 2.5mm each.
-    Even,
-    /// Use max_step_down for all passes except the last, which may be shallower.
-    /// E.g., 10mm total at 3mm max → passes of 3, 3, 3, 1mm.
-    Constant,
-}
-
 /// Parameters controlling depth stepping for multi-pass operations.
+///
+/// # One distribution, no finish allowance (CUT-15, 2026-09-17)
+///
+/// The ladder divides the total depth equally: `ceil(total / max_step_down)`
+/// passes of `total / n` each. A second distribution (`Constant`: full steps
+/// and a shallower last one) and a `finish_allowance` that held roughing above
+/// the floor were both implemented and reachable from NO surface. Every
+/// production construction site wrote `Even` and `0.0`.
+///
+/// `Constant` was the documented fix for the staircase
+/// [`realised_step_down`] describes, so the decision is recorded, not silent:
+/// exposing it as an operation dial changes the emitted Z ladder on every
+/// 2.5D operation, and `feeds/` reports the realised depth from the Even
+/// arithmetic. That is an operator ruling with a measurement behind it, not a
+/// refactor. Deleted for now; the staircase stands and is documented.
 #[derive(Debug, Clone)]
 pub struct DepthStepping {
     /// Z height of material surface (usually 0.0).
@@ -31,12 +35,6 @@ pub struct DepthStepping {
     pub final_z: f64,
     /// Maximum depth per pass in mm (positive, e.g., 3.0).
     pub max_step_down: f64,
-    /// How to distribute depth across passes.
-    pub distribution: DepthDistribution,
-    /// Material to leave at bottom for a finish pass (mm, >= 0).
-    /// Roughing passes stop at `final_z + finish_allowance`.
-    /// Set to 0.0 for no separate finish pass.
-    pub finish_allowance: f64,
     /// Number of finishing (spring) passes to repeat at the final depth.
     /// Each spring pass repeats the last Z level for dimensional accuracy.
     /// 0 = no extra spring passes.
@@ -45,8 +43,7 @@ pub struct DepthStepping {
 
 /// The depth a pass will ACTUALLY cut, given the depth that was asked for.
 ///
-/// Under [`DepthDistribution::Even`] — which every 2.5D operation uses, and
-/// which none of them makes configurable — the pass count is
+/// The pass distribution is even and is the only one, so the pass count is
 /// `ceil(total / requested)` and the realised step is `total / n`. So the
 /// realised depth is a STAIRCASE: on a 12 mm pocket only 4.00, 3.00, 2.40,
 /// 2.00, 1.71, 1.50 and 1.33 mm are reachable. Asking for 2.90 cuts 2.40.
@@ -127,8 +124,6 @@ impl DepthStepping {
             start_z,
             final_z,
             max_step_down,
-            distribution: DepthDistribution::Even,
-            finish_allowance: 0.0,
             finishing_passes: 0,
         }
     }
@@ -140,7 +135,7 @@ impl DepthStepping {
 
     /// Number of roughing passes needed.
     pub fn roughing_pass_count(&self) -> usize {
-        let rough_depth = self.roughing_depth();
+        let rough_depth = self.total_depth();
         if rough_depth <= 0.0 || self.max_step_down <= 0.0 {
             return 0;
         }
@@ -149,27 +144,12 @@ impl DepthStepping {
         pass_count(rough_depth, self.max_step_down).unwrap_or(0)
     }
 
-    /// Total roughing depth (total minus finish allowance).
-    fn roughing_depth(&self) -> f64 {
-        (self.total_depth() - self.finish_allowance).max(0.0)
-    }
-
-    /// Z of the roughing floor (may be above final_z if finish_allowance > 0).
-    pub fn roughing_floor(&self) -> f64 {
-        self.final_z + self.finish_allowance
-    }
-
-    /// Whether a separate finish pass is configured.
-    pub fn has_finish_pass(&self) -> bool {
-        self.finish_allowance > 0.0 && self.total_depth() > 0.0
-    }
-
     /// Calculate Z levels for roughing passes (top to bottom).
     ///
     /// Each value is the Z height of that pass. The first pass is near
-    /// start_z, the last is at roughing_floor().
+    /// start_z, the last is at final_z.
     pub fn roughing_levels(&self) -> Vec<f64> {
-        let rough_depth = self.roughing_depth();
+        let rough_depth = self.total_depth();
         if rough_depth <= 0.0 || self.max_step_down <= 0.0 {
             return Vec::new();
         }
@@ -179,30 +159,13 @@ impl DepthStepping {
             return Vec::new();
         }
 
-        let floor = self.roughing_floor();
-
-        match self.distribution {
-            DepthDistribution::Even => {
-                let step = rough_depth / n as f64;
-                (1..=n).map(|i| self.start_z - step * i as f64).collect()
-            }
-            DepthDistribution::Constant => {
-                let mut levels = Vec::with_capacity(n);
-                for i in 1..=n {
-                    let z = self.start_z - self.max_step_down * i as f64;
-                    levels.push(z.max(floor));
-                }
-                levels
-            }
-        }
+        let step = rough_depth / n as f64;
+        (1..=n).map(|i| self.start_z - step * i as f64).collect()
     }
 
-    /// Calculate all Z levels: roughing + optional finish pass + spring passes.
+    /// Calculate all Z levels: roughing passes plus spring passes.
     pub fn all_levels(&self) -> Vec<f64> {
         let mut levels = self.roughing_levels();
-        if self.has_finish_pass() {
-            levels.push(self.final_z);
-        }
         // Add spring passes (repeat final Z for dimensional accuracy)
         let final_z = levels.last().copied().unwrap_or(self.final_z);
         for _ in 0..self.finishing_passes {
@@ -211,19 +174,7 @@ impl DepthStepping {
         levels
     }
 
-    /// The finish pass Z level, if configured.
-    pub fn finish_level(&self) -> Option<f64> {
-        if self.has_finish_pass() {
-            Some(self.final_z)
-        } else {
-            None
-        }
-    }
-
-    /// Actual step size for each roughing pass.
-    ///
-    /// For Even: all steps are equal.
-    /// For Constant: all steps are max_step_down except possibly the last.
+    /// Actual step size for each roughing pass. Every step is equal.
     pub fn roughing_steps(&self) -> Vec<f64> {
         let levels = self.roughing_levels();
         if levels.is_empty() {
@@ -279,45 +230,6 @@ where
 {
     let levels = depth.all_levels();
     toolpath_at_levels_with_cancel(&levels, safe_z, operation, cancel)
-}
-
-/// Like `depth_stepped_toolpath` but uses a different operation for the
-/// finish pass (e.g., profile finish after pocket roughing).
-///
-/// `rough_op` is called for each roughing level. `finish_op` is called
-/// for the final finish pass (if finish_allowance > 0).
-///
-/// **Test door.** The `#[cfg(test)]` module of this file is the only
-/// caller. No production path reads it (S29, tech debt 2026-09-16).
-#[cfg(test)]
-pub(crate) fn depth_stepped_with_finish<R, F>(
-    depth: &DepthStepping,
-    safe_z: f64,
-    rough_op: R,
-    finish_op: F,
-) -> Toolpath
-where
-    R: Fn(f64) -> Toolpath,
-    F: Fn(f64) -> Toolpath,
-{
-    let mut tp = Toolpath::new();
-
-    // Roughing passes
-    let roughing = depth.roughing_levels();
-    let rough_tp = toolpath_at_levels(&roughing, safe_z, &rough_op);
-    tp.moves.extend(rough_tp.moves);
-
-    // Finish pass
-    if let Some(finish_z) = depth.finish_level() {
-        let finish_tp = finish_op(finish_z);
-        if !finish_tp.moves.is_empty() {
-            // Ensure retract before finish pass
-            tp.final_retract(safe_z);
-            tp.moves.extend(finish_tp.moves);
-        }
-    }
-
-    tp
 }
 
 /// Generate a toolpath by applying a 2D operation at each pre-computed Z level.
@@ -419,35 +331,6 @@ mod tests {
     }
 
     #[test]
-    fn test_constant_distribution_uneven() {
-        // 10mm depth at 3mm max → 3mm, 3mm, 3mm, 1mm
-        let mut ds = DepthStepping::new(0.0, -10.0, 3.0);
-        ds.distribution = DepthDistribution::Constant;
-        let levels = ds.roughing_levels();
-        assert_eq!(levels.len(), 4);
-        assert!((levels[0] - -3.0).abs() < 1e-10);
-        assert!((levels[1] - -6.0).abs() < 1e-10);
-        assert!((levels[2] - -9.0).abs() < 1e-10);
-        assert!((levels[3] - -10.0).abs() < 1e-10);
-
-        let steps = ds.roughing_steps();
-        assert!((steps[0] - 3.0).abs() < 1e-10);
-        assert!((steps[1] - 3.0).abs() < 1e-10);
-        assert!((steps[2] - 3.0).abs() < 1e-10);
-        assert!((steps[3] - 1.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_constant_distribution_exact() {
-        // 9mm at 3mm → exactly 3 passes
-        let mut ds = DepthStepping::new(0.0, -9.0, 3.0);
-        ds.distribution = DepthDistribution::Constant;
-        let levels = ds.roughing_levels();
-        assert_eq!(levels.len(), 3);
-        assert!((levels[2] - -9.0).abs() < 1e-10);
-    }
-
-    #[test]
     fn test_shallow_cut_single_pass() {
         // 1mm depth at 3mm max → 1 pass
         let ds = DepthStepping::new(0.0, -1.0, 3.0);
@@ -499,51 +382,6 @@ mod tests {
         assert!((levels[19] - -10.0).abs() < 1e-10);
     }
 
-    // --- Finish allowance tests ---
-
-    #[test]
-    fn test_finish_allowance() {
-        // 12mm total, 0.5mm finish allowance
-        let mut ds = DepthStepping::new(0.0, -12.0, 3.0);
-        ds.finish_allowance = 0.5;
-
-        assert!(ds.has_finish_pass());
-        assert!((ds.roughing_floor() - -11.5).abs() < 1e-10);
-
-        let roughing = ds.roughing_levels();
-        // Roughing depth = 11.5mm, 11.5/3 → 4 passes
-        assert_eq!(roughing.len(), 4);
-        // Last roughing level should be at -11.5, not -12.0
-        assert!((roughing.last().unwrap() - -11.5).abs() < 1e-10);
-
-        assert_eq!(ds.finish_level(), Some(-12.0));
-
-        let all = ds.all_levels();
-        assert_eq!(all.len(), 5); // 4 roughing + 1 finish
-        assert!((all.last().unwrap() - -12.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_finish_allowance_exceeds_depth() {
-        // Finish allowance >= total depth → no roughing, only finish
-        let mut ds = DepthStepping::new(0.0, -2.0, 3.0);
-        ds.finish_allowance = 3.0;
-
-        assert_eq!(ds.roughing_levels().len(), 0);
-        assert!(ds.has_finish_pass());
-        let all = ds.all_levels();
-        assert_eq!(all.len(), 1);
-        assert!((all[0] - -2.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_no_finish_allowance() {
-        let ds = DepthStepping::new(0.0, -10.0, 3.0);
-        assert!(!ds.has_finish_pass());
-        assert_eq!(ds.finish_level(), None);
-        assert_eq!(ds.roughing_levels().len(), ds.all_levels().len());
-    }
-
     // --- Step calculation tests ---
 
     #[test]
@@ -552,35 +390,6 @@ mod tests {
         let steps = ds.roughing_steps();
         let total: f64 = steps.iter().sum();
         assert!((total - 10.0).abs() < 1e-10, "Steps sum {} != 10.0", total);
-    }
-
-    #[test]
-    fn test_roughing_steps_with_finish() {
-        let mut ds = DepthStepping::new(0.0, -10.0, 3.0);
-        ds.finish_allowance = 1.0;
-        let steps = ds.roughing_steps();
-        let total: f64 = steps.iter().sum();
-        assert!(
-            (total - 9.0).abs() < 1e-10,
-            "Roughing steps sum {} != 9.0 (with 1mm finish allowance)",
-            total
-        );
-    }
-
-    #[test]
-    fn test_constant_steps_never_exceed_max() {
-        let mut ds = DepthStepping::new(0.0, -10.0, 3.0);
-        ds.distribution = DepthDistribution::Constant;
-        let steps = ds.roughing_steps();
-        for (i, step) in steps.iter().enumerate() {
-            assert!(
-                *step <= ds.max_step_down + 1e-10,
-                "Step {} = {} exceeds max {}",
-                i,
-                step,
-                ds.max_step_down
-            );
-        }
     }
 
     #[test]
@@ -722,69 +531,6 @@ mod tests {
         cut_zs.dedup();
 
         assert_eq!(cut_zs.len(), 2, "Expected 2 levels, got {:?}", cut_zs);
-    }
-
-    #[test]
-    fn test_multipass_with_finish() {
-        let sq = Polygon2::rectangle(0.0, 0.0, 30.0, 30.0);
-        let mut depth = DepthStepping::new(0.0, -10.0, 3.0);
-        depth.finish_allowance = 0.5;
-
-        // Rough with pocket, finish with profile
-        let tp = depth_stepped_with_finish(
-            &depth,
-            10.0,
-            |z| {
-                pocket_toolpath(
-                    &sq,
-                    &PocketParams {
-                        tool_radius: 3.175,
-                        stepover: 2.0,
-                        cut_depth: z,
-                        feed_rate: 1000.0,
-                        plunge_rate: 500.0,
-                        safe_z: 10.0,
-                        climb: false,
-                    },
-                )
-            },
-            |z| {
-                profile_toolpath(
-                    &sq,
-                    &ProfileParams {
-                        tool_radius: 3.175,
-                        side: ProfileSide::Inside,
-                        cut_depth: z,
-                        feed_rate: 800.0,
-                        plunge_rate: 400.0,
-                        safe_z: 10.0,
-                        climb: true,
-                        compensate_in_controller: false,
-                    },
-                )
-            },
-        );
-
-        assert!(!tp.moves.is_empty());
-
-        // Should have roughing levels + finish level
-        let mut cut_zs: Vec<f64> = tp
-            .moves
-            .iter()
-            .filter(|m| matches!(m.move_type, MoveType::Linear { .. }))
-            .map(|m| (m.target.z * 100.0).round() / 100.0)
-            .collect();
-        cut_zs.sort_by(|a, b| b.total_cmp(a));
-        cut_zs.dedup();
-
-        // Should include -10.0 (the finish pass)
-        assert!(
-            cut_zs.iter().any(|z| (*z - -10.0).abs() < 0.1),
-            "Should have finish pass at -10.0, got {:?}",
-            cut_zs
-        );
-        // Should NOT have roughing at -10.0 (roughing stops at -9.5)
-        // The -10.0 entries should only come from the finish operation
     }
 
     #[test]
