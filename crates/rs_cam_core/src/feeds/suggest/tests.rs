@@ -12,12 +12,12 @@ use super::axial_envelope::recompute_chipload_bounds_for_dpp;
 use super::invariants::{
     DEFLECTION_BACKOFF_DPP_FLOOR_MM, DEFLECTION_BACKOFF_TARGET_UM,
     STEPOVER_BACKOFF_DIAMETER_FRACTION, STEPOVER_BACKOFF_MAX_ITERATIONS,
-    STEPOVER_BACKOFF_TARGET_MOVES,
+    STEPOVER_BACKOFF_TARGET_MOVES, enforce_invariants,
 };
 use super::*;
 use crate::compute::operation_configs::{DropCutterConfig, PocketConfig};
 use crate::compute::tool_config::{ToolId, ToolType};
-use crate::feeds::{ChiploadSource, EMBEDDED_LUT};
+use crate::feeds::{ChiploadSource, EMBEDDED_LUT, PassRole};
 
 /// C2 sentinel contract: `SuggestContext::effective_diameter_mm == 0.0`
 /// is "not populated", and the post-mutation chipload re-derivation must
