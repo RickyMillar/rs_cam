@@ -41,6 +41,19 @@ pub fn run_sweep(
         bail!("No sweep values provided");
     }
 
+    // Read the baseline before any work: a field name the parser does not
+    // know refuses here, not after the baseline run has written artifacts.
+    let first_probe = values
+        .first()
+        .context("the sweep has no values to probe the field with")?;
+    let base_value = resolve_base_value(&base_job, param_name, first_probe)?;
+    let base_op_type = base_job
+        .operation
+        .first()
+        .context("the job file declares no [[operation]] block to sweep")?
+        .op_type
+        .clone();
+
     std::fs::create_dir_all(output_dir)
         .context(format!("Creating output dir: {}", output_dir.display()))?;
 
@@ -49,17 +62,6 @@ pub fn run_sweep(
     let base_result = job::execute_job(&base_job, job_dir, false)?;
     let base_tp = &base_result.combined;
     let base_fp = ToolpathFingerprint::from_toolpath(base_tp);
-
-    // Get baseline value of the parameter being swept. The sweep patches
-    // the FIRST `[[operation]]` block, so a job file with none has nothing
-    // to sweep and the run stops here with that sentence.
-    let first_op = base_job
-        .operation
-        .first()
-        .context("the job file declares no [[operation]] block to sweep")?;
-    let base_value = get_op_field(first_op, param_name)
-        .unwrap_or_else(|| serde_json::Value::String("default".to_owned()));
-    let base_op_type = first_op.op_type.clone();
 
     // Write baseline artifacts
     write_json(&output_dir.join("baseline.json"), &base_fp)?;
@@ -173,32 +175,62 @@ pub fn run_sweep(
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
-/// Get a field value from an OperationDef as JSON.
-fn get_op_field(op: &job::OperationDef, field: &str) -> Option<serde_json::Value> {
-    match field {
-        "stepover" => op.stepover.map(|v| serde_json::json!(v)),
-        "depth" => op.depth.map(|v| serde_json::json!(v)),
-        "depth_per_pass" => op.depth_per_pass.map(|v| serde_json::json!(v)),
-        "feed_rate" => op.feed_rate.map(|v| serde_json::json!(v)),
-        "plunge_rate" => op.plunge_rate.map(|v| serde_json::json!(v)),
-        "safe_z" => op.safe_z.map(|v| serde_json::json!(v)),
-        "tolerance" => op.tolerance.map(|v| serde_json::json!(v)),
-        "angle" => op.angle.map(|v| serde_json::json!(v)),
-        "stock_to_leave" => op.stock_to_leave.map(|v| serde_json::json!(v)),
-        "stock_top_z" => op.stock_top_z.map(|v| serde_json::json!(v)),
-        "fine_stepdown" => op.fine_stepdown.map(|v| serde_json::json!(v)),
-        "min_cutting_radius" => op.min_cutting_radius.map(|v| serde_json::json!(v)),
-        "side" => op.side.as_ref().map(|s| serde_json::json!(s)),
-        "pattern" => op.pattern.as_ref().map(|s| serde_json::json!(s)),
-        "climb" => op.climb.map(|v| serde_json::json!(v)),
-        "slot_clearing" => op.slot_clearing.map(|v| serde_json::json!(v)),
-        "z_blend" => op.z_blend.map(|v| serde_json::json!(v)),
-        "detect_flat_areas" => op.detect_flat_areas.map(|v| serde_json::json!(v)),
-        "dogbone" => op.dogbone.map(|v| serde_json::json!(v)),
-        "entry" => op.entry.as_ref().map(|s| serde_json::json!(s)),
-        "strategy" => op.strategy.as_ref().map(|s| serde_json::json!(s)),
-        "order_by" => op.order_by.as_ref().map(|s| serde_json::json!(s)),
-        _ => None,
+/// The JSON object the job parser itself makes of one operation.
+///
+/// The keys are the TOML keys of the job file, so the sweep reads a field by
+/// the same name it patches. `OperationDef` skips an unset option, so a field
+/// the job file does not set is absent from the map.
+fn op_field_map(op: &job::OperationDef) -> Result<serde_json::Map<String, serde_json::Value>> {
+    match serde_json::to_value(op).context("Serializing the swept operation")? {
+        serde_json::Value::Object(map) => Ok(map),
+        other => bail!("the operation serialized as {other}, which is not a table"),
+    }
+}
+
+/// The value the job file gives the swept field, before the sweep patches it.
+///
+/// An agent reads `base_value` to learn what the sweep varied FROM, so the
+/// sweep reports only what it read:
+///
+/// - the field's value, exactly as the parsed job file carries it;
+/// - JSON `null` when the job file leaves the field unset, which states "the
+///   job file sets nothing here; the operation ran on the planner default";
+/// - a refusal that names the field when `OperationDef` has no such key.
+///
+/// The refusal matters: the parser drops an unknown key, so such a sweep
+/// patches nothing and every variant repeats the baseline.
+fn resolve_base_value(
+    base: &job::JobFile,
+    field: &str,
+    probe_value: &str,
+) -> Result<serde_json::Value> {
+    // The sweep patches the FIRST `[[operation]]` block, so a job file with
+    // none has nothing to sweep and the run stops here with that sentence.
+    let first_op = base
+        .operation
+        .first()
+        .context("the job file declares no [[operation]] block to sweep")?;
+    if let Some(value) = op_field_map(first_op)?.get(field) {
+        return Ok(value.clone());
+    }
+
+    // The job file does not set the field. Patch it with the first sweep
+    // value and read the parsed result back: a key `OperationDef` knows
+    // survives the round trip, an unknown key does not.
+    let probe_job = patch_job_param(base, field, probe_value)?;
+    let probe_op = probe_job
+        .operation
+        .first()
+        .context("the patched job file lost its [[operation]] block")?;
+    if op_field_map(probe_op)?.contains_key(field) {
+        Ok(serde_json::Value::Null)
+    } else {
+        let set_fields = op_field_map(first_op)?;
+        let known: Vec<&str> = set_fields.keys().map(String::as_str).collect();
+        bail!(
+            "the job file's [[operation]] has no field `{field}`; the parser drops that key, so every variant would repeat the baseline. The first operation sets: {}",
+            known.join(", ")
+        )
     }
 }
 
@@ -346,7 +378,72 @@ fn simulate_and_export(
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
+    use super::resolve_base_value;
     use crate::job::{CliToolType, JobFile};
+
+    /// A job file with one adaptive3d operation. `min_region_cut_length_mm`
+    /// is one of the fields the old hand-written reader did not cover.
+    fn sweepable_job() -> JobFile {
+        let source = r#"
+[job]
+output = "part.nc"
+
+[tools.flat_6mm]
+type = "flat"
+diameter = 6.35
+
+[[operation]]
+type = "adaptive3d"
+input = "design.stl"
+tool = "flat_6mm"
+stepover = 2.0
+min_region_cut_length_mm = 4.0
+"#;
+        toml::from_str(source).unwrap()
+    }
+
+    /// CLI-05 sentry: the sweep report states the field's real baseline.
+    ///
+    /// The reader used to name 22 of the 42 job fields and answer the string
+    /// `"default"` for the rest. An agent reads `base_value` to learn what
+    /// the sweep varied FROM, so that string was made-up evidence.
+    #[test]
+    fn a_swept_field_reports_its_real_baseline_not_the_word_default() {
+        let job = sweepable_job();
+
+        // An uncovered field the job file sets: the real value, not "default".
+        let covered = resolve_base_value(&job, "min_region_cut_length_mm", "9.0").unwrap();
+        assert_eq!(covered, serde_json::json!(4.0));
+        assert_ne!(covered, serde_json::json!("default"));
+
+        // A field the reader already named stays exact.
+        assert_eq!(
+            resolve_base_value(&job, "stepover", "3.0").unwrap(),
+            serde_json::json!(2.0)
+        );
+    }
+
+    /// A field the job file leaves unset reports `null`, which states "the
+    /// job file sets nothing here", not a value the sweep never read.
+    #[test]
+    fn an_unset_field_reports_null_not_a_made_up_value() {
+        let job = sweepable_job();
+        let value = resolve_base_value(&job, "stock_to_leave", "0.3").unwrap();
+        assert_eq!(value, serde_json::Value::Null);
+        assert_ne!(value, serde_json::json!("default"));
+    }
+
+    /// A field name `OperationDef` does not know refuses and names the field.
+    /// The parser drops the key, so the sweep would repeat the baseline.
+    #[test]
+    fn a_field_the_parser_does_not_know_refuses_the_sweep() {
+        let job = sweepable_job();
+        let err = resolve_base_value(&job, "not_a_field", "1.0").unwrap_err();
+        assert!(
+            err.to_string().contains("not_a_field"),
+            "the refusal must name the field, got: {err}"
+        );
+    }
 
     /// I10 pair 4: the sweep baseline is a serialize-then-reparse round trip.
     /// Every field the parser knows must survive it. The hand-written mirror
