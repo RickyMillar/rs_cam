@@ -1,5 +1,6 @@
 use crate::state::job::{PostConfig, PostFormat};
 use crate::ui::components::UiExt as _;
+use crate::ui::components::ValueRow;
 use crate::ui::theme;
 use rs_cam_core::compute::config::{SAFE_Z_CLEARANCE_MM, effective_safe_z};
 
@@ -18,6 +19,9 @@ pub fn draw(ui: &mut egui::Ui, post: &mut PostConfig, stock_top_z: f64) {
             });
         ui.end_row();
 
+        // UI-10: `spindle_speed` is a `u32`. `ValueRow` edits an `f64`, and a
+        // temporary f64 would change what a partial edit commits, so the row
+        // keeps its own DragValue.
         ui.label("Spindle Speed:");
         ui.add(
             egui::DragValue::new(&mut post.spindle_speed)
@@ -27,15 +31,11 @@ pub fn draw(ui: &mut egui::Ui, post: &mut PostConfig, stock_top_z: f64) {
         );
         ui.end_row();
 
-        ui.label("Safe Z:")
-            .on_hover_text("Global clearance plane for rapid moves between operations.");
-        ui.add(
-            egui::DragValue::new(&mut post.safe_z)
-                .suffix(" mm")
-                .speed(0.5)
-                .range(0.0..=500.0),
-        );
-        ui.end_row();
+        ValueRow::new("Safe Z:", &mut post.safe_z, " mm", 0.5, 0.0..=500.0)
+            .tooltip(Some(
+                "Global clearance plane for rapid moves between operations.",
+            ))
+            .show(ui);
     });
 
     // Surface the compute-time clamp: `effective_safe_z` floors the user's
@@ -75,14 +75,14 @@ pub fn draw(ui: &mut egui::Ui, post: &mut PostConfig, stock_top_z: f64) {
     );
     if post.high_feedrate_mode {
         ui.param_grid("high_feed_p", |ui| {
-            ui.label("  High Feed:");
-            ui.add(
-                egui::DragValue::new(&mut post.high_feedrate)
-                    .suffix(" mm/min")
-                    .speed(50.0)
-                    .range(500.0..=20000.0),
-            );
-            ui.end_row();
+            ValueRow::new(
+                "  High Feed:",
+                &mut post.high_feedrate,
+                " mm/min",
+                50.0,
+                500.0..=20000.0,
+            )
+            .show(ui);
         });
     }
 }

@@ -12,6 +12,7 @@ use super::panel_apply::{
 use crate::state::AppState;
 use crate::ui::AppEvent;
 use crate::ui::components::UiExt as _;
+use crate::ui::components::ValueRow;
 use crate::ui_command::{NoArgs, UiCommand};
 
 /// Machine-library UX (SNAPSHOT model, like the tool library): import a
@@ -161,28 +162,28 @@ pub(super) fn draw_machine_panel(
         ui.label(format!("{:.2} kW", max_power));
         ui.end_row();
 
-        ui.label("Max Feed:");
-        edit.drag(
-            &ui.add(
-                egui::DragValue::new(&mut draft.max_feed_mm_min)
-                    .speed(50.0)
-                    .range(100.0..=30000.0)
-                    .suffix(" mm/min"),
-            )
-            .on_hover_text("Travel/rapid rate ($110-class). Cutting feeds are capped separately."),
-        );
-        ui.end_row();
+        let out = ValueRow::new(
+            "Max Feed:",
+            &mut draft.max_feed_mm_min,
+            " mm/min",
+            50.0,
+            100.0..=30000.0,
+        )
+        .tooltip(Some(
+            "Travel/rapid rate ($110-class). Cutting feeds are capped separately.",
+        ))
+        .show(ui);
+        edit.drag(&out.value_response);
 
-        ui.label("Max Shank:");
-        edit.drag(
-            &ui.add(
-                egui::DragValue::new(&mut draft.max_shank_mm)
-                    .speed(0.1)
-                    .range(1.0..=25.0)
-                    .suffix(" mm"),
-            ),
-        );
-        ui.end_row();
+        let out = ValueRow::new(
+            "Max Shank:",
+            &mut draft.max_shank_mm,
+            " mm",
+            0.1,
+            1.0..=25.0,
+        )
+        .show(ui);
+        edit.drag(&out.value_response);
     });
 
     ui.add_space(8.0);
@@ -335,17 +336,10 @@ pub(super) fn draw_machine_kinematics(
     let mut changed = false;
 
     let accel_row = |ui: &mut egui::Ui, label: &str, v: &mut f64, hint: &str| -> egui::Response {
-        ui.label(label);
-        let response = ui
-            .add(
-                egui::DragValue::new(v)
-                    .speed(5.0)
-                    .range(10.0..=20000.0)
-                    .suffix(" mm/s²"),
-            )
-            .on_hover_text(hint);
-        ui.end_row();
-        response
+        ValueRow::new(label, v, " mm/s²", 5.0, 10.0..=20000.0)
+            .tooltip(Some(hint))
+            .show(ui)
+            .value_response
     };
 
     ui.param_grid("machine_kinematics", |ui| {
@@ -361,6 +355,9 @@ pub(super) fn draw_machine_kinematics(
             edit.drag(&response);
         }
 
+        // UI-10: `max_decimals(4)` is the reason this row keeps its own
+        // DragValue. `ValueRow` has no decimal-precision dial, and a junction
+        // deviation reads in thousandths of a millimetre.
         ui.label("Junction dev:");
         let response = ui
             .add(
@@ -380,6 +377,8 @@ pub(super) fn draw_machine_kinematics(
             let response = ui.checkbox(&mut jerk_enabled, "");
             changed |= response.changed();
             edit.click(&response);
+            // UI-10: the jerk value shares its cell with the enable
+            // checkbox, so it is not a labelled row of its own.
             if jerk_enabled {
                 let response = ui.add(
                     egui::DragValue::new(&mut jerk_val)

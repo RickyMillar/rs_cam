@@ -801,3 +801,172 @@ fn the_hand_rolled_emphasis_list_is_not_vacuous_ui03() {
          DELETES headers passes the budget arm without routing anything."
     );
 }
+
+// ---------------------------------------------------------------------------
+// UI-10 — a labelled numeric parameter row is `ValueRow`
+// ---------------------------------------------------------------------------
+//
+// `value_row.rs` states it is "the one labelled-numeric-input row" and
+// `ui/components/CLAUDE.md` makes that an invariant. The audit counted 69 raw
+// `DragValue::new` sites against 4 `ValueRow` call sites. One renderer must
+// decide the commit semantics — the `PanelEdit::drag` triple of changed /
+// committed / in_flight — for every numeric field, because that is the
+// mechanism the focus-loss-while-typing defect turns on.
+//
+// UI-10 converted every labelled row that already sits in a 2-column
+// parameter grid. What is left is listed below with the reason it is not a
+// `ValueRow` row. The count only ever goes down.
+
+/// Files that may still name `egui::DragValue::new`, with the count and the
+/// reason. `ui/components/` is exempt by folder: it holds the renderers.
+const RAW_DRAG_VALUE_ALLOWANCE: &[(&str, usize, &str)] = &[
+    (
+        "ui/multitool_planner.rs",
+        8,
+        "inline dial ribbons — several dials share one horizontal row, so \
+         there is no label:value row to render",
+    ),
+    (
+        "ui/properties/toolpath_panel.rs",
+        4,
+        "boundary offset and the three rest-analysis dials draw in \
+         `ui.horizontal`; `ValueRow::show` calls `ui.end_row()` and needs a \
+         grid",
+    ),
+    (
+        "ui/properties/stock.rs",
+        4,
+        "padding, the shared pin diameter and the per-pin X/Y all draw in \
+         `ui.horizontal` rows",
+    ),
+    (
+        "ui/properties/operations/surface_3d.rs",
+        4,
+        "two integer fields (`ValueRow` edits an `f64`) and two rows whose \
+         value cell holds a horizontal with extra content",
+    ),
+    (
+        "ui/properties/operations/boundary_2d.rs",
+        3,
+        "integer fields: tab count and two finishing-pass counts",
+    ),
+    (
+        "ui/properties/setup.rs",
+        2,
+        "the datum Z offset and the fixture clearance draw in \
+         `ui.horizontal` rows",
+    ),
+    (
+        "ui/properties/machine_panel.rs",
+        2,
+        "junction deviation needs `max_decimals(4)`, which `ValueRow` has no \
+         dial for; the jerk value shares its cell with the enable checkbox",
+    ),
+    (
+        "ui/export_wizard.rs",
+        2,
+        "the Safe Z override is a conditional horizontal row and the spindle \
+         warm-up is an integer",
+    ),
+    ("ui/properties/tool.rs", 1, "the flute count is an integer"),
+    ("ui/properties/post.rs", 1, "the spindle speed is a `u32`"),
+    (
+        "ui/properties/operations/mod.rs",
+        1,
+        "the heights ladder is a 4-column grid; `ValueRow` ends the row after \
+         two cells",
+    ),
+    (
+        "ui/properties/model_sim_panels.rs",
+        1,
+        "the custom model scale is drawn inside a `push_id` horizontal",
+    ),
+    (
+        "ui/feeds/compare.rs",
+        1,
+        "the feeds surfaces are the power session's; UI-10 does not edit them",
+    ),
+];
+
+/// The folder that OWNS the numeric-row renderers.
+const VALUE_ROW_HOME: &str = "ui/components/";
+
+/// The fewest `ValueRow::new` call sites the crate must hold, so a sweep that
+/// DELETES rows cannot pass the budget arm.
+const MIN_VALUE_ROWS: usize = 30;
+
+fn raw_drag_value_sites() -> Vec<(String, usize)> {
+    let root = ui_src_root();
+    let mut out = Vec::new();
+    for path in ui_rs_files() {
+        let rel = path
+            .strip_prefix(&root)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        if rel.starts_with(VALUE_ROW_HOME) {
+            continue;
+        }
+        let text = without_comments(&std::fs::read_to_string(&path).unwrap());
+        let n = text.matches("DragValue::new(").count();
+        if n > 0 {
+            out.push((rel, n));
+        }
+    }
+    out
+}
+
+#[test]
+fn a_labelled_numeric_row_is_the_kit_element_ui10() {
+    let sites = raw_drag_value_sites();
+    let mut over = Vec::new();
+
+    for (rel, count) in &sites {
+        let allowed = RAW_DRAG_VALUE_ALLOWANCE
+            .iter()
+            .find(|(f, _, _)| f == rel)
+            .map_or(0, |(_, n, _)| *n);
+        if *count > allowed {
+            over.push(format!("{rel} {count} (allowed {allowed})"));
+        }
+    }
+
+    assert!(
+        over.is_empty(),
+        "these files draw a raw DragValue where `components::ValueRow` is \
+         the renderer. A labelled numeric parameter inside a 2-column grid \
+         is `ValueRow::new(label, &mut value, suffix, speed, range)`, and a \
+         panel that records edits feeds `out.value_response` to \
+         `PanelEdit::drag` so the commit rule stays the panel's own. A row \
+         that is NOT that shape is named in RAW_DRAG_VALUE_ALLOWANCE with \
+         its reason. Over budget: {}",
+        over.join(", ")
+    );
+}
+
+#[test]
+fn the_raw_drag_value_allowance_is_not_vacuous_ui10() {
+    let sites = raw_drag_value_sites();
+
+    for (rel, allowed, reason) in RAW_DRAG_VALUE_ALLOWANCE {
+        assert!(!reason.is_empty(), "{rel} must say WHY its rows are raw");
+        let found = sites.iter().find(|(f, _)| f == rel).map_or(0, |(_, n)| *n);
+        assert_eq!(
+            found, *allowed,
+            "{rel} is allowed {allowed} raw DragValue sites and holds \
+             {found}. An allowance that no longer matches its file lets a \
+             new hand-rolled row in under an old number."
+        );
+    }
+
+    let mut value_rows = 0usize;
+    for path in ui_rs_files() {
+        let text = without_comments(&std::fs::read_to_string(&path).unwrap());
+        value_rows += text.matches("ValueRow::new(").count();
+    }
+    assert!(
+        value_rows >= MIN_VALUE_ROWS,
+        "the crate holds only {value_rows} ValueRow call sites, fewer than \
+         the {MIN_VALUE_ROWS} it had after UI-10."
+    );
+}

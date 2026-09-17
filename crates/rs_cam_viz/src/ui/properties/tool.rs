@@ -1,5 +1,6 @@
 use crate::state::job::{BitCutDirection, ToolConfig, ToolMaterial, ToolType};
 use crate::ui::components::UiExt as _;
+use crate::ui::components::ValueRow;
 use crate::ui::theme;
 
 /// TOO-003 — what the operator asked the tool editor to do this frame.
@@ -158,25 +159,20 @@ pub(crate) fn draw_tool_fields(ui: &mut egui::Ui, tool: &mut ToolConfig) {
 
     // Parameters grid
     ui.param_grid("tool_params", |ui| {
-        ui.label("Diameter:");
-        ui.add(
-            egui::DragValue::new(&mut tool.diameter)
-                .suffix(" mm")
-                .speed(0.1)
-                .range(0.1..=100.0),
-        );
-        ui.end_row();
+        ValueRow::new("Diameter:", &mut tool.diameter, " mm", 0.1, 0.1..=100.0).show(ui);
 
-        ui.label("Cutting Length:");
-        ui.add(
-            egui::DragValue::new(&mut tool.cutting_length)
-                .suffix(" mm")
-                .speed(0.5)
-                .range(0.1..=200.0),
-        );
-        ui.end_row();
+        ValueRow::new(
+            "Cutting Length:",
+            &mut tool.cutting_length,
+            " mm",
+            0.5,
+            0.1..=200.0,
+        )
+        .show(ui);
 
-        // Flute count (critical for feeds calculation)
+        // Flute count (critical for feeds calculation).
+        // UI-10: an integer field. `ValueRow` edits an `f64`, and a
+        // temporary f64 would change what a partial edit commits.
         ui.label("Flutes:");
         let mut flutes_i = tool.flute_count as i32;
         if ui
@@ -187,24 +183,17 @@ pub(crate) fn draw_tool_fields(ui: &mut egui::Ui, tool: &mut ToolConfig) {
         }
         ui.end_row();
 
-        ui.label("Helix:");
-        ui.add(
-            egui::DragValue::new(&mut tool.helix_deg)
-                .suffix(" deg")
-                .speed(1.0)
-                .range(0.0..=60.0),
-        );
-        ui.end_row();
+        ValueRow::new("Helix:", &mut tool.helix_deg, " deg", 1.0, 0.0..=60.0).show(ui);
 
         if matches!(tool.tool_type, ToolType::EndMill) {
-            ui.label("Corner Radius:");
-            ui.add(
-                egui::DragValue::new(&mut tool.corner_radius_mm)
-                    .suffix(" mm")
-                    .speed(0.01)
-                    .range(0.0..=tool.diameter / 2.0),
-            );
-            ui.end_row();
+            ValueRow::new(
+                "Corner Radius:",
+                &mut tool.corner_radius_mm,
+                " mm",
+                0.01,
+                0.0..=tool.diameter / 2.0,
+            )
+            .show(ui);
         }
 
         // Tool material
@@ -232,34 +221,34 @@ pub(crate) fn draw_tool_fields(ui: &mut egui::Ui, tool: &mut ToolConfig) {
         // Type-specific parameters
         match tool.tool_type {
             ToolType::BullNose => {
-                ui.label("Corner Radius:");
-                ui.add(
-                    egui::DragValue::new(&mut tool.corner_radius)
-                        .suffix(" mm")
-                        .speed(0.05)
-                        .range(0.01..=tool.diameter / 2.0),
-                );
-                ui.end_row();
+                ValueRow::new(
+                    "Corner Radius:",
+                    &mut tool.corner_radius,
+                    " mm",
+                    0.05,
+                    0.01..=tool.diameter / 2.0,
+                )
+                .show(ui);
             }
             ToolType::VBit => {
-                ui.label("Included Angle:");
-                ui.add(
-                    egui::DragValue::new(&mut tool.included_angle)
-                        .suffix(" deg")
-                        .speed(1.0)
-                        .range(1.0..=179.0),
-                );
-                ui.end_row();
+                ValueRow::new(
+                    "Included Angle:",
+                    &mut tool.included_angle,
+                    " deg",
+                    1.0,
+                    1.0..=179.0,
+                )
+                .show(ui);
             }
             ToolType::TaperedBallNose => {
-                ui.label("Taper Half-Angle:");
-                ui.add(
-                    egui::DragValue::new(&mut tool.taper_half_angle)
-                        .suffix(" deg")
-                        .speed(0.5)
-                        .range(0.5..=89.0),
-                );
-                ui.end_row();
+                ValueRow::new(
+                    "Taper Half-Angle:",
+                    &mut tool.taper_half_angle,
+                    " deg",
+                    0.5,
+                    0.5..=89.0,
+                )
+                .show(ui);
                 // TOO-005: the tapered "shaft diameter" (taper top) used to
                 // sit here next to the holder "shank diameter", two near-
                 // identical names for different geometry. It now lives in its
@@ -276,14 +265,14 @@ pub(crate) fn draw_tool_fields(ui: &mut egui::Ui, tool: &mut ToolConfig) {
         ui.add_space(8.0);
         ui.label(egui::RichText::new("Cutter geometry").strong());
         ui.param_grid("tool_cutter_geometry", |ui| {
-            ui.label("Upper shaft ⌀ (taper top):");
-            ui.add(
-                egui::DragValue::new(&mut tool.shaft_diameter)
-                    .suffix(" mm")
-                    .speed(0.1)
-                    .range(tool.diameter..=100.0),
-            );
-            ui.end_row();
+            ValueRow::new(
+                "Upper shaft ⌀ (taper top):",
+                &mut tool.shaft_diameter,
+                " mm",
+                0.1,
+                tool.diameter..=100.0,
+            )
+            .show(ui);
         });
     }
 
@@ -311,43 +300,36 @@ pub(crate) fn draw_tool_fields(ui: &mut egui::Ui, tool: &mut ToolConfig) {
         .id_salt("tool_holder_shank")
         .show(ui, |ui| {
             ui.param_grid("holder_params", |ui| {
-                ui.label("Holder Diameter:");
-                ui.add(
-                    egui::DragValue::new(&mut tool.holder_diameter)
-                        .suffix(" mm")
-                        .speed(0.5)
-                        .range(0.0..=200.0),
-                );
-                ui.end_row();
+                ValueRow::new(
+                    "Holder Diameter:",
+                    &mut tool.holder_diameter,
+                    " mm",
+                    0.5,
+                    0.0..=200.0,
+                )
+                .show(ui);
 
                 // TOO-005: role-bearing label, distinct from the tapered
                 // "Upper shaft ⌀" in the Cutter geometry group above.
-                ui.label("Shank \u{2300} (in collet):");
-                ui.add(
-                    egui::DragValue::new(&mut tool.shank_diameter)
-                        .suffix(" mm")
-                        .speed(0.1)
-                        .range(0.0..=100.0),
-                );
-                ui.end_row();
+                ValueRow::new(
+                    "Shank \u{2300} (in collet):",
+                    &mut tool.shank_diameter,
+                    " mm",
+                    0.1,
+                    0.0..=100.0,
+                )
+                .show(ui);
 
-                ui.label("Shank Length:");
-                ui.add(
-                    egui::DragValue::new(&mut tool.shank_length)
-                        .suffix(" mm")
-                        .speed(0.5)
-                        .range(0.0..=200.0),
-                );
-                ui.end_row();
+                ValueRow::new(
+                    "Shank Length:",
+                    &mut tool.shank_length,
+                    " mm",
+                    0.5,
+                    0.0..=200.0,
+                )
+                .show(ui);
 
-                ui.label("Stickout:");
-                ui.add(
-                    egui::DragValue::new(&mut tool.stickout)
-                        .suffix(" mm")
-                        .speed(0.5)
-                        .range(0.0..=300.0),
-                );
-                ui.end_row();
+                ValueRow::new("Stickout:", &mut tool.stickout, " mm", 0.5, 0.0..=300.0).show(ui);
             });
         });
 

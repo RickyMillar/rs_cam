@@ -106,6 +106,8 @@ pub(in crate::ui::properties) fn draw_pocket_params(
         if cfg.pattern == PocketPattern::Zigzag {
             dv(ui, "Angle:", &mut cfg.angle, " deg", 1.0, 0.0..=360.0);
         }
+        // UI-10: an integer field. `ValueRow` edits an `f64`, and a
+        // temporary f64 would change what a partial edit commits.
         ui.label("Finishing Passes:");
         let mut fp = cfg.finishing_passes as i32;
         if ui
@@ -198,6 +200,8 @@ pub(in crate::ui::properties) fn draw_profile_params(
         .open(tabs_force_open)
         .show(ui, |ui| {
             ui.param_grid("tab_p", |ui| {
+                // UI-10: an integer field. `ValueRow` edits an `f64`, and a
+                // temporary f64 would change what a partial edit commits.
                 ui.label("Count:");
                 let mut count = cfg.tab_count as i32;
                 if ui
@@ -218,6 +222,8 @@ pub(in crate::ui::properties) fn draw_profile_params(
             }
         });
     ui.param_grid("prof_finish", |ui| {
+        // UI-10: an integer field. `ValueRow` edits an `f64`, and a
+        // temporary f64 would change what a partial edit commits.
         ui.label("Finishing Passes:");
         let mut fp = cfg.finishing_passes as i32;
         if ui

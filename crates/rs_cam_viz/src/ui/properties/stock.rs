@@ -6,6 +6,7 @@ use super::PanelEdit;
 use crate::state::job::{AlignmentPin, FaceUp, FlipAxis, StockConfig};
 use crate::ui::AppEvent;
 use crate::ui::components::UiExt as _;
+use crate::ui::components::ValueRow;
 
 /// Draw the stock panel over a SCRATCH copy of the stock configuration.
 ///
@@ -75,72 +76,30 @@ pub fn draw(
 
     ui.label("Dimensions:");
     ui.param_grid("stock_dims", |ui| {
-        ui.label("X:");
-        edit.drag(
-            &ui.add(
-                egui::DragValue::new(&mut stock.x)
-                    .suffix(" mm")
-                    .speed(0.5)
-                    .range(0.1..=10000.0),
-            ),
-        );
-        ui.end_row();
+        let out = ValueRow::new("X:", &mut stock.x, " mm", 0.5, 0.1..=10000.0).show(ui);
+        edit.drag(&out.value_response);
 
-        ui.label("Y:");
-        edit.drag(
-            &ui.add(
-                egui::DragValue::new(&mut stock.y)
-                    .suffix(" mm")
-                    .speed(0.5)
-                    .range(0.1..=10000.0),
-            ),
-        );
-        ui.end_row();
+        let out = ValueRow::new("Y:", &mut stock.y, " mm", 0.5, 0.1..=10000.0).show(ui);
+        edit.drag(&out.value_response);
 
-        ui.label("Z:");
-        edit.drag(
-            &ui.add(
-                egui::DragValue::new(&mut stock.z)
-                    .suffix(" mm")
-                    .speed(0.5)
-                    .range(0.1..=10000.0),
-            ),
-        );
-        ui.end_row();
+        let out = ValueRow::new("Z:", &mut stock.z, " mm", 0.5, 0.1..=10000.0).show(ui);
+        edit.drag(&out.value_response);
     });
 
     ui.add_space(8.0);
     ui.label("Origin:");
     ui.param_grid("stock_origin", |ui| {
-        ui.label("X:");
-        edit.drag(
-            &ui.add(
-                egui::DragValue::new(&mut stock.origin_x)
-                    .suffix(" mm")
-                    .speed(0.5),
-            ),
-        );
-        ui.end_row();
+        let out =
+            ValueRow::new("X:", &mut stock.origin_x, " mm", 0.5, f64::MIN..=f64::MAX).show(ui);
+        edit.drag(&out.value_response);
 
-        ui.label("Y:");
-        edit.drag(
-            &ui.add(
-                egui::DragValue::new(&mut stock.origin_y)
-                    .suffix(" mm")
-                    .speed(0.5),
-            ),
-        );
-        ui.end_row();
+        let out =
+            ValueRow::new("Y:", &mut stock.origin_y, " mm", 0.5, f64::MIN..=f64::MAX).show(ui);
+        edit.drag(&out.value_response);
 
-        ui.label("Z:");
-        edit.drag(
-            &ui.add(
-                egui::DragValue::new(&mut stock.origin_z)
-                    .suffix(" mm")
-                    .speed(0.5),
-            ),
-        );
-        ui.end_row();
+        let out =
+            ValueRow::new("Z:", &mut stock.origin_z, " mm", 0.5, f64::MIN..=f64::MAX).show(ui);
+        edit.drag(&out.value_response);
     });
 
     ui.add_space(8.0);

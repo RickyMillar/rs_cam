@@ -416,6 +416,8 @@ pub(in crate::ui::properties) fn draw_pencil_params(
                 0.01,
                 0.0..=2.0,
             );
+            // UI-10: an integer field. `ValueRow` edits an `f64`, and a
+            // temporary f64 would change what a partial edit commits.
             ui.label("Curv. Smoothing:");
             let mut s = cfg.curvature_smoothing as i32;
             if ui.add(egui::DragValue::new(&mut s).range(0..=20)).changed() {
@@ -448,6 +450,8 @@ pub(in crate::ui::properties) fn draw_pencil_params(
             0.5,
             0.5..=50.0,
         );
+        // UI-10: an integer field. `ValueRow` edits an `f64`, and a
+        // temporary f64 would change what a partial edit commits.
         ui.label("Offset Passes:");
         let mut n = cfg.num_offset_passes as i32;
         if ui.add(egui::DragValue::new(&mut n).range(0..=10)).changed() {
