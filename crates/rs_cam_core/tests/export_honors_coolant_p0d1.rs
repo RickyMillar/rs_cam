@@ -67,8 +67,8 @@
 
 use std::sync::Arc;
 
-use rs_cam_core::compute::PocketConfig;
 use rs_cam_core::compute::catalog::OperationConfig;
+use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::gcode::{CoolantMode, ToolLoadExportPolicy, export_gcode_checked};
 use rs_cam_core::geo::P3;
 use rs_cam_core::session::{AdoptResultArgs, Command, ProjectSession, ToolpathComputeResult};

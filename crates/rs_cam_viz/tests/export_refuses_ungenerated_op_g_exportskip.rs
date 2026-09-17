@@ -93,7 +93,9 @@ fn toolpath_config(id: u32, name: &str, enabled: bool) -> ToolpathConfig {
         id: rs_cam_core::ToolpathId(id as usize),
         name: name.to_owned(),
         enabled,
-        operation: OperationConfig::Scallop(rs_cam_core::compute::ScallopConfig::default()),
+        operation: OperationConfig::Scallop(
+            rs_cam_core::compute::operation_configs::ScallopConfig::default(),
+        ),
         dressups: Default::default(),
         heights: Default::default(),
         tool_id: 1,

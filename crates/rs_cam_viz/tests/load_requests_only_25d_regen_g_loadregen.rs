@@ -167,7 +167,9 @@ fn write_two_op_project() -> PathBuf {
                 0,
                 "Pocket",
                 0,
-                OperationConfig::Pocket(rs_cam_core::compute::PocketConfig::default()),
+                OperationConfig::Pocket(
+                    rs_cam_core::compute::operation_configs::PocketConfig::default(),
+                ),
             ),
         )
         .expect("add pocket");
@@ -178,7 +180,9 @@ fn write_two_op_project() -> PathBuf {
                 1,
                 "Scallop",
                 1,
-                OperationConfig::Scallop(rs_cam_core::compute::ScallopConfig::default()),
+                OperationConfig::Scallop(
+                    rs_cam_core::compute::operation_configs::ScallopConfig::default(),
+                ),
             ),
         )
         .expect("add scallop");

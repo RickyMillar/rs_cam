@@ -125,7 +125,9 @@ fn build_state() -> (ProjectSession, GuiState, SimulationState) {
         id: rs_cam_core::ToolpathId(0),
         name: OP_NAME.to_owned(),
         enabled: true,
-        operation: OperationConfig::Scallop(rs_cam_core::compute::ScallopConfig::default()),
+        operation: OperationConfig::Scallop(
+            rs_cam_core::compute::operation_configs::ScallopConfig::default(),
+        ),
         dressups: Default::default(),
         heights: Default::default(),
         tool_id: 1,

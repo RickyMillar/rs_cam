@@ -138,7 +138,9 @@ fn build_session() -> (ProjectSession, GuiState, SimulationState) {
         id: rs_cam_core::ToolpathId(0),
         name: "Sample Path".to_owned(),
         enabled: true,
-        operation: OperationConfig::Scallop(rs_cam_core::compute::ScallopConfig::default()),
+        operation: OperationConfig::Scallop(
+            rs_cam_core::compute::operation_configs::ScallopConfig::default(),
+        ),
         dressups: Default::default(),
         heights: Default::default(),
         tool_id: 1,
@@ -422,7 +424,8 @@ fn viz_phase_assembly_uses_per_op_spindle_rpm() {
     let (mut session, mut gui, sim) = build_session();
 
     // Second toolpath on the same tool, with an op-level RPM override.
-    let mut op = OperationConfig::Scallop(rs_cam_core::compute::ScallopConfig::default());
+    let mut op =
+        OperationConfig::Scallop(rs_cam_core::compute::operation_configs::ScallopConfig::default());
     op.set_spindle_rpm(Some(12_345));
     let tp2 = ToolpathConfig {
         id: rs_cam_core::ToolpathId(1),
@@ -597,7 +600,9 @@ fn wizard_setup_pause_message_lands_in_emitted_gcode() {
         id: rs_cam_core::ToolpathId(99),
         name: "Bottom Op".to_owned(),
         enabled: true,
-        operation: OperationConfig::Scallop(rs_cam_core::compute::ScallopConfig::default()),
+        operation: OperationConfig::Scallop(
+            rs_cam_core::compute::operation_configs::ScallopConfig::default(),
+        ),
         dressups: Default::default(),
         heights: Default::default(),
         tool_id: 1,
@@ -753,7 +758,9 @@ fn per_setup_export_puts_identity_setup_in_the_stock_relative_frame() {
         id: rs_cam_core::ToolpathId(99),
         name: "Bottom Op".to_owned(),
         enabled: true,
-        operation: OperationConfig::Scallop(rs_cam_core::compute::ScallopConfig::default()),
+        operation: OperationConfig::Scallop(
+            rs_cam_core::compute::operation_configs::ScallopConfig::default(),
+        ),
         dressups: Default::default(),
         heights: Default::default(),
         tool_id: 1,

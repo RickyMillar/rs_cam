@@ -144,9 +144,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use rs_cam_core::compute::PocketConfig;
 use rs_cam_core::compute::StockConfig;
 use rs_cam_core::compute::catalog::OperationConfig;
+use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::compute::transform::FaceUp;

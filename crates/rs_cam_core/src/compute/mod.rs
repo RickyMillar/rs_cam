@@ -35,17 +35,6 @@ pub use config::{
     ReferenceOffset, ResolvedHeights, RetractTripCount, StockSource, ToolpathId, ToolpathStats,
 };
 
-pub use operation_configs::{
-    Adaptive3dConfig, Adaptive3dEntryStyle, AdaptiveConfig, AlignmentPinDrillConfig, ChamferConfig,
-    ClearingStrategy, CompensationType, CutDirection, DrillConfig, DrillCycleType,
-    DropCutterConfig, FaceConfig, FaceDirection, HorizontalFinishConfig, InlayConfig, PencilConfig,
-    PocketConfig, PocketPattern, ProfileConfig, ProfileSide, ProjectCurveConfig,
-    ProjectCurveDirection, ProjectCurveSide, RadialFinishConfig, RampFinishConfig, RegionOrdering,
-    RestConfig, ScallopConfig, ScallopDirection, SpiralDirection, SpiralFinishConfig,
-    SteepShallowConfig, TraceCompensation, TraceConfig, VCarveConfig, WaterlineConfig,
-    ZigzagConfig,
-};
-
 pub use tool_config::{BitCutDirection, ToolConfig, ToolId, ToolMaterial, ToolType};
 
 pub use stock_config::{

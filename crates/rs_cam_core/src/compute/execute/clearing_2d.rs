@@ -261,7 +261,7 @@ pub(crate) fn generate_profile(
             safe_z,
             climb: cfg.climb,
             compensate_in_controller: cfg.compensation
-                == crate::compute::CompensationType::InControl,
+                == crate::compute::operation_configs::CompensationType::InControl,
         };
         let (contour, failures) = crate::ops::profile::profile_path_reported(poly, &base);
         offset_failures.set(offset_failures.get() + failures);

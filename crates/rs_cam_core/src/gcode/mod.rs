@@ -816,7 +816,8 @@ fn refuse_inch_units(post: &PostDefinition, overlay: &WizardOverlay) -> Result<(
 pub fn controller_compensation_for(
     tc: &crate::session::ToolpathConfig,
 ) -> Option<ControllerCompensation> {
-    use crate::compute::{CompensationType, OperationConfig};
+    use crate::compute::catalog::OperationConfig;
+    use crate::compute::operation_configs::CompensationType;
     use crate::ops::profile::ProfileSide;
 
     if let OperationConfig::Profile(ref cfg) = tc.operation
@@ -1108,7 +1109,8 @@ mod tests {
     /// nothing.
     #[test]
     fn controller_compensation_follows_the_side_and_the_direction() {
-        use crate::compute::{CompensationType, OperationConfig, PocketConfig, ProfileConfig};
+        use crate::compute::catalog::OperationConfig;
+        use crate::compute::operation_configs::{CompensationType, PocketConfig, ProfileConfig};
         use crate::ops::profile::ProfileSide;
 
         let profile = |side: ProfileSide, climb: bool, compensation: CompensationType| {

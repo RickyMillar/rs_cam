@@ -305,7 +305,9 @@ fn sample_project_into<B: ComputeBackend>(controller: &mut AppController<B>) {
         id: ToolpathId(0),
         name: "Scallop".to_owned(),
         enabled: true,
-        operation: OperationConfig::Scallop(rs_cam_core::compute::ScallopConfig::default()),
+        operation: OperationConfig::Scallop(
+            rs_cam_core::compute::operation_configs::ScallopConfig::default(),
+        ),
         dressups: Default::default(),
         heights: Default::default(),
         tool_id: 1,
@@ -369,7 +371,9 @@ fn push_toolpath<B: ComputeBackend>(controller: &mut AppController<B>, name: &st
         id: ToolpathId(next),
         name: name.to_owned(),
         enabled: true,
-        operation: OperationConfig::Scallop(rs_cam_core::compute::ScallopConfig::default()),
+        operation: OperationConfig::Scallop(
+            rs_cam_core::compute::operation_configs::ScallopConfig::default(),
+        ),
         dressups: Default::default(),
         heights: Default::default(),
         tool_id: 1,
@@ -1879,7 +1883,9 @@ fn add_derived_rest_dependent(
         id: ToolpathId(0), // placeholder — add_toolpath assigns the real id
         name: "Rest scallop".to_owned(),
         enabled: true,
-        operation: OperationConfig::Scallop(rs_cam_core::compute::ScallopConfig::default()),
+        operation: OperationConfig::Scallop(
+            rs_cam_core::compute::operation_configs::ScallopConfig::default(),
+        ),
         dressups: Default::default(),
         heights: Default::default(),
         tool_id: 1,
@@ -2014,7 +2020,9 @@ fn set_boundary_config_auto_enables_source_rest_analysis() {
         id: ToolpathId(0), // placeholder — add_toolpath assigns the real id
         name: "Consumer".to_owned(),
         enabled: true,
-        operation: OperationConfig::Scallop(rs_cam_core::compute::ScallopConfig::default()),
+        operation: OperationConfig::Scallop(
+            rs_cam_core::compute::operation_configs::ScallopConfig::default(),
+        ),
         dressups: Default::default(),
         heights: Default::default(),
         tool_id: 1,
@@ -2774,7 +2782,7 @@ impl crate::compute::ComputeBackend for CapturingBackend {
 /// Z=-2, -4, -6, simulation engages stock.
 #[test]
 fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
-    use rs_cam_core::compute::PocketConfig;
+    use rs_cam_core::compute::operation_configs::PocketConfig;
     use rs_cam_core::compute::operation_configs::PocketPattern;
     use rs_cam_core::compute::stock_config::StockConfig;
     use rs_cam_core::material::{Material, WoodSpecies};
