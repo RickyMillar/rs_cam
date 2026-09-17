@@ -35,4 +35,5 @@ Every 3D finishing strategy and the unified planner. The entry point is
 - `cargo test -p rs_cam_core -q --test finish_resolution_policy_pr3`
 - `cargo test -p rs_cam_core -q --test classification_strategy_m3`
 - `cargo test -p rs_cam_core -q --test finish_planner_wanaka_decompose`
+  (an `#[ignore]` harness on the wanaka project; needs `-- --ignored`; long)
 - `cargo test -p rs_cam_core -q --test scallop_iso_field_config`

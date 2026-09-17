@@ -34,6 +34,7 @@ point is `feeds::suggest`.
 ## Sentries
 
 - `cargo test -p rs_cam_core -q --test lut_resolver_census_a6`
-- `cargo test -p rs_cam_core -q --test wanaka_suggest_integration`
+- `cargo test -p rs_cam_core -q --test wanaka_suggest_integration` — a long
+  simulation (minutes): ask the operator before you run it; not routine.
 - `cargo test -p rs_cam_core -q --test lookup_parity`
 - `cargo test -p rs_cam_core -q --test rubbing_floor_never_exceeds_band`

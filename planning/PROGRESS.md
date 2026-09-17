@@ -38,6 +38,40 @@
 - bounded typed simulation triage plus per-metric measurability abstention, consumed by GUI, MCP, CLI and narration through one contract
 - machine kinematics as an analysis dimension: per-axis max rates (`$110/$111/$112`) in the machine model, a per-toolpath kinematic utilization instrument (utilization, feed-bound headroom, machine-bound share, plunge-class peak) on every simulation surface, and a geometric plunge guard in the feed modulator
 
+## Structure programme — 2026-09-17 (navigable repository; COMPLETE)
+
+The tree changed shape today. Read `planning/structure_2026-09-17/EXECUTION_SUMMARY.md`
+for the full account; the durable facts:
+
+- **Planning purge.** 1 010 files (1.15 GB) left `planning/` and the root.
+  Nothing was archived. Every deleted file is at the annotated tag
+  `planning-pre-purge-2026-09-17`: `git show planning-pre-purge-2026-09-17:<path>`.
+  `planning/DELETED_INDEX.md` records what each deleted package decided and
+  why it is obsolete. A `planning/…` path in a doc comment that no longer
+  exists is expected, not a defect.
+- **Core layout.** `crates/rs_cam_core/src/` holds `lib.rs` plus seven spine
+  files (`geo`, `polygon`, `mesh`, `toolpath`, `ids`, `interrupt`,
+  `measurement`); everything else sits in one of 24 folders (`ops/`,
+  `finish/`, `geometry/`, `surface/`, `maps/`, `stock/`, `dressup/`, `io/`,
+  `export/`, `trace/`, `machine/`, `util/` are new). No re-export shims: a
+  moved module's path changed everywhere.
+- **File splits.** The 19 production files over 3 000 lines (core and viz,
+  including `session/compute.rs`, `compute/execute.rs`, `feeds/suggest.rs`,
+  `app/mcp.rs`, `ui/properties/mod.rs`) are split into children as pure
+  moves; the parent re-exports every public name, so callers did not change.
+  Only `polygon.rs` (spine, ruled whole) remains over 3 000.
+- **Instruction files.** Every module folder with an invariant carries its own
+  `CLAUDE.md` (≤ 40 lines: file map, invariants, sentries, traps). The crate
+  files are indexes. A rule lives in the one folder that owns it.
+- **Also closed:** `feeds/` and `tool_load/` tech-debt hand-off list; all
+  five red tests handed off by earlier programmes; the CLI smoke baseline is
+  re-cut at `planning/toolpath_acceptance/baselines/2026-09-17.csv`
+  (AS014's power verdict flagged for the operator).
+
+Open for the operator: `git filter-repo` for the 948 MB blob and the tag
+push; the AS014 verdict; the two `conformal_spiral` children declined on
+visibility cost.
+
 ## Architecture consolidation — 2026-09-13 (close-out: every package landed; one core dev loop)
 
 The operator answered four close-out questions (plan §27) and one UX
