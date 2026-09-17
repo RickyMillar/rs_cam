@@ -2094,6 +2094,125 @@ pub struct DressupConfig {
     pub air_bridge_policy: crate::dressup::AirBridgePolicy,
 }
 
+/// One published dressup field: the wire name and what the field does.
+///
+/// CMP-17: the MCP `set_dressup_config` description used to be a hand-written
+/// prose list. It named 17 fields of 23 and it advertised a dial nothing read.
+/// This table is the one place the vocabulary is written down.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DressupFieldDef {
+    /// The wire name, identical to the serde name of the struct field.
+    pub name: &'static str,
+    /// What the field does, in one line.
+    pub description: &'static str,
+}
+
+impl DressupConfig {
+    /// Every settable dressup field.
+    ///
+    /// `dressup_field_names_are_published` (this file) holds the table against
+    /// the struct, and the `rs_cam_viz` test of the same name holds the MCP
+    /// `set_dressup_config` description against the table. A field added to
+    /// `DressupConfig` without a row here fails the first test; a row that the
+    /// description does not name fails the second.
+    pub const FIELD_DEFS: &'static [DressupFieldDef] = &[
+        DressupFieldDef {
+            name: "entry_style",
+            description: "how the tool enters the cut: none, ramp or helix",
+        },
+        DressupFieldDef {
+            name: "ramp_angle",
+            description: "ramp entry angle (degrees)",
+        },
+        DressupFieldDef {
+            name: "helix_radius",
+            description: "helix entry radius (mm)",
+        },
+        DressupFieldDef {
+            name: "helix_pitch",
+            description: "helix entry pitch per turn (mm)",
+        },
+        DressupFieldDef {
+            name: "dogbone",
+            description: "add dogbone overcuts at inside corners",
+        },
+        DressupFieldDef {
+            name: "dogbone_angle",
+            description: "corner angle at or below which a dogbone is cut (degrees)",
+        },
+        DressupFieldDef {
+            name: "lead_in_out",
+            description: "add tangential lead-in and lead-out arcs",
+        },
+        DressupFieldDef {
+            name: "lead_radius",
+            description: "lead-in and lead-out arc radius (mm)",
+        },
+        DressupFieldDef {
+            name: "lead_in_feed_rate",
+            description: "feed for the lead-in arc (mm/min); unset inherits the cutting feed",
+        },
+        DressupFieldDef {
+            name: "lead_out_feed_rate",
+            description: "feed for the lead-out arc (mm/min); unset inherits the cutting feed",
+        },
+        DressupFieldDef {
+            name: "link_moves",
+            description: "keep the tool down between near passes instead of retracting",
+        },
+        DressupFieldDef {
+            name: "link_max_distance",
+            description: "longest gap a link move may span (mm)",
+        },
+        DressupFieldDef {
+            name: "link_feed_rate",
+            description: "feed for a link move (mm/min)",
+        },
+        DressupFieldDef {
+            name: "arc_fitting",
+            description: "fit linear runs into G2 and G3 arcs",
+        },
+        DressupFieldDef {
+            name: "arc_tolerance",
+            description: "deviation budget for arc fitting (mm)",
+        },
+        DressupFieldDef {
+            name: "segment_merge",
+            description: "merge dense cut runs into longer moves; default on for roughing",
+        },
+        DressupFieldDef {
+            name: "segment_merge_tolerance",
+            description: "deviation budget for segment merge (mm)",
+        },
+        DressupFieldDef {
+            name: "feed_optimization",
+            description: "scale the feed with stock engagement",
+        },
+        DressupFieldDef {
+            name: "feed_max_rate",
+            description: "upper feed the optimiser may command (mm/min)",
+        },
+        DressupFieldDef {
+            name: "feed_ramp_rate",
+            description: "how fast the optimiser may change the feed (mm/min per mm)",
+        },
+        DressupFieldDef {
+            name: "optimize_rapid_order",
+            description: "reorder disconnected fragments to cut rapid travel",
+        },
+        DressupFieldDef {
+            name: "air_bridge_policy",
+            description: "when the air-cut filter may replace an air run with a retract bridge",
+        },
+    ];
+
+    /// The published field names, in table order.
+    #[must_use]
+    pub fn published_field_names() -> Vec<&'static str> {
+        Self::FIELD_DEFS.iter().map(|d| d.name).collect()
+    }
+}
+
 impl Default for DressupConfig {
     fn default() -> Self {
         // Roadmap B.6 — three pure-flips: link_moves, feed_optimization,
@@ -2246,6 +2365,49 @@ impl DressupConfig {
 )]
 mod tests {
     use super::*;
+
+    /// CMP-17 — the published dressup table names every `DressupConfig` field.
+    ///
+    /// The names are read from a serialized instance, not from a hand-written
+    /// list, so a field added to the struct shows up here. Both `Option`
+    /// fields carry `skip_serializing_if = "Option::is_none"`, so the instance
+    /// sets them to `Some`; a default instance would hide them and the test
+    /// would pass while the table was wrong in exactly the direction CMP-17
+    /// reports.
+    ///
+    /// NOT MEASURED: the description text of a row, and whether any code reads
+    /// the field. The `rs_cam_viz` test of the same name holds the MCP
+    /// description against this table.
+    #[test]
+    fn dressup_field_names_are_published() {
+        let full = DressupConfig {
+            lead_in_feed_rate: Some(300.0),
+            lead_out_feed_rate: Some(900.0),
+            ..DressupConfig::default()
+        };
+        let value = serde_json::to_value(&full).unwrap();
+        let serialized: std::collections::BTreeSet<String> = value
+            .as_object()
+            .expect("DressupConfig serializes to an object")
+            .keys()
+            .cloned()
+            .collect();
+        let published: std::collections::BTreeSet<String> = DressupConfig::published_field_names()
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+
+        let missing: Vec<&String> = serialized.difference(&published).collect();
+        assert!(
+            missing.is_empty(),
+            "DressupConfig fields absent from DressupConfig::FIELD_DEFS: {missing:?}"
+        );
+        let extra: Vec<&String> = published.difference(&serialized).collect();
+        assert!(
+            extra.is_empty(),
+            "DressupConfig::FIELD_DEFS rows that name no field: {extra:?}"
+        );
+    }
 
     fn test_ctx() -> HeightContext {
         HeightContext {
