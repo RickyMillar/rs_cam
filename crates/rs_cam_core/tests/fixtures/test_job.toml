@@ -230,7 +230,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-retract_strategy = "full"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -313,7 +312,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = false
-retract_strategy = "full"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "from_reference"
@@ -405,7 +403,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-retract_strategy = "full"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "from_reference"
@@ -497,7 +494,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-retract_strategy = "full"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "from_reference"
@@ -606,7 +602,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = false
-retract_strategy = "full"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -682,7 +677,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-retract_strategy = "full"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "from_reference"
@@ -793,7 +787,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-retract_strategy = "minimum"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "auto"
@@ -865,7 +858,6 @@ feed_optimization = false
 feed_max_rate = 3000.0
 feed_ramp_rate = 200.0
 optimize_rapid_order = true
-retract_strategy = "full"
 
 [setups.toolpaths.heights.clearance_z]
 mode = "from_reference"
