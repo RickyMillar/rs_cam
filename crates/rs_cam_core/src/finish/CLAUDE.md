@@ -33,8 +33,10 @@ Every 3D finishing strategy and the unified planner. The entry point is
 
 - `cargo test -p rs_cam_core -q --test finish_resolution_policy_pr3`
 - `cargo test -p rs_cam_core -q --test classification_strategy_m3`
-- `cargo test -p rs_cam_core -q --test finish_planner_wanaka_decompose`
-  (an `#[ignore]` harness on the wanaka project; needs `-- --ignored`; long)
+- `wanaka_decomposes_to_order_ten_regions` in
+  `--test finish_planner_wanaka_decompose` (`#[ignore]`; long). The rest of
+  that file is fast; the three wanaka TABLES live in
+  `--test finish_planner_wanaka_diagnostics` under `heavy-tests`.
 - `cargo test -p rs_cam_core -q --test scallop_iso_field_config`
 - `cargo test -p rs_cam_core -q --test the_research_arms_are_feature_gated_fin01`
 - A research harness: `--features research` (off by default), `-- --ignored`.

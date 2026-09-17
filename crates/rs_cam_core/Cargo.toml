@@ -91,13 +91,21 @@ harness = false
 name = "hot_paths"
 harness = false
 
-# The twelve heaviest test binaries, gated behind `heavy-tests` (see the
+# The twelve heaviest test binaries plus one research table set, gated
+# behind `heavy-tests` (see the
 # comment on that feature). Naming a target explicitly does not disable
 # autodiscovery of the rest of `tests/` — `autotests` stays true — so these
 # sections add a required-features condition and change nothing else. The
 # trailing comment on each is its 2026-08-27 serial wall-clock.
 [[test]]
 name = "feed_modulation_cycle_time_f036c" # 256 s
+required-features = ["heavy-tests"]
+
+# FIN-05: not one of the twelve by cost — three wanaka research TABLES that
+# assert nothing, split out of `finish_planner_wanaka_decompose` so the R1
+# acceptance gate the folder `CLAUDE.md` names is the only test in that file.
+[[test]]
+name = "finish_planner_wanaka_diagnostics"
 required-features = ["heavy-tests"]
 
 [[test]]

@@ -31,13 +31,22 @@ use rs_cam_core::session::{ProjectSession, SimulationOptions};
 /// (P0 probe, 2026-07-07). New collisions above this fail the gate.
 const BASELINE_RAPID_COLLISIONS: usize = 4;
 
+/// The pinned wanaka play-file this A/B measures against.
+///
+/// FIN-06: the harness read `planning/airrun_2026-06-01/wanaka.toml`, a
+/// document the operator edits between machining sessions. `planning/` is
+/// evidence, not a fixture store. The fixture here is a BYTE-IDENTICAL copy
+/// of that file (sha256 prefix `2c908dca`), so the baseline below still
+/// measures what it was measured on.
+///
+/// It is NOT `wanaka_2026-08-16_f530995a.toml`, the other wanaka fixture:
+/// that snapshot disables two toolpaths, and this test counts collisions
+/// over the whole enabled chain.
 fn wanaka_project_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("planning")
-        .join("airrun_2026-06-01")
-        .join("wanaka.toml")
+        .join("tests")
+        .join("fixtures")
+        .join("wanaka_airrun_2026-06-01_2c908dca.toml")
 }
 
 #[test]

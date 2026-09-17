@@ -29,13 +29,15 @@ fn baseline_path() -> PathBuf {
     //   so ±7-8% deflection shifts ripple through AS001/AS002/AS003/
     //   AS013/AS015 — all stay Within. Derivation:
     //   planning/data_ingest_2026-05-30/wood_kc_derivation.md.
+    //
+    // FIN-06: read from `tests/fixtures/`, not from `planning/`. The file is
+    // a byte-identical copy of
+    // `planning/toolpath_acceptance/baselines/2026-06-04.csv` (sha256 prefix
+    // `142f4a80`); `planning/` is evidence, not a fixture store.
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("planning")
-        .join("toolpath_acceptance")
-        .join("baselines")
-        .join("2026-06-04.csv")
+        .join("tests")
+        .join("fixtures")
+        .join("smoke_baseline_2026-06-04_142f4a80.csv")
 }
 
 fn read_rows(path: &std::path::Path) -> Vec<csv::StringRecord> {

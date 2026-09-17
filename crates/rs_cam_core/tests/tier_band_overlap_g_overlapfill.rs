@@ -304,7 +304,9 @@ fn a_surviving_hole_is_a_real_polygon_not_a_collapsed_ring() {
 /// Owned vs machining area at the planner's own dials, on the real board.
 ///
 /// The dials come from the fixture the peer measured with
-/// (`planning/deep_doc_modulation_2026-09-08/T3b_r10_scallop_islands_relink3.toml`):
+/// (`tests/fixtures/t3b_r10_scallop_islands_2026-09-08_e4d817e9.toml`, a
+/// byte-identical copy of the peer's
+/// `planning/deep_doc_modulation_2026-09-08/T3b_r10_scallop_islands_relink3.toml`):
 /// tools 4 and 2, cell 0.4, margin 0.5, slope-compensated, **overlap 1.25**
 /// — NOT [`rs_cam_core::maps::tier_islands::DEFAULT_OVERLAP_MM`] (2.0). Reference
 /// readings from study doc §2.7a, owned / machining mm²:
@@ -326,12 +328,13 @@ fn wanaka_owned_versus_machining_area_at_three_tolerances() {
 
     use rs_cam_core::session::{MultitoolPlanSpec, ProjectSession};
 
+    // FIN-06: a byte-identical copy of the peer's measurement fixture
+    // (sha256 prefix `e4d817e9`). `planning/` holds the evidence, not the
+    // fixture a test loads.
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("planning")
-        .join("deep_doc_modulation_2026-09-08")
-        .join("T3b_r10_scallop_islands_relink3.toml");
+        .join("tests")
+        .join("fixtures")
+        .join("t3b_r10_scallop_islands_2026-09-08_e4d817e9.toml");
     assert!(
         path.exists(),
         "instrument fixture not found at {}",
