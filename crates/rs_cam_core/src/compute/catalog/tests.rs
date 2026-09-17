@@ -23,6 +23,13 @@ fn operation_catalog_is_exhaustive_and_consistent() {
             "{op_type:?}: registry entry has no settable params — \
              every op exposes at least one"
         );
+        // CMP-01: every row names a generation adapter. The field is
+        // `GenerateFn`, not `Option<GenerateFn>`, since the T11 fallback
+        // match was deleted, so this reads as a type check rather than a
+        // runtime one — which is why
+        // `generate_adapter_migration_is_an_explicit_per_op_decision`
+        // went with the match it guarded.
+        let _: crate::compute::execute::GenerateFn = entry.generate;
     }
 }
 
@@ -196,27 +203,6 @@ fn every_alias_names_a_field_of_its_own_operation() {
         aliases_seen, 3,
         "the alias population moved. Three alias setters exist in          `session/compute/params.rs`; each one needs its registry row."
     );
-}
-
-/// Phase 5 (T11): GenerateFn migration is a per-family DECISION,
-/// not drift. Each op is either migrated (registry adapter — the
-/// match arm delegates to the same fn) or fallback (exhaustive
-/// match arm only). Moving a family without updating this table
-/// fails here; the table is the cutover log.
-#[test]
-fn generate_adapter_migration_is_an_explicit_per_op_decision() {
-    // Cutover complete 2026-06-07 (T11 PRs 2-14): every family is
-    // registry-dispatched. A new op MUST ship a GenerateFn — the
-    // fallback match still compiles it, but registry dispatch is
-    // the production path and this test refuses a None entry.
-    for &op_type in OperationType::ALL {
-        assert!(
-            op_type.registry_entry().generate.is_some(),
-            "{op_type:?}: missing GenerateFn — every operation family is \
-             registry-dispatched since the T11 cutover; wire the adapter \
-             and prove it against the param-sweep fingerprint oracle"
-        );
-    }
 }
 
 /// Phase 1 wildcard kill (architectural refactor T3, re-baselined

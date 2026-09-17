@@ -429,11 +429,15 @@ pub struct OpRegistryEntry {
     pub param_defs: &'static [ParamDef],
     pub tool_constraints: ToolConstraintsDef,
     pub dressup_policy: DressupPolicy,
-    /// Phase-5 (T11) family adapter. `Some` once the family's
-    /// generation has been migrated onto the shared `GenerateFn`
-    /// signature and proven against the param-sweep fingerprint
-    /// oracle; `None` families dispatch through the exhaustive match
-    /// in `execute_operation_annotated`. Migration state is pinned by
-    /// `generate_adapter_migration_is_an_explicit_per_op_decision`.
-    pub generate: Option<crate::compute::execute::GenerateFn>,
+    /// The family adapter `execute_operation_annotated` dispatches to.
+    ///
+    /// CMP-01: this was `Option<GenerateFn>` and `execute.rs` carried a
+    /// 24-arm `else` match for the `None` case. The T11 cutover of
+    /// 2026-06-07 filled every row, so that match never ran, and the
+    /// sentry that asserted `generate.is_some()` for every op made the
+    /// branch unreachable by test as well as in fact. The compile-time
+    /// net survives the delete: `OperationType::registry_entry` is an
+    /// exhaustive match, so a new variant fails to compile until it
+    /// names a row, and a row cannot be written without an adapter.
+    pub generate: crate::compute::execute::GenerateFn,
 }

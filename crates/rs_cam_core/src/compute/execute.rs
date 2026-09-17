@@ -615,70 +615,13 @@ pub(crate) fn execute_operation_annotated_with_regions(
         link_kinematics,
         rest_analysis,
     };
-    let mut generated = if let Some(generate) = op.op_type().registry_entry().generate {
-        generate(&ctx, op)
-    } else {
-        match op {
-            // Migrated to the registry GenerateFn (T11); arm kept for the
-            // exhaustiveness net and delegates to the same adapter.
-            OperationConfig::Face(_) => generate_face(&ctx, op),
-            // Migrated to the registry GenerateFn (T11); arm kept for the
-            // exhaustiveness net and delegates to the same adapter.
-            OperationConfig::Pocket(_) => generate_pocket(&ctx, op),
-            // Migrated to the registry GenerateFn (T11); arm kept for the
-            // exhaustiveness net and delegates to the same adapter.
-            OperationConfig::Profile(_) => generate_profile(&ctx, op),
-            // Migrated to the registry GenerateFn (T11); arm kept for the
-            // exhaustiveness net and delegates to the same adapter.
-            OperationConfig::Adaptive(_) => generate_adaptive(&ctx, op),
-            // Migrated to the registry GenerateFn (T11); arms kept for the
-            // exhaustiveness net and delegate to the same adapters.
-            OperationConfig::Zigzag(_) => generate_zigzag(&ctx, op),
-            OperationConfig::Trace(_) => generate_trace(&ctx, op),
-            // Migrated to the registry GenerateFn (T11); arm kept for the
-            // exhaustiveness net and delegates to the same adapter.
-            OperationConfig::VCarve(_) => generate_vcarve(&ctx, op),
-            // Migrated to the registry GenerateFn (T11); arms kept for the
-            // exhaustiveness net and delegate to the same adapters.
-            OperationConfig::Rest(_) => generate_rest(&ctx, op),
-            OperationConfig::Inlay(_) => generate_inlay(&ctx, op),
-            // Migrated to the registry GenerateFn (T11); arm kept for the
-            // exhaustiveness net and delegates to the same adapter.
-            OperationConfig::Drill(_) => generate_drill(&ctx, op),
-            // Migrated to the registry GenerateFn (T11); arm kept for the
-            // exhaustiveness net and delegates to the same adapter.
-            OperationConfig::Chamfer(_) => generate_chamfer(&ctx, op),
-            // Migrated to the registry GenerateFn (T11); arm kept for the
-            // exhaustiveness net and delegates to the same adapter.
-            OperationConfig::AlignmentPinDrill(_) => generate_alignment_pin_drill(&ctx, op),
-
-            // ── 3D operations ────────────────────────────────────────────
-            // Migrated to the registry GenerateFn (T11); arm kept for the
-            // exhaustiveness net and delegates to the same adapter.
-            OperationConfig::DropCutter(_) => generate_drop_cutter(&ctx, op),
-            // Migrated to the registry GenerateFn (T11); arm kept for the
-            // exhaustiveness net and delegates to the same adapter.
-            OperationConfig::Adaptive3d(_) => generate_adaptive3d(&ctx, op),
-            // Migrated to the registry GenerateFn (T11); arm kept for the
-            // exhaustiveness net and delegates to the same adapter.
-            OperationConfig::Waterline(_) => generate_waterline(&ctx, op),
-            // Migrated to the registry GenerateFn (T11); arms kept for the
-            // exhaustiveness net and delegate to the same adapters.
-            OperationConfig::Pencil(_) => generate_pencil(&ctx, op),
-            OperationConfig::Scallop(_) => generate_scallop(&ctx, op),
-            OperationConfig::UnifiedFinish(_) => generate_unified_finish(&ctx, op),
-            OperationConfig::SteepShallow(_) => generate_steep_shallow(&ctx, op),
-            OperationConfig::RampFinish(_) => generate_ramp_finish(&ctx, op),
-            // Migrated to the registry GenerateFn (T11); arms kept for the
-            // exhaustiveness net and delegate to the same adapters.
-            OperationConfig::SpiralFinish(_) => generate_spiral_finish(&ctx, op),
-            OperationConfig::RadialFinish(_) => generate_radial_finish(&ctx, op),
-            OperationConfig::HorizontalFinish(_) => generate_horizontal_finish(&ctx, op),
-            // Migrated to the registry GenerateFn (T11); arm kept for the
-            // exhaustiveness net and delegates to the same adapter.
-            OperationConfig::ProjectCurve(_) => generate_project_curve(&ctx, op),
-        }
-    }?;
+    // CMP-01: one dispatch, no fallback. The `else` branch here was a
+    // 24-arm match kept as a compile net after the T11 cutover, and every
+    // arm called the same adapter the registry row already holds. The net
+    // is `OperationType::registry_entry`, which is exhaustive: a new
+    // variant does not compile until it names a row, and a row cannot be
+    // written without an adapter.
+    let mut generated = (op.op_type().registry_entry().generate)(&ctx, op)?;
 
     // P2.5: op-agnostic rest analysis. Precedence — an op that already
     // attached its own rest artifacts (pencil's `RestDepth` detector arm,

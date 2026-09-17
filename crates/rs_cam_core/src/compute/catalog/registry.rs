@@ -532,7 +532,7 @@ pub(super) static REG_FACE: OpRegistryEntry = OpRegistryEntry {
     param_defs: FACE_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: Some(crate::compute::execute::generate_face),
+    generate: crate::compute::execute::generate_face,
 };
 
 pub(super) static REG_POCKET: OpRegistryEntry = OpRegistryEntry {
@@ -551,7 +551,7 @@ pub(super) static REG_POCKET: OpRegistryEntry = OpRegistryEntry {
     param_defs: POCKET_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: Some(crate::compute::execute::generate_pocket),
+    generate: crate::compute::execute::generate_pocket,
 };
 
 pub(super) static REG_PROFILE: OpRegistryEntry = OpRegistryEntry {
@@ -570,7 +570,7 @@ pub(super) static REG_PROFILE: OpRegistryEntry = OpRegistryEntry {
     param_defs: PROFILE_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: Some(crate::compute::execute::generate_profile),
+    generate: crate::compute::execute::generate_profile,
 };
 
 pub(super) static REG_ADAPTIVE: OpRegistryEntry = OpRegistryEntry {
@@ -591,7 +591,7 @@ pub(super) static REG_ADAPTIVE: OpRegistryEntry = OpRegistryEntry {
     // Roadmap B.5 — 2D adaptive pocketing has natural circular
     // boundaries, so Ramp upgrades to Helix.
     dressup_policy: DressupPolicy::PREFER_HELIX,
-    generate: Some(crate::compute::execute::generate_adaptive),
+    generate: crate::compute::execute::generate_adaptive,
 };
 
 pub(super) static REG_VCARVE: OpRegistryEntry = OpRegistryEntry {
@@ -613,7 +613,7 @@ pub(super) static REG_VCARVE: OpRegistryEntry = OpRegistryEntry {
         supports_v_bit: true,
     },
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: Some(crate::compute::execute::generate_vcarve),
+    generate: crate::compute::execute::generate_vcarve,
 };
 
 pub(super) static REG_REST: OpRegistryEntry = OpRegistryEntry {
@@ -632,7 +632,7 @@ pub(super) static REG_REST: OpRegistryEntry = OpRegistryEntry {
     param_defs: REST_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: Some(crate::compute::execute::generate_rest),
+    generate: crate::compute::execute::generate_rest,
 };
 
 pub(super) static REG_INLAY: OpRegistryEntry = OpRegistryEntry {
@@ -654,7 +654,7 @@ pub(super) static REG_INLAY: OpRegistryEntry = OpRegistryEntry {
         supports_v_bit: true,
     },
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: Some(crate::compute::execute::generate_inlay),
+    generate: crate::compute::execute::generate_inlay,
 };
 
 pub(super) static REG_ZIGZAG: OpRegistryEntry = OpRegistryEntry {
@@ -673,7 +673,7 @@ pub(super) static REG_ZIGZAG: OpRegistryEntry = OpRegistryEntry {
     param_defs: ZIGZAG_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: Some(crate::compute::execute::generate_zigzag),
+    generate: crate::compute::execute::generate_zigzag,
 };
 
 pub(super) static REG_TRACE: OpRegistryEntry = OpRegistryEntry {
@@ -693,7 +693,7 @@ pub(super) static REG_TRACE: OpRegistryEntry = OpRegistryEntry {
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     // Roadmap B.5 — single-pass engraving: no entry style applies.
     dressup_policy: DressupPolicy::FORCE_NO_ENTRY,
-    generate: Some(crate::compute::execute::generate_trace),
+    generate: crate::compute::execute::generate_trace,
 };
 
 pub(super) static REG_DRILL: OpRegistryEntry = OpRegistryEntry {
@@ -715,7 +715,7 @@ pub(super) static REG_DRILL: OpRegistryEntry = OpRegistryEntry {
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     // Roadmap B.5 — stock-based peck cycle: no entry style applies.
     dressup_policy: DressupPolicy::FORCE_NO_ENTRY,
-    generate: Some(crate::compute::execute::generate_drill),
+    generate: crate::compute::execute::generate_drill,
 };
 
 pub(super) static REG_CHAMFER: OpRegistryEntry = OpRegistryEntry {
@@ -737,7 +737,7 @@ pub(super) static REG_CHAMFER: OpRegistryEntry = OpRegistryEntry {
         supports_v_bit: true,
     },
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: Some(crate::compute::execute::generate_chamfer),
+    generate: crate::compute::execute::generate_chamfer,
 };
 
 pub(super) static REG_DROP_CUTTER: OpRegistryEntry = OpRegistryEntry {
@@ -762,7 +762,7 @@ pub(super) static REG_DROP_CUTTER: OpRegistryEntry = OpRegistryEntry {
     dressup_policy: DressupPolicy::strip_all(
         "Incompatible with 3D Finish: each raster segment's ramp entry would carve a diagonal trench across the stock.",
     ),
-    generate: Some(crate::compute::execute::generate_drop_cutter),
+    generate: crate::compute::execute::generate_drop_cutter,
 };
 
 pub(super) static REG_ADAPTIVE3D: OpRegistryEntry = OpRegistryEntry {
@@ -787,7 +787,7 @@ pub(super) static REG_ADAPTIVE3D: OpRegistryEntry = OpRegistryEntry {
     // engagement on a 3 mm-commanded DPP, deflection gate Exceeds).
     // Users who want a Helix entry set it at the planner level.
     dressup_policy: DressupPolicy::FORCE_NO_ENTRY,
-    generate: Some(crate::compute::execute::generate_adaptive3d),
+    generate: crate::compute::execute::generate_adaptive3d,
 };
 
 pub(super) static REG_WATERLINE: OpRegistryEntry = OpRegistryEntry {
@@ -806,7 +806,7 @@ pub(super) static REG_WATERLINE: OpRegistryEntry = OpRegistryEntry {
     param_defs: WATERLINE_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: Some(crate::compute::execute::generate_waterline),
+    generate: crate::compute::execute::generate_waterline,
 };
 
 pub(super) static REG_PENCIL: OpRegistryEntry = OpRegistryEntry {
@@ -825,7 +825,7 @@ pub(super) static REG_PENCIL: OpRegistryEntry = OpRegistryEntry {
     param_defs: PENCIL_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: Some(crate::compute::execute::generate_pencil),
+    generate: crate::compute::execute::generate_pencil,
 };
 
 pub(super) static REG_SCALLOP: OpRegistryEntry = OpRegistryEntry {
@@ -847,7 +847,7 @@ pub(super) static REG_SCALLOP: OpRegistryEntry = OpRegistryEntry {
         supports_v_bit: false,
     },
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: Some(crate::compute::execute::generate_scallop),
+    generate: crate::compute::execute::generate_scallop,
 };
 
 /// P2.c orchestrator (`planning/unified_finish_planner_design.md`): bands
@@ -884,7 +884,7 @@ pub(super) static REG_UNIFIED_FINISH: OpRegistryEntry = OpRegistryEntry {
     dressup_policy: DressupPolicy::strip_all(
         "Incompatible with Unified Finish: ramp/lead/link dressups would carve diagonal trenches across the mesh surface; the op emits its own surface-safe entries and links.",
     ),
-    generate: Some(crate::compute::execute::generate_unified_finish),
+    generate: crate::compute::execute::generate_unified_finish,
 };
 
 pub(super) static REG_STEEP_SHALLOW: OpRegistryEntry = OpRegistryEntry {
@@ -903,7 +903,7 @@ pub(super) static REG_STEEP_SHALLOW: OpRegistryEntry = OpRegistryEntry {
     param_defs: STEEP_SHALLOW_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: Some(crate::compute::execute::generate_steep_shallow),
+    generate: crate::compute::execute::generate_steep_shallow,
 };
 
 pub(super) static REG_RAMP_FINISH: OpRegistryEntry = OpRegistryEntry {
@@ -922,7 +922,7 @@ pub(super) static REG_RAMP_FINISH: OpRegistryEntry = OpRegistryEntry {
     param_defs: RAMP_FINISH_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: Some(crate::compute::execute::generate_ramp_finish),
+    generate: crate::compute::execute::generate_ramp_finish,
 };
 
 pub(super) static REG_SPIRAL_FINISH: OpRegistryEntry = OpRegistryEntry {
@@ -941,7 +941,7 @@ pub(super) static REG_SPIRAL_FINISH: OpRegistryEntry = OpRegistryEntry {
     param_defs: SPIRAL_FINISH_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: Some(crate::compute::execute::generate_spiral_finish),
+    generate: crate::compute::execute::generate_spiral_finish,
 };
 
 pub(super) static REG_RADIAL_FINISH: OpRegistryEntry = OpRegistryEntry {
@@ -960,7 +960,7 @@ pub(super) static REG_RADIAL_FINISH: OpRegistryEntry = OpRegistryEntry {
     param_defs: RADIAL_FINISH_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: Some(crate::compute::execute::generate_radial_finish),
+    generate: crate::compute::execute::generate_radial_finish,
 };
 
 pub(super) static REG_HORIZONTAL_FINISH: OpRegistryEntry = OpRegistryEntry {
@@ -979,7 +979,7 @@ pub(super) static REG_HORIZONTAL_FINISH: OpRegistryEntry = OpRegistryEntry {
     param_defs: HORIZONTAL_FINISH_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
-    generate: Some(crate::compute::execute::generate_horizontal_finish),
+    generate: crate::compute::execute::generate_horizontal_finish,
 };
 
 pub(super) static REG_PROJECT_CURVE: OpRegistryEntry = OpRegistryEntry {
@@ -1002,7 +1002,7 @@ pub(super) static REG_PROJECT_CURVE: OpRegistryEntry = OpRegistryEntry {
     dressup_policy: DressupPolicy::strip_all(
         "Incompatible with Project Curve: each ring would get a phantom diagonal cut.",
     ),
-    generate: Some(crate::compute::execute::generate_project_curve),
+    generate: crate::compute::execute::generate_project_curve,
 };
 
 pub(super) static REG_ALIGNMENT_PIN_DRILL: OpRegistryEntry = OpRegistryEntry {
@@ -1028,5 +1028,5 @@ pub(super) static REG_ALIGNMENT_PIN_DRILL: OpRegistryEntry = OpRegistryEntry {
     // the UI offered a control that silently did nothing and the strip
     // warned on the product's own default.
     dressup_policy: DressupPolicy::FORCE_NO_ENTRY,
-    generate: Some(crate::compute::execute::generate_alignment_pin_drill),
+    generate: crate::compute::execute::generate_alignment_pin_drill,
 };
