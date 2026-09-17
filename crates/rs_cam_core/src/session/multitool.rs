@@ -290,6 +290,32 @@ pub struct MultitoolPreview {
     pub tool_ids: Vec<usize>,
 }
 
+/// Everything one multi-tool plan resolves ONCE, before it writes anything
+/// (SES-06).
+///
+/// [`ProjectSession::resolve_multitool_plan`] is the only producer, and it
+/// takes `&self`, so a refusal while resolving leaves the project untouched.
+/// Every field is read by more than one tier.
+struct MultitoolPlanContext {
+    /// The ladder's tools, ordered coarse → fine.
+    ladder_tools: Vec<ToolConfig>,
+    /// The ladder length, as the one-byte tier label every op carries.
+    tier_count: u8,
+    /// The same tools' session ids, in the same order — what a tier
+    /// boundary stores.
+    ordered_ids: Vec<usize>,
+    /// Tip-sphere radii (mm), in the same order.
+    cusp_radii: Vec<f64>,
+    /// The heights every tier shares, with `bottom_z` pinned below the
+    /// mesh floor.
+    heights: HeightsConfig,
+    /// G-OVERLAPFILL advisories off an already cached tier map, or `None`
+    /// when nothing measured them.
+    band_advisories: Option<Vec<TierBandAdvisory>>,
+    /// The bbox the Suggest funnel reads for the stepover back-off.
+    model_bbox: Option<crate::geo::BoundingBox3>,
+}
+
 impl ProjectSession {
     /// Emit a multi-tool finishing chain into `spec.setup_index`, replacing
     /// any chain already there.
@@ -307,8 +333,57 @@ impl ProjectSession {
         &mut self,
         spec: &MultitoolPlanSpec,
     ) -> Result<MultitoolPlanOutcome, SessionError> {
+        // SES-06: validate, resolve, build. The three run in that order and
+        // each one has its own door, so a reader follows one at a time.
         self.validate_multitool_spec(spec)?;
+        let ctx = self.resolve_multitool_plan(spec)?;
 
+        let plan_id = self.next_plan_id();
+        let replaced = self.remove_planned_toolpaths(spec.setup_index);
+
+        let mut toolpath_ids = Vec::with_capacity(ctx.ladder_tools.len());
+        for (tier_usize, tool) in ctx.ladder_tools.iter().enumerate() {
+            // Unreachable: `tier_count` converted in `resolve_multitool_plan`,
+            // so every index below it fits a `u8`. Written as a `let ... else`
+            // rather than an unwrap because a lint-clean impossibility costs
+            // one line.
+            let Ok(tier) = u8::try_from(tier_usize) else {
+                continue;
+            };
+            let cfg = self.build_tier_config(&ctx, spec, tier, tool, plan_id);
+            // The `pub(crate)` half. The public `add_toolpath` reports
+            // `Effects`, and this planner answers with its own outcome
+            // record; the two halves append the same toolpath.
+            let index = self.add_toolpath_impl(spec.setup_index, cfg)?;
+            let Some(added) = self.toolpath_configs.get(index) else {
+                return Err(SessionError::ToolpathNotFound(index));
+            };
+            toolpath_ids.push(added.id);
+        }
+
+        Ok(MultitoolPlanOutcome {
+            plan_id,
+            toolpath_ids,
+            replaced,
+            band_advisories: ctx.band_advisories,
+        })
+    }
+
+    /// Resolve everything a whole ladder shares, before anything is written.
+    ///
+    /// `&self`: this is the read half of the planner. It allocates no plan
+    /// id and removes no op, so a refusal here leaves the project exactly
+    /// as it was.
+    ///
+    /// # Errors
+    ///
+    /// [`SessionError::InvalidParam`] for an unknown tool id, a ladder
+    /// [`TierLadder::new`] refuses, or a ladder longer than the one-byte
+    /// tier label.
+    fn resolve_multitool_plan(
+        &self,
+        spec: &MultitoolPlanSpec,
+    ) -> Result<MultitoolPlanContext, SessionError> {
         // Resolve, then order coarse → fine. Validation only: the ladder is
         // rebuilt at generation time from the ids stored on the boundary,
         // because the tools may have been re-dialled in between.
@@ -357,82 +432,80 @@ impl ProjectSession {
         // machines `spec.model_id`.
         let model_bbox = self.model_bbox(spec.model_id);
 
-        let plan_id = self.next_plan_id();
-        let replaced = self.remove_planned_toolpaths(spec.setup_index);
-
-        let mut toolpath_ids = Vec::with_capacity(ladder_tools.len());
-        for (tier_usize, tool) in ladder_tools.iter().enumerate() {
-            // Unreachable: `tier_count` converted above, so every index
-            // below it fits a `u8`. Written as a `let ... else` rather than
-            // an unwrap because a lint-clean impossibility costs one line.
-            let Ok(tier) = u8::try_from(tier_usize) else {
-                continue;
-            };
-            let cusp = cusp_radii.get(tier_usize).copied().unwrap_or(0.0);
-            let strategy = spec
-                .tier_strategies
-                .get(tier_usize)
-                .copied()
-                .unwrap_or_default();
-            let mut operation = plan_tier_operation(tier, cusp, spec, strategy);
-            let feeds_provenance =
-                self.suggest_feeds_for(&mut operation, tool, model_bbox.as_ref());
-            let strategy_tag = match strategy {
-                TierStrategy::UnifiedFinish => "",
-                TierStrategy::Scallop => " scallop",
-                TierStrategy::IsoScallop => " iso",
-            };
-            let dressup_op = match strategy {
-                TierStrategy::UnifiedFinish => OperationType::UnifiedFinish,
-                TierStrategy::Scallop | TierStrategy::IsoScallop => OperationType::Scallop,
-            };
-            let cfg = ToolpathConfig {
-                id: ToolpathId(0),
-                name: format!("Finish tier {tier}{strategy_tag} (R{cusp:.1})"),
-                enabled: true,
-                dressups: DressupConfig::for_op(dressup_op),
-                heights: heights.clone(),
-                tool_id: tool.id.0,
-                model_id: spec.model_id,
-                pre_gcode: None,
-                post_gcode: None,
-                boundary: tier_boundary(tier, &ordered_ids, spec),
-                // A planner boundary is the whole point of the op; letting
-                // the stock default overwrite it would silently un-confine
-                // the fine tier back onto the whole board.
-                boundary_inherit: false,
-                rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
-                // EVERY tier, tier 0 included: they chain after roughing and
-                // after each other, so each one cuts what its predecessor
-                // left. Tier 0's own predecessor is the roughing pass.
-                stock_source: StockSource::FromRemainingStock,
-                coolant: crate::gcode::CoolantMode::Off,
-                face_selection: None,
-                debug_options: crate::trace::debug_trace::ToolpathDebugOptions::default(),
-                operation,
-                feeds_provenance,
-                planner_origin: Some(PlannerOrigin {
-                    plan_id,
-                    tier,
-                    tier_count,
-                }),
-            };
-            // The `pub(crate)` half. The public `add_toolpath` reports
-            // `Effects`, and this planner answers with its own outcome
-            // record; the two halves append the same toolpath.
-            let index = self.add_toolpath_impl(spec.setup_index, cfg)?;
-            let Some(added) = self.toolpath_configs.get(index) else {
-                return Err(SessionError::ToolpathNotFound(index));
-            };
-            toolpath_ids.push(added.id);
-        }
-
-        Ok(MultitoolPlanOutcome {
-            plan_id,
-            toolpath_ids,
-            replaced,
+        Ok(MultitoolPlanContext {
+            ladder_tools,
+            tier_count,
+            ordered_ids,
+            cusp_radii,
+            heights,
             band_advisories,
+            model_bbox,
         })
+    }
+
+    /// Build one tier's [`ToolpathConfig`] from the resolved ladder.
+    ///
+    /// It writes nothing: the Suggest funnel it calls takes `&self` and
+    /// reports the provenance the config carries. The caller owns the
+    /// append.
+    fn build_tier_config(
+        &self,
+        ctx: &MultitoolPlanContext,
+        spec: &MultitoolPlanSpec,
+        tier: u8,
+        tool: &ToolConfig,
+        plan_id: u64,
+    ) -> ToolpathConfig {
+        let tier_usize = usize::from(tier);
+        let cusp = ctx.cusp_radii.get(tier_usize).copied().unwrap_or(0.0);
+        let strategy = spec
+            .tier_strategies
+            .get(tier_usize)
+            .copied()
+            .unwrap_or_default();
+        let mut operation = plan_tier_operation(tier, cusp, spec, strategy);
+        let feeds_provenance =
+            self.suggest_feeds_for(&mut operation, tool, ctx.model_bbox.as_ref());
+        let strategy_tag = match strategy {
+            TierStrategy::UnifiedFinish => "",
+            TierStrategy::Scallop => " scallop",
+            TierStrategy::IsoScallop => " iso",
+        };
+        let dressup_op = match strategy {
+            TierStrategy::UnifiedFinish => OperationType::UnifiedFinish,
+            TierStrategy::Scallop | TierStrategy::IsoScallop => OperationType::Scallop,
+        };
+        ToolpathConfig {
+            id: ToolpathId(0),
+            name: format!("Finish tier {tier}{strategy_tag} (R{cusp:.1})"),
+            enabled: true,
+            dressups: DressupConfig::for_op(dressup_op),
+            heights: ctx.heights.clone(),
+            tool_id: tool.id.0,
+            model_id: spec.model_id,
+            pre_gcode: None,
+            post_gcode: None,
+            boundary: tier_boundary(tier, &ctx.ordered_ids, spec),
+            // A planner boundary is the whole point of the op; letting
+            // the stock default overwrite it would silently un-confine
+            // the fine tier back onto the whole board.
+            boundary_inherit: false,
+            rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
+            // EVERY tier, tier 0 included: they chain after roughing and
+            // after each other, so each one cuts what its predecessor
+            // left. Tier 0's own predecessor is the roughing pass.
+            stock_source: StockSource::FromRemainingStock,
+            coolant: crate::gcode::CoolantMode::Off,
+            face_selection: None,
+            debug_options: crate::trace::debug_trace::ToolpathDebugOptions::default(),
+            operation,
+            feeds_provenance,
+            planner_origin: Some(PlannerOrigin {
+                plan_id,
+                tier,
+                tier_count: ctx.tier_count,
+            }),
+        }
     }
 
     /// G-OVERLAPFILL advisories off an ALREADY CACHED tier map, or `None`.
