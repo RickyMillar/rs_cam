@@ -45,6 +45,9 @@ const PROPERTIES_SRC: &str = include_str!("../src/ui/properties/mod.rs");
 const APP_SRC: &str = include_str!("../src/app.rs");
 const INPUT_SRC: &str = include_str!("../src/app/input.rs");
 const MCP_SRC: &str = include_str!("../src/app/mcp.rs");
+/// P4 moved `app/mcp.rs`'s own `mod tests` into this file. The round-trip
+/// test the sentry below reads lives here now, so the sentry reads both.
+const MCP_TESTS_SRC: &str = include_str!("../src/app/mcp/tests.rs");
 
 // ── the list ───────────────────────────────────────────────────────────────
 
@@ -162,7 +165,8 @@ fn the_switcher_bar_is_built_from_the_one_list() {
 #[test]
 fn the_mcp_key_round_trip_reads_the_one_list() {
     assert!(
-        MCP_SRC.contains("for ws in Workspace::ALL {"),
+        MCP_SRC.contains("for ws in Workspace::ALL {")
+            || MCP_TESTS_SRC.contains("for ws in Workspace::ALL {"),
         "workspace_keys_round_trip must iterate Workspace::ALL, or it only \
          covers the variants someone remembered to type"
     );

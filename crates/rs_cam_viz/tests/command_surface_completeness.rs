@@ -130,13 +130,15 @@ fn viz_sources() -> Vec<PathBuf> {
 /// column says `Skip` and stays true — no GUI control replaces the tools
 /// list. Read a construction here as a fixture, never as a caller.
 ///
-/// `ui/properties/operations/mod.rs` and `app/mcp.rs` carry an INLINE
-/// `mod tests`, so the file cannot be split. `app/mcp.rs` is on the list
-/// already as an MCP source; `ui/properties/operations/mod.rs` stays in
-/// the scan, because its production half is a view caller.
+/// P4 moved `app/mcp.rs`'s own `mod tests` out to `app/mcp/tests.rs`, so
+/// that file joins the list as a test module. `app/mcp.rs` stays on it as
+/// an MCP source. `ui/properties/operations/mod.rs` still carries an
+/// INLINE `mod tests`; it stays in the scan, because its production half
+/// is a view caller.
 const MCP_SOURCES: &[&str] = &[
     "src/app/mcp.rs",
     "src/app/mcp/commands.rs",
+    "src/app/mcp/tests.rs",
     "src/mcp_bridge.rs",
     "src/mcp_server.rs",
     "src/controller/tests.rs",
