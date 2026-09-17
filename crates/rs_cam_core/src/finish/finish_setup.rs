@@ -361,17 +361,6 @@ pub fn surface_build_count() -> u64 {
     SURFACE_BUILDS.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-/// Zero the whole-board surface-build counter. For harnesses that want a
-/// per-run delta; no cached or computed value is touched, so this cannot
-/// change any result.
-///
-/// **Test door.** The harness
-/// `crates/rs_cam_core/tests/finish_surface_cache.rs` is the only caller.
-/// No production path reads it.
-pub fn reset_surface_build_count() {
-    SURFACE_BUILDS.store(0, std::sync::atomic::Ordering::Relaxed);
-}
-
 /// Build a [`FinishSurface`] over `mesh`'s own bounding box, expanded by one
 /// cutter radius on every side (so the cutter's full extent has heightmap
 /// coverage right up to the model boundary), at the resolution `resolution`

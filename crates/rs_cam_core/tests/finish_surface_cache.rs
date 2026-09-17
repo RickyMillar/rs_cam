@@ -32,8 +32,7 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use common::tools::{ball_cutter, wanaka_taper};
 use rs_cam_core::finish::finish_setup::{
-    FinishResolutionPolicy, build_finish_surface_with_policy_and_cancel, reset_surface_build_count,
-    surface_build_count,
+    FinishResolutionPolicy, build_finish_surface_with_policy_and_cancel, surface_build_count,
 };
 use rs_cam_core::finish::scallop::{
     ScallopParams, scallop_toolpath_structured_annotated_with_cancel,
@@ -101,7 +100,10 @@ fn ridge_mesh() -> TriangleMesh {
 fn the_same_key_returns_the_cached_arc_and_does_zero_build_work() {
     let _guard = cache_lock();
     clear();
-    reset_surface_build_count();
+    // FIN-15: the counter has no reset door any more, so every assertion
+    // below is a DELTA against the count this test started from. The lock
+    // above is what makes the delta sound.
+    let base_builds = surface_build_count();
 
     let mesh = make_test_hemisphere(20.0, 10);
     let index = SpatialIndex::build_auto(&mesh);
@@ -114,7 +116,8 @@ fn the_same_key_returns_the_cached_arc_and_does_zero_build_work() {
     let builds_for_the_build = surface_build_count();
     assert_eq!(after_build.builds, before.builds + 1, "first call builds");
     assert_eq!(
-        builds_for_the_build, 1,
+        builds_for_the_build - base_builds,
+        1,
         "the build must actually run the whole-board walk"
     );
 
@@ -139,7 +142,7 @@ fn the_same_key_returns_the_cached_arc_and_does_zero_build_work() {
 fn repeated_scallop_calls_share_one_surface_build() {
     let _guard = cache_lock();
     clear();
-    reset_surface_build_count();
+    let base_builds = surface_build_count();
 
     let mesh = ridge_mesh();
     let index = SpatialIndex::build(&mesh, 10.0);
@@ -162,7 +165,11 @@ fn repeated_scallop_calls_share_one_surface_build() {
     )
     .unwrap();
     let after_first = surface_build_count();
-    assert_eq!(after_first, 1, "the first scallop call builds the surface");
+    assert_eq!(
+        after_first - base_builds,
+        1,
+        "the first scallop call builds the surface"
+    );
     assert!(
         !first.moves.is_empty(),
         "fixture must actually produce a toolpath, or this proves nothing"
@@ -380,7 +387,7 @@ fn a_perturbed_mesh_misses() {
 fn equal_meshes_at_different_addresses_hit() {
     let _guard = cache_lock();
     clear();
-    reset_surface_build_count();
+    let base_builds = surface_build_count();
 
     let a_mesh = make_test_hemisphere(20.0, 8);
     let b_mesh = make_test_hemisphere(20.0, 8);
@@ -401,7 +408,7 @@ fn equal_meshes_at_different_addresses_hit() {
          identical mesh must HIT — this is what makes the key sound without an \
          Arc to hang a Weak on"
     );
-    assert_eq!(surface_build_count(), 1);
+    assert_eq!(surface_build_count() - base_builds, 1);
 }
 
 // ── bounds ──────────────────────────────────────────────────────────────
