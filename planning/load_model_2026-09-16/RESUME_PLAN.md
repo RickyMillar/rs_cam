@@ -30,7 +30,13 @@ Shipped and verified:
 T-17 verification: core lib 2503/0, sentry 5/5, `literature_matrix` 21/21,
 `literature_parity` 24/24, clippy clean, fmt clean.
 
-**One check is outstanding and it is real.** `the_corridor_bounds_the_band_g_corridor`
+**Update 2026-09-18:** the outstanding corridor check below was run. It was
+red (`EdgeForceOverBudget` on `LONG_AND_THIN`), exactly as predicted, and
+was repaired at `6a3ba42c` by re-deriving the fixture into the middle of its
+window. `CORRIDOR_REPAIR.md` has the derivation. The paragraph below is kept
+as the record of the prediction.
+
+**One check was outstanding and it was real.** `the_corridor_bounds_the_band_g_corridor`
 in `rs_cam_viz` was never run. It PANICS rather than drifts if the force budget
 crosses the edge force, and T-17 made every tool 2.441x more compliant, so it
 is a plausible red. It was skipped because a second session was rewriting
@@ -153,10 +159,30 @@ Step 7 clamped at `cutting_feed_ceiling_mm_min()`:
 rule: *"the calculator emits CUTTING feeds — clamp at the cutting ceiling, not
 the gantry travel rate."*
 
-Replace all three with `machine.cutting_feed_ceiling_mm_min()`. **One decision
-to take deliberately:** Step 7 does NOT apply the safety factor to the
-ceiling, and the three lift sites DO apply it to travel. Pick one, and say why
-in the code.
+**Decision taken 2026-09-18, from the code's own two-axis vocabulary
+(`feeds/mod.rs` ~1840, "RAW axis" vs "COMMANDED axis"):**
+
+- Step 7 runs BEFORE Step 9 and caps the RAW feed at the ceiling.
+- Step 9 multiplies the feed by `safety_factor`. The calculator's output
+  invariant is therefore `commanded_feed <= ceiling * safety_factor`.
+- The three lift sites run AFTER Step 9, on the COMMANDED axis. Their
+  `* safety_factor` is the right shape. Their base quantity is wrong: the
+  travel rate instead of the cutting ceiling. Class-2 defect.
+
+So: cap every post-Step-9 lift at `cutting_feed_ceiling_mm_min() *
+safety_factor`. Add one helper on `MachineProfile` (name it for the axis,
+for example `commanded_cutting_feed_ceiling_mm_min`) with a doc that states
+the invariant, and use it at all three sites. On the shipped presets
+(travel 4000/5000/5000, all under the 6000 default cap) the ceiling equals
+the travel rate, so no shipped number moves. The defect bites a profile with
+an explicit `max_cutting_feed_mm_min` below travel, or a gantry faster than
+6000 / safety.
+
+`adaptive_entry.rs:421` ("Step 7 re-applied") caps the RESCALED feed at the
+RAW-axis ceiling with no factor, and `rescaled` is a post-Step-9 quantity.
+That is the same axis mismatch in the other direction. The T-18 agent must
+measure whether moving it to the helper changes any fixture, and report
+before it changes behaviour there.
 
 Latent today only because the rubbing floor caps chipload at 0.025 mm/tooth on
 the shipped presets. That is evidence about the presets.
@@ -175,9 +201,15 @@ ceilings only; no kinematic maximum is breached. Add a round-DOWN twin of
 `round_suggestion_value`, the same shape as `machine::next_rpm_at_or_below`.
 Detail in `T9_CEILING.md`.
 
-Also from that survey, cheap and worth doing: `rs_cam_viz/src/io/export.rs:21`
-passes `max_feed_mm_min: None` into the validator, which disables the one
-check that could catch any of this in the emitted file.
+Also from that survey, cheap and worth doing: `rs_cam_viz/src/io/export.rs`
+`machine_safety_pass` passes `max_feed_mm_min: None` into the validator,
+which disables the one check that could catch any of this in the emitted
+file. Its own doc calls this a plumbing gap. **Decision 2026-09-18:** pass
+the TRAVEL rate (`machine.max_feed_mm_min`), not the cutting ceiling. The
+validator checks every `F` word, and the export rewrites some rapids as
+feeds at travel rate, so the ceiling would false-positive on every rewritten
+rapid. The travel rate catches a true kinematic overrun. All four callers
+hold the session, so the profile is reachable.
 
 ---
 
@@ -222,6 +254,15 @@ The operator's stated requirements, verbatim in effect:
 - **T-14** — a drop-cutter finishing pass measures 42.5 mm of axial
   engagement. The power ladder made it load-bearing.
 - **T-2, T-3, T-5** — guard and structure debt, no physics.
+- **`rs_cam_viz/src/ui/feeds/explore.rs`** (found by the corridor repair,
+  2026-09-18): the `Ceiling::OffScale` doc near line 306 prints a
+  9.36 / 0.1176 mm/tooth pair for the STUBBY cut that measures
+  2.4315 / 0.12353 (the 0.1176 belongs to 18000 RPM; the cut runs 17000).
+  Near line 324 it also says the compliance rises with the cube of
+  stickout; the integrator is a stepped cantilever, and at Ø2 mm three
+  times the stickout gives 1.44x the compliance. Both are doc comments in
+  a production file. Fix them with the T-9 viz change, after the viz wave
+  lands. Numbers and derivation: `CORRIDOR_REPAIR.md`.
 - **T-10** (gantry thrust) and **T-13** (`F_edge` per mm of depth) are
   BLOCKED on a number that cannot be sourced. Under the no-bench-rig rule they
   stay unmodelled. Do not invent a constant to close them.
