@@ -48,6 +48,8 @@ const MCP_SRC: &str = include_str!("../src/app/mcp.rs");
 /// P4 moved `app/mcp.rs`'s own `mod tests` into this file. The round-trip
 /// test the sentry below reads lives here now, so the sentry reads both.
 const MCP_TESTS_SRC: &str = include_str!("../src/app/mcp/tests.rs");
+/// P4 moved `mcp_load_project` into `app/mcp/project.rs`.
+const MCP_PROJECT_SRC: &str = include_str!("../src/app/mcp/project.rs");
 
 // ── the list ───────────────────────────────────────────────────────────────
 
@@ -238,7 +240,7 @@ fn every_project_load_route_fits_the_camera() {
     // below the call.
     for (label, src) in [
         ("app/input.rs File > Open", INPUT_SRC),
-        ("app/mcp.rs load_project", MCP_SRC),
+        ("app/mcp/project.rs load_project", MCP_PROJECT_SRC),
     ] {
         let at = src
             .find("open_job_from_path")

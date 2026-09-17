@@ -678,6 +678,7 @@ const MCP_SURFACE: &[&str] = &[
     "src/app/mcp.rs",
     "src/app/mcp/diagnostics.rs",
     "src/app/mcp/generation.rs",
+    "src/app/mcp/project.rs",
     "src/app/mcp/simulation.rs",
     "src/app/mcp/view.rs",
 ];

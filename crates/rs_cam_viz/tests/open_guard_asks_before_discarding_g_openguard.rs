@@ -38,7 +38,8 @@ use rs_cam_viz::mcp_server::EmbeddedCamServer;
 /// The two dispatch sources under test, read as text.
 const INPUT_SRC: &str = include_str!("../src/app/input.rs");
 const DIALOG_SRC: &str = include_str!("../src/app/export.rs");
-const MCP_SRC: &str = include_str!("../src/app/mcp.rs");
+/// P4 (2026-09-17) moved `mcp_load_project` into `app/mcp/project.rs`.
+const MCP_SRC: &str = include_str!("../src/app/mcp/project.rs");
 
 /// The body of the `AppEvent::OpenJob` arm, from its `=>` to the arm that
 /// follows it.
