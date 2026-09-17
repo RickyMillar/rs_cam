@@ -103,8 +103,10 @@
 //!
 //! ## The tool is the one input with no stable identity
 //!
-//! `SimToolpathEntry::tool` is a `ToolDefinition` **by value**, rebuilt from
-//! the session's `Tool` on every request, so there is no `Arc` to pin. Its
+//! `SimToolpathEntry::tool` is an `Arc<ToolDefinition>` rebuilt from the
+//! session's `Tool` on every request, so the pointer is fresh every time and
+//! pins nothing — CMP-19 made it an `Arc` so the GUI's viewport playback can
+//! share the one cutter, not to give the key an identity. Its
 //! `cutter: Box<dyn MillingCutter>` is not `Serialize` and the trait carries no
 //! `Any` bound (the same wall `DELTA_gen_w4.md` hit when it declined full
 //! devirtualization), so the key is built from the trait's own observable

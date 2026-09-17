@@ -1202,7 +1202,7 @@ fn ladder_request(
                     id: ToolpathId(i + 1),
                     name: format!("Pass{i}"),
                     annotated: std::sync::Arc::clone(tp),
-                    tool: tool(),
+                    tool: std::sync::Arc::new(tool()),
                     flute_count: 2,
                     tool_summary: "6mm Flat".to_owned(),
                     semantic_trace: None,

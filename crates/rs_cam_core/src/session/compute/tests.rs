@@ -2115,7 +2115,7 @@ fn apply_boundary_clip_multi_all_regions_collapsed_returns_original() {
 /// the global Z the dexel columns index on.
 #[test]
 fn the_group_stock_rule_answers_for_every_face() {
-    use super::simulation::group_stock_cut_direction;
+    use crate::compute::simulate::group_stock_cut_direction;
     use crate::compute::transform::FaceUp;
     use crate::dexel_stock::StockCutDirection;
 
@@ -2159,7 +2159,7 @@ fn the_group_stock_rule_answers_for_every_face() {
 /// from reading one of these questions as the other.
 #[test]
 fn the_group_rule_and_the_global_accessor_diverge_on_the_laterals() {
-    use super::simulation::group_stock_cut_direction;
+    use crate::compute::simulate::group_stock_cut_direction;
     use crate::compute::transform::{FaceUp, SetupTransformInfo, ZRotation};
 
     let info = |face_up| SetupTransformInfo {

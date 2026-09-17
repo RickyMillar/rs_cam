@@ -191,8 +191,8 @@ pub struct ToolpathResult {
     pub debug_trace_path: Option<PathBuf>,
     /// §6.E first-class drill-op view. `Some` for `Drill` /
     /// `AlignmentPinDrill` configs; routed onto
-    /// [`SetupSimToolpath.drill_op`](crate::compute::worker::SetupSimToolpath)
-    /// and through to [`SimToolpathEntry.drill_op`](rs_cam_core::compute::simulate::SimToolpathEntry).
+    /// [`SimToolpathEntry::drill_op`](rs_cam_core::compute::simulate::SimToolpathEntry::drill_op)
+    /// by the controller's simulation request builder.
     pub drill_op: Option<Arc<rs_cam_core::ops::drill_op::DrillOp>>,
 }
 

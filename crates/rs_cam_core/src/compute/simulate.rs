@@ -7,7 +7,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::compute::sim_prefix::{PrefixState, SimMemo};
-use crate::compute::transform::SetupTransformInfo;
+use crate::compute::tool_config::ToolConfig;
+use crate::compute::transform::{FaceUp, SetupTransformInfo};
 use crate::dexel_stock::{StockCutDirection, TriDexelStock};
 use crate::geo::{BoundingBox3, P3};
 use crate::ids::ToolpathId;
@@ -40,7 +41,11 @@ pub struct SimToolpathEntry {
     /// `SpanKind` / `pass_index` without re-parsing the move list.
     pub annotated: Arc<AnnotatedToolpath>,
     /// Pre-built tool definition (cutter + holder geometry).
-    pub tool: ToolDefinition,
+    ///
+    /// Shared, not cloned: `ToolDefinition` holds a `Box<dyn MillingCutter>`
+    /// and is not `Clone`, and the GUI's viewport playback needs the same
+    /// cutter this entry simulates with. An `Arc` hands it over for free.
+    pub tool: Arc<ToolDefinition>,
     /// Number of cutting flutes (for metric sampling).
     pub flute_count: u32,
     /// Short description of the tool for boundary labels.
@@ -77,7 +82,16 @@ pub struct SimToolpathEntry {
 /// A group of toolpaths from one setup, sharing a cut direction.
 pub struct SimGroupEntry {
     pub toolpaths: Vec<SimToolpathEntry>,
-    /// Cut direction derived from the setup's face-up orientation.
+    /// Cut direction of the setup, from [`group_stock_cut_direction`].
+    ///
+    /// The simulator does NOT stamp with this value: a per-setup stock is
+    /// always carved `FromTop`, and the global stock takes the direction
+    /// `local_to_global` reports. The one reader is the S5 prefix memo's
+    /// group key (`sim_prefix`), which needs a setup whose face-up
+    /// orientation changed to miss. Both request builders call
+    /// [`group_stock_cut_direction`]; the GUI builder wrote the constant
+    /// `FromTop` until 2026-09-18, which made this doc untrue on one of the
+    /// two producers.
     pub direction: StockCutDirection,
     /// Per-setup local stock bounding box. When `Some`, the simulation uses
     /// per-group stocks (always stamped FromTop) and composites the results.
@@ -113,6 +127,88 @@ pub struct SimGroupEntry {
     /// fresh project load. This field turns that into a ladder: each
     /// simulation run unlocks exactly one more pending op.
     pub phantom_prior_stock: Option<(usize, ToolpathId)>,
+}
+
+/// The cut direction a per-setup simulation GROUP stock is stamped with.
+///
+/// Two faces, not six. A group stock is built in the SETUP-LOCAL frame,
+/// where local −Z is always the tool axis, so the tool always arrives
+/// from local `FromTop`. `FaceUp::Bottom` is the one face whose local Z
+/// runs against the global Z the dexel columns are indexed on, so it is
+/// the one face that stamps `FromBottom`.
+///
+/// # Do not replace this with `SetupTransformInfo::cut_direction()`
+///
+/// That accessor answers a DIFFERENT question — which side the tool
+/// arrives from in the stock-relative GLOBAL frame — and returns
+/// `FromFront` / `FromBack` / `FromLeft` / `FromRight` for the four
+/// lateral faces. It feeds the global playback stock. This rule feeds the
+/// per-setup group stock, which every metric, gate, collision check and
+/// checkpoint mesh is computed on. The two agree on `Top` and `Bottom`
+/// and diverge on the four laterals, and that divergence is the design,
+/// not a defect. `compute/transform.rs:493` records two earlier defects
+/// in exactly this table (G-LATERALSIGN, G-FRONTNAME), both of which came
+/// from reading one question as the other.
+///
+/// STK-06 gave the rule this one home. It used to be an untitled `_` arm
+/// written out in two files, which read as an oversight rather than as a
+/// decision.
+///
+/// CMP-19 moved this rule here, beside [`SimGroupEntry::direction`], so the
+/// GUI request builder can reach it too. That builder wrote the constant
+/// `FromTop` until 2026-09-18, which keyed a flipped setup the same as an
+/// upright one.
+///
+/// The S5 simulation prefix hash reads what this returns
+/// (`compute/sim_prefix.rs`), so the answer must not move for a lateral
+/// setup without a deliberate cache break.
+pub fn group_stock_cut_direction(face_up: FaceUp) -> StockCutDirection {
+    match face_up {
+        FaceUp::Top => StockCutDirection::FromTop,
+        FaceUp::Bottom => StockCutDirection::FromBottom,
+        // The tool axis is setup-local Z on a lateral face too.
+        FaceUp::Front | FaceUp::Back | FaceUp::Left | FaceUp::Right => StockCutDirection::FromTop,
+    }
+}
+
+/// The three tool fields of a [`SimToolpathEntry`], all derived from one
+/// [`ToolConfig`].
+///
+/// **One derivation, two builders.** `tool`, `flute_count` and
+/// `tool_summary` are three views of the same `ToolConfig`; each request
+/// builder used to write all three by hand.
+pub fn entry_tool_fields(tool: &ToolConfig) -> (Arc<ToolDefinition>, u32, String) {
+    (
+        Arc::new(crate::compute::cutter::build_cutter(tool)),
+        tool.flute_count,
+        tool.summary(),
+    )
+}
+
+/// Whether a toolpath's dexel engagement metrics mean nothing
+/// ([`SimToolpathEntry::metrics_not_applicable`]).
+///
+/// **One predicate, two builders.** Three signals answer it, in falling
+/// order of authority: the §6.E first-class drill op, a `MoveIntent::Drilling`
+/// move, and the operation kind. The GUI builder tested the operation kind
+/// alone until 2026-09-18. The three agreed for every shipped generator —
+/// only `ops/drill.rs` emits the intent, and it emits it on the two drilling
+/// op kinds — so the divergence was structural, not live.
+pub fn entry_metrics_not_applicable(
+    has_drill_op: bool,
+    toolpath: &Toolpath,
+    op_type: crate::compute::catalog::OperationType,
+) -> bool {
+    has_drill_op
+        || toolpath
+            .moves
+            .iter()
+            .any(|m| matches!(m.intent, crate::toolpath::MoveIntent::Drilling))
+        || matches!(
+            op_type,
+            crate::compute::catalog::OperationType::Drill
+                | crate::compute::catalog::OperationType::AlignmentPinDrill
+        )
 }
 
 /// Fewest moves a toolpath needs before a simulation builder will carve it.
@@ -1161,12 +1257,12 @@ fn carve_entry(
                 intent_transits,
             )
         };
-        let mut rapid_check = RapidClearanceCheck::new(&entry.tool);
+        let mut rapid_check = RapidClearanceCheck::new(entry.tool.as_ref());
         let mut samples = group_stock
             .simulate_toolpath_with_lut_metrics_rapid_checked(
                 entry_toolpath,
                 env.lut,
-                &entry.tool,
+                entry.tool.as_ref(),
                 env.radius,
                 env.direction,
                 entry.id,
@@ -1190,7 +1286,7 @@ fn carve_entry(
             &mut run.rapid_collision_move_indices,
         );
     } else {
-        let mut rapid_check = RapidClearanceCheck::new(&entry.tool);
+        let mut rapid_check = RapidClearanceCheck::new(entry.tool.as_ref());
         group_stock
             .simulate_toolpath_with_lut_cancel_rapid_checked(
                 entry_toolpath,
@@ -1426,7 +1522,7 @@ where
 
             set_phase(&format!("Simulate {}", entry.name));
             let lut = RadialProfileLUT::from_cutter(
-                &entry.tool,
+                entry.tool.as_ref(),
                 crate::stock::radial_profile::LUT_SAMPLES,
             );
             let radius = entry.tool.radius();
@@ -1951,7 +2047,7 @@ mod tests {
             id: ToolpathId(1),
             name: "Test".to_owned(),
             annotated: Arc::new(AnnotatedToolpath::new(tp)),
-            tool,
+            tool: Arc::new(tool),
             flute_count: 2,
             tool_summary: "6mm Flat".to_owned(),
             semantic_trace: None,
@@ -2218,7 +2314,7 @@ mod tests {
             id: ToolpathId(1),
             name: "Pocket F-2 validation".to_owned(),
             annotated: Arc::new(AnnotatedToolpath::new(tp)),
-            tool: tool_def,
+            tool: Arc::new(tool_def),
             flute_count: 2,
             tool_summary: "6.35mm Flat".to_owned(),
             semantic_trace: None,
@@ -2323,7 +2419,7 @@ mod tests {
                 id: ToolpathId(1),
                 name: "Top Cut".into(),
                 annotated: Arc::new(AnnotatedToolpath::new(top_tp)),
-                tool: make_tool(),
+                tool: Arc::new(make_tool()),
                 flute_count: 2,
                 tool_summary: "6mm Flat".into(),
                 semantic_trace: None,
@@ -2343,7 +2439,7 @@ mod tests {
                 id: ToolpathId(2),
                 name: "Bottom Cut".into(),
                 annotated: Arc::new(AnnotatedToolpath::new(bottom_tp)),
-                tool: make_tool(),
+                tool: Arc::new(make_tool()),
                 flute_count: 2,
                 tool_summary: "6mm Flat".into(),
                 semantic_trace: None,

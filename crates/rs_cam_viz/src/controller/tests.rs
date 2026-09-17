@@ -1307,6 +1307,91 @@ fn the_primary_and_the_builder_agree_about_a_runnable_project_ur3() {
     );
 }
 
+/// CONTRACT — CMP-19. The GUI request builder and
+/// `ProjectSession::run_simulation` answer `metrics_not_applicable` with
+/// ONE predicate, `rs_cam_core::compute::simulate::entry_metrics_not_applicable`.
+///
+/// Three signals answer it: the §6.E first-class drill op, a
+/// `MoveIntent::Drilling` move, and the operation kind. The GUI builder
+/// tested the operation kind ALONE until 2026-09-18, while core tested all
+/// three. Only `ops/drill.rs` emits the intent today, and it emits it on
+/// the two drilling op kinds, so the two builders agreed for every shipped
+/// generator — the divergence was structural, and a new drilling generator
+/// would have made it live: the GUI's simulation would emit per-sample
+/// air-cut and low-engagement issues that core's would suppress.
+///
+/// The teeth are case 2: a milling op kind whose generated toolpath carries
+/// a drilling move. An op-kind-only builder answers `false` there.
+#[test]
+fn the_gui_builder_reads_every_drill_signal_cmp19() {
+    use rs_cam_core::compute::simulate::entry_metrics_not_applicable;
+    use rs_cam_core::toolpath::MoveIntent;
+
+    let mut controller = sample_controller();
+    let tc = &controller.state.session.toolpath_configs()[0];
+    let id = tc.id;
+    let op_type = tc.operation.op_type();
+    assert!(
+        !matches!(
+            op_type,
+            rs_cam_core::compute::catalog::OperationType::Drill
+                | rs_cam_core::compute::catalog::OperationType::AlignmentPinDrill
+        ),
+        "the fixture's op kind must NOT be a drilling kind, or signal 3 \
+         would answer every case on its own"
+    );
+
+    // Replace the fixture's generated toolpath, keeping every other field.
+    let seed = |controller: &mut AppController<ScriptedBackend>, tp: Toolpath| {
+        controller
+            .state
+            .gui
+            .toolpath_rt
+            .get_mut(&id)
+            .expect("the fixture seeds a runtime for toolpath 0")
+            .result
+            .as_mut()
+            .expect("the fixture seeds a result")
+            .annotated = Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
+            tp,
+        ));
+    };
+    let flag = |controller: &AppController<ScriptedBackend>| {
+        let (groups, _, _) = controller
+            .build_simulation_groups(|_, tc| tc.enabled, |_| false)
+            .expect("the fixture project builds one group");
+        groups[0].toolpaths[0].metrics_not_applicable
+    };
+
+    // Case 1 — a milling op with no drilling move.
+    let mut milling = Toolpath::new();
+    milling.rapid_to(P3::new(0.0, 0.0, 5.0));
+    milling.feed_to(P3::new(10.0, 0.0, -1.0), 600.0);
+    seed(&mut controller, milling);
+    assert!(
+        !flag(&controller),
+        "case 1: a milling op with no drilling signal reports measurable metrics"
+    );
+
+    // Case 2 — the same op kind, one drilling move.
+    let mut drilled = Toolpath::new();
+    drilled.rapid_to(P3::new(0.0, 0.0, 5.0));
+    drilled.feed_to_with_intent(P3::new(0.0, 0.0, -1.0), 200.0, MoveIntent::Drilling);
+    seed(&mut controller, drilled);
+    assert!(
+        flag(&controller),
+        "case 2: a drilling move must set `metrics_not_applicable`, whatever \
+         the op kind says. This is the signal the GUI builder used to miss."
+    );
+
+    // Case 3 — the first-class drill op, stated against the shared
+    // predicate because a `DrillOp` literal carries fourteen fields.
+    assert!(
+        entry_metrics_not_applicable(true, &Toolpath::new(), op_type),
+        "case 3: a first-class drill op sets the flag on its own"
+    );
+}
+
 #[test]
 fn playback_defaults_after_reset() {
     let mut controller = sample_controller();
@@ -2482,7 +2567,7 @@ fn delete_unselected_toolpath_preserves_selection() {
 /// dropping the origin. For AS001 (`origin_z=-12`) this sent a bbox of
 /// `(0,0,0)..(100,100,12)` to the worker even though the actual world stock
 /// spans `(-10,-10,-12)..(90,90,0)`. The F-024 viz-worker follow-up
-/// (commit `1dd1aa7`) made `build_core_simulation_request` forward
+/// (commit `1dd1aa7`) made the viz request forward
 /// `local_stock_bbox = None` for identity setups so the core would fall back
 /// to `request.stock_bbox` — but the fallback bbox itself was the same
 /// broken bbox. Result: toolpath cuts at world Z=-2 still sat below every
@@ -2573,9 +2658,10 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
     use rs_cam_core::stock::simulation_cut::CutKinematics;
     use std::sync::atomic::AtomicBool;
 
-    use crate::compute::{
-        SetupSimGroup, SetupSimToolpath, SimulationRequest as VizSimulationRequest,
-    };
+    use rs_cam_core::compute::cutter::build_cutter;
+    use rs_cam_core::compute::simulate::{SimGroupEntry, SimToolpathEntry};
+
+    use crate::compute::SimulationRequest as VizSimulationRequest;
 
     let stock = StockConfig {
         x: 100.0,
@@ -2618,43 +2704,43 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
     // stock origin (Z=[-12, 0]); pre-fix it was Z=[0, 12].
     let world_stock_bbox = crate::controller::events::simulation::build_world_stock_bbox(&session);
 
-    // Identity-setup local bbox shape from `controller::events::simulation`
-    // (always zero-rooted via `xform.effective_stock_bbox()`).
-    let local_stock_bbox = rs_cam_core::geo::BoundingBox3 {
-        min: P3::new(0.0, 0.0, 0.0),
-        max: P3::new(100.0, 100.0, 12.0),
-    };
-
     let request = VizSimulationRequest {
-        groups: vec![SetupSimGroup {
-            toolpaths: vec![SetupSimToolpath {
-                id: ToolpathId(1),
-                name: "AS001 Pocket Pass 1".to_owned(),
-                annotated: Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
-                    tp,
-                )),
-                tool,
-                semantic_trace: None,
-                spindle_rpm: Some(18_000),
-                metrics_not_applicable: false,
-                drill_op: None,
-                operation_config_hash: 0,
+        core: rs_cam_core::compute::simulate::SimulationRequest {
+            groups: vec![SimGroupEntry {
+                toolpaths: vec![SimToolpathEntry {
+                    id: ToolpathId(1),
+                    name: "AS001 Pocket Pass 1".to_owned(),
+                    annotated: Arc::new(
+                        rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp),
+                    ),
+                    tool: Arc::new(build_cutter(&tool)),
+                    flute_count: tool.flute_count,
+                    tool_summary: tool.summary(),
+                    semantic_trace: None,
+                    spindle_rpm: Some(18_000),
+                    metrics_not_applicable: false,
+                    drill_op: None,
+                    operation_config_hash: 0,
+                }],
+                direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+                // Identity-setup shape from `controller::events::simulation`:
+                // no local bbox, so the simulator grids `stock_bbox`.
+                local_stock_bbox: None,
+                local_to_global: None,
+                phantom_prior_stock: None,
             }],
-            local_stock_bbox,
-            local_to_global: None,
-            phantom_prior_stock: None,
-        }],
-        stock_bbox: world_stock_bbox,
-        stock_top_z: world_stock_bbox.max.z,
-        resolution: 1.0,
-        metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions {
-            enabled: true,
-            capture_arc_engagement: true,
+            stock_bbox: world_stock_bbox,
+            stock_top_z: world_stock_bbox.max.z,
+            resolution: 1.0,
+            metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions {
+                enabled: true,
+                capture_arc_engagement: true,
+            },
+            spindle_rpm: 18_000,
+            rapid_feed_mm_min: 5_000.0,
+            model_mesh: None,
+            kinematics: None,
         },
-        spindle_rpm: 18_000,
-        rapid_feed_mm_min: 5_000.0,
-        model_mesh: None,
-        kinematics: None,
         memoize_prefix: false,
     };
 

@@ -104,7 +104,7 @@ fn entry(id: usize, name: &str, tp: Toolpath) -> SimToolpathEntry {
         id: ToolpathId(id),
         name: name.to_owned(),
         annotated: Arc::new(AnnotatedToolpath::new(tp)),
-        tool: endmill_6mm(),
+        tool: std::sync::Arc::new(endmill_6mm()),
         flute_count: 2,
         tool_summary: "6mm Flat".to_owned(),
         semantic_trace: None,

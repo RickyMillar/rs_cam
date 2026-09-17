@@ -283,10 +283,9 @@ impl RsCamApp {
                                 tp_moves
                             };
 
-                            let cutter = crate::compute::worker::helpers::build_cutter(tool);
                             stock.simulate_toolpath_range(
                                 toolpath,
-                                &cutter,
+                                tool.as_ref(),
                                 *direction,
                                 local_start,
                                 local_end,

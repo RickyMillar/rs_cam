@@ -3,10 +3,13 @@ use std::sync::Arc;
 use rs_cam_core::geo::BoundingBox3;
 use rs_cam_core::session::ToolpathConfig;
 
-use crate::compute::{
-    CollisionRequest, ComputeBackend, ComputeLane, SetupSimGroup, SetupSimToolpath,
-    SimulationRequest,
+use rs_cam_core::compute::simulate::{
+    SimGroupEntry, SimToolpathEntry, entry_metrics_not_applicable, entry_tool_fields,
+    group_stock_cut_direction,
 };
+use rs_cam_core::compute::tool_config::ToolConfig;
+
+use crate::compute::{CollisionRequest, ComputeBackend, ComputeLane, SimulationRequest};
 use crate::state::simulation::HolderCheckScope;
 use crate::state::toolpath::ToolpathId;
 
@@ -93,7 +96,7 @@ impl<B: ComputeBackend> AppController<B> {
         &self,
         mut include_toolpath: impl FnMut(usize, &ToolpathConfig) -> bool,
         mut stop_after_setup: impl FnMut(usize) -> bool,
-    ) -> Option<(Vec<SetupSimGroup>, Vec<SetupSimToolpath>, BoundingBox3)> {
+    ) -> Option<(Vec<SimGroupEntry>, Vec<ToolConfig>, BoundingBox3)> {
         // F-024 third-site fix: the world `stock_bbox` forwarded to the
         // worker must respect the stock's origin offset. Previously this
         // constructed a zero-rooted bbox (`(0,0,0)..(stock.x, stock.y,
@@ -106,11 +109,12 @@ impl<B: ComputeBackend> AppController<B> {
         // the origin correctly.
         let stock_bbox = build_world_stock_bbox(&self.state.session);
 
-        let mut groups: Vec<SetupSimGroup> = Vec::new();
-        let mut all_toolpaths_flat = Vec::new();
+        let mut groups: Vec<SimGroupEntry> = Vec::new();
+        let mut all_tools_flat: Vec<ToolConfig> = Vec::new();
 
         for (i, setup) in self.state.session.list_setups().iter().enumerate() {
-            let mut toolpaths: Vec<SetupSimToolpath> = Vec::new();
+            let mut toolpaths: Vec<SimToolpathEntry> = Vec::new();
+            let mut tools: Vec<ToolConfig> = Vec::new();
             // F.4: mirrors `ProjectSession::run_simulation`'s phantom-
             // prior-stock scan (`rs_cam_core::compute::simulate::
             // PhantomPriorStockScan`) so the core and GUI builders can't
@@ -163,17 +167,20 @@ impl<B: ComputeBackend> AppController<B> {
                 else {
                     continue;
                 };
-                let op_type = tc.operation.op_type();
-                let metrics_not_applicable = matches!(
-                    op_type,
-                    rs_cam_core::compute::catalog::OperationType::Drill
-                        | rs_cam_core::compute::catalog::OperationType::AlignmentPinDrill
+                let metrics_not_applicable = entry_metrics_not_applicable(
+                    result.drill_op.is_some(),
+                    &result.annotated.toolpath,
+                    tc.operation.op_type(),
                 );
-                toolpaths.push(SetupSimToolpath {
+                let (tool_def, flute_count, tool_summary) = entry_tool_fields(tool);
+                tools.push(tool.clone());
+                toolpaths.push(SimToolpathEntry {
                     id: tc.id,
                     name: tc.name.clone(),
                     annotated: Arc::clone(&result.annotated),
-                    tool: tool.clone(),
+                    tool: tool_def,
+                    flute_count,
+                    tool_summary,
                     semantic_trace: rt.semantic_trace.clone(),
                     spindle_rpm: tc.operation.spindle_rpm(),
                     metrics_not_applicable,
@@ -193,7 +200,7 @@ impl<B: ComputeBackend> AppController<B> {
             // phantom is still valid and the group must still be
             // emitted (with an empty `toolpaths` vec) to carry it.
             if !toolpaths.is_empty() || phantom_prior_stock.is_some() {
-                all_toolpaths_flat.extend(toolpaths.clone());
+                all_tools_flat.extend(tools);
 
                 // F-030: drive per-setup frame decisions through the shared
                 // `SetupEvalContext` so the viz controller, viz worker, and
@@ -204,9 +211,16 @@ impl<B: ComputeBackend> AppController<B> {
                     setup.z_rotation,
                 );
 
-                groups.push(SetupSimGroup {
+                groups.push(SimGroupEntry {
                     toolpaths,
-                    local_stock_bbox: setup_ctx.local_stock_bbox,
+                    direction: group_stock_cut_direction(setup.face_up),
+                    // F-024's one door. An identity setup answers `None`, so
+                    // the simulator grids the request's world `stock_bbox` —
+                    // the frame the toolpath emits in. The viz worker
+                    // re-derived this rule by hand from a non-optional mirror
+                    // field until 2026-09-18 (CMP-19); this is the third and
+                    // last site to take the shared accessor.
+                    local_stock_bbox: setup_ctx.sim_local_stock_bbox(),
                     local_to_global: setup_ctx.local_to_global,
                     phantom_prior_stock,
                 });
@@ -220,21 +234,21 @@ impl<B: ComputeBackend> AppController<B> {
         if groups.is_empty() {
             return None;
         }
-        Some((groups, all_toolpaths_flat, stock_bbox))
+        Some((groups, all_tools_flat, stock_bbox))
     }
 
     /// Submit a simulation request.
     pub(crate) fn submit_simulation_for_groups(
         &mut self,
-        groups: Vec<SetupSimGroup>,
-        all_toolpaths_flat: &[SetupSimToolpath],
+        groups: Vec<SimGroupEntry>,
+        all_tools_flat: &[ToolConfig],
         stock_bbox: BoundingBox3,
         _model_setup_idx: Option<usize>,
         memoize_prefix: bool,
     ) {
         if self.state.simulation.auto_resolution {
             self.state.simulation.resolution =
-                auto_resolution_for_tools(all_toolpaths_flat, &stock_bbox);
+                auto_resolution_for_tools(all_tools_flat, &stock_bbox);
         }
 
         let model_mesh = self
@@ -272,19 +286,21 @@ impl<B: ComputeBackend> AppController<B> {
             }
         });
         self.compute.submit_simulation(SimulationRequest {
-            groups,
-            stock_bbox,
-            stock_top_z: stock_bbox.max.z,
-            resolution: self.state.simulation.resolution,
-            metric_options: self.state.simulation.metric_options,
-            spindle_rpm: self.state.gui.post.spindle_speed,
-            rapid_feed_mm_min: if self.state.gui.post.high_feedrate_mode {
-                self.state.gui.post.high_feedrate.max(1.0)
-            } else {
-                max_feed_mm_min
+            core: rs_cam_core::compute::simulate::SimulationRequest {
+                groups,
+                stock_bbox,
+                stock_top_z: stock_bbox.max.z,
+                resolution: self.state.simulation.resolution,
+                metric_options: self.state.simulation.metric_options,
+                spindle_rpm: self.state.gui.post.spindle_speed,
+                rapid_feed_mm_min: if self.state.gui.post.high_feedrate_mode {
+                    self.state.gui.post.high_feedrate.max(1.0)
+                } else {
+                    max_feed_mm_min
+                },
+                model_mesh,
+                kinematics,
             },
-            model_mesh,
-            kinematics,
             memoize_prefix,
         });
     }
@@ -305,7 +321,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// back. Every other simulation still consumes a held snapshot when it
     /// matches, but leaves none behind.
     pub(crate) fn run_simulation_with_all_memoized(&mut self, memoize_prefix: bool) -> bool {
-        let Some((groups, all_toolpaths_flat, stock_bbox)) =
+        let Some((groups, all_tools_flat, stock_bbox)) =
             self.build_simulation_groups(|_setup_idx, tc| tc.enabled, |_setup_idx| false)
         else {
             tracing::warn!("No computed toolpaths to simulate");
@@ -317,7 +333,7 @@ impl<B: ComputeBackend> AppController<B> {
         };
         self.submit_simulation_for_groups(
             groups,
-            &all_toolpaths_flat,
+            &all_tools_flat,
             stock_bbox,
             Some(0),
             memoize_prefix,
@@ -344,7 +360,7 @@ impl<B: ComputeBackend> AppController<B> {
             return;
         };
 
-        let Some((groups, all_toolpaths_flat, stock_bbox)) = self.build_simulation_groups(
+        let Some((groups, all_tools_flat, stock_bbox)) = self.build_simulation_groups(
             |setup_idx, tc| {
                 if setup_idx == target_setup_idx {
                     ids.contains(&tc.id)
@@ -360,7 +376,7 @@ impl<B: ComputeBackend> AppController<B> {
         };
         self.submit_simulation_for_groups(
             groups,
-            &all_toolpaths_flat,
+            &all_tools_flat,
             stock_bbox,
             Some(target_setup_idx),
             false,
@@ -482,10 +498,12 @@ impl<B: ComputeBackend> AppController<B> {
 /// in `build_simulation_groups` was `(0,0,0)..(stock.x, stock.y, stock.z)`
 /// — it ignored the stock origin. For AS001 (`origin_z = -12`) the world
 /// bbox should be `(-10,-10,-12)..(90, 90, 0)` but was being sent as
-/// `(0,0,0)..(100, 100, 12)`. The viz worker's
-/// `build_core_simulation_request` falls back to `request.stock_bbox`
-/// when `local_to_global` is `None` (the F-024 follow-up landed in commit
-/// `1dd1aa7`), so the broken bbox was the dexel grid's Z range — toolpath
+/// `(0,0,0)..(100, 100, 12)`. The simulator falls back to
+/// `request.stock_bbox` when `local_stock_bbox` is `None` (the F-024
+/// follow-up landed in commit `1dd1aa7`; CMP-19 moved the viz's copy of
+/// the rule onto `SetupEvalContext::sim_local_stock_bbox`, the accessor
+/// core's own builder calls), so the broken bbox was the dexel grid's
+/// Z range — toolpath
 /// cuts at world Z=-2 sat below every ray and `axial_engagement_mm` read
 /// the full stock height instead of the commanded DOC.
 pub(crate) fn build_world_stock_bbox(
@@ -495,10 +513,10 @@ pub(crate) fn build_world_stock_bbox(
 }
 
 /// Auto-resolution calculation.
-fn auto_resolution_for_tools(toolpaths: &[SetupSimToolpath], stock_bbox: &BoundingBox3) -> f64 {
-    let min_radius = toolpaths
+fn auto_resolution_for_tools(tools: &[ToolConfig], stock_bbox: &BoundingBox3) -> f64 {
+    let min_radius = tools
         .iter()
-        .map(|toolpath| toolpath.tool.diameter / 2.0)
+        .map(|tool| tool.diameter / 2.0)
         .fold(f64::INFINITY, f64::min);
 
     let from_tool = (min_radius / 5.0).clamp(0.02, 0.5);

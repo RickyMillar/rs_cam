@@ -7,9 +7,8 @@ use std::time::{Duration, Instant};
 
 pub use worker::{
     CollisionRequest, CollisionResult, ComputeRequest, ComputeResult, JobRequest, JobResult,
-    OptimizeRequest, OptimizeResult, OptimizeResultKind, ReachRequest, ReachResult, SetupSimGroup,
-    SetupSimToolpath, SetupTransformInfo, SimulationRequest, SimulationResult,
-    ThreadedComputeBackend, VizExtras,
+    OptimizeRequest, OptimizeResult, OptimizeResultKind, ReachRequest, ReachResult,
+    SetupTransformInfo, SimulationRequest, SimulationResult, ThreadedComputeBackend, VizExtras,
 };
 
 /// Identifies one [`JobRequest`] submit, so the drain routes its answer

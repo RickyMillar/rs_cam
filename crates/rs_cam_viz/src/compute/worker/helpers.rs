@@ -1,6 +1,4 @@
-use super::{
-    AtomicBool, CollisionRequest, CollisionResult, ComputeError, ComputeRequest, SimulationRequest,
-};
+use super::{AtomicBool, CollisionRequest, CollisionResult, ComputeError, ComputeRequest};
 use serde_json::json;
 use std::path::PathBuf;
 
@@ -101,7 +99,7 @@ pub(super) fn build_trace_artifact(
 }
 
 pub(super) fn build_simulation_cut_artifact(
-    req: &SimulationRequest,
+    req: &rs_cam_core::compute::simulate::SimulationRequest,
     trace: rs_cam_core::stock::simulation_cut::SimulationCutTrace,
 ) -> rs_cam_core::stock::simulation_cut::SimulationCutArtifact {
     let included_toolpath_ids: Vec<_> = req
@@ -137,7 +135,7 @@ pub(super) fn build_simulation_cut_artifact(
                     json!({
                         "toolpath_id": toolpath.id.0,
                         "name": toolpath.name,
-                        "tool": toolpath.tool.summary(),
+                        "tool": toolpath.tool_summary,
                     })
                 }).collect::<Vec<_>>(),
             })

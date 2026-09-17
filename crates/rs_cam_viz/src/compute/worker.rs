@@ -35,7 +35,6 @@ use std::sync::{Condvar, Mutex};
 use std::time::Instant;
 
 use rs_cam_core::dexel_stock::StockCutDirection;
-use rs_cam_core::geo::BoundingBox3;
 use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::stock::collision::CollisionReport;
 use rs_cam_core::toolpath::Toolpath;
@@ -105,81 +104,22 @@ pub struct ComputeResult {
     pub debug_trace_path: Option<PathBuf>,
 }
 
-#[derive(Clone)]
-pub struct SetupSimToolpath {
-    pub id: ToolpathId,
-    pub name: String,
-    pub annotated: Arc<AnnotatedToolpath>,
-    pub tool: ToolConfig,
-    pub semantic_trace: Option<Arc<rs_cam_core::trace::semantic_trace::ToolpathSemanticTrace>>,
-    /// Per-toolpath spindle RPM override. `None` means use the simulation
-    /// request's project/post default RPM.
-    pub spindle_rpm: Option<u32>,
-    /// P4: true for drill / pin-drill kinds — see `SimToolpathEntry`.
-    pub metrics_not_applicable: bool,
-    /// §6.E first-class drill-op view (dual-representation invariant).
-    /// When `Some`, the worker forwards this onto `SimToolpathEntry.drill_op`
-    /// so the simulator uses analytical removal instead of per-segment
-    /// stamping. Populated by [`crate::controller::events::simulation`]
-    /// from the session's cached `ToolpathComputeResult`.
-    pub drill_op: Option<Arc<rs_cam_core::ops::drill_op::DrillOp>>,
-    /// Hash of the toolpath's `OperationConfig` at sim-build time.
-    /// Forwarded to `SimToolpathEntry.operation_config_hash` so the
-    /// provenance builder can stamp it without holding the config.
-    /// Lets [`rs_cam_core::gcode::sim_trace_is_fresh`] invalidate
-    /// cached load verdicts on config-only edits like `feed_rate`.
-    pub operation_config_hash: u64,
-}
-
-/// A group of toolpaths from one setup in setup-local coordinates.
-///
-/// Toolpaths are NOT transformed to global — they stay in the setup's local
-/// frame.  The simulation creates a per-group stock from `local_stock_bbox`
-/// and always stamps from the top (Z-axis down).  After simulation the mesh
-/// is transformed to global coordinates for compositing.
-pub struct SetupSimGroup {
-    /// Toolpaths in setup-local frame.
-    pub toolpaths: Vec<SetupSimToolpath>,
-    /// Bounding box for this setup's stock in local coordinates
-    /// (origin at 0,0,0; max at effective width/depth/height).
-    pub local_stock_bbox: BoundingBox3,
-    /// Transform info to convert local coordinates back to global stock frame.
-    /// `None` when the setup is identity (FaceUp::Top, ZRotation::None).
-    pub local_to_global: Option<SetupTransformInfo>,
-    /// F.4 — phantom `prior_stocks` snapshot for a not-yet-generated
-    /// toolpath. Forwarded verbatim onto the core
-    /// `rs_cam_core::compute::simulate::SimGroupEntry::phantom_prior_stock`
-    /// of the same name — see that field's doc comment for the full
-    /// validity rule and `PhantomPriorStockScan` for how the controller
-    /// computes it.
-    pub phantom_prior_stock: Option<(usize, ToolpathId)>,
-}
-
 // Re-export from core — the struct and all methods now live in rs_cam_core.
 pub use rs_cam_core::compute::SetupTransformInfo;
 
+/// The simulation lane's request: one core simulation request, plus the one
+/// viz-only dial core carries no slot for.
+///
+/// **One request type, not a mirror.** Every field of the simulation itself
+/// lives on [`rs_cam_core::compute::simulate::SimulationRequest`]. The viz
+/// held `SetupSimGroup`, `SetupSimToolpath` and a field-identical twin of
+/// core's request until 2026-09-18, and one translation site copied them
+/// across field by field, so a new core field dropped out at every hop
+/// (CMP-19). [`SimulationResult`] below carries the same shape for the same
+/// reason.
 pub struct SimulationRequest {
-    /// Per-setup groups, processed sequentially on one stock.
-    pub groups: Vec<SetupSimGroup>,
-    pub stock_bbox: BoundingBox3,
-    pub stock_top_z: f64,
-    pub resolution: f64,
-    pub metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions,
-    pub spindle_rpm: u32,
-    pub rapid_feed_mm_min: f64,
-    /// Optional model mesh for deviation computation (sim_z vs model_z).
-    pub model_mesh: Option<Arc<TriangleMesh>>,
-    /// F-034/F-035 plumbing, in core's own type. The viz controller
-    /// builds this from `self.state.session.machine()` at submit time and
-    /// the worker forwards it verbatim onto
-    /// `rs_cam_core::compute::simulate::SimulationRequest::kinematics`.
-    /// `None` — the shipped default, because no preset carries a
-    /// kinematics block — keeps runtime and gates byte-identical to
-    /// pre-F-034 / pre-F-035.
-    ///
-    /// The viz held the three members of this context as three loose
-    /// fields until 2026-09-17, which is a mirror of core's struct.
-    pub kinematics: Option<rs_cam_core::compute::simulate::KinematicsContext>,
+    /// The request, in core's own type. Read its field docs there.
+    pub core: rs_cam_core::compute::simulate::SimulationRequest,
     /// S5 — leave a prefix snapshot behind for the next simulation to resume
     /// from (`rs_cam_core::compute::sim_prefix`).
     ///
@@ -194,7 +134,7 @@ pub struct SimulationRequest {
 pub use rs_cam_core::compute::simulate::{SimBoundary, SimCheckpointMesh};
 
 /// One entry in the live-sim playback stream: a pre-transformed toolpath, the
-/// tool config, the cut direction to stamp it with, and (for drill operations)
+/// tool, the cut direction to stamp it with, and (for drill operations)
 /// the analytical `DrillOp` in the same frame.
 ///
 /// `drill_op = Some(...)` instructs `update_live_sim` to use
@@ -208,7 +148,10 @@ pub use rs_cam_core::compute::simulate::{SimBoundary, SimCheckpointMesh};
 pub struct PlaybackToolpath {
     /// Moves, expressed in [`Self::frame`].
     pub toolpath: Arc<Toolpath>,
-    pub tool: ToolConfig,
+    /// The same cutter the compute pass stamped the checkpoint stocks with,
+    /// shared from `SimToolpathEntry::tool`. The playback loop used to hold
+    /// the `ToolConfig` and rebuild the cutter once per frame.
+    pub tool: Arc<rs_cam_core::tool::ToolDefinition>,
     /// Direction to stamp with, in [`Self::frame`]. Always `FromTop` for a
     /// setup-local entry, because setup-local Z is always the tool axis.
     pub direction: StockCutDirection,
@@ -839,7 +782,7 @@ fn toolpath_job_label(request: &ComputeRequest) -> String {
 fn analysis_job_label(request: &AnalysisRequest) -> String {
     match request {
         AnalysisRequest::Simulation(request) => {
-            let count: usize = request.groups.iter().map(|g| g.toolpaths.len()).sum();
+            let count: usize = request.core.groups.iter().map(|g| g.toolpaths.len()).sum();
             format!("Simulation ({count} toolpaths)")
         }
         AnalysisRequest::Collision(_) => "Collision check".to_owned(),

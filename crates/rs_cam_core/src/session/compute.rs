@@ -5,7 +5,6 @@ use std::sync::atomic::AtomicBool;
 
 use tracing::instrument;
 
-use crate::compute::cutter::build_cutter;
 use crate::compute::operation_configs::ClearingStrategy;
 use crate::compute::simulate::{
     SimGroupEntry, SimToolpathEntry, SimulationRequest, run_simulation,
@@ -1854,15 +1853,17 @@ fn simulate_candidate_isolated(
     }
     let stock_bbox = context.stock_bbox;
     let setup_ctx = &context.setup_ctx;
-    let direction = simulation::group_stock_cut_direction(setup_ctx.face_up);
+    let direction = crate::compute::simulate::group_stock_cut_direction(setup_ctx.face_up);
 
+    let (tool_def, flute_count, tool_summary) =
+        crate::compute::simulate::entry_tool_fields(tool_cfg);
     let entry = SimToolpathEntry {
         id: context.toolpath_id,
         name: context.toolpath_name.clone(),
         annotated,
-        tool: build_cutter(tool_cfg),
-        flute_count: tool_cfg.flute_count,
-        tool_summary: tool_cfg.summary(),
+        tool: tool_def,
+        flute_count,
+        tool_summary,
         semantic_trace: None,
         spindle_rpm: operation.spindle_rpm(),
         metrics_not_applicable: false,

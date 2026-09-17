@@ -71,15 +71,20 @@ use rs_cam_core::session::{CommandId, CommandKind, Reach};
 /// listed anyway, so the allowlist names the door set the plan names.
 const DOORS: &[&str] = &["apply", "query", "start"];
 
-/// The five compute entry points.
+/// The six compute entry points.
 ///
 /// Each one runs a generation, a simulation or a plan rather than
 /// writing a field. §25 ruling 4 assigns them to the `Job` programme as
 /// a second write surface, not to WP15a.
+///
+/// `run_simulation_memoized` is `run_simulation` holding the S5 prefix
+/// cache (CMP-23, 2026-09-17). It joined the list on 2026-09-18, because
+/// the CLI ladder took it and this property read it as a setter.
 const COMPUTE_DOORS: &[&str] = &[
     "generate_toolpath",
     "generate_all",
     "run_simulation",
+    "run_simulation_memoized",
     "modulate_simulation_trace",
     "plan_multitool_finishing",
 ];

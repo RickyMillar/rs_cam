@@ -4,7 +4,9 @@ use crate::compute::worker::test_fixture::{
 };
 use crate::compute::{ComputeBackend, ComputeLane, ComputeMessage, LaneState};
 use crate::state::toolpath::{DressupConfig, OperationConfig, OperationType};
-use rs_cam_core::geo::P3;
+use rs_cam_core::compute::cutter::build_cutter;
+use rs_cam_core::compute::simulate::{SimGroupEntry, SimToolpathEntry};
+use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_core::mesh::{make_test_flat, make_test_hemisphere};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::toolpath::Toolpath;
@@ -331,32 +333,37 @@ fn long_simulation_request() -> SimulationRequest {
         max: P3::new(100.0, 100.0, 10.0),
     };
     SimulationRequest {
-        groups: vec![SetupSimGroup {
-            toolpaths: vec![SetupSimToolpath {
-                id: ToolpathId(99),
-                name: "Long Sim".to_owned(),
-                annotated: Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
-                    toolpath,
-                )),
-                tool,
-                semantic_trace: None,
-                spindle_rpm: None,
-                metrics_not_applicable: false,
-                drill_op: None,
-                operation_config_hash: 0,
+        core: rs_cam_core::compute::simulate::SimulationRequest {
+            groups: vec![SimGroupEntry {
+                toolpaths: vec![SimToolpathEntry {
+                    id: ToolpathId(99),
+                    name: "Long Sim".to_owned(),
+                    annotated: Arc::new(
+                        rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(toolpath),
+                    ),
+                    tool: Arc::new(build_cutter(&tool)),
+                    flute_count: tool.flute_count,
+                    tool_summary: tool.summary(),
+                    semantic_trace: None,
+                    spindle_rpm: None,
+                    metrics_not_applicable: false,
+                    drill_op: None,
+                    operation_config_hash: 0,
+                }],
+                direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+                local_stock_bbox: None,
+                local_to_global: None,
+                phantom_prior_stock: None,
             }],
-            local_stock_bbox: stock_bbox,
-            local_to_global: None,
-            phantom_prior_stock: None,
-        }],
-        stock_bbox,
-        stock_top_z: 10.0,
-        resolution: 0.5,
-        metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions::default(),
-        spindle_rpm: 18_000,
-        rapid_feed_mm_min: 5_000.0,
-        model_mesh: None,
-        kinematics: None,
+            stock_bbox,
+            stock_top_z: 10.0,
+            resolution: 0.5,
+            metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions::default(),
+            spindle_rpm: 18_000,
+            rapid_feed_mm_min: 5_000.0,
+            model_mesh: None,
+            kinematics: None,
+        },
         memoize_prefix: false,
     }
 }
@@ -374,35 +381,40 @@ fn small_simulation_request_with_metrics(enabled: bool) -> SimulationRequest {
         max: P3::new(20.0, 20.0, 10.0),
     };
     SimulationRequest {
-        groups: vec![SetupSimGroup {
-            toolpaths: vec![SetupSimToolpath {
-                id: ToolpathId(1),
-                name: "Metrics".to_owned(),
-                annotated: Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
-                    toolpath,
-                )),
-                tool,
-                semantic_trace: None,
-                spindle_rpm: None,
-                metrics_not_applicable: false,
-                drill_op: None,
-                operation_config_hash: 0,
+        core: rs_cam_core::compute::simulate::SimulationRequest {
+            groups: vec![SimGroupEntry {
+                toolpaths: vec![SimToolpathEntry {
+                    id: ToolpathId(1),
+                    name: "Metrics".to_owned(),
+                    annotated: Arc::new(
+                        rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(toolpath),
+                    ),
+                    tool: Arc::new(build_cutter(&tool)),
+                    flute_count: tool.flute_count,
+                    tool_summary: tool.summary(),
+                    semantic_trace: None,
+                    spindle_rpm: None,
+                    metrics_not_applicable: false,
+                    drill_op: None,
+                    operation_config_hash: 0,
+                }],
+                direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+                local_stock_bbox: None,
+                local_to_global: None,
+                phantom_prior_stock: None,
             }],
-            local_stock_bbox: stock_bbox,
-            local_to_global: None,
-            phantom_prior_stock: None,
-        }],
-        stock_bbox,
-        stock_top_z: 10.0,
-        resolution: 0.5,
-        metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions {
-            enabled,
-            capture_arc_engagement: enabled,
+            stock_bbox,
+            stock_top_z: 10.0,
+            resolution: 0.5,
+            metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions {
+                enabled,
+                capture_arc_engagement: enabled,
+            },
+            spindle_rpm: 18_000,
+            rapid_feed_mm_min: 5_000.0,
+            model_mesh: None,
+            kinematics: None,
         },
-        spindle_rpm: 18_000,
-        rapid_feed_mm_min: 5_000.0,
-        model_mesh: None,
-        kinematics: None,
         memoize_prefix: false,
     }
 }
@@ -420,7 +432,12 @@ fn small_simulation_request_with_semantic_metrics(enabled: bool) -> SimulationRe
         rs_cam_core::trace::semantic_trace::ToolpathSemanticKind::Pass,
         "Pass 1",
     );
-    if let Some(toolpath) = req.groups.first().and_then(|group| group.toolpaths.first()) {
+    if let Some(toolpath) = req
+        .core
+        .groups
+        .first()
+        .and_then(|group| group.toolpaths.first())
+    {
         pass.bind_to_toolpath(
             &toolpath.annotated.toolpath,
             0,
@@ -428,7 +445,7 @@ fn small_simulation_request_with_semantic_metrics(enabled: bool) -> SimulationRe
         );
     }
     let semantic_trace = Arc::new(recorder.finish());
-    req.groups[0].toolpaths[0].semantic_trace = Some(semantic_trace);
+    req.core.groups[0].toolpaths[0].semantic_trace = Some(semantic_trace);
     req
 }
 
@@ -1485,59 +1502,67 @@ fn multi_setup_top_bottom_simulation() {
     }
 
     let request = SimulationRequest {
-        groups: vec![
-            SetupSimGroup {
-                toolpaths: vec![SetupSimToolpath {
-                    id: ToolpathId(1),
-                    name: "Top Cut".to_owned(),
-                    annotated: Arc::new(
-                        rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(top_tp),
-                    ),
-                    tool: tool.clone(),
-                    semantic_trace: None,
-                    spindle_rpm: None,
-                    metrics_not_applicable: false,
-                    drill_op: None,
-                    operation_config_hash: 0,
-                }],
-                local_stock_bbox: stock_bbox,
-                local_to_global: None,
-                phantom_prior_stock: None,
-            },
-            SetupSimGroup {
-                toolpaths: vec![SetupSimToolpath {
-                    id: ToolpathId(2),
-                    name: "Bottom Cut".to_owned(),
-                    annotated: Arc::new(
-                        rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(bottom_tp),
-                    ),
-                    tool,
-                    semantic_trace: None,
-                    spindle_rpm: None,
-                    metrics_not_applicable: false,
-                    drill_op: None,
-                    operation_config_hash: 0,
-                }],
-                local_stock_bbox: stock_bbox,
-                local_to_global: Some(SetupTransformInfo {
-                    face_up: crate::state::job::FaceUp::Bottom,
-                    z_rotation: crate::state::job::ZRotation::Deg0,
-                    stock_x: 50.0,
-                    stock_y: 50.0,
-                    stock_z: 20.0,
-                    ..Default::default()
-                }),
-                phantom_prior_stock: None,
-            },
-        ],
-        stock_bbox,
-        stock_top_z: 20.0,
-        resolution: 0.5,
-        metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions::default(),
-        spindle_rpm: 18_000,
-        rapid_feed_mm_min: 5_000.0,
-        model_mesh: None,
-        kinematics: None,
+        core: rs_cam_core::compute::simulate::SimulationRequest {
+            groups: vec![
+                SimGroupEntry {
+                    toolpaths: vec![SimToolpathEntry {
+                        id: ToolpathId(1),
+                        name: "Top Cut".to_owned(),
+                        annotated: Arc::new(
+                            rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(top_tp),
+                        ),
+                        tool: Arc::new(build_cutter(&tool)),
+                        flute_count: tool.flute_count,
+                        tool_summary: tool.summary(),
+                        semantic_trace: None,
+                        spindle_rpm: None,
+                        metrics_not_applicable: false,
+                        drill_op: None,
+                        operation_config_hash: 0,
+                    }],
+                    direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+                    local_stock_bbox: None,
+                    local_to_global: None,
+                    phantom_prior_stock: None,
+                },
+                SimGroupEntry {
+                    toolpaths: vec![SimToolpathEntry {
+                        id: ToolpathId(2),
+                        name: "Bottom Cut".to_owned(),
+                        annotated: Arc::new(
+                            rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(bottom_tp),
+                        ),
+                        tool: Arc::new(build_cutter(&tool)),
+                        flute_count: tool.flute_count,
+                        tool_summary: tool.summary(),
+                        semantic_trace: None,
+                        spindle_rpm: None,
+                        metrics_not_applicable: false,
+                        drill_op: None,
+                        operation_config_hash: 0,
+                    }],
+                    direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+                    local_stock_bbox: Some(stock_bbox),
+                    local_to_global: Some(SetupTransformInfo {
+                        face_up: crate::state::job::FaceUp::Bottom,
+                        z_rotation: crate::state::job::ZRotation::Deg0,
+                        stock_x: 50.0,
+                        stock_y: 50.0,
+                        stock_z: 20.0,
+                        ..Default::default()
+                    }),
+                    phantom_prior_stock: None,
+                },
+            ],
+            stock_bbox,
+            stock_top_z: 20.0,
+            resolution: 0.5,
+            metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions::default(),
+            spindle_rpm: 18_000,
+            rapid_feed_mm_min: 5_000.0,
+            model_mesh: None,
+            kinematics: None,
+        },
         memoize_prefix: false,
     };
 
@@ -1633,59 +1658,67 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
     }
 
     let request = SimulationRequest {
-        groups: vec![
-            SetupSimGroup {
-                toolpaths: vec![SetupSimToolpath {
-                    id: ToolpathId(1),
-                    name: "Top".to_owned(),
-                    annotated: Arc::new(
-                        rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp1),
-                    ),
-                    tool: tool.clone(),
-                    semantic_trace: None,
-                    spindle_rpm: None,
-                    metrics_not_applicable: false,
-                    drill_op: None,
-                    operation_config_hash: 0,
-                }],
-                local_stock_bbox: stock_bbox,
-                local_to_global: None,
-                phantom_prior_stock: None,
-            },
-            SetupSimGroup {
-                toolpaths: vec![SetupSimToolpath {
-                    id: ToolpathId(2),
-                    name: "Bottom".to_owned(),
-                    annotated: Arc::new(
-                        rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp2),
-                    ),
-                    tool,
-                    semantic_trace: None,
-                    spindle_rpm: None,
-                    metrics_not_applicable: false,
-                    drill_op: None,
-                    operation_config_hash: 0,
-                }],
-                local_stock_bbox: stock_bbox,
-                local_to_global: Some(SetupTransformInfo {
-                    face_up: crate::state::job::FaceUp::Bottom,
-                    z_rotation: crate::state::job::ZRotation::Deg0,
-                    stock_x: 30.0,
-                    stock_y: 30.0,
-                    stock_z: 10.0,
-                    ..Default::default()
-                }),
-                phantom_prior_stock: None,
-            },
-        ],
-        stock_bbox,
-        stock_top_z: 10.0,
-        resolution: 0.5,
-        metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions::default(),
-        spindle_rpm: 18_000,
-        rapid_feed_mm_min: 5_000.0,
-        model_mesh: None,
-        kinematics: None,
+        core: rs_cam_core::compute::simulate::SimulationRequest {
+            groups: vec![
+                SimGroupEntry {
+                    toolpaths: vec![SimToolpathEntry {
+                        id: ToolpathId(1),
+                        name: "Top".to_owned(),
+                        annotated: Arc::new(
+                            rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp1),
+                        ),
+                        tool: Arc::new(build_cutter(&tool)),
+                        flute_count: tool.flute_count,
+                        tool_summary: tool.summary(),
+                        semantic_trace: None,
+                        spindle_rpm: None,
+                        metrics_not_applicable: false,
+                        drill_op: None,
+                        operation_config_hash: 0,
+                    }],
+                    direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+                    local_stock_bbox: None,
+                    local_to_global: None,
+                    phantom_prior_stock: None,
+                },
+                SimGroupEntry {
+                    toolpaths: vec![SimToolpathEntry {
+                        id: ToolpathId(2),
+                        name: "Bottom".to_owned(),
+                        annotated: Arc::new(
+                            rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp2),
+                        ),
+                        tool: Arc::new(build_cutter(&tool)),
+                        flute_count: tool.flute_count,
+                        tool_summary: tool.summary(),
+                        semantic_trace: None,
+                        spindle_rpm: None,
+                        metrics_not_applicable: false,
+                        drill_op: None,
+                        operation_config_hash: 0,
+                    }],
+                    direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+                    local_stock_bbox: Some(stock_bbox),
+                    local_to_global: Some(SetupTransformInfo {
+                        face_up: crate::state::job::FaceUp::Bottom,
+                        z_rotation: crate::state::job::ZRotation::Deg0,
+                        stock_x: 30.0,
+                        stock_y: 30.0,
+                        stock_z: 10.0,
+                        ..Default::default()
+                    }),
+                    phantom_prior_stock: None,
+                },
+            ],
+            stock_bbox,
+            stock_top_z: 10.0,
+            resolution: 0.5,
+            metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions::default(),
+            spindle_rpm: 18_000,
+            rapid_feed_mm_min: 5_000.0,
+            model_mesh: None,
+            kinematics: None,
+        },
         memoize_prefix: false,
     };
 
@@ -1816,32 +1849,37 @@ fn playback_data_carries_drill_op_for_drill_toolpaths() {
     };
 
     let request = SimulationRequest {
-        groups: vec![SetupSimGroup {
-            toolpaths: vec![SetupSimToolpath {
-                id: ToolpathId(42),
-                name: "Drill".to_owned(),
-                annotated: Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
-                    tp,
-                )),
-                tool,
-                semantic_trace: None,
-                spindle_rpm: None,
-                metrics_not_applicable: true,
-                drill_op: Some(Arc::clone(&drill_op)),
-                operation_config_hash: 0,
+        core: rs_cam_core::compute::simulate::SimulationRequest {
+            groups: vec![SimGroupEntry {
+                toolpaths: vec![SimToolpathEntry {
+                    id: ToolpathId(42),
+                    name: "Drill".to_owned(),
+                    annotated: Arc::new(
+                        rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp),
+                    ),
+                    tool: Arc::new(build_cutter(&tool)),
+                    flute_count: tool.flute_count,
+                    tool_summary: tool.summary(),
+                    semantic_trace: None,
+                    spindle_rpm: None,
+                    metrics_not_applicable: true,
+                    drill_op: Some(Arc::clone(&drill_op)),
+                    operation_config_hash: 0,
+                }],
+                direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+                local_stock_bbox: None,
+                local_to_global: None,
+                phantom_prior_stock: None,
             }],
-            local_stock_bbox: stock_bbox,
-            local_to_global: None,
-            phantom_prior_stock: None,
-        }],
-        stock_bbox,
-        stock_top_z: 10.0,
-        resolution: 0.5,
-        metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions::default(),
-        spindle_rpm: 18_000,
-        rapid_feed_mm_min: 5_000.0,
-        model_mesh: None,
-        kinematics: None,
+            stock_bbox,
+            stock_top_z: 10.0,
+            resolution: 0.5,
+            metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions::default(),
+            spindle_rpm: 18_000,
+            rapid_feed_mm_min: 5_000.0,
+            model_mesh: None,
+            kinematics: None,
+        },
         memoize_prefix: false,
     };
 
@@ -1911,39 +1949,44 @@ fn playback_data_drill_op_transforms_to_global_frame_in_flipped_setup() {
     };
 
     let request = SimulationRequest {
-        groups: vec![SetupSimGroup {
-            toolpaths: vec![SetupSimToolpath {
-                id: ToolpathId(7),
-                name: "Drill (back)".to_owned(),
-                annotated: Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
-                    tp,
-                )),
-                tool,
-                semantic_trace: None,
-                spindle_rpm: None,
-                metrics_not_applicable: true,
-                drill_op: Some(Arc::clone(&drill_op)),
-                operation_config_hash: 0,
+        core: rs_cam_core::compute::simulate::SimulationRequest {
+            groups: vec![SimGroupEntry {
+                toolpaths: vec![SimToolpathEntry {
+                    id: ToolpathId(7),
+                    name: "Drill (back)".to_owned(),
+                    annotated: Arc::new(
+                        rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp),
+                    ),
+                    tool: Arc::new(build_cutter(&tool)),
+                    flute_count: tool.flute_count,
+                    tool_summary: tool.summary(),
+                    semantic_trace: None,
+                    spindle_rpm: None,
+                    metrics_not_applicable: true,
+                    drill_op: Some(Arc::clone(&drill_op)),
+                    operation_config_hash: 0,
+                }],
+                direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+                local_stock_bbox: Some(stock_bbox),
+                local_to_global: Some(SetupTransformInfo {
+                    face_up: crate::state::job::FaceUp::Bottom,
+                    z_rotation: crate::state::job::ZRotation::Deg0,
+                    stock_x: 10.0,
+                    stock_y: 10.0,
+                    stock_z: 10.0,
+                    ..Default::default()
+                }),
+                phantom_prior_stock: None,
             }],
-            local_stock_bbox: stock_bbox,
-            local_to_global: Some(SetupTransformInfo {
-                face_up: crate::state::job::FaceUp::Bottom,
-                z_rotation: crate::state::job::ZRotation::Deg0,
-                stock_x: 10.0,
-                stock_y: 10.0,
-                stock_z: 10.0,
-                ..Default::default()
-            }),
-            phantom_prior_stock: None,
-        }],
-        stock_bbox,
-        stock_top_z: 10.0,
-        resolution: 0.5,
-        metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions::default(),
-        spindle_rpm: 18_000,
-        rapid_feed_mm_min: 5_000.0,
-        model_mesh: None,
-        kinematics: None,
+            stock_bbox,
+            stock_top_z: 10.0,
+            resolution: 0.5,
+            metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions::default(),
+            spindle_rpm: 18_000,
+            rapid_feed_mm_min: 5_000.0,
+            model_mesh: None,
+            kinematics: None,
+        },
         memoize_prefix: false,
     };
 
@@ -2010,39 +2053,44 @@ fn a_lateral_setup_replays_in_its_own_frame_and_its_checkpoint_carries_the_cut()
     tp.rapid_to(P3::new(15.0, 4.0, 12.0));
 
     let request = SimulationRequest {
-        groups: vec![SetupSimGroup {
-            toolpaths: vec![SetupSimToolpath {
-                id: ToolpathId(11),
-                name: "Front groove".to_owned(),
-                annotated: Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
-                    tp,
-                )),
-                tool,
-                semantic_trace: None,
-                spindle_rpm: None,
-                metrics_not_applicable: false,
-                drill_op: None,
-                operation_config_hash: 0,
+        core: rs_cam_core::compute::simulate::SimulationRequest {
+            groups: vec![SimGroupEntry {
+                toolpaths: vec![SimToolpathEntry {
+                    id: ToolpathId(11),
+                    name: "Front groove".to_owned(),
+                    annotated: Arc::new(
+                        rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp),
+                    ),
+                    tool: Arc::new(build_cutter(&tool)),
+                    flute_count: tool.flute_count,
+                    tool_summary: tool.summary(),
+                    semantic_trace: None,
+                    spindle_rpm: None,
+                    metrics_not_applicable: false,
+                    drill_op: None,
+                    operation_config_hash: 0,
+                }],
+                direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+                local_stock_bbox: Some(local_bbox),
+                local_to_global: Some(SetupTransformInfo {
+                    face_up: crate::state::job::FaceUp::Front,
+                    z_rotation: crate::state::job::ZRotation::Deg0,
+                    stock_x: 20.0,
+                    stock_y: 10.0,
+                    stock_z: 8.0,
+                    ..Default::default()
+                }),
+                phantom_prior_stock: None,
             }],
-            local_stock_bbox: local_bbox,
-            local_to_global: Some(SetupTransformInfo {
-                face_up: crate::state::job::FaceUp::Front,
-                z_rotation: crate::state::job::ZRotation::Deg0,
-                stock_x: 20.0,
-                stock_y: 10.0,
-                stock_z: 8.0,
-                ..Default::default()
-            }),
-            phantom_prior_stock: None,
-        }],
-        stock_bbox,
-        stock_top_z: 8.0,
-        resolution: 0.5,
-        metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions::default(),
-        spindle_rpm: 18_000,
-        rapid_feed_mm_min: 5_000.0,
-        model_mesh: None,
-        kinematics: None,
+            stock_bbox,
+            stock_top_z: 8.0,
+            resolution: 0.5,
+            metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions::default(),
+            spindle_rpm: 18_000,
+            rapid_feed_mm_min: 5_000.0,
+            model_mesh: None,
+            kinematics: None,
+        },
         memoize_prefix: false,
     };
 
@@ -2128,15 +2176,19 @@ fn simulation_metrics_capture_emits_semantic_cut_summaries() {
 }
 
 /// F-024 (viz-path follow-up, 2026-05-25): regression test asserting that
-/// the viz worker's `build_core_simulation_request` path applies the same
-/// "identity setup → drop local_stock_bbox/local_to_global" conditional
-/// that `session::compute::compute_simulation_groups` does. Without this
-/// fix the viz worker forwards a zero-rooted `local_stock_bbox` (Z=[0,
-/// stock_z]) paired with `local_to_global=None`, so the per-setup dexel
-/// grid spans world Z=[0, 12] while the toolpath emits cuts at world
-/// Z=-2. The cutter sits below every dexel ray, `ray_blend_above` clears
-/// the full ray length, and per-sample `axial_engagement_mm` reads the
-/// full stock height instead of the commanded DOC.
+/// an identity setup grids its dexels in the WORLD frame, which is what
+/// `local_stock_bbox = None` beside `local_to_global = None` asks for.
+/// A zero-rooted `local_stock_bbox` (Z=[0, stock_z]) here instead spans
+/// world Z=[0, 12] while the toolpath emits cuts at world Z=-2. The
+/// cutter then sits below every dexel ray, `ray_blend_above` clears the
+/// full ray length, and per-sample `axial_engagement_mm` reads the full
+/// stock height instead of the commanded DOC.
+///
+/// CMP-19 (2026-09-18): the drop rule itself is no longer the worker's.
+/// The viz worker had its own copy in `build_core_simulation_request`;
+/// the controller now calls `SetupEvalContext::sim_local_stock_bbox`,
+/// the same accessor `ProjectSession::run_simulation` calls. This test
+/// keeps the CONSEQUENCE pinned on the viz simulation entry point.
 ///
 /// AS001-shape: identity setup, hardwood 100x100x12 with origin at
 /// `(-10, -10, -12)` so stock top is at world Z=0. A handful of linear
@@ -2167,14 +2219,6 @@ fn as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024() {
         min: P3::new(-10.0, -10.0, -12.0),
         max: P3::new(90.0, 90.0, 0.0),
     };
-    // Viz-side zero-rooted local bbox (what `effective_stock_bbox()` returns
-    // for any setup, identity or not). Pre-fix this was forwarded to core
-    // wrapped in `Some(...)` even for identity setups, which is the bug.
-    let local_stock_bbox = BoundingBox3 {
-        min: P3::new(0.0, 0.0, 0.0),
-        max: P3::new(100.0, 100.0, 12.0),
-    };
-
     // First-pass-of-pocket-style linear cutting at world Z=-2. The exact
     // span shape doesn't matter — what matters is that the toolpath emits
     // cuts in world frame at Z=-2 while the viz-side local bbox is in
@@ -2192,37 +2236,44 @@ fn as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024() {
     tp.rapid_to(P3::new(70.0, 30.0, 5.0));
 
     let request = SimulationRequest {
-        groups: vec![SetupSimGroup {
-            toolpaths: vec![SetupSimToolpath {
-                id: ToolpathId(1),
-                name: "AS001 Pocket Pass 1".to_owned(),
-                annotated: Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
-                    tp,
-                )),
-                tool,
-                semantic_trace: None,
-                spindle_rpm: Some(18_000),
-                metrics_not_applicable: false,
-                drill_op: None,
-                operation_config_hash: 0,
+        core: rs_cam_core::compute::simulate::SimulationRequest {
+            groups: vec![SimGroupEntry {
+                toolpaths: vec![SimToolpathEntry {
+                    id: ToolpathId(1),
+                    name: "AS001 Pocket Pass 1".to_owned(),
+                    annotated: Arc::new(
+                        rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp),
+                    ),
+                    tool: Arc::new(build_cutter(&tool)),
+                    flute_count: tool.flute_count,
+                    tool_summary: tool.summary(),
+                    semantic_trace: None,
+                    spindle_rpm: Some(18_000),
+                    metrics_not_applicable: false,
+                    drill_op: None,
+                    operation_config_hash: 0,
+                }],
+                // Identity setup shape from controller/events/simulation.rs:
+                // no local bbox, no transform. The zero-rooted local bbox
+                // `effective_stock_bbox()` returns was forwarded here inside
+                // `Some(...)` before F-024, and that was the defect.
+                direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+                local_stock_bbox: None,
+                local_to_global: None,
+                phantom_prior_stock: None,
             }],
-            // Identity setup shape from controller/events/simulation.rs:
-            // zero-rooted local bbox + `local_to_global = None`.
-            local_stock_bbox,
-            local_to_global: None,
-            phantom_prior_stock: None,
-        }],
-        stock_bbox: world_stock_bbox,
-        stock_top_z: 0.0,
-        resolution: 1.0,
-        metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions {
-            enabled: true,
-            capture_arc_engagement: true,
+            stock_bbox: world_stock_bbox,
+            stock_top_z: 0.0,
+            resolution: 1.0,
+            metric_options: rs_cam_core::stock::simulation_cut::SimulationMetricOptions {
+                enabled: true,
+                capture_arc_engagement: true,
+            },
+            spindle_rpm: 18_000,
+            rapid_feed_mm_min: 5_000.0,
+            model_mesh: None,
+            kinematics: None,
         },
-        spindle_rpm: 18_000,
-        rapid_feed_mm_min: 5_000.0,
-        model_mesh: None,
-        kinematics: None,
         memoize_prefix: false,
     };
 

@@ -90,7 +90,7 @@ fn entry(index: usize, annotated: &Arc<AnnotatedToolpath>) -> SimToolpathEntry {
         id: ToolpathId(index + 1),
         name: format!("Pass{index}"),
         annotated: Arc::clone(annotated),
-        tool: tool(),
+        tool: std::sync::Arc::new(tool()),
         flute_count: 2,
         tool_summary: "6mm Flat".to_owned(),
         semantic_trace: None,
@@ -484,7 +484,7 @@ fn tool_key_separates_every_shipped_shape() {
         let mut cache = SimPrefixCache::new();
         let _ = run_memo(&request(&chain, 2), &mut cache, true);
         let mut req = request(&chain, 3);
-        req.groups[0].toolpaths[0].tool = clone_tool(replacement);
+        req.groups[0].toolpaths[0].tool = std::sync::Arc::new(clone_tool(replacement));
         let resumed = run_memo(&req, &mut cache, true);
         assert_eq!(
             cache.stats().hits,

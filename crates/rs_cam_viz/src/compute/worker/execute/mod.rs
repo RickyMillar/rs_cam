@@ -15,7 +15,6 @@ use crate::state::toolpath::{
     FaceConfig, FaceDirection, InlayConfig, OperationConfig, ProfileConfig, RestConfig,
     ZigzagConfig,
 };
-use rs_cam_core::compute::build_cutter;
 #[cfg(test)]
 use rs_cam_core::polygon::Polygon2;
 #[cfg(test)]
@@ -32,104 +31,15 @@ pub(super) struct ComputeExecutionOutcome {
     pub debug_trace_path: Option<std::path::PathBuf>,
 }
 
-/// Convert viz `SimulationRequest` into a core `SimulationRequest` so the
-/// actual simulation can be delegated to `rs_cam_core::compute::simulate`.
-fn build_core_simulation_request(
-    req: &SimulationRequest,
-) -> rs_cam_core::compute::simulate::SimulationRequest {
-    use rs_cam_core::compute::simulate::{SimGroupEntry, SimToolpathEntry};
-
-    let groups = req
-        .groups
-        .iter()
-        .map(|group| {
-            // F-024 follow-up (2026-05-25): mirror the
-            // `session::compute::compute_simulation_groups` decision shape so
-            // the viz worker's production simulation path matches the core
-            // `ProjectSession::run_simulation` path. For identity setups
-            // (`face_up=Top`, `z_rotation=Deg0`) the viz controller leaves
-            // `local_to_global = None` and the toolpath emits cut moves in
-            // world frame (Z=[0, -depth], because `HeightsConfig::resolve`
-            // auto-defaults `top_z = 0.0`). The per-setup dexel grid must
-            // therefore also be in world frame. Forwarding the local
-            // zero-rooted `local_stock_bbox` (Z=[0, stock_z]) here placed the
-            // cutter at world Z=-2 below every dexel ray and inflated
-            // `axial_engagement_mm` to the full stock height — which fed the
-            // deflection gate 374-573 µm tip-deflection readings on AS001-
-            // shape pockets that should land well under 50 µm.
-            //
-            // Fix: when `local_to_global` is `None` (identity setup), pass
-            // `local_stock_bbox = None` too. `run_simulation` then falls back
-            // to `request.stock_bbox` (world frame) for the per-setup grid,
-            // matching the toolpath frame.
-            //
-            // Non-identity setups continue to forward the viz-side
-            // zero-rooted `local_stock_bbox` paired with `local_to_global` —
-            // that path is outside F-024's scope (see core finding).
-            let (local_stock_bbox, local_to_global) =
-                if let Some(info) = group.local_to_global.as_ref() {
-                    (Some(group.local_stock_bbox), Some(info.clone()))
-                } else {
-                    (None, None)
-                };
-
-            SimGroupEntry {
-                toolpaths: group
-                    .toolpaths
-                    .iter()
-                    .map(|tp| {
-                        let cutter = build_cutter(&tp.tool);
-                        SimToolpathEntry {
-                            id: tp.id,
-                            name: tp.name.clone(),
-                            annotated: Arc::clone(&tp.annotated),
-                            tool: cutter,
-                            flute_count: tp.tool.flute_count,
-                            tool_summary: tp.tool.summary(),
-                            semantic_trace: tp.semantic_trace.clone(),
-                            spindle_rpm: tp.spindle_rpm,
-                            metrics_not_applicable: tp.metrics_not_applicable,
-                            drill_op: tp.drill_op.clone(),
-                            operation_config_hash: tp.operation_config_hash,
-                        }
-                    })
-                    .collect(),
-                direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
-                local_stock_bbox,
-                local_to_global,
-                // F.4 — forward the phantom-prior-stock candidate computed
-                // by the controller (`build_simulation_groups`) verbatim;
-                // the core simulator inserts the phantom snapshot at the
-                // recorded group position.
-                phantom_prior_stock: group.phantom_prior_stock,
-            }
-        })
-        .collect();
-
-    rs_cam_core::compute::simulate::SimulationRequest {
-        groups,
-        stock_bbox: req.stock_bbox,
-        stock_top_z: req.stock_top_z,
-        resolution: req.resolution,
-        metric_options: req.metric_options,
-        spindle_rpm: req.spindle_rpm,
-        rapid_feed_mm_min: req.rapid_feed_mm_min,
-        model_mesh: req.model_mesh.clone(),
-        // F-034/F-035 — the viz request carries core's own
-        // `KinematicsContext`, so this is a forward, not a rebuild.
-        // `None` (the default for every shipped preset) keeps the run
-        // byte-identical to pre-F-034 / pre-F-035.
-        kinematics: req.kinematics,
-    }
-}
-
-/// Build viz playback data from the viz request (global-frame toolpaths + tool
-/// config + cut direction + optional global-frame drill_op). Core does not
+/// Build viz playback data from the core request (global-frame toolpaths +
+/// tool + cut direction + optional global-frame drill_op). Core does not
 /// produce this because it is a viz-only concern (incremental playback in the
 /// 3D viewport). The `drill_op`, when present, lets `update_live_sim` apply
 /// analytical removal during forward scrub rather than relying on
 /// `simulate_toolpath_range`'s degenerate-Z dexel stamping for plunge moves.
-fn build_playback_data(req: &SimulationRequest) -> Vec<super::PlaybackToolpath> {
+fn build_playback_data(
+    req: &rs_cam_core::compute::simulate::SimulationRequest,
+) -> Vec<super::PlaybackToolpath> {
     use super::PlaybackToolpath;
     use rs_cam_core::compute::simulate::{group_drill_op_to_global, group_toolpath_to_global};
 
@@ -169,12 +79,15 @@ fn build_playback_data(req: &SimulationRequest) -> Vec<super::PlaybackToolpath> 
                     // group's toolpaths already are — stamped down local Z,
                     // exactly as `compute/simulate.rs` stamps `group_stock`.
                     toolpath: Arc::new(tp.annotated.toolpath.clone()),
-                    tool: tp.tool.clone(),
+                    tool: Arc::clone(&tp.tool),
                     direction: StockCutDirection::FromTop,
                     drill_op: tp.drill_op.clone(),
                     group: group_ordinal,
                     frame: group.local_to_global.clone(),
-                    stock_bbox: group.local_stock_bbox,
+                    // A lateral group always carries its own bbox — it is
+                    // non-identity by construction, so `local_to_global` and
+                    // `local_stock_bbox` are `Some` together (F-024).
+                    stock_bbox: group.local_stock_bbox.unwrap_or(global_bbox),
                 }
             } else {
                 // Frame-map through the SAME core helpers the global stock is
@@ -189,7 +102,7 @@ fn build_playback_data(req: &SimulationRequest) -> Vec<super::PlaybackToolpath> 
                         &group.local_to_global,
                         req.stock_bbox.min,
                     )),
-                    tool: tp.tool.clone(),
+                    tool: Arc::clone(&tp.tool),
                     direction: playback_direction,
                     drill_op: tp.drill_op.as_ref().map(|drill_op_arc| {
                         Arc::new(group_drill_op_to_global(
@@ -220,18 +133,17 @@ where
 {
     use rs_cam_core::compute::simulate;
 
-    // Convert viz request to core request and delegate. `memo` carries the
-    // analysis lane's S5 prefix cache; `None` is the pre-S5 behaviour.
-    let core_req = build_core_simulation_request(req);
-    let core_result = simulate::run_simulation_memoized(&core_req, cancel, set_phase, memo)
+    // `memo` carries the analysis lane's S5 prefix cache; `None` is the
+    // pre-S5 behaviour.
+    let core_result = simulate::run_simulation_memoized(&req.core, cancel, set_phase, memo)
         .map_err(|_cancelled| ComputeError::Cancelled)?;
 
     // Build viz-only playback data (global-frame toolpaths for viewport replay).
-    let playback_data = build_playback_data(req);
+    let playback_data = build_playback_data(&req.core);
 
     // Write cut-trace artifact to disk (viz-only filesystem concern).
     let cut_trace_path = if let Some(trace) = core_result.cut_trace.as_ref() {
-        let artifact = build_simulation_cut_artifact(req, (**trace).clone());
+        let artifact = build_simulation_cut_artifact(&req.core, (**trace).clone());
         match rs_cam_core::stock::simulation_cut::write_simulation_cut_artifact(
             &simulation_metric_artifact_dir(),
             "simulation_metrics",

@@ -12,11 +12,10 @@ use tracing::instrument;
 use crate::compute::cutter::build_cutter;
 use crate::compute::sim_prefix::SimMemo;
 use crate::compute::simulate::{
-    SimGroupEntry, SimToolpathEntry, SimulationRequest, run_simulation_memoized,
+    SimGroupEntry, SimToolpathEntry, SimulationRequest, entry_metrics_not_applicable,
+    entry_tool_fields, group_stock_cut_direction, run_simulation_memoized,
 };
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use crate::compute::transform::FaceUp;
-use crate::dexel_stock::StockCutDirection;
 use crate::geo::{BoundingBox3, P3};
 use crate::ids::ToolpathId;
 use crate::mesh::TriangleMesh;
@@ -27,43 +26,6 @@ use super::{
     FeedContext, SimRequestContext, auto_resolution_for_groups, build_sim_request,
     modulate_annotated_against_trace,
 };
-
-/// The cut direction a per-setup simulation GROUP stock is stamped with.
-///
-/// Two faces, not six. A group stock is built in the SETUP-LOCAL frame,
-/// where local −Z is always the tool axis, so the tool always arrives
-/// from local `FromTop`. `FaceUp::Bottom` is the one face whose local Z
-/// runs against the global Z the dexel columns are indexed on, so it is
-/// the one face that stamps `FromBottom`.
-///
-/// # Do not replace this with `SetupTransformInfo::cut_direction()`
-///
-/// That accessor answers a DIFFERENT question — which side the tool
-/// arrives from in the stock-relative GLOBAL frame — and returns
-/// `FromFront` / `FromBack` / `FromLeft` / `FromRight` for the four
-/// lateral faces. It feeds the global playback stock. This rule feeds the
-/// per-setup group stock, which every metric, gate, collision check and
-/// checkpoint mesh is computed on. The two agree on `Top` and `Bottom`
-/// and diverge on the four laterals, and that divergence is the design,
-/// not a defect. `compute/transform.rs:493` records two earlier defects
-/// in exactly this table (G-LATERALSIGN, G-FRONTNAME), both of which came
-/// from reading one question as the other.
-///
-/// STK-06 gave the rule this one home. It used to be an untitled `_` arm
-/// written out in two files, which read as an oversight rather than as a
-/// decision.
-///
-/// The S5 simulation prefix hash reads what this returns
-/// (`compute/sim_prefix.rs`), so the answer must not move for a lateral
-/// setup without a deliberate cache break.
-pub(crate) fn group_stock_cut_direction(face_up: FaceUp) -> StockCutDirection {
-    match face_up {
-        FaceUp::Top => StockCutDirection::FromTop,
-        FaceUp::Bottom => StockCutDirection::FromBottom,
-        // The tool axis is setup-local Z on a lateral face too.
-        FaceUp::Front | FaceUp::Back | FaceUp::Left | FaceUp::Right => StockCutDirection::FromTop,
-    }
-}
 
 /// Translate a triangle mesh by (dx, dy, dz) and rebuild bbox/faces.
 fn translate_mesh(mesh: &TriangleMesh, dx: f64, dy: f64, dz: f64) -> TriangleMesh {
@@ -195,37 +157,28 @@ impl ProjectSession {
                         continue;
                     }
 
-                    let tool_config = self.find_tool_by_raw_id(tc.tool_id);
-                    let flute_count = tool_config.map(|t| t.flute_count).unwrap_or(2);
-                    let tool_summary = tool_config
-                        .map(|t| t.summary())
-                        .unwrap_or_else(|| "Unknown".to_owned());
-                    let tool_def = tool_config.map(build_cutter).unwrap_or_else(|| {
-                        build_cutter(&ToolConfig::new_default(ToolId(0), ToolType::EndMill))
-                    });
+                    // A missing tool is a phantom default HERE and a
+                    // dropped entry in the GUI builder. That difference is
+                    // older than CMP-19 and outside it; only the derivation
+                    // of the three tool fields is shared.
+                    let (tool_def, flute_count, tool_summary) =
+                        match self.find_tool_by_raw_id(tc.tool_id) {
+                            Some(tool) => entry_tool_fields(tool),
+                            None => (
+                                Arc::new(build_cutter(&ToolConfig::new_default(
+                                    ToolId(0),
+                                    ToolType::EndMill,
+                                ))),
+                                2,
+                                "Unknown".to_owned(),
+                            ),
+                        };
 
-                    // §6.C / §6.I revision: prefer the move-intent signal
-                    // (a toolpath containing any `MoveIntent::Drilling` move)
-                    // over the op-kind heuristic. The op-kind matches stay
-                    // as the fallback so an in-flight Drill/AlignmentPinDrill
-                    // whose generator hasn't been migrated still gets flagged.
-                    let op_type = tc.operation.op_type();
-                    let has_drilling_intent = result
-                        .annotated()
-                        .toolpath
-                        .moves
-                        .iter()
-                        .any(|m| matches!(m.intent, crate::toolpath::MoveIntent::Drilling));
-                    // §6.E DrillOp variant is the new primary signal;
-                    // intent + op-kind remain as fallbacks for the
-                    // dual-representation invariant.
-                    let metrics_not_applicable = result.is_drill_op()
-                        || has_drilling_intent
-                        || matches!(
-                            op_type,
-                            crate::compute::catalog::OperationType::Drill
-                                | crate::compute::catalog::OperationType::AlignmentPinDrill
-                        );
+                    let metrics_not_applicable = entry_metrics_not_applicable(
+                        result.is_drill_op(),
+                        &result.annotated().toolpath,
+                        tc.operation.op_type(),
+                    );
                     entries.push(SimToolpathEntry {
                         id: tc.id,
                         name: tc.name.clone(),
