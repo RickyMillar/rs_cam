@@ -29,7 +29,3 @@ The two cutter walks and the derived surface fields. The entry point is
 - `cargo test -p rs_cam_core -q --test rest_routing_probe_e9`
 - `cargo test -p rs_cam_core -q --test catchment_basin_census_w0`
 - `cargo test -p rs_cam_core -q --test drop_cutter_off_mesh`
-
-## Do not
-
-- Do not sample the surface without a raised-fraction check on a rest mask.

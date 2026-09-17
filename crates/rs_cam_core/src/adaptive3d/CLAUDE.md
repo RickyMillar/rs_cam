@@ -25,8 +25,3 @@ Constant-engagement clearing on a mesh surface. The entry point is
 - `cargo test -p rs_cam_core -q --test adaptive3d_entry_coalescing_f038`
 - `cargo test -p rs_cam_core -q --test agent_search_coverage`
 - `cargo test -p rs_cam_core -q --test adaptive3d_subtool_channel_gouge`
-
-## Do not
-
-- Do not assume the 3D entry search has the 2D boundary walk. `find_entry_3d`
-  took a separate patch.

@@ -30,7 +30,6 @@ numbers each file cites.
   `ProvKind`. Do not add a second.
 - A component reads a token from `ui/tokens.rs`. It holds no literal colour
   or spacing.
-- A component displays. It does not compute a verdict.
 
 ## Sentries
 

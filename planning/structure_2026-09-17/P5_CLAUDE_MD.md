@@ -124,7 +124,14 @@ Two further splits, recorded so the no-duplicate check stays mechanical:
 
 ## 8. Dropped rules
 
-None. Every symbol the task named still exists:
+Two, both found in the write pass, not in the plan pass:
+
+- The 3D entry-search note. `find_entry_3d` no longer exists anywhere in
+  `crates/rs_cam_core/src`, so the note left `adaptive3d/CLAUDE.md`.
+- The rest-mask raised-fraction check. `raised_fraction` does not exist, so
+  the note left `surface/CLAUDE.md`.
+
+Every other symbol the task named still exists:
 
 `ChiploadBounds` (`feeds/geometry.rs`), `is_steady_state_for_gate`
 (`tool_load/locality.rs`), `honors_pinned_bottom_z` (`compute/catalog.rs`),
@@ -173,7 +180,7 @@ Entries that are not test binaries (`tests/common/shim.rs`,
 
 | File | Before | Target | After |
 |---|---:|---:|---:|
-| `crates/rs_cam_core/CLAUDE.md` | 121 | ≤ 60 | 59 |
+| `crates/rs_cam_core/CLAUDE.md` | 121 | ≤ 60 | 55 |
 | `crates/rs_cam_viz/CLAUDE.md` | 68 | ≤ 40 | 40 |
 | root `CLAUDE.md` | 88 | +1 paragraph | 93 |
 
@@ -189,12 +196,31 @@ change. Neither crate has a folder that meets the admission rule.
 `planning/AGENT_CODEMAP.md` and `.claude/skills/dev/SKILL.md` each get one
 pointer line. Neither duplicates a folder file's content.
 
-## 11. Commits
+## 11. The write pass changed three assignments
+
+Sections 5 and 6 record the assignment the plan made. Two later passes moved
+three rules, and the commit messages record each move:
+
+- The de-duplication pass (commit 4) found eleven rules written in two files
+  and gave each one owner: `StockCutDirection` to `ops/`, the datum to
+  `gcode/`, gate population to `tool_load/`, `flow_accum` to `surface/`, the
+  narrate Z ladder to `trace/`, the plunge classification to `dressup/`, the
+  selected-only draw set to viz `ui/`, the GUI field audit to the viz parent,
+  and the result revision to viz `compute/`. The core parent dropped the
+  layer list and the purge note, which the root `CLAUDE.md` already owns.
+- The evidence pass (commit 5) deleted every invariant that no parent
+  sentence, no durable rule and no named sentry supports. It also moved the
+  composite-renderer convention from viz `render/` to core `export/`, where
+  the `composite_render_convention` sentry reads it.
+
+## 12. Commits
 
 1. This plan.
-2. The 32 folder files (commit `HEAD~1` at the time of writing).
-3. The two trimmed parents, the root sentence, the codemap line and the skill
-   line.
+2. The 32 folder files.
+3. The two trimmed parents, the root paragraph, the codemap line and the
+   skill line.
+4. The de-duplication pass.
+5. The evidence pass and this section.
 
 Every commit uses an explicit pathspec. A bare `git commit` in this shared
 checkout sweeps a peer's staged work.

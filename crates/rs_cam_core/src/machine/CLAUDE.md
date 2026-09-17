@@ -16,7 +16,6 @@ principal type is `MachineProfile` in `mod.rs`.
   a diagonal move.
 - Machine acceleration decides parallel against spiral. The advisor reads the
   profile; do not hard-code a strategy preference.
-- A cycle time is only as good as its basis. Carry the basis with the number.
 
 ## Sentries
 

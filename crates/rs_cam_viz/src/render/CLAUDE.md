@@ -22,15 +22,12 @@ Every viewport pipeline. The entry point is `render::mod`, called from
 - Every upload goes through `upload_cache.rs`, so that an unchanged buffer is
   not re-uploaded each frame.
 - Check a buffer against the device limit before you create it.
-- The composite renderer must not mirror a panel. Check the handedness of a
-  new pipeline against the convention sentry.
 
 ## Sentries
 
 - `cargo test -p rs_cam_viz -q --test render_pipelines_headless_g_pipesmoke`
 - `cargo test -p rs_cam_viz -q --test reach_overlay_p5`
 - `cargo test -p rs_cam_viz -q --test viewport_draws_selected_only_wp27`
-- `cargo test -p rs_cam_core -q --test composite_render_convention`
 
 ## Do not
 

@@ -14,10 +14,9 @@ is `export::mod`, which re-exports the four surfaces.
 ## Invariants
 
 - The datum rule for Z zero lives in `../gcode/CLAUDE.md`.
-- The validator reads emitted bytes. It is the answer to "did it cut too
-  deep", not the plan.
-- A preview is evidence of shape, not of load. Do not quote a preview as a
-  safety verdict.
+- The validator reads emitted bytes, not the plan.
+- The 6-view composite renderer keeps one camera convention: every panel uses
+  `StockConfig::origin`, one shared scale and consistent polar handedness.
 
 ## Sentries
 

@@ -18,7 +18,6 @@ Turns a `Toolpath` into bytes. The entry point is
 - The datum decides Z zero. `StockTop` maps to Z equal to zero. A flipped
   setup zeroes to the presented top. Export consumes the datum in the setup;
   do not re-derive it here.
-- The emitted schedule is the truth about what the machine will do.
 - A post-processor is data, not code. Add a `PostDefinition` row, not a
   branch in the emitter.
 

@@ -25,7 +25,7 @@ is `compute::execute_operation_annotated`.
   builder share a phantom prior-stock rule for the first pending rest
   operation. Keep that parity when you change the admission logic.
 - A new operation needs a catalogue row, a config variant and a dispatch arm.
-  Add all three; the registry test fails on a missing row.
+  Add all three.
 
 ## Sentries
 

@@ -17,8 +17,6 @@ that reads it. The entry point for an operator answer is
 
 ## Invariants
 
-- A summary reports the range it covered. A caller that quotes a mean without
-  the sample count quotes an unbounded number.
 - A `NotMeasurable` metric must abstain. Collision detection stays enabled.
 - The air-cut threshold reads `air_cut_pct_of_total_runtime`. Do not
   substitute the cutting-time denominator. Prefer absolute air-cut time when

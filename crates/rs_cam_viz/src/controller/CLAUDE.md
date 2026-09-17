@@ -31,7 +31,3 @@ result. The entry point is `../controller.rs`.
 - `cargo test -p rs_cam_viz -q --test production_writes_go_through_apply_wp15a`
 - `cargo test -p rs_cam_viz -q --test generate_all_fixpoint_parity`
 - `cargo test -p rs_cam_viz -q --test feeds_apply_drops_result_n13`
-
-## Do not
-
-- Do not let a UI intent reach the core except through a handler in `events/`.

@@ -35,5 +35,5 @@ entry point is `TriDexelStock::simulate_*` in `simulation.rs`.
 
 ## Do not
 
-- Do not compare a metric run against a playback run. Only the metric route
-  records samples.
+- `playback.rs` is the NON-metric replay route. Do not read a metric from a
+  playback run.

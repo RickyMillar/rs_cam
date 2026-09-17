@@ -19,7 +19,6 @@ The shared instruments that measure a finished surface. The entry point is
 
 - Both sides of a ratio must be the same measure. A changed instrument makes
   its own docstring a lie.
-- An instrument reports what it measured, not a verdict. The gate decides.
 - A candidate cost must use the production relink kernel, never a private
   copy.
 
