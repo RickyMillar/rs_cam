@@ -41,7 +41,7 @@ pub(super) fn record_truncated_core(
 ///
 /// Pocket's cascade hits this: when a bound stops it, the standing ring area
 /// is exactly what
-/// [`crate::compute::config::ToolpathStats::truncated_core_mm2`] means, but
+/// [`crate::compute::toolpath_stats::ToolpathStats::truncated_core_mm2`] means, but
 /// pocket computes no `untouched_mm2` and no `standing_mm2`. Going through
 /// [`record_truncated_core`] with two zeroes would publish "measured zero" for
 /// two measures nobody took — the silent-zero trap X-19 exists to prevent —
@@ -60,7 +60,7 @@ pub(super) fn record_truncated_core_only(
 /// finding with an absence.
 pub(super) fn record_dropped_band(
     cell: &std::cell::RefCell<GenerationFindings>,
-    finding: Option<crate::compute::config::DroppedBandFinding>,
+    finding: Option<crate::compute::toolpath_stats::DroppedBandFinding>,
 ) {
     let Some(finding) = finding else { return };
     cell.borrow_mut().dropped_band = Some(finding);
@@ -71,7 +71,7 @@ pub(super) fn record_dropped_band(
 /// none must not overwrite an earlier finding with an absence.
 pub(super) fn record_clipped_band(
     cell: &std::cell::RefCell<GenerationFindings>,
-    finding: Option<crate::compute::config::ClippedBandFinding>,
+    finding: Option<crate::compute::toolpath_stats::ClippedBandFinding>,
 ) {
     let Some(finding) = finding else { return };
     cell.borrow_mut().clipped_band = Some(finding);
@@ -83,7 +83,7 @@ pub(super) fn record_clipped_band(
 /// is exactly what stops a later reader from reading silence as clean.
 pub(super) fn record_tip_float(
     cell: &std::cell::RefCell<GenerationFindings>,
-    finding: crate::compute::config::TipFloatFinding,
+    finding: crate::compute::toolpath_stats::TipFloatFinding,
 ) {
     let mut findings = cell.borrow_mut();
     let mut merged = findings.tip_float.unwrap_or_default();
@@ -113,7 +113,7 @@ pub(super) fn record_ramp_reach_clamp(
 /// moves. The diagnostic adapter is what decides how loud to be.
 pub(super) fn record_claims_reference(
     cell: &std::cell::RefCell<GenerationFindings>,
-    finding: crate::compute::config::ClaimsReferenceFinding,
+    finding: crate::compute::toolpath_stats::ClaimsReferenceFinding,
 ) {
     cell.borrow_mut().claims_reference = Some(finding);
 }
@@ -129,7 +129,7 @@ pub(super) fn record_claims_reference(
 /// **Emitting this changes no geometry.** It is recorded from the config
 /// alone, before anything is planned, and nothing downstream branches on it.
 /// The dial stays inert deliberately — see
-/// [`crate::compute::config::InertClaimsDialFinding`] for why applying it or
+/// [`crate::compute::toolpath_stats::InertClaimsDialFinding`] for why applying it or
 /// refusing would both break shipped projects.
 ///
 /// The per-dial inertness rules are the finding's, restated here as the
@@ -151,14 +151,15 @@ pub(super) fn record_inert_claims_dial(
     if !min_rest_depth_inert && !claims_reference_inert {
         return;
     }
-    cell.borrow_mut().inert_claims_dial = Some(crate::compute::config::InertClaimsDialFinding {
-        min_rest_depth_mm: cfg.min_rest_depth_mm,
-        default_min_rest_depth_mm: defaults.min_rest_depth_mm,
-        min_rest_depth_inert,
-        claims_reference: cfg.claims_reference,
-        claims_reference_inert,
-        pencil_claims: cfg.pencil_claims,
-    });
+    cell.borrow_mut().inert_claims_dial =
+        Some(crate::compute::toolpath_stats::InertClaimsDialFinding {
+            min_rest_depth_mm: cfg.min_rest_depth_mm,
+            default_min_rest_depth_mm: defaults.min_rest_depth_mm,
+            min_rest_depth_inert,
+            claims_reference: cfg.claims_reference,
+            claims_reference_inert,
+            pencil_claims: cfg.pencil_claims,
+        });
 }
 
 /// F3: record what the [`crate::geometry::region_mask::MAX_REST_REGIONS`] cap did to a
@@ -208,7 +209,7 @@ pub(super) fn record_relink_totals(
 /// Shallow region existed, and that `None` is the honest "not measured" —
 /// coercing it to a zeroed struct here would claim a clean measurement of a
 /// pass that never happened, which is the exact reading the
-/// [`crate::compute::config::ToolpathStats`] contract forbids.
+/// [`crate::compute::toolpath_stats::ToolpathStats`] contract forbids.
 pub(super) fn record_monotone_cells(
     cell: &std::cell::RefCell<GenerationFindings>,
     totals: crate::finish::unified_finish::MonotoneCellTotals,
@@ -267,7 +268,7 @@ pub(crate) fn record_offset_library_failures(
 /// outright.
 pub fn record_boundary_clip_dropped(
     findings: &mut GenerationFindings,
-    finding: crate::compute::config::BoundaryClipDroppedFinding,
+    finding: crate::compute::toolpath_stats::BoundaryClipDroppedFinding,
 ) {
     findings.boundary_clip_dropped = Some(finding);
 }
@@ -332,7 +333,7 @@ pub(super) fn record_zero_removal(
     if engagement.deepest_mm > floor_mm {
         return;
     }
-    cell.borrow_mut().zero_removal = Some(crate::compute::config::ZeroRemovalFinding {
+    cell.borrow_mut().zero_removal = Some(crate::compute::toolpath_stats::ZeroRemovalFinding {
         deepest_engagement_mm: engagement.deepest_mm,
         sampled_positions: engagement.sampled_positions,
         cutting_distance_mm: toolpath.total_cutting_distance(),
@@ -363,7 +364,7 @@ pub(super) fn record_zero_removal(
 /// it survived.
 pub(super) fn record_derived_stepover(
     cell: &std::cell::RefCell<GenerationFindings>,
-    finding: crate::compute::config::DerivedStepoverFinding,
+    finding: crate::compute::toolpath_stats::DerivedStepoverFinding,
 ) {
     cell.borrow_mut().derived_stepovers.push(finding);
 }

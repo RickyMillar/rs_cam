@@ -244,10 +244,11 @@ use std::time::Instant;
 
 use rs_cam_core::compute::StockConfig;
 use rs_cam_core::compute::catalog::OperationConfig;
-use rs_cam_core::compute::config::{HeightsConfig, RetractTripCount, StockSource};
+use rs_cam_core::compute::config::{HeightsConfig, StockSource};
 use rs_cam_core::compute::operation_configs::{ScallopConfig, UnifiedFinishConfig};
 use rs_cam_core::compute::simulate::ColumnDeviation;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::compute::toolpath_stats::RetractTripCount;
 use rs_cam_core::geo::P3;
 use rs_cam_core::measurement::{
     DEFAULT_FOOTPRINT_CELL_MM, MeasurementProvenance, ProjectedXyAreaMm2, swept_footprint_area,

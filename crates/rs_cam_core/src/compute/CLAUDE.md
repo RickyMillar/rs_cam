@@ -1,8 +1,7 @@
 # `compute/` — dispatch, catalogue, configuration, simulation
 
-One entry point for every toolpath operation, the operation catalogue, the
-shared configuration types and the simulation orchestration. The entry point
-is `compute::execute_operation_annotated`.
+Operation dispatch, the catalogue, the configuration types and the simulation
+orchestration. The entry is `compute::execute_operation_annotated`.
 
 ## Files
 
@@ -13,11 +12,12 @@ is `compute::execute_operation_annotated`.
   `OperationConfig`, the parameter registry and its schema.
 - `operation_configs.rs`, `config.rs`, `stock_config.rs`, `tool_config.rs`,
   `cutter.rs`, `transform.rs` — the configuration model.
+- `toolpath_stats.rs` — `ToolpathStats` and its finding types.
+  `alignment_pins.rs` — the keyed-pin construction and the flip audit.
 - `simulate.rs`, `sim_prefix.rs`, `collision_check.rs` — simulation
   orchestration, the `generate_all` prefix memo, the collision wrapper.
 - `annotate.rs`, `spans.rs`, `stats.rs` — runtime annotation and spans.
-- `validate.rs`, `generated_empty.rs` — the stale-default validator and the
-  empty-generation refusal.
+  `validate.rs`, `generated_empty.rs` — stale defaults, the empty refusal.
 
 ## Invariants
 

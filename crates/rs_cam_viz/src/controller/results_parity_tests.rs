@@ -149,7 +149,7 @@ fn worker_result_with_findings() -> ToolpathResult {
     ];
     annotated.spans_valid = true;
 
-    let mut stats = rs_cam_core::compute::config::ToolpathStats {
+    let mut stats = rs_cam_core::compute::toolpath_stats::ToolpathStats {
         move_count: 3,
         cutting_distance: 20.0,
         rapid_distance: 5.0,

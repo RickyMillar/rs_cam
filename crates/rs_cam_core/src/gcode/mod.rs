@@ -1036,6 +1036,36 @@ impl PostFormat {
     }
 }
 
+/// Post-processor configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PostConfig {
+    pub format: PostFormat,
+    pub spindle_speed: u32,
+    pub safe_z: f64,
+    /// Convert G0 rapids to G1 at high feedrate (for machines with unpredictable rapid behavior).
+    pub high_feedrate_mode: bool,
+    pub high_feedrate: f64,
+    /// Project-level spindle policy used by Suggest. `MatchChart`
+    /// (default) preserves chart RPM. `MaxSpeed` walks the constant-
+    /// chipload line up to the spindle ceiling, scaling feed
+    /// proportionally. See [`crate::feeds::SpindleStrategy`].
+    #[serde(default)]
+    pub spindle_strategy: crate::feeds::SpindleStrategy,
+}
+
+impl Default for PostConfig {
+    fn default() -> Self {
+        Self {
+            format: PostFormat::Grbl,
+            spindle_speed: 18000,
+            safe_z: 10.0,
+            high_feedrate_mode: false,
+            high_feedrate: 5000.0,
+            spindle_strategy: crate::feeds::SpindleStrategy::default(),
+        }
+    }
+}
+
 /// Get a `PostDefinition` by name (CLI / config-string lookup).
 pub fn get_post_definition(name: &str) -> Option<&'static PostDefinition> {
     PostFormat::from_token(name).map(PostFormat::definition)

@@ -44,7 +44,7 @@ pub struct ToolpathDiagnostic {
     /// A/M9: generation-time truncated cascade core, XY-projected mm².
     /// `None` serialises as `null` and means **not measured** (this operation
     /// runs no ring cascade) — never "nothing left uncut". See
-    /// [`crate::compute::config::ToolpathStats::truncated_core_mm2`], which
+    /// [`crate::compute::toolpath_stats::ToolpathStats::truncated_core_mm2`], which
     /// carries the wave-16 rename (A6) and the vocabulary it fixes.
     ///
     /// L5 retired the duplicate key `standing_material_mm2`, which named
@@ -52,14 +52,14 @@ pub struct ToolpathDiagnostic {
     pub truncated_core_mm2: Option<f64>,
     /// B8 (Checkpoint E): the hole-aware sibling of
     /// [`Self::truncated_core_mm2`], off
-    /// [`crate::compute::config::ToolpathStats::untouched_material_mm2`].
+    /// [`crate::compute::toolpath_stats::ToolpathStats::untouched_material_mm2`].
     /// `None` = not measured; `Some(0.0)` = a cascade ran and left no
     /// unreached core. Narration has carried this split since wave 15; this
     /// is the MCP per-toolpath summary catching up. Report-only.
     pub untouched_material_mm2: Option<f64>,
     /// B8 (Checkpoint E): area the cascade DID ring but where every point was
     /// dropped — the oracle's *standing* (reached, left high), off
-    /// [`crate::compute::config::ToolpathStats::reached_uncut_estimate_mm2`].
+    /// [`crate::compute::toolpath_stats::ToolpathStats::reached_uncut_estimate_mm2`].
     /// An ESTIMATOR, not an exact area, and a different quantity from
     /// [`Self::truncated_core_mm2`]; the two must never be summed or
     /// compared. Report-only.
@@ -80,7 +80,7 @@ pub struct ToolpathDiagnostic {
     /// [`Self::tip_float_points`]. Report-only.
     pub max_tip_float_mm: Option<f64>,
     /// C2: what the shallow band's monotone-cell decomposition did, off
-    /// [`crate::compute::config::ToolpathStats::monotone_cells`]. The whole
+    /// [`crate::compute::toolpath_stats::ToolpathStats::monotone_cells`]. The whole
     /// [`crate::finish::unified_finish::MonotoneCellTotals`] travels, because its
     /// five counters only mean anything together — `regions` is the
     /// denominator of the other four.

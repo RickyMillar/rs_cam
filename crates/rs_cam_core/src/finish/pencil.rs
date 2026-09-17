@@ -40,7 +40,7 @@ pub(crate) use emission::{emit_paths_with_entry_stock, plan_entry_ramp};
 
 use tracing::info;
 
-use crate::compute::config::TipFloatFinding;
+use crate::compute::toolpath_stats::TipFloatFinding;
 use crate::geo::P3;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};

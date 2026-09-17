@@ -68,7 +68,7 @@ pub struct GenerationFindings {
     /// `None` means **no cascade ran**, so nothing was measured; `Some(0.0)`
     /// means a cascade ran and collapsed. Only the adapters that actually
     /// run one write here, which is what keeps the two apart all the way to
-    /// [`crate::compute::config::ToolpathStats::truncated_core_mm2`]
+    /// [`crate::compute::toolpath_stats::ToolpathStats::truncated_core_mm2`]
     /// (A/M9 / `MEASUREMENT_DOMAINS.md` X-19). See
     /// [`crate::finish::scallop::ScallopReport::uncut_core_mm2`].
     pub truncated_core_mm2: Option<f64>,
@@ -86,21 +86,21 @@ pub struct GenerationFindings {
     /// Wave D1: a planned finish band whose cutting was entirely erased by
     /// height resolution — an unmachined feature. `None` = no banded
     /// decomposition ran, or every band it planned survived.
-    /// See [`crate::compute::config::DroppedBandFinding`].
-    pub dropped_band: Option<crate::compute::config::DroppedBandFinding>,
+    /// See [`crate::compute::toolpath_stats::DroppedBandFinding`].
+    pub dropped_band: Option<crate::compute::toolpath_stats::DroppedBandFinding>,
     /// C8: a planned finish band whose Z ladder height resolution SHORTENED
     /// while it still cut. `None` = no band was partially clipped, or no
     /// banded decomposition ran. Disjoint from [`Self::dropped_band`].
-    /// See [`crate::compute::config::ClippedBandFinding`].
-    pub clipped_band: Option<crate::compute::config::ClippedBandFinding>,
+    /// See [`crate::compute::toolpath_stats::ClippedBandFinding`].
+    pub clipped_band: Option<crate::compute::toolpath_stats::ClippedBandFinding>,
     /// Wave D1: tip float on the emitted valley centrelines. `None` = the
     /// operation emits no centrelines, so nothing was measured.
-    /// See [`crate::compute::config::TipFloatFinding`].
-    pub tip_float: Option<crate::compute::config::TipFloatFinding>,
+    /// See [`crate::compute::toolpath_stats::TipFloatFinding`].
+    pub tip_float: Option<crate::compute::toolpath_stats::TipFloatFinding>,
     /// PR-5: a retired dial still set to a non-default value in the loaded
     /// project. `None` = nothing retired is set.
-    /// See [`crate::compute::config::DeprecatedDialFinding`].
-    pub deprecated_dial: Option<crate::compute::config::DeprecatedDialFinding>,
+    /// See [`crate::compute::toolpath_stats::DeprecatedDialFinding`].
+    pub deprecated_dial: Option<crate::compute::toolpath_stats::DeprecatedDialFinding>,
     /// PR-6a: the offset stepovers this operation derived from the canonical
     /// reach policy. EMPTY = the operation derives none.
     ///
@@ -114,8 +114,8 @@ pub struct GenerationFindings {
     /// the other existed. Both are recorded now, in the order they fired,
     /// each naming its own `site`.
     ///
-    /// See [`crate::compute::config::DerivedStepoverFinding`].
-    pub derived_stepovers: Vec<crate::compute::config::DerivedStepoverFinding>,
+    /// See [`crate::compute::toolpath_stats::DerivedStepoverFinding`].
+    pub derived_stepovers: Vec<crate::compute::toolpath_stats::DerivedStepoverFinding>,
     /// PR-8b: what the ramp-finish reach clamp did. `None` = no ramp descent
     /// ran, so nothing was measured; `Some` with an inert clamp is a
     /// measured-clean descent. See [`crate::finish::ramp_finish::RampReachClamp`].
@@ -123,14 +123,14 @@ pub struct GenerationFindings {
     /// A/M6: which rest reference the crease/pencil claims pipeline resolved
     /// to, and whether it was pinned or derived. `None` = the claims
     /// pipeline did not run, so nothing was resolved.
-    /// See [`crate::compute::config::ClaimsReferenceFinding`].
-    pub claims_reference: Option<crate::compute::config::ClaimsReferenceFinding>,
+    /// See [`crate::compute::toolpath_stats::ClaimsReferenceFinding`].
+    pub claims_reference: Option<crate::compute::toolpath_stats::ClaimsReferenceFinding>,
     /// A4: this rest pass's emitted cutting geometry never reaches under the
     /// reference stock it was planned on, so it will remove nothing. `None` =
     /// the measurement did not run (no resolved machined-stock reference, or
     /// no cutting geometry) or it ran and found real engagement.
-    /// See [`crate::compute::config::ZeroRemovalFinding`].
-    pub zero_removal: Option<crate::compute::config::ZeroRemovalFinding>,
+    /// See [`crate::compute::toolpath_stats::ZeroRemovalFinding`].
+    pub zero_removal: Option<crate::compute::toolpath_stats::ZeroRemovalFinding>,
     /// Checkpoint C (Q1 / D-2): how many of this generation's 2D offset
     /// calls came back with a [`crate::polygon::OffsetFailure`].
     ///
@@ -139,11 +139,11 @@ pub struct GenerationFindings {
     /// clean. Only the adapters that opt into
     /// [`crate::polygon::offset_polygon_reported`] write here, which is what
     /// keeps those two apart all the way to
-    /// [`crate::compute::config::ToolpathStats::offset_library_failures`].
+    /// [`crate::compute::toolpath_stats::ToolpathStats::offset_library_failures`].
     pub offset_library_failures: Option<usize>,
     /// Checkpoint C (Q2 / D-3a option b): the machining-boundary containment
     /// collapsed and the clip was therefore not applied. `None` = nothing was
-    /// dropped. See [`crate::compute::config::BoundaryClipDroppedFinding`].
+    /// dropped. See [`crate::compute::toolpath_stats::BoundaryClipDroppedFinding`].
     ///
     /// Unlike every other field here this one is recorded AFTER the operation
     /// adapter has returned — the boundary clip is a post-dressup step in
@@ -151,33 +151,33 @@ pub struct GenerationFindings {
     /// written through `&mut GenerationFindings` rather than through
     /// [`ExecutionContext::findings`]. Both writers hold the findings by then;
     /// the join has not run yet.
-    pub boundary_clip_dropped: Option<crate::compute::config::BoundaryClipDroppedFinding>,
+    pub boundary_clip_dropped: Option<crate::compute::toolpath_stats::BoundaryClipDroppedFinding>,
     /// F4: a non-default rest-claims dial this operation's own configuration
     /// never applies. `None` = nothing inert is set.
-    /// See [`crate::compute::config::InertClaimsDialFinding`].
-    pub inert_claims_dial: Option<crate::compute::config::InertClaimsDialFinding>,
+    /// See [`crate::compute::toolpath_stats::InertClaimsDialFinding`].
+    pub inert_claims_dial: Option<crate::compute::toolpath_stats::InertClaimsDialFinding>,
     /// F3: what the [`crate::geometry::region_mask::MAX_REST_REGIONS`] cap did to this
     /// operation's rest-region extraction. `None` = no extraction ran, so
     /// nothing was measured — never "nothing was truncated". Written by the
     /// rest-analysis attach; see
-    /// [`crate::compute::config::ToolpathStats::region_cap`].
+    /// [`crate::compute::toolpath_stats::ToolpathStats::region_cap`].
     pub region_cap: Option<crate::geometry::region_mask::RegionCapReport>,
     /// Phase O item 3 / G-LINKVISIBLE: what this operation's finishing link
     /// stage did, and why it declined. `None` = the stage never ran (a
     /// family that has none, or one whose hookup dial is `0.0`). Written by
     /// `unified_finish`, `scallop`, `drop_cutter` and `waterline`. See
-    /// [`crate::compute::config::ToolpathStats::relink`].
+    /// [`crate::compute::toolpath_stats::ToolpathStats::relink`].
     pub relink: Option<crate::finish::unified_finish::RelinkTotals>,
     /// G-LINKVISIBLE: what the PENCIL's own link stage did. `None` = not a
     /// pencil, or a pencil whose detector produced no centreline, so the
     /// emitter — and with it every junction decision — never ran. Its own
     /// slot rather than [`Self::relink`] because its counter set differs;
-    /// see [`crate::compute::config::ToolpathStats::pencil_link`].
+    /// see [`crate::compute::toolpath_stats::ToolpathStats::pencil_link`].
     pub pencil_link: Option<crate::finish::pencil::PencilLinkReport>,
     /// C2: what the shallow band's monotone-cell decomposition did. `None` =
     /// the pass never ran (not a `UnifiedFinish`, or its
     /// `monotone_cell_decomposition` is off, or the op emitted no Shallow
-    /// region). See [`crate::compute::config::ToolpathStats::monotone_cells`].
+    /// region). See [`crate::compute::toolpath_stats::ToolpathStats::monotone_cells`].
     pub monotone_cells: Option<crate::finish::unified_finish::MonotoneCellTotals>,
 }
 

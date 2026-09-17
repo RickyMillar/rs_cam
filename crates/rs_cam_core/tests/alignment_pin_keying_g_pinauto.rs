@@ -35,10 +35,11 @@
     clippy::indexing_slicing
 )]
 
-use rs_cam_core::compute::stock_config::{
+use rs_cam_core::compute::alignment_pins::{
     AlignmentPin, FlipAxis, PIN_KEYING_ASYMMETRY_MM, PinPlacementError, PinPlacementRequest,
-    PinSide, StockConfig, place_keyed_pins, validate_pins_for_flip,
+    PinSide, place_keyed_pins, validate_pins_for_flip,
 };
+use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::geo::{BoundingBox3, P3};
 

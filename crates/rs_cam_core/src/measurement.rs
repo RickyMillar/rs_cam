@@ -78,7 +78,7 @@ pub enum MeasurementDomain {
 impl MeasurementDomain {
     /// Human-readable domain label. `const` so callers can derive
     /// documentation constants from a provenance value rather than restating
-    /// it in prose (see `crate::compute::config::TRUNCATED_CORE_DOMAIN`).
+    /// it in prose (see `crate::compute::toolpath_stats::TRUNCATED_CORE_DOMAIN`).
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {

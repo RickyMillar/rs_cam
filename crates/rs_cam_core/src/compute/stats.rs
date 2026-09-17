@@ -1,5 +1,5 @@
-use super::config::{RetractTripCount, ToolpathStats};
 use super::execute::GenerationFindings;
+use super::toolpath_stats::{RetractTripCount, ToolpathStats};
 use crate::toolpath::{MoveType, Toolpath};
 use crate::trace::toolpath_spans::Span;
 
@@ -163,7 +163,7 @@ pub fn stats_with_findings(
     tp: &Toolpath,
     spans: Option<&[Span]>,
     findings: GenerationFindings,
-    stock_snapshot: Option<crate::compute::config::StockSnapshotStamp>,
+    stock_snapshot: Option<crate::compute::toolpath_stats::StockSnapshotStamp>,
 ) -> ToolpathStats {
     // Guard 2: the move-derived half. Bound fields are measured from the
     // move list; `_` fields are generation-owned, and the helper's honest

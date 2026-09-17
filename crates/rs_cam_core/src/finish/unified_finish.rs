@@ -345,7 +345,7 @@ pub enum CreaseReference {
 /// meaning: it used to default to `SelfProbe` and now defaults to `Auto`
 /// (`compute::operation_configs::default_unified_finish_claims_reference`),
 /// and every resolution — derived or explicit — is recorded in
-/// [`crate::compute::config::ClaimsReferenceFinding`] so the change is
+/// [`crate::compute::toolpath_stats::ClaimsReferenceFinding`] so the change is
 /// visible rather than silent.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -933,7 +933,7 @@ pub struct ClaimsReport {
 }
 
 /// Fold [`UnifiedFinishReport::clipped_bands`] into the single Copy finding
-/// [`crate::compute::config::ToolpathStats`] carries. `None` when no band
+/// [`crate::compute::toolpath_stats::ToolpathStats`] carries. `None` when no band
 /// was partially clipped.
 ///
 /// Aggregates the same way [`dropped_band_finding`] does — area and count
@@ -942,13 +942,13 @@ pub struct ClaimsReport {
 #[must_use]
 pub fn clipped_band_finding(
     report: &UnifiedFinishReport,
-) -> Option<crate::compute::config::ClippedBandFinding> {
+) -> Option<crate::compute::toolpath_stats::ClippedBandFinding> {
     let worst = report
         .clipped_bands
         .iter()
         .copied()
         .reduce(|a, b| if b.area_mm2 > a.area_mm2 { b } else { a })?;
-    Some(crate::compute::config::ClippedBandFinding {
+    Some(crate::compute::toolpath_stats::ClippedBandFinding {
         band: worst.band,
         region_count: report.clipped_bands.len(),
         area_mm2: report.clipped_bands.iter().map(|c| c.area_mm2).sum(),
@@ -964,7 +964,7 @@ pub fn clipped_band_finding(
 }
 
 /// Fold [`UnifiedFinishReport::dropped_bands`] into the single Copy finding
-/// [`crate::compute::config::ToolpathStats`] carries. `None` when nothing
+/// [`crate::compute::toolpath_stats::ToolpathStats`] carries. `None` when nothing
 /// was dropped.
 ///
 /// Area and region count aggregate over EVERY dropped region; the band token
@@ -973,13 +973,13 @@ pub fn clipped_band_finding(
 #[must_use]
 pub fn dropped_band_finding(
     report: &UnifiedFinishReport,
-) -> Option<crate::compute::config::DroppedBandFinding> {
+) -> Option<crate::compute::toolpath_stats::DroppedBandFinding> {
     let worst = report
         .dropped_bands
         .iter()
         .copied()
         .reduce(|a, b| if b.area_mm2 > a.area_mm2 { b } else { a })?;
-    Some(crate::compute::config::DroppedBandFinding {
+    Some(crate::compute::toolpath_stats::DroppedBandFinding {
         band: worst.band,
         region_count: report.dropped_bands.len(),
         area_mm2: report.dropped_bands.iter().map(|d| d.area_mm2).sum(),
@@ -1044,17 +1044,17 @@ pub struct UnifiedFinishReport {
     /// estimator's formula and stated limitations.
     pub standing_mm2: f64,
     /// Wave D1: planned band regions whose cutting was entirely erased by
-    /// height resolution (see [`crate::compute::config::BandClipRecord`]).
+    /// height resolution (see [`crate::compute::toolpath_stats::BandClipRecord`]).
     /// Empty on a healthy run.
     /// Folded into the per-toolpath finding by [`dropped_band_finding`].
-    pub dropped_bands: Vec<crate::compute::config::BandClipRecord>,
+    pub dropped_bands: Vec<crate::compute::toolpath_stats::BandClipRecord>,
     /// C8: planned band regions whose Z ladder was SHORTENED by height
     /// resolution but which still cut (see
-    /// [`crate::compute::config::BandClipRecord`]). Empty on a healthy run.
+    /// [`crate::compute::toolpath_stats::BandClipRecord`]). Empty on a healthy run.
     /// Folded into the per-toolpath finding by
     /// [`clipped_band_finding`]. Disjoint from [`Self::dropped_bands`] by
     /// construction — a region appears in exactly one of them, or neither.
-    pub clipped_bands: Vec<crate::compute::config::BandClipRecord>,
+    pub clipped_bands: Vec<crate::compute::toolpath_stats::BandClipRecord>,
     /// FIN-14: which bands compared their own Z span against the resolved
     /// heights on this run.
     ///
@@ -1062,12 +1062,12 @@ pub struct UnifiedFinishReport {
     /// [`Self::dropped_bands`] and [`Self::clipped_bands`] can only speak
     /// for the bands in this set. Only the `VerySteep` arm reads `top_z` and
     /// `bottom_z`, so only that arm can enter the set today — see
-    /// [`crate::compute::config::MeasuredBands`].
-    pub height_clip_measured: crate::compute::config::MeasuredBands,
+    /// [`crate::compute::toolpath_stats::MeasuredBands`].
+    pub height_clip_measured: crate::compute::toolpath_stats::MeasuredBands,
     /// Wave D1: tip float measured on the crease node's centrelines.
     /// `None` when the claims pipeline never ran, so no centrelines existed
     /// to measure — never read as "nothing floated".
-    pub tip_float: Option<crate::compute::config::TipFloatFinding>,
+    pub tip_float: Option<crate::compute::toolpath_stats::TipFloatFinding>,
     /// What the AREA fields of [`Self::region_table`] mean (M1) — copied from
     /// the decomposition that produced them, so a consumer never has to guess
     /// which grid or which conditioning stage an `area_mm2` came from.
@@ -1489,7 +1489,7 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
     // Wave D1: `None` until the claims pipeline actually emits a centreline,
     // so "the claims pass never ran" stays distinguishable from "it ran and
     // nothing floated".
-    let mut claims_tip_float: Option<crate::compute::config::TipFloatFinding> = None;
+    let mut claims_tip_float: Option<crate::compute::toolpath_stats::TipFloatFinding> = None;
     let mut claims_report: Option<ClaimsReport> = None;
     let mut claims_rest_grid: Option<std::sync::Arc<crate::surface::rest_field::RestGrid>> = None;
     let mut claims_rest_regions: Option<std::sync::Arc<Vec<Polygon2>>> = None;
@@ -1597,7 +1597,7 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
         // only carve-and-abandon-proof contract.
         let detected = rf.centerlines.len();
         let mut emitted_paths: Vec<crate::finish::pencil::PencilPath> = Vec::new();
-        let mut float = crate::compute::config::TipFloatFinding::default();
+        let mut float = crate::compute::toolpath_stats::TipFloatFinding::default();
         for centerline in rf.centerlines {
             check_cancel(cancel)?;
             let paths = centerline_cut_paths(
@@ -1872,7 +1872,7 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
         // Wave D1: set by any band arm whose Z range the resolved heights
         // narrowed. Consulted AFTER generation, because a narrowed range is
         // only a FINDING when nothing came out of it.
-        let mut height_clip: Option<crate::compute::config::BandHeightClip> = None;
+        let mut height_clip: Option<crate::compute::toolpath_stats::BandHeightClip> = None;
         let (tp, anns) = match region.band {
             FinishBand::VerySteep => {
                 let Some((band_min_z, band_max_z)) = band_z_range(&surface, &covered, &region_set)
@@ -1909,14 +1909,17 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
                     // did, the floor is the one an operator can act on
                     // (a raised `bottom_z` removes the DEEP levels).
                     let (clip, clip_z_mm) = if final_z > band_min_z {
-                        (crate::compute::config::HeightClip::BottomZ, bottom_z)
+                        (
+                            crate::compute::toolpath_stats::HeightClip::BottomZ,
+                            bottom_z,
+                        )
                     } else {
-                        (crate::compute::config::HeightClip::TopZ, top_z)
+                        (crate::compute::toolpath_stats::HeightClip::TopZ, top_z)
                     };
                     // C8: the BOUNDS travel with the level counts. Counts say
                     // how much of the ladder was lost; bounds say where, which
                     // is what an operator can act on.
-                    height_clip = Some(crate::compute::config::BandHeightClip {
+                    height_clip = Some(crate::compute::toolpath_stats::BandHeightClip {
                         clip,
                         clip_z_mm,
                         planned_levels,
@@ -2316,7 +2319,7 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
                 );
                 report
                     .dropped_bands
-                    .push(crate::compute::config::BandClipRecord {
+                    .push(crate::compute::toolpath_stats::BandClipRecord {
                         band: region.band,
                         region_index,
                         area_mm2,
@@ -2339,7 +2342,7 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
                 );
                 report
                     .clipped_bands
-                    .push(crate::compute::config::BandClipRecord {
+                    .push(crate::compute::toolpath_stats::BandClipRecord {
                         band: region.band,
                         region_index,
                         area_mm2,

@@ -4,6 +4,7 @@
 //! (Phase 2), and simulation/collision logic (Phase 3) extracted from
 //! `rs_cam_viz` so they can be used by both the GUI and CLI.
 
+pub mod alignment_pins;
 pub mod annotate;
 pub mod catalog;
 pub mod collision_check;
@@ -18,6 +19,7 @@ pub mod spans;
 pub mod stats;
 pub mod stock_config;
 pub mod tool_config;
+pub mod toolpath_stats;
 pub mod transform;
 pub mod validate;
 
@@ -32,15 +34,12 @@ pub use catalog::{
 pub use config::{
     AwaitingPriorStock, BoundaryConfig, BoundaryContainment, BoundarySource, ComputeStatus,
     DressupConfig, DressupEntryStyle, HeightContext, HeightMode, HeightReference, HeightsConfig,
-    ReferenceOffset, ResolvedHeights, RetractTripCount, StockSource, ToolpathId, ToolpathStats,
+    ReferenceOffset, ResolvedHeights, StockSource, ToolpathId,
 };
 
 pub use tool_config::{BitCutDirection, ToolConfig, ToolId, ToolMaterial, ToolType};
 
-pub use stock_config::{
-    AlignmentPin, FixtureId, FlipAxis, KeepOutId, ModelId, ModelKind, ModelUnits, PostConfig,
-    PostFormat, SetupId, StockConfig,
-};
+pub use stock_config::{ModelKind, ModelUnits, StockConfig};
 
 pub use transform::{FaceUp, SetupTransformInfo, ZRotation};
 

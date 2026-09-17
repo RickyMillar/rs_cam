@@ -48,7 +48,7 @@
 //! * **It sees two-wall fouling.** The reach toward one wall is bounded below
 //!   by the *other* wall's intrusion; when `X_left + X_right < 0` the cutter
 //!   wedges between the walls and cannot hold `δ` on the apex at all. That is
-//!   the tip-float case ([`crate::compute::config::TipFloatFinding`], up to
+//!   the tip-float case ([`crate::compute::toolpath_stats::TipFloatFinding`], up to
 //!   5.248 mm of residual on the matrix's taper cells), and it is the reason
 //!   `CLR` still scored 3 float-blind cells where this model scores 0.
 //!

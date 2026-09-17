@@ -38,7 +38,7 @@ pub const MAX_REST_REGIONS: usize = 64;
 /// **Not a three-valued channel.** Every extraction measures this, so there
 /// is no "not measured" state at this layer to preserve; the `Option` lives
 /// one level up, on
-/// [`crate::compute::config::ToolpathStats::region_cap`], where `None`
+/// [`crate::compute::toolpath_stats::ToolpathStats::region_cap`], where `None`
 /// genuinely means "no rest-region extraction ran".
 ///
 /// Nothing here changes what is kept: the largest [`MAX_REST_REGIONS`] by

@@ -3,14 +3,14 @@ use rs_cam_core::geo::BoundingBox3;
 // persisted type it names is defined (and derived) in core.
 
 // ── Re-exports from rs_cam_core::compute (Phase 1 service layer extraction) ──
-pub use rs_cam_core::compute::stock_config::{
-    AlignmentPin, FixtureId, FlipAxis, KeepOutId, ModelId, ModelKind, ModelUnits, PostConfig,
-    PostFormat, SetupId, StockConfig,
-};
+pub use rs_cam_core::compute::alignment_pins::{AlignmentPin, FlipAxis};
+pub use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
 pub use rs_cam_core::compute::tool_config::{
     BitCutDirection, ToolConfig, ToolId, ToolMaterial, ToolType,
 };
 pub use rs_cam_core::compute::transform::{FaceUp, ZRotation};
+pub use rs_cam_core::gcode::{PostConfig, PostFormat};
+pub use rs_cam_core::ids::{FixtureId, KeepOutId, ModelId, SetupId};
 
 // LoadedModel is now the single core type — viz re-exports it directly.
 pub use rs_cam_core::session::LoadedModel;
@@ -27,7 +27,7 @@ pub use rs_cam_core::session::LoadedModel;
 // private copy; both are now re-exports of the one core definition.
 pub use rs_cam_core::session::{Corner, DatumConfig, XYDatum, ZDatum};
 
-// FlipAxis and AlignmentPin are now re-exported from core::compute::stock_config above.
+// FlipAxis and AlignmentPin are now re-exported from core::compute::alignment_pins above.
 
 /// The orientation half of a setup: what the transform helpers need.
 ///

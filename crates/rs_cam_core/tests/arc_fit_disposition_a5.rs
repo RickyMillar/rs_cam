@@ -114,11 +114,12 @@ use common::session::{mesh_model, pinned_heights, stock_over, toolpath_config};
 use common::tools::{ball_tool_config, endmill_tool_config, tapered_ball_tool_config};
 
 use rs_cam_core::compute::catalog::OperationConfig;
-use rs_cam_core::compute::config::{StockSnapshotStamp, StockSource};
+use rs_cam_core::compute::config::StockSource;
 use rs_cam_core::compute::operation_configs::{
     Adaptive3dConfig, Adaptive3dEntryStyle, DropCutterConfig,
 };
 use rs_cam_core::compute::tool_config::ToolConfig;
+use rs_cam_core::compute::toolpath_stats::StockSnapshotStamp;
 use rs_cam_core::feeds::suggest::SuggestWarning;
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};

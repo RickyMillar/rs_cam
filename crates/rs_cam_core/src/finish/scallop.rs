@@ -871,7 +871,7 @@ pub struct ScallopReport {
     /// ([`crate::finish::surface_link::RelinkReport::at_depth_links`]) was readable
     /// only by scraping a headless run's stdout. This carries it to the op
     /// adapter, which publishes it on
-    /// [`crate::compute::config::ToolpathStats::relink`].
+    /// [`crate::compute::toolpath_stats::ToolpathStats::relink`].
     ///
     /// * `None` — **not measured**. The pass never ran:
     ///   `intra_pass_hookup_mm` is `0.0` (which disables it), `continuous`
@@ -893,7 +893,7 @@ impl ScallopReport {
     ///
     /// This is the single source the user-visible standing-material strings
     /// are derived from
-    /// ([`crate::compute::config::TRUNCATED_CORE_DOMAIN`] and friends).
+    /// ([`crate::compute::toolpath_stats::TRUNCATED_CORE_DOMAIN`] and friends).
     pub const PROVENANCE: crate::measurement::MeasurementProvenance =
         crate::measurement::MeasurementProvenance::new(
             crate::measurement::MeasurementDomain::ProjectedXyArea,

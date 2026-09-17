@@ -14,7 +14,7 @@
 //! no engagement and no removed volume are attributed to it.
 //!
 //! The only pre-existing signal was
-//! [`crate::compute::config::ToolpathStats::zero_removal`], which is
+//! [`crate::compute::toolpath_stats::ToolpathStats::zero_removal`], which is
 //! **report-only by operator ruling** (A4, `zero_removal_rest_pass_a4.rs`)
 //! and — decisively — cannot fire on an empty toolpath at all: it measures
 //! engagement of *emitted cutting geometry* against a reference stock, and

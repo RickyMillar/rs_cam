@@ -468,9 +468,7 @@ fn project_curve_session(cell_note: &str) -> ProjectSession {
         point_spacing: 0.4,
         feed_rate: 800.0,
         plunge_rate: 400.0,
-        surface_model_id: Some(rs_cam_core::compute::stock_config::ModelId(
-            surface_model_id,
-        )),
+        surface_model_id: Some(rs_cam_core::ids::ModelId(surface_model_id)),
         spindle_rpm: Some(18_000),
         ..ProjectCurveConfig::default()
     });

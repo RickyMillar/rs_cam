@@ -35,10 +35,11 @@ use common::make_endmill_6mm;
 
 use std::sync::atomic::AtomicBool;
 
+use rs_cam_core::compute::alignment_pins::AlignmentPin;
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
 use rs_cam_core::compute::operation_configs::{AlignmentPinDrillConfig, DrillCycleType};
-use rs_cam_core::compute::stock_config::{AlignmentPin, StockConfig};
+use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::transform::{FaceUp, ZRotation};
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::ids::ToolpathId;

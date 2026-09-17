@@ -23,13 +23,13 @@ use crate::session::{Effects, ProjectSession, SessionError, ToolpathConfig};
 use std::collections::BTreeSet;
 
 use crate::compute::catalog::OperationConfig;
-use crate::compute::config::ToolpathStats;
 use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig};
 use crate::compute::operation_configs::{
     AlignmentPinDrillConfig, PencilConfig, PocketConfig, RestConfig,
 };
-use crate::compute::stock_config::FixtureId;
+use crate::compute::toolpath_stats::ToolpathStats;
 use crate::gcode::CoolantMode;
+use crate::ids::FixtureId;
 use crate::session::{Fixture, FixtureKind, KeepOutZone, ToolpathComputeResult};
 use crate::trace::debug_trace::ToolpathDebugOptions;
 
@@ -664,7 +664,7 @@ fn add_keep_out_invalidates_setup_toolpaths() {
     s.results.insert(0, fake_result());
 
     let zone = KeepOutZone {
-        id: crate::compute::stock_config::KeepOutId(0),
+        id: crate::ids::KeepOutId(0),
         name: "Zone 1".to_owned(),
         enabled: true,
         origin_x: 0.0,
@@ -683,7 +683,7 @@ fn add_keep_out_invalidates_setup_toolpaths() {
 fn remove_keep_out_by_id() {
     let mut s = make_session();
     let zone = KeepOutZone {
-        id: crate::compute::stock_config::KeepOutId(7),
+        id: crate::ids::KeepOutId(7),
         name: "Zone".to_owned(),
         enabled: true,
         origin_x: 0.0,
@@ -694,9 +694,7 @@ fn remove_keep_out_by_id() {
     let _ = s.add_keep_out(0, zone).unwrap();
     assert_eq!(s.list_setups()[0].keep_out_zones.len(), 1);
 
-    let _ = s
-        .remove_keep_out(0, crate::compute::stock_config::KeepOutId(7))
-        .unwrap();
+    let _ = s.remove_keep_out(0, crate::ids::KeepOutId(7)).unwrap();
     assert!(s.list_setups()[0].keep_out_zones.is_empty());
 }
 

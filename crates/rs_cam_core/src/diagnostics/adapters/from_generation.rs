@@ -13,7 +13,7 @@
 //! and the GUI's diagnostics list had no channel for it at all
 //! (`planning/unified_v3_design.md` §13/§14c/§14h).
 
-use crate::compute::config::{
+use crate::compute::toolpath_stats::{
     TRUNCATED_CORE_DOMAIN, TRUNCATED_CORE_RESOLUTION, TRUNCATED_CORE_STAGE, ToolpathStats,
 };
 use crate::diagnostics::{

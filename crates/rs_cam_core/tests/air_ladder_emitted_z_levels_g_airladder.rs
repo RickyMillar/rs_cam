@@ -308,7 +308,7 @@ fn measure(session: &mut ProjectSession) -> (EmittedZProfile, Vec<f64>, bool, us
 }
 
 fn fixture_context() -> String {
-    let raw_safe_z = rs_cam_core::compute::stock_config::PostConfig::default().safe_z;
+    let raw_safe_z = rs_cam_core::gcode::PostConfig::default().safe_z;
     format!(
         "fixture: stock {STOCK_THICKNESS_MM} mm at origin_z {STOCK_ORIGIN_Z_MM} \
          (world stock top {WORLD_STOCK_TOP_MM:+.3}), flat model surface at \

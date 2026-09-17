@@ -55,9 +55,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
-use rs_cam_core::compute::config::ToolpathStats;
-use rs_cam_core::compute::stock_config::{ModelId, ModelKind, ModelUnits};
+use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::compute::toolpath_stats::ToolpathStats;
+use rs_cam_core::ids::ModelId;
 use rs_cam_core::ops::drill_op::OpData;
 use rs_cam_core::session::{
     AddToolpathArgs, AdoptResultArgs, Command, LoadedModel, ProjectSessionBuilder,

@@ -53,8 +53,8 @@
 
 use std::path::PathBuf;
 
-use rs_cam_core::compute::stock_config::ModelId;
 use rs_cam_core::compute::transform::{FaceUp, ZRotation};
+use rs_cam_core::ids::ModelId;
 use rs_cam_core::session::{
     Corner, DatumConfig, ProjectSession, ProjectSessionBuilder, SetupData, XYDatum, ZDatum,
 };

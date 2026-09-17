@@ -20,8 +20,11 @@ use super::*;
 
 // ── C8: findings collections ────────────────────────────────────────
 
-fn stepover_finding(site: &'static str, mm: f64) -> crate::compute::config::DerivedStepoverFinding {
-    crate::compute::config::DerivedStepoverFinding {
+fn stepover_finding(
+    site: &'static str,
+    mm: f64,
+) -> crate::compute::toolpath_stats::DerivedStepoverFinding {
+    crate::compute::toolpath_stats::DerivedStepoverFinding {
         site,
         stepover_mm: mm,
         reference_depth_mm: 0.5,
@@ -82,11 +85,11 @@ fn two_derivations_on_one_toolpath_are_both_recorded() {
 /// noteworthy second one could be silenced by an unremarkable first.
 #[test]
 fn the_diagnostic_adapter_reports_each_derivation_separately() {
-    let mut stats = crate::compute::config::ToolpathStats::default();
+    let mut stats = crate::compute::toolpath_stats::ToolpathStats::default();
     // First agrees with the envelope rule (a plain ball) — silent.
     stats
         .derived_stepovers
-        .push(crate::compute::config::DerivedStepoverFinding {
+        .push(crate::compute::toolpath_stats::DerivedStepoverFinding {
             envelope_rule_mm: 0.20,
             ..stepover_finding("quiet site", 0.20)
         });

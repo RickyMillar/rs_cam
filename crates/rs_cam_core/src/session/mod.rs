@@ -81,17 +81,17 @@ use std::sync::Arc;
 
 use crate::compute::catalog::OperationConfig;
 use crate::compute::config::{
-    BoundaryConfig, BoundarySource, DressupConfig, HeightsConfig, StockSource, ToolpathStats,
+    BoundaryConfig, BoundarySource, DressupConfig, HeightsConfig, StockSource,
 };
 use crate::compute::simulate::SimulationResult;
-use crate::compute::stock_config::{
-    FixtureId, KeepOutId, ModelId, ModelKind, ModelUnits, StockConfig,
-};
+use crate::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use crate::compute::toolpath_stats::ToolpathStats;
 use crate::compute::transform::{FaceUp, ZRotation};
 use crate::gcode::CoolantMode;
 use crate::geo::{BoundingBox3, P3};
 use crate::geometry::enriched_mesh::{EnrichedMesh, FaceGroupId};
+use crate::ids::{FixtureId, KeepOutId, ModelId};
 use crate::io::dxf_input::DrillTarget;
 use crate::mesh::TriangleMesh;
 use crate::polygon::Polygon2;
@@ -2352,7 +2352,7 @@ mod tests {
                         crate::toolpath::Toolpath::new(),
                     ),
                 )),
-                stats: crate::compute::config::ToolpathStats::default(),
+                stats: crate::compute::toolpath_stats::ToolpathStats::default(),
                 debug_trace: None,
                 semantic_trace: None,
             },

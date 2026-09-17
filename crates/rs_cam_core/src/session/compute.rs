@@ -836,7 +836,7 @@ pub fn execute_job(
                 context
                     .prior_stock
                     .as_deref()
-                    .map(crate::compute::config::StockSnapshotStamp::of),
+                    .map(crate::compute::toolpath_stats::StockSnapshotStamp::of),
             );
 
             let mut debug_trace = debug_recorder.finish();

@@ -350,7 +350,7 @@ pub(crate) fn generate_unified_finish(
         );
         record_claims_reference(
             ctx.findings,
-            crate::compute::config::ClaimsReferenceFinding {
+            crate::compute::toolpath_stats::ClaimsReferenceFinding {
                 resolution,
                 territory_clip_requested: cfg.territory_clip,
             },
@@ -515,14 +515,14 @@ pub(crate) fn generate_unified_finish(
     for d in &report.shallow_slope_derates {
         record_derived_stepover(
             ctx.findings,
-            crate::compute::config::DerivedStepoverFinding {
+            crate::compute::toolpath_stats::DerivedStepoverFinding {
                 site: "UnifiedFinish shallow raster slope derate",
                 stepover_mm: d.derated_stepover_mm,
                 // Not a depth-keyed derivation: the derate is slope-keyed.
                 reference_depth_mm: 0.0,
                 reference_depth_basis: SHALLOW_SLOPE_DERATE_BASIS,
                 envelope_rule_mm: d.configured_stepover_mm,
-                slope_derate: Some(crate::compute::config::SlopeDerateDetail {
+                slope_derate: Some(crate::compute::toolpath_stats::SlopeDerateDetail {
                     region_index: d.region_index,
                     slope_max_deg: d.slope_max_deg,
                 }),
@@ -536,7 +536,7 @@ pub(crate) fn generate_unified_finish(
     if let Some(claims) = report.claims {
         record_derived_stepover(
             ctx.findings,
-            crate::compute::config::DerivedStepoverFinding {
+            crate::compute::toolpath_stats::DerivedStepoverFinding {
                 site: "UnifiedFinish crease/pencil claims",
                 stepover_mm: claims.offset_stepover_mm,
                 reference_depth_mm: claims.offset_stepover_reference_depth_mm,

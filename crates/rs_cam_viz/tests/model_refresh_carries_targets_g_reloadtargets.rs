@@ -72,7 +72,8 @@
 
 use std::path::{Path, PathBuf};
 
-use rs_cam_core::compute::stock_config::{ModelId, ModelKind, ModelUnits};
+use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
+use rs_cam_core::ids::ModelId;
 use rs_cam_core::io::load_model_file;
 use rs_cam_core::session::LoadedModel;
 use rs_cam_viz::compute::{

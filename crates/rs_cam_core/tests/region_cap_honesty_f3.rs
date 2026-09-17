@@ -31,7 +31,7 @@
     clippy::indexing_slicing
 )]
 
-use rs_cam_core::compute::config::ToolpathStats;
+use rs_cam_core::compute::toolpath_stats::ToolpathStats;
 use rs_cam_core::diagnostics::adapters::from_generation::diagnostics_from_generation;
 use rs_cam_core::diagnostics::{DiagnosticId, Scope, ids};
 use rs_cam_core::geometry::grid2::Grid2;

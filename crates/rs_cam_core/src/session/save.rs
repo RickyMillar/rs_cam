@@ -335,9 +335,9 @@ mod tests {
     use super::*;
     use crate::compute::catalog::OperationConfig;
     use crate::compute::operation_configs::PocketConfig;
-    use crate::compute::stock_config::FixtureId;
     use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
     use crate::compute::transform::FaceUp;
+    use crate::ids::FixtureId;
     use crate::ids::ToolpathId;
     use crate::session::{Fixture, FixtureKind, KeepOutZone, ToolpathConfig};
 
@@ -453,7 +453,7 @@ mod tests {
         let _ = s.add_fixture(0, fixture).unwrap();
 
         let zone = KeepOutZone {
-            id: crate::compute::stock_config::KeepOutId(0),
+            id: crate::ids::KeepOutId(0),
             name: "Danger Zone".to_owned(),
             enabled: true,
             origin_x: 5.0,

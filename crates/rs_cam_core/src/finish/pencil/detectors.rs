@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use tracing::{info, warn};
 
-use crate::compute::config::TipFloatFinding;
+use crate::compute::toolpath_stats::TipFloatFinding;
 use crate::finish::pencil_dihedral::{
     EdgeKey, SharedEdge, build_edge_adjacency, chain_concave_edges, compute_shared_edges,
     sample_chain_bisected,

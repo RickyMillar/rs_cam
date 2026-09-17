@@ -184,7 +184,7 @@ fn rest_source_result(regions: Vec<Polygon2>) -> ToolpathComputeResult {
     annotated.rest_regions = Some(Arc::new(regions));
     ToolpathComputeResult {
         op_data: rs_cam_core::ops::drill_op::OpData::Toolpath(Arc::new(annotated)),
-        stats: rs_cam_core::compute::config::ToolpathStats::default(),
+        stats: rs_cam_core::compute::toolpath_stats::ToolpathStats::default(),
         debug_trace: None,
         semantic_trace: None,
     }

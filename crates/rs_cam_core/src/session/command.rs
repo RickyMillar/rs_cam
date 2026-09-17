@@ -1249,7 +1249,7 @@ pub struct SetSetupModelsArgs {
     pub setup_index: usize,
     /// The models in scope for the setup. An EMPTY list means "all
     /// models"; it is not the same as a list that names every model.
-    pub model_ids: Vec<crate::compute::stock_config::ModelId>,
+    pub model_ids: Vec<crate::ids::ModelId>,
 }
 
 /// The arguments of the `set_setup_pause_message` command.
@@ -1335,7 +1335,7 @@ pub struct ReplaceFixtureArgs {
     /// The index of the setup that holds the fixture.
     pub setup_index: usize,
     /// The id of the fixture to replace.
-    pub fixture_id: crate::compute::stock_config::FixtureId,
+    pub fixture_id: crate::ids::FixtureId,
     /// The fixture to install.
     pub fixture: Box<super::Fixture>,
 }
@@ -1348,7 +1348,7 @@ pub struct ReplaceKeepOutArgs {
     /// The index of the setup that holds the zone.
     pub setup_index: usize,
     /// The id of the zone to replace.
-    pub zone_id: crate::compute::stock_config::KeepOutId,
+    pub zone_id: crate::ids::KeepOutId,
     /// The zone to install.
     pub zone: Box<super::KeepOutZone>,
 }
@@ -1705,7 +1705,7 @@ pub struct RemoveFixtureArgs {
     /// The index of the setup that holds the fixture.
     pub setup_index: usize,
     /// The id of the fixture to remove.
-    pub fixture_id: crate::compute::stock_config::FixtureId,
+    pub fixture_id: crate::ids::FixtureId,
 }
 
 /// The arguments of the `add_keep_out` command.
@@ -1725,7 +1725,7 @@ pub struct RemoveKeepOutArgs {
     /// The index of the setup that holds the zone.
     pub setup_index: usize,
     /// The id of the zone to remove.
-    pub zone_id: crate::compute::stock_config::KeepOutId,
+    pub zone_id: crate::ids::KeepOutId,
 }
 
 /// The arguments of the `auto_enable_rest_analysis` command.

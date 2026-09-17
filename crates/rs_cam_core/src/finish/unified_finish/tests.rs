@@ -338,10 +338,13 @@ fn a_band_renders_through_one_label_table() {
     assert_eq!(FinishBand::MidSteep.label(), "MidSteep");
     assert_eq!(FinishBand::Shallow.label(), "Shallow");
     assert_eq!(
-        crate::compute::config::HeightClip::BottomZ.label(),
+        crate::compute::toolpath_stats::HeightClip::BottomZ.label(),
         "bottom_z"
     );
-    assert_eq!(crate::compute::config::HeightClip::TopZ.label(), "top_z");
+    assert_eq!(
+        crate::compute::toolpath_stats::HeightClip::TopZ.label(),
+        "top_z"
+    );
 }
 
 /// `v3_cascade_ab.rs::strategy_of_span` was a four-arm label -> strategy

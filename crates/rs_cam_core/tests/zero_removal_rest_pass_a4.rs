@@ -179,7 +179,7 @@ fn cascade_session(finish_stepover: f64) -> ProjectSession {
 /// What the rest op of one arm did.
 struct RestArmResult {
     cutting_mm: f64,
-    finding: Option<rs_cam_core::compute::config::ZeroRemovalFinding>,
+    finding: Option<rs_cam_core::compute::toolpath_stats::ZeroRemovalFinding>,
     diagnostic: Option<String>,
     narration: String,
 }

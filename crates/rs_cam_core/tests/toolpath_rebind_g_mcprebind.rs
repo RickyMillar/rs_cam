@@ -464,7 +464,7 @@ fn fake_result() -> rs_cam_core::session::ToolpathComputeResult {
                 rs_cam_core::toolpath::Toolpath::new(),
             ),
         )),
-        stats: rs_cam_core::compute::config::ToolpathStats::default(),
+        stats: rs_cam_core::compute::toolpath_stats::ToolpathStats::default(),
         debug_trace: None,
         semantic_trace: None,
     }

@@ -39,13 +39,13 @@
     clippy::indexing_slicing
 )]
 
-use rs_cam_core::compute::config::{
-    BandHeightClip, BoundaryClipDroppedFinding, BoundaryContainment, ClaimsReferenceFinding,
-    ClippedBandFinding, DeprecatedDialFinding, DerivedStepoverFinding, DroppedBandFinding,
-    HeightClip, InertClaimsDialFinding, MeasuredBands, TipFloatFinding, ToolpathStats,
-    ZeroRemovalFinding,
-};
+use rs_cam_core::compute::config::BoundaryContainment;
 use rs_cam_core::compute::execute::GenerationFindings;
+use rs_cam_core::compute::toolpath_stats::{
+    BandHeightClip, BoundaryClipDroppedFinding, ClaimsReferenceFinding, ClippedBandFinding,
+    DeprecatedDialFinding, DerivedStepoverFinding, DroppedBandFinding, HeightClip,
+    InertClaimsDialFinding, MeasuredBands, TipFloatFinding, ToolpathStats, ZeroRemovalFinding,
+};
 use rs_cam_core::compute::{compute_stats_with_spans, stats_with_findings};
 use rs_cam_core::finish::finish_planner::FinishBand;
 use rs_cam_core::finish::pencil::PencilLinkReport;

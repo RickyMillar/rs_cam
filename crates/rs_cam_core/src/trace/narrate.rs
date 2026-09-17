@@ -94,7 +94,7 @@ pub struct ToolpathNarrationContext<'a> {
     pub material: Option<&'a crate::material::Material>,
     /// A/M9: the generation-time standing-material finding for this
     /// toolpath, straight off
-    /// [`crate::compute::config::ToolpathStats::truncated_core_mm2`].
+    /// [`crate::compute::toolpath_stats::ToolpathStats::truncated_core_mm2`].
     ///
     /// `None` = not measured (no ring cascade ran, or the caller has no
     /// stats), `Some(0.0)` = a cascade measured zero. Narration states
@@ -103,51 +103,51 @@ pub struct ToolpathNarrationContext<'a> {
     pub truncated_core_mm2: Option<f64>,
     /// M4 §5b: the hole-aware sibling of [`Self::truncated_core_mm2`],
     /// straight off
-    /// [`crate::compute::config::ToolpathStats::untouched_material_mm2`].
+    /// [`crate::compute::toolpath_stats::ToolpathStats::untouched_material_mm2`].
     /// Same `None`/`Some(0.0)` contract.
     pub untouched_material_mm2: Option<f64>,
     /// M4 §5b: the ESTIMATED reached-but-dropped sibling of
     /// [`Self::truncated_core_mm2`], straight off
-    /// [`crate::compute::config::ToolpathStats::reached_uncut_estimate_mm2`].
+    /// [`crate::compute::toolpath_stats::ToolpathStats::reached_uncut_estimate_mm2`].
     /// Same `None`/`Some(0.0)` contract.
     pub reached_uncut_estimate_mm2: Option<f64>,
     /// Wave D1: a planned finish band whose cutting was entirely erased by
     /// height resolution, straight off
-    /// [`crate::compute::config::ToolpathStats::dropped_band`]. `None` =
+    /// [`crate::compute::toolpath_stats::ToolpathStats::dropped_band`]. `None` =
     /// nothing dropped or nothing measured; narration says which, using
     /// [`Self::operation_kind`] to tell those two apart.
-    pub dropped_band: Option<crate::compute::config::DroppedBandFinding>,
+    pub dropped_band: Option<crate::compute::toolpath_stats::DroppedBandFinding>,
     /// C8: a planned finish band whose Z ladder height resolution SHORTENED
     /// while it still cut, straight off
-    /// [`crate::compute::config::ToolpathStats::clipped_band`]. `None` =
+    /// [`crate::compute::toolpath_stats::ToolpathStats::clipped_band`]. `None` =
     /// nothing clipped or nothing measured; narration says which, using
     /// [`Self::operation_kind`] to tell those two apart — the same contract
     /// [`Self::dropped_band`] carries.
-    pub clipped_band: Option<crate::compute::config::ClippedBandFinding>,
+    pub clipped_band: Option<crate::compute::toolpath_stats::ClippedBandFinding>,
     /// C8: what the ramp-finish reach clamp did, off
-    /// [`crate::compute::config::ToolpathStats::ramp_reach_clamp`]. `None` =
+    /// [`crate::compute::toolpath_stats::ToolpathStats::ramp_reach_clamp`]. `None` =
     /// no ramp descent ran, so nothing was measured — NOT "the tool reached
     /// everywhere". A/M9's contract, applied to a third measure.
     pub ramp_reach_clamp: Option<crate::finish::ramp_finish::RampReachClamp>,
     /// Wave D1: the centreline TIP-FLOAT tally, off
-    /// [`crate::compute::config::ToolpathStats::tip_float`]. `None` = the
+    /// [`crate::compute::toolpath_stats::ToolpathStats::tip_float`]. `None` = the
     /// operation emits no valley centrelines, so nothing was measured — NOT
     /// "the tool reached everywhere".
-    pub tip_float: Option<crate::compute::config::TipFloatFinding>,
+    pub tip_float: Option<crate::compute::toolpath_stats::TipFloatFinding>,
     /// A/M7 gate 1: the retract round-trip count, off
-    /// [`crate::compute::config::ToolpathStats::retract_trips`]. `None` =
+    /// [`crate::compute::toolpath_stats::ToolpathStats::retract_trips`]. `None` =
     /// this stats struct never walked a move list (a placeholder, never a
     /// real generation) — narration says so rather than staying silent.
-    pub retract_trips: Option<crate::compute::config::RetractTripCount>,
+    pub retract_trips: Option<crate::compute::toolpath_stats::RetractTripCount>,
     /// A4: this rest pass will remove nothing, off
-    /// [`crate::compute::config::ToolpathStats::zero_removal`]. `None` = the
+    /// [`crate::compute::toolpath_stats::ToolpathStats::zero_removal`]. `None` = the
     /// measurement did not run, or it ran and found real engagement — and
     /// unlike the A/M9 channels those two are not distinguished, because the
     /// number supports no ratio. Narration therefore prints this line ONLY
     /// when the finding is present.
-    pub zero_removal: Option<crate::compute::config::ZeroRemovalFinding>,
+    pub zero_removal: Option<crate::compute::toolpath_stats::ZeroRemovalFinding>,
     /// Checkpoint C: contained 2D-offset failures, off
-    /// [`crate::compute::config::ToolpathStats::offset_library_failures`].
+    /// [`crate::compute::toolpath_stats::ToolpathStats::offset_library_failures`].
     /// `None` = this operation made no offset call through the reporting
     /// name, so nothing was measured — NOT "no offset failed". Narration
     /// prints the line only when the count is non-zero: a "0 contained
@@ -156,19 +156,19 @@ pub struct ToolpathNarrationContext<'a> {
     /// a warning.
     pub offset_library_failures: Option<usize>,
     /// Checkpoint C: the machining-boundary containment that collapsed, off
-    /// [`crate::compute::config::ToolpathStats::boundary_clip_dropped`].
+    /// [`crate::compute::toolpath_stats::ToolpathStats::boundary_clip_dropped`].
     /// `None` = nothing was dropped. Narration prints this whenever it is
     /// present — an unclipped path where a containment was requested is not
     /// a routine event.
-    pub boundary_clip_dropped: Option<crate::compute::config::BoundaryClipDroppedFinding>,
+    pub boundary_clip_dropped: Option<crate::compute::toolpath_stats::BoundaryClipDroppedFinding>,
     /// F4: a non-default rest-claims dial this operation never applied, off
-    /// [`crate::compute::config::ToolpathStats::inert_claims_dial`]. `None` =
+    /// [`crate::compute::toolpath_stats::ToolpathStats::inert_claims_dial`]. `None` =
     /// nothing inert is set. Narration prints the line ONLY when the finding
     /// is present — it is a statement about the config, and the vast majority
     /// of toolpaths have nothing to say about it.
-    pub inert_claims_dial: Option<crate::compute::config::InertClaimsDialFinding>,
+    pub inert_claims_dial: Option<crate::compute::toolpath_stats::InertClaimsDialFinding>,
     /// Phase O: the finishing link stage's totals and decline attribution,
-    /// off [`crate::compute::config::ToolpathStats::relink`]. `None` = the
+    /// off [`crate::compute::toolpath_stats::ToolpathStats::relink`]. `None` = the
     /// stage never ran (hookup 0, or a family that has none).
     ///
     /// Narration prints the line whenever this is `Some` — **widened from
@@ -180,7 +180,7 @@ pub struct ToolpathNarrationContext<'a> {
     /// the one reading that never reached an operator surface.
     pub relink: Option<crate::finish::unified_finish::RelinkTotals>,
     /// G-LINKVISIBLE: the PENCIL's own link stage, off
-    /// [`crate::compute::config::ToolpathStats::pencil_link`]. `None` = not
+    /// [`crate::compute::toolpath_stats::ToolpathStats::pencil_link`]. `None` = not
     /// a pencil, or a pencil that emitted no centreline. Printed on the same
     /// rule as [`Self::relink`], on its own line and with its own counter
     /// names — the two reports do not have the same shape and must not be
@@ -239,7 +239,7 @@ pub fn is_drill_cycle_for_narration(
 }
 
 impl<'a> ToolpathNarrationContext<'a> {
-    /// The ONE join from [`crate::compute::config::ToolpathStats`] into
+    /// The ONE join from [`crate::compute::toolpath_stats::ToolpathStats`] into
     /// narration.
     ///
     /// **Exhaustive by construction.** The destructuring below names every
@@ -262,8 +262,8 @@ impl<'a> ToolpathNarrationContext<'a> {
     ///
     /// Callers set the identity/tool/material fields themselves and then
     /// call this; it touches nothing but the stats-derived channels.
-    pub fn absorb_stats(&mut self, stats: &crate::compute::config::ToolpathStats) {
-        let crate::compute::config::ToolpathStats {
+    pub fn absorb_stats(&mut self, stats: &crate::compute::toolpath_stats::ToolpathStats) {
+        let crate::compute::toolpath_stats::ToolpathStats {
             // Narration walks the move list itself, so these three are
             // recomputed rather than carried — they are not findings.
             move_count: _,
@@ -968,7 +968,7 @@ const STANDING_MATERIAL_NARRATION_FLOOR_MM2: f64 = 1.0;
 /// the measurement's domain, stage and resolution (M1) — an unlabelled mm²
 /// invites exactly the cross-domain comparison the audit found.
 fn append_truncated_core(output: &mut String, measured: Option<f64>) {
-    use crate::compute::config::{
+    use crate::compute::toolpath_stats::{
         TRUNCATED_CORE_DOMAIN, TRUNCATED_CORE_RESOLUTION, TRUNCATED_CORE_STAGE,
     };
     match measured {
@@ -1005,9 +1005,9 @@ fn append_truncated_core(output: &mut String, measured: Option<f64>) {
 ///
 /// Two different figures, two different measurement contracts (M1): the
 /// "never reached" half is an exact hole-aware polygon area
-/// ([`crate::compute::config::UNTOUCHED_MATERIAL_PROVENANCE`]); the
+/// ([`crate::compute::toolpath_stats::UNTOUCHED_MATERIAL_PROVENANCE`]); the
 /// "reached but dropped" half is an ESTIMATOR
-/// ([`crate::compute::config::REACHED_UNCUT_ESTIMATE_PROVENANCE`]), so
+/// ([`crate::compute::toolpath_stats::REACHED_UNCUT_ESTIMATE_PROVENANCE`]), so
 /// its number is prefixed `~` and its own domain/stage/resolution are stated
 /// separately rather than shared with the first.
 fn append_untouched_standing_split(
@@ -1015,7 +1015,7 @@ fn append_untouched_standing_split(
     untouched_mm2: Option<f64>,
     standing_estimate_mm2: Option<f64>,
 ) {
-    use crate::compute::config::{
+    use crate::compute::toolpath_stats::{
         REACHED_UNCUT_ESTIMATE_DOMAIN, REACHED_UNCUT_ESTIMATE_RESOLUTION,
         REACHED_UNCUT_ESTIMATE_STAGE, UNTOUCHED_MATERIAL_DOMAIN, UNTOUCHED_MATERIAL_RESOLUTION,
         UNTOUCHED_MATERIAL_STAGE,
@@ -1101,7 +1101,7 @@ fn append_dropped_band(output: &mut String, context: &ToolpathNarrationContext<'
 /// interesting because the pass was paid for anyway.
 fn append_zero_removal(
     output: &mut String,
-    finding: Option<crate::compute::config::ZeroRemovalFinding>,
+    finding: Option<crate::compute::toolpath_stats::ZeroRemovalFinding>,
 ) {
     let Some(f) = finding else { return };
     output.push_str(&format!("Zero removal: {}\n", f.message()));
@@ -1146,7 +1146,7 @@ fn append_offset_library_failures(output: &mut String, failures: Option<usize>) 
 /// the operator turned on is not in force on this path.
 fn append_boundary_clip_dropped(
     output: &mut String,
-    finding: Option<crate::compute::config::BoundaryClipDroppedFinding>,
+    finding: Option<crate::compute::toolpath_stats::BoundaryClipDroppedFinding>,
 ) {
     let Some(f) = finding else { return };
     output.push_str(&format!("Boundary containment DROPPED: {}\n", f.message()));
@@ -1165,7 +1165,7 @@ fn append_boundary_clip_dropped(
 /// got a byte-identical toolpath.
 fn append_inert_claims_dial(
     output: &mut String,
-    finding: Option<crate::compute::config::InertClaimsDialFinding>,
+    finding: Option<crate::compute::toolpath_stats::InertClaimsDialFinding>,
 ) {
     let Some(f) = finding else { return };
     output.push_str(&format!("Inert claims dial: {}\n", f.message()));
@@ -1265,9 +1265,9 @@ fn append_clipped_band(output: &mut String, context: &ToolpathNarrationContext<'
 /// reach on a valley centreline.
 fn append_tip_float(
     output: &mut String,
-    measured: Option<crate::compute::config::TipFloatFinding>,
+    measured: Option<crate::compute::toolpath_stats::TipFloatFinding>,
 ) {
-    use crate::compute::config::{TIP_FLOAT_DOMAIN, TIP_FLOAT_STAGE};
+    use crate::compute::toolpath_stats::{TIP_FLOAT_DOMAIN, TIP_FLOAT_STAGE};
     match measured {
         Some(f) if f.floating_points > 0 => {
             output.push_str(&format!("Tip float: {}\n", f.message()));
@@ -1303,9 +1303,9 @@ fn append_tip_float(
 /// `rapid_distance`(mm) total printed in the header line above.
 fn append_retract_trips(
     output: &mut String,
-    measured: Option<crate::compute::config::RetractTripCount>,
+    measured: Option<crate::compute::toolpath_stats::RetractTripCount>,
 ) {
-    use crate::compute::config::{
+    use crate::compute::toolpath_stats::{
         RETRACT_TRIP_DOMAIN, RETRACT_TRIP_RESOLUTION, RETRACT_TRIP_STAGE,
     };
     match measured {
@@ -1340,7 +1340,7 @@ fn append_retract_trips(
 
 /// Which hookup dial tunes this operation's link stage.
 ///
-/// Four families write [`crate::compute::config::ToolpathStats::relink`] and
+/// Four families write [`crate::compute::toolpath_stats::ToolpathStats::relink`] and
 /// each spells its dial differently, so naming one of them unconditionally —
 /// which this narration did until G-LINKVISIBLE — sends three quarters of
 /// its readers to a field their operation does not have. `None` when the op
@@ -2289,7 +2289,7 @@ mod tests {
         assert!(standing.contains("837 mm² left UNCUT"), "{standing}");
         assert!(standing.contains("Report-only"), "{standing}");
         assert!(
-            standing.contains(crate::compute::config::TRUNCATED_CORE_DOMAIN),
+            standing.contains(crate::compute::toolpath_stats::TRUNCATED_CORE_DOMAIN),
             "the number must declare its domain: {standing}"
         );
 

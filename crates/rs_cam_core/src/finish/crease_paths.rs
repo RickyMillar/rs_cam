@@ -106,10 +106,10 @@ pub fn centerline_cut_paths(
     min_cut_length: f64,
     stock_to_leave: f64,
     // Wave D1: accumulates the centreline TIP-FLOAT tally across every
-    // emitted crease (see `crate::compute::config::TipFloatFinding`). This
+    // emitted crease (see `crate::compute::toolpath_stats::TipFloatFinding`). This
     // path is shared by the pencil `RestDepth` arm and the unified-finish
     // crease node, so both report through one measurement.
-    float: &mut crate::compute::config::TipFloatFinding,
+    float: &mut crate::compute::toolpath_stats::TipFloatFinding,
     cancel: &dyn CancelCheck,
 ) -> Result<Vec<PencilPath>, Cancelled> {
     let mut all_paths: Vec<PencilPath> = Vec::new();

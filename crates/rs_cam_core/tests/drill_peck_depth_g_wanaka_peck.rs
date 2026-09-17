@@ -51,12 +51,13 @@ use common::session::{polygon_model, toolpath_config};
 
 use std::sync::atomic::AtomicBool;
 
+use rs_cam_core::compute::alignment_pins::AlignmentPin;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::DressupEntryStyle;
 use rs_cam_core::compute::operation_configs::{
     AlignmentPinDrillConfig, DrillConfig, DrillCycleType,
 };
-use rs_cam_core::compute::stock_config::{AlignmentPin, StockConfig};
+use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::geo::P2;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder};

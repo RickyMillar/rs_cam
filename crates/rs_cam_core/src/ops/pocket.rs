@@ -190,7 +190,7 @@ pub struct PocketCascadeReport {
     /// stopped the cascade — material this pocket will NOT clear.
     ///
     /// `None` when no bound fired, which is the same three-valued contract
-    /// [`crate::compute::config::ToolpathStats::truncated_core_mm2`] carries
+    /// [`crate::compute::toolpath_stats::ToolpathStats::truncated_core_mm2`] carries
     /// and is why it can be recorded straight onto that existing channel
     /// rather than needing a new one. On the divergent-winding case this
     /// number is enormous, which is exactly the right signal.

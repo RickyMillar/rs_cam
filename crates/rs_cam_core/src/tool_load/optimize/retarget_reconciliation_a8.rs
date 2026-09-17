@@ -220,7 +220,7 @@ fn fixture_session(depth_mm: f64) -> ProjectSession {
 struct Arm {
     feed: f64,
     verdict: ChiploadVerdict,
-    stock_snapshot: Option<crate::compute::config::StockSnapshotStamp>,
+    stock_snapshot: Option<crate::compute::toolpath_stats::StockSnapshotStamp>,
     /// The gate's own steady-state **population**, from
     /// `FeedExplanation::gate.sample_count`. X-VAC: a gate handed an empty
     /// population passes and looks healthy, so every arm reports this and

@@ -703,7 +703,7 @@ pub(in crate::ui::properties) fn draw_scallop_params(
 fn draw_unified_finish_claims(
     ui: &mut egui::Ui,
     cfg: &mut UnifiedFinishConfig,
-    resolved: Option<rs_cam_core::compute::config::ClaimsReferenceFinding>,
+    resolved: Option<rs_cam_core::compute::toolpath_stats::ClaimsReferenceFinding>,
     stock_source: StockSource,
 ) {
     ui.add_space(6.0);
@@ -867,7 +867,7 @@ pub(in crate::ui::properties) fn draw_unified_finish_params(
     ui: &mut egui::Ui,
     cfg: &mut UnifiedFinishConfig,
     _pills: Option<&PillSuggestions>,
-    resolved_claims_reference: Option<rs_cam_core::compute::config::ClaimsReferenceFinding>,
+    resolved_claims_reference: Option<rs_cam_core::compute::toolpath_stats::ClaimsReferenceFinding>,
     stock_source: StockSource,
 ) {
     egui::Grid::new("uf_p")

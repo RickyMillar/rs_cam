@@ -1,0 +1,1686 @@
+//! `ToolpathStats` and the per-generator finding types it carries.
+//!
+//! A finding is not configuration. `config.rs` is the height, boundary, rest,
+//! dressup and stock configuration model; this file holds the measurement
+//! carrier and the nine finding types one generator each writes into it.
+//! `execute/findings.rs` holds `GenerationFindings`, the writer side: one
+//! field there per optional slot here.
+
+use crate::compute::config::BoundaryContainment;
+
+#[derive(Debug, Clone, Default)]
+pub struct ToolpathStats {
+    pub move_count: usize,
+    pub cutting_distance: f64,
+    pub rapid_distance: f64,
+    /// Generation-time finding, not a toolpath measurement: region-interior
+    /// area a scallop ring cascade left UNCUT because it hit its ring cap
+    /// before collapsing — the **truncated cascade core**.
+    ///
+    /// **Renamed in wave 16** (Checkpoint E ruling A6). It was
+    /// `standing_material_mm2` from A/M9 until 2026-08-04, and that name was
+    /// wrong in the one way a measurement name must never be: §5.3 gave the
+    /// cascade the M4 oracle's vocabulary, and *standing* there means
+    /// "reached, left high" while this field measures ground **no cutter
+    /// position ever entered**. That is the oracle's *untouched*. The
+    /// reached-but-uncut quantity is [`Self::reached_uncut_estimate_mm2`],
+    /// a different number entirely. `truncated_core_mm2` names the geometry
+    /// it actually sums and claims nothing about why.
+    ///
+    /// The old spelling is gone. L5 (`bbaa193e`, 2026-09-17) retired the
+    /// duplicate JSON key from both wires that carried it
+    /// ([`crate::session::ToolpathDiagnostic`]'s `Serialize` and the CLI's
+    /// per-toolpath report), because a reader who trusted the old NAME read
+    /// the wrong quantity. No Rust identifier and no wire carries it now.
+    ///
+    /// `ToolpathStats` is not serde, so this repo holds no read-side alias.
+    /// A consumer that still keeps pre-rename documents puts
+    /// `#[serde(alias = "standing_material_mm2")]` on its OWN reader. One
+    /// such reader serves both shapes, because the wire emits one key. That
+    /// is pinned in `tests/standing_material_channel_am9.rs`.
+    ///
+    /// **Three-valued on purpose** (A/M9, `MEASUREMENT_DOMAINS.md` X-19):
+    ///
+    /// * `None` — **not measured**. The operation runs no ring cascade
+    ///   (any 2.5D family, drop-cutter, waterline, drill …), or the result
+    ///   came from a path that carries no [`GenerationFindings`]. Do NOT
+    ///   read this as "nothing left uncut"; it supports no ratio at all.
+    /// * `Some(0.0)` — **measured zero**: a cascade ran and collapsed, so
+    ///   no core was left truncated.
+    /// * `Some(a)` — `a` mm² of region interior was never reached.
+    ///
+    /// The pre-A/M9 `f64` conflated the first two, which is the silent-zero
+    /// trap the audit logged: a reader building "% left uncut" over a
+    /// pocket would have divided a real area by an unmeasured zero.
+    ///
+    /// Domain / stage / resolution are fixed and declared by
+    /// [`TRUNCATED_CORE_PROVENANCE`], from which
+    /// [`TRUNCATED_CORE_DOMAIN`], [`TRUNCATED_CORE_STAGE`] and
+    /// [`TRUNCATED_CORE_RESOLUTION`] are derived — every user-visible
+    /// rendering of this number must state them (M1). Read the typed value
+    /// through [`ToolpathStats::truncated_core`], which returns the area
+    /// and its provenance together or `None`. Sourced from
+    /// [`crate::compute::execute::GenerationFindings`]; read by the
+    /// diagnostics pipeline as `crate::diagnostics::ids::GEOM_STANDING_MATERIAL`
+    /// — the diagnostic **id** is a stable identity and deliberately keeps
+    /// the old word (`MEASUREMENT_DOMAINS.md` renaming table).
+    ///
+    /// Report-only: no gate consumes it and no verdict changes on it.
+    pub truncated_core_mm2: Option<f64>,
+    /// M4 §5b: the HOLE-AWARE sibling of [`Self::truncated_core_mm2`].
+    /// `truncated_core_mm2` is computed from each truncated cascade
+    /// polygon's EXTERIOR only (`MEASUREMENT_DOMAINS.md` X-5) — an island
+    /// inside the truncated core over-reports as uncut. This field nets out
+    /// holes instead, straight off
+    /// [`crate::finish::scallop::ScallopReport::untouched_mm2`].
+    ///
+    /// Same three-valued contract as [`Self::truncated_core_mm2`]: `None`
+    /// = not measured, `Some(0.0)` = measured and clean.
+    /// `untouched_material_mm2 <= truncated_core_mm2` whenever both are
+    /// `Some` (same cascade run, hole-corrected).
+    ///
+    /// Report-only: no gate consumes it and no verdict changes on it.
+    pub untouched_material_mm2: Option<f64>,
+    /// M4 §5b: area the ring cascade **DID reach** — it ringed there — but
+    /// where the keep predicate dropped every point, so no cut landed.
+    /// Straight off [`crate::finish::scallop::ScallopReport::standing_mm2`]. Same
+    /// three-valued contract.
+    ///
+    /// **This is NOT an estimate of [`Self::truncated_core_mm2`].** It is
+    /// a different quantity, and the naming here is a trap worth stating
+    /// plainly (H4, wave 15 — this field was called
+    /// `standing_material_estimate_mm2` for exactly long enough to prove the
+    /// point):
+    ///
+    /// | field | what it is | oracle's word |
+    /// |---|---|---|
+    /// | [`Self::truncated_core_mm2`] | truncated cascade core, exteriors only | **untouched** (never reached) |
+    /// | [`Self::untouched_material_mm2`] | the same core, hole-corrected | **untouched** (never reached) |
+    /// | this field | ringed, then every point dropped | **standing** (reached, left high) |
+    ///
+    /// Wave 15 shipped that table under a first column that still read
+    /// `standing_material_mm2` — a field labelled *standing* sitting in the
+    /// *untouched* row. Checkpoint E ruling A6 closed it: the first row's
+    /// field is now [`Self::truncated_core_mm2`], and only this field wears
+    /// the oracle's word *standing*.
+    ///
+    /// **Not an exact area** — it is `(arc length owned by dropped ring
+    /// points) x (offset stepover)`, summed per ring; see the source field's
+    /// doc for what it cannot distinguish (off-part geometry vs a genuine
+    /// left-high residual).
+    ///
+    /// Report-only: no gate consumes it and no verdict changes on it.
+    pub reached_uncut_estimate_mm2: Option<f64>,
+    /// Wave D1: a planned finish BAND whose cutting was entirely erased by
+    /// height resolution — an unmachined feature.
+    ///
+    /// Three-valued for the same reason as [`Self::truncated_core_mm2`]:
+    /// `None` = **not measured** (this operation plans no bands at all —
+    /// anything that is not a `UnifiedFinish`), `Some(f)` = a banded
+    /// decomposition ran AND at least one band was dropped. A banded op that
+    /// dropped nothing also reports `None`, because "no dropped band" and
+    /// "nothing to drop" are the same statement about the part: the honest
+    /// distinction narration draws is *measured-clean* vs *not measured*, and
+    /// it draws it from the operation kind, not from this field.
+    ///
+    /// Report-only: generation still succeeds, the diagnostic severity is
+    /// `Caution`, and no verdict reads it.
+    ///
+    /// **Boxed on purpose.** The finding carries a whole
+    /// [`crate::measurement::MeasurementProvenance`] and is `None` on almost
+    /// every toolpath, so paying 8 bytes here instead of ~120 keeps
+    /// `ToolpathStats` — cloned once per toolpath into the session results
+    /// and again into GUI state — small, without weakening the measurement
+    /// contract.
+    ///
+    /// This used to be justified by `clippy::large_enum_variant` firing on
+    /// the GUI's `ComputeMessage` channel enum. That is no longer the
+    /// reason: C5 boxed `ComputeMessage::Toolpath` itself, so nothing added
+    /// here can push that enum over the threshold again.
+    pub dropped_band: Option<Box<DroppedBandFinding>>,
+    /// Wave D1: the tip-float residual on a pencil/rest centreline — points
+    /// where the cutter physically cannot reach the valley floor it is being
+    /// driven along, and the depth it floats above it.
+    ///
+    /// `None` = **not measured**: the operation emits no valley centrelines
+    /// (Checkpoint A evidence §9.4). `Some` with `floating_points == 0` is a
+    /// measured clean pass. Never read a missing value as zero float.
+    ///
+    /// Report-only: no gate consumes it.
+    pub tip_float: Option<TipFloatFinding>,
+    /// PR-5: a loaded project carries a RETIRED dial at a non-default value,
+    /// so the number the operator set is no longer the one steering the
+    /// operation.
+    ///
+    /// `None` = **nothing retired is set** (the overwhelming majority of
+    /// toolpaths, and every project that never touched the dial). It is not
+    /// a measurement, it is a compatibility notice: the field is still
+    /// deserialized so old projects load unchanged, and this is what stops
+    /// that from being silent.
+    ///
+    /// **Boxed** for the same reason as [`Self::dropped_band`]: keeping
+    /// `ToolpathStats` small for the clones it takes per toolpath. Not,
+    /// since C5, because of `clippy::large_enum_variant`.
+    ///
+    /// Report-only: no gate consumes it, and generation is unaffected.
+    pub deprecated_dial: Option<Box<DeprecatedDialFinding>>,
+    /// PR-6a (H2.3): an offset stepover this operation DERIVED from the
+    /// canonical reach policy instead of taking from a dial, together with
+    /// the envelope-scaled number that used to be used there.
+    ///
+    /// EMPTY = **this operation derived no stepover** (anything that is not
+    /// a `UnifiedFinish` running its crease/pencil claims pipeline, and not
+    /// a rest-analysis post-pass that sized its own). These are not
+    /// measurements of the part and not defect claims; they are the audit
+    /// trail for numbers the operator cannot see in any dial.
+    ///
+    /// C8: a `Vec`, not `Option<Box<..>>`. Two derivations can occur on one
+    /// toolpath — the operation's own routing site and PR-7's generic
+    /// rest-analysis post-pass — and the slot kept only the first. Reading
+    /// ergonomics improve rather than degrade: `iter().filter(..)` replaces
+    /// `as_deref().map(..)`, and "did anything derive a stepover" is
+    /// `!is_empty()`.
+    ///
+    /// The `Box` is gone with the `Option`: the finding is 6 words, and a
+    /// `Vec` is 3 whether or not it allocates. Empty is the common case and
+    /// allocates nothing.
+    ///
+    /// Report-only: no gate consumes it.
+    pub derived_stepovers: Vec<DerivedStepoverFinding>,
+    /// C8: a planned finish band whose Z ladder the resolved heights
+    /// SHORTENED while it still cut. `None` = **no band was partially
+    /// clipped**, or nothing that plans bands ran — never "measured zero".
+    /// Its loud sibling is [`Self::dropped_band`]; the two are disjoint by
+    /// construction.
+    ///
+    /// **Boxed** for the same reason as [`Self::dropped_band`]: keeping
+    /// `ToolpathStats` small for the clones it takes per toolpath.
+    ///
+    /// Report-only: no gate consumes it.
+    pub clipped_band: Option<Box<ClippedBandFinding>>,
+    /// PR-8b (H3): how far a ramp-finish descent had to be RAISED because the
+    /// cutter could not hold the commanded depth there.
+    ///
+    /// `None` = **no ramp descent ran**, so nothing was measured. `Some` with
+    /// `clamped_points == 0` and an unmoved ladder bottom is the honest
+    /// "a ramp ran and every commanded depth was holdable" — the A/M9
+    /// distinction, applied to a second measure (X-19).
+    ///
+    /// **Boxed** for the same reason as [`Self::dropped_band`]: keeping
+    /// `ToolpathStats` small for the clones it takes per toolpath. Not,
+    /// since C5, because of `clippy::large_enum_variant`.
+    ///
+    /// Report-only: no gate consumes it. The clamp itself is not report-only
+    /// — it changes emitted geometry — but nothing downstream branches on
+    /// this record.
+    pub ramp_reach_clamp: Option<Box<crate::finish::ramp_finish::RampReachClamp>>,
+    /// A/M6: which rest reference this operation's crease/pencil claims
+    /// pipeline ran against, and whether that was pinned or derived.
+    ///
+    /// `None` = **the claims pipeline did not run**, so no reference was
+    /// resolved. That is every operation except a `UnifiedFinish` with
+    /// `pencil_claims = true` — including a `UnifiedFinish` with the dial at
+    /// its default, where `claims_reference` is inert and reporting it would
+    /// be reporting a decision nothing acted on.
+    ///
+    /// NOT boxed, unlike its neighbours: the payload is one fieldless enum
+    /// plus a `bool`, so a `Box` would cost a pointer to save nothing.
+    ///
+    /// Report-only: no gate consumes it. The *resolution* is not report-only
+    /// — it decides which field the detector reads — but nothing downstream
+    /// branches on this record.
+    pub claims_reference: Option<ClaimsReferenceFinding>,
+    /// A/M7 gate 1: retract round-trip count, split by in-routing-node vs
+    /// between-nodes. See [`RetractTripCount`] for the counting rule and
+    /// the X-19 availability contract of the in/out split.
+    ///
+    /// `None` = **this stats struct never walked a move list**
+    /// (`ToolpathStats::default()` placeholders, and results built before a
+    /// real generation ran) — never "zero trips". Every stats struct that
+    /// went through [`crate::compute::stats::compute_stats_with_spans`] or
+    /// the production `generate_toolpath` literal carries `Some`, even on a
+    /// toolpath with zero rapids (`total == 0` is a measured answer, not an
+    /// absent one).
+    ///
+    /// Report-only: no gate consumes it.
+    pub retract_trips: Option<RetractTripCount>,
+    /// A4: this rest pass will remove nothing against the reference it was
+    /// planned on. See [`ZeroRemovalFinding`].
+    ///
+    /// `None` = **not measured or nothing to report**, and the two are
+    /// deliberately not split here: the measurement only runs where both a
+    /// resolved machined-stock reference and emitted cutting geometry exist,
+    /// and a rest pass that DOES reach material is the overwhelming default.
+    /// Unlike the A/M9 channels this is not an area anyone would build a
+    /// ratio from, so the three-valued contract would buy a distinction with
+    /// no consumer.
+    ///
+    /// NOT boxed: three words, and the pointer would cost more than it saves
+    /// (same reasoning as [`Self::claims_reference`]).
+    ///
+    /// Report-only: no gate consumes it and generation is unaffected.
+    pub zero_removal: Option<ZeroRemovalFinding>,
+    /// Checkpoint C (Q1 / D-2): how many times this generation's 2D offsets
+    /// came back with a [`crate::polygon::OffsetFailure`] instead of a
+    /// result — a `cavalier_contours` panic the chokepoint contained, or an
+    /// input one of its own guards refused.
+    ///
+    /// **Three-valued, the A/M9 X-19 contract**, and this one earns it:
+    ///
+    /// * `None` — **not measured**. The operation runs no 2D offset at all
+    ///   (every 3D family, drill), or it runs one through the plain
+    ///   [`crate::polygon::offset_polygon`] name that drops the channel. Do
+    ///   NOT read this as "no failures".
+    /// * `Some(0)` — **measured clean**: every offset this operation made
+    ///   either produced geometry or collapsed honestly.
+    /// * `Some(n)` — `n` offset CALLS failed. Not `n` distinct polygons: a
+    ///   depth-stepped operation re-offsets the same geometry once per Z
+    ///   level, so a single bad ring on a ten-level pocket reports ten.
+    ///
+    /// Why it needs a channel at all: before this, a contained panic and a
+    /// geometric collapse were the same `Vec::new()` and the only trace was
+    /// a `tracing::warn!` in a process that usually installs no subscriber.
+    /// The measured cost of that is F-12 — an inlay's female pocket whose
+    /// ring cascade stopped early on a `debug_assert!` in a transitive
+    /// dependency, left material standing, and reported a successful
+    /// generate.
+    ///
+    /// **Debug/release divergence applies** (Checkpoint C, Q4 option a).
+    /// Most of the assertions counted here are `debug_assert!`s, so the same
+    /// project generated in release can legitimately report a lower count
+    /// while the library proceeds on unvalidated input instead. See
+    /// [`crate::polygon`]'s `## Failure contract`.
+    ///
+    /// Report-only: no gate consumes it and generation is unaffected.
+    pub offset_library_failures: Option<usize>,
+    /// Checkpoint C (Q2 / D-3a option b): the machining-boundary containment
+    /// this operation asked for **collapsed**, so the toolpath was emitted
+    /// unclipped. See [`BoundaryClipDroppedFinding`].
+    ///
+    /// `None` = no containment was dropped: either no boundary clip ran, or
+    /// it ran and produced geometry. There is no "measured zero" to
+    /// distinguish here — the finding is an event, not a quantity — so the
+    /// two-valued reading is the honest one, the same call
+    /// [`Self::zero_removal`] makes and for the same reason.
+    ///
+    /// The **failure** case is not here, because it is not a finding: an
+    /// empty containment caused by a contained offset failure REFUSES the
+    /// generate instead (`OperationError`). This slot is only ever the
+    /// legitimate collapse.
+    ///
+    /// Report-only: no gate consumes it. The toolpath is real and runnable;
+    /// what it is not is contained.
+    pub boundary_clip_dropped: Option<BoundaryClipDroppedFinding>,
+    /// F4 (multi-tool island finishing, 2026-08-23): this operation carries a
+    /// non-default rest-CLAIMS dial that its own configuration never applies.
+    /// See [`InertClaimsDialFinding`].
+    ///
+    /// `None` = **nothing inert is set**. Like [`Self::deprecated_dial`] this
+    /// is not a measurement of the part, it is a statement about the config,
+    /// so the two-valued reading is the honest one — there is no "measured
+    /// zero" for "the operator set nothing unusual".
+    ///
+    /// NOT boxed: five words, the same call [`Self::claims_reference`] makes.
+    ///
+    /// Report-only, and deliberately so: emitting it must not change the
+    /// emitted toolpath by one byte. The dial is left inert — making it
+    /// suddenly apply would silently re-cut every shipped project that
+    /// carries one — and refusing would black them out. What changes is that
+    /// somebody says so.
+    pub inert_claims_dial: Option<InertClaimsDialFinding>,
+    /// C2 (`planning/thin_organic_2026-08-27/PROGRAMME.md` Track C): what
+    /// the shallow band's monotone-cell decomposition did. See
+    /// [`crate::finish::unified_finish::MonotoneCellTotals`].
+    ///
+    /// This is the three-valued family, not the two-valued one:
+    ///
+    /// * `None` — **not measured**. The operation is not a `unified_finish`,
+    ///   or it is one with `monotone_cell_decomposition` off, or it emitted
+    ///   no Shallow region at all. Never read as "nothing was decomposed".
+    /// * `Some(t)` with `t.membership_fallbacks == 0 && t.empty_fallbacks ==
+    ///   0` — **measured clean**: every Shallow region was decomposed and
+    ///   emitted as cells.
+    /// * `Some(t)` with a non-zero fallback count — that many regions fell
+    ///   back to the undivided raster. The emitted path is safe (it is the
+    ///   pre-C2 one for those regions); what the count reports is that the
+    ///   decomposition could not reproduce the region's own emitted lattice.
+    ///
+    /// NOT boxed: five words, the same call [`Self::inert_claims_dial`]
+    /// makes.
+    ///
+    /// Report-only: no gate consumes it, and recording it changes no
+    /// geometry.
+    ///
+    /// Published WHOLE (or `null`) on both per-toolpath diagnostic wires —
+    /// [`crate::session::ToolpathDiagnostic`]'s `Serialize` (MCP
+    /// `get_diagnostics`) and the CLI's `tp_*.json` — because the five
+    /// counters only mean anything together.
+    pub monotone_cells: Option<crate::finish::unified_finish::MonotoneCellTotals>,
+    /// S-4 (G-BYTE): the identity of the machined-stock snapshot this
+    /// generation consumed. See [`StockSnapshotStamp`].
+    ///
+    /// **Provenance, not a measurement.** It records *which stock* the
+    /// generator was handed, so two generations can be compared on equal
+    /// terms — the thing the G-BYTE incident could not do.
+    ///
+    /// `None` = **this generation consumed no machined-stock snapshot**: a
+    /// `StockSource::Fresh` op with no prior simulation, or a stats struct
+    /// that never went through a real generation
+    /// ([`ToolpathStats::default`] placeholders). This is the two-valued
+    /// contract [`Self::zero_removal`] and [`Self::boundary_clip_dropped`]
+    /// use, and for the same reason: there is no "measured zero" for an
+    /// identity, so the three-valued X-19 split would buy a distinction with
+    /// no consumer. It is **not** the A/M9 three-valued family — do not read
+    /// an absent stamp as "the snapshot was empty".
+    ///
+    /// NOT boxed: four words, the same call [`Self::claims_reference`]
+    /// makes.
+    ///
+    /// Report-only: no gate consumes it, nothing branches on it, and
+    /// generation is byte-identical whether or not it is populated.
+    pub stock_snapshot: Option<StockSnapshotStamp>,
+    /// F3 (2026-08-23): what the
+    /// [`crate::geometry::region_mask::MAX_REST_REGIONS`] cap did to this operation's
+    /// rest-region extraction. See [`crate::geometry::region_mask::RegionCapReport`].
+    ///
+    /// **Three-valued, the A/M9 X-19 contract:**
+    ///
+    /// * `None` — **not measured**. This operation ran no rest-region
+    ///   extraction (anything without `rest_analysis.enabled`, and every
+    ///   stats struct that never went through a real generation). Do NOT
+    ///   read it as "nothing was truncated".
+    /// * `Some(r)` with `r.truncated() == false` — **measured clean**: an
+    ///   extraction ran and every island it found survived.
+    /// * `Some(r)` with `r.truncated() == true` — `r.dropped()` islands were
+    ///   discarded; `r.total_before_cap` is what the mask actually produced.
+    ///
+    /// Why it needs a channel: the cap's only trace was a `tracing::warn!`,
+    /// and a 64-long region list is indistinguishable from a complete one at
+    /// every consumer. A tier/rest map on real terrain is exactly the input
+    /// that breaches it (`planning/multitool_2026-08-23/T2_FINDINGS.md`
+    /// §3.4).
+    ///
+    /// NOT boxed: three words, the same call [`Self::claims_reference`]
+    /// makes.
+    ///
+    /// Report-only: no gate consumes it, and the cap's behaviour is
+    /// unchanged — largest-by-area first, exactly as before.
+    pub region_cap: Option<crate::geometry::region_mask::RegionCapReport>,
+    /// Phase O item 3 (2026-08-27): what the INTRA-REGION stay-down relink
+    /// did, and — the reason this channel exists — why it declined.
+    ///
+    /// T4 measured **19,132 intra-node retract round trips** (16,140 s of
+    /// rapids) on a `unified_finish` op whose relink was ON at a 6.0 mm
+    /// hookup (`planning/multitool_2026-08-23/ORCHESTRATION_PLAN.md` §0).
+    /// The relinker already counted every refusal reason separately, but the
+    /// totals reached nothing but a `tracing::info!` line, so no measurement
+    /// could attribute those retracts to `too_far` versus `off_surface`
+    /// versus `outside_boundary` versus a ceiling that reached `safe_z`.
+    ///
+    /// **Three-valued, the A/M9 X-19 contract:**
+    ///
+    /// * `None` — **not measured**. This operation ran no link stage: a
+    ///   family that has none, or one whose own hookup dial is `0.0`, which
+    ///   disables the pass. Do NOT read it as "nothing retracted".
+    /// * `Some(t)` with `t.surface_links > 0` — the pass ran and kept
+    ///   junctions down.
+    /// * `Some(t)` with every counter zero — the pass ran and found no
+    ///   junction to act on (one fragment per region).
+    ///
+    /// **Four families write here (G-LINKVISIBLE, 2026-09-09)**, each
+    /// through its own dial: `unified_finish` (`intra_region_hookup_mm`),
+    /// `scallop` (`intra_pass_hookup_mm`), `drop_cutter` and `waterline`
+    /// (`hookup_mm`). They share the slot because they share the KERNEL —
+    /// every one of them sums a [`crate::finish::surface_link::RelinkReport`], so
+    /// the counters mean the same thing in each — and because one toolpath
+    /// is one operation, so which dial produced a reading is never
+    /// ambiguous. Until G-LINKVISIBLE only `unified_finish` wrote here and
+    /// the other three logged their totals and dropped them, which left the
+    /// ACCEPTANCE measure for G-LINKSTAGE readable only by scraping a
+    /// headless run's stdout.
+    ///
+    /// The PENCIL does not write here. It runs a different linker with a
+    /// different counter set; see [`Self::pencil_link`].
+    ///
+    /// NOT boxed: eight words, the same call [`Self::region_cap`] makes.
+    ///
+    /// Report-only: no gate consumes it and no verdict changes on it.
+    pub relink: Option<crate::finish::unified_finish::RelinkTotals>,
+    /// G-LINKVISIBLE (2026-09-09): what the PENCIL's own link stage did.
+    ///
+    /// **The same three-valued contract [`Self::relink`] documents:**
+    ///
+    /// * `None` — **not measured**. Not a pencil, or a pencil whose
+    ///   detector produced no centreline at all, so the emitter — and with
+    ///   it every junction decision — never ran. Do NOT read it as "nothing
+    ///   retracted".
+    /// * `Some(r)` with `r.linked_at_depth > 0` — the stage ran and removed
+    ///   entries.
+    /// * `Some(r)` with every counter zero — the stage ran and found no
+    ///   junction to act on (a single emitted run).
+    ///
+    /// **Why its own slot rather than [`Self::relink`].** The pencil's
+    /// report carries eight counters against
+    /// [`crate::finish::unified_finish::RelinkTotals`]' six, and the two that a
+    /// mapping would have to drop —
+    /// [`crate::finish::pencil::PencilLinkReport::hop_too_far`] and this pass's own
+    /// at-depth/hop split — are exactly the ones that name the pencil's
+    /// binding constraint. A measurement squeezed into another
+    /// measurement's shape reads clean and means something else.
+    ///
+    /// NOT boxed: eight words, the same call [`Self::region_cap`] makes.
+    ///
+    /// Report-only: no gate consumes it and no verdict changes on it.
+    pub pencil_link: Option<crate::finish::pencil::PencilLinkReport>,
+}
+
+/// S-4 (G-BYTE): which machined-stock snapshot a generation consumed.
+///
+/// # The incident this exists for
+///
+/// W10-LV re-exported a rest-fed finish op at the same parameter value it
+/// had at baseline and got **135 change-hunks** — ~140 `G0` approach heights
+/// moved 0.05–0.15 mm and 12 of 180 118 cutting lines were dropped. Two
+/// causes fit that signature: generator nondeterminism, or the two
+/// generations having consumed *different* machined-stock snapshots. They
+/// could not be told apart, because **nothing recorded which snapshot a
+/// generation had been handed**.
+///
+/// The frozen-snapshot A/B (`tests/frozen_snapshot_regeneration_s4.rs`,
+/// 2026-08-12) settled the verdict: against ONE frozen snapshot, two
+/// generations of the same op at the same parameters are byte-identical —
+/// move list, spans and emitted G-code alike (187 557 B / 7 208 lines, zero
+/// hunks). Re-simulating at the *same* cell also reproduces the snapshot
+/// exactly and stays byte-identical. Re-simulating at a *different* cell
+/// moves the snapshot and moves the output. So the incident was snapshot
+/// drift, and what was missing was never determinism — it was provenance.
+///
+/// This stamp is that provenance. It does not prevent drift; it makes drift
+/// **visible**, so a future comparison can see that its two arms were not
+/// handed the same stock before it concludes anything about the generator.
+///
+/// # What equality means
+///
+/// Two stamps compare equal when the snapshots were sampled on the same
+/// dexel grid AND carry the same material. Equal stamps mean a comparison
+/// between those two generations is fair. Unequal stamps mean it is not — a
+/// §6.1 rule-6 violation, and any byte difference is attributable to the
+/// stock before it is attributable to the generator.
+///
+/// The digest is content-derived, not identity-derived: re-running the same
+/// simulation produces a *new* `Arc` holding the *same* material, and that
+/// must read as the same snapshot (measured — arm B1). A pointer or a
+/// counter would have called it a difference and raised a false alarm.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StockSnapshotStamp {
+    /// Dexel cell size (mm) the snapshot was sampled on, as raw bits so the
+    /// type can stay `Eq`. Read it with [`Self::cell_size_mm`].
+    ///
+    /// Carried beside the digest because it is the field that moves in the
+    /// overwhelmingly common drift case (two simulation events at different
+    /// resolutions), and a reader should not have to re-derive it from a
+    /// hash to say *why* two generations differed.
+    cell_size_bits: u64,
+    /// Z-grid rows of the snapshot.
+    pub rows: usize,
+    /// Z-grid columns of the snapshot.
+    pub cols: usize,
+    /// FNV-1a over the snapshot's grid geometry and every ray's material
+    /// segments, on all three axes. Equal digests mean equal stock.
+    ///
+    /// Not a cryptographic hash and not stable across releases of the dexel
+    /// layout — it exists to answer "same or not, within one process/build",
+    /// which is exactly the question a before/after comparison asks.
+    pub digest: u64,
+}
+
+impl StockSnapshotStamp {
+    /// Cell size (mm) the snapshot was sampled on.
+    #[must_use]
+    pub fn cell_size_mm(&self) -> f64 {
+        f64::from_bits(self.cell_size_bits)
+    }
+
+    /// Stamp a snapshot.
+    ///
+    /// Cost is one pass over the dexel rays — the same data the simulation
+    /// that produced them just wrote, and orders of magnitude cheaper than
+    /// producing them. Measured 2026-08-12 on the S-4 fixture (161×161 Z-grid
+    /// at 0.25 mm): under a millisecond, against a ~1.3 s generation.
+    #[must_use]
+    pub fn of(stock: &crate::dexel_stock::TriDexelStock) -> Self {
+        const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+        const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+
+        let mut h: u64 = FNV_OFFSET_BASIS;
+        let mut eat = |word: u64| {
+            for byte in word.to_le_bytes() {
+                h ^= u64::from(byte);
+                h = h.wrapping_mul(FNV_PRIME);
+            }
+        };
+
+        let bb = stock.stock_bbox;
+        for v in [bb.min.x, bb.min.y, bb.min.z, bb.max.x, bb.max.y, bb.max.z] {
+            eat(v.to_bits());
+        }
+
+        // All three axes: an X/Y grid that diverges from the Z grid is a
+        // different snapshot even when the Z grid agrees.
+        for grid in [
+            Some(&stock.z_grid),
+            stock.x_grid.as_ref(),
+            stock.y_grid.as_ref(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            eat(grid.rows as u64);
+            eat(grid.cols as u64);
+            eat(grid.cell_size.to_bits());
+            eat(grid.origin_u.to_bits());
+            eat(grid.origin_v.to_bits());
+            // `DexelRay` IS the segment list (a `SmallVec<[DexelSegment; 1]>`),
+            // so the ray's own length is its segment count.
+            for ray in &grid.rays {
+                eat(ray.len() as u64);
+                for seg in ray {
+                    eat(u64::from(seg.enter.to_bits()));
+                    eat(u64::from(seg.exit.to_bits()));
+                }
+            }
+        }
+
+        Self {
+            cell_size_bits: stock.z_grid.cell_size.to_bits(),
+            rows: stock.z_grid.rows,
+            cols: stock.z_grid.cols,
+            digest: h,
+        }
+    }
+}
+
+/// Checkpoint C (Q2): a boundary containment that collapsed, and the clip
+/// that was therefore not applied.
+///
+/// F-1 is the incident this exists for. `boundary::effective_boundary` turns
+/// a containment setting into geometry with a single offset, and
+/// `clip_annotated_to_boundary_set`'s documented contract is that an EMPTY
+/// boundary slice *"is not an error and not a clip: the toolpath passes
+/// through with an identity mapping."* Both call sites implement exactly
+/// that. So an operator who set `Inside` — "keep the whole cutter inside this
+/// boundary", a safety containment — could get a path with no containment at
+/// all, and nothing anywhere said so.
+///
+/// The pass-through itself is **kept**, because the cause it was written for
+/// is real: when the tool is larger than the stock nothing is machinable
+/// anyway, and emitting the unclipped path is better than silently deleting
+/// it. What was missing is the operator being told. That is this finding.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BoundaryClipDroppedFinding {
+    /// The containment mode that was requested and not applied. `Center`
+    /// cannot appear: it makes no offset, so it cannot collapse.
+    pub containment: BoundaryContainment,
+    /// Tool diameter (mm) the containment was insetting by. Half of this is
+    /// the offset distance that ate the boundary, so it is the number that
+    /// makes "the tool is larger than the stock" checkable rather than
+    /// asserted.
+    pub tool_diameter_mm: f64,
+    /// How many source polygons went into the containment before the offset.
+    /// `1` on the single-polygon path; on the `DerivedRestRegions` path this
+    /// is the region count, and *every one* of them collapsed — a rest
+    /// boundary made of many small islands eaten by the inset reads very
+    /// differently from one stock rectangle that was too small.
+    pub source_region_count: usize,
+}
+
+impl BoundaryClipDroppedFinding {
+    /// The operator-facing sentence, without a leading label and without a
+    /// trailing newline.
+    ///
+    /// **One sentence, two surfaces.** The diagnostic adapter
+    /// (`diagnostics::adapters::from_generation`) and the narration
+    /// (`narrate`) both render this finding, and each wrote its own wording
+    /// until 2026-09-17. The two had already drifted. Each surface adds its
+    /// own frame — the narration its label and newline, the adapter its
+    /// `Diagnostic` id and severity — and neither restates the sentence.
+    #[must_use]
+    pub fn message(&self) -> String {
+        format!(
+            "`{containment:?}` containment was requested and its offset \
+             collapsed to nothing across all {regions} source region(s) at a \
+             {dia:.3} mm tool, so this toolpath was emitted with NO boundary \
+             clip — not with a smaller one. The usual cause is benign: the \
+             tool is wider than the region it was asked to stay inside, \
+             nothing there is machinable, and leaving the path unclipped is \
+             better than silently deleting it. But nothing is containing this \
+             path. Check it against the boundary you meant before running it, \
+             or use a smaller tool. [Generation stage; report-only — no gate \
+             consumes this.]",
+            containment = self.containment,
+            regions = self.source_region_count,
+            dia = self.tool_diameter_mm,
+        )
+    }
+}
+
+/// A/M7 gate 1: how many retract round trips a toolpath took, and whether
+/// each one happened INSIDE a planner routing node or BETWEEN two of them.
+///
+/// The reason this channel exists: finishing air cost is COUNT-bound, not
+/// distance-bound — a hop pays two ~`safe_z` Z legs whatever its XY length
+/// — and `ToolpathStats::rapid_distance` cannot show that. The v3 process-
+/// proof campaign found 15 311 of 15 363 measured trips landing INSIDE a
+/// single routing node, which is why the split has to travel with the
+/// count rather than being left as a derivation nobody performs.
+///
+/// A "trip" is one maximal contiguous run of
+/// [`crate::toolpath::MoveType::Rapid`] moves — the exact rule
+/// `tests/v3_cascade_ab.rs`'s `rapid_round_trips` helper uses, reproduced
+/// bit-for-bit in [`crate::compute::stats::compute_retract_trips`] so the
+/// production channel and that harness can never disagree about what counts
+/// as one trip.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct RetractTripCount {
+    /// Total retract round trips. Always populated once a stats struct has
+    /// walked a move list — needs no spans, so this is never `None` inside
+    /// a `Some(RetractTripCount)`.
+    pub total: usize,
+    /// Of `total`, how many trips STARTED inside a planner territory
+    /// `Region` node (`RegionSpanRole::Node`). `None` when the split could
+    /// not be trusted — no spans were supplied, or
+    /// `AnnotatedToolpath::spans_valid` was `false` at compute time (X-19:
+    /// an untrustworthy split must report as unmeasured, never as a
+    /// confident zero).
+    pub in_node: Option<usize>,
+    /// Of `total`, how many trips started between two nodes (or outside
+    /// any node). Same availability rule as [`Self::in_node`]. When both
+    /// are `Some`, `in_node + between_nodes == total`.
+    pub between_nodes: Option<usize>,
+    /// Rapid distance (mm) attributable to the in-node trips. Same
+    /// availability rule as [`Self::in_node`].
+    pub in_node_rapid_mm: Option<f64>,
+    /// Rapid distance (mm) attributable to the between-node trips. Same
+    /// availability rule as [`Self::between_nodes`]. When both mm fields
+    /// are `Some`, they sum to [`ToolpathStats::rapid_distance`] (up to
+    /// floating-point accumulation order).
+    pub between_nodes_rapid_mm: Option<f64>,
+}
+
+impl RetractTripCount {
+    /// `true` when the in-node / between-node split is present and can be
+    /// trusted (spans were supplied and valid at compute time).
+    ///
+    /// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
+    /// only callers. No production path reads it.
+    #[must_use]
+    pub const fn has_split(&self) -> bool {
+        self.in_node.is_some() && self.between_nodes.is_some()
+    }
+}
+
+/// A4 (Checkpoint E): a rest pass whose emitted cutting geometry never
+/// reaches under the reference stock it was planned against.
+///
+/// H4 §3.2 Finding 1 is the incident: on the grooved block a same-tool
+/// cascade's rest pass cost +43.9 s (+45% of the arm's runtime), 1 294 mm of
+/// cutting and 48 retract round trips, and removed **zero** material —
+/// rendered, not inferred: the cross-arm column difference was uniformly
+/// zero over all 96 641 columns. The claims pipeline held both halves of the
+/// answer the whole time (the reference stock, and the territory it planned
+/// on), and nothing joined them up.
+///
+/// **A report, not a refusal**, on the operator's ruling: a pass that finds
+/// nothing is sometimes exactly what was wanted. Generation succeeds, the
+/// toolpath is untouched, and no verdict moves.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ZeroRemovalFinding {
+    /// Deepest the tip reached BELOW the reference stock surface, mm, over
+    /// every sampled cutting position. `<= 0` is the finding's whole
+    /// premise: the tool never got under the surface, so there is nothing
+    /// for it to remove.
+    ///
+    /// Negative values are meaningful — they say how far ABOVE the stock the
+    /// pass flew, which separates "riding its own previous cut" (≈ 0) from
+    /// "aimed at a surface that is not there" (millimetres).
+    pub deepest_engagement_mm: f64,
+    /// Positions the verdict rests on. Never `0` on a recorded finding: with
+    /// nothing sampled there is no measurement, and an absent measurement is
+    /// not a defect claim (X-19).
+    pub sampled_positions: usize,
+    /// What the pass costs anyway, mm of cutting travel. This is the number
+    /// that makes the finding worth reading rather than a curiosity — §3.2's
+    /// pass paid 1 294 mm for nothing.
+    pub cutting_distance_mm: f64,
+    /// The threshold this verdict was taken against, mm — derived from the
+    /// REFERENCE's resolution, never dialled
+    /// (`compute::execute::zero_removal_engagement_floor_mm`).
+    ///
+    /// It travels with the finding because a reader must be able to see how
+    /// much room there was: a deepest reach of 18 µm against a 21 µm floor
+    /// is a different statement from 0 µm against 21 µm, and the second is
+    /// the only one that means "nothing at all".
+    pub floor_mm: f64,
+}
+
+impl ZeroRemovalFinding {
+    /// The operator-facing sentence, without a leading label and without a
+    /// trailing newline.
+    ///
+    /// **One sentence, two surfaces.** The diagnostic adapter
+    /// (`diagnostics::adapters::from_generation`) and the narration
+    /// (`narrate`) both render this finding, and each wrote its own wording
+    /// until 2026-09-17. The two had already drifted. Each surface adds its
+    /// own frame — the narration its label and newline, the adapter its
+    /// `Diagnostic` id and severity — and neither restates the sentence.
+    #[must_use]
+    pub fn message(&self) -> String {
+        format!(
+            "This rest pass removes no material: over {samples} sampled \
+             cutting positions the tool never gets under the stock the prior \
+             operation left (deepest reach {deepest:+.4} mm against a \
+             {floor:.4} mm floor, which is what the reference's own sampling \
+             can manufacture; positive would be INTO material). It still \
+             costs {cutting:.0} mm of cutting travel plus its retracts. Most \
+             often the reference is not what was intended — check that the \
+             prior operation actually left something here, and that this \
+             pass's stock-to-leave is BELOW what the prior pass left. Keeping \
+             the pass is a legitimate choice; running it unknowingly is not. \
+             [Material standing above the CUTTER's own surface, mm; measured \
+             at generation against the prior stock snapshot; sampled along \
+             the swept path at the stock grid cell. Report-only — no gate \
+             consumes this.]",
+            samples = self.sampled_positions,
+            deepest = self.deepest_engagement_mm,
+            floor = self.floor_mm,
+            cutting = self.cutting_distance_mm,
+        )
+    }
+}
+
+/// Which rest reference a claims pipeline resolved to, and under what
+/// conditions (A/M6).
+///
+/// The finding exists because the resolution is invisible everywhere else:
+/// `claims_reference` is a three-valued dial whose `auto` setting means
+/// "decide from context", and the context — whether a simulated prior stock
+/// is in scope — is not a field of any config. Before A/M6 the only trace of
+/// the decision was a `tracing::warn!` on one of the six outcomes, in a
+/// process that usually installs no subscriber.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClaimsReferenceFinding {
+    /// What the dial said, what was used, and whether a machined prior was
+    /// in scope — see [`crate::finish::unified_finish::ClaimsReferenceResolution`].
+    pub resolution: crate::finish::unified_finish::ClaimsReferenceResolution,
+    /// The operation also asked for S4 rest-territory confinement
+    /// (`territory_clip`), which only runs under a machined-stock reference.
+    /// When this is `true` and the resolution is a self-probe one, the
+    /// confinement was SKIPPED — the difference between a rest pass and an
+    /// all-over pass.
+    pub territory_clip_requested: bool,
+}
+
+impl ClaimsReferenceFinding {
+    /// `true` when the operator asked for rest-territory confinement and the
+    /// resolved reference cannot deliver it, so the operation quietly became
+    /// an all-over pass.
+    #[must_use]
+    pub const fn territory_clip_skipped(&self) -> bool {
+        self.territory_clip_requested
+            && matches!(
+                self.resolution.reference(),
+                crate::finish::unified_finish::CreaseReference::SelfProbe
+            )
+    }
+}
+
+/// F4 (2026-08-23): a rest-CLAIMS dial set away from its default on a
+/// `UnifiedFinish` whose own configuration never applies it.
+///
+/// # The measurement this exists for
+///
+/// The multi-tool T4 arm branched the shipped C2 keeper into a two-tier
+/// ladder and moved the fine tier's `min_rest_depth_mm` from 0.03 to 0.05 —
+/// above the coarse tier's own cusp height, which should have shrunk the fine
+/// tier's territory sharply. The emitted toolpath came back **byte-identical**.
+///
+/// The reason is structural: `min_rest_depth_mm` is only ever consumed by the
+/// S4 mask-AND (`unified_finish`'s step 2.6), and that block is guarded on
+/// `territory_clip`. With `territory_clip = false` the keep-mask is never
+/// built, so the dial steers nothing at all — the "rest tier" was a full-board
+/// finish wearing a rest pass's parameters, and 23 916 s of runtime was spent
+/// before anything said so.
+///
+/// # Why this is a REPORT and not a fix or a refusal
+///
+/// Both alternatives break shipped projects. Making the dial suddenly apply
+/// would re-cut every project that carries a non-default value with
+/// `territory_clip` off — including the C2 keeper's own neighbours — and
+/// refusing would black them out at generate time. Neither is a change an
+/// operator asked for. So the emitted geometry is untouched, byte for byte,
+/// and what changes is that the operator is told which dial is inert and
+/// which switch would make it live.
+///
+/// # What "inert" means per dial (read the flags, not the values)
+///
+/// The two dials fail differently, and the finding says which:
+///
+/// * [`Self::min_rest_depth_mm`] is inert whenever `territory_clip` is
+///   `false` — unconditionally, because the mask-AND is its only consumer.
+/// * [`Self::claims_reference`] is inert only when `pencil_claims` is ALSO
+///   `false`. With claims on it still chooses which field the crease detector
+///   reads, which is a real effect even with no confinement — so a
+///   non-default reference alone is NOT reported on a claims-running op.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct InertClaimsDialFinding {
+    /// The value the operator dialled (mm).
+    pub min_rest_depth_mm: f64,
+    /// What it would have been left at — `UnifiedFinishConfig`'s shipped
+    /// default. Carried so a reader can see the size of the intent rather
+    /// than having to look the default up.
+    pub default_min_rest_depth_mm: f64,
+    /// `true` when [`Self::min_rest_depth_mm`] differs from its default and
+    /// therefore steered nothing.
+    pub min_rest_depth_inert: bool,
+    /// The reference the operator pinned.
+    pub claims_reference: crate::finish::unified_finish::ClaimsReference,
+    /// `true` when [`Self::claims_reference`] is non-default AND the claims
+    /// pipeline is off, so it too steered nothing.
+    pub claims_reference_inert: bool,
+    /// Whether this operation's claims pipeline ran at all. `false` is the
+    /// stronger cause and is named separately in the message: with claims off
+    /// there is no rest field to threshold in the first place.
+    pub pencil_claims: bool,
+}
+
+impl InertClaimsDialFinding {
+    /// The inert dials, named with their values, for a one-line report.
+    ///
+    /// Never empty on a recorded finding: the finding is only constructed
+    /// when at least one flag is set.
+    #[must_use]
+    pub fn dials(&self) -> String {
+        let mut parts: Vec<String> = Vec::new();
+        if self.min_rest_depth_inert {
+            parts.push(format!(
+                "`min_rest_depth_mm` = {value:.4} (default {default:.4})",
+                value = self.min_rest_depth_mm,
+                default = self.default_min_rest_depth_mm,
+            ));
+        }
+        if self.claims_reference_inert {
+            let reference = self.claims_reference;
+            parts.push(format!("`claims_reference` = {reference:?}"));
+        }
+        parts.join(" and ")
+    }
+
+    /// Why those dials did nothing, naming the switch that would make them
+    /// live. Always names `territory_clip`, because that is the gate on the
+    /// only consumer either dial has for confinement.
+    #[must_use]
+    pub const fn why(&self) -> &'static str {
+        if self.pencil_claims {
+            "`territory_clip = false`, and the S4 mask-AND it gates is the \
+             only thing that reads these numbers, so no rest-territory \
+             confinement was applied and this pass covered its full territory"
+        } else {
+            "`territory_clip = false` AND `pencil_claims = false`: the claims \
+             pipeline never ran, so no rest field was even built, and the S4 \
+             mask-AND that `territory_clip` gates — the only consumer of these \
+             numbers — never ran either. This pass covered its full territory"
+        }
+    }
+
+    /// The operator-facing sentence, without a leading label and without a
+    /// trailing newline.
+    ///
+    /// **One sentence, two surfaces.** The diagnostic adapter
+    /// (`diagnostics::adapters::from_generation`) and the narration
+    /// (`narrate`) both render this finding, and each wrote its own wording
+    /// until 2026-09-17. The two had already drifted. Each surface adds its
+    /// own frame — the narration its label and newline, the adapter its
+    /// `Diagnostic` id and severity — and neither restates the sentence.
+    #[must_use]
+    pub fn message(&self) -> String {
+        format!(
+            "{dials} — but {why}. This operation therefore cut its FULL \
+             territory, not rest islands, and its emitted toolpath is \
+             byte-identical to what the default value would have produced. \
+             Set `territory_clip = true` (which also needs \
+             `pencil_claims = true` and a machined-stock reference in scope) \
+             to make the number live, or return it to its default. [Read from \
+             this operation's config at generation; report-only — no gate \
+             consumes this, and recording it changes no emitted motion.]",
+            dials = self.dials(),
+            why = self.why(),
+        )
+    }
+}
+
+/// A user-facing dial that a project still sets but the code no longer
+/// reads (PR-5, H2.2).
+///
+/// The alternative to reporting is one of the two failure modes this
+/// programme keeps finding: silently ignore the value (the operator's
+/// setting stops doing anything, with no way to tell), or refuse to load
+/// the project (breaks every saved job for a dial that was never
+/// load-bearing). Deserialize it, ignore it, and SAY SO.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DeprecatedDialFinding {
+    /// The dial's name as it appears in the project file and the GUI.
+    pub dial: &'static str,
+    /// The value the project carries.
+    pub value: f64,
+    /// The value that used to be the default — anything else means the
+    /// operator deliberately tuned it.
+    pub default_value: f64,
+    /// One sentence naming what replaced it.
+    pub replaced_by: &'static str,
+}
+
+/// An offset stepover an operation sized from [`crate::surface::reach`] rather than
+/// from a user dial (PR-6a, H2.3).
+///
+/// The number this records is invisible to the operator: it is not a field
+/// in any config, it steers both the routing criterion and the emitted fan,
+/// and until PR-6a it was `cutter.envelope_radius_mm() * 0.5` — half the
+/// SHANK of a tapered ball, three times the whole tip. Reporting the derived
+/// value AND the retired one is what makes the migration checkable on a real
+/// job instead of only on a fixture.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DerivedStepoverFinding {
+    /// Which routing/fit site this sized, e.g.
+    /// `"UnifiedFinish crease/pencil claims"`.
+    pub site: &'static str,
+    /// The stepover (mm) actually used, from
+    /// [`crate::surface::reach::suggested_offset_stepover_mm`].
+    pub stepover_mm: f64,
+    /// Depth (mm) the reach policy was evaluated at. The policy is
+    /// depth-aware; a single scalar stepover has to name ITS depth.
+    pub reference_depth_mm: f64,
+    /// One phrase saying why that depth was the honest one to size at.
+    pub reference_depth_basis: &'static str,
+    /// What the retired rule would have produced. For a reach-policy
+    /// finding this is the `envelope_radius_mm() * 0.5` rule — equal to
+    /// `stepover_mm` on any plain ball. For a slope-derate finding
+    /// ([`Self::slope_derate`] is `Some`) it is the configured
+    /// `raster_stepover`, the value the pre-fix code used unchanged.
+    pub envelope_rule_mm: f64,
+    /// Honest-raster slope derate detail (Track B fix, 2026-09-01).
+    /// `None` = a reach-policy derivation, the original PR-6a shape.
+    /// `Some` = a Shallow-band raster stepover derated by
+    /// `cos(slope_max_deg)` of one region; `stepover_mm` then holds the
+    /// derated value and `envelope_rule_mm` the configured one.
+    pub slope_derate: Option<SlopeDerateDetail>,
+}
+
+/// Per-region detail for a slope-derated Shallow raster stepover — see
+/// [`DerivedStepoverFinding::slope_derate`] and
+/// [`crate::finish::unified_finish::ShallowSlopeDerate`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SlopeDerateDetail {
+    /// Index into the finish decomposition's planned regions.
+    pub region_index: usize,
+    /// The maximum slope (deg) the region's covered cells carry.
+    pub slope_max_deg: f64,
+}
+
+impl DerivedStepoverFinding {
+    /// `true` when the policy value and the retired envelope rule coincide —
+    /// every plain ball, at every depth. Nothing moved, so nothing is worth
+    /// telling the operator.
+    #[must_use]
+    pub fn matches_the_envelope_rule(&self) -> bool {
+        (self.stepover_mm - self.envelope_rule_mm).abs() <= 1e-9
+    }
+}
+
+/// Which finish bands COMPARED their own Z span against the resolved
+/// heights on this run (FIN-14).
+///
+/// The three-state contract (`diagnostics/CLAUDE.md`) applied to the band
+/// clip: a band outside this set did not measure zero, it did not measure at
+/// all. The distinction is real and not defensive. `top_z` and `bottom_z`
+/// reach exactly ONE arm of the unified planner — the `VerySteep` waterline
+/// ladder. The `MidSteep` (scallop) and `Shallow` (drop-cutter raster) arms
+/// read neither height, so they can neither clip a band nor report a clip,
+/// and a clipped region there reads as clean on every surface that renders
+/// the finding.
+///
+/// The set is a RUN measurement, not a constant, so an arm that learns to
+/// measure its own span reports the widened coverage without a second
+/// vocabulary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct MeasuredBands {
+    /// The waterline arm compared its planned ladder with the resolved one.
+    pub very_steep: bool,
+    /// The scallop arm did.
+    pub mid_steep: bool,
+    /// The raster arm did.
+    pub shallow: bool,
+}
+
+impl MeasuredBands {
+    /// Nothing measured — the value a run starts from.
+    pub const NONE: Self = Self {
+        very_steep: false,
+        mid_steep: false,
+        shallow: false,
+    };
+
+    /// Mark one band measured.
+    pub fn insert(&mut self, band: crate::finish::finish_planner::FinishBand) {
+        use crate::finish::finish_planner::FinishBand;
+        match band {
+            FinishBand::VerySteep => self.very_steep = true,
+            FinishBand::MidSteep => self.mid_steep = true,
+            FinishBand::Shallow => self.shallow = true,
+        }
+    }
+
+    /// Did this band measure its own clip?
+    #[must_use]
+    pub const fn contains(self, band: crate::finish::finish_planner::FinishBand) -> bool {
+        use crate::finish::finish_planner::FinishBand;
+        match band {
+            FinishBand::VerySteep => self.very_steep,
+            FinishBand::MidSteep => self.mid_steep,
+            FinishBand::Shallow => self.shallow,
+        }
+    }
+
+    /// The measured bands as stable tokens, in band order. Empty when the
+    /// run measured none.
+    #[must_use]
+    pub fn measured_labels(self) -> Vec<&'static str> {
+        let mut out = Vec::new();
+        if self.very_steep {
+            out.push("VerySteep");
+        }
+        if self.mid_steep {
+            out.push("MidSteep");
+        }
+        if self.shallow {
+            out.push("Shallow");
+        }
+        out
+    }
+
+    /// The bands this run did NOT measure, as stable tokens, in band order.
+    #[must_use]
+    pub fn unmeasured_labels(self) -> Vec<&'static str> {
+        let mut out = Vec::new();
+        if !self.very_steep {
+            out.push("VerySteep");
+        }
+        if !self.mid_steep {
+            out.push("MidSteep");
+        }
+        if !self.shallow {
+            out.push("Shallow");
+        }
+        out
+    }
+
+    /// One clause for an operator sentence: which bands measured their clip
+    /// and which did not. Never empty, so no surface can render the coverage
+    /// as silence.
+    #[must_use]
+    pub fn describe(self) -> String {
+        let measured = self.measured_labels();
+        let unmeasured = self.unmeasured_labels();
+        let measured_text = if measured.is_empty() {
+            "no band measured its Z span".to_owned()
+        } else {
+            format!("measured on {}", measured.join(", "))
+        };
+        if unmeasured.is_empty() {
+            format!("{measured_text}; every band measured")
+        } else {
+            format!(
+                "{measured_text}; NOT measured on {} — those arms read no \
+                 resolved height, so a clip there is invisible",
+                unmeasured.join(", ")
+            )
+        }
+    }
+}
+
+/// Which resolved height clipped a band's Z range.
+///
+/// FIN-13 moved this here from `finish::unified_finish`, with
+/// [`BandHeightClip`] and [`BandClipRecord`]: the finding vocabulary has one
+/// home, and the band token stops degrading to a `&'static str` on the way
+/// across.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HeightClip {
+    /// `ResolvedHeights::bottom_z` raised the ladder's floor.
+    BottomZ,
+    /// `ResolvedHeights::top_z` lowered the ladder's ceiling.
+    TopZ,
+}
+
+impl HeightClip {
+    /// Stable token used in findings, narration and diagnostics.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::BottomZ => "bottom_z",
+            Self::TopZ => "top_z",
+        }
+    }
+}
+
+/// What the resolved heights did to ONE band's Z ladder — the raw
+/// measurement every band-clip report is cut from.
+///
+/// C8 widened this from the Wave-D1 four-tuple to carry the Z BOUNDS as
+/// well as the level counts, because "requested vs delivered heights" is
+/// what an operator can act on: level counts say how much was lost, the
+/// bounds say where.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BandHeightClip {
+    /// Which resolved height bit.
+    pub clip: HeightClip,
+    /// Its value (mm) — the number in the operator's heights config.
+    pub clip_z_mm: f64,
+    /// Z levels the band's OWN surface span would have laddered.
+    pub planned_levels: usize,
+    /// Z levels that survived height resolution.
+    pub resolved_levels: usize,
+    /// Ceiling the band's own surface span asked for (mm).
+    pub requested_top_z_mm: f64,
+    /// Floor the band's own surface span asked for (mm).
+    pub requested_bottom_z_mm: f64,
+    /// Ceiling the resolved heights allowed (mm).
+    pub delivered_top_z_mm: f64,
+    /// Floor the resolved heights allowed (mm).
+    pub delivered_bottom_z_mm: f64,
+}
+
+impl BandHeightClip {
+    /// Vertical extent (mm) the clamps removed from this band's ladder.
+    #[must_use]
+    pub fn lost_height_mm(&self) -> f64 {
+        let requested = (self.requested_top_z_mm - self.requested_bottom_z_mm).max(0.0);
+        let delivered = (self.delivered_top_z_mm - self.delivered_bottom_z_mm).max(0.0);
+        (requested - delivered).max(0.0)
+    }
+}
+
+/// ONE planned band region and what the resolved heights did to it.
+///
+/// FIN-13 merged the two per-region structs
+/// (`unified_finish::DroppedBand` and `unified_finish::ClippedBand`) into
+/// this one. They restated each other field for field, and the difference
+/// between them was never in the SHAPE: it is which collection the record
+/// lands in, which is decided by whether the region still cut.
+///
+/// `UnifiedFinishReport::dropped_bands` holds the regions that emitted no
+/// cutting at all; `clipped_bands` holds the regions that cut a shortened
+/// ladder. The two carry different severities and must not be merged into
+/// one list.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BandClipRecord {
+    /// Which band planned the region.
+    pub band: crate::finish::finish_planner::FinishBand,
+    /// Index into the decomposition's `planned.regions`.
+    pub region_index: usize,
+    /// XY-projected area (mm²) of the planned band polygon —
+    /// `UnifiedFinishReport::provenance` describes it.
+    pub area_mm2: f64,
+    /// The clip itself: which height, its value, the level counts and the
+    /// requested-versus-delivered Z bounds.
+    pub clip: BandHeightClip,
+}
+
+/// A finish band whose planned cutting was entirely removed by height
+/// resolution (Wave D1, ledger task #15).
+///
+/// The mechanism this exists to make audible: `UnifiedFinishConfig`'s
+/// `depth_semantics()` is `DepthSemantics::None`, so an Auto `bottom_z`
+/// resolves to `top_z - 0.0` — the stock top — and the very-steep band's
+/// waterline ladder (`final_z = band_min_z.max(bottom_z)`) collapses onto
+/// the rim. The band planned real levels over real area and emitted no
+/// cutting at all; before this finding the only trace was a
+/// `region_count += 1` on a struct nothing printed.
+///
+/// Deliberately NOT the fix. Changing the depth semantics is a behavioural
+/// change; this is the instrument that must exist first.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DroppedBandFinding {
+    /// The band of the LARGEST dropped region when several were dropped.
+    ///
+    /// FIN-13 typed this field. It was a `&'static str` the producer
+    /// rendered before the finding crossed the boundary, so the enum was
+    /// available on one side and gone on the other. Call
+    /// [`crate::finish::finish_planner::FinishBand::label`] to render it.
+    pub band: crate::finish::finish_planner::FinishBand,
+    /// How many planned regions were dropped, across every band.
+    pub region_count: usize,
+    /// Summed XY-projected area (mm²) of the dropped regions' band polygons.
+    /// Read the domain off [`Self::provenance`] before comparing it to
+    /// anything.
+    pub area_mm2: f64,
+    /// What the resolved heights did to the LARGEST dropped region: which
+    /// height bit, its value, the level counts and the bounds.
+    pub clip: BandHeightClip,
+    /// FIN-14: which bands compared their Z span with the resolved heights
+    /// on this run. A band outside the set was NOT measured, so this finding
+    /// says nothing about it — see [`MeasuredBands`].
+    pub bands_measured: MeasuredBands,
+    /// What [`Self::area_mm2`] means. Carried per-instance rather than as a
+    /// module constant because the band polygons are quantised by the
+    /// classification grid, whose cell size is derived from the TOOL
+    /// (`cusp_radius/4`) — one constant could not describe two tools.
+    pub provenance: crate::measurement::MeasurementProvenance,
+}
+
+impl DroppedBandFinding {
+    /// [`Self::area_mm2`] in the newtype that refuses cross-domain division
+    /// (M1 slice 2), together with its contract.
+    #[must_use]
+    pub fn area(
+        &self,
+    ) -> (
+        crate::measurement::ProjectedXyAreaMm2,
+        crate::measurement::MeasurementProvenance,
+    ) {
+        (
+            crate::measurement::ProjectedXyAreaMm2::new(self.area_mm2),
+            self.provenance,
+        )
+    }
+}
+
+/// A planned finish band whose Z ladder was SHORTENED by the resolved
+/// heights but which still emitted cutting (C8).
+///
+/// The complement of [`DroppedBandFinding`], and the gap
+/// `ANTIPATTERNS_BACKLOG.md` P8 logged. Wave D1 measured the clip on EVERY
+/// band and discarded the measurement unless the region emitted nothing at
+/// all — so a band that machined the top 2 mm of a 12 mm wall and stopped
+/// left an unfinished feature and no trace.
+///
+/// Severity is the reason the two are separate types rather than one with a
+/// flag: a dropped band is a `Caution` ("this feature will be UNMACHINED"),
+/// a clipped band is `Info` ("this feature is PARTLY machined, here is what
+/// was left"), and a loud finding must not be buried under quiet ones.
+///
+/// Report-only: no gate consumes it, and it is deliberately NOT the fix.
+/// Changing `UnifiedFinishConfig`'s depth semantics is a behavioural change;
+/// this is the instrument that has to exist first.
+///
+/// **Known limit, carried rather than implied**: only the `VerySteep` arm
+/// measures its clip today, because `top_z` and `bottom_z` reach no other
+/// arm. FIN-14 put that limit IN the finding — [`Self::bands_measured`]
+/// names the bands this run compared — so a clipped `MidSteep` or `Shallow`
+/// region reads as "not measured" and never as clean. Wave D1 built the
+/// instrument on the arm whose ladder is explicit, C8 widened what it
+/// REPORTS, and FIN-14 widened what it ADMITS.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ClippedBandFinding {
+    /// The band of the LARGEST clipped region.
+    ///
+    /// FIN-13 typed this field, for the reason
+    /// [`DroppedBandFinding::band`] gives.
+    pub band: crate::finish::finish_planner::FinishBand,
+    /// How many planned regions were clipped, across every band.
+    pub region_count: usize,
+    /// Summed XY-projected area (mm²) of the clipped regions' band polygons.
+    /// Read the domain off [`Self::provenance`] before comparing it.
+    pub area_mm2: f64,
+    /// What the resolved heights did to the LARGEST clipped region: which
+    /// height bit, its value, the level counts and the requested-versus-
+    /// delivered bounds.
+    ///
+    /// FIN-13 folded eight restated fields into this one. They were a
+    /// [`BandHeightClip`] copied out member by member.
+    pub clip: BandHeightClip,
+    /// Worst vertical extent (mm) removed from any one clipped band —
+    /// requested height minus delivered height. This is the number that
+    /// answers "how much of the wall is unfinished".
+    pub max_lost_height_mm: f64,
+    /// FIN-14: which bands compared their Z span with the resolved heights
+    /// on this run. A band outside the set was NOT measured, so this finding
+    /// says nothing about it — see [`MeasuredBands`].
+    pub bands_measured: MeasuredBands,
+    /// What [`Self::area_mm2`] means. Per-instance for the same reason as
+    /// [`DroppedBandFinding::provenance`]: the band polygons are quantised
+    /// by a TOOL-derived classification cell.
+    pub provenance: crate::measurement::MeasurementProvenance,
+}
+
+impl ClippedBandFinding {
+    /// [`Self::area_mm2`] in the newtype that refuses cross-domain division
+    /// (M1 slice 2), together with its contract.
+    #[must_use]
+    pub fn area(
+        &self,
+    ) -> (
+        crate::measurement::ProjectedXyAreaMm2,
+        crate::measurement::MeasurementProvenance,
+    ) {
+        (
+            crate::measurement::ProjectedXyAreaMm2::new(self.area_mm2),
+            self.provenance,
+        )
+    }
+
+    /// The operator-facing sentence, without a leading label and without a
+    /// trailing newline.
+    ///
+    /// **One sentence, two surfaces.** The diagnostic adapter
+    /// (`diagnostics::adapters::from_generation`) and the narration
+    /// (`narrate`) both render this finding, and each wrote its own wording
+    /// until 2026-09-17. The two had already drifted. Each surface adds its
+    /// own frame — the narration its label and newline, the adapter its
+    /// `Diagnostic` id and severity — and neither restates the sentence.
+    #[must_use]
+    pub fn message(&self) -> String {
+        format!(
+            "{area:.1} mm² of the {band} band across {count} planned \
+             region(s) cut only PART of its depth: the resolved {clip} = \
+             {clip_z:.3} mm shortened the ladder from \
+             {req_lo:.3}..{req_hi:.3} mm to {del_lo:.3}..{del_hi:.3} mm \
+             ({planned} levels planned, {resolved} laddered), leaving up to \
+             {lost:.3} mm of the feature unfinished. If that was not \
+             deliberate, pin {clip} to the real depth of the feature. \
+             Band clip coverage: {coverage}. \
+             [{provenance}. Report-only — no gate consumes this.]",
+            area = self.area_mm2,
+            band = self.band.label(),
+            count = self.region_count,
+            clip = self.clip.clip.label(),
+            clip_z = self.clip.clip_z_mm,
+            req_lo = self.clip.requested_bottom_z_mm,
+            req_hi = self.clip.requested_top_z_mm,
+            del_lo = self.clip.delivered_bottom_z_mm,
+            del_hi = self.clip.delivered_top_z_mm,
+            planned = self.clip.planned_levels,
+            resolved = self.clip.resolved_levels,
+            lost = self.max_lost_height_mm,
+            coverage = self.bands_measured.describe(),
+            provenance = self.provenance.describe(),
+        )
+    }
+}
+
+/// Tip float on a pencil/rest centreline: the cutter is driven along a
+/// valley it physically cannot bottom out in, so it rides the walls and
+/// leaves residual material below the emitted line (Wave D1; Checkpoint A
+/// evidence §5 measured up to 5.248 mm on 24 of 176 taper cells, with no
+/// channel of any kind reporting it).
+///
+/// The measurement is the one routing already solves: at each emitted
+/// centreline point, the drop-cutter's resting Z minus the valley-floor Z
+/// the detector traced at the same XY — the same quantity
+/// `pencil::reach_gap_at_point` computes for the rest-depth gate, sampled
+/// on every point instead of eight.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct TipFloatFinding {
+    /// Emitted centreline points examined (offset passes excluded — they are
+    /// *meant* to ride the walls).
+    pub centreline_points: usize,
+    /// Of those, how many float more than [`TIP_FLOAT_THRESHOLD_MM`] above
+    /// the traced valley floor.
+    pub floating_points: usize,
+    /// Largest float residual (mm) seen. `0.0` when nothing floated.
+    pub max_float_mm: f64,
+}
+
+impl TipFloatFinding {
+    /// Record one centreline point's float.
+    ///
+    /// NaN floats (a point whose lift found no contact, or a detector line
+    /// with no surface Z) count as examined and nothing else — an unmeasured
+    /// point is not a clean one, and it is certainly not a defect claim.
+    pub fn record(&mut self, float_mm: f64) {
+        self.centreline_points += 1;
+        if float_mm > TIP_FLOAT_THRESHOLD_MM {
+            self.floating_points += 1;
+            if float_mm > self.max_float_mm {
+                self.max_float_mm = float_mm;
+            }
+        }
+    }
+
+    /// Fold another tally in (one per chain / per detector arm).
+    pub fn merge(&mut self, other: Self) {
+        self.centreline_points += other.centreline_points;
+        self.floating_points += other.floating_points;
+        if other.max_float_mm > self.max_float_mm {
+            self.max_float_mm = other.max_float_mm;
+        }
+    }
+
+    /// Fraction of examined centreline points that float. `None` when
+    /// nothing was examined — never a fabricated zero.
+    #[must_use]
+    fn floating_fraction(&self) -> Option<f64> {
+        (self.centreline_points > 0)
+            .then(|| self.floating_points as f64 / self.centreline_points as f64)
+    }
+
+    /// The operator-facing sentence for a finding that HAS floating points,
+    /// without a leading label and without a trailing newline.
+    ///
+    /// **One sentence, two surfaces.** The diagnostic adapter
+    /// (`diagnostics::adapters::from_generation`) and the narration
+    /// (`narrate`) both render this finding, and each wrote its own wording
+    /// until 2026-09-17. The two had already drifted. Each surface adds its
+    /// own frame — the narration its label and newline, the adapter its
+    /// `Diagnostic` id and severity — and neither restates the sentence.
+    ///
+    /// The three "nothing to report" readings — measured clean, no points at
+    /// all, and not measured — stay with the narration, which prints a line
+    /// for each. The adapter is silent on all three.
+    #[must_use]
+    pub fn message(&self) -> String {
+        let pct = 100.0 * self.floating_fraction().unwrap_or(0.0);
+        format!(
+            "{floating} of {total} centreline points ({pct:.0}%) sit over \
+             material this tool CANNOT reach — it wedges between the valley \
+             walls and rides above the floor. Worst residual {max:.3} mm is \
+             left uncut BENEATH the emitted line (float > \
+             {TIP_FLOAT_THRESHOLD_MM} mm counts). The pass as emitted cannot \
+             remove it: use a smaller tip, or route these valleys to a finer \
+             tool. [{provenance}. Report-only — no gate consumes this.]",
+            floating = self.floating_points,
+            total = self.centreline_points,
+            max = self.max_float_mm,
+            provenance = TIP_FLOAT_PROVENANCE.describe(),
+        )
+    }
+}
+
+/// Float (mm) above the traced valley floor at which a centreline point
+/// counts as FLOATING.
+///
+/// Deliberately the same absolute number as
+/// `crate::finish::pencil::reach_gap_threshold` — 0.05 mm — because it is the same
+/// physical question the pencil's own rest gate asks ("is the tool actually
+/// off the surface here, or is this triangulation noise?"), and two
+/// thresholds for one question is how instruments start disagreeing with
+/// the code they measure.
+pub const TIP_FLOAT_THRESHOLD_MM: f64 = 0.05;
+
+/// The measurement contract of [`TipFloatFinding::max_float_mm`].
+///
+/// A vertical residual at a point, measured at generation from the
+/// centreline drop solve. Not an area, not a length along the path, and not
+/// comparable to either.
+pub const TIP_FLOAT_PROVENANCE: crate::measurement::MeasurementProvenance =
+    crate::measurement::MeasurementProvenance::new(
+        crate::measurement::MeasurementDomain::VerticalResidualMm,
+        crate::measurement::MeasurementStage::CentrelineDropSolve,
+    )
+    .with_resolution_note(
+        "one sample per emitted centreline point (path sampling spacing); float = \
+         drop-cutter rest Z minus the detector's traced valley-floor Z at the same XY",
+    );
+
+/// Measurement domain of [`TipFloatFinding::max_float_mm`].
+pub const TIP_FLOAT_DOMAIN: &str = TIP_FLOAT_PROVENANCE.domain.label();
+
+/// Pipeline stage [`TipFloatFinding`] is measured at.
+pub const TIP_FLOAT_STAGE: &str = TIP_FLOAT_PROVENANCE.stage.label();
+
+impl ToolpathStats {
+    /// [`Self::truncated_core_mm2`] with its measurement contract attached,
+    /// or `None` when nothing measured it (M1 slice 1).
+    ///
+    /// The provenance cannot be set independently of the value — the two
+    /// travel together or not at all — so a stats struct can never claim a
+    /// domain it did not measure in.
+    #[must_use]
+    pub fn truncated_core(
+        &self,
+    ) -> Option<(
+        crate::measurement::ProjectedXyAreaMm2,
+        crate::measurement::MeasurementProvenance,
+    )> {
+        self.truncated_core_mm2.map(|mm2| {
+            (
+                crate::measurement::ProjectedXyAreaMm2::new(mm2),
+                TRUNCATED_CORE_PROVENANCE,
+            )
+        })
+    }
+
+    /// [`Self::tip_float`] with its measurement contract attached, or `None`
+    /// when nothing measured it. Same rule as [`Self::truncated_core`]:
+    /// the value and its provenance travel together or not at all.
+    ///
+    /// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
+    /// only callers. No production path reads it.
+    #[must_use]
+    pub fn tip_float_measured(
+        &self,
+    ) -> Option<(TipFloatFinding, crate::measurement::MeasurementProvenance)> {
+        self.tip_float.map(|f| (f, TIP_FLOAT_PROVENANCE))
+    }
+
+    /// [`Self::retract_trips`] with its measurement contract attached, or
+    /// `None` when nothing measured it. Same rule as
+    /// [`Self::truncated_core`]: the value and its provenance travel
+    /// together or not at all.
+    ///
+    /// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
+    /// only callers. No production path reads it.
+    #[must_use]
+    pub fn retract_trip_measurement(
+        &self,
+    ) -> Option<(RetractTripCount, crate::measurement::MeasurementProvenance)> {
+        self.retract_trips.map(|f| (f, RETRACT_TRIP_PROVENANCE))
+    }
+}
+
+/// The measurement contract of [`RetractTripCount`] — a count of retract
+/// round trips, measured on the emitted toolpath with no reference to
+/// stock (a rapid run is visible in the move list regardless of whether a
+/// simulation ever runs).
+pub const RETRACT_TRIP_PROVENANCE: crate::measurement::MeasurementProvenance =
+    crate::measurement::MeasurementProvenance::new(
+        crate::measurement::MeasurementDomain::RetractTripCount,
+        crate::measurement::MeasurementStage::Emission,
+    )
+    .with_resolution_note(
+        "one contiguous run of MoveType::Rapid moves = one retract round trip; the \
+         in-node / between-nodes split classifies each run by whether its FIRST move \
+         sits inside a planner territory Region node (RegionSpanRole::Node) — see \
+         `AnnotatedToolpath::spans_valid` for when that split is trustworthy",
+    );
+
+/// Measurement domain of [`RetractTripCount::total`] and its split.
+pub const RETRACT_TRIP_DOMAIN: &str = RETRACT_TRIP_PROVENANCE.domain.label();
+
+/// Pipeline stage [`RetractTripCount`] is measured at.
+pub const RETRACT_TRIP_STAGE: &str = RETRACT_TRIP_PROVENANCE.stage.label();
+
+/// Resolution note of [`RetractTripCount`].
+pub const RETRACT_TRIP_RESOLUTION: &str = RETRACT_TRIP_PROVENANCE.resolution_note;
+
+/// The measurement contract of [`ToolpathStats::truncated_core_mm2`] — the
+/// SINGLE source of truth the three prose constants below are derived from
+/// (M1 slice 1; before it they were three independent strings that narration
+/// and diagnostics concatenated, with nothing tying them to the code that
+/// produced the number).
+///
+/// It is exactly the scallop ring cascade's residual, because that is where
+/// the number comes from: [`crate::finish::scallop::ScallopReport::PROVENANCE`].
+pub const TRUNCATED_CORE_PROVENANCE: crate::measurement::MeasurementProvenance =
+    crate::finish::scallop::ScallopReport::PROVENANCE;
+
+/// Measurement domain of [`ToolpathStats::truncated_core_mm2`].
+///
+/// It is a **projected** area — the shoelace area of the ring cascade's
+/// residual polygons in XY — and therefore NOT comparable with 3D surface
+/// area, dexel-top area or removed volume (non-negotiable rule 3).
+pub const TRUNCATED_CORE_DOMAIN: &str = TRUNCATED_CORE_PROVENANCE.domain.label();
+
+/// Pipeline stage [`ToolpathStats::truncated_core_mm2`] is measured at.
+///
+/// Generation, from the cascade's own geometry. A simulation cannot
+/// reproduce it: material the toolpath never attempted to cut leaves no
+/// trace in a cut record, which is exactly why the defect survived.
+pub const TRUNCATED_CORE_STAGE: &str = TRUNCATED_CORE_PROVENANCE.stage.label();
+
+/// Resolution of [`ToolpathStats::truncated_core_mm2`].
+///
+/// Not a grid measure: the residual is the ring polygons themselves, whose
+/// vertices are decimated to `0.75 ×` the finish heightmap cell during the
+/// cascade (`scallop.rs`). Exterior-shoelace: holes are not subtracted
+/// (`MEASUREMENT_DOMAINS.md` X-5), so treat it as an upper bound. M4 §5b
+/// closed X-5 with a hole-aware sibling rather than by changing this
+/// figure — see [`UNTOUCHED_MATERIAL_PROVENANCE`].
+pub const TRUNCATED_CORE_RESOLUTION: &str = TRUNCATED_CORE_PROVENANCE.resolution_note;
+
+/// The measurement contract of [`ToolpathStats::untouched_material_mm2`]
+/// (M4 §5b) — the SINGLE source [`UNTOUCHED_MATERIAL_DOMAIN`] and friends
+/// derive from, exactly the pattern [`TRUNCATED_CORE_PROVENANCE`] set.
+///
+/// Same domain and stage as [`TRUNCATED_CORE_PROVENANCE`] — both are
+/// exact shoelace areas over the same truncated-cascade polygons — but this
+/// one is [`crate::finish::scallop::ScallopReport::UNTOUCHED_PROVENANCE`], which
+/// nets out holes where the other sums exteriors only.
+pub const UNTOUCHED_MATERIAL_PROVENANCE: crate::measurement::MeasurementProvenance =
+    crate::finish::scallop::ScallopReport::UNTOUCHED_PROVENANCE;
+
+/// Measurement domain of [`ToolpathStats::untouched_material_mm2`].
+pub const UNTOUCHED_MATERIAL_DOMAIN: &str = UNTOUCHED_MATERIAL_PROVENANCE.domain.label();
+
+/// Pipeline stage [`ToolpathStats::untouched_material_mm2`] is measured at.
+pub const UNTOUCHED_MATERIAL_STAGE: &str = UNTOUCHED_MATERIAL_PROVENANCE.stage.label();
+
+/// Resolution of [`ToolpathStats::untouched_material_mm2`]: the hole-aware
+/// net area — see [`crate::finish::scallop::ScallopReport::untouched_mm2`]'s doc.
+pub const UNTOUCHED_MATERIAL_RESOLUTION: &str = UNTOUCHED_MATERIAL_PROVENANCE.resolution_note;
+
+/// The measurement contract of
+/// [`ToolpathStats::reached_uncut_estimate_mm2`] (M4 §5b) — the SINGLE
+/// source [`REACHED_UNCUT_ESTIMATE_DOMAIN`] and friends derive from.
+///
+/// A DIFFERENT [`crate::measurement::MeasurementStage`] from
+/// [`TRUNCATED_CORE_PROVENANCE`] / [`UNTOUCHED_MATERIAL_PROVENANCE`] —
+/// [`crate::finish::scallop::ScallopReport::STANDING_PROVENANCE`] — so
+/// [`crate::measurement::MeasurementProvenance::comparable_to`] refuses to
+/// treat this ESTIMATOR as interchangeable with either exact polygon area,
+/// even though all three travel on the same `ToolpathStats`.
+pub const REACHED_UNCUT_ESTIMATE_PROVENANCE: crate::measurement::MeasurementProvenance =
+    crate::finish::scallop::ScallopReport::STANDING_PROVENANCE;
+
+/// Measurement domain of [`ToolpathStats::reached_uncut_estimate_mm2`].
+pub const REACHED_UNCUT_ESTIMATE_DOMAIN: &str = REACHED_UNCUT_ESTIMATE_PROVENANCE.domain.label();
+
+/// Pipeline stage [`ToolpathStats::reached_uncut_estimate_mm2`] is
+/// measured at.
+pub const REACHED_UNCUT_ESTIMATE_STAGE: &str = REACHED_UNCUT_ESTIMATE_PROVENANCE.stage.label();
+
+/// Resolution of [`ToolpathStats::reached_uncut_estimate_mm2`]: an
+/// estimator, not a polygon area — see
+/// [`crate::finish::scallop::ScallopReport::standing_mm2`]'s doc for the formula and
+/// its stated limitations.
+pub const REACHED_UNCUT_ESTIMATE_RESOLUTION: &str =
+    REACHED_UNCUT_ESTIMATE_PROVENANCE.resolution_note;

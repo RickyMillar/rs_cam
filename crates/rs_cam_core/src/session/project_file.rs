@@ -11,11 +11,12 @@ use super::{
 };
 use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
-use crate::compute::stock_config::{FixtureId, KeepOutId, ModelKind, ModelUnits, StockConfig};
+use crate::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use crate::compute::transform::{FaceUp, ZRotation};
 use crate::gcode::CoolantMode;
 use crate::geometry::enriched_mesh::FaceGroupId;
+use crate::ids::{FixtureId, KeepOutId};
 use crate::trace::debug_trace::ToolpathDebugOptions;
 
 // ── Project file types (TOML deserialization) ──────────────────────────
@@ -202,9 +203,9 @@ pub struct ProjectStockConfig {
     #[serde(default)]
     pub material: crate::material::Material,
     #[serde(default)]
-    pub alignment_pins: Vec<crate::compute::stock_config::AlignmentPin>,
+    pub alignment_pins: Vec<crate::compute::alignment_pins::AlignmentPin>,
     #[serde(default)]
-    pub flip_axis: Option<crate::compute::stock_config::FlipAxis>,
+    pub flip_axis: Option<crate::compute::alignment_pins::FlipAxis>,
 }
 
 impl Default for ProjectStockConfig {
@@ -1159,7 +1160,7 @@ pub(super) fn build_session_from_project(
             model_ids: setup_section
                 .model_ids
                 .iter()
-                .map(|&id| crate::compute::stock_config::ModelId(id))
+                .map(|&id| crate::ids::ModelId(id))
                 .collect(),
             fixtures,
             keep_out_zones,

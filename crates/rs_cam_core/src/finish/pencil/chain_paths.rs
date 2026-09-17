@@ -7,7 +7,7 @@
 //! `paths_from_sampled` live in `detectors`; the pass emitter lives in
 //! `emission`.
 
-use crate::compute::config::TipFloatFinding;
+use crate::compute::toolpath_stats::TipFloatFinding;
 use crate::geo::P3;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::surface::dropcutter::point_drop_cutter;

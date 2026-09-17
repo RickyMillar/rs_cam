@@ -28,3 +28,19 @@ impl std::fmt::Display for ToolpathId {
         write!(f, "{}", self.0)
     }
 }
+
+/// Unique identifier for a loaded model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ModelId(pub usize);
+
+/// Unique identifier for a setup (workholding / orientation context).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct SetupId(pub usize);
+
+/// Unique identifier for a fixture within a setup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct FixtureId(pub usize);
+
+/// Unique identifier for a keep-out zone within a setup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct KeepOutId(pub usize);

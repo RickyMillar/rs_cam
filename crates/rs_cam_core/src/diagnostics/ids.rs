@@ -47,7 +47,7 @@ pub const PROJECT_AIR_CUT_HIGH: &str = "project.air_cut_high";
 pub const PROJECT_GENERATED_EMPTY: &str = "project.generated_empty";
 /// The stock's alignment pins do not key the flip a setup is programmed
 /// for (CMP-27). The judgement lives in
-/// [`crate::compute::stock_config::validate_pins_for_flip`]; this is the
+/// [`crate::compute::alignment_pins::validate_pins_for_flip`]; this is the
 /// id it reaches every surface under.
 pub const PROJECT_ALIGNMENT_PINS_UNKEYED: &str = "project.alignment_pins_unkeyed";
 /// A gate declined to produce a verdict because the metric it reads is not

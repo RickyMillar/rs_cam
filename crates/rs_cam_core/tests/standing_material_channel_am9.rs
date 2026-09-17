@@ -37,11 +37,11 @@ use common::session::{
 use common::tools::{ball_tool_config, endmill_tool_config, tapered_ball_tool_config};
 
 use rs_cam_core::compute::catalog::OperationConfig;
-use rs_cam_core::compute::config::{
-    TRUNCATED_CORE_DOMAIN, TRUNCATED_CORE_RESOLUTION, TRUNCATED_CORE_STAGE,
-};
 use rs_cam_core::compute::operation_configs::{PocketConfig, PocketPattern, ScallopConfig};
 use rs_cam_core::compute::tool_config::ToolConfig;
+use rs_cam_core::compute::toolpath_stats::{
+    TRUNCATED_CORE_DOMAIN, TRUNCATED_CORE_RESOLUTION, TRUNCATED_CORE_STAGE,
+};
 use rs_cam_core::diagnostics::{Diagnostic, ids};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::mesh::make_test_flat;

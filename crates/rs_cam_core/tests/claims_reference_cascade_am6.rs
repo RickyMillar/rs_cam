@@ -60,9 +60,10 @@ use common::meshes::height_field;
 use common::session::{generate, mesh_model, pinned_heights, stock_over, toolpath_config};
 use common::tools::{ball_tool_config, tapered_ball_tool_config};
 use rs_cam_core::compute::catalog::OperationConfig;
-use rs_cam_core::compute::config::{ClaimsReferenceFinding, StockSource};
+use rs_cam_core::compute::config::StockSource;
 use rs_cam_core::compute::operation_configs::{ClaimsReference, UnifiedFinishConfig};
 use rs_cam_core::compute::tool_config::ToolConfig;
+use rs_cam_core::compute::toolpath_stats::ClaimsReferenceFinding;
 use rs_cam_core::finish::unified_finish::{ClaimsReferenceResolution, CreaseReference};
 use rs_cam_core::session::{
     AddToolpathArgs, Command, ProjectSession, ProjectSessionBuilder, SetStockSourceArgs,

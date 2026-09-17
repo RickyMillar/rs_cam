@@ -57,11 +57,10 @@ use std::sync::atomic::AtomicBool;
 
 use rs_cam_core::compute::StockConfig;
 use rs_cam_core::compute::catalog::OperationConfig;
-use rs_cam_core::compute::config::{
-    BoundaryConfig, DressupConfig, HeightsConfig, StockSource, TIP_FLOAT_THRESHOLD_MM,
-};
+use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
 use rs_cam_core::compute::operation_configs::{PencilConfig, WaterlineConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::compute::toolpath_stats::TIP_FLOAT_THRESHOLD_MM;
 use rs_cam_core::diagnostics::{Diagnostic, Severity, ids};
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P3;

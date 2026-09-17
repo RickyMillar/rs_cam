@@ -6,10 +6,10 @@
 use tracing::instrument;
 
 use crate::compute::catalog::OperationConfig;
-use crate::compute::stock_config::{FixtureId, KeepOutId};
 use crate::compute::tool_config::{ToolConfig, ToolId};
 use crate::compute::transform::{FaceUp, ZRotation};
 use crate::geometry::enriched_mesh::FaceGroupId;
+use crate::ids::{FixtureId, KeepOutId};
 use crate::session::{Effects, Fixture, KeepOutZone, ProjectSession, SessionError, SetupData};
 
 use super::{fixture_collision_inputs_moved, keep_out_collision_inputs_moved, polygons_bbox};
@@ -356,7 +356,7 @@ impl ProjectSession {
     pub(crate) fn set_setup_models(
         &mut self,
         setup_index: usize,
-        model_ids: Vec<crate::compute::stock_config::ModelId>,
+        model_ids: Vec<crate::ids::ModelId>,
     ) -> Result<Effects, SessionError> {
         self.try_with_effects(None, move |session| {
             let setup = session
@@ -551,7 +551,7 @@ impl ProjectSession {
             session
                 .stock
                 .alignment_pins
-                .push(crate::compute::stock_config::AlignmentPin::new(
+                .push(crate::compute::alignment_pins::AlignmentPin::new(
                     x, y, diameter,
                 ));
             session.drop_all_results();

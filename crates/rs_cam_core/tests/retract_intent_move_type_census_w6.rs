@@ -88,10 +88,11 @@ use rs_cam_core::compute::operation_configs::{
     RestConfig, ScallopConfig, SpiralFinishConfig, SteepShallowConfig, TraceConfig,
     UnifiedFinishConfig, VCarveConfig, WaterlineConfig, ZigzagConfig,
 };
-use rs_cam_core::compute::stock_config::{ModelId, StockConfig};
+use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
+use rs_cam_core::ids::ModelId;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::ops::profile::ProfileSide;
 use rs_cam_core::polygon::Polygon2;

@@ -18,10 +18,11 @@
 use rs_cam_core::ids::ToolpathId;
 use std::sync::atomic::AtomicBool;
 
+use rs_cam_core::compute::alignment_pins::AlignmentPin;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
 use rs_cam_core::compute::operation_configs::{AlignmentPinDrillConfig, DrillCycleType};
-use rs_cam_core::compute::stock_config::{AlignmentPin, StockConfig};
+use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::material::{Material, WoodSpecies};

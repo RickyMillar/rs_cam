@@ -260,7 +260,7 @@ struct Capture {
     snapshot_id: SnapshotId,
     /// The production provenance stamp this generation recorded
     /// (`ToolpathStats::stock_snapshot`) — the S-4 deliverable.
-    stamp: Option<rs_cam_core::compute::config::StockSnapshotStamp>,
+    stamp: Option<rs_cam_core::compute::toolpath_stats::StockSnapshotStamp>,
 }
 
 /// A test-side stand-in for the provenance the incident lacked.
@@ -456,7 +456,7 @@ fn report(arm: &str, first: &Capture, second: &Capture) -> GcodeDiff {
     // The S-4 deliverable, on every arm: the production stamp must agree
     // with the independent witness above. This is the whole point — the
     // incident could not see this line.
-    let show = |s: Option<rs_cam_core::compute::config::StockSnapshotStamp>| match s {
+    let show = |s: Option<rs_cam_core::compute::toolpath_stats::StockSnapshotStamp>| match s {
         Some(s) => format!(
             "{:016x} @{:.3}mm {}x{}",
             s.digest,

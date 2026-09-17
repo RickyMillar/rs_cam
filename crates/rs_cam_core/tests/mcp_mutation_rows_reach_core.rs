@@ -48,9 +48,10 @@ use rs_cam_core::compute::config::{
     BoundaryConfig, DressupConfig, HeightMode, HeightsConfig, RestAnalysisConfig, StockSource,
 };
 use rs_cam_core::compute::operation_configs::{PocketConfig, RestConfig};
-use rs_cam_core::compute::stock_config::{ModelId, StockConfig};
+use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::gcode::CoolantMode;
+use rs_cam_core::ids::ModelId;
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::session::{
     AddToolpathArgs, AdoptResultArgs, Command, CommandId, CommandKind, LoadedModel, ProjectSession,
@@ -135,7 +136,7 @@ fn fake_result() -> rs_cam_core::session::ToolpathComputeResult {
                 rs_cam_core::toolpath::Toolpath::new(),
             ),
         )),
-        stats: rs_cam_core::compute::config::ToolpathStats::default(),
+        stats: rs_cam_core::compute::toolpath_stats::ToolpathStats::default(),
         debug_trace: None,
         semantic_trace: None,
     }

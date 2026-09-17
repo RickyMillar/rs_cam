@@ -356,7 +356,7 @@ fn a_genuine_collapse_still_passes_through_and_now_says_so() {
     assert!((dropped.tool_diameter_mm - tool_diameter).abs() < 1e-9);
 
     // And it reaches the operator surface, not just the struct.
-    let stats = rs_cam_core::compute::config::ToolpathStats {
+    let stats = rs_cam_core::compute::toolpath_stats::ToolpathStats {
         boundary_clip_dropped: findings.boundary_clip_dropped,
         ..Default::default()
     };

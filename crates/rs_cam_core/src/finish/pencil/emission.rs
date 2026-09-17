@@ -616,7 +616,7 @@ pub(crate) fn emit_paths_with_entry_stock(
 /// against 0.16 s of cutting per fragment. A hop that removes a retract and
 /// leaves the ramp standing scores zero here, correctly.
 /// G-LINKVISIBLE (2026-09-09): published on
-/// [`crate::compute::config::ToolpathStats::pencil_link`], in its OWN slot
+/// [`crate::compute::toolpath_stats::ToolpathStats::pencil_link`], in its OWN slot
 /// rather than mapped onto [`crate::finish::unified_finish::RelinkTotals`]. The two
 /// counters a mapping would have to drop — [`Self::hop_too_far`] and this
 /// pass's own at-depth/hop split — are exactly the ones that name the

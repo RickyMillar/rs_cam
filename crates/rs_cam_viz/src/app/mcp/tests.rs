@@ -163,7 +163,7 @@ fn cut_trace_fixture(
         let mut rt = crate::state::runtime::ToolpathRuntime::new(false);
         rt.result = Some(crate::state::toolpath::ToolpathResult {
             annotated: std::sync::Arc::new(annotated),
-            stats: rs_cam_core::compute::config::ToolpathStats::default(),
+            stats: rs_cam_core::compute::toolpath_stats::ToolpathStats::default(),
             debug_trace: None,
             semantic_trace: None,
             debug_trace_path: None,

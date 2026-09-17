@@ -3,5 +3,6 @@
 pub use rs_cam_core::compute::config::{
     AwaitingPriorStock, BoundaryConfig, BoundaryContainment, BoundarySource, ComputeStatus,
     DressupConfig, DressupEntryStyle, HeightContext, HeightMode, HeightReference, HeightsConfig,
-    ReferenceOffset, ResolvedHeights, RestAnalysisConfig, StockSource, ToolpathId, ToolpathStats,
+    ReferenceOffset, ResolvedHeights, RestAnalysisConfig, StockSource, ToolpathId,
 };
+pub use rs_cam_core::compute::toolpath_stats::ToolpathStats;

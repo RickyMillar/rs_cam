@@ -30,11 +30,12 @@ use std::sync::Arc;
 use rs_cam_core::ToolpathId;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{
-    BoundaryConfig, DressupConfig, HeightsConfig, RestAnalysisConfig, StockSource, ToolpathStats,
+    BoundaryConfig, DressupConfig, HeightsConfig, RestAnalysisConfig, StockSource,
 };
 use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::compute::toolpath_stats::ToolpathStats;
 use rs_cam_core::compute::transform::{FaceUp, ZRotation};
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;

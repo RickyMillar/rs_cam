@@ -1,4 +1,4 @@
-use rs_cam_core::compute::stock_config::{
+use rs_cam_core::compute::alignment_pins::{
     PIN_MATCH_TOL_MM, PIN_WALL_MM, PinPlacementError, PinPlacementRequest, place_keyed_pins,
 };
 

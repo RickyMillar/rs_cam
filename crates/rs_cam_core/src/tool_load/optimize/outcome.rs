@@ -127,10 +127,10 @@ pub struct OptimizeOutcome {
     /// operating point.
     ///
     /// This is the same three-valued discipline
-    /// [`crate::compute::config::ToolpathStats::truncated_core_mm2`]
+    /// [`crate::compute::toolpath_stats::ToolpathStats::truncated_core_mm2`]
     /// carries (`None` = not measured, a present value = measured), and
     /// deliberately **not**
-    /// [`crate::compute::config::ToolpathStats::zero_removal`]'s weaker
+    /// [`crate::compute::toolpath_stats::ToolpathStats::zero_removal`]'s weaker
     /// contract where `None` conflates "not measured" with "nothing to
     /// report". Here the two are distinguishable and the inner
     /// `Option`s keep them distinguished — see

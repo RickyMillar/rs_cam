@@ -7,7 +7,7 @@
 //!
 //! 1. **G-ENTRYEMPTY.** An `adaptive3d` back-rough with `entry_style = helix`
 //!    generated a **0-move toolpath and reported success**. Nothing gated it
-//!    — [`rs_cam_core::compute::config::ToolpathStats::zero_removal`] is
+//!    — [`rs_cam_core::compute::toolpath_stats::ToolpathStats::zero_removal`] is
 //!    report-only by operator ruling *and* cannot fire on an empty toolpath
 //!    at all (it measures engagement of emitted cutting geometry; with no
 //!    cutting moves it samples nothing and records nothing). The same gap let

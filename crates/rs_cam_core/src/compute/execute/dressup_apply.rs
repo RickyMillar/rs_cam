@@ -90,7 +90,7 @@ pub(super) fn attach_generic_rest_analysis(
     if cfg.offset_stepover_mm.is_none() {
         record_derived_stepover(
             findings,
-            crate::compute::config::DerivedStepoverFinding {
+            crate::compute::toolpath_stats::DerivedStepoverFinding {
                 site: "generic rest analysis routing",
                 stepover_mm: offset_stepover_mm,
                 reference_depth_mm: cfg.min_valley_depth,

@@ -42,7 +42,7 @@
     clippy::print_stdout
 )]
 
-use rs_cam_core::compute::config::ToolpathStats;
+use rs_cam_core::compute::toolpath_stats::ToolpathStats;
 use rs_cam_core::diagnostics::{Severity, ids};
 use rs_cam_core::finish::ramp_finish::{
     RampFinishParams, RampReachClamp, ramp_finish_toolpath_structured_annotated,

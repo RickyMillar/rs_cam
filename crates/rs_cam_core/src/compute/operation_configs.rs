@@ -1172,7 +1172,7 @@ pub struct UnifiedFinishConfig {
     /// dial since A/M6 (`unified_finish::ClaimsReference` doc), resolved to
     /// the two-valued `CreaseReference` at generation time by
     /// `ClaimsReferenceResolution::resolve` and recorded in
-    /// [`crate::compute::config::ClaimsReferenceFinding`].
+    /// [`crate::compute::toolpath_stats::ClaimsReferenceFinding`].
     ///
     /// `Auto` (**the default since A/M6**) uses the machined prior stock when
     /// one is in scope and the analytic self-probe when none is. `SelfProbe`
@@ -1454,7 +1454,7 @@ fn default_unified_finish_min_rest_depth_mm() -> f64 {
 /// on AND left `claims_reference` unwritten AND cut remaining stock. Any
 /// project file that names a value keeps it (`ClaimsReference` doc: the two
 /// pre-A/M6 wire names are unchanged), and every resolution is recorded in
-/// [`crate::compute::config::ClaimsReferenceFinding`], so a behaviour change
+/// [`crate::compute::toolpath_stats::ClaimsReferenceFinding`], so a behaviour change
 /// arrives with its own explanation rather than silently.
 fn default_unified_finish_claims_reference() -> ClaimsReference {
     ClaimsReference::Auto
@@ -1808,7 +1808,7 @@ pub struct ProjectCurveConfig {
     pub plunge_rate: f64,
     /// Optional separate surface model for projection.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub surface_model_id: Option<super::stock_config::ModelId>,
+    pub surface_model_id: Option<crate::ids::ModelId>,
     /// Project from above (Z-down, default) or below (Z-up).
     #[serde(default)]
     pub direction: ProjectCurveDirection,
