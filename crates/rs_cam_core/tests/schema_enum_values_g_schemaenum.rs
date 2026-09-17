@@ -57,7 +57,25 @@ fn advertised_values(type_name: &str) -> Option<Vec<&str>> {
 /// `params`, and the whole object round-trips through
 /// `serde_json::from_value`. No numeric coercion branch applies — every
 /// value here is a string.
-fn serde_accepts(op: &OperationConfig, param: &str, value: &str) -> Result<(), String> {
+///
+/// `optional` is the def's own `optional` flag, and it decides what an ABSENT
+/// key means. A REQUIRED param that the default config does not serialize is
+/// drift: no such field exists, so the published name is an untruth. An
+/// OPTIONAL param may legitimately be absent — `skip_serializing_if` omits it
+/// while it holds its default, which is exactly how
+/// `UnifiedFinishConfig::classification_sampler` and
+/// `PencilConfig::link_hop_distance_mm` are written. `set_toolpath_param`
+/// handles that case: it inserts the key whether or not it existed and refuses
+/// only when the def is also absent (`session/compute/params.rs`, the
+/// `!existed && target_type.is_none()` arm). So for an optional param this
+/// asks serde the same question the setter asks. A bogus optional NAME is
+/// caught by the `param_defs`-covers-the-struct sentry, not here.
+fn serde_accepts(
+    op: &OperationConfig,
+    param: &str,
+    value: &str,
+    optional: bool,
+) -> Result<(), String> {
     let mut json = serde_json::to_value(op).map_err(|e| e.to_string())?;
     let params = json
         .get_mut("params")
@@ -68,10 +86,10 @@ fn serde_accepts(op: &OperationConfig, param: &str, value: &str) -> Result<(), S
         param.to_owned(),
         serde_json::Value::String(value.to_owned()),
     );
-    if !present {
+    if !present && !optional {
         return Err(format!(
-            "the schema names `{param}` but the serialized config carries no \
-             such field, so the name itself is drift"
+            "the schema names `{param}` as REQUIRED but the serialized config \
+             carries no such field, so the name itself is drift"
         ));
     }
     serde_json::from_value::<OperationConfig>(json)
@@ -87,6 +105,7 @@ fn every_advertised_enum_value_is_one_the_config_can_hold() {
 
     for &op_type in OperationType::ALL {
         let op = OperationConfig::new_default(op_type);
+        let hints = op.param_schema_hints();
         for param in OperationConfig::param_names_for_type(op_type) {
             let Some(type_name) = op.param_type_name(param) else {
                 continue;
@@ -94,10 +113,11 @@ fn every_advertised_enum_value_is_one_the_config_can_hold() {
             let Some(values) = advertised_values(type_name) else {
                 continue;
             };
+            let optional = hints.get(param).is_some_and(|h| h.optional);
             enum_params += 1;
             for value in values {
                 checked += 1;
-                if let Err(e) = serde_accepts(&op, param, value) {
+                if let Err(e) = serde_accepts(&op, param, value, optional) {
                     failures.push(format!(
                         "{:?}.{param} advertises '{value}' ({type_name}) — {e}",
                         op_type

@@ -170,6 +170,16 @@ const DROP_CUTTER_PARAMS: &[ParamDef] = &[
     ParamDef::required("slope_from", "f64"),
     ParamDef::required("slope_to", "f64"),
     ParamDef::optional("spindle_rpm", "option<u32>"),
+    // CMP-09: the Suggest pipeline reads this and the GUI has a dedicated
+    // route to it (`set_drop_cutter_scallop_height`), so an operator could
+    // turn the dial and an agent could not. `None` keeps the legacy
+    // formula stepover.
+    ParamDef::optional_desc(
+        "scallop_height",
+        "option<f64>",
+        "Target scallop (cusp) height in mm. When set, Suggest derives stepover from the \
+         tool's tip radius instead of the ae_factor formula. No effect on a flat or bull tool.",
+    ),
     // G-LINKSTAGE (2026-09-09) — the shared surface-link stage's cap.
     // Absent, or 0.0, is OFF and byte-identical.
     ParamDef::optional("hookup_mm", "f64"),
@@ -213,7 +223,10 @@ const ADAPTIVE3D_PARAMS: &[ParamDef] = &[
 ];
 
 const WATERLINE_PARAMS: &[ParamDef] = &[
-    ParamDef::required("z_step", "f64"),
+    // CMP-08: `depth_per_pass` is the alias `set_toolpath_param`'s named
+    // arm writes onto this field. It is published here, so the schema and
+    // the refusal message agree with the setter.
+    ParamDef::required("z_step", "f64").with_aliases(&["depth_per_pass"]),
     ParamDef::required("sampling", "f64"),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
@@ -228,7 +241,9 @@ const PENCIL_PARAMS: &[ParamDef] = &[
     ParamDef::required("min_cut_length", "f64"),
     ParamDef::required("hookup_distance", "f64"),
     ParamDef::required("num_offset_passes", "usize"),
-    ParamDef::required("offset_stepover", "f64"),
+    // CMP-08: `stepover` is the alias the named arm writes onto this
+    // field. Pencil has no `stepover` field of its own.
+    ParamDef::required("offset_stepover", "f64").with_aliases(&["stepover"]),
     ParamDef::required("sampling", "f64"),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
@@ -337,6 +352,19 @@ const UNIFIED_FINISH_PARAMS: &[ParamDef] = &[
     // ClaimsConfig::crease_hookup_mm`).
     ParamDef::required("intra_region_hookup_mm", "f64"),
     ParamDef::required("crease_hookup_mm", "f64"),
+    // CMP-09: the field is read at `execute/finish_3d.rs` and reaches
+    // `unified_finish`, but no surface could set it, so it was frozen at
+    // `ClassificationSampler::PRODUCTION`. `optional` because the config
+    // omits the key while it holds that value.
+    ParamDef::optional_desc(
+        "classification_sampler",
+        "enum:drop_cutter_probe|drop_cutter_probe_scratch|triangle_raster|vertical_ray|tile_raster",
+        "Which sampler fills the classification height grid (M3 COLUMNS). NOT a quality or \
+         speed dial: it exists so an A/B can drive the pre-switch drop-cutter classifier and \
+         the production tile-raster one through one pipeline, and so a project that hits a \
+         regression has an escape hatch that needs no rebuild. Absent = tile_raster, the \
+         production sampler.",
+    ),
     // F2 island-filter overrides on `FinishPlannerParams`. All three are
     // `null` by default and are OMITTED from a saved project while null, so
     // an existing file round-trips byte-identically. `null` = derive from the
@@ -384,7 +412,8 @@ const STEEP_SHALLOW_PARAMS: &[ParamDef] = &[
 ];
 
 const RAMP_FINISH_PARAMS: &[ParamDef] = &[
-    ParamDef::required("max_stepdown", "f64"),
+    // CMP-08: the `depth_per_pass` alias, as on Waterline's `z_step`.
+    ParamDef::required("max_stepdown", "f64").with_aliases(&["depth_per_pass"]),
     ParamDef::required("slope_from", "f64"),
     ParamDef::required("slope_to", "f64"),
     ParamDef::required("direction", "enum:climb|conventional"),

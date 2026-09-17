@@ -803,6 +803,53 @@ fn the_unified_finish_op_defaults_to_the_production_sampler() {
     );
 }
 
+/// CMP-09: the schema publishes the sampler, so an agent can set it.
+///
+/// The dial was read at `execute/finish_3d.rs` and reached `unified_finish`,
+/// but no surface wrote it: it was in no `param_defs` array and the GUI never
+/// names it, so it was frozen at `ClassificationSampler::PRODUCTION`. The
+/// registry row makes the schema and the setter agree. Note that the field is
+/// `skip_serializing_if = is_production`, so the setter's absent-key path is
+/// the one under test here.
+#[test]
+fn the_sampler_is_a_settable_published_param() {
+    use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
+
+    let op = OperationConfig::new_default(OperationType::UnifiedFinish);
+    assert_eq!(
+        op.param_type_name("classification_sampler"),
+        Some(
+            "enum:drop_cutter_probe|drop_cutter_probe_scratch|triangle_raster|vertical_ray|tile_raster"
+        ),
+        "the schema must publish the sampler and every token serde accepts"
+    );
+
+    // The setter's own mechanism: merge into the config JSON and deserialize.
+    // The key is ABSENT from a default config, which is why the def has to be
+    // `optional` and why the setter inserts rather than requires.
+    let mut json = serde_json::to_value(&op).expect("serialise the default op");
+    let params = json
+        .get_mut("params")
+        .and_then(|v| v.as_object_mut())
+        .expect("a tagged config carries a params object");
+    assert!(
+        !params.contains_key("classification_sampler"),
+        "a default config must not write the key"
+    );
+    params.insert(
+        "classification_sampler".to_owned(),
+        serde_json::Value::String("vertical_ray".to_owned()),
+    );
+    let set: OperationConfig = serde_json::from_value(json).expect("the setter's round-trip");
+    let OperationConfig::UnifiedFinish(cfg) = set else {
+        panic!("the kind must survive the round-trip");
+    };
+    assert_eq!(
+        cfg.classification_sampler,
+        ClassificationSampler::VerticalRay
+    );
+}
+
 // ── Analytic-fixture gates (default, fast) ──────────────────────────────
 
 #[test]
