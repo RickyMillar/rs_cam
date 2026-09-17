@@ -13,12 +13,12 @@
 //!
 //! A consumer declares its own edges; a source declares none.
 //!
-//! - [`EdgeKind::Stock`] — `stock_source == StockSource::FromRemainingStock`.
+//! - [`EdgeKind::Stock`]: `stock_source == StockSource::FromRemainingStock`.
 //!   The consumer starts from the material the ops above it left.
-//! - [`EdgeKind::Regions`] — `boundary.enabled` plus
+//! - [`EdgeKind::Regions`]: `boundary.enabled` plus
 //!   `BoundarySource::DerivedRestRegions { source_toolpath_id }`. The
 //!   consumer machines the rest regions another op's result carries.
-//! - [`EdgeKind::PrevTool`] — `OperationConfig::Rest(cfg)`. The consumer
+//! - [`EdgeKind::PrevTool`]: `OperationConfig::Rest(cfg)`. The consumer
 //!   clears what the cutter named by `cfg.prev_tool_id` left behind.
 //!
 //! # Two asymmetries a reviewer must not "fix"
@@ -190,9 +190,9 @@ pub fn edges(session: &ProjectSession) -> Vec<Edge> {
 /// never `edge.on`.
 ///
 /// The Regions arm reads the source result's payload, not the source's
-/// `rest_analysis.enabled` flag. Two producers attach `rest_regions` — the
-/// op-agnostic analysis and the pencil rest-depth detector — so a config
-/// read would call a pencil source Broken. The payload read reproduces the
+/// `rest_analysis.enabled` flag. Two producers attach `rest_regions`: the
+/// op-agnostic analysis and the pencil rest-depth detector. A config read
+/// would call a pencil source Broken. The payload read reproduces the
 /// generation refusal exactly.
 pub fn state(edge: &Edge, session: &ProjectSession) -> EdgeState {
     let Some(source_id) = edge.on else {

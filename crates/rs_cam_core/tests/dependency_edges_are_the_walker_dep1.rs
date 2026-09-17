@@ -1,4 +1,4 @@
-//! DEP-1 — "the dependency edges ARE the invalidation walker's rules".
+//! DEP-1: "the dependency edges ARE the invalidation walker's rules".
 //!
 //! Programme: `planning/gen_sim_rest_ux_2026-09-18/PLAN.md` §4.1, brief
 //! `IMPL_W0.md` §6. Before this file the walker held its own copy of the
@@ -7,18 +7,18 @@
 //!
 //! ## What the file pins
 //!
-//! 1. `edges_name_every_declaration` — one edge of each kind exists, and a
+//! 1. `edges_name_every_declaration`: one edge of each kind exists, and a
 //!    toolpath that declares nothing gets no edge.
-//! 2. `every_walker_drop_is_an_edge` — every index the walker drops is the
+//! 2. `every_walker_drop_is_an_edge`: every index the walker drops is the
 //!    `from` of some edge.
-//! 3. `every_edge_drop_the_rules_predict_is_made` — a fixpoint computed in
+//! 3. `every_edge_drop_the_rules_predict_is_made`: a fixpoint computed in
 //!    this file from `edges()` alone equals the walker's drop set. The
 //!    claim is NOT "every edge makes a drop": a Stock edge whose source is
 //!    clean makes none.
-//! 4. `regenerating_a_source_drops_its_consumers` — D1. Adopting a result
+//! 4. `regenerating_a_source_drops_its_consumers`: D1. Adopting a result
 //!    for a source drops its Regions and PrevTool consumers, leaves its
 //!    Stock consumers alone, and keeps the simulation.
-//! 5. `edge_state_reads_the_session` — the three `EdgeState` answers, and
+//! 5. `edge_state_reads_the_session`: the three `EdgeState` answers, and
 //!    the split that makes them differ: the edit door clears the
 //!    simulation, the adopt door does not.
 //!
