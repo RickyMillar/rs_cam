@@ -363,13 +363,13 @@ impl<B: ComputeBackend> AppController<B> {
 
     /// Rebuild the viz post mirror from the session block (SHL-01).
     ///
-    /// `GuiState::post` is a view of `session.post_config()` in the viz
-    /// enum shape; the session owns the values. Four write sites used to
-    /// copy ONE field back by hand after their command applied, so the
-    /// Post panel and the Feeds modal did not lag until the next save. A
-    /// field added to `ProjectPostConfig` then reached three of the four
-    /// and was forgotten in the fourth. This is the one function that
-    /// rebuilds the mirror, and `post_from_session` carries every field.
+    /// `GuiState::post` is a CLONE of `session.post_config()`; the session
+    /// owns the values. Four write sites used to copy ONE field back by
+    /// hand after their command applied, so the Post panel and the Feeds
+    /// modal did not lag until the next save. A field added to the post
+    /// block then reached three of the four and was forgotten in the
+    /// fourth. This is the one function that rebuilds the mirror, and
+    /// UI-07 made it a clone of the one type, so it cannot miss a field.
     ///
     /// Safe to call after any command: the Post panel pushes its edited
     /// `gui.post` into the session in the same frame it changes it

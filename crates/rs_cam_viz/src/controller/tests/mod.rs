@@ -1214,10 +1214,10 @@ fn controller_holding_a_simulation() -> AppController<RestChainBackend> {
 /// The mirror must carry the WHOLE session block, not the one field a
 /// route remembered to copy.
 ///
-/// `PostConfig` has no `PartialEq`, so the comparison runs through
-/// `post_to_session`, which is the writer half of the same resolver pair
-/// `post_from_session` reads. A field that reaches neither half is a
-/// field the project file does not carry either.
+/// UI-07: the mirror and the session block are the SAME type, so this is a
+/// direct `PartialEq` over every field. It used to compare through
+/// `post_to_session`, one half of a translation pair a new field could
+/// miss.
 fn assert_post_mirror_matches_session<B: ComputeBackend>(
     controller: &AppController<B>,
     route: &str,

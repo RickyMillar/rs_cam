@@ -2409,8 +2409,8 @@ impl RsCamApp {
                 // SHL-01: rebuild the viz mirror through the one door.
                 // The GUI's Feeds & Speeds modal reads that copy, not
                 // the session's. This arm copied `spindle_strategy`
-                // alone, so a second field on `ProjectPostConfig` set
-                // through this route would not have reached the panel.
+                // alone, so a second field of the post block set through
+                // this route would not have reached the panel.
                 self.controller.refresh_post_mirror();
                 self.controller.state_mut().gui.mark_edited();
                 let strategy = before.display_name();
