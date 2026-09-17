@@ -21,7 +21,7 @@ disable-model-invocation: true
 |------|---------|
 | Per-crate (recommended) | `cargo test -p rs_cam_core -q && cargo test -p rs_cam_cli -q && cargo test -p rs_cam_viz -q && cargo test -p rs_cam_mcp -q` |
 | Core only (dev loop) | `cargo test -p rs_cam_core -q` |
-| Core FULL gate | `cargo test -p rs_cam_core --features heavy-tests --no-fail-fast -- -q` |
+| Core FULL gate | `cargo test -p rs_cam_core --features heavy-tests,research --no-fail-fast -- -q` |
 | CLI integration | `cargo test -p rs_cam_cli --test integration` |
 | Viz regression | `cargo test -p rs_cam_viz controller::tests::` |
 | Compute worker | `cargo test -p rs_cam_viz compute::worker::tests::` |
@@ -38,7 +38,7 @@ Note: the 12 heaviest core binaries sit behind the `heavy-tests` feature (75% of
 
 | What | Command |
 |------|---------|
-| Lint | `cargo clippy --workspace --all-targets --features rs_cam_core/heavy-tests -- -D warnings` |
+| Lint | `cargo clippy --workspace --all-targets --features rs_cam_core/heavy-tests,rs_cam_core/research -- -D warnings` |
 | Format check | `cargo fmt --check` |
 | Format fix | `cargo fmt` |
 | Benchmark | `cargo bench -p rs_cam_core` |
@@ -59,7 +59,7 @@ principal type where one exists (`io`, `machine`, `dressup`, `material`).
 | Folder | Holds |
 |---|---|
 | `ops/` | 2.5D and drilling operations: `pocket`, `profile`, `face`, `drill`, `drill_op`, `drill_metrics`, `vcarve`, `inlay`, `chamfer`, `waterline`, `zigzag`, `trace_path`, `rest`, `project_curve`, `depth`, `adaptive_shared` |
-| `finish/` | 3D finishing: `scallop`, `scallop_isofield`, `scallop_math`, `pencil`, `pencil_dihedral`, `unified_finish`, `finish_planner`, `finish_setup`, `conformal_spiral`, `direction_field`, `crest_lines`, `crease_paths`, `classify_probe`, `steep_shallow`, `surface_link`, `ramp_finish`, `spiral_finish`, `spiral_finish_compact`, `radial_finish`, `horizontal_finish` |
+| `finish/` | 3D finishing: `scallop`, `scallop_isofield`, `scallop_math`, `pencil`, `pencil_dihedral`, `unified_finish`, `finish_planner`, `finish_setup`, `conformal_spiral`, `direction_field` (these two and `spiral_finish_compact` build only with `--features research`), `crest_lines`, `crease_paths`, `classify_probe`, `steep_shallow`, `surface_link`, `ramp_finish`, `spiral_finish`, `spiral_finish_compact`, `radial_finish`, `horizontal_finish` |
 | `adaptive/`, `adaptive3d/` | adaptive clearing, 2D and 3D |
 | `geometry/` | derived geometry: `boundary`, `contour_extract`, `edge_distance`, `enriched_mesh`, `fiber`, `grid2`, `grid_field`, `marching_squares`, `monotone_cells`, `nn_order`, `point_runs`, `region_mask`, `region_set`, `arc_util` |
 | `surface/` | surface queries: `dropcutter`, `pushcutter`, `slope`, `rest_field`, `reach`, `flow_accum` |
