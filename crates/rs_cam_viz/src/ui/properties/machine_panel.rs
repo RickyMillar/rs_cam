@@ -25,9 +25,6 @@ pub(super) fn draw_machine_library_row(
     state: &mut AppState,
     events: &mut Vec<AppEvent>,
 ) {
-    let status_id = egui::Id::new("machine_lib_status");
-    let name_id = egui::Id::new("machine_lib_save_name");
-
     let machines = rs_cam_core::io::machine_library::list();
 
     ui.horizontal(|ui| {
@@ -41,15 +38,12 @@ pub(super) fn draw_machine_library_row(
                             Ok(profile) => {
                                 // Snapshot copy into the inline machine — no ref.
                                 apply_machine(state, profile);
-                                ui.data_mut(|d| {
-                                    d.insert_temp(status_id, format!("Imported '{name}' (copy)"));
-                                });
+                                state.panels.machine_library_status =
+                                    format!("Imported '{name}' (copy)");
                             }
                             Err(e) => {
                                 tracing::error!("machine library load failed: {e}");
-                                ui.data_mut(|d| {
-                                    d.insert_temp(status_id, format!("Import failed: {e}"));
-                                });
+                                state.panels.machine_library_status = format!("Import failed: {e}");
                             }
                         }
                     }
@@ -63,39 +57,42 @@ pub(super) fn draw_machine_library_row(
         }
     });
 
+    // UI-09: the name and the status line are typed state on `AppState`,
+    // so the `TextEdit` writes the draft in place instead of cloning a
+    // `String` into `ui.data` on every keystroke.
+    let mut save_clicked = false;
+    let mut trimmed = String::new();
     ui.horizontal(|ui| {
         ui.label("Save as:");
-        let mut name: String = ui.data(|d| d.get_temp::<String>(name_id).unwrap_or_default());
-        let resp = ui.add(
-            egui::TextEdit::singleline(&mut name)
+        ui.add(
+            egui::TextEdit::singleline(&mut state.panels.machine_library_name)
                 .desired_width(140.0)
                 .hint_text("machine name"),
         );
-        if resp.changed() {
-            ui.data_mut(|d| d.insert_temp(name_id, name.clone()));
-        }
-        let trimmed = name.trim().to_owned();
-        if ui
+        trimmed = state.panels.machine_library_name.trim().to_owned();
+        save_clicked = ui
             .add_enabled(!trimmed.is_empty(), egui::Button::new("Save to library"))
-            .clicked()
-        {
-            match rs_cam_core::io::machine_library::save(&trimmed, state.session.machine()) {
-                Ok(path) => {
-                    state.gui.mark_edited();
-                    ui.data_mut(|d| {
-                        d.insert_temp(status_id, format!("Saved to {}", path.display()));
-                    });
-                }
-                Err(e) => {
-                    tracing::error!("machine library save failed: {e}");
-                    ui.data_mut(|d| d.insert_temp(status_id, format!("Save failed: {e}")));
-                }
+            .clicked();
+    });
+    if save_clicked {
+        match rs_cam_core::io::machine_library::save(&trimmed, state.session.machine()) {
+            Ok(path) => {
+                state.gui.mark_edited();
+                state.panels.machine_library_status = format!("Saved to {}", path.display());
+            }
+            Err(e) => {
+                tracing::error!("machine library save failed: {e}");
+                state.panels.machine_library_status = format!("Save failed: {e}");
             }
         }
-    });
+    }
 
-    if let Some(msg) = ui.data(|d| d.get_temp::<String>(status_id)) {
-        ui.label(egui::RichText::new(msg).small().weak());
+    if !state.panels.machine_library_status.is_empty() {
+        ui.label(
+            egui::RichText::new(&state.panels.machine_library_status)
+                .small()
+                .weak(),
+        );
     }
 }
 
@@ -417,147 +414,148 @@ pub(super) fn draw_grbl_import(
     draft: &mut rs_cam_core::machine::MachineProfile,
     edit: &mut PanelEdit,
 ) {
-    let buf_id = egui::Id::new("machine_grbl_paste");
-    let status_id = egui::Id::new("machine_grbl_status");
-
+    // UI-09: the buffer, the status line and the PARSE are typed state.
+    // `from_grbl_settings` used to run unconditionally inside this draw, so
+    // the whole pasted dump was re-parsed on every frame the disclosure was
+    // open. `GrblImportDraft::parsed` parses only when the text changed.
     ui.collapsing("Import GRBL $$", |ui| {
-        let mut buf: String = ui.data(|d| d.get_temp::<String>(buf_id).unwrap_or_default());
-
         ui.horizontal(|ui| {
-            if ui.button("Load from file…").clicked()
+            if ui.button("Load from file\u{2026}").clicked()
                 && let Some(path) = rfd::FileDialog::new()
                     .add_filter("GRBL settings", &["txt", "nc", "gcode", "cfg"])
                     .pick_file()
             {
                 match std::fs::read_to_string(&path) {
-                    Ok(content) => {
-                        buf = content;
-                        ui.data_mut(|d| d.insert_temp(buf_id, buf.clone()));
-                    }
+                    Ok(content) => state.panels.grbl.buffer = content,
                     Err(e) => {
                         tracing::error!("read $$ file failed: {e}");
-                        ui.data_mut(|d| {
-                            d.insert_temp(status_id, format!("Read failed: {e}"));
-                        });
+                        state.panels.grbl.status = format!("Read failed: {e}");
                     }
                 }
             }
             if ui.button("Clear").clicked() {
-                buf.clear();
-                ui.data_mut(|d| {
-                    d.insert_temp(buf_id, String::new());
-                    d.insert_temp(status_id, String::new());
-                });
+                state.panels.grbl.clear();
+                state.panels.grbl.status.clear();
             }
         });
 
-        let resp = ui.add(
-            egui::TextEdit::multiline(&mut buf)
+        ui.add(
+            egui::TextEdit::multiline(&mut state.panels.grbl.buffer)
                 .desired_rows(4)
                 .desired_width(f32::INFINITY)
-                .hint_text("Paste $$ output here ($11=…, $120=…, …)"),
+                .hint_text("Paste $$ output here ($11=\u{2026}, $120=\u{2026}, \u{2026})"),
         );
-        if resp.changed() {
-            ui.data_mut(|d| d.insert_temp(buf_id, buf.clone()));
-        }
 
-        if !buf.trim().is_empty() {
-            let imp = rs_cam_core::machine::kinematics::MachineKinematics::from_grbl_settings(&buf);
-            let default_delta = rs_cam_core::machine::kinematics::default_junction_deviation_mm();
-            let recognized = imp.kinematics.acceleration_xyz_mm_s2.is_some()
-                || imp.max_feed_mm_min.is_some()
-                || imp.arc_tolerance_mm.is_some()
-                || imp.max_spindle_rpm.is_some()
-                || (imp.kinematics.junction_deviation_mm - default_delta).abs() > 1e-12;
-
-            if !recognized {
+        let current_max_feed = state.session.machine().max_feed_mm_min;
+        let default_delta = rs_cam_core::machine::kinematics::default_junction_deviation_mm();
+        // The parse is read once and copied out, so the draft's borrow ends
+        // before the Apply arm writes the session.
+        let preview = state.panels.grbl.parsed().cloned();
+        let Some(imp) = preview else {
+            if !state.panels.grbl.status.is_empty() {
                 ui.label(
-                    egui::RichText::new("No GRBL settings recognised in this text.")
+                    egui::RichText::new(&state.panels.grbl.status)
                         .small()
-                        .color(crate::ui::tokens::DANGER),
+                        .weak(),
                 );
-            } else {
-                ui.add_space(4.0);
-                ui.label(egui::RichText::new("Will apply:").small().strong());
-                if let Some(a) = imp.kinematics.acceleration_xyz_mm_s2 {
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "• Accel X/Y/Z = {:.0}/{:.0}/{:.0} mm/s²",
-                            a[0], a[1], a[2]
-                        ))
-                        .small(),
-                    );
-                }
+            }
+            return;
+        };
+
+        let recognized = imp.kinematics.acceleration_xyz_mm_s2.is_some()
+            || imp.max_feed_mm_min.is_some()
+            || imp.arc_tolerance_mm.is_some()
+            || imp.max_spindle_rpm.is_some()
+            || (imp.kinematics.junction_deviation_mm - default_delta).abs() > 1e-12;
+
+        if !recognized {
+            ui.label(
+                egui::RichText::new("No GRBL settings recognised in this text.")
+                    .small()
+                    .color(crate::ui::tokens::DANGER),
+            );
+        } else {
+            ui.add_space(4.0);
+            ui.label(egui::RichText::new("Will apply:").small().strong());
+            if let Some(a) = imp.kinematics.acceleration_xyz_mm_s2 {
                 ui.label(
                     egui::RichText::new(format!(
-                        "• Junction dev ($11) = {:.3} mm",
-                        imp.kinematics.junction_deviation_mm
+                        "\u{2022} Accel X/Y/Z = {:.0}/{:.0}/{:.0} mm/s\u{b2}",
+                        a[0], a[1], a[2]
                     ))
                     .small(),
                 );
-                if let Some(r) = imp.max_rate_xyz_mm_min {
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "• Max rate X/Y/Z = {:.0}/{:.0}/{:.0} mm/min",
-                            r[0], r[1], r[2]
-                        ))
-                        .small(),
-                    );
-                }
-                if let Some(mf) = imp.max_feed_mm_min {
-                    let cur = state.session.machine().max_feed_mm_min;
-                    ui.label(
-                        egui::RichText::new(format!("• Max Feed: {cur:.0} → {mf:.0} mm/min"))
-                            .small(),
-                    );
-                }
-                if let Some(at) = imp.arc_tolerance_mm {
-                    ui.label(
-                        egui::RichText::new(format!("• Arc tol ($12) = {at:.3} mm (advisory)"))
-                            .small()
-                            .weak(),
-                    );
-                }
-                if imp.ignored_count > 0 {
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "({} unrelated $ settings ignored)",
-                            imp.ignored_count
-                        ))
+            }
+            ui.label(
+                egui::RichText::new(format!(
+                    "\u{2022} Junction dev ($11) = {:.3} mm",
+                    imp.kinematics.junction_deviation_mm
+                ))
+                .small(),
+            );
+            if let Some(r) = imp.max_rate_xyz_mm_min {
+                ui.label(
+                    egui::RichText::new(format!(
+                        "\u{2022} Max rate X/Y/Z = {:.0}/{:.0}/{:.0} mm/min",
+                        r[0], r[1], r[2]
+                    ))
+                    .small(),
+                );
+            }
+            if let Some(mf) = imp.max_feed_mm_min {
+                ui.label(
+                    egui::RichText::new(format!(
+                        "\u{2022} Max Feed: {current_max_feed:.0} \u{2192} {mf:.0} mm/min"
+                    ))
+                    .small(),
+                );
+            }
+            if let Some(at) = imp.arc_tolerance_mm {
+                ui.label(
+                    egui::RichText::new(format!("\u{2022} Arc tol ($12) = {at:.3} mm (advisory)"))
                         .small()
                         .weak(),
-                    );
-                }
+                );
+            }
+            if imp.ignored_count > 0 {
+                ui.label(
+                    egui::RichText::new(format!(
+                        "({} unrelated $ settings ignored)",
+                        imp.ignored_count
+                    ))
+                    .small()
+                    .weak(),
+                );
+            }
 
-                if ui.button("Apply import").clicked() {
-                    let max_feed = imp.max_feed_mm_min;
-                    // The parser reports the per-axis rates on the import,
-                    // not inside `kinematics` — land them here (P1).
-                    let mut kinematics = imp.kinematics;
-                    kinematics.max_rate_xyz_mm_min = imp.max_rate_xyz_mm_min;
-                    // The draft follows the write, so the panel does not
-                    // put the pre-import numbers back on the next commit.
-                    draft.kinematics = Some(kinematics);
-                    if let Some(mf) = max_feed {
-                        draft.max_feed_mm_min = mf;
-                    }
-                    // The import is its own row: a GRBL dump carries the
-                    // travel rate as well as the block, and the row drops
-                    // the library link because the numbers are inline now.
-                    apply_machine_import(state, kinematics, max_feed);
-                    edit.changed = true;
-                    ui.data_mut(|d| {
-                        d.insert_temp(buf_id, String::new());
-                        d.insert_temp(status_id, "Imported $$ settings".to_owned());
-                    });
+            if ui.button("Apply import").clicked() {
+                let max_feed = imp.max_feed_mm_min;
+                // The parser reports the per-axis rates on the import,
+                // not inside `kinematics` — land them here (P1).
+                let mut kinematics = imp.kinematics;
+                kinematics.max_rate_xyz_mm_min = imp.max_rate_xyz_mm_min;
+                // The draft follows the write, so the panel does not
+                // put the pre-import numbers back on the next commit.
+                draft.kinematics = Some(kinematics);
+                if let Some(mf) = max_feed {
+                    draft.max_feed_mm_min = mf;
                 }
+                // The import is its own row: a GRBL dump carries the
+                // travel rate as well as the block, and the row drops
+                // the library link because the numbers are inline now.
+                apply_machine_import(state, kinematics, max_feed);
+                edit.changed = true;
+                state.panels.grbl.clear();
+                state.panels.grbl.status = "Imported $$ settings".to_owned();
             }
         }
 
-        if let Some(msg) = ui.data(|d| d.get_temp::<String>(status_id))
-            && !msg.is_empty()
-        {
-            ui.label(egui::RichText::new(msg).small().weak());
+        if !state.panels.grbl.status.is_empty() {
+            ui.label(
+                egui::RichText::new(&state.panels.grbl.status)
+                    .small()
+                    .weak(),
+            );
         }
     });
 }

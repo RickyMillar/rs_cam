@@ -271,8 +271,11 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     .as_ref()
                     .is_some_and(|(_, draft)| *draft != committed);
                 let mut action = tool::ToolEditAction::None;
+                // UI-09: the draft and the panel's own typed state are
+                // disjoint fields of `AppState`, so both borrow at once.
+                let panels = &mut state.panels;
                 if let Some((_, draft)) = state.history.tool_draft.as_mut() {
-                    action = tool::draw(ui, draft, modified);
+                    action = tool::draw(ui, draft, modified, panels);
                 }
                 match action {
                     tool::ToolEditAction::Apply => {

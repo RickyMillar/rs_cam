@@ -12,14 +12,15 @@ project. The entry point is `state::AppState` in `mod.rs`.
   and configuration support.
 - `simulation.rs`, `job.rs`, `runtime.rs` — the simulation state, the job
   lane state and the GUI-only runtime overlay state.
-- `simulation/` — `playback_state.rs` (results, boundaries, playhead),
-  `issue_triage.rs` (issue list, caches, evidence), `semantic_trace.rs`
-  (active semantic item, trace targets), `tests.rs`.
+- `simulation/` — `playback_state.rs`, `issue_triage.rs`,
+  `semantic_trace.rs`, `tests.rs`.
 - `viewport.rs`, `selection.rs`, `overlays.rs` — the viewport, the selection
   and the Overlays panel state.
 - `history.rs`, `wizard.rs`, `multitool_planner.rs`, `rest_dependency.rs` —
   undo history, the export wizard, the planner dialog and the one rule for a
   Rest operation's predecessor.
+- `panels.rs` — the panel drafts that outlive a frame: typed text, status
+  lines and the cached GRBL `$$` parse.
 
 ## Invariants
 
@@ -27,6 +28,8 @@ project. The entry point is `state::AppState` in `mod.rs`.
   revision. Do not reintroduce a mutable stale boolean, and do not clear it
   on an un-stamped, cancelled or failed result.
 - Freshness is derived. A stored freshness flag drifts from the core answer.
+- A panel draft with CONTENT lives here, not in egui temporary memory. A
+  view toggle or a drag index may stay in egui memory, named with a reason.
 
 ## Sentries
 
@@ -34,3 +37,4 @@ project. The entry point is `state::AppState` in `mod.rs`.
 - `cargo test -p rs_cam_viz -q --test rest_badge_one_predicate_g_restbadge`
 - `cargo test -p rs_cam_viz -q --test effects_are_stamped_wp19`
 - `cargo test -p rs_cam_viz -q --test load_requests_only_25d_regen_g_loadregen`
+- `cargo test -p rs_cam_viz -q --test panel_drafts_leave_egui_memory_ui09`

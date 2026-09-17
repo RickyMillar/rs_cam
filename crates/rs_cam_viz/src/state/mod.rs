@@ -3,6 +3,7 @@ pub mod history;
 pub mod job;
 pub mod multitool_planner;
 pub mod overlays;
+pub mod panels;
 pub mod rest_dependency;
 pub mod runtime;
 pub mod selection;
@@ -14,6 +15,7 @@ pub mod wizard;
 
 use history::UndoHistory;
 use overlays::OverlayPanelState;
+use panels::PanelDrafts;
 use runtime::GuiState;
 use selection::Selection;
 use simulation::SimulationState;
@@ -139,6 +141,11 @@ pub struct AppState {
     pub overlays: OverlayPanelState,
     pub simulation: SimulationState,
     pub history: UndoHistory,
+    /// UI-09: the panel drafts that outlive a frame — the text an operator
+    /// typed and the status line a panel printed. They used to sit in egui
+    /// temporary memory, where MCP and the integration harness could not
+    /// read them and the GRBL dump was re-parsed every frame.
+    pub panels: PanelDrafts,
     /// Show pre-flight checklist modal before export.
     pub show_preflight: bool,
     /// Show keyboard shortcuts reference window.
@@ -603,6 +610,7 @@ impl AppState {
             overlays: OverlayPanelState::new(),
             simulation: SimulationState::new(),
             history: UndoHistory::new(),
+            panels: PanelDrafts::default(),
             show_preflight: false,
             show_shortcuts: false,
             show_export_wizard: false,

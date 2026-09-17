@@ -21,7 +21,12 @@ pub enum ToolEditAction {
 /// true a "● modified — Apply / Revert" affordance is shown so the
 /// pending-until-committed state is legible (matching the Tool Library
 /// modal's draft-then-Save model — TOO-003). Returns the operator action.
-pub fn draw(ui: &mut egui::Ui, tool: &mut ToolConfig, modified: bool) -> ToolEditAction {
+pub fn draw(
+    ui: &mut egui::Ui,
+    tool: &mut ToolConfig,
+    modified: bool,
+    panels: &mut crate::state::panels::PanelDrafts,
+) -> ToolEditAction {
     ui.heading(&tool.name);
     ui.separator();
 
@@ -69,44 +74,42 @@ pub fn draw(ui: &mut egui::Ui, tool: &mut ToolConfig, modified: bool) -> ToolEdi
     // TOO-004: add-or-replace by geometry signature, so re-saving an edited
     // tool overwrites its catalog entry instead of silently piling up
     // duplicates that only the modal's Dedupe button could clean.
-    let name_id = egui::Id::new("tool_lib_save_catalog");
-    let status_id = egui::Id::new("tool_lib_save_status");
+    // UI-09: the catalog name and the status line are typed state on
+    // `AppState`, not egui temporary memory.
+    let mut save_clicked = false;
+    let mut trimmed = String::new();
     ui.horizontal(|ui| {
         ui.label("Save to library:");
-        let mut catalog: String = ui.data(|d| d.get_temp::<String>(name_id).unwrap_or_default());
-        let resp = ui.add(
-            egui::TextEdit::singleline(&mut catalog)
+        ui.add(
+            egui::TextEdit::singleline(&mut panels.tool_catalog_name)
                 .desired_width(120.0)
                 .hint_text("catalog e.g. endmills"),
         );
-        if resp.changed() {
-            ui.data_mut(|d| d.insert_temp(name_id, catalog.clone()));
-        }
-        let trimmed = catalog.trim().to_owned();
-        if ui
+        trimmed = panels.tool_catalog_name.trim().to_owned();
+        save_clicked = ui
             .add_enabled(!trimmed.is_empty(), egui::Button::new("Save"))
             .on_hover_text("Add to the catalog, or overwrite the matching entry if one exists.")
-            .clicked()
-        {
-            match rs_cam_core::io::tool_library::add_or_replace_tool(&trimmed, tool.clone()) {
-                Ok((path, replaced)) => {
-                    let verb = if replaced { "Updated" } else { "Saved" };
-                    ui.data_mut(|d| {
-                        d.insert_temp(
-                            status_id,
-                            format!("{verb} '{}' in {}", tool.name, path.display()),
-                        );
-                    });
-                }
-                Err(e) => {
-                    tracing::error!("tool library save failed: {e}");
-                    ui.data_mut(|d| d.insert_temp(status_id, format!("Save failed: {e}")));
-                }
+            .clicked();
+    });
+    if save_clicked {
+        match rs_cam_core::io::tool_library::add_or_replace_tool(&trimmed, tool.clone()) {
+            Ok((path, replaced)) => {
+                let verb = if replaced { "Updated" } else { "Saved" };
+                panels.tool_catalog_status =
+                    format!("{verb} '{}' in {}", tool.name, path.display());
+            }
+            Err(e) => {
+                tracing::error!("tool library save failed: {e}");
+                panels.tool_catalog_status = format!("Save failed: {e}");
             }
         }
-    });
-    if let Some(msg) = ui.data(|d| d.get_temp::<String>(status_id)) {
-        ui.label(egui::RichText::new(msg).small().weak());
+    }
+    if !panels.tool_catalog_status.is_empty() {
+        ui.label(
+            egui::RichText::new(&panels.tool_catalog_status)
+                .small()
+                .weak(),
+        );
     }
 
     action
