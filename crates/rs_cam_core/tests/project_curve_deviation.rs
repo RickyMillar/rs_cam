@@ -402,20 +402,21 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
     with_links.link_max_distance = 10.0;
     let tp_with_links = apply_dressups(
         AnnotatedToolpath::new(all_moves.clone()),
-        &with_links,
-        1000.0,
-        // WP22: no operation in scope, so the plunge cap does not apply.
-        None,
-        1.0,
-        10.0,
-        0.0,
-        None,
-        None,
-        None,
-        None,
-        OperationType::ProjectCurve.transform_capabilities(),
-        None,
-        None,
+        rs_cam_core::compute::execute::DressupContext {
+            cfg: &with_links,
+            nominal_feed_rate: 1000.0,
+            plunge_rate_mm_min: None,
+            tool_diameter: 1.0,
+            safe_z: 10.0,
+            stock_top: 0.0,
+            prior_stock: None,
+            feed_opt_stock: None,
+            cutter: None,
+            entry_surface: None,
+            transform_capabilities: OperationType::ProjectCurve.transform_capabilities(),
+            debug_ctx: None,
+            semantic_ctx: None,
+        },
         &mut ReconcileSet::empty(),
     )
     .toolpath;
@@ -424,20 +425,21 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
     // And without link_moves — the fixed default.
     let tp_no_links = apply_dressups(
         AnnotatedToolpath::new(all_moves.clone()),
-        &DressupConfig::default(),
-        1000.0,
-        // WP22: no operation in scope, so the plunge cap does not apply.
-        None,
-        1.0,
-        10.0,
-        0.0,
-        None,
-        None,
-        None,
-        None,
-        OperationType::ProjectCurve.transform_capabilities(),
-        None,
-        None,
+        rs_cam_core::compute::execute::DressupContext {
+            cfg: &DressupConfig::default(),
+            nominal_feed_rate: 1000.0,
+            plunge_rate_mm_min: None,
+            tool_diameter: 1.0,
+            safe_z: 10.0,
+            stock_top: 0.0,
+            prior_stock: None,
+            feed_opt_stock: None,
+            cutter: None,
+            entry_surface: None,
+            transform_capabilities: OperationType::ProjectCurve.transform_capabilities(),
+            debug_ctx: None,
+            semantic_ctx: None,
+        },
         &mut ReconcileSet::empty(),
     )
     .toolpath;
@@ -453,20 +455,21 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
     finish_defaults.lead_radius = 2.0;
     let tp_finish = apply_dressups(
         AnnotatedToolpath::new(all_moves.clone()),
-        &finish_defaults,
-        1000.0,
-        // WP22: no operation in scope, so the plunge cap does not apply.
-        None,
-        1.0,
-        10.0,
-        0.0,
-        None,
-        None,
-        None,
-        None,
-        OperationType::ProjectCurve.transform_capabilities(),
-        None,
-        None,
+        rs_cam_core::compute::execute::DressupContext {
+            cfg: &finish_defaults,
+            nominal_feed_rate: 1000.0,
+            plunge_rate_mm_min: None,
+            tool_diameter: 1.0,
+            safe_z: 10.0,
+            stock_top: 0.0,
+            prior_stock: None,
+            feed_opt_stock: None,
+            cutter: None,
+            entry_surface: None,
+            transform_capabilities: OperationType::ProjectCurve.transform_capabilities(),
+            debug_ctx: None,
+            semantic_ctx: None,
+        },
         &mut ReconcileSet::empty(),
     )
     .toolpath;
@@ -478,20 +481,21 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
     ramp_only.ramp_angle = 3.0;
     let tp_ramp = apply_dressups(
         AnnotatedToolpath::new(all_moves.clone()),
-        &ramp_only,
-        1000.0,
-        // WP22: no operation in scope, so the plunge cap does not apply.
-        None,
-        1.0,
-        10.0,
-        0.0,
-        None,
-        None,
-        None,
-        None,
-        OperationType::ProjectCurve.transform_capabilities(),
-        None,
-        None,
+        rs_cam_core::compute::execute::DressupContext {
+            cfg: &ramp_only,
+            nominal_feed_rate: 1000.0,
+            plunge_rate_mm_min: None,
+            tool_diameter: 1.0,
+            safe_z: 10.0,
+            stock_top: 0.0,
+            prior_stock: None,
+            feed_opt_stock: None,
+            cutter: None,
+            entry_surface: None,
+            transform_capabilities: OperationType::ProjectCurve.transform_capabilities(),
+            debug_ctx: None,
+            semantic_ctx: None,
+        },
         &mut ReconcileSet::empty(),
     )
     .toolpath;

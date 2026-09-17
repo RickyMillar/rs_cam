@@ -597,37 +597,21 @@ pub fn execute_job(
             let dressup_debug_ctx = dressup_scope.as_ref().map(|scope| scope.context());
             let dressed = crate::compute::execute::apply_dressups(
                 annotated,
-                &context.dressups,
-                context.feed_rate,
-                // WP22 (G-FEEDOPTPLUNGE): the RAW operation's plunge rate.
-                // The feed-optimisation pass caps a move the shared
-                // classifier calls `Plunge` at it. This is the one
-                // production door, so the cap reaches every generated
-                // toolpath and no test fixture.
-                Some(context.plunge_rate),
-                inputs.tool_def.diameter(),
-                inputs.heights.retract_z,
-                // Stock top in the simulator's frame (= the bbox passed to
-                // dexel construction) — used by `apply_entry` to keep ramp /
-                // helix descent rapids above stock. The dexel collision
-                // check operates on this same Z; using a different frame
-                // (e.g. `heights.top_z`) here re-introduces the
-                // false-positive rapids the fix targets.
-                inputs.emission_stock_bbox.max.z,
-                prior_stock_ref,
-                feed_opt_stock.as_mut(),
-                // S3: the air-cut filter classifies each sample for the
-                // whole cutter, so this op's tool rides in whether or not
-                // feed optimisation (the other consumer) is on.
-                Some(&inputs.tool_def as &dyn crate::tool::MillingCutter),
-                entry_surface,
-                context.transform_capabilities,
-                // The per-dressup ITEMS. `debug_options` gates them, so an
-                // operator who asked for a trace gets the same per-dressup
-                // entries the GUI worker used to record, and one who did
-                // not pays for none.
-                dressup_debug_ctx.as_ref(),
-                observer.records_dressup_items().then_some(&semantic_root),
+                crate::compute::execute::DressupContext {
+                    cfg: &context.dressups,
+                    nominal_feed_rate: context.feed_rate,
+                    plunge_rate_mm_min: Some(context.plunge_rate),
+                    tool_diameter: inputs.tool_def.diameter(),
+                    safe_z: inputs.heights.retract_z,
+                    stock_top: inputs.emission_stock_bbox.max.z,
+                    prior_stock: prior_stock_ref,
+                    feed_opt_stock: feed_opt_stock.as_mut(),
+                    cutter: Some(&inputs.tool_def as &dyn crate::tool::MillingCutter),
+                    entry_surface,
+                    transform_capabilities: context.transform_capabilities,
+                    debug_ctx: dressup_debug_ctx.as_ref(),
+                    semantic_ctx: observer.records_dressup_items().then_some(&semantic_root),
+                },
                 &mut channels,
             );
             annotated = dressed;

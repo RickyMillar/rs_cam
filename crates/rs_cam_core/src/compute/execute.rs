@@ -429,8 +429,8 @@ pub(crate) use clearing_2d::{
 pub(crate) use curve_engrave::{
     generate_chamfer, generate_inlay, generate_project_curve, generate_vcarve,
 };
-pub use dressup_apply::apply_dressups;
 use dressup_apply::attach_generic_rest_analysis;
+pub use dressup_apply::{DRESSUP_PIPELINE, DressupContext, DressupStage, apply_dressups};
 #[cfg(test)]
 pub(crate) use drilling::STALE_DRILL_PICKS_PHRASE;
 pub use drilling::{

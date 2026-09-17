@@ -1472,20 +1472,21 @@ fn feed_optimization_uses_configured_nominal_feed_not_entry_plunge() {
 
     let _result = apply_dressups(
         AnnotatedToolpath::new(tp),
-        &cfg,
-        configured_feed,
-        // WP22: no operation in scope, so the plunge cap does not apply.
-        None,
-        tool_def.diameter(),
-        30.0,
-        25.0,
-        None,
-        Some(&mut stock),
-        Some(&cutter),
-        None,
-        OperationType::Pocket.transform_capabilities(),
-        None,
-        Some(&semantic_root),
+        crate::compute::execute::DressupContext {
+            cfg: &cfg,
+            nominal_feed_rate: configured_feed,
+            plunge_rate_mm_min: None,
+            tool_diameter: tool_def.diameter(),
+            safe_z: 30.0,
+            stock_top: 25.0,
+            prior_stock: None,
+            feed_opt_stock: Some(&mut stock),
+            cutter: Some(&cutter),
+            entry_surface: None,
+            transform_capabilities: OperationType::Pocket.transform_capabilities(),
+            debug_ctx: None,
+            semantic_ctx: Some(&semantic_root),
+        },
         &mut ReconcileSet::empty(),
     );
     let semantic = recorder.finish();
@@ -1515,20 +1516,21 @@ fn apply_dressups_preserves_moves() {
     let cfg = DressupConfig::default();
     let result = apply_dressups(
         AnnotatedToolpath::new(tp),
-        &cfg,
-        1000.0,
-        // WP22: no operation in scope, so the plunge cap does not apply.
-        None,
-        6.35,
-        30.0,
-        0.0,
-        None,
-        None,
-        None,
-        None,
-        OperationType::DropCutter.transform_capabilities(),
-        None,
-        None,
+        crate::compute::execute::DressupContext {
+            cfg: &cfg,
+            nominal_feed_rate: 1000.0,
+            plunge_rate_mm_min: None,
+            tool_diameter: 6.35,
+            safe_z: 30.0,
+            stock_top: 0.0,
+            prior_stock: None,
+            feed_opt_stock: None,
+            cutter: None,
+            entry_surface: None,
+            transform_capabilities: OperationType::DropCutter.transform_capabilities(),
+            debug_ctx: None,
+            semantic_ctx: None,
+        },
         &mut ReconcileSet::empty(),
     );
 

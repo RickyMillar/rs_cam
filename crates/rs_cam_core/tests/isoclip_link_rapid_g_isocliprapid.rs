@@ -327,20 +327,21 @@ fn c_no_rapid_crosses_the_rest_stock() {
     };
     let dressed = apply_dressups(
         AnnotatedToolpath::new(two_island_pass()),
-        &cfg,
-        CUT_FEED,
-        // WP22: no operation in scope, so the plunge cap does not apply.
-        None,
-        cutter.diameter(),
-        RETRACT_Z,
-        STOCK_TOP_Z,
-        None,
-        None,
-        Some(&cutter),
-        None,
-        OperationType::Scallop.transform_capabilities(),
-        None,
-        None,
+        rs_cam_core::compute::execute::DressupContext {
+            cfg: &cfg,
+            nominal_feed_rate: CUT_FEED,
+            plunge_rate_mm_min: None,
+            tool_diameter: cutter.diameter(),
+            safe_z: RETRACT_Z,
+            stock_top: STOCK_TOP_Z,
+            prior_stock: None,
+            feed_opt_stock: None,
+            cutter: Some(&cutter),
+            entry_surface: None,
+            transform_capabilities: OperationType::Scallop.transform_capabilities(),
+            debug_ctx: None,
+            semantic_ctx: None,
+        },
         &mut ReconcileSet::empty(),
     );
     let (clipped, _mapping) = clip_toolpath_to_boundary_set_with_provenance(

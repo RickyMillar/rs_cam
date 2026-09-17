@@ -504,20 +504,21 @@ fn dressed_entry(stock: &TriDexelStock, carry_rest_stock: bool) -> Toolpath {
     };
     apply_dressups(
         AnnotatedToolpath::new(plunge_then_cut()),
-        &cfg,
-        CUT_FEED,
-        // WP22: no operation in scope, so the plunge cap does not apply.
-        None,
-        cutter.diameter(),
-        SAFE_Z,
-        STOCK_TOP_Z,
-        None,
-        None,
-        Some(&cutter),
-        Some(probe),
-        OperationType::Scallop.transform_capabilities(),
-        None,
-        None,
+        rs_cam_core::compute::execute::DressupContext {
+            cfg: &cfg,
+            nominal_feed_rate: CUT_FEED,
+            plunge_rate_mm_min: None,
+            tool_diameter: cutter.diameter(),
+            safe_z: SAFE_Z,
+            stock_top: STOCK_TOP_Z,
+            prior_stock: None,
+            feed_opt_stock: None,
+            cutter: Some(&cutter),
+            entry_surface: Some(probe),
+            transform_capabilities: OperationType::Scallop.transform_capabilities(),
+            debug_ctx: None,
+            semantic_ctx: None,
+        },
         &mut ReconcileSet::empty(),
     )
     .toolpath
@@ -633,20 +634,21 @@ fn dressed_entry_wide(stock: &TriDexelStock) -> Toolpath {
     };
     apply_dressups(
         AnnotatedToolpath::new(plunge_then_cut()),
-        &cfg,
-        CUT_FEED,
-        // WP22: no operation in scope, so the plunge cap does not apply.
-        None,
-        cutter.diameter(),
-        SAFE_Z,
-        STOCK_TOP_Z,
-        None,
-        None,
-        Some(&cutter),
-        Some(probe),
-        OperationType::Scallop.transform_capabilities(),
-        None,
-        None,
+        rs_cam_core::compute::execute::DressupContext {
+            cfg: &cfg,
+            nominal_feed_rate: CUT_FEED,
+            plunge_rate_mm_min: None,
+            tool_diameter: cutter.diameter(),
+            safe_z: SAFE_Z,
+            stock_top: STOCK_TOP_Z,
+            prior_stock: None,
+            feed_opt_stock: None,
+            cutter: Some(&cutter),
+            entry_surface: Some(probe),
+            transform_capabilities: OperationType::Scallop.transform_capabilities(),
+            debug_ctx: None,
+            semantic_ctx: None,
+        },
         &mut ReconcileSet::empty(),
     )
     .toolpath

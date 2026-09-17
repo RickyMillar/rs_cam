@@ -71,20 +71,21 @@ mod tests {
         ];
         let optimized = apply_dressups(
             AnnotatedToolpath::with_spans(raw, spans),
-            &cfg,
-            1000.0,
-            // WP22: no operation in scope, so the plunge cap does not apply.
-            None,
-            6.0,
-            safe_z,
-            0.0,
-            None,
-            None,
-            None,
-            None,
-            OperationType::Adaptive3d.transform_capabilities(),
-            None,
-            None,
+            rs_cam_core::compute::execute::DressupContext {
+                cfg: &cfg,
+                nominal_feed_rate: 1000.0,
+                plunge_rate_mm_min: None,
+                tool_diameter: 6.0,
+                safe_z,
+                stock_top: 0.0,
+                prior_stock: None,
+                feed_opt_stock: None,
+                cutter: None,
+                entry_surface: None,
+                transform_capabilities: OperationType::Adaptive3d.transform_capabilities(),
+                debug_ctx: None,
+                semantic_ctx: None,
+            },
             &mut ReconcileSet::empty(),
         );
 
@@ -118,20 +119,21 @@ mod tests {
         };
         let optimized = apply_dressups(
             AnnotatedToolpath::new(raw),
-            &cfg,
-            1000.0,
-            // WP22: no operation in scope, so the plunge cap does not apply.
-            None,
-            6.0,
-            safe_z,
-            0.0,
-            None,
-            None,
-            None,
-            None,
-            OperationType::Adaptive3d.transform_capabilities(),
-            None,
-            None,
+            rs_cam_core::compute::execute::DressupContext {
+                cfg: &cfg,
+                nominal_feed_rate: 1000.0,
+                plunge_rate_mm_min: None,
+                tool_diameter: 6.0,
+                safe_z,
+                stock_top: 0.0,
+                prior_stock: None,
+                feed_opt_stock: None,
+                cutter: None,
+                entry_surface: None,
+                transform_capabilities: OperationType::Adaptive3d.transform_capabilities(),
+                debug_ctx: None,
+                semantic_ctx: None,
+            },
             &mut ReconcileSet::empty(),
         );
 

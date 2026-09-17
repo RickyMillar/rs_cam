@@ -784,20 +784,21 @@ fn chained_junctions_survive_the_rapid_order_dressup() {
     let tool_def = build_cutter(&tool_cfg);
     let after = apply_dressups(
         on,
-        &dressups,
-        800.0,
-        // WP22: no operation in scope, so the plunge cap does not apply.
-        None,
-        TOOL_DIAMETER_MM,
-        SAFE_Z_MM,
-        0.0,
-        None,
-        None,
-        Some(&tool_def as &dyn MillingCutter),
-        None,
-        OperationType::ProjectCurve.transform_capabilities(),
-        None,
-        None,
+        crate::compute::execute::DressupContext {
+            cfg: &dressups,
+            nominal_feed_rate: 800.0,
+            plunge_rate_mm_min: None,
+            tool_diameter: TOOL_DIAMETER_MM,
+            safe_z: SAFE_Z_MM,
+            stock_top: 0.0,
+            prior_stock: None,
+            feed_opt_stock: None,
+            cutter: Some(&tool_def as &dyn MillingCutter),
+            entry_surface: None,
+            transform_capabilities: OperationType::ProjectCurve.transform_capabilities(),
+            debug_ctx: None,
+            semantic_ctx: None,
+        },
         &mut ReconcileSet::empty(),
     );
 

@@ -172,13 +172,108 @@ fn resolve_rest_reference<'a>(
 
 // ── Dressup tracing helper (Phase 4 / #44) ────────────────────────────
 
-/// Identifiers for one dressup step, used by the tracing wrapper.
-struct DressupTraceInfo<'a> {
-    debug_key: &'a str,
-    debug_label: &'a str,
-    kind: ToolpathSemanticKind,
-    semantic_label: &'a str,
+/// One stage of the dressup pipeline: the four identifiers it traces under.
+///
+/// CMP-20 / CUT-06: each stage used to write these four strings as a literal
+/// at its own call site, and they existed nowhere else. Nothing could
+/// enumerate the pipeline. They are named constants now, and
+/// [`DRESSUP_PIPELINE`] lists them in run order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DressupStage {
+    pub debug_key: &'static str,
+    pub debug_label: &'static str,
+    pub kind: ToolpathSemanticKind,
+    pub semantic_label: &'static str,
 }
+
+impl DressupStage {
+    pub const RAPID_ORDER: Self = Self {
+        debug_key: "rapid_order",
+        debug_label: "Optimize rapid order",
+        kind: ToolpathSemanticKind::Optimization,
+        semantic_label: "Rapid ordering",
+    };
+    pub const RAMP_ENTRY: Self = Self {
+        debug_key: "entry_style",
+        debug_label: "Ramp entry",
+        kind: ToolpathSemanticKind::Entry,
+        semantic_label: "Ramp entry",
+    };
+    pub const HELIX_ENTRY: Self = Self {
+        debug_key: "entry_style",
+        debug_label: "Helix entry",
+        kind: ToolpathSemanticKind::Entry,
+        semantic_label: "Helix entry",
+    };
+    pub const DOGBONES: Self = Self {
+        debug_key: "dogbones",
+        debug_label: "Apply dogbones",
+        kind: ToolpathSemanticKind::Dressup,
+        semantic_label: "Dogbones",
+    };
+    pub const LEAD_IN_OUT: Self = Self {
+        debug_key: "lead_in_out",
+        debug_label: "Apply lead in/out",
+        kind: ToolpathSemanticKind::Dressup,
+        semantic_label: "Lead in/out",
+    };
+    pub const LINK_MOVES: Self = Self {
+        debug_key: "link_moves",
+        debug_label: "Apply link moves",
+        kind: ToolpathSemanticKind::Dressup,
+        semantic_label: "Link moves",
+    };
+    pub const ARC_FIT: Self = Self {
+        debug_key: "arc_fit",
+        debug_label: "Fit arcs",
+        kind: ToolpathSemanticKind::Optimization,
+        semantic_label: "Arc fitting",
+    };
+    pub const SEGMENT_MERGE: Self = Self {
+        debug_key: "segment_merge",
+        debug_label: "Merge short segments",
+        kind: ToolpathSemanticKind::Optimization,
+        semantic_label: "Segment merge",
+    };
+    pub const AIR_CUT_FILTER: Self = Self {
+        debug_key: "air_cut_filter",
+        debug_label: "Filter air cuts",
+        kind: ToolpathSemanticKind::Optimization,
+        semantic_label: "Air-cut filter",
+    };
+    pub const FEED_OPTIMIZATION: Self = Self {
+        debug_key: "feed_optimization",
+        debug_label: "Optimize feeds",
+        kind: ToolpathSemanticKind::Optimization,
+        semantic_label: "Feed optimization",
+    };
+}
+
+/// The dressup pipeline, in the order [`apply_dressups`] runs it.
+///
+/// ORDER IS LOAD-BEARING and this list states it: segment merge runs AFTER
+/// arc fitting (curves are already G2/G3 by then, so the merge only cleans
+/// up residual linears), and the second rapid-order pass runs AFTER link
+/// moves. `RAPID_ORDER` appears twice for that reason — the barriered arm
+/// and the unbarriered fallback are the same stage under two gates, and
+/// exactly one of them fires. `RAMP_ENTRY` stands for the entry slot; a
+/// helix entry runs [`DressupStage::HELIX_ENTRY`] in the same position.
+///
+/// Every stage is GATED. A run emits a subsequence of this list, never a
+/// different order and never a key that is not here.
+/// `tests/dressup_span_invariants.rs` is the guard.
+pub const DRESSUP_PIPELINE: &[DressupStage] = &[
+    DressupStage::RAPID_ORDER,
+    DressupStage::RAMP_ENTRY,
+    DressupStage::DOGBONES,
+    DressupStage::LEAD_IN_OUT,
+    DressupStage::LINK_MOVES,
+    DressupStage::ARC_FIT,
+    DressupStage::SEGMENT_MERGE,
+    DressupStage::RAPID_ORDER,
+    DressupStage::AIR_CUT_FILTER,
+    DressupStage::FEED_OPTIMIZATION,
+];
 
 /// Run one dressup step with optional debug + semantic tracing scopes.
 ///
@@ -199,7 +294,7 @@ fn apply_dressup_traced(
     debug_ctx: Option<&ToolpathDebugContext>,
     semantic_ctx: Option<&ToolpathSemanticContext>,
     channels: &mut ReconcileSet<'_>,
-    info: DressupTraceInfo<'_>,
+    info: DressupStage,
     set_params: impl FnOnce(&ToolpathSemanticScope),
     transform: impl FnOnce(AnnotatedToolpath) -> Transformed,
 ) -> AnnotatedToolpath {
@@ -334,34 +429,65 @@ fn toolpath_is_drill_cycle(annotated: &AnnotatedToolpath) -> bool {
         .any(|m| matches!(m.intent, crate::toolpath::MoveIntent::Drilling))
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Everything one generation's dressup pipeline needs besides the toolpath
+/// and the reconcile channels.
+///
+/// CMP-20 / CUT-11: `apply_dressups` took 15 positional arguments and
+/// carried its own `#[allow(clippy::too_many_arguments)]`. Nine of them are
+/// per-generation constants, so a new dressup that needed one more input
+/// widened a 15-argument signature in three crates. They travel together
+/// now.
+///
+/// `channels` stays OUTSIDE this struct. It is the one `&mut` the pipeline
+/// reconciles against at every step, and folding it in would hold the whole
+/// context mutably borrowed while each stage reads its constants.
+pub struct DressupContext<'a> {
+    pub cfg: &'a DressupConfig,
+    pub nominal_feed_rate: f64,
+    /// WP22 (G-FEEDOPTPLUNGE): the OPERATION's own plunge rate (mm/min).
+    /// The feed-optimisation pass caps a geometric plunge at it. `None`
+    /// names a caller with no operation in scope, and the cap does not
+    /// apply. This is NOT the `plunge_rate` local inside the pipeline,
+    /// which is a heuristic for the entry and link dressups.
+    pub plunge_rate_mm_min: Option<f64>,
+    pub tool_diameter: f64,
+    pub safe_z: f64,
+    pub stock_top: f64,
+    pub prior_stock: Option<&'a crate::dexel_stock::TriDexelStock>,
+    pub feed_opt_stock: Option<&'a mut crate::dexel_stock::TriDexelStock>,
+    pub cutter: Option<&'a dyn MillingCutter>,
+    /// G-RAMPTERRAIN: drop-cutter surface probe for stock-aware entry
+    /// moves. `None` only for operations with no mesh surface.
+    pub entry_surface: Option<crate::dressup::EntrySurfaceProbe<'a>>,
+    pub transform_capabilities: OperationTransformCapabilities,
+    pub debug_ctx: Option<&'a ToolpathDebugContext>,
+    pub semantic_ctx: Option<&'a ToolpathSemanticContext>,
+}
+
 pub fn apply_dressups(
     annotated: AnnotatedToolpath,
-    cfg: &DressupConfig,
-    nominal_feed_rate: f64,
-    // WP22 (G-FEEDOPTPLUNGE): the OPERATION's own plunge rate (mm/min).
-    // The feed-optimisation pass caps a geometric plunge at it. `None`
-    // names a caller with no operation in scope, and the cap does not
-    // apply. This is NOT the `plunge_rate` local below, which is a
-    // heuristic for the entry and link dressups.
-    plunge_rate_mm_min: Option<f64>,
-    tool_diameter: f64,
-    safe_z: f64,
-    stock_top: f64,
-    prior_stock: Option<&crate::dexel_stock::TriDexelStock>,
-    feed_opt_stock: Option<&mut crate::dexel_stock::TriDexelStock>,
-    cutter: Option<&dyn MillingCutter>,
-    // G-RAMPTERRAIN: drop-cutter surface probe for stock-aware entry
-    // moves. `None` only for operations with no mesh surface.
-    entry_surface: Option<crate::dressup::EntrySurfaceProbe<'_>>,
-    transform_capabilities: OperationTransformCapabilities,
-    debug_ctx: Option<&ToolpathDebugContext>,
-    semantic_ctx: Option<&ToolpathSemanticContext>,
+    ctx: DressupContext<'_>,
     channels: &mut ReconcileSet<'_>,
 ) -> AnnotatedToolpath {
     use crate::dressup::{
         EntryStyle, LinkMoveParams, apply_dogbones, apply_entry, apply_link_moves,
     };
+
+    let DressupContext {
+        cfg,
+        nominal_feed_rate,
+        plunge_rate_mm_min,
+        tool_diameter,
+        safe_z,
+        stock_top,
+        prior_stock,
+        feed_opt_stock,
+        cutter,
+        entry_surface,
+        transform_capabilities,
+        debug_ctx,
+        semantic_ctx,
+    } = ctx;
 
     // Capability gate: barriered TSP only fires when the input has barriers.
     let rapid_order_barriers = annotated.rapid_order_barriers();
@@ -381,12 +507,7 @@ pub fn apply_dressups(
             debug_ctx,
             semantic_ctx,
             channels,
-            DressupTraceInfo {
-                debug_key: "rapid_order",
-                debug_label: "Optimize rapid order",
-                kind: ToolpathSemanticKind::Optimization,
-                semantic_label: "Rapid ordering",
-            },
+            DressupStage::RAPID_ORDER,
             |scope| {
                 scope.set_param(SemanticKey::SafeZ, safe_z);
                 scope.set_param(SemanticKey::BarrierCount, barrier_count);
@@ -468,12 +589,7 @@ pub fn apply_dressups(
                 debug_ctx,
                 semantic_ctx,
                 channels,
-                DressupTraceInfo {
-                    debug_key: "entry_style",
-                    debug_label: "Ramp entry",
-                    kind: ToolpathSemanticKind::Entry,
-                    semantic_label: "Ramp entry",
-                },
+                DressupStage::RAMP_ENTRY,
                 |scope| {
                     scope.set_param(SemanticKey::Kind, "ramp");
                     scope.set_param(SemanticKey::MaxAngleDeg, ramp_angle);
@@ -499,12 +615,7 @@ pub fn apply_dressups(
                 debug_ctx,
                 semantic_ctx,
                 channels,
-                DressupTraceInfo {
-                    debug_key: "entry_style",
-                    debug_label: "Helix entry",
-                    kind: ToolpathSemanticKind::Entry,
-                    semantic_label: "Helix entry",
-                },
+                DressupStage::HELIX_ENTRY,
                 |scope| {
                     scope.set_param(SemanticKey::Kind, "helix");
                     scope.set_param(SemanticKey::Radius, helix_radius);
@@ -535,12 +646,7 @@ pub fn apply_dressups(
             debug_ctx,
             semantic_ctx,
             channels,
-            DressupTraceInfo {
-                debug_key: "dogbones",
-                debug_label: "Apply dogbones",
-                kind: ToolpathSemanticKind::Dressup,
-                semantic_label: "Dogbones",
-            },
+            DressupStage::DOGBONES,
             |scope| {
                 scope.set_param(SemanticKey::AngleDeg, angle);
             },
@@ -558,12 +664,7 @@ pub fn apply_dressups(
             debug_ctx,
             semantic_ctx,
             channels,
-            DressupTraceInfo {
-                debug_key: "lead_in_out",
-                debug_label: "Apply lead in/out",
-                kind: ToolpathSemanticKind::Dressup,
-                semantic_label: "Lead in/out",
-            },
+            DressupStage::LEAD_IN_OUT,
             |scope| {
                 scope.set_param(SemanticKey::Radius, radius);
                 if let Some(f) = li_feed {
@@ -599,12 +700,7 @@ pub fn apply_dressups(
             debug_ctx,
             semantic_ctx,
             channels,
-            DressupTraceInfo {
-                debug_key: "link_moves",
-                debug_label: "Apply link moves",
-                kind: ToolpathSemanticKind::Dressup,
-                semantic_label: "Link moves",
-            },
+            DressupStage::LINK_MOVES,
             |scope| {
                 scope.set_param(SemanticKey::MaxLinkDistance, max_dist);
                 scope.set_param(SemanticKey::LinkFeedRate, link_feed);
@@ -631,12 +727,7 @@ pub fn apply_dressups(
             debug_ctx,
             semantic_ctx,
             channels,
-            DressupTraceInfo {
-                debug_key: "arc_fit",
-                debug_label: "Fit arcs",
-                kind: ToolpathSemanticKind::Optimization,
-                semantic_label: "Arc fitting",
-            },
+            DressupStage::ARC_FIT,
             |scope| {
                 scope.set_param(SemanticKey::Tolerance, tolerance);
             },
@@ -654,12 +745,7 @@ pub fn apply_dressups(
             debug_ctx,
             semantic_ctx,
             channels,
-            DressupTraceInfo {
-                debug_key: "segment_merge",
-                debug_label: "Merge short segments",
-                kind: ToolpathSemanticKind::Optimization,
-                semantic_label: "Segment merge",
-            },
+            DressupStage::SEGMENT_MERGE,
             |scope| {
                 scope.set_param(SemanticKey::Tolerance, merge_tol);
             },
@@ -678,12 +764,7 @@ pub fn apply_dressups(
             debug_ctx,
             semantic_ctx,
             channels,
-            DressupTraceInfo {
-                debug_key: "rapid_order",
-                debug_label: "Optimize rapid order",
-                kind: ToolpathSemanticKind::Optimization,
-                semantic_label: "Rapid ordering",
-            },
+            DressupStage::RAPID_ORDER,
             |scope| {
                 scope.set_param(SemanticKey::SafeZ, safe_z);
             },
@@ -702,12 +783,7 @@ pub fn apply_dressups(
             debug_ctx,
             semantic_ctx,
             channels,
-            DressupTraceInfo {
-                debug_key: "air_cut_filter",
-                debug_label: "Filter air cuts",
-                kind: ToolpathSemanticKind::Optimization,
-                semantic_label: "Air-cut filter",
-            },
+            DressupStage::AIR_CUT_FILTER,
             |scope| {
                 scope.set_param(SemanticKey::ToolRadius, tool_radius);
                 scope.set_param(SemanticKey::SafeZ, safe_z);
@@ -753,12 +829,7 @@ pub fn apply_dressups(
             debug_ctx,
             semantic_ctx,
             channels,
-            DressupTraceInfo {
-                debug_key: "feed_optimization",
-                debug_label: "Optimize feeds",
-                kind: ToolpathSemanticKind::Optimization,
-                semantic_label: "Feed optimization",
-            },
+            DressupStage::FEED_OPTIMIZATION,
             |scope| {
                 scope.set_param(SemanticKey::NominalFeedRate, nominal);
                 scope.set_param(SemanticKey::MaxFeedRate, max_rate);

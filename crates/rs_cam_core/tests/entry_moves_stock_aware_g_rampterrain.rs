@@ -114,20 +114,21 @@ fn dress_on_ridge(entry_x: f64, style: DressupEntryStyle) -> Dressed {
     };
     let dressed = apply_dressups(
         AnnotatedToolpath::new(tp),
-        &cfg,
-        FEED,
-        // WP22: no operation in scope, so the plunge cap does not apply.
-        None,
-        cutter.diameter(),
-        SAFE_Z,
-        RIDGE_HEIGHT_MM,
-        None,
-        None,
-        Some(&cutter),
-        Some(probe),
-        OperationType::Scallop.transform_capabilities(),
-        None,
-        None,
+        rs_cam_core::compute::execute::DressupContext {
+            cfg: &cfg,
+            nominal_feed_rate: FEED,
+            plunge_rate_mm_min: None,
+            tool_diameter: cutter.diameter(),
+            safe_z: SAFE_Z,
+            stock_top: RIDGE_HEIGHT_MM,
+            prior_stock: None,
+            feed_opt_stock: None,
+            cutter: Some(&cutter),
+            entry_surface: Some(probe),
+            transform_capabilities: OperationType::Scallop.transform_capabilities(),
+            debug_ctx: None,
+            semantic_ctx: None,
+        },
         &mut ReconcileSet::empty(),
     );
     Dressed {
@@ -233,20 +234,21 @@ fn unclipped_ramp_keeps_two_legs() {
     };
     let dressed = apply_dressups(
         AnnotatedToolpath::new(tp),
-        &cfg,
-        FEED,
-        // WP22: no operation in scope, so the plunge cap does not apply.
-        None,
-        cutter.diameter(),
-        SAFE_Z,
-        RIDGE_HEIGHT_MM,
-        None,
-        None,
-        Some(&cutter),
-        Some(probe),
-        OperationType::Scallop.transform_capabilities(),
-        None,
-        None,
+        rs_cam_core::compute::execute::DressupContext {
+            cfg: &cfg,
+            nominal_feed_rate: FEED,
+            plunge_rate_mm_min: None,
+            tool_diameter: cutter.diameter(),
+            safe_z: SAFE_Z,
+            stock_top: RIDGE_HEIGHT_MM,
+            prior_stock: None,
+            feed_opt_stock: None,
+            cutter: Some(&cutter),
+            entry_surface: Some(probe),
+            transform_capabilities: OperationType::Scallop.transform_capabilities(),
+            debug_ctx: None,
+            semantic_ctx: None,
+        },
         &mut ReconcileSet::empty(),
     );
     assert_eq!(

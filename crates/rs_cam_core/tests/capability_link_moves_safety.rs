@@ -235,20 +235,21 @@ fn dressup(tp: Toolpath, cfg: &DressupConfig, op: OperationType, tool_diameter: 
     let spans = production_spans(&tp, op);
     apply_dressups(
         rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::with_spans(tp, spans),
-        cfg,
-        1000.0,
-        // WP22: no operation in scope, so the plunge cap does not apply.
-        None,
-        tool_diameter,
-        /* safe_z */ 30.0,
-        /* stock_top */ 0.0,
-        /* prior_stock */ None,
-        /* feed_opt_stock */ None,
-        /* cutter */ None,
-        None,
-        op.transform_capabilities(),
-        None,
-        None,
+        rs_cam_core::compute::execute::DressupContext {
+            cfg,
+            nominal_feed_rate: 1000.0,
+            plunge_rate_mm_min: None,
+            tool_diameter,
+            safe_z: /* safe_z */ 30.0,
+            stock_top: /* stock_top */ 0.0,
+            prior_stock: /* prior_stock */ None,
+            feed_opt_stock: /* feed_opt_stock */ None,
+            cutter: /* cutter */ None,
+            entry_surface: None,
+            transform_capabilities: op.transform_capabilities(),
+            debug_ctx: None,
+            semantic_ctx: None,
+        },
         &mut ReconcileSet::empty(),
     )
     .toolpath
@@ -269,20 +270,21 @@ fn dressup_with_caps(
 ) -> Toolpath {
     apply_dressups(
         rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp),
-        cfg,
-        1000.0,
-        // WP22: no operation in scope, so the plunge cap does not apply.
-        None,
-        tool_diameter,
-        /* safe_z */ 30.0,
-        /* stock_top */ 0.0,
-        /* prior_stock */ None,
-        /* feed_opt_stock */ None,
-        /* cutter */ None,
-        None,
-        caps,
-        None,
-        None,
+        rs_cam_core::compute::execute::DressupContext {
+            cfg,
+            nominal_feed_rate: 1000.0,
+            plunge_rate_mm_min: None,
+            tool_diameter,
+            safe_z: /* safe_z */ 30.0,
+            stock_top: /* stock_top */ 0.0,
+            prior_stock: /* prior_stock */ None,
+            feed_opt_stock: /* feed_opt_stock */ None,
+            cutter: /* cutter */ None,
+            entry_surface: None,
+            transform_capabilities: caps,
+            debug_ctx: None,
+            semantic_ctx: None,
+        },
         &mut ReconcileSet::empty(),
     )
     .toolpath
@@ -1713,20 +1715,21 @@ fn unified_finish_node_barriers_allow_intra_region_reorder_and_pin_depth() {
         let spans = unified_finish_spans(&raw, &anns, &report);
         apply_dressups(
             AnnotatedToolpath::with_spans(raw.clone(), spans),
-            cfg,
-            1000.0,
-            // WP22: no operation in scope, so the plunge cap does not apply.
-            None,
-            /* tool_diameter */ 3.0,
-            /* safe_z */ 30.0,
-            /* stock_top */ 0.0,
-            None,
-            None,
-            None,
-            None,
-            caps,
-            None,
-            None,
+            rs_cam_core::compute::execute::DressupContext {
+                cfg,
+                nominal_feed_rate: 1000.0,
+                plunge_rate_mm_min: None,
+                tool_diameter: /* tool_diameter */ 3.0,
+                safe_z: /* safe_z */ 30.0,
+                stock_top: /* stock_top */ 0.0,
+                prior_stock: None,
+                feed_opt_stock: None,
+                cutter: None,
+                entry_surface: None,
+                transform_capabilities: caps,
+                debug_ctx: None,
+                semantic_ctx: None,
+            },
             &mut ReconcileSet::empty(),
         )
     };
@@ -1930,20 +1933,21 @@ fn steep_shallow_split_barriers_allow_intra_half_reorder_and_pin_depth() {
     let dressed = |cfg: &DressupConfig| -> AnnotatedToolpath {
         apply_dressups(
             AnnotatedToolpath::with_spans(raw.clone(), steep_shallow_spans(&raw, &split)),
-            cfg,
-            1000.0,
-            // WP22: no operation in scope, so the plunge cap does not apply.
-            None,
-            /* tool_diameter */ 3.0,
-            /* safe_z */ 30.0,
-            /* stock_top */ 0.0,
-            None,
-            None,
-            None,
-            None,
-            caps,
-            None,
-            None,
+            rs_cam_core::compute::execute::DressupContext {
+                cfg,
+                nominal_feed_rate: 1000.0,
+                plunge_rate_mm_min: None,
+                tool_diameter: /* tool_diameter */ 3.0,
+                safe_z: /* safe_z */ 30.0,
+                stock_top: /* stock_top */ 0.0,
+                prior_stock: None,
+                feed_opt_stock: None,
+                cutter: None,
+                entry_surface: None,
+                transform_capabilities: caps,
+                debug_ctx: None,
+                semantic_ctx: None,
+            },
             &mut ReconcileSet::empty(),
         )
     };

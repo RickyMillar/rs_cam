@@ -270,20 +270,21 @@ fn three_pass_full_dressups_fingerprint() {
 
     let out = apply_dressups(
         input,
-        &full_dressups(),
-        1000.0,
-        // WP22: no operation in scope, so the plunge cap does not apply.
-        None,
-        6.0,
-        /* safe_z */ 30.0,
-        /* stock_top */ 0.0,
-        None,
-        None,
-        None,
-        None,
-        OperationType::Adaptive3d.transform_capabilities(),
-        None,
-        None,
+        rs_cam_core::compute::execute::DressupContext {
+            cfg: &full_dressups(),
+            nominal_feed_rate: 1000.0,
+            plunge_rate_mm_min: None,
+            tool_diameter: 6.0,
+            safe_z: /* safe_z */ 30.0,
+            stock_top: /* stock_top */ 0.0,
+            prior_stock: None,
+            feed_opt_stock: None,
+            cutter: None,
+            entry_surface: None,
+            transform_capabilities: OperationType::Adaptive3d.transform_capabilities(),
+            debug_ctx: None,
+            semantic_ctx: None,
+        },
         &mut ReconcileSet::new(Some(&recorder), None),
     );
 
@@ -331,20 +332,21 @@ fn arc_raster_full_dressups_fingerprint() {
 
     let out = apply_dressups(
         input,
-        &full_dressups(),
-        1200.0,
-        // WP22: no operation in scope, so the plunge cap does not apply.
-        None,
-        6.0,
-        /* safe_z */ 30.0,
-        /* stock_top */ 0.0,
-        None,
-        None,
-        None,
-        None,
-        OperationType::Adaptive3d.transform_capabilities(),
-        None,
-        None,
+        rs_cam_core::compute::execute::DressupContext {
+            cfg: &full_dressups(),
+            nominal_feed_rate: 1200.0,
+            plunge_rate_mm_min: None,
+            tool_diameter: 6.0,
+            safe_z: /* safe_z */ 30.0,
+            stock_top: /* stock_top */ 0.0,
+            prior_stock: None,
+            feed_opt_stock: None,
+            cutter: None,
+            entry_surface: None,
+            transform_capabilities: OperationType::Adaptive3d.transform_capabilities(),
+            debug_ctx: None,
+            semantic_ctx: None,
+        },
         &mut ReconcileSet::new(Some(&recorder), None),
     );
 
@@ -433,20 +435,21 @@ fn face_full_chain_fingerprint() {
     // Stage 1 — dressups.
     let mut current = apply_dressups(
         input,
-        &full_dressups(),
-        1500.0,
-        // WP22: no operation in scope, so the plunge cap does not apply.
-        None,
-        6.0,
-        /* safe_z */ 30.0,
-        /* stock_top */ 0.0,
-        None,
-        None,
-        None,
-        None,
-        OperationType::Face.transform_capabilities(),
-        None,
-        None,
+        rs_cam_core::compute::execute::DressupContext {
+            cfg: &full_dressups(),
+            nominal_feed_rate: 1500.0,
+            plunge_rate_mm_min: None,
+            tool_diameter: 6.0,
+            safe_z: /* safe_z */ 30.0,
+            stock_top: /* stock_top */ 0.0,
+            prior_stock: None,
+            feed_opt_stock: None,
+            cutter: None,
+            entry_surface: None,
+            transform_capabilities: OperationType::Face.transform_capabilities(),
+            debug_ctx: None,
+            semantic_ctx: None,
+        },
         &mut ReconcileSet::new(Some(&recorder), None),
     );
     // RE-PINNED 2026-09-09 (G-ISOCLIPRAPID), mechanism: the lead-in's

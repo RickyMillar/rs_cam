@@ -29,10 +29,11 @@
 
 use rs_cam_core::{
     compute::catalog::OperationType,
-    compute::config::DressupConfig,
-    compute::execute::apply_dressups,
+    compute::config::{DressupConfig, DressupEntryStyle},
+    compute::execute::{DRESSUP_PIPELINE, apply_dressups},
     geo::P3,
     toolpath::Toolpath,
+    trace::debug_trace::ToolpathDebugRecorder,
     trace::toolpath_spans::{AnnotatedToolpath, Span, SpanKind},
     trace::transform_provenance::ReconcileSet,
 };
@@ -124,20 +125,21 @@ fn run_full_pipeline(
 ) -> AnnotatedToolpath {
     apply_dressups(
         annotated,
-        cfg,
-        1000.0,
-        // WP22: no operation in scope, so the plunge cap does not apply.
-        None,
-        tool_diameter,
-        /* safe_z */ 30.0,
-        /* stock_top */ 0.0,
-        None,
-        None,
-        None,
-        None,
-        op.transform_capabilities(),
-        None,
-        None,
+        rs_cam_core::compute::execute::DressupContext {
+            cfg,
+            nominal_feed_rate: 1000.0,
+            plunge_rate_mm_min: None,
+            tool_diameter,
+            safe_z: /* safe_z */ 30.0,
+            stock_top: /* stock_top */ 0.0,
+            prior_stock: None,
+            feed_opt_stock: None,
+            cutter: None,
+            entry_surface: None,
+            transform_capabilities: op.transform_capabilities(),
+            debug_ctx: None,
+            semantic_ctx: None,
+        },
         &mut ReconcileSet::empty(),
     )
 }
@@ -183,20 +185,21 @@ fn synthetic_three_pass_preserves_invariants_across_all_combos() {
         let n_in = input.toolpath.moves.len();
         let output = apply_dressups(
             input,
-            &cfg,
-            1000.0,
-            // WP22: no operation in scope, so the plunge cap does not apply.
-            None,
-            6.0,
-            10.0,
-            0.0,
-            None,
-            None,
-            None,
-            None,
-            cap,
-            None,
-            None,
+            rs_cam_core::compute::execute::DressupContext {
+                cfg: &cfg,
+                nominal_feed_rate: 1000.0,
+                plunge_rate_mm_min: None,
+                tool_diameter: 6.0,
+                safe_z: 10.0,
+                stock_top: 0.0,
+                prior_stock: None,
+                feed_opt_stock: None,
+                cutter: None,
+                entry_surface: None,
+                transform_capabilities: cap,
+                debug_ctx: None,
+                semantic_ctx: None,
+            },
             &mut ReconcileSet::empty(),
         );
         assert_invariants(&output, label);
@@ -225,20 +228,21 @@ fn synthetic_three_pass_link_moves_never_straddles_barrier() {
     };
     let output = apply_dressups(
         input,
-        &cfg,
-        1000.0,
-        // WP22: no operation in scope, so the plunge cap does not apply.
-        None,
-        6.0,
-        10.0,
-        0.0,
-        None,
-        None,
-        None,
-        None,
-        cap,
-        None,
-        None,
+        rs_cam_core::compute::execute::DressupContext {
+            cfg: &cfg,
+            nominal_feed_rate: 1000.0,
+            plunge_rate_mm_min: None,
+            tool_diameter: 6.0,
+            safe_z: 10.0,
+            stock_top: 0.0,
+            prior_stock: None,
+            feed_opt_stock: None,
+            cutter: None,
+            entry_surface: None,
+            transform_capabilities: cap,
+            debug_ctx: None,
+            semantic_ctx: None,
+        },
         &mut ReconcileSet::empty(),
     );
     assert_invariants(&output, "link_moves_barrier_check");
@@ -284,20 +288,21 @@ fn synthetic_with_invalid_input_spans_stays_invalid() {
     };
     let output = apply_dressups(
         input,
-        &cfg,
-        1000.0,
-        // WP22: no operation in scope, so the plunge cap does not apply.
-        None,
-        6.0,
-        10.0,
-        0.0,
-        None,
-        None,
-        None,
-        None,
-        cap,
-        None,
-        None,
+        rs_cam_core::compute::execute::DressupContext {
+            cfg: &cfg,
+            nominal_feed_rate: 1000.0,
+            plunge_rate_mm_min: None,
+            tool_diameter: 6.0,
+            safe_z: 10.0,
+            stock_top: 0.0,
+            prior_stock: None,
+            feed_opt_stock: None,
+            cutter: None,
+            entry_surface: None,
+            transform_capabilities: cap,
+            debug_ctx: None,
+            semantic_ctx: None,
+        },
         &mut ReconcileSet::empty(),
     );
     assert_invariants(&output, "invalid_input_passthrough");
@@ -340,4 +345,112 @@ fn face_op_dressup_pipeline_preserves_invariants() {
         assert_invariants(&output, &scope);
         assert_operation_span_tracks_moves(&output, &scope);
     }
+}
+
+// ── CMP-20 / CUT-06: the pipeline is a list, and its order is pinned ─────
+
+/// A run emits a SUBSEQUENCE of [`DRESSUP_PIPELINE`], in order.
+///
+/// Every stage used to write its four trace strings (`debug_key`,
+/// `debug_label`, `kind`, `semantic_label`) as a literal at its own call
+/// site, and those strings existed nowhere else. Nothing could enumerate
+/// the pipeline, so nothing checked that the order the code runs matches
+/// the order the docs claim. The stages are named constants now and
+/// `DRESSUP_PIPELINE` lists them in run order.
+///
+/// ORDER IS LOAD-BEARING: segment merge runs after arc fitting, and the
+/// unbarriered rapid-order pass runs after link moves. A stage that moved
+/// would emit its key out of order and fail here.
+///
+/// Non-vacuity: the run must emit at least four stages, and every key it
+/// emits must appear in the list.
+#[test]
+fn dressup_stages_run_in_the_order_the_pipeline_lists() {
+    let recorder = ToolpathDebugRecorder::new("Stage order", "Pocket");
+    let root = recorder.root_context();
+    let cfg = DressupConfig {
+        entry_style: DressupEntryStyle::Ramp,
+        ramp_angle: 5.0,
+        dogbone: true,
+        dogbone_angle: 90.0,
+        lead_in_out: true,
+        lead_radius: 1.0,
+        link_moves: true,
+        link_max_distance: 50.0,
+        arc_fitting: true,
+        arc_tolerance: 0.05,
+        segment_merge: true,
+        optimize_rapid_order: true,
+        ..DressupConfig::default()
+    };
+    let _ = apply_dressups(
+        synthetic_three_pass(),
+        rs_cam_core::compute::execute::DressupContext {
+            cfg: &cfg,
+            nominal_feed_rate: 1000.0,
+            plunge_rate_mm_min: None,
+            tool_diameter: 6.0,
+            safe_z: 30.0,
+            stock_top: 0.0,
+            prior_stock: None,
+            feed_opt_stock: None,
+            cutter: None,
+            entry_surface: None,
+            transform_capabilities: OperationType::Pocket.transform_capabilities(),
+            debug_ctx: Some(&root),
+            semantic_ctx: None,
+        },
+        &mut ReconcileSet::empty(),
+    );
+    let trace = recorder.finish();
+    let emitted: Vec<String> = trace.spans.iter().map(|s| s.kind.clone()).collect();
+
+    assert!(
+        emitted.len() >= 4,
+        "the run emitted only {} stage(s) ({emitted:?}); a tiny population \
+         passes this test and checks nothing",
+        emitted.len()
+    );
+
+    // Walk the pipeline once, consuming a row per emitted key. A key that
+    // cannot be found at or after the cursor is either unknown or out of
+    // order.
+    let mut cursor = 0usize;
+    for key in &emitted {
+        let found = DRESSUP_PIPELINE[cursor..]
+            .iter()
+            .position(|stage| stage.debug_key == key);
+        let offset = found.unwrap_or_else(|| {
+            panic!(
+                "dressup stage {key:?} is not in DRESSUP_PIPELINE at or after \
+                 position {cursor}. Emitted order: {emitted:?}. Pipeline: {:?}",
+                DRESSUP_PIPELINE
+                    .iter()
+                    .map(|s| s.debug_key)
+                    .collect::<Vec<_>>()
+            )
+        });
+        cursor += offset + 1;
+    }
+}
+
+/// Every stage constant names a distinct `debug_label`.
+///
+/// `debug_key` is deliberately NOT unique — the two rapid-order passes and
+/// the two entry styles share one key each — so the label is what tells two
+/// rows apart in a trace. Two rows with the same label would be
+/// indistinguishable on screen.
+#[test]
+fn dressup_stage_labels_are_distinct() {
+    let mut labels: Vec<&str> = DRESSUP_PIPELINE.iter().map(|s| s.debug_label).collect();
+    labels.sort_unstable();
+    let before = labels.len();
+    labels.dedup();
+    assert_eq!(
+        labels.len() + 1,
+        before,
+        "DRESSUP_PIPELINE lists {before} rows with {} distinct labels; only \
+         the two rapid-order passes may share one",
+        labels.len()
+    );
 }
