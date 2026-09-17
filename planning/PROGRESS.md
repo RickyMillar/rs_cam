@@ -68,9 +68,11 @@ for the full account; the durable facts:
   re-cut at `planning/toolpath_acceptance/baselines/2026-09-17.csv`
   (AS014's power verdict flagged for the operator).
 
-Open for the operator: `git filter-repo` for the 948 MB blob and the tag
-push; the AS014 verdict; the two `conformal_spiral` children declined on
-visibility cost.
+History was rewritten with `git filter-repo` the same day (four blobs out;
+HEAD tree unchanged). Old commit hashes resolve through
+`planning/structure_2026-09-17/commit_map_2026-09-17.tsv`. Open: the
+force-push of the rewritten history and the tag; the AS014 smoke verdict
+(other session); the two `conformal_spiral` children (a separate session).
 
 ## Architecture consolidation — 2026-09-13 (close-out: every package landed; one core dev loop)
 

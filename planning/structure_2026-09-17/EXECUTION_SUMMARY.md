@@ -216,10 +216,17 @@ Range `540b66d0..HEAD`: 135 commits.
 
 ## Follow-ups (recorded, not scheduled)
 
-- `git filter-repo` for the 948 MB blob; push of the tag.
+- ~~`git filter-repo`~~ DONE (operator ruling): four blobs out of every commit,
+  HEAD tree byte-identical, pack 271 → 129 MB, 2 614 commits re-hashed;
+  every cited hash in the tree was rewritten from the map at
+  `commit_map_2026-09-17.tsv`. **The GitHub remote still holds the old
+  history until a force-push (`git push --force --all --tags`); the
+  `cutting-calcs-gaps` worktree was rewritten in place.**
 - `demos/`, `reference/` at the root (untracked): operator ruling 2026-09-17, keep as test beds.
 - 293 doc-comment citations of deleted planning paths (ruled: leave).
 - FW-22 / T-5: `feeds::calculate` split is a design decision.
 - `preview_field_applies` carries an inert `too_many_arguments` allow (7 args).
-- rustdoc: 85 unresolved intra-doc links.
+- rustdoc: 85 unresolved intra-doc links, plus parent-to-private-child links from the splits (not gated).
+- Q1 CLOSED in the GUI (`ed1da4a9`): the panel snapshot carries the model bbox; the pill number now matches apply-all (a latent G-PILLCLAMP mismatch). Residual: the two GUI Suggest sites and the six wired sites pass no `StockContext`, so a drill op's inspector rationale can still differ from MCP's on the peck clamp; fix = one more snapshot field.
+- Sentry-teeth review (`SENTRY_TEETH_REVIEW.md`): 14 of 15 edited viz sentries had teeth; the four vacuous arms and the dead wp6b allowance were fixed with red proofs (`3f4d48c8`).
 - COLLISION_POINT and SPACE_0 stay held for `ui_premium_2026-09-13`.
