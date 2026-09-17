@@ -112,18 +112,8 @@ fn pencil_params(num_offset_passes: usize) -> PencilParams {
 fn run_pencil(mesh: &TriangleMesh, params: &PencilParams) -> (usize, usize, Vec<i64>) {
     let index = SpatialIndex::build(mesh, 4.0);
     let cutter = wanaka_taper();
-    let mut grid = None;
-    let mut regions = None;
-    let (_tp, ann) = pencil_toolpath_structured_annotated(
-        mesh,
-        &index,
-        &cutter,
-        params,
-        None,
-        None,
-        &mut grid,
-        &mut regions,
-    );
+    let (_tp, ann, _report) =
+        pencil_toolpath_structured_annotated(mesh, &index, &cutter, params, None, None);
     let mut chains: std::collections::BTreeSet<usize> = Default::default();
     let mut offsets: std::collections::BTreeSet<i64> = Default::default();
     let mut max_total = 0usize;
@@ -379,9 +369,7 @@ fn a_pass_is_truncated_where_the_valley_pinches_not_dropped_wholesale() {
     // stream as several runs carrying the SAME `(chain_index, offset_index)`.
     // A dropped pass would carry none, and an untruncated one exactly one.
     let index2 = SpatialIndex::build(&mesh, 4.0);
-    let mut grid = None;
-    let mut regions = None;
-    let (_tp, ann) = pencil_toolpath_structured_annotated(
+    let (_tp, ann, _report) = pencil_toolpath_structured_annotated(
         &mesh,
         &index2,
         &cutter,
@@ -392,8 +380,6 @@ fn a_pass_is_truncated_where_the_valley_pinches_not_dropped_wholesale() {
         },
         None,
         None,
-        &mut grid,
-        &mut regions,
     );
     let mut runs_per_pass: std::collections::BTreeMap<(usize, usize), usize> = Default::default();
     let mut declared: std::collections::BTreeMap<usize, usize> = Default::default();

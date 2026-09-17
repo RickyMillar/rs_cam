@@ -500,9 +500,7 @@ pub fn pencil_toolpath(
     cutter: &dyn MillingCutter,
     params: &PencilParams,
 ) -> Toolpath {
-    let (tp, _) = pencil_toolpath_structured_annotated(
-        mesh, index, cutter, params, None, None, &mut None, &mut None,
-    );
+    let (tp, _, _) = pencil_toolpath_structured_annotated(mesh, index, cutter, params, None, None);
     tp
 }
 
@@ -565,7 +563,38 @@ fn polyline_passes_depth(
     median > threshold
 }
 
-#[allow(clippy::expect_used, clippy::too_many_arguments)]
+/// What one pencil pass MEASURED on its way to the toolpath (FIN-12).
+///
+/// Four `&mut Option<..>` out-parameters carried these values before, so a
+/// caller had to declare four bindings, remember their order and read the
+/// doc to learn which ones a given detector sets.
+/// [`crate::finish::unified_finish::UnifiedFinishReport`] already solved the
+/// same problem by returning a report, and this is that shape.
+///
+/// Every field keeps the `None` reading it had as an out-parameter:
+/// `None` is **not measured**, never a measured zero.
+#[derive(Debug, Clone, Default)]
+pub struct PencilReport {
+    /// The `RestDepth` detector's rest-field grid, for the GUI heatmap
+    /// overlay. `None` for every other detector — no rest field was built.
+    pub rest_grid: Option<crate::surface::rest_field::RestGrid>,
+    /// The `RestDepth` detector's derived machining-region polygons (P2.2
+    /// selective-finishing boundary source). `None` for every other
+    /// detector.
+    pub rest_regions: Option<Vec<Polygon2>>,
+    /// Wave D1: the centreline TIP-FLOAT tally. Always `Some` from the
+    /// cancellable entry point — a detector that emitted no centreline
+    /// still measured zero points, which is a different statement from
+    /// "not measured".
+    pub tip_float: Option<TipFloatFinding>,
+    /// G-LINKVISIBLE: what the link stage did. `Some` ONLY where the
+    /// emitter produced it, so a detector that found no centreline leaves
+    /// it `None` — the emitter, and with it every junction decision, never
+    /// ran.
+    pub link: Option<PencilLinkReport>,
+}
+
+#[allow(clippy::expect_used)]
 pub fn pencil_toolpath_structured_annotated(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -577,14 +606,7 @@ pub fn pencil_toolpath_structured_annotated(
     // toolpath pattern). `None` ⇒ fall back to the tool/nominal reference (R1).
     initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
     debug: Option<&ToolpathDebugContext>,
-    // Out: the RestDepth detector's rest-field grid, for the GUI heatmap
-    // overlay. Set only when `detector == RestDepth`; left untouched otherwise.
-    rest_grid_out: &mut Option<crate::surface::rest_field::RestGrid>,
-    // Out: the RestDepth detector's derived machining-region polygons (P2.2
-    // selective-finishing boundary source). Set only when
-    // `detector == RestDepth`; left untouched otherwise.
-    rest_regions_out: &mut Option<Vec<Polygon2>>,
-) -> (Toolpath, Vec<PencilRuntimeAnnotation>) {
+) -> (Toolpath, Vec<PencilRuntimeAnnotation>, PencilReport) {
     crate::interrupt::run_uncancellable(|cancel| {
         pencil_toolpath_structured_annotated_with_cancel(
             mesh,
@@ -593,14 +615,6 @@ pub fn pencil_toolpath_structured_annotated(
             params,
             initial_stock,
             debug,
-            rest_grid_out,
-            rest_regions_out,
-            // Wave D1: this legacy entry point predates the tip-float channel
-            // and has no slot to return it through. Callers that need the
-            // finding (the op adapter does) call the cancellable form.
-            &mut None,
-            // G-LINKVISIBLE: same reading for the link report.
-            &mut None,
             cancel,
         )
     })
@@ -614,7 +628,6 @@ pub fn pencil_toolpath_structured_annotated(
 /// (`crest_lines::detect_valley_lines`, `rest_field::detect_rest_valleys`,
 /// `chain_concave_edges`/`gate_chains_by_depth`) — those stay as a follow-up
 /// if they ever show up as the actual long pole.
-#[allow(clippy::too_many_arguments)]
 pub fn pencil_toolpath_structured_annotated_with_cancel(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -622,26 +635,13 @@ pub fn pencil_toolpath_structured_annotated_with_cancel(
     params: &PencilParams,
     initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
     debug: Option<&ToolpathDebugContext>,
-    rest_grid_out: &mut Option<crate::surface::rest_field::RestGrid>,
-    rest_regions_out: &mut Option<Vec<Polygon2>>,
-    // Wave D1 out: the centreline TIP-FLOAT tally (see [`TipFloatFinding`]).
-    // Always set — a detector that emitted no centreline still measured
-    // zero points, which is a different statement from "not measured", and
-    // the op adapter is what turns the distinction into a report.
-    tip_float_out: &mut Option<TipFloatFinding>,
-    // G-LINKVISIBLE out: what the link stage did, on its way to
-    // `ToolpathStats::pencil_link`. Set ONLY where the emitter produces it,
-    // so a detector that found no centreline leaves it `None` — the emitter,
-    // and with it every junction decision, never ran. That is a different
-    // statement from `tip_float_out`'s, which is `Some` even on an empty
-    // pass because the detector always measures float.
-    link_report_out: &mut Option<PencilLinkReport>,
     cancel: &dyn CancelCheck,
-) -> Result<(Toolpath, Vec<PencilRuntimeAnnotation>), Cancelled> {
+) -> Result<(Toolpath, Vec<PencilRuntimeAnnotation>, PencilReport), Cancelled> {
     check_cancel(cancel)?;
     let tp = Toolpath::new();
     let annotations = Vec::new();
     let mut float = TipFloatFinding::default();
+    let mut report = PencilReport::default();
 
     let mut all_paths: Vec<PencilPath> = match params.detector {
         PencilDetector::Curvature => {
@@ -654,17 +654,18 @@ pub fn pencil_toolpath_structured_annotated_with_cancel(
             params,
             initial_stock,
             debug,
-            rest_grid_out,
-            rest_regions_out,
+            &mut report,
             &mut float,
             cancel,
         )?,
         PencilDetector::Dihedral => dihedral_arm(mesh, index, cutter, params, &mut float, cancel)?,
     };
-    *tip_float_out = Some(float);
+    // Wave D1: the detector always measures float, so the tally is `Some`
+    // even on a pass that emitted no centreline.
+    report.tip_float = Some(float);
 
     if all_paths.is_empty() {
-        return Ok((tp, annotations));
+        return Ok((tp, annotations, report));
     }
     check_cancel(cancel)?;
 
@@ -684,7 +685,7 @@ pub fn pencil_toolpath_structured_annotated_with_cancel(
     );
     // G-LINKVISIBLE: recorded even when every counter is zero — the emitter
     // ran, so the measurement exists.
-    *link_report_out = Some(link_report);
+    report.link = Some(link_report);
 
     if let Some(debug_ctx) = debug {
         for annotation in &annotations {
@@ -699,7 +700,7 @@ pub fn pencil_toolpath_structured_annotated_with_cancel(
         "Pencil toolpath complete"
     );
 
-    Ok((tp, annotations))
+    Ok((tp, annotations, report))
 }
 
 #[cfg(test)]

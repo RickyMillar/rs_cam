@@ -1654,18 +1654,8 @@ fn probe_reach_policy_emits_the_fan_the_envelope_baseline_suppressed() {
     let index = SpatialIndex::build(&mesh, 4.0);
     let cutter = wanaka_taper();
     let params = probe_params(12.0);
-    let mut grid = None;
-    let mut regions = None;
-    let (_tp, ann) = pencil_toolpath_structured_annotated(
-        &mesh,
-        &index,
-        &cutter,
-        &params,
-        None,
-        None,
-        &mut grid,
-        &mut regions,
-    );
+    let (_tp, ann, _report) =
+        pencil_toolpath_structured_annotated(&mesh, &index, &cutter, &params, None, None);
     let mut chains: std::collections::BTreeSet<usize> = Default::default();
     let mut max_offset_total = 0usize;
     for a in &ann {
@@ -1780,18 +1770,8 @@ fn probe_tapered_pencil_resolves_a_real_reference_at_the_default() {
 
     let count = |reference_diameter: f64| -> usize {
         let params = probe_params(reference_diameter);
-        let mut grid = None;
-        let mut regions = None;
-        let (_tp, ann) = pencil_toolpath_structured_annotated(
-            &mesh,
-            &index,
-            &cutter,
-            &params,
-            None,
-            None,
-            &mut grid,
-            &mut regions,
-        );
+        let (_tp, ann, _report) =
+            pencil_toolpath_structured_annotated(&mesh, &index, &cutter, &params, None, None);
         let mut chains: std::collections::BTreeSet<usize> = Default::default();
         for a in &ann {
             let PencilRuntimeEvent::OffsetPass { chain_index, .. } = a.event;

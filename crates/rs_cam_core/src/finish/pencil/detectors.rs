@@ -18,7 +18,6 @@ use crate::finish::pencil_dihedral::{
 use crate::geo::{P3, V3, polyline_length, resample_polyline};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::polygon::Polygon2;
 use crate::tool::MillingCutter;
 use crate::trace::debug_trace::ToolpathDebugContext;
 
@@ -217,8 +216,7 @@ pub(super) fn rest_depth_arm(
     params: &PencilParams,
     initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
     debug: Option<&ToolpathDebugContext>,
-    rest_grid_out: &mut Option<crate::surface::rest_field::RestGrid>,
-    rest_regions_out: &mut Option<Vec<Polygon2>>,
+    out: &mut super::PencilReport,
     float: &mut TipFloatFinding,
     cancel: &dyn CancelCheck,
 ) -> Result<Vec<PencilPath>, Cancelled> {
@@ -338,11 +336,11 @@ pub(super) fn rest_depth_arm(
     }
     // Hand the rest-field grid to the caller for the GUI heatmap overlay
     // (set even when no centreline survives the length gate below).
-    *rest_grid_out = Some(rf.rest_grid);
+    out.rest_grid = Some(rf.rest_grid);
     // Same for the derived machining-region polygons (P2.2 selective-finishing
     // boundary source) — set alongside the grid, independent of whether any
     // centreline survives the length gate.
-    *rest_regions_out = Some(rf.region_polygons);
+    out.rest_regions = Some(rf.region_polygons);
     // Length-gate + resample + width-capped offset-pass emission, factored
     // into `crease_paths::centerline_cut_paths` so the P2 finish planner's
     // future crease pass can reuse it without pencil's detector dispatch.

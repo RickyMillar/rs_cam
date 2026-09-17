@@ -131,18 +131,8 @@ fn generate(stock: Option<&TriDexelStock>) -> Toolpath {
     let index = SpatialIndex::build(&mesh, 4.0);
     let cutter = ball_cutter(TOOL_DIAMETER_MM);
     let p = params();
-    let mut grid = None;
-    let mut regions = None;
-    let (tp, _ann) = pencil_toolpath_structured_annotated(
-        &mesh,
-        &index,
-        &cutter,
-        &p,
-        stock,
-        None,
-        &mut grid,
-        &mut regions,
-    );
+    let (tp, _ann, _report) =
+        pencil_toolpath_structured_annotated(&mesh, &index, &cutter, &p, stock, None);
     tp
 }
 

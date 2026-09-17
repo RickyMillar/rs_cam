@@ -7,7 +7,6 @@ use std::sync::atomic::Ordering;
 
 use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::compute::operation_configs::OpMotion;
-use crate::polygon::Polygon2;
 use crate::tool::MillingCutter;
 
 use super::dressup_apply::SHALLOW_SLOPE_DERATE_BASIS;
@@ -226,11 +225,7 @@ pub(crate) fn generate_pencil(
             .map(crate::compute::cutter::build_cutter),
         ctx.link_kinematics.clone(),
     );
-    let mut rest_grid_out: Option<crate::surface::rest_field::RestGrid> = None;
-    let mut rest_regions_out: Option<Vec<Polygon2>> = None;
-    let mut tip_float_out: Option<crate::compute::config::TipFloatFinding> = None;
-    let mut link_report_out: Option<crate::finish::pencil::PencilLinkReport> = None;
-    let (tp, annotations) =
+    let (tp, annotations, report) =
         crate::finish::pencil::pencil_toolpath_structured_annotated_with_cancel(
             m,
             idx,
@@ -240,23 +235,19 @@ pub(crate) fn generate_pencil(
             // the RestDepth detector prefers it as the rest reference.
             ctx.initial_stock,
             ctx.debug_ctx,
-            &mut rest_grid_out,
-            &mut rest_regions_out,
-            &mut tip_float_out,
-            &mut link_report_out,
             &(|| ctx.cancel.load(Ordering::SeqCst)),
         )
         .map_err(|_e| OperationError::Cancelled)?;
     // Wave D1: pencil is a centreline op, so it always MEASURES float — even
     // when the answer is zero. That is the whole point: a silent pass and a
     // pass that proved the tool reached the floor must not look alike.
-    if let Some(float) = tip_float_out {
+    if let Some(float) = report.tip_float {
         record_tip_float(ctx.findings, float);
     }
     // G-LINKVISIBLE: the generator sets this exactly when the emitter ran,
     // so pass its `Option` through. `None` reaches the stats channel as "not
     // measured" — no centreline, so no junction decision was ever taken.
-    if let Some(link) = link_report_out {
+    if let Some(link) = report.link {
         record_pencil_link(ctx.findings, link);
     }
     if let Some(sem) = ctx.semantic_ctx {
@@ -270,10 +261,10 @@ pub(crate) fn generate_pencil(
     );
     let mut generated = generated_with_spans(tp, spans);
     // Attach the RestDepth heatmap grid (if any) for the GUI overlay.
-    generated.rest_grid = rest_grid_out.map(std::sync::Arc::new);
+    generated.rest_grid = report.rest_grid.map(std::sync::Arc::new);
     // Attach the derived machining-region polygons (if any) — P2.2
     // selective-finishing boundary source.
-    generated.rest_regions = rest_regions_out.map(std::sync::Arc::new);
+    generated.rest_regions = report.rest_regions.map(std::sync::Arc::new);
     Ok(generated)
 }
 
