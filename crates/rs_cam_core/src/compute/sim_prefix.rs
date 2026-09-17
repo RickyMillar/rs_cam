@@ -408,22 +408,55 @@ fn hash_tool(hasher: &mut DefaultHasher, tool: &ToolDefinition) {
 }
 
 fn hash_entry_scalar(entry: &SimToolpathEntry) -> u64 {
+    // CMP-22: destructured, `..`-free. This named its inputs one by one,
+    // so a new field on `SimToolpathEntry` compiled and was silently
+    // absent from the key — a wrong HIT, which is the one failure mode
+    // `resumed_run_is_bit_identical_to_a_full_replay` cannot construct.
+    // The `_`-bound fields are keyed by `Weak` pointer identity in
+    // `PrefixKey`, not here; see the module doc's closure table. A new
+    // field is now `E0027` until someone decides which side it is on.
+    let SimToolpathEntry {
+        id,
+        name,
+        tool,
+        flute_count,
+        tool_summary,
+        spindle_rpm,
+        metrics_not_applicable,
+        operation_config_hash,
+        annotated: _,
+        semantic_trace: _,
+        drill_op: _,
+    } = entry;
+
     let mut hasher = DefaultHasher::new();
-    entry.id.hash(&mut hasher);
-    entry.name.hash(&mut hasher);
-    entry.tool_summary.hash(&mut hasher);
-    entry.flute_count.hash(&mut hasher);
-    entry.spindle_rpm.hash(&mut hasher);
-    entry.metrics_not_applicable.hash(&mut hasher);
-    entry.operation_config_hash.hash(&mut hasher);
-    hash_tool(&mut hasher, &entry.tool);
+    id.hash(&mut hasher);
+    name.hash(&mut hasher);
+    tool_summary.hash(&mut hasher);
+    flute_count.hash(&mut hasher);
+    spindle_rpm.hash(&mut hasher);
+    metrics_not_applicable.hash(&mut hasher);
+    operation_config_hash.hash(&mut hasher);
+    hash_tool(&mut hasher, tool);
     hasher.finish()
 }
 
 fn hash_group_scalar(group: &SimGroupEntry) -> u64 {
+    // CMP-22, as for `hash_entry_scalar`. `toolpaths` is keyed per entry
+    // (position in the key vector plus the entry hash), and
+    // `phantom_prior_stock` is deliberately excluded and re-derived — see
+    // the module doc's "Phantom prior stock".
+    let SimGroupEntry {
+        direction,
+        local_stock_bbox,
+        local_to_global,
+        toolpaths: _,
+        phantom_prior_stock: _,
+    } = group;
+
     let mut hasher = DefaultHasher::new();
-    format!("{:?}", group.direction).hash(&mut hasher);
-    match group.local_stock_bbox.as_ref() {
+    format!("{direction:?}").hash(&mut hasher);
+    match local_stock_bbox.as_ref() {
         Some(bbox) => {
             1_u8.hash(&mut hasher);
             for value in [
@@ -434,18 +467,30 @@ fn hash_group_scalar(group: &SimGroupEntry) -> u64 {
         }
         None => 0_u8.hash(&mut hasher),
     }
-    match group.local_to_global.as_ref() {
+    match local_to_global.as_ref() {
         Some(info) => {
+            // Destructured too: every field of the transform decides where
+            // a group's cuts land, so none of them may go missing.
+            let crate::compute::transform::SetupTransformInfo {
+                face_up,
+                z_rotation,
+                stock_x,
+                stock_y,
+                stock_z,
+                stock_origin_x,
+                stock_origin_y,
+                stock_origin_z,
+            } = info;
             1_u8.hash(&mut hasher);
-            info.face_up.hash(&mut hasher);
-            info.z_rotation.hash(&mut hasher);
+            face_up.hash(&mut hasher);
+            z_rotation.hash(&mut hasher);
             for value in [
-                info.stock_x,
-                info.stock_y,
-                info.stock_z,
-                info.stock_origin_x,
-                info.stock_origin_y,
-                info.stock_origin_z,
+                *stock_x,
+                *stock_y,
+                *stock_z,
+                *stock_origin_x,
+                *stock_origin_y,
+                *stock_origin_z,
             ] {
                 hash_f64_bits(&mut hasher, value);
             }
@@ -456,27 +501,45 @@ fn hash_group_scalar(group: &SimGroupEntry) -> u64 {
 }
 
 fn hash_global_scalar(request: &SimulationRequest) -> u64 {
+    // CMP-22, as above. The two `_`-bound fields are the module doc's two
+    // recorded exclusions: `model_mesh` is keyed by `Weak<TriangleMesh>`
+    // identity in `PrefixKey`, and `kinematics` is consumed only AFTER the
+    // memoized loop, by `apply_kinematics_cycle_time`. `groups` keys by
+    // count here and by position in the key vector.
+    let SimulationRequest {
+        groups,
+        stock_bbox,
+        stock_top_z,
+        resolution,
+        metric_options,
+        spindle_rpm,
+        rapid_feed_mm_min,
+        model_mesh: _,
+        kinematics: _,
+    } = request;
+    let crate::stock::simulation_cut::SimulationMetricOptions {
+        enabled,
+        capture_arc_engagement,
+    } = metric_options;
+
     let mut hasher = DefaultHasher::new();
     for value in [
-        request.stock_bbox.min.x,
-        request.stock_bbox.min.y,
-        request.stock_bbox.min.z,
-        request.stock_bbox.max.x,
-        request.stock_bbox.max.y,
-        request.stock_bbox.max.z,
-        request.stock_top_z,
-        request.resolution,
-        request.rapid_feed_mm_min,
+        stock_bbox.min.x,
+        stock_bbox.min.y,
+        stock_bbox.min.z,
+        stock_bbox.max.x,
+        stock_bbox.max.y,
+        stock_bbox.max.z,
+        *stock_top_z,
+        *resolution,
+        *rapid_feed_mm_min,
     ] {
         hash_f64_bits(&mut hasher, value);
     }
-    request.spindle_rpm.hash(&mut hasher);
-    request.metric_options.enabled.hash(&mut hasher);
-    request
-        .metric_options
-        .capture_arc_engagement
-        .hash(&mut hasher);
-    request.groups.len().hash(&mut hasher);
+    spindle_rpm.hash(&mut hasher);
+    enabled.hash(&mut hasher);
+    capture_arc_engagement.hash(&mut hasher);
+    groups.len().hash(&mut hasher);
     hasher.finish()
 }
 
