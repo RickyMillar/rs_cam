@@ -217,7 +217,7 @@ impl RsCamApp {
                     .as_ref()
                     .map(|sim| {
                         let mut m = sim_mesh_in_world_frame(&sim.mesh, session);
-                        m.apply_height_gradient();
+                        rs_cam_core::export::ribbon::apply_height_gradient(&mut m);
                         m
                     })
             } else {

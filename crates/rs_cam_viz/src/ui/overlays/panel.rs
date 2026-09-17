@@ -435,7 +435,7 @@ fn draw_legend(ui: &mut egui::Ui, state: &AppState, legend: Legend) {
             });
         }
         Legend::ByHeight => {
-            use rs_cam_core::stock::stock_mesh::height_gradient_colors;
+            use rs_cam_core::export::ribbon::height_gradient_colors;
             // The function normalises over the vertices it is handed, so one
             // synthetic ramp of Z values reproduces the mesh's own scale.
             let mut vertices = Vec::with_capacity(3 * 25);

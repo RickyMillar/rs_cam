@@ -1506,7 +1506,7 @@ pub enum Legend {
     Reach(rs_cam_core::maps::reach_map::ReachRamp),
     /// Colours from `render::sim_render::deviation_colors`.
     Deviation,
-    /// Colours from `rs_cam_core::stock::stock_mesh::height_gradient_colors`.
+    /// Colours from `rs_cam_core::export::ribbon::height_gradient_colors`.
     ByHeight,
     /// Colours from `render::toolpath_render::engagement_color`.
     Engagement,

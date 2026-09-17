@@ -724,7 +724,7 @@ impl AnnotatedToolpath {
     /// * the interactive GUI viewport
     ///   (`rs_cam_viz::render::toolpath_render::ToolpathGpuData::from_toolpath`), and
     /// * the PNG/6-view exporter
-    ///   ([`crate::stock::stock_mesh::toolpath_to_tube_mesh_with_spans`], reached from
+    ///   ([`crate::export::ribbon::toolpath_to_tube_mesh_with_spans`], reached from
     ///   `screenshot_toolpath`).
     ///
     /// Before this existed the two walked the span path in **opposite

@@ -3,7 +3,7 @@
 //!
 //! # What was wrong
 //!
-//! `stock_mesh::toolpath_to_tube_mesh_with_spans` (the `screenshot_toolpath`
+//! `export::ribbon::toolpath_to_tube_mesh_with_spans` (the `screenshot_toolpath`
 //! 6-view PNG exporter) and `rs_cam_viz::render::toolpath_render` (the live
 //! viewport) each walked a move's span path themselves, and disagreed three
 //! ways (`planning/review_2026-08-04/UNTOUCHED_TERRITORY_RISK_MAP.md`, X-1):
@@ -52,8 +52,9 @@
     clippy::indexing_slicing
 )]
 
+use rs_cam_core::export::ribbon::toolpath_to_tube_mesh_with_spans;
 use rs_cam_core::geo::P3;
-use rs_cam_core::stock::stock_mesh::{StockMesh, toolpath_to_tube_mesh_with_spans};
+use rs_cam_core::stock::stock_mesh::StockMesh;
 use rs_cam_core::toolpath::{Move, MoveIntent, MoveType, Toolpath};
 use rs_cam_core::trace::toolpath_spans::{
     AnnotatedToolpath, Span, SpanClass, SpanKind, SpanPayload,

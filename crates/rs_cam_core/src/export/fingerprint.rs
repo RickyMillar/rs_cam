@@ -683,7 +683,7 @@ pub fn render_stock_composite_in_frame(
     use crate::stock::dexel_mesh::dexel_stock_to_mesh;
 
     let mut mesh = dexel_stock_to_mesh(stock);
-    mesh.apply_height_gradient();
+    crate::export::ribbon::apply_height_gradient(&mut mesh);
     render_mesh_composite_in_frame(&mesh, Some(frame), width, height)
 }
 
@@ -793,7 +793,7 @@ pub fn render_toolpath_composite_subject(
     include_rapids: bool,
     subject: CompositeSubject,
 ) -> Vec<u8> {
-    use crate::stock::stock_mesh::{auto_ribbon_radius, toolpath_to_tube_mesh_with_spans};
+    use crate::export::ribbon::{auto_ribbon_radius, dimmed, toolpath_to_tube_mesh_with_spans};
 
     let (ribbon, moves_dim, bg_dim) = subject.factors();
     let radius = auto_ribbon_radius(&annotated.toolpath) * ribbon;
@@ -803,12 +803,12 @@ pub fn render_toolpath_composite_subject(
         let mut m = if (bg_dim - 1.0).abs() < f32::EPSILON {
             bg.clone()
         } else {
-            bg.with_dimmed_colors(bg_dim)
+            dimmed(bg, bg_dim)
         };
         if (moves_dim - 1.0).abs() < f32::EPSILON {
             m.append(&tp_mesh);
         } else {
-            m.append(&tp_mesh.with_dimmed_colors(moves_dim));
+            m.append(&dimmed(&tp_mesh, moves_dim));
         }
         m
     } else {

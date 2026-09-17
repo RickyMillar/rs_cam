@@ -13,7 +13,8 @@ that reads it. The entry point for an operator answer is
 - `sim_measurability.rs` — can this run measure the metric you will gate on?
 - `collision.rs` — holder and shank collision detection, and the three-state
   `HolderCollisionCheck` the triage reads.
-- `stock_mesh.rs`, `dexel_mesh.rs`, `dexel_mesh_mc.rs` — mesh extraction.
+- `stock_mesh.rs`, `dexel_mesh.rs`, `dexel_mesh_mc.rs` — mesh extraction. The
+  `StockMesh` container only; ribbons and colour ramps are `export/ribbon.rs`.
 - `radial_profile.rs` — the precomputed radial profile lookup table.
 
 ## Invariants

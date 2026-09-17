@@ -85,7 +85,7 @@ impl RsCamApp {
                 }
             }
             StockVizMode::ByHeight => {
-                rs_cam_core::stock::stock_mesh::height_gradient_colors(&mesh.vertices)
+                rs_cam_core::export::ribbon::height_gradient_colors(&mesh.vertices)
             }
         }
     }
