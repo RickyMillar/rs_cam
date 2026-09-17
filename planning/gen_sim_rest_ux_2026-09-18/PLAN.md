@@ -13,6 +13,12 @@ viz, MCP and CLI. Operator brief (verbatim points):
 - "when you make a change you should see anything dependent go stale."
 - "I don't want you to add lots of words. Minimal and graphical."
 
+**2026-09-18, later:** six implementation briefs (`IMPL_W0.md` to
+`IMPL_W5.md`) and their reconciliation (`IMPLEMENTATION.md`) sit beside
+this plan. Where a brief corrects a section here, the brief wins; the
+corrections are listed in `IMPLEMENTATION.md` §1. Two new defects (D7, D8)
+and six rulings (R8 to R13) are there.
+
 Ownership: this folder is new. `planning/ui_premium_2026-09-13/` and the card
 layout in `crates/rs_cam_viz/src/ui/toolpath_panel.rs` (R24, R32, the
 declutter phase) belong to the other account. `feeds/`, `tool_load/`,
