@@ -41,16 +41,20 @@ fn toolpath_tab_parse_covers_all_documented_keys() {
         Some(ToolpathTab::Dressup)
     ));
     assert!(ToolpathTab::parse("not_a_tab").is_none());
-    // Every variant in ALL is reachable through some key.
+    // UI-06: `key()` is the ONE key table. The hand-written match that used
+    // to sit here was a third copy of the list, beside the parser and the
+    // MCP refusal message. Every canonical key must name its own variant.
+    assert!(
+        ToolpathTab::ALL.len() >= 5,
+        "the tab list shrank; this loop would pass for the wrong reason"
+    );
     for &tab in ToolpathTab::ALL {
-        let key = match tab {
-            ToolpathTab::Geometry => "geometry",
-            ToolpathTab::FeedsSpeeds => "feeds",
-            ToolpathTab::Linking => "linking",
-            ToolpathTab::Heights => "heights",
-            ToolpathTab::Dressup => "dressup",
-        };
-        assert!(ToolpathTab::parse(key).is_some());
+        assert_eq!(
+            ToolpathTab::parse(tab.key()),
+            Some(tab),
+            "`{}` does not parse back to the tab it names",
+            tab.key()
+        );
     }
 }
 

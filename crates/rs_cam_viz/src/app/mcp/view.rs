@@ -14,6 +14,7 @@ use crate::mcp_bridge::McpResponse;
 use crate::state::Workspace;
 use crate::state::selection::Selection;
 use crate::ui::AppEvent;
+use crate::ui::properties::ToolpathTab;
 use crate::ui_command::{NoArgs, UiCommand};
 
 use super::simulation::sim_mesh_in_world_frame;
@@ -511,21 +512,20 @@ impl RsCamApp {
         //    toolpath (so it only shows once a toolpath is selected).
         let mut tab_applied: Option<&str> = None;
         if let Some(tab) = properties_tab {
-            const VALID_TABS: &[&str] = &[
-                "geometry",
-                "feeds",
-                "feeds_speeds",
-                "linking",
-                "heights",
-                "dressup",
-            ];
-            if !VALID_TABS.contains(&tab) {
+            // UI-06: `ToolpathTab::parse` is the ONE key table, and the
+            // refusal names `ToolpathTab::ALL`. A second list used to sit
+            // here; a new tab needed both edited and nothing failed when
+            // only one was.
+            let Some(parsed) = ToolpathTab::parse(tab) else {
+                let valid = ToolpathTab::ALL
+                    .iter()
+                    .map(|t| t.key())
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 return json_str(serde_json::json!({
-                    "error": format!(
-                        "Unknown properties_tab '{tab}'. Valid: geometry, feeds, linking, heights, dressup"
-                    )
+                    "error": format!("Unknown properties_tab '{tab}'. Valid: {valid}")
                 }));
-            }
+            };
             // Scope the override to its target toolpath (the one selected
             // above, or the pre-existing selection) so an intervening
             // render of another toolpath can't consume it.
@@ -535,8 +535,9 @@ impl RsCamApp {
                               call or select a toolpath first"
                 }));
             };
-            self.controller.state_mut().gui.pending_toolpath_tab =
-                Some((target_id, tab.to_owned()));
+            self.controller.state_mut().gui.pending_toolpath_tab = Some((target_id, parsed));
+            // The reply echoes what the caller wrote, not the canonical
+            // key, so `feeds_speeds` still reads back as `feeds_speeds`.
             tab_applied = Some(tab);
         }
 

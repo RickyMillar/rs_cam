@@ -282,16 +282,22 @@ pub struct GuiState {
     #[cfg(feature = "mcp")]
     pub mcp_highlights: HashMap<String, std::time::Instant>,
     /// One-shot toolpath-properties tab override, set by the MCP
-    /// `set_ui_view` tool: `(target toolpath, tab key)`. Consumed the
+    /// `set_ui_view` tool: `(target toolpath, tab)`. Consumed the
     /// next time the properties panel renders *that* toolpath — scoping
     /// to the target makes the override survive whatever frame the
     /// workspace-switch / selection events land on (pre-fix an
     /// intervening render of the previously selected toolpath consumed
-    /// it and persisted the tab onto the wrong toolpath). Canonical tab
-    /// values: "geometry", "feeds", "linking", "heights", "dressup".
+    /// it and persisted the tab onto the wrong toolpath).
+    ///
+    /// UI-06: the tab is the [`crate::ui::properties::ToolpathTab`] enum,
+    /// not its agent-facing key. The MCP boundary parses the key once;
+    /// a GUI-internal writer names the variant it means.
     /// Not cfg-gated on `mcp` so the properties panel can consume it
     /// unconditionally.
-    pub pending_toolpath_tab: Option<(crate::state::toolpath::ToolpathId, String)>,
+    pub pending_toolpath_tab: Option<(
+        crate::state::toolpath::ToolpathId,
+        crate::ui::properties::ToolpathTab,
+    )>,
     /// Per-tool reach map for the selected toolpath (P5). Scheduled by
     /// `AppController::process_reach_overlay`, filled by the Reach compute
     /// lane, drawn by `ViewportCallback::show_reach_overlay`.

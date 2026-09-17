@@ -626,11 +626,13 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             // call land on different frames), persisting the tab onto the
             // wrong toolpath. The tab bar persists the applied value via
             // the regular temp-memory path.
-            let tab_override = match state.gui.pending_toolpath_tab.as_ref() {
-                Some((target, tab)) if *target == id => {
-                    let parsed = ToolpathTab::parse(tab);
+            // UI-06: the pending tab is already a `ToolpathTab`. The MCP
+            // boundary parses the agent's key once, so no string reaches
+            // here and no second key table can drift from the parser.
+            let tab_override = match state.gui.pending_toolpath_tab {
+                Some((target, tab)) if target == id => {
                     state.gui.pending_toolpath_tab = None;
-                    parsed
+                    Some(tab)
                 }
                 _ => None,
             };
@@ -819,8 +821,8 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
 // (how fast — the SPEED/CUT split from W3.1), Linking (how moves connect:
 // entry/exit, move optimization, retract), Heights (Z planes), and Dressup
 // (edge work / path quality). Replaces the old [Params][Feeds][Heights][Dressups].
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum ToolpathTab {
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ToolpathTab {
     Geometry,
     FeedsSpeeds,
     Linking,
@@ -829,7 +831,7 @@ enum ToolpathTab {
 }
 
 impl ToolpathTab {
-    const ALL: &[ToolpathTab] = &[
+    pub const ALL: &[ToolpathTab] = &[
         ToolpathTab::Geometry,
         ToolpathTab::FeedsSpeeds,
         ToolpathTab::Linking,
@@ -847,9 +849,26 @@ impl ToolpathTab {
         }
     }
 
-    /// Parse the agent-facing tab key used by the MCP `set_ui_view` tool
-    /// (stored in `GuiState::pending_toolpath_tab`).
-    fn parse(s: &str) -> Option<Self> {
+    /// The canonical agent-facing key of this tab.
+    ///
+    /// UI-06: this is the ONE key table. The MCP `set_ui_view` tool builds
+    /// its valid-key list from `ALL.map(key)`, so the list cannot disagree
+    /// with what [`Self::parse`] accepts.
+    pub fn key(self) -> &'static str {
+        match self {
+            ToolpathTab::Geometry => "geometry",
+            ToolpathTab::FeedsSpeeds => "feeds",
+            ToolpathTab::Linking => "linking",
+            ToolpathTab::Heights => "heights",
+            ToolpathTab::Dressup => "dressup",
+        }
+    }
+
+    /// Parse the agent-facing tab key used by the MCP `set_ui_view` tool.
+    ///
+    /// Every [`Self::key`] parses back to its own variant. `feeds_speeds` is
+    /// an extra spelling the tool has always accepted for the Feeds tab.
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "geometry" => Some(ToolpathTab::Geometry),
             "feeds" | "feeds_speeds" => Some(ToolpathTab::FeedsSpeeds),

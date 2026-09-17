@@ -281,7 +281,8 @@ fn run_action(state: &mut AppState, events: &mut Vec<AppEvent>, action: OverlayA
         // The authoring home, not a dial the panel writes itself.
         OverlayAction::OpenRestAnalysis => {
             if let crate::state::selection::Selection::Toolpath(id) = state.selection {
-                state.gui.pending_toolpath_tab = Some((id, "geometry".to_owned()));
+                state.gui.pending_toolpath_tab =
+                    Some((id, crate::ui::properties::ToolpathTab::Geometry));
             }
         }
     }
