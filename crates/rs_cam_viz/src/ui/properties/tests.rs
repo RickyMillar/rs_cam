@@ -123,3 +123,95 @@ fn stateful_gate_rows_merge_groups_by_exact_status_text() {
     assert_eq!(merged[0].message, "Gates: run simulation to evaluate");
     assert_eq!(rest.len(), 1, "differently-worded gate stays separate");
 }
+
+/// Q1: the panel snapshot carries the model bounding box.
+///
+/// `SuggestContext::model_bbox` gates the runtime-sanity stepover
+/// back-off. The inspector's two Suggest sites — the Geometry-tab pill
+/// funnel and the Feeds-tab card — passed `SuggestContext::default()`,
+/// so the GUI recommendation could differ from the controller and the
+/// MCP recommendation for the same toolpath. Both now read this field,
+/// so the assembly is the thing to pin: the snapshot reports the box of
+/// the model the STORED `tc.model_id` names, and it agrees with
+/// `ProjectSession::model_bbox`.
+#[test]
+fn the_panel_snapshot_carries_the_model_bbox() {
+    use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
+    use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
+    use std::sync::Arc;
+
+    let tool = rs_cam_core::compute::tool_config::ToolConfig::new_default(
+        rs_cam_core::compute::ToolId(1),
+        rs_cam_core::compute::tool_config::ToolType::EndMill,
+    );
+    let mut builder = ProjectSessionBuilder::new().tool(tool);
+    let mesh = Arc::new(rs_cam_core::mesh::make_test_flat(40.0));
+    let _ = builder.add_model(LoadedModel {
+        id: 0,
+        path: std::path::PathBuf::from("flat.stl"),
+        name: "Flat".to_owned(),
+        kind: Some(ModelKind::Stl),
+        mesh: Some(Arc::clone(&mesh)),
+        polygons: None,
+        drill_targets: Arc::new(Vec::new()),
+        layers: Arc::new(Vec::new()),
+        enriched_mesh: None,
+        units: Some(ModelUnits::Millimeters),
+        winding_report: None,
+        load_error: None,
+    });
+    let _ = builder
+        .add_toolpath(
+            0,
+            ToolpathConfig {
+                id: rs_cam_core::compute::ToolpathId(0),
+                name: "Pocket".to_owned(),
+                enabled: true,
+                operation: crate::state::toolpath::OperationConfig::new_default(
+                    crate::state::toolpath::OperationType::Pocket,
+                ),
+                dressups: Default::default(),
+                heights: Default::default(),
+                tool_id: 1,
+                model_id: 0,
+                pre_gcode: None,
+                post_gcode: None,
+                boundary: Default::default(),
+                boundary_inherit: true,
+                stock_source: Default::default(),
+                coolant: Default::default(),
+                face_selection: None,
+                debug_options: Default::default(),
+                feeds_provenance: Default::default(),
+                rest_analysis: Default::default(),
+                planner_origin: None,
+            },
+        )
+        .expect("the fixture toolpath is addable");
+    let session = builder.build();
+
+    let tc = &session.toolpath_configs()[0];
+    let snapshot = super::toolpath_panel_snapshot(
+        tc.id,
+        &session,
+        &crate::state::runtime::GuiState::default(),
+    )
+    .expect("the toolpath resolves for the properties panel");
+
+    let expected = session
+        .model_bbox(tc.model_id)
+        .expect("the fixture model carries a finite bbox");
+    let carried = snapshot
+        .model_bbox
+        .expect("the snapshot must carry the model bbox, not None");
+    assert_eq!(
+        format!("{carried:?}"),
+        format!("{expected:?}"),
+        "the snapshot bbox must be `ProjectSession::model_bbox` of the stored model id"
+    );
+    assert_eq!(
+        format!("{:?}", carried.min),
+        format!("{:?}", mesh.bbox.min),
+        "the bbox must be the model's own, not a placeholder"
+    );
+}

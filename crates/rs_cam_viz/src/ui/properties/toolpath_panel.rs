@@ -26,19 +26,23 @@ use super::tab_badges::{
     wrapped_small_label,
 };
 use super::{
-    BoundaryRestCandidate, ReachPanelSummary, ToolpathTab, boundary_summary_line, operations,
-    rest_grid_footprint_area,
+    BoundaryRestCandidate, ReachPanelSummary, ToolpathPanelSnapshot, ToolpathTab,
+    boundary_summary_line, operations, rest_grid_footprint_area,
 };
 use crate::state::toolpath::{
     BoundaryContainment, BoundarySource, ComputeStatus, DressupConfig, HeightContext,
-    OperationConfig, ProfileSide, SpiralDirection, ToolpathEntry, TraceCompensation, UiProcessRole,
+    OperationConfig, ProfileSide, SpiralDirection, TraceCompensation, UiProcessRole,
 };
 use crate::ui::AppEvent;
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn draw_toolpath_panel(
     ui: &mut egui::Ui,
-    entry: &mut ToolpathEntry,
+    // The panel's whole read side: the owned entry, both static
+    // diagnostic contexts and the model bbox, built once by
+    // `toolpath_panel_snapshot`. They travel together so a caller cannot
+    // render the entry while substituting a default for one of the rest.
+    snapshot: &mut ToolpathPanelSnapshot,
     tools: &[(crate::state::job::ToolId, String, f64)],
     models: &[(crate::state::job::ModelId, String)],
     tool_configs: &[(crate::state::job::ToolId, crate::state::job::ToolConfig)],
@@ -56,8 +60,6 @@ pub(super) fn draw_toolpath_panel(
     model_has_enriched: bool,
     model_is_step_missing_brep: bool,
     height_ctx: Option<&HeightContext>,
-    preconditions: &rs_cam_core::diagnostics::diagnose::PreconditionContext,
-    model_refs: &rs_cam_core::diagnostics::diagnose::ModelRefContext,
     stale_default_defects: &[rs_cam_core::compute::validate::StaleDefault],
     load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
     tab_override: Option<ToolpathTab>,
@@ -77,6 +79,17 @@ pub(super) fn draw_toolpath_panel(
     freshness: &crate::state::freshness::FreshnessState,
     events: &mut Vec<AppEvent>,
 ) {
+    // Disjoint borrows of the snapshot's fields. The body edits the entry
+    // and only reads the other three, so the four live side by side.
+    let entry = &mut snapshot.entry;
+    let preconditions = &snapshot.preconditions;
+    let model_refs = &snapshot.model_refs;
+    // Q1: what both Suggest sites below put in
+    // `SuggestContext::model_bbox`. The pill funnel and the Feeds card
+    // passed `SuggestContext::default()` before, so the runtime-sanity
+    // stepover back-off could not fire in the GUI.
+    let model_bbox = snapshot.model_bbox.as_ref();
+
     // The inspector is a fixed-width side panel. Keep children — especially
     // long Feeds annotations — from enlarging its requested width.
     ui.set_max_width(ui.available_width());
@@ -378,6 +391,7 @@ pub(super) fn draw_toolpath_panel(
                     tool_cfg,
                     machine,
                     material,
+                    model_bbox,
                 )),
                 _ => None,
             };
@@ -1057,6 +1071,7 @@ pub(super) fn draw_toolpath_panel(
                     spindle_strategy,
                     project_default_rpm,
                     load_verdict,
+                    model_bbox,
                     events,
                 );
             }

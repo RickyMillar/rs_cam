@@ -120,12 +120,21 @@ impl<'a> PillSuggestion<'a> {
 
 impl<'a> PillSuggestions<'a> {
     /// Dry-run the apply funnel for `operation` against `result`.
+    ///
+    /// Q1: `model_bbox` is the box of the model this toolpath machines,
+    /// carried in by `ToolpathPanelSnapshot`. The funnel's
+    /// runtime-sanity stepover back-off reads it; this site passed
+    /// `SuggestContext::default()` before, so the back-off could not
+    /// fire and the pill offered a value the controller and the MCP
+    /// surfaces would have backed off. `None` when the toolpath names no
+    /// model with finite geometry.
     pub fn new(
         operation: &OperationConfig,
         result: &'a FeedsResult,
         tool: &rs_cam_core::compute::tool_config::ToolConfig,
         machine: &rs_cam_core::machine::MachineProfile,
         material: &rs_cam_core::material::Material,
+        model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
     ) -> Self {
         let previews = preview_field_applies(
             operation,
@@ -134,7 +143,13 @@ impl<'a> PillSuggestions<'a> {
             machine,
             material,
             operation.feeds_style().1,
-            SuggestContext::default(),
+            // The stock is not carried here: this preview reads the
+            // operation the panel already holds, and the wired Suggest
+            // sites leave `SuggestContext::stock` empty too.
+            SuggestContext {
+                model_bbox,
+                ..SuggestContext::default()
+            },
         );
         Self {
             result,
@@ -225,6 +240,7 @@ mod tests {
             &tool,
             session.machine(),
             &session.stock_config().material,
+            None,
         );
         let dpp = pills.depth_per_pass();
         assert!(dpp.suggestion.clamped);
@@ -261,6 +277,7 @@ mod tests {
             &tool,
             session.machine(),
             &session.stock_config().material,
+            None,
         );
         assert!(pills.take_clicked().is_none());
         let dpp = pills.depth_per_pass();
@@ -291,7 +308,14 @@ mod tests {
             session.post_config().spindle_strategy,
         )
         .expect("V-bit on VCarve is a valid pairing");
-        let pills = PillSuggestions::new(&op, &result, &tool, session.machine(), &stock.material);
+        let pills = PillSuggestions::new(
+            &op,
+            &result,
+            &tool,
+            session.machine(),
+            &stock.material,
+            None,
+        );
         let max_depth = pills.depth_per_pass();
         assert!(!max_depth.suggestion.clamped);
         assert_eq!(max_depth.field, None);

@@ -680,15 +680,14 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             // contexts together. Keeping them in one snapshot makes it
             // impossible for this production call chain to draw an entry while
             // silently omitting either static context.
-            if let Some(snapshot) = toolpath_panel_snapshot(id, &state.session, &state.gui) {
-                let ToolpathPanelSnapshot {
-                    mut entry,
-                    preconditions,
-                    model_refs,
-                } = snapshot;
+            if let Some(mut snapshot) = toolpath_panel_snapshot(id, &state.session, &state.gui) {
+                // The panel takes the whole snapshot. The entry, both
+                // static diagnostic contexts and the model bbox travel as
+                // one value, so no caller can draw the entry while
+                // silently substituting a default for one of the others.
                 draw_toolpath_panel(
                     ui,
-                    &mut entry,
+                    &mut snapshot,
                     &tools,
                     &models,
                     &tool_configs,
@@ -703,8 +702,6 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     model_has_enriched,
                     model_is_step_missing_brep,
                     height_ctx.as_ref(),
-                    &preconditions,
-                    &model_refs,
                     &stale_default_defects,
                     load_verdict_for_tp.as_ref(),
                     tab_override,
@@ -724,12 +721,12 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                 // The config write-back stamps the fresh value, so the
                 // other order would erase the stamp on every edited
                 // frame and leave the card green over dropped geometry.
-                write_entry_runtime_to_gui(&entry, &mut state.gui);
+                write_entry_runtime_to_gui(&snapshot.entry, &mut state.gui);
                 // Write config changes back to the session, through the
                 // one command door. The call stamps `stale_since` on
                 // every index the core dropped, and dirties the project,
                 // so no caller keeps a staleness model of its own.
-                let _ = write_entry_config_to_session(&entry, state);
+                let _ = write_entry_config_to_session(&snapshot.entry, state);
             }
 
             // Two side effects need to know WHICH field moved, and
@@ -865,6 +862,17 @@ pub struct ToolpathPanelSnapshot {
     pub entry: ToolpathEntry,
     pub preconditions: rs_cam_core::diagnostics::diagnose::PreconditionContext,
     pub model_refs: rs_cam_core::diagnostics::diagnose::ModelRefContext,
+    /// Q1: the bounding box of the model this toolpath machines, read
+    /// once here through `ProjectSession::model_bbox`.
+    ///
+    /// The panel's two Suggest sites — the Geometry-tab pill funnel and
+    /// the Feeds-tab card — put it in `SuggestContext::model_bbox`,
+    /// which gates the runtime-sanity stepover back-off. Both sites
+    /// passed `SuggestContext::default()` before, so the back-off read
+    /// "no constraint signal" in the GUI while the controller and the
+    /// MCP surfaces read the real box. `None` means the id names no
+    /// model, or the model carries no finite geometry.
+    pub model_bbox: Option<rs_cam_core::geo::BoundingBox3>,
 }
 
 /// Build the production panel snapshot from session config + GUI runtime.
@@ -915,6 +923,10 @@ pub fn toolpath_panel_snapshot(
         entry,
         preconditions: session.precondition_context_for_toolpath(tc),
         model_refs: session.model_ref_context_for_toolpath(tc),
+        // Q1: the one place the panel's model bbox enters. The id is the
+        // STORED `tc.model_id`, so the box is the box of the model this
+        // toolpath machines.
+        model_bbox: session.model_bbox(tc.model_id),
     })
 }
 

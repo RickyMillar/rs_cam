@@ -26,6 +26,9 @@ pub(super) fn calculate_and_apply_feeds(
     spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
     project_default_rpm: u32,
     load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
+    // Q1: the bbox of the model this toolpath machines, from
+    // `ToolpathPanelSnapshot`. The card's Suggest call reads it.
+    model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
     events: &mut Vec<AppEvent>,
 ) {
     match rs_cam_core::feeds::suggest::feeds_result_for_operation(
@@ -49,6 +52,7 @@ pub(super) fn calculate_and_apply_feeds(
                 load_verdict,
                 workholding,
                 spindle_strategy,
+                model_bbox,
                 events,
             );
         }
@@ -169,6 +173,7 @@ fn draw_feeds_card(
     load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
     workholding: rs_cam_core::feeds::WorkholdingRigidity,
     spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
+    model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
     events: &mut Vec<AppEvent>,
 ) {
     ui.add_space(8.0);
@@ -198,7 +203,14 @@ fn draw_feeds_card(
             workholding,
             lut: rs_cam_core::feeds::embedded_vendor_lut(),
             spindle_strategy,
-            context: rs_cam_core::feeds::suggest::SuggestContext::default(),
+            // Q1: the box the runtime-sanity stepover back-off reads.
+            // This site passed a default context before, so the card
+            // quoted a rationale the controller and the MCP surfaces
+            // would not have produced.
+            context: rs_cam_core::feeds::suggest::SuggestContext {
+                model_bbox,
+                ..rs_cam_core::feeds::suggest::SuggestContext::default()
+            },
         },
     )
     .ok()
