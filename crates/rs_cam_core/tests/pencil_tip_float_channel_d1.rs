@@ -35,7 +35,7 @@
 //!
 //! ## Red-first evidence
 //!
-//! At `e9f9554`, on Gate 1's fixture through
+//! At `216604b`, on Gate 1's fixture through
 //! `ProjectSession::generate_toolpath`: 37 moves / 56.3 mm of cutting were
 //! emitted, the lowest commanded Z was **-0.1252 mm** against a valley floor
 //! at **-2.5 mm** (2.37 mm of residual the pass can never remove), and

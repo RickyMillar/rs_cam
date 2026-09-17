@@ -31,7 +31,7 @@
 //!
 //! ## Red-first evidence
 //!
-//! At `e9f9554`, on the Auto-heights run below:
+//! At `216604b`, on the Auto-heights run below:
 //! `session.generate_toolpath` succeeded, the VerySteep band produced no
 //! region node at all, and `narrate_toolpath` / `diagnose_toolpath_with_trace`
 //! contained ZERO occurrences of "unmachined", "dropped band" or

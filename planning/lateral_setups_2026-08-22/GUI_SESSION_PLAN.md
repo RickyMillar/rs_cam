@@ -5,7 +5,7 @@ pre-built release (built at campaign close — do NOT let the MCP connect race a
 cold compile; if in doubt `cargo build --release -p rs_cam_viz --bin
 rs_cam_gui` first and wait).
 
-Context: the lateral-setups campaign closed at `fccd5968` (see
+Context: the lateral-setups campaign closed at `c324b5e5` (see
 `planning/lateral_setups_2026-08-22/SPEC.md` — every §3 item landed, closed
 unreachable, or blocked-with-evidence). Everything below needs a LIVE GUI and
 is ordered by value.

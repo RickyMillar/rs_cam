@@ -68,7 +68,7 @@ pub(super) fn calculate_and_apply_feeds(
 ///
 /// # Why this exists again
 ///
-/// `540715c1` (UR4) deleted the `SPEED — how fast` section from this tab on
+/// `d323cabb` (UR4) deleted the `SPEED — how fast` section from this tab on
 /// its way past. Feed and plunge had ALREADY been moved off the Geometry
 /// panel into this section by W3.2, and the spindle override by W3.1, so
 /// the deletion left the product with no way to set a feed rate at all —

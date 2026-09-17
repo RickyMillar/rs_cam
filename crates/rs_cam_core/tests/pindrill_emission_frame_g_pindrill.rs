@@ -3,7 +3,7 @@
 //!
 //! `StockConfig::alignment_pins` are stock-relative: X0Y0 at the stock's
 //! min corner. That is the frame `gcode`'s export datum converges on
-//! (`0bb38a2f`), because the pins are what physically registers a flip.
+//! (`dd7aad5e`), because the pins are what physically registers a flip.
 //! The toolpath, however, emits in the setup frame — world for an
 //! identity setup, zero-rooted local otherwise.
 //!
@@ -20,7 +20,7 @@
 //! `selected_holes` are a DIFFERENT frame — raw model/DXF coordinates —
 //! and are reconciled separately by the setup transform, not by this
 //! stock-origin translation. That was G-DRILLPICK-FRAME, fixed in
-//! `d019a5a4`; `pin_holes_in_emission_frame` is now the single place both
+//! `61cb27a4`; `pin_holes_in_emission_frame` is now the single place both
 //! frames meet, and neither hole list ever takes the other's correction.
 
 #![allow(
@@ -159,7 +159,7 @@ fn pin_holes_land_where_the_stock_says_the_pins_are() {
 ///
 /// The second half of the tangle — `selected_holes` being raw model/DXF
 /// coordinates, so a pick at world (30,40) belonged at setup-local
-/// (50,185) on a flip — was G-DRILLPICK-FRAME, fixed in `d019a5a4` by
+/// (50,185) on a flip — was G-DRILLPICK-FRAME, fixed in `61cb27a4` by
 /// transforming picks at generation while leaving storage in world frame.
 /// Its own sentry is `drill_pick_emission_frame_g_drillpick.rs`.
 #[test]

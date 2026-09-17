@@ -1,6 +1,6 @@
 # S-2 — literature-matrix source refresh (DR-URL, DR-WS) + Checkpoint K (e1)
 
-Date: 2026-08-13. Branch `tech-debt-3`. Base `2b1a5c66`.
+Date: 2026-08-13. Branch `tech-debt-3`. Base `fc3a464e`.
 Procedure: `.claude/skills/refresh-lit-matrix/SKILL.md`.
 Ledger rows discharged: **DR-URL**, **DR-WS**
 (`planning/review_2026-08-04/TECH_DEBT_2_CLOSEOUT.md` §4.4).

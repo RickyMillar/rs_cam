@@ -7,7 +7,7 @@ Captured 2026-08-20 against `PERF_REVIEW.md` S5 and the wave-2 numbers in
 **Do not read this file as a replacement for `BASELINES.md`.** It is one
 lane's delta.
 
-Commits: `2ed9df04` (implementation), `55847d4f` (sentries + bench arm).
+Commits: `e5952463` (implementation), `fb83d155` (sentries + bench arm).
 
 ---
 
@@ -389,7 +389,7 @@ With `row_min > rows - 1` the clamps give `row_lo > row_hi` and
 `row_hi + 1 - row_lo` underflows. Reproduced while building this wave's
 fixture: a raster pass at `y ∈ [31, 35]` over a stock whose Y extent is
 `[0, 24]`. It is **pre-existing** — the `bbox_cells` line is S2's mip block
-(`f9f26997`), nothing in S5 touches `dexel_stock/` — and it is reachable from
+(`6fe20c3d`), nothing in S5 touches `dexel_stock/` — and it is reachable from
 an ordinary project, because toolpaths legitimately move outside the stock
 (profile lead-ins, edge drills, any op whose boundary extends past the
 blank). Release builds wrap instead of panicking, so debug and release do not
@@ -456,8 +456,8 @@ everything stayed green because a stale mip is *sound* (`DELTA_sim_w2.md`
 
 | Commit | Contents |
 |---|---|
-| `2ed9df04` | `compute/sim_prefix.rs`, the `run_simulation_memoized` restructure, `Vec<Arc<SimCheckpointMesh>>`, the viz worker/controller wiring and the `clear_sim_prefix_cache` release point |
-| `55847d4f` | `tests/sim_prefix_memo_s5.rs` (14 sentries) and the `sim_fixpoint_ladder` bench arm |
+| `e5952463` | `compute/sim_prefix.rs`, the `run_simulation_memoized` restructure, `Vec<Arc<SimCheckpointMesh>>`, the viz worker/controller wiring and the `clear_sim_prefix_cache` release point |
+| `fb83d155` | `tests/sim_prefix_memo_s5.rs` (14 sentries) and the `sim_fixpoint_ladder` bench arm |
 
 Planning edits (this file, `PERF_REVIEW.md`'s S5 annotation, the
 `BASELINES.md` rows) are left **UNSTAGED** for the consolidator, per the wave

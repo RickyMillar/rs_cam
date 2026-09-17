@@ -501,8 +501,8 @@ commits is why:
 
 | | |
 |---|---|
-| `921aa0e3` | the chipload verdict replaces the power gauge |
-| `73b84d69` | **R1** — power is built from the force model, not a constant |
+| `e475085f` | the chipload verdict replaces the power gauge |
+| `2708ee52` | **R1** — power is built from the force model, not a constant |
 
 The gauge was deleted BEFORE R1 rebuilt the power model. R1 raised the
 predicted power about 8.6x at the reference fixture, because the edge term it

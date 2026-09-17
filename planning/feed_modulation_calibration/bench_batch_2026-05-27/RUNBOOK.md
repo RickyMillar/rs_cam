@@ -8,7 +8,7 @@ Confirm three workstream features on real Shapeoko XXL hardware:
 - **F-039** — constrained-max feed modulation (sim says ConstrainedMax @ 1.0 ≈ BandMid on wanaka; aggressiveness 1.3 trims 17%)
 - **F-040** — lead-in / lead-out feed-rate breakout (audible F500 entry / F4500 exit on the small profile fixture)
 
-All six G-code files passed Docker CAMotics 1.2.0 GRBL-parse validation. The arc-fitter fix (commit `2db19c2`) is included, so the wanaka Back Rough should NOT throw GRBL error 33 like it did pre-fix.
+All six G-code files passed Docker CAMotics 1.2.0 GRBL-parse validation. The arc-fitter fix (commit `8a5d1fd`) is included, so the wanaka Back Rough should NOT throw GRBL error 33 like it did pre-fix.
 
 ## Setup (same as 2026-05-26 bench)
 
@@ -57,8 +57,8 @@ After the run, compare:
 ## Pre-flight (already done)
 
 - Docker CAMotics 1.2.0 GRBL-parse: all 6 files clean.
-- Arc-fitter (commit `2db19c2`) included — wanaka Back Rough arcs all pass `$12=0.010` tolerance.
-- F-037 smoke baseline: no regressions in current `master` (commit `77c1101`).
+- Arc-fitter (commit `8a5d1fd`) included — wanaka Back Rough arcs all pass `$12=0.010` tolerance.
+- F-037 smoke baseline: no regressions in current `master` (commit `6a36d9f`).
 - **`nc-time` cross-check** — second independent time estimate via parsing the .nc and replaying through F-034:
 
   ```
@@ -88,13 +88,13 @@ After the run, compare:
 
 | Feature | Commit |
 |---|---|
-| F-040 lead-in/out | `77c1101` |
-| F-039 constrained-max | `c1a4932` |
-| F-038b keep-tool-down | `86d7da8` |
+| F-040 lead-in/out | `6a36d9f` |
+| F-039 constrained-max | `d77cde7` |
+| F-038b keep-tool-down | `d8ba5c9` |
 | F-038 entry coalescing | `2860896` |
-| F-034 kinematics + F-036c calibration | `a797909` |
-| arcfit chord bisector | `2db19c2` |
-| F-037 smoke baseline | `bca5e20` |
+| F-034 kinematics + F-036c calibration | `13c790b` |
+| arcfit chord bisector | `8a5d1fd` |
+| F-037 smoke baseline | `f598c6c` |
 
 ## After the bench
 
@@ -122,6 +122,6 @@ Bring measurements back. I'll:
 - ConstrainedMax ≈ BandMid on wanaka (v2↔v3): predicted −0.9%, actual **−1.0%** ✓
 - F-040 lead-in feed change audible: **confirmed** ✓
 
-Zero GRBL errors. Arc-fitter fix (commit `2db19c2`) holds.
+Zero GRBL errors. Arc-fitter fix (commit `8a5d1fd`) holds.
 
 **One follow-up surfaced**: variant 6 ran as "plunge/retract, not classic lead-in" — F-040 changed feeds correctly (audible F500), but the geometry was already broken pre-F-040 (diagonal feed instead of tangent entry). Landed as **F-040a** the same day; v6 in this bundle is the post-F-040a version with classic geometry. Re-run v6 next bench to confirm the tangent-entry sound.

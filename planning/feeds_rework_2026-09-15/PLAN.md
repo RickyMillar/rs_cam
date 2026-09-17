@@ -37,7 +37,7 @@ however short it is. So "why" moves onto the row whose number changed. (F-7)
 
 ### W1 — restore direct feed / plunge / RPM control (F-1)
 
-The regression from `540715c1`. Highest priority: the product currently
+The regression from `d323cabb`. Highest priority: the product currently
 cannot set a feed rate.
 
 - A `SPEED` block at the top of the Feeds & Speeds tab, above the
@@ -127,6 +127,6 @@ plot and into the readout below it, where it has a line to itself.
   does not change the default, which is a machine-library question.
 - The vendor LUT table's own formatting. It is collapsed by default and was
   not reported.
-- The four tests failing at `7a5fdad4` (simulation staleness, freshness,
+- The four tests failing at `e2ecf697` (simulation staleness, freshness,
   and the `RunSimulation` producer ruling). Unrelated, pre-existing, and
   they need an owner decision rather than a patch.

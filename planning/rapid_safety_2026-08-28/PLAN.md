@@ -125,7 +125,7 @@ Outcome decides everything downstream:
 Deliberate ordering. If the emitter is fixed first, the detector still cannot
 prove it worked. Give `check_rapid_collisions_against_stock` a cutter and walk
 the profile — the primitive already exists
-(`dexel_stock::max_clearance_tip_z_for_profile`, landed 994996b7) and
+(`dexel_stock::max_clearance_tip_z_for_profile`, landed 2eaa6c18) and
 `compute/simulate.rs:1022` has both `entry.tool` and the LUT in scope.
 
 Then re-run S1's replay: a fixed detector on unfixed emission should *find* the
@@ -228,7 +228,7 @@ made unconditional.
 
 ---
 
-> **PHASE M OUTCOME (2026-08-28, commits `fa8ee8d3` + evidence docs):**
+> **PHASE M OUTCOME (2026-08-28, commits `b9525f9d` + evidence docs):**
 > M1 measured first and REFUTED part of this phase's own framing: the
 > sub-0.02 discard population is 48% of cutting samples but 99.75% hard
 > zeros, so the denominator fix moves MAGNITUDE (3.69×/5.74× time-weighted

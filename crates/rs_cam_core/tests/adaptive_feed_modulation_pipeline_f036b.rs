@@ -315,13 +315,13 @@ impl CuttingFeedWords {
 /// **Why the filter exists (RT-5, 2026-09-17).** AB3 claims a CUTTING
 /// chipload. [`collect_f_words`] takes every F word in the program, the
 /// entry plunge and the entry ramp feeds included, so a median over it
-/// measures a different population. `d0aeee02` (G-RAMPCONTAIN) folded the
+/// measures a different population. `fd135a04` (G-RAMPCONTAIN) folded the
 /// ramp along the following cut and multiplied the entry words; the median
 /// then crossed out of the cutting moves and the arm went red on an
 /// instrument defect, not on a modulation regression. The diagnosis is on
 /// record in `planning/ui_fix_2026-09-09/reports/J2.md` §4c — the structure
 /// purge deleted that path, so read it with
-/// `git show 0a6c476b^:planning/ui_fix_2026-09-09/reports/J2.md` — and this
+/// `git show ea4d5bfb^:planning/ui_fix_2026-09-09/reports/J2.md` — and this
 /// is the remedy §4c prescribes. The band, the fixture and the three
 /// assertions are unchanged.
 ///
@@ -710,7 +710,7 @@ fn modulated_cycle_time_lower_than_unmodulated() {
 /// **WP26 (2026-09-13) — why the old proxy broke.** The arm used to keep
 /// a move whose feed differs from the operation's own `feed_rate()` by
 /// 0.5 mm/min or more. That proxy holds only while the modulator is the
-/// one pass that writes a per-move feed. Since WP11b (`4b53576b`,
+/// one pass that writes a per-move feed. Since WP11b (`80a9cf4d`,
 /// 2026-09-11) the feed-optimisation dressup writes per-move feeds on
 /// the same generation door, so the proxy counted 21 of 126 moves the
 /// modulator never touched and read a feed-optimisation value as a

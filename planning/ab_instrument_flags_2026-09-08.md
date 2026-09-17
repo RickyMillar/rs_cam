@@ -2,7 +2,7 @@
 
 Source of the flags: `planning/roughing_strategy_ab_results_2026-09-07.md`
 ("Caveats"). This document reads the code only. It runs nothing and changes
-nothing. Branch `machine-kinematics-confidence`, HEAD `86eaa3d7`.
+nothing. Branch `machine-kinematics-confidence`, HEAD `79ecc870`.
 
 ---
 

@@ -6,11 +6,11 @@ fifteen edited sentry files still fail on the defect they guard. One sentry —
 because its skip list misses `src/app/mcp/tests.rs`. Three more sentries lose
 coverage without going fully vacuous. The four fixes are in section 3.
 
-Scope: reviewed at `5067b5b5`. `git diff --name-only 5845f295..5067b5b5 --
+Scope: reviewed at `17c5a27e`. `git diff --name-only c60ef8c8..5067b5b5 --
 crates/rs_cam_viz/tests` lists fifteen files. The commits are
-`e6a5476f..857709cd` (`app/mcp.rs`), `b3690b6c..ee25a1a3`
-(`ui/properties/mod.rs`), `5358ec27` (`ui/properties/operations/mod.rs`) and
-`5602e1c0` (`state/simulation.rs`).
+`15d4dc00..857709cd` (`app/mcp.rs`), `ff55de3f..ee25a1a3`
+(`ui/properties/mod.rs`), `a4839e74` (`ui/properties/operations/mod.rs`) and
+`cd35f22a` (`state/simulation.rs`).
 
 The last two splits edited no sentry. No sentry reads `state/simulation.rs`.
 One un-edited sentry reads `ui/properties/operations/mod.rs`:
@@ -19,7 +19,7 @@ One un-edited sentry reads `ui/properties/operations/mod.rs`:
 (`// ── Stepover Pattern Diagram`) both stayed in `mod.rs`, and its slice is
 3592 bytes before and after the split. That sentry is intact.
 
-Method: a throwaway worktree at `5067b5b5`, one injected defect at a time, and the
+Method: a throwaway worktree at `17c5a27e`, one injected defect at a time, and the
 pre-built sentry binary run directly. Most of these sentries read the source at
 run time, so an injection needs no rebuild. Two sentries bake the source with
 `include_str!` and were rebuilt. The baseline is 15 files, 15 test targets, all
@@ -64,7 +64,7 @@ The three end-marker changes are honest. Each number is the byte length of the
 slice the arm reads. "Bare marker" is what the old marker returns against the
 new source.
 
-| Sentry | Arm | 5845f295 | 5067b5b5 | Bare marker at 5067b5b5 |
+| Sentry | Arm | c60ef8c8 | 17c5a27e | Bare marker at 17c5a27e |
 |---|---|---|---|---|
 | `viewport_draws_selected_only_wp27.rs` | `mcp_screenshot_toolpath` body | 3858 | 3857 | 15677 (the rest of `view.rs`) |
 | `inspector_header_wraps_g_reachwrap.rs` | `wrapped_small_label` body | 1149 | 1160 | 6500 |
@@ -204,7 +204,7 @@ therefore passes. The allowance is a dead ceiling.
 
 This is by design and it predates the split. `MCP_GENERATE_ARM_ALLOWANCE` is
 documented as a ceiling — "this scan stays green when it goes" — and
-`git show 5845f295:crates/rs_cam_viz/src/app/mcp.rs` shows the site was already
+`git show c60ef8c8:crates/rs_cam_viz/src/app/mcp.rs` shows the site was already
 a comment then. The P4 edit repointed the shield faithfully. Consider setting
 `MCP_GENERATE_ARM_ALLOWANCE` to `0` now that WP11b has removed the site.
 
@@ -217,9 +217,9 @@ a comment then. The P4 edit repointed the shield faithfully. Consider setting
 - The run-time-read injections ran one at a time. The four `include_str!`
   injections ran in one build; their results are per test function.
 - Every red run names the injected token, so no result comes from cross-talk.
-- HEAD moved `5067b5b5` → `8db15b75` during the run. That commit changes two
+- HEAD moved `17c5a27e` → `28102f72` during the run. That commit changes two
   `CLAUDE.md` files only, so the review holds.
 
 ## Outcome (2026-09-17)
 
-All four fixes and the wp6b note landed in `7665b5fc`, each with a red proof. The wp6b ceiling could not be set to 0 (`absurd_extreme_comparisons` rejects a `usize` minimum comparison), so the allowance, its branch and its assertion were deleted; a `toolpath_configs_mut` call in `app/mcp/generation.rs` now lands in the offence list with its line.
+All four fixes and the wp6b note landed in `3f4d48c8`, each with a red proof. The wp6b ceiling could not be set to 0 (`absurd_extreme_comparisons` rejects a `usize` minimum comparison), so the allowance, its branch and its assertion were deleted; a `toolpath_configs_mut` call in `app/mcp/generation.rs` now lands in the offence list with its line.

@@ -106,7 +106,7 @@ fixture, stop and report — do not widen the tolerance.
 
 ## S2 — lead-in/out clip (pre-registered before the instrument ran)
 
-Scope widened by `25d80035` (metrology lane): the buried-chord A/B
+Scope widened by `cfe4ea9a` (metrology lane): the buried-chord A/B
 found the family's member 3 — with `lead_in_out = true` the entry
 plunge lands `lead_radius` away from the ring start and the lead arc
 approaches HORIZONTALLY at ring depth through standing terrain. The
@@ -140,7 +140,7 @@ Bars:
 
 ## S3 — sagging refit arcs (pre-registered; mechanism not yet reproduced synthetically)
 
-Family member 2 (`25d80035`): with `arc_fitting = true` (tol 0.05)
+Family member 2 (`cfe4ea9a`): with `arc_fitting = true` (tol 0.05)
 the wanaka triage carries an `entry_load` CRITICAL of 2 242 samples,
 peak 3.90 mm, which VANISHES entirely with arcs off. That A/B is the
 S3-red — measured on wanaka by the metrology lane; this file does not
@@ -202,7 +202,7 @@ the running GUI, alongside the S2/ramp re-measure.
 ### Post-commit verification probes (2026-09-03, throwaway test, not committed)
 
 Two claims were verified by measurement instead of inference after
-`8451e87c`:
+`53804052`:
 
 1. **Arcfit vs clipped entries.** On the ridge fixture, after full
    dressups: the clipped RAMP legs stay linear (66 linear entry

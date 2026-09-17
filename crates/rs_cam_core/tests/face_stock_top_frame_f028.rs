@@ -335,7 +335,7 @@ fn as004_face_no_rapid_collisions() {
 // production entry point with the auto_from_model=false convention. With
 // the F-028 fix in place, `self.stock_bbox().max.z = origin_z + z = -12+12 = 0`
 // (the world stock top), heights.top_z resolves to 0, and the pocket cuts
-// at world Z=[-2,-4,-6] as expected. The test passes on commit `bf63d06`,
+// at world Z=[-2,-4,-6] as expected. The test passes on commit `b544405`,
 // confirming the alleged AS001 regression does not reproduce at the
 // `ProjectSession` API level; it stays in place as a defensive guard so
 // any future change to the identity-setup HeightContext wiring that
@@ -428,7 +428,7 @@ fn build_as001_pocket_session_from_file() -> ProjectSession {
 /// `self.stock_bbox()` for HeightContext on identity setups might have
 /// shifted AS001 cuts out of stock; this test pins the in-stock behaviour.
 ///
-/// On commit `bf63d06` actual readings via this path are:
+/// On commit `b544405` actual readings via this path are:
 ///   peak_axial_doc_mm ≈ 1.76 mm, total_removed ≈ 20222 mm³, chipload
 ///   modeled — i.e. the AS001 pocket emits at world Z=[-2,-4,-6] as
 ///   expected. The test passes today and stays in place as a defensive

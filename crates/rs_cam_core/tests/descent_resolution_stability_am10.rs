@@ -2,7 +2,7 @@
 //! grid someone happened to verify it on.
 //!
 //! Oracle: `planning/review_2026-07-29/TECH_DEBT_RESEARCH_AND_FIX_PLAN.md`
-//! §A/M10, and the TP15 RCA (`4f590f3`).
+//! §A/M10, and the TP15 RCA (`234c654`).
 //!
 //! ## The coupling this file exists to break
 //!

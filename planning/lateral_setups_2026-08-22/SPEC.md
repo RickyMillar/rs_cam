@@ -240,7 +240,7 @@ Filed as **G-POLYTRANSFORM-DUP**.
 ### 2c. Drilling — **CLOSED-UNREACHABLE 2026-08-22**
 
 > **The stamping fallback below is moot and was not built.** G-LATERALSCRUB
-> (`3e951540`) removed the only shipped caller that ever handed
+> (`686be424`) removed the only shipped caller that ever handed
 > `TriDexelStock::apply_drill_op` a lateral direction: the global playback
 > stock's drill stamp now sits inside `if !lateral_playback`, and the viz
 > worker's `build_playback_data` gives a lateral group `FromTop` plus its own
@@ -286,7 +286,7 @@ no serde and is rebuilt on every regenerate. What *is* persisted is XY-only
 
 ### 2d. The live-scrub viewport mesh — **DONE 2026-08-22**
 
-> Fixed in `3e951540` by the local-stock-then-map route the checkpoint meshes
+> Fixed in `686be424` by the local-stock-then-map route the checkpoint meshes
 > already used. Sentried by `tests/lateral_scrub_playback_stock_g_lateralscrub.rs`,
 > which asserts **Z-grid solid volume** rather than a vertex probe — the
 > obvious probe passes against the broken code, because the buried side
@@ -354,7 +354,7 @@ field's value is not.
 3. **G-POLYTRANSFORM-DUP** — delete the viz copy. Independent of the decision,
    and doing it first means 2a is a one-place change instead of two.
 4. **2a** — decided; implement the work-plane rule + no-mesh refusal.
-5. ~~**G-LATERALSCRUB**~~ — **done** 2026-08-22 (`3e951540`); see 2d.
+5. ~~**G-LATERALSCRUB**~~ — **done** 2026-08-22 (`686be424`); see 2d.
 6. ~~**G-DRILLLATERAL**~~ — **closed unreachable** 2026-08-22, doc-pinned, no
    stamping fallback built; see 2c.
 7. `SimGroupEntry.direction` — **blocked, not deleted.** It has a reader

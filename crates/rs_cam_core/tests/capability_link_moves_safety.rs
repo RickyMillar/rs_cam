@@ -1,6 +1,6 @@
 //! Capability flip safety regression tests (audit task 41).
 //!
-//! Background: commit 51f6d3d loosened `OperationTransformCapabilities` for
+//! Background: commit 32dec0d loosened `OperationTransformCapabilities` for
 //! 7 ops (Face, Trace, VCarve, Inlay, Chamfer, Pencil, RadialFinish) so that
 //! `apply_dressups` will now apply `link_moves` when callers enable it. The
 //! existing `param_sweep` fixtures don't enable `link_moves`, so the

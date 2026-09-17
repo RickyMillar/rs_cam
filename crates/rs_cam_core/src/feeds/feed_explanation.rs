@@ -6,7 +6,7 @@
 //! ruled at Checkpoint B Q2. Reference semantics:
 //! `crates/rs_cam_core/tests/feed_explanation_snapshot_b3.rs` (the
 //! test-only assembler that reconciled the live B3 evidence, commit
-//! `5f7bb25`).
+//! `6629a0d`).
 //!
 //! ## Why this type exists
 //!

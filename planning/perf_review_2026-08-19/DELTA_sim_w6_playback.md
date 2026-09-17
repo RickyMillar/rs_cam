@@ -8,7 +8,7 @@ Every cargo invocation serialized behind `flock /tmp/rs_cam_cargo.lock` with a
 **Do not read this file as a replacement for `BASELINES.md`.** It is one lane's
 delta.
 
-Commits: `6a04f775` (kernel + dispatch), `4cfd0e07` (sentries), `e3e09c49`
+Commits: `440e40d8` (kernel + dispatch), `eab8d615` (sentries), `a836a272`
 (paired A/B bench arm).
 
 ---
@@ -160,7 +160,7 @@ per-cell cost it is the entire crossover.
 
 Its two arguments — `lut.radius_sq()` and `grid.cell_size` — do not move inside a
 replay, so the driver now computes it **once per batch** and hands the same value
-to every band (`da1aac06`). Bit-identical by construction: same pure function,
+to every band (`94c9330f`). Bit-identical by construction: same pure function,
 same two inputs, and `playback_band_dispatch_s6` is green unchanged across the
 change.
 
@@ -203,7 +203,7 @@ simulation of the same fixture (`DELTA_sim_w4.md` §3a). That 37× is the
 independent confirmation of `perf_suite`'s ~25× per-cell claim, and it is why the
 per-band fixed cost of §1h mattered here and not there.
 
-### 2a. Run 1 (pre-hoist, `6a04f775`) — the run that found the defect
+### 2a. Run 1 (pre-hoist, `440e40d8`) — the run that found the defect
 
 Machine state: **load 2.51 at start, 11.63 at end** — another lane started up
 during the run. The first two fixtures are usable; **the last two are
@@ -229,9 +229,9 @@ data: `flat6_cs0.25_plunge/serial` reads 0.378 ms at 1 thread, 0.904 ms at 4, an
 The **0.42×** is the finding, and it is not a contention artefact: it is a
 *one-thread* reading, where there is no scheduling to be perturbed, and it is
 2.4× — an order out of the range contention explains on the neighbouring arms.
-§1h is its diagnosis and `da1aac06` is the fix.
+§1h is its diagnosis and `94c9330f` is the fix.
 
-### 2b. Run 2 (post-hoist, `da1aac06`)
+### 2b. Run 2 (post-hoist, `94c9330f`)
 
 Measured 2026-08-21 ~11:15 by the consolidator (the lane itself was killed by
 `systemd-oomd` at 10:57 — see §6). Same paired group, same pinned-pool method,
@@ -365,7 +365,7 @@ section — §6), all under `flock`, all at `-j 8`:
 | `cargo test -p rs_cam_mcp --release` | clean (13 tests) |
 | `playback_band_dispatch_s6` | **7/7** |
 | `cargo clippy --workspace --all-targets -- -D warnings` | zero warnings |
-| `cargo fmt --check` | clean after `1a0a4ee0` (pre-existing drift in six G1/G9-era files — none of them this wave's) |
+| `cargo fmt --check` | clean after `7193ae38` (pre-existing drift in six G1/G9-era files — none of them this wave's) |
 
 The one failure, `wanaka_scale_indexed_path_beats_linear_scan_and_matches_output`
 (`remap_interval_index_c9.rs:539`), read 4.66× against its ≥5× bar, then

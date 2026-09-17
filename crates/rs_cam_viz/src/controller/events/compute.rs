@@ -1994,7 +1994,7 @@ impl<B: ComputeBackend> AppController<B> {
     ///
     /// The rows used to be hand-built from `gui.toolpath_rt` alone, under a
     /// doc comment claiming `session.results` was "only populated by the
-    /// standalone MCP". That stopped being true at `d706c036`, when
+    /// standalone MCP". That stopped being true at `da1b4753`, when
     /// `drain_compute_results` started writing the worker's result through
     /// `ProjectSession::insert_result` (`Command::AdoptResult` since WP3) —
     /// but the read was never moved, so ten

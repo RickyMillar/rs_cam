@@ -1541,7 +1541,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         // ~63% above the Onsrud/Amana 14 k literature ceiling
         // (literature-matrix cell flat_12mm_adaptive2d_oak_power).
         // Drill ops already had a diameter tier from round-4
-        // (`drill_rpm_envelope_for_diameter`, commit c9818dd); this is
+        // (`drill_rpm_envelope_for_diameter`, commit 9c4f3b9); this is
         // the milling-side analogue.
         //
         // The tier ceiling always applies for nominal-D == cutting-D

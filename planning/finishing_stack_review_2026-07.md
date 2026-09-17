@@ -832,7 +832,7 @@ toolpath's frame, and it shifts ONLY the moves. Everything else checked out.*
   tool, so true rest = boundary bands/edges only); all 30 chains centerline-only
   (width-aware pass cap working); pencil adds 0 rapid collisions (was 14 on virgin
   stock). Gates: core 2078 pass/3 known reds, viz 212/212, clippy clean.
-- 2026-07-07 (tech-debt pair, COMMITTED d0d6d75 + 482be35, live-validated):
+- 2026-07-07 (tech-debt pair, COMMITTED e2575f8 + a2340e1, live-validated):
   sliver-region guard (MAX_REST_REGIONS=64 cap + warn in region_polygons_from_mask;
   classify_rest_regions pathology → GUI captions in Rest Analysis + Boundary picker) and
   MCP cancel_generation + timeout_s on generate_toolpath/generate_all (toolpath-lane-only
@@ -1289,7 +1289,7 @@ toolpath's frame, and it shifts ONLY the moves. Everything else checked out.*
   `column_deviations_pointwise_against_flat_model`. Vertex deviations
   remain for GUI display; quality verdicts read COLUMNS from now on.
 - Dead lead closed: `set_toolpath_operation` dressup-policy gap is
-  invalid — `normalize_for_op` has run on op swap since 06468a8;
+  invalid — `normalize_for_op` has run on op swap since 8c1fdd7;
   `arc_fitting: true` surviving strip-all is by design and
   branch-symmetric (arcs were exonerated twice anyway).
 - Open (Task 2/3): 670 s-vs-405 s region-scallop generation, per-band

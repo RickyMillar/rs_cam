@@ -485,7 +485,7 @@ impl<B: ComputeBackend> AppController<B> {
 /// `(0,0,0)..(100, 100, 12)`. The viz worker's
 /// `build_core_simulation_request` falls back to `request.stock_bbox`
 /// when `local_to_global` is `None` (the F-024 follow-up landed in commit
-/// `0c907a6`), so the broken bbox was the dexel grid's Z range — toolpath
+/// `1dd1aa7`), so the broken bbox was the dexel grid's Z range — toolpath
 /// cuts at world Z=-2 sat below every ray and `axial_engagement_mm` read
 /// the full stock height instead of the commanded DOC.
 pub(crate) fn build_world_stock_bbox(

@@ -862,7 +862,7 @@ fn reset_simulation_clears_results_and_checks() {
 fn simulation_staleness_tracks_edits() {
     let mut controller = sample_controller();
     generate_all_for_test(&mut controller);
-    // UR3 (7b4e18f6): an UNSTAMPED result reads stale, never current. A
+    // UR3 (f97327c3): an UNSTAMPED result reads stale, never current. A
     // fresh-looking run must come through the submit that stamps the
     // capture revision, as a real Run Simulation does.
     controller.handle_internal_event(AppEvent::RunSimulation);
@@ -2442,7 +2442,7 @@ fn delete_unselected_toolpath_preserves_selection() {
 /// dropping the origin. For AS001 (`origin_z=-12`) this sent a bbox of
 /// `(0,0,0)..(100,100,12)` to the worker even though the actual world stock
 /// spans `(-10,-10,-12)..(90,90,0)`. The F-024 viz-worker follow-up
-/// (commit `0c907a6`) made `build_core_simulation_request` forward
+/// (commit `1dd1aa7`) made `build_core_simulation_request` forward
 /// `local_stock_bbox = None` for identity setups so the core would fall back
 /// to `request.stock_bbox` — but the fallback bbox itself was the same
 /// broken bbox. Result: toolpath cuts at world Z=-2 still sat below every
@@ -2660,7 +2660,7 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
 // ---------------------------------------------------------------------------
 // F-028 viz-path follow-up (2026-05-25)
 //
-// The original F-028 fix (commit `e48d7df`) only patched
+// The original F-028 fix (commit `329c5cf`) only patched
 // `session::compute::compute_simulation_groups` (site 1). Round-07 smoke
 // verified through the MCP exposed that the viz / MCP / GUI pipeline takes
 // a different path: `AppController::submit_toolpath_compute`
@@ -2672,7 +2672,7 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
 // at Z=10, 8, 6 in the setup-local frame.
 //
 // The downstream simulation path, however, drops `local_to_global = None`
-// for identity setups (F-024 follow-up `0c907a6`) — so the dexel grid was
+// for identity setups (F-024 follow-up `1dd1aa7`) — so the dexel grid was
 // rebuilt in *world* frame. The generator's local-frame cuts at Z=10 sat
 // 10 mm above the world stock top at Z=0; the cutter swept through air
 // the whole run. Round-07 MCP smoke evidence:
@@ -2734,7 +2734,7 @@ impl crate::compute::ComputeBackend for CapturingBackend {
 /// downstream toolpath generator emits cuts at Z=-2, -4, -6 to match the
 /// downstream sim path's world-frame dexel grid.
 ///
-/// Pre-fix readings (commit `db1fb69`): `heights.top_z = 12.0`,
+/// Pre-fix readings (commit `f00c733`): `heights.top_z = 12.0`,
 /// `stock_bbox.max.z = 12.0`, cuts emitted at Z=10, 8, 6 → simulation peak
 /// axial = 0, total removed = 0, air cut = 96 %.
 ///
@@ -2895,7 +2895,7 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
          12.0 (the local zero-rooted stock_top), and the toolpath generator \
          emitted cuts at Z=10, 8, 6 in setup-local frame. The downstream \
          viz simulation drops `local_to_global = None` for identity setups \
-         (F-024 viz-worker follow-up `0c907a6`) so the dexel grid is rebuilt \
+         (F-024 viz-worker follow-up `1dd1aa7`) so the dexel grid is rebuilt \
          in world frame — and the generator's local-frame cuts at Z=10 sat \
          10 mm above the world stock top at Z=0. Round-07 MCP smoke: \
          peak_axial=0, total_removed=0, air_cut=96 %."
@@ -5383,7 +5383,7 @@ fn freshness_does_not_outrank_a_collision() {
 
     let (chip, role) =
         workspace_bar::readiness_badge(&controller.state).expect("a collision must be reported");
-    // UR2 (ec7c6acc): one shared safety text replaces the two per-tab
+    // UR2 (e7901838): one shared safety text replaces the two per-tab
     // spellings. The count, not the word "collision", is the claim.
     assert_eq!(chip, "1 safety");
     // UP4: the badge producers hand back a ROLE now, not a colour, so the

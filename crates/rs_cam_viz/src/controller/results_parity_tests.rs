@@ -6,10 +6,10 @@
 //! without generation findings and spans while the CLI's carry both."
 //!
 //! The census (`planning/review_2026-08-08/RESULTS_PARITY.md`) measured that
-//! claim at `1c0a4ac` and found it **half true**:
+//! claim at `65fe537` and found it **half true**:
 //!
 //! * The *store* is wired. `drain_compute_results` has called
-//!   `ProjectSession::insert_result` since `d706c036` (the door is
+//!   `ProjectSession::insert_result` since `da1b4753` (the door is
 //!   `Command::AdoptResult` since WP3), and the payload it
 //!   writes goes through the same `compute::stats_with_findings` join the
 //!   core session path uses. So the generation findings, the spans and the
@@ -186,7 +186,7 @@ fn drain_one_result(controller: &mut AppController<InertBackend>) {
 
 // ── Half 1: the store ───────────────────────────────────────────────────
 
-/// GREEN at `1c0a4ac`, and it must stay that way: the GUI drain writes the
+/// GREEN at `65fe537`, and it must stay that way: the GUI drain writes the
 /// worker's result — findings AND spans — into `ProjectSession.results`, so
 /// every core read that goes through `get_result` (the load report's span
 /// lookup, its `drill_op` lookup, `diagnose_toolpath_with_trace`'s stats

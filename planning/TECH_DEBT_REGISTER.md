@@ -14,18 +14,18 @@ need a register.
 
 | ID | What | Status |
 |---|---|---|
-| T-1 | `enumerate_matching_rows` is dead; `pub` hides it | **closed** `b930cce5` — deleted (feeds wave, 2026-09-17) |
+| T-1 | `enumerate_matching_rows` is dead; `pub` hides it | **closed** `d641996c` — deleted (feeds wave, 2026-09-17) |
 | T-2 | LH-1's guard is syntactic and a closure defeats it | open |
 | T-3 | Cross-crate sentries never run in a per-crate gate | open |
 | T-4 | `predict_peak_deflection_um` returns `0.0` for every refusal | open |
 | T-5 | `feeds/mod.rs` 4 144 lines, `suggest.rs` 5 667 | open — `calculate` (1 302 lines) has no mechanical seam: 16 `let mut` locals cross its 19 step banners and `effective_d` is rebound mid-way (FEEDS_WAVE FW-22, 2026-09-17) |
 | T-6 | Two implementations of one physical model | closed |
 | T-7 | Two definitions of "teeth in cut", differing by helix wrap | **withdrawn** — the premise fails |
-| T-8 | The power derate thins the chip, and only half the power responds | **closed** `348facbb` |
+| T-8 | The power derate thins the chip, and only half the power responds | **closed** `a7c17be7` |
 | T-9 | A feed clamped onto a ceiling ships one rounding step above it | open |
 | T-10 | No gantry feed-force limit exists; the steppers are unmodelled | open — needs a thrust rating |
-| T-11 | Feed modulation multiplies mm by a fraction of a different quantity | **closed** `bf8824ad` |
-| T-12 | A depth recommendation is dropped for 14 of 24 operations, silently | **closed** `0dc9141f` |
+| T-11 | Feed modulation multiplies mm by a fraction of a different quantity | **closed** `809d28b9` |
+| T-12 | A depth recommendation is dropped for 14 of 24 operations, silently | **closed** `ad2f749b` |
 | T-13 | `F_edge` is applied per mm of depth to an edge that is longer than that | open — needs a literature anchor |
 
 ---
@@ -34,7 +34,7 @@ need a register.
 
 `crates/rs_cam_core/src/feeds/vendor_lookup.rs:315`
 `enumerate_matching_rows` has **zero callers** across `crates/` since D-1
-(commit `b68c484d`) deleted the sibling-row scan. The only remaining mention
+(commit `500c21a1`) deleted the sibling-row scan. The only remaining mention
 in the repository is a historical note in a comment.
 
 **Why nothing catches it:** it is `pub` in a library crate, so it is part of
@@ -64,7 +64,7 @@ to stop a surface dividing air-cut time by hand instead of calling
 **It does not work.** Moving the division into a closure applied to the field
 — `pct_of_total(s.air_cut_time_s)`, where the closure divides — contains no
 such text. I introduced exactly the defect the sentry exists to prevent, in
-commit `790b033c`, and it went unnoticed for a day. Fixed in `41d0ee5c`.
+commit `236be682`, and it went unnoticed for a day. Fixed in `5b716c47`.
 
 There is a second edge, found while fixing it: the sentry scans raw source
 including comments, so a comment that *explains* the trap by quoting the
@@ -147,7 +147,7 @@ The recurring structural defect in this area, and the one that motivated the
   its terms from `force::affine_coefficients_for_kc`, and the literature
   constants live in `force.rs` alone.
 - **`feed_modulation` held its own copy** of the deflection inversion that
-  `force.rs` should own. Closed by N-2 (`ad89f8be`): one implementation,
+  `force.rs` should own. Closed by N-2 (`991e6af7`): one implementation,
   two views.
 - **`feed_modulation` held a second copy of the power formula too.** Closed
   by R1 the same way: the solver calls `PowerTerms::feed_for_kw` instead of
@@ -289,7 +289,7 @@ re-pinned.
 correct against the ceiling it is given, and every assertion about the
 clamp passes. No assertion states which lever a power limit should pull.
 
-**CLOSED by `348facbb`** (2026-09-16). The engagement ladder shipped and
+**CLOSED by `a7c17be7`** (2026-09-16). The engagement ladder shipped and
 `bull_12mm_pocket_oak` went from `major` to `moderate` without re-pinning.
 Pinned by `tests/the_power_ladder_pulls_the_right_lever_g_ladder.rs`, whose
 VFD arm is the only coverage of the refuse-the-traverse case — no literature
@@ -500,7 +500,7 @@ about four. Any reasoning about "reduce the depth" that passes through the
 modulator is wrong until this is fixed. See
 `planning/load_model_2026-09-16/IMPLEMENTATION_PLAN.md`.
 
-**CLOSED by `bf8824ad`** (2026-09-16). `PerMoveEngagement` now carries
+**CLOSED by `809d28b9`** (2026-09-16). `PerMoveEngagement` now carries
 `axial_doc_mm` and the solver reads it. The multiplication is deleted, not
 corrected, so no expression with the wrong units survives. Pinned by
 `tests/modulation_reads_the_depth_in_mm_g_axialunits.rs`, which never uses a
@@ -566,7 +566,7 @@ step. Asking for 2.60 or 2.40 then changes nothing at all. **A proposal
 expressed as a percentage cut cannot be honoured**, and a caller that assumes
 it was gets a depth up to 20 % away from the one it reasoned about.
 
-**CLOSED by `0dc9141f`** (2026-09-16). The funnel honours the `bool` and
+**CLOSED by `ad2f749b`** (2026-09-16). The funnel honours the `bool` and
 raises `SuggestWarning::CutGeometryFieldNotHeld`, pinned by
 `tests/apply_reports_a_field_it_cannot_hold_g_notheld.rs`. The second half —
 snapping a proposed depth to a realisable `total / n` — is NOT done, and is

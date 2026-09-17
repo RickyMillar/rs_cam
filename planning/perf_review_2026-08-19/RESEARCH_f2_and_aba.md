@@ -1,6 +1,6 @@
 # RESEARCH — W5B-F2 sentry re-expression, and the triage cache ABA hazard
 
-Read-only research lane, 2026-08-21. Branch `tech-debt-3` @ `1d6dd855`.
+Read-only research lane, 2026-08-21. Branch `tech-debt-3` @ `e0554da7`.
 Nothing here is implemented; both sections are sized for an implementation
 lane. **Topic A changes what a shipped sentry asserts — that is a user
 decision, flagged inline.**

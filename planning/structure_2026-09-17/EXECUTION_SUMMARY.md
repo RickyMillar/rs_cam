@@ -1,6 +1,6 @@
 # EXECUTION_SUMMARY.md — structure programme 3, 2026-09-17
 
-Orchestrated by Claude Fable 5.1 from `PROMPT.md` (`fa8176fa`). Opus agents
+Orchestrated by Claude Fable 5.1 from `PROMPT.md` (`540b66d0`). Opus agents
 did the work: one P1 agent, one P2 layout agent, one P2 move agent, one P2
 reviewer, one feeds triage agent, two feeds fix agents, one red-test
 diagnosis agent, two red-test fix agents, one round-2 split-proposal agent,
@@ -36,11 +36,11 @@ instruction to continue unattended.
 | production files over 3 000 lines (core + viz) | 19 | 1 (`polygon.rs`, ruled) |
 | folder-level `CLAUDE.md` files | 0 | 32 |
 
-Range `fa8176fa..e0125f8b` (through P2 and the feeds wave): 69 commits.
+Range `540b66d0..e0125f8b` (through P2 and the feeds wave): 69 commits.
 
-## P1 — planning purge (9 commits, `aede83fc..4ba1b2a2`)
+## P1 — planning purge (9 commits, `56cd3ab2..4ba1b2a2`)
 
-Tag `planning-pre-purge-2026-09-17` sits on `2b1416ab`. Any deleted file
+Tag `planning-pre-purge-2026-09-17` sits on `38291bdf`. Any deleted file
 returns with `git show planning-pre-purge-2026-09-17:<path>`. 1 010 tracked
 files and 1 146 727 947 bytes left the tree. `DELETED_INDEX.md` holds one
 rationale line per deleted package, the root deletions, the four moves and
@@ -59,16 +59,16 @@ History is not rewritten. The 948 MB blob stays in the object database. A
 `git filter-repo` pass is an operator decision for a moment when no session
 and no clone is live. The tag is local; pushing it is the operator's call.
 
-## P3 — root tidy (`155f1178`, `eb862de5`)
+## P3 — root tidy (`5509f452`, `6474ff8f`)
 
 `review/` (106 files), `G13_PROMPT.md`, `AGENT_PROMPT.md`, five generated
 fixture outputs and the excluded `tests/step_validation` crate (with its
 `Cargo.toml` exclude line) are gone. Root screenshots are ignored. The
 untracked `demos/` (103 MB) and `reference/` (4.9 GB) stay for the operator.
 
-## P2 — core module grouping (17 commits, `602911a6..5614d761`)
+## P2 — core module grouping (17 commits, `5166244c..5614d761`)
 
-Layout `P2_LAYOUT.md` (`677e96b0`, rulings `602911a6`). One sequential move
+Layout `P2_LAYOUT.md` (`939b69b9`, rulings `5166244c`). One sequential move
 agent, one folder per commit, each commit gated by
 `check --workspace --all-targets --features rs_cam_core/heavy-tests,rs_cam_core/step`
 and fmt. 3 454 path sites rewritten; no re-export shim; one visibility
@@ -79,7 +79,7 @@ literals. Final gate: workspace clippy `-D warnings` clean, fmt clean, core
 
 Completeness review (`P2_REVIEW.md`): GAP — no
 behaviour, visibility or persisted value changed, nothing left behind; six
-documents still named old paths. Fixed in `e0125f8b` (CREDITS.md 15 paths,
+documents still named old paths. Fixed in `1e2c4f61` (CREDITS.md 15 paths,
 FEATURE_CATALOG, AGENT_CODEMAP, the dev skill census, four test docs, one
 orphan comment in `lib.rs`). rustdoc: 233 warnings (85 unresolved links,
 139 private links), none naming an old root path; the 255 baseline's
@@ -88,14 +88,14 @@ command is unrecorded, so the two numbers are not a trend.
 `rs_cam_viz` was measured and not moved: `ui/` holds 25 panel files beside
 four folders; the two groups that grew are already foldered.
 
-## Feeds wave (23 commits, `FEEDS_WAVE.md` `ae40daee`)
+## Feeds wave (23 commits, `FEEDS_WAVE.md` `f9e765e7`)
 
-Triage: 23 rows, no tier A. Agent A (`feeds/`, 11 commits `126e8053..68745825`):
+Triage: 23 rows, no tier A. Agent A (`feeds/`, 11 commits `e4b05e40..68745825`):
 `enumerate_matching_rows`, `VendorLut::load_dir`, `render_label`, the
 `stock_to_leave_radial` match arms deleted; eight own-file-only items
 private; nine inert `dead_code` attributes gone; every allow carries
 `SAFETY:`; four `Test door:` lines. Agent B (`tool_load/`, 12 commits
-`2340aaed..905bbb80`): `evaluate_project`, `active_axes` deleted; the
+`ce6c5a7f..905bbb80`): `evaluate_project`, `active_axes` deleted; the
 `verdict.rs` banner that said "no consumers" for types with 181 references
 corrected; twelve items to `pub(crate)`; nine stale "run_stage_*" comments
 gone. Net −49 lines in `feeds/`, −25 in `tool_load/`. Gates: `--lib`
@@ -110,26 +110,26 @@ mechanical seam: 16 `let mut` locals cross its 19 step banners and
 `effective_d` is rebound mid-way; recorded on T-5 in the register. T-1
 closed.
 
-## Red tests (`RED_TESTS.md` `17740823`; fixes `fc07674f`, `8cac2857`, `a9333598`, `ad944a0a`, `20160147`)
+## Red tests (`RED_TESTS.md` `17740823`; fixes `56011126`, `b037568d`, `82233556`, `03e13fff`, `20160147`)
 
-Two hand-off attributions were wrong: test 3 came from UR2 `ec7c6acc`, not
-UR3; test 5 came from the ramp fold `d0aeee02`, not `7a5fdad4` (viz-only).
+Two hand-off attributions were wrong: test 3 came from UR2 `e7901838`, not
+UR3; test 5 came from the ramp fold `fd135a04`, not `e2ecf697` (viz-only).
 Tests 3 and 4 pinned behaviour the product changed on purpose (badge text
 "1 safety"; one `RunSimulation` producer). Tests 1 and 2 were fixture
 defects (a seeded result; an unstamped inject). Viz `--lib` is 385/0 for
-the first time since `7b4e18f6`. Test 5 was an instrument defect (the
-median took every F word, entry feeds included); `4d4d7a9b` measures the
+the first time since `f97327c3`. Test 5 was an instrument defect (the
+median took every F word, entry feeds included); `d1efe266` measures the
 cutting population by `MoveIntent`, the gate's own partition; the median
 lands on the band floor (the modulator's clamp) with no band change.
 
 ## Round 2 and P4/P5
 
-`evidence_round2/` (`2dcb2123`): dead pub 8 → 4, own-file-only 55 → 34,
+`evidence_round2/` (`27fa79db`): dead pub 8 → 4, own-file-only 55 → 34,
 legacy lines 479 → 468, allows 677 → 665 (449 without `SAFETY:`), test-only
 pub 36, functions ≥ 250 lines 89, src near-dup pairs 118 at 0.88 (moved
 files re-chunked).
 
-**Residue wave** (5 commits `4a9928e1..bc8c4338`, net −373 lines): the
+**Residue wave** (5 commits `4c82e4b4..bc8c4338`, net −373 lines): the
 whole dead `ToolpathSemanticWriter`; `NewDefaultCtx` and
 `apply_stock_defaults` (a duplicate of `feeds::suggest::StockContext`);
 three demotions; six `Test door:` lines; the dead viz runtime-profile
@@ -140,13 +140,13 @@ lines W4 wrote. Q1 remainder: six of eight Suggest sites now carry the
 model bbox; the two behind `draw_toolpath_panel` need a 25th parameter and
 stay with the ui-premium owner.
 
-**Smoke re-baseline** (`22c9310f`): the CLI built at `21f94270^` and at
-`b0d9d330` produce byte-identical smoke CSVs, so the populated context
+**Smoke re-baseline** (`a815b7e4`): the CLI built at `bb1ccc7b^` and at
+`f649bef6` produce byte-identical smoke CSVs, so the populated context
 changes no case. `2026-09-17.csv` replaces the 3.5-month-old June baseline;
 the notes list the June deltas and flag AS014's power verdict
 (`within` → `exceeds`) for the operator.
 
-**P4 big-file splits** (`P4_SPLITS.md` `7d4bec86`): 19 files over 3 000
+**P4 big-file splits** (`P4_SPLITS.md` `6800ccb5`): 19 files over 3 000
 lines; 60 271 of 83 364 lines can leave their parents; 30 % of those lines
 are inline test modules. Rulings: `polygon.rs` stays whole (spine);
 tests-only moves in `feeds/` and `tool_load/` are allowed. Wave 1 (six
@@ -154,12 +154,12 @@ files, six commits, each a pure move proven by item inventory):
 
 | file | before | parent after | children |
 |---|---:|---:|---|
-| `adaptive3d/mod.rs` `b0d9d330` | 3 018 | 532 | tests |
-| `dressup/mod.rs` `a1b79182` | 4 726 | 2 181 | air_cut, entry_descent, link, tests |
-| `stock/simulation_cut.rs` `6db8fe55` | 3 141 | 887 | accumulate, analysis, reporting, tests |
-| `session/mutation.rs` `a7f6d501` | 3 272 | 131 | toolpath, entities, config, tests |
+| `adaptive3d/mod.rs` `f649bef6` | 3 018 | 532 | tests |
+| `dressup/mod.rs` `d883c077` | 4 726 | 2 181 | air_cut, entry_descent, link, tests |
+| `stock/simulation_cut.rs` `0658302c` | 3 141 | 887 | accumulate, analysis, reporting, tests |
+| `session/mutation.rs` `90aff4dd` | 3 272 | 131 | toolpath, entities, config, tests |
 | `compute/catalog.rs` `58473752` | 3 287 | 1 412 | schema, registry, tests |
-| `finish/pencil.rs` `785b4acb` | 3 634 | 743 | chain_paths, detectors, emission, tests |
+| `finish/pencil.rs` `7d7138d6` | 3 634 | 743 | chain_paths, detectors, emission, tests |
 
 Combined HEAD gate after wave 1: workspace clippy `-D warnings` clean, fmt
 clean, core `--lib` 2526/0. Lessons: the plan's visibility column was
@@ -169,30 +169,30 @@ decide); `wildcard_imports` is denied, so re-exports list names; a
 cut off by the usage limit mid-split; their partial state was coherent and
 was finished, not redone.
 
-Wave 2 (six files): `unified_finish` 4 806 → 2 673 (`8a2b2f6b`), `scallop`
-3 580 → 1 158 (`efa2669f`), `feeds/mod` 4 624 → 2 767 tests-only
-(`74cd95b3`), `tool_load/optimize/mod` 3 361 → 1 019 five test files
-(`7f16ef96`), `compute/execute` 6 362 → 752 nine children (`8d52ceeb`),
-`session/compute` 8 032 → 2 252 six children (`16a5757b`). The
+Wave 2 (six files): `unified_finish` 4 806 → 2 673 (`09884357`), `scallop`
+3 580 → 1 158 (`5b20691e`), `feeds/mod` 4 624 → 2 767 tests-only
+(`c9551ad3`), `tool_load/optimize/mod` 3 361 → 1 019 five test files
+(`a94edf29`), `compute/execute` 6 362 → 752 nine children (`56e383f0`),
+`session/compute` 8 032 → 2 252 six children (`451680b3`). The
 `checkpoint_b_resolution_ab` sentry is a text census over `src/`: a door
-string that moves into a child changes its expected list (`efa2669f`); an
-`include_str!` needle moved with its function (`16a5757b`). `macro_rules!`
+string that moves into a child changes its expected list (`5b20691e`); an
+`include_str!` needle moved with its function (`451680b3`). `macro_rules!`
 textual scope forces `mod` lines below the macro; a sibling `tests.rs` needs
 `pub(super)` on struct fields.
 
 Wave 3 (two files): `feeds/suggest` 5 769 → 879, five children
-(`916de2ad..56b6b9c0`, the inert `too_many_arguments` allow deleted);
+(`1d808fb3..56b6b9c0`, the inert `too_many_arguments` allow deleted);
 `finish/conformal_spiral` 4 401 → 2 981, tests plus `spiral_build.rs`
-(`83bbe51d`, `ed3462e0`); its `flatten` and `rings` children were declined
+(`80b0d4a8`, `8e9f5cca`); its `flatten` and `rings` children were declined
 at 13 and 16 visibility changes.
 
 Viz wave (operator ruling: "happy to run the file split, high risk"):
 `app/mcp.rs` 6 067 → 1 089, six children, ten sentries repointed with their
 assertions intact and the negative `stamp_stale` check widened to every
-child (`e6a5476f..857709cd`); `ui/properties/mod.rs` 5 965 → 1 152, eight
-children, seven sentries now read the folder (`b3690b6c..ee25a1a3`);
-`ui/properties/operations/mod.rs` 3 013 → 766 (`5358ec27`);
-`state/simulation.rs` 2 908 → 1 014 (`5602e1c0`).
+child (`15d4dc00..857709cd`); `ui/properties/mod.rs` 5 965 → 1 152, eight
+children, seven sentries now read the folder (`ff55de3f..ee25a1a3`);
+`ui/properties/operations/mod.rs` 3 013 → 766 (`a4839e74`);
+`state/simulation.rs` 2 908 → 1 014 (`cd35f22a`).
 
 After all waves the largest production file is `polygon.rs` at 3 004 lines
 (ruled whole, spine) and `conformal_spiral.rs` at 2 981; every other
@@ -201,9 +201,9 @@ production file is under 2 900. Final gate: workspace clippy
 `--lib` 2526/0, viz `--lib` 384/0 and every viz integration binary green,
 cli and mcp green.
 
-**P5 per-folder instruction files** (`P5_CLAUDE_MD.md` `17a0d8ee`; files
-`8909e8df`, parents `7495f609`, de-dup `6f3ca825`, evidence `25456d1a`, maps
-`572a5ab9..f89e4d88`): 32 folder `CLAUDE.md` files, each ≤ 40 lines, with a
+**P5 per-folder instruction files** (`P5_CLAUDE_MD.md` `010758d9`; files
+`a52d5714`, parents `45445869`, de-dup `22d629fa`, evidence `e958f9a7`, maps
+`556d646c..f89e4d88`): 32 folder `CLAUDE.md` files, each ≤ 40 lines, with a
 file map, invariants, sentries and traps; the core crate file 121 → 55
 lines, viz 68 → 40; root gains one paragraph. Durable rules that lived only
 in the orchestrator's memory (chipload-bounds mirror, the steady-state gate
@@ -212,7 +212,7 @@ door) now live in the one folder that owns each. Two rules were dropped
 because their symbols no longer exist; 13 unsourced bullets were deleted
 rather than kept.
 
-Range `fa8176fa..HEAD`: 135 commits.
+Range `540b66d0..HEAD`: 135 commits.
 
 ## Follow-ups (recorded, not scheduled)
 

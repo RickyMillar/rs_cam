@@ -733,7 +733,7 @@ fn evaluate_inner(
     // ramp entries laid down by D4 / D5) are kept out of the
     // steady-state trip set and surfaced separately as `entry_spikes`
     // on the `Within` arm. Replaces the C1 kinematics filter reverted
-    // in D3 (commit `8e2a7fc`). `span_lookup` was constructed alongside
+    // in D3 (commit `a07cfa2`). `span_lookup` was constructed alongside
     // `lookup_axial_doc_mm` above.
     // Worst Entry-ancestry over-max sample (largest observed_fpt > max).
     let mut entry_high: Option<(f64, usize)> = None;
@@ -1313,10 +1313,10 @@ mod tests {
         // *purpose* — ProjectCurve→Trace routing finds a contour/finish
         // row and gates the sample — is preserved.
         //
-        // 2026-06-03 family-default Janka anchor (151c7b5): the Onsrud
+        // 2026-06-03 family-default Janka anchor (279fcee): the Onsrud
         // 6.35 mm hardwood row carries no per-row `hardness_value`, so
         // `hardness_ratio_raw` (then named `hardness_scale_factor`) previously degraded to identity for
-        // any hardwood query. After 151c7b5 it scales against the
+        // any hardwood query. After 279fcee it scales against the
         // hardwood family anchor (Janka 1290, red oak). HardMaple's
         // Janka is 1450, so the matched band derates by 1290/1450 ≈
         // 0.8896 → effective band 0.3164–0.3616 mm/tooth. Sample

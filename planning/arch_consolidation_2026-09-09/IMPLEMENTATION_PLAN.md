@@ -10,7 +10,7 @@ This file sequences the adopted ruling (`RULING_ONE_COMMAND_SURFACE_DRAFT.md`, A
 `STATUS.md:202-206`) across the nine phases of `PLAN.md`. `PLAN.md` stays verbatim; it says
 WHAT and this file says IN WHAT ORDER, WITH WHICH DELETION, AND UNDER WHICH SENTRY. Read
 `STATUS.md` first for finding state, then the ruling, then this file. I read every
-`path:line` cited below in the file itself, at `master` HEAD `80219e69`. Nothing here is
+`path:line` cited below in the file itself, at `master` HEAD `bfe8586b`. Nothing here is
 implemented. A verifier commits on this branch concurrently, so a line number can drift; the
 symbol name is the anchor.
 
@@ -228,7 +228,7 @@ WP3 → WP5 → WP7; WP11a → WP10 → WP11b → WP12.
   `apply_command`. `rs_cam_cli` declares no `[lib]`, so its test is a `#[cfg(test)]` module
   inside the bin.
 - **Deletes.** `compute_stale_set_for_toolpath_param_returns_single_toolpath`
-  (`compute.rs:5385` at `80219e69`). It is VACUOUS-GREEN, not red: `make_session()` plus one
+  (`compute.rs:5385` at `bfe8586b`). It is VACUOUS-GREEN, not red: `make_session()` plus one
   `Fresh` Pocket, so a chain-aware answer is also `[0]`. `PLAN.md:111` forbids freezing a
   defect as desired behaviour.
 - **Sentry.** `crates/rs_cam_core/tests/command_registry_completeness.rs` (red first: it
@@ -905,7 +905,7 @@ it, and the ruling names `SetToolpathParam` as the first step.
 ## §11 Changelog — review round 2 (confirmation, 2026-09-11)
 
 Verdict: ACCEPT WITH CHANGES. All ten round-1 blockers confirmed CLOSED against
-the live code at `80219e69`. The B3 dispute resolved in the plan's favour: ten
+the live code at `bfe8586b`. The B3 dispute resolved in the plan's favour: ten
 residual `UiCommand` rows. Two accuracy defects found and applied here:
 
 - §1 `Effects.stale`: `drop_result` is not the only revision bump site.
@@ -993,7 +993,7 @@ Full inventory: session scratchpad `wp3_brief.md`.
 
 ## §13 WP9 and WP11a pre-implementation corrections and rulings (2026-09-11)
 
-Scouts measured §4 WP9 and §4 WP11a against master `4a480fc8`. Full briefs: session
+Scouts measured §4 WP9 and §4 WP11a against master `f2548a02`. Full briefs: session
 scratchpad `wp9_brief.md`, `wp11a_brief.md`.
 
 ### WP11a corrections
@@ -1075,7 +1075,7 @@ whole-core dev loop are not run per package.
 
 ## §15 WP4 pre-implementation corrections and rulings (2026-09-11)
 
-A scout measured §4 WP4 against master `b902540c` and the WP3 tree. Full brief: session
+A scout measured §4 WP4 against master `4d97fa8b` and the WP3 tree. Full brief: session
 scratchpad `wp4_brief.md` (32 rows, 8 hatch-writing rows).
 
 ### Corrections
@@ -1180,7 +1180,7 @@ A scout measured §4 WP10 against the WP3 tree and master. Full brief: session s
    `generate_toolpath` on the P0 fixture, plus a fn-pointer coercion proving `execute_job`
    takes no session.
 
-### WP3 landed note (2026-09-11, `25f37b74`)
+### WP3 landed note (2026-09-11, `c68c7b7c`)
 
 `Effects.stale` is the revision-moved set. On `remove_toolpath` that set is every remaining
 toolpath, because `bump_all_revisions` re-keys results without dropping them. The MCP
@@ -1193,7 +1193,7 @@ that wants "which results were dropped" reads the result slots.
 
 ## §17 WP5 and WP8 pre-implementation corrections and rulings (2026-09-11)
 
-Scouts measured §4 WP5 and §4 WP8 against master `c9780b4f`. Full briefs: session scratchpad
+Scouts measured §4 WP5 and §4 WP8 against master `f1f7b698`. Full briefs: session scratchpad
 `wp5_brief.md`, `wp8_brief.md`. Both packages proceed on the §9 defaults (Q1: one command;
 Q2: viz wide, optimizer narrow).
 
@@ -1277,7 +1277,7 @@ same commit that closes the hatches (§5 WP7: no partial commit is possible).
 
 ## §19 WP6 and WP6b pre-implementation corrections and rulings (2026-09-11)
 
-A scout measured §4 WP6 and WP6b against master `cd2b8efd`. Full brief: session scratchpad
+A scout measured §4 WP6 and WP6b against master `753cbb76`. Full brief: session scratchpad
 `wp6_wp6b_brief.md`.
 
 ### Corrections
@@ -1327,7 +1327,7 @@ A scout measured §4 WP6 and WP6b against master `cd2b8efd`. Full brief: session
 
 ## §20 WP7 pre-implementation corrections and rulings; WP7a split (2026-09-11)
 
-A scout measured §4 WP7 against master `cd2b8efd`. Full brief: session scratchpad
+A scout measured §4 WP7 against master `753cbb76`. Full brief: session scratchpad
 `wp7_brief.md`.
 
 ### Corrections
@@ -1369,7 +1369,7 @@ A scout measured §4 WP7 against master `cd2b8efd`. Full brief: session scratchp
 
 ## §21 WP13 (moves and sentry) corrections and rulings (2026-09-11)
 
-A scout measured WP13's second half against master `5fba840b` and the WP4 worktree. Full
+A scout measured WP13's second half against master `b1b1d8fc` and the WP4 worktree. Full
 brief: session scratchpad `wp13_moves_brief.md`.
 
 ### Corrections
@@ -1531,7 +1531,7 @@ A scout measured §4 WP12 against the WP11b tree. Full brief: session scratchpad
 
 ### §22 addendum — N12 item 10 and the `AdoptSimulation` ruling (2026-09-11 night)
 
-WP11b landed (`4b53576b`) with three GUI controller tests red. Cause: `ProjectSession::start`
+WP11b landed (`80a9cf4d`) with three GUI controller tests red. Cause: `ProjectSession::start`
 reads the rest snapshot from `session.simulation.prior_stocks`, but the GUI simulates on its
 own lane and adopts the result into viz state only (`controller/events/compute.rs:665,703`);
 `session.simulation` stays `None` in the GUI process, so `start` refuses every
@@ -1677,13 +1677,13 @@ The operator answered four questions at the programme close.
    feeds constant moves. Sentry red-first, named after the finding.
 4. **Cargo while the GUI runs.** Verifiers run debug builds and tests and the
    clippy/fmt gate only. Nothing touches `target/release`; the running GUI
-   and its binary stay as built at `351e2880`.
+   and its binary stay as built at `2e340c81`.
 
 ---
 
 ## §28 WP19 and WP14b rulings after the re-scout (2026-09-13)
 
-**WP19 re-measured at `10263b4d`.** The nineteen `let _ =` stale sites the
+**WP19 re-measured at `f21aea33`.** The nineteen `let _ =` stale sites the
 review named are closed: WP15a and WP17 routed them through
 `apply_controller_command`, `apply_quietly`, `apply_panel_command` and
 `adopt_post_effects`. The live residual is `Effects::simulation_cleared`:
@@ -1732,7 +1732,7 @@ a runtime row with `auto_regen = true` while twelve operations declare
 ## §29 Rulings on the 2026-09-13 completeness review (orchestrator, 2026-09-13)
 
 The operator commissioned an independent completeness review at pin
-`61c16b75` (`REVIEW_COMPLETENESS_2026-09-13.md`, verdict INCOMPLETE, one
+`2c593c7d` (`REVIEW_COMPLETENESS_2026-09-13.md`, verdict INCOMPLETE, one
 blocker). Rulings:
 
 1. **B1 becomes WP23.** `UiCommand::SimJumpToOpEnd` and
@@ -1749,17 +1749,17 @@ blocker). Rulings:
    MCP-only (the seven wire-only rows at `ui_command.rs:498-551` at the
    pin). The sentry contract stays: every row declares each surface, and
    every `Reached` surface has a constructor.
-3. **N1: recorded as an exception.** `SetSetupName`'s sentry `ff81b712`
-   flipped `Skip` to `Reached` one commit before its caller `183900e2`.
+3. **N1: recorded as an exception.** `SetSetupName`'s sentry `50bf6b96`
+   flipped `Skip` to `Reached` one commit before its caller `df87f239`.
    History is not rewritten.
-4. **N2: closed by WP14b** (`2abf78aa`), which flipped `PreviewTierMap`'s
+4. **N2: closed by WP14b** (`04d09453`), which flipped `PreviewTierMap`'s
    `gui` column to `Reached` and removed the forward-promise wording.
 
 ---
 
 ## §30 Operator rulings on the four close-out ledgers (2026-09-13)
 
-1. **G-PERFGOLDEN2D: re-bless now.** Done at `7177c139`; the moved fields are
+1. **G-PERFGOLDEN2D: re-bless now.** Done at `457fddc2`; the moved fields are
    in that commit body. Which commit moved the 2D fixture stays NOT MEASURED.
 2. **G-F036B-FLOOR: scout it, no code change.** A read-only scout reports the
    mechanism and the first appearance; the operator decides after.
@@ -1778,7 +1778,7 @@ blocker). Rulings:
 
 **Fix the test arm (option c of the scout brief) → WP26.** The red is an
 instrument defect. The arm's proxy for "the modulator touched this move" is
-"the feed differs from nominal". Since WP11b (`4b53576b`) the
+"the feed differs from nominal". Since WP11b (`80a9cf4d`) the
 feed-optimisation dressup writes per-move feeds on the same door, so the arm
 counts moves the modulator never touched. The fix is test-only:
 
@@ -1795,7 +1795,7 @@ counts moves the modulator never touched. The fix is test-only:
 Expected read after the fix: 9 passed / 1 failed, the band arm red by design
 (J2 §4c). Ten of ten is NOT the expected read. The G-F036B-FLOOR ledger row
 in STATUS.md carries the scout's two corrections (first appearance bracketed
-to `4b53576b`; not the same finding as the band arm).
+to `80a9cf4d`; not the same finding as the band arm).
 
 ---
 

@@ -449,19 +449,19 @@ record.
 
 | Finding | Commit | Measured | Delta doc |
 |---|---|---|---|
-| **G9** v-carve/inlay distance field | `7d9557db` | `gen_vcarve_field` 193.67 ms → **15.869 ms** (**12.2×**) | `DELTA_gen_w3.md` |
-| **G1** push-cutter band query | `932a9719` | `push_cutter_batch/terrain` **4.51×**; `gen_waterline/L20` 97.84 → **31.83 ms** (3.07×) | `DELTA_gen_w2b.md` |
-| **G4** Polygon2 cached AABB | `1e3c5d8c` | `contains_point` **3.90×**; RegionSet **51×** | (in-file, above) |
-| **G2** 2.5D depth hoist | `473c3d1f` | L20/L1 **22.2× → 1.04×**; pocket L20 738.19 → **33.78 ms** | `DELTA_gen_w2.md` |
-| **face.rs** (G2 sibling) | `7d9557db` | `gen_face_levels` 264.89 → **85.18 µs** (3.11×) | `DELTA_gen_w3.md` |
-| **G3** drop-cutter early-outs | `ca92d767` | see in-file section above | (in-file, above) |
-| **S4a/S7/S6** | `5099db9e`, `29823980` | `flat6/cs0.25` **−7.10%**, `e2e/res1` **−7.93%**; plunge arms **no change** | `DELTA_sim_w1.md` |
-| **V8/V13** content-keyed uploads | `08345ee4` | 8-op generate: 36 → **8** toolpath builds, 8 → **0** mesh builds | `DELTA_viz_w2.md` |
-| **V1/V3/V4** viz caching | `42ed4774` | per-frame triage/deflection/issues rebuilds removed | — |
-| **S2/S3** stamp early-out + row bands | `f9f26997`, `5973b7cb` | 1.46–2.07× (S2) on every arm; S3 ceiling 2.10× at 4 threads | `DELTA_sim_w2.md` |
-| **S5** fixpoint prefix memo | `2ed9df04`, `55847d4f` | `sim_fixpoint_ladder` 180.37 → **100.66 ms** (**1.79×**, ceiling 2.00×) | `DELTA_sim_w3.md` |
-| **S1** `SweptPlungeOnly` — bit-identical | `5d02b7db`, `9e65d1a7` (merged `d671b049`) | raster arms **1.37–1.45×**, plunge arm **3.4–5.0×**, **zero metric movement** | `DELTA_sim_w5_s1_DECISION.md` |
-| **S1** full `Swept` — **metric-changing**, now the default | `51497a19` + flip `a4ff2a8c` | kernel **2.9–5.1×**; wanaka simulate phases **−14.8/−16.0%**, whole run **−8.0%** | `DELTA_sim_w5b_landing.md` |
+| **G9** v-carve/inlay distance field | `2b8b8fa0` | `gen_vcarve_field` 193.67 ms → **15.869 ms** (**12.2×**) | `DELTA_gen_w3.md` |
+| **G1** push-cutter band query | `834a0bd8` | `push_cutter_batch/terrain` **4.51×**; `gen_waterline/L20` 97.84 → **31.83 ms** (3.07×) | `DELTA_gen_w2b.md` |
+| **G4** Polygon2 cached AABB | `a3e244e7` | `contains_point` **3.90×**; RegionSet **51×** | (in-file, above) |
+| **G2** 2.5D depth hoist | `ad107fbb` | L20/L1 **22.2× → 1.04×**; pocket L20 738.19 → **33.78 ms** | `DELTA_gen_w2.md` |
+| **face.rs** (G2 sibling) | `2b8b8fa0` | `gen_face_levels` 264.89 → **85.18 µs** (3.11×) | `DELTA_gen_w3.md` |
+| **G3** drop-cutter early-outs | `5efc1cbc` | see in-file section above | (in-file, above) |
+| **S4a/S7/S6** | `26cc2221`, `29823980` | `flat6/cs0.25` **−7.10%**, `e2e/res1` **−7.93%**; plunge arms **no change** | `DELTA_sim_w1.md` |
+| **V8/V13** content-keyed uploads | `9de29150` | 8-op generate: 36 → **8** toolpath builds, 8 → **0** mesh builds | `DELTA_viz_w2.md` |
+| **V1/V3/V4** viz caching | `1b34e38e` | per-frame triage/deflection/issues rebuilds removed | — |
+| **S2/S3** stamp early-out + row bands | `6fe20c3d`, `f093a88e` | 1.46–2.07× (S2) on every arm; S3 ceiling 2.10× at 4 threads | `DELTA_sim_w2.md` |
+| **S5** fixpoint prefix memo | `e5952463`, `fb83d155` | `sim_fixpoint_ladder` 180.37 → **100.66 ms** (**1.79×**, ceiling 2.00×) | `DELTA_sim_w3.md` |
+| **S1** `SweptPlungeOnly` — bit-identical | `0a4c4a10`, `22dce580` (merged `11e239a2`) | raster arms **1.37–1.45×**, plunge arm **3.4–5.0×**, **zero metric movement** | `DELTA_sim_w5_s1_DECISION.md` |
+| **S1** full `Swept` — **metric-changing**, now the default | `7959bc4c` + flip `34d8917a` | kernel **2.9–5.1×**; wanaka simulate phases **−14.8/−16.0%**, whole run **−8.0%** | `DELTA_sim_w5b_landing.md` |
 
 Two rows for S1 because they are two decisions. `SweptPlungeOnly` is free —
 bit-identical to the shipped kernel, sentried at whole-simulation level, and it
@@ -472,8 +472,8 @@ enumerated in `DELTA_sim_w5b_landing.md`. Read the ratio against its own
 context: a 3–5× stamp kernel buys 8% end-to-end, because S4 and S6 are now in
 front of it.
 
-Phase 0 instruments: `bfe4e251` (benches + goldens), `b2a5e661` (3D golden arm).
-Gate repair: `e4379dd5`.
+Phase 0 instruments: `d2610ccf` (benches + goldens), `a8874993` (3D golden arm).
+Gate repair: `2e94dc42`.
 
 ## Corrections to PERF_REVIEW — the campaign's other output
 
@@ -535,7 +535,7 @@ Captured 2026-08-20. Full write-up, corrections and sentry inventory in
 
 **Three tree states benched back to back in one session**, at load average 3.8
 on a 24-core box, by checking out each state of the lane's own files:
-pre-S2 (`25c6823e`), S2 (`f9f26997`), S2+S3 (working tree, later `5973b7cb`).
+pre-S2 (`80ee198a`), S2 (`6fe20c3d`), S2+S3 (working tree, later `f093a88e`).
 The pre-S2 column reproduces wave 1's committed numbers to within 1 % on every
 arm, which is the check that the window was quiet.
 
@@ -596,7 +596,7 @@ dispatch in wave 4 SIM — see the sections at the end of this file.
 ## 0C — wanaka200 end-to-end wall clock (2026-08-20, post metric-neutral tier) — **SUPERSEDED BY 0D**
 
 > **Superseded 2026-08-21 by 0D (below).** After the S1 landing
-> (`Auto` → `Swept`, `a4ff2a8c`) this section's *result-consistency* checks are
+> (`Auto` → `Swept`, `34d8917a`) this section's *result-consistency* checks are
 > no longer the right comparison: nine metrics that read `not_measurable` here
 > became measurable, the project verdict changed kind (abstention → WARNING),
 > and one `FromRemainingStock` toolpath's geometry changed. The **wall-clock**
@@ -604,7 +604,7 @@ dispatch in wave 4 SIM — see the sections at the end of this file.
 > what the ≈6× against the pre-campaign reference is stated against; the
 > metric rows are historical.
 
-Binary: release, built at tip 9dee1889 (all waves through SIM w2 / GEN w4).
+Binary: release, built at tip 33f2e022 (all waves through SIM w2 / GEN w4).
 Protocol: fresh MCP GUI instance, load wanaka200.toml, timed `generate_all`
 (fixpoint: true, simulation_resolution_mm: 0.4), then timed `run_simulation` (0.4).
 
@@ -635,7 +635,7 @@ resident throughout; no cargo jobs during the run.
 Captured 2026-08-20. Full write-up, corrections, output enumeration and sentry
 inventory in `DELTA_sim_w3.md`; this is the numbers table only.
 
-Commits: `2ed9df04` (implementation), `55847d4f` (sentries + bench arm).
+Commits: `e5952463` (implementation), `fb83d155` (sentries + bench arm).
 
 ## The number
 
@@ -704,7 +704,7 @@ clean, `cargo fmt --check` clean for this lane's files.
 with overflow" when a stamp's bbox falls entirely outside the grid
 (`row_hi + 1 - row_lo` underflows once the clamps give `row_lo > row_hi`).
 Reproduced with a raster pass at `y ∈ [31, 35]` over a stock whose Y extent is
-`[0, 24]`. **Pre-existing** — that line is S2's mip block (`f9f26997`) and
+`[0, 24]`. **Pre-existing** — that line is S2's mip block (`6fe20c3d`) and
 nothing in S5 touches `dexel_stock/` — and reachable from ordinary projects,
 since toolpaths legitimately leave the stock (profile lead-ins, edge drills,
 any op whose boundary extends past the blank). Release wraps instead of
@@ -727,9 +727,9 @@ not interchangeable with one carved with them on. Sketch in `DELTA_sim_w3.md`
 # Wave 4 (SIM) — S3 whole-toolpath band dispatch
 
 Captured 2026-08-20. Full write-up, corrections and sentry inventory in
-`DELTA_sim_w4.md`; this is the numbers table only. Commits: `c652ee52` (the
-out-of-grid clamp defect), `38b8e4a9` (restructure), `d1d9a0a4` (sentries +
-bench arm), `ee8b9da4`.
+`DELTA_sim_w4.md`; this is the numbers table only. Commits: `2f046bcf` (the
+out-of-grid clamp defect), `22743979` (restructure), `4691c686` (sentries +
+bench arm), `4786beed`.
 
 **Paired, same-session, same-process.** The new bench group `sim_dispatch_ab`
 runs `per_stamp` and `whole_path` adjacent for every fixture and thread count in
@@ -822,9 +822,9 @@ Wave 5 built and evidenced it on `perf/s1-swept-volume`
 `DELTA_sim_w5b_landing.md`. Both delta docs are the primary record; this is the
 numbers table only.
 
-Merge `d671b049`; flip `a4ff2a8c`; re-baselines `9b4505be` (goldens),
-`a4452a59` (F-XXX axial), `b5b6db3c` (parity bar); `dbb9c8fa` (S5 key
-argument); `217be7a2` (clippy).
+Merge `11e239a2`; flip `34d8917a`; re-baselines `2b6f976a` (goldens),
+`dc9b0eea` (F-XXX axial), `20111413` (parity bar); `1440c173` (S5 key
+argument); `cc6f4284` (clippy).
 
 ## The kernel A/B — four modes, one criterion session per fixture and thread count
 
@@ -959,7 +959,7 @@ diagnostics 2.28). This is a single unpaired cross-day absolute and the rule at
 the top of this file forbids comparing it to the 2026-08-20 session. The paired
 figure from that session stands and is the one to cite: **−8.0% end-to-end,
 −14.8/−16.0% on the simulate phases**, itself a lower bound because both of
-those runs predate `9e65d1a7`.
+those runs predate `22dce580`.
 
 ## Verification at the new default
 
@@ -976,7 +976,7 @@ recorded as the same flake by the decision package.
 One claim from the decision package **did not reproduce**: clippy was not clean
 on the merged lane (4 `needless_range_loop` in `swept.rs`, 6 `print_stdout` in
 `tests/swept_stamping_s1.rs`, all pre-existing on the lane's own files). Fixed
-in `217be7a2`. Every other number in the package reproduced exactly, including
+in `cc6f4284`. Every other number in the package reproduced exactly, including
 all 39 + 29 golden fields, all three F-XXX readings, both parity splits and
 every wanaka metric row.
 
@@ -989,7 +989,7 @@ Three parallel lanes. Full write-ups: `DELTA_sim_w6_playback.md` (banding),
 `DELTA_w5b_f4_aircut_DECISION.md` (threshold decision package, **awaiting the
 user's decision — no shipped bar moved**).
 
-## Playback banding — the numbers (paired, post-hoist run, `da1aac06`)
+## Playback banding — the numbers (paired, post-hoist run, `94c9330f`)
 
 Bit-identical by construction (no accumulators to reassociate), sentried on
 every live grid + 300-probe remaining-stock lattice, mutation-checked. Ratios
@@ -1015,7 +1015,7 @@ exists.
 The 1360/568 boundary "over-claim" was the F-027 border clear acting on parity
 FIXTURES that passed `world_stock_xy_bbox: None` — production has supplied that
 bbox on every adaptive3d call since F-027. Control run: declaring the stock
-bbox takes `sim_higher` 1360 → 0 and 568 → 0. Landed `77ead905`, test-only.
+bbox takes `sim_higher` 1360 → 0 and 568 → 0. Landed `b9eaf5bf`, test-only.
 Residual watch item: the `boundary`-polygon clear (`path.rs:404-430`) is the
 same mechanism live in production and **un-measured** (parity fixtures set
 `boundary: None`).
@@ -1034,7 +1034,7 @@ Linear feed ships" sentry are queued for the user.
 
 ## W5B-F3 — CLOSED (corpus half, 2026-08-21)
 
-Full detail: `DELTA_w5b_f3_corpus.md`, harness `af8c1c48`. Headlines:
+Full detail: `DELTA_w5b_f3_corpus.md`, harness `f1852a51`. Headlines:
 
 * **Zero collisions everywhere**, every arm, every project — no stop items.
 * Smoke corpus, three-way paired (baseline → `whole_path` → swept, one
@@ -1059,7 +1059,7 @@ Full detail: `DELTA_w5b_f3_corpus.md`, harness `af8c1c48`. Headlines:
   +0.81% entirely from this (raw-path A/B −0.11%). Not a defect; wider than
   the landing doc's statement; now on record.
 * Corpus infrastructure defects found (predating swept): AS015, the corpus's
-  only rest-chain row, has been `generation_failed` since `4b105dab`
+  only rest-chain row, has been `generation_failed` since `45347db3`
   (2026-07-06) — no rest measurement for ~7 weeks; `smoke::run_diff`'s
   chipload regression check is **vacuous** (`kind == "exceeds"` never matches
   `exceeds_low/high`); 211 baseline rapid collisions are 0 today across ALL
@@ -1069,7 +1069,7 @@ Full detail: `DELTA_w5b_f3_corpus.md`, harness `af8c1c48`. Headlines:
 
 ## W5B-F4 — IMPLEMENTED (user-approved, 2026-08-21)
 
-`bfaf213d` (bands: 3D finish 30→45, ProjectCurve 97→60, GUI/MCP banner
+`5fde0fa5` (bands: 3D finish 30→45, ProjectCurve 97→60, GUI/MCP banner
 20→40 interim; 2.5D/2D 40 and drill `None` unchanged; CLI verified at 40) +
 `97166645` (narration marker reads the op's own band, flat 50 demoted to
 fallback). **No golden moved** — the package's prediction that the 3D
@@ -1083,11 +1083,11 @@ outside the inventory; fixed.
 
 ## Post-wave sentries + two findings (2026-08-21, second lane)
 
-`ed31d789`: dynamic census sentry `retract_intent_move_type_census_w6` — 24
+`d6669c5f`: dynamic census sentry `retract_intent_move_type_census_w6` — 24
 op configs × 2 dressup profiles, 242,790 moves, 812 Retract-tagged, **zero**
 Retract-tagged Linear feeds; the stale `compute.rs` feed-modulation-default
 comment fixed in the same commit. CLAUDE.md mechanism sentence corrected
-`bed036fe`.
+`5c33ca91`.
 
 **Finding: drill intent tags are erased downstream.** The census showed
 Drill/AlignmentPinDrill emitting zero Retract-tagged moves although
@@ -1097,7 +1097,7 @@ Drill/AlignmentPinDrill emitting zero Retract-tagged moves although
 and, possibly, cheaper re-entry heights. Open follow-up (cycle-time smell on
 peck drilling); not chased.
 
-**Ledger #15 — the C9 bar was calibrated in a debug build.** `0c5fbaea`
+**Ledger #15 — the C9 bar was calibrated in a debug build.** `962f3236`
 landed the approved median-of-3, which collapsed the variance and exposed
 the real shape: debug median **12.9×** (reproducing the landing commit's
 seconds-scale timings), release median **~4.3×** — the linear reference arm
@@ -1124,7 +1124,7 @@ Post-OOM re-verification by the consolidator (the banding lane was killed by
 `systemd-oomd` at 10:57 before its final gates — machine did not reboot; all
 lane commits and docs survived): `playback_band_dispatch_s6` 7/7,
 `cargo clippy --workspace --all-targets -- -D warnings` zero warnings,
-`cargo fmt --check` clean after `1a0a4ee0` (drift in six G1/G9-era files the
+`cargo fmt --check` clean after `7193ae38` (drift in six G1/G9-era files the
 original lanes' per-file spot checks missed). Full release suites at `-j 8`:
 core **3129 passed / 1 failed** — the one failure is the C9 wall-clock flake
 (`remap_interval_index_c9.rs:539`), 4.66× vs its ≥5× bar, **5.3× and passing
@@ -1135,7 +1135,7 @@ re-statement (bar 4×, or median-of-3) queued as a user decision.
 ## Implementation wave — CLOSED (2026-08-21, "go, defaults")
 
 Full per-cluster detail: `RESEARCH_WAVE_IMPLEMENTATION_PLAN.md` §EXECUTION
-STATUS (the closure note for this wave). Ten wave commits + the 691304b4
+STATUS (the closure note for this wave). Ten wave commits + the 0d37decb
 golden re-bless, landed alongside ten concurrent TD3-session commits with
 file-gate coordination and zero collisions (one recovered `--amend` incident
 → standing rule: no history rewriting of any kind in a shared tree).
@@ -1150,7 +1150,7 @@ Weak-pinned with the triage keyed on its evidence; boundary parity sentried
 (B1 27.7%, B2 exactly 138); F2 C3 ladder sentry landed.
 
 Ledger additions (now TWENTY-ONE):
-- #17 the research doc's drill arithmetic was stale post-889b1573 (70/14/4.12×
+- #17 the research doc's drill arithmetic was stale post-9df20910 (70/14/4.12×
   per hole, not 105/21/4.65× — safe-Z resolves to 10, not 17).
 - #18 the research doc's C1 shape (rebuild-height) provably cannot go green —
   45 mm vs the schedule's 17 mm; the landed shape is a split ceiling.
@@ -1170,7 +1170,7 @@ corpus effective population is 14/18 (four rows vacuous since baseline).
 
 ## 0E — wanaka200 at post-implementation-wave tip + first CPU profile (2026-08-22)
 
-Tip `1357441c` (implementation wave + 10 TD3 commits). Same harness and
+Tip `8b666204` (implementation wave + 10 TD3 commits). Same harness and
 protocol as 0D (`swept_wanaka_ab_s1`, dispatch unset = Swept, 0.4 mm).
 Machine: 29.7 GiB available at launch, no cargo, no rust-analyzer.
 
@@ -1190,8 +1190,8 @@ Machine: 29.7 GiB available at launch, no cargo, no rust-analyzer.
 
 Peak RSS 5.47 GB. Safety: all 19 collision rows zero, 2 ladder rounds.
 Air moved attributably: tp5 50.8→36.6 %, tp8 35.7→36.6 % — the TD3 drill/pin
-fixes (no ramp entry on pin drills 7c125fe9, pin XY frame d93837eb, peck clamp
-d019a5a4) changed removed material and both downstream ops are
+fixes (no ramp entry on pin drills 2eb14d14, pin XY frame f5afdeca, peck clamp
+61cb27a4) changed removed material and both downstream ops are
 FromRemainingStock. Verdict now flags only tp9 (58.5 % pencil).
 
 ### CPU profile — the headline finding (V16)

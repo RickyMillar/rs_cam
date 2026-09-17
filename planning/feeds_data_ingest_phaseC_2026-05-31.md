@@ -1,7 +1,7 @@
 # Feeds Data Ingest — Phase C (AluminumAlloy expansion)
 
 **Date:** 2026-05-31
-**Predecessor:** Phase B (`585e2d8`).
+**Predecessor:** Phase B (`7c9d6bc`).
 **Plan reference:** `planning/feeds_data_ingest_completion_2026-05-31.md`
 ("Phase C" section, design decision D3).
 

@@ -15,7 +15,7 @@ suggest/baseline split, 1 per case for AS006-AS018).
 
 ## Repository state
 
-- git HEAD: `07a723d`
+- git HEAD: `b0b517a`
 - working tree: dirty (pre-existing user changes; nothing reset by this run)
 - Mid-run: a second agent landed the **MCP param UX overhaul** prompted
   by this run's findings. The new feature flags

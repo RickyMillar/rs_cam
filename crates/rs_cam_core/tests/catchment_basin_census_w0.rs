@@ -1,7 +1,7 @@
 //! **Track H phase W0 — the catchment BASIN census.**
 //!
 //! Pre-registration: `planning/valley_tracing_2026-09-02/FINDINGS.md`, §"Phase
-//! W" and §W0 (commit `431e5eaa`). A census ONLY — no toolpath generation and
+//! W" and §W0 (commit `6bd41606`). A census ONLY — no toolpath generation and
 //! no new strategy code. It writes NO verdict: bar W0-a and the seam budget
 //! are applied by the orchestrator.
 //!

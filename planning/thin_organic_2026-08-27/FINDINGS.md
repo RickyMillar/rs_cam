@@ -652,7 +652,7 @@ The ceiling then enters through the production parameters and no others:
 top }`, `flush_ride: true` and `airborne_links_may_leave_territory: true` (the
 G-LINKVETO op prior), `hookup_distance = 25.0` (`intra_region_hookup_mm` in the
 toml), `reorder: true`. The clearance itself is the **profile-aware** one A1
-landed (`dexel_stock::max_clearance_tip_z_for_profile`, `994996b7`), not the
+landed (`dexel_stock::max_clearance_tip_z_for_profile`, `2eaa6c18`), not the
 flat disc that produced the 1.57× swing.
 
 **Known biases, all in one direction.** The rough's toolpath is not replayed
@@ -1793,7 +1793,7 @@ What the measurement said (`planning/review_2026-07-29/CHECKPOINT_C_EVIDENCE.md`
   leave production on the offset cascade** — because a chord-fidelity fix
   showed the 2–3× quality margin *belonged to the instrument*. §14: no
   production path moved; the end-to-end COLUMNS A/B was never run; any revival
-  **must re-baseline from `dde7a54`, not `28503db`**.
+  **must re-baseline from `0ece700`, not `a933a70`**.
 
 ### What a minimal streamline prototype could reuse
 
@@ -1837,7 +1837,7 @@ family of answer as Lever 1 — contour-following coverage — with a strictly
 larger blast radius and one adopt-then-retract already on the record. The
 cheapest honest experiment, if the appetite exists after the A/B, is to route
 **only the thin-shallow arm** through `RingSource::IsoField` as a fifth A/B arm
-(the seam already accepts it, `scallop.rs:1246`), re-baselined from `dde7a54`,
+(the seam already accepts it, `scallop.rs:1246`), re-baselined from `0ece700`,
 with the §3.8 gouge and short-segment findings as pre-declared tripwires. That
 is a config-level experiment inside work Lever 1 has to do anyway — perhaps
 20 lines — and it answers the architecture question with a wanaka-class number
@@ -2080,14 +2080,14 @@ one.
 
 **A blocker found first, and it invalidates earlier eyeballs.** The
 operator's live GUI ran a binary built 2026-08-27 16:50 — 63 commits
-behind HEAD and two days before C2 landed (`a2a7ef89`, 08-29 18:30).
+behind HEAD and two days before C2 landed (`7f7326bb`, 08-29 18:30).
 Verified against the running server, not inferred: `get_operation_schema`
 returned 21 unified-finish params with `monotone_cell_decomposition`
 absent, while `catalog.rs` at HEAD carries it. The dial did not exist in
-the binary being reviewed. The same staleness covers `994996b7` (links
-clear against the tool profile), `938d85db` (S2 profile-aware rapid
-checks), `79361f31` (S3 air-cut classifies for the tool), `fa8ee8d3` (M3
-engagement normalised by engaged width) and `9b85db6e` (B2 profile-ceiling
+the binary being reviewed. The same staleness covers `2eaa6c18` (links
+clear against the tool profile), `503cbee3` (S2 profile-aware rapid
+checks), `10c5f1bb` (S3 air-cut classifies for the tool), `b9525f9d` (M3
+engagement normalised by engaged width) and `3921aede` (B2 profile-ceiling
 entry descents). **Any engagement, air-cut or rapid-collision figure read
 off that window between 08-27 and 09-01 is pre-fix.** Rebuilt and
 restarted before the A/B ran.

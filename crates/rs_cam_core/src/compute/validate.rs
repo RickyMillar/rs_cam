@@ -39,7 +39,7 @@ pub enum StaleDefaultRule {
     /// from `-50.0` to stock bottom. Pre-B.1 projects keep `-50.0`.
     DropCutterMinZPreB1,
     /// Ball or tapered-ball tool with plunge_rate above the
-    /// `150 × tip_diameter_mm` cap. Fix 2 (commit c5b9f74) added the
+    /// `150 × tip_diameter_mm` cap. Fix 2 (commit c7d9dbc) added the
     /// cap to fresh LUT recommendations; pre-Fix-2 projects bypass it.
     TaperedBallPlungePreFix2,
     /// Wood-class material with flat tool on an Adaptive/Adaptive3d op,

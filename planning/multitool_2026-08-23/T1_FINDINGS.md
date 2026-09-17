@@ -32,7 +32,7 @@ for **any** operation family with **any** configured reference tool, hanging
 the result on the toolpath so a downstream op can be confined to it via
 `BoundarySource::DerivedRestRegions`
 (`crates/rs_cam_core/src/compute/config.rs:1454-1456`). The July "P2 selective
-finishing" commit `6a7e164` wired all of that end to end and **measured it on
+finishing" commit `2195d33` wired all of that end to end and **measured it on
 this exact board: a selective fine scallop cut 1593 mm against a 7788 mm
 all-over baseline, ~80 % less** (§4.1). What is missing is not the machinery
 but (a) an *n*-tool pass instead of a 2-tool one, (b) a planner that picks the
@@ -75,7 +75,7 @@ committed measurements bracket it:
 |---|---|---|---|
 | **A** | `planning/review_2026-07-29/RADIUS_AUDIT.md:83` (Q5) | **wanaka-native** classification sweep, 661 k-tri mesh, Ø0.05 probe, release: "1.0 s at 143², 9.6 s at 425², **47.3 s at 849²**, and 102.2 s at 1697²" | **~15 k cells/s wall** |
 | **B** | `planning/review_2026-07-29/CLASSIFICATION_PERF_STUDY.md:192-200`, re-earned `:694-703` | 849² = **720,801 cells**, 215 k-tri / 100 mm fixture, Ø0.05 probe, 24-core: **2.99 s wall / 40.7 s CPU** (re-run 3.16 / 40.4) | **~241 k cells/s wall; 56 µs CPU/cell** |
-| **C** | `planning/perf_review_2026-08-19/BASELINES.md:322-330` | G3 drop-cutter early-outs (`ca92d767`): `batch_drop_cutter/terrain_ball_6mm_step1` **79.099 → 13.001 ms (6.08×)**; `point_drop_cutter/terrain_center_ball` **6.3921 → 1.9588 µs (3.26×)** | **1.96 µs/drop serial**, Ø6.35 ball |
+| **C** | `planning/perf_review_2026-08-19/BASELINES.md:322-330` | G3 drop-cutter early-outs (`5efc1cbc`): `batch_drop_cutter/terrain_ball_6mm_step1` **79.099 → 13.001 ms (6.08×)**; `point_drop_cutter/terrain_center_ball` **6.3921 → 1.9588 µs (3.26×)** | **1.96 µs/drop serial**, Ø6.35 ball |
 | **D** | same, `:326` / `TileRaster` row `CLASSIFICATION_PERF_STUDY.md:698` | true-surface sampler at 849²: **0.016 s wall / 0.13 s CPU** | ~45 M cells/s — effectively free |
 
 Why they disagree by 16×: A and B differ only in mesh (661 k vs 215 k
@@ -112,7 +112,7 @@ Four facts that must not be lost:
    192.9 s, −22.5%** (`CLASSIFICATION_PERF_STUDY.md:643-646`).
 
 **Scale context, corrected.** A full wanaka200 `generate_all` fixpoint (8 ops)
-is **394 s (6 min 34 s)** at tip `9dee1889`
+is **394 s (6 min 34 s)** at tip `33f2e022`
 (`planning/perf_review_2026-08-19/BASELINES.md:610-615`) — the "~40 min"
 figure carried in CLAUDE.md is explicitly retired there as *"approximate —
 anecdotal wall clock, not a paired measurement"*. And the run is
@@ -582,7 +582,7 @@ The n-tier version is a chain of these.**
 
 ---
 
-## 4. The July "P2 selective finishing" work — `6a7e164`
+## 4. The July "P2 selective finishing" work — `2195d33`
 
 `6a7e16482a754d87633b5f95ca681b0e6fadb5a4`, **2026-07-07**,
 *"feat(finishing): P2 selective finishing — rest regions to derived boundaries
@@ -744,7 +744,7 @@ correctness problem, and no amount of grid budget fixes it.
 
 ### 5.4 Suggested order of attack (T1's opinion, for the other tracks to argue with)
 
-1. **Reproduce `6a7e164`'s 1593-vs-7788 result on today's master** before
+1. **Reproduce `2195d33`'s 1593-vs-7788 result on today's master** before
    building anything. It is the only end-to-end evidence that exists, it is on
    this board, and it is a year-quarter old. If it still holds, the two-tier
    case is closed and the question is only *how many tiers*.

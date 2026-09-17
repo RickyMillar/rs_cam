@@ -1,12 +1,12 @@
 # rs_cam GUI — the review pass after the declutter phase
 
 Date: 2026-09-14, afternoon. Follows `planning/ui_declutter_2026-09-14/`
-(commit 790b033c) and the reviewer's walk of that build. The operator's own
+(commit 236be682) and the reviewer's walk of that build. The operator's own
 complaints are the primary list. The reviewer's list is folded in where it
 names the same surface.
 
 Every item below was confirmed live on 2026-09-14 against the release
-binary built at 14:45 (master 6010b8f7) with wanaka200 loaded, at
+binary built at 14:45 (master fb158141) with wanaka200 loaded, at
 1920×1165. The captures sit beside this file. The line numbers are from
 that commit.
 
@@ -19,7 +19,7 @@ DELETES. A package that only moves things is not done.
 
 | # | Complaint | Seen | Cause in code |
 |---|---|---|---|
-| 1 | The Feeds & Speeds tab is clipped on the left. | `01_feeds_tab_clipped.png`. The inspector content starts under the viewport. "Name" reads "e:", "Generate" reads "erate", "Geometry" reads "metry". Every other tab fits. | Several rows in the feeds card still carry text with an infinite max width: the "configured 0.0833 mm/tooth" trailing caption, the RPM "default (…)" caption, the two vendor warnings and the rubbing-floor line (`ui/properties/mod.rs:2540` onward, `draw_feeds_card`). Commit 1e6393af wrapped ONE such string. Its sentry `tests/inspector_width_is_tab_independent_up4.rs` measures a synthetic string and passes while the real tab clips. |
+| 1 | The Feeds & Speeds tab is clipped on the left. | `01_feeds_tab_clipped.png`. The inspector content starts under the viewport. "Name" reads "e:", "Generate" reads "erate", "Geometry" reads "metry". Every other tab fits. | Several rows in the feeds card still carry text with an infinite max width: the "configured 0.0833 mm/tooth" trailing caption, the RPM "default (…)" caption, the two vendor warnings and the rubbing-floor line (`ui/properties/mod.rs:2540` onward, `draw_feeds_card`). Commit a2fee8ed wrapped ONE such string. Its sentry `tests/inspector_width_is_tab_independent_up4.rs` measures a synthetic string and passes while the real tab clips. |
 | 2 | Errors still show as large extra tabs. | `02_tab_strip_chips.png`. After a simulation with five rapid collisions the strip reads `Simulation · ✕ 5! · Readiness · ✕ 5 COLLISION(S)`. The two chips read as two more tabs, and they carry two different texts for one count. | `ui/workspace_bar.rs:177-181`. Ruling R30 keeps a `StatusChip` for a `Role::Danger` badge; every other badge is a 6-point dot. The Simulation badge formats `" {n}!"`, the Readiness badge `"{n} collision(s)"`. Sentry `tests/the_workspace_bar_is_a_strip_dc3.rs` arm 2 asserts the chip. |
 | 3 | The eye and the click-to-isolate overlap. | Toolpaths workspace. Since WP27 the viewport draws the SELECTED toolpath only, so a click on a card already isolates it. | Five routes now drive two overlapping states. Eye click toggles visibility (`ui/toolpath_panel.rs:415`), eye double-click pins an isolate (R28), the `…` menu has "Isolate this toolpath" (`:516`), the viewport bar has an "Isolate" button (`ui/viewport_overlay.rs:137`) and a "Selected only / All toolpaths" toggle (`:151`). Under the WP27 default the eye on a non-selected card changes nothing visible. |
 | 4 | Generate All centres its text on hover only. | Toolpaths workspace. At rest the label is left-aligned in the full-width button. On hover it jumps to the centre. | `ui/components/button.rs:161-186`. The hover branch repaints the label at `rect.center()` with `Align2::CENTER_CENTER`; the rest state is egui's own `Button`, which places the label at the left. Every `Button` with a `min_width` has this: Export G-code and Run simulation included. |

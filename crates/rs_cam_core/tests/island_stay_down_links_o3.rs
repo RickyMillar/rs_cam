@@ -10,7 +10,7 @@
 //! `FromRemainingStock` op: there, material stands wherever no prior op has
 //! cut yet, and a link that rides the design surface is a **cutting feed
 //! straight through it** — the G-LINKLOAD class, fixed for pencil in
-//! `fb5339da` and left open here.
+//! `b6bf1ca9` and left open here.
 //!
 //! # The fixture, and why it isolates the intra-region seam
 //!

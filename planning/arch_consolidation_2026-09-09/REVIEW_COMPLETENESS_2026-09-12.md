@@ -1,6 +1,6 @@
 # Completeness review — arch consolidation 2026-09-09
 
-**HEAD read:** `d7192d35` ("docs(status): WP7 DONE — programme implementation
+**HEAD read:** `12358bee` ("docs(status): WP7 DONE — programme implementation
 complete"), branch `master`; the tree carries one modified file, `.mcp.json`.
 **I ran no cargo.** Every verdict comes from reading the code or from an `rg` /
 `git` check I ran. I say "I read", never "verified".

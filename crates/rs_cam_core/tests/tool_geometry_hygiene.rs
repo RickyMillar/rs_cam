@@ -19,7 +19,7 @@
 //! **Defect 2 — cross-type defaults persisted in saved projects.** That
 //! same tapered ball carried `corner_radius_mm: 2.0` and
 //! `included_angle: 90.0`, neither meaningful for its type, both from
-//! the old type-AGNOSTIC `add_tool` defaults. b0362626 fixed the MCP
+//! the old type-AGNOSTIC `add_tool` defaults. 4b1e6f21 fixed the MCP
 //! creation path going forward; every already-saved project still
 //! carried the garbage. Not cosmetic: `Session::list_tools` publishes
 //! `corner_radius_mm.max(corner_radius)`, so a flat end mill reported a
@@ -112,7 +112,7 @@ fn the_two_mm_name_on_the_one_mm_tapered_ball_is_flagged() {
     assert!(after.is_empty(), "unexpected {after:?}");
 }
 
-/// A saved project written before b0362626 carries every type's
+/// A saved project written before 4b1e6f21 carries every type's
 /// geometry on every tool. Loading it must stop republishing the parts
 /// that belong to other types — including through the `.max()` in
 /// `Session::list_tools`, which is how a flat end mill came to report a
@@ -169,7 +169,7 @@ product_id = ""
 fn normalizing_changes_no_cutter_geometry() {
     for &tool_type in ToolType::ALL {
         let mut tool = ToolConfig::new_default(ToolId(0), tool_type);
-        // Re-plant the pre-b0362626 defaults on every type.
+        // Re-plant the pre-4b1e6f21 defaults on every type.
         tool.corner_radius_mm = 0.5;
         tool.corner_radius = 2.0;
         tool.included_angle = 90.0;
@@ -210,7 +210,7 @@ fn normalizing_changes_no_cutter_geometry() {
 }
 
 /// Type-defining geometry is required, not guessed — the other half of
-/// b0362626's rule. A tool whose type was switched in place (the GUI's
+/// 4b1e6f21's rule. A tool whose type was switched in place (the GUI's
 /// tool-type combo is the only surface that does that) reports what it
 /// now needs, so the caller refills it instead of cutting with a zero.
 /// `VBitEndmill::new` asserts `0 < included_angle < 180` and

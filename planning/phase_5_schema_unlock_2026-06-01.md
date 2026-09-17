@@ -2,7 +2,7 @@
 
 **Authored:** 2026-06-01
 **Predecessor:** `planning/phase_4_promotion_plan_2026-06-01.md` (closed
-2026-06-01 in commit `18a056b`).
+2026-06-01 in commit `51edd49`).
 **Why now:** Phase 4 left 17 vendor LUT rows staged-but-unpromotable
 due to schema shape, plus a separate per-species wood Kc wiring TODO
 that's been carrying since Phase 2B. The user explicitly authorized

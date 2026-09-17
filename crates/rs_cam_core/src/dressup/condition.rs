@@ -323,7 +323,7 @@ mod tests {
     /// collapsed to ONE move labelled with the LAST block's intent, and the
     /// first block's geometry was attributed to it.
     ///
-    /// Red-first: at `3dbec75` (arcfit fixed, this pass not yet) the
+    /// Red-first: at `96717b0` (arcfit fixed, this pass not yet) the
     /// boundary point below vanished and the output held a single `Linking`
     /// move.
     #[test]

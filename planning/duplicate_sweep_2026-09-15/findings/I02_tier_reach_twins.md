@@ -14,7 +14,7 @@ Verdict: cache scaffolding TRUE_DUP (pairs 19/28/38); GridSpec TRUE_DUP (pair 37
 
 ## Drift / differences
 - walk_rows: authoritative = `crate::tier_map::walk_rows` (instruments the T3 drop-work contract; reach's doc defers to it). Drift: reach copy omits the DROP_CALLS fold and uses `Cancelled`; cancellation semantics identical today, kept in sync by convention only — the "one site so granularity cannot drift" argument applies equally across modules.
-- Side finding (within reach_map_cache, not a pair): module doc L35-38 says tool/model ids are "deliberately NOT in the key", but `ReachMapKey` includes `tool_id`/`model_id` since the file's first commit (5f665edf). Code is the safe side (prevents a hit returning stale stamped ids via `with_ids`); doc is stale. Sentry `reach_map_p5.rs:451` pins stamped ids.
+- Side finding (within reach_map_cache, not a pair): module doc L35-38 says tool/model ids are "deliberately NOT in the key", but `ReachMapKey` includes `tool_id`/`model_id` since the file's first commit (1592898c). Code is the safe side (prevents a hit returning stale stamped ids via `with_ids`); doc is stale. Sentry `reach_map_p5.rs:451` pins stamped ids.
 
 ## Proposed cleanup
 - home: new `crates/rs_cam_core/src/memo/` — generic `MeshMemo<K, V, const CAPACITY>` owning table/Weak-identity entry/get/put(sweep+LRU); keep per-cache statics, key types, stats structs, build fns. Plus `grid.rs`: shared `GridSpec` struct + `x_of`/`y_of` (+ padding helper), constructors stay local; shared `walk_rows` taking `Option<&AtomicU64>` drop sink, returning `Result<_, Cancelled>` (tier keeps its `From<Cancelled> for TierMapError`, tier_map.rs:327).

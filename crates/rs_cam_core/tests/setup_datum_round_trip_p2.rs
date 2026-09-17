@@ -17,7 +17,7 @@
 //! since deleted that schema; core's `session::project_file` is the one
 //! that carries the keys today.
 //!
-//! # Red-first evidence (parent `777a78b`)
+//! # Red-first evidence (parent `91f3580`)
 //!
 //! [`a_hand_written_datum_survives_a_load_and_a_re_save`] is the
 //! reproducer that compiles **unchanged** on the parent and fails there:

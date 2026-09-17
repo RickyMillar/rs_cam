@@ -14,7 +14,7 @@
 //!
 //! (The backlog also named a slope-window sentinel copy in
 //! `compute/execute.rs`. There isn't one: `execute.rs:1948` has called the
-//! shared `finish_setup::slope_filter_active` since `4b105da`, the very
+//! shared `finish_setup::slope_filter_active` since `45347db`, the very
 //! commit that created the module. The stale claims in `finish_setup.rs`'s
 //! header and in the backlog are corrected rather than acted on.)
 //!

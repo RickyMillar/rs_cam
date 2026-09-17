@@ -8,18 +8,18 @@ re-baselines, accepting the classified metric movements and the rest-chain
 geometry change. That decision is recorded here so the next reader does not
 mistake this wave for the package's own recommendation.
 
-Branch `tech-debt-3`. Merge is `d671b049` (the lane's seven commits kept, not
+Branch `tech-debt-3`. Merge is `11e239a2` (the lane's seven commits kept, not
 squashed).
 
 | Commit | What |
 |---|---|
-| `d671b049` | merge `perf/s1-swept-volume` — default NOT flipped |
-| `a4ff2a8c` | **the flip**: `StampDispatch::resolved()`, `Auto` → `Swept` |
-| `9b4505be` | re-baseline both perf goldens |
-| `a4452a59` | re-baseline the three F-XXX axial sentries |
-| `b5b6db3c` | planner/sim parity — skew bar restated over the interior population |
-| `dbb9c8fa` | S5 prefix key: why the dispatch shape is excluded, + precondition sentry |
-| `217be7a2` | clippy clean (9 pre-existing findings on the lane's files, 1 mine) |
+| `11e239a2` | merge `perf/s1-swept-volume` — default NOT flipped |
+| `34d8917a` | **the flip**: `StampDispatch::resolved()`, `Auto` → `Swept` |
+| `2b6f976a` | re-baseline both perf goldens |
+| `dc9b0eea` | re-baseline the three F-XXX axial sentries |
+| `20111413` | planner/sim parity — skew bar restated over the interior population |
+| `1440c173` | S5 prefix key: why the dispatch shape is excluded, + precondition sentry |
+| `cc6f4284` | clippy clean (9 pre-existing findings on the lane's files, 1 mine) |
 
 ---
 
@@ -48,7 +48,7 @@ was **not** clean on the merged lane. The package reports "zero warnings" for
 the side branch; run today at the merge commit it produced 4
 `needless_range_loop` warnings in `swept.rs` and 6 `print_stdout` errors in
 `tests/swept_stamping_s1.rs`, all on the lane's own files and none introduced
-by the flip. Fixed in `217be7a2` (allow-with-reason in both cases — the index
+by the flip. Fixed in `cc6f4284` (allow-with-reason in both cases — the index
 loops address `weight(b)` / `job.bin_segment(b)` as well as `out[b]`, and the
 test binary prints its measurements deliberately). Reported rather than
 smoothed over, because it is the only claim in the package that did not hold.
@@ -478,7 +478,7 @@ cross-day absolute, and `BASELINES.md`'s cross-day rule (a 22% swing observed
 with no code change) forbids comparing it to either 2026-08-20 column. The
 paired figure from that session stands: **−8.0% end-to-end, −14.8/−16.0% on the
 simulate phases**, and it is a lower bound because both of those runs predate
-`9e65d1a7`. The stamp kernel is 3–5× faster and the end-to-end run is 8%
+`22dce580`. The stamp kernel is 3–5× faster and the end-to-end run is 8%
 faster; S4 and S6 are still in front of it.
 
 ---
@@ -491,7 +491,7 @@ faster; S4 and S6 are still in front of it.
 | `cargo test -p rs_cam_viz --release --no-fail-fast` | **0 failures** |
 | `cargo test -p rs_cam_cli --release` | **ok** |
 | `cargo test -p rs_cam_mcp --release` | **ok** (13 tests) |
-| `cargo clippy --workspace --all-targets -- -D warnings` | **zero warnings** (after `217be7a2`) |
+| `cargo clippy --workspace --all-targets -- -D warnings` | **zero warnings** (after `cc6f4284`) |
 | `rustfmt --check` on every file this lane touches | **clean** |
 | `sim_prefix_memo_s5` | **15/15**, no re-baseline |
 | `swept_stamping_s1` | **9/9** + 1 measurement |

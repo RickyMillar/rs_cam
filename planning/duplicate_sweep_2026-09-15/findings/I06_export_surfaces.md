@@ -31,8 +31,8 @@ Verdict: TRUE_DUP (both pairs)
 - Both: Profile op + `CompensationType::InControl` → identical (side×climb)
   → Left/Right mapping, `None` otherwise. Same inputs
   (`session::ToolpathConfig`), same output (`gcode::ControllerCompensation`).
-- History: viz copy born 2026-04-08 (60b6453a, "Implement G41/G42 controller
-  compensation"); core copy cloned 2026-05-02 (8d3d98ef) when
+- History: viz copy born 2026-04-08 (3959883c, "Implement G41/G42 controller
+  compensation"); core copy cloned 2026-05-02 (105230ba) when
   `export_gcode_checked` was added. Core owns the enum
   (`gcode/mod.rs:61`), `GcodePhase`, and the G41/G42/G40 emitter
   (`gcode/program_builder.rs:574-583`).

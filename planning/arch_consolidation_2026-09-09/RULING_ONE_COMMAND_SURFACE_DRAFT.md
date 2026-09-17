@@ -1,6 +1,6 @@
 # One command surface — ADOPTED 2026-09-11 (operator ruling)
 
-> Written 2026-09-11 from a read-only comparison of `sysml-rs/crates/tooling/sysml-service-macros` against rs_cam at `ce5ccabb`+. Nothing here is implemented. `PLAN.md` stays verbatim; this file is the proposed Phase 0 addition. Read, not run.
+> Written 2026-09-11 from a read-only comparison of `sysml-rs/crates/tooling/sysml-service-macros` against rs_cam at `9125728e`+. Nothing here is implemented. `PLAN.md` stays verbatim; this file is the proposed Phase 0 addition. Read, not run.
 
 ## Phase 0 ruling — one command surface (draft, 2026-09-11)
 

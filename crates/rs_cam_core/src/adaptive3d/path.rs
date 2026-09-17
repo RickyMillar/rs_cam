@@ -1715,7 +1715,7 @@ mod tests {
     // 2026-08-04: this helper's doc comment used to claim "the
     // heightfield never gets queried" because `minimal_params` disables
     // keep-tool-down (`max_stay_down_distance_mm: Some(0.0)`). That
-    // stopped being true at `fa27b08`, which made `segments_to_toolpath`
+    // stopped being true at `fad3a56`, which made `segments_to_toolpath`
     // drape every Cut point (`drape_path_to_leave`) and every plain-Rapid
     // entry (`drape_point`) up to `drop_cutter(x, y) + stock_to_leave`
     // unconditionally. On a flat mesh at z = 0 with `stock_to_leave` 0.5
@@ -1728,7 +1728,7 @@ mod tests {
     }
 
     /// A `size`×`size` flat quad at height `z`. Fixtures that want the
-    /// `fa27b08` drape to be provably inert put the surface far BELOW
+    /// `fad3a56` drape to be provably inert put the surface far BELOW
     /// every commanded Z; fixtures that want it active put it above.
     /// The drape is never disabled — it is a production gouge guard.
     fn flat_mesh_at(size: f64, z: f64) -> (crate::mesh::TriangleMesh, crate::mesh::SpatialIndex) {
@@ -1812,7 +1812,7 @@ mod tests {
     }
 
     /// Livelock guard, introduced with the F-001/F-002/F-003 batch
-    /// (`072c11a`): when the operator sets the peck depth equal to the
+    /// (`c1121c6`): when the operator sets the peck depth equal to the
     /// peck retract clearance, the entry plunge must still walk the hole
     /// down. `emit_peck_plunge` advances `current_z` to the **committed
     /// cut floor** (`next_z`); advancing it to the retract height instead
@@ -1820,7 +1820,7 @@ mod tests {
     ///
     /// Fixture history (2026-08-04): this test used to enter at z = 0 on
     /// the flat mesh at z = 0 with `stock_to_leave = 0.5` and
-    /// `safe_z = 1.0`. From `fa27b08` the drape lifted that entry to
+    /// `safe_z = 1.0`. From `fad3a56` the drape lifted that entry to
     /// z = +0.5, so `safe_z - entry.z` collapsed to exactly
     /// `depth_per_pass` and the peck loop stopped iterating at all. The
     /// test failed `left: 1, right: 2` — and was simultaneously VACUOUS:
@@ -1995,7 +1995,7 @@ mod tests {
         let cutter = legacy_test_cutter();
         let (tp, _) = segments_to_toolpath(&[cut1, rapid, cut2], &params, &mesh, &si, &cutter);
 
-        // Where fa27b08's drape puts the two landmarks on THIS surface.
+        // Where fad3a56's drape puts the two landmarks on THIS surface.
         // Derived from the production helper rather than hard-coded, so a
         // drape-semantics change relocates the landmarks instead of
         // silently deleting them (which is how this test went red).
@@ -2114,7 +2114,7 @@ mod tests {
     /// the lift/traverse/descend ordering is measured on the raw geometry.
     ///
     /// History (2026-08-04): this test used `make_test_flat(100.0)` — a
-    /// quad AT z = 0 — with `stock_to_leave = 0.5`. From fa27b08 the drape
+    /// quad AT z = 0 — with `stock_to_leave = 0.5`. From fad3a56 the drape
     /// lifted every fixture point from -3 / -2 up to +0.5, the landmark
     /// search for (5, 5, -3) found nothing, and the test panicked at
     /// `.expect("cut1 endpoint not found")` BEFORE evaluating any of its
@@ -2126,7 +2126,7 @@ mod tests {
     }
 
     /// Drape-ACTIVE fixture: the surface sits ABOVE the commanded cut Z,
-    /// so fa27b08's drape lifts both the cut and the entry. The
+    /// so fad3a56's drape lifts both the cut and the entry. The
     /// lift-then-traverse-then-descend ordering must survive that. This
     /// is the case that had no coverage at all before 2026-08-04 — it is
     /// the case that silently broke the test above, and it is what a

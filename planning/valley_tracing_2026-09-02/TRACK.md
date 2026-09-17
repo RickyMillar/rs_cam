@@ -10,7 +10,7 @@
 > Status: **CLOSED 2026-09-02 — the tracing arm failed all three V1
 > bars on the pre-registered favourable region** (fragments 14.2×,
 > distance 3.28×, time 3.53× vs the shipped raster; instrument
-> `valley_branch_falsifier_h1.rs`, `99eb30aa`). Mechanism: adjacent
+> `valley_branch_falsifier_h1.rs`, `8ffa8971`). Mechanism: adjacent
 > branches' offset fans overlap on a dendritic network — §9's
 > pathology one level down. V0's evidence stands: the in-mask
 > direction prize (D_pot 5.9–9.3 pp upper bound) is real and
@@ -53,7 +53,7 @@ The open reading is per-branch: trace along each valley segment,
 offset passes out one side and back, capped by the local valley
 half-width, with junctions handled explicitly. Pencil's offset-pass
 machinery already does the per-segment part (`pencil.rs`,
-width-capped since `29a6d61`).
+width-capped since `0db602e`).
 
 ## Standing priors (do not re-derive)
 
@@ -66,7 +66,7 @@ width-capped since `29a6d61`).
   valley the reference ball fully contacts has rest ≈ 0 and no line.
   The default detector is still `Dihedral`.
 - **A flow-accumulation drainage detector existed and was deleted**
-  (`53293c96`, 2026-07-03, operator ruling: hydrology trunks are not
+  (`c73b38c3`, 2026-07-03, operator ruling: hydrology trunks are not
   tool-relevant seams). That ruling was about pencil seam-finding.
   It does not bind a finishing-territory use, but the post-mortem
   stands: coherent lines, wrong scalar field for that purpose. The

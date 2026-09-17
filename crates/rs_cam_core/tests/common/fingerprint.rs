@@ -12,7 +12,7 @@
 //! releases; every pinned constant in the repo would silently rot.
 //!
 //! Reference consumers: `finish_resolution_policy_pr3.rs` (three pinned
-//! `(moves, hash)` constants captured at HEAD `606b8d5` / PR-8a / PR-8b).
+//! `(moves, hash)` constants captured at HEAD `5fc2411` / PR-8a / PR-8b).
 
 #![allow(dead_code)]
 #![allow(

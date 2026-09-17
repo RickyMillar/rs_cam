@@ -9,7 +9,7 @@
 //! against a **3D mesh face area** and reported "313 of 482 mm² recovered
 //! (65%)". Both numbers were correct. The ratio was meaningless: near-vertical
 //! ribbons project onto XY at ~cos(slope), a ~10× shrink at 84°. The claim was
-//! retracted in `63d5e8b`, and the only thing standing between the next reader
+//! retracted in `49047c4`, and the only thing standing between the next reader
 //! and the same mistake was a comment.
 //!
 //! Two mechanisms live here:
@@ -432,7 +432,7 @@ impl fmt::Display for MeasurementProvenance {
 ///
 /// ```compile_fail
 /// use rs_cam_core::measurement::{ProjectedXyAreaMm2, SurfaceAreaMm2};
-/// // §14r: "313 of 482 mm² recovered (65%)" — retracted in 63d5e8b.
+/// // §14r: "313 of 482 mm² recovered (65%)" — retracted in 49047c4.
 /// let recovered = ProjectedXyAreaMm2::new(313.0); // XY-projected regions
 /// let truth = SurfaceAreaMm2::new(482.0);         // 3D mesh face area
 /// let _share = recovered / truth; // E0277: no Div impl — THIS IS THE GATE

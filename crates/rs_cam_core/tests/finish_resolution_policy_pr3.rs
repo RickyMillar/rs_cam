@@ -13,7 +13,7 @@
 //!    tool where envelope and cusp differ 6×. A consumer silently moving to
 //!    another scale fails here.
 //! 2. **Byte-identical output** — three toolpath fingerprints captured at
-//!    HEAD `606b8d5` (i.e. *before* the refactor) on a shared ridge fixture.
+//!    HEAD `5fc2411` (i.e. *before* the refactor) on a shared ridge fixture.
 //!
 //! **PR-8a moved exactly one of them, on purpose** (H3 wave, approved
 //! Checkpoint B): `ramp_finish` now selects
@@ -124,8 +124,8 @@ fn scallop_fingerprint() {
 //
 // | value | when | why |
 // |---|---|---|
-// | `(1318, 4897619324930985607)` | HEAD `606b8d5`, before the H3 policy refactor | original capture |
-// | `(1423, 11432160290294522021)` | M4 phase C, `dde7a54` | +105 moves (+8.0%) |
+// | `(1318, 4897619324930985607)` | HEAD `5fc2411`, before the H3 policy refactor | original capture |
+// | `(1423, 11432160290294522021)` | M4 phase C, `0ece700` | +105 moves (+8.0%) |
 // | `(2674, 7524232187494395883)` | wave 14, arc-carrying cascade | **+1251 moves (+87.9%)** |
 // | `(2820, 9136261611286019458)` | F2 (D-16.1), 2026-08-06 | +146 moves (+5.5%) — the ring-lift coverage guard became EXACT |
 //
@@ -229,7 +229,7 @@ fn ramp_finish_fingerprint() {
     // `GeoMeanEnvelopeCusp` (0.306 mm on this taper, against 0.750), so its
     // ramp sampling step `cell_size * 2` halves and the emitted chords get
     // shorter. The pre-PR-8a value on this fixture was
-    // `(164, 596513364120972287)`, captured at HEAD 606b8d5; it is recorded
+    // `(164, 596513364120972287)`, captured at HEAD 5fc2411; it is recorded
     // here rather than deleted because it is the number the Checkpoint B
     // evidence was measured against.
     //
@@ -364,7 +364,7 @@ fn steep_shallow_fingerprint() {
     assert_eq!(
         fingerprint(&tp),
         (913, 14129959905444107510),
-        "steep_shallow output moved; captured at HEAD 606b8d5 before the H3 policy refactor"
+        "steep_shallow output moved; captured at HEAD 5fc2411 before the H3 policy refactor"
     );
 }
 

@@ -1,7 +1,7 @@
 # W5B-F4 — air-cut threshold recalibration: DECISION PACKAGE
 
 Follow-up to `DELTA_sim_w5b_landing.md` §9 row W5B-F4. Branch `tech-debt-3`,
-measured at `3e2041f3`; the lane's instrument landed as `b5f04331`.
+measured at `17a90e93`; the lane's instrument landed as `d10abe81`.
 
 **This package changes no shipped threshold.** It inventories every consumer,
 measures every family under the new default, proposes numbers, and states
@@ -12,7 +12,7 @@ the user.
 
 ## 0. The question, stated precisely
 
-Since `a4ff2a8c` `StampDispatch::Auto` resolves to `Swept`. Under the retired
+Since `34d8917a` `StampDispatch::Auto` resolves to `Swept`. Under the retired
 per-stamp kernel the air-cut percentage was largely a function of the
 **simulation cell size** rather than of the toolpath: on one unchanged
 toolpath it read 0.31 % at `cs = 0.25` and 89.61 % at `cs = 1.0`, while swept
@@ -142,9 +142,9 @@ Three sources, kept separate because their standing differs.
 
 | Source | What it is | Standing |
 |---|---|---|
-| **Goldens** | `tests/fixtures/perf_golden_sim_metrics{,_3d}.json`, re-baselined at `9b4505be`; old values recorded in `DELTA_sim_w5b_landing.md` §2 | Paired old→new on the same fixture. Highest. |
+| **Goldens** | `tests/fixtures/perf_golden_sim_metrics{,_3d}.json`, re-baselined at `2b6f976a`; old values recorded in `DELTA_sim_w5b_landing.md` §2 | Paired old→new on the same fixture. Highest. |
 | **wanaka 0D** | `DELTA_sim_w5b_landing.md` §6, `tests/swept_wanaka_ab_s1.rs`, cell 0.4, shipped default | A real project, a real stack. Only one project. |
-| **W5B-F4 harness** | `tests/air_cut_family_calibration_w5bf4.rs`, landed `b5f04331`. 38 rows: every family, two cell sizes, run twice — once under the default (swept) and once under `RS_CAM_STAMP_DISPATCH=whole_path` (the old `Auto` resolution) | Fresh, paired, but **isolated fixtures** — see below. |
+| **W5B-F4 harness** | `tests/air_cut_family_calibration_w5bf4.rs`, landed `d10abe81`. 38 rows: every family, two cell sizes, run twice — once under the default (swept) and once under `RS_CAM_STAMP_DISPATCH=whole_path` (the old `Auto` resolution) | Fresh, paired, but **isolated fixtures** — see below. |
 
 ### 2.a The harness's isolation choice, and what it costs
 
@@ -466,7 +466,7 @@ threshold at all. Two ways to hold that:
 * **Recommended:** leave the band at 40 and add a sentry asserting that the
   `AirCut` metric abstains for a shipped `VCarve` fixture, so a change to the
   abstention rule lands as a red test rather than as a new warning on every
-  sign-carving project. `b5f04331`'s harness already measures the abstention
+  sign-carving project. `d10abe81`'s harness already measures the abstention
   column; promoting it to an assertion is a one-line follow-up.
 * **Rejected:** moving `VCarve`/`Inlay` into a sparse band (97-style). It
   would treat a **non-reading** as a high reading and thereby bless it. Their
@@ -574,7 +574,7 @@ evidence for a different value is nil. Untouched.
 
 | Commit | What |
 |---|---|
-| `b5f04331` | `crates/rs_cam_core/tests/air_cut_family_calibration_w5bf4.rs` — 38-row family table (2 kernels × 2 cell sizes) plus the triage-composition probe of §4.d. No threshold moved. Clippy clean at `--workspace --all-targets -D warnings`, `rustfmt --check` clean. |
+| `d10abe81` | `crates/rs_cam_core/tests/air_cut_family_calibration_w5bf4.rs` — 38-row family table (2 kernels × 2 cell sizes) plus the triage-composition probe of §4.d. No threshold moved. Clippy clean at `--workspace --all-targets -D warnings`, `rustfmt --check` clean. |
 
 Nothing in `catalog.rs`, `sim_diagnostics.rs`, `cli/project.rs`,
 `viz/compute.rs`, `narrate.rs` or `sim_triage.rs` was touched.

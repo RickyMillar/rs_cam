@@ -1,6 +1,6 @@
 # RESEARCH — the drill `MoveIntent` erasure, and what it is actually a symptom of
 
-Read/test-only lane, 2026-08-21. Branch `tech-debt-3` @ `1d6dd855`.
+Read/test-only lane, 2026-08-21. Branch `tech-debt-3` @ `e0554da7`.
 Nothing in this file was fixed; no tracked file was edited.
 
 **Do not read this as a replacement for `BASELINES.md`.** It is one lane's

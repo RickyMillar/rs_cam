@@ -45,7 +45,7 @@ fn wanaka_project_path() -> PathBuf {
 ///
 /// This file prints an XY-projected band-area column and a 3D mesh-face-area
 /// column ~30 lines apart. §14r divided one by the other and published "313 of
-/// 482 mm² recovered (65%)"; the claim was retracted in `63d5e8b` and, until
+/// 482 mm² recovered (65%)"; the claim was retracted in `49047c4` and, until
 /// now, the only thing stopping the next reader was a comment.
 ///
 /// Both columns are now newtypes with **no `Div` between them**, so the
@@ -487,7 +487,7 @@ fn p2e_conditioning_dial_sweep() {
 /// because the classification cell size follows the cusp radius too
 /// (§14q) — so every row varies resolution AND dials together, and the
 /// rows cannot attribute a change to either. The docstring claimed
-/// isolation for a while after `32c5e48` made it false; the independent
+/// isolation for a while after `f15adda` made it false; the independent
 /// audit caught it (§14t). The isolating experiment is the second table
 /// below, which pins ONE grid and varies only the dials on it — and it
 /// shows the dials barely matter at this resolution.

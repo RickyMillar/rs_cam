@@ -27,7 +27,7 @@ fn two_tool_fixture() -> Vec<ToolConfig> {
 }
 
 /// The parent revision's lookup, transcribed from
-/// `mcp_narrate_toolpath` at parent `88ce23a`.
+/// `mcp_narrate_toolpath` at parent `e925aef`.
 fn parent_revision_tool_lookup(tools: &[ToolConfig], tool_id: usize) -> Option<&ToolConfig> {
     tools
         .iter()

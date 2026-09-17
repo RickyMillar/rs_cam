@@ -25,7 +25,7 @@
 | Sim resolution | `resolution_mm = 0.3`, `sample_step_mm = 0.3` (top level and `trace.sample_step_mm`) |
 | Trace schema | `trace.schema_version = 5`, `provenance.captured_arc_engagement = true` |
 | Samples | `trace.samples`, byte range `[350856583, 7706449456)` = 7.36 GB, **5,478,011 records** — matches `trace.summary.sample_count` exactly |
-| **git HEAD** | **`d25e0a74f251063db167740a8386f0496c7ebe2b`**. The task brief said `b0dc13ae`; both are recorded here, neither silently adopted. The trace itself carries no git hash — `trace.provenance` is toolpath/tool/config/stock/machine hashes only. |
+| **git HEAD** | **`d25e0a74f251063db167740a8386f0496c7ebe2b`**. The task brief said `c2c623a7`; both are recorded here, neither silently adopted. The trace itself carries no git hash — `trace.provenance` is toolpath/tool/config/stock/machine hashes only. |
 | Script | `m1_exposure.py` (this directory) |
 | Raw counters | `m1_counters.json` (this directory) — every table below is derived from it |
 

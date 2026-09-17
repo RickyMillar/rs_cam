@@ -1,7 +1,7 @@
 # RESEARCH — the smoke-corpus instrument: three suspected defects
 
 **Lane:** read/test-only research (no production code changed, nothing staged).
-**Binary under test:** `tech-debt-3` @ `1d6dd855`, **debug** build of `rs_cam_cli`.
+**Binary under test:** `tech-debt-3` @ `e0554da7`, **debug** build of `rs_cam_cli`.
 **Scratch artifacts:** `/tmp/claude-1001/-home-ricky-personal-repos-rs-cam/fe062f6e-ba96-4d15-8a99-f12da437e66d/scratchpad/corpus_lane/`
 **Follow-ups addressed:** `DELTA_w5b_f3_corpus.md` F3-1 (a), F3-3's blocking question (b), F3-2 (c).
 
@@ -9,7 +9,7 @@ Headline results:
 
 | # | Claim under test | Verdict |
 |---|---|---|
-| a | AS015 has been `generation_failed` since `4b105dab` | **REPRODUCED**, exact refusal path root-caused, minimal repair identified and sized |
+| a | AS015 has been `generation_failed` since `45347db3` | **REPRODUCED**, exact refusal path root-caused, minimal repair identified and sized |
 | b | 211 baseline rapid collisions are 0 today — is the detector blind? | **DETECTOR IS ALIVE** — forced fixture reads **35** collisions at HEAD against a **0** control. Attribution of the 211→0 drop is *partly* settled: **both named candidates (G-SIM-IDENTITY-FRAME, G-EXPORT-DATUM) are DISCONFIRMED for this corpus** |
 | c | `run_diff`'s chipload check is vacuous; drill columns undiffed | **REPRODUCED and worse than stated** — 5 injected regressions, **1** detected |
 
@@ -88,7 +88,7 @@ if tc.stock_source == StockSource::FromRemainingStock
 
 The predicate is `prior_stocks` **keyed by the toolpath's own id**. It is checked
 *before any geometry work* (deliberately — fail fast, never fall back to fresh
-stock). That block landed in `4b105dab` (2026-07-06), listed in its own commit
+stock). That block landed in `45347db3` (2026-07-06), listed in its own commit
 message as *"FromRemainingStock silent fresh-stock fallback (now fail-hard)"*.
 
 `prior_stocks` is populated **only inside `run_simulation`**
@@ -141,7 +141,7 @@ cut at 0.5 and a run at 0.25 diff as if they were comparable. Recommend adding i
 AS015's `2026-06-04` baseline row (`ok`, `chipload exceeds_low 0.002008`,
 `deflection within 0.1204`, `avg_engagement 0.0640`, `peak_axial 3.488`) was
 produced **while `FromRemainingStock` silently fell back to fresh stock** — that
-fallback is precisely what `4b105dab` removed. So the old AS015 row is a
+fallback is precisely what `45347db3` removed. So the old AS015 row is a
 *fresh-stock* scallop measured under a *rest-stock* label. Once the chain works,
 the new numbers will differ and that is **not a regression**: AS015's baseline row
 must be **re-cut, never diffed** against the old one.
@@ -156,7 +156,7 @@ must be **re-cut, never diffed** against the old one.
   (`crates/rs_cam_core/src/collision.rs:450-545`). Per `MoveType::Rapid` move it
   samples ~1 mm steps and flags `pz < z_grid.top_z_at(row,col)`. Two carve-outs:
   pure-vertical retracts (`collision.rs:474`) and the F3 same-XY peck re-entry
-  (`collision.rs:483-511`, added `cbd8785d`, 2026-05-10 — **before** the baseline).
+  (`collision.rs:483-511`, added `d084fe7e`, 2026-05-10 — **before** the baseline).
 * Call site: `compute/simulate.rs:925-934`, once per toolpath, against
   `group_stock.z_grid` — the **per-setup** stock *before* this toolpath carves.
 * Publication: `session.diagnostics().per_toolpath[].rapid_collision_count`, read by
@@ -213,7 +213,7 @@ Per-toolpath JSON:
 | `rapid_distance_mm` | 1682.931 | 866.931 |
 | **`rapid_collision_count`** | **0** | **35** |
 
-**The rapid-collision detector is not blind at `1d6dd855`.** It is live, it is wired
+**The rapid-collision detector is not blind at `e0554da7`.** It is live, it is wired
 to the same field the corpus reads, and it flags a dive the moment one exists. The
 `0` on the corpus is the absence of the phenomenon, not the absence of the
 instrument.
@@ -222,7 +222,7 @@ instrument.
 
 **Both candidates named in the brief are disconfirmed for this corpus.**
 
-* **G-SIM-IDENTITY-FRAME (`ff3696fd`)** changed the **global/playback** stock frame.
+* **G-SIM-IDENTITY-FRAME (`6bcc3c97`)** changed the **global/playback** stock frame.
   Its own commit message states the collision check was *not* on the affected
   object — *"per-toolpath metrics, engagement and collision checks all read the
   correctly-framed per-group stock"* — and that reproducing it required a fixture
@@ -231,7 +231,7 @@ instrument.
   (`ux_2d_star`, `ux_2d_pocket`, `ux_3d_terrain`, `ux_step_stepped`) carry exactly
   **one** `[[setups]]`, `face_up = "top"`, `z_rotation = "0"` — identity, single
   setup. The fix cannot have touched them.
-* **G-EXPORT-DATUM (`0bb38a2f`)** touches `gcode/mod.rs`, `eval_context.rs`,
+* **G-EXPORT-DATUM (`dd7aad5e`)** touches `gcode/mod.rs`, `eval_context.rs`,
   `viz/io/export.rs`, `mcp` — **no simulator file at all** — and its own message says
   *"Unchanged: origin==0 projects"*. Two of the four corpus templates are
   `origin_z = -12`, but the change is export-side; the simulator never reads it.
@@ -243,12 +243,12 @@ instrument.
    returns `None` (`session/eval_context.rs:182-188`), so the per-setup dexel grid is
    the **world** stock bbox. That is the F-024 shape, dated 2026-05-25 — *before* the
    2026-06-04 baseline. `git log -S"local_stock_bbox"` since the baseline returns
-   only `7cee538c` (advisor) and `2ed9df04` (S5 memoisation), neither of which
+   only `32d168b4` (advisor) and `e5952463` (S5 memoisation), neither of which
    re-frames the grid.
 2. **No move-type reclassification is masking the detector.** The detector only
    inspects `MoveType::Rapid`; a fix that turned diving rapids into feeds would zero
    the count while the dive survived. The W6 census sentry
-   `retract_intent_move_type_census_w6` (`ed31d789`) measured 24 op configs × 2
+   `retract_intent_move_type_census_w6` (`d6669c5f`) measured 24 op configs × 2
    dressup profiles, 242,790 moves, 812 Retract-tagged, **zero** Retract-tagged
    Linear feeds. That escape route is closed at HEAD.
 3. **The detector is alive** (§2.c).
@@ -257,7 +257,7 @@ instrument.
 stopped being emitted** — i.e. a genuine behavioural improvement somewhere in the
 2026-06-04 → HEAD window. Note the corpus's own supporting signal: AS009 and AS010
 both changed *cut geometry* over the window (`peak_axial_doc_mm` 0.541→1.100 and
-0.542→1.763), which is consistent with their emitters having moved, and `4b105dab`
+0.542→1.763), which is consistent with their emitters having moved, and `45347db3`
 carries a `vcarve/inlay/chamfer` frame fix touching exactly those two op families.
 
 **Confidence: medium-high that the detector is sound and the drop is behavioural;
@@ -265,7 +265,7 @@ LOW on naming the specific commit.** A candidate that is *not* excluded: the ops
 Z frames moved for reasons unrelated to rapids and the rapids followed. The
 experiment that would settle it is small and was deliberately not run here (it
 needs a build at an old commit, which means touching git state while another
-session holds the tree): build `rs_cam_cli` at `4b105dab^` and at `4b105dab`, run
+session holds the tree): build `rs_cam_cli` at `45347db3^` and at `45347db3`, run
 the 4-row subset `AS007,AS009,AS010,AS017` at `--resolution 0.5`, compare
 `rapid_collision_count`. ~15 min of machine time, no ambiguity in the answer.
 
@@ -421,7 +421,7 @@ if !prior_ids.is_empty() {
 | LOC | ~35 for the chain repair; ~15 more for the resolution column |
 | Risk | **low** — CLI harness only, no core change. Unchained rows (17 of 18) take the identical code path they take today; the new branch is reachable only when `prior_passes` is non-empty |
 | Cost | one extra `run_simulation` per chained row (currently 1 row). AS015's case took ~65 s end-to-end in the failing run; expect roughly double |
-| **Moves a metric?** | **YES — user decision required.** AS015 will produce a row where it produces none today, and that row is **not** comparable to the `2026-06-04` one (§1.d: the old row was measured under the fresh-stock fallback that `4b105dab` deleted). AS015's baseline must be re-cut with a note, not diffed |
+| **Moves a metric?** | **YES — user decision required.** AS015 will produce a row where it produces none today, and that row is **not** comparable to the `2026-06-04` one (§1.d: the old row was measured under the fresh-stock fallback that `45347db3` deleted). AS015's baseline must be re-cut with a note, not diffed |
 
 ### 4.2 — Pin the collision detector's population (unblocks F3-3)
 
@@ -516,7 +516,7 @@ sustain, offered for the corrections ledger:
 1. **§2.d's speculation that the 211→0 drop is "*probably* the identity-frame and
    export-datum fixes"** — both are **disconfirmed** for this corpus (§2.d). The
    corpus's four templates are single-setup identity projects, which is the exact
-   shape `ff3696fd` says it *cannot* affect, and `0bb38a2f` touches no simulator
+   shape `6bcc3c97` says it *cannot* affect, and `dd7aad5e` touches no simulator
    file. The doc was appropriately hedged and explicitly declined to investigate;
    this is a refinement of an open question, not a mis-statement.
 2. **F3-1's repair sentence — "needs a `run_simulation` between the prior pass and

@@ -1543,7 +1543,7 @@ mod tests {
     /// "verify on a scrap" with no gate named, or a gate is named on a run
     /// that was not demoted.
     ///
-    /// RED at the parent (`e94be53a`): both wrote bare `>` / `<`, so a 1-ulp
+    /// RED at the parent (`f2c0b09d`): both wrote bare `>` / `<`, so a 1-ulp
     /// reconstruction produced a `LimitingGate` with `band_admitted: true` on
     /// a candidate the epsilon-aware gate had called `Within`.
     ///

@@ -1379,7 +1379,7 @@ impl<'a> ProjectEvidence<'a> {
 }
 
 /// Structured project-level verdict. Replaces the legacy single-line
-/// `ProjectDiagnostics::verdict` string, which L11 (`5e4165ce`,
+/// `ProjectDiagnostics::verdict` string, which L11 (`bbaa193e`,
 /// 2026-09-17) deleted from the struct and from the wire. Read
 /// [`ProjectDiagnostics::verdicts`]. The old single line is
 /// `verdicts[0].headline`, or `"OK"` when the list is empty.

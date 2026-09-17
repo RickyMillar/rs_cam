@@ -66,7 +66,7 @@
 //!
 //! The magnitudes recorded in `planning/airrun_2026-08-19/RUN_LOG.md`
 //! (1.25× / 1.67× / 3.82× / 4.00×) were measured **before** Suggest pass 9
-//! (G-SUGGEST-NOCLAMP, `a1bb964b`) landed. Pass 9 re-derives the thinning term
+//! (G-SUGGEST-NOCLAMP, `180c6f26`) landed. Pass 9 re-derives the thinning term
 //! at the stepover the operation actually runs instead of the one the
 //! calculator was handed, which on a backed-off finish pass cut the factor
 //! from 3.8236 to 1.7171 on its own. Any decision about this defect must be

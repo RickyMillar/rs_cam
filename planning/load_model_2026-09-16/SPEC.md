@@ -48,7 +48,7 @@ package exists to close.
 ### S-3. Phase C needs no core work at all
 
 `ApplyScope::{Speeds, CutGeometry, Both}` (`suggest.rs:840`) and
-`apply_speeds_to_op` (`suggest.rs:992`) are **intact**. `540715c1` deleted
+`apply_speeds_to_op` (`suggest.rs:992`) are **intact**. `d323cabb` deleted
 only the GUI button. Phase C is a UI control plus a command-registry row.
 
 ---

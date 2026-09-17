@@ -89,7 +89,7 @@ any verdict above.
   field choice** (synthesis §2a) — any nested level sets can be bridged.
   This is the single most product-shaped asset the programme built.
 - `CoverageAudit` + achieved-surface-spacing instrument (with its own
-  sampling floor and blindness audit, `72e844da`) — "did it finish the
+  sampling floor and blindness audit, `57446281`) — "did it finish the
   part, at what spacing" for ANY candidate.
 - Ring-anisotropy and quasi-conformal-dilatation metrics — the pre-check
   for "will one-radius rings over-cover here".
@@ -414,13 +414,13 @@ and status; its FINDINGS.md carries the evidence.
 | Track | Avenue | Dir | Status |
 |---|---|---|---|
 | A | C4 + Phase U operator reviews | evidence: `~/Downloads/c4_review/`, `thin_organic_2026-08-27/FINDINGS.md` §7 | **C4 PASSED** (2026-09-01, pattern evidence — see §7 ruling); **Phase U island placement RATIFIED** (operator: "the filled island looks good"); **spiral appearance APPROVED** (operator, dish SVG pair) — Track C moves to a productisation ticket |
-| B | honest raster on shipped code (+ ×floor honest arm) | `planning/honest_raster_2026-09-01/` | **COMPLETE — DEFECT CONFIRMED** (`fe186d01`): shipped spacing = s_XY/cos θ on slopes, ×floor 0.808 at 40°; sphere refunded by convex focusing up to 17.75°; honest arm hits 1.0000× spec at 1.009× floor, costing 1.09–1.25× distance. **FIXED, ALWAYS ON** (operator ruling + implementation 2026-09-01 — see §9) |
-| C | shape-selected spiral (offsets + bridging) | `planning/spiral_finish_2026-09-01/` | **COMPLETE — BAR MET** (`c7beb6b3`/`aec52a65`): sphere 1.113× floor, dish 1.223×, 0 retracts, 0.0000 % unmachined, spacing within 0.8 % of spec, bridge overhead ~5.6–5.8 %. Research module `spiral_finish_compact.rs`, refusal-first on non-compact shapes. Next gate: operator appearance review of the SVGs, then productisation decision |
-| D | bike-seat gate (fixture + two censuses only) | `planning/bikeseat_gate_2026-09-01/` | **CLOSED — GATES FAIL** (`c4710501`): prize ceiling +3.85 % vs the 5 % bar (gate 1 fail) even though coherence passes at 3.45 stepovers, w30 0.887 (gate 2 pass); negative control separated. Structural finding: the coherence gate 2 demands is exactly what lets a fixed per-region angle capture ~half the prize, so the field's margin over a rotated raster cannot clear the bar in this class at R = 1.0 mm. The direction-field family is now closed at the gate on BOTH geometry classes — terrain fails coherence, swept sheets fail the prize. Salvage: the swept-sheet coherence result argues FOR C2's shipped per-region rotation |
+| B | honest raster on shipped code (+ ×floor honest arm) | `planning/honest_raster_2026-09-01/` | **COMPLETE — DEFECT CONFIRMED** (`7cd33fdd`): shipped spacing = s_XY/cos θ on slopes, ×floor 0.808 at 40°; sphere refunded by convex focusing up to 17.75°; honest arm hits 1.0000× spec at 1.009× floor, costing 1.09–1.25× distance. **FIXED, ALWAYS ON** (operator ruling + implementation 2026-09-01 — see §9) |
+| C | shape-selected spiral (offsets + bridging) | `planning/spiral_finish_2026-09-01/` | **COMPLETE — BAR MET** (`0b3fddc0`/`c68f6065`): sphere 1.113× floor, dish 1.223×, 0 retracts, 0.0000 % unmachined, spacing within 0.8 % of spec, bridge overhead ~5.6–5.8 %. Research module `spiral_finish_compact.rs`, refusal-first on non-compact shapes. Next gate: operator appearance review of the SVGs, then productisation decision |
+| D | bike-seat gate (fixture + two censuses only) | `planning/bikeseat_gate_2026-09-01/` | **CLOSED — GATES FAIL** (`92942c0f`): prize ceiling +3.85 % vs the 5 % bar (gate 1 fail) even though coherence passes at 3.45 stepovers, w30 0.887 (gate 2 pass); negative control separated. Structural finding: the coherence gate 2 demands is exactly what lets a fixed per-region angle capture ~half the prize, so the field's margin over a rotated raster cannot clear the bar in this class at R = 1.0 mm. The direction-field family is now closed at the gate on BOTH geometry classes — terrain fails coherence, swept sheets fail the prize. Salvage: the swept-sheet coherence result argues FOR C2's shipped per-region rotation |
 | E | folded into Track B step 2 | — | — |
 | F | spacing-along-pass prize measurement | not opened | after B/C/D land |
 | G | strategy ledger (whole-board arms vs tiers) | `planning/ledger_2026-09-01/` | **MEASURED** — see §13; arm B row contaminated, correction noted |
-| H | valley tracing (drainage-tree finishing) | `planning/valley_tracing_2026-09-02/` | **CLOSED (2026-09-02, `99eb30aa`) — tracing arm failed all three V1 bars on the pre-registered FAVOURABLE region**: fragments 14.2× (2819 vs 199), distance 3.28×, time 3.53× vs the shipped raster. Mechanism: adjacent branch offset-fans overlap on dendritic ground. RE-BOUNDED same day (operator-caught): the arm traced the DENSEST tree rung on a band-region corridor — a configuration that guaranteed overlap by arithmetic (meta-error §2); refutes dense-tree-on-band-region only. The operator then reframed catchments as full-slope ZONES (phase W); W0b (corrected hydrology, operator-caught lake+flat defects fixed, labelling verified at 0.87 % divide crossings) rules it: compact-basin area 31.5/12.6/3.6 % vs the 50 % bar - FAILS at every rung, no artifact left. PHASE W CLOSED; TRACK H CLOSED on both arms. Avenue-F prize measured and routed to section 5 F (2.78 territory / 1.7-2.4 in-basin - decomposition does not capture it). Tracing arm closed (V1, bounded); the full-territory slope mix (69.3 % > 45 deg 3D) is on record for any future full-slope proposal. Survives: D_pot 5.9–9.3 pp in-mask direction prize, measured and unharvested (every known harvest mechanism now individually refuted; avenue F is the surviving lever); avenue G mechanism corrected (steep inclusions in Shallow polygons, not fringe — S′ ≡ S on region 1, 42.9 % of its 3D area > 45°); region-polygon ≠ band-territory finding routed to Track M. See §14 |
+| H | valley tracing (drainage-tree finishing) | `planning/valley_tracing_2026-09-02/` | **CLOSED (2026-09-02, `8ffa8971`) — tracing arm failed all three V1 bars on the pre-registered FAVOURABLE region**: fragments 14.2× (2819 vs 199), distance 3.28×, time 3.53× vs the shipped raster. Mechanism: adjacent branch offset-fans overlap on dendritic ground. RE-BOUNDED same day (operator-caught): the arm traced the DENSEST tree rung on a band-region corridor — a configuration that guaranteed overlap by arithmetic (meta-error §2); refutes dense-tree-on-band-region only. The operator then reframed catchments as full-slope ZONES (phase W); W0b (corrected hydrology, operator-caught lake+flat defects fixed, labelling verified at 0.87 % divide crossings) rules it: compact-basin area 31.5/12.6/3.6 % vs the 50 % bar - FAILS at every rung, no artifact left. PHASE W CLOSED; TRACK H CLOSED on both arms. Avenue-F prize measured and routed to section 5 F (2.78 territory / 1.7-2.4 in-basin - decomposition does not capture it). Tracing arm closed (V1, bounded); the full-territory slope mix (69.3 % > 45 deg 3D) is on record for any future full-slope proposal. Survives: D_pot 5.9–9.3 pp in-mask direction prize, measured and unharvested (every known harvest mechanism now individually refuted; avenue F is the surviving lever); avenue G mechanism corrected (steep inclusions in Shallow polygons, not fringe — S′ ≡ S on region 1, 42.9 % of its 3D area > 45°); region-polygon ≠ band-territory finding routed to Track M. See §14 |
 
 ## 9. Track B consequence — a product decision, not a polish item (2026-09-01)
 
@@ -533,7 +533,7 @@ re-approached one dial at a time, under the union instrument.
 ## 13. Track G — the strategy ledger (2026-09-01). The tier split is the losing layer on this board.
 
 Full table and caveats: `planning/ledger_2026-09-01/FINDINGS.md` (merge
-`6677370d`). The same-scale CLI comparison, one binary, upstream ops
+`5c749a34`). The same-scale CLI comparison, one binary, upstream ops
 identical:
 
 | arm | finish time | spec |
@@ -607,7 +607,7 @@ with named evidence-cited thresholds, and the NEW `union_coverage`
 audit (G-UNIONCOV's fix) with a loud `assert_within` failure API. The
 measurement contract (None vs 0.0, the two air-cut denominators, the
 two time scales) is written once, in the module docs. The b1 acceptance
-sentinel is byte-identical through the move. Merge `5887b11d`.
+sentinel is byte-identical through the move. Merge `c0a37270`.
 
 The audit's pre-registered proof held both ways: the rejected
 overlap-0.2 variant FAILS (18,341 mm², 45.8 % above spec, one

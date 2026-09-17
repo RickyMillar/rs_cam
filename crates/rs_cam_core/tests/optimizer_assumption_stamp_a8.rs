@@ -23,7 +23,7 @@
 //! # Red-first
 //!
 //! Every assertion in this file is a **compile error** at the parent revision
-//! (`1c0a4acc`): `OptimizeOutcome` has no `assumptions` field and none of the
+//! (`65fe5375`): `OptimizeOutcome` has no `assumptions` field and none of the
 //! stamp types exist. That is the strongest form of the red-first
 //! reproduction — the claim cannot be made at all before the change, rather
 //! than being made wrongly. Verified by `cargo check --test

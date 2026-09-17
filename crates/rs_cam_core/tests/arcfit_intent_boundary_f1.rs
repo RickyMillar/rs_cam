@@ -31,8 +31,8 @@
 //! ## History — this file was red-first
 //!
 //! Wave W2 shipped these as four positive assertions of the DEFECT at
-//! `8963b75`, deliberately not `#[ignore]`d, so that the H2.2 fix would
-//! break them loudly. It did: at PR-6's parent `246b7ae` the four passed;
+//! `48b38c8`, deliberately not `#[ignore]`d, so that the H2.2 fix would
+//! break them loudly. It did: at PR-6's parent `60316ec` the four passed;
 //! with the fix applied three failed (the fourth, `f1_control_…`, is the
 //! control and passed unchanged both times). That failure is PR-6's
 //! red-first evidence and is recorded in its commit body. The assertions

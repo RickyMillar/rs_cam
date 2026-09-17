@@ -1,4 +1,4 @@
-# Tech-debt review — arch consolidation programme (ab2e1466..d7192d35)
+# Tech-debt review — arch consolidation programme (d618f2bb..d7192d35)
 
 Independent review of the NEW and REWRITTEN code. No cargo ran. No repo file
 was edited. S = under an hour, M = a half day.
@@ -66,14 +66,14 @@ MCP helper "reads the window, not the state"; it reads
 **non-comment** lines for the literal `"session/compute.rs"`. A file path in
 Rust appears only in comments, and `is_comment` skips them at `:273`. The
 motivating occurrence was a `//!` line (`gen_parity_p0_tests.rs:11` at
-`89f81cb4^`), and commit `77627c33`'s own RED-OUTPUT block records this arm as
+`4a39a368^`), and commit `e19a8870`'s own RED-OUTPUT block records this arm as
 `... ok` on the **pre-fix** commit. Its `!files.is_empty()` guard (`:262-266`)
 proves the walk read files, never that the needle can match.
 **Fix:** drop the `is_comment` skip for this arm, or delete it and say in the
 module doc that arms (a) and (b) carry the guarantee. **S**
 
 **H5. Coverage was lost: the feed-optimisation refusals are now untested.**
-WP11b (`4b53576b`) deleted `feed_optimization_uses_real_stock_bounds`,
+WP11b (`80a9cf4d`) deleted `feed_optimization_uses_real_stock_bounds`,
 `feed_optimization_rejects_remaining_stock` and
 `feed_optimization_rejects_mesh_derived_operations` from
 `viz/compute/worker/tests.rs` with the helper they drove. The behaviour moved
@@ -94,7 +94,7 @@ Measured: 42 and 45. The line was corrected once already for the same reason.
 
 **H7. Twenty `Reach::Skip` reasons name landed work packages as future work.**
 `command.rs:139,159,185,229,239,259,269,279,300,310,320,330,340,356,396,407,417,427,437,447`.
-12× "…WP6 adopts this row" — WP6 landed (`8eee4c3f`) and did NOT adopt them;
+12× "…WP6 adopts this row" — WP6 landed (`7f6d33ea`) and did NOT adopt them;
 the GUI still calls `session.add_toolpath`
 (`viz/controller/events/toolpath.rs:167,222`), `remove_toolpath`, `add_tool`,
 `remove_tool`, `add_setup`. 7× "the GUI inspector writes this field directly;
@@ -104,7 +104,7 @@ WP5 gives it a door" — now FALSE; the inspector goes through
 `SetToolpathParam` at `:101` already does. **S**
 
 **H8. "Every surface mutates through `ProjectSession::apply`" is not true.**
-The claim is in commit `7dff635b`, in the WP7 sentry's failure message
+The claim is in commit `44d0c2a6`, in the WP7 sentry's failure message
 (`core/tests/hatches_are_crate_private_wp7.rs`, arm 1) and in two doc comments
 (`core/session/mod.rs:1789,1802`). WP7 closed the nine `*_mut` FIELD
 accessors. About 21 public typed setters remain (`session/mutation.rs`:
@@ -130,7 +130,7 @@ residual at all**.
 **H10. A doubled operator sentence kept for a landed work package.**
 `viz/app/mcp/commands.rs:1671-1679` — `text(format!("Save failed: Save failed:
 {error}"))`, commented "…WP6b retires the wrapper with the door". WP6b landed
-(`06a7332d`); the wrapper stands (`controller/io.rs:326`).
+(`36deab51`); the wrapper stands (`controller/io.rs:326`).
 **Fix:** drop the outer prefix and the comment. **S**
 
 ---

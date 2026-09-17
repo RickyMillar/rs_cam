@@ -11,7 +11,7 @@ delta; the consolidation is the orchestrator's.
 
 ## 0. Prerequisite — a 3D arm on the sim-metrics golden
 
-Commit `b2a5e661`, landed **before** any src file was touched.
+Commit `a8874993`, landed **before** any src file was touched.
 
 Phase 0's golden is pocket + zigzag + profile on a 2D polygon model. It works
 the stamp kernel hard and contains no 3D finishing kinematics: no ball-tip
@@ -338,7 +338,7 @@ Everything below is on the landed tree, i.e. after the S7 threshold fix.
 - **Both goldens green, never re-baselined.** `perf_golden_sim_metrics`
   (5 tests, both arms) and `perf_golden_depth_level_geometry` (2 tests) pass
   after S4a, after S7-naive, and again after S7-exact. The only golden write in
-  this wave is the deliberate prerequisite regeneration in `b2a5e661`, which
+  this wave is the deliberate prerequisite regeneration in `a8874993`, which
   added the `per_kinematics` block and — verified field by field — moved no
   previously pinned value.
 - **Sentries green:** `dexel_stock_z_frame_f024`, `dexel_stock_z_frame_f026`,

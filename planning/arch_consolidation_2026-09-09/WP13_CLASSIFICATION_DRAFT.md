@@ -1,7 +1,7 @@
 > **DRAFT — WP13 first deliverable, scout-measured 2026-09-11 at master `2b31b7e5`. Reviewed by nobody yet. WP4 must not move a variant until the nine open calls at the end carry a ruling. Plan line numbers in this file run about 10-12 low against later trees.**
 
 # WP13 deliverable 1 — per-variant classification (input to WP4)
-I read the tree at `master` HEAD **`2b31b7e5`** — NOT the task's `13fb1666`, NOT the plan's `80219e69`. Every `file:line` is from `2b31b7e5`; plan numbers run ~10-12 low. Anchor on symbol names.
+I read the tree at `master` HEAD **`2b31b7e5`** — NOT the task's `dbf572b9`, NOT the plan's `bfe8586b`. Every `file:line` is from `2b31b7e5`; plan numbers run ~10-12 low. Anchor on symbol names.
 Kinds: `Command` = sync validated `ProjectSession` mutation; `Query` = sync read; `Job` = capture/execute/adopt; `UiCommand` = viz only. `Comp→Cmd`/`Comp→Job` = hand-written composition (the arm calls `self.controller.*` or dispatches an `AppEvent` instead of a session method), target kind kept visible. `(h:X)` = writes hatch `X`. `Query(viz)` = a read that never touches `ProjectSession`.
 `B` = `crates/rs_cam_viz/src/mcp_bridge.rs`; `M` = `crates/rs_cam_viz/src/app/mcp.rs`.
 ## 1. `McpRequestKind` (`B:442-874`, 76 variants)
@@ -240,7 +240,7 @@ Against `RULING:66-69`'s "~89 project mutations / ~44 GUI-only": **DISAGREE — 
 - Declared `crates/rs_cam_viz/src/ui/mod.rs:157`; handled `crates/rs_cam_viz/src/controller/events/mod.rs:94` → `handle_remove_setup` (`controller/events/model.rs:421`, reaches `session.remove_setup` and `session.remove_toolpath`).
 - `rg -n "RemoveSetup" crates/` returns exactly 6 hits: the declaration, the handler, and **4 test sites** — `crates/rs_cam_viz/src/controller/tests.rs:1594, 1602, 1796, 1869`. No production emitter exists; WP13's "give it an emitter or delete it" stands.
 ## 5. Mismatches with the plan
-1. **HEAD is `2b31b7e5`, not `13fb1666`** (the task's) and not `80219e69` (the plan's). All plan `app/mcp.rs` line numbers are ~10-12 low.
+1. **HEAD is `2b31b7e5`, not `dbf572b9`** (the task's) and not `bfe8586b` (the plan's). All plan `app/mcp.rs` line numbers are ~10-12 low.
 2. **WP1 has already landed at `mcp_set_toolpath_param`** (`M:3474` is `session.apply(Command::SetToolpathParam)` with a "WP1: one door" comment). WP4's premise "34 classified arms to rewrite" is now 33, of which 17 are mechanical (§2).
 3. **`mcp_apply_stale` has 14 call sites, not 15**: `M:2886,2943,3660,3749,3808,3886,3924,4325,4647,4767,5197,5234,5303,5429`. The plan's 15th (`:3464`, `mcp_set_toolpath_param`) is gone with item 2.
 4. **A SEVENTH hatch site in `app/mcp.rs` that WP4 does not own**: `toolpath_configs_mut()` at **`M:5492`**, inside `mcp_generate_toolpath` (it force-enables `debug_options`). The plan's WP4 "Owns these hatch sites" lists six — `2372, 2457, 2815, 3170, 4509, 5341` → here `2372, 2457, 2825, 3180, 4521, 5353`. The same write recurs at `controller/events/compute.rs:1647` (`mcp_start_generate_all`). Nothing in WP4-WP7 claims either.

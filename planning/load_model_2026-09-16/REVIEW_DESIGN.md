@@ -174,7 +174,7 @@ safety, then class B actions.
 The post-stage screen shows five distributions and a headline. It never
 consults safety findings. A run with a holder collision and five comfortable
 load rows reads "no sample past the limit" on every row and says nothing
-else. The repository already pinned this hazard: commit `8cac2857`,
+else. The repository already pinned this hazard: commit `b037568d`,
 `freshness_does_not_outrank_a_collision`.
 
 The shipped page is also summary-first by rule. `draw`

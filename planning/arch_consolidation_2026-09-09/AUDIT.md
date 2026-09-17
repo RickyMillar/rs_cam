@@ -1,7 +1,7 @@
 # rs_cam architecture / tech-debt audit — 2026-09-09
 
 > **PROVENANCE.** This document was produced by gpt-5.6-astra in a pi session on
-> 2026-09-09 at 21:22 UTC, as a read-only review at commit `627ef997`. It was
+> 2026-09-09 at 21:22 UTC, as a read-only review at commit `5087490f`. It was
 > never written to a file. It existed only inside the pi session transcript
 > `~/.pi/agent/sessions/--home-ricky-personal_repos-rs_cam--/2026-09-09T07-13-43-916Z_01a08503-f3ec-7cb0-9e06-18f23f467ae9.jsonl`
 > until 2026-09-10, when the operator asked for it to be found and recorded.
@@ -15,7 +15,7 @@
 
 # rs-cam architecture / technical-debt audit
 
-**Read-only review at `627ef997`.** Used SocratiCode and source inspection. No builds, tests, application execution, or file changes.
+**Read-only review at `5087490f`.** Used SocratiCode and source inspection. No builds, tests, application execution, or file changes.
 
 ## Overall assessment
 

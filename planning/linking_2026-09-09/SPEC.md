@@ -346,7 +346,7 @@ order, no reorder, no loop rotation) is the cause. The GUI's 613 and
 567 retract trips are these 510 / 475 ring junctions plus the region
 and clip transitions.
 
-## 8. Pencil baseline (2026-09-09 evening, binary 491c17ed, 0.3 mm)
+## 8. Pencil baseline (2026-09-09 evening, binary 15b407b7, 0.3 mm)
 
 Fixture: `planning/deep_doc_modulation_2026-09-08/PENCIL_baseline_r10_rest.toml`
 (a durable copy of the 09-04 throwaway, which lived only in a working

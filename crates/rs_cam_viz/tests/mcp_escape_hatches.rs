@@ -413,7 +413,7 @@ async fn generate_then_status_then_cancel_over_the_mcp_surface() {
 
 // ── G-LV.1: the frame loop itself can be the thing that is stopped ───────
 //
-// Measured live 2026-08-07 (release build at 73e2376, wanaka,
+// Measured live 2026-08-07 (release build at 06bfb71, wanaka,
 // simulation_resolution_mm 0.1): a `generate_all` fixpoint run stalled
 // indefinitely between rounds after the GUI window stopped repainting. The
 // lane finished `3D Rough 6` and went idle; the simulate-round handoff never

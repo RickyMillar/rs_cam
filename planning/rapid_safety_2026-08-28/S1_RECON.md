@@ -1,6 +1,6 @@
 # S1 recon — replay-instrument groundwork (read-only, 2026-08-28)
 
-Repo at HEAD `1c353d9f`, branch master. All paths relative to repo root unless
+Repo at HEAD `a8024b46`, branch master. All paths relative to repo root unless
 absolute. Target G-code: `planning/airrun_2026-08-19/wanaka200_1_Setup_1.nc`
 (17,167 lines) and `wanaka200_2_Setup_2___front.nc` (489,243 lines), generated
 from `planning/airrun_2026-08-19/wanaka200.toml`.

@@ -1,8 +1,8 @@
-# Phase F smoke baseline — post-`cfb146b`
+# Phase F smoke baseline — post-`476cad1`
 
 **Date:** 2026-05-31 (overnight autonomous run, MCP unavailable)
 **Captured by:** `cargo run -p rs_cam_cli -- smoke --output planning/toolpath_acceptance/baselines/2026-05-31_postphasef.csv`
-**Source HEAD:** `cfb146b` (hierarchical material picker — latest in the
+**Source HEAD:** `476cad1` (hierarchical material picker — latest in the
 feeds-data-ingest + audit-followup line: A → B → C → D → E → F → S3-13
 → S2-9 → hierarchical picker)
 
@@ -73,19 +73,19 @@ smoke-diff: no regressions (18 cases checked)
 
 The 2026-05-26 baseline predates several major changes:
 
-- F-031 (2026-05-26 `497a3b2`) — AS013 deflection 0.637 → 0.105 mm
+- F-031 (2026-05-26 `9bc5943`) — AS013 deflection 0.637 → 0.105 mm
   Within (round-09 result). **But the 2026-05-26.csv shows 262.9 µm
   Exceeds**, meaning that baseline was captured BEFORE F-031 landed
   the AS013 fix.
-- Phase 2B (2026-05-30 `bbb164f`) — sheet-good Kc retune + anisotropy
+- Phase 2B (2026-05-30 `06faa7b`) — sheet-good Kc retune + anisotropy
   factor 2.5 → 2.0.
-- Phase B (2026-05-31 `585e2d8`) — Garr aluminum 11 rows.
+- Phase B (2026-05-31 `7c9d6bc`) — Garr aluminum 11 rows.
 - Phase C–E + audit followups — aluminum / plastic / wood library
   expansions, no toolpath-behavior changes expected.
 
 So this diff is really showing **F-031 missing-baseline-update plus
 Phase 2B Kc effect** — not "what Phase B–E changed", which the Phase A
-param_sweep already proved was zero behavior change (`f01e400`).
+param_sweep already proved was zero behavior change (`6f323a1`).
 
 ## Round-10 STATE.md operator-validated reference
 
@@ -192,7 +192,7 @@ The simulation chains: prior toolpaths cut residual stock, the
 measured toolpath cuts what remains.
 
 AS015 now has `prior_passes=AS013` (matches the round-10 STATE.md
-methodology). The result on `cfb146b`-class current code:
+methodology). The result on `476cad1`-class current code:
 
 | Case  | Pre-chain (2026-06-01) | Post-chain (2026-06-02) | Round-10 target |
 |-------|------------------------|-------------------------|-----------------|
@@ -201,7 +201,7 @@ methodology). The result on `cfb146b`-class current code:
 
 AS015 is now under the 200 µm Exceeds threshold and matches the
 round-10 verdict-kind. The numerical reading is lower than round-10's
-197 µm (129.7 vs 197 µm); the delta is consistent with `cfb146b`
+197 µm (129.7 vs 197 µm); the delta is consistent with `476cad1`
 having a tighter scallop entry than the round-10 capture and is not
 a methodology bug.
 

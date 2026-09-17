@@ -6,7 +6,7 @@
 //! mrr_cross_section(ap_calc, ae_calc), raw_feed)`.
 //!
 //! `enforce_invariants` then runs, and pass 9
-//! (`rescale_feed_to_final_geometry`, added `a1bb964b` for
+//! (`rescale_feed_to_final_geometry`, added `180c6f26` for
 //! G-SUGGEST-NOCLAMP) re-solves the feed against the operation's FINAL
 //! stepover and depth_per_pass. Nothing between pass 9 and the write
 //! re-checks Step 6. Power scales with `ae · ap · feed`, so a rescale

@@ -3,7 +3,7 @@
 **Date:** 2026-06-03
 **Predecessors:**
 - 2026-06-02 audit workflow `w39ma2j1y` — 7 confirmed pipeline bugs
-- 7 audit fixes landed (commits `3fab54b`, `cfe98ce`, `917e2fd`, `7cac9bd`, `6841df6`, `b1f52e7`)
+- 7 audit fixes landed (commits `9283ac4`, `04109ed`, `8c9d9f7`, `ffdf1ec`, `e649891`, `6727d75`)
 - Research/plan workflow `wcyw1sb2b` (this doc consolidates its output + locked decisions)
 
 **Problem:** the existing test suite (1686 unit + 62 integration + 18 smoke + F-024…F-037 sentries)

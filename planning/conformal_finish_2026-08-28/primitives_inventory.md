@@ -3,7 +3,7 @@
 > Produced 2026-08-29 by a very-thorough repo sweep for the conformal
 > finishing feasibility programme (`PROGRAMME.md` Phase F0, third bullet).
 > Every claim carries a file:line reference; verdicts are against the tree as
-> of commit `30f59ba5`.
+> of commit `3549f186`.
 
 Workspace: 4 members (`rs_cam_core`, `rs_cam_cli`, `rs_cam_viz`, `rs_cam_mcp`;
 `tests/step_validation` and `reference/shapeoko_feeds_and_speeds` are
@@ -257,9 +257,9 @@ Known limitations recorded in M4/M5 tests: `tests/scallop_oracle_validation_m4.r
 ## 10. PCA-cell / monotone-cell evidence harness — EXISTS (one file)
 
 **The instrument: `crates/rs_cam_core/tests/thin_organic_island_widths.rs` (2207 lines).** Commit lineage:
-- `d5a0c061` "evidence(finish): compare rotated monotone cells" — +219 lines to this test, +44 to FINDINGS.md → **this is the commit that produced 875.9 s** (Stage K).
-- `d25e0a74` "evidence(finish): render monotone cell overlays" — +87 lines, the SVG overlays.
-- `4455ade9` "docs(finish): charter conformal finishing feasibility" — created PROGRAMME.md + CREDITS.md entries only.
+- `9f5b4e2a` "evidence(finish): compare rotated monotone cells" — +219 lines to this test, +44 to FINDINGS.md → **this is the commit that produced 875.9 s** (Stage K).
+- `177d8aca` "evidence(finish): render monotone cell overlays" — +87 lines, the SVG overlays.
+- `f10bf715` "docs(finish): charter conformal finishing feasibility" — created PROGRAMME.md + CREDITS.md entries only.
 
 **The evidence doc: `planning/thin_organic_2026-08-27/FINDINGS.md`.** The numbers:
 - `FINDINGS.md:290` — `| 3104 mm² | 1053.7 s | 1203.3 s | 0.88× |` (the 0° undivided baseline).

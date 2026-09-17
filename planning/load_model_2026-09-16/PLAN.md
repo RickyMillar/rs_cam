@@ -56,7 +56,7 @@ string and the badge throws it away.
 
 `no_power_gauge_returns_to_the_card_g_chipverdict` bans the bar because the
 readout peaked at 23.6 % across the shipped matrix. That was measured at
-`921aa0e3`, **before** R1 (`73b84d69`) rebuilt the power model about 8.6x
+`e475085f`, **before** R1 (`2708ee52`) rebuilt the power model about 8.6x
 higher.
 
 Re-measured after R1, 162 recipes: median 17.8 %, p90 89.4 %, peak 100.0 %,

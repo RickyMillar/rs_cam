@@ -33,7 +33,7 @@
 //! text-level fact about which definition the export actually used, not
 //! a re-assertion of the resolver.
 //!
-//! # Red-first evidence (parent `777a78b`)
+//! # Red-first evidence (parent `91f3580`)
 //!
 //! `the_exported_gcode_uses_the_grblhal_definition` fails on the parent
 //! with the GRBL warning comment present and no `M7` line. The token

@@ -8,7 +8,7 @@ better pencil centerlines than the current NMS+hysteresis+Zhang-Suen
 pipeline in `rest_depth_arm`** — more coherent, no coverage loss, no
 higher cost, spine no further from the valley bottom.
 
-## Baseline (the number to beat, established by `29a6d61`)
+## Baseline (the number to beat, established by `0db602e`)
 
 The current extractor's coverage on textured relief is ~0.80
 (`RestFieldReport::coverage`, traced ÷ skeleton length surviving
@@ -24,7 +24,7 @@ extractor A (current) and extractor B (flow-accumulation), and reports:
 - **M1 coverage** — `RestFieldReport::coverage` for each extractor.
 - **M2 fragmentation** — count of kept centerline polylines and the
   MEDIAN polyline length (mm). Fewer, longer = more coherent. (The
-  `29a6d61` pain was a 0.7 mm median; the fix raised it.)
+  `0db602e` pain was a 0.7 mm median; the fix raised it.)
 - **M3 total traced length** — `traced_length_mm`, and the fraction of
   skeleton length lost to `min_cut_length` (the shredding tax).
 - **M4 valley-bottom fidelity** — for a uniform sample of centerline
@@ -67,7 +67,7 @@ Adopt-to-opt-in requires ALL of:
   coverage, dropped a seam, or cost more; the current pipeline wins.
 - **B1/B3/B5 pass but B2 fails (only a tie on coherence)** → DO NOT
   ADOPT and record the tie: the shipped NMS pipeline already captured
-  the win `29a6d61` was after, and a second extractor is not worth the
+  the win `0db602e` was after, and a second extractor is not worth the
   maintenance.
 - **The render (B6) contradicts a passing number** → the number is
   void; re-examine the instrument before any ruling (Track H rule).
@@ -85,7 +85,7 @@ connectivity a right answer:
   check, not a comparison);
 - the broad basin must stay untraced by BOTH (rest gate working);
 - the Y-junction is the connectivity test: extractor A is expected to
-  shred at the junction (degree-3 node — the `29a6d61` failure mode),
+  shred at the junction (degree-3 node — the `0db602e` failure mode),
   extractor B to keep the trunk continuous through it. If A does NOT
   shred here, the whole premise is weaker than stated — record that.
 
@@ -147,7 +147,7 @@ results: written ahead of the instrument, never edited by an outcome. The
 `resolve_flats`, `d8_receivers`, `d8_accumulation`, `neighbour`), promoted
 byte-identical from three Track H copies. All three `#[ignore]` wanaka
 censuses reproduce their baselines (w0b `mean/p1 2.780` / 49 basins; h0
-`D_pot 7.27 pp`; h1 pass). Commit `17e9e74c`.
+`D_pot 7.27 pp`; h1 pass). Commit `315467aa`.
 
 ### P1 — instrument + synthetic A/B (2026-09-03)
 
@@ -248,7 +248,7 @@ By the decision rule ("B1 or B3 or B5 fails → REJECT"), and directly:
   of A), it DROWNS them — A covers only 0.123 of B, i.e. ~8× of B's
   footprint is terrain drainage that is not a tool-relevant seam.
 
-**This is the drainage-deletion lesson (`53293c96`), confirmed empirically.**
+**This is the drainage-deletion lesson (`c73b38c3`), confirmed empirically.**
 The charter's hope — that rest-gating keeps flow-accumulation "clear of the
 drainage-deletion ruling" — is FALSIFIED. Rest-gating at the natural floor
 (`0.5 × min_valley_depth`) does not constrain flow-accumulation on real
@@ -266,7 +266,7 @@ the DEEP major terrain valleys — which are exactly the ones A's ridge
 detector already finds. The gate that would actually separate a tool-relevant
 seam from terrain drainage is rest-RIDGE detection — and that IS A's NMS.
 Flow-accumulation adds nothing on top of it. The NMS+hysteresis+Zhang-Suen
-pipeline (`29a6d61`, coverage 0.80) stands as the pencil-spine extractor.
+pipeline (`0db602e`, coverage 0.80) stands as the pencil-spine extractor.
 
 **Bounded positive, stated so it is not a lead:** on a single sloping valley
 IN ISOLATION (one junction, no competing drainage), flow-accumulation traces
@@ -370,8 +370,8 @@ stays 6.1× A. And the gate that separates a tool ridge from a drainage line is
 ridge detection, which IS A. Flow-accumulation adds nothing A does not already
 have.
 
-The drainage-deletion lesson (`53293c96`) holds — now demonstrated on CORRECT
-dendritic drainage, not a flood artifact. The shipped NMS pipeline (`29a6d61`)
+The drainage-deletion lesson (`c73b38c3`) holds — now demonstrated on CORRECT
+dendritic drainage, not a flood artifact. The shipped NMS pipeline (`0db602e`)
 stands. **Credit: the operator caught the flood by eye ("pure fuzz, nothing
 like the river lines") — the aggregate numbers alone read as a confident,
 wrong REJECT.**

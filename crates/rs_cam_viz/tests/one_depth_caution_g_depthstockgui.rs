@@ -11,7 +11,7 @@
 //! twice is itself a surface saying something untrue about how many problems
 //! the operator has.
 //!
-//! The orchestrator's gate on the merged head `9292287a` caught it through
+//! The orchestrator's gate on the merged head `3a660156` caught it through
 //! the F1.6 sentry's `== 1` assertions. This file makes the guard generic and
 //! independent of that fixture, so the next surface that appends a finding
 //! core already produces fails here.

@@ -7,7 +7,7 @@
 //! 3-phase assessment on the pristine Wanaka100 project and found
 //! four pre-optimize-stage defaults that deviated from FSWizard
 //! published bands. Three were addressed by the code fixes in
-//! commit c5b9f74. This test locks those fixes in against the same
+//! commit c7d9dbc. This test locks those fixes in against the same
 //! input set the assessment used.
 //!
 //! Fix 5 (existing-project re-derivation policy) is a planning-doc

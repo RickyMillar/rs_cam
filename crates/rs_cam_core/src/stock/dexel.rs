@@ -266,7 +266,7 @@ pub struct DexelGrid {
     /// half-cut column; on a fine grid it reads at full stock height. That
     /// difference — not any property of the toolpath — is what made the same
     /// generated chain measure 0 / 15 / 20 rapid collisions at 0.5 / 0.25 /
-    /// 0.1 mm (TP15 RCA `4f590f3`).
+    /// 0.1 mm (TP15 RCA `234c654`).
     ///
     /// This channel answers the question a descent ceiling actually asks:
     /// *"how high can material be ANYWHERE in this cell"*. It is lowered

@@ -5,7 +5,7 @@
 //! # The defect
 //!
 //! `ToolpathStats::relink` had exactly ONE writer: the unified-finish arm of
-//! `compute/execute.rs`. Every other family that G-LINKSTAGE (`0c36a2f0`)
+//! `compute/execute.rs`. Every other family that G-LINKSTAGE (`4d1f4ab4`)
 //! put on the shared stage built a report and only LOGGED it — the scallop's
 //! `"Scallop intra-pass relink"` line, the adapter's `"Finishing link
 //! stage"` line for the raster and the waterline, and the pencil's `"Pencil

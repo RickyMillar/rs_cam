@@ -4,7 +4,7 @@
 //! Background (`planning/review_2026-07-29/TECH_DEBT_RESEARCH_AND_FIX_PLAN.md`
 //! §A/M9; `MEASUREMENT_DOMAINS.md` rows 37-42 and X-19): the scallop ring
 //! cascade has always measured the region interior it failed to reach
-//! (`ScallopReport::uncut_core_mm2`), and `0d1f307` carried that figure to
+//! (`ScallopReport::uncut_core_mm2`), and `f9b54b9` carried that figure to
 //! `ToolpathStats` plus the `geom.standing_material` diagnostic. Two gaps
 //! remained, and this file pins both shut:
 //!

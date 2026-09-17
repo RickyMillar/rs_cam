@@ -49,7 +49,7 @@ steps depend on earlier nets being in place):
 4. [needs D2] Baseline re-cut: add resolution column, re-cut AS015 (and any row
    the drift channel now reports), record 211→0 as a documented baseline move.
 Note: 211→0 attribution stays UNNAMED (both candidates disconfirmed; optional
-15-min settling bisect at `4b105dab^` allowed once the tree is free — nice to
+15-min settling bisect at `45347db3^` allowed once the tree is free — nice to
 have, not blocking).
 
 ### Cluster 2 — Drill TSP (ladder A → B → C1)
@@ -63,11 +63,11 @@ Source: `RESEARCH_drill_intent_erasure.md`. One lane for A+B; C1 separately gate
 - C1. [needs D1, Gate 0 vs G-SAFEZ-LOCAL] per-op `rebuild_clearance_z` through
   TSP (~120–180 LOC, machine-visible). Sentry A flips red→green; A/B the G-code
   and cycle time (expected ≈ 3.4 s vs 21.0 s per hole on shipped defaults).
-  NOTE (post-889b1573): G-SAFEZ-LOCAL landed 2026-08-21 and moved resolved
+  NOTE (post-9df20910): G-SAFEZ-LOCAL landed 2026-08-21 and moved resolved
   heights on negative-origin fixtures — `clearance_z` resolves as
   `retract + 10.0` (`compute/config.rs:1386`) and inherited the shift
   (40 → 20 on wanaka). Any absolute clearance_z number measured before
-  889b1573 is stale; re-derive against the current tree, or reason
+  9df20910 is stale; re-derive against the current tree, or reason
   relative to retract_z.
 - Same pass: decide `DressupConfig::retract_strategy` (dead dial — GUI/MCP
   settable, zero consumers): wire it or remove it. Flag to user in the C1
@@ -126,39 +126,39 @@ A and C1 in the same push window; ASK THE USER which.
 
 ## EXECUTION STATUS (2026-08-21, updated live by the orchestrator)
 
-Peer TD3 session landed 8 commits during the wave (889b1573 G-SAFEZ-LOCAL,
-d93837eb pin frame, 0748f7ec profile flip, d019a5a4 drill defects + peck
-clamp, 5ad592a1 composite supersample ×9 fill cost, b0362626 MCP surface,
-838908f8 G-AIRLADDER, 7c125fe9 pin FORCE_NO_ENTRY). My 691304b4 re-blessed
+Peer TD3 session landed 8 commits during the wave (9df20910 G-SAFEZ-LOCAL,
+f5afdeca pin frame, 09b4c758 profile flip, 61cb27a4 drill defects + peck
+clamp, f606a2db composite supersample ×9 fill cost, 4b1e6f21 MCP surface,
+2e276ce8 G-AIRLADDER, 2eb14d14 pin FORCE_NO_ENTRY). My 0d37decb re-blessed
 the perf golden after G-SAFEZ-LOCAL (verified: 17 fields, all exact 7 mm/leg).
 All five are legitimate baseline-drift sources for Cluster 1 step 4.
 
-- Cluster 1 (corpus): COMPLETE. a8e27d92 (run_diff fix, 12 tests), eaa9e879
+- Cluster 1 (corpus): COMPLETE. f1ba1b81 (run_diff fix, 12 tests), 6a5056f4
   (forced-dive sentry: control 0 vs forced 35 — same 35 as the research via an
   independent construction; asserts corpus reads the detector's own number),
-  5ca0c3a0 (AS015 add→simulate→generate + resolution column). AS015 re-cut:
+  d3090830 (AS015 add→simulate→generate + resolution column). AS015 re-cut:
   old row was `exceeds_low` chipload 0.002008 @ no recorded cell; new row
   `exceeds_high` 0.022857 @ 0.5 mm, deterministic across subset/full runs, now
   genuinely through PhantomPriorStockScan. Drift channel: 86 changes / 0
   regressions over 18 rows (old net would have printed ZERO lines); the
   211→0 printed for the first time (AS007 6→0, AS009 1→0, AS010 104→0,
   AS017 100→0), attribution left unnamed. Honest falsifications of the brief:
-  889b1573 is STRUCTURALLY unobservable on this corpus (BaselineRow has no
+  9df20910 is STRUCTURALLY unobservable on this corpus (BaselineRow has no
   rapid/runtime/air column); pin-drill fixes unobservable (AS012 vacuous since
   baseline). Effective corpus population is 14 of 18 rows (AS006/012/016/018
   vacuous since baseline), 12 with chipload. OPEN: promote
   `exceeds_low→exceeds_high` (4 rows) to a failing regression? Currently
   reported-not-failed per the within→exceeds contract.
-- Cluster 2 (drill): COMPLETE. f29eeb8d (sentry A, verified red first: emitted
-  descent 0 was 10.000→2.000 vs schedule 5.000→2.000), 1c5a87b6 (rung B intent
+- Cluster 2 (drill): COMPLETE. 68aa61ac (sentry A, verified red first: emitted
+  descent 0 was 10.000→2.000 vs schedule 5.000→2.000), caf882ed (rung B intent
   tagging: 1251 G-code lines byte-identical, 202 Unknown rapid intents
   eliminated, + attributed PR-6b re-pin — that pin hashes Debug incl. `intent`
-  despite its geometry-claiming name, split-hash is a backlog row), 18a0a79e
+  despite its geometry-claiming name, split-hash is a backlog row), d54068ed
   (C1 `internal_link_ceiling_z`: per hole 70.0→17.0 mm fed / 14.000→3.400 s,
   4.12×, EXACTLY fed_descents; 6 non-drill families md5-identical; hole
   reorder win kept; G73 vs G83 distinct again — they were byte-identical
   before, the cycle dial was inert). Full -p rs_cam_core 3005/0 with C1.
-  Research-doc corrections: post-889b1573 the defect cost 70 mm/14 s per hole
+  Research-doc corrections: post-9df20910 the defect cost 70 mm/14 s per hole
   (not 105/21 — safe-Z resolves to 10 not 17); the doc's rebuild-height C1
   shape provably cannot go green (45 mm vs 17 mm). WAVE RULE from a recovered
   incident: never `git commit --amend` in the shared tree (an amend rewrote
@@ -178,11 +178,11 @@ All five are legitimate baseline-drift sources for Cluster 1 step 4.
   keep field, don't wire, don't delete; after C1 the only residual job is
   inter-group traverse height (G98/G99) which deserves its own dial; the
   "active dressups" badge overcounts it today (viz change, deferred).
-- Cluster 3 (viz caches): COMPLETE. 8a7e71d3 (four Weak-pins + evidence
+- Cluster 3 (viz caches): COMPLETE. bc992937 (four Weak-pins + evidence
   fingerprint on the triage key — hashes boundaries, rapid collisions +
   indices, holder collision indices, resolution bits; None-report hashes a
   distinct sentinel so "no report yet"→"report with 0" invalidates) and
-  77fd6f72 (upload keys: new `ArcId<T>(Weak<T>)`, both bare-pointer keys had
+  4e8e4db4 (upload keys: new `ArcId<T>(Weak<T>)`, both bare-pointer keys had
   the same hole; `advance_source` 0-sentinel replaced; doctrine comment
   retired). -p rs_cam_viz --lib 282/0, clippy clean. The
   evidence-invalidation test is red on the old key by construction.
@@ -196,7 +196,7 @@ All five are legitimate baseline-drift sources for Cluster 1 step 4.
 - Cluster 4 (boundary sentry): DONE, commit 31639742. Reproduced research
   exactly (B1 27.71%/27.07%, B2 exactly 138, non-vacuity green, #[ignore]d
   B1==0 carries the D4 contract). 2.19 s runtime.
-- Cluster 5 (F2): C3 DONE, commit 84bbafd3 (+ tests/common/zladder.rs).
+- Cluster 5 (F2): C3 DONE, commit 4d82dbff (+ tests/common/zladder.rs).
   C1 STOP CONDITION FIRED — fixture has a SHORT FINAL PASS (rung 20 of 20 =
   0.0652 mm, landing on the stock_to_leave floor; 19×3.0 before it). Measured,
   not reasoned: the ratio bar would read 8.6994 vs ceiling 1.35 on a shipped

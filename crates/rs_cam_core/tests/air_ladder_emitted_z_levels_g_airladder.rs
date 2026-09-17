@@ -359,7 +359,7 @@ fn wasted_fed_cutting_levels_above_the_world_stock_top() {
     // The history, because the number moved twice and each move meant a
     // different thing:
     //
-    // 1. G-SAFEZ-LOCAL (889b1573) took this fixture from five wasted rungs to
+    // 1. G-SAFEZ-LOCAL (9df20910) took this fixture from five wasted rungs to
     //    one, and the emitted air above the stock top from ~14,591 mm —
     //    measured off the shipped `wanaka200_2_Setup_2___front.nc`, five rungs
     //    of 231 fed moves each with ZERO lateral cutting — down to ~27 mm.

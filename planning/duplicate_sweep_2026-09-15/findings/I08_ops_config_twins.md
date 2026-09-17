@@ -3,7 +3,7 @@ Verdict: MIXED — per sub-pair below (2 FALSE_POSITIVE, 1 SIBLING, 1 DRIFTED_DU
 
 ## Pair A — `resample_polyline`: pencil.rs:705-746 ↔ project_curve.rs:80-141 (0.9216) — DRIFTED_DUP
 - P3 copy `crates/rs_cam_core/src/pencil.rs:712` (`pub(crate)`, also called by `crease_paths.rs:222`,
-  `pencil.rs:2131`); added 53293c96 2026-07-03 replacing dihedral `sample_chain`
+  `pencil.rs:2131`); added c73b38c3 2026-07-03 replacing dihedral `sample_chain`
   (`pencil_dihedral.rs:344,558` name it canonical). Pinned by `pencil.rs:2574`.
 - P2 copy `crates/rs_cam_core/src/project_curve.rs:86` (private, caller `:341` ring spacing); added
   a1a8c31b 2026-03-20. Pinned by in-file tests `:406-451` (exact sample coords). Both sides are

@@ -20,7 +20,7 @@
 //!    alone, so the `Ok` answer has no binding at all. The shape itself
 //!    proves the discard; no block scan is needed.
 //!
-//! `crates/rs_cam_viz/src/app/input.rs` held shape 2 at `10263b4d`, and
+//! `crates/rs_cam_viz/src/app/input.rs` held shape 2 at `f21aea33`, and
 //! that site is the red this file was written against.
 //!
 //! # Needle 1 is a RATCHET, not a defect finder
@@ -105,7 +105,7 @@ const JUSTIFIED: &[Justified] = &[
         reason: "storing a simulation leaves the session's `Some`, so `stale` is empty \
                  and `simulation_cleared` is false (`session/command.rs`)",
     },
-    // C01 (`41f0b243`) deleted the legacy project loader in
+    // C01 (`9da22f20`) deleted the legacy project loader in
     // `src/controller/io.rs`. Its two rows — `Command::SetProjectName(`
     // and `Command::ReplaceSetupsAndToolpaths(` — named the builder over
     // a session no surface had adopted. Both sites went with it, so the

@@ -10,7 +10,7 @@
 //! `PrecedenceField`. `ui/properties/operations/mod.rs` still carries the
 //! comment recording both moves.
 //!
-//! Commit `540715c1` ("UR4 — the feeds modal is Explore only") then deleted
+//! Commit `d323cabb` ("UR4 — the feeds modal is Explore only") then deleted
 //! that section on its way past. Its stated scope was the MODAL; the SPEED
 //! section was inspector furniture the same commit removed, and nothing
 //! replaced it. `PrecedenceField` was left with no call site in the crate.

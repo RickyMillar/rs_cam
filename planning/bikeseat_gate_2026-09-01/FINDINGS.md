@@ -123,7 +123,7 @@ direction field turns at sub-stepover scale by construction.
 *(to be appended after the run — nothing below this line was written
 before it)*
 
-Run: 2026-09-01, commit `7f5f0d01` (pre-registration) + this commit.
+Run: 2026-09-01, commit `aefbd72c` (pre-registration) + this commit.
 `cargo test --release -p rs_cam_core --test bikeseat_gate_d1 -- --ignored --nocapture`,
 4.2 s wall. Exit 0; every fixture assert held.
 

@@ -7,8 +7,8 @@ behind `flock /tmp/rs_cam_cargo.lock` with a ≥20 GB available-memory gate.
 **Do not read this file as a replacement for `BASELINES.md`.** It is one
 lane's delta.
 
-Commits: `c652ee52` (defect), `38b8e4a9` (restructure), `d1d9a0a4` (sentries +
-bench arm), `ee8b9da4` (memory-bound test tightened).
+Commits: `2f046bcf` (defect), `22743979` (restructure), `4691c686` (sentries +
+bench arm), `4786beed` (memory-bound test tightened).
 
 ---
 

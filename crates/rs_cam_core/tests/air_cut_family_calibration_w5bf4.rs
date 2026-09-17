@@ -12,7 +12,7 @@
 //! artifact**: on one unchanged toolpath it moved 0.31 % → 89.61 % across
 //! cell sizes 0.25 → 1.0 mm while the swept kernel read a stable
 //! 5.95 → 11.04 (`DELTA_sim_w5_s1_DECISION.md` §2, class (ii-b)). Since
-//! `a4ff2a8c` the swept kernel is the default, so the bands are calibrated
+//! `34d8917a` the swept kernel is the default, so the bands are calibrated
 //! for a retired instrument.
 //!
 //! The goldens and the wanaka 0D reference cover eight op kinds between

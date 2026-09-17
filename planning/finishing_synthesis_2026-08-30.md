@@ -23,7 +23,7 @@ L_min = ∫∫ dA / s_max(x)
 — every pass spaced exactly at the local limit, nothing cut twice. Below
 this, the spec is not met. It is a hard floor, not a target.
 
-Measured against it, from the six-arm F2 run (`87c97c82`):
+Measured against it, from the six-arm F2 run (`057ecd8c`):
 
 | arm | region 3D area | s_max | **L_min** | raster cut | ×floor | spiral cut | ×floor |
 |---|---|---|---|---|---|---|---|
@@ -203,7 +203,7 @@ targets the floor). What is missing is one afternoon of wiring and the
 
 ## 8. The § 4.3 proposal, measured overnight — it helps a lot and still loses
 
-Run `e5af6336`, four candidates on four analytic fixtures, every one scored
+Run `ce7c1dd7`, four candidates on four analytic fixtures, every one scored
 against the local floor `L_min = Σ area_t / s_max(t)` with analytic
 curvature. **This is the × floor column §6 asked for.**
 
@@ -284,7 +284,7 @@ Looking at the ribbon figure the operator proposed: *"parallel passes down
 each of the arms, along the length of each arm, and then a spiral in the
 center."* Implemented as a third choice of `D` — the region's **medial
 axis**, obtained as `rotate(grad(EDT), 90°)` — with the iso-scallop
-magnitude unchanged. Run `16ac0dc1`.
+magnitude unchanged. Run `f975120f`.
 
 **The derivation came first, and it recast the idea.** With that `D`, the
 target field reduces to `V = −|V|·∇̂EDT`, so φ is a reparameterised negative
@@ -429,7 +429,7 @@ of relief is gentle at 1 mm-ball scale. The operator objected: *"many
 mounts and valleys. We are milling a mountain range. Isn't this exactly the
 use case?"* **Measured, on the real mesh — they are right and §10's
 closure was wrong.** Instrument
-`crates/rs_cam_core/tests/wanaka_curvature_anisotropy.rs` (`7f341f9d`),
+`crates/rs_cam_core/tests/wanaka_curvature_anisotropy.rs` (`5e4ae866`),
 Monge-quadric fit at controlled radius, curvature from the shape operator,
 verdict thresholds pre-registered.
 
@@ -500,13 +500,13 @@ supply the missing segmentation stage and re-measure region 1. That test
 ran, twice, and both runs are recorded in
 `planning/conformal_finish_2026-08-28/FINDINGS.md`:
 
-- **§F1-2** (`b2d2b346`): coherence-gated segmentation WORKS as the
+- **§F1-2** (`9144681f`): coherence-gated segmentation WORKS as the
   literature says — threading falls from 68.47 components per level to
   1.07, orientation inconsistencies to zero — and the verdict **fails
   anyway**: best arm is control ÷ 1.41 against a pre-registered
   order-of-magnitude bar, and at 10° tolerance 48.2 % of the region lies
   in patches under 1 mm². Patch count rises as fast as threading falls.
-- **§F1-3** (`a17de695`): the zone-coherence census across every shipped
+- **§F1-3** (`1145939f`): the zone-coherence census across every shipped
   decomposition (tier islands, slope bands, equal tiles at 16/8/4 mm).
   **The coherence length is ~0.35 mm at every zone size; the stepover is
   0.486 mm.** The field turns more than 30° inside one pass width,

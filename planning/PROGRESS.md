@@ -77,61 +77,61 @@ visibility cost.
 The operator answered four close-out questions (plan §27) and one UX
 question (plan §28 ruling 1). Every open package landed on `master`:
 
-- **WP22** (`d880ca1a`): the feed-optimisation pass caps a geometric
+- **WP22** (`077acf91`): the feed-optimisation pass caps a geometric
   plunge at the operation's `plunge_rate`, the same classifier the
   modulator's P3 guard reads. Measured red: 18 of 18 plunges at 2.00×
   on the sentry pocket. G-FEEDOPTPLUNGE is closed.
-- **WP19** (`0395aba0`, `09eb9768`): the view mirrors
+- **WP19** (`c566b24d`, `9d11ddc3`): the view mirrors
   `Effects::simulation_cleared`; a toolpath edit CLEARS the viewport
   simulation like every other edit (operator ruling; the F2.5 banner
   for toolpath edits ends); `mcp_stamp_stale` is merged into
   `state::stale::stamp_stale`, and a row it creates reads the catalog's
   `default_auto_regen`.
-- **WP14b** (`2abf78aa`): `OptimizeToolpath` is a `Job` over a cloned
+- **WP14b** (`04d09453`): `OptimizeToolpath` is a `Job` over a cloned
   session; the three `mem::replace` sites are gone; the clone on the P0
   fixture costs 0.07 ms. An `optimize_toolpath` issued after an edit that
   dropped the simulation refuses at submit.
-- **WP15b** (`30dab0d0` over five fix commits): `ProjectSessionBuilder`
+- **WP15b** (`38951287` over five fix commits): `ProjectSessionBuilder`
   gains id-allocating `add_tool` / `add_model` / `add_setup` /
   `add_toolpath` and read accessors; 610 out-of-crate test sites moved
   to the builder or `apply`; the 59 `ProjectSession` setters are
   `pub(crate)`. The compile is the completeness proof.
 
 **Independent completeness review** (`REVIEW_COMPLETENESS_2026-09-13.md`,
-pin `61c16b75`): INCOMPLETE, one blocker. The blocker became **WP23**
-(`325f2249`, `07eddc1e`; sentry `151f1c21`): two view rows claimed a GUI
+pin `2c593c7d`): INCOMPLETE, one blocker. The blocker became **WP23**
+(`88aeb4d4`, `7e889892`; sentry `73c11d5b`): two view rows claimed a GUI
 constructor that did not exist and are deleted; the view sentry now
 censes constructors for every `gui: Reached` view row; and the viz
 crate compiles without the `mcp` feature again. The review's other three
 findings are ruled in plan §29. Open ledgers for the operator:
 G-PERFGOLDEN2D, G-F036B-FLOOR, G-NOMCPTESTS.
 
-**Closing core dev loop** (once, capped, at `15aa896f`): 3863 passed /
+**Closing core dev loop** (once, capped, at `0487287e`): 3863 passed /
 4 failed / 272 ignored. All four reds are pre-existing: the f036b band
 arm (red by design), the f036b floor arm (new ledger G-F036B-FLOOR),
 `perf_golden_sim_metrics` (G-PERFGOLDEN2D, a re-bless is the operator's
-call), and one stale surfaces arm, fixed at `9a88dfef`. The heavy gate
+call), and one stale surfaces arm, fixed at `b5250b71`. The heavy gate
 did not run.
 
 **Ledger close-out, same day** (plan §30 and §31; the operator answered
 one question per ledger):
 
-- **G-PERFGOLDEN2D**: the 2D perf golden is re-blessed at `7177c139`;
+- **G-PERFGOLDEN2D**: the 2D perf golden is re-blessed at `457fddc2`;
   the moved fields are in that commit body.
-- **WP25** (`ba5b24af`): the three MCP tests in
+- **WP25** (`b4dfb329`): the three MCP tests in
   `controller/results_parity_tests.rs` are gated on the `mcp` feature.
   The two store-half tests still compile in both configurations. The
   non-MCP all-targets viz clippy joins the lint gate. G-NOMCPTESTS is
   closed.
-- **WP26** (`610f8a58`): the f036b floor arm was an instrument defect,
+- **WP26** (`a21a4a24`): the f036b floor arm was an instrument defect,
   not a feeds change. Its proxy counted a move as modulated when the feed
-  differed from nominal, and since WP11b (`4b53576b`) the
+  differed from nominal, and since WP11b (`80a9cf4d`) the
   feed-optimisation dressup writes per-move feeds on the same door. The
   arm now diffs the pre- and post-modulation IR per index and skips a
   `PlungeRate`-bound move. No feeds quantity moved. The binary reads
   9 passed / 1 failed; the band arm stays red by design. G-F036B-FLOOR
   is closed.
-- **WP24** (`e8c0076b`; sentry `28f5675b`): the full-screen Optimize
+- **WP24** (`f405a657`; sentry `4efc88ee`): the full-screen Optimize
   placeholder is deleted. An Optimize run is `optimize_run:
   Option<OptimizeRun>` on the view state, the workspace bar draws a
   progress row with the run label, elapsed time and a Cancel
@@ -150,7 +150,7 @@ The work-package table held 30 rows, WP1 to WP26 all DONE, at that point.
 G-EXPORTEMPTYSETUP, G-FRESHNESSDISAGREE, G-DIRTYONLOAD, plus
 G-OPTCANCELPARTIAL from the WP29 scout):
 
-- **WP27** (`940b8a05`; sentry `fc84547f`): the viewport draws the SELECTED
+- **WP27** (`1a87e04c`; sentry `6bc2e506`): the viewport draws the SELECTED
   toolpath only by default (operator ruling, plan §32: many drawn toolpaths
   make the viewport slow). One `show_all_toolpaths` view flag, one Overlays
   registry row `all_toolpaths`, one bar button, one pure `toolpaths_to_draw`
@@ -158,7 +158,7 @@ G-OPTCANCELPARTIAL from the WP29 scout):
   workspace still draws every toolpath. Consequences: nothing selected draws
   no toolpath, so the viewport is empty after a load until a row is clicked,
   and a viewport click cannot select an undrawn toolpath.
-- **WP29** (`83c6219b`; sentry `7834761f`): an Optimize run reports its rung
+- **WP29** (`8849572e`; sentry `2c8b4183`): an Optimize run reports its rung
   (three: feed/rpm, grid, refine) and its candidate done/total on the
   workspace-bar row and in the Optimize window (plan §33). The progress
   struct rides the job handle and the evaluation context, so no optimizer
@@ -166,8 +166,8 @@ G-OPTCANCELPARTIAL from the WP29 scout):
   front. The window's "keep partial results" sentence is untouched and
   ledgered as G-OPTCANCELPARTIAL, because both cancel routes discard them.
 
-- **WP30** (`f092cd67`): the toolchain moved to Rust 1.98.1 (operator ruling;
-  pinned by `rust-toolchain.toml` at `89268d49`). The new compiler raised
+- **WP30** (`57841b05`): the toolchain moved to Rust 1.98.1 (operator ruling;
+  pinned by `rust-toolchain.toml` at `7cad232a`). The new compiler raised
   156 findings, not the 14 a partial measurement had counted: 20 clippy
   findings in core, 132 `float_literal_f32_fallback` future-incompatibility
   warnings and 4 clippy findings in viz, none in CLI or MCP. All fixed, no
@@ -252,31 +252,31 @@ checked G-code export, the door both CLI routes consume. A pre-fix reproduction
 failed; the new sentry checks motion and phase metadata omission, retained
 cache, an enabled control, and re-enable without regeneration. Review accepted.
 No enabled missing/stale-result policy changed and no phase is complete.
-N3/STEP units was already fixed by `069a2314`; it was not redone.
+N3/STEP units was already fixed by `be8b78c5`; it was not redone.
 
 Focused export/core/GUI/CLI checks, workspace format and heavy-enabled Clippy
 passed. Full heavy core: **3783 passed, 1 failed, 288 ignored**; the sole failure
 is the documented F-036b all-F-word-median baseline (0.0214 vs [0.0320, 0.0550]),
 not a green gate or a new N1 regression. Evidence and next-item ordering:
 `arch_consolidation_2026-09-09/STATUS.md`. N1 is committed: the fix is
-`d4e1154b` and the sentry is `2687b82b`. N2 is next.
+`3255a2ee` and the sentry is `b7bf5b33`. N2 is next.
 
 ## Architecture consolidation — 2026-09-10 late (N1, N2, N4, N5 DONE)
 
 Three more pre-phase defects landed on `ui-fix-2026-09-09`, each as a sentry
 commit that fails alone and a fix commit that carries the red output:
 
-- N5 `1e4373aa` (sentry `3b8cd298`): `set_toolpath_param` refuses `stepover`
+- N5 `f00f3bed` (sentry `4bdef194`): `set_toolpath_param` refuses `stepover`
   and `depth_per_pass` on an operation without the field. Before, it reported
   success, stamped manual provenance and staled the result chain. The three
   alias setters (Pencil, Waterline, RampFinish) still write. `rs_cam_cli run
   --set` on an unsupported field is now an error.
-- N4 `44c68add` (sentry `6d1d2026`): the core diagnostics route resolves the
+- N4 `84e43fff` (sentry `2dcfd14b`): the core diagnostics route resolves the
   toolpath's own `HeightsConfig`. Before, it projected heights onto the stock,
   so a pinned Top Z never reached MCP `get_toolpath_diagnostics` and three
   `geom.*` height checks could never fire there. The tautology parity test is
   replaced by a real ribbon-vs-session test.
-- N2 `736a2959` (sentry `8634acf1`): the modulation retime republishes
+- N2 `cff84815` (sentry `d36f5050`): the modulation retime republishes
   `toolpath_runtimes`, the summaries and the project total through one
   publisher on one clock. Before, the project total dropped every drill and
   the per-toolpath runtimes stayed pre-modulation.
@@ -306,10 +306,10 @@ was performed. Logs: `/tmp/rs_cam_n9_gates/`; current phase/decision status:
 ## Architecture consolidation — 2026-09-11 (rulings, three fixes, the implementation plan)
 
 Work moved to `master` (operator ruling; `ui-fix-2026-09-09` fast-forwarded in).
-Landed red-first: P0-D1 coolant on the core export door (`281c4ae7`, sentry
-`09263c04`); N7 the modulation retime integrates only with a kinematics block
-(`c6af7f4b`, sentry `c1191963`); N10 `angular_step` / `point_spacing` ranged
-`greater_than(0.0)`, operator-authored (`3f8d97bb`, sentry `1634bb13`). Full heavy
+Landed red-first: P0-D1 coolant on the core export door (`ebfa657a`, sentry
+`a96e3c4e`); N7 the modulation retime integrates only with a kinematics block
+(`a20c0a93`, sentry `b6a98fe7`); N10 `angular_step` / `point_spacing` ranged
+`greater_than(0.0)`, operator-authored (`5a5f9670`, sentry `598d2fc9`). Full heavy
 core on the Phase 0 tree: **3801 passed, 1 failed, 288 ignored**; the one is F-036b,
 red by design. Viz 618/0, CLI 31/0, MCP 29/0, fmt and clippy clean.
 
@@ -324,7 +324,7 @@ rounds). Nothing of it is implemented. Q5 blocks WP7; WP1 can start.
 
 The setup already carried the work datum (`XYDatum`, `ZDatum`, panel, IO).
 Export ignored it and emitted Z in the world frame, so a 3D job whose
-stock top sits above world Z0 zeroed 7 mm below the top. `e17b2ff0`:
+stock top sits above world Z0 zeroed 7 mm below the top. `b252e2ce`:
 `ZDatum::StockTop` puts the emitted stock top at Z0; a flipped setup
 zeroes to its presented face; 2D stock already at Z0 is byte-identical.
 
@@ -333,13 +333,13 @@ zeroes to its presented face; 2D stock already at Z0 is byte-identical.
 Operator ruling: not a safety gate — a confidence instrument, "how fast
 can we push it", with the plunge hazard as one corner of the same gauge.
 
-- **Phase 1** (`65a04a2e`): `MachineKinematics::max_rate_xyz_mm_min` from
+- **Phase 1** (`007ed684`): `MachineKinematics::max_rate_xyz_mm_min` from
   `$110/$111/$112`; `effective_max_rate_mm_min`; one physics site
   `move_kinematics()` shared by the runtime integrator, the modulator's
   reach cap and the instrument. Calibration moved 1030 → 1053 s against the
   827 s wall clock and was accepted: a ten-times-too-fast Z rapid left the
   model.
-- **Phases 2 + 4** (`17c7f964`): `kinematic_utilization` — every fed move
+- **Phases 2 + 4** (`69e71151`): `kinematic_utilization` — every fed move
   classified by GEOMETRY (Plunge ≤ 15° from vertical / Ramp / Lateral /
   Retract), commanded vs achieved feed, binding fractions, `headroom_at_1_30`,
   plunge-class peak against the op's own plunge rate; surfaced in the CLI
@@ -347,25 +347,25 @@ can we push it", with the plunge hazard as one corner of the same gauge.
   a non-blocking `project.plunge_class_load` finding beside `entry_load`.
   Readings are PLANNED before a simulation and EMITTED after
   (`FeedsProvenance`).
-- **Phase 3** (`1af25c87`): the root cause. The modulator skipped plunges by
+- **Phase 3** (`90239e26`): the root cause. The modulator skipped plunges by
   INTENT tag; adaptive3d emits step-down descents untagged, so they were
   lifted to the lateral band max (1807 vs a 512 plunge rate). A geometric
   guard caps any Plunge-class move at the op's plunge rate. Paired A/B:
   118 of 125 over-limit plunges removed, lateral feeds byte-identical,
   +0.43 % fed time.
-- **G-BOUNDARYPLUNGE** (`301f2cbc`): the residual seven — a boundary
+- **G-BOUNDARYPLUNGE** (`3c1aeb67`): the residual seven — a boundary
   re-entry re-tagged a cutting move `EntryPlunge` while keeping its cut
   feed. The clipper now emits it at the op's plunge rate; the merge-gate
   instrument run reads the whole-population peak at exactly 1.00×.
-- **G-DCFLAT** (`7c5a4c61`): a flat end mill on drop_cutter resolves the
+- **G-DCFLAT** (`9d630316`): a flat end mill on drop_cutter resolves the
   roughing row instead of `no_vendor_data` (one routing arm; same
   observation the adaptive3d rough uses). Written by the rs-cam-38 session.
-- **G-AIRDENOM** (`d5a0a521`): the two air-cut percentages shared one
+- **G-AIRDENOM** (`ab2f0d29`): the two air-cut percentages shared one
   numerator but different time bases (naive commanded-feed seconds vs the
   modulated wall clock) and inverted under modulation; now one base,
   rebased per sample. The documented order holds again.
 
-### P5 — the reach map (`5f665edf`, merged `6c532e4d`)
+### P5 — the reach map (`1592898c`, merged `1eb779d0`)
 
 Operator ask: "if it is cheap to calculate the reach map, show it when any
 finishing op is selected in the viewport." `reach_map::compute_reach_map`
@@ -383,7 +383,7 @@ second 3D mesh model does not draw while the overlay is on; a 3 s
 `REACH_STALL_GRACE` recovers a stuck `Computing`. Gates green; **not yet
 seen on screen** — the live GUI check waits on the next MCP restart.
 
-### Viewport overlays — design + audit (`4a7a84f3`, this entry)
+### Viewport overlays — design + audit (`d5a2f8a1`, this entry)
 
 `planning/ui_overlays_ux_2026-09-08.md` (deleted 2026-09-17): 42 overlays across four groups,
 an Overlays panel that lists every overlay and disables with a reason.
@@ -394,7 +394,7 @@ consumers (rest regions, machining boundary), 7 silent couplings under one
 "Fixtures" flag, `analytics_tab` has six writers and no reader. P6 builds
 the panel from the audit's KEEP set.
 
-### P6 — the Overlays panel (`f6478689`, merged `92a62851`)
+### P6 — the Overlays panel (`c13e27a7`, merged `f7e5e0b1`)
 
 One registry (`ui/overlays/registry.rs`, 38 rows in Geometry / Toolpath /
 Regions / Analysis) feeds the panel, MCP `set_ui_view` `overlays` (with
@@ -409,7 +409,7 @@ box, the split Fixtures flag and the `analytics_tab` deletion. Not drawn
 yet and listed as such: derived rest regions, boundary outline. **Not
 seen on screen** — live GUI check pending with P5's.
 
-### P5.1 — the reach map after its first live look (`be96933c`)
+### P5.1 — the reach map after its first live look (`2e667614`)
 
 The live look (rs-cam-38) showed 68.2 % of the wanaka terrain unreachable
 by the R2.0 ball at the 0.05 default against ~24 % from the tier map. An
@@ -428,11 +428,11 @@ call, dimmed moves under the reach screenshot, cell fixed by tool + model
 and printed first. Ledgered: the floor is a C² bound and misses slope
 kinks in `tip_z`.
 
-### P5.2 — the second look closed (`504fb350`, merged `72391682`)
+### P5.2 — the second look closed (`a121dea0`, merged `72391682`)
 
 The second look read the map 12 pp above the rasteriser at every bar. Measured on one mask: 3.5 pp is the AREA BASE (3D surface area over the rim-eroded population vs planar whole-board; same-base truth 58.6 / 42.1 / 26.8 at 0.05 / 0.146 / 0.30), the taper +0.01 pp, ~9 pp the documented grid gap inflation reading as a constant PERCENTAGE offset on a flat gap density. Not a probe bias. The map's figure is an UPPER estimate; "lower bound" is gone from every surface, `area_basis` prints in words, one `over_statement_note` feeds all four surfaces and a sentry forbids the old wording. Depth-ramp colouring (green ≤ bar, grey unresolved, log yellow→red→dark red to max_gap) so the R1.0 islands read as their own colour. P6: the viewport keeps a 320 px minimum width; side panels capped at 420 px; a docked Overlays panel that would breach the floor floats.
 
-### G-ISOCLIPENTRY — island-clipped rest passes buried their re-entries (`df1232fd`)
+### G-ISOCLIPENTRY — island-clipped rest passes buried their re-entries (`e05eeba0`)
 
 The two-tool trials (§2.7 of the deep-DOC doc) found entry_load CRITICAL on
 every island-clipped scallop from remaining stock, iso and contour alike,
@@ -496,7 +496,7 @@ checker audits only rapids, so nothing flagged it. Operator ruling:
   door, prism stock). Only surface-riding operations receive the
   probe (`OperationConfig::entry_probe_leave`) — a pocket ramp must
   keep cutting below the mesh top.
-- The metrology lane widened the charter the same day (`25d80035`):
+- The metrology lane widened the charter the same day (`cfe4ea9a`):
   three stock-blind classes, one family. All three are fixed:
   - **Member 1, ramp/helix entries** — the clip above. S1-red
     5.14 mm pre-fix on the ridge fixture, green post-fix.
@@ -522,7 +522,7 @@ checker audits only rapids, so nothing flagged it. Operator ruling:
 - **Scope of the shipped exposure:** every mesh-finish operation
   with default dressups (the Finish role: ramp entry + lead-in/out)
   shipped blind approach moves for as long as those defaults
-  existed. Re-export any G-code generated before `8451e87c` that
+  existed. Re-export any G-code generated before `53804052` that
   used ramp/helix entries, leads, or `arc_fitting` on terrain. The
   fix is verified by mechanism and sentry; the live wanaka
   re-measure is still owed.
@@ -592,7 +592,7 @@ and was superseded; the corrected model's D_pot cleared its bar),
 then the V1 falsifier on the pre-registered favourable region —
 where per-branch tracing **failed all three bars by multiples**
 (fragments 14.2×, distance 3.28×, time 3.53× vs the shipped
-raster; `valley_branch_falsifier_h1.rs`, `99eb30aa`). Mechanism:
+raster; `valley_branch_falsifier_h1.rs`, `8ffa8971`). Mechanism:
 adjacent branches' offset fans overlap on dendritic ground.
 Surviving assets: the drainage-territory census instrument, a
 measured-and-unharvested in-mask direction prize (5.9–9.3 pp upper
@@ -684,12 +684,12 @@ closure — do not act on §11 alone). Headlines:
 - S1 measured the blind spot from shipped G-code: finish link descents
   rapid-plunging into rest material under a zero collision count.
 - S2 rebuilt the detector: rapid checks ride the live replay with the
-  tool profile (`938d85db`); S3 fixed the air-cut filter to classify air
-  for the TOOL, not the centerline (`79361f31`). **S4 (holder/fixture
+  tool profile (`503cbee3`); S3 fixed the air-cut filter to classify air
+  for the TOOL, not the centerline (`10c5f1bb`). **S4 (holder/fixture
   checks on rapids, stock-aware `check_collisions*`) is OPEN, deliberately
   deferred** — cost must be measured first.
 - Phase M: engagement was normalised by the SHANK on non-flat tools;
-  M3 fixed the denominator to the engaged width (`fa8ee8d3`) — taper ops
+  M3 fixed the denominator to the engaged width (`b9525f9d`) — taper ops
   read 3.69×/5.74× higher, flats bit-identical. **Residual: air-cut % on
   fine tools remains misattributed at 0.3 mm** (a second mechanism; M1
   §L3) — do not treat it as clean.
@@ -727,7 +727,7 @@ same day, each behind its full gate:
 - **C4 PASSED** → `monotone_cell_decomposition` default flipped ON
   (`83449244`); wanaka project saved dial-on. Legacy files that pin
   `false` keep it.
-- **Track B fix, ALWAYS ON** (`a78174b8`): the shallow raster derates
+- **Track B fix, ALWAYS ON** (`9b9a9a15`): the shallow raster derates
   its effective stepover by cos(theta_max) per region; the Track B
   instrument now reads 1.0000× spec on the plane fixtures and is a
   standing acceptance gate. Wanaka price: 24,447.9 → 26,108.2 s — the
@@ -763,7 +763,7 @@ measurement provenance index are in that close-out; the factual record
 per wave is `planning/review_2026-08-04/ORCHESTRATION_LOG.md` (deleted 2026-09-17). Headlines:
 
 - **The `cargo test -p rs_cam_core --lib` accepted-red allowlist is
-  empty** — three permanent adaptive3d reds since `fa27b08`, all one
+  empty** — three permanent adaptive3d reds since `fad3a56`, all one
   un-mirrored stock-to-leave drape, bisected over 343 revisions. Final
   gate: 2260 passed / 0 failed / 12 ignored. `wanaka_suggest_baseline`
   remains the single declared environmental exception.
@@ -799,7 +799,7 @@ the shallow raster band, mechanism unproven).
 
 User approved Checkpoints A and B (rulings in
 `review_2026-07-29/ORCHESTRATION_LOG.md` (deleted 2026-09-17) §"CHECKPOINT DECISIONS"). Twelve more
-commits (`cbe8503`..`81e0012`), every wave gated green:
+commits (`0b3ddd5`..`20ae57d`), every wave gated green:
 
 - **Wave D** (instruments before behavior): dropped-band + tip-float findings;
   LH-1..LH-4 measurement hazards fixed (air-cut% named denominators, footprint
@@ -832,7 +832,7 @@ commits (`cbe8503`..`81e0012`), every wave gated green:
 ### Radius-audit tech-debt programme — pre-checkpoint waves landed
 
 Executed the front half of `planning/review_2026-07-29/TECH_DEBT_RESEARCH_AND_FIX_PLAN.md` (deleted 2026-09-17)
-(9 commits `93b43e8`..`4bc8f92`, all no-behavior-change, gates green throughout;
+(9 commits `15e4396`..`7e8c9ce`, all no-behavior-change, gates green throughout;
 full trail in `review_2026-07-29/ORCHESTRATION_LOG.md` (deleted 2026-09-17)):
 
 - **Diagnostics**: UnifiedFinish now emits semantic band/strategy regions
@@ -1115,7 +1115,7 @@ D/d 4.500 and chip-welding risk Low.
 
 **Performance** (§10.5 hard gate, regression > 20 %/step requires
 justification, > 50 % cumulative requires sign-off). `cargo bench`
-A/B at `be0dcbf^1` vs HEAD on the F.a-relevant kernels:
+A/B at `f1a15bf^1` vs HEAD on the F.a-relevant kernels:
 
 | Bench | Pre-F.a | F.a | Δ |
 |---|---|---|---|
@@ -1163,8 +1163,8 @@ deferred; the `coverage_max` field is a forward-compat hook only.
 Drill ops are unaffected (Step 3 analytical removal kernel).
 Marching cubes is Step 5.
 
-**Commits:** `be0dcbf` (F.a kernel + adjusted tests + new regression
-tests), `2770089` (WANAKA F.a revalidation test), `d4ef955` (perf
+**Commits:** `f1a15bf` (F.a kernel + adjusted tests + new regression
+tests), `2770089` (WANAKA F.a revalidation test), `516bb9c` (perf
 optimisation + bench A/B + doc updates).
 
 ---
@@ -1760,29 +1760,29 @@ Closed six of the seven optimizer gaps tracked in
 against the wanaka project via the MCP `get_tool_load_report` and
 `optimize_toolpath` tools.
 
-- **G5 + G6 + G7** (`d09001e`) — vendor LUT lookup widened to support
+- **G5 + G6 + G7** (`bb2efca`) — vendor LUT lookup widened to support
   engaged-edge geometry on tapered tools, with linear chipload scaling
   by diameter ratio and hardness ratio. Verdict carries
   `Confidence::Approximate(detail)` past ±40 % divergence with the
   scaling factors named in the detail string. Material-family changed
   from a hard match (wood / plastic / metal) to a category gate;
   hardness moved from a reject filter to a soft-scoring lever.
-- **G1** (`11e0f9f`) — Profile + Zigzag added to the optimizer's
+- **G1** (`062e539`) — Profile + Zigzag added to the optimizer's
   `has_doc_knob` allowlist so Stage 1 collapses the stepover dim when
   the op lacks the knob. Bipolar prescription reordered so Contour /
   Trace family ops point at geometry-driven levers instead of DOC.
-- **G2** (`c40795b`) — `scallop_height` added as a third axis to
+- **G2** (`ba750cf`) — `scallop_height` added as a third axis to
   Stage 1's grid; gate widened from "has DOC knob" to "has any sweep
   knob". Live-validated against wanaka TP 7 (1 attempted → 4
   attempted).
-- **G3** (`2926a15`) — Trace, RampFinish, Waterline added to
+- **G3** (`4c57c3d`) — Trace, RampFinish, Waterline added to
   `has_doc_knob`; Pencil gets conditional stepover when
   `num_offset_passes > 1`. RadialFinish split out as the new G3a
   (deferred).
-- **G14** (`13a469e`) — engaged-diameter usage audit across every
+- **G14** (`ae7810a`) — engaged-diameter usage audit across every
   tool-load gate path; cam-navigator subagent confirmed no code fixes
   needed. Closed audit-only.
-- **G13** (`1fe3292`) — replaced the geometric L/D > 6 deflection
+- **G13** (`54749e4`) — replaced the geometric L/D > 6 deflection
   gate with a force-aware tip-deflection estimator. New
   `ToolDefinition::tip_deflection_mm` integrates a stepped cantilever
   (shank + cutting region) using each cutter's existing

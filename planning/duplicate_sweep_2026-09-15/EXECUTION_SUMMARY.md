@@ -20,11 +20,11 @@ on `master`.
 
 | Phase | Items | Commits |
 |---|---|---|
-| 0 tooling | C00 | `0324b0bb` |
-| 1 live bugs | C01, C02, C03, C04, C05, C06 | `41f0b243` + `9e6c2d0b`, `f0496fd4`, `e4d735d4` + `3034aad7`, `288567f3`, `d761fe3f`, `6ae2d368` |
-| 2 I/O consolidation | C10, C11, C12, C13 | `a37af6ba`, `54cf7a14`, `51394156`, `e125c08b` |
-| 3 merges | C20, C21, C22, C23, C24, C25, C26, C27, C28 | `40453fa0`, `86a056d8`, `ab598e00` + `d6699242` + `f0496fd4`, `6ae2d368`, `461ee65e`, `af60a6a3`, `25d6f40f`, `286410da`, `21884390` |
-| 3b tail (re-run) | C29, C30, C31 | `24110475`, `1898afa6`, `272f3a6d` |
+| 0 tooling | C00 | `e9597365` |
+| 1 live bugs | C01, C02, C03, C04, C05, C06 | `9da22f20` + `3f9600db`, `54cd4e4e`, `afed18bf` + `b987c268`, `d22beed6`, `b6318de6`, `68670286` |
+| 2 I/O consolidation | C10, C11, C12, C13 | `5f367169`, `d044063b`, `51394156`, `07df301b` |
+| 3 merges | C20, C21, C22, C23, C24, C25, C26, C27, C28 | `f7fc41b9`, `114f3006`, `9a1d5fc2` + `b3f5db33` + `54cd4e4e`, `68670286`, `43b6db83`, `681f0dd2`, `573f0743`, `28d5c6dd`, `21884390` |
+| 3b tail (re-run) | C29, C30, C31 | `24110475`, `c35681c0`, `22c00ef0` |
 | 4 docs | C40, C99 | this file |
 
 Net diff for phases 0–3: 74 files, +2367 / −5378 lines (23 commits).
@@ -105,13 +105,13 @@ Tail items (Phase 3b):
 - C29 `24110475`: the Title-Case copies in `ui/properties/mod.rs` are
   gone; the LUT viewer reads `ui/feeds/shared.rs`. No test pinned either
   spelling, so the shared sentence-case labels win.
-- C30 `1898afa6`: core had no `SpanKind::label()` (line 396 was
+- C30 `c35681c0`: core had no `SpanKind::label()` (line 396 was
   `RegionSpanRole::label`; the plan's premise was wrong). The viz table
   moved UP into core as `SpanKind::label()`; both viz copies deleted, five
   call sites delegate, no emitted string changed. Observed, not acted on:
   MCP span replies emit the CamelCase label but accept only the
   snake_case `as_key()` in a filter.
-- C31 `272f3a6d`: the script marks a file declared under
+- C31 `22c00ef0`: the script marks a file declared under
   `#[cfg(test)] mod NAME;` (and `NAME/**`) as test scope; 15 such files
   found, the six named ones verified against their parents.
 
@@ -122,10 +122,10 @@ label pairs listed above; `rerun_2026-09-16.md` is that final report.
 
 ## Known hazards
 
-- Two mid-chain commits do not build on their own: `6ae2d368` (C06+C23)
+- Two mid-chain commits do not build on their own: `68670286` (C06+C23)
   swept a peer's staged `git rm` of `io/project.rs` before `io/mod.rs`
-  dropped the module, so `6ae2d368` and `461ee65e` fail to compile;
-  `41f0b243` (C01) leaves one sentry red until `9e6c2d0b`. HEAD is
+  dropped the module, so `68670286` and `43b6db83` fail to compile;
+  `9da22f20` (C01) leaves one sentry red until `3f9600db`. HEAD is
   consistent. Bisect across this range with care.
 
 ## Follow-up candidates (out of scope, not started)
@@ -167,7 +167,7 @@ findings needed code, landed as R1-R3 (see Phase 3b in the plan):
   `io/project.rs`; `MODEL_FILE_EXTENSIONS` now comes from core; the
   private `polyline_length` in `conformal_spiral.rs` is gone.
 
-Commits: R1 `f4e88be2`, R2 `8e485ad2`, R3 `8db8793b`. Workspace clippy
+Commits: R1 `d7cd7357`, R2 `01b06992`, R3 `7185497f`. Workspace clippy
 gate re-run clean on the closed tree (see Gates).
 
 ## Hand-off: three pre-existing red viz tests, not touched by this programme
@@ -186,7 +186,7 @@ baseline commit `18584671` (run in a throwaway worktree):
 - `freshness_does_not_outrank_a_collision` (`:5311`, badge chip reads
   "1 safety", the test expects "collision").
 
-All three sit in the UI review session's UR3/UP4 work (`7b4e18f6`,
+All three sit in the UI review session's UR3/UP4 work (`f97327c3`,
 2026-09-15). Left for that session. The viz `tests/` integration suite
 as a whole was not run (it links many binaries and exceeds the small-gate
 allowance); every item ran its named integration sentries instead.

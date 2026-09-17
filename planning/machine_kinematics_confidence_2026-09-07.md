@@ -524,7 +524,7 @@ pieces to build on: `preview_tier_map` (multitool planner tiers by
 radius), `untouched_material_mm2` / `reached_uncut_estimate_mm2`
 generation findings, the remaining-stock render.
 
-**Landed 2026-09-08** (`5f665edf`, merged to master `6c532e4d`). The
+**Landed 2026-09-08** (`1592898c`, merged to master `1eb779d0`). The
 primitive is NEITHER of the two named above: a one-rung tier map is
 identically zero (its residual is tool-vs-finest, and with one tool those
 are the same drop) and `TierMap` discards the residual anyway; the rest
@@ -661,7 +661,7 @@ Ledger:
   why the island tier's overlap and retract count balloon (2 mm overlap,
   1 104 trips). This is where P5's reach map feeds planning, not just
   display.
-- **G-ISOCLIPENTRY (2026-09-09, FIXED df1232fd):** a rest-driven entry on a
+- **G-ISOCLIPENTRY (2026-09-09, FIXED e05eeba0):** a rest-driven entry on a
   surface-riding pass took its whole bite in one move. On a
   `FromRemainingStock` pass the fed part of an entry descent is exactly the
   material the upstream tool could not reach, and two emitters took it
@@ -683,7 +683,7 @@ Ledger:
   peak by nothing — both doors were needed. Sentry:
   `tests/isoclip_entry_ramp_g_isoclipentry.rs` (two arms assert the full
   bite with each door off).
-- **G-ISOCLIPRAPID (2026-09-09, FIXED 38f8d151):** `apply_lead_in_out`
+- **G-ISOCLIPRAPID (2026-09-09, FIXED d30b7520):** `apply_lead_in_out`
   planted its pre-position rapid at `moves[i-1].target.z` — often a CUTTING
   move's Z (a lead-out arc, a stepped pass) — so the lead-in traversed the
   work at cutting depth (T2 move 68538, 4.7 mm lateral, both ends
@@ -693,7 +693,7 @@ Ledger:
   style None, so it attributes THIS fix — G-ISOCLIPENTRY alone had already
   removed the counted collision). Report:
   `planning/island_clip_2026-09-09/G-ISOCLIPRAPID_RAMPFALL_report.md`.
-- **G-ISOCLIPRAMPFALL (2026-09-09, FIXED 38f8d151):** the entry residual
+- **G-ISOCLIPRAMPFALL (2026-09-09, FIXED d30b7520):** the entry residual
   (peak 1.39 mm at (115.8, 182.4, −1.59) on both fields). `emit_ramp`'s
   rest-driven arm abstained when its 1.18 mm ladder window left the mesh
   or held nothing past the budget, and fell through to the legacy 38 mm
@@ -705,7 +705,7 @@ Ledger:
   quieting it on R1.0 finish passes is a dial decision, not a defect),
   entry samples > 1 mm 80 → 0, time −6.8 %. Sentry arm g (chord-sampling
   measure; the target-only measure reads 0 on a gouging leg).
-- **G-LINEVIS (2026-09-09, FIXED 241efd45):** the P5.3 release crashed on
+- **G-LINEVIS (2026-09-09, FIXED 0e6fb9f1):** the P5.3 release crashed on
   launch — the line shader's fragment stage read `uniforms.dim` while the
   bind-group-layout entry stayed VERTEX-only, and wgpu refused the
   pipeline. Found by rs-cam-38 on the live launch; the fix is the
@@ -743,7 +743,7 @@ Ledger:
   equal-cusp stepover; (b) MCP `set_boundary_config` accepts stock /
   model_silhouette / derived_rest_regions only, no planned_tier_regions.
   A hand-edited project file carries the boundary as data (T5 fixture).
-- **G-TIERCONTINUOUS (2026-09-09, FIXED fb6027fb — planner default):** `plan_tier_operation` sets
+- **G-TIERCONTINUOUS (2026-09-09, FIXED a99f0ba3 — planner default):** `plan_tier_operation` sets
   `continuous: true` on every per-island scallop tier; under continuous
   the connector retracts/rapids/replunges on any hop over the ring-spacing
   bound and the intra-pass relink is skipped (scallop.rs). Retracts per
@@ -770,7 +770,7 @@ Ledger:
   closed per tier in the planner output and UI, with an advisory naming
   the two dials (branch `tier-overlap`). Evidence: `svg_island_area.py`,
   `tier_map_r20_r10_tol*.svg`.
-  **Shipped as a REPORT (fb6027fb):** `TierIslandSet` publishes
+  **Shipped as a REPORT (a99f0ba3):** `TierIslandSet` publishes
   machining area, both hole counts, median owned hole area and the
   overlap; `TierBandAdvisory` above 1.5× names the two dials, on
   `preview_tier_map`, the planner panel and `plan_multitool_finishing`.
@@ -809,7 +809,7 @@ Ledger:
   river/pencil work, not to a finer tier. Recommendation on record: Q3 one
   pass; T1 if the flats must carry the R1.0 median.
 - **G-ISOCLIPENTRY family — CLOSED on the operator surface (2026-09-09).**
-  Final after-table (rs-cam-15, live 0.2 mm on master 5a30124a, saved
+  Final after-table (rs-cam-15, live 0.2 mm on master ec1c78c1, saved
   reproductions so both still carry `continuous: true` — emitter changes
   only). T3: pair 11 105 → 9 535 → **9 078 s**, tier fed 7 013 → 5 918 →
   5 516, retracts 989 → 929 → 923, rapids 61.6 → 49.9 → 47.8 km,
@@ -872,7 +872,7 @@ Ledger:
   junctions, the kinematics and surface tests refused nothing, and
   doubling the cap moved 42 out of too_far. Implementation can proceed
   from the spec's design.
-  **§8 PENCIL BASELINE (rs-cam-15, live 0.2 on 491c17ed) — the second
+  **§8 PENCIL BASELINE (rs-cam-15, live 0.2 on 15b407b7) — the second
   acceptance case, operator-added.** The 2026-09-04 fixture is
   pathological: P0, pencil on a FRESH block as that fixture is saved,
   reads 32 426 s total with 29 114 s (89.8 %) of ENTRY motion, 1 418 s of
@@ -888,7 +888,7 @@ Ledger:
   The hard requirement this case adds to the stage: the link must arrive
   LATERALLY at cutting depth, not from above, or each fragment still pays
   a fresh ramp — routing through `relink_fragments` alone does not fix it.
-  **IMPLEMENTED 0c36a2f0 (2026-09-09), gates green, live measurement
+  **IMPLEMENTED 4d1f4ab4 (2026-09-09), gates green, live measurement
   pending.** `FinishingLinkStage::params()` is the one construction site;
   ordering and rotation are a single interleaved walk (the picker's next
   query is seeded from the previous fragment's EMITTED exit, and a
@@ -905,7 +905,7 @@ Ledger:
   tell a whole level from a boundary-split arc); unified finish not
   converted (its boundary is a per-region polygon the adapter-level stage
   cannot supply).
-  **LIVE RESULTS (rs-cam-15, 0.2 mm on 44978c21).** Byte-identity CONFIRMED
+  **LIVE RESULTS (rs-cam-15, 0.2 mm on 6fff1f26).** Byte-identity CONFIRMED
   on the live path, not only by fingerprint sentry: with `hookup_mm` 0.0
   the island raster reproduces the previous binary to every digit
   (7 985.080572550756 s, 46 720 moves, 49 432.797587308385 mm cutting,
@@ -939,16 +939,16 @@ Ledger:
   holds here.
 - **G-PENCILHOP (2026-09-09) — RETRACTED AND RESTATED. My "the byte-identity
   claim is false" was WRONG; the real gap is that the pencil has no dial at
-  all.** I claimed `0c36a2f0` shipped an on-by-default behaviour change on the
+  all.** I claimed `4d1f4ab4` shipped an on-by-default behaviour change on the
   pencil because `link_hop_distance_mm: None` means "the same cap as
   `hookup_distance`". Verified in code and the claim does not hold:
   `hop_cap = link_hop_distance_mm.unwrap_or(hookup_distance)` (`pencil.rs`
   ~1687), and `if gap > params.hookup_distance { too_far; return None; }`
   already ran at ~1731, so the `if gap > hop_cap` check added at ~1776 is
   UNREACHABLE when the field is `None`. `None` is byte-identical to
-  pre-`0c36a2f0`, exactly as the commit message said. The clearance-hop tier
+  pre-`4d1f4ab4`, exactly as the commit message said. The clearance-hop tier
   itself is older: `git log -S "PencilJunction::Lifted"` returns one commit,
-  `fb5339da` (G-LINKLOAD), before the link stage. So the 1 014 hops measured
+  `b6bf1ca9` (G-LINKLOAD), before the link stage. So the 1 014 hops measured
   live are pre-existing behaviour, not a regression, and making `None` mean
   "hop tier OFF" would have been a NEW change dressed as a restoration — it
   would revert G-LINKLOAD and contradict the raster measurement, where hops
@@ -969,7 +969,7 @@ Ledger:
   the "fix" disputed the premise with `git log -S` and a two-line
   reachability argument instead of doing as it was told, which is the right
   behaviour and saved a reverted feature.**
-  `ParamDef` audit (clean): `0c36a2f0` added exactly two config fields,
+  `ParamDef` audit (clean): `4d1f4ab4` added exactly two config fields,
   `DropCutterConfig::hookup_mm` and `WaterlineConfig::hookup_mm`, and BOTH
   have `ParamDef::optional("hookup_mm","f64")`. Unchecked corner: the +14
   lines the commit added to `unified_finish.rs`.
@@ -1084,7 +1084,7 @@ Ledger:
   win.** The tier counts say what KIND of link was made; an entry figure
   says what it BOUGHT; a reader needs both, and the narration is being
   changed to carry both and to describe a hop by what it does.
-- **G-LINKVISIBLE (2026-09-09, FIXED f8622ac7) — a stage judged on
+- **G-LINKVISIBLE (2026-09-09, FIXED ea581462) — a stage judged on
   counters nobody could see.** `ToolpathStats::relink` had ONE writer, the
   unified-finish arm. Every other family G-LINKSTAGE put on the shared
   stage built a report and only LOGGED it (scallop, `relink_in_adapter`
@@ -1108,11 +1108,11 @@ Ledger:
   OPEN: `get_diagnostics` per-toolpath rows carry neither report (neither
   type derives `Serialize`; a structured row needs a `build_info` probe
   key).
-- **G-LINKTRACE (2026-09-09, REGRESSION from G-LINKSTAGE `0c36a2f0`, fix
+- **G-LINKTRACE (2026-09-09, REGRESSION from G-LINKSTAGE `4d1f4ab4`, fix
   in progress):** the contour scallop's SEMANTIC TRACE collapses when the
   link stage runs. Live on the T3b island fixture at 0.2 mm: `617 items;
-  regions 10, rings 600` (binary dc1ab3c7) → `7 items (4 move-linked);
-  depth levels 0, regions 0, rings 0` (44978c21), `semantic_summary_count`
+  regions 10, rings 600` (binary f8522850) → `7 items (4 move-linked);
+  depth levels 0, regions 0, rings 0` (6fff1f26), `semantic_summary_count`
   603 → 4. Visible consequence: the air-cut advisory buckets 826 939
   samples into ONE item reading "4393.6 s wasted around (185.8, 184.6,
   1.1)" — the whole pass in one bag, not a hotspot. The TOOLPATH is
@@ -1195,7 +1195,7 @@ Ledger:
   several rows above). Caught only as a red test outside every gate list
   we used — `narrate_regions_closed_c8::scallop_narration_reports_its_regions`,
   failing at its FIRST assertion, verified pre-existing by stashing the
-  whole G-LINKVISIBLE diff and reproducing on dc1ab3c7. Not diagnosed
+  whole G-LINKVISIBLE diff and reproducing on f8522850. Not diagnosed
   further; nobody owns it.
 - **G-REGIONPARENT (2026-09-09, OPEN — nothing anywhere checks that a ring
   belongs to its region).** The parenting assertion "every scallop ring

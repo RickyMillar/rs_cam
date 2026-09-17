@@ -369,7 +369,7 @@ side saying the two doors must agree. That part of the divergence is closed.
 
 ### 3. What changed since the audit
 
-`STATUS.md` records **F4.4 (`957f051f`)**, which unified `rescale_model`,
+`STATUS.md` records **F4.4 (`bb07d724`)**, which unified `rescale_model`,
 `reload_model` and `relink_model` into `LoadedModel::adopt_geometry`
 (`core/session/mod.rs:319-368`) with an exhaustive destructure as the guard.
 I confirmed all three GUI doors call it: `viz/controller/io.rs:105`, `:168`
@@ -584,7 +584,7 @@ unenforced when it goes through its own named path.
 
 ### 3. What changed since the audit
 
-**G-SCHEMAENUM (`df5c27d3`, F1.16)** added
+**G-SCHEMAENUM (`32a1fd46`, F1.16)** added
 `crates/rs_cam_core/tests/schema_enum_values_g_schemaenum.rs`. It is generic
 and it pins one direction: **every value an `enum:a|b|c` string advertises
 must be a value serde will accept.** Its own header states the residue

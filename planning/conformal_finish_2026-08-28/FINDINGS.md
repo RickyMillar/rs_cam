@@ -3,8 +3,8 @@
 ## §F1-1 Direction-field arm on captured Wanaka region 1 — FALSIFIED (2026-08-30)
 
 Instrument: `crates/rs_cam_core/tests/direction_field_wanaka_f1.rs`
-(`wanaka_direction_field_f1`, run against capture `0206aa69`, module at
-`f1e1447e`). Full stage output in the run log; SVG artifact
+(`wanaka_direction_field_f1`, run against capture `295a6a32`, module at
+`933e370c`). Full stage output in the run log; SVG artifact
 `wanaka_region1_direction_field_f1.svg` (drop in
 `~/Downloads/svg/conformal_f1/`).
 
@@ -96,7 +96,7 @@ kernel for its ceiling arm.
 ## §F1-2 Segmentation works. It does not fix the fragmentation. (2026-08-31)
 
 Instrument: `crates/rs_cam_core/tests/direction_field_wanaka_f1.rs`,
-test `wanaka_direction_field_segmented_f1`, commit `b2d2b346`.
+test `wanaka_direction_field_segmented_f1`, commit `9144681f`.
 
 §11 of the synthesis reopened this arm. The literature runs four stages
 after the direction rule. We had built none of them. Segmentation was the
@@ -169,7 +169,7 @@ before any future attempt.
 ## §F1-3 No shipped decomposition is a coherent zone. The field turns inside one stepover. (2026-08-31)
 
 Instrument: `crates/rs_cam_core/tests/zone_coherence_census.rs`, commit
-`a17de695`. It generates no toolpath. It measures the zones the product
+`1145939f`. It generates no toolpath. It measures the zones the product
 already produces.
 
 The operator asked whether the multitool tier islands, the slope bands, or

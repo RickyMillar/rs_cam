@@ -684,7 +684,7 @@ impl ToolpathSemanticRecorder {
     ///
     /// # The policy (task #14 follow-up, Wave D3)
     ///
-    /// `ae10cb2` remapped the move INDICES through every post-generation
+    /// `f375045` remapped the move INDICES through every post-generation
     /// transform but left the coordinates exactly as generation recorded
     /// them — so after a boundary clip deleted moves, an item's bbox could
     /// describe geometry that is no longer in the toolpath. Same class of
@@ -727,7 +727,7 @@ impl ToolpathSemanticRecorder {
     /// report — the [`crate::trace::transform_provenance::RemapConsumer`] body for
     /// this channel, kept here because it needs the private link accessors.
     ///
-    /// Replaces ae10cb2's two entry points (`remap_move_links` for
+    /// Replaces f375045's two entry points (`remap_move_links` for
     /// transforms that handed out a mapping directly, `SemanticLinkCarrier`
     /// for transforms that only exposed their remap through the span
     /// vector). One route now, because the transform is obliged to report
@@ -1393,7 +1393,7 @@ mod tests {
 
     /// Wave D3 — the coordinates follow the indices.
     ///
-    /// `ae10cb2` remapped move INDICES through every transform and
+    /// `f375045` remapped move INDICES through every transform and
     /// deliberately left `xy_bbox` / `z_min` / `z_max` at their
     /// generation-time values. That made a surviving item describe an extent
     /// that no longer existed: here the clip deletes the far half of a

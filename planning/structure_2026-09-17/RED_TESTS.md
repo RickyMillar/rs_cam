@@ -1,6 +1,6 @@
 # RED_TESTS — the five pre-existing red tests, diagnosed
 
-Date: 2026-09-17. Branch `master`, HEAD `602c8ff6`.
+Date: 2026-09-17. Branch `master`, HEAD `fdb9979a`.
 Author: a read-only diagnosis agent. No code changed. No commits.
 
 Two programmes handed these five reds forward without a diagnosis. This
@@ -52,9 +52,9 @@ The shared fixture seeds a result:
   at `:340`.
 
 That seed predates the blamed commit. `git log -S 'rt.result = Some(ToolpathResult {'`
-names `f3aa0dbf`, `5765a179` and `9b918c8a`, all older than `7b4e18f6`.
-`git show 7b4e18f6^:crates/rs_cam_viz/src/controller/tests.rs` already carries
-the seed at line 327. `git show 7b4e18f6 -- crates/rs_cam_viz/src/controller/tests.rs`
+names `cbad95c7`, `6eb9ae55` and `f99e9e43`, all older than `f97327c3`.
+`git show f97327c3^:crates/rs_cam_viz/src/controller/tests.rs` already carries
+the seed at line 327. `git show f97327c3 -- crates/rs_cam_viz/src/controller/tests.rs`
 removes one line, the diff header. The commit therefore only ADDED this test.
 The premise was false when the author wrote it.
 
@@ -163,7 +163,7 @@ Fresh simulation should not be stale
 
 ### Root cause
 
-`7b4e18f6` derived metric-options staleness from the accepted revision. Its
+`f97327c3` derived metric-options staleness from the accepted revision. Its
 own message states the rule: "an unstamped, cancelled or errored result can no
 longer report a clean capture revision".
 
@@ -203,7 +203,7 @@ stamp the run:
 ```rust
 let mut controller = sample_controller();
 generate_all_for_test(&mut controller);
-// UR3 (7b4e18f6): an UNSTAMPED result reads stale, never current. A
+// UR3 (f97327c3): an UNSTAMPED result reads stale, never current. A
 // fresh-looking run must come through the submit that stamps the
 // capture revision, as a real Run Simulation does.
 controller.handle_internal_event(AppEvent::RunSimulation);
@@ -251,12 +251,12 @@ panicked at crates/rs_cam_viz/src/controller/tests.rs:5365:5:
 
 ### Root cause
 
-The hand-off blames `7b4e18f6`. The real cause is its neighbour, `ec7c6acc`
+The hand-off blames `f97327c3`. The real cause is its neighbour, `e7901838`
 ("fix(ui): UR2 — a Danger badge is a dot too"). The two commits sit six
-seconds apart in the same push: `ec7c6acc` at 08:52:45 and `7b4e18f6` at
+seconds apart in the same push: `e7901838` at 08:52:45 and `f97327c3` at
 08:52:51 on 2026-09-15.
 
-`ec7c6acc` replaced two per-tab spellings with one shared text. Its own
+`e7901838` replaced two per-tab spellings with one shared text. Its own
 message: "One shared 'N safety' text replaces the two per-tab spellings." The
 diff changed `format!("{collisions} collision(s)")` to `collision_badge(collisions)`:
 
@@ -264,7 +264,7 @@ diff changed `format!("{collisions} collision(s)")` to `collision_badge(collisio
   which returns `(format!("{collision_count} safety"), Role::Danger)`.
 - the call site — `crates/rs_cam_viz/src/ui/workspace_bar.rs:257-258`.
 
-`ec7c6acc` updated its two integration sentries,
+`e7901838` updated its two integration sentries,
 `crates/rs_cam_viz/tests/chrome_reads_the_kit_up3.rs` and
 `crates/rs_cam_viz/tests/the_workspace_bar_is_a_strip_dc3.rs`. It missed this
 controller unit test.
@@ -283,7 +283,7 @@ The test's second assertion is already correct. `collision_badge` returns
 with
 
 ```rust
-    // UR2 (ec7c6acc): one shared safety text replaces the two per-tab
+    // UR2 (e7901838): one shared safety text replaces the two per-tab
     // spellings. The count, not the word "collision", is the claim.
     assert_eq!(chip, "1 safety");
 ```
@@ -330,7 +330,7 @@ table, not a silent pass.
 
 ### Root cause
 
-The hand-off note is correct. `4a1d8e27` ("feat(ui): UR8 — Readiness leads
+The hand-off note is correct. `b1f5182f` ("feat(ui): UR8 — Readiness leads
 with the first unmet action") says so: "One action row below the checks
 replaces every per-row remedy button and the second Run simulation."
 
@@ -353,7 +353,7 @@ Change the tuple from `3` to `1` and record the ruling that made it 1:
         (
             "ui/readiness_panel.rs",
             1,
-            "UR8 (4a1d8e27): the ordered FirstUnmetAction row is the one \
+            "UR8 (b1f5182f): the ordered FirstUnmetAction row is the one \
              Readiness route; no simulation panel is on screen with it",
         ),
 ```
@@ -395,26 +395,26 @@ Arm 3 fails. Arms 1 and 2 pass, so the modulator still raises the median feed.
 
 ### The attribution is wrong
 
-The hand-off blames `7a5fdad4`. That commit is
+The hand-off blames `e2ecf697`. That commit is
 "fix(ui): the feeds inspector fits the 240-point simulation rail". Its
 `--stat` lists only `crates/rs_cam_viz/src/ui/**` files. It cannot reach
 `rs_cam_core` feed modulation.
 
-The real cause is `d0aeee02`, 2026-09-10, "fix(entry): G-RAMPCONTAIN — a prism
+The real cause is `fd135a04`, 2026-09-10, "fix(entry): G-RAMPCONTAIN — a prism
 ramp folds along the operation's own following cut". It is an ancestor of
 HEAD. Its own report diagnosed this red at the time.
 
 ### Root cause, on record since 2026-09-10
 
 The report is `planning/ui_fix_2026-09-09/reports/J2.md` §4c. The structure
-programme deleted that directory in `0a6c476b` ("docs(structure): purge the
+programme deleted that directory in `ea4d5bfb` ("docs(structure): purge the
 superseded UI packages"). Read it with:
 
 ```
-git show 0a6c476b^:planning/ui_fix_2026-09-09/reports/J2.md
+git show ea4d5bfb^:planning/ui_fix_2026-09-09/reports/J2.md
 ```
 
-`610f8a58` (WP26) cites the same report and calls this arm "red by design".
+`a21a4a24` (WP26) cites the same report and calls this arm "red by design".
 
 What J2 §4c measured. The test's `median` helper takes EVERY F word in the
 emitted program — `collect_f_words`
@@ -441,7 +441,7 @@ not match the claim.
 Today's reading is 0.0221, not J2's 0.0214. The test's own constant is
 `RPM_X_FLUTES = 36_000` (`:421`), so the median F word is now about 796
 mm/min. That is neither the 192 entry feed nor the 770 nominal. WP26
-(`610f8a58`) names the producer of such a value: WP11b (`4b53576b`) routed
+(`a21a4a24`) names the producer of such a value: WP11b (`80a9cf4d`) routed
 `feed_opt_stock` into the core generation door, its engaged arm writes
 `nominal × rctf`, and `smooth_feed_rates` caps a move against its neighbour.
 Both sit a few mm/min off 770.
@@ -532,15 +532,15 @@ machining output and no gate verdict.
 ## Ownership check
 
 - `crates/rs_cam_viz/src/controller/tests.rs` — last three commits are
-  `826f6806`, `8946b910`, `b6b32ade`, all this structure programme's P2 module
+  `91cf094e`, `81784e04`, `24f1ee4e`, all this structure programme's P2 module
   moves.
 - `crates/rs_cam_viz/tests/the_simulation_page_is_summary_first_dc6.rs` — last
-  touched by `7b4e18f6` (2026-09-15).
+  touched by `f97327c3` (2026-09-15).
 - `crates/rs_cam_core/tests/adaptive_feed_modulation_pipeline_f036b.rs` — last
   three commits are P2 module moves.
 - `planning/ui_premium_2026-09-13` belongs to the operator's other account. No
   fix in this document touches it.
-- The worktrees `wt-ur3`, `wt-ur5` and `wt-ur8` sit at `9e1e96cc`. Each is 200
+- The worktrees `wt-ur3`, `wt-ur5` and `wt-ur8` sit at `9f074ef0`. Each is 200
   commits behind `master` and 0 ahead. Their UR packages already merged. They
   contain no work at risk.
 - Live foreign work: the FEEDS_WAVE agents hold

@@ -100,7 +100,7 @@ fn fixture() -> Vec<SimulationCutSample> {
 }
 
 /// The parent revision's walk, transcribed from
-/// `crates/rs_cam_viz/src/app/mcp.rs:4578-4602` at parent `88ce23a`, with
+/// `crates/rs_cam_viz/src/app/mcp.rs:4578-4602` at parent `e925aef`, with
 /// only the GUI plumbing (the `state.session` / `toolpath_rt` lookups and the
 /// JSON emission) removed — the loop structure, the `any()` membership test
 /// and the accumulate call are verbatim.

@@ -233,7 +233,7 @@ fn within_chip_welding_displays_the_boundary_that_decided_it() {
 /// peck-adequacy gate has the mirror image and it was never fixed:
 /// `evaluate_peck_adequacy` trips `Simple` / `Dwell` cycles on the
 /// **whole-hole** ratio, and the operator was then told, verbatim
-/// (`viz/src/ui/sim_diagnostics.rs:1094` at 0afb51b):
+/// (`viz/src/ui/sim_diagnostics.rs:1094` at 4e342a2):
 ///
 /// ```text
 /// single peck too deep for the material — reduce peck depth
@@ -242,7 +242,7 @@ fn within_chip_welding_displays_the_boundary_that_decided_it() {
 /// on a cycle that has no peck depth to reduce. Fixture D3: Ø4 × 30 mm
 /// softwood `Simple` → 7.5 > 6.0 → Exceeds(Critical).
 ///
-/// Lands with its fix: the remedy did not exist in core at 0afb51b —
+/// Lands with its fix: the remedy did not exist in core at 4e342a2 —
 /// it was a `match` on `CriterionKind` inside the GUI, which cannot see
 /// the cycle.
 #[test]

@@ -23,7 +23,7 @@
 //!   DPP straight to the matched row's ap ceiling via
 //!   `AxialDocClampedByEnvelope`, and the deflection solve never runs.
 //!   **Re-baselined 2026-08-16 (G-WANAKA-DPP):** that ceiling is 4.2 mm,
-//!   not 5.4 — Checkpoint K-(a4) (`b7234d2f`) moved the matched row from
+//!   not 5.4 — Checkpoint K-(a4) (`6604303c`) moved the matched row from
 //!   the adaptive to the pocket family. Full record at the assertion.
 //!   **Re-baselined 2026-08-13 (Checkpoint
 //!   J-1):** `FeedRaisedForChipload` used to fire here, lifting feed
@@ -115,7 +115,7 @@ use rs_cam_core::session::ProjectSession;
 ///
 /// **New source:** `tests/fixtures/wanaka_2026-08-16_f530995a.toml` — a
 /// byte-identical snapshot of that play-file taken from
-/// `git show f530995a:planning/airrun_2026-06-01/wanaka.toml`
+/// `git show 008ab8ce:planning/airrun_2026-06-01/wanaka.toml`
 /// (blob `fa04baaa`).
 ///
 /// **Why:** the old rationale conflated two different failures under one
@@ -330,7 +330,7 @@ fn wanaka_suggest_baseline() {
         // new value are bit-exact reproductions of their row's ceiling, so
         // the attribution is arithmetic, not inference.
         //
-        // MECHANISM: `b7234d2f` — "feat(a7)!: K-(a4) — route the LUT query
+        // MECHANISM: `6604303c` — "feat(a7)!: K-(a4) — route the LUT query
         // ONCE; both consumers call `lut_query_for`" (A-7, Checkpoint
         // K-(a4), ruled binding and declared NUMBER-MOVING for Adaptive3d).
         // Before a4, Suggest queried the *declared* family, so an
@@ -343,7 +343,7 @@ fn wanaka_suggest_baseline() {
         // → `pick_axial_envelope` → `cutter_axial_constraints` →
         // `max_doc_vendor` = `min(ap_max_factor × D, ap_max_mm)`.
         //
-        // The same commit's companion `16786d3b` re-pinned the two
+        // The same commit's companion `c9c82398` re-pinned the two
         // Adaptive3d feeds in `arc_fit_disposition_a5.rs` on this exact
         // row pair (band 0.038–0.070 → 0.032–0.055) and named the row ids.
         // This file was NOT re-pinned then because it was already red on
@@ -364,7 +364,7 @@ fn wanaka_suggest_baseline() {
             matched.observation_id, "amana-flat-hardwood-pocket-6000-2f",
             "{ctx}: post-K-(a4) an Adaptive3d Suggest query must resolve the POCKET row. \
              If this reads `amana-flat-hardwood-adaptive-6000-2f` again, the shared routing \
-             through `vendor_normalize::lut_query_for` has regressed (b7234d2f)"
+             through `vendor_normalize::lut_query_for` has regressed (6604303c)"
         );
         let row_ap_ceiling = match (matched.ap_max_factor, matched.ap_max_mm) {
             (Some(f), Some(a)) => (f * 6.0).min(a),
@@ -380,7 +380,7 @@ fn wanaka_suggest_baseline() {
         assert!(
             (envelope_clamped - 4.2).abs() < 0.05,
             "{ctx}: envelope-clamped DPP must land near 4.2 mm (regression baseline, \
-             re-baselined from 5.4 on 2026-08-16 — mechanism b7234d2f / Checkpoint K-(a4)), \
+             re-baselined from 5.4 on 2026-08-16 — mechanism 6604303c / Checkpoint K-(a4)), \
              got {envelope_clamped}"
         );
         // This assertion catches the deflection back-off leaking back
@@ -401,7 +401,7 @@ fn wanaka_suggest_baseline() {
         // ── RE-BASELINED 2026-08-13 (Checkpoint J-1) ───────────────────
         //
         // This block required the arc-fit feed-up to fire and pinned its
-        // outcome. Measured at `5c4e847c` on this real project, printed by
+        // outcome. Measured at `719b92d7` on this real project, printed by
         // this test's own baseline dump:
         //
         //   FeedRaisedForChipload { requested_mm_per_min: 911.0,
@@ -593,7 +593,7 @@ fn wanaka_suggest_baseline() {
         );
 
         // RE-BASELINED 2026-08-13 (Checkpoint J-1). Same Wanaka geometry as
-        // Back Rough, and at `5c4e847c` the identical lift: 911 → 6000
+        // Back Rough, and at `719b92d7` the identical lift: 911 → 6000
         // mm/min, `cap_hit: Some(MaxFeed)`, still-low alongside. Retired.
         assert_no_feed_raised(&suggested.warnings, &ctx);
         assert!(
@@ -652,7 +652,7 @@ fn wanaka_suggest_baseline() {
         // the DropCutter lift reaching its target uncapped (`cap_hit ==
         // None`, `obs_after >= 0.95 × lut_target`, no still-low). Retired
         // with pass 8. The A-5i log entry carried this block as a NOT
-        // EXERCISED row: at `5c4e847c` the test never got here, because
+        // EXERCISED row: at `719b92d7` the test never got here, because
         // the operator had disabled toolpath 11 in their working copy of
         // `wanaka.toml` and `find_case(ToolpathId(11))` panicked first.
         // **That row is discharged 2026-08-16 (G-WANAKA-DPP):** the

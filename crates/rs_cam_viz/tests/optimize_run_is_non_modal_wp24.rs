@@ -16,7 +16,7 @@
 //! made false.
 //!
 //! The placeholder was a POLICY and not a necessity. WP14b
-//! (`2abf78aa`) stopped every route lending the session to a worker, so
+//! (`04d09453`) stopped every route lending the session to a worker, so
 //! the panels read the real project throughout; nothing needed the
 //! placeholder after that date.
 //!

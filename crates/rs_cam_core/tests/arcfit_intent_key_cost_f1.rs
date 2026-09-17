@@ -18,7 +18,7 @@
 //! * `region_breaks` — same intent, same feed, but a `SpanKind::Region` edge
 //!   (Checkpoint F1 Q2).
 //!
-//! **Measured result at PR-6 (parent `246b7ae`).** Seven strict-`Unknown`
+//! **Measured result at PR-6 (parent `60316ec`).** Seven strict-`Unknown`
 //! seams exist across the five fixtures (3 in `three_pass`, 4 in
 //! `arc_raster`) and they cost **zero** extra arcs and **zero** extra moves:
 //! every one of them sits where `try_fit_arc` already refused the geometry
@@ -333,7 +333,7 @@ fn run(
 }
 
 /// Every `(moves, arcs)` below is IDENTICAL to the pre-fix reading taken at
-/// `246b7ae` with the arcfit change stashed out. That equality IS the
+/// `60316ec` with the arcfit change stashed out. That equality IS the
 /// measurement: the intent term, strict `Unknown` included, and the `Region`
 /// barrier together cost zero arcs and zero moves on all five fixtures.
 ///
@@ -341,7 +341,7 @@ fn run(
 /// file's subject, and the second one moved ARCS. Read both before citing the
 /// paragraph above.
 ///
-/// 1. `38f8d151` (G-ISOCLIPRAPID) added a vertical retract lift to the
+/// 1. `d30b7520` (G-ISOCLIPRAPID) added a vertical retract lift to the
 ///    lead-in dressup: `face_full` moves 74 -> 80, arcs unchanged.
 /// 2. **G-RAMPCONTAIN (2026-09-10) moved the ARC counts on three fixtures.**
 ///    A prism ramp now folds along the operation's own following cut instead
@@ -386,15 +386,15 @@ fn pr6_measure_arcfit_intent_key_cost() {
             census: (232, 4, 4, 0),
         },
     );
-    // MOVES RE-PINNED 74 -> 80 on 2026-09-10 (J1). `38f8d151` (G-ISOCLIPRAPID)
+    // MOVES RE-PINNED 74 -> 80 on 2026-09-10 (J1). `d30b7520` (G-ISOCLIPRAPID)
     // gave the lead-in dressup a pure-vertical `MoveIntent::Retract` lift
     // before its pre-position rapid, because a rising DIAGONAL out of the cut
     // is a strike to every reader of the IR. Six of this fixture's seven
     // lead-ins stood below the retract plane and gained one lift each.
     //
     // Measured either side of that commit, same test binary:
-    //   01ec1e41  moves=74 arcs=13 Retract=7  pre_arcfit_moves=159
-    //   38f8d151  moves=80 arcs=13 Retract=13 pre_arcfit_moves=165
+    //   5afa54f5  moves=74 arcs=13 Retract=7  pre_arcfit_moves=159
+    //   d30b7520  moves=80 arcs=13 Retract=13 pre_arcfit_moves=165
     //
     // The F1 Q3 quantity this file exists to protect did NOT move: arcs stay
     // 13 and the seam census stays (118, 20, 0, 0), because a Rapid is not a

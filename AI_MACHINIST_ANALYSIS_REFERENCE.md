@@ -137,7 +137,7 @@ toolpaths, `drill_summaries`. Run the simulation first. Narrow the reply with
 `toolpath_id`, `span_kind`, `span_id` or `pass_index`. Every array carries a cap
 and reports its own truncation, so a shortened array always says so.
 
-S4 (`3374e3c7`, 2026-09-16) deleted four `SimulationState` doors that nothing
+S4 (`1300aa73`, 2026-09-16) deleted four `SimulationState` doors that nothing
 called: `toolpath_cut_summary`, `semantic_cut_summary`, `cut_worst_items` and
 `cut_hotspots`. Do not cite them.
 

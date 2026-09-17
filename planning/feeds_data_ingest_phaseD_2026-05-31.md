@@ -1,7 +1,7 @@
 # Feeds Data Ingest — Phase D (PlasticFamily expansion + Rockwell R)
 
 **Date:** 2026-05-31
-**Predecessor:** Phase C (`1ebf55e`).
+**Predecessor:** Phase C (`658f8f3`).
 **Plan reference:** `planning/feeds_data_ingest_completion_2026-05-31.md`
 ("Phase D" section, design decision D2).
 

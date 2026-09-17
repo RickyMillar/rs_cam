@@ -46,7 +46,7 @@
 //!   `crest_lines::Curvature` is `pub(crate)` and unreachable from an
 //!   integration test, and no `src/` change was in scope. F1-S therefore
 //!   restates the Monge-quadric estimator of `wanaka_curvature_anisotropy.rs`
-//!   (committed `7f341f9d`) and takes `t₁` from the **shape operator's**
+//!   (committed `5e4ae866`) and takes `t₁` from the **shape operator's**
 //!   eigenvector — see [`fit_from_derivatives`].
 //! * **The solve runs through
 //!   [`rs_cam_core::finish::direction_field::solve_paths_with_target`]**, not
@@ -78,7 +78,7 @@
 //! patches is the slow case, and [`region_submesh`] is what keeps that
 //! multiplier at 44k rather than 661k. Budget tens of minutes, not seconds.
 //!
-//! `wanaka_curvature_anisotropy.rs` (`7f341f9d`) is restated at:
+//! `wanaka_curvature_anisotropy.rs` (`5e4ae866`) is restated at:
 //! `solve_sym6` (:547–602), `finalise_normal_equations` (:652–664),
 //! `fit_quadric` (:668–761), `fit_from_derivatives` (:606–642, **extended**
 //! with the principal-direction eigenvector), `kappa_perp_zou` (:779–791) and
@@ -2657,7 +2657,7 @@ fn wanaka_direction_field_segmented_f1() {
         "   Estimator: Monge quadric fitted to mesh vertices inside {SEG_FIT_RADIUS_MM:.1} mm of each\n\
          \x20  triangle centroid (~3x the {WANAKA_MEDIAN_FACET_EDGE_MM} mm median facet edge); t1 = shape-operator\n\
          \x20  eigenvector for the SMALLER eigenvalue (= convex-positive kappa1). Restated from\n\
-         \x20  wanaka_curvature_anisotropy.rs (7f341f9d) because crest_lines::Curvature is\n\
+         \x20  wanaka_curvature_anisotropy.rs (5e4ae866) because crest_lines::Curvature is\n\
          \x20  pub(crate) and no src/ change was in scope.\n"
     );
     let (geom, census) = region_geometry(&mesh, &index, &region_tris, BALL_RADIUS_MM);

@@ -133,7 +133,7 @@ maintain.
   import to core's type (review gap). Move the legacy round-trip tests
   (`io/project.rs:1824-1911`) to the new converter before deleting.
   Risk: med. Gate: `cargo test -p rs_cam_viz -q`.
-  **Resolution 2026-09-16 (54cf7a14).** The legacy round-trip tests were
+  **Resolution 2026-09-16 (d044063b).** The legacy round-trip tests were
   not moved. There is no converter to move them to: C01 and C12 deleted
   the legacy format, so the tests had no subject. Arm (c) of
   `boundary_controls_always_visible_g_boundaryinherit` lost half its
@@ -143,7 +143,7 @@ maintain.
   `!boundary_inherit` survives a save and a load and the serde default
   is `true`. The arm still pins that the key LOADS with every boundary
   field unchanged, and arm (a) still pins that no UI file reads it.
-  The deletion of `io/project.rs` landed inside peer commit `6ae2d368`,
+  The deletion of `io/project.rs` landed inside peer commit `68670286`,
   which committed a staged `git rm`.
 - [x] **C12 — delete the legacy format support outright** (I01 step 5;
   **DECIDED 2026-09-16: no `project_legacy` converter needed**). Delete
@@ -162,7 +162,7 @@ maintain.
   keeping `winding_report` and the four documented divergences as one
   behavior. Risk: med-high (G-UNITSRELOAD/G-STEPUNITS territory). Gate:
   `cargo test -p rs_cam_core --features heavy-tests --no-fail-fast -- -q`.
-  **Judgement call resolved, not stopped, 2026-09-16 (e125c08b).** The
+  **Judgement call resolved, not stopped, 2026-09-16 (07df301b).** The
   item said to stop on a divergence that needs a judgement call. One did:
   the STEP `units` field. `io::load_model_file` recorded
   `Some(ModelUnits::Millimeters)` after it had scaled the geometry;
@@ -280,16 +280,16 @@ maintain.
   run. Risk: low (tooling only).
 
 - [x] **R1-R3 — review fix-ups** (the completeness review after the sweep).
-  - R1 (`f4e88be2`): `tests/effects_are_stamped_wp19.rs` dropped its two
+  - R1 (`d7cd7357`): `tests/effects_are_stamped_wp19.rs` dropped its two
     `Justified` rows for `src/controller/io.rs`, whose sites C01 deleted;
     `every_justified_discard_still_names_a_real_site` had gone red.
-  - R2 (`8e485ad2`): new core test
+  - R2 (`01b06992`): new core test
     `tests/toolpath_fields_round_trip_c11.rs` pins the rest analysis,
     the `DerivedRestRegions` boundary, `boundary_inherit`, the coolant,
     the pre and post G-code, the dressups, the heights, the stock source
     and the debug options through a save and a load — the assertions that
     died with the viz writer C11 deleted.
-  - R3 (`8db8793b`): the docs stop naming the deleted loader as live
+  - R3 (`7185497f`): the docs stop naming the deleted loader as live
     (`state/toolpath/entry.rs`, `session/mutation.rs` ×2,
     `ui/properties/operations/mod.rs`, `session/project_file.rs`,
     `session/save.rs`, `gcode/mod.rs` ×2,

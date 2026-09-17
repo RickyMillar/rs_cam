@@ -60,7 +60,7 @@
 //! observation reaches the bound through a numerically stable path. The
 //! table is in `cross_gate_boundary_semantics_at_exact_equality`.
 //!
-//! Measured 2026-08-13, branch `tech-debt-3`, parent `7d8a2ea0`, dev
+//! Measured 2026-08-13, branch `tech-debt-3`, parent `64f017a4`, dev
 //! profile. Nothing in A-6 changed behaviour — A-6 was a research wave.
 //!
 //! # A-7 status, 2026-08-13 — riders 2 and 4 are DISCHARGED

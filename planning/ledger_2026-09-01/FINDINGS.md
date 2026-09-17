@@ -126,7 +126,7 @@ D2 uses the same construction with the derate deleted:
 
 ---
 
-## Results (all runs 2026-09-01, worktree at `ccf4d099`)
+## Results (all runs 2026-09-01, worktree at `a6cc465b`)
 
 Every CLI arm ran `target/release/rs_cam_cli project <toml> --resolution
 0.3` (one binary, default modulation ON). Every harness arm ran

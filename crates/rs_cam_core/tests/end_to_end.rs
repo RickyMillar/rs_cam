@@ -476,7 +476,7 @@ fn tridexel_simulation_two_toolpaths_carry_forward() {
 
 /// Regression test for Phase 3 of the adaptive remediation series.
 ///
-/// Before the Phase 3 fix (commit 3ab7605), `segments_to_toolpath`
+/// Before the Phase 3 fix (commit 71174c0), `segments_to_toolpath`
 /// emitted every `Adaptive3dSegment::Rapid` as a single diagonal
 /// rapid from whatever cut-depth position the tool currently held
 /// to `(entry.xy, safe_z)`. That diagonal cuts through material

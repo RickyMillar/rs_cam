@@ -32,7 +32,7 @@
 //! recorded; the middle column is a real committed state, not a
 //! hypothetical.
 //!
-//! | | parent `777a78b` | after floor (`2d1bfc8`) | after laws |
+//! | | parent `91f3580` | after floor (`aff98bd`) | after laws |
 //! |---|---:|---:|---:|
 //! | derated band (mm/tooth) | 0.013219–0.022721 | unchanged | **0.020567–0.035350** |
 //! | pre-clamp `requested` | 0.014128 | unchanged | **0.021982** |

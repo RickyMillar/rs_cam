@@ -17,7 +17,7 @@
 //!   epsilon (`waterline::WATERLINE_LADDER_EPSILON`, 1e-10) and delegating
 //!   here; `tests/waterline_shared_finish_setup_c3.rs` pins the two together.
 //! * `execute.rs` never had a surviving slope-sentinel copy to extract. It
-//!   has called [`slope_filter_active`] since `4b105da` — the very commit
+//!   has called [`slope_filter_active`] since `45347db` — the very commit
 //!   that created this module. A repo-wide search for the `0.01` / `89.99`
 //!   literals outside this file finds only consumers of the constants below.
 //!

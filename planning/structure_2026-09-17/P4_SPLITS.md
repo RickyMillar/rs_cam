@@ -46,11 +46,11 @@ edits, `use` edits and re-export lines. Nothing else.
 ## 1. The measurement
 
 Every number in this document comes from the working tree at commit
-`5592b7d0`, measured on 2026-09-17.
+`2cca3461`, measured on 2026-09-17.
 
 **WARNING. The tree moves under this file. Read this before you start.**
-The survey began at `2dcb2123`. Three commits landed while it ran, and
-`c97837b8` deleted `NewDefaultCtx` from `compute/catalog.rs`, which moved
+The survey began at `27fa79db`. Three commits landed while it ran, and
+`69173a53` deleted `NewDefaultCtx` from `compute/catalog.rs`, which moved
 every line below 2613 in that file by 46 and shortened the file from 3334
 to 3287. `session/compute.rs` grew by 18 lines in the same window.
 `FEEDS_WAVE.md` reports the same effect. Therefore:
@@ -1513,7 +1513,7 @@ path in the frozen folder.
 
 **Correction to the brief's inputs.** `digest3.txt` and the brief's header
 both say 3334 lines; the live file is 3287. `git log` shows a peer session
-committed `c97837b8` on top of the commit the digest was taken from, which
+committed `69173a53` on top of the commit the digest was taken from, which
 trimmed this file by 47 lines (and the `NewDefaultCtx` struct/impl the
 digest reports no longer exists anywhere in `rs_cam_core/src`). Every line
 number in this section was re-taken with `grep -n` on the live file, not

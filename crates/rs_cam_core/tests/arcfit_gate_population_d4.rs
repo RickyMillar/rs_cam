@@ -35,14 +35,14 @@
 //! and therefore keeps the verdict `Within`. The bar below counts **how many
 //! of the generator's own cutting samples reach the gate population**, on
 //! the same fixture with `arc_fitting` off and on. It is expressed through
-//! `SimulationCutSample::source_intent` (R-11, `ebe77de`), which is a SOURCE
+//! `SimulationCutSample::source_intent` (R-11, `f0bded1`), which is a SOURCE
 //! key: it is what the generator emitted, so it survives arc-fitting and
 //! every other post-transform relabel — exactly the handle a population bar
 //! needs when the two arms have different move counts.
 //!
 //! ## Red-first record
 //!
-//! Measured at the parent revision `e93d748`, with `fit_arcs` still tagging
+//! Measured at the parent revision `5a7ee52`, with `fit_arcs` still tagging
 //! `SpanKind::DressupArtifact`:
 //!
 //! ```text

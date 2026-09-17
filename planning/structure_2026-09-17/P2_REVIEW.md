@@ -1,4 +1,4 @@
-# P2 completeness review — `eb862de5..5614d761`
+# P2 completeness review — `6474ff8f..5614d761`
 
 **Verdict: GAP.** No behaviour, visibility or persisted value changed, and
 no file was left behind; but `CREDITS.md` (13 paths), `lib.rs:41`, four test
@@ -13,9 +13,9 @@ rs_cam_core --no-deps`). It compiled no test target and no bench target.
 The range holds 20 commits, not 17. Three of them belong to another
 workstream and touch only `planning/load_model_2026-09-16/`:
 
-- `df9c58f0` — a prototype of the limits surface
-- `7ba6beb6` — every limit is one kind of thing
-- `f282d626` — distributions after the cut
+- `829091fd` — a prototype of the limits surface
+- `17fc8ac3` — every limit is one kind of thing
+- `5ee6a180` — distributions after the cut
 
 They change no code. The other 17 commits are the P2 move and its two
 documentation commits.
@@ -28,7 +28,7 @@ documentation commits.
 | 1b | Behaviour change in modified files | `norm5.py`: the same rewrite, with every `use` statement and bare `mod` line removed first | 75 files differ. Every chunk is a rustfmt reflow (trailing comma, closure brace) or a documentation path rewrite. Example: `compute/execute.rs:370` becomes `\|z\| { Ok(crate::ops::trace_path::trace_polygons_at_z(&rings, z, &params)) }` — the same expression, wrapped. | none |
 | 1c | Persisted value | `rg -n 'any::type_name\|module_path!' crates/` | 0 hits. No module path reaches a hash, a fingerprint or a serialised field. The `type_name` hits in `compute/catalog.rs` are a struct field of that name, not `std::any::type_name`. | none |
 | 1d | Relative include in a moved file | `rg -n 'include_str!\|include_bytes!\|file!\(\)'` over the 106 renamed files (the deleted `simulation.rs` is the 107th) | 0 hits. No moved file reads a path relative to its own depth. | none |
-| 2 | Visibility | A script compares every `mod` line of `git show eb862de5:.../lib.rs` with the same module in the new `lib.rs` or in its `folder/mod.rs` | One change: `artifact_io` goes from `mod` (crate root, so crate-wide) to `pub(crate) mod` in `export/mod.rs` (also crate-wide). Layout §7 requires it. `grid`, `memo` and `named_toml_library` stay private and narrow to their folder, as §7 allows. `nn_order` and `tool_shape_key` stay `pub(crate)`. `machine_kinematics` reports as absent because it renames to `machine/kinematics.rs`. | none |
+| 2 | Visibility | A script compares every `mod` line of `git show 6474ff8f:.../lib.rs` with the same module in the new `lib.rs` or in its `folder/mod.rs` | One change: `artifact_io` goes from `mod` (crate root, so crate-wide) to `pub(crate) mod` in `export/mod.rs` (also crate-wide). Layout §7 requires it. `grid`, `memo` and `named_toml_library` stay private and narrow to their folder, as §7 allows. `nn_order` and `tool_shape_key` stay `pub(crate)`. `machine_kinematics` reports as absent because it renames to `machine/kinematics.rs`. | none |
 | 3a | Left-behind root files | `ls crates/rs_cam_core/src/*.rs` | Exactly `lib.rs`, `geo.rs`, `ids.rs`, `interrupt.rs`, `measurement.rs`, `mesh.rs`, `polygon.rs`, `toolpath.rs` — the 8 files ruling Q1 names. | none |
 | 3b | Folder file counts | `ls <folder>/*.rs \| wc -l` | `util` 2+mod, `geometry` 14+mod, `surface` 6+mod, `maps` 11+mod, `ops` 16+mod, `finish` 20+mod, `dressup` 6+mod(`dressup.rs`), `stock` 9+mod, `io` 6+mod(`io.rs`), `export` 4+mod, `trace` 5+mod, `machine` 3+mod(`machine.rs`), `material` 1+mod(`material.rs`). Every row matches the Q-ruling table. `lib.rs` declares 31 modules plus one `pub use`. | none |
 | 3c | Duplicate file | `find -name '*.rs' \| xargs -n1 basename \| sort \| uniq -d` | 10 repeated stems, each in a different folder (`geometry/boundary.rs` and `tool_load/boundary.rs`, `ops/profile.rs` and `feeds/profile.rs`, and so on). §6 permits this. No path repeats. | none |
@@ -38,7 +38,7 @@ documentation commits.
 | 4c | Stale `rs_cam_core::<old>` outside core | `rg -n "rs_cam_core::($STEMS)\b" crates/ scripts/` | 0 hits. | none |
 | 4d | Brace-grouped import | `rg -U -n "use (rs_cam_core\|crate)::\{[^}]*\}" crates/` filtered for an old stem | 0 hits. The 16 brace blocks that layout §5 counted carry no old stem. | none |
 | 4e | Stale `crate::<old>` in test prose | `rg -n "crate::($STEMS)\b" crates/rs_cam_core/tests` | 4 hits. See finding **F3**. | **F3** |
-| 4f | Stale `src/<moved>.rs` in a live document | `rg -n "src/($STEMS)\.rs" .` over `CLAUDE.md`, `FEATURE_CATALOG.md`, `AI_MACHINIST_ANALYSIS_REFERENCE.md`, `architecture/`, `.claude/`, `planning/AGENT_CODEMAP.md`, `CREDITS.md`, `crates/*/src`, `crates/*/tests`, `scripts/` | `CREDITS.md` holds 13. Every other live document is clean; commits `1a486a47` and `5614d761` repaired them. | **F1** |
+| 4f | Stale `src/<moved>.rs` in a live document | `rg -n "src/($STEMS)\.rs" .` over `CLAUDE.md`, `FEATURE_CATALOG.md`, `AI_MACHINIST_ANALYSIS_REFERENCE.md`, `architecture/`, `.claude/`, `planning/AGENT_CODEMAP.md`, `CREDITS.md`, `crates/*/src`, `crates/*/tests`, `scripts/` | `CREDITS.md` holds 13. Every other live document is clean; commits `1769ac41` and `93685c6d` repaired them. | **F1** |
 | 4g | Orphan comment in `lib.rs` | `sed -n '38,44p' crates/rs_cam_core/src/lib.rs` | Line 41 keeps `// The walk grid \`tier_map\` and \`reach_map\` share; private to the crate.` between `pub mod geo;` and `pub mod geometry;`. The comment belonged to `mod grid;`. `maps/mod.rs` already carries the correct copy. | **F2** |
 | 4h | Dated evidence that keeps old paths | the same scan over `planning/` | Reported below, not a defect. | none |
 | 4i | Bare file name of a renamed file | `rg -n '\b(trace\|machine_kinematics\|io\|machine\|dressup\|material\|simulation)\.rs\b'` over the live documents, then `find crates -name '<name>.rs'` to see which names still exist | `trace.rs`, `machine_kinematics.rs`, `machine.rs`, `dressup.rs` and `material.rs` exist nowhere in the tree. Four live documents still name them. See finding **F4**. | **F4** |
@@ -47,8 +47,8 @@ documentation commits.
 | 5c | The recursive-walker claim | `rg -c 'is_dir\(\)'` over the 8 files §9 names | All 8 recurse. None passes vacuously after the move. | none |
 | 5d | The extra §9 prose fix | `rg -n 'tool_shape_key' crates/rs_cam_viz/src/state/runtime.rs` | Line 127 reads `rs_cam_core::maps::tool_shape_key::ToolShapeKey`. | none |
 | 6 | rustdoc | `scripts/cargo_lane.sh doc -p rs_cam_core --no-deps` | Exit 0. 233 warnings: 85 `unresolved link`, 139 `links to private item`, 6 redundant link target, 3 unclosed HTML tag. No unresolved link names an old root path. The five that carry a new path (`crate::finish::pencil::emit_paths` and four more) point at items that do not exist under either name, so they predate the move. The 31 `REPO` links are citation markers. | none |
-| 7a | Mutation contract | `rg -o 'fn [a-z_]+_mut\b'` over `git archive eb862de5` and over the working tree, sorted and counted | The two lists are identical. No new `_mut` function. | none |
-| 7b | GUI type in core, parallel flow | `git diff eb862de5 5614d761 -- Cargo.toml crates/*/Cargo.toml` | Empty. No dependency changed. The only `build.rs` change is one doc line: `rs_cam_core::build_info` becomes `rs_cam_core::util::build_info`. | none |
+| 7a | Mutation contract | `rg -o 'fn [a-z_]+_mut\b'` over `git archive 6474ff8f` and over the working tree, sorted and counted | The two lists are identical. No new `_mut` function. | none |
+| 7b | GUI type in core, parallel flow | `git diff 6474ff8f 93685c6d -- Cargo.toml crates/*/Cargo.toml` | Empty. No dependency changed. The only `build.rs` change is one doc line: `rs_cam_core::build_info` becomes `rs_cam_core::util::build_info`. | none |
 
 ## Findings
 
@@ -103,7 +103,7 @@ already wrong before the move. They are still stale names of moved modules.
 
 ### F4 — four live documents name a file that no longer exists
 
-Commit `1a486a47` rewrote every path that carried a `src/` prefix, and its
+Commit `1769ac41` rewrote every path that carried a `src/` prefix, and its
 message states that it left bare file names alone. That rule is safe for a
 name the move kept, such as `scallop.rs`. It is not safe for the five names
 the move retired. `trace.rs`, `machine_kinematics.rs`, `machine.rs`,

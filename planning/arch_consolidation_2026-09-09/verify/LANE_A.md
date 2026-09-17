@@ -2,7 +2,7 @@
 
 **Method.** I READ the tree at `HEAD` on the branch
 `machine-kinematics-confidence` (98 commits after the audit commit
-`627ef997`). I ran no build, no test and no application. Every line
+`5087490f`). I ran no build, no test and no application. Every line
 number below is today's. Where the audit's own citation moved, I say so.
 Nothing here is an execution result.
 
@@ -49,7 +49,7 @@ builds in `submit_toolpath_compute`
 lines to the next function at `:829`).
 
 **The audit's cited locations.** `core/session/compute.rs:1404` was
-`pub fn generate_toolpath` at `627ef997`; it is now `:1412`.
+`pub fn generate_toolpath` at `5087490f`; it is now `:1412`.
 `viz/compute/worker/execute/mod.rs:603` was
 `run_compute_with_phase_tracker`; it is now `:605`.
 `viz/compute/worker/helpers.rs:24` has not moved.
@@ -113,12 +113,12 @@ route and does not get it on the CLI, optimizer and bench route.
 
 ### 3. What changed since the audit
 
-Nothing structural. `git log 627ef997..HEAD` over
+Nothing structural. `git log 5087490f..HEAD` over
 `crates/rs_cam_core/src/session/compute.rs` and the viz worker shows no
 convergence commit. The named recent work does not touch this finding:
-G-FRESHSTATE (`5765a179`) and the F2 programme act on invalidation and
+G-FRESHSTATE (`6eb9ae55`) and the F2 programme act on invalidation and
 freshness, F4.3/F4.4/F4.7 act on model import and refresh, and
-G-DEPTHSTOCKCORE (`6484b527`, `ab98b5c1`) acts on the depth caution.
+G-DEPTHSTOCKCORE (`f9566adf`, `0d73b5e2`) acts on the depth caution.
 
 ### 4. Is the recommendation still the right shape?
 
@@ -240,24 +240,24 @@ a symptom is at `crates/rs_cam_viz/src/app/mcp.rs:1553`:
 pre-modulation IR, which a simulation never rewrites". The narration
 function is now `mcp_narrate_toolpath` at
 `crates/rs_cam_viz/src/app/mcp.rs:1369` (the audit cited `:1288`, which
-was this function at `627ef997`).
+was this function at `5087490f`).
 
 **Correction to the audit's wording.** The audit says export "prefers
 session results but falls back to GUI results, including results
-retained for stale display". That was true at `627ef997`. It is no
+retained for stale display". That was true at `5087490f`. It is no
 longer an unconditional preference-plus-fallback; it is a preference
 plus an operator-gated waiver, and the waiver is refused by default.
 
 ### 3. What changed since the audit
 
-- G-STALEXPORT, `66d2c232` — an edited operation blocks the file. This
+- G-STALEXPORT, `82279cef` — an edited operation blocks the file. This
   is the commit that closes the audit's stated problem.
-- G-EXPORTSKIP, `cbe20d06` — an enabled operation with no result refuses
+- G-EXPORTSKIP, `b9dcc98e` — an enabled operation with no result refuses
   instead of dropping out of the program.
-- G-FRESHSTATE / F2.1, `5765a179` — one derived `FreshnessState`, read
+- G-FRESHSTATE / F2.1, `6eb9ae55` — one derived `FreshnessState`, read
   from the core result cache.
-- G-FRESHRENDER, `6b39feaf` — every surface draws that state.
-- G-LATERESULT / F2.4, `9544ca75` — a late result is stored but not made
+- G-FRESHRENDER, `620e0988` — every surface draws that state.
+- G-LATERESULT / F2.4, `b71412b4` — a late result is stored but not made
   current. This is what turned the split from an accident into a
   contract.
 - G-STICKYEMPTY — both caches are cleared on a failed generation
@@ -330,7 +330,7 @@ records at `:335`–`:370`.
 **Site 2 — viz (GUI and MCP).** `gcode_phase_for_session_toolpath`,
 `crates/rs_cam_viz/src/io/export.rs:317`, fed by `emitted_toolpaths`
 at `:144`. The audit's `:118` and `:142` were these two functions at
-`627ef997`; both moved, and the lines the audit cites are doc-comment
+`5087490f`; both moved, and the lines the audit cites are doc-comment
 text today. Four exported entry points share them:
 `export_gcode_from_session_with_policy` (`:403`),
 `export_combined_gcode_from_session` (`:446`),
@@ -418,9 +418,9 @@ carries `phase.spindle_speed` from its own job pipeline.
 
 Only on the viz side, and only in the selection stage:
 
-- G-EXPORTSKIP, `cbe20d06` — the viz collect stopped being a silent
+- G-EXPORTSKIP, `b9dcc98e` — the viz collect stopped being a silent
   `filter_map` over missing results.
-- G-STALEXPORT, `66d2c232` — the viz collect gained the freshness
+- G-STALEXPORT, `82279cef` — the viz collect gained the freshness
   refusal.
 
 Neither touched core site 1 or CLI site 3. The gap between the sites is

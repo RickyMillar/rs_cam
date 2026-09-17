@@ -168,7 +168,7 @@ flipping past 200 µm AND the cut is operator-known-good in
 practice, file a deflection-model finding (force arm, near-tip
 integration) — do NOT widen the bound.
 
-## Phase A baseline (post-`5a67c1d`) — 2026-05-31
+## Phase A baseline (post-`eeb51b3`) — 2026-05-31
 
 Per `planning/feeds_data_ingest_completion_2026-05-31.md` Phase A,
 this section captures the LUT runtime behavior **after** the Phase 4

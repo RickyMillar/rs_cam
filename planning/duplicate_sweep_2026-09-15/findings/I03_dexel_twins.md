@@ -2,7 +2,7 @@
 
 Verdict: TRUE_DUP — but the `dexel_mesh.rs` copies are **dead legacy code**;
 the merge is a deletion, not an extraction. (Note: "mc" = marching cubes
-per commit 81cd86e2 / §6.J, not "midpoint-circle" as the plan item guesses.)
+per commit 72af682a / §6.J, not "midpoint-circle" as the plan item guesses.)
 
 ## Evidence
 - Files: `crates/rs_cam_core/src/dexel_mesh.rs` (1451 L, facade + preview +

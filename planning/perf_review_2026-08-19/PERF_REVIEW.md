@@ -57,7 +57,7 @@ Fix (two halves):
 **DONE in wave 5 + 5b SIM.** Built and evidenced on `perf/s1-swept-volume`
 (`DELTA_sim_w5_s1_DECISION.md`); landed on `tech-debt-3` by explicit user
 decision (`DELTA_sim_w5b_landing.md`). `StampDispatch::Auto` resolves to
-`Swept` as of `a4ff2a8c`; `SweptPlungeOnly`, `WholeToolpath` and `PerStamp`
+`Swept` as of `34d8917a`; `SweptPlungeOnly`, `WholeToolpath` and `PerStamp`
 remain selectable via `RS_CAM_STAMP_DISPATCH`, which is the A/B instrument.
 
 **Measured 2.9–5.1× on the stamp kernel** across three fixtures and five thread
@@ -99,7 +99,7 @@ Fix: coarse max-top mip over the z-grid (one f32 per 16×16 tile, ~4 KB/1M cells
 `tile_max_top ≤ depth_min` ⇒ skip tile, exactly (h(r) ≥ 0). Tile maxima only decrease
 under top-down stamping — maintain with a monotone min where `lower_conservative_top`
 is called (`dexel.rs:554`). 2–10× on finish passes, multiplicative with S1.
-**FIXED in wave 2 SIM (`f9f26997`). Measured 1.46–2.07× on every bench arm** —
+**FIXED in wave 2 SIM (`6fe20c3d`). Measured 1.46–2.07× on every bench arm** —
 including BOTH plunge arms, which S7 could not touch at all. `DELTA_sim_w2.md`.
 Four corrections to the prescription, all of which would have shipped as a silent
 metric change:
@@ -134,7 +134,7 @@ Fix: row-band decomposition over a whole toolpath (`rays.par_chunks_mut(band_row
 moves whose bbox misses. Per-cell mutation order preserved ⇒ **bit-identical** results
 (matters: `ray_blend_above` with f<1 is non-commutative). Metrics reduce across bands.
 Expected 6–12× desktop.
-**PARTIALLY DONE in wave 2 SIM (`5973b7cb`) — per-STAMP bands, and two corrections.**
+**PARTIALLY DONE in wave 2 SIM (`f093a88e`) — per-STAMP bands, and two corrections.**
 (1) **"bit-identical" is false for `removed_volume_est_mm3`.** The mutation-order half
 is true and the conclusion is not: the volume comes off the `pre_volume`/`post_volume`
 pair, and splitting the rows splits both sums. Everything else IS bit-identical (rays,
@@ -401,7 +401,7 @@ pure emission fns are already pub. Hoist geometry above `toolpath_at_levels_with
 closure stamps Z only. Identical output by construction.
 Bench blind spot: `perf_suite.rs:295 run_cascade` seeds rings once — cannot see the L×;
 no bench exists for any *_toolpath or dressup.
-**FIXED in wave 2 (473c3d1f) — prescription held exactly as written.** L20/L1
+**FIXED in wave 2 (ad107fbb) — prescription held exactly as written.** L20/L1
 **22.2×/22.5×/20.4× → 1.04×/1.14×/1.01×** (pocket/profile/zigzag), i.e. L20 is
 **21.7–21.9× faster**. `depth.rs` needed no change: the choke point was already right,
 the repetition was at the call sites. Three things the finding did not name:
@@ -423,7 +423,7 @@ Numbers and caveats: `DELTA_gen_w2.md`.
 sqrts). `Triangle.bbox` precomputed (`geo.rs:154-158`), never consulted.
 `CLPoint::update_z` is monotone increasing ⇒ a max-Z bbox reject skips most triangles
 after first contact; XY-AABB reject vs cl±radius similarly.
-**CORRECTION (wave 1, ca92d767): the bare `tri.bbox.max.z <= cl.z` form is NOT sound** —
+**CORRECTION (wave 1, 5efc1cbc): the bare `tri.bbox.max.z <= cl.z` form is NOT sound** —
 edge_drop accepts edge params in ±1e-8 slack (contact can land outside the bbox in Z), and
 flat-tip vertex_drop makes `cl.z` exactly a vertex height, so `bbox.max.z == cl.z` is
 SYSTEMATIC for every triangle sharing that vertex. Caught by `steep_shallow_fingerprint`
@@ -444,10 +444,10 @@ Other sites: `toolpath.rs:658`, `scallop.rs:2260`, `waterline.rs:225`,
 `surface_link.rs:318`, `rest.rs:49`.
 Fix: cache AABB on Polygon2 (one change, twelve sites); then y-bucketed edge index;
 memoize (last_xy,result) in the boundary closure for plunge/retract runs.
-FIXED in wave 1 (1e3c5d8c): lazy OnceLock exterior-only bbox + invalidation at the five
+FIXED in wave 1 (a3e244e7): lazy OnceLock exterior-only bbox + invalidation at the five
 post-construction exterior-mutation sites; NaN poisons the box (disables reject, never
 changes an answer). Measured: contains_point 3.90×, RegionSet path **51×**.
-G3 FIXED in wave 1 (ca92d767, with the slack correction above): batch drop-cutter
+G3 FIXED in wave 1 (5efc1cbc, with the slack correction above): batch drop-cutter
 **6.5× flat / 6.1× ball**; query_only control flat — the index query now bounds
 classification cost. Devirtualization + cell-sort-by-maxZ remain follow-ups.
 
@@ -545,7 +545,7 @@ mechanical.
 `Polygon2::contains_point`, an even-odd ray cast against the previous tool's reachable
 region — same family (per-sample linear walk over all edges) but a *containment* query
 that cannot share the distance index, and `contains_point` already has a bbox early-out.
-Verified against the pre-G2 file, so it is not an artifact of `473c3d1f` moving lines.
+Verified against the pre-G2 file, so it is not an artifact of `ad107fbb` moving lines.
 The helper is **duplicated** (vcarve + inlay), not triplicated; the shared field covers
 **two** call sites. Rest got the parallelism half only.
 (2) **The emphasis is inverted.** Measured on `gen_vcarve_field`: the index alone is
@@ -622,7 +622,7 @@ per frame.
   toolpath) + SimulationTriage::build (another scan + height collect+SORT per toolpath) +
   build_cutter per toolpath + project_evidence allocs. O(samples×toolpaths) w/ sorts, per
   frame, to render one strip. Fix: the existing (Arc::as_ptr(trace), edit_counter) cache
-  pattern. **Largest single win, smallest diff.** FIXED in wave 1 (42ed4774):
+  pattern. **Largest single win, smallest diff.** FIXED in wave 1 (1b34e38e):
   `SimulationTriageCache`, returns `&SimulationTriage` (no clone on hit — unlike the
   sibling caches, see Tier-4: cached_load_report/envelopes still clone on hit, easy wave-2
   follow-up in the same file).
@@ -633,7 +633,7 @@ per frame.
 - **V3. Deflection lookup scans full trace/frame BEFORE its early-out**
   (`app/simulation.rs:422-437` scan; the `tool_gpu_move == Some(current)` guard at :478).
   With MCP's 100 ms heartbeat this burns continuously.
-  **CORRECTION (wave 1, 42ed4774): do NOT naively hoist the whole guard** — the pre-guard
+  **CORRECTION (wave 1, 1b34e38e): do NOT naively hoist the whole guard** — the pre-guard
   block is not pure: it publishes six playback fields (tool_position, deflection, radius,
   label, stickout, cutting_length) that the 2D tool overlay in viewport.rs reads every
   frame; a full hoist silently stales that overlay. The landed fix gates only the
@@ -643,7 +643,7 @@ per frame.
 - **V4. `sim.issues()` deep-clones ~25k issues (with Strings) 3–4×/frame on cache HIT**
   (`state/simulation.rs:1563-1567`); `sim_timeline.rs:117-121` clones the vec just to count
   hotspots; issue_cache_key re-hashes all collision indices per call. Fix: return
-  &[..]/Arc<[..]>; cached count. FIXED in wave 1 (42ed4774): `Arc<[SimulationIssue]>` —
+  &[..]/Arc<[..]>; cached count. FIXED in wave 1 (1b34e38e): `Arc<[SimulationIssue]>` —
   note `&[..]` does NOT work here (two call sites hold the list across later `&mut sim`
   calls); `issue_hotspot_count()` added; issue_cache_key re-hash left as-is (O(handful),
   needs a dirty-flag mechanism, not worth it).
@@ -816,14 +816,14 @@ frame-time tracing span pass is optional follow-up, not Phase 0.
   denominators), engagement summary, collision/holder counts, sample count, per_kinematics
   totals — compared within stated tolerances. This is the net that lets S2 (exact tile
   skip) and S3 (bit-identical bands) claim "metric-neutral", and the thing that gets
-  DELIBERATELY re-baselined for S1. **Re-baselined 2026-08-21 (`9b4505be`)**: 39 fields
+  DELIBERATELY re-baselined for S1. **Re-baselined 2026-08-21 (`2b6f976a`)**: 39 fields
   on the 2.5D arm, 29 on the 3D one, every old→new recorded in
   `DELTA_sim_w5b_landing.md` §2 before the regeneration. **Exactly one exact-compared
   field moved** (`triage_action_count` 3 → 1, itself downstream of the air-cut change);
   every collision channel and the whole sample stream were bit-stable. The
   non-vacuity guards passed unchanged and no tolerance was widened — which is the
   evidence that "deliberately re-baselined" did not become "regenerated until green".
-  **EXTENDED (wave 1 SIM, `b2a5e661`).** The Phase 0 fixture is 2.5D only and emits **no
+  **EXTENDED (wave 1 SIM, `a8874993`).** The Phase 0 fixture is 2.5D only and emits **no
   `CutKinematics::Arc` sample at all** — a net that pins only that arm cannot cover the arc
   or ball-tip stamp branches S1/S2/S3 reshape. A second arm (hemisphere mesh, Ø6 ball nose,
   drop cutter + waterline with `arc_fitting` on, 0.5 mm cells) now sits beside it in

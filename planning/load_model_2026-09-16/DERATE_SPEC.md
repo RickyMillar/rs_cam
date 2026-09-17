@@ -1,6 +1,6 @@
 # Derate by the lever the constraint responds to
 
-**Status: specification, not implemented.** Follows R1 (`73b84d69`), which
+**Status: specification, not implemented.** Follows R1 (`2708ee52`), which
 made the power model honest and thereby exposed that the derate mechanism
 cannot satisfy the constraint it exists to satisfy.
 
@@ -228,13 +228,13 @@ pulls the right dial.
 
 ## What is already shipped, for context after a compaction
 
-`73b84d69` R1 — power built from the affine force model, 8.61× at the
-reference fixture, edge share 83 %. `1a92cb56` Match vendor chipload.
-`e796a4d4` the corridor. `921aa0e3` the chipload verdict row. `eac5552a`
-`feeds::efficiency`. `ad89f8be` one deflection solver. `b68c484d` the dead
-sibling-row scan deleted. `806dd5c4` `ui/feeds/` layout. `41d0ee5c` the
+`2708ee52` R1 — power built from the affine force model, 8.61× at the
+reference fixture, edge share 83 %. `4d799ea1` Match vendor chipload.
+`9e84d6af` the corridor. `e475085f` the chipload verdict row. `23779881`
+`feeds::efficiency`. `991e6af7` one deflection solver. `500c21a1` the dead
+sibling-row scan deleted. `f7933787` `ui/feeds/` layout. `5b716c47` the
 air-cut regression.
 
 Known red: `bull_12mm_pocket_oak` (this work fixes it) and
 `modulation_raises_cutting_chipload_toward_band` (pre-existing at
-`7a5fdad4`, unrelated, still unowned).
+`e2ecf697`, unrelated, still unowned).

@@ -1,7 +1,7 @@
 # Lane C verification — findings 5, 8, 9
 
-**Method.** I READ the tree at `9d82cdf0` (98 commits after the audit's
-`627ef997`). I ran no `cargo` command. Nothing below is an execution result.
+**Method.** I READ the tree at `62665c62` (98 commits after the audit's
+`5087490f`). I ran no `cargo` command. Nothing below is an execution result.
 Every claim carries a `path:line` from today's tree.
 
 **Contract reminder.** `None` means NOT MEASURED, never clean.

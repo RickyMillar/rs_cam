@@ -7,7 +7,7 @@
 //! * The STRUCTURAL one — `unified_finish::unified_finish_spans` emits a
 //!   `SpanKind::Region` span per routed node plus the rapid-order barriers
 //!   that make the barriered TSP safe. Its `move_range` tiling was fixed in
-//!   `77f2b7a` (sentry `region_node_ranges_tile_the_stitched_toolpath`).
+//!   `9d47d9f` (sentry `region_node_ranges_tile_the_stitched_toolpath`).
 //! * The SEMANTIC one — `ToolpathSemanticTrace`, which `narrate_toolpath`
 //!   reads and reports as `regions N`.
 //!

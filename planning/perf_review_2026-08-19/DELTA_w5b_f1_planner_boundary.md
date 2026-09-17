@@ -1,7 +1,7 @@
 # W5B-F1 — the adaptive3d planner's boundary-ring over-claim
 
-**Lane:** W5B-F1, 2026-08-21. Branch `tech-debt-3`, parent tip `3e2041f3`,
-landed as `77ead905`.
+**Lane:** W5B-F1, 2026-08-21. Branch `tech-debt-3`, parent tip `17a90e93`,
+landed as `b9eaf5bf`.
 
 **Verdict: root-caused. The standing candidate is REFUTED. The finding is a
 test-fixture artifact and does not occur in the shipped configuration.**
@@ -180,7 +180,7 @@ per-setup dexel grid, so no divergence is observable there and none is wrong.
 
 ---
 
-## 6. What landed — `77ead905`
+## 6. What landed — `b9eaf5bf`
 
 Verdict-safe by the brief's definition, and by a stronger one: **every hunk is
 inside `#[cfg(test)] mod tests`.** No production line is touched, so no

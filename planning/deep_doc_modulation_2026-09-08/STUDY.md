@@ -1,6 +1,6 @@
 # Deep depth-of-cut with feed modulation on plywood terrain — 2026-09-08
 
-Status: MEASURED on the pre-rebuild binary (`1af25c87`). Sections marked
+Status: MEASURED on the pre-rebuild binary (`90239e26`). Sections marked
 `[after rebuild]` wait for the G-DCFLAT + G-AIRDENOM release build and the
 operator's MCP reset.
 
@@ -93,7 +93,7 @@ no target. On the rebuilt binary (G-DCFLAT in, `armG_dc6mm_s3.toml`
 reloaded with no parameter change, oak, fresh stock, 0.2 mm, `cell_mm`
 0.2 verified) the gate reads and the modulator runs:
 
-| | Arm G pre-fix (1af25c87) | Arm G post-fix |
+| | Arm G pre-fix (90239e26) | Arm G post-fix |
 |---|---:|---:|
 | total runtime (s) | 1 117.8 | **615.6** (−44.9 %) |
 | commanded feed / plunge / rpm | 750 / 541 / 15 000 | same |
@@ -237,8 +237,8 @@ plunge and RPM come from the plywood band, `generate_all` (0.2 mm),
 aggressiveness 1.0). Each arm is the WHOLE job on fresh stock unless the row
 says otherwise.
 
-Binary note: every arm in this table ran on the GUI built at `1af25c87`,
-which predates the G-BOUNDARYPLUNGE fix (`301f2cbc`). The
+Binary note: every arm in this table ran on the GUI built at `90239e26`,
+which predates the G-BOUNDARYPLUNGE fix (`3c1aeb67`). The
 `plunge_class_load` readings are therefore the PRE-FIX evidence, on five
 operations that had never shown it before (scallop, spiral, radial,
 waterline, adaptive3d). The arms marked "rerun" are to be re-measured on
@@ -395,7 +395,7 @@ pair) needed a same-material partner. Run on the plywood copy: fixture
 index 5 (adaptive3d rough, C2 default, DOC 4.2) and index 6 (R1.5
 drop_cutter finish, stepover 0.3, from_remaining_stock), both through
 `apply_feeds` (speeds), modulation ON, 0.2 mm, generate_all fixpoint (2
-rounds, 1 simulation) and one final simulation. Binary `1af25c87`.
+rounds, 1 simulation) and one final simulation. Binary `90239e26`.
 
 | | A-ply rough (idx 5) | R1.5 finish (idx 6) | pair |
 |---|---:|---:|---:|
@@ -444,7 +444,7 @@ S20 and SP15 were reloaded from their saved TOMLs with no parameter
 change and run again at 0.2 mm. Everything that is a property of the CUT
 reproduces; the two things the fixes touch move, and only those.
 
-| | S20 pre (1af25c87) | S20 post | SP15 pre | SP15 post |
+| | S20 pre (90239e26) | S20 post | SP15 pre | SP15 post |
 |---|---:|---:|---:|---:|
 | total runtime (s) | 2 389.18 | 2 389.02 | 3 806.3 | 3 799.96 |
 | fed time (s) | 2 256.5 | 2 256.40 | 3 330.0 | 3 326.97 |
@@ -570,7 +570,7 @@ grid (cell = tip radius / 2, 0.645 mm, against a 0.05 mm bar) over-read
 by about 13 points, and the two instruments answer different questions
 (the tier map is a tool-vs-tool residual — what R2.0 misses that a finer
 tool would catch; the reach map is absolute). Fixed as P5.1
-(`be96933c`): unresolved cells are reported separately from unreachable,
+(`2e667614`): unresolved cells are reported separately from unreachable,
 the default bar is the operation's own cusp (0.146 for Q2), and the
 reply leads with a `grid_note` (cell, floor, bar) to read before the
 percentage. An independent rasterisation of the terrain closed with the
@@ -846,7 +846,7 @@ Artifacts:
 
 Both island scallops were rerun once more on the binary that carries
 G-ISOCLIPRAPID, G-ISOCLIPRAMPFALL and the G-TIERCONTINUOUS planner
-default (master 5a30124a). The project files are the same saved
+default (master ec1c78c1). The project files are the same saved
 reproductions, so they still carry `continuous: true`; only the emitters
 changed.
 

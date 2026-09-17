@@ -12,8 +12,8 @@
 > data, flow-accumulation traces the dendritic drainage within each rest
 > region — 26.8 m vs A's 3.1 m (8.7×), even 2T is 6.1× — because surface
 > drainage lines are a different curve family from the rest RIDGES pencil
-> wants. The drainage-deletion lesson (`53293c96`) holds; the NMS pipeline
-> (`29a6d61`) stands. Full record + RE-RULING in `FINDINGS.md`.
+> wants. The drainage-deletion lesson (`c73b38c3`) holds; the NMS pipeline
+> (`0db602e`) stands. Full record + RE-RULING in `FINDINGS.md`.
 
 ## The question — sharpened
 
@@ -25,7 +25,7 @@ self-intersection / bitangent double-contact), and the correct driver
 is the dual-tool REST comparison. Dihedral, Curvature, and the deleted
 Drainage detector are all design-surface proxies, tool-radius-blind. A
 watershed line is in that same class — so as a standalone detector it
-would repeat the exact mistake that deleted `Drainage` (`53293c96`:
+would repeat the exact mistake that deleted `Drainage` (`c73b38c3`:
 "hydrology trunks, not tool-relevant seams; needed non-literature
 gates").
 
@@ -63,7 +63,7 @@ is only the SKELETONIZER of the rest field.
   is the correct one; this experiment improves its EXTRACTION stage,
   not its criterion.
 - **The rest mask is a space-filling hairball** (module doc,
-  `rest_field.rs`). `29a6d61` already replaced mask-medial-axis with
+  `rest_field.rs`). `0db602e` already replaced mask-medial-axis with
   NMS+hysteresis ridge extraction and moved coverage **0.137 → 0.80**.
   The baseline to beat is that 0.80 pipeline, NOT the old hairball. A
   marginal win is a real possible outcome and a legitimate "do not

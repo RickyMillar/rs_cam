@@ -27,7 +27,7 @@ and no clone is live.
 
 | Package | Files | What it decided | Why it went |
 |---|---|---|---|
-| `review_2026-08-08/` | 187 | Tech-debt review 3: the apply-contract, heatmap-vocabulary, XVAC and LUT-boundary censuses, the arc-fit ratio evidence and the G-LV.2 crash capture | Every finding landed; the programme closed 2026-08-08 at `53b1c72`. `LIT_MATRIX_REFRESH_S2.md` is kept — `CREDITS.md:688` and a fixture data string cite it |
+| `review_2026-08-08/` | 187 | Tech-debt review 3: the apply-contract, heatmap-vocabulary, XVAC and LUT-boundary censuses, the arc-fit ratio evidence and the G-LV.2 crash capture | Every finding landed; the programme closed 2026-08-08 at `b53375b`. `LIT_MATRIX_REFRESH_S2.md` is kept — `CREDITS.md:688` and a fixture data string cite it |
 | `review_2026-08-04/` | 108 | Tech-debt review 2: the chipload literature verdict, the law-magnitude tables, the reference-plate fixture spec, the drill-gate evidence audit and the mega-harness policy | Closed via `TECH_DEBT_2_CLOSEOUT.md`. Three verdict files are kept for `CREDITS.md`. `artifacts/e_impl` and `artifacts/w8` were test **outputs**, recreated by the harness |
 | `review_2026-07-29/` | 14 | Finishing-stack review: tool-scale semantics, measurement domains, checkpoints A–C, the radius audit and the antipattern backlog | All landed. Its one durable output, `SUPERSEDED_CONCLUSIONS.md`, is kept and cited by `planning/CLAUDE.md`, `PROGRESS.md` and `FEATURE_CATALOG.md` |
 | `review_2026-07-27/` | 1 | A review stub | Superseded by `review_2026-07-29` four days later; no citation anywhere |
@@ -39,7 +39,7 @@ and no clone is live.
 |---|---|---|---|
 | `ui_review_2026-09-09/` | 137 | The UX review pass: 40+ findings including the depth-beyond-stock cautions, boundary-control visibility and the W03 source tracks | Every finding shipped with its own viz sentry. Superseded by `ui_review_2026-09-14`, which is kept and open |
 | `ui_fix_2026-09-09/` | 62 | The UX fix wave: the bottom-Z pin note and the F4/J2 report fixes | All landed and sentried |
-| `ui_overlays_ux_2026-09-08/` | 7 | Screenshot evidence for the overlay audit | The audit shipped as the P6 Overlays panel (`92a62851`) |
+| `ui_overlays_ux_2026-09-08/` | 7 | Screenshot evidence for the overlay audit | The audit shipped as the P6 Overlays panel (`f7e5e0b1`) |
 | `ui_audit/` | 97 | The GUI information-architecture audit, the component-layer architecture, the final design mockups and the egui 0.34.3 spike | It shipped: the upgrade landed, and the three 2026-09 UI programmes replaced the backlog. `PROGRESS.md` is corrected |
 
 ## Air-run and measurement campaigns
@@ -73,7 +73,7 @@ and no clone is live.
 
 | Family | Files | What it decided | Why it went |
 |---|---|---|---|
-| AgentSearch and adaptive investigations, 2026-04/05 | 15 | Diagnosed the AgentSearch entry, the corner clearing, the DPP islands, the link-distance divergence and the deep-channel gouge | All three `ClearingStrategy3d` variants are live, the gouge is fixed (`fa27b08`) and the boundary-walk entry landed 2026-04-15 |
+| AgentSearch and adaptive investigations, 2026-04/05 | 15 | Diagnosed the AgentSearch entry, the corner clearing, the DPP islands, the link-distance divergence and the deep-channel gouge | All three `ClearingStrategy3d` variants are live, the gouge is fixed (`fad3a56`) and the boundary-walk entry landed 2026-04-15 |
 | Optimizer and G16, 2026-05 | 8 | The optimizer reorg, its layered scoring, the explainability surface and the pre-optimize defaults audit | Shipped. `PROGRESS.md`'s "Current priorities" block, which still called two of them in flight, is corrected to history |
 | RCA notes F-1..F-10 and P1..P5 | 8 | Root causes for the air-cut thresholds, the plunge stress gate, the drill metric suppression, the stale-defaults validator and the fresh-defaults policy | Each finding now has a named sentry under `crates/rs_cam_core/tests/` |
 | UX dial-in, pain points and testing, 2026-05 | 7 | The first UX pain-point census, its fix plan, the IA audit workflow and the wanaka assessment | Roadmap A shipped; superseded by the IA audit and the 2026-09 review passes |
@@ -83,9 +83,9 @@ and no clone is live.
 | Unification and refactor, 2026-04/06 | 10 | Unifying the two project loaders, removing `JobState`, the 2026-06-06 architectural refactor and its decision record | Completed 2026-06-08; the duplicate sweep of 2026-09-16 removed the last legacy loader and `JobState` outright |
 | Feeds ingest working papers, 2026-05/06 | 19 | The coverage audit, the source acquisition, the phased ingest plan, the modal and workspace designs, the combined-suggest design, the Kc milling calibration and the cutter axial constraints | The bundled data's attribution is in `CREDITS.md`, which cites the eight consolidation and phase records that are **kept**. These are the drafts behind them |
 | Finishing v3 campaign, 2026-07/08 | 17 | The unified-finishing planner, the v3 design, the campaign map, the workplan, the proof spec and the rest-cascade plan | CLOSED 2026-07-28 **not provable on this fixture** (coarse TIN). The surviving verdicts are in `SUPERSEDED_CONCLUSIONS.md`, `finishing_status_2026-09-01.md` and `finishing_synthesis_2026-08-30.md`, all kept |
-| Pencil campaign, 2026-06/07 | 7 | Pencil's curvature, rest-depth and reference-fidelity detectors, and the post-mortem | Fixed at `29a6d61` — coverage 0.137 → 0.80. The watershed follow-up closed REJECT 2026-09-03 and keeps its package |
+| Pencil campaign, 2026-06/07 | 7 | Pencil's curvature, rest-depth and reference-fidelity detectors, and the post-mortem | Fixed at `0db602e` — coverage 0.137 → 0.80. The watershed follow-up closed REJECT 2026-09-03 and keeps its package |
 | `planning/README.md`'s 2026-03 index targets | 11 | The implementation plan, the performance review, the future plans, the workspace UX redesign, the simulation workspace vision, the workflow test plan, the voxel sim design, the two multi-setup documents, the alignment-pin design and the tool-library design | The index that called them active was itself stale. Judged on content: each is finished or abandoned. The index is rewritten in the same commit |
-| Misc closed | 12 | Accel-friendly toolpaths, the strategy advisor, the heights setup-frame audit, the dexel Z-only roadmap, the two 2026-04/06 tech-debt audits, the datum and machine-run notes and the overlay audit | Each closed: conditioning is default-on for roughing, the advisor shipped, the frame bug was fixed 2026-06-12, the roadmap landed steps 0–5, the datum work landed at `e17b2ff0` and the overlay audit shipped at `92a62851` |
+| Misc closed | 12 | Accel-friendly toolpaths, the strategy advisor, the heights setup-frame audit, the dexel Z-only roadmap, the two 2026-04/06 tech-debt audits, the datum and machine-run notes and the overlay audit | Each closed: conditioning is default-on for roughing, the advisor shipped, the frame bug was fixed 2026-06-12, the roadmap landed steps 0–5, the datum work landed at `b252e2ce` and the overlay audit shipped at `f7e5e0b1` |
 
 ## Root-level deletions
 

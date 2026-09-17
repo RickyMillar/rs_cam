@@ -101,59 +101,59 @@ kind, and tracker status. “compile” and “assertion” are historical categ
 
 | Unit | Evidence / main pin assertion / recorded red / status |
 |---|---|
-| WP1 | `255f6fe3→90c8e90e; A/P; core/tests/mutation_paths_invalidate_alike_p0.rs:531; compile; DONE` |
-| WP2a | `8f4faf43→ecee1ee5; A/P; viz/tests/mcp_wire_surface_pin.rs:185; assertion (missing snapshot); DONE` |
-| WP3 | `0d22acaf→25f37b74; A/P; core/tests/adopt_result_rejects_stale_completion.rs:231; compile (14 errors); DONE` |
-| WP4 | `4dfde9cc→1c399a71; A/P; core/tests/mcp_mutation_rows_reach_core.rs:231; compile (9 errors); DONE`. Additional viz `viz/tests/mcp_core_arm_describes_every_row.rs:77` was introduced by the **fix**; it is not falsely described as red-first evidence. |
-| WP5 | `973834f7→caf8fbe6; A/P; core/tests/replace_toolpath_config_gates_on_the_signature.rs:228; compile; DONE` |
-| WP6 | `fd883efa→9b887707; A/P; viz/tests/egui_draw_sites_write_through_commands_wp6.rs:167; assertion (compiled, 1 pass/4 fail); DONE`. Per-widget commits are historical follow-ons, not replacements for this pair; `4a49b434` is the tool widget (verified from git log), alongside stock `a86f2df1`, setup `97e4eaf1`, properties `9b887707`. |
-| WP6b | `b84f2601→2cfc2b9a; A/P; viz/tests/non_egui_sites_write_through_commands_wp6b.rs:206; assertion plus core compile red; DONE` |
-| WP7 | `72e912bf→7dff635b; A/P; core/tests/hatches_are_crate_private_wp7.rs:242; assertion (9 public/17 external names); DONE` |
-| WP7a | `76dbfb41→084b9b50; A/P; core/tests/session_builder_preserves_ids.rs:168; compile (missing builder); DONE` |
-| WP8 | `5c32ced7→e079e192; A/P; core/tests/restore_snapshot_invalidates_like_the_setter_n14.rs:223; compile; DONE` |
-| WP9 | `720626b2→5173c923; A/P; core/tests/query_cycle_time_one_answer.rs:279; compile; DONE` |
-| WP10 | `b952e6ee→3ff3cffa; A/P; core/tests/job_three_steps_equal_generate_toolpath.rs:164; compile; DONE` |
-| WP11a | `181f5c13→a9ef73d6; A/P; core/tests/resolved_gen_inputs_has_one_producer.rs:167; compile; DONE` |
-| WP11b.1 | `df963567→4b53576b; A/P; core/tests/gen_inputs_one_assembly_n12.rs:165; compile plus assertion (28 feed mismatches); DONE` |
-| WP11b.2 | `bab065ce→276e5c13; A/P; core/tests/adopt_simulation_stores_prior_stocks.rs:177; compile plus viz assertion; DONE` |
-| WP12 | `89f81cb4→77627c33; A/P; core/tests/loose_executor_is_crate_private_wp12.rs:182; assertion (arms a/b); DONE` |
-| WP13 | `50f975e2→35ae77ad; A/P; viz/tests/command_surface_completeness.rs:182; compile (13 errors); DONE`. It proves static declaration/reach contracts, not correct handler behavior; B1’s constructor hole remains. |
-| WP14a | `5a43a365→6e9a1326; A/P; core/tests/job_rows_recommend_and_preview_wp14a.rs:181; compile (14 errors); PARTIAL` (WP14b in flight/excluded). |
-| WP15a | `a4c0abd7→ad06c690; A/P; core/tests/setters_have_rows_wp15a.rs:251 and viz/tests/production_writes_go_through_apply_wp15a.rs:456; assertion/source-scan red; PARTIAL` (WP15b in flight/excluded). The core sentry enumerates **24** row-less setters at `:43-52`; a claimed 25th is the `set_toolpath_param` wrapper exemption (`:89-92,:301-322`), not a 25th missing setter. |
-| WP16 | `ff81b712→183900e2; A/P; viz/tests/command_surface_completeness.rs:182; assertion (“set_setup_name” absent constructor); DONE`. The older §19.3 same-commit phrasing is a separate historical caller/diff issue, not an A/B ancestor failure. |
-| WP17 | `91bc6c39→525fe504; A/P; core/tests/save_keeps_the_simulation_wp17.rs:237; assertion; DONE`. The historical header `RED-OUTPUT` is a valid label without a colon. |
-| WP18 | **not an original red→fix pair:** `3654826a` is independent injection repair; `514fd0fc` is coverage work. Actual sources: `core/tests/loose_executor_is_crate_private_wp12.rs:322` (injection-sensitive source scan) and `core/tests/feed_optimization_refusals_wp18.rs:279` (coverage). No invented pair/ancestor claim; DONE as recorded. |
+| WP1 | `fb76ecc8→f714c9ff; A/P; core/tests/mutation_paths_invalidate_alike_p0.rs:531; compile; DONE` |
+| WP2a | `d3a14bd9→9aa3cc08; A/P; viz/tests/mcp_wire_surface_pin.rs:185; assertion (missing snapshot); DONE` |
+| WP3 | `623e1a49→c68c7b7c; A/P; core/tests/adopt_result_rejects_stale_completion.rs:231; compile (14 errors); DONE` |
+| WP4 | `6b107d6e→c663f166; A/P; core/tests/mcp_mutation_rows_reach_core.rs:231; compile (9 errors); DONE`. Additional viz `viz/tests/mcp_core_arm_describes_every_row.rs:77` was introduced by the **fix**; it is not falsely described as red-first evidence. |
+| WP5 | `95f45031→1e07d657; A/P; core/tests/replace_toolpath_config_gates_on_the_signature.rs:228; compile; DONE` |
+| WP6 | `bbf69747→15751413; A/P; viz/tests/egui_draw_sites_write_through_commands_wp6.rs:167; assertion (compiled, 1 pass/4 fail); DONE`. Per-widget commits are historical follow-ons, not replacements for this pair; `3da5f3de` is the tool widget (verified from git log), alongside stock `6a76afd8`, setup `8ac801f6`, properties `15751413`. |
+| WP6b | `b647a4ac→0d770f48; A/P; viz/tests/non_egui_sites_write_through_commands_wp6b.rs:206; assertion plus core compile red; DONE` |
+| WP7 | `56d90c0c→44d0c2a6; A/P; core/tests/hatches_are_crate_private_wp7.rs:242; assertion (9 public/17 external names); DONE` |
+| WP7a | `7cae7538→6b9f0d78; A/P; core/tests/session_builder_preserves_ids.rs:168; compile (missing builder); DONE` |
+| WP8 | `1ee6b556→69292b16; A/P; core/tests/restore_snapshot_invalidates_like_the_setter_n14.rs:223; compile; DONE` |
+| WP9 | `30029223→126ba577; A/P; core/tests/query_cycle_time_one_answer.rs:279; compile; DONE` |
+| WP10 | `84d27361→89deeb5e; A/P; core/tests/job_three_steps_equal_generate_toolpath.rs:164; compile; DONE` |
+| WP11a | `5a1300c1→da01eaa9; A/P; core/tests/resolved_gen_inputs_has_one_producer.rs:167; compile; DONE` |
+| WP11b.1 | `eb60a5c3→80a9cf4d; A/P; core/tests/gen_inputs_one_assembly_n12.rs:165; compile plus assertion (28 feed mismatches); DONE` |
+| WP11b.2 | `03e45d09→51f41c40; A/P; core/tests/adopt_simulation_stores_prior_stocks.rs:177; compile plus viz assertion; DONE` |
+| WP12 | `4a39a368→e19a8870; A/P; core/tests/loose_executor_is_crate_private_wp12.rs:182; assertion (arms a/b); DONE` |
+| WP13 | `25c0ef9b→2b60b6a4; A/P; viz/tests/command_surface_completeness.rs:182; compile (13 errors); DONE`. It proves static declaration/reach contracts, not correct handler behavior; B1’s constructor hole remains. |
+| WP14a | `f132ba83→b68c636f; A/P; core/tests/job_rows_recommend_and_preview_wp14a.rs:181; compile (14 errors); PARTIAL` (WP14b in flight/excluded). |
+| WP15a | `dd40cecb→18a951a3; A/P; core/tests/setters_have_rows_wp15a.rs:251 and viz/tests/production_writes_go_through_apply_wp15a.rs:456; assertion/source-scan red; PARTIAL` (WP15b in flight/excluded). The core sentry enumerates **24** row-less setters at `:43-52`; a claimed 25th is the `set_toolpath_param` wrapper exemption (`:89-92,:301-322`), not a 25th missing setter. |
+| WP16 | `50bf6b96→df87f239; A/P; viz/tests/command_surface_completeness.rs:182; assertion (“set_setup_name” absent constructor); DONE`. The older §19.3 same-commit phrasing is a separate historical caller/diff issue, not an A/B ancestor failure. |
+| WP17 | `e19d0239→3817ba3c; A/P; core/tests/save_keeps_the_simulation_wp17.rs:237; assertion; DONE`. The historical header `RED-OUTPUT` is a valid label without a colon. |
+| WP18 | **not an original red→fix pair:** `ce153d9d` is independent injection repair; `3631126c` is coverage work. Actual sources: `core/tests/loose_executor_is_crate_private_wp12.rs:322` (injection-sensitive source scan) and `core/tests/feed_optimization_refusals_wp18.rs:279` (coverage). No invented pair/ancestor claim; DONE as recorded. |
 | WP19 | no sentry/fix pair at pin; TODO, explicitly excluded WP19. |
-| WP20 | `9b3f75de` prose pass; no new sentry. Existing `viz/tests/command_surface_completeness.rs` covers the exemption deletion; prose/toast work is not misreported as a new red pair; DONE. |
-| WP21 | `10c2ad37→4aeaeda3; A/P; core/tests/feedopt_clamp_never_panics_wp21.rs:163; runtime panic red, message anchored in historical status as `min > max, or either was NaN. min = 6000.0, max = 3000.0`; DONE. |
+| WP20 | `e1894b70` prose pass; no new sentry. Existing `viz/tests/command_surface_completeness.rs` covers the exemption deletion; prose/toast work is not misreported as a new red pair; DONE. |
+| WP21 | `5a403b6b→e4d835f6; A/P; core/tests/feedopt_clamp_never_panics_wp21.rs:163; runtime panic red, message anchored in historical status as `min > max, or either was NaN. min = 6000.0, max = 3000.0`; DONE. |
 | WP22 | no sentry/fix pair at pin; TODO, explicitly excluded WP22. |
 
 The following are recorded commit-message lines, not review test runs. WP18 and WP20 remain exceptions outside this table.
 
 | Unit | Fix | Representative recorded failure line |
 |---|---|---|
-| WP1 | `90c8e90e` | `error[E0432]: unresolved imports \`rs_cam_core::session::Command\`, \`..::CommandId\`,` |
-| WP2a | `ecee1ee5` | `test every_mcp_reached_command_row_is_on_the_wire ... FAILED` |
-| WP3 | `25f37b74` | `error[E0432]: unresolved import \`rs_cam_core::session::AdoptResultArgs\`` |
-| WP4 | `1c399a71` | `error[E0432]: unresolved imports \`rs_cam_core::session::AddToolpathArgs\`, \`rs_cam_core::session::SetMachineArgs\`, \`rs_cam_core::session::SetSetupModelsArgs\`, \`rs_cam_core::session::SetStockConfigArgs\`, \`rs_cam_core::session::SetToolpathDebugOptionsArgs\`, \`rs_cam_core::session::SetToolpathHeightsArgs\`` |
-| WP5 | `caf8fbe6` | `error[E0432]: unresolved import \`rs_cam_core::session::ReplaceToolpathConfigArgs\`` |
-| WP6 | `9b887707` | `test every_adopted_row_declares_a_gui_reach ... FAILED` |
-| WP6b | `2cfc2b9a` | `error[E0432]: unresolved import \`rs_cam_core::session::AdoptModelGeometryArgs\`` |
-| WP7 | `7dff635b` | `test every_mutation_hatch_is_declared_crate_private ... FAILED` |
-| WP7a | `084b9b50` | `error[E0432]: unresolved import \`rs_cam_core::session::ProjectSessionBuilder\`` |
-| WP8 | `e079e192` | `error[E0432]: unresolved import \`rs_cam_core::session::RestoreToolpathSnapshotArgs\`` |
-| WP9 | `5173c923` | `error[E0432]: unresolved imports \`rs_cam_core::session::CycleTime\`, \`rs_cam_core::session::CycleTimeBasis\`, \`rs_cam_core::session::Query\`, \`rs_cam_core::session::QueryAnswer\`, \`rs_cam_core::session::ToolpathCycleTimeAnswer\`, \`rs_cam_core::session::ToolpathCycleTimeArgs\`` |
-| WP10 | `3ff3cffa` | `error[E0432]: unresolved imports \`rs_cam_core::session::GenerateToolpathArgs\`, \`rs_cam_core::session::GenerateToolpathHandle\`, \`rs_cam_core::session::Job\`, \`rs_cam_core::session::JobHandle\`, \`rs_cam_core::session::execute_job\`` |
-| WP11a | `a9ef73d6` | `error[E0412]: cannot find type \`ResolvedGenInputs\` in module \`rs_cam_core::session\`` |
-| WP11b.1 | `4b53576b` | `error[E0432]: unresolved imports \`rs_cam_core::session::GenObserver\`,` |
-| WP11b.2 | `276e5c13` | `error[E0432]: unresolved import \`rs_cam_core::session::AdoptSimulationArgs\`` |
-| WP12 | `77627c33` | `test the_three_generation_entries_are_crate_private ... FAILED` |
-| WP13 | `35ae77ad` | `error[E0432]: unresolved import \`rs_cam_viz::ui_command\`` |
-| WP14a | `6e9a1326` | `error[E0432]: unresolved imports \`rs_cam_core::session::PreviewTierMapArgs\`,` |
-| WP15a | `ad06c690` | `thread 'every_public_setter_has_a_command_row' (1115731) panicked at crates/rs_cam_core/tests/setters_have_rows_wp15a.rs:282:5:` |
-| WP16 | `183900e2` | `test every_gui_reached_core_row_is_constructed_in_the_view ... FAILED` |
-| WP17 | `525fe504` | `test a_post_config_edit_keeps_the_simulation_wp17 ... FAILED` |
-| WP21 | `4aeaeda3` | `test the_pass_caps_the_floor_at_the_ceiling_instead_of_panicking ... FAILED` |
+| WP1 | `f714c9ff` | `error[E0432]: unresolved imports \`rs_cam_core::session::Command\`, \`..::CommandId\`,` |
+| WP2a | `9aa3cc08` | `test every_mcp_reached_command_row_is_on_the_wire ... FAILED` |
+| WP3 | `c68c7b7c` | `error[E0432]: unresolved import \`rs_cam_core::session::AdoptResultArgs\`` |
+| WP4 | `c663f166` | `error[E0432]: unresolved imports \`rs_cam_core::session::AddToolpathArgs\`, \`rs_cam_core::session::SetMachineArgs\`, \`rs_cam_core::session::SetSetupModelsArgs\`, \`rs_cam_core::session::SetStockConfigArgs\`, \`rs_cam_core::session::SetToolpathDebugOptionsArgs\`, \`rs_cam_core::session::SetToolpathHeightsArgs\`` |
+| WP5 | `1e07d657` | `error[E0432]: unresolved import \`rs_cam_core::session::ReplaceToolpathConfigArgs\`` |
+| WP6 | `15751413` | `test every_adopted_row_declares_a_gui_reach ... FAILED` |
+| WP6b | `0d770f48` | `error[E0432]: unresolved import \`rs_cam_core::session::AdoptModelGeometryArgs\`` |
+| WP7 | `44d0c2a6` | `test every_mutation_hatch_is_declared_crate_private ... FAILED` |
+| WP7a | `6b9f0d78` | `error[E0432]: unresolved import \`rs_cam_core::session::ProjectSessionBuilder\`` |
+| WP8 | `69292b16` | `error[E0432]: unresolved import \`rs_cam_core::session::RestoreToolpathSnapshotArgs\`` |
+| WP9 | `126ba577` | `error[E0432]: unresolved imports \`rs_cam_core::session::CycleTime\`, \`rs_cam_core::session::CycleTimeBasis\`, \`rs_cam_core::session::Query\`, \`rs_cam_core::session::QueryAnswer\`, \`rs_cam_core::session::ToolpathCycleTimeAnswer\`, \`rs_cam_core::session::ToolpathCycleTimeArgs\`` |
+| WP10 | `89deeb5e` | `error[E0432]: unresolved imports \`rs_cam_core::session::GenerateToolpathArgs\`, \`rs_cam_core::session::GenerateToolpathHandle\`, \`rs_cam_core::session::Job\`, \`rs_cam_core::session::JobHandle\`, \`rs_cam_core::session::execute_job\`` |
+| WP11a | `da01eaa9` | `error[E0412]: cannot find type \`ResolvedGenInputs\` in module \`rs_cam_core::session\`` |
+| WP11b.1 | `80a9cf4d` | `error[E0432]: unresolved imports \`rs_cam_core::session::GenObserver\`,` |
+| WP11b.2 | `51f41c40` | `error[E0432]: unresolved import \`rs_cam_core::session::AdoptSimulationArgs\`` |
+| WP12 | `e19a8870` | `test the_three_generation_entries_are_crate_private ... FAILED` |
+| WP13 | `2b60b6a4` | `error[E0432]: unresolved import \`rs_cam_viz::ui_command\`` |
+| WP14a | `b68c636f` | `error[E0432]: unresolved imports \`rs_cam_core::session::PreviewTierMapArgs\`,` |
+| WP15a | `18a951a3` | `thread 'every_public_setter_has_a_command_row' (1115731) panicked at crates/rs_cam_core/tests/setters_have_rows_wp15a.rs:282:5:` |
+| WP16 | `df87f239` | `test every_gui_reached_core_row_is_constructed_in_the_view ... FAILED` |
+| WP17 | `3817ba3c` | `test a_post_config_edit_keeps_the_simulation_wp17 ... FAILED` |
+| WP21 | `e4d835f6` | `test the_pass_caps_the_floor_at_the_ceiling_instead_of_panicking ... FAILED` |
 
 ### Historical red-block qualification
 
@@ -186,7 +186,7 @@ Each PASS below is a source or history check, not a test run. Evidence names the
 | §13.WP9.3 | Cycle-time Query; explicit surfaces | PASS | `crates/rs_cam_core/src/session/command.rs:442` — `(Query, ToolpathCycleTime, "toolpath_cycle_time", ToolpathCycleTimeArgs,` |
 | §13.WP9.4 | Five viz consumers use the core answer | PASS | `crates/rs_cam_viz/src/ui/readiness.rs:390` — `pub fn toolpath_cycle_time(`; `crates/rs_cam_viz/src/ui/readiness.rs:400` — `let query = Query::ToolpathCycleTime(ToolpathCycleTimeArgs {` |
 | §13.WP9.5 | Frozen-oracle cycle-time and registry sentry | PASS: sentry source; not executed | `crates/rs_cam_core/tests/query_cycle_time_one_answer.rs:279` — `fn machine_model_basis_matches_the_oracle() {` |
-| §13.WP9.6 | WP3 before WP9 | PASS: commit order | Checked `25f37b74` precedes `5173c923` at the pin. This establishes landing order, not when editing began. |
+| §13.WP9.6 | WP3 before WP9 | PASS: commit order | Checked `c68c7b7c` precedes `126ba577` at the pin. This establishes landing order, not when editing began. |
 | §14.1 | Recommend/Preview/Optimize are Jobs | PARTIAL; Optimize is excluded WP14b | `crates/rs_cam_core/src/session/command.rs:804` — `(Job, RecommendClearingStrategy, "recommend_clearing_strategy",`; `crates/rs_cam_core/src/session/command.rs:816` — `(Job, PreviewTierMap, "preview_tier_map", PreviewTierMapArgs,` |
 | §14.2 | Viz-owned reads use UiQuery | PASS | `crates/rs_cam_core/src/session/command.rs:843` — `UiQuery,`; `crates/rs_cam_viz/src/ui_command.rs:913` — `pub enum UiQuery {` |
 | §14.3 | Delete five post-write events; wizard takes SetPostConfig | PASS | `crates/rs_cam_viz/src/app/input.rs:111` — `let command = rs_cam_core::session::Command::SetPostConfig(`; `crates/rs_cam_viz/tests/egui_draw_sites_write_through_commands_wp6.rs:271` — `fn the_app_event_enum_dropped_the_five_post_write_events() {` |
@@ -201,7 +201,7 @@ Each PASS below is a source or history check, not a test run. Evidence names the
 | §15.8 | Post-write effects move to describe | PASS for post-write effects; pre-display work is separate | `crates/rs_cam_viz/src/app/mcp/commands.rs:1818` — `pub(crate) fn describe_core(`; `crates/rs_cam_viz/src/app/mcp/commands.rs:194` — `pub(crate) fn mcp_before_core(&mut self, request: &CoreRequest) {` |
 | §15.9 | Retarget the toast sentry | PASS: sentry source; not executed | `crates/rs_cam_viz/tests/mcp_toasts_report_outcome_g_mcptoast.rs:94` — `fn every_command_row_toast_is_returned_not_pushed() {` |
 | §15.10 | Two writers and one fix commit | NOT MEASURED: process | Source and commit ancestry do not establish writer count or worktree discipline. `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md` §15.10. |
-| §16.1 | WP9 before WP10 | PASS: commit order | Checked `5173c923` precedes `3ff3cffa` at the pin.  |
+| §16.1 | WP9 before WP10 | PASS: commit order | Checked `126ba577` precedes `89deeb5e` at the pin.  |
 | §16.2 | start captures inputs/context and revision | PASS as amended by §16 addendum | `crates/rs_cam_core/src/session/command.rs:2597` — `pub fn start(&mut self, job: Job, cancel: &AtomicBool) -> Result<JobHandle, SessionError> {`; `crates/rs_cam_core/src/session/compute.rs:3015` — `pub(crate) fn start_generate_toolpath(` |
 | §16.3 | Session-free executor | PASS as amended by §22 observer parameter | `crates/rs_cam_core/src/session/compute.rs:611` — `pub fn execute_job(` |
 | §16.4 | Adopt uses handle revision | PASS | `crates/rs_cam_core/src/session/compute.rs:3250` — `revision: handle.revision,` |
@@ -225,19 +225,19 @@ Each PASS below is a source or history check, not a test run. Evidence names the
 | §18 | Builder for setup; Commands for live edits | PASS | `crates/rs_cam_core/src/session/builder.rs:55` — `pub struct ProjectSessionBuilder {`; `crates/rs_cam_core/src/session/builder.rs:102` — `pub fn model(mut self, model: LoadedModel) -> Self {` |
 | §19.1 | Remaining producers return Effects; adds carry created id | PASS: current command/mutation paths | `crates/rs_cam_core/src/session/command.rs:1118` — `pub created: Option<usize>,`; `crates/rs_cam_core/src/session/mutation.rs:777` — `pub fn add_model(&mut self, model: super::LoadedModel) -> Effects {`; `crates/rs_cam_core/src/session/mutation.rs:126` — `pub fn add_toolpath(` |
 | §19.2 | One whole-machine row | PASS | `crates/rs_cam_core/src/session/command.rs:365` — `(Command, SetMachine, "load_machine_from_library", SetMachineArgs, Effects,`; `crates/rs_cam_core/src/session/mutation.rs:1746` — `pub fn set_machine(&mut self, machine: crate::machine::MachineProfile) -> Effects {` |
-| §19.3 | Surface flip and caller in the same commit | HISTORICAL EXCEPTION: ff81b712 flips; 183900e2 adds caller | `crates/rs_cam_core/src/session/command.rs:204` — `(Command, SetSetupName, "set_setup_name", SetSetupNameArgs, Effects,`; `crates/rs_cam_viz/src/controller/events/model.rs:476` — `let command = Command::SetSetupName(SetSetupNameArgs { setup_index, name });` |
+| §19.3 | Surface flip and caller in the same commit | HISTORICAL EXCEPTION: 50bf6b96 flips; df87f239 adds caller | `crates/rs_cam_core/src/session/command.rs:204` — `(Command, SetSetupName, "set_setup_name", SetSetupNameArgs, Effects,`; `crates/rs_cam_viz/src/controller/events/model.rs:476` — `let command = Command::SetSetupName(SetSetupNameArgs { setup_index, name });` |
 | §19.4 | Free stale helper over AppState | PASS | `crates/rs_cam_viz/src/state/stale.rs:31` — `pub fn stamp_stale(state: &mut AppState, stale: &BTreeSet<usize>) {` |
 | §19.5 | WizardState is viz-owned; wizard hatch is deleted | PASS | `crates/rs_cam_viz/src/state/runtime.rs:330` — `pub wizard: crate::state::wizard::WizardState,` |
 | §19.6 | Name/datum/models have distinct invalidation rules | PASS | `crates/rs_cam_core/src/session/command.rs:214` — `(Command, SetSetupDatum, "set_setup_datum", SetSetupDatumArgs, Effects,`; `crates/rs_cam_core/src/session/mutation.rs:1279` — `pub fn set_setup_models(` |
 | §19.7 | Stock auto-fit invalidates all results | PASS | `crates/rs_cam_core/src/session/mutation.rs:1631` — `pub fn update_stock_from_bbox(&mut self, bbox: &BoundingBox3) -> Effects {` |
 | §19.8 | Drag commits on stop/focus loss; clicks on change | PASS: static guards; runtime NOT MEASURED | `crates/rs_cam_viz/src/ui/properties/mod.rs:445` — `self.committed &#124;= response.drag_stopped() &#124;&#124; response.lost_focus();`; `crates/rs_cam_viz/src/ui/properties/mod.rs:444` — `self.changed &#124;= response.changed();` |
-| §19.9 | Builder precedes final hatch migration | PASS: commit order | Checked `084b9b50` precedes `7dff635b` at the pin.  |
-| §19.10 | Per-widget landing points | PASS: commit order | Checked `a86f2df1` precedes `97e4eaf1` at the pin. Properties follows in `9b887707`; separate file commits remain in history. |
+| §19.9 | Builder precedes final hatch migration | PASS: commit order | Checked `6b9f0d78` precedes `44d0c2a6` at the pin.  |
+| §19.10 | Per-widget landing points | PASS: commit order | Checked `6a76afd8` precedes `8ac801f6` at the pin. Properties follows in `15751413`; separate file commits remain in history. |
 | §20.1 | Builder preserves supplied IDs/order; no automatic stock fit | PASS: builder methods | `crates/rs_cam_core/src/session/builder.rs:102` — `pub fn model(mut self, model: LoadedModel) -> Self {`; `crates/rs_cam_core/src/session/builder.rs:142` — `pub fn build(mut self) -> ProjectSession {` |
 | §20.2 | No SetExportWizard row; use viz state | PASS: registry census and viz owner | `crates/rs_cam_viz/src/state/runtime.rs:330` — `pub wizard: crate::state::wizard::WizardState,` |
 | §20.3 | Core un-commanded reproduction stays in-crate; viz one removed | PASS: test-only remaining reproduction | `crates/rs_cam_core/src/session/mutation.rs:3299` — `fn arm_inspector_door() -> Observation {` |
 | §20.4 | Remaining hatch users move to commands/builder | PASS: sentry source; not executed | `crates/rs_cam_core/tests/hatches_are_crate_private_wp7.rs:242` — `fn every_mutation_hatch_is_declared_crate_private() {` |
-| §20.5 | Final privacy gate follows builder and migration | PASS: commit order | Checked `2cfc2b9a` precedes `7dff635b` at the pin. Primary privacy sentry is `hatches_are_crate_private_wp7`; no build was rerun here. |
+| §20.5 | Final privacy gate follows builder and migration | PASS: commit order | Checked `0d770f48` precedes `44d0c2a6` at the pin. Primary privacy sentry is `hatches_are_crate_private_wp7`; no build was rerun here. |
 | §21.1 | Separate viz registry and one union | PASS | `crates/rs_cam_viz/src/ui_command.rs:345` — `macro_rules! for_each_ui_command {`; `crates/rs_cam_viz/src/ui_command.rs:1053` — `pub enum SurfaceId {` |
 | §21.2 | Fifth kind UiQuery | PASS | `crates/rs_cam_core/src/session/command.rs:843` — `UiQuery,` |
 | §21.3 | GetOperationSchema is a core Query | PASS | `crates/rs_cam_core/src/session/command.rs:501` — `(Query, GetOperationSchema, "get_operation_schema", GetOperationSchemaArgs,` |
@@ -256,7 +256,7 @@ Each PASS below is a source or history check, not a test run. Evidence names the
 | §22.6 | Preconditions/refusals occur at start | PASS | `crates/rs_cam_core/src/session/compute.rs:3015` — `pub(crate) fn start_generate_toolpath(` |
 | §22.7 | Request carries handle and viz extras | PASS | `crates/rs_cam_viz/src/compute/worker.rs:63` — `pub struct ComputeRequest {` |
 | §22.8 | Behavioral N12 check and worker/executor source contract | PASS: sentry source; not executed | `crates/rs_cam_core/tests/gen_inputs_one_assembly_n12.rs:165` — `fn the_job_route_modulates_feeds_from_the_feed_optimisation_stock() {` |
-| §22.9 | WP4 precedes WP11b | PASS: commit order | Checked `1c399a71` precedes `4b53576b` at the pin. Observer and lazy-index changes are in the WP11b package. |
+| §22.9 | WP4 precedes WP11b | PASS: commit order | Checked `c663f166` precedes `80a9cf4d` at the pin. Observer and lazy-index changes are in the WP11b package. |
 | §22 addendum | Adopt prior stocks and shared trace after GUI simulation | PASS: one common GUI drain serves both branches | `crates/rs_cam_core/src/session/command.rs:2276` — `Command::AdoptSimulation(args) => {`; `crates/rs_cam_viz/src/controller/events/compute.rs:801` — `let adopt = Command::AdoptSimulation(args);` |
 | §23.1 | Loose generation entries are crate-private | PASS | `crates/rs_cam_core/src/compute/execute.rs:3406` — `pub(crate) fn execute_operation_annotated(`; `crates/rs_cam_core/src/compute/execute.rs:3498` — `pub(crate) fn execute_operation_annotated_with_regions(` |
 | §23.2 | Move raw-output tests in-crate; no external loose callers | PASS: sentry source; not executed | `crates/rs_cam_core/tests/loose_executor_is_crate_private_wp12.rs:182` — `fn no_file_outside_core_src_names_the_loose_executor() {` |
@@ -272,7 +272,7 @@ Each PASS below is a source or history check, not a test run. Evidence names the
 | §25.2 | Narrow typed setters after builder/test migration | EXCLUDED: WP15b | The user excludes this in-flight outcome. `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md` §25.2; no later worktree implementation is assessed. |
 | §25.3 | Post shadows use SetPostConfig; WP17 owns semantics | PASS | `crates/rs_cam_core/src/session/command.rs:389` — `(Command, SetPostConfig, "set_spindle_strategy", SetPostConfigArgs, Effects,`; `crates/rs_cam_core/src/session/mutation.rs:1717` — `pub fn set_post_config(&mut self, post: ProjectPostConfig) -> Effects {` |
 | §25.4 | Compute doors belong to later Job work | PRESENT: explicitly ledgered scope | `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md:1619-1622`; generation/simulation convenience methods remain, not a claim that all actions are Commands. |
-| §25.5 | WP16 → WP20 → WP14a → WP15a | PASS: commit order | Checked `183900e2` precedes `9b3f75de` at the pin. Also checked `9b3f75de → 6e9a1326 → ad06c690`. |
+| §25.5 | WP16 → WP20 → WP14a → WP15a | PASS: commit order | Checked `df87f239` precedes `e1894b70` at the pin. Also checked `e1894b70 → b68c636f → 18a951a3`. |
 | §26.1 | No new timeout wire field; pending oneshot waits | PASS: unchanged parameter types; poll API remains deferred | `crates/rs_cam_mcp/src/server.rs:83` — `pub struct IndexParam {`; `crates/rs_cam_mcp/src/server.rs:862` — `pub struct PreviewTierMapParam {` |
 | §26.2 | Boxed JobAnswer and handle convention | PASS | `crates/rs_cam_core/src/session/command.rs:2063` — `pub enum JobAnswer {`; `crates/rs_cam_core/src/session/command.rs:2217` — `pub enum JobHandle {` |
 | §26.3 | FIFO Job lane; generation status/cancel remains Toolpath-only | PASS for FIFO; stated status/cancel residual remains | `crates/rs_cam_viz/src/compute/worker.rs:605` — `let job_lane = LaneQueue::new(ComputeLane::Job);`; `crates/rs_cam_viz/src/compute/worker.rs:753` — `fn submit_job(&mut self, request: JobRequest) {` |
@@ -1035,7 +1035,7 @@ The following inline map is the full 141-row construction census at the pin. Cou
 
 ### MINOR
 
-- **N1 — SetSetupName did not meet §19.3's same-commit red-to-fix requirement.** `crates/rs_cam_viz/src/controller/events/model.rs:468-480`; sentry `ff81b712` changes Skip to Reached before caller fix `183900e2`. **Fix:** record the exception; do not rewrite history.
+- **N1 — SetSetupName did not meet §19.3's same-commit red-to-fix requirement.** `crates/rs_cam_viz/src/controller/events/model.rs:468-480`; sentry `50bf6b96` changes Skip to Reached before caller fix `df87f239`. **Fix:** record the exception; do not rewrite history.
 - **N2 — PreviewTierMap has forward-promise wording.** `crates/rs_cam_core/src/session/command.rs:819-821`. **Fix:** replace “WP14b moves it” with a present-tense scope note; WP14b is excluded, so this is not an implementation gap.
 
 ## F. Core test inventory not named by this review evidence

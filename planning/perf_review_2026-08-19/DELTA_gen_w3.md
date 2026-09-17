@@ -28,7 +28,7 @@ not, and it matters for the prescription.
   query, and it cannot share `EdgeDistanceField`: a distance index answers a
   different question, and `contains_point` already has a bbox early-out that a
   distance query does not. Verified against the pre-G2 file
-  (`git show 473c3d1f^:crates/rs_cam_core/src/rest.rs`), so this is not an
+  (`git show ad107fbb^:crates/rs_cam_core/src/rest.rs`), so this is not an
   artifact of the G2 restructure moving lines around.
 
 So "one indexed EdgeDistanceField shared by all three" is a **two**-site
@@ -114,7 +114,7 @@ would not notice.
 `face_toolpath_with_cancel` built the facing rectangle once but then called
 `zigzag_toolpath` / `oneway_toolpath` inside the per-Z-level closure, and both
 of those start with `zigzag_lines` — the inset and the row slicing — so a
-depth-stepped face redid all of it once per level. Same shape as `473c3d1f`:
+depth-stepped face redid all of it once per level. Same shape as `ad107fbb`:
 `face_scan_lines` is the Z-independent half (inset, slicing, and the `OneWay`
 endpoint normalisation, which only permutes endpoints within a row and is
 Z-independent by the same argument); `lines_to_toolpath` stamps `cut_depth` in
@@ -233,7 +233,7 @@ not staged with this commit.
 - `cargo clippy -p rs_cam_core --lib --benches --test <the eight below> -- -D warnings`:
   clean. The full `--tests` run fails on `tests/pushcutter_band_query_g1.rs`
   (`print_stdout`), which is the PUSH-CUTTER lane's in-flight file — not
-  touched, per the ownership protocol. (It was fixed by that lane in `e4379dd5`
+  touched, per the ownership protocol. (It was fixed by that lane in `2e94dc42`
   mid-wave.)
 - `cargo test -p rs_cam_core --lib`: **2313 passed, 0 failed.**
 - Phase 0 goldens: `perf_golden_sim_metrics` 5/5,

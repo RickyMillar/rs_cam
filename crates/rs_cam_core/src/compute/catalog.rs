@@ -554,7 +554,7 @@ impl OperationType {
     /// Originally calibrated from `WANAKA_ASSESSMENT_2026-05-19.md`
     /// expectation bands; **recalibrated 2026-08-21 (W5B-F4)** against the
     /// swept stamping kernel that became the `StampDispatch::Auto` resolution
-    /// at `a4ff2a8c`. The pre-flip readings these bands were fitted to were
+    /// at `34d8917a`. The pre-flip readings these bands were fitted to were
     /// largely a simulation-cell artifact (one unchanged toolpath read 0.31 %
     /// at cell 0.25 and 89.61 % at cell 1.0); the evidence table, the flip
     /// list and the rejected alternatives are in

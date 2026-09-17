@@ -32,7 +32,7 @@
 //! therefore reproduces the pre-fix expression inline (the technique
 //! `boundary_clip_escape_f1` uses) and shows it going `true → false` on
 //! arithmetic alone, then shows the shipped rule holding. That test's first
-//! two assertions ran against the `29303b5` parent unmodified; the third did
+//! two assertions ran against the `caec437` parent unmodified; the third did
 //! not compile there, because `is_extrapolated_for_ratios` did not exist.
 //!
 //! ## THE EXPONENTS MOVED — 2026-08-06, and the rider held
@@ -97,7 +97,7 @@ const PROPOSED_HARDNESS_EXPONENT: f64 = 0.5;
 const RETIRED_LINEAR_EXPONENT: f64 = 1.0;
 
 /// The pre-fix rule, verbatim from `vendor_lookup::build_result` at parent
-/// `29303b5`: `total_scale.ln().abs() > APPROX_LN_THRESHOLD`, where
+/// `caec437`: `total_scale.ln().abs() > APPROX_LN_THRESHOLD`, where
 /// `total_scale` is the product of the scales **actually applied** to the
 /// band.
 fn pre_fix_flag(applied_total_scale: f64) -> bool {
@@ -117,7 +117,7 @@ fn the_pre_fix_rule_silently_un_flags_a_row_when_an_exponent_softens() {
         let applied_softened = apply_chipload_law(raw_d, PROPOSED_DIAMETER_EXPONENT);
 
         // (a) The retired ^1.0 law flags it. This assertion holds on the
-        //     `29303b5` parent against the then-live constant.
+        //     `caec437` parent against the then-live constant.
         assert!(
             pre_fix_flag(applied_today),
             "raw diameter ratio {raw_d} must be flagged under the retired ^1.0 law \

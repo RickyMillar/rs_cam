@@ -345,7 +345,7 @@ fn w3_face_z_propagates_to_height_resolution() {
 
     // Without face Z, auto top_z resolves to 0 (HeightContext::simple stock
     // spans 0 → -op_depth; resolve() uses 0 as the auto top default — see
-    // commit 1e8df9f which locked in this behavior).
+    // commit c604e8b which locked in this behavior).
     assert!(
         heights.top_z.abs() < 1e-9,
         "Auto top_z should be 0.0, got {}",

@@ -409,7 +409,7 @@ That is the failure mode to watch for, and the two identity tests are the
 detector.
 
 **`modulation_raises_cutting_chipload_toward_band` is already red** and is
-unrelated (pre-existing at `7a5fdad4`, still unowned). Do not let it be
+unrelated (pre-existing at `e2ecf697`, still unowned). Do not let it be
 absorbed into this work's result, and do not let it mask a new failure.
 
 ---

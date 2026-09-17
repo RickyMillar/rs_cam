@@ -8,7 +8,7 @@
 //! pocket, adaptive, profile, trace, zigzag, inlay, v-carve, rest and the
 //! 2D-driven drill — never has. A **twelve-vertex reflex cross** was enough
 //! to put `pocket_offsets` at 13 minutes and 386 MB until the arc cascade
-//! landed (`e3427f8`, 2026-08-03). Twelve vertices. Nothing in the suite
+//! landed (`18e9506`, 2026-08-03). Twelve vertices. Nothing in the suite
 //! would have found it, because every 2D fixture in the tree was a square,
 //! a circle, or a captured real part.
 //!

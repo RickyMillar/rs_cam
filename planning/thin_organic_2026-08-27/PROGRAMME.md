@@ -85,7 +85,7 @@ These are not a track. Anything that fails one of these is not done.
 
 ---
 
-## Track A — Tool-profile clearance *(A1 LANDED 994996b7)*
+## Track A — Tool-profile clearance *(A1 LANDED 2eaa6c18)*
 
 **The measured prize, and the only one that is not confined to one band.**
 
@@ -96,7 +96,7 @@ touch the cutter while the code reached 3.0 mm — a 2× over-reach that lifted
 every link to the height of ridges it could never hit. Those lifted links are
 the "huge walls" the operator sees; they are not retracts.
 
-**A1 — DONE 2026-08-28** (`994996b7`, gate 237 binaries / 3453 passed) — profile-aware ceiling: `max over r of [material_top(r) −
+**A1 — DONE 2026-08-28** (`2eaa6c18`, gate 237 binaries / 3453 passed) — profile-aware ceiling: `max over r of [material_top(r) −
 height_at_radius(r)]`, replacing the flat disc. Contained: one production
 caller.
 **A2** — promote it to the shared primitive X2 demands: *given a heightfield, a
@@ -403,7 +403,7 @@ fewer walls in the viewport.
 ## Track F — Validation and operator surface
 
 > **Phase M gate status (2026-08-28): PARTIALLY LIFTED.** The engagement
-> denominator is fixed (`fa8ee8d3` — engaged width, not shank), so Track F
+> denominator is fixed (`b9525f9d` — engaged width, not shank), so Track F
 > may grade engagement / power / deflection magnitudes on tapers. BUT
 > air-cut % on fine tools remains misattributed by a SECOND mechanism
 > (hard-zero samples: fresh-material threshold + resolution; 6.8% of

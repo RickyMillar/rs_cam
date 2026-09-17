@@ -814,7 +814,7 @@ fn run_single_case_inner(
 
     if chained {
         // The catch-22 this order resolves (AS015 had been
-        // `generation_failed` since 4b105dab made the fresh-stock fallback
+        // `generation_failed` since 45347db3 made the fresh-stock fallback
         // fail-hard): `generate_toolpath` refuses a `FromRemainingStock` op
         // unless `simulation.prior_stocks` holds a snapshot keyed to THAT
         // op's id, and `run_simulation` only keys one to an op that already

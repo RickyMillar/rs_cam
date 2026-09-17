@@ -150,7 +150,7 @@ pub struct ToolpathStats {
     /// a different number entirely. `truncated_core_mm2` names the geometry
     /// it actually sums and claims nothing about why.
     ///
-    /// The old spelling is gone. L5 (`5e4165ce`, 2026-09-17) retired the
+    /// The old spelling is gone. L5 (`bbaa193e`, 2026-09-17) retired the
     /// duplicate JSON key from both wires that carried it
     /// ([`crate::session::ToolpathDiagnostic`]'s `Serialize` and the CLI's
     /// per-toolpath report), because a reader who trusted the old NAME read

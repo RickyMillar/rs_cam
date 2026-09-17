@@ -1,6 +1,6 @@
 # S — dead and over-exposed production surface
 
-**Tree under test:** working tree on `master` at `687cac85`, with
+**Tree under test:** working tree on `master` at `401d7735`, with
 `compute/catalog.rs`, `compute/operation_configs.rs`, `depth.rs` and
 `feeds/suggest.rs` modified. The instrument ran on the committed baseline.
 Line numbers below are working-tree numbers; that explains the ~16-line drift
@@ -186,7 +186,7 @@ The module pairs a `*_in(dir, …)` form with a `*_library(…)` /
 
 ### S33 — two rows the instrument called dead and a peer agent revived
 `realised_step_down` (`depth.rs:68`) and `roughing_pass_count`
-(`depth.rs:101`) were dead at `687cac85`. They are live only through
+(`depth.rs:101`) were dead at `401d7735`. They are live only through
 uncommitted power-calcs work: the sole production caller of
 `realised_step_down` is `feeds/suggest.rs:937`, a file that is `M` in the
 working tree, and the tests of both live in

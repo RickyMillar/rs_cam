@@ -101,7 +101,7 @@ fine tier do not.
     for tapered balls.
   - **B3 intra-island routing:** fragments must link with stay-down moves
     under the stock-aware `LinkCeiling` (machinery landed with chaining +
-    pencil links, commits 3ef08d32/4346cb7b), not full retracts. 19k
+    pencil links, commits c04d899f/4346cb7b), not full retracts. 19k
     retracts = 16.1k s is the measured price of not doing this.
 - **Structure: op-chain, not one-op** (T3 §1, decisive): gates, G-code
   (M6 per phase boundary), feeds provenance, and stock chaining all key on
@@ -323,16 +323,16 @@ binary before MCP connect.
 Continue rs_cam in /home/ricky/personal_repos/rs_cam (branch master).
 Read planning/multitool_2026-08-23/ORCHESTRATION_PLAN.md FIRST, then the
 Session 3 section of planning/airrun_2026-08-19/P2_RUN_LOG.md (the
-implementation ledger). STATUS as of 2026-08-27 (through b1a63fc0):
+implementation ledger). STATUS as of 2026-08-27 (through c37d3873):
 **Phases F, T and I are COMPLETE and committed** — F: tip-radius rest
-dilation (b16b042d, envelope-welding fixed), planner dials exposed,
+dilation (4eb37498, envelope-welding fixed), planner dials exposed,
 region-cap + inert-claims findings; T: `tier_map.rs` n-tool residual
-walk + `tier_map_cache.rs` (b0ebadf5) and
-`ResidualTreatment::SlopeCompensated` (5c1f07fb) — **B1 is DECIDED**:
+walk + `tier_map_cache.rs` (21871f7e) and
+`ResidualTreatment::SlopeCompensated` (9fa8b02e) — **B1 is DECIDED**:
 analytic slope compensation for planning/preview (wanaka A/B: raw 71.6%
 fine-tier vs compensated 22.0%/8,815 mm², within 3% of the
 stock-referenced truth 9,096 mm², 4.6 s per 445k-cell map); I:
-`tier_islands.rs` (b1a63fc0) — per-tier island sets, operator coarseness
+`tier_islands.rs` (c37d3873) — per-tier island sets, operator coarseness
 slider (linear radius/quadratic area), `owned` (strict partition) vs
 `machining` (overlap_mm blend) region sets, bounded cap loop, all typed.
 Also landed: the test height-field WINDING fix (all 22 consumer files;

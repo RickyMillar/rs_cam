@@ -21,7 +21,7 @@ than the current NMS+hysteresis+Zhang-Suen skeleton inside
 extraction", called from `crates/rs_cam_core/src/pencil.rs:1955`)?
 "Better" = the six pre-registered metrics; the bars are fixed, and a
 TIE is an adopt-nothing outcome (baseline coverage is already 0.80 from
-`29a6d61`, not the old hairball 0.137).
+`0db602e`, not the old hairball 0.137).
 
 **Start at P0, in order:**
 
@@ -55,7 +55,7 @@ TIE is an adopt-nothing outcome (baseline coverage is already 0.80 from
 
 - The shared pencil pipeline already rest-gates every arm, so
   flow-accumulation is rest-gated by construction — this is what keeps
-  the idea clear of the `53293c96` drainage-deletion ("hydrology
+  the idea clear of the `c73b38c3` drainage-deletion ("hydrology
   trunks, needed gates").
 - Track H refuted watershed as a FULL-SURFACE strategy vs raster; that
   does NOT bind a sparse rest-gated pencil pass. The one carried
@@ -64,7 +64,7 @@ TIE is an adopt-nothing outcome (baseline coverage is already 0.80 from
   natively, no new projection; it inherits (does not add) the "no
   undercut / no non-drainage seam" limit.
 - The synthetic fixture's Y-junction is the crux: A is EXPECTED to
-  shred at the degree-3 node (its `29a6d61` failure), B to stay
+  shred at the degree-3 node (its `0db602e` failure), B to stay
   continuous. If A does not shred there, record that the premise is
   weaker than claimed and re-weigh before P2.
 - Cost with `relink_and_cost_under` under the machined-stock

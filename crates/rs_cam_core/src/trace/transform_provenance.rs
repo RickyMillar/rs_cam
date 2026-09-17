@@ -9,9 +9,9 @@
 //! move links. Before this module, each transform built a
 //! [`MoveRemap`](crate::trace::toolpath_spans::MoveRemap) *privately*, applied it to
 //! the spans, and dropped it. The semantic trace was only kept honest because
-//! ae10cb2's `SemanticLinkCarrier` smuggled its links through the span vector
+//! f375045's `SemanticLinkCarrier` smuggled its links through the span vector
 //! as fake spans. That is a convention: the next channel, or the next
-//! transform, silently drifts again — which is exactly what ae10cb2 was
+//! transform, silently drifts again — which is exactly what f375045 was
 //! fixing after A/M8 had already "fixed" it once.
 //!
 //! # The contract
@@ -443,7 +443,7 @@ pub trait RemapConsumer: sealed::Sealed {
 /// ([`crate::trace::semantic_trace::ToolpathSemanticItem::move_start`] /
 /// `move_end`).
 ///
-/// Replaces ae10cb2's `SemanticLinkCarrier`: instead of smuggling each link
+/// Replaces f375045's `SemanticLinkCarrier`: instead of smuggling each link
 /// through the span vector as a fake span so it would be remapped by
 /// whatever the transform did to real spans, the link is remapped by the
 /// transform's own reported provenance. The observable rules are unchanged —

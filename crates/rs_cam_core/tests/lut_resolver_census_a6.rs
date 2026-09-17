@@ -712,7 +712,7 @@ fn envelope_resolver_never_matches_where_geometry_resolver_does_not() {
 /// the CURRENT (defective) state on purpose** — it is the pre-fix
 /// reproduction F-LUT2 has lacked since Checkpoint B item 5.
 ///
-/// Measured 2026-08-13, branch `tech-debt-3`, parent `7d8a2ea0`.
+/// Measured 2026-08-13, branch `tech-debt-3`, parent `64f017a4`.
 #[test]
 fn f_lut2_divergence_surface_is_pinned() {
     let cells = run_census();

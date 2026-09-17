@@ -1,7 +1,7 @@
 # EXECUTION_SUMMARY.md — tech-debt programme 2, 2026-09-16/17
 
-Orchestrated by Claude Fable 5.1. Evidence baseline `687cac85`; ranked plan
-`bdef37f1`; rulings `0761b14d`; fix range `0761b14d..HEAD`. Four read-only
+Orchestrated by Claude Fable 5.1. Evidence baseline `401d7735`; ranked plan
+`9826d06d`; rulings `db68a352`; fix range `db68a352..HEAD`. Four read-only
 Opus triage agents, five Opus fix agents (W1, W2a, W2b, W3, W4), one Opus
 completeness reviewer. Every item is one commit on `master` with its hash in
 `TECH_DEBT_PLAN.md`.
@@ -33,22 +33,22 @@ additions are one-home helpers, test doors and doc lines).
 ## What landed, per wave
 
 **W1 — tier A and B, plus the ruled deletions (12 commits).**
-Q1 `a98b7fca`: both add-toolpath doors now pass `SuggestContext.model_bbox`
+Q1 `f4d1a9dc`: both add-toolpath doors now pass `SuggestContext.model_bbox`
 (new `ProjectSession::model_bbox`), so the runtime-sanity stepover back-off
 can fire; eight production sites still pass a default context (two behind
-the other account's `draw_toolpath_panel`, one in the CLI smoke baseline). L1 `625a4b6d`: the dressup migration
-reports through `ProjectLoadWarning::DressupsNormalized`. L2 `dbc00a15`:
+the other account's `draw_toolpath_panel`, one in the CLI smoke baseline). L1 `511c8b9f`: the dressup migration
+reports through `ProjectLoadWarning::DressupsNormalized`. L2 `1f5b1a54`:
 `stock_to_leave_radial` deleted from config, catalog, file, MCP and CLI
-schemas. L3+L4 `9c720ea3`: both pre-v3 readers gone; saved files lose the
-empty `toolpaths = []` line. L6 `d496e5df`: the `machine_ref` chain and
+schemas. L3+L4 `2c369c7c`: both pre-v3 readers gone; saved files lose the
+empty `toolpaths = []` line. L6 `776c88b0`: the `machine_ref` chain and
 `Command::SetMachineRef` gone; `machine_library_link_cleared` leaves the
-wire. L8 `cd6bba1a`: `ReplaceSetupsAndToolpaths` and `SetProjectName`
-deleted. L5+L10+L11 `5e4165ce`: `standing_material_mm2`,
+wire. L8 `83488756`: `ReplaceSetupsAndToolpaths` and `SetProjectName`
+deleted. L5+L10+L11 `bbaa193e`: `standing_material_mm2`,
 `air_cut_percentage`, `ProjectDiagnostics::verdict` retired from the MCP
-and CLI report wires. L9 `b0691763`: eight tool-type aliases refused;
-canonical tokens only. L7 `3ead7135`: a trace with no provenance block is
-stale. Q2 `4a8b9871`: the CLI's file-wide index allow gone. Overlap
-`7a81ee4d`: five dead items in W1-owned files.
+and CLI report wires. L9 `6e89ede5`: eight tool-type aliases refused;
+canonical tokens only. L7 `6c87c697`: a trace with no provenance block is
+stale. Q2 `d41db0cc`: the CLI's file-wide index allow gone. Overlap
+`add64df2`: five dead items in W1-owned files.
 
 **W2a — dead code in core (18 commits, −1799 lines).** `viz.rs` HTML
 renderers (−772), `compute/semantic_helpers.rs` (−158),
@@ -123,7 +123,7 @@ parallel flow. Six documentation GAPs and a few leftovers landed as R1–R4:
   `SAFETY:` prefix, two fixtures that still wrote retired keys.
 - R4: plan closed.
 
-Commits: R1 `7e53684e`, R2 `f36fa3b3`, R3 `2089e29d`, R4 `545b7b79`.
+Commits: R1 `89c0be93`, R2 `783aa6ed`, R3 `36371930`, R4 `e5448b55`.
 Corrections found while fixing: no production serde alias for
 `standing_material_mm2` ever existed (the only one is the pinned test-side
 reader); `geo.rs` had three bare allows, not two.
@@ -131,13 +131,13 @@ reader); `geo.rs` had three bare allows, not two.
 ## Hand-off: five pre-existing red tests, none touched by this programme
 
 - viz controller `..._ur3`, `simulation_staleness_tracks_edits`,
-  `freshness_does_not_outrank_a_collision` (UR3/UP4 work, `7b4e18f6`).
+  `freshness_does_not_outrank_a_collision` (UR3/UP4 work, `f97327c3`).
 - viz `the_simulation_page_is_summary_first_dc6::off_workspace_run_producers_hold_their_recorded_ruling_ur3`:
-  UR8 (`4a1d8e27`) cut `readiness_panel.rs` from 3
+  UR8 (`b1f5182f`) cut `readiness_panel.rs` from 3
   `RunSimulation` producers to 1 without updating the ruling table; the
   file is unchanged since before this programme.
 - core `adaptive_feed_modulation_pipeline_f036b::modulation_raises_cutting_chipload_toward_band`
-  (pre-existing since `7a5fdad4`; power-calcs area).
+  (pre-existing since `e2ecf697`; power-calcs area).
 
 ## Follow-ups (recorded, not scheduled)
 

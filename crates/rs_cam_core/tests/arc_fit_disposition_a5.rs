@@ -177,7 +177,7 @@ struct Fixture {
     /// *realised* or merely *solved for*, and the two differ by a lot.
     max_cutting_feed_mm_min: Option<f64>,
     /// **Arm A — the feed Suggest SHIPPED before the retirement** (mm/min),
-    /// measured on this exact fixture at `5c4e847c` and pinned here on
+    /// measured on this exact fixture at `719b92d7` and pinned here on
     /// 2026-08-13. Applied explicitly by `arc_fit_arms_gate_observation`
     /// so the pre-fix reproduction outlives the code that produced it.
     legacy_shipped_feed: f64,
@@ -535,7 +535,7 @@ fn suggest_read(session: &ProjectSession, fx: &Fixture) -> SuggestRead {
 // ── Step 1–3: the Suggest-side before/after table ───────────────────────
 
 /// **The disposition sentry — §6.1's `retired_lift_leaves_feed_at_the_
-/// calculator_value`, red-first at `5c4e847c`.**
+/// calculator_value`, red-first at `719b92d7`.**
 ///
 /// Pre-fix this test was `arc_fit_lift_before_after_by_family` and it
 /// *required* the lift to fire: it asserted `arc_fit_source == "Calibrated"`,

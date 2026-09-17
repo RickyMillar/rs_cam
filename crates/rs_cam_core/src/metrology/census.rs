@@ -40,7 +40,7 @@ pub const VERDICT_ANGLE_INDEX: usize = 2;
 ///
 /// Evidence: on Wanaka region 1 every shipped decomposition reads
 /// `w30 ≤ 0.43` (`tests/zone_coherence_census.rs`, evidence commit
-/// `a17de695`/`d22e8b53`: "no shipped decomposition is a coherent zone —
+/// `1145939f`/`489f73ff`: "no shipped decomposition is a coherent zone —
 /// the field turns inside one stepover"); the bikeseat control geometry
 /// reads `w30 ≥ 0.70` per orientation regime
 /// (`planning/bikeseat_gate_2026-09-01/FINDINGS.md`). The bar sits at the

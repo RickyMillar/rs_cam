@@ -2,7 +2,7 @@
 
 **Track T2, 2026-08-23. Read-only investigation.** Every claim carries a
 `file:line`. Line numbers are against the working tree at investigation time
-(branch `master`, HEAD `a84c26d9`). Uncommitted pencil-related edits by a
+(branch `master`, HEAD `bc5fba45`). Uncommitted pencil-related edits by a
 concurrent lane were ignored.
 
 **Headline:** the island machinery the multi-tool plan needs is **already

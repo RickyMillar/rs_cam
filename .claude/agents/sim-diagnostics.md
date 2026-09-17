@@ -27,7 +27,7 @@ Check `SimulationToolpathCutSummary`:
 - `average_engagement` > 0.6 for finishing = too aggressive
 Then read the `hotspots` section of the MCP tool `get_cut_trace` for the worst
 regions, and its `semantic_summaries` section for the per-region breakdown.
-S4 (`3374e3c7`) deleted the `cut_hotspots` and `semantic_cut_summary` doors on
+S4 (`1300aa73`) deleted the `cut_hotspots` and `semantic_cut_summary` doors on
 `SimulationState`.
 
 ### "Why is this operation slow?"

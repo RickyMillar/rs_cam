@@ -5,9 +5,9 @@
 //! * **Kind**: GATE (default CI, synthetic, seconds). Not a
 //!   characterisation — every assertion below is a claim that must hold on
 //!   any future implementation, not a snapshot of today's numbers.
-//! * **Guards**: `32c5e48` (classification cell size follows the CUSP
-//!   radius) and `5732f57` (finish-planner dials derive from the CUSP
-//!   radius), against their parent `1748be2`. Both fixes are behaviourally
+//! * **Guards**: `f15adda` (classification cell size follows the CUSP
+//!   radius) and `a0d9588` (finish-planner dials derive from the CUSP
+//!   radius), against their parent `33a0f77`. Both fixes are behaviourally
 //!   INERT on ball cutters — `cusp_radius() == radius()` there — which is
 //!   exactly why all 56 parameter sweeps and every pre-existing unit test
 //!   missed the defect (`tapered_cusp_radius_sentry.rs` header, design doc
@@ -825,7 +825,7 @@ fn tapered_region_areas_prove_tip_scale_dials_end_to_end() {
     }
 }
 
-/// The historical red. This reconstructs the pre-`32c5e48`/`5732f57`
+/// The historical red. This reconstructs the pre-`f15adda`/`a0d9588`
 /// pipeline exactly — see the module header — and asserts it loses every
 /// steep region on the same mesh the end-to-end run above cuts.
 ///

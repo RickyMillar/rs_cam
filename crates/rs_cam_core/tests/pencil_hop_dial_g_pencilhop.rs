@@ -19,8 +19,8 @@
 //! `hookup_distance`, and the earlier `gap > hookup_distance` test already
 //! returned, so the `gap > hop_cap` test cannot run at `None`. An earlier
 //! ledger row called this a shipped regression and was RETRACTED
-//! (`0b5f1cd2`); the hop tier itself predates the link stage
-//! (`git log -S "PencilJunction::Lifted"` reaches `fb5339da`). This file
+//! (`fe0227a2`); the hop tier itself predates the link stage
+//! (`git log -S "PencilJunction::Lifted"` reaches `b6bf1ca9`). This file
 //! pins the retraction: `None` and `Some(hookup_distance)` emit the same
 //! toolpath, move for move.
 //!

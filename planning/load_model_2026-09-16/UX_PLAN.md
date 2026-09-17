@@ -118,7 +118,7 @@ change your cut geometry too".
 where the feed cap binds) to land inside the band.
 
 Note this is a **restoration, not an invention**. `⚡⚡ Apply recommended
-speeds` existed and was deleted by `540715c1` along with the SPEED section.
+speeds` existed and was deleted by `d323cabb` along with the SPEED section.
 The product deleted the safe narrow action and kept the broad one.
 
 Routing through `feeds::suggest::apply` with an explicit `ApplyScope` keeps

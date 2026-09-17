@@ -225,7 +225,7 @@ tree settled.
 `cargo fmt --check -p rs_cam_core` is clean for all seven files this wave
 touched (the two remaining diffs in the crate are, again, the SIM lane's).
 
-### One wart in commit `473c3d1f`, for whoever reads that diff
+### One wart in commit `ad107fbb`, for whoever reads that diff
 
 `benches/hot_paths.rs` shows **187 insertions / 44 deletions**, and only about
 130 of those lines are this wave's work. The rest are **rustfmt reflow of code
@@ -242,9 +242,9 @@ It is reflow only — **no semantic change, and no bench arm added or removed
 outside `gen_depth`**. Proof, reproducible:
 
 ```text
-git show 473c3d1f^:crates/rs_cam_core/benches/hot_paths.rs > before.rs
+git show ad107fbb^:crates/rs_cam_core/benches/hot_paths.rs > before.rs
 cp before.rs before_fmt.rs && rustfmt --edition 2024 before_fmt.rs
-diff before_fmt.rs <(git show 473c3d1f:crates/rs_cam_core/benches/hot_paths.rs)
+diff before_fmt.rs <(git show ad107fbb:crates/rs_cam_core/benches/hot_paths.rs)
 ```
 
 The only removals are `bench_gen_depth`'s four old `use` lines; every addition

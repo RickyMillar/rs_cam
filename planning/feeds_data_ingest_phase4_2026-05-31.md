@@ -1,8 +1,8 @@
 # Feeds Data Ingest — Phase 4 (bulk LUT row promotion)
 
 **Date:** 2026-05-31
-**Predecessors:** Phase 1+2C (`5ccf533`), Phase 2B (`bbb164f`), Phase 4
-consolidation audit (`132e0a8`, `a4c6bfe`, `91625d6`, `c5f0363`, `a73f244`).
+**Predecessors:** Phase 1+2C (`aca1375`), Phase 2B (`06faa7b`), Phase 4
+consolidation audit (`90efcb8`, `65b13d1`, `d3cc13d`, `445302a`, `140fcbd`).
 **Plan reference:** `planning/feeds_data_ingest_2026-05-30_phased_plan.md`
 ("PHASE 4" section).
 

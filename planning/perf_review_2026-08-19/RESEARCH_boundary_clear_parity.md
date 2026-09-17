@@ -1,7 +1,7 @@
 # RESEARCH — planner/sim parity with a `ToolContainment` boundary set
 
 **Lane:** W7 research (read/test-only), 2026-08-21. Branch `tech-debt-3`,
-tip `1d6dd855`. Nothing committed; the scratch instrument was deleted after
+tip `e0554da7`. Nothing committed; the scratch instrument was deleted after
 measurement (source preserved under **Artifacts**).
 
 **Closes OPEN ITEM 1 of `DELTA_w5b_f1_planner_boundary.md` §7(a)** — "the

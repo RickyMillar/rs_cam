@@ -42,7 +42,7 @@
 //! # The estimator, restated
 //!
 //! Restated from `crates/rs_cam_core/tests/wanaka_curvature_anisotropy.rs`
-//! (commit `7f341f9d`), and the `t1` extraction from
+//! (commit `5e4ae866`), and the `t1` extraction from
 //! `crates/rs_cam_core/tests/direction_field_wanaka_f1.rs`. Both files are
 //! read-only here. An integration test cannot import another one, so the
 //! arithmetic is restated. It is not modified.

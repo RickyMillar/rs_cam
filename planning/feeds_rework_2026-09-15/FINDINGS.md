@@ -1,6 +1,6 @@
 # Feeds and Speeds — findings, 2026-09-15
 
-The operator reported four things after the declutter landed (`5d329ea7`).
+The operator reported four things after the declutter landed (`9b778d3c`).
 This document records what I measured for each. It is evidence, not a plan;
 the plan is `PLAN.md`.
 
@@ -35,7 +35,7 @@ The operator asked "there is no direct f/s control?". Correct. There is none.
 So both controls were deliberately concentrated in one place: the Feeds tab's
 `SPEED — how fast` section.
 
-Commit `540715c1` ("UR4 — the feeds modal is Explore only", today 14:13) then
+Commit `d323cabb` ("UR4 — the feeds modal is Explore only", today 14:13) then
 deleted that section. Its diff removes:
 
 ```

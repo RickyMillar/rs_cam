@@ -33,7 +33,7 @@
 //! `hatches_are_crate_private_wp7.rs` reads the same evidence the same
 //! way, and this file reuses its walk.
 //!
-//! # The population, measured at `61c16b75`
+//! # The population, measured at `2c593c7d`
 //!
 //! The scan reads **86** `&mut self` methods inside `impl ProjectSession`
 //! blocks. Two doors match, `apply` and `start`; `query` takes `&self`

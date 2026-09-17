@@ -229,7 +229,7 @@ impl ToolConfig {
         // whatever its type, and those numbers then survived save,
         // load, and every report surface that does not dispatch on
         // `tool_type` first. Keep only what this type actually
-        // defines — b0362626 made the MCP creation path do the same,
+        // defines — 4b1e6f21 made the MCP creation path do the same,
         // and this is the constructor the GUI and CLI use.
         tool.normalize_geometry();
         tool
@@ -294,7 +294,7 @@ impl ToolConfig {
 
     /// Zero the geometry belonging to OTHER tool types, returning what
     /// was cleared. Geometry that defines this type is left alone —
-    /// b0362626's rule, applied here to tools that were already saved
+    /// 4b1e6f21's rule, applied here to tools that were already saved
     /// before that commit landed.
     ///
     /// This changes no cutting geometry. Every consumer dispatches on
@@ -1070,7 +1070,7 @@ product_id = ""
     }
 
     /// A tool carrying every geometry field at once — the shape a
-    /// project saved before b0362626 has on disk, whatever its type.
+    /// project saved before 4b1e6f21 has on disk, whatever its type.
     fn fully_populated(tool_type: ToolType) -> ToolConfig {
         let mut tool = ToolConfig::new_default(ToolId(0), tool_type);
         tool.corner_radius_mm = 0.5;
@@ -1104,7 +1104,7 @@ product_id = ""
     }
 
     /// The GUI/CLI constructor is the surviving source of the
-    /// type-agnostic defaults b0362626 fixed on the MCP path. Every
+    /// type-agnostic defaults 4b1e6f21 fixed on the MCP path. Every
     /// default tool must now be complete for its type and carry
     /// nothing belonging to another.
     #[test]

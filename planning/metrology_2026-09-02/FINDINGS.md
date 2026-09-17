@@ -227,7 +227,7 @@ The operator routed three tasks here; Track H is blocked on the first two.
 
 ### M2.0 — gate reds fixed
 
-Commit `2e2ef306` left the workspace clippy gate red. Fixed:
+Commit `aeb36ee7` left the workspace clippy gate red. Fixed:
 
 - `tests/union_coverage_m1.rs:71` — `ptr_arg`: `run_arm` takes `&Path`.
 - `tests/wanaka_curvature_anisotropy.rs:489` — `wrong_self_convention`:

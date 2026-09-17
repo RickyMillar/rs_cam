@@ -341,7 +341,7 @@ unambiguously the **axial** depth of cut.
 
 FEEDS_CENSUS §4.3 established `cl_norm = fz · f(arc_sample) · f_lut / f(arc_sample)
 = fz · f_lut`, pinned executably by
-`crates/rs_cam_core/tests/feed_explanation_snapshot_b3.rs` (commit `5f7bb25`).
+`crates/rs_cam_core/tests/feed_explanation_snapshot_b3.rs` (commit `6629a0d`).
 Under the advance-per-tooth verdict the band's unit is `fz`, so:
 
 ```

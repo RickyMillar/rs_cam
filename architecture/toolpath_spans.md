@@ -11,7 +11,7 @@
 The pipeline today emits a `Toolpath` (sequence of moves) plus an `OperationAnnotations` sidecar (op-specific enum). Dressup transforms (`apply_link_moves`, `optimize_rapid_order`, `apply_dogbones`, `fit_arcs`, boundary clip, `filter_air_cuts`) mutate the move list **without updating the annotations**. Anything downstream that reads annotations sees stale move indices.
 
 Concrete failure modes this has produced:
-- TSP reordered adaptive3d cuts across depth-pass boundaries → wanaka 18mm full-depth pass-1 bite (fixed in commit 01727e1, but only because `rapid_order_barriers` was special-cased for Adaptive3d in `execute.rs:50-73`).
+- TSP reordered adaptive3d cuts across depth-pass boundaries → wanaka 18mm full-depth pass-1 bite (fixed in commit e7c968c, but only because `rapid_order_barriers` was special-cased for Adaptive3d in `execute.rs:50-73`).
 - Per-op sidecar means RampFinish/Scallop/SpiralFinish/Pencil emit annotations but their `rapid_order_barriers()` returns empty (audit FT-2). The infrastructure exists but is wired only for one op.
 - GUI tracing builds a separate semantic trace before dressups; after dressups, that trace's move ranges are stale (`crates/rs_cam_viz/src/compute/worker/helpers.rs`).
 

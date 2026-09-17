@@ -34,7 +34,7 @@ Old values are stale — expect both to drop.
    bench: `MachineKinematics::shapeoko_xxl_ricky_tuned()`, `max_feed_mm_min = 10000`.
    - The export now runs the machine-safety pass and logs any findings —
      confirm the log is clean before sending either file to the machine.
-   - The emitted GRBL program now sets `G54` explicitly (commit `e6fa90b`).
+   - The emitted GRBL program now sets `G54` explicitly (commit `360ae21`).
 
 2. **Run + time each on the machine.** Stopwatch from cycle start to the
    final retract. Record `run A` and `run B` wall-clock in seconds.

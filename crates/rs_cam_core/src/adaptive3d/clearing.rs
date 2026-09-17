@@ -432,7 +432,7 @@ fn stamp_along_path(
 }
 
 /// The mesh geometry `segments_to_toolpath` needs in order to drape an
-/// emitted move up to `surface + stock_to_leave` (the `fa27b08` gouge
+/// emitted move up to `surface + stock_to_leave` (the `fad3a56` gouge
 /// guard). Carried into the planner's mirror stamp so both sides see the
 /// same path.
 ///
@@ -471,14 +471,14 @@ impl<'a> ClearZLevelContext<'a> {
 /// applies, so the planner stamps the SAME path the simulator will
 /// replay. Today that is three transformations, in the emitter's order:
 ///
-/// 1. `drape_path_to_leave` / `drape_point` — the `fa27b08` gouge guard,
+/// 1. `drape_path_to_leave` / `drape_point` — the `fad3a56` gouge guard,
 ///    which densifies to `<= cutter.radius()` and raises every point to
 ///    `drop_cutter(x, y) + stock_to_leave`;
 /// 2. `simplify_path_3d` (RDP at `tolerance`);
 /// 3. `blend_corners_3d` (at `min_cutting_radius`).
 ///
 /// If a fourth is ever added to the emitter it must be added here in the
-/// same commit. `fa27b08` added (1) to the emitter and not here, and the
+/// same commit. `fad3a56` added (1) to the emitter and not here, and the
 /// planner spent seven weeks believing it had removed material its own
 /// emitted toolpath leaves standing — see
 /// `planning/review_2026-08-04/ADAPTIVE3D_RED_BASELINE.md` §3.

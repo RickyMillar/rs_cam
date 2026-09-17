@@ -464,7 +464,7 @@ mod tests {
     /// absorb, routine on the recipes the rubbing-floor clamp parks exactly on
     /// the ceiling.
     ///
-    /// RED at the parent (`e94be53a`): `chipload_within_breaches_strict` wrote
+    /// RED at the parent (`f2c0b09d`): `chipload_within_breaches_strict` wrote
     /// a bare `observed > bounds.max_mm_per_tooth`, so this candidate was
     /// re-decided as a strict breach and routed to `MarginalSafe` — the modal
     /// says **"verify on a scrap"** instead of auto-recommending, on the last

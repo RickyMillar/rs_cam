@@ -29,10 +29,10 @@ reason is stated. It is not a to-do marker.
 
 | # | Defect | What it did to a measurement | Fixed |
 |---|---|---|---|
-| **D1** | Classification grid **6x too coarse** — the cell size was derived from the tool's SHANK radius, not its CUSP radius | Band decomposition ran at 0.75 mm instead of 0.125 mm on the shipped Ø1-tip taper. Ribbons of steep terrain merged or vanished before any strategy saw them | `32c5e48` (2026-07-29) |
-| **D2** | Finish-planner **dials 6x/36x too large** — `min_region_area_mm2` 144 vs 4 mm², `close_radius_mm` 1.5 vs 0.25, `pencil_claim_floor` 0.75 vs 0.125, all from `radius()` instead of `cusp_radius()` | An area floor 36x too high deleted small regions wholesale; a close radius 6x too big merged distinct regions into one blob. Whichever strategy owns big blobs wins by construction | `5732f57` (2026-07-29) |
-| **D3** | Rest-routing radius = **SHAFT**, not TIP — `RestFieldParams::pencil_radius` was overwritten by `radius()` at all three production call sites | The valley detector was asked where a **3 mm** cylinder can reach, for work the **0.5 mm** tip would do. Every "pencil finds nothing" measurement asked the wrong question | PR-4 `df41169` .. PR-7 `e922931` |
-| **D4** | `claims_reference: self_probe` was the shipped default — an **analytic** rest reference that never consults machined stock | In a same-tool cascade the reference is, by construction, exactly what the tool cannot reach, so the rest pass re-cut the whole part. Measured cost when finally compared: 46 366 mm vs 5 259 mm of cutting (**-88.7%**) | `5c24d62` (2026-08-02) |
+| **D1** | Classification grid **6x too coarse** — the cell size was derived from the tool's SHANK radius, not its CUSP radius | Band decomposition ran at 0.75 mm instead of 0.125 mm on the shipped Ø1-tip taper. Ribbons of steep terrain merged or vanished before any strategy saw them | `f15adda` (2026-07-29) |
+| **D2** | Finish-planner **dials 6x/36x too large** — `min_region_area_mm2` 144 vs 4 mm², `close_radius_mm` 1.5 vs 0.25, `pencil_claim_floor` 0.75 vs 0.125, all from `radius()` instead of `cusp_radius()` | An area floor 36x too high deleted small regions wholesale; a close radius 6x too big merged distinct regions into one blob. Whichever strategy owns big blobs wins by construction | `a0d9588` (2026-07-29) |
+| **D3** | Rest-routing radius = **SHAFT**, not TIP — `RestFieldParams::pencil_radius` was overwritten by `radius()` at all three production call sites | The valley detector was asked where a **3 mm** cylinder can reach, for work the **0.5 mm** tip would do. Every "pencil finds nothing" measurement asked the wrong question | PR-4 `a061b0d` .. PR-7 `2520b2d` |
+| **D4** | `claims_reference: self_probe` was the shipped default — an **analytic** rest reference that never consults machined stock | In a same-tool cascade the reference is, by construction, exactly what the tool cannot reach, so the rest pass re-cut the whole part. Measured cost when finally compared: 46 366 mm vs 5 259 mm of cutting (**-88.7%**) | `0d0a80f` (2026-08-02) |
 
 D1 and D2 interact, and the interaction was itself mis-attributed. The
 audit in `unified_v3_design.md` §14t found that **cell size drove the
@@ -55,7 +55,7 @@ Origin paths are relative to the repo root. "Defect" cites §1.
 | 1 | "Contour and pencil have nothing to do on this part" | `planning/unified_v3_design.md:2947-2952`, restated `:1547-1556` | D1, D2, **D3** | **YES (contour half)** | **CONTOUR HALF REFUTED.** On the committed terrain fixture at corrected instruments, waterline owns **41.4% of all cutting** in a single coherent VerySteep region (§3.3 Finding 5) — against §14's **0.0%**. §14's stated basis was *"the fixture has no very-steep band"*; it has one, and it is the second-largest consumer of cutting on the part. **Pencil half NOT tested** — `pencil_claims` is off by design in this comparison (§3.4 limit 5), and an absence under a disabled feature is not evidence. Corroborated independently by the §14t audit on one pinned grid: coarse + shaft dials → **0 VerySteep regions, 0 mm²**; fine + tip dials → **10 regions, 313 mm²**. |
 | 2 | "Scallop wins every time" | `planning/unified_v3_design.md:2947-2952`; `FEATURE_CATALOG.md:34` | D1, D2, D3 | **YES, both fixtures** | **NOT REPRODUCED on either.** Concave fixture (§3.2): a split decision — scallop wins the tails (worst overcut **−34 vs −235 µm**) and the ±25 µm bin; the mix arm wins the bulk (p90 **0.2 vs 1.7 µm**) and the clock (−7.8%). Terrain (§3.3): scallop loses p50, p90 **and** worst overcut (**−1 654 vs −528 µm**) and takes **2.94× longer**, keeping only the ±25 µm bin by 0.93 pp. **But read §3.3 Finding 7 first** — on terrain every arm misses the 22.5 µm dial by ~3×, so the µm half of that comparison is inside the noise. The **time** half is not. |
 | 3 | The band-mix tables of §14 / §14a / §14m–§14p | `planning/unified_v3_design.md:1547-1556`, `:1616-1642`, `:2347-2399`, `:2492-2559` | D1, D2, D3, D4 | **PARTLY** | Re-measured **as a method**: the mix table now carries a cutting-DISTANCE column, because a move count cannot answer a claim expressed as a share of cutting (§3.1 pins its arithmetic exactly). Honest mixes, by share of cutting: **terrain** scallop 54.9% / waterline 41.4% / raster 3.7%; **groove** raster 79.8% / scallop 20.2%. The §14 tables' *numbers* are not re-derivable — different part, different tool set — and stay void; what is re-earned is that the mix is fixture-dependent and that waterline is a first-class consumer, not a rounding error. |
-| 4 | The mm²/s efficiency comparison — **Op B 0.476 vs D 0.938** | `planning/unified_v3_design.md:1577-1583`; restated `planning/v3_campaign_map.md:204-219` | D1, D2, D3 (**and the numerator changed under it — see §2.4**) | **DIRECTION ONLY** | **REVERSED in direction.** Void claim: mix/all-over = 0.51 (half the rate). Re-measured within one run on one instrument: **1.09** on the groove and **2.12** on terrain, and the rest pass alone reads **1.8×** / **4.2×** all-over. But see §3.2 Finding 3 — the rest pass's high rate is ground it re-crossed **without removing anything**, so this is a *motion* measure behaving correctly and inviting the wrong reading. **The absolute numbers 0.476 / 0.938 must never appear beside a post-`a2741a5` figure** (§2.4). |
+| 4 | The mm²/s efficiency comparison — **Op B 0.476 vs D 0.938** | `planning/unified_v3_design.md:1577-1583`; restated `planning/v3_campaign_map.md:204-219` | D1, D2, D3 (**and the numerator changed under it — see §2.4**) | **DIRECTION ONLY** | **REVERSED in direction.** Void claim: mix/all-over = 0.51 (half the rate). Re-measured within one run on one instrument: **1.09** on the groove and **2.12** on terrain, and the rest pass alone reads **1.8×** / **4.2×** all-over. But see §3.2 Finding 3 — the rest pass's high rate is ground it re-crossed **without removing anything**, so this is a *motion* measure behaving correctly and inviting the wrong reading. **The absolute numbers 0.476 / 0.938 must never appear beside a post-`23d8e92` figure** (§2.4). |
 | 5 | The v3 process-proof closure — "cascade +25% slower at shipped dials" | `planning/v3_workplan.md:267-286` | D1, D2, D3, plausibly D4 | **NO** | **NOT RE-RUN — and deliberately so. See §4.** |
 
 ### 2.2 Claims found by grepping planning prose for verdicts citing these instruments' output
@@ -77,7 +77,7 @@ deliverable clause requires.
 | 14 | "D (plain scallop) is currently the best fine-quality tool in the shop" | `planning/finishing_stack_review_2026-07.md:1238-1241` | D1, D2 | **YES, on one fixture** | **True in one specific sense, false in another.** All-over scallop is the safest — it left a **−34 µm** worst overcut against the band-mix arm's **−235 µm**, and its deviation map is clean where the other has run-off overcut (§3.2 Finding 2). It is *not* the most accurate in the bulk: p90 1.7 µm vs 0.2 µm. "Best" needs a stated statistic. |
 | 15 | "Big-tool→small-tool cascade is REAL for shallows only: mid-steep rest share is 87–96% for every ball Ø2–6" | `planning/p2g_quality_matrix_prompt.md:38-56`; `planning/unified_v3_design.md:59, 239, 581`; `planning/v3_process_proof_prompt.md:73-79`; `planning/unified_finishing_pass_plan.md:395-411` | **instrument clean, conclusion contaminated, fixture unstable** | **NO — and it cannot be** | **NOT RE-RUN, with two caveats that matter.** *(a) The instrument is clean.* The probe (`p2c_headless_ab_wanaka.rs::p2f_ball_rest_share_probe`, verified line by line) uses a **non-tapered** `BallEndmill`, for which `radius() == cusp_radius()`, pins its cell explicitly at 0.05/0.25 mm, and calls `FinishPlannerParams::for_tool(3.0)` — which is the correct cusp radius for a Ø6 ball. D1 and D2 cannot reach any of that. The number is probably sound. *(b) It cannot be re-run anyway.* The probe calls `ProjectSession::load(wanaka_project_path())`, so it reads the live, user-modified play-file this programme is forbidden to depend on — the same reason `wanaka_suggest_baseline` is permanently red. A clean instrument pointed at an unstable fixture, cited four times as load-bearing support for conclusions that ARE contaminated (rows 12–14, the ×2-scale fixture decision, "ball size is not a lever"). Re-earning it needs a committed fixture first. |
 | 16 | "Pencil valley-targeting works and is validated: coverage 0.137 → 0.80" | `planning/pencil_investigation_2026-07.md:26-29, 82-84, 208-209, 221-225`; `planning/finishing_stack_review_2026-07.md:797` | **D3** | **NO** | **NOT RE-RUN.** Every number in that investigation was taken on the live wanaka project through the shaft-radius routing field. Re-earning it needs a pencil-specific harness on a committed fixture with real valley structure — not this strategy comparison, which deliberately holds `pencil_claims` off so the only variable is the strategy (§3.4 limit 5). A tracked follow-up, not a finding. |
-| 17 | "669 mm cutting vs 9 265 mm with the analytic reference (~14× overestimate)" | `planning/finishing_stack_review_2026-07.md:820-822`; `planning/unified_finishing_pass_plan.md:30`; `planning/unified_v3_design_prompt.md:74-75` | **D3** (magnitudes) and it is the **precursor evidence for D4** | **NO** | **NOT RE-RUN.** Dual status, and both halves need saying. As a *pencil* measurement it is void (D3: the routing radius was the shaft). As *evidence that an analytic reference overestimates rest*, it was **right, and it was ignored for three weeks** — D4 shipped as the default until `5c24d62`. The 14× is the same finding the §14p root cause later measured as 8.8×. Keep the lesson, discard the magnitude. |
+| 17 | "669 mm cutting vs 9 265 mm with the analytic reference (~14× overestimate)" | `planning/finishing_stack_review_2026-07.md:820-822`; `planning/unified_finishing_pass_plan.md:30`; `planning/unified_v3_design_prompt.md:74-75` | **D3** (magnitudes) and it is the **precursor evidence for D4** | **NO** | **NOT RE-RUN.** Dual status, and both halves need saying. As a *pencil* measurement it is void (D3: the routing radius was the shaft). As *evidence that an analytic reference overestimates rest*, it was **right, and it was ignored for three weeks** — D4 shipped as the default until `0d0a80f`. The 14× is the same finding the §14p root cause later measured as 8.8×. Keep the lesson, discard the magnitude. |
 | 18 | Catalog row: "−20% vs all-over raster at the SPEED tier; at the fine tier plain Scallop currently wins on quality" | `FEATURE_CATALOG.md:34` | D1, D2 | **MARKED SUPERSEDED** | **It was the only void claim published to a user** — last edited 2026-07-09, three weeks before D1/D2 were fixed, never touched since. The comparative clauses are struck and the row now points here. A tier-by-tier verdict does not belong in a capability catalog at all: it cannot be dated there, and rows 2/13/14 show it was too coarse even when it was current. |
 | 19 | "Reference choice is a 30× knob" (712 mm³ self-referenced vs 33 987 / 46 859 mm³ machined) | `planning/rest_cascade_optimal_plan.md:21-40` | earliest documented instance of **D4** | **N/A** | **Vindicated, not superseded.** Written 2026-07-04; D4 shipped as the default for a further four weeks. Indexed so the record shows the defect was described before it was fixed. |
 | 20 | `planning/PROGRESS.md` asserts none of this and has absorbed none of the retractions | `planning/PROGRESS.md` | — | **N/A** | **Gap, not a claim.** The master progress ledger carries no reference to any of the four defects or their retractions. Listed so the docs sweep (L1) has it. |
@@ -111,7 +111,7 @@ The §14 table introduces its own numerator, verbatim, as *"**area finished**
 per second, which unlike seconds is invariant to tool and stepover"*
 (`unified_v3_design.md:1573`).
 
-The metric was re-founded in `a2741a5` as an **honest swept footprint**:
+The metric was re-founded in `23d8e92` as an **honest swept footprint**:
 `measurement::swept_footprint_area` rasterises the union of the cutter disc
 swept along cutting moves, counting each cell **once**, and
 `swept_footprint_mm2_per_s` divides by total runtime. Its own documentation
@@ -127,7 +127,7 @@ not the same event.
 
 `MEMORY.md`'s standing rule applies exactly here: *a changed instrument
 makes its own docstring a lie you then cite.* **0.476 and 0.938 must never
-be printed in the same table as a post-`a2741a5` mm²/s figure.** They are
+be printed in the same table as a post-`23d8e92` mm²/s figure.** They are
 different measures wearing the same unit, and the older one wore a better
 name than it deserved.
 
@@ -183,7 +183,7 @@ cutting. A harness whose own arithmetic is unchecked is the failure this
 whole wave exists to correct.
 
 **A second self-check arrived by accident and is worth keeping.** Fixture 2
-was run twice: once on the build at `7d61ad3`, and again after §5.3's
+was run twice: once on the build at `92413f4`, and again after §5.3's
 `ScallopReport` split landed. Every reported statistic reproduced to every
 digit — p50, p90, both on-size bins, mm²/s, retract trips, collisions and
 runtime, on all three arms. That is two facts at once: the split really is
@@ -575,7 +575,7 @@ recorded here as one.
 Two items arrived from the 2026-07-30 live validation with hypotheses
 attached and an explicit instruction: **do not name a mechanism without a
 repro.** This subsystem has had five confidently-named mechanisms turn out
-not to be the cause. Both are resolved; commit `7d61ad3`.
+not to be the cause. Both are resolved; commit `92413f4`.
 
 ### 5.1 The chipload gate contradicted its own evidence — hypothesis VERIFIED
 
@@ -728,8 +728,8 @@ H4 re-run is published. This section is that stop.
 
 | Prerequisite | State |
 |---|---|
-| **H2.1** rest-routing radius | **LANDED** — PR-4 `df41169` … PR-7 `e922931` |
-| **A/M6** `claims_reference` default | **LANDED** — `5c24d62`, now `Auto` with its derivation recorded |
+| **H2.1** rest-routing radius | **LANDED** — PR-4 `a061b0d` … PR-7 `2520b2d` |
+| **A/M6** `claims_reference` default | **LANDED** — `0d0a80f`, now `Auto` with its derivation recorded |
 | **Checkpoint B** generation-grid decision | **DECIDED** — the quality half of every speed/quality trade is pinned |
 | Fixture choice, and why wanaka alone is insufficient | §6.1 |
 | Metric contract per M1 — domain, stage, resolution, both sides of every ratio | §6.2 |
@@ -825,9 +825,9 @@ never save over wanaka).
 | # | Must confirm | Origin |
 |---|---|---|
 | C1 | **Hookup-default regeneration on an OLD project.** `intra_pass_hookup_mm` is `#[serde(default)]` at 3.0 and `intra_region_hookup_mm` ships ON at 6.0, so a saved project without the keys reloads with links and regenerates. The operator's Checkpoint D ruling carried this re-check as an explicit condition. | waves 12, 14 |
-| C2 | **TSP-reorder value on a real part.** Surface ops now reorder behind region-node barriers, and the span-tiling defect that inverted the mix table is fixed (`77f2b7a`). Never seen on a part. | wave 12 / span defect |
+| C2 | **TSP-reorder value on a real part.** Surface ops now reorder behind region-node barriers, and the span-tiling defect that inverted the mix table is fixed (`9d47d9f`). Never seen on a part. | wave 12 / span defect |
 | C3 | **Per-point fan geometry** (C9 claims fan) — measured pointwise, never rendered. | wave 10 |
-| C4 | **`claims_reference: Auto`** picks `machined_stock` in a real cascade and says so. This is D4's fix; if Auto mis-derives on a live chain, every cascade number regresses to void. | A/M6, `5c24d62` |
+| C4 | **`claims_reference: Auto`** picks `machined_stock` in a real cascade and says so. This is D4's fix; if Auto mis-derives on a live chain, every cascade number regresses to void. | A/M6, `0d0a80f` |
 | C5 | **M3's +5.6% cutting time** on wanaka-class relief. Quality is a wash and generation is 22.5% faster, but the honest classifier finds more very-steep ground and waterline is the expensive strategy. The lever if unwanted is `waterline_threshold_deg`, **not** the classifier. | wave 7b |
 | C6 | **Collision count stability across simulation resolutions** on a fixed toolpath (definition-of-done item 15). The live 20-collision reading was a 0.1 vs 0.5 mm resolution asymmetry, not an emission defect. **Never clear collisions across mismatched resolutions.** | wave 11 / A/M10 |
 | C7 | The **narration and chipload wording changes** of §5 read correctly on a real diagnostic panel. They are the only operator-visible output this wave moved. | this wave |

@@ -35,7 +35,7 @@
 //!
 //! Production still passes `&[]`, so H2.4 cannot move the emitted toolpath —
 //! and the pinned constants were CAPTURED on the pre-H2.4 tree (commit
-//! `b8e3a0d`) with a throwaway probe, then re-asserted after. They are
+//! `0b46f8b`) with a throwaway probe, then re-asserted after. They are
 //! evidence, not a snapshot of whatever the code does now.
 
 #![allow(
@@ -397,17 +397,17 @@ fn production_unified_finish_output_is_byte_identical() {
         (tp.moves.len(), h)
     }
 
-    // Captured at `b8e3a0d` (PR-6a, pre-H2.4) with a throwaway probe.
+    // Captured at `0b46f8b` (PR-6a, pre-H2.4) with a throwaway probe.
     //
     // TAPER RE-PINNED 2026-08-03 (C-sequence wave 11), 1855 → 1874 moves.
-    // The mover is `dde7a54` — M4's iso-field gouge fix — NOT anything in
+    // The mover is `0ece700` — M4's iso-field gouge fix — NOT anything in
     // this file's subject. That wave knew it moved scallop geometry and
-    // re-pinned the scallop-side fingerprint in `a376b1e`; what it missed is
+    // re-pinned the scallop-side fingerprint in `3227f29`; what it missed is
     // that `UnifiedFinish` embeds scallop for its MidSteep band, so a SECOND
     // pin lives here. Proven by surgical revert: restoring `scallop.rs` +
-    // `scallop_isofield.rs` to `dde7a54^` reproduces (1855, 0xe031…)
+    // `scallop_isofield.rs` to `0ece700^` reproduces (1855, 0xe031…)
     // exactly, and every other commit in the window — including the claims
-    // fan (`0dff17e`), which was the first suspect — leaves the value
+    // fan (`7ff1e1c`), which was the first suspect — leaves the value
     // untouched.
     //
     // The A/B that justifies the move (per this test's own instruction),
@@ -477,8 +477,8 @@ fn production_unified_finish_output_is_byte_identical() {
     // The gap is therefore re-pinned here, unattributed and said so, rather
     // than folded into a commit that would then look like it caused it. If
     // this fixture's numbers matter to a future reader, the −131 moves are
-    // an open question with a known bracket: between `e3427f8` (the last
-    // commit that touched this pin) and `88ce23a`.
+    // an open question with a known bracket: between `18e9506` (the last
+    // commit that touched this pin) and `e925aef`.
     // Re-pinned 2026-08-21 for G-SAFEZ-LOCAL, and this one IS attributed.
     // This fixture's stock is 9 mm thick at `origin_z = -9.0`, so its world
     // top is Z0 and the project's own `post.safe_z = 10` already clears it.

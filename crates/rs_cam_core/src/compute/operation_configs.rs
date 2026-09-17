@@ -889,7 +889,7 @@ pub struct PencilConfig {
     ///   shipped emission, byte for byte. Do NOT read `None` as "the hop
     ///   tier is off": the `gap > hookup_distance` test returns first, so
     ///   the hop test cannot run at `None` (G-PENCILHOP, retracted in
-    ///   `0b5f1cd2`).
+    ///   `fe0227a2`).
     /// * `Some(0.0)` — the OFF switch for the hop tier alone. The pass
     ///   refuses every lifted candidate and counts it in
     ///   [`crate::finish::pencil::PencilLinkReport::hop_too_far`]. The at-depth tier

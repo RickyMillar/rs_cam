@@ -1,7 +1,7 @@
 # Feeds Data Ingest — Phase E (Wood species parametric + library)
 
 **Date:** 2026-05-31
-**Predecessor:** Phase D (`16eb650`).
+**Predecessor:** Phase D (`06cb43a`).
 **Plan reference:** `planning/feeds_data_ingest_completion_2026-05-31.md`
 ("Phase E" section, design decision D1).
 

@@ -115,7 +115,7 @@ the row stays in this staged JSON unpromoted.
 
 `MaterialFamily::Fiberglass` added to `vendor_lut.rs` and
 `Material::Fiberglass { grade: FiberglassGrade }` lifecycle added
-to `material.rs` (commit `6c56b95`). Fiberglass gets its own
+to `material.rs` (commit `3f1b038`). Fiberglass gets its own
 `material_category` (3) in the matcher — never extrapolates onto
 polymer / metal rows.
 

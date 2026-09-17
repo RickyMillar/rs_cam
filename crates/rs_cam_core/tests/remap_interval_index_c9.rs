@@ -504,7 +504,7 @@ fn wanaka_scale_indexed_path_beats_linear_scan_and_matches_output() {
     // | debug   | 12.68 – 12.94 | **12.9×** | passes, every run |
     // | release |  3.92 –  4.75 |  **4.3×** | FAILS, every run |
     //
-    // The bar was calibrated in DEBUG. The landing commit (`ef4011cc`,
+    // The bar was calibrated in DEBUG. The landing commit (`c15d47c1`,
     // 2026-08-03) recorded "linear scan 4.44 s, indexed 324 ms, 13.7x" —
     // seconds-scale timings this same fixture only produces unoptimised,
     // and today's debug build reproduces them (3.08 s / 240 ms / 12.9×).

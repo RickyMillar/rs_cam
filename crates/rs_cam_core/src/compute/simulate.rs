@@ -1957,7 +1957,7 @@ mod tests {
     /// End-to-end validation for F-2 (April 2026 adaptive review):
     /// a 2D polygon pocket operation must produce non-zero average
     /// engagement and non-zero removed volume. Before Package N
-    /// (commit 12dca81), `StockConfig::update_from_bbox` placed the
+    /// (commit 68b7d2b), `StockConfig::update_from_bbox` placed the
     /// stock above the 2D cut plane — the stock spanned [0, stock_z]
     /// while the pocket cut at negative Z, so every cutting sample
     /// fell below the stock floor and the simulator reported 0

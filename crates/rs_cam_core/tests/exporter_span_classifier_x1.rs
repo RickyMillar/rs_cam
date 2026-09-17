@@ -31,7 +31,7 @@
 //! # Red-first
 //!
 //! Every test in the "divergence" section FAILS on the parent revision
-//! (`6396eb0`), each on the exporter's own output:
+//! (`3fad0af`), each on the exporter's own output:
 //!
 //! | test | parent behaviour | expected |
 //! |---|---|---|
@@ -404,7 +404,7 @@ fn viewport_reference_rules_are_unchanged() {
 
 /// The parent revision's exporter walk, verbatim.
 ///
-/// Transcribed from `stock_mesh.rs:181-203` at `6396eb0` — reversed
+/// Transcribed from `stock_mesh.rs:181-203` at `3fad0af` — reversed
 /// iteration, `DressupArtifact` early-returning, no `DepthPass` handling:
 ///
 /// ```text
@@ -439,7 +439,7 @@ fn parent_revision_exporter_walk(a: &AnnotatedToolpath, move_idx: usize) -> [f32
 /// The red-first bar, executable in perpetuity.
 ///
 /// The programme's rule is that a fix must be demonstrated red on the parent
-/// revision. Checking out `6396eb0` was not available: this tree is shared
+/// revision. Checking out `3fad0af` was not available: this tree is shared
 /// with two other live lanes, so stashing the fix to run a build would have
 /// handed them the wrong source mid-compile. Instead the parent's walk is
 /// pinned above and asserted — on the same fixtures the tests above use — to

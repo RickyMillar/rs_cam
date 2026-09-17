@@ -1,6 +1,6 @@
 # SIM wave 5 — S1 swept-volume stamping: **decision package**
 
-Branch `perf/s1-swept-volume`, off `tech-debt-3` at `c604c096`. **Nothing here is
+Branch `perf/s1-swept-volume`, off `tech-debt-3` at `2aff71bb`. **Nothing here is
 landed on `tech-debt-3`.** S1 is metric-changing by design and the landing
 decision is the user's; this document is the evidence for it.
 
@@ -419,7 +419,7 @@ a **geometry** change. Every downstream consumer of a `FromRemainingStock` path
 | diagnostics | 2.18 s | 2.24 s | +2.6 % |
 | **total test** | **322.8 s** | **296.9 s** | **−8.0 %** |
 
-These two runs predate `9e65d1a7`, which made the swept kernel faster without
+These two runs predate `22dce580`, which made the swept kernel faster without
 moving a bit. The wall-clock column is therefore a **lower bound** on the gain;
 the metric columns above it are unaffected, because bit-identity was re-verified
 after that commit and the golden diff is unchanged at 39/29 fields.
@@ -580,7 +580,7 @@ with the single exception of a pre-existing wall-clock flake that also fails in
 the default mode.
 
 It is worth **3.4–5.0×** on the plunge fixture and, after the two fixes in
-`9e65d1a7`, **1.37–1.45×** on the raster fixtures as well — a strict improvement
+`22dce580`, **1.37–1.45×** on the raster fixtures as well — a strict improvement
 on every arm at every thread count, for zero metric movement. Making `Auto`
 select it is a one-line change with a bit-identity sentry behind it.
 
@@ -657,15 +657,15 @@ the part with no net under it.
 
 ## 8. Commits on `perf/s1-swept-volume`
 
-Branched from `tech-debt-3` at `c604c096`. **`tech-debt-3` is untouched.**
+Branched from `tech-debt-3` at `2aff71bb`. **`tech-debt-3` is untouched.**
 
 | Commit | What |
 |---|---|
-| `51497a19` | S1 swept-volume stamping behind `StampDispatch::Swept`; new `swept.rs`; three prescription corrections in the message |
-| `5d02b7db` | `SweptPlungeOnly` — the bit-identical half, on its own switch; caught a 2-ULP reciprocal defect |
-| `f1e837c9` | The three falsifiable claims (density independence, commanded axial DOC, air-cut vs cell size) |
-| `f035349f` | Headless wanaka200 A/B harness |
-| `9e65d1a7` | Made the bit-identical mode *faster* than the shipped one (per-chunk allocations + per-cell division) |
+| `7959bc4c` | S1 swept-volume stamping behind `StampDispatch::Swept`; new `swept.rs`; three prescription corrections in the message |
+| `0a4c4a10` | `SweptPlungeOnly` — the bit-identical half, on its own switch; caught a 2-ULP reciprocal defect |
+| `ff97b96e` | The three falsifiable claims (density independence, commanded axial DOC, air-cut vs cell size) |
+| `4d158e54` | Headless wanaka200 A/B harness |
+| `22dce580` | Made the bit-identical mode *faster* than the shipped one (per-chunk allocations + per-cell division) |
 | *(this doc)* | The decision package |
 
 Files touched, all under `crates/rs_cam_core`:

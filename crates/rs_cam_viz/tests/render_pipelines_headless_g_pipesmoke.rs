@@ -1,6 +1,6 @@
 //! G-PIPESMOKE — every viewport render pipeline builds on a real wgpu device.
 //!
-//! Commit 241efd45 (G-LINEVIS) made the line shader's FRAGMENT stage read
+//! Commit 0e6fb9f1 (G-LINEVIS) made the line shader's FRAGMENT stage read
 //! `uniforms.dim`. The matching `line_bind_group_layout` entry in
 //! `render/mod.rs` stayed VERTEX-only. wgpu validates a pipeline layout
 //! against BOTH stages, so `create_render_pipeline('line_pipeline')` failed

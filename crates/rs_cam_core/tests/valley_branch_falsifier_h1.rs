@@ -2,7 +2,7 @@
 //! bidirectional offset tracing beat a sweep inside valley territory?
 //!
 //! Pre-registration: `planning/valley_tracing_2026-09-02/FINDINGS.md`, §Q2 and
-//! §"V1 — OPEN" (commits `2d43bdf5`, `8ccfc36f`). This file measures; it
+//! §"V1 — OPEN" (commits `11ac62d5`, `5013ad70`). This file measures; it
 //! writes NO verdict. B3 / B4 / B5, the margin rule and the spec-meeting rule
 //! are applied by the orchestrator.
 //!

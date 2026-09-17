@@ -20,7 +20,7 @@
 //! wall-clocks land, tighten `MAX_RATIO` and update `MEASURED_*`.
 //!
 //! Zero GRBL errors on either run — the arc-fitter fix shipped at
-//! commit `2db19c2` cleared the 13 arcs that previously tripped error
+//! commit `8a5d1fd` cleared the 13 arcs that previously tripped error
 //! 33 on gSender's pre-flight.
 //!
 //! ## Outcome interpretation

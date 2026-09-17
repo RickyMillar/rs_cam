@@ -122,7 +122,7 @@ duplicate. **Inherit the existing entry; do not open a new number.**
 ## D7 — polyline length, four copies (0.9041 / 0.8833) — DRIFTED_DUP, tier D
 
 - `geo::polyline_length` (`geo.rs:256`) is the canonical 3D length; R3
-  (`8db8793b`) already deleted the `conformal_spiral.rs` copy against it.
+  (`7185497f`) already deleted the `conformal_spiral.rs` copy against it.
   `adaptive3d/clearing.rs:2587` `polyline_length_3d` is a fourth copy of exactly
   that function; `:2571` `polyline_xy_length` and `dressup.rs:862`
   `polyline_xy_len` are the XY variant twice. `geo` publishes no XY form, so the

@@ -58,7 +58,7 @@ regions where residual > tolerance. Establish:
   `pencil_claims`, `territory_stock`) express "what tool X left behind" —
   this is the two-tier version's engine and probably the n-tier one's too.
 - The July selective-finishing work (memory: P2 selective finishing,
-  commit 6a7e164) — what "selective" already means there and whether its
+  commit 2195d33) — what "selective" already means there and whether its
   region selection is reusable.
 
 ### T2 — Island machinery: decomposition, routing, filtering

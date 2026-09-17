@@ -9,7 +9,7 @@ This lane answers the other two questions:
 * **(b)** what it does to generated **geometry** on `FromRemainingStock` chains
   beyond wanaka200.
 
-Branch `tech-debt-3`, measured at `8fb8b119` on 2026-08-21. **No production code
+Branch `tech-debt-3`, measured at `05cabf1e` on 2026-08-21. **No production code
 changed in this lane.** The only code commit is the A/B harness gaining three
 env hooks.
 
@@ -507,14 +507,14 @@ vanish under the §6.a control while the path itself got shorter).
 | 0D reproduces | every setup-1 op of `wanaka200_unified_finish` matches 0D's published `wanaka200` rows to the printed digit (§3.a) |
 | smoke run repeatability | swept arm run twice, output CSVs **byte-identical** |
 
-Harness commit: `af8c1c48`, test-only, three env hooks all defaulting to the
+Harness commit: `f1852a51`, test-only, three env hooks all defaulting to the
 0D configuration. No production code changed in this lane.
 
 ## 8. Follow-ups this lane produced
 
 | id | what | owner |
 |---|---|---|
-| **F3-1** | The corpus runner's `prior_passes` chain needs a `run_simulation` between the prior pass and the measured case, or AS015 stays dead. Broken since `4b105dab` (2026-07-06). | corpus |
+| **F3-1** | The corpus runner's `prior_passes` chain needs a `run_simulation` between the prior pass and the measured case, or AS015 stays dead. Broken since `45347db3` (2026-07-06). | corpus |
 | **F3-2** | `smoke::run_diff`'s `is_exceeds` never matches the chipload or drill-gate spellings — that arm of the F-037 regression net is vacuous. | corpus |
 | **F3-3** | Re-cut the acceptance baseline. **After** F3-1, F3-2, and after someone confirms the 211→0 rapid collisions in §2.d are a fix and not a blind detector. | corpus |
 | **F3-4** | `session/compute.rs:2352-2355` states `adaptive_feed_modulation`'s default is `false`; `session/mod.rs:878` sets it `true`. One-line doc fix. | sim |
@@ -543,7 +543,7 @@ in a single `run_simulation` call so the dexel state chains."
 
 The code does exactly that (`smoke.rs:463-496`) and it **no longer works**,
 because generating a `FromRemainingStock` op now *refuses* without a prior
-simulated snapshot. That refusal landed in **`4b105dab` (2026-07-06)**, six
+simulated snapshot. That refusal landed in **`45347db3` (2026-07-06)**, six
 weeks before swept. So:
 
 * AS015 is the corpus's only rest-chain row and it has produced no measurement

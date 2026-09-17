@@ -1,6 +1,6 @@
 # S2 recon — why `rapid_collision_count` was silent (2026-08-28)
 
-> READ-ONLY recon at HEAD `2afc4742`. No cargo run; every claim is a code read
+> READ-ONLY recon at HEAD `50c8db55`. No cargo run; every claim is a code read
 > with file:line citations. The headline is uncomfortable and stated plainly:
 > **by code read, the HEAD detector should already flag the S1 class.** No
 > mechanism found in the current checker explains the recorded zero. The
@@ -23,7 +23,7 @@ snapshot `Arc::new(group_stock.clone())` at `:1010` → **collision check
 `:1020-1027`** → stamping afterwards (`apply_drill_op` `:1045`, or
 `simulate_toolpath_with_lut_metrics_cancel` `:1089`). So op 7 is checked
 against the post-op-6, pre-op-7 stock — option **(a)**, and it has been since
-the site was introduced (`d36cb191`, unchanged through `fc10fe71`/`663cc3af`
+the site was introduced (`eaa56158`, unchanged through `1d886be6`/`090959b7`
 per `git log -L`). The check is a **batch walk against one frozen snapshot**,
 not interleaved with stamping — `collision.rs:433-435`: "The grid passed in is
 a *snapshot* — it is not updated as the toolpath progresses". That frozenness
@@ -121,10 +121,10 @@ identity setups get `local_stock_bbox = None` (F-024/F-030,
 `session/compute.rs:2481-2508`, `sim_local_stock_bbox()` returns `None`) →
 `run_simulation` falls back to world-frame `request.stock_bbox`
 (`simulate.rs:936-939`), the same frame the untransformed toolpath is stamped
-and checked in. The playback-stock defect was fixed in-session (`ff3696fd`,
+and checked in. The playback-stock defect was fixed in-session (`6bcc3c97`,
 2026-08-19); nothing since touched the check's query object — `git log` on
-`collision.rs` shows nothing after `36d3f944` (W0.1), and the lateral-setups
-commits (`3e951540`, `65994496`) touched playback/scrub, not this seam.
+`collision.rs` shows nothing after `8a17cdd2` (W0.1), and the lateral-setups
+commits (`686be424`, `65994496`) touched playback/scrub, not this seam.
 **Verdict: at HEAD the rapid check's query frame is correct for identity
 setups with non-zero stock origin; `RUN_LOG:1243` is a conflation and does
 not explain the zero either.** (Note also: even a misframed grid would be

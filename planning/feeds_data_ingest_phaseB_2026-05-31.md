@@ -1,14 +1,14 @@
 # Feeds Data Ingest — Phase B (Garr aluminum per-series flute split)
 
 **Date:** 2026-05-31
-**Predecessor:** Phase A baseline (`d654936`).
+**Predecessor:** Phase A baseline (`7f62544`).
 **Plan reference:** `planning/feeds_data_ingest_completion_2026-05-31.md`
 ("Phase B" section, design decision D4).
 
 ## What landed
 
 Closed the Garr aluminum deferral that has been carried since
-Phase 1C (`5ccf533`). The staged file
+Phase 1C (`aca1375`). The staged file
 `planning/data_ingest_2026-05-29/harvey_helical_garr.json` held 10
 Garr observations that shared CPT across multiple cutter series in a
 single row — the live `VendorObservation` schema requires a single

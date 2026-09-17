@@ -22,24 +22,24 @@ Every direct submodule of both folders is a `pub mod`, and `lib.rs:49` and
 already crate-effective, and `dead_code` does fire there.
 
 **Git-status check for the two folders.** At the start of this triage, at
-commit `7ba6beb6`, `git status --short crates/rs_cam_core/src/feeds
+commit `17fc8ac3`, `git status --short crates/rs_cam_core/src/feeds
 crates/rs_cam_core/src/tool_load` printed nothing. Both folders were clean.
 The S33 hand-off note said the two `depth.rs` rows were "live only through
 uncommitted work — do not delete". That uncommitted work no longer exists as
-uncommitted work: it landed as commit `0b178508`, and
+uncommitted work: it landed as commit `70989b97`, and
 `crates/rs_cam_core/tests/the_written_depth_is_one_the_machine_cuts_g_stair.rs`
 is now a tracked file. S33 is therefore a plain false positive. See §3.
 
 **WARNING. The tree moves under this file. Read this before you start.**
 The structure agent holds the cargo lane and moves modules under
 `crates/rs_cam_core/src/`. During this triage the branch head advanced from
-`7ba6beb6` to `569e3a39` ("P2: maps/ — move 11 modules"), and
+`17fc8ac3` to `098f0f36` ("P2: maps/ — move 11 modules"), and
 `crates/rs_cam_core/src/simulation_cut.rs` became
 `crates/rs_cam_core/src/stock/simulation_cut.rs`. A second check then showed
 10 modified files inside `tool_load/`, all `use`-line rewrites. Therefore:
 
 - Start this wave only after the mover's work lands.
-- Treat every line number below as a number at `7ba6beb6`..`569e3a39`.
+- Treat every line number below as a number at `17fc8ac3`..`098f0f36`.
   Re-locate each item by symbol name, not by line.
 - The two folders do not move. Only their `use` lines change.
 
@@ -88,8 +88,8 @@ loses data or misleads the operator at run time.
 
 | id | claim | reason it is a false positive |
 |---|---|---|
-| Q3 | `classify_3d_terrain` is unreachable from every shipped surface. | Q1 fixed it. Commit `a98b7fca` made both add-toolpath doors pass `SuggestContext::model_bbox` (`viz/controller/events/toolpath.rs:126`, `viz/app/mcp/commands.rs:868`). `feeds/suggest.rs:2553` and `:2641` call `geometry_class::classify(op_type, context.model_bbox)` for 3D op types, so `feeds/geometry_class.rs:84` reaches `:89`. The Q1 remainder stands: eight Suggest sites still pass `SuggestContext::default()`, so the branch is reachable from the two fixed doors only. Keep the function. |
-| S33 | `realised_step_down` and `roughing_pass_count` are live only through uncommitted work. | The work is committed. `feeds/suggest.rs:937` calls `crate::depth::realised_step_down` in production, and the test file is tracked at commit `0b178508`. Both stay `pub`. `roughing_pass_count` needs a `Test door:` line if a later wave touches `depth.rs`. **`crates/rs_cam_core/src/depth.rs` is outside both folders and inside the mover's territory. Assign it to neither fix agent.** |
+| Q3 | `classify_3d_terrain` is unreachable from every shipped surface. | Q1 fixed it. Commit `f4d1a9dc` made both add-toolpath doors pass `SuggestContext::model_bbox` (`viz/controller/events/toolpath.rs:126`, `viz/app/mcp/commands.rs:868`). `feeds/suggest.rs:2553` and `:2641` call `geometry_class::classify(op_type, context.model_bbox)` for 3D op types, so `feeds/geometry_class.rs:84` reaches `:89`. The Q1 remainder stands: eight Suggest sites still pass `SuggestContext::default()`, so the branch is reachable from the two fixed doors only. Keep the function. |
+| S33 | `realised_step_down` and `roughing_pass_count` are live only through uncommitted work. | The work is committed. `feeds/suggest.rs:937` calls `crate::depth::realised_step_down` in production, and the test file is tracked at commit `70989b97`. Both stay `pub`. `roughing_pass_count` needs a `Test door:` line if a later wave touches `depth.rs`. **`crates/rs_cam_core/src/depth.rs` is outside both folders and inside the mover's territory. Assign it to neither fix agent.** |
 | S27 | The nine `vendor_lut` `#[allow(dead_code)]` mark dead fields. | The fields are live serde provenance on a `pub` struct. The allows are inert. The verdict "dead" is wrong; the attributes still go. Scheduled as FW-18. |
 | L16 | `LEGACY_DEGENERATE_RANGE_ROWS` is legacy residue. | It is a shrink-only data allowlist with its own guard. `feeds/vendor_lut.rs:786-790` fails loudly when a listed row stops violating any rule, so the list cannot grow stale silently. This is a healthy pattern. Keep it. Fixing the listed data rows is a LUT data task, not a code wave. |
 | D-narrative | `optimize/narrative.rs:105-116` duplicates `optimize/refusal.rs:20-30` at 0.93. | A documented sibling pair. `narrative.rs:107` says the struct "mirrors `refusal::DeflectionSetupPrescription` minus the prose", and `refusal.rs:17` names the mirror from the other side. The wire type carries no `text` field on purpose. |
@@ -112,7 +112,7 @@ These rows stay closed until someone schedules that run.
 |---|---|---|
 | FW-P1 | `feeds/efficiency.rs:309-351` duplicates `feeds/force.rs:271-296` at 0.92. | Both regions are deflection-cap and specific-energy arithmetic. `force.rs:272` and `efficiency.rs:310` each document their own assembly. A merge changes a formula. |
 | FW-P2 | D15. Core publishes four types over the same two numbers: `feed_modulation::ChiploadBand:117`, `feeds::ChiploadBounds` (`feeds/mod.rs:433`), `feeds::quantities::VendorChiploadBand:203`, `tool_load::verdict::ChipBounds:927`. | The D findings call this a SIBLING set and route it as an API-surface question, not a cleanup. A standing operator rule blocks a naive merge: Suggest's `ChiploadBounds` must mirror the post-sim gate's piecewise-linear DOC derating, and the canonical scale lives in `feeds::geometry`. Any merge that splits them is a defect. Needs a ruling before any code moves. |
-| FW-P3 | The pre-existing red `adaptive_feed_modulation_pipeline_f036b::modulation_raises_cutting_chipload_toward_band`. | **No finding in this wave explains it, and the attribution looks wrong.** `git show --stat 7a5fdad4` lists seven files, all in `rs_cam_viz`: `ui/components/compare.rs`, `ui/components/provenance.rs`, `ui/feeds/compare.rs`, `ui/feeds/why.rs`, `ui/properties/mod.rs`, `ui/toolpath_panel.rs` and one viz test. That commit touches no core file, so it cannot have changed a core physics result. Re-bisect before anyone treats the red as a physics regression. Do not schedule a fix here. |
+| FW-P3 | The pre-existing red `adaptive_feed_modulation_pipeline_f036b::modulation_raises_cutting_chipload_toward_band`. | **No finding in this wave explains it, and the attribution looks wrong.** `git show --stat e2ecf697` lists seven files, all in `rs_cam_viz`: `ui/components/compare.rs`, `ui/components/provenance.rs`, `ui/feeds/compare.rs`, `ui/feeds/why.rs`, `ui/properties/mod.rs`, `ui/toolpath_panel.rs` and one viz test. That commit touches no core file, so it cannot have changed a core physics result. Re-bisect before anyone treats the red as a physics regression. Do not schedule a fix here. |
 
 ## 5. Rulings needed
 

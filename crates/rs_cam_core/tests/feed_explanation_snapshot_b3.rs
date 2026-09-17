@@ -934,7 +934,7 @@ fn the_commanded_feed_per_tooth_is_never_compared_to_the_band() {
     //     "the gate must nonetheless report Within — that IS the
     //     finding". True because the gate compared a CHIP thickness to
     //     an ADVANCE band, 12.43× apart.
-    //  2. Post-conversion (`0a45e35`): `"Exceeds"` — same axis at last,
+    //  2. Post-conversion (`7571d9d`): `"Exceeds"` — same axis at last,
     //     and the achieved feed genuinely sat 1.27× over a
     //     0.003605–0.007211 band.
     //  3. Post-law (2026-08-06): `"Within"` again — the observation is

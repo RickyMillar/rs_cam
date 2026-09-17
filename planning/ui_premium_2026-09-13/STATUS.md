@@ -38,10 +38,10 @@ DECIDED and what is still OPEN.
 ## Blocking dependencies — CLEARED 2026-09-13
 
 - ~~The 14 core clippy findings must land before UP0~~ — **done by the core
-  lane as WP30** (`f092cd67`). `cargo clippy -p rs_cam_core --all-targets
+  lane as WP30** (`57841b05`). `cargo clippy -p rs_cam_core --all-targets
   -- -D warnings` exits 0 on 1.98.1.
 - ~~The toolchain is unpinned and drifts per machine~~ — **done**
-  (`89268d49`): `rust-toolchain.toml` pins `1.98.1`. This was recommended
+  (`7cad232a`): `rust-toolchain.toml` pins `1.98.1`. This was recommended
   here and adopted by the core lane.
 
 **UP0 is therefore unblocked.** Core is green, the toolchain is pinned, the
@@ -66,7 +66,7 @@ proof; no test may be edited to make it pass. Full detail in `PLAN.md` UP0.
 
 ---
 
-## UP0 — DONE, 2026-09-13, commit `704a2f32`
+## UP0 — DONE, 2026-09-13, commit `473fbe17`
 
 One commit, not two. `PLAN.md` rules that UP0 carries no sentry of its own
 and that the compile is its proof, as WP25 ruled for the `mcp` feature gate.
@@ -133,7 +133,7 @@ output going to a file.** Every later package inherits this.
 
 ---
 
-## UP1 — DONE, 2026-09-13, commits `d53e2bd9` (red) and `91d83f1e` (green)
+## UP1 — DONE, 2026-09-13, commits `3c3c4512` (red) and `94afd33a` (green)
 
 Two commits, red first, as the plan requires. The red was observed twice:
 the sentry did not compile, because `ui::tokens` did not exist, and the
@@ -215,7 +215,7 @@ unverified by eye.
 
 ---
 
-## UP2 — DONE, 2026-09-13, commits `1234ce8a` (red) and `a33fcabf` (green)
+## UP2 — DONE, 2026-09-13, commits `20cd03c7` (red) and `76faed3d` (green)
 
 Twelve patterns, each existing once, in `ui/components/`. Fifteen sentry
 arms. 731 tests pass; fmt and the workspace clippy gate are green.
@@ -229,7 +229,7 @@ and `theme::card_frame` calls `Card` and keeps its signature.
 
 Reading §4 against §2 and §3 found **six contradictions and thirteen
 underspecified points**. All are ruled in `DESIGN_SPEC.md` §4.13, committed
-at `5b510913`. The ones that changed a shipped value:
+at `4920c8ed`. The ones that changed a shipped value:
 
 - **R1** the overflow row reads `Showing 4 of 293 · Show all` everywhere.
   §4.10's `+3 more · View` is retired.
@@ -334,7 +334,7 @@ No test would have caught this. It needed a picture.
 
 ---
 
-## UP3 — DONE, 2026-09-14, commits `a4fd3b53` (red) and `3a3571d4` (green)
+## UP3 — DONE, 2026-09-14, commits `b21e3294` (red) and `3733ddb8` (green)
 
 **Operator, on seeing the first capture:** *"ohh, the tabs, the buttons. all
 of that looks way more out of place now"*. Correct, and it is the predictable
@@ -427,9 +427,9 @@ the thing the operator reads.
 
 | Package | Commit | Budget after |
 |---|---|---|
-| UP4 inspector + toolpath list | `1e4eb503` | 209 |
-| UP5–UP7 simulation, setup, modals (parallel) | `c42bd9ae` | 4 |
-| R22 / R23 rulings and fixes | `d91d5c70` | 4 |
+| UP4 inspector + toolpath list | `efe94a8e` | 209 |
+| UP5–UP7 simulation, setup, modals (parallel) | `aa7dadcf` | 4 |
+| R22 / R23 rulings and fixes | `ba0467d6` | 4 |
 
 ### Parallel agents: what worked and what it cost
 
@@ -545,11 +545,11 @@ The failure is **`modulation_raises_cutting_chipload_toward_band`**
 (`adaptive_feed_modulation_pipeline_f036b.rs:469`), and it is **NOT this
 programme's**:
 
-- `git log 704a2f32..HEAD -- crates/rs_cam_core` is **EMPTY**. No commit in
+- `git log 473fbe17..HEAD -- crates/rs_cam_core` is **EMPTY**. No commit in
   this programme touched that crate.
 - `rs_cam_core` does not depend on `rs_cam_viz`, so a viz change cannot reach
   it.
-- The file's last commit is `610f8a58` (WP26, 2026-09-13), the other lane
+- The file's last commit is `a21a4a24` (WP26, 2026-09-13), the other lane
   fixing a SIBLING assertion in the same test. This is their work in flight.
 
 **Not fixed, deliberately.** `project_ui_fix_2026-09` records the rule: a

@@ -1,6 +1,6 @@
 //! C1 — refactor-invariance harness for the transform provenance contract.
 //!
-//! The C1 wave replaces ae10cb2's `SemanticLinkCarrier` convention (semantic
+//! The C1 wave replaces f375045's `SemanticLinkCarrier` convention (semantic
 //! move links ride the span vector through each transform's private
 //! `MoveRemap`) with a compile-enforced typestate: a transform hands back a
 //! `Transformed<Unreconciled>` and the only route to the toolpath inside is
@@ -26,26 +26,26 @@
 //! | `arc_raster` | same pipeline over collinear/arc-shaped runs (arc fit + segment merge actually fire) |
 //! | `face_full_chain` | real `face` op → full dressups → boundary clip → entry-descent split |
 //!
-//! Every constant below was ORIGINALLY captured at HEAD 5d32150, BEFORE any
+//! Every constant below was ORIGINALLY captured at HEAD 4787421, BEFORE any
 //! C1 edit. Two re-pins have happened since; each names its own mechanism.
 //!
 //! ## Pin lineage
 //!
 //! | Wave | Commit | What moved | Which pins |
 //! |------|--------|-----------|------------|
-//! | C1 capture | `5d32150` | — (original capture) | all five |
-//! | PR-6 (H2.2 / Checkpoint F1) | `3dbec75` | arc-fit's run key gained `intent`, so four dressup-inserted `LeadOut` segments stopped being swallowed into an `Unknown`-labelled arc — LABEL only | `arc_raster` |
-//! | W8 / F23-impl (Checkpoints F2+F3, ruled 2026-08-06) | `268e427` | the closing retract now lifts from the lead-out ARC endpoint instead of the stale cut endpoint — XY of N rapids per fixture | **all five** |
+//! | C1 capture | `4787421` | — (original capture) | all five |
+//! | PR-6 (H2.2 / Checkpoint F1) | `96717b0` | arc-fit's run key gained `intent`, so four dressup-inserted `LeadOut` segments stopped being swallowed into an `Unknown`-labelled arc — LABEL only | `arc_raster` |
+//! | W8 / F23-impl (Checkpoints F2+F3, ruled 2026-08-06) | `f86a38c` | the closing retract now lifts from the lead-out ARC endpoint instead of the stale cut endpoint — XY of N rapids per fixture | **all five** |
 //!
-//! `268e427`'s move went un-re-pinned for eight days: that lane re-pinned
-//! `crease_own_region_pr6b` in its own preceding commit (`23f98fc`) but did not
+//! `f86a38c`'s move went un-re-pinned for eight days: that lane re-pinned
+//! `crease_own_region_pr6b` in its own preceding commit (`3f2e84e`) but did not
 //! re-run this suite, and TD2's closing green claim over the core tests hit the
 //! first-failing-binary trap, so the red was never surfaced. Re-pinned under TD3
 //! intake row **G-XFP** on 2026-08-14 with the archaeology recorded in
 //! `planning/review_2026-08-08/ORCHESTRATION_LOG.md` §3.1.
 //!
 //! **The link sites did not move under the first two re-pins.** That was the
-//! load-bearing half: `268e427` is a geometry fix, and the semantic-channel
+//! load-bearing half: `f86a38c` is a geometry fix, and the semantic-channel
 //! landing sites this file exists to guard were byte-identical across it. Only
 //! the geometry hashes moved, and every move COUNT (23 / 40 / 74 / 97 / 103) and
 //! the stage-3 `split_count` (6) held.
@@ -287,7 +287,7 @@ fn three_pass_full_dressups_fingerprint() {
         &mut ReconcileSet::new(Some(&recorder), None),
     );
 
-    // RE-PINNED 2026-08-14 (TD3 / G-XFP), mechanism `268e427` (W8 / F23-impl,
+    // RE-PINNED 2026-08-14 (TD3 / G-XFP), mechanism `f86a38c` (W8 / F23-impl,
     // Checkpoints F2+F3 ruled 2026-08-06 — "the closing retract must lift from
     // where the tool IS"). Was `(23, 14_756_822_782_673_573_601)`.
     //
@@ -306,8 +306,8 @@ fn three_pass_full_dressups_fingerprint() {
         fingerprint(&out.toolpath),
         (23, 14_265_253_333_427_783_116),
         "three_pass geometry moved; re-pinned 2026-08-14 for the lead-out retract \
-         lift (268e427), previously re-pinned by PR-6, originally captured at \
-         HEAD 5d32150 before C1"
+         lift (f86a38c), previously re-pinned by PR-6, originally captured at \
+         HEAD 4787421 before C1"
     );
     assert_eq!(
         link_sites(&recorder.finish()),
@@ -317,7 +317,7 @@ fn three_pass_full_dressups_fingerprint() {
             ("tail", Some((14, 22))),
             ("whole", Some((0, 22))),
         ]),
-        "three_pass semantic link landing sites moved; captured at HEAD 5d32150 before C1"
+        "three_pass semantic link landing sites moved; captured at HEAD 4787421 before C1"
     );
 }
 
@@ -348,7 +348,7 @@ fn arc_raster_full_dressups_fingerprint() {
         &mut ReconcileSet::new(Some(&recorder), None),
     );
 
-    // RE-PINNED by PR-6 (H2.2 / Checkpoint F1), build `246b7ae` + the arcfit
+    // RE-PINNED by PR-6 (H2.2 / Checkpoint F1), build `60316ec` + the arcfit
     // intent-key change. Was `(40, 9_877_459_821_106_430_315)`.
     //
     // Mechanism: the move COUNT is unchanged at 40 and no coordinate moved —
@@ -364,7 +364,7 @@ fn arc_raster_full_dressups_fingerprint() {
     // The other four pinned constants in this file did NOT move at PR-6:
     // `three_pass` and all three `face_full_chain` stages were byte-identical.
     //
-    // RE-PINNED AGAIN 2026-08-14 (TD3 / G-XFP), mechanism `268e427` (W8 /
+    // RE-PINNED AGAIN 2026-08-14 (TD3 / G-XFP), mechanism `f86a38c` (W8 /
     // F23-impl, Checkpoints F2+F3 ruled 2026-08-06 — the lead-out retract lift).
     // Was `(40, 5_428_414_886_474_768_522)`.
     //
@@ -393,8 +393,8 @@ fn arc_raster_full_dressups_fingerprint() {
         fingerprint(&out.toolpath),
         (48, 10_027_966_985_113_258_553),
         "arc_raster geometry moved; re-pinned 2026-09-10 for the G-RAMPCONTAIN \
-         ramp fold, 2026-08-14 for the lead-out retract lift (268e427), before \
-         that by PR-6 (arcfit intent key), originally captured at HEAD 5d32150 \
+         ramp fold, 2026-08-14 for the lead-out retract lift (f86a38c), before \
+         that by PR-6 (arcfit intent key), originally captured at HEAD 4787421 \
          before C1"
     );
     // RE-PINNED 2026-09-10 (J2, G-RAMPCONTAIN). The ramp fold adds two moves
@@ -418,7 +418,7 @@ fn arc_raster_full_dressups_fingerprint() {
             ("tail", Some((33, 47))),
             ("whole", Some((0, 47))),
         ]),
-        "arc_raster semantic link landing sites moved; captured at HEAD 5d32150 before C1"
+        "arc_raster semantic link landing sites moved; captured at HEAD 4787421 before C1"
     );
 }
 
@@ -461,7 +461,7 @@ fn face_full_chain_fingerprint() {
     // pre-position rapids that follow them move from Z 2.0 to Z 30.0, XY
     // unchanged. Nothing else differs, and the move count goes 74 -> 80.
     //
-    // RE-PINNED 2026-08-14 (TD3 / G-XFP), mechanism `268e427` (W8 / F23-impl,
+    // RE-PINNED 2026-08-14 (TD3 / G-XFP), mechanism `f86a38c` (W8 / F23-impl,
     // Checkpoints F2+F3, the lead-out retract lift). Was
     // `(74, 9_692_869_450_022_244_402)`.
     //
@@ -473,7 +473,7 @@ fn face_full_chain_fingerprint() {
         fingerprint(&current.toolpath),
         (80, 6_526_175_378_945_769_562),
         "face stage-1 (dressups) geometry moved; re-pinned 2026-08-14 for the \
-         lead-out retract lift (268e427), originally captured at HEAD 5d32150 \
+         lead-out retract lift (f86a38c), originally captured at HEAD 4787421 \
          before C1"
     );
 
@@ -492,7 +492,7 @@ fn face_full_chain_fingerprint() {
         (103, 10_899_331_192_678_125_387),
         "face stage-2 (boundary clip) geometry moved; re-pinned 2026-09-09 for the \
          lead-in retract-plane lift (G-ISOCLIPRAPID) carried forward from stage 1, \
-         originally captured at HEAD 5d32150 before C1"
+         originally captured at HEAD 4787421 before C1"
     );
 
     // Stage 3 — entry-descent split (no dexel stock: the fresh-stock top is
@@ -522,7 +522,7 @@ fn face_full_chain_fingerprint() {
         (6, (109, 2_717_567_159_789_683_815)),
         "face stage-3 (entry-descent split) geometry moved; re-pinned 2026-09-09 for \
          the lead-in retract-plane lift (G-ISOCLIPRAPID) carried forward from stage 1, \
-         originally captured at HEAD 5d32150 before C1"
+         originally captured at HEAD 4787421 before C1"
     );
 
     assert_eq!(
@@ -541,6 +541,6 @@ fn face_full_chain_fingerprint() {
         ]),
         "face full-chain semantic link landing sites moved; re-pinned 2026-09-09 for \
          the lead-in retract-plane lift (G-ISOCLIPRAPID), originally captured at HEAD \
-         5d32150 before C1"
+         4787421 before C1"
     );
 }

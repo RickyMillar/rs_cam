@@ -190,7 +190,7 @@ fn arm(toolpath_id: ToolpathId, arc_rad: f64) -> (Vec<SimulationCutSample>, f64)
     (samples, chip)
 }
 
-/// The pre-fix record, kept permanently. Measured on `becf1cb`
+/// The pre-fix record, kept permanently. Measured on `04d9cbf`
 /// (A-1's characterization run) and reproduced by
 /// [`the_retired_measure_still_reproduces_the_defect`] every time this
 /// file runs, so it is a live number rather than a comment.

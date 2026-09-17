@@ -11,7 +11,7 @@ RMW, not two sqrts"* — and it held. S7 measured 1.04–1.07× on the arms it c
 reach and nothing on the plunge fixture. S2 measures **1.46–2.07× on every arm
 including both plunge arms**, on the same machine, in the same session.
 
-Commits: `f9f26997` (S2), `5973b7cb` (S3).
+Commits: `6fe20c3d` (S2), `f093a88e` (S3).
 
 **Do not read this file as a replacement for `BASELINES.md`.** It is one lane's
 delta.
@@ -45,8 +45,8 @@ checking out three tree states in sequence and benching each:
 
 | state | how |
 |---|---|
-| pre-S2 | `git checkout 25c6823e -- src/dexel_stock src/radial_profile.rs` |
-| S2 | `git checkout f9f26997 -- …` |
+| pre-S2 | `git checkout 80ee198a -- src/dexel_stock src/radial_profile.rs` |
+| S2 | `git checkout 6fe20c3d -- …` |
 | S2+S3 | working tree |
 
 The pre-S2 column reproduces wave 1's committed numbers to within 1 % on every

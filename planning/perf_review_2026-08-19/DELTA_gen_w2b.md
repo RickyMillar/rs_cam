@@ -156,7 +156,7 @@ population — applied to a golden instead of a gate.
 ### Method
 
 The Phase-0 baselines were captured on 2026-08-19, and three other lanes have
-landed changes to this crate since (`ca92d767` G3, `473c3d1f` G2, `08345ee4`
+landed changes to this crate since (`5efc1cbc` G3, `ad107fbb` G2, `9de29150`
 V8/V13), so a straight comparison against `BASELINES.md` cannot separate this
 lane's effect from theirs or from a different machine load. The primary number
 below is therefore a **same-session A/B**: within one hold of the build lane,

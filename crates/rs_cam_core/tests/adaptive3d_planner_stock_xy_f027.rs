@@ -3,7 +3,7 @@
 //! ## Background
 //!
 //! After F-026 fixed `auto_from_model` load-time stock re-derivation
-//! (commit `cad1fcc`), the AS013 reproducer (adaptive3d on
+//! (commit `163b489`), the AS013 reproducer (adaptive3d on
 //! `ux_3d_terrain.toml`) saw `rapid_collision_count` drop from 844 → 0
 //! (the headline F-026 win), but `deflection.peak_mm` stayed at
 //! ~0.576 mm — still firing Exceeds despite the bulk of the toolpath

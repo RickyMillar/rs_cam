@@ -332,7 +332,7 @@ sits at 1.009x the theoretical floor with spacing at spec.
   met — the pre-fix speed was under-delivery, not efficiency.
 
 
-## The wanaka price, measured (2026-09-01, CLI `project`, 0.3 mm, worktree at `8cd15837`)
+## The wanaka price, measured (2026-09-01, CLI `project`, 0.3 mm, worktree at `fc526aed`)
 
 `planning/multitool_2026-08-23/wanaka200_mt2.toml`, both C2 dial arms,
 post-fix, against the §7 pre-fix records (`thin_organic_2026-08-27/

@@ -145,7 +145,7 @@ until the union-coverage instrument exists.
 ### V0 — RUN 2026-09-02. All gates pass. V1 OPENS.
 
 **Instrument:** `crates/rs_cam_core/tests/valley_prize_census_h0.rs`,
-numbers from commit `df3383a2` (instrument committed at `c14b2202`
+numbers from commit `cac1c28b` (instrument committed at `2820e91d`
 before the first result run, per convention). Full log + SVGs:
 `target/valley_census_h0/`. Verdict written by the orchestrator; the
 implementing agent reported numbers only. The orchestrator ALSO read
@@ -259,7 +259,7 @@ This completes M4's intent (attribution); it does not move B1, B2,
 or V0-pre.
 
 **V0-att v1 RAN 2026-09-02 AND ITS FORMULA IS ILL-POSED — measured,
-recorded, superseded (`9b1d7b74`).** Two structural defects, caught
+recorded, superseded (`d42db9b4`).** Two structural defects, caught
 by the implementing agent's stop-and-report guard, verified on the
 numbers:
 
@@ -330,7 +330,7 @@ direction-aware XY model that reproduces what ships:**
   it, V1 proceeds knowing the bound is optimistic. P = R_topo +
   D_pot may be quoted only as a stated ceiling, never as the bar.
 
-**V0-att v2 RAN 2026-09-02 (`1d6535cb`) — BAR PASSES. Ruling: V1
+**V0-att v2 RAN 2026-09-02 (`848250f4`) — BAR PASSES. Ruling: V1
 OPENS.** Bracket check passed on every population (territory
 1.0027 ≤ 1.1549 ≤ 1.4142, reproduced to the digit). D_pot
 (cut-intent): mask B 5.90 pp at the picked rung T = 8, 7.27–9.29 pp
@@ -417,7 +417,7 @@ one amendment pre-registered before any V1 run:
 ### V1 — RUN 2026-09-02. ALL THREE BARS FAIL. THE TRACING ARM CLOSES.
 
 **Instrument:** `crates/rs_cam_core/tests/valley_branch_falsifier_h1.rs`
-(`2ae57a31` → `99eb30aa`; the middle commit fixed the coverage
+(`24735178` → `8ffa8971`; the middle commit fixed the coverage
 audit's lift direction — it was lifting INTO the material).
 Region 1, the pre-registered favourable case (3104 mm², 64.4 % of
 its own cutting time in-mask — largest of all 16). Artifacts:
@@ -576,7 +576,7 @@ the hillshade.
 ### W0 — RUN 2026-09-02. Bar W0-a FAILS at every rung. PHASE W CLOSES.
 
 **Instrument:** `catchment_basin_census_w0.rs` (`86663373` →
-`193869af`; the middle commit fixed a self-caught sea-labelling
+`0ca73a6b`; the middle commit fixed a self-caught sea-labelling
 bug that had opened 31 602 basins). Full territory, no band clip:
 28 545 mm² XY / 42 637 mm² 3D across all 23 planned regions.
 Basin map SVG read by the orchestrator before ruling: large
@@ -652,7 +652,7 @@ overflow; each lake belongs to exactly one catchment.
   gates whether a variable-spacing ring candidate is ever worth
   pre-registering — avenue F's own measure-first rule.
 
-### W0b — RUN 2026-09-02 (`33840d6f` → `2d6b1492`). Bar W0-a FAILS on the corrected map. PHASE W CLOSES.
+### W0b — RUN 2026-09-02 (`fcd993e9` → `a009f883`). Bar W0-a FAILS on the corrected map. PHASE W CLOSES.
 
 **Sea-rule fallback RATIFIED by the orchestrator:** no water body
 touches the board border (the perimeter is the raised machining
@@ -741,7 +741,7 @@ two clippy-red files.
 2. **6.6 % of territory cells sit at or below the land floor
    (z ≤ 0)** and can carry no basin label — bookkeeping for any
    future watershed work.
-3. **Track M's commit `2e2ef306` left the workspace clippy gate
+3. **Track M's commit `aeb36ee7` left the workspace clippy gate
    red** on `union_coverage_m1.rs:71` (`ptr_arg`) and
    `wanaka_curvature_anisotropy.rs:489` (`wrong_self_convention`)
    — outside this track's footprint, relayed to the operator.

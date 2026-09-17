@@ -1,7 +1,7 @@
 //! Monge-quadric curvature estimation on an up-facing heightfield mesh.
 //!
 //! **Extraction, not new math.** This estimator was built by
-//! `tests/wanaka_curvature_anisotropy.rs` (commit `7f341f9d`), restated by
+//! `tests/wanaka_curvature_anisotropy.rs` (commit `5e4ae866`), restated by
 //! `tests/zone_coherence_census.rs`, extracted to `tests/common/monge.rs`
 //! for the bikeseat gate, and PROMOTED here by Track M (2026-09-02) so the
 //! strategy censuses read one implementation. The census source files carry
