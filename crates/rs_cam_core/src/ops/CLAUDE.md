@@ -8,11 +8,10 @@ module is reached through `compute::execute_operation_annotated`.
 - `mod.rs`, `depth.rs`, `adaptive_shared.rs` — facade, depth stepping, shared
   adaptive helpers.
 - `pocket.rs`, `profile.rs`, `face.rs`, `zigzag.rs`, `rest.rs` — the 2.5D
-  clearing family.
+  clearing family. `waterline.rs` — closed contours at constant Z.
 - `drill.rs`, `drill_op.rs`, `drill_metrics.rs` — the drilling family.
 - `vcarve.rs`, `inlay.rs`, `chamfer.rs`, `trace_path.rs`, `project_curve.rs`
   — the engraving and curve family.
-- `waterline.rs` — closed contours at constant Z.
 
 ## Invariants
 
@@ -28,6 +27,9 @@ module is reached through `compute::execute_operation_annotated`.
   (CUT-14): `EvenRedistributed` for 2.5D (equal passes,
   `total / ceil(total / per_pass)`, top excluded) and `ConstantStep` for
   finishing (constant step from the top, top included). Build no third.
+- `ops/trace_path.rs` is the follow-path OPERATION and `trace/` holds the
+  toolpath records. The two read alike and are not the same; do not confuse
+  them.
 
 ## Sentries
 
@@ -35,8 +37,3 @@ module is reached through `compute::execute_operation_annotated`.
 - `cargo test -p rs_cam_core -q --test drill_flip_removal_g_drillflip`
 - `cargo test -p rs_cam_core -q --test depth_beyond_stock_core_g_depthstockcore`
 - `cargo test -p rs_cam_core -q --test project_curve_depth_sign`
-
-## Do not
-
-- `ops/trace_path.rs` is the follow-path OPERATION. `trace/` holds the
-  toolpath records. The two read alike and are not the same.

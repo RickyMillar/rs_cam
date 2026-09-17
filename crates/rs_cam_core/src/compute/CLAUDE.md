@@ -1,7 +1,6 @@
 # `compute/` — dispatch, catalogue, configuration, simulation
 
-Operation dispatch, the catalogue, the configuration types and the simulation
-orchestration. The entry is `compute::execute_operation_annotated`.
+The title names the scope. The entry is `compute::execute_operation_annotated`.
 
 ## Files
 
@@ -23,12 +22,11 @@ orchestration. The entry is `compute::execute_operation_annotated`.
 
 - One simulation request, two builders: `ProjectSession::run_simulation` and
   the GUI controller. Four decisions are SHARED functions in `simulate.rs`,
-  not parity to keep by hand — `PhantomPriorStockScan` (a rest chain needs
-  simulated upstream stock), `group_stock_cut_direction`,
-  `entry_tool_fields` and `entry_metrics_not_applicable`. Put a fifth there
-  rather than in one builder.
+  not parity kept by hand: `PhantomPriorStockScan` (a rest chain needs
+  simulated upstream stock), `group_stock_cut_direction`, `entry_tool_fields`,
+  `entry_metrics_not_applicable`. Put a fifth there, not in one builder.
 - A new operation needs a catalogue row and a config variant. The row's
-  `generate` field IS the dispatch; `execute.rs` has no second arm to add.
+  `generate` field IS the dispatch; add no second path beside `execute.rs`.
 - A dressup's parameters live INSIDE its `Option` on `DressupConfig`
   (CUT-13). Add no value field beside an enable bool. `DressupConfigWire`
   holds the flat wire keys; the project file and MCP read that, not the type.
@@ -40,7 +38,3 @@ orchestration. The entry is `compute::execute_operation_annotated`.
 - `cargo test -p rs_cam_core -q --test sim_prefix_memo_s5`
 - `cargo test -p rs_cam_core -q --test set_param_refuses_absent_field_n5`
 - `cargo test -p rs_cam_core -q --test generated_empty_refusal_g_entryempty`
-
-## Do not
-
-- Do not add a second dispatch path beside `execute`.
