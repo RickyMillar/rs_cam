@@ -1928,10 +1928,19 @@ impl Default for BoundaryConfig {
 /// rest-analysis pass for the generic wiring, and `pencil.rs::rest_depth_arm`
 /// for the original detector this reuses.
 ///
-/// Field defaults mirror `rest_field::RestFieldParams`'s own defaults
-/// (`cell_mm` = 0.5, `min_valley_depth` = 0.05, `region_margin_mm` = 0.5) —
-/// the two structs describe the same underlying algorithm from two call
-/// sites (config vs. detector internals) and should stay numerically in sync.
+/// Field defaults are READ FROM `rest_field::RestFieldParams::default()`,
+/// not restated here — the two structs describe the same underlying
+/// algorithm from two call sites (config vs. detector internals), so the
+/// detector owns the numbers and this config copies them.
+///
+/// CMP-16: both files used to write `cell_mm` = 0.5,
+/// `min_valley_depth` = 0.05 and `region_margin_mm` = 0.5 as separate
+/// literals, under a doc line that said they "should stay numerically in
+/// sync", and no test compared them. The consumer proves the coupling is
+/// real: `execute/dressup_apply.rs` builds one `RestFieldParams` from
+/// this config's three fields and takes `num_offset_passes_cap` and
+/// `min_cut_length` from `RestFieldParams::default()` in the same
+/// literal.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RestAnalysisConfig {
     pub enabled: bool,
@@ -1981,12 +1990,14 @@ pub struct RestAnalysisConfig {
 
 impl Default for RestAnalysisConfig {
     fn default() -> Self {
+        // CMP-16: the detector's own defaults, read rather than restated.
+        let detector = crate::surface::rest_field::RestFieldParams::default();
         Self {
             enabled: false,
             reference_tool_id: None,
-            cell_mm: 0.5,
-            min_valley_depth: 0.05,
-            region_margin_mm: 0.5,
+            cell_mm: detector.cell_mm,
+            min_valley_depth: detector.min_valley_depth,
+            region_margin_mm: detector.region_margin_mm,
             // Not a value: an instruction to ask the reach policy. See the
             // field docs.
             offset_stepover_mm: None,
@@ -2471,6 +2482,39 @@ mod tests {
     /// pre-registry semantics — strip-all clears entry+lead+link;
     /// force-no-entry clears entry ONLY; prefer-helix upgrades Ramp and
     /// leaves Helix/None alone; unrestricted ops pass through untouched.
+    #[test]
+    /// CMP-16: the config's rest defaults ARE the detector's, not a copy
+    /// of them.
+    ///
+    /// The struct doc said the three numbers "should stay numerically in
+    /// sync", both files wrote them as separate literals, and nothing
+    /// compared the two. The defaults are derived now, so this test is a
+    /// guard against someone re-inlining a literal — which is a real
+    /// possibility, not a tautology: the derive is three field reads that
+    /// an edit can replace one at a time.
+    #[test]
+    fn rest_analysis_config_defaults_match_the_detector() {
+        let cfg = RestAnalysisConfig::default();
+        let detector = crate::surface::rest_field::RestFieldParams::default();
+
+        assert!((cfg.cell_mm - detector.cell_mm).abs() < f64::EPSILON);
+        assert!((cfg.min_valley_depth - detector.min_valley_depth).abs() < f64::EPSILON);
+        assert!((cfg.region_margin_mm - detector.region_margin_mm).abs() < f64::EPSILON);
+
+        // Non-vacuity: a zeroed detector default would satisfy the three
+        // comparisons above and mean nothing.
+        assert!(detector.cell_mm > 0.0);
+        assert!(detector.min_valley_depth > 0.0);
+        assert!(detector.region_margin_mm > 0.0);
+
+        // The two `None` fields are NOT the detector's numbers. Both are
+        // instructions to ask a policy at use time, and reading a literal
+        // from the detector would freeze the answer — see the field docs
+        // (PR-7 / H2.5).
+        assert_eq!(cfg.offset_stepover_mm, None);
+        assert_eq!(cfg.num_offset_passes, None);
+    }
+
     #[test]
     fn normalize_for_op_applies_registry_policy() {
         use super::super::catalog::OperationType;
