@@ -81,6 +81,7 @@ fn scanned_paths() -> Vec<PathBuf> {
     for extra in [
         "src/app/mcp.rs",
         "src/app/mcp/diagnostics.rs",
+        "src/app/mcp/generation.rs",
         "src/app/mcp/simulation.rs",
         "src/mcp_server.rs",
         "../rs_cam_mcp/src/server.rs",

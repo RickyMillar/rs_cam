@@ -83,7 +83,7 @@ struct Justified {
 /// The six viz sites that discard an answer for a stated reason.
 const JUSTIFIED: &[Justified] = &[
     Justified {
-        path: "src/app/mcp.rs",
+        path: "src/app/mcp/generation.rs",
         needle: "Command::SetToolpathDebugOptions(",
         reason: "a debug capture is an output of a generation, never an input to one, \
                  so the row moves no revision and `stale` is empty",
@@ -677,6 +677,7 @@ fn every_justified_discard_still_names_a_real_site() {
 const MCP_SURFACE: &[&str] = &[
     "src/app/mcp.rs",
     "src/app/mcp/diagnostics.rs",
+    "src/app/mcp/generation.rs",
     "src/app/mcp/simulation.rs",
 ];
 

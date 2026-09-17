@@ -104,6 +104,7 @@ const MCP_SOURCES: &[&str] = &[
     "src/app/mcp.rs",
     "src/app/mcp/commands.rs",
     "src/app/mcp/diagnostics.rs",
+    "src/app/mcp/generation.rs",
     "src/app/mcp/simulation.rs",
     "src/mcp_bridge.rs",
     "src/mcp_server.rs",
