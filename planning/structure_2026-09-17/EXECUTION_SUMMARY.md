@@ -32,7 +32,7 @@ instruction to continue unattended.
 | `.rs` files at the root of `crates/rs_cam_core/src/` | 115 | 8 |
 | `mod` lines in `crates/rs_cam_core/src/lib.rs` | 125 | 31 |
 | folders under `crates/rs_cam_core/src/` | 12 | 24 |
-| known red tests handed off by earlier programmes | 5 | 1 (test 5 in progress) |
+| known red tests handed off by earlier programmes | 5 | 0 |
 
 Range `fa8176fa..e0125f8b`: 69 commits (5 belong to the peer's load-model
 workstream), 543 files under `crates/` changed, +4 503 / −3 979 lines there.
@@ -116,20 +116,58 @@ UR3; test 5 came from the ramp fold `d0aeee02`, not `7a5fdad4` (viz-only).
 Tests 3 and 4 pinned behaviour the product changed on purpose (badge text
 "1 safety"; one `RunSimulation` producer). Tests 1 and 2 were fixture
 defects (a seeded result; an unstamped inject). Viz `--lib` is 385/0 for
-the first time since `7b4e18f6`. Test 5 is an instrument defect (the
-median takes every F word, entry feeds included); the cutting-only fix is
-in progress.
+the first time since `7b4e18f6`. Test 5 was an instrument defect (the
+median took every F word, entry feeds included); `4d4d7a9b` measures the
+cutting population by `MoveIntent`, the gate's own partition; the median
+lands on the band floor (the modulator's clamp) with no band change.
 
-## Round 2 (in progress)
+## Round 2
 
 `evidence_round2/` (`2dcb2123`): dead pub 8 → 4, own-file-only 55 → 34,
 legacy lines 479 → 468, allows 677 → 665 (449 without `SAFETY:`), test-only
 pub 36, functions ≥ 250 lines 89, src near-dup pairs 118 at 0.88 (moved
-files re-chunked). The mechanical instruments are close to exhausted; the
-next lever is file size (15 core files and 4 viz files over 3 000 lines,
-`session/compute.rs` at 8 015). `P4_SPLITS.md` (split proposal) and the
-residue wave (dead 2, own-file-only 34, test-only 36, Q1 remainder, W4
-residue) are running; their outcome is appended below when they land.
+files re-chunked).
+
+**Residue wave** (5 commits `4a9928e1..bc8c4338`, net −373 lines): the
+whole dead `ToolpathSemanticWriter`; `NewDefaultCtx` and
+`apply_stock_defaults` (a duplicate of `feeds::suggest::StockContext`);
+three demotions; six `Test door:` lines; the dead viz runtime-profile
+cluster (454 lines out of `state/simulation.rs`, nine state methods and five
+UI functions lose an argument). Own-file-only rows were mostly false
+positives: the word-count instrument does not read the `Stays pub` doc
+lines W4 wrote. Q1 remainder: six of eight Suggest sites now carry the
+model bbox; the two behind `draw_toolpath_panel` need a 25th parameter and
+stay with the ui-premium owner.
+
+**Smoke re-baseline** (`22c9310f`): the CLI built at `21f94270^` and at
+`b0d9d330` produce byte-identical smoke CSVs, so the populated context
+changes no case. `2026-09-17.csv` replaces the 3.5-month-old June baseline;
+the notes list the June deltas and flag AS014's power verdict
+(`within` → `exceeds`) for the operator.
+
+**P4 big-file splits** (`P4_SPLITS.md` `7d4bec86`): 19 files over 3 000
+lines; 60 271 of 83 364 lines can leave their parents; 30 % of those lines
+are inline test modules. Rulings: `polygon.rs` stays whole (spine);
+tests-only moves in `feeds/` and `tool_load/` are allowed. Wave 1 (six
+files, six commits, each a pure move proven by item inventory):
+
+| file | before | parent after | children |
+|---|---:|---:|---|
+| `adaptive3d/mod.rs` `b0d9d330` | 3 018 | 532 | tests |
+| `dressup/mod.rs` `a1b79182` | 4 726 | 2 181 | air_cut, entry_descent, link, tests |
+| `stock/simulation_cut.rs` `6db8fe55` | 3 141 | 887 | accumulate, analysis, reporting, tests |
+| `session/mutation.rs` `a7f6d501` | 3 272 | 131 | toolpath, entities, config, tests |
+| `compute/catalog.rs` `58473752` | 3 287 | 1 412 | schema, registry, tests |
+| `finish/pencil.rs` `785b4acb` | 3 634 | 743 | chain_paths, detectors, emission, tests |
+
+Combined HEAD gate after wave 1: workspace clippy `-D warnings` clean, fmt
+clean, core `--lib` 2526/0. Lessons: the plan's visibility column was
+built from rustdoc links, not call sites (grep call sites, let the compiler
+decide); `wildcard_imports` is denied, so re-exports list names; a
+`#[cfg(test)]` item cannot be re-exported in a lib build. Three agents were
+cut off by the usage limit mid-split; their partial state was coherent and
+was finished, not redone. Wave 2 (`unified_finish`, `scallop`, `feeds/mod`,
+`tool_load/optimize/mod`, `compute/execute`, `session/compute`) is running.
 
 ## Follow-ups (recorded, not scheduled)
 
