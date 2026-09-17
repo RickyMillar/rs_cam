@@ -91,6 +91,9 @@ const COMPUTE_DOORS: &[&str] = &[
     "generate_toolpath",
     "generate_all",
     "run_simulation",
+    // CMP-23: the S5-memoized twin of `run_simulation`. It runs a
+    // simulation with a held prefix snapshot and writes nothing else.
+    "run_simulation_memoized",
     "modulate_simulation_trace",
     "plan_multitool_finishing",
 ];
