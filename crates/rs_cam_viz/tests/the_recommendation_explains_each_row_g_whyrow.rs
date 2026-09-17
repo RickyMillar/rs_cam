@@ -201,13 +201,23 @@ fn feeds_sources() -> Vec<(PathBuf, String)> {
             out.push((path, source));
         }
     }
-    out.push((
-        Path::new("properties/mod.rs").to_path_buf(),
-        std::fs::read_to_string(
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("src/ui/properties/mod.rs"),
-        )
-        .expect("read properties source"),
-    ));
+    // The inspector's Feeds tab. P4 (2026-09-17) split `properties/mod.rs`
+    // into `mod.rs` plus seven panel children beside it, so every `.rs` file
+    // directly in that folder is read. `operations/` is a sub-folder with
+    // its own sentries and is not read.
+    let inspector = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/ui/properties");
+    let mut panels: Vec<PathBuf> = std::fs::read_dir(&inspector)
+        .expect("read src/ui/properties")
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|e| e == "rs"))
+        .collect();
+    panels.sort();
+    assert!(!panels.is_empty(), "no source under src/ui/properties");
+    for path in panels {
+        let source = std::fs::read_to_string(&path).expect("read properties source");
+        out.push((path, source));
+    }
     out
 }
 

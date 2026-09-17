@@ -165,9 +165,32 @@ fn painted_text() -> Vec<String> {
     texts
 }
 
+/// Every `.rs` file directly in `src/ui/properties/`, concatenated in
+/// file-name order.
+///
+/// P4 (2026-09-17) split `properties/mod.rs` into `mod.rs` plus seven panel
+/// children beside it, so the inspector's source is the folder, not one
+/// file. `operations/` is a sub-folder and is not read; it carries its own
+/// sentries.
 fn properties_src() -> String {
-    std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/ui/properties/mod.rs"))
-        .expect("read properties source")
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/ui/properties");
+    let mut paths: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|error| panic!("read_dir properties: {error}"))
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|e| e == "rs"))
+        .collect();
+    paths.sort();
+    assert!(!paths.is_empty(), "no source under {}", dir.display());
+    let mut out = String::new();
+    for path in paths {
+        out.push_str(
+            &std::fs::read_to_string(&path)
+                .unwrap_or_else(|error| panic!("read {}: {error}", path.display())),
+        );
+        out.push('\n');
+    }
+    out
 }
 
 // ── arm 1 — the controls are on screen ───────────────────────────────────
