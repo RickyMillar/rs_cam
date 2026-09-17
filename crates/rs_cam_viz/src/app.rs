@@ -891,7 +891,7 @@ impl RsCamApp {
         // Feeds & Speeds modal (redesigned Feeds tab)
         if self.controller.state().feeds_modal.is_some() {
             let (state, events) = self.controller.state_ref_and_events_mut();
-            crate::ui::feeds_modal::draw(ctx, state, events);
+            crate::ui::feeds::draw(ctx, state, events);
         }
 
         // Tool Library management modal
