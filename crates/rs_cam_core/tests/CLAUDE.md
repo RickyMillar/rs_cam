@@ -9,9 +9,9 @@ part says what the file protects. Search by claim words, not by code.
 
 - `common/` — shared fixtures: meshes, chains, the reference plate, the
   band map, the fingerprint helper, the offset lab.
-- `fixtures/` — the wanaka project, `terrain.stl`, the STEP samples, the
-  perf golden files. `perf_golden_*.json` are blessed outputs; re-bless
-  only with a measured cause.
+- `fixtures/` — the pinned projects, `terrain.stl`, the STEP samples, the
+  golden files. A project or baseline a test loads lives HERE, not in
+  `planning/`, dated and hashed; re-bless a golden on a measured cause.
 - `literature_matrix/` — the cited feeds cells and their invariants; the
   `/refresh-lit-matrix` skill maintains `sources.toml`.
 - `ARCHIVED_HARNESSES.md` — two mega harnesses that left this directory.
@@ -20,10 +20,10 @@ part says what the file protects. Search by claim words, not by code.
 
 - One sentry: `cargo test -p rs_cam_core -q --test <name>`. Each folder
   `CLAUDE.md` under `src/` names the sentries for that folder.
-- `heavy-tests` (the twelve heaviest, with durations), `research` (eight)
-  and `test-support` (eight that bind a door such as `reach_map_for_mesh`)
-  gate test targets in `Cargo.toml`; a named run without its feature errors.
-  CI runs them. Locally, name one binary and ask the operator first.
+- `heavy-tests` (twelve heavy binaries plus one table set), `research` (8)
+  and `test-support` (8, which bind a door) gate targets in `Cargo.toml`; a
+  named run without its feature errors. CI runs them. Locally, name one
+  binary and ask the operator first.
 - `#[ignore]` marks an instrument or an evidence run, not a broken test.
   Run one by name with `-- --ignored`. Never use `--include-ignored`.
 - A `planning/…` path in a doc comment may no longer exist; the tag
