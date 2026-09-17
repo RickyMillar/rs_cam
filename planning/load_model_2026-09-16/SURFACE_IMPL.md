@@ -179,13 +179,20 @@ additively, with the cause named.
 - The producer reads `axial_engagement_mm` per cutting sample; statistic
   `PeakHigh` (one excursion is the finding, as for deflection); carries
   `GatePopulation` so zero cutting samples is X-VAC, not a clean pass.
-- **The bound is the factor the clamp used**, read from one shared core
-  helper that both `clamp_dpp_to_rigidity` and this producer call:
-  `adaptive_doc_factor` for the adaptive families, `doc_roughing_factor`
-  otherwise, × `tool.diameter`. Not a constant (`REVIEW_DESIGN.md` W2).
-- **Finishing passes and drills are `Unmodeled(NotApplicableForOp)`**: no depth
-  cap applies to a finishing pass (`clamp_dpp_to_rigidity` is roughing-only),
-  and a drill has no radial engagement. The row paints `—` with the reason.
+- **The bound is the factor the clamp would use for this family**, from the
+  shared helper below. Not a constant (`REVIEW_DESIGN.md` W2).
+- **Refined 2026-09-18 after reading `RigidityProfile`:** the profile carries
+  `doc_roughing_factor`, `doc_finishing_factor` AND `adaptive_doc_factor`, so a
+  finishing pass has a real bound even though `clamp_dpp_to_rigidity` is
+  roughing-only (a Suggest policy, not an absence of a bound). One shared core
+  helper, `rigidity_depth_cap(machine, tool, family, pass_role) ->
+  Option<(factor, cap_mm)>`, picks the factor per family — adaptive →
+  `adaptive_doc_factor`, roughing → `doc_roughing_factor`, finishing →
+  `doc_finishing_factor` — and both the clamp (for its roughing branch) and
+  the criterion call it, so the two cannot disagree. **Drills are
+  `Unmodeled(NotApplicableForOp)`**: no radial engagement. The row paints `—`
+  with the reason. Every factor is a rule of thumb with no published source,
+  so every variant carries `BoundSource::RigidityRuleOfThumb` and none gates.
 - Before a simulation the depth stays a rationale entry
   (`RationaleReason::RigidityFactor`). No pre-simulation row.
 
