@@ -142,7 +142,7 @@ pub(crate) struct PowerModelInputs {
 /// a solver that needs "what feed reaches this power budget" must
 /// invert an affine function, not divide a ratio.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct PowerTerms {
+pub struct PowerTerms {
     /// kW per mm/min of linear feed — the shear term's slope,
     /// `A·Ks·cross_section/60e6`.
     pub shear_kw_per_mm_min: f64,
@@ -213,7 +213,7 @@ impl PowerTerms {
     }
 
     /// Predicted instantaneous spindle power (kW) at `feed_mm_min`.
-    pub(crate) fn kw_at_feed(self, feed_mm_min: f64) -> f64 {
+    pub fn kw_at_feed(self, feed_mm_min: f64) -> f64 {
         self.shear_kw_per_mm_min * feed_mm_min.max(0.0) + self.edge_kw
     }
 
@@ -228,7 +228,7 @@ impl PowerTerms {
     /// - there is no shear slope, so feed does not move power at all.
     ///
     /// Never returns a negative or non-finite feed.
-    pub(crate) fn feed_for_kw(self, budget_kw: f64) -> Option<f64> {
+    pub fn feed_for_kw(self, budget_kw: f64) -> Option<f64> {
         if !budget_kw.is_finite() || self.shear_kw_per_mm_min <= 0.0 {
             return None;
         }

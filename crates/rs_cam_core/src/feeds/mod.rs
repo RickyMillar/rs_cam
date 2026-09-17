@@ -22,6 +22,7 @@ pub mod feed_explanation;
 pub mod force;
 pub mod geometry;
 pub mod geometry_class;
+pub mod operating_point;
 pub mod predict;
 pub mod profile;
 pub mod provenance;
@@ -37,6 +38,7 @@ pub use feed_explanation::{
     ADVANCE_PER_TOOTH, AchievedFeedStage, ClampReason, CommandedStage, FeedExplanation,
     GateObservationStage, LutBandStage, ObservedStatistic,
 };
+pub use operating_point::{PowerFigure, PowerUnmodeled, power_at_operating_point};
 pub use predict::{
     DeflectionBreakdown, DeflectionCaveat, DeflectionPrediction, DeflectionUnmodeled,
     predict_peak_deflection_um,
@@ -455,7 +457,22 @@ pub struct FeedsResult {
     pub ramp_feed_mm_min: f64,
     pub axial_depth_mm: f64,
     pub radial_width_mm: f64,
+    /// Predicted spindle power (kW) **at the CALCULATOR's geometry** — the
+    /// `ap`, `ae`, RPM and feed this result carries, on the COMMANDED axis.
+    ///
+    /// It is not the power the machine draws. `suggest::enforce_invariants`
+    /// runs after the calculator and may lower the depth per pass (the
+    /// rigidity, cutting-length and deflection clamps) and the stepover, and
+    /// pass 9 then re-derives the feed at the point that ships. A display of
+    /// the SHIPPED figure calls
+    /// [`crate::feeds::power_at_operating_point`] on the final operation.
     pub power_kw: f64,
+    /// The ceiling `power_kw` is quoted against (kW):
+    /// `power_at_rpm(rpm) × safety_factor`, the gate's own ceiling.
+    ///
+    /// It moves with the RPM, so it belongs to the calculator's operating
+    /// point exactly as `power_kw` does. See `power_kw` for the shipped
+    /// figure.
     pub available_power_kw: f64,
     pub power_limited: bool,
     pub mrr_mm3_min: f64,

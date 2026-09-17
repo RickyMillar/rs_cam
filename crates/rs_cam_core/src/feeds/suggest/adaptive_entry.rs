@@ -590,74 +590,35 @@ pub(super) fn recheck_power_after_rescale(
     let mut warnings = Vec::new();
     let usable = |v: f64| v.is_finite() && v > 0.0;
 
-    let Some(kc) = material.kc_n_per_mm2() else {
-        tracing::debug!(
-            reason = "no_kc",
-            "Suggest pass 10 abstains — the material publishes no Kc, so Step 6 \
-             applied no power ceiling and there is none to re-check"
-        );
-        return warnings;
+    // The evaluation itself is the public door `feeds::power_at_operating_point`
+    // (S2, 2026-09-18). It reads exactly what this pass read when T-15 landed
+    // it — the operation's final `ap` / `ae` / RPM with the calculator's point
+    // as the fallback, the chip-thinning effective diameter at the final
+    // depth, and the ceiling `power_at_rpm × safety_factor`. Pass 10 keeps the
+    // decision: the clamp, the fallback feed and the warning.
+    let figure = match crate::feeds::power_at_operating_point(
+        operation,
+        tool,
+        material,
+        machine,
+        context.calculator_operating_point,
+    ) {
+        Ok(figure) => figure,
+        Err(crate::feeds::PowerUnmodeled::MaterialUnvalidated) => {
+            tracing::debug!(
+                reason = "no_kc",
+                "Suggest pass 10 abstains — the material publishes no Kc, so Step 6 \
+                 applied no power ceiling and there is none to re-check"
+            );
+            return warnings;
+        }
+        Err(_) => return warnings,
     };
+    let rescaled = figure.feed_mm_min;
+    let ceiling = figure.available_kw;
+    let terms = figure.terms;
 
-    let rescaled = operation.feed_rate();
-    if !usable(rescaled) {
-        return warnings;
-    }
-
-    // The same final-geometry reads pass 9 makes, for the same reason: an
-    // operation that exposes no stepover / DPP field cannot have gone stale on
-    // that axis, so it falls back to the calculator's own value.
-    let calc = context.calculator_operating_point;
-    let final_ae = operation
-        .stepover()
-        .filter(|v| usable(*v))
-        .or_else(|| calc.map(|c| c.radial_width_mm))
-        .filter(|v| usable(*v));
-    let final_ap = operation
-        .depth_per_pass()
-        .filter(|v| usable(*v))
-        .or_else(|| calc.map(|c| c.axial_depth_mm))
-        .filter(|v| usable(*v));
-    let (Some(final_ae), Some(final_ap)) = (final_ae, final_ap) else {
-        return warnings;
-    };
-
-    let rpm = operation
-        .spindle_rpm()
-        .map(f64::from)
-        .filter(|v| usable(*v))
-        .or_else(|| calc.map(|c| c.rpm).filter(|v| usable(*v)));
-    let Some(rpm) = rpm else {
-        return warnings;
-    };
-
-    let ceiling = machine.power_at_rpm(rpm) * machine.safety_factor;
-    if !usable(ceiling) {
-        return warnings;
-    }
-
-    let geom = build_cutter(tool).to_geometry_hint();
-    let shank = if usable(tool.shank_diameter) {
-        tool.shank_diameter
-    } else {
-        tool.diameter
-    };
-    let effective_d = crate::feeds::effective_diameter(geom, tool.diameter, shank, final_ap);
-    if !usable(effective_d) {
-        return warnings;
-    }
-    let terms =
-        crate::tool_load::power::PowerTerms::of(crate::tool_load::power::PowerModelInputs {
-            kc_n_per_mm2: kc,
-            cross_section_mm2: geom.mrr_cross_section_mm2(final_ap, final_ae),
-            axial_doc_mm: final_ap,
-            immersion_rad: crate::feeds::force::immersion_angle(final_ae, effective_d / 2.0),
-            engagement_diameter_mm: effective_d,
-            spindle_rpm: rpm,
-            flute_count: f64::from(tool.flute_count.max(1)),
-        });
-
-    let required = terms.kw_at_feed(rescaled);
+    let required = figure.required_kw;
     if required <= ceiling {
         return warnings;
     }
