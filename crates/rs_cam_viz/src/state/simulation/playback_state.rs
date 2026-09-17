@@ -56,6 +56,7 @@ impl SimulationState {
             },
             last_run: None,
             submitted_edit_counter: None,
+            submitted_simulation_epoch: None,
             submitted_collision_edit_counter: None,
             submitted_collision_scope: None,
             resolution: 0.25,

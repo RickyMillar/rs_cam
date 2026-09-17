@@ -826,16 +826,31 @@ impl<B: ComputeBackend> AppController<B> {
                     .as_ref()
                     .and_then(|results| results.cut_trace.as_ref())
                     .map(Arc::clone);
-                let args = AdoptSimulationArgs {
-                    result: Box::new(adopted),
-                };
-                let adopt = Command::AdoptSimulation(args);
-                // WP19: the `Ok` arm stays absent on purpose.
-                // Storing a simulation leaves the session's
-                // `Some`, so `stale` is empty and
-                // `simulation_cleared` is false.
-                if let Err(error) = self.state.session.apply(adopt) {
-                    tracing::warn!("simulation not adopted into the session: {error}");
+                // D7 (W0c): the run reaches the core only with the
+                // epoch the submit door stamped. An UNSTAMPED result
+                // adopts nothing: there is no fallback to the live
+                // epoch, because "this run answers the project as it
+                // stands" is a claim only the submit door can make.
+                // The view keeps the result either way; the core
+                // stays empty and every reader calls it not current.
+                match self.state.simulation.submitted_simulation_epoch {
+                    Some(epoch) => {
+                        let args = AdoptSimulationArgs {
+                            result: Box::new(adopted),
+                            epoch,
+                        };
+                        let adopt = Command::AdoptSimulation(args);
+                        // WP19: the `Ok` arm stays absent on purpose.
+                        // Storing a simulation leaves the session's
+                        // `Some`, so `stale` is empty and
+                        // `simulation_cleared` is false.
+                        if let Err(error) = self.state.session.apply(adopt) {
+                            tracing::warn!("simulation not adopted into the session: {error}");
+                        }
+                    }
+                    None => tracing::warn!(
+                        "simulation not adopted into the session: the run carries no epoch stamp"
+                    ),
                 }
 
                 let inspect_target = self.state.simulation.debug.pending_inspect_toolpath.take();
@@ -888,6 +903,7 @@ impl<B: ComputeBackend> AppController<B> {
                 // with nothing and no way to tell a cancelled run
                 // from one that never happened. Stored, and marked
                 // not-current.
+                let _ = self.state.simulation.submitted_simulation_epoch.take();
                 let submitted_at = self
                     .state
                     .simulation
@@ -929,6 +945,7 @@ impl<B: ComputeBackend> AppController<B> {
             Err(ComputeError::Cancelled) => {
                 let _ = (
                     self.state.simulation.submitted_edit_counter.take(),
+                    self.state.simulation.submitted_simulation_epoch.take(),
                     self.state
                         .simulation
                         .submitted_metric_options_revision
@@ -943,6 +960,7 @@ impl<B: ComputeBackend> AppController<B> {
             Err(ComputeError::Message(error)) => {
                 let _ = (
                     self.state.simulation.submitted_edit_counter.take(),
+                    self.state.simulation.submitted_simulation_epoch.take(),
                     self.state
                         .simulation
                         .submitted_metric_options_revision

@@ -32,6 +32,7 @@ impl<B: ComputeBackend> AppController<B> {
         sim.last_run = None;
         sim.submitted_metric_options_revision = None;
         sim.submitted_edit_counter = None;
+        sim.submitted_simulation_epoch = None;
         self.collision_positions.clear();
         self.pending_upload = true;
     }
@@ -269,6 +270,11 @@ impl<B: ComputeBackend> AppController<B> {
         self.state.simulation.submitted_edit_counter = Some(self.state.gui.edit_counter);
         self.state.simulation.submitted_metric_options_revision =
             Some(self.state.simulation.metric_options_revision);
+        // D7 (W0c): the core's own half of the same rule. Every edit that
+        // clears the simulation bumps the epoch, so a run that lands after
+        // one carries a stamp the session refuses.
+        self.state.simulation.submitted_simulation_epoch =
+            Some(self.state.session.simulation_epoch());
 
         let machine = self.state.session.machine();
         let max_feed_mm_min = machine.max_feed_mm_min.max(1.0);

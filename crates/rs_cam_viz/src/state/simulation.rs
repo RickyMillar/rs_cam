@@ -798,6 +798,16 @@ pub struct SimulationState {
     /// the first (`ThreadedComputeBackend::submit_analysis` clears the queue
     /// and sets the cancel flag), so at most one result can arrive per stamp.
     pub submitted_edit_counter: Option<u64>,
+    /// `ProjectSession::simulation_epoch` as it stood when the in-flight
+    /// simulation was submitted (D7, W0c).
+    ///
+    /// The core refuses an adopt whose epoch has moved, so this stamp is
+    /// what lets a run reach the session at all. `None` means no submit
+    /// has been seen through this controller, and then the drain adopts
+    /// NOTHING: there is no fallback, because an unstamped result is a
+    /// claim this guard cannot make. The view keeps the result and reads
+    /// it as not current, which is what F2.10 already asks for.
+    pub submitted_simulation_epoch: Option<u64>,
     /// [`crate::state::runtime::GuiState::edit_counter`] as it stood when the
     /// in-flight COLLISION check was submitted (F2.12, G-HOLDERSTALE).
     ///
