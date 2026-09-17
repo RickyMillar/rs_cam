@@ -49,7 +49,9 @@ waves, a not-now list and a verification list. The top defects: a failed
 holder-collision check reads as zero collisions; MCP export drops the
 machine-safety findings the GUI shows; `apply_tabs` strips move intent; an
 unknown `face_up` loads as Top; a Post-tab edit never marks the project
-dirty. No code changed. Read `SYNTHESIS.md` before you start a wave.
+dirty. Wave 1 landed the same evening: 18 commits (`1a0a1ea5`..`3c691ac2`),
+see `SYNTHESIS.md` § Wave 1 outcome. Read `SYNTHESIS.md` before you start
+the next wave.
 
 ## Structure programme — 2026-09-17 (navigable repository; COMPLETE)
 

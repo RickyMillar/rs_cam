@@ -609,3 +609,38 @@ One more is worth running before wave 5, because the tail depends on it:
 CMP-20 + CUT-11 — `crates/rs_cam_core/src/compute/execute/dressup_apply.rs:338` —
 `rg -n 'apply_dressups' crates --type rust`. The doc claims three calling
 crates; the auditor found two callers, both in core.
+
+## Wave 1 outcome — 2026-09-17 evening
+
+Seven agents, 18 commits on master (`1a0a1ea5` .. `3c691ac2`), one row per
+commit, a teeth check on every new sentry. Consolidated gate: see
+`WAVE1_GATE.md`.
+
+Landed: CUT-08, CUT-02, CUT-12, CUT-07 (doc); EDG-01, EDG-03, EDG-04;
+FLD-03; STK-08, STK-04 + STK-05 (deleted; schema 5 → 6); UI-08, UI-13;
+CLI-05 (+ a second defect found at runtime: a multi-operation sweep patched
+the last operation and reported the first, `88c8e5e9`); CLI-07; FIN-01
+(eight test targets gated, not six; CI runs them under the feature).
+
+Skipped with cause:
+- FLD-04, FLD-05: all eight doors are bound by integration-test crates, so
+  `cfg(test)` cannot hide them. Mechanism: a `test-support` feature on
+  `rs_cam_core` with `required-features` on seven test targets and a viz
+  dev-dependency. One row, after wave 1.
+- EDG-05: the claim is wrong. `GrblImport` and `MoveKinematics` are return
+  types of live `pub fn` with external readers; only `WindingReport` plus
+  `check_winding` could narrow to `pub(crate)`.
+- UI-06: two files outside the viz-ui row; stays in wave 5.
+- CUT-12's `search.rs` → `material.rs` rename: file-map row only this wave.
+
+Deviations from the finding text, recorded in the commit bodies: CUT-08's
+vertical re-entries are at `:878` and `:910`, not `:899`; CUT-02 found nine
+wrappers, not eight, and `optimize_entry_descents_with_provenance` keeps its
+suffix; FLD-03's `ordinal` takes `&self` (`Copy` would raise
+`clone_on_copy` in two foreign files).
+
+Follow-ups opened: a third point-to-segment copy in
+`tests/scallop_isofield_gouge_m4.rs:484` (heavy-tests); the `entry_style`
+serde alias on `OperationDef` (no-legacy delete candidate); UI-08 may mark a
+loaded project dirty on its first Post-tab frame if a post config does not
+round-trip (G-DIRTYONLOAD); `material/` still has no `CLAUDE.md`.
