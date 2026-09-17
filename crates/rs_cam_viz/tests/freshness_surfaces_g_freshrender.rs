@@ -33,6 +33,20 @@
 /// over the whole inspector, so the reader is the folder. `operations/` is
 /// a sub-folder and is not read; it carries its own sentries.
 fn properties_src() -> String {
+    let mut out = String::new();
+    for (_, text) in properties_files() {
+        out.push_str(&text);
+        out.push('\n');
+    }
+    out
+}
+
+/// The same files, one row each: the label a message prints and the text.
+///
+/// The export-wording scan below exempts a surface that calls the shared
+/// builder. Over the concatenation one child exempts all fourteen files,
+/// so that scan reads the rows, not the join.
+fn properties_files() -> Vec<(String, String)> {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/ui/properties");
     let mut paths: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
         .unwrap_or_else(|e| panic!("read_dir {}: {e}", dir.display()))
@@ -42,15 +56,19 @@ fn properties_src() -> String {
         .collect();
     paths.sort();
     assert!(!paths.is_empty(), "no source under {}", dir.display());
-    let mut out = String::new();
-    for path in paths {
-        out.push_str(
-            &std::fs::read_to_string(&path)
-                .unwrap_or_else(|e| panic!("read {}: {e}", path.display())),
-        );
-        out.push('\n');
-    }
-    out
+    paths
+        .into_iter()
+        .map(|path| {
+            let name = path
+                .file_name()
+                .unwrap_or_else(|| panic!("no file name: {}", path.display()))
+                .to_string_lossy()
+                .into_owned();
+            let text = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+            (format!("ui/properties/{name}"), text)
+        })
+        .collect()
 }
 const PANEL_SRC: &str = include_str!("../src/ui/toolpath_panel.rs");
 const RENDER_SRC: &str = include_str!("../src/render/mod.rs");
@@ -223,13 +241,18 @@ fn no_freshness_surface_writes_its_own_export_blocking_sentence() {
         "not be export",
     ];
 
-    let inspector = properties_src();
+    let inspector = properties_files();
     for (label, src) in [
         ("ui/toolpath_panel.rs", PANEL_SRC),
         ("readiness_panel.rs", READINESS_PANEL_SRC),
         ("workspace_bar.rs", WORKSPACE_BAR_SRC),
-        ("ui/properties/", inspector.as_str()),
-    ] {
+    ]
+    .into_iter()
+    .chain(
+        inspector
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str())),
+    ) {
         // A surface that calls the shared builder is using the one text by
         // construction; the rule is about surfaces that write their own.
         if src.contains("blocking_toolpath_message") {

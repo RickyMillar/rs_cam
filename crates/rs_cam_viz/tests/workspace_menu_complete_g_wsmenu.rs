@@ -43,7 +43,35 @@ use rs_cam_viz::state::Workspace;
 
 const MENU_SRC: &str = include_str!("../src/ui/menu_bar.rs");
 const BAR_SRC: &str = include_str!("../src/ui/workspace_bar.rs");
-const PROPERTIES_SRC: &str = include_str!("../src/ui/properties/mod.rs");
+/// Every `.rs` file directly in `src/ui/properties/`, concatenated in
+/// file-name order.
+///
+/// P4 (2026-09-17) split `properties/mod.rs` into `mod.rs` plus panel
+/// children beside it. Both wording arms below are NEGATIVE, so reading
+/// `mod.rs` alone lets the forbidden text come back in a sibling. The
+/// other properties sentries read the folder for the same reason.
+/// `operations/` is a sub-folder and is not read; it carries its own
+/// sentries.
+fn properties_src() -> String {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/ui/properties");
+    let mut paths: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read_dir {}: {e}", dir.display()))
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|e| e == "rs"))
+        .collect();
+    paths.sort();
+    assert!(!paths.is_empty(), "no source under {}", dir.display());
+    let mut out = String::new();
+    for path in paths {
+        out.push_str(
+            &std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("read {}: {e}", path.display())),
+        );
+        out.push('\n');
+    }
+    out
+}
 const APP_SRC: &str = include_str!("../src/app.rs");
 const INPUT_SRC: &str = include_str!("../src/app/input.rs");
 const MCP_SRC: &str = include_str!("../src/app/mcp.rs");
@@ -182,12 +210,13 @@ fn the_mcp_key_round_trip_reads_the_one_list() {
 /// replacement names the four things that can actually be selected.
 #[test]
 fn the_empty_inspector_names_what_can_be_selected() {
+    let properties = properties_src();
     assert!(
-        PROPERTIES_SRC.contains("Select an operation, tool, setup or model"),
+        properties.contains("Select an operation, tool, setup or model"),
         "the selection-none fallback must name the selectable kinds"
     );
     assert!(
-        !PROPERTIES_SRC.contains("Select an item in the project tree"),
+        !properties.contains("Select an item in the project tree"),
         "the stale \"project tree\" wording must be gone, not duplicated"
     );
 }
@@ -197,27 +226,26 @@ fn the_empty_inspector_names_what_can_be_selected() {
 /// order, and each on its own line.
 #[test]
 fn getting_started_reviews_before_it_exports() {
+    let properties = properties_src();
     for step in [
         "\"5. Generate toolpaths\"",
         "\"6. Simulate and review\"",
         "\"7. Export G-code\"",
     ] {
         assert!(
-            PROPERTIES_SRC.contains(step),
+            properties.contains(step),
             "the Getting started list is missing {step}"
         );
     }
     assert!(
-        !PROPERTIES_SRC.contains("Generate and export G-code"),
+        !properties.contains("Generate and export G-code"),
         "the combined generate-and-export step must be replaced, not kept beside \
          the new ones"
     );
-    let simulate = PROPERTIES_SRC
+    let simulate = properties
         .find("6. Simulate and review")
         .expect("checked above");
-    let export = PROPERTIES_SRC
-        .find("7. Export G-code")
-        .expect("checked above");
+    let export = properties.find("7. Export G-code").expect("checked above");
     assert!(
         simulate < export,
         "review comes before export, or the step is decoration"

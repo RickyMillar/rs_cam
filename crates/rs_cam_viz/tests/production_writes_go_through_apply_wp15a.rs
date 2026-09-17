@@ -100,6 +100,10 @@ const CLI_COMPUTE_DOOR_ROWS: &[CommandId] = &[CommandId::GenerateToolpath];
 /// `Command` inside `app/mcp/commands.rs`, so most `gui: Skip` rows are
 /// constructed there — correctly, and by the wire. The list matches
 /// `command_surface_completeness.rs`.
+///
+/// P4 moved `app/mcp.rs`'s inline `mod tests` out to `app/mcp/tests.rs`.
+/// That file constructs commands, so it joins the list; without the row
+/// property 2 reads a test construction as a view construction.
 const MCP_SOURCES: &[&str] = &[
     "src/app/mcp.rs",
     "src/app/mcp/commands.rs",
@@ -107,6 +111,7 @@ const MCP_SOURCES: &[&str] = &[
     "src/app/mcp/generation.rs",
     "src/app/mcp/project.rs",
     "src/app/mcp/simulation.rs",
+    "src/app/mcp/tests.rs",
     "src/app/mcp/view.rs",
     "src/mcp_bridge.rs",
     "src/mcp_server.rs",

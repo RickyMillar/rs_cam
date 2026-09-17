@@ -673,13 +673,16 @@ fn every_justified_discard_still_names_a_real_site() {
 /// half of the test below reads on its own.
 ///
 /// P4 split `app/mcp.rs` into `app/mcp/*.rs`. The negative property is
-/// about the whole surface, so a new child joins this list.
+/// about the whole surface, so a new child joins this list — the test
+/// module included, because the inline `mod tests` was in the scan
+/// before the split.
 const MCP_SURFACE: &[&str] = &[
     "src/app/mcp.rs",
     "src/app/mcp/diagnostics.rs",
     "src/app/mcp/generation.rs",
     "src/app/mcp/project.rs",
     "src/app/mcp/simulation.rs",
+    "src/app/mcp/tests.rs",
     "src/app/mcp/view.rs",
 ];
 

@@ -34,16 +34,15 @@
 //! `ProjectSession::generate_toolpath`, which runs the three steps
 //! inline, so the binary constructs no `Job::GenerateToolpath(`.
 //!
-//! Two exclusions, both deliberate:
+//! One exclusion, deliberate: `crates/rs_cam_viz/src/compute/**` and
+//! `crates/rs_cam_viz/src/controller/events/compute.rs` belong to WP10
+//! and WP11b (§15), not to this package.
 //!
-//! - `crates/rs_cam_viz/src/compute/**` and
-//!   `crates/rs_cam_viz/src/controller/events/compute.rs` belong to WP10
-//!   and WP11b (§15), not to this package.
-//! - `crates/rs_cam_viz/src/app/mcp/generation.rs` may still name
-//!   `toolpath_configs_mut` ONCE, in the generate arm that writes the
-//!   debug-capture flag. That site is WP11b's. The allowance is a
-//!   ceiling, so WP11b removing it keeps this scan green. P4 moved the
-//!   arm out of `app/mcp.rs` into that child.
+//! `app/mcp/generation.rs` held a second one. Its generate arm named
+//! `toolpath_configs_mut` once, to write the debug-capture flag, and the
+//! allowance was a ceiling of 1. WP11b removed the site, and the sentry
+//! review of 2026-09-17 proved the ceiling was dead: a second call
+//! passed. The allowance is gone, so that file scans like every other.
 //!
 //! Red before the fix: scan 1 reports every remaining hatch call, scan 2
 //! reports `wizard_mut`, and scan 3 reports the rows the CLI does not
@@ -77,15 +76,6 @@ const HATCHES: &[&str] = &[
     ".find_toolpath_config_by_id_mut(",
     ".toolpath_configs_mut(",
 ];
-
-/// The one file that may still name a hatch, the hatch it may name, and
-/// how many times.
-///
-/// The generate arm writes `debug_options.enabled` before it queues the
-/// compute. §15 moved that site to WP10, and WP11b removes it. P4 moved
-/// the arm into `app/mcp/generation.rs`. The count is a CEILING, so this
-/// scan stays green when it goes.
-const MCP_GENERATE_ARM_ALLOWANCE: usize = 1;
 
 /// The wire name of every registry row WP6b flips to `cli: Reached`.
 const CLI_ADOPTED_ROWS: &[&str] = &[
@@ -207,20 +197,14 @@ fn production_lines(source: &str) -> Vec<(usize, String)> {
 #[test]
 fn no_production_site_names_a_session_hatch() {
     let mut offences: Vec<String> = Vec::new();
-    let mut allowed = 0_usize;
     let mut scanned = 0_usize;
     for path in scanned_sources() {
         let display = path.to_string_lossy().replace('\\', "/");
-        let is_mcp = display.ends_with("/app/mcp/generation.rs");
         let source = read(&path);
         for (number, line) in production_lines(&source) {
             scanned += 1;
             for hatch in HATCHES {
                 if !line.contains(hatch) {
-                    continue;
-                }
-                if is_mcp && *hatch == ".toolpath_configs_mut(" {
-                    allowed += 1;
                     continue;
                 }
                 offences.push(format!("{display}:{number} names {hatch}"));
@@ -230,11 +214,6 @@ fn no_production_site_names_a_session_hatch() {
     assert!(
         scanned > 0,
         "the scan read no production line, so it asserts nothing"
-    );
-    assert!(
-        allowed <= MCP_GENERATE_ARM_ALLOWANCE,
-        "app/mcp/generation.rs names `toolpath_configs_mut` {allowed} times. Only the \
-         generate arm's debug-capture write is allowed, and WP11b removes it."
     );
     assert!(
         offences.is_empty(),
