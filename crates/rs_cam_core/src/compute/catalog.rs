@@ -15,8 +15,9 @@ mod registry;
 mod schema;
 
 pub use schema::{
-    DressupPolicy, EntryStylePolicy, OpRegistryEntry, OperationParamSchema, OperationSchema,
-    ParamDef, ParamHint, ParamRange, TOOLPATH_PARAM_DEFS, ToolConstraints, ToolConstraintsDef,
+    DressupPolicy, EntryStylePolicy, Kinematics, OpPolicy, OpRegistryEntry, OperationParamSchema,
+    OperationSchema, ParamDef, ParamHint, ParamRange, TOOLPATH_PARAM_DEFS, ToolConstraints,
+    ToolConstraintsDef,
 };
 
 use registry::{
@@ -439,12 +440,14 @@ impl OperationType {
     ///
     /// `Scallop` and `UnifiedFinish` are absent for the opposite reason:
     /// they declare a `scallop_height()`, which is consulted first.
+    ///
+    /// CMP-07: the membership list moved onto the registry row
+    /// (`OpPolicy::raster_stepover_is_lateral`). As a `matches!` it failed
+    /// OPEN — a 25th operation joined the false side without a compiler
+    /// word. The set is pinned by `lateral_raster_stepover_set_is_pinned`.
     #[must_use]
     pub fn lateral_raster_stepover(self) -> bool {
-        matches!(
-            self,
-            Self::DropCutter | Self::SteepShallow | Self::SpiralFinish | Self::HorizontalFinish
-        )
+        self.registry_entry().policy.raster_stepover_is_lateral
     }
 
     /// True for op kinds whose kinematics are Z-only (peck-plunge drilling).
@@ -456,8 +459,11 @@ impl OperationType {
     /// power / deflection gates, the optimizer skip, and the narrate
     /// `is_drill_cycle` flag onto this). The membership set is pinned by
     /// `drill_kinematics_set_is_pinned`; extend it deliberately.
+    ///
+    /// CMP-07: the class is a registry row field (`OpPolicy::kinematics`)
+    /// and no longer a `matches!` list that fails open.
     pub fn is_drill_kinematics(self) -> bool {
-        matches!(self, Self::Drill | Self::AlignmentPinDrill)
+        self.registry_entry().policy.kinematics == Kinematics::DrillZOnly
     }
 
     pub fn transform_capabilities(self) -> OperationTransformCapabilities {

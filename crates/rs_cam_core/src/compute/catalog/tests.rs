@@ -353,6 +353,56 @@ fn cutting_levels_is_exhaustive_per_op() {
     }
 }
 
+/// CMP-07: the lateral-raster membership set, pinned like the drill set.
+///
+/// It was `matches!(self, DropCutter | SteepShallow | SpiralFinish |
+/// HorizontalFinish)` in `catalog.rs`, which fails OPEN: a 25th operation
+/// joins the false side without a compiler word. The set is a registry row
+/// field now; this pins what it contains.
+#[test]
+fn lateral_raster_stepover_set_is_pinned() {
+    let lateral: Vec<_> = OperationType::ALL
+        .iter()
+        .copied()
+        .filter(|op| op.lateral_raster_stepover())
+        .collect();
+    assert_eq!(
+        lateral,
+        [
+            OperationType::DropCutter,
+            OperationType::SteepShallow,
+            OperationType::SpiralFinish,
+            OperationType::HorizontalFinish,
+        ],
+        "lateral-raster membership changed — update the pin deliberately"
+    );
+}
+
+/// CMP-07: the empty-generation exemption set, pinned like the drill set.
+///
+/// It was `matches!(op_type, Pencil | HorizontalFinish | Waterline)` in
+/// `generated_empty.rs`. Both directions of a silent change hurt: an op
+/// that should be exempt and is not reads as a spurious refusal, and an op
+/// that should be gated and is not lets a failed generation pass as an
+/// absent feature.
+#[test]
+fn feature_selective_exemption_set_is_pinned() {
+    let exempt: Vec<_> = OperationType::ALL
+        .iter()
+        .copied()
+        .filter(|op| crate::compute::generated_empty::feature_selective_exemption(*op))
+        .collect();
+    assert_eq!(
+        exempt,
+        [
+            OperationType::Waterline,
+            OperationType::Pencil,
+            OperationType::HorizontalFinish,
+        ],
+        "empty-generation exemption set changed — update the pin deliberately"
+    );
+}
+
 /// Parity freeze (architectural refactor §7.2): `ALL` is exactly the
 /// disjoint union of `ALL_2D`, `ALL_3D`, and the NAMED system-only
 /// set. A new op added to `ALL` without being placed in a menu

@@ -63,9 +63,11 @@
 //!
 //! # Where it is applied
 //!
-//! At the two — and only two — points where a finished generation becomes a
-//! *persisted result*: [`crate::session::ProjectSession::generate_toolpath`]
-//! and the GUI worker's `run_compute_with_phase_tracker`. Deliberately NOT
+//! At the one — and only one — point where a finished generation becomes a
+//! *persisted result*: [`crate::session::ProjectSession::generate_toolpath`].
+//! CMP-11: this used to name a second point, the GUI worker's
+//! `run_compute_with_phase_tracker`. The GUI worker applies no gate of its
+//! own now; it adopts a session result. Deliberately NOT
 //! inside `compute::execute`: the individual generators are also called
 //! directly by unit tests and by the strategy advisor's throwaway
 //! candidates, where an empty return is data, not an outcome. The gate is
@@ -183,11 +185,15 @@ impl LegitimateEmptyReason {
 /// given, so an empty result from them is a failure to plan, not an absent
 /// feature. `Adaptive3d` — the operation the live G-ENTRYEMPTY defect was
 /// found on — is squarely in that gated set.
+///
+/// CMP-07: the exemption is a registry row field
+/// (`OpPolicy::empty_is_feature_selective`), not a `matches!` list in this
+/// file. The list failed OPEN: a 25th operation joined the gated side by
+/// accident rather than by decision, and the reverse — an operation that
+/// should be exempt and is not — reads as a spurious refusal. The set is
+/// pinned by `feature_selective_exemption_set_is_pinned`.
 pub fn feature_selective_exemption(op_type: OperationType) -> bool {
-    matches!(
-        op_type,
-        OperationType::Pencil | OperationType::HorizontalFinish | OperationType::Waterline
-    )
+    op_type.registry_entry().policy.empty_is_feature_selective
 }
 
 /// A typed refusal: the operation had a region to cut and produced no
@@ -274,10 +280,10 @@ pub fn classify(toolpath: &Toolpath, inputs: &EmptyGenerationInputs<'_>) -> Empt
 
     let op_type = inputs.operation.op_type();
 
-    if matches!(
-        op_type,
-        OperationType::Drill | OperationType::AlignmentPinDrill
-    ) {
+    // CMP-07: `is_drill_kinematics` is THE drill-family predicate and it
+    // reads the registry row. This was a second hand-written
+    // `Drill | AlignmentPinDrill` membership list.
+    if op_type.is_drill_kinematics() {
         return EmptyGenerationVerdict::Legitimate(LegitimateEmptyReason::DrillCycle);
     }
     if inputs.seeded_machined_stock || inputs.stock_source == StockSource::FromRemainingStock {

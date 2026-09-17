@@ -1,7 +1,13 @@
-//! Unified operation execution — one entry point for all 23 toolpath operations.
+//! Unified operation execution — one entry point for all 24 toolpath
+//! operations.
 //!
-//! Both `ProjectSession` and the GUI compute worker delegate here so the
-//! operation dispatch logic exists exactly once.
+//! CMP-11: there is ONE driver, and it is `ProjectSession`. Two functions
+//! in `session/compute.rs` call in — `execute_generation` (the real
+//! generation path) and the strategy advisor's candidate probe. The GUI
+//! compute worker's `generate_via_core` was a second assembly of the same
+//! inputs; it was deleted, and `rg generate_via_core` now finds it only in
+//! viz test prose that records the removal. Nothing in `rs_cam_viz` or
+//! `rs_cam_cli` calls this module.
 
 use std::sync::atomic::AtomicBool;
 
@@ -147,10 +153,10 @@ pub struct GenerationFindings {
     ///
     /// Unlike every other field here this one is recorded AFTER the operation
     /// adapter has returned — the boundary clip is a post-dressup step in
-    /// `ProjectSession::generate_toolpath` and in the GUI worker — so it is
-    /// written through `&mut GenerationFindings` rather than through
-    /// [`ExecutionContext::findings`]. Both writers hold the findings by then;
-    /// the join has not run yet.
+    /// `ProjectSession::generate_toolpath` — so it is written through
+    /// `&mut GenerationFindings` rather than through
+    /// [`ExecutionContext::findings`]. The writer holds the findings by
+    /// then; the join has not run yet.
     pub boundary_clip_dropped: Option<crate::compute::toolpath_stats::BoundaryClipDroppedFinding>,
     /// F4: a non-default rest-claims dial this operation's own configuration
     /// never applies. `None` = nothing inert is set.
@@ -443,9 +449,9 @@ pub(crate) fn execute_operation(
 /// here and discards the spans for backwards compatibility.
 ///
 /// Thin wrapper over [`execute_operation_annotated_with_regions`] with
-/// `boundary_regions = None` — kept as a stable, unchanged signature for the
-/// pre-existing callers (the GUI compute worker, the strategy advisor) that
-/// don't participate in the P2.3 mesh-finish pre-clip.
+/// `boundary_regions = None`, for the one caller that does not participate
+/// in the P2.3 mesh-finish pre-clip: the strategy advisor's candidate probe
+/// in `session/compute.rs`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn execute_operation_annotated(
     op: &OperationConfig,
@@ -481,8 +487,8 @@ pub(crate) fn execute_operation_annotated(
     // built off this path leave `truncated_core_mm2` at `None` — "not
     // measured" — instead of the `0.0` that used to read as "nothing
     // standing". A caller that needs the finding must use
-    // `execute_operation_annotated_with_regions`, which both production
-    // drivers (the core session and the GUI worker) already do.
+    // `execute_operation_annotated_with_regions`, which the one production
+    // generation path (`session::execute_generation`) already does.
     execute_operation_annotated_with_regions(
         op,
         mesh,
@@ -584,12 +590,11 @@ pub(crate) fn execute_operation_annotated_with_regions(
     // diverge).
     //
     // This function's own signature stays slice-based (`Option<&[Polygon2]>`)
-    // — both callers (session's `generate_toolpath`, the GUI worker's
-    // `generate_via_core`) already resolve a plain `Vec<Polygon2>`/slice via
-    // `RegionSet::processed` and pass it straight through, so changing this
-    // signature to `&RegionSet` would only add a wrap/unwrap at both call
-    // sites for no benefit. The borrow into `RegionSet` happens right here,
-    // where it's used.
+    // — its two callers in `session/compute.rs` already resolve a plain
+    // `Vec<Polygon2>`/slice via `RegionSet::processed` and pass it straight
+    // through, so changing this signature to `&RegionSet` would only add a
+    // wrap/unwrap at both call sites for no benefit. The borrow into
+    // `RegionSet` happens right here, where it's used.
     let region_set = boundary_regions.map(RegionSet::from_slice);
     let findings = std::cell::RefCell::new(GenerationFindings::default());
     let ctx = ExecutionContext {

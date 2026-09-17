@@ -110,10 +110,11 @@ pub fn compute_stats_with_spans(tp: &Toolpath, spans: Option<&[Span]>) -> Toolpa
 /// **The** join from a generation's [`GenerationFindings`] onto the
 /// move-derived statistics of the toolpath it produced (H2.1 / R7).
 ///
-/// Every production caller that has both halves in hand goes through here:
-/// `ProjectSession::generate_toolpath` and the GUI compute worker. Before
-/// this existed the two paths each carried their own field-by-field copy of
-/// the same mapping, and the GUI one was patched **five separate times** for
+/// Every production caller that has both halves in hand goes through here.
+/// Today that is one — `ProjectSession::generate_toolpath`. Before this
+/// existed there were TWO, the session and the GUI compute worker, each
+/// carrying its own field-by-field copy of the same mapping, and the GUI one
+/// was patched **five separate times** for
 /// a channel that reached the session path and not the operator's screen —
 /// the worst instance dropping every annotated side-channel at once. A
 /// finding that lands on one path and not the other is invisible in exactly
@@ -146,11 +147,11 @@ pub fn compute_stats_with_spans(tp: &Toolpath, spans: Option<&[Span]>) -> Toolpa
 /// ## Why `stock_snapshot` is a PARAMETER and not a finding
 ///
 /// S-4 (G-BYTE). The snapshot's identity is known only to the *caller* — the
-/// session or the GUI worker looked it up in `prior_stocks` before handing
-/// it to the generator — so it cannot arrive through [`GenerationFindings`],
-/// which is written from inside `execute`. Threading it as a parameter keeps
-/// the property this function exists for: **adding it broke both production
-/// call sites at compile time**, exactly as guards 1–3 would have. The
+/// session looks it up in `prior_stocks` before handing it to the generator
+/// — so it cannot arrive through [`GenerationFindings`], which is written
+/// from inside `execute`. Threading it as a parameter keeps the property
+/// this function exists for: **adding it broke every production call site at
+/// compile time**, exactly as guards 1–3 would have. The
 /// alternative — a `stats.stock_snapshot = …;` line after the join — is
 /// precisely the pattern documented above as unsafe, and one forgotten line
 /// would ship a `None` that reads as "no snapshot was consumed" on a path

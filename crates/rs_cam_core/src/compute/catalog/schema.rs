@@ -367,6 +367,82 @@ impl ToolConstraintsDef {
     }
 }
 
+/// Cutting kinematics class of an operation.
+///
+/// CMP-07: this was `matches!(self, Drill | AlignmentPinDrill)` in
+/// `catalog.rs` — a membership list that fails OPEN. A 25th operation
+/// joined the false side of it without a compiler word. It is a registry
+/// row field now, so every operation states its class.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kinematics {
+    /// The cutter moves in XY and Z. Every milling operation.
+    Milling,
+    /// Z-only peck-plunge drilling. The verdict layer suppresses the
+    /// rapid:cut-ratio and engagement signals for these, and the chipload,
+    /// power and deflection gates, the optimizer skip and the narrate
+    /// `is_drill_cycle` flag all read this one class.
+    DrillZOnly,
+}
+
+/// The three per-operation policies that used to be `matches!` membership
+/// lists outside the registry (CMP-07).
+///
+/// The registry's own header states the goal — data-only per-operation
+/// metadata, with no wildcard fallbacks. These three failed open: a new
+/// operation joined the false side of each in silence. As a row field the
+/// decision is written per operation, beside `tool_constraints` and
+/// `dressup_policy`, and the named constants below are what an entry
+/// points at when it takes the ordinary answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OpPolicy {
+    /// The op's `stepover()` is a LATERAL raster spacing, so the cusp
+    /// between neighbouring passes is the scallop it forms.
+    ///
+    /// False for an op whose stepover is not a raster pitch (Pencil's
+    /// offset fan, RadialFinish's varying spoke spacing), for an op that
+    /// publishes no stepover (RampFinish), and for the two that declare a
+    /// `scallop_height()`, which is consulted first (Scallop,
+    /// UnifiedFinish).
+    pub raster_stepover_is_lateral: bool,
+    /// Milling or Z-only drilling.
+    pub kinematics: Kinematics,
+    /// An empty generation from this op is a legitimately absent FEATURE,
+    /// not a failure to plan, so the empty-generation gate exempts it.
+    pub empty_is_feature_selective: bool,
+}
+
+impl OpPolicy {
+    /// The ordinary answer: a milling op whose stepover is not a raster
+    /// pitch and whose empty result is a planning failure.
+    pub const MILLING: Self = Self {
+        raster_stepover_is_lateral: false,
+        kinematics: Kinematics::Milling,
+        empty_is_feature_selective: false,
+    };
+
+    /// A milling op whose `stepover()` IS the lateral raster pitch.
+    pub const LATERAL_RASTER: Self = Self {
+        raster_stepover_is_lateral: true,
+        kinematics: Kinematics::Milling,
+        empty_is_feature_selective: false,
+    };
+
+    /// Z-only peck-plunge drilling.
+    pub const DRILLING: Self = Self {
+        raster_stepover_is_lateral: false,
+        kinematics: Kinematics::DrillZOnly,
+        empty_is_feature_selective: false,
+    };
+
+    /// A milling op that cuts one FEATURE class, so an empty result means
+    /// the model has none of that feature.
+    pub const FEATURE_SELECTIVE: Self = Self {
+        raster_stepover_is_lateral: false,
+        kinematics: Kinematics::Milling,
+        empty_is_feature_selective: true,
+    };
+}
+
 /// Entry-style coercion applied by `DressupConfig::normalize_for_op`
 /// (and mirrored by the viz dressup panel) for one operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -429,6 +505,8 @@ pub struct OpRegistryEntry {
     pub param_defs: &'static [ParamDef],
     pub tool_constraints: ToolConstraintsDef,
     pub dressup_policy: DressupPolicy,
+    /// The three per-op policies CMP-07 moved off `matches!` lists.
+    pub policy: OpPolicy,
     /// The family adapter `execute_operation_annotated` dispatches to.
     ///
     /// CMP-01: this was `Option<GenerateFn>` and `execute.rs` carried a
