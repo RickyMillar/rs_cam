@@ -261,26 +261,36 @@ fn patch_toml_field(toml_str: &str, field: &str, value: &str) -> Result<String> 
     let mut patched = false;
 
     for line in &mut lines {
-        if line.trim() == "[[operation]]" {
-            in_operation = true;
+        if !in_operation {
+            // Every line before the first `[[operation]]` header belongs to
+            // another table.
+            if line.trim() == "[[operation]]" {
+                in_operation = true;
+            }
             continue;
         }
-        if in_operation && !patched {
-            // Check if this line sets our field
-            if line.trim_start().starts_with(&format!("{field} "))
-                || line.trim_start().starts_with(&format!("{field}="))
-            {
-                *line = format_toml_field(field, value);
-                patched = true;
-                continue;
-            }
-            // If we hit the next section without finding the field, insert it
-            if line.starts_with('[') || line.starts_with("[[") {
-                let insert = format_toml_field(field, value);
-                *line = format!("{insert}\n{line}");
-                patched = true;
-                continue;
-            }
+        if patched {
+            continue;
+        }
+        // Check if this line sets our field
+        if line.trim_start().starts_with(&format!("{field} "))
+            || line.trim_start().starts_with(&format!("{field}="))
+        {
+            *line = format_toml_field(field, value);
+            patched = true;
+            continue;
+        }
+        // The first operation ends at the next header, `[[operation]]` for
+        // the second operation included. Insert the field before it. The
+        // header test used to run before this one, so a second operation
+        // re-armed the scan instead of closing the first: the field was
+        // appended to the LAST operation, and the sweep varied an operation
+        // it does not report.
+        if line.starts_with('[') {
+            let insert = format_toml_field(field, value);
+            *line = format!("{insert}\n{line}");
+            patched = true;
+            continue;
         }
     }
 
@@ -431,6 +441,42 @@ min_region_cut_length_mm = 4.0
         let value = resolve_base_value(&job, "stock_to_leave", "0.3").unwrap();
         assert_eq!(value, serde_json::Value::Null);
         assert_ne!(value, serde_json::json!("default"));
+    }
+
+    /// The sweep patches the FIRST operation, so a field the job file leaves
+    /// unset must land there. The header test used to re-arm the scan on the
+    /// second `[[operation]]`, which appended the field to the LAST operation:
+    /// the sweep then varied one operation and reported another.
+    #[test]
+    fn an_unset_field_lands_in_the_first_operation_not_the_last() {
+        let source = r#"
+[job]
+output = "part.nc"
+
+[tools.flat_6mm]
+type = "flat"
+diameter = 6.35
+
+[[operation]]
+type = "adaptive"
+input = "rough.svg"
+tool = "flat_6mm"
+
+[[operation]]
+type = "profile"
+input = "finish.svg"
+tool = "flat_6mm"
+"#;
+        let base: JobFile = toml::from_str(source).unwrap();
+        let patched = super::patch_job_param(&base, "min_region_cut_length_mm", "3.0").unwrap();
+        assert_eq!(patched.operation[0].min_region_cut_length_mm, Some(3.0));
+        assert_eq!(patched.operation[1].min_region_cut_length_mm, None);
+
+        // The baseline reads the same operation the patch writes.
+        assert_eq!(
+            resolve_base_value(&base, "min_region_cut_length_mm", "3.0").unwrap(),
+            serde_json::Value::Null
+        );
     }
 
     /// A field name `OperationDef` does not know refuses and names the field.
