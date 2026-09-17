@@ -267,12 +267,11 @@ pub fn primary_edges(session: &ProjectSession) -> Vec<Edge> {
             .iter()
             .filter(|e| e.from == edge.from && e.kind == EdgeKind::Stock)
             .filter_map(|e| e.on)
-            .filter(|id| {
+            .rfind(|id| {
                 session
                     .find_toolpath_config_by_id(*id)
                     .is_some_and(|(_, tc)| tc.enabled)
-            })
-            .next_back();
+            });
         out.push(Edge {
             from: edge.from,
             on: nearest,

@@ -715,11 +715,10 @@ fn regenerating_a_source_drops_its_consumers() {
 fn state_of(session: &ProjectSession, consumer: usize, kind: EdgeKind) -> EdgeState {
     let id = id_of(session, consumer);
     let all = edges(session);
+    // The nearest declared source answers for the row.
     let edge = all
         .iter()
-        .filter(|e| e.from == id && e.kind == kind)
-        // The nearest declared source answers for the row.
-        .next_back()
+        .rfind(|e| e.from == id && e.kind == kind)
         .unwrap_or_else(|| panic!("row {consumer} declares a {kind:?} edge"));
     state(edge, session)
 }
