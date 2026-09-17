@@ -16,6 +16,9 @@ principal type is `MachineProfile` in `mod.rs`.
   a diagonal move.
 - Machine acceleration decides parallel against spiral. The advisor reads the
   profile; do not hard-code a strategy preference.
+- The cycle time and the predicted feed come from ONE pass: `digest_moves`
+  then `walk_junctions`, over the one physics site `solve_move`. Do not add a
+  second digest loop or a second junction walk (EDG-07).
 
 ## Sentries
 

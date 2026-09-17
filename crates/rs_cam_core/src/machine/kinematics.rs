@@ -747,42 +747,44 @@ impl std::ops::AddAssign for CycleTimeBreakdown {
     }
 }
 
-/// Same integrator as [`compute_cycle_time`], additionally bucketing
-/// each move's integrated time by `MoveIntent` class. See
-/// [`compute_cycle_time`] for the physical model; this function's
-/// `total_s` is bit-identical to that function's return value.
-pub fn compute_cycle_time_breakdown(
+/// EDG-07 — one move's pre-computed integrator inputs.
+///
+/// [`compute_cycle_time_breakdown`] and [`predicted_feeds_for_toolpath`]
+/// built this digest twice and walked the junction integrator twice. They
+/// now share [`digest_moves`] and [`walk_junctions`], so the cycle time and
+/// the predicted feed always read the same trapezoid. The digest carries
+/// both callers' extra column: `source_index` for the feed map's key and
+/// `intent` for the breakdown's buckets.
+struct MoveDigest {
+    /// Index of this move in the original `Toolpath::moves`.
+    source_index: usize,
+    length: f64,
+    dir: [f64; 3],
+    v_cmd_mm_s: f64,
+    /// Cruise ceiling: `v_cmd_mm_s` throttled by the direction-aware
+    /// per-axis rate. Equals `v_cmd_mm_s` when the machine carries no
+    /// per-axis rates.
+    v_ceiling_mm_s: f64,
+    accel: f64,
+    is_rapid: bool,
+    intent: crate::toolpath::MoveIntent,
+}
+
+/// EDG-07 — the one digest pass. Pre-computes every move's per-move
+/// velocity cap (commanded feed capped by machine max feed), direction
+/// vector, and the direction-aware path acceleration (per-axis limits when
+/// set). Zero-length moves are skipped, which keeps the junction-velocity
+/// geometry well-defined; a skipped move still leaves the surviving moves'
+/// `source_index` untouched.
+///
+/// `max_feed_mm_s` and `rapid_feed_mm_s` are mm/s: the caller converts the
+/// mm/min inputs once.
+fn digest_moves(
     toolpath: &Toolpath,
     kinematics: &MachineKinematics,
-    max_feed_mm_min: f64,
-    rapid_feed_mm_min: f64,
-) -> CycleTimeBreakdown {
-    if toolpath.moves.len() < 2 {
-        return CycleTimeBreakdown::default();
-    }
-
-    // Convert feed rates from mm/min → mm/s once up front.
-    let max_feed_mm_s = (max_feed_mm_min / 60.0).max(1e-6);
-    let rapid_feed_mm_s = (rapid_feed_mm_min / 60.0).max(max_feed_mm_s);
-
-    // Pre-compute every move's per-move velocity cap (commanded feed
-    // capped by machine max feed), direction vector, and the
-    // direction-aware path acceleration (per-axis limits when set).
-    // Skipping zero-length moves keeps the junction-velocity geometry
-    // well-defined.
-    struct MoveDigest {
-        length: f64,
-        dir: [f64; 3],
-        v_cmd_mm_s: f64,
-        /// Cruise ceiling: `v_cmd_mm_s` throttled by the direction-aware
-        /// per-axis rate. Equals `v_cmd_mm_s` when the machine carries no
-        /// per-axis rates.
-        v_ceiling_mm_s: f64,
-        accel: f64,
-        is_rapid: bool,
-        intent: crate::toolpath::MoveIntent,
-    }
-
+    max_feed_mm_s: f64,
+    rapid_feed_mm_s: f64,
+) -> Vec<MoveDigest> {
     let mut digests: Vec<MoveDigest> = Vec::with_capacity(toolpath.moves.len());
     #[allow(clippy::indexing_slicing)]
     // SAFETY: bounded by `toolpath.moves.len()`.
@@ -808,6 +810,7 @@ pub fn compute_cycle_time_breakdown(
         let accel = kinematics.effective_accel(&dir);
         let (v_ceiling_mm_s, _) = cruise_ceiling(v_cmd_mm_s, &dir, kinematics);
         digests.push(MoveDigest {
+            source_index: i,
             length,
             dir,
             v_cmd_mm_s,
@@ -817,23 +820,33 @@ pub fn compute_cycle_time_breakdown(
             intent: toolpath.moves[i].intent,
         });
     }
+    digests
+}
 
-    if digests.is_empty() {
-        return CycleTimeBreakdown::default();
-    }
-
+/// EDG-07 — the one junction walk. Walks the digests pairwise, solves each
+/// move's trapezoid at [`solve_move`], and hands the caller the digest, the
+/// solution and the junction velocities in and out. The first move starts
+/// at rest and the last move ends at rest.
+///
+/// The junction limiter sees each block's CEILING (command ∧ per-axis
+/// rate), which is what GRBL calls the block's nominal speed — see the
+/// module doc's "Per-axis maximum rate" section.
+///
+/// The caller accumulates: the cycle-time breakdown buckets time by intent,
+/// the predicted-feed map records the peak velocity per source move.
+fn walk_junctions(
+    digests: &[MoveDigest],
+    kinematics: &MachineKinematics,
+    mut visit: impl FnMut(&MoveDigest, &MoveSolution, f64, f64),
+) {
     // Junction velocity entering move i — first move starts at rest.
     let mut v_in = 0.0;
-    let mut breakdown = CycleTimeBreakdown::default();
     let n = digests.len();
     #[allow(clippy::indexing_slicing)]
-    // SAFETY: i bounded by digests.len(); i+1 guarded by `i < n - 1`.
+    // SAFETY: i bounded by digests.len(); i+1 guarded by `i + 1 < n`.
     for i in 0..n {
         let v_cmd = digests[i].v_cmd_mm_s;
-        // Junction with the next move. Last move ends at rest. The
-        // junction limiter sees each block's CEILING (command ∧ per-axis
-        // rate), which is what GRBL calls the block's nominal speed —
-        // see the module doc's "Per-axis maximum rate" section.
+        // Junction with the next move. Last move ends at rest.
         let v_out = if i + 1 < n {
             junction_velocity(
                 &digests[i].dir,
@@ -848,15 +861,44 @@ pub fn compute_cycle_time_breakdown(
         } else {
             0.0
         };
-        let t = solve_move(
+        let solution = solve_move(
             digests[i].length,
             &digests[i].dir,
             v_in,
             v_out,
             v_cmd,
             kinematics,
-        )
-        .time_s;
+        );
+        visit(&digests[i], &solution, v_in, v_out);
+        v_in = v_out;
+    }
+}
+
+/// Same integrator as [`compute_cycle_time`], additionally bucketing
+/// each move's integrated time by `MoveIntent` class. See
+/// [`compute_cycle_time`] for the physical model; this function's
+/// `total_s` is bit-identical to that function's return value.
+pub fn compute_cycle_time_breakdown(
+    toolpath: &Toolpath,
+    kinematics: &MachineKinematics,
+    max_feed_mm_min: f64,
+    rapid_feed_mm_min: f64,
+) -> CycleTimeBreakdown {
+    if toolpath.moves.len() < 2 {
+        return CycleTimeBreakdown::default();
+    }
+
+    // Convert feed rates from mm/min → mm/s once up front.
+    let max_feed_mm_s = (max_feed_mm_min / 60.0).max(1e-6);
+    let rapid_feed_mm_s = (rapid_feed_mm_min / 60.0).max(max_feed_mm_s);
+
+    let digests = digest_moves(toolpath, kinematics, max_feed_mm_s, rapid_feed_mm_s);
+    if digests.is_empty() {
+        return CycleTimeBreakdown::default();
+    }
+
+    let mut breakdown = CycleTimeBreakdown::default();
+    walk_junctions(&digests, kinematics, |digest, solution, v_in, v_out| {
         // Jerk penalty: if a jerk limit is configured, the accel and
         // decel ramps each take an additional `accel / jerk` seconds
         // to round their edges. This is a first-order approximation
@@ -866,8 +908,8 @@ pub fn compute_cycle_time_breakdown(
         // caps has no ramp up to the command it never runs at.
         let jerk_penalty = if let Some(jerk) = kinematics.jerk_mm_s3 {
             if jerk > 1e-3 {
-                let rounding = digests[i].accel / jerk;
-                let v_ceiling = digests[i].v_ceiling_mm_s;
+                let rounding = digest.accel / jerk;
+                let v_ceiling = digest.v_ceiling_mm_s;
                 let in_ramp = if (v_ceiling - v_in).abs() > 1e-6 {
                     rounding
                 } else {
@@ -885,13 +927,13 @@ pub fn compute_cycle_time_breakdown(
         } else {
             0.0
         };
-        let dt = t + jerk_penalty;
+        let dt = solution.time_s + jerk_penalty;
         breakdown.total_s += dt;
-        if digests[i].is_rapid {
+        if digest.is_rapid {
             breakdown.rapid_s += dt;
         } else {
             use crate::toolpath::MoveIntent as MI;
-            match digests[i].intent {
+            match digest.intent {
                 MI::ClearingCut | MI::FinishingCut | MI::Drilling => breakdown.cutting_s += dt,
                 MI::EntryPlunge | MI::EntryHelix | MI::EntryRamp | MI::LeadIn => {
                     breakdown.entry_s += dt;
@@ -901,8 +943,7 @@ pub fn compute_cycle_time_breakdown(
                 MI::Unknown => breakdown.unknown_s += dt,
             }
         }
-        v_in = v_out;
-    }
+    });
 
     breakdown
 }
@@ -963,88 +1004,14 @@ pub fn predicted_feeds_for_toolpath(
     let max_feed_mm_s = (max_feed_mm_min / 60.0).max(1e-6);
     let rapid_feed_mm_s = (rapid_feed_mm_min / 60.0).max(max_feed_mm_s);
 
-    // Same digest shape as `compute_cycle_time`, plus the original
-    // toolpath-move index so callers can key the result map by it.
-    struct MoveDigest {
-        source_index: usize,
-        length: f64,
-        dir: [f64; 3],
-        v_cmd_mm_s: f64,
-        /// Cruise ceiling: `v_cmd_mm_s` throttled by the direction-aware
-        /// per-axis rate (see [`cruise_ceiling`]).
-        v_ceiling_mm_s: f64,
-        accel: f64,
-        is_rapid: bool,
-    }
-
-    let mut digests: Vec<MoveDigest> = Vec::with_capacity(toolpath.moves.len());
-    #[allow(clippy::indexing_slicing)]
-    // SAFETY: bounded by `toolpath.moves.len()`.
-    for i in 1..toolpath.moves.len() {
-        let p0 = &toolpath.moves[i - 1].target;
-        let p1 = &toolpath.moves[i].target;
-        let length = chord_length(p0, p1, toolpath.moves[i].move_type);
-        if length <= 1e-9 {
-            continue;
-        }
-        let dir = unit_vec(p0, p1);
-        let (v_cmd_mm_s, is_rapid) = match toolpath.moves[i].move_type {
-            MoveType::Rapid => (rapid_feed_mm_s, true),
-            MoveType::Linear { feed_rate }
-            | MoveType::ArcCW { feed_rate, .. }
-            | MoveType::ArcCCW { feed_rate, .. } => {
-                let cmd = (feed_rate / 60.0).max(1e-6).min(max_feed_mm_s);
-                (cmd, false)
-            }
-        };
-        let accel = kinematics.effective_accel(&dir);
-        let (v_ceiling_mm_s, _) = cruise_ceiling(v_cmd_mm_s, &dir, kinematics);
-        digests.push(MoveDigest {
-            source_index: i,
-            length,
-            dir,
-            v_cmd_mm_s,
-            v_ceiling_mm_s,
-            accel,
-            is_rapid,
-        });
-    }
+    let digests = digest_moves(toolpath, kinematics, max_feed_mm_s, rapid_feed_mm_s);
     if digests.is_empty() {
         return out;
     }
 
-    let mut v_in = 0.0;
-    let n = digests.len();
-    #[allow(clippy::indexing_slicing)]
-    // SAFETY: i bounded by digests.len(); i+1 guarded by `i < n - 1`.
-    for i in 0..n {
-        let v_cmd = digests[i].v_cmd_mm_s;
-        let v_out = if i + 1 < n {
-            junction_velocity(
-                &digests[i].dir,
-                &digests[i + 1].dir,
-                digests[i].v_ceiling_mm_s,
-                digests[i + 1].v_ceiling_mm_s,
-                digests[i].accel.min(digests[i + 1].accel),
-                kinematics.junction_deviation_mm,
-                kinematics.max_junction_velocity_mm_min,
-                digests[i].is_rapid || digests[i + 1].is_rapid,
-            )
-        } else {
-            0.0
-        };
-        let v_peak_mm_s = solve_move(
-            digests[i].length,
-            &digests[i].dir,
-            v_in,
-            v_out,
-            v_cmd,
-            kinematics,
-        )
-        .peak_mm_s;
-        out.insert(digests[i].source_index, v_peak_mm_s * 60.0);
-        v_in = v_out;
-    }
+    walk_junctions(&digests, kinematics, |digest, solution, _v_in, _v_out| {
+        out.insert(digest.source_index, solution.peak_mm_s * 60.0);
+    });
 
     out
 }

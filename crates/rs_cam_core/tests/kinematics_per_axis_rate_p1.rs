@@ -393,3 +393,122 @@ fn kinematics_with_rates_survive_serde_unchanged() {
     let old: MachineKinematics = serde_json::from_str(legacy).expect("legacy deserialize");
     assert_eq!(old.max_rate_xyz_mm_min, None);
 }
+
+// ---- (f) EDG-07 — one digest-and-junction-walk pass -------------------
+//
+// `compute_cycle_time_breakdown` and `predicted_feeds_for_toolpath` built
+// two copies of the same `MoveDigest` and walked the same junction
+// integrator twice. EDG-07 folds them onto one `digest_moves` +
+// `walk_junctions` pass. The refactor must not move a single bit, and
+// sentries (a) and (b) above cannot prove that on their own: they pin
+// `total_s` only, with the per-axis rates UNSET and no jerk limit.
+//
+// This case pins every `CycleTimeBreakdown` field AND every predicted
+// feed, with the rates set, a jerk limit set and a junction-velocity cap
+// set, on a fixture that reaches every branch of the shared pass: a
+// rapid, an arc, a zero-length move the digest drops, a triangular move,
+// and one feed move per intent bucket the breakdown names. Bit patterns,
+// not tolerances.
+
+fn tuned_with_rates_and_jerk() -> MachineKinematics {
+    MachineKinematics {
+        jerk_mm_s3: Some(30_000.0),
+        max_junction_velocity_mm_min: Some(4_000.0),
+        ..tuned_with_rates()
+    }
+}
+
+/// Every branch of the shared pass, in one toolpath.
+fn fixture_every_branch() -> Toolpath {
+    let mut tp = Toolpath::new();
+    tp.rapid_to(P3::new(0.0, 0.0, 10.0));
+    // Zero length: the digest drops it, so it must not shift an index.
+    tp.rapid_to(P3::new(0.0, 0.0, 10.0));
+    tp.rapid_to(P3::new(5.0, 5.0, 10.0));
+    tp.feed_to_with_intent(P3::new(5.0, 5.0, -2.0), 600.0, MoveIntent::EntryPlunge);
+    tp.feed_to_with_intent(P3::new(6.0, 5.0, -2.5), 900.0, MoveIntent::EntryRamp);
+    tp.feed_to_with_intent(P3::new(8.0, 5.0, -3.0), 1200.0, MoveIntent::EntryHelix);
+    tp.feed_to_with_intent(P3::new(10.0, 5.0, -3.0), 1500.0, MoveIntent::LeadIn);
+    tp.feed_to_with_intent(P3::new(40.0, 5.0, -3.0), 2400.0, MoveIntent::ClearingCut);
+    tp.arc_cw_to_with_intent(
+        P3::new(45.0, 10.0, -3.0),
+        0.0,
+        5.0,
+        2400.0,
+        MoveIntent::FinishingCut,
+    );
+    // 0.2 mm: too short to reach the commanded feed — triangular.
+    tp.feed_to_with_intent(P3::new(45.2, 10.0, -3.0), 2400.0, MoveIntent::FinishingCut);
+    tp.feed_to_with_intent(P3::new(45.2, 10.0, -1.0), 1800.0, MoveIntent::LeadOut);
+    tp.feed_to_with_intent(P3::new(45.2, 10.0, 10.0), 1800.0, MoveIntent::Retract);
+    tp.feed_to_with_intent(P3::new(60.0, 30.0, 10.0), 3000.0, MoveIntent::Linking);
+    // Untagged: a legacy generator's move lands in `unknown_s`.
+    tp.feed_to(P3::new(60.0, 30.0, -4.0), 1807.0);
+    tp.feed_to_with_intent(P3::new(62.0, 30.0, -4.0), 2400.0, MoveIntent::Drilling);
+    tp.rapid_to(P3::new(0.0, 0.0, 10.0));
+    tp
+}
+
+/// Captured 2026-09-17 from the two-pass code, before EDG-07 merged them.
+const EDG07_BREAKDOWN_BITS: [(&str, u64); 7] = [
+    ("total_s", 0x4019_c56c_e815_d179),
+    ("rapid_s", 0x3ff4_5c5a_7580_5555),
+    ("cutting_s", 0x3ff4_5bb7_1a62_e3d6),
+    ("entry_s", 0x3ff8_ecdd_2f9e_d6a9),
+    ("linking_s", 0x3fe8_32e2_ac8d_e28d),
+    ("retract_s", 0x3fe6_039a_ae4a_5da5),
+    ("unknown_s", 0x3fec_ab0c_66d2_2bed),
+];
+
+/// Captured 2026-09-17 from the two-pass code, before EDG-07 merged them.
+const EDG07_FEED_BITS: [(usize, u64); 14] = [
+    (2, 0x40b0_92a4_0412_304c),
+    (3, 0x4082_c000_0000_0000),
+    (4, 0x408c_2000_0000_0000),
+    (5, 0x4092_c000_0000_0000),
+    (6, 0x4097_7000_0000_0000),
+    (7, 0x40a2_c000_0000_0000),
+    (8, 0x40a2_c000_0000_0000),
+    (9, 0x4088_3ebf_e283_ac58),
+    (10, 0x408f_4000_0000_0001),
+    (11, 0x408f_4000_0000_0001),
+    (12, 0x40a7_7000_0000_0000),
+    (13, 0x408f_4000_0000_0001),
+    (14, 0x409d_be29_6599_6b0c),
+    (15, 0x40b3_9c5d_def1_5bfc),
+];
+
+#[test]
+fn one_shared_pass_leaves_both_integrators_bit_identical_edg07() {
+    let kin = tuned_with_rates_and_jerk();
+    let tp = fixture_every_branch();
+
+    let breakdown = compute_cycle_time_breakdown(&tp, &kin, MAX_FEED_MM_MIN, RAPID_FEED_MM_MIN);
+    let got: Vec<(&str, u64)> = vec![
+        ("total_s", breakdown.total_s.to_bits()),
+        ("rapid_s", breakdown.rapid_s.to_bits()),
+        ("cutting_s", breakdown.cutting_s.to_bits()),
+        ("entry_s", breakdown.entry_s.to_bits()),
+        ("linking_s", breakdown.linking_s.to_bits()),
+        ("retract_s", breakdown.retract_s.to_bits()),
+        ("unknown_s", breakdown.unknown_s.to_bits()),
+    ];
+    assert_eq!(
+        got,
+        EDG07_BREAKDOWN_BITS.to_vec(),
+        "every CycleTimeBreakdown field must stay bit-identical across the \
+         EDG-07 extraction"
+    );
+
+    let feeds = predicted_feeds_for_toolpath(&tp, &kin, MAX_FEED_MM_MIN, RAPID_FEED_MM_MIN);
+    let got_feeds: Vec<(usize, u64)> = feeds
+        .iter()
+        .map(|(index, feed)| (*index, feed.to_bits()))
+        .collect();
+    assert_eq!(
+        got_feeds,
+        EDG07_FEED_BITS.to_vec(),
+        "every predicted feed, and the source-move index it is keyed by, \
+         must stay bit-identical across the EDG-07 extraction"
+    );
+}
