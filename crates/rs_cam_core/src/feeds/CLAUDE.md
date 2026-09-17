@@ -5,11 +5,13 @@ point is `feeds::suggest`.
 
 ## Files
 
-- `mod.rs`, `suggest.rs`, `tests.rs` — the calculator, the canonical
-  suggestion path and the unit tests.
-- `geometry.rs`, `geometry_class.rs`, `cutter_constraints.rs` — effective
-  diameter, chip thinning, the DOC derating scale, the axial-DOC envelope.
-- `force.rs`, `predict.rs`, `efficiency.rs` — force, deflection, efficiency.
+- `mod.rs`, `tests.rs` — the calculator and its unit tests.
+- `suggest.rs` + `suggest/` — the Suggest model and read doors; children
+  `apply.rs` (write-back funnel, previews, defaults), `invariants.rs` (clamps,
+  back-offs), `axial_envelope.rs`, `adaptive_entry.rs`, `tests.rs`.
+- `geometry.rs`, `geometry_class.rs`, `cutter_constraints.rs`, `force.rs`,
+  `predict.rs`, `efficiency.rs` — effective diameter, chip thinning, the DOC
+  derating scale, the axial envelope, force, deflection, efficiency.
 - `vendor_lut.rs`, `vendor_lookup.rs`, `vendor_normalize.rs` — the vendor
   observation table, its scored lookup and the type mapping.
 - `profile.rs`, `quantities.rs`, `provenance.rs` — the pre-sim profile, the

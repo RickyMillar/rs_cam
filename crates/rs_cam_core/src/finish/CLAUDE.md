@@ -16,7 +16,8 @@ Every 3D finishing strategy and the unified planner. The entry point is
   centreline paths, the fine classification grid.
 - `steep_shallow.rs`, `horizontal_finish.rs`, `ramp_finish.rs`,
   `radial_finish.rs`, `spiral_finish*.rs` — the single-strategy finishes.
-- `conformal_spiral.rs`, `direction_field.rs` — research arms, both measured.
+- `conformal_spiral.rs` + `conformal_spiral/` (`spiral_build.rs`, `tests.rs`)
+  and `direction_field.rs` — research arms, both measured.
 - `surface_link.rs` — the gouge-safe link kernel `relink_fragments`.
 
 ## Invariants

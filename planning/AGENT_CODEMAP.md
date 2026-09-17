@@ -18,7 +18,7 @@ Graph caveat: Rust `mod`/crate dependency extraction is sparse in the current gr
 | Core engine | `crates/rs_cam_core` | Geometry, imports, tool modeling, operation configs/generation, dressups, simulation, feeds/speeds, tool-load optimizer, G-code, session API. |
 | CLI | `crates/rs_cam_cli` | Batch commands and TOML job execution. Delegates to core/session where possible. |
 | GUI | `crates/rs_cam_viz` | Desktop `egui`/`wgpu` app, controller, worker lanes, viewport/UI, embedded MCP bridge. |
-| Standalone MCP | `crates/rs_cam_mcp` | Headless/project-session MCP server tools. |
+| MCP wire types | `crates/rs_cam_mcp` | Shared MCP parameter types only; the server is embedded in `rs_cam_viz` (`app/mcp.rs`). |
 
 ## Core engine map
 
@@ -54,7 +54,7 @@ Graph caveat: Rust `mod`/crate dependency extraction is sparse in the current gr
 
 | Path | Role |
 |---|---|
-| `crates/rs_cam_core/src/compute/catalog.rs` | `OperationType`, `OperationConfig`, operation metadata/specs, shared `OperationParams` accessors. |
+| `crates/rs_cam_core/src/compute/catalog.rs` (+ `catalog/` `schema.rs`, `registry.rs`, `tests.rs`) | `OperationType`, `OperationConfig`, operation metadata/specs, shared `OperationParams` accessors. |
 | `crates/rs_cam_core/src/compute/operation_configs.rs` | Concrete config structs/defaults for the operation variants. |
 | `crates/rs_cam_core/src/compute/tool_config.rs` | GUI/session-facing tool config model. |
 | `crates/rs_cam_core/src/compute/stock_config.rs` | Stock/material/workholding configuration. |
@@ -67,7 +67,7 @@ Graph caveat: Rust `mod`/crate dependency extraction is sparse in the current gr
 
 | Path | Role |
 |---|---|
-| `crates/rs_cam_core/src/compute/execute.rs` | Central operation dispatch. SocratiCode symbols: `execute_operation`, `execute_operation_annotated`, `apply_dressups`, validation helpers. |
+| `crates/rs_cam_core/src/compute/execute.rs` (+ nine `execute/` children by operation family) | Central operation dispatch. SocratiCode symbols: `execute_operation`, `execute_operation_annotated`, `apply_dressups`, validation helpers. |
 | `crates/rs_cam_core/src/compute/spans.rs` | Generic span derivation helpers for depth runs, cut runs, drill holes, labeled runtime events. |
 | `crates/rs_cam_core/src/compute/annotate.rs` | Semantic annotation helpers for trace/drill/depth regions. |
 | `crates/rs_cam_core/src/dressup/mod.rs` | Entry/link/lead/dogbone/arcfit/feed optimization dressups. |
@@ -88,7 +88,7 @@ Typical flow:
 | Path | Role |
 |---|---|
 | `crates/rs_cam_core/src/session/mod.rs` | Session type and module facade. SocratiCode graph imports `compute.rs`, `mutation.rs`, `save.rs`. |
-| `crates/rs_cam_core/src/session/compute.rs` | High-level compute API. SocratiCode symbols include `set_toolpath_param`, `generate_toolpath`, `generate_all`, `run_simulation`, `collision_check`, `narrate_toolpath`, `diagnostics`, `export_gcode`, `tool_load_report`. |
+| `crates/rs_cam_core/src/session/compute.rs` (+ `compute/` `params.rs`, `generation.rs`, `simulation.rs`, `diagnostics.rs`, `export.rs`, `tests.rs`) | High-level compute API. SocratiCode symbols include `set_toolpath_param`, `generate_toolpath`, `generate_all`, `run_simulation`, `collision_check`, `narrate_toolpath`, `diagnostics`, `export_gcode`, `tool_load_report`. |
 | `crates/rs_cam_core/src/session/execution.rs` | Execution/result types and session-side runtime state. |
 | `crates/rs_cam_core/src/session/loading.rs` | Project load/import paths. |
 | `crates/rs_cam_core/src/session/mutation.rs` | Session mutation methods and invalidation. |
@@ -179,7 +179,7 @@ When GUI state adds fields, audit project IO, setup sheet, worker test initializ
 | `crates/rs_cam_cli/src/main.rs` | CLI entrypoint. SocratiCode graph marks it as a high-level entry point. |
 | `crates/rs_cam_cli/src/job.rs` | TOML job execution flow. |
 | `crates/rs_cam_cli/src/helpers.rs` | CLI helper utilities. |
-| `crates/rs_cam_mcp/src/server.rs` | Standalone MCP ProjectSession-backed tool implementations. |
+| `crates/rs_cam_mcp/src/server.rs` | MCP tool parameter types and schemas (no server loop). |
 | `crates/rs_cam_mcp/src/main.rs` | MCP server binary entrypoint. |
 
 Keep GUI embedded MCP and standalone MCP behavior aligned where tools overlap.
