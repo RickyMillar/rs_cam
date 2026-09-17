@@ -15,6 +15,16 @@
 //! | 2 | GUI undo and redo | `ProjectSession::apply` -> `Command::RestoreToolpathSnapshot` | WIDE |
 //! | 3 | feeds Apply funnel | a direct field write, then `invalidate_toolpath_inputs` | WIDE, in-crate since WP7 |
 //! | 4 | wholesale config replacement | `ProjectSession::apply` -> `Command::ReplaceToolpathConfig` | WIDE |
+//! | 5 | tool edit | `ProjectSession::apply` -> `Command::SetToolParam` -> `drop_tool_results` | WIDE, since SES-07 |
+//! | 6 | model refresh | `ProjectSession::apply` -> `Command::AdoptModelGeometry` -> `drop_results_for_model` | WIDE, since SES-07 |
+//!
+//! Arms 5 and 6 are the SES-07 pair. `drop_tool_results` and
+//! `drop_results_for_model` used to `drop_result` the DIRECTLY affected
+//! toolpaths in a flat loop and stop. A downstream
+//! `StockSource::FromRemainingStock` op that runs on a DIFFERENT tool kept
+//! a cached result built on stock the edit had moved. Both doors now seed
+//! `invalidate_output_dependents_of_set`, so they walk the chain every
+//! other wide path walks.
 //!
 //! A WIDE path calls `invalidate_result_chain` (`mutation.rs:236`). That
 //! drops the edited toolpath's own result. It then walks the setup's
@@ -118,14 +128,19 @@ use rs_cam_core::compute::operation_configs::{
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
-    AdoptResultArgs, Command, LoadedModel, ProjectSession, ProjectSessionBuilder,
-    ReplaceToolpathConfigArgs, RestoreToolpathSnapshotArgs, SetAlignmentPinDrillHolesArgs,
-    SetDrillSelectedHolesArgs, SetToolpathParamArgs, ToolpathConfig,
+    AdoptModelGeometryArgs, AdoptResultArgs, Command, LoadedModel, ProjectSession,
+    ProjectSessionBuilder, ReplaceToolpathConfigArgs, RestoreToolpathSnapshotArgs,
+    SetAlignmentPinDrillHolesArgs, SetDrillSelectedHolesArgs, SetToolParamArgs,
+    SetToolpathParamArgs, ToolpathConfig,
 };
 use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 /// The one feed value every arm writes.
 const EDITED_FEED_RATE: f64 = 4321.0;
+
+/// The tool diameter arm 5 writes. `ToolConfig::new_default` carries
+/// another value, so the write is visible.
+const EDITED_TOOL_DIAMETER: f64 = 7.5;
 
 // ── fixture ──────────────────────────────────────────────────────
 
@@ -237,6 +252,102 @@ fn fixture(upstream: OperationConfig) -> ProjectSession {
 
 fn pocket() -> OperationConfig {
     OperationConfig::Pocket(PocketConfig::default())
+}
+
+/// The SES-07 fixture: the same two rows, on TWO tools and TWO models.
+///
+/// Index 0, `upstream`, runs tool 0 on model 0 with `StockSource::Fresh`.
+/// Index 1, `downstream`, is a Rest with `StockSource::FromRemainingStock`
+/// that runs tool 1 on model 1.
+///
+/// The second tool and the second model are the non-vacuity of arms 5 and
+/// 6. In [`fixture`] both rows name one tool and one model, so the OLD
+/// narrow loop — which filtered on `tc.tool_id == tool_id` and on
+/// `tc.model_id == model_id` — dropped index 1 directly and an arm built
+/// on that fixture would pass without the fix. Here only the chain walk
+/// reaches index 1.
+fn fixture_split_inputs() -> ProjectSession {
+    let mut builder = ProjectSessionBuilder::new();
+    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    builder.add_tool(ToolConfig::new_default(ToolId(1), ToolType::BallNose));
+    builder.add_model(empty_model("part.svg"));
+    builder.add_model(empty_model("other.svg"));
+    let upstream_tool = builder.tools()[0].id.0;
+    let downstream_tool = builder.tools()[1].id.0;
+    let upstream_model = builder.models()[0].id;
+    let downstream_model = builder.models()[1].id;
+    let upstream_tc = tc(
+        "upstream",
+        pocket(),
+        StockSource::Fresh,
+        upstream_tool,
+        upstream_model,
+    );
+    let downstream_tc = tc(
+        "downstream",
+        OperationConfig::Rest(RestConfig::default()),
+        StockSource::FromRemainingStock,
+        downstream_tool,
+        downstream_model,
+    );
+    let _ = builder.add_toolpath(0, upstream_tc).unwrap();
+    let _ = builder.add_toolpath(0, downstream_tc).unwrap();
+    let mut s = builder.build();
+    adopt(&mut s, 0);
+    adopt(&mut s, 1);
+    assert_fixture_is_live(&s);
+    assert_ne!(
+        s.toolpath_configs()[0].tool_id,
+        s.toolpath_configs()[1].tool_id,
+        "the downstream row must run another tool, or the narrow loop \
+         reaches it directly and the arm measures nothing"
+    );
+    assert_ne!(
+        s.toolpath_configs()[0].model_id,
+        s.toolpath_configs()[1].model_id,
+        "the downstream row must read another model, or the narrow loop \
+         reaches it directly and the arm measures nothing"
+    );
+    s
+}
+
+/// Arm 5 — `Command::SetToolParam`, the MCP and CLI tool-edit door.
+///
+/// It writes the upstream row's tool diameter. A wider cutter removes
+/// other material, so the stock the downstream Rest op inherits moves.
+fn arm_tool_param() -> Observation {
+    let mut s = fixture_split_inputs();
+    let before = revisions(&s);
+    let _ = s
+        .apply(Command::SetToolParam(SetToolParamArgs {
+            index: 0,
+            param: "diameter".to_owned(),
+            value: serde_json::json!(EDITED_TOOL_DIAMETER),
+        }))
+        .expect("diameter is a tool parameter");
+    let written = s.tools()[0].diameter;
+    assert!(
+        (written - EDITED_TOOL_DIAMETER).abs() < 1e-9,
+        "the arm must write the diameter. I read {written}"
+    );
+    observe(&s, &before)
+}
+
+/// Arm 6 — `Command::AdoptModelGeometry`, the GUI model-refresh door.
+///
+/// All three refresh doors — rescale, reload and relink — end here.
+fn arm_adopt_model() -> Observation {
+    let mut s = fixture_split_inputs();
+    let before = revisions(&s);
+    let model_id = s.toolpath_configs()[0].model_id;
+    let _ = s
+        .apply(Command::AdoptModelGeometry(AdoptModelGeometryArgs {
+            model_id,
+            geometry: Box::new(empty_model("part.svg")),
+            units: None,
+        }))
+        .expect("model 0 exists");
+    observe(&s, &before)
 }
 
 /// The non-vacuity guard. A dropped-set assertion proves nothing unless
@@ -445,6 +556,8 @@ fn a_dropped_result_and_a_bumped_revision_are_the_same_event() {
         ("set_toolpath_param", arm_setter()),
         ("Command::RestoreToolpathSnapshot", arm_snapshot()),
         ("Command::ReplaceToolpathConfig", arm_replace_config()),
+        ("Command::SetToolParam", arm_tool_param()),
+        ("Command::AdoptModelGeometry", arm_adopt_model()),
     ];
     for (name, obs) in arms {
         assert_eq!(
@@ -534,6 +647,63 @@ fn n6_set_alignment_pin_drill_holes_invalidates_the_chain() {
         set(&[0, 1]),
         "the pin-hole setter walks the chain. This is the answer the \
          drill-pick setter above reaches too, since WP8."
+    );
+}
+
+/// CONTRACT — SES-07. A tool edit walks the chain the toolpath edit walks.
+///
+/// `drop_tool_results` filtered the toolpath list for a DIRECT dependency
+/// (`tc.tool_id == tool_id`, plus a `PlannedTierRegions` ladder member) and
+/// called `drop_result` on each hit. It never walked the stock chain, so a
+/// downstream `StockSource::FromRemainingStock` op on ANOTHER tool kept a
+/// result generated against stock the wider cutter no longer leaves.
+///
+/// The fixture gives the downstream row its own tool, so the direct filter
+/// cannot reach index 1. Only the chain walk can.
+#[test]
+fn ses07_a_tool_edit_invalidates_the_chain() {
+    let obs = arm_tool_param();
+
+    assert_eq!(
+        obs.dropped,
+        set(&[0, 1]),
+        "SES-07: a tool edit moves the stock the downstream row inherits. \
+         It dropped {{0}} alone before the fix."
+    );
+    assert_eq!(obs.bumped, obs.dropped, "one event, as above");
+}
+
+/// CONTRACT — SES-07, the model half. `drop_results_for_model` carried the
+/// same narrow loop, and all three GUI refresh doors reach it.
+#[test]
+fn ses07_a_model_refresh_invalidates_the_chain() {
+    let obs = arm_adopt_model();
+
+    assert_eq!(
+        obs.dropped,
+        set(&[0, 1]),
+        "SES-07: a refreshed model replaces the geometry index 0 was \
+         generated against, so the stock index 1 inherits moves. It \
+         dropped {{0}} alone before the fix."
+    );
+    assert_eq!(obs.bumped, obs.dropped, "one event, as above");
+}
+
+/// CONTRACT — SES-07. The two doors answer what the toolpath setter
+/// answers for the same logical question: "these inputs moved".
+#[test]
+fn ses07_the_tool_and_model_doors_invalidate_alike() {
+    let tool = arm_tool_param();
+    let model = arm_adopt_model();
+
+    assert_eq!(
+        tool.dropped, model.dropped,
+        "SES-07: one invalidation rule, two doors onto it"
+    );
+    assert_eq!(
+        tool.dropped,
+        arm_setter().dropped,
+        "SES-07: the tool door reaches the set the toolpath setter reaches"
     );
 }
 

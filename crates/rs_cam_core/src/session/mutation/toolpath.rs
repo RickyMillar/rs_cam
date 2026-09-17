@@ -262,20 +262,58 @@ impl ProjectSession {
         index: usize,
         stock_chain_changed: bool,
     ) -> (BTreeSet<usize>, BTreeSet<usize>) {
+        let seeds = BTreeSet::from([index]);
+        let chain_seeds = if stock_chain_changed {
+            seeds.clone()
+        } else {
+            BTreeSet::new()
+        };
+        self.invalidate_output_dependents_of_set(seeds, chain_seeds)
+    }
+
+    /// Seed-set half of [`Self::invalidate_output_dependents`]: run the
+    /// same fixpoint over MANY seeds at once.
+    ///
+    /// A tool edit or a model refresh invalidates a SET of toolpaths in one
+    /// mutation, not one toolpath (see [`Self::drop_tool_results`] and
+    /// `drop_results_for_model`). Those two doors used to call
+    /// [`Self::drop_result`] in a flat loop, so a same-setup
+    /// `StockSource::FromRemainingStock` op, or a
+    /// `BoundarySource::DerivedRestRegions` consumer, kept a cached result
+    /// built on stock that the edit had moved (SES-07). They now seed this
+    /// walker instead, and the whole seed set shares ONE fixpoint: a
+    /// per-seed loop would walk the chain once per seed and reach the same
+    /// answer more slowly.
+    ///
+    /// `dirty` seeds every index whose cached result is already invalid.
+    /// `chain_dirty` names the subset whose contribution to the setup's
+    /// material-removal sequence changed; it must hold only ENABLED seeds,
+    /// because a disabled op removes no material and only its
+    /// `DerivedRestRegions` consumers go stale.
+    ///
+    /// Returns `(dirty, dropped)` with the contract
+    /// [`Self::invalidate_output_dependents`] states: `dropped` excludes
+    /// every seed, because this call drops no seed's own result.
+    pub(crate) fn invalidate_output_dependents_of_set(
+        &mut self,
+        seeds: BTreeSet<usize>,
+        chain_seeds: BTreeSet<usize>,
+    ) -> (BTreeSet<usize>, BTreeSet<usize>) {
+        debug_assert!(
+            chain_seeds.is_subset(&seeds),
+            "a chain seed names a stock contribution that moved, so it is \
+             also a dirty seed"
+        );
         self.simulation = None;
 
         // Indices whose cached result is now invalid.
-        let mut dirty: BTreeSet<usize> = BTreeSet::new();
-        dirty.insert(index);
-        // The subset `drop_result` ran on. `index` never joins it here.
+        let mut dirty: BTreeSet<usize> = seeds;
+        // The subset `drop_result` ran on. No seed joins it here.
         let mut dropped: BTreeSet<usize> = BTreeSet::new();
         // Subset of `dirty` whose stock contribution changed (drives the
         // same-setup downstream rule). A dirtied enabled op joins this set:
         // its regenerated output may cut differently.
-        let mut chain_dirty: BTreeSet<usize> = BTreeSet::new();
-        if stock_chain_changed {
-            chain_dirty.insert(index);
-        }
+        let mut chain_dirty: BTreeSet<usize> = chain_seeds;
 
         loop {
             let mut newly: Vec<usize> = Vec::new();
@@ -762,6 +800,36 @@ impl ProjectSession {
             self.drop_result(index);
         }
         self.simulation = None;
+    }
+
+    /// Drop the cached result of every named toolpath, then invalidate
+    /// everything downstream of them, plus the simulation.
+    ///
+    /// The set-shaped sibling of [`Self::invalidate_result_chain`]. A tool
+    /// edit and a model refresh each name a SET of directly affected
+    /// toolpaths, so they collect that set and hand it here. The seeds lose
+    /// their own cached result; the fixpoint in
+    /// [`Self::invalidate_output_dependents_of_set`] then reaches the
+    /// same-setup `StockSource::FromRemainingStock` ops and the
+    /// `BoundarySource::DerivedRestRegions` consumers that the seeds feed.
+    ///
+    /// A disabled seed removes no material, so it seeds `dirty` but not
+    /// `chain_dirty` — the same rule every single-index caller applies.
+    pub(crate) fn drop_results_and_their_dependents(&mut self, indices: &[usize]) {
+        let mut seeds: BTreeSet<usize> = BTreeSet::new();
+        let mut chain_seeds: BTreeSet<usize> = BTreeSet::new();
+        for &index in indices {
+            self.drop_result(index);
+            seeds.insert(index);
+            if self
+                .toolpath_configs
+                .get(index)
+                .is_some_and(|tc| tc.enabled)
+            {
+                chain_seeds.insert(index);
+            }
+        }
+        let _ = self.invalidate_output_dependents_of_set(seeds, chain_seeds);
     }
 
     /// Drop the cached results of every toolpath in one setup, plus the

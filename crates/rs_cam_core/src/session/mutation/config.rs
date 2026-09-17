@@ -310,6 +310,15 @@ impl ProjectSession {
     /// [`Self::set_tool_param`] calls it directly, so the two routes
     /// cannot drop different sets and neither nests one [`Effects`]
     /// construction inside another.
+    ///
+    /// SES-07: the direct set is the SEED, not the answer. A re-dialled
+    /// cutter leaves other stock, so a same-setup
+    /// `StockSource::FromRemainingStock` op on ANOTHER tool, and a
+    /// `BoundarySource::DerivedRestRegions` consumer, go stale with it.
+    /// The walk to fixpoint lives in
+    /// [`Self::drop_results_and_their_dependents`], which every other wide
+    /// mutation path shares. This door ran a flat `drop_result` loop
+    /// before, and kept those downstream results.
     pub(crate) fn drop_tool_results(&mut self, tool_id: usize) {
         // A toolpath depends on a tool through TWO doors, not one. The
         // obvious door is `tool_id` — the cutter that machines it. The
@@ -333,10 +342,7 @@ impl ProjectSession {
             })
             .map(|(idx, _)| idx)
             .collect();
-        for &idx in &stale {
-            self.drop_result(idx);
-        }
-        self.simulation = None;
+        self.drop_results_and_their_dependents(&stale);
     }
 
     /// Invalidate cached results for every toolpath that machines a given
@@ -361,6 +367,11 @@ impl ProjectSession {
     /// geometry and runs this in ONE mutation, so the two halves cannot
     /// drift apart the way the three GUI refresh doors did
     /// (G-RELOADTARGETS, G-RESCALESTALE).
+    ///
+    /// SES-07: a downstream `StockSource::FromRemainingStock` result was
+    /// generated against the stock the OLD geometry left, so it is stale
+    /// too. This door seeds the same chain walk, through
+    /// [`Self::drop_results_and_their_dependents`].
     fn drop_results_for_model(&mut self, model_id: usize) {
         let affected: Vec<usize> = self
             .toolpath_configs
@@ -369,10 +380,7 @@ impl ProjectSession {
             .filter(|(_, tc)| tc.model_id == model_id)
             .map(|(idx, _)| idx)
             .collect();
-        for &idx in &affected {
-            self.drop_result(idx);
-        }
-        self.simulation = None;
+        self.drop_results_and_their_dependents(&affected);
     }
 
     /// Replace one model's geometry, and drop the results that read it.
