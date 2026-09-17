@@ -290,3 +290,58 @@ fn the_panel_inputs_carry_the_session_lists_ui01() {
         "one toolpath has no other toolpath to derive a rest boundary from"
     );
 }
+/// UI-11: both drill editors draw the SAME cycle rows.
+///
+/// The four-way cycle combo and the peck row were written out twice,
+/// verbatim, in `operations/drill.rs`. A shared helper draws them now; this
+/// renders both editors on a Peck cycle and asserts the same labels appear
+/// in both, so an edit to one cannot stop reaching the other.
+#[test]
+fn both_drill_editors_draw_the_same_cycle_rows_ui11() {
+    use crate::state::toolpath::{AlignmentPinDrillConfig, DrillConfig, DrillCycleType};
+
+    fn rendered(mut draw: impl FnMut(&mut egui::Ui)) -> Vec<String> {
+        let ctx = egui::Context::default();
+        crate::ui::tokens::apply(&ctx);
+        crate::ui::tokens::apply_fonts(&ctx);
+        let mut warmup = ctx.run_ui(egui::RawInput::default(), |_ui| {});
+        warmup.textures_delta.clear();
+
+        let mut out = ctx.run_ui(egui::RawInput::default(), &mut draw);
+        let mut texts = Vec::new();
+        for clipped in &out.shapes {
+            if let egui::epaint::Shape::Text(text) = &clipped.shape {
+                texts.push(text.galley.job.text.clone());
+            }
+        }
+        out.textures_delta.clear();
+        texts
+    }
+
+    let mut drill = DrillConfig {
+        cycle: DrillCycleType::Peck,
+        ..Default::default()
+    };
+    let drill_texts = rendered(|ui| {
+        super::operations::draw_drill_params(ui, &mut drill, &[], &[], None, None);
+    });
+
+    let mut pin = AlignmentPinDrillConfig {
+        cycle: DrillCycleType::Peck,
+        ..Default::default()
+    };
+    let pin_texts = rendered(|ui| {
+        super::operations::draw_alignment_pin_drill_params(ui, &mut pin, &[], &[], None);
+    });
+
+    for label in ["Peck (G83)", "Peck Depth:", "Feed Rate:", "Retract (R):"] {
+        assert!(
+            drill_texts.iter().any(|t| t.contains(label)),
+            "the drill editor no longer draws `{label}`; it rendered {drill_texts:?}"
+        );
+        assert!(
+            pin_texts.iter().any(|t| t.contains(label)),
+            "the pin-drill editor no longer draws `{label}`; it rendered {pin_texts:?}"
+        );
+    }
+}

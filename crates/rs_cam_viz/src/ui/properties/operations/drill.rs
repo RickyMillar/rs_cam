@@ -129,6 +129,78 @@ fn draw_drill_target_selector(
     ui.label(egui::RichText::new(legend).small().weak());
 }
 
+/// The four-way drill-cycle combo, one renderer for both editors.
+///
+/// UI-11: `draw_drill_params` and `draw_alignment_pin_drill_params` wrote
+/// this combo out twice, label strings included, so a new cycle or a
+/// re-worded label reached one editor and not the other. `id_salt` keeps the
+/// two combos' egui ids distinct.
+fn draw_drill_cycle_combo(ui: &mut egui::Ui, id_salt: &str, cycle: &mut DrillCycleType) {
+    ui.label("Cycle:");
+    egui::ComboBox::from_id_salt(id_salt)
+        .selected_text(match cycle {
+            DrillCycleType::Simple => "Simple (G81)",
+            DrillCycleType::Dwell => "Dwell (G82)",
+            DrillCycleType::Peck => "Peck (G83)",
+            DrillCycleType::ChipBreak => "Chip Break (G73)",
+        })
+        .show_ui(ui, |ui| {
+            ui.selectable_value(cycle, DrillCycleType::Simple, "Simple (G81)");
+            ui.selectable_value(cycle, DrillCycleType::Dwell, "Dwell (G82)");
+            ui.selectable_value(cycle, DrillCycleType::Peck, "Peck (G83)");
+            ui.selectable_value(cycle, DrillCycleType::ChipBreak, "Chip Break (G73)");
+        });
+    ui.end_row();
+}
+
+/// The feed-rate and retract rows both drill editors carry.
+fn draw_drill_feed_rows(
+    ui: &mut egui::Ui,
+    feed_rate: &mut f64,
+    retract_z: &mut f64,
+    feed_sugg: Option<super::super::pills::PillSuggestion<'_>>,
+) {
+    dv_pill(
+        ui,
+        "Feed Rate:",
+        feed_rate,
+        " mm/min",
+        10.0,
+        1.0..=5000.0,
+        feed_sugg,
+    );
+    dv(ui, "Retract (R):", retract_z, " mm", 0.5, 0.5..=50.0);
+}
+
+/// The rows a cycle adds: peck depth, dwell time and chip-break retract.
+///
+/// `dwell_time` and `retract_amount` are `None` for the alignment-pin
+/// editor, whose config carries no knobs for them — pin drilling fixes dwell
+/// at 0.5 s and chip-break retract at 0.5 mm
+/// (`AlignmentPinDrillConfig::drill_cycle`). That is the ONLY difference
+/// between the two editors' conditional rows.
+fn draw_drill_cycle_rows(
+    ui: &mut egui::Ui,
+    cycle: DrillCycleType,
+    peck_depth: &mut f64,
+    dwell_time: Option<&mut f64>,
+    retract_amount: Option<&mut f64>,
+) {
+    if matches!(cycle, DrillCycleType::Peck | DrillCycleType::ChipBreak) {
+        dv(ui, "Peck Depth:", peck_depth, " mm", 0.5, 0.5..=50.0);
+    }
+    if let Some(dwell_time) = dwell_time
+        && cycle == DrillCycleType::Dwell
+    {
+        dv(ui, "Dwell Time:", dwell_time, " s", 0.1, 0.1..=10.0);
+    }
+    if let Some(retract_amount) = retract_amount
+        && cycle == DrillCycleType::ChipBreak
+    {
+        dv(ui, "Retract Amt:", retract_amount, " mm", 0.1, 0.1..=5.0);
+    }
+}
+
 pub(in crate::ui::properties) fn draw_drill_params(
     ui: &mut egui::Ui,
     cfg: &mut DrillConfig,
@@ -147,74 +219,17 @@ pub(in crate::ui::properties) fn draw_drill_params(
         .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
         .min_row_height(crate::ui::tokens::ROW_DENSE)
         .show(ui, |ui| {
-            ui.label("Cycle:");
-            egui::ComboBox::from_id_salt("drill_cycle")
-                .selected_text(match cfg.cycle {
-                    DrillCycleType::Simple => "Simple (G81)",
-                    DrillCycleType::Dwell => "Dwell (G82)",
-                    DrillCycleType::Peck => "Peck (G83)",
-                    DrillCycleType::ChipBreak => "Chip Break (G73)",
-                })
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut cfg.cycle, DrillCycleType::Simple, "Simple (G81)");
-                    ui.selectable_value(&mut cfg.cycle, DrillCycleType::Dwell, "Dwell (G82)");
-                    ui.selectable_value(&mut cfg.cycle, DrillCycleType::Peck, "Peck (G83)");
-                    ui.selectable_value(
-                        &mut cfg.cycle,
-                        DrillCycleType::ChipBreak,
-                        "Chip Break (G73)",
-                    );
-                });
-            ui.end_row();
+            draw_drill_cycle_combo(ui, "drill_cycle", &mut cfg.cycle);
             dv(ui, "Depth:", &mut cfg.depth, " mm", 0.5, 0.5..=100.0);
             depth_caution_row(ui, depth_caution);
-            dv_pill(
+            draw_drill_feed_rows(ui, &mut cfg.feed_rate, &mut cfg.retract_z, feed_sugg);
+            draw_drill_cycle_rows(
                 ui,
-                "Feed Rate:",
-                &mut cfg.feed_rate,
-                " mm/min",
-                10.0,
-                1.0..=5000.0,
-                feed_sugg,
+                cfg.cycle,
+                &mut cfg.peck_depth,
+                Some(&mut cfg.dwell_time),
+                Some(&mut cfg.retract_amount),
             );
-            dv(
-                ui,
-                "Retract (R):",
-                &mut cfg.retract_z,
-                " mm",
-                0.5,
-                0.5..=50.0,
-            );
-            if matches!(cfg.cycle, DrillCycleType::Peck | DrillCycleType::ChipBreak) {
-                dv(
-                    ui,
-                    "Peck Depth:",
-                    &mut cfg.peck_depth,
-                    " mm",
-                    0.5,
-                    0.5..=50.0,
-                );
-            }
-            if cfg.cycle == DrillCycleType::Dwell {
-                dv(
-                    ui,
-                    "Dwell Time:",
-                    &mut cfg.dwell_time,
-                    " s",
-                    0.1,
-                    0.1..=10.0,
-                );
-            }
-            if cfg.cycle == DrillCycleType::ChipBreak {
-                dv(
-                    ui,
-                    "Retract Amt:",
-                    &mut cfg.retract_amount,
-                    " mm",
-                    0.1,
-                    0.1..=5.0,
-                );
-            }
         });
     draw_drill_target_selector(
         ui,
@@ -252,52 +267,9 @@ pub(in crate::ui::properties) fn draw_alignment_pin_drill_params(
                 0.5,
                 0.5..=20.0,
             );
-            ui.label("Cycle:");
-            egui::ComboBox::from_id_salt("pin_drill_cycle")
-                .selected_text(match cfg.cycle {
-                    DrillCycleType::Simple => "Simple (G81)",
-                    DrillCycleType::Dwell => "Dwell (G82)",
-                    DrillCycleType::Peck => "Peck (G83)",
-                    DrillCycleType::ChipBreak => "Chip Break (G73)",
-                })
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut cfg.cycle, DrillCycleType::Simple, "Simple (G81)");
-                    ui.selectable_value(&mut cfg.cycle, DrillCycleType::Dwell, "Dwell (G82)");
-                    ui.selectable_value(&mut cfg.cycle, DrillCycleType::Peck, "Peck (G83)");
-                    ui.selectable_value(
-                        &mut cfg.cycle,
-                        DrillCycleType::ChipBreak,
-                        "Chip Break (G73)",
-                    );
-                });
-            ui.end_row();
-            dv_pill(
-                ui,
-                "Feed Rate:",
-                &mut cfg.feed_rate,
-                " mm/min",
-                10.0,
-                1.0..=5000.0,
-                feed_sugg,
-            );
-            dv(
-                ui,
-                "Retract (R):",
-                &mut cfg.retract_z,
-                " mm",
-                0.5,
-                0.5..=50.0,
-            );
-            if matches!(cfg.cycle, DrillCycleType::Peck | DrillCycleType::ChipBreak) {
-                dv(
-                    ui,
-                    "Peck Depth:",
-                    &mut cfg.peck_depth,
-                    " mm",
-                    0.5,
-                    0.5..=50.0,
-                );
-            }
+            draw_drill_cycle_combo(ui, "pin_drill_cycle", &mut cfg.cycle);
+            draw_drill_feed_rows(ui, &mut cfg.feed_rate, &mut cfg.retract_z, feed_sugg);
+            draw_drill_cycle_rows(ui, cfg.cycle, &mut cfg.peck_depth, None, None);
         });
     draw_drill_target_selector(
         ui,
