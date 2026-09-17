@@ -196,6 +196,7 @@ fn an_adopted_simulation_lets_start_see_the_prior_stock() {
     let effects = session
         .apply(Command::AdoptSimulation(AdoptSimulationArgs {
             result: Box::new(simulation_with_prior_stock(rest_id, &snapshot)),
+            epoch: session.simulation_epoch(),
         }))
         .expect("the adopt stores the simulation");
     assert!(

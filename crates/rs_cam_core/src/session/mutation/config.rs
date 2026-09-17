@@ -311,7 +311,7 @@ impl ProjectSession {
     #[instrument(skip(self))]
     pub(crate) fn invalidate_machine(&mut self) -> Effects {
         self.with_effects(None, |session| {
-            session.simulation = None;
+            session.drop_simulation();
         })
     }
 
@@ -519,7 +519,7 @@ impl ProjectSession {
         self.with_effects(None, move |session| {
             session.post = post;
             if reaches_motion {
-                session.simulation = None;
+                session.drop_simulation();
             }
         })
     }
@@ -539,7 +539,7 @@ impl ProjectSession {
     pub(crate) fn set_machine(&mut self, machine: crate::machine::MachineProfile) -> Effects {
         self.with_effects(None, move |session| {
             session.machine = machine;
-            session.simulation = None;
+            session.drop_simulation();
         })
     }
 
@@ -558,7 +558,7 @@ impl ProjectSession {
     ) -> Effects {
         self.with_effects(None, move |session| {
             session.machine.kinematics = Some(kinematics);
-            session.simulation = None;
+            session.drop_simulation();
         })
     }
 
@@ -584,7 +584,7 @@ impl ProjectSession {
             if let Some(max_feed) = max_feed_mm_min {
                 session.machine.max_feed_mm_min = max_feed;
             }
-            session.simulation = None;
+            session.drop_simulation();
         })
     }
 
@@ -625,7 +625,7 @@ impl ProjectSession {
             // Update the next-ID counter so newly added tools don't
             // collide.
             session.next_tool_id = session.tools.iter().map(|t| t.id.0 + 1).max().unwrap_or(0);
-            session.simulation = None;
+            session.drop_simulation();
         })
     }
 }

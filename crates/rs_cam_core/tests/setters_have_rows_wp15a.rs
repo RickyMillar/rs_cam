@@ -146,6 +146,7 @@ const CRATE_PRIVATE_HELPERS: &[&str] = &[
     "drop_result",
     "drop_results_and_their_dependents",
     "drop_setup_results",
+    "drop_simulation",
     "drop_tool_results",
     "find_toolpath_config_by_id_mut",
     "insert_result",

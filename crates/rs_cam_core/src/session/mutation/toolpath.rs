@@ -65,7 +65,7 @@ impl ProjectSession {
         setup.toolpath_indices.push(tp_index);
 
         // Adding a toolpath invalidates simulation
-        self.simulation = None;
+        self.drop_simulation();
 
         Ok(tp_index)
     }
@@ -119,7 +119,7 @@ impl ProjectSession {
             // toolpath, so no revision a reader recorded still applies.
             session.bump_all_revisions();
 
-            session.simulation = None;
+            session.drop_simulation();
             Ok(())
         })
     }
@@ -192,7 +192,7 @@ impl ProjectSession {
             session.invalidate_output_dependents(from_index, true);
             session.invalidate_output_dependents(to_index, true);
 
-            session.simulation = None;
+            session.drop_simulation();
             Ok(())
         })
     }
@@ -306,7 +306,7 @@ impl ProjectSession {
         seeds: BTreeSet<usize>,
         chain_seeds: BTreeSet<usize>,
     ) -> (BTreeSet<usize>, BTreeSet<usize>) {
-        self.simulation = None;
+        self.drop_simulation();
         self.walk_output_dependents(seeds, chain_seeds)
     }
 
@@ -435,7 +435,7 @@ impl ProjectSession {
             if changed {
                 session.invalidate_output_dependents(index, true);
             }
-            session.simulation = None;
+            session.drop_simulation();
             Ok(())
         })
     }
@@ -523,7 +523,7 @@ impl ProjectSession {
             target.insert(at, tp_index);
 
             session.drop_result(tp_index);
-            session.simulation = None;
+            session.drop_simulation();
             Ok(())
         })
     }
@@ -674,7 +674,7 @@ impl ProjectSession {
             tc.dressups = dressups;
             tc.face_selection = face_selection;
             session.drop_result(index);
-            session.simulation = None;
+            session.drop_simulation();
             Ok(())
         })
     }
@@ -789,6 +789,28 @@ impl ProjectSession {
         })
     }
 
+    /// Drop the simulation and bump the simulation epoch.
+    ///
+    /// **The single site that does either**, the way
+    /// [`Self::drop_result`] is for a toolpath's cached answer. Nineteen
+    /// mutation sites wrote `self.simulation = None` and moved nothing
+    /// else, so an in-flight run that landed after the edit was stored as
+    /// if it were current (defect D7). One function makes "the simulation
+    /// is gone" and "the project state it answered has moved" one event
+    /// with one record, which `Command::AdoptSimulation` then refuses on.
+    ///
+    /// The epoch bumps unconditionally, whether or not a simulation was
+    /// there: two edits must move it twice, or a run submitted between
+    /// them reads current.
+    ///
+    /// The method sits here beside `drop_result` although it names no
+    /// toolpath: the two are one rule, and the reader who finds either
+    /// needs the other.
+    pub(crate) fn drop_simulation(&mut self) {
+        self.simulation = None;
+        self.simulation_epoch += 1;
+    }
+
     /// Drop a toolpath's cached result and bump its revision.
     ///
     /// **The single site that does either.** Every mutating method on
@@ -831,7 +853,7 @@ impl ProjectSession {
         for index in 0..self.toolpath_configs.len() {
             self.drop_result(index);
         }
-        self.simulation = None;
+        self.drop_simulation();
     }
 
     /// Drop the cached result of every named toolpath, then invalidate
@@ -875,7 +897,7 @@ impl ProjectSession {
         for idx in indices {
             self.drop_result(idx);
         }
-        self.simulation = None;
+        self.drop_simulation();
     }
 
     /// Public door onto the chain invalidation for callers that write

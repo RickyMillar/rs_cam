@@ -212,6 +212,7 @@ fn rest_chain_session(feed_optimization: bool) -> ProjectSession {
     let _ = session
         .apply(Command::AdoptSimulation(AdoptSimulationArgs {
             result: Box::new(full_material_simulation(rest_id, &snapshot)),
+            epoch: session.simulation_epoch(),
         }))
         .expect("the adopt stores the simulation");
     session

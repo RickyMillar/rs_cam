@@ -213,6 +213,24 @@ pub enum SessionError {
         submitted: u64,
         current: u64,
     },
+    /// D7 (W0c): a simulation answers a project state the session has
+    /// left.
+    ///
+    /// A simulation runs off the frame loop. The submit door stamps the
+    /// [`ProjectSession::simulation_epoch`] it reads, and
+    /// [`Command::AdoptSimulation`] carries that stamp back. Every edit
+    /// that clears the simulation bumps the epoch, so an unequal epoch
+    /// means the run describes material the project no longer cuts. The
+    /// door refuses it and stores nothing.
+    ///
+    /// This is a safety matter, not only a display one:
+    /// `StockSource::FromRemainingStock` reads its prior stock from that
+    /// field, so a stored late run hands a rest operation a superseded
+    /// snapshot.
+    ///
+    /// `submitted` is the epoch the lane started from. `current` is the
+    /// epoch the session carries now.
+    StaleSimulation { submitted: u64, current: u64 },
 }
 
 impl std::fmt::Display for SessionError {
@@ -258,6 +276,12 @@ impl std::fmt::Display for SessionError {
                 "Toolpath {index} changed while it was generating: the \
                  result answers revision {submitted} and the toolpath is \
                  at revision {current}. Generate it again."
+            ),
+            Self::StaleSimulation { submitted, current } => write!(
+                f,
+                "The project changed while it was simulating: the run \
+                 answers simulation epoch {submitted} and the project is \
+                 at epoch {current}. Simulate it again."
             ),
         }
     }
@@ -1260,6 +1284,19 @@ pub struct ProjectSession {
     /// Monotonic source of [`Self::toolpath_revision`] values. Never reset.
     pub(crate) next_revision: u64,
     pub(crate) simulation: Option<SimulationResult>,
+    /// How many times an edit has dropped the simulation.
+    ///
+    /// The generation half of the same rule `toolpath_revision` states:
+    /// a run that answers a superseded project state must be refusable.
+    /// `next_revision` cannot serve, because `invalidate_machine`,
+    /// `set_machine`, `set_machine_kinematics`, `import_machine_settings`,
+    /// `set_post_config`, `replace_tools` and `set_toolpath_enabled` all
+    /// clear the simulation and move no toolpath revision.
+    ///
+    /// Bumped by [`Self::drop_simulation`] and by nothing else, so two
+    /// edits move it twice. NOT persisted: a load builds a session with no
+    /// simulation, and no in-flight run can outlive the process.
+    pub(crate) simulation_epoch: u64,
 
     // ID generators (max existing ID + 1)
     pub(crate) next_toolpath_id: usize,
@@ -1296,6 +1333,7 @@ impl ProjectSession {
             results: HashMap::new(),
             toolpath_revision: HashMap::new(),
             next_revision: 0,
+            simulation_epoch: 0,
             simulation: None,
             next_toolpath_id: 0,
             next_tool_id: 0,
@@ -1442,6 +1480,16 @@ impl ProjectSession {
     /// Get the simulation result, if one has been run.
     pub fn simulation_result(&self) -> Option<&SimulationResult> {
         self.simulation.as_ref()
+    }
+
+    /// How many times an edit has dropped the simulation.
+    ///
+    /// Read it beside a simulation request and hand it back on
+    /// [`Command::AdoptSimulation`]. An unequal epoch when the answer
+    /// arrives means the project moved while the worker ran, so the run
+    /// describes material the project no longer cuts.
+    pub fn simulation_epoch(&self) -> u64 {
+        self.simulation_epoch
     }
 
     /// Number of toolpath configs in the session.

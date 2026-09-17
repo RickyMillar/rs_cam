@@ -908,6 +908,15 @@ pub struct AdoptSimulationArgs {
     /// and a caller that adopted the pre-modulation trace would publish
     /// two different traces on two surfaces.
     pub result: Box<SimulationResult>,
+    /// The simulation epoch the lane started from, read with
+    /// [`ProjectSession::simulation_epoch`](super::ProjectSession::simulation_epoch).
+    ///
+    /// D7 (W0c). This row used to store unconditionally, so a run that
+    /// landed after an edit had cleared the field re-filled it and every
+    /// reader called it current. [`ProjectSession::apply`] now compares
+    /// this against the epoch the session carries and refuses a mismatch
+    /// with [`SessionError::StaleSimulation`], storing nothing.
+    pub epoch: u64,
 }
 
 /// Names the simulation's countable parts, and no geometry.
@@ -922,6 +931,7 @@ impl std::fmt::Debug for AdoptSimulationArgs {
             .field("total_moves", &self.result.total_moves)
             .field("prior_stocks", &self.result.prior_stocks.len())
             .field("cut_trace", &self.result.cut_trace.is_some())
+            .field("epoch", &self.epoch)
             .finish_non_exhaustive()
     }
 }
@@ -2244,7 +2254,20 @@ impl ProjectSession {
                 })
             }
             Command::AdoptSimulation(args) => {
-                let AdoptSimulationArgs { result } = args;
+                let AdoptSimulationArgs { result, epoch } = args;
+                // D7. The same guard `AdoptResult` makes, for the same
+                // reason: an edit that cleared the simulation moved the
+                // epoch, so this run answers material the project no
+                // longer cuts. `FromRemainingStock` reads its prior stock
+                // from this field, so storing it would hand a rest
+                // operation a superseded snapshot.
+                let current = self.simulation_epoch();
+                if current != epoch {
+                    return Err(SessionError::StaleSimulation {
+                        submitted: epoch,
+                        current,
+                    });
+                }
                 // The row names no toolpath, so `index` is `None`.
                 //
                 // `stale` reads empty: a simulation moves no

@@ -1213,6 +1213,7 @@ pub(super) fn build_session_from_project(
         results: std::collections::HashMap::new(),
         toolpath_revision: std::collections::HashMap::new(),
         next_revision: 0,
+        simulation_epoch: 0,
         simulation: None,
         next_toolpath_id,
         next_tool_id,

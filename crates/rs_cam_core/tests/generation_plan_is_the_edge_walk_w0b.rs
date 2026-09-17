@@ -209,6 +209,7 @@ fn adopt_simulation(session: &mut ProjectSession, covered: &[usize]) {
                 column_grid_cell_mm: 2.0,
                 prior_stocks,
             }),
+            epoch: session.simulation_epoch(),
         }))
         .expect("the fixture stores a simulation");
 }

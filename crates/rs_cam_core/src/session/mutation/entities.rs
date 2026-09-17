@@ -463,7 +463,7 @@ impl ProjectSession {
             for &tp_idx in &indices {
                 session.drop_result(tp_idx);
             }
-            session.simulation = None;
+            session.drop_simulation();
             Ok(())
         })
     }
@@ -485,7 +485,7 @@ impl ProjectSession {
             for &tp_idx in &indices {
                 session.drop_result(tp_idx);
             }
-            session.simulation = None;
+            session.drop_simulation();
             Ok(())
         })
     }
@@ -507,7 +507,7 @@ impl ProjectSession {
             for &tp_idx in &indices {
                 session.drop_result(tp_idx);
             }
-            session.simulation = None;
+            session.drop_simulation();
             Ok(())
         })
     }
@@ -529,7 +529,7 @@ impl ProjectSession {
             for &tp_idx in &indices {
                 session.drop_result(tp_idx);
             }
-            session.simulation = None;
+            session.drop_simulation();
             Ok(())
         })
     }

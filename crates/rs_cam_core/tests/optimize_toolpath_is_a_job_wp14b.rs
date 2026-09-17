@@ -211,6 +211,7 @@ fn refusal_session() -> ProjectSession {
         .expect("the stock door accepts a custom material");
     let adopted = session.apply(Command::AdoptSimulation(AdoptSimulationArgs {
         result: Box::new(result_carrying(SimulationCutTrace::test_fixture())),
+        epoch: session.simulation_epoch(),
     }));
     let _ = adopted.expect("the adopt door stores a simulation result");
     session
