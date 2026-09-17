@@ -504,8 +504,12 @@ tool = "flat_6mm"
     fn the_deleted_job_keys_refuse_the_sweep() {
         let job = sweepable_job();
         for field in ["max_stay_down_dist", "entry_style"] {
-            let err = resolve_base_value(&job, field, "1.0")
-                .expect_err("a deleted key must refuse the sweep, not repeat the baseline");
+            let outcome = resolve_base_value(&job, field, "1.0");
+            assert!(
+                outcome.is_err(),
+                "the deleted key {field} must refuse the sweep, not repeat the baseline"
+            );
+            let err = outcome.unwrap_err();
             assert!(
                 err.to_string().contains(field),
                 "the refusal must name the field, got: {err}"
