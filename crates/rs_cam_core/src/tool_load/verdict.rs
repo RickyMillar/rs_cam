@@ -9,6 +9,7 @@
 use crate::ids::ToolpathId;
 use std::collections::BTreeMap;
 use std::ops::Range;
+use std::sync::LazyLock;
 
 use serde::{Deserialize, Serialize};
 
@@ -292,13 +293,21 @@ impl ToolpathLoadVerdict {
     /// action. Drill cycles carry drill-native gates; when all milling
     /// criteria are `NotApplicableForOp` and drill gates exist, that is
     /// neutral rather than scary/missing evidence.
+    ///
+    /// S1 (2026-09-18): a row for which
+    /// [`CriterionStatus::is_known_absence`] is true does not count
+    /// either. The gantry-push row is `Unmodeled` on every milling
+    /// toolpath and always will be until a machine-side thrust rating
+    /// exists (register T-10). Counting it here would refuse every
+    /// export under `accept_unmodeled: false` and would prompt the
+    /// operator to re-run a simulation that cannot change the answer.
     pub fn any_unmodeled(&self) -> bool {
         if self.drill_gates.is_some() && all_not_applicable(self) {
             return false;
         }
         self.criteria()
             .iter()
-            .any(|s| s.state == LoadState::Unmodeled)
+            .any(|s| s.state == LoadState::Unmodeled && !s.is_known_absence())
     }
 
     /// Generic per-criterion summaries — chipload, power, deflection in
@@ -339,16 +348,31 @@ impl ToolpathLoadVerdict {
         all
     }
 
-    /// The three milling gates only — chipload, power, deflection.
-    /// Used by `all_not_applicable` to decide the "drill cycle, milling
-    /// gates don't apply" partition without the drill criteria muddying
-    /// the test.
+    /// The milling gates only — chipload, power, deflection, and the
+    /// gantry-push row. Used by `all_not_applicable` to decide the
+    /// "drill cycle, milling gates don't apply" partition without the
+    /// drill criteria muddying the test.
+    ///
+    /// S1 (2026-09-18) — the gantry-push row joins here, after
+    /// deflection. `feeds::force::lateral_cutting_force` computes the
+    /// push; no `MachineProfile` field states the thrust the gantry can
+    /// deliver, so the row carries no number and no bound. It is
+    /// [`gantry_push_criterion`], and it takes the drill arm when the
+    /// three measured gates all took it — a drill has no lateral
+    /// engagement, so the partition is unchanged.
     pub(crate) fn milling_criteria(&self) -> Vec<CriterionStatus<'_>> {
-        vec![
+        let mut rows = vec![
             self.chipload.as_criterion_status(),
             self.power.as_criterion_status(),
             self.deflection.as_criterion_status(),
-        ]
+        ];
+        // Read the drill answer off the gates that already decided it,
+        // not off `drill_gates`: the optimizer path leaves `drill_gates`
+        // `None` on a drill toolpath, and the row must still say
+        // "doesn't apply" there.
+        let plunge_only = rows.iter().all(|s| is_not_applicable(s.unmodeled_reason));
+        rows.push(gantry_push_criterion(plunge_only));
+        rows
     }
 
     /// Per-criterion exceedance labels for this toolpath. Empty when no
@@ -522,6 +546,69 @@ fn is_not_applicable(reason: Option<&UnmodeledReason>) -> bool {
     matches!(reason, Some(UnmodeledReason::NotApplicableForOp(_)))
 }
 
+/// **The one operator-facing clause for the gantry-push absence.**
+///
+/// Held in a single place so the GUI, the CLI and the MCP print the
+/// same words. It cites the register item, never a `planning/…` path:
+/// those paths rot (`REVIEW_DESIGN` §6.3 counted 117 dead citations of
+/// 231), and the register entry is what a reader can act on.
+///
+/// The blocker behind T-10 is a number, not code. `MachineProfile`
+/// carries no axis-thrust field and no maker publishes a rating; the
+/// ballpark figures span 20:1 across machine classes, so one constant
+/// for every machine is not an option. Until a rating exists the row
+/// states that, and states nothing else.
+pub const GANTRY_PUSH_UNMODELED_CLAUSE: &str =
+    "no machine-side thrust rating is published; register T-10";
+
+/// The gantry row's clause on a plunge-only op. Word for word the one
+/// the three milling gates use, so the four rows read as one decision.
+pub const GANTRY_PUSH_NOT_APPLICABLE_CLAUSE: &str = "drill cycle — no continuous engagement";
+
+/// `UnmodeledReason` carries a `String` (it deserializes over the MCP
+/// wire), so the two reasons cannot be `const`. They are built once and
+/// borrowed for `'static`, which coerces to any `CriterionStatus<'a>`.
+static GANTRY_PUSH_NOT_IMPLEMENTED: LazyLock<UnmodeledReason> =
+    LazyLock::new(|| UnmodeledReason::NotImplemented(GANTRY_PUSH_UNMODELED_CLAUSE.to_owned()));
+static GANTRY_PUSH_NOT_APPLICABLE: LazyLock<UnmodeledReason> = LazyLock::new(|| {
+    UnmodeledReason::NotApplicableForOp(GANTRY_PUSH_NOT_APPLICABLE_CLAUSE.to_owned())
+});
+
+/// The gantry-push row, in the one place that builds it.
+///
+/// S1 (2026-09-18). Every field that would carry evidence is `None`:
+/// no peak, no population, no sample range, no exceedance. A row that
+/// printed any of those would claim a judgement the crate cannot make
+/// — defect class 3 (`RESUME_PLAN` §9), an absence rendering as a
+/// reading.
+///
+/// `population: None` reads as "not stated", never as zero, so
+/// [`CriterionStatus::is_vacuous`] stays false. Vacuity is X-VAC: a
+/// gate that measured an EMPTY population. This row has no population
+/// at all, and calling it vacuous would put it in the same bucket as a
+/// gate whose filters ate its samples — a different finding with a
+/// different remedy.
+///
+/// `plunge_only` is true for a drill cycle, which has no lateral
+/// engagement to push against.
+fn gantry_push_criterion(plunge_only: bool) -> CriterionStatus<'static> {
+    CriterionStatus {
+        kind: CriterionKind::GantryPush,
+        state: LoadState::Unmodeled,
+        confidence: None,
+        unmodeled_reason: Some(if plunge_only {
+            &GANTRY_PUSH_NOT_APPLICABLE
+        } else {
+            &GANTRY_PUSH_NOT_IMPLEMENTED
+        }),
+        sample_range: None,
+        population: None,
+        display_peak: None,
+        unit: CriterionKind::GantryPush.unit(),
+        exceeded: None,
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // The typed verdicts. `ToolpathLoadVerdict` carries one per gate, and
 // the GUI, the export layer and the MCP wire format all read them.
@@ -545,6 +632,9 @@ pub enum CriterionKind {
     Chipload,
     Power,
     Deflection,
+    /// S1 (2026-09-18) — the force the gantry must push to make the
+    /// cut. Always `Unmodeled`; see [`GANTRY_PUSH_UNMODELED_CLAUSE`].
+    GantryPush,
     // F1.7 (2026-06-10): drill-native gates join the criterion tier so
     // they participate in export gating like the milling gates.
     DrillChipWelding,
@@ -558,6 +648,7 @@ impl CriterionKind {
             CriterionKind::Chipload => "chipload",
             CriterionKind::Power => "power",
             CriterionKind::Deflection => "deflection",
+            CriterionKind::GantryPush => "gantry push",
             CriterionKind::DrillChipWelding => "chip welding",
             CriterionKind::DrillPeckAdequacy => "peck depth",
             CriterionKind::DrillPlungeFeed => "plunge feed",
@@ -569,9 +660,27 @@ impl CriterionKind {
             CriterionKind::Chipload => "mm/tooth",
             CriterionKind::Power => "kW",
             CriterionKind::Deflection => "mm",
+            CriterionKind::GantryPush => "N",
             CriterionKind::DrillChipWelding | CriterionKind::DrillPeckAdequacy => "D/d",
             CriterionKind::DrillPlungeFeed => "mm/min per mm Ø",
         }
+    }
+
+    /// **True when this crate models the criterion not at all.** S1
+    /// (2026-09-18).
+    ///
+    /// Not "the gate refused this time" — there is no gate, no bound
+    /// and no producer, and no project input creates one. Today the
+    /// only such kind is [`CriterionKind::GantryPush`]: the force is
+    /// computed, and no `MachineProfile` field states the thrust to
+    /// judge it against (register T-10).
+    ///
+    /// [`CriterionStatus::is_known_absence`] reads this to decide
+    /// whether an `Unmodeled` row may prompt the operator. Remove a
+    /// kind from this list on the day its model lands, and every
+    /// counter starts counting it with no other change.
+    pub fn is_unmodeled_by_design(self) -> bool {
+        matches!(self, CriterionKind::GantryPush)
     }
 }
 
@@ -614,6 +723,38 @@ impl CriterionStatus<'_> {
     /// exonerated the cut" must consult this first.
     pub fn is_vacuous(&self) -> bool {
         self.population.is_some_and(GatePopulation::is_vacuous)
+    }
+
+    /// **True when this row is absent by design and no operator action
+    /// can fill it.** S1 (2026-09-18). This is the ONE predicate every
+    /// counter reads before it turns an `Unmodeled` tally into an
+    /// operator prompt: [`ToolpathLoadVerdict::any_unmodeled`] and,
+    /// through it, the export gate, the Readiness triage and the
+    /// pre-flight panel.
+    ///
+    /// **It is NOT `matches!(reason, NotImplemented(_))`.** Measured
+    /// 2026-09-18: two shipped gates already refuse with
+    /// `NotImplemented` for reasons the operator CAN fix — the power
+    /// gate when no `MachineProfile` reached the evaluator
+    /// (`power.rs`), and the deflection gate when the tool reports zero
+    /// stickout (`deflection.rs`). Both name a missing input. Treating
+    /// the bare variant as a known absence would stop the export gate
+    /// refusing on either, which is a silent weakening of two gates.
+    ///
+    /// The distinction is the KIND, not the reason: see
+    /// [`CriterionKind::is_unmodeled_by_design`]. The reason must still
+    /// be `NotImplemented`, so a drill cycle's `NotApplicableForOp`
+    /// gantry row keeps the arm the three milling gates take beside it.
+    ///
+    /// The row itself stays in [`ToolpathLoadVerdict::criteria`]: it is
+    /// a VISIBLE absence, not a hidden one. This predicate suppresses
+    /// the prompt, never the row.
+    pub fn is_known_absence(&self) -> bool {
+        self.kind.is_unmodeled_by_design()
+            && matches!(
+                self.unmodeled_reason,
+                Some(UnmodeledReason::NotImplemented(_))
+            )
     }
 
     /// The one operator-facing vacuity clause, shared by every renderer

@@ -23,7 +23,7 @@ need a register.
 | T-7 | Two definitions of "teeth in cut", differing by helix wrap | **withdrawn** — the premise fails |
 | T-8 | The power derate thins the chip, and only half the power responds | **closed** `a7c17be7` |
 | T-9 | A feed clamped onto a ceiling ships one rounding step above it | **closed** `6a9330dc` — the feed and the plunge floor; the pill fallback too; the export validator gets the travel rate |
-| T-10 | No gantry feed-force limit exists; the steppers are unmodelled | open — needs a thrust rating |
+| T-10 | No gantry feed-force limit exists; the steppers are unmodelled | open — needs a thrust rating; the absence is a visible row since S1 (2026-09-18) |
 | T-11 | Feed modulation multiplies mm by a fraction of a different quantity | **closed** `809d28b9` |
 | T-12 | A depth recommendation is dropped for 14 of 24 operations, silently | **closed** `ad2f749b` |
 | T-13 | `F_edge` is applied per mm of depth to an edge that is longer than that | open — needs a literature anchor |
@@ -542,6 +542,19 @@ cut, not in a corner, and the acceleration budget is nowhere near binding.
 not belt driven, and a check on whether the frame rather than the motor sets
 the real limit. The one piece of evidence on that point, a Shapeoko belt
 thread, says the drive compliance dominated.
+
+**Update 2026-09-18 (S1) — the absence is now on the surface.** The limit is
+still absent; what changed is that the crate says so. `CriterionKind::GantryPush`
+joins the criterion tier as a row that is always `Unmodeled`, with the clause
+*"no machine-side thrust rating is published; register T-10"*. The row carries
+no number, no bound and no population, so it cannot read as a measurement. It
+never refuses an export, and it never prompts the operator to act — no
+simulation run and no tool datum can fill it. The blocker is unchanged: a
+thrust rating nobody publishes.
+
+The row is removed on the day a rating exists. Delete
+`CriterionKind::GantryPush` from `CriterionKind::is_unmodeled_by_design` and
+every counter starts counting it, with no other change.
 
 ---
 

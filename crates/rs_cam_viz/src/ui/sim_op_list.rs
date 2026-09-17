@@ -1083,6 +1083,18 @@ fn toolpath_status_flags(
             if is_drill_not_applicable(verdict, &status) {
                 continue;
             }
+            // S1 (2026-09-18): a KNOWN absence raises no flag. This
+            // strip is a triage prompt — every flag it paints asks the
+            // operator to do something, and the `?` flag below asks
+            // them to re-run the simulation or supply tool data.
+            // Neither fills the gantry-push row: the model does not
+            // exist and no project datum creates it (register T-10).
+            // The row still ships in `criteria()`, so the per-limit
+            // rows render it as a visible absence; it just does not
+            // prompt. See `CriterionStatus::is_known_absence`.
+            if status.is_known_absence() {
+                continue;
+            }
             // X-VAC (2026-08-14): a vacuous verdict raised no flag at
             // all on this surface — `Within` + `Validated` is the silent
             // case — so an op whose gates measured nothing looked
@@ -1200,6 +1212,7 @@ fn criterion_short_label(kind: CriterionKind) -> &'static str {
         CriterionKind::Chipload => "advance/t",
         CriterionKind::Power => "power",
         CriterionKind::Deflection => "defl",
+        CriterionKind::GantryPush => "gantry",
         CriterionKind::DrillChipWelding => "weld",
         CriterionKind::DrillPeckAdequacy => "peck",
         CriterionKind::DrillPlungeFeed => "plunge",
