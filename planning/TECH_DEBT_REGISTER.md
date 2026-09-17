@@ -29,6 +29,7 @@ need a register.
 | T-13 | `F_edge` is applied per mm of depth to an edge that is longer than that | open — needs a literature anchor |
 | T-14 | A drop-cutter finishing pass measures 42.5 mm of axial engagement | open — R1 made it load-bearing |
 | T-15 | Pass 9 can raise a feed the power ladder just clamped | open — reachable by hand TODAY |
+| T-16 | The deflection bending diameter cites a source that does not say it | open — comment is wrong today |
 
 ---
 
@@ -774,6 +775,86 @@ machines, tools or materials outside that sample.
 **Fix:** re-check the power ceiling after the rescale, or make the rescale
 refuse to raise a feed on a recipe whose `FeedsDerates::power_limit` is below
 1.0. The second is cheaper and is enough.
+
+---
+
+## T-16 — the bending diameter cites a source that does not say it
+
+`ENDMILL_CORE_FRACTION = 0.7` (`feeds::predict`) is the bending section the
+closed-form deflection model uses. Its comment says:
+
+> The 0.7x reduction is the canonical handbook value for 2- to 3-flute end
+> mills (Machinery's Handbook stiffness-correction notes; matches the FSWizard
+> "effective root diameter" recommendation).
+
+**A literature search found no source that gives 0.7 as a 2- to 3-flute core
+fraction.** Published 2-flute core fractions run 0.54 to 0.60. The number is
+neither a core diameter nor an equivalent diameter, and the citation does not
+support it.
+
+## Two quantities the sources conflate, and a cantilever needs the second
+
+| | Published range | What it is |
+|---|---|---|
+| **Core diameter** | 0.47 – 0.85 D | the geometric root between the flutes |
+| **Equivalent diameter** | 0.75 – 0.93 D | the solid shaft with the SAME bending compliance |
+
+**The flute-count effect reverses sign between them.** More flutes gives a
+LARGER core and a SMALLER equivalent diameter. Mixing the two gets the
+correction backwards, which is exactly what this session did on its first
+attempt before the research corrected it.
+
+## What the number should be, and what that changes
+
+Equivalent diameter by flute count, derived from Kivanc and Budak's published
+deflection tables (Sabanci MSc thesis 2004, Tables 3.1 and 3.2; same work as
+IJMTM 44(11):1151-1161). The ratios repeat to four significant figures across
+6, 10, 16 and 20 mm and across two materials, so they are scale-free.
+
+| Flutes | Equivalent d | Engine uses | Deflection error |
+|---|---|---|---|
+| 2 | 0.889 | 0.70 | **2.60x OVER-stated** |
+| 3 | 0.841 | 0.70 | 2.08x OVER-stated |
+| 4 | 0.748 | 0.70 | 1.30x OVER-stated |
+
+**The engine is CONSERVATIVE, not permissive.** It over-states deflection on
+every flute count. So this is not a safety defect. It is an over-restriction:
+a 2-flute tool is modelled as bending 2.6 times more than it does, so the
+deflection back-off fires when it need not and the recipe is needlessly timid.
+
+## It probably explains a documented anomaly
+
+`DEFLECTION_BACKOFF_TARGET_UM` records that the predictor "over-shoots
+post-sim by ~36 %" and treats that bias as a safety margin. **The 4-flute
+over-read computed above is +30 %.** The documented bias may simply BE the
+missing flute-count term, measured on a 4-flute fixture. If so, correcting the
+diameter removes the bias rather than adding a new error, and the back-off
+threshold should be revisited in the same change.
+
+## Why this is not a simple swap
+
+Confidence is medium-high for 3 and 4 flutes and **low-medium for 2** — two of
+eight 2-flute rows in the source disagree, giving 0.920 against 0.889.
+
+And the change LOOSENS a guard. Deflection numbers all get smaller, so the
+back-off fires less. Loosening a safety bound on medium-confidence literature
+is a decision for the operator, not for the engine.
+
+**Separately and freely: the comment is wrong today.** A citation that does
+not say what it is cited for is a defect on its own, whatever happens to the
+number. That half can be corrected without touching behaviour.
+
+## What the search could not settle
+
+**No manufacturer publishes core diameter in any catalogue dimension table.**
+Harvey, Guhring, Garr, Fullerton, M.A. Ford, Fastcut and Dormer were all
+checked. The figures that exist come from patents and from academic work.
+
+Spread between makers at ONE flute count exceeds the spread across flute
+counts — at 4 flutes the published core figures run 0.53 to 0.70, which is
+9.8x in stiffness. **There is no universal core constant to find.** Diameter
+does not matter, but stick-out ratio does: OSG raised one 3-flute core from
+0.38 D to 0.50 D purely because it is a long-flute tool.
 
 ---
 
