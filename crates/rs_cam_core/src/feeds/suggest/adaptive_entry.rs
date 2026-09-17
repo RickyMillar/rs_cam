@@ -417,8 +417,16 @@ pub(super) fn rescale_feed_to_final_geometry(
     // Calculator Step 7, re-applied. The cutting-feed ceiling is a physical
     // limit, not a derate, so it survives a re-derivation the same way it
     // survived retired pass 8's lift.
+    //
+    // T-18 (2026-09-18) — the axis. `rescaled` derives from
+    // `calc.feed_rate_mm_min`, which calculator Step 9 has already multiplied
+    // by `safety_factor`, so it sits on the COMMANDED axis. The cap therefore
+    // has to be the ceiling on that axis,
+    // `commanded_cutting_feed_ceiling_mm_min()`. The RAW-axis
+    // `cutting_feed_ceiling_mm_min()` that stood here let a rescaled feed
+    // exceed the highest value the calculator itself can ever emit.
     let mut cap_hit = None;
-    let ceiling = machine.cutting_feed_ceiling_mm_min();
+    let ceiling = machine.commanded_cutting_feed_ceiling_mm_min();
     if usable(ceiling) && rescaled > ceiling {
         rescaled = ceiling;
         cap_hit = Some(FeedRecalibrationCap::MaxFeed);
@@ -464,11 +472,17 @@ pub(super) fn rescale_feed_to_final_geometry(
                     floor_mm_per_tooth: floor,
                     band_capped_from,
                 });
-                // Same conflict resolution as Step 9b: the machine cap wins
-                // over the floor, and the warning still fires so the operator
-                // sees that neither guarantee was met.
-                let machine_max_after_safety = machine.max_feed_mm_min * machine.safety_factor;
-                rescaled = (floor * divisor).min(machine_max_after_safety);
+                // Same conflict resolution as Step 9b: the COMMANDED
+                // cutting-feed ceiling wins over the floor, and the warning
+                // still fires so the operator sees that neither guarantee was
+                // met. This lift works on the COMMANDED axis, so the cap it
+                // reads is `commanded_cutting_feed_ceiling_mm_min()`. T-18
+                // (2026-09-18) replaced `max_feed_mm_min × safety_factor`
+                // here — a fraction of the gantry TRAVEL rate, a different
+                // quantity, which let the lift restore a feed above the
+                // ceiling the cap above just enforced.
+                let commanded_cut_ceiling = machine.commanded_cutting_feed_ceiling_mm_min();
+                rescaled = (floor * divisor).min(commanded_cut_ceiling);
             }
         }
     }

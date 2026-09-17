@@ -139,6 +139,38 @@ impl MachineProfile {
             .min(self.max_feed_mm_min)
     }
 
+    /// T-18 — the cutting-feed ceiling stated on the COMMANDED axis:
+    /// [`Self::cutting_feed_ceiling_mm_min`] × `safety_factor`.
+    ///
+    /// `feeds::calculate` names two axes (the F-2 block in `feeds/mod.rs`):
+    ///
+    /// - RAW axis — the feed before Step 9.
+    /// - COMMANDED axis — the feed the machine receives, after Step 9.
+    ///
+    /// Step 7 caps the RAW feed at [`Self::cutting_feed_ceiling_mm_min`] with
+    /// no factor. Step 9 then multiplies the feed by `safety_factor`. The
+    /// calculator's output invariant is therefore
+    ///
+    /// ```text
+    /// commanded_feed <= cutting_feed_ceiling_mm_min() * safety_factor
+    /// ```
+    ///
+    /// and this function is the right-hand side. Every clamp that runs AFTER
+    /// Step 9 — the Step 9b rubbing-floor lift, the Step 9c drill envelope
+    /// clamp, and Suggest pass 9 in `feeds/suggest/adaptive_entry.rs` — reads
+    /// this value. A clamp that reads `max_feed_mm_min * safety_factor`
+    /// instead caps a CUTTING feed against a fraction of the gantry TRAVEL
+    /// rate, which is a different quantity (T-18).
+    ///
+    /// On every shipped preset the travel rate sits under
+    /// [`DEFAULT_CUTTING_FEED_CAP_MM_MIN`], so the ceiling equals the travel
+    /// rate and this value equals `max_feed_mm_min * safety_factor`. The two
+    /// separate on a profile with an explicit `max_cutting_feed_mm_min` below
+    /// travel, or with a gantry faster than the default cap.
+    pub fn commanded_cutting_feed_ceiling_mm_min(&self) -> f64 {
+        self.cutting_feed_ceiling_mm_min() * self.safety_factor
+    }
+
     /// Acceleration-aware kinematics for estimators that opt into them —
     /// the F-034 cycle-time integrator on demand, and the strategy
     /// advisor's wall-clock comparison (STRATEGY_ADVISOR_2026-06-17).
@@ -392,6 +424,46 @@ mod tests {
         // Built-ins (travel ≤ cap) keep pre-F4 behavior exactly.
         let preset = MachineProfile::shapeoko_vfd();
         assert!((preset.cutting_feed_ceiling_mm_min() - preset.max_feed_mm_min).abs() < 1e-9);
+    }
+
+    /// T-18 — the COMMANDED-axis ceiling. On every shipped preset the
+    /// travel rate sits under the default cutting cap, so the ceiling equals
+    /// the travel rate and the commanded ceiling equals
+    /// `max_feed_mm_min * safety_factor`. A post-Step-9 clamp therefore moves
+    /// no shipped number when it swaps one expression for the other. The two
+    /// separate on a fast gantry with a slow cutting ceiling.
+    #[test]
+    fn commanded_cutting_ceiling_is_the_ceiling_after_the_safety_factor() {
+        for preset in [
+            MachineProfile::generic_wood_router(),
+            MachineProfile::shapeoko_vfd(),
+            MachineProfile::shapeoko_makita(),
+        ] {
+            assert!(
+                (preset.cutting_feed_ceiling_mm_min() - preset.max_feed_mm_min).abs() < 1e-9,
+                "{}: travel sits under the default cutting cap",
+                preset.name
+            );
+            assert!(
+                (preset.commanded_cutting_feed_ceiling_mm_min()
+                    - preset.max_feed_mm_min * preset.safety_factor)
+                    .abs()
+                    < 1e-9,
+                "{}: the commanded ceiling must equal the travel rate after the safety \
+                 factor on a preset",
+                preset.name
+            );
+        }
+
+        let mut fast_gantry = MachineProfile::generic_wood_router();
+        fast_gantry.max_feed_mm_min = 10_000.0;
+        fast_gantry.max_cutting_feed_mm_min = Some(500.0);
+        fast_gantry.safety_factor = 0.8;
+        assert!((fast_gantry.commanded_cutting_feed_ceiling_mm_min() - 400.0).abs() < 1e-9);
+        assert!(
+            (fast_gantry.max_feed_mm_min * fast_gantry.safety_factor - 8_000.0).abs() < 1e-9,
+            "the travel-rate expression is the quantity T-18 replaced"
+        );
     }
 
     #[test]

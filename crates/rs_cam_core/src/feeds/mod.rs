@@ -2296,9 +2296,14 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // tool*, but a chipload below 0.025 mm/tooth heats the edge and
     // burns the work — the cure is worse than the disease.
     //
-    // The machine feed cap (Step 7) is treated as a hard physical
-    // limit: if lifting feed to the floor would exceed
-    // `machine.max_feed_mm_min × safety_factor`, we leave feed at the
+    // The CUTTING feed ceiling of Step 7 is treated as a hard physical
+    // limit. This lift runs after Step 9, so it works on the COMMANDED
+    // axis and the cap it reads is the ceiling on that axis:
+    // `machine.commanded_cutting_feed_ceiling_mm_min()`. T-18 (2026-09-18)
+    // replaced `machine.max_feed_mm_min × safety_factor` here — a fraction
+    // of the gantry TRAVEL rate, which is a different quantity and lets the
+    // lift restore a feed above the ceiling Step 7 just enforced. If
+    // lifting feed to the floor would exceed that cap, we leave feed at the
     // cap and still emit the warning. In that situation the user must
     // either drop RPM (so floor × rpm × flutes fits under the cap) or
     // accept the rubbing recipe — the engine surfaces the conflict
@@ -2349,9 +2354,9 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
                     ClampReason::RubbingFloor { .. } => None,
                 },
             });
-            let machine_max_feed_after_safety = machine.max_feed_mm_min * machine.safety_factor;
+            let commanded_cut_ceiling = machine.commanded_cutting_feed_ceiling_mm_min();
             let target_feed = floor * fpt_divisor;
-            feed = target_feed.min(machine_max_feed_after_safety);
+            feed = target_feed.min(commanded_cut_ceiling);
         }
     }
 
@@ -2366,9 +2371,15 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     //    feed/Ø per minute). Same clamp-and-warn convention as the
     //    rubbing floor above — never silently serve a recipe in the
     //    rubbing band below the envelope or the breakage band above it.
-    //    The machine cap (post-safety) still wins over the envelope
+    //    The COMMANDED cutting-feed ceiling still wins over the envelope
     //    floor: a machine that can't reach the floor gets the honest
-    //    conflict via the warning rather than an unreachable feed.
+    //    conflict via the warning rather than an unreachable feed. This
+    //    clamp runs after Step 9, so it works on the COMMANDED axis and
+    //    the cap it reads is
+    //    `machine.commanded_cutting_feed_ceiling_mm_min()` — the Step 7
+    //    ceiling on that axis. T-18 (2026-09-18) replaced
+    //    `machine.max_feed_mm_min × safety_factor` here, which is a
+    //    fraction of the gantry TRAVEL rate and a different quantity.
     // 2. Alias `plunge_rate` to the final drill feed. Drill op configs
     //    alias `set_feed_rate` / `set_plunge_rate` onto one field
     //    ("feed IS plunge"), and `apply_feeds_subset` writes feed then
@@ -2381,11 +2392,9 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         let (env_lo_per_mm, env_hi_per_mm) = material.drill_plunge_feed_envelope_per_mm();
         let (env_lo, env_hi) = (env_lo_per_mm * d, env_hi_per_mm * d);
         if feed < env_lo || feed > env_hi {
-            let machine_max_feed_after_safety = machine.max_feed_mm_min * machine.safety_factor;
+            let commanded_cut_ceiling = machine.commanded_cutting_feed_ceiling_mm_min();
             let requested = feed;
-            let clamped = feed
-                .clamp(env_lo, env_hi)
-                .min(machine_max_feed_after_safety);
+            let clamped = feed.clamp(env_lo, env_hi).min(commanded_cut_ceiling);
             warnings.push(FeedsWarning::DrillFeedClampedToEnvelope {
                 requested,
                 actual: clamped,
