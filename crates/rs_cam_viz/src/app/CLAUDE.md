@@ -6,8 +6,12 @@ processing. The server lives here, not in `rs_cam_mcp`.
 ## Files
 
 - `../app.rs` — `RsCamApp` and the frame update loop.
-- `mcp.rs` and `mcp/commands.rs` — the MCP request route: a wire request in, a
-  `Command` out, one dispatch.
+- `mcp.rs` + `mcp/` — the MCP pump (`handle_mcp_request`, `ui_query`,
+  export, notifications); children `commands.rs` (the core command route),
+  `project.rs` (project reads, `load_project`), `generation.rs` (add,
+  generate, optimize, feeds, multi-tool), `diagnostics.rs` (diagnostics,
+  narration, debug trace), `simulation.rs` (run, scrub, cut trace,
+  collisions), `view.rs` (reach map, screenshots, `set_ui_view`), `tests.rs`.
 - `export.rs` — the GUI export path.
 - `simulation.rs` — the per-frame simulation work.
 - `viewport.rs`, `gpu_upload.rs` — the viewport frame and the GPU upload pass.
