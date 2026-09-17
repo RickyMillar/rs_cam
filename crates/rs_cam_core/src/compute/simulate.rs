@@ -840,6 +840,426 @@ where
 /// restored values *are* the previous run's values and the code that runs
 /// afterwards is unchanged. See `sim_prefix.rs` for the key closure, the
 /// phantom-prior-stock rule and the memory bound.
+/// The cold-start accumulator set: what a run with no memo hit begins from.
+///
+/// CMP-18 seam 1. This was a `PrefixState` literal inside the 609-line
+/// `run_simulation_memoized`, on the `None` arm of the resume match.
+fn cold_prefix_state(request: &SimulationRequest, global_bbox: &BoundingBox3) -> PrefixState {
+    PrefixState {
+        total_moves: 0,
+        boundary_index: 0,
+        boundaries: Vec::new(),
+        checkpoints: Vec::new(),
+        cut_samples: Vec::new(),
+        drill_samples_all: Vec::new(),
+        drill_summaries_all: Vec::new(),
+        composite_mesh: StockMesh::empty(),
+        global_stock: TriDexelStock::from_bounds(global_bbox, request.resolution),
+        column_deviations: request.model_mesh.as_ref().map(|_| Vec::new()),
+        rapid_collisions: Vec::new(),
+        rapid_collision_move_indices: Vec::new(),
+        prior_stocks: std::collections::HashMap::new(),
+        global_drill_ops: Vec::new(),
+        group_stock: None,
+        group_drill_ops: Vec::new(),
+    }
+}
+
+/// CMP-18 seam: build the `SimulationCutTrace` from the run's sample
+/// streams, stamp its provenance and apply the F-034 kinematics override.
+///
+/// Pure in the loop's terms: it reads the request and the three streams the
+/// loop accumulated, and touches no accumulator.
+fn assemble_cut_trace(
+    request: &SimulationRequest,
+    sample_step_mm: f64,
+    cut_samples: Vec<crate::stock::simulation_cut::SimulationCutSample>,
+    drill_samples: Vec<crate::ops::drill_metrics::DrillSample>,
+    drill_summaries: Vec<crate::ops::drill_metrics::DrillToolpathSummary>,
+) -> SimulationCutTrace {
+    let semantic_traces: Vec<_> = request
+        .groups
+        .iter()
+        .flat_map(|group| {
+            group.toolpaths.iter().filter_map(|entry| {
+                entry
+                    .semantic_trace
+                    .as_deref()
+                    .map(|trace| (entry.id, trace))
+            })
+        })
+        .collect();
+    // P4: collect drill-kind toolpath ids so the trace builder
+    // suppresses air-cut / low-engagement issue spam for them.
+    let metrics_not_applicable_ids: std::collections::BTreeSet<ToolpathId> = request
+        .groups
+        .iter()
+        .flat_map(|g| g.toolpaths.iter())
+        .filter(|e| e.metrics_not_applicable)
+        .map(|e| e.id)
+        .collect();
+    let mut trace = SimulationCutTrace::from_samples_with_context(
+        sample_step_mm,
+        cut_samples,
+        semantic_traces,
+        &metrics_not_applicable_ids,
+    );
+    trace.provenance = Some(build_simulation_provenance(request));
+    trace.drill_samples = drill_samples;
+    trace.drill_summaries = drill_summaries;
+    // F-034: kinematics-aware cycle time override. When the
+    // caller supplied a `KinematicsContext`, recompute each
+    // toolpath's `total_runtime_s` from its IR using the
+    // trapezoidal integrator and resum the project-wide total.
+    // Other fields on the summary (cutting_runtime_s, air_cut_s,
+    // engagement averages …) are left untouched — they're
+    // measured from dexel samples and aren't directly affected
+    // by accel modelling. F-035 will revisit them once predicted
+    // effective feed enters the gates.
+    if let Some(ctx) = request.kinematics {
+        apply_kinematics_cycle_time(&mut trace, request, ctx);
+    }
+    trace
+}
+
+/// CMP-18 seam: the end-of-group work.
+///
+/// Pointwise column deviations for this group's final stock, then the
+/// group's mesh extracted, drill cylinders appended, framed to the
+/// zero-rooted stock-relative frame and composited. Runs once per group,
+/// after its last entry has carved.
+#[allow(clippy::too_many_arguments)]
+fn finish_group<F>(
+    run: &mut PrefixState,
+    group_stock: &TriDexelStock,
+    group_drill_ops: &[Arc<crate::ops::drill_op::DrillOp>],
+    request: &SimulationRequest,
+    group: &SimGroupEntry,
+    group_ordinal: usize,
+    model_index: Option<&SpatialIndex>,
+    set_phase: &mut F,
+) where
+    F: FnMut(&str),
+{
+    // Pointwise column deviations for this group's final stock (world
+    // frame), before the local stock is dropped.
+    if let (Some(model), Some(index), Some(out)) = (
+        request.model_mesh.as_ref(),
+        model_index,
+        run.column_deviations.as_mut(),
+    ) {
+        set_phase("Compute column deviations");
+        collect_column_deviations(
+            group_stock,
+            &group.local_to_global,
+            index,
+            model,
+            group_ordinal,
+            request.stock_bbox.min,
+            out,
+        );
+    }
+
+    // After all toolpaths in this group, extract mesh and composite.
+    let mut group_mesh = dexel_stock_to_mesh(group_stock);
+    if !group_drill_ops.is_empty() {
+        let refs: Vec<&crate::ops::drill_op::DrillOp> =
+            group_drill_ops.iter().map(|d| d.as_ref()).collect();
+        crate::stock::dexel_mesh::append_drill_cylinders(&mut group_mesh, &refs);
+    }
+    // Same frame contract as the checkpoint meshes: every group lands
+    // in the zero-rooted stock-relative frame, identity groups via the
+    // `-stock_bbox.min` shift. Before this, a MIXED project composited
+    // its identity groups (world) and non-identity groups
+    // (stock-relative) into one mesh, displacing the two setups'
+    // surfaces from each other by the stock origin.
+    let group_global =
+        transform_stock_mesh_to_global(&group_mesh, &group.local_to_global, request.stock_bbox.min);
+    run.composite_mesh.append(&group_global);
+}
+
+/// CMP-18 seam: stamp one entry into the global playback stock.
+///
+/// The parallel global stock exists for checkpoint and playback support.
+/// A drill entry removes its material analytically; every other entry is
+/// replayed into the global frame with the SAME `RadialProfileLUT` the
+/// local carve used (S4a — it is the same cutter, so it takes the same
+/// profile).
+///
+/// The caller decides whether to call this at all: a lateral group is
+/// skipped outright (G-LATERALSCRUB).
+#[allow(clippy::too_many_arguments)]
+fn stamp_playback_stock(
+    run: &mut PrefixState,
+    entry: &SimToolpathEntry,
+    entry_toolpath: &Toolpath,
+    group: &SimGroupEntry,
+    request: &SimulationRequest,
+    lut: &RadialProfileLUT,
+    radius: f64,
+    playback_direction: StockCutDirection,
+    cancel: &AtomicBool,
+) {
+    if let Some(drill_op_arc) = entry.drill_op.as_ref() {
+        // For drill ops, apply analytical removal in the global
+        // frame — hole XYs are frame-mapped for every group,
+        // non-identity through `local_to_global` and identity by
+        // `-stock_bbox.min`.
+        let global_drill_op =
+            group_drill_op_to_global(drill_op_arc, &group.local_to_global, request.stock_bbox.min);
+        run.global_stock
+            .apply_drill_op(&global_drill_op, playback_direction);
+        run.global_drill_ops.push(global_drill_op);
+    } else {
+        // S4a: this used to build a second `RadialProfileLUT` from
+        // `entry.tool` at `LUT_SAMPLES` — the same two arguments as
+        // `lut` above, i.e. a bit-for-bit duplicate of a 4096-entry
+        // table, rebuilt once per toolpath. The playback stamp is a
+        // different grid and a different frame, but it is the same
+        // cutter, so it takes the same profile.
+        let global_tp = Arc::new(group_toolpath_to_global(
+            entry_toolpath,
+            &group.local_to_global,
+            request.stock_bbox.min,
+        ));
+        let _ = run.global_stock.simulate_toolpath_with_lut_cancel(
+            &global_tp,
+            lut,
+            radius,
+            playback_direction,
+            &|| cancel.load(Ordering::SeqCst),
+        );
+    }
+}
+
+/// CMP-18 seam: publish one playback checkpoint.
+///
+/// The composited display mesh plus the stock a scrub resumes from. A
+/// lateral group publishes its LOCAL stock and the transform that frames
+/// it; every other group publishes the global stock, as it always has —
+/// see `SimCheckpointMesh::stock_local_to_global`.
+fn push_checkpoint(
+    run: &mut PrefixState,
+    group_stock: &TriDexelStock,
+    group_drill_ops: &[Arc<crate::ops::drill_op::DrillOp>],
+    group: &SimGroupEntry,
+    request: &SimulationRequest,
+    lateral_playback: bool,
+    checkpoint_frame: Option<SetupTransformInfo>,
+) {
+    let mut local_mesh = dexel_stock_to_mesh(group_stock);
+    // §6.E append analytic drill cylinders so checkpoint frames
+    // show clean circular hole walls even at low dexel resolution.
+    // Cylinders are emitted in local-frame coords; the
+    // transform_stock_mesh_to_global call below handles re-framing.
+    if !group_drill_ops.is_empty() {
+        let refs: Vec<&crate::ops::drill_op::DrillOp> =
+            group_drill_ops.iter().map(|d| d.as_ref()).collect();
+        crate::stock::dexel_mesh::append_drill_cylinders(&mut local_mesh, &refs);
+    }
+    let checkpoint_mesh =
+        transform_stock_mesh_to_global(&local_mesh, &group.local_to_global, request.stock_bbox.min);
+    let checkpoint_stock = if lateral_playback {
+        group_stock.checkpoint()
+    } else {
+        run.global_stock.checkpoint()
+    };
+    run.checkpoints.push(Arc::new(SimCheckpointMesh {
+        boundary_index: run.boundary_index,
+        mesh: checkpoint_mesh,
+        stock: checkpoint_stock,
+        stock_local_to_global: checkpoint_frame,
+    }));
+    run.boundary_index += 1;
+}
+
+/// The per-generation constants one entry's carve needs, so
+/// [`carve_entry`] takes six arguments rather than eleven.
+struct CarveEnv<'a> {
+    request: &'a SimulationRequest,
+    /// The cutter's radial profile. ONE table per entry: the local carve
+    /// and the global playback stamp are the same cutter (S4a).
+    lut: &'a RadialProfileLUT,
+    radius: f64,
+    /// Per-setup stocks are always simulated from the top: setup-local Z
+    /// always points at the spindle. The global stock takes the group's
+    /// real direction instead — see G-DRILLFLIP.
+    direction: StockCutDirection,
+    sample_step_mm: f64,
+    cancel: &'a AtomicBool,
+}
+
+/// CMP-18 seam: remove one entry's material from the group stock.
+///
+/// Three kernels, chosen by the entry and the request:
+///
+/// - a drill entry removes its cone/cylinder envelope analytically and
+///   emits the drill-native per-peck samples and per-toolpath summary;
+/// - a metric-enabled milling entry stamps per segment and accumulates
+///   `SimulationCutSample`s;
+/// - a metric-disabled milling entry stamps per segment and accumulates
+///   nothing but rapid hits.
+///
+/// Every kernel appends its rapid hits to the run. The caller advances
+/// `total_moves` afterwards, so `run.total_moves` still reads as this
+/// entry's start move throughout.
+fn carve_entry(
+    run: &mut PrefixState,
+    group_stock: &mut TriDexelStock,
+    group_drill_ops: &mut Vec<Arc<crate::ops::drill_op::DrillOp>>,
+    entry: &SimToolpathEntry,
+    entry_toolpath: &Toolpath,
+    env: &CarveEnv<'_>,
+) -> Result<(), SimulationError> {
+    if let Some(drill_op_arc) = entry.drill_op.as_ref() {
+        // §6.E analytical drill removal: bypass per-segment
+        // stamping. Cone/cylinder envelope is applied directly
+        // to the dexel grid; the linearized toolpath remains
+        // available for rapid-collision checks, G-code, and
+        // wire-render.
+        // `env.direction` is FromTop for every per-setup stock; the
+        // global stock takes the group's real direction instead
+        // (G-DRILLFLIP). See `CarveEnv::direction`.
+        group_stock.apply_drill_op(drill_op_arc, env.direction);
+        group_drill_ops.push(Arc::clone(drill_op_arc));
+        // PR2: emit per-peck drill samples + per-toolpath summary
+        // (the analytical kernel doesn't produce
+        // `SimulationCutSample`s, so the drill-native stream lands
+        // here instead).
+        let pecks = crate::ops::drill_metrics::emit_drill_samples(entry.id, drill_op_arc);
+        let summary =
+            crate::ops::drill_metrics::build_drill_toolpath_summary(entry.id, drill_op_arc, &pecks);
+        run.drill_samples_all.extend(pecks);
+        run.drill_summaries_all.push(summary);
+    } else if env.request.metric_options.enabled {
+        let entry_rpm = entry.spindle_rpm.unwrap_or(env.request.spindle_rpm);
+        // F2.2 (defect class C3): honor `spans_valid`. When a
+        // transform invalidated the spans (legacy invalidators;
+        // TSP now drops exactly the spans it split instead),
+        // stamping per-sample ancestry from the fragmented
+        // vector gives samples WRONG ancestry — a tagged
+        // Entry/LinkBridge sample can become effectively
+        // untagged and drive a gate trip with phantom dexel
+        // engagement (the WANAKA 622 µm DeflectionSetupLocked
+        // mechanism). Degrade honestly: no span_path, transit
+        // classification from per-move intents only.
+        //
+        // In the valid case the intent bitmap is UNIONED in:
+        // a transit span dropped by TSP (split LinkBridge)
+        // leaves its moves without ancestry, but their intents
+        // still classify them as transit.
+        let intent_transits = entry.annotated.transit_moves_bitmap_from_intents();
+        let (span_paths_by_move, transit_moves) = if entry.annotated.spans_valid {
+            let mut transit = entry.annotated.transit_moves_bitmap();
+            for (slot, from_intent) in transit.iter_mut().zip(intent_transits) {
+                *slot = *slot || from_intent;
+            }
+            (entry.annotated.span_paths_by_move(), transit)
+        } else {
+            (
+                vec![Vec::new(); entry_toolpath.moves.len()],
+                intent_transits,
+            )
+        };
+        let mut rapid_check = RapidClearanceCheck::new(&entry.tool);
+        let mut samples = group_stock
+            .simulate_toolpath_with_lut_metrics_rapid_checked(
+                entry_toolpath,
+                env.lut,
+                &entry.tool,
+                env.radius,
+                env.direction,
+                entry.id,
+                entry_rpm,
+                entry.flute_count,
+                env.request.rapid_feed_mm_min,
+                env.sample_step_mm,
+                entry.semantic_trace.as_deref(),
+                &span_paths_by_move,
+                &transit_moves,
+                env.request.metric_options.capture_arc_engagement,
+                &|| env.cancel.load(Ordering::SeqCst),
+                Some(&mut rapid_check),
+            )
+            .map_err(|_cancelled| SimulationError::Cancelled)?;
+        run.cut_samples.append(&mut samples);
+        collect_rapid_hits(
+            rapid_check,
+            run.total_moves,
+            &mut run.rapid_collisions,
+            &mut run.rapid_collision_move_indices,
+        );
+    } else {
+        let mut rapid_check = RapidClearanceCheck::new(&entry.tool);
+        group_stock
+            .simulate_toolpath_with_lut_cancel_rapid_checked(
+                entry_toolpath,
+                env.lut,
+                env.radius,
+                env.direction,
+                &|| env.cancel.load(Ordering::SeqCst),
+                Some(&mut rapid_check),
+            )
+            .map_err(|_cancelled| SimulationError::Cancelled)?;
+        collect_rapid_hits(
+            rapid_check,
+            run.total_moves,
+            &mut run.rapid_collisions,
+            &mut run.rapid_collision_move_indices,
+        );
+    }
+    Ok(())
+}
+
+/// CMP-18 seam: the bookkeeping one entry needs BEFORE it carves.
+///
+/// The prior-stock snapshot every rest-machining generator and the dressup
+/// air-cut filter read, and the analytic-removal rapid pre-pass. Both must
+/// see the stock as it stands after every previous toolpath and before this
+/// one.
+fn record_pre_carve(
+    run: &mut PrefixState,
+    group_stock: &TriDexelStock,
+    entry: &SimToolpathEntry,
+    group: &SimGroupEntry,
+    k: usize,
+) {
+    // Snapshot the stock *before* this toolpath carves so the dressup
+    // air-cut filter and rest-machining-aware generators can use it.
+    //
+    // F.4: when this position is also this group's phantom-prior-
+    // stock slot (the first pending FromRemainingStock op, recorded
+    // by the request builder), the pending op's snapshot is taken at
+    // this exact same sequence point — share the one stock clone via
+    // `Arc::clone` rather than cloning the (potentially large) dexel
+    // stock twice.
+    let pre_carve_stock = Arc::new(group_stock.clone());
+    if let Some((phantom_k, phantom_id)) = group.phantom_prior_stock
+        && phantom_k == k
+    {
+        run.prior_stocks
+            .insert(phantom_id, Arc::clone(&pre_carve_stock));
+    }
+    run.prior_stocks.insert(entry.id, pre_carve_stock);
+
+    // Rapid collisions, split by removal kernel (S2). An entry whose
+    // material is removed ANALYTICALLY never enters a replay walk, so
+    // it keeps the pre-pass against the *current* stock state (after
+    // all previous toolpaths, before this one carves). Stamped entries
+    // are checked inside their own walk below, against live stock and
+    // with the cutter's profile — the frozen snapshot cannot carry a
+    // disc query without over-flagging the op's own already-cut rows.
+    if entry.drill_op.is_some() {
+        let rapids =
+            check_rapid_collisions_against_stock(&entry.annotated.toolpath, &group_stock.z_grid);
+        for rc in &rapids {
+            run.rapid_collision_move_indices
+                .push(run.total_moves + rc.move_index);
+        }
+        run.rapid_collisions.extend(rapids);
+    }
+}
+
 pub fn run_simulation_memoized<F>(
     request: &SimulationRequest,
     cancel: &AtomicBool,
@@ -898,62 +1318,27 @@ where
         .as_ref()
         .map_or((0, 0), |r| (r.resume_group, r.resume_entry));
 
-    let PrefixState {
-        mut total_moves,
-        mut boundary_index,
-        mut boundaries,
-        mut checkpoints,
-        mut cut_samples,
-        // §6.E PR2 accumulators for drill-native metrics emitted alongside the
-        // engagement-side `cut_samples` stream. Each drill toolpath contributes
-        // a per-peck sample vector + a per-toolpath summary; both are attached
-        // to `SimulationCutTrace` after the per-group simulation loop.
-        mut drill_samples_all,
-        mut drill_summaries_all,
-        // Composited mesh from all per-setup simulations.
-        mut composite_mesh,
-        mut global_stock,
-        mut column_deviations,
-        // Rapid collision accumulators — populated per-toolpath BEFORE each
-        // simulation step so we compare against the stock state left by all
-        // *previous* operations.
-        mut rapid_collisions,
-        mut rapid_collision_move_indices,
-        mut prior_stocks,
-        // §6.E accumulators for analytic drill geometry. The per-group half is
-        // reset per group (matches per-setup `group_stock` lifetime); the
-        // global accumulator stores transformed copies so the final
-        // composite mesh shows holes from all setups.
-        mut global_drill_ops,
-        group_stock: mut resumed_group_stock,
-        group_drill_ops: mut resumed_group_drill_ops,
-    } = match resumed {
+    // CMP-18 seam 1. `PrefixState` IS the loop's accumulator set — its own
+    // doc says so — so the loop carries one `run` value instead of sixteen
+    // `mut` locals, and the snapshot below is `..run.clone()` instead of a
+    // second hand-written copy of the same field list. The two places the
+    // accumulator list used to be written down are now one place, the
+    // struct declaration.
+    let mut run = match resumed {
         Some(r) => r.state,
-        None => PrefixState {
-            total_moves: 0,
-            boundary_index: 0,
-            boundaries: Vec::new(),
-            checkpoints: Vec::new(),
-            cut_samples: Vec::new(),
-            drill_samples_all: Vec::new(),
-            drill_summaries_all: Vec::new(),
-            composite_mesh: StockMesh::empty(),
-            global_stock: TriDexelStock::from_bounds(&global_bbox, request.resolution),
-            column_deviations: request.model_mesh.as_ref().map(|_| Vec::new()),
-            rapid_collisions: Vec::new(),
-            rapid_collision_move_indices: Vec::new(),
-            prior_stocks: std::collections::HashMap::new(),
-            global_drill_ops: Vec::new(),
-            group_stock: None,
-            group_drill_ops: Vec::new(),
-        },
+        None => cold_prefix_state(request, &global_bbox),
     };
+    // The group the resume point sits inside carries its own stock and its
+    // own drill ops. The group loop owns those, so take them out of `run`.
+    let mut resumed_group_stock = run.group_stock.take();
+    let mut resumed_group_drill_ops = std::mem::take(&mut run.group_drill_ops);
+
     // `phantom_prior_stock` is the ONE per-group input deliberately left out
     // of the cache key, because it moves down the group on every fixpoint
     // round — keying on it would make the memo never hit. Its effect inside
     // the replayed region is re-derived from the LIVE request instead, so a
     // resumed `prior_stocks` matches a full replay's exactly.
-    rederive_phantom_prior_stocks(request, resume_group, resume_entry, &mut prior_stocks);
+    rederive_phantom_prior_stocks(request, resume_group, resume_entry, &mut run.prior_stocks);
 
     // Model spatial index for per-column deviations (shared across groups;
     // `compute_deviations` builds its own for the vertex pass).
@@ -1037,38 +1422,7 @@ where
                 continue;
             }
             let entry_toolpath = &entry.annotated.toolpath;
-            // Snapshot the stock *before* this toolpath carves so the dressup
-            // air-cut filter and rest-machining-aware generators can use it.
-            //
-            // F.4: when this position is also this group's phantom-prior-
-            // stock slot (the first pending FromRemainingStock op, recorded
-            // by the request builder), the pending op's snapshot is taken at
-            // this exact same sequence point — share the one stock clone via
-            // `Arc::clone` rather than cloning the (potentially large) dexel
-            // stock twice.
-            let pre_carve_stock = Arc::new(group_stock.clone());
-            if let Some((phantom_k, phantom_id)) = group.phantom_prior_stock
-                && phantom_k == k
-            {
-                prior_stocks.insert(phantom_id, Arc::clone(&pre_carve_stock));
-            }
-            prior_stocks.insert(entry.id, pre_carve_stock);
-
-            // Rapid collisions, split by removal kernel (S2). An entry whose
-            // material is removed ANALYTICALLY never enters a replay walk, so
-            // it keeps the pre-pass against the *current* stock state (after
-            // all previous toolpaths, before this one carves). Stamped entries
-            // are checked inside their own walk below, against live stock and
-            // with the cutter's profile — the frozen snapshot cannot carry a
-            // disc query without over-flagging the op's own already-cut rows.
-            if entry.drill_op.is_some() {
-                let rapids =
-                    check_rapid_collisions_against_stock(entry_toolpath, &group_stock.z_grid);
-                for rc in &rapids {
-                    rapid_collision_move_indices.push(total_moves + rc.move_index);
-                }
-                rapid_collisions.extend(rapids);
-            }
+            record_pre_carve(&mut run, &group_stock, entry, group, k);
 
             set_phase(&format!("Simulate {}", entry.name));
             let lut = RadialProfileLUT::from_cutter(
@@ -1076,117 +1430,31 @@ where
                 crate::stock::radial_profile::LUT_SAMPLES,
             );
             let radius = entry.tool.radius();
-            let start_move = total_moves;
+            let start_move = run.total_moves;
 
-            if let Some(drill_op_arc) = entry.drill_op.as_ref() {
-                // §6.E analytical drill removal: bypass per-segment
-                // stamping. Cone/cylinder envelope is applied directly
-                // to the dexel grid; the linearized toolpath remains
-                // available for rapid-collision checks, G-code, and
-                // wire-render.
-                // Per-setup stock is always simulated FromTop (`direction`
-                // above is that constant): setup-local Z always points at
-                // the spindle. The global stock below is the one that needs
-                // the group's real direction — see G-DRILLFLIP.
-                group_stock.apply_drill_op(drill_op_arc, direction);
-                group_drill_ops.push(Arc::clone(drill_op_arc));
-                // PR2: emit per-peck drill samples + per-toolpath summary
-                // (the analytical kernel doesn't produce
-                // `SimulationCutSample`s, so the drill-native stream lands
-                // here instead).
-                let pecks = crate::ops::drill_metrics::emit_drill_samples(entry.id, drill_op_arc);
-                let summary = crate::ops::drill_metrics::build_drill_toolpath_summary(
-                    entry.id,
-                    drill_op_arc,
-                    &pecks,
-                );
-                drill_samples_all.extend(pecks);
-                drill_summaries_all.push(summary);
-            } else if request.metric_options.enabled {
-                let entry_rpm = entry.spindle_rpm.unwrap_or(request.spindle_rpm);
-                // F2.2 (defect class C3): honor `spans_valid`. When a
-                // transform invalidated the spans (legacy invalidators;
-                // TSP now drops exactly the spans it split instead),
-                // stamping per-sample ancestry from the fragmented
-                // vector gives samples WRONG ancestry — a tagged
-                // Entry/LinkBridge sample can become effectively
-                // untagged and drive a gate trip with phantom dexel
-                // engagement (the WANAKA 622 µm DeflectionSetupLocked
-                // mechanism). Degrade honestly: no span_path, transit
-                // classification from per-move intents only.
-                //
-                // In the valid case the intent bitmap is UNIONED in:
-                // a transit span dropped by TSP (split LinkBridge)
-                // leaves its moves without ancestry, but their intents
-                // still classify them as transit.
-                let intent_transits = entry.annotated.transit_moves_bitmap_from_intents();
-                let (span_paths_by_move, transit_moves) = if entry.annotated.spans_valid {
-                    let mut transit = entry.annotated.transit_moves_bitmap();
-                    for (slot, from_intent) in transit.iter_mut().zip(intent_transits) {
-                        *slot = *slot || from_intent;
-                    }
-                    (entry.annotated.span_paths_by_move(), transit)
-                } else {
-                    (
-                        vec![Vec::new(); entry_toolpath.moves.len()],
-                        intent_transits,
-                    )
-                };
-                let mut rapid_check = RapidClearanceCheck::new(&entry.tool);
-                let mut samples = group_stock
-                    .simulate_toolpath_with_lut_metrics_rapid_checked(
-                        entry_toolpath,
-                        &lut,
-                        &entry.tool,
-                        radius,
-                        direction,
-                        entry.id,
-                        entry_rpm,
-                        entry.flute_count,
-                        request.rapid_feed_mm_min,
-                        sample_step_mm,
-                        entry.semantic_trace.as_deref(),
-                        &span_paths_by_move,
-                        &transit_moves,
-                        request.metric_options.capture_arc_engagement,
-                        &|| cancel.load(Ordering::SeqCst),
-                        Some(&mut rapid_check),
-                    )
-                    .map_err(|_cancelled| SimulationError::Cancelled)?;
-                cut_samples.append(&mut samples);
-                collect_rapid_hits(
-                    rapid_check,
-                    total_moves,
-                    &mut rapid_collisions,
-                    &mut rapid_collision_move_indices,
-                );
-            } else {
-                let mut rapid_check = RapidClearanceCheck::new(&entry.tool);
-                group_stock
-                    .simulate_toolpath_with_lut_cancel_rapid_checked(
-                        entry_toolpath,
-                        &lut,
-                        radius,
-                        direction,
-                        &|| cancel.load(Ordering::SeqCst),
-                        Some(&mut rapid_check),
-                    )
-                    .map_err(|_cancelled| SimulationError::Cancelled)?;
-                collect_rapid_hits(
-                    rapid_check,
-                    total_moves,
-                    &mut rapid_collisions,
-                    &mut rapid_collision_move_indices,
-                );
-            }
-            total_moves += entry_toolpath.moves.len();
+            carve_entry(
+                &mut run,
+                &mut group_stock,
+                &mut group_drill_ops,
+                entry,
+                entry_toolpath,
+                &CarveEnv {
+                    request,
+                    lut: &lut,
+                    radius,
+                    direction,
+                    sample_step_mm,
+                    cancel,
+                },
+            )?;
+            run.total_moves += entry_toolpath.moves.len();
 
-            boundaries.push(SimBoundary {
+            run.boundaries.push(SimBoundary {
                 id: entry.id,
                 name: entry.name.clone(),
                 tool_name: entry.tool_summary.clone(),
                 start_move,
-                end_move: total_moves,
+                end_move: run.total_moves,
                 direction: playback_direction,
             });
 
@@ -1203,101 +1471,47 @@ where
             // the grid axis — and that is what the checkpoint below
             // publishes.
             if !lateral_playback {
-                if let Some(drill_op_arc) = entry.drill_op.as_ref() {
-                    // For drill ops, apply analytical removal in the global
-                    // frame — hole XYs are frame-mapped for every group,
-                    // non-identity through `local_to_global` and identity by
-                    // `-stock_bbox.min`.
-                    let global_drill_op = group_drill_op_to_global(
-                        drill_op_arc,
-                        &group.local_to_global,
-                        request.stock_bbox.min,
-                    );
-                    global_stock.apply_drill_op(&global_drill_op, playback_direction);
-                    global_drill_ops.push(global_drill_op);
-                } else {
-                    // S4a: this used to build a second `RadialProfileLUT` from
-                    // `entry.tool` at `LUT_SAMPLES` — the same two arguments as
-                    // `lut` above, i.e. a bit-for-bit duplicate of a 4096-entry
-                    // table, rebuilt once per toolpath. The playback stamp is a
-                    // different grid and a different frame, but it is the same
-                    // cutter, so it takes the same profile.
-                    let global_tp = Arc::new(group_toolpath_to_global(
-                        entry_toolpath,
-                        &group.local_to_global,
-                        request.stock_bbox.min,
-                    ));
-                    let _ = global_stock.simulate_toolpath_with_lut_cancel(
-                        &global_tp,
-                        &lut,
-                        radius,
-                        playback_direction,
-                        &|| cancel.load(Ordering::SeqCst),
-                    );
-                }
+                stamp_playback_stock(
+                    &mut run,
+                    entry,
+                    entry_toolpath,
+                    group,
+                    request,
+                    &lut,
+                    radius,
+                    playback_direction,
+                    cancel,
+                );
             }
 
-            // Checkpoint: composited mesh for display + playback stock resume.
-            let mut local_mesh = dexel_stock_to_mesh(&group_stock);
-            // §6.E append analytic drill cylinders so checkpoint frames
-            // show clean circular hole walls even at low dexel resolution.
-            // Cylinders are emitted in local-frame coords; the
-            // transform_stock_mesh_to_global call below handles re-framing.
-            if !group_drill_ops.is_empty() {
-                let refs: Vec<&crate::ops::drill_op::DrillOp> =
-                    group_drill_ops.iter().map(|d| d.as_ref()).collect();
-                crate::stock::dexel_mesh::append_drill_cylinders(&mut local_mesh, &refs);
-            }
-            let checkpoint_mesh = transform_stock_mesh_to_global(
-                &local_mesh,
-                &group.local_to_global,
-                request.stock_bbox.min,
+            push_checkpoint(
+                &mut run,
+                &group_stock,
+                &group_drill_ops,
+                group,
+                request,
+                lateral_playback,
+                checkpoint_frame.clone(),
             );
-            // The playback stock. For every setup whose tool axis is global
-            // Z this is the global stock, exactly as it has always been. A
-            // lateral setup publishes its LOCAL stock plus the transform
-            // that frames it — see `SimCheckpointMesh::stock_local_to_global`.
-            let checkpoint_stock = if lateral_playback {
-                group_stock.checkpoint()
-            } else {
-                global_stock.checkpoint()
-            };
-            checkpoints.push(Arc::new(SimCheckpointMesh {
-                boundary_index,
-                mesh: checkpoint_mesh,
-                stock: checkpoint_stock,
-                stock_local_to_global: checkpoint_frame.clone(),
-            }));
-
-            boundary_index += 1;
 
             // S5: the snapshot point is this request's last entry, taken here
             // — after the entry has fully carved and BEFORE the group's
             // end-of-group work, so a resume redoes that work against the
             // restored `group_stock` exactly as a full replay would.
             if snapshot_at == Some((group_ordinal, k)) {
+                // CMP-18: the snapshot used to restate all sixteen
+                // accumulators by hand. Only the three the group loop owns
+                // differ from `run`; the rest come from one `clone`.
                 pending_snapshot = Some(PrefixState {
-                    total_moves,
-                    boundary_index,
-                    boundaries: boundaries.clone(),
-                    checkpoints: checkpoints.clone(),
-                    cut_samples: cut_samples.clone(),
-                    drill_samples_all: drill_samples_all.clone(),
-                    drill_summaries_all: drill_summaries_all.clone(),
-                    composite_mesh: composite_mesh.clone(),
-                    global_stock: global_stock.clone(),
-                    column_deviations: column_deviations.clone(),
-                    rapid_collisions: rapid_collisions.clone(),
-                    rapid_collision_move_indices: rapid_collision_move_indices.clone(),
                     prior_stocks: replayed_prior_stocks(
-                        &prior_stocks,
+                        &run.prior_stocks,
                         request,
                         group_ordinal,
                         k + 1,
                     ),
-                    global_drill_ops: global_drill_ops.clone(),
                     group_stock: Some(group_stock.clone()),
                     group_drill_ops: group_drill_ops.clone(),
+                    ..run.clone()
                 });
             }
         }
@@ -1308,47 +1522,20 @@ where
         if let Some((phantom_k, phantom_id)) = group.phantom_prior_stock
             && phantom_k == group.toolpaths.len()
         {
-            prior_stocks.insert(phantom_id, Arc::new(group_stock.clone()));
+            run.prior_stocks
+                .insert(phantom_id, Arc::new(group_stock.clone()));
         }
 
-        // Pointwise column deviations for this group's final stock (world
-        // frame), before the local stock is dropped.
-        if let (Some(model), Some(index), Some(out)) = (
-            request.model_mesh.as_ref(),
+        finish_group(
+            &mut run,
+            &group_stock,
+            &group_drill_ops,
+            request,
+            group,
+            group_ordinal,
             model_index.as_ref(),
-            column_deviations.as_mut(),
-        ) {
-            set_phase("Compute column deviations");
-            collect_column_deviations(
-                &group_stock,
-                &group.local_to_global,
-                index,
-                model,
-                group_ordinal,
-                request.stock_bbox.min,
-                out,
-            );
-        }
-
-        // After all toolpaths in this group, extract mesh and composite.
-        let mut group_mesh = dexel_stock_to_mesh(&group_stock);
-        if !group_drill_ops.is_empty() {
-            let refs: Vec<&crate::ops::drill_op::DrillOp> =
-                group_drill_ops.iter().map(|d| d.as_ref()).collect();
-            crate::stock::dexel_mesh::append_drill_cylinders(&mut group_mesh, &refs);
-        }
-        // Same frame contract as the checkpoint meshes: every group lands
-        // in the zero-rooted stock-relative frame, identity groups via the
-        // `-stock_bbox.min` shift. Before this, a MIXED project composited
-        // its identity groups (world) and non-identity groups
-        // (stock-relative) into one mesh, displacing the two setups'
-        // surfaces from each other by the stock origin.
-        let group_global = transform_stock_mesh_to_global(
-            &group_mesh,
-            &group.local_to_global,
-            request.stock_bbox.min,
+            &mut set_phase,
         );
-        composite_mesh.append(&group_global);
     }
 
     // S5: hand the captured prefix to the memo. `store` enforces the size
@@ -1359,6 +1546,28 @@ where
         cache.store(request, snap_group, snap_entry + 1, state);
     }
 
+    // CMP-18: the tail keeps its own names. One destructure here, and the
+    // compiler holds it to the struct — an accumulator added to
+    // `PrefixState` and forgotten here does not compile.
+    let PrefixState {
+        total_moves,
+        boundary_index: _,
+        boundaries,
+        checkpoints,
+        cut_samples,
+        mut drill_samples_all,
+        mut drill_summaries_all,
+        composite_mesh,
+        global_stock: _,
+        column_deviations,
+        rapid_collisions,
+        rapid_collision_move_indices,
+        prior_stocks,
+        global_drill_ops,
+        group_stock: _,
+        group_drill_ops: _,
+    } = run;
+
     // `global_drill_ops` is currently accumulated for future use by
     // alternative mesh extractions (e.g. checkpoint resume with cylinders
     // re-emitted in global coords). The composite mesh above is built
@@ -1367,49 +1576,13 @@ where
     let _ = global_drill_ops;
 
     let cut_trace = if request.metric_options.enabled {
-        let semantic_traces: Vec<_> = request
-            .groups
-            .iter()
-            .flat_map(|group| {
-                group.toolpaths.iter().filter_map(|entry| {
-                    entry
-                        .semantic_trace
-                        .as_deref()
-                        .map(|trace| (entry.id, trace))
-                })
-            })
-            .collect();
-        // P4: collect drill-kind toolpath ids so the trace builder
-        // suppresses air-cut / low-engagement issue spam for them.
-        let metrics_not_applicable_ids: std::collections::BTreeSet<ToolpathId> = request
-            .groups
-            .iter()
-            .flat_map(|g| g.toolpaths.iter())
-            .filter(|e| e.metrics_not_applicable)
-            .map(|e| e.id)
-            .collect();
-        let mut trace = SimulationCutTrace::from_samples_with_context(
+        Some(Arc::new(assemble_cut_trace(
+            request,
             sample_step_mm,
             cut_samples,
-            semantic_traces,
-            &metrics_not_applicable_ids,
-        );
-        trace.provenance = Some(build_simulation_provenance(request));
-        trace.drill_samples = std::mem::take(&mut drill_samples_all);
-        trace.drill_summaries = std::mem::take(&mut drill_summaries_all);
-        // F-034: kinematics-aware cycle time override. When the
-        // caller supplied a `KinematicsContext`, recompute each
-        // toolpath's `total_runtime_s` from its IR using the
-        // trapezoidal integrator and resum the project-wide total.
-        // Other fields on the summary (cutting_runtime_s, air_cut_s,
-        // engagement averages …) are left untouched — they're
-        // measured from dexel samples and aren't directly affected
-        // by accel modelling. F-035 will revisit them once predicted
-        // effective feed enters the gates.
-        if let Some(ctx) = request.kinematics {
-            apply_kinematics_cycle_time(&mut trace, request, ctx);
-        }
-        Some(Arc::new(trace))
+            std::mem::take(&mut drill_samples_all),
+            std::mem::take(&mut drill_summaries_all),
+        )))
     } else {
         None
     };
