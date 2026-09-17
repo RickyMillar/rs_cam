@@ -671,3 +671,40 @@ the better home); the collision lane has no revision check and never had one
 findings do not name the file; `DeprecatedDialFinding` and its adapter have
 no producer; `ramp_finish_toolpath` is a sixth FIN-11-shape wrapper; the
 four caches' `reset_stats`/`cache_len`/`clear` are the same test-only shape.
+
+## Wave 3 outcome — 2026-09-18 00:30
+
+Four agents, 26 commits (`4de1be71` .. `1cafe62b`). Gate: `WAVE3_GATE.md`.
+No row skipped.
+
+Landed: SES-07 (seed-set fixpoint), SES-01 (four derives, byte-identical),
+SES-03 (`session/diagnostics_types.rs`), STK-06 (named `FromTop` rule;
+lateral setups unchanged); CUT-03 + CMP-17 (`RetractStrategy` gone from
+nine files, `DressupConfig::FIELD_DEFS` publishes 22 fields), CUT-05,
+CUT-15 (DELETE: `DepthDistribution` and the finish-allowance arms; the
+staircase stays documented because the stair sentry pins the Even
+arithmetic and the Z ladder is an operator measurement), CUT-01; CLI-08
+(one tool-type vocabulary, job TOML tokens changed), CLI-09 (`z_rotation`
+enum on the wire), CLI-01 (+ the `entry_style` alias), CLI-04 (four
+hand-rolled caps, not one; `get_generation_debug_trace` had no truncation
+key at all), CLI-06; UI-06, UI-01 (25 params → 5, 1 255 lines → ~410 plus
+four tab functions), UI-11.
+
+Two live defects found by the agents' sentries and fixed by the
+orchestrator: `set_dressup_field` refused the two F-040 lead feeds on a
+fresh config (`9d01139b`); the Linking tab wrote `feed_optimization =
+false` while drawing and staled the toolpath (`1cafe62b`, G-LINKFEEDOPT).
+Two pre-existing vacuous sentries repaired: LH-1 (`5e10dc80`) and WP15a
+(`5311fb91`), both reading pre-split paths.
+
+Incident: the core-session agent ran a forbidden `git stash` that swept
+25 in-flight peer files; it restored them by content and every peer
+verified its edits. The stash survives as dangling commit `1b1f3c11`.
+
+Follow-ups opened: `inspect_spans` detail mode still emits
+`total_matching`/`truncated` (rename needs `mcp_server.rs:678` to move);
+`DressupFieldDef::description` has no reader; `HolderCollisionCheck`
+should move to `stock::collision`; the GUI's MCP project JSON lacks
+`collision_checks_failed`; `ramp_finish_toolpath` is a sixth FIN-11-shape
+wrapper; `feeds/suggest/apply.rs:92` names the deleted
+`DepthDistribution::Even` in a comment (power session's file).
