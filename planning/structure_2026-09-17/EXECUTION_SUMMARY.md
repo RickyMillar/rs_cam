@@ -33,9 +33,10 @@ instruction to continue unattended.
 | `mod` lines in `crates/rs_cam_core/src/lib.rs` | 125 | 31 |
 | folders under `crates/rs_cam_core/src/` | 12 | 24 |
 | known red tests handed off by earlier programmes | 5 | 0 |
+| production files over 3 000 lines (core + viz) | 19 | 1 (`polygon.rs`, ruled) |
+| folder-level `CLAUDE.md` files | 0 | 32 |
 
-Range `fa8176fa..e0125f8b`: 69 commits (5 belong to the peer's load-model
-workstream), 543 files under `crates/` changed, +4 503 / −3 979 lines there.
+Range `fa8176fa..e0125f8b` (through P2 and the feeds wave): 69 commits.
 
 ## P1 — planning purge (9 commits, `aede83fc..4ba1b2a2`)
 
@@ -121,7 +122,7 @@ median took every F word, entry feeds included); `4d4d7a9b` measures the
 cutting population by `MoveIntent`, the gate's own partition; the median
 lands on the band floor (the modulator's clamp) with no band change.
 
-## Round 2
+## Round 2 and P4/P5
 
 `evidence_round2/` (`2dcb2123`): dead pub 8 → 4, own-file-only 55 → 34,
 legacy lines 479 → 468, allows 677 → 665 (449 without `SAFETY:`), test-only
@@ -166,8 +167,52 @@ built from rustdoc links, not call sites (grep call sites, let the compiler
 decide); `wildcard_imports` is denied, so re-exports list names; a
 `#[cfg(test)]` item cannot be re-exported in a lib build. Three agents were
 cut off by the usage limit mid-split; their partial state was coherent and
-was finished, not redone. Wave 2 (`unified_finish`, `scallop`, `feeds/mod`,
-`tool_load/optimize/mod`, `compute/execute`, `session/compute`) is running.
+was finished, not redone.
+
+Wave 2 (six files): `unified_finish` 4 806 → 2 673 (`8a2b2f6b`), `scallop`
+3 580 → 1 158 (`efa2669f`), `feeds/mod` 4 624 → 2 767 tests-only
+(`74cd95b3`), `tool_load/optimize/mod` 3 361 → 1 019 five test files
+(`7f16ef96`), `compute/execute` 6 362 → 752 nine children (`8d52ceeb`),
+`session/compute` 8 032 → 2 252 six children (`16a5757b`). The
+`checkpoint_b_resolution_ab` sentry is a text census over `src/`: a door
+string that moves into a child changes its expected list (`efa2669f`); an
+`include_str!` needle moved with its function (`16a5757b`). `macro_rules!`
+textual scope forces `mod` lines below the macro; a sibling `tests.rs` needs
+`pub(super)` on struct fields.
+
+Wave 3 (two files): `feeds/suggest` 5 769 → 879, five children
+(`916de2ad..56b6b9c0`, the inert `too_many_arguments` allow deleted);
+`finish/conformal_spiral` 4 401 → 2 981, tests plus `spiral_build.rs`
+(`83bbe51d`, `ed3462e0`); its `flatten` and `rings` children were declined
+at 13 and 16 visibility changes.
+
+Viz wave (operator ruling: "happy to run the file split, high risk"):
+`app/mcp.rs` 6 067 → 1 089, six children, ten sentries repointed with their
+assertions intact and the negative `stamp_stale` check widened to every
+child (`e6a5476f..857709cd`); `ui/properties/mod.rs` 5 965 → 1 152, eight
+children, seven sentries now read the folder (`b3690b6c..ee25a1a3`);
+`ui/properties/operations/mod.rs` 3 013 → 766 (`5358ec27`);
+`state/simulation.rs` 2 908 → 1 014 (`5602e1c0`).
+
+After all waves the largest production file is `polygon.rs` at 3 004 lines
+(ruled whole, spine) and `conformal_spiral.rs` at 2 981; every other
+production file is under 2 900. Final gate: workspace clippy
+`--features rs_cam_core/heavy-tests -D warnings` clean, fmt clean, core
+`--lib` 2526/0, viz `--lib` 384/0 and every viz integration binary green,
+cli and mcp green.
+
+**P5 per-folder instruction files** (`P5_CLAUDE_MD.md` `17a0d8ee`; files
+`8909e8df`, parents `7495f609`, de-dup `6f3ca825`, evidence `25456d1a`, maps
+`572a5ab9..f89e4d88`): 32 folder `CLAUDE.md` files, each ≤ 40 lines, with a
+file map, invariants, sentries and traps; the core crate file 121 → 55
+lines, viz 68 → 40; root gains one paragraph. Durable rules that lived only
+in the orchestrator's memory (chipload-bounds mirror, the steady-state gate
+predicate, the 2D stock Z frame, rest-measurement prerequisites, the mutation
+door) now live in the one folder that owns each. Two rules were dropped
+because their symbols no longer exist; 13 unsourced bullets were deleted
+rather than kept.
+
+Range `fa8176fa..HEAD`: 135 commits.
 
 ## Follow-ups (recorded, not scheduled)
 
