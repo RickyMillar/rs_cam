@@ -45,10 +45,12 @@
 //!                                     + (1 − share_c) · (n_f / n_c) )
 //! ```
 //!
-//! The arm derives `share_c` by scaling the SHIPPED `PowerTerms` back to the
-//! calculator's depth and RPM, then checks that reconstruction against the
-//! published `power_kw` before it uses it. Nothing in this file restates the
-//! model's coefficients.
+//! The arm recovers the two terms at the shipped point from the door's own
+//! public surface — `required_kw_at_feed` at a zero feed is the edge floor,
+//! and the slope is the shear term — scales them back to the calculator's
+//! depth and RPM, then checks that reconstruction against the published
+//! `power_kw` before it uses it. Nothing in this file restates the model's
+//! coefficients, and nothing reads the terms apart.
 //!
 //! ## The arms
 //!
@@ -57,8 +59,8 @@
 //! - [`the_rigidity_clamp_moves_the_depth_on_this_fixture`] — non-vacuity for
 //!   the claim: the clamp fires and the door answers.
 //! - [`the_door_and_pass_ten_are_one_evaluation`] — on the T-15 sentry's own
-//!   fixture, the door's `available_kw` and its terms reproduce what
-//!   `PowerRecheckedAfterRescale` reported, bit for bit.
+//!   fixture, the door's `available_kw` and its `required_kw_at_feed`
+//!   reproduce what `PowerRecheckedAfterRescale` reported, bit for bit.
 //! - [`every_refusal_names_itself`] — a drill, a material with no `Kc` and a
 //!   zero feed each refuse with a distinct, non-empty clause.
 //! - [`the_anchor_cut_is_modelled_not_refused`] — non-vacuity for the
@@ -296,12 +298,21 @@ fn the_published_power_describes_a_depth_that_will_not_be_cut() {
     let feed_ratio = figure.feed_mm_min / feed_c;
     let rpm_ratio = figure.rpm / rpm_c;
 
-    // Scale the SHIPPED terms back to the calculator's point. The shear slope
+    // Split the shipped point into its two terms through the door's own
+    // public surface. Power is affine in the feed, so two evaluations
+    // determine the whole line: the reading at a zero feed IS the edge floor,
+    // and the rest is the shear term. The probe feed is the calculator's,
+    // which keeps the two magnitudes comparable so the subtraction stays well
+    // conditioned.
+    let edge_f = figure.required_kw_at_feed(0.0);
+    let shear_slope_f = (figure.required_kw_at_feed(feed_c) - edge_f) / feed_c;
+
+    // Scale the shipped terms back to the calculator's point. The shear slope
     // carries the cross-section and the width is held, so it scales with the
     // depth; the edge term carries the depth and the cutting velocity, so it
     // scales with the depth and the RPM.
-    let shear_c = figure.terms.shear_kw_per_mm_min / depth_ratio;
-    let edge_c = figure.terms.edge_kw / (depth_ratio * rpm_ratio);
+    let shear_c = shear_slope_f / depth_ratio;
+    let edge_c = edge_f / (depth_ratio * rpm_ratio);
     let reconstructed_calc_kw = shear_c * feed_c + edge_c;
 
     // Before the reconstruction is used it is checked against the number the
@@ -459,7 +470,7 @@ fn the_door_and_pass_ten_are_one_evaluation() {
         figure.available_kw,
     );
 
-    let door_required_at_rescaled = figure.terms.kw_at_feed(rescaled_feed);
+    let door_required_at_rescaled = figure.required_kw_at_feed(rescaled_feed);
     assert!(
         door_required_at_rescaled.to_bits() == reported_required.to_bits(),
         "the door and pass 10 built different PowerTerms: at the rescaled feed \

@@ -1,7 +1,10 @@
 # S2 — power at the operating point that ships
 
-Implemented 2026-09-18, against `SURFACE_IMPL.md` §1 step S2. Not committed;
-the orchestrator reviews and commits.
+Implemented 2026-09-18, against `SURFACE_IMPL.md` §1 step S2. The first form
+was committed as `6d13b93a`. The orchestrator then ruled that `PowerFigure`
+holds the model privately and answers through two accessors (§5.1), so this
+document describes the form after that follow-up. The follow-up is not
+committed.
 
 S2 fixes a class-1 defect (`RESUME_PLAN.md` §9): a value computed at one
 state, consumed at another. `feeds::calculate` publishes `power_kw` at the
@@ -30,8 +33,25 @@ pub fn power_at_operating_point(
 ) -> Result<PowerFigure, PowerUnmodeled>;
 ```
 
-`PowerFigure` carries `required_kw`, `available_kw`, the `PowerTerms`, and the
-point the figure was evaluated at (`ap_mm`, `ae_mm`, `rpm`, `feed_mm_min`).
+`PowerFigure` carries `required_kw`, `available_kw` and the point the figure
+was evaluated at (`ap_mm`, `ae_mm`, `rpm`, `feed_mm_min`). It holds the
+`PowerTerms` PRIVATELY and answers through two methods:
+
+```rust
+impl PowerFigure {
+    /// Predicted spindle power (kW) at `feed_mm_min`, at THIS point's
+    /// geometry and speed, on the COMMANDED axis.
+    pub fn required_kw_at_feed(&self, feed_mm_min: f64) -> f64;
+    /// The feed (mm/min) at which this cut draws exactly `budget_kw`, in
+    /// closed form. `None` when the edge term alone meets the budget.
+    pub fn feed_for_kw(&self, budget_kw: f64) -> Option<f64>;
+}
+```
+
+`power_at_operating_point` is the only constructor. The model type stays
+inside `tool_load`, where it lives, and every caller solves through the same
+two methods. Pass 10 needs only `feed_for_kw`; the Feeds card needs only
+`required_kw` and `available_kw`.
 
 ### What it reads
 
@@ -96,7 +116,8 @@ Pass 10 keeps every decision it owned:
 - the gate on pass 9 (`enforce_invariants` calls it only when
   `FeedRescaledToFinalGeometry` fired);
 - the `required <= ceiling` early return;
-- the `feed_for_kw` solve and the `rescaled.min(cap)`;
+- the `feed_for_kw` solve (now `figure.feed_for_kw(ceiling)`) and the
+  `rescaled.min(cap)`;
 - the fallback to the pre-rescale feed with `fits_at_any_feed: false`;
 - the `PowerRecheckedAfterRescale` warning;
 - the `clamp_plunge_to_feed` re-establishment;
@@ -125,7 +146,8 @@ G-S2 parity | pass 10 ceiling 1.200000 kW, required at the rescaled feed
 shipped 659.646 mm/min
 ```
 
-Both comparisons use `f64::to_bits`, not a tolerance.
+Both comparisons use `f64::to_bits`, not a tolerance. The required figure
+comes from `figure.required_kw_at_feed(rescaled_feed)`.
 
 ---
 
@@ -170,11 +192,15 @@ P_ship / P_calc = (ap_f / ap_c) · ( share_c · (f_f / f_c)
                 = 0.083624
 ```
 
-The arm derives `share_c` from the SHIPPED `PowerTerms`, scaled back to the
-calculator's depth and RPM. It then checks that reconstruction against the
-published `power_kw` BEFORE it uses it, so the arm is a cross-check of two
-doors rather than an identity on one. The file restates none of the model's
-coefficients.
+The arm recovers the two terms at the shipped point through the door's own
+public surface. Power is affine in the feed, so two evaluations determine the
+whole line: `required_kw_at_feed(0.0)` IS the edge floor, and the slope is
+the shear term. The probe feed is the calculator's, which keeps the two
+magnitudes comparable so the subtraction stays well conditioned. The arm then
+scales both terms back to the calculator's depth and RPM, and checks that
+reconstruction against the published `power_kw` BEFORE it uses it — so the
+arm is a cross-check of two doors rather than an identity on one. The file
+restates none of the model's coefficients and reads no term directly.
 
 The feed rises exactly 2.000000× because the depth tier moves from
 `ap/D = 3` (multiplier 0.45) to `ap/D = 0.2` (multiplier 1.00), and pass 9
@@ -210,7 +236,9 @@ The sentry was injected twice and went red both times.
 1. The door evaluated at a depth 15× the one it reported
    (`mrr_cross_section_mm2(15.0 * ap_mm, ae_mm)` and
    `axial_doc_mm: 15.0 * ap_mm`): **3 of 5 arms failed** — the headline, the
-   parity arm and the anchor.
+   parity arm and the anchor. This injection was re-run after the §5.1
+   follow-up, because the headline arm recovers the term split differently
+   now. The same three arms failed.
 2. The door used ψ × 0.90, a model divergence from Step 6 and pass 10: the
    headline arm failed on the reconstruction check, relative error 7.456e-2.
 
@@ -228,20 +256,23 @@ Every command ran through `scripts/cargo_lane.sh`.
 | Command | Result |
 |---|---|
 | `fmt --all -- --check` | exit 0, no diff |
-| `clippy -p rs_cam_core --all-targets --features heavy-tests,research,test-support -- -D warnings` | `Finished \`dev\` profile [unoptimized + debuginfo] target(s) in 37.94s` |
-| `test -p rs_cam_core --lib -q` | `test result: ok. 2521 passed; 0 failed; 12 ignored; 0 measured; 0 filtered out; finished in 37.67s` |
+| `clippy -p rs_cam_core --all-targets --features heavy-tests,research,test-support -- -D warnings` | `Finished \`dev\` profile [unoptimized + debuginfo] target(s) in 23.64s` |
+| `test -p rs_cam_core --lib -q` | `test result: ok. 2521 passed; 0 failed; 12 ignored; 0 measured; 0 filtered out; finished in 37.33s` |
+
+The whole list below was re-run after the §5.1 follow-up. Every figure it
+quotes is from that second run.
 
 Integration targets, each `cargo test -p rs_cam_core -q --test <name>`:
 
 | Target | Result |
 |---|---|
-| `a_published_power_is_at_the_depth_that_cuts_g_s2` | `test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s` |
-| `a_rescaled_feed_stays_inside_the_power_ceiling_g_t15` | `test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s` |
+| `a_published_power_is_at_the_depth_that_cuts_g_s2` | `test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s` |
+| `a_rescaled_feed_stays_inside_the_power_ceiling_g_t15` | `test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s` |
 | `suggest_power_ceiling_after_pass9_g_suggest_powerstale` | `test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s` |
-| `suggest_feed_matches_final_geometry` | `test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.12s` |
+| `suggest_feed_matches_final_geometry` | `test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.95s` |
 | `a_clamped_feed_ships_at_or_below_its_ceiling_g_feeddown` | `test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s` |
-| `a_feed_lift_caps_at_the_cutting_ceiling_g_t18` | `test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s` |
-| `arc_fit_disposition_a5` | `test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 21.94s` |
+| `a_feed_lift_caps_at_the_cutting_ceiling_g_t18` | `test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s` |
+| `arc_fit_disposition_a5` | `test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 21.78s` |
 | `literature_matrix` | `test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s` |
 | `literature_parity` | `test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s` |
 | `power_ceiling_parity_f2` | `test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s` |
@@ -266,18 +297,33 @@ No test moved. No golden was re-blessed.
 
 ## 5. What the plan did not anticipate
 
-### 5.1 `PowerTerms` had to become `pub` — one file outside the brief's list
+### 5.1 `pub terms: PowerTerms` did not hold — the figure answers instead
 
-Decision 2 fixes `PowerFigure { pub terms: PowerTerms, .. }`. `PowerTerms`
+Decision 2 fixed `PowerFigure { pub terms: PowerTerms, .. }`. `PowerTerms`
 was `pub(crate)` (`tool_load/power.rs:145`), and so were `kw_at_feed` and
 `feed_for_kw`. A `pub` field of a `pub(crate)` type trips rustc's
 `private_interfaces`, which the core clippy run fails under `-D warnings`.
-`tool_load::power` is already `pub mod`, so only the three items were closed.
 
-Change: three visibility tokens, no logic, no doc rewrite.
-`PowerModelInputs` and `PowerTerms::of` stay `pub(crate)`, so
-`power_at_operating_point` remains the only public constructor of the terms.
-The orchestrator was told before the change landed.
+The first form widened those three items to `pub` and shipped as `6d13b93a`.
+The orchestrator then ruled that decision 2 fixed the CONTRACT — one door,
+the terms reusable without rebuilding — not the field. A `pub` `PowerTerms`
+whose only constructor stays `pub(crate)` is a wider public surface than the
+plan needs.
+
+The follow-up therefore:
+
+- reverts `tool_load/power.rs` to its committed `pub(crate)` state — three
+  visibility tokens, no logic;
+- makes `PowerFigure::terms` private;
+- adds `required_kw_at_feed` and `feed_for_kw` as methods that delegate to it.
+
+Pass 10 calls `figure.feed_for_kw(ceiling)`. The sentry calls
+`required_kw_at_feed`. No caller reads a term apart.
+
+The widening was part of `6d13b93a`, so the follow-up carries a real reverse
+diff on `tool_load/power.rs` against HEAD. Verified: the file is now
+byte-identical to `6d13b93a^`, its state before S2. S2 leaves `tool_load/`
+untouched once both commits land.
 
 ### 5.2 Two stale doc lines this agent did not own
 
@@ -323,7 +369,7 @@ Changed or added:
 - `crates/rs_cam_core/src/feeds/mod.rs` (`pub mod`, `pub use`, the doc on the
   published power pair)
 - `crates/rs_cam_core/src/feeds/suggest/adaptive_entry.rs` (pass 10 only)
-- `crates/rs_cam_core/src/tool_load/power.rs` (three visibility tokens — see
-  §5.1)
+- `crates/rs_cam_core/src/tool_load/power.rs` (reverts the three visibility
+  tokens `6d13b93a` widened; byte-identical to `6d13b93a^` — see §5.1)
 - `crates/rs_cam_core/tests/a_published_power_is_at_the_depth_that_cuts_g_s2.rs` (new)
 - `planning/load_model_2026-09-16/S2_IMPLEMENTATION.md` (this file)

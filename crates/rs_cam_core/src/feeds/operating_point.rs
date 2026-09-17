@@ -15,11 +15,12 @@
 //!
 //! [`crate::tool_load::power::PowerTerms`], and nothing else. Power is affine
 //! in the feed — the shear term carries the feed and the cross-section, the
-//! edge term carries `ap` alone — so the terms are kept apart and handed to
-//! the caller in [`PowerFigure::terms`]. A caller that needs "what feed
-//! reaches this budget" calls
-//! [`crate::tool_load::power::PowerTerms::feed_for_kw`] on them rather than
-//! rebuilding the model.
+//! edge term carries `ap` alone — so the two terms are kept apart. The model
+//! type stays where it lives, inside `tool_load`: [`PowerFigure`] holds the
+//! terms privately and answers through
+//! [`PowerFigure::required_kw_at_feed`] and [`PowerFigure::feed_for_kw`].
+//! Every caller solves through those two methods rather than rebuilding the
+//! model.
 //!
 //! Three places assemble the same `PowerTerms` from the same inputs:
 //! `feeds::calculate` Step 6 (through `power_model_terms`), Suggest pass 10
@@ -100,6 +101,15 @@ impl PowerUnmodeled {
 /// Spindle power at one operating point, with the point it was evaluated at.
 ///
 /// Both power figures sit on the COMMANDED axis — see the module doc.
+///
+/// The figure holds the model's two terms PRIVATELY. A caller that needs the
+/// power at another feed, or the feed that meets a budget, asks
+/// [`Self::required_kw_at_feed`] or [`Self::feed_for_kw`]; it never rebuilds
+/// the model and it never reads the terms apart. That keeps
+/// [`crate::tool_load::power::PowerTerms`] inside `tool_load`, where the
+/// model lives, and it keeps every caller on one solver.
+///
+/// [`power_at_operating_point`] is the only constructor.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PowerFigure {
     /// Predicted spindle power (kW) at the operation's feed, on the
@@ -108,9 +118,6 @@ pub struct PowerFigure {
     /// The gate's ceiling (kW): `power_at_rpm(rpm) × safety_factor`. Finite
     /// and positive.
     pub available_kw: f64,
-    /// The two terms, so a caller may solve
-    /// [`PowerTerms::feed_for_kw`] without rebuilding the model.
-    pub terms: PowerTerms,
     /// The axial depth of cut (mm) the figure was evaluated at.
     pub ap_mm: f64,
     /// The radial width of cut (mm) the figure was evaluated at.
@@ -119,6 +126,37 @@ pub struct PowerFigure {
     pub rpm: f64,
     /// The feed (mm/min) the figure was evaluated at.
     pub feed_mm_min: f64,
+    /// The model this figure was built from. Private on purpose — see the
+    /// type doc.
+    terms: PowerTerms,
+}
+
+impl PowerFigure {
+    /// Predicted spindle power (kW) at `feed_mm_min`, at THIS operating
+    /// point's geometry and speed, on the COMMANDED axis.
+    ///
+    /// `self.required_kw` is this function at `self.feed_mm_min`. Power is
+    /// affine in the feed, so two evaluations determine the whole line: the
+    /// value at a zero feed is the edge floor, and the slope is the shear
+    /// term.
+    pub fn required_kw_at_feed(&self, feed_mm_min: f64) -> f64 {
+        self.terms.kw_at_feed(feed_mm_min)
+    }
+
+    /// The feed (mm/min) at which this cut draws exactly `budget_kw`, in
+    /// closed form. No bisection is needed, and the answer is exact rather
+    /// than converged.
+    ///
+    /// `None` when no feed answers the question: the feed-free edge term
+    /// alone already meets or exceeds the budget, so thinning the chip
+    /// cannot rescue the cut (drop the depth, the stepover or the RPM
+    /// instead), or there is no shear slope at all.
+    ///
+    /// The answer is on the COMMANDED axis, like `budget_kw` and like
+    /// `self.feed_mm_min`. A caller must not apply `safety_factor` to it.
+    pub fn feed_for_kw(&self, budget_kw: f64) -> Option<f64> {
+        self.terms.feed_for_kw(budget_kw)
+    }
 }
 
 /// Evaluate spindle power at the point `operation` ships.
@@ -228,10 +266,10 @@ pub fn power_at_operating_point(
     Ok(PowerFigure {
         required_kw: terms.kw_at_feed(feed_mm_min),
         available_kw,
-        terms,
         ap_mm,
         ae_mm,
         rpm,
         feed_mm_min,
+        terms,
     })
 }

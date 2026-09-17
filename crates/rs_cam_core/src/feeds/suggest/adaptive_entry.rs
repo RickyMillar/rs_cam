@@ -522,9 +522,11 @@ pub(super) fn rescale_feed_to_final_geometry(
 ///
 /// The ONE power model, [`crate::tool_load::power::PowerTerms`] — the same
 /// terms `feeds::calculate` assembles in `power_model_terms` and the same ones
-/// the post-simulation gate `tool_load::power::evaluate` reads. Suggest does
-/// not hold the calculator's `FeedsInput`, so the inputs are rebuilt from the
-/// operation and the tool rather than re-modelled:
+/// the post-simulation gate `tool_load::power::evaluate` reads. Suggest reads
+/// it through the public door [`crate::feeds::power_at_operating_point`] (S2,
+/// 2026-09-18), which is where the list below now lives. Suggest does not hold
+/// the calculator's `FeedsInput`, so the door rebuilds the inputs from the
+/// operation and the tool rather than re-modelling them:
 ///
 /// - `ap` / `ae` — the operation's final depth and stepover, with the
 ///   calculator's own values as the fallback for an operation that carries no
@@ -552,9 +554,9 @@ pub(super) fn rescale_feed_to_final_geometry(
 ///
 /// Feed-only and downward. The geometry is final here, and required power is
 /// affine in the feed — the shear term scales with it, the edge term does not
-/// — so [`crate::tool_load::power::PowerTerms::feed_for_kw`] solves the feed
-/// at which required equals the ceiling in closed form. No bisection is
-/// needed, and the solved feed is exact rather than converged.
+/// — so [`crate::feeds::PowerFigure::feed_for_kw`] solves the feed at which
+/// required equals the ceiling in closed form. No bisection is needed, and
+/// the solved feed is exact rather than converged.
 ///
 /// When `feed_for_kw` returns `None` the feed-free edge term alone is at or
 /// over the ceiling and no feed fits. The feed then goes back to the value
@@ -616,14 +618,13 @@ pub(super) fn recheck_power_after_rescale(
     };
     let rescaled = figure.feed_mm_min;
     let ceiling = figure.available_kw;
-    let terms = figure.terms;
 
     let required = figure.required_kw;
     if required <= ceiling {
         return warnings;
     }
 
-    let (shipped, fits_at_any_feed) = match terms.feed_for_kw(ceiling) {
+    let (shipped, fits_at_any_feed) = match figure.feed_for_kw(ceiling) {
         // `feed_for_kw` answers on the same COMMANDED axis the feed sits on,
         // so it is written straight back. It is below `rescaled` by
         // construction: required is increasing in the feed and it is over the
