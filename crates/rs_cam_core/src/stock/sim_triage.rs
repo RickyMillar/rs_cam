@@ -45,6 +45,7 @@
 //! that says which population it counts. Nothing is hidden; it is demoted to
 //! a footer and labelled.
 
+use crate::compute::collision_check::HolderCollisionCheck;
 use crate::diagnostics::{
     Category, Confidence, Diagnostic, DiagnosticEvidence, DiagnosticId, DiagnosticState, Scope,
     Severity, Source, ids,
@@ -265,8 +266,13 @@ pub struct TriageInputs<'a> {
     /// on.
     pub diagnostics: &'a [Diagnostic],
     pub rapid_collisions: &'a [RapidCollision],
-    /// Per-toolpath holder/shank collision counts.
-    pub holder_collisions: &'a [(ToolpathId, usize)],
+    /// Per-toolpath holder/shank collision outcomes.
+    ///
+    /// CMP-14: three states, not a count. This list used to be filtered
+    /// with `n > 0`, so a toolpath whose check FAILED was indistinguishable
+    /// from a clean one — on the one question that wrecks a machine. A
+    /// failed check now raises its own safety finding.
+    pub holder_collisions: &'a [(ToolpathId, HolderCollisionCheck)],
     /// Tool diameter per toolpath, for the spatial bucket edge.
     pub tool_diameters_mm: &'a BTreeMap<ToolpathId, f64>,
     /// Phase 4 — the per-toolpath kinematic reading, keyed by toolpath id.
@@ -325,8 +331,25 @@ impl SimulationTriage {
                 i,
             ));
         }
-        for (tp, count) in inputs.holder_collisions.iter().filter(|(_, n)| *n > 0) {
-            for i in 0..*count {
+        for (tp, check) in inputs.holder_collisions {
+            if check.failed() {
+                // Not a collision. The ABSENCE of an answer, which class A
+                // reports because "we do not know" is a safety statement
+                // and silence would read as clean (CMP-14).
+                safety.push(collision_finding(
+                    ids::PROJECT_HOLDER_CHECK_FAILED,
+                    "Holder/shank collision check failed on this toolpath — holder clearance \
+                     is UNKNOWN, not clear"
+                        .to_owned(),
+                    Some(*tp),
+                    0,
+                    [0.0, 0.0, 0.0],
+                    0,
+                ));
+                continue;
+            }
+            let count = check.collisions();
+            for i in 0..count {
                 safety.push(collision_finding(
                     ids::PROJECT_HOLDER_COLLISION,
                     format!("Holder/shank collision ({} on this toolpath)", count),
@@ -1151,7 +1174,7 @@ mod tests {
         m: &'a MeasurabilityReport,
         diags: &'a [Diagnostic],
         rapids: &'a [RapidCollision],
-        holders: &'a [(ToolpathId, usize)],
+        holders: &'a [(ToolpathId, HolderCollisionCheck)],
         diameters: &'a BTreeMap<ToolpathId, f64>,
         kinematics: &'a BTreeMap<ToolpathId, ToolpathKinematicUtilization>,
     ) -> TriageInputs<'a> {
@@ -1238,7 +1261,7 @@ mod tests {
             &m,
             std::slice::from_ref(&removal_warning),
             std::slice::from_ref(&rapid),
-            &[(ToolpathId(1), 1)],
+            &[(ToolpathId(1), HolderCollisionCheck::Measured(1))],
             &d,
             &BTreeMap::new(),
         ));

@@ -34,6 +34,13 @@ pub const DRILL_PLUNGE_FEED: &str = "drill.plunge_feed";
 
 // ── Project verdicts ─────────────────────────────────────────────────
 pub const PROJECT_HOLDER_COLLISION: &str = "project.holder_collision";
+/// The holder/shank collision check could not answer for a toolpath.
+///
+/// Deliberately NOT [`PROJECT_HOLDER_COLLISION`] (CMP-14): one rule says
+/// the toolpath collides, this one says nobody knows whether it does.
+/// Collapsing them into one id is the measured-zero-against-not-measured
+/// defect the `diagnostics/` contract names.
+pub const PROJECT_HOLDER_CHECK_FAILED: &str = "project.holder_check_failed";
 pub const PROJECT_RAPID_COLLISION: &str = "project.rapid_collision";
 pub const PROJECT_PLUNGE_STRESS: &str = "project.plunge_stress";
 pub const PROJECT_AIR_CUT_HIGH: &str = "project.air_cut_high";
@@ -286,6 +293,7 @@ pub const ALL: &[&str] = &[
     DRILL_PECK_ADEQUACY,
     DRILL_PLUNGE_FEED,
     PROJECT_HOLDER_COLLISION,
+    PROJECT_HOLDER_CHECK_FAILED,
     PROJECT_RAPID_COLLISION,
     PROJECT_PLUNGE_STRESS,
     PROJECT_AIR_CUT_HIGH,

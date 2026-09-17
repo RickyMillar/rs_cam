@@ -30,14 +30,32 @@ where
         tool: build_cutter(&req.tool),
         mesh: &req.mesh,
         obstacles: req.obstacles.clone(),
+        // One toolpath, one index. The per-model hoist is the batch
+        // sweep's concern (CMP-24).
+        index: None,
     };
     set_phase("Check collisions");
     let core_result =
         core_cc::run_collision_check(&core_req, cancel).map_err(|_e| ComputeError::Cancelled)?;
     set_phase("Collect collision markers");
+    // CMP-24: the render positions are built HERE now. The core result
+    // used to carry `Vec<[f32; 3]>`, a render type in the core model whose
+    // only readers were the viewport, the GPU upload and the picker.
+    let positions: Vec<[f32; 3]> = core_result
+        .collision_report
+        .collisions
+        .iter()
+        .map(|collision| {
+            [
+                collision.position.x as f32,
+                collision.position.y as f32,
+                collision.position.z as f32,
+            ]
+        })
+        .collect();
     Ok(CollisionResult {
         report: core_result.collision_report,
-        positions: core_result.collision_positions,
+        positions,
     })
 }
 

@@ -1196,7 +1196,12 @@ pub struct ToolpathDiagnostic {
     pub move_count: usize,
     pub cutting_distance_mm: f64,
     pub rapid_distance_mm: f64,
-    pub collision_count: usize,
+    /// Holder/shank collisions on this toolpath. `None` serialises as
+    /// `null` and means the check **FAILED or never ran** — never
+    /// "measured and clear", which is `Some(0)` (CMP-14). Consumers must
+    /// not coerce it to 0: that is the defect commit `70a3db27` removed
+    /// from the CLI and this row removes from core.
+    pub collision_count: Option<usize>,
     pub rapid_collision_count: usize,
     /// A/M9: generation-time truncated cascade core, XY-projected mm².
     /// `None` serialises as `null` and means **not measured** (this operation
@@ -1270,6 +1275,10 @@ pub enum VerdictSeverity {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VerdictKind {
     HolderCollision,
+    /// A holder/shank collision check that could not answer (CMP-14).
+    /// Distinct from [`Self::HolderCollision`] on purpose: one says the
+    /// toolpath collides, this one says nobody knows.
+    HolderCheckFailed,
     RapidCollision,
     PlungeStress,
     AirCut,
@@ -1286,6 +1295,7 @@ impl VerdictKind {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::HolderCollision => "holder_collision",
+            Self::HolderCheckFailed => "holder_check_failed",
             Self::RapidCollision => "rapid_collision",
             Self::PlungeStress => "plunge_stress",
             Self::AirCut => "air_cut",
@@ -1325,9 +1335,14 @@ pub struct ProjectEvidence<'a> {
     pub rapid_collisions: &'a [crate::stock::collision::RapidCollision],
     pub rapid_collision_move_indices: &'a [usize],
     pub cut_trace: Option<&'a crate::stock::simulation_cut::SimulationCutTrace>,
-    /// Per-toolpath holder/shank collision counts, supplied by the
+    /// Per-toolpath holder/shank collision outcomes, supplied by the
     /// caller from its most recent dedicated collision check. Empty =
-    /// no holder evidence (no holder verdicts are emitted).
+    /// no holder evidence (no holder verdicts are emitted), and so is a
+    /// toolpath that is absent from a non-empty list.
+    ///
+    /// CMP-14: the element carries three states, not a count. A check
+    /// that failed reads [`crate::compute::collision_check::HolderCollisionCheck::Failed`],
+    /// which is not the same claim as `Measured(0)`.
     ///
     /// Evidence is an INPUT here on purpose: `diagnostics_with_evidence`
     /// used to run `collision_check` (spatial-index build + full
@@ -1336,7 +1351,10 @@ pub struct ProjectEvidence<'a> {
     /// project that recomputed every toolpath's collision sweep at
     /// frame rate (the 2026-06-11 setup-tab lag). Batch callers that
     /// want the sweep use [`ProjectSession::holder_collision_counts`].
-    pub holder_collisions: Vec<(ToolpathId, usize)>,
+    pub holder_collisions: Vec<(
+        ToolpathId,
+        crate::compute::collision_check::HolderCollisionCheck,
+    )>,
     /// Simulation cell size (mm) the trace was captured at, when known.
     ///
     /// Read only by [`crate::stock::sim_measurability`], and only to enrich the
@@ -1369,7 +1387,10 @@ impl<'a> ProjectEvidence<'a> {
     /// input rather than computed internally).
     pub fn from_simulation_with_holder_collisions(
         sim: &'a SimulationResult,
-        holder_collisions: Vec<(ToolpathId, usize)>,
+        holder_collisions: Vec<(
+            ToolpathId,
+            crate::compute::collision_check::HolderCollisionCheck,
+        )>,
     ) -> Self {
         Self {
             holder_collisions,
@@ -1412,7 +1433,14 @@ pub struct ProjectDiagnostics {
     /// caveats describe. No threshold is applied to it.
     pub air_cut_pct_of_cutting_time: f64,
     pub average_engagement: f64,
+    /// Holder/shank collisions summed over every toolpath the evidence
+    /// MEASURED. It is not the whole project's answer unless
+    /// [`Self::collision_checks_failed`] is zero — read the two together.
     pub collision_count: usize,
+    /// How many toolpaths' holder/shank checks failed (CMP-14). Non-zero
+    /// means [`Self::collision_count`] is a partial sum and the project
+    /// has no clean bill of health. The CLI carries the same pair.
+    pub collision_checks_failed: usize,
     pub rapid_collision_count: usize,
     pub per_toolpath: Vec<ToolpathDiagnostic>,
     /// Severity-ranked list of structured verdicts (critical → polish).
@@ -2102,6 +2130,8 @@ impl serde::Serialize for ToolpathDiagnostic {
         s.serialize_field("move_count", &self.move_count)?;
         s.serialize_field("cutting_distance_mm", &self.cutting_distance_mm)?;
         s.serialize_field("rapid_distance_mm", &self.rapid_distance_mm)?;
+        // `null` = the check failed or never ran. Consumers must not
+        // coerce it to 0 (CMP-14).
         s.serialize_field("collision_count", &self.collision_count)?;
         s.serialize_field("rapid_collision_count", &self.rapid_collision_count)?;
         // `null` = not measured (A/M9). Consumers must not coerce it to 0.
@@ -2173,7 +2203,7 @@ impl serde::Serialize for Verdict {
 impl serde::Serialize for ProjectDiagnostics {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut s = serializer.serialize_struct("ProjectDiagnostics", 8)?;
+        let mut s = serializer.serialize_struct("ProjectDiagnostics", 9)?;
         s.serialize_field("total_runtime_s", &self.total_runtime_s)?;
         // LH-1: each key names its own denominator, so a reader never
         // has to guess. L10 retired the unnamed `air_cut_percentage`.
@@ -2187,6 +2217,9 @@ impl serde::Serialize for ProjectDiagnostics {
         )?;
         s.serialize_field("average_engagement", &self.average_engagement)?;
         s.serialize_field("collision_count", &self.collision_count)?;
+        // CMP-14: the denominator for `collision_count`. Non-zero means
+        // that sum covers only part of the project.
+        s.serialize_field("collision_checks_failed", &self.collision_checks_failed)?;
         s.serialize_field("rapid_collision_count", &self.rapid_collision_count)?;
         s.serialize_field("per_toolpath", &self.per_toolpath)?;
         s.serialize_field("verdicts", &self.verdicts)?;

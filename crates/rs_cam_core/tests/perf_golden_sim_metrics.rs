@@ -200,7 +200,10 @@ struct ToolpathAggregate {
     // Exact.
     sample_count: usize,
     move_count: usize,
-    collision_count: usize,
+    /// `null` = the holder check FAILED, so no count exists (CMP-14). A
+    /// measured clear toolpath is `0`, and the two are different claims,
+    /// so the golden pins the `Option` rather than a coerced number.
+    collision_count: Option<usize>,
     rapid_collision_count: usize,
     metrics_not_applicable: bool,
     // Accumulated across samples → LOOSE_REL.
@@ -532,7 +535,13 @@ fn measure(mut session: ProjectSession, resolution: f64) -> ProjectAggregate {
         .expect("simulation completes");
 
     let holder_collisions = session.holder_collision_counts(&cancel);
-    let holder_collision_total: usize = holder_collisions.iter().map(|(_, n)| *n).sum();
+    // Collisions actually FOUND. A failed check contributes nothing here
+    // and is reported by `ProjectDiagnostics::collision_checks_failed`
+    // instead — a sum cannot say "not checked" (CMP-14).
+    let holder_collision_total: usize = holder_collisions
+        .iter()
+        .map(|(_, check)| check.collisions())
+        .sum();
 
     let sim = session.simulation_result().expect("simulation result");
     let evidence = ProjectEvidence::from_simulation_with_holder_collisions(sim, holder_collisions);

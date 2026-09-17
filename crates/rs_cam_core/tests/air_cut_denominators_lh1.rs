@@ -115,6 +115,7 @@ fn project_diagnostics_wire_names_both_denominators() {
         air_cut_pct_of_cutting_time: 40.0,
         average_engagement: 0.31,
         collision_count: 0,
+        collision_checks_failed: 0,
         rapid_collision_count: 0,
         per_toolpath: Vec::new(),
         verdicts: Vec::new(),
@@ -143,9 +144,11 @@ fn project_diagnostics_wire_names_both_denominators() {
         obj.get("verdict").is_none(),
         "L11 retired the derived single-line verdict: {obj:?}"
     );
+    // 9 since CMP-14 added `collision_checks_failed`: a collision count is
+    // a partial sum unless the reader knows how many checks did not answer.
     assert_eq!(
         obj.len(),
-        8,
+        9,
         "serialize_struct arity must match the field count, or serde formats \
          that count fields (bincode, MessagePack) truncate: {obj:?}"
     );

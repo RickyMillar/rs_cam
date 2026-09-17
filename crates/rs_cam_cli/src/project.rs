@@ -1042,7 +1042,7 @@ mod tests {
             move_count: 1234,
             cutting_distance_mm: 5678.25,
             rapid_distance_mm: 90.5,
-            collision_count: 3,
+            collision_count: Some(3),
             rapid_collision_count: 2,
             truncated_core_mm2: Some(12.5),
             untouched_material_mm2: Some(9.75),

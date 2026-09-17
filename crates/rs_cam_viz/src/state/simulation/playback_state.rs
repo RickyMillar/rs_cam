@@ -281,7 +281,13 @@ impl SimulationState {
     /// stored report (O(collisions)), never recomputed, so it is safe
     /// to call at frame rate (the 2026-06-11 setup-tab lag was the
     /// diagnostics path re-running the full collision sweep per frame).
-    pub(crate) fn holder_collision_counts_by_tp(&self) -> Vec<(ToolpathId, usize)> {
+    pub(crate) fn holder_collision_counts_by_tp(
+        &self,
+    ) -> Vec<(
+        ToolpathId,
+        rs_cam_core::compute::collision_check::HolderCollisionCheck,
+    )> {
+        use rs_cam_core::compute::collision_check::HolderCollisionCheck;
         let mut counts: Vec<(ToolpathId, usize)> = Vec::new();
         if let Some(report) = self.checks.collision_report.as_ref() {
             for collision in &report.collisions {
@@ -293,7 +299,13 @@ impl SimulationState {
                 }
             }
         }
+        // Only toolpaths the report found HITS on appear here. A toolpath
+        // the GUI never checked is absent, and core reads absence as "not
+        // measured" — it must not be listed as a measured zero (CMP-14).
         counts
+            .into_iter()
+            .map(|(id, count)| (id, HolderCollisionCheck::Measured(count)))
+            .collect()
     }
 
     pub(crate) fn boundary_for_toolpath_id(

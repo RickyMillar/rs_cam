@@ -860,6 +860,7 @@ fn diagnostics_with_evidence_consumes_holder_counts_instead_of_computing() {
     // No holder evidence → no holder verdict, zero count.
     let diag = s.diagnostics_with_evidence(&ProjectEvidence::default());
     assert_eq!(diag.collision_count, 0);
+    assert_eq!(diag.collision_checks_failed, 0);
     assert!(
         !diag
             .verdicts
@@ -867,11 +868,17 @@ fn diagnostics_with_evidence_consumes_holder_counts_instead_of_computing() {
             .any(|v| matches!(v.kind, crate::session::VerdictKind::HolderCollision)),
         "no holder verdict without holder evidence"
     );
+    // CMP-14: a toolpath with NO evidence is not measured, so it carries
+    // no count at all. It used to carry a zero.
+    assert_eq!(diag.per_toolpath[0].collision_count, None);
 
     // Supplied counts surface verbatim.
     let tp0_id = s.toolpath_configs()[0].id;
     let evidence = ProjectEvidence {
-        holder_collisions: vec![(tp0_id, 3)],
+        holder_collisions: vec![(
+            tp0_id,
+            crate::compute::collision_check::HolderCollisionCheck::Measured(3),
+        )],
         ..ProjectEvidence::default()
     };
     let diag = s.diagnostics_with_evidence(&evidence);
@@ -883,6 +890,63 @@ fn diagnostics_with_evidence_consumes_holder_counts_instead_of_computing() {
         .expect("holder verdict from supplied evidence");
     assert_eq!(verdict.evidence.count, Some(3));
     assert_eq!(verdict.offender_toolpath_ids, vec![tp0_id]);
+}
+
+/// CMP-24: the holder-collision sweep builds ONE spatial index per
+/// DISTINCT model, not one per toolpath.
+///
+/// The build is the expensive half of a collision check. Before this row
+/// the only entry point built its own index on every call, so a project
+/// whose N toolpaths bind one model paid for the same index N times — and
+/// the session's answer to that cost was a doc line telling callers not to
+/// call it.
+#[test]
+fn the_collision_sweep_builds_one_index_per_model() {
+    fn mesh_model(id: usize, name: &str) -> crate::session::LoadedModel {
+        crate::session::LoadedModel {
+            id,
+            name: name.to_owned(),
+            mesh: Some(Arc::new(crate::mesh::make_test_hemisphere(10.0, 8))),
+            polygons: None,
+            drill_targets: Arc::new(Vec::new()),
+            layers: Arc::new(Vec::new()),
+            path: std::path::PathBuf::from(format!("synthetic://{name}.stl")),
+            kind: None,
+            units: None,
+            enriched_mesh: None,
+            winding_report: None,
+            load_error: None,
+        }
+    }
+
+    let mut s = make_session();
+    s.models.push(mesh_model(0, "one"));
+    for _ in 0..3 {
+        let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+    }
+    for index in 0..3 {
+        s.results.insert(index, empty_result());
+    }
+
+    assert_eq!(
+        s.holder_collision_indices().len(),
+        1,
+        "three toolpaths on one model must share one spatial index"
+    );
+
+    // And the hoist is per MODEL, not a blanket "build one": a second model
+    // earns a second index.
+    s.models.push(mesh_model(1, "two"));
+    let mut second = make_tc(s.tools()[0].id.0);
+    second.model_id = 1;
+    let _ = s.add_toolpath(0, second).unwrap();
+    s.results.insert(3, empty_result());
+
+    assert_eq!(
+        s.holder_collision_indices().len(),
+        2,
+        "a toolpath on a second model needs that model's own index"
+    );
 }
 
 /// A12: per-toolpath diagnostics carry an `op_kind` snake_case tag so

@@ -192,6 +192,17 @@ fn int(mode: &str, scope: &str, metric: &str, value: usize) {
     println!("S1AB mode={mode} scope={scope} metric={metric} value={value}");
 }
 
+/// A count that may not exist. `None` prints `value=not_measured`, never
+/// `value=0` (CMP-14): a holder-collision check that failed is not a
+/// toolpath with no collisions, and a harness that prints the zero makes
+/// the reader believe the wrong one.
+fn opt_int(mode: &str, scope: &str, metric: &str, value: Option<usize>) {
+    match value {
+        Some(v) => println!("S1AB mode={mode} scope={scope} metric={metric} value={v}"),
+        None => println!("S1AB mode={mode} scope={scope} metric={metric} value=not_measured"),
+    }
+}
+
 fn tp_scope(id: ToolpathId) -> String {
     format!("tp{}", id.0)
 }
@@ -448,6 +459,12 @@ fn swept_wanaka_ab_s1() {
     int(
         mode,
         "project",
+        "collision_checks_failed",
+        diag.collision_checks_failed,
+    );
+    int(
+        mode,
+        "project",
         "diag_rapid_collision_count",
         diag.rapid_collision_count,
     );
@@ -474,7 +491,7 @@ fn swept_wanaka_ab_s1() {
             td.op_kind, td.tool_name
         );
         int(mode, &scope, "move_count", td.move_count);
-        int(mode, &scope, "collision_count", td.collision_count);
+        opt_int(mode, &scope, "collision_count", td.collision_count);
         int(
             mode,
             &scope,

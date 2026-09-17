@@ -73,6 +73,7 @@ fn severity_from_legacy(s: VerdictSeverity) -> Severity {
 fn id_and_category_for(kind: VerdictKind) -> (&'static str, Category) {
     match kind {
         VerdictKind::HolderCollision => (ids::PROJECT_HOLDER_COLLISION, Category::Safety),
+        VerdictKind::HolderCheckFailed => (ids::PROJECT_HOLDER_CHECK_FAILED, Category::Safety),
         VerdictKind::RapidCollision => (ids::PROJECT_RAPID_COLLISION, Category::Safety),
         VerdictKind::PlungeStress => (ids::PROJECT_PLUNGE_STRESS, Category::Safety),
         VerdictKind::AirCut => (ids::PROJECT_AIR_CUT_HIGH, Category::Efficiency),

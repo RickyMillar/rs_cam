@@ -9,7 +9,7 @@ use std::sync::atomic::AtomicBool;
 use tracing::instrument;
 
 use crate::compute::collision_check::{
-    CollisionCheckRequest, CollisionCheckResult, run_collision_check,
+    CollisionCheckRequest, CollisionCheckResult, HolderCollisionCheck, run_collision_check,
 };
 use crate::compute::cutter::build_cutter;
 use crate::compute::tool_config::ToolId;
@@ -171,6 +171,18 @@ impl ProjectSession {
         index: usize,
         cancel: &AtomicBool,
     ) -> Result<CollisionCheckResult, SessionError> {
+        self.collision_check_with_index(index, None, cancel)
+    }
+
+    /// [`Self::collision_check`] with a spatial index the caller already
+    /// built over this toolpath's model mesh (CMP-24). The sweep hands one
+    /// index per distinct model; a single check hands `None`.
+    fn collision_check_with_index(
+        &self,
+        index: usize,
+        prebuilt_index: Option<&crate::mesh::SpatialIndex>,
+        cancel: &AtomicBool,
+    ) -> Result<CollisionCheckResult, SessionError> {
         let tc = self
             .toolpath_configs
             .get(index)
@@ -196,6 +208,7 @@ impl ProjectSession {
             tool: tool_def,
             mesh: model,
             obstacles: self.collision_obstacles_for_toolpath(index),
+            index: prebuilt_index,
         };
         let check_result = run_collision_check(&request, cancel)?;
         Ok(check_result)
@@ -347,25 +360,79 @@ impl ProjectSession {
         self.diagnostics_with_evidence(&evidence)
     }
 
-    /// Run the holder/shank collision check for every computed
-    /// toolpath and return `(toolpath_id, collision_count)` pairs.
-    /// Toolpaths whose check fails (missing mesh, etc.) count as 0,
-    /// matching the legacy in-diagnostics behavior.
+    /// One spatial index per DISTINCT model the computed toolpaths bind,
+    /// keyed by the model's raw id (CMP-24).
     ///
-    /// This is the expensive sweep (spatial-index build + interpolated
-    /// toolpath walk per toolpath). Interactive surfaces should reuse
-    /// their last dedicated check instead of calling this per frame.
-    pub fn holder_collision_counts(&self, cancel: &AtomicBool) -> Vec<(ToolpathId, usize)> {
+    /// The sweep below used to build one index per TOOLPATH, so a project
+    /// whose N toolpaths bind one model paid for the same index N times.
+    /// The build is the expensive half of a collision check, and the
+    /// session's own answer to that cost was a doc line telling callers
+    /// not to call it. This hoists the build instead.
+    ///
+    /// A toolpath whose model carries no mesh contributes no entry, and
+    /// the sweep then reads [`HolderCollisionCheck::NotApplicable`] for it.
+    pub(crate) fn holder_collision_indices(
+        &self,
+    ) -> std::collections::BTreeMap<usize, crate::mesh::SpatialIndex> {
+        let mut indices = std::collections::BTreeMap::new();
+        for (idx, tc) in self.toolpath_configs.iter().enumerate() {
+            if !self.results.contains_key(&idx) || indices.contains_key(&tc.model_id) {
+                continue;
+            }
+            let Some(mesh) = self
+                .find_model_by_raw_id(tc.model_id)
+                .and_then(|m| m.mesh.as_ref())
+            else {
+                continue;
+            };
+            indices.insert(tc.model_id, crate::mesh::SpatialIndex::build_auto(mesh));
+        }
+        indices
+    }
+
+    /// Run the holder/shank collision check for every computed toolpath
+    /// and return one [`HolderCollisionCheck`] per toolpath.
+    ///
+    /// **A check that FAILED is not a check that found nothing** (CMP-14).
+    /// This used to answer `0` for a failure, a not-applicable check and a
+    /// clean check alike, so no consumer could tell them apart — on the one
+    /// question that wrecks a machine. The three states are now distinct at
+    /// the producer and every consumer decides for itself.
+    ///
+    /// This is the expensive sweep (one spatial-index build per distinct
+    /// model plus an interpolated toolpath walk per toolpath). Interactive
+    /// surfaces should reuse their last dedicated check instead of calling
+    /// this per frame.
+    pub fn holder_collision_counts(
+        &self,
+        cancel: &AtomicBool,
+    ) -> Vec<(ToolpathId, HolderCollisionCheck)> {
+        let indices = self.holder_collision_indices();
         self.toolpath_configs
             .iter()
             .enumerate()
             .filter(|(idx, _)| self.results.contains_key(idx))
             .map(|(idx, tc)| {
-                let count = self
-                    .collision_check(idx, cancel)
-                    .map(|r| r.collision_report.collisions.len())
-                    .unwrap_or(0);
-                (tc.id, count)
+                let outcome =
+                    match self.collision_check_with_index(idx, indices.get(&tc.model_id), cancel) {
+                        Ok(r) => {
+                            HolderCollisionCheck::Measured(r.collision_report.collisions.len())
+                        }
+                        // The 2D case the CLI calls expected: no mesh, so
+                        // nothing to check against.
+                        Err(SessionError::MissingGeometry(_)) => {
+                            HolderCollisionCheck::NotApplicable
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                index = idx,
+                                error = %e,
+                                "Holder collision check failed; the count is unknown"
+                            );
+                            HolderCollisionCheck::Failed
+                        }
+                    };
+                (tc.id, outcome)
             })
             .collect()
     }
@@ -612,6 +679,7 @@ impl ProjectSession {
     pub fn diagnostics_with_evidence(&self, evidence: &ProjectEvidence<'_>) -> ProjectDiagnostics {
         let mut per_toolpath = Vec::new();
         let mut total_collision_count: usize = 0;
+        let mut collision_checks_failed: usize = 0;
         let mut total_rapid_collision_count: usize = 0;
 
         // Per-TP context collected in the toolpath loop for later verdict
@@ -621,6 +689,7 @@ impl ProjectSession {
             z: f64,
         }
         let mut holder_collisions_by_tp: Vec<(ToolpathId, String, usize)> = Vec::new();
+        let mut failed_checks_by_tp: Vec<(ToolpathId, String)> = Vec::new();
         let mut rapid_collisions_by_tp: Vec<(ToolpathId, String, usize, RapidWorst)> = Vec::new();
         let mut empty_results_by_tp: Vec<(ToolpathId, String, &str)> = Vec::new();
 
@@ -711,16 +780,30 @@ impl ProjectSession {
                 // GUI setup panel then executed every frame (2026-06-11
                 // setup-tab lag). Diagnostics consume evidence; they do
                 // not compute it.
-                let holder_collision_count = evidence
+                //
+                // CMP-14, the second `unwrap_or(0)`: a toolpath ABSENT
+                // from the evidence was read as a measured zero here,
+                // summed into `collision_count` and tested with `> 0`.
+                // The GUI supplies only the toolpaths its last check
+                // found hits on, so absence there means NOT MEASURED. It
+                // now reports `None` and raises no verdict — a toolpath
+                // nobody checked is neither clean nor dirty.
+                let holder_check = evidence
                     .holder_collisions
                     .iter()
                     .find(|(id, _)| *id == tc.id)
-                    .map(|(_, count)| *count)
-                    .unwrap_or(0);
-                total_collision_count += holder_collision_count;
+                    .map(|(_, check)| *check);
+                let holder_collision_count = holder_check.and_then(HolderCollisionCheck::count);
+                total_collision_count += holder_collision_count.unwrap_or(0);
+                if holder_check.is_some_and(HolderCollisionCheck::failed) {
+                    collision_checks_failed += 1;
+                    failed_checks_by_tp.push((tc.id, tc.name.clone()));
+                }
 
-                if holder_collision_count > 0 {
-                    holder_collisions_by_tp.push((tc.id, tc.name.clone(), holder_collision_count));
+                if let Some(count) = holder_collision_count
+                    && count > 0
+                {
+                    holder_collisions_by_tp.push((tc.id, tc.name.clone(), count));
                 }
 
                 // C7: detect toolpaths that generated successfully but laid
@@ -745,6 +828,8 @@ impl ProjectSession {
                     move_count: result.stats.move_count,
                     cutting_distance_mm: result.stats.cutting_distance,
                     rapid_distance_mm: result.stats.rapid_distance,
+                    // `null` = the check FAILED, so no count exists.
+                    // Consumers must not coerce it to 0 (CMP-14).
                     collision_count: holder_collision_count,
                     rapid_collision_count: rapid_count,
                     truncated_core_mm2: result.stats.truncated_core_mm2,
@@ -852,6 +937,29 @@ impl ProjectSession {
                     move_index: None,
                     z_value: None,
                     count: Some(*count),
+                },
+            });
+        }
+
+        // Critical: a holder/shank check that could not answer. The
+        // absence is the finding — CMP-14's whole point is that it must
+        // not be reported as a clean toolpath.
+        for (id, name) in &failed_checks_by_tp {
+            verdicts.push(Verdict {
+                severity: VerdictSeverity::Critical,
+                kind: VerdictKind::HolderCheckFailed,
+                headline: format!(
+                    "NOT CHECKED: the holder/shank collision check failed on TP{id} '{name}'"
+                ),
+                offender_toolpath_ids: vec![*id],
+                fix_hint: "Nothing is known about holder clearance on this toolpath. Re-run \
+                           the collision check. If it fails again, confirm the toolpath's \
+                           model still carries a mesh and its tool still exists."
+                    .to_owned(),
+                evidence: VerdictEvidence {
+                    move_index: None,
+                    z_value: None,
+                    count: None,
                 },
             });
         }
@@ -1012,6 +1120,7 @@ impl ProjectSession {
             air_cut_pct_of_cutting_time,
             average_engagement,
             collision_count: total_collision_count,
+            collision_checks_failed,
             rapid_collision_count: total_rapid_collision_count,
             per_toolpath,
             verdicts,
