@@ -2458,15 +2458,12 @@ impl RsCamApp {
                 })))
             }
             CommandId::SetPostConfig => {
-                // The viz mirror of the same field. The GUI's Feeds &
-                // Speeds modal reads this copy, not the session's.
-                let parsed = self
-                    .controller
-                    .state()
-                    .session
-                    .post_config()
-                    .spindle_strategy;
-                self.controller.state_mut().gui.post.spindle_strategy = parsed;
+                // SHL-01: rebuild the viz mirror through the one door.
+                // The GUI's Feeds & Speeds modal reads that copy, not
+                // the session's. This arm copied `spindle_strategy`
+                // alone, so a second field on `ProjectPostConfig` set
+                // through this route would not have reached the panel.
+                self.controller.refresh_post_mirror();
                 self.controller.state_mut().gui.mark_edited();
                 let strategy = before.display_name();
                 // Suggest is the read-side consumer — no toolpaths go
@@ -2663,7 +2660,7 @@ impl RsCamApp {
                     let is_rest_depth_pencil = matches!(
                         &source_tc.operation,
                         rs_cam_core::compute::catalog::OperationConfig::Pencil(cfg)
-                            if rs_cam_core::finish::pencil::PencilDetector::parse(&cfg.detector)
+                            if cfg.detector
                                 == rs_cam_core::finish::pencil::PencilDetector::RestDepth
                     );
                     (idx, source_toolpath_id, is_rest_depth_pencil)

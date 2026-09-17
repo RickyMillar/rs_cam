@@ -23,6 +23,8 @@ result. The entry point is `../controller.rs`.
   live session while it runs.
 - `generate_all` is a fixpoint over the rest-stock chain. Do not replace it
   with a single pass over the toolpath list.
+- `GuiState::post` is a view of `session.post_config()`. `io.rs`'s
+  `refresh_post_mirror` rebuilds it. Never copy one post field by hand.
 
 ## Sentries
 

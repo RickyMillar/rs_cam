@@ -381,8 +381,12 @@ impl<B: ComputeBackend> AppController<B> {
                     let command = Command::SetPostConfig(SetPostConfigArgs {
                         post: Box::new(post),
                     });
-                    self.apply_controller_command(command, "the spindle strategy");
-                    self.state.gui.post.spindle_strategy = strategy;
+                    if self.apply_controller_command(command, "the spindle strategy") {
+                        // SHL-01: one door rebuilds the mirror. This arm
+                        // copied `spindle_strategy` alone, and it copied
+                        // it even when the command was refused.
+                        self.refresh_post_mirror();
+                    }
                     self.state.gui.mark_edited();
                 }
             }

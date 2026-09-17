@@ -110,9 +110,12 @@ impl RsCamApp {
                     // already takes it. It is a method on the
                     // controller, so the borrow of the state ends before
                     // the command runs.
+                    //
+                    // SHL-01: that door now also rebuilds the post
+                    // mirror, so this arm no longer copies `format` on
+                    // by hand ahead of the write.
                     let command = {
                         let s = self.controller.state_mut();
-                        s.gui.post.format = format;
                         s.gui.mark_edited();
                         let mut post = s.session.post_config().clone();
                         post.format = format.to_token().to_owned();
