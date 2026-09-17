@@ -277,16 +277,24 @@ enum Commands {
         /// One or more .nc files to analyze.
         inputs: Vec<PathBuf>,
 
-        /// Maximum feed (mm/min). Default 4000 matches the typical
-        /// MachineProfile cap; override per-file if the project uses
-        /// something else.
-        #[arg(long, default_value_t = 4000.0)]
-        max_feed: f64,
+        /// Machine profile to replay against, by name in the shared
+        /// machine library (the one the GUI and MCP
+        /// `load_machine_from_library` read). Without this flag the
+        /// command uses the built-in `shapeoko_xxl_ricky_tuned` preset.
+        #[arg(long)]
+        machine: Option<String>,
 
-        /// Rapid feed (mm/min) for `G0` moves. Default 10000 matches the
-        /// Shapeoko XXL tuned `$110/$111`.
-        #[arg(long, default_value_t = 10000.0)]
-        rapid_feed: f64,
+        /// Maximum feed (mm/min). Overrides the loaded machine's
+        /// cutting-feed ceiling. Without `--machine` the default is
+        /// 4000, as it has always been.
+        #[arg(long)]
+        max_feed: Option<f64>,
+
+        /// Rapid feed (mm/min) for `G0` moves. Overrides the loaded
+        /// machine's travel rate. Without `--machine` the default is
+        /// 10000, matching the Shapeoko XXL tuned `$110/$111`.
+        #[arg(long)]
+        rapid_feed: Option<f64>,
     },
 }
 
@@ -444,10 +452,11 @@ fn main() -> Result<()> {
         }
         Commands::NcTime {
             inputs,
+            machine,
             max_feed,
             rapid_feed,
         } => {
-            nc_replay::run_nc_time(&inputs, max_feed, rapid_feed)?;
+            nc_replay::run_nc_time(&inputs, machine.as_deref(), max_feed, rapid_feed)?;
         }
     }
 

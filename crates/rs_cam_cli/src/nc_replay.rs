@@ -6,27 +6,126 @@
 //! Useful as a cross-check after `project --emit-gcode` runs — confirms
 //! the emitter didn't drop / add moves on the way from `Toolpath` IR to
 //! the .nc the controller will see. Also lets us re-predict time on .nc
-//! files we didn't generate (vendor G-code, hand-tweaked, etc.) using
-//! the user's calibrated `shapeoko_xxl_ricky_tuned` kinematics.
+//! files we didn't generate (vendor G-code, hand-tweaked, etc.).
+//!
+//! CLI-06: `--machine <name>` reads the same `io::machine_library` the
+//! GUI and MCP `load_machine_from_library` read, so a prediction can be
+//! made for any machine in the library. Without the flag the command
+//! keeps the built-in `shapeoko_xxl_ricky_tuned` preset it used to
+//! hardcode. The feed caps come off the loaded profile through the
+//! canonical mapping (`session/compute.rs`'s `LinkKinematics`): the
+//! cutting-feed ceiling is the commanded-feed cap, the travel rate is
+//! the rapid rate. `--max-feed` and `--rapid-feed` still override.
 //!
 //! Parser is intentionally minimal — only handles the G-code subset
 //! rs_cam emits + common GRBL-friendly bits. Comments, M-codes,
 //! S-words, T-words are all silently skipped. Modal X/Y/Z/F are
 //! tracked. G0/G1 emit linear moves; G2/G3 emit arcs.
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use rs_cam_core::geo::P3;
+use rs_cam_core::io::machine_library;
+use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::machine::kinematics::{MachineKinematics, compute_cycle_time};
 use rs_cam_core::toolpath::Toolpath;
 use std::path::{Path, PathBuf};
 
+/// The machine one `nc-time` run replays against.
+///
+/// `kinematics_declared` is the honest half: a library profile may carry
+/// no `[kinematics]` block at all, and `MachineProfile::
+/// effective_kinematics` then answers the generic wood-router default.
+/// That is a real answer, but it is not the named machine's answer, so
+/// the run says which one it used.
+#[derive(Debug)]
+pub(crate) struct ReplayMachine {
+    pub label: String,
+    pub kinematics: MachineKinematics,
+    pub max_feed_mm_min: f64,
+    pub rapid_feed_mm_min: f64,
+    pub kinematics_declared: bool,
+}
+
+/// The built-in default when no `--machine` is given: the operator's
+/// calibrated preset, with the feed caps this command has always used.
+fn builtin_machine() -> ReplayMachine {
+    ReplayMachine {
+        label: "shapeoko_xxl_ricky_tuned (built-in preset)".to_owned(),
+        kinematics: MachineKinematics::shapeoko_xxl_ricky_tuned(),
+        max_feed_mm_min: 4000.0,
+        rapid_feed_mm_min: 10_000.0,
+        kinematics_declared: true,
+    }
+}
+
+/// Read a machine profile the way the simulator does.
+///
+/// The mapping is `session/compute.rs`'s `LinkKinematics`, not a second
+/// reading of the same struct: `cutting_feed_ceiling_mm_min` is the cap
+/// on commanded feeds (F4 — `max_feed_mm_min` is the TRAVEL rate, and
+/// reading it as the cutting cap is the defect F4 fixed), and
+/// `max_feed_mm_min` is the rapid rate.
+pub(crate) fn machine_from_profile(profile: &MachineProfile) -> ReplayMachine {
+    ReplayMachine {
+        label: profile.name.clone(),
+        kinematics: profile.effective_kinematics(),
+        max_feed_mm_min: profile.cutting_feed_ceiling_mm_min().max(1.0),
+        rapid_feed_mm_min: profile.max_feed_mm_min.max(1.0),
+        kinematics_declared: profile.kinematics.is_some(),
+    }
+}
+
+/// Resolve `--machine` against a library directory.
+///
+/// `None` keeps the built-in preset. A named machine is loaded from
+/// `dir`; a missing directory or a missing name is a refusal that lists
+/// what the library does hold, not a silent fall back to the preset —
+/// a predicted cycle time attributed to the wrong machine is worse than
+/// no prediction.
+pub(crate) fn resolve_machine_in(
+    dir: Option<&Path>,
+    machine: Option<&str>,
+) -> Result<ReplayMachine> {
+    let Some(name) = machine else {
+        return Ok(builtin_machine());
+    };
+    let Some(dir) = dir else {
+        bail!(
+            "--machine {name} needs a machine library, and none is set. Set \
+             RS_CAM_MACHINE_DIR, XDG_CONFIG_HOME or HOME, or drop the flag to \
+             use the built-in shapeoko_xxl_ricky_tuned preset."
+        );
+    };
+    match machine_library::load_from(dir, name) {
+        Ok(profile) => Ok(machine_from_profile(&profile)),
+        Err(e) => {
+            let available = machine_library::list_in(dir);
+            let listed = if available.is_empty() {
+                "nothing".to_owned()
+            } else {
+                available.join(", ")
+            };
+            bail!("{e}. The library at {} holds: {listed}.", dir.display())
+        }
+    }
+}
+
 /// Replay one or more .nc files through F-034 and print the predicted
 /// cycle time for each.
-pub fn run_nc_time(inputs: &[PathBuf], max_feed: f64, rapid_feed: f64) -> Result<()> {
+pub fn run_nc_time(
+    inputs: &[PathBuf],
+    machine: Option<&str>,
+    max_feed: Option<f64>,
+    rapid_feed: Option<f64>,
+) -> Result<()> {
     if inputs.is_empty() {
         anyhow::bail!("nc-time requires at least one input .nc file");
     }
-    let kinematics = MachineKinematics::shapeoko_xxl_ricky_tuned();
+    let resolved = resolve_machine_in(machine_library::library_dir().as_deref(), machine)?;
+    let kinematics = resolved.kinematics;
+    // A flag overrides the profile; the profile overrides nothing else.
+    let max_feed = max_feed.unwrap_or(resolved.max_feed_mm_min);
+    let rapid_feed = rapid_feed.unwrap_or(resolved.rapid_feed_mm_min);
     let junction_str = kinematics
         .max_junction_velocity_mm_min
         .map(|v| format!("{v:.0} mm/min"))
@@ -36,9 +135,16 @@ pub fn run_nc_time(inputs: &[PathBuf], max_feed: f64, rapid_feed: f64) -> Result
         None => format!("accel {:.0} mm/s²", kinematics.acceleration_mm_s2),
     };
     println!(
-        "kinematics: shapeoko_xxl_ricky_tuned ({accel_str}, δ {:.3} mm, junction {})",
-        kinematics.junction_deviation_mm, junction_str,
+        "kinematics: {} ({accel_str}, δ {:.3} mm, junction {})",
+        resolved.label, kinematics.junction_deviation_mm, junction_str,
     );
+    if !resolved.kinematics_declared {
+        println!(
+            "note: {} declares no kinematics; the generic wood-router \
+             default is in use, so this time is NOT that machine's.",
+            resolved.label
+        );
+    }
     println!(
         "machine caps: max_feed {:.0} mm/min, rapid_feed {:.0} mm/min",
         max_feed, rapid_feed,
@@ -270,6 +376,100 @@ mod tests {
             }
         }
         let _ = std::fs::remove_file(&path);
+    }
+
+    /// CLI-06 sentry: `nc-time` reads the shared machine library, and a
+    /// different machine predicts a different time.
+    ///
+    /// The command used to read
+    /// `MachineKinematics::shapeoko_xxl_ricky_tuned()` with no parameter
+    /// to change it, while `io::machine_library` — the library the GUI
+    /// and MCP `load_machine_from_library` share — sat unreachable from
+    /// this surface. A prediction that can only ever describe one
+    /// machine is not a cross-check for any other.
+    ///
+    /// The directory is passed in, not read from the environment:
+    /// `std::env::set_var` is `unsafe` in edition 2024 and the workspace
+    /// denies `unsafe_code`.
+    #[test]
+    fn a_library_machine_changes_the_predicted_time() {
+        let dir = std::env::temp_dir().join(format!("nc_time_library_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let mut slow = rs_cam_core::machine::MachineProfile::generic_wood_router();
+        slow.name = "slow_router".to_owned();
+        slow.max_feed_mm_min = 6000.0;
+        slow.kinematics = Some(MachineKinematics {
+            acceleration_mm_s2: 100.0,
+            acceleration_xyz_mm_s2: Some([100.0, 100.0, 100.0]),
+            ..MachineKinematics::default()
+        });
+        let mut fast = slow.clone();
+        fast.name = "fast_router".to_owned();
+        fast.kinematics = Some(MachineKinematics {
+            acceleration_mm_s2: 3000.0,
+            acceleration_xyz_mm_s2: Some([3000.0, 3000.0, 3000.0]),
+            ..MachineKinematics::default()
+        });
+        rs_cam_core::io::machine_library::save_to(&dir, "slow_router", &slow).unwrap();
+        rs_cam_core::io::machine_library::save_to(&dir, "fast_router", &fast).unwrap();
+
+        // A short zig-zag: acceleration decides its time, not the feed.
+        let mut tp = Toolpath::new();
+        for i in 0..20 {
+            let x = f64::from(i % 2) * 10.0;
+            tp.feed_to(P3::new(x, f64::from(i), 0.0), 3000.0);
+        }
+
+        let slow_run = resolve_machine_in(Some(&dir), Some("slow_router")).unwrap();
+        let fast_run = resolve_machine_in(Some(&dir), Some("fast_router")).unwrap();
+        assert_eq!(slow_run.label, "slow_router");
+        assert!(slow_run.kinematics_declared);
+
+        let slow_s = compute_cycle_time(
+            &tp,
+            &slow_run.kinematics,
+            slow_run.max_feed_mm_min,
+            slow_run.rapid_feed_mm_min,
+        );
+        let fast_s = compute_cycle_time(
+            &tp,
+            &fast_run.kinematics,
+            fast_run.max_feed_mm_min,
+            fast_run.rapid_feed_mm_min,
+        );
+        assert!(
+            slow_s > fast_s * 1.5,
+            "the two library machines predicted the same time \
+             ({slow_s:.3} s vs {fast_s:.3} s); nc-time is not reading the profile"
+        );
+
+        // The feed caps come off the profile, not off the old hardcoded
+        // flag defaults.
+        assert!(
+            (slow_run.rapid_feed_mm_min - 6000.0).abs() < 1e-9,
+            "the rapid rate must be the profile travel rate, got {}",
+            slow_run.rapid_feed_mm_min
+        );
+        assert!(
+            (slow_run.max_feed_mm_min - slow.cutting_feed_ceiling_mm_min()).abs() < 1e-9,
+            "the feed cap must be the profile cutting ceiling, got {}",
+            slow_run.max_feed_mm_min
+        );
+
+        // A name the library does not hold refuses and says what it holds.
+        let err = resolve_machine_in(Some(&dir), Some("not_in_the_library")).unwrap_err();
+        let text = format!("{err:#}");
+        assert!(
+            text.contains("not_in_the_library") && text.contains("slow_router"),
+            "the refusal must name the machine and list the library, got: {text}"
+        );
+
+        // No flag keeps the built-in preset.
+        let builtin = resolve_machine_in(Some(&dir), None).unwrap();
+        assert!(builtin.label.contains("shapeoko_xxl_ricky_tuned"));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
