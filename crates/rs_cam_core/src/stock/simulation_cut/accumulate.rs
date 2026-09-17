@@ -58,7 +58,8 @@ impl KinematicsAccumulator {
             self.mean_chip_thickness_observed_runtime_s += dt;
         }
         if let Some(pct) = eng.peak_chip_thickness_mm {
-            self.peak_chip_thickness_mm = self.peak_chip_thickness_mm.max(pct);
+            self.peak_chip_thickness_mm =
+                Some(self.peak_chip_thickness_mm.map_or(pct, |p| p.max(pct)));
         }
         self.leading_edge_speed_time_weighted_sum += eng.leading_edge_speed_mm_min * dt;
     }
@@ -94,11 +95,7 @@ impl KinematicsAccumulator {
             } else {
                 None
             },
-            peak_chip_thickness_mm: if self.peak_chip_thickness_mm > 0.0 {
-                Some(self.peak_chip_thickness_mm)
-            } else {
-                None
-            },
+            peak_chip_thickness_mm: self.peak_chip_thickness_mm,
             average_leading_edge_speed_mm_min: if self.cutting_runtime_s > 1e-9 {
                 self.leading_edge_speed_time_weighted_sum / t
             } else {

@@ -9,14 +9,16 @@
 //! precise-looking percentage trips every shipped band while nothing anywhere
 //! says the number is not a measurement.
 //!
-//! Before this wave the story ended there. These tests pin all three legs:
+//! Before this wave the story ended there. These tests pin all four legs:
 //!
 //! 1. the fixture really does behave that way (`the_floor_fixture_...`) —
 //!    if it ever stops, the rest of this file is testing nothing;
 //! 2. the measurability detector calls it `NotMeasurable` and names the
 //!    floor, while leaving collision detection and material removal live;
 //! 3. the control arm — the same geometry cut deep — stays `Measurable`, so
-//!    the detector is not simply abstaining on everything.
+//!    the detector is not simply abstaining on everything;
+//! 4. the same contract one layer up (STK-08): a summary reports `Some(0.0)`
+//!    for a measured zero chip peak and `None` only when nothing measured it.
 //!
 //! Ruled 2026-08-04 (Checkpoint D Q2): the 0.05 mm floor is documented, not
 //! tuned; a `NotMeasurable` metric stops feeding its gate; collision
@@ -35,7 +37,10 @@ use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::stock::sim_measurability::{
     Measurability, MeasurabilityReason, MeasurabilityReport, SimMetric,
 };
-use rs_cam_core::stock::simulation_cut::{AirCutRatios, CutKinematics, SimulationCutTrace};
+use rs_cam_core::stock::simulation_cut::{
+    AirCutRatios, CutKinematics, Engagement, SimulationCutSample, SimulationCutTrace,
+    SummaryAccumulator,
+};
 use rs_cam_core::tool::FlatEndmill;
 use rs_cam_core::toolpath::{MoveIntent, Toolpath};
 
@@ -208,5 +213,51 @@ fn the_deep_control_arm_stays_measurable() {
             .iter()
             .filter(|e| e.measurability != Measurability::Measurable)
             .collect::<Vec<_>>()
+    );
+}
+
+/// One cutting sample whose chip model measured a peak of exactly `depth`.
+fn one_cutting_sample(peak_chip_thickness_mm: Option<f64>) -> SimulationCutSample {
+    SimulationCutSample {
+        toolpath_id: ToolpathId(0),
+        segment_time_s: 0.1,
+        is_cutting: true,
+        cut_kinematics: CutKinematics::Linear,
+        feed_rate_mm_min: 1000.0,
+        spindle_rpm: 18_000,
+        flute_count: 2,
+        engagement: Engagement {
+            radial_woc_fraction: 0.5,
+            peak_chip_thickness_mm,
+            ..Engagement::default()
+        },
+        ..SimulationCutSample::test_fixture()
+    }
+}
+
+#[test]
+fn a_measured_zero_chip_peak_reports_some_zero_not_none() {
+    // Leg 4 (STK-08): the same contract on the summary side. `None` means
+    // the class measured no chip peak at all. A class that measured a peak
+    // of exactly zero must say `Some(0.0)`, or a consumer reads a real
+    // measurement as an abstention.
+    let mut acc = SummaryAccumulator::default();
+    acc.observe(&one_cutting_sample(Some(0.0)));
+    let measured = acc.finish_toolpath(ToolpathId(0));
+    let lin = &measured.per_kinematics[&CutKinematics::Linear];
+    assert_eq!(
+        lin.peak_chip_thickness_mm,
+        Some(0.0),
+        "a measured zero peak must publish Some(0.0), not an abstention"
+    );
+
+    // The control arm: no sample carried a peak, so the class abstains.
+    let mut acc = SummaryAccumulator::default();
+    acc.observe(&one_cutting_sample(None));
+    let unmeasured = acc.finish_toolpath(ToolpathId(0));
+    let lin = &unmeasured.per_kinematics[&CutKinematics::Linear];
+    assert_eq!(
+        lin.peak_chip_thickness_mm, None,
+        "a class that measured no chip peak must abstain"
     );
 }

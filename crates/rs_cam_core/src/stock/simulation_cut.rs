@@ -379,7 +379,11 @@ pub struct KinematicsSummary {
     /// samples that carried it. `None` when no sample reported chip
     /// thickness.
     pub average_mean_chip_thickness_mm: Option<f64>,
-    /// Maximum `engagement.peak_chip_thickness_mm` observed.
+    /// Maximum `engagement.peak_chip_thickness_mm` observed. `None` =
+    /// **not measured**: no sample in this class carried a peak chip
+    /// thickness. `Some(0.0)` is a measured zero (STK-08 — this field used to
+    /// publish `None` for a measured zero, against the contract the sibling
+    /// [`Self::peak_axial_doc_fraction`] already kept).
     pub peak_chip_thickness_mm: Option<f64>,
     /// Time-weighted mean of `engagement.leading_edge_speed_mm_min`.
     pub average_leading_edge_speed_mm_min: f64,
@@ -878,7 +882,10 @@ pub struct KinematicsAccumulator {
     pub arc_observed_runtime_s: f64,
     pub mean_chip_thickness_time_weighted_sum: f64,
     pub mean_chip_thickness_observed_runtime_s: f64,
-    pub peak_chip_thickness_mm: f64,
+    /// `None` until a sample carries a peak chip thickness — the same
+    /// `Option`-preserving accumulation `peak_axial_doc_fraction` uses, so a
+    /// measured zero stays `Some(0.0)` (STK-08).
+    pub peak_chip_thickness_mm: Option<f64>,
     pub leading_edge_speed_time_weighted_sum: f64,
     pub sample_count: usize,
 }

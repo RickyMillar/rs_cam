@@ -18,6 +18,8 @@ that reads it. The entry point for an operator answer is
 ## Invariants
 
 - A `NotMeasurable` metric must abstain. Collision detection stays enabled.
+- On every summary field, `None` means not measured and `Some(0.0)` means
+  measured and zero. Never publish `None` for a measured zero.
 - The air-cut threshold reads `air_cut_pct_of_total_runtime`. Do not
   substitute the cutting-time denominator. Prefer absolute air-cut time when
   you compare arms.
