@@ -1,7 +1,11 @@
 # `dressup/` — post-generation transforms
 
-The passes that run after an operation generates a toolpath. They are driven
-from `compute/execute/dressup_apply.rs`, never called ad hoc.
+The passes that run after an operation generates a toolpath. `apply_dressups`
+in `compute/execute/dressup_apply.rs` drives them. Three run outside it.
+`apply_tabs` runs in the per-level closure of `compute/execute/clearing_2d.rs`;
+it needs that level's cut depth. `optimize_entry_descents_annotated` and
+`adaptive_feed_modulate` run in `session/compute.rs`; they need the prior-stock
+dexel and the simulated engagement. Add no fourth.
 
 ## Files
 
