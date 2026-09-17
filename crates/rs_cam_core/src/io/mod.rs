@@ -23,6 +23,42 @@ use crate::compute::stock_config::{ModelKind, ModelUnits};
 use crate::mesh::TriangleMesh;
 use crate::session::{LoadedGeometry, LoadedModel, SessionError};
 
+/// The largest file any import door reads, in bytes.
+///
+/// A file over this limit is refused before the parser sees it, so a stray
+/// multi-gigabyte file cannot exhaust memory inside a third-party parser.
+/// STEP has held this guard since it landed; DXF and SVG hold it too
+/// (EDG-03, 2026-09-17).
+pub const MAX_IMPORT_FILE_SIZE: u64 = 500 * 1024 * 1024;
+
+/// A file that is over the import size limit, in whole MB.
+pub(crate) struct OversizeFile {
+    /// The measured file size.
+    pub size_mb: u64,
+    /// The limit it passed.
+    pub limit_mb: u64,
+}
+
+/// Measure the file at `path` against `limit_bytes`.
+///
+/// `None` means the file is within the limit. Each door keeps its own error
+/// type and turns a `Some` into its own `FileTooLarge` variant: the three
+/// importers share the mechanism, not the error.
+pub(crate) fn file_size_over_limit(
+    path: &Path,
+    limit_bytes: u64,
+) -> Result<Option<OversizeFile>, std::io::Error> {
+    let size_bytes = std::fs::metadata(path)?.len();
+    if size_bytes > limit_bytes {
+        Ok(Some(OversizeFile {
+            size_mb: size_bytes / (1024 * 1024),
+            limit_mb: limit_bytes / (1024 * 1024),
+        }))
+    } else {
+        Ok(None)
+    }
+}
+
 /// Read the geometry of one model file, at one scale.
 ///
 /// **C13: one door.** There used to be two readers of a model file, and

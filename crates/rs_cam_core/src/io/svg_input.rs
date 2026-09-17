@@ -27,6 +27,10 @@ pub enum SvgError {
     Parse(#[from] usvg::Error),
     #[error("No closed paths found in SVG")]
     NoPaths,
+    /// The file is over [`crate::io::MAX_IMPORT_FILE_SIZE`]. The door
+    /// refuses before it reads the bytes (EDG-03).
+    #[error("SVG file too large ({size_mb} MB, limit {limit_mb} MB)")]
+    FileTooLarge { size_mb: u64, limit_mb: u64 },
 }
 
 /// Load closed polygon paths from an SVG file.
@@ -34,6 +38,12 @@ pub enum SvgError {
 /// Bezier curves are flattened to line segments with the given tolerance (mm).
 /// Only closed subpaths are returned. Open paths are ignored.
 pub fn load_svg(path: &Path, tolerance: f64) -> Result<Vec<Polygon2>, SvgError> {
+    if let Some(over) = crate::io::file_size_over_limit(path, crate::io::MAX_IMPORT_FILE_SIZE)? {
+        return Err(SvgError::FileTooLarge {
+            size_mb: over.size_mb,
+            limit_mb: over.limit_mb,
+        });
+    }
     let data = std::fs::read(path)?;
     load_svg_data(&data, tolerance)
 }

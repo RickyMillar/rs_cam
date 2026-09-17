@@ -32,6 +32,10 @@ pub enum DxfError {
     Io(#[from] dxf::DxfError),
     #[error("No closed entities found in DXF")]
     NoEntities,
+    /// The file is over [`crate::io::MAX_IMPORT_FILE_SIZE`]. The door
+    /// refuses before the parser reads a byte (EDG-03).
+    #[error("DXF file too large ({size_mb} MB, limit {limit_mb} MB)")]
+    FileTooLarge { size_mb: u64, limit_mb: u64 },
 }
 
 /// What kind of DXF feature a [`DrillTarget`] was derived from.
@@ -102,6 +106,14 @@ pub fn load_dxf(path: &Path, arc_tolerance_deg: f64) -> Result<Vec<Polygon2>, Dx
 /// Load a DXF file as a full [`DxfImport`]: polygons plus pickable drill
 /// targets (POINT entities, circle/arc centres) and their layer names.
 pub fn load_dxf_full(path: &Path, arc_tolerance_deg: f64) -> Result<DxfImport, DxfError> {
+    if let Some(over) = crate::io::file_size_over_limit(path, crate::io::MAX_IMPORT_FILE_SIZE)
+        .map_err(|e| DxfError::Io(e.into()))?
+    {
+        return Err(DxfError::FileTooLarge {
+            size_mb: over.size_mb,
+            limit_mb: over.limit_mb,
+        });
+    }
     let drawing = dxf::Drawing::load_file(path.to_str().unwrap_or(""))?;
     Ok(extract_dxf(&drawing, arc_tolerance_deg))
 }

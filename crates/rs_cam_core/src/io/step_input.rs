@@ -42,12 +42,12 @@ pub enum StepImportError {
 /// For wood routing, 0.1 mm is appropriate. Smaller values produce more triangles.
 #[allow(clippy::indexing_slicing)] // mesh vertex/face indices bounded by tessellation output
 pub fn load_step(path: &Path, tolerance: f64) -> Result<EnrichedMesh, StepImportError> {
-    const MAX_FILE_SIZE: u64 = 500 * 1024 * 1024; // 500 MB
-    let file_size = std::fs::metadata(path)?.len();
-    if file_size > MAX_FILE_SIZE {
+    // EDG-03: the three import doors share one size mechanism and keep
+    // their own error type.
+    if let Some(over) = crate::io::file_size_over_limit(path, crate::io::MAX_IMPORT_FILE_SIZE)? {
         return Err(StepImportError::FileTooLarge {
-            size_mb: file_size / (1024 * 1024),
-            limit_mb: MAX_FILE_SIZE / (1024 * 1024),
+            size_mb: over.size_mb,
+            limit_mb: over.limit_mb,
         });
     }
     let step_string = std::fs::read_to_string(path)?;
