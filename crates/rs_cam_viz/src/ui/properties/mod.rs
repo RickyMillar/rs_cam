@@ -34,9 +34,11 @@ use panel_apply::{
 use toolpath_panel::draw_toolpath_panel;
 
 use crate::state::AppState;
+use crate::state::job::{FixtureId, KeepOutId, ModelId, SetupId, ToolId};
 use crate::state::selection::Selection;
 use crate::state::toolpath::{BoundarySource, ToolpathEntry, ToolpathId};
 use crate::ui::AppEvent;
+use rs_cam_core::geometry::enriched_mesh::FaceGroupId;
 
 /// Candidate source toolpath for a `BoundarySource::DerivedRestRegions`
 /// picker: (id, display name, whether its cached result already has
@@ -137,460 +139,24 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
     flush_toolpath_snapshot(state);
 
     match state.selection.clone() {
-        Selection::None => {
-            if state.session.models().is_empty()
-                && state
-                    .session
-                    .list_setups()
-                    .iter()
-                    .all(|s| s.toolpath_indices.is_empty())
-            {
-                ui.label(
-                    egui::RichText::new("Getting started:")
-                        .strong()
-                        .color(crate::ui::tokens::TEXT_STRONG),
-                );
-                ui.add_space(4.0);
-                ui.label("1. Import a model (File > Import)");
-                ui.label("2. Configure stock dimensions");
-                ui.label("3. Add a cutting tool");
-                ui.label("4. Create a toolpath");
-                ui.label("5. Generate toolpaths");
-                // G-WSMENU (2026-09-10): step 5 used to read "Generate and
-                // export G-code", which walks a first-time operator from a
-                // generated path straight to the machine. Simulation is
-                // where collisions, air cutting and the tool-load gates are
-                // measured, so it is a step of its own and it comes first.
-                ui.label("6. Simulate and review");
-                ui.label("7. Export G-code");
-            } else {
-                ui.label(
-                    // Not "the project tree": no panel of that name exists
-                    // (IA/CURRENT_MAP.md §1). Name the four things that can
-                    // actually be selected (G-WSMENU, 2026-09-10).
-                    egui::RichText::new("Select an operation, tool, setup or model")
-                        .italics()
-                        .color(crate::ui::tokens::TEXT_FAINT),
-                );
-            }
-        }
-        Selection::Stock => {
-            // Capture snapshot for undo before editing
-            if state.history.stock_snapshot.is_none() {
-                state.history.stock_snapshot = Some(state.session.stock_config().clone());
-            }
-            let has_flipped_setup = state
-                .session
-                .list_setups()
-                .iter()
-                .any(|s| s.face_up != crate::state::job::FaceUp::Top);
-            // WP6: the widgets write a DRAFT, not the session. The draft
-            // is re-read from the session on any frame no widget of this
-            // panel is dragged or focused, so an edit made on another
-            // surface reaches the panel instead of being overwritten.
-            let mut draft = match state.history.stock_draft.take() {
-                Some(draft) => draft,
-                None => state.session.stock_config().clone(),
-            };
-            let edit = stock::draw(ui, &mut draft, has_flipped_setup, events);
-            if edit.committed {
-                apply_stock_draft(state, draft.clone());
-                // The undo compare runs AFTER the command, so the
-                // session already holds the new value and the comparison
-                // is true exactly once. It used to compare a session the
-                // panel had already written in place.
-                if let Some(old) = state.history.stock_snapshot.take()
-                    && old != *state.session.stock_config()
-                {
-                    state
-                        .history
-                        .push(crate::state::history::UndoAction::StockChange {
-                            old,
-                            new: state.session.stock_config().clone(),
-                        });
-                }
-            }
-            if edit.in_flight {
-                state.history.stock_draft = Some(draft);
-            }
-        }
-        Selection::PostProcessor => {
-            // Capture snapshot for undo before editing
-            if state.history.post_snapshot.is_none() {
-                state.history.post_snapshot = Some(state.gui.post.clone());
-            }
-            let stock_top = state.session.stock_config().origin_z + state.session.stock_config().z;
-            post::draw(ui, &mut state.gui.post, stock_top);
-            // W2.2 [P1-004]: the session is canonical for post config. Push the
-            // edited gui.post straight through so `session.post_config()` can't
-            // lag behind the panel (the stale window the GUI-vs-MCP race read).
-            // Guarded on a real change: the panel must not write the
-            // session on every idle frame. WP17 moved the second half of
-            // this reason into the setter — `set_post_config` clears the
-            // simulation only for a field that reaches emitted motion,
-            // so an unchanged write clears nothing now either.
-            let session_post = state.gui.post.clone();
-            if *state.session.post_config() != session_post {
-                let command = rs_cam_core::session::Command::SetPostConfig(
-                    rs_cam_core::session::SetPostConfigArgs {
-                        post: Box::new(session_post),
-                    },
-                );
-                // UI-08: the Post tab is a panel door, so it marks the
-                // project edited exactly as the other seven doors do. Without
-                // this the operator changes Safe Z, closes the window, and the
-                // `app.rs` close guard reads a clean project and asks nothing.
-                // The compare above already gates on a real change, so an idle
-                // frame still dirties nothing.
-                if apply_panel_command(state, command) {
-                    state.gui.mark_edited();
-                }
-            }
-        }
-        Selection::Machine => {
-            // Capture snapshot for undo before editing
-            if state.history.machine_snapshot.is_none() {
-                state.history.machine_snapshot = Some(state.session.machine().clone());
-            }
-            draw_machine_panel(ui, state, events);
-        }
-        Selection::Model(id) => {
-            draw_model_properties(ui, id, state, events);
-        }
-        Selection::Tool(id) => {
-            // TOO-003 — draft-commit: edit a clone, commit on Apply (or on
-            // navigate-away via flush_tool_draft), discard on Revert.
-            if let Some(committed) = state.session.tools().iter().find(|t| t.id == id).cloned() {
-                // (Re)initialise the draft when entering a different tool.
-                if state.history.tool_draft.as_ref().map(|(d, _)| *d) != Some(id) {
-                    state.history.tool_draft = Some((id, committed.clone()));
-                }
-                let modified = state
-                    .history
-                    .tool_draft
-                    .as_ref()
-                    .is_some_and(|(_, draft)| *draft != committed);
-                let mut action = tool::ToolEditAction::None;
-                // UI-09: the draft and the panel's own typed state are
-                // disjoint fields of `AppState`, so both borrow at once.
-                let panels = &mut state.panels;
-                if let Some((_, draft)) = state.history.tool_draft.as_mut() {
-                    action = tool::draw(ui, draft, modified, panels);
-                }
-                match action {
-                    tool::ToolEditAction::Apply => {
-                        if let Some((_, draft)) = state.history.tool_draft.clone() {
-                            commit_tool_draft(state, id, draft);
-                        }
-                    }
-                    tool::ToolEditAction::Revert => {
-                        state.history.tool_draft = Some((id, committed));
-                    }
-                    tool::ToolEditAction::None => {}
-                }
-            } else {
-                // Tool vanished (e.g. deleted while selected).
-                state.history.tool_draft = None;
-            }
-        }
-        Selection::Setup(setup_id) => {
-            let pin_count = state.session.stock_config().alignment_pins.len();
-            let has_flip_axis = state.session.stock_config().flip_axis.is_some();
-            let all_models: Vec<_> = state
-                .session
-                .models()
-                .iter()
-                .map(|m| (crate::state::job::ModelId(m.id), m.name.clone()))
-                .collect();
-            // WP6: the panel writes a DRAFT. The caller compares the
-            // draft against the stored setup and applies one command per
-            // field group that moved.
-            //
-            // G-FRESHSTATE: the panel used to write `face_up` /
-            // `z_rotation` straight into `SetupData`, so no core setter
-            // ran and every toolpath in the setup kept a result
-            // generated in the OLD frame. The datum and the model scope
-            // had no core door at all.
-            let stored = state
-                .session
-                .find_setup_by_id(setup_id.0)
-                .map(|(index, setup)| (index, setup.clone()));
-            if let Some((setup_index, stored)) = stored {
-                let mut draft = match state.history.setup_draft.take() {
-                    Some((id, data)) if id == setup_id => data,
-                    _ => stored.clone(),
-                };
-                let edit = setup::draw(
-                    ui,
-                    setup_id,
-                    &mut draft,
-                    pin_count,
-                    has_flip_axis,
-                    &all_models,
-                    events,
-                );
-                if edit.committed {
-                    apply_setup_draft(state, setup_index, &stored, &draft);
-                }
-                if edit.in_flight {
-                    state.history.setup_draft = Some((setup_id, draft));
-                }
-            }
-        }
+        Selection::None => draw_nothing_selected(ui, state),
+        Selection::Stock => draw_stock_selection(ui, state, events),
+        Selection::PostProcessor => draw_post_selection(ui, state),
+        Selection::Machine => draw_machine_selection(ui, state, events),
+        Selection::Model(id) => draw_model_selection(ui, state, events, id),
+        Selection::Tool(id) => draw_tool_selection(ui, state, id),
+        Selection::Setup(setup_id) => draw_setup_selection(ui, state, events, setup_id),
         Selection::Fixture(setup_id, fixture_id) => {
-            let stored =
-                state
-                    .session
-                    .find_setup_by_id(setup_id.0)
-                    .and_then(|(index, setup_data)| {
-                        setup_data
-                            .fixtures
-                            .iter()
-                            .find(|fixture| fixture.id == fixture_id)
-                            .map(|fixture| (index, fixture.clone()))
-                    });
-            if let Some((setup_index, stored)) = stored {
-                let mut draft = match state.history.fixture_draft.take() {
-                    Some((s_id, f_id, data)) if s_id == setup_id && f_id == fixture_id => data,
-                    _ => stored.clone(),
-                };
-                let edit = setup::draw_fixture_properties(ui, setup_id, &mut draft);
-                if edit.committed && draft != stored {
-                    apply_fixture_draft(state, setup_index, fixture_id, draft.clone());
-                }
-                if edit.in_flight {
-                    state.history.fixture_draft = Some((setup_id, fixture_id, draft));
-                }
-            }
+            draw_fixture_selection(ui, state, setup_id, fixture_id);
         }
         Selection::KeepOut(setup_id, keep_out_id) => {
-            let stored =
-                state
-                    .session
-                    .find_setup_by_id(setup_id.0)
-                    .and_then(|(index, setup_data)| {
-                        setup_data
-                            .keep_out_zones
-                            .iter()
-                            .find(|zone| zone.id == keep_out_id)
-                            .map(|zone| (index, zone.clone()))
-                    });
-            if let Some((setup_index, stored)) = stored {
-                let mut draft = match state.history.keep_out_draft.take() {
-                    Some((s_id, z_id, data)) if s_id == setup_id && z_id == keep_out_id => data,
-                    _ => stored.clone(),
-                };
-                let edit = setup::draw_keep_out_properties(ui, setup_id, &mut draft);
-                if edit.committed && draft != stored {
-                    apply_keep_out_draft(state, setup_index, keep_out_id, draft.clone());
-                }
-                if edit.in_flight {
-                    state.history.keep_out_draft = Some((setup_id, keep_out_id, draft));
-                }
-            }
+            draw_keep_out_selection(ui, state, setup_id, keep_out_id);
         }
-        Selection::Face(model_id, face_id) => {
-            ui.heading("Face Selected");
-            ui.separator();
-            let model_name = state
-                .session
-                .models()
-                .iter()
-                .find(|m| m.id == model_id.0)
-                .map(|m| m.name.as_str())
-                .unwrap_or("Unknown");
-            ui.label(format!("Model: {model_name}"));
-            ui.label(format!("Face: {}", face_id.0));
-            if let Some(model) = state.session.models().iter().find(|m| m.id == model_id.0)
-                && let Some(enriched) = &model.enriched_mesh
-                && let Some(group) = enriched.face_group(face_id)
-            {
-                ui.label(format!("Surface type: {:?}", group.surface_type));
-                ui.label(format!("Triangles: {}", group.triangle_range.len()));
-            }
-        }
+        Selection::Face(model_id, face_id) => draw_face_selection(ui, state, model_id, face_id),
         Selection::Faces(model_id, ref face_ids) => {
-            ui.heading("Faces Selected");
-            ui.separator();
-            let model_name = state
-                .session
-                .models()
-                .iter()
-                .find(|m| m.id == model_id.0)
-                .map(|m| m.name.as_str())
-                .unwrap_or("Unknown");
-            ui.label(format!("Model: {model_name}"));
-            ui.label(format!("{} faces selected", face_ids.len()));
+            draw_faces_selection(ui, state, model_id, face_ids);
         }
-        Selection::Toolpath(id) => {
-            // Capture snapshot for undo before editing
-            if state.history.toolpath_snapshot.is_none()
-                && let Some((_, tc)) = state.session.find_toolpath_config_by_id(id)
-            {
-                state.history.toolpath_snapshot = Some((
-                    id,
-                    tc.operation.clone(),
-                    tc.dressups.clone(),
-                    tc.face_selection.clone(),
-                    tc.feeds_provenance.clone(),
-                ));
-            }
-
-            // Snapshot heights and boundary for the two side effects
-            // below. WP5 deleted the operation snapshot beside them: the
-            // operation is inside the generation-inputs signature, so the
-            // command door reports it stale, and no side effect here
-            // needs to know that it was the operation that moved.
-            let heights_before = state
-                .session
-                .find_toolpath_config_by_id(id)
-                .map(|(_, tc)| format!("{:?}", tc.heights));
-            // P2.2: boundary source/containment/offset changes (including
-            // picking a `DerivedRestRegions` source toolpath) also affect
-            // the generated toolpath. The command door stamps them stale;
-            // this snapshot drives the rest-analysis hook below.
-            let boundary_before = state
-                .session
-                .find_toolpath_config_by_id(id)
-                .map(|(_, tc)| format!("{:?}", tc.boundary));
-
-            // One-shot tab override from the MCP set_ui_view tool. Consumed
-            // only when the panel renders the override's TARGET toolpath —
-            // a blind take() here used to fire on whatever toolpath rendered
-            // first (workspace/selection changes from the same set_ui_view
-            // call land on different frames), persisting the tab onto the
-            // wrong toolpath. The tab bar persists the applied value via
-            // the regular temp-memory path.
-            // UI-06: the pending tab is already a `ToolpathTab`. The MCP
-            // boundary parses the agent's key once, so no string reaches
-            // here and no second key table can drift from the parser.
-            let tab_override = match state.gui.pending_toolpath_tab {
-                Some((target, tab)) if target == id => {
-                    state.gui.pending_toolpath_tab = None;
-                    Some(tab)
-                }
-                _ => None,
-            };
-
-            // Copied out and written back so the panel's `&mut bool` cannot
-            // collide with the session borrows in the same argument list.
-            let mut show_reach_map = state.viewport.show_reach_map;
-
-            // UI-01: the panel's whole read side, assembled by one
-            // function. The 21 arguments it replaces were built here by
-            // hand, so a caller could substitute a default for one and
-            // still get a panel that rendered.
-            let inputs = toolpath_panel_inputs(
-                id,
-                &state.session,
-                &state.gui,
-                state
-                    .simulation
-                    .results
-                    .as_ref()
-                    .and_then(|r| r.cut_trace.as_deref()),
-                tab_override,
-            );
-
-            // Build the temporary entry and its canonical session diagnostic
-            // contexts together. Keeping them in one snapshot makes it
-            // impossible for this production call chain to draw an entry while
-            // silently omitting either static context.
-            if let Some(mut snapshot) = toolpath_panel_snapshot(id, &state.session, &state.gui) {
-                // The panel takes the whole snapshot. The entry, both
-                // static diagnostic contexts and the model bbox travel as
-                // one value, so no caller can draw the entry while
-                // silently substituting a default for one of the others.
-                draw_toolpath_panel(ui, &mut snapshot, &inputs, &mut show_reach_map, events);
-
-                state.viewport.show_reach_map = show_reach_map;
-
-                // ORDER IS LOAD-BEARING. The runtime write-back runs
-                // FIRST, because it copies `entry.stale_since` — the
-                // value read before the draw — back onto the runtime row.
-                // The config write-back stamps the fresh value, so the
-                // other order would erase the stamp on every edited
-                // frame and leave the card green over dropped geometry.
-                write_entry_runtime_to_gui(&snapshot.entry, &mut state.gui);
-                // Write config changes back to the session, through the
-                // one command door. The call stamps `stale_since` on
-                // every index the core dropped, and dirties the project,
-                // so no caller keeps a staleness model of its own.
-                let _ = write_entry_config_to_session(&snapshot.entry, state);
-            }
-
-            // Two side effects need to know WHICH field moved, and
-            // `Effects::stale` cannot say. Both fields are inside the
-            // generation-inputs signature, so the command reports the
-            // toolpath stale either way; these comparisons say which of
-            // the two caused it (plan §17 ruling 4).
-            //
-            // Demand-driven rest-analysis producer hook (P2 pencil-panel
-            // consolidation): captured here (while `tc` is borrowed) and
-            // applied below, once the session borrow above is released —
-            // see the comment on the follow-up block.
-            let mut auto_enable_rest_source: Option<ToolpathId> = None;
-            let mut heights_moved = false;
-            if let Some((_, tc)) = state.session.find_toolpath_config_by_id(id) {
-                let heights_changed = heights_before
-                    .as_ref()
-                    .is_some_and(|b| *b != format!("{:?}", tc.heights));
-                let boundary_changed = boundary_before
-                    .as_ref()
-                    .is_some_and(|b| *b != format!("{:?}", tc.boundary));
-                if heights_changed {
-                    // Re-upload only. The heights edit itself already
-                    // dirtied the project and dropped that toolpath's
-                    // result. WP6 replaced the `HeightPlanesChanged`
-                    // event with the flag the frame loop reads.
-                    heights_moved = true;
-                }
-                if boundary_changed
-                    && tc.boundary.enabled
-                    && let BoundarySource::DerivedRestRegions { source_toolpath_id } =
-                        &tc.boundary.source
-                {
-                    auto_enable_rest_source = Some(*source_toolpath_id);
-                }
-            }
-            if heights_moved {
-                state.panel_side_effects.upload = true;
-            }
-            // The GUI's boundary picker (Machining Boundary section, above)
-            // writes `tc.boundary` through `write_entry_config_to_session`
-            // rather than going through `session::set_boundary_config` — the
-            // MCP entry point (`app/mcp/commands.rs`, the `SetBoundaryConfig`
-            // arm of the describe step) is the
-            // one caller of that setter. Run the same demand-driven producer
-            // hook here so picking "Rest Regions" in the GUI has the same
-            // effect: the source toolpath's rest analysis turns on and its
-            // cached result invalidates, so it actually produces regions on
-            // next generation.
-            // WP3: the setter reports `Option<Effects>`. `None` says the
-            // call changed nothing, which is the old `false`.
-            //
-            // WP15a: the row FOLDS that `None` into an empty `Effects`,
-            // so the answer is `Ok` either way. `Effects::revision` is
-            // the discriminator — the setter names the source index on
-            // the arm that changed something, and the fold names none.
-            if let Some(source_id) = auto_enable_rest_source {
-                let command = rs_cam_core::session::Command::AutoEnableRestAnalysis(
-                    rs_cam_core::session::AutoEnableRestAnalysisArgs { source_id },
-                );
-                if let Ok(effects) = state.session.apply(command)
-                    && effects.revision.is_some()
-                {
-                    crate::state::stale::stamp_stale(state, &effects.stale);
-                    state.gui.mark_edited();
-                    // WP19 (plan §28). The gate stays on `revision`: the
-                    // fold that changed nothing reports no revision AND
-                    // clears nothing, so the two agree.
-                    if effects.simulation_cleared {
-                        state.panel_side_effects.invalidate_simulation = true;
-                    }
-                }
-            }
-        }
+        Selection::Toolpath(id) => draw_toolpath_selection(ui, state, events, id),
     }
 }
 
@@ -1231,3 +797,512 @@ pub(crate) enum ReachPanelSummary {
 
 #[cfg(test)]
 mod tests;
+
+/// The `None` arm of [`draw`]'s selection dispatch.
+fn draw_nothing_selected(ui: &mut egui::Ui, state: &mut AppState) {
+    if state.session.models().is_empty()
+        && state
+            .session
+            .list_setups()
+            .iter()
+            .all(|s| s.toolpath_indices.is_empty())
+    {
+        ui.label(
+            egui::RichText::new("Getting started:")
+                .strong()
+                .color(crate::ui::tokens::TEXT_STRONG),
+        );
+        ui.add_space(4.0);
+        ui.label("1. Import a model (File > Import)");
+        ui.label("2. Configure stock dimensions");
+        ui.label("3. Add a cutting tool");
+        ui.label("4. Create a toolpath");
+        ui.label("5. Generate toolpaths");
+        // G-WSMENU (2026-09-10): step 5 used to read "Generate and
+        // export G-code", which walks a first-time operator from a
+        // generated path straight to the machine. Simulation is
+        // where collisions, air cutting and the tool-load gates are
+        // measured, so it is a step of its own and it comes first.
+        ui.label("6. Simulate and review");
+        ui.label("7. Export G-code");
+    } else {
+        ui.label(
+            // Not "the project tree": no panel of that name exists
+            // (IA/CURRENT_MAP.md §1). Name the four things that can
+            // actually be selected (G-WSMENU, 2026-09-10).
+            egui::RichText::new("Select an operation, tool, setup or model")
+                .italics()
+                .color(crate::ui::tokens::TEXT_FAINT),
+        );
+    }
+}
+
+/// The `Stock` arm of [`draw`]'s selection dispatch.
+fn draw_stock_selection(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
+    // Capture snapshot for undo before editing
+    if state.history.stock_snapshot.is_none() {
+        state.history.stock_snapshot = Some(state.session.stock_config().clone());
+    }
+    let has_flipped_setup = state
+        .session
+        .list_setups()
+        .iter()
+        .any(|s| s.face_up != crate::state::job::FaceUp::Top);
+    // WP6: the widgets write a DRAFT, not the session. The draft
+    // is re-read from the session on any frame no widget of this
+    // panel is dragged or focused, so an edit made on another
+    // surface reaches the panel instead of being overwritten.
+    let mut draft = match state.history.stock_draft.take() {
+        Some(draft) => draft,
+        None => state.session.stock_config().clone(),
+    };
+    let edit = stock::draw(ui, &mut draft, has_flipped_setup, events);
+    if edit.committed {
+        apply_stock_draft(state, draft.clone());
+        // The undo compare runs AFTER the command, so the
+        // session already holds the new value and the comparison
+        // is true exactly once. It used to compare a session the
+        // panel had already written in place.
+        if let Some(old) = state.history.stock_snapshot.take()
+            && old != *state.session.stock_config()
+        {
+            state
+                .history
+                .push(crate::state::history::UndoAction::StockChange {
+                    old,
+                    new: state.session.stock_config().clone(),
+                });
+        }
+    }
+    if edit.in_flight {
+        state.history.stock_draft = Some(draft);
+    }
+}
+
+/// The `PostProcessor` arm of [`draw`]'s selection dispatch.
+fn draw_post_selection(ui: &mut egui::Ui, state: &mut AppState) {
+    // Capture snapshot for undo before editing
+    if state.history.post_snapshot.is_none() {
+        state.history.post_snapshot = Some(state.gui.post.clone());
+    }
+    let stock_top = state.session.stock_config().origin_z + state.session.stock_config().z;
+    post::draw(ui, &mut state.gui.post, stock_top);
+    // W2.2 [P1-004]: the session is canonical for post config. Push the
+    // edited gui.post straight through so `session.post_config()` can't
+    // lag behind the panel (the stale window the GUI-vs-MCP race read).
+    // Guarded on a real change: the panel must not write the
+    // session on every idle frame. WP17 moved the second half of
+    // this reason into the setter — `set_post_config` clears the
+    // simulation only for a field that reaches emitted motion,
+    // so an unchanged write clears nothing now either.
+    let session_post = state.gui.post.clone();
+    if *state.session.post_config() != session_post {
+        let command =
+            rs_cam_core::session::Command::SetPostConfig(rs_cam_core::session::SetPostConfigArgs {
+                post: Box::new(session_post),
+            });
+        // UI-08: the Post tab is a panel door, so it marks the
+        // project edited exactly as the other seven doors do. Without
+        // this the operator changes Safe Z, closes the window, and the
+        // `app.rs` close guard reads a clean project and asks nothing.
+        // The compare above already gates on a real change, so an idle
+        // frame still dirties nothing.
+        if apply_panel_command(state, command) {
+            state.gui.mark_edited();
+        }
+    }
+}
+
+/// The `Machine` arm of [`draw`]'s selection dispatch.
+fn draw_machine_selection(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
+    // Capture snapshot for undo before editing
+    if state.history.machine_snapshot.is_none() {
+        state.history.machine_snapshot = Some(state.session.machine().clone());
+    }
+    draw_machine_panel(ui, state, events);
+}
+
+/// The `Model` arm of [`draw`]'s selection dispatch.
+fn draw_model_selection(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    events: &mut Vec<AppEvent>,
+    id: ModelId,
+) {
+    draw_model_properties(ui, id, state, events);
+}
+
+/// The `Tool` arm of [`draw`]'s selection dispatch.
+fn draw_tool_selection(ui: &mut egui::Ui, state: &mut AppState, id: ToolId) {
+    // TOO-003 — draft-commit: edit a clone, commit on Apply (or on
+    // navigate-away via flush_tool_draft), discard on Revert.
+    if let Some(committed) = state.session.tools().iter().find(|t| t.id == id).cloned() {
+        // (Re)initialise the draft when entering a different tool.
+        if state.history.tool_draft.as_ref().map(|(d, _)| *d) != Some(id) {
+            state.history.tool_draft = Some((id, committed.clone()));
+        }
+        let modified = state
+            .history
+            .tool_draft
+            .as_ref()
+            .is_some_and(|(_, draft)| *draft != committed);
+        let mut action = tool::ToolEditAction::None;
+        // UI-09: the draft and the panel's own typed state are
+        // disjoint fields of `AppState`, so both borrow at once.
+        let panels = &mut state.panels;
+        if let Some((_, draft)) = state.history.tool_draft.as_mut() {
+            action = tool::draw(ui, draft, modified, panels);
+        }
+        match action {
+            tool::ToolEditAction::Apply => {
+                if let Some((_, draft)) = state.history.tool_draft.clone() {
+                    commit_tool_draft(state, id, draft);
+                }
+            }
+            tool::ToolEditAction::Revert => {
+                state.history.tool_draft = Some((id, committed));
+            }
+            tool::ToolEditAction::None => {}
+        }
+    } else {
+        // Tool vanished (e.g. deleted while selected).
+        state.history.tool_draft = None;
+    }
+}
+
+/// The `Setup` arm of [`draw`]'s selection dispatch.
+fn draw_setup_selection(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    events: &mut Vec<AppEvent>,
+    setup_id: SetupId,
+) {
+    let pin_count = state.session.stock_config().alignment_pins.len();
+    let has_flip_axis = state.session.stock_config().flip_axis.is_some();
+    let all_models: Vec<_> = state
+        .session
+        .models()
+        .iter()
+        .map(|m| (crate::state::job::ModelId(m.id), m.name.clone()))
+        .collect();
+    // WP6: the panel writes a DRAFT. The caller compares the
+    // draft against the stored setup and applies one command per
+    // field group that moved.
+    //
+    // G-FRESHSTATE: the panel used to write `face_up` /
+    // `z_rotation` straight into `SetupData`, so no core setter
+    // ran and every toolpath in the setup kept a result
+    // generated in the OLD frame. The datum and the model scope
+    // had no core door at all.
+    let stored = state
+        .session
+        .find_setup_by_id(setup_id.0)
+        .map(|(index, setup)| (index, setup.clone()));
+    if let Some((setup_index, stored)) = stored {
+        let mut draft = match state.history.setup_draft.take() {
+            Some((id, data)) if id == setup_id => data,
+            _ => stored.clone(),
+        };
+        let edit = setup::draw(
+            ui,
+            setup_id,
+            &mut draft,
+            pin_count,
+            has_flip_axis,
+            &all_models,
+            events,
+        );
+        if edit.committed {
+            apply_setup_draft(state, setup_index, &stored, &draft);
+        }
+        if edit.in_flight {
+            state.history.setup_draft = Some((setup_id, draft));
+        }
+    }
+}
+
+/// The `Fixture` arm of [`draw`]'s selection dispatch.
+fn draw_fixture_selection(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    setup_id: SetupId,
+    fixture_id: FixtureId,
+) {
+    let stored = state
+        .session
+        .find_setup_by_id(setup_id.0)
+        .and_then(|(index, setup_data)| {
+            setup_data
+                .fixtures
+                .iter()
+                .find(|fixture| fixture.id == fixture_id)
+                .map(|fixture| (index, fixture.clone()))
+        });
+    if let Some((setup_index, stored)) = stored {
+        let mut draft = match state.history.fixture_draft.take() {
+            Some((s_id, f_id, data)) if s_id == setup_id && f_id == fixture_id => data,
+            _ => stored.clone(),
+        };
+        let edit = setup::draw_fixture_properties(ui, setup_id, &mut draft);
+        if edit.committed && draft != stored {
+            apply_fixture_draft(state, setup_index, fixture_id, draft.clone());
+        }
+        if edit.in_flight {
+            state.history.fixture_draft = Some((setup_id, fixture_id, draft));
+        }
+    }
+}
+
+/// The `KeepOut` arm of [`draw`]'s selection dispatch.
+fn draw_keep_out_selection(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    setup_id: SetupId,
+    keep_out_id: KeepOutId,
+) {
+    let stored = state
+        .session
+        .find_setup_by_id(setup_id.0)
+        .and_then(|(index, setup_data)| {
+            setup_data
+                .keep_out_zones
+                .iter()
+                .find(|zone| zone.id == keep_out_id)
+                .map(|zone| (index, zone.clone()))
+        });
+    if let Some((setup_index, stored)) = stored {
+        let mut draft = match state.history.keep_out_draft.take() {
+            Some((s_id, z_id, data)) if s_id == setup_id && z_id == keep_out_id => data,
+            _ => stored.clone(),
+        };
+        let edit = setup::draw_keep_out_properties(ui, setup_id, &mut draft);
+        if edit.committed && draft != stored {
+            apply_keep_out_draft(state, setup_index, keep_out_id, draft.clone());
+        }
+        if edit.in_flight {
+            state.history.keep_out_draft = Some((setup_id, keep_out_id, draft));
+        }
+    }
+}
+
+/// The `Face` arm of [`draw`]'s selection dispatch.
+fn draw_face_selection(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    model_id: ModelId,
+    face_id: FaceGroupId,
+) {
+    ui.heading("Face Selected");
+    ui.separator();
+    let model_name = state
+        .session
+        .models()
+        .iter()
+        .find(|m| m.id == model_id.0)
+        .map(|m| m.name.as_str())
+        .unwrap_or("Unknown");
+    ui.label(format!("Model: {model_name}"));
+    ui.label(format!("Face: {}", face_id.0));
+    if let Some(model) = state.session.models().iter().find(|m| m.id == model_id.0)
+        && let Some(enriched) = &model.enriched_mesh
+        && let Some(group) = enriched.face_group(face_id)
+    {
+        ui.label(format!("Surface type: {:?}", group.surface_type));
+        ui.label(format!("Triangles: {}", group.triangle_range.len()));
+    }
+}
+
+/// The `Faces` arm of [`draw`]'s selection dispatch.
+fn draw_faces_selection(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    model_id: ModelId,
+    face_ids: &[FaceGroupId],
+) {
+    ui.heading("Faces Selected");
+    ui.separator();
+    let model_name = state
+        .session
+        .models()
+        .iter()
+        .find(|m| m.id == model_id.0)
+        .map(|m| m.name.as_str())
+        .unwrap_or("Unknown");
+    ui.label(format!("Model: {model_name}"));
+    ui.label(format!("{} faces selected", face_ids.len()));
+}
+
+/// The `Toolpath` arm of [`draw`]'s selection dispatch.
+fn draw_toolpath_selection(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    events: &mut Vec<AppEvent>,
+    id: ToolpathId,
+) {
+    // Capture snapshot for undo before editing
+    if state.history.toolpath_snapshot.is_none()
+        && let Some((_, tc)) = state.session.find_toolpath_config_by_id(id)
+    {
+        state.history.toolpath_snapshot = Some((
+            id,
+            tc.operation.clone(),
+            tc.dressups.clone(),
+            tc.face_selection.clone(),
+            tc.feeds_provenance.clone(),
+        ));
+    }
+
+    // Snapshot heights and boundary for the two side effects
+    // below. WP5 deleted the operation snapshot beside them: the
+    // operation is inside the generation-inputs signature, so the
+    // command door reports it stale, and no side effect here
+    // needs to know that it was the operation that moved.
+    let heights_before = state
+        .session
+        .find_toolpath_config_by_id(id)
+        .map(|(_, tc)| format!("{:?}", tc.heights));
+    // P2.2: boundary source/containment/offset changes (including
+    // picking a `DerivedRestRegions` source toolpath) also affect
+    // the generated toolpath. The command door stamps them stale;
+    // this snapshot drives the rest-analysis hook below.
+    let boundary_before = state
+        .session
+        .find_toolpath_config_by_id(id)
+        .map(|(_, tc)| format!("{:?}", tc.boundary));
+
+    // One-shot tab override from the MCP set_ui_view tool. Consumed
+    // only when the panel renders the override's TARGET toolpath —
+    // a blind take() here used to fire on whatever toolpath rendered
+    // first (workspace/selection changes from the same set_ui_view
+    // call land on different frames), persisting the tab onto the
+    // wrong toolpath. The tab bar persists the applied value via
+    // the regular temp-memory path.
+    // UI-06: the pending tab is already a `ToolpathTab`. The MCP
+    // boundary parses the agent's key once, so no string reaches
+    // here and no second key table can drift from the parser.
+    let tab_override = match state.gui.pending_toolpath_tab {
+        Some((target, tab)) if target == id => {
+            state.gui.pending_toolpath_tab = None;
+            Some(tab)
+        }
+        _ => None,
+    };
+
+    // Copied out and written back so the panel's `&mut bool` cannot
+    // collide with the session borrows in the same argument list.
+    let mut show_reach_map = state.viewport.show_reach_map;
+
+    // UI-01: the panel's whole read side, assembled by one
+    // function. The 21 arguments it replaces were built here by
+    // hand, so a caller could substitute a default for one and
+    // still get a panel that rendered.
+    let inputs = toolpath_panel_inputs(
+        id,
+        &state.session,
+        &state.gui,
+        state
+            .simulation
+            .results
+            .as_ref()
+            .and_then(|r| r.cut_trace.as_deref()),
+        tab_override,
+    );
+
+    // Build the temporary entry and its canonical session diagnostic
+    // contexts together. Keeping them in one snapshot makes it
+    // impossible for this production call chain to draw an entry while
+    // silently omitting either static context.
+    if let Some(mut snapshot) = toolpath_panel_snapshot(id, &state.session, &state.gui) {
+        // The panel takes the whole snapshot. The entry, both
+        // static diagnostic contexts and the model bbox travel as
+        // one value, so no caller can draw the entry while
+        // silently substituting a default for one of the others.
+        draw_toolpath_panel(ui, &mut snapshot, &inputs, &mut show_reach_map, events);
+
+        state.viewport.show_reach_map = show_reach_map;
+
+        // ORDER IS LOAD-BEARING. The runtime write-back runs
+        // FIRST, because it copies `entry.stale_since` — the
+        // value read before the draw — back onto the runtime row.
+        // The config write-back stamps the fresh value, so the
+        // other order would erase the stamp on every edited
+        // frame and leave the card green over dropped geometry.
+        write_entry_runtime_to_gui(&snapshot.entry, &mut state.gui);
+        // Write config changes back to the session, through the
+        // one command door. The call stamps `stale_since` on
+        // every index the core dropped, and dirties the project,
+        // so no caller keeps a staleness model of its own.
+        let _ = write_entry_config_to_session(&snapshot.entry, state);
+    }
+
+    // Two side effects need to know WHICH field moved, and
+    // `Effects::stale` cannot say. Both fields are inside the
+    // generation-inputs signature, so the command reports the
+    // toolpath stale either way; these comparisons say which of
+    // the two caused it (plan §17 ruling 4).
+    //
+    // Demand-driven rest-analysis producer hook (P2 pencil-panel
+    // consolidation): captured here (while `tc` is borrowed) and
+    // applied below, once the session borrow above is released —
+    // see the comment on the follow-up block.
+    let mut auto_enable_rest_source: Option<ToolpathId> = None;
+    let mut heights_moved = false;
+    if let Some((_, tc)) = state.session.find_toolpath_config_by_id(id) {
+        let heights_changed = heights_before
+            .as_ref()
+            .is_some_and(|b| *b != format!("{:?}", tc.heights));
+        let boundary_changed = boundary_before
+            .as_ref()
+            .is_some_and(|b| *b != format!("{:?}", tc.boundary));
+        if heights_changed {
+            // Re-upload only. The heights edit itself already
+            // dirtied the project and dropped that toolpath's
+            // result. WP6 replaced the `HeightPlanesChanged`
+            // event with the flag the frame loop reads.
+            heights_moved = true;
+        }
+        if boundary_changed
+            && tc.boundary.enabled
+            && let BoundarySource::DerivedRestRegions { source_toolpath_id } = &tc.boundary.source
+        {
+            auto_enable_rest_source = Some(*source_toolpath_id);
+        }
+    }
+    if heights_moved {
+        state.panel_side_effects.upload = true;
+    }
+    // The GUI's boundary picker (Machining Boundary section, above)
+    // writes `tc.boundary` through `write_entry_config_to_session`
+    // rather than going through `session::set_boundary_config` — the
+    // MCP entry point (`app/mcp/commands.rs`, the `SetBoundaryConfig`
+    // arm of the describe step) is the
+    // one caller of that setter. Run the same demand-driven producer
+    // hook here so picking "Rest Regions" in the GUI has the same
+    // effect: the source toolpath's rest analysis turns on and its
+    // cached result invalidates, so it actually produces regions on
+    // next generation.
+    // WP3: the setter reports `Option<Effects>`. `None` says the
+    // call changed nothing, which is the old `false`.
+    //
+    // WP15a: the row FOLDS that `None` into an empty `Effects`,
+    // so the answer is `Ok` either way. `Effects::revision` is
+    // the discriminator — the setter names the source index on
+    // the arm that changed something, and the fold names none.
+    if let Some(source_id) = auto_enable_rest_source {
+        let command = rs_cam_core::session::Command::AutoEnableRestAnalysis(
+            rs_cam_core::session::AutoEnableRestAnalysisArgs { source_id },
+        );
+        if let Ok(effects) = state.session.apply(command)
+            && effects.revision.is_some()
+        {
+            crate::state::stale::stamp_stale(state, &effects.stale);
+            state.gui.mark_edited();
+            // WP19 (plan §28). The gate stays on `revision`: the
+            // fold that changed nothing reports no revision AND
+            // clears nothing, so the two agree.
+            if effects.simulation_cleared {
+                state.panel_side_effects.invalidate_simulation = true;
+            }
+        }
+    }
+}

@@ -24,7 +24,23 @@ pub fn draw(
     viewport: &mut ViewportState,
     events: &mut Vec<AppEvent>,
 ) {
-    let max_feed = session.machine().max_feed_mm_min;
+    draw_run_controls(ui, sim, session, gui, events);
+    draw_toolpath_rows(ui, sim, session, gui, viewport, events);
+}
+
+/// The workspace primary, the recording settings and the notices above the
+/// per-toolpath list.
+///
+/// UI-12: `draw` ran 864 lines. 470 of those were items DECLARED inside it;
+/// they are at module scope now. The statements that remained split on the
+/// two seams the body already had — the controls, and the row list.
+fn draw_run_controls(
+    ui: &mut egui::Ui,
+    sim: &mut SimulationState,
+    session: &ProjectSession,
+    gui: &GuiState,
+    events: &mut Vec<AppEvent>,
+) {
     ui.heading("Verification");
     ui.separator();
 
@@ -213,7 +229,18 @@ pub fn draw(
         ui.add_space(4.0);
         ui.separator();
     }
+}
 
+/// One row per simulated toolpath, with its setup dividers.
+fn draw_toolpath_rows(
+    ui: &mut egui::Ui,
+    sim: &mut SimulationState,
+    session: &ProjectSession,
+    gui: &GuiState,
+    viewport: &mut ViewportState,
+    events: &mut Vec<AppEvent>,
+) {
+    let max_feed = session.machine().max_feed_mm_min;
     let boundaries = sim.boundaries().to_vec();
     let setup_boundaries = sim.setup_boundaries().to_vec();
     let issues = sim.issues(gui, max_feed);
@@ -410,474 +437,477 @@ pub fn draw(
             ui.add_space(2.0);
         }
     }
+}
 
-    #[derive(Clone, Copy)]
-    enum OutlineKind {
-        StructuralSpans,
-        SemanticFallback,
-    }
+// UI-12: these items were declared INSIDE `draw`. Nesting them made
+// the function 864 lines long while none of them read a local of it.
+// Moving them to module scope is pure motion: no call, no order and no
+// signature changed.
 
-    impl OutlineKind {
-        const fn show_label(self) -> &'static str {
-            match self {
-                Self::StructuralSpans => "Show spans",
-                Self::SemanticFallback => "Show semantics",
-            }
-        }
+#[derive(Clone, Copy)]
+enum OutlineKind {
+    StructuralSpans,
+    SemanticFallback,
+}
 
-        const fn hide_label(self) -> &'static str {
-            match self {
-                Self::StructuralSpans => "Hide spans",
-                Self::SemanticFallback => "Hide semantics",
-            }
-        }
-
-        const fn hover_text(self) -> &'static str {
-            match self {
-                Self::StructuralSpans => "Expand structural SpanKind outline for this toolpath",
-                Self::SemanticFallback => {
-                    "Spans were invalidated; expand the legacy semantic trace fallback"
-                }
-            }
+impl OutlineKind {
+    const fn show_label(self) -> &'static str {
+        match self {
+            Self::StructuralSpans => "Show spans",
+            Self::SemanticFallback => "Show semantics",
         }
     }
 
-    fn outline_kind_for_toolpath(gui: &GuiState, toolpath_id: ToolpathId) -> Option<OutlineKind> {
-        let rt = gui.toolpath_rt.get(&toolpath_id)?;
-        let result = rt.result.as_ref()?;
-        if result.spans_valid() {
-            if result
-                .spans()
-                .iter()
-                .any(|span| !span.is_boundary() && span.kind != SpanKind::Operation)
-            {
-                Some(OutlineKind::StructuralSpans)
-            } else if rt.semantic_trace.is_some() {
-                Some(OutlineKind::SemanticFallback)
-            } else {
-                None
+    const fn hide_label(self) -> &'static str {
+        match self {
+            Self::StructuralSpans => "Hide spans",
+            Self::SemanticFallback => "Hide semantics",
+        }
+    }
+
+    const fn hover_text(self) -> &'static str {
+        match self {
+            Self::StructuralSpans => "Expand structural SpanKind outline for this toolpath",
+            Self::SemanticFallback => {
+                "Spans were invalidated; expand the legacy semantic trace fallback"
             }
+        }
+    }
+}
+
+fn outline_kind_for_toolpath(gui: &GuiState, toolpath_id: ToolpathId) -> Option<OutlineKind> {
+    let rt = gui.toolpath_rt.get(&toolpath_id)?;
+    let result = rt.result.as_ref()?;
+    if result.spans_valid() {
+        if result
+            .spans()
+            .iter()
+            .any(|span| !span.is_boundary() && span.kind != SpanKind::Operation)
+        {
+            Some(OutlineKind::StructuralSpans)
         } else if rt.semantic_trace.is_some() {
             Some(OutlineKind::SemanticFallback)
         } else {
             None
         }
+    } else if rt.semantic_trace.is_some() {
+        Some(OutlineKind::SemanticFallback)
+    } else {
+        None
+    }
+}
+
+fn draw_structural_outline(
+    ui: &mut egui::Ui,
+    sim: &mut SimulationState,
+    gui: &GuiState,
+    boundary: &crate::state::simulation::ToolpathBoundary,
+    events: &mut Vec<AppEvent>,
+) {
+    let Some(rt) = gui.toolpath_rt.get(&boundary.id) else {
+        return;
+    };
+    let Some(result) = rt.result.as_ref() else {
+        return;
+    };
+    if !result.spans_valid() {
+        return;
+    }
+    let spans = result.spans();
+    let parent_of = structural_span_parents(spans);
+    let mut root_indices = root_span_indices(spans, &parent_of);
+    sort_span_indices(&mut root_indices, spans);
+    if root_indices.is_empty() {
+        ui.label(
+            egui::RichText::new("No move-linked spans")
+                .small()
+                .italics()
+                .color(theme::TEXT_DIM),
+        );
+        return;
     }
 
-    fn draw_structural_outline(
-        ui: &mut egui::Ui,
-        sim: &mut SimulationState,
-        gui: &GuiState,
-        boundary: &crate::state::simulation::ToolpathBoundary,
-        events: &mut Vec<AppEvent>,
-    ) {
-        let Some(rt) = gui.toolpath_rt.get(&boundary.id) else {
-            return;
-        };
-        let Some(result) = rt.result.as_ref() else {
-            return;
-        };
-        if !result.spans_valid() {
-            return;
-        }
-        let spans = result.spans();
-        let parent_of = structural_span_parents(spans);
-        let mut root_indices = root_span_indices(spans, &parent_of);
-        sort_span_indices(&mut root_indices, spans);
-        if root_indices.is_empty() {
-            ui.label(
-                egui::RichText::new("No move-linked spans")
-                    .small()
-                    .italics()
-                    .color(theme::TEXT_DIM),
-            );
-            return;
-        }
+    let active_local_move =
+        sim.current_local_toolpath_move()
+            .and_then(|(_, toolpath_id, local_move)| {
+                if toolpath_id == boundary.id {
+                    Some(local_move)
+                } else {
+                    None
+                }
+            });
 
-        let active_local_move =
-            sim.current_local_toolpath_move()
-                .and_then(|(_, toolpath_id, local_move)| {
-                    if toolpath_id == boundary.id {
-                        Some(local_move)
-                    } else {
-                        None
-                    }
-                });
-
-        ui.add_space(2.0);
-        for span_index in root_indices {
-            draw_span_item_row(
-                ui,
-                spans,
-                &parent_of,
-                sim,
-                boundary,
-                span_index,
-                0,
-                active_local_move,
-                events,
-            );
-        }
+    ui.add_space(2.0);
+    for span_index in root_indices {
+        draw_span_item_row(
+            ui,
+            spans,
+            &parent_of,
+            sim,
+            boundary,
+            span_index,
+            0,
+            active_local_move,
+            events,
+        );
     }
+}
 
-    fn structural_span_parents(spans: &[Span]) -> Vec<Option<usize>> {
-        let mut parents = vec![None; spans.len()];
-        for (child_index, child) in spans.iter().enumerate() {
-            if child.is_boundary() {
-                continue;
-            }
-            let parent = spans
-                .iter()
-                .enumerate()
-                .filter_map(|(parent_index, parent)| {
-                    if parent_index != child_index && span_can_parent(parent, child) {
-                        Some(parent_index)
-                    } else {
-                        None
-                    }
-                })
-                .min_by(|a, b| compare_parent_candidates(spans, *a, *b));
-            if let Some(slot) = parents.get_mut(child_index) {
-                *slot = parent;
-            }
+fn structural_span_parents(spans: &[Span]) -> Vec<Option<usize>> {
+    let mut parents = vec![None; spans.len()];
+    for (child_index, child) in spans.iter().enumerate() {
+        if child.is_boundary() {
+            continue;
         }
-        parents
-    }
-
-    fn root_span_indices(spans: &[Span], parent_of: &[Option<usize>]) -> Vec<usize> {
-        spans
+        let parent = spans
             .iter()
             .enumerate()
-            .filter_map(|(span_index, span)| {
-                if span.is_boundary() {
-                    return None;
+            .filter_map(|(parent_index, parent)| {
+                if parent_index != child_index && span_can_parent(parent, child) {
+                    Some(parent_index)
+                } else {
+                    None
                 }
-                let has_parent = parent_of
-                    .get(span_index)
-                    .and_then(|parent| *parent)
-                    .is_some();
-                (!has_parent).then_some(span_index)
             })
-            .collect()
-    }
-
-    fn span_can_parent(parent: &Span, child: &Span) -> bool {
-        if parent.is_boundary() {
-            return false;
-        }
-        let parent_contains_child = parent.start_move <= child.start_move
-            && parent.end_move >= child.end_move
-            && parent.move_count() >= child.move_count();
-        if !parent_contains_child {
-            return false;
-        }
-        let same_range = parent.start_move == child.start_move && parent.end_move == child.end_move;
-        !same_range || span_kind_rank(parent.kind) < span_kind_rank(child.kind)
-    }
-
-    fn compare_parent_candidates(spans: &[Span], a: usize, b: usize) -> std::cmp::Ordering {
-        let a_span = spans.get(a);
-        let b_span = spans.get(b);
-        match (a_span, b_span) {
-            (Some(a_span), Some(b_span)) => a_span
-                .move_count()
-                .cmp(&b_span.move_count())
-                .then_with(|| span_kind_rank(b_span.kind).cmp(&span_kind_rank(a_span.kind)))
-                .then_with(|| a.cmp(&b)),
-            (Some(_), None) => std::cmp::Ordering::Less,
-            (None, Some(_)) => std::cmp::Ordering::Greater,
-            (None, None) => a.cmp(&b),
+            .min_by(|a, b| compare_parent_candidates(spans, *a, *b));
+        if let Some(slot) = parents.get_mut(child_index) {
+            *slot = parent;
         }
     }
+    parents
+}
 
-    fn sort_span_indices(indices: &mut [usize], spans: &[Span]) {
-        indices.sort_by(|a, b| match (spans.get(*a), spans.get(*b)) {
-            (Some(a_span), Some(b_span)) => a_span
-                .start_move
-                .cmp(&b_span.start_move)
-                .then_with(|| a_span.end_move.cmp(&b_span.end_move))
-                .then_with(|| span_kind_rank(a_span.kind).cmp(&span_kind_rank(b_span.kind)))
-                .then_with(|| a.cmp(b)),
-            (Some(_), None) => std::cmp::Ordering::Less,
-            (None, Some(_)) => std::cmp::Ordering::Greater,
-            (None, None) => a.cmp(b),
-        });
+fn root_span_indices(spans: &[Span], parent_of: &[Option<usize>]) -> Vec<usize> {
+    spans
+        .iter()
+        .enumerate()
+        .filter_map(|(span_index, span)| {
+            if span.is_boundary() {
+                return None;
+            }
+            let has_parent = parent_of
+                .get(span_index)
+                .and_then(|parent| *parent)
+                .is_some();
+            (!has_parent).then_some(span_index)
+        })
+        .collect()
+}
+
+fn span_can_parent(parent: &Span, child: &Span) -> bool {
+    if parent.is_boundary() {
+        return false;
     }
+    let parent_contains_child = parent.start_move <= child.start_move
+        && parent.end_move >= child.end_move
+        && parent.move_count() >= child.move_count();
+    if !parent_contains_child {
+        return false;
+    }
+    let same_range = parent.start_move == child.start_move && parent.end_move == child.end_move;
+    !same_range || span_kind_rank(parent.kind) < span_kind_rank(child.kind)
+}
 
-    #[allow(clippy::too_many_arguments)]
-    fn draw_span_item_row(
-        ui: &mut egui::Ui,
-        spans: &[Span],
-        parent_of: &[Option<usize>],
-        sim: &mut SimulationState,
-        boundary: &crate::state::simulation::ToolpathBoundary,
-        span_index: usize,
-        depth: usize,
-        active_local_move: Option<usize>,
-        events: &mut Vec<AppEvent>,
-    ) {
-        let Some(span) = spans.get(span_index) else {
-            return;
+fn compare_parent_candidates(spans: &[Span], a: usize, b: usize) -> std::cmp::Ordering {
+    let a_span = spans.get(a);
+    let b_span = spans.get(b);
+    match (a_span, b_span) {
+        (Some(a_span), Some(b_span)) => a_span
+            .move_count()
+            .cmp(&b_span.move_count())
+            .then_with(|| span_kind_rank(b_span.kind).cmp(&span_kind_rank(a_span.kind)))
+            .then_with(|| a.cmp(&b)),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => a.cmp(&b),
+    }
+}
+
+fn sort_span_indices(indices: &mut [usize], spans: &[Span]) {
+    indices.sort_by(|a, b| match (spans.get(*a), spans.get(*b)) {
+        (Some(a_span), Some(b_span)) => a_span
+            .start_move
+            .cmp(&b_span.start_move)
+            .then_with(|| a_span.end_move.cmp(&b_span.end_move))
+            .then_with(|| span_kind_rank(a_span.kind).cmp(&span_kind_rank(b_span.kind)))
+            .then_with(|| a.cmp(b)),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => a.cmp(b),
+    });
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_span_item_row(
+    ui: &mut egui::Ui,
+    spans: &[Span],
+    parent_of: &[Option<usize>],
+    sim: &mut SimulationState,
+    boundary: &crate::state::simulation::ToolpathBoundary,
+    span_index: usize,
+    depth: usize,
+    active_local_move: Option<usize>,
+    events: &mut Vec<AppEvent>,
+) {
+    let Some(span) = spans.get(span_index) else {
+        return;
+    };
+    let color = span_kind_color(span.kind);
+    let is_active = active_local_move.is_some_and(|move_index| span.contains(move_index));
+
+    ui.horizontal(|ui| {
+        ui.add_space(depth as f32 * 12.0);
+        ui.label(
+            egui::RichText::new(span_kind_label(span.kind))
+                .small()
+                .color(color),
+        );
+
+        let label = span_display_label(span);
+        let text = if is_active {
+            egui::RichText::new(label).small().strong()
+        } else {
+            egui::RichText::new(label).small()
         };
-        let color = span_kind_color(span.kind);
-        let is_active = active_local_move.is_some_and(|move_index| span.contains(move_index));
+        let response = ui.selectable_label(is_active, text);
+        if response.clicked() {
+            sim.clear_pinned_semantic_item();
+            events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+                move_index: boundary.start_move + span.start_move,
+            })));
+        }
 
-        ui.horizontal(|ui| {
-            ui.add_space(depth as f32 * 12.0);
-            ui.label(
-                egui::RichText::new(span_kind_label(span.kind))
-                    .small()
-                    .color(color),
-            );
+        if ui
+            .small_button("►|")
+            .on_hover_text("Jump to span end")
+            .clicked()
+        {
+            events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+                move_index: boundary.start_move + span.end_move,
+            })));
+        }
+        ui.label(
+            egui::RichText::new(format!("{}..{}", span.start_move, span.end_move))
+                .small()
+                .color(theme::TEXT_DIM),
+        );
+    });
 
-            let label = span_display_label(span);
-            let text = if is_active {
-                egui::RichText::new(label).small().strong()
-            } else {
-                egui::RichText::new(label).small()
-            };
-            let response = ui.selectable_label(is_active, text);
-            if response.clicked() {
-                sim.clear_pinned_semantic_item();
+    let mut children: Vec<usize> = parent_of
+        .iter()
+        .enumerate()
+        .filter_map(|(child_index, parent)| (*parent == Some(span_index)).then_some(child_index))
+        .collect();
+    sort_span_indices(&mut children, spans);
+    for child_index in children {
+        draw_span_item_row(
+            ui,
+            spans,
+            parent_of,
+            sim,
+            boundary,
+            child_index,
+            depth + 1,
+            active_local_move,
+            events,
+        );
+    }
+}
+
+fn span_display_label(span: &Span) -> String {
+    if !span.label.is_empty() {
+        return span.label.clone().into_owned();
+    }
+    match (&span.kind, &span.payload) {
+        (
+            SpanKind::DepthPass,
+            Some(SpanPayload::DepthPass {
+                z_level,
+                pass_index,
+            }),
+        ) => {
+            format!("Pass {} @ Z {:.3}", pass_index + 1, z_level)
+        }
+        (SpanKind::Region, Some(SpanPayload::Region { region_id, .. })) => {
+            format!("Region {region_id}")
+        }
+        _ => span_kind_label(span.kind).to_owned(),
+    }
+}
+
+const fn span_kind_rank(kind: SpanKind) -> u8 {
+    match kind {
+        SpanKind::Operation => 0,
+        SpanKind::DepthPass => 1,
+        SpanKind::Region => 2,
+        SpanKind::Entry => 3,
+        SpanKind::LeadOut => 3,
+        SpanKind::LinkBridge => 3,
+        SpanKind::DressupArtifact => 3,
+        SpanKind::GeometryRefit => 2,
+        SpanKind::WaterlineCleanup => 3,
+        SpanKind::RapidOrderBarrier => 4,
+    }
+}
+
+const fn span_kind_label(kind: SpanKind) -> &'static str {
+    match kind {
+        SpanKind::Operation => "Operation",
+        SpanKind::DepthPass => "Depth pass",
+        SpanKind::Region => "Region",
+        SpanKind::Entry => "Entry",
+        SpanKind::LeadOut => "Lead-out",
+        SpanKind::LinkBridge => "Link bridge",
+        SpanKind::DressupArtifact => "Dressup",
+        SpanKind::GeometryRefit => "Arc fit",
+        SpanKind::WaterlineCleanup => "Waterline cleanup",
+        SpanKind::RapidOrderBarrier => "Order barrier",
+    }
+}
+
+/// UP4: span kinds are a CATEGORY. The ten hues here included an amber
+/// `Entry` and a green-ish `GeometryRefit`, so a span list read as a
+/// verdict column when no span carries a verdict (`DESIGN_SPEC.md` §2.6
+/// principle 1). They walk `SPAN_SCALE` in declaration order instead.
+#[allow(clippy::indexing_slicing)]
+// SAFETY: every index is a literal in `0..6` and `SPAN_SCALE` has six
+// entries, so each one is in bounds at compile time.
+const fn span_kind_color(kind: SpanKind) -> egui::Color32 {
+    use crate::ui::tokens::SPAN_SCALE;
+
+    match kind {
+        SpanKind::Operation => SPAN_SCALE[0],
+        SpanKind::DepthPass => SPAN_SCALE[1],
+        SpanKind::Region => SPAN_SCALE[2],
+        SpanKind::Entry => SPAN_SCALE[3],
+        SpanKind::LeadOut => SPAN_SCALE[4],
+        SpanKind::LinkBridge => SPAN_SCALE[5],
+        SpanKind::DressupArtifact => SPAN_SCALE[0],
+        SpanKind::GeometryRefit => SPAN_SCALE[1],
+        SpanKind::WaterlineCleanup => SPAN_SCALE[2],
+        SpanKind::RapidOrderBarrier => SPAN_SCALE[3],
+    }
+}
+
+fn draw_semantic_outline(
+    ui: &mut egui::Ui,
+    sim: &mut SimulationState,
+    gui: &GuiState,
+    boundary: &crate::state::simulation::ToolpathBoundary,
+    active_item_id: Option<(ToolpathId, u64)>,
+    events: &mut Vec<AppEvent>,
+) {
+    let Some(rt) = gui.toolpath_rt.get(&boundary.id) else {
+        return;
+    };
+    let Some(trace) = rt.semantic_trace.as_ref() else {
+        return;
+    };
+    let Some(index) = sim.debug.semantic_indexes.get(&boundary.id).cloned() else {
+        return;
+    };
+    let root_items = index
+        .child_indices_by_parent
+        .get(&None)
+        .cloned()
+        .unwrap_or_default();
+    if root_items.is_empty() {
+        ui.label(
+            egui::RichText::new("No move-linked semantics")
+                .small()
+                .italics()
+                .color(theme::TEXT_DIM),
+        );
+        return;
+    }
+
+    ui.add_space(2.0);
+    for item_index in root_items {
+        draw_semantic_item_row(
+            ui,
+            trace,
+            &index,
+            sim,
+            boundary,
+            item_index,
+            0,
+            active_item_id,
+            events,
+        );
+    }
+}
+
+// SAFETY: item_index from recursive traversal of trace.items children
+#[allow(clippy::too_many_arguments, clippy::indexing_slicing)]
+fn draw_semantic_item_row(
+    ui: &mut egui::Ui,
+    trace: &rs_cam_core::trace::semantic_trace::ToolpathSemanticTrace,
+    index: &crate::state::simulation::SimulationSemanticIndex,
+    sim: &mut SimulationState,
+    boundary: &crate::state::simulation::ToolpathBoundary,
+    item_index: usize,
+    depth: usize,
+    active_item_id: Option<(ToolpathId, u64)>,
+    events: &mut Vec<AppEvent>,
+) {
+    let item = &trace.items[item_index];
+    let color = semantic_kind_color(&item.kind);
+    let is_active = active_item_id == Some((boundary.id, item.id));
+
+    ui.horizontal(|ui| {
+        ui.add_space(depth as f32 * 12.0);
+        ui.label(
+            egui::RichText::new(semantic_kind_label(&item.kind))
+                .small()
+                .color(color),
+        );
+
+        let text = if is_active {
+            egui::RichText::new(&item.label).small().strong()
+        } else {
+            egui::RichText::new(&item.label).small()
+        };
+        let response = ui.selectable_label(is_active, text);
+        if response.clicked() {
+            sim.pin_semantic_item(boundary.id, item.id);
+            if let Some(move_start) = item.move_start {
                 events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
-                    move_index: boundary.start_move + span.start_move,
+                    move_index: boundary.start_move + move_start,
                 })));
             }
+        }
 
+        if let (Some(move_start), Some(move_end)) = (item.move_start, item.move_end) {
             if ui
                 .small_button("►|")
-                .on_hover_text("Jump to span end")
+                .on_hover_text("Jump to semantic item end")
                 .clicked()
             {
                 events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
-                    move_index: boundary.start_move + span.end_move,
+                    move_index: boundary.start_move + move_end,
                 })));
             }
             ui.label(
-                egui::RichText::new(format!("{}..{}", span.start_move, span.end_move))
+                egui::RichText::new(format!("{move_start}-{move_end}"))
                     .small()
                     .color(theme::TEXT_DIM),
             );
-        });
+        }
+    });
 
-        let mut children: Vec<usize> = parent_of
-            .iter()
-            .enumerate()
-            .filter_map(|(child_index, parent)| {
-                (*parent == Some(span_index)).then_some(child_index)
-            })
-            .collect();
-        sort_span_indices(&mut children, spans);
+    if let Some(children) = index.child_indices_by_parent.get(&Some(item.id)) {
         for child_index in children {
-            draw_span_item_row(
-                ui,
-                spans,
-                parent_of,
-                sim,
-                boundary,
-                child_index,
-                depth + 1,
-                active_local_move,
-                events,
-            );
-        }
-    }
-
-    fn span_display_label(span: &Span) -> String {
-        if !span.label.is_empty() {
-            return span.label.clone().into_owned();
-        }
-        match (&span.kind, &span.payload) {
-            (
-                SpanKind::DepthPass,
-                Some(SpanPayload::DepthPass {
-                    z_level,
-                    pass_index,
-                }),
-            ) => {
-                format!("Pass {} @ Z {:.3}", pass_index + 1, z_level)
-            }
-            (SpanKind::Region, Some(SpanPayload::Region { region_id, .. })) => {
-                format!("Region {region_id}")
-            }
-            _ => span_kind_label(span.kind).to_owned(),
-        }
-    }
-
-    const fn span_kind_rank(kind: SpanKind) -> u8 {
-        match kind {
-            SpanKind::Operation => 0,
-            SpanKind::DepthPass => 1,
-            SpanKind::Region => 2,
-            SpanKind::Entry => 3,
-            SpanKind::LeadOut => 3,
-            SpanKind::LinkBridge => 3,
-            SpanKind::DressupArtifact => 3,
-            SpanKind::GeometryRefit => 2,
-            SpanKind::WaterlineCleanup => 3,
-            SpanKind::RapidOrderBarrier => 4,
-        }
-    }
-
-    const fn span_kind_label(kind: SpanKind) -> &'static str {
-        match kind {
-            SpanKind::Operation => "Operation",
-            SpanKind::DepthPass => "Depth pass",
-            SpanKind::Region => "Region",
-            SpanKind::Entry => "Entry",
-            SpanKind::LeadOut => "Lead-out",
-            SpanKind::LinkBridge => "Link bridge",
-            SpanKind::DressupArtifact => "Dressup",
-            SpanKind::GeometryRefit => "Arc fit",
-            SpanKind::WaterlineCleanup => "Waterline cleanup",
-            SpanKind::RapidOrderBarrier => "Order barrier",
-        }
-    }
-
-    /// UP4: span kinds are a CATEGORY. The ten hues here included an amber
-    /// `Entry` and a green-ish `GeometryRefit`, so a span list read as a
-    /// verdict column when no span carries a verdict (`DESIGN_SPEC.md` §2.6
-    /// principle 1). They walk `SPAN_SCALE` in declaration order instead.
-    #[allow(clippy::indexing_slicing)]
-    // SAFETY: every index is a literal in `0..6` and `SPAN_SCALE` has six
-    // entries, so each one is in bounds at compile time.
-    const fn span_kind_color(kind: SpanKind) -> egui::Color32 {
-        use crate::ui::tokens::SPAN_SCALE;
-
-        match kind {
-            SpanKind::Operation => SPAN_SCALE[0],
-            SpanKind::DepthPass => SPAN_SCALE[1],
-            SpanKind::Region => SPAN_SCALE[2],
-            SpanKind::Entry => SPAN_SCALE[3],
-            SpanKind::LeadOut => SPAN_SCALE[4],
-            SpanKind::LinkBridge => SPAN_SCALE[5],
-            SpanKind::DressupArtifact => SPAN_SCALE[0],
-            SpanKind::GeometryRefit => SPAN_SCALE[1],
-            SpanKind::WaterlineCleanup => SPAN_SCALE[2],
-            SpanKind::RapidOrderBarrier => SPAN_SCALE[3],
-        }
-    }
-
-    fn draw_semantic_outline(
-        ui: &mut egui::Ui,
-        sim: &mut SimulationState,
-        gui: &GuiState,
-        boundary: &crate::state::simulation::ToolpathBoundary,
-        active_item_id: Option<(ToolpathId, u64)>,
-        events: &mut Vec<AppEvent>,
-    ) {
-        let Some(rt) = gui.toolpath_rt.get(&boundary.id) else {
-            return;
-        };
-        let Some(trace) = rt.semantic_trace.as_ref() else {
-            return;
-        };
-        let Some(index) = sim.debug.semantic_indexes.get(&boundary.id).cloned() else {
-            return;
-        };
-        let root_items = index
-            .child_indices_by_parent
-            .get(&None)
-            .cloned()
-            .unwrap_or_default();
-        if root_items.is_empty() {
-            ui.label(
-                egui::RichText::new("No move-linked semantics")
-                    .small()
-                    .italics()
-                    .color(theme::TEXT_DIM),
-            );
-            return;
-        }
-
-        ui.add_space(2.0);
-        for item_index in root_items {
             draw_semantic_item_row(
                 ui,
                 trace,
-                &index,
+                index,
                 sim,
                 boundary,
-                item_index,
-                0,
+                *child_index,
+                depth + 1,
                 active_item_id,
                 events,
             );
-        }
-    }
-
-    // SAFETY: item_index from recursive traversal of trace.items children
-    #[allow(clippy::too_many_arguments, clippy::indexing_slicing)]
-    fn draw_semantic_item_row(
-        ui: &mut egui::Ui,
-        trace: &rs_cam_core::trace::semantic_trace::ToolpathSemanticTrace,
-        index: &crate::state::simulation::SimulationSemanticIndex,
-        sim: &mut SimulationState,
-        boundary: &crate::state::simulation::ToolpathBoundary,
-        item_index: usize,
-        depth: usize,
-        active_item_id: Option<(ToolpathId, u64)>,
-        events: &mut Vec<AppEvent>,
-    ) {
-        let item = &trace.items[item_index];
-        let color = semantic_kind_color(&item.kind);
-        let is_active = active_item_id == Some((boundary.id, item.id));
-
-        ui.horizontal(|ui| {
-            ui.add_space(depth as f32 * 12.0);
-            ui.label(
-                egui::RichText::new(semantic_kind_label(&item.kind))
-                    .small()
-                    .color(color),
-            );
-
-            let text = if is_active {
-                egui::RichText::new(&item.label).small().strong()
-            } else {
-                egui::RichText::new(&item.label).small()
-            };
-            let response = ui.selectable_label(is_active, text);
-            if response.clicked() {
-                sim.pin_semantic_item(boundary.id, item.id);
-                if let Some(move_start) = item.move_start {
-                    events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
-                        move_index: boundary.start_move + move_start,
-                    })));
-                }
-            }
-
-            if let (Some(move_start), Some(move_end)) = (item.move_start, item.move_end) {
-                if ui
-                    .small_button("►|")
-                    .on_hover_text("Jump to semantic item end")
-                    .clicked()
-                {
-                    events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
-                        move_index: boundary.start_move + move_end,
-                    })));
-                }
-                ui.label(
-                    egui::RichText::new(format!("{move_start}-{move_end}"))
-                        .small()
-                        .color(theme::TEXT_DIM),
-                );
-            }
-        });
-
-        if let Some(children) = index.child_indices_by_parent.get(&Some(item.id)) {
-            for child_index in children {
-                draw_semantic_item_row(
-                    ui,
-                    trace,
-                    index,
-                    sim,
-                    boundary,
-                    *child_index,
-                    depth + 1,
-                    active_item_id,
-                    events,
-                );
-            }
         }
     }
 }
