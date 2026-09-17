@@ -172,7 +172,7 @@ was finished, not redone. Wave 2 (`unified_finish`, `scallop`, `feeds/mod`,
 ## Follow-ups (recorded, not scheduled)
 
 - `git filter-repo` for the 948 MB blob; push of the tag.
-- `demos/`, `reference/` at the root (untracked).
+- `demos/`, `reference/` at the root (untracked): operator ruling 2026-09-17, keep as test beds.
 - 293 doc-comment citations of deleted planning paths (ruled: leave).
 - FW-22 / T-5: `feeds::calculate` split is a design decision.
 - `preview_field_applies` carries an inert `too_many_arguments` allow (7 args).

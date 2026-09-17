@@ -102,8 +102,8 @@ cites nine and two of their files as algorithm-lineage attribution),
 `toolpath_stress_test/` (`AI_MACHINIST_ANALYSIS_REFERENCE.md:350` names its
 analyse script), and `AI_MACHINIST_ANALYSIS_REFERENCE.md` itself.
 The untracked, git-ignored `demos/` (103 MB) and `reference/` (4.9 GB;
-`reference/validators/linuxcnc` is a run-time lookup of one test) stay for the
-operator to decide.
+`reference/validators/linuxcnc` is a run-time lookup of one test) stay. The
+operator ruled on 2026-09-17: they are test beds, keep them.
 
 ## Moves, not deletions
 
