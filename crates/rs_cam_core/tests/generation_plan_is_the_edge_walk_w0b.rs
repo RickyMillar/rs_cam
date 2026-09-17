@@ -16,8 +16,10 @@
 //! 3. `the_ancestor_scope_walks_the_edges`: `Ancestors(rest2)` gives
 //!    rough, Simulate, rest1, Simulate, rest2, and leaves the other setup
 //!    out.
-//! 4. `a_disabled_op_gets_no_step`.
-//! 5. `the_loader_normalises_the_rest_analysis_demand`: a round trip
+//! 4. `the_ancestor_closure_is_not_the_nearest_source_only`: the arm that
+//!    parts a closure over `edges` from one over `primary_edges`.
+//! 5. `a_disabled_op_gets_no_step`.
+//! 6. `the_loader_normalises_the_rest_analysis_demand`: a round trip
 //!    through the save and load doors switches a stray producer off and a
 //!    consumed producer on.
 //!
@@ -54,7 +56,8 @@ use rs_cam_core::ids::{SetupId, ToolpathId};
 use rs_cam_core::session::generation_plan::{Scope, Step, plan};
 use rs_cam_core::session::{
     AdoptSimulationArgs, Command, LoadedModel, ProjectSession, ProjectSessionBuilder,
-    SetBoundaryConfigArgs, SetRestAnalysisConfigArgs, SetToolpathEnabledArgs, ToolpathConfig,
+    SetBoundaryConfigArgs, SetRestAnalysisConfigArgs, SetStockSourceArgs, SetToolpathEnabledArgs,
+    ToolpathConfig,
 };
 use rs_cam_core::stock::stock_mesh::StockMesh;
 use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
@@ -324,6 +327,39 @@ fn the_ancestor_scope_walks_the_edges() {
         plan(&session, Scope::Setup(setup_id_of(&session, 1))),
         vec![generate(&session, BACK)],
         "the setup scope plans that setup's operations"
+    );
+}
+
+/// The defect injection claim 3 cannot make on its own.
+///
+/// While `rest1` starts from the remaining stock it carries its own Stock
+/// edges, so a closure over `primary_edges` still reaches `rough`
+/// TRANSITIVELY (rest2 to rest1 to rough) and gives the same plan. Make
+/// `rest1` start from fresh stock and the two closures part: `rest1`
+/// declares no Stock edge, `primary_edges` keeps only `rest2`'s NEAREST
+/// source, and `rough` disappears from the plan. That is defect D6, and
+/// the plan must not inherit it.
+#[test]
+fn the_ancestor_closure_is_not_the_nearest_source_only() {
+    let mut session = fixture();
+    let _ = session
+        .apply(Command::SetStockSource(SetStockSourceArgs {
+            index: REST1,
+            source: StockSource::Fresh,
+        }))
+        .expect("the setter writes the stock source");
+
+    assert_eq!(
+        plan(&session, Scope::Ancestors(id_of(&session, REST2))),
+        vec![
+            generate(&session, ROUGH),
+            generate(&session, REST1),
+            simulate(&session, 0, REST2),
+            generate(&session, REST2),
+        ],
+        "the closure keeps EVERY enabled predecessor. A nearest-only \
+         closure would drop `rough` here, because `rest1` no longer \
+         carries a Stock edge of its own"
     );
 }
 
