@@ -171,7 +171,13 @@ struct ToolpathSummaryEntry {
     operation: String,
     status: String,
     move_count: usize,
-    collision_count: usize,
+    /// `null` = **the collision check did not run or failed**, never "no
+    /// collisions". `Some(0)` is a check that ran and found none.
+    ///
+    /// Mirrors `truncated_core_mm2` above and the core rule that `None` means
+    /// not measured while `Some(0)` means measured clean. Until 2026-09-17
+    /// this was a bare `usize` and a failed check shipped `0`.
+    collision_count: Option<usize>,
 }
 
 #[derive(Serialize)]
@@ -188,7 +194,13 @@ struct ProjectSummary {
     air_cut_pct_of_total_runtime: f64,
     air_cut_pct_of_cutting_time: f64,
     average_engagement: f64,
+    /// Holder/shank collisions summed over the toolpaths whose check RAN.
+    /// Read it with `collision_checks_failed` — a zero here means nothing on
+    /// its own if some checks did not complete.
     collision_count: usize,
+    /// How many per-toolpath collision checks failed to run. `0` means
+    /// `collision_count` is a sum over every toolpath.
+    collision_checks_failed: usize,
     rapid_collision_count: usize,
     per_toolpath: Vec<ToolpathSummaryEntry>,
     verdict: String,
@@ -373,6 +385,14 @@ pub fn run_project_command(
         rs_cam_core::stock::collision::CollisionReport,
     > = std::collections::HashMap::new();
 
+    // A check that FAILED is not a check that found nothing. Before this set
+    // existed, the `Err(e)` arm below logged a warning and inserted nothing,
+    // both readers did `.unwrap_or(0)`, and the toolpath shipped
+    // `collision_count: 0, status: "ok"` — a clean bill of health asserted
+    // with no evidence, in the CLI's only machine-readable artifact.
+    let mut collision_check_failed: std::collections::HashSet<rs_cam_core::ToolpathId> =
+        std::collections::HashSet::new();
+
     for idx in 0..tp_count {
         if session.get_result(idx).is_none() {
             continue;
@@ -394,6 +414,7 @@ pub fn run_project_command(
             }
             Err(e) => {
                 warn!(index = idx, error = %e, "Collision check failed");
+                collision_check_failed.insert(tp_id);
             }
         }
     }
@@ -507,19 +528,29 @@ pub fn run_project_command(
         .per_toolpath
         .iter()
         .map(|d| {
-            let holder_collisions = collision_reports
-                .get(&d.toolpath_id)
-                .map(|r| r.collisions.len())
-                .unwrap_or(0);
-            let total_collisions = holder_collisions + d.rapid_collision_count;
-            let status = if total_collisions > 0 { "error" } else { "ok" };
+            // Three states, not two. A failed check is neither clear nor
+            // dirty, and it must not read as either.
+            let checked = !collision_check_failed.contains(&d.toolpath_id);
+            let holder_collisions = checked.then(|| {
+                collision_reports
+                    .get(&d.toolpath_id)
+                    .map(|r| r.collisions.len())
+                    .unwrap_or(0)
+            });
+            let status = match holder_collisions {
+                None => "collision_check_failed",
+                Some(h) if h + d.rapid_collision_count > 0 => "error",
+                Some(_) => "ok",
+            };
             ToolpathSummaryEntry {
                 id: d.toolpath_id,
                 name: d.name.clone(),
                 operation: d.operation_type.clone(),
                 status: status.to_owned(),
                 move_count: d.move_count,
-                collision_count: total_collisions,
+                // Carries the absence through. `total_collisions` no longer
+                // exists as a bare sum, because a sum cannot say "not checked".
+                collision_count: holder_collisions.map(|h| h + d.rapid_collision_count),
             }
         })
         .collect();
@@ -552,7 +583,18 @@ pub fn run_project_command(
         "off (--no-adaptive-feed-modulation)".to_owned()
     };
 
-    let verdict = if total_collision_count > 0 {
+    // A failed check outranks a clean count, because the count is only clean
+    // for the toolpaths that were actually checked. Ordered above the
+    // collision arm on purpose: "some checks did not run" is a statement about
+    // the evidence, and it must not be hidden by a finding from the rest of it.
+    let verdict = if !collision_check_failed.is_empty() {
+        format!(
+            "UNKNOWN: {} of {} toolpath collision checks failed — the collision \
+             result is incomplete",
+            collision_check_failed.len(),
+            tp_count
+        )
+    } else if total_collision_count > 0 {
         format!(
             "ERROR: {} holder/shank collisions detected",
             total_collision_count
@@ -584,6 +626,9 @@ pub fn run_project_command(
         air_cut_pct_of_cutting_time: diag.air_cut_pct_of_cutting_time,
         average_engagement: diag.average_engagement,
         collision_count: total_collision_count,
+        // The denominator for `collision_count`. Non-zero means that count is
+        // a sum over SOME toolpaths, not all of them.
+        collision_checks_failed: collision_check_failed.len(),
         rapid_collision_count: diag.rapid_collision_count,
         per_toolpath,
         verdict: verdict.clone(),
@@ -658,9 +703,15 @@ pub fn run_project_command(
         );
         for entry in &project_summary.per_toolpath {
             let status_icon = if entry.status == "ok" { " " } else { "!" };
+            // "not checked" is not "0 collisions". The operator reads this
+            // line, so it must not round an absent check down to a clean one.
+            let collisions = match entry.collision_count {
+                Some(n) => format!("{n} collisions"),
+                None => "collisions NOT CHECKED".to_owned(),
+            };
             eprintln!(
-                "  [{status_icon}] #{} {} ({}) — {} moves, {} collisions",
-                entry.id, entry.name, entry.operation, entry.move_count, entry.collision_count,
+                "  [{status_icon}] #{} {} ({}) — {} moves, {collisions}",
+                entry.id, entry.name, entry.operation, entry.move_count,
             );
             if let Some(util) = kinematics.get(&entry.id)
                 && let Some(line) = kinematics_report_line(util)
