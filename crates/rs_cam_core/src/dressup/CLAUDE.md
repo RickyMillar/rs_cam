@@ -6,8 +6,7 @@ a `DressupContext`, and `DRESSUP_PIPELINE` there lists every stage in run
 order. Three run outside it: `apply_tabs`, in the per-level closure of
 `compute/execute/clearing_2d.rs` (it needs that level's cut depth), and
 `optimize_entry_descents_annotated` and `adaptive_feed_modulate`, in
-`session/compute.rs` (they need the prior stock and the simulated
-engagement). Add no fourth.
+`session/compute.rs` (they need prior stock and engagement). Add no fourth.
 
 ## Files
 
