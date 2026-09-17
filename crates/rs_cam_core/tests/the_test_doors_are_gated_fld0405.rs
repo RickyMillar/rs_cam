@@ -3,11 +3,13 @@
 //!
 //! # What this file guards
 //!
-//! Twelve items in `maps/` and `surface/` exist for the harnesses alone:
+//! Twenty-four items in `maps/` and `surface/` exist for the harnesses alone:
 //!
 //! - the four cache-stats types and their four `stats()` readers
 //!   (`FinishSurfaceCacheStats`, `GeomCacheStats`, `ReachMapCacheStats`,
 //!   `TierMapCacheStats`),
+//! - the same four caches' `reset_stats`, `cache_len` and `clear` — twelve
+//!   more doors, added by the wave 5 tail,
 //! - `maps::reach_map::reach_map_for_mesh` — a raw constructor that bypasses
 //!   the cache, beside the canonical `compute_reach_map`,
 //! - `maps::tier_map::reset_drop_call_count`,
@@ -21,21 +23,30 @@
 //! enables the feature from its `[dev-dependencies]` for
 //! `crates/rs_cam_viz/tests/reach_overlay_p5.rs`.
 //!
+//! The twelve `reset_stats`/`cache_len`/`clear` doors follow the same rule.
+//! Two `clear()` doc comments used to offer an embedder an eager release of
+//! the retained maps; no embedder ever called one, and the wave 5 tail
+//! removed the offer rather than keep an unexercised product claim. The
+//! `pub(crate)` machinery under them — `MeshMemo::entry_count`,
+//! `MeshMemo::clear` and `MemoCounters::reset` in `maps/memo.rs` — carries
+//! the same gate, because the twelve doors are its only callers.
+//!
 //! The gate holds only while two things stay true, so this file asserts both.
 //!
 //! # The two arms
 //!
-//! 1. Every one of the twelve declarations carries
+//! 1. Every one of the twenty-four declarations carries
 //!    `#[cfg(feature = "test-support")]` in the attribute run directly above
 //!    it. A declaration that loses the attribute puts the door back into the
 //!    default public API of the crate.
 //! 2. No `.rs` file under `crates/rs_cam_core/src`, outside the seven files
-//!    that declare the twelve, names one of the eight identifiers in code. A
+//!    that declare them, names one of the ten needle identifiers in code. A
 //!    comment line may name them; prose costs no build.
 //!
 //! # Non-vacuity
 //!
-//! Arm 1 counts the declarations it accounted for and fails below twelve.
+//! Arm 1 counts the declarations it accounted for and fails below
+//! [`DOORS`]`.len()`.
 //! Arm 2 walks at least [`MIN_FILES_WALKED`] files, and it runs the same
 //! matcher over the seven owner files first: that scan must find at least
 //! [`MIN_OWNER_HITS`] hits, or the matcher reads nothing and the empty result
@@ -45,8 +56,14 @@
 //!
 //! `label_at` and `is_covered` are method names, not paths. A future,
 //! unrelated method of either name anywhere under `src/` reads as a hit here.
+//!
 //! That is the same trade `the_research_arms_are_feature_gated_fin01.rs`
 //! makes: a false red that a reader resolves in one line beats a silent gap.
+//!
+//! `clear` is NOT a needle, and cannot be: `Vec::clear`, `String::clear` and
+//! every other `clear()` in the crate would read as a hit, and the arm would
+//! be noise instead of a gate. Arm 1 still pins all four `clear` doors by
+//! their exact declaration lines, so a lost `#[cfg]` is caught there.
 //!
 //! # Red before the fix
 //!
@@ -55,6 +72,13 @@
 //! read a `pub(crate) fn probe_teeth(z: GridZ) -> bool { z.is_covered() }`
 //! appended to `maps/grid.rs`, and named `maps/grid.rs:107`. Both defects
 //! were injected, both arms went red, and both files were restored.
+//!
+//! The twelve new doors were checked the same way: the `#[cfg]` line above
+//! `maps/finish_surface_cache.rs`'s `pub fn clear` was deleted, arm 1 named
+//! that declaration, and the line was restored. Deleting the same line above
+//! `maps/geom_cache.rs`'s `pub fn cache_len` does not even compile under the
+//! default features, because `MeshMemo::entry_count` under it carries the same
+//! gate — a second, stricter guard on three of the twelve.
 //!
 //! The teeth check for arm 2 ran under `--features test-support`, and it has
 //! to: with the default features the product reader stops the crate compiling
@@ -80,7 +104,7 @@ struct Door {
     declaration: &'static str,
 }
 
-/// The twelve declarations arm 1 checks.
+/// The declarations arm 1 checks.
 const DOORS: &[Door] = &[
     Door {
         file: "maps/finish_surface_cache.rs",
@@ -130,9 +154,59 @@ const DOORS: &[Door] = &[
         file: "surface/slope.rs",
         declaration: "pub fn is_covered(self) -> bool {",
     },
+    Door {
+        file: "maps/finish_surface_cache.rs",
+        declaration: "pub fn reset_stats() {",
+    },
+    Door {
+        file: "maps/finish_surface_cache.rs",
+        declaration: "pub fn cache_len() -> usize {",
+    },
+    Door {
+        file: "maps/finish_surface_cache.rs",
+        declaration: "pub fn clear() {",
+    },
+    Door {
+        file: "maps/geom_cache.rs",
+        declaration: "pub fn reset_stats() {",
+    },
+    Door {
+        file: "maps/geom_cache.rs",
+        declaration: "pub fn cache_len() -> usize {",
+    },
+    Door {
+        file: "maps/geom_cache.rs",
+        declaration: "pub fn clear() {",
+    },
+    Door {
+        file: "maps/reach_map_cache.rs",
+        declaration: "pub fn reset_stats() {",
+    },
+    Door {
+        file: "maps/reach_map_cache.rs",
+        declaration: "pub fn cache_len() -> usize {",
+    },
+    Door {
+        file: "maps/reach_map_cache.rs",
+        declaration: "pub fn clear() {",
+    },
+    Door {
+        file: "maps/tier_map_cache.rs",
+        declaration: "pub fn reset_stats() {",
+    },
+    Door {
+        file: "maps/tier_map_cache.rs",
+        declaration: "pub fn cache_len() -> usize {",
+    },
+    Door {
+        file: "maps/tier_map_cache.rs",
+        declaration: "pub fn clear() {",
+    },
 ];
 
-/// The eight identifiers arm 2 looks for.
+/// The identifiers arm 2 looks for.
+///
+/// `clear` is deliberately absent — see the module doc's "Known limit".
 const NEEDLES: &[&str] = &[
     "FinishSurfaceCacheStats",
     "GeomCacheStats",
@@ -142,6 +216,8 @@ const NEEDLES: &[&str] = &[
     "reset_drop_call_count",
     "label_at",
     "is_covered",
+    "reset_stats",
+    "cache_len",
 ];
 
 /// The files that declare the twelve. Arm 2 skips them and measures its own
@@ -160,10 +236,11 @@ const OWNERS: &[&str] = &[
 /// 2026-09-17. A walk that reads a handful proves nothing.
 const MIN_FILES_WALKED: usize = 250;
 
-/// The lowest number of in-owner hits the matcher must find. Each of the eight
-/// identifiers is named at least once by its own declaration, and the four
-/// cache-stats types are named again by the `stats()` return type.
-const MIN_OWNER_HITS: usize = 12;
+/// The lowest number of in-owner hits the matcher must find. Each of the ten
+/// identifiers is named at least once by its own declaration, the four
+/// cache-stats types are named again by the `stats()` return type, and
+/// `reset_stats` and `cache_len` are each declared four times, once per cache.
+const MIN_OWNER_HITS: usize = 20;
 
 /// This crate's `src` directory.
 fn src_root() -> PathBuf {
@@ -355,14 +432,14 @@ fn no_product_file_names_a_test_door() {
     );
     assert!(
         outside.is_empty(),
-        "FLD-04 + FLD-05: the four cache-stats types, their four `stats()` \
-         readers, `reach_map_for_mesh`, `reset_drop_call_count`, \
-         `TierMap::label_at` and `GridZ::is_covered` are test doors behind the \
-         `test-support` feature. A product file that names one in code either \
-         breaks the default build or turns the door into a hidden product API. \
-         Use `compute_reach_map` for a reach map, or promote the door to a \
-         plain `pub` item with a product reader and a sentry. I read {} \
-         line(s):\n  {}",
+        "FLD-04 + FLD-05: the four cache-stats types, their `stats()`, \
+         `reset_stats` and `cache_len` readers, `reach_map_for_mesh`, \
+         `reset_drop_call_count`, `TierMap::label_at` and `GridZ::is_covered` \
+         are test doors behind the `test-support` feature. A product file that \
+         names one in code either breaks the default build or turns the door \
+         into a hidden product API. Use `compute_reach_map` for a reach map, \
+         or promote the door to a plain `pub` item with a product reader and a \
+         sentry. I read {} line(s):\n  {}",
         outside.len(),
         outside.join("\n  ")
     );

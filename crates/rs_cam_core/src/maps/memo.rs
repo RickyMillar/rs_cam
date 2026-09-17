@@ -76,6 +76,10 @@ impl CacheCounters {
 
     /// Zero the counters. The cached values themselves are untouched, so this
     /// cannot change any result.
+    ///
+    /// **Test door** (FLD-04/05 tail). The four `reset_stats()` readers are
+    /// its only callers, and they sit behind the same feature.
+    #[cfg(feature = "test-support")]
     pub(crate) fn reset(&self) {
         self.builds.store(0, Ordering::Relaxed);
         self.hits.store(0, Ordering::Relaxed);
@@ -115,12 +119,20 @@ impl<K: PartialEq, V, const CAPACITY: usize> MeshMemo<K, V, CAPACITY> {
         }
     }
 
-    /// Number of live entries. Test hook for the capacity bound.
+    /// Number of live entries.
+    ///
+    /// **Test door** (FLD-04/05 tail). The three `cache_len()` readers are
+    /// its only callers, and they sit behind the same feature.
+    #[cfg(feature = "test-support")]
     pub(crate) fn entry_count(&self) -> usize {
         self.entries.len()
     }
 
     /// Drop every entry.
+    ///
+    /// **Test door** (FLD-04/05 tail). The three `clear()` doors are its only
+    /// callers, and they sit behind the same feature.
+    #[cfg(feature = "test-support")]
     pub(crate) fn clear(&mut self) {
         self.entries.clear();
     }

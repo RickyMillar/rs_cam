@@ -27,8 +27,9 @@ heavy-tests = []
 #   cargo test -p rs_cam_core --features research --test spiral_finish_compact_c1
 # Most of their tests are `#[ignore]` evidence runs and need `-- --ignored`.
 research = []
-# Gates the twelve test doors in `maps/` and `surface/` — the four cache-stats
-# types with their four `stats()` readers, `reach_map_for_mesh`,
+# Gates the twenty-four test doors in `maps/` and `surface/` — the four
+# cache-stats types with their four `stats()` readers, the same four caches'
+# `reset_stats`, `cache_len` and `clear`, `reach_map_for_mesh`,
 # `reset_drop_call_count`, `TierMap::label_at` and `GridZ::is_covered`. No
 # product path reads any of them, and each one is bound by an integration-test
 # crate, so `cfg(test)` cannot hide them. Off by default, so the default

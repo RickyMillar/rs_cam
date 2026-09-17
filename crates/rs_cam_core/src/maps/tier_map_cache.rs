@@ -165,11 +165,21 @@ pub fn stats() -> TierMapCacheStats {
 
 /// Zero the counters. The cached values themselves are untouched, so this
 /// cannot change any result.
+///
+/// **Test door** (FLD-04/05 tail). The harnesses under
+/// `crates/rs_cam_core/tests` are the only callers, so it sits behind
+/// `test-support`.
+#[cfg(feature = "test-support")]
 pub fn reset_stats() {
     COUNTERS.reset();
 }
 
-/// Number of live entries. Test hook for the capacity bound.
+/// Number of live entries — the capacity bound's instrument.
+///
+/// **Test door** (FLD-04/05 tail). The harnesses under
+/// `crates/rs_cam_core/tests` are the only callers, so it sits behind
+/// `test-support`.
+#[cfg(feature = "test-support")]
 #[must_use]
 pub fn cache_len() -> usize {
     table().lock().map_or(0, |t| t.entry_count())
@@ -177,7 +187,12 @@ pub fn cache_len() -> usize {
 
 /// Drop every entry. Not needed for correctness — a stale entry is
 /// unreachable once its mesh is gone — but lets a test start from a known
-/// state and lets an embedder release the retained maps eagerly.
+/// state.
+///
+/// **Test door** (FLD-04/05 tail). The harnesses under
+/// `crates/rs_cam_core/tests` are the only callers, so it sits behind
+/// `test-support`.
+#[cfg(feature = "test-support")]
 pub fn clear() {
     if let Ok(mut t) = table().lock() {
         t.clear();
