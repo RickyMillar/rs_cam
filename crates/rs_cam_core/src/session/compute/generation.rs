@@ -572,10 +572,9 @@ impl ProjectSession {
         match result.annotated().rest_regions.as_ref() {
             Some(regions) if !regions.is_empty() => Ok(Arc::clone(regions)),
             _ => Err(SessionError::OperationFailed(format!(
-                "'{source_name}' produced no rest regions — it must be a pencil operation with \
-                 the rest-depth detector enabled, and its rest analysis must have found \
-                 material above the threshold. Check the pencil rest-depth settings on \
-                 '{source_name}' and regenerate it.",
+                "'{source_name}' produced no rest regions. Its rest analysis found no material \
+                 above the threshold, or it is switched off. Check the rest analysis settings \
+                 on '{source_name}' and regenerate it.",
             ))),
         }
     }
