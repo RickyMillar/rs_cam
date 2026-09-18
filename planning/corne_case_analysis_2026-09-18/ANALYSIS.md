@@ -329,3 +329,9 @@ a waterline on a solid emits loops inside material; `waterline_contours`
 returns open arcs when the bbox extent divides the sampling evenly (the
 grid is padded now, the chain builder is not fixed); UnifiedFinish's
 VerySteep band lacks the stock floor and the flat-face nudge.
+
+GUI look on the new binary (`14_gui_simulation_after_fixes.png`, project
+`corne_job_corrected.toml`, `generate_all` at 0.3 mm, 6 steps, 3
+simulations): the walls stand all round, a one-tool-diameter moat around
+the outer faces, the far stock untouched, every hex and screw hole cut,
+0 collisions, 59:39 machine time.
