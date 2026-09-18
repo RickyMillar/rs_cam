@@ -323,9 +323,10 @@ at 0 dropped), 32 752 cutting moves, and ZERO cutting moves inside the
 right wall below Z 17.5. The wall saw is gone. The GUI look waits for a
 restart of the MCP GUI on the new release binary.
 
-Open after landing: the R10 lap cap also reaches roughing (a Zigzag rough
-entry that would lap more than three times now plunges into fresh stock);
-a waterline on a solid emits loops inside material; `waterline_contours`
+R10 ruling `b9d691c5`: the lap cap applies to the finishing roles only; a
+rough keeps folding (Zigzag golden back to 188 moves).
+
+Open after landing: a waterline on a solid emits loops inside material; `waterline_contours`
 returns open arcs when the bbox extent divides the sampling evenly (the
 grid is padded now, the chain builder is not fixed); UnifiedFinish's
 VerySteep band lacks the stock floor and the flat-face nudge.
