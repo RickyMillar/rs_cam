@@ -2017,8 +2017,19 @@
           "type": "integer"
         },
         "source": {
-          "description": "Either \"fresh\" or \"from_remaining_stock\"",
-          "type": "string"
+          "description": "Where this operation's material comes from.",
+          "oneOf": [
+            {
+              "const": "fresh",
+              "description": "Start from raw stock.",
+              "type": "string"
+            },
+            {
+              "const": "from_remaining_stock",
+              "description": "Start from the material the prior enabled operations left.",
+              "type": "string"
+            }
+          ]
         }
       },
       "required": [

@@ -605,22 +605,14 @@ impl RsCamApp {
             }
             CoreRequest::SetStockConfig(p) => self.core_set_stock_config(&p, before),
             CoreRequest::SetStockSource(p) => {
-                let parsed = match p.source.as_str() {
-                    "fresh" => rs_cam_core::compute::config::StockSource::Fresh,
-                    "from_remaining_stock" => {
-                        rs_cam_core::compute::config::StockSource::FromRemainingStock
-                    }
-                    other => {
-                        return CorePlan::Answered(mutation_error_json(
-                            &format!(
-                                "Error: unknown stock_source '{other}'. Expected 'fresh' or 'from_remaining_stock'."
-                            ),
-                            Some("stock_source"),
-                        ));
-                    }
-                };
+                // W5 item (b): the schema owns the token list, so an unknown
+                // token never reaches this arm. The hand parser and its
+                // runtime refusal are gone.
+                let parsed = rs_cam_core::compute::config::StockSource::from(p.source);
                 before.index = Some(p.index);
-                before.extra = serde_json::json!({ "stock_source": p.source });
+                // The CORE enum serialises here, so one owner writes the
+                // token the wire echoes.
+                before.extra = serde_json::json!({ "stock_source": parsed });
                 CorePlan::Apply(
                     Command::SetStockSource(SetStockSourceArgs {
                         index: p.index,

@@ -12,6 +12,7 @@ use rmcp::schemars;
 use serde::Deserialize;
 
 use rs_cam_core::compute::catalog::OperationType;
+use rs_cam_core::compute::config::StockSource;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::compute::transform::ZRotation;
 use rs_cam_core::feeds::WorkholdingRigidity;
@@ -998,12 +999,44 @@ pub struct SetToolpathEnabledParam {
     pub enabled: bool,
 }
 
+/// The two legal stock sources, as a wire enum (W5 item b).
+///
+/// The wire used to carry a bare `String` here, so the published tool schema
+/// said only `"type": "string"` and a client had to read the doc comment to
+/// learn the two legal values. The viz server then hand-parsed the string and
+/// refused an unknown one at runtime. This enum is a thin mirror of
+/// [`StockSource`], which cannot derive `schemars::JsonSchema` itself because
+/// `rs_cam_core` does not depend on schemars. The token of each variant is the
+/// token core's serde already stores in a project file.
+/// `inline` keeps both values IN the property that uses this type. Without it
+/// schemars emits a `$ref` into `$defs`, and the published tool schema carries
+/// no `$defs`, so the reference does not resolve for a client.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum StockSourceParam {
+    /// Start from raw stock.
+    #[default]
+    Fresh,
+    /// Start from the material the prior enabled operations left.
+    FromRemainingStock,
+}
+
+impl From<StockSourceParam> for StockSource {
+    fn from(p: StockSourceParam) -> Self {
+        match p {
+            StockSourceParam::Fresh => StockSource::Fresh,
+            StockSourceParam::FromRemainingStock => StockSource::FromRemainingStock,
+        }
+    }
+}
+
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct SetStockSourceParam {
     /// Toolpath index (0-based)
     pub index: usize,
-    /// Either "fresh" or "from_remaining_stock"
-    pub source: String,
+    /// Where this operation's material comes from.
+    pub source: StockSourceParam,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
@@ -2038,11 +2071,13 @@ mod tests {
                 "`{field}` was supplied — it must not be reported as defaulted"
             );
         }
-        assert!(build_tool_config(&AddToolParam {
-            flute_count: Some(0),
-            ..add_tool_spec("end_mill", 6.0)
-        })
-        .is_err());
+        assert!(
+            build_tool_config(&AddToolParam {
+                flute_count: Some(0),
+                ..add_tool_spec("end_mill", 6.0)
+            })
+            .is_err()
+        );
     }
 
     /// `add_tool` is all-optional beyond name/type/diameter, and the
