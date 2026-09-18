@@ -34,7 +34,7 @@ need a register.
 | T-18 | Three feed lifts cap against the gantry TRAVEL rate, not the cutting ceiling | **closed** `d47a04d8` — four sites read `commanded_cutting_feed_ceiling_mm_min()`; no preset number moved |
 | T-19 | The export gate's unmodelled refusal names three gates by hand, and there are now five | **closed** 2026-09-18 — one loop over `criteria()`; the message names every counting row |
 | T-20 | `UnmodeledReason` has four renderers that word the same ten variants and share no code | open — found by T-19 (2026-09-18); the door belongs on the type in `verdict.rs`; take it after V1–V3 land, because two renderers sit in the viz files those steps edit |
-| T-21 | The `StaleSimulation` rewrite in `project_load_report` covers chipload, power and deflection, not the S3 depth row | open — found by T-19 (2026-09-18); a stale trace leaves the depth row saying "simulation has not been run" beside three rows that say "stale"; fix: the rewrite walks every typed verdict, and a sentry pins it |
+| T-21 | The `StaleSimulation` rewrite in `project_load_report` covers chipload, power and deflection, not the S3 depth row | **closed** 2026-09-18 — the rewrite walks the depth row too; drill gates carry no `Unmodeled` arm and need none |
 
 ---
 
@@ -1314,6 +1314,51 @@ variants and share no code, and the depth row carries no
 `StaleSimulation` rewrite, so a stale trace leaves it saying "simulation
 has not been run" beside three rows that say "stale". Neither changes an
 export decision today.
+
+---
+
+## T-21 — a stale trace marked three rows and left the fourth
+
+Found 2026-09-18 while landing T-19. **Implemented the same day** —
+`planning/load_model_2026-09-16/T19_IMPLEMENTATION.md` §7. The
+orchestrator closes this row at the commit.
+
+`gcode::project_load_report` throws away a trace whose provenance no
+longer matches the project, runs the gates without it, and rewrites each
+`Unmodeled(SimulationRequired)` into `Unmodeled(StaleSimulation)`. The
+two reasons are different operator actions: "run the simulation" against
+"re-run it, the one you have no longer describes this job".
+
+The rewrite named three verdicts — chipload, power, deflection. S3 added
+the depth-of-cut gate beside them and no rewrite arm. So one toolpath
+reported three rows stale and one row never simulated, for the one trace
+and the one cause.
+
+**Why nothing caught it.** The rewrite is three private functions called
+from one loop, and adding a gate to `criteria()` does not add it to that
+loop. No test built a report from a stale trace and compared the rows
+against each other; the sentries that exercise the depth gate call the
+evaluators directly and never pass through `project_load_report`.
+
+**What it cost.** No export decision: the gate refuses on the rows
+either way, and the stale HEADLINE still fired through the three rows
+that did read stale. What it cost was the report. The operator read a
+self-contradicting toolpath, and a surface that keys on the reason —
+the diagnostics adapter renders `StaleSimulation` as `StaleEvidence` and
+`SimulationRequired` as `NeedsSimulation` — painted the depth row as
+never-simulated evidence beside three rows marked stale.
+
+**The fix** is `rewrite_sim_required_to_stale_depth`, in the shape of
+the three beside it, called from the same loop. The drill gates take no
+rewrite and need none: `DrillGateOutcome` has two arms, `Within` and
+`Exceeds`, and no `Unmodeled` at all, because those gates read the drill
+op's geometry and feeds and never a trace.
+
+Sentry:
+`crates/rs_cam_core/tests/a_stale_trace_marks_every_row_it_invalidated_g_t21.rs`.
+It builds a report from a stale trace through `project_load_report` and
+asserts every milling row carries the one reason; it ran red on the
+depth row alone, with the three rows beside it already green.
 
 ---
 

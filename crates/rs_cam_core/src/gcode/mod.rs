@@ -477,6 +477,23 @@ fn rewrite_sim_required_to_stale_deflection(v: &mut crate::tool_load::verdict::D
     }
 }
 
+/// T-21 (2026-09-18). S3 added the depth-of-cut gate beside the three
+/// above and no rewrite arm, so one toolpath reported three rows stale
+/// and one row never simulated, for the one trace and the one cause.
+/// The depth gate reads `axial_engagement_mm` off the trace's cutting
+/// samples, so a stale trace invalidates it exactly as it invalidates
+/// the three.
+fn rewrite_sim_required_to_stale_depth(v: &mut crate::tool_load::verdict::DepthVerdict) {
+    if let crate::tool_load::verdict::DepthVerdict::Unmodeled { reason } = v
+        && matches!(
+            reason,
+            crate::tool_load::UnmodeledReason::SimulationRequired
+        )
+    {
+        *reason = crate::tool_load::UnmodeledReason::StaleSimulation;
+    }
+}
+
 /// Classification of the cached simulation trace's relationship to the
 /// current project state. Resolves the ambiguity between "no trace ever
 /// existed" (e.g. project just loaded) and "trace exists but is stale"
@@ -655,6 +672,12 @@ pub fn project_load_report(
             rewrite_sim_required_to_stale_chipload(&mut verdict.chipload);
             rewrite_sim_required_to_stale_power(&mut verdict.power);
             rewrite_sim_required_to_stale_deflection(&mut verdict.deflection);
+            // T-21: the depth row walks with the three above it. The
+            // drill gates take no rewrite and need none —
+            // `DrillGateOutcome` has no `Unmodeled` arm, because those
+            // gates read the drill op's geometry and feeds and never a
+            // trace.
+            rewrite_sim_required_to_stale_depth(&mut verdict.depth);
         }
     }
 

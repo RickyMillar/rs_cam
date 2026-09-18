@@ -105,7 +105,9 @@ scans the criterion rows for `UnmodeledReason::StaleSimulation`. The two
 agree: only `project_load_report`'s `rewrite_sim_required_to_stale_*`
 writes that reason, and it writes it onto the chipload, power and
 deflection rows, all three of which are in `criteria()`. Nothing pinned
-the stale headline before; the sentry pins it now.
+the stale headline before; the sentry pins it now. (§7 adds the depth
+row to that rewrite. It is a fourth row in the same list, so the
+equivalence above is unchanged and the scan now reaches one row more.)
 
 ---
 
@@ -262,7 +264,8 @@ file is outside this step's file set, so this step words the refusal in
 place and files the door as a follow-up. It is a wording-drift risk, not
 a decision risk: the four sites render, and none of them decides.
 
-**2. The depth row cannot report a stale trace.**
+**2. The depth row cannot report a stale trace.** Registered as T-21 and
+closed in §7 below.
 `project_load_report` rewrites `SimulationRequired` to
 `StaleSimulation` on the chipload, power and deflection verdicts only.
 S3 added the depth gate and no rewrite beside it, so a stale trace
@@ -279,3 +282,122 @@ direction is covered in §2, and the predicate belongs beside
 
 Findings 1 and 2 are register candidates; this step did not write them,
 because its register edit is the T-19 row and entry only.
+
+---
+
+## 7. T-21 — the stale rewrite covers the depth row
+
+Implemented 2026-09-18, after T-19 landed at `465d2d2d`. This is a
+section of the T-19 report and not a file of its own: T-21 is finding 2
+of §6 above, it is four lines of code, and a separate document would be
+mostly a cross-reference to this one.
+
+### The defect
+
+`project_load_report` discards a trace whose provenance no longer
+matches the project, runs the gates without it, and rewrites each
+`Unmodeled(SimulationRequired)` into `Unmodeled(StaleSimulation)`. The
+rewrite named three verdicts. S3 added the depth gate beside them and no
+rewrite arm, so one toolpath reported three rows stale and one row never
+simulated, for the one trace and the one cause.
+
+### Red first
+
+The sentry ran against the shipped code before the fix. The three rows
+beside the depth row passed the same loop, which isolates the defect to
+the one arm:
+
+```text
+thread 'a_stale_trace_marks_the_depth_row_like_the_rows_beside_it' panicked at
+crates/rs_cam_core/tests/a_stale_trace_marks_every_row_it_invalidated_g_t21.rs:131:9:
+assertion `left == right` failed: the depth row must read as stale evidence, not as missing evidence
+  left: Some(SimulationRequired)
+ right: Some(StaleSimulation)
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+No defect had to be injected: the red run IS the shipped defect, caught
+by the arm that now guards it.
+
+### The change
+
+`rewrite_sim_required_to_stale_depth` in `gcode/mod.rs`, the shape of
+the three functions beside it, called from the same `if sim_is_stale`
+loop. Four lines of body and one call.
+
+**The drill gates take no rewrite and need none, and this was read
+rather than assumed.** `drill_gates::DrillGateOutcome` has two arms,
+`Within` and `Exceeds`; it carries no `Unmodeled` variant and no
+`UnmodeledReason` at all. Those gates read the drill op's own geometry
+and feeds — hole depth, peck depth, feed over diameter — and never a
+simulation trace, so no trace can invalidate them. The comment at the
+call site says so, so the next reader does not re-derive it.
+
+### The sentry
+
+`crates/rs_cam_core/tests/a_stale_trace_marks_every_row_it_invalidated_g_t21.rs`,
+two arms. A new file rather than an arm on the T-19 sentry: T-19's claim
+is that the refusal MESSAGE names every row, and this claim is that the
+rewrite REACHES every row. Different function, different rule, and this
+one needs a `ProjectSession` the T-19 file does not build.
+
+- `a_stale_trace_marks_the_depth_row_like_the_rows_beside_it` — the
+  claim. It asserts every milling row reads `StaleSimulation`, and then
+  that the depth row's reason equals the deflection row's, which is the
+  self-contradiction the defect produced.
+- `with_no_trace_the_same_rows_ask_for_a_simulation` — non-vacuity. The
+  same fixture with no trace reads `SimulationRequired` on the same four
+  rows, so the rewrite is what moves the reason and the first arm is not
+  reading a constant the gates set themselves.
+
+The stale condition is reached without simulating: a trace with no
+provenance block carries no evidence of what it was simulated against,
+and `sim_trace_is_fresh` reads it as stale (L7, operator ruling
+2026-09-16). The first arm asserts `!sim_trace_is_fresh(…)` as its
+fixture guard, so the arm cannot pass through a fresh-trace path by
+accident. The fixture needs no generated result either: a report is
+built per enabled toolpath config.
+
+**Not built: a fresh-trace arm.** Stamping a matching provenance by hand
+needs `compute::simulate::hash_toolpath`, which is not public, and
+running a real simulation in this sentry buys a slower fixture for a
+path T-21 does not change. The freshness decision is
+`sim_trace_is_fresh`'s own, it is untouched here, and the guard above
+pins which side of it this fixture is on.
+
+### Verification
+
+Every command through `scripts/cargo_lane.sh`.
+
+| Target | Result |
+|---|---|
+| `--test a_stale_trace_marks_every_row_it_invalidated_g_t21` | `test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s` |
+| `-p rs_cam_core --lib -q` | `test result: ok. 2530 passed; 0 failed; 12 ignored; 0 measured; 0 filtered out; finished in 39.10s` |
+| `--test export_disabled_cached_n1` | `test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s` |
+| `--test adaptive_feed_modulation_pipeline_f036b` | `test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.76s` |
+| `--test export_honors_coolant_p0d1` | `test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s` |
+| `--test post_format_round_trip_p1` | `test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s` |
+| `--test a_weak_bound_cannot_refuse_an_export_g_s4weak` | `test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s` |
+| `--test an_absent_limit_is_visibly_absent_g_gantry` | `test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s` |
+| `--test export_datum_setup_frame` | `test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s` |
+| `--test the_depth_that_cut_is_a_measured_load_g_s3depth` | `test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s` |
+| `--test frozen_snapshot_regeneration_s4` | `test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.05s` |
+| `--test an_unmodelled_refusal_names_every_row_g_t19` | `test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s` |
+| `--test gate_population_vacuity_xvac` | `test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s` |
+| `--test drill_evidence_wording_d3` | `test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s` |
+
+Clippy, the core gate command:
+
+```text
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 29.61s
+```
+
+`fmt --all -- --check` reports no diff in either file this step owns. It
+reports one file, `crates/rs_cam_mcp/src/server.rs`, which is another
+session's in-flight work.
+
+### Unanticipated
+
+Nothing beyond the entry above. T-20 — the four renderers that word the
+same ten `UnmodeledReason` variants — stands open and is unchanged by
+this step.
