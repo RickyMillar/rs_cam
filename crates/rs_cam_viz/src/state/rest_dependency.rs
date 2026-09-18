@@ -1,20 +1,18 @@
 //! One rule for the predecessor of a Rest operation (G-RESTBADGE).
 //!
-//! The Operations card badge (`ui::toolpath_panel::rest_badge`) and the
-//! static validator (`ui::properties::validate_toolpath`) both answer the
-//! question "does this Rest op have an operation to follow?". Until
-//! 2026-09-10 each held its own copy of the rule. The badge looked for ANY
-//! other toolpath in the setup with the previous tool, in any order and in
-//! any enabled state, so a Rest card dragged above its roughing pass kept a
-//! green `dep` while the validator refused to generate it (R05 §2, defect 2).
+//! The static validator (`ui::properties::validate_toolpath`) answers the
+//! question "does this Rest op have an operation to follow?" for a DRAFT
+//! entry whose model may differ from the stored config. The stored answer
+//! is the `PrevTool` edge of `rs_cam_core::session::dependencies`, which
+//! the Operations card connector reads (W3, 2026-09-19); the card badge
+//! that used to read this module is gone.
 //!
 //! The rule, in words: a predecessor is an EARLIER toolpath in the SAME
 //! setup that is ENABLED, cuts the SAME model, and uses the Rest op's
-//! configured PREVIOUS tool. This module is the only place that rule is
-//! written down. Both callers build a [`RestCandidate`] list in plan order
-//! and call [`rest_predecessors`].
+//! configured PREVIOUS tool. The caller builds a [`RestCandidate`] list in
+//! plan order and calls [`rest_predecessors`].
 
-use rs_cam_core::session::{ProjectSession, ToolpathConfig};
+use rs_cam_core::session::ToolpathConfig;
 
 use crate::state::job::{ModelId, ToolId};
 use crate::state::toolpath::ToolpathId;
@@ -38,22 +36,6 @@ impl RestCandidate {
             enabled: tc.enabled,
         }
     }
-}
-
-/// The candidates of one setup, in plan order (`SetupData::toolpath_indices`).
-pub(crate) fn setup_candidates(session: &ProjectSession, setup_idx: usize) -> Vec<RestCandidate> {
-    session
-        .list_setups()
-        .get(setup_idx)
-        .map(|setup| {
-            setup
-                .toolpath_indices
-                .iter()
-                .filter_map(|&idx| session.get_toolpath_config(idx))
-                .map(RestCandidate::from_config)
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 /// Every toolpath that qualifies as the predecessor of the Rest op `rest_id`,
@@ -80,26 +62,4 @@ pub fn rest_predecessors(
         .filter(|c| c.enabled && c.tool_id == prev_tool_id && c.model_id == rest_model_id)
         .map(|c| c.id)
         .collect()
-}
-
-/// [`rest_predecessors`] over the setup that owns `rest_id` in `session`.
-///
-/// `rest_model_id` is passed in rather than read from the session because
-/// the inspector validates a DRAFT entry whose model may differ from the
-/// stored config; the badge passes the stored model.
-pub fn rest_predecessors_in_session(
-    session: &ProjectSession,
-    rest_id: ToolpathId,
-    rest_model_id: ModelId,
-    prev_tool_id: ToolId,
-) -> Vec<ToolpathId> {
-    let Some(setup_idx) = session.setup_of_toolpath_id(rest_id) else {
-        return Vec::new();
-    };
-    rest_predecessors(
-        &setup_candidates(session, setup_idx),
-        rest_id,
-        rest_model_id,
-        prev_tool_id,
-    )
 }

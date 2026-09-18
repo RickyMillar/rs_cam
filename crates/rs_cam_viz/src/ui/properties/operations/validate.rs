@@ -249,8 +249,8 @@ fn validate_geometry_selection(
 }
 
 /// Does the Rest op `rest_id` have a predecessor under the one rule in
-/// [`crate::state::rest_dependency`]? The Operations card badge
-/// (`ui::toolpath_panel::rest_badge`) reads the same rule (G-RESTBADGE).
+/// [`crate::state::rest_dependency`]? The Operations card connector reads
+/// the stored form of the same rule, the core `PrevTool` edge (G-RESTBADGE).
 pub(in crate::ui::properties) fn has_prior_rest_source(
     ctx: &ToolpathValidationContext,
     rest_id: ToolpathId,

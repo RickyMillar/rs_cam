@@ -34,7 +34,7 @@ project. The entry point is `state::AppState` in `mod.rs`.
 ## Sentries
 
 - `cargo test -p rs_cam_viz -q --test freshness_surfaces_g_freshrender`
-- `cargo test -p rs_cam_viz -q --test rest_badge_one_predicate_g_restbadge`
+- `cargo test -p rs_cam_viz -q --test connector_reads_edge_state_g_connector`
 - `cargo test -p rs_cam_viz -q --test effects_are_stamped_wp19`
 - `cargo test -p rs_cam_viz -q --test load_requests_only_25d_regen_g_loadregen`
 - `cargo test -p rs_cam_viz -q --test panel_drafts_leave_egui_memory_ui09`
