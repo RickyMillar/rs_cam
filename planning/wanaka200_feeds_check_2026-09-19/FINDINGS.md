@@ -182,3 +182,78 @@ A separate agent is collecting published chipload charts from tooling vendors
 to compare against these figures. It writes
 `planning/load_model_2026-09-16/MACHINIST_REFERENCE_CHECK.md`. That file was
 not complete when this report was written.
+
+---
+
+# Addendum — the feeds were dialled in (2026-09-19)
+
+The operator decided that the relief is shallow and that a roughing pass is
+not necessary for this job. The operator asked for a feed increase in place of
+an RPM decrease. Both RPM values stay as they were.
+
+## What changed
+
+| Operation | Parameter | From | To |
+|---|---|---|---|
+| Scallop Finish 10 | feed_rate | 782 | **1050** mm/min |
+| Scallop Finish 10 | plunge_rate | 170 | **300** mm/min |
+| Scallop Finish 10 | spindle_rpm | 18500 | 18500 (held) |
+| Project Curve 7 | feed_rate | 900 | **1200** mm/min |
+| Project Curve 7 | plunge_rate | 127 | **400** mm/min |
+| Project Curve 7 | spindle_rpm | 18000 | 18000 (held) |
+
+A plunge rate of 350 mm/min was refused on the scallop. The application holds
+a tool-geometry safety cap of 300 mm/min for a small ball or tapered-ball
+flute tip (`stale.tapered_ball_plunge`). The value was set to 300 mm/min.
+
+Both operations were regenerated. A simulation was run at 0.5 mm resolution.
+
+## Result
+
+Total runtime falls from 8722.98 s to 7645.97 s. That is 18 minutes.
+
+| Gate | Scallop before | Scallop after | Curve before | Curve after |
+|---|---|---|---|---|
+| Power | 0.068 kW | 0.061 kW | 0.010 kW | 0.006 kW |
+| Deflection | 10.3 um | 10.3 um | 5.7 um | 6.0 um |
+| Observed chipload | 18.7 um | **18.7 um** | unmodeled | unmodeled |
+
+## Finding 5 — feed is NOT the lever for the scallop chipload
+
+The observed feed-per-tooth did not move. It reads 0.0187 mm/tooth before and
+after. The achieved/commanded ratio fell from 0.885 to **0.659**.
+
+The feed modulator clamps the scallop feed back to the vendor band ceiling.
+A higher commanded feed therefore buys runtime on the moves that the band does
+not bind, and buys nothing on the moves that it does. The burnishing is not
+fixed.
+
+Only RPM raises the true chip on this operation, because the modulator cannot
+clamp RPM. At 782 mm/min and 15000 rpm the chip is 26.1 um, which clears the
+25 um floor. The operator has chosen not to do this.
+
+## Finding 6 — the V-bit descent is now marked critical
+
+`project.plunge_class_load` on toolpath 19, severity **critical**:
+
+    1 of 250 vertical-dominant moves exceed 400 mm/min, peaking at
+    1165 mm/min (2.9x) at move 3700 (100.5, 63.1, 17.40)
+
+The ratio improved from 6.88x to 2.9x, because the plunge rate rose. The
+absolute rate got worse, because the descent follows the lateral feed: it was
+874 mm/min and it is now 1165 mm/min. The rate is what breaks a V point, not
+the ratio.
+
+The cause is unchanged. The curve crosses a 73 degree slope, and feed
+modulation does not run on this operation. Three options exist:
+
+1. Accept it. It is one move of 250.
+2. Lower the project curve feed. This only scales the descent rate down.
+3. Find why the modulator skips a project_curve operation. This is the real
+   fix and it belongs in the register.
+
+## State
+
+The changes live in the GUI session only. The file
+`~/Downloads/wanaka200/wanaka200.toml` does NOT hold them. Save the project in
+the GUI to keep them.
