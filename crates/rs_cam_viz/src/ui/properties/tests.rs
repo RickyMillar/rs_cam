@@ -249,6 +249,7 @@ fn the_panel_inputs_carry_the_session_lists_ui01() {
         &crate::state::runtime::GuiState::default(),
         None,
         Some(ToolpathTab::Heights),
+        false,
     );
 
     assert_eq!(

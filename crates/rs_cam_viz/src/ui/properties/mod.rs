@@ -319,6 +319,11 @@ pub(crate) struct ToolpathPanelInputs {
     /// as a `DerivedRestRegions` machining boundary (P2 pencil-panel
     /// consolidation, §2) — empty when nothing depends on it yet.
     pub rest_region_consumers: Vec<String>,
+    /// The rest-heatmap overlay is on. The inspector draws the SELECTED
+    /// toolpath, so this is the overlay demand for THIS operation. W2
+    /// (G-STARTFROM): the second demand for the rest dials, beside a
+    /// regions consumer. The disclosure appears for either.
+    pub rest_heatmap_on: bool,
     pub validation: ToolpathValidationContext,
     pub material: rs_cam_core::material::Material,
     pub machine: rs_cam_core::machine::MachineProfile,
@@ -354,6 +359,7 @@ pub(crate) fn toolpath_panel_inputs(
     gui: &crate::state::runtime::GuiState,
     sim_cut_trace: Option<&rs_cam_core::stock::simulation_cut::SimulationCutTrace>,
     tab_override: Option<ToolpathTab>,
+    rest_heatmap_on: bool,
 ) -> ToolpathPanelInputs {
     // Snapshot tool/model lists to avoid borrow conflict with toolpaths
     let tools: Vec<_> = session
@@ -409,11 +415,10 @@ pub(crate) fn toolpath_panel_inputs(
         })
         .collect();
 
-    // Names of toolpaths that consume THIS toolpath's rest-depth
-    // analysis as their machining boundary (P2 pencil-panel
-    // consolidation, §2/§3): drives the Rest Analysis section's
-    // demand-driven auto-enable + "Producing rest regions for: ..."
-    // label instead of a plain checkbox.
+    // Names of toolpaths that consume THIS toolpath's rest analysis as
+    // their machining boundary. W2: they TITLE the rest disclosure
+    // ("Rest regions → Lakes, Holes") and they are one of its two
+    // demands. Empty means nothing depends on this operation's rest.
     let rest_region_consumer_names: Vec<String> = session
         .rest_region_consumers(id)
         .into_iter()
@@ -546,6 +551,7 @@ pub(crate) fn toolpath_panel_inputs(
         tool_configs,
         boundary_source_candidates,
         rest_region_consumers: rest_region_consumer_names,
+        rest_heatmap_on,
         validation,
         material,
         machine,
@@ -1206,6 +1212,7 @@ fn draw_toolpath_selection(
             .as_ref()
             .and_then(|r| r.cut_trace.as_deref()),
         tab_override,
+        state.viewport.show_rest_heatmap,
     );
 
     // Build the temporary entry and its canonical session diagnostic
@@ -1289,20 +1296,37 @@ fn draw_toolpath_selection(
     // the discriminator — the setter names the source index on
     // the arm that changed something, and the fold names none.
     if let Some(source_id) = auto_enable_rest_source {
-        let command = rs_cam_core::session::Command::AutoEnableRestAnalysis(
-            rs_cam_core::session::AutoEnableRestAnalysisArgs { source_id },
-        );
-        if let Ok(effects) = state.session.apply(command)
-            && effects.revision.is_some()
-        {
-            crate::state::stale::stamp_stale(state, &effects.stale);
-            state.gui.mark_edited();
-            // WP19 (plan §28). The gate stays on `revision`: the
-            // fold that changed nothing reports no revision AND
-            // clears nothing, so the two agree.
-            if effects.simulation_cleared {
-                state.panel_side_effects.invalidate_simulation = true;
-            }
+        apply_auto_enable(state, source_id);
+    }
+}
+
+/// Switch `source_id`'s rest analysis on, through the one core command.
+///
+/// W2 (G-STARTFROM). Two GUI doors demand a rest grid: this panel's
+/// boundary picker, and the Overlays panel's "Compute rest" action beside
+/// the disabled rest-heatmap row. Both end here, so the stamp, the edited
+/// mark and the simulation invalidation keep ONE home. A draw pass never
+/// writes the flag itself; that was D5.
+///
+/// WP3: the setter reports `Option<Effects>`, and WP15a folds a `None`
+/// into an empty `Effects`, so the answer is `Ok` either way.
+/// `Effects::revision` is the discriminator — a fold that changed nothing
+/// reports no revision and clears nothing.
+pub(crate) fn apply_auto_enable(
+    state: &mut AppState,
+    source_id: crate::state::toolpath::ToolpathId,
+) {
+    let command = rs_cam_core::session::Command::AutoEnableRestAnalysis(
+        rs_cam_core::session::AutoEnableRestAnalysisArgs { source_id },
+    );
+    if let Ok(effects) = state.session.apply(command)
+        && effects.revision.is_some()
+    {
+        crate::state::stale::stamp_stale(state, &effects.stale);
+        state.gui.mark_edited();
+        // WP19 (plan §28). The gate stays on `revision`.
+        if effects.simulation_cleared {
+            state.panel_side_effects.invalidate_simulation = true;
         }
     }
 }

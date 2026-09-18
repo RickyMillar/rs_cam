@@ -66,11 +66,11 @@ pub(in crate::ui::properties) struct OpDrawCtx<'a> {
     pub tool_radius: f64,
     /// What the LAST generation resolved `claims_reference` to.
     pub resolved_claims_reference: Option<ClaimsReferenceFinding>,
-    /// Pencil's "Rest reference" group owns this field directly.
-    pub stock_source: &'a mut StockSource,
-    /// Set when Pencil's rest reference changed, so the caller can stale
-    /// the toolpath.
-    pub stock_source_changed: &'a mut bool,
+    /// READ ONLY. The Geometry tab's one "Start from" row writes this
+    /// field (W2, G-STARTFROM); an editor only reads it. Pencil gates its
+    /// analytic reference picker on it, Unified Finish gates its claims
+    /// block.
+    pub stock_source: StockSource,
 }
 
 /// What shape diagram an operation shows under its parameter grid.
@@ -266,8 +266,7 @@ editor!(ed_pencil, Pencil, |ui, cfg, cx| draw_pencil_params(
     cfg,
     cx.tools,
     cx.pills,
-    cx.stock_source,
-    cx.stock_source_changed
+    cx.stock_source
 ));
 editor!(ed_scallop, Scallop, |ui, cfg, cx| draw_scallop_params(
     ui, cfg, cx.pills
@@ -278,7 +277,7 @@ editor!(ed_unified_finish, UnifiedFinish, |ui, cfg, cx| {
         cfg,
         cx.pills,
         cx.resolved_claims_reference,
-        *cx.stock_source,
+        cx.stock_source,
     );
 });
 editor!(ed_steep_shallow, SteepShallow, |ui, cfg, cx| {

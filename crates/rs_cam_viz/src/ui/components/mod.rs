@@ -24,6 +24,7 @@
 pub mod button;
 pub mod card;
 pub mod chip;
+pub mod choice_row;
 pub mod compare;
 pub mod focus_ring;
 pub mod format;
@@ -42,6 +43,7 @@ pub mod value_row;
 pub use button::{Button, Variant as ButtonVariant};
 pub use card::{Card, SectionHeader, scrim};
 pub use chip::{Role, StatusChip};
+pub use choice_row::ChoiceRow;
 pub use compare::{CompareRow, delta_tag, format_optional, mrr_row, power_bar};
 pub use freshness::{Freshness, FreshnessGate};
 pub use kv_row::{DataTable, KeyValueRow, Value as KeyValue};

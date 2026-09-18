@@ -19,9 +19,10 @@ use super::{
 };
 use crate::state::toolpath::{
     BoundaryContainment, BoundarySource, ComputeStatus, DressupConfig, HeightContext,
-    OperationConfig, UiProcessRole,
+    OperationConfig, StockSource, UiProcessRole,
 };
 use crate::ui::AppEvent;
+use crate::ui::components::UiExt as _;
 
 pub(super) fn draw_toolpath_panel(
     ui: &mut egui::Ui,
@@ -458,6 +459,9 @@ fn draw_geometry_tab(
     let tool_configs = inputs.tool_configs.as_slice();
     let boundary_source_candidates = inputs.boundary_source_candidates.as_slice();
     let rest_region_consumers = inputs.rest_region_consumers.as_slice();
+    // W2: the rest-heatmap overlay is on FOR THIS TOOLPATH. It is the
+    // second demand for the rest dials, beside a regions consumer.
+    let rest_heatmap_on = inputs.rest_heatmap_on;
     let material = &inputs.material;
     let machine = &inputs.machine;
     let workholding = inputs.workholding;
@@ -603,16 +607,12 @@ fn draw_geometry_tab(
     // table, and `operations_registry` holds it against
     // `OperationType::ALL`.
     //
-    // `entry.operation` and `entry.stock_source` are disjoint fields, so both
-    // are borrowed at once; the Pencil editor is the one that writes the
-    // stock source.
     // The Adaptive3d "Optimal load" knob needs the active tool's radius to
     // map engagement to stepover.
     let tool_radius = tool_configs
         .iter()
         .find(|(id, _)| *id == entry.tool_id)
         .map_or(0.0, |(_, t)| t.diameter / 2.0);
-    let mut stock_source_changed = false;
     let mut draw_ctx = operations::registry::OpDrawCtx {
         tools,
         models,
@@ -623,13 +623,9 @@ fn draw_geometry_tab(
         through_cut,
         tool_radius,
         resolved_claims_reference,
-        stock_source: &mut entry.stock_source,
-        stock_source_changed: &mut stock_source_changed,
+        stock_source: entry.stock_source,
     };
     operations::registry::draw_editor_and_diagram(ui, &mut entry.operation, &mut draw_ctx);
-    if stock_source_changed {
-        entry.stale_since = Some(std::time::Instant::now());
-    }
     // G-PILLCLAMP: a pill wrote its field this frame — stamp the
     // recommendation's provenance (the value is the funnel's, not a hand
     // edit) and remember it for the flush.
@@ -718,8 +714,8 @@ fn draw_geometry_tab(
                              toolpath below."
                         } else {
                             "No other toolpaths in this project yet — add \
-                             one, switch on its Rest Analysis and \
-                             generate it to use as the source."
+                             one and generate it to use as the source. Picking it here \
+                             switches its rest analysis on."
                         })
                         .clicked()
                     {
@@ -778,10 +774,10 @@ fn draw_geometry_tab(
                     .response
                     .on_hover_text(
                         "The toolpath whose rest analysis supplies the \
-                         rest regions. ANY operation produces them when \
-                         its Rest Analysis is on and the project carries \
-                         a mesh; the pencil rest-depth detector and the \
-                         Unified Finish claims pipeline attach their own.",
+                         rest regions. ANY operation produces them: picking it here \
+                         switches its analysis on, and the project needs a mesh. The \
+                         pencil rest-depth detector and the Unified Finish claims \
+                         pipeline attach their own.",
                     );
             });
 
@@ -865,101 +861,85 @@ fn draw_geometry_tab(
         });
     }
 
-    // ── Rest Analysis (P2.5 → P2 pencil-panel consolidation) ────
-    // Sibling of Machining Boundary: any toolpath can turn on the
-    // rest-depth detector against ITS OWN tool, attaching the
-    // heatmap grid + derived regions this op leaves behind — the
-    // same analysis that used to be pencil-only. Now demand-driven
-    // rather than a manual checkbox on every op: a downstream
-    // `Rest Regions` boundary auto-enables it (see the
-    // `auto_enable_rest_source` handling below this panel's draw
-    // call, and `session::auto_enable_rest_analysis_for_source`
-    // for the MCP-path twin), and it's
-    // hidden entirely on a `rest_depth` pencil, whose own detector
-    // already attaches the same artifacts (invisibly, per
-    // `compute::execute::attach_generic_rest_analysis`'s precedence
-    // check) — showing a second, redundant control there was the
-    // third overlapping rest control this consolidation removes.
+    // ── Rest analysis: a demand-titled disclosure ───────────────
+    // W2 (G-STARTFROM). There is no "Compute rest heatmap" checkbox and
+    // no draw-time flip (D5). The analysis costs a rest-field solve at
+    // generation, so it runs only on DEMAND, and the demand names itself
+    // in the title:
+    //   - another operation takes this one's rest regions as its
+    //     boundary (`rest_region_consumers`), or
+    //   - the operator switched the rest-heatmap overlay on for this
+    //     operation.
+    // Both doors WRITE `rest_analysis.enabled` through
+    // `Command::AutoEnableRestAnalysis`: the boundary picker and the
+    // overlay action in `ui::properties::apply_auto_enable`, the MCP
+    // `set_boundary_config` setter, and the loader's post-pass. A draw
+    // reads the flag; it never sets it.
     let is_rest_depth_pencil = matches!(
         &entry.operation,
         OperationConfig::Pencil(cfg)
             if cfg.detector == rs_cam_core::finish::pencil::PencilDetector::RestDepth
     );
-    ui.add_space(8.0);
-    if is_rest_depth_pencil {
-        ui.label(
-            egui::RichText::new("Rest heatmap & regions: produced by the Rest depth detector.")
-                .small()
-                .color(crate::ui::tokens::TEXT_MUTED),
-        );
-    } else {
-        crate::ui::components::SectionHeader::new("Rest Analysis").show(ui);
-        if rest_region_consumers.is_empty() {
-            ui.checkbox(
-                &mut entry.rest_analysis.enabled,
-                "Compute rest heatmap (material left after this op)",
-            )
-            .on_hover_text(
-                "Run the rest-depth detector against this toolpath's own tool \
-                 after generation, attaching a heatmap grid. Also makes this op \
-                 selectable as a `Rest Regions` boundary source on other \
-                 toolpaths.",
-            );
+    if !rest_region_consumers.is_empty() || rest_heatmap_on {
+        let title = if rest_region_consumers.is_empty() {
+            "Rest heatmap overlay".to_owned()
         } else {
-            // Demand-driven: a consumer's boundary picker (or the
-            // MCP `set_boundary_config` path) already flipped this
-            // on — see `auto_enable_rest_analysis_for_source`. Force
-            // it here too so a stale project file (or a consumer
-            // whose boundary was set before this session started)
-            // still reflects reality.
-            if !entry.rest_analysis.enabled {
-                entry.rest_analysis.enabled = true;
-                entry.stale_since = Some(std::time::Instant::now());
+            format!("Rest regions \u{2192} {}", rest_region_consumers.join(", "))
+        };
+        ui.add_space(8.0);
+        ui.disclosure("rest_regions", &title, false, |ui| {
+            if is_rest_depth_pencil {
+                // The rest-depth detector attaches the same grid and the
+                // same regions from the pencil dials one grid above, so
+                // this operation has no second set to show.
+                ui.label(
+                    egui::RichText::new(
+                        "The Rest depth detector above produces the grid and the regions.",
+                    )
+                    .small()
+                    .color(crate::ui::tokens::TEXT_MUTED),
+                );
+                return;
             }
-            ui.label(format!(
-                "Producing rest regions for: {}",
-                rest_region_consumers.join(", ")
-            ))
-            .on_hover_text(
-                "Enabled automatically — those toolpaths use this op's rest \
-                 regions as their machining boundary.",
-            );
-        }
-        if entry.rest_analysis.enabled {
-            ui.horizontal(|ui| {
-                ui.label("Reference:");
-                let ref_label = entry
-                    .rest_analysis
-                    .reference_tool_id
-                    .and_then(|rid| tools.iter().find(|(id, _, _)| *id == rid))
-                    .map(|(_, name, _)| name.as_str())
-                    .unwrap_or("Self / machined stock");
-                egui::ComboBox::from_id_salt("rest_analysis_reference_tool")
-                    .selected_text(ref_label)
-                    .show_ui(ui, |ui| {
-                        if ui
-                            .selectable_label(
-                                entry.rest_analysis.reference_tool_id.is_none(),
-                                "Self / machined stock",
-                            )
-                            .clicked()
-                        {
-                            entry.rest_analysis.reference_tool_id = None;
-                        }
-                        for (id, name, _) in tools {
-                            let selected = entry.rest_analysis.reference_tool_id == Some(*id);
-                            if ui.selectable_label(selected, name.as_str()).clicked() {
-                                entry.rest_analysis.reference_tool_id = Some(*id);
+            if entry.stock_source == StockSource::Fresh {
+                // `resolve_rest_reference` prefers the machined stock
+                // whenever it overlaps, so under "After previous ops"
+                // this combo is inert and naming it would be a lie.
+                ui.horizontal(|ui| {
+                    ui.label("Reference:");
+                    let ref_label = entry
+                        .rest_analysis
+                        .reference_tool_id
+                        .and_then(|rid| tools.iter().find(|(id, _, _)| *id == rid))
+                        .map(|(_, name, _)| name.as_str())
+                        .unwrap_or("Self / machined stock");
+                    egui::ComboBox::from_id_salt("rest_analysis_reference_tool")
+                        .selected_text(ref_label)
+                        .show_ui(ui, |ui| {
+                            if ui
+                                .selectable_label(
+                                    entry.rest_analysis.reference_tool_id.is_none(),
+                                    "Self / machined stock",
+                                )
+                                .clicked()
+                            {
+                                entry.rest_analysis.reference_tool_id = None;
                             }
-                        }
-                    })
-                    .response
-                    .on_hover_text(
-                        "The reference the rest gate measures 'deeper than'. \
-                         Unset = prefer the actual machined stock from a prior \
-                         simulation, else a self-referenced bare-surface probe.",
-                    );
-            });
+                            for (id, name, _) in tools {
+                                let selected = entry.rest_analysis.reference_tool_id == Some(*id);
+                                if ui.selectable_label(selected, name.as_str()).clicked() {
+                                    entry.rest_analysis.reference_tool_id = Some(*id);
+                                }
+                            }
+                        })
+                        .response
+                        .on_hover_text(
+                            "The reference the gate measures 'deeper than'. Unset = prefer \
+                             the machined stock from a prior simulation, else a \
+                             self-referenced bare-surface probe.",
+                        );
+                });
+            }
             ui.horizontal(|ui| {
                 ui.label("Cell Size:");
                 ui.add(
@@ -979,8 +959,8 @@ fn draw_geometry_tab(
                         .suffix(" mm"),
                 )
                 .on_hover_text(
-                    "A cell counts as REST material once the reference floats \
-                     more than this above the true surface.",
+                    "A cell counts as REST material once the reference floats more than \
+                     this above the true surface.",
                 );
             });
             ui.horizontal(|ui| {
@@ -992,19 +972,24 @@ fn draw_geometry_tab(
                         .suffix(" mm"),
                 )
                 .on_hover_text(
-                    "Extra clearance added around detected rest regions beyond \
-                     this toolpath's own tool radius.",
+                    "Extra clearance added around detected regions beyond this \
+                     toolpath's own tool radius.",
                 );
             });
-        }
+        })
+        .header_response
+        .on_hover_text(
+            "The rest field this operation leaves, and the regions the operations \
+             above take as their boundary.",
+        );
     }
 
     // Sliver-storm / giant-region caption (2026-07-06 incident):
-    // classify THIS toolpath's own generated rest regions, whether
-    // they came from the checkbox-driven detector above or (for a
-    // rest_depth pencil) the detector it always runs. Deliberately
-    // outside the `is_rest_depth_pencil` branch so both cases show
-    // it.
+    // classify THIS toolpath's own generated rest regions, whether the
+    // generic rest analysis produced them or (for a rest_depth pencil)
+    // the detector it always runs. Deliberately outside the disclosure
+    // above, so both cases show it and a closed disclosure cannot hide
+    // a caution.
     //
     // LH-2: the giant-region denominator is THIS result's own rest
     // grid — covered cells × cell², the same grid the regions were

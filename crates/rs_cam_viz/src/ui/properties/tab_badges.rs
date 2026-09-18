@@ -3,7 +3,7 @@
 //! wiring block.
 
 use super::ToolpathTab;
-use crate::state::toolpath::{HeightContext, OperationConfig, StockSource, ToolpathEntry};
+use crate::state::toolpath::{HeightContext, StockSource, ToolpathEntry};
 
 /// Per-tab badge state for the tab bar.
 pub(super) struct TabBadges {
@@ -450,13 +450,28 @@ pub(super) fn rest_region_pathology_caption(
             // so, because the two differ by ~2x on any non-rectangular part.
             format!(
                 "⚠ Rest region covers {:.0}% of the part footprint — regions barely restrict \
-                 the fine pass; raise min_valley_depth, or use the machined-stock reference \
-                 (Use remaining stock) for an honest rest picture.",
+                 the fine pass; raise min_valley_depth, or set Start from to \
+                 After previous ops for an honest rest picture.",
                 part_footprint_fraction * 100.0
             )
         }
     }
 }
+
+/// The two ways an operation can start, in the order an operator meets
+/// them. `Fresh` is the default, so it reads first.
+const STOCK_SOURCES: &[(StockSource, &str)] = &[
+    (StockSource::Fresh, "Stock"),
+    (StockSource::FromRemainingStock, "After previous ops"),
+];
+
+/// One hover for the row. It names what each option does, because the
+/// difference between them is the whole question.
+const START_FROM_HOVER: &str = concat!(
+    "Stock: the toolpath starts from the raw stock. ",
+    "After previous ops: the toolpath starts from the material the earlier ",
+    "operations in this setup leave, and needs their simulation first."
+);
 
 /// The Geometry tab's WIRING rows: Tool, Input model, Faces, stock source.
 ///
@@ -556,30 +571,26 @@ pub(super) fn draw_geometry_wiring(
         }
     }
 
-    // Stock source toggle — hidden for pencil ops. Pencil's own
-    // "Rest reference" group on the Geometry tab (see
-    // `draw_pencil_params`) now owns `stock_source` directly; showing
-    // this generic checkbox too used to give the user two controls
-    // that silently disagreed (this one won at generation time via
-    // `rest_depth_arm`'s R2 stock preference, regardless of what the
-    // reference-tool picker showed). Every other op still shows it.
-    if !matches!(entry.operation, OperationConfig::Pencil(_)) {
-        ui.add_space(8.0);
-        let mut use_remaining = entry.stock_source == StockSource::FromRemainingStock;
-        let resp = ui
-            .checkbox(&mut use_remaining, "Use remaining stock")
-            .on_hover_text(
-                "When enabled, prior operations in this setup are simulated to \
-                 determine remaining material. The toolpath will skip air cuts and \
-                 adapt to the actual stock state.",
-            );
-        if resp.changed() {
-            entry.stock_source = if use_remaining {
-                StockSource::FromRemainingStock
-            } else {
-                StockSource::Fresh
-            };
-            entry.stale_since = Some(std::time::Instant::now());
-        }
+    // W2 (G-STARTFROM): ONE row writes `stock_source`, for every
+    // operation, pencil included. It used to be two controls that
+    // disagreed: this generic checkbox, and a pencil-only "Rest
+    // reference" pair. The checkbox won at generation, through
+    // `rest_depth_arm`'s stock preference, whatever the pencil pair
+    // showed. Pencil keeps its analytic reference picker, which is a
+    // different question: what "rest" is measured against when no
+    // machined stock is read.
+    //
+    // W3/W4: hover from the result. The deleted caption said the generator
+    // falls back to the reference tool when the simulated stock does not
+    // overlap this model's frame. That is resolved at generation, not in
+    // the config, so it belongs on this row as a hover read from the
+    // generation result once `rest_reference_mode` reaches `ToolpathStats`.
+    ui.add_space(8.0);
+    let resp = ui.add(
+        crate::ui::components::ChoiceRow::new("Start from", &mut entry.stock_source, STOCK_SOURCES)
+            .hover(START_FROM_HOVER),
+    );
+    if resp.changed() {
+        entry.stale_since = Some(std::time::Instant::now());
     }
 }
