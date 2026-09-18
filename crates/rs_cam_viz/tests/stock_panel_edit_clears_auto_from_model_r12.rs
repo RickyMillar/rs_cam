@@ -164,7 +164,7 @@ fn a_rigidity_edit_under_auto_refits_a_stale_record() {
     let reconciled = reconcile_auto_from_model(&previous, draft, Some(&corne_bbox()));
 
     assert!(reconciled.auto_from_model);
-    let mut expected = previous.clone();
+    let mut expected = previous;
     expected.update_from_bbox(&corne_bbox());
     assert_eq!(
         reconciled.y, expected.y,
