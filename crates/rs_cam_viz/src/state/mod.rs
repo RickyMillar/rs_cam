@@ -659,6 +659,27 @@ impl AppState {
         }
     }
 
+    /// Where the simulation stands. THE one answer, for every surface.
+    ///
+    /// W4, G-FRESHNESSDISAGREE. Each reader used to build its own from
+    /// `SimulationState::is_stale(gui.edit_counter)`, and several paired it
+    /// with a second `has_results()` read. The counter is not the project's
+    /// truth about a simulation; `ProjectSession::simulation_result()` is.
+    #[must_use]
+    pub fn simulation_freshness(&self) -> freshness::SimFreshness {
+        freshness::simulation_freshness(&self.session, &self.simulation)
+    }
+
+    /// Whether a reader must not present the simulation as current evidence.
+    ///
+    /// A thin predicate over [`Self::simulation_freshness`]. A reader that
+    /// needs to tell "nothing to show" from "showing something old" asks
+    /// for the arm instead.
+    #[must_use]
+    pub fn simulation_is_stale(&self) -> bool {
+        self.simulation_freshness().is_stale()
+    }
+
     /// Is an Optimize run in flight?
     ///
     /// The policy question (§28 ruling 8): one Optimize run at a time. The

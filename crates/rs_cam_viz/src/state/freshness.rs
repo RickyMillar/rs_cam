@@ -107,3 +107,92 @@ pub fn freshness_at(
     let rt = gui.toolpath_rt.get(&tc.id);
     Some(freshness(tc, rt, session.get_result(index).is_some()))
 }
+
+/// Where the SIMULATION stands, as every surface should read it.
+///
+/// The toolpath sibling of [`FreshnessState`], and derived the same way:
+/// computed on every read, never stored, so it cannot drift from the thing
+/// it describes. The core answers for every project input, because
+/// `ProjectSession::drop_simulation` is the one site that clears the field.
+/// The GUI answers for the capture options alone, which are runtime-only
+/// and which the core therefore cannot see.
+///
+/// Before this enum the answer lived in `SimulationState::is_stale`, a
+/// comparison of the project-wide edit counter against a stamp. That
+/// counter moves for edits the core keeps a simulation through (an export
+/// wizard field, a machine saved to the library) and stays still for edits
+/// the core clears it on, so the two stores disagreed (G-FRESHNESSDISAGREE).
+///
+/// [`Self::EditedSince`] is RARE on a GUI path. Three controller doors
+/// mirror `Effects::simulation_cleared` into
+/// `AppController::invalidate_simulation`, which wipes `last_run` as well
+/// as the results, so a mirrored GUI edit reads [`Self::NoRun`]. The
+/// `EditedSince` arm is reached where no door mirrors: the MCP surface,
+/// Optimize Apply, a panel edit the frame loop has not discharged yet, and
+/// a late run the core refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SimFreshness {
+    /// No run has landed, or an edit cleared both the core and the view.
+    NoRun,
+    /// A run is in flight. The submit door stamped
+    /// `SimulationState::submitted_simulation_epoch` and no result has
+    /// consumed it yet.
+    Running,
+    /// The core holds the simulation these inputs produce.
+    Current,
+    /// The core dropped the simulation; the view still draws the trace.
+    EditedSince,
+    /// The project is unchanged and the capture options are not. The run
+    /// is a true answer about geometry and an incomplete one about
+    /// metrics, so it needs a re-run to answer what is asked now.
+    CaptureOptionsChanged,
+}
+
+impl SimFreshness {
+    /// Stable machine-readable label, for the MCP wire and for tests.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::NoRun => "no_run",
+            Self::Running => "running",
+            Self::Current => "current",
+            Self::EditedSince => "edited_since",
+            Self::CaptureOptionsChanged => "capture_options_changed",
+        }
+    }
+
+    /// Every arm a reader must not present as current evidence.
+    ///
+    /// [`Self::NoRun`] and [`Self::Running`] are false here: neither one
+    /// holds a result to mislabel. A reader that wants "there is nothing
+    /// to show" asks for the arm, not for this predicate.
+    pub fn is_stale(self) -> bool {
+        matches!(self, Self::EditedSince | Self::CaptureOptionsChanged)
+    }
+}
+
+/// Derive the simulation's state from the core and the view together.
+///
+/// The order of the arms is the order of the questions. A run in flight
+/// answers first, because its own result has not landed and the view still
+/// holds the previous one. Then the view: with nothing to draw there is no
+/// claim to qualify. Then the core, which owns every project input. The
+/// capture options come last, because they only refine a run the core
+/// still stands behind.
+pub fn simulation_freshness(
+    session: &ProjectSession,
+    sim: &crate::state::simulation::SimulationState,
+) -> SimFreshness {
+    if sim.submitted_simulation_epoch.is_some() {
+        return SimFreshness::Running;
+    }
+    if !sim.has_results() {
+        return SimFreshness::NoRun;
+    }
+    if session.simulation_result().is_none() {
+        return SimFreshness::EditedSince;
+    }
+    if sim.metric_options_are_stale() {
+        return SimFreshness::CaptureOptionsChanged;
+    }
+    SimFreshness::Current
+}

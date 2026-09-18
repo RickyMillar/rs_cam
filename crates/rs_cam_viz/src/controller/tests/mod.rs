@@ -25,6 +25,7 @@ mod planner;
 mod post_mirror;
 mod rest_dependency;
 mod selection;
+mod sim_stale_is_the_core_answer_g_freshnessdisagree;
 mod simulation_state;
 mod smoke;
 mod stock_frame;
