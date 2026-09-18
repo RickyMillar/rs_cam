@@ -124,10 +124,13 @@ pub enum OverlayAction {
     GenerateAll,
     /// Switch on generator-trace capture for the next generation.
     RecordGeneratorTrace,
-    /// Navigate to the selected toolpath's `Geometry ▸ Rest Analysis`, the
-    /// authoring home for a rest grid. The panel is a viewer, not an editor
-    /// (UX §6.6), so this navigates rather than writing the dial.
-    OpenRestAnalysis,
+    /// Switch the selected toolpath's rest analysis on and regenerate it.
+    ///
+    /// W2 (G-STARTFROM): switching the heatmap on IS the demand for a rest
+    /// grid, the same demand a `Rest regions` boundary is. There is no
+    /// checkbox to navigate to any more, so the row asks for the work
+    /// instead of pointing at an authoring home.
+    EnableRestAnalysis,
 }
 
 impl OverlayAction {
@@ -137,7 +140,7 @@ impl OverlayAction {
             Self::OpenPlanner => "Plan\u{2026}",
             Self::GenerateAll => "Generate all",
             Self::RecordGeneratorTrace => "Record & re-generate",
-            Self::OpenRestAnalysis => "Rest Analysis\u{2026}",
+            Self::EnableRestAnalysis => "Compute rest",
         }
     }
 }
@@ -826,10 +829,8 @@ pub const ROWS: &[OverlayRow] = &[
                 Precondition::Ready
             } else if selected_toolpath(s).is_some() {
                 Precondition::no_with(
-                    "the selected toolpath carries no rest grid \u{2014} switch on \
-                     Geometry \u{25B8} Rest Analysis and regenerate"
-                        .to_owned(),
-                    OverlayAction::OpenRestAnalysis,
+                    "this toolpath has no rest grid yet".to_owned(),
+                    OverlayAction::EnableRestAnalysis,
                 )
             } else {
                 Precondition::no("select a toolpath that carries a rest grid")
@@ -841,9 +842,9 @@ pub const ROWS: &[OverlayRow] = &[
         // Reach.
         default_for: rest_heatmap_default,
         hover: "How much material this operation leaves. ANY operation \
-                attaches a rest grid when Geometry \u{25B8} Rest Analysis is on. \
-                Off by default: switching it on clears Analysis \u{25B8} Model \
-                colour: Reach, which shares the model surface.",
+                attaches a rest grid once something demands one. Off by \
+                default: switching it on clears Analysis \u{25B8} Model colour: \
+                Reach, which shares the model surface.",
     },
     OverlayRow {
         id: "tier_map",

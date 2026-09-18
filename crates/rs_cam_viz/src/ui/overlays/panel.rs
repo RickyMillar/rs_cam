@@ -253,7 +253,7 @@ fn draw_row(
             ui.horizontal(|ui| {
                 ui.add_space(18.0);
                 if ui.small_button(action.label()).clicked() {
-                    run_action(state, events, action);
+                    run_action(state, events, action, row);
                 }
             });
         }
@@ -261,7 +261,15 @@ fn draw_row(
 }
 
 /// Run a disabled row's compute affordance.
-fn run_action(state: &mut AppState, events: &mut Vec<AppEvent>, action: OverlayAction) {
+///
+/// `row` is the row whose precondition offered `action`, so an action may
+/// switch its OWN row on through the registry's one setter.
+fn run_action(
+    state: &mut AppState,
+    events: &mut Vec<AppEvent>,
+    action: OverlayAction,
+    row: &'static registry::OverlayRow,
+) {
     match action {
         OverlayAction::RunCollisionCheck => events.push(AppEvent::RunCollisionCheck),
         OverlayAction::OpenPlanner => {
@@ -272,11 +280,17 @@ fn run_action(state: &mut AppState, events: &mut Vec<AppEvent>, action: OverlayA
             events.push(AppEvent::SetGeneratorTraceCaptureAll(true));
             events.push(AppEvent::GenerateAll);
         }
-        // The authoring home, not a dial the panel writes itself.
-        OverlayAction::OpenRestAnalysis => {
+        // W2 (G-STARTFROM): switching the heatmap on IS the demand for a
+        // rest grid. The panel does not apply the command itself; it calls
+        // the one door that owns the stamp, the edited mark and the
+        // simulation invalidation, then asks for the generation that fills
+        // the grid. The row goes on here too, or the operator would have to
+        // come back and click the checkbox a second time.
+        OverlayAction::EnableRestAnalysis => {
             if let crate::state::selection::Selection::Toolpath(id) = state.selection {
-                state.gui.pending_toolpath_tab =
-                    Some((id, crate::ui::properties::ToolpathTab::Geometry));
+                crate::ui::properties::apply_auto_enable(state, id);
+                registry::set_overlay(state, row, true);
+                events.push(AppEvent::GenerateToolpath(id));
             }
         }
     }
