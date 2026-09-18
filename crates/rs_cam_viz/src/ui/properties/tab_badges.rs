@@ -30,8 +30,9 @@ pub(super) fn compute_tab_badges(
 ) -> TabBadges {
     use rs_cam_core::diagnostics::{Category, DiagnosticState, Severity};
 
-    // Heights: badge if any height warning exists
-    let heights_badge = if let Some(hctx) = height_ctx {
+    // Heights: badge if any height warning exists. A warning outranks the
+    // pin mark below.
+    let heights_warning = height_ctx.and_then(|hctx| {
         let h = entry.heights.resolve(hctx);
         if h.bottom_z > h.top_z || h.clearance_z < h.retract_z {
             Some(crate::ui::tokens::DANGER) // red
@@ -40,9 +41,22 @@ pub(super) fn compute_tab_badges(
         } else {
             None
         }
-    } else {
-        None
-    };
+    });
+    // R5 (2026-09-18): a pinned height is a fact the tab states before it
+    // opens. A diagram drag pinned Top at −1.37 and nothing on the tab strip
+    // said so (`planning/corne_case_analysis_2026-09-18/ANALYSIS.md` §4.2).
+    // INFO is the badge's neutral role; the Feeds badge uses the same one.
+    let hs = &entry.heights;
+    let any_pinned = [
+        &hs.clearance_z,
+        &hs.retract_z,
+        &hs.feed_z,
+        &hs.top_z,
+        &hs.bottom_z,
+    ]
+    .into_iter()
+    .any(|mode| !mode.is_auto());
+    let heights_badge = heights_warning.or(any_pinned.then_some(crate::ui::tokens::INFO));
 
     // Feeds: badge if any feed warning from core
     let feeds_badge = entry.feeds_result.as_ref().and_then(|r| {

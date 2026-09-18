@@ -23,6 +23,74 @@ struct DiagramLine {
 /// R33 hover both name it.
 const BOTTOM_LINE_INDEX: usize = 4;
 
+/// How far the pointer may sit from a height line and still take it, in
+/// points.
+const HIT_THRESHOLD_PX: f32 = 12.0;
+
+/// Two lines closer than this, in points, count as one line under the
+/// pointer. The tie-break in [`pick_line`] then decides.
+const TIE_EPS_PX: f32 = 0.5;
+
+/// The grid a dragged height lands on: ten steps per millimetre, so the
+/// step is 0.1 mm. A multiply then a divide by ten lands on the nearest
+/// double to the printed value; a multiply by 0.1 does not.
+const PIN_STEPS_PER_MM: f64 = 10.0;
+
+/// Pick the line under the pointer from `candidates`, each `(index,
+/// distance)` with the distance in points.
+///
+/// The nearest line wins. When two lines are within [`TIE_EPS_PX`] of the
+/// nearest, the line with the HIGHER index wins: Bottom (4) over Top (3)
+/// over Feed (2) and so on.
+///
+/// # R5 (2026-09-18): coincident lines picked Top
+///
+/// On a waterline the Auto Top and the Auto Bottom coincide. The old hit
+/// test took the FIRST line within the threshold with a strict `<`, and
+/// the lines are ordered Clearance, Retract, Feed, Top, Bottom, so a drag
+/// on the shared line moved Top. The Auto Bottom then followed it. The
+/// operator meant to drag the Bottom down and pinned the Top at −1.37
+/// instead; the waterline cut the bed
+/// (`planning/corne_case_analysis_2026-09-18/ANALYSIS.md` §4.2). A line
+/// lower in the ladder is the one an operator reaches for when two
+/// coincide, so the higher index wins the tie.
+///
+/// The result does not depend on the order of `candidates`.
+#[must_use]
+pub fn pick_line(candidates: &[(usize, f32)]) -> Option<usize> {
+    let nearest = candidates.iter().map(|&(_, d)| d).reduce(f32::min)?;
+    candidates
+        .iter()
+        .filter(|&&(_, d)| d <= nearest + TIE_EPS_PX)
+        .map(|&(idx, _)| idx)
+        .max()
+}
+
+/// Round a dragged height onto the 0.1 mm grid ([`PIN_STEPS_PER_MM`]).
+///
+/// R5. The drag handler writes `current_z + dz` with `dz` derived from
+/// screen pixels, so a value such as −1.3704614721537909 reached the
+/// project file. The drag stop rounds it once. A negative zero becomes a
+/// positive zero, so the file never carries `-0.0`.
+#[must_use]
+pub fn round_pin(v: f64) -> f64 {
+    let rounded = (v * PIN_STEPS_PER_MM).round() / PIN_STEPS_PER_MM;
+    if rounded == 0.0 { 0.0 } else { rounded }
+}
+
+/// The stored mode behind a `DiagramLine::index`.
+fn height_field(heights: &mut HeightsConfig, idx: usize) -> &mut HeightMode {
+    match idx {
+        0 => &mut heights.clearance_z,
+        1 => &mut heights.retract_z,
+        2 => &mut heights.feed_z,
+        3 => &mut heights.top_z,
+        // `idx` is always 0..5 from the `DiagramLine` definitions, so the
+        // last arm is `BOTTOM_LINE_INDEX`.
+        _ => &mut heights.bottom_z,
+    }
+}
+
 /// What the height diagram can honestly say about the model's Z profile.
 ///
 /// # The defect this names (F-1, 2026-09-14)
@@ -373,20 +441,20 @@ pub fn draw_height_diagram(
     }
 
     // Height lines + labels
-    let hit_threshold = 12.0_f32;
+
+    // The line at a screen Y, if one is within the hit threshold. R5: the
+    // tie between coincident lines goes to `pick_line`.
+    let line_at = |y: f32| -> Option<usize> {
+        let candidates: Vec<(usize, f32)> = lines
+            .iter()
+            .map(|line| (line.index, (y - z_to_y(line.z)).abs()))
+            .filter(|&(_, dist)| dist < HIT_THRESHOLD_PX)
+            .collect();
+        pick_line(&candidates)
+    };
 
     // Check pointer proximity for hover cursor
-    let pointer_y = response.hover_pos().map(|p| p.y);
-    let mut nearest_line: Option<(usize, f32)> = None;
-    for line in &lines {
-        let line_y = z_to_y(line.z);
-        if let Some(py) = pointer_y {
-            let dist = (py - line_y).abs();
-            if dist < hit_threshold && nearest_line.is_none_or(|(_, d)| dist < d) {
-                nearest_line = Some((line.index, dist));
-            }
-        }
-    }
+    let nearest_line = response.hover_pos().and_then(|p| line_at(p.y));
     if nearest_line.is_some() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
     }
@@ -396,7 +464,7 @@ pub fn draw_height_diagram(
     // within the hit threshold of that line, so the tooltip belongs to the
     // Bottom line rather than to the whole canvas.
     if !bottom_drives_the_cut
-        && nearest_line.is_some_and(|(idx, _)| idx == BOTTOM_LINE_INDEX)
+        && nearest_line == Some(BOTTOM_LINE_INDEX)
         && let Some(note) = bottom_z_pin_note(op_type)
     {
         response = response.on_hover_text(note);
@@ -413,7 +481,7 @@ pub fn draw_height_diagram(
 
     for (line, galley) in lines.iter().zip(labels) {
         let y = z_to_y(line.z);
-        let is_hovered = nearest_line.is_some_and(|(idx, _)| idx == line.index);
+        let is_hovered = nearest_line == Some(line.index);
 
         // Line
         let stroke_width = if is_hovered {
@@ -439,31 +507,36 @@ pub fn draw_height_diagram(
     // Drag interaction
     let drag_id = ui.id().with("height_drag_idx");
 
+    // The canvas senses click AND drag, so egui reports `drag_started` only
+    // after the pointer has moved past the click distance. By then the
+    // pointer can sit on a neighbour line. The press origin is where the
+    // operator pressed, so the drag takes the line under THAT point. The
+    // inspector layer carries no transform, so the global origin is the
+    // canvas origin. The hovered line is the fallback.
     if response.drag_started()
-        && let Some((idx, _)) = nearest_line
+        && let Some(idx) = ui
+            .input(|i| i.pointer.press_origin())
+            .and_then(|p| line_at(p.y))
+            .or(nearest_line)
     {
         ui.memory_mut(|mem| mem.data.insert_temp(drag_id, idx));
     }
 
+    // One read serves the drag and the drag stop. `drag_started` and
+    // `dragged` are both true on the first frame, so the read follows the
+    // insert.
+    let drag_idx = ui.memory(|mem| mem.data.get_temp::<usize>(drag_id));
+
     if response.dragged()
-        && let Some(idx) = ui.memory(|mem| mem.data.get_temp::<usize>(drag_id))
+        && let Some(idx) = drag_idx
     {
         let dy = response.drag_delta().y;
         // Convert screen delta to Z delta (screen Y is inverted relative to Z)
         let z_per_pixel = (z_max - z_min) / plot.height() as f64;
         let dz = -(dy as f64) * z_per_pixel;
 
-        let field = match idx {
-            0 => &mut heights.clearance_z,
-            1 => &mut heights.retract_z,
-            2 => &mut heights.feed_z,
-            3 => &mut heights.top_z,
-            // SAFETY: idx is always 0..5 from DiagramLine definitions above,
-            // so the last arm is `BOTTOM_LINE_INDEX`.
-            _ => &mut heights.bottom_z,
-        };
-
-        // Get current resolved value and apply delta
+        // Get current resolved value and apply delta. The per-frame write
+        // is the live feedback; `drag_stopped` below rounds it once.
         let current_z = match idx {
             0 => resolved.clearance_z,
             1 => resolved.retract_z,
@@ -471,10 +544,21 @@ pub fn draw_height_diagram(
             3 => resolved.top_z,
             _ => resolved.bottom_z,
         };
-        *field = HeightMode::Manual(current_z + dz);
+        *height_field(heights, idx) = HeightMode::Manual(current_z + dz);
     }
 
     if response.drag_stopped() {
+        // R5. The dragged field lands on the 0.1 mm grid. `dragged` is
+        // false on this frame, so nothing writes the raw value back. A
+        // press and release under the click distance never starts a drag,
+        // so a field the drag did not write is not `Manual` here and stays
+        // as it was.
+        if let Some(idx) = drag_idx {
+            let field = height_field(heights, idx);
+            if let HeightMode::Manual(v) = *field {
+                *field = HeightMode::Manual(round_pin(v));
+            }
+        }
         ui.memory_mut(|mem| mem.data.remove::<usize>(drag_id));
     }
 
