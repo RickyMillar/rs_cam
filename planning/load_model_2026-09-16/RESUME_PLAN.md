@@ -34,6 +34,7 @@ Shipped and verified:
 | `6bca9bc8` | **S1 — gantry push is a visibly absent row (`CriterionKind::GantryPush`)** |
 | S2 (see `git log`) | **S2 — `feeds::power_at_operating_point`, the one public door; published `power_kw` was 11.96× the power at the depth that cuts** |
 | `ac15834f` | **S4 — every criterion carries its bound and a typed `BoundSource`; a weak bound cannot refuse an export** |
+| `79578772` | **S3 — depth of cut is a post-simulation criterion, judged and not gating; the core half of the surface is complete** |
 
 T-17 verification: core lib 2503/0, sentry 5/5, `literature_matrix` 21/21,
 `literature_parity` 24/24, clippy clean, fmt clean.
@@ -275,7 +276,11 @@ hold the session, so the profile is reachable.
 ## 7. THEN: the limits surface — the original request
 
 **Implementation plan written 2026-09-18: `SURFACE_IMPL.md`.** S1 landed at
-`6bca9bc8`; S2 next; S4 at `ac15834f`; S3 in progress. Two small follow-ups from S4,
+`6bca9bc8`; S2 next; S4 at `ac15834f`; S3 at `79578772`. **The core half is
+complete.** Open before the viz half: T-19 (the export gate's unmodelled
+refusal names three gates by hand; one loop over `criteria()`), and wiring
+`criterion_rows()` into the MCP report (coordinated with the other
+session's W5). Two small follow-ups from S4,
 for after S3: (a) `enforce_load_policy`'s unmodeled half still enumerates the
 three typed verdicts by hand while its exceeded half derives from
 `criteria()`; (b) `criterion_rows()` joins the MCP report at

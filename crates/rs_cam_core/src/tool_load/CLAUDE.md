@@ -33,8 +33,8 @@ Run one with `cargo test -p rs_cam_core -q --test <name>`: `gate_population_vacu
 `chipload_boundary_g_chip_ulp`, `predicted_feed_gates_f035`, `drill_evidence_wording_d3`,
 `an_absent_limit_is_visibly_absent_g_gantry` (the gantry-push row is `Unmodeled`, never a reading, never
 a prompt), `a_criterion_carries_its_own_bound_g_s4bound` and `a_weak_bound_cannot_refuse_an_export_g_s4weak`
-(every row states its bound and its `BoundSource`; only a sourced bound may refuse an export).
+(every row states its bound and its `BoundSource`; only a sourced bound may refuse an export),
+`the_depth_that_cut_is_a_measured_load_g_s3depth` (depth is a post-sim row; it exceeds, it never refuses).
 
 ## Do not
-
 - A Kc or factor change needs the slow `--test` sims, not `--lib` alone.
