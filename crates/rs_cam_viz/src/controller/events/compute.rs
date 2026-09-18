@@ -916,14 +916,8 @@ impl<B: ComputeBackend> AppController<B> {
                 // from one that never happened. Stored, and marked
                 // not-current.
                 let _ = self.state.simulation.submitted_simulation_epoch.take();
-                let submitted_at = self
-                    .state
-                    .simulation
-                    .submitted_edit_counter
-                    .take()
-                    .unwrap_or(self.state.gui.edit_counter);
+                let _ = self.state.simulation.submitted_edit_counter.take();
                 self.state.simulation.last_run = Some(SimulationRunMeta {
-                    last_sim_edit_counter: submitted_at,
                     // Recording preferences are runtime-only. This
                     // result carries the capture revision it was
                     // SUBMITTED with; a toggle while the worker ran

@@ -1,6 +1,7 @@
 use super::AppEvent;
 use super::sim_debug::{semantic_kind_color, semantic_kind_label};
 use crate::render::toolpath_render::palette_color;
+use crate::state::freshness::simulation_freshness;
 use crate::state::job::SetupId;
 use crate::state::runtime::GuiState;
 use crate::state::selection::Selection;
@@ -53,7 +54,7 @@ fn draw_run_controls(
     // Toolpaths' Generate All placement.
     let run_label = if !sim.has_results() {
         "Run Simulation"
-    } else if sim.is_stale(gui.edit_counter) {
+    } else if simulation_freshness(session, sim).is_stale() {
         "Re-run Simulation · params changed"
     } else {
         "Re-run Simulation"
@@ -205,7 +206,7 @@ fn draw_run_controls(
     }
 
     // Staleness warning
-    if sim.is_stale(gui.edit_counter) {
+    if simulation_freshness(session, sim).is_stale() {
         egui::Frame::default()
             .fill(crate::ui::tokens::TINT_CAUTION)
             .stroke(egui::Stroke::new(1.5_f32, theme::WARNING))

@@ -4,6 +4,7 @@ use super::readiness;
 use super::sim_debug::{
     debug_span_math_summary, format_json_value, semantic_kind_color, semantic_kind_label,
 };
+use crate::state::freshness::simulation_freshness;
 use crate::state::runtime::GuiState;
 use crate::state::simulation::{SimulationIssueKind, SimulationState};
 use crate::state::toolpath::ToolpathId;
@@ -224,7 +225,10 @@ fn draw_status_header(
     draw_air_cut_caution(ui, sim);
     // Freshness chip — rendered here (not in the overview body) so it covers
     // the focused-card paths too (INS-005).
-    if sim.is_stale(gui.edit_counter) {
+    // W4, G-FRESHNESSDISAGREE: this chip and the Optimize window's banner
+    // are the two halves of the ledger row. Both ask the core now, so the
+    // pair cannot read "live" and "stale" about one run again.
+    if simulation_freshness(session, sim).is_stale() {
         FreshnessGate::banner(ui);
     } else {
         ui.label(

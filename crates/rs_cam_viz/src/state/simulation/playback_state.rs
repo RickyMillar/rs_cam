@@ -164,20 +164,6 @@ impl SimulationState {
         })
     }
 
-    /// Returns true if simulation results are stale (params or recording
-    /// options changed since the last sim).
-    ///
-    /// W4: migrate to `AppState::simulation_is_stale`; the four sites in the
-    /// load-model session's files move when that session's viz half lands.
-    /// Those four are `ui/sim_diagnostics.rs`, `ui/readiness_panel.rs` and
-    /// `ui/sim_op_list.rs` (two). Every other reader is on the facade, which
-    /// asks `ProjectSession` rather than the project-wide edit counter.
-    pub fn is_stale(&self, current_edit_counter: u64) -> bool {
-        self.last_run.as_ref().is_some_and(|meta| {
-            current_edit_counter > meta.last_sim_edit_counter || self.metric_options_are_stale()
-        })
-    }
-
     /// True when a collision check HAS run and the project has moved under
     /// it since it was submitted (F2.12, G-HOLDERSTALE).
     ///

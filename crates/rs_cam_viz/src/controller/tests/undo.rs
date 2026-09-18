@@ -410,14 +410,14 @@ fn a_machine_undo_leaves_the_toolpaths_current_g_undofresh() {
 // evidence, is the export defect on the surface people trust to tell them it
 // is safe to cut.
 //
-// `SimulationRunMeta::last_sim_edit_counter` was stamped in the DRAIN from
-// the live `edit_counter`, which folded every edit made while the simulation
-// ran into the record of when it was run. `is_stale` then said `false`.
+// The run used to be recorded against the live `edit_counter` in the DRAIN,
+// which folded every edit made while the simulation ran into the record of
+// when it was run, and the staleness read said `false`.
 //
-// The counter is project-wide and that is deliberate — see `reports/F2.10.md`
-// §3. In short: this is already `is_stale`'s semantics after a run, so
-// stamping at submit adds no new coarseness; it makes the in-flight window
-// behave like the window either side of it.
+// W4 moved the record to `ProjectSession::simulation_epoch`, stamped at
+// SUBMIT. The epoch is project-wide and that is deliberate — see
+// `reports/F2.10.md` §3: the in-flight window now behaves like the window
+// either side of it.
 
 /// THE race. An edit lands while the simulation runs; the result that
 /// arrives answers the configuration the operator has already left.
@@ -464,16 +464,10 @@ fn an_edit_during_a_simulation_leaves_the_result_stale_g_latesim() {
          has already left, and it is the surface they read collision counts \
          off"
     );
-    assert_eq!(
-        controller
-            .state
-            .simulation
-            .last_run
-            .as_ref()
-            .map(|m| m.last_sim_edit_counter),
-        submitted_at,
-        "the run is recorded against the counter it was SUBMITTED at, not the \
-         one that happened to be live when it landed"
+    assert!(
+        controller.state.session.simulation_result().is_none(),
+        "and the CORE refused the adopt: the epoch this run was submitted \
+         with has moved, so the session holds no simulation at all"
     );
 }
 

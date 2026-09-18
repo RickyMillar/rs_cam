@@ -101,7 +101,7 @@ fn first_unmet_action(
 
 pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     let sim = &state.simulation;
-    let stale = sim.has_results() && sim.is_stale(state.gui.edit_counter);
+    let stale = state.simulation_is_stale();
 
     // Compute every check up front (cheap reads of existing producers) so the
     // headline verdict is the worst of them.
