@@ -26,9 +26,10 @@
 //!     new finding;
 //!   - `bottom_z = −9.0` (M2.1's pin) — the whole groove is laddered →
 //!     nothing reported, the non-vacuity control;
-//!   - `HeightsConfig::default()` — Auto/Auto collapses the ladder entirely
-//!     → the Wave-D1 finding, and NOT this one. The two are disjoint by
-//!     construction and this arm proves it.
+//!   - `bottom_z = 0.0`, pinned at the rim (what Auto resolved to before R3,
+//!     Corne case 2026-09-18) — collapses the ladder entirely → the Wave-D1
+//!     finding, and NOT this one. The two are disjoint by construction and
+//!     this arm proves it.
 //! * **Report-only**: generation still succeeds, no verdict moves, and no
 //!   gate consumes the number.
 //!
@@ -60,7 +61,7 @@ mod common;
 
 use rs_cam_core::compute::StockConfig;
 use rs_cam_core::compute::catalog::OperationConfig;
-use rs_cam_core::compute::config::HeightsConfig;
+use rs_cam_core::compute::config::{HeightMode, HeightsConfig};
 use rs_cam_core::compute::operation_configs::UnifiedFinishConfig;
 use rs_cam_core::diagnostics::{Diagnostic, Severity, ids};
 use rs_cam_core::mesh::TriangleMesh;
@@ -298,19 +299,23 @@ fn fully_pinned_heights_clip_nothing_and_say_so() {
     );
 }
 
-/// GATE 3 — the two findings are DISJOINT. Auto/Auto heights collapse the
-/// ladder entirely: that is Wave D1's finding, and this one must stay quiet.
-/// Without this arm, "partial clip" could quietly become a synonym for
-/// "clip" and swallow the case that leaves a feature at full stock.
+/// GATE 3 — the two findings are DISJOINT. A bottom pinned at the rim
+/// collapses the ladder entirely: that is Wave D1's finding, and this one
+/// must stay quiet. Without this arm, "partial clip" could quietly become a
+/// synonym for "clip" and swallow the case that leaves a feature at full
+/// stock. (Before R3 an all-Auto config resolved to this same rim pin.)
 #[test]
 fn a_totally_collapsed_band_is_dropped_not_clipped() {
-    let session = session_with(HeightsConfig::default());
+    let session = session_with(HeightsConfig {
+        bottom_z: HeightMode::Manual(0.0),
+        ..HeightsConfig::default()
+    });
     let result = session.get_result(0).expect("generated result");
 
     assert!(
         result.stats.dropped_band.is_some(),
-        "Auto heights collapse the VerySteep ladder — Wave D1's finding must \
-         still fire"
+        "a rim-pinned bottom collapses the VerySteep ladder — Wave D1's finding \
+         must still fire"
     );
     assert!(
         result.stats.clipped_band.is_none(),

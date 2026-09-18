@@ -157,6 +157,11 @@ pub struct GenerationFindings {
     /// [`ExecutionContext::findings`]. The writer holds the findings by
     /// then; the join has not run yet.
     pub boundary_clip_dropped: Option<crate::compute::toolpath_stats::BoundaryClipDroppedFinding>,
+    /// R3 / R4: what the standalone waterline's ladder builder did. `None` =
+    /// not a standalone `Waterline`, so no ladder was built. Written by
+    /// `generate_waterline`. See
+    /// [`crate::compute::toolpath_stats::WaterlineLadderFinding`].
+    pub waterline_ladder: Option<crate::compute::toolpath_stats::WaterlineLadderFinding>,
     /// F4: a non-default rest-claims dial this operation's own configuration
     /// never applies. `None` = nothing inert is set.
     /// See [`crate::compute::toolpath_stats::InertClaimsDialFinding`].

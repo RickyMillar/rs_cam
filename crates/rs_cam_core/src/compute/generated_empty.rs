@@ -174,10 +174,18 @@ impl LegitimateEmptyReason {
 ///   (`pencil_tip_float_channel_d1.rs` builds exactly that fixture). The
 ///   cost of this exemption is stated honestly: a standalone waterline
 ///   emptied by a mis-resolved Z window (the G-UNIFIEDBOTTOMZ shape) also
-///   succeeds silently. The gate cannot tell "no steep slopes" from
+///   succeeds here. The gate cannot tell "no steep slopes" from
 ///   "window missed the material" without slope analysis it does not have;
 ///   `UnifiedFinish` stays gated because ALL THREE of its bands empty at
-///   once is not a slope story.
+///   once is not a slope story. R3 (Corne case, 2026-09-18): the window
+///   case is no longer SILENT. The waterline adapter records a
+///   [`crate::compute::toolpath_stats::WaterlineLadderFinding`], and a
+///   ladder with fewer than two levels raises
+///   `geom.waterline_ladder_empty` as a `Caution` on the diagnostics
+///   list. This gate still classes the result legitimate — it cannot see
+///   the ladder without a new [`EmptyGenerationInputs`] field, which the
+///   persist site in `session/compute.rs` must then fill — so the
+///   refusal half of R3 is parked on that wire change.
 ///
 /// Everything else is gated, INCLUDING the families whose emptiness looks
 /// similar but is not: `SteepShallow`, `Scallop`, `DropCutter`,

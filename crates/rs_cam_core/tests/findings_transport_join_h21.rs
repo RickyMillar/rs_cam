@@ -44,7 +44,8 @@ use rs_cam_core::compute::execute::GenerationFindings;
 use rs_cam_core::compute::toolpath_stats::{
     BandHeightClip, BoundaryClipDroppedFinding, ClaimsReferenceFinding, ClippedBandFinding,
     DeprecatedDialFinding, DerivedStepoverFinding, DroppedBandFinding, HeightClip,
-    InertClaimsDialFinding, MeasuredBands, TipFloatFinding, ToolpathStats, ZeroRemovalFinding,
+    InertClaimsDialFinding, MeasuredBands, TipFloatFinding, ToolpathStats, WaterlineLadderFinding,
+    ZeroRemovalFinding,
 };
 use rs_cam_core::compute::{compute_stats_with_spans, stats_with_findings};
 use rs_cam_core::finish::finish_planner::FinishBand;
@@ -189,6 +190,17 @@ fn every_finding_recorded() -> GenerationFindings {
             tool_diameter_mm: 6.0,
             source_region_count: 3,
         }),
+        // R3 / R4. Recorded by the waterline adapter once per ladder build.
+        waterline_ladder: Some(WaterlineLadderFinding {
+            requested_top_z_mm: 23.0,
+            requested_bottom_z_mm: 0.0,
+            stock_bottom_z_mm: 0.0,
+            z_step_mm: 1.0,
+            planned_levels: 24,
+            nudged_levels: 2,
+            dropped_below_stock: 1,
+            delivered_levels: 23,
+        }),
         // F4. Recorded from the operation's CONFIG rather than from anything
         // measured, and the join must carry it like any other finding.
         inert_claims_dial: Some(InertClaimsDialFinding {
@@ -283,6 +295,7 @@ fn every_recorded_finding_survives_the_single_join() {
         zero_removal,
         offset_library_failures,
         boundary_clip_dropped,
+        waterline_ladder,
         inert_claims_dial,
         region_cap,
         relink,
@@ -329,6 +342,7 @@ fn every_recorded_finding_survives_the_single_join() {
     assert_eq!(zero_removal, findings.zero_removal);
     assert_eq!(offset_library_failures, findings.offset_library_failures);
     assert_eq!(boundary_clip_dropped, findings.boundary_clip_dropped);
+    assert_eq!(waterline_ladder, findings.waterline_ladder);
     assert_eq!(inert_claims_dial, findings.inert_claims_dial);
     assert_eq!(region_cap, findings.region_cap);
     assert_eq!(relink, findings.relink);
@@ -394,6 +408,10 @@ fn an_unrecorded_generation_still_reads_as_not_measured() {
          `Some(0)` here would claim every offset was clean"
     );
     assert_eq!(stats.boundary_clip_dropped, None);
+    assert_eq!(
+        stats.waterline_ladder, None,
+        "R3 / R4: an operation that built no waterline ladder measured nothing"
+    );
     assert_eq!(
         stats.inert_claims_dial, None,
         "F4: a generation that recorded nothing must not claim a dial is inert"

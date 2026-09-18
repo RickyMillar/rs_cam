@@ -1822,6 +1822,8 @@ fn fake_result_with_regions(
             zero_removal: None,
             offset_library_failures: None,
             boundary_clip_dropped: None,
+            // Nor a waterline ladder (R3 / R4).
+            waterline_ladder: None,
             inert_claims_dial: None,
             // Nor did it run a rest-region extraction (F3).
             region_cap: None,

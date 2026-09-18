@@ -532,9 +532,29 @@ pub fn depth_beyond_stock(op: &OperationConfig, h: &ResolvedHeights) -> Option<D
     })
 }
 
+/// The Top Z the generator ANCHORS on, for the plane-order check.
+///
+/// R7 (Corne case, 2026-09-18): the as-found 6 mm rough carried a pinned
+/// `top_z = 0.109` (an un-rounded Heights-diagram drag, R5) and a pinned
+/// `bottom_z = 4.0`, and the ribbon said "Bottom Z (4.0) is above Top Z
+/// (0.1). No material will be cut." The numbers were the config's; the
+/// sentence was false. `Adaptive3d` deliberately ignores a pinned top and
+/// anchors on the stock top (`generate_adaptive3d`, `stock_top_z:
+/// ctx.stock_bbox.max.z`), so a pinned bottom on a rough must be compared
+/// against the stock top the rough really starts from. Every other operation
+/// reads its resolved `top_z`.
+fn anchored_top_z(op: &OperationConfig, h: &ResolvedHeights) -> f64 {
+    if op.op_type() == crate::compute::catalog::OperationType::Adaptive3d {
+        h.stock_top_z.unwrap_or(h.top_z)
+    } else {
+        h.top_z
+    }
+}
+
 fn heights_checks(scope: &Scope, op: &OperationConfig, h: &ResolvedHeights) -> Vec<Diagnostic> {
     let mut out = Vec::new();
-    if h.bottom_z > h.top_z {
+    let top_z = anchored_top_z(op, h);
+    if h.bottom_z > top_z {
         out.push(Diagnostic {
             id: DiagnosticId::from(ids::GEOM_BOTTOM_ABOVE_TOP_Z),
             scope: scope.clone(),
@@ -545,7 +565,7 @@ fn heights_checks(scope: &Scope, op: &OperationConfig, h: &ResolvedHeights) -> V
             source: Source::StaticValidation,
             message: format!(
                 "Bottom Z ({:.1}) is above Top Z ({:.1}). No material will be cut.",
-                h.bottom_z, h.top_z
+                h.bottom_z, top_z
             ),
             evidence: None,
             fix: None,
@@ -553,7 +573,7 @@ fn heights_checks(scope: &Scope, op: &OperationConfig, h: &ResolvedHeights) -> V
             suppressed_diagnostics: vec![],
         });
     }
-    if h.feed_z < h.top_z {
+    if h.feed_z < top_z {
         out.push(Diagnostic {
             id: DiagnosticId::from(ids::GEOM_FEED_Z_BELOW_TOP_Z),
             scope: scope.clone(),
@@ -564,7 +584,7 @@ fn heights_checks(scope: &Scope, op: &OperationConfig, h: &ResolvedHeights) -> V
             source: Source::StaticValidation,
             message: format!(
                 "Feed Z ({:.1}) is below Top Z ({:.1}). Tool will plunge into material at feed rate.",
-                h.feed_z, h.top_z
+                h.feed_z, top_z
             ),
             evidence: None,
             fix: None,

@@ -13,7 +13,7 @@ use crate::toolpath::Toolpath;
 use crate::trace::toolpath_spans::AnnotatedToolpath;
 use crate::trace::transform_provenance::ReconcileSet;
 
-use super::findings::{record_relink_totals, record_truncated_core};
+use super::findings::{record_relink_totals, record_truncated_core, record_waterline_ladder};
 use super::shared::{
     generated_with_cut_run_spans, generated_with_depth_run_spans, generated_with_spans,
     require_index, require_mesh, with_depth_run_annotation,
@@ -428,13 +428,41 @@ pub(crate) fn generate_waterline(
         // (`FINISHING_OPEN_DEFECTS_EVIDENCE.md` §3.C).
         stock_to_leave: 0.0,
     };
-    let tp = crate::ops::waterline::waterline_toolpath_with_cancel(
+    // R3 / R4 (Corne case, 2026-09-18): the ladder is built ONCE, here, and
+    // the same `Vec` reaches the generator and the span builder below.
+    // `waterline_ladder` nudges a level off a horizontal facet (§4.5 of the
+    // analysis: levels at 18.0 and 15.0 wove junk across the wall top and
+    // the notch floor) and drops every level at or below the emission-frame
+    // stock bottom (a level AT the stock bottom cuts the bed). The as-found
+    // `-1.37` pin therefore yields an EMPTY ladder plus the finding, never a
+    // cut below the stock. The resolved heights themselves are the R3 half:
+    // an Auto bottom on this zero-depth op is now the model bottom
+    // (`HeightsConfig::auto_bottom_z`), so the Auto ladder spans the model.
+    let ladder = crate::ops::waterline::waterline_ladder(
         m,
-        idx,
-        ctx.tool_def,
         ctx.heights.top_z,
         ctx.heights.bottom_z,
         cfg.z_step,
+        ctx.stock_bbox.min.z,
+    );
+    record_waterline_ladder(
+        ctx.findings,
+        crate::compute::toolpath_stats::WaterlineLadderFinding {
+            requested_top_z_mm: ctx.heights.top_z,
+            requested_bottom_z_mm: ctx.heights.bottom_z,
+            stock_bottom_z_mm: ctx.stock_bbox.min.z,
+            z_step_mm: cfg.z_step,
+            planned_levels: ladder.planned_levels,
+            nudged_levels: ladder.nudged_levels,
+            dropped_below_stock: ladder.dropped_below_stock,
+            delivered_levels: ladder.levels.len(),
+        },
+    );
+    let tp = crate::ops::waterline::waterline_toolpath_at_levels(
+        m,
+        idx,
+        ctx.tool_def,
+        &ladder.levels,
         &params,
         ctx.boundary_regions,
         &(|| ctx.cancel.load(Ordering::SeqCst)),
@@ -476,15 +504,10 @@ pub(crate) fn generate_waterline(
     // R2.8: waterline has a real Z-level ladder (unlike the single-level
     // Face op) — pass it to the span builder instead of `&[]` so
     // `spans_from_depth_runs`'s `nearest_level` snapping has real levels
-    // to snap to, matching the exact ladder `waterline_toolpath_with_cancel`
-    // cut at (same helper, one source of truth).
-    let levels = crate::ops::waterline::waterline_z_levels(
-        ctx.heights.top_z,
-        ctx.heights.bottom_z,
-        cfg.z_step,
-    );
+    // to snap to. R4: it is the SAME `Vec` the generator cut at, nudged and
+    // floored, not a second call to the raw ladder helper.
     Ok(with_depth_run_annotation(
-        generated_with_depth_run_spans(tp, &levels),
+        generated_with_depth_run_spans(tp, &ladder.levels),
         ctx.semantic_ctx,
     ))
 }

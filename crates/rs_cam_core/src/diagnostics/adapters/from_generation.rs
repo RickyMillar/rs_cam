@@ -47,6 +47,7 @@ pub fn diagnostics_from_generation(
     out.extend(zero_removal(toolpath_id, stats));
     out.extend(offset_library_failures(toolpath_id, stats));
     out.extend(boundary_clip_dropped(toolpath_id, stats));
+    out.extend(waterline_ladder(toolpath_id, stats));
     out.extend(inert_claims_dial(toolpath_id, stats));
     out.extend(region_cap_truncated(toolpath_id, stats));
     out
@@ -174,6 +175,46 @@ fn boundary_clip_dropped(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<
         supersedes: vec![],
         suppressed_diagnostics: vec![],
     }]
+}
+
+/// R3 / R4 (Corne case): the waterline's Z ladder was floored at the stock
+/// bottom, or fewer than two levels reached the cutter.
+///
+/// `Caution` on both readings. Not `Blocking`: the floored ladder is the
+/// SAFE one — the levels that would have cut the bed are gone — and an empty
+/// ladder cuts nothing. Not `Info`: an operator who pinned a height at or
+/// below the bed, or whose ladder missed the model, must see it before
+/// the next operation's rest chain inherits the result. A clean ladder
+/// (nothing dropped, two or more levels) is silent here; narration prints
+/// it.
+fn waterline_ladder(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
+    let Some(f) = stats.waterline_ladder else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let make = |id: &str| Diagnostic {
+        id: DiagnosticId::from(id),
+        scope: Scope::Toolpath { id: toolpath_id },
+        category: Category::Geometry,
+        severity: Severity::Caution,
+        // Observed at generation, where the ladder was built. A simulation
+        // cannot supersede it: the dropped levels are not in the toolpath.
+        confidence: Confidence::Verified,
+        state: DiagnosticState::Current,
+        source: Source::StaticValidation,
+        message: f.message(),
+        evidence: None,
+        fix: None,
+        supersedes: vec![],
+        suppressed_diagnostics: vec![],
+    };
+    if f.floored() {
+        out.push(make(ids::GEOM_WATERLINE_LEVELS_BELOW_STOCK));
+    }
+    if f.degenerate() {
+        out.push(make(ids::GEOM_WATERLINE_LADDER_EMPTY));
+    }
+    out
 }
 
 /// Checkpoint C (Q1 / D-2): 2D offsets in this generation that FAILED rather

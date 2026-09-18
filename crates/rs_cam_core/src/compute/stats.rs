@@ -75,6 +75,9 @@ pub fn compute_stats_with_spans(tp: &Toolpath, spans: Option<&[Span]>) -> Toolpa
         // Same rule: a dropped boundary containment is a decision taken
         // after generation, invisible in the move list it produced.
         boundary_clip_dropped: None,
+        // R3 / R4: same rule — the ladder builder is a generation-time step
+        // and the move list cannot say which levels it dropped.
+        waterline_ladder: None,
         // F4: read off the operation's CONFIG at generation time. A move list
         // carries no dials, so this helper can only honestly say "not told" —
         // and the whole point of the finding is that the dial left no trace
@@ -187,6 +190,7 @@ pub fn stats_with_findings(
         zero_removal: _,
         offset_library_failures: _,
         boundary_clip_dropped: _,
+        waterline_ladder: _,
         inert_claims_dial: _,
         region_cap: _,
         relink: _,
@@ -213,6 +217,7 @@ pub fn stats_with_findings(
         zero_removal,
         offset_library_failures,
         boundary_clip_dropped,
+        waterline_ladder,
         inert_claims_dial,
         region_cap,
         relink,
@@ -242,6 +247,7 @@ pub fn stats_with_findings(
         zero_removal,
         offset_library_failures,
         boundary_clip_dropped,
+        waterline_ladder,
         inert_claims_dial,
         region_cap,
         relink,

@@ -273,6 +273,17 @@ pub fn record_boundary_clip_dropped(
     findings.boundary_clip_dropped = Some(finding);
 }
 
+/// Record what the standalone waterline's ladder builder did (R3 / R4).
+///
+/// Written once per `generate_waterline` run, clean or not: `None` on the
+/// stats side means "no ladder was built", never "nothing was dropped".
+pub(crate) fn record_waterline_ladder(
+    cell: &std::cell::RefCell<GenerationFindings>,
+    finding: crate::compute::toolpath_stats::WaterlineLadderFinding,
+) {
+    cell.borrow_mut().waterline_ladder = Some(finding);
+}
+
 /// The engagement (mm) at or below which a pass is reported as removing
 /// nothing (A4) — derived from the REFERENCE's own resolution, not dialled.
 ///

@@ -198,6 +198,19 @@ pub const GEOM_OFFSET_LIBRARY_FAILURE: &str = "geom.offset_library_failure";
 /// the path instead would break the case the contract was written for. What
 /// it is not is silent any more.
 pub const GEOM_BOUNDARY_CLIP_DROPPED: &str = "geom.boundary_clip_dropped";
+/// R4 (Corne case, 2026-09-18): the waterline's Z ladder asked for at least
+/// one level at or below the stock bottom, and the ladder builder DROPPED
+/// it. A level at the stock bottom cuts the bed by definition; the as-found
+/// Corne waterline had one level at `-1.37`, below the whole part, and the
+/// simulation read an 18.5 mm bite through Z 0. The dropped levels are not
+/// cut; the finding says so, and names the stock bottom the ladder floored at.
+pub const GEOM_WATERLINE_LEVELS_BELOW_STOCK: &str = "geom.waterline_levels_below_stock";
+/// R3 (Corne case, 2026-09-18): fewer than two waterline levels reached the
+/// cutter, so the operation cut nothing between its top and bottom. The
+/// empty gate cannot raise this: `Waterline` is a feature-selective
+/// exemption there ("a model with no steep walls legitimately yields
+/// nothing"), so a one-level or empty ladder passed as a legitimate empty.
+pub const GEOM_WATERLINE_LADDER_EMPTY: &str = "geom.waterline_ladder_empty";
 /// F3 (2026-08-23): a rest-region extraction produced more islands than
 /// `region_mask::MAX_REST_REGIONS` and the list was TRUNCATED to the largest
 /// 64 by area. Every dropped island is territory a `DerivedRestRegions`

@@ -18,20 +18,27 @@
 //! behavioural change and belongs to a behavioural wave. What Wave D1 owns is
 //! the instrument: an unmachined feature must never again be silent.
 //!
+//! R3 (Corne case, 2026-09-18) was that behavioural wave: on a zero-depth
+//! context `HeightsConfig::resolve` now gives an Auto `bottom_z` at the MODEL
+//! bottom, so `HeightsConfig::default()` no longer collapses the ladder. The
+//! trap arm below pins `bottom_z` at the stock top — the value Auto used to
+//! resolve to — so the instrument is still exercised on the same collapse.
+//!
 //! ## Contract
 //!
 //! * **Kind**: GATE (default CI, synthetic, seconds).
 //! * **Fixture**: the M2.1 `two_groove_plateau` mesh, deliberately run with
-//!   `HeightsConfig::default()` (Auto/Auto). M2.1 pins `top_z`/`bottom_z`
-//!   precisely to AVOID this trap and says so in its own comment; this file
-//!   does the opposite on purpose, and the `pinned_heights_*` control proves
-//!   the finding is a response to the heights and not to the mesh.
+//!   `bottom_z` pinned at the stock top (what `HeightsConfig::default()`
+//!   resolved to before R3). M2.1 pins `top_z`/`bottom_z` precisely to
+//!   AVOID this trap and says so in its own comment; this file does the
+//!   opposite on purpose, and the `pinned_heights_*` control proves the
+//!   finding is a response to the heights and not to the mesh.
 //! * **Report-only**: generation still succeeds, the verdict severity stays
 //!   `Caution`, and no gate consumes the number.
 //!
 //! ## Red-first evidence
 //!
-//! At `216604b`, on the Auto-heights run below:
+//! At `216604b`, on the then-Auto-heights run below (today's rim pin):
 //! `session.generate_toolpath` succeeded, the VerySteep band produced no
 //! region node at all, and `narrate_toolpath` / `diagnose_toolpath_with_trace`
 //! contained ZERO occurrences of "unmachined", "dropped band" or
@@ -196,9 +203,13 @@ fn session_with(heights: HeightsConfig) -> ProjectSession {
     session
 }
 
-/// `HeightsConfig::default()` — every level Auto. The trap.
-fn auto_heights() -> HeightsConfig {
-    HeightsConfig::default()
+/// The trap: `bottom_z` pinned AT the stock top (0.0), which is what an Auto
+/// bottom resolved to before R3. `top_z` stays Auto.
+fn rim_pinned_heights() -> HeightsConfig {
+    HeightsConfig {
+        bottom_z: HeightMode::Manual(0.0),
+        ..HeightsConfig::default()
+    }
 }
 
 /// M2.1's pinned pair — the control.
@@ -218,12 +229,12 @@ fn unmachined_diagnostic(diags: &[Diagnostic]) -> Option<&Diagnostic> {
 
 // ── Gates ────────────────────────────────────────────────────────────────
 
-/// GATE 1 — with Auto heights the very-steep groove is dropped, and every
-/// user-visible surface says so: stats, narration, diagnostics, and the
-/// project-level `ToolpathDiagnostic`.
+/// GATE 1 — with the bottom pinned at the rim the very-steep groove is
+/// dropped, and every user-visible surface says so: stats, narration,
+/// diagnostics, and the project-level `ToolpathDiagnostic`.
 #[test]
-fn auto_heights_drop_the_very_steep_band_and_every_surface_reports_it() {
-    let session = session_with(auto_heights());
+fn rim_pinned_heights_drop_the_very_steep_band_and_every_surface_reports_it() {
+    let session = session_with(rim_pinned_heights());
 
     // (a) The typed channel. `Some` = measured; the band, its area and the
     //     clipping height all travel with it.
@@ -232,7 +243,7 @@ fn auto_heights_drop_the_very_steep_band_and_every_surface_reports_it() {
         .stats
         .dropped_band
         .as_deref()
-        .expect("Auto heights collapse the VerySteep ladder — this MUST be measured");
+        .expect("a rim-pinned bottom collapses the VerySteep ladder — this MUST be measured");
     println!(
         "D1 measured: band={} regions={} area={:.2} mm² clipped at Z{:.3} ({})",
         dropped.band.label(),
@@ -252,7 +263,7 @@ fn auto_heights_drop_the_very_steep_band_and_every_surface_reports_it() {
         "a dropped band with no area is not a feature: {}",
         dropped.area_mm2
     );
-    // Auto `bottom_z` resolves to `top_z - op_depth` = the stock top (0.0).
+    // The pinned `bottom_z` IS the stock top (0.0).
     assert!(
         (dropped.clip.clip_z_mm - 0.0).abs() < 1e-6,
         "the clipping height IS the resolved bottom_z: {}",

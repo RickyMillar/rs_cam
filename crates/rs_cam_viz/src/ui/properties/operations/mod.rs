@@ -29,7 +29,7 @@ pub(super) use surface_3d::{
 // The P4 split moved three topics into children beside this file. Each name
 // keeps its module path through these re-exports, so `ui/properties/mod.rs`
 // and the sibling operation editors import exactly what they imported before.
-pub use height_diagram::draw_height_diagram;
+pub use height_diagram::{draw_height_diagram, pick_line, round_pin};
 pub(super) use shape_diagrams::{
     StepoverPattern, draw_dogbone_diagram, draw_inlay_diagram, draw_lead_in_out_diagram,
     draw_outline_diagram, draw_pencil_diagram, draw_point_set_diagram, draw_radial_diagram,
@@ -130,7 +130,6 @@ fn draw_height_row(
     ctx: &HeightContext,
     id_salt: &str,
 ) {
-    let was_auto = mode.is_auto();
     let mut display = height_row_display(mode, default_ref, default_z, ctx);
 
     ui.label(label).on_hover_text(tooltip);
@@ -164,21 +163,49 @@ fn draw_height_row(
     commit_height_row(mode, display, edited);
 
     // Resolved absolute Z as a dim hint. "(auto)" marks a row that is still
-    // deferring to the resolver rather than carrying a pinned value.
+    // deferring to the resolver. "(pinned)" marks a row that carries a
+    // stored value, whether the operator typed it, picked a reference, or
+    // dragged the diagram. After the commit, `mode.is_auto()` is exactly
+    // "was Auto before this frame and no widget moved this frame".
+    //
+    // R5 (2026-09-18): the row showed no sign that a height was pinned, so
+    // a diagram drag that pinned Top at −1.37 read like an Auto row
+    // (`planning/corne_case_analysis_2026-09-18/ANALYSIS.md` §4.2). The
+    // Auto button is the one-click release; the panel's snapshot diff
+    // stamps the edit stale, as it does for every heights write.
     let resolved = display.reference.resolve_z(ctx) + display.offset;
-    let hint = if was_auto && !edited {
-        format!("= {resolved:.1} (auto)")
+    if mode.is_auto() {
+        ui.label(
+            egui::RichText::new(format!("= {resolved:.1} (auto)"))
+                .small()
+                .color(crate::ui::tokens::DIAGRAM_DIM),
+        );
     } else {
-        format!("= {resolved:.1}")
-    };
-    ui.label(
-        egui::RichText::new(hint)
-            .small()
-            .color(crate::ui::tokens::DIAGRAM_DIM),
-    );
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new(format!("= {resolved:.1} (pinned)"))
+                    .small()
+                    .color(crate::ui::tokens::TEXT_MUTED),
+            )
+            .on_hover_text(PINNED_HINT);
+            if ui
+                .small_button("Auto")
+                .on_hover_text("Release the pin. The resolver sets this height again.")
+                .clicked()
+            {
+                *mode = HeightMode::Auto;
+            }
+        });
+    }
 
     ui.end_row();
 }
+
+/// The hover on a pinned height row's hint.
+const PINNED_HINT: &str = concat!(
+    "This height is pinned. The resolver does not move it when the stock, ",
+    "the model or the operation changes. Click Auto to release it."
+);
 
 /// Descriptive label for the reference dropdown: "above/below Stock Top" etc.
 fn ref_label(reference: HeightReference, offset: f64) -> String {
@@ -410,9 +437,13 @@ mod tests {
         // Pre-condition: an all-Auto config leaves the floor to the operation.
         assert!(!auto.bottom_pinned);
         assert!(!auto.top_pinned);
-        // …and on a zero-depth op the resolver's Auto bottom sits AT the stock
-        // top, which is exactly why committing it clipped the op to nothing.
-        assert!((auto.bottom_z - ctx.stock_top_z).abs() < 1e-9);
+        // …and on a zero-depth op the resolver's Auto bottom sits at the
+        // MODEL bottom (R3, Corne case 2026-09-18). It used to sit AT the
+        // stock top, which is exactly why committing it clipped the op to
+        // nothing; the display still shows whatever the resolver returns.
+        let model_bottom = ctx.model_bottom_z.expect("fixture carries a model");
+        assert!((auto.bottom_z - model_bottom).abs() < 1e-9);
+        assert!((auto.top_z - ctx.stock_top_z).abs() < 1e-9);
 
         // Rendering projects each Auto row for display only.
         for (mode, default_z) in [

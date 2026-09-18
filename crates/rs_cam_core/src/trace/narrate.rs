@@ -161,6 +161,13 @@ pub struct ToolpathNarrationContext<'a> {
     /// present — an unclipped path where a containment was requested is not
     /// a routine event.
     pub boundary_clip_dropped: Option<crate::compute::toolpath_stats::BoundaryClipDroppedFinding>,
+    /// R3 / R4: what the standalone waterline's ladder builder did, off
+    /// [`crate::compute::toolpath_stats::ToolpathStats::waterline_ladder`].
+    /// `None` = not a standalone waterline, so no ladder was built.
+    /// Narration prints the line whenever it is present: the ladder is the
+    /// whole plan of a waterline, and a floored or empty one is the Corne
+    /// defect.
+    pub waterline_ladder: Option<crate::compute::toolpath_stats::WaterlineLadderFinding>,
     /// F4: a non-default rest-claims dial this operation never applied, off
     /// [`crate::compute::toolpath_stats::ToolpathStats::inert_claims_dial`]. `None` =
     /// nothing inert is set. Narration prints the line ONLY when the finding
@@ -281,6 +288,7 @@ impl<'a> ToolpathNarrationContext<'a> {
             zero_removal,
             offset_library_failures,
             boundary_clip_dropped,
+            waterline_ladder,
             inert_claims_dial,
 
             // NOT rendered by narration. Deliberate, and listed so the
@@ -330,6 +338,7 @@ impl<'a> ToolpathNarrationContext<'a> {
         self.zero_removal = *zero_removal;
         self.offset_library_failures = *offset_library_failures;
         self.boundary_clip_dropped = *boundary_clip_dropped;
+        self.waterline_ladder = *waterline_ladder;
         self.inert_claims_dial = *inert_claims_dial;
         self.relink = *relink;
         self.pencil_link = *pencil_link;
@@ -546,6 +555,7 @@ pub fn narrate_toolpath_with_context(
     append_zero_removal(&mut output, context.zero_removal);
     append_offset_library_failures(&mut output, context.offset_library_failures);
     append_boundary_clip_dropped(&mut output, context.boundary_clip_dropped);
+    append_waterline_ladder(&mut output, context.waterline_ladder);
     append_inert_claims_dial(&mut output, context.inert_claims_dial);
     append_retract_trips(&mut output, context.retract_trips);
     append_relink_totals(&mut output, context.relink.as_ref(), context.operation_kind);
@@ -1150,6 +1160,27 @@ fn append_boundary_clip_dropped(
 ) {
     let Some(f) = finding else { return };
     output.push_str(&format!("Boundary containment DROPPED: {}\n", f.message()));
+}
+
+/// R3 / R4: one line, always when present, about the waterline's Z ladder.
+///
+/// The ladder is the whole plan of a waterline. A floored ladder (levels at
+/// or below the stock bottom were dropped) or a degenerate one (fewer than
+/// two levels cut) is the Corne defect, and a clean one is the reader's
+/// confirmation that the levels are where the model is.
+fn append_waterline_ladder(
+    output: &mut String,
+    finding: Option<crate::compute::toolpath_stats::WaterlineLadderFinding>,
+) {
+    let Some(f) = finding else { return };
+    let label = if f.floored() {
+        "Waterline ladder FLOORED"
+    } else if f.degenerate() {
+        "Waterline ladder EMPTY"
+    } else {
+        "Waterline ladder"
+    };
+    output.push_str(&format!("{label}: {}\n", f.message()));
 }
 
 /// F4: one line when a rest-claims dial the operator set steers nothing.
@@ -2248,6 +2279,8 @@ mod tests {
             zero_removal: None,
             offset_library_failures: None,
             boundary_clip_dropped: None,
+            // Nor a waterline ladder (R3 / R4): not a waterline.
+            waterline_ladder: None,
             inert_claims_dial: None,
             retract_trips: None,
             relink: None,

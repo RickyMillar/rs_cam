@@ -311,6 +311,14 @@ pub struct ToolpathStats {
     /// Report-only: no gate consumes it. The toolpath is real and runnable;
     /// what it is not is contained.
     pub boundary_clip_dropped: Option<BoundaryClipDroppedFinding>,
+    /// R3 / R4 (Corne case, 2026-09-18): what the standalone waterline's Z
+    /// ladder builder did to the requested ladder. See
+    /// [`WaterlineLadderFinding`].
+    ///
+    /// `None` = NOT MEASURED: the operation is not a standalone `Waterline`,
+    /// so no ladder was built. `Some` with zero dropped and zero nudged is a
+    /// measured-clean ladder. Report-only: the ladder is what was cut.
+    pub waterline_ladder: Option<WaterlineLadderFinding>,
     /// F4 (multi-tool island finishing, 2026-08-23): this operation carries a
     /// non-default rest-CLAIMS dial that its own configuration never applies.
     /// See [`InertClaimsDialFinding`].
@@ -661,6 +669,96 @@ impl BoundaryClipDroppedFinding {
             regions = self.source_region_count,
             dia = self.tool_diameter_mm,
         )
+    }
+}
+
+/// R3 / R4 (Corne case, 2026-09-18): what the standalone waterline's ladder
+/// builder ([`crate::ops::waterline::waterline_ladder`]) did to the ladder
+/// the resolved heights asked for.
+///
+/// The incident: an Auto waterline resolved `bottom_z == top_z` and
+/// laddered ONE level at the stock top, above the mesh; one drag on the
+/// Heights diagram then pinned `top_z` to `-1.37`, one level BELOW the part,
+/// and the tool cut the bed
+/// (`planning/corne_case_analysis_2026-09-18/ANALYSIS.md` §4.1-§4.3). No
+/// reading checked a level against the stock bottom. Now the ladder floors
+/// at the stock bottom, and this finding says what the floor and the
+/// flat-face nudge did.
+///
+/// Two of its readings are a `Caution`: `dropped_below_stock > 0` (the
+/// operator asked for a cut at or below the bed) and `delivered_levels < 2`
+/// (the ladder has nothing to cut between top and bottom — the empty gate
+/// cannot see this, because `Waterline` is a feature-selective exemption).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WaterlineLadderFinding {
+    /// The resolved `top_z` (mm) the ladder started from.
+    pub requested_top_z_mm: f64,
+    /// The resolved `bottom_z` (mm) the ladder ran down to.
+    pub requested_bottom_z_mm: f64,
+    /// The emission-frame stock bottom (mm) the ladder was floored at.
+    pub stock_bottom_z_mm: f64,
+    /// The operation's `z_step` (mm).
+    pub z_step_mm: f64,
+    /// Levels the raw ladder asked for.
+    pub planned_levels: usize,
+    /// Levels moved 0.01 mm down off a horizontal facet (§4.5).
+    pub nudged_levels: usize,
+    /// Levels removed because they sat at or below the stock bottom (R4).
+    pub dropped_below_stock: usize,
+    /// Levels that were cut.
+    pub delivered_levels: usize,
+}
+
+impl WaterlineLadderFinding {
+    /// True when the operator asked for at least one level at or below the
+    /// stock bottom.
+    #[must_use]
+    pub fn floored(&self) -> bool {
+        self.dropped_below_stock > 0
+    }
+
+    /// True when fewer than two levels reached the cutter.
+    #[must_use]
+    pub fn degenerate(&self) -> bool {
+        self.delivered_levels < 2
+    }
+
+    /// The operator-facing sentence, without a leading label and without a
+    /// trailing newline. One sentence, two surfaces — the same contract as
+    /// [`BoundaryClipDroppedFinding::message`].
+    #[must_use]
+    pub fn message(&self) -> String {
+        let mut s = format!(
+            "waterline ladder from Z {top:.3} to Z {bottom:.3} by {step:.3} mm: \
+             {planned} level(s) planned, {delivered} cut",
+            top = self.requested_top_z_mm,
+            bottom = self.requested_bottom_z_mm,
+            step = self.z_step_mm,
+            planned = self.planned_levels,
+            delivered = self.delivered_levels,
+        );
+        if self.nudged_levels > 0 {
+            s.push_str(&format!(
+                "; {} level(s) sat on a horizontal face and moved 0.01 mm down",
+                self.nudged_levels
+            ));
+        }
+        if self.floored() {
+            s.push_str(&format!(
+                "; {} level(s) at or below the stock bottom (Z {:.3}) were DROPPED — a \
+                 level at the stock bottom cuts the bed; pin bottom_z above it",
+                self.dropped_below_stock, self.stock_bottom_z_mm
+            ));
+        }
+        if self.degenerate() {
+            s.push_str(
+                "; fewer than two levels reached the cutter, so this waterline cut \
+                 nothing between its top and bottom — check top_z and bottom_z \
+                 against the model",
+            );
+        }
+        s.push_str(". [Generation stage; report-only — no gate consumes this.]");
+        s
     }
 }
 
