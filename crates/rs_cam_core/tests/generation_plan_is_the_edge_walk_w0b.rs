@@ -18,9 +18,10 @@
 //!    out.
 //! 4. `the_ancestor_closure_is_not_the_nearest_source_only`: the arm that
 //!    parts a closure over `edges` from one over `primary_edges`.
-//! 4b. `a_first_in_setup_rest_op_plans_the_setup_before_it`: R2.
-//! 5. `a_disabled_op_gets_no_step`.
-//! 6. `the_loader_normalises_the_rest_analysis_demand`: a round trip
+//! 5. `a_first_in_setup_rest_op_plans_the_setup_before_it`: R2, the
+//!    cross-setup Stock edge in the plan.
+//! 6. `a_disabled_op_gets_no_step`.
+//! 7. `the_loader_normalises_the_rest_analysis_demand`: a round trip
 //!    through the save and load doors switches a stray producer off and a
 //!    consumed producer on.
 //!
