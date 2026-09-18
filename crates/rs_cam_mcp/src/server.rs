@@ -2085,13 +2085,11 @@ mod tests {
                 "`{field}` was supplied — it must not be reported as defaulted"
             );
         }
-        assert!(
-            build_tool_config(&AddToolParam {
-                flute_count: Some(0),
-                ..add_tool_spec("end_mill", 6.0)
-            })
-            .is_err()
-        );
+        assert!(build_tool_config(&AddToolParam {
+            flute_count: Some(0),
+            ..add_tool_spec("end_mill", 6.0)
+        })
+        .is_err());
     }
 
     /// `add_tool` is all-optional beyond name/type/diameter, and the
