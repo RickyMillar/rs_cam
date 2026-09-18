@@ -16,6 +16,35 @@ use rs_cam_mcp::server::{json_str, no_project_error, text};
 use crate::app::RsCamApp;
 use crate::mcp_bridge::{McpOutcome, McpResponse};
 
+/// The wire word for a dependency kind (W5 item c).
+///
+/// `EdgeKind` derives no serde: `rs_cam_core::session` is W0's file set and
+/// W5 does not edit it. The tokens are written here, once, and the
+/// `list_toolpaths` row is their only reader. Move them onto the enum when
+/// core next opens.
+const fn edge_kind_token(kind: rs_cam_core::session::dependencies::EdgeKind) -> &'static str {
+    use rs_cam_core::session::dependencies::EdgeKind;
+    match kind {
+        EdgeKind::Stock => "stock",
+        EdgeKind::Regions => "regions",
+        EdgeKind::PrevTool => "prev_tool",
+    }
+}
+
+/// The wire word for how current a dependency is (W5 item c).
+///
+/// `Pending` is a WAIT, not a fault: the source has not generated, or the
+/// simulated snapshot is missing. `Broken` is the declaration resolving to no
+/// usable source.
+const fn edge_state_token(state: rs_cam_core::session::dependencies::EdgeState) -> &'static str {
+    use rs_cam_core::session::dependencies::EdgeState;
+    match state {
+        EdgeState::Ready => "ready",
+        EdgeState::Pending => "pending",
+        EdgeState::Broken => "broken",
+    }
+}
+
 impl RsCamApp {
     pub(super) fn mcp_project_summary(&self) -> String {
         let session = &self.controller.state().session;
@@ -48,6 +77,10 @@ impl RsCamApp {
         let state = self.controller.state();
         let session = &state.session;
         let summaries = session.list_toolpaths();
+        // W5 item (c): read the edges ONCE, not once per row. `primary_edges`
+        // is the row a surface draws as one line: one entry per (consumer,
+        // kind), with the nearest enabled source on a Stock edge.
+        let edges = rs_cam_core::session::dependencies::primary_edges(session);
         let rows: Vec<serde_json::Value> = summaries
             .into_iter()
             .map(|s| {
@@ -58,6 +91,26 @@ impl RsCamApp {
                 // rest-stock error it had while it was on.
                 let raw = rt.map_or(&ComputeStatus::Pending, |r| &r.status);
                 let status = ComputeStatus::effective(s.enabled, raw);
+                // `ToolpathSummary` carries no stock source, and widening it
+                // would push a viz concern into the core listing. Read the
+                // config instead.
+                let stock_source = session
+                    .find_toolpath_config_by_id(s.id)
+                    .map(|(_, tc)| tc.stock_source)
+                    .unwrap_or_default();
+                let depends_on: Vec<serde_json::Value> = edges
+                    .iter()
+                    .filter(|e| e.from == s.id)
+                    .map(|e| {
+                        serde_json::json!({
+                            "id": e.on,
+                            "kind": edge_kind_token(e.kind),
+                            "state": edge_state_token(
+                                rs_cam_core::session::dependencies::state(e, session),
+                            ),
+                        })
+                    })
+                    .collect();
                 serde_json::json!({
                     "index": s.index,
                     "id": s.id,
@@ -71,6 +124,10 @@ impl RsCamApp {
                     // W5 item (a): the core struct serialises. Do not
                     // hand-build the three keys here.
                     "awaiting_prior_stock": status.blocked_on(),
+                    "stock_source": stock_source,
+                    // W5 item (c). An EMPTY list means "asked, and this
+                    // operation depends on nothing". It is never null.
+                    "depends_on": depends_on,
                 })
             })
             .collect();

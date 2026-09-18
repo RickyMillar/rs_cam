@@ -1138,7 +1138,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "set_rest_analysis_config",
-        description = "Enable/configure op-agnostic rest analysis on a toolpath: runs the rest-depth detector against THIS toolpath's own tool after generation, attaching a heatmap grid + derived machining regions (usable as a 'derived_rest_regions' boundary source on another toolpath) without emitting a pencil centerline toolpath. reference_tool_id (optional) names a real library tool for the rest reference; unset prefers the machined stock, else a self-referenced probe. cell_mm/min_valley_depth/region_margin_mm default to 0.5/0.05/0.5mm. offset_stepover_mm/num_offset_passes tune the fan the ROUTING criterion assumes a downstream pencil pass would emit; leave both unset and the stepover is sized by the canonical reach policy for this toolpath's own cutter (correct unless you are modelling a specific pinned downstream operation). Invalidates cached result."
+        description = "Run the rest-depth detector on this toolpath after it generates. It attaches a heatmap grid and the machining regions another toolpath can use as a `derived_rest_regions` boundary. It emits no pencil centerline toolpath. `reference_tool_id` names a library tool as the reference; unset prefers the machined stock. `cell_mm`, `min_valley_depth` and `region_margin_mm` default to 0.5, 0.05 and 0.5 mm. `offset_stepover_mm` and `num_offset_passes` tune the fan the ROUTING criterion assumes; leave both unset for the canonical reach policy. The call invalidates the cached result."
     )]
     async fn set_rest_analysis_config(
         &self,
@@ -1201,7 +1201,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "set_stock_source",
-        description = "Set stock_source for a toolpath: 'fresh' (default) or 'from_remaining_stock' (rest machining). Invalidates the toolpath result."
+        description = "Set where a toolpath's material comes from. `fresh` starts from raw stock. `from_remaining_stock` starts from the simulated stock of the prior enabled operations, and adds a Stock dependency edge. The call invalidates the toolpath result."
     )]
     async fn set_stock_source(&self, Parameters(param): Parameters<SetStockSourceParam>) -> String {
         Self::format_result(
@@ -1246,7 +1246,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "generate_toolpath",
-        description = "Generate a single toolpath by index. Returns move count and distances. By default waits indefinitely for generation to finish; pass `timeout_s` to bound the wait — on timeout the call returns a `status: \"running\"` response instead of blocking (the generate is NOT cancelled, it keeps running in the background). While it runs, `generation_status` reports the stage and elapsed time live, `list_toolpaths` answers from a snapshot, and `cancel_generation` aborts it — all three are served off the GUI frame loop and answer within a second."
+        description = "Generate a single toolpath by index. The call first makes this operation's dependencies current, then generates it. Returns move count and distances. By default waits indefinitely for generation to finish; pass `timeout_s` to bound the wait — on timeout the call returns a `status: \"running\"` response instead of blocking (the generate is NOT cancelled, it keeps running in the background). While it runs, `generation_status` reports the stage and elapsed time live, `list_toolpaths` answers from a snapshot, and `cancel_generation` aborts it — all three are served off the GUI frame loop and answer within a second."
     )]
     async fn generate_toolpath(
         &self,
@@ -1270,7 +1270,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "generate_all",
-        description = "Generate all enabled toolpaths, iterating to a fixpoint over the rest-machining chain: generate, simulate, regenerate whatever was blocked only on missing upstream stock, repeat. A project with a k-deep chain of \"remaining stock\" operations reaches fully generated in ONE call, and the reply reports how many internal rounds and simulations it took. `simulation_resolution_mm` is REQUIRED when the project has enabled rest-machining ops (the call refuses rather than guessing a cell size — resolution changes collision counts and engagement); pass `fixpoint: false` for the old single pass. The reply separates `errors` (genuine failures) from `awaiting_prior_stock` (ops still waiting, each naming the operation it waits for). By default waits indefinitely; pass `timeout_s` to bound the wait — on timeout the call returns a `status: \"running\"` response instead of blocking (nothing is cancelled, generation continues in the background). While it runs, `generation_status` reports which toolpath index is in flight and its stage, `list_toolpaths` answers from a snapshot, and `cancel_generation` aborts it — all three are served off the GUI frame loop and answer within a second."
+        description = "Generate every enabled toolpath. The call plans the work over the dependency edges: it simulates a setup prefix when an operation starts from remaining stock, then generates that operation. A project reaches a fully generated state in ONE call. `simulation_resolution_mm` is REQUIRED when any enabled operation starts from remaining stock. The call refuses rather than guess a cell size, because collision counts and engagement both move with it; pass `fixpoint: false` to plan no simulation at all. The reply separates `errors` (genuine failures) from `awaiting_prior_stock` (operations still waiting, each naming what it waits for), and reports `steps` and `simulations`. The call waits indefinitely. Pass `timeout_s` to bound the wait; on timeout the reply says `status: \"running\"` and generation continues. Read `generation_status` for live progress. Call `cancel_generation` to stop it."
     )]
     async fn generate_all(
         &self,
@@ -1332,10 +1332,14 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "generation_status",
-        description = "What the toolpath compute lane is doing RIGHT NOW: lane state, the in-flight toolpath index and id, the planner stage, seconds elapsed, and how many jobs are queued behind it. Read live off the lane on the MCP server thread — it answers whatever the GUI is doing, so it is the call to reach for when a generate_toolpath/generate_all is taking longer than expected and you need to attribute the cost to an operation before deciding whether to cancel_generation. A null `stage` means the operation publishes no stages, not that the lane is stalled; watch `elapsed_s` and `stage` across two calls to see progress. ALSO carries `frame_loop`: an idle lane does NOT mean your call finished — if `frame_loop.healthy` is false, the GUI window is not repainting and every MCP request plus every generate_all round handoff is stranded until it is visible again."
+        description = "What the toolpath compute lane is doing RIGHT NOW: lane state, the in-flight toolpath index and id, the planner stage, seconds elapsed, and how many jobs are queued behind it. Read live off the lane on the MCP server thread — it answers whatever the GUI is doing, so it is the call to reach for when a generate_toolpath/generate_all is taking longer than expected and you need to attribute the cost to an operation before deciding whether to cancel_generation. A null `stage` means the operation publishes no stages, not that the lane is stalled; watch `elapsed_s` and `stage` across two calls to see progress. ALSO carries `frame_loop`: an idle lane does NOT mean your call finished — if `frame_loop.healthy` is false, the GUI window is not repainting and every MCP request plus every generate_all round handoff is stranded until it is visible again. `plan` reports the step a Generate All is on, and whether that step is a simulation. A null `plan` means no plan runs."
     )]
     pub async fn generation_status(&self) -> String {
-        build_generation_status_response(&self.generation.snapshot(), self.reads.frame_loop())
+        build_generation_status_response(
+            &self.generation.snapshot(),
+            self.reads.frame_loop(),
+            self.reads.plan().read(),
+        )
     }
 
     #[tool(

@@ -1549,6 +1549,13 @@ pub fn build_info() -> serde_json::Value {
             // gap histogram. `screenshot_toolpath` takes the same map as a
             // `reach_overlay` shading on the model surface.
             "reach_map",
+            // W5 (2026-09-18): a `list_toolpaths` row names where its stock
+            // comes from and what it depends on (`stock_source`,
+            // `depends_on`), and `generation_status` reports the Generate
+            // All cursor under `plan`. Probe these to learn whether the
+            // running binary answers the dependency questions.
+            "toolpath_depends_on",
+            "generation_plan_progress",
         ],
     })
 }
@@ -1620,6 +1627,8 @@ mod tests {
             "multitool_finishing_planner",
             "preview_tier_map",
             "reach_map",
+            "toolpath_depends_on",
+            "generation_plan_progress",
         ] {
             assert!(
                 features.contains(&flag),

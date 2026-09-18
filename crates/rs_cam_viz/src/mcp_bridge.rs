@@ -938,9 +938,14 @@ fn parked_frame_loop_warning(frame_loop: &FrameLoopBeat) -> Option<String> {
 /// to an operation, and every "it's been 40 minutes" is unfalsifiable — the
 /// only diagnosis available on 2026-07-30 was reading `/proc` thread
 /// accounting from outside the process.
+/// W5 item (d): `plan` reports where a Generate All has got to. It reads the
+/// [`PlanBeat`] the GUI thread stamps, not the compute lane, because the plan
+/// cursor lives on the GUI thread and a lane field would always read null. A
+/// null `plan` means no plan runs.
 pub fn build_generation_status_response(
     snapshot: &crate::compute::LaneSnapshot,
     frame_loop: &FrameLoopBeat,
+    plan: Option<PlanBeatRow>,
 ) -> String {
     use crate::compute::LaneState;
 
@@ -987,12 +992,19 @@ pub fn build_generation_status_response(
         "elapsed_s": elapsed_s,
         "queue_depth": snapshot.queue_depth,
         "summary": summary,
+        "plan": plan.map(|p| serde_json::json!({
+            "step": p.step,
+            "of": p.of,
+            "simulating": p.simulating,
+        })),
         "frame_loop": frame_loop.report(),
         "note": "Live: read straight off the compute lane on the MCP server thread, \
                  never through the GUI frame loop. `stage` is whatever the planner \
                  last reported — a null means the op reports no stages, NOT that it \
                  is doing nothing. `lane_state` describes the COMPUTE LANE only — \
-                 read `frame_loop` before reading an idle lane as \"my call finished\".",
+                 read `frame_loop` before reading an idle lane as \"my call finished\". \
+                 `plan` is the Generate All cursor, stamped by the GUI thread: a null \
+                 means no plan runs.",
     }))
 }
 
@@ -1685,6 +1697,7 @@ mod tests {
         let resp = build_generation_status_response(
             &LaneSnapshot::idle(ComputeLane::Toolpath),
             &parked_beat_with_generate_all(),
+            None,
         );
         let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
 
@@ -1730,8 +1743,11 @@ mod tests {
     fn a_parked_frame_loop_with_nothing_waiting_is_not_a_warning() {
         let beat = beat_last_ran(Duration::from_secs(600), 0, false);
 
-        let resp =
-            build_generation_status_response(&LaneSnapshot::idle(ComputeLane::Toolpath), &beat);
+        let resp = build_generation_status_response(
+            &LaneSnapshot::idle(ComputeLane::Toolpath),
+            &beat,
+            None,
+        );
         let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
         assert_eq!(
             v["summary"], "idle: no toolpath generation in flight",
