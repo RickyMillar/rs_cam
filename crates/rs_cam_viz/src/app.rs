@@ -421,6 +421,33 @@ impl RsCamApp {
     }
 
     fn draw_toolpath_layout(&mut self, ui: &mut egui::Ui) {
+        // W3 - the operation panel needs three facts `AppState` does not
+        // hold: where the generation plan has got to, whether the analysis
+        // lane is simulating, and the question a plan waits on. They are
+        // read HERE, before the panel borrows the controller, and they are
+        // NOT mirrored onto `AppState`: a mirrored copy is a second store.
+        let lane_snapshots = self.controller.lane_snapshots();
+        let panel_ctx = crate::ui::toolpath_panel::PanelContext {
+            // The analysis lane also runs collision checks, and a collision
+            // check carves no stock. The lane's own job label is what the
+            // status bar tells them apart by.
+            analysis_simulating: lane_snapshots
+                .iter()
+                .find(|lane| lane.lane == crate::compute::ComputeLane::Analysis)
+                .is_some_and(|lane| {
+                    lane.is_active()
+                        && lane
+                            .current_job
+                            .as_deref()
+                            .is_some_and(|job| job.starts_with("Simulation"))
+                }),
+            plan: self.controller.generation_plan_progress(),
+            pending_confirm: self
+                .controller
+                .pending_plan_confirm()
+                .map(|confirm| confirm.message.clone()),
+        };
+
         // Left panel: operation queue
         egui::Panel::left("toolpath_tree")
             .default_size(240.0)
@@ -429,7 +456,7 @@ impl RsCamApp {
             .show(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let (state, events) = self.controller.state_and_events_mut();
-                    crate::ui::toolpath_panel::draw(ui, state, events);
+                    crate::ui::toolpath_panel::draw(ui, state, &panel_ctx, events);
                 });
             });
 
@@ -451,7 +478,6 @@ impl RsCamApp {
             .simulation
             .checks
             .total_collision_count();
-        let lane_snapshots = self.controller.lane_snapshots();
         egui::Panel::bottom("status_bar").show(ui, |ui| {
             // DC7: the bar carries the load-warnings count and reports the
             // click. The controller owns the list, so the open decision is

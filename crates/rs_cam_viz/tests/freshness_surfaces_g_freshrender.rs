@@ -145,6 +145,24 @@ fn the_card_reads_the_freshness_state() {
          back without the ruling that would justify it — and a card whose \
          height varies with its content breaks Rule D."
     );
+
+    // W3 - the ring is a SECOND read, beside freshness and not inside it.
+    assert!(
+        PANEL_SRC.contains("in_flight(") && PANEL_SRC.contains("InFlight::Simulating"),
+        "a worker chewing on a row is a lane fact, so the card must take it \
+         as its own read"
+    );
+    let freshness_src = include_str!("../src/state/freshness.rs");
+    let at = freshness_src
+        .find("pub enum FreshnessState {")
+        .expect("FreshnessState moved out of state/freshness.rs");
+    let rest = &freshness_src[at..];
+    let end = rest.find("\n}").expect("the FreshnessState body has no end");
+    assert!(
+        !rest[..end].contains("Simulating"),
+        "FreshnessState keeps its seven arms. It is derived from the core \
+         result cache, and the cache cannot say what a lane is doing."
+    );
 }
 
 /// The viewport dims a stale path instead of drawing it at full strength.

@@ -26,6 +26,9 @@ const CONNECTOR_BROKEN_WIDTH: f32 = 1.5;
 /// How long one dash and one gap of an unready connector are.
 const CONNECTOR_DASH: f32 = tokens::SPACE_1;
 
+/// How heavy the simulating ring draws.
+const RING_WIDTH: f32 = 1.5;
+
 /// Minimal snapshot of a `ToolpathConfig` with just the fields the card reads.
 /// Cloning this releases the `state.session` borrow so `state.viewport` can be
 /// borrowed mutably inside the card body.
@@ -54,6 +57,9 @@ struct RuntimeSnapshot {
     /// beside `freshness`. The MCP `depends_on` row reads the same door
     /// (W5), so the card and the wire cannot disagree.
     edges_in: Vec<EdgeRow>,
+    /// What a worker is doing to this row now. A SEPARATE read from
+    /// `freshness`, which keeps its seven arms.
+    in_flight: Option<InFlight>,
 }
 
 /// One dependency, as the connector draws it.
@@ -70,8 +76,129 @@ pub struct EdgeRow {
     pub state: EdgeState,
 }
 
+/// What a worker is doing to one row right now.
+///
+/// **Not a [`FreshnessState`] arm.** Freshness is derived from the core
+/// result cache, and "a worker is chewing on this" is a lane fact the cache
+/// cannot express. The seven state function keeps its seven arms.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InFlight {
+    /// The toolpath lane owns this row.
+    Generating,
+    /// The analysis lane is simulating a run that covers this row.
+    Simulating,
+}
+
+/// What the generation plan is doing, reduced to the two facts a row needs.
+///
+/// `simulating_upto` is a setup POSITION, not a setup id: a prefix
+/// simulation covers every enabled operation in setups `0..=position`, so
+/// the row question is a comparison of positions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct PlanFocus {
+    /// The operation the plan generates now.
+    pub generating: Option<ToolpathId>,
+    /// The last setup position the plan's simulation step covers.
+    pub simulating_upto: Option<usize>,
+}
+
+/// The facts about one row that the in-flight question reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RowFacts {
+    pub id: ToolpathId,
+    /// Position of this row's setup in the project's setup order.
+    pub setup_position: usize,
+    pub enabled: bool,
+    /// The GUI holds geometry for this row, so a simulation carves it.
+    pub has_result: bool,
+}
+
+/// Is a worker chewing on this row? Pure, so the sentry drives it.
+///
+/// **Precedence, one line:** `Generating` beats `Simulating` beats the dot.
+///
+/// The generating arm comes from the freshness state, which already folds
+/// the toolpath lane, or from the plan naming this row as its Generate step.
+/// The simulating arm cannot come from freshness: the analysis lane is
+/// project wide and the result cache says nothing about it. It reads the
+/// plan's own simulation step first, and otherwise a running lane plus the
+/// rows that run carves.
+///
+/// The lane guard is deliberate. A claim that outlives its run still draws
+/// no ring, because the lane is quiet. The residual failure is a MISSING
+/// ring, never a stuck one.
+#[must_use]
+pub fn in_flight(
+    freshness: &FreshnessState,
+    plan: PlanFocus,
+    analysis_simulating: bool,
+    row: RowFacts,
+) -> Option<InFlight> {
+    if matches!(freshness, FreshnessState::Regenerating) || plan.generating == Some(row.id) {
+        return Some(InFlight::Generating);
+    }
+    if !row.enabled {
+        return None;
+    }
+    // The plan's own prefix simulation covers setups `0..=position`.
+    if plan
+        .simulating_upto
+        .is_some_and(|upto| row.setup_position <= upto)
+    {
+        return Some(InFlight::Simulating);
+    }
+    // A simulation started outside a plan carves what the project holds.
+    if analysis_simulating && row.has_result {
+        return Some(InFlight::Simulating);
+    }
+    None
+}
+
+/// What the operation panel needs that `AppState` does not hold.
+///
+/// One context struct, so the signature grows once and not per feature.
+/// Neither the compute lanes nor the generation plan is mirrored onto
+/// `AppState`: a mirrored copy is a second store, which is the defect class
+/// this sweep closes.
+pub struct PanelContext {
+    /// The analysis lane is running a SIMULATION, not a collision check.
+    pub analysis_simulating: bool,
+    /// Where the plan in flight has got to, or `None` when none runs.
+    pub plan: Option<crate::controller::generate_all::GenerationPlanProgress>,
+    /// The question a plan waits on. The button is disabled while it
+    /// stands, and this is the hover that says why.
+    pub pending_confirm: Option<String>,
+}
+
+/// The plan's position, resolved against this project's setup order.
+fn plan_focus(
+    plan: Option<&crate::controller::generate_all::GenerationPlanProgress>,
+    session: &rs_cam_core::session::ProjectSession,
+) -> PlanFocus {
+    use crate::controller::generate_all::Activity;
+
+    let Some(plan) = plan else {
+        return PlanFocus::default();
+    };
+    match &plan.activity {
+        Activity::Generating(id, _) => PlanFocus {
+            generating: Some(*id),
+            simulating_upto: None,
+        },
+        Activity::Simulating(setup, _) => PlanFocus {
+            generating: None,
+            simulating_upto: session.find_setup_by_id(setup.0).map(|(at, _)| at),
+        },
+    }
+}
+
 /// Left panel for the Toolpath workspace: the operation queue.
-pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
+pub fn draw(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    ctx: &PanelContext,
+    events: &mut Vec<AppEvent>,
+) {
     // DC2 — the heading and its rule leave the panel. A panel inside a
     // workspace tab named "Toolpaths" does not need a second word for the
     // same idea, and the rule separated that word from nothing. The one
@@ -110,6 +237,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
         };
         edges.entry(edge.from).or_default().push(row);
     }
+    let focus = plan_focus(ctx.plan.as_ref(), &state.session);
     let names: HashMap<ToolpathId, String> = state
         .session
         .toolpath_configs()
@@ -122,7 +250,9 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
     // the scroll delta on every scrolling frame.
     let mut row_rects: Vec<(ToolpathId, egui::Rect, Vec<EdgeRow>)> = Vec::new();
 
-    for (setup_id, setup_name, toolpath_indices) in setups_data {
+    for (setup_position, (setup_id, setup_name, toolpath_indices)) in
+        setups_data.into_iter().enumerate()
+    {
         // Setup header (only if multi-setup)
         if multi_setup {
             ui.add_space(tokens::SPACE_2);
@@ -183,11 +313,26 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     tool_id: tc_src.tool_id,
                 };
                 let rt = state.gui.toolpath_rt.get(&card.id);
+                let row_freshness =
+                    freshness(tc_src, rt, state.session.get_result(tp_idx).is_some());
+                let has_result = rt.is_some_and(|r| r.result.is_some());
+                let flight = in_flight(
+                    &row_freshness,
+                    focus,
+                    ctx.analysis_simulating,
+                    RowFacts {
+                        id: card.id,
+                        setup_position,
+                        enabled: card.enabled,
+                        has_result,
+                    },
+                );
                 let rt_snap = RuntimeSnapshot {
                     visible: rt.is_none_or(|r| r.visible),
-                    has_result: rt.is_some_and(|r| r.result.is_some()),
-                    freshness: freshness(tc_src, rt, state.session.get_result(tp_idx).is_some()),
+                    has_result,
+                    freshness: row_freshness,
                     edges_in: edges.remove(&card.id).unwrap_or_default(),
+                    in_flight: flight,
                 };
                 let rect = draw_toolpath_card(ui, state, events, &card, &rt_snap, i, local_idx);
                 row_rects.push((card.id, rect, rt_snap.edges_in));
@@ -274,6 +419,10 @@ fn draw_toolpath_card(
     // been generated.
     let freshness = &rt.freshness;
     let has_result = rt.has_result;
+    // The ring's hover names what the run carves for THIS row, so it needs
+    // to know whether the row takes its stock from the ops above it.
+    let has_stock_edge = rt.edges_in.iter().any(|e| e.kind == EdgeKind::Stock);
+    let flight = rt.in_flight;
     let dim = !tc.enabled || !visible;
 
     // Read every session-derived value HERE. The row body borrows
@@ -348,7 +497,15 @@ fn draw_toolpath_card(
             ui.horizontal(|ui| {
                 ui.set_min_height(tokens::ROW_ACTION);
                 draw_swatch(ui, tp_id, swatch_color);
-                draw_state_dot(ui, freshness, tp_id, events);
+                draw_state_dot(
+                    ui,
+                    freshness,
+                    flight,
+                    tp_id,
+                    &tc.name,
+                    has_stock_edge,
+                    events,
+                );
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.menu_button("\u{2026}", |ui| {
@@ -437,7 +594,10 @@ fn draw_swatch(ui: &mut egui::Ui, tp_id: ToolpathId, swatch_color: egui::Color32
 fn draw_state_dot(
     ui: &mut egui::Ui,
     freshness: &FreshnessState,
+    flight: Option<InFlight>,
     tp_id: ToolpathId,
+    name: &str,
+    has_stock_edge: bool,
     events: &mut Vec<AppEvent>,
 ) {
     // The mapping is a pure function, so the sentry can drive every state
@@ -458,19 +618,20 @@ fn draw_state_dot(
     };
     let size = egui::vec2(tokens::SPACE_4, tokens::SPACE_4);
     let (rect, resp) = ui.allocate_exact_size(size, sense);
-    if matches!(freshness, FreshnessState::Regenerating) {
-        // The operator asked for a spinner on anything that generates.
-        ui.put(rect, egui::Spinner::new().size(tokens::SPACE_3));
-    } else {
-        // SPACE_2 is the RADIUS here, so the dot is the 8 points R24 asks
-        // for.
-        ui.painter()
-            .circle_filled(rect.center(), tokens::SPACE_2, status_role.text());
-    }
+    draw_state_glyph(ui, rect, flight, status_role.text());
     let mut text = match hover {
         Some(message) => format!("{status_text} \u{2014} {message}"),
         None => status_text.to_owned(),
     };
+    // One hover carries the state AND the activity, so the row keeps one
+    // indicator, one place and one word (R24).
+    if flight == Some(InFlight::Simulating) {
+        if has_stock_edge {
+            text.push_str(&format!("\nSimulating \u{00B7} stock for {name}"));
+        } else {
+            text.push_str("\nSimulating \u{00B7} this operation carves the stock");
+        }
+    }
     if needs_generation {
         text.push_str("\nClick to generate this operation.");
     }
@@ -478,6 +639,78 @@ fn draw_state_dot(
     if resp.clicked() {
         events.push(AppEvent::GenerateToolpath(tp_id));
     }
+}
+
+/// The one glyph the state box draws: a spinner, a ring, or the dot.
+///
+/// Three forms in one box of one size, so the card's height never varies
+/// with its state (Rule D), and the ring REPLACES the dot rather than
+/// standing beside it (R24, one indicator).
+///
+/// Simulating is a different SHAPE, not a second spinner colour. §2.6 rule 3
+/// says colour is never the only channel, and two spinners in two colours
+/// make it the only one.
+pub fn draw_state_glyph(
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    flight: Option<InFlight>,
+    dot_colour: egui::Color32,
+) {
+    match flight {
+        // The operator asked for a spinner on anything that generates.
+        Some(InFlight::Generating) => {
+            ui.put(rect, egui::Spinner::new().size(tokens::SPACE_3));
+        }
+        Some(InFlight::Simulating) => draw_sim_ring(ui, rect),
+        // SPACE_2 is the RADIUS here, so the dot is the 8 points R24 asks
+        // for.
+        None => {
+            ui.painter()
+                .circle_filled(rect.center(), tokens::SPACE_2, dot_colour);
+        }
+    }
+}
+
+/// A hollow ring with a rotating gap: the simulating form (R7).
+///
+/// egui 0.34 has no arc primitive, so the ring is a sampled polyline, which
+/// is the pattern the crate already uses for its diagrams. The clock is the
+/// frame time rather than an `animate_*` helper: those interpolate towards a
+/// target, and a rotation has none. §5 exempts the spinner row from the 200
+/// ms cap by naming it "continuous".
+fn draw_sim_ring(ui: &mut egui::Ui, rect: egui::Rect) {
+    /// 270 degrees, so the gap is a quarter turn.
+    const SWEEP: f32 = std::f32::consts::FRAC_PI_2 * 3.0;
+    const SEGMENTS: usize = 24;
+
+    let centre = rect.center();
+    let radius = tokens::SPACE_2;
+    // SAFETY: the clock is reduced to one turn first, so the cast is exact
+    // to well inside f32 precision however long the session has run.
+    #[allow(clippy::cast_possible_truncation)]
+    let start = ui.input(|i| i.time.rem_euclid(1.0)) as f32 * std::f32::consts::TAU;
+    let points: Vec<egui::Pos2> = (0..=SEGMENTS)
+        .map(|k| {
+            // SAFETY: k and SEGMENTS are both at most 24, so both casts are
+            // exact.
+            #[allow(clippy::cast_precision_loss)]
+            let along = k as f32 / SEGMENTS as f32;
+            let angle = start + along * SWEEP;
+            egui::pos2(
+                centre.x + radius * angle.cos(),
+                centre.y + radius * angle.sin(),
+            )
+        })
+        .collect();
+    // INFO is the accent. A ring is not a verdict, and §2.6 gives INFO to
+    // "informational".
+    ui.painter().add(egui::Shape::line(
+        points,
+        egui::Stroke::new(RING_WIDTH, tokens::INFO),
+    ));
+    // The Spinner does this, and the frame loop repaints while any lane is
+    // active. Both, so the ring cannot stall if either route changes.
+    ui.ctx().request_repaint();
 }
 
 /// The eye is available only while the viewport draws all toolpaths.
