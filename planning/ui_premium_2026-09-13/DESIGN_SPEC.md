@@ -726,9 +726,14 @@ whole row, naming every option, because the difference between the options
 is what the operator needs. It owns no state and reports a real move through
 `Response::changed`.
 
-The strip WRAPS. A label column plus two long option words is wider than the
-240 point Simulation rail, and a row that cannot wrap pushes the inspector
-off its own left edge.
+The strip never SPLITS. A label column plus two long option words is wider
+than the 240 point rail, and the first drawing wrapped inside the strip: one
+option beside the label and the other on the line below, so a closed pair of
+two read as two unrelated controls. The row MEASURES the label column and
+every option against the width it has. They sit beside the label when they
+fit; otherwise the label takes its own line and the whole set sits under it.
+A row that cannot wrap at all pushes the inspector off its own left edge, so
+the fallback is a stack, never an overflow.
 
 ---
 

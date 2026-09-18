@@ -192,6 +192,75 @@ fn a_full_width_button_paints_its_centered_label_once_ur6() {
     );
 }
 
+/// A closed pair of options never splits across two lines.
+///
+/// Seen on screen 2026-09-18, on the Geometry tab at the narrow rail:
+/// "Start from" drew "Stock" beside the label and "After previous ops" on
+/// the line below it, so one closed choice of two read as two unrelated
+/// controls. The row measures now: the options go beside the label when
+/// they fit, and otherwise the label takes its own line and the pair stays
+/// together under it. Either way the pair shares one line.
+#[test]
+fn a_choice_row_keeps_its_options_on_one_line_up2() {
+    use components::ChoiceRow;
+
+    /// The narrowest rail the product gives a panel that draws this row.
+    const RAIL: f32 = 240.0;
+    const OPTIONS: [(u8, &str); 2] = [(0, "Stock"), (1, "After previous ops")];
+
+    let ctx = ctx();
+    let mut choice = 1_u8;
+    let mut f = Some(());
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        if f.take().is_some() {
+            ui.set_max_width(RAIL);
+            let _ = ui.add(ChoiceRow::new("Start from", &mut choice, &OPTIONS));
+        }
+    });
+    let shapes = std::mem::take(&mut output.shapes);
+    output.textures_delta.clear();
+
+    let mut lines: Vec<(String, f32, f32)> = Vec::new();
+    for clipped in &shapes {
+        if let egui::Shape::Text(text) = &clipped.shape {
+            let word = text.galley.text().to_owned();
+            if OPTIONS.iter().any(|(_, o)| *o == word) || word == "Start from" {
+                lines.push((word, text.pos.y, text.pos.x + text.galley.size().x));
+            }
+        }
+    }
+    assert_eq!(
+        lines.len(),
+        3,
+        "non-vacuity: the pass must draw the label and both options, and it \
+         drew {lines:?}"
+    );
+
+    let y_of = |want: &str| {
+        lines
+            .iter()
+            .find(|(word, _, _)| word == want)
+            .map(|(_, y, _)| *y)
+            .unwrap_or_else(|| panic!("{want} was not drawn: {lines:?}"))
+    };
+    assert!(
+        (y_of("Stock") - y_of("After previous ops")).abs() < 1.0,
+        "the two options must share one line, and they sit at {} and {}",
+        y_of("Stock"),
+        y_of("After previous ops")
+    );
+
+    let right = lines
+        .iter()
+        .map(|(_, _, right)| *right)
+        .fold(f32::MIN, f32::max);
+    assert!(
+        right <= RAIL + 1.0,
+        "the row ran to {right} points inside a {RAIL} point rail, so the \
+         inspector would clip its own left edge (AUDIT.md D-16)"
+    );
+}
+
 #[test]
 fn the_primary_button_clears_the_contrast_floor_up2() {
     // Ruling R8. Computed here rather than asserted from a comment, because
