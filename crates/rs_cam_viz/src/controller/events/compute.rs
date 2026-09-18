@@ -2035,15 +2035,19 @@ impl<B: ComputeBackend> AppController<B> {
             return;
         }
 
-        // Read before the `&mut` borrow below: the plan's error rows name the
-        // operation, and the config is gone from the session on the one path
-        // that reports "toolpath runtime not found".
-        let tp_name = self
+        // Read before the `&mut` borrow below: the plan's error and blocked
+        // rows name the operation, and the config is gone from the session on
+        // the one path that reports "toolpath runtime not found".
+        let located = self
             .state
             .session
             .find_toolpath_config_by_id(tp_id)
-            .map(|(_, tc)| tc.name.clone())
-            .unwrap_or_else(|| format!("toolpath {}", tp_id.0));
+            .map(|(index, tc)| (index, tc.name.clone()));
+        // A submit with no config FAILS rather than blocks, so a blocked row
+        // always found one. `usize::MAX` is deliberately implausible: it
+        // reads as "no index", not as toolpath 0.
+        let tp_index = located.as_ref().map_or(usize::MAX, |(index, _)| *index);
+        let tp_name = located.map_or_else(|| format!("toolpath {}", tp_id.0), |(_, name)| name);
         let rt_status = self
             .state
             .gui
@@ -2071,7 +2075,16 @@ impl<B: ComputeBackend> AppController<B> {
                 // count as a failure. The plan already ran this operation's
                 // own prefix simulation, so the block is terminal for it.
                 Some((false, ComputeStatus::AwaitingPriorStock(block))) => {
-                    plan.blocked.push((tp_id, block.message.clone()));
+                    // D4: one row shape for every `awaiting_prior_stock`
+                    // array, so the waiting operation and its block cannot
+                    // drift apart.
+                    plan.blocked
+                        .push(crate::controller::generate_all::BlockedRow {
+                            toolpath_id: tp_id,
+                            toolpath_index: tp_index,
+                            name: tp_name,
+                            block: block.clone(),
+                        });
                     if let Some(setup) = setup {
                         plan.blocked_setups.insert(setup);
                     }

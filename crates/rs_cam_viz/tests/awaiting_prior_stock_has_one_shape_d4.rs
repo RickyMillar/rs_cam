@@ -15,15 +15,14 @@
 //! and then dropped by a hand-written `Serialize` impl. So:
 //!
 //! - the ARITY half builds the struct, serialises it and counts the keys;
-//! - the NET half reads each producer and refuses the key literal.
+//! - the NET half reads each producer and refuses the key literal;
+//! - the REPLY half builds a finished `generate_all` summary and reads the
+//!   row the wire renders, because that reply's carrier is the one that used
+//!   to be a `(toolpath id, message)` pair.
 //!
 //! # NOT MEASURED
 //!
-//! The wording of `message` (its own sentry owns that), and the shape of the
-//! `generate_all` reply's `awaiting_prior_stock` rows. That reply's carrier
-//! (`controller::generate_all::GenerateAllSummary::blocked`) is still a
-//! `(toolpath id, message)` pair; widening it is a handoff, recorded in the
-//! W5 report.
+//! The wording of `message`. Its own sentry owns that.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -66,7 +65,7 @@ fn the_serialised_block_carries_exactly_three_keys() {
 ///
 /// A scan that reads an empty or renamed file passes and looks healthy, so
 /// each row names a literal the file must still contain.
-const PRODUCERS: [(&str, &str); 5] = [
+const PRODUCERS: [(&str, &str); 6] = [
     (
         "crates/rs_cam_viz/src/app/mcp/project.rs",
         "awaiting_prior_stock",
@@ -79,7 +78,14 @@ const PRODUCERS: [(&str, &str); 5] = [
         "crates/rs_cam_viz/src/controller/events/compute.rs",
         "awaiting_prior_stock",
     ),
-    ("crates/rs_cam_viz/src/mcp_bridge.rs", "struct BlockedRow"),
+    (
+        "crates/rs_cam_viz/src/controller/generate_all.rs",
+        "struct BlockedRow",
+    ),
+    (
+        "crates/rs_cam_viz/src/mcp_bridge.rs",
+        "awaiting_prior_stock",
+    ),
     (
         "crates/rs_cam_cli/src/project.rs",
         "awaiting_prior_stock: Vec<",
@@ -127,4 +133,65 @@ fn no_surface_hand_builds_the_block() {
              AwaitingPriorStock instead, so the surfaces cannot drift (D4)."
         );
     }
+}
+
+/// The `generate_all` reply's array row, measured.
+///
+/// W1 tail. The carrier was `Vec<(toolpath id, message)>`, so this reply
+/// named the waiting operation by id alone and dropped the blocker entirely.
+/// It now carries `BlockedRow`, the same type every other array site
+/// renders, and the row is the three identifying keys plus the flattened
+/// block.
+#[test]
+fn the_generate_all_reply_renders_the_one_row_shape() {
+    use rs_cam_viz::mcp_bridge::{BlockedRow, GenerateAllSummary, build_generate_all_response};
+
+    let summary = GenerateAllSummary {
+        generated: 1,
+        failed: 0,
+        errors: Vec::new(),
+        blocked: vec![BlockedRow {
+            toolpath_id: rs_cam_core::ToolpathId(4),
+            toolpath_index: 3,
+            name: "Rest B".to_owned(),
+            block: AwaitingPriorStock {
+                blocking_toolpath_id: Some(rs_cam_core::ToolpathId(7)),
+                blocking_toolpath_index: Some(2),
+                message: "waiting on 'Rough' to generate and be simulated".to_owned(),
+            },
+        }],
+        steps: 4,
+        simulations: 1,
+        loop_error: None,
+    };
+
+    let reply: serde_json::Value =
+        serde_json::from_str(&build_generate_all_response(&summary)).expect("the reply is JSON");
+    let rows = reply
+        .get("awaiting_prior_stock")
+        .and_then(serde_json::Value::as_array)
+        .expect("awaiting_prior_stock is an array");
+    assert_eq!(rows.len(), 1, "reply: {reply}");
+    let row = rows.first().expect("one row").as_object().expect("object");
+
+    for key in KEYS {
+        assert!(
+            row.contains_key(key),
+            "the array row lost the flattened `{key}`: {row:?}"
+        );
+    }
+    for key in ["toolpath_id", "toolpath_index", "name"] {
+        assert!(
+            row.contains_key(key),
+            "the array row must name the WAITING operation too: {row:?}"
+        );
+    }
+    assert_eq!(
+        row.len(),
+        KEYS.len() + 3,
+        "one row is the block plus three identifying keys, and nothing else: {row:?}"
+    );
+    assert_eq!(row.get("toolpath_id"), Some(&serde_json::json!(4)));
+    assert_eq!(row.get("toolpath_index"), Some(&serde_json::json!(3)));
+    assert_eq!(row.get("blocking_toolpath_id"), Some(&serde_json::json!(7)));
 }

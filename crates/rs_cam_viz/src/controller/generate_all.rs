@@ -14,10 +14,36 @@
 
 use std::collections::HashSet;
 
+use serde::Serialize;
+
+use rs_cam_core::compute::config::AwaitingPriorStock;
 use rs_cam_core::ids::SetupId;
 use rs_cam_core::session::ToolpathConfig;
 
 use crate::state::toolpath::{StockSource, ToolpathId};
+
+/// One row of an `awaiting_prior_stock` ARRAY: the waiting operation, and
+/// the block it carries.
+///
+/// W5 item (a). The object sites report the BLOCKER alone and serialise
+/// [`AwaitingPriorStock`] directly. An array site has to name the waiting
+/// operation too, so it flattens the same struct under the three identifying
+/// keys. One type, so the two subjects cannot drift apart.
+///
+/// It lives here rather than in `mcp_bridge`, which is `#[cfg(feature =
+/// "mcp")]`, because [`GenerationPlan`] carries these rows and compiles
+/// without the feature. `mcp_bridge` re-exports it, so every `use
+/// crate::mcp_bridge::BlockedRow` still names this one type.
+///
+/// Pinned by `tests/awaiting_prior_stock_has_one_shape_d4.rs`.
+#[derive(Debug, Clone, Serialize)]
+pub struct BlockedRow {
+    pub toolpath_id: ToolpathId,
+    pub toolpath_index: usize,
+    pub name: String,
+    #[serde(flatten)]
+    pub block: AwaitingPriorStock,
+}
 
 /// Which ops one `generate_all` covers, and which of them force a simulation.
 ///
@@ -264,7 +290,7 @@ pub struct GenerationPlan {
     /// Ops still waiting on upstream simulated stock. Deliberately NOT
     /// counted in `failed`: "cannot yet" and "cannot ever" are different
     /// states.
-    pub blocked: Vec<(ToolpathId, String)>,
+    pub blocked: Vec<BlockedRow>,
     /// Simulations this plan ran on the caller's behalf.
     pub simulations: usize,
     /// Setups holding an operation that blocked or failed. A later prefix
@@ -354,11 +380,7 @@ impl GenerationPlan {
             generated: self.generated,
             failed: self.failed,
             errors: self.errors.clone(),
-            blocked: self
-                .blocked
-                .iter()
-                .map(|(id, msg)| (id.0, msg.clone()))
-                .collect(),
+            blocked: self.blocked.clone(),
             steps: self.steps.len(),
             simulations: self.simulations,
             loop_error: self.loop_error.clone(),
@@ -372,10 +394,10 @@ pub struct GenerateAllSummary {
     pub failed: usize,
     /// `(toolpath id, message)` for genuine failures.
     pub errors: Vec<(usize, String)>,
-    /// `(toolpath id, message)` for ops still waiting on upstream simulated
-    /// stock. Separate from `errors` on purpose: an agent must be able to
+    /// Ops still waiting on upstream simulated stock, one [`BlockedRow`]
+    /// each. Separate from `errors` on purpose: an agent must be able to
     /// tell "cannot yet" from "cannot ever" without parsing prose.
-    pub blocked: Vec<(usize, String)>,
+    pub blocked: Vec<BlockedRow>,
     /// How many steps the plan held. A round no longer exists.
     pub steps: usize,
     /// How many simulations the plan ran on the caller's behalf.

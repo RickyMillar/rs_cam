@@ -1536,27 +1536,8 @@ impl PendingGuiScreenshot {
 // so the GUI and the MCP tool walk one plan. Re-exported here because every
 // existing `use crate::mcp_bridge::...` site names them from this module.
 pub use crate::controller::generate_all::{
-    GenerateAllSink, GenerateAllSummary, GenerationPlan, generate_all_headline,
+    BlockedRow, GenerateAllSink, GenerateAllSummary, GenerationPlan, generate_all_headline,
 };
-
-/// One row of an `awaiting_prior_stock` ARRAY: the operation that waits, and
-/// the block it carries.
-///
-/// W5 item (a). The object sites report the BLOCKER alone and serialise
-/// [`rs_cam_core::compute::config::AwaitingPriorStock`] directly. An array
-/// site has to name the waiting operation too, so it flattens the same struct
-/// under the three identifying keys. One type, so the two subjects cannot
-/// drift apart.
-///
-/// Pinned by `tests/awaiting_prior_stock_has_one_shape_d4.rs`.
-#[derive(Debug, Clone, Serialize)]
-pub struct BlockedRow {
-    pub toolpath_id: rs_cam_core::ToolpathId,
-    pub toolpath_index: usize,
-    pub name: String,
-    #[serde(flatten)]
-    pub block: rs_cam_core::compute::config::AwaitingPriorStock,
-}
 
 /// Render the `generate_all` reply.
 ///
@@ -1566,19 +1547,24 @@ pub fn build_generate_all_response(summary: &GenerateAllSummary) -> String {
     // drift into telling the operator different stories about one run.
     let headline = generate_all_headline(summary);
 
-    let render = |rows: &[(usize, String)]| -> Vec<serde_json::Value> {
-        rows.iter()
-            .map(|(id, message)| serde_json::json!({"toolpath_id": id, "message": message}))
-            .collect()
-    };
+    let errors: Vec<serde_json::Value> = summary
+        .errors
+        .iter()
+        .map(|(id, message)| serde_json::json!({"toolpath_id": id, "message": message}))
+        .collect();
 
     rs_cam_mcp::server::json_str(serde_json::json!({
         "ok": summary.failed == 0 && summary.loop_error.is_none(),
         "summary": headline,
         "generated": summary.generated,
         "failed": summary.failed,
-        "errors": render(&summary.errors),
-        "awaiting_prior_stock": render(&summary.blocked),
+        "errors": errors,
+        // W1 tail: the array rows are `BlockedRow`, the one shape every
+        // `awaiting_prior_stock` array carries (D4). They gain
+        // `toolpath_index`, `name`, `blocking_toolpath_id` and
+        // `blocking_toolpath_index` over the old `{toolpath_id, message}`
+        // pair.
+        "awaiting_prior_stock": summary.blocked,
         // W1 wire break: `rounds` is gone. The fixpoint had rounds; the plan
         // has steps, and `steps` is how many it held.
         "steps": summary.steps,
