@@ -299,3 +299,33 @@ A reload of `~/corne_job.toml` restores the as-found state, including the
    Boundary `stock` if the outer faces are wanted.
 5. Re-fit the stock to the model (§1 footnote) before anything else; it
    halves the roughing time.
+
+## 10. Landed 2026-09-18 (commits `ea3fa221..dba92e8c`, not pushed)
+
+| Ruling | Commit | What moved |
+|---|---|---|
+| R9 | `ea3fa221` | The real cause of §4.5 was the edge SAMPLER in the push cutter (nine samples over the whole edge; a 6 mm contact window fell between samples at the hex-row pitch). Fixed by sampling the analytic contact window. The vertical-facet skip was a latent second hole, also closed. Pre-R9 every long or sloped edge under-blocked: the golden dome waterline CL was 310 mm against 385 mm now. |
+| R1, R2 | `ab2e5e9e` | The machining boundary from a silhouette is the outer loop only (`silhouette_machining_outline`). A new 3D op gets silhouette + one tool diameter (a stored number). |
+| R3, R4, R7 | `3bd47ef8` | Auto bottom on a zero-depth op is the model bottom; the waterline ladder nudges off flat faces and drops levels at or below the stock bottom with a finding. The "Top Z 0.1" banner was true: the 6 mm rough carried a second diagram-drag pin. |
+| R10 | `7b65e58e` | Finish and SemiFinish roles create with no entry ramp; a fold laps a run three times at most. |
+| R11 | `d25ca61d` | The export safety check compares against the emitted retract plane. |
+| R5 | `070b6df9` | Tie-break prefers Bottom; a drag rounds to 0.1 mm on release; the row shows "(pinned)" with an Auto reset; the Heights badge reads INFO. |
+| R12 | `5588502d` | A dimension edit on the Stock panel clears "Auto from model"; the tick refits. |
+
+Gates after `dba92e8c`: core lib 2534/0, viz 942/0 over 86 binaries, cli
+54/0, clippy and fmt clean. Goldens re-blessed with the causes named
+(`67cd171e`, `dba92e8c`).
+
+CLI proof on a corrected copy of the job (pins reset to Auto, silhouette
+offset = tool diameter, waterline entry none, resolution 0.3): three
+toolpaths generate, 0 collisions; the waterline ladders 18 → 1 (the level
+at 0 dropped), 32 752 cutting moves, and ZERO cutting moves inside the
+right wall below Z 17.5. The wall saw is gone. The GUI look waits for a
+restart of the MCP GUI on the new release binary.
+
+Open after landing: the R10 lap cap also reaches roughing (a Zigzag rough
+entry that would lap more than three times now plunges into fresh stock);
+a waterline on a solid emits loops inside material; `waterline_contours`
+returns open arcs when the bbox extent divides the sampling evenly (the
+grid is padded now, the chain builder is not fixed); UnifiedFinish's
+VerySteep band lacks the stock floor and the flat-face nudge.
