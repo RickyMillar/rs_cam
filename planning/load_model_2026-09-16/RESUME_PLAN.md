@@ -39,6 +39,8 @@ Shipped and verified:
 | `c9a721c1` | T-21 — a stale trace marks the depth row stale too |
 | `05848280` | **V4 — the power bar returns to the Feeds card as a 0-to-limit bar; its ban sentry is now a test of its reason** |
 | `4dd7da98` | **V1–V3 — every row reads its own bound (deflection: `L/D 0%` → `deflection 2%`); no `≈` on the face; Readiness shows the rows** |
+| `f37d3595` | V1b — the Simulation op list raises no flag for a criterion inside its bound |
+| `ea32daf5` | V4b — one label renderer for the two verdict rows; `apply_contract_a3`'s plunge pin moves 794 → 793 with T-9 |
 
 T-17 verification: core lib 2503/0, sentry 5/5, `literature_matrix` 21/21,
 `literature_parity` 24/24, clippy clean, fmt clean.
@@ -306,7 +308,7 @@ replaced by a test of the reason → V5 LOOK) waits for the
 below are the design record that plan was written from.
 
 **The viz wave's W2 landed on 2026-09-18 (`b57c0e06`, `4d09dc9a`, `899b84f5`);
-the viz half started the same day** — agent `v123-limit-rows` (V1–V3:
+the viz half started the same day and LANDED (V1–V4, V1b, V4b — see the commit table); V5 is next** — agent `v123-limit-rows` (V1–V3:
 `sim_diagnostics.rs`, `sim_op_list.rs`, `readiness_panel.rs`) and agent
 `v4-power-bar` (V4: `feeds/compare.rs`, the chip-verdict sentry), plus
 `t19-unmodeled-loop` in core `gcode/mod.rs`. The load report the inspector
@@ -380,6 +382,13 @@ The operator's stated requirements, verbatim in effect:
   variants and share no code (found by T-19). The door belongs on the type in
   `verdict.rs`. Take it after V1–V3 land: two renderers sit in the viz files
   those steps edit.
+- **Surface follow-ups from V1–V4** (2026-09-18): one `statistic` field on
+  `CriterionStatus` so the row can print `ObservedStatistic::label` (the GUI
+  cannot reach it today); a rendered drill arm in the ownbound sentry; a dense
+  emphasis rung in `ui/components/text.rs` (`small` + `strong` +
+  `TEXT_HEADING`) so `compare.rs`, `sim_op_list.rs`, `sim_timeline.rs` and
+  `readiness_panel.rs` read the kit and their hand-rolled-chain allowances
+  drop to zero.
 - **`rs_cam_viz/src/ui/components/compare.rs::power_bar`** is dead code whose
   face prints kW (found by V4). Delete it with a `rg` blast-radius check.
 - **`rs_cam_viz/src/ui/feeds/explore.rs`** (found by the corridor repair,
