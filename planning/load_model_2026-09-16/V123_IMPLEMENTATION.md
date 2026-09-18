@@ -474,3 +474,112 @@ may add, within the 40-line cap:
 - `crates/rs_cam_viz/tests/the_limit_rows_read_their_own_bound_g_ownbound.rs` (new)
 - `crates/rs_cam_viz/tests/readiness_shows_the_limits_g_readylimits.rs` (new)
 - `planning/load_model_2026-09-16/V123_IMPLEMENTATION.md` (this file)
+
+---
+
+## 10. V1b — the triage chip loses the mark too (2026-09-18, second round)
+
+The orchestrator ruled on §5.4: the ruling is about the FACE of any reading,
+and a triage chip is a face. `crates/rs_cam_viz/src/ui/sim_op_list.rs` was
+clean before this round.
+
+### 10.1 What "drop the mark" means on this strip, and why
+
+The brief said to drop the mark and move the reason into the chip's hover.
+Dropping only the GLYPH leaves a chip that cannot work: every other flag on
+this strip is a glyph plus a kind in a state colour — `⚠ defl`, `? power`,
+`∅ chipload` — and the mark WAS the whole face distinction. A glyph-less chip
+in `WARNING_MILD` would still read as a warning on a row that passed every
+gate, which is the defect the ruling removes.
+
+So the rule was applied the way `verdict_badge` applied it: **the
+`Approximate` arm merges into the plain one.** In `verdict_badge` that means a
+Within row paints one face whatever its tier; here the `LoadState::Within` arm
+pushes nothing, whatever its tier, exactly as it already did for
+`Confidence::Validated`.
+
+**The reason is not lost.** `criterion_detail` — the hover this strip gives
+every flag — still prints `approximate: {why}`, and it is reached by the
+`Exceeds`, `Unmodeled` and vacuous arms beside it. On the same workspace, the
+Inspector's limit row hover prints the same reason (§2). Nothing left the
+Simulation workspace; a mark left the face.
+
+This matters more here than on the badge strip, because the row rollup shows
+the single WORST flag on the face and hides the rest behind a `+N`
+(`sim_op_list.rs:936`). On an otherwise clean, approximate op the `≈` chip was
+therefore not one chip among several — it was the row.
+
+`ToolpathStatusFlag::rank`'s doc named `3 = approximate-within`. Nothing
+produces rank 3 now. The number is left in the gap rather than renumbered, and
+the doc says why: the ranks are compared, never counted.
+
+### 10.2 The red run, measured on the old branch
+
+The new arm was written after the repair, so it was checked against the old
+branch by restoring it, running the arm, and restoring the fix:
+
+```
+test the_op_list_paints_no_approximation_mark_g_ownbound ... FAILED
+the Simulation op list painted "≈ power". A criterion inside its bound raises
+no flag, whatever its confidence tier; the reason lives in the hover.
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.55s
+```
+
+The arm is non-vacuous by assertion: it first reads the report back and fails
+if the fixture carries no `Within` + `Approximate` criterion, because without
+one the strip had nothing to paint before the change either. On this fixture
+the power row is `Approximate("isotropic Kc with 2.0× grain anisotropy factor
+(Pałubicki 2021); no helix/grain decomposition")`.
+
+`limits_fixture` gained `op_list_text`, which renders `sim_op_list::draw`
+through the same real `egui::Context` the other arms use.
+
+### 10.3 Verification
+
+```
+the_limit_rows_read_their_own_bound_g_ownbound
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.01s
+
+readiness_shows_the_limits_g_readylimits
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.35s
+
+ribbon_and_mcp_diagnostic_ids_n4
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+```
+
+Every viz test that names `toolpath_status_flags` or `sim_op_list`:
+
+```
+component_contracts_up2
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+viewport_draws_selected_only_wp27
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+the_simulation_page_is_summary_first_dc6
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+the_sim_row_offers_its_visibility_control_ur3
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+```
+test -p rs_cam_viz --lib -j 2 -q
+test result: ok. 409 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.08s
+
+clippy -p rs_cam_viz -j 2 --all-targets -- -D warnings
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.30s
+
+fmt --all -- --check
+clean for every file in this change
+```
+
+`component_contracts_up2` was failing in §8 on the V4 session's
+`ui/feeds/compare.rs`. It passes now — that session repaired it. No sentry
+moved in this round either.
+
+### 10.4 Files in this round
+
+- `crates/rs_cam_viz/src/ui/sim_op_list.rs`
+- `crates/rs_cam_viz/tests/the_limit_rows_read_their_own_bound_g_ownbound.rs`
+- `crates/rs_cam_viz/tests/limits_fixture/mod.rs`

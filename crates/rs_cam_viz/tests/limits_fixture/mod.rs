@@ -321,6 +321,22 @@ pub fn inspector_text(state: &mut AppState) -> Vec<String> {
     })
 }
 
+/// Every text run the Simulation op list paints — the left rail of the
+/// Simulation workspace, where `toolpath_status_flags` puts its triage chips.
+pub fn op_list_text(state: &mut AppState) -> Vec<String> {
+    let AppState {
+        simulation,
+        session,
+        gui,
+        viewport,
+        ..
+    } = state;
+    painted(|ui| {
+        let mut events = Vec::new();
+        rs_cam_viz::ui::sim_op_list::draw(ui, simulation, session, gui, viewport, &mut events);
+    })
+}
+
 /// Every text run the Readiness page paints, in the column width the
 /// workspace gives it.
 pub fn readiness_text(state: &AppState) -> Vec<String> {

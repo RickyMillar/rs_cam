@@ -917,8 +917,13 @@ struct ToolpathStatusFlag {
     detail: String,
     color: egui::Color32,
     /// Worst-of ordering for the row rollup — lower is worse.
-    /// 0 = collisions / exceeds, 1 = hotspot, 2 = notes,
-    /// 3 = approximate-within, 4 = unmodeled.
+    /// 0 = collisions / exceeds, 1 = hotspot, 2 = notes / vacuous,
+    /// 4 = unmodeled.
+    ///
+    /// Rank 3 was `approximate-within`, and nothing produces it now: V1
+    /// (2026-09-18) stopped a criterion inside its bound raising a flag at
+    /// all. The number is left in the gap rather than renumbered, because
+    /// the ranks are only compared, never counted.
     rank: u8,
 }
 
@@ -1123,16 +1128,22 @@ fn toolpath_status_flags(
                     theme::TEXT_DIM,
                     4,
                 )),
-                LoadState::Within => {
-                    if matches!(status.confidence, Some(Confidence::Approximate(_))) {
-                        flags.push(ToolpathStatusFlag::new(
-                            format!("≈ {}", criterion_short_label(status.kind)),
-                            criterion_detail(&status),
-                            theme::WARNING_MILD,
-                            3,
-                        ));
-                    }
-                }
+                // V1 (2026-09-18), extended to this strip on the
+                // orchestrator's ruling: a criterion INSIDE its bound raises
+                // no flag, whatever its confidence tier. This arm used to
+                // push the approximation mark plus the kind, in
+                // WARNING_MILD, so a row that passed every gate read as a
+                // warning - and the worst-of rollup made that mark the FACE
+                // of an otherwise clean op.
+                //
+                // Same rule and same reason as the badge: a weak input is
+                // carried by BEHAVIOUR (`BoundSource::gates_export`, through
+                // `CriterionStatus::refuses_export`), not by a mark, and the
+                // reason - WHICH input is approximate - belongs in a hover.
+                // `criterion_detail` still prints it, for every flag this
+                // strip does raise and for the Inspector's limit row beside
+                // it. See `Confidence`'s doc in `tool_load::verdict`.
+                LoadState::Within => {}
             }
         }
     } else {

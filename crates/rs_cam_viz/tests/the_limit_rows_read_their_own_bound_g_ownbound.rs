@@ -42,7 +42,9 @@
 
 mod limits_fixture;
 
-use limits_fixture::{Cut, faces, hovers, inspector_text, load_report, simulated_state};
+use limits_fixture::{
+    Cut, faces, hovers, inspector_text, load_report, op_list_text, simulated_state,
+};
 use rs_cam_core::tool_load::ToolpathLoadVerdict;
 use rs_cam_core::tool_load::deflection::EXCEEDS_BOUND_MM;
 use rs_cam_core::tool_load::verdict::{Confidence, CriterionKind, CriterionStatus, LoadState};
@@ -358,6 +360,46 @@ fn every_row_states_the_population_it_measured_g_ownbound() {
     assert!(
         checked > 0,
         "no row stated a population, so this arm checked nothing"
+    );
+}
+
+// ── arm 5 — the op list's triage strip lost the mark too ─────────────────
+
+/// The ruling is about the FACE of any reading, and a triage chip is a face.
+///
+/// `toolpath_status_flags` pushed an approximation chip in `WARNING_MILD` for
+/// a criterion INSIDE its bound, and the row's worst-of rollup showed the
+/// worst flag on the face — so on an otherwise clean op that mark WAS the
+/// row. The chip is gone; `criterion_detail` still carries the reason on
+/// every flag the strip does raise.
+#[test]
+fn the_op_list_paints_no_approximation_mark_g_ownbound() {
+    let mut state = simulated_state(Cut::InsideTheRigidityCap);
+
+    // Non-vacuity: without an `Approximate` criterion inside its bound, the
+    // strip had nothing to paint before this change either.
+    let report = load_report(&state);
+    let approximate = only_verdict(&report).criteria().into_iter().any(|s| {
+        s.state == LoadState::Within && matches!(s.confidence, Some(Confidence::Approximate(_)))
+    });
+    assert!(
+        approximate,
+        "the fixture carries no `Within` + `Approximate` criterion, so this \
+         arm would pass on a strip that still paints the mark"
+    );
+
+    let texts = op_list_text(&mut state);
+    for text in &texts {
+        assert!(
+            !text.contains('\u{2248}'),
+            "the Simulation op list painted {text:?}. A criterion inside its \
+             bound raises no flag, whatever its confidence tier; the reason \
+             lives in the hover."
+        );
+    }
+    assert!(
+        !texts.is_empty(),
+        "the op list painted nothing at all, so this arm read no surface"
     );
 }
 
