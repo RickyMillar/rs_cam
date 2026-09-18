@@ -313,3 +313,119 @@ Added:
 - `/home/ricky/personal_repos/rs_cam/planning/load_model_2026-09-16/V4_IMPLEMENTATION.md` (this file)
 
 No new sentry file was needed: the ban's successor sits where the ban sat.
+
+---
+
+## 9. Two sentries red after V4 and T-9 — repaired 2026-09-18
+
+V4 landed at `05848280`. Two `rs_cam_viz` sentries outside the first round's
+run were red. Both belong to this programme, and each had a different cause.
+
+### 9.1 `component_contracts_up2` — the power row was a fourth hand-rolled chain
+
+```
+ui/feeds/compare.rs is allowed 3 hand-rolled chains and holds 4. An allowance
+that no longer matches its file lets a new hand-rolled header in under an old
+number.
+  left: 4
+ right: 3
+```
+
+Two arms failed: `a_section_header_is_the_kit_element_ui03` (over budget) and
+`the_hand_rolled_emphasis_list_is_not_vacuous_ui03`, which asserts the count
+EQUALS the allowance, so an under-count fails too.
+
+The four chains in `compare.rs` were the `rail_row` label, the `rail_efficiency_row`
+label, the new `rail_power_row` label and the Apply column's refusal notice.
+The first three were three copies of one `RichText` chain.
+
+**The repair.** One renderer for one element, which is the kit's own invariant
+(`ui/components/CLAUDE.md`): a private `verdict_row_label(ui, label, hover)`
+in `compare.rs`, called by `rail_efficiency_row` and `rail_power_row`. The
+chipload verdict and the power reading are the same element — a named verdict
+whose workings sit on a hover — so they now paint through one function. The
+count returns to **exactly 3**: the comparison row's label, the shared verdict
+label, and the refusal notice. The allowance was not touched, in either
+direction.
+
+**What was not done, and why.** The brief asked for the face, the caption and
+the hover to be rebuilt through "the same kit components `rail_efficiency_row`
+uses". `rail_efficiency_row` uses no kit component for its label: it
+hand-rolled the same chain, which is why the file's allowance was 3 rather
+than 0. The nearest kit rung is `components::text::body_strong`, and it is 13
+points where the rail's rung is `small` at 11. A 13-point row does not fit the
+240-point rail. The helper therefore keeps the chain and states that reason in
+its doc.
+
+**One request for the kit, not taken this round.** The kit has no dense
+emphasis rung. If `ui/components/text.rs` gained one — a `small` + `strong` +
+`TEXT_HEADING` constructor — the three remaining chains in this file and the
+matching chains in `sim_op_list.rs`, `sim_timeline.rs` and `readiness_panel.rs`
+could all read it, and several allowances would drop to zero. That is a
+`ui/components/` change and outside this round's file set.
+
+### 9.2 `apply_contract_a3` — a pinned plunge moved with its cause
+
+```
+assertion `left == right` failed: plunge
+  left: 793.0
+ right: 794.0
+```
+
+**Cause confirmed** at `6a9330dc` (T-9), in
+`crates/rs_cam_core/src/feeds/suggest/apply.rs`:
+
+```rust
+-    scratch.set_feed_rate(round_suggestion_value(result.feed_rate_mm_min, 1.0));
+-    scratch.set_plunge_rate(round_suggestion_value(result.plunge_rate_mm_min, 1.0));
++    // T-9: the feed and the plunge round DOWN, not to the nearest.
+```
+
+`apply_feeds_subset` rounded the feed and the plunge to the nearest whole
+mm/min after every clamp had bound them, so a clamped value shipped up to
++0.5 mm/min above the ceiling the clamp exists to enforce. It now floors both.
+The Pocket fixture's unrounded plunge is 793.75, so it ships as 793.
+
+**The repair**, the same one `arc_fit_disposition_a5` took at that commit
+(881 → 880, 638 → 637):
+
+- `pocket_fixture_recipe_fingerprint_is_unmoved` asserts `793.0`, with a
+  comment naming T-9 and the reason. It is still an equality on one value; no
+  tolerance was widened.
+- That test's doc block records the move: which figure moved, its cause, its
+  commit, and why the other four of the five did not — the stepover and the
+  depth keep the nearest rounding because their clamps run below the
+  quantisation, and the feed lands on a whole number.
+- `modal_apply_all_writes_what_the_panel_writes` quotes `794` in a table. Its
+  assertions compare the two write routes to each other, not to an absolute
+  value, so it stayed green. Its doc now says the plunge column reads 793 from
+  T-9 onward and points at the test that carries the reason.
+
+**Three `794` sites were left alone, deliberately.** Lines 248, 297 and 322
+are each headed *"Pre-fix (measured 2026-08-12)"* and record what the
+pre-Checkpoint-I defect wrote. Re-blessing a dated measurement of a defect
+would falsify the record it exists to keep. 793.75 at line 248 is the
+unrounded calculator value and did not move either.
+
+### 9.3 Verification for this round
+
+| Command | Result |
+|---|---|
+| `fmt --all -- --check` | no diff in any file this round owns; one remains in `crates/rs_cam_mcp/src/server.rs`, another session's |
+| `clippy -p rs_cam_viz -j 2 --all-targets -- -D warnings` | `Finished \`dev\` profile [unoptimized + debuginfo] target(s) in 29.11s` |
+| `--test component_contracts_up2` | `test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s` |
+| `--test apply_contract_a3` | `test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s` |
+| `--test the_chipload_verdict_is_one_row_g_chipverdict` | `test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.46s` |
+| `test -p rs_cam_viz --lib -j 2 -q` | `test result: ok. 409 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.21s` |
+
+Every arm of the power row still passes after the kit rebuild, including the
+rendered face, hover, refusal and spread arms.
+
+### 9.4 Paths, this round
+
+- `/home/ricky/personal_repos/rs_cam/crates/rs_cam_viz/src/ui/feeds/compare.rs`
+- `/home/ricky/personal_repos/rs_cam/crates/rs_cam_viz/tests/apply_contract_a3.rs`
+- `/home/ricky/personal_repos/rs_cam/planning/load_model_2026-09-16/V4_IMPLEMENTATION.md` (this section)
+
+`crates/rs_cam_viz/tests/component_contracts_up2.rs` was read and **not**
+edited: no allowance moved, in either direction.

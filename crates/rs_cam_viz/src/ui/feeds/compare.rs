@@ -442,6 +442,33 @@ fn rail_row(
     ui.add_space(2.0);
 }
 
+/// The label of a verdict row: the row's name, its detail mark, and its
+/// workings behind the mark.
+///
+/// One renderer for one element (`ui/components/CLAUDE.md`). The chipload
+/// verdict and the power reading are the same element — a named verdict whose
+/// workings live on a hover — so they paint through one function rather than
+/// two copies of one `RichText` chain. `component_contracts_up2` counts those
+/// chains per file for exactly this reason: a second copy of an element is
+/// how a surface stops reading the kit.
+///
+/// The chain stays hand-rolled rather than calling `components::text`,
+/// because the rail's rung is `small` (11 points) and the kit's nearest rung,
+/// `text::body_strong`, is 13. A rail row at 13 points does not fit the
+/// 240-point column. Say if the kit should gain a dense rung.
+fn verdict_row_label(ui: &mut egui::Ui, label: &str, hover: &str) {
+    ui.add(
+        egui::Label::new(
+            egui::RichText::new(format!("{label} {}", crate::ui::tokens::GLYPH_DETAIL))
+                .small()
+                .strong()
+                .color(theme::TEXT_HEADING),
+        )
+        .wrap(),
+    )
+    .on_hover_text(hover.to_owned());
+}
+
 /// The rail's chipload verdict — where this cut sits in the corridor, and
 /// what sitting there costs.
 ///
@@ -496,16 +523,7 @@ fn rail_efficiency_row(
     // `horizontal_wrapped` so the verdict phrase wraps to its own line inside
     // the Simulation workspace's 240-point rail rather than widening it.
     ui.horizontal_wrapped(|ui| {
-        ui.add(
-            egui::Label::new(
-                egui::RichText::new(format!("Chip {}", crate::ui::tokens::GLYPH_DETAIL))
-                    .small()
-                    .strong()
-                    .color(theme::TEXT_HEADING),
-            )
-            .wrap(),
-        )
-        .on_hover_text(hover.clone());
+        verdict_row_label(ui, "Chip", &hover);
         ui.add(
             egui::Label::new(
                 egui::RichText::new(compare::format_optional(advance_mm, " mm/tooth", 0.0001))
@@ -801,7 +819,6 @@ impl PowerReading {
 /// An empty bar would read as a cut with power to spare, which is the
 /// opposite of what an absent model says.
 fn rail_power_row(ui: &mut egui::Ui, power: &PowerReading) {
-    let label = format!("Power {}", crate::ui::tokens::GLYPH_DETAIL);
     let hover = match (&power.figure, &power.source) {
         (Ok(figure), Some(source)) => power_hover(figure, source),
         (Err(reason), _) => power_unmodelled_hover(*reason),
@@ -811,16 +828,7 @@ fn rail_power_row(ui: &mut egui::Ui, power: &PowerReading) {
         (Ok(_), None) => power_unmodelled_hover(PowerUnmodeled::NoAvailablePower),
     };
     ui.horizontal_wrapped(|ui| {
-        ui.add(
-            egui::Label::new(
-                egui::RichText::new(label)
-                    .small()
-                    .strong()
-                    .color(theme::TEXT_HEADING),
-            )
-            .wrap(),
-        )
-        .on_hover_text(hover.clone());
+        verdict_row_label(ui, "Power", &hover);
         match (&power.figure, &power.source) {
             (Ok(figure), Some(source)) => {
                 // The door promises a finite, positive `available_kw`, so the

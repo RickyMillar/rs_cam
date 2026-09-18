@@ -458,6 +458,12 @@ fn refused_pairing_with_a_geometry_dial_takes_no_write() {
 /// again in its tooltip, and the values it writes are asserted here to be
 /// **exactly** the panel's speeds-apply plus the panel's cut-geometry apply.
 /// One recommendation, one funnel, two spellings of the same result.
+///
+/// The plunge column of that table reads **793** from T-9 (`6a9330dc`)
+/// onward, which floors the plunge instead of rounding it to the nearest;
+/// `pocket_fixture_recipe_fingerprint_is_unmoved` carries the reason. This
+/// test asserts that the two routes AGREE rather than asserting either
+/// absolute value, so the change did not reach its assertions.
 #[test]
 fn modal_apply_all_writes_what_the_panel_writes() {
     let mut controller = controller_with(OperationType::Pocket);
@@ -677,6 +683,21 @@ fn panel_cut_geometry_apply_goes_through_the_invariant_funnel() {
 /// but was forbidden from moving a recipe number; a moved fingerprint is a
 /// STOP under plan §0.2, not a re-pin.
 ///
+/// **The plunge moved once, with its cause: 794 → 793 at T-9
+/// (`6a9330dc`, 2026-09-18).** `apply_feeds_subset` rounded the feed and the
+/// plunge to the NEAREST whole mm/min after every clamp had bound them, so a
+/// clamped value shipped up to +0.5 mm/min above the ceiling the clamp exists
+/// to enforce. It now FLOORS both, and this fixture's unrounded plunge is
+/// 793.75. The pin is re-derived from the fix, not widened to admit two
+/// answers: it is still an equality on one value.
+/// `arc_fit_disposition_a5` took the same repair on the same cause
+/// (881 → 880 and 638 → 637).
+///
+/// The other four are unmoved, and that is the point of quoting all five: the
+/// stepover and the depth keep the nearest rounding — their clamps run below
+/// the quantisation — and the feed lands on a whole number, so only the one
+/// value the cause touches moved.
+///
 /// This pins all five through the validated panel path, which is the path
 /// whose numbers the census recorded.
 #[test]
@@ -713,7 +734,10 @@ fn pocket_fixture_recipe_fingerprint_is_unmoved() {
     );
 
     assert_eq!(op.feed_rate(), 3000.0, "feed");
-    assert_eq!(op.plunge_rate(), 794.0, "plunge");
+    // T-9 (`6a9330dc`) floors the plunge instead of rounding it to the
+    // nearest, so this fixture's unrounded 793.75 ships as 793, not 794. The
+    // figure is re-derived from the cause; it is not a widened tolerance.
+    assert_eq!(op.plunge_rate(), 793.0, "plunge");
     assert_eq!(op.spindle_rpm(), Some(18_000), "rpm");
     assert_eq!(op.stepover(), Some(2.222), "woc");
     assert_eq!(op.depth_per_pass(), Some(1.27), "doc");
