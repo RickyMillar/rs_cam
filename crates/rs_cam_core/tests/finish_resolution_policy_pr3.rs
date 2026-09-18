@@ -300,7 +300,11 @@ fn ramp_finish_fingerprint() {
 /// PR-8a + PR-8b's ramp-finish fingerprint on `ridge_mesh()` with the taper.
 /// Named so the value has one home and the two assertions that read it
 /// cannot drift apart.
-const RAMP_FINISH_GEO_MEAN_FINGERPRINT: (usize, u64) = (277, 18_231_352_062_362_901_444);
+// Re-pinned 2026-09-18 for R9 (Corne case): the edge sampler samples the
+// contact window of an edge and the waterline grid carries one cell of
+// pad, so the contour points move by a hair. The move count is unchanged.
+// Was `(277, 18_231_352_062_362_901_444)`.
+const RAMP_FINISH_GEO_MEAN_FINGERPRINT: (usize, u64) = (277, 10_508_855_153_191_199_570);
 
 /// PR-8a control: the geo-mean of two EQUAL numbers is that number, so a
 /// cutter whose cusp radius is its envelope radius must not move at all.
@@ -407,9 +411,13 @@ fn steep_shallow_fingerprint() {
         ..Default::default()
     };
     let tp = steep_shallow_toolpath(&mesh, &index, &t, &params);
+    // Re-pinned 2026-09-18 for R9 (Corne case): the edge sampler samples
+    // the contact window of an edge and the waterline grid carries one
+    // cell of pad. The move count is unchanged. Was
+    // `(913, 14129959905444107510)`.
     assert_eq!(
         fingerprint(&tp),
-        (913, 14129959905444107510),
+        (913, 17934662407811726553),
         "steep_shallow output moved; captured at HEAD 5fc2411 before the H3 policy refactor"
     );
 }

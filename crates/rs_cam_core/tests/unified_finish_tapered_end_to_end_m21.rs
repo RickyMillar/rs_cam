@@ -201,13 +201,24 @@ fn mesh_model(mesh: TriangleMesh) -> LoadedModel {
 /// max(cusp/4, tolerance)`, so a coarse tolerance would clamp BOTH tools to
 /// the same cell and silently erase the very differential this file exists
 /// to measure. 0.05 is below the taper's 0.125 and the ball's 0.375.
+///
+/// `sampling` matters too, since R9 (2026-09-18). The 85 degree groove is
+/// 1.5 mm wide at the rim, so the Ø1 tip's free lane at the first level
+/// (z = -1.5) is 0.25 mm wide, and no deeper level admits the tip at all.
+/// A 0.5 mm fiber pitch cannot resolve that lane, so the very-steep band
+/// gets no contour. Before R9 the pitch was 0.5 and the band still had
+/// moves, because the edge sampler missed the 30 mm wall edges between
+/// its coarse samples and the fiber read FREE inside the wall on most
+/// rows: the "waterline" in the band was a saw through the wall at a
+/// 3.75 mm pitch. R9 made the sampler exact, the saw went, and the pitch
+/// had to come down to what the groove needs.
 fn unified_finish_op() -> OperationConfig {
     OperationConfig::UnifiedFinish(UnifiedFinishConfig {
         steep_threshold_deg: 45.0,
         waterline_threshold_deg: 75.0,
         overlap_mm: 0.0,
         tolerance: 0.05,
-        sampling: 0.5,
+        sampling: 0.25,
         scallop_height: 0.15,
         raster_stepover: 1.5,
         z_step: 1.5,

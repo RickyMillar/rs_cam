@@ -537,10 +537,20 @@ fn production_unified_finish_output_is_byte_identical() {
     type Fp = (usize, u64);
     let mut drift: Vec<(&str, Fp, Fp)> = Vec::new();
     for (label, tool, expect) in [
+        // Re-pinned 2026-09-18 for R9 (Corne case). The edge sampler now
+        // samples the contact window of an edge, not the whole edge, and
+        // the waterline grid carries one cell of pad. On this fixture the
+        // very-steep band's contours were a saw through the groove walls:
+        // the old sampler missed the 30 mm wall edges between its coarse
+        // samples and the fiber read free inside the wall on most rows.
+        // Those moves are gone:
+        //
+        //   taper 1481 0x5748d2a216607e5c -> 951 0x4b4666eba3afa7ab
+        //   ball  1025 0xd32f5976312a7ec4 -> 659 0xb506292bc14e7e38
         (
             "taper",
             tapered_ball_tool(),
-            (1481usize, 0x5748_d2a2_1660_7e5cu64),
+            (951usize, 0x4b46_66eb_a3af_a7abu64),
         ),
         // Re-pinned again 2026-09-01, same day, on the MERGE of the C2
         // default flip and the always-on shallow slope derate. Each side
@@ -552,7 +562,7 @@ fn production_unified_finish_output_is_byte_identical() {
         //      -> 983 0x2350977058f01265 (flip only)
         //      -> 1013 0x5e2f61dfd9d79f74 (derate only)
         //      -> 1025 0xd32f5976312a7ec4 (flip + derate, this pin)
-        ("ball", ball_tool(), (1025usize, 0xd32f_5976_312a_7ec4u64)),
+        ("ball", ball_tool(), (659usize, 0xb506_292b_c14e_7e38u64)),
     ] {
         let session = generate_through_session(tool);
         let result = session.get_result(0).expect("a generated result");

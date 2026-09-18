@@ -183,8 +183,12 @@ fn the_floor_costs_the_ribbon_no_cutting_length() {
     // sagitta — see `common/meshes.rs`). A 5.2 µm move over 1.2 m of
     // ribbon; the floor-costs-nothing property this test pins is about
     // the DELTA, which the fixture change does not touch.
+    // Re-pinned 2026-09-18 to 1224.9121 mm for R9: the edge sampler now
+    // samples the contact window of an edge, so a blocked interval ends
+    // where the cutter meets the edge, not at the last bisection sample.
+    // A 6.8 µm move over 1.2 m; the segment count below is unchanged.
     assert!(
-        (total - 1224.9053).abs() < 1e-3,
+        (total - 1224.9121).abs() < 1e-3,
         "ribbon waterline cutting length moved: {total:.4} mm"
     );
     assert_eq!(

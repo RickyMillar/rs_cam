@@ -123,10 +123,12 @@ fn waterline_fibers(
 ) -> (Vec<Fiber>, Vec<Fiber>) {
     let bbox = &mesh.bbox;
     let r = cutter.radius();
-    let x_min = bbox.min.x - r;
-    let x_max = bbox.max.x + r;
-    let y_min = bbox.min.y - r;
-    let y_max = bbox.max.y + r;
+    // One sampling cell of pad on every side, as the shipped grid has
+    // since R9 (2026-09-18).
+    let x_min = bbox.min.x - r - sampling;
+    let x_max = bbox.max.x + r + sampling;
+    let y_min = bbox.min.y - r - sampling;
+    let y_max = bbox.max.y + r + sampling;
 
     let ny = ((y_max - y_min) / sampling).ceil() as usize + 1;
     let x_fibers: Vec<Fiber> = (0..ny)

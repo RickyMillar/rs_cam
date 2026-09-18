@@ -106,6 +106,102 @@ pub fn waterline_z_levels(start_z: f64, final_z: f64, z_step: f64) -> Vec<f64> {
     )
 }
 
+/// A facet whose unit normal has `|n.z|` above this is horizontal for the
+/// flat-face nudge in [`waterline_ladder`].
+pub const FLAT_FACET_NORMAL_Z: f64 = 0.999;
+/// A level within this of a horizontal facet's Z is ON that face.
+pub const FLAT_FACE_SNAP_MM: f64 = 1e-3;
+/// How far the nudge moves a level DOWN off a horizontal facet.
+pub const FLAT_FACE_NUDGE_MM: f64 = 0.01;
+/// A level at or below `stock_bottom_z + this` is dropped (R4).
+pub const STOCK_BOTTOM_FLOOR_EPS_MM: f64 = 1e-6;
+
+/// What [`waterline_ladder`] did to the requested ladder.
+///
+/// The counts are the adapter's finding material: `planned_levels` is the
+/// raw [`waterline_z_levels`] count, `nudged_levels` how many of those the
+/// flat-face nudge moved, `dropped_below_stock` how many the stock-bottom
+/// floor removed, and `levels` the ladder that is cut AND spanned.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WaterlineLadder {
+    /// The levels to cut, top first, after the nudge and the floor.
+    pub levels: Vec<f64>,
+    /// Levels the raw ladder asked for.
+    pub planned_levels: usize,
+    /// Levels moved down off a horizontal facet.
+    pub nudged_levels: usize,
+    /// Levels removed because they sat at or below the stock bottom.
+    pub dropped_below_stock: usize,
+}
+
+/// Unique Z values of the mesh's horizontal facets, rounded to 1e-6 and
+/// sorted ascending.
+pub fn flat_facet_z_values(mesh: &TriangleMesh) -> Vec<f64> {
+    let mut zs: Vec<f64> = mesh
+        .faces
+        .iter()
+        .filter(|f| f.normal.z.abs() > FLAT_FACET_NORMAL_Z)
+        // A horizontal facet's bbox has one Z.
+        .map(|f| (f.bbox.min.z * 1e6).round() / 1e6)
+        .collect();
+    zs.sort_by(f64::total_cmp);
+    zs.dedup();
+    zs
+}
+
+/// The ladder a standalone waterline cuts, built ONCE for the generator and
+/// the span builder (R3 / R4, Corne case 2026-09-18).
+///
+/// Three steps, in this order:
+///
+/// 1. [`waterline_z_levels`]`(start_z, final_z, z_step)` — the raw ladder.
+/// 2. The flat-face nudge (§4.5 of the analysis): a level within
+///    [`FLAT_FACE_SNAP_MM`] of a horizontal facet's Z moves DOWN by
+///    [`FLAT_FACE_NUDGE_MM`], never up. On the Corne case the levels at
+///    18.0 (the wall top) and 15.0 (the USB notch floor) wove junk across
+///    those faces; a fibre exactly on a flat face reads it as a wall.
+/// 3. The stock-bottom floor (R4): every level at or below
+///    `stock_bottom_z` is dropped. A level AT the stock bottom cuts the bed
+///    by definition; the pinned `-1.37` top on the Corne waterline gave one
+///    level below the part that cut the bed.
+///
+/// Nudge before floor, so a level at a flat model bottom that coincides
+/// with the stock bottom nudges to below the stock and is then dropped.
+pub fn waterline_ladder(
+    mesh: &TriangleMesh,
+    start_z: f64,
+    final_z: f64,
+    z_step: f64,
+    stock_bottom_z: f64,
+) -> WaterlineLadder {
+    let raw = waterline_z_levels(start_z, final_z, z_step);
+    let planned_levels = raw.len();
+    let flats = flat_facet_z_values(mesh);
+    let mut nudged_levels = 0;
+    let mut dropped_below_stock = 0;
+    let mut levels = Vec::with_capacity(planned_levels);
+    for z in raw {
+        let on_flat = flats.iter().any(|fz| (fz - z).abs() < FLAT_FACE_SNAP_MM);
+        let z = if on_flat {
+            nudged_levels += 1;
+            z - FLAT_FACE_NUDGE_MM
+        } else {
+            z
+        };
+        if z <= stock_bottom_z + STOCK_BOTTOM_FLOOR_EPS_MM {
+            dropped_below_stock += 1;
+            continue;
+        }
+        levels.push(z);
+    }
+    WaterlineLadder {
+        levels,
+        planned_levels,
+        nudged_levels,
+        dropped_below_stock,
+    }
+}
+
 /// PR-8d's minimum-segment floor, inherited by waterline at C3.
 ///
 /// `contour_extract::weave_contours` places each cell-edge vertex at an
@@ -177,9 +273,39 @@ pub fn waterline_toolpath_with_cancel(
     boundary_regions: Option<&RegionSet<'_>>,
     cancel: &dyn CancelCheck,
 ) -> Result<Toolpath, Cancelled> {
+    // R4: the raw ladder, byte-identical to the pre-2026-09-18 loop. The
+    // `UnifiedFinish` very-steep band and the benches ladder through here;
+    // the standalone adapter builds its ladder with `waterline_ladder` and
+    // calls `waterline_toolpath_at_levels` directly.
+    let levels = waterline_z_levels(start_z, final_z, z_step);
+    waterline_toolpath_at_levels(
+        mesh,
+        index,
+        cutter,
+        &levels,
+        params,
+        boundary_regions,
+        cancel,
+    )
+}
+
+/// [`waterline_toolpath_with_cancel`] over an EXPLICIT ladder.
+///
+/// The caller owns the levels, so the ladder it cuts is the ladder it hands
+/// to the span builder — one `Vec`, two readers. `levels` is walked in the
+/// order given; [`waterline_ladder`] hands them top first.
+pub fn waterline_toolpath_at_levels(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    levels: &[f64],
+    params: &WaterlineParams,
+    boundary_regions: Option<&RegionSet<'_>>,
+    cancel: &dyn CancelCheck,
+) -> Result<Toolpath, Cancelled> {
     let mut toolpath = Toolpath::new();
 
-    for z in waterline_z_levels(start_z, final_z, z_step) {
+    for &z in levels {
         check_cancel(cancel)?;
         let mut contours =
             waterline_contours_with_cancel(mesh, index, cutter, z, params.sampling, cancel)?;
@@ -275,10 +401,20 @@ pub fn waterline_contours_with_cancel(
     let bbox = &mesh.bbox;
     let r = cutter.radius();
 
-    let x_min = bbox.min.x - r;
-    let x_max = bbox.max.x + r;
-    let y_min = bbox.min.y - r;
-    let y_max = bbox.max.y + r;
+    // The grid covers `bbox ± r`, padded by one sampling cell on every side
+    // (R9, Corne case 2026-09-18). The cutter-location offset of a vertical
+    // wall on a bbox face sits exactly at `bbox ± r`. The weave needs one
+    // free node outside a blocked node to place a contour crossing, so
+    // without the pad the outer loop of such a wall has no crossing on its
+    // straight sides and comes back as open corner arcs. The old edge
+    // sampler hid this: its bisection left the blocked interval a hair
+    // short of the fiber end, so the end node read free. With exact
+    // interval ends the pad is the mechanism. One cell exactly: the span
+    // grows by `2 · sampling`, so every interior node keeps its coordinate.
+    let x_min = bbox.min.x - r - sampling;
+    let x_max = bbox.max.x + r + sampling;
+    let y_min = bbox.min.y - r - sampling;
+    let y_max = bbox.max.y + r + sampling;
 
     let ny = ((y_max - y_min) / sampling).ceil() as usize + 1;
     let mut x_fibers: Vec<Fiber> = (0..ny)

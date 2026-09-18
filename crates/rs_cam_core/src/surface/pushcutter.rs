@@ -317,8 +317,11 @@ fn vertex_push(fiber: &mut Fiber, tri: &Triangle, cutter: &dyn MillingCutter) {
 fn facet_push(fiber: &mut Fiber, tri: &Triangle, cutter: &dyn MillingCutter) {
     let n = &tri.normal;
 
-    // Skip nearly-vertical triangles (no horizontal contact)
+    // A vertical facet has its own arm: the contact formula below divides
+    // by `n.z`, and the side of the cutter meets the facet's interior, not
+    // its tip (R9).
     if n.z.abs() < 1e-12 {
+        vertical_facet_push(fiber, tri, cutter);
         return;
     }
 
@@ -408,6 +411,162 @@ fn facet_push(fiber: &mut Fiber, tri: &Triangle, cutter: &dyn MillingCutter) {
     fiber.add_interval(Interval::new(t - eps, t + eps));
 }
 
+/// Push the side of the cutter against a vertical facet (R9, the Corne case,
+/// `planning/corne_case_analysis_2026-09-18/ANALYSIS.md` §4.5).
+///
+/// `facet_push` used to return at once for a facet with `n.z == 0` ("no
+/// horizontal contact"). A vertical wall was therefore seen only through its
+/// vertices and edges. That is enough while every wall edge lies inside the
+/// slab `[z, z + length]` and the edge push finds it. It is not enough when
+/// the slab clips the facet: a wall taller than the cutting length, or a
+/// level through the middle of a tall wall triangle, leaves a clipped
+/// polygon whose top or bottom side is a slab cut, not a mesh edge, and no
+/// test covered its interior. A fiber through the middle of such a wall came
+/// back free, and the waterline walked through the wall.
+///
+/// This arm clips the facet to the slab, projects the clipped polygon to XY
+/// (one segment, because the facet is vertical) and pushes that segment with
+/// the widest cutter profile over the clipped height range
+/// ([`push_segment_xy`]). For a constant-width cutter that is exact. For a
+/// profile that widens with height it is conservative: the whole segment is
+/// pushed with the width at the top of the clipped range, so the contour
+/// keeps extra distance from a vertical facet whose outline narrows upward.
+/// A rectangular wall is two triangles whose clipped polygons together span
+/// the full width at every height, so on a wall the union is exact for
+/// every profile; only a gable-shaped vertical facet sees the margin.
+fn vertical_facet_push(fiber: &mut Fiber, tri: &Triangle, cutter: &dyn MillingCutter) {
+    let z_lo = fiber.z();
+    let z_hi = z_lo + cutter.length();
+    let tri_z_min = tri.v[0].z.min(tri.v[1].z).min(tri.v[2].z);
+    let tri_z_max = tri.v[0].z.max(tri.v[1].z).max(tri.v[2].z);
+    if tri_z_max < z_lo - 1e-10 || tri_z_min > z_hi + 1e-10 {
+        return;
+    }
+
+    let n = &tri.normal;
+    let nxy_len = (n.x * n.x + n.y * n.y).sqrt();
+    if nxy_len < 1e-12 {
+        return;
+    }
+    // Unit direction along the facet's XY trace.
+    let dir_x = -n.y / nxy_len;
+    let dir_y = n.x / nxy_len;
+
+    // The clipped polygon's vertices: the triangle vertices inside the slab
+    // and the crossings of its edges with the two slab planes. Every one of
+    // them lies on the facet's XY trace, so the two extremes along `dir`
+    // bound the projected segment.
+    let mut lo: Option<(f64, (f64, f64))> = None;
+    let mut hi: Option<(f64, (f64, f64))> = None;
+    let mut take = |x: f64, y: f64| {
+        let s = x * dir_x + y * dir_y;
+        if lo.is_none_or(|(s_lo, _)| s < s_lo) {
+            lo = Some((s, (x, y)));
+        }
+        if hi.is_none_or(|(s_hi, _)| s > s_hi) {
+            hi = Some((s, (x, y)));
+        }
+    };
+    let edges = [
+        (&tri.v[0], &tri.v[1]),
+        (&tri.v[1], &tri.v[2]),
+        (&tri.v[2], &tri.v[0]),
+    ];
+    for (p, q) in edges {
+        if p.z >= z_lo - 1e-10 && p.z <= z_hi + 1e-10 {
+            take(p.x, p.y);
+        }
+        for plane in [z_lo, z_hi] {
+            if (p.z - plane) * (q.z - plane) < 0.0 {
+                let s = (plane - p.z) / (q.z - p.z);
+                take(p.x + s * (q.x - p.x), p.y + s * (q.y - p.y));
+            }
+        }
+    }
+    let (Some((_, a)), Some((_, b))) = (lo, hi) else {
+        return;
+    };
+
+    // The widest profile over the clipped height range. Sampled, not
+    // assumed monotone: the trait does not promise a monotone profile.
+    let h_lo = tri_z_min.max(z_lo) - z_lo;
+    let h_hi = tri_z_max.min(z_hi) - z_lo;
+    let w = (0..=16)
+        .map(|i| cutter.width_at_height(h_lo + (h_hi - h_lo) * (i as f64 / 16.0)))
+        .fold(0.0_f64, f64::max);
+    if w < 1e-15 {
+        return;
+    }
+    push_segment_xy(fiber, a, b, w);
+}
+
+/// Exact blocked interval of a cutter of constant width `w`, swept along the
+/// fiber, against the XY segment `a`–`b`: every `t` where the distance from
+/// `fiber.point(t)` to the segment is at most `w`.
+///
+/// The blocked set is one interval (a disc swept along a line against a
+/// convex segment). Each end of it is a contact position: either the disc
+/// rim passes through a segment endpoint, or the disc is tangent to the
+/// segment's interior. Both families have closed forms, so nothing is
+/// sampled. Every candidate is a contact position, so it lies inside the
+/// interval, and the interval is the min and max over the candidates.
+fn push_segment_xy(fiber: &mut Fiber, a: (f64, f64), b: (f64, f64), w: f64) {
+    let fdx = fiber.p2.x - fiber.p1.x;
+    let fdy = fiber.p2.y - fiber.p1.y;
+    let fiber_len_sq = fdx * fdx + fdy * fdy;
+    if fiber_len_sq < 1e-20 {
+        return;
+    }
+    let fiber_len = fiber_len_sq.sqrt();
+
+    let mut t_min = f64::INFINITY;
+    let mut t_max = f64::NEG_INFINITY;
+    let mut take = |t: f64| {
+        t_min = t_min.min(t);
+        t_max = t_max.max(t);
+    };
+
+    // Endpoint contacts: the rim through `a` or `b`.
+    for (px, py) in [a, b] {
+        let qx = px - fiber.p1.x;
+        let qy = py - fiber.p1.y;
+        let perp = (qx * fdy - qy * fdx).abs() / fiber_len;
+        if perp > w + 1e-10 {
+            continue;
+        }
+        let t_proj = (qx * fdx + qy * fdy) / fiber_len_sq;
+        let half = (w * w - perp * perp).max(0.0).sqrt() / fiber_len;
+        take(t_proj - half);
+        take(t_proj + half);
+    }
+
+    // Interior tangency: the fiber point at signed distance `±w` from the
+    // segment's line, kept when its foot lies inside the segment.
+    let ex = b.0 - a.0;
+    let ey = b.1 - a.1;
+    let e_len_sq = ex * ex + ey * ey;
+    if e_len_sq > 1e-20 {
+        let e_len = e_len_sq.sqrt();
+        let g0 = ((fiber.p1.x - a.0) * ey - (fiber.p1.y - a.1) * ex) / e_len;
+        let g1 = (fdx * ey - fdy * ex) / e_len;
+        if g1.abs() > 1e-15 {
+            for sign in [-1.0, 1.0] {
+                let t = (sign * w - g0) / g1;
+                let fx = fiber.p1.x + t * fdx - a.0;
+                let fy = fiber.p1.y + t * fdy - a.1;
+                let s = (fx * ex + fy * ey) / e_len_sq;
+                if (-1e-10..=1.0 + 1e-10).contains(&s) {
+                    take(t);
+                }
+            }
+        }
+    }
+
+    if t_min <= t_max && t_max >= 0.0 && t_min <= 1.0 {
+        fiber.add_interval(Interval::new(t_min, t_max));
+    }
+}
+
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Edge push: for each triangle edge, compute the interval on the fiber
 /// where the cutter contacts that edge.
@@ -425,6 +584,33 @@ fn edge_push(fiber: &mut Fiber, tri: &Triangle, cutter: &dyn MillingCutter) {
 /// Finds where the cutter profile, swept along the fiber at constant Z,
 /// contacts the edge. This is done by sampling contact points along the edge
 /// and checking if the cutter width at the contact height covers the fiber.
+///
+/// **The samples cover the candidate window, not the whole edge** (R9, the
+/// Corne case, `planning/corne_case_analysis_2026-09-18/ANALYSIS.md` §4.5).
+/// The perpendicular distance from the fiber line and the height above the
+/// fiber are both linear along the edge, so the part of the edge that can
+/// touch the cutter at all is one closed sub-range of `s`:
+/// `|perp(s)| <= envelope_radius` and `0 <= h(s) <= length`.
+///
+/// The nine coarse samples used to sit at `s = k/8` over the WHOLE edge, and
+/// the bisection only ran between two coarse samples that disagreed. An edge
+/// that crosses the fiber has a contact window about `2·w` long. On the
+/// Corne tray the wall edges are 55.26 mm long (coarse pitch 6.9 mm) and the
+/// 6 mm flat cutter's 6 mm window fell between two coarse samples on every
+/// fiber row at that pitch: no sample made contact, no bisection ran, and
+/// the edge added nothing. The fiber passed through the 3 mm wall and the
+/// waterline notched into it at a 7 mm pitch on every level. The rows next
+/// to a missed row lost up to 0.5 mm at the interval ends for the same
+/// reason: the ends came from the bisection, not from the window.
+///
+/// With the samples confined to the window, both window ends are always
+/// sampled, so a constant-width cutter gets its exact interval ends, and a
+/// window narrower than an eighth of the edge can no longer fall between
+/// two samples. For a profile that varies with height the contact set is a
+/// sub-range of the window; the coarse-plus-bisection search inside the
+/// window finds it as before, now at window resolution instead of edge
+/// resolution. `tests/waterline_respects_a_vertical_wall_r9.rs` pins the
+/// tray case.
 fn edge_push_single(fiber: &mut Fiber, p1: &P3, p2: &P3, cutter: &dyn MillingCutter) {
     let z = fiber.z();
 
@@ -444,6 +630,50 @@ fn edge_push_single(fiber: &mut Fiber, p1: &P3, p2: &P3, cutter: &dyn MillingCut
     if edge_len_sq < 1e-20 {
         return;
     }
+
+    // The candidate window `[s_lo, s_hi]` of the edge parameter.
+    //
+    // Signed perpendicular distance of the edge point at `s` to the fiber
+    // line: `g0 + g1·s`. No profile is wider than the envelope radius
+    // (`fiber_lateral_reach_mm` checks that contract), so a contact needs
+    // `|g0 + g1·s| <= envelope + 1e-10`, the slack `eval_at` uses. The
+    // window takes half that slack, so a rounding hair at a window end
+    // cannot push the end sample past the evaluator's own bound.
+    let q0x = p1.x - fiber.p1.x;
+    let q0y = p1.y - fiber.p1.y;
+    let g0 = (q0x * fiber_dy - q0y * fiber_dx) / fiber_len;
+    let g1 = (ex * fiber_dy - ey * fiber_dx) / fiber_len;
+    let reach = cutter.envelope_radius_mm() + 5e-11;
+    let mut s_lo = 0.0_f64;
+    let mut s_hi = 1.0_f64;
+    if g1.abs() < 1e-15 {
+        if g0.abs() > reach {
+            return;
+        }
+    } else {
+        let a = (-reach - g0) / g1;
+        let b = (reach - g0) / g1;
+        s_lo = s_lo.max(a.min(b));
+        s_hi = s_hi.min(a.max(b));
+    }
+    // Height above the fiber: `h0 + ez·s`, inside `[-1e-10, length]`. The
+    // window again keeps half the slack on each side.
+    let h0 = p1.z - z;
+    if ez.abs() < 1e-15 {
+        if h0 < -1e-10 || h0 > cutter.length() {
+            return;
+        }
+    } else {
+        let a = (-5e-11 - h0) / ez;
+        let b = (cutter.length() - 5e-11 - h0) / ez;
+        s_lo = s_lo.max(a.min(b));
+        s_hi = s_hi.min(a.max(b));
+    }
+    if s_lo > s_hi {
+        return;
+    }
+    // Map a unit sample position onto the window.
+    let s_of = |u: f64| s_lo + u * (s_hi - s_lo);
 
     // Coarse+bisection sampling: 9 coarse samples to find contact intervals,
     // then bisect at boundaries for higher accuracy with fewer evaluations.
@@ -489,11 +719,11 @@ fn edge_push_single(fiber: &mut Fiber, p1: &P3, p2: &P3, cutter: &dyn MillingCut
         }
     };
 
-    // Phase 1: 9 coarse samples at s = 0, 1/8, 2/8, ..., 1
+    // Phase 1: 9 coarse samples at u = 0, 1/8, 2/8, ..., 1 of the window
     let mut coarse_contact = [false; 9];
     for (i, contacted) in coarse_contact.iter_mut().enumerate().take(n_coarse + 1) {
-        let s = i as f64 / n_coarse as f64;
-        if let Some((tl, tu)) = eval_at(s) {
+        let u = i as f64 / n_coarse as f64;
+        if let Some((tl, tu)) = eval_at(s_of(u)) {
             t_min = t_min.min(tl);
             t_max = t_max.max(tu);
             *contacted = true;
@@ -503,19 +733,19 @@ fn edge_push_single(fiber: &mut Fiber, p1: &P3, p2: &P3, cutter: &dyn MillingCut
     // Phase 2: Bisect at boundaries (contact ↔ no-contact transitions)
     for i in 0..n_coarse {
         if coarse_contact[i] != coarse_contact[i + 1] {
-            let mut s_lo = i as f64 / n_coarse as f64;
-            let mut s_hi = (i + 1) as f64 / n_coarse as f64;
+            let mut u_lo = i as f64 / n_coarse as f64;
+            let mut u_hi = (i + 1) as f64 / n_coarse as f64;
             // 5 bisection iterations → 1/32 of interval precision
             for _ in 0..5 {
-                let s_mid = (s_lo + s_hi) * 0.5;
-                let has_contact = eval_at(s_mid).is_some();
+                let u_mid = (u_lo + u_hi) * 0.5;
+                let has_contact = eval_at(s_of(u_mid)).is_some();
                 if has_contact == coarse_contact[i] {
-                    s_lo = s_mid;
+                    u_lo = u_mid;
                 } else {
-                    s_hi = s_mid;
+                    u_hi = u_mid;
                 }
                 // Evaluate at boundary for t_min/t_max update
-                if let Some((tl, tu)) = eval_at(s_mid) {
+                if let Some((tl, tu)) = eval_at(s_of(u_mid)) {
                     t_min = t_min.min(tl);
                     t_max = t_max.max(tu);
                 }
@@ -709,6 +939,91 @@ mod tests {
             lo,
             hi
         );
+    }
+
+    /// R9: a long edge that crosses the fiber is found even when its 6 mm
+    /// contact window sits between two of the old whole-edge coarse samples.
+    /// The edge is 56 mm long (coarse pitch 7 mm) and crosses the fiber at
+    /// `y = 0` with the window `[-3, 3]` centred at `s = 0.5 + 3.5/56`, so
+    /// the old samples at `s = 4/8` (`y = -3.5`) and `s = 5/8` (`y = 3.5`)
+    /// both missed it.
+    #[test]
+    fn long_crossing_edge_blocks_the_fiber_between_coarse_samples() {
+        let tool = FlatEndmill::new(6.0, 25.0); // R=3
+        let mut fiber = Fiber::new_x(0.0, 10.0, -50.0, 50.0);
+        let p1 = P3::new(20.0, -31.5, 15.0);
+        let p2 = P3::new(20.0, 24.5, 15.0);
+        edge_push_single(&mut fiber, &p1, &p2, &tool);
+        let intervals = fiber.intervals();
+        assert_eq!(intervals.len(), 1, "one contact interval expected");
+        let lo = fiber.point(intervals[0].lower).x;
+        let hi = fiber.point(intervals[0].upper).x;
+        assert!(
+            (lo - 17.0).abs() < 1e-6,
+            "interval starts at x={lo}, want 17"
+        );
+        assert!((hi - 23.0).abs() < 1e-6, "interval ends at x={hi}, want 23");
+    }
+
+    /// R9: a vertical facet taller than the cutting length blocks the fiber
+    /// across its whole XY trace, not only near its in-slab edges.
+    #[test]
+    fn tall_vertical_facet_blocks_across_its_trace() {
+        let tool = FlatEndmill::new(6.0, 12.0); // R=3, cutting length 12
+        // A wall triangle in the plane x = 20, spanning y -40..40 and
+        // z 0..60. At fiber z = 5 the slab is [5, 17]: the top vertex is
+        // out of reach and the diagonal covers only part of the width.
+        let tri = Triangle::new(
+            P3::new(20.0, -40.0, 0.0),
+            P3::new(20.0, 40.0, 0.0),
+            P3::new(20.0, -40.0, 60.0),
+        );
+        // A Y-fiber through the middle of the wall, 3 mm short of its face.
+        let mut fiber = Fiber::new_y(17.5, 5.0, -60.0, 60.0);
+        push_cutter_triangle(&mut fiber, &tri, &tool);
+        // The clipped facet at z in [5, 17] spans y from -40 to
+        // 40 - 80·(17/60) ≈ 17.33 at the slab top and up to 33.33 at the
+        // slab bottom; its XY trace is y in [-40, 33.33]. The fiber at 2.5
+        // from the face is blocked over that trace, widened by the rim.
+        assert!(
+            fiber.is_blocked(fiber.tval(&P3::new(17.5, 0.0, 5.0))),
+            "fiber free in the middle of a tall vertical wall"
+        );
+        assert!(
+            fiber.is_blocked(fiber.tval(&P3::new(17.5, 30.0, 5.0))),
+            "fiber free under the clipped diagonal"
+        );
+        assert!(
+            !fiber.is_blocked(fiber.tval(&P3::new(17.5, 40.0, 5.0))),
+            "fiber blocked beyond the clipped facet's trace plus the radius"
+        );
+    }
+
+    /// `push_segment_xy` is exact for a constant width: an oblique segment
+    /// gives the closed-form tangency ends, and a segment crossing the
+    /// fiber gives both sides.
+    #[test]
+    fn push_segment_xy_is_exact_for_a_constant_width() {
+        let mut fiber = Fiber::new_x(0.0, 0.0, -50.0, 50.0);
+        // A segment along y crossing the fiber at x = 10: blocked [7, 13].
+        push_segment_xy(&mut fiber, (10.0, -20.0), (10.0, 20.0), 3.0);
+        let iv = fiber.intervals()[0];
+        assert!((fiber.point(iv.lower).x - 7.0).abs() < 1e-9);
+        assert!((fiber.point(iv.upper).x - 13.0).abs() < 1e-9);
+
+        // A segment parallel to the fiber at perpendicular distance 1.8,
+        // x from -30 to -20: the rim through each end reaches
+        // sqrt(9 - 3.24) = 2.4 along the fiber.
+        let mut fiber = Fiber::new_x(0.0, 0.0, -50.0, 50.0);
+        push_segment_xy(&mut fiber, (-30.0, 1.8), (-20.0, 1.8), 3.0);
+        let iv = fiber.intervals()[0];
+        assert!((fiber.point(iv.lower).x - (-32.4)).abs() < 1e-9);
+        assert!((fiber.point(iv.upper).x - (-17.6)).abs() < 1e-9);
+
+        // Too far away: nothing.
+        let mut fiber = Fiber::new_x(0.0, 0.0, -50.0, 50.0);
+        push_segment_xy(&mut fiber, (-30.0, 3.5), (-20.0, 3.5), 3.0);
+        assert!(fiber.intervals().is_empty());
     }
 
     #[test]
