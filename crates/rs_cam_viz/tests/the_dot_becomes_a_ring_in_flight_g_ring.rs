@@ -31,8 +31,8 @@
 use rs_cam_core::ToolpathId;
 use rs_cam_core::compute::config::AwaitingPriorStock;
 use rs_cam_viz::state::freshness::FreshnessState;
-use rs_cam_viz::ui::toolpath_panel::{InFlight, PlanFocus, RowFacts, draw_state_glyph, in_flight};
 use rs_cam_viz::ui::tokens;
+use rs_cam_viz::ui::toolpath_panel::{InFlight, PlanFocus, RowFacts, draw_state_glyph, in_flight};
 
 const ROW: ToolpathId = ToolpathId(7);
 
@@ -59,12 +59,7 @@ fn plan_simulating() -> PlanFocus {
 #[test]
 fn a_row_the_plan_simulates_shows_the_ring_g_ring() {
     assert_eq!(
-        in_flight(
-            &FreshnessState::Current,
-            plan_simulating(),
-            false,
-            row()
-        ),
+        in_flight(&FreshnessState::Current, plan_simulating(), false, row()),
         Some(InFlight::Simulating),
         "a prefix simulation covers setups 0..=1, and this row sits in setup 1"
     );
@@ -217,9 +212,7 @@ fn an_idle_row_draws_a_circle_g_ring() {
 fn a_simulating_row_draws_the_ring_g_ring() {
     let shapes = glyph_shapes(Some(InFlight::Simulating));
     assert!(
-        !shapes
-            .iter()
-            .any(|s| matches!(s, egui::Shape::Circle(_))),
+        !shapes.iter().any(|s| matches!(s, egui::Shape::Circle(_))),
         "the ring REPLACES the dot; it does not sit beside it: {shapes:?}"
     );
     let ring = shapes.iter().find_map(|s| match s {

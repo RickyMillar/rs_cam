@@ -157,7 +157,9 @@ fn the_card_reads_the_freshness_state() {
         .find("pub enum FreshnessState {")
         .expect("FreshnessState moved out of state/freshness.rs");
     let rest = &freshness_src[at..];
-    let end = rest.find("\n}").expect("the FreshnessState body has no end");
+    let end = rest
+        .find("\n}")
+        .expect("the FreshnessState body has no end");
     assert!(
         !rest[..end].contains("Simulating"),
         "FreshnessState keeps its seven arms. It is derived from the core \

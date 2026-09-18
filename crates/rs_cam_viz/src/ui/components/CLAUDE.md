@@ -15,13 +15,11 @@ numbers each file cites.
 - `choice_row.rs` — `ChoiceRow`, the one closed-choice row (G-STARTFROM).
 - `freshness.rs` — `Freshness` and `FreshnessGate`, the single staleness cue.
 - `provenance.rs` — `ProvKind` and `ProvenanceBadge`.
-- `precedence.rs` — `PrecedenceField`, a per-operation override over a
-  project default.
+- `precedence.rs` — `PrecedenceField`, an override over a project default.
 - `suggest.rs`, `compare.rs` — `SuggestButton` and the current-versus-
   recommended comparison.
 - `button.rs`, `focus_ring.rs`, `motion.rs`, `text.rs`, `format.rs` — the
-  button, the keyboard focus ring, the motion helpers, the type rungs and
-  the shared text formatting.
+  button, the focus ring, motion, the type rungs and text formatting.
 
 ## Invariants
 
@@ -31,6 +29,8 @@ numbers each file cites.
   `ProvKind`. Do not add a second.
 - A component reads a token from `ui/tokens.rs`. It holds no literal colour
   or spacing.
+- A button that starts a long job reports it through `Button::progress`. The
+  words are its own label, because it paints that label exactly once.
 
 ## Sentries
 
