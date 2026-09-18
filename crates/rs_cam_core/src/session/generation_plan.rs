@@ -194,3 +194,50 @@ fn ancestors(session: &ProjectSession, toolpath_id: ToolpathId) -> BTreeSet<Tool
     }
     set
 }
+
+/// The coarsest cell size that still resolves the rest the plan machines, in
+/// mm, or `None` when the plan runs no simulation.
+///
+/// R1, 2026-09-18. A rest operation reads a simulated snapshot of the stock
+/// above it, so the snapshot has to resolve detail the operation's own cutter
+/// can cut. The rule is the tool's TIP radius divided by five, with a floor of
+/// [`RESOLUTION_FLOOR_MM`], taken over the operations the plan's
+/// [`Step::Simulate`] steps unlock, and the FINEST answer wins. That is the
+/// rule `auto_resolution_for_tools` already applies to the smallest tool in a
+/// simulation request, and the rule the old refusal text stated: "well below
+/// the finishing tool's TIP radius, e.g. 0.1 mm for a 1 mm ball".
+///
+/// The set is the `Step::Simulate` steps, not every `FromRemainingStock`
+/// operation in scope. A rest operation that already holds its snapshot plans
+/// no simulation, so it asks for no cell size, and a plan that runs no
+/// simulation answers `None`.
+///
+/// The grid ceiling `auto_resolution_for_tools` also applies is NOT mirrored
+/// here: it coarsens a request to fit the dexel budget, and this answers what
+/// the rest needs. The caller takes the finer of the two.
+#[must_use]
+pub fn required_resolution_mm(session: &ProjectSession, scope: Scope) -> Option<f64> {
+    let mut finest: Option<f64> = None;
+    for step in plan(session, scope) {
+        let Step::Simulate { upto, .. } = step else {
+            continue;
+        };
+        let Some((_, tc)) = session.find_toolpath_config_by_id(upto) else {
+            continue;
+        };
+        let Some(tool) = session.tools().iter().find(|t| t.id.0 == tc.tool_id) else {
+            continue;
+        };
+        // The same field `auto_resolution_for_tools` reads, so the two
+        // cannot answer different numbers for one tool.
+        let needed = ((tool.diameter / 2.0) / 5.0).max(RESOLUTION_FLOOR_MM);
+        finest = Some(finest.map_or(needed, |held: f64| held.min(needed)));
+    }
+    finest
+}
+
+/// The finest cell size a rest requirement may ask for, in mm.
+///
+/// The same floor `auto_resolution_for_tools` clamps to. Below it the dexel
+/// grid costs more than the rest it resolves.
+pub const RESOLUTION_FLOOR_MM: f64 = 0.02;
