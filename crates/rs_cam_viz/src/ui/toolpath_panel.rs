@@ -204,12 +204,7 @@ pub fn draw(
     // same idea, and the rule separated that word from nothing. The one
     // action this panel is FOR takes the space, at the full section width.
     ui.add_space(tokens::SPACE_2);
-    if ui
-        .add(crate::ui::components::Button::primary("Generate All").min_width(ui.available_width()))
-        .clicked()
-    {
-        events.push(AppEvent::GenerateAll);
-    }
+    draw_generate_all(ui, ctx, events);
 
     ui.add_space(tokens::SPACE_4);
 
@@ -385,6 +380,71 @@ pub fn draw(
     // Setup is where the resources live. It was a collapsed disclosure at the
     // bottom of the operation queue, which drew one object kind at a weight
     // no other resource carries (Rule D).
+}
+
+/// The one action this panel is FOR, and the plan's ONE progress surface.
+///
+/// While a plan runs the button says where it has got to and carries a bar
+/// along its bottom edge, and a click cancels. No new panel, and the five
+/// second status line no longer carries plan progress, so the plan is
+/// reported in one place.
+///
+/// The button is never disabled while a plan runs: it IS the cancel, and a
+/// disabled control with no route would leave a long plan unstoppable from
+/// the panel. It IS disabled while a plan waits on the resolution question,
+/// because a second plan would be refused, and the hover names the question.
+fn draw_generate_all(ui: &mut egui::Ui, ctx: &PanelContext, events: &mut Vec<AppEvent>) {
+    use crate::controller::generate_all::Activity;
+
+    // The literal survives as the idle label: the DC1 sentry anchors on it,
+    // and a fully dynamic label would make every arm of that scan pass for
+    // the wrong reason.
+    let mut label = "Generate All".to_owned();
+    if let Some(plan) = ctx.plan.as_ref() {
+        match &plan.activity {
+            Activity::Generating(_, name) => {
+                label.push_str(&format!(" \u{00B7} {}/{} {name}", plan.step, plan.of));
+            }
+            Activity::Simulating(_, setup) => {
+                label.push_str(&format!(" \u{00B7} simulating {setup}"));
+            }
+        }
+    }
+
+    let mut button = crate::ui::components::Button::primary(label)
+        .min_width(ui.available_width())
+        .enabled(ctx.pending_confirm.is_none());
+    if let Some(plan) = ctx.plan.as_ref() {
+        // SAFETY: `of` is clamped to 1, so the ratio is finite and in 0..=1,
+        // and both counts are plan step positions, far inside f32.
+        #[allow(clippy::cast_precision_loss)]
+        let fraction = plan.step as f32 / plan.of.max(1) as f32;
+        button = button.progress(fraction);
+    }
+    let response = ui.add(button);
+
+    if let Some(question) = ctx.pending_confirm.as_deref() {
+        response.on_disabled_hover_text(question);
+        return;
+    }
+    let Some(plan) = ctx.plan.as_ref() else {
+        if response
+            .on_hover_text("Generate every enabled operation, in dependency order.")
+            .clicked()
+        {
+            events.push(AppEvent::GenerateAll);
+        }
+        return;
+    };
+    if plan.cancellable {
+        if response.on_hover_text("Click to stop the plan.").clicked() {
+            events.push(AppEvent::CancelGeneration);
+        }
+    } else {
+        // A step that cannot be stopped swallows the click rather than
+        // raising an event the handler would drop.
+        response.on_hover_text("This step cannot be stopped. It finishes first.");
+    }
 }
 
 /// Draw a single toolpath card, wrapped in a drag source.

@@ -459,8 +459,8 @@ fn the_component_set_is_complete_up2() {
     // Naming each type IS the assertion: a renamed or deleted component stops
     // this file compiling, which is louder than a runtime check.
     use components::{
-        Banner, Button, Card, DataTable, EmptyState, KeyValueRow, NotMeasured, Notice, NoticeStack,
-        Role, SectionHeader, StatusChip,
+        Banner, Button, Card, ChoiceRow, DataTable, EmptyState, KeyValueRow, NotMeasured, Notice,
+        NoticeStack, Role, SectionHeader, StatusChip,
     };
 
     let ctx = ctx();
@@ -471,6 +471,13 @@ fn the_component_set_is_complete_up2() {
         });
         let _ = ui.add(StatusChip::new("OK", Role::Ok));
         let _ = ui.add(Button::primary("Generate"));
+        let _ = ui.add(Button::primary("Generate All \u{00B7} 3/8").progress(0.375));
+        let mut choice = 1_u8;
+        let _ = ui.add(ChoiceRow::new(
+            "Start from",
+            &mut choice,
+            &[(0, "Stock"), (1, "Model")],
+        ));
         let _ = ui.add(KeyValueRow::measured("Feed", "2400", "mm/min"));
         DataTable::new("t", vec!["Current".into(), "Recommended".into()]).show(ui, |ui| {
             ui.label("a");
@@ -487,7 +494,9 @@ fn the_component_set_is_complete_up2() {
 
     // The spec's component list. If §4 grows a component, this number moves
     // and the test says so rather than silently covering less.
-    const SPEC_COMPONENTS: usize = 12;
+    // W3 (2026-09-18): 12 to 13. Section 4.14 `ChoiceRow` is W2's new
+    // component, the one renderer for a small closed choice (G-STARTFROM).
+    const SPEC_COMPONENTS: usize = 13;
     let covered = [
         "SectionHeader",
         "Card",
@@ -500,6 +509,7 @@ fn the_component_set_is_complete_up2() {
         "Banner",
         "NoticeStack",
         "NotMeasured",
+        "ChoiceRow",
         "motion",
     ];
     assert_eq!(
@@ -666,11 +676,6 @@ const HAND_ROLLED_EMPHASIS: &[(&str, usize, &str)] = &[
         "ui/properties/machine_panel.rs",
         1,
         "\"Will apply:\" leads a bullet list inside the GRBL import preview",
-    ),
-    (
-        "ui/toolpath_panel.rs",
-        1,
-        "the rest badge's own text, not a section title",
     ),
     (
         "app.rs",

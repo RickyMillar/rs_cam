@@ -85,6 +85,7 @@ pub struct Button {
     variant: Variant,
     enabled: bool,
     min_width: Option<f32>,
+    progress: Option<f32>,
 }
 
 impl Button {
@@ -94,6 +95,7 @@ impl Button {
             variant: Variant::Default,
             enabled: true,
             min_width: None,
+            progress: None,
         }
     }
 
@@ -130,6 +132,19 @@ impl Button {
     #[must_use]
     pub fn min_width(mut self, w: f32) -> Self {
         self.min_width = Some(w);
+        self
+    }
+
+    /// How far a job this button started has got, as a fraction of its own
+    /// width, painted as a bar along the bottom edge. `None` paints nothing.
+    ///
+    /// A progress BAR and not a second label. The button paints its label
+    /// exactly ONCE (`component_contracts_up2`), so the progress WORDS are
+    /// the button's own `text`, which the caller composes. That also keeps
+    /// the one centred label centred while a job runs.
+    #[must_use]
+    pub fn progress(mut self, fraction: f32) -> Self {
+        self.progress = Some(fraction.clamp(0.0, 1.0));
         self
     }
 }
@@ -187,6 +202,28 @@ impl egui::Widget for Button {
                 egui::CornerRadius::from(tokens::RADIUS_SM),
                 fill,
             );
+        }
+
+        // AFTER the hover block, which covers the whole rect and would
+        // erase a bar painted before it.
+        if let Some(fraction) = self.progress {
+            // A bar that jumps is a wrong instrument (§5).
+            // `animate_value_with_time` is LINEAR in egui 0.34, which is
+            // right here: progress is a measurement, not an arrival.
+            let shown = ui.ctx().animate_value_with_time(
+                id.with("progress"),
+                fraction,
+                tokens::MOTION_BASE,
+            );
+            let bar = egui::Rect::from_min_size(
+                response.rect.left_bottom() - egui::vec2(0.0, tokens::SPACE_1),
+                egui::vec2(response.rect.width() * shown, tokens::SPACE_1),
+            );
+            // INK_05, not ACCENT: the Primary fill IS ACCENT, so an ACCENT
+            // bar would be invisible on the one variant that needs this.
+            // INK_05 on ACCENT reads 6.22, so it needs no new token.
+            ui.painter()
+                .rect_filled(bar, egui::CornerRadius::ZERO, tokens::INK_05);
         }
 
         let text_color = if self.enabled {

@@ -536,6 +536,20 @@ keeps for 40 rows (`AUDIT.md` D-38).
 `Primary` is the most constrained token in this document. §6 names the one
 primary action per screen. Two primaries on one screen is a defect.
 
+**Progress form, added 2026-09-18.** A button that STARTS a long job is also
+that job's progress surface: `Button::progress(fraction)` paints a 2 point
+bar along the bottom edge in `INK_05`, inside the button's own rect, so the
+control keeps one height. `INK_05` and not `ACCENT`, because the `Primary`
+fill IS `ACCENT` and an accent bar would be invisible on the one variant
+that needs this. The bar eases over `MOTION_BASE`, linearly: progress is a
+measurement, not an arrival.
+
+The progress WORDS are the button's own `text`, which the caller composes
+(`Generate All · 3/8 Holes`). The button paints its label exactly once, so
+there is no second label slot, and the one centred label stays centred while
+the job runs. A button in this form cancels the job it reports on; a step
+that cannot be stopped swallows the click and says so on hover.
+
 ### 4.6 `KeyValueRow` — the extension of `ValueRow`
 
 `ui/components/value_row.rs` already owns the labelled input and the ⚡
@@ -696,6 +710,25 @@ screen.
 The rendered form of principle 3. An inline run of `—` in `UNKNOWN` at
 `Numeric` size, with a hover that names the reason. A row of them reads as a
 deliberate row of blanks, not as missing text.
+
+### 4.14 `ChoiceRow` — added 2026-09-18
+
+The one labelled closed choice: a label column, then the options as
+selectable buttons. The kit had no renderer for a small closed choice, so
+every such control was a raw widget — a bare `ui.checkbox` for the generic
+stock source, a pair of `ui.selectable_label` calls for pencil's rest
+reference. Two raw controls wrote ONE field and they disagreed on screen
+(G-STARTFROM).
+
+Drawn as: a truncating label column at `LABEL_COL_WIDTH`, the same rung
+`ValueRow` uses, then the options in a wrapping strip. One hover for the
+whole row, naming every option, because the difference between the options
+is what the operator needs. It owns no state and reports a real move through
+`Response::changed`.
+
+The strip WRAPS. A label column plus two long option words is wider than the
+240 point Simulation rail, and a row that cannot wrap pushes the inspector
+off its own left edge.
 
 ---
 

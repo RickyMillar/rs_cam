@@ -144,6 +144,10 @@ pub enum AppEvent {
     ToggleToolpathEnabled(ToolpathId),
     GenerateToolpath(ToolpathId),
     GenerateAll,
+    /// Stop the generation plan in flight (W3). The Generate All button IS
+    /// the cancel while a plan runs: a disabled control with no route would
+    /// leave a long plan unstoppable from the panel.
+    CancelGeneration,
 
     // Simulation
     RunSimulation,
