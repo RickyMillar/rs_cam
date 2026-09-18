@@ -38,6 +38,30 @@
 - bounded typed simulation triage plus per-metric measurability abstention, consumed by GUI, MCP, CLI and narration through one contract
 - machine kinematics as an analysis dimension: per-axis max rates (`$110/$111/$112`) in the machine model, a per-toolpath kinematic utilization instrument (utilization, feed-bound headroom, machine-bound share, plunge-class peak) on every simulation surface, and a geometric plunge guard in the feed modulator
 
+## Generate ↔ simulate ↔ rest — 2026-09-18/19 (COMPLETE, seen on screen)
+
+`planning/gen_sim_rest_ux_2026-09-18/`: `PLAN.md`, six implementation
+briefs, `IMPLEMENTATION.md` (reconciliation, every landed commit, the
+live look). The operator's brief: incremental simulations on Generate
+All, one rest path, a minimal graphical dependency indicator, generating
+vs simulating on the row, everything dependent goes stale on an edit.
+The finding that explained the complaint: the GUI ladder refused to
+start whenever the Simulation panel was on "Auto from tool size" and
+submitted nothing. Five packages landed 2026-09-19 plus R2 and three
+connector rounds: one pure edge function in core that the invalidation
+walker, the card and the MCP wire all read; one core plan walk shared by
+GUI, MCP and CLI, advanced off-frame (the 137 s stall was the ladder's
+own frame-drained event push); the "Start from" row replacing four rest
+controls; the rail connector, the simulating ring and the progress
+button; one simulation-freshness truth (the core epoch; a late
+simulation is refused, D7); one `awaiting_prior_stock` shape, an enum
+for `set_stock_source`, `depends_on` on `list_toolpaths`, the CLI plan
+driver. Gate on the merged tree: viz lib 412/0, core lib 2530/0,
+nineteen viz binaries, cli, mcp, workspace clippy and fmt clean. Open:
+R11/R12 MCP freshness wording, R13/D8 a core export refusal for a
+blocked operation, the view-only isolation simulation, the confirm modal
+unseen live. Not pushed.
+
 ## Design audit — 2026-09-17 (findings only; nothing landed)
 
 Twelve read-only agents audited the regrouped tree for design patterns and

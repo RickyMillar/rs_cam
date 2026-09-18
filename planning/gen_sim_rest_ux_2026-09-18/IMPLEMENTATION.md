@@ -235,6 +235,43 @@ Not yet done: the live GUI look (confirm modal, ring, connector, Start-from
 row), the core integration suite as a whole, the release rebuild at the
 time of writing, any push.
 
+## 2c. The live look and the three follow-up rounds (2026-09-19)
+
+Captures in this folder, `after_01` to `after_13` with `crop_*` at 3× of
+the operation list. Baseline is `before_01_toolpaths.png`.
+
+What the first look showed (`after_01` to `after_04`): one MCP
+`generate_all` took wanaka from two generated operations to all seven
+in twelve steps with four prefix simulations; the button read
+"Generate All · 9/12 3D Rough 6" with the bar; the generating row spun;
+the wire reported `depends_on` per row. Two defects: the connector was a
+one-point hairline at the panel edge and invisible when ready, and the
+"Start from" row wrapped at the rail width.
+
+Operator rulings during the look: "still show a green line when the
+dependency is ready"; "the centering of the lines is not ideal"; "it
+clips over the Setup 2 header"; R2 yes, "the setup should have `…` with
+'Regenerate setup only', and by default it should regen what's required".
+
+| Round | Commits | Result |
+|---|---|---|
+| Connector 1 | `2578534b` `6c72a459` | 2 pt, Ready green solid, Pending amber dashed, Broken red dashed, arrowhead; ChoiceRow no longer wraps (`crop_05`, `crop_06`, `crop_07`) |
+| Connector 2 | `168fd7cc` | one rail down the swatch column, arrowhead into the dependent swatch, crossed swatches repainted on top, gutter removed (`crop_09` to `crop_11`) |
+| R2 core | `1d361563` `4fa88af8` `6370b6fe` | a setup's first rest op reads the previous setup's stock; a Setup 1 edit stales Setup 2's chain; Ancestors crosses setups |
+| Setup menu | `e48ece93` | `…` beside `+` with "Regenerate setup only" → `Scope::Setup`; a single-setup project draws no header, so no menu there |
+| Connector 3 | `0bba955f` | the rail stops at a setup header band and resumes below it (`crop_12`, `crop_13`) |
+
+Verified on screen after `0bba955f`: one edit on Back Rough turns rows
+1, 4, 5, 6 and 7 amber and every rail amber dashed, through the setup
+boundary; a full plan turns them all green with the rail unbroken except
+at the header. Viz lib 412/0, workspace clippy and fmt clean at every
+round.
+
+Not seen live: the R1 confirm modal. It is reachable only through the
+GUI button with a manual resolution coarser than the rest tool needs
+(set the Simulation panel to 0.5 mm manual and click Generate All on
+wanaka; the required value is 0.10 mm for the 1 mm tapered ball).
+
 ## 3. Rulings the scans added
 
 Beside PLAN.md §8 R1 to R7:
