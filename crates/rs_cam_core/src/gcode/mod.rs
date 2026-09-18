@@ -767,6 +767,200 @@ pub fn enforce_exceedance_policy(
     Ok((!advisory_block.is_empty()).then(|| advisory_block.trim_end().to_owned()))
 }
 
+/// True for the drill-native gates, false for the milling gates. T-19
+/// (2026-09-18).
+///
+/// [`refusing_unmodeled`] reads it to reproduce the drill partition
+/// [`crate::tool_load::ToolpathLoadVerdict::any_unmodeled`] applies:
+/// drill rows exist in `criteria()` exactly when `drill_gates` is
+/// `Some`, so "the list holds a drill row" is the same test as
+/// "`drill_gates.is_some()`".
+///
+/// The list names the DRILL kinds, never the milling ones, and the
+/// direction matters. A new milling gate takes the default arm, joins
+/// the milling partition and refuses like the four beside it, with no
+/// edit here. A new drill gate that nobody adds here reads as a milling
+/// gate, so the partition does not fire and the export refuses — the
+/// safe direction.
+fn is_drill_gate(kind: crate::tool_load::verdict::CriterionKind) -> bool {
+    use crate::tool_load::verdict::CriterionKind;
+    matches!(
+        kind,
+        CriterionKind::DrillChipWelding
+            | CriterionKind::DrillPeckAdequacy
+            | CriterionKind::DrillPlungeFeed
+    )
+}
+
+/// **The unmodelled criteria that refuse a g-code export.** T-19
+/// (2026-09-18).
+///
+/// Pure, and public, so the rule is testable on hand-built rows. It is
+/// the unmodelled half's answer to [`refusing_exceedances`], and it
+/// derives from the same list: a gate added to
+/// [`crate::tool_load::ToolpathLoadVerdict::criteria`] participates
+/// here without an edit.
+///
+/// Two rows do not count, and both exclusions are the ones
+/// [`crate::tool_load::ToolpathLoadVerdict::any_unmodeled`] already
+/// applies, so the decision this helper makes is the decision the gate
+/// made before it existed:
+///
+/// - a row [`crate::tool_load::verdict::CriterionStatus::is_known_absence`]
+///   accepts — the gantry-push row, which no operator action can fill
+///   (register T-10);
+/// - every row, when the toolpath ran the drill gates and every milling
+///   gate reported `NotApplicableForOp`. A drill cycle is not an
+///   unmeasured milling cut.
+///
+/// Before T-19 the decision read this list and the MESSAGE enumerated
+/// chipload, power and deflection by hand. A toolpath whose only
+/// unmodelled row was the depth row refused and named no criterion.
+#[must_use]
+pub fn refusing_unmodeled<'a>(
+    criteria: &'a [crate::tool_load::verdict::CriterionStatus<'a>],
+) -> Vec<&'a crate::tool_load::verdict::CriterionStatus<'a>> {
+    use crate::tool_load::UnmodeledReason;
+    use crate::tool_load::verdict::LoadState;
+
+    let ran_drill_gates = criteria.iter().any(|s| is_drill_gate(s.kind));
+    let milling_all_not_applicable = criteria.iter().filter(|s| !is_drill_gate(s.kind)).all(|s| {
+        matches!(
+            s.unmodeled_reason,
+            Some(UnmodeledReason::NotApplicableForOp(_))
+        )
+    });
+    if ran_drill_gates && milling_all_not_applicable {
+        return Vec::new();
+    }
+    criteria
+        .iter()
+        .filter(|s| s.state == LoadState::Unmodeled && !s.is_known_absence())
+        .collect()
+}
+
+/// **The one operator-facing clause for an unmodelled row.** T-19
+/// (2026-09-18).
+///
+/// [`crate::tool_load::UnmodeledReason`] carries no `Display`, and the
+/// refusal used to print `{:?}` — a Rust variant name in an operator's
+/// message. A vacuous row states its own clause; every other row words
+/// its reason, and a reason that carries a detail string prints that
+/// detail, because the gate that refused wrote it for this reader.
+fn unmodeled_clause(status: &crate::tool_load::verdict::CriterionStatus<'_>) -> String {
+    use crate::tool_load::UnmodeledReason;
+
+    let vacuity = status.vacuity_clause();
+    if !vacuity.is_empty() {
+        return vacuity;
+    }
+    match status.unmodeled_reason {
+        Some(UnmodeledReason::SimulationRequired) => "simulation has not been run".to_owned(),
+        Some(UnmodeledReason::StaleSimulation) => {
+            "simulation trace is stale — re-run simulation".to_owned()
+        }
+        Some(UnmodeledReason::ArcEngagementNotCaptured) => {
+            "arc-engagement metric not captured — enable Cut Metrics and re-run".to_owned()
+        }
+        Some(UnmodeledReason::NoVendorData) => {
+            "no vendor LUT row for this tool/material combination".to_owned()
+        }
+        Some(UnmodeledReason::SteadyStateSamplesNotPresent) => {
+            "no steady-state cutting samples — the toolpath runs entirely on transient \
+             (plunge/ramp) feeds"
+                .to_owned()
+        }
+        Some(UnmodeledReason::MaterialUnvalidated) => {
+            "the material is Custom without a validated Kc value".to_owned()
+        }
+        Some(UnmodeledReason::CutterModeUnsupported(why)) => {
+            format!("cutter mode unsupported — {why}")
+        }
+        Some(UnmodeledReason::NotImplemented(detail)) => {
+            format!("not implemented yet — {detail}")
+        }
+        Some(UnmodeledReason::NotApplicableForOp(detail)) => {
+            format!("not applicable to this operation — {detail}")
+        }
+        Some(UnmodeledReason::AllSamplesAirCutOrRapid) => {
+            "the toolpath made no contact with material — every sample was a rapid or an \
+             air cut"
+                .to_owned()
+        }
+        None => "no reason stated".to_owned(),
+    }
+}
+
+/// **The whole unmodelled half of the export policy, pure.** T-19
+/// (2026-09-18).
+///
+/// `Err` refuses the export and names EVERY row it refused on, kind and
+/// clause. `Ok(())` means nothing unmodelled counts, or the operator
+/// accepted what does.
+///
+/// [`enforce_load_policy`] delegates to this, the way it delegates the
+/// exceeded half to [`enforce_exceedance_policy`]. Both halves now read
+/// the criterion tier from the same place, which is the whole of
+/// register item T-19.
+///
+/// The headline distinguishes a stale simulation from a missing one:
+/// they are different operator actions even though both refuse. A row
+/// reads stale only through
+/// [`crate::tool_load::UnmodeledReason::StaleSimulation`], which
+/// [`project_load_report`] writes onto the rows it invalidated.
+pub fn enforce_unmodeled_policy(
+    per_toolpath: &[(
+        crate::ids::ToolpathId,
+        Vec<crate::tool_load::verdict::CriterionStatus<'_>>,
+    )],
+    accept_unmodeled: bool,
+) -> Result<(), ExportError> {
+    use crate::tool_load::UnmodeledReason;
+
+    if accept_unmodeled {
+        return Ok(());
+    }
+    let mut lines: Vec<String> = Vec::new();
+    for (id, criteria) in per_toolpath {
+        for status in refusing_unmodeled(criteria) {
+            lines.push(format!(
+                "  toolpath {id}: {}: {}",
+                status.kind.label(),
+                unmodeled_clause(status)
+            ));
+        }
+    }
+    if lines.is_empty() {
+        return Ok(());
+    }
+    // Distinguish "stale simulation" (re-sim required) from
+    // "never simulated / no LUT data" — they're different user
+    // actions even though both block export.
+    let any_stale = per_toolpath
+        .iter()
+        .flat_map(|(_, criteria)| criteria.iter())
+        .any(|s| matches!(s.unmodeled_reason, Some(UnmodeledReason::StaleSimulation)));
+    let headline = if any_stale {
+        "G-code export refused: cached simulation is stale — re-run simulation \
+         to verify load gates against current toolpath state.\n"
+    } else {
+        "G-code export refused: tool load not fully modeled for toolpath(s):\n"
+    };
+    let mut msg = String::from(headline);
+    for line in &lines {
+        let _ = writeln!(msg, "{line}");
+    }
+    if any_stale {
+        msg.push_str(
+            "Run simulation, then export again. Pass `accept_unmodeled=true` to \
+             export against the stale evidence anyway.",
+        );
+    } else {
+        msg.push_str("Pass `accept_unmodeled=true` to acknowledge unmodeled criteria.");
+    }
+    Err(ExportError::new(msg))
+}
+
 /// Enforce a `ToolLoadExportPolicy` against a report. Returns a structured
 /// error message naming each offending toolpath and criterion so the user
 /// (or UI) sees exactly what to override.
@@ -774,6 +968,12 @@ pub fn enforce_exceedance_policy(
 /// S4 (2026-09-18): the `Ok` arm carries a note when a criterion
 /// exceeded a bound that may not refuse an export. The caller logs it;
 /// the export goes ahead. See [`enforce_exceedance_policy`].
+///
+/// T-19 (2026-09-18): this function decides nothing of its own. It
+/// builds the criterion tier once and hands it to both pure halves —
+/// [`enforce_exceedance_policy`] and [`enforce_unmodeled_policy`] — so
+/// the decision and the message cannot read a criterion from two
+/// different places.
 pub fn enforce_load_policy(
     report: &crate::tool_load::ToolLoadReport,
     policy: &ToolLoadExportPolicy,
@@ -787,60 +987,7 @@ pub fn enforce_load_policy(
         .map(|v| (v.toolpath_id, v.criteria()))
         .collect();
     let note = enforce_exceedance_policy(&per_toolpath, policy.accept_exceeded)?;
-    if !policy.accept_unmodeled && report.any_unmodeled() {
-        // Distinguish "stale simulation" (re-sim required) from
-        // "never simulated / no LUT data" — they're different user
-        // actions even though both block export.
-        let any_stale = report.per_toolpath.iter().any(|v| {
-            matches!(
-                &v.chipload,
-                crate::tool_load::ChiploadVerdict::Unmodeled {
-                    reason: crate::tool_load::UnmodeledReason::StaleSimulation
-                }
-            ) || matches!(
-                &v.power,
-                crate::tool_load::PowerVerdict::Unmodeled {
-                    reason: crate::tool_load::UnmodeledReason::StaleSimulation
-                }
-            ) || matches!(
-                &v.deflection,
-                crate::tool_load::DeflectionVerdict::Unmodeled {
-                    reason: crate::tool_load::UnmodeledReason::StaleSimulation
-                }
-            )
-        });
-        let headline = if any_stale {
-            "G-code export refused: cached simulation is stale — re-run simulation \
-             to verify load gates against current toolpath state.\n"
-        } else {
-            "G-code export refused: tool load not fully modeled for toolpath(s):\n"
-        };
-        let mut msg = String::from(headline);
-        for v in &report.per_toolpath {
-            if v.any_unmodeled() {
-                let mut crits = Vec::new();
-                if let crate::tool_load::ChiploadVerdict::Unmodeled { reason } = &v.chipload {
-                    crits.push(format!("chipload={reason:?}"));
-                }
-                if let crate::tool_load::PowerVerdict::Unmodeled { reason } = &v.power {
-                    crits.push(format!("power={reason:?}"));
-                }
-                if let crate::tool_load::DeflectionVerdict::Unmodeled { reason } = &v.deflection {
-                    crits.push(format!("deflection={reason:?}"));
-                }
-                let _ = writeln!(msg, "  toolpath {}: {}", v.toolpath_id, crits.join(", "));
-            }
-        }
-        if any_stale {
-            msg.push_str(
-                "Run simulation, then export again. Pass `accept_unmodeled=true` to \
-                 export against the stale evidence anyway.",
-            );
-        } else {
-            msg.push_str("Pass `accept_unmodeled=true` to acknowledge unmodeled criteria.");
-        }
-        return Err(ExportError::new(msg));
-    }
+    enforce_unmodeled_policy(&per_toolpath, policy.accept_unmodeled)?;
     Ok(note)
 }
 
@@ -2456,8 +2603,18 @@ mod tests {
         let m2 = enforce_load_policy(&r2, &ToolLoadExportPolicy::default())
             .expect_err("blocks")
             .to_string();
-        assert!(m1.contains("SimulationRequired"));
-        assert!(m2.contains("NoVendorData"));
+        // T-19 (2026-09-18): the claim is unchanged and the words are
+        // not. These two lines read `{:?}` — `SimulationRequired` and
+        // `NoVendorData`, Rust variant names in an operator's refusal —
+        // which is the half of T-19 that printed a blank line for every
+        // criterion it did not enumerate. The message now words each
+        // reason, so the assertions read the words.
+        assert!(m1.contains("simulation has not been run"), "{m1}");
+        assert!(
+            m2.contains("no vendor LUT row for this tool/material combination"),
+            "{m2}"
+        );
+        assert_ne!(m1, m2, "two reasons, two messages");
     }
 
     // ── C1: gate enforcement on the phase-level checked exports ──────

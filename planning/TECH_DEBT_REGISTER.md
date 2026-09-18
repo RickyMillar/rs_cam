@@ -32,7 +32,9 @@ need a register.
 | T-16 | The deflection bending diameter cites a source that does not say it | **closed** — its per-flute table is itself superseded, see T-17 |
 | T-17 | The deflection integrator gives a fluted end mill a solid cross-section | **closed** `93dd145c` — flat 0.80, every fluted shape; V-bit still open under T-4 |
 | T-18 | Three feed lifts cap against the gantry TRAVEL rate, not the cutting ceiling | **closed** `d47a04d8` — four sites read `commanded_cutting_feed_ceiling_mm_min()`; no preset number moved |
-| T-19 | The export gate's unmodelled refusal names three gates by hand, and there are now five | open — found by S3 (2026-09-18) |
+| T-19 | The export gate's unmodelled refusal names three gates by hand, and there are now five | **closed** 2026-09-18 — one loop over `criteria()`; the message names every counting row |
+| T-20 | `UnmodeledReason` has four renderers that word the same ten variants and share no code | open — found by T-19 (2026-09-18); the door belongs on the type in `verdict.rs`; take it after V1–V3 land, because two renderers sit in the viz files those steps edit |
+| T-21 | The `StaleSimulation` rewrite in `project_load_report` covers chipload, power and deflection, not the S3 depth row | open — found by T-19 (2026-09-18); a stale trace leaves the depth row saying "simulation has not been run" beside three rows that say "stale"; fix: the rewrite walks every typed verdict, and a sentry pins it |
 
 ---
 
@@ -1281,6 +1283,37 @@ builds that combination today, which is exactly why no gate fails on it.
 **The fix** is one loop over `criteria()` in place of the three hand-written
 matches, filtering `state == Unmodeled && !is_known_absence()`. It is a small
 job and it closes the halves against each other permanently.
+
+**Implemented 2026-09-18** — `planning/load_model_2026-09-16/T19_IMPLEMENTATION.md`.
+The orchestrator closes this row at the commit.
+
+Two pure helpers in `gcode/mod.rs`, the shape S4 gave the exceeded half:
+`refusing_unmodeled` filters the rows that count, and
+`enforce_unmodeled_policy` words the refusal from them.
+`enforce_load_policy` builds the criterion tier once and delegates both
+halves, so it decides nothing of its own. The refusal keeps its headline
+and its override hint byte-for-byte; between them it now lists
+`kind: clause` for every counting row. The `{:?}` printing went with it:
+an operator read `chipload=SimulationRequired` before and reads
+"chipload: simulation has not been run" now.
+
+The decision did not move, and three things prove it: the sentry arm
+`the_helper_refuses_exactly_where_any_unmodeled_says_it_must` pins the
+helper against the untouched `any_unmodeled` over five fixtures; the two
+lib tests that pin the two overrides are unchanged and green; and the
+one lib test this change edits,
+`enforce_distinguishes_unmodeled_reasons`, keeps its claim and moves its
+assertions off the `{:?}` text onto the operator's words.
+
+Sentry: `crates/rs_cam_core/tests/an_unmodelled_refusal_names_every_row_g_t19.rs`,
+ten arms, red twice before green.
+
+Two findings the fix surfaced and did not close, both outside its file
+set: `UnmodeledReason` has four renderers that word the same ten
+variants and share no code, and the depth row carries no
+`StaleSimulation` rewrite, so a stale trace leaves it saying "simulation
+has not been run" beside three rows that say "stale". Neither changes an
+export decision today.
 
 ---
 
