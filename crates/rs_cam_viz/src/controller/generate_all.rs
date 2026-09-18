@@ -1,31 +1,37 @@
-//! `generate_all` as a fixpoint over the rest-stock chain — the state and the
-//! pure decisions, shared by every surface that starts one.
+//! The generation plan: the state and the pure decisions every surface that
+//! makes a scope current shares.
 //!
-//! A/M11 landed the ladder behind `#[cfg(feature = "mcp")]`, so the GUI's
-//! Generate All stayed a single pass and told the operator to loop by hand.
-//! Phase O's emitted tier chain (k rest-driven ops from one planner action)
-//! makes that untenable, so the types live here — unconditionally compiled,
-//! with the MCP response channels demoted to one variant of
-//! [`GenerateAllSink`]. The loop itself is unchanged; only where the finished
-//! summary is delivered differs between the two callers.
+//! W1 of `planning/gen_sim_rest_ux_2026-09-18/`. The round-based fixpoint is
+//! gone. The ORDER now lives in core, at
+//! [`rs_cam_core::session::generation_plan::plan`], because the GUI, the MCP
+//! server and the CLI all need the same answer to "what makes this current".
+//! What lives here is the async state machine's data: the step list the
+//! driver walks, the outcome it records per step, the progress a button
+//! reads, and where the finished summary is delivered.
+//!
+//! The driver itself is `controller::events::compute`
+//! (`start_plan`, `pump_plan`, `record_step_outcome`, `finish_plan`).
 
+use std::collections::HashSet;
+
+use rs_cam_core::ids::SetupId;
 use rs_cam_core::session::ToolpathConfig;
 
 use crate::state::toolpath::{StockSource, ToolpathId};
 
-/// Which ops one `generate_all` covers, and which of them force the ladder.
+/// Which ops one `generate_all` covers, and which of them force a simulation.
 ///
 /// Stays `pub`: it is the return type of `pub fn generate_all_scope`, so a
 /// crate-private form raises `private_interfaces` (S29, 2026-09-16).
 pub struct GenerateAllScope {
-    /// Every enabled toolpath, in project order — the round-1 submission set.
+    /// Every enabled toolpath, in project order.
     pub enabled: Vec<ToolpathId>,
     /// 0-based project indices of the enabled ops whose stock comes from a
-    /// simulation. Both the ladder's hard bound and what a refusal names.
+    /// simulation. What an MCP refusal names.
     pub rest_op_indices: Vec<usize>,
 }
 
-/// Read the ladder's inputs off a project.
+/// Read the plan's inputs off a project.
 #[must_use]
 pub fn generate_all_scope(configs: &[ToolpathConfig]) -> GenerateAllScope {
     GenerateAllScope {
@@ -34,8 +40,6 @@ pub fn generate_all_scope(configs: &[ToolpathConfig]) -> GenerateAllScope {
             .filter(|tc| tc.enabled)
             .map(|tc| tc.id)
             .collect(),
-        // Rest-dependent ops bound the ladder: a stock chain cannot be longer
-        // than the number of links in it.
         rest_op_indices: configs
             .iter()
             .enumerate()
@@ -45,11 +49,11 @@ pub fn generate_all_scope(configs: &[ToolpathConfig]) -> GenerateAllScope {
     }
 }
 
-/// The ladder must simulate between rounds and was handed no usable cell size.
+/// The plan must simulate and was handed no usable cell size.
 ///
-/// Typed rather than pre-rendered because the two surfaces owe the operator
-/// different remedies — an MCP caller passes an argument, a GUI operator
-/// unticks a checkbox — while the reason is one thing.
+/// MCP only since R1. The GUI reads the Simulation panel and, when the panel
+/// is coarser than the rest needs, asks the operator through the confirm
+/// ([`crate::controller::PlanResolutionConfirm`]).
 #[derive(Debug)]
 pub struct MissingResolution {
     /// 0-based project indices of the enabled rest ops that force a simulation.
@@ -69,50 +73,49 @@ impl MissingResolution {
     }
 }
 
-/// Decide the ladder for one `generate_all`.
+/// Decide the cell size one MCP `generate_all` simulates at.
 ///
-/// The resolution is **refused, never defaulted** (A/M10) whenever the project
-/// needs one: collision counts and engagement both move with cell size, so a
-/// silently chosen one hands back verdicts nobody asked for.
+/// The resolution is **refused, never defaulted** (A/M10) whenever the
+/// project needs one: collision counts and engagement both move with cell
+/// size, so a silently chosen one hands back verdicts nobody asked for.
+///
+/// `Ok(None)` means "this plan runs no simulation of its own": the caller
+/// opted out, or nothing depends on simulated stock and no cell size arrived.
+/// The driver then drops every simulation step and appends no closing one.
 ///
 /// # Errors
-/// [`MissingResolution`] when the ladder is on, the project has enabled
-/// rest-machining ops, and no positive cell size was supplied.
-pub fn plan_fixpoint(
+/// [`MissingResolution`] when the project has enabled rest-machining ops and
+/// no positive cell size was supplied.
+pub fn require_resolution(
     fixpoint: bool,
     rest_op_indices: &[usize],
-    simulation_resolution_mm: Option<f64>,
-) -> Result<FixpointPlan, MissingResolution> {
-    match (
-        fixpoint,
-        rest_op_indices.is_empty(),
-        simulation_resolution_mm,
-    ) {
-        (false, _, _) => Ok(FixpointPlan::single_pass()),
-        // Nothing depends on simulated stock, so no simulation will be run and
-        // no resolution is needed.
-        (true, true, _) => Ok(FixpointPlan::single_pass()),
-        (true, false, Some(res)) if res > 0.0 => {
-            Ok(FixpointPlan::looping(res, rest_op_indices.len()))
-        }
-        (true, false, supplied) => Err(MissingResolution {
+    supplied: Option<f64>,
+) -> Result<Option<f64>, MissingResolution> {
+    let usable = supplied.filter(|r| r.is_finite() && *r > 0.0);
+    match (fixpoint, rest_op_indices.is_empty()) {
+        // An explicit opt-out runs no simulation, whatever arrived with it.
+        (false, _) => Ok(None),
+        // Nothing depends on simulated stock, so no simulation is forced. A
+        // cell size that did arrive is still honoured.
+        (true, true) => Ok(usable),
+        (true, false) => usable.map(Some).ok_or_else(|| MissingResolution {
             rest_op_indices: rest_op_indices.to_vec(),
             supplied,
         }),
     }
 }
 
-/// Where a finished `generate_all` reports to.
+/// Where a finished plan reports to.
 ///
 /// The MCP variant is gated because `mcp_bridge` is: everything else in this
 /// module compiles either way, which is the point of re-homing it.
 pub enum GenerateAllSink {
-    /// GUI Generate All — progress on the status line, summary as a toast.
+    /// GUI Generate All — the summary as a toast.
     Gui,
     #[cfg(feature = "mcp")]
     Mcp {
         response_tx: tokio::sync::oneshot::Sender<crate::mcp_bridge::McpResponse>,
-        /// Optional channel for streaming per-toolpath progress to the client.
+        /// Optional channel for streaming per-step progress to the client.
         progress_tx: Option<tokio::sync::mpsc::Sender<crate::mcp_bridge::ProgressUpdate>>,
     },
 }
@@ -130,47 +133,225 @@ impl GenerateAllSink {
     }
 }
 
-/// State for one in-flight "generate all", whichever surface started it.
-pub struct PendingGenerateAll {
-    pub remaining: Vec<ToolpathId>,
-    pub completed: usize,
-    pub failed: usize,
-    /// Per-toolpath error messages for genuinely failed generations.
-    pub errors: Vec<(usize, String)>,
-    /// A/M11 — ops that could not generate *yet* because their upstream
-    /// simulated stock does not exist. Deliberately NOT counted in `failed`:
-    /// "cannot yet" and "cannot ever" are different states, and only the
-    /// former is worth retrying.
-    pub blocked: Vec<(ToolpathId, String)>,
-    /// A/M11 — the fixpoint loop's own state.
-    pub fixpoint: FixpointPlan,
-    /// Set when the loop itself failed (e.g. its simulation errored), as
-    /// distinct from any individual toolpath failing.
-    pub loop_error: Option<String>,
-    pub sink: GenerateAllSink,
+/// One piece of work the driver submits, in plan order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlanStep {
+    /// Generate one operation.
+    Generate(ToolpathId),
+    /// Simulate setups `0..=setup` so `upto` can read its prior stock.
+    ///
+    /// `setup` is the setup's STABLE id. The driver resolves it to a
+    /// position and covers EVERY enabled operation in `0..=position`; `upto`
+    /// is a label, and narrowing the request to it shifts the phantom scan
+    /// (core's `generation_plan` module doc).
+    SimulatePrefix { setup: SetupId, upto: ToolpathId },
+    /// The closing full-project simulation, so the Simulation workspace
+    /// lands fresh. The GUI appends it; MCP appends it only with an explicit
+    /// resolution.
+    SimulateAll,
 }
 
-impl PendingGenerateAll {
-    /// Arm a run that has not submitted anything yet.
+/// What one step did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StepOutcome {
+    /// Not reached, or still in flight.
+    Pending,
+    Done,
+    /// Still no stock AFTER its own prefix simulation. Terminal for this op.
+    Blocked(String),
+    Failed(String),
+    Cancelled,
+    /// Nothing to submit. Not an error.
+    Skipped(String),
+}
+
+/// How the plan's own simulation step ended.
+///
+/// The three arms are the three the simulation drain can reach. A cancelled
+/// or failed simulation stops the plan, because every later step in that
+/// setup needs the snapshot that never came.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PlanSimOutcome {
+    Done,
+    Cancelled,
+    Failed(String),
+}
+
+/// The cell size a plan's simulations run at.
+///
+/// The two arms are two different promises. [`Self::AtMost`] is the GUI's:
+/// the Simulation panel's standing setting applies, and the plan only makes
+/// it finer when the rest it machines needs that (R1). [`Self::Exactly`] is
+/// the MCP caller's own argument, which nothing may move.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PlanResolution {
+    /// Take the panel's effective cell size, but no coarser than this.
+    AtMost(f64),
+    /// This cell size, whatever the panel says.
+    Exactly(f64),
+}
+
+impl PlanResolution {
+    /// The cell size to put on the request, given the panel's effective one.
     #[must_use]
-    pub fn new(remaining: Vec<ToolpathId>, fixpoint: FixpointPlan, sink: GenerateAllSink) -> Self {
+    pub fn resolve(self, panel_mm: f64) -> f64 {
+        match self {
+            Self::AtMost(mm) => panel_mm.min(mm),
+            Self::Exactly(mm) => mm,
+        }
+    }
+}
+
+/// What the step in flight is doing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Activity {
+    /// Generating this operation. The string is its name, read at read time,
+    /// so a rename mid-plan reads correctly.
+    Generating(ToolpathId, String),
+    /// Simulating. The string is the label to draw.
+    ///
+    /// A [`PlanStep::SimulateAll`] reports the LAST setup's id, because that
+    /// is the last setup it covers, with the label "All setups".
+    Simulating(SetupId, String),
+}
+
+/// The plan's position, for the Generate All button (W3) and the MCP plan
+/// beat (W5).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GenerationPlanProgress {
+    /// 1-based position of the step in flight.
+    pub step: usize,
+    pub of: usize,
+    pub activity: Activity,
+    pub cancellable: bool,
+}
+
+impl GenerationPlanProgress {
+    /// Is the step in flight a simulation?
+    #[must_use]
+    pub fn is_simulating(&self) -> bool {
+        matches!(self.activity, Activity::Simulating(..))
+    }
+}
+
+/// State for one in-flight plan, whichever surface started it.
+pub struct GenerationPlan {
+    pub steps: Vec<PlanStep>,
+    pub outcomes: Vec<StepOutcome>,
+    /// The step in flight. `== steps.len()` means finished.
+    pub cursor: usize,
+    /// A submit is out and the drain owes this plan an outcome.
+    pub in_flight: bool,
+    /// Re-entrancy guard for a submit that completes inside itself. Every
+    /// submit-time refusal funnels through `toolpath_completion_landed`,
+    /// which re-enters the driver while `pump_plan` is on the stack.
+    pub(crate) pumping: bool,
+    pub cancelled: bool,
+    /// `None` runs no simulation at all.
+    pub resolution: Option<PlanResolution>,
+    pub loop_error: Option<String>,
+    pub sink: GenerateAllSink,
+    /// `GuiState::edit_counter` at `start_plan`. An operator edit moves it
+    /// and cancels the plan; the plan's own completions never do.
+    pub edit_counter: u64,
+    /// The operation a single Generate names (R6). It regenerates even when
+    /// it already holds a result; its ancestors do not.
+    pub target: Option<ToolpathId>,
+    pub generated: usize,
+    pub failed: usize,
+    /// `(toolpath id, message)` for genuine failures.
+    pub errors: Vec<(usize, String)>,
+    /// Ops still waiting on upstream simulated stock. Deliberately NOT
+    /// counted in `failed`: "cannot yet" and "cannot ever" are different
+    /// states.
+    pub blocked: Vec<(ToolpathId, String)>,
+    /// Simulations this plan ran on the caller's behalf.
+    pub simulations: usize,
+    /// Setups holding an operation that blocked or failed. A later prefix
+    /// simulation of one of them cannot unlock anything: the phantom scan
+    /// latches at the first enabled operation with no result, which is that
+    /// one. Those steps are skipped, not run.
+    pub(crate) blocked_setups: HashSet<SetupId>,
+}
+
+impl GenerationPlan {
+    /// Arm a plan that has submitted nothing yet.
+    #[must_use]
+    pub fn new(
+        steps: Vec<PlanStep>,
+        resolution: Option<PlanResolution>,
+        sink: GenerateAllSink,
+    ) -> Self {
+        let outcomes = vec![StepOutcome::Pending; steps.len()];
         Self {
-            remaining,
-            completed: 0,
+            steps,
+            outcomes,
+            cursor: 0,
+            in_flight: false,
+            pumping: false,
+            cancelled: false,
+            resolution,
+            loop_error: None,
+            sink,
+            edit_counter: 0,
+            target: None,
+            generated: 0,
             failed: 0,
             errors: Vec::new(),
             blocked: Vec::new(),
-            fixpoint,
-            loop_error: None,
-            sink,
+            simulations: 0,
+            blocked_setups: HashSet::new(),
         }
+    }
+
+    /// The operation this plan regenerates even when it is already current.
+    #[must_use]
+    pub fn with_target(mut self, target: ToolpathId) -> Self {
+        self.target = Some(target);
+        self
+    }
+
+    /// The step in flight, or `None` when the plan has finished.
+    #[must_use]
+    pub fn current_step(&self) -> Option<&PlanStep> {
+        self.steps.get(self.cursor)
+    }
+
+    /// The operation the cursor's `Generate` step names, if it is one.
+    ///
+    /// This is the one rule that decides both "does this completion close a
+    /// step" and "does this blocked submit belong to the plan".
+    #[must_use]
+    pub fn generate_target(&self) -> Option<ToolpathId> {
+        match self.current_step() {
+            Some(PlanStep::Generate(id)) => Some(*id),
+            _ => None,
+        }
+    }
+
+    /// Is the cursor on a simulation step?
+    #[must_use]
+    pub fn on_simulation(&self) -> bool {
+        matches!(
+            self.current_step(),
+            Some(PlanStep::SimulatePrefix { .. } | PlanStep::SimulateAll)
+        )
+    }
+
+    /// Did any step generate an operation?
+    ///
+    /// The closing full simulation runs only when something moved; a plan
+    /// whose every operation was already current changes no stock.
+    #[must_use]
+    pub fn generated_anything(&self) -> bool {
+        self.generated > 0
     }
 
     /// Freeze this run into the shape the renderers consume.
     #[must_use]
     pub fn completed_summary(&self) -> GenerateAllSummary {
         GenerateAllSummary {
-            generated: self.completed,
+            generated: self.generated,
             failed: self.failed,
             errors: self.errors.clone(),
             blocked: self
@@ -178,135 +359,29 @@ impl PendingGenerateAll {
                 .iter()
                 .map(|(id, msg)| (id.0, msg.clone()))
                 .collect(),
-            rounds: self.fixpoint.round,
-            simulations: self.fixpoint.simulations,
+            steps: self.steps.len(),
+            simulations: self.simulations,
             loop_error: self.loop_error.clone(),
         }
     }
 }
 
-/// A/M11 — `generate_all` iterating to a fixpoint over the rest-stock chain.
-///
-/// The ladder: generate everything, simulate, regenerate whatever was blocked
-/// only on missing upstream stock, repeat. Before this, a chain of `k`
-/// dependent rest ops needed `k` manual sim->generate rounds and nothing told
-/// the operator what `k` was.
-///
-/// **Termination.** A round only continues when (a) at least one op is
-/// blocked *purely* on sequencing and (b) the previous round generated at
-/// least one new op. Genuine failures record `Error` and are never retried,
-/// so they cannot keep (a) true. An op reaches `Done` at most once per call,
-/// so (b) can hold at most `enabled_count` times. On top of that the loop is
-/// hard-bounded by [`Self::max_rounds`] = the number of rest-dependent ops
-/// plus one, because a stock chain cannot be longer than that.
-pub struct FixpointPlan {
-    /// `false` = the pre-A/M11 single pass. The caller can always opt out.
-    pub enabled: bool,
-    /// Simulation cell size for the loop's own simulations, in mm.
-    ///
-    /// **Caller-specified, never defaulted** (A/M10). A silently chosen
-    /// resolution is the resolution-mismatch trap: collision counts and
-    /// engagement change with cell size, so a loop that picked its own would
-    /// hand back verdicts nobody asked for. `None` is only legal alongside
-    /// `enabled: false`; otherwise the call refuses at request time.
-    pub resolution_mm: Option<f64>,
-    /// 1-based; the first generate pass is round 1.
-    pub round: usize,
-    pub max_rounds: usize,
-    /// Ops that reached `Done` in the current round — condition (b).
-    pub completed_this_round: usize,
-    /// How many simulations the loop ran.
-    pub simulations: usize,
-    /// True between submitting the loop's simulation and its completion.
-    pub awaiting_simulation: bool,
-}
-
-impl FixpointPlan {
-    /// A plan that does exactly what `generate_all` did before A/M11.
-    #[must_use]
-    pub(crate) fn single_pass() -> Self {
-        Self {
-            enabled: false,
-            resolution_mm: None,
-            round: 1,
-            max_rounds: 1,
-            completed_this_round: 0,
-            simulations: 0,
-            awaiting_simulation: false,
-        }
-    }
-
-    #[must_use]
-    pub fn looping(resolution_mm: f64, rest_dependent_ops: usize) -> Self {
-        Self {
-            enabled: true,
-            resolution_mm: Some(resolution_mm),
-            round: 1,
-            max_rounds: rest_dependent_ops.saturating_add(1),
-            completed_this_round: 0,
-            simulations: 0,
-            awaiting_simulation: false,
-        }
-    }
-}
-
-/// The outcome of one `generate_all` call, ready to render.
+/// The outcome of one plan, ready to render.
 pub struct GenerateAllSummary {
     pub generated: usize,
     pub failed: usize,
     /// `(toolpath id, message)` for genuine failures.
     pub errors: Vec<(usize, String)>,
-    /// A/M11 — `(toolpath id, message)` for ops still waiting on upstream
-    /// simulated stock. Separate from `errors` on purpose: an agent must be
-    /// able to tell "cannot yet" from "cannot ever" without parsing prose.
+    /// `(toolpath id, message)` for ops still waiting on upstream simulated
+    /// stock. Separate from `errors` on purpose: an agent must be able to
+    /// tell "cannot yet" from "cannot ever" without parsing prose.
     pub blocked: Vec<(usize, String)>,
-    /// How many internal generate rounds it took. 1 = no ladder was needed.
-    pub rounds: usize,
-    /// How many simulations the loop ran on the caller's behalf.
+    /// How many steps the plan held. A round no longer exists.
+    pub steps: usize,
+    /// How many simulations the plan ran on the caller's behalf.
     pub simulations: usize,
-    /// The loop itself failed (not an individual toolpath).
+    /// The plan itself stopped (not an individual toolpath).
     pub loop_error: Option<String>,
-}
-
-/// What the operator is owed when the ladder takes over their simulation
-/// resolution, or `None` when it changes nothing.
-///
-/// G-RESNOTICE (2026-09-10). Between rounds the ladder writes
-/// `SimulationState::resolution` and clears `auto_resolution`, and the new
-/// values STAY after the run — every later simulation, collision count and
-/// engagement figure is measured at whatever cell the ladder chose. The GUI
-/// arm can only ever write back the value the operator pinned themselves
-/// (`pinned_simulation_resolution` refuses `auto`), so it says nothing; an
-/// MCP `generate_all` carries its own `simulation_resolution_mm` and can
-/// differ from, or overrule, both dials, and that is the case this names.
-///
-/// This is a truthfulness fix and nothing else: it does not change when or
-/// whether the ladder rewrites the setting, only whether the rewrite is
-/// visible. The text names the old value and the new one, because the
-/// operator has to be able to put the old one back.
-#[must_use]
-pub fn resolution_override_notice(
-    current_mm: f64,
-    current_auto: bool,
-    ladder_mm: f64,
-) -> Option<String> {
-    // `auto` is a different setting even at the same number: it re-derives
-    // the cell per simulation, so clearing it is a change the operator can
-    // see in later runs.
-    if !current_auto && (current_mm - ladder_mm).abs() < f64::EPSILON {
-        return None;
-    }
-    let was = if current_auto {
-        format!("{current_mm:.3} mm, auto from tool size")
-    } else {
-        format!("{current_mm:.3} mm, pinned")
-    };
-    Some(format!(
-        "Generate All set the simulation resolution to {ladder_mm:.3} mm for the \
-         rest-stock ladder (was {was}) and unticked \"Auto from tool size\". The new \
-         value stays after this run — collision counts and engagement both move with \
-         cell size, so set it back if you wanted the old one."
-    ))
 }
 
 /// The one-line account both surfaces give of a finished run.
@@ -323,14 +398,14 @@ pub fn generate_all_headline(summary: &GenerateAllSummary) -> String {
         ));
     }
     headline.push_str(&format!(
-        " (in {} generate round{}, {} simulation{})",
-        summary.rounds,
-        if summary.rounds == 1 { "" } else { "s" },
+        " (in {} step{}, {} simulation{})",
+        summary.steps,
+        if summary.steps == 1 { "" } else { "s" },
         summary.simulations,
         if summary.simulations == 1 { "" } else { "s" },
     ));
     if let Some(err) = &summary.loop_error {
-        headline.push_str(&format!(". The fixpoint loop stopped early: {err}"));
+        headline.push_str(&format!(". The plan stopped early: {err}"));
     }
     headline
 }

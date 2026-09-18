@@ -377,8 +377,49 @@ impl FrameLoopBeat {
     }
 }
 
-/// Shared handle onto [`McpReadSnapshot`] and the [`FrameLoopBeat`]. Cloned
-/// into the MCP server thread.
+/// Where the generation plan has got to, shared with the MCP server thread.
+///
+/// `generation_status` is answered on the server thread, off the frame loop,
+/// so a controller field is unreachable there. This is a second cell beside
+/// [`FrameLoopBeat`] on the same struct, for the same reason and with no rate
+/// limit: a plan step changes faster than the 500 ms read snapshot, and the
+/// snapshot stops when the frame loop parks, which is the exact failure
+/// `generation_status` exists to see through.
+///
+/// The GUI thread stamps it on every cursor move and once more, with `None`,
+/// when the plan ends. A reader that sees `None` therefore knows no plan
+/// runs, rather than that the stamp went stale.
+#[derive(Debug, Default)]
+pub struct PlanBeat {
+    cell: RwLock<Option<PlanBeatRow>>,
+}
+
+/// One plan position, as the wire renders it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlanBeatRow {
+    /// 1-based position of the step in flight.
+    pub step: usize,
+    pub of: usize,
+    /// Is that step a simulation rather than a generation?
+    pub simulating: bool,
+}
+
+impl PlanBeat {
+    /// Called by the GUI main thread. `None` clears the cell.
+    pub fn stamp(&self, row: Option<PlanBeatRow>) {
+        let mut guard = self.cell.write().unwrap_or_else(|e| e.into_inner());
+        *guard = row;
+    }
+
+    /// Called by the MCP server thread.
+    #[must_use]
+    pub fn read(&self) -> Option<PlanBeatRow> {
+        *self.cell.read().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+/// Shared handle onto [`McpReadSnapshot`], the [`FrameLoopBeat`] and the
+/// [`PlanBeat`]. Cloned into the MCP server thread.
 ///
 /// The two travel together because they answer the same question from
 /// opposite sides: the snapshot is what the frame loop last *said*, the beat
@@ -387,6 +428,7 @@ impl FrameLoopBeat {
 pub struct McpReadCache {
     snapshot: Arc<RwLock<McpReadSnapshot>>,
     frame_loop: Arc<FrameLoopBeat>,
+    plan: Arc<PlanBeat>,
 }
 
 impl McpReadCache {
@@ -397,6 +439,17 @@ impl McpReadCache {
     /// Frame-loop liveness, shared with the GUI thread.
     pub fn frame_loop(&self) -> &FrameLoopBeat {
         &self.frame_loop
+    }
+
+    /// Where the generation plan has got to, shared with the GUI thread.
+    pub fn plan(&self) -> &PlanBeat {
+        &self.plan
+    }
+
+    /// The handle the controller stamps. Taken once, on the GUI thread.
+    #[must_use]
+    pub fn plan_handle(&self) -> Arc<PlanBeat> {
+        Arc::clone(&self.plan)
     }
 
     /// Called by the GUI main thread. Cheap: five `String` moves under a
@@ -584,15 +637,15 @@ pub enum McpRequestKind {
     GenerateToolpath {
         index: usize,
     },
-    /// A/M11: generate every enabled toolpath, iterating to a fixpoint over
-    /// the rest-stock chain when `fixpoint` is set. See [`FixpointPlan`].
+    /// Generate every enabled toolpath, simulating between the steps that
+    /// need it. See [`GenerationPlan`].
     GenerateAll {
-        /// `None` = fixpoint on (the default). `Some(false)` = the
-        /// pre-A/M11 single pass.
+        /// `None` = the plan simulates where it must (the default).
+        /// `Some(false)` = generate only, and run no simulation at all.
         fixpoint: Option<bool>,
-        /// Cell size in mm for the loop's own simulations. Required whenever
-        /// the loop is on AND the project has rest-machining ops; never
-        /// defaulted (A/M10).
+        /// Cell size in mm for the plan's own simulations. Required whenever
+        /// the plan may simulate AND the project has rest-machining ops;
+        /// never defaulted (A/M10).
         simulation_resolution_mm: Option<f64>,
     },
     // A/M12: `CancelGeneration` used to live here, which is exactly why it
@@ -1467,12 +1520,11 @@ impl PendingGuiScreenshot {
     }
 }
 
-// A/M11's `PendingGenerateAll` / `FixpointPlan` / `GenerateAllSummary` moved
-// to `controller::generate_all` in Phase O so the GUI's Generate All can run
-// the same ladder. Re-exported here because every existing `use
-// crate::mcp_bridge::...` site names them from this module.
+// `GenerationPlan` / `GenerateAllSummary` live in `controller::generate_all`
+// so the GUI and the MCP tool walk one plan. Re-exported here because every
+// existing `use crate::mcp_bridge::...` site names them from this module.
 pub use crate::controller::generate_all::{
-    FixpointPlan, GenerateAllSink, GenerateAllSummary, PendingGenerateAll, generate_all_headline,
+    GenerateAllSink, GenerateAllSummary, GenerationPlan, generate_all_headline,
 };
 
 /// Render the `generate_all` reply.
@@ -1496,7 +1548,9 @@ pub fn build_generate_all_response(summary: &GenerateAllSummary) -> String {
         "failed": summary.failed,
         "errors": render(&summary.errors),
         "awaiting_prior_stock": render(&summary.blocked),
-        "rounds": summary.rounds,
+        // W1 wire break: `rounds` is gone. The fixpoint had rounds; the plan
+        // has steps, and `steps` is how many it held.
+        "steps": summary.steps,
         "simulations": summary.simulations,
         "loop_error": summary.loop_error,
     }))

@@ -1,14 +1,6 @@
 #![deny(clippy::indexing_slicing)]
 
 mod events;
-#[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
-mod fixpoint_resolution_notice_g_resnotice;
 pub mod generate_all;
 #[cfg(test)]
 #[allow(
@@ -126,11 +118,25 @@ pub struct AppController<B: ComputeBackend = ThreadedComputeBackend> {
     /// which had already finished (the one narrow TOCTOU the lane can
     /// produce) self-heals on the very next drain instead of persisting.
     superseded_toolpaths: std::collections::HashSet<crate::state::toolpath::ToolpathId>,
-    /// Phase O — the in-flight `generate_all`, from whichever surface started
-    /// it. Unconditional on purpose: the GUI's Generate All runs the same
-    /// fixpoint ladder the MCP tool does, and `pending_mcp` is `None` outside
-    /// `--mcp`. Only [`generate_all::GenerateAllSink`] differs.
-    generate_all: Option<generate_all::PendingGenerateAll>,
+    /// W1 — the in-flight generation plan, from whichever surface started
+    /// it. Unconditional on purpose: the GUI's Generate All walks the same
+    /// plan the MCP tool does, and `pending_mcp` is `None` outside `--mcp`.
+    /// Only [`generate_all::GenerateAllSink`] differs.
+    pub(crate) plan: Option<generate_all::GenerationPlan>,
+    /// W1/R1 — the one question a plan asks the operator before it starts.
+    ///
+    /// `Some` means the Simulation panel holds a cell size coarser than the
+    /// rest the plan machines needs, and nothing has been submitted. The
+    /// answer is [`Self::accept_plan_resolution`] or
+    /// [`Self::cancel_plan_resolution`]. This is the ONE place a plan writes
+    /// the panel.
+    pending_plan_confirm: Option<PlanResolutionConfirm>,
+    /// W1/W5 — the cell the MCP server thread reads plan progress from.
+    ///
+    /// `generation_status` is answered off the frame loop, so a controller
+    /// field is unreachable there. `None` outside `--mcp`.
+    #[cfg(feature = "mcp")]
+    plan_beat: Option<std::sync::Arc<crate::mcp_bridge::PlanBeat>>,
     /// P5 — the reach-map checkbox as this controller last saw it.
     ///
     /// V13: `upload_gpu_data` runs only when `pending_upload` is set, so a
@@ -173,6 +179,33 @@ pub(crate) struct PendingGuiJob {
     pub cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
+/// The one question a generation plan asks before it starts (R1).
+///
+/// The Simulation panel holds a pinned cell size COARSER than the rest the
+/// plan machines needs, so a plan that ran at the panel's value would carve
+/// the rest operations against a snapshot that cannot see what the coarse
+/// tool left. The operator decides: take the finer cell, or cancel.
+///
+/// Nothing is submitted while this is `Some`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlanResolutionConfirm {
+    /// The scope the plan will cover once the answer arrives.
+    pub scope: rs_cam_core::session::generation_plan::Scope,
+    /// The operation the operator named, when this is a single Generate. It
+    /// regenerates even when it already holds a result.
+    pub target: Option<crate::state::toolpath::ToolpathId>,
+    /// The cell size the rest needs, in mm.
+    pub required_mm: f64,
+    /// The cell size the panel holds, in mm.
+    pub panel_mm: f64,
+    /// The names of the operations that ask for `required_mm`.
+    pub operations: Vec<String>,
+    /// The whole question, ready to draw.
+    pub message: String,
+    /// The label of the button that accepts `required_mm`.
+    pub accept_label: String,
+}
+
 /// What a GUI-started `Job` answers.
 pub(crate) enum GuiJobTarget {
     /// The per-toolpath Optimize modal. The id is the STABLE toolpath id,
@@ -210,7 +243,10 @@ impl<B: ComputeBackend> AppController<B> {
             status_message: None,
             notifications: Vec::new(),
             superseded_toolpaths: std::collections::HashSet::new(),
-            generate_all: None,
+            plan: None,
+            pending_plan_confirm: None,
+            #[cfg(feature = "mcp")]
+            plan_beat: None,
             reach_overlay_shown: true,
             next_job_request_id: 0,
             gui_jobs: std::collections::HashMap::new(),
@@ -232,8 +268,8 @@ impl<B: ComputeBackend> AppController<B> {
     /// and a build without `--mcp` has no MCP slot to count them.
     #[must_use]
     pub fn awaiting_deferred_completions(&self) -> u64 {
-        let ladder = u64::from(self.generate_all.is_some())
-            + u64::try_from(self.gui_jobs.len()).unwrap_or(u64::MAX);
+        let ladder =
+            u64::from(self.plan.is_some()) + u64::try_from(self.gui_jobs.len()).unwrap_or(u64::MAX);
         #[cfg(feature = "mcp")]
         let ladder = ladder
             + self
@@ -243,10 +279,105 @@ impl<B: ComputeBackend> AppController<B> {
         ladder
     }
 
-    /// Whether a `generate_all` ladder is among them.
+    /// Whether a generation plan is among them.
+    ///
+    /// Keeps its name: `app.rs` feeds it to
+    /// [`crate::mcp_bridge::FrameLoopBeat::beat`], and the MCP liveness
+    /// report names the same thing.
     #[must_use]
     pub fn awaiting_generate_all(&self) -> bool {
-        self.generate_all.is_some()
+        self.plan.is_some()
+    }
+
+    /// Where the plan in flight has got to, or `None` when none runs.
+    ///
+    /// Derived from the cursor each time it is read, never stored, so a
+    /// rename mid-plan reads correctly. W3's Generate All button and W5's
+    /// `generation_status` both read this one answer.
+    #[must_use]
+    pub fn generation_plan_progress(&self) -> Option<generate_all::GenerationPlanProgress> {
+        use generate_all::{Activity, GenerationPlanProgress, PlanStep};
+
+        let plan = self.plan.as_ref()?;
+        let step = *plan.current_step()?;
+        let activity = match step {
+            PlanStep::Generate(id) => {
+                let name = self
+                    .state
+                    .session
+                    .find_toolpath_config_by_id(id)
+                    .map_or_else(|| format!("toolpath {}", id.0), |(_, tc)| tc.name.clone());
+                Activity::Generating(id, name)
+            }
+            PlanStep::SimulatePrefix { setup, .. } => {
+                Activity::Simulating(setup, self.setup_label(setup))
+            }
+            // The closing simulation covers every setup, so it reports the
+            // LAST one's id: that is the last setup it reaches.
+            PlanStep::SimulateAll => {
+                let last = self
+                    .state
+                    .session
+                    .list_setups()
+                    .last()
+                    .map_or(rs_cam_core::ids::SetupId(0), |s| {
+                        rs_cam_core::ids::SetupId(s.id)
+                    });
+                Activity::Simulating(last, "All setups".to_owned())
+            }
+        };
+        Some(GenerationPlanProgress {
+            step: plan.cursor + 1,
+            of: plan.steps.len(),
+            activity,
+            cancellable: true,
+        })
+    }
+
+    /// The name a setup draws under, or a positional fallback.
+    fn setup_label(&self, setup: rs_cam_core::ids::SetupId) -> String {
+        self.state.session.find_setup_by_id(setup.0).map_or_else(
+            || format!("Setup {}", setup.0),
+            |(position, data)| {
+                if data.name.is_empty() {
+                    format!("Setup {}", position + 1)
+                } else {
+                    data.name.clone()
+                }
+            },
+        )
+    }
+
+    /// The question a plan is waiting on, or `None` when it is waiting on
+    /// nothing.
+    #[must_use]
+    pub fn pending_plan_confirm(&self) -> Option<&PlanResolutionConfirm> {
+        self.pending_plan_confirm.as_ref()
+    }
+
+    /// W1/W5 — hand the controller the cell the MCP server thread reads.
+    #[cfg(feature = "mcp")]
+    pub fn set_plan_beat(&mut self, beat: std::sync::Arc<crate::mcp_bridge::PlanBeat>) {
+        self.plan_beat = Some(beat);
+    }
+
+    /// Publish the plan's position to the MCP server thread.
+    ///
+    /// Called on every cursor move and once more when the plan ends, so a
+    /// reader that sees `None` knows no plan runs rather than that the
+    /// stamp went stale.
+    pub(crate) fn stamp_plan_beat(&self) {
+        #[cfg(feature = "mcp")]
+        if let Some(beat) = self.plan_beat.as_ref() {
+            beat.stamp(
+                self.generation_plan_progress()
+                    .map(|p| crate::mcp_bridge::PlanBeatRow {
+                        step: p.step,
+                        of: p.of,
+                        simulating: p.is_simulating(),
+                    }),
+            );
+        }
     }
 
     pub fn state(&self) -> &AppState {
@@ -416,9 +547,20 @@ impl<B: ComputeBackend> AppController<B> {
         None
     }
 
+    /// The 500 ms sweep that regenerates what an edit staled.
+    ///
+    /// W1: it does NOTHING while a plan runs. This is not a corner case; it
+    /// happens inside every plan. A source that lands stales its Regions
+    /// consumers through the core walker, and those consumers are still
+    /// steps in the plan, so the sweep would submit them directly and race
+    /// the cursor. The stamps survive the plan, so a genuine leftover is
+    /// swept on the next tick.
     pub fn process_auto_regen(&mut self) {
         use crate::state::toolpath::ToolpathId;
 
+        if self.plan.is_some() {
+            return;
+        }
         let now = std::time::Instant::now();
         // Collect stale toolpath IDs from the GUI runtime overlay.
         let stale_ids: Vec<ToolpathId> = self

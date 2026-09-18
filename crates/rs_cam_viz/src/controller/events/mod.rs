@@ -242,7 +242,9 @@ impl<B: ComputeBackend> AppController<B> {
                 }
             }
             AppEvent::RemoveToolpath(tp_id) => self.handle_remove_toolpath(tp_id),
-            AppEvent::GenerateToolpath(tp_id) => self.submit_toolpath_compute(tp_id),
+            // R6: one Generate makes the named operation current, which
+            // means running its ancestors first.
+            AppEvent::GenerateToolpath(tp_id) => self.handle_generate_toolpath(tp_id),
             AppEvent::GenerateAll => self.handle_generate_all(),
 
             // --- Simulation events ---

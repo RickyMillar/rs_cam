@@ -414,24 +414,17 @@ impl<B: ComputeBackend> AppController<B> {
         self.state.gui.mark_edited();
     }
 
-    /// Generate every toolpath, running the rest-stock fixpoint ladder when
-    /// the project needs one (Phase O, plan §2 item 4).
+    /// Generate every enabled operation, simulating in between wherever a
+    /// rest operation needs its stock (W1, `PLAN.md` §4.2).
     ///
-    /// A project with no enabled `FromRemainingStock` op takes the pre-Phase-O
-    /// path unchanged apart from its scope — every ENABLED config submitted
-    /// once, no ladder state, no notification.
-    ///
-    /// G-GENALLDISABLED (2026-09-10): this branch used to submit every
-    /// config, enabled or not, while the ladder branch beside it submitted
-    /// `scope.enabled`. So one Generate All obeyed the enable toggle and the
-    /// other did not, purely on whether the project happened to hold a rest
-    /// chain. Disabling an op promises exclusion "from generation, simulation
-    /// and output" (the row-control hover), core's own `generate_all` skips
-    /// disabled ops, and export filters them out — this was the one surface
-    /// that generated them anyway, burning the compute lane on work no
-    /// surface would consume and leaving a disabled card reading `OK`.
+    /// G-GENALLDISABLED (2026-09-10): the walk filters on `tc.enabled`, so a
+    /// disabled operation is never generated. Disabling an op promises
+    /// exclusion "from generation, simulation and output" (the row-control
+    /// hover), core's own `generate_all` skips disabled ops, and export
+    /// filters them out.
     pub(crate) fn handle_generate_all(&mut self) {
-        use crate::controller::generate_all::{GenerateAllSink, generate_all_scope, plan_fixpoint};
+        use crate::controller::generate_all::generate_all_scope;
+        use rs_cam_core::session::generation_plan::Scope;
 
         let scope = generate_all_scope(self.state.session.toolpath_configs());
         if scope.enabled.is_empty() {
@@ -441,54 +434,133 @@ impl<B: ComputeBackend> AppController<B> {
             );
             return;
         }
+        self.start_gui_plan(Scope::Project, None);
+    }
 
-        if scope.rest_op_indices.is_empty() {
-            for id in scope.enabled {
-                self.submit_toolpath_compute(id);
-            }
+    /// Make one operation current, and everything it depends on first (R6).
+    ///
+    /// A single Generate used to submit the named operation alone, so a rest
+    /// operation whose predecessor was stale blocked, and a Regions consumer
+    /// clipped against regions its source no longer held. The ancestor plan
+    /// generates the source first, in plan order, and simulates where a Stock
+    /// edge needs a snapshot.
+    pub(crate) fn handle_generate_toolpath(&mut self, tp_id: ToolpathId) {
+        use rs_cam_core::session::generation_plan::Scope;
+
+        self.start_gui_plan(Scope::Ancestors(tp_id), Some(tp_id));
+    }
+
+    /// Arm a GUI plan over `scope`, asking about the cell size first when the
+    /// panel holds one that is too coarse for the rest (R1).
+    ///
+    /// `target` is the operation the operator named. It regenerates even when
+    /// it already holds a result; its ancestors do not.
+    pub(crate) fn start_gui_plan(
+        &mut self,
+        scope: rs_cam_core::session::generation_plan::Scope,
+        target: Option<ToolpathId>,
+    ) {
+        use crate::controller::generate_all::{GenerateAllSink, GenerationPlan, PlanStep};
+        use rs_cam_core::session::generation_plan::required_resolution_mm;
+
+        // A second plan would race the first one's cursor.
+        if self.plan.is_some() || self.pending_plan_confirm().is_some() {
             return;
         }
 
-        let plan = match plan_fixpoint(
-            true,
-            &scope.rest_op_indices,
-            self.pinned_simulation_resolution(),
-        ) {
-            Ok(plan) => plan,
-            Err(missing) => {
-                self.push_notification(
-                    format!(
-                        "Generate All needs a pinned simulation resolution: {} enabled \
-                         operation(s) take their stock from a simulation, so the ladder has \
-                         to simulate between generate rounds. Untick \"Auto from tool size\" \
-                         in the Simulation panel and set a resolution well below the \
-                         finishing tool's TIP radius (e.g. 0.1 mm for a 1 mm ball). It is \
-                         not guessed — collision counts and engagement both move with cell \
-                         size.",
-                        missing.rest_op_indices.len()
-                    ),
-                    super::super::Severity::Warning,
-                );
-                return;
-            }
-        };
+        let required = required_resolution_mm(&self.state.session, scope);
 
-        self.start_generate_all(scope.enabled, plan, GenerateAllSink::Gui);
+        // R1. The Simulation panel's setting IS the operator's standing
+        // choice: Run Simulation uses it as it stands, so reading it is not a
+        // silent default. The plan only asks when the panel's PINNED value is
+        // coarser than the rest it machines needs, because at that cell size
+        // the snapshot cannot see what the coarse tool left.
+        if let Some(required) = required
+            && !self.state.simulation.auto_resolution
+            && self.state.simulation.resolution.is_finite()
+            && self.state.simulation.resolution > required
+        {
+            self.pending_plan_confirm =
+                Some(self.build_resolution_confirm(scope, required, target));
+            return;
+        }
+
+        let mut steps = self.plan_steps(scope, true);
+        if !steps.is_empty() {
+            // The GUI always closes with a full simulation, so the Simulation
+            // workspace lands fresh. The step records `Skipped` when nothing
+            // generated, because then the stock did not move.
+            steps.push(PlanStep::SimulateAll);
+        }
+        let mut plan = GenerationPlan::new(
+            steps,
+            required.map(crate::controller::generate_all::PlanResolution::AtMost),
+            GenerateAllSink::Gui,
+        );
+        if let Some(target) = target {
+            plan = plan.with_target(target);
+        }
+        self.start_plan(plan);
     }
 
-    /// The cell size the ladder's own simulations will use, when the operator
-    /// has pinned one.
+    /// The question the operator answers when the panel is too coarse.
+    fn build_resolution_confirm(
+        &self,
+        scope: rs_cam_core::session::generation_plan::Scope,
+        required_mm: f64,
+        target: Option<ToolpathId>,
+    ) -> crate::controller::PlanResolutionConfirm {
+        use rs_cam_core::session::generation_plan::{Step, plan};
+
+        let operations: Vec<String> = plan(&self.state.session, scope)
+            .into_iter()
+            .filter_map(|step| match step {
+                Step::Simulate { upto, .. } => self
+                    .state
+                    .session
+                    .find_toolpath_config_by_id(upto)
+                    .map(|(_, tc)| tc.name.clone()),
+                Step::Generate { .. } => None,
+            })
+            .collect();
+        let panel_mm = self.state.simulation.resolution;
+        let names = if operations.is_empty() {
+            "the rest operations".to_owned()
+        } else {
+            operations.join(", ")
+        };
+        crate::controller::PlanResolutionConfirm {
+            scope,
+            target,
+            required_mm,
+            panel_mm,
+            operations,
+            message: format!(
+                "To generate rest for {names}, the simulation needs cells of \
+                 {required_mm:.3} mm. The panel is set to {panel_mm:.3} mm. A finer \
+                 simulation is slower."
+            ),
+            accept_label: format!("Use {required_mm:.3} mm"),
+        }
+    }
+
+    /// Take the finer cell size and start the plan.
     ///
-    /// `auto_resolution` is deliberately NOT accepted: it is re-derived per
-    /// simulation from the tools of whatever has generated so far
-    /// (`submit_simulation_for_groups` -> `auto_resolution_for_tools`), so it
-    /// can move between rounds of one ladder. A/M10's rule is that the cell
-    /// size is never chosen silently, and a value that changes under the run
-    /// is the same defect in slower motion.
-    fn pinned_simulation_resolution(&self) -> Option<f64> {
-        let sim = &self.state.simulation;
-        (!sim.auto_resolution && sim.resolution.is_finite() && sim.resolution > 0.0)
-            .then_some(sim.resolution)
+    /// This is the ONE place a plan writes the Simulation panel. "Auto from
+    /// tool size" stays off: the operator pinned a value, and the answer here
+    /// is a different pinned value, not a return to auto.
+    pub fn accept_plan_resolution(&mut self) {
+        let Some(confirm) = self.pending_plan_confirm.take() else {
+            return;
+        };
+        self.state.simulation.resolution = confirm.required_mm;
+        self.state.simulation.auto_resolution = false;
+        self.start_gui_plan(confirm.scope, confirm.target);
+    }
+
+    /// Answer "no". Nothing is submitted and the panel is untouched.
+    pub fn cancel_plan_resolution(&mut self) {
+        self.pending_plan_confirm = None;
     }
 
     pub(crate) fn handle_inspect_toolpath_in_simulation(&mut self, tp_id: ToolpathId) {

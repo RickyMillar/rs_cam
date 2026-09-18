@@ -855,12 +855,25 @@ impl RsCamApp {
             ),
         );
 
-        // Push the generate event via the controller
-        self.controller
-            .events_mut()
-            .push(crate::ui::AppEvent::GenerateToolpath(tp_id));
+        // Checked before the waiter is stored: a plan already running would
+        // refuse this one, and nothing would ever resolve the oneshot. That
+        // is the failure that left a `generate_toolpath` unresolved for
+        // about nine hours.
+        if self.controller.awaiting_generate_all() {
+            let _ = response_tx.send(McpResponse {
+                result: Ok(json_str(serde_json::json!({
+                    "ok": false,
+                    "error": "a generation plan is already running. Poll \
+                              `generation_status` for its step, or call \
+                              `cancel_generation` and try again.",
+                }))),
+            });
+            return;
+        }
 
-        // Store the oneshot sender for when the compute result arrives
+        // Store the oneshot sender BEFORE the plan runs: a submit-time
+        // refusal reaches a terminal state inside the call below, and the
+        // waiter has to already be there to be resolved.
         if let Some(ref mut pending) = self.controller.pending_mcp {
             pending.toolpath.insert(tp_id, response_tx);
         } else {
@@ -868,7 +881,15 @@ impl RsCamApp {
             let _ = response_tx.send(McpResponse {
                 result: Err("MCP compute tracking not initialized".to_owned()),
             });
+            return;
         }
+
+        // R6: by DIRECT CALL, not through `AppEvent`. `self.events` is
+        // drained only by `handle_events` inside `draw_frame`, so an event
+        // here would wait for a painted frame the MCP path cannot promise.
+        // The waiter still resolves off `notify_mcp_toolpath_complete`, keyed
+        // by id, so it reads this operation's own outcome and not the plan's.
+        self.controller.handle_generate_toolpath(tp_id);
     }
 
     pub(super) fn mcp_generate_all(

@@ -1,17 +1,18 @@
-//! Phase O item 4 — GUI Generate All runs the SAME rest-stock fixpoint ladder
-//! the MCP `generate_all` tool runs.
+//! GUI Generate All and the MCP `generate_all` tool walk the SAME plan.
 //!
-//! A/M11 landed the ladder behind `#[cfg(feature = "mcp")]`, so the GUI stayed
-//! single-pass and told the operator to loop by hand. The multi-tool planner
-//! emits a k-op coarse-to-fine chain from one action, which makes "loop it by
-//! hand k times" untenable.
+//! A/M11 landed the rest-stock ladder behind `#[cfg(feature = "mcp")]`, so
+//! the GUI stayed single-pass and told the operator to loop by hand. The
+//! multi-tool planner emits a k-op coarse-to-fine chain from one action,
+//! which makes "loop it by hand k times" untenable.
 //!
-//! What is asserted here is the shared decision, not the loop: the plan a
-//! project produces (`plan_fixpoint`), and the GUI entry's two ends of it —
-//! it arms the ladder when the operator has pinned a resolution, and it
-//! REFUSES rather than guessing when they have not. A/M10's rule is that the
-//! cell size is never chosen silently, because collision counts and
-//! engagement both move with it.
+//! What is asserted here is the shared decision, not the walk: the cell size
+//! the two surfaces demand (`require_resolution`), and the GUI entry's two
+//! ends of it. W1 inverted one of those ends. A/M10's rule — the cell size is
+//! never chosen SILENTLY — is an MCP rule: an agent's cell size arrives as an
+//! argument or not at all. In the GUI the Simulation panel's setting IS the
+//! operator's standing choice, because Run Simulation uses it as it stands,
+//! so reading it is not a default (R1). The GUI now arms a plan on auto, and
+//! asks only when the panel's PINNED value is coarser than the rest needs.
 
 #![allow(
     clippy::unwrap_used,
@@ -28,45 +29,40 @@ use rs_cam_viz::compute::{
     GenerationControl, LaneSnapshot, OptimizeRequest, SimulationRequest, ToolpathSubmitOutcome,
 };
 use rs_cam_viz::controller::AppController;
-use rs_cam_viz::controller::generate_all::plan_fixpoint;
+use rs_cam_viz::controller::generate_all::require_resolution;
 use rs_cam_viz::state::toolpath::StockSource;
 use rs_cam_viz::ui::AppEvent;
 
 // ── the pure decision ──────────────────────────────────────────────────────
 
-/// `k` enabled rest ops plus a pinned resolution = a ladder bounded by `k + 1`
-/// rounds. A stock chain cannot be longer than the number of links in it.
+/// `k` enabled rest ops plus a supplied resolution: the plan simulates, at
+/// exactly the cell size that arrived.
 #[test]
-fn rest_ops_with_a_resolution_produce_a_bounded_looping_plan() {
+fn rest_ops_with_a_resolution_are_accepted() {
     for k in 1..=4 {
         let rest_ops: Vec<usize> = (1..=k).collect();
-        let plan = plan_fixpoint(true, &rest_ops, Some(0.15))
-            .unwrap_or_else(|_| panic!("{k} rest ops + a resolution must plan a ladder"));
-        assert!(plan.enabled, "k={k}");
-        assert_eq!(plan.resolution_mm, Some(0.15), "k={k}");
-        assert_eq!(plan.max_rounds, k + 1, "k={k}");
-        assert_eq!(plan.round, 1, "k={k}");
-        assert_eq!(plan.simulations, 0, "k={k}");
-        assert!(!plan.awaiting_simulation, "k={k}");
+        let resolution = require_resolution(true, &rest_ops, Some(0.15))
+            .unwrap_or_else(|_| panic!("{k} rest ops + a resolution must be accepted"));
+        assert_eq!(resolution, Some(0.15), "k={k}");
     }
 }
 
-/// Nothing depends on simulated stock, so no simulation runs and no resolution
-/// is needed — the pre-A/M11 single pass, unchanged.
+/// Nothing depends on simulated stock, so no simulation is forced and no
+/// resolution is needed.
 #[test]
-fn no_rest_ops_is_a_single_pass_and_needs_no_resolution() {
-    let plan = plan_fixpoint(true, &[], None).expect("no rest ops needs no resolution");
-    assert!(!plan.enabled);
-    assert_eq!(plan.max_rounds, 1);
-    assert!(plan.resolution_mm.is_none());
+fn no_rest_ops_needs_no_resolution() {
+    let resolution = require_resolution(true, &[], None).expect("no rest ops needs no resolution");
+    assert!(
+        resolution.is_none(),
+        "with no cell size the plan runs no simulation at all, so a no-rest          generate_all cannot simulate at a size the agent never chose"
+    );
 }
 
-/// An explicit opt-out is honoured even with a chain present.
+/// An explicit opt-out runs no simulation even with a chain present.
 #[test]
-fn fixpoint_off_is_a_single_pass_even_with_a_chain() {
-    let plan = plan_fixpoint(false, &[1, 2, 3], None).expect("opting out never refuses");
-    assert!(!plan.enabled);
-    assert_eq!(plan.max_rounds, 1);
+fn fixpoint_off_runs_no_simulation_even_with_a_chain() {
+    let resolution = require_resolution(false, &[1, 2, 3], None).expect("opting out never refuses");
+    assert!(resolution.is_none());
 }
 
 /// A/M10 — the refusal, and what it carries so each surface can render its own
@@ -74,14 +70,14 @@ fn fixpoint_off_is_a_single_pass_even_with_a_chain() {
 #[test]
 fn a_chain_without_a_resolution_refuses_and_names_the_blocking_ops() {
     for supplied in [None, Some(0.0), Some(-0.1), Some(f64::NAN)] {
-        let refusal = plan_fixpoint(true, &[2, 5], supplied)
+        let refusal = require_resolution(true, &[2, 5], supplied)
             .err()
             .unwrap_or_else(|| panic!("{supplied:?} must not be accepted as a cell size"));
         assert_eq!(refusal.rest_op_indices, vec![2, 5], "{supplied:?}");
         assert!(!refusal.supplied_clause().is_empty(), "{supplied:?}");
     }
     assert!(
-        plan_fixpoint(true, &[2], None)
+        require_resolution(true, &[2], None)
             .err()
             .unwrap()
             .supplied_clause()
@@ -157,24 +153,42 @@ fn controller_with_chain(rest_ops: usize) -> AppController<SilentBackend> {
     controller
 }
 
-/// THE Phase O gate. With a chain present and a resolution pinned, the GUI's
-/// Generate All arms the ladder — the same tracker the MCP path arms — instead
-/// of firing a single pass and leaving the rest ops blocked.
+/// The one line every finished plan leaves behind.
+fn summary(controller: &AppController<SilentBackend>) -> String {
+    controller
+        .notifications()
+        .iter()
+        .map(|n| n.message.clone())
+        .find(|m| m.starts_with("Generated "))
+        .expect("every plan reports one summary")
+}
+
+/// THE Phase O gate. With a chain present, the GUI's Generate All walks a
+/// plan — the same plan the MCP path walks — instead of firing a single pass
+/// and leaving the rest ops blocked. Six steps: three generations, one prefix
+/// simulation per rest op, and the closing full simulation.
+///
+/// `SilentBackend` has no model, so every submit refuses at validation and
+/// the plan walks to its end inside the call. That is what makes the STEP
+/// COUNT observable here; what the lane does with a submit is the controller
+/// sentry's subject, not this file's.
 #[test]
-fn gui_generate_all_arms_the_ladder_when_a_resolution_is_pinned() {
+fn gui_generate_all_walks_a_plan_when_a_resolution_is_pinned() {
     let mut controller = controller_with_chain(2);
     controller.state.simulation.auto_resolution = false;
-    controller.state.simulation.resolution = 0.15;
+    controller.state.simulation.resolution = 0.02;
 
     controller.handle_internal_event(AppEvent::GenerateAll);
 
+    let summary = summary(&controller);
     assert!(
-        controller.awaiting_generate_all(),
-        "a chain + a pinned resolution must start the fixpoint ladder"
+        summary.contains("in 6 steps"),
+        "a chain of two rest ops plans three generations, two prefix \
+         simulations and one closing simulation: {summary}"
     );
     assert!(
-        controller.awaiting_deferred_completions() > 0,
-        "the ladder owes a future frame, so the repaint driver must see it"
+        controller.pending_plan_confirm().is_none(),
+        "a cell size finer than the rest needs asks nothing"
     );
     assert!(
         controller
@@ -184,49 +198,57 @@ fn gui_generate_all_arms_the_ladder_when_a_resolution_is_pinned() {
     );
 }
 
-/// The other end of A/M10. `auto_resolution` is NOT a pinned cell size — it is
-/// re-derived per simulation from whatever has generated so far, so it can
-/// move between rounds of one ladder. The GUI refuses and says which control
-/// to touch; it does not start a run whose verdicts nobody asked for.
+/// R1, and the test this INVERTS. The old rule refused to start on "Auto from
+/// tool size", which is the panel's default, so the operator's first Generate
+/// All was an error message. The panel's setting is their standing choice; the
+/// plan reads it, narrows the REQUEST to what the rest needs, and says
+/// nothing.
 #[test]
-fn gui_generate_all_refuses_rather_than_guessing_a_resolution() {
+fn gui_generate_all_reads_the_panel_resolution_r1() {
     let mut controller = controller_with_chain(2);
     controller.state.simulation.auto_resolution = true;
+    let before = controller.state.simulation.resolution;
 
     controller.handle_internal_event(AppEvent::GenerateAll);
 
     assert!(
-        !controller.awaiting_generate_all(),
-        "a refusal must not leave a ladder armed"
-    );
-    let refusal = controller
-        .active_notifications()
-        .find(|n| n.message.contains("resolution"))
-        .map(|n| n.message.clone())
-        .expect("the refusal has to reach the operator, not just the log");
-    assert!(
-        refusal.contains("Auto from tool size"),
-        "the refusal must name the control that fixes it: {refusal}"
+        summary(&controller).contains("in 6 steps"),
+        "auto resolution must walk a plan, not refuse one"
     );
     assert!(
-        refusal.contains('2'),
-        "the refusal must say how many ops force the ladder: {refusal}"
+        controller.pending_plan_confirm().is_none(),
+        "auto asks nothing: the plan narrows the request, not the panel"
+    );
+    assert!(
+        controller
+            .active_notifications()
+            .all(|n| !n.message.contains("resolution")),
+        "the operator is asked for nothing"
+    );
+    assert!(
+        (controller.state.simulation.resolution - before).abs() < f64::EPSILON,
+        "the plan does not write the panel unless the operator says so"
+    );
+    assert!(
+        controller.state.simulation.auto_resolution,
+        "and it does not untick the operator's checkbox"
     );
 }
 
-/// A project with no rest ops keeps the pre-Phase-O behaviour exactly: every
-/// config submitted once, no ladder state, nothing said to the operator.
+/// The other inversion. A project with no rest ops used to take a bare submit
+/// loop with no plan state and no summary; it now walks the same plan, so one
+/// summary exists.
 #[test]
-fn gui_generate_all_without_a_chain_stays_a_single_pass() {
+fn gui_generate_all_without_a_chain_still_walks_a_plan() {
     let mut controller = controller_with_chain(0);
 
     controller.handle_internal_event(AppEvent::GenerateAll);
 
+    let summary = summary(&controller);
     assert!(
-        !controller.awaiting_generate_all(),
-        "no rest op means no ladder"
+        summary.contains("in 2 steps"),
+        "one generation and the closing simulation: {summary}"
     );
-    assert_eq!(controller.awaiting_deferred_completions(), 0);
     assert!(
         controller
             .active_notifications()

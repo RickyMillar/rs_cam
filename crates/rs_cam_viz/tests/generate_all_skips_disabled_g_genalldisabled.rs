@@ -27,6 +27,7 @@ use std::sync::{Arc, Mutex};
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::session::generation_plan::{Scope, Step, plan};
 use rs_cam_core::session::{ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_viz::compute::{
     CollisionRequest, ComputeBackend, ComputeLane, ComputeMessage, ComputeRequest,
@@ -111,16 +112,30 @@ fn controller_with_a_disabled_op() -> (AppController<RecordingBackend>, Arc<Mute
 
 /// THE sentry. The disabled op must not reach the compute lane. Pre-fix the
 /// log reads `[0, 1, 2]`.
+///
+/// W1 split the measurement in two, because the plan submits ONE step at a
+/// time and this backend never answers: the WALK is what names every
+/// operation Generate All will submit, and the lane log is what proves the
+/// walk really drives the lane. The enable filter now has one owner,
+/// `rs_cam_core::session::generation_plan::plan`, and both halves read it.
 #[test]
 fn generate_all_without_a_chain_submits_only_enabled_ops() {
     let (mut controller, log) = controller_with_a_disabled_op();
 
     controller.handle_internal_event(AppEvent::GenerateAll);
-    // `handle_generate_all` submits this arm directly, but drain any events
-    // it queued so the assertion covers both routes to the lane.
-    for event in controller.drain_events() {
-        controller.handle_internal_event(event);
-    }
+
+    let generates: Vec<ToolpathId> = plan(&controller.state.session, Scope::Project)
+        .into_iter()
+        .filter_map(|step| match step {
+            Step::Generate { toolpath, .. } => Some(toolpath),
+            Step::Simulate { .. } => None,
+        })
+        .collect();
+    assert_eq!(
+        generates,
+        vec![ToolpathId(0), ToolpathId(2)],
+        "the walk holds exactly the enabled ops, in plan order"
+    );
 
     let submitted = log.lock().expect("submission log").clone();
     assert!(
@@ -129,8 +144,13 @@ fn generate_all_without_a_chain_submits_only_enabled_ops() {
     );
     assert_eq!(
         submitted,
-        vec![ToolpathId(0), ToolpathId(2)],
-        "Generate All submits exactly the enabled ops, in plan order"
+        vec![ToolpathId(0)],
+        "the plan submits its first step and waits for the completion: \
+         {submitted:?}"
+    );
+    assert!(
+        controller.drain_events().is_empty(),
+        "no plan step hands off through the event queue"
     );
 }
 

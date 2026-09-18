@@ -246,11 +246,22 @@ impl<B: ComputeBackend> AppController<B> {
         stock_bbox: BoundingBox3,
         _model_setup_idx: Option<usize>,
         memoize_prefix: bool,
+        plan_resolution: Option<crate::controller::generate_all::PlanResolution>,
     ) {
         if self.state.simulation.auto_resolution {
             self.state.simulation.resolution =
                 auto_resolution_for_tools(all_tools_flat, &stock_bbox);
         }
+        // R1. The panel's setting IS the operator's standing choice, so it is
+        // what a plain Run Simulation and a GUI plan both use. A plan only
+        // narrows it, and only when the rest it machines needs a finer cell
+        // than the panel holds. An MCP plan carries its caller's own cell
+        // size, which nothing may move. Either way the panel is NOT written:
+        // the request carries the number, and the operator's dials stay
+        // theirs (G-RESNOTICE is deleted with the write that caused it).
+        let request_resolution = plan_resolution.map_or(self.state.simulation.resolution, |plan| {
+            plan.resolve(self.state.simulation.resolution)
+        });
 
         let model_mesh = self
             .state
@@ -296,7 +307,7 @@ impl<B: ComputeBackend> AppController<B> {
                 groups,
                 stock_bbox,
                 stock_top_z: stock_bbox.max.z,
-                resolution: self.state.simulation.resolution,
+                resolution: request_resolution,
                 metric_options: self.state.simulation.metric_options,
                 spindle_rpm: self.state.gui.post.spindle_speed,
                 rapid_feed_mm_min: if self.state.gui.post.high_feedrate_mode {
@@ -311,22 +322,26 @@ impl<B: ComputeBackend> AppController<B> {
         });
     }
 
-    /// Simulate every enabled toolpath. Returns `false` when there was
-    /// nothing to simulate and no request was submitted — A/M11's fixpoint
-    /// loop must know that, or it would wait forever for a completion that
-    /// will never drain.
+    /// Simulate every enabled toolpath at the panel's own resolution.
+    ///
+    /// Returns `false` when there was nothing to simulate and no request was
+    /// submitted. A plan step must know that, or it would wait forever for a
+    /// completion that will never drain.
     pub(crate) fn run_simulation_with_all(&mut self) -> bool {
-        self.run_simulation_with_all_memoized(false)
+        self.run_simulation_all(false, None)
     }
 
-    /// [`Self::run_simulation_with_all`] with control over the S5 prefix memo.
+    /// [`Self::run_simulation_with_all`] with the S5 prefix memo and the
+    /// plan's cell size.
     ///
-    /// `memoize_prefix` is set **only** by the `generate_all` fixpoint ladder
-    /// (`controller::events::compute::settle_generate_all_round`), the one
-    /// caller that runs several simulations over a growing project back to
-    /// back. Every other simulation still consumes a held snapshot when it
-    /// matches, but leaves none behind.
-    pub(crate) fn run_simulation_with_all_memoized(&mut self, memoize_prefix: bool) -> bool {
+    /// `memoize_prefix` is `false` for the plan's CLOSING simulation: it is
+    /// the last one and leaves nothing behind. Only
+    /// [`Self::run_simulation_prefix`] memoises.
+    pub(crate) fn run_simulation_all(
+        &mut self,
+        memoize_prefix: bool,
+        plan_resolution: Option<crate::controller::generate_all::PlanResolution>,
+    ) -> bool {
         let Some((groups, all_tools_flat, stock_bbox)) =
             self.build_simulation_groups(|_setup_idx, tc| tc.enabled, |_setup_idx| false)
         else {
@@ -343,6 +358,40 @@ impl<B: ComputeBackend> AppController<B> {
             stock_bbox,
             Some(0),
             memoize_prefix,
+            plan_resolution,
+        );
+        true
+    }
+
+    /// Simulate setups `0..=setup_idx`, every enabled operation, for a plan.
+    ///
+    /// The filter is "every ENABLED operation in setups `0..=setup_idx`",
+    /// never a narrowed id list. `build_simulation_groups` feeds the phantom
+    /// scan the count of the operations its include filter ADMITTED, so
+    /// dropping a generated operation that sits before the pending one
+    /// shifts that count down and takes the snapshot BEFORE that operation's
+    /// cuts. For a rest operation that is an over-cut, not a stale preview.
+    ///
+    /// Answers `false` when the builder produced no group, so the plan
+    /// records `Skipped` instead of waiting for a result that never drains.
+    pub(crate) fn run_simulation_prefix(
+        &mut self,
+        setup_idx: usize,
+        memoize_prefix: bool,
+        plan_resolution: Option<crate::controller::generate_all::PlanResolution>,
+    ) -> bool {
+        let Some((groups, all_tools_flat, stock_bbox)) =
+            self.build_simulation_groups(|i, tc| i <= setup_idx && tc.enabled, |i| i == setup_idx)
+        else {
+            return false;
+        };
+        self.submit_simulation_for_groups(
+            groups,
+            &all_tools_flat,
+            stock_bbox,
+            Some(setup_idx),
+            memoize_prefix,
+            plan_resolution,
         );
         true
     }
@@ -386,6 +435,7 @@ impl<B: ComputeBackend> AppController<B> {
             stock_bbox,
             Some(target_setup_idx),
             false,
+            None,
         );
     }
 

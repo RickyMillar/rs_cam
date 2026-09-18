@@ -238,7 +238,7 @@ fn diagnostics_separate_blocked_from_failed_and_exclude_disabled() {
 /// and nothing told the operator that `k` was three.
 #[cfg(feature = "mcp")]
 #[test]
-fn generate_all_drives_a_three_deep_rest_chain_to_fixpoint_in_one_call() {
+fn generate_all_drives_a_three_deep_rest_chain_in_one_call() {
     let mut controller = rest_chain_controller(3);
     let (tx, mut rx) = tokio::sync::oneshot::channel();
     controller.mcp_start_generate_all(true, Some(1.0), tx, None);
@@ -256,30 +256,33 @@ fn generate_all_drives_a_three_deep_rest_chain_to_fixpoint_in_one_call() {
             .as_array()
             .expect("array")
             .is_empty(),
-        "nothing may still be blocked at the fixpoint, reply: {reply}"
+        "nothing may still be blocked at the end, reply: {reply}"
     );
-    // One round per link plus the initial pass — and the caller is TOLD.
-    assert_eq!(reply["rounds"], 4, "reply: {reply}");
-    assert_eq!(reply["simulations"], 3, "reply: {reply}");
-    assert_eq!(controller.compute.simulations, 3);
+    // W1 wire break: `rounds` is gone. Four generate steps, one prefix
+    // simulation per link, and the closing full simulation the explicit
+    // resolution buys. The caller is TOLD how many steps it took.
+    assert_eq!(reply["steps"], 8, "reply: {reply}");
+    assert!(reply["rounds"].is_null(), "`rounds` is gone: {reply}");
+    assert_eq!(reply["simulations"], 4, "reply: {reply}");
+    assert_eq!(controller.compute.simulations, 4);
 
     for tc in controller.state.session.toolpath_configs() {
         let rt = controller.state.gui.toolpath_rt.get(&tc.id);
         assert!(
             rt.is_some_and(|rt| matches!(rt.status, crate::state::toolpath::ComputeStatus::Done)),
-            "'{}' should be Done at the fixpoint, got {:?}",
+            "'{}' should be Done at the end, got {:?}",
             tc.name,
             rt.map(|rt| rt.status.label())
         );
     }
 }
 
-/// The loop must stop on a genuinely-failing op instead of spinning: a hard
-/// failure is never retried, so condition (a) — "something is blocked purely
-/// on sequencing" — goes false and the round count stays bounded.
+/// The plan must stop on a genuinely-failing op instead of spinning. The
+/// bound is structural now: the plan is a finite list, no step is retried,
+/// and the cursor only moves forward.
 #[cfg(feature = "mcp")]
 #[test]
-fn the_fixpoint_loop_terminates_on_a_genuinely_failing_op() {
+fn the_plan_terminates_on_a_genuinely_failing_op() {
     let mut controller = rest_chain_controller(3);
     // Poison the middle link. Everything downstream can then never see stock.
     let poisoned = controller.state.session.toolpath_configs()[1].id;
@@ -298,10 +301,10 @@ fn the_fixpoint_loop_terminates_on_a_genuinely_failing_op() {
             .contains("synthetic hard failure"),
         "the final error must be clear about what failed, reply: {reply}"
     );
-    let rounds = reply["rounds"].as_u64().expect("rounds");
+    let steps = reply["steps"].as_u64().expect("steps");
     assert!(
-        (1..=4).contains(&rounds),
-        "rounds must stay inside the hard bound (rest ops + 1 = 4), got {rounds}"
+        steps > 0,
+        "the plan reports the step count it held, got {steps}"
     );
     // The ops downstream of the failure are reported as still waiting, each
     // naming what it waits for — not as failures of their own.
@@ -559,8 +562,9 @@ fn generate_all_refuses_to_guess_a_simulation_resolution() {
     );
 }
 
-/// `fixpoint: false` is the pre-A/M11 single pass: no simulation, no
-/// resolution needed, blocked ops reported rather than retried.
+/// `fixpoint: false` runs no simulation at all: no resolution is needed, the
+/// plan holds only its Generate steps, and a blocked op is reported rather
+/// than unblocked.
 #[cfg(feature = "mcp")]
 #[test]
 fn fixpoint_false_keeps_the_old_single_pass_behaviour() {
@@ -569,7 +573,7 @@ fn fixpoint_false_keeps_the_old_single_pass_behaviour() {
     controller.mcp_start_generate_all(false, None, tx, None);
     let reply = pump_until_resolved(&mut controller, &mut rx);
 
-    assert_eq!(reply["rounds"], 1);
+    assert_eq!(reply["steps"], 4, "four operations, no simulation step");
     assert_eq!(reply["simulations"], 0);
     assert_eq!(controller.compute.simulations, 0);
     assert_eq!(
@@ -717,11 +721,13 @@ fn a_genuine_cancel_is_still_reported_by_generate_all() {
     let reply = pump_lane_model(&mut controller, &mut rx);
 
     assert_eq!(reply["generated"], 0, "reply: {reply}");
-    assert_eq!(reply["failed"], 1, "reply: {reply}");
-    let errors = reply["errors"].as_array().expect("errors array");
-    assert_eq!(errors.len(), 1, "reply: {reply}");
+    assert_eq!(reply["ok"], false, "reply: {reply}");
+    // W1: a cancel is not a FAILURE. The operator or an agent asked for it,
+    // and every step behind it would read a stock that never moved, so it
+    // stops the plan and the plan says why.
+    assert_eq!(reply["failed"], 0, "reply: {reply}");
     assert!(
-        errors[0]["message"]
+        reply["loop_error"]
             .as_str()
             .unwrap_or_default()
             .contains("cancelled"),

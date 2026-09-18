@@ -280,10 +280,14 @@ impl<B: ComputeBackend> AppController<B> {
         if stock_source == StockSource::FromRemainingStock
             && self.state.simulation.prior_stock_for(tp_id).is_none()
         {
+            // W1: no toast. Blocked is a SEQUENCING state, not an error
+            // (A/M11). The row already reads WAIT — `block_toolpath_submit`
+            // sets `ComputeStatus::AwaitingPriorStock` and the card derives
+            // from that — and the plan reports the whole set once. After R6
+            // every GUI and MCP generate runs its ancestors first, so a
+            // blocked submit is a state the operator can see, never news.
             let block = self.prior_stock_blocker(tp_id, &toolpath_name);
-            let notice = block.message.clone();
             self.block_toolpath_submit(tp_id, block);
-            self.push_notification(notice, super::super::Severity::Warning);
             return;
         }
 
@@ -369,15 +373,15 @@ impl<B: ComputeBackend> AppController<B> {
     /// Mark every toolpath whose *enabled* boundary is `DerivedRestRegions`
     /// referencing `source_id` as stale, using the same `stale_since`
     /// mechanism `crate::state::stale::stamp_stale` gives every command
-    /// route (WP28 deleted the MCP surface's own helper). A
-    /// `DerivedRestRegions` boundary's
-    /// clip depends entirely on the source toolpath's cached
-    /// `rest_regions` — any regeneration of the source (regions changed,
-    /// vanished, or newly appeared) or its removal invalidates every
-    /// dependent's cached result just as surely as editing the dependent's
-    /// own boundary config would, so this sweep is called from both the
-    /// generation-completion handler (`drain_compute_results`, below) and
-    /// `handle_remove_toolpath` (`controller/events/toolpath.rs`).
+    /// route.
+    ///
+    /// W1 removed the generation-completion caller: core's `AdoptResult`
+    /// walks the source's consumers itself (D1) and the drain stamps
+    /// `Effects::stale`, which covers PrevTool as well as Regions. What is
+    /// left are the two REMOVAL callers, `handle_remove_toolpath` and the
+    /// multi-tool planner. Both run against a session the source has already
+    /// left, where a Regions edge resolves to no source at all, so the core
+    /// walk cannot name the consumer and this sweep still can.
     pub(crate) fn mark_derived_rest_dependents_stale(&mut self, source_id: ToolpathId) {
         let dependent_ids: Vec<ToolpathId> = self
             .state
@@ -483,6 +487,13 @@ impl<B: ComputeBackend> AppController<B> {
         match result.result {
             Ok(computed) => {
                 rt.status = ComputeStatus::Done;
+                // W0/D1 handoff: `AdoptResult` now drops the source's
+                // Regions and PrevTool consumers through the core walker, so
+                // the adopt reports a stale set. Collected here and stamped
+                // below, after the runtime-row borrow ends, because
+                // `stamp_stale` takes the whole `AppState`.
+                let mut adopt_stale: std::collections::BTreeSet<usize> =
+                    std::collections::BTreeSet::new();
                 // Sync the core-side `session.results` cache so the
                 // single point of truth for "this toolpath has a
                 // fresh result" is `ProjectSession`, not the
@@ -566,8 +577,6 @@ impl<B: ComputeBackend> AppController<B> {
                                     result: Box::new(core_result),
                                 },
                             ));
-                    // The `Ok` effects are empty: a completion
-                    // records an answer, it moves no revision.
                     // On a refusal the core slot stays empty,
                     // which derives `EditedSince`. `rt.result`
                     // below still keeps the geometry, so the
@@ -575,18 +584,27 @@ impl<B: ComputeBackend> AppController<B> {
                     // not lose a long 3D generation. That is
                     // what the deleted viz gate did, and the
                     // outcome is the same.
-                    if let Err(e) = adopted {
-                        tracing::debug!(toolpath = tp_index, "compute result not adopted: {e}");
+                    //
+                    // Since W0's D1 the `Ok` effects are NOT
+                    // empty: the source's OUTPUT moved, so the
+                    // walker drops its Regions and PrevTool
+                    // consumers and names them here. A PrevTool
+                    // consumer gets its `stale_since` stamp from
+                    // this set and from nowhere else.
+                    match adopted {
+                        Ok(effects) => adopt_stale = effects.stale,
+                        Err(e) => {
+                            tracing::debug!(toolpath = tp_index, "compute result not adopted: {e}");
+                        }
                     }
                 }
                 rt.result = Some(computed);
-                // Any toolpath whose `DerivedRestRegions` boundary
-                // depends on this one just saw its source result
-                // replaced (rest_regions may have appeared,
-                // changed, or vanished) — force a regenerate so
-                // the dependent re-resolves against the fresh
-                // regions instead of clipping against a stale set.
-                self.mark_derived_rest_dependents_stale(tp_id);
+                // W1: the viz twin `mark_derived_rest_dependents_stale` is
+                // NOT called here any more. It re-derived the Regions rule
+                // by hand and saw no PrevTool consumer at all. The core
+                // walker's answer covers both, so the GUI auto-regeneration
+                // clock reads the one truth.
+                crate::state::stale::stamp_stale(&mut self.state, &adopt_stale);
             }
             Err(ComputeError::Cancelled) => {
                 rt.status = ComputeStatus::Pending;
@@ -936,11 +954,10 @@ impl<B: ComputeBackend> AppController<B> {
                 // Notify pending MCP simulation request
                 #[cfg(feature = "mcp")]
                 self.notify_mcp_simulation_complete();
-                // A/M11: if this simulation was the fixpoint loop's
-                // own, the blocked rest ops can now see their upstream
-                // stock — start the next round. Ungated since Phase O:
-                // the GUI's Generate All runs the same ladder.
-                self.resume_generate_all_after_simulation(None);
+                // W1: if this simulation was the plan's own, the next step
+                // can now read the stock it left. Advanced by DIRECT CALL,
+                // so no painted frame is needed.
+                self.plan_simulation_landed(crate::controller::generate_all::PlanSimOutcome::Done);
             }
             Err(ComputeError::Cancelled) => {
                 let _ = (
@@ -953,9 +970,9 @@ impl<B: ComputeBackend> AppController<B> {
                 );
                 #[cfg(feature = "mcp")]
                 self.notify_mcp_simulation_error("Simulation cancelled");
-                self.resume_generate_all_after_simulation(Some(
-                    "the simulation was cancelled".to_owned(),
-                ));
+                self.plan_simulation_landed(
+                    crate::controller::generate_all::PlanSimOutcome::Cancelled,
+                );
             }
             Err(ComputeError::Message(error)) => {
                 let _ = (
@@ -973,7 +990,9 @@ impl<B: ComputeBackend> AppController<B> {
                 );
                 #[cfg(feature = "mcp")]
                 self.notify_mcp_simulation_error(&error);
-                self.resume_generate_all_after_simulation(Some(error));
+                self.plan_simulation_landed(
+                    crate::controller::generate_all::PlanSimOutcome::Failed(error),
+                );
             }
         }
     }
@@ -1501,16 +1520,41 @@ impl<B: ComputeBackend> AppController<B> {
         }
     }
 
-    // ── A/M11: generate_all as a fixpoint over the rest-stock chain ──
+    // ── W1: the generation plan ──────────────────────────────────────────
 
-    /// Start a `generate_all` from the MCP tool. When `fixpoint` is on this
-    /// iterates generate -> simulate -> generate until nothing new appears;
-    /// see [`crate::controller::generate_all::FixpointPlan`] for the
-    /// termination argument.
+    /// The core plan for `scope`, as this driver's own step list.
+    ///
+    /// The order is core's, at
+    /// [`rs_cam_core::session::generation_plan::plan`]. The driver adds only
+    /// two things: it drops the simulation steps when the plan runs no
+    /// simulation at all, and it re-resolves each operation's index by id at
+    /// submit, because a plan is cancelled by any edit that could move one.
+    pub(crate) fn plan_steps(
+        &self,
+        scope: rs_cam_core::session::generation_plan::Scope,
+        with_simulations: bool,
+    ) -> Vec<crate::controller::generate_all::PlanStep> {
+        use crate::controller::generate_all::PlanStep;
+        use rs_cam_core::session::generation_plan::{Step, plan};
+
+        plan(&self.state.session, scope)
+            .into_iter()
+            .filter_map(|step| match step {
+                Step::Simulate { setup, upto } => {
+                    with_simulations.then_some(PlanStep::SimulatePrefix { setup, upto })
+                }
+                Step::Generate { toolpath, .. } => Some(PlanStep::Generate(toolpath)),
+            })
+            .collect()
+    }
+
+    /// Start a `generate_all` from the MCP tool.
     ///
     /// `simulation_resolution_mm` is refused rather than defaulted when the
     /// project needs it (A/M10): a silently chosen cell size changes
-    /// collision counts and engagement, so the loop must not pick one.
+    /// collision counts and engagement, so the plan must not pick one. Only
+    /// this surface refuses. The GUI reads the Simulation panel, which IS
+    /// the operator's standing choice (R1).
     #[cfg(feature = "mcp")]
     pub(crate) fn mcp_start_generate_all(
         &mut self,
@@ -1519,8 +1563,12 @@ impl<B: ComputeBackend> AppController<B> {
         response_tx: tokio::sync::oneshot::Sender<crate::mcp_bridge::McpResponse>,
         progress_tx: Option<tokio::sync::mpsc::Sender<crate::mcp_bridge::ProgressUpdate>>,
     ) {
-        use crate::controller::generate_all::{GenerateAllSink, generate_all_scope, plan_fixpoint};
+        use crate::controller::generate_all::{
+            GenerateAllSink, GenerationPlan, PlanResolution, PlanStep, generate_all_scope,
+            require_resolution,
+        };
         use crate::mcp_bridge::McpResponse;
+        use rs_cam_core::session::generation_plan::Scope;
 
         let scope = generate_all_scope(self.state.session.toolpath_configs());
 
@@ -1531,33 +1579,48 @@ impl<B: ComputeBackend> AppController<B> {
             return;
         }
 
-        let plan = match plan_fixpoint(fixpoint, &scope.rest_op_indices, simulation_resolution_mm) {
-            Ok(plan) => plan,
-            Err(missing) => {
-                let bad = missing.supplied_clause();
-                let _ = response_tx.send(McpResponse {
-                    result: Ok(rs_cam_mcp::server::json_str(serde_json::json!({
-                        "ok": false,
-                        "error": format!(
-                            "generate_all needs `simulation_resolution_mm`, and {bad}. This \
-                             project has {} enabled rest-machining operation(s) (indices {:?}) \
-                             whose stock comes from a simulation, so reaching a fully \
-                             generated state requires running simulations between generate \
-                             rounds. The resolution is NOT guessed: collision counts and \
-                             engagement both move with cell size, so a silently chosen one \
-                             would hand you verdicts you did not ask for. Pass the same \
-                             resolution you will use for verification — well below the \
-                             finishing tool's TIP radius (e.g. 0.1 for a 1 mm ball). To skip \
-                             the ladder and get the old single-pass behaviour, pass \
-                             `fixpoint: false`.",
-                            missing.rest_op_indices.len(),
-                            missing.rest_op_indices,
-                        ),
-                    }))),
-                });
-                return;
-            }
-        };
+        // Checked before the plan is built: a second plan would strand this
+        // caller's oneshot behind the first one's cursor.
+        if self.plan.is_some() {
+            let _ = response_tx.send(McpResponse {
+                result: Ok(rs_cam_mcp::server::json_str(serde_json::json!({
+                    "ok": false,
+                    "error": "a generation plan is already running. Poll \
+                              `generation_status` for its step, or call \
+                              `cancel_generation` and try again.",
+                }))),
+            });
+            return;
+        }
+
+        let resolution =
+            match require_resolution(fixpoint, &scope.rest_op_indices, simulation_resolution_mm) {
+                Ok(resolution) => resolution,
+                Err(missing) => {
+                    let bad = missing.supplied_clause();
+                    let _ = response_tx.send(McpResponse {
+                        result: Ok(rs_cam_mcp::server::json_str(serde_json::json!({
+                            "ok": false,
+                            "error": format!(
+                                "generate_all needs `simulation_resolution_mm`, and {bad}. This \
+                                 project has {} enabled rest-machining operation(s) (indices {:?}) \
+                                 whose stock comes from a simulation, so reaching a fully \
+                                 generated state requires running simulations between generate \
+                                 rounds. The resolution is NOT guessed: collision counts and \
+                                 engagement both move with cell size, so a silently chosen one \
+                                 would hand you verdicts you did not ask for. Pass the same \
+                                 resolution you will use for verification — well below the \
+                                 finishing tool's TIP radius (e.g. 0.1 for a 1 mm ball). To skip \
+                                 the ladder and get the old single-pass behaviour, pass \
+                                 `fixpoint: false`.",
+                                missing.rest_op_indices.len(),
+                                missing.rest_op_indices,
+                            ),
+                        }))),
+                    });
+                    return;
+                }
+            };
 
         // Checked before anything is queued: without the slot no individual
         // toolpath waiter can ever be resolved, so starting the run would
@@ -1571,13 +1634,13 @@ impl<B: ComputeBackend> AppController<B> {
 
         // MCP-only: `get_generation_debug_trace` needs the generator's
         // step-by-step output, and an agent has no other way to turn it on
-        // mid-call. The GUI ladder leaves the operator's own
-        // "capture generator trace" toggle alone.
+        // mid-call. The GUI plan leaves the operator's own "capture generator
+        // trace" toggle alone.
         //
         // WP7: one `SetToolpathDebugOptions` per index, the same row
-        // `mcp_generate_toolpath` and the GUI's own capture toggle take.
-        // The row moves no revision and drops no result, because a debug
-        // trace is an OUTPUT of a generation and never an input to one.
+        // `mcp_generate_toolpath` and the GUI's own capture toggle take. The
+        // row moves no revision and drops no result, because a debug trace is
+        // an OUTPUT of a generation and never an input to one.
         //
         // WP19 `let _ =`: `Effects::stale` is therefore empty and
         // `simulation_cleared` is false. There is nothing to mirror.
@@ -1602,246 +1665,395 @@ impl<B: ComputeBackend> AppController<B> {
                     ));
         }
 
-        self.start_generate_all(
-            scope.enabled,
-            plan,
+        let mut steps = self.plan_steps(Scope::Project, resolution.is_some());
+        // The closing simulation runs only with an explicit resolution. A
+        // no-rest `generate_all` passes `require_resolution` without
+        // supplying one, and simulating there would pick a cell size the
+        // agent never chose.
+        if resolution.is_some() && !steps.is_empty() {
+            steps.push(PlanStep::SimulateAll);
+        }
+
+        let plan = GenerationPlan::new(
+            steps,
+            resolution.map(PlanResolution::Exactly),
             GenerateAllSink::Mcp {
                 response_tx,
                 progress_tx,
             },
         );
+        self.start_plan(plan);
     }
 
-    /// Arm the ladder and submit round 1. Shared entry point: the MCP tool and
-    /// the GUI's Generate All differ only in [`GenerateAllSink`].
-    pub(crate) fn start_generate_all(
-        &mut self,
-        ids: Vec<crate::state::toolpath::ToolpathId>,
-        fixpoint: crate::controller::generate_all::FixpointPlan,
-        sink: crate::controller::generate_all::GenerateAllSink,
-    ) {
-        use crate::controller::generate_all::{GenerateAllSink, PendingGenerateAll};
-
-        let total = ids.len();
-        match &sink {
-            GenerateAllSink::Gui => {
-                self.set_status(format!("Generate All: round 1, {total} operation(s)..."));
-            }
-            #[cfg(feature = "mcp")]
-            GenerateAllSink::Mcp { progress_tx, .. } => {
-                if let Some(tx) = progress_tx.as_ref() {
-                    let _ = tx.try_send(crate::mcp_bridge::ProgressUpdate {
-                        message: format!("Round 1: generating {total} toolpaths..."),
-                        progress: 0.0,
-                        total: Some(total as f64),
-                    });
-                }
-            }
+    /// Arm a plan and submit its first step.
+    ///
+    /// Refuses while another plan runs, and reports the refusal on the new
+    /// plan's own sink, so an MCP oneshot is never stranded.
+    pub(crate) fn start_plan(&mut self, mut plan: crate::controller::generate_all::GenerationPlan) {
+        if self.plan.is_some() {
+            plan.loop_error = Some("a generation plan was already running".to_owned());
+            let summary = plan.completed_summary();
+            self.report_plan(plan.sink, &summary);
+            return;
         }
-
-        for &id in &ids {
-            self.events.push(crate::ui::AppEvent::GenerateToolpath(id));
-        }
-
-        self.generate_all = Some(PendingGenerateAll::new(ids, fixpoint, sink));
+        // The discriminator for a mid-plan edit. `mark_edited` is the only
+        // writer of `edit_counter`, and the adopt path never calls it, so the
+        // plan's own completions cannot cancel it and an operator edit always
+        // does.
+        plan.edit_counter = self.state.gui.edit_counter;
+        self.plan = Some(plan);
+        self.pump_plan();
     }
 
-    /// Called whenever a round might have finished. Either advances the
-    /// ladder (submitting the loop's own simulation) or resolves the caller.
-    fn settle_generate_all_round(&mut self) {
-        use crate::controller::generate_all::{GenerateAllSink, GenerateAllSummary};
+    /// Advance the plan until one step is in flight, or it finishes.
+    ///
+    /// The plan advances by DIRECT CALL, never by pushing an `AppEvent`.
+    /// `self.events` is drained only by `RsCamApp::handle_events` inside
+    /// `draw_frame`, so an event-driven handoff waits for a painted frame —
+    /// and on a hidden or occluded Wayland surface no frame ever runs. That
+    /// was the 137 s dispatch stall. `drain_compute_results` pumps this from
+    /// the off-frame pump, which a compositor cannot park.
+    fn pump_plan(&mut self) {
+        use crate::controller::generate_all::PlanStep;
 
-        enum Next {
+        enum PumpNext {
             Wait,
-            Simulate(f64),
-            Finish(Box<GenerateAllSummary>),
+            Cancel { simulating: bool },
+            Finish,
+            Submit(PlanStep),
         }
 
-        let next = {
-            let Some(ga) = self.generate_all.as_mut() else {
-                return;
-            };
-            if !ga.remaining.is_empty() || ga.fixpoint.awaiting_simulation {
-                Next::Wait
-            } else {
-                // (a) something is blocked purely on sequencing, (b) the round
-                // just finished produced at least one new op, and we are
-                // inside the hard bound. All three, or we stop.
-                let advance = ga.fixpoint.enabled
-                    && !ga.blocked.is_empty()
-                    && ga.fixpoint.completed_this_round > 0
-                    && ga.fixpoint.round < ga.fixpoint.max_rounds;
-                match (advance, ga.fixpoint.resolution_mm) {
-                    (true, Some(res)) => {
-                        ga.fixpoint.awaiting_simulation = true;
-                        ga.fixpoint.simulations += 1;
-                        Next::Simulate(res)
+        if self.plan.as_ref().is_none_or(|plan| plan.pumping) {
+            return;
+        }
+        if let Some(plan) = self.plan.as_mut() {
+            plan.pumping = true;
+        }
+        loop {
+            let live = self.state.gui.edit_counter;
+            let next = {
+                let Some(plan) = self.plan.as_mut() else {
+                    break;
+                };
+                // An operator edit drops results this plan has produced.
+                // Cancel; the 500 ms sweep re-plans. Splicing steps into a
+                // live cursor is not worth the failure mode.
+                if !plan.cancelled && plan.edit_counter != live {
+                    plan.cancelled = true;
+                    if plan.loop_error.is_none() {
+                        plan.loop_error = Some("an edit cancelled the plan".to_owned());
                     }
-                    _ => Next::Finish(Box::new(ga.completed_summary())),
+                }
+                if plan.cancelled {
+                    if plan.in_flight {
+                        PumpNext::Cancel {
+                            simulating: plan.on_simulation(),
+                        }
+                    } else {
+                        PumpNext::Finish
+                    }
+                } else if plan.in_flight {
+                    PumpNext::Wait
+                } else {
+                    match plan.current_step() {
+                        None => PumpNext::Finish,
+                        Some(step) => {
+                            let step = *step;
+                            // Set BEFORE the submit: a submit-time refusal
+                            // funnels through `toolpath_completion_landed`
+                            // and re-enters this driver while `pump_plan` is
+                            // on the stack, and the nested
+                            // `record_step_outcome` needs a step to close.
+                            plan.in_flight = true;
+                            PumpNext::Submit(step)
+                        }
+                    }
+                }
+            };
+            match next {
+                PumpNext::Wait => break,
+                PumpNext::Cancel { simulating } => {
+                    // Not `invalidate_simulation`: it clears `results`,
+                    // `prior_stocks` and playback, which throws away the
+                    // snapshots the plan already earned.
+                    self.compute
+                        .cancel_lane(crate::compute::ComputeLane::Toolpath);
+                    if simulating {
+                        self.compute
+                            .cancel_lane(crate::compute::ComputeLane::Analysis);
+                    }
+                    break;
+                }
+                PumpNext::Finish => {
+                    self.finish_plan();
+                    break;
+                }
+                PumpNext::Submit(step) => {
+                    self.stamp_plan_beat();
+                    self.plan_progress_line();
+                    self.submit_plan_step(step);
                 }
             }
-        };
+        }
+        // `finish_plan` may have taken the plan, so the tail re-borrows
+        // rather than holding one across the loop.
+        if let Some(plan) = self.plan.as_mut() {
+            plan.pumping = false;
+        }
+    }
 
-        match next {
-            Next::Wait => {}
-            Next::Simulate(resolution) => {
-                // G-RESNOTICE: say so before doing it. The write below is
-                // unchanged and unconditional — only the operator's
-                // knowledge of it is new.
-                if let Some(notice) = crate::controller::generate_all::resolution_override_notice(
-                    self.state.simulation.resolution,
-                    self.state.simulation.auto_resolution,
-                    resolution,
-                ) {
-                    self.push_notification(notice, super::super::Severity::Warning);
+    /// Submit the step the cursor names, or record why it submitted nothing.
+    fn submit_plan_step(&mut self, step: crate::controller::generate_all::PlanStep) {
+        use crate::controller::generate_all::{PlanStep, StepOutcome};
+
+        match step {
+            PlanStep::Generate(id) => {
+                let Some((index, _)) = self.state.session.find_toolpath_config_by_id(id) else {
+                    self.record_step_outcome(StepOutcome::Skipped(format!(
+                        "toolpath {} is no longer in the project",
+                        id.0
+                    )));
+                    return;
+                };
+                // The core plan emits a Generate step for every enabled
+                // operation in scope, current or not, because the F.4
+                // property depends on the step being present. An operation
+                // that already holds a CORE result needs no work. The one the
+                // operator named is the exception: a single Generate on a
+                // current operation still regenerates it, and an MCP
+                // `generate_toolpath` turns the debug trace on for exactly
+                // that run.
+                let target = self.plan.as_ref().and_then(|plan| plan.target);
+                if target != Some(id) && self.state.session.get_result(index).is_some() {
+                    self.record_step_outcome(StepOutcome::Skipped(
+                        "it already holds a current result".to_owned(),
+                    ));
+                    return;
                 }
-                self.state.simulation.resolution = resolution;
-                self.state.simulation.auto_resolution = false;
-                if self.run_simulation_with_all_memoized(true) {
-                    self.generate_all_progress(
-                        "Simulating so the blocked rest operations can see their stock...",
-                    );
+                self.submit_toolpath_compute(id);
+            }
+            PlanStep::SimulatePrefix { setup, upto } => {
+                // A blocked or failed operation in this setup latches the
+                // phantom scan at itself, so a later prefix simulation of the
+                // same setup can unlock nothing and is pure cost.
+                if self
+                    .plan
+                    .as_ref()
+                    .is_some_and(|plan| plan.blocked_setups.contains(&setup))
+                {
+                    self.record_step_outcome(StepOutcome::Skipped(format!(
+                        "an earlier operation in this setup did not generate, so no \
+                         simulation can unlock toolpath {}",
+                        upto.0
+                    )));
+                    return;
+                }
+                let Some((position, _)) = self.state.session.find_setup_by_id(setup.0) else {
+                    self.record_step_outcome(StepOutcome::Skipped(
+                        "the setup is no longer in the project".to_owned(),
+                    ));
+                    return;
+                };
+                let resolution = self.plan.as_ref().and_then(|plan| plan.resolution);
+                // S5: prefix simulations of one setup run back to back over a
+                // growing project, the case the memo was built for.
+                if self.run_simulation_prefix(position, true, resolution) {
+                    if let Some(plan) = self.plan.as_mut() {
+                        plan.simulations += 1;
+                    }
                 } else {
-                    // Nothing to simulate — the completion we just armed will
-                    // never drain. Unwind rather than hang.
-                    self.resume_generate_all_after_simulation(Some(
-                        "there was nothing to simulate, so the blocked operations can \
-                         never see upstream stock"
-                            .to_owned(),
+                    self.record_step_outcome(StepOutcome::Skipped(
+                        "there was nothing to simulate".to_owned(),
                     ));
                 }
             }
-            Next::Finish(summary) => {
-                // S5: the ladder is the only thing that asked the analysis
-                // lane to retain a prefix snapshot, so it is the thing that
-                // releases it. Without this the last round's snapshot would
-                // sit on the lane until the next simulation consumed it.
-                self.compute.clear_sim_prefix_cache();
-                let Some(ga) = self.generate_all.take() else {
+            PlanStep::SimulateAll => {
+                let moved = self.plan.as_ref().is_some_and(
+                    crate::controller::generate_all::GenerationPlan::generated_anything,
+                );
+                if !moved {
+                    self.record_step_outcome(StepOutcome::Skipped(
+                        "no operation generated, so the stock did not move".to_owned(),
+                    ));
                     return;
-                };
-                match ga.sink {
-                    GenerateAllSink::Gui => {
-                        let severity = if summary.failed > 0 || summary.loop_error.is_some() {
-                            super::super::Severity::Warning
-                        } else {
-                            super::super::Severity::Info
-                        };
-                        let message =
-                            crate::controller::generate_all::generate_all_headline(&summary);
-                        self.push_notification(message, severity);
+                }
+                let resolution = self.plan.as_ref().and_then(|plan| plan.resolution);
+                // The last simulation leaves no snapshot behind.
+                if self.run_simulation_all(false, resolution) {
+                    if let Some(plan) = self.plan.as_mut() {
+                        plan.simulations += 1;
                     }
-                    #[cfg(feature = "mcp")]
-                    GenerateAllSink::Mcp { response_tx, .. } => {
-                        let _ = response_tx.send(crate::mcp_bridge::McpResponse {
-                            result: Ok(crate::mcp_bridge::build_generate_all_response(&summary)),
-                        });
-                    }
+                } else {
+                    self.record_step_outcome(StepOutcome::Skipped(
+                        "there was nothing to simulate".to_owned(),
+                    ));
                 }
             }
         }
     }
 
-    /// Hook from the simulation drain. Advances the ladder to the next round,
-    /// or stops it when the simulation itself failed.
-    pub(crate) fn resume_generate_all_after_simulation(&mut self, sim_error: Option<String>) {
-        let retry: Vec<ToolpathId> = {
-            let Some(ga) = self.generate_all.as_mut() else {
+    /// Close the step in flight and take the next one.
+    fn record_step_outcome(&mut self, outcome: crate::controller::generate_all::StepOutcome) {
+        {
+            let Some(plan) = self.plan.as_mut() else {
                 return;
             };
-            if !ga.fixpoint.awaiting_simulation {
-                return;
+            if let Some(slot) = plan.outcomes.get_mut(plan.cursor) {
+                *slot = outcome;
             }
-            ga.fixpoint.awaiting_simulation = false;
-            if let Some(err) = sim_error {
-                // Disable the loop as well as recording the error: leaving it
-                // armed with a still-populated `blocked` list would re-arm the
-                // same simulation forever.
-                ga.fixpoint.enabled = false;
-                ga.loop_error = Some(err);
-                Vec::new()
-            } else {
-                ga.fixpoint.round += 1;
-                ga.fixpoint.completed_this_round = 0;
-                let retry: Vec<ToolpathId> = ga.blocked.drain(..).map(|(id, _)| id).collect();
-                ga.remaining.clone_from(&retry);
-                retry
-            }
-        };
-
-        if retry.is_empty() {
-            self.settle_generate_all_round();
-            return;
+            plan.in_flight = false;
+            plan.cursor += 1;
         }
-        let round = self.generate_all.as_ref().map_or(0, |ga| ga.fixpoint.round);
-        self.generate_all_progress(&format!(
-            "Round {round}: regenerating {} operation(s) that were waiting on upstream stock...",
-            retry.len()
-        ));
-        for id in retry {
-            self.events.push(crate::ui::AppEvent::GenerateToolpath(id));
-        }
+        self.stamp_plan_beat();
+        self.pump_plan();
     }
 
-    /// Report ladder progress on whichever surface started it, with the
-    /// completion count the caller already knows.
+    /// Release the plan's held resources and report on its sink.
     ///
-    /// `progress` and `total` reach the MCP progress channel alone. The
-    /// GUI sink writes the status line and reads the message only, so a
-    /// build without the `mcp` feature never reads the two numbers.
-    #[cfg_attr(not(feature = "mcp"), allow(unused_variables))]
-    fn generate_all_progress_at(&mut self, message: &str, progress: f64, total: Option<f64>) {
+    /// S5: the plan is the only thing that asks the analysis lane to retain a
+    /// prefix snapshot, so it is the thing that releases it. One exit path
+    /// means a plan stopped by a simulation error cannot leak the snapshot.
+    fn finish_plan(&mut self) {
+        self.compute.clear_sim_prefix_cache();
+        let Some(plan) = self.plan.take() else {
+            return;
+        };
+        // Stamped after the take, so a reader sees "no plan runs".
+        self.stamp_plan_beat();
+        let summary = plan.completed_summary();
+        self.report_plan(plan.sink, &summary);
+    }
+
+    /// Deliver one finished plan's summary.
+    fn report_plan(
+        &mut self,
+        sink: crate::controller::generate_all::GenerateAllSink,
+        summary: &crate::controller::generate_all::GenerateAllSummary,
+    ) {
         use crate::controller::generate_all::GenerateAllSink;
 
-        let is_gui = match self.generate_all.as_ref() {
-            None => return,
-            Some(ga) => match &ga.sink {
-                GenerateAllSink::Gui => true,
-                #[cfg(feature = "mcp")]
-                GenerateAllSink::Mcp { progress_tx, .. } => {
-                    if let Some(tx) = progress_tx.as_ref() {
-                        let _ = tx.try_send(crate::mcp_bridge::ProgressUpdate {
-                            message: message.to_owned(),
-                            progress,
-                            total,
-                        });
-                    }
-                    false
-                }
-            },
-        };
-        if is_gui {
-            self.set_status(message.to_owned());
+        match sink {
+            GenerateAllSink::Gui => {
+                let severity = if summary.failed > 0 || summary.loop_error.is_some() {
+                    super::super::Severity::Warning
+                } else {
+                    super::super::Severity::Info
+                };
+                let message = crate::controller::generate_all::generate_all_headline(summary);
+                self.push_notification(message, severity);
+            }
+            #[cfg(feature = "mcp")]
+            GenerateAllSink::Mcp { response_tx, .. } => {
+                let _ = response_tx.send(crate::mcp_bridge::McpResponse {
+                    result: Ok(crate::mcp_bridge::build_generate_all_response(summary)),
+                });
+            }
         }
     }
 
-    /// Ladder progress at whatever the run has completed so far.
-    fn generate_all_progress(&mut self, message: &str) {
-        let done = self
-            .generate_all
-            .as_ref()
-            .map_or(0.0, |ga| (ga.completed + ga.failed) as f64);
-        self.generate_all_progress_at(message, done, None);
+    /// Stream one progress line to an MCP caller.
+    ///
+    /// The GUI reads [`Self::generation_plan_progress`] each frame instead.
+    /// The five-second status line no longer carries plan progress.
+    fn plan_progress_line(&self) {
+        #[cfg(feature = "mcp")]
+        {
+            use crate::controller::generate_all::{Activity, GenerateAllSink};
+
+            let Some(progress) = self.generation_plan_progress() else {
+                return;
+            };
+            let message = match &progress.activity {
+                Activity::Generating(_, name) => {
+                    format!("Step {}/{}: generating {name}", progress.step, progress.of)
+                }
+                Activity::Simulating(_, label) => {
+                    format!("Step {}/{}: simulating {label}", progress.step, progress.of)
+                }
+            };
+            let Some(plan) = self.plan.as_ref() else {
+                return;
+            };
+            if let GenerateAllSink::Mcp {
+                progress_tx: Some(tx),
+                ..
+            } = &plan.sink
+            {
+                let _ = tx.try_send(crate::mcp_bridge::ProgressUpdate {
+                    message,
+                    progress: progress.step.saturating_sub(1) as f64,
+                    total: Some(progress.of as f64),
+                });
+            }
+        }
+    }
+
+    /// Stop the plan at the end of the step in flight.
+    ///
+    /// Every later step needs work that will now never happen, so the plan
+    /// reports what it completed rather than walking on.
+    fn stop_plan(&mut self, reason: String) {
+        if let Some(plan) = self.plan.as_mut() {
+            plan.cancelled = true;
+            if plan.loop_error.is_none() {
+                plan.loop_error = Some(reason);
+            }
+        }
+    }
+
+    /// Cancel the plan in flight from a UI control or an MCP call.
+    ///
+    /// The cancelled step drains as `ComputeError::Cancelled`, `finish_plan`
+    /// runs, the S5 memo is released, and the plan reports what it completed.
+    pub fn cancel_generation_plan(&mut self) {
+        let Some(plan) = self.plan.as_ref() else {
+            return;
+        };
+        let in_flight = plan.in_flight;
+        let simulating = plan.on_simulation();
+        self.stop_plan("the operator cancelled the plan".to_owned());
+        self.compute
+            .cancel_lane(crate::compute::ComputeLane::Toolpath);
+        if simulating {
+            self.compute
+                .cancel_lane(crate::compute::ComputeLane::Analysis);
+        }
+        if !in_flight {
+            self.pump_plan();
+        }
     }
 
     /// A toolpath generation reached a terminal state — resolve whoever is
     /// waiting on it.
     ///
     /// Every submit-time rejection and every drained compute result funnels
-    /// through here, so the ladder cannot miss a completion (the failure that
+    /// through here, so the plan cannot miss a completion (the failure that
     /// left an MCP `generate_toolpath` unresolved for ~9 hours).
     fn toolpath_completion_landed(&mut self, tp_id: crate::state::toolpath::ToolpathId) {
         #[cfg(feature = "mcp")]
         self.notify_mcp_toolpath_complete(tp_id);
-        self.record_generate_all_completion(tp_id);
+        self.record_plan_toolpath_completion(tp_id);
     }
 
-    /// Fold one finished toolpath into the in-flight ladder, then let the
-    /// round settle.
-    fn record_generate_all_completion(&mut self, tp_id: crate::state::toolpath::ToolpathId) {
-        // Read before the `&mut` borrow below: the ladder's error rows name
-        // the operation, and the config is gone from the session on the one
-        // path that reports "toolpath runtime not found".
+    /// Fold one finished toolpath into the plan, and take the next step.
+    ///
+    /// A `Generate` step closes ONLY when the completion names the cursor's
+    /// id. A completion for any other id is foreign — the auto-regen sweep,
+    /// a reconciliation resubmit — and leaves the plan alone.
+    fn record_plan_toolpath_completion(&mut self, tp_id: crate::state::toolpath::ToolpathId) {
+        use crate::controller::generate_all::StepOutcome;
+
+        let closes = self
+            .plan
+            .as_ref()
+            .is_some_and(|plan| plan.in_flight && plan.generate_target() == Some(tp_id));
+        if !closes {
+            return;
+        }
+
+        // Read before the `&mut` borrow below: the plan's error rows name the
+        // operation, and the config is gone from the session on the one path
+        // that reports "toolpath runtime not found".
         let tp_name = self
             .state
             .session
@@ -1854,77 +2066,112 @@ impl<B: ComputeBackend> AppController<B> {
             .toolpath_rt
             .get(&tp_id)
             .map(|rt| (rt.result.is_some(), rt.status.clone()));
+        let setup = self
+            .state
+            .session
+            .setup_of_toolpath_id(tp_id)
+            .and_then(|position| self.state.session.list_setups().get(position))
+            .map(|setup| rs_cam_core::ids::SetupId(setup.id));
 
-        let mut progress: Option<(usize, usize)> = None;
-        if let Some(ga) = self.generate_all.as_mut()
-            && let Some(pos) = ga.remaining.iter().position(|id| *id == tp_id)
-        {
-            ga.remaining.remove(pos);
+        let mut stop: Option<String> = None;
+        let outcome = {
+            let Some(plan) = self.plan.as_mut() else {
+                return;
+            };
             match rt_status {
                 Some((true, _)) => {
-                    ga.completed += 1;
-                    ga.fixpoint.completed_this_round += 1;
+                    plan.generated += 1;
+                    StepOutcome::Done
                 }
-                // A/M11: a sequencing block goes in its own bucket and does
-                // NOT count as a failure. The fixpoint loop retries exactly
-                // this set after a simulation; a genuine error is never
-                // retried, which is what makes the loop terminate.
-                Some((false, ComputeStatus::AwaitingPriorStock(b))) => {
-                    ga.blocked.push((tp_id, b.message));
+                // A sequencing block goes in its own bucket and does NOT
+                // count as a failure. The plan already ran this operation's
+                // own prefix simulation, so the block is terminal for it.
+                Some((false, ComputeStatus::AwaitingPriorStock(block))) => {
+                    plan.blocked.push((tp_id, block.message.clone()));
+                    if let Some(setup) = setup {
+                        plan.blocked_setups.insert(setup);
+                    }
+                    StepOutcome::Blocked(block.message)
                 }
-                Some((false, ComputeStatus::Error(e))) => {
-                    ga.failed += 1;
-                    ga.errors.push((tp_id.0, e));
+                Some((false, ComputeStatus::Error(error))) => {
+                    plan.failed += 1;
+                    plan.errors.push((tp_id.0, error.clone()));
+                    if let Some(setup) = setup {
+                        plan.blocked_setups.insert(setup);
+                    }
+                    StepOutcome::Failed(error)
                 }
                 // Roadmap E.4 — "completed cleanly with zero moves" is a
                 // config issue (depth/stock/model), not a thrown error.
                 Some((false, ComputeStatus::Done)) => {
-                    ga.failed += 1;
-                    ga.errors.push((
-                        tp_id.0,
-                        format!(
-                            "{tp_name}: completed with no moves — check depth, stock, or \
-                             model assignment"
-                        ),
-                    ));
+                    let message = format!(
+                        "{tp_name}: completed with no moves — check depth, stock, or model \
+                         assignment"
+                    );
+                    plan.failed += 1;
+                    plan.errors.push((tp_id.0, message.clone()));
+                    if let Some(setup) = setup {
+                        plan.blocked_setups.insert(setup);
+                    }
+                    StepOutcome::Failed(message)
                 }
-                // Cancel resets status to `Pending`.
+                // A cancel resets the status to `Pending`. A cancelled step
+                // stops the plan: the operator or an agent asked for that,
+                // and the steps behind it read a stock that never moved.
                 Some((false, ComputeStatus::Pending)) => {
-                    ga.failed += 1;
-                    ga.errors
-                        .push((tp_id.0, format!("{tp_name}: generation cancelled")));
+                    stop = Some(format!("{tp_name}: the generation was cancelled"));
+                    StepOutcome::Cancelled
                 }
                 Some((false, status @ (ComputeStatus::Computing | ComputeStatus::Disabled))) => {
-                    ga.failed += 1;
-                    ga.errors.push((
-                        tp_id.0,
-                        format!("{tp_name}: no result, status={}", status.label()),
-                    ));
+                    let message = format!("{tp_name}: no result, status={}", status.label());
+                    plan.failed += 1;
+                    plan.errors.push((tp_id.0, message.clone()));
+                    StepOutcome::Failed(message)
                 }
                 None => {
-                    ga.failed += 1;
-                    ga.errors
-                        .push((tp_id.0, format!("{tp_name}: toolpath runtime not found")));
+                    let message = format!("{tp_name}: toolpath runtime not found");
+                    plan.failed += 1;
+                    plan.errors.push((tp_id.0, message.clone()));
+                    StepOutcome::Failed(message)
                 }
             }
-            progress = Some((
-                ga.completed + ga.failed,
-                ga.completed + ga.failed + ga.remaining.len(),
-            ));
+        };
+        if let Some(reason) = stop {
+            self.stop_plan(reason);
         }
+        self.record_step_outcome(outcome);
+    }
 
-        if let Some((current, total)) = progress {
-            self.generate_all_progress_at(
-                &format!("Completed {current}/{total}: {tp_name}"),
-                current as f64,
-                Some(total as f64),
-            );
+    /// Hook from the simulation drain. Closes the plan's own simulation step.
+    ///
+    /// A simulation that the plan did not submit — the reconciliation resim,
+    /// an operator's own Run Simulation beside a running plan — leaves the
+    /// cursor alone: the step in flight is a `Generate`, so nothing matches.
+    pub(crate) fn plan_simulation_landed(
+        &mut self,
+        outcome: crate::controller::generate_all::PlanSimOutcome,
+    ) {
+        use crate::controller::generate_all::{PlanSimOutcome, StepOutcome};
+
+        let closes = self
+            .plan
+            .as_ref()
+            .is_some_and(|plan| plan.in_flight && plan.on_simulation());
+        if !closes {
+            return;
         }
-
-        // A/M11: a finished round either advances the ladder or resolves the
-        // caller. Outside the borrow above because advancing needs `&mut self`
-        // to submit a simulation.
-        self.settle_generate_all_round();
+        let step = match outcome {
+            PlanSimOutcome::Done => StepOutcome::Done,
+            PlanSimOutcome::Cancelled => {
+                self.stop_plan("the simulation was cancelled".to_owned());
+                StepOutcome::Cancelled
+            }
+            PlanSimOutcome::Failed(error) => {
+                self.stop_plan(error.clone());
+                StepOutcome::Failed(error)
+            }
+        };
+        self.record_step_outcome(step);
     }
 
     // ── MCP notification helpers ─────────────────────────────────────

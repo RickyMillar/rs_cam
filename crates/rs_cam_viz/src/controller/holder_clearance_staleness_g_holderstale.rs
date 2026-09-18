@@ -44,10 +44,9 @@
 //!
 //! # Placement
 //!
-//! Beside the code, not in `tests/`, for the reason
-//! `fixpoint_resolution_notice_g_resnotice.rs` gives: the two entry points
-//! this file drives, `request_collision_check` and `drain_compute_results`,
-//! are `pub(crate)`. Nothing here starts a GUI or an MCP server.
+//! Beside the code, not in `tests/`: the two entry points this file drives,
+//! `request_collision_check` and `drain_compute_results`, are `pub(crate)`.
+//! Nothing here starts a GUI or an MCP server.
 
 use std::sync::Arc;
 

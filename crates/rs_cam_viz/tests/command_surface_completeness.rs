@@ -154,7 +154,6 @@ const MCP_SOURCES: &[&str] = &[
     "src/controller/results_parity_tests.rs",
     "src/controller/holder_clearance_staleness_g_holderstale.rs",
     "src/controller/holder_clearance_scope_g_holderscope.rs",
-    "src/controller/fixpoint_resolution_notice_g_resnotice.rs",
     "src/compute/worker/gen_parity_p0_tests.rs",
 ];
 

@@ -144,6 +144,10 @@ impl RsCamApp {
         #[cfg(feature = "mcp")]
         let mcp_receiver = if mcp_mode {
             controller.pending_mcp = Some(crate::mcp_bridge::PendingMcpCompute::new());
+            // W1/W5: the cell the MCP server thread reads plan progress
+            // from. `generation_status` is answered off the frame loop, so a
+            // controller field is unreachable there.
+            controller.set_plan_beat(mcp_reads.plan_handle());
 
             let (tx, rx) = std::sync::mpsc::channel();
             let egui_ctx = cc.egui_ctx.clone();
@@ -898,6 +902,22 @@ impl RsCamApp {
         if self.controller.state().tool_library_modal.is_some() {
             let (state, events) = self.controller.state_ref_and_events_mut();
             crate::ui::tool_library_modal::draw(ctx, state, events);
+        }
+
+        // The generation plan's one question (R1). Its state lives on the
+        // controller, not on `AppState`: the plan is the controller's, and
+        // the answer starts it.
+        if let Some(confirm) = self.controller.pending_plan_confirm().cloned() {
+            use crate::ui::generation_resolution_modal::PlanResolutionChoice;
+            match crate::ui::generation_resolution_modal::draw(ctx, &confirm) {
+                Some(PlanResolutionChoice::UseRequired) => {
+                    self.controller.accept_plan_resolution();
+                }
+                Some(PlanResolutionChoice::Cancel) => {
+                    self.controller.cancel_plan_resolution();
+                }
+                None => {}
+            }
         }
 
         // Machine Library management modal
