@@ -105,6 +105,11 @@ fn hemisphere() -> (TriangleMesh, SpatialIndex) {
 
 /// The left half of the stock footprint in X. Chosen so ~half the planner grid
 /// falls outside the containment and the wall runs down the middle of the mesh.
+///
+/// R1 (`planning/corne_case_analysis_2026-09-18/ANALYSIS.md` §7) named this
+/// file as a pin of the holes-kept silhouette. It is not: the containment
+/// here is a hand-built rectangle with no hole, and the silhouette never
+/// enters. The R1 sentry is `silhouette_boundary_has_no_holes_r1.rs`.
 fn half_stock_boundary() -> Polygon2 {
     Polygon2::rectangle(-23.5, -23.5, 0.0, 23.5)
 }

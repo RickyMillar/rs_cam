@@ -785,6 +785,8 @@ impl RsCamApp {
                 None,
             ));
         };
+        // R2: the creation-time boundary copies this diameter as its offset.
+        let tool_diameter_mm = tool.diameter;
         // Q1: `add_toolpath` takes `model_id` as a required parameter, so
         // the model IS known here. The bbox gates the runtime-sanity
         // stepover back-off in Suggest.
@@ -820,13 +822,11 @@ impl RsCamApp {
         };
 
         // Roadmap B.7 — boundary auto-enable for 3D ops on mesh models.
+        // R2: silhouette plus one tool diameter, the same rule the GUI
+        // controller applies (`BoundaryConfig::for_3d_op`).
         let has_mesh = session.models().iter().any(|m| m.mesh.is_some());
         let boundary = if op_config.is_3d() && has_mesh {
-            BoundaryConfig {
-                enabled: true,
-                source: BoundarySource::ModelSilhouette,
-                ..BoundaryConfig::default()
-            }
+            BoundaryConfig::for_3d_op(tool_diameter_mm)
         } else {
             BoundaryConfig::default()
         };

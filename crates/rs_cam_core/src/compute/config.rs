@@ -301,6 +301,22 @@ impl HeightsConfig {
     /// keep working for callers that haven't migrated; combining with the
     /// new `top_z` Auto yields `bottom_z = -op_depth` (unchanged when
     /// `stock_top_z == 0`, which is the common test/fixture case).
+    ///
+    /// R3 (Corne case, 2026-09-18): on a context with NO depth
+    /// (`op_depth == 0`, the `DepthSemantics::None` family) the Auto bottom
+    /// is the MODEL bottom, floored at the stock bottom. Before this the
+    /// zero-depth arithmetic gave `bottom_z = top_z - 0 = stock top`, so an
+    /// Auto waterline laddered ONE level at the stock top, above the mesh,
+    /// and an Auto `UnifiedFinish` pinned its very-steep band to the rim
+    /// (`planning/corne_case_analysis_2026-09-18/ANALYSIS.md` §4.1).
+    /// [`Self::auto_bottom_z`] is the rule; the Heights tab displays the
+    /// same resolver, so display and generation agree.
+    ///
+    /// The Auto TOP stays at the stock top for every depth. The session's
+    /// entry-descent pass reads `heights.top_z` as the fresh-stock ceiling
+    /// (`session/compute.rs`, `optimize_entry_descents_annotated`), so an
+    /// Auto top at the model top would rapid a fresh-stock rough into the
+    /// overhead above the model.
     pub fn resolve(&self, ctx: &HeightContext) -> ResolvedHeights {
         let retract = self.retract_z.resolve_value(ctx.safe_z, ctx);
         let top_z = self.top_z.resolve_value(ctx.stock_top_z, ctx);
@@ -309,12 +325,40 @@ impl HeightsConfig {
             retract_z: retract,
             feed_z: self.feed_z.resolve_value(retract - 2.0, ctx),
             top_z,
-            bottom_z: self.bottom_z.resolve_value(top_z - ctx.op_depth.abs(), ctx),
+            bottom_z: self
+                .bottom_z
+                .resolve_value(Self::auto_bottom_z(top_z, ctx), ctx),
             top_pinned: !self.top_z.is_auto(),
             bottom_pinned: !self.bottom_z.is_auto(),
         }
     }
+
+    /// The Auto bottom for a resolved `top_z` (R3).
+    ///
+    /// * A context WITH a depth keeps the F-028 arithmetic exactly:
+    ///   `top_z - op_depth`. The 2.5D family and `cutting_levels` anchor on
+    ///   it, and a pinned bottom on those ops reaches no motion
+    ///   (`pinned_bottom_z_reaches_motion_g_bottompin`).
+    /// * A ZERO-depth context has no dial to subtract, so the floor is the
+    ///   model bottom when the context carries a model, else the stock
+    ///   bottom; either way never below the stock bottom. `top_z` is not
+    ///   read on this arm: a pinned top below the model bottom yields an
+    ///   inverted range, which the waterline ladder reports as empty.
+    pub fn auto_bottom_z(top_z: f64, ctx: &HeightContext) -> f64 {
+        if ctx.op_depth.abs() < ZERO_DEPTH_EPSILON {
+            ctx.model_bottom_z
+                .map_or(ctx.stock_bottom_z, |model_bottom| {
+                    model_bottom.max(ctx.stock_bottom_z)
+                })
+        } else {
+            top_z - ctx.op_depth.abs()
+        }
+    }
 }
+
+/// Below this an `op_depth` counts as "no depth dial" for
+/// [`HeightsConfig::auto_bottom_z`].
+pub const ZERO_DEPTH_EPSILON: f64 = 1e-9;
 
 /// Fully resolved (concrete) heights for a single operation.
 #[derive(Debug, Clone, Copy)]
@@ -455,6 +499,32 @@ impl Default for BoundaryConfig {
             source: BoundarySource::Stock,
             containment: BoundaryContainment::Center,
             offset: 0.0,
+        }
+    }
+}
+
+impl BoundaryConfig {
+    /// The creation-time boundary of a 3D operation on a mesh model: the
+    /// model silhouette, `Center` containment, expanded by one tool
+    /// diameter (R2, `planning/corne_case_analysis_2026-09-18/ANALYSIS.md`
+    /// §5). Roadmap B.7 enabled the silhouette so the cutter does not sweep
+    /// the whole stock on a small part in oversized stock. Under `Center`
+    /// containment the cutter centre stays inside the polygon. A silhouette
+    /// with no offset therefore keeps the cutter one radius short of every
+    /// outer face. The diameter offset lets the cutter pass the outer face
+    /// with one radius of clearance.
+    ///
+    /// `offset` stores a NUMBER, a copy of `tool_diameter_mm` at creation.
+    /// A later tool change does not update it. Both creation doors (the
+    /// GUI controller and the MCP `add_toolpath` door) call this with the
+    /// diameter of the tool they bind.
+    #[must_use]
+    pub fn for_3d_op(tool_diameter_mm: f64) -> Self {
+        Self {
+            enabled: true,
+            source: BoundarySource::ModelSilhouette,
+            containment: BoundaryContainment::Center,
+            offset: tool_diameter_mm,
         }
     }
 }
@@ -1029,14 +1099,22 @@ impl DressupConfig {
                 optimize_rapid_order: true,
                 ..base
             },
+            // R10 (2026-09-18): the finishing families get NO entry ramp
+            // by default (was Ramp). A finishing contour starts on a
+            // 0.5 mm leave, so a plunge there is a 0.5 mm bite. A 3 degree
+            // ramp is 19 mm of XY per mm of descent, and on a short run the
+            // fold lays that XY as laps over the run: the Corne waterline
+            // sawed a 3 mm wall to pins along a 2 mm run (case analysis
+            // §4.5). The fold's lap cap refuses the saw; this default stops
+            // the finishing families asking for it. Roughing keeps Ramp.
             UiProcessRole::SemiFinish => Self {
-                entry_style: DressupEntryStyle::Ramp,
+                entry_style: DressupEntryStyle::None,
                 arc_fitting: Some(ArcFitParams::default()),
                 optimize_rapid_order: true,
                 ..base
             },
             UiProcessRole::Finish => Self {
-                entry_style: DressupEntryStyle::Ramp,
+                entry_style: DressupEntryStyle::None,
                 lead_in_out: Some(LeadParams::default()),
                 arc_fitting: Some(ArcFitParams::default()),
                 optimize_rapid_order: true,

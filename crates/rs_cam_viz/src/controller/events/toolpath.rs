@@ -106,6 +106,8 @@ impl<B: ComputeBackend> AppController<B> {
             );
             return None;
         };
+        // R2: the creation-time boundary copies this diameter as its offset.
+        let tool_diameter_mm = tool.diameter;
         let (operation, feeds_provenance) = match rs_cam_core::feeds::suggest::suggest_params(
             rs_cam_core::feeds::suggest::SuggestParamsInput {
                 op_type,
@@ -171,16 +173,15 @@ impl<B: ComputeBackend> AppController<B> {
             // Roadmap B.7 — for 3D ops on a 3D mesh model, default the
             // machining boundary to the model silhouette so the cutter
             // doesn't sweep over the whole stock area on small parts in
-            // oversized stock. Falls back to the default (disabled) for
-            // 2D / stock-based ops or when no mesh model is available.
+            // oversized stock. R2: the silhouette is expanded by one tool
+            // diameter so the cutter reaches the outer faces; the rule is
+            // `BoundaryConfig::for_3d_op`, shared with the MCP door. Falls
+            // back to the default (disabled) for 2D / stock-based ops or
+            // when no mesh model is available.
             boundary: {
                 let has_mesh = self.state.session.models().iter().any(|m| m.mesh.is_some());
                 if op_is_3d && has_mesh {
-                    crate::state::toolpath::BoundaryConfig {
-                        enabled: true,
-                        source: crate::state::toolpath::BoundarySource::ModelSilhouette,
-                        ..crate::state::toolpath::BoundaryConfig::default()
-                    }
+                    crate::state::toolpath::BoundaryConfig::for_3d_op(tool_diameter_mm)
                 } else {
                     crate::state::toolpath::BoundaryConfig::default()
                 }

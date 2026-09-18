@@ -446,6 +446,11 @@ const SILHOUETTE_CELL_SIZE: f64 = 0.5;
 /// `cell_size` controls grid resolution in mm (smaller = more detail, slower).
 /// Pass `None` for the default (0.5 mm).
 ///
+/// This is the RAW silhouette: a through-hole stays a hole. A machining
+/// boundary does not read it directly. The session resolves the
+/// `ModelSilhouette` source through [`silhouette_machining_outline`], which
+/// keeps the outer loop only (R1).
+///
 /// Saddle cells (diagonal touch-points in the rasterized grid) resolve via
 /// the shared `marching_squares` convention — see that module's doc for the
 /// tie-break. This changed at the 2026-07 P1.7/R1.2 merge: silhouettes now
@@ -487,6 +492,39 @@ pub fn model_silhouette(mesh: &TriangleMesh, cell_size: Option<f64>) -> Vec<Poly
         })
         .collect();
     detect_containment(polygons)
+}
+
+/// The machining outline of a model silhouette: the outer loop of the
+/// polygon with the largest exterior, with every hole removed.
+///
+/// R1 (`planning/corne_case_analysis_2026-09-18/ANALYSIS.md` §3, §5, R1):
+/// for a machining boundary a through-hole is material. [`model_silhouette`]
+/// keeps each inner loop as a hole. adaptive3d's pre-clip then clears every
+/// hole cell to the stock bottom, so a through-hole becomes an island of
+/// "no material" at every Z level. The post-generation clip turns every
+/// move inside the hole into a rapid. A keep-out is the mechanism for "do
+/// not cut here". The silhouette boundary states where the part is.
+///
+/// The rank is the EXTERIOR area, not the net area of
+/// [`crate::polygon::largest_by_area`]. Net area subtracts the holes, and
+/// under R1 the holes count as material, so a plate with a large hole must
+/// outrank a small solid piece. On a one-polygon silhouette the two ranks
+/// agree.
+///
+/// Returns `None` for an empty silhouette. The caller decides the fallback.
+///
+/// Sentry: `tests/silhouette_boundary_has_no_holes_r1.rs`.
+#[must_use]
+pub fn silhouette_machining_outline(silhouettes: &[Polygon2]) -> Option<Polygon2> {
+    silhouettes
+        .iter()
+        .max_by(|a, b| {
+            a.signed_area()
+                .abs()
+                .partial_cmp(&b.signed_area().abs())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|p| Polygon2::new(p.exterior.clone()))
 }
 
 /// Rasterize one triangle's XY projection onto the boolean grid (scanline).

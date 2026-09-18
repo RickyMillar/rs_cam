@@ -581,8 +581,14 @@ impl ProjectSession {
 
     /// Resolve the boundary "containment polygon" — the polygon the cutter's
     /// footprint must stay inside (Containment=Inside) or outside (Outside).
-    /// For ModelSilhouette source this returns the silhouette itself
-    /// (after keep-outs and user offset). The downstream toolpath clip
+    /// For ModelSilhouette source this returns the OUTER LOOP of the
+    /// silhouette (after keep-outs and user offset). The holes are dropped
+    /// here, in `silhouette_machining_outline`, before the polygon reaches
+    /// adaptive3d's pre-clip and the post-generation clip: a through-hole
+    /// is material for a machining boundary, and a keep-out is the
+    /// mechanism for "do not cut here" (R1,
+    /// `planning/corne_case_analysis_2026-09-18/ANALYSIS.md` §3, §5).
+    /// The downstream toolpath clip
     /// (`clip_toolpath_to_boundary`) does its own tool-radius inset to gate
     /// CUTTER CENTER positions — but for adaptive3d's internal-stock
     /// pre-clip we want the silhouette itself, since the cutter footprint
@@ -624,8 +630,9 @@ impl ProjectSession {
                 // (pre-boundary resolution + the post-generation enforcement
                 // clip), each time rasterising every face of the mesh.
                 let silhouettes = crate::maps::geom_cache::cached_silhouette(m);
-                crate::polygon::largest_by_area(&silhouettes)
-                    .cloned()
+                // R1: the outer loop only. The raw silhouette keeps a
+                // through-hole as a hole; the boundary treats it as material.
+                crate::geometry::boundary::silhouette_machining_outline(&silhouettes)
                     .unwrap_or_else(|| {
                         crate::polygon::Polygon2::rectangle(
                             stock_bbox.min.x,
