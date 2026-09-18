@@ -2,11 +2,56 @@ use rs_cam_core::compute::alignment_pins::{
     PIN_MATCH_TOL_MM, PIN_WALL_MM, PinPlacementError, PinPlacementRequest, place_keyed_pins,
 };
 
+use rs_cam_core::geo::BoundingBox3;
+
 use super::PanelEdit;
 use crate::state::job::{AlignmentPin, FaceUp, FlipAxis, StockConfig};
 use crate::ui::AppEvent;
 use crate::ui::components::UiExt as _;
 use crate::ui::components::ValueRow;
+use crate::ui::components::text;
+
+/// Reconcile a finished stock draft with the `auto_from_model` rule.
+///
+/// R12 (Corne case §1 footnote): a saved project carried
+/// `auto_from_model = true` beside dimensions that no bounding box
+/// produced. The MCP `set_stock_config` door already clears the flag when
+/// a dimension or an origin is set explicitly; the panel let the operator
+/// drag a dimension under a ticked checkbox, and the next load re-derived
+/// the numbers from the model. This is the one rule both surfaces follow:
+///
+/// - A dimension or an origin that differs from `previous` is a manual
+///   stock. The flag clears and the numbers stand.
+/// - Otherwise a draft under `auto_from_model` refits to `model_bbox`.
+///   That covers the flag flipped on, a padding edit under auto, and a
+///   record whose stored numbers lag the model.
+/// - Without a model the flag keeps its value and nothing refits.
+///
+/// `previous` is the session's record, which the draft was cloned from
+/// when the edit began.
+#[must_use]
+pub fn reconcile_auto_from_model(
+    previous: &StockConfig,
+    mut draft: StockConfig,
+    model_bbox: Option<&BoundingBox3>,
+) -> StockConfig {
+    let geometry_edited = draft.x != previous.x
+        || draft.y != previous.y
+        || draft.z != previous.z
+        || draft.origin_x != previous.origin_x
+        || draft.origin_y != previous.origin_y
+        || draft.origin_z != previous.origin_z;
+    if geometry_edited {
+        draft.auto_from_model = false;
+        return draft;
+    }
+    if draft.auto_from_model
+        && let Some(bbox) = model_bbox
+    {
+        draft.update_from_bbox(bbox);
+    }
+    draft
+}
 
 /// Draw the stock panel over a SCRATCH copy of the stock configuration.
 ///
@@ -15,10 +60,15 @@ use crate::ui::components::ValueRow;
 /// [`PanelEdit`] reports a finished edit. The panel therefore pushes no
 /// `StockChanged` event of its own; the command carries the invalidation
 /// the event used to ask for.
+///
+/// `has_model` says whether a model with geometry is loaded. It gates
+/// the caption under the checkbox, because "refit to the model" is not
+/// an offer the panel can keep without one.
 pub fn draw(
     ui: &mut egui::Ui,
     stock: &mut StockConfig,
     has_flipped_setup: bool,
+    has_model: bool,
     events: &mut Vec<AppEvent>,
 ) -> PanelEdit {
     ui.heading("Stock Setup");
@@ -74,16 +124,24 @@ pub fn draw(
 
     ui.add_space(8.0);
 
+    // R12: a dragged or typed dimension is a manual stock. The checkbox
+    // below unticks in the same frame, so the operator sees the rule as
+    // it applies; `reconcile_auto_from_model` applies the same rule at
+    // the commit, so a draft cannot carry both.
+    let mut geometry_edited = false;
     ui.label("Dimensions:");
     ui.param_grid("stock_dims", |ui| {
         let out = ValueRow::new("X:", &mut stock.x, " mm", 0.5, 0.1..=10000.0).show(ui);
         edit.drag(&out.value_response);
+        geometry_edited |= out.value_response.changed();
 
         let out = ValueRow::new("Y:", &mut stock.y, " mm", 0.5, 0.1..=10000.0).show(ui);
         edit.drag(&out.value_response);
+        geometry_edited |= out.value_response.changed();
 
         let out = ValueRow::new("Z:", &mut stock.z, " mm", 0.5, 0.1..=10000.0).show(ui);
         edit.drag(&out.value_response);
+        geometry_edited |= out.value_response.changed();
     });
 
     ui.add_space(8.0);
@@ -92,18 +150,29 @@ pub fn draw(
         let out =
             ValueRow::new("X:", &mut stock.origin_x, " mm", 0.5, f64::MIN..=f64::MAX).show(ui);
         edit.drag(&out.value_response);
+        geometry_edited |= out.value_response.changed();
 
         let out =
             ValueRow::new("Y:", &mut stock.origin_y, " mm", 0.5, f64::MIN..=f64::MAX).show(ui);
         edit.drag(&out.value_response);
+        geometry_edited |= out.value_response.changed();
 
         let out =
             ValueRow::new("Z:", &mut stock.origin_z, " mm", 0.5, f64::MIN..=f64::MAX).show(ui);
         edit.drag(&out.value_response);
+        geometry_edited |= out.value_response.changed();
     });
+    if geometry_edited {
+        stock.auto_from_model = false;
+    }
 
     ui.add_space(8.0);
     edit.click(&ui.checkbox(&mut stock.auto_from_model, "Auto from model"));
+    if !stock.auto_from_model && has_model {
+        ui.label(text::caption(
+            "Stock is manual. Tick to refit to the model.",
+        ));
+    }
     if stock.auto_from_model {
         ui.horizontal(|ui| {
             ui.label("Padding:");

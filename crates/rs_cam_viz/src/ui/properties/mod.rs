@@ -862,7 +862,16 @@ fn draw_stock_selection(ui: &mut egui::Ui, state: &mut AppState, events: &mut Ve
         Some(draft) => draft,
         None => state.session.stock_config().clone(),
     };
-    let edit = stock::draw(ui, &mut draft, has_flipped_setup, events);
+    // R12: the caption under the checkbox offers a refit only when a
+    // model with geometry exists. It reads the two sources
+    // `first_model_bbox` reads; an empty polygon set counts here and
+    // yields no bbox there.
+    let has_model = state
+        .session
+        .models()
+        .iter()
+        .any(|model| model.mesh.is_some() || model.polygons.is_some());
+    let edit = stock::draw(ui, &mut draft, has_flipped_setup, has_model, events);
     if edit.committed {
         apply_stock_draft(state, draft.clone());
         // The undo compare runs AFTER the command, so the

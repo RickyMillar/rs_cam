@@ -100,16 +100,19 @@ fn first_model_bbox(state: &AppState) -> Option<rs_cam_core::geo::BoundingBox3> 
 ///
 /// - `auto_from_model` re-sizes the stock around the first model. The
 ///   handler did it before invalidating; this does it before the write,
-///   so one command carries the finished record.
+///   so one command carries the finished record. R12: the refit runs
+///   ONLY when no dimension or origin row moved; a moved row clears the
+///   flag instead. `stock::reconcile_auto_from_model` holds that rule
+///   and mirrors the MCP `set_stock_config` door.
 /// - the viewport buffers and the pin-drill operation both read what
 ///   moved. The panel raises both flags; the frame loop discharges them.
-pub(crate) fn apply_stock_draft(state: &mut AppState, mut draft: crate::state::job::StockConfig) {
+pub(crate) fn apply_stock_draft(state: &mut AppState, draft: crate::state::job::StockConfig) {
     use rs_cam_core::session::{Command, SetStockConfigArgs};
-    if draft.auto_from_model
-        && let Some(bbox) = first_model_bbox(state)
-    {
-        draft.update_from_bbox(&bbox);
-    }
+    let draft = super::stock::reconcile_auto_from_model(
+        state.session.stock_config(),
+        draft,
+        first_model_bbox(state).as_ref(),
+    );
     // A finished edit is not the same as a CHANGED one. A `DragValue`
     // reports `lost_focus` when the operator clicks into the field and
     // out of it again, and this row drops every toolpath result — so an
