@@ -18,6 +18,7 @@
 //!    out.
 //! 4. `the_ancestor_closure_is_not_the_nearest_source_only`: the arm that
 //!    parts a closure over `edges` from one over `primary_edges`.
+//! 4b. `a_first_in_setup_rest_op_plans_the_setup_before_it`: R2.
 //! 5. `a_disabled_op_gets_no_step`.
 //! 6. `the_loader_normalises_the_rest_analysis_demand`: a round trip
 //!    through the save and load doors switches a stray producer off and a
@@ -361,6 +362,52 @@ fn the_ancestor_closure_is_not_the_nearest_source_only() {
         "the closure keeps EVERY enabled predecessor. A nearest-only \
          closure would drop `rough` here, because `rest1` no longer \
          carries a Stock edge of its own"
+    );
+}
+
+/// R2: a setup's first rest operation pulls the setup before it into the
+/// plan, and gets its own Simulate step.
+///
+/// `back` is setup 2's only row. Make it start from the remaining stock
+/// and it becomes wanaka's "3D Rough 6": first in its setup, with no row
+/// above it there, reading the stock setup 1 finished.
+#[test]
+fn a_first_in_setup_rest_op_plans_the_setup_before_it() {
+    let mut session = fixture();
+    let _ = session
+        .apply(Command::SetStockSource(SetStockSourceArgs {
+            index: BACK,
+            source: StockSource::FromRemainingStock,
+        }))
+        .expect("the setter writes the stock source");
+
+    assert_eq!(
+        plan(&session, Scope::Ancestors(id_of(&session, BACK))),
+        vec![
+            generate(&session, ROUGH),
+            simulate(&session, 0, REST1),
+            generate(&session, REST1),
+            simulate(&session, 0, REST2),
+            generate(&session, REST2),
+            simulate(&session, 1, BACK),
+            generate(&session, BACK),
+        ],
+        "the ancestor closure crosses the setup boundary, and the \
+         cross-setup consumer still gets its own Simulate step"
+    );
+
+    // The Simulate step names the CONSUMER's setup. The consumer resolves
+    // that id to a position and covers setups 0 to it, so setup 1's rows
+    // are inside the request that fills this snapshot.
+    let steps = plan(&session, Scope::Project);
+    let simulate_for_back = steps
+        .iter()
+        .find(|step| matches!(step, Step::Simulate { upto, .. } if *upto == id_of(&session, BACK)))
+        .expect("the cross-setup consumer plans a Simulate step");
+    assert_eq!(
+        *simulate_for_back,
+        simulate(&session, 1, BACK),
+        "the step names the consumer's own setup, not the source's"
     );
 }
 

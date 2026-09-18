@@ -67,10 +67,17 @@ pub enum Scope {
     Project,
     /// Every enabled operation in one setup.
     ///
-    /// A Simulate step still covers the setups BEFORE this one, and the
-    /// phantom scan locks on the first enabled operation with no result. So
-    /// an earlier setup holding an ungenerated enabled operation stalls
-    /// this scope's rest operations. A caller that cannot promise the
+    /// An earlier setup holding an ungenerated enabled operation does NOT
+    /// stall this scope. Both request builders start a fresh
+    /// `PhantomPriorStockScan` inside their per-setup loop, so the scan is
+    /// per group and an earlier setup's pending row cannot take this
+    /// setup's phantom slot.
+    ///
+    /// What it costs instead is accuracy. The simulator runs setups
+    /// sequentially on one stock, and an operation with no result
+    /// contributes no carve, so the snapshot this setup's first rest
+    /// operation reads holds material the real part no longer has. The
+    /// operation then plans cuts in air. A caller that cannot promise the
     /// earlier setups are current uses [`Scope::Project`].
     Setup(SetupId),
     /// One operation, and everything it depends on, directly or through
@@ -170,10 +177,14 @@ fn setup_toolpath_ids(session: &ProjectSession, setup_id: SetupId) -> BTreeSet<T
 /// card's one connector row, and that pick can disagree with the scan
 /// (defect D6). The plan must not inherit D6.
 ///
-/// A Regions edge names an explicit source, which may sit in another setup,
-/// so the closure can cross a setup. Plan order still holds: `plan` walks
-/// setups then `toolpath_indices` and tests membership, so the closure
-/// decides WHICH operations run and never in what order.
+/// The closure crosses setups two ways. A Regions edge names an explicit
+/// source, which may sit anywhere. And since R2 a setup's first rest
+/// operation carries Stock edges on the previous setup's rows, so
+/// "generate this one operation" pulls in the setup before it, which is
+/// what the operator asked for: regenerate what is required. Plan order
+/// still holds: `plan` walks setups then `toolpath_indices` and tests
+/// membership, so the closure decides WHICH operations run and never in
+/// what order.
 ///
 /// A disabled ancestor enters the set. The walk then drops it, because no
 /// scope generates a disabled operation.
