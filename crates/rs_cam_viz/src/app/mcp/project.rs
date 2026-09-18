@@ -52,7 +52,10 @@ impl RsCamApp {
             return no_project_error();
         }
         let bbox = session.stock_bbox();
-        let stale_defaults = rs_cam_core::compute::validate::validate_stale_defaults(session);
+        // W5 item (g): the key is `default_findings`. `stale` names a row
+        // whose inputs changed after it generated; these name a parameter
+        // that was never chosen. The core function keeps its name.
+        let default_findings = rs_cam_core::compute::validate::validate_stale_defaults(session);
         json_str(serde_json::json!({
             "name": session.name(),
             "stock": {
@@ -63,7 +66,7 @@ impl RsCamApp {
             "setup_count": session.setup_count(),
             "toolpath_count": session.toolpath_count(),
             "tools": session.list_tools(),
-            "stale_defaults": stale_defaults,
+            "default_findings": default_findings,
             "build": rs_cam_mcp::server::build_info(),
         }))
     }

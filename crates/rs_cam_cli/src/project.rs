@@ -309,16 +309,22 @@ struct ProjectSummary {
     /// `collision_count` is a sum over every toolpath.
     collision_checks_failed: usize,
     rapid_collision_count: usize,
-    /// CMP-25: the stale-default validator's findings for this project.
+    /// CMP-25: the validator's findings for this project.
     ///
     /// The validator reached the GUI, MCP and the core export precondition
     /// and not this command, so the batch CLI's only machine-readable
-    /// artifact carried no stale-default row at all.
+    /// artifact carried no row of this class at all.
+    ///
+    /// W5 item (g) renamed the key from `stale_defaults`. `stale` names one
+    /// state on this wire: a row whose inputs changed after it generated. A
+    /// finding here says the parameter was NEVER CHOSEN, and still sits at a
+    /// default that does not suit the tool or the material. Two meanings
+    /// under one stem made the word useless.
     ///
     /// An EMPTY list means none of the validator's four rules fired. It does
-    /// NOT mean the project carries no stale defaults — the rule library is
+    /// NOT mean the project carries no such parameter — the rule library is
     /// closed at four, and `compute::validate`'s header says why.
-    stale_defaults: Vec<rs_cam_core::compute::validate::StaleDefault>,
+    default_findings: Vec<rs_cam_core::compute::validate::StaleDefault>,
     /// W5 item (f): operations that never generated because an upstream
     /// simulated stock was missing. An EMPTY list means none were blocked.
     awaiting_prior_stock: Vec<BlockedEntry>,
@@ -768,16 +774,16 @@ pub fn run_project_command(
         "OK".to_owned()
     };
 
-    // CMP-25: the stale-default validator, on the one artifact a batch run
+    // CMP-25: the default-findings validator, on the one artifact a batch run
     // leaves behind. The adapter already turns these into `Diagnostic`s for
     // the GUI and MCP; the CLI simply had no call.
-    let stale_defaults = rs_cam_core::compute::validate::validate_stale_defaults(&session);
-    if !stale_defaults.is_empty() {
-        for finding in &stale_defaults {
+    let default_findings = rs_cam_core::compute::validate::validate_stale_defaults(&session);
+    if !default_findings.is_empty() {
+        for finding in &default_findings {
             warn!(
                 toolpath = %finding.toolpath_name,
                 rule = finding.rule_id.id(),
-                "stale default: {} — {}",
+                "parameter still at a default that does not suit it: {} — {}",
                 finding.title,
                 finding.detail
             );
@@ -799,7 +805,7 @@ pub fn run_project_command(
         // a sum over SOME toolpaths, not all of them.
         collision_checks_failed: collision_check_failed.len(),
         rapid_collision_count: diag.rapid_collision_count,
-        stale_defaults,
+        default_findings,
         awaiting_prior_stock: blocked,
         per_toolpath,
         verdict: verdict.clone(),

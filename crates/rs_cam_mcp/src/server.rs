@@ -1556,6 +1556,10 @@ pub fn build_info() -> serde_json::Value {
             // running binary answers the dependency questions.
             "toolpath_depends_on",
             "generation_plan_progress",
+            // W5 item (g): `project_summary` publishes the validator's
+            // findings under `default_findings`. `stale_defaults` above
+            // stays: it records a shipped CAPABILITY, not a key name.
+            "default_findings",
         ],
     })
 }
@@ -1629,6 +1633,7 @@ mod tests {
             "reach_map",
             "toolpath_depends_on",
             "generation_plan_progress",
+            "default_findings",
         ] {
             assert!(
                 features.contains(&flag),
