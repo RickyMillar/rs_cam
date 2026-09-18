@@ -39,6 +39,7 @@ is retrievable the same way.
 | [`arch_consolidation_2026-09-09/`](arch_consolidation_2026-09-09/) | Live tracker; five G- items open |
 | [`structure_2026-09-17/`](structure_2026-09-17/) | This programme |
 | [`gen_sim_rest_ux_2026-09-18/`](gen_sim_rest_ux_2026-09-18/) | Plan; seven rulings open (generate ↔ simulate ↔ rest, one path, one indicator) |
+| [`corne_case_analysis_2026-09-18/`](corne_case_analysis_2026-09-18/) | Analysis; eight rulings open (silhouette holes make the rough weave, waterline Auto ladder is one level, a diagram drag pinned Z −1.37) |
 
 ## Other packages held under this directory
 

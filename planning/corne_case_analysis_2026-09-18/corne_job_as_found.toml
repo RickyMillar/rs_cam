@@ -1,0 +1,423 @@
+format_version = 3
+
+[job]
+name = "corne_job"
+
+[job.stock]
+x = 153.07408142089844
+y = 169.31554412841797
+z = 23.0
+origin_x = 0.0
+origin_y = -109.31554412841797
+origin_z = 0.0
+padding = 5.0
+workholding_rigidity = "Medium"
+auto_from_model = true
+alignment_pins = []
+
+[job.stock.material.SolidWood]
+species = "GenericSoftwood"
+
+[job.post]
+format = "grbl"
+spindle_speed = 18000
+safe_z = 10.0
+high_feedrate_mode = false
+high_feedrate = 5000.0
+spindle_strategy = "max_speed"
+
+[job.machine]
+name = "Generic Wood Router"
+max_feed_mm_min = 4000.0
+max_shank_mm = 6.35
+safety_factor = 0.75
+
+[job.machine.spindle.Variable]
+min_rpm = 8000.0
+max_rpm = 24000.0
+
+[job.machine.power.ConstantPower]
+power_kw = 0.8
+
+[job.machine.chip_load]
+k0 = 0.024
+p = 0.61
+q = 1.26
+
+[job.machine.rigidity]
+doc_roughing_factor = 0.2
+doc_finishing_factor = 0.08
+woc_roughing_factor = 0.7
+woc_roughing_max_mm = 5.0
+woc_finishing_mm = 0.5
+adaptive_doc_factor = 1.5
+adaptive_woc_factor = 0.2
+
+[[tools]]
+id = 0
+name = "6mm 2F flat"
+type = "end_mill"
+diameter = 6.0
+cutting_length = 25.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 0.0
+taper_half_angle = 0.0
+shaft_diameter = 0.0
+holder_diameter = 25.0
+shank_diameter = 6.35
+shank_length = 20.0
+stickout = 45.0
+flute_count = 2
+tool_number = 1
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[tools]]
+id = 1
+name = "End Mill"
+type = "end_mill"
+diameter = 3.0
+cutting_length = 25.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 0.0
+taper_half_angle = 0.0
+shaft_diameter = 0.0
+holder_diameter = 25.0
+shank_diameter = 6.35
+shank_length = 20.0
+stickout = 45.0
+flute_count = 2
+tool_number = 1
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[models]]
+id = 1
+path = "/home/ricky/Downloads/Corne Case Hex.stl"
+name = "Corne Case Hex.stl"
+kind = "stl"
+
+[models.units]
+kind = "millimeters"
+
+[[setups]]
+id = 0
+name = "Setup 1"
+face_up = "top"
+z_rotation = "0"
+model_ids = [1]
+fixtures = []
+keep_out_zones = []
+
+[[setups.toolpaths]]
+id = 1
+name = "3D Rough 1"
+type = "adaptive3d"
+enabled = false
+tool_id = 0
+model_id = 1
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "adaptive3d"
+
+[setups.toolpaths.operation.params]
+stepover = 1.2
+depth_per_pass = 6.0
+stock_to_leave_axial = 0.5
+feed_rate = 1518.75
+plunge_rate = 750.0
+tolerance = 0.1
+min_cutting_radius = 0.0
+entry_style = "plunge"
+ramp_angle_deg = 10.0
+helix_radius_factor = 0.3
+helix_pitch = 2.0
+fine_stepdown = 0.0
+detect_flat_areas = false
+region_ordering = "global"
+clearing_strategy = "agent_search"
+trochoid_cap_mult = 1.6
+engagement_measure = "DiskArea"
+z_blend = false
+spindle_rpm = 20000
+mill_shallow_areas = false
+min_region_cut_length_mm = 15.0
+stay_down_clearance_mm = 0.5
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_radius = 2.0
+helix_pitch = 1.0
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = true
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = true
+arc_tolerance = 0.05
+segment_merge = true
+segment_merge_tolerance = 0.3
+feed_optimization = true
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+air_bridge_policy = "always"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "manual"
+value = 0.10899639423077159
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = true
+source = "model_silhouette"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-flat-softwood-pocket-6000-2f"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "vendor_lut"
+reference = "amana-flat-softwood-pocket-6000-2f"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "vendor_lut"
+reference = "amana-flat-softwood-pocket-6000-2f"
+
+[setups.toolpaths.feeds_provenance.stepover]
+source = "vendor_lut"
+reference = "amana-flat-softwood-pocket-6000-2f"
+
+[setups.toolpaths.feeds_provenance.depth_per_pass]
+source = "vendor_lut"
+reference = "amana-flat-softwood-pocket-6000-2f"
+
+[[setups.toolpaths]]
+id = 3
+name = "3D Rough 1 (copy)"
+type = "adaptive3d"
+enabled = true
+tool_id = 1
+model_id = 1
+boundary_inherit = true
+stock_source = "from_remaining_stock"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "adaptive3d"
+
+[setups.toolpaths.operation.params]
+stepover = 0.6
+depth_per_pass = 3.0
+stock_to_leave_axial = 0.5
+feed_rate = 2429.1212963925036
+plunge_rate = 375.0
+tolerance = 0.1
+min_cutting_radius = 0.0
+entry_style = "plunge"
+ramp_angle_deg = 10.0
+helix_radius_factor = 0.3
+helix_pitch = 2.0
+fine_stepdown = 0.0
+detect_flat_areas = false
+region_ordering = "global"
+clearing_strategy = "adaptive"
+trochoid_cap_mult = 1.6
+engagement_measure = "DiskArea"
+z_blend = false
+spindle_rpm = 22000
+mill_shallow_areas = false
+min_region_cut_length_mm = 15.0
+stay_down_clearance_mm = 0.5
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_radius = 2.0
+helix_pitch = 1.0
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = true
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = true
+arc_tolerance = 0.05
+segment_merge = true
+segment_merge_tolerance = 0.3
+feed_optimization = true
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+air_bridge_policy = "always"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "manual"
+value = 26.0
+
+[setups.toolpaths.heights.top_z]
+mode = "manual"
+value = -0.22379541774050368
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = true
+source = "model_silhouette"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-zrn-flat-softwood-pocket-3175-2f"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "vendor_lut"
+reference = "amana-zrn-flat-softwood-pocket-3175-2f"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "vendor_lut"
+reference = "amana-zrn-flat-softwood-pocket-3175-2f"
+
+[setups.toolpaths.feeds_provenance.stepover]
+source = "formula"
+
+[setups.toolpaths.feeds_provenance.depth_per_pass]
+source = "vendor_lut"
+reference = "amana-zrn-flat-softwood-pocket-3175-2f"
+
+[[setups.toolpaths]]
+id = 4
+name = "Waterline 3"
+type = "waterline"
+enabled = true
+tool_id = 0
+model_id = 1
+boundary_inherit = true
+stock_source = "from_remaining_stock"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "waterline"
+
+[setups.toolpaths.operation.params]
+z_step = 1.0
+sampling = 0.5
+feed_rate = 2406.0
+plunge_rate = 750.0
+continuous = false
+spindle_rpm = 15915
+hookup_mm = 0.0
+
+[setups.toolpaths.dressups]
+entry_style = "ramp"
+ramp_angle = 3.0
+helix_radius = 2.0
+helix_pitch = 1.0
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = true
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = true
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = true
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+air_bridge_policy = "always"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "manual"
+value = -1.3704614721537909
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = true
+source = "model_silhouette"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "onsrud-softwood-60-200-1_4-finish"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "vendor_lut"
+reference = "onsrud-softwood-60-200-1_4-finish"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "formula"
+
+[setups.toolpaths.feeds_provenance.depth_per_pass]
+source = "vendor_lut"
+reference = "onsrud-softwood-60-200-1_4-finish"
+
+[[setups]]
+id = 1
+name = "Setup 2"
+face_up = "top"
+z_rotation = "0"
+model_ids = [1]
+fixtures = []
+keep_out_zones = []
+toolpaths = []
