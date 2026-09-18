@@ -1042,16 +1042,12 @@ impl<B: ComputeBackend> AppController<B> {
                 // one that never ran.
                 //
                 // A result with NO stamp of its own cannot say when
-                // it was measured. The simulation falls back to the
-                // live counter there; this row does not, because a
-                // holder verdict is a safety claim and "I do not
-                // know when this was measured" is not one to make.
-                // `None` reads as "Not checked".
-                self.state.simulation.checks.checked_at_edit_counter = self
-                    .state
-                    .simulation
-                    .submitted_collision_edit_counter
-                    .take();
+                // it was measured, so this row keeps `None`, which
+                // reads as "Not checked". A holder verdict is a
+                // safety claim, and "I do not know when this was
+                // measured" is not one to make.
+                self.state.simulation.checks.checked_at_epoch =
+                    self.state.simulation.submitted_collision_epoch.take();
                 // G-HOLDERSCOPE (F2.13): and the population the check
                 // covered, from the same submit. A result with no
                 // stamp of its own leaves the EMPTY population, which
@@ -1087,13 +1083,13 @@ impl<B: ComputeBackend> AppController<B> {
                 // The stamp describes a check that produced nothing.
                 // Clearing it here keeps it from being read by a
                 // later arrival that had no submit of its own.
-                self.state.simulation.submitted_collision_edit_counter = None;
+                self.state.simulation.submitted_collision_epoch = None;
                 self.state.simulation.submitted_collision_scope = None;
                 #[cfg(feature = "mcp")]
                 self.notify_mcp_collision_error("Collision check cancelled");
             }
             Err(ComputeError::Message(error)) => {
-                self.state.simulation.submitted_collision_edit_counter = None;
+                self.state.simulation.submitted_collision_epoch = None;
                 self.state.simulation.submitted_collision_scope = None;
                 tracing::error!("Collision check failed: {error}");
                 self.push_notification(
@@ -1568,6 +1564,7 @@ impl<B: ComputeBackend> AppController<B> {
             require_resolution,
         };
         use crate::mcp_bridge::McpResponse;
+        use rs_cam_core::compute::config::REST_NEEDS_RESOLUTION;
         use rs_cam_core::session::generation_plan::Scope;
 
         let scope = generate_all_scope(self.state.session.toolpath_configs());
@@ -1602,18 +1599,17 @@ impl<B: ComputeBackend> AppController<B> {
                     let _ = response_tx.send(McpResponse {
                         result: Ok(rs_cam_mcp::server::json_str(serde_json::json!({
                             "ok": false,
+                            // W5 item (f): the middle sentence is
+                            // `REST_NEEDS_RESOLUTION`, the one the CLI
+                            // interpolates too. Two surfaces, one sentence,
+                            // no paraphrase.
                             "error": format!(
                                 "generate_all needs `simulation_resolution_mm`, and {bad}. This \
                                  project has {} enabled rest-machining operation(s) (indices {:?}) \
                                  whose stock comes from a simulation, so reaching a fully \
                                  generated state requires running simulations between generate \
-                                 rounds. The resolution is NOT guessed: collision counts and \
-                                 engagement both move with cell size, so a silently chosen one \
-                                 would hand you verdicts you did not ask for. Pass the same \
-                                 resolution you will use for verification — well below the \
-                                 finishing tool's TIP radius (e.g. 0.1 for a 1 mm ball). To skip \
-                                 the ladder and get the old single-pass behaviour, pass \
-                                 `fixpoint: false`.",
+                                 steps. {REST_NEEDS_RESOLUTION} To skip the simulations and get a \
+                                 single pass, pass `fixpoint: false`.",
                                 missing.rest_op_indices.len(),
                                 missing.rest_op_indices,
                             ),

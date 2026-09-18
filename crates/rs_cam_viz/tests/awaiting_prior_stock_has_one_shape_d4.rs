@@ -66,7 +66,7 @@ fn the_serialised_block_carries_exactly_three_keys() {
 ///
 /// A scan that reads an empty or renamed file passes and looks healthy, so
 /// each row names a literal the file must still contain.
-const PRODUCERS: [(&str, &str); 4] = [
+const PRODUCERS: [(&str, &str); 5] = [
     (
         "crates/rs_cam_viz/src/app/mcp/project.rs",
         "awaiting_prior_stock",
@@ -80,6 +80,10 @@ const PRODUCERS: [(&str, &str); 4] = [
         "awaiting_prior_stock",
     ),
     ("crates/rs_cam_viz/src/mcp_bridge.rs", "struct BlockedRow"),
+    (
+        "crates/rs_cam_cli/src/project.rs",
+        "awaiting_prior_stock: Vec<",
+    ),
 ];
 
 /// Drop `//` line comments, so a comment may name the key in prose.

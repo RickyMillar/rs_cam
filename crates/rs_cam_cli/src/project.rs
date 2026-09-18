@@ -10,9 +10,11 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use tracing::{debug, info, warn};
 
+use rs_cam_core::compute::config::{AwaitingPriorStock, REST_NEEDS_RESOLUTION};
+use rs_cam_core::session::generation_plan::{self, Scope};
 use rs_cam_core::session::{
     Command, ProjectSession, ReplaceToolpathConfigArgs, SetMachineKinematicsArgs,
-    SetPostConfigArgs, SimulationOptions,
+    SetPostConfigArgs, SimulationOptions, dependencies,
 };
 use rs_cam_core::stock::simulation_cut::SimulationCutArtifact;
 
@@ -180,6 +182,111 @@ struct ToolpathSummaryEntry {
     collision_count: Option<usize>,
 }
 
+/// One operation that never generated because an upstream simulated stock was
+/// missing (W5 item f).
+///
+/// The same six keys the MCP surfaces report: the waiting operation's id,
+/// index and name, with [`AwaitingPriorStock`] flattened under them. The CLI
+/// held no typed blocked answer at all before this, so a blocked operation
+/// appeared NOWHERE in `summary.json` — the core builds a diagnostic only for
+/// an operation that has a result, and both per-toolpath loops skip the same
+/// set. An absent row cannot say "waiting".
+#[derive(Serialize)]
+struct BlockedEntry {
+    toolpath_id: rs_cam_core::ToolpathId,
+    toolpath_index: usize,
+    name: String,
+    #[serde(flatten)]
+    block: AwaitingPriorStock,
+}
+
+/// Was this generation failure a WAIT on upstream simulated stock, or a fault?
+///
+/// The CLI holds no `ComputeStatus`, so it asks the dependency edges: a Stock
+/// edge out of this operation whose state is `Pending` is the blocked case.
+/// `None` means a genuine failure, which the caller logs and carries.
+///
+/// The blocker is the nearest enabled source `primary_edges` picks, which is
+/// the operation the GUI's own message names.
+fn blocked_entry(
+    session: &ProjectSession,
+    toolpath: rs_cam_core::ToolpathId,
+    index: usize,
+    error: &rs_cam_core::session::SessionError,
+) -> Option<BlockedEntry> {
+    let edges = dependencies::primary_edges(session);
+    let stock = edges.iter().find(|e| {
+        e.from == toolpath
+            && e.kind == dependencies::EdgeKind::Stock
+            && dependencies::state(e, session) == dependencies::EdgeState::Pending
+    })?;
+    let blocker = stock
+        .on
+        .and_then(|id| session.find_toolpath_config_by_id(id));
+    let name = session
+        .find_toolpath_config_by_id(toolpath)
+        .map_or_else(|| format!("toolpath {index}"), |(_, tc)| tc.name.clone());
+    let message = match blocker.as_ref() {
+        Some((_, tc)) => format!(
+            "waiting on the simulated stock '{}' leaves. Generate it, simulate, then generate this operation. The generator refused with: {error}",
+            tc.name
+        ),
+        None => format!(
+            "waiting on simulated stock, and no enabled operation above it can leave any. The generator refused with: {error}"
+        ),
+    };
+    Some(BlockedEntry {
+        toolpath_id: toolpath,
+        toolpath_index: index,
+        name,
+        block: AwaitingPriorStock {
+            blocking_toolpath_id: stock.on,
+            blocking_toolpath_index: blocker.map(|(i, _)| i),
+            message,
+        },
+    })
+}
+
+/// The cell size the run simulates at (W5 item f, R1).
+///
+/// # Errors
+/// - when the plan has to simulate and no cell size arrived;
+/// - when what arrived is not a positive number;
+/// - when what arrived is coarser than the rest the plan machines needs.
+fn resolve_cell_size(
+    supplied: Option<f64>,
+    plans_a_simulation: bool,
+    required: Option<f64>,
+) -> Result<f64> {
+    /// The cell size a project that plans NO simulation still simulates at
+    /// for its diagnostics. It was the clap default before W5.
+    const FALLBACK_MM: f64 = 0.5;
+
+    let Some(cell) = supplied else {
+        if plans_a_simulation {
+            anyhow::bail!(
+                "--resolution is required: an enabled operation in this project starts from \
+                 remaining stock, so the plan simulates before it generates. \
+                 {REST_NEEDS_RESOLUTION}"
+            );
+        }
+        return Ok(FALLBACK_MM);
+    };
+    anyhow::ensure!(
+        cell.is_finite() && cell > 0.0,
+        "--resolution {cell} is not a positive cell size. {REST_NEEDS_RESOLUTION}"
+    );
+    if let Some(needed) = required {
+        anyhow::ensure!(
+            cell <= needed,
+            "--resolution {cell} is coarser than the rest this project machines needs \
+             ({needed} mm). At that cell size the simulated stock cannot resolve the detail \
+             the rest operation's own cutter removes. {REST_NEEDS_RESOLUTION}"
+        );
+    }
+    Ok(cell)
+}
+
 #[derive(Serialize)]
 struct ProjectSummary {
     project: String,
@@ -212,6 +319,9 @@ struct ProjectSummary {
     /// NOT mean the project carries no stale defaults — the rule library is
     /// closed at four, and `compute::validate`'s header says why.
     stale_defaults: Vec<rs_cam_core::compute::validate::StaleDefault>,
+    /// W5 item (f): operations that never generated because an upstream
+    /// simulated stock was missing. An EMPTY list means none were blocked.
+    awaiting_prior_stock: Vec<BlockedEntry>,
     per_toolpath: Vec<ToolpathSummaryEntry>,
     verdict: String,
     /// Checkpoint K (g2) — the operating point `verdict` and every
@@ -231,7 +341,7 @@ pub fn run_project_command(
     output_dir: &Path,
     setup_filter: Option<&str>,
     skip_ids: &[rs_cam_core::ToolpathId],
-    resolution: f64,
+    resolution: Option<f64>,
     summary: bool,
     emit_gcode: Option<&Path>,
     adaptive_feed_modulation: bool,
@@ -317,25 +427,24 @@ pub fn run_project_command(
         apply_suggested_feeds_to_session(&mut session)?;
     }
 
-    // 3. Generate all toolpaths — a manual pass instead of
-    // `generate_all` so ops that refuse are collected for the ladder
-    // below. `FromRemainingStock` ops fail hard here by design (F.4:
-    // no prior simulated stock yet — never fall back to fresh stock).
-    let cancel = AtomicBool::new(false);
-    let mut pending: Vec<usize> = Vec::new();
-    for idx in 0..session.toolpath_count() {
-        let Some(tc) = session.get_toolpath_config(idx) else {
-            continue;
-        };
-        if !tc.enabled || combined_skip.contains(&tc.id) {
-            continue;
-        }
-        if session.generate_toolpath(idx, &cancel).is_err() {
-            pending.push(idx);
-        }
-    }
+    // 2c. W5 item (f): the cell size is REFUSED, never guessed, whenever the
+    // plan has to simulate. `--resolution` no longer carries a clap default,
+    // because clap cannot see the project and the question only has an answer
+    // once the edges are known.
+    let steps = generation_plan::plan(&session, Scope::Project);
+    let plans_a_simulation = steps
+        .iter()
+        .any(|step| matches!(step, generation_plan::Step::Simulate { .. }));
+    let required = generation_plan::required_resolution_mm(&session, Scope::Project);
+    let resolution = resolve_cell_size(resolution, plans_a_simulation, required)?;
 
-    // 4. Run simulation
+    // 3. Walk the plan core owns. Setup order, then `toolpath_indices`, with
+    // a Simulate step immediately before every operation that starts from
+    // remaining stock and has no snapshot. There is no cap and no ladder: the
+    // list is finite and no step is retried, so the GUI, the MCP server and
+    // this command cannot disagree about what "make the project current"
+    // means.
+    let cancel = AtomicBool::new(false);
     let sim_opts = SimulationOptions {
         resolution,
         skip_ids: combined_skip.clone(),
@@ -348,12 +457,57 @@ pub fn run_project_command(
         modulation_strategy,
         modulation_aggressiveness,
     };
-    // CMP-23: the S5 prefix memo. Every ladder round re-simulates the
-    // previous round's toolpaths plus whatever became generatable, so round
-    // N+1's request has round N's as a PREFIX — exactly the shape the memo
-    // exists for. The cache is local to this run: it holds one snapshot, it
-    // is single-slot and in-process, and it dies with the command.
+    // CMP-23: the S5 prefix memo. The plan's simulations are prefixes of one
+    // another — exactly the shape the memo exists for. The cache is local to
+    // this run: it holds one snapshot, it is single-slot and in-process, and
+    // it dies with the command.
     let mut sim_cache = rs_cam_core::compute::sim_prefix::SimPrefixCache::new();
+    let mut simulations = 0usize;
+    let mut blocked: Vec<BlockedEntry> = Vec::new();
+    for step in &steps {
+        match *step {
+            generation_plan::Step::Simulate { upto, .. } => {
+                // A setup whose earlier operation is already blocked cannot
+                // be unlocked by another simulation: the phantom scan latches
+                // on the first enabled operation with no result, which is
+                // that one. Skip the step instead of paying for it.
+                if blocked.iter().any(|b| b.toolpath_id == upto) {
+                    continue;
+                }
+                simulations += 1;
+                session.run_simulation_memoized(
+                    &sim_opts,
+                    &cancel,
+                    Some(rs_cam_core::compute::sim_prefix::SimMemo {
+                        cache: &mut sim_cache,
+                        store: true,
+                    }),
+                )?;
+            }
+            generation_plan::Step::Generate { toolpath, index } => {
+                if combined_skip.contains(&toolpath) {
+                    continue;
+                }
+                if let Err(error) = session.generate_toolpath(index, &cancel) {
+                    match blocked_entry(&session, toolpath, index, &error) {
+                        Some(entry) => {
+                            warn!(
+                                toolpath = %entry.name,
+                                "operation is waiting on upstream simulated stock"
+                            );
+                            blocked.push(entry);
+                        }
+                        None => warn!(index, error = %error, "toolpath generation failed"),
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. The closing simulation. The plan emits no trailing full step, and
+    // every reading below (metrics, collisions, the diagnostics) is taken
+    // from one simulation over the whole project.
+    simulations += 1;
     session.run_simulation_memoized(
         &sim_opts,
         &cancel,
@@ -362,57 +516,19 @@ pub fn run_project_command(
             store: true,
         }),
     )?;
+    info!(
+        steps = steps.len(),
+        simulations,
+        blocked = blocked.len(),
+        "generation plan finished"
+    );
 
-    // 4b. F.4 fixpoint ladder, mirroring MCP `generate_all`'s default:
-    // each simulation can unlock `FromRemainingStock` ops that were
-    // waiting on simulated prior stock, whose fresh toolpaths then need
-    // to be in the simulation themselves. Repeat until nothing new
-    // becomes generatable. Without this a flat pass silently exports a
-    // project minus its rest ops (wanaka200 loses 4 of 8).
-    let ladder_cap = session.toolpath_count() + 2;
-    let mut ladder_round = 0usize;
-    while !pending.is_empty() {
-        ladder_round += 1;
-        if ladder_round > ladder_cap {
-            tracing::warn!(
-                still_pending = ?pending,
-                "fixpoint ladder did not converge; exporting without these toolpaths"
-            );
-            break;
-        }
-        let before = pending.len();
-        pending.retain(|&i| session.generate_toolpath(i, &cancel).is_err());
-        if pending.len() >= before {
-            // Stalled: the remaining ops fail for reasons another
-            // simulation cannot fix (real errors). Their statuses are
-            // reported in the diagnostics below; do not loop on them.
-            tracing::warn!(
-                still_pending = ?pending,
-                "toolpaths still refusing after simulation; not a ladder dependency"
-            );
-            break;
-        }
-        tracing::info!(
-            round = ladder_round,
-            resolved = before - pending.len(),
-            remaining = pending.len(),
-            "fixpoint ladder round"
-        );
-        session.run_simulation_memoized(
-            &sim_opts,
-            &cancel,
-            Some(rs_cam_core::compute::sim_prefix::SimMemo {
-                cache: &mut sim_cache,
-                store: true,
-            }),
-        )?;
-    }
     let sim_memo_stats = sim_cache.stats();
     tracing::info!(
         lookups = sim_memo_stats.lookups,
         hits = sim_memo_stats.hits,
         entries_reused = sim_memo_stats.entries_reused,
-        "S5 prefix memo over the fixpoint ladder"
+        "S5 prefix memo over the generation plan"
     );
 
     // 5. Run collision checks per toolpath and collect results
@@ -684,6 +800,7 @@ pub fn run_project_command(
         collision_checks_failed: collision_check_failed.len(),
         rapid_collision_count: diag.rapid_collision_count,
         stale_defaults,
+        awaiting_prior_stock: blocked,
         per_toolpath,
         verdict: verdict.clone(),
         adaptive_feed_modulation,

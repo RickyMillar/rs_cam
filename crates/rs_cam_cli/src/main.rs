@@ -152,9 +152,16 @@ enum Commands {
         #[arg(long)]
         skip: Option<String>,
 
-        /// Simulation resolution in mm
-        #[arg(long, default_value = "0.5")]
-        resolution: f64,
+        /// Simulation resolution in mm.
+        ///
+        /// W5 item (f): NOT defaulted. clap cannot see the project, so the
+        /// refusal lives in `run_project_command`: a project whose plan has
+        /// to simulate refuses without this flag, and refuses a cell size
+        /// coarser than the rest it machines needs (R1). A project that
+        /// plans no simulation still simulates once for the diagnostics, at
+        /// 0.5 mm.
+        #[arg(long)]
+        resolution: Option<f64>,
 
         /// Print human-readable summary to stderr
         #[arg(long)]
