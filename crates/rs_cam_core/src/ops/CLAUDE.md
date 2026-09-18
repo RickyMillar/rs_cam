@@ -37,3 +37,4 @@ module is reached through `compute::execute_operation_annotated`.
 - `cargo test -p rs_cam_core -q --test drill_flip_removal_g_drillflip`
 - `cargo test -p rs_cam_core -q --test depth_beyond_stock_core_g_depthstockcore`
 - `cargo test -p rs_cam_core -q --test project_curve_depth_sign`
+- `cargo test -p rs_cam_core -q --test waterline_auto_ladder_is_model_top_to_bottom_r3 --test waterline_respects_a_vertical_wall_r9`

@@ -30,7 +30,7 @@ The tabs that edit a setup, a tool, the stock, the post and an operation.
 
 ## Sentries
 
-- `cargo test -p rs_cam_viz -q --test bottom_z_pin_note_g_bottompin`
+- `cargo test -p rs_cam_viz -q --test bottom_z_pin_note_g_bottompin --test height_diagram_drag_prefers_bottom_and_rounds_r5 --test stock_panel_edit_clears_auto_from_model_r12`
 - `cargo test -p rs_cam_viz -q --test boundary_controls_always_visible_g_boundaryinherit`
 - `cargo test -p rs_cam_viz -q --test the_inspector_nests_once_dc5`
 - `cargo test -p rs_cam_viz -q --test inspector_width_is_tab_independent_up4`

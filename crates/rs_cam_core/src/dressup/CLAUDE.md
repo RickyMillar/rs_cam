@@ -35,6 +35,6 @@ order. Three run outside it: `apply_tabs`, in the per-level closure of
 - `cargo test -p rs_cam_core -q --test capability_link_moves_safety`
 - `cargo test -p rs_cam_core -q --test dressup_span_invariants`
 - `cargo test -p rs_cam_core -q --test constrained_max_modulation_f039`
-- `cargo test -p rs_cam_core -q --test entry_moves_stock_aware_g_rampterrain`
+- `cargo test -p rs_cam_core -q --test entry_moves_stock_aware_g_rampterrain --test finishing_defaults_have_no_ramp_entry_r10`
 - `cargo test -p rs_cam_core -q --test lead_in_out_feed_rates_f040`
 - `cargo test -p rs_cam_core -q --test plunge_guard_p3`

@@ -26,6 +26,7 @@ is `export::mod`, which re-exports the four surfaces.
 
 - `cargo test -p rs_cam_core -q --test composite_render_convention`
 - `cargo test -p rs_cam_core -q --test gcode_validator_baseline`
+- `cargo test -p rs_cam_core -q --test gcode_validator_reads_the_emission_frame_r11`
 - `cargo test -p rs_cam_core -q --test param_sweep`
 - `cargo test -p rs_cam_core -q --test exporter_span_classifier_x1`
 

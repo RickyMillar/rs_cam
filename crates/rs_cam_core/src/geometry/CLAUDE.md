@@ -29,7 +29,7 @@ principal type is `RegionSet`; the boundary entry points are
 
 ## Sentries
 
-- `cargo test -p rs_cam_core -q --test boundary_clip_escape_f1`
+- `cargo test -p rs_cam_core -q --test boundary_clip_escape_f1 --test silhouette_boundary_has_no_holes_r1`
 - `cargo test -p rs_cam_core -q --test monotone_cell_decomposition_c2`
 - `cargo test -p rs_cam_core -q --test skipped_boundary_offset_f8`
 - `cargo test -p rs_cam_core -q --test nn_order_scaling_g5_g6`
