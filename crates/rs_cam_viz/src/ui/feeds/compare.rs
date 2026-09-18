@@ -12,10 +12,11 @@
 //! refusal text when `validate_tool_for_operation` declines the tool ×
 //! operation pairing (I-3).
 
-use rs_cam_core::feeds::FeedsExplain;
 use rs_cam_core::feeds::efficiency::{ChipVerdict, CutEfficiency, cut_efficiency};
 use rs_cam_core::feeds::suggest::FeedsPreview;
+use rs_cam_core::feeds::{FeedsExplain, PowerFigure, PowerUnmodeled};
 use rs_cam_core::tool_load::deflection::EXCEEDS_BOUND_MM;
+use rs_cam_core::tool_load::verdict::BoundSource;
 
 use rs_cam_core::feeds::rationale::SuggestRationale;
 
@@ -162,6 +163,8 @@ pub(crate) fn draw_inspector_comparison(
     // Core computes the verdict; this file renders it. `rs_cam_viz`'s rule:
     // do not recompute a narrower answer in the UI.
     let efficiency = cut_efficiency(operation, tool, material, machine, &explain.recommended);
+    let power =
+        PowerReading::at_shipped_point(operation, tool, material, machine, &explain.recommended);
     draw_context_chip(ui, explain);
     ui.add_space(crate::ui::tokens::SPACE_2);
     draw_comparison_card(
@@ -171,6 +174,7 @@ pub(crate) fn draw_inspector_comparison(
         preview.refusal(),
         rationale,
         efficiency.as_ref(),
+        &power,
         toolpath_id,
         events,
     );
@@ -255,6 +259,11 @@ fn draw_context_chip(ui: &mut egui::Ui, explain: &FeedsExplain) {
     });
 }
 
+// SAFETY: the card carries one more borrowed payload than the argument
+// threshold allows, for the reason `draw_inspector_comparison` carries its
+// own allow: the two verdict rows are statements about the CUT, and bundling
+// the session's own values into a struct to shorten this list would build a
+// second data model of them.
 #[allow(clippy::too_many_arguments)]
 fn draw_comparison_card(
     ui: &mut egui::Ui,
@@ -263,6 +272,7 @@ fn draw_comparison_card(
     refusal: Option<&rs_cam_core::feeds::FeedsError>,
     rationale: Option<&SuggestRationale>,
     efficiency: Option<&CutEfficiency>,
+    power: &PowerReading,
     toolpath_id: crate::state::toolpath::ToolpathId,
     events: &mut Vec<AppEvent>,
 ) {
@@ -366,6 +376,8 @@ fn draw_comparison_card(
                 current.flute_count,
             ),
         );
+        ui.add_space(2.0);
+        rail_power_row(ui, power);
         ui.add_space(2.0);
         rail_mrr_row(ui, explain.recommended.mrr_mm3_min);
 
@@ -693,6 +705,214 @@ fn unmodelled_hover(advance_mm: Option<f64>) -> String {
         ),
     }
     out
+}
+
+/// The width of the rail's power bar, in points.
+///
+/// The Simulation workspace's rail is 240 points wide and this row also
+/// carries a label and the setting its bound traces back to, so the bar takes
+/// the middle. `horizontal_wrapped` moves it to a line of its own when the
+/// rail is narrower still.
+const POWER_BAR_WIDTH: f32 = 84.0;
+
+/// The power row's payload: the figure at the point this operation ships, or
+/// the typed refusal, plus the provenance of the bound.
+///
+/// The provenance is built from the figure's own RPM and the machine's own
+/// safety factor — the two numbers the post-simulation power gate stores on
+/// its own verdict — so the predicted row and the measured row name the same
+/// source. The GUI owns no limit: the ceiling is
+/// [`PowerFigure::available_kw`], and nothing here computes one.
+struct PowerReading {
+    figure: Result<PowerFigure, PowerUnmodeled>,
+    source: Option<BoundSource>,
+}
+
+impl PowerReading {
+    /// Evaluate the power this operation will draw at the point it ships.
+    ///
+    /// **Not `FeedsResult::power_kw`.** That figure sits at the CALCULATOR's
+    /// geometry, and `enforce_invariants` lowers the depth per pass
+    /// afterwards; on a shipped Ø12 roughing preset the published figure is
+    /// 11.96× the power at the depth that cuts. The recommendation supplies
+    /// only the FALLBACK point here, for an operation that exposes no depth,
+    /// no stepover or no speed of its own — the surface-following finishes
+    /// command no axial step, so the calculator's value is the correct
+    /// substitute for them.
+    fn at_shipped_point(
+        operation: &crate::state::toolpath::OperationConfig,
+        tool: &crate::state::job::ToolConfig,
+        material: &rs_cam_core::material::Material,
+        machine: &rs_cam_core::machine::MachineProfile,
+        recommended: &rs_cam_core::feeds::FeedsResult,
+    ) -> Self {
+        let figure = rs_cam_core::feeds::power_at_operating_point(
+            operation,
+            tool,
+            material,
+            machine,
+            Some(rs_cam_core::feeds::suggest::CalculatorOperatingPoint {
+                radial_width_mm: recommended.radial_width_mm,
+                axial_depth_mm: recommended.axial_depth_mm,
+                feed_rate_mm_min: recommended.feed_rate_mm_min,
+                rpm: recommended.rpm,
+            }),
+        );
+        let source = figure
+            .as_ref()
+            .ok()
+            .map(|figure| BoundSource::MachinePowerCurve {
+                rpm: figure.rpm,
+                safety_factor: machine.safety_factor,
+            });
+        Self { figure, source }
+    }
+}
+
+/// The rail's power row — 0 to the machine's own limit at this spindle speed.
+///
+/// # Why the bar is back
+///
+/// It was deleted on a measurement: peak utilisation 23.6 % across the whole
+/// shipped matrix, so the readout could not separate a good cut from a bad
+/// one. R1 then rebuilt power on the affine force model, whose feed-free edge
+/// term carries most of the load at wood chiploads, and the same sweep reads
+/// median 17.8 %, p90 89.4 % and peak 100 %. The operator reinstated the bar
+/// on 2026-09-18. `the_power_bar_is_informative_g_chipverdict` replaced the
+/// ban with a test of its reason, and holds the new measurement.
+///
+/// # What the face carries, and what it does not
+///
+/// The face is the percent of the limit and nothing else: every limit on this
+/// product reads 0 to limit, and "limit calculated from X" belongs in the
+/// hover. The kW pair, the provenance clause and the four figures of the
+/// operating point are on the hover. The caption is the SETTING that moves
+/// the bound, so a reader can trace the limit back to it.
+///
+/// A 100 % reading here is a real reading, not an absent constraint painted
+/// as an all-clear: the Step 6 power ladder clamps a power-limited recipe
+/// onto the ceiling rather than letting it through, so the top of the scale
+/// is where those recipes land.
+///
+/// # A refusal is stated, never drawn
+///
+/// `power_at_operating_point` refuses, typed, on seven missing inputs. Each
+/// paints its own clause in the dim abstention style the chipload row uses.
+/// An empty bar would read as a cut with power to spare, which is the
+/// opposite of what an absent model says.
+fn rail_power_row(ui: &mut egui::Ui, power: &PowerReading) {
+    let label = format!("Power {}", crate::ui::tokens::GLYPH_DETAIL);
+    let hover = match (&power.figure, &power.source) {
+        (Ok(figure), Some(source)) => power_hover(figure, source),
+        (Err(reason), _) => power_unmodelled_hover(*reason),
+        // `PowerReading` builds the source from the figure, so an `Ok` with
+        // no source cannot occur. It is worded as an abstention rather than
+        // a panic because a GUI row is not the place to assert an invariant.
+        (Ok(_), None) => power_unmodelled_hover(PowerUnmodeled::NoAvailablePower),
+    };
+    ui.horizontal_wrapped(|ui| {
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(label)
+                    .small()
+                    .strong()
+                    .color(theme::TEXT_HEADING),
+            )
+            .wrap(),
+        )
+        .on_hover_text(hover.clone());
+        match (&power.figure, &power.source) {
+            (Ok(figure), Some(source)) => {
+                // The door promises a finite, positive `available_kw`, so the
+                // ratio is always defined. The FILL is clamped because a bar
+                // cannot draw past its end; the TEXT is not, because a cut
+                // over its ceiling must read over its ceiling.
+                let utilisation = figure.required_kw / figure.available_kw;
+                ui.add(
+                    egui::ProgressBar::new(utilisation.clamp(0.0, 1.0) as f32)
+                        .fill(compare::power_color(utilisation))
+                        .desired_width(POWER_BAR_WIDTH)
+                        .text(egui::RichText::new(power_face(figure)).small()),
+                )
+                .on_hover_text(hover.clone());
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(source.setting())
+                            .small()
+                            .color(theme::TEXT_DIM),
+                    )
+                    .wrap(),
+                )
+                .on_hover_text(hover.clone());
+            }
+            _ => {
+                let clause = match &power.figure {
+                    Err(reason) => reason.clause(),
+                    Ok(_) => PowerUnmodeled::NoAvailablePower.clause(),
+                };
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(format!(
+                            "{} {clause}",
+                            crate::ui::tokens::GLYPH_UNKNOWN
+                        ))
+                        .small()
+                        .color(theme::TEXT_DIM),
+                    )
+                    .wrap(),
+                )
+                .on_hover_text(hover.clone());
+            }
+        }
+    });
+}
+
+/// The face: the percent of the limit, formatted from the two figures it
+/// describes. No number on this face is typed; both come off the figure.
+fn power_face(figure: &PowerFigure) -> String {
+    format!("{:.1} %", figure.required_kw / figure.available_kw * 100.0)
+}
+
+/// The row's workings: the kW pair the face does not carry, where the limit
+/// came from, and the operating point the figure was evaluated at — so the
+/// reader can see that the bar describes the depth that will be cut.
+fn power_hover(figure: &PowerFigure, source: &BoundSource) -> String {
+    format!(
+        "Power {:.3} kW of {:.3} kW available \u{2014} {} of the limit.\n\n\
+         Limit from {}. Setting: {}.\n\n\
+         Evaluated at the point this operation will cut: depth of cut \
+         {:.3} mm, width of cut {:.3} mm, {:.0} rpm, feed {:.0} mm/min. The \
+         bar describes the depth that WILL be cut, not the depth the \
+         calculator sized its feed at \u{2014} the rigidity clamp can lower \
+         one without moving the other.",
+        figure.required_kw,
+        figure.available_kw,
+        power_face(figure),
+        source.clause(),
+        source.setting(),
+        figure.ap_mm,
+        figure.ae_mm,
+        figure.rpm,
+        figure.feed_mm_min,
+    )
+}
+
+/// The hover for a refused power figure.
+///
+/// It names the missing input and the engine's own typed refusal, so the
+/// empty row cannot be read as a cut with power to spare.
+fn power_unmodelled_hover(reason: PowerUnmodeled) -> String {
+    format!(
+        "Power is not modelled at this operating point.\n\n\
+         {} \u{2014} so feeds::power_at_operating_point refuses with \
+         {reason:?}, and there is no figure and no limit to draw. Nothing is \
+         drawn rather than a zero or an empty bar: an empty bar reads as a \
+         cut with power to spare, which is the opposite of what an absent \
+         model says.\n\n\
+         The machine's power curve is unaffected. What is missing is the \
+         input named above.",
+        reason.clause(),
+    )
 }
 
 /// The rail's MRR readout, wrapped like its neighbours.

@@ -142,15 +142,60 @@ pub(crate) fn draw_modal_body(
         return;
     };
     let efficiency = read_cut_efficiency(state, toolpath_id, &preview);
+    let power = read_power_figure(state, toolpath_id, &preview);
     draw_chart_c(
         ui,
         &current,
         &preview,
         efficiency.as_ref(),
+        power.as_ref(),
         toolpath_id,
         modal,
         events,
     );
+}
+
+/// The core's power answer at the point this operation ships, or `None` when
+/// [`rs_cam_core::feeds::power_at_operating_point`] refuses.
+///
+/// The chart does not scale a published power by a feed ratio. It used to:
+/// `rec.power_kw * (explore_feed / rec.feed_rate_mm_min)` took the
+/// CALCULATOR-geometry figure and re-scaled it, so the readout described a
+/// depth the operation will not cut — 11.96x off on a shipped Ø12 roughing
+/// preset. `PowerFigure` carries the model at the shipped point and answers
+/// any feed exactly through `required_kw_at_feed`, because power is affine in
+/// the feed. Same rule as the corridor above: the core owns the model, and
+/// the chart renders its answer.
+fn read_power_figure(
+    state: &AppState,
+    toolpath_id: crate::state::toolpath::ToolpathId,
+    preview: &FeedsPreview,
+) -> Option<rs_cam_core::feeds::PowerFigure> {
+    let tc = state
+        .session
+        .toolpath_configs()
+        .iter()
+        .find(|tc| tc.id == toolpath_id)?;
+    let tool = state
+        .session
+        .tools()
+        .iter()
+        .find(|t| t.id == rs_cam_core::compute::ToolId(tc.tool_id))?;
+    let stock = state.session.stock_config();
+    let recommended = preview.recommended();
+    rs_cam_core::feeds::power_at_operating_point(
+        &tc.operation,
+        tool,
+        &stock.material,
+        state.session.machine(),
+        Some(rs_cam_core::feeds::suggest::CalculatorOperatingPoint {
+            radial_width_mm: recommended.radial_width_mm,
+            axial_depth_mm: recommended.axial_depth_mm,
+            feed_rate_mm_min: recommended.feed_rate_mm_min,
+            rpm: recommended.rpm,
+        }),
+    )
+    .ok()
 }
 
 /// The core's efficiency answer for the recommended operating point, or
@@ -390,11 +435,17 @@ impl Corridor {
     }
 }
 
+// The chart carries the two core answers it renders — the chipload corridor
+// and the power figure — beside the recipe, for the reason the inspector card
+// carries them: they are statements about the CUT, and bundling them into a
+// struct would build a second data model of them.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_chart_c(
     ui: &mut egui::Ui,
     current: &CurrentValues,
     preview: &FeedsPreview,
     efficiency: Option<&CutEfficiency>,
+    power: Option<&rs_cam_core::feeds::PowerFigure>,
     toolpath_id: crate::state::toolpath::ToolpathId,
     modal: &crate::state::FeedsModalState,
     events: &mut Vec<AppEvent>,
@@ -756,7 +807,16 @@ pub(crate) fn draw_chart_c(
     }
 
     // Phase 3 — Explore controls.
-    draw_explore_controls(ui, current, explain, refusal, toolpath_id, modal, events);
+    draw_explore_controls(
+        ui,
+        current,
+        explain,
+        power,
+        refusal,
+        toolpath_id,
+        modal,
+        events,
+    );
 }
 
 /// The legend under the nomogram: one row per mark, then `Sources`.
@@ -1103,10 +1163,15 @@ fn clip_iso_line(cl: f64, rpm_max: f64, flutes: f64, feed_cap: f64) -> Vec<[f64;
 
 // ── Drag-to-explore controls (Phase 3) ──────────────────────────────
 
+// Same cause as `draw_chart_c`: the explored readout states the power at the
+// explored feed, and that answer comes from the core figure, not from a
+// number this function could rebuild.
+#[allow(clippy::too_many_arguments)]
 fn draw_explore_controls(
     ui: &mut egui::Ui,
     current: &CurrentValues,
     explain: &FeedsExplain,
+    power: Option<&rs_cam_core::feeds::PowerFigure>,
     refusal: Option<&rs_cam_core::feeds::FeedsError>,
     toolpath_id: crate::state::toolpath::ToolpathId,
     modal: &crate::state::FeedsModalState,
@@ -1159,12 +1224,17 @@ fn draw_explore_controls(
             0.0
         };
         let (verdict_text, color) = chipload_verdict(preview_chipload, explain);
-        let preview_power = preview_power_kw(explain, explore.feed_mm_min);
-        let power_pct = if env.max_power_kw > 0.0 {
-            (preview_power / env.max_power_kw).clamp(0.0, 2.0) * 100.0
-        } else {
-            0.0
-        };
+        // Both figures come off ONE core answer, so the numerator and the
+        // ceiling sit on the same (COMMANDED) axis. `env.max_power_kw` is the
+        // machine's rating, not the gate's ceiling, and dividing a commanded
+        // power by it read the cut as having more room than the gate allows.
+        let explored_power = power.map(|figure| {
+            (
+                figure.required_kw_at_feed(explore.feed_mm_min).max(0.0),
+                figure.available_kw,
+            )
+        });
+        let power_pct = explored_power.map(|(kw, ceiling)| (kw / ceiling).clamp(0.0, 2.0) * 100.0);
         ui.horizontal(|ui| {
             ui.add(
                 egui::Label::new(
@@ -1177,21 +1247,27 @@ fn draw_explore_controls(
                 .wrap(),
             );
             ui.separator();
-            ui.add(
-                egui::Label::new(
-                    egui::RichText::new(format!(
-                        "power {preview_power:.2} kW ({power_pct:.0}% of cap)"
-                    ))
-                    .small()
-                    .color(if power_pct > 90.0 {
+            // A refused power figure abstains here, as every other readout on
+            // this chart abstains: a `0.00 kW (0% of cap)` reads as a cut with
+            // power to spare.
+            let (power_text, power_color) = match (explored_power, power_pct) {
+                (Some((kw, ceiling)), Some(pct)) => (
+                    format!("power {kw:.2} of {ceiling:.2} kW ({pct:.0}% of the limit)"),
+                    if pct > 90.0 {
                         theme::ERROR
-                    } else if power_pct > 70.0 {
+                    } else if pct > 70.0 {
                         theme::WARNING_MILD
                     } else {
                         theme::SUCCESS
-                    }),
-                )
-                .wrap(),
+                    },
+                ),
+                _ => (
+                    "power not modelled at this operating point".to_owned(),
+                    theme::TEXT_DIM,
+                ),
+            };
+            ui.add(
+                egui::Label::new(egui::RichText::new(power_text).small().color(power_color)).wrap(),
             );
         });
         ui.horizontal(|ui| {
@@ -1262,18 +1338,6 @@ fn draw_explore_controls(
             events.push(AppEvent::Ui(UiCommand::SetFeedsExplore(Some(explore))));
         }
     }
-}
-
-/// Estimate power at the explored feed by scaling the recommendation's
-/// power linearly with feed. Good enough as an interactive preview —
-/// not the same as the calc, but matches the optimizer's first-order
-/// model for adaptive ops.
-fn preview_power_kw(explain: &FeedsExplain, explore_feed: f64) -> f64 {
-    let rec = &explain.recommended;
-    if rec.feed_rate_mm_min <= 0.0 {
-        return 0.0;
-    }
-    (rec.power_kw * (explore_feed / rec.feed_rate_mm_min)).max(0.0)
 }
 
 /// Advance/tooth for the nomogram's hover readout — **display only**.

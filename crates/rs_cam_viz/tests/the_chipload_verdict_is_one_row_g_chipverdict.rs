@@ -1,48 +1,66 @@
-//! **G-CHIPVERDICT — the Feeds tab says where the chip sits, and abstains
+//! **G-CHIPVERDICT — the Feeds tab says where the cut sits, and abstains
 //! when it cannot.**
 //!
-//! # What was there, and why it went
+//! # Two rows, one question each
 //!
-//! The inspector's comparison card ended with `Power 0.01 of 0.60 kW (1 %)`.
-//! `feeds/mod.rs` already carried the measurement that condemned it: across
-//! all three shipped machine presets × ten species × Ø3/Ø6/Ø12 slots, the
-//! power branch never fires, and **peak** utilisation across the whole
-//! shipped matrix is 23.6 %. Typical is 1 %. A readout whose maximum
-//! observed value sits in its left quarter cannot separate a good cut from a
-//! bad one, and an operator who learns to read it learns nothing.
+//! The card carries one chipload verdict row and one power row. The chipload
+//! row says where the chip sits in the vendor corridor and what sitting there
+//! costs; the power row says how much of the spindle's limit this cut draws
+//! at the depth that will be cut. Neither repeats the other, and each has one
+//! row.
 //!
-//! The chipload can separate them. Below the vendor band there is no
-//! trade-off, only loss: the cut spends more energy per mm³ AND more time
-//! than the band midpoint, at once. `feeds::efficiency::cut_efficiency`
-//! computes that verdict; this row renders it.
+//! # The chipload row
+//!
+//! Below the vendor band there is no trade-off, only loss: the cut spends
+//! more energy per mm³ AND more time than the band midpoint, at once.
+//! `feeds::efficiency::cut_efficiency` computes that verdict; this row
+//! renders it.
+//!
+//! # The power row, and the ban it replaced
+//!
+//! The card once ended with `Power 0.01 of 0.60 kW (1 %)`, and this file
+//! banned its return: peak utilisation across the whole shipped matrix was
+//! 23.6 %, so the readout could not separate a good cut from a bad one. R1
+//! then rebuilt power on the affine force model, and the re-measurement made
+//! the ban's reason false. The operator reinstated the bar on 2026-09-18
+//! (`planning/load_model_2026-09-16/RESUME_PLAN.md` §7, ruling 2). Arm 3
+//! below is the ban's successor: it watches the REASON, not the ban. A ban
+//! whose reason expired becomes a test of the reason.
 //!
 //! # The arm that matters
 //!
 //! `cut_efficiency` returns `Option<CutEfficiency>`, and three of its fields
-//! are independently optional. Every one of those `None`s must reach the
-//! screen as a **stated abstention** — never as a zero, a blank, a bare dash
-//! or a 100 %. This repository has drawn the opposite four times: an empty
-//! triage as an all-clear, an empty chart frame as a chart, a 2D model's
-//! zero Z as a blank frame, and a hazard verdict from a pointer that was not
-//! on the chart. `no_fabricated_number_survives_a_refusal_g_chipverdict` is
-//! the fifth's tripwire, and
-//! `the_verdict_row_states_real_numbers_g_chipverdict` is its non-vacuity
-//! partner: a suite in which everything abstains would pass the refusal arm
+//! are independently optional; `power_at_operating_point` returns a typed
+//! refusal with seven variants. Every one of those absences must reach the
+//! screen as a **stated abstention** — never as a zero, a blank, a bare dash,
+//! an empty bar or a 100 %. This repository has drawn the opposite four
+//! times: an empty triage as an all-clear, an empty chart frame as a chart, a
+//! 2D model's zero Z as a blank frame, and a hazard verdict from a pointer
+//! that was not on the chart. `no_fabricated_number_survives_a_refusal_g_chipverdict`
+//! and `the_power_row_states_its_refusal_g_chipverdict` are the fifth's
+//! tripwires, and `the_verdict_row_states_real_numbers_g_chipverdict` and
+//! `the_power_row_states_a_real_reading_g_chipverdict` are their non-vacuity
+//! partners: a suite in which everything abstains would pass the refusal arms
 //! and prove nothing.
 
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    // The spread arm RECORDS its measurement as well as asserting on it;
+    // `--nocapture` is how the figure in V4_IMPLEMENTATION.md was taken.
+    clippy::print_stderr
 )]
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::feeds::{self, PowerFigure, PowerUnmodeled};
+use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, PlasticFamily, PlywoodGrade, WoodSpecies};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
@@ -124,11 +142,6 @@ fn state_for(fixture: Fixture) -> AppState {
     tool.flute_count = 2;
     tool.stickout = 18.0;
 
-    let stock = StockConfig {
-        material: fixture.material,
-        ..Default::default()
-    };
-
     let mut operation = fixture.operation;
     match &mut operation {
         OperationConfig::Adaptive3d(config) => {
@@ -141,6 +154,26 @@ fn state_for(fixture: Fixture) -> AppState {
         }
         other => panic!("fixture operation {other:?} has no feed/RPM setter here"),
     }
+
+    state_for_recipe(None, tool, fixture.material, operation)
+}
+
+/// A session on one tool × material × operation, on `machine` when the
+/// recipe names one and on the builder's own preset when it does not.
+///
+/// The spread arm needs a session on an arbitrary shipped preset, diameter
+/// and operation, so the fixture builders above and that arm share one
+/// session shape rather than two.
+fn state_for_recipe(
+    machine: Option<MachineProfile>,
+    tool: ToolConfig,
+    material: Material,
+    operation: OperationConfig,
+) -> AppState {
+    let stock = StockConfig {
+        material,
+        ..Default::default()
+    };
 
     let config = ToolpathConfig {
         id: rs_cam_core::ToolpathId(0),
@@ -183,6 +216,9 @@ fn state_for(fixture: Fixture) -> AppState {
         .stock(stock)
         .tool(tool)
         .model(model);
+    if let Some(machine) = machine {
+        builder = builder.machine(machine);
+    }
     builder
         .add_toolpath(0, config)
         .expect("add the chip verdict fixture");
@@ -212,8 +248,12 @@ fn ctx() -> egui::Context {
 /// Every text run the Feeds tab paints, in paint order. The production tab
 /// override is one-shot, so the second frame is the steady state.
 fn painted_text(fixture: Fixture) -> Vec<String> {
+    painted_text_of(state_for(fixture))
+}
+
+/// The same, on a session the caller built.
+fn painted_text_of(mut state: AppState) -> Vec<String> {
     let ctx = ctx();
-    let mut state = state_for(fixture);
     let mut texts = Vec::new();
     for pass in 0..2 {
         let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
@@ -284,11 +324,6 @@ fn all_fixtures() -> [NamedFixture; 4] {
         ("no band", no_band),
         ("no Kc", no_kc),
     ]
-}
-
-fn compare_source() -> String {
-    std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/ui/feeds/compare.rs"))
-        .expect("read src/ui/feeds/compare.rs")
 }
 
 // ── arm 1 — exactly one verdict row ────────────────────────────────────────
@@ -388,35 +423,445 @@ fn the_units_stay_on_the_hover_g_chipverdict() {
     );
 }
 
-// ── arm 3 — the power readout does not come back ───────────────────────────
+// ── arm 3 — the power bar is informative ───────────────────────────────────
+//
+// This arm replaces `no_power_gauge_returns_to_the_card_g_chipverdict`, which
+// banned `ProgressBar`, `power_bar`, `power_color` and `rail_power_row` from
+// `src/ui/feeds/compare.rs`. The ban's stated reason was a measurement:
+//
+// > The power readout peaked at 23.6 % across the entire shipped matrix; it
+// > cannot separate a good cut from a bad one.
+//
+// That measurement was taken against a power model that no longer exists.
+// The gauge was deleted at `e475085f`; `2708ee52` (R1) then rebuilt power on
+// the affine force model, which added a feed-free edge term carrying most of
+// the load at wood chiploads. Re-measured after R1 the spread is median
+// 17.8 %, p90 89.4 %, peak 100.0 %, with a quarter of recipes over half
+// scale (`planning/load_model_2026-09-16/SURVEY_UI.md`, "The ban on a
+// predicted power bar rests on stale evidence"). The operator reversed the
+// ruling on 2026-09-18 (`RESUME_PLAN.md` §7, ruling 2): the bar returns as a
+// 0-to-limit bar.
+//
+// A ban whose reason expired becomes a test of the reason. The arms below
+// watch the reason, not the ban: the row reads 0 to the machine's limit at
+// the point the operation will cut, it states a refusal rather than a zero,
+// and its utilisation still spreads across the range.
 
+/// The face of the power row always opens with this label.
+const POWER_LABEL: &str = "Power";
+
+/// The single-line runs the power row paints: its label, the percent of the
+/// limit, and the setting the limit traces back to.
+fn power_row(texts: &[String]) -> Vec<String> {
+    let label = format!("{POWER_LABEL} {}", tokens::GLYPH_DETAIL);
+    let at = texts
+        .iter()
+        .position(|t| *t == label)
+        .unwrap_or_else(|| panic!("no power row painted; runs were {texts:#?}"));
+    texts[at..]
+        .iter()
+        .filter(|t| !t.contains('\n'))
+        .take(3)
+        .cloned()
+        .collect()
+}
+
+/// The power row's hover — the longest multi-line run that opens with the
+/// row's own label.
+fn power_hover(texts: &[String]) -> String {
+    texts
+        .iter()
+        .filter(|t| t.contains('\n') && t.starts_with(POWER_LABEL))
+        .max_by_key(|t| t.len())
+        .cloned()
+        .unwrap_or_else(|| panic!("the power row painted no hover; runs were {texts:#?}"))
+}
+
+/// The figure the row must be showing, read from a session built the same way
+/// the painted frame's session is, and through the same public door the row
+/// calls. The test states no power expression of its own.
+fn door_figure(fixture: Fixture) -> Result<PowerFigure, PowerUnmodeled> {
+    let state = state_for(fixture);
+    let tc = &state.session.toolpath_configs()[0];
+    let tool = &state.session.tools()[0];
+    let stock = state.session.stock_config();
+    let preview = feeds::suggest::feeds_preview_for_operation(
+        &tc.operation,
+        tool,
+        &stock.material,
+        state.session.machine(),
+        stock.workholding_rigidity,
+        feeds::embedded_vendor_lut(),
+        state.session.post_config().spindle_strategy,
+    );
+    let recommended = preview.recommended();
+    feeds::power_at_operating_point(
+        &tc.operation,
+        tool,
+        &stock.material,
+        state.session.machine(),
+        Some(feeds::suggest::CalculatorOperatingPoint {
+            radial_width_mm: recommended.radial_width_mm,
+            axial_depth_mm: recommended.axial_depth_mm,
+            feed_rate_mm_min: recommended.feed_rate_mm_min,
+            rpm: recommended.rpm,
+        }),
+    )
+}
+
+/// The percent the row paints, parsed back off the face.
+fn painted_percent(face: &str) -> f64 {
+    let at = face
+        .find('%')
+        .unwrap_or_else(|| panic!("the power face paints no percent: {face:?}"));
+    let digits: String = face[..at]
+        .trim_end()
+        .chars()
+        .rev()
+        .take_while(|c| c.is_ascii_digit() || *c == '.')
+        .collect();
+    digits
+        .chars()
+        .rev()
+        .collect::<String>()
+        .parse()
+        .unwrap_or_else(|_| panic!("the power face paints no parsable percent: {face:?}"))
+}
+
+/// The row is one 0-to-limit reading: a percent on the face, the kW pair and
+/// the provenance on the hover, and the setting the limit traces back to
+/// beside it. The operator's rules 1 to 3 (`RESUME_PLAN.md` §7).
 #[test]
-fn no_power_gauge_returns_to_the_card_g_chipverdict() {
-    let source = compare_source();
-    // Strip line comments: this file and its neighbours discuss the deleted
-    // gauge by name, and a scan that reads a comment reports code that is
-    // absent.
-    let code: String = source
-        .lines()
-        .map(|line| match line.find("//") {
-            Some(at) => &line[..at],
-            None => line,
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    for banned in ["ProgressBar", "power_bar", "power_color", "rail_power_row"] {
-        assert!(
-            !code.contains(banned),
-            "src/ui/feeds/compare.rs builds `{banned}` again. The power \
-             readout peaked at 23.6 % across the entire shipped matrix; it \
-             cannot separate a good cut from a bad one."
+fn the_power_row_reads_zero_to_the_limit_g_chipverdict() {
+    let label = format!("{POWER_LABEL} {}", tokens::GLYPH_DETAIL);
+    for (name, fixture) in [
+        ("thin", thin as fn() -> Fixture),
+        ("in band", in_band),
+        ("no band", no_band),
+    ] {
+        let texts = painted_text(fixture());
+        let count = texts.iter().filter(|t| **t == label).count();
+        assert_eq!(
+            count, 1,
+            "the {name} fixture painted {count} power rows. One operating \
+             point has one power reading."
         );
-    }
 
-    let texts = painted_text(in_band());
+        let face = power_row(&texts).join(" ");
+        assert!(
+            face.contains('%'),
+            "the {name} fixture's power face quotes no percent of the limit: \
+             {face:?}. Every limit reads 0 to limit."
+        );
+        assert!(
+            !face.contains(" kW"),
+            "the {name} fixture's power face quotes kW: {face:?}. The ruling \
+             puts the kW pair on the hover and a 0-to-limit percent on the \
+             face."
+        );
+        assert!(
+            face.contains("machine"),
+            "the {name} fixture's power row drops its setting: {face:?}. The \
+             limit must trace back to the setting that set it."
+        );
+
+        let hover = power_hover(&texts);
+        for clause in [
+            // BoundSource::MachinePowerCurve::clause(), formatted from the
+            // rpm and the safety factor the gate stores.
+            "the machine power curve at",
+            "safety factor",
+            // BoundSource::MachinePowerCurve::setting().
+            "machine",
+            // The kW pair the face no longer carries.
+            " kW",
+            // The four figures of the operating point the bar describes.
+            "depth of cut",
+            "width of cut",
+            " rpm",
+            "mm/min",
+        ] {
+            assert!(
+                hover.contains(clause),
+                "the {name} fixture's power hover drops {clause:?}: {hover:?}. \
+                 The hover carries the provenance and the point the figure was \
+                 evaluated at."
+            );
+        }
+    }
+}
+
+/// Non-vacuity: the in-band fixture paints a real reading, and it is the
+/// door's own ratio. A suite in which the row always refused would pass the
+/// refusal arm and prove nothing.
+#[test]
+fn the_power_row_states_a_real_reading_g_chipverdict() {
+    let face = power_row(&painted_text(in_band())).join(" ");
+    let painted = painted_percent(&face);
     assert!(
-        !texts.iter().any(|t| t.contains(" kW")),
-        "the comparison card painted a kW figure again: {texts:#?}"
+        painted > 0.0 && painted < 100.0,
+        "the in-band fixture painted {painted} % of the limit: {face:?}. A \
+         zero and a flat hundred are both the shape of a constraint that was \
+         never evaluated."
+    );
+
+    let figure = door_figure(in_band()).unwrap_or_else(|reason| {
+        panic!(
+            "the in-band fixture refuses the power door: {}",
+            reason.clause()
+        )
+    });
+    let expected = figure.required_kw / figure.available_kw * 100.0;
+    assert!(
+        (painted - expected).abs() <= 0.05,
+        "the row painted {painted} % but feeds::power_at_operating_point \
+         reads {expected} % ({:.4} kW of {:.4} kW). The face must be the \
+         door's own ratio, not a second computation.",
+        figure.required_kw,
+        figure.available_kw,
+    );
+}
+
+/// A refusal is stated, never drawn as a zero or an empty bar. Acrylic has no
+/// primary-source Kc, so `power_at_operating_point` returns
+/// `PowerUnmodeled::MaterialUnvalidated`.
+#[test]
+fn the_power_row_states_its_refusal_g_chipverdict() {
+    let reason = door_figure(no_kc())
+        .err()
+        .unwrap_or_else(|| panic!("the no-Kc fixture no longer refuses the power door"));
+    assert_eq!(reason, PowerUnmodeled::MaterialUnvalidated);
+
+    let texts = painted_text(no_kc());
+    let face = power_row(&texts).join(" ");
+    assert!(
+        face.contains(reason.clause()),
+        "the no-Kc fixture painted {face:?}; it must paint the door's own \
+         clause {:?}.",
+        reason.clause()
+    );
+    assert!(
+        !face.contains('%'),
+        "the no-Kc fixture painted a percent of a limit it cannot read: \
+         {face:?}. A refusal is never a zero and never an empty bar."
+    );
+    assert!(
+        !face.chars().any(|c| c.is_ascii_digit()),
+        "the no-Kc power face carries a number: {face:?}."
+    );
+
+    let hover = power_hover(&texts);
+    assert!(
+        hover.contains(reason.clause()) && hover.contains("MaterialUnvalidated"),
+        "the no-Kc power hover does not name the missing input or the \
+         engine's own refusal: {hover:?}."
+    );
+}
+
+// ── the shipped population, and the reason the ban expired ─────────────────
+
+/// A named operation family: what to call it, and how to build one.
+type NamedFamily = (&'static str, fn() -> OperationConfig);
+
+/// The three operation families the sweep walks, each a milling family the
+/// Feeds card draws a recipe for.
+fn sweep_families() -> [NamedFamily; 3] {
+    [
+        (
+            "pocket",
+            (|| OperationConfig::Pocket(Default::default())) as fn() -> OperationConfig,
+        ),
+        ("adaptive", || OperationConfig::Adaptive(Default::default())),
+        ("adaptive 3d", || {
+            OperationConfig::Adaptive3d(Default::default())
+        }),
+    ]
+}
+
+/// One shipped recipe, and what the power row reads on it.
+struct Recipe {
+    /// Utilisation of this recipe's own ceiling, as a percent.
+    utilisation_pct: f64,
+    machine: MachineProfile,
+    material: Material,
+    tool: ToolConfig,
+    /// The operation AFTER the Suggest funnel wrote it — the state the
+    /// machine receives, and the state the power row reads.
+    operation: OperationConfig,
+    name: String,
+}
+
+/// Take one shipped recipe through the public doors the Feeds card uses: the
+/// Suggest funnel writes the operation, and `power_at_operating_point` reads
+/// the point that operation ships.
+fn shipped_recipe(
+    machine: &MachineProfile,
+    species: WoodSpecies,
+    diameter: f64,
+    family: NamedFamily,
+) -> Option<Recipe> {
+    let stock = StockConfig {
+        material: Material::SolidWood { species },
+        ..Default::default()
+    };
+    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    tool.diameter = diameter;
+    tool.flute_count = 2;
+    tool.stickout = 3.0 * diameter;
+
+    // The heaviest cut the calculator will entertain for this tool — a
+    // full-width slot at twice the diameter — is what the review's sweep
+    // asked for. The clamps answer it, and their answer is the recipe that
+    // ships.
+    let (family_name, build) = family;
+    let mut operation = build();
+    operation.set_spindle_rpm(Some(18_000));
+    operation.set_feed_rate(3_000.0);
+    operation.set_stepover(diameter);
+    operation.set_depth_per_pass(2.0 * diameter);
+
+    let preview = feeds::suggest::feeds_preview_for_operation(
+        &operation,
+        &tool,
+        &stock.material,
+        machine,
+        stock.workholding_rigidity,
+        feeds::embedded_vendor_lut(),
+        feeds::SpindleStrategy::MatchChart,
+    );
+    let recommended = preview.applicable()?.result().clone();
+    let (_, pass_role) = operation.feeds_style();
+    let mut provenance = feeds::FeedsProvenance::default();
+    feeds::suggest::apply_feeds_result_to_op(
+        &mut operation,
+        &mut provenance,
+        &recommended,
+        &tool,
+        machine,
+        &stock.material,
+        pass_role,
+        feeds::suggest::SuggestContext::default(),
+    );
+
+    let figure = feeds::power_at_operating_point(
+        &operation,
+        &tool,
+        &stock.material,
+        machine,
+        Some(feeds::suggest::CalculatorOperatingPoint {
+            radial_width_mm: recommended.radial_width_mm,
+            axial_depth_mm: recommended.axial_depth_mm,
+            feed_rate_mm_min: recommended.feed_rate_mm_min,
+            rpm: recommended.rpm,
+        }),
+    )
+    .ok()?;
+    Some(Recipe {
+        utilisation_pct: figure.required_kw / figure.available_kw * 100.0,
+        machine: machine.clone(),
+        material: stock.material.clone(),
+        tool,
+        operation,
+        name: format!(
+            "{} / {species:?} / Ø{diameter:.0} / {family_name}",
+            machine.name
+        ),
+    })
+}
+
+/// **The reason the ban expired, under test.**
+///
+/// The ban's evidence was a spread that could not separate a good cut from a
+/// bad one: peak 23.6 % across the whole shipped matrix. The reinstatement
+/// condition the review stated is the opposite reading — *"a quarter of
+/// recipes pass half scale"* — so this arm holds the bar to it: at least one
+/// shipped recipe reads over half its ceiling, and the median sits below the
+/// peak, so the readout is not pinned to one value either.
+///
+/// The population is the review's, widened to every shipped species: three
+/// machine presets × ten species × Ø3/Ø6/Ø12 × three milling families.
+#[test]
+fn the_power_bar_is_informative_g_chipverdict() {
+    /// The review's own stated reinstatement condition (`SURVEY_UI.md`, "The
+    /// ban on a predicted power bar rests on stale evidence"): a quarter of
+    /// recipes pass half scale. This arm holds the bar to the weaker half of
+    /// that reading — that half scale is reachable at all — because the
+    /// fraction above it is a property of the population, and the population
+    /// here is widened past the review's.
+    const HALF_SCALE_PERCENT: f64 = 50.0;
+
+    let mut recipes = Vec::new();
+    for (_preset, machine) in MachineProfile::presets() {
+        for species in WoodSpecies::ALL {
+            for diameter in [3.0, 6.0, 12.0] {
+                for family in sweep_families() {
+                    if let Some(recipe) = shipped_recipe(&machine, species, diameter, family) {
+                        recipes.push(recipe);
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        recipes.len() >= 100,
+        "the sweep read only {} recipes; the population is too small to say \
+         anything about the spread",
+        recipes.len()
+    );
+    recipes.sort_by(|a, b| a.utilisation_pct.partial_cmp(&b.utilisation_pct).unwrap());
+    let at = |q: f64| recipes[((recipes.len() - 1) as f64 * q).round() as usize].utilisation_pct;
+    let (min, median, p90, max) = (at(0.0), at(0.5), at(0.9), at(1.0));
+    let over_half = recipes
+        .iter()
+        .filter(|r| r.utilisation_pct > HALF_SCALE_PERCENT)
+        .count();
+    let peak = recipes.last().unwrap();
+    eprintln!(
+        "G-CHIPVERDICT power spread | {} recipes: min {min:.1} %, median \
+         {median:.1} %, p90 {p90:.1} %, peak {max:.1} %; {over_half} over \
+         {HALF_SCALE_PERCENT:.0} %. Peak recipe: {}",
+        recipes.len(),
+        peak.name,
+    );
+
+    assert!(
+        max > HALF_SCALE_PERCENT,
+        "the heaviest shipped recipe reads {max:.1} % of its ceiling. The ban \
+         this arm replaces was right when no recipe passed half scale: a bar \
+         that never leaves its left half cannot separate a good cut from a \
+         bad one. Put the measurement to the operator before changing this \
+         threshold."
+    );
+    assert!(
+        median < max,
+        "every shipped recipe reads {median:.1} % of its ceiling. A readout \
+         that says the same thing on every job is the 1 %-forever power bar \
+         again, whatever value it is pinned to."
+    );
+    assert!(
+        min < median,
+        "the lower half of the population is flat at {min:.1} %. The bar must \
+         move across the range, not step between two values."
+    );
+
+    // The three assertions above measure the door. This one measures the
+    // BAR: the heaviest shipped recipe, rendered on the card it ships on,
+    // must paint past half scale. Without it the arm would stay green with
+    // no bar on the card at all, which is the state the ban left behind.
+    let texts = painted_text_of(state_for_recipe(
+        Some(peak.machine.clone()),
+        peak.tool.clone(),
+        peak.material.clone(),
+        peak.operation.clone(),
+    ));
+    let face = power_row(&texts).join(" ");
+    let painted = painted_percent(&face);
+    assert!(
+        painted > HALF_SCALE_PERCENT,
+        "the heaviest shipped recipe ({}) reads {max:.1} % of its ceiling \
+         through feeds::power_at_operating_point, but the card paints \
+         {painted} %: {face:?}. The row must show what the door reads.",
+        peak.name,
     );
 }
 

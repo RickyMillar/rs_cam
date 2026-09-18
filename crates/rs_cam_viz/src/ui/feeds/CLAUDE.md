@@ -20,6 +20,10 @@ The Explore window and the per-operation inspector card. The entry point is
   result.
 - A nomogram readout outside the measured band must abstain, not extrapolate.
 - The window fits the screen at the smallest supported size.
+- Power reads through `feeds::power_at_operating_point` on the operation,
+  never `FeedsResult::power_kw` and never a feed-scaled copy of it. The card's
+  power row is 0 to `PowerFigure::available_kw`; the kW pair and the
+  provenance are on its hover.
 
 ## Sentries
 
@@ -28,6 +32,7 @@ The Explore window and the per-operation inspector card. The entry point is
 - `cargo test -p rs_cam_viz -q --test the_recommendation_explains_each_row_g_whyrow`
 - `cargo test -p rs_cam_viz -q --test the_nomogram_readout_abstains_g_hoverbound`
 - `cargo test -p rs_cam_viz -q --test the_speeds_apply_holds_the_cut_g_speedsonly`
+- `cargo test -p rs_cam_viz -q --test the_chipload_verdict_is_one_row_g_chipverdict`
 
 ## Do not
 
