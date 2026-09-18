@@ -275,6 +275,33 @@ tab with the measured rows after a simulation. Decide with the operator
 whether anything else is needed — the distribution (PLAN 4d) is the
 interesting part and the least valuable, and it stays "probably not yet".
 
+**Checklist, written 2026-09-18 before the look.** First: the running
+`rs_cam_gui` binary must be newer than HEAD — a stale GUI fails silently
+(memory `feedback_check_gui_binary_age`). Then, on Wanaka:
+
+1. Feeds tab, a roughing toolpath, before any simulation: the chip verdict
+   row and the power row side by side, both 0-to-limit, no `≈`, no kW on
+   the face. Hover the power row: the kW pair, the machine's setting, and
+   the four figures of the operating point (`ap`, `ae`, rpm, feed). Is the
+   `ap` the depth Suggest shipped, not the depth the calculator was handed?
+2. Simulate. Simulation inspector, the same toolpath: five rows in
+   `criteria()` order — chipload, power, deflection, depth of cut, gantry
+   push. The gantry row paints `—`; its hover names T-10. The deflection
+   row reads mm against 0.200 mm (it used to read L/D against 4.0). The
+   depth row's caption says "machine" and its hover names the factor and
+   the diameter.
+3. Readiness: the per-limit rows replace the three count pills; the triage
+   headline still sits above them. No `within / exceeds / unmodeled` pill.
+4. Set a DPP by hand above the rigidity cap on one toolpath, re-simulate:
+   the depth row goes red; Readiness shows one more exceeds; export still
+   goes ahead, and the export's note names the depth row.
+5. Edit the toolpath so the trace goes stale: every unmodelled row reads
+   "stale", including depth (T-21).
+6. Ask: does anything on these surfaces still read like a verbal
+   explanation rather than a multimeter? Does any limit fail to trace back
+   to a setting? Write the answers into `RESUME_PLAN.md` §7 and decide
+   there whether PLAN 4d (the distribution) is wanted.
+
 ---
 
 ## 3. Sequence and hand-offs

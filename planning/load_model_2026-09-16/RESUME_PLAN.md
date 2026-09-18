@@ -38,6 +38,7 @@ Shipped and verified:
 | `465d2d2d` | T-19 — the export gate's unmodelled refusal names every counting row |
 | `c9a721c1` | T-21 — a stale trace marks the depth row stale too |
 | `05848280` | **V4 — the power bar returns to the Feeds card as a 0-to-limit bar; its ban sentry is now a test of its reason** |
+| `4dd7da98` | **V1–V3 — every row reads its own bound (deflection: `L/D 0%` → `deflection 2%`); no `≈` on the face; Readiness shows the rows** |
 
 T-17 verification: core lib 2503/0, sentry 5/5, `literature_matrix` 21/21,
 `literature_parity` 24/24, clippy clean, fmt clean.
@@ -369,7 +370,12 @@ The operator's stated requirements, verbatim in effect:
   3/3 with the new panic arm. Report: `T15_IMPLEMENTATION.md`.
 - **T-14** — a drop-cutter finishing pass measures 42.5 mm of axial
   engagement. The power ladder made it load-bearing.
-- **T-2, T-3, T-5** — guard and structure debt, no physics.
+- **T-2, T-3, T-5** — guard and structure debt, no physics. **T-3 bit twice on
+  2026-09-18:** T-9 moved a plunge 794 → 793 that `rs_cam_viz`'s
+  `apply_contract_a3` pins, and V4's row exceeded `component_contracts_up2`'s
+  hand-rolled-chain allowance; neither was in any core-side run. The
+  per-task rule "run every target that names the door" must cross crates:
+  `rg -l` the door across `crates/*/tests/`, not only the crate being edited.
 - **T-20** — `UnmodeledReason` has four renderers that word the same ten
   variants and share no code (found by T-19). The door belongs on the type in
   `verdict.rs`. Take it after V1–V3 land: two renderers sit in the viz files
