@@ -301,7 +301,14 @@ replaced by a test of the reason → V5 LOOK) waits for the
 `gen_sim_rest_ux_2026-09-18` wave's W2 on `ui/properties/`. The paragraphs
 below are the design record that plan was written from.
 
-**Do not start until the `rs_cam_viz` wave lands.** Design is in `PLAN.md`
+**The viz wave's W2 landed on 2026-09-18 (`b57c0e06`, `4d09dc9a`, `899b84f5`);
+the viz half started the same day** — agent `v123-limit-rows` (V1–V3:
+`sim_diagnostics.rs`, `sim_op_list.rs`, `readiness_panel.rs`) and agent
+`v4-power-bar` (V4: `feeds/compare.rs`, the chip-verdict sentry), plus
+`t19-unmodeled-loop` in core `gcode/mod.rs`. The load report the inspector
+builds is at `ui/properties/mod.rs:502` (read-only for these agents). The
+other session's W1 is still in flight in `controller/**`; its W5 will carry
+`criterion_rows()` onto the MCP wire. Original gate note follows. Design is in `PLAN.md`
 (§11 recommends Reading A: depth as a post-sim criterion, not gating
 initially), `SURVEY_UI.md` and `REVIEW_DESIGN.md`. The interactive prototype
 is `derate_bench.html`.
