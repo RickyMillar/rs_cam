@@ -56,7 +56,8 @@ use rs_cam_core::stock::simulation_cut::{
 };
 use rs_cam_core::tool::{FlatEndmill, ToolDefinition};
 use rs_cam_core::tool_load::verdict::{
-    CriterionKind, DeflectionVerdict, LoadState, PopulationUnit, PowerVerdict, ToolpathLoadVerdict,
+    CriterionKind, DeflectionVerdict, DepthVerdict, LoadState, PopulationUnit, PowerVerdict,
+    ToolpathLoadVerdict,
 };
 use rs_cam_core::tool_load::{GateEnv, ToleranceBands, ToolpathLoadContext};
 
@@ -146,7 +147,7 @@ fn measured_trace() -> SimulationCutTrace {
     trace((0..12).map(|i| cutting_sample(i, false)).collect())
 }
 
-fn verdicts(t: &SimulationCutTrace) -> (PowerVerdict, DeflectionVerdict) {
+fn verdicts(t: &SimulationCutTrace) -> (PowerVerdict, DeflectionVerdict, DepthVerdict) {
     let tool = tool();
     let material = Material::default();
     let machine = MachineProfile::shapeoko_makita();
@@ -170,11 +171,12 @@ fn verdicts(t: &SimulationCutTrace) -> (PowerVerdict, DeflectionVerdict) {
     (
         rs_cam_core::tool_load::power::evaluate(&ctx, &env),
         rs_cam_core::tool_load::deflection::evaluate(&ctx, &env),
+        rs_cam_core::tool_load::depth::evaluate(&ctx, &env),
     )
 }
 
 fn verdict_for(t: &SimulationCutTrace) -> ToolpathLoadVerdict {
-    let (power, deflection) = verdicts(t);
+    let (power, deflection, depth) = verdicts(t);
     ToolpathLoadVerdict {
         toolpath_id: TP,
         chipload: rs_cam_core::tool_load::verdict::ChiploadVerdict::Unmodeled {
@@ -182,6 +184,9 @@ fn verdict_for(t: &SimulationCutTrace) -> ToolpathLoadVerdict {
         },
         power,
         deflection,
+        // S3: the depth gate reads the same trace, so its population
+        // is vacuous on exactly the traces the other two are.
+        depth,
         drill_gates: None,
         modulation_summary: None,
         feed_explanation: None,
@@ -198,7 +203,7 @@ fn verdict_for(t: &SimulationCutTrace) -> ToolpathLoadVerdict {
 #[test]
 fn the_2026_08_05_shape_still_reproduces() {
     let t = vacuous_trace();
-    let (power, deflection) = verdicts(&t);
+    let (power, deflection, _depth) = verdicts(&t);
 
     // Power: `Within`, `available_kw 0.0`, empty range, no locality.
     match &power {
@@ -532,6 +537,11 @@ fn the_drill_criteria_and_diagnostics_carry_the_hole_population() {
             ),
         },
         deflection: DeflectionVerdict::Unmodeled {
+            reason: rs_cam_core::tool_load::verdict::UnmodeledReason::NotApplicableForOp(
+                "drill".to_owned(),
+            ),
+        },
+        depth: DepthVerdict::Unmodeled {
             reason: rs_cam_core::tool_load::verdict::UnmodeledReason::NotApplicableForOp(
                 "drill".to_owned(),
             ),

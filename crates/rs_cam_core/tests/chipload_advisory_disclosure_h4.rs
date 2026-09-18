@@ -59,7 +59,8 @@ use rs_cam_core::diagnostics::{DiagnosticEvidence, Severity, ids};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::tool_load::verdict::{
     ChipBounds, ChipBoundsSource, ChiploadMetric, ChiploadStatistic, ChiploadVerdict, Confidence,
-    DeflectionVerdict, PowerVerdict, SampleEvidence, ToolpathLoadVerdict, UnmodeledReason,
+    DeflectionVerdict, DepthVerdict, PowerVerdict, SampleEvidence, ToolpathLoadVerdict,
+    UnmodeledReason,
 };
 
 /// The live numbers, kept verbatim so this file reproduces the operator's
@@ -113,6 +114,11 @@ fn verdict_with(chipload: ChiploadVerdict) -> ToolpathLoadVerdict {
             reason: UnmodeledReason::SimulationRequired,
         },
         deflection: DeflectionVerdict::Unmodeled {
+            reason: UnmodeledReason::SimulationRequired,
+        },
+        // S3: this fixture supplies no trace, so the depth row is
+        // unmodelled beside the two gates above it.
+        depth: DepthVerdict::Unmodeled {
             reason: UnmodeledReason::SimulationRequired,
         },
         drill_gates: None,

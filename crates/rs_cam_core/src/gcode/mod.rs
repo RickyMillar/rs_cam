@@ -2269,6 +2269,9 @@ mod tests {
                 chipload,
                 power,
                 deflection,
+                // S3: a hand-built export-gate fixture states no
+                // measured depth; the row keeps the fixture's posture.
+                depth: crate::tool_load::verdict::DepthVerdict::fixture_within(),
                 drill_gates: None,
                 modulation_summary: None,
                 feed_explanation: None,

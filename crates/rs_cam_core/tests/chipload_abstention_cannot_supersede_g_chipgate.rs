@@ -74,7 +74,8 @@ use rs_cam_core::diagnostics::{
 };
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::tool_load::verdict::{
-    ChiploadVerdict, DeflectionVerdict, PowerVerdict, ToolpathLoadVerdict, UnmodeledReason,
+    ChiploadVerdict, DeflectionVerdict, DepthVerdict, PowerVerdict, ToolpathLoadVerdict,
+    UnmodeledReason,
 };
 
 const TP: ToolpathId = ToolpathId(15);
@@ -89,6 +90,11 @@ fn abstaining_verdict(reason: UnmodeledReason) -> ToolpathLoadVerdict {
             reason: UnmodeledReason::SimulationRequired,
         },
         deflection: DeflectionVerdict::Unmodeled {
+            reason: UnmodeledReason::SimulationRequired,
+        },
+        // S3: this fixture supplies no trace, so the depth row is
+        // unmodelled beside the two gates above it.
+        depth: DepthVerdict::Unmodeled {
             reason: UnmodeledReason::SimulationRequired,
         },
         drill_gates: None,

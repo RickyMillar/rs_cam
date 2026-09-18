@@ -151,6 +151,9 @@ fn within_verdict() -> ToolpathLoadVerdict {
         chipload: within_chipload_verdict(0.04),
         power: within_power_verdict(),
         deflection: within_deflection_verdict(0.030),
+        // S3: a hand-built fixture states no measured depth; the
+        // row keeps the posture of the gates beside it.
+        depth: crate::tool_load::verdict::DepthVerdict::fixture_within(),
         drill_gates: None,
         modulation_summary: None,
         feed_explanation: None,
@@ -164,6 +167,9 @@ fn exceeds_chipload_verdict() -> ToolpathLoadVerdict {
         chipload: exceeds_chipload_verdict_high(0.08),
         power: within_power_verdict(),
         deflection: within_deflection_verdict(0.030),
+        // S3: a hand-built fixture states no measured depth; the
+        // row keeps the posture of the gates beside it.
+        depth: crate::tool_load::verdict::DepthVerdict::fixture_within(),
         drill_gates: None,
         modulation_summary: None,
         feed_explanation: None,
@@ -308,6 +314,9 @@ fn select_stage2_prefers_midpoint_over_band_edge_at_close_cycle_time() {
             chipload,
             power: within_power_verdict(),
             deflection: within_deflection_verdict(0.030),
+            // S3: a hand-built fixture states no measured depth; the
+            // row keeps the posture of the gates beside it.
+            depth: crate::tool_load::verdict::DepthVerdict::fixture_within(),
             drill_gates: None,
             modulation_summary: None,
             feed_explanation: None,
@@ -712,6 +721,9 @@ fn band_admitted_verdict() -> ToolpathLoadVerdict {
         chipload: band_admitted_chipload_verdict(0.072),
         power: within_power_verdict(),
         deflection: within_deflection_verdict(0.030),
+        // S3: a hand-built fixture states no measured depth; the
+        // row keeps the posture of the gates beside it.
+        depth: crate::tool_load::verdict::DepthVerdict::fixture_within(),
         drill_gates: None,
         modulation_summary: None,
         feed_explanation: None,
@@ -760,6 +772,9 @@ fn burn_advisory_candidate_lands_marginal_safe() {
         chipload,
         power: within_power_verdict(),
         deflection: within_deflection_verdict(0.030),
+        // S3: a hand-built fixture states no measured depth; the
+        // row keeps the posture of the gates beside it.
+        depth: crate::tool_load::verdict::DepthVerdict::fixture_within(),
         drill_gates: None,
         modulation_summary: None,
         feed_explanation: None,

@@ -292,6 +292,11 @@ fn the_shipped_gate_still_refuses_a_deflection_exceedance() {
                 evidence: SampleEvidence::at(0),
                 confidence: Confidence::Validated,
             },
+            // S3: this fixture supplies no trace, so the depth row is
+            // unmodelled beside the gates above it.
+            depth: rs_cam_core::tool_load::verdict::DepthVerdict::Unmodeled {
+                reason: UnmodeledReason::SimulationRequired,
+            },
             drill_gates: None,
             modulation_summary: None,
             feed_explanation: None,

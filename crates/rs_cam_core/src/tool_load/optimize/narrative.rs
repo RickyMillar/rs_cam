@@ -1077,6 +1077,9 @@ mod tests {
             chipload,
             power: within_power(),
             deflection: defl,
+            // S3: a hand-built fixture states no measured depth; the
+            // row keeps the posture of the gates beside it.
+            depth: crate::tool_load::verdict::DepthVerdict::fixture_within(),
             drill_gates: None,
             modulation_summary: None,
             feed_explanation: None,
@@ -1377,6 +1380,9 @@ mod tests {
                 chipload: chipload_with_spike,
                 power: within_power(),
                 deflection: within_deflection(0.030),
+                // S3: a hand-built fixture states no measured depth; the
+                // row keeps the posture of the gates beside it.
+                depth: crate::tool_load::verdict::DepthVerdict::fixture_within(),
                 drill_gates: None,
                 modulation_summary: None,
                 feed_explanation: None,

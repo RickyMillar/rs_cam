@@ -32,6 +32,7 @@ need a register.
 | T-16 | The deflection bending diameter cites a source that does not say it | **closed** — its per-flute table is itself superseded, see T-17 |
 | T-17 | The deflection integrator gives a fluted end mill a solid cross-section | **closed** `93dd145c` — flat 0.80, every fluted shape; V-bit still open under T-4 |
 | T-18 | Three feed lifts cap against the gantry TRAVEL rate, not the cutting ceiling | **closed** `d47a04d8` — four sites read `commanded_cutting_feed_ceiling_mm_min()`; no preset number moved |
+| T-19 | The export gate's unmodelled refusal names three gates by hand, and there are now five | open — found by S3 (2026-09-18) |
 
 ---
 
@@ -1242,6 +1243,44 @@ Same structure: a late step raises a feed that an earlier step clamped. T-15
 is the power ladder's version, this is the machine ceiling's. A fix for either
 that only patches its own site leaves the shape intact. Consider one guard
 that re-checks every ceiling after the last lift, instead of three patches.
+
+---
+
+## T-19 — the export gate's unmodelled refusal names three gates by hand
+
+Found 2026-09-18 while landing S3 (the depth-of-cut criterion).
+
+`gcode::enforce_load_policy` has two halves and they read the criterion tier
+from two different places.
+
+- The EXCEEDED half derives from `ToolpathLoadVerdict::criteria()`, so a gate
+  added to that list participates in export gating automatically. S4 made this
+  half read the bound's provenance too.
+- The UNMODELLED half does not. Under `!policy.accept_unmodeled` it decides
+  whether to refuse from `report.any_unmodeled()`, which DOES read
+  `criteria()`, and then builds the message by matching
+  `v.chipload`, `v.power` and `v.deflection` one at a time. The same block
+  detects a stale simulation the same way.
+
+So the decision and the explanation disagree about where a criterion comes
+from. S1 found the shape; S4 recorded it and did not fix it, because its file
+set covered the exceeded branch. S3 makes it reachable in practice: there are
+now five milling rows, and two of them — depth of cut and gantry push — are
+invisible to the message builder.
+
+**What it costs.** A toolpath whose ONLY unmodelled row is the depth row
+refuses the export and names no criterion: the message prints
+"tool load not fully modeled for toolpath(s):" and then "  toolpath 4: " with
+nothing after the colon, so the operator has nothing to act on. The condition
+is `depth` unmodelled while chipload, power and deflection all measure — the
+depth gate's own refusal is `NotImplemented` when the tool reports no usable
+diameter for the rigidity cap. The gantry row cannot trigger this: it is a
+known absence and `any_unmodeled` already skips it. No fixture in the suite
+builds that combination today, which is exactly why no gate fails on it.
+
+**The fix** is one loop over `criteria()` in place of the three hand-written
+matches, filtering `state == Unmodeled && !is_known_absence()`. It is a small
+job and it closes the halves against each other permanently.
 
 ---
 

@@ -224,6 +224,15 @@ pub struct ToolpathLoadVerdict {
     pub chipload: ChiploadVerdict,
     pub power: PowerVerdict,
     pub deflection: DeflectionVerdict,
+    /// **S3 (2026-09-18) — the depth the cut actually took.**
+    ///
+    /// Post-simulation only. Before a simulation the depth is a value
+    /// the engine chose and clamped, and it stays a rationale entry
+    /// (`RationaleReason::RigidityFactor`); after one it is a measured
+    /// quantity with a real population, like the three gates above it.
+    /// Its bound is a rule of thumb, so the row reports and never
+    /// refuses an export.
+    pub depth: DepthVerdict,
     /// Drill-specific gate trio (§6.E / Step 3 PR2). Populated only for
     /// drill toolpaths — `None` for milling ops. Lives alongside the
     /// existing three gates so consumers iterating
@@ -348,8 +357,8 @@ impl ToolpathLoadVerdict {
         all
     }
 
-    /// The milling gates only — chipload, power, deflection, and the
-    /// gantry-push row. Used by `all_not_applicable` to decide the
+    /// The milling gates only — chipload, power, deflection, depth of
+    /// cut, and the gantry-push row. Used by `all_not_applicable` to decide the
     /// "drill cycle, milling gates don't apply" partition without the
     /// drill criteria muddying the test.
     ///
@@ -360,11 +369,17 @@ impl ToolpathLoadVerdict {
     /// [`gantry_push_criterion`], and it takes the drill arm when the
     /// three measured gates all took it — a drill has no lateral
     /// engagement, so the partition is unchanged.
+    ///
+    /// S3 (2026-09-18) — the depth-of-cut row joins after deflection
+    /// and before the gantry row. It is a REAL gate with a real
+    /// producer, so it counts in every tally the way the three above it
+    /// do; only its bound's provenance stops it refusing an export.
     pub(crate) fn milling_criteria(&self) -> Vec<CriterionStatus<'_>> {
         let mut rows = vec![
             self.chipload.as_criterion_status(),
             self.power.as_criterion_status(),
             self.deflection.as_criterion_status(),
+            self.depth.as_criterion_status(),
         ];
         // Read the drill answer off the gates that already decided it,
         // not off `drill_gates`: the optimizer path leaves `drill_gates`
@@ -700,6 +715,12 @@ pub enum CriterionKind {
     Chipload,
     Power,
     Deflection,
+    /// S3 (2026-09-18) — the depth the cut actually took, measured as
+    /// the peak `axial_engagement_mm` over the toolpath's cutting
+    /// samples, against the machine rigidity rule of thumb. The bound
+    /// is [`BoundSource::RigidityRuleOfThumb`], which does not gate an
+    /// export. See [`crate::tool_load::depth`].
+    DepthOfCut,
     /// S1 (2026-09-18) — the force the gantry must push to make the
     /// cut. Always `Unmodeled`; see [`GANTRY_PUSH_UNMODELED_CLAUSE`].
     GantryPush,
@@ -716,6 +737,7 @@ impl CriterionKind {
             CriterionKind::Chipload => "chipload",
             CriterionKind::Power => "power",
             CriterionKind::Deflection => "deflection",
+            CriterionKind::DepthOfCut => "depth of cut",
             CriterionKind::GantryPush => "gantry push",
             CriterionKind::DrillChipWelding => "chip welding",
             CriterionKind::DrillPeckAdequacy => "peck depth",
@@ -727,7 +749,7 @@ impl CriterionKind {
         match self {
             CriterionKind::Chipload => "mm/tooth",
             CriterionKind::Power => "kW",
-            CriterionKind::Deflection => "mm",
+            CriterionKind::Deflection | CriterionKind::DepthOfCut => "mm",
             CriterionKind::GantryPush => "N",
             CriterionKind::DrillChipWelding | CriterionKind::DrillPeckAdequacy => "D/d",
             CriterionKind::DrillPlungeFeed => "mm/min per mm Ø",
@@ -1803,6 +1825,151 @@ impl DeflectionVerdict {
     }
 }
 
+/// **Typed depth-of-cut verdict.** S3 (2026-09-18).
+///
+/// The measured half of the depth question (`PLAN.md` §11, Reading A).
+/// Both decided arms carry the cap they were judged against, so a
+/// consumer reads the bound off the verdict and never rebuilds it.
+///
+/// `bound` is a [`RigidityDepthCap`], which holds the profile's factor
+/// and the tool diameter rather than their product. That is the same
+/// pair [`BoundSource::RigidityRuleOfThumb`] carries, so the row's
+/// bound and the row's provenance are one value seen twice and cannot
+/// disagree.
+///
+/// **This verdict never refuses an export.** The cap is a rule of
+/// thumb with no published source; see [`BoundSource::gates_export`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum DepthVerdict {
+    Within {
+        /// Peak `axial_engagement_mm` over the toolpath's contributing
+        /// cutting samples. `0.0` with a vacuous population means the
+        /// gate measured nothing — read [`GatePopulation::is_vacuous`],
+        /// never this field alone.
+        peak_mm: f64,
+        bound: crate::machine::RigidityDepthCap,
+        evidence: SampleEvidence,
+        confidence: Confidence,
+    },
+    Exceeds {
+        peak_mm: f64,
+        bound: crate::machine::RigidityDepthCap,
+        evidence: SampleEvidence,
+        confidence: Confidence,
+    },
+    Unmodeled {
+        reason: UnmodeledReason,
+    },
+}
+
+impl DepthVerdict {
+    pub fn state(&self) -> LoadState {
+        match self {
+            DepthVerdict::Within { .. } => LoadState::Within,
+            DepthVerdict::Exceeds { .. } => LoadState::Exceeds,
+            DepthVerdict::Unmodeled { .. } => LoadState::Unmodeled,
+        }
+    }
+
+    pub fn is_exceeded(&self) -> bool {
+        matches!(self, DepthVerdict::Exceeds { .. })
+    }
+
+    pub fn is_unmodeled(&self) -> bool {
+        matches!(self, DepthVerdict::Unmodeled { .. })
+    }
+
+    pub fn confidence(&self) -> Option<&Confidence> {
+        match self {
+            DepthVerdict::Within { confidence, .. } | DepthVerdict::Exceeds { confidence, .. } => {
+                Some(confidence)
+            }
+            DepthVerdict::Unmodeled { .. } => None,
+        }
+    }
+
+    pub fn unmodeled_reason(&self) -> Option<&UnmodeledReason> {
+        match self {
+            DepthVerdict::Unmodeled { reason } => Some(reason),
+            _ => None,
+        }
+    }
+
+    /// **A hand-built depth row for a fixture that ran no simulation.**
+    /// S3 (2026-09-18).
+    ///
+    /// The verdict fixtures in this crate's test modules state their
+    /// chipload, power and deflection claims by hand, most of them as a
+    /// `Within` over `SampleEvidence::empty()`. This keeps the depth row
+    /// beside them in the same posture, so adding the row to
+    /// [`ToolpathLoadVerdict`] changes no fixture's meaning. The two
+    /// numbers are fixture choices — a 0.25 factor on a Ø6 tool — and
+    /// no model reads them.
+    #[cfg(test)]
+    pub(crate) fn fixture_within() -> Self {
+        DepthVerdict::Within {
+            peak_mm: 0.0,
+            bound: crate::machine::RigidityDepthCap {
+                factor: 0.25,
+                diameter_mm: 6.0,
+            },
+            evidence: SampleEvidence::empty(),
+            confidence: Confidence::Validated,
+        }
+    }
+
+    /// The generic row. The bound is `factor × diameter` from the
+    /// profile, and the source carries those two numbers, so a renderer
+    /// formats the cap and its provenance without multiplying anything
+    /// itself.
+    pub fn as_criterion_status(&self) -> CriterionStatus<'_> {
+        let (state, peak, range, population, bound) = match self {
+            DepthVerdict::Within {
+                peak_mm,
+                bound,
+                evidence,
+                ..
+            } => (
+                LoadState::Within,
+                Some(*peak_mm),
+                option_range(&evidence.sample_range),
+                evidence.population,
+                Some(*bound),
+            ),
+            DepthVerdict::Exceeds {
+                peak_mm,
+                bound,
+                evidence,
+                ..
+            } => (
+                LoadState::Exceeds,
+                Some(*peak_mm),
+                option_range(&evidence.sample_range),
+                evidence.population,
+                Some(*bound),
+            ),
+            DepthVerdict::Unmodeled { .. } => (LoadState::Unmodeled, None, None, None, None),
+        };
+        CriterionStatus {
+            kind: CriterionKind::DepthOfCut,
+            state,
+            confidence: self.confidence(),
+            unmodeled_reason: self.unmodeled_reason(),
+            sample_range: range,
+            population,
+            display_peak: peak,
+            unit: CriterionKind::DepthOfCut.unit(),
+            bound: bound.map(|b| b.cap_mm()),
+            bound_source: bound.map(|b| BoundSource::RigidityRuleOfThumb {
+                factor: b.factor,
+                diameter_mm: b.diameter_mm,
+            }),
+            exceeded: (state == LoadState::Exceeds).then(ExceededCriterion::depth_of_cut),
+        }
+    }
+}
+
 /// Per-criterion exceedance label suitable for the export-gate error
 /// message and MCP wire output. Replaces the
 /// `(&'static str, ExceedsReason)` pair returned by the legacy
@@ -1868,6 +2035,22 @@ impl ExceededCriterion {
             label: "deflection",
             reason_label: "stiffness",
             remedy: "tip deflection exceeds 200 µm — finish/breakage risk",
+        }
+    }
+
+    /// S3 (2026-09-18). The remedy says the bound is advisory, because
+    /// an operator who reads "exceeded" beside an export that went
+    /// ahead is owed the reason in the same place.
+    pub fn depth_of_cut() -> Self {
+        Self {
+            kind: CriterionKind::DepthOfCut,
+            label: "depth of cut",
+            reason_label: "machine rigidity",
+            remedy: "the measured depth of cut is deeper than the machine \
+                     rigidity factor allows for this operation family. That \
+                     factor is a rule of thumb with no published source, so \
+                     it reports and does not refuse the export. Reduce the \
+                     depth per pass, or take the cut deliberately.",
         }
     }
 
@@ -1989,12 +2172,19 @@ mod tests {
                 confidence: Confidence::Validated,
                 entry_spike: None,
             },
+            // S3: a hand-built fixture states no measured depth; the
+            // row keeps the posture of the gates beside it.
+            depth: DepthVerdict::fixture_within(),
             drill_gates: None,
             modulation_summary: None,
             feed_explanation: None,
             kinematic_utilization: None,
         };
-        assert_eq!(v.modeled_count(), 2);
+        // S3: three, not two. The fixture's chipload and deflection rows
+        // were modelled before, and the depth row joined them. The count
+        // moved because a REAL row joined the tier; the gantry row beside
+        // it stays `Unmodeled` and still does not count.
+        assert_eq!(v.modeled_count(), 3);
         assert!(!v.any_exceeded());
         assert!(v.any_unmodeled());
     }
@@ -2038,6 +2228,9 @@ mod tests {
                     confidence: Confidence::Approximate("L/D in 4-6 range".to_owned()),
                     entry_spike: None,
                 },
+                // S3: a hand-built fixture states no measured depth; the
+                // row keeps the posture of the gates beside it.
+                depth: DepthVerdict::fixture_within(),
                 drill_gates: None,
                 modulation_summary: None,
                 feed_explanation: None,
@@ -2086,6 +2279,9 @@ mod tests {
                         evidence: SampleEvidence::empty(),
                         confidence: Confidence::Validated,
                     },
+                    // S3: a hand-built fixture states no measured depth; the
+                    // row keeps the posture of the gates beside it.
+                    depth: DepthVerdict::fixture_within(),
                     drill_gates: None,
                     modulation_summary: None,
                     feed_explanation: None,
@@ -2123,6 +2319,9 @@ mod tests {
                         confidence: Confidence::Validated,
                         entry_spike: None,
                     },
+                    // S3: a hand-built fixture states no measured depth; the
+                    // row keeps the posture of the gates beside it.
+                    depth: DepthVerdict::fixture_within(),
                     drill_gates: None,
                     modulation_summary: None,
                     feed_explanation: None,
@@ -2154,6 +2353,8 @@ mod tests {
             chipload: ChiploadVerdict::Unmodeled { reason: na() },
             power: PowerVerdict::Unmodeled { reason: na() },
             deflection: DeflectionVerdict::Unmodeled { reason: na() },
+            // S3: the depth row mirrors the gates beside it.
+            depth: DepthVerdict::Unmodeled { reason: na() },
             drill_gates: Some(DrillGatesVerdict {
                 chip_welding: DrillGateOutcome::Within {
                     observed: 0.5,
@@ -2253,6 +2454,10 @@ mod tests {
                     deflection: DeflectionVerdict::Unmodeled {
                         reason: UnmodeledReason::NotApplicableForOp("drill cycle".to_owned()),
                     },
+                    // S3: the depth row mirrors the gates beside it.
+                    depth: DepthVerdict::Unmodeled {
+                        reason: UnmodeledReason::NotApplicableForOp("drill cycle".to_owned()),
+                    },
                     drill_gates: None,
                     modulation_summary: None,
                     feed_explanation: None,
@@ -2269,6 +2474,10 @@ mod tests {
                         reason: UnmodeledReason::SimulationRequired,
                     },
                     deflection: DeflectionVerdict::Unmodeled {
+                        reason: UnmodeledReason::SimulationRequired,
+                    },
+                    // S3: the depth row mirrors the gates beside it.
+                    depth: DepthVerdict::Unmodeled {
                         reason: UnmodeledReason::SimulationRequired,
                     },
                     drill_gates: None,
@@ -2288,6 +2497,10 @@ mod tests {
                         reason: UnmodeledReason::SimulationRequired,
                     },
                     deflection: DeflectionVerdict::Unmodeled {
+                        reason: UnmodeledReason::NotApplicableForOp("drill cycle".to_owned()),
+                    },
+                    // S3: the depth row mirrors the gates beside it.
+                    depth: DepthVerdict::Unmodeled {
                         reason: UnmodeledReason::NotApplicableForOp("drill cycle".to_owned()),
                     },
                     drill_gates: None,
@@ -2347,6 +2560,9 @@ mod tests {
                     confidence: Confidence::Validated,
                     entry_spike: None,
                 },
+                // S3: a hand-built fixture states no measured depth; the
+                // row keeps the posture of the gates beside it.
+                depth: DepthVerdict::fixture_within(),
                 drill_gates: None,
                 modulation_summary: None,
                 feed_explanation: None,
@@ -2620,6 +2836,9 @@ mod tests {
                     confidence: Confidence::Approximate("approximate band".to_owned()),
                     entry_spike: None,
                 },
+                // S3: a hand-built fixture states no measured depth; the
+                // row keeps the posture of the gates beside it.
+                depth: DepthVerdict::fixture_within(),
                 drill_gates: None,
                 modulation_summary: None,
                 feed_explanation: None,
@@ -2688,6 +2907,9 @@ mod tests {
                     confidence: Confidence::Validated,
                     entry_spike: None,
                 },
+                // S3: a hand-built fixture states no measured depth; the
+                // row keeps the posture of the gates beside it.
+                depth: DepthVerdict::fixture_within(),
                 drill_gates: None,
                 modulation_summary: None,
                 feed_explanation: None,
@@ -2761,6 +2983,10 @@ mod tests {
             deflection: DeflectionVerdict::Unmodeled {
                 reason: UnmodeledReason::SimulationRequired,
             },
+            // S3: the depth row mirrors the gates beside it.
+            depth: DepthVerdict::Unmodeled {
+                reason: UnmodeledReason::SimulationRequired,
+            },
             drill_gates: None,
             modulation_summary: None,
             feed_explanation: None,
@@ -2802,7 +3028,11 @@ mod tests {
             power: PowerVerdict::Unmodeled {
                 reason: reason.clone(),
             },
-            deflection: DeflectionVerdict::Unmodeled { reason },
+            deflection: DeflectionVerdict::Unmodeled {
+                reason: reason.clone(),
+            },
+            // S3: the depth row mirrors the gates beside it.
+            depth: DepthVerdict::Unmodeled { reason },
             drill_gates: None,
             modulation_summary: None,
             feed_explanation: None,
@@ -2822,6 +3052,10 @@ mod tests {
                 reason: UnmodeledReason::SimulationRequired,
             },
             deflection: DeflectionVerdict::Unmodeled {
+                reason: UnmodeledReason::SimulationRequired,
+            },
+            // S3: the depth row mirrors the gates beside it.
+            depth: DepthVerdict::Unmodeled {
                 reason: UnmodeledReason::SimulationRequired,
             },
             drill_gates: None,
@@ -2907,6 +3141,9 @@ mod tests {
                     evidence: SampleEvidence::empty(),
                     confidence: Confidence::Validated,
                 },
+                // S3: a hand-built fixture states no measured depth; the
+                // row keeps the posture of the gates beside it.
+                depth: DepthVerdict::fixture_within(),
                 drill_gates: None,
                 modulation_summary: None,
                 feed_explanation: None,
@@ -2961,6 +3198,9 @@ mod tests {
                     confidence: Confidence::Validated,
                     entry_spike: None,
                 },
+                // S3: a hand-built fixture states no measured depth; the
+                // row keeps the posture of the gates beside it.
+                depth: DepthVerdict::fixture_within(),
                 drill_gates: None,
                 modulation_summary: None,
                 feed_explanation: None,

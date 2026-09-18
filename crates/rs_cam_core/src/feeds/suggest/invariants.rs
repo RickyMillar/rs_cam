@@ -8,7 +8,7 @@
 
 use crate::compute::catalog::OperationConfig;
 use crate::compute::tool_config::ToolConfig;
-use crate::feeds::{OperationFamily as FeedsOperationFamily, PassRole};
+use crate::feeds::PassRole;
 use crate::machine::MachineProfile;
 use crate::material::Material;
 
@@ -357,17 +357,24 @@ fn clamp_dpp_to_rigidity(
     pass_role: PassRole,
 ) -> Vec<SuggestWarning> {
     let mut warnings = Vec::new();
+    // S3 (2026-09-18): the factor selection moved to
+    // `RigidityProfile::depth_cap_mm`, the ONE producer of this cap. The
+    // post-simulation depth criterion reads the same helper, so the cap
+    // the recipe was lowered to and the cap the criterion row draws
+    // against cannot disagree. The branch is unchanged: adaptive family
+    // → `adaptive_doc_factor`, otherwise (this pass is roughing-only) →
+    // `doc_roughing_factor`. The helper's `None` arm is the drill
+    // family, and a drill operation carries no `depth_per_pass`, so the
+    // `if let` below never binds there.
     if let Some(current) = operation.depth_per_pass()
         && matches!(pass_role, PassRole::Roughing)
+        && let Some(cap) = machine.rigidity.depth_cap_mm(
+            operation.op_type().spec().feeds_family,
+            pass_role,
+            tool.diameter,
+        )
     {
-        let is_adaptive_family =
-            operation.op_type().spec().feeds_family == FeedsOperationFamily::Adaptive;
-        let factor = if is_adaptive_family {
-            machine.rigidity.adaptive_doc_factor
-        } else {
-            machine.rigidity.doc_roughing_factor
-        };
-        let cap = factor * tool.diameter;
+        let cap = cap.cap_mm();
         if current.is_finite() && cap.is_finite() && cap > 0.0 && current > cap {
             operation.set_depth_per_pass(cap);
             warnings.push(SuggestWarning::RoughingDepthClampedToRigidity {

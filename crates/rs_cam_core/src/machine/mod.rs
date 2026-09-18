@@ -62,6 +62,86 @@ pub struct RigidityProfile {
     pub adaptive_woc_factor: f64,
 }
 
+/// **The axial depth cap one rigidity profile implies for one
+/// operation family, and the factor behind it.** S3 (2026-09-18).
+///
+/// The cap is a RULE OF THUMB with no published source. It is the only
+/// axial bound this crate has, and it sets the depth on nearly every
+/// recipe, so it is stated as a value with its factor rather than
+/// recomputed at each reader. [`RigidityProfile::depth_cap_mm`] is the
+/// one producer.
+///
+/// The cap is not stored: [`Self::cap_mm`] multiplies the two fields it
+/// carries, so the bound and the provenance beside it cannot disagree.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct RigidityDepthCap {
+    /// The profile's own factor for this family: `doc_roughing_factor`,
+    /// `doc_finishing_factor` or `adaptive_doc_factor`.
+    pub factor: f64,
+    /// The tool diameter the factor multiplies, in mm.
+    pub diameter_mm: f64,
+}
+
+impl RigidityDepthCap {
+    /// The cap itself, in mm: `factor × diameter_mm`.
+    #[must_use]
+    pub fn cap_mm(&self) -> f64 {
+        self.factor * self.diameter_mm
+    }
+}
+
+impl RigidityProfile {
+    /// **The axial depth cap this profile implies for one operation
+    /// family, and the factor behind it.** S3 (2026-09-18).
+    ///
+    /// `None` for a family with no axial cap. Today that is
+    /// [`OperationFamily::Drill`] alone: a drill cycle is Z-only, so
+    /// there is no radial engagement and no axial rule of thumb to
+    /// judge it by. A drill operation also carries no
+    /// `depth_per_pass`, so the Suggest clamp never reaches this arm.
+    ///
+    /// The factor follows the family first and the pass role second,
+    /// which is the order `feeds::suggest::invariants::clamp_dpp_to_rigidity`
+    /// already used: an adaptive pass is a deep, narrow strategy whose
+    /// axial ceiling is deliberately far above the conventional one, so
+    /// the family decides before the role does.
+    ///
+    /// | Family / role | Factor |
+    /// |---|---|
+    /// | `Drill` | none |
+    /// | `Adaptive` | `adaptive_doc_factor` |
+    /// | any other, `Roughing` | `doc_roughing_factor` |
+    /// | any other, `SemiFinish` or `Finish` | `doc_finishing_factor` |
+    ///
+    /// **This is the one producer of the cap.** The Suggest clamp calls
+    /// it for its roughing branch and the post-simulation depth
+    /// criterion (`tool_load::depth`) calls it for the bound it judges
+    /// against, so the number the operator's recipe was lowered to and
+    /// the number the row draws against are the same number.
+    #[must_use]
+    pub fn depth_cap_mm(
+        &self,
+        family: crate::feeds::OperationFamily,
+        pass_role: crate::feeds::PassRole,
+        diameter_mm: f64,
+    ) -> Option<RigidityDepthCap> {
+        use crate::feeds::{OperationFamily, PassRole};
+        let factor = match (family, pass_role) {
+            (OperationFamily::Drill, _) => return None,
+            (OperationFamily::Adaptive, _) => self.adaptive_doc_factor,
+            (_, PassRole::Roughing) => self.doc_roughing_factor,
+            // The profile publishes two milling factors, and the split
+            // is roughing against not-roughing. A semi-finish pass is
+            // not roughing, so it reads the finishing factor.
+            (_, PassRole::SemiFinish | PassRole::Finish) => self.doc_finishing_factor,
+        };
+        Some(RigidityDepthCap {
+            factor,
+            diameter_mm,
+        })
+    }
+}
+
 impl Default for RigidityProfile {
     fn default() -> Self {
         Self {

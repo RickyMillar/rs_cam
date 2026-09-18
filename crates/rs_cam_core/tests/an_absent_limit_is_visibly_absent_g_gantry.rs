@@ -42,8 +42,8 @@ use rs_cam_core::stock::simulation_cut::{
 };
 use rs_cam_core::tool::{FlatEndmill, ToolDefinition};
 use rs_cam_core::tool_load::verdict::{
-    ChiploadVerdict, CriterionKind, DeflectionVerdict, LoadState, PowerVerdict, ToolLoadReport,
-    ToolpathLoadVerdict, UnmodeledReason,
+    ChiploadVerdict, CriterionKind, DeflectionVerdict, DepthVerdict, LoadState, PowerVerdict,
+    ToolLoadReport, ToolpathLoadVerdict, UnmodeledReason,
 };
 use rs_cam_core::tool_load::{GateEnv, ToleranceBands, ToolpathLoadContext};
 
@@ -148,6 +148,8 @@ fn milling_verdict() -> ToolpathLoadVerdict {
         chipload: rs_cam_core::tool_load::chipload::evaluate(&ctx, &env),
         power: rs_cam_core::tool_load::power::evaluate(&ctx, &env),
         deflection: rs_cam_core::tool_load::deflection::evaluate(&ctx, &env),
+        // S3: the depth gate runs against the same measured trace.
+        depth: rs_cam_core::tool_load::depth::evaluate(&ctx, &env),
         drill_gates: None,
         modulation_summary: None,
         feed_explanation: None,
@@ -195,6 +197,11 @@ fn drill_verdict() -> ToolpathLoadVerdict {
             ),
         },
         deflection: DeflectionVerdict::Unmodeled {
+            reason: UnmodeledReason::NotApplicableForOp(
+                "drill cycle — no continuous engagement".to_owned(),
+            ),
+        },
+        depth: DepthVerdict::Unmodeled {
             reason: UnmodeledReason::NotApplicableForOp(
                 "drill cycle — no continuous engagement".to_owned(),
             ),
@@ -501,15 +508,20 @@ fn the_three_milling_criteria_are_still_there_and_at_least_one_is_modelled() {
             "{wanted:?} left the criterion tier: {kinds:?}"
         );
     }
+    // S3 (2026-09-18) inserted the depth-of-cut row between deflection
+    // and the gantry row. The gantry row is still LAST, which is what
+    // this arm pins: a row with no bound sits after every row that has
+    // one.
     assert_eq!(
         kinds,
         vec![
             CriterionKind::Chipload,
             CriterionKind::Power,
             CriterionKind::Deflection,
+            CriterionKind::DepthOfCut,
             CriterionKind::GantryPush,
         ],
-        "the gantry row goes after deflection, and no drill row joins a milling toolpath"
+        "the gantry row goes last, and no drill row joins a milling toolpath"
     );
     let modelled = v
         .criteria()

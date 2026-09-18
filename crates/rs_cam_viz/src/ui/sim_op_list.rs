@@ -1212,6 +1212,7 @@ fn criterion_short_label(kind: CriterionKind) -> &'static str {
         CriterionKind::Chipload => "advance/t",
         CriterionKind::Power => "power",
         CriterionKind::Deflection => "defl",
+        CriterionKind::DepthOfCut => "depth",
         CriterionKind::GantryPush => "gantry",
         CriterionKind::DrillChipWelding => "weld",
         CriterionKind::DrillPeckAdequacy => "peck",

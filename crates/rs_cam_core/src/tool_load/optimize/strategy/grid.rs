@@ -213,6 +213,9 @@ mod tests {
                 confidence: Confidence::Validated,
                 entry_spike: None,
             },
+            // S3: a hand-built fixture states no measured depth; the
+            // row keeps the posture of the gates beside it.
+            depth: crate::tool_load::verdict::DepthVerdict::fixture_within(),
             drill_gates: None,
             modulation_summary: None,
             feed_explanation: None,

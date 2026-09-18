@@ -44,8 +44,8 @@ use rs_cam_core::tool::{FlatEndmill, ToolDefinition};
 use rs_cam_core::tool_load::deflection::EXCEEDS_BOUND_MM;
 use rs_cam_core::tool_load::verdict::{
     BoundSource, ChipBounds, ChipBoundsSource, ChiploadMetric, ChiploadStatistic, ChiploadVerdict,
-    Confidence, CriterionKind, CriterionRow, CriterionStatus, DeflectionVerdict, LoadState,
-    PowerVerdict, SampleEvidence, ToolpathLoadVerdict, UnmodeledReason,
+    Confidence, CriterionKind, CriterionRow, CriterionStatus, DeflectionVerdict, DepthVerdict,
+    LoadState, PowerVerdict, SampleEvidence, ToolpathLoadVerdict, UnmodeledReason,
 };
 use rs_cam_core::tool_load::{GateEnv, ToleranceBands, ToolpathLoadContext};
 
@@ -163,6 +163,8 @@ fn milling_verdict() -> ToolpathLoadVerdict {
         chipload: rs_cam_core::tool_load::chipload::evaluate(&ctx, &env),
         power: rs_cam_core::tool_load::power::evaluate(&ctx, &env),
         deflection: rs_cam_core::tool_load::deflection::evaluate(&ctx, &env),
+        // S3: the depth gate runs against the same measured trace.
+        depth: rs_cam_core::tool_load::depth::evaluate(&ctx, &env),
         drill_gates: None,
         modulation_summary: None,
         feed_explanation: None,
@@ -202,6 +204,7 @@ fn drill_verdict() -> ToolpathLoadVerdict {
         chipload: ChiploadVerdict::Unmodeled { reason: na() },
         power: PowerVerdict::Unmodeled { reason: na() },
         deflection: DeflectionVerdict::Unmodeled { reason: na() },
+        depth: DepthVerdict::Unmodeled { reason: na() },
         drill_gates: Some(gates),
         modulation_summary: None,
         feed_explanation: None,

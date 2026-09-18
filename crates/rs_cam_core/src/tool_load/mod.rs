@@ -7,6 +7,9 @@
 //! - `deflection` — per-sample tip deflection from cutting force
 //!   (`Kc · DOC · WOC` through a stepped-cantilever model) vs the
 //!   50 µm / 200 µm bounds
+//! - `depth` — per-sample engaged depth vs the machine rigidity cap
+//!   (S3, 2026-09-18). It reports and never refuses an export: its
+//!   bound is a rule of thumb with no published source.
 //!
 //! There is no aggregate scalar "load %". A scalar would conflate inputs
 //! that are individually honest with inputs that are systematically
@@ -17,6 +20,7 @@
 pub mod boundary;
 pub mod chipload;
 pub mod deflection;
+pub mod depth;
 pub mod display;
 pub mod drill_gates;
 pub mod locality;
@@ -82,8 +86,9 @@ use crate::tool::ToolDefinition;
 use serde::{Deserialize, Serialize};
 
 pub use verdict::{
-    BindingConstraint, ChiploadVerdict, Confidence, DeflectionVerdict, ModulationStrategyTag,
-    ModulationSummary, PowerVerdict, ToolLoadReport, ToolpathLoadVerdict, UnmodeledReason,
+    BindingConstraint, ChiploadVerdict, Confidence, DeflectionVerdict, DepthVerdict,
+    ModulationStrategyTag, ModulationSummary, PowerVerdict, ToolLoadReport, ToolpathLoadVerdict,
+    UnmodeledReason,
 };
 
 /// Why the optimizer refused to produce a recommendation. Typed
@@ -538,6 +543,10 @@ pub fn evaluate_toolpath(
         chipload: chipload_verdict,
         power: power::evaluate(ctx, &env),
         deflection: deflection::evaluate(ctx, &env),
+        // S3 — the depth row. Assembled HERE, at the single
+        // `ToolpathLoadVerdict` assembly site, so the optimizer, the
+        // g-code export path and the GUI all see one depth verdict.
+        depth: depth::evaluate(ctx, &env),
         drill_gates,
         // Feed-modulation rollup captured by the simulator for this
         // toolpath, when the trace carries one. Populated here (not at

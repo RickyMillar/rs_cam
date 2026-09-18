@@ -34,8 +34,8 @@ use rs_cam_core::ops::drill_metrics::{build_drill_toolpath_summary, emit_drill_s
 use rs_cam_core::ops::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
 use rs_cam_core::tool_load::drill_gates::{DrillGateOutcome, DrillGatesVerdict};
 use rs_cam_core::tool_load::verdict::{
-    ChiploadVerdict, CriterionKind, DeflectionVerdict, PowerVerdict, ToolpathLoadVerdict,
-    UnmodeledReason,
+    ChiploadVerdict, CriterionKind, DeflectionVerdict, DepthVerdict, PowerVerdict,
+    ToolpathLoadVerdict, UnmodeledReason,
 };
 
 /// The R-plane every shipped drill op actually gets:
@@ -82,6 +82,9 @@ fn verdict_with(drill: DrillGatesVerdict) -> ToolpathLoadVerdict {
             reason: UnmodeledReason::NotApplicableForOp("drill cycle".to_owned()),
         },
         deflection: DeflectionVerdict::Unmodeled {
+            reason: UnmodeledReason::NotApplicableForOp("drill cycle".to_owned()),
+        },
+        depth: DepthVerdict::Unmodeled {
             reason: UnmodeledReason::NotApplicableForOp("drill cycle".to_owned()),
         },
         drill_gates: Some(drill),

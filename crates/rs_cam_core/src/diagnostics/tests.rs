@@ -397,6 +397,13 @@ fn tool_load_adapter_drops_milling_na_on_drill_with_drill_gates() {
                 "drill cycle — no continuous engagement".to_owned(),
             ),
         },
+        // S3: the depth row takes the same arm as the three milling
+        // gates beside it, so the drill partition is unchanged.
+        depth: DepthVerdict::Unmodeled {
+            reason: UnmodeledReason::NotApplicableForOp(
+                "drill cycle — no continuous engagement".to_owned(),
+            ),
+        },
         drill_gates: Some(DrillGatesVerdict {
             chip_welding: DrillGateOutcome::Within {
                 observed: 4.0,
@@ -473,6 +480,11 @@ fn tool_load_adapter_emits_chipload_exceeds_with_evidence() {
         deflection: DeflectionVerdict::Unmodeled {
             reason: UnmodeledReason::SimulationRequired,
         },
+        // S3: this fixture supplies no trace, so the depth gate has
+        // nothing to measure either.
+        depth: DepthVerdict::Unmodeled {
+            reason: UnmodeledReason::SimulationRequired,
+        },
         drill_gates: None,
         modulation_summary: None,
         feed_explanation: None,
@@ -511,6 +523,10 @@ fn tool_load_adapter_marks_stale_simulation_as_stale_evidence_state() {
         deflection: DeflectionVerdict::Unmodeled {
             reason: UnmodeledReason::StaleSimulation,
         },
+        // S3: every row is stale, including this one.
+        depth: DepthVerdict::Unmodeled {
+            reason: UnmodeledReason::StaleSimulation,
+        },
         drill_gates: None,
         modulation_summary: None,
         feed_explanation: None,
@@ -545,6 +561,10 @@ fn tool_load_adapter_marks_sim_required_as_needs_simulation_state() {
             reason: UnmodeledReason::SimulationRequired,
         },
         deflection: DeflectionVerdict::Unmodeled {
+            reason: UnmodeledReason::SimulationRequired,
+        },
+        // S3: no simulation, so no measured depth either.
+        depth: DepthVerdict::Unmodeled {
             reason: UnmodeledReason::SimulationRequired,
         },
         drill_gates: None,
