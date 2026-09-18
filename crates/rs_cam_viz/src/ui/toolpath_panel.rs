@@ -16,15 +16,32 @@ use crate::ui::theme;
 use crate::ui::tokens;
 use crate::ui_command::UiCommand;
 
-/// How heavy a broken connector draws.
+/// How heavy a connector draws.
+///
+/// Two points, never a hairline. The first drawing used a 1 point line in
+/// `HAIRLINE` grey for a ready edge, and the operator's verdict on screen
+/// was "once it's done, you can see nothing" (2026-09-18).
+const CONNECTOR_WIDTH: f32 = 2.0;
+
+/// How heavy a BROKEN connector draws.
 ///
 /// Stroke width is the THIRD channel of section 2.6 rule 3, after colour and
-/// the dash pattern. An eight point gutter cannot hold a glyph, so a broken
-/// edge says "fault" by being heavier as well as red and dashed.
-const CONNECTOR_BROKEN_WIDTH: f32 = 1.5;
+/// the dash pattern. The gutter cannot hold a glyph, so a broken edge says
+/// "fault" by being heavier as well as red and dashed.
+const CONNECTOR_BROKEN_WIDTH: f32 = 2.5;
 
 /// How long one dash and one gap of an unready connector are.
 const CONNECTOR_DASH: f32 = tokens::SPACE_1;
+
+/// The size of the arrowhead that lands in the dependent row.
+const CONNECTOR_ARROW: f32 = tokens::SPACE_2;
+
+/// The column the connectors run down, as the drop zone's left margin.
+///
+/// Twelve points, not eight. The line leaves the source row's swatch and
+/// arrives at the dependent row's swatch, so it needs room for a 2 point
+/// line beside a 2.5 point one without either touching a card border.
+const CONNECTOR_GUTTER: f32 = tokens::SPACE_4;
 
 /// How heavy the simulating ring draws.
 const RING_WIDTH: f32 = 1.5;
@@ -192,6 +209,19 @@ fn plan_focus(
     }
 }
 
+/// Where one drawn row landed this frame.
+///
+/// The connector needs BOTH rects. It leaves the source row's swatch and it
+/// lands beside the dependent row's swatch, so a card rect alone cannot
+/// place either end.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RowGeometry {
+    /// The card's own frame.
+    pub card: egui::Rect,
+    /// The colour swatch inside it, which is also the drag grip.
+    pub swatch: egui::Rect,
+}
+
 /// Left panel for the Toolpath workspace: the operation queue.
 pub fn draw(
     ui: &mut egui::Ui,
@@ -243,7 +273,7 @@ pub fn draw(
     // outlive the layout it describes, and a second pass in the SAME frame,
     // because the panel sits in a scroll area and a lagged map is wrong by
     // the scroll delta on every scrolling frame.
-    let mut row_rects: Vec<(ToolpathId, egui::Rect, Vec<EdgeRow>)> = Vec::new();
+    let mut row_rects: Vec<(ToolpathId, RowGeometry, Vec<EdgeRow>)> = Vec::new();
 
     for (setup_position, (setup_id, setup_name, toolpath_indices)) in
         setups_data.into_iter().enumerate()
@@ -270,15 +300,16 @@ pub fn draw(
         }
 
         // Drop zone for this setup. W3 - the gutter is this zone's LEFT
-        // margin, so every card rect starts SPACE_3 right of the zone and
-        // the connector owns the space to their left. The card frame is
-        // untouched, and the card's own click rect is INSIDE it, so a
-        // connector click is clean. `compute_drop_index` reads the pointer
-        // Y only, so drag and drop does not notice.
+        // margin, so every card rect starts CONNECTOR_GUTTER right of the
+        // zone and the connectors own the space to their left. The card's
+        // own inner margin is 2 points, which cannot hold a 2.5 point line
+        // without touching the border, so the column lives outside the
+        // frame. `compute_drop_index` reads the pointer Y only, so drag and
+        // drop does not notice.
         //
-        // SAFETY: SPACE_3 is 8.0, which is exact in i8.
+        // SAFETY: CONNECTOR_GUTTER is 12.0, which is exact in i8.
         #[allow(clippy::cast_possible_truncation)]
-        let gutter = tokens::SPACE_3 as i8;
+        let gutter = CONNECTOR_GUTTER as i8;
         let drop_frame = egui::Frame::default().inner_margin(egui::Margin {
             left: gutter,
             right: 2,
@@ -329,8 +360,8 @@ pub fn draw(
                     edges_in: edges.remove(&card.id).unwrap_or_default(),
                     in_flight: flight,
                 };
-                let rect = draw_toolpath_card(ui, state, events, &card, &rt_snap, i, local_idx);
-                row_rects.push((card.id, rect, rt_snap.edges_in));
+                let geometry = draw_toolpath_card(ui, state, events, &card, &rt_snap, i, local_idx);
+                row_rects.push((card.id, geometry, rt_snap.edges_in));
             }
         });
 
@@ -466,7 +497,7 @@ fn draw_toolpath_card(
     rt: &RuntimeSnapshot,
     global_idx: usize,
     _local_idx: usize,
-) -> egui::Rect {
+) -> RowGeometry {
     let tp_id = tc.id;
     let selected = state.selection == Selection::Toolpath(tp_id);
     let visible = rt.visible;
@@ -554,43 +585,46 @@ fn draw_toolpath_card(
 
             // The one row. Rule D: the height does not vary with the
             // content, so every card in the queue is the same height.
-            ui.horizontal(|ui| {
-                ui.set_min_height(tokens::ROW_ACTION);
-                draw_swatch(ui, tp_id, swatch_color);
-                draw_state_dot(
-                    ui,
-                    freshness,
-                    flight,
-                    tp_id,
-                    &tc.name,
-                    has_stock_edge,
-                    events,
-                );
+            let swatch = ui
+                .horizontal(|ui| {
+                    ui.set_min_height(tokens::ROW_ACTION);
+                    let swatch = draw_swatch(ui, tp_id, swatch_color);
+                    draw_state_dot(
+                        ui,
+                        freshness,
+                        flight,
+                        tp_id,
+                        &tc.name,
+                        has_stock_edge,
+                        events,
+                    );
 
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.menu_button("\u{2026}", |ui| {
-                        card_menu(
-                            ui,
-                            tp_id,
-                            visible,
-                            tc.enabled,
-                            has_result,
-                            &mut state.viewport,
-                            events,
-                        );
-                    });
-                    if state.viewport.show_all_toolpaths {
-                        draw_eye(ui, tp_id, visible, events);
-                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.menu_button("\u{2026}", |ui| {
+                            card_menu(
+                                ui,
+                                tp_id,
+                                visible,
+                                tc.enabled,
+                                has_result,
+                                &mut state.viewport,
+                                events,
+                            );
+                        });
+                        if state.viewport.show_all_toolpaths {
+                            draw_eye(ui, tp_id, visible, events);
+                        }
 
-                    // The name and the tool take the width the controls
-                    // leave.
-                    let tool = tool_summary.as_deref();
-                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                        draw_name_and_tool(ui, &tc.name, tool, dim);
+                        // The name and the tool take the width the controls
+                        // leave.
+                        let tool = tool_summary.as_deref();
+                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                            draw_name_and_tool(ui, &tc.name, tool, dim);
+                        });
                     });
-                });
-            });
+                    swatch
+                })
+                .inner;
 
             // Right-click carries the same list. It costs no screen space,
             // so it stays BESIDE the `…` menu rather than instead of it.
@@ -605,8 +639,10 @@ fn draw_toolpath_card(
                     events,
                 );
             });
+            swatch
         });
 
+    let swatch = inner_response.inner;
     let inner_response = inner_response.response;
 
     // If this card is being hovered while something is dragged, show insertion indicator
@@ -622,7 +658,10 @@ fn draw_toolpath_card(
         );
     }
 
-    inner_response.rect
+    RowGeometry {
+        card: inner_response.rect,
+        swatch,
+    }
 }
 
 /// The colour swatch, which is also the card's drag grip (R26).
@@ -630,7 +669,7 @@ fn draw_toolpath_card(
 /// The card opened with a 10-point grip glyph beside a 6-point swatch: two
 /// rectangles, one job each. The swatch takes the drag now, so the thing the
 /// operator grabs is the thing that names the row in the viewport.
-fn draw_swatch(ui: &mut egui::Ui, tp_id: ToolpathId, swatch_color: egui::Color32) {
+fn draw_swatch(ui: &mut egui::Ui, tp_id: ToolpathId, swatch_color: egui::Color32) -> egui::Rect {
     let size = egui::vec2(tokens::SPACE_3, tokens::SPACE_5);
     let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::drag());
     let radius = egui::CornerRadius::from(tokens::RADIUS_SM);
@@ -643,6 +682,7 @@ fn draw_swatch(ui: &mut egui::Ui, tp_id: ToolpathId, swatch_color: egui::Color32
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
     }
     resp.on_hover_text("Drag to reorder this operation, or to move it to another setup.");
+    rect
 }
 
 /// The card's one state indicator (R24).
@@ -1077,8 +1117,11 @@ fn add_op_menu_item(
 
 /// The role one edge state carries.
 ///
-/// A `Ready` edge is STRUCTURE, not a verdict (§2.6 rule 1): it draws a
-/// hairline, and it takes `Ok` here only so [`worst_edge`] can rank it.
+/// Ready is `Ok`, and it DRAWS as `Ok`: a green line. The first drawing read
+/// a ready edge as structure rather than a verdict and gave it a grey
+/// hairline, which the operator could not see at all on screen. A dependency
+/// that is satisfied is a thing the operator wants confirmed, so it takes
+/// the pass colour like any other verdict (ruling, 2026-09-18).
 #[must_use]
 pub fn edge_role(state: EdgeState) -> Role {
     match state {
@@ -1099,22 +1142,26 @@ pub struct ConnectorStroke {
 
 /// The stroke for one edge state.
 ///
-/// **Colour is not the only channel.** §2.6 rule 3 asks for a glyph beside
-/// every colour, and an eight point gutter cannot hold one legibly. The dash
-/// pattern is the second channel and the stroke width the third. The WORD
+/// The three states are the three verdict colours. **Colour is not the only
+/// channel**: §2.6 rule 3 asks for a glyph beside every colour, and a twelve
+/// point gutter cannot hold one legibly. A ready edge is the only SOLID one,
+/// which is the second channel, and the stroke width is the third. The WORD
 /// still reaches the operator, through the connector's hover and through the
 /// row's own state dot.
+///
+/// No arm is thinner than [`CONNECTOR_WIDTH`]. A line the operator cannot
+/// see reports nothing.
 #[must_use]
 pub fn edge_stroke(state: EdgeState) -> ConnectorStroke {
     match state {
         EdgeState::Ready => ConnectorStroke {
-            colour: tokens::HAIRLINE,
-            width: 1.0,
+            colour: Role::Ok.text(),
+            width: CONNECTOR_WIDTH,
             dash: None,
         },
         EdgeState::Pending => ConnectorStroke {
             colour: Role::Caution.text(),
-            width: 1.0,
+            width: CONNECTOR_WIDTH,
             dash: Some(CONNECTOR_DASH),
         },
         EdgeState::Broken => ConnectorStroke {
@@ -1182,34 +1229,102 @@ pub fn worst_edge(rows: &[EdgeRow]) -> Option<EdgeRow> {
         .copied()
 }
 
-/// Where one connector runs: beside the source, down the gutter, into the
-/// row.
+/// Where one connector runs, source first.
 ///
-/// Three points as ONE polyline, so the corner joins. A `None` source is a
-/// source that is not drawn: a collapsed setup, a filtered list, or a row
-/// the session no longer holds. It draws a short stub instead of a line to
-/// nothing.
+/// One polyline, so every corner joins:
+///
+/// 1. the bottom centre of the SOURCE row's swatch, which is the colour the
+///    operator already reads that row by;
+/// 2. left, into the gutter column;
+/// 3. down that column to the dependent row;
+/// 4. right, stopping one arrowhead short of the dependent row's swatch.
+///
+/// The caller paints the arrowhead at [`arrow_tip`], so the line points at
+/// the row it feeds and the direction needs no word.
+///
+/// A `None` source is a source that is not DRAWN: a collapsed setup, a
+/// filtered list, or a row the session no longer holds. It starts one
+/// gutter above the row instead, which is the stub, and the caller adds the
+/// up glyph.
+///
+/// A chain A to B to C draws two paths that share the column, and the second
+/// starts at B's own swatch, so the two meet end to end.
 #[must_use]
-pub fn elbow_points(source: Option<egui::Rect>, target: egui::Rect) -> [egui::Pos2; 3] {
-    let x = target.left() - tokens::SPACE_3 / 2.0;
-    let y = target.center().y;
-    let top = source.map_or(y - tokens::SPACE_3, |rect| rect.center().y);
-    [
-        egui::pos2(x, top),
-        egui::pos2(x, y),
-        egui::pos2(target.left(), y),
+pub fn connector_path(source: Option<RowGeometry>, target: RowGeometry) -> ConnectorPath {
+    let x = target.card.left() - CONNECTOR_GUTTER / 2.0;
+    let y = target.swatch.center().y;
+    let end = egui::pos2(arrow_tip(target).x - CONNECTOR_ARROW, y);
+    let foot = egui::pos2(x, y);
+    match source {
+        Some(source) => {
+            let head = egui::pos2(x, source.swatch.bottom());
+            ConnectorPath {
+                points: vec![
+                    egui::pos2(source.swatch.center().x, source.swatch.bottom()),
+                    head,
+                    foot,
+                    end,
+                ],
+                column: (head, foot),
+                stub: None,
+            }
+        }
+        None => {
+            let head = egui::pos2(x, y - CONNECTOR_GUTTER);
+            ConnectorPath {
+                points: vec![head, foot, end],
+                column: (head, foot),
+                stub: Some(head),
+            }
+        }
+    }
+}
+
+/// One connector's geometry, with the parts the painter needs by NAME.
+///
+/// Named rather than indexed: the path is three points for a stub and four
+/// for a line whose source is on screen, and a painter that counts from
+/// either end is a painter that will be wrong about one of them.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConnectorPath {
+    /// The polyline, source end first.
+    pub points: Vec<egui::Pos2>,
+    /// The top and the bottom of the VERTICAL run, which is the only part
+    /// of the path the operator has to aim at: the two horizontal runs sit
+    /// inside the rows they join.
+    pub column: (egui::Pos2, egui::Pos2),
+    /// Where the up glyph goes, when the source is not drawn.
+    pub stub: Option<egui::Pos2>,
+}
+
+/// Where the connector's arrowhead lands: just left of the row's swatch.
+#[must_use]
+pub fn arrow_tip(target: RowGeometry) -> egui::Pos2 {
+    egui::pos2(
+        target.swatch.left() - tokens::SPACE_1 / 2.0,
+        target.swatch.center().y,
+    )
+}
+
+/// The filled triangle that lands in the dependent row.
+fn arrow_head(tip: egui::Pos2) -> Vec<egui::Pos2> {
+    let half = CONNECTOR_ARROW / 2.0;
+    vec![
+        tip,
+        egui::pos2(tip.x - CONNECTOR_ARROW, tip.y - half),
+        egui::pos2(tip.x - CONNECTOR_ARROW, tip.y + half),
     ]
 }
 
 /// Draw every row's dependency as one line in the gutter.
 ///
 /// The second pass of the frame, after the cards, because a line needs both
-/// rects. Painted in ROW order, sources first, so a `Ready` hairline goes
-/// UNDER a `Pending` amber on a shared span: the overlapping span then reads
-/// amber, which is the honest answer.
+/// rects. Painted in ROW order, sources first, so a ready green goes UNDER a
+/// pending amber on a shared span: the overlapping span then reads amber,
+/// which is the honest answer.
 fn draw_connectors(
     ui: &mut egui::Ui,
-    row_rects: &[(ToolpathId, egui::Rect, Vec<EdgeRow>)],
+    row_rects: &[(ToolpathId, RowGeometry, Vec<EdgeRow>)],
     names: &HashMap<ToolpathId, String>,
     events: &mut Vec<AppEvent>,
 ) {
@@ -1222,32 +1337,41 @@ fn draw_connectors(
         let Some(edge) = worst_edge(row_edges) else {
             continue;
         };
-        let source_rect = edge.source.and_then(|source| {
+        let source = edge.source.and_then(|source| {
             row_rects
                 .iter()
                 .find(|(id, _, _)| *id == source)
-                .map(|(_, rect, _)| *rect)
+                .map(|(_, geometry, _)| *geometry)
         });
-        let points = elbow_points(source_rect, *target);
+        let path = connector_path(source, *target);
         let spec = edge_stroke(edge.state);
         let stroke = egui::Stroke::new(spec.width, spec.colour);
         match spec.dash {
             None => {
-                ui.painter().add(egui::Shape::line(points.to_vec(), stroke));
+                ui.painter()
+                    .add(egui::Shape::line(path.points.clone(), stroke));
             }
             Some(dash) => {
                 ui.painter()
-                    .extend(egui::Shape::dashed_line(&points, stroke, dash, dash));
+                    .extend(egui::Shape::dashed_line(&path.points, stroke, dash, dash));
             }
         }
-        if source_rect.is_none() {
+        // The arrowhead is always solid, whatever the line does: it says
+        // which row the dependency feeds, and a dashed arrow says that less
+        // well without saying anything more.
+        ui.painter().add(egui::Shape::convex_polygon(
+            arrow_head(arrow_tip(*target)),
+            spec.colour,
+            egui::Stroke::NONE,
+        ));
+        if let Some(anchor) = path.stub {
             // The stub ends in an up glyph: the source is above, and it is
             // not in this list.
             ui.painter().text(
-                points[0],
+                anchor,
                 egui::Align2::CENTER_BOTTOM,
                 "\u{2191}",
-                egui::FontId::proportional(tokens::SPACE_3),
+                egui::FontId::proportional(tokens::SPACE_4),
                 spec.colour,
             );
         }
@@ -1258,14 +1382,16 @@ fn draw_connectors(
                 .map(String::as_str),
             edge.kind,
             edge.state,
-            source_rect.is_some(),
+            source.is_some(),
         );
-        if edge.source.is_some() && source_rect.is_none() {
+        if edge.source.is_some() && source.is_none() {
             hover.push_str("\nIt is not in this list.");
         }
+        // The operator aims at the vertical run.
+        let (head, foot) = path.column;
         let hit = egui::Rect::from_x_y_ranges(
-            (points[0].x - tokens::SPACE_2)..=(points[0].x + tokens::SPACE_2),
-            points[0].y.min(points[1].y)..=points[0].y.max(points[1].y),
+            (foot.x - tokens::SPACE_2)..=(foot.x + tokens::SPACE_2),
+            head.y.min(foot.y)..=head.y.max(foot.y),
         );
         let response = ui
             .interact(
@@ -1275,10 +1401,12 @@ fn draw_connectors(
             )
             .on_hover_text(hover);
         if response.clicked()
-            && let Some(source) = edge.source
-            && source_rect.is_some()
+            && let Some(source_id) = edge.source
+            && source.is_some()
         {
-            events.push(AppEvent::Ui(UiCommand::Select(Selection::Toolpath(source))));
+            events.push(AppEvent::Ui(UiCommand::Select(Selection::Toolpath(
+                source_id,
+            ))));
         }
     }
 }

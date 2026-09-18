@@ -48,7 +48,10 @@ use rs_cam_viz::state::runtime::{ComputeStatus, ToolpathRuntime};
 use rs_cam_viz::state::toolpath::{OperationType, ToolpathEntry};
 use rs_cam_viz::ui::components::Role;
 use rs_cam_viz::ui::properties::{ToolpathValidationContext, validate_toolpath};
-use rs_cam_viz::ui::toolpath_panel::{edge_hover, edge_role, edge_stroke, elbow_points};
+use rs_cam_viz::ui::tokens;
+use rs_cam_viz::ui::toolpath_panel::{
+    RowGeometry, arrow_tip, connector_path, edge_hover, edge_role, edge_stroke,
+};
 
 const PANEL_SRC: &str = include_str!("../src/ui/toolpath_panel.rs");
 
@@ -64,22 +67,49 @@ const VALIDATOR_REFUSAL: &str = "earlier enabled operation";
 const KINDS: [EdgeKind; 3] = [EdgeKind::Stock, EdgeKind::Regions, EdgeKind::PrevTool];
 const STATES: [EdgeState; 3] = [EdgeState::Ready, EdgeState::Pending, EdgeState::Broken];
 
-/// The role ladder of §4.4: structure, a wait, a fault.
+/// The role ladder of §4.4: a pass, a wait, a fault.
+///
+/// The first drawing gave a ready edge a 1 point `HAIRLINE` grey, on the
+/// reading that structure is not a verdict. On screen the operator could see
+/// nothing at all, and ruled on 2026-09-18 that a satisfied dependency is a
+/// thing to confirm: it draws GREEN, at the `Ok` role, like any other pass.
 #[test]
 fn every_edge_state_takes_its_own_role_g_connector() {
     assert_eq!(edge_role(EdgeState::Ready), Role::Ok);
     assert_eq!(edge_role(EdgeState::Pending), Role::Caution);
     assert_eq!(edge_role(EdgeState::Broken), Role::Danger);
 
-    // §2.6 rule 3: colour is never the only channel. The dash is the
-    // second channel and the width is the third, because an eight point
-    // gutter cannot hold a glyph.
     let ready = edge_stroke(EdgeState::Ready);
     let pending = edge_stroke(EdgeState::Pending);
     let broken = edge_stroke(EdgeState::Broken);
+
+    // Each state DRAWS in its own role's colour. A line the operator cannot
+    // see reports nothing, so this is the arm that keeps the ruling.
+    assert_eq!(ready.colour, Role::Ok.text());
+    assert_eq!(pending.colour, Role::Caution.text());
+    assert_eq!(broken.colour, Role::Danger.text());
+    assert_ne!(
+        ready.colour,
+        tokens::HAIRLINE,
+        "a connector is never drawn in the border grey: that was the \
+         invisible first drawing"
+    );
+
+    // Never a hairline, whatever the state.
+    for (name, spec) in [("ready", ready), ("pending", pending), ("broken", broken)] {
+        assert!(
+            spec.width >= 2.0,
+            "the {name} connector is {} points and the floor is 2",
+            spec.width
+        );
+    }
+
+    // §2.6 rule 3: colour is never the only channel. A ready edge is the
+    // only SOLID one, and the width is the third channel, because a twelve
+    // point gutter cannot hold a glyph.
     assert!(
         ready.dash.is_none(),
-        "a ready edge is structure, so it draws a solid hairline"
+        "a ready edge is the one solid line, which is its second channel"
     );
     assert!(
         pending.dash.is_some() && broken.dash.is_some(),
@@ -90,14 +120,6 @@ fn every_edge_state_takes_its_own_role_g_connector() {
         "a broken edge is heavier than a pending one: {} vs {}",
         broken.width,
         pending.width
-    );
-    assert_ne!(
-        ready.colour, pending.colour,
-        "a ready edge and a pending edge must not share a colour"
-    );
-    assert_ne!(
-        pending.colour, broken.colour,
-        "a pending edge and a broken edge must not share a colour"
     );
 }
 
@@ -517,78 +539,126 @@ fn no_previous_tool_configured_is_broken_g_connector() {
 
 // ── arm 3 — geometry ────────────────────────────────────────────────────
 
-fn row_rect(top: f32) -> egui::Rect {
-    egui::Rect::from_min_size(egui::pos2(40.0, top), egui::vec2(200.0, 24.0))
+/// One row at `top`: a card 200 points wide with its swatch inside the
+/// card's own 3 point left padding, which is where the real one sits.
+fn row(top: f32) -> RowGeometry {
+    let card = egui::Rect::from_min_size(egui::pos2(40.0, top), egui::vec2(200.0, 26.0));
+    RowGeometry {
+        card,
+        swatch: egui::Rect::from_min_size(
+            egui::pos2(card.left() + 3.0, top + 5.0),
+            egui::vec2(8.0, 16.0),
+        ),
+    }
 }
 
-/// The elbow runs down one gutter column and turns into its own row.
+/// The path leaves the SOURCE swatch and lands at the DEPENDENT swatch.
+///
+/// The swatch is the colour the operator already reads a row by, so a line
+/// that starts and ends there names both rows with no word.
 #[test]
-fn the_elbow_sits_on_the_gutter_centre_line_g_connector() {
-    let source = row_rect(0.0);
-    let target = row_rect(60.0);
-    let points = elbow_points(Some(source), target);
+fn the_path_joins_the_two_swatches_g_connector() {
+    let source = row(0.0);
+    let target = row(60.0);
+    let points = connector_path(Some(source), target).points;
+
+    assert_eq!(
+        points.len(),
+        4,
+        "out of the swatch, left, down, in: {points:?}"
+    );
+    assert!(
+        (points[0].x - source.swatch.center().x).abs() < f32::EPSILON
+            && (points[0].y - source.swatch.bottom()).abs() < f32::EPSILON,
+        "the line starts at the bottom centre of the SOURCE swatch: {points:?}"
+    );
+    assert!(
+        (points[1].x - points[2].x).abs() < f32::EPSILON,
+        "the two middle points share the gutter column: {points:?}"
+    );
+    assert!(
+        points[1].x < target.card.left(),
+        "the column runs OUTSIDE the card frame, and {} is not left of {}",
+        points[1].x,
+        target.card.left()
+    );
+    assert!(
+        (points[2].y - target.swatch.center().y).abs() < f32::EPSILON
+            && (points[3].y - target.swatch.center().y).abs() < f32::EPSILON,
+        "the line arrives at the DEPENDENT swatch's centre: {points:?}"
+    );
+    assert!(
+        points[3].x > points[2].x,
+        "the last run turns RIGHT, into the row it feeds: {points:?}"
+    );
+}
+
+/// The arrowhead lands just left of the dependent swatch, and the line
+/// stops short of it so the two do not overlap.
+#[test]
+fn the_path_stops_short_of_its_arrowhead_g_connector() {
+    let target = row(60.0);
+    let tip = arrow_tip(target);
+    let points = connector_path(Some(row(0.0)), target).points;
+    let end = points[points.len() - 1];
 
     assert!(
-        (points[0].x - points[1].x).abs() < f32::EPSILON,
-        "the first two points must share the gutter column: {points:?}"
+        tip.x < target.swatch.left() && tip.x > target.card.left(),
+        "the tip sits just LEFT of the swatch and inside the card: tip {} \
+         swatch {} card {}",
+        tip.x,
+        target.swatch.left(),
+        target.card.left()
     );
     assert!(
-        points[0].x < target.left(),
-        "the gutter is OUTSIDE the card, and {} is not left of {}",
-        points[0].x,
-        target.left()
+        (tip.y - target.swatch.center().y).abs() < f32::EPSILON,
+        "the arrow points along the row's own centre line"
     );
+    let head = tip.x - end.x;
     assert!(
-        (points[2].x - target.left()).abs() < f32::EPSILON,
-        "the elbow turns into the row at its left edge: {points:?}"
-    );
-    assert!(
-        (points[0].y - source.center().y).abs() < f32::EPSILON,
-        "the line starts beside the SOURCE row's centre: {points:?}"
-    );
-    assert!(
-        (points[1].y - target.center().y).abs() < f32::EPSILON
-            && (points[2].y - target.center().y).abs() < f32::EPSILON,
-        "the elbow arrives at the TARGET row's centre: {points:?}"
+        head > 0.0 && head <= 6.0,
+        "the line stops one small arrowhead short of the tip, and this one \
+         is {head} points"
     );
 }
 
 /// A chain A to B to C meets end to end in one column.
 #[test]
 fn a_chain_meets_end_to_end_in_one_column_g_connector() {
-    let a = row_rect(0.0);
-    let b = row_rect(30.0);
-    let c = row_rect(60.0);
-    let first = elbow_points(Some(a), b);
-    let second = elbow_points(Some(b), c);
+    let a = row(0.0);
+    let b = row(40.0);
+    let c = row(80.0);
+    let first = connector_path(Some(a), b).points;
+    let second = connector_path(Some(b), c).points;
     assert!(
-        (first[0].x - second[0].x).abs() < f32::EPSILON,
-        "a chain must read as one thread, so both lines share the column"
+        (first[1].x - second[1].x).abs() < f32::EPSILON,
+        "a chain must read as one thread, so both paths share the column"
     );
     assert!(
-        (first[1].y - second[0].y).abs() < f32::EPSILON,
-        "the second line starts where the first one ended: {first:?} {second:?}"
+        (second[0].x - b.swatch.center().x).abs() < f32::EPSILON,
+        "the second path starts at B's OWN swatch, which is where the first \
+         one delivered: {second:?}"
     );
 }
 
 /// An off-list source draws a short stub, not a line to nothing.
 #[test]
 fn an_off_list_source_draws_a_stub_g_connector() {
-    let target = row_rect(200.0);
-    let stub = elbow_points(None, target);
-    let span = target.center().y - stub[0].y;
+    let target = row(200.0);
+    let stub = connector_path(None, target).points;
+    assert_eq!(stub.len(), 3, "the stub has no source end: {stub:?}");
+    let span = target.swatch.center().y - stub[0].y;
     assert!(
         span > 0.0,
         "the stub points UP, towards the source that is not drawn: {stub:?}"
     );
     assert!(
-        span < target.height(),
+        span < target.card.height(),
         "the stub is short: it says `not in this list`, it does not pretend \
          to reach a row. It spans {span} points."
     );
     assert!(
-        (stub[0].x - stub[1].x).abs() < f32::EPSILON
-            && (stub[2].x - target.left()).abs() < f32::EPSILON,
+        (stub[0].x - stub[1].x).abs() < f32::EPSILON && stub[2].x > stub[1].x,
         "the stub keeps the elbow's shape: {stub:?}"
     );
 }
