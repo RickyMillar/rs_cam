@@ -199,8 +199,28 @@ pub enum UnmodeledReason {
 /// What a "Within" or "Exceeds" verdict claims about its inputs.
 ///
 /// `Validated` is rare — it means every input was independently checked.
-/// Most useful results are `Approximate` with a typed reason; UI must render
-/// `Approximate` differently from `Validated` so users don't anchor on it.
+/// Most useful results are `Approximate` with a typed reason.
+///
+/// # Where a renderer puts this (operator ruling, 2026-09-18)
+///
+/// **In the hover, and not on the face.** The face of a limit row is a plain
+/// 0-to-limit reading; the tier and the reason string sit in the hover beside
+/// the bound and its provenance.
+///
+/// The earlier wording here said a UI *must render `Approximate` differently
+/// from `Validated`*, and `verdict_badge` did: it painted the row in a
+/// warning colour and appended a `≈`. A row INSIDE its bound then read as a
+/// warning, and every limit stopped being the same kind of thing.
+///
+/// The ruling stands on what S4 made true. The consequence of a weak input is
+/// carried by BEHAVIOUR now, not by a mark: a bound whose provenance cannot
+/// support a refusal does not refuse ([`BoundSource::gates_export`], read
+/// through [`CriterionStatus::refuses_export`]). So the face does not have to
+/// carry it, and the detail the operator can act on — WHICH input is
+/// approximate — is what the hover states.
+///
+/// This is a change of place, not a deletion. A renderer that drops the
+/// reason entirely has taken a fact off the surface.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind", content = "detail")]
 pub enum Confidence {

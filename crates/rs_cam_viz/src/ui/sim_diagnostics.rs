@@ -12,9 +12,8 @@ use crate::ui::theme;
 use crate::ui::tokens;
 use crate::ui_command::{SimJumpToMoveArgs, UiCommand};
 use rs_cam_core::session::ProjectSession;
-use rs_cam_core::tool_load::drill_gates::{DrillGateOutcome, DrillGateSeverity};
 use rs_cam_core::tool_load::verdict::{
-    ChipSide, ChiploadVerdict, CriterionKind, CriterionStatus, LoadState,
+    BoundSource, ChipSide, ChiploadVerdict, CriterionKind, CriterionStatus, LoadState,
 };
 use rs_cam_core::tool_load::{Confidence, ToolLoadReport, ToolpathLoadVerdict, UnmodeledReason};
 use rs_cam_core::trace::toolpath_spans::{Span, SpanKind, SpanPayload};
@@ -65,7 +64,7 @@ pub fn draw(
 
         draw_project_section(ui, sim, session, gui, &issues, &load_report, events);
         ui.add_space(6.0);
-        draw_toolpath_section(ui, sim, session, gui, &load_report, events);
+        draw_toolpath_section(ui, sim, &load_report, events);
 
         let trace_arc = sim
             .results
@@ -899,8 +898,6 @@ fn draw_project_section(
 fn draw_toolpath_section(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
-    session: &ProjectSession,
-    gui: &GuiState,
     load_report: &ToolLoadReport,
     events: &mut Vec<AppEvent>,
 ) {
@@ -932,19 +929,14 @@ fn draw_toolpath_section(
                 .iter()
                 .find(|tp| tp.toolpath_id == boundary_id)
             {
-                let chipload_envelopes = sim.cached_chipload_envelopes(session, gui.edit_counter);
-                let chipload_cap = chipload_envelopes.get(&boundary_id).map(|range| range.end);
-                let machine = session.machine();
-                let max_power_kw = match machine.power {
-                    rs_cam_core::machine::PowerModel::ConstantPower { power_kw } => power_kw,
-                    rs_cam_core::machine::PowerModel::VfdConstantTorque {
-                        rated_power_kw, ..
-                    } => rated_power_kw,
-                };
-                let power_cap_kw = (max_power_kw * machine.safety_factor > 0.0)
-                    .then_some(max_power_kw * machine.safety_factor);
-                let deflection_cap = Some(DEFLECTION_SAFE_LD_RATIO);
-                draw_tool_load_badges(ui, tp, chipload_cap, power_cap_kw, deflection_cap);
+                // V2 (2026-09-18) — the three caps this function used to
+                // build are gone. Two of them were GUI-owned: the power cap
+                // as `max_power_kw × safety_factor`, and the deflection cap
+                // as an L over D ratio of 4.0 beside a gate that judges
+                // MILLIMETRES. Every row now reads
+                // `CriterionStatus::bound`, which is the value the gate
+                // itself judged against (S4).
+                draw_limit_rows(ui, &limit_rows(tp));
             }
             ui.horizontal(|ui| {
                 if ui.small_button("Optimize this op").clicked() {
@@ -1003,30 +995,34 @@ const ARC_MEAN_CHIP_HOVER: &str = "Arc-mean chip thickness measured by the dexel
 const ENGAGEMENT_PROVENANCE_HOVER: &str = "Engagement = cylinder-side radial width-of-cut fraction. Reads ~10× below the \
      algorithmic target; use it to compare variants, not as an absolute under-engagement bar.";
 
-/// Render a single short summary line in the project summary card showing how
-/// Render three independent badges (chipload | power | deflection) for the
-/// active toolpath. **Never** combine into a single load %.
-fn draw_tool_load_badges(
-    ui: &mut egui::Ui,
-    verdict: &ToolpathLoadVerdict,
-    chipload_cap: Option<f64>,
-    power_cap_kw: Option<f64>,
-    deflection_cap: Option<f64>,
-) {
-    if let Some(drill_gates) = &verdict.drill_gates {
-        ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new("Drill gates:")
-                    .small()
-                    .color(theme::TEXT_STRONG),
-            );
-            drill_gate_badge(ui, "chip weld", &drill_gates.chip_welding);
-            drill_gate_badge(ui, "peck", &drill_gates.peck_adequacy);
-            drill_gate_badge(ui, "plunge", &drill_gates.plunge_feed);
-        });
-        return;
-    }
+/// **One limit row on the tool-load surface.**
+///
+/// The criterion the gate produced, plus the two facts a renderer needs and
+/// [`CriterionStatus`] does not carry: whether a chipload reading sits BELOW
+/// its band rather than above it, and which toolpath the reading came from
+/// when a surface folds several toolpaths into one column.
+pub(crate) struct LimitRow<'a> {
+    pub status: CriterionStatus<'a>,
+    /// True for a chipload verdict that exceeded on the LOW side. The peak is
+    /// then under the band floor, not over the ceiling, so the row states a
+    /// burn risk instead of a percent of a bound it never passed.
+    pub burn_risk: bool,
+    /// The toolpath this reading was measured on. `None` when the surface
+    /// already names one toolpath, as the Simulation Inspector does.
+    pub source: Option<String>,
+}
 
+/// **The rows one toolpath's verdict paints, in `criteria()` order.**
+///
+/// V2 (2026-09-18). This iterates the criterion tier instead of naming three
+/// gates, so the depth-of-cut row (S3) and the gantry-push row (S1) reach the
+/// screen the day core publishes them, and a sixth gate needs no edit here.
+///
+/// A row whose reason is `NotApplicableForOp` is left out: the gate has no
+/// meaning for the operation, which is a different statement from a limit
+/// that was not measured. That is what turns a drill cycle's eight rows into
+/// its three drill rows, and it leaves a milling toolpath's five untouched.
+pub(crate) fn limit_rows(verdict: &ToolpathLoadVerdict) -> Vec<LimitRow<'_>> {
     let burn_risk = matches!(
         verdict.chipload,
         ChiploadVerdict::Exceeds {
@@ -1034,156 +1030,186 @@ fn draw_tool_load_badges(
             ..
         }
     );
-    // Roadmap C.3 — for BurnRisk (chipload-low), the relevant bound is
-    // the LUT *floor*, not the cap. Without this, the BURN tooltip
-    // talked about "peak / cap" which made the user think they were
-    // *exceeding* the high bound when they were actually under-feeding.
-    let chipload_bound = if burn_risk
-        && let ChiploadVerdict::Exceeds {
-            triggering: ref m, ..
-        } = verdict.chipload
-    {
-        m.bounds.min_mm_per_tooth.or(chipload_cap)
-    } else {
-        chipload_cap
-    };
-    ui.horizontal(|ui| {
-        ui.label(
-            egui::RichText::new("Tool load:")
-                .small()
-                .color(theme::TEXT_STRONG),
-        );
-        verdict_badge(
-            ui,
-            "advance/tooth",
-            &verdict.chipload.as_criterion_status(),
-            chipload_bound,
-            burn_risk,
-        );
-        verdict_badge(
-            ui,
-            "power",
-            &verdict.power.as_criterion_status(),
-            power_cap_kw,
-            false,
-        );
-        verdict_badge(
-            ui,
-            "L/D",
-            &verdict.deflection.as_criterion_status(),
-            deflection_cap,
-            false,
-        );
-    });
-}
-
-fn drill_gate_badge(ui: &mut egui::Ui, label: &str, outcome: &DrillGateOutcome) {
-    let (color, text, hover) = match outcome {
-        DrillGateOutcome::Within {
-            observed,
-            threshold,
-            envelope_lo,
-            envelope_hi,
-        } => (
-            theme::SUCCESS,
-            "OK".to_owned(),
-            match (envelope_lo, envelope_hi) {
-                (Some(lo), Some(hi)) => {
-                    format!("Within drill gate: observed {observed:.3}, envelope {lo:.1}–{hi:.1}")
-                }
-                _ => format!("Within drill gate: observed {observed:.3}, threshold {threshold:.3}"),
-            },
-        ),
-        DrillGateOutcome::Exceeds {
-            observed,
-            threshold,
-            severity,
-            ..
-        } => {
-            let sev = match severity {
-                DrillGateSeverity::Elevated => "elevated",
-                DrillGateSeverity::Critical => "critical",
-            };
-            (
-                theme::ERROR,
-                sev.to_owned(),
-                format!("Drill gate exceeds: observed {observed:.3}, threshold {threshold:.3}"),
+    verdict
+        .criteria()
+        .into_iter()
+        .filter(|status| {
+            !matches!(
+                status.unmodeled_reason,
+                Some(UnmodeledReason::NotApplicableForOp(_))
             )
-        }
-    };
-    ui.label(
-        egui::RichText::new(format!("{label} {text}"))
-            .small()
-            .color(color),
-    )
-    .on_hover_text(hover);
+        })
+        .map(|status| LimitRow {
+            burn_risk: burn_risk && status.kind == CriterionKind::Chipload,
+            status,
+            source: None,
+        })
+        .collect()
 }
 
-/// Default L/D safe threshold for the deflection gate's `% of cap`
-/// readout. Above this is the "long tool" warning band; the gate
-/// flags `LongToolStiffnessUnsafe` further past it. Matches the
-/// constant used by `feeds::calculate` for the L/D feed derate.
-const DEFLECTION_SAFE_LD_RATIO: f64 = 4.0;
+/// **Draw the limit rows: one face and one caption each.**
+///
+/// The face is `<label> <reading>` on a common 0-to-limit scale. The caption
+/// under it names the SETTING that set the bound (`BoundSource::setting`) and
+/// the population the reading was drawn from. The provenance and the bound's
+/// own digits live in the hover, where the operator's rule 2 puts them.
+///
+/// The label is [`CriterionKind::label`], the crate's own word.
+/// `SURVEY_UI.md` §4 counted the same three verdicts rendering in six
+/// vocabularies — `advance/tooth` / `advance/t` / `Chip`, `L/D` / `defl` /
+/// `deflection` — and a shared scale has to pick one. Picking core's means
+/// the GUI, the CLI and the MCP name one row one way.
+///
+/// Both the Simulation Inspector and the Readiness page call this. Readiness
+/// hands it a 560-point column and the Inspector a 240-point rail; neither
+/// gets a second renderer.
+pub(crate) fn draw_limit_rows(ui: &mut egui::Ui, rows: &[LimitRow<'_>]) {
+    ui.label(
+        egui::RichText::new("Tool load")
+            .small()
+            .color(theme::TEXT_STRONG),
+    );
+    if rows.is_empty() {
+        // Every row said "does not apply". Nothing was measured and nothing
+        // is claimed — a blank here would read as a clean cut.
+        ui.label(
+            egui::RichText::new("No limit applies to this operation.")
+                .small()
+                .color(theme::TEXT_DIM),
+        );
+        return;
+    }
+    for row in rows {
+        verdict_badge(ui, row);
+    }
+}
 
-/// Format the peak as a percentage of the cap. Returns `None` when
-/// the cap is unavailable or non-positive — caller falls back to a
-/// non-numeric badge.
-fn pct_of_cap(peak: f64, cap: Option<f64>) -> Option<i32> {
-    let c = cap.filter(|c| *c > 0.0)?;
-    let pct = (peak / c * 100.0).round();
+/// The vendor band floor a burn reading sits below, when the band publishes
+/// one.
+///
+/// `BoundSource::VendorChipBand::floor_mm_per_tooth` is an `Option` because
+/// [`rs_cam_core::tool_load::verdict::ChipBounds::min_mm_per_tooth`] is one:
+/// some LUT rows ship only an upper bound. `None` means the row states the
+/// absence; it never states a zero.
+fn burn_floor(status: &CriterionStatus<'_>) -> Option<f64> {
+    match status.bound_source.as_ref()? {
+        BoundSource::VendorChipBand {
+            floor_mm_per_tooth, ..
+        } => *floor_mm_per_tooth,
+        _ => None,
+    }
+}
+
+/// Format the peak as a percentage of the bound the gate judged it against.
+/// Returns `None` when there is no bound, or the bound is not positive —
+/// the caller then paints a non-numeric badge rather than a manufactured
+/// figure.
+fn pct_of_bound(peak: f64, bound: Option<f64>) -> Option<i32> {
+    let b = bound.filter(|b| *b > 0.0)?;
+    let pct = (peak / b * 100.0).round();
     if !pct.is_finite() {
         return None;
     }
     Some(pct as i32)
 }
 
-fn verdict_badge(
-    ui: &mut egui::Ui,
-    label: &str,
-    status: &CriterionStatus<'_>,
-    cap: Option<f64>,
-    burn_risk: bool,
-) {
-    // For chipload BurnRisk the peak is *below* the floor, not above the
-    // cap — `% of cap` is misleading there. Skip the % branch and fall
-    // back to a non-numeric badge.
-    let peak = status.display_peak.unwrap_or(0.0);
-    // X-VAC (2026-08-14) — a gate handed an empty population returns
-    // `Within` and, before this branch, painted theme::SUCCESS with a
-    // "0%" or "OK" badge: indistinguishable from a measured clean cut.
-    // The VERDICT is unchanged (report-tier); the badge stops claiming
-    // it measured something. See
-    // `planning/review_2026-08-08/XVAC_CENSUS.md`.
-    if status.is_vacuous() {
-        let text = format!("{label} \u{2205}");
-        ui.label(egui::RichText::new(text).small().color(theme::TEXT_DIM))
-            .on_hover_text(verdict_tooltip(status, cap, burn_risk));
-        return;
+/// The caption under a row's face: the setting that moves the bound, the
+/// population the reading was drawn from, and the toolpath it came from.
+///
+/// Every figure is formatted from the value it describes. The population's
+/// unit is [`PopulationUnit::plural`], core's own word.
+fn row_caption(row: &LimitRow<'_>) -> String {
+    let status = &row.status;
+    let mut parts: Vec<String> = Vec::new();
+    match status.bound_source.as_ref() {
+        // W1 — the provenance rides in the caption the row already has, so
+        // the geometry is identical for a measured bound and a rule of thumb.
+        Some(source) => parts.push(source.setting().to_owned()),
+        // An unmodelled row has no setting to name. The reasons that carry
+        // their own clause state it here, in core's words; the rest state it
+        // in the hover.
+        None => match status.unmodeled_reason {
+            Some(UnmodeledReason::NotImplemented(why))
+            | Some(UnmodeledReason::NotApplicableForOp(why))
+            | Some(UnmodeledReason::CutterModeUnsupported(why)) => parts.push(why.clone()),
+            _ => {}
+        },
     }
-    let (color, status_text) = match (status.state, status.confidence) {
-        (LoadState::Within, Some(Confidence::Validated)) | (LoadState::Within, None) => {
-            match pct_of_cap(peak, cap) {
-                Some(pct) => (theme::SUCCESS, format!("{pct}%")),
-                None => (theme::SUCCESS, "OK".to_owned()),
-            }
-        }
-        (LoadState::Within, Some(Confidence::Approximate(_))) => match pct_of_cap(peak, cap) {
-            Some(pct) => (theme::WARNING_MILD, format!("{pct}%\u{2248}")),
-            None => (theme::WARNING_MILD, "OK\u{2248}".to_owned()),
-        },
-        (LoadState::Exceeds, _) if burn_risk => (theme::ERROR, "BURN".to_owned()),
-        (LoadState::Exceeds, _) => match pct_of_cap(peak, cap) {
-            Some(pct) => (theme::ERROR, format!("{pct}%")),
-            None => (theme::ERROR, "FAIL".to_owned()),
-        },
-        (LoadState::Unmodeled, _) => (theme::TEXT_DIM, "—".to_owned()),
-    };
-    let text = format!("{label} {status_text}");
-    ui.label(egui::RichText::new(text).small().color(color))
-        .on_hover_text(verdict_tooltip(status, cap, burn_risk));
+    // W4 — every row states its population, so a three-sample verdict cannot
+    // read like a measured run. The vacuous case keeps its own clause, which
+    // the badge already paints.
+    if let Some(population) = status.population
+        && !population.is_vacuous()
+    {
+        parts.push(format!(
+            "{} of {} {}",
+            population.contributing,
+            population.offered,
+            population.unit.plural()
+        ));
+    }
+    if let Some(source) = &row.source {
+        parts.push(source.clone());
+    }
+    parts.join(" \u{00b7} ")
 }
 
-fn verdict_tooltip(status: &CriterionStatus<'_>, cap: Option<f64>, burn_risk: bool) -> String {
+/// Paint one limit row: the face, then the caption under it.
+fn verdict_badge(ui: &mut egui::Ui, row: &LimitRow<'_>) {
+    let status = &row.status;
+    let label = status.kind.label();
+    let peak = status.display_peak.unwrap_or(0.0);
+    let hover = verdict_tooltip(row);
+    let (color, status_text) = if status.is_vacuous() {
+        // X-VAC (2026-08-14) — a gate handed an empty population returns
+        // `Within` and used to paint theme::SUCCESS with a "0%" or "OK"
+        // badge: indistinguishable from a measured clean cut. The VERDICT is
+        // unchanged (report-tier); the badge stops claiming it measured
+        // something. See `planning/review_2026-08-08/XVAC_CENSUS.md`.
+        (theme::TEXT_DIM, "\u{2205}".to_owned())
+    } else {
+        // V1 (2026-09-18) — the colour follows `state` alone. The
+        // `Approximate` arms used to take WARNING_MILD and append a `≈`, so a
+        // row INSIDE its bound read as a warning. The operator's ruling:
+        // every limit reads as a plain 0-to-limit figure, and the confidence
+        // tier moves into the hover. The behaviour still carries the meaning
+        // — a weak bound cannot refuse an export
+        // (`BoundSource::gates_export`) — so the face does not have to.
+        match status.state {
+            LoadState::Within => match pct_of_bound(peak, status.bound) {
+                Some(pct) => (theme::SUCCESS, format!("{pct}%")),
+                None => (theme::SUCCESS, "OK".to_owned()),
+            },
+            // For a burn the peak is BELOW the floor, not above the ceiling,
+            // and `status.bound` is the ceiling the gate reports. A percent
+            // of it would read as "you are under the breakage limit", which
+            // is true and is not the finding.
+            LoadState::Exceeds if row.burn_risk => (theme::ERROR, "BURN".to_owned()),
+            LoadState::Exceeds => match pct_of_bound(peak, status.bound) {
+                Some(pct) => (theme::ERROR, format!("{pct}%")),
+                None => (theme::ERROR, "FAIL".to_owned()),
+            },
+            LoadState::Unmodeled => (theme::TEXT_DIM, "\u{2014}".to_owned()),
+        }
+    };
+    ui.label(
+        egui::RichText::new(format!("{label} {status_text}"))
+            .small()
+            .color(color),
+    )
+    .on_hover_text(hover.clone());
+    let caption = row_caption(row);
+    if !caption.is_empty() {
+        ui.horizontal(|ui| {
+            ui.add_space(tokens::SPACE_2);
+            ui.label(egui::RichText::new(caption).small().color(theme::TEXT_DIM))
+                .on_hover_text(hover);
+        });
+    }
+}
+
+fn verdict_tooltip(row: &LimitRow<'_>) -> String {
+    let status = &row.status;
     // X-VAC: the clause comes from core so GUI, CLI, MCP and the
     // diagnostics list cannot word it differently.
     let vacuity = status.vacuity_clause();
@@ -1194,25 +1220,37 @@ fn verdict_tooltip(status: &CriterionStatus<'_>, cap: Option<f64>, burn_risk: bo
             status.state
         );
     }
-    // For burn-risk chipload, the bound is the LUT *floor* — render as
-    // "peak / floor" instead of "peak / cap" so the relationship reads
-    // correctly (peak < floor, not peak > cap). (Roadmap C.3)
-    let bound_label = if burn_risk { "floor" } else { "cap" };
+    // For burn-risk chipload, the bound the reading sits against is the LUT
+    // FLOOR — render as "peak / floor" so the relationship reads correctly
+    // (peak < floor, not peak > cap). (Roadmap C.3)
+    let (bound_label, bound) = if row.burn_risk {
+        ("floor", burn_floor(status))
+    } else {
+        ("limit", status.bound)
+    };
     let format_peak = |peak: f64| -> String {
-        match cap.filter(|c| *c > 0.0) {
-            Some(c) => {
-                let pct = (peak / c * 100.0).round() as i32;
-                format!("peak {peak:.4} / {bound_label} {c:.4} ({pct}%)")
+        match bound.filter(|b| *b > 0.0) {
+            Some(b) => {
+                let pct = (peak / b * 100.0).round() as i32;
+                format!("peak {peak:.4} / {bound_label} {b:.4} ({pct}%)")
+            }
+            // A burn against a band that publishes no floor. Stating the
+            // absence is the whole point: a fabricated 0.0 floor would make
+            // every reading look infinitely far above it.
+            None if row.burn_risk => {
+                format!("peak {peak:.4}; the vendor row publishes no floor")
             }
             None => format!("peak {peak:.4}"),
         }
     };
     let peak = status.display_peak.unwrap_or(0.0);
-    match status.state {
+    let head = match status.state {
         LoadState::Within => match status.confidence {
             Some(Confidence::Validated) | None => {
                 format!("Within bounds ({}) — validated", format_peak(peak))
             }
+            // V1: the reason stays here, and only here. It names WHICH input
+            // is approximate.
             Some(Confidence::Approximate(why)) => {
                 format!("Within bounds ({}) — approximate: {why}", format_peak(peak))
             }
@@ -1237,7 +1275,7 @@ fn verdict_tooltip(status: &CriterionStatus<'_>, cap: Option<f64>, burn_risk: bo
                 .exceeded
                 .as_ref()
                 .map(|e| e.remedy)
-                .unwrap_or(match (status.kind, burn_risk) {
+                .unwrap_or(match (status.kind, row.burn_risk) {
                     (CriterionKind::Chipload, true) => {
                         "achieved advance/tooth below the vendor band minimum — \
                          rubbing/burning risk. At low advance per tooth the tool edge \
@@ -1298,6 +1336,17 @@ fn verdict_tooltip(status: &CriterionStatus<'_>, cap: Option<f64>, burn_risk: bo
             }
             None => "Unmodeled".to_owned(),
         },
+    };
+    // W1 / rule 3 — the bound's own digits and the setting that moves them.
+    // `bound_clause` is core's wording, formatted from the values the source
+    // carries; no number in it is typed here.
+    let clause = status.bound_clause();
+    if clause.is_empty() {
+        return head;
+    }
+    match status.bound_source.as_ref() {
+        Some(source) => format!("{head}\n{clause}.\nThe {} sets it.", source.setting()),
+        None => format!("{head}\n{clause}."),
     }
 }
 
@@ -1893,7 +1942,42 @@ mod tests {
             bound_source: None,
             exceeded: None,
         };
-        let tooltip = verdict_tooltip(&status, None, false);
+        let tooltip = verdict_tooltip(&LimitRow {
+            status,
+            burn_risk: false,
+            source: None,
+        });
         assert!(tooltip.contains("Cut Metrics"));
+    }
+
+    /// A toolpath whose every criterion says "does not apply" — the optimizer
+    /// path leaves `drill_gates` as `None` on a drill op, so this state is
+    /// reachable. `limit_rows` drops every row, and `draw_limit_rows` must
+    /// then state the absence: a blank there reads as a clean cut, which is
+    /// defect class 3.
+    #[test]
+    fn a_verdict_with_no_applicable_limit_paints_no_row() {
+        use rs_cam_core::tool_load::verdict::{
+            DeflectionVerdict, DepthVerdict, PowerVerdict, ToolpathLoadVerdict,
+        };
+        let na = || {
+            UnmodeledReason::NotApplicableForOp("drill cycle — no continuous engagement".to_owned())
+        };
+        let verdict = ToolpathLoadVerdict {
+            toolpath_id: rs_cam_core::ToolpathId(0),
+            chipload: ChiploadVerdict::Unmodeled { reason: na() },
+            power: PowerVerdict::Unmodeled { reason: na() },
+            deflection: DeflectionVerdict::Unmodeled { reason: na() },
+            depth: DepthVerdict::Unmodeled { reason: na() },
+            drill_gates: None,
+            modulation_summary: None,
+            feed_explanation: None,
+            kinematic_utilization: None,
+        };
+        assert!(
+            limit_rows(&verdict).is_empty(),
+            "a criterion that does not apply is not a limit that was not \
+             measured, and it must not take a row"
+        );
     }
 }

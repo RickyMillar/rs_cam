@@ -10,14 +10,17 @@
 
 use egui_plot::{Line, MarkerShape, Plot, PlotPoints, Points};
 use rs_cam_core::feeds::FeedsExplain;
+use rs_cam_core::tool_load::ToolLoadReport;
+use rs_cam_core::tool_load::verdict::{CriterionKind, LoadState};
 
 use super::AppEvent;
 use crate::state::{AppState, ProjectFeedsSort, ProjectFeedsState, Workspace};
+use crate::ui::components::FreshnessGate;
 use crate::ui::components::compare;
-use crate::ui::components::{CountPill, FreshnessGate};
 use crate::ui::feeds::compare::{compute_preview, read_current_values};
 use crate::ui::feeds::shared::{CurrentValues, draw_machine_envelope, speedup, wash};
 use crate::ui::readiness::{self, CheckStatus, CycleTimeBasisExt};
+use crate::ui::sim_diagnostics::{LimitRow, draw_limit_rows, limit_rows};
 use crate::ui::{theme, tokens};
 use crate::ui_command::{NoArgs, UiCommand};
 
@@ -108,7 +111,6 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     let holder_status = readiness::holder_clearance_check(state);
     let report = readiness::load_report(state);
     let load_status = readiness::tool_load_check(&report);
-    let summary = report.summary(|_| None);
 
     // DC5a. The rollup's rows feed BOTH the check row below and the detail
     // window, so the feeds maths runs once per frame, not once per surface.
@@ -191,37 +193,19 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             let holder_detail = readiness::holder_clearance_detail(state);
             check_row(ui, holder_status, "Holder clearance", &holder_detail);
 
-            // Tool load — verdict-family CountPills, one universe via the /T
-            // denominator (the canonical `ToolLoadReportSummary` producer).
-            check_row(ui, load_status, "Tool load", "");
-            if summary.total_toolpaths > 0 {
-                ui.horizontal(|ui| {
-                    ui.add_space(28.0);
-                    ui.add(
-                        CountPill::verdict("within", summary.within)
-                            .denom(summary.total_toolpaths)
-                            .color(theme::SUCCESS),
-                    );
-                    if summary.exceeds > 0 {
-                        ui.add(
-                            CountPill::verdict("exceeds", summary.exceeds)
-                                .denom(summary.total_toolpaths)
-                                .color(theme::ERROR),
-                        );
-                    }
-                    if summary.fully_unmodeled > 0 {
-                        ui.add(
-                            CountPill::verdict("unmodeled", summary.fully_unmodeled)
-                                .denom(summary.total_toolpaths)
-                                .color(theme::WARNING)
-                                .hover(
-                                    "Criteria that couldn't be evaluated — run/refresh the \
-                                     simulation or supply tool data.",
-                                ),
-                        );
-                    }
-                });
-            }
+            // Tool load — V3 (2026-09-18). This row used to be a `check_row`
+            // plus three `CountPill::verdict` counters: `within 1/1`,
+            // `exceeds 0/1`, `unmodeled 0/1`. Those count TOOLPATHS. They
+            // answer "how many operations are in trouble" and never "how
+            // close is this cut to each limit", which is the question this
+            // workspace carries by name (`SURVEY_UI.md` §4). The per-limit
+            // rows replace them, drawn by the Simulation Inspector's own
+            // renderer in the 560-point column this page gets.
+            //
+            // The tier the pills carried is not lost: `load_status` still
+            // folds into the headline verdict and into the first unmet
+            // action, both above.
+            draw_limit_rows(ui, &worst_limit_rows(state, &report));
 
             // Cycle time — information only, never gates the verdict. The row
             // now names its own basis (G-TIMEEST): the same word used to cover
@@ -309,6 +293,92 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
 /// the band the bottleneck callout already treats as worth acting on; below
 /// it the rollup has nothing to offer and the check passes. An empty project
 /// passes too — there is nothing to roll up.
+/// **The worst row per limit across the setup.**
+///
+/// V3 (2026-09-18). The Readiness workspace draws ONE centred column with no
+/// rail and no viewport (`draw_readiness_layout`), so the page has no visible
+/// toolpath selection to scope a reading to, and the question it asks — "is
+/// this safe to cut?" — is about the job. The fold is therefore per LIMIT,
+/// across every toolpath in the report, and each row names the toolpath its
+/// reading came from whenever the project holds more than one.
+///
+/// Worst means:
+///
+/// - a measured row beats a vacuous one, and a vacuous one beats an
+///   unmodelled one — a reading outranks an absence, and X-VAC keeps a
+///   verdict that rests on nothing out of the top slot;
+/// - between two measured rows, the one closer to its own bound wins.
+///
+/// The order of the rows is the order [`ToolpathLoadVerdict::criteria`] first
+/// offers each kind, so the page lists the limits the way every other surface
+/// does.
+fn worst_limit_rows<'a>(state: &AppState, report: &'a ToolLoadReport) -> Vec<LimitRow<'a>> {
+    let name_toolpath = |id: rs_cam_core::ToolpathId| -> Option<String> {
+        if report.per_toolpath.len() < 2 {
+            return None;
+        }
+        state
+            .session
+            .toolpath_configs()
+            .iter()
+            .find(|tc| tc.id == id)
+            .map(|tc| tc.name.clone())
+    };
+    let mut order: Vec<CriterionKind> = Vec::new();
+    let mut best: Vec<(CriterionKind, LimitRow<'a>)> = Vec::new();
+    for verdict in &report.per_toolpath {
+        for mut row in limit_rows(verdict) {
+            row.source = name_toolpath(verdict.toolpath_id);
+            let kind = row.status.kind;
+            match best.iter_mut().find(|(k, _)| *k == kind) {
+                Some((_, held)) if !row_outranks(&row, held) => {}
+                Some(slot) => slot.1 = row,
+                None => {
+                    order.push(kind);
+                    best.push((kind, row));
+                }
+            }
+        }
+    }
+    order
+        .into_iter()
+        .filter_map(|kind| {
+            best.iter()
+                .position(|(k, _)| *k == kind)
+                .map(|at| best.swap_remove(at).1)
+        })
+        .collect()
+}
+
+/// True when `candidate` is the worse reading of the two, and so the one the
+/// page must show.
+fn row_outranks(candidate: &LimitRow<'_>, held: &LimitRow<'_>) -> bool {
+    let rank = |row: &LimitRow<'_>| -> u8 {
+        if row.status.state == LoadState::Unmodeled {
+            2
+        } else if row.status.is_vacuous() {
+            1
+        } else {
+            0
+        }
+    };
+    let (a, b) = (rank(candidate), rank(held));
+    if a != b {
+        return a < b;
+    }
+    // A row with no bound has no share to compare, so it never displaces one
+    // that has.
+    let share = |row: &LimitRow<'_>| -> Option<f64> {
+        let bound = row.status.bound.filter(|b| *b > 0.0)?;
+        Some(row.status.display_peak? / bound)
+    };
+    match (share(candidate), share(held)) {
+        (Some(x), Some(y)) => x > y,
+        (Some(_), None) => true,
+        _ => false,
+    }
+}
+
 fn project_feeds_status(rows: &[ProjectFeedsRow]) -> CheckStatus {
     if rows.is_empty() || aggregate_speedup(rows) <= 1.05 {
         CheckStatus::Pass
