@@ -280,6 +280,9 @@ pub fn draw(
     // because the panel sits in a scroll area and a lagged map is wrong by
     // the scroll delta on every scrolling frame.
     let mut row_rects: Vec<(ToolpathId, RowGeometry, Vec<EdgeRow>)> = Vec::new();
+    // Each setup's list frame. The band BETWEEN two of them is the setup
+    // header, and a rail must not draw across it.
+    let mut setup_frames: Vec<egui::Rect> = Vec::new();
 
     for (setup_position, (setup_id, setup_name, toolpath_indices)) in
         setups_data.into_iter().enumerate()
@@ -359,6 +362,8 @@ pub fn draw(
             }
         });
 
+        setup_frames.push(inner_resp.response.rect);
+
         // Handle drop
         if let Some(payload) = dropped_payload {
             let dragged_tp_id: ToolpathId = Arc::unwrap_or_clone(payload);
@@ -391,7 +396,7 @@ pub fn draw(
     // W3 - the second pass, in the same frame as the cards it joins. A
     // cross-setup edge needs a rect recorded inside an EARLIER setup's drop
     // zone, which a per-zone pass cannot see.
-    draw_connectors(ui, &row_rects, &names, events);
+    draw_connectors(ui, &row_rects, &header_bands(&setup_frames), &names, events);
 
     // Single-setup: the add menu sits below the operation list.
     if !multi_setup && let Some(setup) = state.session.list_setups().first() {
@@ -1338,6 +1343,25 @@ fn arrow_head(tip: egui::Pos2) -> Vec<egui::Pos2> {
     ]
 }
 
+/// The band each setup HEADER occupies, from the setup list frames.
+///
+/// A header sits between two list frames, so the band is the gap between
+/// them: the "Setup 2" label, its `+` and its menu, and the air around
+/// them. A rail that crossed one drew a line straight through the words
+/// (operator, 2026-09-19).
+///
+/// Pure over the frames, so the sentry drives it.
+#[must_use]
+pub fn header_bands(setup_frames: &[egui::Rect]) -> Vec<(f32, f32)> {
+    setup_frames
+        .windows(2)
+        .filter_map(|pair| match pair {
+            [above, below] if below.top() > above.bottom() => Some((above.bottom(), below.top())),
+            _ => None,
+        })
+        .collect()
+}
+
 /// The spans of one rail an operator may aim at.
 ///
 /// The rail runs down the swatch column, so it passes THROUGH the swatch of
@@ -1381,9 +1405,15 @@ pub fn rail_gaps(top: f32, bottom: f32, blocked: &[(f32, f32)]) -> Vec<(f32, f32
 /// Every swatch a rail crosses is repainted LAST, so the swatches sit on top
 /// of the rails and read as beads threaded on them. Without that a rail to a
 /// row two below would strike a line through the swatch of the row between.
+///
+/// A setup HEADER is different: it is not a bead, and a rail must not reach
+/// it at all. A cross-setup rail therefore draws as two pieces on one
+/// column, one down to the source setup's frame and one from the dependent
+/// setup's frame, with the header band clear between them.
 fn draw_connectors(
     ui: &mut egui::Ui,
     row_rects: &[(ToolpathId, RowGeometry, Vec<EdgeRow>)],
+    header_bands: &[(f32, f32)],
     names: &HashMap<ToolpathId, String>,
     events: &mut Vec<AppEvent>,
 ) {
@@ -1407,14 +1437,24 @@ fn draw_connectors(
         let path = connector_path(source, *target);
         let spec = edge_stroke(edge.state);
         let stroke = egui::Stroke::new(spec.width, spec.colour);
-        match spec.dash {
-            None => {
-                ui.painter()
-                    .add(egui::Shape::line(path.points.clone(), stroke));
-            }
-            Some(dash) => {
-                ui.painter()
-                    .extend(egui::Shape::dashed_line(&path.points, stroke, dash, dash));
+
+        // The rail's own span, and the pieces of it that are free to draw.
+        let rail_top = path.points.first().map_or(path.tip.y, |point| point.y);
+        let rail_foot = path.points.last().map_or(path.tip.y, |point| point.y);
+        let pieces = rail_gaps(rail_top, rail_foot, header_bands);
+        for (top, bottom) in &pieces {
+            let piece = [
+                egui::pos2(path.tip.x, *top),
+                egui::pos2(path.tip.x, *bottom),
+            ];
+            match spec.dash {
+                None => {
+                    ui.painter().add(egui::Shape::line(piece.to_vec(), stroke));
+                }
+                Some(dash) => {
+                    ui.painter()
+                        .extend(egui::Shape::dashed_line(&piece, stroke, dash, dash));
+                }
             }
         }
         // The arrowhead is always solid, whatever the rail does: it says
@@ -1437,16 +1477,16 @@ fn draw_connectors(
             );
         }
 
-        // The rail's own span, and the swatches standing in it.
-        let rail_top = path.points.first().map_or(path.tip.y, |point| point.y);
-        let rail_bottom = path.tip.y;
-        let blocked: Vec<(f32, f32)> = row_rects
+        // The swatches standing in the rail. They keep their own clicks,
+        // because a swatch is that row's drag grip, and they are repainted
+        // on top of the rail at the end of the pass.
+        let mut blocked: Vec<(f32, f32)> = row_rects
             .iter()
             .filter(|(id, geometry, _)| {
                 *id != *row_id
                     && Some(*id) != edge.source
                     && geometry.swatch.bottom() > rail_top
-                    && geometry.swatch.top() < rail_bottom
+                    && geometry.swatch.top() < rail_foot
                     && geometry.swatch.x_range().contains(path.tip.x)
             })
             .map(|(_, geometry, _)| {
@@ -1454,6 +1494,7 @@ fn draw_connectors(
                 (geometry.swatch.top(), geometry.swatch.bottom())
             })
             .collect();
+        blocked.extend_from_slice(header_bands);
 
         let mut hover = edge_hover(
             edge.source
@@ -1469,7 +1510,7 @@ fn draw_connectors(
         // One hit strip per clear span. A crossed swatch keeps its own
         // clicks, because it is that row's drag grip.
         let half = target.swatch.width() / 2.0;
-        for (index, (top, bottom)) in rail_gaps(rail_top, rail_bottom, &blocked)
+        for (index, (top, bottom)) in rail_gaps(rail_top, rail_foot, &blocked)
             .into_iter()
             .enumerate()
         {

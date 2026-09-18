@@ -50,7 +50,8 @@ use rs_cam_viz::ui::components::Role;
 use rs_cam_viz::ui::properties::{ToolpathValidationContext, validate_toolpath};
 use rs_cam_viz::ui::tokens;
 use rs_cam_viz::ui::toolpath_panel::{
-    RowGeometry, arrow_tip, connector_path, edge_hover, edge_role, edge_stroke, rail_gaps,
+    RowGeometry, arrow_tip, connector_path, edge_hover, edge_role, edge_stroke, header_bands,
+    rail_gaps,
 };
 
 const PANEL_SRC: &str = include_str!("../src/ui/toolpath_panel.rs");
@@ -696,6 +697,72 @@ fn a_crossed_swatch_keeps_its_own_clicks_g_connector() {
     // A clear rail is one strip, and a fully covered one is none.
     assert_eq!(rail_gaps(0.0, 40.0, &[]), vec![(0.0, 40.0)]);
     assert!(rail_gaps(10.0, 20.0, &[(0.0, 30.0)]).is_empty());
+}
+
+/// A rail never draws across a setup header.
+///
+/// With R2 landed a dependency crosses a setup boundary, and the rail then
+/// ran straight through the "Setup 2" label. The operator's verdict was "it
+/// clips over the 'Setup 2'.. that's the only issue" (2026-09-19). The
+/// header band is blocked the same way a crossed swatch is, so a cross-setup
+/// rail draws as two pieces on one column with the header clear between.
+#[test]
+fn a_cross_setup_rail_breaks_at_the_header_g_connector() {
+    // Two list frames with a header band between them.
+    let first = egui::Rect::from_min_size(egui::pos2(10.0, 0.0), egui::vec2(220.0, 60.0));
+    let second = egui::Rect::from_min_size(egui::pos2(10.0, 100.0), egui::vec2(220.0, 60.0));
+    let bands = header_bands(&[first, second]);
+    assert_eq!(
+        bands,
+        vec![(60.0, 100.0)],
+        "the band is the gap between the two list frames: the label, its \
+         controls and the air around them"
+    );
+
+    // A rail from a row in the first frame to a row in the second one.
+    let path = connector_path(Some(row(30.0)), row(110.0));
+    let (top, foot) = (path.points[0].y, path.points[1].y);
+    let pieces = rail_gaps(top, foot, &bands);
+    assert_eq!(
+        pieces.len(),
+        2,
+        "a cross-setup rail draws in two pieces: {pieces:?}"
+    );
+    assert!(
+        (pieces[0].1 - bands[0].0).abs() < f32::EPSILON
+            && (pieces[1].0 - bands[0].1).abs() < f32::EPSILON,
+        "the gap between the pieces IS the header band: {pieces:?} against \
+         {bands:?}"
+    );
+    assert!(
+        pieces[0].0 >= top && pieces[1].1 <= foot,
+        "the two pieces stay inside the rail they belong to: {pieces:?}"
+    );
+
+    // A same-setup rail sees no band and stays one piece.
+    let near = connector_path(Some(row(0.0)), row(30.0));
+    assert_eq!(
+        rail_gaps(near.points[0].y, near.points[1].y, &bands).len(),
+        1,
+        "non-vacuity: a rail inside one setup is not broken by a band it \
+         never reaches"
+    );
+}
+
+/// One setup draws no header band, and a header needs two frames.
+#[test]
+fn a_single_setup_has_no_header_band_g_connector() {
+    let frame = egui::Rect::from_min_size(egui::pos2(10.0, 0.0), egui::vec2(220.0, 60.0));
+    assert!(header_bands(&[frame]).is_empty());
+    assert!(header_bands(&[]).is_empty());
+
+    // Three setups give two bands, in list order.
+    let second = egui::Rect::from_min_size(egui::pos2(10.0, 100.0), egui::vec2(220.0, 40.0));
+    let third = egui::Rect::from_min_size(egui::pos2(10.0, 180.0), egui::vec2(220.0, 40.0));
+    assert_eq!(
+        header_bands(&[frame, second, third]),
+        vec![(60.0, 100.0), (140.0, 180.0)]
+    );
 }
 
 // ── arm 4 — non-vacuity ─────────────────────────────────────────────────
