@@ -50,7 +50,7 @@ use rs_cam_viz::ui::components::Role;
 use rs_cam_viz::ui::properties::{ToolpathValidationContext, validate_toolpath};
 use rs_cam_viz::ui::tokens;
 use rs_cam_viz::ui::toolpath_panel::{
-    RowGeometry, arrow_tip, connector_path, edge_hover, edge_role, edge_stroke,
+    RowGeometry, arrow_tip, connector_path, edge_hover, edge_role, edge_stroke, rail_gaps,
 };
 
 const PANEL_SRC: &str = include_str!("../src/ui/toolpath_panel.rs");
@@ -549,118 +549,153 @@ fn row(top: f32) -> RowGeometry {
             egui::pos2(card.left() + 3.0, top + 5.0),
             egui::vec2(8.0, 16.0),
         ),
+        colour: egui::Color32::from_rgb(0x30, 0xA0, 0x60),
     }
 }
 
-/// The path leaves the SOURCE swatch and lands at the DEPENDENT swatch.
+/// The rail is STRAIGHT, and it runs down the swatch column.
 ///
-/// The swatch is the colour the operator already reads a row by, so a line
-/// that starts and ends there names both rows with no word.
+/// The first drawing hung it in a gutter left of the cards, with a jog out
+/// of the source row and a jog back into the dependent one. On screen it
+/// read as a bracket beside the list rather than a line between two rows
+/// (operator, 2026-09-18). The swatch column is the one x every row already
+/// shares.
 #[test]
-fn the_path_joins_the_two_swatches_g_connector() {
+fn the_rail_runs_straight_down_the_swatch_column_g_connector() {
     let source = row(0.0);
     let target = row(60.0);
-    let points = connector_path(Some(source), target).points;
+    let path = connector_path(Some(source), target);
 
-    assert_eq!(
-        points.len(),
-        4,
-        "out of the swatch, left, down, in: {points:?}"
+    assert_eq!(path.points.len(), 2, "the rail is straight: {path:?}");
+    let (head, foot) = (path.points[0], path.points[1]);
+    assert!(
+        (head.x - foot.x).abs() < f32::EPSILON,
+        "a rail with a jog in it is the bracket this replaced: {path:?}"
     );
     assert!(
-        (points[0].x - source.swatch.center().x).abs() < f32::EPSILON
-            && (points[0].y - source.swatch.bottom()).abs() < f32::EPSILON,
-        "the line starts at the bottom centre of the SOURCE swatch: {points:?}"
+        (head.x - target.swatch.center().x).abs() < f32::EPSILON,
+        "the rail runs at the SWATCH centre, not beside the card: rail {} \
+         swatch {}",
+        head.x,
+        target.swatch.center().x
     );
     assert!(
-        (points[1].x - points[2].x).abs() < f32::EPSILON,
-        "the two middle points share the gutter column: {points:?}"
+        (head.x - source.swatch.center().x).abs() < f32::EPSILON,
+        "every row shares that column, so the rail leaves the source swatch \
+         dead centre too"
     );
     assert!(
-        points[1].x < target.card.left(),
-        "the column runs OUTSIDE the card frame, and {} is not left of {}",
-        points[1].x,
-        target.card.left()
+        (head.y - source.swatch.bottom()).abs() < f32::EPSILON,
+        "the rail starts at the bottom of the SOURCE swatch: {path:?}"
     );
     assert!(
-        (points[2].y - target.swatch.center().y).abs() < f32::EPSILON
-            && (points[3].y - target.swatch.center().y).abs() < f32::EPSILON,
-        "the line arrives at the DEPENDENT swatch's centre: {points:?}"
-    );
-    assert!(
-        points[3].x > points[2].x,
-        "the last run turns RIGHT, into the row it feeds: {points:?}"
+        head.x > target.card.left(),
+        "the rail is INSIDE the card now, so the list keeps its full width"
     );
 }
 
-/// The arrowhead lands just left of the dependent swatch, and the line
-/// stops short of it so the two do not overlap.
+/// The arrowhead points DOWN into the dependent swatch, and stops above it.
 #[test]
-fn the_path_stops_short_of_its_arrowhead_g_connector() {
+fn the_arrowhead_lands_on_top_of_the_dependent_swatch_g_connector() {
     let target = row(60.0);
+    let path = connector_path(Some(row(0.0)), target);
     let tip = arrow_tip(target);
-    let points = connector_path(Some(row(0.0)), target).points;
-    let end = points[points.len() - 1];
 
+    assert_eq!(tip, path.tip, "the path reports the tip the caller paints");
     assert!(
-        tip.x < target.swatch.left() && tip.x > target.card.left(),
-        "the tip sits just LEFT of the swatch and inside the card: tip {} \
-         swatch {} card {}",
-        tip.x,
-        target.swatch.left(),
-        target.card.left()
+        (tip.x - target.swatch.center().x).abs() < f32::EPSILON,
+        "the arrow is centred on the swatch it points into: {tip:?}"
+    );
+    let gap = target.swatch.top() - tip.y;
+    assert!(
+        gap > 0.0 && gap <= 2.0,
+        "the tip stops just ABOVE the swatch, and this one is {gap} points \
+         off it"
+    );
+    let foot = path.points[1];
+    assert!(
+        foot.y < tip.y,
+        "the rail stops short of the tip, so the line and the arrowhead do \
+         not overlap: foot {} tip {}",
+        foot.y,
+        tip.y
     );
     assert!(
-        (tip.y - target.swatch.center().y).abs() < f32::EPSILON,
-        "the arrow points along the row's own centre line"
-    );
-    let head = tip.x - end.x;
-    assert!(
-        head > 0.0 && head <= 6.0,
-        "the line stops one small arrowhead short of the tip, and this one \
-         is {head} points"
+        tip.y - foot.y <= 6.0,
+        "the arrowhead is small: it is {} points long",
+        tip.y - foot.y
     );
 }
 
-/// A chain A to B to C meets end to end in one column.
+/// A chain A to B to C is two COLLINEAR segments on one rail.
 #[test]
-fn a_chain_meets_end_to_end_in_one_column_g_connector() {
+fn a_chain_is_one_rail_with_the_swatches_threaded_on_it_g_connector() {
     let a = row(0.0);
     let b = row(40.0);
     let c = row(80.0);
-    let first = connector_path(Some(a), b).points;
-    let second = connector_path(Some(b), c).points;
+    let first = connector_path(Some(a), b);
+    let second = connector_path(Some(b), c);
+
+    for point in first.points.iter().chain(second.points.iter()) {
+        assert!(
+            (point.x - a.swatch.center().x).abs() < f32::EPSILON,
+            "every point of a chain sits on one column: {point:?}"
+        );
+    }
     assert!(
-        (first[1].x - second[1].x).abs() < f32::EPSILON,
-        "a chain must read as one thread, so both paths share the column"
+        (second.points[0].y - b.swatch.bottom()).abs() < f32::EPSILON,
+        "the second segment leaves B's OWN swatch, which is where the first \
+         one arrived: {second:?}"
     );
     assert!(
-        (second[0].x - b.swatch.center().x).abs() < f32::EPSILON,
-        "the second path starts at B's OWN swatch, which is where the first \
-         one delivered: {second:?}"
+        first.tip.y < b.swatch.top() && second.points[0].y > b.swatch.top(),
+        "B's swatch sits BETWEEN the two segments, threaded on the rail"
     );
 }
 
-/// An off-list source draws a short stub, not a line to nothing.
+/// An off-list source draws a short rail above the row, not a line to
+/// nothing.
 #[test]
 fn an_off_list_source_draws_a_stub_g_connector() {
     let target = row(200.0);
-    let stub = connector_path(None, target).points;
-    assert_eq!(stub.len(), 3, "the stub has no source end: {stub:?}");
-    let span = target.swatch.center().y - stub[0].y;
+    let path = connector_path(None, target);
+    let stub = path.stub.expect("an undrawn source draws the stub");
+
     assert!(
-        span > 0.0,
-        "the stub points UP, towards the source that is not drawn: {stub:?}"
+        (stub.x - target.swatch.center().x).abs() < f32::EPSILON,
+        "the stub keeps the rail's column: {path:?}"
     );
     assert!(
-        span < target.card.height(),
+        stub.y < target.swatch.top(),
+        "the stub sits ABOVE the swatch, where the source would have been"
+    );
+    let span = target.swatch.top() - stub.y;
+    assert!(
+        span > 0.0 && span < target.card.height(),
         "the stub is short: it says `not in this list`, it does not pretend \
          to reach a row. It spans {span} points."
     );
-    assert!(
-        (stub[0].x - stub[1].x).abs() < f32::EPSILON && stub[2].x > stub[1].x,
-        "the stub keeps the elbow's shape: {stub:?}"
-    );
+}
+
+/// A rail yields the operator no hit strip over a swatch it crosses.
+///
+/// The rail runs down the swatch column, so a rail to a row two below passes
+/// through the swatch of the row between. That band is the crossed row's own
+/// drag grip, and a connector that took its clicks would make the row
+/// undraggable.
+#[test]
+fn a_crossed_swatch_keeps_its_own_clicks_g_connector() {
+    // A rail from y=20 to y=100 across one swatch at 40..=56.
+    let gaps = rail_gaps(20.0, 100.0, &[(40.0, 56.0)]);
+    assert_eq!(gaps, vec![(20.0, 40.0), (56.0, 100.0)]);
+
+    // Two crossings, given out of order, and one that misses the rail.
+    let gaps = rail_gaps(0.0, 100.0, &[(60.0, 70.0), (200.0, 216.0), (20.0, 30.0)]);
+    assert_eq!(gaps, vec![(0.0, 20.0), (30.0, 60.0), (70.0, 100.0)]);
+
+    // A clear rail is one strip, and a fully covered one is none.
+    assert_eq!(rail_gaps(0.0, 40.0, &[]), vec![(0.0, 40.0)]);
+    assert!(rail_gaps(10.0, 20.0, &[(0.0, 30.0)]).is_empty());
 }
 
 // ── arm 4 — non-vacuity ─────────────────────────────────────────────────

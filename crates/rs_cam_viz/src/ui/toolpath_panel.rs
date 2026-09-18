@@ -36,12 +36,14 @@ const CONNECTOR_DASH: f32 = tokens::SPACE_1;
 /// The size of the arrowhead that lands in the dependent row.
 const CONNECTOR_ARROW: f32 = tokens::SPACE_2;
 
-/// The column the connectors run down, as the drop zone's left margin.
+/// How far above the dependent row's swatch the arrowhead stops.
+const CONNECTOR_TIP_GAP: f32 = tokens::SPACE_1 / 2.0;
+
+/// How long the stub is when the source is not drawn.
 ///
-/// Twelve points, not eight. The line leaves the source row's swatch and
-/// arrives at the dependent row's swatch, so it needs room for a 2 point
-/// line beside a 2.5 point one without either touching a card border.
-const CONNECTOR_GUTTER: f32 = tokens::SPACE_4;
+/// Long enough to hold the arrowhead, a dash or two and the up glyph above
+/// them, and short enough that it cannot be read as reaching a row.
+const CONNECTOR_STUB: f32 = tokens::SPACE_5;
 
 /// How heavy the simulating ring draws.
 const RING_WIDTH: f32 = 1.5;
@@ -220,6 +222,10 @@ pub struct RowGeometry {
     pub card: egui::Rect,
     /// The colour swatch inside it, which is also the drag grip.
     pub swatch: egui::Rect,
+    /// That swatch's colour. The rail runs THROUGH the swatch column, so
+    /// the connector pass repaints every swatch it crosses on top of the
+    /// line, and it needs the colour to do that.
+    pub colour: egui::Color32,
 }
 
 /// Left panel for the Toolpath workspace: the operation queue.
@@ -299,23 +305,10 @@ pub fn draw(
             ui.separator();
         }
 
-        // Drop zone for this setup. W3 - the gutter is this zone's LEFT
-        // margin, so every card rect starts CONNECTOR_GUTTER right of the
-        // zone and the connectors own the space to their left. The card's
-        // own inner margin is 2 points, which cannot hold a 2.5 point line
-        // without touching the border, so the column lives outside the
-        // frame. `compute_drop_index` reads the pointer Y only, so drag and
-        // drop does not notice.
-        //
-        // SAFETY: CONNECTOR_GUTTER is 12.0, which is exact in i8.
-        #[allow(clippy::cast_possible_truncation)]
-        let gutter = CONNECTOR_GUTTER as i8;
-        let drop_frame = egui::Frame::default().inner_margin(egui::Margin {
-            left: gutter,
-            right: 2,
-            top: 2,
-            bottom: 2,
-        });
+        // Drop zone for this setup. The left margin W3 widened for a
+        // gutter is gone again: the rail runs down the SWATCH column, which
+        // is inside the card, so the list keeps its full width.
+        let drop_frame = egui::Frame::default().inner_margin(2.0);
         let tp_count = toolpath_indices.len();
         let (inner_resp, dropped_payload) = ui.dnd_drop_zone::<ToolpathId, ()>(drop_frame, |ui| {
             if toolpath_indices.is_empty() {
@@ -661,6 +654,7 @@ fn draw_toolpath_card(
     RowGeometry {
         card: inner_response.rect,
         swatch,
+        colour: swatch_color,
     }
 }
 
@@ -1229,51 +1223,41 @@ pub fn worst_edge(rows: &[EdgeRow]) -> Option<EdgeRow> {
         .copied()
 }
 
-/// Where one connector runs, source first.
+/// Where one connector runs: straight down the swatch column.
 ///
-/// One polyline, so every corner joins:
+/// One vertical rail, from the bottom centre of the SOURCE row's swatch to
+/// the top centre of the dependent row's swatch, ending in an arrowhead
+/// that points DOWN into it. No horizontal jog anywhere.
 ///
-/// 1. the bottom centre of the SOURCE row's swatch, which is the colour the
-///    operator already reads that row by;
-/// 2. left, into the gutter column;
-/// 3. down that column to the dependent row;
-/// 4. right, stopping one arrowhead short of the dependent row's swatch.
+/// The first drawing hung the line in a gutter left of the cards, with a jog
+/// out of the source and a jog back in. On screen it read as a bracket
+/// beside the list rather than a line between two rows, and the operator's
+/// verdict was that the lines "look a bit off center" (2026-09-18). The
+/// swatch column is the one x every row already shares, so a rail on it
+/// threads the swatches instead of bracketing them.
 ///
-/// The caller paints the arrowhead at [`arrow_tip`], so the line points at
-/// the row it feeds and the direction needs no word.
+/// A chain A to B to C is two COLLINEAR segments, A's bottom to B's top and
+/// B's bottom to C's top, so the three swatches read as beads on one rail.
 ///
 /// A `None` source is a source that is not DRAWN: a collapsed setup, a
-/// filtered list, or a row the session no longer holds. It starts one
-/// gutter above the row instead, which is the stub, and the caller adds the
-/// up glyph.
-///
-/// A chain A to B to C draws two paths that share the column, and the second
-/// starts at B's own swatch, so the two meet end to end.
+/// filtered list, or a row the session no longer holds. It draws a short
+/// rail above the row instead, on the same x, and the caller puts the up
+/// glyph at [`Self::stub`].
 #[must_use]
 pub fn connector_path(source: Option<RowGeometry>, target: RowGeometry) -> ConnectorPath {
-    let x = target.card.left() - CONNECTOR_GUTTER / 2.0;
-    let y = target.swatch.center().y;
-    let end = egui::pos2(arrow_tip(target).x - CONNECTOR_ARROW, y);
-    let foot = egui::pos2(x, y);
+    let tip = arrow_tip(target);
+    let foot = egui::pos2(tip.x, tip.y - CONNECTOR_ARROW);
     match source {
-        Some(source) => {
-            let head = egui::pos2(x, source.swatch.bottom());
-            ConnectorPath {
-                points: vec![
-                    egui::pos2(source.swatch.center().x, source.swatch.bottom()),
-                    head,
-                    foot,
-                    end,
-                ],
-                column: (head, foot),
-                stub: None,
-            }
-        }
+        Some(source) => ConnectorPath {
+            points: vec![egui::pos2(tip.x, source.swatch.bottom()), foot],
+            tip,
+            stub: None,
+        },
         None => {
-            let head = egui::pos2(x, y - CONNECTOR_GUTTER);
+            let head = egui::pos2(tip.x, tip.y - CONNECTOR_STUB);
             ConnectorPath {
-                points: vec![head, foot, end],
-                column: (head, foot),
+                points: vec![head, foot],
+                tip,
                 stub: Some(head),
             }
         }
@@ -1281,58 +1265,92 @@ pub fn connector_path(source: Option<RowGeometry>, target: RowGeometry) -> Conne
 }
 
 /// One connector's geometry, with the parts the painter needs by NAME.
-///
-/// Named rather than indexed: the path is three points for a stub and four
-/// for a line whose source is on screen, and a painter that counts from
-/// either end is a painter that will be wrong about one of them.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConnectorPath {
-    /// The polyline, source end first.
+    /// The rail, source end first. Two points: it is straight.
     pub points: Vec<egui::Pos2>,
-    /// The top and the bottom of the VERTICAL run, which is the only part
-    /// of the path the operator has to aim at: the two horizontal runs sit
-    /// inside the rows they join.
-    pub column: (egui::Pos2, egui::Pos2),
+    /// Where the arrowhead's point lands, just above the dependent swatch.
+    pub tip: egui::Pos2,
     /// Where the up glyph goes, when the source is not drawn.
     pub stub: Option<egui::Pos2>,
 }
 
-/// Where the connector's arrowhead lands: just left of the row's swatch.
+/// Where the connector's arrowhead lands: on the swatch column, one point
+/// above the dependent row's own swatch.
 #[must_use]
 pub fn arrow_tip(target: RowGeometry) -> egui::Pos2 {
     egui::pos2(
-        target.swatch.left() - tokens::SPACE_1 / 2.0,
-        target.swatch.center().y,
+        target.swatch.center().x,
+        target.swatch.top() - CONNECTOR_TIP_GAP,
     )
 }
 
-/// The filled triangle that lands in the dependent row.
+/// The filled triangle that points down into the dependent row's swatch.
 fn arrow_head(tip: egui::Pos2) -> Vec<egui::Pos2> {
     let half = CONNECTOR_ARROW / 2.0;
     vec![
         tip,
-        egui::pos2(tip.x - CONNECTOR_ARROW, tip.y - half),
-        egui::pos2(tip.x - CONNECTOR_ARROW, tip.y + half),
+        egui::pos2(tip.x - half, tip.y - CONNECTOR_ARROW),
+        egui::pos2(tip.x + half, tip.y - CONNECTOR_ARROW),
     ]
 }
 
-/// Draw every row's dependency as one line in the gutter.
+/// The spans of one rail an operator may aim at.
 ///
-/// The second pass of the frame, after the cards, because a line needs both
+/// The rail runs down the swatch column, so it passes THROUGH the swatch of
+/// every row between its two ends. Those bands belong to the row they mark,
+/// which is also that row's drag grip, so the connector takes no interaction
+/// over them. Pure, so the sentry drives it.
+///
+/// `blocked` is every crossed swatch as a `(top, bottom)` pair, in any
+/// order. The result is `(top, bottom)` pairs in rail order, and it is empty
+/// when the crossings cover the whole rail.
+#[must_use]
+pub fn rail_gaps(top: f32, bottom: f32, blocked: &[(f32, f32)]) -> Vec<(f32, f32)> {
+    let mut bands: Vec<(f32, f32)> = blocked
+        .iter()
+        .copied()
+        .filter(|(band_top, band_bottom)| *band_bottom > top && *band_top < bottom)
+        .collect();
+    bands.sort_by(|a, b| a.0.total_cmp(&b.0));
+
+    let mut out = Vec::new();
+    let mut cursor = top;
+    for (band_top, band_bottom) in bands {
+        if band_top > cursor {
+            out.push((cursor, band_top));
+        }
+        cursor = cursor.max(band_bottom);
+    }
+    if cursor < bottom {
+        out.push((cursor, bottom));
+    }
+    out
+}
+
+/// Draw every row's dependency as one rail down the swatch column.
+///
+/// The second pass of the frame, after the cards, because a rail needs both
 /// rects. Painted in ROW order, sources first, so a ready green goes UNDER a
 /// pending amber on a shared span: the overlapping span then reads amber,
 /// which is the honest answer.
+///
+/// Every swatch a rail crosses is repainted LAST, so the swatches sit on top
+/// of the rails and read as beads threaded on them. Without that a rail to a
+/// row two below would strike a line through the swatch of the row between.
 fn draw_connectors(
     ui: &mut egui::Ui,
     row_rects: &[(ToolpathId, RowGeometry, Vec<EdgeRow>)],
     names: &HashMap<ToolpathId, String>,
     events: &mut Vec<AppEvent>,
 ) {
-    // The card rects move while one is dragged, so a line drawn now is
+    // The card rects move while one is dragged, so a rail drawn now is
     // wrong as well as ugly. The insertion indicator owns the picture.
     if egui::DragAndDrop::has_payload_of_type::<ToolpathId>(ui.ctx()) {
         return;
     }
+    let mut crossed: Vec<(egui::Rect, egui::Color32)> = Vec::new();
+
     for (row_id, target, row_edges) in row_rects {
         let Some(edge) = worst_edge(row_edges) else {
             continue;
@@ -1356,11 +1374,11 @@ fn draw_connectors(
                     .extend(egui::Shape::dashed_line(&path.points, stroke, dash, dash));
             }
         }
-        // The arrowhead is always solid, whatever the line does: it says
+        // The arrowhead is always solid, whatever the rail does: it says
         // which row the dependency feeds, and a dashed arrow says that less
         // well without saying anything more.
         ui.painter().add(egui::Shape::convex_polygon(
-            arrow_head(arrow_tip(*target)),
+            arrow_head(path.tip),
             spec.colour,
             egui::Stroke::NONE,
         ));
@@ -1376,6 +1394,24 @@ fn draw_connectors(
             );
         }
 
+        // The rail's own span, and the swatches standing in it.
+        let rail_top = path.points.first().map_or(path.tip.y, |point| point.y);
+        let rail_bottom = path.tip.y;
+        let blocked: Vec<(f32, f32)> = row_rects
+            .iter()
+            .filter(|(id, geometry, _)| {
+                *id != *row_id
+                    && Some(*id) != edge.source
+                    && geometry.swatch.bottom() > rail_top
+                    && geometry.swatch.top() < rail_bottom
+                    && geometry.swatch.x_range().contains(path.tip.x)
+            })
+            .map(|(_, geometry, _)| {
+                crossed.push((geometry.swatch, geometry.colour));
+                (geometry.swatch.top(), geometry.swatch.bottom())
+            })
+            .collect();
+
         let mut hover = edge_hover(
             edge.source
                 .and_then(|id| names.get(&id))
@@ -1387,26 +1423,39 @@ fn draw_connectors(
         if edge.source.is_some() && source.is_none() {
             hover.push_str("\nIt is not in this list.");
         }
-        // The operator aims at the vertical run.
-        let (head, foot) = path.column;
-        let hit = egui::Rect::from_x_y_ranges(
-            (foot.x - tokens::SPACE_2)..=(foot.x + tokens::SPACE_2),
-            head.y.min(foot.y)..=head.y.max(foot.y),
-        );
-        let response = ui
-            .interact(
-                hit,
-                egui::Id::new("tp_edge").with(row_id.0),
-                egui::Sense::click(),
-            )
-            .on_hover_text(hover);
-        if response.clicked()
-            && let Some(source_id) = edge.source
-            && source.is_some()
+        // One hit strip per clear span. A crossed swatch keeps its own
+        // clicks, because it is that row's drag grip.
+        let half = target.swatch.width() / 2.0;
+        for (index, (top, bottom)) in rail_gaps(rail_top, rail_bottom, &blocked)
+            .into_iter()
+            .enumerate()
         {
-            events.push(AppEvent::Ui(UiCommand::Select(Selection::Toolpath(
-                source_id,
-            ))));
+            let hit = egui::Rect::from_x_y_ranges(
+                (path.tip.x - half)..=(path.tip.x + half),
+                top..=bottom,
+            );
+            let response = ui
+                .interact(
+                    hit,
+                    egui::Id::new("tp_edge").with(row_id.0).with(index),
+                    egui::Sense::click(),
+                )
+                .on_hover_text(hover.clone());
+            if response.clicked()
+                && let Some(source_id) = edge.source
+                && source.is_some()
+            {
+                events.push(AppEvent::Ui(UiCommand::Select(Selection::Toolpath(
+                    source_id,
+                ))));
+            }
         }
+    }
+
+    // Last, so the swatches read as beads on the rails rather than as
+    // rectangles a line was drawn through.
+    for (swatch, colour) in crossed {
+        ui.painter()
+            .rect_filled(swatch, egui::CornerRadius::from(tokens::RADIUS_SM), colour);
     }
 }
