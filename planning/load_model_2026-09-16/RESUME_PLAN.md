@@ -35,6 +35,9 @@ Shipped and verified:
 | S2 (see `git log`) | **S2 — `feeds::power_at_operating_point`, the one public door; published `power_kw` was 11.96× the power at the depth that cuts** |
 | `ac15834f` | **S4 — every criterion carries its bound and a typed `BoundSource`; a weak bound cannot refuse an export** |
 | `79578772` | **S3 — depth of cut is a post-simulation criterion, judged and not gating; the core half of the surface is complete** |
+| `465d2d2d` | T-19 — the export gate's unmodelled refusal names every counting row |
+| `c9a721c1` | T-21 — a stale trace marks the depth row stale too |
+| `05848280` | **V4 — the power bar returns to the Feeds card as a 0-to-limit bar; its ban sentry is now a test of its reason** |
 
 T-17 verification: core lib 2503/0, sentry 5/5, `literature_matrix` 21/21,
 `literature_parity` 24/24, clippy clean, fmt clean.
@@ -367,6 +370,12 @@ The operator's stated requirements, verbatim in effect:
 - **T-14** — a drop-cutter finishing pass measures 42.5 mm of axial
   engagement. The power ladder made it load-bearing.
 - **T-2, T-3, T-5** — guard and structure debt, no physics.
+- **T-20** — `UnmodeledReason` has four renderers that word the same ten
+  variants and share no code (found by T-19). The door belongs on the type in
+  `verdict.rs`. Take it after V1–V3 land: two renderers sit in the viz files
+  those steps edit.
+- **`rs_cam_viz/src/ui/components/compare.rs::power_bar`** is dead code whose
+  face prints kW (found by V4). Delete it with a `rg` blast-radius check.
 - **`rs_cam_viz/src/ui/feeds/explore.rs`** (found by the corridor repair,
   2026-09-18): the `Ceiling::OffScale` doc near line 306 prints a
   9.36 / 0.1176 mm/tooth pair for the STUBBY cut that measures
