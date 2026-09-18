@@ -62,7 +62,8 @@ fn sample_toolpath() -> Toolpath {
     path.feed_to(P3::new(10.0, 0.0, -1.0), 600.0);
     path.feed_to(P3::new(10.0, 10.0, -1.0), 600.0);
     // The rapid this sentry rides: it repositions in X and Y at Z=5, which
-    // is below a 60 mm clearance plane.
+    // is below the emitted retract plane (R11: `max(post.safe_z = 10,
+    // stock top 0 + 5)` in the program frame, so Z10).
     path.rapid_to(P3::new(30.0, 30.0, 5.0));
     path.feed_to(P3::new(30.0, 30.0, -1.0), 600.0);
     path
@@ -117,8 +118,11 @@ fn toolpath_config(id: u32, name: &str) -> ToolpathConfig {
 }
 
 /// One generated operation, and the GUI post block the export reads.
-/// `safe_z` is the clearance plane the machine-safety pass compares every
-/// rapid against.
+/// `safe_z` sets the GUI post block only. R11 (2026-09-18): the
+/// machine-safety pass no longer reads it; the pass resolves the emitted
+/// retract plane from the SESSION (`post_config().safe_z = 10` floored at
+/// the stock top, here world 0, in the program frame). The rapids at Z=5
+/// sit below that plane of Z10.
 fn build_state(safe_z: f64) -> (ProjectSession, GuiState, SimulationState) {
     let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new()
@@ -180,8 +184,8 @@ fn policy() -> rs_cam_core::gcode::ToolLoadExportPolicy {
 
 #[test]
 fn an_mcp_export_that_trips_an_error_finding_names_it() {
-    // A clearance plane far above every rapid in the program: each rapid
-    // that moves in X or Y at Z=5 is then below clearance.
+    // Each rapid that moves in X or Y at Z=5 is below the emitted retract
+    // plane (Z10, see `build_state`). The GUI value is not the plane.
     let (session, gui, sim) = build_state(60.0);
 
     let exported = export_gcode_from_session_reporting(
@@ -200,8 +204,8 @@ fn an_mcp_export_that_trips_an_error_finding_names_it() {
         .collect();
     assert!(
         !errors.is_empty(),
-        "EDG-06 fixture is vacuous: a safe-Z of 60 mm over a program whose rapids \
-         reposition at Z=5 raised no error-severity finding (got {} findings)",
+        "EDG-06 fixture is vacuous: a retract plane of 10 mm over a program whose \
+         rapids reposition at Z=5 raised no error-severity finding (got {} findings)",
         exported.machine_safety.len()
     );
 

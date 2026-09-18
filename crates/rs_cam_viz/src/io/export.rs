@@ -1,5 +1,5 @@
 use rs_cam_core::export::gcode_validator::{
-    Finding, MachineSafety, Severity, validate_machine_safety,
+    Finding, MachineSafety, Severity, emission_frame_clearance_z, validate_machine_safety,
 };
 use rs_cam_core::gcode::{
     GcodePhase, GcodeSetupPhase, PhaseTool, ToolLoadExportPolicy, WizardOverlay,
@@ -24,8 +24,14 @@ pub struct ExportedGcode {
 /// Run the machine-safety pass over freshly emitted G-code. Log the
 /// findings (non-blocking) and return them.
 ///
-/// Uses the post's safe-Z as the clearance plane and the session machine's
-/// `max_feed_mm_min` as the feed cap.
+/// The clearance plane is the retract plane the program emits, in the
+/// program's own frame: [`emission_frame_clearance_z`] over the toolpaths
+/// in `emitted_indices`. R11 (2026-09-18): the pass used to compare
+/// against the raw `gui.post.safe_z`, a world-frame value. The export
+/// writes Z0 at the stock top. A stock 0..23 therefore emitted its
+/// retract plane at Z5, and the check read every rapid there as a
+/// traverse through the part (18 680 errors on the Corne case). The feed
+/// cap is the session machine's `max_feed_mm_min`.
 ///
 /// **Which feed limit, and why that one.** `max_feed_mm_min` is the gantry
 /// TRAVEL rate — the kinematic maximum, GRBL's `$110`/`$111`. It is NOT
@@ -42,13 +48,17 @@ pub struct ExportedGcode {
 /// Runs before any high-feedrate rapid→feed rewrite so the rapid
 /// structure is still intact to check. A caller must therefore keep the
 /// findings this returns; the rewritten program has no G0 left to check.
-fn machine_safety_pass(gcode: &str, safe_z: f64, max_feed_mm_min: f64) -> Vec<Finding> {
+fn machine_safety_pass(
+    gcode: &str,
+    session: &ProjectSession,
+    emitted_indices: impl IntoIterator<Item = usize>,
+) -> Vec<Finding> {
     let findings = validate_machine_safety(
         gcode,
         MachineSafety {
-            clearance_z: safe_z,
+            clearance_z: emission_frame_clearance_z(session, emitted_indices),
             min_z: None,
-            max_feed_mm_min: Some(max_feed_mm_min),
+            max_feed_mm_min: Some(session.machine().max_feed_mm_min),
         },
     );
     if findings.is_empty() {
@@ -528,8 +538,7 @@ pub fn export_gcode_from_session_reporting(
     )
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
-    let machine_safety =
-        machine_safety_pass(&gcode, gui.post.safe_z, session.machine().max_feed_mm_min);
+    let machine_safety = machine_safety_pass(&gcode, session, emitted.iter().map(|(idx, _)| *idx));
 
     if gui.post.high_feedrate_mode {
         gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate, post);
@@ -602,7 +611,7 @@ pub fn export_combined_gcode_from_session(
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
     // No reporting caller on this door yet: the pass logs, as it always did.
-    machine_safety_pass(&gcode, gui.post.safe_z, session.machine().max_feed_mm_min);
+    machine_safety_pass(&gcode, session, emitted.iter().map(|(idx, _)| *idx));
 
     if gui.post.high_feedrate_mode {
         gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate, post);
@@ -665,7 +674,7 @@ pub fn export_single_toolpath_from_session(
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
     // No reporting caller on this door yet: the pass logs, as it always did.
-    machine_safety_pass(&gcode, gui.post.safe_z, session.machine().max_feed_mm_min);
+    machine_safety_pass(&gcode, session, std::iter::once(tp_index));
 
     if gui.post.high_feedrate_mode {
         gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate, post);
@@ -751,8 +760,7 @@ pub fn export_setup_gcode_from_session_reporting(
     )
     .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
 
-    let machine_safety =
-        machine_safety_pass(&gcode, gui.post.safe_z, session.machine().max_feed_mm_min);
+    let machine_safety = machine_safety_pass(&gcode, session, emitted.iter().map(|(idx, _)| *idx));
 
     if gui.post.high_feedrate_mode {
         gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate, post);

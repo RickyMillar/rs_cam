@@ -405,9 +405,17 @@ fn rule_missing_wcs(
 /// against. Supply these from the post + machine profile at export time.
 #[derive(Debug, Clone, Copy)]
 pub struct MachineSafety {
-    /// Clearance plane Z. A rapid (`G0`) that changes X or Y must stay
-    /// at or above this height for the whole move — no traversing
-    /// through the part. Use the post's safe-Z.
+    /// Clearance plane Z, in the frame of the program text. A rapid
+    /// (`G0`) that changes X or Y must stay at or above this height for
+    /// the whole move — no traversing through the part.
+    ///
+    /// R11 (2026-09-18): this is the retract plane the program EMITS,
+    /// after the export datum shift, not the raw `post.safe_z`. The
+    /// emitter writes Z0 at the stock top (`ZDatum::StockTop`), so on a
+    /// stock 0..23 with `post.safe_z = 10` the retract plane is world
+    /// 28 = program Z5. A check against the raw 10 read every rapid at
+    /// Z5 as a traverse through the part. Build this value with
+    /// [`emission_frame_clearance_z`].
     pub clearance_z: f64,
     /// Deepest Z the program may command (a negative value: stock bottom
     /// minus any allowed spoilboard margin). `None` disables the floor
@@ -454,6 +462,45 @@ fn word_value(cleaned_upper: &str, letter: char) -> Option<f64> {
         i += 1;
     }
     None
+}
+
+/// The clearance plane the machine-safety pass compares a program
+/// against, in the frame of the program text.
+///
+/// Each toolpath retracts to its setup's effective safe Z
+/// ([`crate::session::SetupEvalContext::safe_z`], the post `safe_z`
+/// floored at the stock top plus `SAFE_Z_CLEARANCE_MM`). The export then
+/// translates the toolpath by the setup's datum shift
+/// ([`crate::session::SetupEvalContext::export_datum_shift`]), which puts
+/// the stock top at program Z0 under the `StockTop` default. The emitted
+/// retract plane is therefore `safe_z + shift.z` for each toolpath.
+///
+/// One program text carries one clearance value, so a set that spans
+/// setups with different planes gets the LOWEST one. A rapid below its
+/// own setup's plane but above the lowest one is then not flagged; a
+/// per-setup pass is a separate row. An empty `toolpath_indices` reads
+/// the identity setup.
+///
+/// Read the value from the session, not from a GUI copy of the post
+/// block: the toolpath was generated against the session's `safe_z`,
+/// so this is the plane the moves actually retract to.
+pub fn emission_frame_clearance_z(
+    session: &crate::session::ProjectSession,
+    toolpath_indices: impl IntoIterator<Item = usize>,
+) -> f64 {
+    let plane_for = |setup: Option<&crate::session::SetupData>| {
+        let ctx = crate::session::SetupEvalContext::build_for_setup(session, setup);
+        ctx.safe_z + ctx.export_datum_shift().z
+    };
+    let lowest = toolpath_indices
+        .into_iter()
+        .map(|idx| plane_for(session.find_setup_for_toolpath_index(idx)))
+        .fold(f64::INFINITY, f64::min);
+    if lowest.is_finite() {
+        lowest
+    } else {
+        plane_for(None)
+    }
 }
 
 /// Run the machine-safety modal pass over `gcode`. Returns all findings
@@ -566,8 +613,9 @@ pub fn validate_machine_safety(gcode: &str, cfg: MachineSafety) -> Vec<Finding> 
                             line: line_no,
                             message: format!(
                                 "Rapid (G0) repositions in X/Y at Z{lo:.3}, below the clearance \
-                                 plane {:.3}. The tool traverses through the part / fixturing — \
-                                 retract to clearance before any rapid XY move.",
+                                 plane {:.3} (program frame, after the datum shift). The tool \
+                                 traverses through the part / fixturing — retract to clearance \
+                                 before any rapid XY move.",
                                 cfg.clearance_z
                             ),
                         });
