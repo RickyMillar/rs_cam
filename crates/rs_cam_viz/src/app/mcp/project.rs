@@ -16,35 +16,6 @@ use rs_cam_mcp::server::{json_str, no_project_error, text};
 use crate::app::RsCamApp;
 use crate::mcp_bridge::{McpOutcome, McpResponse};
 
-/// The wire word for a dependency kind (W5 item c).
-///
-/// `EdgeKind` derives no serde: `rs_cam_core::session` is W0's file set and
-/// W5 does not edit it. The tokens are written here, once, and the
-/// `list_toolpaths` row is their only reader. Move them onto the enum when
-/// core next opens.
-const fn edge_kind_token(kind: rs_cam_core::session::dependencies::EdgeKind) -> &'static str {
-    use rs_cam_core::session::dependencies::EdgeKind;
-    match kind {
-        EdgeKind::Stock => "stock",
-        EdgeKind::Regions => "regions",
-        EdgeKind::PrevTool => "prev_tool",
-    }
-}
-
-/// The wire word for how current a dependency is (W5 item c).
-///
-/// `Pending` is a WAIT, not a fault: the source has not generated, or the
-/// simulated snapshot is missing. `Broken` is the declaration resolving to no
-/// usable source.
-const fn edge_state_token(state: rs_cam_core::session::dependencies::EdgeState) -> &'static str {
-    use rs_cam_core::session::dependencies::EdgeState;
-    match state {
-        EdgeState::Ready => "ready",
-        EdgeState::Pending => "pending",
-        EdgeState::Broken => "broken",
-    }
-}
-
 impl RsCamApp {
     pub(super) fn mcp_project_summary(&self) -> String {
         let session = &self.controller.state().session;
@@ -105,12 +76,13 @@ impl RsCamApp {
                     .iter()
                     .filter(|e| e.from == s.id)
                     .map(|e| {
+                        // W1 tail: the two wire words live on the enums
+                        // (`stock|regions|prev_tool`, `ready|pending|broken`),
+                        // so a fourth arm cannot reach this reply unnamed.
                         serde_json::json!({
                             "id": e.on,
-                            "kind": edge_kind_token(e.kind),
-                            "state": edge_state_token(
-                                rs_cam_core::session::dependencies::state(e, session),
-                            ),
+                            "kind": e.kind,
+                            "state": rs_cam_core::session::dependencies::state(e, session),
                         })
                     })
                     .collect();

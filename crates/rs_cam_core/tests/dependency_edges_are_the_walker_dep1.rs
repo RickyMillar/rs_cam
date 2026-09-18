@@ -21,6 +21,9 @@
 //! 5. `edge_state_reads_the_session`: the three `EdgeState` answers, and
 //!    the split that makes them differ: the edit door clears the
 //!    simulation, the adopt door does not.
+//! 6. `the_two_enums_carry_their_own_wire_words`: the six tokens, exactly.
+//!    W5 hand-mapped them in `app/mcp/project.rs` because the enums carried
+//!    no serde; the derive replaced that map, so this file owns the words.
 //!
 //! Read `edges()` AFTER `apply`, never before. The walker derives its edges
 //! after the mutation wrote, so a pre-apply snapshot of the disable case
@@ -803,4 +806,36 @@ fn edge_state_reads_the_session() {
         EdgeState::Broken,
         "the Regions state reads the result payload, not the rest-analysis flag"
     );
+}
+
+/// The six wire words, on the enums and nowhere else.
+///
+/// W5 wrote these tokens a second time, in `app/mcp/project.rs`, because
+/// neither enum derived serde. The derive deleted that map. A fourth arm
+/// added to either enum now reaches the wire under a name this file states,
+/// or it does not compile.
+#[test]
+fn the_two_enums_carry_their_own_wire_words() {
+    for (kind, token) in [
+        (EdgeKind::Stock, "stock"),
+        (EdgeKind::Regions, "regions"),
+        (EdgeKind::PrevTool, "prev_tool"),
+    ] {
+        assert_eq!(
+            serde_json::to_value(kind).expect("EdgeKind serialises"),
+            serde_json::Value::String(token.to_owned()),
+            "the `list_toolpaths` row reads this word"
+        );
+    }
+    for (state, token) in [
+        (EdgeState::Ready, "ready"),
+        (EdgeState::Pending, "pending"),
+        (EdgeState::Broken, "broken"),
+    ] {
+        assert_eq!(
+            serde_json::to_value(state).expect("EdgeState serialises"),
+            serde_json::Value::String(token.to_owned()),
+            "the `list_toolpaths` row reads this word"
+        );
+    }
 }

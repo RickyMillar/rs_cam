@@ -53,13 +53,20 @@
 
 use std::collections::HashMap;
 
+use serde::{Deserialize, Serialize};
+
 use crate::compute::catalog::OperationConfig;
 use crate::compute::config::{BoundarySource, StockSource};
 use crate::ids::ToolpathId;
 use crate::session::ProjectSession;
 
 /// What a consumer asks of its source.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+///
+/// The wire words are `stock`, `regions` and `prev_tool`. They live on the
+/// enum, not in a surface's own match, so a fourth kind cannot reach one
+/// reply under a new name and another under none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum EdgeKind {
     /// The material the ops above the consumer left.
     Stock,
@@ -70,7 +77,11 @@ pub enum EdgeKind {
 }
 
 /// How current a dependency is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+///
+/// The wire words are `ready`, `pending` and `broken`, for the same reason
+/// [`EdgeKind`]'s are on the enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum EdgeState {
     /// The source is current, and for a Stock edge the snapshot exists.
     Ready,
