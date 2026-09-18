@@ -34,6 +34,7 @@ use crate::trace::toolpath_spans::{AnnotatedToolpath, MoveRemap, Span, SpanKind}
 use crate::trace::transform_provenance::{ReconcileSet, Transformed};
 
 use air_cut::{material_above_cutter, sample_is_air_for_tool, swept_path_is_all_air};
+pub use entry_descent::RAMP_FOLD_MAX_LAPS;
 use entry_descent::{
     RampFold, collect_following_cut, find_next_xy_direction, fold_walk_budget, upcoming_run,
 };
@@ -164,6 +165,11 @@ pub struct EntrySafety<'a> {
     pub stock_top: f64,
     /// Drop-cutter surface probe. See [`EntrySurfaceProbe`].
     pub surface: Option<EntrySurfaceProbe<'a>>,
+    /// R10: the most laps a ramp fold may lay over its run, or `None` for
+    /// no cap. The dressup door reads it from
+    /// `OperationType::ramp_fold_lap_cap` (finishing roles only); the
+    /// adaptive3d door passes `None`.
+    pub fold_lap_cap: Option<u32>,
 }
 
 /// Replace straight plunges in a toolpath with ramped or helical entries.
@@ -231,6 +237,7 @@ pub fn apply_entry(
                         follow: &follow,
                         closed,
                         min_run_mm: tool_radius_mm.max(1.0),
+                        lap_cap: safety.fold_lap_cap,
                     };
                     emit_ramp(
                         &mut result,

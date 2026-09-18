@@ -140,3 +140,49 @@ fn the_roughing_family_is_unmoved() {
         "Profile is Roughing with an unrestricted policy: Ramp"
     );
 }
+
+/// Operator ruling 2026-09-18: the lap cap applies to the finishing roles
+/// only. A rough that would lap a short run keeps folding; the alternative
+/// is a flat end mill plunging into fresh stock, which G-RAMPTERRAIN
+/// restored the ramps to avoid. The role decides, through
+/// `OperationType::ramp_fold_lap_cap`, and the dressup door reads the
+/// same answer off `transform_capabilities()`.
+#[test]
+fn the_lap_cap_reaches_the_finishing_roles_only() {
+    use rs_cam_core::dressup::RAMP_FOLD_MAX_LAPS;
+
+    let mut finishing = 0;
+    let mut roughing = 0;
+    for &op in OperationType::ALL {
+        let role = op.spec().ui_process_role;
+        let expected = if is_finishing(role) {
+            finishing += 1;
+            Some(RAMP_FOLD_MAX_LAPS)
+        } else {
+            roughing += 1;
+            None
+        };
+        assert_eq!(
+            op.ramp_fold_lap_cap(),
+            expected,
+            "R10: ramp_fold_lap_cap({op:?}) with role {role:?}"
+        );
+        assert_eq!(
+            op.transform_capabilities().ramp_fold_lap_cap,
+            expected,
+            "R10: the dressup door reads the cap off transform_capabilities({op:?})"
+        );
+    }
+    assert!(finishing >= 10, "population: {finishing} finishing ops");
+    assert!(roughing >= 5, "population: {roughing} roughing ops");
+    assert_eq!(
+        OperationType::Zigzag.ramp_fold_lap_cap(),
+        None,
+        "Zigzag is a rough"
+    );
+    assert_eq!(
+        OperationType::Waterline.ramp_fold_lap_cap(),
+        Some(RAMP_FOLD_MAX_LAPS),
+        "Waterline is SemiFinish"
+    );
+}

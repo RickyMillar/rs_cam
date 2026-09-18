@@ -165,6 +165,9 @@ pub(crate) struct RampFold<'a> {
     /// Below this XY run length the fold degrades to a plunge. A run
     /// shorter than the tool radius is a scrub in place, not a ramp.
     pub min_run_mm: f64,
+    /// The most laps the fold may lay over the run, or `None` for no cap.
+    /// See [`RAMP_FOLD_MAX_LAPS`] and [`EntrySafety::fold_lap_cap`].
+    pub lap_cap: Option<u32>,
 }
 
 /// Guard on the lap / bounce loop in [`extend_fold_path`]. A run of any
@@ -188,7 +191,14 @@ const FOLD_EXTEND_MAX_ROUNDS: usize = 64;
 /// [`collect_following_cut`] stops at `half_len` mm of XY, so a run that
 /// reaches the budget measures at most 2 laps here. The cap bites only on
 /// a run SHORTER than half a ramp: 12.7 mm at the shipped 3 degrees.
-pub(crate) const RAMP_FOLD_MAX_LAPS: f64 = 3.0;
+///
+/// Operator ruling 2026-09-18: the cap applies to the FINISHING roles only
+/// (`UiProcessRole::Finish` and `SemiFinish`). A rough that laps a short
+/// run is cutting material that has to go, and the alternative is a flat
+/// end mill plunging into fresh stock, which is what G-RAMPTERRAIN restored
+/// the ramps to avoid. `OperationType::ramp_fold_lap_cap` is the one
+/// place that maps a role to this cap.
+pub const RAMP_FOLD_MAX_LAPS: u32 = 3;
 
 /// Grow `base` until its XY length reaches `want`, by lapping a closed
 /// ring or bouncing off the far end of an open run.
@@ -279,12 +289,19 @@ fn fold_ramp_points(
     half_len: f64,
     ramp_start_z: f64,
     end_z: f64,
+    lap_cap: Option<u32>,
 ) -> Vec<P3> {
     // R10: the lap cap. `follow` starts AT the plunge target, and on a
     // closed ring it ends there too, so its XY length is the run length
-    // in both cases: the open run, or one circuit of the ring.
+    // in both cases: the open run, or one circuit of the ring. `None`
+    // is a roughing role: no cap (operator ruling 2026-09-18).
     let run = crate::geo::polyline_xy_length(follow);
-    if run <= 1e-9 || 2.0 * half_len > RAMP_FOLD_MAX_LAPS * run {
+    if run <= 1e-9 {
+        return Vec::new();
+    }
+    if let Some(cap) = lap_cap
+        && 2.0 * half_len > f64::from(cap) * run
+    {
         return Vec::new();
     }
     let extended = extend_fold_path(follow, closed, half_len);
@@ -512,7 +529,14 @@ pub(crate) fn emit_ramp(
         // [`RAMP_FOLD_MAX_LAPS`], and that empty takes the same plunge.
         let run = crate::geo::polyline_xy_length(fold.follow);
         let folded = if fold.follow.len() >= 2 && run >= fold.min_run_mm {
-            fold_ramp_points(fold.follow, fold.closed, half_len, ramp_start_z, end.z)
+            fold_ramp_points(
+                fold.follow,
+                fold.closed,
+                half_len,
+                ramp_start_z,
+                end.z,
+                fold.lap_cap,
+            )
         } else {
             Vec::new()
         };

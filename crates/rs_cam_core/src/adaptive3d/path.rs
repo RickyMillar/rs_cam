@@ -1358,6 +1358,8 @@ pub(super) fn segments_to_toolpath(
             // the bite-budgeted rest ramp is the surface family's door.
             rest_stock: None,
         }),
+        // R10: a rough keeps folding; the cap is for the finishing roles.
+        fold_lap_cap: None,
     };
 
     for segment in segments {

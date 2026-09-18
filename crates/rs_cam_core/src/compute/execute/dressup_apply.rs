@@ -580,6 +580,7 @@ pub fn apply_dressups(
     let entry_safety = crate::dressup::EntrySafety {
         stock_top,
         surface: entry_surface,
+        fold_lap_cap: transform_capabilities.ramp_fold_lap_cap,
     };
     match entry_style {
         DressupEntryStyle::Ramp => {

@@ -274,6 +274,7 @@ fn the_ramp_transform_itself_is_alive() {
         rs_cam_core::dressup::EntrySafety {
             stock_top: 0.0,
             surface: None,
+            fold_lap_cap: None,
         },
         // G-RAMPCONTAIN: the tool radius, which sets the floor under which a
         // fold degrades to a plunge. This fixture's following cut is 40 mm,

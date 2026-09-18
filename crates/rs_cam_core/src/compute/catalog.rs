@@ -115,6 +115,12 @@ pub struct OperationTransformCapabilities {
     /// pencil/unified_finish, rather than trusting a static per-op boolean.
     /// This field is the interim guard, not the end state.
     pub allows_link_moves: bool,
+    /// R10 (operator ruling 2026-09-18): the most laps a ramp entry may
+    /// fold over the run it enters on, or `None` for no cap. Set from the
+    /// operation's process role by [`OperationType::ramp_fold_lap_cap`]:
+    /// the finishing roles get [`crate::dressup::RAMP_FOLD_MAX_LAPS`], a
+    /// rough keeps folding. `new` leaves it `None`.
+    pub ramp_fold_lap_cap: Option<u32>,
 }
 
 impl OperationTransformCapabilities {
@@ -129,6 +135,15 @@ impl OperationTransformCapabilities {
             requires_depth_order,
             continuous_path_required,
             allows_link_moves,
+            ramp_fold_lap_cap: None,
+        }
+    }
+
+    /// The same capabilities with the R10 lap cap set.
+    pub const fn with_ramp_fold_lap_cap(self, cap: Option<u32>) -> Self {
+        Self {
+            ramp_fold_lap_cap: cap,
+            ..self
         }
     }
 
@@ -466,7 +481,29 @@ impl OperationType {
         self.registry_entry().policy.kinematics == Kinematics::DrillZOnly
     }
 
+    /// R10: the ramp-fold lap cap for this operation's process role. The
+    /// finishing roles (`Finish`, `SemiFinish`) get
+    /// [`crate::dressup::RAMP_FOLD_MAX_LAPS`]; a rough gets `None` and
+    /// keeps folding (operator ruling 2026-09-18: a rough that laps a
+    /// short run cuts material that has to go, and the alternative is a
+    /// flat end mill plunging into fresh stock).
+    pub fn ramp_fold_lap_cap(self) -> Option<u32> {
+        match self.spec().ui_process_role {
+            UiProcessRole::Finish | UiProcessRole::SemiFinish => {
+                Some(crate::dressup::RAMP_FOLD_MAX_LAPS)
+            }
+            UiProcessRole::Roughing => None,
+        }
+    }
+
     pub fn transform_capabilities(self) -> OperationTransformCapabilities {
+        self.transform_capabilities_without_lap_cap()
+            .with_ramp_fold_lap_cap(self.ramp_fold_lap_cap())
+    }
+
+    /// The order and link capabilities alone; `transform_capabilities`
+    /// adds the R10 lap cap on top.
+    fn transform_capabilities_without_lap_cap(self) -> OperationTransformCapabilities {
         use OperationType::{
             Adaptive, Adaptive3d, AlignmentPinDrill, Chamfer, Drill, DropCutter, Face,
             HorizontalFinish, Inlay, Pencil, Pocket, Profile, ProjectCurve, RadialFinish,

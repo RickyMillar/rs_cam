@@ -1035,6 +1035,9 @@ fn no_probe(stock_top: f64) -> EntrySafety<'static> {
     EntrySafety {
         stock_top,
         surface: None,
+        // The finishing cap: these tests pin the folded ramp as a
+        // finishing contour sees it.
+        fold_lap_cap: Some(super::entry_descent::RAMP_FOLD_MAX_LAPS),
     }
 }
 
@@ -1264,6 +1267,42 @@ fn ramp_entry_90deg_angle_falls_back() {
     }
 }
 
+/// Operator ruling 2026-09-18: with no lap cap (a roughing role) the same
+/// 2 mm run still takes the fold. The cap is the finishing roles' rule,
+/// not the fold's.
+#[test]
+fn a_rough_keeps_folding_over_a_short_run_r10() {
+    let style = EntryStyle::Ramp { max_angle_deg: 3.0 };
+    let safety = EntrySafety {
+        stock_top: 0.0,
+        surface: None,
+        fold_lap_cap: None,
+    };
+    let result = without_provenance(apply_entry(
+        AnnotatedToolpath::new(plunge_then_run(2.0)),
+        style,
+        500.0,
+        safety,
+        0.5,
+    ))
+    .toolpath;
+    let ramps = result
+        .moves
+        .iter()
+        .filter(|m| m.intent == MoveIntent::EntryRamp)
+        .count();
+    assert!(
+        ramps > 0,
+        "R10: a rough (no cap) folds its ramp over the 2 mm run, got 0 EntryRamp moves"
+    );
+    let plunges = result
+        .moves
+        .iter()
+        .filter(|m| m.intent == MoveIntent::EntryPlunge)
+        .count();
+    assert_eq!(plunges, 0, "R10: no plunge degrade without the cap");
+}
+
 /// A plunge followed by one straight cut run of `run_mm` along +X.
 ///
 /// The rapid stops AT the ramp start height (`end.z + ENTRY_CLEARANCE`),
@@ -1308,7 +1347,7 @@ fn ramp_fold_caps_laps_and_falls_back_to_plunge_r10() {
     // The short run: 19 laps at the shipped dials, above the cap.
     let short_run = 2.0;
     assert!(
-        ramp_xy_mm / short_run > RAMP_FOLD_MAX_LAPS,
+        ramp_xy_mm / short_run > f64::from(RAMP_FOLD_MAX_LAPS),
         "fixture: the 2 mm run must need more than {RAMP_FOLD_MAX_LAPS} laps"
     );
     let result = entry(short_run);
@@ -1372,7 +1411,7 @@ fn ramp_fold_caps_laps_and_falls_back_to_plunge_r10() {
         "control: the fold walks the whole ramp, {walked:.3} mm of {ramp_xy_mm:.3}"
     );
     assert!(
-        walked / long_run <= RAMP_FOLD_MAX_LAPS,
+        walked / long_run <= f64::from(RAMP_FOLD_MAX_LAPS),
         "control: {:.2} laps over the 40 mm run exceeds the cap",
         walked / long_run
     );
