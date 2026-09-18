@@ -1527,6 +1527,25 @@ pub use crate::controller::generate_all::{
     GenerateAllSink, GenerateAllSummary, GenerationPlan, generate_all_headline,
 };
 
+/// One row of an `awaiting_prior_stock` ARRAY: the operation that waits, and
+/// the block it carries.
+///
+/// W5 item (a). The object sites report the BLOCKER alone and serialise
+/// [`rs_cam_core::compute::config::AwaitingPriorStock`] directly. An array
+/// site has to name the waiting operation too, so it flattens the same struct
+/// under the three identifying keys. One type, so the two subjects cannot
+/// drift apart.
+///
+/// Pinned by `tests/awaiting_prior_stock_has_one_shape_d4.rs`.
+#[derive(Debug, Clone, Serialize)]
+pub struct BlockedRow {
+    pub toolpath_id: rs_cam_core::ToolpathId,
+    pub toolpath_index: usize,
+    pub name: String,
+    #[serde(flatten)]
+    pub block: rs_cam_core::compute::config::AwaitingPriorStock,
+}
+
 /// Render the `generate_all` reply.
 ///
 /// A/M11: reports blocked ops on their own channel, and never as failures.

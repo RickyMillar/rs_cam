@@ -2215,14 +2215,15 @@ impl<B: ComputeBackend> AppController<B> {
                                 }
                             })
                             .unwrap_or_else(|| "Toolpath not found".to_owned());
+                        // W5 item (a) WIRE BREAK: this reply used to omit
+                        // `message`, alone among the six sites. The core
+                        // struct serialises, so the three keys arrive here
+                        // too and the shape cannot drift again.
                         let blocked = status.and_then(ComputeStatus::blocked_on);
                         json_str(serde_json::json!({
                             "error": status_msg,
                             "status": status.map_or("Pending", ComputeStatus::label),
-                            "awaiting_prior_stock": blocked.map(|b| serde_json::json!({
-                                "blocking_toolpath_id": b.blocking_toolpath_id,
-                                "blocking_toolpath_index": b.blocking_toolpath_index,
-                            })),
+                            "awaiting_prior_stock": blocked,
                         }))
                     }
                 };
@@ -2352,13 +2353,13 @@ impl<B: ComputeBackend> AppController<B> {
                     }));
                 }
                 if let Some(block) = status.blocked_on() {
-                    awaiting_prior_stock.push(serde_json::json!({
-                        "toolpath_index": index,
-                        "toolpath_id": tc.id,
-                        "name": tc.name,
-                        "blocking_toolpath_id": block.blocking_toolpath_id,
-                        "blocking_toolpath_index": block.blocking_toolpath_index,
-                        "message": block.message,
+                    // W5 item (a): one row type for every array site, so the
+                    // waiting operation and its block cannot drift apart.
+                    awaiting_prior_stock.push(serde_json::json!(crate::mcp_bridge::BlockedRow {
+                        toolpath_id: tc.id,
+                        toolpath_index: index,
+                        name: tc.name.clone(),
+                        block: block.clone(),
                     }));
                 }
                 // Start from the core diagnostic when this toolpath has one,
@@ -2381,12 +2382,8 @@ impl<B: ComputeBackend> AppController<B> {
                     row["tool_name"] = serde_json::json!(tool_name);
                     row["status"] = serde_json::json!(status.label());
                     row["error"] = serde_json::json!(status.error_text());
-                    row["awaiting_prior_stock"] =
-                        serde_json::json!(status.blocked_on().map(|b| serde_json::json!({
-                            "blocking_toolpath_id": b.blocking_toolpath_id,
-                            "blocking_toolpath_index": b.blocking_toolpath_index,
-                            "message": b.message,
-                        })));
+                    // W5 item (a): the core struct serialises.
+                    row["awaiting_prior_stock"] = serde_json::json!(status.blocked_on());
                     row["stale"] = serde_json::json!(rt.stale_since.is_some());
                     if let Some(ref result) = rt.result {
                         row["move_count"] = serde_json::json!(result.stats.move_count);

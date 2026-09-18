@@ -68,11 +68,9 @@ impl RsCamApp {
                     "stale": stale,
                     "status": status.label(),
                     "error": status.error_text(),
-                    "awaiting_prior_stock": status.blocked_on().map(|b| serde_json::json!({
-                        "blocking_toolpath_id": b.blocking_toolpath_id,
-                        "blocking_toolpath_index": b.blocking_toolpath_index,
-                        "message": b.message,
-                    })),
+                    // W5 item (a): the core struct serialises. Do not
+                    // hand-build the three keys here.
+                    "awaiting_prior_stock": status.blocked_on(),
                 })
             })
             .collect();

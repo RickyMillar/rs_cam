@@ -28,7 +28,11 @@ pub use crate::ids::ToolpathId;
 /// Reporting that as `Error` made "cannot yet" indistinguishable from "cannot
 /// ever", and left the operator with no way to tell a one-round wait from a
 /// four-round one.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// W5 item (a): the struct SERIALISES, so every surface that reports a block
+/// renders one shape. Six sites used to hand-build the object from a
+/// `serde_json::json!` literal, and one of them dropped `message`. Nothing
+/// reads the shape back, so `Deserialize` is not derived.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AwaitingPriorStock {
     /// The upstream operation whose simulated stock is missing. `None` only
     /// when this op is first in its setup and there is genuinely nothing
