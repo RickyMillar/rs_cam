@@ -901,12 +901,6 @@ impl<B: ComputeBackend> AppController<B> {
                 // while the frame does not.
                 self.state.simulation.playback.live_stock_group = None;
 
-                let prev_gen = self
-                    .state
-                    .simulation
-                    .last_run
-                    .as_ref()
-                    .map_or(0, |m| m.sim_generation);
                 // G-LATESIM (F2.10): the counter as it stood at
                 // SUBMIT, not now. Stamping the live counter here
                 // recorded the run as having been made against every
@@ -929,7 +923,6 @@ impl<B: ComputeBackend> AppController<B> {
                     .take()
                     .unwrap_or(self.state.gui.edit_counter);
                 self.state.simulation.last_run = Some(SimulationRunMeta {
-                    sim_generation: prev_gen + 1,
                     last_sim_edit_counter: submitted_at,
                     // Recording preferences are runtime-only. This
                     // result carries the capture revision it was

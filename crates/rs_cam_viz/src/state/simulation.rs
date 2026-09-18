@@ -749,9 +749,11 @@ impl SimulationChecks {
 
 /// Metadata about the last simulation run for staleness tracking.
 pub struct SimulationRunMeta {
-    /// Generation counter — incremented when sim results arrive.
-    pub sim_generation: u64,
     /// Edit counter at the time of the last simulation run.
+    ///
+    /// W4: read by [`SimulationState::is_stale`] alone, which four call
+    /// sites in the load-model session's files still use. It goes when they
+    /// move to `AppState::simulation_is_stale`.
     pub last_sim_edit_counter: u64,
     /// The metric-options revision this accepted result PROVABLY answers.
     ///

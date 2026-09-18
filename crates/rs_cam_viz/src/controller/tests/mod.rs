@@ -1151,7 +1151,6 @@ fn controller_ready_for_undo() -> (AppController<ScriptedBackend>, ToolpathId) {
     generate_all_for_test(&mut controller);
     let tp_id = controller.state.session.toolpath_configs()[0].id;
     controller.state.simulation.last_run = Some(crate::state::simulation::SimulationRunMeta {
-        sim_generation: 1,
         last_sim_edit_counter: controller.state.gui.edit_counter,
         // A hand-built fresh run answers the capture revision now set.
         accepted_metric_options_revision: Some(controller.state.simulation.metric_options_revision),
