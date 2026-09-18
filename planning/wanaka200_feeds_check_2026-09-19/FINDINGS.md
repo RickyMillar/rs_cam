@@ -257,3 +257,87 @@ modulation does not run on this operation. Three options exist:
 The changes live in the GUI session only. The file
 `~/Downloads/wanaka200/wanaka200.toml` does NOT hold them. Save the project in
 the GUI to keep them.
+
+---
+
+# Addendum 2 — the published machinist references (2026-09-19)
+
+Source data: `planning/load_model_2026-09-16/MACHINIST_REFERENCE_CHECK.md`.
+Every figure there carries a URL. No repository data was used.
+
+## Our figures in the units the charts use
+
+| | mm/tooth | in/tooth |
+|---|---|---|
+| Scallop commanded | 0.0284 | .00112 |
+| **Scallop achieved** | **0.0187** | **.00074** |
+| V-bit commanded | 0.0333 | .00131 |
+
+## Against the published 1/8 in hardwood bands
+
+Our tapered ball cuts at an effective diameter of 3.209 mm. That is 1/8 in.
+
+| Publisher | Band (in/tooth) | Band (mm/tooth) | Times our achieved |
+|---|---|---|---|
+| Onsrud 52-200 / 57-200 / 63-200 / 77-100 | .003 - .005 | 0.0762 - 0.1270 | 4.1x - 6.8x |
+| Onsrud 64-000 / 65-000 | .002 - .004 | 0.0508 - 0.1016 | 2.7x - 5.4x |
+| Freud solid carbide | .002 - .005 | 0.0508 - 0.1270 | 2.7x - 6.8x |
+| Techno CNC | .003 - .005 | 0.0762 - 0.1270 | 4.1x - 6.8x |
+| Amana compression 2F (the outlier) | .0011 | 0.0279 | 1.5x |
+
+Every publisher puts this tool above our figure. The lowest published band is
+2.7x our achieved chipload. The mainstream bands are 4x to 7x above it.
+
+PreciseBits publishes a rule rather than a table: `F = 0.03 x D x flutes x
+RPM`. At the 2.0 mm tip that gives **2220 mm/min**. At the 3.209 mm effective
+diameter it gives 3562 mm/min. We command 1050 mm/min.
+
+The V-bit is in the same position. No vendor publishes a 20 degree chart.
+Amana's nearest published V-bit wood rows are .003 - .007 in/tooth, which at
+18000 rpm and 2 flutes implies 2743 - 6401 mm/min. We command 1200 mm/min.
+Our .00131 in/tooth is 2.3x to 5.3x below that band.
+
+## What this changes
+
+The direction of every published reference is the same: both operations run
+BELOW the published wood bands, not above them. Nothing in the machinist
+literature says these feeds are too fast. Several sources say they are slow.
+
+This reframes Finding 5. The scallop's real ceiling is not the feed value the
+operator sets. It is the vendor LUT row
+`amana-tapered-hardwood-scallop-3175-2f`, whose maximum of 0.0187 mm/tooth the
+modulator clamps to. That row sits at or below the single most conservative
+published chart, and 4x to 7x below the mainstream ones. **Review the row, not
+the project.** Register this.
+
+## Three caveats, stated plainly
+
+1. Every published chart describes a PROFILING or SLOTTING cut with a straight
+   or spiral flute. None describes a light-stepover finishing pass with a
+   tapered ball. A 1:1 comparison therefore overstates the gap. It does not
+   reverse its direction.
+2. **No vendor publishes a minimum chip thickness for wood.** The only
+   numeric rubbing threshold found anywhere is Ingersoll's .004 in for carbide
+   in METAL, which is above the entire published wood band for a 1/8 in bit.
+   The application's 0.025 mm chip-formation floor is therefore not traceable
+   to published wood data. It drives the burnishing warning on both operations.
+   Register this too.
+3. **No wood tooling vendor recommends a feed increase for chip thinning.**
+   Every chip-thinning source is metalworking. The 0.8897 thinning factor used
+   in Finding 3 is metal practice applied to wood. Treat it as an assumption.
+
+## One result that did check out
+
+DAPRA publishes a radial chip-thinning multiplier table and an effective
+cutting diameter table. The multipliers (35 % WOC -> 1.05, 10 % -> 1.70,
+5 % -> 2.3) reproduce `1/sqrt(1-(1-2ae/D)^2)` exactly. The diameter table
+reproduces `2*sqrt(D*ap - ap^2)` exactly. Both formulas used in this report are
+therefore correct as formulas. Only their application to wood is an
+extrapolation.
+
+## A caution about the reference data itself
+
+Onsrud's own numbers vary by 2x at one diameter and one material: the 40-000
+series reads .006 - .008 in/tooth at 1/8 in hardwood against 52-200's
+.003 - .005. The tool SERIES is a first-class input. A single chipload per
+diameter and material does not describe the published data.
