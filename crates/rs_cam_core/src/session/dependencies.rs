@@ -30,6 +30,22 @@
 //! the edge. A PrevTool edge asks "does a predecessor with that cutter
 //! exist", and a disabled op is not one.
 //!
+//! # A setup's first rest operation reads the previous setup's stock
+//!
+//! R2, ruled 2026-09-19. The simulator runs setups sequentially on ONE
+//! stock, so the material a setup starts from is the material the setup
+//! before it finished. A consumer with no ENABLED row above it in its own
+//! setup therefore declares its Stock edges on the previous setup's rows.
+//!
+//! The live evidence: on wanaka, "3D Rough 6" is the first enabled row of
+//! the flipped Setup 2 and starts from the remaining stock. It read
+//! `Broken` on the card and on the wire, and the plan generated it
+//! correctly all the same, from Setup 1's simulated stock.
+//!
+//! Only the previous setup, not every setup before it. A previous setup
+//! with no enabled row leaves every edge Broken, which is the honest
+//! answer: nothing above the consumer removed material.
+//!
 //! **A Stock consumer must be enabled; a Regions or PrevTool consumer need
 //! not be.** The first mirrors the walker's rule (a), which drops only
 //! enabled `FromRemainingStock` ops. The second two mirror rule (b), which
@@ -137,23 +153,54 @@ pub fn edges(session: &ProjectSession) -> Vec<Edge> {
 
         // Stock. Many edges, no `enabled` filter on the source.
         if tc.enabled && matches!(tc.stock_source, StockSource::FromRemainingStock) {
-            let mut found = false;
-            for &up_index in above {
-                if let Some(up) = configs.get(up_index) {
-                    out.push(Edge {
-                        from: tc.id,
-                        on: Some(up.id),
-                        kind: EdgeKind::Stock,
-                    });
-                    found = true;
-                }
+            let mut sources: Vec<ToolpathId> = Vec::new();
+            // R2: a setup's FIRST rest operation reads the PREVIOUS
+            // setup's finished stock. These go in FIRST, because they sit
+            // further above the consumer than its own setup's rows, and
+            // `primary_edges` keeps the nearest.
+            //
+            // The trigger is "no ENABLED row above me in my own setup".
+            // The consumer KEEPS its edges on those disabled rows as
+            // well, or switching the one row above it off would remove
+            // the edge the walker needs to drop it.
+            let has_enabled_above = above
+                .iter()
+                .filter_map(|&up_index| configs.get(up_index))
+                .any(|up| up.enabled);
+            if !has_enabled_above
+                && let Some(&(setup_index, _)) = plan_position.get(&tp_index)
+                && let Some(previous) = setup_index
+                    .checked_sub(1)
+                    .and_then(|before| session.setups.get(before))
+            {
+                sources.extend(
+                    previous
+                        .toolpath_indices
+                        .iter()
+                        .filter_map(|&up_index| configs.get(up_index))
+                        .map(|up| up.id),
+                );
             }
-            if !found {
+            sources.extend(
+                above
+                    .iter()
+                    .filter_map(|&up_index| configs.get(up_index))
+                    .map(|up| up.id),
+            );
+            if sources.is_empty() {
                 out.push(Edge {
                     from: tc.id,
                     on: None,
                     kind: EdgeKind::Stock,
                 });
+            } else {
+                for source in sources {
+                    out.push(Edge {
+                        from: tc.id,
+                        on: Some(source),
+                        kind: EdgeKind::Stock,
+                    });
+                }
             }
         }
 
@@ -217,12 +264,9 @@ pub fn state(edge: &Edge, session: &ProjectSession) -> EdgeState {
     }
     match edge.kind {
         EdgeKind::Stock => {
-            // R2, cross-setup stock, is open. Delete this block when the
-            // ruling widens the rule. The simulator runs setups
-            // sequentially on one stock, so a wider rule is possible.
-            if session.setup_of_toolpath_id(source_id) != session.setup_of_toolpath_id(edge.from) {
-                return EdgeState::Broken;
-            }
+            // A cross-setup source is as real as a same-setup one (R2).
+            // The state is the same question either way: is the snapshot
+            // there, and has the source generated.
             let snapshot = session
                 .simulation_result()
                 .is_some_and(|s| s.prior_stocks.contains_key(&edge.from));
@@ -256,6 +300,9 @@ pub fn state(edge: &Edge, session: &ProjectSession) -> EdgeState {
 /// [`edges`] holds many Stock edges per consumer. This keeps the NEAREST
 /// ENABLED source, which is the op the blocked-operation message names, or
 /// the `on: None` row when no source above the consumer is enabled.
+/// `edges` emits a cross-setup source BEFORE the consumer's own setup, so
+/// "nearest" prefers a same-setup row and falls back to the previous
+/// setup's LAST enabled row.
 /// The Regions and PrevTool rows pass through unchanged.
 pub fn primary_edges(session: &ProjectSession) -> Vec<Edge> {
     let all = edges(session);

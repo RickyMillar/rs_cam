@@ -15,10 +15,13 @@
 //!    this file from `edges()` alone equals the walker's drop set. The
 //!    claim is NOT "every edge makes a drop": a Stock edge whose source is
 //!    clean makes none.
-//! 4. `regenerating_a_source_drops_its_consumers`: D1. Adopting a result
+//! 4. `a_first_in_setup_rest_op_reads_the_previous_setup` and
+//!    `a_setup_one_edit_drops_setup_twos_rest_chain`: R2, the cross-setup
+//!    Stock edge.
+//! 5. `regenerating_a_source_drops_its_consumers`: D1. Adopting a result
 //!    for a source drops its Regions and PrevTool consumers, leaves its
 //!    Stock consumers alone, and keeps the simulation.
-//! 5. `edge_state_reads_the_session`: the three `EdgeState` answers, and
+//! 6. `edge_state_reads_the_session`: the three `EdgeState` answers, and
 //!    the split that makes them differ: the edit door clears the
 //!    simulation, the adopt door does not.
 //! 6. `the_two_enums_carry_their_own_wire_words`: the six tokens, exactly.
@@ -415,7 +418,10 @@ fn edges_name_every_declaration() {
         "a Stock consumer names EVERY op above it, not only the nearest"
     );
 
-    // The setup scope: `back finish` names only its own setup's row.
+    // `back finish` HAS an enabled row above it in its own setup, so it
+    // names that row and nothing else. A Stock edge crosses a setup only
+    // when the consumer's own setup holds no enabled row above it (R2);
+    // `a_first_in_setup_rest_op_reads_the_previous_setup` is that case.
     let back_sources: BTreeSet<Option<ToolpathId>> = stock
         .iter()
         .filter(|e| e.from == id_of(&session, BACK_FINISH))
@@ -424,7 +430,8 @@ fn edges_name_every_declaration() {
     assert_eq!(
         back_sources,
         BTreeSet::from([Some(id_of(&session, BACK_ROUGH))]),
-        "a Stock edge never crosses a setup"
+        "a consumer with an enabled row above it in its own setup names \
+         that row, never the setup before"
     );
 
     assert_eq!(
@@ -473,6 +480,18 @@ struct Arm {
     /// The subset whose stock contribution moved.
     chain_seeds: BTreeSet<usize>,
     run: fn(&mut ProjectSession) -> BTreeSet<usize>,
+}
+
+/// One wide edit on any index, and the stale set it reports.
+fn edit_index(session: &mut ProjectSession, index: usize) -> BTreeSet<usize> {
+    session
+        .apply(Command::SetToolpathParam(SetToolpathParamArgs {
+            index,
+            param: "feed_rate".to_owned(),
+            value: serde_json::json!(EDITED_FEED_RATE),
+        }))
+        .expect("the setter writes feed_rate")
+        .stale
 }
 
 fn edit_rough(session: &mut ProjectSession) -> BTreeSet<usize> {
@@ -669,6 +688,154 @@ fn the_arms_drop_the_named_rows() {
         let measured: BTreeSet<usize> = stale.difference(&arm.seeds).copied().collect();
         assert_eq!(&measured, expected, "arm '{}'", arm.name);
     }
+}
+
+// ── R2: the cross-setup Stock edge ───────────────────────────────
+
+/// Three rows over two setups, where setup 2's ONLY row starts from the
+/// remaining stock.
+///
+/// That is wanaka's shape: "3D Rough 6" is the first enabled row of the
+/// flipped Setup 2 and reads the stock Setup 1 finished. Before R2 it read
+/// `Broken` on the card and on the wire, while the plan generated it
+/// correctly from Setup 1's simulated stock.
+fn cross_setup_fixture() -> ProjectSession {
+    let mut builder = ProjectSessionBuilder::new();
+    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    builder.add_model(empty_model("part.svg"));
+    let tool = builder.tools()[0].id.0;
+    let model = builder.models()[0].id;
+    let setup_2 = builder.add_setup("Setup 2".to_owned(), FaceUp::Bottom);
+    let plain = BoundaryConfig::default();
+    let _ = builder
+        .add_toolpath(
+            0,
+            tc(
+                "front rough",
+                pocket(),
+                StockSource::Fresh,
+                tool,
+                model,
+                plain.clone(),
+            ),
+        )
+        .unwrap();
+    let _ = builder
+        .add_toolpath(
+            0,
+            tc(
+                "front finish",
+                pocket(),
+                StockSource::Fresh,
+                tool,
+                model,
+                plain.clone(),
+            ),
+        )
+        .unwrap();
+    let _ = builder
+        .add_toolpath(
+            setup_2,
+            tc(
+                "3D Rough 6",
+                pocket(),
+                StockSource::FromRemainingStock,
+                tool,
+                model,
+                plain,
+            ),
+        )
+        .unwrap();
+    let mut session = builder.build();
+    for index in 0..3 {
+        adopt(&mut session, index, None);
+    }
+    assert_eq!(
+        session.list_setups()[1].toolpath_indices,
+        vec![2],
+        "setup 2 holds one row, and it is first in its setup"
+    );
+    session
+}
+
+#[test]
+fn a_first_in_setup_rest_op_reads_the_previous_setup() {
+    let session = cross_setup_fixture();
+    let consumer = id_of(&session, 2);
+
+    let sources: BTreeSet<Option<ToolpathId>> = edges(&session)
+        .into_iter()
+        .filter(|e| e.kind == EdgeKind::Stock && e.from == consumer)
+        .map(|e| e.on)
+        .collect();
+    assert_eq!(
+        sources,
+        BTreeSet::from([Some(id_of(&session, 0)), Some(id_of(&session, 1))]),
+        "a setup's first rest operation names EVERY row of the setup \
+         before it, not one and not none"
+    );
+
+    // The state is Pending, NOT Broken. Nothing is missing; the snapshot
+    // has not been taken yet.
+    assert_eq!(
+        state_of(&session, 2, EdgeKind::Stock),
+        EdgeState::Pending,
+        "a cross-setup source is as real as a same-setup one, so the edge \
+         waits for the snapshot instead of reading Broken"
+    );
+
+    // The drawn line names the previous setup's LAST enabled row, which
+    // is what the wire's `depends_on` reports.
+    let primary: Vec<Edge> = primary_edges(&session)
+        .into_iter()
+        .filter(|e| e.from == consumer && e.kind == EdgeKind::Stock)
+        .collect();
+    assert_eq!(primary.len(), 1, "a surface draws one Stock line");
+    assert_eq!(
+        primary[0].on,
+        Some(id_of(&session, 1)),
+        "the drawn line names the previous setup's last enabled row"
+    );
+
+    // Switch that row off and the line moves to the one before it.
+    let mut disabled = cross_setup_fixture();
+    let _ = disabled
+        .apply(Command::SetToolpathEnabled(SetToolpathEnabledArgs {
+            index: 1,
+            enabled: false,
+        }))
+        .expect("the toggle writes enabled");
+    let primary: Vec<Edge> = primary_edges(&disabled)
+        .into_iter()
+        .filter(|e| e.from == consumer && e.kind == EdgeKind::Stock)
+        .collect();
+    assert_eq!(
+        primary[0].on,
+        Some(id_of(&disabled, 0)),
+        "the nearest ENABLED row of the previous setup answers"
+    );
+}
+
+#[test]
+fn a_setup_one_edit_drops_setup_twos_rest_chain() {
+    let mut session = cross_setup_fixture();
+    assert!(
+        session.get_result(2).is_some(),
+        "the precondition is a cached result on the cross-setup consumer"
+    );
+
+    let stale = edit_index(&mut session, 0);
+
+    assert!(
+        stale.contains(&2),
+        "an edit in setup 1 stales setup 2's first rest operation. Before \
+         R2 it did not, and that result was silently wrong: it had been \
+         built on stock the edit moved. Stale set: {stale:?}"
+    );
+    assert!(
+        session.get_result(2).is_none(),
+        "the walker dropped the cross-setup consumer's cached result"
+    );
 }
 
 // ── claim 4: D1 ──────────────────────────────────────────────────
