@@ -202,6 +202,39 @@ carries the semantic `SetupId`, resolve to a position then cover
 doc); the RestDepth-pencil predicate has two copies, a third becomes one
 function; rule (c) over-drops on purpose.
 
+## 2b. All five packages landed (2026-09-19)
+
+| WP | Commits | Result |
+|---|---|---|
+| W1 | `2da975bd` `aee13f76` `d94c3f85` `6e4e9a32` + tail `3194f2c8` `6ca4d099` | plan machine off-frame, R1 rule + confirm state, R6, PlanBeat, one blocked-row shape, serde on the edge enums |
+| W2 | `b57c0e06` `4d09dc9a` `899b84f5` | one Start-from row (`ChoiceRow`), rest dials behind a demand disclosure, D5, overlay demand |
+| W3 | `2ba48cef` `e3e3e501` `d40c3f87` `81f7758e` + tail `14b99111` | gutter connector from `primary_edges`, ring in flight, Generate All as progress with cancel, `dep` badge folded |
+| W4 | `de6f1ee3` `0dd488cb` `6bdc0899` `1e1857f2` `841fce6d` `a8f0ae6b` | `SimFreshness`, one facade, all readers migrated, collision stamps on the epoch, the GUI counter no longer answers |
+| W5 | `2d1cfa65` `e057b96b` `a74ab06a` `cb77f0b6` `2386632e` `cd927147` `486392a8` | one `awaiting_prior_stock` shape, `StockSourceParam`, `depends_on`, `plan` on `generation_status`, CLI plan driver + required resolution, `default_findings` |
+
+Checkpoint gate on the merged tree: `cargo fmt --all -- --check` clean,
+workspace clippy with the three features clean, viz lib 409/0, nineteen
+viz integration binaries green one invocation each (the seventeen the
+agents could not run under each other's edits plus the two wire pins),
+core lib 2530/0, cli 19/0, mcp 31/0.
+
+Rulings taken during the run: R1 (auto → finer of auto and required,
+silently; manual coarser → confirm), R6 yes, R4 yes with the cost rule
+(analysis only on demand), the auto-regen sweep stays manual (no
+simulation after an edit; a staled rest op waits at WAIT), R3, R7, R10
+yes, R8 taken by W0b, R9 taken by W0c.
+
+Still open: R2 cross-setup stock (one `if` in `dependencies::state`),
+R11/R12 MCP freshness wording, R13/D8 a core export refusal for a blocked
+op (the CLI can still ship a partial program; W5 made the blocked ops
+visible in `summary.json`), the view-only isolation simulation, D6 (the
+blocker message names the nearest op, the scan gates on the first
+ungenerated; documented in `generation_plan`, not fixed).
+
+Not yet done: the live GUI look (confirm modal, ring, connector, Start-from
+row), the core integration suite as a whole, the release rebuild at the
+time of writing, any push.
+
 ## 3. Rulings the scans added
 
 Beside PLAN.md §8 R1 to R7:
