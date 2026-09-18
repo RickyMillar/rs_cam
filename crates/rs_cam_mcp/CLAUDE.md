@@ -11,6 +11,9 @@ run the server; the live server, GUI dispatch and session ownership are in
   so a `$ref` does not resolve for a client.
 - Breaking a wire shape is allowed (operator ruling 2026-09-16, no
   legacy support). State the break in the commit; do not add an alias.
+  A `build_info().features` token records a shipped CAPABILITY, not a key
+  name: add one when a reply gains a key, and keep the old one when a key
+  is renamed.
 - A cap on a response array is named here, in `response.rs`, never
   written as a number in a handler.
 - A schema change normally requires coordinated updates to this crate, the

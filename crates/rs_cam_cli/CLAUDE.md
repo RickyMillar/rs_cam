@@ -14,6 +14,13 @@ parameter-sweep entry points. Read root `CLAUDE.md` first and
 - Generated G-code must use the core export path, including coolant,
   stale-geometry refusal and explicit safety overrides.
 - Treat a missing diagnostic row as absent evidence, not a clean verdict.
+  A blocked operation is LISTED in `summary.json` under
+  `awaiting_prior_stock`, never left absent.
+- Generation order is core's: walk `session::generation_plan::plan`. Do not
+  hold a CLI ladder or a cap.
+- The simulation cell size is refused, never defaulted, when the plan
+  simulates. `compute::config::REST_NEEDS_RESOLUTION` is the one sentence
+  this command and the MCP refusal both say.
 - One vocabulary per concept across `job` TOML, `run` and MCP. A tool
   type is `ToolType`'s own serde token (`end_mill`, `ball_nose`,
   `bull_nose`, `v_bit`, `tapered_ball_nose`) on every surface; do not
