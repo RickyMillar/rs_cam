@@ -246,6 +246,7 @@ impl<B: ComputeBackend> AppController<B> {
             // means running its ancestors first.
             AppEvent::GenerateToolpath(tp_id) => self.handle_generate_toolpath(tp_id),
             AppEvent::GenerateAll => self.handle_generate_all(),
+            AppEvent::GenerateSetupOnly(setup_id) => self.handle_generate_setup_only(setup_id),
             AppEvent::CancelGeneration => self.cancel_generation_plan(),
 
             // --- Simulation events ---

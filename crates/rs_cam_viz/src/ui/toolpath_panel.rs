@@ -299,8 +299,9 @@ pub fn draw(
                 // nothing (Pattern B). The setup card carries the state
                 // indicator instead.
 
-                // Per-setup add menu.
+                // Per-setup add menu, then the setup's own actions.
                 add_toolpath_menu(ui, setup_id, state, events);
+                setup_menu(ui, setup_id, ctx, events);
             });
             ui.separator();
         }
@@ -1039,6 +1040,48 @@ pub fn status_chip(
         FreshnessState::Disabled => ("OFF", Role::Unknown, None),
         FreshnessState::Error(msg) => ("ERR", Role::Danger, Some(msg.as_str())),
     }
+}
+
+/// The setup header's own actions (operator, 2026-09-19).
+///
+/// One item. Generate All and a single Generate both resolve what a scope
+/// DEPENDS on, which is the default the operator asked to keep. This is the
+/// narrow route beside it, for an operator who knows the setups above are
+/// current.
+///
+/// The header stays ONE row: this sits beside the `+`, in the same kit form
+/// the card's own menu uses.
+fn setup_menu(
+    ui: &mut egui::Ui,
+    setup_id: SetupId,
+    ctx: &PanelContext,
+    events: &mut Vec<AppEvent>,
+) {
+    // A second plan would race the first one's cursor, and a plan armed
+    // behind an unanswered question would submit at a cell size nobody has
+    // agreed to. The controller refuses either way; the control says so
+    // first.
+    let busy = ctx.plan.is_some() || ctx.pending_confirm.is_some();
+    ui.menu_button("\u{2026}", |ui| {
+        let item = ui.add_enabled(!busy, egui::Button::new("Regenerate setup only"));
+        if busy {
+            item.on_disabled_hover_text(
+                "A generation plan is already running. Stop it from the \
+                 Generate All button first.",
+            );
+            return;
+        }
+        if item
+            .on_hover_text(
+                "Generate every enabled operation in THIS setup. The setups \
+                 above it are simulated as they stand, not regenerated.",
+            )
+            .clicked()
+        {
+            events.push(AppEvent::GenerateSetupOnly(setup_id));
+            ui.close();
+        }
+    });
 }
 
 /// Menu button for adding a toolpath to a specific setup.

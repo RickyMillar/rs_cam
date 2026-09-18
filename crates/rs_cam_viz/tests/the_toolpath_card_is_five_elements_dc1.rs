@@ -247,6 +247,55 @@ fn the_panel_names_neither_the_heading_nor_the_tool_library_dc2() {
     );
 }
 
+// ── arm 3b — the setup header keeps its one row ──────────────────────
+
+/// The setup header carries TWO controls, and the setup menu carries ONE
+/// item.
+///
+/// Operator ruling 2026-09-19: the setup row gains a `…` with "Regenerate
+/// setup only". DC1's whole subject is accumulation, and a menu is the
+/// easiest place for it: every future setup action will look as reasonable
+/// as this one. The narrow regeneration route is the ONE thing this menu is
+/// for, and anything else on the header needs a ruling first.
+#[test]
+fn the_setup_header_holds_two_controls_and_one_menu_item_dc1() {
+    let code = code_only();
+    let at = code
+        .find("if multi_setup {")
+        .expect("the setup header moved out of the panel");
+    let header = &code[at..(at + 900).min(code.len())];
+    let rows = header.matches("ui.horizontal(").count();
+    assert_eq!(
+        rows, 1,
+        "the setup header is ONE row, and it opened {rows} of them:\n{header}"
+    );
+    for needle in ["add_toolpath_menu(", "setup_menu("] {
+        assert!(
+            header.contains(needle),
+            "the header must still call {needle}:\n{header}"
+        );
+    }
+
+    let at = code
+        .find("fn setup_menu(")
+        .expect("the setup menu moved out of the panel");
+    let body = &code[at..(at + 1200).min(code.len())];
+    let items = body.matches("egui::Button::new(").count() + body.matches("ui.button(").count();
+    assert_eq!(
+        items, 1,
+        "the setup menu offers ONE item, and it offers {items}. A second \
+         action there needs a ruling, not a line:\n{body}"
+    );
+    assert!(
+        body.contains("\"Regenerate setup only\""),
+        "the one item is the narrow regeneration route:\n{body}"
+    );
+    assert!(
+        body.contains("on_disabled_hover_text("),
+        "a disabled control always states the reason (DESIGN_SPEC §4.5)"
+    );
+}
+
 // ── arm 4 — non-vacuity ──────────────────────────────────────────────
 
 /// The scans above are `!contains` assertions, and a `!contains` over an
@@ -275,6 +324,7 @@ fn the_scan_read_a_real_panel_dc1() {
         "pub fn status_chip(",
         "fn add_toolpath_menu(",
         "\"Generate All\"",
+        "\"Regenerate setup only\"",
         "ToggleToolpathVisibility",
     ] {
         assert!(

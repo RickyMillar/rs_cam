@@ -450,6 +450,21 @@ impl<B: ComputeBackend> AppController<B> {
         let _ = self.start_gui_plan(Scope::Ancestors(tp_id), Some(tp_id));
     }
 
+    /// Make one setup current, and nothing else.
+    ///
+    /// `Scope::Setup` is NARROW: only this setup's operations get a Generate
+    /// step, while its Simulate steps still cover every setup before it as
+    /// those setups stand, so an earlier setup holding an ungenerated enabled
+    /// operation stalls this setup's rest.
+    ///
+    /// It takes the same door as Generate All, so the R1 resolution question
+    /// and the busy refusal are the same ones.
+    pub(crate) fn handle_generate_setup_only(&mut self, setup_id: rs_cam_core::ids::SetupId) {
+        use rs_cam_core::session::generation_plan::Scope;
+
+        let _ = self.start_gui_plan(Scope::Setup(setup_id), None);
+    }
+
     /// Arm a GUI plan over `scope`, asking about the cell size first when the
     /// panel holds one that is too coarse for the rest (R1).
     ///

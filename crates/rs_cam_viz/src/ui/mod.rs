@@ -144,6 +144,13 @@ pub enum AppEvent {
     ToggleToolpathEnabled(ToolpathId),
     GenerateToolpath(ToolpathId),
     GenerateAll,
+    /// Make one setup current, and nothing else (operator, 2026-09-19).
+    ///
+    /// The DEFAULT route resolves whatever a scope depends on: Generate All
+    /// and a single Generate both walk the edges. This is the narrow one,
+    /// for an operator who knows the setups above are current and does not
+    /// want them re-walked.
+    GenerateSetupOnly(SetupId),
     /// Stop the generation plan in flight (W3). The Generate All button IS
     /// the cancel while a plan runs: a disabled control with no route would
     /// leave a long plan unstoppable from the panel.
