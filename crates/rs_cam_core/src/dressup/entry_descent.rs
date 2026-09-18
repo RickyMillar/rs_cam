@@ -172,6 +172,24 @@ pub(crate) struct RampFold<'a> {
 /// degenerate run of near-zero-length segments from spinning.
 const FOLD_EXTEND_MAX_ROUNDS: usize = 64;
 
+/// The most laps a ramp fold may lay over its run (R10, 2026-09-18).
+///
+/// A lap is one traverse of the run. The count is the whole ramp's XY
+/// length — out AND back, `2 * half_len` — divided by the run's XY length.
+/// On a closed ring the run is the ring, so a lap is one circuit.
+///
+/// A fold exists to fit a ramp into a run of a few tool diameters. It does
+/// not exist to saw a slot. The Corne waterline (§4.5 of the case
+/// analysis) had a 2 mm run inside a 3 mm wall: a 2 mm drop at 3 degrees
+/// is 38 mm of XY, so the fold laid 19 laps over that run at every level,
+/// and the simulation showed the wall sawn to a row of pins. Above this
+/// cap the fold returns empty and [`emit_ramp`] degrades to the plunge.
+///
+/// [`collect_following_cut`] stops at `half_len` mm of XY, so a run that
+/// reaches the budget measures at most 2 laps here. The cap bites only on
+/// a run SHORTER than half a ramp: 12.7 mm at the shipped 3 degrees.
+pub(crate) const RAMP_FOLD_MAX_LAPS: f64 = 3.0;
+
 /// Grow `base` until its XY length reaches `want`, by lapping a closed
 /// ring or bouncing off the far end of an open run.
 ///
@@ -250,6 +268,9 @@ fn walk_fold_path(path: &[P3], want: f64) -> Vec<P3> {
 ///
 /// The returned points exclude the starting position — the caller already
 /// stands at `(entry column, ramp_start_z)`.
+///
+/// Returns empty when the ramp would lap the run more than
+/// [`RAMP_FOLD_MAX_LAPS`] times (R10). The caller degrades to a plunge.
 // SAFETY: `windows(2)` yields slices of exactly two elements.
 #[allow(clippy::indexing_slicing)]
 fn fold_ramp_points(
@@ -259,6 +280,13 @@ fn fold_ramp_points(
     ramp_start_z: f64,
     end_z: f64,
 ) -> Vec<P3> {
+    // R10: the lap cap. `follow` starts AT the plunge target, and on a
+    // closed ring it ends there too, so its XY length is the run length
+    // in both cases: the open run, or one circuit of the ring.
+    let run = crate::geo::polyline_xy_length(follow);
+    if run <= 1e-9 || 2.0 * half_len > RAMP_FOLD_MAX_LAPS * run {
+        return Vec::new();
+    }
     let extended = extend_fold_path(follow, closed, half_len);
     let out = walk_fold_path(&extended, half_len);
     if out.len() < 2 {
@@ -271,7 +299,9 @@ fn fold_ramp_points(
     // `extend_fold_path` cannot cap out on a run the caller admits — its
     // guard is 64 rounds and the caller refuses a run under 1 mm, so the
     // extension reaches at least 64 mm against a half length of 19.08 mm at
-    // the shipped 3 degrees. This is the belt to that braces.
+    // the shipped 3 degrees. The lap cap above refuses earlier still: a run
+    // that passes it is at least `2 * half_len / RAMP_FOLD_MAX_LAPS` long.
+    // This check stays as a second guard behind both.
     if crate::geo::polyline_xy_length(&out) < half_len - 1e-6 {
         return Vec::new();
     }
@@ -475,6 +505,11 @@ pub(crate) fn emit_ramp(
         // along the operation's own following cut instead — see
         // [`RampFold`]. The degrade is a plunge, never a refusal: the entry
         // column is a cut point of the operation by construction.
+        //
+        // R10 (2026-09-18): containment alone is not enough. A fold that
+        // stays on the cut but laps a 2 mm run 19 times is contained AND a
+        // saw. `fold_ramp_points` also returns empty above
+        // [`RAMP_FOLD_MAX_LAPS`], and that empty takes the same plunge.
         let run = crate::geo::polyline_xy_length(fold.follow);
         let folded = if fold.follow.len() >= 2 && run >= fold.min_run_mm {
             fold_ramp_points(fold.follow, fold.closed, half_len, ramp_start_z, end.z)

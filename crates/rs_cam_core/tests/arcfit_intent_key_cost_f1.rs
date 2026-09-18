@@ -431,8 +431,13 @@ fn pr6_measure_arcfit_intent_key_cost() {
             // passes are radius 8-11 circles, far longer than the 19.08 mm
             // half ramp, so the fold walks a single arc and fits back to one
             // arc per entry. Q3's `unknown_strict` stays 0.
-            out: (32, 16),
-            census: (362, 8, 0, 0),
+            //
+            // RE-PINNED 2026-09-18 (R10, Corne case): the Finish role has
+            // no entry ramp by default, so the four entries are plunges.
+            // EntryRamp 8 -> 0, EntryPlunge 4, moves 32 -> 40, arcs stay
+            // 16, joins 362 -> 204. Q3's `unknown_strict` stays 0.
+            out: (40, 16),
+            census: (204, 8, 0, 0),
         },
     );
     // Pass radii AT the shipped `lead_radius`: the lead-out quarter-circle is
@@ -457,8 +462,17 @@ fn pr6_measure_arcfit_intent_key_cost() {
             // designed degrade for a closed run shorter than the ramp, and it
             // is contained by construction where the old straight legs were
             // not. Q3's `unknown_strict` stays 0.
-            out: (76, 44),
-            census: (1084, 12, 0, 0),
+            //
+            // RE-PINNED 2026-09-18 (R10, Corne case): the Finish role has
+            // no entry ramp by default, so the lap path is gone with it.
+            // EntryRamp 36 -> 0, EntryPlunge 4, (76, 44) -> (40, 16),
+            // census (1084, 12, 0, 0) -> (204, 8, 0, 0): the same numbers
+            // as the wide arm, because without a ramp the pass radius no
+            // longer reaches the entry. Q3's `unknown_strict` stays 0. The
+            // fold's lap cap (`RAMP_FOLD_MAX_LAPS`) is pinned by
+            // `dressup::tests`, not by this arm.
+            out: (40, 16),
+            census: (204, 8, 0, 0),
         },
     );
 }

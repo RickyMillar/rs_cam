@@ -1264,6 +1264,124 @@ fn ramp_entry_90deg_angle_falls_back() {
     }
 }
 
+/// A plunge followed by one straight cut run of `run_mm` along +X.
+///
+/// The rapid stops AT the ramp start height (`end.z + ENTRY_CLEARANCE`),
+/// so the B1 lift-bridge pre-descent in `emit_ramp` emits nothing and the
+/// entry is the fold's own output: the folded ramp, or its plunge degrade.
+fn plunge_then_run(run_mm: f64) -> Toolpath {
+    let mut tp = Toolpath::new();
+    tp.rapid_to(P3::new(10.0, 10.0, -3.0 + ENTRY_CLEARANCE));
+    tp.feed_to(P3::new(10.0, 10.0, -3.0), 500.0);
+    tp.feed_to(P3::new(10.0 + run_mm, 10.0, -3.0), 1000.0);
+    tp.rapid_to(P3::new(10.0 + run_mm, 10.0, 10.0));
+    tp
+}
+
+/// R10 (2026-09-18): a ramp fold refuses a run it would lap more than
+/// [`entry_descent::RAMP_FOLD_MAX_LAPS`] times and degrades to a plunge.
+///
+/// The Corne waterline folded a 3 degree ramp along a 2 mm run: a 2 mm
+/// drop at 3 degrees is 38 mm of XY, so the fold laid 19 laps over the
+/// run at every level and sawed the wall to pins. The tool radius here is
+/// 0.5 mm, so `min_run_mm` is 1.0 and the 2 mm run passes the OLD gate;
+/// only the lap cap can produce the plunge.
+#[test]
+fn ramp_fold_caps_laps_and_falls_back_to_plunge_r10() {
+    use super::entry_descent::RAMP_FOLD_MAX_LAPS;
+
+    let style = EntryStyle::Ramp { max_angle_deg: 3.0 };
+    let ramp_xy_mm = ENTRY_CLEARANCE / 3.0_f64.to_radians().tan();
+    let entry = |run_mm: f64| {
+        without_provenance(apply_entry(
+            AnnotatedToolpath::new(plunge_then_run(run_mm)),
+            style,
+            500.0,
+            no_probe(0.0),
+            // G-RAMPCONTAIN: the tool radius. 0.5 mm keeps `min_run_mm`
+            // at its 1.0 floor so the 2 mm run clears the old gate.
+            0.5,
+        ))
+        .toolpath
+    };
+
+    // The short run: 19 laps at the shipped dials, above the cap.
+    let short_run = 2.0;
+    assert!(
+        ramp_xy_mm / short_run > RAMP_FOLD_MAX_LAPS,
+        "fixture: the 2 mm run must need more than {RAMP_FOLD_MAX_LAPS} laps"
+    );
+    let result = entry(short_run);
+    let ramps: Vec<&Move> = result
+        .moves
+        .iter()
+        .filter(|m| m.intent == MoveIntent::EntryRamp)
+        .collect();
+    assert!(
+        ramps.is_empty(),
+        "R10: a fold over a 2 mm run must degrade to a plunge, got {} EntryRamp moves",
+        ramps.len()
+    );
+    let plunges: Vec<&Move> = result
+        .moves
+        .iter()
+        .filter(|m| m.intent == MoveIntent::EntryPlunge)
+        .collect();
+    assert_eq!(plunges.len(), 1, "R10: the degrade is ONE plunge move");
+    let p = plunges[0].target;
+    assert!(
+        (p.x - 10.0).abs() < 1e-9 && (p.y - 10.0).abs() < 1e-9 && (p.z + 3.0).abs() < 1e-9,
+        "R10: the plunge lands on the entry target, got {p:?}"
+    );
+    assert_eq!(
+        result.moves.len(),
+        4,
+        "R10: the plunge replaces the plunge one for one"
+    );
+
+    // The control: a 40 mm run takes the fold, and the fold laps it at
+    // most `RAMP_FOLD_MAX_LAPS` times.
+    let long_run = 40.0;
+    let result = entry(long_run);
+    let first_ramp = result
+        .moves
+        .iter()
+        .position(|m| m.intent == MoveIntent::EntryRamp)
+        .expect("control: a 40 mm run must still fold (EntryRamp moves present)");
+    assert!(first_ramp > 0, "control: the ramp follows the rapid");
+    let mut walked = 0.0;
+    let mut prev = result.moves[first_ramp - 1].target;
+    let mut last_ramp = prev;
+    for m in result.moves.iter().skip(first_ramp) {
+        if m.intent != MoveIntent::EntryRamp {
+            break;
+        }
+        let dx = m.target.x - prev.x;
+        let dy = m.target.y - prev.y;
+        walked += (dx * dx + dy * dy).sqrt();
+        assert!(
+            (10.0 - 1e-9..=10.0 + long_run + 1e-9).contains(&m.target.x),
+            "control: the fold stays on the run, got x={}",
+            m.target.x
+        );
+        prev = m.target;
+        last_ramp = m.target;
+    }
+    assert!(
+        (walked - ramp_xy_mm).abs() < 1e-6,
+        "control: the fold walks the whole ramp, {walked:.3} mm of {ramp_xy_mm:.3}"
+    );
+    assert!(
+        walked / long_run <= RAMP_FOLD_MAX_LAPS,
+        "control: {:.2} laps over the 40 mm run exceeds the cap",
+        walked / long_run
+    );
+    assert!(
+        (last_ramp.x - 10.0).abs() < 1e-9 && (last_ramp.z + 3.0).abs() < 1e-9,
+        "control: the fold returns to the entry target, got {last_ramp:?}"
+    );
+}
+
 #[test]
 fn helix_entry_zero_radius_falls_back() {
     let mut tp = Toolpath::new();

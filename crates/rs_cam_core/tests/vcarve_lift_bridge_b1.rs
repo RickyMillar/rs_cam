@@ -8,8 +8,9 @@
 //!
 //! Repro mirrors the Phase B finding in
 //! `planning/UX_DIALIN_REVIEW_2026-05-20.md`: 12.7 mm V-bit, 60° included
-//! angle, hardwood, default Finish-role dressups (which provide a Ramp
-//! entry and lead-in/out arcs).
+//! angle, hardwood, Finish-role dressups with the entry set to Ramp. R10
+//! (2026-09-18) made the Finish default a plunge, so the fixture pins the
+//! Ramp entry itself: the lift-bridge path is the ramp emitter's.
 
 #![allow(
     clippy::unwrap_used,
@@ -25,7 +26,9 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
-use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
+use rs_cam_core::compute::config::{
+    BoundaryConfig, DressupConfig, DressupEntryStyle, HeightsConfig, StockSource,
+};
 use rs_cam_core::compute::operation_configs::VCarveConfig;
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
@@ -124,10 +127,14 @@ fn build_vcarve_session() -> ProjectSession {
         name: "VCarve".to_owned(),
         enabled: true,
         operation: OperationConfig::VCarve(vcarve),
-        // Finish role → Ramp entry + lead_in_out + arc_fitting +
-        // optimize_rapid_order. Without the Ramp entry the lift-bridge
+        // Finish role → lead_in_out + arc_fitting + optimize_rapid_order.
+        // The entry is set to Ramp by hand: R10 (2026-09-18) made the
+        // Finish default `None`, and without the Ramp entry the lift-bridge
         // bug doesn't fire.
-        dressups: DressupConfig::for_op(OperationType::VCarve),
+        dressups: DressupConfig {
+            entry_style: DressupEntryStyle::Ramp,
+            ..DressupConfig::for_op(OperationType::VCarve)
+        },
         heights: HeightsConfig::default(),
         tool_id,
         model_id,

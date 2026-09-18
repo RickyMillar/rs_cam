@@ -449,9 +449,10 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
     .toolpath;
     let (offenders, total, worst) = report("project_curve (no links)", &tp_no_links, &polygons);
 
-    // PC6's dressup defaults *come from* `for_role(Finish)`, which enables
-    // entry_style=Ramp + lead_in_out=true. Model what those produce so we
-    // can see which ones introduce phantom lateral moves at cut depth.
+    // PC6's dressup defaults *come from* `for_role(Finish)`, which enabled
+    // entry_style=Ramp + lead_in_out=true until R10 (2026-09-18) made the
+    // Finish entry `None`. The Ramp arm below stays as an opt-in model, so
+    // we can see which dressups introduce phantom lateral moves at cut depth.
     let mut finish_defaults = DressupConfig::default();
     finish_defaults.entry_style = DressupEntryStyle::Ramp;
     finish_defaults.ramp_angle = 3.0;
