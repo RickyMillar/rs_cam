@@ -341,3 +341,70 @@ Onsrud's own numbers vary by 2x at one diameter and one material: the 40-000
 series reads .006 - .008 in/tooth at 1/8 in hardwood against 52-200's
 .003 - .005. The tool SERIES is a first-class input. A single chipload per
 diameter and material does not describe the published data.
+
+---
+
+# Addendum 3 — the stress check, and the verdict on a test cut
+
+The operator asked whether the job is safe to test without a roughing pass.
+Deflection and power were already quiet. Neither answers the question that
+matters, which is whether the tool BREAKS. That needs bending stress.
+
+Carbide transverse rupture strength for fine-grain WC-Co is commonly quoted
+from 1500 MPa to 4000 MPa. The low end, 1500 MPa, is used below.
+
+## The tapered ball is far from its limit
+
+Peak bending stress is found by walking the real tapered section and taking the
+maximum of `M(z)/Z(z)`, with the 24.5 N resultant placed two ways.
+
+| Load case | Peak stress | Safety factor | Breaks at |
+|---|---|---|---|
+| Spread over the 7 mm engagement | 36.4 MPa at z=35 mm | **41x** | 103 kgf |
+| All at the tip (a corner dig) | 46.3 MPa at z=5 mm | **32x** | 81 kgf |
+
+The cut applies about 2.5 kgf. A force estimate 5x too low still leaves a 6x
+margin. The taper carries this: the stress peaks at the 6 mm section, not at
+the tip.
+
+**A relief cut with no roughing pass is mechanically safe in this material.**
+
+This also explains the missing literature. The failure mode is a burnished
+surface, not a broken tool. Nobody publishes a number because nothing dramatic
+happens. The absence of published data is evidence of a benign failure mode.
+
+## The V-bit tip is the thin spot
+
+A first calculation put a point load at the tip. That is not physical and it
+was discarded. With the load distributed along the engaged edge, the resultant
+of a triangular intensity sits at two thirds of the depth, and the critical
+section is found numerically.
+
+| Depth of cut | Lateral force that breaks the tip |
+|---|---|
+| 1.00 mm (the commanded depth) | **19.4 N** (about 2 kgf) |
+| 2.24 mm (where the fast move sits) | 97.2 N |
+
+Estimated force on the 1165 mm/min move is 17 N to 34 N. The two estimates
+differ because the surface speed along a V edge is not constant: the low figure
+uses the maximum groove speed, the high figure uses the mean.
+
+The fast move lands at 2.24 mm depth, where the margin is 2.9x to 5.8x. Had it
+landed on a 1 mm section the margin would be about 1x. This is tighter than the
+tapered ball by an order of magnitude, but it is not marginal.
+
+## Verdict
+
+Run the test. Take these four precautions:
+
+1. Run Project Curve 7 first. It takes 20 minutes and it carries the fragile
+   tool.
+2. Keep a spare 20 degree V-bit. Baltic birch glue lines are harder than the
+   plies, and 2 kgf is a force a glue line can supply.
+3. Watch the first minute of each operation. The entries hold the surprises.
+4. Expect scorch marks at the 250 V-bit entries. That is cosmetic, and it is
+   what the test measures.
+
+To improve the V-bit margin before cutting, lower that operation's feed to
+about 900 mm/min. That reduces the descent rate by 22 % and costs about four
+minutes.
