@@ -15,15 +15,18 @@ the UI thread. The entry point is `compute::worker`.
   worker result must agree with `ProjectSession` for the same inputs.
 - A toolpath result arrives with the revision it was computed for. The
   controller rejects a result whose revision no longer matches.
-- Simulation and collision carry an EDIT-COUNTER stamp instead, taken at
-  submit. An unstamped simulation falls back to the live counter; an
-  unstamped collision does NOT — a holder verdict is a safety claim, so it
-  reads "Not checked" rather than guess when it was measured.
+- Simulation and collision carry a SIMULATION-EPOCH stamp instead, taken at
+  submit and read back from `ProjectSession::simulation_epoch` (W0c, W4).
+  Neither falls back to a live read. An unstamped simulation reaches the core
+  not at all and reads `EditedSince`; an unstamped collision reads
+  "Not checked". A holder verdict is a safety claim, so it never guesses when
+  it was measured.
 - A generation-input change drops the affected result. It does not paint a
   stale label over a live one.
 
 ## Sentries
 
+- `cargo test -p rs_cam_viz -q --lib generate_all_plan_g_genplan`
 - `cargo test -p rs_cam_viz -q --test generate_all_fixpoint_parity`
 - `cargo test -p rs_cam_viz -q --test export_parity_core_vs_gui_p0`
 - `cargo test -p rs_cam_viz -q --test optimize_runs_on_the_job_lane_wp14b`

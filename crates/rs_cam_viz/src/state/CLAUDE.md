@@ -6,21 +6,19 @@ project. The entry point is `state::AppState` in `mod.rs`.
 ## Files
 
 - `mod.rs` — `AppState` and the facade.
-- `freshness.rs` — one freshness state per toolpath, DERIVED, never stored.
+- `freshness.rs` — `FreshnessState` per toolpath and `SimFreshness` for the
+  simulation. Both DERIVED, never stored.
 - `stale.rs` — the one place the GUI stamps `stale_since` from a core answer.
 - `toolpath.rs` and `toolpath/` — the toolpath rows, their catalogue entries
   and configuration support.
 - `simulation.rs`, `job.rs`, `runtime.rs` — the simulation state, the job
   lane state and the GUI-only runtime overlay state.
-- `simulation/` — `playback_state.rs`, `issue_triage.rs`,
-  `semantic_trace.rs`, `tests.rs`.
+- `simulation/` — `playback_state.rs`, `issue_triage.rs`, `semantic_trace.rs`.
 - `viewport.rs`, `selection.rs`, `overlays.rs` — the viewport, the selection
   and the Overlays panel state.
 - `history.rs`, `wizard.rs`, `multitool_planner.rs`, `rest_dependency.rs` —
-  undo history, the export wizard, the planner dialog and the one rule for a
-  Rest operation's predecessor.
-- `panels.rs` — the panel drafts that outlive a frame: typed text, status
-  lines and the cached GRBL `$$` parse.
+  undo, the export wizard, the planner and the Rest predecessor rule.
+- `panels.rs` — the panel drafts that outlive a frame.
 
 ## Invariants
 
@@ -28,6 +26,8 @@ project. The entry point is `state::AppState` in `mod.rs`.
   revision. Do not reintroduce a mutable stale boolean, and do not clear it
   on an un-stamped, cancelled or failed result.
 - Freshness is derived. A stored freshness flag drifts from the core answer.
+- `AppState::simulation_is_stale` is the ONE door onto simulation freshness.
+  The core answers project inputs, the GUI capture options. Never the counter.
 - A panel draft with CONTENT lives here, not in egui temporary memory. A
   view toggle or a drag index may stay in egui memory, named with a reason.
 

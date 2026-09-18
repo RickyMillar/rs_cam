@@ -12,10 +12,10 @@ Every panel, modal and workspace. `ui::mod` runs once per frame from `../app.rs`
   Setup workspace rail and the toolpath rows.
 - `sim_timeline.rs`, `sim_op_list.rs`, `sim_diagnostics.rs`,
   `sim_debug.rs` — the Simulation workspace, with `draw_trace_badge`.
-- `readiness.rs`, `readiness_panel.rs`, `preflight.rs` — the "is this safe
-  to cut?" view.
+- `readiness.rs`, `readiness_panel.rs`, `preflight.rs` — is this safe to cut?
 - `export_wizard.rs`, `optimize_modal.rs`, `optimize_project.rs`,
-  `multitool_planner.rs`, `*_library_modal.rs` — the modals.
+  `multitool_planner.rs`, `generation_resolution_modal.rs`,
+  `*_library_modal.rs` — the modals.
 - `viewport_overlay.rs`, `automation.rs`, `shortcuts_window.rs` — the strip
   above the 3D view, automation, the shortcuts window.
 
