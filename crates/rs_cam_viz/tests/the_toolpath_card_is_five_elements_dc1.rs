@@ -156,7 +156,10 @@ fn the_card_still_draws_its_five_elements_dc1() {
         "draw_state_dot(",
         "draw_eye(",
         "card_menu(",
-        "draw_rest_badge(",
+        // W3/R3 — the Rest `dep` badge folded into the gutter connector.
+        // The card keeps the same count of elements: it lost two words
+        // inside the row and gained one line outside the card frame.
+        "draw_connectors(",
     ] {
         assert!(
             code.contains(needle),

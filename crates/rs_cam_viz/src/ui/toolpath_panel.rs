@@ -1,4 +1,7 @@
+use std::collections::HashMap;
 use std::sync::Arc;
+
+use rs_cam_core::session::dependencies::{self, EdgeKind, EdgeState};
 
 use super::AppEvent;
 use crate::render::toolpath_render::palette_color;
@@ -8,9 +11,20 @@ use crate::state::job::{SetupId, ToolId};
 use crate::state::selection::Selection;
 use crate::state::toolpath::{OperationType, ToolpathId};
 use crate::state::viewport::ViewportState;
+use crate::ui::components::Role;
 use crate::ui::theme;
 use crate::ui::tokens;
 use crate::ui_command::UiCommand;
+
+/// How heavy a broken connector draws.
+///
+/// Stroke width is the THIRD channel of section 2.6 rule 3, after colour and
+/// the dash pattern. An eight point gutter cannot hold a glyph, so a broken
+/// edge says "fault" by being heavier as well as red and dashed.
+const CONNECTOR_BROKEN_WIDTH: f32 = 1.5;
+
+/// How long one dash and one gap of an unready connector are.
+const CONNECTOR_DASH: f32 = tokens::SPACE_1;
 
 /// Minimal snapshot of a `ToolpathConfig` with just the fields the card reads.
 /// Cloning this releases the `state.session` borrow so `state.viewport` can be
@@ -20,17 +34,40 @@ struct CardInfo {
     name: String,
     enabled: bool,
     tool_id: usize,
-    operation: crate::state::toolpath::OperationConfig,
 }
 
 /// Minimal snapshot of `ToolpathRuntime` fields the card needs.
+///
+/// Built for EVERY row, including a row with no runtime entry at all. A
+/// never-generated operation that machines the remaining stock is exactly
+/// the pending connector the gutter exists to draw, and an `Option` here
+/// dropped it.
 struct RuntimeSnapshot {
     visible: bool,
     has_result: bool,
-    /// The one state every surface should read (R0.1 §4.4). Derived here,
-    /// beside the core result cache the derivation needs, because the card
-    /// body no longer holds the session borrow.
+    /// The one state every surface should read (R0.1 §4.4). Derived
+    /// here, beside the core result cache the derivation needs, because the
+    /// card body no longer holds the session borrow.
     freshness: FreshnessState,
+    /// Every dependency this row declares, read forward from the core's
+    /// [`dependencies::primary_edges`]. Never stored; re-read each frame
+    /// beside `freshness`. The MCP `depends_on` row reads the same door
+    /// (W5), so the card and the wire cannot disagree.
+    edges_in: Vec<EdgeRow>,
+}
+
+/// One dependency, as the connector draws it.
+///
+/// The three [`EdgeKind`] arms carry what the Rest card's `dep` badge used
+/// to say about `PrevTool` alone: `Ready` is the old `Resolved`, `Pending`
+/// the old `Stale`, `Broken` the old `Missing` (R3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EdgeRow {
+    /// The source row, or `None` when the declaration resolves to no
+    /// toolpath. A `None` source is always [`EdgeState::Broken`].
+    pub source: Option<ToolpathId>,
+    pub kind: EdgeKind,
+    pub state: EdgeState,
 }
 
 /// Left panel for the Toolpath workspace: the operation queue.
@@ -60,6 +97,31 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
     let multi_setup = setups_data.len() > 1;
     let mut global_idx = 0usize;
 
+    // W3 - every dependency in the project, read ONCE per frame. Per card
+    // this walk is O(n^2) and buys nothing. `primary_edges` keeps the
+    // nearest enabled source per (consumer, kind), which is exactly the one
+    // line per row the gutter draws.
+    let mut edges: HashMap<ToolpathId, Vec<EdgeRow>> = HashMap::new();
+    for edge in dependencies::primary_edges(&state.session) {
+        let row = EdgeRow {
+            source: edge.on,
+            kind: edge.kind,
+            state: dependencies::state(&edge, &state.session),
+        };
+        edges.entry(edge.from).or_default().push(row);
+    }
+    let names: HashMap<ToolpathId, String> = state
+        .session
+        .toolpath_configs()
+        .iter()
+        .map(|tc| (tc.id, tc.name.clone()))
+        .collect();
+    // Where each drawn card landed THIS frame. A local, so it cannot
+    // outlive the layout it describes, and a second pass in the SAME frame,
+    // because the panel sits in a scroll area and a lagged map is wrong by
+    // the scroll delta on every scrolling frame.
+    let mut row_rects: Vec<(ToolpathId, egui::Rect, Vec<EdgeRow>)> = Vec::new();
+
     for (setup_id, setup_name, toolpath_indices) in setups_data {
         // Setup header (only if multi-setup)
         if multi_setup {
@@ -82,8 +144,22 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
             ui.separator();
         }
 
-        // Drop zone for this setup
-        let drop_frame = egui::Frame::default().inner_margin(2.0);
+        // Drop zone for this setup. W3 - the gutter is this zone's LEFT
+        // margin, so every card rect starts SPACE_3 right of the zone and
+        // the connector owns the space to their left. The card frame is
+        // untouched, and the card's own click rect is INSIDE it, so a
+        // connector click is clean. `compute_drop_index` reads the pointer
+        // Y only, so drag and drop does not notice.
+        //
+        // SAFETY: SPACE_3 is 8.0, which is exact in i8.
+        #[allow(clippy::cast_possible_truncation)]
+        let gutter = tokens::SPACE_3 as i8;
+        let drop_frame = egui::Frame::default().inner_margin(egui::Margin {
+            left: gutter,
+            right: 2,
+            top: 2,
+            bottom: 2,
+        });
         let tp_count = toolpath_indices.len();
         let (inner_resp, dropped_payload) = ui.dnd_drop_zone::<ToolpathId, ()>(drop_frame, |ui| {
             if toolpath_indices.is_empty() {
@@ -105,22 +181,16 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
                     name: tc_src.name.clone(),
                     enabled: tc_src.enabled,
                     tool_id: tc_src.tool_id,
-                    operation: tc_src.operation.clone(),
                 };
-                let rt_snap = state
-                    .gui
-                    .toolpath_rt
-                    .get(&card.id)
-                    .map(|r| RuntimeSnapshot {
-                        visible: r.visible,
-                        has_result: r.result.is_some(),
-                        freshness: freshness(
-                            tc_src,
-                            Some(r),
-                            state.session.get_result(tp_idx).is_some(),
-                        ),
-                    });
-                draw_toolpath_card(ui, state, events, &card, rt_snap.as_ref(), i, local_idx);
+                let rt = state.gui.toolpath_rt.get(&card.id);
+                let rt_snap = RuntimeSnapshot {
+                    visible: rt.is_none_or(|r| r.visible),
+                    has_result: rt.is_some_and(|r| r.result.is_some()),
+                    freshness: freshness(tc_src, rt, state.session.get_result(tp_idx).is_some()),
+                    edges_in: edges.remove(&card.id).unwrap_or_default(),
+                };
+                let rect = draw_toolpath_card(ui, state, events, &card, &rt_snap, i, local_idx);
+                row_rects.push((card.id, rect, rt_snap.edges_in));
             }
         });
 
@@ -153,6 +223,11 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
         }
     }
 
+    // W3 - the second pass, in the same frame as the cards it joins. A
+    // cross-setup edge needs a rect recorded inside an EARLIER setup's drop
+    // zone, which a per-zone pass cannot see.
+    draw_connectors(ui, &row_rects, &names, events);
+
     // Single-setup: the add menu sits below the operation list.
     if !multi_setup && let Some(setup) = state.session.list_setups().first() {
         let sid = SetupId(setup.id);
@@ -183,13 +258,13 @@ fn draw_toolpath_card(
     state: &mut AppState,
     events: &mut Vec<AppEvent>,
     tc: &CardInfo,
-    rt: Option<&RuntimeSnapshot>,
+    rt: &RuntimeSnapshot,
     global_idx: usize,
     _local_idx: usize,
-) {
+) -> egui::Rect {
     let tp_id = tc.id;
     let selected = state.selection == Selection::Toolpath(tp_id);
-    let visible = rt.is_none_or(|r| r.visible);
+    let visible = rt.visible;
     // F2.2 — the one state the dot reads. It replaces the
     // `ComputeStatus::effective` call that used to stand here: A/M11's "one
     // taxonomy" rule is unchanged and `enabled` still wins over everything,
@@ -197,8 +272,8 @@ fn draw_toolpath_card(
     // arm) and adds the one state `ComputeStatus` cannot express —
     // generated, then edited. A card with no runtime entry at all has never
     // been generated.
-    let freshness = rt.map_or(&FreshnessState::NoResult, |r| &r.freshness);
-    let has_result = rt.is_some_and(|r| r.has_result);
+    let freshness = &rt.freshness;
+    let has_result = rt.has_result;
     let dim = !tc.enabled || !visible;
 
     // Read every session-derived value HERE. The row body borrows
@@ -209,13 +284,6 @@ fn draw_toolpath_card(
         .iter()
         .find(|t| t.id == ToolId(tc.tool_id))
         .map(|tool| tool.summary());
-    let rest = match tc.operation {
-        crate::state::toolpath::OperationConfig::Rest(ref rest_cfg) => {
-            Some(rest_badge(state, rest_cfg, tp_id))
-        }
-        _ => None,
-    };
-
     let pc = palette_color(global_idx);
     let swatch_color = tokens::from_linear_rgb(pc);
 
@@ -302,7 +370,7 @@ fn draw_toolpath_card(
                     // leave.
                     let tool = tool_summary.as_deref();
                     ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                        draw_name_and_tool(ui, &tc.name, tool, rest, dim);
+                        draw_name_and_tool(ui, &tc.name, tool, dim);
                     });
                 });
             });
@@ -336,6 +404,8 @@ fn draw_toolpath_card(
             egui::Stroke::new(2.0_f32, theme::ACCENT),
         );
     }
+
+    inner_response.rect
 }
 
 /// The colour swatch, which is also the card's drag grip (R26).
@@ -435,15 +505,10 @@ fn draw_eye(ui: &mut egui::Ui, tp_id: ToolpathId, visible: bool, events: &mut Ve
 /// The operation name and its tool, truncated and never wrapped.
 ///
 /// A wrapped name is what made two cards different heights, which Rule D
-/// forbids. The rest-dependency badge sits between them, because it
-/// qualifies the operation rather than the tool.
-fn draw_name_and_tool(
-    ui: &mut egui::Ui,
-    name: &str,
-    tool_summary: Option<&str>,
-    rest: Option<RestBadge>,
-    dim: bool,
-) {
+/// forbids. R3 took the rest-dependency badge out from between them: the
+/// gutter connector says the same three things for every dependency kind,
+/// and the card loses two words at rest.
+fn draw_name_and_tool(ui: &mut egui::Ui, name: &str, tool_summary: Option<&str>, dim: bool) {
     let text_color = if dim {
         tokens::TEXT_FAINT
     } else {
@@ -451,9 +516,6 @@ fn draw_name_and_tool(
     };
     let name_text = egui::RichText::new(name).color(text_color);
     ui.add(egui::Label::new(name_text).truncate());
-    if let Some(badge) = rest {
-        draw_rest_badge(ui, badge);
-    }
     if let Some(summary) = tool_summary {
         let tool_text = egui::RichText::new(summary)
             .small()
@@ -718,114 +780,212 @@ fn add_op_menu_item(
     }
 }
 
-/// What the Rest dependency badge says about one Rest card.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RestBadge {
-    /// A predecessor exists and its runtime is generated and fresh: green `dep`.
-    Resolved,
-    /// A predecessor exists but needs generation or is stale: yellow `dep`.
-    Stale,
-    /// No predecessor, or no previous tool configured: red `no dep`.
-    Missing,
+// ── the gutter connector (W3, R3, R10) ──────────────────────────────────
+
+/// The role one edge state carries.
+///
+/// A `Ready` edge is STRUCTURE, not a verdict (§2.6 rule 1): it draws a
+/// hairline, and it takes `Ok` here only so [`worst_edge`] can rank it.
+#[must_use]
+pub fn edge_role(state: EdgeState) -> Role {
+    match state {
+        EdgeState::Ready => Role::Ok,
+        EdgeState::Pending => Role::Caution,
+        EdgeState::Broken => Role::Danger,
+    }
 }
 
-impl RestBadge {
-    /// The badge label the card draws.
-    pub fn text(self) -> &'static str {
-        match self {
-            Self::Resolved | Self::Stale => "dep",
-            Self::Missing => "no dep",
+/// How one connector draws: a colour, a width, and a dash.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ConnectorStroke {
+    pub colour: egui::Color32,
+    pub width: f32,
+    /// The dash and gap length, or `None` for a solid line.
+    pub dash: Option<f32>,
+}
+
+/// The stroke for one edge state.
+///
+/// **Colour is not the only channel.** §2.6 rule 3 asks for a glyph beside
+/// every colour, and an eight point gutter cannot hold one legibly. The dash
+/// pattern is the second channel and the stroke width the third. The WORD
+/// still reaches the operator, through the connector's hover and through the
+/// row's own state dot.
+#[must_use]
+pub fn edge_stroke(state: EdgeState) -> ConnectorStroke {
+    match state {
+        EdgeState::Ready => ConnectorStroke {
+            colour: tokens::HAIRLINE,
+            width: 1.0,
+            dash: None,
+        },
+        EdgeState::Pending => ConnectorStroke {
+            colour: Role::Caution.text(),
+            width: 1.0,
+            dash: Some(CONNECTOR_DASH),
+        },
+        EdgeState::Broken => ConnectorStroke {
+            colour: Role::Danger.text(),
+            width: CONNECTOR_BROKEN_WIDTH,
+            dash: Some(CONNECTOR_DASH),
+        },
+    }
+}
+
+/// What one connector says on hover.
+///
+/// Pure, so the sentry drives all nine `(kind, state)` pairs. `selectable`
+/// adds the click line, and it is false when the source is not drawn: there
+/// is no row to select.
+#[must_use]
+pub fn edge_hover(
+    source_name: Option<&str>,
+    kind: EdgeKind,
+    state: EdgeState,
+    selectable: bool,
+) -> String {
+    let source = source_name.unwrap_or("an operation that is gone");
+    let mut text = match (kind, state) {
+        (EdgeKind::Stock, EdgeState::Ready) => format!("After {source}"),
+        (EdgeKind::Stock, EdgeState::Pending) => {
+            format!("After {source} \u{00B7} waiting for simulation")
+        }
+        (EdgeKind::Stock, EdgeState::Broken) => {
+            format!("After {source} \u{00B7} no upstream stock")
+        }
+        (EdgeKind::Regions, EdgeState::Ready) => format!("Rest regions of {source}"),
+        (EdgeKind::Regions, EdgeState::Pending) => {
+            format!("Rest regions of {source} \u{00B7} {source} is not current")
+        }
+        (EdgeKind::Regions, EdgeState::Broken) => {
+            format!("Rest regions of {source} \u{00B7} source missing")
+        }
+        (EdgeKind::PrevTool, EdgeState::Ready) => format!("Rest after {source}"),
+        (EdgeKind::PrevTool, EdgeState::Pending) => {
+            format!("Rest after {source} \u{00B7} {source} is not current")
+        }
+        // The one arm that names no source: there is no earlier enabled
+        // operation with that cutter, which is what the static validator
+        // refuses on (G-RESTBADGE).
+        (EdgeKind::PrevTool, EdgeState::Broken) => {
+            "No previous operation with that tool".to_owned()
+        }
+    };
+    if selectable {
+        text.push_str("\nClick to select it.");
+    }
+    text
+}
+
+/// The one edge a row draws, when it declares several.
+///
+/// A rest operation can declare both a Stock edge and a Regions edge. One
+/// line per row keeps the gutter one column wide and R32's "one row"
+/// honest, so the WORSE state wins, ranked by `Role::severity_rank`.
+#[must_use]
+pub fn worst_edge(rows: &[EdgeRow]) -> Option<EdgeRow> {
+    rows.iter()
+        .min_by_key(|row| edge_role(row.state).severity_rank())
+        .copied()
+}
+
+/// Where one connector runs: beside the source, down the gutter, into the
+/// row.
+///
+/// Three points as ONE polyline, so the corner joins. A `None` source is a
+/// source that is not drawn: a collapsed setup, a filtered list, or a row
+/// the session no longer holds. It draws a short stub instead of a line to
+/// nothing.
+#[must_use]
+pub fn elbow_points(source: Option<egui::Rect>, target: egui::Rect) -> [egui::Pos2; 3] {
+    let x = target.left() - tokens::SPACE_3 / 2.0;
+    let y = target.center().y;
+    let top = source.map_or(y - tokens::SPACE_3, |rect| rect.center().y);
+    [
+        egui::pos2(x, top),
+        egui::pos2(x, y),
+        egui::pos2(target.left(), y),
+    ]
+}
+
+/// Draw every row's dependency as one line in the gutter.
+///
+/// The second pass of the frame, after the cards, because a line needs both
+/// rects. Painted in ROW order, sources first, so a `Ready` hairline goes
+/// UNDER a `Pending` amber on a shared span: the overlapping span then reads
+/// amber, which is the honest answer.
+fn draw_connectors(
+    ui: &mut egui::Ui,
+    row_rects: &[(ToolpathId, egui::Rect, Vec<EdgeRow>)],
+    names: &HashMap<ToolpathId, String>,
+    events: &mut Vec<AppEvent>,
+) {
+    // The card rects move while one is dragged, so a line drawn now is
+    // wrong as well as ugly. The insertion indicator owns the picture.
+    if egui::DragAndDrop::has_payload_of_type::<ToolpathId>(ui.ctx()) {
+        return;
+    }
+    for (row_id, target, row_edges) in row_rects {
+        let Some(edge) = worst_edge(row_edges) else {
+            continue;
+        };
+        let source_rect = edge.source.and_then(|source| {
+            row_rects
+                .iter()
+                .find(|(id, _, _)| *id == source)
+                .map(|(_, rect, _)| *rect)
+        });
+        let points = elbow_points(source_rect, *target);
+        let spec = edge_stroke(edge.state);
+        let stroke = egui::Stroke::new(spec.width, spec.colour);
+        match spec.dash {
+            None => {
+                ui.painter().add(egui::Shape::line(points.to_vec(), stroke));
+            }
+            Some(dash) => {
+                ui.painter()
+                    .extend(egui::Shape::dashed_line(&points, stroke, dash, dash));
+            }
+        }
+        if source_rect.is_none() {
+            // The stub ends in an up glyph: the source is above, and it is
+            // not in this list.
+            ui.painter().text(
+                points[0],
+                egui::Align2::CENTER_BOTTOM,
+                "\u{2191}",
+                egui::FontId::proportional(tokens::SPACE_3),
+                spec.colour,
+            );
+        }
+
+        let mut hover = edge_hover(
+            edge.source
+                .and_then(|id| names.get(&id))
+                .map(String::as_str),
+            edge.kind,
+            edge.state,
+            source_rect.is_some(),
+        );
+        if edge.source.is_some() && source_rect.is_none() {
+            hover.push_str("\nIt is not in this list.");
+        }
+        let hit = egui::Rect::from_x_y_ranges(
+            (points[0].x - tokens::SPACE_2)..=(points[0].x + tokens::SPACE_2),
+            points[0].y.min(points[1].y)..=points[0].y.max(points[1].y),
+        );
+        let response = ui
+            .interact(
+                hit,
+                egui::Id::new("tp_edge").with(row_id.0),
+                egui::Sense::click(),
+            )
+            .on_hover_text(hover);
+        if response.clicked()
+            && let Some(source) = edge.source
+            && source_rect.is_some()
+        {
+            events.push(AppEvent::Ui(UiCommand::Select(Selection::Toolpath(source))));
         }
     }
-}
-
-/// Decide the Rest dependency badge for the Rest card `tp_id`.
-///
-/// G-RESTBADGE (2026-09-10): the predecessor rule is
-/// [`crate::state::rest_dependency::rest_predecessors`], the same rule the
-/// static validator refuses on. Before this the badge accepted ANY other
-/// toolpath in the setup with the previous tool, whatever its order, enabled
-/// state or model, so a Rest card dragged above its roughing pass kept a
-/// green `dep` while Generate was refused (R05 §2, defect 2).
-///
-/// Pure with respect to egui so the sentry can read it. `draw_rest_badge`
-/// maps the result to a colour.
-pub fn rest_badge(
-    state: &AppState,
-    rest_cfg: &crate::state::toolpath::RestConfig,
-    tp_id: ToolpathId,
-) -> RestBadge {
-    let Some(prev_tool_id) = rest_cfg.prev_tool_id else {
-        return RestBadge::Missing;
-    };
-    let Some(model_id) = state
-        .session
-        .toolpath_configs()
-        .iter()
-        .find(|tc| tc.id == tp_id)
-        .map(|tc| crate::state::job::ModelId(tc.model_id))
-    else {
-        return RestBadge::Missing;
-    };
-    let predecessors = crate::state::rest_dependency::rest_predecessors_in_session(
-        &state.session,
-        tp_id,
-        model_id,
-        prev_tool_id,
-    );
-    if predecessors.is_empty() {
-        return RestBadge::Missing;
-    }
-    // A predecessor that is not CURRENT is not ready. A/M11: a dep that is
-    // blocked on upstream stock is just as un-ready as a pending one.
-    //
-    // F2.2: `is_current()`, not `needs_generation() || stale_since.is_some()`.
-    // `ComputeStatus::Done` is what an edited predecessor still carries, so
-    // the first half said "ready"; the second half leaned on `stale_since`,
-    // which F2.1 demoted to the auto-regeneration debounce clock and is NOT
-    // a claim about correctness. The rows that drop a core result without
-    // setting a regeneration request — toggle enabled, reorder,
-    // move-to-setup, setup orientation (F2.1 §5) — therefore left this badge
-    // green over a predecessor whose result no longer exists.
-    let dep_stale = predecessors.iter().any(|dep_id| {
-        state
-            .session
-            .find_toolpath_config_by_id(*dep_id)
-            .and_then(|(index, _)| {
-                crate::state::freshness::freshness_at(&state.session, &state.gui, index)
-            })
-            .is_none_or(|f| !f.is_current())
-    });
-    if dep_stale {
-        RestBadge::Stale
-    } else {
-        RestBadge::Resolved
-    }
-}
-
-/// Show a rest dependency badge for Rest operations.
-/// Green "dep" if the dependency is resolved, yellow if stale, red "no dep" if missing.
-///
-/// R25 deleted the `MAN` and the `TRACE` badge from the card. This one
-/// stays: a rest dependency is a real, per-operation relationship, and it
-/// changes what the operation cuts. `MAN` is a property of the operation
-/// TYPE, so every 3D card carried it and it separated nothing.
-///
-/// The caller resolves the badge with [`rest_badge`] before it enters the
-/// row, because the row body holds a mutable borrow of the viewport and
-/// cannot also hold the `&AppState` that predicate needs.
-fn draw_rest_badge(ui: &mut egui::Ui, badge: RestBadge) {
-    let badge_color = match badge {
-        RestBadge::Resolved => theme::SUCCESS_BRIGHT,
-        RestBadge::Stale => theme::WARNING,
-        RestBadge::Missing => theme::ERROR_MILD,
-    };
-    let badge_text = badge.text();
-
-    ui.label(
-        egui::RichText::new(badge_text)
-            .small()
-            .strong()
-            .color(badge_color),
-    );
 }
