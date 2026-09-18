@@ -200,16 +200,16 @@ pub fn rapid_collision_check(state: &AppState) -> CheckStatus {
 /// [`crate::state::simulation::SimulationChecks`] alone. The check reads the
 /// holder assembly, the workholding obstacles and the emitted motion; the
 /// operator could change any of them and the row went on reporting the
-/// verdict computed against the previous machine setup. Every other
-/// readiness row declares itself out of date through `GuiState::edit_counter`
-/// — [`crate::state::simulation::SimulationState::collision_check_is_stale`]
-/// is that same counter, read the same way.
+/// verdict computed against the previous machine setup.
+/// [`crate::state::simulation::SimulationState::collision_check_is_stale`]
+/// compares `ProjectSession::simulation_epoch` against the epoch stamped at
+/// SUBMIT, which is the same answer the simulation row reads (W4).
 ///
 /// `min_safe_stickout` is no longer the freshness proxy. The drain writes it
 /// only when the check FOUND collisions, so the old `Pass` arm was
 /// unreachable from the shipped lane and a clean, current check reported
 /// "Not checked".
-/// [`crate::state::simulation::SimulationChecks::checked_at_edit_counter`]
+/// [`crate::state::simulation::SimulationChecks::checked_at_epoch`]
 /// answers "was it checked" directly, which is what that proxy stood in for.
 ///
 /// **Staleness withdraws a CLEARANCE claim. It never withdraws a STRIKE.**
@@ -274,10 +274,10 @@ pub enum HolderClearance {
 /// population the check covered.
 pub fn holder_clearance_state(state: &AppState) -> HolderClearance {
     let sim = &state.simulation;
-    if sim.checks.checked_at_edit_counter.is_none() {
+    if sim.checks.checked_at_epoch.is_none() {
         return HolderClearance::NotChecked;
     }
-    let stale = sim.collision_check_is_stale(state.gui.edit_counter);
+    let stale = sim.collision_check_is_stale(state.session.simulation_epoch());
     let scope = sim.checks.checked_scope;
     match (stale, sim.checks.holder_collision_count) {
         (true, 0) => HolderClearance::StaleClear,

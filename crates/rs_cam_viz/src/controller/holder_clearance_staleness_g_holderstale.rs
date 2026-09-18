@@ -1,15 +1,13 @@
 //! G-HOLDERSTALE (F2.12) — the holder-clearance row must not report a verdict
 //! it can no longer stand behind.
 //!
-//! Every other readiness row declares itself out of date through one counter.
-//! [`crate::state::runtime::GuiState::edit_counter`] counts `mark_edited`
-//! calls; the simulation stamps it at SUBMIT
-//! ([`crate::state::simulation::SimulationState::submitted_edit_counter`],
-//! F2.10) and again at DRAIN into `SimulationRunMeta::last_sim_edit_counter`,
-//! and [`crate::state::simulation::SimulationState::is_stale`] compares the
-//! two. The collision check stamps that counter zero times, so
-//! [`crate::ui::readiness::holder_clearance_check`] answers from
-//! `SimulationChecks` alone and its verdict survives every edit.
+//! Every other readiness row declares itself out of date through one number.
+//! W4 makes that number `ProjectSession::simulation_epoch`, which
+//! `drop_simulation` is the one site to move; the simulation stamps it at
+//! SUBMIT and the core refuses a run whose stamp has moved. The collision
+//! check stamped nothing at all, so
+//! [`crate::ui::readiness::holder_clearance_check`] answered from
+//! `SimulationChecks` alone and its verdict survived every edit.
 //!
 //! The row is a safety row. It is the one that says the cutter will not hit
 //! the workholding.
@@ -35,9 +33,9 @@
 //! stop that here:
 //!
 //! - [`edit_classes`] must not be empty.
-//! - Every class must move `edit_counter`. A class that does not is reported
-//!   BY NAME, because a collision input that no counter follows is the defect
-//!   this row exists to catch.
+//! - Every class must move `ProjectSession::simulation_epoch`. A class that
+//!   does not is reported BY NAME, because a collision input the core does
+//!   not follow is the defect this row exists to catch.
 //! - The collision verdict must arrive through the real drain arm
 //!   (`collision_report` is `Some` and a submit reached the lane), so the
 //!   walk cannot pass on a verdict the test wrote by hand.
@@ -333,12 +331,11 @@ fn disable_the_operation(controller: &mut AppController<ScriptedLane>) {
 
 /// Every edit class that moves an input `check_collisions` reads.
 ///
-/// Deliberately NOT a list of everything that bumps `edit_counter`. The
-/// counter is project-wide and coarse — a rename stales the simulation today
-/// (F2.10 §3) — and pinning that coarseness here would make a later
-/// narrowing fail this sentry. What is pinned is the other direction: an
-/// edit that really does change the holder verdict's inputs must never leave
-/// the previous verdict standing.
+/// Deliberately NOT a list of everything that moves the simulation epoch.
+/// The epoch is project-wide and coarse (F2.10 §3), and pinning that
+/// coarseness here would make a later narrowing fail this sentry. What is
+/// pinned is the other direction: an edit that really does change the holder
+/// verdict's inputs must never leave the previous verdict standing.
 fn edit_classes() -> Vec<EditClass> {
     vec![
         EditClass {
@@ -409,12 +406,12 @@ fn a_clear_verdict_is_reported_and_then_withdrawn_g_holderstale() {
             class.input
         );
 
-        let counter_before = controller.state.gui.edit_counter;
+        let epoch_before = controller.state.session.simulation_epoch();
         (class.apply)(&mut controller);
         assert!(
-            controller.state.gui.edit_counter > counter_before,
-            "the '{}' edit moves {} and no counter follows it — this class is \
-             NOT COVERED by the project's freshness model",
+            controller.state.session.simulation_epoch() > epoch_before,
+            "the '{}' edit moves {} and the core does not follow it — this \
+             class is NOT COVERED by the project's freshness model",
             class.name,
             class.input
         );

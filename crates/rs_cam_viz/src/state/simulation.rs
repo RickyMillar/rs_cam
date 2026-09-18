@@ -702,27 +702,27 @@ pub struct SimulationChecks {
     /// Written only when the check FOUND collisions; a clear check leaves it
     /// `None`. It therefore says nothing about whether a check has run, and
     /// [`crate::ui::readiness::holder_clearance_check`] no longer reads it as
-    /// if it did — see [`Self::checked_at_edit_counter`].
+    /// if it did — see [`Self::checked_at_epoch`].
     pub min_safe_stickout: Option<f64>,
-    /// [`crate::state::runtime::GuiState::edit_counter`] as it stood when the
-    /// collision check that produced the verdict above was SUBMITTED
-    /// (F2.12, G-HOLDERSTALE).
+    /// `ProjectSession::simulation_epoch` as it stood when the collision
+    /// check that produced the verdict above was SUBMITTED (F2.12,
+    /// G-HOLDERSTALE).
     ///
     /// `None` means no check has run. Any other value is compared against the
-    /// live counter by [`SimulationState::collision_check_is_stale`], which is
+    /// live epoch by [`SimulationState::collision_check_is_stale`], which is
     /// how the holder-clearance row says its evidence is old. The check reads
-    /// the holder assembly, the workholding obstacles and the emitted motion;
-    /// every GUI route that changes one of those calls `mark_edited`, so the
-    /// one project-wide counter follows them all.
+    /// the holder assembly, the workholding obstacles, the emitted motion and
+    /// the setup frame. Every core door that writes one of those reaches
+    /// `ProjectSession::drop_simulation`, so the one epoch follows them all.
+    ///
+    /// W4: this was the GUI edit counter. The counter moved for edits that
+    /// write no project data, so an export wizard field withdrew a verdict it
+    /// could not have changed; the epoch moves only where the core drops the
+    /// simulation.
     ///
     /// Staleness withdraws a CLEARANCE claim; it never withdraws a measured
     /// STRIKE. See [`crate::ui::readiness::holder_clearance_check`].
-    ///
-    /// This is the same counter and the same two-stamp shape the simulation
-    /// already uses ([`SimulationState::submitted_edit_counter`],
-    /// `SimulationRunMeta::last_sim_edit_counter`, F2.10). The collision check
-    /// stamped it nowhere, so its verdict survived every edit.
-    pub checked_at_edit_counter: Option<u64>,
+    pub checked_at_epoch: Option<u64>,
     /// The population [`Self::holder_collision_count`] was measured over
     /// (F2.13, G-HOLDERSCOPE), stamped at SUBMIT like the counter above.
     ///
@@ -758,7 +758,7 @@ pub struct SimulationRunMeta {
     /// `None` means the drain could not prove one: the submit stamp was
     /// consumed by a cancel or an error, and a late result arrived behind
     /// it. An unprovable revision reads STALE, never current — the rule
-    /// [`SimulationChecks::checked_at_edit_counter`] already applies to a
+    /// [`SimulationChecks::checked_at_epoch`] already applies to a
     /// holder verdict, for the same reason: recording preferences are not
     /// a safety claim, but a "current" reading on unprovable evidence is
     /// still a wrong reading.
@@ -808,28 +808,32 @@ pub struct SimulationState {
     /// claim this guard cannot make. The view keeps the result and reads
     /// it as not current, which is what F2.10 already asks for.
     pub submitted_simulation_epoch: Option<u64>,
-    /// [`crate::state::runtime::GuiState::edit_counter`] as it stood when the
-    /// in-flight COLLISION check was submitted (F2.12, G-HOLDERSTALE).
+    /// `ProjectSession::simulation_epoch` as it stood when the in-flight
+    /// COLLISION check was submitted (F2.12, G-HOLDERSTALE; W4 moved it off
+    /// the GUI edit counter).
     ///
     /// The collision lane is the analysis lane, so `submit_analysis` clears
     /// the queue and cancels any in-flight job before queuing a new one. At
     /// most one collision result can therefore arrive per stamp, which is
     /// what makes a single `Option<u64>` sound rather than a map keyed by
     /// run. The drain `take()`s it, so a result with no submit of its own
-    /// leaves [`SimulationChecks::checked_at_edit_counter`] at `None` and the
-    /// row reads "Not checked". The simulation falls back to the live counter
-    /// in that position; this row does not, because a holder verdict is a
-    /// safety claim and an unstamped result cannot say when it was measured.
-    pub submitted_collision_edit_counter: Option<u64>,
+    /// leaves [`SimulationChecks::checked_at_epoch`] at `None` and the row
+    /// reads "Not checked". An unstamped result cannot say when it was
+    /// measured, and a holder verdict is a safety claim.
+    ///
+    /// The simulation carries the same stamp for the same reason
+    /// ([`Self::submitted_simulation_epoch`]), and neither one falls back to
+    /// a live read.
+    pub submitted_collision_epoch: Option<u64>,
     /// The population of the in-flight collision check, stamped at SUBMIT
-    /// beside [`Self::submitted_collision_edit_counter`] (F2.13,
+    /// beside [`Self::submitted_collision_epoch`] (F2.13,
     /// G-HOLDERSCOPE).
     ///
     /// Stamped at submit rather than read live at render, for the reason the
-    /// counter is: it describes what the check COVERED, and the operation list
+    /// epoch is: it describes what the check COVERED, and the operation list
     /// can move under it while the lane works. An operation added afterwards
-    /// moves the edit counter, so the row withdraws the claim through
-    /// staleness instead of quietly re-scoping a verdict that never saw it.
+    /// moves the epoch, so the row withdraws the claim through staleness
+    /// instead of quietly re-scoping a verdict that never saw it.
     pub submitted_collision_scope: Option<HolderCheckScope>,
     /// Heightmap cell size in mm (smaller = finer detail, more memory/time).
     pub resolution: f64,

@@ -51,13 +51,13 @@ impl SimulationState {
                 collision_report: None,
                 holder_collision_count: 0,
                 min_safe_stickout: None,
-                checked_at_edit_counter: None,
+                checked_at_epoch: None,
                 checked_scope: HolderCheckScope::default(),
             },
             last_run: None,
             submitted_edit_counter: None,
             submitted_simulation_epoch: None,
-            submitted_collision_edit_counter: None,
+            submitted_collision_epoch: None,
             submitted_collision_scope: None,
             resolution: 0.25,
             auto_resolution: true,
@@ -178,23 +178,31 @@ impl SimulationState {
         })
     }
 
-    /// True when a collision check HAS run and the project has been edited
-    /// since it was submitted (F2.12, G-HOLDERSTALE).
+    /// True when a collision check HAS run and the project has moved under
+    /// it since it was submitted (F2.12, G-HOLDERSTALE).
     ///
     /// A project with no check returns `false` here. That is not "clear": it
     /// is "there is nothing to be stale", and
     /// [`crate::ui::readiness::holder_clearance_check`] separates the two by
-    /// reading [`SimulationChecks::checked_at_edit_counter`] first.
+    /// reading [`SimulationChecks::checked_at_epoch`] first.
     ///
-    /// The counter is project-wide, so an edit that could not have changed
-    /// the holder verdict still stales it. That coarseness is F2.10 §3's,
+    /// The epoch is project-wide, so an edit that could not have changed the
+    /// holder verdict still stales it. That coarseness is F2.10 §3's,
     /// accepted for the same reason: the cost is one re-check, and the cost
     /// of the other error is telling an operator a cut is clear on evidence
     /// that belongs to a different machine setup.
-    pub fn collision_check_is_stale(&self, current_edit_counter: u64) -> bool {
+    ///
+    /// W4: the stamp is `ProjectSession::simulation_epoch`, not the GUI edit
+    /// counter. The check reads the holder assembly, the workholding
+    /// obstacles, the emitted motion and the setup frame, and every core
+    /// door that writes one of those calls `drop_simulation`, which is the
+    /// one site that moves the epoch. The counter moved for edits that write
+    /// no project data (an export wizard field, a machine saved to the
+    /// library) and withdrew a verdict none of them could have changed.
+    pub fn collision_check_is_stale(&self, current_epoch: u64) -> bool {
         self.checks
-            .checked_at_edit_counter
-            .is_some_and(|checked_at| current_edit_counter > checked_at)
+            .checked_at_epoch
+            .is_some_and(|checked_at| current_epoch > checked_at)
     }
 
     pub fn progress(&self) -> f32 {

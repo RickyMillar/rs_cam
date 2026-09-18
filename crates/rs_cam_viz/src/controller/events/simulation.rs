@@ -506,12 +506,17 @@ impl<B: ComputeBackend> AppController<B> {
             });
 
         if let Some((index, enabled, annotated, tool, mesh, obstacles)) = toolpath_data {
-            // G-HOLDERSTALE (F2.12): the counter as it stands at SUBMIT, and
-            // only on the branch that really submits. The `else` arm below
-            // reaches the lane with nothing, and a stamp written before the
-            // search would sit there for an unrelated later arrival.
-            self.state.simulation.submitted_collision_edit_counter =
-                Some(self.state.gui.edit_counter);
+            // G-HOLDERSTALE (F2.12): the core's simulation epoch as it
+            // stands at SUBMIT, and only on the branch that really submits.
+            // The `else` arm below reaches the lane with nothing, and a stamp
+            // written before the search would sit there for an unrelated
+            // later arrival.
+            //
+            // W4: the epoch, not the GUI edit counter. Every input this check
+            // reads reaches `ProjectSession::drop_simulation`, which is the
+            // one site that moves it.
+            self.state.simulation.submitted_collision_epoch =
+                Some(self.state.session.simulation_epoch());
             // G-HOLDERSCOPE (F2.13): and the population it covers, on the same
             // branch and for the same reason.
             //
