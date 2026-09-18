@@ -38,7 +38,7 @@
 - bounded typed simulation triage plus per-metric measurability abstention, consumed by GUI, MCP, CLI and narration through one contract
 - machine kinematics as an analysis dimension: per-axis max rates (`$110/$111/$112`) in the machine model, a per-toolpath kinematic utilization instrument (utilization, feed-bound headroom, machine-bound share, plunge-class peak) on every simulation surface, and a geometric plunge guard in the feed modulator
 
-## Generate ↔ simulate ↔ rest — 2026-09-18/19 (COMPLETE, seen on screen)
+## Generate ↔ simulate ↔ rest — 2026-09-18/19 (COMPLETE; MCP path and every indicator seen on screen, the GUI Auto click and the confirm modal not yet)
 
 `planning/gen_sim_rest_ux_2026-09-18/`: `PLAN.md`, six implementation
 briefs, `IMPLEMENTATION.md` (reconciliation, every landed commit, the

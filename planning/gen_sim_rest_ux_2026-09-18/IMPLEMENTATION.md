@@ -267,10 +267,39 @@ boundary; a full plan turns them all green with the rail unbroken except
 at the header. Viz lib 412/0, workspace clippy and fmt clean at every
 round.
 
-Not seen live: the R1 confirm modal. It is reachable only through the
-GUI button with a manual resolution coarser than the rest tool needs
-(set the Simulation panel to 0.5 mm manual and click Generate All on
-wanaka; the required value is 0.10 mm for the 1 mm tapered ball).
+Not seen live, two GUI-only paths. Every live plan above ran through
+MCP `generate_all` with an explicit resolution. The operator's original
+click, the GUI Generate All button with "Auto from tool size" ticked,
+takes the silent `min(auto, required)` branch and is covered by W1's
+controller sentry with a fake backend only. The R1 confirm modal is
+reachable only through that button with a manual value coarser than
+the rest tool needs (Simulation panel at 0.5 mm manual; the required
+value on wanaka is 0.10 mm for the 1 mm tapered ball). One click each
+closes them.
+
+### PLAN §7 measures, as read
+
+| Measure | Before | After |
+|---|---|---|
+| Ops current after one Generate All | 0 (refused on auto) | all 7 enabled, MCP path; GUI click with Auto pending |
+| Toasts during one Generate All | 1 refusal, or 1 per blocked op per round | 0 observed |
+| Clicks from load to every op current and simulated | ≥ 1 + 2 per rest link | 1 |
+| Words visible on a card at rest | 0 | 0 |
+| Inspector controls whose label contains "rest" | 4 | 3 (W2 measured; the consumer side keeps its combo, picker label and caption) |
+| Controls the system flips during draw | 1 | 0 |
+| Truths for "simulation stale" | 2 | 1 |
+
+### Known surface disagreements W4 introduced (open)
+
+- During a re-run that follows no edit, the Readiness simulation check
+  reads Warning while the workspace-bar badge reads the tick, for the
+  length of the run. `SimFreshness::Running` is not stale, the readiness
+  arm order says otherwise.
+- After an MCP edit, an MCP `run_simulation` reads `Running`, so the
+  timeline un-dims the old trace while the new run works.
+
+Both are the §3 arm order in `state/freshness.rs`; one ruling on which
+surface is right fixes both.
 
 ## 3. Rulings the scans added
 
