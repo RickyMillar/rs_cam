@@ -590,6 +590,8 @@ struct RestChainBackend {
     /// admitted, and what the phantom scan picked (its position and the
     /// operation it unlocks).
     pub sim_requests: Vec<SimRequestLog>,
+    /// The cell size each simulation request carried.
+    pub sim_resolutions: Vec<f64>,
     /// When set, this toolpath always fails to generate.
     poison: Option<ToolpathId>,
 }
@@ -600,6 +602,7 @@ impl RestChainBackend {
             drained: Vec::new(),
             simulations: 0,
             sim_requests: Vec::new(),
+            sim_resolutions: Vec::new(),
             poison: None,
         }
     }
@@ -643,6 +646,7 @@ impl ComputeBackend for RestChainBackend {
 
     fn submit_simulation(&mut self, request: SimulationRequest) {
         self.simulations += 1;
+        self.sim_resolutions.push(request.core.resolution);
         self.sim_requests.push(
             request
                 .core

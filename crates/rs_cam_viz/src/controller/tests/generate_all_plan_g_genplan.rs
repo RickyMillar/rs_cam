@@ -177,6 +177,21 @@ fn generate_all_walks_one_plan_over_the_rest_chain() {
         controller.compute.sim_requests
     );
 
+    // The plan narrows the REQUEST, never the panel. Every simulation it
+    // ran is at least as fine as the rest needs.
+    let required = rs_cam_core::session::generation_plan::required_resolution_mm(
+        &controller.state.session,
+        rs_cam_core::session::generation_plan::Scope::Project,
+    );
+    if let Some(required) = required {
+        for resolution in &controller.compute.sim_resolutions {
+            assert!(
+                *resolution <= required,
+                "the plan simulates at min(panel, required): {resolution} > {required}"
+            );
+        }
+    }
+
     // 3. Zero warnings. Read the whole stack, not `active_notifications`.
     let warnings: Vec<&str> = controller
         .notifications()
@@ -427,6 +442,15 @@ fn a_coarse_pinned_resolution_asks_before_it_generates() {
         controller.awaiting_generate_all(),
         "accepting starts the plan"
     );
+    pump_until_idle(&mut controller);
+    for resolution in &controller.compute.sim_resolutions {
+        assert!(
+            (resolution - confirm.required_mm).abs() < f64::EPSILON,
+            "every simulation runs at the cell size the operator agreed to: \
+             {resolution} != {}",
+            confirm.required_mm
+        );
+    }
     assert!(
         (controller.state.simulation.resolution - confirm.required_mm).abs() < f64::EPSILON,
         "this is the ONE place a plan writes the panel"
@@ -468,5 +492,28 @@ fn a_fine_pinned_resolution_asks_nothing() {
     assert!(
         (controller.state.simulation.resolution - 0.05).abs() < f64::EPSILON,
         "a plan that asks nothing writes nothing"
+    );
+}
+
+/// An MCP `generate_toolpath` must not be stored behind a question the
+/// operator has not answered. A plan that never starts resolves nothing, and
+/// that is the failure that left one call unresolved for about nine hours.
+#[cfg(feature = "mcp")]
+#[test]
+fn a_waiter_is_refused_while_the_resolution_question_stands() {
+    let (mut controller, _ids) = two_setup_chain();
+    controller.state.simulation.auto_resolution = false;
+    controller.state.simulation.resolution = 2.0;
+
+    controller.handle_internal_event(crate::ui::AppEvent::GenerateAll);
+
+    assert!(controller.pending_plan_confirm().is_some());
+    assert!(
+        !controller.awaiting_generate_all(),
+        "no plan runs, so `awaiting_generate_all` alone would let a waiter in"
+    );
+    assert!(
+        controller.plan_is_busy(),
+        "the door an MCP handler asks must cover the unanswered question too"
     );
 }

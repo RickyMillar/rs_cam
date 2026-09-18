@@ -859,13 +859,14 @@ impl RsCamApp {
         // refuse this one, and nothing would ever resolve the oneshot. That
         // is the failure that left a `generate_toolpath` unresolved for
         // about nine hours.
-        if self.controller.awaiting_generate_all() {
+        if self.controller.plan_is_busy() {
             let _ = response_tx.send(McpResponse {
                 result: Ok(json_str(serde_json::json!({
                     "ok": false,
-                    "error": "a generation plan is already running. Poll \
-                              `generation_status` for its step, or call \
-                              `cancel_generation` and try again.",
+                    "error": "a generation plan is already running, or one is \
+                              waiting on the operator to confirm a simulation \
+                              resolution. Poll `generation_status` for its step, \
+                              or call `cancel_generation` and try again.",
                 }))),
             });
             return;

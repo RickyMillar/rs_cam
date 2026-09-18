@@ -355,6 +355,17 @@ impl<B: ComputeBackend> AppController<B> {
         self.pending_plan_confirm.as_ref()
     }
 
+    /// Would a new plan be refused right now?
+    ///
+    /// True while one runs AND while one waits on the resolution question. A
+    /// caller that stores a waiter must ask this BEFORE it stores one: a
+    /// plan that never starts resolves nothing, which is the failure that
+    /// left an MCP `generate_toolpath` unresolved for about nine hours.
+    #[must_use]
+    pub fn plan_is_busy(&self) -> bool {
+        self.plan.is_some() || self.pending_plan_confirm.is_some()
+    }
+
     /// W1/W5 — hand the controller the cell the MCP server thread reads.
     #[cfg(feature = "mcp")]
     pub fn set_plan_beat(&mut self, beat: std::sync::Arc<crate::mcp_bridge::PlanBeat>) {

@@ -1580,8 +1580,9 @@ impl<B: ComputeBackend> AppController<B> {
         }
 
         // Checked before the plan is built: a second plan would strand this
-        // caller's oneshot behind the first one's cursor.
-        if self.plan.is_some() {
+        // caller's oneshot behind the first one's cursor, and a plan armed
+        // behind an unanswered resolution question would never start.
+        if self.plan_is_busy() {
             let _ = response_tx.send(McpResponse {
                 result: Ok(rs_cam_mcp::server::json_str(serde_json::json!({
                     "ok": false,

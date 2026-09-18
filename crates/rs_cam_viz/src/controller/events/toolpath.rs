@@ -400,12 +400,12 @@ impl<B: ComputeBackend> AppController<B> {
             let command = Command::RemoveToolpath(RemoveToolpathArgs { index: tp_idx });
             let _ = self.apply_quietly(command);
             self.state.gui.toolpath_rt.remove(&tp_id);
-            // Any toolpath whose `DerivedRestRegions` boundary referenced
-            // this one just lost its source entirely — force a regenerate
-            // so it fails hard with the "source toolpath no longer exists"
-            // message instead of silently keeping a clip built from the
-            // now-orphaned cached regions.
-            self.mark_derived_rest_dependents_stale(tp_id);
+            // W1: the viz twin `mark_derived_rest_dependents_stale` is NOT
+            // called here any more. `remove_toolpath` walks the dependents
+            // BEFORE it takes the config out
+            // (`session/mutation/toolpath.rs:88-91`), so the Regions edge
+            // still resolves, the walker names every consumer, and
+            // `apply_quietly` stamps them from `Effects::stale`.
         }
         if self.state.selection == Selection::Toolpath(tp_id) {
             self.state.selection = Selection::None;
@@ -434,7 +434,7 @@ impl<B: ComputeBackend> AppController<B> {
             );
             return;
         }
-        self.start_gui_plan(Scope::Project, None);
+        let _ = self.start_gui_plan(Scope::Project, None);
     }
 
     /// Make one operation current, and everything it depends on first (R6).
@@ -447,7 +447,7 @@ impl<B: ComputeBackend> AppController<B> {
     pub(crate) fn handle_generate_toolpath(&mut self, tp_id: ToolpathId) {
         use rs_cam_core::session::generation_plan::Scope;
 
-        self.start_gui_plan(Scope::Ancestors(tp_id), Some(tp_id));
+        let _ = self.start_gui_plan(Scope::Ancestors(tp_id), Some(tp_id));
     }
 
     /// Arm a GUI plan over `scope`, asking about the cell size first when the
@@ -455,17 +455,24 @@ impl<B: ComputeBackend> AppController<B> {
     ///
     /// `target` is the operation the operator named. It regenerates even when
     /// it already holds a result; its ancestors do not.
+    ///
+    /// Answers `false` when nothing was armed, either because a plan already
+    /// runs or because one is waiting on the resolution question. A caller
+    /// holding a waiter must check [`Self::plan_is_busy`] BEFORE it stores
+    /// one, because a plan that never starts resolves nothing.
     pub(crate) fn start_gui_plan(
         &mut self,
         scope: rs_cam_core::session::generation_plan::Scope,
         target: Option<ToolpathId>,
-    ) {
+    ) -> bool {
         use crate::controller::generate_all::{GenerateAllSink, GenerationPlan, PlanStep};
         use rs_cam_core::session::generation_plan::required_resolution_mm;
 
-        // A second plan would race the first one's cursor.
-        if self.plan.is_some() || self.pending_plan_confirm().is_some() {
-            return;
+        // A second plan would race the first one's cursor, and a plan armed
+        // behind an unanswered question would submit at a cell size the
+        // operator has not agreed to.
+        if self.plan_is_busy() {
+            return false;
         }
 
         let required = required_resolution_mm(&self.state.session, scope);
@@ -482,7 +489,7 @@ impl<B: ComputeBackend> AppController<B> {
         {
             self.pending_plan_confirm =
                 Some(self.build_resolution_confirm(scope, required, target));
-            return;
+            return false;
         }
 
         let mut steps = self.plan_steps(scope, true);
@@ -501,6 +508,7 @@ impl<B: ComputeBackend> AppController<B> {
             plan = plan.with_target(target);
         }
         self.start_plan(plan);
+        true
     }
 
     /// The question the operator answers when the panel is too coarse.
@@ -555,7 +563,7 @@ impl<B: ComputeBackend> AppController<B> {
         };
         self.state.simulation.resolution = confirm.required_mm;
         self.state.simulation.auto_resolution = false;
-        self.start_gui_plan(confirm.scope, confirm.target);
+        let _ = self.start_gui_plan(confirm.scope, confirm.target);
     }
 
     /// Answer "no". Nothing is submitted and the panel is untouched.
