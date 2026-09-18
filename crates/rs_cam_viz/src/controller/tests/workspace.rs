@@ -83,21 +83,21 @@ fn simulation_staleness_tracks_edits() {
 
     // Should not be stale immediately
     assert!(
-        !controller
-            .state
-            .simulation
-            .is_stale(controller.state.gui.edit_counter),
+        !controller.state.simulation_is_stale(),
         "Fresh simulation should not be stale"
     );
 
-    // Mark an edit
-    controller.state.gui.mark_edited();
+    // W4: the edit is a real one. `GuiState::mark_edited` alone moves the
+    // counter and writes no project data, and the core is right to keep the
+    // run through it — see
+    // `a_counter_bump_alone_does_not_stale_the_run_g_freshnessdisagree`.
+    let tp_id = controller.state.session.toolpath_configs()[0].id;
+    panel_edit(&mut controller, tp_id, |entry| {
+        entry.operation.set_feed_rate(4321.0);
+    });
 
     assert!(
-        controller
-            .state
-            .simulation
-            .is_stale(controller.state.gui.edit_counter),
+        controller.state.simulation_is_stale(),
         "Simulation should be stale after job edit"
     );
 }

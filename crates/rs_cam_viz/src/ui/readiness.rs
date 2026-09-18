@@ -170,15 +170,12 @@ pub fn simulation_request_is_buildable(session: &ProjectSession, gui: &GuiState)
 /// Simulation freshness — Pass when fresh results exist, Warning when missing
 /// or stale.
 pub fn simulation_check(state: &AppState) -> CheckStatus {
-    let sim = &state.simulation;
-    if sim.has_results() {
-        if sim.is_stale(state.gui.edit_counter) {
-            CheckStatus::Warning
-        } else {
-            CheckStatus::Pass
-        }
-    } else {
-        CheckStatus::Warning
+    // W4: one function answers this. Only the arm the core stands behind
+    // passes; "no run", "in flight", "edited since" and "capture options
+    // changed" are each a reason the row cannot report evidence.
+    match state.simulation_freshness() {
+        crate::state::freshness::SimFreshness::Current => CheckStatus::Pass,
+        _ => CheckStatus::Warning,
     }
 }
 

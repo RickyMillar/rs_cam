@@ -77,14 +77,17 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
 
             // --- Simulation check ---
             let sim_status = readiness::simulation_check(state);
-            let sim_detail = if sim.has_results() {
-                if sim.is_stale(state.gui.edit_counter) {
-                    "Stale — parameters changed"
-                } else {
-                    "Up to date"
+            // W4: the arm names the reason, so the card can say which of the
+            // two stale readings it has. The old text called a capture-option
+            // change a parameter change.
+            let sim_detail = match state.simulation_freshness() {
+                crate::state::freshness::SimFreshness::NoRun => "Not run",
+                crate::state::freshness::SimFreshness::Running => "Running",
+                crate::state::freshness::SimFreshness::Current => "Up to date",
+                crate::state::freshness::SimFreshness::EditedSince => "Stale — parameters changed",
+                crate::state::freshness::SimFreshness::CaptureOptionsChanged => {
+                    "Stale — capture options changed"
                 }
-            } else {
-                "Not run"
             };
             check_card(
                 ui,

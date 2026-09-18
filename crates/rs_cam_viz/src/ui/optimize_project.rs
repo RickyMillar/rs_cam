@@ -53,7 +53,7 @@ fn draw_view(
     // launch; if that sim was already stale the optimized-vs-baseline
     // numbers are computed from out-of-date stock. Flag it instead of
     // presenting the figures as current.
-    if state.simulation.is_stale(state.gui.edit_counter) {
+    if state.simulation_is_stale() {
         FreshnessGate::banner(ui);
         ui.add_space(4.0);
     }

@@ -129,7 +129,7 @@ pub fn draw(
             // Safety keeps its voice.
             let holder = state.simulation.checks.holder_collision_count;
             let rapid = state.simulation.checks.rapid_collisions.len();
-            let stale = state.simulation.is_stale(state.gui.edit_counter);
+            let stale = state.simulation_is_stale();
             let color = if stale {
                 tokens::TEXT_MUTED
             } else {

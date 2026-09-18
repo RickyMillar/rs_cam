@@ -224,7 +224,7 @@ fn simulation_badge(state: &AppState) -> Option<(String, Role)> {
         return Some(collision_badge(collision_count));
     }
 
-    if sim.is_stale(state.gui.edit_counter) {
+    if state.simulation_is_stale() {
         return Some((" stale".to_owned(), Role::Caution));
     }
 
@@ -247,7 +247,7 @@ pub(crate) fn readiness_badge(state: &AppState) -> Option<(String, Role)> {
     let collisions = sim.checks.total_collision_count();
 
     // Check simulation staleness
-    let stale = sim.has_results() && sim.is_stale(state.gui.edit_counter);
+    let stale = state.simulation_is_stale();
 
     // Order: collisions, then stale operations, then uncomputed, then a
     // stale simulation. Safety outranks everything (SHE-003), and an edited

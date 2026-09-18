@@ -103,7 +103,7 @@ fn every_undo_arm_marks_the_project_edited_g_undofresh() {
         // cleared or stale, never present-and-fresh.
         let sim = &controller.state.simulation;
         assert!(
-            !sim.has_results() || sim.is_stale(controller.state.gui.edit_counter),
+            !sim.has_results() || controller.state.simulation_is_stale(),
             "{name}: the simulation was computed from the configuration this \
              undo just discarded, and is still being presented as fresh"
         );
@@ -459,7 +459,7 @@ fn an_edit_during_a_simulation_leaves_the_result_stale_g_latesim() {
          that never happened"
     );
     assert!(
-        controller.state.simulation.is_stale(after_edit),
+        controller.state.simulation_is_stale(),
         "but NOT current — this run measured the configuration the operator \
          has already left, and it is the surface they read collision counts \
          off"
@@ -490,10 +490,7 @@ fn a_simulation_with_no_edit_in_flight_is_current_g_latesim() {
 
     assert!(controller.state.simulation.has_results());
     assert!(
-        !controller
-            .state
-            .simulation
-            .is_stale(controller.state.gui.edit_counter),
+        !controller.state.simulation_is_stale(),
         "an unedited run is current evidence"
     );
 }

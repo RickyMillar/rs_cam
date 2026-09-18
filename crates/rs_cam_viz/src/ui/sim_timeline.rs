@@ -3,6 +3,7 @@ use super::components::{CountPill, FreshnessGate, NotMeasured};
 use super::readiness::{self, CycleTimeBasisExt};
 use super::sim_debug::semantic_kind_color;
 use crate::render::toolpath_render::palette_color;
+use crate::state::freshness::simulation_freshness;
 use crate::state::runtime::GuiState;
 use crate::state::simulation::{ActiveSemanticItem, SimulationState};
 use crate::ui_command::{NoArgs, SimJumpToMoveArgs, UiCommand};
@@ -51,7 +52,9 @@ pub fn draw(
     // W0.5/TIM-009 — the spine + strips keep rendering the last trace, so
     // flag staleness here too; otherwise the bottom panel's concrete metrics
     // read as fresh after an edit while only the left/right panels say stale.
-    if sim.has_results() && sim.is_stale(gui.edit_counter) {
+    // W4: one function, and it carries the "nothing to show" case, so the
+    // second `has_results()` read goes.
+    if simulation_freshness(session, sim).is_stale() {
         FreshnessGate::banner(ui);
         ui.add_space(2.0);
     }
@@ -295,7 +298,7 @@ fn draw_signal_spine(
     // TIM-009 — whole-spine stale skin. When the trace no longer matches the
     // current params, desaturate the track colours and drop the gate-trip
     // drill (its dots point at moves that may no longer exist).
-    let stale = sim.is_stale(gui.edit_counter);
+    let stale = simulation_freshness(session, sim).is_stale();
 
     // Group cutting samples by toolpath using the per-trace cache. Without
     // this, the per-frame `for sample in samples.iter()` + linear

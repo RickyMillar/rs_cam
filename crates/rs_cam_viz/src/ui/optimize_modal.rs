@@ -46,7 +46,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) {
 
     // W0.5/OPT-003 — flag when the baseline behind these numbers came from
     // a sim that's already out of date relative to the current params.
-    let baseline_stale = state.simulation.is_stale(state.gui.edit_counter);
+    let baseline_stale = state.simulation_is_stale();
 
     let mut still_open = true;
     egui::Window::new(format!("Optimize — {toolpath_name}"))
