@@ -191,6 +191,9 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::ImportMachineFromLibrary(name) => self.import_machine_from_library(&name),
 
             AppEvent::AddSetup => self.handle_add_setup(),
+            AppEvent::RequestRemoveSetup(setup_id) => self.request_remove_setup(setup_id),
+            AppEvent::CancelRemoveSetup => self.state.panels.pending_setup_removal = None,
+            AppEvent::RemoveSetup(setup_id) => self.handle_remove_setup(setup_id),
             AppEvent::SetupTwoSided => self.handle_setup_two_sided(),
             AppEvent::RenameSetup(setup_id, name) => self.handle_rename_setup(setup_id, name),
             AppEvent::AddFixture(setup_id) => self.handle_add_fixture(setup_id),

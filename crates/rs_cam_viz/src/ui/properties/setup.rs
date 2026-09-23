@@ -42,6 +42,7 @@ pub fn draw(
     pin_count: usize,
     has_flip_axis: bool,
     all_models: &[(ModelId, String)],
+    setup_count: usize,
     events: &mut Vec<AppEvent>,
 ) -> PanelEdit {
     ui.heading("Setup Properties");
@@ -58,6 +59,12 @@ pub fn draw(
     });
 
     ui.add_space(4.0);
+    if setup_count == 1 {
+        ui.add_enabled(false, egui::Button::new("Remove Setup"))
+            .on_disabled_hover_text("The last remaining setup cannot be removed.");
+    } else if ui.button("Remove Setup").clicked() {
+        events.push(AppEvent::RequestRemoveSetup(setup_id));
+    }
 
     ui.label(
         egui::RichText::new("Orientation")

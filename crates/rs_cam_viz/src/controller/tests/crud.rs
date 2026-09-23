@@ -88,11 +88,6 @@ fn add_tool_and_remove_tool_lifecycle() {
     );
 }
 
-/// WP28 part 3 deleted `Command::RemoveSetup` with its setter. The row
-/// declared `Reach::Skip` on all three surfaces, so no operator path and
-/// no agent path removed a setup (review §21.8). WP13 had already
-/// deleted `AppEvent::RemoveSetup` for the same reading. What remains of
-/// the old lifecycle test is the half the product still runs: the add.
 #[test]
 fn add_setup_appends_a_second_setup() {
     let mut controller = AppController::with_backend(ScriptedBackend::new());
@@ -110,6 +105,172 @@ fn add_setup_appends_a_second_setup() {
         original_setup_id,
         "the add appends; it never re-keys the setup that stood first"
     );
+}
+
+#[test]
+fn remove_setup_selects_previous_then_next_and_cancels_generation() {
+    let mut controller = AppController::with_backend(ScriptedBackend::new());
+    controller.handle_internal_event(crate::ui::AppEvent::AddSetup);
+    controller.handle_internal_event(crate::ui::AppEvent::AddSetup);
+    let first = SetupId(controller.state.session.list_setups()[0].id);
+    let second = SetupId(controller.state.session.list_setups()[1].id);
+    let third = SetupId(controller.state.session.list_setups()[2].id);
+
+    controller.handle_internal_event(crate::ui::AppEvent::RemoveSetup(second));
+
+    assert_eq!(controller.state.session.list_setups().len(), 2);
+    assert_eq!(controller.state.selection, Selection::Setup(first));
+    assert_eq!(
+        controller.compute.toolpath_lane.state,
+        LaneState::Cancelling
+    );
+
+    controller.handle_internal_event(crate::ui::AppEvent::RemoveSetup(first));
+
+    assert_eq!(controller.state.session.list_setups().len(), 1);
+    assert_eq!(controller.state.selection, Selection::Setup(third));
+}
+
+#[test]
+fn remove_final_setup_is_refused_without_cancelling_or_editing() {
+    let mut controller = AppController::with_backend(ScriptedBackend::new());
+    let only = SetupId(controller.state.session.list_setups()[0].id);
+    let epoch = controller.state.session.simulation_epoch();
+    let edits = controller.state.gui.edit_counter;
+
+    controller.handle_internal_event(crate::ui::AppEvent::RemoveSetup(only));
+
+    assert_eq!(controller.state.session.list_setups().len(), 1);
+    assert_eq!(controller.compute.toolpath_lane.state, LaneState::Idle);
+    assert_eq!(controller.state.session.simulation_epoch(), epoch);
+    assert_eq!(controller.state.gui.edit_counter, edits);
+}
+
+#[test]
+fn remove_setup_cleans_runtime_and_ignores_a_queued_late_completion() {
+    let mut controller = sample_controller();
+    controller.handle_internal_event(crate::ui::AppEvent::AddSetup);
+    let removed_setup = SetupId(controller.state.session.list_setups()[1].id);
+    let retained_id = controller.state.session.toolpath_configs()[0].id;
+    let mut config = controller.state.session.toolpath_configs()[0].clone();
+    config.name = "Removed setup operation".to_owned();
+    let removed_index = controller
+        .state
+        .session
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 1,
+            config: Box::new(config),
+        }))
+        .expect("add toolpath to removed setup")
+        .created
+        .expect("created toolpath index");
+    let removed_id = controller.state.session.toolpath_configs()[removed_index].id;
+    controller
+        .state
+        .gui
+        .toolpath_rt
+        .insert(removed_id, ToolpathRuntime::new(true));
+    assert!(controller.start_gui_plan(
+        rs_cam_core::session::generation_plan::Scope::Ancestors(removed_id),
+        Some(removed_id),
+    ));
+    assert!(controller.plan.as_ref().is_some_and(|plan| plan.in_flight));
+    #[cfg(feature = "mcp")]
+    let mut late_mcp_rx = {
+        controller.pending_mcp = Some(crate::mcp_bridge::PendingMcpCompute::new());
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        controller
+            .pending_mcp
+            .as_mut()
+            .expect("pending MCP state")
+            .toolpath
+            .insert(removed_id, tx);
+        rx
+    };
+    controller.state.pending_reconciliation_for_ids = vec![retained_id, removed_id];
+    controller.state.pending_apply_resim = Some(removed_id.0);
+    controller.state.gui.pending_toolpath_tab =
+        Some((removed_id, crate::ui::properties::ToolpathTab::Geometry));
+    controller.state.simulation.debug.pending_inspect_toolpath = Some(removed_id);
+    controller.superseded_toolpaths.insert(removed_id);
+    controller
+        .compute
+        .drained
+        .push(ComputeMessage::Toolpath(Box::new(
+            crate::compute::worker::ComputeResult {
+                toolpath_id: removed_id,
+                revision: None,
+                result: Ok(ToolpathResult {
+                    annotated: Arc::new(
+                        rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(Toolpath::new()),
+                    ),
+                    stats: Default::default(),
+                    debug_trace: None,
+                    semantic_trace: None,
+                    debug_trace_path: None,
+                    drill_op: None,
+                }),
+                debug_trace: None,
+                semantic_trace: None,
+                debug_trace_path: None,
+            },
+        )));
+    let edits = controller.state.gui.edit_counter;
+    controller.pending_upload = false;
+
+    controller.handle_internal_event(crate::ui::AppEvent::RemoveSetup(removed_setup));
+
+    assert!(controller.state.gui.toolpath_rt.contains_key(&retained_id));
+    assert!(!controller.state.gui.toolpath_rt.contains_key(&removed_id));
+    assert_eq!(
+        controller.state.pending_reconciliation_for_ids,
+        vec![retained_id]
+    );
+    assert!(controller.state.pending_apply_resim.is_none());
+    assert!(controller.state.gui.pending_toolpath_tab.is_none());
+    assert!(
+        controller
+            .state
+            .simulation
+            .debug
+            .pending_inspect_toolpath
+            .is_none()
+    );
+    assert!(!controller.superseded_toolpaths.contains(&removed_id));
+    assert!(controller.pending_upload);
+    assert_eq!(controller.state.gui.edit_counter, edits + 1);
+
+    controller.drain_compute_results();
+
+    assert!(
+        controller
+            .state
+            .session
+            .find_toolpath_config_by_id(removed_id)
+            .is_none()
+    );
+    assert!(!controller.state.gui.toolpath_rt.contains_key(&removed_id));
+    assert!(controller.state.session.get_result(0).is_none());
+    assert!(
+        controller.plan.is_none(),
+        "the deleted target's terminal message must close the cancelled plan"
+    );
+    #[cfg(feature = "mcp")]
+    {
+        let response = late_mcp_rx
+            .try_recv()
+            .expect("the deleted target's terminal message must resolve its MCP waiter");
+        let payload = response.result.expect("MCP completion payload");
+        assert!(payload.contains("Toolpath not found"), "payload: {payload}");
+        assert!(
+            !controller
+                .pending_mcp
+                .as_ref()
+                .expect("pending MCP state remains allocated")
+                .toolpath
+                .contains_key(&removed_id)
+        );
+    }
 }
 
 /// Q1: the add-toolpath door holds the model before it calls Suggest.

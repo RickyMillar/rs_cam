@@ -456,9 +456,18 @@ fn draw_setup_card(
         })
         .response;
 
-    if response.on_hover_text(detail).clicked() {
+    let response = response.on_hover_text(detail);
+    if response.clicked() {
         events.push(AppEvent::Ui(UiCommand::Select(Selection::Setup(setup_id))));
     }
+    response.context_menu(|ui| {
+        if state.session.list_setups().len() == 1 {
+            ui.label("The last remaining setup cannot be removed.");
+        } else if ui.button("Remove Setup…").clicked() {
+            events.push(AppEvent::RequestRemoveSetup(setup_id));
+            ui.close();
+        }
+    });
 }
 
 /// The lines that used to sit on the card and made one card taller than

@@ -1025,6 +1025,7 @@ fn draw_setup_selection(
             pin_count,
             has_flip_axis,
             &all_models,
+            state.session.list_setups().len(),
             events,
         );
         if edit.committed {

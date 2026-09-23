@@ -23,6 +23,8 @@
 
 use rs_cam_core::machine::kinematics::{GrblImport, MachineKinematics};
 
+use super::job::SetupId;
+
 /// The pasted GRBL `$$` dump, its status line, and the parse of it.
 ///
 /// The parse is cached on the exact text it was made from, so a frame that
@@ -73,6 +75,13 @@ impl GrblImportDraft {
     }
 }
 
+/// A pending destructive action requested from either setup surface.
+#[derive(Debug, Clone)]
+pub struct SetupRemovalConfirmation {
+    pub setup_id: SetupId,
+    pub setup_name: String,
+}
+
 /// Every panel draft that outlives one frame.
 #[derive(Debug, Default, Clone)]
 pub struct PanelDrafts {
@@ -84,6 +93,8 @@ pub struct PanelDrafts {
     /// The Tool panel's "Save to library" catalog name and status line.
     pub tool_catalog_name: String,
     pub tool_catalog_status: String,
+    /// The setup deletion confirmation, shared by the inspector and setup rail.
+    pub pending_setup_removal: Option<SetupRemovalConfirmation>,
 }
 
 #[cfg(test)]

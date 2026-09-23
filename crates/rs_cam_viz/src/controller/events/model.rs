@@ -1,9 +1,9 @@
 use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::session::{
     AddFixtureArgs, AddKeepOutArgs, AddSetupArgs, AddToolArgs, AddToolpathArgs, Command, Fixture,
-    KeepOutZone, RemoveFixtureArgs, RemoveKeepOutArgs, RemoveModelArgs, RemoveToolArgs,
-    RemoveToolpathArgs, SetAlignmentPinDrillHolesArgs, SetMachineArgs, SetSetupNameArgs,
-    SetSetupPauseMessageArgs, SetStockConfigArgs,
+    KeepOutZone, RemoveFixtureArgs, RemoveKeepOutArgs, RemoveModelArgs, RemoveSetupArgs,
+    RemoveToolArgs, RemoveToolpathArgs, SetAlignmentPinDrillHolesArgs, SetMachineArgs,
+    SetSetupNameArgs, SetSetupPauseMessageArgs, SetStockConfigArgs,
 };
 
 use crate::compute::ComputeBackend;
@@ -307,6 +307,110 @@ impl<B: ComputeBackend> AppController<B> {
         if let Some(setup) = created.and_then(|idx| self.state.session.list_setups().get(idx)) {
             self.state.selection = Selection::Setup(SetupId(setup.id));
         }
+        self.state.gui.mark_edited();
+    }
+
+    /// Open the shared removal confirmation for a setup that still exists.
+    pub(crate) fn request_remove_setup(&mut self, setup_id: SetupId) {
+        let setups = self.state.session.list_setups();
+        if setups.len() <= 1 {
+            return;
+        }
+        let Some(setup) = setups.iter().find(|setup| setup.id == setup_id.0) else {
+            return;
+        };
+        self.state.panels.pending_setup_removal =
+            Some(crate::state::panels::SetupRemovalConfirmation {
+                setup_id,
+                setup_name: setup.name.clone(),
+            });
+    }
+
+    /// Remove a setup after cancelling any work that could otherwise adopt
+    /// results for its now-deleted toolpaths.
+    pub(crate) fn handle_remove_setup(&mut self, setup_id: SetupId) {
+        self.state.panels.pending_setup_removal = None;
+        let setups = self.state.session.list_setups();
+        let Some((index, setup)) = setups
+            .iter()
+            .enumerate()
+            .find(|(_, setup)| setup.id == setup_id.0)
+        else {
+            return;
+        };
+        // Refusing the final setup is not an edit, so it must not cancel an
+        // unrelated generation that is already in flight.
+        if setups.len() <= 1 {
+            return;
+        }
+
+        let replacement = setups
+            .get(if index > 0 { index - 1 } else { 1 })
+            .map(|setup| SetupId(setup.id));
+        let removed_ids: Vec<_> = setup
+            .toolpath_indices
+            .iter()
+            .filter_map(|&tp| {
+                self.state
+                    .session
+                    .toolpath_configs()
+                    .get(tp)
+                    .map(|config| config.id)
+            })
+            .collect();
+
+        self.cancel_plan_resolution();
+        self.cancel_generation_plan();
+        self.compute
+            .cancel_lane(crate::compute::ComputeLane::Toolpath);
+
+        let Some(effects) =
+            self.apply_quietly(Command::RemoveSetup(RemoveSetupArgs { setup_index: index }))
+        else {
+            return;
+        };
+        // `apply_quietly` clears the view when a stored core simulation was
+        // dropped. An in-flight-only run has no stored core value yet, but
+        // still has to be cancelled after the epoch moves.
+        if !effects.simulation_cleared {
+            self.invalidate_simulation();
+        }
+
+        for id in &removed_ids {
+            self.state.gui.toolpath_rt.remove(id);
+            self.superseded_toolpaths.remove(id);
+        }
+        self.state
+            .pending_reconciliation_for_ids
+            .retain(|id| !removed_ids.contains(id));
+        if self
+            .state
+            .pending_apply_resim
+            .is_some_and(|id| removed_ids.iter().any(|removed| removed.0 == id))
+        {
+            self.state.pending_apply_resim = None;
+        }
+        if self
+            .state
+            .gui
+            .pending_toolpath_tab
+            .as_ref()
+            .is_some_and(|(id, _)| removed_ids.contains(id))
+        {
+            self.state.gui.pending_toolpath_tab = None;
+        }
+        if self
+            .state
+            .simulation
+            .debug
+            .pending_inspect_toolpath
+            .is_some_and(|id| removed_ids.contains(&id))
+        {
+            self.state.simulation.debug.pending_inspect_toolpath = None;
+        }
+
+        self.state.selection = replacement.map_or(Selection::None, Selection::Setup);
+        self.pending_upload = true;
         self.state.gui.mark_edited();
     }
 

@@ -930,6 +930,13 @@ impl RsCamApp {
             crate::ui::tool_library_modal::draw(ctx, state, events);
         }
 
+        // Both the setup inspector and setup rail request this one persistent
+        // confirmation; only its confirmed event can remove a setup.
+        {
+            let (state, events) = self.controller.state_ref_and_events_mut();
+            crate::ui::setup_deletion_modal::draw(ctx, state, events);
+        }
+
         // The generation plan's one question (R1). Its state lives on the
         // controller, not on `AppState`: the plan is the controller's, and
         // the answer starts it.

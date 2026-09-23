@@ -448,6 +448,16 @@ impl<B: ComputeBackend> AppController<B> {
         let tp_id = result.toolpath_id;
         // WP11b: read before the match below moves `result`.
         let reply_revision = result.revision;
+        // Resolve the stable id once, before any runtime row can be created.
+        // A setup deletion removes the config and runtime while the lane's
+        // terminal message may still be queued. Such a message closes its
+        // plan/MCP waiter, but cannot recreate GUI or core state.
+        let resolved_tp_index = self
+            .state
+            .session
+            .find_toolpath_config_by_id(tp_id)
+            .map(|(index, _)| index);
+
         // G-REGEN-RACE — the supersede is not an outcome.
         //
         // The toolpath lane's submit rule is
@@ -474,6 +484,10 @@ impl<B: ComputeBackend> AppController<B> {
         // `cancel_generation` escape hatch, the GUI's cancel
         // button — is untouched and still terminal.
         let expected_supersede = self.superseded_toolpaths.remove(&tp_id);
+        let Some(tp_index) = resolved_tp_index else {
+            self.toolpath_completion_landed(tp_id);
+            return;
+        };
         if expected_supersede && matches!(result.result, Err(ComputeError::Cancelled)) {
             // Was a `continue` while this arm sat inside the drain loop.
             // It skipped THIS message only, so the method returns and the
@@ -523,79 +537,77 @@ impl<B: ComputeBackend> AppController<B> {
                 // `Command::AdoptResult`. This door hands the
                 // stamp over and reads the answer; it does not
                 // compare revisions of its own any more.
-                if let Some((tp_index, _)) = self.state.session.find_toolpath_config_by_id(tp_id) {
-                    // Honour the §6.E dual-representation
-                    // invariant: drill ops carry both the
-                    // DrillOp payload and the annotated
-                    // toolpath. The worker already built the
-                    // DrillOp into `computed.drill_op`;
-                    // routing it through here so
-                    // `session.results[idx].drill_op()`
-                    // returns Some for drill TPs matches the
-                    // `session.generate_toolpath` production
-                    // path. Without this, drill_gates on the
-                    // tool-load report never populate (the
-                    // gate evaluator reads `result.drill_op()`).
-                    let op_data = match &computed.drill_op {
-                        Some(drill_op_arc) => rs_cam_core::ops::drill_op::OpData::DrillOp(
-                            Arc::clone(drill_op_arc),
-                            Arc::clone(&computed.annotated),
-                        ),
-                        None => rs_cam_core::ops::drill_op::OpData::Toolpath(Arc::clone(
-                            &computed.annotated,
-                        )),
-                    };
-                    let core_result = rs_cam_core::session::ToolpathComputeResult {
-                        op_data,
-                        stats: computed.stats.clone(),
-                        // Debug + semantic traces stay viz-side
-                        // (Arc'd on `rt.debug_trace` /
-                        // `rt.semantic_trace` above). Core readers
-                        // currently only consume `annotated.spans`
-                        // from `session.results`; bloating the
-                        // cache with owned trace copies is wasted
-                        // work.
-                        debug_trace: None,
-                        semantic_trace: None,
-                    };
-                    // WP11b: the revision rides the REPLY,
-                    // stamped from the handle `start`
-                    // produced. `None` means a hand-built
-                    // reply in a test, and reproduces the
-                    // pre-WP3 accept-when-unstamped arm.
-                    let revision = match reply_revision {
-                        Some(submitted) => submitted,
-                        None => self.state.session.toolpath_revision(tp_index),
-                    };
-                    let adopted =
-                        self.state
-                            .session
-                            .apply(rs_cam_core::session::Command::AdoptResult(
-                                rs_cam_core::session::AdoptResultArgs {
-                                    index: tp_index,
-                                    revision,
-                                    result: Box::new(core_result),
-                                },
-                            ));
-                    // On a refusal the core slot stays empty,
-                    // which derives `EditedSince`. `rt.result`
-                    // below still keeps the geometry, so the
-                    // viewport draws it and the operator does
-                    // not lose a long 3D generation. That is
-                    // what the deleted viz gate did, and the
-                    // outcome is the same.
-                    //
-                    // Since W0's D1 the `Ok` effects are NOT
-                    // empty: the source's OUTPUT moved, so the
-                    // walker drops its Regions and PrevTool
-                    // consumers and names them here. A PrevTool
-                    // consumer gets its `stale_since` stamp from
-                    // this set and from nowhere else.
-                    match adopted {
-                        Ok(effects) => adopt_stale = effects.stale,
-                        Err(e) => {
-                            tracing::debug!(toolpath = tp_index, "compute result not adopted: {e}");
-                        }
+                // Honour the §6.E dual-representation
+                // invariant: drill ops carry both the
+                // DrillOp payload and the annotated
+                // toolpath. The worker already built the
+                // DrillOp into `computed.drill_op`;
+                // routing it through here so
+                // `session.results[idx].drill_op()`
+                // returns Some for drill TPs matches the
+                // `session.generate_toolpath` production
+                // path. Without this, drill_gates on the
+                // tool-load report never populate (the
+                // gate evaluator reads `result.drill_op()`).
+                let op_data = match &computed.drill_op {
+                    Some(drill_op_arc) => rs_cam_core::ops::drill_op::OpData::DrillOp(
+                        Arc::clone(drill_op_arc),
+                        Arc::clone(&computed.annotated),
+                    ),
+                    None => rs_cam_core::ops::drill_op::OpData::Toolpath(Arc::clone(
+                        &computed.annotated,
+                    )),
+                };
+                let core_result = rs_cam_core::session::ToolpathComputeResult {
+                    op_data,
+                    stats: computed.stats.clone(),
+                    // Debug + semantic traces stay viz-side
+                    // (Arc'd on `rt.debug_trace` /
+                    // `rt.semantic_trace` above). Core readers
+                    // currently only consume `annotated.spans`
+                    // from `session.results`; bloating the
+                    // cache with owned trace copies is wasted
+                    // work.
+                    debug_trace: None,
+                    semantic_trace: None,
+                };
+                // WP11b: the revision rides the REPLY,
+                // stamped from the handle `start`
+                // produced. `None` means a hand-built
+                // reply in a test, and reproduces the
+                // pre-WP3 accept-when-unstamped arm.
+                let revision = match reply_revision {
+                    Some(submitted) => submitted,
+                    None => self.state.session.toolpath_revision(tp_index),
+                };
+                let adopted = self
+                    .state
+                    .session
+                    .apply(rs_cam_core::session::Command::AdoptResult(
+                        rs_cam_core::session::AdoptResultArgs {
+                            index: tp_index,
+                            revision,
+                            result: Box::new(core_result),
+                        },
+                    ));
+                // On a refusal the core slot stays empty,
+                // which derives `EditedSince`. `rt.result`
+                // below still keeps the geometry, so the
+                // viewport draws it and the operator does
+                // not lose a long 3D generation. That is
+                // what the deleted viz gate did, and the
+                // outcome is the same.
+                //
+                // Since W0's D1 the `Ok` effects are NOT
+                // empty: the source's OUTPUT moved, so the
+                // walker drops its Regions and PrevTool
+                // consumers and names them here. A PrevTool
+                // consumer gets its `stale_since` stamp from
+                // this set and from nowhere else.
+                match adopted {
+                    Ok(effects) => adopt_stale = effects.stale,
+                    Err(e) => {
+                        tracing::debug!(toolpath = tp_index, "compute result not adopted: {e}");
                     }
                 }
                 rt.result = Some(computed);
@@ -672,6 +684,23 @@ impl<B: ComputeBackend> AppController<B> {
     ) {
         match result {
             Ok(simulation) => {
+                // A cancelled/superseded run can already be queued when an
+                // edit (notably setup deletion) moves the core epoch. Reject
+                // it before *any* viewport install or modulation side effect:
+                // `AdoptSimulation` alone is too late because modulation
+                // rewrites cached toolpath results.
+                let Some(submitted_epoch) = self.state.simulation.submitted_simulation_epoch else {
+                    tracing::warn!("discarding unstamped simulation result");
+                    return;
+                };
+                if submitted_epoch != self.state.session.simulation_epoch() {
+                    tracing::info!(
+                        submitted_epoch,
+                        current_epoch = self.state.session.simulation_epoch(),
+                        "discarding stale simulation result"
+                    );
+                    return;
+                }
                 // N12 item 10 — one simulation state. The GUI
                 // simulates on its own lane, so the session never
                 // saw this answer and `ProjectSession::start`

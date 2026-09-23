@@ -508,6 +508,7 @@ impl<B: ComputeBackend> AppController<B> {
         self.state.session = session;
         self.state.gui = gui;
         self.state.selection = Selection::None;
+        self.state.panels.pending_setup_removal = None;
         self.state.simulation = SimulationState::new();
         self.collision_positions.clear();
         self.pending_upload = true;

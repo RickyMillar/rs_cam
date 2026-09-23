@@ -1681,6 +1681,7 @@ impl RsCamApp {
             CommandId::AddModel
             | CommandId::AdoptModelGeometry
             | CommandId::AddSetup
+            | CommandId::RemoveSetup
             | CommandId::AddAlignmentPin
             | CommandId::RemoveAlignmentPin
             | CommandId::SetSetupFace
@@ -1899,6 +1900,12 @@ impl RsCamApp {
                 );
                 CoreReply::quiet(reply)
             }
+            // GUI-only row: no MCP tool constructs it. Keep the exhaustive
+            // command-reply match honest if that surface changes later.
+            CommandId::RemoveSetup => CoreReply::quiet(mutation_error_json(
+                "Error: remove_setup is available from the GUI only",
+                None,
+            )),
             CommandId::SetSetupFace => {
                 self.controller.state_mut().gui.mark_edited();
                 self.controller.set_pending_upload();

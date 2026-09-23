@@ -15,6 +15,7 @@ pub mod preflight;
 pub mod properties;
 pub mod readiness;
 pub mod readiness_panel;
+pub mod setup_deletion_modal;
 pub mod setup_panel;
 pub mod shortcuts_window;
 pub mod sim_debug;
@@ -116,6 +117,11 @@ pub enum AppEvent {
 
     // Setups
     AddSetup,
+    /// Open the shared setup-deletion confirmation.
+    RequestRemoveSetup(SetupId),
+    /// Close the shared setup-deletion confirmation without changing the project.
+    CancelRemoveSetup,
+    RemoveSetup(SetupId),
     RenameSetup(SetupId, String),
     /// One-click two-sided setup: create flipped Setup 2, set flip axis, auto-place pins.
     SetupTwoSided,
