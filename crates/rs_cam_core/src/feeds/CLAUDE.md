@@ -24,10 +24,8 @@ point is `feeds::suggest`.
   piecewise-linear DOC derating. The canonical scale is in `feeds::geometry`.
 - The vendor lookup is hardness-agnostic. Material and hardness dial the
   parameters; they do not hard-reject a row.
-- Suggest is the validated application path. A raw parameter write is a
-  deliberate override and must stale the result.
-- A matched vendor band caps the rubbing floor. Without a matched row, a
-  sub-2 mm diameter conclusion is provisional.
+- Suggest is the validated application path; a raw parameter write is an override and stales the result.
+- A matched vendor band caps the rubbing floor; without a row a sub-2 mm conclusion is provisional.
 - On an adaptive rough the simulated chipload outranks the Suggest verdict.
 
 ## Sentries

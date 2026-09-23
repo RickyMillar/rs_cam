@@ -380,11 +380,15 @@ fn wanaka_suggest_baseline() {
             "{ctx}: the clamp must be the matched row's own ap ceiling \
              (min(ap_max_factor × Ø6, ap_max_mm) = {row_ap_ceiling}), got {envelope_clamped}"
         );
+        // Re-baselined 2026-09-23 (feeds matrix R5): the printed Spektra
+        // pocket row carries the chart's own depth condition, ap_max_factor
+        // 1.0 (1 x D = 6.0 mm). The 4.2 mm baseline of 2026-08-16 was the
+        // 0.7 x D ceiling of the unprinted row, now derived/c.
         assert!(
-            (envelope_clamped - 4.2).abs() < 0.05,
-            "{ctx}: envelope-clamped DPP must land near 4.2 mm (regression baseline, \
-             re-baselined from 5.4 on 2026-08-16 — mechanism 6604303c / Checkpoint K-(a4)), \
-             got {envelope_clamped}"
+            (envelope_clamped - 6.0).abs() < 0.05,
+            "{ctx}: envelope-clamped DPP must land near 6.0 mm (the printed row's 1 x D \
+             ceiling; re-baselined from 4.2 on 2026-09-23 for R5, from 5.4 on 2026-08-16 \
+             for 6604303c / Checkpoint K-(a4)), got {envelope_clamped}"
         );
         // This assertion catches the deflection back-off leaking back
         // into stub-tool roughing — a regression that would silently
