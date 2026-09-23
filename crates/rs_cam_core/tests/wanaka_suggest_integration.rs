@@ -95,7 +95,7 @@ use std::path::PathBuf;
 
 use rs_cam_core::compute::tool_config::ToolId;
 use rs_cam_core::feeds::{
-    embedded_vendor_lut,
+    FeedsError, embedded_vendor_lut,
     suggest::{
         StockContext, SuggestContext, SuggestForOperationInput, SuggestWarning, SuggestedParams,
         suggest_for_operation,
@@ -152,8 +152,15 @@ fn wanaka_project_path() -> PathBuf {
 ///
 /// Returns `(toolpath_id, toolpath_name, suggested)` tuples in
 /// session order so individual assertions can find their case by id.
-fn run_suggest_for_enabled(session: &ProjectSession) -> Vec<(ToolpathId, String, SuggestedParams)> {
+///
+/// Feeds matrix ruling R1 (2026-09-23): a cell the R1 judgement calls
+/// CLUELESS refuses with `FeedsError::Unbacked`. On this project both
+/// drill toolpaths (7 Holes, 14 Pin Drill: a 6 mm flat end mill in
+/// hardwood) refuse. The helper records them in `refused`; every other
+/// refusal still panics.
+fn run_suggest_for_enabled(session: &ProjectSession) -> SuggestRun {
     let mut out = Vec::new();
+    let mut refused = Vec::new();
     for tc in session.toolpath_configs() {
         if !tc.enabled {
             continue;
@@ -161,11 +168,16 @@ fn run_suggest_for_enabled(session: &ProjectSession) -> Vec<(ToolpathId, String,
         let profile = session
             .cutter_op_profile(tc)
             .unwrap_or_else(|| panic!("Tool {} missing for toolpath {}", tc.tool_id, tc.id));
-        if let Err(e) = &profile.feasibility {
-            panic!(
+        match &profile.feasibility {
+            Err(e @ FeedsError::Unbacked { .. }) => {
+                refused.push((tc.id, tc.name.clone(), e.to_string()));
+                continue;
+            }
+            Err(e) => panic!(
                 "Suggest refused enabled toolpath {} ({}): {e:?}",
                 tc.id, tc.name
-            );
+            ),
+            Ok(()) => {}
         }
         // Feasibility Ok ⟺ both Some (`CutterOpProfile::for_combo`).
         let operation = profile
@@ -185,7 +197,17 @@ fn run_suggest_for_enabled(session: &ProjectSession) -> Vec<(ToolpathId, String,
             },
         ));
     }
-    out
+    SuggestRun {
+        cases: out,
+        refused,
+    }
+}
+
+/// The recipes Suggest shipped, and the toolpaths it refused for lack of
+/// a published basis (`FeedsError::Unbacked`, as text).
+struct SuggestRun {
+    cases: Vec<(ToolpathId, String, SuggestedParams)>,
+    refused: Vec<(ToolpathId, String, String)>,
 }
 
 /// Find one toolpath in the suggest output by id; panic with a helpful
@@ -220,18 +242,6 @@ fn assert_no_feed_raised(warnings: &[SuggestWarning], context: &str) {
     );
 }
 
-fn assert_no_dpp_capped(warnings: &[SuggestWarning], context: &str) {
-    assert!(
-        !warnings
-            .iter()
-            .any(|w| matches!(w, SuggestWarning::DppCappedByDeflection { .. })),
-        // T-4 removed the "/ V-bit" clause this message used to carry. A
-        // V-bit is no longer a predictor refusal; the two call sites of
-        // this helper are both drill toolpaths and always were.
-        "{context}: DppCappedByDeflection must NOT fire (drill), got warnings: {warnings:?}"
-    );
-}
-
 #[test]
 fn wanaka_suggest_baseline() {
     let path = wanaka_project_path();
@@ -242,11 +252,26 @@ fn wanaka_suggest_baseline() {
     );
     let session = ProjectSession::load(&path).expect("Load wanaka.toml as ProjectSession");
 
-    let cases = run_suggest_for_enabled(&session);
+    let SuggestRun { cases, refused } = run_suggest_for_enabled(&session);
     assert!(
         !cases.is_empty(),
         "Expected ≥1 enabled toolpath in wanaka.toml, got 0 — project shape regression"
     );
+    // Ruling R1 (2026-09-23): exactly the two drill toolpaths refuse, with
+    // the judgement's drill reason. Any other refusal is a regression.
+    let mut refused_ids: Vec<ToolpathId> = refused.iter().map(|(id, _, _)| *id).collect();
+    refused_ids.sort_by_key(|id| id.0);
+    assert_eq!(
+        refused_ids,
+        vec![ToolpathId(7), ToolpathId(14)],
+        "the Unbacked refusals must be the two drill toolpaths (Holes, Pin Drill): {refused:?}"
+    );
+    for (id, name, text) in &refused {
+        assert!(
+            text.contains("plunge drill") && text.contains("2.5") && !text.contains('{'),
+            "tp {id} ({name}): the refusal must carry the drill reason as a sentence: {text}"
+        );
+    }
 
     // Baseline snapshot (visible with `cargo test -- --nocapture`).
     // Useful to recover the on-disk Wanaka numbers without having to
@@ -670,28 +695,18 @@ fn wanaka_suggest_baseline() {
         assert_no_feed_raised(&suggested.warnings, &ctx);
     }
 
-    // ── Toolpath 14: Pin Drill (drill family — chipload NotApplicable)
-    {
-        let (_id, name, suggested) = find_case(&cases, ToolpathId(14));
-        let ctx = format!("Pin Drill (tp {_id} / {name})");
-        assert_no_feed_raised(&suggested.warnings, &ctx);
-        assert_no_dpp_capped(&suggested.warnings, &ctx);
+    // ── Toolpath 14: Pin Drill and toolpath 7: Holes (drill family)
+    //
+    // Until 2026-09-23 these two blocks asserted that no chipload-lift or
+    // DppCappedByDeflection warning fired on a drill. Ruling R1 refuses
+    // every drill cell in the judged woods (no published figure; the 2.5
+    // multiplier is unsourced), so both toolpaths are in `refused` (asserted
+    // above) and ship no warnings at all.
+    for id in [ToolpathId(14), ToolpathId(7)] {
         assert!(
-            !suggested
-                .warnings
-                .iter()
-                .any(|w| matches!(w, SuggestWarning::ChiploadStillLowAfterRecalibration { .. })),
-            "{ctx}: ChiploadStillLowAfterRecalibration must NOT fire on drill, got {:?}",
-            suggested.warnings
+            cases.iter().all(|(tid, _, _)| *tid != id),
+            "tp {id}: a refused drill must not also ship a recipe"
         );
-    }
-
-    // ── Toolpath 7: Holes (drill — same as Pin Drill)
-    {
-        let (_id, name, suggested) = find_case(&cases, ToolpathId(7));
-        let ctx = format!("Holes (tp {_id} / {name})");
-        assert_no_feed_raised(&suggested.warnings, &ctx);
-        assert_no_dpp_capped(&suggested.warnings, &ctx);
     }
 
     // ── Toolpath 5: Rivers (back) — Project Curve, 60° V-bit (chipload NotApplicable)
@@ -1040,12 +1055,36 @@ fn session_cutter_op_profile_matches_gui_rationale_assembly() {
             lut,
             spindle_strategy: session.post_config().spindle_strategy,
             context,
-        })
-        .unwrap_or_else(|e| panic!("Suggest refused toolpath {} ({}): {e:?}", tc.id, tc.name));
+        });
 
         let profile = session
             .cutter_op_profile(tc)
             .unwrap_or_else(|| panic!("profile tool lookup failed for toolpath {}", tc.id));
+
+        // Ruling R1 (2026-09-23): the two drills refuse. Both assemblies
+        // must refuse with the same text; nothing else is comparable.
+        let direct = match direct {
+            Ok(direct) => direct,
+            Err(e @ FeedsError::Unbacked { .. }) => {
+                let profile_text = match &profile.feasibility {
+                    Err(p) => p.to_string(),
+                    Ok(()) => panic!(
+                        "toolpath {} ({}): direct refused ({e}) but the profile is feasible",
+                        tc.id, tc.name
+                    ),
+                };
+                assert_eq!(
+                    profile_text,
+                    e.to_string(),
+                    "toolpath {} ({}): the profile's refusal diverged from direct",
+                    tc.id,
+                    tc.name
+                );
+                checked += 1;
+                continue;
+            }
+            Err(e) => panic!("Suggest refused toolpath {} ({}): {e:?}", tc.id, tc.name),
+        };
 
         assert!(
             profile.feasibility.is_ok(),
