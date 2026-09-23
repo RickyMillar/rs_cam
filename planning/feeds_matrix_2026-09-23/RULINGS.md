@@ -53,10 +53,13 @@ Recorded verbatim in substance; the operator's words are in FINDINGS-style quote
   shows no band, the burn gate is silent (its low side is advisory without a
   minimum, by existing policy) and modulation runs bandless. Options: accept;
   or author a derived band around the printed value with a named rule.
-- R1: the evidence-backed refusals wait for a fresh judgement on the post-R5
-  matrix (FORMULA_BACKING.md was judged on the old rows). The engine-rule
-  part (refuse where the registry's own tool rule refuses; refusal wording and
-  routing, rows 2-1, 2-6, 2-7, 4.4-15) is in progress.
+- R1, engine-rule part: LANDED (feat commit "Suggest refuses what the
+  registry's own tool rule refuses" and the FM4 sentry). Suggest and the
+  generator now refuse the same cells; Pencil and SpiralFinish carry
+  Scallop's tool rule; the refusal text names the operation and the allowed
+  kinds in words (rows 2-1, 2-6, 2-7, 4.4-15, 3.5-18 closed). The
+  evidence-backed refusals wait for FORMULA_BACKING_v2 (a fresh judgement on
+  the post-R5 matrix) and the operator's look at its count.
 - R2, R4: no change.
 
 ## The three findings that change the frame
