@@ -197,6 +197,12 @@ macro_rules! for_each_command {
                      "the batch CLI exposes no such command",
                  ),
              }),
+            (Command, RemoveSetup, "remove_setup", RemoveSetupArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip("no MCP tool removes a setup"),
+                 cli: Reach::Skip("the batch CLI exposes no such command"),
+             }),
             (Command, SetSetupFace, "set_setup_face", SetSetupFaceArgs, Effects,
              Surfaces {
                  gui: Reach::Reached,
@@ -1221,6 +1227,13 @@ pub struct AddSetupArgs {
     pub name: Option<String>,
     /// The face of the stock that points up in the new setup.
     pub face_up: crate::compute::transform::FaceUp,
+}
+
+/// The arguments of the `remove_setup` command.
+#[derive(Debug, Clone)]
+pub struct RemoveSetupArgs {
+    /// The index of the setup to remove.
+    pub setup_index: usize,
 }
 
 /// The arguments of the `set_setup_face` command.
@@ -2309,6 +2322,7 @@ impl ProjectSession {
                     name.unwrap_or_else(|| format!("Setup {}", self.list_setups().len() + 1));
                 Ok(self.add_setup(name, face_up))
             }
+            Command::RemoveSetup(args) => self.remove_setup(args.setup_index),
             Command::SetSetupFace(args) => self.set_setup_face(args.setup_index, args.face_up),
             Command::SetSetupRotation(args) => {
                 self.set_setup_rotation(args.setup_index, args.z_rotation)

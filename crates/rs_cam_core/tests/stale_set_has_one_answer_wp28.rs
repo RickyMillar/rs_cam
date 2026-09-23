@@ -31,12 +31,12 @@
 //! A `Surfaces` literal declares, per row, whether the GUI, the MCP
 //! server and the batch CLI reach the command. A row that declares
 //! `Reach::Skip` on all three is reached by no surface, so nothing in the
-//! product runs it. `Command::RemoveSetup` was such a row, and its setter
-//! `remove_setup` had no caller at all. WP28 part 3 deletes both.
+//! product runs it. `Command::RemoveSetup` was historically such a row;
+//! it now has a GUI route and must remain explicitly GUI-reached.
 //!
 //! ## What this arm does NOT claim
 //!
-//! It does not claim the registry holds no dead row. TEN rows remain
+//! It does not claim the registry holds no dead row. NINE rows remain
 //! all-Skip, and I measured that NONE of them is constructed by
 //! `rs_cam_viz/src`, `rs_cam_cli/src` or `rs_cam_mcp/src` outside an
 //! in-`src` test module. They are on [`ALL_SKIP_ALLOW_LIST`] with that
@@ -45,17 +45,18 @@
 //! (`setters_have_rows_wp15a.rs`) requires a row per setter — deleting a
 //! row without deleting its setter turns that test red.
 //!
-//! The arm is BIDIRECTIONAL: the measured all-Skip set must EQUAL the
-//! allow-list. So a new all-Skip row fails here, `remove_setup` coming
-//! back fails here, and a listed row that later gains a `Reach::Reached`
-//! or leaves the registry fails here too. The list cannot rot into a
-//! graveyard.
+//! The generic arm is BIDIRECTIONAL: the measured all-Skip set must EQUAL
+//! the allow-list. So a new all-Skip row fails here, and a listed row that
+//! later gains a `Reach::Reached` or leaves the registry fails here too.
+//! A separate assertion below locates `remove_setup` by wire name and pins
+//! its GUI reachability without weakening that equality invariant.
 //!
-//! # Red before the fix
+//! # Regression shape
 //!
-//! Both arms fail on their assertion. The file compiles at the sentry
-//! commit: it names no symbol the fix introduces, and it reads
-//! `CommandId::ALL` and `Surfaces`, which both already ship.
+//! Arm 1 fails if the deleted second staleness model returns. Arm 2 fails
+//! if the generic all-Skip set diverges from its ledger, while the explicit
+//! `remove_setup` assertion fails if that live GUI route disappears or is
+//! misclassified.
 
 #![allow(
     clippy::unwrap_used,
@@ -207,9 +208,9 @@ fn no_production_source_names_the_second_staleness_model() {
 /// MEASURED 2026-09-14: no `Command::<row>` literal stands in
 /// `crates/rs_cam_viz/src`, `crates/rs_cam_cli/src` or
 /// `crates/rs_cam_mcp/src` outside an in-`src` test module, for ANY of
-/// these ten. Each is therefore dead in the same sense `remove_setup`
-/// was. They stay because WP15a requires a row per setter, and because
-/// §34 part 3 names one row. This list is a LEDGER of an open finding.
+/// these nine. Each is therefore dead by the all-Skip definition above.
+/// They stay because WP15a requires a row per setter. This list is a
+/// LEDGER of an open finding.
 const ALL_SKIP_ALLOW_LIST: &[(&str, &str)] = &[
     (
         "set_toolpath_operation",
@@ -304,6 +305,30 @@ fn no_registry_row_declares_skip_on_every_surface() {
          graveyard.",
         stale.len(),
         stale.join(", ")
+    );
+}
+
+/// `remove_setup` is a live GUI row, not an accidental all-Skip regression.
+#[test]
+fn remove_setup_is_gui_reached_and_not_all_skip() {
+    let rows: Vec<CommandId> = CommandId::ALL
+        .iter()
+        .copied()
+        .filter(|id| id.wire_name() == "remove_setup")
+        .collect();
+    assert_eq!(
+        rows.len(),
+        1,
+        "the registry must contain exactly one `remove_setup` wire row"
+    );
+
+    let surfaces = rows[0].surfaces();
+    assert_eq!(surfaces.gui, Reach::Reached);
+    assert!(
+        !matches!(surfaces.gui, Reach::Skip(_))
+            || !matches!(surfaces.mcp, Reach::Skip(_))
+            || !matches!(surfaces.cli, Reach::Skip(_)),
+        "the located `remove_setup` row must not be all-Skip"
     );
 }
 

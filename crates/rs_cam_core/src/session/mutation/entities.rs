@@ -157,6 +157,58 @@ impl ProjectSession {
         effects
     }
 
+    /// Remove a setup and all toolpaths it owns.
+    ///
+    /// The final setup is the project's required machining frame, so it
+    /// cannot be removed. Owned toolpaths are invalidated before their
+    /// indices disappear; simulation is dropped once for the whole cascade.
+    #[instrument(skip(self))]
+    pub(crate) fn remove_setup(&mut self, setup_index: usize) -> Result<Effects, SessionError> {
+        self.try_with_effects(None, |session| {
+            let Some(setup) = session.setups.get(setup_index) else {
+                return Err(SessionError::SetupNotFound(setup_index));
+            };
+            if session.setups.len() == 1 {
+                return Err(SessionError::InvalidParam(
+                    "cannot remove the last remaining setup".to_owned(),
+                ));
+            }
+
+            let removed: std::collections::BTreeSet<usize> =
+                setup.toolpath_indices.iter().copied().collect();
+            if removed.is_empty() {
+                session.drop_simulation();
+            } else {
+                session.drop_results_and_their_dependents(
+                    &removed.iter().copied().collect::<Vec<_>>(),
+                );
+            }
+            session.setups.remove(setup_index);
+            if !removed.is_empty() {
+                session.toolpath_configs = session
+                    .toolpath_configs
+                    .drain(..)
+                    .enumerate()
+                    .filter_map(|(index, config)| (!removed.contains(&index)).then_some(config))
+                    .collect();
+                let mut rekeyed_results = std::collections::HashMap::new();
+                for (index, result) in session.results.drain() {
+                    if !removed.contains(&index) {
+                        rekeyed_results.insert(index - removed.range(..index).count(), result);
+                    }
+                }
+                session.results = rekeyed_results;
+                for setup in &mut session.setups {
+                    for index in &mut setup.toolpath_indices {
+                        *index -= removed.range(..*index).count();
+                    }
+                }
+                session.bump_all_revisions();
+            }
+            Ok(())
+        })
+    }
+
     /// Append the setup and report its index. The raw half of
     /// [`Self::add_setup`].
     pub(crate) fn add_setup_impl(&mut self, name: String, face_up: FaceUp) -> usize {

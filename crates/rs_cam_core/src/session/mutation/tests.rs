@@ -11,7 +11,9 @@
 
 use super::*;
 use crate::ids::ToolpathId;
-use crate::session::{AdoptResultArgs, Command, ReplaceToolpathConfigArgs};
+use crate::session::{
+    AddSetupArgs, AdoptResultArgs, Command, RemoveSetupArgs, ReplaceToolpathConfigArgs,
+};
 use std::sync::Arc;
 
 // The parent held these names before the split. Each one now sits in the
@@ -539,10 +541,146 @@ fn add_setup_returns_index() {
     assert_eq!(s.list_setups()[1].face_up, FaceUp::Bottom);
 }
 
-// WP28 part 3 deleted `remove_setup` with its all-Skip registry
-// row. No GUI control, no MCP tool and no CLI command removed a
-// setup, so the two tests that stood here measured a function the
-// product never called (review §21.8).
+#[test]
+fn remove_setup_cascades_owned_toolpaths_and_refuses_the_last() {
+    let mut s = make_session();
+    let first_setup_id = s.list_setups()[0].id;
+    let tool = s.add_tool(make_tool()).created.expect("tool index");
+    let tool_id = s.tools().get(tool).expect("added tool").id.0;
+    let removed_setup = s
+        .apply(Command::AddSetup(AddSetupArgs {
+            name: Some("Removed".to_owned()),
+            face_up: FaceUp::Top,
+        }))
+        .expect("removed setup")
+        .created
+        .expect("removed setup index");
+    let after_setup = s
+        .apply(Command::AddSetup(AddSetupArgs {
+            name: Some("After".to_owned()),
+            face_up: FaceUp::Bottom,
+        }))
+        .expect("after setup")
+        .created
+        .expect("after setup index");
+    let after_setup_id = s.list_setups()[after_setup].id;
+
+    let before = s
+        .add_toolpath(0, make_tc(tool_id, 0))
+        .expect("toolpath before removed setup")
+        .created
+        .expect("before index");
+    let owned = s
+        .add_toolpath(removed_setup, make_tc(tool_id, 0))
+        .expect("owned toolpath")
+        .created
+        .expect("owned index");
+    let owned_id = s.toolpath_configs()[owned].id;
+    let mut dependent_config = make_tc(tool_id, 0);
+    dependent_config.boundary = BoundaryConfig {
+        enabled: true,
+        source: crate::compute::config::BoundarySource::DerivedRestRegions {
+            source_toolpath_id: owned_id,
+        },
+        ..BoundaryConfig::default()
+    };
+    let dependent = s
+        .add_toolpath(after_setup, dependent_config)
+        .expect("dependent toolpath after removed setup")
+        .created
+        .expect("dependent index");
+    let independent = s
+        .add_toolpath(after_setup, make_tc(tool_id, 0))
+        .expect("independent toolpath after removed setup")
+        .created
+        .expect("independent index");
+
+    let before_id = s.toolpath_configs()[before].id;
+    let dependent_id = s.toolpath_configs()[dependent].id;
+    let independent_id = s.toolpath_configs()[independent].id;
+    for (index, moves) in [
+        (before, 10),
+        (owned, 20),
+        (dependent, 30),
+        (independent, 40),
+    ] {
+        let mut result = fake_result();
+        result.stats.move_count = moves;
+        s.results.insert(index, result);
+    }
+    let revisions_before: Vec<_> = (0..s.toolpath_count())
+        .map(|index| s.toolpath_revision(index))
+        .collect();
+    let epoch = s.simulation_epoch();
+
+    let effects = s
+        .apply(Command::RemoveSetup(RemoveSetupArgs {
+            setup_index: removed_setup,
+        }))
+        .expect("remove setup");
+
+    assert_eq!(
+        s.toolpath_configs()
+            .iter()
+            .map(|config| config.id)
+            .collect::<Vec<_>>(),
+        vec![before_id, dependent_id, independent_id],
+        "only the removed setup's owned toolpath leaves"
+    );
+    assert_eq!(s.list_setups().len(), 2);
+    assert_eq!(s.list_setups()[0].id, first_setup_id);
+    assert_eq!(s.list_setups()[1].id, after_setup_id);
+    assert_eq!(s.list_setups()[0].toolpath_indices, vec![0]);
+    assert_eq!(s.list_setups()[1].toolpath_indices, vec![1, 2]);
+    assert_eq!(
+        s.get_result(0).map(|result| result.stats.move_count),
+        Some(10),
+        "the independent result before the removed setup is preserved"
+    );
+    assert!(
+        s.get_result(1).is_none(),
+        "the removed toolpath's dependent result is invalidated"
+    );
+    assert_eq!(
+        s.get_result(2).map(|result| result.stats.move_count),
+        Some(40),
+        "an independent result after the removed setup is rekeyed"
+    );
+    assert_eq!(effects.stale, BTreeSet::from([0, 1, 2]));
+    assert!(effects.revision.is_none());
+    for (new_index, old_index) in [(0, before), (1, dependent), (2, independent)] {
+        assert!(
+            s.toolpath_revision(new_index) > revisions_before[old_index],
+            "the surviving toolpath at index {new_index} must reject an in-flight old-index result"
+        );
+    }
+    assert_eq!(s.simulation_epoch(), epoch + 1);
+
+    let mut empty = make_session();
+    let empty_setup = empty
+        .apply(Command::AddSetup(AddSetupArgs {
+            name: Some("Empty".to_owned()),
+            face_up: FaceUp::Top,
+        }))
+        .expect("empty setup")
+        .created
+        .expect("empty setup index");
+    let empty_epoch = empty.simulation_epoch();
+    let empty_effects = empty
+        .apply(Command::RemoveSetup(RemoveSetupArgs {
+            setup_index: empty_setup,
+        }))
+        .expect("remove empty setup");
+    assert!(empty_effects.stale.is_empty());
+    assert_eq!(empty.simulation_epoch(), empty_epoch + 1);
+
+    let final_epoch = empty.simulation_epoch();
+    assert!(matches!(
+        empty.apply(Command::RemoveSetup(RemoveSetupArgs { setup_index: 0 })),
+        Err(SessionError::InvalidParam(_))
+    ));
+    assert_eq!(empty.simulation_epoch(), final_epoch);
+}
 
 // ── Cross-setup move ─────────────────────────────────────────
 
