@@ -397,6 +397,14 @@ depth alone". The pass count rises by about `1 / s`.
 
 ### 3.4 The workholding factor 0.85 / 1.03 (S9)
 
+Status: LANDED 2026-09-24 under ruling Q8 (commit hash: see RULINGS.md).
+The operator ruled "the workholding factor and its selector go", not the
+`k_eff = k x w` recommendation below. `WorkholdingRigidity`,
+`StockConfig::workholding_rigidity`, `SetupContext::workholding_rigidity`,
+`FeedsDerates::workholding`, the Suggest inputs, the stock-panel combo and
+the MCP `set_stock_config.workholding_rigidity` parameter are deleted. An
+old project file's key is ignored on load. The dial is the one load margin.
+
 - It is a feed scale in the same class as the 0.75 factor
   (`feeds/mod.rs:1913-1922`). It fires on 0 matrix cells (Medium), and on
   every Low or High project.

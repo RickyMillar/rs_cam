@@ -132,8 +132,17 @@ On R4_AGGRESSIVENESS_SPEC.md §5, in the spec's numbering:
   cells follow down, 35 still clamp. The HDPE literature cell's three
   thermal checks are known gaps (row band above the ductile ceiling; no
   `rpm_min` on the row). Sentry FM8.
-- Open after Q10: Q8 (workholding folds into the dial), the size-law
-  phase, WP2b, WP5.
+- Q8 LANDED b5675591: the workholding factor (Low 0.85 / Medium
+  1.00 / High 1.03 on the feed) and its selector are deleted, with no
+  alias. `WorkholdingRigidity`, `StockConfig::workholding_rigidity`,
+  `SetupContext::workholding_rigidity`, `FeedsDerates::workholding`, the
+  `workholding` Suggest inputs, the stock-panel combo and the MCP
+  `set_stock_config.workholding_rigidity` parameter are gone. An old
+  project file's key is ignored on load. Every matrix cell ran Medium, so
+  no FM1 cell moves. The Ipe literature cell (stickout 45 mm, was `Low`)
+  moves from 0.039176 to the default-setup advance 0.046089 mm/tooth and
+  still does not warn. The dial is the one load margin.
+- Open after Q8: the size-law phase, WP2b, WP5.
 
 ## Landed under the rulings, 2026-09-23 evening
 

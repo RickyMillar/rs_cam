@@ -11,7 +11,7 @@ scripts/cargo_lane.sh test -p rs_cam_core -q --test feeds_matrix_instrument_fm1 
 ## Walk
 
 - Machine: `MachineProfile::default()` = `Generic Wood Router`. The repository holds no measured rigidity or power profile. The presets `shapeoko_vfd` and `shapeoko_makita` and the kinematics preset `shapeoko_xxl_ricky_tuned` exist; the instrument does not walk them.
-- Workholding `Medium`, `SpindleStrategy::default()`, `SuggestContext::default()`, stock context top 0, bottom -18, height 18, padding 2.
+- `SpindleStrategy::default()`, `SuggestContext::default()`, stock context top 0, bottom -18, height 18, padding 2.
 - Cells: 5 tool types × 2 diameters × 24 operations × 4 materials = 960 cells. Flutes: 2 on every tool.
 
 Diameters walked (small, common):
@@ -125,7 +125,7 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 - 2D: Pocket, Profile, Adaptive on a 40 mm square polygon, stock 44 × 44 × 18 below z = 0; end_mill and bull_nose at 6 mm; the four materials.
 - 3D: a dome height field (top z = 0, flat base z = -8, 46 mm footprint) in the same stock; heights pinned to top 0 and bottom -8 on all 3D cells (`bottom_z: Auto` collapses a waterline band). Waterline, DropCutter, Adaptive3d with end_mill; Scallop and DropCutter with ball_nose and tapered_ball_nose; 6 mm; softwood and hardwood.
 - Simulation: resolution 1.0, metrics on, auto resolution off, other fields from `SimulationOptions::default()`. That default has `adaptive_feed_modulation: true`, so the post-simulation verdicts read the modulated feed, as the GUI default does.
-- Cells run: 37; errors: 0; skipped on the 150 s budget: 1; wall-clock of the subset: 161.5 s.
+- Cells run: 37; errors: 0; skipped on the 150 s budget: 1; wall-clock of the subset: 155.3 s.
 
 ## Post-simulation diagnostic ids (cells that fire each id)
 

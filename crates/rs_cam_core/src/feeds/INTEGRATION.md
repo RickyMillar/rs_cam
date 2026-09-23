@@ -19,7 +19,7 @@ The calculator is fed from:
 - machine profile
 - operation family and pass role
 - optional vendor LUT observations
-- setup context such as tool overhang and workholding rigidity
+- setup context such as tool overhang (the machine aggressiveness dial is the one load margin; ruling R4 Q8, 2026-09-24)
 
 ## Current GUI flow
 
@@ -59,7 +59,6 @@ The calculator is fed from:
 
 ## Current known gaps
 
-- workholding rigidity is still hardcoded to `Medium` in the GUI integration
 - vendor-source labels are still raw observation IDs
 - there is no GUI flow for loading additional LUT directories
 - not every operation exposes a perfect DOC/WOC hint, so some operations still rely on calculator defaults
