@@ -378,6 +378,13 @@ const EMBEDDED_FILES: &[(&str, &str)] = &[
         "onsrud_tapered_ball.json",
         include_str!("../../data/vendor_lut/observations/onsrud_tapered_ball.json"),
     ),
+    // 2026-09-23 (feeds matrix R5): the Onsrud Hard Plywood and Soft
+    // Plywood sheets, same flat-end series and diameters as
+    // onsrud_ocr.json, so a plywood query no longer borrows a hardwood row.
+    (
+        "onsrud_plywood.json",
+        include_str!("../../data/vendor_lut/observations/onsrud_plywood.json"),
+    ),
 ];
 
 impl VendorLut {
@@ -599,14 +606,15 @@ mod tests {
         let lut = VendorLut::embedded();
         assert_eq!(
             lut.observations.len(),
-            356,
-            "expected 356 embedded observations: 252 before feeds matrix R5 \
+            389,
+            "expected 389 embedded observations: 252 before feeds matrix R5 \
              (2026-09-23), + 12 printed Amana ball v7 rows (1/8 and 1/4 in, \
              hardwood / softwood / MDF, pocket and adaptive), + 60 printed \
              Amana Spektra v24 rows (2F and 3F at 1/8 in, 6 mm and 1/4 in; \
              five material families; pocket and adaptive), + 32 printed \
              Onsrud 77-100 tapered ball rows (4 sheets x 1/8 and 1/4 in x \
-             parallel / scallop / pocket / adaptive)"
+             parallel / scallop / pocket / adaptive), + 33 printed Onsrud \
+             Hard Plywood (17) and Soft Plywood (16) flat-end rows"
         );
     }
 
