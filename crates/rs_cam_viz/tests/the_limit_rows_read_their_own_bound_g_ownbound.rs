@@ -19,6 +19,16 @@
 //! refuse an export (`BoundSource::gates_export`) — so the face does not have
 //! to.
 //!
+//! # Where the rows live in the Inspector (2026-09-23)
+//!
+//! Sim-cut-metrics package C moved the four banded rows (chipload, power,
+//! deflection, depth of cut) onto their "Cut metrics" cards. Each card draws
+//! its row with the same renderer, `verdict_badge`, so every contract below
+//! reads the same face, caption and hover as before. The rows with no card
+//! (gantry push) follow the cards, so the Inspector still lists every row
+//! once, in `criteria()` order. `every_banded_row_is_on_its_own_card_g_ownbound`
+//! holds the move.
+//!
 //! # Rendered, not source-scanned
 //!
 //! Every arm runs the Simulation Inspector through a real `egui::Context` and
@@ -224,9 +234,9 @@ fn a_milling_toolpath_paints_one_row_per_kind_g_ownbound() {
             .position(|t| t.starts_with(&prefix))
             .unwrap_or_else(|| {
                 panic!(
-                    "the {kind:?} row painted no face. `draw_tool_load_badges` \
-                     must iterate `criteria()`, not a hard-coded three. Runs \
-                     were {painted:#?}"
+                    "the {kind:?} row painted no face. The Inspector must draw \
+                     every row of `criteria()`: a banded row on its card, the \
+                     rest after the cards. Runs were {painted:#?}"
                 )
             });
         if let Some(previous) = last {
@@ -238,6 +248,91 @@ fn a_milling_toolpath_paints_one_row_per_kind_g_ownbound() {
             );
         }
         last = Some(at);
+    }
+}
+
+/// The card title each banded kind's row sits under, in `criteria()` order.
+/// The titles are `sim_diagnostics::CutMetricSpec::of(..).title`.
+const CARD_TITLES: [(CriterionKind, &str); 4] = [
+    (CriterionKind::Chipload, "Chipload"),
+    (CriterionKind::Power, "Spindle power"),
+    (CriterionKind::Deflection, "Tool deflection"),
+    (CriterionKind::DepthOfCut, "Depth of cut"),
+];
+
+/// Package C: each banded row is painted ONCE, and on its own card: after
+/// the card's title and before the next card's title. A row painted in
+/// "Now playing" as well would be a second copy of one verdict; a row
+/// painted on the wrong card would state one gate under another's name.
+#[test]
+fn every_banded_row_is_on_its_own_card_g_ownbound() {
+    let mut state = simulated_state(Cut::InsideTheRigidityCap);
+    let texts = inspector_text(&mut state);
+    let painted = faces(&texts);
+
+    let title_at = |title: &str| {
+        painted
+            .iter()
+            .position(|t| t == title)
+            .unwrap_or_else(|| panic!("no card titled {title:?}. Runs were {painted:#?}"))
+    };
+    let titles: Vec<usize> = CARD_TITLES.iter().map(|(_, t)| title_at(t)).collect();
+    for pair in titles.windows(2) {
+        assert!(
+            pair[0] < pair[1],
+            "the cards are out of `criteria()` order: {titles:?}. One order, \
+             so the GUI, the CLI and the MCP list the same rows the same way."
+        );
+    }
+
+    for (index, (kind, title)) in CARD_TITLES.iter().enumerate() {
+        let prefix = format!("{} ", face_label(*kind));
+        let at: Vec<usize> = painted
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| t.starts_with(&prefix))
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(
+            at.len(),
+            1,
+            "the {kind:?} row painted {} faces, not one. The card carries the \
+             row; \"Now playing\" must not draw a second copy. Runs were \
+             {painted:#?}",
+            at.len()
+        );
+        let start = titles[index];
+        let end = titles.get(index + 1).copied().unwrap_or(usize::MAX);
+        assert!(
+            at[0] > start && at[0] < end,
+            "the {kind:?} row (run {}) is not on the {title:?} card (runs {start} \
+             to {end})",
+            at[0]
+        );
+    }
+
+    // Feeds ruling R2: a finishing or semi-finishing pass has no depth cap,
+    // so the depth gate REPORTS its peak with no bound. The card still
+    // draws, with no invented limit, and says which gate decides.
+    let report = load_report(&state);
+    let criteria = only_verdict(&report).criteria();
+    let depth = criteria
+        .iter()
+        .find(|s| s.kind == CriterionKind::DepthOfCut)
+        .expect("a depth row");
+    if depth.state == LoadState::Within && depth.bound.is_none() {
+        let start = titles[3];
+        let caption = "Depth is reported; the deflection limit decides.";
+        assert!(
+            painted.iter().skip(start).any(|t| t == caption),
+            "the depth gate reported a peak with no bound, and the Depth of \
+             cut card never painted {caption:?}. Runs were {painted:#?}"
+        );
+        assert!(
+            depth.bound_source.is_none(),
+            "a reported depth row must carry no bound source; the card draws \
+             no limit line for it"
+        );
     }
 }
 

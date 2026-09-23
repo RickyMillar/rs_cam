@@ -19,7 +19,11 @@ use rs_cam_core::stock::simulation_cut::{
     SimulationCutSample, SimulationCutTrace, SimulationMetricOptions,
 };
 use rs_cam_core::stock::stock_mesh::StockMesh;
-use rs_cam_core::tool_load::ToolLoadReport;
+use rs_cam_core::tool_load::verdict::CriterionKind;
+use rs_cam_core::tool_load::{
+    DistributionMetric, DistributionOutcome, GateEnv, ToleranceBands, ToolLoadReport,
+    ToolpathLoadContext, ToolpathLoadVerdict,
+};
 use rs_cam_core::trace::semantic_trace::{ToolpathSemanticItem, ToolpathSemanticTrace};
 use rs_cam_core::trace::toolpath_spans::SpanId;
 
@@ -114,6 +118,11 @@ pub struct SimulationDebugState {
     /// then triage) with a per-toolpath height sort, so the inspector's
     /// measurability strip must not rebuild it every frame.
     pub(crate) triage_cache: SimulationTriageCache,
+    /// The cut-metric distributions of the focused toolpath, keyed by the
+    /// sim trace, the toolpath and the edit counter. The Inspector's "Cut
+    /// metrics" section reads them on every frame; the build walks the
+    /// trace once per metric.
+    pub(crate) cut_metric_cache: CutMetricCache,
     /// Cached sorted issue list keyed by sim/debug trace fingerprints.
     /// Avoids rebuilding + sorting the same air-cut/hotspot/collision list
     /// in multiple panels during smooth playback.
@@ -169,6 +178,204 @@ pub(crate) struct ChiploadEnvelopeCache {
     trace: Option<Weak<SimulationCutTrace>>,
     edit_counter: u64,
     envelopes: Option<HashMap<rs_cam_core::ToolpathId, Range<f64>>>,
+}
+
+/// The metrics the Inspector's "Cut metrics" section shows, in the order it
+/// shows them: the criteria in `ToolpathLoadVerdict::criteria()` order, so
+/// the cards, the drawer tracks, the CLI and the MCP list one order. The
+/// engagement card has no criterion and goes last.
+pub const CUT_METRIC_ORDER: [DistributionMetric; 5] = [
+    DistributionMetric::Criterion(CriterionKind::Chipload),
+    DistributionMetric::Criterion(CriterionKind::Power),
+    DistributionMetric::Criterion(CriterionKind::Deflection),
+    DistributionMetric::Criterion(CriterionKind::DepthOfCut),
+    DistributionMetric::Engagement,
+];
+
+/// One card of the "Cut metrics" section: the metric and what core said.
+#[derive(Debug, Clone)]
+pub struct CutMetricCard {
+    pub metric: DistributionMetric,
+    pub outcome: DistributionOutcome,
+    /// The gate population in trace order, as `(toolpath-local move, value
+    /// in core's unit)`. The time-series drawer plots it, so the track and
+    /// the histogram read the same samples. Empty unless `outcome` is
+    /// `Measured`.
+    pub series: Vec<(usize, f64)>,
+}
+
+/// The cut-metric cards of one toolpath. A metric that has no card for the
+/// operation (`NotApplicableForOp`) is not in `cards`.
+#[derive(Debug, Clone)]
+pub struct CutMetricSet {
+    pub toolpath_id: ToolpathId,
+    pub cards: Vec<CutMetricCard>,
+}
+
+/// The memo behind [`SimulationState::cached_cut_metrics`]. The key is the
+/// trace identity (see [`weak_matches`]), the toolpath and the edit counter.
+#[derive(Default)]
+pub(crate) struct CutMetricCache {
+    trace: Option<Weak<SimulationCutTrace>>,
+    toolpath_id: Option<ToolpathId>,
+    edit_counter: u64,
+    set: Option<Arc<CutMetricSet>>,
+}
+
+impl SimulationState {
+    /// The cut-metric distributions of `toolpath_id`, built once per trace,
+    /// toolpath and edit counter. Never per frame.
+    ///
+    /// The verdict comes from [`Self::cached_load_report`], so the cards and
+    /// the limit rows read one gate answer. The population comes from
+    /// `rs_cam_core::tool_load::metric_distribution`, which runs the gate's
+    /// own filters.
+    pub fn cached_cut_metrics(
+        &mut self,
+        session: &rs_cam_core::session::ProjectSession,
+        edit_counter: u64,
+        toolpath_id: ToolpathId,
+    ) -> Arc<CutMetricSet> {
+        let live = self
+            .results
+            .as_ref()
+            .and_then(|results| results.cut_trace.as_ref());
+        let cache = &self.debug.cut_metric_cache;
+        if weak_matches(cache.trace.as_ref(), live)
+            && cache.edit_counter == edit_counter
+            && cache.toolpath_id == Some(toolpath_id)
+            && let Some(set) = &cache.set
+        {
+            return Arc::clone(set);
+        }
+        let stored_trace = live.map(Arc::downgrade);
+        let trace = live.map(Arc::clone);
+
+        let report = self.cached_load_report(session, edit_counter);
+        let verdict = report
+            .per_toolpath
+            .iter()
+            .find(|verdict| verdict.toolpath_id == toolpath_id);
+        let start = std::time::Instant::now();
+        let set = Arc::new(build_cut_metric_set(
+            session,
+            verdict,
+            trace.as_deref(),
+            toolpath_id,
+        ));
+        let elapsed = start.elapsed();
+        if elapsed > std::time::Duration::from_millis(8) {
+            tracing::debug!(
+                elapsed_ms = elapsed.as_secs_f64() * 1000.0,
+                "slow cut-metric distribution build"
+            );
+        }
+        let cache = &mut self.debug.cut_metric_cache;
+        cache.trace = stored_trace;
+        cache.toolpath_id = Some(toolpath_id);
+        cache.edit_counter = edit_counter;
+        cache.set = Some(Arc::clone(&set));
+        set
+    }
+}
+
+/// Build the cards for one toolpath.
+///
+/// The context is the one `rs_cam_core::gcode::project_load_report` builds
+/// for the same toolpath: the same tool, material, LUT family, pass role,
+/// feed, spans filter, drill payload, machine and strict tolerance. The
+/// trace goes to the gates only when `sim_trace_is_fresh` accepts it, which
+/// is the rule the load report applies. A stale trace therefore gives no
+/// engagement histogram, because engagement has no verdict to refuse it.
+///
+/// Residual: core has no public door that builds this context for one
+/// toolpath of a session, so this function holds a copy of that loop body.
+fn build_cut_metric_set(
+    session: &rs_cam_core::session::ProjectSession,
+    verdict: Option<&ToolpathLoadVerdict>,
+    trace: Option<&SimulationCutTrace>,
+    toolpath_id: ToolpathId,
+) -> CutMetricSet {
+    let mut set = CutMetricSet {
+        toolpath_id,
+        cards: Vec::new(),
+    };
+    let Some(verdict) = verdict else {
+        return set;
+    };
+    let Some((index, config)) = session
+        .toolpath_configs()
+        .iter()
+        .enumerate()
+        .find(|(_, config)| config.id == toolpath_id)
+    else {
+        return set;
+    };
+    let Some(tool_config) =
+        session.get_tool(rs_cam_core::compute::tool_config::ToolId(config.tool_id))
+    else {
+        return set;
+    };
+    let tool = rs_cam_core::compute::cutter::build_cutter(tool_config);
+    let (family, pass_role) = config.operation.feeds_style();
+    let result = session.get_result(index);
+    let spans = result
+        .filter(|result| result.annotated().spans_valid)
+        .map(|result| result.annotated().spans.as_slice());
+    let drill_op = result.and_then(|result| result.drill_op());
+    let ctx = ToolpathLoadContext {
+        toolpath_id: config.id,
+        tool: &tool,
+        material: &session.stock_config().material,
+        operation_family: rs_cam_core::feeds::vendor_normalize::op_family_to_lut(family),
+        pass_role: lut_pass_role(pass_role),
+        operation_feed_rate_mm_min: config.operation.feed_rate(),
+        operation_kind: config.operation.op_type(),
+        spans,
+        drill_op: drill_op.map(|op| op.as_ref()),
+    };
+    let tolerance = ToleranceBands::default();
+    let env = GateEnv {
+        sim_trace: trace.filter(|trace| rs_cam_core::gcode::sim_trace_is_fresh(session, trace)),
+        machine: Some(session.machine()),
+        tolerance: &tolerance,
+    };
+    for metric in CUT_METRIC_ORDER {
+        let Some(outcome) =
+            rs_cam_core::tool_load::metric_distribution(metric, verdict, &ctx, &env)
+        else {
+            continue;
+        };
+        let series = match &outcome {
+            DistributionOutcome::Measured(_) => {
+                rs_cam_core::tool_load::distribution::gate_population(metric, &ctx, &env)
+                    .into_iter()
+                    .map(|sample| (sample.move_index, sample.value))
+                    .collect()
+            }
+            DistributionOutcome::NotMeasured(_) => Vec::new(),
+        };
+        set.cards.push(CutMetricCard {
+            metric,
+            outcome,
+            series,
+        });
+    }
+    set
+}
+
+/// The LUT pass role of a feeds pass role. Core holds the same three arms
+/// as a crate-private function.
+fn lut_pass_role(
+    role: rs_cam_core::feeds::PassRole,
+) -> rs_cam_core::feeds::vendor_lut::LutPassRole {
+    use rs_cam_core::feeds::PassRole;
+    use rs_cam_core::feeds::vendor_lut::LutPassRole;
+    match role {
+        PassRole::Roughing => LutPassRole::Roughing,
+        PassRole::SemiFinish => LutPassRole::SemiFinish,
+        PassRole::Finish => LutPassRole::Finish,
+    }
 }
 
 /// Cached [`rs_cam_core::stock::sim_triage::SimulationTriage`] for the inspector.
@@ -853,6 +1060,13 @@ pub struct SimulationState {
     /// crosshair at the same X. One frame of lag is intentional: tracks read
     /// this on the same frame they may overwrite it.
     pub hovered_x: Option<f64>,
+    /// True when the bottom drawer shows the cut-metric time series. The
+    /// Inspector's "Cut metrics" section owns the one toggle (PLAN §3.3).
+    /// Runtime-only: `SimulationState` is not saved with the project.
+    pub time_series_open: bool,
+    /// The time-series track the drawer scrolls to on its next frame. A card
+    /// footer sets it; the drawer takes it.
+    pub time_series_scroll_to: Option<DistributionMetric>,
 }
 
 impl Default for SimulationState {

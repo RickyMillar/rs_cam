@@ -57,7 +57,11 @@ use rs_cam_viz::ui::tokens;
 const BAND_FEED_MM_MIN: f64 = 1_225.0;
 
 /// Room for the whole panel, so nothing the arms read is clipped away.
-pub const SCREEN: egui::Vec2 = egui::Vec2::new(900.0, 1600.0);
+/// Tall enough for the Inspector with every section forced open: the five
+/// cut-metric cards (sim-cut-metrics package C, 2026-09-23) take about
+/// 1000 px on top of the Project and Findings sections. egui does not
+/// paint a run below the screen, so a short screen reads as a missing row.
+pub const SCREEN: egui::Vec2 = egui::Vec2::new(900.0, 3200.0);
 
 /// The Readiness workspace's centred column, pinned at `app.rs`'s
 /// `set_max_width(560.0)`. The Readiness rows must fit the geometry the

@@ -1,12 +1,17 @@
 use super::AppEvent;
-use super::components::{CountPill, FreshnessGate};
+use super::components::histogram;
+use super::components::{
+    Card, CountPill, DistributionChart, FreshnessGate, NotMeasured, Role, StatusChip, text,
+};
 use super::readiness;
 use super::sim_debug::{
     debug_span_math_summary, format_json_value, semantic_kind_color, semantic_kind_label,
 };
 use crate::state::freshness::simulation_freshness;
 use crate::state::runtime::GuiState;
-use crate::state::simulation::{SimulationIssueKind, SimulationState};
+use crate::state::simulation::{
+    CUT_METRIC_ORDER, CutMetricCard, CutMetricSet, SimulationIssueKind, SimulationState,
+};
 use crate::state::toolpath::ToolpathId;
 use crate::ui::components::UiExt as _;
 use crate::ui::theme;
@@ -16,7 +21,10 @@ use rs_cam_core::session::ProjectSession;
 use rs_cam_core::tool_load::verdict::{
     BoundSource, ChipSide, ChiploadVerdict, CriterionKind, CriterionStatus, LoadState,
 };
-use rs_cam_core::tool_load::{Confidence, ToolLoadReport, ToolpathLoadVerdict, UnmodeledReason};
+use rs_cam_core::tool_load::{
+    Confidence, DistributionMetric, DistributionOutcome, MetricDistribution, NotMeasuredReason,
+    ToolLoadReport, ToolpathLoadVerdict, UnmodeledReason,
+};
 use rs_cam_core::trace::toolpath_spans::{Span, SpanKind, SpanPayload};
 
 pub fn draw(
@@ -65,7 +73,16 @@ pub fn draw(
 
         draw_project_section(ui, sim, session, gui, &issues, &load_report, events);
         ui.add_space(6.0);
-        draw_toolpath_section(ui, sim, &load_report, events);
+        // The limit rows live in ONE place. When the focused toolpath has
+        // cut-metric cards, each card draws its own row and the section
+        // draws the rows with no card after them, so the Inspector lists
+        // every row once, in `criteria()` order. Otherwise "Now playing"
+        // draws the rows, as before.
+        let cut_metrics = cut_metrics_view(sim, session, gui);
+        let cards_shown = matches!(cut_metrics, CutMetricsView::Cards(..));
+        draw_toolpath_section(ui, sim, &load_report, cards_shown, events);
+        ui.add_space(6.0);
+        draw_cut_metrics_section(ui, sim, &cut_metrics, &load_report, events);
 
         let trace_arc = sim
             .results
@@ -903,6 +920,7 @@ fn draw_toolpath_section(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
     load_report: &ToolLoadReport,
+    cards_shown: bool,
     events: &mut Vec<AppEvent>,
 ) {
     let now = sim
@@ -940,7 +958,13 @@ fn draw_toolpath_section(
                 // MILLIMETRES. Every row now reads
                 // `CriterionStatus::bound`, which is the value the gate
                 // itself judged against (S4).
-                draw_limit_rows(ui, &limit_rows(tp));
+                //
+                // Package C (2026-09-23): when the "Cut metrics" section
+                // shows cards, it draws every row of this toolpath, so the
+                // rows are not drawn twice.
+                if !cards_shown {
+                    draw_limit_rows(ui, &limit_rows(tp));
+                }
             }
             ui.horizontal(|ui| {
                 if ui.small_button("Optimize this op").clicked() {
@@ -1275,11 +1299,8 @@ fn verdict_tooltip(row: &LimitRow<'_>) -> String {
             // in core and was never carried this far. The fallback is
             // the chipload side split, which is the one distinction
             // this site legitimately makes on its own.
-            let reason_str = status
-                .exceeded
-                .as_ref()
-                .map(|e| e.remedy)
-                .unwrap_or(match (status.kind, row.burn_risk) {
+            let reason_str = status.exceeded.as_ref().map(|e| e.remedy).unwrap_or(
+                match (status.kind, row.burn_risk) {
                     (CriterionKind::Chipload, true) => {
                         "achieved advance/tooth below the vendor band minimum — \
                          rubbing/burning risk. At low advance per tooth the tool edge \
@@ -1287,7 +1308,8 @@ fn verdict_tooltip(row: &LimitRow<'_>) -> String {
                          and burns the wood. Increase feed rate or reduce RPM."
                     }
                     _ => "load criterion exceeded",
-                });
+                },
+            );
             let conf = match status.confidence {
                 Some(Confidence::Validated) | None => "validated".to_owned(),
                 Some(Confidence::Approximate(why)) => format!("approximate: {why}"),
@@ -1299,47 +1321,7 @@ fn verdict_tooltip(row: &LimitRow<'_>) -> String {
             };
             format!("{prefix}: {reason_str} ({}, {conf})", format_peak(peak))
         }
-        LoadState::Unmodeled => match status.unmodeled_reason {
-            Some(UnmodeledReason::SimulationRequired) => {
-                "Unmodeled: simulation has not been run".to_owned()
-            }
-            Some(UnmodeledReason::StaleSimulation) => {
-                "Unmodeled: simulation trace is stale — re-run simulation".to_owned()
-            }
-            Some(UnmodeledReason::ArcEngagementNotCaptured) => {
-                "Unmodeled: arc-engagement metric not captured — enable Cut Metrics and re-run"
-                    .to_owned()
-            }
-            Some(UnmodeledReason::NoVendorData) => {
-                "Unmodeled: no vendor LUT row for this tool/material combination".to_owned()
-            }
-            Some(UnmodeledReason::SteadyStateSamplesNotPresent) => {
-                "Unmodeled: no steady-state cutting samples — toolpath runs entirely on transient (plunge/ramp) feeds".to_owned()
-            }
-            Some(UnmodeledReason::MaterialUnvalidated) => {
-                "Unmodeled: material is Custom without a validated Kc value".to_owned()
-            }
-            Some(UnmodeledReason::CutterModeUnsupported(why)) => {
-                format!("Unmodeled: cutter mode unsupported — {why}")
-            }
-            Some(UnmodeledReason::NotImplemented(phase)) => {
-                format!("Unmodeled: not implemented yet — {phase}")
-            }
-            // Roadmap F.8 — the gate isn't applicable to this op type
-            // (drill / alignment-pin-drill). The carried `String` is
-            // the operator-facing explanation; surface it verbatim so
-            // users read "doesn't apply" rather than the misleading
-            // "couldn't measure" framing.
-            Some(UnmodeledReason::NotApplicableForOp(detail)) => {
-                format!("N/A: {detail}")
-            }
-            // UX dial-in A10 — sim ran but toolpath never contacted the
-            // stock. The finding is the no-contact, not "missing data".
-            Some(UnmodeledReason::AllSamplesAirCutOrRapid) => {
-                "Unmodeled: toolpath made no contact with material — every sample was a rapid or air-cut. Check depth / direction / stock position.".to_owned()
-            }
-            None => "Unmodeled".to_owned(),
-        },
+        LoadState::Unmodeled => unmodeled_text(status.unmodeled_reason),
     };
     // W1 / rule 3 — the bound's own digits and the setting that moves them.
     // `bound_clause` is core's wording, formatted from the values the source
@@ -1351,6 +1333,52 @@ fn verdict_tooltip(row: &LimitRow<'_>) -> String {
     match status.bound_source.as_ref() {
         Some(source) => format!("{head}\n{clause}.\nThe {} sets it.", source.setting()),
         None => format!("{head}\n{clause}."),
+    }
+}
+
+/// Core's reason for an `Unmodeled` verdict, in the words every surface of
+/// this panel uses. The limit rows and the cut-metric cards share it.
+fn unmodeled_text(reason: Option<&UnmodeledReason>) -> String {
+    match reason {
+        Some(UnmodeledReason::SimulationRequired) => {
+            "Unmodeled: simulation has not been run".to_owned()
+        }
+        Some(UnmodeledReason::StaleSimulation) => {
+            "Unmodeled: simulation trace is stale — re-run simulation".to_owned()
+        }
+        Some(UnmodeledReason::ArcEngagementNotCaptured) => {
+            "Unmodeled: arc-engagement metric not captured — enable Cut Metrics and re-run"
+                .to_owned()
+        }
+        Some(UnmodeledReason::NoVendorData) => {
+            "Unmodeled: no vendor LUT row for this tool/material combination".to_owned()
+        }
+        Some(UnmodeledReason::SteadyStateSamplesNotPresent) => {
+            "Unmodeled: no steady-state cutting samples — toolpath runs entirely on transient (plunge/ramp) feeds".to_owned()
+        }
+        Some(UnmodeledReason::MaterialUnvalidated) => {
+            "Unmodeled: material is Custom without a validated Kc value".to_owned()
+        }
+        Some(UnmodeledReason::CutterModeUnsupported(why)) => {
+            format!("Unmodeled: cutter mode unsupported — {why}")
+        }
+        Some(UnmodeledReason::NotImplemented(phase)) => {
+            format!("Unmodeled: not implemented yet — {phase}")
+        }
+        // Roadmap F.8 — the gate isn't applicable to this op type
+        // (drill / alignment-pin-drill). The carried `String` is
+        // the operator-facing explanation; surface it verbatim so
+        // users read "doesn't apply" rather than the misleading
+        // "couldn't measure" framing.
+        Some(UnmodeledReason::NotApplicableForOp(detail)) => {
+            format!("N/A: {detail}")
+        }
+        // UX dial-in A10 — sim ran but toolpath never contacted the
+        // stock. The finding is the no-contact, not "missing data".
+        Some(UnmodeledReason::AllSamplesAirCutOrRapid) => {
+            "Unmodeled: toolpath made no contact with material — every sample was a rapid or air-cut. Check depth / direction / stock position.".to_owned()
+        }
+        None => "Unmodeled".to_owned(),
     }
 }
 
@@ -1390,6 +1418,478 @@ fn aggregate_stats(
     }
 
     (total_cutting, total_rapid, cycle)
+}
+
+// ── Cut metrics section ─────────────────────────────────────────────────
+//
+// Package C of `planning/sim_cut_metrics_2026-09-23/PLAN.md` (§3.1, §3.2).
+// One card per metric of the focused toolpath: a time-weighted histogram of
+// the gate's own population, the gate's limit lines, and a headline chip
+// that the GATE verdict colours. The in-band share never colours it.
+
+/// True when the Inspector draws a cut-metric card for `kind`. Those kinds
+/// leave the text limit rows of "Now playing"; Readiness keeps the rows.
+fn has_cut_metric_card(kind: CriterionKind) -> bool {
+    CUT_METRIC_ORDER.contains(&DistributionMetric::Criterion(kind))
+}
+
+/// What a card asks the panel to do after the draw.
+enum CutMetricAction {
+    /// Open or close the time-series drawer.
+    ToggleSeries,
+    /// Open the drawer and scroll it to this metric's track.
+    ShowSeries(DistributionMetric),
+    /// Seek the playhead to a toolpath-local move.
+    Seek { local_move: usize },
+}
+
+/// How a card names and scales its metric. The time-series drawer reads
+/// the same spec, so a card and its track show one unit.
+pub(crate) struct CutMetricSpec {
+    pub title: &'static str,
+    /// The display unit. It differs from core's unit only for deflection.
+    pub unit: &'static str,
+    /// Display value = core value × `scale`.
+    pub scale: f64,
+    /// The one-word consequence of time above the ceiling.
+    pub above: &'static str,
+}
+
+impl CutMetricSpec {
+    pub(crate) fn of(metric: DistributionMetric) -> Self {
+        match metric {
+            DistributionMetric::Criterion(CriterionKind::Chipload) => Self {
+                title: "Chipload",
+                unit: "mm/tooth",
+                scale: 1.0,
+                above: "overload",
+            },
+            DistributionMetric::Criterion(CriterionKind::DepthOfCut) => Self {
+                title: "Depth of cut",
+                unit: "mm",
+                scale: 1.0,
+                above: "flex",
+            },
+            // Core bins deflection in millimetres; the card reads
+            // micrometres, and so do its bounds.
+            DistributionMetric::Criterion(CriterionKind::Deflection) => Self {
+                title: "Tool deflection",
+                unit: "\u{00b5}m",
+                scale: 1000.0,
+                above: "chatter",
+            },
+            DistributionMetric::Criterion(CriterionKind::Power) => Self {
+                title: "Spindle power",
+                unit: "kW",
+                scale: 1.0,
+                above: "stall",
+            },
+            DistributionMetric::Criterion(kind) => Self {
+                title: kind.label(),
+                unit: kind.unit(),
+                scale: 1.0,
+                above: "over limit",
+            },
+            DistributionMetric::Engagement => Self {
+                title: "Engagement",
+                unit: "\u{00b0}",
+                scale: 1.0,
+                above: "over limit",
+            },
+        }
+    }
+}
+
+/// The four guide lines of the (i) hover, in core's words (§3.2).
+fn cut_metric_guide(metric: DistributionMetric) -> Option<String> {
+    let guide = match metric {
+        DistributionMetric::Criterion(kind) => kind.guide()?,
+        DistributionMetric::Engagement => rs_cam_core::tool_load::engagement_guide(),
+    };
+    Some(format!(
+        "{}\n\nToo low: {}\nToo high: {}\nLevers: {}",
+        guide.what, guide.too_low, guide.too_high, guide.levers
+    ))
+}
+
+/// True when the bound is a rule of thumb that does not gate an export.
+fn is_advisory(distribution: &MetricDistribution) -> bool {
+    distribution
+        .bound_source
+        .as_ref()
+        .is_some_and(|source| !source.gates_export())
+}
+
+/// Core's reason for a missing histogram, in words.
+fn not_measured_text(reason: &NotMeasuredReason) -> String {
+    match reason {
+        NotMeasuredReason::Unmodeled(reason) => unmodeled_text(Some(reason)),
+        NotMeasuredReason::Vacuous(population) => {
+            format!("Not measured{}", population.vacuity_clause())
+        }
+    }
+}
+
+/// The section's summary: the header states it, so the body can start closed.
+struct CutMetricsSummary {
+    exceeded: usize,
+    not_measured: usize,
+}
+
+impl CutMetricsSummary {
+    fn of(set: &CutMetricSet) -> Self {
+        let mut summary = Self {
+            exceeded: 0,
+            not_measured: 0,
+        };
+        for card in &set.cards {
+            match &card.outcome {
+                DistributionOutcome::Measured(d) if d.state == Some(LoadState::Exceeds) => {
+                    summary.exceeded += 1;
+                }
+                DistributionOutcome::Measured(_) => {}
+                DistributionOutcome::NotMeasured(_) => summary.not_measured += 1,
+            }
+        }
+        summary
+    }
+
+    fn title(&self) -> String {
+        if self.exceeded > 0 {
+            format!("Cut metrics \u{00b7} {} outside limit", self.exceeded)
+        } else if self.not_measured > 0 {
+            format!("Cut metrics \u{00b7} {} not measured", self.not_measured)
+        } else {
+            "Cut metrics \u{00b7} within limits".to_owned()
+        }
+    }
+}
+
+/// What the "Cut metrics" section shows for the focused toolpath.
+enum CutMetricsView {
+    /// Nothing is measured, for this reason.
+    Empty(&'static str),
+    /// No toolpath is in focus.
+    NoFocus,
+    /// The cards of this toolpath.
+    Cards(ToolpathId, std::sync::Arc<CutMetricSet>),
+}
+
+/// Decide what the section shows. The decision is made once per frame,
+/// before "Now playing" draws, because that section draws the limit rows
+/// only when no card will.
+fn cut_metrics_view(
+    sim: &mut SimulationState,
+    session: &ProjectSession,
+    gui: &GuiState,
+) -> CutMetricsView {
+    let has_trace = sim
+        .results
+        .as_ref()
+        .is_some_and(|results| results.cut_trace.is_some());
+    if !has_trace {
+        return CutMetricsView::Empty(
+            "The accepted simulation result contains no cut trace. Turn on \
+             \"Capture cutting metrics\" and run the simulation again.",
+        );
+    }
+    if simulation_freshness(session, sim).is_stale() {
+        return CutMetricsView::Empty(
+            "The cut trace is from an earlier version of the project. Run the \
+             simulation again to measure the cut.",
+        );
+    }
+    let Some(toolpath_id) = sim.focused_toolpath() else {
+        return CutMetricsView::NoFocus;
+    };
+    let set = sim.cached_cut_metrics(session, gui.edit_counter, toolpath_id);
+    if set.cards.is_empty() {
+        return CutMetricsView::Empty("No cut metric applies to this operation.");
+    }
+    CutMetricsView::Cards(toolpath_id, set)
+}
+
+/// The rank of a card: the position of its criterion in `criteria()`, so
+/// the cards and the rows keep the one order the CLI and the MCP use.
+/// Engagement has no criterion and goes last.
+fn card_rank(metric: DistributionMetric, rows: &[LimitRow<'_>]) -> usize {
+    match metric {
+        DistributionMetric::Criterion(kind) => rows
+            .iter()
+            .position(|row| row.status.kind == kind)
+            .unwrap_or(usize::MAX - 1),
+        DistributionMetric::Engagement => usize::MAX,
+    }
+}
+
+/// The "Cut metrics" section of the focused toolpath.
+///
+/// DC6: the header is the summary, and the body opens by default only when
+/// a criterion exceeds. The drawer toggle sits under the header, so it is
+/// reachable with the body closed. It is the one route to the drawer
+/// (§7 Q3); the card footers only open it at a track.
+///
+/// Each card draws its criterion's limit row through `verdict_badge`, the
+/// renderer Readiness uses: the face, the setting, the population and the
+/// hover with the bound and the confidence reason. The rows with no card
+/// follow the cards.
+fn draw_cut_metrics_section(
+    ui: &mut egui::Ui,
+    sim: &mut SimulationState,
+    view: &CutMetricsView,
+    load_report: &ToolLoadReport,
+    events: &mut Vec<AppEvent>,
+) {
+    let (toolpath_id, set) = match view {
+        CutMetricsView::Empty(reason) => {
+            draw_cut_metrics_empty(ui, reason);
+            return;
+        }
+        CutMetricsView::NoFocus => {
+            crate::ui::components::SectionHeader::new("Cut metrics").show(ui);
+            ui.label(text::caption("Play or select a toolpath."));
+            return;
+        }
+        CutMetricsView::Cards(toolpath_id, set) => (*toolpath_id, set),
+    };
+    let rows: Vec<LimitRow<'_>> = load_report
+        .per_toolpath
+        .iter()
+        .find(|verdict| verdict.toolpath_id == toolpath_id)
+        .map(limit_rows)
+        .unwrap_or_default();
+    let mut cards: Vec<&CutMetricCard> = set.cards.iter().collect();
+    cards.sort_by_key(|card| card_rank(card.metric, &rows));
+    let other_rows: Vec<&LimitRow<'_>> = rows
+        .iter()
+        .filter(|row| !has_cut_metric_card(row.status.kind))
+        .collect();
+
+    let summary = CutMetricsSummary::of(set);
+    let id = ui.make_persistent_id("inspector_cut_metrics");
+    let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(
+        ui.ctx(),
+        id,
+        summary.exceeded > 0,
+    );
+    let header = ui.horizontal(|ui| {
+        state.show_toggle_button(ui, egui::collapsing_header::paint_default_icon);
+        let title = ui.add(
+            egui::Label::new(summary.title())
+                .sense(egui::Sense::click())
+                .truncate(),
+        );
+        if title.clicked() {
+            state.toggle(ui);
+        }
+    });
+
+    let mut actions: Vec<CutMetricAction> = Vec::new();
+    let toggle_label = if sim.time_series_open {
+        "Hide time series \u{25be}"
+    } else {
+        "See time series \u{25b8}"
+    };
+    ui.horizontal(|ui| {
+        ui.add_space(ui.spacing().indent);
+        if ui.link(toggle_label).clicked() {
+            actions.push(CutMetricAction::ToggleSeries);
+        }
+    });
+    state.show_body_indented(&header.response, ui, |ui| {
+        for card in cards {
+            let row = match card.metric {
+                DistributionMetric::Criterion(kind) => {
+                    rows.iter().find(|row| row.status.kind == kind)
+                }
+                DistributionMetric::Engagement => None,
+            };
+            draw_cut_metric_card(ui, card, row, &mut actions);
+            ui.add_space(tokens::SPACE_2);
+        }
+        if !other_rows.is_empty() {
+            crate::ui::components::SectionHeader::new("Other limits").show(ui);
+            for row in other_rows {
+                verdict_badge(ui, row);
+            }
+        }
+    });
+
+    for action in actions {
+        match action {
+            CutMetricAction::ToggleSeries => {
+                sim.time_series_open = !sim.time_series_open;
+                sim.time_series_scroll_to = None;
+            }
+            CutMetricAction::ShowSeries(metric) => {
+                sim.time_series_open = true;
+                sim.time_series_scroll_to = Some(metric);
+            }
+            CutMetricAction::Seek { local_move } => {
+                if let Some(move_index) = sim.global_move_for_local(toolpath_id, local_move) {
+                    events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+                        move_index,
+                    })));
+                }
+            }
+        }
+    }
+}
+
+/// The section when nothing is measured: the header and the abstention
+/// mark with its reason.
+///
+/// This is the empty state the bottom panel used to draw (DC6, package A).
+/// It shows state only. It starts no work and it changes no recording: the
+/// one capture control is "Capture cutting metrics" in `sim_op_list.rs`, and
+/// the workspace primary is the only run route.
+fn draw_cut_metrics_empty(ui: &mut egui::Ui, reason: &str) {
+    crate::ui::components::SectionHeader::new("Cut metrics").show(ui);
+    ui.horizontal_wrapped(|ui| {
+        ui.add(NotMeasured::new().reason(reason));
+        ui.label(text::caption(reason));
+    });
+}
+
+/// One card: title, (i), headline chip, histogram, caption, footer.
+fn draw_cut_metric_card(
+    ui: &mut egui::Ui,
+    card: &CutMetricCard,
+    row: Option<&LimitRow<'_>>,
+    actions: &mut Vec<CutMetricAction>,
+) {
+    let spec = CutMetricSpec::of(card.metric);
+    Card::new().show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.horizontal_wrapped(|ui| {
+            ui.label(egui::RichText::new(spec.title).color(tokens::TEXT_STRONG));
+            if let Some(guide) = cut_metric_guide(card.metric) {
+                ui.label(egui::RichText::new(tokens::GLYPH_DETAIL).color(tokens::TEXT_MUTED))
+                    .on_hover_text(guide);
+            }
+            if let DistributionOutcome::Measured(distribution) = &card.outcome {
+                ui.add(headline_chip(distribution));
+            }
+        });
+        // The criterion's limit row, drawn by the renderer Readiness uses:
+        // the face reads the peak against the gate's own bound, the caption
+        // names the setting and the population, and the hover carries the
+        // bound clause and the confidence reason (G-OWNBOUND).
+        if let Some(row) = row {
+            verdict_badge(ui, row);
+        }
+        match &card.outcome {
+            DistributionOutcome::Measured(distribution) => {
+                let chart = DistributionChart::new(&distribution.histogram, spec.unit)
+                    .scale(spec.scale)
+                    .advisory(is_advisory(distribution))
+                    .show(ui);
+                if let Some(bin) = chart.clicked_bin
+                    && let Some(Some(local_move)) =
+                        distribution.histogram.first_move_per_bin.get(bin)
+                {
+                    actions.push(CutMetricAction::Seek {
+                        local_move: *local_move,
+                    });
+                }
+                ui.add(egui::Label::new(text::caption(card_caption(distribution, &spec))).wrap());
+                if ui.link("See time series \u{25b8}").clicked() {
+                    actions.push(CutMetricAction::ShowSeries(card.metric));
+                }
+            }
+            DistributionOutcome::NotMeasured(reason) => {
+                let reason = not_measured_text(reason);
+                ui.horizontal_wrapped(|ui| {
+                    ui.add(NotMeasured::new().reason(reason.clone()));
+                    ui.label(text::caption(reason));
+                });
+            }
+        }
+    });
+}
+
+/// The headline chip: the in-band share, in the gate verdict's role.
+fn headline_chip(distribution: &MetricDistribution) -> StatusChip {
+    let hist = &distribution.histogram;
+    if hist.floor.is_none() && hist.ceiling.is_none() {
+        // Two cases have no bound, and neither gets an invented one:
+        // engagement has no gate, and a gate can report a reading it does
+        // not judge (feeds ruling R2: a finishing pass has no depth cap).
+        return match distribution.metric {
+            DistributionMetric::Engagement => StatusChip::new("no limit", Role::Info)
+                .hover("No gate judges this metric. Use it to compare cuts."),
+            DistributionMetric::Criterion(_) => {
+                StatusChip::new("reported \u{00b7} no limit", Role::Info).hover(format!(
+                    "The gate reports this reading and has no limit for this pass. \
+                     It measured {} of {} {}.",
+                    distribution.population.contributing,
+                    distribution.population.offered,
+                    distribution.population.unit.plural()
+                ))
+            }
+        };
+    }
+    let Some(share) = hist.in_band_share() else {
+        return StatusChip::new("no cut time", Role::Unknown);
+    };
+    let advisory = is_advisory(distribution);
+    let role = match distribution.state {
+        Some(LoadState::Within) => Role::Ok,
+        Some(LoadState::Exceeds) if advisory => Role::Caution,
+        Some(LoadState::Exceeds) => Role::Danger,
+        Some(LoadState::Unmodeled) => Role::Unknown,
+        None => Role::Info,
+    };
+    let population = distribution.population;
+    let mut hover = format!(
+        "The gate judged {} of {} {}.",
+        population.contributing,
+        population.offered,
+        population.unit.plural()
+    );
+    if let Some(source) = &distribution.bound_source {
+        hover.push_str(&format!("\nThe limit is {}.", source.clause()));
+        if advisory {
+            hover.push_str("\nThis limit is a rule of thumb. It does not stop an export.");
+        }
+    }
+    StatusChip::new(
+        format!("{} in band", histogram::format_share(share * 100.0)),
+        role,
+    )
+    .hover(hover)
+}
+
+/// The caption: each out-of-band share with its one-word consequence.
+fn card_caption(distribution: &MetricDistribution, spec: &CutMetricSpec) -> String {
+    let hist = &distribution.histogram;
+    if hist.floor.is_none() && hist.ceiling.is_none() {
+        return match distribution.metric {
+            DistributionMetric::Criterion(CriterionKind::DepthOfCut) => {
+                "Depth is reported; the deflection limit decides.".to_owned()
+            }
+            _ => "No limit applies.".to_owned(),
+        };
+    }
+    let share = |seconds: f64| {
+        if hist.total_s > 0.0 {
+            histogram::format_share(seconds / hist.total_s * 100.0)
+        } else {
+            histogram::format_share(0.0)
+        }
+    };
+    let mut parts: Vec<String> = Vec::new();
+    if hist.floor.is_some() {
+        parts.push(format!("{} below floor (rubbing)", share(hist.below_s)));
+    }
+    if hist.ceiling.is_some() {
+        parts.push(format!(
+            "{} above ceiling ({})",
+            share(hist.above_s),
+            spec.above
+        ));
+    }
+    parts.join(" \u{00b7} ")
 }
 
 // ── Selected span section ───────────────────────────────────────────────

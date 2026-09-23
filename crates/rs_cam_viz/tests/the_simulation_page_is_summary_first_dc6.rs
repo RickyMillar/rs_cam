@@ -15,6 +15,12 @@
 //!   a framed chip strip — beside nothing they drive, and the signal spine's
 //!   empty state was an italic sentence plus a button.
 //!
+//! Sim-cut-metrics packages C and E (2026-09-23) moved that empty state. The
+//! time series is a drawer, closed until the Inspector opens it, and the
+//! bottom panel has no placeholder. The Inspector's "Cut metrics" section
+//! draws the abstention in `draw_cut_metrics_empty`. The arms that held the
+//! placeholder now hold that function.
+//!
 //! # Why this invariant and not a screenshot diff
 //!
 //! A screenshot diff fails on every legitimate restyle and says nothing about
@@ -76,6 +82,13 @@ const DELETED_HELP_SENTENCES: [&str; 3] = [
     "(shortcut: O)",
     "Per-toolpath cutting / rapid visibility",
 ];
+
+/// The Inspector's cut-metrics empty state (packages C and E, 2026-09-23).
+/// It replaced the bottom panel's placeholder.
+const CUT_METRICS_EMPTY: &str = "fn draw_cut_metrics_empty(";
+
+/// The bottom panel's placeholder, which the drawer model deleted.
+const DELETED_PLACEHOLDER: &str = "fn draw_spine_empty_placeholder(";
 
 /// The italic sentence the signal spine's empty state used to print.
 ///
@@ -296,10 +309,17 @@ fn the_bottom_strip_is_one_bar_with_no_italic_sentence_dc6() {
         "an italic sentence is back in {TIMELINE}. The bottom strip carried \
          one and DC6 deleted it."
     );
-    let placeholder = function_source(&code, "fn draw_spine_empty_placeholder(");
+    assert!(
+        !code.contains(DELETED_PLACEHOLDER),
+        "{TIMELINE} draws a cut-metrics placeholder again. The drawer is \
+         closed until metrics exist, and the Inspector's \"Cut metrics\" \
+         section carries the abstention (packages C and E)."
+    );
+    let diagnostics = code_only(&read(DIAGNOSTICS));
+    let placeholder = function_source(&diagnostics, CUT_METRICS_EMPTY);
     assert!(
         placeholder.contains("NotMeasured::new()"),
-        "the spine's empty state must draw the abstention mark. A run that \
+        "the cut-metrics empty state must draw the abstention mark. A run that \
          captured no cutting metrics measured NOTHING, and the product has \
          shipped an abstention looking like a measurement before."
     );
@@ -348,8 +368,8 @@ fn simulation_workspace_has_one_direct_run_producer_ur3() {
         }
     }
 
-    let timeline = code_only(&read(TIMELINE));
-    let placeholder = function_source(&timeline, "fn draw_spine_empty_placeholder(");
+    let diagnostics = code_only(&read(DIAGNOSTICS));
+    let placeholder = function_source(&diagnostics, CUT_METRICS_EMPTY);
     assert!(
         placeholder.contains("NotMeasured::new()"),
         "the cut-metrics placeholder must keep its abstention semantics."
@@ -430,7 +450,11 @@ fn the_scan_is_not_vacuous_dc6() {
     // Each anchor the other arms brace against, named here so a rename fails
     // once and loudly rather than silently relaxing four assertions.
     let diagnostics = code_only(&read(DIAGNOSTICS));
-    for anchor in ["fn verdict_line(", "fn draw_status_header("] {
+    for anchor in [
+        "fn verdict_line(",
+        "fn draw_status_header(",
+        CUT_METRICS_EMPTY,
+    ] {
         assert!(
             diagnostics.contains(anchor),
             "{DIAGNOSTICS} no longer defines {anchor}"
@@ -441,7 +465,7 @@ fn the_scan_is_not_vacuous_dc6() {
         "pub fn draw(",
         "fn draw_verdict_hud(",
         "fn desaturate(",
-        "fn draw_spine_empty_placeholder(",
+        "fn draw_time_series(",
     ] {
         assert!(
             timeline.contains(anchor),

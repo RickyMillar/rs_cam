@@ -1,29 +1,25 @@
 use super::AppEvent;
-use super::components::{CountPill, FreshnessGate, NotMeasured};
+use super::components::{CountPill, FreshnessGate};
 use super::readiness::{self, CycleTimeBasisExt};
 use super::sim_debug::semantic_kind_color;
+use super::sim_diagnostics::CutMetricSpec;
 use crate::render::toolpath_render::palette_color;
 use crate::state::freshness::simulation_freshness;
 use crate::state::runtime::GuiState;
-use crate::state::simulation::{ActiveSemanticItem, SimulationState};
+use crate::state::simulation::{ActiveSemanticItem, CUT_METRIC_ORDER, SimulationState};
 use crate::ui_command::{NoArgs, SimJumpToMoveArgs, UiCommand};
 use egui_plot::{Line, Plot, PlotPoints, Polygon};
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::stock::simulation_cut::SimulationCutSample;
-use rs_cam_core::tool_load::ToolLoadReport;
+use rs_cam_core::tool_load::{DistributionMetric, DistributionOutcome, ToolLoadReport};
 
 /// Per-toolpath line in the signal plot: a colour plus a sequence of
 /// `(global_move_index, [x, y])` points decimated for the current X span.
 type GroupPoints = Vec<(egui::Color32, Vec<(usize, [f64; 2])>)>;
 
-/// One signal plot track: label, value extractor over `SimulationCutSample`,
-/// stroke colour, and an optional `(min, max)` envelope for shading.
-type SignalTrack = (
-    &'static str,
-    fn(&SimulationCutSample) -> Option<f64>,
-    egui::Color32,
-    Option<(f64, f64)>,
-);
+/// One unbanded signal track: label and value extractor over
+/// `SimulationCutSample`. An unbanded track has no limit lines.
+type SignalTrack = (&'static str, fn(&SimulationCutSample) -> Option<f64>);
 
 /// Bottom panel in simulation workspace: transport controls, timeline scrubber, speed control.
 pub fn draw(
@@ -96,7 +92,7 @@ pub fn draw(
 
     // Boundary timeline always shows the whole project — user wants the
     // full picture (Pin Drill, Back Rough, ...) at a glance regardless
-    // of which TP is focused below. The signal-spine graphs scope to
+    // of which TP is focused below. The time-series drawer scopes to
     // the focused TP independently. The two widgets use different X
     // coordinate spaces; markers on each are accurate within their own
     // widget but won't visually align with the other.
@@ -109,7 +105,7 @@ pub fn draw(
         &active_semantic,
         events,
     );
-    draw_signal_spine(ui, sim, session, gui, &load_report, events);
+    draw_time_series(ui, sim, session, gui, &load_report, events);
 }
 
 fn draw_verdict_hud(
@@ -265,7 +261,28 @@ fn draw_verdict_hud(
     });
 }
 
-fn draw_signal_spine(
+/// Package E (PLAN §3.3): the time-series drawer.
+///
+/// The drawer is closed by default. The Inspector's "Cut metrics" section
+/// owns the one toggle, `SimulationState::time_series_open`. Closed, this
+/// function draws nothing and the bottom panel holds the transport bar and
+/// the boundary timeline only. There is no placeholder here: the right
+/// section states `NotMeasured` when no metric exists.
+///
+/// Open, the drawer draws every track in one scroll area:
+///
+/// - One banded track per cut-metric card of the focused toolpath. Its
+///   points are the gate population the card bins
+///   (`CutMetricCard::series`), in the card's display unit, with the
+///   gate's own limit lines. The drawer and the card show one number.
+/// - Three unbanded tracks from the raw samples: arc-mean chip thickness,
+///   MRR and commanded feed. Arc-mean chip thickness has no band on purpose
+///   (Checkpoint H3).
+///
+/// The normalised "advance/tooth vs band max" summary track and the
+/// "Signal graphs" disclosure are gone. The chipload card carries the
+/// summary.
+fn draw_time_series(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
     session: &ProjectSession,
@@ -273,10 +290,13 @@ fn draw_signal_spine(
     load_report: &ToolLoadReport,
     events: &mut Vec<AppEvent>,
 ) {
-    // Signal graphs only render when cut-metric capture was on for the
-    // last sim run. If there's no trace, hide this section entirely —
-    // the user enables capture from the left panel's "Setup & run" and
-    // re-runs to populate it.
+    if !sim.time_series_open {
+        // No track is under the pointer while the drawer is closed.
+        sim.hovered_x = None;
+        return;
+    }
+    // The card footer asks for one track. The request lives for one frame.
+    let scroll_to = sim.time_series_scroll_to.take();
     // Acquire the trace as an Arc so we can keep an immutable handle for
     // reads while still calling `&mut sim` methods (e.g. ensure_built).
     let trace_arc = sim
@@ -285,19 +305,17 @@ fn draw_signal_spine(
         .and_then(|r| r.cut_trace.as_ref())
         .map(std::sync::Arc::clone);
     let Some(trace_arc) = trace_arc else {
-        draw_spine_empty_placeholder(ui, sim);
         return;
     };
     sim.debug.span_aggregates.ensure_built(&trace_arc);
     let trace = trace_arc.as_ref();
     let total_moves = sim.total_moves();
     if total_moves == 0 {
-        draw_spine_empty_placeholder(ui, sim);
         return;
     }
-    // TIM-009 — whole-spine stale skin. When the trace no longer matches the
-    // current params, desaturate the track colours and drop the gate-trip
-    // drill (its dots point at moves that may no longer exist).
+    // TIM-009 — whole-drawer stale skin. When the trace no longer matches
+    // the current params, desaturate the track colours and drop the
+    // gate-trip drill (its dots point at moves that may no longer exist).
     let stale = simulation_freshness(session, sim).is_stale();
 
     // Group cutting samples by toolpath using the per-trace cache. Without
@@ -332,20 +350,17 @@ fn draw_signal_spine(
         })
         .collect();
 
-    // Inspector pin / playback-derived focus filters the per-TP groups so
-    // graphs show only the selected toolpath when one is focused. The
-    // boundary timeline above stays project-wide regardless.
+    // Playback-derived focus filters the per-TP groups so the tracks show
+    // only the playing toolpath. The boundary timeline above stays
+    // project-wide regardless.
     let focused_id = sim.focused_toolpath();
     if let Some(id) = focused_id {
         groups.retain(|g| g.toolpath_id == id);
     }
-
     if groups.iter().all(|g| g.samples.is_empty()) {
-        draw_spine_empty_placeholder(ui, sim);
         return;
     }
-
-    // Stale skin: grey the per-toolpath line colours so the spine reads as
+    // Stale skin: grey the per-toolpath line colours so the drawer reads as
     // "last run, not current" (TIM-009).
     if stale {
         for g in &mut groups {
@@ -355,28 +370,11 @@ fn draw_signal_spine(
 
     ui.add_space(4.0);
     let active_x = Some(sim.playback.current_move as f64);
-    let chipload_envelopes = sim.cached_chipload_envelopes(session, gui.edit_counter);
-    let envelope = focused_id
-        .and_then(|id| chipload_envelopes.get(&id))
-        .map(|range| (range.start, range.end));
 
-    // F6.1 — timeline point markers are reserved for Critical/Risky gate
-    // trips only. The per-`(toolpath_id, semantic_item_id)` aggregator
-    // dots that used to render here (one per `trace.hotspots` entry, ~850
-    // on wanaka TP 1) were reporting buckets, not problem flags, and
-    // drowned the real signal in a sea of orange. The diagnostics-panel
-    // table is the home for the per-bucket data; the timeline is the
-    // safety channel.
-    //
-    // See planning/OPTIMIZER_UX_DIALIN_FIXES.md F6 for the broader
-    // reframe (graph panels with bands instead of dots for continuous
-    // data) — this is just the dot-removal slice.
+    // F6.1 — timeline point markers are reserved for gate trips only: one
+    // dot per Exceeds verdict at the gate's actual worst-sample move. Reuses
+    // the timeline's memoed `load_report` (passed in).
     let mut hotspots: Vec<HotspotMarker> = Vec::new();
-
-    // Add tool-load gate markers — one dot per Exceeds verdict at the
-    // gate's actual worst-sample move. Reuses the timeline's already-
-    // memoed `load_report` (passed in) instead of building a second copy
-    // per frame.
     for verdict in &load_report.per_toolpath {
         if let Some(focus) = focused_id
             && verdict.toolpath_id != focus
@@ -402,9 +400,11 @@ fn draw_signal_spine(
     // X-axis range for the tracks. When a TP is focused, zoom the X axis to
     // just that TP's move range so the data fills the plot width. The
     // boundary timeline above stays whole-project regardless.
-    let x_range: (f64, f64) = focused_id
+    let focused_start = focused_id
         .and_then(|id| sim.boundaries().iter().find(|b| b.id == id))
-        .map(|b| (b.start_move as f64, b.end_move as f64))
+        .map(|b| (b.start_move, b.end_move));
+    let x_range: (f64, f64) = focused_start
+        .map(|(start, end)| (start as f64, end as f64))
         .unwrap_or((0.0, total_moves_f));
 
     // DepthPass bands behind every track. Computed once and reused so each
@@ -443,34 +443,64 @@ fn draw_signal_spine(
         })
         .unwrap_or_default();
 
-    // UP4: the five tracks are SERIES in a chart, a category. They carried
-    // `(230,200,60)`, `(80,200,120)`, `(110,150,230)`, `(210,130,230)` and
-    // `(150,190,230)` — a hand-assembled colour wheel with a pass-green in
-    // it, which `DESIGN_SPEC.md` §2.6 principle 1 forbids. They walk
-    // `SPAN_SCALE` now; the summary track below takes the sixth step, so all
-    // six strips stay distinct. `CHART_SERIES` has only four steps and cannot
-    // cover this strip.
-    // SAFETY: every index is a literal in `0..6` and `SPAN_SCALE` has six
-    // entries, so each one is in bounds at compile time.
-    #[allow(clippy::indexing_slicing)]
-    let tracks: [SignalTrack; 5] = [
+    // The banded tracks: the cut-metric set of the focused toolpath, from
+    // the same memo the Inspector cards read.
+    let metric_set = focused_id.map(|id| sim.cached_cut_metrics(session, gui.edit_counter, id));
+    let mut banded: Vec<BandedTrack> = Vec::new();
+    if let (Some(set), Some((start_move, _))) = (metric_set.as_ref(), focused_start) {
+        for card in &set.cards {
+            let DistributionOutcome::Measured(distribution) = &card.outcome else {
+                continue;
+            };
+            if card.series.is_empty() {
+                continue;
+            }
+            let spec = CutMetricSpec::of(card.metric);
+            let points: Vec<(usize, [f64; 2])> = card
+                .series
+                .iter()
+                .map(|&(local_move, value)| {
+                    let global_move = start_move + local_move;
+                    (global_move, [global_move as f64, value * spec.scale])
+                })
+                .collect();
+            let advisory = distribution
+                .bound_source
+                .as_ref()
+                .is_some_and(|source| !source.gates_export());
+            banded.push(BandedTrack {
+                metric: card.metric,
+                label: format!("{} ({})", spec.title, spec.unit),
+                points: decimate_max(points, SIGNAL_MAX_POINTS),
+                bounds: TrackBounds {
+                    floor: distribution.histogram.floor.map(|v| v * spec.scale),
+                    ceiling: distribution.histogram.ceiling.map(|v| v * spec.scale),
+                    advisory,
+                },
+            });
+        }
+    }
+
+    // The tracks keep the card order: `CUT_METRIC_ORDER`, which is the
+    // `criteria()` order with engagement last.
+    banded.sort_by_key(|track| {
+        CUT_METRIC_ORDER
+            .iter()
+            .position(|metric| *metric == track.metric)
+            .unwrap_or(usize::MAX)
+    });
+
+    // UP4: the tracks are SERIES in a chart, a category. They walk
+    // `SPAN_SCALE`, not a hand-assembled colour wheel.
+    let raw_tracks: [SignalTrack; 3] = [
         (
             // Checkpoint H3 (2026-08-08): this track keeps the arc-mean
             // chip thickness — a real engagement/force signal — but is
-            // **unbanded**, and says which quantity it is. It used to be
-            // labelled "chipload" and shaded with the vendor advance-per-
-            // tooth band, which is a comparison no source supports
-            // (`CHIPLOAD_LITERATURE_VERDICT.md` §2.3). The banded
-            // comparison now lives on the "advance/tooth vs band max"
-            // summary track above, in the band's own unit.
-            "arc-mean chip thickness",
+            // **unbanded**, and says which quantity it is. The banded
+            // comparison lives on the chipload track, in the band's unit.
+            "arc-mean chip thickness (mm)",
             // Filter air-cut samples (radial_engagement < 0.02). Same
-            // threshold the gate's verdict uses
-            // (`tool_load::chipload::evaluate`). Plotting them shows a
-            // near-zero static line that reads as "static chip during
-            // air" — visually misleading because air cuts have no real
-            // chip. Drawing only meaningful samples lets the eye focus on
-            // the engaged-cut chip distribution.
+            // threshold the gate's verdict uses. Air cuts have no chip.
             |s| {
                 if s.engagement.radial_woc_fraction < 0.02 {
                     None
@@ -478,34 +508,11 @@ fn draw_signal_spine(
                     s.effective_chip_thickness_mm
                 }
             },
-            crate::ui::tokens::SPAN_SCALE[0],
-            // No envelope, on purpose. A shaded band IS a comparison.
-            None,
         ),
-        (
-            "arc engagement",
-            |s| s.arc_engagement_radians,
-            crate::ui::tokens::SPAN_SCALE[1],
-            None,
-        ),
-        (
-            "axial DOC",
-            |s| (s.axial_doc_mm > 0.0).then_some(s.axial_doc_mm),
-            crate::ui::tokens::SPAN_SCALE[2],
-            None,
-        ),
-        (
-            "MRR",
-            |s| (s.mrr_mm3_s > 0.0).then_some(s.mrr_mm3_s),
-            crate::ui::tokens::SPAN_SCALE[3],
-            None,
-        ),
-        (
-            "feed",
-            |s| Some(s.feed_rate_mm_min),
-            crate::ui::tokens::SPAN_SCALE[4],
-            None,
-        ),
+        ("MRR (mm\u{00b3}/s)", |s| {
+            (s.mrr_mm3_s > 0.0).then_some(s.mrr_mm3_s)
+        }),
+        ("commanded feed (mm/min)", |s| Some(s.feed_rate_mm_min)),
     ];
 
     // Header row showing what's currently in focus. Focus follows the
@@ -527,111 +534,54 @@ fn draw_signal_spine(
         });
     }
 
-    // Summary tier (density Batch 2 — the unlanded half of W3.6): one
-    // metric-resolved track answering "where is it in trouble?" — the
-    // per-sample **achieved advance per tooth** normalised by that
-    // toolpath's vendor band ceiling, so 1.0 reads "at the limit" across
-    // toolpaths with different tools. Toolpaths without vendor data
-    // contribute nothing here (they're already pilled as unmodeled in the
-    // HUD); the raw per-metric tracks live one click below.
-    //
-    // Checkpoint H1 (2026-08-08): the numerator used to be
-    // `effective_chip_thickness_mm` — an arc-mean chip thickness over an
-    // advance-per-tooth ceiling. Because the result was *normalised*, it
-    // read as a fraction-of-limit, which is the strongest "trust me"
-    // framing of the three defective surfaces the A-1 census found.
-    let has_normalizable = groups
-        .iter()
-        .any(|g| !g.samples.is_empty() && chipload_envelopes.contains_key(&g.toolpath_id));
-    if has_normalizable {
-        let predicted_feeds = &trace_arc.predicted_feeds;
-        let summary_fn = |s: &SimulationCutSample| -> Option<f64> {
-            if s.engagement.radial_woc_fraction < 0.02 {
-                return None;
-            }
-            let observed =
-                rs_cam_core::tool_load::display::achieved_advance_per_tooth(s, predicted_feeds)?;
-            let band = rs_cam_core::feeds::VendorChiploadBand::from_advance_range(
-                chipload_envelopes.get(&s.toolpath_id)?,
-            );
-            band.fraction_of_ceiling(observed)
-        };
-        // Band: vendor floor→ceiling in normalised space for the focused
-        // TP. Project-wide the burn floor varies per toolpath, so the
-        // ceiling at 1.0 is the only honest bound (floor pinned to 0 —
-        // no burn zone rather than a misleading one).
-        let summary_env = envelope
-            .filter(|(_, hi)| *hi > 0.0)
-            .map(|(lo, hi)| (lo / hi, 1.0))
-            .or(Some((0.0, 1.0)));
-        // UP4: the sixth series of the same strip. The amber it carried
-        // read as a standing warning; the verdict here is where the line
-        // crosses 1.0, not the line itself.
-        // SAFETY: index 5 is a literal and `SPAN_SCALE` has six entries.
-        #[allow(clippy::indexing_slicing)]
-        let summary_track = crate::ui::tokens::SPAN_SCALE[5];
-        let summary_color = if stale {
-            desaturate(summary_track)
-        } else {
-            summary_track
-        };
-        draw_signal_track(
-            ui,
-            "advance/tooth vs band max",
-            &groups,
-            summary_fn,
-            summary_color,
-            active_x,
-            display_x,
-            &mut new_hovered,
-            summary_env,
-            &hotspots,
-            x_range,
-            &pass_bands,
-            &mut clicked_hotspot,
-            &mut signal_drag_active,
-            events,
-        );
-        ui.add_space(4.0);
-    }
-
-    // Expert spine behind disclosure: five co-equal raw-metric tracks
-    // (~90 px each) used to consume a third of the screen even when every
-    // gate was green. The summary track above + HUD pills + gate-trip dots
-    // carry the default story; the per-metric graphs are one click away.
-    egui::CollapsingHeader::new("Signal graphs (5)")
-        .id_salt("signal_spine_expert")
-        .default_open(!has_normalizable)
+    let mut ctx = TrackContext {
+        active_x,
+        display_x,
+        new_hovered: &mut new_hovered,
+        hotspots: &hotspots,
+        x_range,
+        pass_bands: &pass_bands,
+        clicked_hotspot: &mut clicked_hotspot,
+        scrub_drag_active: &mut signal_drag_active,
+        events: &mut *events,
+    };
+    // One scroll area for every track. Each track is 90 px with vertical
+    // separation, so the operator can read two or three at once and scroll
+    // to the rest without losing the X-axis lock.
+    egui::ScrollArea::vertical()
+        .id_salt("signal_spine_scroll")
+        .auto_shrink([false, false])
         .show(ui, |ui| {
-            // Stacked scroll area: each track is taller (90 px) and gets
-            // vertical separation, so the user can read 2–3 at once and
-            // scroll to the rest without losing their X-axis lock.
-            egui::ScrollArea::vertical()
-                .id_salt("signal_spine_scroll")
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    for (label, value_fn, color, env) in tracks {
-                        let track_color = if stale { desaturate(color) } else { color };
-                        draw_signal_track(
-                            ui,
-                            label,
-                            &groups,
-                            value_fn,
-                            track_color,
-                            active_x,
-                            display_x,
-                            &mut new_hovered,
-                            env,
-                            &hotspots,
-                            x_range,
-                            &pass_bands,
-                            &mut clicked_hotspot,
-                            &mut signal_drag_active,
-                            events,
-                        );
-                        ui.add_space(8.0);
-                    }
-                });
+            for (index, track) in banded.iter().enumerate() {
+                let colour = track_colour(index);
+                let colour = if stale { desaturate(colour) } else { colour };
+                let group_points: GroupPoints = vec![(colour, track.points.clone())];
+                draw_signal_track(
+                    ui,
+                    &track.label,
+                    &group_points,
+                    colour,
+                    track.bounds,
+                    scroll_to == Some(track.metric),
+                    &mut ctx,
+                );
+                ui.add_space(8.0);
+            }
+            for (offset, (label, value_fn)) in raw_tracks.into_iter().enumerate() {
+                let colour = track_colour(banded.len() + offset);
+                let colour = if stale { desaturate(colour) } else { colour };
+                let group_points = sample_points(&groups, value_fn);
+                draw_signal_track(
+                    ui,
+                    label,
+                    &group_points,
+                    colour,
+                    TrackBounds::default(),
+                    false,
+                    &mut ctx,
+                );
+                ui.add_space(8.0);
+            }
         });
 
     if signal_drag_active {
@@ -649,6 +599,46 @@ fn draw_signal_spine(
     }
 }
 
+/// One banded track: a cut-metric card's population, in its display unit.
+struct BandedTrack {
+    metric: DistributionMetric,
+    label: String,
+    points: Vec<(usize, [f64; 2])>,
+    bounds: TrackBounds,
+}
+
+/// The limit lines of one track, in the track's own unit. A line is drawn
+/// only for a bound the gate has. No zone is shaded (PLAN §7 Q1).
+#[derive(Clone, Copy, Debug, Default)]
+struct TrackBounds {
+    floor: Option<f64>,
+    ceiling: Option<f64>,
+    /// Draw the lines dashed: the bound is a rule of thumb.
+    advisory: bool,
+}
+
+/// The state every track of one drawer frame shares.
+struct TrackContext<'a> {
+    active_x: Option<f64>,
+    display_x: Option<f64>,
+    new_hovered: &'a mut Option<f64>,
+    hotspots: &'a [HotspotMarker],
+    x_range: (f64, f64),
+    pass_bands: &'a [(f64, f64, bool)],
+    clicked_hotspot: &'a mut Option<usize>,
+    scrub_drag_active: &'a mut bool,
+    events: &'a mut Vec<AppEvent>,
+}
+
+/// The series colour of track `index`, from the `SPAN_SCALE` token ramp.
+fn track_colour(index: usize) -> egui::Color32 {
+    let scale = &crate::ui::tokens::SPAN_SCALE;
+    scale
+        .get(index % scale.len())
+        .copied()
+        .unwrap_or(crate::ui::tokens::TEXT_MUTED)
+}
+
 struct ToolpathGroup<'a> {
     toolpath_id: crate::state::toolpath::ToolpathId,
     start_move: usize,
@@ -663,9 +653,7 @@ struct ToolpathGroup<'a> {
 /// `10_000+i` synthetic value, then tried `trace.hotspots.get(index)` on
 /// click — always None, so the "drill into hotspot" half was dead. These
 /// markers are gate trips, not engagement hotspots; there is no trace
-/// hotspot to focus, so the jump *is* the drill. (Plotting real hotspots
-/// here, with a focus-the-card affordance, is left to the W3.6 timeline
-/// rewrite.)
+/// hotspot to focus, so the jump *is* the drill.
 #[derive(Clone, Copy)]
 struct HotspotMarker {
     global_move: usize,
@@ -673,36 +661,14 @@ struct HotspotMarker {
 
 const SIGNAL_MAX_POINTS: usize = 1600;
 
-#[allow(clippy::too_many_arguments)]
-fn draw_signal_track(
-    ui: &mut egui::Ui,
-    label: &str,
+/// Build per-toolpath point lists in global-move space, decimating each
+/// independently so the global cap applies fairly across toolpaths.
+fn sample_points(
     groups: &[ToolpathGroup<'_>],
     value_fn: impl Fn(&SimulationCutSample) -> Option<f64>,
-    color: egui::Color32,
-    active_x: Option<f64>,
-    display_x: Option<f64>,
-    new_hovered: &mut Option<f64>,
-    envelope: Option<(f64, f64)>,
-    hotspots: &[HotspotMarker],
-    x_range: (f64, f64),
-    pass_bands: &[(f64, f64, bool)],
-    clicked_hotspot: &mut Option<usize>,
-    scrub_drag_active: &mut bool,
-    events: &mut Vec<AppEvent>,
-) {
-    let (x_min, x_max) = x_range;
-    let x_span = (x_max - x_min).max(1.0);
-    // Build per-toolpath point lists in global-move space, decimating each
-    // independently so the global cap applies fairly across toolpaths.
+) -> GroupPoints {
     let per_group_cap = (SIGNAL_MAX_POINTS / groups.len().max(1)).max(64);
-    // Decimate by **max-per-bucket** rather than stride sampling. Stride
-    // sampling drops single-sample spikes (the advance/tooth trace's
-    // full-slot peaks at every region entry), making the gate's reported
-    // peak invisible on the graph. Max-per-bucket preserves the worst-case
-    // sample per X-bucket, so a single-sample advance/tooth spike at sample
-    // 86603 actually appears as a vertical bar in the rendered line.
-    let group_points: GroupPoints = groups
+    groups
         .iter()
         .filter_map(|group| {
             let pts: Vec<(usize, [f64; 2])> = group
@@ -716,47 +682,64 @@ fn draw_signal_track(
             if pts.is_empty() {
                 return None;
             }
-            if pts.len() <= per_group_cap {
-                return Some((group.color, pts));
-            }
-            // Bucket the points and keep the max-Y point per bucket.
-            // Buckets are equal-width in sample-index space (which maps
-            // 1-to-1 to X position in the plot for this group). Result
-            // size is ≤ per_group_cap by construction.
-            let bucket_size = pts.len().div_ceil(per_group_cap);
-            let mut decimated: Vec<(usize, [f64; 2])> = Vec::with_capacity(per_group_cap + 1);
-            let mut chunk_iter = pts.chunks(bucket_size);
-            for chunk in chunk_iter.by_ref() {
-                if let Some(peak) = chunk.iter().max_by(|a, b| {
-                    a.1[1]
-                        .partial_cmp(&b.1[1])
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                }) {
-                    decimated.push(*peak);
-                }
-            }
-            Some((group.color, decimated))
+            Some((group.color, decimate_max(pts, per_group_cap)))
         })
-        .collect();
+        .collect()
+}
+
+/// Decimate by **max-per-bucket** rather than stride sampling. Stride
+/// sampling drops single-sample spikes (the full-slot peaks at every region
+/// entry), which makes the gate's reported peak invisible on the graph.
+/// Max-per-bucket keeps the worst-case sample per X-bucket. The result
+/// holds at most `cap` points.
+fn decimate_max(pts: Vec<(usize, [f64; 2])>, cap: usize) -> Vec<(usize, [f64; 2])> {
+    if pts.len() <= cap.max(1) {
+        return pts;
+    }
+    let bucket_size = pts.len().div_ceil(cap.max(1));
+    pts.chunks(bucket_size)
+        .filter_map(|chunk| {
+            chunk
+                .iter()
+                .max_by(|a, b| a.1[1].total_cmp(&b.1[1]))
+                .copied()
+        })
+        .collect()
+}
+
+/// Draw one track: its label, then the plot. `scroll_here` scrolls the
+/// drawer so the label is at the top.
+fn draw_signal_track(
+    ui: &mut egui::Ui,
+    label: &str,
+    group_points: &GroupPoints,
+    color: egui::Color32,
+    bounds: TrackBounds,
+    scroll_here: bool,
+    ctx: &mut TrackContext<'_>,
+) {
     if group_points.is_empty() {
         return;
     }
+    let (x_min, x_max) = ctx.x_range;
+    let x_span = (x_max - x_min).max(1.0);
+    let values = || {
+        group_points
+            .iter()
+            .flat_map(|(_, pts)| pts.iter().map(|(_, p)| p[1]))
+            .chain(bounds.floor)
+            .chain(bounds.ceiling)
+    };
+    let min_y = values().fold(f64::INFINITY, f64::min);
+    let max_y = values().fold(f64::NEG_INFINITY, f64::max);
 
-    let min_y = group_points
-        .iter()
-        .flat_map(|(_, pts)| pts.iter().map(|(_, p)| p[1]))
-        .fold(f64::INFINITY, f64::min);
-    let max_y = group_points
-        .iter()
-        .flat_map(|(_, pts)| pts.iter().map(|(_, p)| p[1]))
-        .fold(f64::NEG_INFINITY, f64::max);
-
-    // All five tracks share this link group so X-zoom/pan happens in lockstep.
-    // Y is independent (each metric has its own scale).
     // Track label above the plot — the embedded plot legend isn't very
     // visible at this size, and a leading label is more scannable when
     // tracks are stacked vertically in a scroll area.
-    ui.label(egui::RichText::new(label).small().strong().color(color));
+    let label_response = ui.label(egui::RichText::new(label).small().strong().color(color));
+    if scroll_here {
+        label_response.scroll_to_me(Some(egui::Align::TOP));
+    }
 
     // The link group ID encodes the X range, so changing focus (which
     // changes x_range) creates a *fresh* link group. Without this, egui_plot
@@ -765,12 +748,19 @@ fn draw_signal_track(
     let link_group = ui
         .id()
         .with(("signal_spine_x_link", x_min.to_bits(), x_max.to_bits()));
+    let active_x = ctx.active_x;
+    let display_x = ctx.display_x;
+    let hotspots = ctx.hotspots;
+    let pass_bands = ctx.pass_bands;
+    let mut hovered: Option<f64> = None;
+    let mut clicked_hotspot: Option<usize> = None;
+    let mut dragged_now = false;
+    let mut seek: Option<usize> = None;
     let response = Plot::new(format!("signal_track_{label}"))
         .height(90.0)
         // Wheel zooms horizontally; drag is *not* used by the plot — we
         // intercept it below as a scrub gesture instead so dragging across
-        // a track scrubs playback rather than panning the graph (the prior
-        // behaviour confused users since "drag" looked like a scrub).
+        // a track scrubs playback rather than panning the graph.
         .allow_zoom([true, false])
         .allow_drag([false, false])
         .allow_scroll([false, false])
@@ -782,10 +772,9 @@ fn draw_signal_track(
         .include_x(x_min)
         .include_x(x_max)
         .show(ui, |plot_ui| {
-            // DepthPass bands first so the data lines and envelope shading
-            // render on top of them. Bands have transparent strokes and
-            // disabled hover so they don't show up in legend hover or
-            // intercept clicks.
+            // DepthPass bands first so the data lines and limit lines render
+            // on top of them. Bands have transparent strokes and disabled
+            // hover so they don't show up in legend hover or intercept clicks.
             if !pass_bands.is_empty() {
                 let band_y_min = min_y - (max_y - min_y).abs() * 0.1;
                 let band_y_max = max_y + (max_y - min_y).abs() * 0.1;
@@ -794,8 +783,8 @@ fn draw_signal_track(
                     // UP4: three washes over one plot ground. They stay
                     // PREMULTIPLIED — `tokens::accent_wash` is unmultiplied,
                     // and at these alphas it would leave the selected band
-                    // dimmer than its unselected neighbours, inverting what
-                    // the bands are for. The base colours are the tokens.
+                    // dimmer than its unselected neighbours. The base colours
+                    // are the tokens.
                     let wash = |c: egui::Color32, a: u8| {
                         egui::Color32::from_rgba_premultiplied(c.r(), c.g(), c.b(), a)
                     };
@@ -825,36 +814,27 @@ fn draw_signal_track(
             }
 
             // One Line per toolpath, further split into contiguous runs
-            // wherever consecutive surviving samples have a sample-index
-            // gap > MAX_LINE_BRIDGE_GAP. A gap means the value_fn returned
-            // None for the in-between samples (e.g. air-cut on the
-            // advance/tooth track, or zero-DOC on axial DOC) — drawing one
-            // Line across the gap
-            // bridges those samples with a misleading diagonal segment.
-            // Splitting at the gap makes air-cut sections render as
-            // explicit blanks, matching the user's mental model: "samples
-            // with no signal don't have a line".
+            // wherever consecutive surviving samples have a move gap >
+            // MAX_LINE_BRIDGE_GAP. A gap means the value was absent for the
+            // in-between samples (for example an air cut); one Line across
+            // the gap would bridge them with a misleading diagonal.
             //
-            // Threshold > 1 (not > 0) absorbs decimation-induced gaps:
-            // when the per-bucket-max decimator picks one point per
-            // bucket, surviving consecutive points are bucket_size apart
-            // even with no air cuts. Use a slightly looser threshold to
-            // accommodate that without bridging real air-cut runs.
+            // Threshold > 1 (not > 0) absorbs decimation-induced gaps.
             const MAX_LINE_BRIDGE_GAP: usize = 16;
-            for (_tp_color, pts) in &group_points {
+            for (_tp_color, pts) in group_points {
                 let mut run_start = 0usize;
                 for (i, pair) in pts.windows(2).enumerate() {
-                    // SAFETY: windows(2) guarantees len == 2
-                    #[allow(clippy::indexing_slicing)]
-                    let (prev_move, cur_move) = (pair[0].0, pair[1].0);
-                    if cur_move.saturating_sub(prev_move) > MAX_LINE_BRIDGE_GAP {
-                        // i is the index of pair[0]; the break is between i and i+1.
+                    let (Some(prev), Some(cur)) = (pair.first(), pair.get(1)) else {
+                        continue;
+                    };
+                    if cur.0.saturating_sub(prev.0) > MAX_LINE_BRIDGE_GAP {
                         let end = i + 1;
-                        // SAFETY: end <= pts.len() because windows(2) yields
-                        // indices i in 0..pts.len()-1.
-                        #[allow(clippy::indexing_slicing)]
-                        let xy: Vec<[f64; 2]> =
-                            pts[run_start..end].iter().map(|(_, p)| *p).collect();
+                        let xy: Vec<[f64; 2]> = pts
+                            .get(run_start..end)
+                            .unwrap_or_default()
+                            .iter()
+                            .map(|(_, p)| *p)
+                            .collect();
                         if xy.len() >= 2 {
                             plot_ui
                                 .line(Line::new("", PlotPoints::from(xy)).name(label).color(color));
@@ -862,86 +842,34 @@ fn draw_signal_track(
                         run_start = end;
                     }
                 }
-                // SAFETY: run_start is monotonically advanced by the loop
-                // above using indices bounded by pts.len(), so the suffix
-                // slice is always in range.
-                #[allow(clippy::indexing_slicing)]
-                let xy: Vec<[f64; 2]> = pts[run_start..].iter().map(|(_, p)| *p).collect();
+                let xy: Vec<[f64; 2]> = pts
+                    .get(run_start..)
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|(_, p)| *p)
+                    .collect();
                 if xy.len() >= 2 {
                     plot_ui.line(Line::new("", PlotPoints::from(xy)).name(label).color(color));
                 }
             }
 
-            if let Some((cl_min, cl_max)) = envelope {
-                // Shade the out-of-bounds zones so users can see at a
-                // glance which segments are breaking the envelope.
-                // Above-max → red (breakage). Below-min → amber (burn).
-                // The clear band between cl_min and cl_max is the safe
-                // zone. Stroke is transparent — fill only.
-                //
-                // Only a track whose values are in the band's own unit may
-                // pass an envelope (Checkpoint H3) — today that is the
-                // normalised advance/tooth summary track alone.
-                let transparent = egui::Stroke::new(0.0_f32, egui::Color32::TRANSPARENT);
-                if cl_max < max_y {
-                    let breakage_top = max_y.max(cl_max);
-                    plot_ui.polygon(
-                        Polygon::new(
-                            "",
-                            PlotPoints::from(vec![
-                                [x_min, cl_max],
-                                [x_max, cl_max],
-                                [x_max, breakage_top],
-                                [x_min, breakage_top],
-                            ]),
-                        )
-                        .fill_color(egui::Color32::from_rgba_premultiplied(
-                            crate::ui::tokens::TINT_DANGER.r(),
-                            crate::ui::tokens::TINT_DANGER.g(),
-                            crate::ui::tokens::TINT_DANGER.b(),
-                            90,
-                        ))
-                        .stroke(transparent)
-                        .allow_hover(false)
-                        .name("breakage zone"),
-                    );
+            // The gate's own limit lines, in this track's unit. The same
+            // numbers the card draws; a line only for a bound that exists.
+            for (bound, colour, name) in [
+                (bounds.floor, crate::ui::tokens::CAUTION, "floor"),
+                (bounds.ceiling, crate::ui::tokens::DANGER, "ceiling"),
+            ] {
+                let Some(value) = bound else {
+                    continue;
+                };
+                let mut line =
+                    Line::new("", PlotPoints::from(vec![[x_min, value], [x_max, value]]))
+                        .color(colour)
+                        .name(name);
+                if bounds.advisory {
+                    line = line.style(egui_plot::LineStyle::Dashed { length: 6.0 });
                 }
-                if cl_min > min_y {
-                    let burn_bottom = min_y.min(cl_min);
-                    plot_ui.polygon(
-                        Polygon::new(
-                            "",
-                            PlotPoints::from(vec![
-                                [x_min, burn_bottom],
-                                [x_max, burn_bottom],
-                                [x_max, cl_min],
-                                [x_min, cl_min],
-                            ]),
-                        )
-                        .fill_color(egui::Color32::from_rgba_premultiplied(
-                            crate::ui::tokens::TINT_CAUTION.r(),
-                            crate::ui::tokens::TINT_CAUTION.g(),
-                            crate::ui::tokens::TINT_CAUTION.b(),
-                            80,
-                        ))
-                        .stroke(transparent)
-                        .allow_hover(false)
-                        .name("burn zone"),
-                    );
-                }
-                let band_color = crate::ui::tokens::DANGER;
-                plot_ui.line(
-                    Line::new("", PlotPoints::from(vec![[x_min, cl_min], [x_max, cl_min]]))
-                        .color(band_color)
-                        .style(egui_plot::LineStyle::Dashed { length: 6.0 })
-                        .name("cl_min"),
-                );
-                plot_ui.line(
-                    Line::new("", PlotPoints::from(vec![[x_min, cl_max], [x_max, cl_max]]))
-                        .color(band_color)
-                        .style(egui_plot::LineStyle::Dashed { length: 6.0 })
-                        .name("cl_max"),
-                );
+                plot_ui.line(line);
             }
 
             if let Some(x) = active_x {
@@ -958,7 +886,7 @@ fn draw_signal_track(
                         .color(crate::ui::tokens::ACCENT)
                         .style(egui_plot::LineStyle::Dashed { length: 4.0 }),
                 );
-                if let Some((_, point)) = nearest_in_groups(x, &group_points) {
+                if let Some((_, point)) = nearest_in_groups(x, group_points) {
                     plot_ui.text(egui_plot::Text::new(
                         "",
                         egui_plot::PlotPoint::new(point[0], point[1]),
@@ -971,7 +899,7 @@ fn draw_signal_track(
                 let hotspot_pts: Vec<[f64; 2]> = hotspots
                     .iter()
                     .filter_map(|hs| {
-                        nearest_in_groups(hs.global_move as f64, &group_points).map(|(_, pt)| pt)
+                        nearest_in_groups(hs.global_move as f64, group_points).map(|(_, pt)| pt)
                     })
                     .collect();
                 if !hotspot_pts.is_empty() {
@@ -986,20 +914,18 @@ fn draw_signal_track(
 
             // Only react when the pointer is actually over the plot rect AND
             // within the data X range. This prevents the playhead jumping when
-            // the user moves the mouse past the left/right edges of the plot
-            // (which still reports a valid pointer_coordinate well outside the
-            // data bounds).
+            // the user moves the mouse past the left/right edges of the plot.
             let pointer_in_rect = plot_ui.response().hovered();
             let dragged = plot_ui.response().dragged();
             if dragged {
-                *scrub_drag_active = true;
+                dragged_now = true;
             }
             if (pointer_in_rect || dragged)
                 && let Some(pointer) = plot_ui.pointer_coordinate()
                 && pointer.x >= x_min
                 && pointer.x <= x_max
             {
-                *new_hovered = Some(pointer.x);
+                hovered = Some(pointer.x);
                 // Click: hotspot-snap if the pointer is close to one,
                 // otherwise jump to the position. Drag: pure positional
                 // scrub (no hotspot snapping — feels janky on drag).
@@ -1013,23 +939,34 @@ fn draw_signal_track(
                     if let Some(hs) = nearest_hotspot
                         && (hs.global_move as f64 - pointer.x).abs() <= tolerance
                     {
-                        *clicked_hotspot = Some(hs.global_move);
+                        clicked_hotspot = Some(hs.global_move);
                     } else if let Some((global_move, _)) =
-                        nearest_in_groups(pointer.x, &group_points)
+                        nearest_in_groups(pointer.x, group_points)
                     {
-                        events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
-                            move_index: global_move,
-                        })));
+                        seek = Some(global_move);
                     }
                 } else if dragged
-                    && let Some((global_move, _)) = nearest_in_groups(pointer.x, &group_points)
+                    && let Some((global_move, _)) = nearest_in_groups(pointer.x, group_points)
                 {
-                    events.push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
-                        move_index: global_move,
-                    })));
+                    seek = Some(global_move);
                 }
             }
         });
+    if dragged_now {
+        *ctx.scrub_drag_active = true;
+    }
+    if hovered.is_some() {
+        *ctx.new_hovered = hovered;
+    }
+    if clicked_hotspot.is_some() {
+        *ctx.clicked_hotspot = clicked_hotspot;
+    }
+    if let Some(move_index) = seek {
+        ctx.events
+            .push(AppEvent::Ui(UiCommand::SimJumpToMove(SimJumpToMoveArgs {
+                move_index,
+            })));
+    }
     // TIM-004 — the primary interactivity disclosure is the cursor change
     // (the track is scrubbable), not a wall of prose; keep one short line.
     if response.response.hovered() {
@@ -1060,47 +997,6 @@ fn desaturate(c: egui::Color32) -> egui::Color32 {
     let lum = (0.3 * c.r() as f32 + 0.59 * c.g() as f32 + 0.11 * c.b() as f32) as u8;
     let mix = |ch: u8| (((ch as u16) + (lum as u16) * 2) / 3) as u8;
     egui::Color32::from_rgb(mix(c.r()), mix(c.g()), mix(c.b())).linear_multiply(0.7)
-}
-
-/// TIM-003 — the signal spine's empty state.
-///
-/// The spine does not early-return into a void. It paints a placeholder where
-/// the spine would be. The placeholder shows state only. The one capture
-/// control is "Capture cutting metrics" in `sim_op_list.rs` (package A,
-/// 2026-09-23), and the workspace primary is the only run route.
-fn draw_spine_empty_placeholder(ui: &mut egui::Ui, sim: &SimulationState) {
-    // DC6 / Rule C — the abstention mark states why no metrics show. The
-    // placeholder does not start work and does not change the recording.
-    let reason = if !sim.has_results() {
-        "No simulation has run yet, so cutting metrics have not been measured."
-    } else if sim
-        .results
-        .as_ref()
-        .is_some_and(|results| results.cut_trace.is_none())
-    {
-        "The accepted simulation result contains no cut trace."
-    } else {
-        "The accepted simulation result contains no cutting samples."
-    };
-    ui.add_space(crate::ui::tokens::SPACE_2);
-    egui::Frame::default()
-        .fill(crate::ui::tokens::SURFACE_BASE)
-        .inner_margin(egui::Margin::symmetric(
-            crate::ui::tokens::SPACE_3 as i8,
-            crate::ui::tokens::SPACE_3 as i8,
-        ))
-        .corner_radius(crate::ui::tokens::RADIUS_SM)
-        .show(ui, |ui| {
-            ui.set_min_height(crate::ui::tokens::ROW_ACTION);
-            ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new("Cut metrics")
-                        .small()
-                        .color(crate::ui::tokens::TEXT_MUTED),
-                );
-                ui.add(NotMeasured::new().reason(reason));
-            });
-        });
 }
 
 /// Row 1: Transport buttons, timeline scrubber slider, and time display.

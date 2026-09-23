@@ -9,12 +9,12 @@ Every panel, modal and workspace. `ui::mod` runs once per frame from `../app.rs`
 - `components/`, `feeds/`, `overlays/`, `properties/` — see each child file.
 - `setup_panel.rs`, `toolpath_panel.rs`, `toolpath_row_controls.rs` — the
   Setup rail and the toolpath rows, with the card's gutter connector.
-- `sim_*.rs` — the Simulation workspace, with `draw_trace_badge`.
+- `sim_*.rs` — the Simulation workspace, with `draw_trace_badge`. The time-
+  series drawer opens only from the Inspector's Cut metrics toggle.
 - `readiness.rs`, `readiness_panel.rs`, `preflight.rs` — is this safe to cut?
-- `export_wizard.rs`, `optimize_modal.rs`, `optimize_project.rs`,
-  `multitool_planner.rs`, `*_modal.rs` — the modals.
-- `viewport_overlay.rs`, `automation.rs`, `shortcuts_window.rs` — the strip
-  above the 3D view, automation, the shortcuts window.
+- `export_wizard.rs`, `optimize_*.rs`, `multitool_planner.rs`, `*_modal.rs`.
+- `viewport_overlay.rs`, `automation.rs`, `shortcuts_window.rs` — the
+  viewport dock, automation, the shortcuts window.
 
 ## Invariants
 
@@ -23,8 +23,7 @@ Every panel, modal and workspace. `ui::mod` runs once per frame from `../app.rs`
   draw nothing.
 - The Simulation workspace has ONE visible full-run primary. No surface may
   add a second run route.
-- Use `simulation_request_is_buildable` for every Run Simulation affordance,
-  not a simpler "has a generated toolpath" check.
+- Every Run Simulation affordance uses `simulation_request_is_buildable`.
 - Declutter removes a control; it does not hide a duplicate route.
 - A dependency between operations is ONE line in the card gutter, read from
   `dependencies::primary_edges`. No surface draws a second badge for it.
@@ -38,3 +37,4 @@ Every panel, modal and workspace. `ui::mod` runs once per frame from `../app.rs`
 - `cargo test -p rs_cam_viz -q --test ui_string_hygiene`
 - `cargo test -p rs_cam_viz -q --test connector_reads_edge_state_g_connector`
 - `cargo test -p rs_cam_viz -q --test the_dot_becomes_a_ring_in_flight_g_ring`
+- `cargo test -p rs_cam_viz -q --test cut_metric_cards_read_the_gate_g_cutcards`

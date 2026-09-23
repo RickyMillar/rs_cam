@@ -12,8 +12,8 @@ use rs_cam_core::dexel_stock::TriDexelStock;
 use rs_cam_core::stock::simulation_cut::SimulationMetricOptions;
 
 use super::{
-    ChiploadEnvelopeCache, HolderCheckScope, IssueListCache, SetupBoundary, SimCheckpoint,
-    SimulationChecks, SimulationDebugState, SimulationPlayback, SimulationState,
+    ChiploadEnvelopeCache, CutMetricCache, HolderCheckScope, IssueListCache, SetupBoundary,
+    SimCheckpoint, SimulationChecks, SimulationDebugState, SimulationPlayback, SimulationState,
     SimulationTriageCache, SpanAggregateCache, SpanScope, StockVizMode, ToolLoadReportCache,
     ToolpathBoundary,
 };
@@ -79,10 +79,13 @@ impl SimulationState {
                 load_report_cache: ToolLoadReportCache::default(),
                 chipload_envelope_cache: ChiploadEnvelopeCache::default(),
                 triage_cache: SimulationTriageCache::default(),
+                cut_metric_cache: CutMetricCache::default(),
                 issue_cache: IssueListCache::default(),
                 semantic_indexes: HashMap::new(),
             },
             hovered_x: None,
+            time_series_open: false,
+            time_series_scroll_to: None,
         }
     }
 

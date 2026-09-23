@@ -14,6 +14,7 @@ numbers each file cites.
 - `chip.rs`, `pill.rs` — `StatusChip` and `CountPill`.
 - `choice_row.rs` — `ChoiceRow`, the one closed-choice row (G-STARTFROM).
 - `freshness.rs` — `Freshness` and `FreshnessGate`, the single staleness cue.
+- `histogram.rs` — `DistributionChart`, a painted histogram (no `egui_plot`).
 - `provenance.rs` — `ProvKind` and `ProvenanceBadge`.
 - `precedence.rs` — `PrecedenceField`, an override over a project default.
 - `suggest.rs`, `compare.rs` — `SuggestButton` and the current-versus-
@@ -25,12 +26,10 @@ numbers each file cites.
 
 - A component is the ONE renderer for its element. A panel that draws its own
   chip or row breaks the kit.
-- Staleness has one cue: `Freshness`. Provenance has one vocabulary:
-  `ProvKind`. Do not add a second.
+- Staleness has one cue, `Freshness`; provenance one vocabulary, `ProvKind`.
 - A component reads a token from `ui/tokens.rs`. It holds no literal colour
   or spacing.
-- A button that starts a long job reports it through `Button::progress`. The
-  words are its own label, because it paints that label exactly once.
+- A long-job button reports through `Button::progress`; it paints its label once.
 
 ## Sentries
 
@@ -38,3 +37,4 @@ numbers each file cites.
 - `cargo test -p rs_cam_viz -q --test chrome_reads_the_kit_up3`
 - `cargo test -p rs_cam_viz -q --test panels_read_the_token_module_up1`
 - `cargo test -p rs_cam_viz -q --test the_toolpath_card_is_five_elements_dc1`
+- `cargo test -p rs_cam_viz -q --test cut_metric_cards_read_the_gate_g_cutcards`
