@@ -6,6 +6,9 @@
       "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
       "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
       "accessed_on": "2026-03-10",
+      "stored_text": "sources/amana_spektra_spiral_plunge_v24.txt",
+      "pdf_sha256": "5b6fef854b2cf6b422e2eb5bbc86e29b4dcab5b19195b7ff228b70f99cf86d3a",
+      "stored_on": "2026-09-23",
       "coverage_notes": "Flat/compression wood tooling feed and chipload chart. Smallest diameters: 1/32\" (0.794mm), 1.5mm. Chart covers Wood/Plywood and MDF/Laminate columns; does NOT cover ball nose or tapered ball nose tools (these are flat/compression spirals only). Chart does NOT separate softwood from hardwood."
     },
     {
@@ -14,6 +17,9 @@
       "source_title": "Amana Spiral Ball Nose Speed Chart v7",
       "source_url": "https://www.amanatool.com/pub/media/productattachments/Spiral-Ball-Nose-Speed-Chart-v7.pdf",
       "accessed_on": "2026-03-10",
+      "stored_text": "sources/amana_ball_nose_v7.txt",
+      "pdf_sha256": "e851a270a9958a9affc17a24c8e6a8ef51d63a813f384b7043670d676cae3563",
+      "stored_on": "2026-09-23",
       "coverage_notes": "Ball nose chart rows for wood, MDF, plastic, and aluminum. Smallest diameter covered: 1/16\" (1.587mm). Chart values are calibrated for 1xD-depth slot/peripheral cutting, NOT 3D parallel finishing \u2014 using these CPT values as 3D-finish bounds would be aggressive. Existing 3.175mm and 6mm rows in this file are derived (reduced) for 3D-finish use; sub-1mm rows from this chart are NOT transcribed for the same reason. Coverage gap: no sub-1mm 3D-finish-calibrated ball nose rows; use amana_zrn_3d_profiling instead."
     },
     {
@@ -22,6 +28,9 @@
       "source_title": "Amana ZrN 3D Profiling Feed and Chip Load Chart",
       "source_url": "https://www.amanatool.com/pub/media/productattachments/ZrN-3D-Profiling-Feed-Chip-Load-Chart.pdf",
       "accessed_on": "2026-03-10",
+      "stored_text": "sources/amana_zrn_3d_profiling.txt",
+      "pdf_sha256": "52465d1d774c8b37e18c96b439a028d23d8c5a4e6f770542b1cd430a60a5def2",
+      "stored_on": "2026-09-23",
       "coverage_notes": "Ball/tapered-ball/flat profiling guidance. Diameters covered: 1/32\" (0.794mm), 1mm, 1.5mm, 1/16\" (1.587mm), 1/8\" (3.175mm), 3/16\" (4.762mm), 6mm, 1/4\", 3/8\", 1/2\". COVERAGE GAP: chart conflates softwood/hardwood/MDF/sign-foam under one 'Wood, MDF, Sign-Foam' row \u2014 does NOT separate softwood from hardwood at any diameter. Sub-1mm rows added 2026-05-02 (1mm 2-flute, 1/16\" 2-flute, 1/32\" 3-flute, 1.5mm 4-flute) are emitted as softwood and MDF only; HARDWOOD AT SUB-1MM IS A DOCUMENTED GAP \u2014 vendor's wood data is not split, and per refusal-first we do not invent reduced-CPT hardwood rows. The chart's printed CPT for 2-flute 1/16\" Wood (0.003-0.005 inch) is INCONSISTENT with the printed IPM (55-90 IPM at 18000 RPM 2-flute \u2192 0.00153-0.0025 inch); the 1/16\" 2-flute row in observations uses the IPM-derived value and is marked row_kind='derived'."
     },
     {
@@ -222,6 +231,9 @@
       "source_title": "Onsrud Cutting Data — Hard Wood (PDF)",
       "source_url": "https://www.onsrud.com/images/Hard%20Wood.pdf",
       "accessed_on": "2026-05-30",
+      "stored_text": "sources/onsrud_hard_wood_cutting_data.txt",
+      "pdf_sha256": "f123d5f67c03b3760cfd300c36d480747b176e4d9cc06db7d1ea97ff9bda69dc",
+      "stored_on": "2026-09-23",
       "coverage_notes": "Bundled 2026-05-31 (Phase 4 bulk promotion). Per-material Onsrud cutting-data PDF for hardwood (OCR-extracted into onsrud_ocr.json). Series 64-000 / 65-000 (downcut spiral / compression spiral) and selected straight-flute rows."
     },
     {
@@ -230,6 +242,9 @@
       "source_title": "Onsrud Cutting Data — Soft Wood (PDF)",
       "source_url": "https://www.onsrud.com/images/Soft%20Wood.pdf",
       "accessed_on": "2026-05-30",
+      "stored_text": "sources/onsrud_soft_wood_cutting_data.txt",
+      "pdf_sha256": "a5b83da2433c64cb930dffe4a6de142124c894bd6aa982791a604b0048716c54",
+      "stored_on": "2026-09-23",
       "coverage_notes": "Bundled 2026-05-31 (Phase 4 bulk promotion). Per-material Onsrud cutting-data PDF for softwood (OCR-extracted into onsrud_ocr.json)."
     },
     {
@@ -238,7 +253,32 @@
       "source_title": "Onsrud Cutting Data — MDF (PDF)",
       "source_url": "https://www.onsrud.com/images/MDF.pdf",
       "accessed_on": "2026-05-30",
+      "stored_text": "sources/onsrud_mdf_cutting_data.txt",
+      "pdf_sha256": "94464ac393d93a6ad13e166f52aaf9cc9470860895ed97571dd4a07c710bdf4c",
+      "stored_on": "2026-09-23",
       "coverage_notes": "Bundled 2026-05-31 (Phase 4 bulk promotion). Per-material Onsrud cutting-data PDF for MDF (OCR-extracted into onsrud_ocr.json)."
+    },
+    {
+      "source_id": "onsrud_hard_plywood_cutting_data",
+      "source_vendor": "onsrud",
+      "source_title": "Onsrud Cutting Data \u2014 Hard Plywood (PDF)",
+      "source_url": "https://www.onsrud.com/images/Hard%20Plywood.pdf",
+      "accessed_on": "2026-09-23",
+      "stored_text": "sources/onsrud_hard_plywood_cutting_data.txt",
+      "pdf_sha256": "65874767572e1669fb39fcfb91c5a04a21f1eee16b1fa12f7f9bb30ed6775e24",
+      "stored_on": "2026-09-23",
+      "coverage_notes": "Added 2026-09-23 (feeds matrix R5). Per-material Onsrud cutting-data PDF for hard plywood (sheet title \"Hard Plywood Cutting Data Recommendations\", page 118). Transcribed from the stored pdftotext -layout copy into onsrud_plywood.json: flat-end series 60-000 (LH/HH), 60-100MW, 60-100C, 60-300, 60-350, 60-800, and the 77-100 tapered ball row (1/8 in .003-.005, 1/4 in .005-.007). The sheet prints no 60-200 row. Depth rule as printed: 1 x D recommended chip load; 2 x D reduce chip load by 25%; 3 x D reduce chip load by 50%."
+    },
+    {
+      "source_id": "onsrud_soft_plywood_cutting_data",
+      "source_vendor": "onsrud",
+      "source_title": "Onsrud Cutting Data \u2014 Soft Plywood (PDF)",
+      "source_url": "https://www.onsrud.com/images/Soft%20Plywood.pdf",
+      "accessed_on": "2026-09-23",
+      "stored_text": "sources/onsrud_soft_plywood_cutting_data.txt",
+      "pdf_sha256": "f1c369ed8c8c15c918574bef0e9dfdc89c9885f9d8aaf3126e0d35c5c8be1ca1",
+      "stored_on": "2026-09-23",
+      "coverage_notes": "Added 2026-09-23 (feeds matrix R5). Per-material Onsrud cutting-data PDF for soft plywood (sheet title \"Soft Plywood Cutting Data Recommendations\"). Transcribed from the stored pdftotext -layout copy into onsrud_plywood.json: flat-end series 60-000 (LH/HH), 60-100MW, 60-100C, 60-300, 60-350, 60-800. The APPLICATION table names 60-200 for finishing but the chip-load table prints no 60-200 row, and the sheet prints no 77-100 row; neither is transcribed. The chip-load table has no 3/32 in column. Depth rule as printed: 1 x D recommended chip load; 2 x D reduce chip load by 25%; 3 x D reduce chip load by 50%."
     },
     {
       "source_id": "whiteside_fusion360_tools_2019-10-23",

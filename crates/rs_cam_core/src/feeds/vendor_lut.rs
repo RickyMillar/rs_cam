@@ -214,6 +214,13 @@ pub struct VendorObservation {
     /// Optional; older observations did not record this and may be backfilled.
     #[serde(default)]
     pub source_page: Option<String>,
+    /// Provenance note for the row: how a `derived` or `fallback` row
+    /// was made from its cited chart (the reduction factor, the series it
+    /// was derived from, or the statement that the chart does not print
+    /// it). The lookup does not read this field. Added 2026-09-23 for
+    /// feeds matrix ruling R5.
+    #[serde(default)]
+    pub notes: Option<String>,
 }
 
 /// Operation family as used in vendor LUT JSON (separate from feeds::OperationFamily for serde).
