@@ -364,7 +364,7 @@ fn wanaka_suggest_baseline() {
             .as_ref()
             .unwrap_or_else(|| panic!("{ctx}: Suggest matched no vendor LUT row"));
         assert_eq!(
-            matched.observation_id, "amana-flat-hardwood-pocket-6000-2f",
+            matched.observation_id, "amana-flat-hardwood-pocket-6000-2f-spektra",
             "{ctx}: post-K-(a4) an Adaptive3d Suggest query must resolve the POCKET row. \
              If this reads `amana-flat-hardwood-adaptive-6000-2f` again, the shared routing \
              through `vendor_normalize::lut_query_for` has regressed (6604303c)"
