@@ -341,10 +341,31 @@ fn every_chipload_message_discloses_row_scaling_and_pass_role() {
          diameter, so the scaling must be disclosed: {}",
         chipload.message
     );
-    assert!(
+    // The query is a Finish role (`verdict()`). Until R5 (2026-09-23) the
+    // only tapered scallop row was SemiFinish, so the substitution had to
+    // be disclosed. The printed Onsrud 77-100 rows carry `finish`, so the
+    // row that wins now is a Finish row and no substitution exists. The
+    // rule stays: a row of another role must say so; a row of the same
+    // role must not claim a substitution. The winning row is read from the
+    // message, so the arm follows the table.
+    let row_id = chipload
+        .message
+        .split("(row ")
+        .nth(1)
+        .and_then(|rest| rest.split(';').next())
+        .expect("the message names the matched row as `(row <id>;`");
+    let row = rs_cam_core::feeds::EMBEDDED_LUT
+        .observations
+        .iter()
+        .find(|o| o.observation_id == row_id)
+        .unwrap_or_else(|| panic!("the named row {row_id:?} is not in the embedded LUT"));
+    let substituted = row.pass_role != LutPassRole::Finish;
+    assert_eq!(
         chipload.message.contains("pass role"),
-        "the fixture's SemiFinish row won a Finish query — that substitution \
-         must be disclosed: {}",
+        substituted,
+        "row {row_id} has pass role {:?} against a Finish query; a substitution \
+         must be disclosed and only then: {}",
+        row.pass_role,
         chipload.message
     );
 }
