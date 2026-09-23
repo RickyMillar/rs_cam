@@ -1050,7 +1050,13 @@ pub(super) static REG_PENCIL: OpRegistryEntry = OpRegistryEntry {
         feeds_formula_source: Some(MILLING_FORMULA_SOURCE),
     },
     param_defs: PENCIL_PARAMS,
-    tool_constraints: ToolConstraintsDef::ANY_TOOL,
+    // Feeds matrix R1 (2026-09-23): the static check calls a flat end mill
+    // on Pencil Critical ("require a ball nose tool for correct surface
+    // contact"); the row now says so, and Suggest refuses on it.
+    tool_constraints: ToolConstraintsDef {
+        required_kinds: &[CutterKind::Ball, CutterKind::TaperedBall],
+        supports_v_bit: false,
+    },
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     policy: OpPolicy::FEATURE_SELECTIVE,
     generate: crate::compute::execute::generate_pencil,
@@ -1176,7 +1182,14 @@ pub(super) static REG_SPIRAL_FINISH: OpRegistryEntry = OpRegistryEntry {
         feeds_formula_source: Some(MILLING_FORMULA_SOURCE),
     },
     param_defs: SPIRAL_FINISH_PARAMS,
-    tool_constraints: ToolConstraintsDef::ANY_TOOL,
+    // Feeds matrix R1 (2026-09-23, EVIDENCE 2-1): the row declares the
+    // Scallop feeds family, so it carries Scallop's tool rule. Before, the
+    // scallop refusal fired from the family alone while the row accepted
+    // any tool.
+    tool_constraints: ToolConstraintsDef {
+        required_kinds: &[CutterKind::Ball, CutterKind::TaperedBall],
+        supports_v_bit: false,
+    },
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     policy: OpPolicy::LATERAL_RASTER,
     generate: crate::compute::execute::generate_spiral_finish,

@@ -302,8 +302,10 @@ fn a_refused_add_toolpath_shows_the_refusal_and_never_added() {
     let mut controller = controller_with_tool(ToolType::EndMill);
     let refusal = suggest_for(&controller, OperationType::Scallop)
         .expect_err("Scallop on a flat end mill must be refused by the Suggest door");
+    // Feeds matrix R1 (2026-09-23): the refusal names the operation and the
+    // kinds its registry row allows, in words.
     assert!(
-        refusal.contains("scallop requires curved tip"),
+        refusal.contains("Scallop Finish needs a ball nose or tapered ball nose tool"),
         "unexpected refusal text: {refusal}"
     );
 
@@ -329,7 +331,9 @@ fn a_refused_add_toolpath_shows_the_refusal_and_never_added() {
     assert_eq!(warnings.len(), 1, "exactly one Warning toast: {shown:?}");
     assert!(
         warnings[0].0.contains("Cannot add toolpath")
-            && warnings[0].0.contains("scallop requires curved tip"),
+            && warnings[0]
+                .0
+                .contains("needs a ball nose or tapered ball nose tool"),
         "the Warning must carry the handler's refusal text: {}",
         warnings[0].0
     );

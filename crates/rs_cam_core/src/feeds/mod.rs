@@ -227,6 +227,17 @@ pub enum CutterKind {
 }
 
 impl CutterKind {
+    /// The kind as words, for operator-facing text.
+    pub fn label(self) -> &'static str {
+        match self {
+            CutterKind::Flat => "flat end mill",
+            CutterKind::Ball => "ball nose",
+            CutterKind::Bull => "bull nose",
+            CutterKind::VBit => "V-bit",
+            CutterKind::TaperedBall => "tapered ball nose",
+        }
+    }
+
     pub const ALL: &[CutterKind] = &[
         CutterKind::Flat,
         CutterKind::Ball,
@@ -882,15 +893,24 @@ pub enum FeedsWarning {
 /// the refusal signal in a path that doesn't go through `suggest::*`.
 #[derive(Debug, Clone)]
 pub enum FeedsError {
-    /// Tool geometry can't physically produce the operation's intended
-    /// cut. Today fires for `Scallop` (and `DropCutter` when a scallop
-    /// height is set) with `Flat` or `VBit` geometry — both have zero
-    /// tip radius so the scallop-stepover formula
-    /// `2·√(2·R·h − h²)` is undefined.
+    /// The tool cannot run the operation. Two rules raise it, both the
+    /// engine's own (feeds matrix ruling R1, 2026-09-23):
+    ///
+    /// - the operation's registry row does not allow the tool's cutter
+    ///   kind (`OpRegistryEntry::tool_constraints`, the same predicate the
+    ///   generator refuses on) — `allowed` lists the kinds the row allows;
+    /// - a scallop-height stepover needs a curved tip: `Scallop`, and
+    ///   `Parallel` with a scallop target, refuse `Flat` and `VBit`, whose
+    ///   tip radius is zero and whose scallop-stepover formula
+    ///   `2·√(2·R·h − h²)` is undefined — `allowed` is empty.
     WrongToolForOperation {
-        operation: OperationFamily,
-        actual_geometry: ToolGeometryHint,
-        required: &'static str,
+        /// The operation, when the caller named one; a raw `calculate`
+        /// caller may know only the feeds family.
+        operation: Option<crate::compute::catalog::OperationType>,
+        family: OperationFamily,
+        actual: CutterKind,
+        /// The kinds the registry row allows; empty for the scallop-tip rule.
+        allowed: &'static [CutterKind],
     },
     /// The engine has no basis for this cell: no vendor row matches, and
     /// the operation declares no formula source
@@ -914,12 +934,32 @@ impl std::fmt::Display for FeedsError {
         match self {
             FeedsError::WrongToolForOperation {
                 operation,
-                actual_geometry,
-                required,
-            } => write!(
-                f,
-                "scallop requires curved tip (need {required}; got {actual_geometry:?} on {operation:?})",
-            ),
+                family,
+                actual,
+                allowed,
+            } => {
+                let op_name = operation
+                    .map(|op| op.spec().label.to_owned())
+                    .unwrap_or_else(|| format!("the {family:?} family"));
+                let this = actual.label();
+                let names: Vec<&str> = allowed.iter().map(|k| k.label()).collect();
+                if let Some((last, init)) = names.split_last() {
+                    let list = if init.is_empty() {
+                        (*last).to_owned()
+                    } else {
+                        format!("{} or {last}", init.join(", "))
+                    };
+                    write!(f, "{op_name} needs a {list} tool; this tool is a {this}.")
+                } else if *actual == CutterKind::VBit {
+                    write!(f, "{op_name} does not accept a V-bit.")
+                } else {
+                    write!(
+                        f,
+                        "{op_name} with a scallop height needs a tool with a curved tip (ball, \
+                         bull or tapered ball); this tool is a {this}."
+                    )
+                }
+            }
             FeedsError::Unbacked {
                 operation,
                 tool_family,
@@ -943,32 +983,43 @@ impl std::error::Error for FeedsError {}
 /// numeric-looking recipe that would produce ploughing / rubbing /
 /// undefined geometry.
 ///
-/// Today this fires on Scallop + Flat|VBit (no tip radius — the
-/// `R - √(R² - (s/2)²)` scallop formula is undefined) and on
-/// DropCutter + Flat|VBit when `target_scallop_mm.is_some()` (the
-/// DropCutter scallop hint routes through the same scallop-stepover
-/// block in `calculate`, so the same geometry constraint applies).
+/// Two engine rules refuse here (feeds matrix ruling R1, 2026-09-23):
+///
+/// 1. The operation's registry row does not allow the tool's cutter kind
+///    (`OpRegistryEntry::tool_constraints`). The generator refuses on the
+///    same predicate, so Suggest and generation cannot disagree. This
+///    needs `operation_kind`; a raw `calculate` caller without one skips it.
+/// 2. Scallop + Flat|VBit (no tip radius — the `R - √(R² - (s/2)²)`
+///    scallop formula is undefined) and Parallel + Flat|VBit when
+///    `target_scallop_mm.is_some()` (the DropCutter scallop hint routes
+///    through the same scallop-stepover block in `calculate`).
 ///
 /// After the tool check, it refuses with [`FeedsError::Unbacked`] when
 /// [`feeds_support`] returns `FeedsSupport::Refuse`. This is the one place
 /// that constructs `Unbacked`. The lookup runs only for an operation that
 /// declares no formula source, because only such an operation can refuse.
 pub fn validate_tool_for_operation(input: &FeedsInput) -> Result<(), FeedsError> {
+    let actual = input.tool_geometry.cutter_kind();
+    if let Some(operation) = input.operation_kind {
+        let constraints = operation.registry_entry().tool_constraints;
+        if !constraints.allows(actual) {
+            return Err(FeedsError::WrongToolForOperation {
+                operation: Some(operation),
+                family: input.operation,
+                actual,
+                allowed: constraints.required_kinds,
+            });
+        }
+    }
     let scallop_relevant = input.operation == OperationFamily::Scallop
         || (input.operation == OperationFamily::Parallel && input.target_scallop_mm.is_some());
-    if scallop_relevant {
-        match input.tool_geometry {
-            ToolGeometryHint::Ball
-            | ToolGeometryHint::Bull { .. }
-            | ToolGeometryHint::TaperedBall { .. } => {}
-            ToolGeometryHint::Flat | ToolGeometryHint::VBit { .. } => {
-                return Err(FeedsError::WrongToolForOperation {
-                    operation: input.operation,
-                    actual_geometry: input.tool_geometry,
-                    required: "ball|bull|tapered_ball",
-                });
-            }
-        }
+    if scallop_relevant && matches!(actual, CutterKind::Flat | CutterKind::VBit) {
+        return Err(FeedsError::WrongToolForOperation {
+            operation: input.operation_kind,
+            family: input.operation,
+            actual,
+            allowed: &[],
+        });
     }
     if let Some(operation) = input.operation_kind
         && operation.spec().feeds_formula_source.is_none()
@@ -1690,9 +1741,13 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
 
     // --- Step 3b: Scallop-driven stepover for ball/tapered ball ---
     if let Some(target_scallop) = input.target_scallop_mm {
+        // A bull nose forms its scallop with its corner radius (EVIDENCE
+        // 2-7): the registry refuses Bull on the Scallop family, so this
+        // arm serves the Parallel family's scallop hint.
         let ball_r = match input.tool_geometry {
             ToolGeometryHint::Ball => d / 2.0,
             ToolGeometryHint::TaperedBall { tip_radius, .. } => tip_radius,
+            ToolGeometryHint::Bull { corner_radius } => corner_radius,
             _ => 0.0,
         };
         if ball_r > 0.0 {

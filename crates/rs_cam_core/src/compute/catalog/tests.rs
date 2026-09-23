@@ -228,7 +228,13 @@ fn tool_constraints_are_an_explicit_per_op_decision() {
                 assert_eq!(schema.required_tool_type, ["v_bit"], "{op_type:?}");
                 assert!(tc.supports_v_bit, "{op_type:?}");
             }
-            OperationType::Scallop | OperationType::UnifiedFinish => {
+            // Feeds matrix R1 (2026-09-23): Pencil and SpiralFinish joined this
+            // arm. The static check already called a flat end mill on Pencil
+            // Critical, and SpiralFinish declares the Scallop feeds family.
+            OperationType::Scallop
+            | OperationType::UnifiedFinish
+            | OperationType::Pencil
+            | OperationType::SpiralFinish => {
                 assert_eq!(
                     tc.required_kinds,
                     [CutterKind::Ball, CutterKind::TaperedBall]
@@ -240,7 +246,8 @@ fn tool_constraints_are_an_explicit_per_op_decision() {
                 assert!(!tc.supports_v_bit);
             }
             _ => {
-                // Pre-registry these 19 fell through `_ => (Vec::new(), true)`.
+                // Pre-registry these fell through `_ => (Vec::new(), true)`;
+                // 19 until feeds matrix R1 moved Pencil and SpiralFinish.
                 assert!(
                     tc.required_kinds.is_empty(),
                     "{op_type:?}: expected the ANY_TOOL policy"
@@ -253,7 +260,7 @@ fn tool_constraints_are_an_explicit_per_op_decision() {
         assert_eq!(schema.supports_v_bit, tc.supports_v_bit);
     }
     assert_eq!(
-        unrestricted, 19,
+        unrestricted, 17,
         "unrestricted-op count changed — decide deliberately"
     );
 }

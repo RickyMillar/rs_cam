@@ -262,7 +262,10 @@ fn an_mcp_refusal_is_readable_off_the_stack_as_one_warning() {
     use rs_cam_viz::mcp_bridge::{McpOutcome, mutation_error_json};
 
     let mut controller = AppController::with_backend(SilentBackend);
-    let reply = mutation_error_json("Cannot add toolpath: scallop requires curved tip", None);
+    let reply = mutation_error_json(
+        "Cannot add toolpath: Scallop Finish needs a ball nose or tapered ball nose tool; this tool is a flat end mill",
+        None,
+    );
     let outcome = McpOutcome::from_json_response(&reply);
     assert!(matches!(outcome, McpOutcome::Refused(_)), "{outcome:?}");
 
@@ -276,7 +279,7 @@ fn an_mcp_refusal_is_readable_off_the_stack_as_one_warning() {
     assert_eq!(stack.len(), 1, "one toast per request: {stack:?}");
     assert_eq!(stack[0].1, Severity::Warning, "{stack:?}");
     assert!(
-        stack[0].0.contains("scallop requires curved tip"),
+        stack[0].0.contains("Scallop Finish needs a ball nose or tapered ball nose tool; this tool is a flat end mill"),
         "the refusal text reaches the stack verbatim: {stack:?}"
     );
     assert!(

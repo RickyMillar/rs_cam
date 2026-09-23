@@ -31,7 +31,7 @@
 )]
 
 use rs_cam_core::feeds::{
-    FeedsError, FeedsInput, OperationFamily, PassRole, SetupContext, SpindleStrategy,
+    CutterKind, FeedsError, FeedsInput, OperationFamily, PassRole, SetupContext, SpindleStrategy,
     ToolGeometryHint, embedded_vendor_lut, validate_tool_for_operation,
 };
 use rs_cam_core::machine::MachineProfile;
@@ -82,14 +82,18 @@ fn scallop_refuses_flat_endmill() {
     );
     let msg = format!("{err}");
     assert!(
-        msg.contains("scallop") && msg.contains("curved"),
-        "refusal message {msg:?} should mention scallop + curved tip",
+        msg.contains("scallop height") && msg.contains("curved tip"),
+        "refusal message {msg:?} should name the scallop height and the curved tip",
+    );
+    assert!(
+        !msg.contains('{'),
+        "refusal message {msg:?} leaks Debug output"
     );
     assert!(matches!(
         err,
         FeedsError::WrongToolForOperation {
-            operation: OperationFamily::Scallop,
-            actual_geometry: ToolGeometryHint::Flat,
+            family: OperationFamily::Scallop,
+            actual: CutterKind::Flat,
             ..
         }
     ));
