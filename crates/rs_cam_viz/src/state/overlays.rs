@@ -1,45 +1,71 @@
-//! State for the viewport Overlays panel (P6).
+//! State for the viewport dock and the All viewport options catalogue.
 //!
-//! The panel itself holds no copy of any overlay flag — it reads every flag
-//! from [`crate::state::AppState`] each frame and caches nothing, because the
-//! planner and the workspace switch write those flags behind its back
-//! (audit §5, rule 2). What lives here is the panel's own shape plus the
-//! per-workspace default bookkeeping.
+//! The dock and the catalogue hold no copy of any overlay flag. They read
+//! every flag from [`crate::state::AppState`] each frame and cache nothing,
+//! because the planner and the workspace switch write those flags behind
+//! their backs (audit §5, rule 2). What lives here is the shape of the two
+//! surfaces plus the per-workspace default bookkeeping.
 
 use super::Workspace;
 
-/// Which Overlays group a collapsing header belongs to. Mirrors
-/// [`crate::ui::overlays::registry::OverlayGroup`] and exists separately only
-/// so `state` does not depend on `ui`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct GroupOpenState {
-    pub geometry: bool,
-    pub toolpath: bool,
-    pub regions: bool,
-    pub analysis: bool,
+/// One section of the viewport dock (viewport redesign, MOCKUPS §1).
+///
+/// The dock owns four sections in a fixed order. Each section opens one
+/// upward popover. This type lives in `state` so that `state` does not
+/// depend on `ui`; the section of each registry row is
+/// `crate::ui::overlays::registry::dock_section`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DockSection {
+    /// Camera presets, projection, reset and the orientation gizmo.
+    View,
+    /// Geometry, stock, fixtures, grid, boundaries and layers.
+    Scene,
+    /// Draw scope, cutting moves, rapids, spans and move colour.
+    Paths,
+    /// Model and stock analysis, collisions, deflection and traces.
+    Inspect,
 }
 
-impl Default for GroupOpenState {
-    fn default() -> Self {
-        Self {
-            geometry: true,
-            toolpath: true,
-            regions: true,
-            analysis: true,
+impl DockSection {
+    /// Every section, in dock order. The Tab order follows this order.
+    pub const ALL: [Self; 4] = [Self::View, Self::Scene, Self::Paths, Self::Inspect];
+
+    /// The section button text, without a suffix.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::View => "View",
+            Self::Scene => "Scene",
+            Self::Paths => "Paths",
+            Self::Inspect => "Inspect",
         }
     }
 }
 
-/// The Overlays panel's own state.
+/// Which rows the catalogue lists (MOCKUPS §10).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CatalogueFilter {
+    /// Every row, in every state.
+    #[default]
+    All,
+    /// Rows whose value differs from the workspace default.
+    Changed,
+    /// Rows whose precondition is not `Ready`.
+    CannotDraw,
+}
+
+/// The state of the dock and the catalogue.
 pub struct OverlayPanelState {
-    /// `true` while the panel is on screen. The `Overlays (n)` button and the
-    /// `O` shortcut both toggle it.
+    /// `true` while the All viewport options catalogue is on screen. The
+    /// dock's catalogue button and the `O` shortcut both toggle it.
     pub open: bool,
-    /// `true` while the panel is docked as a column inside the viewport
-    /// instead of floating over it. Toggled by the pin icon and `Shift+O`.
-    pub pinned: bool,
-    /// Per-group expanded state, remembered across opens.
-    pub groups: GroupOpenState,
+    /// The dock section whose popover is open. An `Option`, so the dock
+    /// can never hold two open popovers at once.
+    pub open_section: Option<DockSection>,
+    /// The catalogue search text. It is a draft with content, so it lives
+    /// here and not in egui temporary memory (`state/CLAUDE.md`).
+    pub catalogue_query: String,
+    /// The catalogue filter choice.
+    pub catalogue_filter: CatalogueFilter,
     /// The workspace whose defaults are currently applied, and the values
     /// they displaced.
     ///
@@ -58,10 +84,41 @@ impl OverlayPanelState {
     pub fn new() -> Self {
         Self {
             open: false,
-            pinned: false,
-            groups: GroupOpenState::default(),
+            open_section: None,
+            catalogue_query: String::new(),
+            catalogue_filter: CatalogueFilter::All,
             defaults_applied_for: None,
             displaced: Vec::new(),
+        }
+    }
+
+    /// A click on a section button. It opens that section's popover, or
+    /// closes it when it is already open. A click on a second section
+    /// closes the first and opens the second.
+    pub fn toggle_section(&mut self, section: DockSection) {
+        self.open_section = if self.open_section == Some(section) {
+            None
+        } else {
+            Some(section)
+        };
+    }
+
+    /// Close the open popover, if one is open.
+    pub fn close_section(&mut self) {
+        self.open_section = None;
+    }
+
+    /// Escape closes the open popover first, then the catalogue. Returns
+    /// `true` when it closed something, so the caller consumes the key.
+    pub fn close_one_for_escape(&mut self) -> bool {
+        if self.open_section.is_some() {
+            self.open_section = None;
+            true
+        } else if self.open {
+            self.open = false;
+            true
+        } else {
+            false
         }
     }
 }

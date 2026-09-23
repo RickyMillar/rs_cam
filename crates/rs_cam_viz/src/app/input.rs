@@ -434,6 +434,7 @@ impl RsCamApp {
 
     /// Handle keyboard shortcuts for the viewport and application.
     pub(super) fn handle_keyboard_shortcuts(&mut self, ctx: &egui::Context) {
+        self.escape_closes_a_viewport_surface(ctx);
         // Only process shortcuts when no text edit is focused
         if ctx.memory(|m| m.focused().is_some()) {
             return;
@@ -548,15 +549,12 @@ impl RsCamApp {
             return;
         }
 
-        // O: open or close the panel. Shift+O: pin or unpin it.
-        if i.key_pressed(egui::Key::O) {
+        // O: open or close the All viewport options catalogue. Shift+O
+        // pinned the old Overlays column. The dock has no column, so the
+        // viewport redesign retired that key (MOCKUPS §11.4).
+        if i.key_pressed(egui::Key::O) && !modifiers.shift {
             let overlays = &mut self.controller.state_mut().overlays;
-            if modifiers.shift {
-                overlays.pinned = !overlays.pinned;
-                overlays.open = true;
-            } else {
-                overlays.open = !overlays.open;
-            }
+            overlays.open = !overlays.open;
         }
 
         for (key, id) in [
@@ -584,21 +582,47 @@ impl RsCamApp {
             return;
         }
         if i.key_pressed(egui::Key::Comma) {
-            registry::cycle_surface(
-                self.controller.state_mut(),
-                crate::ui::overlays::panel::COMMA_SURFACE,
-            );
+            registry::cycle_surface(self.controller.state_mut(), registry::COMMA_SURFACE);
         }
         if i.key_pressed(egui::Key::Period) {
-            registry::cycle_surface(
-                self.controller.state_mut(),
-                crate::ui::overlays::panel::PERIOD_SURFACE,
-            );
+            registry::cycle_surface(self.controller.state_mut(), registry::PERIOD_SURFACE);
+        }
+    }
+
+    /// Escape closes the open dock popover first, and then the All viewport
+    /// options catalogue (MOCKUPS §0.4). The key is consumed, so no
+    /// workspace handler sees it.
+    ///
+    /// The shortcut handlers run BEFORE the layout draws, so this guard must
+    /// sit here. A check inside the dock's own draw would come too late: in
+    /// Simulation the Escape arm would already have switched the workspace.
+    ///
+    /// A popover closes whatever has focus. With only the catalogue open, a
+    /// focused widget keeps its own Escape: the search field clears its
+    /// query and gives up focus, and the next Escape closes the window.
+    fn escape_closes_a_viewport_surface(&mut self, ctx: &egui::Context) {
+        let state = self.controller.state();
+        if state.workspace == Workspace::Readiness {
+            return;
+        }
+        let popover_open = state.overlays.open_section.is_some();
+        if !popover_open && !state.overlays.open {
+            return;
+        }
+        if !popover_open && ctx.memory(|m| m.focused().is_some()) {
+            return;
+        }
+        let pressed = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+        if pressed {
+            self.controller.state_mut().overlays.close_one_for_escape();
         }
     }
 
     /// Handle keyboard shortcuts for the simulation workspace.
     pub(super) fn handle_simulation_shortcuts(&mut self, ctx: &egui::Context) {
+        // Before the Escape arm below: with a dock popover or the catalogue
+        // open, Escape closes that surface and does not leave the workspace.
+        self.escape_closes_a_viewport_surface(ctx);
         // Record whether a text field (or any widget) has focus *before*
         // processing key events.  Escape causes egui to clear focus, so
         // checking inside the input closure would miss the just-cleared

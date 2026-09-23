@@ -2,7 +2,8 @@
 //!
 //! One list feeds three surfaces, so they cannot disagree:
 //!
-//! - the Overlays panel (`super::panel`),
+//! - the viewport dock (`crate::ui::viewport_overlay`) and the All viewport
+//!   options catalogue (`super::panel`),
 //! - the MCP `set_ui_view` `overlays` map ([`apply_overlays`]),
 //! - the completeness sentries (`tests/overlays_registry.rs`).
 //!
@@ -32,38 +33,22 @@
 
 use std::collections::BTreeMap;
 
+use crate::state::overlays::DockSection;
 use crate::state::simulation::StockVizMode;
 use crate::state::viewport::ToolpathColorMode;
 use crate::state::{AppState, Workspace};
 
 // ── the shape of a row ─────────────────────────────────────────────────────
 
-/// Which collapsible group the row is listed under.
+/// The row's family. The old Overlays panel listed a collapsible group per
+/// family; the dock places a row by [`dock_section`], which falls back to
+/// the family for a row it does not name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OverlayGroup {
     Geometry,
     Toolpath,
     Regions,
     Analysis,
-}
-
-impl OverlayGroup {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Geometry => "Geometry",
-            Self::Toolpath => "Toolpath",
-            Self::Regions => "Regions",
-            Self::Analysis => "Analysis",
-        }
-    }
-
-    /// Every group, in panel order.
-    pub const ALL: [Self; 4] = [
-        Self::Geometry,
-        Self::Toolpath,
-        Self::Regions,
-        Self::Analysis,
-    ];
 }
 
 /// The surface a row paints a per-vertex or per-move SCALAR FIELD on.
@@ -657,7 +642,7 @@ pub const ROWS: &[OverlayRow] = &[
             }
         },
         default_for: moves_default,
-        hover: "Green fed moves, every toolpath. Per-toolpath: each row's C.",
+        hover: "Fed moves, in each toolpath's colour. Per-toolpath: each row's C.",
     },
     OverlayRow {
         id: "rapids",
@@ -680,7 +665,7 @@ pub const ROWS: &[OverlayRow] = &[
             }
         },
         default_for: moves_default,
-        hover: "Orange rapid moves. Per-toolpath: each row's R.",
+        hover: "Rapid moves, a darker toolpath colour. Per-toolpath: each row's R.",
     },
     OverlayRow {
         id: "entry_markers",
@@ -833,7 +818,7 @@ pub const ROWS: &[OverlayRow] = &[
         default_for: rest_heatmap_default,
         hover: "How much material this operation leaves. ANY operation \
                 attaches a rest grid once something demands one. Off by \
-                default: switching it on clears Analysis \u{25B8} Model colour: \
+                default: switching it on clears Inspect \u{25B8} Model colour: \
                 Reach, which shares the model surface.",
     },
     OverlayRow {
@@ -891,8 +876,7 @@ pub const ROWS: &[OverlayRow] = &[
         // island-outline renderer, and the row says so.
         precondition: |_s| {
             Precondition::no(
-                "drawn by Regions \u{25B8} Tier map \u{2014} no separate island \
-                 outline renderer yet",
+                "drawn by Inspect \u{25B8} Tier map \u{2014} no separate island outline renderer yet",
             )
         },
         default_for: no_default,
@@ -947,8 +931,7 @@ pub const ROWS: &[OverlayRow] = &[
                 Precondition::no("the reach map draws in the Toolpaths workspace")
             } else if !s.viewport.show_model {
                 Precondition::no(
-                    "the reach map IS the model, re-coloured \u{2014} \
-                                  switch Geometry \u{25B8} Model on",
+                    "the reach map IS the model, re-coloured \u{2014} switch Scene \u{25B8} Model on",
                 )
             } else if reach_map_wanted(s) {
                 Precondition::Ready
@@ -968,7 +951,7 @@ pub const ROWS: &[OverlayRow] = &[
         default_for: toolpaths_only_default,
         hover: "Green where this cutter forms the surface inside the \
                 operation's tolerance, red where it cannot, neutral where not \
-                measured. Clears Regions \u{25B8} Rest heatmap \u{2014} both colour \
+                measured. Clears Inspect \u{25B8} Rest heatmap \u{2014} both colour \
                 the model.",
     },
     OverlayRow {
@@ -1288,9 +1271,48 @@ pub fn row(id: &str) -> Option<&'static OverlayRow> {
     ROWS.iter().find(|r| r.id == id)
 }
 
-/// Rows in one group, in list order.
-pub fn rows_in(group: OverlayGroup) -> impl Iterator<Item = &'static OverlayRow> {
-    ROWS.iter().filter(move |r| r.group == group)
+/// Every row, in list order. The dock, the catalogue and the dock sentry
+/// iterate this list.
+pub fn rows() -> &'static [OverlayRow] {
+    ROWS
+}
+
+/// The dock section that is the ONE home of `row` (viewport redesign,
+/// MOCKUPS §1).
+///
+/// One home per row keeps the rule "one state, one writer". The function is
+/// total: a row that the named arms do not list falls to the section of its
+/// group, so a new row always has a home in the dock. The catalogue lists
+/// every row in addition.
+pub fn dock_section(row: &OverlayRow) -> DockSection {
+    match row.id {
+        "orientation_gizmo" => DockSection::View,
+        "derived_rest_regions" | "boundary_outline" | "simulated_stock" => DockSection::Scene,
+        _ => match (row.group, row.surface) {
+            (_, OverlaySurface::Moves) | (OverlayGroup::Toolpath, _) => DockSection::Paths,
+            (OverlayGroup::Geometry, _) => DockSection::Scene,
+            (OverlayGroup::Regions | OverlayGroup::Analysis, _) => DockSection::Inspect,
+        },
+    }
+}
+
+/// The rows whose dock home is `section`, in list order.
+pub fn rows_in_section(section: DockSection) -> impl Iterator<Item = &'static OverlayRow> {
+    ROWS.iter().filter(move |r| dock_section(r) == section)
+}
+
+/// Switch off every row on one surface. This is the `Off` choice of the
+/// model colour. A radio surface has no `Off`, so the call does nothing
+/// there.
+pub fn clear_surface(state: &mut AppState, surface: OverlaySurface) {
+    if surface == OverlaySurface::None {
+        return;
+    }
+    for row in ROWS {
+        if row.surface == surface && !row.radio && (row.get)(state) {
+            set_overlay(state, row, false);
+        }
+    }
 }
 
 /// Switch one row on or off, enforcing per-surface exclusivity.
@@ -1349,7 +1371,7 @@ pub fn apply_overlays(state: &mut AppState, requested: &BTreeMap<String, bool>) 
         let Some(row) = row(id.as_str()) else {
             report.refused.insert(
                 id.clone(),
-                format!("unknown overlay id '{id}' \u{2014} see the Overlays panel"),
+                format!("unknown overlay id '{id}' \u{2014} see All viewport options"),
             );
             continue;
         };
@@ -1468,9 +1490,14 @@ pub fn cycle_surface(state: &mut AppState, surface: OverlaySurface) {
     }
 }
 
-/// How many overlays sit away from their workspace default — the count the
-/// `Overlays (n)` button carries, so a closed panel still says that something
-/// is switched on.
+/// Which surface the `,` and `.` shortcuts step (UX §6.8). The keys live in
+/// `app/input.rs`; the surfaces live here, beside [`cycle_surface`].
+pub const COMMA_SURFACE: OverlaySurface = OverlaySurface::Model;
+pub const PERIOD_SURFACE: OverlaySurface = OverlaySurface::Stock;
+
+/// How many overlays sit away from their workspace default. The dock's
+/// catalogue button carries the count, so a closed catalogue still says that
+/// something is switched on.
 pub fn non_default_count(state: &AppState) -> usize {
     ROWS.iter()
         .filter(|row| match (row.default_for)(state.workspace) {

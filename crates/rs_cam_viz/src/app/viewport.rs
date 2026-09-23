@@ -233,19 +233,13 @@ impl RsCamApp {
         // stale (audit §2c, fix §6.5).
         let selected_rest_grid_info: Option<(f64, f32)> =
             crate::ui::overlays::registry::rest_grid_info(self.controller.state());
-        let docked;
-        {
-            let (state, events) = self.controller.state_and_events_mut();
-            crate::ui::viewport_overlay::draw(ui, state, projection, &lane_snapshots, events);
-            // Docked BEFORE the 3D view claims the rest of the space, so the
-            // pinned column takes width from it instead of covering it.
-            docked = crate::ui::overlays::panel::draw_docked(ui, state, events);
-        }
 
         // P6: never hand a degenerate size to the 3D view. `available_size`
         // can arrive at zero once the resizable side panels have taken the
         // window, and a zero-width viewport renders — and screenshots — as
-        // nothing at all.
+        // nothing at all. The viewport redesign removed the docked Overlays
+        // column, so nothing else takes width here: the dock and the
+        // catalogue float over the 3D view.
         let free = ui.available_size();
         let (rect, response) = ui.allocate_exact_size(
             egui::vec2(
@@ -256,16 +250,19 @@ impl RsCamApp {
         );
 
         self.viewport_rect = rect;
-        {
+        let dock = {
             let (state, events) = self.controller.state_and_events_mut();
-            crate::ui::overlays::panel::draw_floating(ui, state, events, rect, docked);
-        }
+            crate::ui::overlays::panel::draw_catalogue(ui.ctx(), state, projection, events, rect);
+            crate::ui::viewport_overlay::draw(ui, state, projection, &lane_snapshots, events, rect)
+        };
         if self.controller.state().viewport.show_tool_deflection {
             self.draw_sim_deflection_overlay(ui, rect);
         }
 
-        // Click-to-select toolpath in viewport
+        // Click-to-select toolpath in viewport. A click that only closed a
+        // dock popover does not also select (MOCKUPS §12, Q1).
         if response.clicked()
+            && !dock.closed_popover_on_click
             && let Some(pos) = response.interact_pointer_pos()
         {
             self.handle_viewport_click(pos);

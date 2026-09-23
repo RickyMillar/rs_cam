@@ -348,12 +348,14 @@ fn render_snapshot(
         CentralPanel::default().show(ui, |ui| {
             let lanes = controller.lane_snapshots();
             let events = &mut controller.events;
+            let viewport_rect = ui.max_rect();
             crate::ui::viewport_overlay::draw(
                 ui,
                 &mut controller.state,
                 crate::render::camera::ProjectionMode::Perspective,
                 &lanes,
                 events,
+                viewport_rect,
             );
         });
 

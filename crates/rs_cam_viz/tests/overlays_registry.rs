@@ -676,9 +676,12 @@ fn the_retired_controls_have_no_second_home() {
         !toolbar.contains("RenderMode"),
         "the render-mode menu is back — its Wireframe arm drew nothing"
     );
+    // The viewport redesign: the dock replaced the strip, and its last
+    // button opens the All viewport options catalogue.
     assert!(
-        toolbar.contains("panel::toolbar_button"),
-        "the toolbar no longer opens the Overlays panel"
+        toolbar.contains("fn catalogue_button(")
+            && toolbar.contains("state.overlays.open = !state.overlays.open"),
+        "the dock no longer opens the All viewport options catalogue"
     );
     assert!(
         toolbar.contains("overlay_collision_check"),
@@ -857,10 +860,27 @@ fn the_viewport_keeps_a_minimum_width() {
         panel.contains("pub const MIN_VIEWPORT_WIDTH"),
         "the viewport floor is gone"
     );
+    // The viewport redesign removed the docked Overlays column, which was the
+    // thing that took width from the 3D view. The dock and the catalogue
+    // float over the view. Neither may carve a column out of it again.
+    let dock = source("src/ui/viewport_overlay.rs");
+    for (name, text) in [("the catalogue", &panel), ("the dock", &dock)] {
+        let code: String = text
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        for column in ["Panel::left(", "Panel::right(", "exact_size("] {
+            assert!(
+                !code.contains(column),
+                "{name} takes width from the 3D view again (`{column}`); it \
+                 must float over the viewport and leave its floor alone"
+            );
+        }
+    }
     assert!(
-        panel.contains("if ui.available_width() - PANEL_WIDTH < MIN_VIEWPORT_WIDTH"),
-        "the docked Overlays column no longer refuses to dock when it would \
-         take the 3D view under its floor"
+        dock.contains("egui::Area::new(egui::Id::new(DOCK_AREA_ID))"),
+        "the dock is no longer a floating area over the viewport"
     );
 
     let viewport = source("src/app/viewport.rs");
@@ -873,11 +893,21 @@ fn the_viewport_keeps_a_minimum_width() {
         viewport.contains("MIN_VIEWPORT_WIDTH"),
         "the viewport no longer floors its own allocation"
     );
-    // A refusal to dock must become the floating form, or a pinned panel on a
-    // narrow window would simply vanish.
+    // The catalogue and the dock are placed on the FLOORED rect, after the
+    // allocation, so a narrow window cannot put either outside the view.
     assert!(
-        viewport.contains("draw_floating(ui, state, events, rect, docked)"),
-        "the floating fallback no longer knows whether the dock refused"
+        viewport.contains("draw_catalogue(ui.ctx(), state, projection, events, rect)"),
+        "the catalogue no longer floats over the floored viewport rect"
+    );
+    assert!(
+        viewport.contains(
+            "viewport_overlay::draw(ui, state, projection, &lane_snapshots, events, rect)"
+        ),
+        "the dock no longer floats over the floored viewport rect"
+    );
+    assert!(
+        !viewport.contains("draw_docked"),
+        "a docked Overlays column is back; it took width from the 3D view"
     );
 }
 
@@ -892,9 +922,9 @@ fn the_viewport_keeps_a_minimum_width() {
 #[test]
 fn every_reach_surface_quotes_the_shared_area_and_bias_notes() {
     let inspector = inspector_source();
-    let legend = source("src/ui/overlays/panel.rs");
+    let legend = source("src/ui/overlays/legend_rail.rs");
 
-    for (name, text) in [("inspector", &inspector), ("panel legend", &legend)] {
+    for (name, text) in [("inspector", &inspector), ("legend rail", &legend)] {
         assert!(
             text.contains("area_basis_note"),
             "the {name} no longer quotes `ReachMap::area_basis_note` — it is \
@@ -911,7 +941,7 @@ fn every_reach_surface_quotes_the_shared_area_and_bias_notes() {
     // And no surface in the crate rolls its own denominator sentence.
     for (file, text) in [
         ("ui/properties/", &inspector),
-        ("overlays/panel.rs", &legend),
+        ("overlays/legend_rail.rs", &legend),
         ("app/mcp.rs", &source("src/app/mcp.rs")),
         ("app/mcp/view.rs", &source("src/app/mcp/view.rs")),
     ] {
@@ -978,7 +1008,7 @@ fn the_live_viewport_dims_moves_under_the_reach_overlay() {
         "the renderer is writing a visibility flag to dim the moves; that \
          would flip the Overlays panel row and steal the operator's switch"
     );
-    let legend = source("src/ui/overlays/panel.rs");
+    let legend = source("src/ui/overlays/legend_rail.rs");
     assert!(
         legend.contains("moves dimmed while reach map is on"),
         "the legend no longer says the moves are being dimmed, so a ticked \

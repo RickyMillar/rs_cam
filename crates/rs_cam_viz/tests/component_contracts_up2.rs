@@ -736,12 +736,6 @@ const HAND_ROLLED_EMPHASIS: &[(&str, usize, &str)] = &[
          other is a sentence, not a title.",
     ),
     (
-        "ui/overlays/panel.rs",
-        1,
-        "the OVERLAYS title shares a horizontal row with the close and pin \
-         buttons; SectionHeader's trailing slot takes text, not a button",
-    ),
-    (
         "ui/properties/machine_panel.rs",
         1,
         "\"Will apply:\" leads a bullet list inside the GRBL import preview",
