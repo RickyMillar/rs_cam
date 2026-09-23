@@ -592,11 +592,10 @@ mod tests {
         let lut = VendorLut::embedded();
         assert_eq!(
             lut.observations.len(),
-            252,
-            "expected 252 embedded observations (251 after Phase 5 Step 5.2 + \
-             1 net-new Phase 5 Step 5.3 2026-06-01: Garr GP composite \
-             (fiberglass / G10) 6 mm 2-flute row, material_family=fiberglass — \
-             see planning/phase_5_schema_unlock_2026-06-01.md)"
+            264,
+            "expected 264 embedded observations: 252 before feeds matrix R5 \
+             (2026-09-23), + 12 printed Amana ball v7 rows (1/8 and 1/4 in, \
+             hardwood / softwood / MDF, pocket and adaptive)"
         );
     }
 

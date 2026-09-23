@@ -20,7 +20,7 @@
       "stored_text": "sources/amana_ball_nose_v7.txt",
       "pdf_sha256": "e851a270a9958a9affc17a24c8e6a8ef51d63a813f384b7043670d676cae3563",
       "stored_on": "2026-09-23",
-      "coverage_notes": "Ball nose chart rows for wood, MDF, plastic, and aluminum. Smallest diameter covered: 1/16\" (1.587mm). Chart values are calibrated for 1xD-depth slot/peripheral cutting, NOT 3D parallel finishing \u2014 using these CPT values as 3D-finish bounds would be aggressive. Existing 3.175mm and 6mm rows in this file are derived (reduced) for 3D-finish use; sub-1mm rows from this chart are NOT transcribed for the same reason. Coverage gap: no sub-1mm 3D-finish-calibrated ball nose rows; use amana_zrn_3d_profiling instead."
+      "coverage_notes": "Ball nose chart rows for wood, MDF, plastic, and aluminum. Smallest diameter covered: 1/16\" (1.587mm). Chart values are calibrated for 1xD-depth slot/peripheral cutting, NOT 3D parallel finishing \u2014 using these CPT values as 3D-finish bounds would be aggressive. The 3.175mm and 6mm parallel/scallop rows first bundled in this file are derived (reduced, about x0.16 to x0.26 of the printed midpoint, no named source) for 3D-finish use; since 2026-09-23 (feeds matrix R5) they carry row_kind derived, evidence_grade c and a notes field that names the factor. The printed 1/8\" and 1/4\" Hardwood, Softwood and MDF rows are bundled as exact grade a rows (amana-ball-*-v7) in the pocket and adaptive families with pass_role roughing, so finish queries keep the derived rows; sub-1mm rows from this chart are NOT transcribed for the same reason. Coverage gap: no sub-1mm 3D-finish-calibrated ball nose rows; use amana_zrn_3d_profiling instead."
     },
     {
       "source_id": "amana_zrn_3d_profiling",
