@@ -113,6 +113,22 @@ On R4_AGGRESSIVENESS_SPEC.md §5, in the spec's numbering:
   3–12 mm"; outside the range refuse or warn by R1. Same shape as R5.
   Operator: "do what you suggest! sounds good".
 
+## Landed under the third and fourth rounds, 2026-09-24
+
+- Q9 06c75ed5 (floor = min(0.025, band min), source named); Q6 c8b6b358
+  (`modulation_feed_scale`); baseline f3297b05 (force/power columns).
+- WP3 the dial: 87027060 (core: `MachineProfile::aggressiveness` 0.85,
+  pass 6b, Q2/Q3/Q4/Q5/Q7/Q11, size rule FM9, solid-wood vs composite
+  lookup categories, literature known gaps) + dcb53a47 (viz: slider, card
+  lines, visibility sentry, fixtures). Matrix on 87027060: 448 ship (366
+  vendor, 82 formula), 512 refuse (192 tool rule, 320 no basis; 50 newly
+  refused ball-nose and V-bit cells in plywood and MDF with no same-category
+  row); dial record on 242 cells, not-applied on 206, long-tool on 428.
+  Shipped-point force vs the pre-dial baseline: roughing/semi-finish fell
+  to 0.66–0.88, finish rose 1.03–1.28 (accepted).
+- Open after WP3: Q10 (RPM follows the feed ceiling), Q8 (workholding folds
+  into the dial), the size-law phase, WP2b, WP5.
+
 ## Landed under the rulings, 2026-09-23 evening
 
 - R3: d8d8b0c7 (hint deleted), aef54c83 (one linear scale for the feed and

@@ -555,6 +555,12 @@ and the named sentries only. No full heavy gate (operator ruling
 
 ### WP3. The dial ships and the 0.75 factor leaves (NEEDS THE OPERATOR'S LOOK)
 
+Status: LANDED 87027060 (core) + dcb53a47 (viz), 2026-09-24 (2026-09-24), under the third-round rulings: default
+0.85, values above 1.00 warn (Caution) up to 1.50, the L/D share moved into
+the target (`k_eff = k x ld`), one common scale, power ceiling
+`power_at_rpm` with no fraction, plunge and ramp at the material base.
+Sentry `the_dial_holds_the_load_and_never_cuts_the_feed_fm7`.
+
 One package, one push. The commits inside it, in order:
 
 1. **Rename only.** `MachineProfile::safety_factor` becomes
