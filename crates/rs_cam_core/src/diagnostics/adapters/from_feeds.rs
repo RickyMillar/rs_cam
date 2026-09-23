@@ -263,6 +263,38 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             supersedes: vec![],
             suppressed_diagnostics: vec![],
         },
+        // Ruling R4 Q10 (2026-09-24). Info: the RPM came down so the
+        // chipload holds at the feed ceiling. The Suggest record of the same
+        // step (`SuggestWarning::RpmLoweredForFeedCeiling`) is a rationale
+        // row only, so the finding is filed once.
+        FeedsWarning::RpmLoweredForFeedCeiling {
+            rpm_from,
+            rpm_to,
+            feed_ceiling_mm_min,
+            rpm_floor,
+            floor_source,
+            held,
+        } => Diagnostic {
+            id: DiagnosticId::from(ids::FEEDS_RPM_LOWERED_FOR_CEILING),
+            scope: Scope::Toolpath { id: tp_id },
+            category: Category::ToolLoad,
+            severity: Severity::Info,
+            confidence: Confidence::Static,
+            state: DiagnosticState::Current,
+            source: Source::FeedsCalculator,
+            message: crate::feeds::rpm_lowered_text(
+                *rpm_from,
+                *rpm_to,
+                *feed_ceiling_mm_min,
+                *rpm_floor,
+                *floor_source,
+                *held,
+            ),
+            evidence: None,
+            fix: None,
+            supersedes: vec![],
+            suppressed_diagnostics: vec![],
+        },
         // Ruling R4 WP1 (2026-09-23). Info. Since ruling R4 Q7 (2026-09-24)
         // the share lowers the dial's load target; the feed does not take it.
         FeedsWarning::LongToolDerate {

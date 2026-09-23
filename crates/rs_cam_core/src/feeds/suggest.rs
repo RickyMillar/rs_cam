@@ -700,6 +700,25 @@ pub enum SuggestWarning {
         /// geometry to hold the load at N %" (spec §2.5).
         applied: bool,
     },
+    /// Ruling R4 Q10 (2026-09-24): the calculator's Step 7 lowered the RPM
+    /// to hold the chipload at the machine feed ceiling
+    /// ([`crate::feeds::FeedsWarning::RpmLoweredForFeedCeiling`]). This is
+    /// the rationale row on the RPM entry; the diagnostic comes from the
+    /// calculator's warning, so it is filed once.
+    RpmLoweredForFeedCeiling {
+        /// The RPM before the descent.
+        rpm_from: f64,
+        /// The RPM that ships.
+        rpm_to: f64,
+        /// The machine cutting-feed ceiling (mm/min).
+        feed_ceiling_mm_min: f64,
+        /// The lowest RPM the descent may reach.
+        rpm_floor: f64,
+        /// What set `rpm_floor`.
+        floor_source: crate::feeds::RpmFloorSource,
+        /// `true` when the chipload is held in full.
+        held: bool,
+    },
     /// Ruling R4 (2026-09-24): the aggressiveness dial did not act on this
     /// operation, and why. The engagement is unchanged. This record exists
     /// so that the card states it (the "no invisible calculations" rule).

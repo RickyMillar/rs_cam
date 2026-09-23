@@ -589,6 +589,8 @@ fn wanaka_suggest_baseline() {
                 // Ruling R4 WP3 (2026-09-24): the aggressiveness dial. Pinned
                 // below as the Wanaka baseline for the dial.
                 | SuggestWarning::EngagementReducedForAggressiveness { .. }
+                // Ruling R4 Q10 (2026-09-24): the RPM follows the feed ceiling.
+                | SuggestWarning::RpmLoweredForFeedCeiling { .. }
                 | SuggestWarning::AggressivenessNotApplied { .. } => {}
                 other => {
                     panic!("{ctx}: unexpected SuggestWarning variant slipped through: {other:?}")
@@ -818,7 +820,9 @@ fn wanaka_suggest_baseline() {
                 // are EXPECTED on Wanaka. The mechanism is pinned by
                 // tests/the_dial_holds_the_load_and_never_cuts_the_feed_fm7.rs.
                 SuggestWarning::EngagementReducedForAggressiveness { .. }
-                | SuggestWarning::AggressivenessNotApplied { .. } => {}
+                | SuggestWarning::AggressivenessNotApplied { .. }
+                // Ruling R4 Q10 (2026-09-24): allowed where the ceiling binds.
+                | SuggestWarning::RpmLoweredForFeedCeiling { .. } => {}
                 // v3.3c: must NOT fire on Wanaka — both 3D-rough
                 // toolpaths pin `clearing_strategy = "agent_search"`,
                 // and heuristic-B pinning suppresses the warn-only

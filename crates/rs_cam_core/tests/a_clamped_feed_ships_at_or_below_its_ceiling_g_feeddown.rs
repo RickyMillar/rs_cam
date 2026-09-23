@@ -172,7 +172,11 @@ fn run_funnel(machine: &MachineProfile, material: &Material) -> Option<Shipped> 
     let clamped = result.warnings.iter().any(|w| {
         matches!(
             w,
-            FeedsWarning::FeedRateClamped { .. } | FeedsWarning::PowerLimited { .. }
+            FeedsWarning::FeedRateClamped { .. }
+                | FeedsWarning::PowerLimited { .. }
+                // Ruling R4 Q10: a ceiling that lowered the RPM bound the
+                // feed too.
+                | FeedsWarning::RpmLoweredForFeedCeiling { .. }
         )
     }) || (result.feed_rate_mm_min - ceiling).abs() < 1e-9;
 

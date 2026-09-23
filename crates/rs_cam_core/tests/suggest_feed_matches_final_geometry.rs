@@ -123,6 +123,14 @@ struct Case {
 }
 
 fn suggest_case(session: &ProjectSession, id: ToolpathId) -> Case {
+    try_suggest_case(session, id).unwrap_or_else(|e| panic!("Suggest refused toolpath {id}: {e:?}"))
+}
+
+/// As [`suggest_case`], but an engine refusal is returned, not a panic.
+fn try_suggest_case(
+    session: &ProjectSession,
+    id: ToolpathId,
+) -> Result<Case, rs_cam_core::feeds::FeedsError> {
     let tc = session
         .toolpath_configs()
         .iter()
@@ -144,10 +152,8 @@ fn suggest_case(session: &ProjectSession, id: ToolpathId) -> Case {
     let profile = session
         .cutter_op_profile(tc)
         .unwrap_or_else(|| panic!("No cutter/op profile for toolpath {id}"));
-    profile
-        .feasibility
-        .unwrap_or_else(|e| panic!("Suggest refused toolpath {id}: {e:?}"));
-    Case {
+    profile.feasibility?;
+    Ok(Case {
         name: tc.name.clone(),
         tool,
         suggested: SuggestedParams {
@@ -160,7 +166,7 @@ fn suggest_case(session: &ProjectSession, id: ToolpathId) -> Case {
             warnings: profile.warnings,
             provenance: rs_cam_core::feeds::FeedsProvenance::default(),
         },
-    }
+    })
 }
 
 /// `(commanded advance per tooth, geometry factor, implied target chipload)`
@@ -301,7 +307,22 @@ fn a_raised_stepover_does_not_move_the_feed_at_all() {
         path.display()
     );
     let session = ProjectSession::load(&path).expect("load wanaka fixture");
-    let case = suggest_case(&session, ToolpathId(11));
+    // Ruling R1 applied to size (2026-09-24): toolpath 11, the 1.0 mm-tip
+    // tapered ball, refuses. Its nearest chart row is 6.35 mm, far outside
+    // the 2x window a micro tool needs, so this fixture carries no recipe and
+    // this arm has nothing to measure until the size-law phase gives it one.
+    // The refusal is asserted to BE the size rule, so any other refusal still
+    // fails. The feed-consistency arms on the toolpaths that ship (tp 4 in
+    // this file) keep their own non-vacuity.
+    let case = match try_suggest_case(&session, ToolpathId(11)) {
+        Ok(case) => case,
+        Err(rs_cam_core::feeds::FeedsError::Unbacked { reason, .. })
+            if reason.starts_with("no published figure for a ") =>
+        {
+            return;
+        }
+        Err(other) => panic!("Suggest refused toolpath 11 for another reason: {other:?}"),
+    };
     dump(&case);
 
     let raised = case

@@ -36,5 +36,5 @@ Run one with `cargo test -p rs_cam_core -q --test <name>`: `lut_resolver_census_
 `a_clamped_feed_ships_at_or_below_its_ceiling_g_feeddown` (feed rounds DOWN), `a_rescaled_feed_stays_inside_the_power_ceiling_g_t15`
 (pass 10), `a_published_power_is_at_the_depth_that_cuts_g_s2`, `every_cell_declares_its_feeds_support_fm0`, `one_depth_derate_for_feed_and_band_fm3`,
 `suggest_refuses_what_the_registry_refuses_fm4`, `clueless_cells_refuse_and_backed_cells_ship_fm5`, `finish_depth_is_reported_not_capped_fm6`,
-`the_dial_holds_the_load_and_never_cuts_the_feed_fm7` (R4 dial), `micro_extrapolation_refuses_fm9`. `feeds_matrix_instrument_fm1` is an `#[ignore]` instrument
+`the_dial_holds_the_load_and_never_cuts_the_feed_fm7` (R4 dial), `rpm_follows_the_feed_ceiling_fm8`, `micro_extrapolation_refuses_fm9`. `feeds_matrix_instrument_fm1` is an `#[ignore]` instrument
 (`-- --ignored`) that writes planning/feeds_matrix_2026-09-23/. `wanaka_suggest_integration` takes minutes: ask first.

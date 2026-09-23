@@ -22,7 +22,11 @@
 ## The hidden 0.75 feed factor (removed by ruling R4 WP3) used to keep these
 ## cells clear; with it gone, the engine ships the vendor row's chipload and
 ## the missing hardness / aluminium de-rate shows. Two entries carry it:
-## `flat_6mm_pocket_ipe_hardness` and `flat_6mm_pocket_al6061_lut`. The
+## `flat_6mm_pocket_ipe_hardness` and `flat_6mm_pocket_al6061_lut`. A third,
+## `flat_6mm_pocket_hdpe_thermal` (on an invariant, `known_gap` works there
+## too: a FAILING invariant passes, a passing one fails), is a row-versus-
+## literature disagreement that the machine feed ceiling hid until ruling
+## R4 Q10 let the RPM follow the ceiling down. The
 ## micro-oak entry was a lookup defect (it borrowed an MDF row), not a gap;
 ## the family ruling of the same day fixed it.
 
@@ -1168,6 +1172,10 @@ ceiling = 0.150  # 18% headroom above Onsrud SP 2F max 0.127; still well below 1
 sources = ["onsrud_plastic", "amana_plastic_oflute", "onsrud_soft_plastic_cutting_data"]
 unit = "mm/tooth"
 severity_on_fail = "critical"
+# Measured after ruling R4 Q10 (2026-09-24): 0.1612 mm/tooth, 7.5 % over. The
+# RPM now follows the machine feed ceiling down, so the chip is the Amana HDPE
+# row's band value (0.12-0.20) instead of a chip the ceiling thinned.
+known_gap = "the vendor HDPE row's band exceeds the literature ductile ceiling 0.15; the machine ceiling hid it until Q10"
 
 [[cell.invariants]]
 name = "mrr_under_power"
@@ -1194,11 +1202,22 @@ severity = "critical"
 name = "hdpe_chipload_welds_chips"
 expr = "feed_rate / (rpm * flutes) > 0.150"
 severity = "critical"
+# Same gap as the invariant above (ruling R4 Q10, 2026-09-24): the vendor
+# HDPE row's band 0.12-0.20 sits above the literature ductile ceiling 0.150;
+# the machine feed ceiling hid it until the RPM followed the feed down and
+# the chip returned to the band value (0.1612 measured).
+known_gap = "the vendor HDPE row's band exceeds the literature ductile ceiling 0.15; the machine ceiling hid it until Q10"
 
 [[cell.anti_patterns]]
 name = "hdpe_rpm_too_low_for_thermal"
 expr = "rpm < 14000"
 severity = "critical"
+# Ruling R4 Q10 (2026-09-24): the RPM follows the feed ceiling down to hold
+# the chip, bounded by the row's rpm_min or the machine minimum. This row
+# publishes no rpm_min, so the descent passes the literature's 14 000 rpm
+# thermal floor for HDPE. The gap is a missing rpm_min on the row, not the
+# rule; a row minimum is the target.
+known_gap = "the vendor HDPE row publishes no rpm_min, so the Q10 descent passes the literature's 14 000 rpm thermal floor"
 
 # ============================================================================
 # Phase 2 expansion (2026-06-03) — 44 new cells from drafter agents N1-N3,

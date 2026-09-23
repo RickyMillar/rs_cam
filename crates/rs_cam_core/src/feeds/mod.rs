@@ -637,6 +637,46 @@ pub struct FeedsDerates {
     pub spindle_scale_reason: SpindleScaleReason,
 }
 
+/// The card and finding text of [`FeedsWarning::RpmLoweredForFeedCeiling`]:
+/// "RPM lowered 18000 -> 15750 to hold the chip at the 4000 mm/min feed
+/// ceiling". When the chip is not held in full it names the stop.
+#[must_use]
+pub fn rpm_lowered_text(
+    rpm_from: f64,
+    rpm_to: f64,
+    feed_ceiling_mm_min: f64,
+    rpm_floor: f64,
+    floor_source: RpmFloorSource,
+    held: bool,
+) -> String {
+    let head = format!(
+        "RPM lowered {rpm_from:.0} -> {rpm_to:.0} to hold the chip at the \
+         {feed_ceiling_mm_min:.0} mm/min feed ceiling"
+    );
+    if held {
+        head
+    } else {
+        let floor = match floor_source {
+            RpmFloorSource::RowRpmMin => "the vendor row's rpm_min",
+            RpmFloorSource::MachineMinimum => "the machine minimum",
+        };
+        format!(
+            "{head}; the descent stopped at {rpm_to:.0} rpm ({floor} is {rpm_floor:.0} rpm, or \
+             the spindle power at a lower speed), so the chip is thinner at the ceiling"
+        )
+    }
+}
+
+/// What set the lowest RPM that the Step 7 descent may reach (ruling R4
+/// Q10).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RpmFloorSource {
+    /// The matched vendor row's published `rpm_min`.
+    RowRpmMin,
+    /// The machine's minimum spindle speed (the row has no `rpm_min`).
+    MachineMinimum,
+}
+
 /// What moved the spindle off the RPM the chart or formula chose.
 ///
 /// Added 2026-09-16 with the power ladder. Before it, `why.rs` rendered
@@ -656,6 +696,11 @@ pub enum SpindleScaleReason {
     /// where a slower RPM genuinely reduces the load. See the power ladder
     /// in [`calculate`].
     PowerLimit,
+    /// Ruling R4 Q10 (2026-09-24): the machine cutting-feed ceiling bound,
+    /// and the RPM came down to hold the chipload instead of the chip
+    /// thinning at the same RPM. See Step 7 in [`calculate`] and
+    /// [`FeedsWarning::RpmLoweredForFeedCeiling`].
+    FeedCeiling,
 }
 
 /// Empirical chipload formula evaluation `K₀ × D^p × (1/H)^q`.
@@ -718,6 +763,32 @@ pub enum FeedsWarning {
     FeedRateClamped {
         requested: f64,
         actual: f64,
+    },
+    /// Ruling R4 Q10 (2026-09-24): the machine cutting-feed ceiling bound,
+    /// so Step 7 lowered the RPM to hold the chipload (the feed moves down
+    /// with the RPM, the advance per tooth stays). The descent stops at the
+    /// matched row's `rpm_min`, or at the machine's minimum RPM when the row
+    /// has none; a VFD's `power_at_rpm` at the lower speed also bounds it.
+    ///
+    /// The card line: "RPM lowered 18 000 -> 15 750 to hold the chip at the
+    /// 4000 mm/min feed ceiling". When `held` is false it adds the stop and
+    /// the thinner chip.
+    RpmLoweredForFeedCeiling {
+        /// The RPM before Step 7.
+        rpm_from: f64,
+        /// The RPM that ships.
+        rpm_to: f64,
+        /// The machine cutting-feed ceiling (mm/min).
+        feed_ceiling_mm_min: f64,
+        /// The lowest RPM the descent may reach: the row's `rpm_min`, or
+        /// the machine minimum.
+        rpm_floor: f64,
+        /// What set `rpm_floor`.
+        floor_source: RpmFloorSource,
+        /// `true` when the chipload is held in full; `false` when the floor
+        /// or the spindle power stopped the descent and the feed still sits
+        /// on the ceiling with a thinner chip.
+        held: bool,
     },
     PowerLimited {
         required_kw: f64,
@@ -2376,11 +2447,91 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         }
     }
 
-    // --- Step 7: Machine feed clamp ---
-    // F4: the calculator emits CUTTING feeds — clamp at the cutting
+    // --- Step 7: Machine feed ceiling ---
+    // F4: the calculator emits CUTTING feeds — the ceiling is the cutting
     // ceiling, not the gantry travel rate.
+    //
+    // Ruling R4 Q10 (2026-09-24): when the ceiling binds, the RPM follows
+    // the feed down so the chipload holds, instead of the chip thinning at
+    // the same RPM. The descent walks the constant-chipload line (booked on
+    // `spindle_scale`, not on the chipload axis) and stops at the floor: the
+    // row's `rpm_min`, or the machine's minimum RPM when the row has none.
+    // A lower RPM also lowers a VFD's available power, so the power is
+    // re-checked at the new RPM, and the descent stops where the cut still
+    // fits the spindle. Whatever the descent cannot absorb is cut from the
+    // feed at the ceiling, as before. Drill cycles keep their own RPM
+    // follow-down (Step 9c).
     let machine_cut_ceiling = machine.cutting_feed_ceiling_mm_min();
     let mut feed_clamp_factor = 1.0;
+    if feed > machine_cut_ceiling
+        && machine_cut_ceiling > 0.0
+        && rpm > 0.0
+        && input.operation != OperationFamily::Drill
+    {
+        let machine_min = machine.rpm_range().0;
+        let (rpm_floor, floor_source) = match vendor_rpm_min {
+            Some(v) if v.is_finite() && v > machine_min => (v, RpmFloorSource::RowRpmMin),
+            _ => (machine_min, RpmFloorSource::MachineMinimum),
+        };
+        let chip_per_rev = feed / rpm;
+        let fits_power = |rpm_c: f64, feed_c: f64| -> bool {
+            let Some(kc) = material.kc_n_per_mm2() else {
+                return true;
+            };
+            let available = machine.power_at_rpm(rpm_c);
+            if available <= 0.0 {
+                return false;
+            }
+            let cs = input.tool_geometry.mrr_cross_section_mm2(ap, ae);
+            power_model_terms(input, kc, cs, ap, ae, effective_d, rpm_c).kw_at_feed(feed_c)
+                <= available
+        };
+        let feed_at = |rpm_c: f64| (chip_per_rev * rpm_c).min(machine_cut_ceiling);
+        // The RPM at which the held chip lands on the ceiling, floored to a
+        // whole rev/min (the apply funnel writes an integer RPM, and a
+        // rounded-up RPM would lift the feed over the ceiling), then the
+        // highest RPM the spindle can run at or below it, not under the
+        // floor.
+        let target = (machine_cut_ceiling / chip_per_rev).floor();
+        let mut candidate = machine.next_rpm_at_or_below(target.max(rpm_floor));
+        if candidate < rpm_floor {
+            candidate = machine.clamp_rpm(rpm_floor);
+        }
+        // Power at the lower RPM: walk back up toward the old RPM until the
+        // cut fits. The old RPM with the feed on the ceiling is the cut
+        // Step 7 used to ship, so it is the upper end of the search.
+        if candidate < rpm && !fits_power(candidate, feed_at(candidate)) {
+            let (mut lo, mut hi) = (candidate, rpm);
+            for _ in 0..40 {
+                let mid = 0.5 * (lo + hi);
+                if fits_power(mid, feed_at(mid)) {
+                    hi = mid;
+                } else {
+                    lo = mid;
+                }
+            }
+            candidate = machine.clamp_rpm(hi).max(candidate);
+            if candidate > rpm {
+                candidate = rpm;
+            }
+        }
+        if candidate < rpm && candidate > 0.0 {
+            let rpm_from = rpm;
+            spindle_scale *= candidate / rpm;
+            spindle_scale_reason = SpindleScaleReason::FeedCeiling;
+            rpm = candidate;
+            feed = chip_per_rev * rpm;
+            let held = feed <= machine_cut_ceiling * (1.0 + 1e-12);
+            warnings.push(FeedsWarning::RpmLoweredForFeedCeiling {
+                rpm_from,
+                rpm_to: rpm,
+                feed_ceiling_mm_min: machine_cut_ceiling,
+                rpm_floor,
+                floor_source,
+                held,
+            });
+        }
+    }
     if feed > machine_cut_ceiling {
         warnings.push(FeedsWarning::FeedRateClamped {
             requested: feed,

@@ -432,6 +432,13 @@ fn finite(v: &[f64]) -> bool {
 fn feeds_warning_defect(w: &FeedsWarning) -> Option<&'static str> {
     let ok = match w {
         FeedsWarning::FeedRateClamped { requested, actual } => finite(&[*requested, *actual]),
+        FeedsWarning::RpmLoweredForFeedCeiling {
+            rpm_from,
+            rpm_to,
+            feed_ceiling_mm_min,
+            rpm_floor,
+            ..
+        } => finite(&[*rpm_from, *rpm_to, *feed_ceiling_mm_min, *rpm_floor]) && rpm_to < rpm_from,
         FeedsWarning::PowerLimited {
             required_kw,
             available_kw,
@@ -588,6 +595,13 @@ fn suggest_warning_defect(w: &SuggestWarning) -> Option<&'static str> {
                 && *scale >= 0.0
                 && (*target_met == shortfall.is_none())
         }
+        SuggestWarning::RpmLoweredForFeedCeiling {
+            rpm_from,
+            rpm_to,
+            feed_ceiling_mm_min,
+            rpm_floor,
+            ..
+        } => finite(&[*rpm_from, *rpm_to, *feed_ceiling_mm_min, *rpm_floor]) && rpm_to < rpm_from,
         SuggestWarning::AggressivenessNotApplied { aggressiveness, .. } => {
             aggressiveness.is_finite()
         }

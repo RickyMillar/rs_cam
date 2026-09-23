@@ -377,6 +377,10 @@ fn eval_invariants(invariants: &[Invariant], snap: &ShimSnapshot, rows: &mut Vec
                 }
             }
         };
+        let detail = match inv.known_gap.as_deref() {
+            Some(gap) => known_gap_rule(detail, gap),
+            None => detail,
+        };
         rows.push(SubVerdictRow {
             label: format!("invariant.{}", inv.name),
             detail,

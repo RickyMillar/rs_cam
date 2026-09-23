@@ -133,6 +133,9 @@ pub const FEEDS_LONG_TOOL_DERATE: &str = "feeds.long_tool_derate";
 /// 2026-09-24). Info; Caution when the target was not met or the dial is
 /// above 1.0.
 pub const FEEDS_AGGRESSIVENESS_ENGAGEMENT: &str = "feeds.aggressiveness_engagement";
+/// The machine cutting-feed ceiling bound, and the RPM came down to hold
+/// the chipload (ruling R4 Q10, 2026-09-24). Info.
+pub const FEEDS_RPM_LOWERED_FOR_CEILING: &str = "feeds.rpm_lowered_for_ceiling";
 pub const FEEDS_DRILL_FEED_CLAMPED_TO_ENVELOPE: &str = "feeds.drill_feed_clamped_to_envelope";
 pub const FEEDS_VENDOR_ROW_PUBLISHES_NO_CHIPLOAD: &str = "feeds.vendor_row_publishes_no_chipload";
 pub const FEEDS_NO_VENDOR_ROWS_FOR_ROUTED_OPERATION: &str =
@@ -364,6 +367,7 @@ pub const ALL: &[&str] = &[
     FEEDS_CHIPLOAD_BELOW_FLOOR,
     FEEDS_LONG_TOOL_DERATE,
     FEEDS_AGGRESSIVENESS_ENGAGEMENT,
+    FEEDS_RPM_LOWERED_FOR_CEILING,
     FEEDS_DRILL_FEED_CLAMPED_TO_ENVELOPE,
     FEEDS_VENDOR_ROW_PUBLISHES_NO_CHIPLOAD,
     FEEDS_NO_VENDOR_ROWS_FOR_ROUTED_OPERATION,

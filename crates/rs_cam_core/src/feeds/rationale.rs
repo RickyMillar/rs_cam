@@ -75,6 +75,8 @@ pub enum RationaleParam {
     EntryStyle,
     /// `operation.clearing_strategy` (Adaptive3d). v3.3 placeholder.
     ClearingStrategy,
+    /// `operation.spindle_rpm` (rev/min). Ruling R4 Q10.
+    Rpm,
     /// The rough pass's `stock_to_leave` allowance. The
     /// finish-envelope advisory is the one producer: it asks the
     /// operator to coordinate the rough allowance with the finish
@@ -153,6 +155,9 @@ pub enum RationaleReason {
     /// Ruling R4 (2026-09-24): the aggressiveness dial did not act on this
     /// operation (a Finish pass or a drill). The entry reports a NON-change.
     AggressivenessNotApplied,
+    /// Ruling R4 Q10 (2026-09-24): the RPM came down to hold the chipload
+    /// at the machine feed ceiling.
+    RpmLoweredForFeedCeiling,
 }
 
 /// One row in the rationale tree the GUI / MCP renders alongside a
@@ -783,6 +788,32 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
                 },
                 |(first, _)| first,
             ),
+        SuggestWarning::RpmLoweredForFeedCeiling {
+            rpm_from,
+            rpm_to,
+            feed_ceiling_mm_min,
+            rpm_floor,
+            floor_source,
+            held,
+        } => RationaleEntry {
+            param: RationaleParam::Rpm,
+            reason: RationaleReason::RpmLoweredForFeedCeiling,
+            from_value: Some(*rpm_from),
+            to_value: Some(*rpm_to),
+            headline: crate::feeds::rpm_lowered_text(
+                *rpm_from,
+                *rpm_to,
+                *feed_ceiling_mm_min,
+                *rpm_floor,
+                *floor_source,
+                *held,
+            ),
+            detail: Some(
+                "The feed moves down with the RPM, so the advance per tooth stays at the \
+                 band value (ruling R4 Q10)."
+                    .to_owned(),
+            ),
+        },
         SuggestWarning::AggressivenessNotApplied {
             aggressiveness,
             reason,

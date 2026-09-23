@@ -437,7 +437,15 @@ fn fixtures() -> Vec<Fixture> {
             // un-capped feed is 1875 / 0.75 = 2500, which is exactly the
             // 2500 mm/min machine ceiling, and equals the legacy shipped feed
             // that the same ceiling bound.
-            expected_suggest_feed: 2500.0,
+            //
+            // **RE-PINNED 2026-09-24, ruling R4 Q10: 2500.0 → 2499.0.** The
+            // raw feed sits on the 2500 mm/min ceiling (a hair above it in
+            // floating point), so Step 7 now lowers the RPM to hold the chip
+            // instead of clamping the feed. Chip per rev = 2500 / 24 000 =
+            // 0.10417 mm; the RPM is floor(2500 / 0.10417) = 23 999 (one
+            // whole rev under 24 000); the feed is 0.10417 x 23 999 =
+            // 2499.896 mm/min, shipped floored to 2499.
+            expected_suggest_feed: 2499.0,
         },
     ]
 }
@@ -692,7 +700,10 @@ fn retired_lift_leaves_feed_at_the_calculator_value() {
         //     cutting ceiling bound both (A3D-2, DC-2) the two are equal
         //     since ruling R4 WP3; elsewhere the shipped feed is strictly
         //     below, and a partial retirement would land between the two.
-        let ceiling_bound = (r.shipped_feed - r.cutting_ceiling).abs() < 0.5;
+        // "On the ceiling" is within 1.5 mm/min under it since ruling R4
+        // Q10: the whole-rev RPM floor and the feed floor put a ceiling-bound
+        // feed up to about one mm/min under the ceiling (DC-2: 2499 on 2500).
+        let ceiling_bound = r.cutting_ceiling - r.shipped_feed < 1.5;
         if r.shipped_feed > fx.legacy_shipped_feed + 0.5
             || (!ceiling_bound && r.shipped_feed >= fx.legacy_shipped_feed - 0.5)
         {
@@ -1032,7 +1043,9 @@ fn modulation_default_is_on_and_closes_the_two_dropcutter_residuals() {
         // its cutting ceiling gives the modulator nothing to move (DC-2 ships
         // exactly 2500 mm/min on a 2500 mm/min router). Skip it and say so;
         // DC-1 is the fixture that must modulate.
-        if (r.shipped_feed - r.cutting_ceiling).abs() < 0.5 {
+        // Within 1.5 mm/min under the ceiling (ruling R4 Q10: DC-2 ships 2499
+        // on its 2500 router), the modulator still has nothing to move.
+        if r.cutting_ceiling - r.shipped_feed < 1.5 {
             println!(
                 "      {}: shipped feed {:.1} sits on the {:.1} mm/min ceiling; \
                  modulation checks skipped",

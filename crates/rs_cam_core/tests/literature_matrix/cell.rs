@@ -232,6 +232,12 @@ pub struct Invariant {
     pub vars: Vec<String>,
     #[serde(default)]
     pub vertices: Vec<[f64; 2]>,
+    /// A known gap on an invariant (operator ruling 2026-09-24), the same
+    /// rule as `AntiPattern::known_gap`: a FAILING invariant is the expected
+    /// state and passes as "KNOWN GAP"; a passing one fails as "KNOWN GAP
+    /// CLOSED", because the entry must be re-graded.
+    #[serde(default)]
+    pub known_gap: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

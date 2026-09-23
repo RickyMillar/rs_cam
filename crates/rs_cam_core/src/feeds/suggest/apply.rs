@@ -178,6 +178,31 @@ fn apply_feeds_subset(
 
     let write_speeds = matches!(subset, ApplyScope::Speeds | ApplyScope::Both);
     let write_geometry = matches!(subset, ApplyScope::CutGeometry | ApplyScope::Both);
+    // Ruling R4 Q10 (2026-09-24): the calculator lowered the RPM to hold the
+    // chip at the feed ceiling. When this apply writes that RPM, the card
+    // gets a rationale row on the RPM entry.
+    if write_speeds && rpm_written {
+        for w in &result.warnings {
+            if let crate::feeds::FeedsWarning::RpmLoweredForFeedCeiling {
+                rpm_from,
+                rpm_to,
+                feed_ceiling_mm_min,
+                rpm_floor,
+                floor_source,
+                held,
+            } = w
+            {
+                warnings.push(SuggestWarning::RpmLoweredForFeedCeiling {
+                    rpm_from: *rpm_from,
+                    rpm_to: *rpm_to,
+                    feed_ceiling_mm_min: *feed_ceiling_mm_min,
+                    rpm_floor: *rpm_floor,
+                    floor_source: *floor_source,
+                    held: *held,
+                });
+            }
+        }
+    }
     // Ruling R4 (2026-09-24): pass 6b ran on the scratch copy. When this
     // apply does not write the cut geometry, its record must not claim the
     // operation carries the engagement it computed.
