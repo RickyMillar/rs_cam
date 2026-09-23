@@ -100,9 +100,9 @@ const DEFAULT_FIXTURE_STICKOUT_MM: f64 = 18.0;
 /// The diameter of every fixture except [`in_band`].
 const FIXTURE_DIAMETER_MM: f64 = 6.0;
 
-/// Softwood under a Ø6 flat 2F pocket: the machine's cutting-feed ceiling
-/// holds the recommendation below the matched vendor band, so the verdict
-/// is `Thin` and both ratios exist.
+/// Softwood under a Ø6 flat 2F pocket on a slow gantry: the machine's
+/// cutting-feed ceiling holds the recommendation below the matched vendor
+/// band, so the verdict is `Thin` and both ratios exist.
 ///
 /// Feeds matrix R5 re-bless (2026-09-23). Until R5 this fixture was Baltic
 /// birch under a 3D adaptive pass. R5 moved that cell onto
@@ -120,12 +120,23 @@ const FIXTURE_DIAMETER_MM: f64 = 6.0;
 ///   is 1.0 and the band stays 0.1778-0.2286.
 /// * The seed chipload is the band midpoint, 0.2032 mm/tooth. At 18 000 rpm
 ///   and 2 flutes that asks for 0.2032 x 18 000 x 2 = 7315 mm/min.
-/// * The machine cutting-feed ceiling clamps the feed to 4000 mm/min
-///   (`FeedRateClamped`). Until ruling R4 (2026-09-24) the 0.75 safety
-///   factor took it on to 3000 mm/min; that factor is gone.
-/// * chipload = 4000 / (18 000 x 2) = 0.1111 mm/tooth, below the 0.1778
-///   minimum, so the verdict is `Thin`. The band midpoint gives the time
-///   ratio 0.2032 / 0.1111 = 1.8x.
+/// * **RE-BLESSED 2026-09-24, ruling R4 Q10.** The RPM now follows a
+///   binding cutting-feed ceiling down to hold the chip. On the generic
+///   router's 4000 mm/min ceiling the RPM went to 4000 / 0.4064 = 9842 and
+///   the chip stayed at the band value 0.2032, so the fixture read "in
+///   vendor range". The fixture now needs a floor that STOPS the descent.
+/// * The machine is the generic router with a cutting-feed ceiling of
+///   1000 mm/min ([`thin_machine`]). Its spindle range is 8000-24 000 rpm.
+/// * The chip per rev is 7315 / 18 000 = 0.4064 mm. The RPM that holds the
+///   chip at the ceiling is 1000 / 0.4064 = 2460, under the 8000 rpm machine
+///   minimum, so the descent stops at 8000 (`RpmLoweredForFeedCeiling`,
+///   `held: false`). The feed there, 0.4064 x 8000 = 3251 mm/min, is still
+///   over the ceiling, so Step 7 clamps it to 1000 (`FeedRateClamped`).
+/// * chipload = 1000 / (8000 x 2) = 0.0625 mm/tooth, below the 0.1778
+///   minimum and above the 0.025 rubbing floor, so the verdict is `Thin`.
+///   The band midpoint gives the time ratio 0.2032 / 0.0625 = 3.25x. If the
+///   vendor row's `rpm_min` is above 8000, the descent stops there instead
+///   and the chip is thinner still; the verdict stays `Thin`.
 fn thin() -> Fixture {
     Fixture {
         tool_type: ToolType::EndMill,
@@ -135,8 +146,17 @@ fn thin() -> Fixture {
         },
         operation: OperationConfig::Pocket(Default::default()),
         stickout_mm: DEFAULT_FIXTURE_STICKOUT_MM,
-        machine: None,
+        machine: Some(thin_machine()),
     }
+}
+
+/// The generic router (spindle 8000-24 000 rpm) with a cutting-feed ceiling
+/// of 1000 mm/min, so the Q10 descent stops at the machine minimum and the
+/// ceiling thins the chip. See [`thin`].
+fn thin_machine() -> MachineProfile {
+    let mut machine = MachineProfile::generic_wood_router();
+    machine.max_cutting_feed_mm_min = Some(1000.0);
+    machine
 }
 
 /// Generic hardwood under a Ø3.175 flat 2F profile, on a short tool: the

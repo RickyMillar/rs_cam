@@ -32,6 +32,11 @@
 //!   cell, a Ø6 flat `Adaptive3d` in Baltic birch on the default stickout
 //!   45 mm (7.5 x D). Raises `LongToolDerate` and
 //!   `EngagementReducedForAggressiveness` (0.85 x 0.75 = 64 %).
+//! - `feed_ceiling_rpm`: a Ø6 flat pocket in generic hardwood on the generic
+//!   router. The feed 18 000 x 0.127 x 2 = 4572 mm/min passes the 4000
+//!   ceiling, so the RPM follows it down, 18 000 -> 15 748 (ruling R4 Q10).
+//!   Raises `RpmLoweredForFeedCeiling` in the calculator and its Suggest
+//!   copy. The card paints the line once, from the calculator's record.
 //! - `slow_gantry`: the `inspector_width_is_tab_independent_up4` cell on a
 //!   cutting-feed ceiling of 200 mm/min. Raises `FeedRateClamped`.
 //! - `weak_spindle`: the adaptive cell on a 0.05 kW constant-power spindle.
@@ -143,6 +148,10 @@ fn classify_feeds(w: &FeedsWarning) -> (&'static str, Class) {
         FeedsWarning::DrillFeedClampedToEnvelope { .. } => {
             ("DrillFeedClampedToEnvelope", Class::OnTheFace)
         }
+        // Ruling R4 Q10: the RPM follows the feed ceiling down.
+        FeedsWarning::RpmLoweredForFeedCeiling { .. } => {
+            ("RpmLoweredForFeedCeiling", Class::OnTheFace)
+        }
     }
 }
 
@@ -157,6 +166,12 @@ fn classify_suggest(w: &SuggestWarning) -> (&'static str, Class) {
         }
         SuggestWarning::FeedRescaledToFinalGeometry { .. } => {
             ("FeedRescaledToFinalGeometry", Class::OnTheFace)
+        }
+        // The Suggest copy of the calculator's record. The card paints the
+        // calculator's line once; this arm checks that line carries the
+        // Suggest copy's numbers too.
+        SuggestWarning::RpmLoweredForFeedCeiling { .. } => {
+            ("SuggestRpmLoweredForFeedCeiling", Class::OnTheFace)
         }
         SuggestWarning::PlungeClampedToFeed { .. } => ("PlungeClampedToFeed", Class::RowHover),
         SuggestWarning::StepoverClampedToToolDiameter { .. } => {
@@ -277,6 +292,16 @@ fn feeds_numbers(w: &FeedsWarning) -> Vec<String> {
             out.push(at(*requested, 0));
             out.push(at(*actual, 0));
         }
+        FeedsWarning::RpmLoweredForFeedCeiling {
+            rpm_from,
+            rpm_to,
+            feed_ceiling_mm_min,
+            ..
+        } => {
+            out.push(at(*rpm_from, 0));
+            out.push(at(*rpm_to, 0));
+            out.push(at(*feed_ceiling_mm_min, 0));
+        }
         _ => {}
     }
     out
@@ -328,6 +353,16 @@ fn suggest_numbers(w: &SuggestWarning) -> Vec<String> {
             out.push(at(*rescaled_mm_per_min, 0));
             out.push(at(*factor_at_calculator, 2));
             out.push(at(*factor_at_final, 2));
+        }
+        SuggestWarning::RpmLoweredForFeedCeiling {
+            rpm_from,
+            rpm_to,
+            feed_ceiling_mm_min,
+            ..
+        } => {
+            out.push(at(*rpm_from, 0));
+            out.push(at(*rpm_to, 0));
+            out.push(at(*feed_ceiling_mm_min, 0));
         }
         _ => {}
     }
@@ -652,7 +687,21 @@ fn cases() -> Vec<Case> {
     let (drill_material, drill_op, drill_tool) =
         first_skip_cell(&[softwood_plywood, hdf], AggressivenessSkip::Drill);
 
+    let mut pocket_tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    pocket_tool.diameter = 6.0;
+
     vec![
+        Case {
+            name: "feed_ceiling_rpm",
+            tool: pocket_tool,
+            material: hardwood(),
+            operation: OperationConfig::new_default(OperationType::Pocket),
+            machine: None,
+            must_raise: &[
+                "RpmLoweredForFeedCeiling",
+                "SuggestRpmLoweredForFeedCeiling",
+            ],
+        },
         Case {
             name: "adaptive_long_tool",
             tool: adaptive_tool(),
@@ -717,6 +766,7 @@ fn every_stage_that_moves_a_number_is_on_the_card_g_visible() {
     // Non-vacuity across the file: the two dial records and the long-tool
     // share were each found on a face.
     for name in [
+        "RpmLoweredForFeedCeiling",
         "EngagementReducedForAggressiveness",
         "AggressivenessNotApplied",
         "LongToolDerate",

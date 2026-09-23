@@ -293,14 +293,19 @@ mod tests {
     /// * the long-tool share (stickout 45 mm, 7.5 x D) is a load target, not
     ///   a feed factor (ruling Q7), and the 0.75 safety factor is gone;
     /// * workholding Medium: 1.0;
-    /// * the cutting ceiling binds. On the generic router it is 4000, an
-    ///   integer again, so this fixture's machine sets
-    ///   `max_cutting_feed_mm_min` to 3999.5 mm/min: 4572 clamps to 3999.5;
-    /// * the rubbing floor does not fire: 3999.5 / 36 000 = 0.1111 mm/tooth,
+    /// * the cutting ceiling binds. This fixture's machine sets
+    ///   `max_cutting_feed_mm_min` to 3999.9 mm/min;
+    /// * the RPM follows the feed down to hold the chip (ruling R4 Q10): the
+    ///   chip per rev is 4572 / 18 000 = 0.254 mm, the RPM target is
+    ///   floor(3999.9 / 0.254) = 15 747, and the feed is 0.254 x 15 747 =
+    ///   3999.738 mm/min;
+    /// * the rubbing floor does not fire: the advance stays 0.127 mm/tooth,
     ///   above 0.025.
     ///
-    /// 3999.5 has a fraction of 0.5, so a nearest rounding gives 4000 and the
-    /// floor gives 3999.
+    /// 3999.738 has a fraction above 0.5, so a nearest rounding gives 4000
+    /// and the floor gives 3999. A ceiling of 3999.5 no longer separates
+    /// them: the RPM goes to 15 746 and the feed to 3999.484, which both
+    /// roundings take to 3999.
     fn hardwood_pocket() -> (
         ProjectSession,
         ToolConfig,
@@ -310,7 +315,7 @@ mod tests {
     ) {
         let mut session = ProjectSession::new_empty();
         let mut machine = session.machine().clone();
-        machine.max_cutting_feed_mm_min = Some(3999.5);
+        machine.max_cutting_feed_mm_min = Some(3999.9);
         let _ = session
             .apply(Command::SetMachine(SetMachineArgs {
                 machine: Box::new(machine),
@@ -408,7 +413,7 @@ mod tests {
     #[test]
     fn the_feed_floors_while_the_depth_rounds_to_the_nearest() {
         // Arm 1 — end to end, on `hardwood_pocket` (the arithmetic is on
-        // that fixture): the calculator gives 3999.5 mm/min and the pill
+        // that fixture): the calculator gives 3999.738 mm/min and the pill
         // offers 3999. A nearest rounding offers 4000, which is ABOVE the
         // value every ceiling was satisfied at, so this arm is red on the
         // pre-T-9 code. Before feeds matrix R5 the demo pocket gave 1290.9375
@@ -419,7 +424,7 @@ mod tests {
         let feed_pill = pills.feed_rate();
         let calculator = result.feed_rate_mm_min;
         assert!(
-            (calculator - 3999.5).abs() < 1e-9,
+            (calculator - 3999.738).abs() < 1e-6,
             "fixture drift: raw feed {calculator}"
         );
         assert!(

@@ -146,6 +146,11 @@ fn explain_rpm(out: &mut String, explain: &FeedsExplain) {
              ×{scale:.3} and the feed came down with it. The advance per tooth \
              is unchanged — the cut is the same shape, just slower.\n"
         )),
+        SpindleScaleReason::FeedCeiling => out.push_str(&format!(
+            "The feed hit the machine's cutting-feed ceiling, so the RPM came \
+             DOWN ×{scale:.3} and the feed came down with it. The advance per \
+             tooth stays at the band value (ruling R4 Q10).\n"
+        )),
         SpindleScaleReason::Unchanged => {
             if (scale - 1.0).abs() > UNITY_TOLERANCE {
                 // A factor that moved with no reason recorded is a bug in the
@@ -574,6 +579,26 @@ fn warning_lines(warning: &rs_cam_core::feeds::FeedsWarning) -> (String, Option<
             ),
             None,
         ),
+        // Ruling R4 Q10 (2026-09-24): the RPM follows the feed ceiling down
+        // to hold the chip. Core owns the one text.
+        FeedsWarning::RpmLoweredForFeedCeiling {
+            rpm_from,
+            rpm_to,
+            feed_ceiling_mm_min,
+            rpm_floor,
+            floor_source,
+            held,
+        } => (
+            rs_cam_core::feeds::rpm_lowered_text(
+                *rpm_from,
+                *rpm_to,
+                *feed_ceiling_mm_min,
+                *rpm_floor,
+                *floor_source,
+                *held,
+            ),
+            None,
+        ),
         // Checkpoint K (a4) — the routing refused; there is no vendor
         // row behind any number on this surface.
         FeedsWarning::NoVendorRowsForRoutedOperation {
@@ -760,6 +785,11 @@ fn suggest_line(warning: &SuggestWarning) -> Option<(String, bool)> {
             ),
             cap_hit.is_some(),
         )),
+        // Ruling R4 Q10: this record mirrors the calculator's
+        // `FeedsWarning::RpmLoweredForFeedCeiling`, which `draw_warnings`
+        // paints on the face with the same core text. A second face line
+        // would repeat it; the rationale row carries it on the RPM hover.
+        SuggestWarning::RpmLoweredForFeedCeiling { .. } => None,
         // These records reach the card through the rationale rows, on the
         // hover of the row whose number they move (`append_rationale`), or
         // they move no number.

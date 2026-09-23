@@ -707,9 +707,20 @@ fn panel_cut_geometry_apply_goes_through_the_invariant_funnel() {
 /// now ships the material base (ruling Q5; 1058.33 floored). The dial acts
 /// through this door too, with one common scale on the engagement: the
 /// stepover 2.222 → 1.498 (×0.674) and the depth 1.27 → 0.75 (the same scale,
-/// then snapped to the generator's pass staircase). The RPM holds. Each
-/// moved value is on the Feeds card as a line, per the operator's rule that
-/// no calculation is invisible.
+/// then snapped to the generator's pass staircase). Each moved value is on
+/// the Feeds card as a line, per the operator's rule that no calculation is
+/// invisible.
+///
+/// **The RPM and the feed moved with their cause: 18000 → 11248 and 4000 →
+/// 3999, ruling R4 Q10 (2026-09-24).** The RPM follows the feed down to hold
+/// the chip when the cutting ceiling binds. This fixture is the SOFTWOOD
+/// demo pocket on the printed Amana ZrN row, so its calculator feed is
+/// about 6400 mm/min at 18000 (0.1778 mm/tooth × 2 flutes): the chip per
+/// rev is 4000 / 11248 = 0.3556 mm; the RPM target is floor(4000 / 0.3556)
+/// = 11248 (measured); the feed is 0.3556 × 11248, floored to 3999. The
+/// advance per tooth stays at the band value. The plunge and the depth do
+/// not move; the stepover re-solves at the new RPM to 1.515 (measured; the
+/// dial's power term reads the spindle at 11248 rpm).
 ///
 /// This pins all five through the validated panel path, which is the path
 /// whose numbers the census recorded.
@@ -746,13 +757,16 @@ fn pocket_fixture_recipe_fingerprint_is_unmoved() {
         ctx(),
     );
 
-    assert_eq!(op.feed_rate(), 4000.0, "feed");
+    assert_eq!(op.feed_rate(), 3999.0, "feed");
     // T-9 (`6a9330dc`) floors the plunge instead of rounding it to the
     // nearest, so this fixture's unrounded 793.75 ships as 793, not 794. The
     // figure is re-derived from the cause; it is not a widened tolerance.
     assert_eq!(op.plunge_rate(), 1058.0, "plunge");
-    assert_eq!(op.spindle_rpm(), Some(18_000), "rpm");
-    assert_eq!(op.stepover(), Some(1.498), "woc");
+    assert_eq!(op.spindle_rpm(), Some(11_248), "rpm");
+    // 1.515 arrives as 1.5150000000000001 from the dial's solve; the pin
+    // is the value, not the bit pattern.
+    let woc = op.stepover().expect("woc");
+    assert!((woc - 1.515).abs() < 1e-9, "woc {woc}");
     assert_eq!(op.depth_per_pass(), Some(0.75), "doc");
 }
 
