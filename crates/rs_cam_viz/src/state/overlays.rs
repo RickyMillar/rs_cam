@@ -7,6 +7,7 @@
 //! surfaces plus the per-workspace default bookkeeping.
 
 use super::Workspace;
+use super::toolpath::ToolpathId;
 
 /// One section of the viewport dock (viewport redesign, MOCKUPS §1).
 ///
@@ -53,6 +54,31 @@ pub enum CatalogueFilter {
     CannotDraw,
 }
 
+/// A `Compute & show` request that waits for its data (viewport redesign,
+/// PLAN "Interaction and availability model").
+///
+/// The request carries the target and the preferred mode as they were when
+/// the operator clicked. When the data lands, the dock applies the request
+/// only if both still match. So a late result can never take over the
+/// rendering after the operator changed the selection or the mode.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingShow {
+    /// The registry id of the row to switch on.
+    pub row_id: &'static str,
+    /// The selected toolpath when the operator clicked.
+    pub target: Option<ToolpathId>,
+    /// The workspace when the operator clicked.
+    pub workspace: Workspace,
+    /// The row that was on for the same surface when the operator clicked.
+    /// For a row without an exclusive surface, the row itself when it was
+    /// on. `None` means that nothing was on.
+    pub preferred: Option<&'static str>,
+    /// `true` after the dock saw the work run. A row that is back to
+    /// Needs compute after that point had no result, and the request
+    /// ends.
+    pub seen_computing: bool,
+}
+
 /// The state of the dock and the catalogue.
 pub struct OverlayPanelState {
     /// `true` while the All viewport options catalogue is on screen. The
@@ -78,6 +104,11 @@ pub struct OverlayPanelState {
     pub defaults_applied_for: Option<Workspace>,
     /// `(registry id, value before the default was applied)`.
     pub displaced: Vec<(&'static str, bool)>,
+    /// The toolpath whose `Compute rest` confirm is open. The confirm
+    /// states the consequence before any work starts (MOCKUPS §4, B2).
+    pub rest_confirm: Option<ToolpathId>,
+    /// The one `Compute & show` request that waits for its data.
+    pub pending_show: Option<PendingShow>,
 }
 
 impl OverlayPanelState {
@@ -89,6 +120,8 @@ impl OverlayPanelState {
             catalogue_filter: CatalogueFilter::All,
             defaults_applied_for: None,
             displaced: Vec::new(),
+            rest_confirm: None,
+            pending_show: None,
         }
     }
 
@@ -108,10 +141,24 @@ impl OverlayPanelState {
         self.open_section = None;
     }
 
-    /// Escape closes the open popover first, then the catalogue. Returns
-    /// `true` when it closed something, so the caller consumes the key.
+    /// Is a surface open that takes `Escape` before any other handler?
+    ///
+    /// The `Compute rest` confirm and a dock popover take it even when a
+    /// widget has focus. The catalogue takes it only when no widget has
+    /// focus, so its search field keeps its own `Escape`.
+    pub fn takes_escape_first(&self) -> bool {
+        self.rest_confirm.is_some() || self.open_section.is_some()
+    }
+
+    /// Escape closes the `Compute rest` confirm first, then the open
+    /// popover, then the catalogue. Returns `true` when it closed
+    /// something, so the caller consumes the key. With nothing open, the
+    /// key keeps the meaning that the workspace gives it.
     pub fn close_one_for_escape(&mut self) -> bool {
-        if self.open_section.is_some() {
+        if self.rest_confirm.is_some() {
+            self.rest_confirm = None;
+            true
+        } else if self.open_section.is_some() {
             self.open_section = None;
             true
         } else if self.open {

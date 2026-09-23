@@ -128,6 +128,25 @@ impl OverlayAction {
             Self::EnableRestAnalysis => "Compute rest",
         }
     }
+
+    /// Does the action start compute work? `Plan…` opens a dialog only, so
+    /// it has no `Compute & show` twin.
+    pub fn is_compute(self) -> bool {
+        !matches!(self, Self::OpenPlanner)
+    }
+
+    /// The label of the `Compute & show` twin of the action. The plain
+    /// action computes only; the twin also switches the row on when the
+    /// data lands, if the target and the preferred mode did not change.
+    pub fn show_label(self) -> Option<&'static str> {
+        match self {
+            Self::RunCollisionCheck => Some("Run check & show"),
+            Self::OpenPlanner => None,
+            Self::GenerateAll => Some("Generate all & show"),
+            Self::RecordGeneratorTrace => Some("Record, re-generate & show"),
+            Self::EnableRestAnalysis => Some("Compute & show"),
+        }
+    }
 }
 
 /// Whether the row can draw right now, and if not, why not.
@@ -303,16 +322,22 @@ fn selected_toolpath(state: &AppState) -> Option<crate::state::toolpath::Toolpat
     }
 }
 
-fn any_generated(state: &AppState) -> bool {
+/// Does at least one toolpath hold a generated result?
+pub(crate) fn any_generated(state: &AppState) -> bool {
     state.gui.toolpath_rt.values().any(|rt| rt.result.is_some())
 }
 
-/// `(threshold_mm, peak_rest_mm)` of the selected toolpath's rest grid.
+/// `(threshold_mm, ramp_top_mm)` of the selected toolpath's rest grid.
 ///
 /// **Any** operation attaches one when its `rest_analysis.enabled` is set and
 /// a mesh plus spatial index are present; the pencil `RestDepth` arm and the
 /// UnifiedFinish claims pipeline attach their own. The "only the pencil
 /// detector" claim the old hover text carried was stale (audit §2c).
+///
+/// The top is [`rest_ramp_top`], the value at which the heatmap mesh
+/// reaches full red. Before the viewport redesign it was the maximum, so
+/// the red end of the legend named a larger number than the red end of the
+/// mesh (inventory §3, the Rest row).
 pub fn rest_grid_info(state: &AppState) -> Option<(f64, f32)> {
     let tp_id = selected_toolpath(state)?;
     state
@@ -321,15 +346,40 @@ pub fn rest_grid_info(state: &AppState) -> Option<(f64, f32)> {
         .get(&tp_id)
         .and_then(|rt| rt.result.as_ref())
         .and_then(|r| r.annotated.rest_grid.as_ref())
-        .map(|grid| {
-            let peak = grid
-                .rest
-                .iter()
-                .copied()
-                .filter(|v| v.is_finite())
-                .fold(0.0_f32, f32::max);
-            (grid.threshold, peak)
+        .map(|grid| (grid.threshold, rest_ramp_top(grid)))
+}
+
+/// The rest depth (mm) at which the heatmap mesh reaches full red: the 95th
+/// percentile of the trusted cells above the threshold.
+///
+/// This is the same arithmetic as
+/// `rs_cam_core::maps::rest_heatmap_mesh::rest_grid_to_heatmap_mesh`, which
+/// does not publish its value. A cell is trusted when its rest depth and
+/// its surface Z are both finite. The sentry
+/// `the_dock_states_read_live_state_g_vpstate` builds a grid, asks the core
+/// mesh for its colours and asserts that this value gives the same colours,
+/// so a change on either side fails a test.
+pub fn rest_ramp_top(grid: &rs_cam_core::surface::rest_field::RestGrid) -> f32 {
+    let threshold = grid.threshold as f32;
+    let mut above: Vec<f32> = (0..grid.grid.cell_count())
+        .filter_map(|i| {
+            let rest = grid.rest.get(i).copied().filter(|v| v.is_finite())?;
+            grid.surface_z.get(i).copied().filter(|v| v.is_finite())?;
+            (rest > threshold).then_some(rest)
         })
+        .collect();
+    if above.is_empty() {
+        return threshold + 1e-6;
+    }
+    above.sort_by(f32::total_cmp);
+    let last = above.len().saturating_sub(1);
+    let index = ((last as f32) * 0.95).round() as usize;
+    above
+        .get(index)
+        .or_else(|| above.last())
+        .copied()
+        .unwrap_or(threshold)
+        .max(threshold + 1e-6)
 }
 
 /// `Some(setup_index)` when the planner holds a `Ready` preview.
@@ -339,6 +389,20 @@ fn ready_preview_setup(state: &AppState) -> Option<usize> {
         .as_ref()
         .filter(|p| p.ready_preview().is_some())
         .map(|p| p.setup_index)
+}
+
+/// The failure text of the reach walk for the toolpath selected RIGHT NOW,
+/// if that walk failed.
+fn reach_map_failure(state: &AppState) -> Option<&str> {
+    use crate::state::runtime::ReachStatus;
+    let id = selected_toolpath(state)?;
+    if state.gui.reach_overlay.toolpath != Some(id) {
+        return None;
+    }
+    match &state.gui.reach_overlay.status {
+        ReachStatus::Failed(message) => Some(message.as_str()),
+        _ => None,
+    }
 }
 
 /// Is a reach map held, or on its way, for the toolpath selected RIGHT NOW?
@@ -935,6 +999,12 @@ pub const ROWS: &[OverlayRow] = &[
                 )
             } else if reach_map_wanted(s) {
                 Precondition::Ready
+            } else if let Some(message) = reach_map_failure(s) {
+                // Before the viewport redesign a failed walk fell to the
+                // reason below, so the operator read "select a finishing
+                // operation" beside a finishing operation (inventory §2.3,
+                // item 2). The MCP refusal carries the same words.
+                Precondition::no(&format!("the reach walk failed \u{2014} {message}"))
             } else {
                 // The controller answers "is this operation one a reach map
                 // speaks about" by whether it scheduled a walk at all
@@ -1315,6 +1385,41 @@ pub fn clear_surface(state: &mut AppState, surface: OverlaySurface) {
     }
 }
 
+/// Put each exclusive surface back to at most one row on.
+///
+/// Every dock and MCP write goes through [`set_overlay`], which keeps this
+/// rule. One writer does not: the inspector's `Show reach map` checkbox
+/// writes `show_reach_map` straight into the state (inventory §2.3, item 6;
+/// MOCKUPS §12, Q4), so it can leave Reach and the rest heatmap both on,
+/// and the renderer then draws both. The dock calls this function before it
+/// draws, and the frame loop draws the dock before it builds the viewport
+/// callback, so no frame draws two colour sources on one surface.
+///
+/// When two rows are on, the LAST one in [`ROWS`] stays on. On the model
+/// surface that is Reach, which is the row the direct writer writes: a
+/// switch through [`set_overlay`] would already have cleared the other.
+/// The radio surfaces are enums and can never hold two, so the rule has
+/// work on the model surface only.
+pub fn settle_exclusive_surfaces(state: &mut AppState) {
+    for surface in OverlaySurface::EXCLUSIVE {
+        let on: Vec<&'static OverlayRow> = ROWS
+            .iter()
+            .filter(|row| row.surface == surface && (row.get)(state))
+            .collect();
+        if let Some((keep, rest)) = on.split_last() {
+            for row in rest {
+                (row.set)(state, false);
+            }
+            if !rest.is_empty() {
+                tracing::debug!(
+                    kept = keep.id,
+                    "two colour sources were on one surface; a direct writer bypassed set_overlay"
+                );
+            }
+        }
+    }
+}
+
 /// Switch one row on or off, enforcing per-surface exclusivity.
 ///
 /// Enabling a scalar-field row clears every other row on the same surface —
@@ -1515,7 +1620,9 @@ pub fn non_default_count(state: &AppState) -> usize {
 /// already followed.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Legend {
-    /// `(threshold_mm, peak_mm)`; colours from `rest_heatmap_mesh::rest_ramp_color`.
+    /// `(threshold_mm, ramp_top_mm)`; colours from
+    /// `rest_heatmap_mesh::rest_ramp_color`. The top is [`rest_ramp_top`],
+    /// the 95th percentile at which the mesh reaches full red.
     RestHeatmap(f64, f32),
     /// The reach ramp's stops; colours from `reach_map::reach_color`. The
     /// whole ramp, not just the bar, because the ramp is LOG-scaled from the
@@ -1534,19 +1641,66 @@ pub enum Legend {
     TierMap(usize),
 }
 
-/// The legends to draw, given what is actually on screen. Only a row whose
-/// precondition is `Ready` and whose flag is on contributes.
+/// Does the viewport draw at least one toolpath? The same rule as the GPU
+/// upload and the pick: `toolpaths_to_draw`.
+pub fn any_toolpath_drawn(state: &AppState) -> bool {
+    !drawn_toolpaths(state).is_empty()
+}
+
+/// The toolpaths the viewport draws, in config order, with their 0-based
+/// config index (the palette index). The same rule as the GPU upload and
+/// the pick: `toolpaths_to_draw`.
+pub fn drawn_toolpaths(state: &AppState) -> Vec<(usize, crate::state::toolpath::ToolpathId)> {
+    let drawn = crate::state::viewport::toolpaths_to_draw(
+        crate::state::viewport::ToolpathDrawFilter::from_state(state),
+        state.session.toolpath_configs().iter().map(|tc| {
+            let rt = state.gui.toolpath_rt.get(&tc.id);
+            (
+                tc.id,
+                rt.is_none_or(|r| r.visible),
+                rt.is_some_and(|r| r.result.is_some()),
+            )
+        }),
+    );
+    state
+        .session
+        .toolpath_configs()
+        .iter()
+        .enumerate()
+        .filter(|(_, tc)| drawn.contains(&tc.id))
+        .map(|(index, tc)| (index, tc.id))
+        .collect()
+}
+
+/// Does the viewport draw the simulated stock now? The same gate as
+/// `ViewportCallback::show_sim_mesh` in `app/viewport.rs`.
+pub fn sim_stock_drawn(state: &AppState) -> bool {
+    state.viewport.show_sim_stock
+        && state.workspace == Workspace::Simulation
+        && state.simulation.has_results()
+}
+
+/// The legends to draw, given what is ACTUALLY on screen.
+///
+/// A row contributes when its flag is on, its precondition is `Ready`, and
+/// the renderer draws its surface now. The flag alone is not enough: a stock
+/// colour legend beside no simulated stock, or a move colour legend beside
+/// no drawn move, names a colour that the operator cannot see.
 pub fn active_legends(state: &AppState) -> Vec<Legend> {
     let mut out = Vec::new();
     let on = |id: &str| -> bool {
         row(id).is_some_and(|r| (r.get)(state) && (r.precondition)(state).is_ready())
     };
+    let moves_drawn = state.viewport.show_cutting && any_toolpath_drawn(state);
     if on("rest_heatmap")
-        && let Some((threshold, peak)) = rest_grid_info(state)
+        && let Some((threshold, top)) = rest_grid_info(state)
     {
-        out.push(Legend::RestHeatmap(threshold, peak));
+        out.push(Legend::RestHeatmap(threshold, top));
     }
+    // The same identity check as the draw gate: a map held for an earlier
+    // selection is never drawn, so it gives no legend.
     if on("reach_map")
+        && state.gui.reach_overlay.toolpath == selected_toolpath(state)
         && let Some(map) = state.gui.reach_overlay.ready_map()
     {
         out.push(Legend::Reach(map.ramp()));
@@ -1557,16 +1711,16 @@ pub fn active_legends(state: &AppState) -> Vec<Legend> {
     {
         out.push(Legend::TierMap(preview.map.tier_count));
     }
-    if on("stock_colour_deviation") {
+    if on("stock_colour_deviation") && sim_stock_drawn(state) {
         out.push(Legend::Deviation);
     }
-    if on("stock_colour_by_height") {
+    if on("stock_colour_by_height") && sim_stock_drawn(state) {
         out.push(Legend::ByHeight);
     }
-    if on("move_colour_engagement") {
+    if on("move_colour_engagement") && moves_drawn {
         out.push(Legend::Engagement);
     }
-    if on("move_colour_advance_per_tooth") {
+    if on("move_colour_advance_per_tooth") && moves_drawn {
         out.push(Legend::AdvancePerTooth);
     }
     out

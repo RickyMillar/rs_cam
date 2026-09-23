@@ -27,6 +27,14 @@
 //!   shared row renderer in `panel.rs`, or through a `UiCommand`.
 //! - The draw loop writes no core state and starts no compute. The dock
 //!   pushes events; the controller does the work.
+//! - A row's state is derived each frame from live state
+//!   (`panel::RowState`, `overlays::live`). The dock stores no copy of it.
+//! - A selection change moves the TARGET. It never changes the preferred
+//!   mode. When the preferred mode cannot apply to the new target, the
+//!   section suffix carries the `—` glyph and the popover gives the reason;
+//!   the dock never shows another mode in its place.
+//! - A `Compute & show` result applies only when the target and the mode
+//!   still match the request (`panel::settle_pending_show`).
 
 use super::AppEvent;
 use crate::compute::LaneSnapshot;
@@ -36,8 +44,8 @@ use crate::state::selection::Selection;
 use crate::state::{AppState, Workspace};
 use crate::ui::automation;
 use crate::ui::components;
-use crate::ui::overlays::legend_rail;
-use crate::ui::overlays::panel::{self, RowControl};
+use crate::ui::overlays::legend_rail::{self, RailLayout};
+use crate::ui::overlays::panel::{self, RowControl, RowState};
 use crate::ui::overlays::registry::{self, OverlaySurface};
 use crate::ui::tokens;
 use crate::ui_command::{NoArgs, UiCommand};
@@ -65,6 +73,15 @@ pub const POPOVER_MAX_WIDTH: f32 = 320.0;
 /// side of the viewport.
 pub const DOCK_GUTTER: f32 = tokens::SPACE_5;
 
+/// The highest share of the viewport height that the target line, the
+/// legend rail and the dock bar may take together. The phase 4 sentry
+/// measures the stack at 320 × 600 pt against this budget.
+pub const DOCK_STACK_MAX_HEIGHT_FRACTION: f32 = 0.6;
+
+/// The smallest height a popover's scroll area gets. Under it, the list
+/// would show less than one row.
+const POPOVER_MIN_LIST_HEIGHT: f32 = 24.0;
+
 /// Which parts of the dock fit at one viewport width.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DockLayout {
@@ -85,13 +102,56 @@ impl DockLayout {
     }
 }
 
-/// The word after a section name: `Paths: Selected`, `Inspect: Reach`.
+/// How the preferred choice of a section stands against its target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SuffixStatus {
+    /// The choice draws, or it is `Off`.
+    Ready,
+    /// The choice cannot apply to this target. The glyph is `—`.
+    Unavailable,
+    /// A job for the choice runs now. The glyph is `◌`.
+    Computing,
+    /// The choice draws an old result. The glyph is `!`.
+    Stale,
+    /// The last run for the choice failed. The glyph is `✕`.
+    Failed,
+}
+
+impl SuffixStatus {
+    /// The glyph after the section name, or `""` for a ready choice.
+    pub fn glyph(self) -> &'static str {
+        match self {
+            Self::Ready => "",
+            Self::Unavailable => tokens::GLYPH_UNKNOWN,
+            Self::Computing => panel::GLYPH_COMPUTING,
+            Self::Stale => tokens::GLYPH_CAUTION,
+            Self::Failed => tokens::GLYPH_DANGER,
+        }
+    }
+
+    fn of(row_state: &RowState) -> Self {
+        match row_state {
+            RowState::Off | RowState::Showing => Self::Ready,
+            RowState::NeedsCompute { .. } | RowState::Blocked { .. } => Self::Unavailable,
+            RowState::Computing { .. } => Self::Computing,
+            RowState::Stale { .. } => Self::Stale,
+            RowState::Failed { .. } => Self::Failed,
+        }
+    }
+}
+
+/// The word after a section name: `Paths: Selected`, `Inspect: Reach`.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SectionSuffix {
     pub word: &'static str,
-    /// The preferred choice cannot draw now. The dock adds the blocked
-    /// glyph; it does not show another choice in its place.
-    pub blocked: bool,
+    /// How the preferred choice stands. The dock adds the glyph of a
+    /// choice that is not ready; it does not show another choice in its
+    /// place.
+    pub status: SuffixStatus,
+    /// The hover text of the section button when the status is not
+    /// `Ready`: the word `unavailable`, `computing…`, `stale` or `failed`,
+    /// and the reason.
+    pub detail: Option<String>,
 }
 
 /// The suffix of one section, or `None` for a section without one.
@@ -102,14 +162,30 @@ pub struct SectionSuffix {
 pub fn section_suffix(state: &AppState, section: DockSection) -> Option<SectionSuffix> {
     match section {
         DockSection::View | DockSection::Scene => None,
-        DockSection::Paths => Some(SectionSuffix {
-            word: if state.viewport.show_all_toolpaths {
-                "All"
-            } else {
-                "Selected"
-            },
-            blocked: false,
-        }),
+        DockSection::Paths => {
+            let show_all = state.viewport.show_all_toolpaths;
+            // Inventory §2.3, item 5: with `Paths: Selected` and nothing
+            // selected, the moves rows read ticked and nothing draws.
+            let nothing_drawn =
+                registry::any_generated(state) && !registry::any_toolpath_drawn(state);
+            Some(SectionSuffix {
+                word: if show_all { "All" } else { "Selected" },
+                status: if nothing_drawn {
+                    SuffixStatus::Unavailable
+                } else {
+                    SuffixStatus::Ready
+                },
+                detail: nothing_drawn.then(|| {
+                    if show_all {
+                        "Paths: All is unavailable \u{2014} every generated toolpath is hidden."
+                            .to_owned()
+                    } else {
+                        "Paths: Selected is unavailable \u{2014} no generated toolpath is selected, so no move draws. Your choice is kept."
+                            .to_owned()
+                    }
+                }),
+            })
+        }
         DockSection::Inspect => {
             let simulation = state.workspace == Workspace::Simulation;
             let choices: &[(&str, &'static str)] = if simulation {
@@ -125,15 +201,28 @@ pub fn section_suffix(state: &AppState, section: DockSection) -> Option<SectionS
                 if let Some(row) = registry::row(id)
                     && (row.get)(state)
                 {
+                    let row_state = RowState::of(state, row);
+                    let status = SuffixStatus::of(&row_state);
+                    let detail = row_state.reason().map(|reason| {
+                        let what = match status {
+                            SuffixStatus::Ready | SuffixStatus::Unavailable => "unavailable",
+                            SuffixStatus::Computing => panel::COMPUTING_WORD,
+                            SuffixStatus::Stale => "stale",
+                            SuffixStatus::Failed => panel::FAILED_WORD,
+                        };
+                        format!("{word} is {what} \u{2014} {reason}. Your choice is kept.")
+                    });
                     return Some(SectionSuffix {
                         word,
-                        blocked: !(row.precondition)(state).is_ready(),
+                        status,
+                        detail,
                     });
                 }
             }
             (!simulation).then_some(SectionSuffix {
                 word: "Off",
-                blocked: false,
+                status: SuffixStatus::Ready,
+                detail: None,
             })
         }
     }
@@ -144,10 +233,9 @@ pub fn section_button_text(state: &AppState, section: DockSection, layout: DockL
     let label = section.label();
     match section_suffix(state, section) {
         Some(suffix) => {
-            let glyph = if suffix.blocked {
-                format!(" {}", tokens::GLYPH_UNKNOWN)
-            } else {
-                String::new()
+            let glyph = match suffix.status.glyph() {
+                "" => String::new(),
+                glyph => format!(" {glyph}"),
             };
             if layout.show_suffixes {
                 format!("{label}: {}{glyph}", suffix.word)
@@ -208,10 +296,16 @@ pub fn draw(
     viewport_rect: egui::Rect,
 ) -> DockOutcome {
     let ctx = ui.ctx().clone();
+    // Two settles before anything draws, so the dock, the rail and the
+    // viewport callback that the frame builds after the dock all read one
+    // state. Both write view state only; neither starts compute.
+    registry::settle_exclusive_surfaces(state);
+    panel::settle_pending_show(state);
     let outcome = DockOutcome {
         closed_popover_on_click: close_on_outside_click(&ctx, state),
     };
     let layout = DockLayout::for_viewport_width(viewport_rect.width());
+    let rail = RailLayout::for_viewport(viewport_rect);
     let max_width = (viewport_rect.width() - 2.0 * DOCK_GUTTER).max(1.0);
 
     let bar = egui::Area::new(egui::Id::new(DOCK_AREA_ID))
@@ -235,7 +329,7 @@ pub fn draw(
                 .truncate(),
             )
             .on_hover_text(target.as_str());
-            legend_rail::draw(ui, state);
+            legend_rail::draw(ui, state, rail);
             dock_bar(ui, state, lanes, events, layout)
         })
         .inner;
@@ -250,6 +344,7 @@ pub fn draw(
         };
         draw_popover(&ctx, state, projection, events, section, anchor);
     }
+    panel::draw_rest_confirm(&ctx, state, events);
     outcome
 }
 
@@ -280,7 +375,8 @@ fn dock_bar(
                 for section in DockSection::ALL {
                     let open = state.overlays.open_section == Some(section);
                     let text = section_button_text(state, section, layout);
-                    let response = ui.add(egui::Button::selectable(
+                    let detail = section_suffix(state, section).and_then(|suffix| suffix.detail);
+                    let mut response = ui.add(egui::Button::selectable(
                         open,
                         egui::RichText::new(text)
                             .size(tokens::SIZE_BODY)
@@ -290,6 +386,9 @@ fn dock_bar(
                                 tokens::TEXT_BODY
                             }),
                     ));
+                    if let Some(detail) = detail {
+                        response = response.on_hover_text(detail);
+                    }
                     if response.clicked() {
                         state.overlays.toggle_section(section);
                     }
@@ -435,7 +534,13 @@ fn draw_popover(
         .min(viewport_rect.right() - DOCK_GUTTER - width)
         .max(viewport_rect.left() + DOCK_GUTTER);
     let bottom = bar.top() - tokens::SPACE_2;
-    let max_height = (bottom - viewport_rect.top() - tokens::SPACE_6).max(80.0);
+    // The short-viewport rule: the popover never grows above the viewport
+    // top. The list scrolls inside the frame instead. The frame margin and
+    // its stroke are taken off, so the whole frame, not the list alone,
+    // stays inside the viewport.
+    let frame_extra = 2.0 * tokens::SPACE_3 + 2.0;
+    let max_height =
+        (bottom - viewport_rect.top() - tokens::SPACE_3 - frame_extra).max(POPOVER_MIN_LIST_HEIGHT);
     egui::Area::new(egui::Id::new(POPOVER_AREA_ID))
         .order(egui::Order::Foreground)
         .pivot(egui::Align2::LEFT_BOTTOM)
@@ -701,7 +806,7 @@ fn inspect_popover(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<App
     // than show another choice in its place.
     if model_rows
         .iter()
-        .any(|row| (row.get)(state) && !(row.precondition)(state).is_ready())
+        .any(|row| (row.get)(state) && !RowState::of(state, row).draws())
     {
         caption(ui, "Your choice is kept. The model draws plain.");
     }

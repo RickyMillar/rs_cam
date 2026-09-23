@@ -589,27 +589,30 @@ impl RsCamApp {
         }
     }
 
-    /// Escape closes the open dock popover first, and then the All viewport
-    /// options catalogue (MOCKUPS §0.4). The key is consumed, so no
-    /// workspace handler sees it.
+    /// Escape closes the `Compute rest` confirm first, then the open dock
+    /// popover, and then the All viewport options catalogue (MOCKUPS §0.4).
+    /// The key is consumed, so no workspace handler sees it.
     ///
     /// The shortcut handlers run BEFORE the layout draws, so this guard must
     /// sit here. A check inside the dock's own draw would come too late: in
     /// Simulation the Escape arm would already have switched the workspace.
     ///
-    /// A popover closes whatever has focus. With only the catalogue open, a
-    /// focused widget keeps its own Escape: the search field clears its
-    /// query and gives up focus, and the next Escape closes the window.
+    /// The `Compute rest` confirm closes first, then the popover; each
+    /// closes whatever has focus. With only the catalogue open, a focused
+    /// widget keeps its own Escape: the search field clears its query and
+    /// gives up focus, and the next Escape closes the window. With nothing
+    /// open, Escape keeps the meaning the workspace gives it (in Simulation,
+    /// back to Toolpaths).
     fn escape_closes_a_viewport_surface(&mut self, ctx: &egui::Context) {
         let state = self.controller.state();
         if state.workspace == Workspace::Readiness {
             return;
         }
-        let popover_open = state.overlays.open_section.is_some();
-        if !popover_open && !state.overlays.open {
+        let takes_first = state.overlays.takes_escape_first();
+        if !takes_first && !state.overlays.open {
             return;
         }
-        if !popover_open && ctx.memory(|m| m.focused().is_some()) {
+        if !takes_first && ctx.memory(|m| m.focused().is_some()) {
             return;
         }
         let pressed = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
