@@ -32,7 +32,7 @@
 use rs_cam_core::feeds::rationale::SuggestRationale;
 use rs_cam_core::feeds::{FeedsExplain, SpindleScaleReason};
 
-use super::shared::{CurrentValues, engaged_diameter_context, vendor_band};
+use super::shared::{CurrentValues, engaged_diameter_context, vendor_band, vendor_single_value};
 use crate::ui::{theme, tokens};
 
 /// A factor within this of 1.0 changed nothing.
@@ -295,17 +295,21 @@ fn explain_advance(out: &mut String, explain: &FeedsExplain) {
         ));
     }
 
-    // Where it landed.
-    if let Some((lo, hi)) = explain
-        .matched_row
-        .as_ref()
-        .and_then(|r| r.chip_load_min_mm.zip(r.chip_load_max_mm))
-        && effective > 0.0
-    {
-        out.push_str(&format!(
-            "Vendor band {lo:.4}–{hi:.4}; this sits at {:.0}% of the maximum.\n",
-            (effective / hi) * 100.0
-        ));
+    // Where it landed. A band only when the row publishes both limits
+    // (G-CHARTLINES); a one-value row names its one value and claims no band.
+    if effective > 0.0 {
+        if let Some((lo, hi)) = vendor_band(explain) {
+            out.push_str(&format!(
+                "Vendor band {lo:.4}–{hi:.4}; this sits at {:.0}% of the maximum.\n",
+                (effective / hi) * 100.0
+            ));
+        } else if let Some(value) = vendor_single_value(explain) {
+            out.push_str(&format!(
+                "Vendor value {value:.4} (the row publishes one value); this sits \
+                 at {:.0}% of it.\n",
+                (effective / value) * 100.0
+            ));
+        }
     }
 }
 
@@ -396,6 +400,10 @@ pub(crate) fn draw_engaged_diameter_row(
 /// S3 — chipload-min warning. For finishing operations a chipload below
 /// the vendor band minimum is the common failure mode (operator slows
 /// feed for surface quality → rubbing / burning). Surface it loudly.
+///
+/// The warning needs a PUBLISHED minimum. A max-only row or a one-point row
+/// has none, so this function draws nothing for it. Until 2026-09-23 it
+/// compared against an invented `0.7 × max` floor (G-CHARTLINES).
 pub(crate) fn draw_chipload_min_warning(
     ui: &mut egui::Ui,
     current: &CurrentValues,

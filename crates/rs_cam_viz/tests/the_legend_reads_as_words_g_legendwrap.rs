@@ -215,11 +215,18 @@ fn the_explore_window_painted_its_legend_g_legendwrap() {
          nothing. It found {} text runs.",
         painted.len()
     );
+    // G-CHARTLINES (2026-09-23): the legend prints `Vendor range` only when
+    // the matched row publishes both limits. A row that publishes one value
+    // prints `Vendor value` instead. Either row is the long vendor entry this
+    // arm needs, so the arm accepts both and does not depend on which kind
+    // of row the fixture matches.
     assert!(
-        painted
-            .iter()
-            .any(|(whole, _)| whole.to_lowercase().contains("vendor range")),
-        "the legend painted no `Vendor range` entry — the row that rendered \
-         as `ven / dor / ban / d` when it was still called `Vendor band`"
+        painted.iter().any(|(whole, _)| {
+            let lower = whole.to_lowercase();
+            lower.contains("vendor range") || lower.contains("vendor value")
+        }),
+        "the legend painted no `Vendor range` or `Vendor value` entry — the \
+         row that rendered as `ven / dor / ban / d` when it was still called \
+         `Vendor band`"
     );
 }

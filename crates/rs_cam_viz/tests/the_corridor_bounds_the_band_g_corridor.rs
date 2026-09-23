@@ -4,9 +4,21 @@
 //! The vendor band says where the vendor tested. The corridor says where the
 //! CUT is physical: below the **rubbing floor** the tool burnishes instead
 //! of cutting, above the **deflection ceiling** tooth force deflects or
-//! chips it. Both are constant-chipload rays, so both are wedges of the
-//! band's own shape, drawn in the machine wall's idiom — a fill, no stroke,
-//! no floating label, no legend row.
+//! chips it. Both are constant-chipload rays, so the chart draws each one as
+//! a thin line from the origin in the machine wall's hue — no floating
+//! label, no legend row.
+//!
+//! # Lines, not wedges (G-CHARTLINES, 2026-09-23)
+//!
+//! The corridor was two shaded wedges, positioned against a shaded vendor
+//! band. The operator ruled "no shading", and the vendor band now draws only
+//! when the row publishes both limits. So this test reads LINES, and it
+//! positions the corridor against the ONE line the chart always draws: the
+//! suggested advance per tooth. Every constant-chipload line leaves the
+//! origin, and the plot transform is linear, so the ratio of two lines'
+//! screen slopes IS the ratio of their advances per tooth. The arms check
+//! those ratios against the core numbers, which is stronger than the old
+//! "wedge centre above band centre" check it replaced.
 //!
 //! # The arm that matters
 //!
@@ -29,7 +41,7 @@
 //! Arm 4 carries those numbers, so the threshold can be checked without
 //! reading pixels.
 //!
-//! So a wedge clamped to the top edge would read as *"you are near the force
+//! So a line clamped to the top edge would read as *"you are near the force
 //! limit"*, false by two orders of magnitude. That is **absence rendered as
 //! a reading**, the failure shape this repository has met four times, most
 //! recently a nomogram readout that printed `37891 RPM · BURN risk` for a
@@ -38,7 +50,7 @@
 //! nothing is painted up there.
 //!
 //! The ceiling DOES come on chart for a thin tool, so arm 1 pins that the
-//! upper wedge is a conditional, not a deletion. A 2 mm cutter at 120 mm
+//! ceiling line is a conditional, not a deletion. A 2 mm cutter at 120 mm
 //! stickout has a ceiling of 0.04796 mm/tooth against a 0.11667 chart top.
 //!
 //! **The diameter is the lever here, not the stickout.**
@@ -54,8 +66,8 @@
 //! # Rendered, not source-scanned
 //!
 //! The window is run through a real `egui::Context` and the corridor is read
-//! off the painted shapes. A source scan would pass for a wedge that is
-//! built and never reaches the plot, and for a wedge drawn in the wrong
+//! off the painted shapes. A source scan would pass for a line that is
+//! built and never reaches the plot, and for a line drawn in the wrong
 //! place.
 
 #![allow(
@@ -80,29 +92,31 @@ use rs_cam_viz::ui::{feeds, tokens};
 /// Room for the whole window, so the plot is drawn unclipped.
 const SCREEN: egui::Vec2 = egui::Vec2::new(1400.0, 1000.0);
 
-/// The alpha `explore.rs` washes the corridor's two wedges at.
+/// The alpha of the corridor's two lines in `explore.rs`
+/// (`CORRIDOR_LINE_ALPHA`).
 ///
 /// The corridor takes the machine wall's DANGER hue at a lighter alpha than
-/// the wall's own 35, so the two are told apart by this number alone. If the
-/// chart re-tunes it, re-tune this constant — it is the handle the test has
-/// on the wedges, because the plot draws no legend and the polygon names
+/// the wall's own 200, so the two are told apart by this number alone. If
+/// the chart re-tunes it, re-tune this constant. It is the handle the test
+/// has on the corridor, because the plot draws no legend and the line names
 /// never reach the paint list.
-const CORRIDOR_ALPHA: u8 = 22;
+const CORRIDOR_LINE_ALPHA: u8 = 150;
 
-/// The alpha the vendor band is washed at, in `chart::BAND`.
-const BAND_ALPHA: u8 = 50;
-
+/// The suggested line's colour: `chart::BAND`, opaque.
 // SAFETY: `CHART_SERIES` has four entries and 1 is a literal inside it.
 #[allow(clippy::indexing_slicing)]
-fn band_fill() -> egui::Color32 {
-    let base = tokens::CHART_SERIES[1];
-    egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), BAND_ALPHA)
+fn suggested_colour() -> egui::Color32 {
+    tokens::CHART_SERIES[1]
 }
 
-fn corridor_fill() -> egui::Color32 {
+fn corridor_colour() -> egui::Color32 {
     let base = tokens::DANGER;
-    egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), CORRIDOR_ALPHA)
+    egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), CORRIDOR_LINE_ALPHA)
 }
+
+/// Two advances per tooth agree when their ratio is this close to 1. The
+/// slopes are read in f32 screen space, so allow a small error.
+const RATIO_TOLERANCE: f64 = 0.02;
 
 /// How a tool is shaped for one arm of this test.
 struct Cutter {
@@ -223,28 +237,32 @@ fn fixture(cutter: &Cutter) -> AppState {
     state
 }
 
-/// One filled region the window painted: its fill and where it sits.
+/// One open line the window painted in one stroke colour.
 #[derive(Debug, Clone, Copy)]
-struct Region {
-    /// Mean of the polygon's own vertices, in SCREEN space — y grows
-    /// downward, so a smaller `centre_y` is HIGHER on the chart, which is a
-    /// larger feed and therefore a larger advance per tooth.
-    centre_y: f32,
-    /// The topmost vertex, in screen space.
-    top_y: f32,
+struct Ray {
+    /// The screen-space slope of the line's FIRST segment, as rise over run
+    /// with the rise measured UP the screen. Every iso-advance line starts
+    /// at the plot origin and its first segment lies on the ray, so this
+    /// slope is `advance · flutes · (y scale / x scale)`. The ratio of two
+    /// rays' slopes is the ratio of their advances per tooth.
+    ///
+    /// The guarantee that point 0 is the plot origin comes from
+    /// `clip_iso_line` in `explore.rs`, which starts every iso-advance line
+    /// at `[0, 0]`. If that function starts a line anywhere else, re-derive
+    /// this measure.
+    rise: f64,
 }
 
-/// Draw the Explore window and return every filled region painted in
-/// `fill`.
+/// Draw the Explore window and return every open line painted in `colour`.
 ///
-/// Four passes, as in `the_nomogram_readout_abstains_g_hoverbound.rs`: the
-/// plot needs a settled layout before its transform maps plot coordinates
-/// onto meaningful screen positions.
-fn painted_regions(state: &AppState, fill: egui::Color32) -> Vec<Region> {
+/// Twelve passes, as in `the_nomogram_readout_abstains_g_hoverbound.rs`:
+/// the plot needs a settled layout before its transform maps plot
+/// coordinates onto meaningful screen positions.
+fn painted_rays(state: &AppState, colour: egui::Color32) -> Vec<Ray> {
     let ctx = egui::Context::default();
     tokens::apply(&ctx);
     tokens::apply_fonts(&ctx);
-    let mut regions = Vec::new();
+    let mut rays = Vec::new();
     for pass in 0..12 {
         let input = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, SCREEN)),
@@ -259,74 +277,115 @@ fn painted_regions(state: &AppState, fill: egui::Color32) -> Vec<Region> {
                 let egui::epaint::Shape::Path(path) = &clipped.shape else {
                     continue;
                 };
-                if path.fill != fill || path.points.is_empty() {
+                if path.closed || path.points.len() < 2 {
                     continue;
                 }
-                let count = path.points.len() as f32;
-                let sum: f32 = path.points.iter().map(|p| p.y).sum();
-                let top_y = path.points.iter().map(|p| p.y).fold(f32::MAX, f32::min);
-                regions.push(Region {
-                    centre_y: sum / count,
-                    top_y,
+                let egui::epaint::ColorMode::Solid(stroke) = &path.stroke.color else {
+                    continue;
+                };
+                if *stroke != colour {
+                    continue;
+                }
+                let (p0, p1) = (path.points[0], path.points[1]);
+                let run = f64::from(p1.x - p0.x);
+                assert!(
+                    run > 0.0,
+                    "a line in this colour does not run left to right from the \
+                     origin: {p0:?} to {p1:?}. It is not an iso-advance line \
+                     from `clip_iso_line`, or another shape in the window \
+                     shares its colour."
+                );
+                rays.push(Ray {
+                    rise: f64::from(p0.y - p1.y) / run,
                 });
             }
         }
         out.textures_delta.clear();
     }
-    regions
+    rays
 }
 
-/// The vendor band, which both corridor bounds are positioned against.
-fn band_region(state: &AppState) -> Region {
-    let bands = painted_regions(state, band_fill());
+/// The ONE solid line at the suggested advance per tooth, which every
+/// corridor line is positioned against.
+fn suggested_ray(state: &AppState) -> Ray {
+    let rays = painted_rays(state, suggested_colour());
     assert_eq!(
-        bands.len(),
+        rays.len(),
         1,
-        "the nomogram painted {} vendor-band regions, not one. Every arm \
-         below positions the corridor against the band, so the test cannot \
-         read the chart until this is one region again.",
-        bands.len()
+        "the nomogram painted {} suggested lines, not one. The ruling is ONE \
+         solid line at the suggested value (G-CHARTLINES), and every arm \
+         below positions the corridor against it.",
+        rays.len()
     );
-    bands[0]
+    rays[0]
+}
+
+/// The suggested advance per tooth the chart draws, from the same
+/// `FeedsExplain` the chart reads.
+fn suggested_mm(cutter: &Cutter) -> f64 {
+    let state = fixture(cutter);
+    let tc = &state.session.toolpath_configs()[0];
+    let tool = &state.session.tools()[0];
+    let stock = state.session.stock_config();
+    let preview = rs_cam_core::feeds::suggest::feeds_preview_for_operation(
+        &tc.operation,
+        tool,
+        &stock.material,
+        state.session.machine(),
+        stock.workholding_rigidity,
+        rs_cam_core::feeds::embedded_vendor_lut(),
+        state.session.post_config().spindle_strategy,
+    );
+    let r = &preview.explain().recommended;
+    r.feed_rate_mm_min / (r.rpm * f64::from(preview.explain().flute_count.max(1)))
+}
+
+fn assert_ratio(what: &str, painted: f64, expected: f64) {
+    assert!(
+        expected.is_finite() && expected > 0.0,
+        "{what}: the expected ratio {expected} is not a positive number"
+    );
+    assert!(
+        (painted / expected - 1.0).abs() <= RATIO_TOLERANCE,
+        "{what}: the painted slope ratio is {painted}, the core numbers give \
+         {expected}. The line is not at the advance per tooth it claims."
+    );
 }
 
 // ── arm 1 — the ceiling is on chart ──────────────────────────────────────
 
 /// A long, thin cutter IS deflection-limited, so the corridor has both
-/// sides: the floor wedge below the band, the ceiling wedge above it.
+/// lines: the rubbing floor and the deflection ceiling, each at its own
+/// advance per tooth.
 #[test]
 fn the_corridor_draws_both_bounds_when_the_ceiling_is_on_chart_g_corridor() {
     let state = fixture(&LONG_AND_THIN);
-    let band = band_region(&state);
-    let mut wedges = painted_regions(&state, corridor_fill());
+    let suggested = suggested_ray(&state);
+    let mut lines = painted_rays(&state, corridor_colour());
     assert_eq!(
-        wedges.len(),
+        lines.len(),
         2,
-        "a deflection-limited tool must get BOTH corridor bounds, and the \
+        "a deflection-limited tool must get BOTH corridor lines, and the \
          nomogram painted {}. A thin section is exactly the case where the \
          ceiling comes on chart; if it no longer does for this fixture, \
          re-derive `LONG_AND_THIN` against the window its doc records \
          rather than dropping the arm.",
-        wedges.len()
+        lines.len()
     );
-    wedges.sort_by(|a, b| a.centre_y.total_cmp(&b.centre_y));
-    let (above, below) = (wedges[0], wedges[1]);
-    assert!(
-        above.centre_y < band.centre_y,
-        "the ceiling wedge is not above the vendor band: wedge centre \
-         {} vs band centre {} (screen y grows downward). Above the ceiling \
-         tooth force deflects the cutter, so that region is the HIGH-feed \
-         side of the band.",
-        above.centre_y,
-        band.centre_y
+    lines.sort_by(|a, b| a.rise.total_cmp(&b.rise));
+    let (floor_line, ceiling_line) = (lines[0], lines[1]);
+    let (floor, ceiling, _) = measured(&LONG_AND_THIN);
+    let ceiling = ceiling.expect("arm 4 pins that the thin cutter's ceiling is modelled");
+    let suggested_mm = suggested_mm(&LONG_AND_THIN);
+    assert_ratio(
+        "rubbing floor against the suggested line",
+        floor_line.rise / suggested.rise,
+        floor / suggested_mm,
     );
-    assert!(
-        below.centre_y > band.centre_y,
-        "the rubbing-floor wedge is not below the vendor band: wedge centre \
-         {} vs band centre {}. Below the floor the tool burnishes, so that \
-         region is the LOW-feed side.",
-        below.centre_y,
-        band.centre_y
+    assert_ratio(
+        "deflection ceiling against the suggested line",
+        ceiling_line.rise / suggested.rise,
+        ceiling / suggested_mm,
     );
 }
 
@@ -334,64 +393,53 @@ fn the_corridor_draws_both_bounds_when_the_ceiling_is_on_chart_g_corridor() {
 
 /// The arm that matters. On the reference fixture the ceiling is about
 /// twenty times the highest chipload the chart can draw, so exactly ONE
-/// wedge is painted and nothing sits at the top edge pretending to be a
-/// limit.
+/// corridor line is painted and nothing sits at the top edge pretending to
+/// be a limit.
 #[test]
-fn the_upper_wedge_is_absent_when_the_ceiling_is_off_scale_g_corridor() {
+fn the_ceiling_line_is_absent_when_the_ceiling_is_off_scale_g_corridor() {
     let state = fixture(&STUBBY);
-    let band = band_region(&state);
-    let wedges = painted_regions(&state, corridor_fill());
+    let suggested = suggested_ray(&state);
+    let lines = painted_rays(&state, corridor_colour());
     assert_eq!(
-        wedges.len(),
+        lines.len(),
         1,
-        "the nomogram painted {} corridor wedges for a stubby carbide \
+        "the nomogram painted {} corridor lines for a stubby carbide \
          cutter. Its deflection ceiling is around 2.4 mm/tooth against a \
-         chart that draws around 0.12 — a second wedge here is a force \
+         chart that draws around 0.12 — a second line here is a force \
          limit manufactured from an absence, wrong by twenty times.",
-        wedges.len()
+        lines.len()
     );
-    let floor = wedges[0];
-    assert!(
-        floor.centre_y > band.centre_y,
-        "the one wedge drawn is not the rubbing floor: centre {} against a \
-         band centre of {}. If the ceiling wedge survived and the floor did \
-         not, the chart is drawing the bound it cannot justify and hiding \
-         the one it can.",
-        floor.centre_y,
-        band.centre_y
-    );
-    assert!(
-        floor.top_y > band.top_y,
-        "the floor wedge reaches above the top of the vendor band (wedge top \
-         {} vs band top {}), so it is not the region below the floor",
-        floor.top_y,
-        band.top_y
+    let (floor, _, _) = measured(&STUBBY);
+    assert_ratio(
+        "the one corridor line is the rubbing floor",
+        lines[0].rise / suggested.rise,
+        floor / suggested_mm(&STUBBY),
     );
 }
 
 // ── arm 3 — non-vacuity ──────────────────────────────────────────────────
 
-/// Arm 2 counts wedges, so it would pass just as well if the chart drew no
+/// Arm 2 counts lines, so it would pass just as well if the chart drew no
 /// corridor at all. This arm is the floor of that count: the rubbing floor
-/// IS painted, on the ordinary fixture, below the band.
+/// IS painted, on the ordinary fixture, and the suggested line is painted
+/// beside it.
 #[test]
-fn the_rubbing_floor_wedge_is_drawn_g_corridor() {
+fn the_rubbing_floor_line_is_drawn_g_corridor() {
     let state = fixture(&STUBBY);
-    let wedges = painted_regions(&state, corridor_fill());
+    let lines = painted_rays(&state, corridor_colour());
     assert!(
-        !wedges.is_empty(),
-        "the nomogram painted NO corridor wedge. Arm 2 asserts that the \
-         upper wedge is absent when the ceiling is off scale, and a chart \
+        !lines.is_empty(),
+        "the nomogram painted NO corridor line. Arm 2 asserts that the \
+         ceiling line is absent when the ceiling is off scale, and a chart \
          that draws nothing satisfies it for the wrong reason: the floor is \
          always on chart, because its ray leaves the origin."
     );
-    let band = band_region(&state);
+    let suggested = suggested_ray(&state);
     assert!(
-        wedges[0].centre_y > band.centre_y,
-        "the one wedge on the ordinary fixture sits at {} against a band \
-         centre of {}, so it is not the region below the floor",
-        wedges[0].centre_y,
-        band.centre_y
+        suggested.rise > 0.0 && lines[0].rise > 0.0,
+        "the painted lines do not rise from the origin: suggested {}, floor {}",
+        suggested.rise,
+        lines[0].rise
     );
 }
 
@@ -443,7 +491,7 @@ fn the_ceiling_decision_is_made_on_the_charts_own_range_g_corridor() {
     assert!(
         floor > 0.0,
         "the rubbing floor is {floor} mm/tooth. A non-positive floor draws no \
-         wedge at all, which would let the rendered arms pass vacuously."
+         line at all, which would let the rendered arms pass vacuously."
     );
     let ceiling = ceiling.expect(
         "the deflection model refused for an ordinary 6 mm carbide flat. That \

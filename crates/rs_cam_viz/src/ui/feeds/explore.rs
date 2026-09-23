@@ -26,13 +26,35 @@
 //! title over its own axis label, collided its point labels, and drew series
 //! outside its frame. Evidence:
 //! `planning/feeds_rework_2026-09-15/FINDINGS.md`, F-4 to F-6.
+//!
+//! # Lines, not shading (G-CHARTLINES, 2026-09-23)
+//!
+//! Operator ruling: *"Always just have the straight line, center or
+//! suggested, then add more faint bands around it, no shading, but only if
+//! they exist".* So the nomogram draws these items:
+//!
+//! - ONE solid iso-advance line at the suggested advance per tooth. It goes
+//!   through the `Recommended` diamond.
+//! - Two fainter lines in the same colour at the vendor minimum and
+//!   maximum, ONLY when the matched row publishes both. A max-only row or a
+//!   one-point row gets no band lines, and no text claims a band. The rule
+//!   is [`vendor_band`], which reads `FeedsExplain::published_chipload_band`.
+//! - Thin lines, not shaded wedges, for the rubbing floor and the deflection
+//!   ceiling.
+//!
+//! No item on this chart is a filled region. Until this ruling the band was a
+//! shaded wedge from `0.7 × max` to `max` on a max-only row, and that lower
+//! limit was invented. `feeds_charts_draw_lines_not_shading_g_chartlines`
+//! holds the rule.
 
-use egui_plot::{Line, MarkerShape, Plot, PlotPoints, Points, Polygon};
+use egui_plot::{Line, MarkerShape, Plot, PlotPoints, Points};
 use rs_cam_core::feeds::FeedsExplain;
 use rs_cam_core::feeds::efficiency::CutEfficiency;
 use rs_cam_core::feeds::suggest::FeedsPreview;
 
-use super::shared::{CurrentValues, chart, draw_machine_envelope, vendor_band, wash};
+use super::shared::{
+    CurrentValues, chart, draw_machine_envelope, vendor_band, vendor_single_value, wash,
+};
 use crate::state::AppState;
 use crate::ui::{AppEvent, theme, tokens};
 use crate::ui_command::UiCommand;
@@ -45,15 +67,30 @@ use crate::ui_command::UiCommand;
 /// pixels.
 pub(crate) const AXIS_MARK_WIDTH: f32 = 4.0;
 
-/// The alpha the chipload corridor's two wedges are washed at.
+/// The alpha of the chipload corridor's two lines.
 ///
 /// The rubbing floor and the deflection ceiling ARE verdicts — below one the
 /// tool burnishes instead of cutting, above the other tooth force deflects
 /// or chips it — so they take the machine wall's hue rather than a data
 /// scale, for the reason `DESIGN_SPEC.md` §2.6 makes the envelope the one
-/// exception. One step lighter than the wall's own 35, because a limit the
-/// machine cannot pass is the harder stop of the two.
-const CORRIDOR_ALPHA: u8 = 22;
+/// exception. Lighter than the wall's own 200, because a limit the machine
+/// cannot pass is the harder stop of the two.
+///
+/// They were shaded wedges until 2026-09-23 (G-CHARTLINES).
+const CORRIDOR_LINE_ALPHA: u8 = 150;
+
+/// The width of the corridor's two lines.
+const CORRIDOR_LINE_WIDTH: f32 = 1.0;
+
+/// The width of the ONE solid line at the suggested advance per tooth.
+const SUGGESTED_LINE_WIDTH: f32 = 1.5;
+
+/// The alpha of the two vendor-limit lines. They are the suggested line's
+/// colour at this alpha, so they read as fainter lines around it.
+const BAND_LIMIT_ALPHA: u8 = 90;
+
+/// The width of the two vendor-limit lines.
+const BAND_LIMIT_WIDTH: f32 = 1.0;
 
 pub(crate) fn draw_spindle_strategy_row(
     ui: &mut egui::Ui,
@@ -259,10 +296,13 @@ fn draw_headline(ui: &mut egui::Ui, explain: &FeedsExplain) {
     let pct = ((1.0 - combined) * 100.0).max(0.0);
     let held_back = pct >= 1.0;
 
-    let text = match (vendor_band(explain), held_back) {
-        (Some(_), true) => format!("{effective:.4} mm/tooth · {pct:.0} % under vendor"),
-        (Some(_), false) => format!("{effective:.4} mm/tooth · at vendor"),
-        (None, _) => format!("{effective:.4} mm/tooth · no vendor range"),
+    // Three states: the row publishes a band, the row publishes one value,
+    // or no row matched. A matched one-value row is NOT "no vendor data".
+    let vendor_published = vendor_band(explain).is_some() || vendor_single_value(explain).is_some();
+    let text = match (vendor_published, held_back) {
+        (true, true) => format!("{effective:.4} mm/tooth · {pct:.0} % under vendor"),
+        (true, false) => format!("{effective:.4} mm/tooth · at vendor"),
+        (false, _) => format!("{effective:.4} mm/tooth · no vendor value"),
     };
     let color = if held_back {
         theme::WARNING_MILD
@@ -273,6 +313,13 @@ fn draw_headline(ui: &mut egui::Ui, explain: &FeedsExplain) {
     let mut hover = String::new();
     if let Some((lo, hi)) = vendor_band(explain) {
         hover.push_str(&format!("Vendor range {lo:.4}\u{2013}{hi:.4} mm/tooth.\n"));
+    } else if let Some(value) = vendor_single_value(explain) {
+        hover.push_str(&format!(
+            "Vendor value {value:.4} mm/tooth. The row publishes one value, \
+             not a range.\n"
+        ));
+    } else if explain.matched_row.is_some() {
+        hover.push_str("The vendor row publishes no advance per tooth.\n");
     } else {
         hover.push_str(
             "No vendor row matched this tool, material and operation, so the \
@@ -325,8 +372,8 @@ fn draw_headline(ui: &mut egui::Ui, explain: &FeedsExplain) {
 /// The vendor band says where the vendor tested. The corridor says where the
 /// CUT is physical: below the rubbing floor the tool burnishes instead of
 /// cutting, above the deflection ceiling tooth force deflects or chips it.
-/// Both bounds are constant-chipload rays, so both are wedges of the band's
-/// own shape.
+/// Both bounds are constant-chipload rays, so the chart draws each one as a
+/// thin line from the origin. It drew them as shaded wedges until 2026-09-23.
 ///
 /// The floor always has a place on the chart, because its ray leaves the
 /// origin. The ceiling does not, and holding that difference is the whole
@@ -360,11 +407,11 @@ enum Ceiling {
     /// `the_corridor_bounds_the_band_g_corridor` measures the pair; the
     /// derivation is in `planning/load_model_2026-09-16/CORRIDOR_REPAIR.md`.
     ///
-    /// A wedge clamped to the top edge would read as *"you are near the
+    /// A line clamped to the top edge would read as *"you are near the
     /// force limit"*, false by two orders of magnitude. That is
     /// absence-rendered-as-a-reading, the failure this window has already
     /// shipped once — a readout that printed `37891 RPM · BURN risk` for a
-    /// pointer that was not over the chart. So the wedge is absent and
+    /// pointer that was not over the chart. So the line is absent and
     /// `Sources` names the number and says it is off scale.
     OffScale {
         ceiling_mm: f64,
@@ -372,7 +419,7 @@ enum Ceiling {
         /// comparison `Sources` prints.
         chart_top_mm: f64,
     },
-    /// Modelled and inside the plot's range, so the upper wedge IS drawn.
+    /// Modelled and inside the plot's range, so the ceiling line IS drawn.
     ///
     /// **The diameter is the lever here, not the stickout.**
     /// `ToolDefinition::tip_deflection_mm` models a STEPPED cantilever: a
@@ -411,7 +458,7 @@ impl Corridor {
     ///
     /// A non-positive RPM or flute count leaves that quantity undefined, and
     /// an undefined comparison abstains: the ceiling is reported off scale
-    /// and no wedge is drawn.
+    /// and no line is drawn.
     fn resolve(efficiency: &CutEfficiency, rpm: f64, flutes: f64, feed_axis_max: f64) -> Self {
         let chart_top_mm = if rpm > 0.0 && flutes > 0.0 {
             feed_axis_max / (rpm * flutes)
@@ -473,14 +520,12 @@ pub(crate) fn draw_chart_c(
     let corridor = efficiency
         .map(|eff| Corridor::resolve(eff, explain.recommended.rpm, flutes, feed_axis_max));
 
-    // Vendor band — three iso-chipload diagonals (min, mid, max).
-    let band = explain.matched_row.as_ref().and_then(|row| {
-        match (row.chip_load_min_mm, row.chip_load_max_mm) {
-            (Some(lo), Some(hi)) => Some((lo, hi)),
-            (None, Some(hi)) => Some((hi * 0.7, hi)),
-            _ => None,
-        }
-    });
+    // The vendor band, ONLY when the row publishes both limits. A max-only
+    // row and a one-point row give `None`, and the chart draws no band line.
+    let band = vendor_band(explain);
+    // The suggested advance per tooth: the ray through the recommended
+    // diamond. `None` when the recommendation has no RPM to divide by.
+    let suggested = suggested_advance_mm(explain);
 
     // Vendor RPM column.
     let vendor_rpm = explain
@@ -510,88 +555,83 @@ pub(crate) fn draw_chart_c(
         .allow_scroll(false)
         .show(ui, |plot_ui| {
             // 0. The corridor: the two bounds that turn the vendor band into
-            //    a place the cut can live. They are drawn in the machine
-            //    wall's idiom — a fill, no stroke, no floating label — and
-            //    they add NO legend row. `Sources` carries both numbers.
+            //    a place the cut can live. Each is a thin line in the machine
+            //    wall's hue, with no floating label and NO legend row.
+            //    `Sources` carries both numbers. They were shaded wedges until
+            //    2026-09-23 (G-CHARTLINES: "no shading").
             if let Some(corridor) = corridor {
                 if corridor.floor_mm.is_finite() && corridor.floor_mm > 0.0 {
-                    plot_ui.polygon(
-                        Polygon::new(
+                    plot_ui.line(
+                        Line::new(
                             "",
-                            wedge_polygon(
-                                0.0,
+                            iso_line(
                                 corridor.floor_mm,
                                 env.spindle_max_rpm,
                                 flutes,
                                 env.max_feed_mm_min,
                             ),
                         )
-                        .fill_color(wash(tokens::DANGER, CORRIDOR_ALPHA))
-                        .stroke(egui::Stroke::NONE)
-                        .name(format!(
-                            "Below the rubbing floor ({:.4} mm/tooth)",
-                            corridor.floor_mm
-                        )),
+                        .color(wash(tokens::DANGER, CORRIDOR_LINE_ALPHA))
+                        .width(CORRIDOR_LINE_WIDTH)
+                        .name(format!("Rubbing floor ({:.4} mm/tooth)", corridor.floor_mm)),
                     );
                 }
-                // The upper wedge is drawn ONLY when the ceiling lands
+                // The ceiling line is drawn ONLY when the ceiling lands
                 // inside the plot. It is never clamped to the top edge —
                 // see [`Ceiling::OffScale`].
                 if let Ceiling::OnChart { ceiling_mm } = corridor.ceiling {
-                    plot_ui.polygon(
-                        Polygon::new(
+                    plot_ui.line(
+                        Line::new(
                             "",
-                            above_iso_line_polygon(
-                                ceiling_mm,
-                                env.spindle_max_rpm,
-                                flutes,
-                                env.max_feed_mm_min,
-                            ),
+                            iso_line(ceiling_mm, env.spindle_max_rpm, flutes, env.max_feed_mm_min),
                         )
-                        .fill_color(wash(tokens::DANGER, CORRIDOR_ALPHA))
-                        .stroke(egui::Stroke::NONE)
-                        .name(format!(
-                            "Past the deflection ceiling ({ceiling_mm:.4} mm/tooth)"
-                        )),
+                        .color(wash(tokens::DANGER, CORRIDOR_LINE_ALPHA))
+                        .width(CORRIDOR_LINE_WIDTH)
+                        .name(format!("Deflection ceiling ({ceiling_mm:.4} mm/tooth)")),
                     );
                 }
             }
-            // 1. Band wedge polygon — clipped at machine RPM cap and
-            //    feed cap so the band visually stops at the wall.
-            // §2.6 rule 2: the vendor band is a RANGE, not a verdict. It
-            // shared its green with `OK` at six sites and four alphas, so a
-            // reader could not tell the band from a pass. It is one chart
-            // series now.
-            if let Some((lo, hi)) = band {
-                let band_poly =
-                    wedge_polygon(lo, hi, env.spindle_max_rpm, flutes, env.max_feed_mm_min);
-                plot_ui.polygon(
-                    Polygon::new("", band_poly)
-                        .fill_color(wash(chart::BAND, 50))
-                        .stroke(egui::Stroke::new(1.0_f32, wash(chart::BAND, 120)))
-                        .name(format!("Vendor band {lo:.4}–{hi:.4} mm/tooth")),
+            // 1. The suggested advance per tooth: ONE solid iso-advance line,
+            //    clipped at the machine RPM cap and feed cap. It goes through
+            //    the `Recommended` diamond.
+            //
+            //    §2.6 rule 2: the vendor data is a RANGE or a VALUE, not a
+            //    verdict, so these lines take a chart series colour and not
+            //    the `OK` green.
+            if let Some(cl) = suggested {
+                plot_ui.line(
+                    Line::new(
+                        "",
+                        iso_line(cl, env.spindle_max_rpm, flutes, env.max_feed_mm_min),
+                    )
+                    .color(chart::BAND)
+                    .width(SUGGESTED_LINE_WIDTH)
+                    .name(format!("Suggested {cl:.4} mm/tooth")),
                 );
-                // W6: the inline "VENDOR BAND 0.0500–0.0850 mm advance/tooth"
-                // text that used to sit here is deleted. It restated the
-                // legend's first row word for word, and it was painted at a
-                // fixed fraction of the band's own extent, so on a wide band
-                // it landed on top of the iso-advance lines it was labelling.
             }
-            // 2. The band's EDGES are the min and max iso-advance lines,
-            //    and its midpoint is the mid line. Drawing all three on top
-            //    of the wedge drew the same fact three times, in a
-            //    three-step colour scale, under a name the product owner
-            //    could not read: "I don't really know what the iso advance
-            //    and similar is" (2026-09-16).
+            // 2. The vendor limits: two fainter lines in the same colour,
+            //    ONLY when the row publishes both. No fill between them.
             //
-            //    The ±5 % admitted ribbons went with them. They are the
-            //    optimizer's tolerance, which is detail about a different
-            //    tool's behaviour, not about this cut. The band's legend row
-            //    carries the numbers.
-            //
-            //    What is left is one region: the vendor's chipload range.
+            //    Operator ruling, 2026-09-23: "Always just have the straight
+            //    line, center or suggested, then add more faint bands around
+            //    it, no shading, but only if they exist". A row that
+            //    publishes one value gets no band lines. The chart does not
+            //    make a band from one value.
+            if let Some((lo, hi)) = band {
+                for limit in [lo, hi] {
+                    plot_ui.line(
+                        Line::new(
+                            "",
+                            iso_line(limit, env.spindle_max_rpm, flutes, env.max_feed_mm_min),
+                        )
+                        .color(wash(chart::BAND, BAND_LIMIT_ALPHA))
+                        .width(BAND_LIMIT_WIDTH)
+                        .name(format!("Vendor limit {limit:.4} mm/tooth")),
+                    );
+                }
+            }
 
-            // 3. Machine envelope — shaded forbidden zones, walls, labels.
+            // 3. Machine envelope — the walls and the axis marks.
             draw_machine_envelope(plot_ui, env, rpm_axis_max, feed_axis_max);
 
             // 4. The vendor's RPM window, marked ON the RPM axis.
@@ -831,9 +871,10 @@ fn draw_chart_c_legend(
     corridor: Option<&Corridor>,
 ) {
     let band = vendor_band(explain);
+    let single = vendor_single_value(explain);
     let mut entries: Vec<LegendEntry> = Vec::new();
 
-    // Marks and the one region, and nothing else.
+    // The marks and the advance-per-tooth lines, and nothing else.
     //
     // This listed up to ELEVEN rows: the band, a ±5 % tolerance, three
     // iso-advance lines, the vendor RPM window, the machine's forbidden
@@ -845,12 +886,26 @@ fn draw_chart_c_legend(
     // So the legend answers "what am I looking at". Where each number CAME
     // FROM is a different question, and it is asked far less often, so it
     // lives on one row's hover at the bottom.
+    //
+    // The chart draws lines, not shading (G-CHARTLINES), so the range swatch
+    // is a line. The range row appears ONLY when the row publishes both
+    // limits. A one-value row prints its one value and says so; it claims no
+    // range. The suggested line goes through the `Recommended` diamond, so
+    // its advance per tooth is on that row and it gets no row of its own.
     if let Some((lo, hi)) = band {
         entries.push(LegendEntry::new(
-            LegendSwatch::FilledSquare,
-            wash(chart::BAND, 200),
+            LegendSwatch::Line,
+            wash(chart::BAND, BAND_LIMIT_ALPHA),
             "Vendor range",
             format!("{lo:.4}\u{2013}{hi:.4} mm/tooth"),
+        ));
+    } else if let Some(value) = single {
+        // No swatch colour of its own: the chart draws no line for it.
+        entries.push(LegendEntry::new(
+            LegendSwatch::Blank,
+            theme::TEXT_FAINT,
+            "Vendor value",
+            format!("{value:.4} mm/tooth \u{00B7} row publishes one value"),
         ));
     }
     if let Some(rpm) = current.spindle_rpm {
@@ -878,10 +933,16 @@ fn draw_chart_c_legend(
         LegendSwatch::Diamond,
         tokens::DIAGRAM_INK,
         "\u{25C6} Recommended",
-        format!(
-            "{:.0} RPM \u{00B7} {:.0} mm/min",
-            explain.recommended.rpm, explain.recommended.feed_rate_mm_min
-        ),
+        match suggested_advance_mm(explain) {
+            Some(cl) => format!(
+                "{:.0} RPM \u{00B7} {:.0} mm/min \u{00B7} {cl:.4} mm/tooth, the solid line",
+                explain.recommended.rpm, explain.recommended.feed_rate_mm_min
+            ),
+            None => format!(
+                "{:.0} RPM \u{00B7} {:.0} mm/min",
+                explain.recommended.rpm, explain.recommended.feed_rate_mm_min
+            ),
+        },
     ));
 
     ui.add_space(4.0);
@@ -952,7 +1013,7 @@ fn draw_sources_row(ui: &mut egui::Ui, explain: &FeedsExplain, corridor: Option<
 /// The corridor's two clauses on the `Sources` hover.
 ///
 /// Every branch says something. The ceiling in particular is named even when
-/// it is not drawn, because "the upper wedge is missing" and "the tool is
+/// it is not drawn, because "the ceiling line is missing" and "the tool is
 /// nowhere near its force limit" are the same fact, and the operator can
 /// only read the second one here.
 fn push_corridor_clauses(hover: &mut String, corridor: Option<&Corridor>) {
@@ -965,8 +1026,9 @@ fn push_corridor_clauses(hover: &mut String, corridor: Option<&Corridor>) {
         return;
     };
     hover.push_str(&format!(
-        "\nRubbing floor: {:.4} mm/tooth, from the vendor band. Below it the \
-         tool burnishes instead of cutting.",
+        "\nRubbing floor: {:.4} mm/tooth, the global floor, or the vendor \
+         maximum when that is lower. Below it the tool burnishes instead of \
+         cutting.",
         corridor.floor_mm
     ));
     match corridor.ceiling {
@@ -1042,7 +1104,10 @@ fn legend_row(ui: &mut egui::Ui, entry: &LegendEntry) {
 
 #[derive(Debug, Clone, Copy)]
 enum LegendSwatch {
-    FilledSquare,
+    /// A short horizontal line, for a line on the chart.
+    Line,
+    /// No mark. The row names a value the chart does not draw.
+    Blank,
     Circle,
     Diamond,
 }
@@ -1070,15 +1135,13 @@ fn draw_legend_swatch(ui: &mut egui::Ui, swatch: LegendSwatch, color: egui::Colo
     let (rect, _resp) = ui.allocate_exact_size(size, egui::Sense::hover());
     let painter = ui.painter();
     match swatch {
-        LegendSwatch::FilledSquare => {
-            painter.rect_filled(rect, 2.0, color);
-            painter.rect_stroke(
-                rect,
-                2.0,
-                egui::Stroke::new(0.5_f32, color.linear_multiply(1.4)),
-                egui::StrokeKind::Middle,
+        LegendSwatch::Line => {
+            painter.line_segment(
+                [rect.left_center(), rect.right_center()],
+                egui::Stroke::new(2.0_f32, color),
             );
         }
+        LegendSwatch::Blank => {}
         LegendSwatch::Circle => {
             painter.circle_filled(rect.center(), 4.0, color);
         }
@@ -1099,48 +1162,29 @@ fn draw_legend_swatch(ui: &mut egui::Ui, swatch: LegendSwatch, color: egui::Colo
     }
 }
 
-/// Build the polygon for a chipload band wedge between `cl_lo` and
-/// `cl_hi`, clipped to the chart's RPM and feed extents.
-fn wedge_polygon(
-    cl_lo: f64,
-    cl_hi: f64,
-    rpm_max: f64,
-    flutes: f64,
-    feed_cap: f64,
-) -> PlotPoints<'static> {
-    // The wedge has two sides:
-    //   lower: feed = cl_lo * rpm * flutes
-    //   upper: feed = cl_hi * rpm * flutes
-    // We clip both at rpm_max and feed_cap.
-    let lo_line = clip_iso_line(cl_lo, rpm_max, flutes, feed_cap);
-    let hi_line = clip_iso_line(cl_hi, rpm_max, flutes, feed_cap);
-    // Stitch into a polygon: low-line forward, high-line reversed.
-    let mut pts: Vec<[f64; 2]> = lo_line;
-    pts.extend(hi_line.into_iter().rev());
-    PlotPoints::from(pts)
+/// The suggested advance per tooth (mm/tooth): the recommended feed over
+/// the recommended RPM and the flute count.
+///
+/// This is the one solid line on the nomogram, and it goes through the
+/// `Recommended` diamond. `None` when the RPM is not positive or the value
+/// is not finite, because then there is no ray to draw.
+fn suggested_advance_mm(explain: &FeedsExplain) -> Option<f64> {
+    let r = &explain.recommended;
+    let flutes = explain.flute_count.max(1) as f64;
+    if r.rpm <= 0.0 {
+        return None;
+    }
+    let cl = r.feed_rate_mm_min / (r.rpm * flutes);
+    (cl.is_finite() && cl > 0.0).then_some(cl)
 }
 
-/// The region ABOVE one iso-chipload ray, clipped to the same extents.
+/// One iso-advance line: `feed = cl · rpm · flutes`, from the origin,
+/// clipped to the chart's RPM and feed extents.
 ///
-/// [`wedge_polygon`] bounds a band BETWEEN two chiploads. The deflection
-/// ceiling has no upper partner — everything above it is out — so the ray is
-/// clipped the same way and the chart's own top-left corner closes the
-/// polygon.
-fn above_iso_line_polygon(
-    cl: f64,
-    rpm_max: f64,
-    flutes: f64,
-    feed_cap: f64,
-) -> PlotPoints<'static> {
-    let mut pts = clip_iso_line(cl, rpm_max, flutes, feed_cap);
-    // `clip_iso_line` already ends at the feed cap when the slope binds
-    // first; when the RPM cap binds first, the right-hand corner is still
-    // needed to close the region against the top of the chart.
-    if pts.last().is_some_and(|[_, feed]| *feed < feed_cap) {
-        pts.push([rpm_max, feed_cap]);
-    }
-    pts.push([0.0, feed_cap]);
-    PlotPoints::from(pts)
+/// The chart draws every advance-per-tooth quantity as one of these lines.
+/// It draws no filled region between two of them (G-CHARTLINES).
+fn iso_line(cl: f64, rpm_max: f64, flutes: f64, feed_cap: f64) -> PlotPoints<'static> {
+    PlotPoints::from(clip_iso_line(cl, rpm_max, flutes, feed_cap))
 }
 
 fn clip_iso_line(cl: f64, rpm_max: f64, flutes: f64, feed_cap: f64) -> Vec<[f64; 2]> {
@@ -1155,8 +1199,9 @@ fn clip_iso_line(cl: f64, rpm_max: f64, flutes: f64, feed_cap: f64) -> Vec<[f64;
         } else {
             rpm_max
         };
+        // The line stops where it meets the feed cap. It does not run on
+        // along the cap: that segment is the machine wall, not this line.
         out.push([rpm_cross, feed_cap]);
-        out.push([rpm_max, feed_cap]);
     }
     out
 }
@@ -1368,16 +1413,24 @@ fn hover_readout_chipload(rpm: f64, feed_mm_min: f64, flutes: f64) -> f64 {
     }
 }
 
+/// The hover and explore verdict for one advance per tooth.
+///
+/// With a published band it reads both sides. With ONE published value it
+/// reads the high side only: the row gives no floor, so this function makes
+/// no burn claim. The high side stays hard for every source, as in the
+/// post-simulation gate. With no value it abstains.
 fn chipload_verdict(cl: f64, explain: &FeedsExplain) -> (&'static str, egui::Color32) {
-    let band = explain.matched_row.as_ref().and_then(|row| {
-        match (row.chip_load_min_mm, row.chip_load_max_mm) {
-            (Some(lo), Some(hi)) => Some((lo, hi)),
-            (None, Some(hi)) => Some((hi * 0.7, hi)),
-            _ => None,
-        }
-    });
-    let Some((lo, hi)) = band else {
-        return ("no band", theme::TEXT_DIM);
+    let Some((lo, hi)) = vendor_band(explain) else {
+        return match vendor_single_value(explain) {
+            Some(value) if cl > value * 1.05 => {
+                ("BREAK risk (above the published value)", theme::ERROR)
+            }
+            Some(value) if cl > value => {
+                ("above the published value (5% admit)", theme::WARNING_MILD)
+            }
+            Some(_) => ("at or under the published value", theme::TEXT_DIM),
+            None => ("no vendor value", theme::TEXT_DIM),
+        };
     };
     if cl < lo * 0.95 {
         ("BURN risk (below band)", theme::ERROR)

@@ -26,7 +26,7 @@
 //! correctness and this package is already large. Move it when the file is
 //! next opened.
 
-use egui_plot::{Line, PlotPoints, Polygon};
+use egui_plot::{Line, PlotPoints};
 use rs_cam_core::feeds::{
     FeedsExplain, ToolGeometryHint, vendor_lut::HardnessKind, vendor_lut::MaterialFamily,
     vendor_lut::ToolFamily,
@@ -46,7 +46,9 @@ use crate::ui::tokens;
 pub(crate) mod chart {
     use crate::ui::tokens;
 
-    /// The vendor advance-per-tooth range.
+    /// The advance-per-tooth series. The suggested value is ONE solid line
+    /// in this colour. The vendor limits are two fainter lines in the same
+    /// colour, and the chart draws them only when the row publishes both.
     pub const BAND: egui::Color32 = tokens::CHART_SERIES[1];
     /// The vendor RPM window, marked on the RPM axis.
     pub const RPM_RANGE: egui::Color32 = tokens::CHART_SERIES[3];
@@ -55,13 +57,15 @@ pub(crate) mod chart {
     // ADMITTED, ISO_MIN, ISO_MID and ISO_MAX were deleted on 2026-09-16 with
     // the series they coloured: three iso-advance lines that restated the
     // band's own edges and midpoint, and a ±5 % ribbon pair. Four colours
-    // for one fact the wedge already draws.
+    // for one fact. The shaded wedge went on 2026-09-23 (ruling G-CHARTLINES):
+    // the chart draws lines, not shading.
 }
 
-/// A token at a given alpha, for a chart wash.
+/// A token at a given alpha, for a fainter chart line.
 ///
-/// Every translucent fill in these charts is one of these, so the hue stays a
-/// token and only the alpha is written at the call site.
+/// Every translucent colour in these charts is one of these, so the hue stays
+/// a token and only the alpha is written at the call site. The charts draw no
+/// filled region (ruling G-CHARTLINES, 2026-09-23).
 pub(crate) fn wash(base: egui::Color32, alpha: u8) -> egui::Color32 {
     egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), alpha)
 }
@@ -173,16 +177,34 @@ pub(crate) fn ball_tip_radius(explain: &FeedsExplain) -> Option<f64> {
     }
 }
 
-/// Vendor chipload band `(min, max)` for the matched row, with the same
-/// `None`-max fallback the charts use. `None` when no row matched.
+/// The vendor chipload band `(min, max)` that the matched row PUBLISHES.
+///
+/// `None` when no row matched, when the row publishes a maximum only, and
+/// when the row publishes one point (`min == max`). The rule is
+/// `FeedsExplain::published_chipload_band` in core.
+///
+/// Until 2026-09-23 this made a band from a maximum alone, as `0.7 × max`
+/// to `max`. That lower limit was invented: the row did not publish it, and
+/// the chart drew it as if it had. Operator ruling (G-CHARTLINES): draw band
+/// lines "only if they exist".
 pub(crate) fn vendor_band(explain: &FeedsExplain) -> Option<(f64, f64)> {
-    explain.matched_row.as_ref().and_then(|row| {
-        match (row.chip_load_min_mm, row.chip_load_max_mm) {
-            (Some(lo), Some(hi)) => Some((lo, hi)),
-            (None, Some(hi)) => Some((hi * 0.7, hi)),
-            _ => None,
-        }
-    })
+    explain.published_chipload_band()
+}
+
+/// The one chipload value (mm/tooth) that a matched row publishes when it
+/// publishes no band.
+///
+/// `None` when the row publishes a band (use [`vendor_band`]), when no row
+/// matched, or when the row publishes no chipload. A max-only row gives its
+/// maximum. A point row gives its one point.
+pub(crate) fn vendor_single_value(explain: &FeedsExplain) -> Option<f64> {
+    if vendor_band(explain).is_some() {
+        return None;
+    }
+    let row = explain.matched_row.as_ref()?;
+    row.chip_load_max_mm
+        .or(row.chip_load_min_mm)
+        .filter(|value| value.is_finite() && *value > 0.0)
 }
 
 /// For tapered-ball / V-bit tools, describe the engaged cutting diameter
@@ -217,9 +239,13 @@ pub(crate) fn engaged_diameter_context(
 }
 
 /// Render the shared machine-envelope overlay used by Chart C and the
-/// project scatter: shaded forbidden zones beyond max RPM and max feed
-/// (plus the left-side dim zone below spindle min RPM when non-zero),
-/// solid red borders on the cap walls, and value labels.
+/// project scatter: solid red walls at max RPM and max feed, and axis marks
+/// for the parts of each axis past the caps and below the spindle minimum.
+///
+/// The envelope draws lines only. It drew three shaded regions until
+/// 2026-09-23; the operator ruled "no shading" for these charts
+/// (G-CHARTLINES). The wall and the axis mark already say where each limit
+/// is.
 pub(crate) fn draw_machine_envelope(
     plot_ui: &mut egui_plot::PlotUi,
     env: &rs_cam_core::feeds::MachineEnvelope,
@@ -229,72 +255,8 @@ pub(crate) fn draw_machine_envelope(
     // These two ARE verdicts — beyond them the machine cannot go — so the
     // envelope keeps the danger hue that every category in these charts just
     // gave up. It used to be a hand-mixed red one step off `DANGER`.
-    let forbidden_fill = wash(tokens::DANGER, 35);
     let forbidden_edge = wash(tokens::DANGER, 200);
 
-    if axis_rpm_max > env.spindle_max_rpm {
-        plot_ui.polygon(
-            Polygon::new(
-                "",
-                PlotPoints::from(vec![
-                    [env.spindle_max_rpm, 0.0],
-                    [axis_rpm_max, 0.0],
-                    [axis_rpm_max, axis_feed_max],
-                    [env.spindle_max_rpm, axis_feed_max],
-                ]),
-            )
-            .fill_color(forbidden_fill)
-            .stroke(egui::Stroke::new(0.0_f32, egui::Color32::TRANSPARENT))
-            .name(format!(
-                "Past machine cap ({} RPM)",
-                env.spindle_max_rpm as i64
-            )),
-        );
-    }
-    if axis_feed_max > env.max_feed_mm_min {
-        plot_ui.polygon(
-            Polygon::new(
-                "",
-                PlotPoints::from(vec![
-                    [0.0, env.max_feed_mm_min],
-                    [axis_rpm_max, env.max_feed_mm_min],
-                    [axis_rpm_max, axis_feed_max],
-                    [0.0, axis_feed_max],
-                ]),
-            )
-            .fill_color(forbidden_fill)
-            .stroke(egui::Stroke::new(0.0_f32, egui::Color32::TRANSPARENT))
-            .name(format!(
-                "Past machine feed ({} mm/min)",
-                env.max_feed_mm_min as i64
-            )),
-        );
-    }
-    // Below the spindle minimum is the SOFT half of the same envelope
-    // verdict the wall above carries, so it reads as caution rather than as
-    // the inert grey it used to mix, which said nothing at all.
-    if env.spindle_min_rpm > 0.0 {
-        plot_ui.polygon(
-            Polygon::new(
-                "",
-                PlotPoints::from(vec![
-                    [0.0, 0.0],
-                    [env.spindle_min_rpm, 0.0],
-                    [env.spindle_min_rpm, axis_feed_max],
-                    [0.0, axis_feed_max],
-                ]),
-            )
-            .fill_color(wash(tokens::CAUTION, 25))
-            .stroke(egui::Stroke::new(0.0_f32, egui::Color32::TRANSPARENT))
-            .name(format!(
-                "Below spindle min ({} RPM)",
-                env.spindle_min_rpm as i64
-            )),
-        );
-        // The shaded region and the axis run below already say where the
-        // spindle minimum is. A third full-height rule in the caution colour
-        // made the left third of the chart the heaviest thing on it.
-    }
     plot_ui.line(
         Line::new(
             "",

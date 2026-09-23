@@ -95,6 +95,29 @@ impl FeedsExplain {
             .as_ref()
             .is_some_and(|row| row.is_extrapolated)
     }
+
+    /// The chipload band `(min, max)` (mm/tooth) that the matched row
+    /// PUBLISHES, after the diameter and hardness scaling.
+    ///
+    /// The result is `Some` only when the row publishes both limits, both
+    /// are finite and positive, and `min < max`. The result is `None` in
+    /// these conditions:
+    ///
+    /// - No row matched.
+    /// - The row publishes a maximum only. Since the R5 row fix many
+    ///   flat-end pocket and adaptive rows publish one value per size.
+    /// - The row publishes one point (`min == max`). This is the rule that
+    ///   `tool_load::chipload` uses for `ChipBoundsSource::VendorLutPointPreset`
+    ///   (`lo >= hi`), so the two surfaces agree on what a band is.
+    ///
+    /// This function never makes a band from one value. A caller that has
+    /// no band shows the one published value, or nothing.
+    #[must_use]
+    pub fn published_chipload_band(&self) -> Option<(f64, f64)> {
+        let row = self.matched_row.as_ref()?;
+        let (lo, hi) = row.chip_load_min_mm.zip(row.chip_load_max_mm)?;
+        (lo.is_finite() && hi.is_finite() && lo > 0.0 && lo < hi).then_some((lo, hi))
+    }
 }
 
 /// Build the explanation payload for the given input. Runs the same

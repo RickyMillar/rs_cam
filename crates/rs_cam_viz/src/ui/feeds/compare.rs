@@ -631,13 +631,21 @@ fn efficiency_hover(efficiency: &CutEfficiency) -> String {
         efficiency.specific_energy_j_per_mm3,
         efficiency.ploughing_share * 100.0,
     );
+    // A range only when the row publishes two different limits
+    // (G-CHARTLINES). A one-point row prints its one value.
     match efficiency.band {
-        Some(band) => out.push_str(&format!(
+        Some(band) if band.min_mm_per_tooth < band.max_mm_per_tooth => out.push_str(&format!(
             "Vendor range: {:.3}–{:.3} mm/tooth, from the matched vendor row.\n",
             band.min_mm_per_tooth, band.max_mm_per_tooth,
         )),
+        Some(band) => out.push_str(&format!(
+            "Vendor value: {:.3} mm/tooth. The matched row publishes one value, \
+             not a range.\n",
+            band.max_mm_per_tooth,
+        )),
         None => out.push_str(
-            "Vendor range: no row matched this tool \u{00D7} material, so there \
+            "Vendor range: none published \u{2014} no row matched this tool \
+             \u{00D7} material, or the row publishes one limit only, so there \
              is no wear or time ratio to quote.\n",
         ),
     }

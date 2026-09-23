@@ -1,7 +1,6 @@
 # `ui/feeds/` — the feeds and speeds surfaces
 
-The Explore window and the per-operation inspector card. The entry point is
-`ui::feeds::mod`.
+The Explore window and the per-operation inspector card; entry `ui::feeds::mod`.
 
 ## Files
 
@@ -14,16 +13,16 @@ The Explore window and the per-operation inspector card. The entry point is
 
 ## Invariants
 
-- The Feeds tab NEVER auto-locks a numeric field. The operator applies a
+- The Feeds tab NEVER auto-locks a numeric field; the operator applies a
   recommendation through an explicit Suggest button.
-- The apply writes through the core command path, and the write stales the
-  result.
+- The apply writes through the core command path; the write stales the result.
 - A nomogram readout outside the measured band must abstain, not extrapolate.
 - The window fits the screen at the smallest supported size.
-- Power reads through `feeds::power_at_operating_point` on the operation,
-  never `FeedsResult::power_kw` and never a feed-scaled copy of it. The card's
-  power row is 0 to `PowerFigure::available_kw`; the kW pair and the
-  provenance are on its hover.
+- A chart draws one line at the suggested value and fainter band lines
+  only when the row publishes both limits; no shading, no invented width.
+- Power reads through `feeds::power_at_operating_point` on the operation, never
+  `FeedsResult::power_kw` or a feed-scaled copy. The card's power row is 0 to
+  `PowerFigure::available_kw`; the kW pair and the provenance are on its hover.
 
 ## Sentries
 
@@ -33,6 +32,7 @@ The Explore window and the per-operation inspector card. The entry point is
 - `cargo test -p rs_cam_viz -q --test the_nomogram_readout_abstains_g_hoverbound`
 - `cargo test -p rs_cam_viz -q --test the_speeds_apply_holds_the_cut_g_speedsonly`
 - `cargo test -p rs_cam_viz -q --test the_chipload_verdict_is_one_row_g_chipverdict`
+- `cargo test -p rs_cam_viz -q --test feeds_charts_draw_lines_not_shading_g_chartlines`
 
 ## Do not
 
