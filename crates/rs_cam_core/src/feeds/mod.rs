@@ -36,8 +36,8 @@ pub mod vendor_normalize;
 pub use efficiency::{ChipVerdict, CutEfficiency, cut_efficiency};
 pub use explain_payload::{FeedsExplain, MachineEnvelope, explain as explain_feeds};
 pub use feed_explanation::{
-    ADVANCE_PER_TOOTH, AchievedFeedStage, ClampReason, CommandedStage, FeedExplanation,
-    GateObservationStage, LutBandStage, ObservedStatistic,
+    ADVANCE_PER_TOOTH, AchievedFeedStage, CommandedStage, FeedExplanation, GateObservationStage,
+    LutBandStage, ObservedStatistic,
 };
 pub use operating_point::{PowerFigure, PowerUnmodeled, power_at_operating_point};
 pub use predict::{
@@ -1228,71 +1228,6 @@ pub fn rubbing_floor(band: Option<ChiploadBounds>) -> (f64, RubbingFloorSource) 
 #[must_use]
 pub fn effective_rubbing_floor(band: Option<ChiploadBounds>) -> f64 {
     rubbing_floor(band).0
-}
-
-/// Name the floor [`effective_rubbing_floor`] gives at this band, as a
-/// [`ClampReason`]. Checkpoint K (d2).
-///
-/// Pure naming: it applies nothing and decides nothing. Since ruling R4
-/// WP2a (2026-09-23) no engine step lifts a feed, so only
-/// [`recipe_parked_by_rubbing_floor`] calls it. WP2b deletes both.
-#[must_use]
-pub fn rubbing_floor_clamp_reason(band: Option<ChiploadBounds>) -> ClampReason {
-    // Ruling R4 Q9: only the band MAXIMUM arm parks a recipe on the band
-    // ceiling. A floor at the band minimum is the band floor, not its
-    // ceiling, so it takes the ordinary arm.
-    let (floor, source) = rubbing_floor(band);
-    if source == RubbingFloorSource::BandMaximum {
-        ClampReason::RubbingFloorCappedToBandCeiling {
-            floor_mm_per_tooth: floor,
-            global_floor_mm_per_tooth: RUBBING_FLOOR_MM_TOOTH,
-        }
-    } else {
-        ClampReason::RubbingFloor {
-            floor_mm_per_tooth: floor,
-        }
-    }
-}
-
-/// **Post-hoc: is this commanded advance sitting exactly where the
-/// rubbing-floor clamp used to put one?** Checkpoint K (c2)/(d2).
-///
-/// Since ruling R4 WP2a (2026-09-23) no engine step parks a recipe on the
-/// floor, so a hit here is a coincidence of the operating point. WP2b
-/// deletes this function with the (c2) arm of the chipload gate.
-///
-/// Asked by the post-simulation chipload gate, which sees a finished
-/// recipe and not the Suggest run that produced it. It reads the same
-/// [`effective_rubbing_floor`] the clamp applies — so it is one decision
-/// consulted twice, not a mirror of Step-9b that can drift — and the
-/// "sits on" test is [`crate::tool_load::boundary::is_at_bound`], the
-/// same epsilon the gate's own comparisons use.
-///
-/// # What it cannot tell you, stated
-///
-/// It identifies the **operating point**, not its author. A feed an
-/// operator typed by hand that happens to land on the identical value is
-/// indistinguishable from a clamped one. For the consumer this exists
-/// for — deciding whether a verdict *on the bound* should read `clamped`
-/// rather than `exceeds` — that is the right answer either way: the
-/// engine will not command past a band ceiling, so a recipe resting on
-/// one is at the operating point the engine itself would choose.
-///
-/// The faithful channel is the recipe's own
-/// [`FeedsWarning::ChiploadBelowRubbingFloor`], which no shipped structure
-/// carries from Suggest to the gate. Recorded as NOT EXERCISED in the
-/// A-7 wave entry with that plumbing as the resume condition.
-#[must_use]
-pub fn recipe_parked_by_rubbing_floor(
-    commanded_fpt_mm: f64,
-    band: Option<ChiploadBounds>,
-) -> Option<ClampReason> {
-    if commanded_fpt_mm <= 0.0 || !commanded_fpt_mm.is_finite() {
-        return None;
-    }
-    let floor = effective_rubbing_floor(band);
-    crate::tool_load::boundary::is_at_bound(commanded_fpt_mm, floor)
-        .then(|| rubbing_floor_clamp_reason(band))
 }
 
 /// Diameter-tiered RPM envelope for wood-drilling ops. The drill RPM

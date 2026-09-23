@@ -82,7 +82,6 @@ fn chipload_within() -> ChiploadVerdict {
         confidence: Confidence::Validated,
         entry_spikes: Vec::new(),
         burn_advisory: None,
-        ceiling_advisory: None,
     }
 }
 

@@ -1,45 +1,37 @@
-//! **Checkpoint K (c2) + (d2), re-blessed for ruling R4 WP2a — a recipe
-//! below the rubbing floor READS "below the rubbing floor", and a recipe
-//! above the band reads Exceeds.**
+//! **A recipe below the rubbing floor READS "below the rubbing floor", and
+//! a recipe above the band reads Exceeds.** Re-blessed for ruling R4 WP2a
+//! and WP2b.
 //!
-//! Until 2026-09-23 this file pinned the other side of the floor lift:
-//! Suggest's Step-9b clamp parked a sub-Ø2 tool's advance exactly on the band
-//! ceiling, and the gate reported that recipe CLAMPED, not EXCEEDED. Ruling R4
-//! WP2a (`planning/feeds_matrix_2026-09-23/R4_AGGRESSIVENESS_SPEC.md` §3.6)
-//! removed the lift, so no recipe is clamped any more. Also, the R5 printed
-//! Onsrud 77-100 rows (3885c8bf..bab9a236) moved the gate's own B3 band to a
-//! maximum of 0.0559 mm/tooth, above the floor, so the collapse this file
-//! needed does not happen on the shipped LUT.
+//! Until 2026-09-23 this file pinned the other side of the floor lift
+//! (Checkpoint K (c2) and (d2)). Suggest's Step-9b clamp parked a sub-Ø2
+//! tool's advance exactly on the band ceiling, and the gate reported that
+//! recipe CLAMPED, not EXCEEDED. Ruling R4 WP2a
+//! (`planning/feeds_matrix_2026-09-23/R4_AGGRESSIVENESS_SPEC.md` §3.6)
+//! removed the lift, so no recipe is clamped. WP2b deleted the machinery
+//! that explained the lift: `ClampReason`, `CommandedStage::clamped_to`,
+//! `recipe_parked_by_rubbing_floor` and the gate's ceiling advisory. The
+//! tests of the advisory precondition and of the clamp identifier went
+//! with them.
 //!
-//! What it protects now:
+//! What stays, and why:
 //!
 //! 1. **Below the floor** (the calculator on an explicit synthetic sub-floor
 //!    row, the `sub_floor_lut()` pattern of 827f383e): the recipe ships its
-//!    computed advance, the feeds adapter renders the Caution
+//!    computed advance, and the feeds adapter renders the Caution
 //!    `feeds.chipload_below_floor` "Advance per tooth below the rubbing
-//!    floor ... The feed is not raised", and the post-hoc
-//!    `recipe_parked_by_rubbing_floor` does not claim a clamp.
+//!    floor ... The feed is not raised". This is the operator's only record
+//!    of a sub-floor recipe, so it must not read as a clamp.
 //! 2. **Above the band** (the gate on the shipped row): a feed 5 % over the
 //!    band maximum reads `Exceeds(High)` and renders as too high; a feed ON
-//!    the ceiling reads `Within` with NO ceiling advisory, because nothing
-//!    parked it there.
-//! 3. The (c2) advisory precondition and the post-hoc identifier.
-//!    They stay until WP2b deletes `ClampReason`, `recipe_parked_by_rubbing_floor`
-//!    and the (c2) arm; WP2b retires arm 3.
+//!    the ceiling reads `Within`. This keeps the boundary contract: a real
+//!    exceedance trips, and a feed on the bound does not.
 //!
-//! Ruling R4 Q9 (2026-09-24) moved the floor to `min(0.025, band min)`. Two
-//! consequences here:
-//!
-//! - Arm 1: the synthetic band is 0.00378–0.00756, so the midpoint is 1.5 x
-//!   the minimum and the computed advance (× 0.75 before R4 WP3) is at
-//!   least 1.125 x the minimum: inside the band, no warning. The arm now
-//!   runs on a machine with a 50 mm/min cutting ceiling. That puts the
-//!   advance under the band minimum (50 / (2 x 8000 rpm) = 0.0031 at the
-//!   lowest RPM of the generic router, and less at any higher RPM).
-//! - Arm 3: the band-ceiling regime exists only on a band with no minimum
-//!   (`min_mm_per_tooth == 0.0`, the gate's maximum-only band). A band with
-//!   a minimum below 0.025 puts the floor on that minimum, and the
-//!   identifier takes the ordinary arm.
+//! Ruling R4 Q9 (2026-09-24) moved the floor to `min(0.025, band min)`. The
+//! synthetic band is 0.00378–0.00756, so the computed advance is inside the
+//! band and does not warn. Arm 1 therefore runs on a machine with a
+//! 50 mm/min cutting ceiling. That puts the advance under the band minimum
+//! (50 / (2 x 8000 rpm) = 0.0031 at the lowest RPM of the generic router,
+//! and less at any higher RPM).
 
 #![allow(
     clippy::unwrap_used,
@@ -57,9 +49,8 @@ use rs_cam_core::feeds::vendor_lut::{
     EvidenceGrade, LutOperationFamily, LutPassRole, ObservationKind, VendorLut,
 };
 use rs_cam_core::feeds::{
-    ChiploadBounds, FeedsInput, FeedsResult, OperationFamily, PassRole, RUBBING_FLOOR_MM_TOOTH,
-    SetupContext, SpindleStrategy, ToolGeometryHint, calculate, effective_rubbing_floor,
-    embedded_vendor_lut, recipe_parked_by_rubbing_floor,
+    FeedsInput, FeedsResult, OperationFamily, PassRole, RUBBING_FLOOR_MM_TOOTH, SetupContext,
+    SpindleStrategy, ToolGeometryHint, calculate, embedded_vendor_lut,
 };
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::MachineProfile;
@@ -159,8 +150,8 @@ fn verdict_and_explanation(
 
 /// The same evaluation, rendered through the **core diagnostics
 /// adapter** — the one surface the CLI report and MCP `get_diagnostics`
-/// both read. Rule 3 (render before verdict): the point of (c2)/(d2) is
-/// what an operator SEES, so the test prints it.
+/// both read. Rule 3 (render before verdict): the point is what an
+/// operator SEES, so the test prints it.
 fn rendered_diagnostics(feed: f64) -> Vec<String> {
     let tool = b3_tool();
     let material = Material::SolidWood {
@@ -312,32 +303,21 @@ fn a_recipe_below_the_floor_reads_below_the_floor_and_is_not_clamped() {
         !floor_line.to_lowercase().contains("clamp"),
         "the floor finding must not word the recipe as clamped: {floor_line}"
     );
-    assert!(
-        recipe_parked_by_rubbing_floor(fpt, Some(band)).is_none(),
-        "the post-hoc identifier must not claim a clamp: {fpt:.9} is under the \
-         floor {:.9}, not on it",
-        effective_rubbing_floor(Some(band))
-    );
 }
 
 /// Arm 2. On the shipped row the gate's band is above the floor. A feed ON
-/// the ceiling is `Within` with no ceiling advisory; a feed 5 % over reads
-/// `Exceeds(High)` and renders as an exceedance.
+/// the ceiling is `Within`; a feed 5 % over reads `Exceeds(High)` and
+/// renders as an exceedance.
 #[test]
 fn a_recipe_above_the_band_reads_exceeds_and_the_ceiling_reads_within() {
     let band_max = gate_band_max();
     println!("gate band max on the shipped row: {band_max:.6}");
 
     let (on_ceiling, _) = verdict_and_explanation(band_max * divisor());
-    match &on_ceiling {
-        ChiploadVerdict::Within {
-            ceiling_advisory, ..
-        } => assert!(
-            ceiling_advisory.is_none(),
-            "nothing parked this recipe on the ceiling, so no advisory: {on_ceiling:?}"
-        ),
-        other => panic!("a feed ON the ceiling must be Within (b1): {other:?}"),
-    }
+    assert!(
+        matches!(on_ceiling, ChiploadVerdict::Within { .. }),
+        "a feed ON the ceiling must be Within (b1): {on_ceiling:?}"
+    );
 
     let over = rendered_diagnostics(band_max * 1.05 * divisor());
     let over_text = over.join("\n");
@@ -357,108 +337,4 @@ fn a_recipe_above_the_band_reads_exceeds_and_the_ceiling_reads_within() {
             ..
         }
     ));
-}
-
-/// **The precondition, asserted.** Proximity alone does not produce the
-/// advisory, and a genuine exceedance is not demoted by it.
-#[test]
-fn the_advisory_needs_both_conditions_and_never_demotes_a_real_exceedance() {
-    let band_max = gate_band_max();
-
-    // (a) A feed well INSIDE the band: not at the ceiling, so no
-    // advisory, even though the recipe would still be identified as
-    // "clamped" if it sat on the floor. Half the band maximum is far
-    // outside the boundary epsilon.
-    let inside = verdict_and_explanation(band_max * 0.5 * divisor()).0;
-    match &inside {
-        ChiploadVerdict::Within {
-            ceiling_advisory, ..
-        } => assert!(
-            ceiling_advisory.is_none(),
-            "a reading at half the ceiling must NOT carry the ceiling advisory — the (c2) \
-             gate is epsilon-proximity, not 'near'"
-        ),
-        other => panic!("a feed inside the band must be Within: {other:?}"),
-    }
-
-    // (b) A genuine 5 %-over feed still Exceeds. If (c2) had been
-    // written on proximity alone, or without (b1)'s bounded epsilon,
-    // this is the verdict it would have swallowed.
-    let over = verdict_and_explanation(band_max * 1.05 * divisor()).0;
-    assert!(
-        matches!(
-            over,
-            ChiploadVerdict::Exceeds {
-                side: ChipSide::High,
-                ..
-            }
-        ),
-        "**c2 over-reach** — a 5 %-over feed must still Exceed, got {over:?}"
-    );
-}
-
-/// The post-hoc identifier is exactly `effective_rubbing_floor` plus the
-/// boundary epsilon — one decision, consulted twice, so Step-9b and the
-/// gate cannot drift apart.
-///
-/// Ruling R4 Q9: the floor==ceiling regime needs a band with no minimum
-/// (the gate builds one with `min_mm_per_tooth: 0.0` on a maximum-only
-/// row). A band with a minimum of 0.005763 puts the floor on 0.005763, the
-/// band floor, and the identifier takes the ordinary arm.
-#[test]
-fn the_clamp_identifier_agrees_with_the_floor_it_reads() {
-    let with_min = ChiploadBounds {
-        min_mm_per_tooth: 0.005_762_689_177_314_92,
-        max_mm_per_tooth: 0.011_525_378_354_629_83,
-    };
-    let min_floor = effective_rubbing_floor(Some(with_min));
-    assert_eq!(
-        min_floor, with_min.min_mm_per_tooth,
-        "the floor==band-minimum regime"
-    );
-    let reason = recipe_parked_by_rubbing_floor(min_floor, Some(with_min))
-        .expect("a recipe on the band-minimum floor sits on the floor");
-    assert!(
-        !reason.parks_on_band_ceiling(),
-        "a floor on the band MINIMUM must not license the ceiling advisory: {reason:?}"
-    );
-
-    let band = ChiploadBounds {
-        min_mm_per_tooth: 0.0,
-        max_mm_per_tooth: 0.011_525_378_354_629_83,
-    };
-    let floor = effective_rubbing_floor(Some(band));
-    assert_eq!(floor, band.max_mm_per_tooth, "the floor==ceiling regime");
-
-    assert!(
-        recipe_parked_by_rubbing_floor(floor, Some(band))
-            .is_some_and(|c| c.parks_on_band_ceiling())
-    );
-    // 1 ulp either side is still "on" the floor — the same absorption
-    // the gate applies, so the identification cannot disagree with the
-    // verdict on the very reconstruction that motivated both.
-    for bits in [floor.to_bits() + 1, floor.to_bits() - 1] {
-        assert!(
-            recipe_parked_by_rubbing_floor(f64::from_bits(bits), Some(band)).is_some(),
-            "±1 ulp off the floor must still identify as clamped"
-        );
-    }
-    // Half the floor is not.
-    assert!(recipe_parked_by_rubbing_floor(floor * 0.5, Some(band)).is_none());
-    assert!(recipe_parked_by_rubbing_floor(0.0, Some(band)).is_none());
-
-    // A band with room above the global floor gets the ordinary arm,
-    // which (c2) deliberately does NOT accept.
-    let roomy = ChiploadBounds {
-        min_mm_per_tooth: 0.034,
-        max_mm_per_tooth: 0.059,
-    };
-    let roomy_floor = effective_rubbing_floor(Some(roomy));
-    assert_eq!(roomy_floor, RUBBING_FLOOR_MM_TOOTH);
-    let reason = recipe_parked_by_rubbing_floor(roomy_floor, Some(roomy))
-        .expect("a recipe sitting on the global floor is still clamped");
-    assert!(
-        !reason.parks_on_band_ceiling(),
-        "the ordinary global-floor clamp must not license the ceiling advisory: {reason:?}"
-    );
 }

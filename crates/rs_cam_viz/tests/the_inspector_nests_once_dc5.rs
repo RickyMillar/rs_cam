@@ -215,13 +215,13 @@ fn requested_width(ctx: &egui::Context, build: impl Fn(&mut egui::Ui)) -> f32 {
 
 /// The Feeds tab's worst row, verbatim.
 ///
-/// `advance_gate_verdict_text` in `ui/properties/mod.rs` returns this string
-/// for a recipe the rubbing-floor clamp parked on the band ceiling, and
+/// `advance_gate_verdict_text` in `ui/properties/feeds_speeds.rs` returns this
+/// string for a low-side chipload exceedance, and
 /// `draw_advance_per_tooth_card` draws it beside its label in a two-column
 /// grid. A grid cell and a horizontal row share one default wrap mode,
 /// `Extend`, so this row reproduces the grid cell's constraint.
 const VERDICT_LABEL: &str = "Gate verdict:";
-const VERDICT_VALUE: &str = "CLAMPED to band ceiling \u{2014} not exceeded";
+const VERDICT_VALUE: &str = "EXCEEDS \u{2014} below band (burn/rubbing)";
 
 fn verdict_row(ui: &mut egui::Ui, wrap: bool) {
     ui.horizontal(|ui| {

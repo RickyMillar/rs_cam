@@ -13,6 +13,7 @@ use crate::ui::AppEvent;
 use crate::ui::components::UiExt as _;
 use crate::ui::components::ValueRow;
 use crate::ui_command::{NoArgs, UiCommand};
+use rs_cam_core::feeds::rationale::AGGRESSIVENESS_ABOVE_BASE_TEXT;
 use rs_cam_core::machine::{AGGRESSIVENESS_MAX, AGGRESSIVENESS_MIN};
 
 /// Machine-library UX (SNAPSHOT model, like the tool library): import a
@@ -513,17 +514,15 @@ const AGGRESSIVENESS_HOVER: &str = "The load of a Suggest recipe as a fraction o
 /// The threshold label under the aggressiveness slider, and its tone.
 ///
 /// Below 0.70 the dial is gentle; up to 1.00 it is normal. Above 1.00 the
-/// load target exceeds the full-engagement cut, which Suggest allows with a
-/// Caution (ruling R4 Q3: warn, never refuse).
+/// load target exceeds the full-engagement base, which Suggest allows with a
+/// Caution (ruling R4 Q3: warn, never refuse). The label is the core
+/// constant that the Feeds card also prints, so the two surfaces say one text.
 fn aggressiveness_band(value: f64) -> (&'static str, egui::Color32) {
     if value < 0.70 {
         ("gentle", crate::ui::tokens::TEXT_MUTED)
     } else if value <= 1.00 {
         ("normal", crate::ui::tokens::TEXT_MUTED)
     } else {
-        (
-            "above the base: the load target exceeds the full-engagement cut",
-            crate::ui::tokens::CAUTION,
-        )
+        (AGGRESSIVENESS_ABOVE_BASE_TEXT, crate::ui::tokens::CAUTION)
     }
 }

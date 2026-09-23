@@ -120,7 +120,6 @@ fn within_chipload_verdict(peak: f64) -> ChiploadVerdict {
         confidence: Confidence::Validated,
         entry_spikes: Vec::new(),
         burn_advisory: None,
-        ceiling_advisory: None,
     }
 }
 
@@ -307,7 +306,6 @@ fn select_stage2_prefers_midpoint_over_band_edge_at_close_cycle_time() {
             confidence: Confidence::Validated,
             entry_spikes: Vec::new(),
             burn_advisory: None,
-            ceiling_advisory: None,
         };
         ToolpathLoadVerdict {
             toolpath_id: ToolpathId(0),
@@ -709,7 +707,6 @@ fn band_admitted_chipload_verdict(peak: f64) -> ChiploadVerdict {
         confidence: Confidence::Validated,
         entry_spikes: Vec::new(),
         burn_advisory: None,
-        ceiling_advisory: None,
     }
 }
 
@@ -763,7 +760,6 @@ fn burn_advisory_candidate_lands_marginal_safe() {
             confidence: Confidence::Approximate("extrapolated".to_owned()),
             entry_spikes,
             burn_advisory: Some(Box::new(advisory_metric)),
-            ceiling_advisory: None,
         },
         other => panic!("fixture must be Within, got {other:?}"),
     };

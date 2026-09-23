@@ -86,16 +86,17 @@
 //!   row is now "+1 ulp absorbed", with a "+9 ulp still trips" row
 //!   beside it bounding the slack.
 //!
-//! Riders 1, 2b and 3 are **unchanged and still true**: the floor still
-//! collapses onto the ceiling (that ruling was correct and stands), the
-//! band still moves 14.16 % across a DOC sweep, and no
+//! Riders 2b and 3 are **unchanged and still true**. Rider 1 changed at
+//! ruling R4 Q9: the floor now sits on the band minimum, not the ceiling.
+//! The band still moves 14.16 % across a DOC sweep, and no
 //! `BindingConstraint` variant names the clamp — Checkpoint K (d2)
 //! deliberately chose the *recipe* record over the modulator's
 //! vocabulary, so rider 3's exhaustive match is expected to keep
-//! compiling. What (d2) did land is `CommandedStage::clamped_to`, and
-//! rider 1's consequence is now reported as
-//! `ChiploadVerdict::Within::ceiling_advisory` — *clamped*, not
-//! *exceeds*.
+//! compiling. (d2) also added a clamp record on the commanded stage and a
+//! "clamped, not exceeds" advisory on `ChiploadVerdict::Within`. Ruling R4
+//! WP2a (2026-09-23) removed the lift, so no recipe is clamped. WP2b
+//! deleted the record and the advisory. A feed ON the ceiling reads
+//! `Within`, and the boundary epsilon above keeps it there.
 
 #![allow(
     clippy::unwrap_used,

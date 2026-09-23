@@ -150,7 +150,6 @@ fn live_op8_verdict() -> ToolpathLoadVerdict {
         // Checkpoint K (c2) — this fixture is the BURN-side advisory;
         // the ceiling advisory is its high-side sibling and is absent
         // here by construction.
-        ceiling_advisory: None,
     })
 }
 
@@ -231,7 +230,6 @@ fn a_genuine_within_still_reads_within_band() {
         confidence: Confidence::Validated,
         entry_spikes: vec![],
         burn_advisory: None,
-        ceiling_advisory: None,
     });
     let diags = diagnostics_from_load_verdict(&clean);
     let chip = diags

@@ -16,12 +16,9 @@
 //! Suggest **multiplies** to build a feed (`feed = fpt × rpm × flutes`,
 //! `feeds/mod.rs`); the chipload gate **divides** to recover an advance
 //! per tooth (`observed = effective_feed / (rpm × flutes)`). In binary
-//! floating point `(x·a)/a ≠ x`. On a recipe the engine's own
-//! rubbing-floor clamp parked **exactly on the band ceiling** — routine
-//! on sub-Ø2 tools, where the whole derated band sits below the 0.025
-//! mm/tooth chip-formation floor and `effective_rubbing_floor` returns
-//! the band *maximum* — the round trip lands 1 ulp above the bound in
-//! **6–8 %** of the (rpm, flutes) grid, and the gate reports
+//! floating point `(x·a)/a ≠ x`. On a recipe **exactly on the band
+//! ceiling** the round trip lands 1 ulp above the bound in **6–8 %** of
+//! the (rpm, flutes) grid, and the gate reports
 //!
 //! ```text
 //! observed 0.011525  vs  max 0.011525  →  Exceeds(High)
@@ -116,19 +113,6 @@ pub fn below_low(observed: f64, bound: f64, tolerance: f64) -> bool {
     observed < trigger - slack_for(trigger)
 }
 
-/// `true` when `observed` is indistinguishable from `bound` at the
-/// boundary epsilon — i.e. the two differ by no more than the
-/// reconstruction noise this contract absorbs.
-///
-/// This is the predicate Checkpoint K (c2) requires for the ceiling
-/// advisory: it says "the recipe is *on* the bound", not "the recipe is
-/// near the bound". Anything an operator would call *near* is orders of
-/// magnitude outside it.
-#[must_use]
-pub fn is_at_bound(observed: f64, bound: f64) -> bool {
-    (observed - bound).abs() <= slack_for(bound)
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
@@ -150,16 +134,13 @@ mod tests {
             "1 ulp above must not trip — that is G-CHIP-ULP"
         );
         assert!(!below_low(below, bound, 0.0), "1 ulp below must not trip");
-        assert!(is_at_bound(above, bound));
-        assert!(is_at_bound(below, bound));
     }
 
     #[test]
-    fn a_genuine_exceedance_still_trips_and_is_not_at_the_bound() {
+    fn a_genuine_exceedance_still_trips() {
         let bound = 0.011_525_378_354_629_83_f64;
-        // 5 % over — the case Checkpoint K (c2) must never demote.
+        // 5 % over is a genuine exceedance, and it trips.
         assert!(exceeds_high(bound * 1.05, bound, 0.0));
-        assert!(!is_at_bound(bound * 1.05, bound));
         // …and so does a difference twelve orders of magnitude smaller
         // than 5 %, so the epsilon is not a tolerance in disguise.
         assert!(exceeds_high(bound * (1.0 + 1e-9), bound, 0.0));
