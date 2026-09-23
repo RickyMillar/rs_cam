@@ -61,7 +61,7 @@ use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::{self, PowerFigure, PowerUnmodeled};
 use rs_cam_core::machine::MachineProfile;
-use rs_cam_core::material::{Material, PlasticFamily, PlywoodGrade, WoodSpecies};
+use rs_cam_core::material::{Material, PlasticFamily, WoodSpecies};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_viz::state::AppState;
@@ -81,32 +81,86 @@ const ROW_LABEL: &str = "Chip";
 /// One operating point the row has to describe.
 struct Fixture {
     tool_type: ToolType,
+    /// The cutter diameter. Ø6 unless the fixture needs a cell that only a
+    /// different diameter reaches.
+    diameter_mm: f64,
     material: Material,
     operation: OperationConfig,
 }
 
-/// Baltic birch plywood under a 3D adaptive pass: the derate chain lands the
-/// recommendation below the matched vendor band, so the verdict is `Thin`
-/// and both ratios exist.
+/// The diameter of every fixture except [`in_band`].
+const FIXTURE_DIAMETER_MM: f64 = 6.0;
+
+/// Softwood under a Ø6 flat 2F pocket: the machine's cutting-feed ceiling
+/// holds the recommendation below the matched vendor band, so the verdict
+/// is `Thin` and both ratios exist.
+///
+/// Feeds matrix R5 re-bless (2026-09-23). Until R5 this fixture was Baltic
+/// birch under a 3D adaptive pass. R5 moved that cell onto
+/// `amana-flat-plywood-hardwood-pocket-6000-2f-spektra`, which prints ONE
+/// value (max only). The chart-display ruling (5199e06e) gives a one-value
+/// row no band, so the row painted "no vendor chipload range matched".
+///
+/// This cell was the in-band fixture until R5. It resolves to the printed
+/// row `amana-zrn-flat-softwood-pocket-6000-2f`, which publishes BOTH
+/// limits: 0.1778-0.2286 mm/tooth at Ø6.0 and Janka 600, so the diameter
+/// and hardness scales are 1.0 for generic softwood (Janka 600). The
+/// arithmetic, from `planning/feeds_matrix_2026-09-23/matrix_2026-09-23.csv`:
+///
+/// * The recommended axial depth is 4.2 mm = 0.7 x D, so the depth scale
+///   is 1.0 and the band stays 0.1778-0.2286.
+/// * The seed chipload is the band midpoint, 0.2032 mm/tooth. At 18 000 rpm
+///   and 2 flutes that asks for 0.2032 x 18 000 x 2 = 7315 mm/min.
+/// * The machine cutting-feed ceiling clamps the feed to 3000 mm/min
+///   (`FeedRateClamped`).
+/// * chipload = 3000 / (18 000 x 2) = 0.0833 mm/tooth, below the 0.1778
+///   minimum, so the verdict is `Thin`. The band midpoint gives the time
+///   ratio 0.2032 / 0.0833 = 2.4x.
 fn thin() -> Fixture {
     Fixture {
         tool_type: ToolType::EndMill,
-        material: Material::Plywood {
-            grade: PlywoodGrade::BalticBirch,
-        },
-        operation: OperationConfig::Adaptive3d(Default::default()),
-    }
-}
-
-/// Softwood under a pocket: the shallower recommended DOC drops the depth
-/// tier derate, and the recommendation lands inside the vendor band.
-fn in_band() -> Fixture {
-    Fixture {
-        tool_type: ToolType::EndMill,
+        diameter_mm: FIXTURE_DIAMETER_MM,
         material: Material::SolidWood {
             species: WoodSpecies::GenericSoftwood,
         },
         operation: OperationConfig::Pocket(Default::default()),
+    }
+}
+
+/// Generic hardwood under a Ø3.175 flat 2F profile: the rubbing floor puts
+/// the recommendation inside the vendor band.
+///
+/// Feeds matrix R5 re-bless (2026-09-23). The softwood pocket that was this
+/// fixture now paints "thin" (see [`thin`]), and no Ø6 flat-end wood cell
+/// in the matrix lands inside a two-limit band. This cell resolves to
+/// `amana-flat-hardwood-contour-3175-2f`, which publishes BOTH limits:
+/// 0.018-0.030 mm/tooth at Ø3.175 and Janka 1300. The row is VendorBacked,
+/// so R1 does not refuse it. The arithmetic, from the matrix CSV:
+///
+/// * The hardness scale is (1300 / 1450)^0.5 = 0.9469, so the band is
+///   0.0170-0.0284 mm/tooth and the seed chipload is the midpoint, 0.0227.
+/// * The recommended axial depth is 2.54 mm = 0.8 x D, so the depth scale
+///   is 1.0.
+/// * The seed 0.0227 is below the 0.025 mm/tooth rubbing floor, so Step 9b
+///   lifts the feed to the floor: 0.025 x 21 000 rpm x 2 = 1050 mm/min.
+/// * chipload = 1050 / (21 000 x 2) = 0.025 mm/tooth, inside 0.0170-0.0284,
+///   so the verdict is `InBand`.
+///
+/// The matrix cell uses the instrument's tool (flute length 12, stickout
+/// 20). This fixture uses the [`state_for`] tool (flute length 25, stickout
+/// 18), so its RPM, feed and depth can differ from the matrix numbers.
+/// The floor pins the chipload at 0.025 whatever the setup de-rates do to
+/// the seed. If a deeper cut de-rated the band maximum below 0.025, the
+/// floor would cap at that maximum (`effective_rubbing_floor`), and the
+/// chipload would still sit inside the band.
+fn in_band() -> Fixture {
+    Fixture {
+        tool_type: ToolType::EndMill,
+        diameter_mm: 3.175,
+        material: Material::SolidWood {
+            species: WoodSpecies::GenericHardwood,
+        },
+        operation: OperationConfig::Profile(Default::default()),
     }
 }
 
@@ -116,6 +170,7 @@ fn in_band() -> Fixture {
 fn no_band() -> Fixture {
     Fixture {
         tool_type: ToolType::VBit,
+        diameter_mm: FIXTURE_DIAMETER_MM,
         material: Material::SolidWood {
             species: WoodSpecies::GenericSoftwood,
         },
@@ -129,6 +184,7 @@ fn no_band() -> Fixture {
 fn no_kc() -> Fixture {
     Fixture {
         tool_type: ToolType::EndMill,
+        diameter_mm: FIXTURE_DIAMETER_MM,
         material: Material::Plastic {
             family: PlasticFamily::Acrylic,
         },
@@ -138,7 +194,7 @@ fn no_kc() -> Fixture {
 
 fn state_for(fixture: Fixture) -> AppState {
     let mut tool = ToolConfig::new_default(ToolId(1), fixture.tool_type);
-    tool.diameter = 6.0;
+    tool.diameter = fixture.diameter_mm;
     tool.flute_count = 2;
     tool.stickout = 18.0;
 
@@ -149,6 +205,10 @@ fn state_for(fixture: Fixture) -> AppState {
             config.spindle_rpm = Some(18_000);
         }
         OperationConfig::Pocket(config) => {
+            config.feed_rate = 3_000.0;
+            config.spindle_rpm = Some(18_000);
+        }
+        OperationConfig::Profile(config) => {
             config.feed_rate = 3_000.0;
             config.spindle_rpm = Some(18_000);
         }
@@ -371,8 +431,8 @@ fn the_verdict_row_carries_its_own_explanation_g_chipverdict() {
 // ── arm 2 — the row changes state ──────────────────────────────────────────
 
 /// A readout that says the same thing on every job is the power bar again.
-/// The thin and in-band fixtures differ only in material and operation, and
-/// the painted verdict must differ with them.
+/// The thin and in-band fixtures differ in material, operation and diameter,
+/// and the painted verdict must differ with them.
 #[test]
 fn the_verdict_changes_state_across_fixtures_g_chipverdict() {
     let thin_row = verdict_row(&painted_text(thin()));

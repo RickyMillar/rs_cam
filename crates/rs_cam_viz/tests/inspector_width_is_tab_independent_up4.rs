@@ -38,7 +38,7 @@ use std::sync::Arc;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::material::{Material, PlywoodGrade};
+use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_viz::state::AppState;
@@ -184,30 +184,64 @@ fn requested_width(ctx: &egui::Context, build: impl Fn(&mut egui::Ui)) -> f32 {
     width
 }
 
-/// A label beside a long trailing annotation — the shape the Feeds tab uses
-/// for "Recommended advance/tooth: 0.0710 mm/tooth · configured 0.1313".
+/// A real Feeds tab whose calculated recipe carries the rubbing-floor
+/// warning, so the tab renders a warning row beside its annotated rows.
+///
+/// # Feeds matrix R5 re-bless (2026-09-23)
+///
+/// The fixture was the observed Back Rough: a Ø6 flat 2F `Adaptive3d` in
+/// Baltic birch plywood. R5 moved that cell onto the printed Spektra row
+/// `amana-flat-plywood-hardwood-pocket-6000-2f-spektra` (0.1159 mm/tooth,
+/// max only), far above the 0.025 mm/tooth floor, so the recipe carries no
+/// warning now. The width contract needs a real warning row, not that
+/// particular cell.
+///
+/// The fixture now uses a cell that
+/// `planning/feeds_matrix_2026-09-23/matrix_2026-09-23.csv` records with
+/// `ChiploadClampedToFloor`: a Ø3.175 flat 2F `Profile` in generic hardwood
+/// (Janka 1450). The tool is the matrix instrument's `tool_of` tool. The
+/// Feeds tab calculates the recipe with `feeds_result_for_operation`. That
+/// door ignores the configured feed and RPM, and `Profile` gives no depth
+/// or width hint. The arithmetic of the warning:
+///
+/// * The row is `amana-flat-hardwood-contour-3175-2f` (VendorBacked, so R1
+///   does not refuse it): 0.018-0.030 mm/tooth at Janka 1300.
+/// * The hardness scale is (1300 / 1450)^0.5 = 0.9469, so the band is
+///   0.0170-0.0284 and the seed chipload is the midpoint, 0.0227.
+/// * The matrix records the axial depth as 2.54 mm = 0.8 x D, so the depth
+///   de-rate is 1.0 and the band maximum stays 0.0284.
+/// * The floor is min(0.025, 0.0284) = 0.025, the global floor, so
+///   `band_capped_from` is `None`. That is the variant that paints
+///   "Commanded advance/tooth below rubbing floor".
+/// * The commanded advance 0.0227 (or less, after a setup de-rate) is below
+///   0.025, so Step 9b clamps it up and emits the warning.
 fn feeds_fixture() -> AppState {
     let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
-    tool.diameter = 6.0;
+    tool.diameter = 3.175;
     tool.flute_count = 2;
+    tool.cutting_length = 12.0;
+    tool.shank_diameter = 3.175;
+    tool.shaft_diameter = 3.175;
+    tool.stickout = 20.0;
 
     let stock = StockConfig {
-        material: Material::Plywood {
-            grade: PlywoodGrade::BalticBirch,
+        material: Material::SolidWood {
+            species: WoodSpecies::GenericHardwood,
         },
         ..Default::default()
     };
 
-    // The warning shape from the observed Back Rough: its deliberately low
-    // advance per tooth trips the rubbing floor while the LUT remains in play.
-    let mut operation = OperationConfig::Adaptive3d(Default::default());
-    if let OperationConfig::Adaptive3d(config) = &mut operation {
+    // The configured feed and RPM are not the recipe. They give the tab a
+    // "configured" value to compare with the recommendation, which is the
+    // annotated row shape that D-16 widened.
+    let mut operation = OperationConfig::Profile(Default::default());
+    if let OperationConfig::Profile(config) = &mut operation {
         config.feed_rate = 3_000.0;
         config.spindle_rpm = Some(18_000);
     }
     let config = ToolpathConfig {
         id: rs_cam_core::ToolpathId(0),
-        name: "Back Rough width fixture".to_owned(),
+        name: "Hardwood profile width fixture".to_owned(),
         enabled: true,
         operation,
         dressups: Default::default(),
@@ -229,8 +263,8 @@ fn feeds_fixture() -> AppState {
 
     let model = LoadedModel {
         id: 1,
-        path: PathBuf::from("back_rough_width_fixture.svg"),
-        name: "Back Rough width fixture".to_owned(),
+        path: PathBuf::from("hardwood_profile_width_fixture.svg"),
+        name: "Hardwood profile width fixture".to_owned(),
         kind: Some(ModelKind::Svg),
         mesh: None,
         polygons: Some(Arc::new(vec![Polygon2::rectangle(0.0, 0.0, 10.0, 10.0)])),
@@ -247,7 +281,7 @@ fn feeds_fixture() -> AppState {
         .model(model);
     builder
         .add_toolpath(0, config)
-        .expect("add Back Rough fixture");
+        .expect("add the hardwood profile fixture");
     let mut state = AppState::new();
     state.session = builder.build();
     let id = state.session.toolpath_configs()[0].id;
@@ -408,7 +442,7 @@ fn real_warning_shaped_feeds_tab_stays_inside_its_panel_ur1() {
             warning,
             rs_cam_core::feeds::FeedsWarning::ChiploadClampedToFloor { .. }
         )),
-        "the Back Rough fixture must render its real rubbing-floor warning; warnings: {:?}",
+        "the hardwood Profile fixture must render its real rubbing-floor warning; warnings: {:?}",
         result.warnings
     );
     assert!(
