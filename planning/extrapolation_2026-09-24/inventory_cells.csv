@@ -1,0 +1,450 @@
+tool_type,diameter_mm,operation,material,status,lut_observation_id,group,detail
+EndMill,3.1750,Face,hardwood,ok,amana-flat-hardwood-pocket-3175-2f-spektra,G4,bandless printed row
+EndMill,3.1750,Face,mdf,ok,amana-flat-mdf-pocket-3175-2f-spektra,G4,bandless printed row
+EndMill,3.1750,Face,plywood_hardwood,ok,amana-flat-plywood-hardwood-pocket-3175-2f-spektra,G4,bandless printed row
+EndMill,3.1750,Pocket,hardwood,ok,amana-flat-hardwood-pocket-3175-2f-spektra,G4,bandless printed row
+EndMill,3.1750,Pocket,mdf,ok,amana-flat-mdf-pocket-3175-2f-spektra,G4,bandless printed row
+EndMill,3.1750,Pocket,plywood_hardwood,ok,amana-flat-plywood-hardwood-pocket-3175-2f-spektra,G4,bandless printed row
+EndMill,3.1750,Profile,mdf,ok,onsrud-mdf-60-100mw-1_8-finish,G2h,extrapolated d_ratio=1.00 h_ratio=0.64 row_mat=mdf
+EndMill,3.1750,Adaptive,softwood,ok,amana-flat-softwood-adaptive-3175-2f-spektra,G4,bandless printed row
+EndMill,3.1750,Adaptive,hardwood,ok,amana-flat-hardwood-adaptive-3175-2f-spektra,G4,bandless printed row
+EndMill,3.1750,Adaptive,mdf,ok,amana-flat-mdf-adaptive-3175-2f-spektra,G4,bandless printed row
+EndMill,3.1750,Adaptive,plywood_hardwood,ok,amana-flat-plywood-hardwood-adaptive-3175-2f-spektra,G4,bandless printed row
+EndMill,3.1750,Rest,hardwood,ok,amana-flat-hardwood-pocket-3175-2f-spektra,G4,bandless printed row
+EndMill,3.1750,Rest,mdf,ok,amana-flat-mdf-pocket-3175-2f-spektra,G4,bandless printed row
+EndMill,3.1750,Rest,plywood_hardwood,ok,amana-flat-plywood-hardwood-pocket-3175-2f-spektra,G4,bandless printed row
+EndMill,3.1750,Zigzag,hardwood,ok,amana-flat-hardwood-pocket-3175-2f-spektra,G4,bandless printed row
+EndMill,3.1750,Zigzag,mdf,ok,amana-flat-mdf-pocket-3175-2f-spektra,G4,bandless printed row
+EndMill,3.1750,Zigzag,plywood_hardwood,ok,amana-flat-plywood-hardwood-pocket-3175-2f-spektra,G4,bandless printed row
+EndMill,3.1750,Drill,softwood,refused,,G6,drill
+EndMill,3.1750,Drill,hardwood,refused,,G6,drill
+EndMill,3.1750,Drill,mdf,refused,,G6,drill
+EndMill,3.1750,Drill,plywood_hardwood,refused,,G6,drill
+EndMill,3.1750,DropCutter,hardwood,ok,amana-flat-hardwood-pocket-3175-2f-spektra,G4,bandless printed row
+EndMill,3.1750,DropCutter,mdf,ok,amana-flat-mdf-pocket-3175-2f-spektra,G4,bandless printed row
+EndMill,3.1750,DropCutter,plywood_hardwood,ok,amana-flat-plywood-hardwood-pocket-3175-2f-spektra,G4,bandless printed row
+EndMill,3.1750,Adaptive3d,hardwood,ok,amana-flat-hardwood-pocket-3175-2f-spektra,G4,bandless printed row
+EndMill,3.1750,Adaptive3d,mdf,ok,amana-flat-mdf-pocket-3175-2f-spektra,G4,bandless printed row
+EndMill,3.1750,Adaptive3d,plywood_hardwood,ok,amana-flat-plywood-hardwood-pocket-3175-2f-spektra,G4,bandless printed row
+EndMill,3.1750,Waterline,mdf,ok,onsrud-mdf-60-100mw-1_8-finish,G2h,extrapolated d_ratio=1.00 h_ratio=0.64 row_mat=mdf
+EndMill,3.1750,SteepShallow,mdf,ok,onsrud-mdf-60-100mw-1_8-finish,G2h,extrapolated d_ratio=1.00 h_ratio=0.64 row_mat=mdf
+EndMill,3.1750,ProjectCurve,mdf,ok,onsrud-mdf-60-100mw-1_8-finish,G2h,extrapolated d_ratio=1.00 h_ratio=0.64 row_mat=mdf
+EndMill,3.1750,AlignmentPinDrill,softwood,refused,,G6,drill
+EndMill,3.1750,AlignmentPinDrill,hardwood,refused,,G6,drill
+EndMill,3.1750,AlignmentPinDrill,mdf,refused,,G6,drill
+EndMill,3.1750,AlignmentPinDrill,plywood_hardwood,refused,,G6,drill
+EndMill,6.0000,Face,hardwood,ok,amana-flat-hardwood-pocket-6000-2f-spektra,G4,bandless printed row
+EndMill,6.0000,Face,mdf,ok,amana-flat-mdf-pocket-6000-2f-spektra,G4,bandless printed row
+EndMill,6.0000,Face,plywood_hardwood,ok,amana-flat-plywood-hardwood-pocket-6000-2f-spektra,G4,bandless printed row
+EndMill,6.0000,Pocket,hardwood,ok,amana-flat-hardwood-pocket-6000-2f-spektra,G4,bandless printed row
+EndMill,6.0000,Pocket,mdf,ok,amana-flat-mdf-pocket-6000-2f-spektra,G4,bandless printed row
+EndMill,6.0000,Pocket,plywood_hardwood,ok,amana-flat-plywood-hardwood-pocket-6000-2f-spektra,G4,bandless printed row
+EndMill,6.0000,Profile,mdf,ok,onsrud-mdf-60-100mw-1_4-finish,G2h,extrapolated d_ratio=0.94 h_ratio=0.64 row_mat=mdf
+EndMill,6.0000,Adaptive,softwood,ok,amana-flat-softwood-adaptive-6000-2f-spektra,G4,bandless printed row
+EndMill,6.0000,Adaptive,hardwood,ok,amana-flat-hardwood-adaptive-6000-2f-spektra,G4,bandless printed row
+EndMill,6.0000,Adaptive,mdf,ok,amana-flat-mdf-adaptive-6000-2f-spektra,G4,bandless printed row
+EndMill,6.0000,Adaptive,plywood_hardwood,ok,amana-flat-plywood-hardwood-adaptive-6000-2f-spektra,G4,bandless printed row
+EndMill,6.0000,Rest,hardwood,ok,amana-flat-hardwood-pocket-6000-2f-spektra,G4,bandless printed row
+EndMill,6.0000,Rest,mdf,ok,amana-flat-mdf-pocket-6000-2f-spektra,G4,bandless printed row
+EndMill,6.0000,Rest,plywood_hardwood,ok,amana-flat-plywood-hardwood-pocket-6000-2f-spektra,G4,bandless printed row
+EndMill,6.0000,Zigzag,hardwood,ok,amana-flat-hardwood-pocket-6000-2f-spektra,G4,bandless printed row
+EndMill,6.0000,Zigzag,mdf,ok,amana-flat-mdf-pocket-6000-2f-spektra,G4,bandless printed row
+EndMill,6.0000,Zigzag,plywood_hardwood,ok,amana-flat-plywood-hardwood-pocket-6000-2f-spektra,G4,bandless printed row
+EndMill,6.0000,Drill,softwood,refused,,G6,drill
+EndMill,6.0000,Drill,hardwood,refused,,G6,drill
+EndMill,6.0000,Drill,mdf,refused,,G6,drill
+EndMill,6.0000,Drill,plywood_hardwood,refused,,G6,drill
+EndMill,6.0000,DropCutter,hardwood,ok,amana-flat-hardwood-pocket-6000-2f-spektra,G4,bandless printed row
+EndMill,6.0000,DropCutter,mdf,ok,amana-flat-mdf-pocket-6000-2f-spektra,G4,bandless printed row
+EndMill,6.0000,DropCutter,plywood_hardwood,ok,amana-flat-plywood-hardwood-pocket-6000-2f-spektra,G4,bandless printed row
+EndMill,6.0000,Adaptive3d,hardwood,ok,amana-flat-hardwood-pocket-6000-2f-spektra,G4,bandless printed row
+EndMill,6.0000,Adaptive3d,mdf,ok,amana-flat-mdf-pocket-6000-2f-spektra,G4,bandless printed row
+EndMill,6.0000,Adaptive3d,plywood_hardwood,ok,amana-flat-plywood-hardwood-pocket-6000-2f-spektra,G4,bandless printed row
+EndMill,6.0000,Waterline,mdf,ok,onsrud-mdf-60-100mw-1_4-finish,G2h,extrapolated d_ratio=0.94 h_ratio=0.64 row_mat=mdf
+EndMill,6.0000,SteepShallow,mdf,ok,onsrud-mdf-60-100mw-1_4-finish,G2h,extrapolated d_ratio=0.94 h_ratio=0.64 row_mat=mdf
+EndMill,6.0000,ProjectCurve,mdf,ok,onsrud-mdf-60-100mw-1_4-finish,G2h,extrapolated d_ratio=0.94 h_ratio=0.64 row_mat=mdf
+EndMill,6.0000,AlignmentPinDrill,softwood,refused,,G6,drill
+EndMill,6.0000,AlignmentPinDrill,hardwood,refused,,G6,drill
+EndMill,6.0000,AlignmentPinDrill,mdf,refused,,G6,drill
+EndMill,6.0000,AlignmentPinDrill,plywood_hardwood,refused,,G6,drill
+BallNose,3.1750,Face,mdf,ok,amana-ball-mdf-pocket-3175-2f-v7,G2h,extrapolated d_ratio=1.00 h_ratio=0.64 row_mat=mdf
+BallNose,3.1750,Face,plywood_hardwood,refused,,G2,"category (ball, no ply row)"
+BallNose,3.1750,Pocket,mdf,ok,amana-ball-mdf-pocket-3175-2f-v7,G2h,extrapolated d_ratio=1.00 h_ratio=0.64 row_mat=mdf
+BallNose,3.1750,Pocket,plywood_hardwood,refused,,G2,"category (ball, no ply row)"
+BallNose,3.1750,Profile,mdf,refused,,G2,"category (ball, MDF formula < 0.5x chart)"
+BallNose,3.1750,Profile,plywood_hardwood,refused,,G2,"category (ball, no ply row)"
+BallNose,3.1750,Adaptive,mdf,ok,amana-ball-mdf-adaptive-3175-2f-v7,G2h,extrapolated d_ratio=1.00 h_ratio=0.64 row_mat=mdf
+BallNose,3.1750,Adaptive,plywood_hardwood,refused,,G2,"category (ball, no ply row)"
+BallNose,3.1750,Rest,mdf,ok,amana-ball-mdf-pocket-3175-2f-v7,G2h,extrapolated d_ratio=1.00 h_ratio=0.64 row_mat=mdf
+BallNose,3.1750,Rest,plywood_hardwood,refused,,G2,"category (ball, no ply row)"
+BallNose,3.1750,Zigzag,mdf,ok,amana-ball-mdf-pocket-3175-2f-v7,G2h,extrapolated d_ratio=1.00 h_ratio=0.64 row_mat=mdf
+BallNose,3.1750,Zigzag,plywood_hardwood,refused,,G2,"category (ball, no ply row)"
+BallNose,3.1750,Trace,mdf,refused,,G2,"category (ball, MDF formula < 0.5x chart)"
+BallNose,3.1750,Trace,plywood_hardwood,refused,,G2,"category (ball, no ply row)"
+BallNose,3.1750,Drill,softwood,refused,,G6,drill
+BallNose,3.1750,Drill,hardwood,refused,,G6,drill
+BallNose,3.1750,Drill,mdf,refused,,G6,drill
+BallNose,3.1750,Drill,plywood_hardwood,refused,,G6,drill
+BallNose,3.1750,DropCutter,plywood_hardwood,refused,,G3,never judged (family)
+BallNose,3.1750,Adaptive3d,mdf,ok,amana-ball-mdf-pocket-3175-2f-v7,G2h,extrapolated d_ratio=1.00 h_ratio=0.64 row_mat=mdf
+BallNose,3.1750,Adaptive3d,plywood_hardwood,refused,,G2,"category (ball, no ply row)"
+BallNose,3.1750,Waterline,mdf,refused,,G2,"category (ball, MDF formula < 0.5x chart)"
+BallNose,3.1750,Waterline,plywood_hardwood,refused,,G2,"category (ball, no ply row)"
+BallNose,3.1750,Pencil,mdf,refused,,G2,"category (ball, MDF formula < 0.5x chart)"
+BallNose,3.1750,Pencil,plywood_hardwood,refused,,G2,"category (ball, no ply row)"
+BallNose,3.1750,Scallop,hardwood,ok,amana-ball-hardwood-scallop-6000-2f,G1,extrapolated d_ratio=0.53 h_ratio=1.00 row_mat=hardwood
+BallNose,3.1750,Scallop,mdf,refused,,G3,never judged (family)
+BallNose,3.1750,Scallop,plywood_hardwood,refused,,G3,never judged (family)
+BallNose,3.1750,UnifiedFinish,hardwood,ok,amana-ball-hardwood-scallop-6000-2f,G1,extrapolated d_ratio=0.53 h_ratio=1.00 row_mat=hardwood
+BallNose,3.1750,UnifiedFinish,mdf,refused,,G3,never judged (family)
+BallNose,3.1750,UnifiedFinish,plywood_hardwood,refused,,G3,never judged (family)
+BallNose,3.1750,SteepShallow,mdf,refused,,G2,"category (ball, MDF formula < 0.5x chart)"
+BallNose,3.1750,SteepShallow,plywood_hardwood,refused,,G2,"category (ball, no ply row)"
+BallNose,3.1750,RampFinish,plywood_hardwood,refused,,G3,never judged (family)
+BallNose,3.1750,SpiralFinish,hardwood,ok,amana-ball-hardwood-scallop-6000-2f,G1,extrapolated d_ratio=0.53 h_ratio=1.00 row_mat=hardwood
+BallNose,3.1750,SpiralFinish,mdf,refused,,G3,never judged (family)
+BallNose,3.1750,SpiralFinish,plywood_hardwood,refused,,G3,never judged (family)
+BallNose,3.1750,RadialFinish,plywood_hardwood,refused,,G3,never judged (family)
+BallNose,3.1750,HorizontalFinish,plywood_hardwood,refused,,G3,never judged (family)
+BallNose,3.1750,ProjectCurve,plywood_hardwood,refused,,G2,"category (ball, no ply row)"
+BallNose,3.1750,AlignmentPinDrill,softwood,refused,,G6,drill
+BallNose,3.1750,AlignmentPinDrill,hardwood,refused,,G6,drill
+BallNose,3.1750,AlignmentPinDrill,mdf,refused,,G6,drill
+BallNose,3.1750,AlignmentPinDrill,plywood_hardwood,refused,,G6,drill
+BallNose,6.0000,Face,mdf,ok,amana-ball-mdf-pocket-6350-2f-v7,G2h,extrapolated d_ratio=0.94 h_ratio=0.64 row_mat=mdf
+BallNose,6.0000,Face,plywood_hardwood,refused,,G2,"category (ball, no ply row)"
+BallNose,6.0000,Pocket,mdf,ok,amana-ball-mdf-pocket-6350-2f-v7,G2h,extrapolated d_ratio=0.94 h_ratio=0.64 row_mat=mdf
+BallNose,6.0000,Pocket,plywood_hardwood,refused,,G2,"category (ball, no ply row)"
+BallNose,6.0000,Profile,mdf,refused,,G2,"category (ball, MDF formula < 0.5x chart)"
+BallNose,6.0000,Profile,plywood_hardwood,refused,,G2,"category (ball, no ply row)"
+BallNose,6.0000,Adaptive,mdf,ok,amana-ball-mdf-adaptive-6350-2f-v7,G2h,extrapolated d_ratio=0.94 h_ratio=0.64 row_mat=mdf
+BallNose,6.0000,Adaptive,plywood_hardwood,refused,,G2,"category (ball, no ply row)"
+BallNose,6.0000,Rest,mdf,ok,amana-ball-mdf-pocket-6350-2f-v7,G2h,extrapolated d_ratio=0.94 h_ratio=0.64 row_mat=mdf
+BallNose,6.0000,Rest,plywood_hardwood,refused,,G2,"category (ball, no ply row)"
+BallNose,6.0000,Zigzag,mdf,ok,amana-ball-mdf-pocket-6350-2f-v7,G2h,extrapolated d_ratio=0.94 h_ratio=0.64 row_mat=mdf
+BallNose,6.0000,Zigzag,plywood_hardwood,refused,,G2,"category (ball, no ply row)"
+BallNose,6.0000,Trace,mdf,refused,,G2,"category (ball, MDF formula < 0.5x chart)"
+BallNose,6.0000,Trace,plywood_hardwood,refused,,G2,"category (ball, no ply row)"
+BallNose,6.0000,Drill,softwood,refused,,G6,drill
+BallNose,6.0000,Drill,hardwood,refused,,G6,drill
+BallNose,6.0000,Drill,mdf,refused,,G6,drill
+BallNose,6.0000,Drill,plywood_hardwood,refused,,G6,drill
+BallNose,6.0000,DropCutter,plywood_hardwood,refused,,G3,never judged (family)
+BallNose,6.0000,Adaptive3d,mdf,ok,amana-ball-mdf-pocket-6350-2f-v7,G2h,extrapolated d_ratio=0.94 h_ratio=0.64 row_mat=mdf
+BallNose,6.0000,Adaptive3d,plywood_hardwood,refused,,G2,"category (ball, no ply row)"
+BallNose,6.0000,Waterline,mdf,refused,,G2,"category (ball, MDF formula < 0.5x chart)"
+BallNose,6.0000,Waterline,plywood_hardwood,refused,,G2,"category (ball, no ply row)"
+BallNose,6.0000,Pencil,mdf,refused,,G2,"category (ball, MDF formula < 0.5x chart)"
+BallNose,6.0000,Pencil,plywood_hardwood,refused,,G2,"category (ball, no ply row)"
+BallNose,6.0000,Scallop,softwood,ok,amana-ball-hardwood-scallop-6000-2f,G2h,extrapolated d_ratio=1.00 h_ratio=2.42 row_mat=hardwood
+BallNose,6.0000,Scallop,mdf,refused,,G3,never judged (family)
+BallNose,6.0000,Scallop,plywood_hardwood,refused,,G3,never judged (family)
+BallNose,6.0000,UnifiedFinish,softwood,ok,amana-ball-hardwood-scallop-6000-2f,G2h,extrapolated d_ratio=1.00 h_ratio=2.42 row_mat=hardwood
+BallNose,6.0000,UnifiedFinish,mdf,refused,,G3,never judged (family)
+BallNose,6.0000,UnifiedFinish,plywood_hardwood,refused,,G3,never judged (family)
+BallNose,6.0000,SteepShallow,mdf,refused,,G2,"category (ball, MDF formula < 0.5x chart)"
+BallNose,6.0000,SteepShallow,plywood_hardwood,refused,,G2,"category (ball, no ply row)"
+BallNose,6.0000,RampFinish,plywood_hardwood,refused,,G3,never judged (family)
+BallNose,6.0000,SpiralFinish,softwood,ok,amana-ball-hardwood-scallop-6000-2f,G2h,extrapolated d_ratio=1.00 h_ratio=2.42 row_mat=hardwood
+BallNose,6.0000,SpiralFinish,mdf,refused,,G3,never judged (family)
+BallNose,6.0000,SpiralFinish,plywood_hardwood,refused,,G3,never judged (family)
+BallNose,6.0000,RadialFinish,plywood_hardwood,refused,,G3,never judged (family)
+BallNose,6.0000,HorizontalFinish,plywood_hardwood,refused,,G3,never judged (family)
+BallNose,6.0000,ProjectCurve,plywood_hardwood,refused,,G2,"category (ball, no ply row)"
+BallNose,6.0000,AlignmentPinDrill,softwood,refused,,G6,drill
+BallNose,6.0000,AlignmentPinDrill,hardwood,refused,,G6,drill
+BallNose,6.0000,AlignmentPinDrill,mdf,refused,,G6,drill
+BallNose,6.0000,AlignmentPinDrill,plywood_hardwood,refused,,G6,drill
+BullNose,3.1750,Face,hardwood,ok,amana-flat-hardwood-pocket-3175-2f-spektra,G4,bandless printed row
+BullNose,3.1750,Face,mdf,ok,amana-flat-mdf-pocket-3175-2f-spektra,G4,bandless printed row
+BullNose,3.1750,Face,plywood_hardwood,ok,amana-flat-plywood-hardwood-pocket-3175-2f-spektra,G4,bandless printed row
+BullNose,3.1750,Pocket,hardwood,ok,amana-flat-hardwood-pocket-3175-2f-spektra,G4,bandless printed row
+BullNose,3.1750,Pocket,mdf,ok,amana-flat-mdf-pocket-3175-2f-spektra,G4,bandless printed row
+BullNose,3.1750,Pocket,plywood_hardwood,ok,amana-flat-plywood-hardwood-pocket-3175-2f-spektra,G4,bandless printed row
+BullNose,3.1750,Profile,mdf,ok,onsrud-mdf-60-100mw-1_8-finish,G2h,extrapolated d_ratio=1.00 h_ratio=0.64 row_mat=mdf
+BullNose,3.1750,Adaptive,softwood,ok,amana-flat-softwood-adaptive-3175-2f-spektra,G4,bandless printed row
+BullNose,3.1750,Adaptive,hardwood,ok,amana-flat-hardwood-adaptive-3175-2f-spektra,G4,bandless printed row
+BullNose,3.1750,Adaptive,mdf,ok,amana-flat-mdf-adaptive-3175-2f-spektra,G4,bandless printed row
+BullNose,3.1750,Adaptive,plywood_hardwood,ok,amana-flat-plywood-hardwood-adaptive-3175-2f-spektra,G4,bandless printed row
+BullNose,3.1750,Rest,hardwood,ok,amana-flat-hardwood-pocket-3175-2f-spektra,G4,bandless printed row
+BullNose,3.1750,Rest,mdf,ok,amana-flat-mdf-pocket-3175-2f-spektra,G4,bandless printed row
+BullNose,3.1750,Rest,plywood_hardwood,ok,amana-flat-plywood-hardwood-pocket-3175-2f-spektra,G4,bandless printed row
+BullNose,3.1750,Zigzag,hardwood,ok,amana-flat-hardwood-pocket-3175-2f-spektra,G4,bandless printed row
+BullNose,3.1750,Zigzag,mdf,ok,amana-flat-mdf-pocket-3175-2f-spektra,G4,bandless printed row
+BullNose,3.1750,Zigzag,plywood_hardwood,ok,amana-flat-plywood-hardwood-pocket-3175-2f-spektra,G4,bandless printed row
+BullNose,3.1750,Trace,softwood,refused,,G3,family (bull finish)
+BullNose,3.1750,Trace,hardwood,refused,,G3,family (bull finish)
+BullNose,3.1750,Trace,mdf,refused,,G3,family (bull finish)
+BullNose,3.1750,Trace,plywood_hardwood,refused,,G3,family (bull finish)
+BullNose,3.1750,Drill,softwood,refused,,G6,drill
+BullNose,3.1750,Drill,hardwood,refused,,G6,drill
+BullNose,3.1750,Drill,mdf,refused,,G6,drill
+BullNose,3.1750,Drill,plywood_hardwood,refused,,G6,drill
+BullNose,3.1750,DropCutter,softwood,refused,,G3,family (bull finish)
+BullNose,3.1750,DropCutter,hardwood,refused,,G3,family (bull finish)
+BullNose,3.1750,DropCutter,mdf,refused,,G3,family (bull finish)
+BullNose,3.1750,DropCutter,plywood_hardwood,refused,,G3,family (bull finish)
+BullNose,3.1750,Adaptive3d,hardwood,ok,amana-flat-hardwood-pocket-3175-2f-spektra,G4,bandless printed row
+BullNose,3.1750,Adaptive3d,mdf,ok,amana-flat-mdf-pocket-3175-2f-spektra,G4,bandless printed row
+BullNose,3.1750,Adaptive3d,plywood_hardwood,ok,amana-flat-plywood-hardwood-pocket-3175-2f-spektra,G4,bandless printed row
+BullNose,3.1750,Waterline,mdf,ok,onsrud-mdf-60-100mw-1_8-finish,G2h,extrapolated d_ratio=1.00 h_ratio=0.64 row_mat=mdf
+BullNose,3.1750,SteepShallow,mdf,ok,onsrud-mdf-60-100mw-1_8-finish,G2h,extrapolated d_ratio=1.00 h_ratio=0.64 row_mat=mdf
+BullNose,3.1750,RampFinish,softwood,refused,,G3,family (bull finish)
+BullNose,3.1750,RampFinish,hardwood,refused,,G3,family (bull finish)
+BullNose,3.1750,RampFinish,mdf,refused,,G3,family (bull finish)
+BullNose,3.1750,RampFinish,plywood_hardwood,refused,,G3,family (bull finish)
+BullNose,3.1750,RadialFinish,softwood,refused,,G3,family (bull finish)
+BullNose,3.1750,RadialFinish,hardwood,refused,,G3,family (bull finish)
+BullNose,3.1750,RadialFinish,mdf,refused,,G3,family (bull finish)
+BullNose,3.1750,RadialFinish,plywood_hardwood,refused,,G3,family (bull finish)
+BullNose,3.1750,HorizontalFinish,softwood,refused,,G3,family (bull finish)
+BullNose,3.1750,HorizontalFinish,hardwood,refused,,G3,family (bull finish)
+BullNose,3.1750,HorizontalFinish,mdf,refused,,G3,family (bull finish)
+BullNose,3.1750,HorizontalFinish,plywood_hardwood,refused,,G3,family (bull finish)
+BullNose,3.1750,ProjectCurve,softwood,refused,,G3,family (bull finish)
+BullNose,3.1750,ProjectCurve,hardwood,refused,,G3,family (bull finish)
+BullNose,3.1750,ProjectCurve,mdf,refused,,G3,family (bull finish)
+BullNose,3.1750,ProjectCurve,plywood_hardwood,refused,,G3,family (bull finish)
+BullNose,3.1750,AlignmentPinDrill,softwood,refused,,G6,drill
+BullNose,3.1750,AlignmentPinDrill,hardwood,refused,,G6,drill
+BullNose,3.1750,AlignmentPinDrill,mdf,refused,,G6,drill
+BullNose,3.1750,AlignmentPinDrill,plywood_hardwood,refused,,G6,drill
+BullNose,6.0000,Face,hardwood,ok,amana-flat-hardwood-pocket-6000-2f-spektra,G4,bandless printed row
+BullNose,6.0000,Face,mdf,ok,amana-flat-mdf-pocket-6000-2f-spektra,G4,bandless printed row
+BullNose,6.0000,Pocket,hardwood,ok,amana-flat-hardwood-pocket-6000-2f-spektra,G4,bandless printed row
+BullNose,6.0000,Pocket,mdf,ok,amana-flat-mdf-pocket-6000-2f-spektra,G4,bandless printed row
+BullNose,6.0000,Profile,mdf,ok,onsrud-mdf-60-100mw-1_4-finish,G2h,extrapolated d_ratio=0.94 h_ratio=0.64 row_mat=mdf
+BullNose,6.0000,Adaptive,mdf,ok,amana-flat-mdf-adaptive-6000-2f-spektra,G4,bandless printed row
+BullNose,6.0000,Adaptive,plywood_hardwood,ok,amana-flat-plywood-hardwood-adaptive-6000-2f-spektra,G4,bandless printed row
+BullNose,6.0000,Rest,hardwood,ok,amana-flat-hardwood-pocket-6000-2f-spektra,G4,bandless printed row
+BullNose,6.0000,Rest,mdf,ok,amana-flat-mdf-pocket-6000-2f-spektra,G4,bandless printed row
+BullNose,6.0000,Zigzag,hardwood,ok,amana-flat-hardwood-pocket-6000-2f-spektra,G4,bandless printed row
+BullNose,6.0000,Zigzag,mdf,ok,amana-flat-mdf-pocket-6000-2f-spektra,G4,bandless printed row
+BullNose,6.0000,Trace,softwood,refused,,G3,family (bull finish)
+BullNose,6.0000,Trace,hardwood,refused,,G3,family (bull finish)
+BullNose,6.0000,Trace,mdf,refused,,G3,family (bull finish)
+BullNose,6.0000,Trace,plywood_hardwood,refused,,G3,family (bull finish)
+BullNose,6.0000,Drill,softwood,refused,,G6,drill
+BullNose,6.0000,Drill,hardwood,refused,,G6,drill
+BullNose,6.0000,Drill,mdf,refused,,G6,drill
+BullNose,6.0000,Drill,plywood_hardwood,refused,,G6,drill
+BullNose,6.0000,DropCutter,softwood,refused,,G3,family (bull finish)
+BullNose,6.0000,DropCutter,hardwood,refused,,G3,family (bull finish)
+BullNose,6.0000,DropCutter,mdf,refused,,G3,family (bull finish)
+BullNose,6.0000,DropCutter,plywood_hardwood,refused,,G3,family (bull finish)
+BullNose,6.0000,Adaptive3d,hardwood,ok,amana-flat-hardwood-pocket-6000-2f-spektra,G4,bandless printed row
+BullNose,6.0000,Adaptive3d,mdf,ok,amana-flat-mdf-pocket-6000-2f-spektra,G4,bandless printed row
+BullNose,6.0000,Waterline,mdf,ok,onsrud-mdf-60-100mw-1_4-finish,G2h,extrapolated d_ratio=0.94 h_ratio=0.64 row_mat=mdf
+BullNose,6.0000,SteepShallow,mdf,ok,onsrud-mdf-60-100mw-1_4-finish,G2h,extrapolated d_ratio=0.94 h_ratio=0.64 row_mat=mdf
+BullNose,6.0000,RampFinish,softwood,refused,,G3,family (bull finish)
+BullNose,6.0000,RampFinish,hardwood,refused,,G3,family (bull finish)
+BullNose,6.0000,RampFinish,mdf,refused,,G3,family (bull finish)
+BullNose,6.0000,RampFinish,plywood_hardwood,refused,,G3,family (bull finish)
+BullNose,6.0000,RadialFinish,softwood,refused,,G3,family (bull finish)
+BullNose,6.0000,RadialFinish,hardwood,refused,,G3,family (bull finish)
+BullNose,6.0000,RadialFinish,mdf,refused,,G3,family (bull finish)
+BullNose,6.0000,RadialFinish,plywood_hardwood,refused,,G3,family (bull finish)
+BullNose,6.0000,HorizontalFinish,softwood,refused,,G3,family (bull finish)
+BullNose,6.0000,HorizontalFinish,hardwood,refused,,G3,family (bull finish)
+BullNose,6.0000,HorizontalFinish,mdf,refused,,G3,family (bull finish)
+BullNose,6.0000,HorizontalFinish,plywood_hardwood,refused,,G3,family (bull finish)
+BullNose,6.0000,ProjectCurve,softwood,refused,,G3,family (bull finish)
+BullNose,6.0000,ProjectCurve,hardwood,refused,,G3,family (bull finish)
+BullNose,6.0000,ProjectCurve,mdf,refused,,G3,family (bull finish)
+BullNose,6.0000,ProjectCurve,plywood_hardwood,refused,,G3,family (bull finish)
+BullNose,6.0000,AlignmentPinDrill,softwood,refused,,G6,drill
+BullNose,6.0000,AlignmentPinDrill,hardwood,refused,,G6,drill
+BullNose,6.0000,AlignmentPinDrill,mdf,refused,,G6,drill
+BullNose,6.0000,AlignmentPinDrill,plywood_hardwood,refused,,G6,drill
+VBit,6.3500,Face,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,Face,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,Pocket,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,Pocket,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,Profile,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,Profile,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,Adaptive,softwood,refused,,G3,family (V-bit adaptive)
+VBit,6.3500,Adaptive,hardwood,refused,,G3,family (V-bit adaptive)
+VBit,6.3500,Adaptive,mdf,refused,,G3,family (V-bit adaptive)
+VBit,6.3500,Adaptive,plywood_hardwood,refused,,G3,family (V-bit adaptive)
+VBit,6.3500,VCarve,softwood,ok,amana-vgroove-softwood-trace-60deg-2f,G1,extrapolated d_ratio=0.50 h_ratio=0.83 row_mat=softwood
+VBit,6.3500,VCarve,softwood,ok,amana-vgroove-softwood-trace-60deg-2f,G4,bandless printed row
+VBit,6.3500,VCarve,hardwood,ok,whiteside-1540-vgroove-60deg-quarter-rpm,G5,"RPM-only V-bit anchor, chipload from formula"
+VBit,6.3500,VCarve,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,VCarve,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,Rest,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,Rest,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,Inlay,softwood,ok,whiteside-1540-vgroove-60deg-quarter-rpm,G2h,extrapolated d_ratio=1.00 h_ratio=2.15 row_mat=hardwood
+VBit,6.3500,Inlay,softwood,ok,whiteside-1540-vgroove-60deg-quarter-rpm,G5,"RPM-only V-bit anchor, chipload from formula"
+VBit,6.3500,Inlay,hardwood,ok,whiteside-1540-vgroove-60deg-quarter-rpm,G5,"RPM-only V-bit anchor, chipload from formula"
+VBit,6.3500,Inlay,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,Inlay,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,Zigzag,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,Zigzag,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,Trace,softwood,ok,whiteside-1540-vgroove-60deg-quarter-rpm,G2h,extrapolated d_ratio=1.00 h_ratio=2.15 row_mat=hardwood
+VBit,6.3500,Trace,softwood,ok,whiteside-1540-vgroove-60deg-quarter-rpm,G5,"RPM-only V-bit anchor, chipload from formula"
+VBit,6.3500,Trace,hardwood,ok,whiteside-1540-vgroove-60deg-quarter-rpm,G5,"RPM-only V-bit anchor, chipload from formula"
+VBit,6.3500,Trace,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,Trace,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,Drill,softwood,refused,,G6,drill
+VBit,6.3500,Drill,hardwood,refused,,G6,drill
+VBit,6.3500,Drill,mdf,refused,,G6,drill
+VBit,6.3500,Drill,plywood_hardwood,refused,,G6,drill
+VBit,6.3500,Chamfer,softwood,ok,whiteside-1540-vgroove-60deg-quarter-rpm,G2h,extrapolated d_ratio=1.00 h_ratio=2.15 row_mat=hardwood
+VBit,6.3500,Chamfer,softwood,ok,whiteside-1540-vgroove-60deg-quarter-rpm,G5,"RPM-only V-bit anchor, chipload from formula"
+VBit,6.3500,Chamfer,hardwood,ok,whiteside-1540-vgroove-60deg-quarter-rpm,G5,"RPM-only V-bit anchor, chipload from formula"
+VBit,6.3500,Chamfer,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,Chamfer,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,DropCutter,softwood,refused,,G5,engaged geometry (V-bit width)
+VBit,6.3500,DropCutter,hardwood,refused,,G5,engaged geometry (V-bit width)
+VBit,6.3500,DropCutter,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,DropCutter,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,Adaptive3d,softwood,refused,,G3,family (V-bit adaptive)
+VBit,6.3500,Adaptive3d,hardwood,refused,,G3,family (V-bit adaptive)
+VBit,6.3500,Adaptive3d,mdf,refused,,G3,family (V-bit adaptive)
+VBit,6.3500,Adaptive3d,plywood_hardwood,refused,,G3,family (V-bit adaptive)
+VBit,6.3500,Waterline,softwood,refused,,G3,family (V-bit 3D finish)
+VBit,6.3500,Waterline,hardwood,refused,,G3,family (V-bit 3D finish)
+VBit,6.3500,Waterline,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,Waterline,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,SteepShallow,softwood,refused,,G3,family (V-bit 3D finish)
+VBit,6.3500,SteepShallow,hardwood,refused,,G3,family (V-bit 3D finish)
+VBit,6.3500,SteepShallow,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,SteepShallow,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,RampFinish,softwood,refused,,G5,engaged geometry (V-bit width)
+VBit,6.3500,RampFinish,hardwood,refused,,G5,engaged geometry (V-bit width)
+VBit,6.3500,RampFinish,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,RampFinish,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,RadialFinish,softwood,refused,,G5,engaged geometry (V-bit width)
+VBit,6.3500,RadialFinish,hardwood,refused,,G5,engaged geometry (V-bit width)
+VBit,6.3500,RadialFinish,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,RadialFinish,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,HorizontalFinish,softwood,refused,,G5,engaged geometry (V-bit width)
+VBit,6.3500,HorizontalFinish,hardwood,refused,,G5,engaged geometry (V-bit width)
+VBit,6.3500,HorizontalFinish,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,HorizontalFinish,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,ProjectCurve,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,ProjectCurve,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,6.3500,AlignmentPinDrill,softwood,refused,,G6,drill
+VBit,6.3500,AlignmentPinDrill,hardwood,refused,,G6,drill
+VBit,6.3500,AlignmentPinDrill,mdf,refused,,G6,drill
+VBit,6.3500,AlignmentPinDrill,plywood_hardwood,refused,,G6,drill
+VBit,12.7000,Face,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,Face,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,Pocket,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,Pocket,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,Profile,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,Profile,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,Adaptive,softwood,refused,,G3,family (V-bit adaptive)
+VBit,12.7000,Adaptive,hardwood,refused,,G3,family (V-bit adaptive)
+VBit,12.7000,Adaptive,mdf,refused,,G3,family (V-bit adaptive)
+VBit,12.7000,Adaptive,plywood_hardwood,refused,,G3,family (V-bit adaptive)
+VBit,12.7000,VCarve,softwood,ok,amana-vgroove-softwood-trace-60deg-2f,G2h,extrapolated d_ratio=1.00 h_ratio=0.83 row_mat=softwood
+VBit,12.7000,VCarve,softwood,ok,amana-vgroove-softwood-trace-60deg-2f,G4,bandless printed row
+VBit,12.7000,VCarve,hardwood,ok,whiteside-1540-vgroove-60deg-quarter-rpm,G5,"RPM-only V-bit anchor, chipload from formula"
+VBit,12.7000,VCarve,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,VCarve,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,Rest,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,Rest,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,Inlay,softwood,ok,amana-vgroove-softwood-trace-60deg-2f,G4,bandless printed row
+VBit,12.7000,Inlay,hardwood,ok,amana-vgroove-hardwood-trace-60deg-2f,G4,bandless printed row
+VBit,12.7000,Inlay,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,Inlay,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,Zigzag,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,Zigzag,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,Trace,softwood,ok,amana-vgroove-softwood-trace-60deg-2f,G4,bandless printed row
+VBit,12.7000,Trace,hardwood,ok,amana-vgroove-hardwood-trace-60deg-2f,G4,bandless printed row
+VBit,12.7000,Trace,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,Trace,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,Drill,softwood,refused,,G6,drill
+VBit,12.7000,Drill,hardwood,refused,,G6,drill
+VBit,12.7000,Drill,mdf,refused,,G6,drill
+VBit,12.7000,Drill,plywood_hardwood,refused,,G6,drill
+VBit,12.7000,Chamfer,softwood,ok,amana-vgroove-softwood-trace-60deg-2f,G4,bandless printed row
+VBit,12.7000,Chamfer,hardwood,ok,amana-vgroove-hardwood-trace-60deg-2f,G4,bandless printed row
+VBit,12.7000,Chamfer,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,Chamfer,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,DropCutter,softwood,refused,,G5,engaged geometry (V-bit width)
+VBit,12.7000,DropCutter,hardwood,refused,,G5,engaged geometry (V-bit width)
+VBit,12.7000,DropCutter,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,DropCutter,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,Adaptive3d,softwood,refused,,G3,family (V-bit adaptive)
+VBit,12.7000,Adaptive3d,hardwood,refused,,G3,family (V-bit adaptive)
+VBit,12.7000,Adaptive3d,mdf,refused,,G3,family (V-bit adaptive)
+VBit,12.7000,Adaptive3d,plywood_hardwood,refused,,G3,family (V-bit adaptive)
+VBit,12.7000,Waterline,softwood,refused,,G3,family (V-bit 3D finish)
+VBit,12.7000,Waterline,hardwood,refused,,G3,family (V-bit 3D finish)
+VBit,12.7000,Waterline,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,Waterline,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,SteepShallow,softwood,refused,,G3,family (V-bit 3D finish)
+VBit,12.7000,SteepShallow,hardwood,refused,,G3,family (V-bit 3D finish)
+VBit,12.7000,SteepShallow,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,SteepShallow,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,RampFinish,softwood,refused,,G5,engaged geometry (V-bit width)
+VBit,12.7000,RampFinish,hardwood,refused,,G5,engaged geometry (V-bit width)
+VBit,12.7000,RampFinish,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,RampFinish,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,RadialFinish,softwood,refused,,G5,engaged geometry (V-bit width)
+VBit,12.7000,RadialFinish,hardwood,refused,,G5,engaged geometry (V-bit width)
+VBit,12.7000,RadialFinish,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,RadialFinish,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,HorizontalFinish,softwood,refused,,G5,engaged geometry (V-bit width)
+VBit,12.7000,HorizontalFinish,hardwood,refused,,G5,engaged geometry (V-bit width)
+VBit,12.7000,HorizontalFinish,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,HorizontalFinish,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,ProjectCurve,mdf,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,ProjectCurve,plywood_hardwood,refused,,G2,"category (V-bit, no MDF/ply row)"
+VBit,12.7000,AlignmentPinDrill,softwood,refused,,G6,drill
+VBit,12.7000,AlignmentPinDrill,hardwood,refused,,G6,drill
+VBit,12.7000,AlignmentPinDrill,mdf,refused,,G6,drill
+VBit,12.7000,AlignmentPinDrill,plywood_hardwood,refused,,G6,drill
+TaperedBallNose,3.1750,Profile,hardwood,refused,,G3,"family (taper contour/trace, no row in that family)"
+TaperedBallNose,3.1750,Profile,mdf,refused,,G3,"family (taper contour/trace, no row in that family)"
+TaperedBallNose,3.1750,Profile,plywood_hardwood,refused,,G3,"family (taper contour/trace, no row in that family)"
+TaperedBallNose,3.1750,Trace,hardwood,refused,,G3,"family (taper contour/trace, no row in that family)"
+TaperedBallNose,3.1750,Trace,mdf,refused,,G3,"family (taper contour/trace, no row in that family)"
+TaperedBallNose,3.1750,Trace,plywood_hardwood,refused,,G3,"family (taper contour/trace, no row in that family)"
+TaperedBallNose,3.1750,Drill,softwood,refused,,G6,drill
+TaperedBallNose,3.1750,Drill,hardwood,refused,,G6,drill
+TaperedBallNose,3.1750,Drill,mdf,refused,,G6,drill
+TaperedBallNose,3.1750,Drill,plywood_hardwood,refused,,G6,drill
+TaperedBallNose,3.1750,Waterline,softwood,refused,,G3,family (taper contour finish)
+TaperedBallNose,3.1750,Waterline,hardwood,refused,,G3,family (taper contour finish)
+TaperedBallNose,3.1750,Waterline,mdf,refused,,G3,family (taper contour finish)
+TaperedBallNose,3.1750,Waterline,plywood_hardwood,refused,,G3,family (taper contour finish)
+TaperedBallNose,3.1750,Pencil,hardwood,refused,,G3,"family (taper contour/trace, no row in that family)"
+TaperedBallNose,3.1750,Pencil,mdf,refused,,G3,"family (taper contour/trace, no row in that family)"
+TaperedBallNose,3.1750,Pencil,plywood_hardwood,refused,,G3,"family (taper contour/trace, no row in that family)"
+TaperedBallNose,3.1750,SteepShallow,softwood,refused,,G3,family (taper contour finish)
+TaperedBallNose,3.1750,SteepShallow,hardwood,refused,,G3,family (taper contour finish)
+TaperedBallNose,3.1750,SteepShallow,mdf,refused,,G3,family (taper contour finish)
+TaperedBallNose,3.1750,SteepShallow,plywood_hardwood,refused,,G3,family (taper contour finish)
+TaperedBallNose,3.1750,RampFinish,plywood_hardwood,ok,onsrud-plywood-hardwood-77-100-1_8-parallel,G2h,extrapolated d_ratio=1.00 h_ratio=0.83 row_mat=plywood_hardwood
+TaperedBallNose,3.1750,AlignmentPinDrill,softwood,refused,,G6,drill
+TaperedBallNose,3.1750,AlignmentPinDrill,hardwood,refused,,G6,drill
+TaperedBallNose,3.1750,AlignmentPinDrill,mdf,refused,,G6,drill
+TaperedBallNose,3.1750,AlignmentPinDrill,plywood_hardwood,refused,,G6,drill
+TaperedBallNose,6.0000,Profile,hardwood,refused,,G3,"family (taper contour/trace, no row in that family)"
+TaperedBallNose,6.0000,Profile,mdf,refused,,G3,"family (taper contour/trace, no row in that family)"
+TaperedBallNose,6.0000,Profile,plywood_hardwood,refused,,G3,"family (taper contour/trace, no row in that family)"
+TaperedBallNose,6.0000,Trace,hardwood,refused,,G3,"family (taper contour/trace, no row in that family)"
+TaperedBallNose,6.0000,Trace,mdf,refused,,G3,"family (taper contour/trace, no row in that family)"
+TaperedBallNose,6.0000,Trace,plywood_hardwood,refused,,G3,"family (taper contour/trace, no row in that family)"
+TaperedBallNose,6.0000,Drill,softwood,refused,,G6,drill
+TaperedBallNose,6.0000,Drill,hardwood,refused,,G6,drill
+TaperedBallNose,6.0000,Drill,mdf,refused,,G6,drill
+TaperedBallNose,6.0000,Drill,plywood_hardwood,refused,,G6,drill
+TaperedBallNose,6.0000,Waterline,softwood,refused,,G3,family (taper contour finish)
+TaperedBallNose,6.0000,Waterline,hardwood,refused,,G3,family (taper contour finish)
+TaperedBallNose,6.0000,Waterline,mdf,refused,,G3,family (taper contour finish)
+TaperedBallNose,6.0000,Waterline,plywood_hardwood,refused,,G3,family (taper contour finish)
+TaperedBallNose,6.0000,Pencil,hardwood,refused,,G3,"family (taper contour/trace, no row in that family)"
+TaperedBallNose,6.0000,Pencil,mdf,refused,,G3,"family (taper contour/trace, no row in that family)"
+TaperedBallNose,6.0000,Pencil,plywood_hardwood,refused,,G3,"family (taper contour/trace, no row in that family)"
+TaperedBallNose,6.0000,SteepShallow,softwood,refused,,G3,family (taper contour finish)
+TaperedBallNose,6.0000,SteepShallow,hardwood,refused,,G3,family (taper contour finish)
+TaperedBallNose,6.0000,SteepShallow,mdf,refused,,G3,family (taper contour finish)
+TaperedBallNose,6.0000,SteepShallow,plywood_hardwood,refused,,G3,family (taper contour finish)
+TaperedBallNose,6.0000,AlignmentPinDrill,softwood,refused,,G6,drill
+TaperedBallNose,6.0000,AlignmentPinDrill,hardwood,refused,,G6,drill
+TaperedBallNose,6.0000,AlignmentPinDrill,mdf,refused,,G6,drill
+TaperedBallNose,6.0000,AlignmentPinDrill,plywood_hardwood,refused,,G6,drill

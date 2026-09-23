@@ -1,0 +1,133 @@
+wood rows with a chipload: 323 of 389
+
+## G1 series with >=2 diameters (source, subfamily, material, flutes, role)
+  chamfer_vbit       amana_ams159_vgroove_v2            carbide_tipped_vgroove softwood         f2 finish     [9.525, 12.7]
+  ball_nose          amana_ball_nose_v7                 solid_carbide          hardwood         f2 finish     [3.175, 6.0]
+  ball_nose          amana_ball_nose_v7                 solid_carbide          hardwood         f2 roughing   [3.175, 6.35]
+  ball_nose          amana_ball_nose_v7                 solid_carbide          mdf              f2 finish     [3.175, 6.0]
+  ball_nose          amana_ball_nose_v7                 solid_carbide          mdf              f2 roughing   [3.175, 6.35]
+  ball_nose          amana_ball_nose_v7                 solid_carbide          softwood         f2 finish     [3.175, 6.0]
+  ball_nose          amana_ball_nose_v7                 solid_carbide          softwood         f2 roughing   [3.175, 6.35]
+  flat_end           amana_compression_spirals_v8       compression            hardwood         f2 roughing   [6.35, 12.7]
+  flat_end           amana_compression_spirals_v8       compression            mdf              f2 roughing   [6.35, 12.7]
+  flat_end           amana_spektra_spiral_plunge_v24    spektra_spiral_plunge  hardwood         f2 roughing   [3.175, 6.0, 6.35]
+  flat_end           amana_spektra_spiral_plunge_v24    spektra_spiral_plunge  hardwood         f3 roughing   [3.175, 6.0, 6.35]
+  flat_end           amana_spektra_spiral_plunge_v24    spektra_spiral_plunge  mdf              f2 roughing   [0.79375, 1.5, 1.5875, 2.38125, 3.0, 3.175, 4.7625, 5.0, 6.0, 6.35, 9.525, 12.0, 12.7]
+  flat_end           amana_spektra_spiral_plunge_v24    spektra_spiral_plunge  mdf              f3 roughing   [3.175, 6.0, 6.35, 9.525, 12.7, 19.05]
+  flat_end           amana_spektra_spiral_plunge_v24    spektra_spiral_plunge  plywood_hardwood f2 roughing   [3.175, 6.0, 6.35]
+  flat_end           amana_spektra_spiral_plunge_v24    spektra_spiral_plunge  plywood_hardwood f3 roughing   [3.175, 6.0, 6.35]
+  flat_end           amana_spektra_spiral_plunge_v24    spektra_spiral_plunge  plywood_softwood f2 roughing   [3.175, 6.0, 6.35]
+  flat_end           amana_spektra_spiral_plunge_v24    spektra_spiral_plunge  plywood_softwood f3 roughing   [3.175, 6.0, 6.35]
+  flat_end           amana_spektra_spiral_plunge_v24    spektra_spiral_plunge  softwood         f2 roughing   [0.79375, 1.5, 1.5875, 2.38125, 3.0, 3.175, 4.7625, 5.0, 6.0, 6.35, 9.525, 12.0, 12.7]
+  flat_end           amana_spektra_spiral_plunge_v24    spektra_spiral_plunge  softwood         f3 roughing   [3.175, 6.0, 6.35, 9.525, 12.7, 19.05]
+  flat_end           amana_spektra_spiral_plunge_v24    upcut                  hardwood         f2 roughing   [3.175, 6.0]
+  flat_end           amana_spektra_spiral_plunge_v24    upcut                  softwood         f2 roughing   [3.175, 6.0]
+  ball_nose          amana_zrn_3d_profiling             zrn                    softwood         f2 finish     [1.0, 1.5875]
+  tapered_ball_nose  amana_zrn_3d_profiling             3d_profiling           hardwood         f2 finish     [3.175, 6.0]
+  tapered_ball_nose  amana_zrn_3d_profiling             3d_profiling           hardwood         f2 semi_finish [3.175, 6.0]
+  tapered_ball_nose  amana_zrn_3d_profiling             3d_profiling           mdf              f2 finish     [3.175, 6.0]
+  tapered_ball_nose  amana_zrn_3d_profiling             3d_profiling           softwood         f2 finish     [3.175, 6.0]
+  ball_nose          amana_zrn_3d_profiling_v8          zrn                    softwood         f3 finish     [9.525, 12.7]
+  flat_end           amana_zrn_3d_profiling_v8          zrn_2d3d_carving       softwood         f2 roughing   [3.175, 6.0, 6.35]
+  flat_end           freud_router_bit_feed_and_speed_for_cnc_20170822 solid_carbide          hardwood         f2 finish     [3.175, 6.35, 9.525, 12.7]
+  flat_end           freud_router_bit_feed_and_speed_for_cnc_20170822 solid_carbide          mdf              f2 roughing   [3.175, 6.35, 12.7]
+  flat_end           freud_router_bit_feed_and_speed_for_cnc_20170822 solid_carbide          plywood_hardwood f2 finish     [6.35, 12.7]
+  flat_end           freud_router_bit_feed_and_speed_for_cnc_20170822 solid_carbide          softwood         f2 finish     [3.175, 6.35, 12.7]
+  ball_nose          idcwoodcraft_chipload_csv_2026-05-30 ball_nose_spiral       hardwood         f2 finish     [3.175, 6.35, 12.7]
+  flat_end           idcwoodcraft_chipload_csv_2026-05-30 compression_spiral     plywood_hardwood f2 finish     [3.175, 6.35]
+  flat_end           onsrud_hard_plywood_cutting_data   60_000hh_series        plywood_hardwood f2 roughing   [9.525, 12.7]
+  flat_end           onsrud_hard_plywood_cutting_data   60_000lh_series        plywood_hardwood f2 roughing   [9.525, 12.7, 15.875, 19.05]
+  flat_end           onsrud_hard_plywood_cutting_data   60_100mw_compression_s plywood_hardwood f2 finish     [3.175, 4.7625, 6.35, 9.525, 12.7]
+  flat_end           onsrud_hard_plywood_cutting_data   60_350_series          plywood_hardwood f2 semi_finish [9.525, 12.7, 15.875]
+  flat_end           onsrud_hard_wood_cutting_data      60_000hh_series        hardwood         f2 roughing   [9.525, 12.7]
+  flat_end           onsrud_hard_wood_cutting_data      60_000lh_series        hardwood         f2 roughing   [9.525, 12.7, 15.875, 19.05]
+  flat_end           onsrud_hard_wood_cutting_data      60_100mw_compression_s hardwood         f2 finish     [3.175, 4.7625, 6.35, 9.525]
+  flat_end           onsrud_hard_wood_cutting_data      60_200_downcut         hardwood         f2 finish     [6.35, 9.525, 12.7, 19.05]
+  flat_end           onsrud_mdf_cutting_data            60_000lh_series        mdf              f2 roughing   [9.525, 12.7, 15.875, 19.05]
+  flat_end           onsrud_mdf_cutting_data            60_100mw_compression_s mdf              f2 finish     [3.175, 4.7625, 6.35, 9.525, 12.7]
+  flat_end           onsrud_mdf_cutting_data            60_200_downcut         mdf              f2 finish     [6.35, 9.525, 12.7, 19.05]
+  flat_end           onsrud_mdf_cutting_data            60_350_series          mdf              f2 semi_finish [9.525, 12.7, 15.875]
+  flat_end           onsrud_soft_plywood_cutting_data   60_000hh_series        plywood_softwood f2 roughing   [9.525, 12.7]
+  flat_end           onsrud_soft_plywood_cutting_data   60_000lh_series        plywood_softwood f2 roughing   [9.525, 12.7, 15.875, 19.05]
+  flat_end           onsrud_soft_plywood_cutting_data   60_100mw_compression_s plywood_softwood f2 finish     [4.7625, 6.35, 9.525, 12.7]
+  flat_end           onsrud_soft_plywood_cutting_data   60_350_series          plywood_softwood f2 semi_finish [9.525, 12.7, 15.875]
+  flat_end           onsrud_soft_wood_cutting_data      60_000lh_series        softwood         f2 roughing   [9.525, 12.7, 15.875]
+  flat_end           onsrud_soft_wood_cutting_data      60_100mw_compression_s softwood         f2 finish     [3.175, 4.7625]
+  flat_end           onsrud_soft_wood_cutting_data      60_200_downcut         softwood         f2 finish     [6.35, 9.525, 12.7, 19.05]
+  ball_nose          whiteside_fusion360_tools_2019-10-23 ball_nose_spiral_solid hardwood         f2 finish     [4.7625, 6.35]
+  flat_end           whiteside_fusion360_tools_2019-10-23 downcut_spiral_solid_c hardwood         f2 finish     [3.175, 4.7625, 6.35]
+  flat_end           whiteside_fusion360_tools_2019-10-23 upcut_spiral_solid_car hardwood         f2 finish     [3.175, 4.7625, 6.35, 12.7]
+  tapered_ball_nose  whiteside_fusion360_tools_2019-10-23 conical_ball_nose_spir hardwood         f2 finish     [1.442, 2.9867]
+  series per tool family: {'chamfer_vbit': 1, 'ball_nose': 10, 'flat_end': 41, 'tapered_ball_nose': 5}
+  smallest printed diameter per tool family: {'ball_nose': 0.794, 'tapered_ball_nose': 1.442, 'flat_end': 0.79375, 'bull_nose': 6.0, 'chamfer_vbit': 6.0, 'facing_bit': 22.0}
+
+## G2 one tool (source, subfamily, diameter, flutes, role) printed in >=2 categories
+    6 ('ball_nose', ('hardwood', 'mdf', 'softwood'))
+    2 ('ball_nose', ('mdf', 'softwood'))
+    1 ('bull_nose', ('hardwood', 'softwood'))
+    1 ('chamfer_vbit', ('hardwood', 'mdf'))
+    1 ('chamfer_vbit', ('hardwood', 'mdf', 'plywood_hardwood', 'softwood'))
+    5 ('chamfer_vbit', ('hardwood', 'softwood'))
+    1 ('facing_bit', ('hardwood', 'hdf', 'mdf', 'particleboard', 'plywood_hardwood', 'softwood'))
+    1 ('facing_bit', ('mdf', 'softwood'))
+    1 ('flat_end', ('hardwood', 'mdf'))
+    1 ('flat_end', ('hardwood', 'mdf', 'plywood_hardwood'))
+   12 ('flat_end', ('hardwood', 'mdf', 'plywood_hardwood', 'plywood_softwood', 'softwood'))
+    2 ('flat_end', ('hardwood', 'plywood_hardwood', 'softwood'))
+    4 ('flat_end', ('hardwood', 'softwood'))
+    1 ('flat_end', ('hdf', 'mdf', 'particleboard', 'plywood_hardwood', 'plywood_softwood'))
+   14 ('flat_end', ('mdf', 'softwood'))
+    2 ('tapered_ball_nose', ('hardwood', 'mdf', 'softwood'))
+
+## G3 one tool (source, subfamily, diameter, flutes, material) printed in >=2 pass roles / op families
+    3 ('ball_nose', 'amana_ball_nose_v7', ('finish', 'roughing'), 'distinct values')
+    1 ('ball_nose', 'amana_ball_nose_v7', ('finish', 'semi_finish'), 'same value')
+    1 ('tapered_ball_nose', 'amana_zrn_3d_profiling', ('finish', 'semi_finish'), 'distinct values')
+    1 ('tapered_ball_nose', 'amana_zrn_3d_profiling', ('finish', 'semi_finish'), 'same value')
+    2 ('tapered_ball_nose', 'onsrud_hard_plywood_cutting_data', ('finish', 'roughing'), 'same value')
+    2 ('tapered_ball_nose', 'onsrud_hard_wood_cutting_data', ('finish', 'roughing'), 'same value')
+    2 ('tapered_ball_nose', 'onsrud_mdf_cutting_data', ('finish', 'roughing'), 'same value')
+    2 ('tapered_ball_nose', 'onsrud_soft_wood_cutting_data', ('finish', 'roughing'), 'same value')
+
+## G4 band shape per tool family and source
+   19 ('ball_nose', 'amana_ball_nose_v7', 'band')
+    6 ('ball_nose', 'amana_zrn_3d_profiling', 'band')
+    2 ('ball_nose', 'amana_zrn_3d_profiling_v8', 'band')
+    3 ('ball_nose', 'idcwoodcraft_chipload_csv_2026-05-30', 'one value')
+    2 ('ball_nose', 'whiteside_fusion360_tools_2019-10-23', 'one value')
+    3 ('bull_nose', 'onsrud_cutting_data_recommendations', 'band')
+    6 ('chamfer_vbit', 'amana_ams159_vgroove_v2', 'band')
+    3 ('chamfer_vbit', 'amana_ams159_vgroove_v2', 'one value')
+    5 ('chamfer_vbit', 'amana_insert_v_groove_v16', 'band')
+    7 ('chamfer_vbit', 'amana_spektra_engraving_v4', 'band')
+    2 ('chamfer_vbit', 'whiteside_vgroove_collection', 'band')
+    6 ('facing_bit', 'amana_spoilboard_v8', 'band')
+    1 ('facing_bit', 'idcwoodcraft_chipload_csv_2026-05-30', 'one value')
+    2 ('facing_bit', 'whiteside_6210_spoilboard', 'band')
+    5 ('flat_end', 'amana_compression_spirals_v8', 'one value')
+   14 ('flat_end', 'amana_spektra_spiral_plunge_v24', 'band')
+   86 ('flat_end', 'amana_spektra_spiral_plunge_v24', 'one value')
+    4 ('flat_end', 'amana_zrn_3d_profiling_v8', 'band')
+   12 ('flat_end', 'freud_router_bit_feed_and_speed_for_cnc_20170822', 'band')
+    4 ('flat_end', 'idcwoodcraft_chipload_csv_2026-05-30', 'one value')
+   17 ('flat_end', 'onsrud_hard_plywood_cutting_data', 'band')
+   15 ('flat_end', 'onsrud_hard_wood_cutting_data', 'band')
+   20 ('flat_end', 'onsrud_mdf_cutting_data', 'band')
+   16 ('flat_end', 'onsrud_soft_plywood_cutting_data', 'band')
+   12 ('flat_end', 'onsrud_soft_wood_cutting_data', 'band')
+    9 ('flat_end', 'whiteside_fusion360_tools_2019-10-23', 'one value')
+    8 ('tapered_ball_nose', 'amana_zrn_3d_profiling', 'band')
+    8 ('tapered_ball_nose', 'onsrud_hard_plywood_cutting_data', 'band')
+    8 ('tapered_ball_nose', 'onsrud_hard_wood_cutting_data', 'band')
+    8 ('tapered_ball_nose', 'onsrud_mdf_cutting_data', 'band')
+    8 ('tapered_ball_nose', 'onsrud_soft_wood_cutting_data', 'band')
+    2 ('tapered_ball_nose', 'whiteside_fusion360_tools_2019-10-23', 'one value')
+  min/max ratio tapered_ball_nose: n=40 median 0.60 range 0.50-0.71
+  min/max ratio bull_nose: n=3 median 0.54 range 0.53-0.58
+  min/max ratio ball_nose: n=27 median 0.62 range 0.38-0.78
+  min/max ratio facing_bit: n=8 median 0.56 range 0.54-0.57
+  min/max ratio flat_end: n=110 median 0.88 range 0.40-0.92
+  min/max ratio chamfer_vbit: n=20 median 0.43 range 0.33-0.55
+
+## G6 drill rows: 0
+## G5 V-bit rows with a chipload: 23 ; V-bit rows with no chipload: 2
