@@ -1,6 +1,6 @@
 # Simulation cut metrics: distributions first, time series on request
 
-Status: LANDED packages A–F on 2026-09-23 night (unattended run; not yet seen on screen). Date: 2026-09-23. Owner-facing decisions: §7 (assumed answers recorded there). Landed commits and residual items: §8.
+Status: LANDED packages A–F on 2026-09-23 night; the operator looked on 2026-09-24 and the follow-up in §8 landed (not yet seen on screen). Date: 2026-09-23. Owner-facing decisions: §7 (assumed answers recorded there). Landed commits and residual items: §8.
 
 ## 1. The request
 
@@ -378,7 +378,7 @@ Residual items, recorded by the editors and the verifier:
   a `ToolpathLoadContext` for one toolpath.
 - The guide copy is not on the MCP `get_tool_load_report` payload (optional
   in §4 D).
-- Not seen on screen. The operator's look decides the §7 answers.
+- Seen on screen on 2026-09-24. The operator ruled Q1 (shading is correct for these cards); the follow-up section below records the changes.
 
 ### §8 Follow-up 2026-09-24
 
