@@ -215,6 +215,19 @@ pub(crate) fn generate_pencil(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Pencil, "generate_pencil");
+    // Feeds matrix R1 (2026-09-23): the registry row carries Scallop's tool
+    // rule, and the generator refuses on the same predicate Suggest reads.
+    // Membership pinned by
+    // `tool_constraints_allows_matches_runtime_refusal_semantics`.
+    if !OperationType::Pencil
+        .registry_entry()
+        .tool_constraints
+        .allows(ctx.tool_cfg.tool_type.cutter_kind())
+    {
+        return Err(OperationError::InvalidTool(
+            "Pencil requires a ball-tip tool (Ball Nose or Tapered Ball Nose)".into(),
+        ));
+    }
     let m = require_mesh(ctx.mesh, op.op_type().name())?;
     let idx = require_index(ctx.index, op.op_type().name())?;
     let params = cfg.params(
@@ -674,6 +687,19 @@ pub(crate) fn generate_spiral_finish(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, SpiralFinish, "generate_spiral_finish");
+    // Feeds matrix R1 (2026-09-23): the registry row carries Scallop's tool
+    // rule, and the generator refuses on the same predicate Suggest reads.
+    // Membership pinned by
+    // `tool_constraints_allows_matches_runtime_refusal_semantics`.
+    if !OperationType::SpiralFinish
+        .registry_entry()
+        .tool_constraints
+        .allows(ctx.tool_cfg.tool_type.cutter_kind())
+    {
+        return Err(OperationError::InvalidTool(
+            "Spiral Finish requires a ball-tip tool (Ball Nose or Tapered Ball Nose)".into(),
+        ));
+    }
     let m = require_mesh(ctx.mesh, op.op_type().name())?;
     let idx = require_index(ctx.index, op.op_type().name())?;
     let params = cfg.params(OpMotion {

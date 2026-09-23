@@ -296,6 +296,16 @@ fn tool_constraints_allows_matches_runtime_refusal_semantics() {
             tool_type.has_ball_tip(),
             "{tool_type:?} vs UnifiedFinish"
         );
+        // Pencil and SpiralFinish: the same ball-tip rule since feeds
+        // matrix R1 (2026-09-23); `generate_pencil` and
+        // `generate_spiral_finish` refuse on it, as Suggest does.
+        for op in [OperationType::Pencil, OperationType::SpiralFinish] {
+            assert_eq!(
+                op.registry_entry().tool_constraints.allows(kind),
+                tool_type.has_ball_tip(),
+                "{tool_type:?} vs {op:?}"
+            );
+        }
         // V-bit-required ops accept exactly the V-bit.
         for op in [
             OperationType::VCarve,

@@ -57,7 +57,9 @@ Recorded verbatim in substance; the operator's words are in FINDINGS-style quote
   registry's own tool rule refuses" and the FM4 sentry). Suggest and the
   generator now refuse the same cells; Pencil and SpiralFinish carry
   Scallop's tool rule; the refusal text names the operation and the allowed
-  kinds in words (rows 2-1, 2-6, 2-7, 4.4-15, 3.5-18 closed). The
+  kinds in words (rows 2-1, 2-6, 2-7, 4.4-15, 3.5-18 closed). Generation and the
+  MCP operation schema moved with Suggest on Pencil and SpiralFinish: their
+  generators now refuse a non-ball tool, as Scallop's always did. The
   evidence-backed refusals wait for FORMULA_BACKING_v2 (a fresh judgement on
   the post-R5 matrix) and the operator's look at its count.
 - R2, R4: no change.
