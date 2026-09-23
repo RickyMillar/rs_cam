@@ -678,29 +678,72 @@ impl<B: ComputeBackend> AppController<B> {
     /// Revision check: the accepted run's capture revision decides
     /// whether the metric evidence is stale, and a run stamped for a
     /// superseded revision does not clear the marker.
+    ///
+    /// Epoch rule (G-LATESIM with WP28):
+    ///
+    /// - A result whose boundaries name a toolpath the session no longer
+    ///   holds is discarded before any install. A setup deletion causes it.
+    /// - A result stamped with an older epoch, or with no stamp, is stored
+    ///   in the view and not adopted by the core, so it reads stale.
+    ///   The fixtures inject unstamped results on purpose: a result with
+    ///   no submit behind it is stored and reads stale, never current.
+    /// - Only a result stamped with the live epoch runs the feed
+    ///   modulation, because modulation writes `session.results`.
     fn adopt_simulation_result(
         &mut self,
         result: Result<Box<crate::compute::SimulationResult>, ComputeError>,
     ) {
         match result {
             Ok(simulation) => {
-                // A cancelled/superseded run can already be queued when an
-                // edit (notably setup deletion) moves the core epoch. Reject
-                // it before *any* viewport install or modulation side effect:
-                // `AdoptSimulation` alone is too late because modulation
-                // rewrites cached toolpath results.
-                let Some(submitted_epoch) = self.state.simulation.submitted_simulation_epoch else {
-                    tracing::warn!("discarding unstamped simulation result");
-                    return;
-                };
-                if submitted_epoch != self.state.session.simulation_epoch() {
+                // WP28 against G-LATESIM. Two different conditions, two
+                // different answers:
+                //
+                // - DISCARD: a boundary names a toolpath the session no
+                //   longer holds. A setup deletion removed it while the
+                //   result was queued. The setup boundaries, the inspect
+                //   lookup and the modulation all key on that id, so the
+                //   result cannot be installed. The check runs before any
+                //   notification, viewport install or modulation.
+                // - STORE STALE: every other result whose stamp is not the
+                //   live epoch (a moved epoch, or no stamp at all). A
+                //   simulation is minutes of work, so the view keeps it.
+                //   The core refuses or skips the adopt below, and the
+                //   freshness read derives `EditedSince`.
+                if let Some(missing) = simulation.core.boundaries.iter().find(|boundary| {
+                    self.state
+                        .session
+                        .find_toolpath_config_by_id(boundary.id)
+                        .is_none()
+                }) {
                     tracing::info!(
-                        submitted_epoch,
-                        current_epoch = self.state.session.simulation_epoch(),
-                        "discarding stale simulation result"
+                        toolpath = missing.id.0,
+                        "discarding simulation result: a boundary names a removed toolpath"
+                    );
+                    // The same closure as a cancelled run: the stamps are
+                    // consumed, and the MCP waiter and the plan step close.
+                    let _ = (
+                        self.state.simulation.submitted_edit_counter.take(),
+                        self.state.simulation.submitted_simulation_epoch.take(),
+                        self.state
+                            .simulation
+                            .submitted_metric_options_revision
+                            .take(),
+                    );
+                    #[cfg(feature = "mcp")]
+                    self.notify_mcp_simulation_error(
+                        "Simulation discarded: the project removed a simulated toolpath",
+                    );
+                    self.plan_simulation_landed(
+                        crate::controller::generate_all::PlanSimOutcome::Cancelled,
                     );
                     return;
                 }
+                // Modulation writes the modulated toolpaths into
+                // `session.results`, and export reads them. Only a run
+                // that answers the live epoch may do that. A stale trace
+                // describes motion the operator has left.
+                let answers_live_epoch = self.state.simulation.submitted_simulation_epoch
+                    == Some(self.state.session.simulation_epoch());
                 // N12 item 10 — one simulation state. The GUI
                 // simulates on its own lane, so the session never
                 // saw this answer and `ProjectSession::start`
@@ -843,7 +886,7 @@ impl<B: ComputeBackend> AppController<B> {
                         .results
                         .as_mut()
                         .and_then(|r| r.cut_trace.take());
-                    if cut_trace.is_some() {
+                    if answers_live_epoch && cut_trace.is_some() {
                         self.state
                             .session
                             .modulate_simulation_trace(&mut cut_trace, &opts);

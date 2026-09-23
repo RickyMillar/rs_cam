@@ -273,6 +273,122 @@ fn remove_setup_cleans_runtime_and_ignores_a_queued_late_completion() {
     }
 }
 
+/// A simulation result whose boundaries name `ids`, for the WP28 queue
+/// tests below.
+fn queued_simulation_naming(ids: &[ToolpathId]) -> ComputeMessage {
+    let boundaries = ids
+        .iter()
+        .enumerate()
+        .map(|(n, &id)| crate::compute::worker::SimBoundary {
+            id,
+            name: format!("Op {}", n + 1),
+            tool_name: "EndMill".to_owned(),
+            start_move: n * 10,
+            end_move: (n + 1) * 10,
+            direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+        })
+        .collect();
+    ComputeMessage::Simulation(Ok(Box::new(SimulationResult {
+        core: rs_cam_core::compute::simulate::SimulationResult {
+            mesh: rs_cam_core::stock::stock_mesh::StockMesh {
+                vertices: vec![0.0; 9],
+                indices: vec![0, 1, 2],
+                colors: vec![0.5; 9],
+            },
+            total_moves: 10 * ids.len(),
+            deviations: None,
+            column_deviations: None,
+            boundaries,
+            checkpoints: Vec::new(),
+            rapid_collisions: Vec::new(),
+            rapid_collision_move_indices: Vec::new(),
+            cut_trace: None,
+            column_grid_cell_mm: 0.5,
+            resolution_clamped: false,
+            prior_stocks: std::collections::HashMap::new(),
+        },
+        playback_data: Vec::new(),
+        cut_trace_path: None,
+    })))
+}
+
+/// Add a second setup with one toolpath. Returns the new setup and the
+/// toolpath id.
+fn add_second_setup_with_a_toolpath(
+    controller: &mut AppController<ScriptedBackend>,
+) -> (SetupId, ToolpathId) {
+    controller.handle_internal_event(crate::ui::AppEvent::AddSetup);
+    let setup = SetupId(controller.state.session.list_setups()[1].id);
+    let mut config = controller.state.session.toolpath_configs()[0].clone();
+    config.name = "Removed setup operation".to_owned();
+    let index = controller
+        .state
+        .session
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 1,
+            config: Box::new(config),
+        }))
+        .expect("add toolpath to the second setup")
+        .created
+        .expect("created toolpath index");
+    let id = controller.state.session.toolpath_configs()[index].id;
+    (setup, id)
+}
+
+/// WP28: a simulation result queued before a setup deletion names a
+/// toolpath that no longer exists. The drain discards it before any view
+/// install, and it closes the run the way a cancel does.
+#[test]
+fn remove_setup_discards_a_queued_simulation_that_names_a_removed_toolpath() {
+    let mut controller = sample_controller();
+    generate_all_for_test(&mut controller);
+    let (removed_setup, removed_id) = add_second_setup_with_a_toolpath(&mut controller);
+    let retained_id = controller.state.session.toolpath_configs()[0].id;
+    controller
+        .compute
+        .drained
+        .push(queued_simulation_naming(&[retained_id, removed_id]));
+
+    controller.handle_internal_event(crate::ui::AppEvent::RemoveSetup(removed_setup));
+    controller.drain_compute_results();
+
+    assert!(
+        !controller.state.simulation.has_results(),
+        "a result whose boundaries name a removed toolpath cannot be installed"
+    );
+    assert!(controller.state.simulation.last_run.is_none());
+    assert!(controller.state.session.simulation_result().is_none());
+}
+
+/// WP28 with G-LATESIM: the setup deletion moves the epoch, but a queued
+/// result that names only retained toolpaths can still be installed. It is
+/// STORED and reads stale, and the core does not adopt it. Only a removed
+/// toolpath makes a result a discard; an epoch change alone does not.
+#[test]
+fn remove_setup_stores_a_queued_simulation_of_retained_toolpaths_as_stale() {
+    let mut controller = sample_controller();
+    generate_all_for_test(&mut controller);
+    let (removed_setup, _removed_id) = add_second_setup_with_a_toolpath(&mut controller);
+    let retained_id = controller.state.session.toolpath_configs()[0].id;
+    controller
+        .compute
+        .drained
+        .push(queued_simulation_naming(&[retained_id]));
+
+    controller.handle_internal_event(crate::ui::AppEvent::RemoveSetup(removed_setup));
+    controller.drain_compute_results();
+
+    assert!(
+        controller.state.simulation.has_results(),
+        "STORED, not discarded: every boundary still names a toolpath"
+    );
+    assert!(
+        controller.state.session.simulation_result().is_none(),
+        "the core does not adopt a run the deletion superseded"
+    );
+    assert!(controller.state.simulation_is_stale());
+}
+
 /// Q1: the add-toolpath door holds the model before it calls Suggest.
 ///
 /// `SuggestContext::model_bbox` gates the runtime-sanity stepover
