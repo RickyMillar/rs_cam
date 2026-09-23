@@ -27,43 +27,55 @@
 //!   `FeedsError::Unbacked` names the operation, the tool family and the
 //!   reason.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::print_stdout
+)]
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::suggest::feeds_input_for_operation;
-use rs_cam_core::feeds::support::{DRILL_FORMULA_SOURCE, MILLING_FORMULA_SOURCE, NO_BASIS_REASON};
+use rs_cam_core::feeds::support::{
+    DRILL_FORMULA_SOURCE, FormulaBacking, MILLING_FORMULA_SOURCE, NO_BASIS_REASON, formula_backing,
+};
 use rs_cam_core::feeds::vendor_lut::{MaterialFamily, ToolFamily};
 use rs_cam_core::feeds::{
     FeedsError, FeedsSupport, SpindleStrategy, WorkholdingRigidity, calculate, embedded_vendor_lut,
     feeds_support, validate_tool_for_operation,
 };
+use rs_cam_core::feeds::{OperationFamily, PassRole};
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, PlywoodGrade, SheetGoodKind, WoodSpecies};
 
 /// The four wood material families of the matrix, one material each.
-fn wood_materials() -> [(&'static str, Material); 4] {
+fn wood_materials() -> [(&'static str, MaterialFamily, Material); 4] {
     [
         (
             "hardwood",
+            MaterialFamily::Hardwood,
             Material::SolidWood {
                 species: WoodSpecies::GenericHardwood,
             },
         ),
         (
             "softwood",
+            MaterialFamily::Softwood,
             Material::SolidWood {
                 species: WoodSpecies::GenericSoftwood,
             },
         ),
         (
             "mdf",
+            MaterialFamily::Mdf,
             Material::SheetGood {
                 kind: SheetGoodKind::Mdf,
             },
         ),
         (
             "plywood_hardwood",
+            MaterialFamily::PlywoodHardwood,
             Material::Plywood {
                 grade: PlywoodGrade::BalticBirch,
             },
@@ -86,6 +98,11 @@ struct CellOutcome {
     has_row: bool,
     declared: Option<&'static str>,
     validation: Result<(), FeedsError>,
+    /// The R1 judgement's key for this cell.
+    tool_family: ToolFamily,
+    family: OperationFamily,
+    role: PassRole,
+    material_family: MaterialFamily,
 }
 
 /// Resolve every cell through the production input builder.
@@ -97,7 +114,8 @@ fn every_cell() -> Vec<CellOutcome> {
         let operation = OperationConfig::new_default(op);
         for &tool_type in ToolType::ALL {
             let tool = tool(tool_type);
-            for (material_name, material) in &wood_materials() {
+            for (material_name, material_family, material) in &wood_materials() {
+                let (family, role) = operation.feeds_style();
                 let input = feeds_input_for_operation(
                     &operation,
                     &tool,
@@ -115,6 +133,10 @@ fn every_cell() -> Vec<CellOutcome> {
                     has_row: result.matched_lut_row.is_some(),
                     declared: op.spec().feeds_formula_source,
                     validation: validate_tool_for_operation(&input),
+                    tool_family: tool_type.cutter_kind().lut_family(),
+                    family,
+                    role,
+                    material_family: *material_family,
                 });
             }
         }
@@ -172,6 +194,7 @@ fn a_cell_with_a_vendor_row_is_vendor_backed() {
 
     let mut vendor_backed = 0usize;
     let mut formula_only = 0usize;
+    let mut refused = 0usize;
     for cell in &cells {
         assert_eq!(
             cell.support, cell.recorded,
@@ -187,10 +210,51 @@ fn a_cell_with_a_vendor_row_is_vendor_backed() {
             );
             vendor_backed += 1;
         } else {
+            let judged = formula_backing(
+                cell.tool_family,
+                cell.family,
+                cell.role,
+                cell.material_family,
+            );
             match (cell.support, cell.declared) {
                 (FeedsSupport::FormulaOnly { source }, Some(declared)) => {
                     assert_eq!(source, declared, "{}: wrong formula source", cell.label);
+                    assert_eq!(
+                        judged,
+                        FormulaBacking::Backed,
+                        "{}: ships the formula but the R1 judgement is {judged:?}",
+                        cell.label
+                    );
+                    // The registry tool rule (FM4) may still refuse the
+                    // cell; the evidence half must not.
+                    assert!(
+                        !matches!(cell.validation, Err(FeedsError::Unbacked { .. })),
+                        "{}: a BACKED cell must not raise Unbacked",
+                        cell.label
+                    );
                     formula_only += 1;
+                }
+                // Ruling R1 (2026-09-23): a wood cell with no row that the
+                // judgement calls CLUELESS refuses, with the judgement's reason.
+                (FeedsSupport::Refuse { reason }, Some(_)) => {
+                    assert!(
+                        matches!(judged, FormulaBacking::Clueless { reason: r } if r == reason),
+                        "{}: refuses with {reason:?} but the judgement says {judged:?}",
+                        cell.label
+                    );
+                    // The validator reads the registry tool rule first, so
+                    // a cell both doors refuse carries `WrongToolForOperation`.
+                    assert!(
+                        matches!(
+                            cell.validation,
+                            Err(FeedsError::Unbacked { .. }
+                                | FeedsError::WrongToolForOperation { .. })
+                        ),
+                        "{}: the arm refuses but validation did not refuse: {:?}",
+                        cell.label,
+                        cell.validation
+                    );
+                    refused += 1;
                 }
                 (other, declared) => panic!(
                     "{}: no row and declared source {declared:?}, but the arm is {other:?}",
@@ -198,33 +262,55 @@ fn a_cell_with_a_vendor_row_is_vendor_backed() {
                 ),
             }
         }
-        assert!(
-            !matches!(cell.validation, Err(FeedsError::Unbacked { .. })),
-            "{}: validation raised Unbacked in Phase 0",
-            cell.label
-        );
     }
-    // Non-vacuity: the grid holds both arms.
+    // Non-vacuity: the grid holds all three arms.
     assert!(vendor_backed > 0, "no cell found a vendor row");
     assert!(formula_only > 0, "no cell fell back to the formula");
+    assert!(
+        refused > 0,
+        "no cell refuses; ruling R1 encodes a CLUELESS set"
+    );
 }
 
-/// (c) No cell refuses today.
+/// (c) The refusing cells are exactly the cells the R1 judgement calls
+/// CLUELESS and that no vendor row answers.
 ///
-/// Phase 4 re-blesses this pin with ruling R1 as the cause: when a
-/// registry row changes to `None`, the cells of that operation with no
-/// vendor row join this set.
+/// Re-blessed 2026-09-23 with ruling R1 as the cause. Phase 0 pinned an
+/// empty set; the operator ruled "refuse for now, they can be our targets
+/// to work on", so the set is now the judgement table, and a new vendor
+/// row or a new judgement moves a cell out of it with its cause named.
 #[test]
-fn no_cell_refuses_today() {
-    let refused: Vec<String> = every_cell()
-        .into_iter()
+fn the_refusing_cells_are_the_clueless_cells() {
+    let cells = every_cell();
+    let refused: Vec<&CellOutcome> = cells
+        .iter()
         .filter(|cell| matches!(cell.support, FeedsSupport::Refuse { .. }))
-        .map(|cell| cell.label)
         .collect();
-    assert!(
-        refused.is_empty(),
-        "Phase 0 refuses no cell; these refuse: {refused:?}"
+    let clueless: Vec<&CellOutcome> = cells
+        .iter()
+        .filter(|cell| {
+            !cell.has_row
+                && matches!(
+                    formula_backing(
+                        cell.tool_family,
+                        cell.family,
+                        cell.role,
+                        cell.material_family
+                    ),
+                    FormulaBacking::Clueless { .. }
+                )
+        })
+        .collect();
+    let refused_labels: Vec<&str> = refused.iter().map(|c| c.label.as_str()).collect();
+    let clueless_labels: Vec<&str> = clueless.iter().map(|c| c.label.as_str()).collect();
+    assert_eq!(
+        refused_labels, clueless_labels,
+        "the refusing set and the judgement's CLUELESS set differ"
     );
+    // Non-vacuity, and the count the operator saw (FORMULA_BACKING_v2: 270
+    // matrix cells at two diameters; this grid walks one diameter).
+    assert!(!refused.is_empty(), "ruling R1 refuses at least one cell");
+    println!("R1 refuses {} of {} grid cells", refused.len(), cells.len());
 }
 
 /// (d) The refusal text names the operation, the tool family, the
@@ -240,8 +326,8 @@ fn the_unbacked_refusal_names_its_cell() {
     let text = err.to_string();
     for needle in [
         OperationType::Pencil.label(),
-        "FlatEnd",
-        "Hardwood",
+        ToolFamily::FlatEnd.label(),
+        MaterialFamily::Hardwood.label(),
         NO_BASIS_REASON,
     ] {
         assert!(text.contains(needle), "{text:?} does not name {needle:?}");

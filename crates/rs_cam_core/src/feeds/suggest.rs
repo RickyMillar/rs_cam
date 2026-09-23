@@ -785,8 +785,7 @@ pub struct SuggestForOperationInput<'a> {
 /// but the GUI / CLI / MCP Suggest buttons should surface the refusal
 /// to the user instead of writing a meaningless recipe into the op.
 pub fn suggest_params(input: SuggestParamsInput<'_>) -> Result<SuggestedParams, FeedsError> {
-    let mut operation = OperationConfig::new_default(input.op_type);
-    apply_stock_defaults(&mut operation, input.stock_ctx);
+    let operation = default_operation(input.op_type, input.stock_ctx);
     suggest_for_operation(SuggestForOperationInput {
         operation: &operation,
         tool: input.tool,
@@ -797,6 +796,17 @@ pub fn suggest_params(input: SuggestParamsInput<'_>) -> Result<SuggestedParams, 
         spindle_strategy: input.spindle_strategy,
         context: input.context,
     })
+}
+
+/// The operation `suggest_params` starts from: the registry default with
+/// the stock defaults applied, and no feeds recipe. An add door falls back
+/// to it when Suggest refuses with [`FeedsError::Unbacked`] (ruling R1): the
+/// operation is still created, the recipe is not.
+#[must_use]
+pub fn default_operation(op_type: OperationType, stock_ctx: &StockContext) -> OperationConfig {
+    let mut operation = OperationConfig::new_default(op_type);
+    apply_stock_defaults(&mut operation, stock_ctx);
+    operation
 }
 
 /// Run the canonical suggestion path for an existing operation. Operation fields

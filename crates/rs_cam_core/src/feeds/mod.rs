@@ -913,14 +913,16 @@ pub enum FeedsError {
         allowed: &'static [CutterKind],
     },
     /// The engine has no basis for this cell: no vendor row matches, and
-    /// the operation declares no formula source
-    /// (`OperationSpec::feeds_formula_source` is `None`). The resolver
-    /// [`feeds_support`] returns `FeedsSupport::Refuse` for it.
+    /// either the operation declares no formula source
+    /// (`OperationSpec::feeds_formula_source` is `None`) or the R1
+    /// judgement (`support::formula_backing`) calls the formula CLUELESS
+    /// for this tool, operation and wood. The resolver [`feeds_support`]
+    /// returns `FeedsSupport::Refuse` for it.
     ///
     /// This is a different refusal from `WrongToolForOperation`. That one
     /// says the tool cannot make the cut. This one says the engine has no
-    /// source for a recipe. Every registry row declares a formula source
-    /// today (feeds-matrix Phase 0), so no production cell raises this.
+    /// source for a recipe. An add door still creates the operation with
+    /// its defaults and no recipe (`suggest::default_operation`).
     Unbacked {
         operation: crate::compute::catalog::OperationType,
         tool_family: vendor_lut::ToolFamily,
@@ -967,8 +969,10 @@ impl std::fmt::Display for FeedsError {
                 reason,
             } => write!(
                 f,
-                "Suggest has no basis for {} with a {tool_family:?} tool in {material:?}: {reason}",
+                "Suggest has no basis for {} with a {} in {}: {reason}",
                 operation.label(),
+                tool_family.label(),
+                material.label(),
             ),
         }
     }
@@ -995,9 +999,10 @@ impl std::error::Error for FeedsError {}
 ///    through the same scallop-stepover block in `calculate`).
 ///
 /// After the tool check, it refuses with [`FeedsError::Unbacked`] when
-/// [`feeds_support`] returns `FeedsSupport::Refuse`. This is the one place
-/// that constructs `Unbacked`. The lookup runs only for an operation that
-/// declares no formula source, because only such an operation can refuse.
+/// [`feeds_support`] returns `FeedsSupport::Refuse`: no vendor row, and
+/// either no formula source or a wood cell the R1 judgement calls
+/// clueless (`support::formula_backing`). This is the one place that
+/// constructs `Unbacked`.
 pub fn validate_tool_for_operation(input: &FeedsInput) -> Result<(), FeedsError> {
     let actual = input.tool_geometry.cutter_kind();
     if let Some(operation) = input.operation_kind {
@@ -1022,7 +1027,6 @@ pub fn validate_tool_for_operation(input: &FeedsInput) -> Result<(), FeedsError>
         });
     }
     if let Some(operation) = input.operation_kind
-        && operation.spec().feeds_formula_source.is_none()
         && let FeedsSupport::Refuse { reason } = feeds_support(input)
     {
         return Err(FeedsError::Unbacked {

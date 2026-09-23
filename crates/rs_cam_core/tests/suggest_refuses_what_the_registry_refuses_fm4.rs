@@ -106,7 +106,12 @@ fn suggest_refuses_exactly_what_the_registry_refuses_fm4() {
     for &op in OperationType::ALL {
         for &kind in ToolType::ALL {
             let allowed = registry_allows(op, kind);
-            let shipped = suggest(op, kind).is_ok();
+            // An `Unbacked` refusal (ruling R1, evidence half) is not the
+            // tool rule; only `WrongToolForOperation` is.
+            let shipped = !matches!(
+                suggest(op, kind),
+                Err(FeedsError::WrongToolForOperation { .. })
+            );
             if allowed != shipped {
                 mismatches.push(format!(
                     "{op:?}/{kind:?}: registry allows {allowed}, Suggest shipped {shipped}"
@@ -137,7 +142,7 @@ fn the_refusal_text_names_the_operation_without_debug_output_fm4() {
     let mut seen = 0;
     for &op in OperationType::ALL {
         for &kind in ToolType::ALL {
-            let Err(err) = suggest(op, kind) else {
+            let Err(err @ FeedsError::WrongToolForOperation { .. }) = suggest(op, kind) else {
                 continue;
             };
             seen += 1;
@@ -168,7 +173,10 @@ fn the_named_pairs_refuse_or_ship_fm4() {
         (OperationType::SpiralFinish, ToolType::EndMill),
     ] {
         assert!(
-            suggest(op, kind).is_err(),
+            matches!(
+                suggest(op, kind),
+                Err(FeedsError::WrongToolForOperation { .. })
+            ),
             "{op:?}/{kind:?} must refuse: the registry's tool rule does not allow this kind"
         );
     }
@@ -178,8 +186,11 @@ fn the_named_pairs_refuse_or_ship_fm4() {
         (OperationType::SpiralFinish, ToolType::BallNose),
     ] {
         assert!(
-            suggest(op, kind).is_ok(),
-            "{op:?}/{kind:?} must ship: the registry's tool rule allows this kind"
+            !matches!(
+                suggest(op, kind),
+                Err(FeedsError::WrongToolForOperation { .. })
+            ),
+            "{op:?}/{kind:?} must pass the tool rule: the registry allows this kind"
         );
     }
 }

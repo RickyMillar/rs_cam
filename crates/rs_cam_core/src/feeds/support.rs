@@ -11,12 +11,17 @@
 //!   so the arm and the row the calculator used cannot disagree.
 //!
 //! Phase 0 of the feeds-matrix programme (`planning/feeds_matrix_2026-09-23/`)
-//! makes the declaration visible. It does not refuse a new cell: every
-//! registry row declares a formula source, so the `Refuse` arm is not
-//! reachable in production. Ruling R1 decides when a cell may refuse.
+//! made the declaration visible. Ruling R1 (operator, 2026-09-23) decides
+//! when a formula-only cell may ship: only where an agent judgement found a
+//! published figure within 0.5x to 2x of the formula's chipload
+//! (`FORMULA_BACKING.md`, `FORMULA_BACKING_v2.md`). [`formula_backing`] is
+//! that judgement as a table; a wood cell with no vendor row and no
+//! `Backed` entry refuses. Non-wood materials were not judged and keep the
+//! formula, as before.
 
 use super::vendor_lookup::{self, LookupQuery, LookupResult};
-use super::{FeedsInput, OperationFamily, VendorLut, vendor_normalize};
+use super::vendor_lut::{MaterialFamily, ToolFamily};
+use super::{FeedsInput, OperationFamily, PassRole, VendorLut, vendor_normalize};
 
 /// The source of the milling chipload formula in step 2 of
 /// [`super::calculate`]: `k0 · D^p · (1/H)^q` from
@@ -46,6 +51,163 @@ pub const DRILL_FORMULA_SOURCE: &str = "repo-derived chipload formula k0*D^p*(1/
 /// and the material beside it.
 pub const NO_BASIS_REASON: &str =
     "no vendor row matches this cell and the operation declares no formula source";
+
+/// The agent judgement of ruling R1 for one formula-only cell class
+/// (`planning/feeds_matrix_2026-09-23/FORMULA_BACKING.md`, sections 2 and
+/// 4; re-derived in `FORMULA_BACKING_v2.md` after R5).
+///
+/// `Backed`: a published figure for the same tool family, a comparable
+/// operation family and the same wood lies within 0.5x to 2x of the
+/// formula's pre-derate chipload. `Clueless`: no such figure, or the
+/// formula lies outside that range; the reason names what was searched.
+/// The operator's threshold ("clueless sounds right to me", 2026-09-23).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FormulaBacking {
+    Backed,
+    Clueless { reason: &'static str },
+}
+
+pub const UNJUDGED_REASON: &str = "No agent judgement covers this tool family, operation family \
+     and material, so the formula has no checked basis.";
+const BALL_MDF: &str = "No published figure backs the formula for a ball-nose cutter on adaptive, \
+     pocket, contour or trace passes in MDF: the 1/4 in charts put it below half.";
+const BALL_PLY: &str = "No published chipload exists for a ball-nose cutter on adaptive, pocket, \
+     contour or trace passes in plywood.";
+const BULL_PARALLEL: &str =
+    "No published wood chipload exists for a bull-nose cutter on a parallel finish pass.";
+const BULL_SCALLOP: &str =
+    "No published wood chipload exists for a bull-nose cutter on a scallop-family finish pass.";
+const BULL_TRACE: &str = "No published wood chipload exists for a bull-nose cutter on a trace, \
+     pencil or projected-curve pass.";
+const VBIT_ADAPTIVE: &str = "No published figure exists for a V-bit on adaptive clearing, and the \
+     recipe depth passes the end of the cone.";
+const VBIT_PARALLEL: &str = "No published figure backs the formula for a V-bit on parallel finish \
+     passes: at the engaged width the chip is below half of every V-bit figure.";
+const VBIT_CONTOUR_FINISH: &str = "No published figure backs the formula for a V-bit on waterline \
+     or steep-shallow passes: no vendor prints a V-bit 3D finish chart.";
+const VBIT_MDF_PLY: &str = "No published V-bit chipload exists for MDF or plywood on pocket, \
+     contour, parallel or trace passes.";
+const TAPER_ROUGH: &str = "No published figure backs the formula for a tapered ball-nose on \
+     adaptive, pocket, contour or trace passes: Onsrud 77-100 puts it below half.";
+const TAPER_CONTOUR_FINISH: &str = "No published figure backs the formula for a tapered ball-nose \
+     on waterline or steep-shallow passes: it is below half of the Onsrud 77-100 band.";
+const DRILL_FLAT: &str = "No published wood figure exists for a plunge drill with a flat end mill, \
+     and the drill multiplier 2.5 is unsourced.";
+const DRILL_BALL: &str = "No published wood figure exists for a plunge drill with a ball-nose \
+     cutter, and the drill multiplier 2.5 is unsourced.";
+const DRILL_BULL: &str = "No published wood figure exists for a plunge drill with a bull-nose \
+     cutter, and the drill multiplier 2.5 is unsourced.";
+const DRILL_VBIT: &str = "No published wood figure exists for a plunge drill with a V-bit, and a V-bit cuts a cone, not a bore.";
+const DRILL_TAPER: &str = "No published wood figure exists for a plunge drill with a tapered \
+     ball-nose, and the drill multiplier 2.5 is unsourced.";
+
+/// The four wood families the judgement covered.
+#[must_use]
+pub fn is_judged_wood(material: MaterialFamily) -> bool {
+    matches!(
+        material,
+        MaterialFamily::Softwood
+            | MaterialFamily::Hardwood
+            | MaterialFamily::Mdf
+            | MaterialFamily::PlywoodHardwood
+    )
+}
+
+/// The R1 judgement for a formula-only cell class. Only meaningful for a
+/// judged wood family ([`is_judged_wood`]); the caller keeps the formula
+/// for every other material.
+#[must_use]
+pub fn formula_backing(
+    tool: ToolFamily,
+    family: OperationFamily,
+    role: PassRole,
+    material: MaterialFamily,
+) -> FormulaBacking {
+    use FormulaBacking::{Backed, Clueless};
+    use MaterialFamily::{Hardwood, Mdf, PlywoodHardwood, Softwood};
+    use OperationFamily::{Adaptive, Contour, Drill, Parallel, Pocket, Scallop, Trace};
+    use PassRole::{Finish, Roughing, SemiFinish};
+    let sw_hw = matches!(material, Softwood | Hardwood);
+    let mdf_ply = matches!(material, Mdf | PlywoodHardwood);
+    match (tool, family, role) {
+        // Drill: no vendor row for any tool; the 2.5 multiplier is unsourced.
+        (ToolFamily::FlatEnd, Drill, _) => Clueless { reason: DRILL_FLAT },
+        (ToolFamily::BallNose, Drill, _) => Clueless { reason: DRILL_BALL },
+        (ToolFamily::BullNose, Drill, _) => Clueless { reason: DRILL_BULL },
+        (ToolFamily::ChamferVbit, Drill, _) => Clueless { reason: DRILL_VBIT },
+        (ToolFamily::TaperedBallNose, Drill, _) => Clueless {
+            reason: DRILL_TAPER,
+        },
+        // Flat end mill: Onsrud and Amana 1 x D charts back trace and parallel finishes.
+        (ToolFamily::FlatEnd, Trace | Parallel, Finish) => Backed,
+        // Ball nose: backed in the two solid woods, not in MDF or plywood.
+        (ToolFamily::BallNose, Adaptive | Pocket, Roughing)
+        | (ToolFamily::BallNose, Contour, _)
+        | (ToolFamily::BallNose, Trace, Finish)
+            if sw_hw =>
+        {
+            Backed
+        }
+        (ToolFamily::BallNose, Adaptive | Pocket, Roughing)
+        | (ToolFamily::BallNose, Contour, _)
+        | (ToolFamily::BallNose, Trace, Finish)
+            if material == Mdf =>
+        {
+            Clueless { reason: BALL_MDF }
+        }
+        (ToolFamily::BallNose, Adaptive | Pocket, Roughing)
+        | (ToolFamily::BallNose, Contour, _)
+        | (ToolFamily::BallNose, Trace, Finish)
+            if material == PlywoodHardwood =>
+        {
+            Clueless { reason: BALL_PLY }
+        }
+        // Bull nose: no wood vendor prints a bull row for any finish family.
+        (ToolFamily::BullNose, Parallel, Finish) => Clueless {
+            reason: BULL_PARALLEL,
+        },
+        (ToolFamily::BullNose, Scallop, Finish) => Clueless {
+            reason: BULL_SCALLOP,
+        },
+        (ToolFamily::BullNose, Trace, Finish) => Clueless { reason: BULL_TRACE },
+        // V-bit: trace and clearing charts exist for the two solid woods only.
+        (ToolFamily::ChamferVbit, Adaptive, Roughing) => Clueless {
+            reason: VBIT_ADAPTIVE,
+        },
+        (ToolFamily::ChamferVbit, Parallel, Finish) if sw_hw => Clueless {
+            reason: VBIT_PARALLEL,
+        },
+        (ToolFamily::ChamferVbit, Contour, SemiFinish | Finish) if sw_hw => Clueless {
+            reason: VBIT_CONTOUR_FINISH,
+        },
+        (ToolFamily::ChamferVbit, Pocket | Contour, Roughing)
+        | (ToolFamily::ChamferVbit, Trace, Finish)
+            if sw_hw =>
+        {
+            Backed
+        }
+        (ToolFamily::ChamferVbit, Pocket | Contour | Parallel | Trace, _) if mdf_ply => Clueless {
+            reason: VBIT_MDF_PLY,
+        },
+        // Tapered ball: the Onsrud 77-100 rows back softwood only.
+        (ToolFamily::TaperedBallNose, Adaptive | Pocket | Contour, Roughing)
+        | (ToolFamily::TaperedBallNose, Trace, Finish)
+            if material == Softwood =>
+        {
+            Backed
+        }
+        (ToolFamily::TaperedBallNose, Adaptive | Pocket | Contour, Roughing)
+        | (ToolFamily::TaperedBallNose, Trace, Finish) => Clueless {
+            reason: TAPER_ROUGH,
+        },
+        (ToolFamily::TaperedBallNose, Contour, SemiFinish | Finish) => Clueless {
+            reason: TAPER_CONTOUR_FINISH,
+        },
+        _ => Clueless {
+            reason: UNJUDGED_REASON,
+        },
+    }
+}
 
 /// The basis Suggest has for one (operation, tool family, material
 /// family) cell.
@@ -131,8 +293,12 @@ pub fn formula_source_for_input(input: &FeedsInput) -> Option<&'static str> {
 /// The support arm for the cell this input describes.
 ///
 /// - The recipe row lookup finds a row: `VendorBacked`.
-/// - No row, and the operation declares a formula source: `FormulaOnly`.
 /// - No row, and no formula source: `Refuse`.
+/// - No row, a formula source, an operation kind and a judged wood
+///   material: [`formula_backing`] decides, `Backed` -> `FormulaOnly`,
+///   `Clueless` -> `Refuse` (ruling R1).
+/// - No row and a formula source otherwise (no operation kind, or a
+///   material the judgement did not cover): `FormulaOnly`, as before.
 ///
 /// "No row" includes an input with no LUT and a routing refusal.
 #[must_use]
@@ -146,10 +312,21 @@ pub(crate) fn support_for_lookup(input: &FeedsInput, lookup: &RecipeRowLookup) -
     if matches!(lookup, RecipeRowLookup::Row { .. }) {
         return FeedsSupport::VendorBacked;
     }
-    match formula_source_for_input(input) {
-        Some(source) => FeedsSupport::FormulaOnly { source },
-        None => FeedsSupport::Refuse {
+    let Some(source) = formula_source_for_input(input) else {
+        return FeedsSupport::Refuse {
             reason: NO_BASIS_REASON,
-        },
+        };
+    };
+    if input.operation_kind.is_none() {
+        return FeedsSupport::FormulaOnly { source };
+    }
+    let material = vendor_normalize::material_to_lut(input.material).0;
+    if !is_judged_wood(material) {
+        return FeedsSupport::FormulaOnly { source };
+    }
+    let tool = input.tool_geometry.cutter_kind().lut_family();
+    match formula_backing(tool, input.operation, input.pass_role, material) {
+        FormulaBacking::Backed => FeedsSupport::FormulaOnly { source },
+        FormulaBacking::Clueless { reason } => FeedsSupport::Refuse { reason },
     }
 }

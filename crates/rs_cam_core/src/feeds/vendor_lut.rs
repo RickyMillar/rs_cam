@@ -136,6 +136,41 @@ pub enum MaterialFamily {
     Fiberglass,
 }
 
+impl ToolFamily {
+    /// The name a refusal text prints for the family.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::FlatEnd => "flat end mill",
+            Self::BallNose => "ball nose",
+            Self::TaperedBallNose => "tapered ball nose",
+            Self::BullNose => "bull nose",
+            Self::ChamferVbit => "V-bit",
+            Self::FacingBit => "facing bit",
+        }
+    }
+}
+
+impl MaterialFamily {
+    /// The name a refusal text prints for the family.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Softwood => "softwood",
+            Self::Hardwood => "hardwood",
+            Self::PlywoodSoftwood => "softwood plywood",
+            Self::PlywoodHardwood => "hardwood plywood",
+            Self::Mdf => "MDF",
+            Self::Hdf => "HDF",
+            Self::Particleboard => "particleboard",
+            Self::Acrylic => "acrylic",
+            Self::Hdpe => "HDPE",
+            Self::Polycarbonate => "polycarbonate",
+            Self::Delrin => "Delrin",
+            Self::Aluminum => "aluminium",
+            Self::Fiberglass => "fibreglass",
+        }
+    }
+}
+
 /// Hardness measurement kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

@@ -199,11 +199,17 @@ fn vendor_lut_row_present_path_is_used() {
 /// Apply-all, CLI --apply-suggest). Post-fix `calculate()` aliases
 /// plunge to the envelope-clamped drill feed, so write order is
 /// irrelevant and the stored value equals the suggestion.
+///
+/// FM5 (2026-09-23): every drill cell in the four judged woods is CLUELESS
+/// and refuses (`FeedsError::Unbacked`), so the round trip runs in a plastic,
+/// a material the judgement did not cover. The funnel is material-free.
 #[test]
 fn drill_apply_round_trips_suggested_feed() {
     let tool = tool(6.0);
     let machine = MachineProfile::default();
-    let material = Material::default();
+    let material = Material::Plastic {
+        family: crate::material::PlasticFamily::Generic,
+    };
     for op_type in [OperationType::Drill, OperationType::AlignmentPinDrill] {
         let s = suggest_params(SuggestParamsInput {
             op_type,
@@ -620,11 +626,17 @@ fn fallback_formula_path_is_used_without_matching_lut_row() {
     // 200 mm exceeds 10x the largest embedded flat-end pocket row
     // (12.7 mm compression spiral), so no row passes the diameter
     // sanity floor and the empirical fallback must take over.
+    //
+    // FM5 (2026-09-23): in a judged wood this no-row cell is UNJUDGED (the
+    // embedded LUT always has a flat-end pocket row there, so the judgement
+    // never saw it formula-only) and refuses. A plastic keeps the formula.
     let result = suggest_params(SuggestParamsInput {
         op_type: OperationType::Pocket,
         tool: &tool(200.0),
         machine: &MachineProfile::default(),
-        material: &Material::default(),
+        material: &Material::Plastic {
+            family: crate::material::PlasticFamily::Generic,
+        },
         workholding: WorkholdingRigidity::Medium,
         lut: &EMBEDDED_LUT,
         stock_ctx: &stock_ctx(),
