@@ -6,10 +6,28 @@ Paste this as the first message of a new session on Opus 5.5.
 
 Read `planning/feeds_matrix_2026-09-23/PLAN.md` in full, then
 `crates/rs_cam_core/src/feeds/CLAUDE.md`, `crates/rs_cam_core/src/tool_load/CLAUDE.md`
-and `crates/rs_cam_core/src/feeds/INTEGRATION.md`. Then check
-`git status --short planning/wanaka200_feeds_check_2026-09-19 planning/load_model_2026-09-16`:
-if those files are still uncommitted, another session owns them; read
-them, do not edit them, and cite them as "uncommitted on <date>".
+and `crates/rs_cam_core/src/feeds/INTEGRATION.md`.
+
+Step zero, before any phase: triage the orphaned tree. On 2026-09-23 the
+checkout carried about forty uncommitted files from a session that was
+cut off: the bandless feed-modulation fix
+(`planning/wanaka200_feeds_check_2026-09-19/IMPLEMENTATION_PLAN.md` work
+item A), its sentry `tests/plunge_guard_bandless_p3.rs`, the wanaka200
+docs, `load_model_2026-09-16/MACHINIST_REFERENCE_CHECK.md`, and unrelated
+viz edits (setup deletion modal, MCP lifecycle). Build core and viz
+through the lane, run the sentries that plan names (`plunge_guard_p3`,
+`dressup_span_invariants`, `constrained_max_modulation_f039`,
+`lead_in_out_feed_rates_f040`, `plunge_guard_bandless_p3`) plus the viz
+tests the modified viz files name, and commit what is green by explicit
+path in small commits that name the origin. Commit the planning docs as
+they are. Report what stays red and leave it in the tree. If the operator
+says the other session is still alive, skip this step and read those
+files without editing them.
+
+Phase 2 is the one phase to run as a workflow (say "use a workflow"): one
+research agent per firing cell class, a verifier per finding that opens
+the URL and confirms the table row, one reconciler that writes
+`EVIDENCE.md`. Every other phase is ordinary orchestration.
 
 Run the plan as a workflow of read-only agents first and editors last.
 The rule for the whole programme: **no fix lands before Phase 3's
