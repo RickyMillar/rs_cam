@@ -111,6 +111,9 @@ pub const FEEDS_DRILL_FEED_CLAMPED_TO_ENVELOPE: &str = "feeds.drill_feed_clamped
 pub const FEEDS_VENDOR_ROW_PUBLISHES_NO_CHIPLOAD: &str = "feeds.vendor_row_publishes_no_chipload";
 pub const FEEDS_NO_VENDOR_ROWS_FOR_ROUTED_OPERATION: &str =
     "feeds.no_vendor_rows_for_routed_operation";
+/// The depth per pass is above 3 x D, past the published de-rate table.
+/// The de-rate holds the last printed point, 0.50 (feeds matrix R3).
+pub const FEEDS_DEPTH_BEYOND_PUBLISHED_TABLE: &str = "feeds.depth_beyond_published_table";
 
 // ── Pre-sim heuristic hints (superseded by load gates) ───────────────
 pub const FEEDS_FEED_VS_LUT_HIGH: &str = "feeds.feed_vs_lut.high";
@@ -332,6 +335,7 @@ pub const ALL: &[&str] = &[
     FEEDS_DRILL_FEED_CLAMPED_TO_ENVELOPE,
     FEEDS_VENDOR_ROW_PUBLISHES_NO_CHIPLOAD,
     FEEDS_NO_VENDOR_ROWS_FOR_ROUTED_OPERATION,
+    FEEDS_DEPTH_BEYOND_PUBLISHED_TABLE,
     FEEDS_FEED_VS_LUT_HIGH,
     FEEDS_FEED_VS_LUT_LOW,
     FEEDS_STEPOVER_VS_LUT,

@@ -180,9 +180,9 @@ pub(super) fn embedded_lut() -> &'static crate::feeds::VendorLut {
     crate::feeds::embedded_vendor_lut()
 }
 
-// Cross-vendor DOC-derating rule lives in `feeds::geometry` so the
-// feeds calculator can apply it to the LUT chipload bounds at the same
-// scale this gate uses. The single canonical home prevents the two
+// The published depth de-rate lives in `feeds::geometry` so the feeds
+// calculator applies it to the feed and to the LUT chipload band (at the
+// shipped depth) at the same scale this gate uses. The single canonical home prevents the two
 // paths from drifting (see `feeds::geometry::doc_derating_scale`).
 // Only exercised directly by this module's own tests today (production
 // callers reach it via `feeds::geometry::doc_derating_scale` directly),
@@ -1273,9 +1273,9 @@ mod tests {
         }
     }
 
-    /// Phase 1E unit tests for the cross-vendor DOC-derating scale
-    /// (Amana + Onsrud verbatim rule: 1×D=1.0, 2×D=0.75, 3×D=0.5,
-    /// clamped at 3×D).
+    /// Phase 1E unit tests for the published depth de-rate (Onsrud,
+    /// Freud and Amana print 1×D=1.0, 2×D=0.75, 3×D=0.5; the scale holds
+    /// 0.5 above 3×D, the last printed point).
     #[test]
     fn doc_derating_unscaled_below_1x_d() {
         assert!((doc_derating_scale(0.5) - 1.0).abs() < 1e-9);

@@ -4,10 +4,30 @@
 //! it was handed. `enforce_invariants` then runs, and pass 9
 //! (`rescale_feed_to_final_geometry`) re-multiplies the feed by
 //! `depth_tier_multiplier` at the FINAL depth. That multiplier RISES as the
-//! depth falls — 1.00 / 0.75 / 0.50 / 0.45 at `ap/D` of 1 / 2 / 3 — so a clamp
-//! that lowers the depth across a tier boundary makes pass 9 RAISE the feed,
-//! by up to 2.22×, for a depth loss that can be arbitrarily small. Until T-15
-//! nothing re-checked Step 6 afterwards.
+//! depth falls, so a clamp that lowers the depth makes pass 9 RAISE the feed.
+//! Until T-15 nothing re-checked Step 6 afterwards.
+//!
+//! ## Re-derived for one continuous scale (feeds matrix R3, 2026-09-23)
+//!
+//! The multiplier used to be a step: 1.00 / 0.75 / 0.50 / 0.45 at `ap/D` of
+//! 1 / 2 / 3. A clamp of 0.21 % across the 2 x D boundary then lifted the
+//! feed 1.5x, and the shipped load outran the ceiling. R3 unified the feed
+//! and the chipload band on the published, piecewise-linear
+//! `feeds::geometry::doc_derating_scale` (1.00 at 1 x D, 0.75 at 2 x D,
+//! 0.50 at 3 x D, linear between, held at 0.50 above). The lift is now the
+//! ratio of the scale at the two depths. Power is affine in the feed, so
+//! for a clamp from `a x D` to `b x D` (`a > b`, both in 1..3) the shipped
+//! load against the calculator's point is at most
+//!
+//! ```text
+//! (b / a) · s(b) / s(a)  =  b (5 − b) / (a (5 − a))
+//! ```
+//!
+//! and `x (5 − x)` rises up to `x = 2.5`, so a clamp that starts at or
+//! below 2.5 x D can never lift the shipped load above a ceiling the
+//! calculator's point satisfied. The headline arm pins that fact on the
+//! fixture; the refusal arm still exercises pass 10, because a ceiling the
+//! feed-free edge term already exceeds stays exceeded at any feed.
 //!
 //! ## The fixture, and why the older instrument missed it
 //!
@@ -28,11 +48,10 @@
 //! - `adaptive_doc_factor = 2.0` — the shipped `RigidityProfile::default()`
 //!   value — on a Ø12 tool, so the rigidity cap lands on 24.000 mm, exactly
 //!   2.0 × D;
-//! - an operator-set depth of 24.050 mm, 2.00417 × D, one step above the
-//!   boundary.
+//! - an operator-set depth of 30.000 mm, 2.5 × D, where the scale is 0.625.
 //!
-//! The rigidity clamp then takes the depth 24.050 → 24.000 mm, a loss of
-//! 0.21 %, and the depth tier goes 0.50 → 0.75, a feed rise of exactly 1.5×.
+//! The rigidity clamp then takes the depth 30.000 → 24.000 mm, a loss of
+//! 20 %, and the scale goes 0.625 → 0.75, a feed rise of exactly 1.2×.
 //!
 //! ## What that does to spindle power
 //!
@@ -44,15 +63,16 @@
 //! P_ship / P_calc = (ap_final / ap_calc) · (1 + (tier_ratio − 1) · shear_share)
 //! ```
 //!
-//! with `tier_ratio = 0.75 / 0.50 = 1.5` and `shear_share = shear / (shear +
-//! edge)` at the calculator's point. The register's "about 1.46×" is the
-//! pure-shear bound; the edge term carries no feed, so the real figure is
-//! lower and the arms below quote the measured split.
+//! with `tier_ratio = 0.75 / 0.625 = 1.2` and `shear_share = shear / (shear +
+//! edge)` at the calculator's point. The edge term carries no feed, so the
+//! real figure is lower than the pure-shear bound and the arms below quote
+//! the measured split.
 //!
 //! ## The arms
 //!
-//! - [`the_shipped_feed_fits_the_spindle_after_a_tier_crossing_rescale`] — the
-//!   breach, on a recipe Step 6 clamped ONTO the ceiling.
+//! - [`the_shipped_feed_fits_the_spindle_after_a_tier_crossing_rescale`] — on
+//!   a recipe Step 6 clamped ONTO the ceiling, the rescale stays under it
+//!   and pass 10 has nothing to do.
 //! - [`pass_nine_raises_the_feed_across_the_tier_boundary`] — non-vacuity: the
 //!   mechanism fires. Without it the headline arm proves an absence.
 //! - [`an_untouched_operation_keeps_its_feed_byte_identical`] — pass 10's gate.
@@ -76,6 +96,7 @@
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::AdaptiveConfig;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::feeds::geometry::doc_derating_scale;
 use rs_cam_core::feeds::suggest::{
     ApplyContext, ApplyScope, FeedsPreview, SuggestContext, SuggestWarning,
 };
@@ -89,13 +110,21 @@ use rs_cam_core::material::{Material, WoodSpecies};
 const DIAMETER_MM: f64 = 12.0;
 const FLUTES: u32 = 2;
 
-/// 2.00417 × D — one step above the `ap/D > 2.0` tier boundary, so the
-/// calculator sizes the feed with `depth_tier_multiplier = 0.50`.
-const ENTRY_DPP_MM: f64 = 24.05;
+/// 2.5 × D, where the published scale is 0.625, so the calculator sizes the
+/// feed with `depth_tier_multiplier = 0.625`.
+const ENTRY_DPP_MM: f64 = 30.0;
 
 /// The rigidity cap: `adaptive_doc_factor × D = 2.0 × 12 = 24.0`, exactly
-/// 2.0 × D, so the clamped depth sits in the 0.75 tier.
+/// 2.0 × D, where the published scale is 0.75.
 const CLAMPED_DPP_MM: f64 = 24.0;
+
+/// The lift pass 9 applies: the scale at the clamped depth over the scale at
+/// the entry depth, 0.75 / 0.625 = 1.2. Derived from the one function so the
+/// arms state the rule, not a number.
+fn tier_ratio() -> f64 {
+    doc_derating_scale(CLAMPED_DPP_MM / DIAMETER_MM)
+        / doc_derating_scale(ENTRY_DPP_MM / DIAMETER_MM)
+}
 
 /// 0.833 × D. Below the 0.85 × D slotting threshold, so `SlottingDetected`
 /// does not cap the depth before Step 6 — the failure that kept the older
@@ -352,8 +381,8 @@ fn pass_nine_raises_the_feed_across_the_tier_boundary() {
         (shipped.ap_mm - CLAMPED_DPP_MM).abs() < 1.0e-9,
         "fixture is vacuous: the shipped depth is {:.4} mm, not the \
          {CLAMPED_DPP_MM:.4} mm rigidity cap. The crossing this file exists to \
-         test is {ENTRY_DPP_MM:.4} mm (ap/D {:.5}, tier 0.50) down to \
-         {CLAMPED_DPP_MM:.4} mm (ap/D {:.5}, tier 0.75).",
+         test is {ENTRY_DPP_MM:.4} mm (ap/D {:.5}, scale 0.625) down to \
+         {CLAMPED_DPP_MM:.4} mm (ap/D {:.5}, scale 0.75).",
         shipped.ap_mm,
         ENTRY_DPP_MM / DIAMETER_MM,
         CLAMPED_DPP_MM / DIAMETER_MM,
@@ -375,7 +404,7 @@ fn pass_nine_raises_the_feed_across_the_tier_boundary() {
     let lift_on_operation = rescaled / requested;
     eprintln!(
         "  G-T15 non-vacuity | depth {ENTRY_DPP_MM:.3} -> {CLAMPED_DPP_MM:.3} mm \
-         (tier 0.50 -> 0.75); pass 9 feed {requested:.3} -> {rescaled:.3} mm/min \
+         (scale 0.625 -> 0.75); pass 9 feed {requested:.3} -> {rescaled:.3} mm/min \
          (x{lift_on_operation:.4} on the floored feed, \
          x{lift_on_calculator:.4} on the calculator's {:.3})",
         shipped.recommended.feed_rate_mm_min,
@@ -386,15 +415,15 @@ fn pass_nine_raises_the_feed_across_the_tier_boundary() {
          ({requested:.3} -> {rescaled:.3} mm/min). T-15 is about a raise; a \
          drop cannot breach a ceiling the calculator already satisfied."
     );
-    // 0.75 / 0.50 = 1.5 exactly. Pass 9 holds the implied chipload fixed and
-    // re-multiplies by the depth tier alone, so the lift IS the tier ratio
+    // 0.75 / 0.625 = 1.2 exactly. Pass 9 holds the implied chipload fixed and
+    // re-multiplies by the depth scale alone, so the lift IS the scale ratio
     // unless the cutting-feed ceiling truncates it.
+    let ratio = tier_ratio();
     assert!(
-        (lift_on_calculator - 1.5).abs() < 1.0e-9,
+        (lift_on_calculator - ratio).abs() < 1.0e-9,
         "the lift is {lift_on_calculator:.9} of the calculator's feed, not the \
-         0.75 / 0.50 = 1.5 tier ratio. Either a cap truncated the \
-         re-derivation or the tier table moved; re-derive this arm, do not \
-         widen it."
+         0.75 / 0.625 = {ratio:.4} scale ratio. Either a cap truncated the \
+         re-derivation or the scale moved; re-derive this arm, do not widen it."
     );
 }
 
@@ -404,10 +433,17 @@ fn pass_nine_raises_the_feed_across_the_tier_boundary() {
 /// reaches the machine must still fit inside the spindle envelope.
 ///
 /// Step 6 clamps this recipe exactly ONTO the ceiling (utilisation 1.000 at
-/// the calculator's point), so every bit of the breach below is the rescale.
+/// the calculator's point), so every bit of the movement below is the
+/// rescale. Under the one continuous scale the rescale cannot breach: the
+/// depth falls to 0.8 and the feed rises 1.2, so the shipped load is
+/// `0.8 · (1 + 0.2 · shear_share) < 1`. Pass 10 finds nothing over the
+/// ceiling and files no warning; that silence is the pin.
 #[test]
 fn the_shipped_feed_fits_the_spindle_after_a_tier_crossing_rescale() {
-    let machine = machine_at(1.6);
+    // 2.0 kW: at the 30 mm entry the feed-free edge term is about 1.17 kW,
+    // so a 1.6 kW spindle (1.2 kW ceiling) leaves no shear budget above the
+    // rubbing floor and Step 6 cannot land the recipe on the ceiling.
+    let machine = machine_at(2.0);
     let material = Material::SolidWood {
         species: WoodSpecies::GenericHardwood,
     };
@@ -430,10 +466,10 @@ fn the_shipped_feed_fits_the_spindle_after_a_tier_crossing_rescale() {
 
     let shear_share = shipped.calculator_shear_share(&material);
     let depth_ratio = shipped.ap_mm / shipped.recommended.axial_depth_mm;
-    // P = shear·feed + edge. The feed rises by the tier ratio, both terms
+    // P = shear·feed + edge. The feed rises by the scale ratio, both terms
     // scale with the depth, and the edge term carries no feed:
     //   P_ship / P_calc = depth_ratio · (1 + (tier_ratio − 1) · shear_share)
-    let predicted = depth_ratio * (1.0 + 0.5 * shear_share);
+    let predicted = depth_ratio * (1.0 + (tier_ratio() - 1.0) * shear_share);
     let utilisation = shipped.shipped_utilisation(&machine, &material);
 
     eprintln!(
@@ -452,36 +488,45 @@ fn the_shipped_feed_fits_the_spindle_after_a_tier_crossing_rescale() {
         "T-15 reproduces: the SHIPPED operating point draws {:.2}% of the \
          spindle's gate ceiling.\n    \
          The rigidity clamp took the depth {ENTRY_DPP_MM:.3} -> \
-         {CLAMPED_DPP_MM:.3} mm, a loss of {:.3}%, which moved the depth tier \
-         0.50 -> 0.75 and made pass 9 raise the feed 1.5x.\n    \
-         Predicted breach = depth ratio {depth_ratio:.6} x (1 + 0.5 x shear \
+         {CLAMPED_DPP_MM:.3} mm, a loss of {:.3}%, which moved the depth scale \
+         0.625 -> 0.75 and made pass 9 raise the feed {:.3}x.\n    \
+         Predicted load = depth ratio {depth_ratio:.6} x (1 + {:.3} x shear \
          share {shear_share:.4}) = {predicted:.4}x, against a recipe Step 6 had \
          clamped to exactly 1.000 of the ceiling.\n    \
          calculator {:.3} mm/min at ap {:.4}; the operation ships {:.3} mm/min \
          at ap {:.4}.",
         100.0 * utilisation,
         100.0 * (1.0 - depth_ratio),
+        tier_ratio(),
+        tier_ratio() - 1.0,
         shipped.recommended.feed_rate_mm_min,
         shipped.recommended.axial_depth_mm,
         shipped.feed_mm_min,
         shipped.ap_mm,
     );
-
-    let (rescaled, ship_feed, fits) = shipped.power_recheck().unwrap_or_else(|| {
-        panic!(
-            "the shipped point fits, but pass 10 filed no warning — the \
-             operator is not told the feed moved. warnings: {:?}",
-            shipped.warnings
-        )
-    });
+    // The continuous scale keeps the rescaled point under the ceiling by
+    // construction (module doc), and the measured load agrees with the
+    // affine prediction. Pass 10 re-checks and finds nothing over the
+    // ceiling, so it files no warning and moves no number.
     assert!(
-        fits,
-        "a feed does fit this cut: the edge term is under the ceiling"
+        predicted < 1.0 - 1.0e-6,
+        "the affine prediction {predicted:.4}x is not below the ceiling; the scale or the \
+         fixture moved — re-derive the module doc's inequality before widening this"
     );
     assert!(
-        ship_feed < rescaled && (ship_feed - shipped.feed_mm_min).abs() < 1.0e-9,
-        "the warning reports {rescaled:.3} -> {ship_feed:.3} mm/min but the \
-         operation carries {:.3} mm/min",
+        (utilisation - predicted).abs() < 5.0e-3,
+        "the shipped load {utilisation:.4} does not match the affine prediction {predicted:.4}"
+    );
+    assert!(
+        shipped.power_recheck().is_none(),
+        "pass 10 filed a power re-check on a rescale that stays under the ceiling: {:?}",
+        shipped.warnings
+    );
+    assert!(
+        (shipped.feed_mm_min - shipped.rescale().map(|(_, r)| r).unwrap_or(f64::NAN)).abs()
+            < 1.0 + 1.0e-9,
+        "the operation must carry pass 9's rescaled feed (to the 1 mm/min rounding); it \
+         carries {:.3} mm/min",
         shipped.feed_mm_min,
     );
 }
@@ -535,7 +580,12 @@ fn an_untouched_operation_keeps_its_feed_byte_identical() {
 /// derate. That is the shape this arm needs.
 #[test]
 fn no_feed_fits_when_the_edge_term_alone_is_over_budget() {
-    let machine = machine_at(0.8);
+    let mut machine = machine_at(0.8);
+    // Step 6 ships this recipe unclamped (no feed fits), and at the 30 mm
+    // entry the unclamped feed reaches the default 4 000 x 0.75 cutting-feed
+    // ceiling, which would hide pass 9's lift behind the cap. A higher
+    // ceiling keeps the lift visible so pass 10 has a raise to withdraw.
+    machine.max_feed_mm_min = 8000.0;
     let material = Material::SolidWood {
         species: WoodSpecies::GenericHardwood,
     };
@@ -595,13 +645,14 @@ fn no_feed_fits_when_the_edge_term_alone_is_over_budget() {
 ///
 /// That proposal was to refuse the raise when `FeedsDerates::power_limit`
 /// is below 1.0 — i.e. only on a recipe Step 6 had already clamped. This
-/// fixture is one Step 6 never touched: 85 % of the ceiling at the
-/// calculator's point, below the 89.4 % p90 the register re-measured across
-/// 162 recipes after R1. Pass 9's 1.5× lift takes it over the ceiling all the
-/// same, and only a re-evaluation at the final state catches it.
+/// fixture is one Step 6 never touched: 80 to 90 % of the ceiling at the
+/// calculator's point, the band that straddles the 89.4 % p90 the register
+/// re-measured across 162 recipes after R1. Under the continuous scale the
+/// 1.2× lift rides on a 0.8× depth, so the shipped load stays under the
+/// ceiling; the arm pins that the un-clamped case is not lifted over it.
 #[test]
 fn an_unclamped_recipe_is_not_lifted_over_the_ceiling() {
-    let machine = machine_at(1.25);
+    let machine = machine_at(1.75);
     let material = Material::SolidWood {
         species: WoodSpecies::RadiataPine,
     };

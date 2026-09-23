@@ -490,6 +490,10 @@ pub struct FeedsResult {
     /// match supplied one. `None` for formula-fallback / RPM-only LUT
     /// rows / edge-radius-floor paths.
     ///
+    /// The band is de-rated at the SHIPPED axial depth
+    /// ([`Self::axial_depth_mm`]) by `geometry::doc_derating_scale`, the
+    /// same scale the post-sim chipload gate applies (feeds matrix R3).
+    ///
     /// Until 2026-08-13 this was also the input to Suggest's chipload-aware
     /// feed-up recalibration (pass 8), which is retired — see the retirement
     /// note in [`crate::feeds::predict`]. The band still drives the
@@ -1282,7 +1286,8 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     //
     // NAMING WARNING (census F-3, T1.4). This binding is the
     // **LUT-semantics** engaged diameter — "which vendor row applies"
-    // — and it is what the chipload-band DOC derate below divides by.
+    // — the chipload band's depth de-rate uses the same kind of diameter,
+    // taken again at the shipped depth after the power ladder.
     // Step 5 rebinds the same name `effective_d` to the **chip-thinning**
     // diameter (`feeds::effective_diameter`, "what actually touches
     // material"), shadowing this one for the rest of the function, and
@@ -1411,7 +1416,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // deliberately does NOT become `chipload_bounds`: the recipe legitimately
     // rests on the RPM anchor, and re-pointing Suggest's *target* at another
     // row is a different change with a different justification.
-    let mut floor_band_fallback: Option<ChiploadBounds> = None;
+    let mut floor_band_fallback_raw: Option<ChiploadBounds> = None;
     // The one recipe row lookup (`support::recipe_row_lookup`). The
     // support arm below reads the same result, so the arm and the row
     // cannot disagree.
@@ -1438,7 +1443,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         vendor_rpm_min,
         vendor_source,
         chipload_source,
-        chipload_bounds,
+        chipload_band_raw,
     ) = if let support::RecipeRowLookup::Row {
         lut,
         query,
@@ -1455,44 +1460,16 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         // only) leave it None so the loop doesn't fire on an
         // ambiguous target.
         //
-        // DOC derating (2026-06-04): the post-sim chipload gate
-        // scales the matched row's bounds by
-        // `geometry::doc_derating_scale(peak_axial_DOC /
-        // effective_d)`. Apply the same scale here using the
-        // commanded axial DPP so `SuggestAggressiveness::target_chipload`
-        // (median / max / min) aims at a value the gate will
-        // accept at this DOC ratio. Without this, v3.0c median
-        // targeting on high-DOC ops (e.g. wanaka Back Rough at
-        // ~3×D) lands above the gate's derated max and trips
-        // `Exceeds(High)` despite the toolpath being healthy.
-        //
-        // Drill ops are excluded because the post-sim gate
-        // short-circuits drill ops with `NotApplicableForOp` —
-        // the chip-evacuation rule that motivates DOC derating
-        // for milling doesn't apply to drill bands (peck depth,
-        // not engagement). Mirroring the gate's exclusion here
-        // keeps the two paths aligned for the cases where the
-        // gate actually fires. Forcing `chipload_doc_ratio` to
-        // `0.0` bypasses derating (`doc_derating_scale` maps
-        // any ratio `<= 1.0` to a scale of `1.0`), same effect
-        // as the pre-S.8 `chipload_doc_scale = 1.0` branch.
-        //
-        // Validation + scaling both now live in
-        // `geometry::derate_chipload_bounds` — the single home
-        // for this wrapper (S.8), also used by
-        // `suggest::recompute_chipload_bounds_for_dpp` and both
-        // `tool_load` chipload sites.
-        let chipload_doc_ratio = if input.operation == OperationFamily::Drill {
-            0.0
-        } else if effective_d > 0.0 {
-            axial_doc_for_eff_d / effective_d
-        } else {
-            0.0
-        };
+        // The band here is the RAW row band: validated, not yet
+        // de-rated. The axial depth that ships is not known until Step 3
+        // and the power ladder have run, so the depth de-rate is applied
+        // once, after them (see "The chipload band at the shipped depth"
+        // below). Validation lives in `geometry::derate_chipload_bounds`
+        // (S.8); a ratio of `0.0` gets a scale of `1.0`.
         let bounds = geometry::derate_chipload_bounds(
             result.chip_load_min_mm,
             result.chip_load_max_mm,
-            chipload_doc_ratio,
+            0.0,
             geometry::ChiploadBoundPolicy::RequireBoth,
         )
         .and_then(geometry::DeratedChiploadBand::into_pair)
@@ -1535,12 +1512,12 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
                 && let Some((min, max)) = geometry::derate_chipload_bounds(
                     env.chip_load_min_mm,
                     env.chip_load_max_mm,
-                    chipload_doc_ratio,
+                    0.0,
                     geometry::ChiploadBoundPolicy::RequireBoth,
                 )
                 .and_then(geometry::DeratedChiploadBand::into_pair)
             {
-                floor_band_fallback = Some(ChiploadBounds {
+                floor_band_fallback_raw = Some(ChiploadBounds {
                     min_mm_per_tooth: min,
                     max_mm_per_tooth: max,
                 });
@@ -1788,7 +1765,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     //
     // SHADOW POINT (census F-3, T1.4). From here on `effective_d` is the
     // **chip-thinning** diameter, NOT the LUT-semantics one the chipload
-    // band was derated by at Step 2'. This is the value published as
+    // band is de-rated by (at the shipped depth, before the rubbing floor). This is the value published as
     // `FeedsResult::effective_diameter_mm`.
     let effective_d = effective_diameter(
         input.tool_geometry,
@@ -1847,11 +1824,11 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     };
     let chip_thinning = (rctf * axial_thinning).clamp(1.0, 4.0);
 
-    // Depth tier feed derate — deep cuts need slower feed to limit deflection.
-    // This one IS applied, and unlike chip thinning it has triple primary-source
-    // backing: Onsrud, Freud and Amana all print the same axial derate table
-    // (1×D full chipload / 2×D −25 % / 3×D −50 %), and the vendors are
-    // unambiguous that the ratio's numerator is the AXIAL depth of cut.
+    // Depth de-rate on the feed. Onsrud, Freud and Amana print the same
+    // three points (1 x D full, 2 x D minus 25 %, 3 x D minus 50 %; Freud
+    // says "at least", Amana says "feed rate"), keyed to the AXIAL depth.
+    // `depth_tier_multiplier` is `geometry::doc_derating_scale`, the one
+    // scale that the chipload band and the post-sim gate also use (R3).
     let depth_tier = geometry::depth_tier_multiplier(ap, d);
 
     let mut raw_feed = rpm * chip_load * input.flute_count as f64 * depth_tier;
@@ -2392,6 +2369,46 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // (all 8 of them; Ø6 → 0.018 against a 0.025 floor). The clamp reason is
     // derived from the SAME band, so the warning and the explanation record
     // cannot name a ceiling the floor did not use.
+    // ── The chipload band at the shipped depth (feeds matrix R3) ──────
+    //
+    // The band that this function returns is the band at the axial depth
+    // that ships: `geometry::doc_derating_scale(ap / D_lut)`, where `D_lut`
+    // is the LUT-semantics engaged diameter at that depth. That is the
+    // scale and the diameter that the post-sim chipload gate applies at the
+    // measured depth, so Suggest's band, the UI's band and the gate's band
+    // are one number. Before R3 the band was de-rated at the depth HINT
+    // (or at 1 x D when no hint came), so every roughing cell showed the
+    // raw row band (EVIDENCE 5.2-7). The rubbing floor below reads this
+    // band too, which is the band the gate will use (P1).
+    //
+    // Drill ops are excluded, as in the gate (`NotApplicableForOp`):
+    // a ratio of `0.0` gets a scale of `1.0`.
+    let band_doc_ratio = if input.operation == OperationFamily::Drill {
+        0.0
+    } else {
+        let band_d = input.tool_geometry.engaged_diameter_at_doc(
+            ap.max(0.0),
+            d,
+            input.shank_diameter.unwrap_or(d),
+        );
+        if band_d > 0.0 { ap / band_d } else { 0.0 }
+    };
+    let band_at_depth = |raw: ChiploadBounds| {
+        geometry::derate_chipload_bounds(
+            Some(raw.min_mm_per_tooth),
+            Some(raw.max_mm_per_tooth),
+            band_doc_ratio,
+            geometry::ChiploadBoundPolicy::RequireBoth,
+        )
+        .and_then(geometry::DeratedChiploadBand::into_pair)
+        .map(|(min, max)| ChiploadBounds {
+            min_mm_per_tooth: min,
+            max_mm_per_tooth: max,
+        })
+    };
+    let chipload_bounds = chipload_band_raw.and_then(band_at_depth);
+    let floor_band_fallback = floor_band_fallback_raw.and_then(band_at_depth);
+
     let fpt_divisor = rpm * input.flute_count as f64;
     if fpt_divisor > 0.0 {
         let commanded_fpt = feed / fpt_divisor;

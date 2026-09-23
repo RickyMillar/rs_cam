@@ -114,6 +114,10 @@ fn all_diagnostic_ids_reachable_in_adapter_source() {
         ("FEEDS_STEPOVER_VS_LUT", ids::FEEDS_STEPOVER_VS_LUT),
         ("FEEDS_DPP_VS_LUT", ids::FEEDS_DPP_VS_LUT),
         (
+            "FEEDS_DEPTH_BEYOND_PUBLISHED_TABLE",
+            ids::FEEDS_DEPTH_BEYOND_PUBLISHED_TABLE,
+        ),
+        (
             "GEOM_STEPOVER_EXCEEDS_DIAMETER",
             ids::GEOM_STEPOVER_EXCEEDS_DIAMETER,
         ),

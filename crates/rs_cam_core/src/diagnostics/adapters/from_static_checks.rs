@@ -364,6 +364,42 @@ fn depth_checks(scope: &Scope, op: &OperationConfig, tool: &ToolConfig) -> Vec<D
         });
     }
 
+    // Past the published de-rate table (feeds matrix R3). The vendors
+    // print the depth de-rate to 3 x D only; above it the feed and the
+    // chipload band hold the last printed point, 0.50. The source layer,
+    // `feeds::geometry`, owns the table edge.
+    if tool.diameter > 0.0
+        && crate::feeds::geometry::depth_beyond_published_table(dpp / tool.diameter)
+    {
+        let last_ratio = crate::feeds::geometry::DOC_DERATE_LAST_PRINTED_RATIO;
+        out.push(Diagnostic {
+            id: DiagnosticId::from(ids::FEEDS_DEPTH_BEYOND_PUBLISHED_TABLE),
+            scope: scope.clone(),
+            category: Category::ToolLoad,
+            severity: Severity::Caution,
+            confidence: Confidence::Static,
+            state: DiagnosticState::Current,
+            source: Source::StaticValidation,
+            message: format!(
+                "Depth per pass ({dpp:.1} mm) is {:.1}× the tool diameter ({:.1} mm). \
+                 The vendors print the depth de-rate to {last_ratio:.0}× diameter only. \
+                 The feed and the chipload band hold the last printed point, 50 %.",
+                dpp / tool.diameter,
+                tool.diameter
+            ),
+            evidence: Some(DiagnosticEvidence::GeometryCompare {
+                lhs_label: "depth_per_pass".to_owned(),
+                lhs_value: dpp,
+                rhs_label: "last_printed_depth (3 x diameter)".to_owned(),
+                rhs_value: tool.diameter * last_ratio,
+                unit: "mm".to_owned(),
+            }),
+            fix: None,
+            supersedes: vec![],
+            suppressed_diagnostics: vec![],
+        });
+    }
+
     out
 }
 

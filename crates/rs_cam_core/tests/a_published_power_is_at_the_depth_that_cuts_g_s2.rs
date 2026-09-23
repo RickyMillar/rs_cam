@@ -382,20 +382,24 @@ fn the_published_power_describes_a_depth_that_will_not_be_cut() {
 /// door, called on the operation that ships, must agree on both — bit for
 /// bit, because after S2 they ARE the same evaluation.
 ///
-/// The fixture is the T-15 one, restated rather than shared: a 2D Adaptive
-/// rough on a Ø12 two-flute end mill, an operator depth of 24.05 mm
-/// (2.00417 x D, one step above the `ap/D > 2.0` tier boundary) and a
-/// synthetic constant-power spindle whose `adaptive_doc_factor` of 2.0 caps
-/// the depth at exactly 24.000 mm. The rigidity clamp then moves the depth
-/// tier 0.50 -> 0.75, pass 9 raises the feed 1.5x, and pass 10 fires.
+/// The fixture is the T-15 refusal one, restated rather than shared: a 2D
+/// Adaptive rough on a Ø12 two-flute end mill, an operator depth of 30 mm
+/// (2.5 x D, scale 0.625) and a synthetic 0.8 kW constant-power spindle
+/// whose `adaptive_doc_factor` of 2.0 caps the depth at exactly 24.000 mm
+/// (scale 0.75). Pass 9 raises the feed 1.2x. Feeds matrix R3 (2026-09-23)
+/// put the feed on the continuous published scale, under which a depth
+/// clamp alone cannot lift the load over a ceiling the calculator's point
+/// satisfied, so pass 10 fires only where the feed-free edge term already
+/// exceeds the ceiling: that is this spindle, and pass 10 answers
+/// `fits_at_any_feed: false`.
 #[test]
 fn the_door_and_pass_ten_are_one_evaluation() {
-    const T15_ENTRY_DPP_MM: f64 = 24.05;
+    const T15_ENTRY_DPP_MM: f64 = 30.0;
     const T15_STEPOVER_MM: f64 = 10.0;
 
     let mut machine = MachineProfile::generic_wood_router();
-    machine.name = "SYNTHETIC 1.60 kW (test only)".to_owned();
-    machine.power = rs_cam_core::machine::PowerModel::ConstantPower { power_kw: 1.6 };
+    machine.name = "SYNTHETIC 0.80 kW (test only)".to_owned();
+    machine.power = rs_cam_core::machine::PowerModel::ConstantPower { power_kw: 0.8 };
     machine.rigidity.adaptive_doc_factor = 2.0;
     let material = hardwood();
 
@@ -487,10 +491,21 @@ fn the_door_and_pass_ten_are_one_evaluation() {
         figure.required_kw, figure.feed_mm_min,
     );
 
+    // No feed fits this cut: the edge term alone is over the ceiling. Pass 10
+    // put the feed back to the value pass 9 started from and said so; the
+    // door, read at that shipped point, must agree that the ceiling is still
+    // exceeded, or the two are not one evaluation.
+    let edge = figure.required_kw_at_feed(0.0);
     assert!(
-        figure.required_kw <= figure.available_kw * (1.0 + MODEL_IDENTITY_TOLERANCE),
-        "pass 10 clamped the feed, but the door still reads {:.6} kW against a \
-         {:.6} kW ceiling at the shipped point.",
+        edge > figure.available_kw * (1.0 - MODEL_IDENTITY_TOLERANCE),
+        "the fixture is not the refusal shape: the feed-free edge term {edge:.6} kW is under \
+         the {:.6} kW ceiling",
+        figure.available_kw,
+    );
+    assert!(
+        figure.required_kw > figure.available_kw * (1.0 - MODEL_IDENTITY_TOLERANCE),
+        "pass 10 said no feed fits, but the door reads {:.6} kW under the {:.6} kW ceiling \
+         at the shipped point.",
         figure.required_kw,
         figure.available_kw,
     );

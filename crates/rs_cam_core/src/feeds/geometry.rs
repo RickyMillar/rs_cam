@@ -116,30 +116,42 @@ pub fn axial_chip_thinning_factor_for_ball(nominal_d: f64, effective_d: f64) -> 
     (nominal_d / effective_d).clamp(1.0, 4.0)
 }
 
-/// Cross-vendor DOC-derating scale for the chipload envelope.
+/// The published depth-of-cut de-rate: the one scale for the feed and for
+/// the chipload band.
 ///
-/// Verbatim from both `amana_compression.json` and `onsrud_plastic.json`
-/// rows' `ap_rule`:
+/// Three wood vendors print the same three points. The exact strings are:
 ///
-/// > "1×D use recommended chip load; 2×D reduce 25%; 3×D reduce 50%."
+/// - Onsrud, `onsrud_plastic` rows' `ap_rule`: "cut depth per pass = cutting
+///   edge diameter (1xD); 2xD reduce chip load 25%; 3xD reduce chip load
+///   50%". The Onsrud wood sheets print "DEPTH OF CUT: 1 x D Use recommended
+///   chip load / 2 x D Reduce chip load by 25% / 3 x D Reduce chip load by
+///   50%".
+/// - Freud: "If Cut Depth is 2X the bit diameter, reduce the Chip Load by at
+///   least 25%" and "If Cut Depth is 3X the bit diameter, reduce the Chip
+///   Load by at least 50%".
+/// - Amana: "1 x D Use recommended feed rate / 2 x D Reduce feed rate by 25%
+///   / 3 x D Reduce feed rate by 50%". At the chart's fixed RPM and flute
+///   count a feed reduction is the same chip-load reduction.
 ///
-/// Piecewise linear; clamped at 3×D ratio to keep extrapolation finite.
-/// Shared between the feeds calculator (which applies this to the LUT
-/// chipload bounds returned to Suggest so `target_chipload` aims at a
-/// value the post-sim gate will accept) and the post-sim chipload gate
-/// in `tool_load::chipload` (which applies it to the matched LUT row
-/// using measured peak axial DOC). Keeping a single canonical
-/// implementation prevents the two paths from drifting out of phase —
-/// the earlier `tool_load::chipload::doc_derating_scale` was a
-/// pub(super) copy and that drift is what caused the v3.0c Wanaka
-/// Back Rough false-Exceeds(High).
+/// The vendors publish the rule at three points only. The linear
+/// interpolation between them is this crate's own. No vendor prints a value
+/// above 3 x D, so the scale holds the last printed point, 0.50, there, and
+/// [`depth_beyond_published_table`] tells the caller that it did.
 ///
-/// | ratio (DOC/D) | scale  |
-/// |---------------|--------|
-/// | ≤ 1.0         | 1.000  |
-/// | 2.0           | 0.750  |
-/// | 3.0           | 0.500  |
-/// | ≥ 3.0         | 0.500 (clamped)  |
+/// Consumers: the feed (through [`depth_tier_multiplier`]), the chipload
+/// band that `feeds::calculate` returns (at the shipped depth), Suggest's
+/// band re-derivation, and the post-simulation chipload gate in
+/// `tool_load::chipload` (at the measured peak depth). One function keeps
+/// them in phase; an earlier private copy in the gate drifted and caused
+/// the v3.0c Wanaka Back Rough false `Exceeds(High)`.
+///
+/// | ratio (DOC/D) | scale                              |
+/// |---------------|------------------------------------|
+/// | <= 1.0        | 1.000 (printed)                    |
+/// | 2.0           | 0.750 (printed)                    |
+/// | 3.0           | 0.500 (printed)                    |
+/// | between       | linear (this crate's own)          |
+/// | > 3.0         | 0.500 (held at the last printed point) |
 pub fn doc_derating_scale(ratio: f64) -> f64 {
     if !ratio.is_finite() || ratio <= 1.0 {
         1.0
@@ -150,6 +162,18 @@ pub fn doc_derating_scale(ratio: f64) -> f64 {
     } else {
         0.5
     }
+}
+
+/// The last depth-to-diameter ratio that the vendors print (3 x D).
+pub const DOC_DERATE_LAST_PRINTED_RATIO: f64 = 3.0;
+
+/// True when the depth is past the published de-rate table.
+///
+/// Above [`DOC_DERATE_LAST_PRINTED_RATIO`] no vendor prints a factor, and
+/// [`doc_derating_scale`] holds 0.50. The static checks raise a Caution
+/// from this answer.
+pub fn depth_beyond_published_table(ratio: f64) -> bool {
+    ratio.is_finite() && ratio > DOC_DERATE_LAST_PRINTED_RATIO
 }
 
 /// How strictly a chipload band's bounds must be populated before a
@@ -254,24 +278,17 @@ pub fn derate_chipload_bounds(
     })
 }
 
-/// Depth tier feed multiplier.
+/// The depth de-rate on the feed, at axial depth `ap` on a tool of
+/// `diameter`.
 ///
-/// When axial depth exceeds tool diameter, feed should be derated to avoid
-/// excessive tool deflection and breakage. From reference calcs.rs.
+/// This is [`doc_derating_scale`] at `ap / diameter`, so the feed and the
+/// chipload band use one function (feeds matrix ruling R3, 2026-09-23).
+/// A non-positive diameter gets no de-rate.
 pub fn depth_tier_multiplier(ap: f64, diameter: f64) -> f64 {
     if diameter <= 0.0 {
         return 1.0;
     }
-    let ratio = ap / diameter;
-    if ratio > 3.0 {
-        0.45
-    } else if ratio > 2.0 {
-        0.50
-    } else if ratio > 1.0 {
-        0.75
-    } else {
-        1.0
-    }
+    doc_derating_scale(ap / diameter)
 }
 
 /// V-bit cut width at a given depth.
@@ -416,9 +433,12 @@ mod tests {
 
     #[test]
     fn test_depth_tier_multiplier_deep() {
-        assert!((depth_tier_multiplier(7.0, 6.0) - 0.75).abs() < 1e-9); // >1D
-        assert!((depth_tier_multiplier(13.0, 6.0) - 0.50).abs() < 1e-9); // >2D
-        assert!((depth_tier_multiplier(19.0, 6.0) - 0.45).abs() < 1e-9); // >3D
+        // R3 (2026-09-23): the feed uses the one published scale, linear
+        // between the printed points and held at 0.50 above 3 x D.
+        assert!((depth_tier_multiplier(9.0, 6.0) - 0.875).abs() < 1e-9); // 1.5D
+        assert!((depth_tier_multiplier(12.0, 6.0) - 0.75).abs() < 1e-9); // 2D
+        assert!((depth_tier_multiplier(18.0, 6.0) - 0.50).abs() < 1e-9); // 3D
+        assert!((depth_tier_multiplier(24.0, 6.0) - 0.50).abs() < 1e-9); // 4D
     }
 
     // ── derate_chipload_bounds (S.8 dedup) ─────────────────────────

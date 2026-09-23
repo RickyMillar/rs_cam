@@ -300,8 +300,14 @@ quotations, access dates and the per-family confidence table):
   diameter.
 
 The axial derate applied by `feeds::geometry::doc_derating_scale`
-(1.00 / 0.75 / 0.50 at DOC = 1 / 2 / 3 x D) is published verbatim and identically
-by all three wood vendors above.
+(1.00 / 0.75 / 0.50 at DOC = 1 / 2 / 3 x D) is published at three points by the
+three wood vendors above. Onsrud prints "1 x D Use recommended chip load / 2 x D
+Reduce chip load by 25% / 3 x D Reduce chip load by 50%". Freud prints "reduce
+the Chip Load by at least 25%" and "at least 50%". Amana prints "Reduce feed rate
+by 25%" and "by 50%", which is the same rule at the chart's fixed RPM. The linear
+interpolation between the three points is this crate's own. Above 3 x D no vendor
+prints a factor; the crate holds 0.50 there and raises a Caution. The one scale
+de-rates the feed, the chipload band and the post-simulation chipload gate.
 
 No wood source in the shipped LUT publishes a **radial** engagement condition
 for its chipload column; the `ae_min_mm` / `ae_max_mm` values on wood rows are
