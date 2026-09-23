@@ -40,6 +40,7 @@ is retrievable the same way.
 | [`structure_2026-09-17/`](structure_2026-09-17/) | This programme |
 | [`gen_sim_rest_ux_2026-09-18/`](gen_sim_rest_ux_2026-09-18/) | Plan; seven rulings open (generate ↔ simulate ↔ rest, one path, one indicator) |
 | [`corne_case_analysis_2026-09-18/`](corne_case_analysis_2026-09-18/) | Analysis; eight rulings open (silhouette holes make the rough weave, waterline Auto ladder is one level, a diagram drag pinned Z −1.37) |
+| [`feeds_matrix_2026-09-23/`](feeds_matrix_2026-09-23/) | Plan; not started (every tool type on every operation: what fires, what ships, what backs it; a `FeedsSupport` declaration that refuses an unbacked suggestion) |
 
 ## Other packages held under this directory
 
