@@ -38,6 +38,18 @@
 - bounded typed simulation triage plus per-metric measurability abstention, consumed by GUI, MCP, CLI and narration through one contract
 - machine kinematics as an analysis dimension: per-axis max rates (`$110/$111/$112`) in the machine model, a per-toolpath kinematic utilization instrument (utilization, feed-bound headroom, machine-bound share, plunge-class peak) on every simulation surface, and a geometric plunge guard in the feed modulator
 
+## Feeds matrix — 2026-09-23 (Phases 0-3 complete; Phase 4 in progress under the rulings)
+
+`planning/feeds_matrix_2026-09-23/`: PLAN.md, EVIDENCE.md (230 findings, 97 confirmed
+by a second fetch), RULINGS.md (the five rulings and what landed), DERATE_CHAIN_REVIEW.md,
+FORMULA_BACKING.md, the FM1 matrix outputs. Landed: `FeedsSupport` per cell (1784881d),
+the FM1 instrument (15f751c0), the printed vendor rows and re-graded seed rows (R5,
+3885cbf..bab9a236, 827f383e), one published depth de-rate for the feed and the band (R3,
+d8d8b0c7, aef54c83). Open: R1 evidence-backed refusals (re-judge after R5), R2 (finish
+depth criterion), R4 (which reductions may scale). Visible: flat-end pocket and adaptive
+cells at 1/8 in, 6 mm and 1/4 in now read a single printed value, so no band and a silent
+burn gate there. Not pushed.
+
 ## Generate ↔ simulate ↔ rest — 2026-09-18/19 (COMPLETE; MCP path and every indicator seen on screen, the GUI Auto click and the confirm modal not yet)
 
 `planning/gen_sim_rest_ux_2026-09-18/`: `PLAN.md`, six implementation

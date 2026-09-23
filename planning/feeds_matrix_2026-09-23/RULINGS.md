@@ -33,6 +33,32 @@ Recorded verbatim in substance; the operator's words are in FINDINGS-style quote
 - **R5: YES.** "if they are broken that's a real f-up. yes please get those
   fixed."
 
+## Landed under the rulings, 2026-09-23 evening
+
+- R3: d8d8b0c7 (hint deleted), aef54c83 (one linear scale for the feed and
+  the band; band at the shipped depth; 0.50 held above 3 x D with a Caution),
+  dc18440e (FM3 sentry). Fact found on the way: under one continuous scale a
+  depth clamp that starts at or below 2.5 x D cannot lift the shipped load
+  over a ceiling the calculator's point satisfied; g_t15 and g_s2 re-derived
+  on a 30 -> 24 mm crossing.
+- R5: 3885c8bf..bab9a236 (stored chart text and hashes; printed Amana ball v7
+  and Spektra v24 rows; reduced and unprinted rows relabelled derived/c; Onsrud
+  77-100 tapered rows and the two plywood sheets; the MDF routing was a
+  missing row), 827f383e (fifteen fixtures re-blessed to the printed rows),
+  d884ab7a (matrix re-run: VendorBacked 328 -> 424, floor fires 333 -> 201,
+  feed-cap clamps 30 -> 97).
+- Consequence to rule on later (R5 follow-up): the Amana Spektra chart prints
+  one value per size, so those rows carry a maximum only. On flat-end pocket
+  and adaptive cells at 1/8 in, 6 mm and 1/4 in in every wood Suggest now
+  shows no band, the burn gate is silent (its low side is advisory without a
+  minimum, by existing policy) and modulation runs bandless. Options: accept;
+  or author a derived band around the printed value with a named rule.
+- R1: the evidence-backed refusals wait for a fresh judgement on the post-R5
+  matrix (FORMULA_BACKING.md was judged on the old rows). The engine-rule
+  part (refuse where the registry's own tool rule refuses; refusal wording and
+  routing, rows 2-1, 2-6, 2-7, 4.4-15) is in progress.
+- R2, R4: no change.
+
 ## The three findings that change the frame
 
 Read these before the rulings. They were not in PLAN.md.
