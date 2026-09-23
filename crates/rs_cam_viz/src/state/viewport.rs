@@ -162,9 +162,9 @@ pub struct ViewportState {
     /// composite `overlay_upload_key` detector in `app.rs` is that trigger,
     /// and it carries the derived selection beside this flag.
     ///
-    /// The Simulation workspace names `Some(true)`, because playback reviews
-    /// every toolpath in the program. The Toolpaths workspace names NO
-    /// default, so an operator override survives a round trip.
+    /// Simulation also defaults off, so entering playback never floods the
+    /// viewport. The Toolpaths workspace names NO default, so an operator
+    /// override survives a round trip.
     pub show_all_toolpaths: bool,
     /// Color mode for toolpath lines.
     pub toolpath_color_mode: ToolpathColorMode,
@@ -292,4 +292,33 @@ where
         })
         .map(|(id, _, _)| id)
         .collect()
+}
+
+/// The one operation whose source vectors may appear in the viewport.
+///
+/// An explicit selection always wins. During Simulation, playback's current
+/// boundary provides the useful fallback; elsewhere an unfocused viewport
+/// draws no DXF/SVG source geometry.
+pub fn vector_source_focus(
+    selected: Option<ToolpathId>,
+    simulation_current: Option<ToolpathId>,
+) -> Option<ToolpathId> {
+    selected.or(simulation_current)
+}
+
+pub fn vector_source_toolpath(state: &super::AppState) -> Option<ToolpathId> {
+    let selected = match state.selection {
+        super::selection::Selection::Toolpath(id) => Some(id),
+        _ => None,
+    };
+    let simulation_current = (state.workspace == super::Workspace::Simulation)
+        .then(|| state.simulation.focused_toolpath())
+        .flatten();
+    // Playback is the active operation while simulating; a selection retained
+    // from the Toolpaths workspace must not pin an unrelated source vector.
+    if state.workspace == super::Workspace::Simulation {
+        vector_source_focus(simulation_current, selected)
+    } else {
+        vector_source_focus(selected, None)
+    }
 }

@@ -1261,6 +1261,9 @@ pub(crate) struct OverlayUploadKey {
     /// `Selection` is not `Copy`, so the DERIVED toolpath id is stored here
     /// and never the enum.
     selected_toolpath: Option<crate::state::toolpath::ToolpathId>,
+    /// Source vectors fall back to Simulation's current boundary when no
+    /// operation is selected, so scrubbing must invalidate their upload.
+    vector_source_toolpath: Option<crate::state::toolpath::ToolpathId>,
 }
 
 pub(crate) fn overlay_upload_key(state: &crate::state::AppState) -> OverlayUploadKey {
@@ -1280,5 +1283,6 @@ pub(crate) fn overlay_upload_key(state: &crate::state::AppState) -> OverlayUploa
             crate::state::selection::Selection::Toolpath(id) => Some(id),
             _ => None,
         },
+        vector_source_toolpath: crate::state::viewport::vector_source_toolpath(state),
     }
 }

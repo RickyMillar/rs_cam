@@ -373,22 +373,24 @@ impl RsCamApp {
                 }
             };
 
-            let setup_for_model = |model_id: usize| -> Option<SetupFrame> {
+            let vector_source = {
                 let state = self.controller.state();
-                let tc = state
-                    .session
-                    .toolpath_configs()
-                    .iter()
-                    .find(|tc| tc.model_id == model_id)?;
-                let setup_idx = state.session.setup_of_toolpath_id(tc.id)?;
-                let sd = state.session.list_setups().get(setup_idx)?;
-                Some(SetupFrame::of(sd))
+                crate::state::viewport::vector_source_toolpath(state).and_then(|id| {
+                    let tc = state.session.find_toolpath_config_by_id(id)?.1;
+                    let setup = state
+                        .session
+                        .setup_of_toolpath_id(id)
+                        .and_then(|index| state.session.list_setups().get(index))
+                        .map(SetupFrame::of);
+                    Some((tc.clone(), setup))
+                })
             };
 
             let ring_to_lines = |ring: &[rs_cam_core::geo::P2],
                                  close: bool,
                                  setup_opt: Option<&SetupFrame>,
-                                 poly_z: f32,
+                                 point_z: &dyn Fn(f64, f64) -> Option<f32>,
+                                 segment_spacing: Option<f64>,
                                  verts: &mut Vec<LineVertex>| {
                 if ring.len() < 2 {
                     return;
@@ -402,57 +404,134 @@ impl RsCamApp {
                         (p.x, p.y)
                     }
                 };
+                let mut draw_segment = |a: (f64, f64), b: (f64, f64)| {
+                    let distance = (b.0 - a.0).hypot(b.1 - a.1);
+                    let pieces = segment_spacing.map_or(1, |spacing| {
+                        (distance / spacing.max(f64::EPSILON)).ceil().max(1.0) as usize
+                    });
+                    for piece in 0..pieces {
+                        let t0 = piece as f64 / pieces as f64;
+                        let t1 = (piece + 1) as f64 / pieces as f64;
+                        let p0 = (a.0 + (b.0 - a.0) * t0, a.1 + (b.1 - a.1) * t0);
+                        let p1 = (a.0 + (b.0 - a.0) * t1, a.1 + (b.1 - a.1) * t1);
+                        if let (Some(z0), Some(z1)) = (point_z(p0.0, p0.1), point_z(p1.0, p1.1)) {
+                            verts.push(LineVertex {
+                                position: [p0.0 as f32, p0.1 as f32, z0],
+                                color,
+                            });
+                            verts.push(LineVertex {
+                                position: [p1.0 as f32, p1.1 as f32, z1],
+                                color,
+                            });
+                        }
+                    }
+                };
                 for pair in ring.windows(2) {
                     // SAFETY: windows(2) guarantees exactly 2 elements per slice.
                     #[allow(clippy::indexing_slicing)]
-                    let (a, b) = (&pair[0], &pair[1]);
-                    let (ax, ay) = transform_pt(a);
-                    let (bx, by) = transform_pt(b);
-                    verts.push(LineVertex {
-                        position: [ax as f32, ay as f32, poly_z],
-                        color,
-                    });
-                    verts.push(LineVertex {
-                        position: [bx as f32, by as f32, poly_z],
-                        color,
-                    });
+                    draw_segment(transform_pt(&pair[0]), transform_pt(&pair[1]));
                 }
                 if close && let (Some(last), Some(first)) = (ring.last(), ring.first()) {
-                    let (ax, ay) = transform_pt(last);
-                    let (bx, by) = transform_pt(first);
-                    verts.push(LineVertex {
-                        position: [ax as f32, ay as f32, poly_z],
-                        color,
-                    });
-                    verts.push(LineVertex {
-                        position: [bx as f32, by as f32, poly_z],
-                        color,
-                    });
+                    draw_segment(transform_pt(last), transform_pt(first));
                 }
             };
 
-            for model in self.controller.state().session.models() {
-                let Some(polys) = &model.polygons else {
-                    continue;
+            'polygon_upload: {
+                let Some((toolpath, model_setup)) = vector_source else {
+                    break 'polygon_upload;
                 };
-                // Prefer the setup that actually uses this model; fall back to
-                // the current active/selected setup.
-                let model_setup = setup_for_model(model.id).or(active_setup_ref);
-                // Draw slightly above the setup's local stock top to avoid
-                // z-fighting. When no setup is known, fall back to world-frame
-                // stock top.
-                let poly_z = if let Some(ref setup) = model_setup {
-                    let (_, _, h) = setup.effective_stock(&stock);
-                    h as f32 + 0.05
-                } else {
-                    (stock.origin_z + stock.z) as f32 + 0.05
+                let state = self.controller.state();
+                let Some(model) = state
+                    .session
+                    .models()
+                    .iter()
+                    .find(|model| model.id == toolpath.model_id)
+                else {
+                    break 'polygon_upload;
+                };
+                let Some(polys) = &model.polygons else {
+                    break 'polygon_upload;
                 };
                 let setup_ref = model_setup.as_ref();
+                let planar_z = match &toolpath.operation {
+                    rs_cam_core::compute::catalog::OperationConfig::Trace(_) => {
+                        let context = height_context_from_session(&state.session, &toolpath);
+                        let heights = toolpath.heights.resolve(&context);
+                        toolpath
+                            .operation
+                            .cutting_levels(heights.top_z)
+                            .last()
+                            .copied()
+                            .unwrap_or(heights.top_z) as f32
+                            + 0.05
+                    }
+                    _ => model_setup
+                        .map(|setup| setup.effective_stock(&stock).2 as f32 + 0.05)
+                        .unwrap_or((stock.origin_z + stock.z) as f32 + 0.05),
+                };
+                let surface_mesh = match &toolpath.operation {
+                    rs_cam_core::compute::catalog::OperationConfig::ProjectCurve(cfg) => state
+                        .session
+                        .models()
+                        .iter()
+                        .find(|model| {
+                            model.id
+                                == cfg
+                                    .surface_model_id
+                                    .map_or(toolpath.model_id, |model_id| model_id.0)
+                        })
+                        .and_then(|model| model.mesh.as_ref())
+                        .map(|mesh| {
+                            let mesh = match model_setup {
+                                Some(setup) => transform_mesh(mesh, &setup, &stock),
+                                None => (**mesh).clone(),
+                            };
+                            // Projection runs on the UI upload path, so never
+                            // scan every face per vector endpoint. This is the
+                            // same uniform index family the generator uses.
+                            let index = rs_cam_core::mesh::SpatialIndex::build_auto(&mesh);
+                            (mesh, index, cfg.direction)
+                        }),
+                    _ => None,
+                };
+                let segment_spacing = match &toolpath.operation {
+                    rs_cam_core::compute::catalog::OperationConfig::ProjectCurve(cfg) => {
+                        Some(cfg.point_spacing)
+                    }
+                    _ => None,
+                };
+                let point_z = |x: f64, y: f64| -> Option<f32> {
+                    let Some((mesh, index, direction)) = surface_mesh.as_ref() else {
+                        return Some(planar_z);
+                    };
+                    let z = index
+                        .query(x, y, 0.0)
+                        .into_iter()
+                        .filter_map(|face_index| mesh.faces.get(face_index))
+                        .filter(|face| face.contains_point_xy(x, y))
+                        .filter_map(|face| face.z_at_xy(x, y));
+                    let z = match direction {
+                    rs_cam_core::compute::operation_configs::ProjectCurveDirection::FromAbove => {
+                        z.max_by(f64::total_cmp)
+                    }
+                    rs_cam_core::compute::operation_configs::ProjectCurveDirection::FromBelow => {
+                        z.min_by(f64::total_cmp)
+                    }
+                }?;
+                    Some(z as f32 + 0.05)
+                };
                 let mut verts = Vec::new();
                 for poly in polys.iter() {
-                    ring_to_lines(&poly.exterior, poly.closed, setup_ref, poly_z, &mut verts);
+                    ring_to_lines(
+                        &poly.exterior,
+                        poly.closed,
+                        setup_ref,
+                        &point_z,
+                        segment_spacing,
+                        &mut verts,
+                    );
                     for hole in &poly.holes {
-                        ring_to_lines(hole, true, setup_ref, poly_z, &mut verts);
+                        ring_to_lines(hole, true, setup_ref, &point_z, segment_spacing, &mut verts);
                     }
                 }
 
@@ -491,7 +570,7 @@ impl RsCamApp {
                             &mut verts,
                             tx as f32,
                             ty as f32,
-                            poly_z,
+                            planar_z,
                             radius,
                             marker_color,
                             16,

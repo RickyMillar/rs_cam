@@ -704,8 +704,7 @@ fn the_retired_controls_have_no_second_home() {
 
 // ── F5 / F3 (P5.1, 2026-09-08) ─────────────────────────────────────────────
 
-/// The moves family is ON in Toolpaths — UX §6.4's "Cutting, Rapids, Entry
-/// markers | off | on | on" row, pinned by NAME.
+/// The moves family is ON in Toolpaths and OFF in Setup and Simulation.
 ///
 /// # Why by name, when `the_constructed_state_equals_the_toolpaths_default_column`
 /// already covers every row
@@ -724,7 +723,7 @@ fn the_retired_controls_have_no_second_home() {
 /// initialiser to match — both halves would agree, and the operator would
 /// lose the moves. This test names the answer the design gives.
 #[test]
-fn the_moves_family_is_on_in_toolpaths_and_off_in_setup() {
+fn the_moves_family_is_on_in_toolpaths_and_off_elsewhere() {
     for id in ["cutting_moves", "rapids", "entry_markers"] {
         let row = registry::row(id).unwrap_or_else(|| panic!("`{id}` has no row"));
         assert_eq!(
@@ -734,8 +733,8 @@ fn the_moves_family_is_on_in_toolpaths_and_off_in_setup() {
         );
         assert_eq!(
             (row.default_for)(Workspace::Simulation),
-            Some(true),
-            "UX 6.4 puts `{id}` ON in Simulation"
+            Some(false),
+            "Simulation starts with `{id}` hidden so playback is decluttered"
         );
         assert_eq!(
             (row.default_for)(Workspace::Setup),

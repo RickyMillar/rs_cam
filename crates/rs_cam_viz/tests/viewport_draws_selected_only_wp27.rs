@@ -37,7 +37,9 @@
 use std::path::Path;
 
 use rs_cam_viz::state::toolpath::ToolpathId;
-use rs_cam_viz::state::viewport::{ToolpathDrawFilter, ViewportState, toolpaths_to_draw};
+use rs_cam_viz::state::viewport::{
+    ToolpathDrawFilter, ViewportState, toolpaths_to_draw, vector_source_focus,
+};
 use rs_cam_viz::state::{AppState, Workspace};
 use rs_cam_viz::ui::overlays::registry;
 
@@ -394,33 +396,54 @@ fn the_upload_key_carries_the_scope_and_the_selection() {
         "`overlay_upload_key` does not read `state.selection`, so a \
          selection change leaves the viewport drawing the previous toolpath"
     );
+    assert!(
+        body.contains("vector_source_toolpath"),
+        "the upload key must follow Simulation's current boundary when it \
+         supplies the contextual vector fallback"
+    );
 }
 
-// ── (viii) the Simulation workspace draws all ────────────────────────
-
-/// Playback reviews every toolpath in the program, so the Simulation
-/// workspace names `Some(true)`. The Toolpaths workspace names NO default on
-/// purpose: a named default is re-applied on every entry, so an operator who
-/// switched show-all on would have to switch it on again each time they came
-/// back from Simulation. `displaced` restores the round trip instead.
 #[test]
-fn the_simulation_workspace_still_draws_every_toolpath() {
+fn vector_upload_is_contextual_and_uses_operation_specific_heights() {
+    let upload = strip_comments(&source("src/app/gpu_upload.rs"));
+    for needle in [
+        "vector_source_toolpath(state)",
+        "find(|model| model.id == toolpath.model_id)",
+        "height_context_from_session(&state.session, &toolpath)",
+        "toolpath.heights.resolve(&context)",
+        ".cutting_levels(heights.top_z)",
+        "surface_model_id",
+        "face.z_at_xy(x, y)",
+    ] {
+        assert!(
+            upload.contains(needle),
+            "contextual vector upload lost `{needle}`"
+        );
+    }
+}
+
+// ── (viii) Simulation stays decluttered ──────────────────────────────
+
+#[test]
+fn entering_simulation_keeps_toolpath_drawing_off() {
     assert_the_row_exists();
     let mut state = AppState::new();
-    assert_eq!(state.workspace, Workspace::Toolpaths);
-    assert!(
-        !state.viewport.show_all_toolpaths,
-        "the app opens in Toolpaths and must start at the selected-only rule"
-    );
     registry::switch_workspace(&mut state, Workspace::Simulation);
     assert!(
-        state.viewport.show_all_toolpaths,
-        "the Simulation workspace reviews the whole program, so its default \
-         draws every toolpath"
-    );
-    registry::switch_workspace(&mut state, Workspace::Toolpaths);
-    assert!(
         !state.viewport.show_all_toolpaths,
-        "leaving Simulation must restore what its default displaced"
+        "Simulation must not turn on global toolpath drawing"
     );
+    assert!(
+        !state.viewport.show_cutting
+            && !state.viewport.show_rapids
+            && !state.viewport.show_entry_markers,
+        "Simulation must default every toolpath visual family off"
+    );
+}
+
+#[test]
+fn vector_source_focus_prefers_selection_then_simulation_and_hides_without_either() {
+    assert_eq!(vector_source_focus(Some(A), Some(B)), Some(A));
+    assert_eq!(vector_source_focus(None, Some(B)), Some(B));
+    assert_eq!(vector_source_focus(None, None), None);
 }

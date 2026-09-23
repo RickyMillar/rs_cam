@@ -248,11 +248,11 @@ fn always_on_default(ws: Workspace) -> Option<bool> {
     }
 }
 
-/// Setup off, Toolpaths on, Simulation on — cutting, rapids, entry markers.
+/// Setup and Simulation off, Toolpaths on — cutting, rapids, entry markers.
 fn moves_default(ws: Workspace) -> Option<bool> {
     match ws {
-        Workspace::Setup => Some(false),
-        Workspace::Toolpaths | Workspace::Simulation => Some(true),
+        Workspace::Toolpaths => Some(true),
+        Workspace::Setup | Workspace::Simulation => Some(false),
         Workspace::Readiness => None,
     }
 }
@@ -287,22 +287,12 @@ fn rest_heatmap_default(ws: Workspace) -> Option<bool> {
     }
 }
 
-/// Simulation on, Toolpaths and Setup unmanaged — the WP27 draw scope.
-///
-/// Simulation names `Some(true)` because playback reviews every toolpath in
-/// the program. Toolpaths names NO default on purpose: a named default is
-/// re-applied on every entry to that workspace
-/// ([`apply_workspace_defaults`]), so the operator would have to switch
-/// "All toolpaths" on again each time they came back from Simulation. `None`
-/// leaves the choice alone, and `displaced` still restores it across a round
-/// trip.
-///
-/// One consequence the bar button carries instead: a `None` row is not
-/// counted by [`non_default_count`], so the `Overlays (n)` badge does not
-/// flag show-all.
+/// Simulation defaults the WP27 draw scope off; other workspaces leave the
+/// operator's choice unmanaged. A named Simulation default is restored on
+/// exit through `displaced`.
 fn draw_scope_default(ws: Workspace) -> Option<bool> {
     match ws {
-        Workspace::Simulation => Some(true),
+        Workspace::Simulation => Some(false),
         Workspace::Setup | Workspace::Toolpaths | Workspace::Readiness => None,
     }
 }
