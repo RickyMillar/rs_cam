@@ -126,8 +126,14 @@ On R4_AGGRESSIVENESS_SPEC.md §5, in the spec's numbering:
   row); dial record on 242 cells, not-applied on 206, long-tool on 428.
   Shipped-point force vs the pre-dial baseline: roughing/semi-finish fell
   to 0.66–0.88, finish rose 1.03–1.28 (accepted).
-- Open after WP3: Q10 (RPM follows the feed ceiling), Q8 (workholding folds
-  into the dial), the size-law phase, WP2b, WP5.
+- Q10 LANDED f82c1e70 (core) + 674dbe73 (viz): the RPM follows the feed
+  ceiling down to hold the chip, bounded by the row `rpm_min` / machine
+  minimum / spindle speeds, power re-checked at the new RPM; 129 matrix
+  cells follow down, 35 still clamp. The HDPE literature cell's three
+  thermal checks are known gaps (row band above the ductile ceiling; no
+  `rpm_min` on the row). Sentry FM8.
+- Open after Q10: Q8 (workholding folds into the dial), the size-law
+  phase, WP2b, WP5.
 
 ## Landed under the rulings, 2026-09-23 evening
 
