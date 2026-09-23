@@ -80,6 +80,39 @@ On R4_AGGRESSIVENESS_SPEC.md §5, in the spec's numbering:
   de-rates**. Every scale that moves a number shows on the card with its
   source status.
 
+## Operator rulings, fourth round, 2026-09-24 (after the dial measured)
+
+- **Finish load rise accepted.** With the 0.75 feed factor gone and no dial
+  action on a finish pass, 244 finish cells load 3–28 % more at the shipped
+  point (median roughing/semi-finish fell to 0.66–0.88). The feed is the
+  published band value; deflection (R2) is the finish limiter; every number
+  is on the card.
+- **Three literature cells are known gaps**, not failures: Ipe pocket
+  (chipload matches oak), the 1 mm flat micro tool, aluminium 6061. Their
+  anti-patterns stay as the target list ("no sourced hardness, micro-tool or
+  aluminium de-rate exists yet"), as the R1 refusals do.
+- **Micro extrapolation refuses (R1 applied to size).** Probe 2026-09-24:
+  a 0.5 / 0.8 / 1.0 mm tapered ball on Scallop ships 0.035 / 0.045 / 0.052
+  mm/tooth (5–7 % of the tip diameter) from the Onsrud 1/8" and 1/4" rows
+  scaled 6–8× down by the repo's (d/D)^0.61 law, which was fitted on 3–12 mm
+  rows. When the tool is under 1.5 mm and the only row is extrapolated more
+  than 2× in diameter, Suggest refuses: "no published figure for a 0.5 mm
+  tapered ball; the nearest chart row is 3.175 mm". Operator: "sounds a bit
+  faffy. But ok."
+- **Lookup defect to fix regardless:** a 1 mm flat pocket in hardwood matched
+  an MDF 0.794 mm Spektra row. Wood material FAMILIES (softwood, hardwood,
+  plywood, MDF) are separate charts at every vendor and do not substitute;
+  hardness within a family stays a dial (the 2026-05 hardness-agnostic
+  ruling is about Janka, not family).
+- **Next package (not started): a sourced size-scaling law.** Fit the
+  exponent per tool family from the printed multi-size rows (Spektra 1/8",
+  6 mm, 1/4"; Amana ball 0.79–12.7; Onsrud tapered 1/8", 1/4"; V-groove
+  3.175–12.7), report residuals and a valid range per family; fetch the
+  micro-tool charts (Amana, PreciseBits sub-1 mm tapered and end mills) as
+  rows; the card prints "scaled ×0.32 from the 3.175 mm row; fit range
+  3–12 mm"; outside the range refuse or warn by R1. Same shape as R5.
+  Operator: "do what you suggest! sounds good".
+
 ## Landed under the rulings, 2026-09-23 evening
 
 - R3: d8d8b0c7 (hint deleted), aef54c83 (one linear scale for the feed and
