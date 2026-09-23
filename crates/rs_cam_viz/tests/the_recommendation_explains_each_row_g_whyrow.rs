@@ -45,7 +45,7 @@ use std::sync::Arc;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::material::{Material, PlywoodGrade};
+use rs_cam_core::material::{Material, PlywoodGrade, WoodSpecies};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_viz::state::AppState;
@@ -90,21 +90,60 @@ fn fixture() -> AppState {
     tool.diameter = 6.0;
     tool.flute_count = 2;
 
-    let stock = StockConfig {
-        material: Material::Plywood {
-            grade: PlywoodGrade::BalticBirch,
-        },
-        ..Default::default()
+    let material = Material::Plywood {
+        grade: PlywoodGrade::BalticBirch,
     };
 
-    // The UR1/UP4 fixture shape: a deliberately low advance per tooth that
-    // trips the rubbing floor while the vendor row stays in play, so
-    // provenance, rationale, derates and a warning all render together.
+    // The UR1/UP4 fixture shape: the vendor row stays in play, so
+    // provenance, rationale and derates render together. The rubbing-floor
+    // warning has its own cell, [`floor_fixture`].
     let mut operation = OperationConfig::Adaptive3d(Default::default());
     if let OperationConfig::Adaptive3d(config) = &mut operation {
         config.feed_rate = 3_000.0;
         config.spindle_rpm = Some(18_000);
     }
+    state_with(tool, material, operation)
+}
+
+/// The rubbing-floor fixture: the cell `inspector_width_is_tab_independent_up4`
+/// uses, a Ø3.175 flat 2F `Profile` in generic hardwood on stickout 20 mm.
+/// Its row `amana-flat-hardwood-contour-3175-2f` seeds 0.0227 mm/tooth. The
+/// safety factor 0.75 and the L/D factor 0.75 (20 / 3.175 = 6.3 x D, above
+/// 6 x D) take it to about 0.0128, under the 0.025 floor, so the calculator
+/// raises `ChiploadBelowRubbingFloor`. Since ruling R4 WP2a it does not lift
+/// the feed; the warning is the whole response and must be on the page.
+///
+/// The Baltic birch fixture above no longer paints the floor line on the
+/// 2026-09-24 rows (R5 moved its cell; ruling R4 WP2a changed the line), so
+/// the floor arm has its own cell, the one the UP4 sentry already proves.
+fn floor_fixture() -> AppState {
+    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    tool.diameter = 3.175;
+    tool.flute_count = 2;
+    tool.cutting_length = 12.0;
+    tool.shank_diameter = 3.175;
+    tool.shaft_diameter = 3.175;
+    tool.stickout = 20.0;
+    let mut operation = OperationConfig::Profile(Default::default());
+    if let OperationConfig::Profile(config) = &mut operation {
+        config.feed_rate = 3_000.0;
+        config.spindle_rpm = Some(18_000);
+    }
+    state_with(
+        tool,
+        Material::SolidWood {
+            species: WoodSpecies::GenericHardwood,
+        },
+        operation,
+    )
+}
+
+/// One session on `tool`, `material` and `operation`, with the Feeds tab open.
+fn state_with(tool: ToolConfig, material: Material, operation: OperationConfig) -> AppState {
+    let stock = StockConfig {
+        material,
+        ..Default::default()
+    };
     let config = ToolpathConfig {
         id: rs_cam_core::ToolpathId(0),
         name: "Why-row fixture".to_owned(),
@@ -161,8 +200,12 @@ fn fixture() -> AppState {
 /// Every text run the Feeds tab paints, in paint order. The production tab
 /// override is one-shot, so the second frame is the steady state.
 fn painted_text() -> Vec<String> {
+    painted_text_of(fixture())
+}
+
+/// Every text run the Feeds tab paints for `state`, in paint order.
+fn painted_text_of(mut state: AppState) -> Vec<String> {
     let ctx = ctx();
-    let mut state = fixture();
     let mut texts = Vec::new();
     for pass in 0..2 {
         let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
@@ -321,13 +364,35 @@ fn every_explanation_that_left_the_page_is_still_reachable_g_whyrow() {
 /// looks for it as a text run of its own.
 #[test]
 fn the_rubbing_floor_warning_stays_on_the_page_g_whyrow() {
-    let texts = painted_text();
+    let texts = painted_text_of(floor_fixture());
     assert!(
         texts
             .iter()
-            .any(|t| t.starts_with('⚠') && t.contains("below rubbing floor")),
+            .any(|t| t.starts_with('⚠') && t.contains("below the rubbing floor")),
         "the rubbing-floor warning is no longer painted as its own line. A \
          warning behind a hover is a warning that was deleted, and this \
          surface exists to stop an operator burning a cutter."
+    );
+}
+
+/// Ruling R4 WP1 (2026-09-23): the long-tool de-rate is on the PAGE. The
+/// fixture tool is `ToolConfig::new_default` at Ø6, so its stickout is
+/// 45 mm, L/D 7.5, above 6 x D: the calculator multiplies the feed by 0.75.
+/// Until WP1 only the "Derated ... by L/D overhang" hover sentence said so.
+#[test]
+fn the_long_tool_derate_is_a_line_on_the_page_ld1() {
+    let texts = painted_text();
+    let line = texts
+        .iter()
+        .find(|t| t.starts_with('⚠') && t.contains("Long tool"))
+        .unwrap_or_else(|| {
+            panic!(
+                "the long-tool de-rate is not painted as its own line. A de-rate that \
+                 only a hover names is a de-rate the operator cannot see. Painted: {texts:?}"
+            )
+        });
+    assert!(
+        line.contains("×0.75") && line.contains("7.5") && line.contains("45"),
+        "the line must carry the factor, the ratio and the stickout: {line:?}"
     );
 }

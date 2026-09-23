@@ -1,5 +1,10 @@
 //! **P1 — the rubbing floor consults the band the gate will judge against.**
 //!
+//! Ruling R4 WP2a (2026-09-23): the floor now only warns
+//! (`FeedsWarning::ChiploadBelowRubbingFloor`); it does not lift a feed. The
+//! band rule below still decides when the warning fires. The probe record
+//! below uses the retired name `ChiploadClampedToFloor`.
+//!
 //! `RUBBING_FLOOR_MM_TOOTH` (0.025 mm/tooth) is subordinated to the matched
 //! vendor band's ceiling by `effective_rubbing_floor`, so the clamp can never
 //! push a recipe past the very window it exists to keep it inside. That rule
@@ -275,12 +280,36 @@ fn floor_falls_back_to_the_envelope_band_not_the_bare_constant() {
     }
 }
 
+/// The shipped Amana ZrN tapered-ball row, alone in a LUT.
+///
+/// RE-DERIVED 2026-09-23. The R5 printed Onsrud 77-100 rows
+/// (3885c8bf..bab9a236) now win the envelope query for a Ø1 tapered ball in
+/// hard maple, and their scaled band maximum is 0.0546 mm/tooth, above the
+/// floor. The premise of this test (a tapered-ball band wholly under 0.025)
+/// is still a real shipped row, so the fixture isolates it: row
+/// `amana-tapered-hardwood-parallel-3175-2f`, 0.010-0.020 mm/tooth at
+/// Ø3.175 and Janka 1450. Scaled to Ø1 by `D^0.61` it is about
+/// 0.020 x (1 / 3.175)^0.61 = 0.020 x 0.494 = 0.0099 mm/tooth at the top,
+/// under the 0.025 floor.
+fn tapered_ball_sub_floor_lut() -> VendorLut {
+    let row = VendorLut::embedded()
+        .observations
+        .iter()
+        .find(|o| o.observation_id == "amana-tapered-hardwood-parallel-3175-2f")
+        .expect("the shipped Amana ZrN tapered-ball parallel row exists")
+        .clone();
+    VendorLut {
+        observations: vec![row],
+    }
+}
+
 /// The tapered-ball case the operator hit, asserted on the numbers rather
-/// than on a row id: the shipped LUT publishes tapered-ball bands entirely
-/// below the global floor, so the floor must come out below the constant.
+/// than on a row id: a tapered-ball band entirely below the global floor
+/// must bring the floor below the constant, and the recipe must warn (ruling
+/// R4 WP2a: warn, never lift).
 #[test]
 fn tapered_ball_floor_lands_below_the_global_constant() {
-    let lut = VendorLut::embedded();
+    let lut = tapered_ball_sub_floor_lut();
     let machine = MachineProfile::shapeoko_vfd();
     let material = Material::SolidWood {
         species: WoodSpecies::HardMaple,
@@ -353,6 +382,28 @@ fn tapered_ball_floor_lands_below_the_global_constant() {
             "the fallback row id must be non-empty when present"
         );
     }
+
+    // The warning fires on the subordinated floor: the band maximum, not the
+    // constant. The target is the band midpoint and every de-rate is at most
+    // 1.0 (the Shapeoko safety factor is 0.80), so the advance sits under the
+    // band maximum.
+    let warned = result.warnings.iter().find_map(|w| match w {
+        FeedsWarning::ChiploadBelowRubbingFloor {
+            commanded, floor, ..
+        } => Some((*commanded, *floor)),
+        _ => None,
+    });
+    let (commanded, warned_floor) = warned.unwrap_or_else(|| {
+        panic!(
+            "a recipe on a sub-floor band must warn; warnings: {:?}",
+            result.warnings
+        )
+    });
+    assert!(
+        warned_floor < RUBBING_FLOOR_MM_TOOTH && commanded < warned_floor,
+        "the warning must read the band maximum as its floor: commanded \
+         {commanded:.6}, floor {warned_floor:.6}"
+    );
 }
 
 /// **What P1 does NOT do, measured and pinned as a tripwire.**
@@ -413,13 +464,16 @@ fn the_fallback_does_not_lower_the_floor_on_todays_lut() {
                                 continue;
                             }
                             for w in &result.warnings {
-                                if let FeedsWarning::ChiploadClampedToFloor {
+                                // R4 WP2a (2026-09-23): the warning no longer
+                                // lifts; a floor under the constant still means
+                                // a band set it.
+                                if let FeedsWarning::ChiploadBelowRubbingFloor {
                                     floor,
-                                    band_capped_from,
+                                    band_max,
                                     ..
                                 } = w
                                     && *floor < RUBBING_FLOOR_MM_TOOTH
-                                    && band_capped_from.is_some()
+                                    && band_max.is_some()
                                 {
                                     lowered.push(format!(
                                         "D{d} {geom_label} {flutes}F \

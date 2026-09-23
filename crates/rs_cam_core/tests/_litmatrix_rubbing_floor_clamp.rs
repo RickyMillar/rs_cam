@@ -1,6 +1,36 @@
-//! Literature-matrix regression — chipload must be clamped to the
-//! 0.025 mm/tooth rubbing floor when extreme-Janka materials derate
-//! a vendor-LUT row below the chip-formation threshold.
+//! Literature-matrix regression — the 0.025 mm/tooth rubbing floor WARNS
+//! when an extreme-Janka material derates a vendor row below the
+//! chip-formation threshold. It does not lift the feed.
+//!
+//! ## RE-PINNED 2026-09-23 — ruling R4 WP2a, and the cell moved
+//!
+//! Ruling R4 WP2a (`planning/feeds_matrix_2026-09-23/R4_AGGRESSIVENESS_SPEC.md`
+//! §3.6) removed the Step-9b lift. The warning stays; the recipe ships its
+//! computed feed. The two Ipe arms therefore read "warns, feed unchanged"
+//! where they read "clamped up to the floor".
+//!
+//! The cell also moved, twice. On the tree of 2026-09-23 the Ipe Ø6 flat
+//! pocket with the default setup no longer reaches the floor: R3 (aef54c83,
+//! one linear depth scale) and the R5 printed rows (3885c8bf..bab9a236) put
+//! the derated band at a maximum of 0.046088898 mm/tooth (was 0.035350302)
+//! and the commanded advance above 0.025, so no warning fired.
+//!
+//! Measured by the verifier (2026-09-23), the chain:
+//!
+//! | setup | L/D | workholding | advance (mm/tooth) | warns |
+//! |---|---:|---:|---:|---|
+//! | default (no stickout, Medium) | 1.00 | 1.00 | 0.034567 (= 0.025925 / 0.75) | no |
+//! | stickout 45 mm, Medium | 0.75 | 1.00 | **0.025925** | no (0.0009 above) |
+//! | stickout 45 mm, **Low** | 0.75 | 0.85 | 0.025925 x 0.85 = **0.022036** | **yes** |
+//!
+//! The first move (stickout 45 mm, the stickout `ToolConfig::new_default`
+//! gives every GUI tool) left the cell 0.0009 above the floor. The second
+//! move adds `WorkholdingRigidity::Low`, the 0.85 workholding factor, a
+//! real setup (a part held by tape or a vacuum table). That puts the cell
+//! 12 % under the floor. The arms pin the relation (0.75 x 0.85 of the
+//! default-setup advance) and the magnitude to 1e-5.
+//!
+//! ## History before 2026-09-23
 //!
 //! Cell: `flat_6mm_pocket_ipe_hardness`. Pre-fix, Ipe (Janka 3510)
 //! scaled an oak-anchored (~1290 lbf) vendor LUT row by 1290/3510 ≈
@@ -95,7 +125,7 @@
 
 use rs_cam_core::feeds::{
     FeedsInput, FeedsWarning, OperationFamily, PassRole, SetupContext, SpindleStrategy,
-    ToolGeometryHint, calculate, embedded_vendor_lut,
+    ToolGeometryHint, WorkholdingRigidity, calculate, embedded_vendor_lut,
 };
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
@@ -105,33 +135,39 @@ use rs_cam_core::material::{Material, WoodSpecies};
 /// of whatever the crate currently believes it is.
 const RUBBING_FLOOR_MM_TOOTH: f64 = 0.025;
 
-/// The Ipe cell's derated band ceiling, measured 2026-08-06 through
-/// `feeds::calculate` (row `amana-flat-hardwood-pocket-6000-2f`, raw
-/// hardness ratio 1290/3510 = 0.3675 applied at `^0.5`). Pinned as a
-/// literal so a change to the scaling law shows up here as a diff and
-/// not as a silently-tracking assertion. **Was 0.022720797720797720**
-/// under the retired `^1.0` hardness law; ×1.556.
-const IPE_DERATED_BAND_MAX_MM_TOOTH: f64 = 0.035_350_302_327_474_86;
-
-/// The commanded feed-per-tooth Step 9b sees for this cell, *before* the
-/// clamp — i.e. after the safety-factor, LD-overhang and power derates
-/// have been applied to the band-derived target. Pinned because it is
-/// the quantity `LAW_MAGNITUDE_TABLES.md` §5.1's prediction confused
-/// with the band midpoint: the midpoint went above the floor and this
-/// did not, which is why the clamp still fires. Was 0.014128326084665594
-/// under the retired `^1.0` law.
+/// The Ipe cell's derated band ceiling. Pinned as a literal so a change to
+/// the scaling law shows up here as a diff and not as a silently-tracking
+/// assertion.
 ///
-/// **RE-PINNED 2026-08-19 (G-CHIPTHIN-HALFFIX): 0.021981648910896722 →
-/// 0.020969157...**, a factor of exactly **1.0483** — this cell's
-/// `observed_combined_chip_thinning`, which the calculator no longer
-/// multiplies into the feed. The cell's *conclusion* is unchanged and that is
-/// the point: the pre-clamp advance was already below the chip-formation floor
-/// and it moved further below, so the clamp still fires and the cell still
-/// demonstrates what it was written to demonstrate. Only the magnitude moved,
-/// and it moved by the deleted multiplier exactly.
-const IPE_PRE_CLAMP_REQUESTED_MM_TOOTH: f64 = 0.020_969_157_101_952_5;
+/// **RE-PINNED 2026-09-23: 0.035350302 → 0.046088898** (x1.304), measured by
+/// the verifier on the tree after R3 (aef54c83, the linear depth scale) and
+/// the R5 printed rows (3885c8bf..bab9a236). Before that: measured
+/// 2026-08-06 (row `amana-flat-hardwood-pocket-6000-2f`, raw hardness ratio
+/// 1290/3510 = 0.3675 applied at `^0.5`); **was 0.022720797720797720**
+/// under the retired `^1.0` hardness law. The stickout does not enter the
+/// band, so the moved cell reads the same ceiling.
+const IPE_DERATED_BAND_MAX_MM_TOOTH: f64 = 0.046_088_898;
 
-fn calc_ipe_6mm() -> rs_cam_core::feeds::FeedsResult {
+/// The pin above came from a nine-decimal print, so it can be off by up to
+/// 5e-10. The tolerance is ten times that.
+const BAND_PIN_TOLERANCE: f64 = 5e-9;
+
+/// The stickout `ToolConfig::new_default` gives every GUI tool (mm). On the
+/// Ø6 cell it is L/D 7.5, above the 6 x D threshold of the long-tool de-rate.
+const DEFAULT_TOOL_STICKOUT_MM: f64 = 45.0;
+
+/// The long-tool de-rate factor above 6 x D (`feeds/mod.rs`, Step 5b).
+const LONG_TOOL_FACTOR: f64 = 0.75;
+
+/// The low-rigidity workholding factor (`feeds/mod.rs`, Step 5b).
+const LOW_WORKHOLDING_FACTOR: f64 = 0.85;
+
+/// The moved cell's advance, 0.025925 x 0.85, from the verifier's measured
+/// 0.025925 mm/tooth at stickout 45 mm and Medium workholding (a six-decimal
+/// print, so the pin carries a 1e-5 tolerance).
+const IPE_MOVED_CELL_ADVANCE_MM_TOOTH: f64 = 0.022_036;
+
+fn calc_ipe_6mm(setup: SetupContext) -> rs_cam_core::feeds::FeedsResult {
     let lut = embedded_vendor_lut();
     let machine = MachineProfile::generic_wood_router();
     let material = Material::SolidWood {
@@ -153,8 +189,17 @@ fn calc_ipe_6mm() -> rs_cam_core::feeds::FeedsResult {
         radial_width_mm: None,
         target_scallop_mm: None,
         vendor_lut: Some(lut),
-        setup: SetupContext::default(),
+        setup,
         spindle_strategy: SpindleStrategy::MatchChart,
+    })
+}
+
+/// The moved cell: the Ipe Ø6 pocket with the default GUI stickout and
+/// low-rigidity workholding.
+fn calc_ipe_6mm_long_tool() -> rs_cam_core::feeds::FeedsResult {
+    calc_ipe_6mm(SetupContext {
+        tool_overhang_mm: Some(DEFAULT_TOOL_STICKOUT_MM),
+        workholding_rigidity: WorkholdingRigidity::Low,
     })
 }
 
@@ -163,7 +208,11 @@ fn calc_ipe_6mm() -> rs_cam_core::feeds::FeedsResult {
 /// `cargo test -p rs_cam_core --test _litmatrix_rubbing_floor_clamp -- --nocapture`
 #[test]
 fn record_the_cell() {
-    for (label, result) in [("ipe", calc_ipe_6mm()), ("oak", calc_oak_6mm())] {
+    for (label, result) in [
+        ("ipe", calc_ipe_6mm(SetupContext::default())),
+        ("ipe long tool", calc_ipe_6mm_long_tool()),
+        ("oak", calc_oak_6mm()),
+    ] {
         let fpt = result.feed_rate_mm_min / (result.rpm * 2.0);
         println!(
             "{label}: rpm={:.0} feed={:.4} fpt={:.6} band={:?} warnings={:?}",
@@ -173,14 +222,13 @@ fn record_the_cell() {
 }
 
 #[test]
-fn ipe_pocket_chipload_never_drops_below_the_effective_rubbing_floor() {
-    // RE-PINNED TWICE 2026-08-06 — see this file's docstring table.
-    // Pass 1 (floor subordination) moved the clamp target down to the
-    // band ceiling 0.022721; pass 2 (`Janka^-0.5`) moved the ceiling up
-    // to 0.035350, which clears the global floor, so the global constant
-    // applies again and the value returns to 0.025. Both moves are
-    // asserted so the net-zero is a measured cancellation, not inertness.
-    let result = calc_ipe_6mm();
+fn ipe_pocket_ships_its_computed_feed_under_the_floor() {
+    // RE-PINNED 2026-09-23 (ruling R4 WP2a). This arm read "never drops
+    // below the effective rubbing floor"; the lift that made that true is
+    // gone. It now pins that the moved cell (Ipe Ø6, stickout 45 mm) ships
+    // the advance its derates compute, and that the advance is under the
+    // floor, which is what makes the warning arm below meaningful.
+    let result = calc_ipe_6mm_long_tool();
     let rpm = result.rpm;
     let flutes = 2.0_f64;
 
@@ -190,95 +238,109 @@ fn ipe_pocket_chipload_never_drops_below_the_effective_rubbing_floor() {
         .chipload_bounds
         .expect("the Ipe cell matches a chipload-bearing row");
     assert!(
-        (band.max_mm_per_tooth - IPE_DERATED_BAND_MAX_MM_TOOTH).abs() < 1e-9,
+        (band.max_mm_per_tooth - IPE_DERATED_BAND_MAX_MM_TOOTH).abs() < BAND_PIN_TOLERANCE,
         "the cell's derated band ceiling moved: {:.9} vs pinned {IPE_DERATED_BAND_MAX_MM_TOOTH:.9}. \
          A scaling-law change must re-pin this file, not slide past it.",
         band.max_mm_per_tooth,
     );
     assert!(
         band.max_mm_per_tooth > RUBBING_FLOOR_MM_TOOTH,
-        "fixture precondition, INVERTED by the hardness law: the Ipe band ceiling \
-         {:.6} must now sit ABOVE the {RUBBING_FLOOR_MM_TOOTH} global floor, so this \
-         cell exercises the un-subordinated branch of `effective_rubbing_floor`. \
-         Under the retired ^1.0 law it sat below, at 0.022721.",
+        "fixture precondition: the Ipe band ceiling {:.6} sits ABOVE the \
+         {RUBBING_FLOOR_MM_TOOTH} global floor, so this cell exercises the \
+         un-subordinated branch of `effective_rubbing_floor`.",
         band.max_mm_per_tooth,
     );
 
-    let effective_floor = RUBBING_FLOOR_MM_TOOTH.min(band.max_mm_per_tooth);
-    assert!(
-        (effective_floor - RUBBING_FLOOR_MM_TOOTH).abs() < 1e-12,
-        "with the band clear of the floor the effective floor IS the global constant",
-    );
     let chipload = result.feed_rate_mm_min / (rpm * flutes);
+    let computed = result.derates.effective_chip_load_mm();
     assert!(
-        chipload >= effective_floor - 1e-9,
-        "Ipe-derated chipload {chipload:.6} fell below the effective rubbing floor \
-         {effective_floor:.6} (feed_rate={}, rpm={rpm}, flutes={flutes}). \
-         The Step-9b rubbing-floor clamp regressed.",
-        result.feed_rate_mm_min,
+        (chipload - computed).abs() <= computed * 1e-9,
+        "the shipped advance {chipload:.9} is not the computed advance \
+         {computed:.9}: a floor lift moved the feed, which ruling R4 WP2a removed.",
     );
     assert!(
-        chipload <= band.max_mm_per_tooth + 1e-9,
-        "the clamp raised Ipe chipload to {chipload:.6}, past the matched row's \
-         derated band maximum {:.6} — the floor is once again overshooting the \
-         band it protects (FEEDS_CENSUS C-12).",
-        band.max_mm_per_tooth,
+        chipload < RUBBING_FLOOR_MM_TOOTH,
+        "the moved cell must sit under the floor: advance {chipload:.6} vs \
+         {RUBBING_FLOOR_MM_TOOTH}. If it does not, move the cell again (a harder \
+         species or a smaller tool), as this file's docstring says.",
+    );
+
+    assert!(
+        (chipload - IPE_MOVED_CELL_ADVANCE_MM_TOOTH).abs() < 1e-5,
+        "the moved cell's advance moved: {chipload:.6} vs pinned \
+         {IPE_MOVED_CELL_ADVANCE_MM_TOOTH} (0.025925 x 0.85)",
+    );
+
+    // The move is the long-tool and workholding factors and nothing else:
+    // the default-setup cell's advance times 0.75 x 0.85. Neither cell
+    // touches the machine ceiling or the power ladder at this feed.
+    let short = calc_ipe_6mm(SetupContext::default());
+    let short_chipload = short.feed_rate_mm_min / (short.rpm * flutes);
+    let expected = short_chipload * LONG_TOOL_FACTOR * LOW_WORKHOLDING_FACTOR;
+    assert!(
+        (chipload - expected).abs() <= short_chipload * 1e-9,
+        "the moved-cell advance {chipload:.9} is not {LONG_TOOL_FACTOR} x \
+         {LOW_WORKHOLDING_FACTOR} x the default-setup advance {short_chipload:.9}",
+    );
+    assert_eq!(result.derates.workholding, LOW_WORKHOLDING_FACTOR);
+    assert_eq!(
+        result.derates.ld_overhang, LONG_TOOL_FACTOR,
+        "L/D 7.5 takes the 0.75 long-tool factor"
     );
 }
 
 #[test]
-fn ipe_pocket_emits_chipload_clamped_warning() {
-    let result = calc_ipe_6mm();
-    let clamp = result
+fn ipe_pocket_emits_chipload_below_floor_warning() {
+    let result = calc_ipe_6mm_long_tool();
+    let warning = result
         .warnings
         .iter()
         .find_map(|w| match w {
-            FeedsWarning::ChiploadClampedToFloor {
-                requested,
+            FeedsWarning::ChiploadBelowRubbingFloor {
+                commanded,
                 floor,
-                band_capped_from,
-            } => Some((*requested, *floor, *band_capped_from)),
+                band_max,
+            } => Some((*commanded, *floor, *band_max)),
             _ => None,
         })
         .unwrap_or_else(|| {
             panic!(
-                "Expected FeedsWarning::ChiploadClampedToFloor for Ipe pocket cell. \
-                 LAW_MAGNITUDE_TABLES.md §5.1 predicted this assertion would go RED \
-                 under `Janka^-0.5`, reasoning from the band MIDPOINT (0.01797 → \
-                 0.02796, above the floor). The clamp tests the COMMANDED \
-                 feed-per-tooth after the safety/LD/power derates, which is \
-                 {IPE_PRE_CLAMP_REQUESTED_MM_TOOTH:.6} — still below \
-                 {RUBBING_FLOOR_MM_TOOTH}. If this panic ever fires, that prediction \
-                 has finally come true and the cell must move to a harder or smaller \
-                 combination. Warnings: {:?}",
+                "Expected FeedsWarning::ChiploadBelowRubbingFloor for the Ipe Ø6 pocket \
+                 at stickout {DEFAULT_TOOL_STICKOUT_MM} mm, Low workholding. \
+                 Warnings: {:?}",
                 result.warnings,
             )
         });
-    let (requested, floor, band_capped_from) = clamp;
+    let (commanded, floor, band_max) = warning;
+    let shipped = result.feed_rate_mm_min / (result.rpm * 2.0);
 
     assert!(
-        requested < floor,
-        "the warning must report a genuine clamp: requested {requested:.6} \
-         should be below the applied floor {floor:.6}",
+        commanded < floor,
+        "the warning must report a genuine sub-floor advance: {commanded:.6} \
+         should be below the floor {floor:.6}",
     );
     assert!(
-        (requested - IPE_PRE_CLAMP_REQUESTED_MM_TOOTH).abs() < 1e-9,
-        "RE-PINNED 2026-08-06 (was 0.014128326084665594 under the retired ^1.0 \
-         hardness law): the pre-clamp commanded feed-per-tooth is \
-         {IPE_PRE_CLAMP_REQUESTED_MM_TOOTH:.9}. Got {requested:.9}.",
+        (commanded - shipped).abs() <= shipped * 1e-9,
+        "the warning reports {commanded:.9} but the recipe ships {shipped:.9}: \
+         the feed must ship unchanged (ruling R4 WP2a)",
     );
     assert!(
         (floor - RUBBING_FLOOR_MM_TOOTH).abs() < 1e-12,
-        "RE-PINNED TWICE 2026-08-06. The floor commit made this the band ceiling \
-         0.022720797720797720; the hardness law lifted the ceiling to \
-         {IPE_DERATED_BAND_MAX_MM_TOOTH:.9}, clear of the global floor, so the \
-         applied floor is the global {RUBBING_FLOOR_MM_TOOTH} again. Got {floor:.9}.",
+        "the band ceiling {IPE_DERATED_BAND_MAX_MM_TOOTH:.9} clears the global floor, \
+         so the floor is the global {RUBBING_FLOOR_MM_TOOTH}. Got {floor:.9}.",
     );
-    assert_eq!(
-        band_capped_from, None,
-        "the band no longer caps the floor on this cell, so nothing is disclosed. \
-         `Some(_)` here would mean the hardness law stopped clearing the band over \
-         the floor — see the docstring table.",
+    assert!(
+        band_max.is_some_and(|m| (m - IPE_DERATED_BAND_MAX_MM_TOOTH).abs() < BAND_PIN_TOLERANCE),
+        "the warning carries the band maximum that the floor read: {band_max:?}",
+    );
+    assert!(
+        result
+            .warnings
+            .iter()
+            .any(|w| matches!(w, FeedsWarning::LongToolDerate { .. })),
+        "the cause of the sub-floor advance, the long-tool de-rate, is visible \
+         too (R4 WP1). Warnings: {:?}",
+        result.warnings,
     );
 }
 
@@ -310,7 +372,7 @@ fn calc_oak_6mm() -> rs_cam_core::feeds::FeedsResult {
 }
 
 #[test]
-fn oak_pocket_chipload_above_floor_is_not_clamped() {
+fn oak_pocket_chipload_above_floor_does_not_warn() {
     // Anti-regression: a normal-Janka species (oak) must NOT trigger
     // the clamp warning — the LUT chipload sits comfortably above the
     // floor and the engine should pass it through verbatim. This locks
@@ -320,10 +382,10 @@ fn oak_pocket_chipload_above_floor_is_not_clamped() {
     let has_clamp_warning = result
         .warnings
         .iter()
-        .any(|w| matches!(w, FeedsWarning::ChiploadClampedToFloor { .. }));
+        .any(|w| matches!(w, FeedsWarning::ChiploadBelowRubbingFloor { .. }));
     assert!(
         !has_clamp_warning,
-        "Oak pocket should not have triggered ChiploadClampedToFloor; \
+        "Oak pocket should not have triggered ChiploadBelowRubbingFloor; \
          warnings: {:?}",
         result.warnings,
     );

@@ -86,7 +86,16 @@ struct Fixture {
     diameter_mm: f64,
     material: Material,
     operation: OperationConfig,
+    /// The tool stickout (mm). [`DEFAULT_FIXTURE_STICKOUT_MM`] unless the
+    /// fixture needs a short tool.
+    stickout_mm: f64,
+    /// The machine, when the fixture needs one that is not the builder's
+    /// own preset.
+    machine: Option<MachineProfile>,
 }
+
+/// The stickout of every fixture except [`in_band`].
+const DEFAULT_FIXTURE_STICKOUT_MM: f64 = 18.0;
 
 /// The diameter of every fixture except [`in_band`].
 const FIXTURE_DIAMETER_MM: f64 = 6.0;
@@ -124,35 +133,56 @@ fn thin() -> Fixture {
             species: WoodSpecies::GenericSoftwood,
         },
         operation: OperationConfig::Pocket(Default::default()),
+        stickout_mm: DEFAULT_FIXTURE_STICKOUT_MM,
+        machine: None,
     }
 }
 
-/// Generic hardwood under a Ø3.175 flat 2F profile: the rubbing floor puts
-/// the recommendation inside the vendor band.
+/// Generic hardwood under a Ø3.175 flat 2F profile, on a short tool and a
+/// machine with the Shapeoko presets' safety factor 0.80: the recommendation
+/// lands inside the vendor band.
 ///
-/// Feeds matrix R5 re-bless (2026-09-23). The softwood pocket that was this
-/// fixture now paints "thin" (see [`thin`]), and no Ø6 flat-end wood cell
-/// in the matrix lands inside a two-limit band. This cell resolves to
-/// `amana-flat-hardwood-contour-3175-2f`, which publishes BOTH limits:
-/// 0.018-0.030 mm/tooth at Ø3.175 and Janka 1300. The row is VendorBacked,
-/// so R1 does not refuse it. The arithmetic, from the matrix CSV:
+/// **RE-BLESSED 2026-09-23, ruling R4 WP2a.** Until then the rubbing floor
+/// LIFTED this cell's seed to 0.025 mm/tooth, which is inside the band, and
+/// that lift was the whole reason the fixture read "in band". With no lift
+/// the cell ships its computed chipload. On the old setup (stickout 18 mm,
+/// the generic router's safety factor 0.75) that is 0.0227 x 0.88 x 0.75 =
+/// 0.0150 mm/tooth, below the 0.0170 minimum, so it would read "thin".
+/// Spec §1.3 counts the general case: without the lift, 0 of 323 banded
+/// matrix cells land in the band at safety 0.75. A vendor range with a
+/// min/max ratio of 0.6 puts 0.75 x the midpoint exactly on the minimum.
 ///
+/// The cell and the row stay. Two setup facts move, and each is a real
+/// configuration:
+///
+/// * The stickout is 12 mm, 3.78 x D, under the 4 x D long-tool threshold,
+///   so the L/D factor is 1.0.
+/// * The machine is the generic router with `safety_factor` 0.80, the value
+///   the Shapeoko presets carry.
+///
+/// The arithmetic, from the matrix CSV for the row and the band:
+///
+/// * The row is `amana-flat-hardwood-contour-3175-2f` (VendorBacked, so R1
+///   does not refuse it): 0.018-0.030 mm/tooth at Ø3.175 and Janka 1300.
 /// * The hardness scale is (1300 / 1450)^0.5 = 0.9469, so the band is
 ///   0.0170-0.0284 mm/tooth and the seed chipload is the midpoint, 0.0227.
-/// * The recommended axial depth is 2.54 mm = 0.8 x D, so the depth scale
-///   is 1.0.
-/// * The seed 0.0227 is below the 0.025 mm/tooth rubbing floor, so Step 9b
-///   lifts the feed to the floor: 0.025 x 21 000 rpm x 2 = 1050 mm/min.
-/// * chipload = 1050 / (21 000 x 2) = 0.025 mm/tooth, inside 0.0170-0.0284,
-///   so the verdict is `InBand`.
+/// * The depth scale applies to the feed and to the band alike (R3), so it
+///   does not move the ratio.
+/// * chipload = 0.0227 x 1.0 x 0.80 = 0.0182 mm/tooth, inside 0.0170-0.0284
+///   (6.7 % above the minimum), so the verdict is `InBand`. It is below the
+///   0.025 floor, so the Caution line paints too; the row does not read it.
 ///
-/// The matrix cell uses the instrument's tool (flute length 12, stickout
-/// 20). This fixture uses the [`state_for`] tool (flute length 25, stickout
-/// 18), so its RPM, feed and depth can differ from the matrix numbers.
-/// The floor pins the chipload at 0.025 whatever the setup de-rates do to
-/// the seed. If a deeper cut de-rated the band maximum below 0.025, the
-/// floor would cap at that maximum (`effective_rubbing_floor`), and the
-/// chipload would still sit inside the band.
+/// The in-band fixture's stickout (mm): 12 / 3.175 = 3.78 x D, under the
+/// 4 x D long-tool threshold. Not 12.7, whose ratio sits on the threshold.
+const IN_BAND_STICKOUT_MM: f64 = 12.0;
+
+/// The generic router with the Shapeoko presets' safety factor 0.80.
+fn in_band_machine() -> MachineProfile {
+    let mut machine = MachineProfile::generic_wood_router();
+    machine.safety_factor = 0.80;
+    machine
+}
+
 fn in_band() -> Fixture {
     Fixture {
         tool_type: ToolType::EndMill,
@@ -161,6 +191,8 @@ fn in_band() -> Fixture {
             species: WoodSpecies::GenericHardwood,
         },
         operation: OperationConfig::Profile(Default::default()),
+        stickout_mm: IN_BAND_STICKOUT_MM,
+        machine: Some(in_band_machine()),
     }
 }
 
@@ -175,6 +207,8 @@ fn no_band() -> Fixture {
             species: WoodSpecies::GenericSoftwood,
         },
         operation: OperationConfig::Pocket(Default::default()),
+        stickout_mm: DEFAULT_FIXTURE_STICKOUT_MM,
+        machine: None,
     }
 }
 
@@ -189,6 +223,8 @@ fn no_kc() -> Fixture {
             family: PlasticFamily::Acrylic,
         },
         operation: OperationConfig::Pocket(Default::default()),
+        stickout_mm: DEFAULT_FIXTURE_STICKOUT_MM,
+        machine: None,
     }
 }
 
@@ -196,7 +232,7 @@ fn state_for(fixture: Fixture) -> AppState {
     let mut tool = ToolConfig::new_default(ToolId(1), fixture.tool_type);
     tool.diameter = fixture.diameter_mm;
     tool.flute_count = 2;
-    tool.stickout = 18.0;
+    tool.stickout = fixture.stickout_mm;
 
     let mut operation = fixture.operation;
     match &mut operation {
@@ -215,7 +251,7 @@ fn state_for(fixture: Fixture) -> AppState {
         other => panic!("fixture operation {other:?} has no feed/RPM setter here"),
     }
 
-    state_for_recipe(None, tool, fixture.material, operation)
+    state_for_recipe(fixture.machine, tool, fixture.material, operation)
 }
 
 /// A session on one tool × material × operation, on `machine` when the

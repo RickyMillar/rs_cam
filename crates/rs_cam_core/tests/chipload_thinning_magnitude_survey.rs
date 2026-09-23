@@ -288,7 +288,7 @@ fn sweep() -> Vec<Point> {
                             w,
                             FeedsWarning::PowerLimited { .. }
                                 | FeedsWarning::FeedRateClamped { .. }
-                                | FeedsWarning::ChiploadClampedToFloor { .. }
+                                | FeedsWarning::ChiploadBelowRubbingFloor { .. }
                         )
                     });
                     out.push(Point {

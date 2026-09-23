@@ -766,29 +766,44 @@ pub enum FeedsWarning {
         target: f64,
         max_possible: f64,
     },
-    /// Vendor-LUT or formula chipload derated below the rubbing
-    /// floor (typically extreme-Janka hardwoods scaling an oak-anchored
-    /// LUT row down). The engine clamps up and emits this so the
-    /// operator sees the honest derate instead of a silent ploughing
-    /// recipe.
-    ChiploadClampedToFloor {
-        requested: f64,
-        /// The floor actually applied — [`RUBBING_FLOOR_MM_TOOTH`], or
-        /// the matched row's derated band maximum when that sits lower.
-        /// See [`effective_rubbing_floor`].
+    /// The commanded advance per tooth is below the rubbing floor.
+    ///
+    /// Below the floor the edge rubs instead of cutting. This heats the
+    /// edge and can burn the work. The usual causes are a hard species that
+    /// scales a vendor row down, a small tool, and the feed de-rates.
+    ///
+    /// The engine does NOT raise the feed to the floor (ruling R4,
+    /// 2026-09-23, WP2a). The warning is the whole response. The operator
+    /// has two levers: raise the feed, or lower the RPM. The floor value is
+    /// [`effective_rubbing_floor`]: the repo constant
+    /// [`RUBBING_FLOOR_MM_TOOTH`] (repo rule, unsourced), or the matched
+    /// band maximum when that is lower.
+    ChiploadBelowRubbingFloor {
+        /// The commanded advance per tooth (mm/tooth). The engine ships it
+        /// unchanged.
+        commanded: f64,
+        /// The floor that the test used (mm/tooth). See
+        /// [`effective_rubbing_floor`].
         floor: f64,
-        /// `Some(global)` when `floor` was capped by the matched band's
-        /// ceiling, carrying the global chip-formation threshold the
-        /// recipe therefore does **not** reach. This combination is a
-        /// genuine, unresolvable conflict between two shipped policies:
-        /// the vendor row says anything above `floor` breaks the tool,
-        /// the chip-formation rule says anything below `global` burns
-        /// the work. The engine picks the vendor ceiling (never command
-        /// past a band we are told is breakage-side) and surfaces the
-        /// residual rubbing risk here rather than hiding it behind a
-        /// number that silently changed meaning.
-        /// `None` when the global floor applied unmodified.
-        band_capped_from: Option<f64>,
+        /// The derated maximum of the band that the floor read, when a band
+        /// exists. When it is below [`RUBBING_FLOOR_MM_TOOTH`], it is the
+        /// floor, and the whole vendor band sits below the repo floor.
+        band_max: Option<f64>,
+    },
+    /// The feed took the long-tool de-rate (ruling R4, 2026-09-23, WP1).
+    ///
+    /// A stickout above 4 x D multiplies the feed by 0.88. A stickout above
+    /// 6 x D multiplies it by 0.75. The rule is a repo rule and it is
+    /// unsourced. The warning makes the cut visible; it changes no number.
+    LongToolDerate {
+        /// The tool stickout from the holder (mm).
+        stickout_mm: f64,
+        /// The tool diameter that the ratio divides by (mm).
+        diameter_mm: f64,
+        /// `stickout_mm / diameter_mm`.
+        ratio: f64,
+        /// The feed multiplier that the calculator applied (0.88 or 0.75).
+        factor: f64,
     },
     /// **Checkpoint K (a3), 2026-08-13 — the recipe resolver matched a
     /// row that publishes no chipload column, so the recommendation is a
@@ -832,7 +847,7 @@ pub enum FeedsWarning {
         /// This is the one thing the recommendation now *does* take from a
         /// chipload-bearing row. The target still comes from the formula and
         /// `chipload_bounds` is still `None`, so this field is not a band —
-        /// it is provenance for a single clamp, and naming it is what keeps
+        /// it is provenance for the floor test, and naming it is what keeps
         /// "the floor" and "the gate's envelope" from being two different
         /// rows the operator cannot tell apart.
         floor_band_from: Option<String>,
@@ -1045,18 +1060,24 @@ pub fn validate_tool_for_operation(input: &FeedsInput) -> Result<(), FeedsError>
 /// "minimum chipload", FPL Wood Handbook chip-formation regime). Any
 /// vendor-LUT or formula chipload that derates below this floor —
 /// typically very hard species (Janka >> the matched row's anchor) or
-/// extreme diameter shrinkage — is clamped up and a
-/// `FeedsWarning::ChiploadClampedToFloor` warning is emitted.
+/// extreme diameter shrinkage — raises a
+/// `FeedsWarning::ChiploadBelowRubbingFloor` warning. The engine does not
+/// raise the feed (ruling R4 WP2a, 2026-09-23). The value is a repo rule
+/// with no primary source.
 ///
-/// **This is a *global* threshold, not the value the clamp applies.**
+/// **This is a *global* threshold, not the value the warning tests.**
 /// It carries no diameter and no material, while every other chipload
-/// bound in the crate is a scaled vendor band. The clamp applies
+/// bound in the crate is a scaled vendor band. The warning tests
 /// [`effective_rubbing_floor`], which subordinates this constant to the
 /// matched row's band ceiling.
 pub const RUBBING_FLOOR_MM_TOOTH: f64 = 0.025;
 
-/// The floor the Step-9b clamp actually applies:
+/// The floor that the Step-9b warning tests:
 /// `min(RUBBING_FLOOR_MM_TOOTH, derated_band_max)`.
+///
+/// Until ruling R4 WP2a (2026-09-23) Step 9b also raised the feed to this
+/// floor. It now only warns. The history below explains why the floor is
+/// capped by the band; the cap still decides when the warning fires.
 ///
 /// # Why the global constant cannot be used directly
 ///
@@ -1072,21 +1093,15 @@ pub const RUBBING_FLOOR_MM_TOOTH: f64 = 0.025;
 /// floor whose stated job is to stop the recipe *undershooting* a band
 /// was pushing it clean over the top of that band.
 ///
-/// # What is preserved, and what is given up
+/// # What the warning says when the band is below the constant
 ///
-/// The rubbing/burnishing threshold is a real phenomenon and the clamp
-/// survives unchanged wherever the band has room for it (the common
-/// case: at Ø6 in oak the band is 0.034–0.059, entirely above the
-/// floor, and `min` returns the constant). What is given up is the
-/// claim that the engine can always *reach* chip formation: when the
-/// whole band sits under 0.025 mm/tooth, no feed exists that both
-/// clears the rubbing threshold and stays inside the vendor window.
-/// The engine then commands the band maximum — the furthest from
-/// rubbing it can go without commanding a chipload it is told is
-/// breakage-side — and
-/// `FeedsWarning::ChiploadClampedToFloor::band_capped_from` discloses
-/// the global threshold that was not met, so the residual burn risk is
-/// surfaced rather than silently absorbed into a smaller number.
+/// Where the band has room above the constant (the common case: at Ø6 in
+/// oak the band is 0.034–0.059), `min` returns the constant. When the
+/// whole band sits under 0.025 mm/tooth, no feed both clears the constant
+/// and stays inside the vendor window. The floor is then the band
+/// maximum, and `FeedsWarning::ChiploadBelowRubbingFloor::band_max`
+/// carries that value so the surfaces can say so. Ruling R4 Q9 asks
+/// whether the threshold becomes `min(0.025, band min)` instead.
 ///
 /// # Bands that do not exist
 ///
@@ -1104,13 +1119,12 @@ pub fn effective_rubbing_floor(band: Option<ChiploadBounds>) -> f64 {
     }
 }
 
-/// Name the clamp [`effective_rubbing_floor`] would apply at this band —
-/// the [`ClampReason`] Step-9b's warning and the explanation record both
-/// describe. Checkpoint K (d2).
+/// Name the floor [`effective_rubbing_floor`] gives at this band, as a
+/// [`ClampReason`]. Checkpoint K (d2).
 ///
-/// Pure naming: it applies nothing and decides nothing. Step-9b calls it
-/// so the warning and the record cannot describe the clamp differently,
-/// which is the failure mode rule 5 names.
+/// Pure naming: it applies nothing and decides nothing. Since ruling R4
+/// WP2a (2026-09-23) no engine step lifts a feed, so only
+/// [`recipe_parked_by_rubbing_floor`] calls it. WP2b deletes both.
 #[must_use]
 pub fn rubbing_floor_clamp_reason(band: Option<ChiploadBounds>) -> ClampReason {
     let floor = effective_rubbing_floor(band);
@@ -1127,7 +1141,11 @@ pub fn rubbing_floor_clamp_reason(band: Option<ChiploadBounds>) -> ClampReason {
 }
 
 /// **Post-hoc: is this commanded advance sitting exactly where the
-/// rubbing-floor clamp puts one?** Checkpoint K (c2)/(d2).
+/// rubbing-floor clamp used to put one?** Checkpoint K (c2)/(d2).
+///
+/// Since ruling R4 WP2a (2026-09-23) no engine step parks a recipe on the
+/// floor, so a hit here is a coincidence of the operating point. WP2b
+/// deletes this function with the (c2) arm of the chipload gate.
 ///
 /// Asked by the post-simulation chipload gate, which sees a finished
 /// recipe and not the Suggest run that produced it. It reads the same
@@ -1147,7 +1165,7 @@ pub fn rubbing_floor_clamp_reason(band: Option<ChiploadBounds>) -> ClampReason {
 /// one is at the operating point the engine itself would choose.
 ///
 /// The faithful channel is the recipe's own
-/// [`FeedsWarning::ChiploadClampedToFloor`], which no shipped structure
+/// [`FeedsWarning::ChiploadBelowRubbingFloor`], which no shipped structure
 /// carries from Suggest to the gate. Recorded as NOT EXERCISED in the
 /// A-7 wave entry with that plumbing as the resume condition.
 #[must_use]
@@ -1912,13 +1930,25 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     const LD_MODERATE_FACTOR: f64 = 0.88;
     let ld_factor = if let Some(overhang) = input.setup.tool_overhang_mm {
         let ld_ratio = overhang / d;
-        if ld_ratio > LD_SEVERE_THRESHOLD {
+        let factor = if ld_ratio > LD_SEVERE_THRESHOLD {
             LD_SEVERE_FACTOR
         } else if ld_ratio > LD_MODERATE_THRESHOLD {
             LD_MODERATE_FACTOR
         } else {
             1.0
+        };
+        // Ruling R4 WP1 (2026-09-23): the de-rate is a repo rule with no
+        // source. The warning makes it visible on the card and in the
+        // diagnostics. It changes no number.
+        if factor < 1.0 {
+            warnings.push(FeedsWarning::LongToolDerate {
+                stickout_mm: overhang,
+                diameter_mm: d,
+                ratio: ld_ratio,
+                factor,
+            });
         }
+        factor
     } else {
         1.0
     };
@@ -2382,64 +2412,29 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         }
     }
 
-    // --- Step 9b: Rubbing-floor clamp on final feed ---
+    // --- Step 9b: Rubbing-floor warning on the final feed ---
     //
-    // Guarantee the commanded feed-per-tooth (`feed / (rpm * flutes)`)
-    // never falls below the chip-formation threshold. Two paths can
-    // push it under:
-    //   1. Vendor-LUT scaling for extreme-Janka hardwoods
-    //      (e.g. Ipe 3510 lbf vs an oak-anchored 1290 lbf row scales
-    //      chipload by 0.367 via `vendor_lookup::hardness_ratio_raw`),
-    //      producing a 0.0124 mm/tooth target before any feed derates.
-    //   2. Post-clamp derates (safety factor 0.75-0.80, LD overhang,
-    //      power-limit) compounding a low-but-above-floor target down
-    //      past the floor at the final feed step.
+    // Below the chip-formation threshold the edge rubs instead of cutting,
+    // heats, and can burn the work. Two paths can put the commanded advance
+    // per tooth (`feed / (rpm * flutes)`) under it:
+    //   1. A vendor row scaled down for a hard species or a small tool.
+    //   2. The feed de-rates (safety factor, L/D, power) on a target that is
+    //      already low.
     //
-    // Pre-fix the engine had no floor enforcement here:
-    // `LookupResult::chip_load_min_mm` was populated but never
-    // consulted. Standard machinist convention is "clamp + warn, never
-    // serve a rubbing recipe" — raising the final feed to the floor
-    // overrides the safety-factor / LD derate that produced the rub,
-    // which is the right tradeoff: those derates exist to *protect the
-    // tool*, but a chipload below 0.025 mm/tooth heats the edge and
-    // burns the work — the cure is worse than the disease.
+    // Ruling R4 WP2a (2026-09-23): this step WARNS and does not lift. Until
+    // then it raised the feed to the floor. The floor constant is a repo
+    // rule with no source, and the lift contradicted the vendor bands below
+    // 0.025 mm/tooth (EVIDENCE 4.1-26). The recipe now ships its computed
+    // feed and `FeedsWarning::ChiploadBelowRubbingFloor` names the levers.
     //
-    // The CUTTING feed ceiling of Step 7 is treated as a hard physical
-    // limit. This lift runs after Step 9, so it works on the COMMANDED
-    // axis and the cap it reads is the ceiling on that axis:
-    // `machine.commanded_cutting_feed_ceiling_mm_min()`. T-18 (2026-09-18)
-    // replaced `machine.max_feed_mm_min × safety_factor` here — a fraction
-    // of the gantry TRAVEL rate, which is a different quantity and lets the
-    // lift restore a feed above the ceiling Step 7 just enforced. If
-    // lifting feed to the floor would exceed that cap, we leave feed at the
-    // cap and still emit the warning. In that situation the user must
-    // either drop RPM (so floor × rpm × flutes fits under the cap) or
-    // accept the rubbing recipe — the engine surfaces the conflict
-    // rather than silently violating either constraint.
+    // The `> 0.0` guard keeps a zero-feed regression (for example on the
+    // RPM-only LUT formula path) visible. The warning does not mask it.
     //
-    // The `> 0.0` guard intentionally lets the RPM-only-LUT-row
-    // formula-fallback path (Step 2, lines 482-508) surface its own
-    // bug if it ever regresses to zero feed — we don't want this
-    // floor silently masking a zero-chipload regression.
-    // (Literature-matrix cell flat_6mm_pocket_ipe_hardness.)
+    // The floor is `effective_rubbing_floor(band)` = `min(0.025, band max)`.
+    // The band is the recipe resolver's band when it published one, and
+    // otherwise the envelope resolver's band (P1, 2026-08-22): the band that
+    // the post-sim gate also uses.
     //
-    // The floor applied is `effective_rubbing_floor(chipload_bounds)`,
-    // NOT the bare `RUBBING_FLOOR_MM_TOOTH` constant: the global
-    // threshold is subordinated to the matched row's derated band
-    // ceiling so the clamp can never push feed past the very band it
-    // exists to keep the recipe inside. See that function for the
-    // derivation and for what is given up when a whole band sits below
-    // the global threshold (FEEDS_CENSUS C-12 / T3.3, ruled 2026-08-06).
-    //
-    // P1 (2026-08-22): the band handed to `effective_rubbing_floor` is the
-    // recipe resolver's when it published one, and otherwise the **envelope**
-    // resolver's — the gate's own row, resolved above with the same query and
-    // the same DOC derate. Before this, an RPM-only recipe anchor meant the
-    // floor saw no band at all and applied the bare constant, which on the
-    // shipped tapered-ball rows is above every chipload the vendor prints
-    // (all 8 of them; Ø6 → 0.018 against a 0.025 floor). The clamp reason is
-    // derived from the SAME band, so the warning and the explanation record
-    // cannot name a ceiling the floor did not use.
     // ── The chipload band at the shipped depth (feeds matrix R3) ──────
     //
     // The band that this function returns is the band at the axial depth
@@ -2486,25 +2481,11 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         let floor_band = chipload_bounds.or(floor_band_fallback);
         let floor = effective_rubbing_floor(floor_band);
         if commanded_fpt > 0.0 && commanded_fpt < floor {
-            // Checkpoint K (d2) — the warning's `band_capped_from` and
-            // the explanation record's `clamped_to` are now derived from
-            // ONE naming function, so the two surfaces cannot describe
-            // this clamp differently.
-            let reason = rubbing_floor_clamp_reason(floor_band);
-            warnings.push(FeedsWarning::ChiploadClampedToFloor {
-                requested: commanded_fpt,
+            warnings.push(FeedsWarning::ChiploadBelowRubbingFloor {
+                commanded: commanded_fpt,
                 floor,
-                band_capped_from: match reason {
-                    ClampReason::RubbingFloorCappedToBandCeiling {
-                        global_floor_mm_per_tooth,
-                        ..
-                    } => Some(global_floor_mm_per_tooth),
-                    ClampReason::RubbingFloor { .. } => None,
-                },
+                band_max: floor_band.map(|b| b.max_mm_per_tooth),
             });
-            let commanded_cut_ceiling = machine.commanded_cutting_feed_ceiling_mm_min();
-            let target_feed = floor * fpt_divisor;
-            feed = target_feed.min(commanded_cut_ceiling);
         }
     }
 
@@ -2516,9 +2497,10 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     //
     // 1. Clamp the chipload-derived feed into the material plunge-feed
     //    envelope (`Material::drill_plunge_feed_envelope_per_mm`, units
-    //    feed/Ø per minute). Same clamp-and-warn convention as the
-    //    rubbing floor above — never silently serve a recipe in the
+    //    feed/Ø per minute). Never silently serve a recipe in the
     //    rubbing band below the envelope or the breakage band above it.
+    //    (The rubbing floor of Step 9b only warns since R4 WP2a; this
+    //    drill envelope still clamps.)
     //    The COMMANDED cutting-feed ceiling still wins over the envelope
     //    floor: a machine that can't reach the floor gets the honest
     //    conflict via the warning rather than an unreachable feed. This

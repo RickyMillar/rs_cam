@@ -25,14 +25,14 @@ point is `feeds::suggest`.
 - The vendor lookup is hardness-agnostic. Material and hardness dial the
   parameters; they do not hard-reject a row.
 - Suggest is the validated application path; a raw parameter write is an override and stales the result.
-- A matched vendor band caps the rubbing floor; without a row a sub-2 mm conclusion is provisional.
+- R4: the rubbing floor warns, never lifts (WP2a); the L/D de-rate raises `LongToolDerate` (WP1).
 - On an adaptive rough the simulated chipload outranks the Suggest verdict.
 
 ## Sentries
 Run one with `cargo test -p rs_cam_core -q --test <name>`: `lut_resolver_census_a6`,
-`lookup_parity`, `rubbing_floor_never_exceeds_band`, `a_refused_deflection_is_not_a_zero_g_t4`
+`lookup_parity`, `rubbing_floor_warns_and_never_lifts`, `long_tool_derate_is_shown_ld1`, `a_refused_deflection_is_not_a_zero_g_t4`
 (a deflection refusal is an `Err`, never `0.0`), `a_feed_lift_caps_at_the_cutting_ceiling_g_t18`
-(a post-Step-9 lift caps on the COMMANDED ceiling), `a_clamped_feed_ships_at_or_below_its_ceiling_g_feeddown`
+(the Step 9c drill clamp caps on the COMMANDED ceiling), `a_clamped_feed_ships_at_or_below_its_ceiling_g_feeddown`
 (the feed quantisation rounds DOWN), `a_rescaled_feed_stays_inside_the_power_ceiling_g_t15` (pass 10
 re-checks power at the shipped point), `a_published_power_is_at_the_depth_that_cuts_g_s2` (the power door
 reads the final depth), `every_cell_declares_its_feeds_support_fm0` (every cell has a support arm), `one_depth_derate_for_feed_and_band_fm3`

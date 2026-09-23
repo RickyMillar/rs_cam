@@ -1,35 +1,25 @@
-//! **The rubbing floor may not clamp a feed above the band it protects.**
+//! **The rubbing floor warns. It never lifts a feed.**
 //!
-//! `planning/review_2026-08-04/FEEDS_CENSUS.md` C-12 / T3.3: Suggest's
-//! Step-9b rubbing-floor clamp (`feeds::calculate`) raises the commanded
-//! feed-per-tooth to a **global** constant, `RUBBING_FLOOR_MM_TOOTH =
-//! 0.025`, while every other chipload bound in the crate is a *scaled
-//! vendor band*. On small tools the two policies contradict: on the live
-//! B3 row (Ø1 tapered-ball, 2 flutes, scallop finish, hard maple) the
-//! matched row's band is 0.00378–0.00756 mm/tooth undated and
-//! 0.003605–0.007211 after DOC derating, so the floor sits **3.31× above
-//! the band maximum**. Clamping *up* to it commands a chipload the
-//! post-sim chipload gate's own envelope calls breakage-side —
-//! i.e. Suggest walks past the gate's ceiling in the name of protecting
-//! against undershooting it.
+//! Ruling R4 WP2a (2026-09-23,
+//! `planning/feeds_matrix_2026-09-23/R4_AGGRESSIVENESS_SPEC.md` §3.6): the
+//! operator ruled "keep the warning, drop the clamp". Until then Step 9b of
+//! `feeds::calculate` (and Suggest pass 9) raised a commanded advance per
+//! tooth below the floor up to it. The floor constant,
+//! `RUBBING_FLOOR_MM_TOOTH = 0.025`, is a repo rule with no source, and the
+//! lift contradicted vendor bands that sit below it (EVIDENCE 4.1-26).
 //!
-//! The floor itself is not in doubt. Rubbing/burnishing below a minimum
-//! chip thickness is a real wood-routing failure mode (see the constant's
-//! own doc comment) and the clamp survives. What cannot survive is a
-//! floor that *exceeds the ceiling of the very band it is derived to keep
-//! the recipe inside*. This sentry pins the subordination:
+//! This file was `rubbing_floor_never_exceeds_band.rs`. That sentry pinned
+//! `effective_floor = min(RUBBING_FLOOR_MM_TOOTH, derated_band_max)` so the
+//! lift could not push a feed past the band. With no lift, the band rule
+//! holds trivially; the warning threshold is still that `min` (Q9 asks
+//! whether it becomes the band minimum).
 //!
-//! ```text
-//! effective_floor = min(RUBBING_FLOOR_MM_TOOTH, derated_band_max)
-//! ```
+//! What this sentry pins:
 //!
-//! and nothing else. When no derated band exists (RPM-only vendor rows,
-//! formula fallback) the global constant still applies unchanged — that
-//! path is pinned by `_litmatrix_rpm_only_lut_chipload`.
-//!
-//! Both tests below are **red on parent** in the sense that matters: the
-//! first fails outright, the second is the control that must stay green
-//! across the fix.
+//! 1. On the B3 sub-floor fixture the warning fires, the commanded advance
+//!    equals `derates.effective_chip_load_mm()` (the computed feed, no
+//!    lift) to 1e-9, and it is at or below the band maximum.
+//! 2. On the Ø6.35 oak ball control no warning fires.
 
 #![allow(
     clippy::unwrap_used,
@@ -122,41 +112,63 @@ fn band(result: &FeedsResult) -> ChiploadBounds {
 }
 
 #[test]
-fn the_floor_never_clamps_a_feed_above_the_matched_band_maximum() {
+fn a_sub_floor_recipe_ships_its_computed_feed_and_warns() {
     let result = b3_scallop();
     let fpt = commanded_fpt(&result, 2.0);
     let bounds = band(&result);
+    let computed = result.derates.effective_chip_load_mm();
 
-    let clamped = result
-        .warnings
-        .iter()
-        .any(|w| matches!(w, FeedsWarning::ChiploadClampedToFloor { .. }));
+    let warning = result.warnings.iter().find_map(|w| match w {
+        FeedsWarning::ChiploadBelowRubbingFloor {
+            commanded,
+            floor,
+            band_max,
+        } => Some((*commanded, *floor, *band_max)),
+        _ => None,
+    });
 
     println!(
-        "B3 scallop: rpm={:.0} feed={:.3} fpt={:.6} band={:.6}..{:.6} clamped={clamped}",
+        "B3 scallop: rpm={:.0} feed={:.3} fpt={:.6} computed={computed:.6} \
+         band={:.6}..{:.6} warning={warning:?}",
         result.rpm, result.feed_rate_mm_min, fpt, bounds.min_mm_per_tooth, bounds.max_mm_per_tooth,
     );
 
-    assert!(
-        clamped,
-        "fixture precondition: the B3 row must derate below the rubbing floor so \
-         the clamp fires at all. warnings: {:?}",
-        result.warnings
-    );
+    let (commanded, floor, band_max) = warning.unwrap_or_else(|| {
+        panic!(
+            "the B3 fixture derates below the rubbing floor, so the warning must \
+             fire. warnings: {:?}",
+            result.warnings
+        )
+    });
 
     assert!(
+        (fpt - computed).abs() <= computed.abs() * 1e-9,
+        "the shipped advance {fpt:.9} mm/tooth is not the computed advance \
+         {computed:.9} (target x combined derates). A floor lift moved the feed; \
+         ruling R4 WP2a removed it."
+    );
+    assert!(
+        (commanded - fpt).abs() <= fpt.abs() * 1e-9,
+        "the warning reports {commanded:.9} mm/tooth but the recipe ships {fpt:.9}"
+    );
+    assert!(
+        commanded < floor,
+        "the warning fired at {commanded:.6}, which is not below its floor {floor:.6}"
+    );
+    assert!(
         fpt <= bounds.max_mm_per_tooth * (1.0 + 1e-9),
-        "the rubbing-floor clamp raised feed-per-tooth to {fpt:.6} mm, which is \
-         {:.2}× the matched row's derated band maximum {:.6} mm. Suggest is \
-         commanding a chipload the post-sim gate's own envelope calls \
-         breakage-side. (FEEDS_CENSUS C-12 / T3.3.)",
-        fpt / bounds.max_mm_per_tooth,
-        bounds.max_mm_per_tooth,
+        "the shipped advance {fpt:.6} is above the derated band maximum {:.6}",
+        bounds.max_mm_per_tooth
+    );
+    assert_eq!(
+        band_max,
+        Some(bounds.max_mm_per_tooth),
+        "the warning carries the band maximum that the floor read"
     );
 }
 
 #[test]
-fn a_tool_whose_band_sits_above_the_floor_is_unchanged() {
+fn a_tool_whose_band_sits_above_the_floor_does_not_warn() {
     // CONTROL. Ø6.35 ball 2-flute pocket rough in white oak: the matched
     // printed Amana ball-nose v7 row (`amana-ball-hardwood-pocket-6350-2f-v7`,
     // 0.127-0.1778 mm/tooth before the hardness scale) is entirely *above*
@@ -209,8 +221,8 @@ fn a_tool_whose_band_sits_above_the_floor_is_unchanged() {
         !result
             .warnings
             .iter()
-            .any(|w| matches!(w, FeedsWarning::ChiploadClampedToFloor { .. })),
-        "control: the Ø6 oak pocket recipe must not clamp at all. warnings: {:?}",
+            .any(|w| matches!(w, FeedsWarning::ChiploadBelowRubbingFloor { .. })),
+        "control: the Ø6 oak pocket recipe must not warn at all. warnings: {:?}",
         result.warnings
     );
 }

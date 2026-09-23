@@ -623,7 +623,9 @@ impl Row {
     }
 
     /// How far it actually lifted it — lower than `demanded_factor` when the
-    /// machine feed cap intervened.
+    /// machine feed cap intervened. Since ruling R4 WP2a (2026-09-23) nothing
+    /// lifts, so this is 1.0 on every row and `demanded_factor` is the lift
+    /// the retired clamp would have asked for.
     fn realised_factor(&self) -> f64 {
         self.final_fpt / self.requested_fpt
     }
@@ -710,11 +712,19 @@ fn sweep() -> Vec<Row> {
                     let mut rpm_only_row = false;
                     for warning in &result.warnings {
                         match warning {
-                            FeedsWarning::ChiploadClampedToFloor {
-                                requested,
-                                floor,
-                                band_capped_from,
-                            } => clamp = Some((*requested, *floor, *band_capped_from)),
+                            // Ruling R4 WP2a (2026-09-23): the warning no longer
+                            // lifts. `band_capped_from` is rebuilt from the floor:
+                            // `Some(global)` when the band maximum set it.
+                            FeedsWarning::ChiploadBelowRubbingFloor {
+                                commanded, floor, ..
+                            } => {
+                                clamp = Some((
+                                    *commanded,
+                                    *floor,
+                                    (*floor < RUBBING_FLOOR_MM_TOOTH)
+                                        .then_some(RUBBING_FLOOR_MM_TOOTH),
+                                ));
+                            }
                             FeedsWarning::VendorRowPublishesNoChipload { .. } => {
                                 rpm_only_row = true;
                             }
@@ -1040,14 +1050,26 @@ fn report_how_often_the_rubbing_floor_binds() {
     for row in &bound {
         assert!(
             row.requested_fpt > 0.0 && row.requested_fpt < row.applied_floor,
-            "{} / {} / {:?}: ChiploadClampedToFloor reported requested {:.6} \
-             against applied floor {:.6} — a clamp warning must describe a genuine \
-             lift",
+            "{} / {} / {:?}: ChiploadBelowRubbingFloor reported commanded {:.6} \
+             against floor {:.6} — the warning must describe a genuine sub-floor \
+             advance",
             row.tool,
             row.case,
             row.species,
             row.requested_fpt,
             row.applied_floor,
+        );
+        // Ruling R4 WP2a: the warning does not lift, so the recipe ships the
+        // advance the warning reports.
+        assert!(
+            (row.final_fpt - row.requested_fpt).abs() <= row.requested_fpt * 1e-9,
+            "{} / {} / {:?}: the floor lifted the advance {:.6} -> {:.6}; ruling R4 \
+             WP2a removed the lift",
+            row.tool,
+            row.case,
+            row.species,
+            row.requested_fpt,
+            row.final_fpt,
         );
     }
     if bound_banded == 0 {

@@ -575,6 +575,9 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
                 }
             )),
         },
+        // Ruling R4 WP2a (2026-09-23): pass 9 warns and does not raise the
+        // feed. The entry reports a NON-change: `to_value` is `None`,
+        // because nothing was written.
         SuggestWarning::FeedClampedToChiploadFloor {
             requested_mm_per_tooth,
             floor_mm_per_tooth,
@@ -583,24 +586,19 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
             param: RationaleParam::Feed,
             reason: RationaleReason::FinalGeometryRescale,
             from_value: Some(*requested_mm_per_tooth),
-            to_value: Some(*floor_mm_per_tooth),
+            to_value: None,
             headline: format!(
-                "Chipload clamped to floor after rescale ({requested_mm_per_tooth:.4} → \
-                 {floor_mm_per_tooth:.4} mm/tooth)"
+                "Advance per tooth below the rubbing floor after rescale: \
+                 {requested_mm_per_tooth:.4} mm/tooth (floor {floor_mm_per_tooth:.4}). \
+                 The feed is not raised."
             ),
-            detail: Some(band_capped_from.map_or_else(
-                || {
-                    "Re-deriving the feed at the final geometry put the advance below the \
-                     chip-formation floor; the floor governs"
-                        .to_owned()
-                },
-                |band_max| {
-                    format!(
-                        "The whole derated band sits below the chip-formation floor, so the \
-                         floor was itself capped to the band maximum {band_max:.4} mm/tooth — \
-                         expect burnishing"
-                    )
-                },
+            detail: Some(format!(
+                "Below the floor the tool rubs instead of cutting and can burn the work. \
+                 Raise the feed or lower the RPM.{}",
+                band_capped_from.map_or_else(String::new, |global| format!(
+                    " The whole derated vendor band sits below the {global:.3} mm/tooth \
+                     repo floor, so the floor here is the band maximum."
+                ))
             )),
         },
         // T-15: produced by Suggest pass 10 since 2026-09-18.

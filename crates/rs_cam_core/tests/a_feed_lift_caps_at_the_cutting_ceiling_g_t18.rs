@@ -29,25 +29,29 @@
 //!
 //! ## The defect
 //!
-//! Three lifts run AFTER Step 9, on the COMMANDED axis, and each one capped
+//! Three lifts ran AFTER Step 9, on the COMMANDED axis, and each one capped
 //! at `max_feed_mm_min * safety_factor` — a fraction of the TRAVEL rate:
 //!
 //! - `feeds/mod.rs` Step 9b, the rubbing-floor lift.
 //! - `feeds/mod.rs` Step 9c, the drill envelope clamp.
 //! - `feeds/suggest/adaptive_entry.rs` pass 9, the re-applied floor lift.
 //!
-//! Each lift therefore restores a feed above the ceiling Step 7 enforced.
+//! Each lift therefore restored a feed above the ceiling Step 7 enforced.
+//!
+//! ## Ruling R4 WP2a (2026-09-23): two of the three lifts are gone
+//!
+//! Step 9b and pass 9 now warn and do not lift a feed, so they cannot
+//! restore a feed above any ceiling. Their arms are retired; the sentry
+//! `rubbing_floor_warns_and_never_lifts` pins the new behaviour. The Step 9c
+//! drill envelope still clamps, and its arm stays.
 //!
 //! ## The fixture
 //!
 //! [`fast_gantry_slow_cut`]: travel 10 000 mm/min, an explicit cutting
 //! ceiling of 500 mm/min, `safety_factor` 0.8. The commanded cutting ceiling
-//! is 400 mm/min and a fraction of the travel rate is 8 000 mm/min. Each lift
-//! targets a value between the two: the rubbing floor of 0.025 mm/tooth at
-//! 15 000 rpm with 2 flutes is 750 mm/min, the drill plunge-feed envelope
-//! floor on a 12 mm cutter in solid wood is 600 mm/min, and pass 9 re-applies
-//! the rubbing floor at 16 000 rpm for 800 mm/min. The defect lands each feed
-//! at its target, the fix lands each at 400.
+//! is 400 mm/min and a fraction of the travel rate is 8 000 mm/min. The drill
+//! plunge-feed envelope floor on a 12 mm cutter in solid wood is 600 mm/min,
+//! between the two. The defect lands the feed at 600, the fix at 400.
 //!
 //! ## Non-vacuity
 //!
@@ -55,8 +59,8 @@
 //! are numerically EQUAL on all three presets, because every preset's travel
 //! rate sits under `DEFAULT_CUTTING_FEED_CAP_MM_MIN`. The swap therefore
 //! moves no shipped number. The same test runs the fixture operation on a
-//! preset and shows its feed lands above the slow-ceiling cap, so the arms
-//! above measure the fixture and not an accident of the operation.
+//! preset and shows its feed lands above the slow-ceiling cap, so the fixture
+//! machine discriminates and the arm above is not an accident of it.
 
 #![allow(
     clippy::unwrap_used,
@@ -65,12 +69,7 @@
     clippy::indexing_slicing
 )]
 
-use rs_cam_core::compute::catalog::OperationConfig;
-use rs_cam_core::compute::operation_configs::AdaptiveConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::feeds::suggest::{
-    SuggestContext, SuggestForOperationInput, SuggestWarning, suggest_for_operation,
-};
 use rs_cam_core::feeds::{
     FeedsInput, FeedsResult, FeedsWarning, OperationFamily, PassRole, SetupContext,
     SpindleStrategy, ToolGeometryHint, WorkholdingRigidity, calculate, embedded_vendor_lut,
@@ -185,37 +184,6 @@ fn travel_rate_cap(machine: &MachineProfile) -> f64 {
     machine.max_feed_mm_min * machine.safety_factor
 }
 
-// ── 1. Step 9b — the rubbing-floor lift ─────────────────────────────────
-
-#[test]
-fn the_rubbing_floor_lift_caps_at_the_commanded_cutting_ceiling() {
-    let machine = fast_gantry_slow_cut();
-    let tool = flat_endmill_6mm();
-    let result = pocket_rough(&machine, &tool);
-
-    let lifted = result
-        .warnings
-        .iter()
-        .any(|w| matches!(w, FeedsWarning::ChiploadClampedToFloor { .. }));
-    assert!(
-        lifted,
-        "non-vacuity: the fixture must actually reach the rubbing-floor lift; at rpm \
-         {:.0} it shipped {:.3} mm/min and its warnings were {:?}",
-        result.rpm, result.feed_rate_mm_min, result.warnings
-    );
-
-    let cap = machine.commanded_cutting_feed_ceiling_mm_min();
-    assert!(
-        result.feed_rate_mm_min <= cap * (1.0 + EPS),
-        "the rubbing-floor lift restored {:.3} mm/min at rpm {:.0}, above the commanded \
-         cutting ceiling {cap:.3} mm/min; it capped against the travel rate {:.3} mm/min \
-         instead",
-        result.feed_rate_mm_min,
-        result.rpm,
-        travel_rate_cap(&machine),
-    );
-}
-
 // ── 2. Step 9c — the drill envelope clamp ───────────────────────────────
 
 #[test]
@@ -243,81 +211,6 @@ fn the_drill_envelope_clamp_caps_at_the_commanded_cutting_ceiling() {
          instead",
         result.feed_rate_mm_min,
         result.rpm,
-        travel_rate_cap(&machine),
-    );
-}
-
-// ── 3. Suggest pass 9 — the re-applied floor lift ───────────────────────
-
-/// An adaptive rough. The calculator gives an adaptive rough a depth per
-/// pass above one diameter, the invariant passes bring it under one
-/// diameter, and the depth tier therefore moves. Pass 9 re-derives the feed
-/// instead of short-circuiting.
-fn suggest_adaptive() -> OperationConfig {
-    OperationConfig::Adaptive(AdaptiveConfig {
-        depth: 24.0,
-        depth_per_pass: 6.0,
-        stepover: 1.0,
-        feed_rate: 1800.0,
-        plunge_rate: 500.0,
-        spindle_rpm: Some(15_000),
-        ..AdaptiveConfig::default()
-    })
-}
-
-/// The same 6 mm cutter on a long stickout, so the deflection back-off has
-/// something to act on.
-fn flat_endmill_6mm_long_stickout() -> ToolConfig {
-    let mut tool = flat_endmill_6mm();
-    tool.stickout = 90.0;
-    tool
-}
-
-#[test]
-fn the_suggest_floor_lift_caps_at_the_commanded_cutting_ceiling() {
-    let machine = fast_gantry_slow_cut();
-    let tool = flat_endmill_6mm_long_stickout();
-    let material = white_oak();
-    let op = suggest_adaptive();
-
-    let suggested = suggest_for_operation(SuggestForOperationInput {
-        operation: &op,
-        tool: &tool,
-        machine: &machine,
-        material: &material,
-        workholding: WorkholdingRigidity::Medium,
-        lut: embedded_vendor_lut(),
-        spindle_strategy: SpindleStrategy::MatchChart,
-        context: SuggestContext::default(),
-    })
-    .expect("a flat end mill on an adaptive rough is a runnable pairing");
-
-    let feed = suggested.operation.feed_rate();
-    let lifted = suggested
-        .warnings
-        .iter()
-        .any(|w| matches!(w, SuggestWarning::FeedClampedToChiploadFloor { .. }));
-    assert!(
-        lifted,
-        "non-vacuity: the fixture must actually reach pass 9's floor lift. The pass \
-         short-circuits unless the depth tier moves, so the geometry is the first thing \
-         to read: the calculator ran at ap {:.4} ae {:.4} and rpm {:.0}, the operation \
-         ships ap {:?} ae {:?}, and it shipped {feed:.3} mm/min. Warnings: {:?}",
-        suggested.feeds_result.axial_depth_mm,
-        suggested.feeds_result.radial_width_mm,
-        suggested.feeds_result.rpm,
-        suggested.operation.depth_per_pass(),
-        suggested.operation.stepover(),
-        suggested.warnings,
-    );
-
-    let cap = machine.commanded_cutting_feed_ceiling_mm_min();
-    assert!(
-        feed <= cap * (1.0 + EPS),
-        "pass 9's floor lift restored {feed:.3} mm/min at rpm {:.0}, above the commanded \
-         cutting ceiling {cap:.3} mm/min; it capped against the travel rate {:.3} mm/min \
-         instead",
-        suggested.feeds_result.rpm,
         travel_rate_cap(&machine),
     );
 }
@@ -350,7 +243,7 @@ fn the_fix_is_silent_on_every_shipped_preset() {
         );
     }
 
-    // The fixture arms above discriminate: the same operation on a shipped
+    // The fixture machine discriminates: an operation on a shipped
     // preset lands far above the slow-ceiling fixture's cap.
     let preset = MachineProfile::generic_wood_router();
     let result = pocket_rough(&preset, &flat_endmill_6mm());
@@ -358,7 +251,7 @@ fn the_fix_is_silent_on_every_shipped_preset() {
     assert!(
         result.feed_rate_mm_min > fixture_cap,
         "the preset feed {:.3} must sit above the fixture cap {fixture_cap:.3}, or the \
-         fixture arms prove nothing",
+         fixture arm proves nothing",
         result.feed_rate_mm_min,
     );
 }

@@ -235,28 +235,28 @@ fn dump(case: &Case) {
 /// operating points, because every other factor in the feed expression is
 /// geometry-independent and cancels.
 ///
-/// The one licensed exception is the rubbing-floor clamp, which deliberately
-/// overrides the derates; when it fires the advance must sit exactly on the
-/// floor it reports instead.
+/// Ruling R4 WP2a (2026-09-23) removed the one licensed exception, the
+/// rubbing-floor lift. When the floor warning fires now, the commanded
+/// advance must be the advance it reports (no lift), and the implied target
+/// must still agree below.
 fn assert_feed_consistent_with_final_geometry(case: &Case) {
     let (adv_f, _, tgt_f) = final_operating_point(case);
     let (_, _, tgt_c) = calculator_operating_point(case);
 
-    if let Some((floor, _)) = case.suggested.warnings.iter().find_map(|w| match w {
+    if let Some(requested) = case.suggested.warnings.iter().find_map(|w| match w {
         SuggestWarning::FeedClampedToChiploadFloor {
-            floor_mm_per_tooth,
             requested_mm_per_tooth,
             ..
-        } => Some((*floor_mm_per_tooth, *requested_mm_per_tooth)),
+        } => Some(*requested_mm_per_tooth),
         _ => None,
     }) {
         assert!(
-            (adv_f - floor).abs() <= floor * 1e-6,
-            "{}: the rubbing-floor clamp fired, so the commanded advance must sit ON the \
-             floor it reports — floor {floor:.8}, commanded {adv_f:.8}",
+            (adv_f - requested).abs() <= requested * 1e-6,
+            "{}: the rubbing-floor warning fired, and the commanded advance must be the \
+             advance it reports, not a lifted one — reported {requested:.8}, commanded \
+             {adv_f:.8}",
             case.name
         );
-        return;
     }
 
     let rel = (tgt_f - tgt_c).abs() / tgt_c.max(f64::MIN_POSITIVE);

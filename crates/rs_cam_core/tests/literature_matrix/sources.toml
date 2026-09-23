@@ -2,6 +2,12 @@
 ##
 ## Each cell's `sources = [...]` keys are looked up here. Phase 0 ships only
 ## the entries the one cell references. Phase 2 fills out the rest.
+##
+## Ruling R4 WP2a (2026-09-23): the sources behind the rubbing floor (for
+## example `shaw_metal_cutting`) now back a WARNING threshold. A cell below
+## the floor passes when the engine raises `ChiploadBelowRubbingFloor`; see
+## the RUBBING FLOOR note at the top of `cells.toml` and
+## `runner.rs::rubbing_floor_rule`.
 
 [onsrud_hwood]
 name = "LMT Onsrud - Hard Wood Cutting Data Recommendations (PCT-19 p.115)"

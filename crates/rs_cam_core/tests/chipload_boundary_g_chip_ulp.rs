@@ -156,7 +156,7 @@ fn sub_floor_lut() -> VendorLut {
     }
 }
 
-/// The B3 reference operation (`tests/rubbing_floor_never_exceeds_band.rs`,
+/// The B3 reference operation (`tests/rubbing_floor_warns_and_never_lifts.rs`,
 /// `tests/feed_explanation_snapshot_b3.rs`): Ø1 tapered ball, 2 flutes,
 /// scallop finish in hard maple. Its derated band is entirely below the
 /// 0.025 rubbing floor, so it is the canonical floor==ceiling case.
@@ -190,8 +190,14 @@ fn b3_scallop() -> FeedsResult {
 // Rider 1 — floor == ceiling, and the recipe parks on the bound
 // ---------------------------------------------------------------------
 
+/// RE-BLESSED 2026-09-23 (ruling R4 WP2a). The floor still collapses onto the
+/// band ceiling, and the warning still fires and names that ceiling. The
+/// recipe no longer PARKS there: Step 9b does not lift, so the commanded
+/// advance is the computed one, below the ceiling. Rider 1 as a live
+/// mechanism is therefore retired; riders 2 and 4 stay, because an operator
+/// can still type a feed onto the bound.
 #[test]
-fn rider1_the_floor_collapses_onto_the_band_ceiling_and_the_recipe_parks_there() {
+fn rider1_the_floor_collapses_onto_the_band_ceiling_and_the_recipe_no_longer_parks() {
     let result = b3_scallop();
     let band: ChiploadBounds = result
         .chipload_bounds
@@ -216,29 +222,32 @@ fn rider1_the_floor_collapses_onto_the_band_ceiling_and_the_recipe_parks_there()
         "the effective floor must have collapsed onto the band CEILING — that collapse is \
          the whole mechanism, and if it stops happening this fixture measures nothing"
     );
-    // The clamp fires and discloses that the global threshold was not met.
-    let capped_from = result
+    // The warning fires and carries the band maximum that set the floor.
+    let (commanded, warned_floor, band_max) = result
         .warnings
         .iter()
         .find_map(|w| match w {
-            FeedsWarning::ChiploadClampedToFloor {
-                band_capped_from, ..
-            } => Some(*band_capped_from),
+            FeedsWarning::ChiploadBelowRubbingFloor {
+                commanded,
+                floor,
+                band_max,
+            } => Some((*commanded, *floor, *band_max)),
             _ => None,
         })
-        .expect("Step-9b clamp must fire on a band wholly below the floor");
-    assert_eq!(
-        capped_from,
-        Some(RUBBING_FLOOR_MM_TOOTH),
-        "the clamp must disclose the global threshold the recipe does NOT reach"
-    );
-    // And the commanded advance lands ON the ceiling: zero headroom, by
-    // construction, on the exact quantity the gate compares.
-    let rel = (fpt - band.max_mm_per_tooth).abs() / band.max_mm_per_tooth;
+        .expect("Step 9b must warn on a band wholly below the floor");
+    assert_eq!(warned_floor, band.max_mm_per_tooth);
+    assert_eq!(band_max, Some(band.max_mm_per_tooth));
+    // And the commanded advance is NOT on the ceiling: no lift, so it is the
+    // computed advance, which sits below the ceiling.
+    let computed = result.derates.effective_chip_load_mm();
     assert!(
-        rel < 1e-12,
-        "the clamped recipe must park the commanded advance/tooth on the band ceiling; \
-         got fpt {fpt:.17} vs ceiling {:.17} (relative {rel:e})",
+        (fpt - computed).abs() <= computed * 1e-9 && (commanded - fpt).abs() <= fpt * 1e-9,
+        "the recipe must ship its computed advance {computed:.17}; got fpt {fpt:.17}, \
+         warning {commanded:.17}"
+    );
+    assert!(
+        fpt < band.max_mm_per_tooth,
+        "no lift, so the advance {fpt:.17} sits below the ceiling {:.17}",
         band.max_mm_per_tooth
     );
 }

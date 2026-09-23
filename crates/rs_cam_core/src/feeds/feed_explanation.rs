@@ -94,8 +94,13 @@ impl ObservedStatistic {
 /// **Why the commanded advance is where it is, when the engine — not
 /// the operator — put it there.** Checkpoint K (d2), 2026-08-13.
 ///
-/// Suggest's Step-9b raises a commanded advance that would sit below the
-/// chip-formation floor. That is a whole-recipe decision taken before any
+/// Ruling R4 WP2a (2026-09-23): no engine step raises a feed to the floor
+/// now, so no Suggest recipe parks here. The post-hoc test
+/// [`crate::feeds::recipe_parked_by_rubbing_floor`] still names an operating
+/// point that sits on the floor by coincidence. WP2b deletes this type.
+///
+/// Until WP2a, Suggest's Step-9b raised a commanded advance that would sit
+/// below the chip-formation floor. That was a whole-recipe decision taken before any
 /// move exists, so it is **not** a
 /// [`crate::tool_load::BindingConstraint`] — that vocabulary reports
 /// per-move *modulator* outcomes, and putting this in it would mean
@@ -121,7 +126,7 @@ pub enum ClampReason {
     /// design, and correctly (clamping up to the global floor instead
     /// was measured at **3.47×** the band maximum on the reference
     /// cutter). The residual rubbing risk is real and unresolved; see
-    /// [`crate::feeds::FeedsWarning::ChiploadClampedToFloor`].
+    /// [`crate::feeds::FeedsWarning::ChiploadBelowRubbingFloor`].
     RubbingFloorCappedToBandCeiling {
         /// The advance actually commanded (mm/tooth) — equal to the
         /// band's derated maximum.
@@ -140,13 +145,13 @@ impl ClampReason {
     pub fn label(&self) -> String {
         match self {
             ClampReason::RubbingFloor { floor_mm_per_tooth } => {
-                format!("clamped up to the {floor_mm_per_tooth:.4} mm/tooth chip-formation floor")
+                format!("sits on the {floor_mm_per_tooth:.4} mm/tooth chip-formation floor")
             }
             ClampReason::RubbingFloorCappedToBandCeiling {
                 floor_mm_per_tooth,
                 global_floor_mm_per_tooth,
             } => format!(
-                "clamped to the vendor band ceiling {floor_mm_per_tooth:.4} mm/tooth — the \
+                "sits on the vendor band ceiling {floor_mm_per_tooth:.4} mm/tooth — the \
                  whole derated band sits below the {global_floor_mm_per_tooth:.4} mm/tooth \
                  chip-formation floor, so the recipe rests ON the breakage bound"
             ),
@@ -173,8 +178,10 @@ pub struct CommandedStage {
     pub flute_count: u32,
     /// `feed_rate_mm_min / (spindle_rpm · flute_count)`.
     pub feed_per_tooth_mm: f64,
-    /// Checkpoint K (d2) — set when this advance was placed by Suggest's
-    /// Step-9b clamp rather than chosen freely.
+    /// Checkpoint K (d2) — set when this advance sits exactly on the
+    /// rubbing floor. Until ruling R4 WP2a (2026-09-23) only Suggest's
+    /// Step-9b clamp put an advance there; that clamp is gone, so a value
+    /// here is now a coincidence of the operating point. WP2b deletes it.
     ///
     /// `None` means **not clamped**, not "unknown": it is populated from
     /// [`crate::feeds::recipe_parked_by_rubbing_floor`], which asks the

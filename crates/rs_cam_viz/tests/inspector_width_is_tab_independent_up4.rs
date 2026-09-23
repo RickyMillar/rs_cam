@@ -198,7 +198,8 @@ fn requested_width(ctx: &egui::Context, build: impl Fn(&mut egui::Ui)) -> f32 {
 ///
 /// The fixture now uses a cell that
 /// `planning/feeds_matrix_2026-09-23/matrix_2026-09-23.csv` records with
-/// `ChiploadClampedToFloor`: a Ø3.175 flat 2F `Profile` in generic hardwood
+/// `ChiploadClampedToFloor` (renamed `ChiploadBelowRubbingFloor` by ruling
+/// R4 WP2a, 2026-09-23): a Ø3.175 flat 2F `Profile` in generic hardwood
 /// (Janka 1450). The tool is the matrix instrument's `tool_of` tool. The
 /// Feeds tab calculates the recipe with `feeds_result_for_operation`. That
 /// door ignores the configured feed and RPM, and `Profile` gives no depth
@@ -210,11 +211,12 @@ fn requested_width(ctx: &egui::Context, build: impl Fn(&mut egui::Ui)) -> f32 {
 ///   0.0170-0.0284 and the seed chipload is the midpoint, 0.0227.
 /// * The matrix records the axial depth as 2.54 mm = 0.8 x D, so the depth
 ///   de-rate is 1.0 and the band maximum stays 0.0284.
-/// * The floor is min(0.025, 0.0284) = 0.025, the global floor, so
-///   `band_capped_from` is `None`. That is the variant that paints
-///   "Commanded advance/tooth below rubbing floor".
+/// * The floor is min(0.025, 0.0284) = 0.025, the global floor. The line
+///   paints "Advance per tooth below the rubbing floor".
 /// * The commanded advance 0.0227 (or less, after a setup de-rate) is below
-///   0.025, so Step 9b clamps it up and emits the warning.
+///   0.025, so Step 9b emits the warning. Since ruling R4 WP2a (2026-09-23)
+///   it does not lift the feed; the warning, and so this fixture, is the
+///   same.
 fn feeds_fixture() -> AppState {
     let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
     tool.diameter = 3.175;
@@ -346,7 +348,7 @@ fn render_feeds_panel_at(
                 .galley
                 .job
                 .text
-                .contains("Commanded advance/tooth below rubbing floor");
+                .contains("Advance per tooth below the rubbing floor");
         }
     }
     out.textures_delta.clear();
@@ -440,7 +442,7 @@ fn real_warning_shaped_feeds_tab_stays_inside_its_panel_ur1() {
     assert!(
         result.warnings.iter().any(|warning| matches!(
             warning,
-            rs_cam_core::feeds::FeedsWarning::ChiploadClampedToFloor { .. }
+            rs_cam_core::feeds::FeedsWarning::ChiploadBelowRubbingFloor { .. }
         )),
         "the hardwood Profile fixture must render its real rubbing-floor warning; warnings: {:?}",
         result.warnings
@@ -498,7 +500,7 @@ fn real_warning_shaped_feeds_tab_fits_the_240_point_rail_ur4() {
     assert!(
         result.warnings.iter().any(|warning| matches!(
             warning,
-            rs_cam_core::feeds::FeedsWarning::ChiploadClampedToFloor { .. }
+            rs_cam_core::feeds::FeedsWarning::ChiploadBelowRubbingFloor { .. }
         )),
         "the rail fixture lost its real rubbing-floor warning; the width changed the path"
     );

@@ -188,36 +188,48 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             supersedes: vec![],
             suppressed_diagnostics: vec![],
         },
-        FeedsWarning::ChiploadClampedToFloor {
-            requested,
-            floor,
-            band_capped_from,
+        // Ruling R4 WP2a (2026-09-23): the engine warns and does not raise
+        // the feed. The message names the consequence and the two levers.
+        FeedsWarning::ChiploadBelowRubbingFloor {
+            commanded, floor, ..
         } => Diagnostic {
-            id: DiagnosticId::from(ids::FEEDS_CHIPLOAD_CLAMPED_TO_FLOOR),
+            id: DiagnosticId::from(ids::FEEDS_CHIPLOAD_BELOW_FLOOR),
             scope: Scope::Toolpath { id: tp_id },
             category: Category::ToolLoad,
             severity: Severity::Caution,
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::FeedsCalculator,
-            message: match band_capped_from {
-                None => format!(
-                    "Chipload clamped to rubbing floor: {requested:.4} → {floor:.4} mm/tooth \
-                     (post-derate chipload below chip-formation threshold; \
-                     expect honest output above floor instead of ploughing recipe)"
-                ),
-                // The matched vendor band tops out below the global
-                // chip-formation threshold, so no feed satisfies both.
-                // Say so — the operator is still in the rubbing regime
-                // and the number alone no longer implies otherwise.
-                Some(global) => format!(
-                    "Chipload clamped to the matched band ceiling: {requested:.4} → \
-                     {floor:.4} mm/tooth. The whole derated band sits below the \
-                     {global:.4} mm/tooth chip-formation floor, so no feed clears \
-                     rubbing without exceeding the band — still expect burnishing. \
-                     Use a larger tool, a softer material, or accept the finish."
-                ),
-            },
+            message: format!(
+                "Advance per tooth below the rubbing floor: {commanded:.4} mm/tooth \
+                 (floor {floor:.4}, {}). The feed is not raised. The tool can rub and \
+                 burn the work: raise the feed or lower the RPM.",
+                floor_source(*floor)
+            ),
+            evidence: None,
+            fix: None,
+            supersedes: vec![],
+            suppressed_diagnostics: vec![],
+        },
+        // Ruling R4 WP1 (2026-09-23). Info: the de-rate changes no number
+        // that the recipe did not already carry; the finding makes it visible.
+        FeedsWarning::LongToolDerate {
+            stickout_mm,
+            diameter_mm,
+            ratio,
+            factor,
+        } => Diagnostic {
+            id: DiagnosticId::from(ids::FEEDS_LONG_TOOL_DERATE),
+            scope: Scope::Toolpath { id: tp_id },
+            category: Category::ToolLoad,
+            severity: Severity::Info,
+            confidence: Confidence::Static,
+            state: DiagnosticState::Current,
+            source: Source::FeedsCalculator,
+            message: format!(
+                "Long tool: stickout {stickout_mm:.1} mm is {ratio:.1} x D \
+                 (D {diameter_mm:.3} mm); feed x{factor:.2} (repo rule, unsourced)"
+            ),
             evidence: None,
             fix: None,
             supersedes: vec![],
@@ -309,6 +321,17 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             supersedes: vec![],
             suppressed_diagnostics: vec![],
         },
+    }
+}
+
+/// Where the rubbing floor came from, in words: the repo constant, or the
+/// vendor band maximum when the whole band sits below that constant.
+fn floor_source(floor: f64) -> String {
+    let global = crate::feeds::RUBBING_FLOOR_MM_TOOTH;
+    if floor < global {
+        format!("the vendor band maximum; the whole band sits below the {global:.3} repo floor")
+    } else {
+        "repo rule, unsourced".to_owned()
     }
 }
 

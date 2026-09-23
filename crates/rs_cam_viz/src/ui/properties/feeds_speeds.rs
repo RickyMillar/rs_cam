@@ -391,12 +391,13 @@ fn draw_advance_per_tooth_card(
     };
     ui.param_grid("feeds_card_advance_per_tooth", |ui| {
         ui.label(format!("{COMMANDED_ADVANCE_PER_TOOTH}:"));
-        // Checkpoint K (d2) — renderer 2 of 3. When the engine placed
-        // this number rather than the operator choosing it, say so on
-        // the face of the row, not only in the hover.
+        // Checkpoint K (d2) — renderer 2 of 3. When this number sits
+        // exactly on the rubbing floor, say so on the face of the row, not
+        // only in the hover. Since ruling R4 WP2a (2026-09-23) no engine
+        // step puts it there; WP2b deletes `clamped_to`.
         let commanded_text = match explain.commanded.clamped_to {
             Some(_) => egui::RichText::new(format!(
-                "{:.4} mm/tooth (clamped)",
+                "{:.4} mm/tooth (on the floor)",
                 explain.commanded.feed_per_tooth_mm
             ))
             .color(theme::WARNING_MILD),
@@ -413,7 +414,7 @@ fn draw_advance_per_tooth_card(
             explain
                 .commanded
                 .clamped_to
-                .map(|c| format!("\n\nNot freely chosen \u{2014} {}", c.label()))
+                .map(|c| format!("\n\nThe advance {}.", c.label()))
                 .unwrap_or_default(),
         );
         wrapped_cell(ui, commanded_text).on_hover_text(commanded_hover);

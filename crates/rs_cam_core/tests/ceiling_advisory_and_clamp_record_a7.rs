@@ -1,30 +1,31 @@
-//! **Checkpoint K (c2) + (d2) — a recipe the engine's own clamp parked
-//! on the band ceiling reports CLAMPED, not EXCEEDED, and says so on the
-//! record.**
+//! **Checkpoint K (c2) + (d2), re-blessed for ruling R4 WP2a — a recipe
+//! below the rubbing floor READS "below the rubbing floor", and a recipe
+//! above the band reads Exceeds.**
 //!
-//! The scenario is A-6's rider 1, unchanged and still true: on a sub-Ø2
-//! tool the whole derated chipload band can sit below the 0.025 mm/tooth
-//! chip-formation floor, so `feeds::effective_rubbing_floor` returns the
-//! band **maximum** and Suggest's Step-9b clamp parks the commanded
-//! advance exactly on the breakage-side bound. That ruling (2026-08-06)
-//! was correct — clamping *up* to the global floor was measured at 3.47×
-//! the band maximum — and it is what made the boundary comparison
-//! load-bearing.
+//! Until 2026-09-23 this file pinned the other side of the floor lift:
+//! Suggest's Step-9b clamp parked a sub-Ø2 tool's advance exactly on the band
+//! ceiling, and the gate reported that recipe CLAMPED, not EXCEEDED. Ruling R4
+//! WP2a (`planning/feeds_matrix_2026-09-23/R4_AGGRESSIVENESS_SPEC.md` §3.6)
+//! removed the lift, so no recipe is clamped any more. Also, the R5 printed
+//! Onsrud 77-100 rows (3885c8bf..bab9a236) moved the gate's own B3 band to a
+//! maximum of 0.0559 mm/tooth, above the floor, so the collapse this file
+//! needed does not happen on the shipped LUT.
 //!
-//! What Checkpoint K changed is the reporting:
+//! What it protects now:
 //!
-//! - **(b1)** the comparison absorbs the multiply→divide reconstruction,
-//!   so the verdict stops flipping on the last bit
-//!   (`chipload_boundary_g_chip_ulp.rs`);
-//! - **(c2)** the `Within` arm carries a `ceiling_advisory` saying the
-//!   recipe is *on* the ceiling because the engine put it there;
-//! - **(d2)** `FeedExplanation`'s commanded stage carries `clamped_to`,
-//!   naming the clamp in the record built for exactly this.
-//!
-//! The two conditions are asserted **separately** below: proximity alone
-//! must not produce the advisory, and a genuine exceedance must not be
-//! demoted by it. That is the whole reason (c2) is only correct with
-//! (b1).
+//! 1. **Below the floor** (the calculator on an explicit synthetic sub-floor
+//!    row, the `sub_floor_lut()` pattern of 827f383e): the recipe ships its
+//!    computed advance, the feeds adapter renders the Caution
+//!    `feeds.chipload_below_floor` "Advance per tooth below the rubbing
+//!    floor ... The feed is not raised", and the post-hoc
+//!    `recipe_parked_by_rubbing_floor` does not claim a clamp.
+//! 2. **Above the band** (the gate on the shipped row): a feed 5 % over the
+//!    band maximum reads `Exceeds(High)` and renders as too high; a feed ON
+//!    the ceiling reads `Within` with NO ceiling advisory, because nothing
+//!    parked it there.
+//! 3. The (c2) advisory precondition and the post-hoc identifier, unchanged.
+//!    They stay until WP2b deletes `ClampReason`, `recipe_parked_by_rubbing_floor`
+//!    and the (c2) arm; WP2b retires arm 3.
 
 #![allow(
     clippy::unwrap_used,
@@ -36,12 +37,18 @@
 
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::tool_config::ToolMaterial;
-use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
+use rs_cam_core::diagnostics::adapters::from_feeds::diagnostics_from_feeds_result;
+use rs_cam_core::diagnostics::ids;
+use rs_cam_core::feeds::vendor_lut::{
+    EvidenceGrade, LutOperationFamily, LutPassRole, ObservationKind, VendorLut,
+};
 use rs_cam_core::feeds::{
-    ChiploadBounds, ClampReason, RUBBING_FLOOR_MM_TOOTH, effective_rubbing_floor,
-    recipe_parked_by_rubbing_floor,
+    ChiploadBounds, FeedsInput, FeedsResult, OperationFamily, PassRole, RUBBING_FLOOR_MM_TOOTH,
+    SetupContext, SpindleStrategy, ToolGeometryHint, calculate, effective_rubbing_floor,
+    embedded_vendor_lut, recipe_parked_by_rubbing_floor,
 };
 use rs_cam_core::ids::ToolpathId;
+use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::machine::kinematics::PredictedFeedMap;
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::stock::simulation_cut::{
@@ -169,44 +176,6 @@ fn rendered_diagnostics(feed: f64) -> Vec<String> {
         .collect()
 }
 
-/// **Rendered evidence (rule 3).** Prints what the operator reads on the
-/// clamped case and on a genuine exceedance, side by side, so the
-/// difference between *clamped* and *exceeds* is visible as text rather
-/// than asserted as a field.
-#[test]
-fn the_rendered_diagnostic_says_clamped_on_one_and_exceeds_on_the_other() {
-    let band_max = gate_band_max();
-    println!("=== ON the band ceiling (rubbing-floor clamp put it there) ===");
-    let clamped = rendered_diagnostics(band_max * divisor());
-    for line in &clamped {
-        println!("{line}");
-    }
-    println!("\n=== 5 % over the same ceiling (genuine exceedance) ===");
-    let over = rendered_diagnostics(band_max * 1.05 * divisor());
-    for line in &over {
-        println!("{line}");
-    }
-
-    let clamped_text = clamped.join("\n");
-    assert!(
-        clamped_text.contains("CLAMPED there by the engine's own rubbing-floor rule"),
-        "the clamped case must READ as clamped:\n{clamped_text}"
-    );
-    assert!(
-        clamped_text.contains("clamped to the vendor band ceiling"),
-        "and the commanded stage's clamp must be rendered too (d2):\n{clamped_text}"
-    );
-    let over_text = over.join("\n");
-    assert!(
-        over_text.contains("too high") || over_text.contains("breakage"),
-        "the genuine exceedance must still read as an exceedance:\n{over_text}"
-    );
-    assert!(
-        !over_text.contains("CLAMPED"),
-        "a real exceedance must never be worded as a clamp:\n{over_text}"
-    );
-}
-
 /// Read the gate's own band by probing it, so nothing here mirrors the
 /// query construction.
 fn gate_band_max() -> f64 {
@@ -222,75 +191,150 @@ fn divisor() -> f64 {
     f64::from(RPM) * f64::from(FLUTES)
 }
 
-#[test]
-fn the_floor_clamped_recipe_reports_clamped_not_exceeded() {
-    let band_max = gate_band_max();
-    assert!(
-        band_max < RUBBING_FLOOR_MM_TOOTH,
-        "fixture precondition: the whole derated band must sit below the {RUBBING_FLOOR_MM_TOOTH} \
-         global floor for the clamp to collapse onto the ceiling; band max {band_max:.6}"
+/// A one-row LUT whose derated band sits wholly below the 0.025 mm/tooth
+/// floor: the printed Onsrud 77-100 1/8 in scallop row, cloned, re-labelled
+/// derived/c, with the ledger's B3 band (0.00378-0.00756 mm/tooth) as its
+/// bounds. Same fixture as `rubbing_floor_warns_and_never_lifts.rs`.
+fn sub_floor_lut() -> VendorLut {
+    let mut row = embedded_vendor_lut()
+        .observations
+        .iter()
+        .find(|o| o.observation_id == "onsrud-hardwood-77-100-1_8-scallop")
+        .expect("the printed Onsrud 77-100 scallop row exists")
+        .clone();
+    row.observation_id = "synthetic-b3-sub-floor-scallop".to_owned();
+    row.diameter_mm = Some(1.0);
+    row.flute_count = 2;
+    row.chipload_min_mm_tooth = Some(0.003_78);
+    row.chipload_max_mm_tooth = Some(0.007_56);
+    row.row_kind = ObservationKind::Derived;
+    row.evidence_grade = EvidenceGrade::C;
+    row.notes = Some(
+        "test fixture: the ledger B3 band on a cloned printed row; not a vendor figure".to_owned(),
     );
-
-    // Step-9b's own arithmetic, on the gate's own band.
-    let feed = band_max * divisor();
-    let (verdict, explanation) = verdict_and_explanation(feed);
-
-    let ChiploadVerdict::Within {
-        approach_to_max,
-        ceiling_advisory,
-        burn_advisory,
-        ..
-    } = &verdict
-    else {
-        panic!(
-            "**c2 regression** — a recipe the engine's own rubbing-floor clamp parked on the \
-             band ceiling must not read as an exceedance: {verdict:?}"
-        );
-    };
-    let advisory = ceiling_advisory
-        .as_deref()
-        .expect("the ceiling advisory must be present on a floor-clamped recipe");
-    println!(
-        "c2: observed {:.17} vs ceiling {:.17} → Within + ceiling_advisory (burn_advisory {})",
-        advisory.observed_mm_per_tooth,
-        advisory.bounds.max_mm_per_tooth,
-        burn_advisory.is_some()
-    );
-    assert_eq!(
-        advisory.observed_mm_per_tooth, approach_to_max.observed_mm_per_tooth,
-        "the advisory must carry the same reading the Within arm reports, not a second number"
-    );
-
-    // (d2) — and the record says why the commanded advance is there.
-    let explanation = explanation.expect("the gate must publish a feed explanation");
-    let clamp = explanation
-        .commanded
-        .clamped_to
-        .expect("the commanded stage must record the clamp that placed this advance");
-    println!("d2: commanded stage clamped_to = {}", clamp.label());
-    assert!(
-        clamp.parks_on_band_ceiling(),
-        "the clamp must be the band-ceiling arm, not the ordinary global-floor arm: {clamp:?}"
-    );
-    match clamp {
-        ClampReason::RubbingFloorCappedToBandCeiling {
-            floor_mm_per_tooth,
-            global_floor_mm_per_tooth,
-        } => {
-            assert!(
-                (floor_mm_per_tooth - band_max).abs() < 1e-15,
-                "the recorded floor must BE the band ceiling: {floor_mm_per_tooth:.17} vs \
-                 {band_max:.17}"
-            );
-            assert_eq!(global_floor_mm_per_tooth, RUBBING_FLOOR_MM_TOOTH);
-        }
-        ClampReason::RubbingFloor { .. } => unreachable!("guarded above"),
+    VendorLut {
+        observations: vec![row],
     }
+}
+
+/// The B3 scallop through the calculator, on the sub-floor LUT.
+fn b3_recipe() -> FeedsResult {
+    let lut = sub_floor_lut();
+    let machine = MachineProfile::generic_wood_router();
+    let material = Material::SolidWood {
+        species: WoodSpecies::HardMaple,
+    };
+    calculate(&FeedsInput {
+        tool_diameter: 1.0,
+        flute_count: FLUTES,
+        flute_length: 20.0,
+        shank_diameter: Some(6.0),
+        tool_geometry: ToolGeometryHint::TaperedBall {
+            tip_radius: 0.5,
+            taper_angle_deg: 5.26,
+        },
+        material: &material,
+        machine: &machine,
+        operation: OperationFamily::Scallop,
+        operation_kind: None,
+        pass_role: PassRole::Finish,
+        axial_depth_mm: Some(AXIAL_DOC),
+        radial_width_mm: None,
+        target_scallop_mm: Some(0.01),
+        vendor_lut: Some(&lut),
+        setup: SetupContext::default(),
+        spindle_strategy: SpindleStrategy::MatchChart,
+    })
+}
+
+/// Arm 1. The band maximum of the fixture is below 0.025, so the floor is the
+/// band maximum; the target is the band midpoint and the safety factor 0.75
+/// takes it lower, so the advance is under the floor and the recipe warns.
+#[test]
+fn a_recipe_below_the_floor_reads_below_the_floor_and_is_not_clamped() {
+    let result = b3_recipe();
+    let band = result
+        .chipload_bounds
+        .expect("the synthetic row publishes both limits");
     assert!(
-        clamp.label().contains("band ceiling"),
-        "every renderer prints this string; it must name the ceiling: {}",
-        clamp.label()
+        band.max_mm_per_tooth < RUBBING_FLOOR_MM_TOOTH,
+        "fixture precondition: the derated band max {:.6} sits below the floor",
+        band.max_mm_per_tooth
     );
+    let fpt = result.feed_rate_mm_min / (result.rpm * f64::from(FLUTES));
+    let computed = result.derates.effective_chip_load_mm();
+    assert!(
+        (fpt - computed).abs() <= computed * 1e-9,
+        "the recipe must ship its computed advance {computed:.9}, got {fpt:.9}"
+    );
+
+    let rendered: Vec<String> = diagnostics_from_feeds_result(ToolpathId(0), &result)
+        .into_iter()
+        .map(|d| format!("[{:?}] {}: {}", d.severity, d.id.as_str(), d.message))
+        .collect();
+    println!("=== below the floor, as the operator reads it ===");
+    for line in &rendered {
+        println!("{line}");
+    }
+    let floor_line = rendered
+        .iter()
+        .find(|l| l.contains(ids::FEEDS_CHIPLOAD_BELOW_FLOOR))
+        .unwrap_or_else(|| panic!("no feeds.chipload_below_floor finding:\n{rendered:#?}"));
+    assert!(
+        floor_line.starts_with("[Caution]")
+            && floor_line.contains("below the rubbing floor")
+            && floor_line.contains("The feed is not raised"),
+        "the finding must read as below the floor, not as a clamp: {floor_line}"
+    );
+    assert!(
+        !floor_line.to_lowercase().contains("clamp"),
+        "the floor finding must not word the recipe as clamped: {floor_line}"
+    );
+    assert!(
+        recipe_parked_by_rubbing_floor(fpt, Some(band)).is_none(),
+        "the post-hoc identifier must not claim a clamp: {fpt:.9} is under the \
+         floor {:.9}, not on it",
+        effective_rubbing_floor(Some(band))
+    );
+}
+
+/// Arm 2. On the shipped row the gate's band is above the floor. A feed ON
+/// the ceiling is `Within` with no ceiling advisory; a feed 5 % over reads
+/// `Exceeds(High)` and renders as an exceedance.
+#[test]
+fn a_recipe_above_the_band_reads_exceeds_and_the_ceiling_reads_within() {
+    let band_max = gate_band_max();
+    println!("gate band max on the shipped row: {band_max:.6}");
+
+    let (on_ceiling, _) = verdict_and_explanation(band_max * divisor());
+    match &on_ceiling {
+        ChiploadVerdict::Within {
+            ceiling_advisory, ..
+        } => assert!(
+            ceiling_advisory.is_none(),
+            "nothing parked this recipe on the ceiling, so no advisory: {on_ceiling:?}"
+        ),
+        other => panic!("a feed ON the ceiling must be Within (b1): {other:?}"),
+    }
+
+    let over = rendered_diagnostics(band_max * 1.05 * divisor());
+    let over_text = over.join("\n");
+    println!("=== 5 % over the ceiling ===\n{over_text}");
+    assert!(
+        over_text.contains("too high") || over_text.contains("breakage"),
+        "the genuine exceedance must read as an exceedance:\n{over_text}"
+    );
+    assert!(
+        !over_text.contains("CLAMPED"),
+        "a real exceedance must never be worded as a clamp:\n{over_text}"
+    );
+    assert!(matches!(
+        verdict_and_explanation(band_max * 1.05 * divisor()).0,
+        ChiploadVerdict::Exceeds {
+            side: ChipSide::High,
+            ..
+        }
+    ));
 }
 
 /// **The precondition, asserted.** Proximity alone does not produce the

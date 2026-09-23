@@ -120,7 +120,13 @@ pub const FEEDS_SHANK_TOO_LARGE: &str = "feeds.shank_too_large";
 pub const FEEDS_DOC_EXCEEDS_FLUTE: &str = "feeds.doc_exceeds_flute";
 pub const FEEDS_SLOTTING_DETECTED: &str = "feeds.slotting_detected";
 pub const FEEDS_SCALLOP_INVALID: &str = "feeds.scallop_invalid";
-pub const FEEDS_CHIPLOAD_CLAMPED_TO_FLOOR: &str = "feeds.chipload_clamped_to_floor";
+/// The commanded advance per tooth is below the rubbing floor. The engine
+/// does not raise the feed (ruling R4 WP2a, 2026-09-23). Until then the id
+/// was `feeds.chipload_clamped_to_floor`.
+pub const FEEDS_CHIPLOAD_BELOW_FLOOR: &str = "feeds.chipload_below_floor";
+/// The feed took the long-tool (L/D) de-rate, a repo rule with no source
+/// (ruling R4 WP1, 2026-09-23). Info: it changes no number.
+pub const FEEDS_LONG_TOOL_DERATE: &str = "feeds.long_tool_derate";
 pub const FEEDS_DRILL_FEED_CLAMPED_TO_ENVELOPE: &str = "feeds.drill_feed_clamped_to_envelope";
 pub const FEEDS_VENDOR_ROW_PUBLISHES_NO_CHIPLOAD: &str = "feeds.vendor_row_publishes_no_chipload";
 pub const FEEDS_NO_VENDOR_ROWS_FOR_ROUTED_OPERATION: &str =
@@ -349,7 +355,8 @@ pub const ALL: &[&str] = &[
     FEEDS_DOC_EXCEEDS_FLUTE,
     FEEDS_SLOTTING_DETECTED,
     FEEDS_SCALLOP_INVALID,
-    FEEDS_CHIPLOAD_CLAMPED_TO_FLOOR,
+    FEEDS_CHIPLOAD_BELOW_FLOOR,
+    FEEDS_LONG_TOOL_DERATE,
     FEEDS_DRILL_FEED_CLAMPED_TO_ENVELOPE,
     FEEDS_VENDOR_ROW_PUBLISHES_NO_CHIPLOAD,
     FEEDS_NO_VENDOR_ROWS_FOR_ROUTED_OPERATION,

@@ -368,7 +368,13 @@ fn eval_invariants(invariants: &[Invariant], snap: &ShimSnapshot, rows: &mut Vec
                     });
                     continue;
                 };
-                expr_check(expr, &snap.bindings, inv.floor, inv.ceiling, EDGE_FRACTION)
+                let detail =
+                    expr_check(expr, &snap.bindings, inv.floor, inv.ceiling, EDGE_FRACTION);
+                if inv.name == RUBBING_FLOOR_INVARIANT {
+                    rubbing_floor_rule(detail, snap)
+                } else {
+                    detail
+                }
             }
         };
         rows.push(SubVerdictRow {
@@ -385,12 +391,67 @@ fn eval_anti_patterns(
     rows: &mut Vec<SubVerdictRow>,
 ) {
     for ap in patterns {
-        let detail = anti_pattern_check(&ap.expr, &snap.bindings);
+        let mut detail = anti_pattern_check(&ap.expr, &snap.bindings);
+        if ap.name == RUBBING_FLOOR_ANTI_PATTERN {
+            detail = rubbing_floor_rule(detail, snap);
+        }
         rows.push(SubVerdictRow {
             label: format!("anti.{}", ap.name),
             detail,
             severity_on_fail: Severity::parse(&ap.severity),
         });
+    }
+}
+
+/// The invariant and the anti-pattern that test the rubbing floor. Their
+/// numeric check is the cell's own floor (0.025 mm/tooth, or a lower
+/// per-cell value on a small tool).
+const RUBBING_FLOOR_INVARIANT: &str = "chipload_above_rubbing_floor";
+const RUBBING_FLOOR_ANTI_PATTERN: &str = "chipload_below_rubbing_floor";
+
+/// The engine warning that names a sub-floor advance, as the shim's
+/// `Debug` string of the `FeedsWarning` starts.
+const RUBBING_FLOOR_WARNING: &str = "ChiploadBelowRubbingFloor";
+
+/// **Ruling R4 WP2a (2026-09-23): the rubbing floor is a warning, not a
+/// clamp.** A commanded advance below the floor is NOT a failure; the
+/// engine ships its computed feed and says so. What the rule requires now:
+///
+/// - above the floor: pass (this includes the old "within 10 %" edge arm,
+///   which is gone, because nothing is expected to sit on the floor);
+/// - below the floor, and `ChiploadBelowRubbingFloor` is present: pass;
+/// - below the floor, and the warning is ABSENT: fail at the cell's own
+///   severity (critical), because a sub-floor recipe shipped silently.
+///
+/// The cell's floor and the engine's floor (`min(0.025, band max)`) can
+/// differ. A cell whose advance is under the cell floor and over the
+/// engine floor fails here, and that disagreement is worth a look.
+fn rubbing_floor_rule(detail: SubVerdictDetail, snap: &ShimSnapshot) -> SubVerdictDetail {
+    match detail.verdict {
+        SubVerdict::Outside => {
+            if snap
+                .warnings
+                .iter()
+                .any(|w| w.contains(RUBBING_FLOOR_WARNING))
+            {
+                SubVerdictDetail::within(format!(
+                    "{}; the engine warned ({RUBBING_FLOOR_WARNING}), which is the \
+                     required response since ruling R4 WP2a",
+                    detail.reason
+                ))
+            } else {
+                SubVerdictDetail::outside(format!(
+                    "{}; below the floor with NO {RUBBING_FLOOR_WARNING} warning: a \
+                     sub-floor recipe shipped silently",
+                    detail.reason
+                ))
+            }
+        }
+        SubVerdict::Edge => SubVerdictDetail::within(format!(
+            "{} (near the floor is not a failure since ruling R4 WP2a)",
+            detail.reason
+        )),
+        _ => detail,
     }
 }
 

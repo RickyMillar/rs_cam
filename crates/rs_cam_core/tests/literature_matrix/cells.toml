@@ -2,6 +2,16 @@
 ##
 ## Phase 0 scaffold: one normal-use cell. Phase 1 expands to the starter 12.
 ## See planning/feeds_literature_matrix_2026-06-03.md.
+##
+## RUBBING FLOOR (ruling R4 WP2a, 2026-09-23). The rubbing floor is a
+## warning, not a clamp. The invariant `chipload_above_rubbing_floor` and
+## the anti-pattern `chipload_below_rubbing_floor` keep their `floor` and
+## `expr`, but `runner.rs::rubbing_floor_rule` changes their meaning:
+##   - above the floor: pass (the old "within 10 %" edge arm is gone);
+##   - below the floor with the engine warning `ChiploadBelowRubbingFloor`:
+##     pass, because the warning is the required response;
+##   - below the floor with NO warning: fail at the cell's own severity.
+## A sub-floor cell is therefore not a failure. A silent sub-floor recipe is.
 
 [[cell]]
 id = "flat_6mm_pocket_oak"

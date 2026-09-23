@@ -525,30 +525,43 @@ fn warning_lines(warning: &rs_cam_core::feeds::FeedsWarning) -> (String, Option<
         // `inspector_width_is_tab_independent_up4.rs`: it is the real
         // warning that sentry renders to prove the tab holds a 240-point
         // rail. Keep the wording on the FACE — a hover is not painted.
-        FeedsWarning::ChiploadClampedToFloor {
-            requested,
-            floor,
-            band_capped_from,
-        } => match band_capped_from {
-            None => (
+        //
+        // Ruling R4 WP2a (2026-09-23): the engine does not raise the feed.
+        // The face line names the consequence and the two levers, because
+        // the operator now owns the fix.
+        FeedsWarning::ChiploadBelowRubbingFloor {
+            commanded, floor, ..
+        } => {
+            let global = rs_cam_core::feeds::RUBBING_FLOOR_MM_TOOTH;
+            let source = if *floor < global {
+                format!("the vendor band maximum, below the {global:.3} repo floor")
+            } else {
+                "repo rule, unsourced".to_owned()
+            };
+            (
                 format!(
-                    "Commanded advance/tooth below rubbing floor: \
-                     {requested:.3} → {floor:.3} mm/tooth"
+                    "Advance per tooth below the rubbing floor: {commanded:.4} mm/tooth \
+                     (floor {floor:.4}, {source}). The feed is not raised. The tool can \
+                     rub and burn the work: raise the feed or lower the RPM."
                 ),
                 None,
+            )
+        }
+        // Ruling R4 WP1 (2026-09-23): the long-tool de-rate is a repo rule
+        // with no source. It fires on most default tools (stickout 45 mm), so
+        // it is one short line with the numbers, on the face.
+        FeedsWarning::LongToolDerate {
+            stickout_mm,
+            diameter_mm,
+            ratio,
+            factor,
+        } => (
+            format!(
+                "Long tool: feed ×{factor:.2} (stickout {stickout_mm:.0} mm is \
+                 {ratio:.1} × Ø{diameter_mm} mm; repo rule, unsourced)"
             ),
-            Some(global) => (
-                format!(
-                    "Advance/tooth raised to the vendor band ceiling: \
-                     {requested:.3} → {floor:.3} mm/tooth"
-                ),
-                Some(format!(
-                    "The whole vendor band sits below the {global:.3} mm/tooth \
-                     rubbing floor, so the ceiling is the best this row can \
-                     offer. Expect burnishing."
-                )),
-            ),
-        },
+            None,
+        ),
         // Checkpoint K (a4) — the routing refused; there is no vendor
         // row behind any number on this surface.
         FeedsWarning::NoVendorRowsForRoutedOperation {

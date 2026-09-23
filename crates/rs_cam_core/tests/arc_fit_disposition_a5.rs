@@ -242,7 +242,7 @@ fn fixtures() -> Vec<Fixture> {
         // Uncapped: isolates the closed form, so the 1/ratio claim is
         // measured rather than inferred through a ceiling.
         Fixture {
-            label: "A3D-1 Ø6 2F endmill / HardMaple / ceiling lifted",
+            label: "A3D-1 Ø6 2F endmill / HardMaple / raised cutting ceiling",
             family: "Adaptive3d",
             material: Material::SolidWood {
                 species: WoodSpecies::HardMaple,
@@ -291,7 +291,15 @@ fn fixtures() -> Vec<Fixture> {
             // target. Nothing about the retired arc-fit lift changed —
             // point 3 still holds at 5.65×, and arm C is reconstructed from
             // the band and RPM, so point 4 is untouched.
-            expected_suggest_feed: 1000.0,
+            //
+            // **RE-PINNED 2026-09-24, feeds matrix R5 + ruling R4 WP2a:
+            // 1000.0 → 3429.0**, the measured un-lifted calculator feed on the
+            // 2026-09-24 rows. The Ø6 hardwood query now resolves the
+            // one-value Spektra row (max 0.127, no minimum), so Suggest carries
+            // no band. At 18 000 rpm x 2 flutes the commanded advance is
+            // 3429 / 36 000 = 0.09525 mm/tooth, under the row's 0.127 and
+            // still strictly below the legacy 6912.0 (point 3).
+            expected_suggest_feed: 3429.0,
         },
         // Stock ceiling: what an operator on a normal machine actually gets.
         Fixture {
@@ -332,7 +340,12 @@ fn fixtures() -> Vec<Fixture> {
             // fire. That asymmetry — the DPP-clamped family moves, the
             // family with no DPP does not — is itself the check that the
             // pass is keyed on geometry and not on op family.
-            expected_suggest_feed: 1806.7,
+            // **RE-PINNED 2026-09-24, feeds matrix R5 + ruling R4 WP2a:
+            // 1806.7 → 4500.0**, the measured un-lifted calculator feed on the
+            // 2026-09-24 rows. Suggest carries no band here either (a
+            // one-value row), and the feed is below the 6000 mm/min stock
+            // ceiling: 4500 / (17 080 x 3) = 0.0878 mm/tooth.
+            expected_suggest_feed: 4500.0,
         },
         Fixture {
             label: "DC-1 Ø3 ball / HardMaple / stock ceiling",
@@ -364,7 +377,15 @@ fn fixtures() -> Vec<Fixture> {
             // does not fire on a DropCutter — no axial step, no mutated
             // geometry — so this fixture ships the quantised value directly
             // and moves by the full step. Measured, not adjusted.
-            expected_suggest_feed: 880.0,
+            //
+            // **RE-PINNED 2026-09-24, ruling R4 WP2a: 880.0 → 371.0**, the
+            // measured un-lifted calculator feed on the 2026-09-24 rows.
+            // Step 9b no longer lifts the advance to the band ceiling. At
+            // 19 000 rpm x 2 flutes the commanded advance is 371 / 38 000 =
+            // 0.00976 mm/tooth, under the band 0.011592-0.023184 and under
+            // the floor, so the recipe carries the rubbing-floor warning.
+            // Modulation lifts it into the band on the sim side (gate 0.02318).
+            expected_suggest_feed: 371.0,
         },
         // A small router: the ceiling binds on a DropCutter lift too.
         Fixture {
@@ -387,7 +408,14 @@ fn fixtures() -> Vec<Fixture> {
             //
             // **RE-PINNED 2026-09-18, T-9: 638.0 → 637.0** (−1 mm/min), the
             // same cause as DC-1 above: the apply path floors the feed.
-            expected_suggest_feed: 637.0,
+            //
+            // **RE-PINNED 2026-09-24, feeds matrix R5 + ruling R4 WP2a:
+            // 637.0 → 1875.0**, the measured un-lifted calculator feed on the
+            // 2026-09-24 rows. The band moved with R5 to 0.063956-0.106593,
+            // above the floor, so no floor acts. At 24 000 rpm x 2 flutes the
+            // commanded advance is 1875 / 48 000 = 0.0391 mm/tooth, below
+            // the 2500 mm/min machine ceiling.
+            expected_suggest_feed: 1875.0,
         },
     ]
 }
@@ -562,15 +590,14 @@ fn suggest_read(session: &ProjectSession, fx: &Fixture) -> SuggestRead {
 ///
 /// 1. neither retired chipload-lift warning appears in `profile.warnings`;
 /// 2. `suggested_operation.feed_rate()` equals the pinned arm-B feed
-///    (1000.0 / 1806.7 / 881.0 / 638.0) within 0.5 mm/min — Suggest ships
-///    the calculator's own number, re-derived at the geometry the operation
-///    ships (G-SUGGEST-NOCLAMP, 2026-08-19) and **no longer multiplied by chip
-///    thinning** (G-CHIPTHIN-HALFFIX, same day, operator-ruled). All four pins
-///    moved for the second reason; the per-fixture comments carry the band
-///    evidence for each. The headline is that **all four now command INSIDE
-///    their derated vendor band** — the two Adaptive3d ones low in the window,
-///    the two DropCutter ones pinned exactly on the band ceiling by the
-///    rubbing floor because their whole band sits under 0.025 mm/tooth;
+///    (3429.0 / 4500.0 / 371.0 / 1875.0, re-pinned 2026-09-24) within
+///    0.5 mm/min — Suggest ships the calculator's own number, re-derived at
+///    the geometry the operation ships (G-SUGGEST-NOCLAMP, 2026-08-19), no
+///    longer multiplied by chip thinning (G-CHIPTHIN-HALFFIX), and no longer
+///    lifted to the rubbing floor (ruling R4 WP2a). On the 2026-09-24 rows the
+///    two Adaptive3d fixtures resolve one-value rows (no band), DC-1 ships
+///    under its band and warns, and DC-2 ships under its R5 band; the
+///    per-fixture comments carry the arithmetic;
 /// 3. the shipped feed is **strictly below** the pinned legacy feed, by the
 ///    per-fixture ratio the retirement removes (6.91× / 3.32× / 5.00× /
 ///    3.92×);
@@ -663,16 +690,29 @@ fn retired_lift_leaves_feed_at_the_calculator_value() {
         // property that IS now true: the band it re-keys against is the
         // Pocket row's.
         let uncapped = fx.legacy_shipped_feed < r.cutting_ceiling - 0.5;
+        //
+        // **2026-09-23, feeds matrix R5.** The R5 printed Spektra rows
+        // (`amana-flat-hardwood-pocket-6000-2f-spektra`, max 0.127, no
+        // minimum) now win the Ø6 hardwood query. The chart-display ruling
+        // (5199e06e) gives a one-value row no band, so A3D-1 carries
+        // `band == None` and has no arm C. The a4 check therefore reads: a
+        // band, when one resolves, is never the Adaptive row's (max ≈ 0.070).
         if fx.family == "Adaptive3d" {
-            let band_max = r.band.map_or(f64::NAN, |b| b.1);
-            assert!(
-                (band_max - 0.055).abs() < 0.02,
-                "{}: post-a4 an Adaptive3d Suggest query must resolve the POCKET band \
-                 (max ≈ 0.055 for the Ø6 hardwood reference), not the Adaptive band \
-                 (max ≈ 0.070). Got {band_max:.5}. If this reads 0.070 again the routing \
-                 stopped being shared and K-(a4) has regressed.",
-                fx.label
-            );
+            match r.band {
+                None => println!(
+                    "      {}: no two-limit band resolves (a one-value row); arm C \
+                     and the band checks do not apply",
+                    fx.label
+                ),
+                Some((_, band_max)) if (band_max - 0.070).abs() < 0.005 => {
+                    mismatches.push(format!(
+                        "{}: an Adaptive3d query resolved the ADAPTIVE band (max \
+                         {band_max:.5}); K-(a4) routes it to the Pocket family",
+                        fx.label
+                    ));
+                }
+                Some(_) => {}
+            }
             continue;
         }
         let nominal = 1.0 / 0.15;
@@ -864,6 +904,9 @@ fn modulation_default_is_on_and_closes_the_two_dropcutter_residuals() {
         "Checkpoint J-3: SimulationOptions::default() must have adaptive_feed_modulation = true"
     );
 
+    // Non-vacuity for the band-less skip below: the fixtures that carry a
+    // two-limit band must still be the majority.
+    let mut banded = 0usize;
     for fx in fixtures() {
         let mut session = build_session(&fx);
         let r = suggest_read(&session, &fx);
@@ -940,6 +983,18 @@ fn modulation_default_is_on_and_closes_the_two_dropcutter_residuals() {
             )),
         );
 
+        // 2026-09-23 (feeds matrix R5): a fixture whose row prints one value
+        // has no band for the modulator to aim at, so 2 and 3 do not apply.
+        // A3D-1 is that fixture since the Spektra rows landed.
+        if r.band.is_none() {
+            println!(
+                "      {}: no two-limit band; modulation checks skipped",
+                fx.label
+            );
+            continue;
+        }
+        banded += 1;
+
         // 3 — the modulator ran, and on a non-empty population. Checked
         //     BEFORE the verdict so a vacuous pass cannot be read as a fix.
         let summary = v.modulation_summary.as_ref().unwrap_or_else(|| {
@@ -971,6 +1026,12 @@ fn modulation_default_is_on_and_closes_the_two_dropcutter_residuals() {
             fx.label, verdict
         );
     }
+    // DC-1 and DC-2 carry two-limit bands on the 2026-09-24 rows; A3D-1 and
+    // A3D-2 resolve one-value rows.
+    assert!(
+        banded >= 2,
+        "only {banded} fixtures carried a two-limit band; the modulation arm is vacuous"
+    );
 }
 
 /// **Step 1–2: Suggest → generate → simulate, three arms, same stock.**
@@ -981,6 +1042,8 @@ fn modulation_default_is_on_and_closes_the_two_dropcutter_residuals() {
 fn arc_fit_arms_gate_observation() {
     println!("\n=== A-5 step 1/2 — simulation-backed arms (cell {SIM_CELL_MM} mm) ===");
 
+    // Non-vacuity for the band-less skip of the pre-fix reproduction.
+    let mut reproduced = 0usize;
     for (fx_index, fx) in fixtures().into_iter().enumerate() {
         let mut session = build_session(&fx);
         let r = suggest_read(&session, &fx);
@@ -1007,23 +1070,34 @@ fn arc_fit_arms_gate_observation() {
         // asserts that is the same number arm B carried pre-fix.
         let arm_a = run_arm(&mut session, fx.legacy_shipped_feed, r.rpm, false);
         let arm_b = run_arm(&mut session, r.shipped_feed, r.rpm, false);
-        let arm_c = run_arm(&mut session, r.arm_c_feed(), r.rpm, false);
+        // 2026-09-23 (feeds matrix R5): arm C aims at the band midpoint, so a
+        // fixture with a one-value row (A3D-1 since the Spektra rows) has no
+        // arm C. It still runs arms A and B.
+        let arm_c = r
+            .band
+            .is_some()
+            .then(|| run_arm(&mut session, r.arm_c_feed(), r.rpm, false));
         let arm_a_mod = run_arm(&mut session, fx.legacy_shipped_feed, r.rpm, true);
         let arm_b_mod = run_arm(&mut session, r.shipped_feed, r.rpm, true);
 
         print_arm("A shipped", &arm_a);
         print_arm("B retire", &arm_b);
-        print_arm("C re-key 1.0", &arm_c);
+        if let Some(arm_c) = &arm_c {
+            print_arm("C re-key 1.0", arm_c);
+        }
         print_arm("A + modulation", &arm_a_mod);
         print_arm("B + modulation", &arm_b_mod);
 
         // ── S-4 handoff: the arms must have consumed the same stock ────
         for (tag, arm) in [
-            ("B", &arm_b),
-            ("C", &arm_c),
-            ("A+mod", &arm_a_mod),
-            ("B+mod", &arm_b_mod),
-        ] {
+            ("B", Some(&arm_b)),
+            ("C", arm_c.as_ref()),
+            ("A+mod", Some(&arm_a_mod)),
+            ("B+mod", Some(&arm_b_mod)),
+        ]
+        .into_iter()
+        .filter_map(|(tag, arm)| arm.map(|a| (tag, a)))
+        {
             assert_eq!(
                 arm.stamp, arm_a.stamp,
                 "{}: arm {tag} consumed a different machined-stock snapshot than arm A — \
@@ -1064,19 +1138,44 @@ fn arc_fit_arms_gate_observation() {
         // removed) and arm C (the lift re-aimed at the gate's actual unit)
         // do not. This is the finding; it must fail loudly if it ever
         // silently stops being true.
-        assert_eq!(
-            arm_a.verdict, "Exceeds",
-            "{}: arm A is the pre-fix reproduction — Suggest's shipped feed must \
-             trip the chipload gate. If this changed, the disposition evidence \
-             is stale and Checkpoint J must be re-run.",
-            fx.label
-        );
-        assert_eq!(
-            arm_c.verdict, "Within",
-            "{}: arm C aims the same solve at the unit the gate reports and must \
-             land inside the band",
-            fx.label
-        );
+        //
+        // 2026-09-24 (feeds matrix R5): the reproduction is observable only
+        // where the LEGACY advance per tooth sits above the band maximum
+        // Suggest resolves; the condition is computed from the legacy feed,
+        // the solved RPM and the flutes, not from a fixed list. On the
+        // 2026-09-24 rows only DC-1 reproduces: 4405 / (19 000 x 2) = 0.116
+        // mm/tooth, above the 0.0232 maximum. A3D-1 and A3D-2 resolve
+        // one-value printed rows (the Spektra rows) and carry no band. DC-2's
+        // band moved with R5 to about 0.064-0.107, and its legacy
+        // 2500 / (24 000 x 2) = 0.052 sits under it. For those three cells the
+        // disposition evidence is historical (the 2026-08-13 record above);
+        // they print that the check was skipped.
+        let legacy_fpt = r.commanded_fpt(fx.legacy_shipped_feed);
+        if r.band.is_some_and(|(_, band_max)| legacy_fpt > band_max) {
+            reproduced += 1;
+            assert_eq!(
+                arm_a.verdict, "Exceeds",
+                "{}: arm A is the pre-fix reproduction — Suggest's shipped feed must \
+                 trip the chipload gate. If this changed, the disposition evidence \
+                 is stale and Checkpoint J must be re-run.",
+                fx.label
+            );
+        } else {
+            println!(
+                "      {}: legacy advance {legacy_fpt:.5} is not above a two-limit band \
+                 maximum; the pre-fix reproduction is historical on this cell and was \
+                 skipped (arm A read {})",
+                fx.label, arm_a.verdict
+            );
+        }
+        if let Some(arm_c) = &arm_c {
+            assert_eq!(
+                arm_c.verdict, "Within",
+                "{}: arm C aims the same solve at the unit the gate reports and must \
+                 land inside the band",
+                fx.label
+            );
+        }
 
         // ── Modulation erases the lift entirely ────────────────────────
         //
@@ -1084,6 +1183,17 @@ fn arc_fit_arms_gate_observation() {
         // modulation both converge on the SAME gate observation. The lift's
         // only effect in a modulated workflow is how far the modulator has
         // to travel to undo it.
+        //
+        // A fixture with a one-value row (A3D-1, A3D-2 on the 2026-09-24
+        // rows) gives the modulator no band to converge into: it touched 0
+        // moves on both arms. The check applies to DC-1 and DC-2 only.
+        let converges = r.band.is_some();
+        if !converges {
+            println!(
+                "      {}: no two-limit band; convergence check skipped",
+                fx.label
+            );
+        }
         let (Some(obs_a), Some(obs_b)) = (arm_a_mod.gate_observed, arm_b_mod.gate_observed) else {
             panic!(
                 "{}: both modulated arms must produce a gate observation",
@@ -1091,7 +1201,7 @@ fn arc_fit_arms_gate_observation() {
             )
         };
         assert!(
-            (obs_a - obs_b).abs() <= 1e-6 * obs_a.abs().max(1.0),
+            !converges || (obs_a - obs_b).abs() <= 1e-6 * obs_a.abs().max(1.0),
             "{}: modulated arms A and B must converge on one operating point, \
              got {obs_a} vs {obs_b}",
             fx.label
@@ -1139,4 +1249,9 @@ fn arc_fit_arms_gate_observation() {
             );
         }
     }
+    assert!(
+        reproduced >= 1,
+        "the pre-fix reproduction ran on no fixture; DC-1 (legacy 0.116 mm/tooth over a \
+         0.0232 band maximum) must carry it"
+    );
 }

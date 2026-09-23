@@ -449,49 +449,33 @@ pub(super) fn rescale_feed_to_final_geometry(
         cap_hit,
     });
 
-    // Calculator Step 9b, re-applied. A downward re-derivation (a raised
-    // stepover cancelling a chip-thinning lift) can put the commanded advance
-    // under the chip-formation threshold, and the floor governs there for the
-    // same reason it governs inside the calculator: the derates exist to
-    // protect the tool, but rubbing burns the work.
+    // Calculator Step 9b, re-applied as a warning. A downward re-derivation
+    // (a raised stepover that cancels a chip-thinning lift) can put the
+    // commanded advance under the chip-formation threshold. Ruling R4 WP2a
+    // (2026-09-23): the pass warns and does NOT raise the feed, the same as
+    // Step 9b. The operator has the levers: raise the feed or lower the RPM.
     //
     // The band read is `context.chipload_bounds`, which pass 0 already
-    // re-derated against its own DPP mutation. A DPP the rigidity /
-    // cutting-length / deflection clamps lowered further is *not* re-derated
-    // there, which leaves this floor judged against a slightly harsher band
-    // than the final DOC deserves — conservative in the safe direction (a
-    // harsher band can only lower the ceiling the floor is capped to), and
-    // ledgered rather than fixed inside a feed pass.
+    // re-derated against its own DPP mutation. A DPP that the rigidity,
+    // cutting-length or deflection clamps lowered further is *not* re-derated
+    // there, so the floor can read a slightly lower band maximum than the
+    // final DOC deserves. That can only lower the floor, so the warning can
+    // only fire less often, not more.
     if let Some(rpm) = op_rpm {
         let divisor = rpm * flutes;
         if divisor > 0.0 {
             let commanded = rescaled / divisor;
             let floor = crate::feeds::effective_rubbing_floor(context.chipload_bounds);
             if commanded > 0.0 && commanded < floor {
-                let band_capped_from =
-                    match crate::feeds::rubbing_floor_clamp_reason(context.chipload_bounds) {
-                        crate::feeds::ClampReason::RubbingFloorCappedToBandCeiling {
-                            global_floor_mm_per_tooth,
-                            ..
-                        } => Some(global_floor_mm_per_tooth),
-                        crate::feeds::ClampReason::RubbingFloor { .. } => None,
-                    };
+                // `band_capped_from` keeps its meaning: `Some(global)` when
+                // the band maximum, not the global constant, set the floor.
+                let band_capped_from = (floor < crate::feeds::RUBBING_FLOOR_MM_TOOTH)
+                    .then_some(crate::feeds::RUBBING_FLOOR_MM_TOOTH);
                 warnings.push(SuggestWarning::FeedClampedToChiploadFloor {
                     requested_mm_per_tooth: commanded,
                     floor_mm_per_tooth: floor,
                     band_capped_from,
                 });
-                // Same conflict resolution as Step 9b: the COMMANDED
-                // cutting-feed ceiling wins over the floor, and the warning
-                // still fires so the operator sees that neither guarantee was
-                // met. This lift works on the COMMANDED axis, so the cap it
-                // reads is `commanded_cutting_feed_ceiling_mm_min()`. T-18
-                // (2026-09-18) replaced `max_feed_mm_min × safety_factor`
-                // here — a fraction of the gantry TRAVEL rate, a different
-                // quantity, which let the lift restore a feed above the
-                // ceiling the cap above just enforced.
-                let commanded_cut_ceiling = machine.commanded_cutting_feed_ceiling_mm_min();
-                rescaled = (floor * divisor).min(commanded_cut_ceiling);
             }
         }
     }
@@ -572,10 +556,10 @@ pub(super) fn rescale_feed_to_final_geometry(
 ///
 /// # What it does not do
 ///
-/// It does not re-lift a clamped feed to the Step 9b rubbing floor. The power
-/// ceiling is a physical limit and the floor is an advisory band; Step 6
-/// rung 4 resolves the same conflict the same way, and both warnings stand so
-/// the operator sees that neither guarantee was met.
+/// It does not raise a clamped feed to the Step 9b rubbing floor. Since ruling
+/// R4 WP2a (2026-09-23) no step raises a feed to the floor; the floor only
+/// warns. The power ceiling is a physical limit and the floor is an advisory
+/// band, and both warnings stand so the operator sees both facts.
 ///
 /// It abstains when the material publishes no `Kc`. There is no power model
 /// without one, and Step 6 did not check a ceiling either, so there is no
