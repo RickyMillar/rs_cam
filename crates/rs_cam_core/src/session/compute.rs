@@ -1540,11 +1540,11 @@ fn optimized_candidate(
     // the raw path with the Suggest-warning regime. The SIM pass goes
     // bandless for the same toolpaths; see
     // `session/compute/simulation.rs::apply_adaptive_feed_modulation`.
-    // ConstrainedMax @ aggressiveness 1.0 — the "bomber feeds" operating
+    // ConstrainedMax @ feed scale 1.0 — the "bomber feeds" operating
     // point and the `SimulationOptions` default, so the advisor times the
     // same path the user gets after a default sim.
     let strategy = crate::dressup::feed_modulation::ModulationStrategy::ConstrainedMax;
-    let aggressiveness = 1.0;
+    let feed_scale = 1.0;
 
     let (modulated, outcome) = modulate_annotated_against_trace(
         &FeedContext {
@@ -1562,10 +1562,10 @@ fn optimized_candidate(
         max_feed,
         rapid_feed,
         strategy,
-        aggressiveness,
+        feed_scale,
     )?;
     let regime = outcome
-        .build_summary(operation.feed_rate(), aggressiveness, strategy)
+        .build_summary(operation.feed_rate(), feed_scale, strategy)
         .map(|s| regime_from_binding(&s))
         .unwrap_or(crate::machine::strategy_advisor::LoadRegime::Unconstrained);
     Some((modulated, regime))
@@ -1622,7 +1622,7 @@ fn modulate_annotated_against_trace(
     max_feed: f64,
     rapid_feed: f64,
     strategy: crate::dressup::feed_modulation::ModulationStrategy,
-    aggressiveness: f64,
+    feed_scale: f64,
 ) -> Option<(
     crate::toolpath::Toolpath,
     crate::dressup::feed_modulation::ModulationOutcome,
@@ -1879,7 +1879,7 @@ fn modulate_annotated_against_trace(
         chipload_band: band,
         kinematics: &kinematics,
         strategy,
-        aggressiveness,
+        feed_scale,
         deflection_inputs,
         power_inputs,
         nominal_axial_doc_mm: nominal_axial,

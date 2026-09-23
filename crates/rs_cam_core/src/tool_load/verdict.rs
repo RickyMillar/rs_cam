@@ -51,8 +51,8 @@ pub enum BindingConstraint {
     KinematicReach,
     /// Chipload band's lower edge bound the feed: the modulator's own
     /// per-move floor, `band.min × rpm × flutes`, applied AFTER
-    /// aggressiveness scaling so feeds never drop below the matched
-    /// row's minimum even at low aggressiveness.
+    /// the feed scale so feeds never drop below the matched
+    /// row's minimum even at a low feed scale.
     ///
     /// **Corrected at Checkpoint K (d2), 2026-08-13.** This doc used to
     /// call itself "the rubbing floor". It is not: the rubbing floor is
@@ -113,8 +113,9 @@ impl BindingConstraint {
 /// - `binding_constraint_distribution`: fraction (0.0–1.0) of
 ///   touched moves whose binding constraint matched each variant.
 ///   Sums to ≤ 1.0 (rounding); variants with zero share are omitted.
-/// - `aggressiveness`: the scalar the run used (1.0 = at-limit;
-///   0.7 = 70 %; etc.).
+/// - `feed_scale`: the multiplier the run applied to the binding feed
+///   limit (1.0 = at-limit; 0.7 = 70 %; etc.). It is not the machine
+///   dial `MachineProfile::aggressiveness`.
 /// - `strategy`: which algorithm produced this summary (band-mid or
 ///   constrained-max). `BandMid` rolls up `binding_constraint_distribution`
 ///   from the same six-variant enum but its bindings collapse to the
@@ -126,7 +127,7 @@ pub struct ModulationSummary {
     pub moves_total: usize,
     pub median_feed_delta_pct: f64,
     pub binding_constraint_distribution: BTreeMap<BindingConstraint, f64>,
-    pub aggressiveness: f64,
+    pub feed_scale: f64,
     pub strategy: ModulationStrategyTag,
 }
 

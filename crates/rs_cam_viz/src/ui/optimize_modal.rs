@@ -470,8 +470,8 @@ fn draw_assumptions(ui: &mut egui::Ui, a: &SimAssumptionStamp) {
                 "Feed modulation",
                 if c.adaptive_feed_modulation {
                     format!(
-                        "on ({:?}, {:.2})",
-                        c.modulation_strategy, c.modulation_aggressiveness
+                        "on ({:?}, feed scale {:.2})",
+                        c.modulation_strategy, c.modulation_feed_scale
                     )
                 } else {
                     "off".to_owned()

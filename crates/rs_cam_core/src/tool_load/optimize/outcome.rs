@@ -251,9 +251,9 @@ pub struct CandidateSimAssumptions {
     /// Inert while [`Self::adaptive_feed_modulation`] is `false`, and
     /// recorded anyway so a future flip is legible against this record.
     pub modulation_strategy: crate::tool_load::ModulationStrategyTag,
-    /// Aggressiveness the candidate sim carries. Inert on the same
+    /// The feed scale the candidate sim carries. Inert on the same
     /// condition as [`Self::modulation_strategy`].
-    pub modulation_aggressiveness: f64,
+    pub modulation_feed_scale: f64,
     /// The F-035 pin. `false`, matching `SimulationOptions::default()`.
     /// While this is off, [`SimAssumptionStamp::kinematics`] cannot
     /// influence a candidate verdict.
@@ -274,7 +274,7 @@ impl CandidateSimAssumptions {
             auto_resolution: opts.auto_resolution,
             adaptive_feed_modulation: opts.adaptive_feed_modulation,
             modulation_strategy: opts.modulation_strategy.tag(),
-            modulation_aggressiveness: opts.modulation_aggressiveness,
+            modulation_feed_scale: opts.modulation_feed_scale,
             use_predicted_feed_in_gates: opts.use_predicted_feed_in_gates,
         }
     }

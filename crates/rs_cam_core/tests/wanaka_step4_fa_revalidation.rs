@@ -62,7 +62,7 @@ fn wanaka_step4_back_rough_engagement_in_plausible_range() {
         adaptive_feed_modulation: false,
         modulation_strategy:
             rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,
+        modulation_feed_scale: 1.0,
     };
     let result = session.run_simulation(&opts, &cancel).expect("sim");
     let cut_trace = result.cut_trace.as_ref().expect("cut trace");

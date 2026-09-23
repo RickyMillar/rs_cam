@@ -166,7 +166,7 @@ pub(crate) fn candidate_sim_options(sim_resolution_mm: f64) -> SimulationOptions
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
         modulation_strategy: crate::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,
+        modulation_feed_scale: 1.0,
     }
 }
 

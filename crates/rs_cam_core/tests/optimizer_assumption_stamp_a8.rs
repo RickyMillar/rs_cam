@@ -198,7 +198,7 @@ fn modulated_trace() -> SimulationCutTrace {
             moves_total: 9,
             median_feed_delta_pct: -12.5,
             binding_constraint_distribution: std::collections::BTreeMap::new(),
-            aggressiveness: 1.0,
+            feed_scale: 1.0,
             strategy: ModulationStrategyTag::ConstrainedMax,
         },
     );

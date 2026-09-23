@@ -19,8 +19,8 @@
 //!  4. `constrained_max_binds_on_power_for_low_rpm` — power inputs
 //!     configured for a low-power band → binding constraint is
 //!     `PowerMax`.
-//!  5. `aggressiveness_below_one_emits_proportional_feed` —
-//!     aggressiveness 1.0 vs 0.7 emits ~70 % of the at-limit feed
+//!  5. `feed_scale_below_one_emits_proportional_feed` —
+//!     feed scale 1.0 vs 0.7 emits ~70 % of the at-limit feed
 //!     (provided the chipload-min floor doesn't trip).
 //!  6. `modulation_summary_matches_per_move_binding_distribution` —
 //!     `ModulationOutcome::build_summary` returns a distribution
@@ -60,7 +60,7 @@ fn ctx_basic<'a>(k: &'a MachineKinematics, b: ChiploadBand) -> ModulationContext
         chipload_band: Some(b),
         kinematics: k,
         strategy: ModulationStrategy::ConstrainedMax,
-        aggressiveness: 1.0,
+        feed_scale: 1.0,
         deflection_inputs: None,
         power_inputs: None,
         nominal_axial_doc_mm: 2.0,
@@ -263,20 +263,20 @@ fn constrained_max_binds_on_power_for_low_rpm() {
     );
 }
 
-// ── 5. aggressiveness scales proportionally ────────────────────────
+// ── 5. the feed scale scales proportionally ────────────────────────
 
 #[test]
-fn aggressiveness_below_one_emits_proportional_feed() {
+fn feed_scale_below_one_emits_proportional_feed() {
     // High band ceiling + low chipload-min so the floor doesn't trip
-    // at 0.7 aggressiveness. Use band (0.005, 0.08) → floor =
+    // at feed scale 0.7. Use band (0.005, 0.08) → floor =
     // 0.005×18000×2 = 180 mm/min, well below 0.7 × ~2880 ≈ 2016.
     let make_tp = || straight_toolpath(2, 1500.0);
 
     let k = shapeoko();
     let mut ctx_a = ctx_basic(&k, band(0.005, 0.08));
-    ctx_a.aggressiveness = 1.0;
+    ctx_a.feed_scale = 1.0;
     let mut ctx_b = ctx_a;
-    ctx_b.aggressiveness = 0.7;
+    ctx_b.feed_scale = 0.7;
 
     let mut tp_a = make_tp();
     let mut tp_b = make_tp();
@@ -345,7 +345,7 @@ fn modulation_summary_matches_per_move_binding_distribution() {
     let outcome = adaptive_feed_modulate(&mut tp, &engagements, &ctx).unwrap();
     let commanded_feed = 1500.0_f64;
     let summary = outcome
-        .build_summary(commanded_feed, ctx.aggressiveness, ctx.strategy)
+        .build_summary(commanded_feed, ctx.feed_scale, ctx.strategy)
         .expect("summary present when moves were visited");
 
     // Hand-count the per-move map.
@@ -370,5 +370,5 @@ fn modulation_summary_matches_per_move_binding_distribution() {
             "binding {b:?}: hand {fraction} vs summary {from_summary}"
         );
     }
-    assert_eq!(summary.aggressiveness, 1.0);
+    assert_eq!(summary.feed_scale, 1.0);
 }

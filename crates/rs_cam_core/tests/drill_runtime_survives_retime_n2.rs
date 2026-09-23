@@ -304,7 +304,7 @@ fn opts(adaptive_feed_modulation: bool) -> SimulationOptions {
         adaptive_feed_modulation,
         modulation_strategy:
             rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,
+        modulation_feed_scale: 1.0,
     }
 }
 

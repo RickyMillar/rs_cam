@@ -48,7 +48,7 @@ use rs_cam_core::session::{ProjectSession, SimulationOptions};
 /// (pass 1), and each subsequent simulation round unlocks whichever
 /// pending op(s) it can, until nothing is left pending. Finishes with one
 /// more simulation using `adaptive_feed_modulation` at
-/// `ModulationStrategy::ConstrainedMax` / aggressiveness `1.0` — the
+/// `ModulationStrategy::ConstrainedMax` / feed scale `1.0` — the
 /// setting both donor harnesses standardized their "final" chain
 /// measurement on.
 ///
@@ -103,7 +103,7 @@ pub fn run_fixpoint_ladder(label: &str, s: &mut ProjectSession) {
         adaptive_feed_modulation: true,
         modulation_strategy:
             rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,
+        modulation_feed_scale: 1.0,
         ..Default::default()
     };
     s.run_simulation(&final_opts, &cancel)

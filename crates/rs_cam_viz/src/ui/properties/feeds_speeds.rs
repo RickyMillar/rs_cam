@@ -324,8 +324,8 @@ fn draw_operating_point(ui: &mut egui::Ui, verdict: &rs_cam_core::tool_load::Too
                 ModulationStrategyTag::BandMid => "band-mid",
             };
             ui.label(format!(
-                "{strat} \u{00b7} aggr {:.1}",
-                summary.aggressiveness
+                "{strat} \u{00b7} feed scale {:.1}",
+                summary.feed_scale
             ));
             ui.end_row();
         });

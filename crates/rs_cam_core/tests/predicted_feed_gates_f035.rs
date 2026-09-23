@@ -459,7 +459,7 @@ fn flag_off_byte_identical_to_pre_f035() {
             adaptive_feed_modulation: false,
             modulation_strategy:
                 rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
-            modulation_aggressiveness: 1.0,
+            modulation_feed_scale: 1.0,
         };
         session
             .run_simulation(&opts, &cancel)
@@ -525,7 +525,7 @@ fn flag_on_extends_existing_f024_test_invariants() {
         adaptive_feed_modulation: false,
         modulation_strategy:
             rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,
+        modulation_feed_scale: 1.0,
     };
     session
         .run_simulation(&opts, &cancel)

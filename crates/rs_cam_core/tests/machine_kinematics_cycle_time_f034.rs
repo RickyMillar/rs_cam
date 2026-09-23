@@ -301,7 +301,7 @@ fn cycle_time_calibrated_against_shapeoko_reference() {
         adaptive_feed_modulation: false,
         modulation_strategy:
             rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,
+        modulation_feed_scale: 1.0,
     };
     let n_toolpaths = session.toolpath_configs().len();
     for i in 0..n_toolpaths {
@@ -429,7 +429,7 @@ fn flag_off_byte_identical_to_pre_f034() {
         adaptive_feed_modulation: false,
         modulation_strategy:
             rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,
+        modulation_feed_scale: 1.0,
     };
     let n_toolpaths = session.toolpath_configs().len();
     for i in 0..n_toolpaths {
@@ -497,7 +497,7 @@ fn flag_on_overrides_total_runtime_s() {
         adaptive_feed_modulation: false,
         modulation_strategy:
             rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,
+        modulation_feed_scale: 1.0,
     };
 
     // Helper to load + add a tiny pocket op + simulate; returns the

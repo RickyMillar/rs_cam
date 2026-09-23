@@ -794,7 +794,7 @@ fn run_single_case_inner(
         adaptive_feed_modulation: false,
         modulation_strategy:
             rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,
+        modulation_feed_scale: 1.0,
     };
 
     // ADD the measured toolpath; generate it here only when it cuts fresh

@@ -103,7 +103,7 @@ fn sim_options(resolution: f64) -> SimulationOptions {
         adaptive_feed_modulation: false,
         modulation_strategy:
             rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,
+        modulation_feed_scale: 1.0,
     }
 }
 

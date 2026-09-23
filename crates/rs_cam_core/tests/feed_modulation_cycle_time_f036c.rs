@@ -125,7 +125,7 @@ fn run_back_rough(modulate: bool) -> f64 {
         adaptive_feed_modulation: modulate,
         modulation_strategy:
             rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,
+        modulation_feed_scale: 1.0,
     };
     let n_toolpaths = session.toolpath_configs().len();
     for i in 0..n_toolpaths {

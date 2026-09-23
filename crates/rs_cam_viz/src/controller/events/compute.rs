@@ -877,7 +877,7 @@ impl<B: ComputeBackend> AppController<B> {
                     adaptive_feed_modulation: true,
                     modulation_strategy:
                         rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
-                    modulation_aggressiveness: 1.0,
+                    modulation_feed_scale: 1.0,
                     ..Default::default()
                 };
                     let mut cut_trace = self

@@ -335,7 +335,7 @@ struct ProjectSummary {
     /// `true` at (g1); `--no-adaptive-feed-modulation` opts out.
     adaptive_feed_modulation: bool,
     /// Human-readable form of the same fact, including the strategy and
-    /// aggressiveness that shaped the rewritten feeds.
+    /// feed scale that shaped the rewritten feeds.
     modulation_state: String,
 }
 
@@ -352,7 +352,7 @@ pub fn run_project_command(
     emit_gcode: Option<&Path>,
     adaptive_feed_modulation: bool,
     modulation_strategy: rs_cam_core::dressup::feed_modulation::ModulationStrategy,
-    modulation_aggressiveness: f64,
+    modulation_feed_scale: f64,
     inject_shapeoko_kinematics: bool,
     apply_suggest: bool,
     spindle_strategy_override: Option<rs_cam_core::feeds::SpindleStrategy>,
@@ -461,7 +461,7 @@ pub fn run_project_command(
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation,
         modulation_strategy,
-        modulation_aggressiveness,
+        modulation_feed_scale,
     };
     // CMP-23: the S5 prefix memo. The plan's simulations are prefixes of one
     // another — exactly the shape the memo exists for. The cache is local to
@@ -737,7 +737,7 @@ pub fn run_project_command(
     // so a script that only reads the JSON is not the one reader left
     // guessing.
     let modulation_state = if adaptive_feed_modulation {
-        format!("on ({modulation_strategy:?}, aggressiveness {modulation_aggressiveness:.2})",)
+        format!("on ({modulation_strategy:?}, feed scale {modulation_feed_scale:.2})",)
     } else {
         "off (--no-adaptive-feed-modulation)".to_owned()
     };

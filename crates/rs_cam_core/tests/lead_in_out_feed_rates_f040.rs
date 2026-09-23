@@ -319,7 +319,7 @@ fn modulation_skips_lead_in_lead_out_moves() {
         chipload_band: Some(band),
         kinematics: &kinematics,
         strategy: ModulationStrategy::ConstrainedMax,
-        aggressiveness: 1.0,
+        feed_scale: 1.0,
         deflection_inputs: None,
         power_inputs: None,
         nominal_axial_doc_mm: 2.0,

@@ -101,7 +101,7 @@ fn p1_headless_ab_full_chain_intent_decomposition() {
         adaptive_feed_modulation: true,
         modulation_strategy:
             rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,
+        modulation_feed_scale: 1.0,
         ..Default::default()
     };
     s.run_simulation(&final_opts, &cancel)

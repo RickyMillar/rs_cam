@@ -233,7 +233,7 @@ fn live_project_pc6_has_no_phantom_cuts() {
         adaptive_feed_modulation: false,
         modulation_strategy:
             rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,
+        modulation_feed_scale: 1.0,
     };
     let _ = session.run_simulation(&sim_opts, &cancel);
     let result = session

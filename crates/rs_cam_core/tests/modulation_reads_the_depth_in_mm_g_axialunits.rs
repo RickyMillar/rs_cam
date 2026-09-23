@@ -81,7 +81,7 @@ fn ctx<'a>(k: &'a MachineKinematics, available_kw: f64) -> ModulationContext<'a>
         chipload_band: Some(ChiploadBand::new(0.01, 0.30).unwrap()),
         kinematics: k,
         strategy: ModulationStrategy::ConstrainedMax,
-        aggressiveness: 1.0,
+        feed_scale: 1.0,
         deflection_inputs: None,
         power_inputs: Some(PowerLimitInputs {
             kc_n_per_mm2: 30.0,

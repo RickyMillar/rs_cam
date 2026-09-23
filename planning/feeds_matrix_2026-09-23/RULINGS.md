@@ -67,6 +67,8 @@ On R4_AGGRESSIVENESS_SPEC.md §5, in the spec's numbering:
 - Q5 plunge and ramp: orchestrator's call → the material base with no
   factor, stated on the card.
 - Q6 the word: yes, rename the modulator's `modulation_aggressiveness`.
+  Landed 2026-09-24 as `modulation_feed_scale` (CLI
+  `--modulation-feed-scale`); no alias for the old name.
 - Q7 L/D into the dial target as a load fraction: yes.
 - Q8 workholding: fold it into the dial. Both are unsourced load margins; the
   dial is the ONE margin. The workholding factor and its selector go.

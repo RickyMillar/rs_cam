@@ -101,7 +101,7 @@ fn wanaka_step5_final_mesh_is_well_formed() {
         adaptive_feed_modulation: false,
         modulation_strategy:
             rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,
+        modulation_feed_scale: 1.0,
     };
     let result = session.run_simulation(&opts, &cancel).expect("sim");
 

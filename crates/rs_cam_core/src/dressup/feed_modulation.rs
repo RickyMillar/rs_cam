@@ -4,7 +4,7 @@
 //!
 //! - [`ModulationStrategy::ConstrainedMax`] (F-039, default) — solves a
 //!   per-move constrained-optimisation problem. Six candidate limits
-//!   compete; the smallest wins, scaled by `aggressiveness`, then
+//!   compete; the smallest wins, scaled by `feed_scale`, then
 //!   floored at the chipload-min band edge. Each per-move decision
 //!   records the [`BindingConstraint`] that drove it so the diagnostic
 //!   surface can explain *why* a given feed landed where it did.
@@ -81,7 +81,7 @@ pub enum ModulationStrategy {
     /// F-039 constrained-max solver (default). Computes the smallest
     /// of six candidate feed limits — chipload-max, deflection-max,
     /// power-max, machine-max, kinematic-reach, chipload-min floor —
-    /// and emits the binding value scaled by `aggressiveness`.
+    /// and emits the binding value scaled by `feed_scale`.
     #[default]
     ConstrainedMax,
 }
@@ -104,7 +104,7 @@ impl ModulationStrategy {
 /// `min` is the matched vendor row's own lower edge — below it the row
 /// says the tooth scrapes instead of slicing and in wood the workpiece
 /// scorches. `max` is the breakage / over-load ceiling. The modulator
-/// floors emitted feeds at `min × rpm × flutes` (after aggressiveness)
+/// floors emitted feeds at `min × rpm × flutes` (after the feed scale)
 /// and caps the constrained-max search at `max × rpm × flutes`.
 ///
 /// **Not the same thing as the rubbing floor** (Checkpoint K (d2),
@@ -265,9 +265,15 @@ pub struct ModulationContext<'a> {
     pub kinematics: &'a MachineKinematics,
     /// F-039 — which algorithm to run.
     pub strategy: ModulationStrategy,
-    /// F-039 — aggressiveness scalar (default 1.0). Ignored by
-    /// `BandMid`.
-    pub aggressiveness: f64,
+    /// F-039 — the feed scale (default 1.0). The constrained-max solver
+    /// multiplies the smallest candidate feed limit by this value, then
+    /// applies the chipload-min floor. `1.0` emits at the binding limit;
+    /// `0.7` emits at 70 % of it. `BandMid` ignores it.
+    ///
+    /// Not the machine dial: `MachineProfile::aggressiveness` is a load
+    /// target for Suggest. This value is a plain multiplier on the
+    /// modulator's output feed (ruling R4 Q6, 2026-09-24).
+    pub feed_scale: f64,
     /// F-039 — optional deflection-cap inputs (see
     /// [`DeflectionLimitInputs`]). `None` disables the constraint.
     pub deflection_inputs: Option<DeflectionLimitInputs>,
@@ -327,7 +333,7 @@ impl ModulationOutcome {
     pub fn build_summary(
         &self,
         commanded_feed_mm_min: f64,
-        aggressiveness: f64,
+        feed_scale: f64,
         strategy: ModulationStrategy,
     ) -> Option<crate::tool_load::ModulationSummary> {
         if self.per_move.is_empty() {
@@ -369,7 +375,7 @@ impl ModulationOutcome {
             moves_total,
             median_feed_delta_pct: median,
             binding_constraint_distribution,
-            aggressiveness,
+            feed_scale,
             strategy: strategy.tag(),
         })
     }
@@ -399,7 +405,7 @@ fn should_skip_modulation(move_type: MoveType, intent: MoveIntent) -> bool {
 ///
 /// Computes six candidate feed caps; the smallest binds. The binding
 /// constraint is returned so the diagnostic surface can name *why*
-/// the move's feed landed where it did. `aggressiveness` scales the
+/// the move's feed landed where it did. `ctx.feed_scale` multiplies the
 /// minimum *before* the chipload-min floor; values above 1.0 push past
 /// the constraint and the chipload-min floor still applies.
 fn max_safe_feed_for_move(
@@ -558,12 +564,12 @@ fn max_safe_feed_for_move(
         .min_by(|(a, _), (b, _)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
         .unwrap_or((ctx.max_feed_mm_min, BindingConstraint::MachineMaxFeed));
 
-    let aggr = ctx.aggressiveness.max(0.0);
-    let after_aggr = limit * aggr;
+    let scale = ctx.feed_scale.max(0.0);
+    let after_scale = limit * scale;
 
     // 6. Chipload-min floor — the matched row's own `band.min`, NOT
     // `feeds::effective_rubbing_floor` (see `ChiploadBand`). Applied last so
-    // aggressiveness can't drop feeds below the safe floor. When
+    // the feed scale can't drop feeds below the safe floor. When
     // the floor itself sits above the machine's hard cap (rare:
     // machine `max_feed` configured below `band.min × rpm × flutes`)
     // the cap wins — emitting above the cap would crash the
@@ -571,15 +577,15 @@ fn max_safe_feed_for_move(
     // workpiece. The machine constraint stays load-bearing.
     //
     // Binding-tag rule (per F-039 spec): re-label as `ChiploadMin`
-    // only when aggressiveness scaled the limit BELOW the floor
+    // only when the feed scale took the limit BELOW the floor
     // (`emitted == floor && limit > floor`). When the *underlying*
     // limit itself sits below the floor (deflection or power forced
-    // a low feed even at aggressiveness 1.0), keep the original
+    // a low feed even at feed scale 1.0), keep the original
     // binding so the diagnostic surface names the load-bearing
     // physical constraint, not the floor we backed off to.
     let floor = band.min_mm_per_tooth * ctx.spindle_rpm * flutes;
     let effective_floor = floor.min(ctx.max_feed_mm_min);
-    if after_aggr < effective_floor {
+    if after_scale < effective_floor {
         let new_binding = if limit > effective_floor {
             BindingConstraint::ChiploadMin
         } else {
@@ -587,7 +593,7 @@ fn max_safe_feed_for_move(
         };
         (effective_floor, new_binding)
     } else {
-        (after_aggr, binding)
+        (after_scale, binding)
     }
 }
 
@@ -852,7 +858,7 @@ mod tests {
             chipload_band: Some(band),
             kinematics: k,
             strategy: ModulationStrategy::BandMid,
-            aggressiveness: 1.0,
+            feed_scale: 1.0,
             deflection_inputs: None,
             power_inputs: None,
             nominal_axial_doc_mm: 0.0,

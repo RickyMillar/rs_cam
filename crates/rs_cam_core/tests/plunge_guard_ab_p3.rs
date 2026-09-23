@@ -39,7 +39,7 @@
 //!
 //! Machine: user-tuned Shapeoko XXL (`$120/$121/$122 = 500/500/270`,
 //! `$110/$111/$112 = 10000/10000/1000`, `$11 = 0.020`). Simulation
-//! resolution 0.5 mm, `ConstrainedMax`, aggressiveness 1.0. The
+//! resolution 0.5 mm, `ConstrainedMax`, feed scale 1.0. The
 //! operation's own dials: plunge rate **541 mm/min**, feed rate **750
 //! mm/min** (the plan's "512" was the earlier hand-analysis figure; the
 //! project file says 541, and both arms divide by the same 541).
@@ -192,7 +192,7 @@ fn wanaka_front_rough_plunge_guard_ab() {
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: true,
         modulation_strategy: ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,
+        modulation_feed_scale: 1.0,
     };
     session
         .run_simulation(&opts, &cancel)

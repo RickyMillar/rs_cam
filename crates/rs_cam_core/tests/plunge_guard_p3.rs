@@ -65,7 +65,7 @@ fn ctx<'a>(k: &'a MachineKinematics, plunge_rate_mm_min: f64) -> ModulationConte
         chipload_band: Some(ChiploadBand::new(0.02, 0.08).expect("valid band")),
         kinematics: k,
         strategy: ModulationStrategy::ConstrainedMax,
-        aggressiveness: 1.0,
+        feed_scale: 1.0,
         deflection_inputs: None,
         power_inputs: None,
         nominal_axial_doc_mm: 0.0,

@@ -188,8 +188,9 @@ The dial is not:
 - a chipload target inside the band (`SuggestAggressiveness`, which WP3
   deletes; see 3.7);
 - a feed scale (the 0.75 factor, which WP3 deletes);
-- the simulation feed-modulation scalar `modulation_aggressiveness`
-  (`dressup/feed_modulation.rs:270`), which is a different quantity (Q6).
+- the simulation feed-modulation scalar `modulation_feed_scale` (named
+  `modulation_aggressiveness` before ruling Q6), which is a different
+  quantity (Q6).
 
 ### 2.3 The algorithm
 
@@ -647,7 +648,10 @@ Each has a recommendation.
    `modulation_aggressiveness` (`dressup/feed_modulation.rs:270`,
    `session/compute.rs:1547`, the CLI flag from `rs_cam_cli/src/main.rs:217`).
    Recommendation: rename it to `modulation_feed_scale` in a later package,
-   so one word has one meaning.
+   so one word has one meaning. Ruled yes and landed 2026-09-24: Rust
+   `SimulationOptions::modulation_feed_scale`, `ModulationContext::feed_scale`,
+   `ModulationSummary::feed_scale`; CLI `--modulation-feed-scale`. The old
+   names have no alias.
 7. **Q7. The L/D cut and the band.** Tonight it stays a feed cut (WP1 makes
    it visible). With the 0.75 gone it still puts 140 banded cells under the
    band minimum. Recommendation: move it into the dial target as a load

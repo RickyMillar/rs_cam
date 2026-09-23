@@ -453,7 +453,7 @@ fn wanaka_back_rough_axial_doc() {
         adaptive_feed_modulation: false,
         modulation_strategy:
             rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,
+        modulation_feed_scale: 1.0,
     };
 
     let tp_id = session.list_toolpaths()[1].id;

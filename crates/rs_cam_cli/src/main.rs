@@ -208,13 +208,13 @@ enum Commands {
         #[arg(long, default_value = "constrained-max")]
         modulation_strategy: String,
 
-        /// F-039 — modulation aggressiveness scalar (default 1.0 =
-        /// emit at the binding constraint). 0.7 backs off 30 % for
-        /// safety margin; 1.1+ pushes past the limit (chipload-min
-        /// still applies). Ignored under `--modulation-strategy
-        /// band-mid`.
+        /// F-039 — modulation feed scale: the multiplier the modulator
+        /// applies to the binding feed limit (default 1.0 = emit at the
+        /// binding constraint). 0.7 backs off 30 % for safety margin;
+        /// 1.1+ pushes past the limit (chipload-min still applies).
+        /// Ignored under `--modulation-strategy band-mid`.
         #[arg(long, default_value_t = 1.0)]
-        modulation_aggressiveness: f64,
+        modulation_feed_scale: f64,
 
         /// Inject the Shapeoko XXL stock-kinematics preset
         /// (250 mm/s² accel, full-stop junction, max-feed cap) into
@@ -393,7 +393,7 @@ fn main() -> Result<()> {
             emit_gcode,
             no_adaptive_feed_modulation,
             modulation_strategy,
-            modulation_aggressiveness,
+            modulation_feed_scale,
             inject_shapeoko_kinematics,
             apply_suggest,
             spindle_strategy,
@@ -427,7 +427,7 @@ fn main() -> Result<()> {
                 // Checkpoint K (g1) — default ON, opt out explicitly.
                 !no_adaptive_feed_modulation,
                 strategy,
-                modulation_aggressiveness,
+                modulation_feed_scale,
                 inject_shapeoko_kinematics,
                 apply_suggest,
                 spindle_strat_override,

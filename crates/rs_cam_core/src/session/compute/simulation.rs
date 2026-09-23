@@ -370,7 +370,7 @@ impl ProjectSession {
         max_feed: f64,
         rapid_feed: f64,
         strategy: crate::dressup::feed_modulation::ModulationStrategy,
-        aggressiveness: f64,
+        feed_scale: f64,
     ) -> Option<(
         crate::toolpath::Toolpath,
         crate::dressup::feed_modulation::ModulationOutcome,
@@ -391,7 +391,7 @@ impl ProjectSession {
             max_feed,
             rapid_feed,
             strategy,
-            aggressiveness,
+            feed_scale,
         )
     }
 
@@ -567,7 +567,7 @@ impl ProjectSession {
                 max_feed,
                 rapid_feed,
                 opts.modulation_strategy,
-                opts.modulation_aggressiveness,
+                opts.modulation_feed_scale,
             ) else {
                 continue;
             };
@@ -580,7 +580,7 @@ impl ProjectSession {
             }
             if let Some(summary) = outcome.build_summary(
                 commanded_feed_for_summary,
-                opts.modulation_aggressiveness,
+                opts.modulation_feed_scale,
                 opts.modulation_strategy,
             ) {
                 modulation_summaries.insert(toolpath_id, summary);

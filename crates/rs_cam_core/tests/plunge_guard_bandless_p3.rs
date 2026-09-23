@@ -59,7 +59,7 @@ fn bandless_ctx<'a>(k: &'a MachineKinematics, plunge_rate_mm_min: f64) -> Modula
         chipload_band: None,
         kinematics: k,
         strategy: ModulationStrategy::ConstrainedMax,
-        aggressiveness: 1.0,
+        feed_scale: 1.0,
         deflection_inputs: None,
         power_inputs: None,
         nominal_axial_doc_mm: 0.0,

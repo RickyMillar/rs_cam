@@ -683,7 +683,7 @@ fn verdict_delta_probe_on_the_committed_fixture() {
         adaptive_feed_modulation: false,
         modulation_strategy:
             rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,
+        modulation_feed_scale: 1.0,
     };
     let _ = session.generate_all(&[], &cancel);
     session

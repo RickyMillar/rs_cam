@@ -183,7 +183,7 @@ fn as001_pocket_first_pass_axial_engagement_within_commanded_doc() {
         adaptive_feed_modulation: false,
         modulation_strategy:
             rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,
+        modulation_feed_scale: 1.0,
     };
     session
         .run_simulation(&opts, &cancel)
@@ -244,7 +244,7 @@ fn as001_pocket_deflection_gate_within_safe_band() {
         adaptive_feed_modulation: false,
         modulation_strategy:
             rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_aggressiveness: 1.0,
+        modulation_feed_scale: 1.0,
     };
     session
         .run_simulation(&opts, &cancel)
