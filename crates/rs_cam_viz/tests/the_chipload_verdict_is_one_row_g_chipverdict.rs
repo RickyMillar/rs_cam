@@ -594,7 +594,6 @@ fn door_figure(fixture: Fixture) -> Result<PowerFigure, PowerUnmodeled> {
         tool,
         &stock.material,
         state.session.machine(),
-        stock.workholding_rigidity,
         feeds::embedded_vendor_lut(),
         state.session.post_config().spindle_strategy,
     );
@@ -829,7 +828,6 @@ fn shipped_recipe(
         &tool,
         &stock.material,
         machine,
-        stock.workholding_rigidity,
         feeds::embedded_vendor_lut(),
         feeds::SpindleStrategy::MatchChart,
     );

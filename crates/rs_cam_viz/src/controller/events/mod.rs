@@ -1180,10 +1180,7 @@ impl<B: ComputeBackend> AppController<B> {
             return Err(format!("toolpath {} has no tool", toolpath_id.0));
         };
         let machine = self.state.session.machine().clone();
-        let (material, workholding) = {
-            let stock = self.state.session.stock_config();
-            (stock.material.clone(), stock.workholding_rigidity)
-        };
+        let material = self.state.session.stock_config().material.clone();
         let spindle_strategy = self.state.session.post_config().spindle_strategy;
 
         let preview = rs_cam_core::feeds::suggest::feeds_preview_for_operation(
@@ -1191,7 +1188,6 @@ impl<B: ComputeBackend> AppController<B> {
             &tool,
             &material,
             &machine,
-            workholding,
             rs_cam_core::feeds::embedded_vendor_lut(),
             spindle_strategy,
         );

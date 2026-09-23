@@ -514,7 +514,6 @@ fn suggest_output_matches_feed_vs_lut_high_diagnostic_recommendation() {
             tool: &tool,
             machine: s.machine(),
             material: &s.stock_config().material,
-            workholding: s.stock_config().workholding_rigidity,
             lut: crate::feeds::embedded_vendor_lut(),
             spindle_strategy: crate::feeds::SpindleStrategy::default(),
             context: crate::feeds::suggest::SuggestContext::default(),
@@ -529,60 +528,9 @@ fn suggest_output_matches_feed_vs_lut_high_diagnostic_recommendation() {
     assert!((diagnostic_rec - suggested.feeds_result.feed_rate_mm_min).abs() < 1e-6);
 }
 
-#[test]
-fn workholding_changes_suggest_output_and_diagnostic_baseline_consistently() {
-    fn session_for_workholding(
-        workholding: crate::feeds::WorkholdingRigidity,
-    ) -> (ProjectSession, f64) {
-        let mut s = make_session();
-        let mut stock = s.stock_config().clone();
-        stock.workholding_rigidity = workholding;
-        // Use a Custom material so the suggest path takes the
-        // hardness/Kc fallback model rather than a vendor-LUT match.
-        // The 2026-05-31 Phase 4 promotion added Onsrud-grade 6.35 mm
-        // softwood pocket rows whose chipload max saturates the
-        // suggested feed at both rigidity levels — that's correct
-        // behavior for the suggest pipeline but defeats this test's
-        // *intent*, which is to verify rigidity flows consistently
-        // through both `suggest_for_operation` and the diagnostic
-        // baseline. Custom material isolates the rigidity scaler.
-        stock.material = crate::material::Material::Custom {
-            name: "test_workholding_fixture".to_owned(),
-            feed_scale_factor: 1.5,
-            kc: 25.0,
-        };
-        let _ = s.set_stock_config(stock);
-        let tool = s.tools()[0].clone();
-        let mut tc = make_tc(tool.id.0);
-        let suggested = crate::feeds::suggest::suggest_for_operation(
-            crate::feeds::suggest::SuggestForOperationInput {
-                operation: &tc.operation,
-                tool: &tool,
-                machine: s.machine(),
-                material: &s.stock_config().material,
-                workholding,
-                lut: crate::feeds::embedded_vendor_lut(),
-                spindle_strategy: crate::feeds::SpindleStrategy::default(),
-                context: crate::feeds::suggest::SuggestContext::default(),
-            },
-        )
-        .expect("test fixture pairs a flat endmill with a Pocket op — not a refused combination");
-        tc.operation
-            .set_feed_rate(suggested.feeds_result.feed_rate_mm_min * 3.0);
-        let _ = s.add_toolpath(0, tc).unwrap();
-        (s, suggested.feeds_result.feed_rate_mm_min)
-    }
-
-    let (medium, medium_suggest) =
-        session_for_workholding(crate::feeds::WorkholdingRigidity::Medium);
-    let (high, high_suggest) = session_for_workholding(crate::feeds::WorkholdingRigidity::High);
-
-    let medium_diag = feed_vs_lut_high_recommended_value(&medium);
-    let high_diag = feed_vs_lut_high_recommended_value(&high);
-    assert!(high_suggest > medium_suggest);
-    assert!((medium_diag - medium_suggest).abs() < 1e-6);
-    assert!((high_diag - high_suggest).abs() < 1e-6);
-}
+// Ruling R4 Q8 (2026-09-24) deleted the workholding rigidity, and with it
+// `workholding_changes_suggest_output_and_diagnostic_baseline_consistently`.
+// The test above still pins Suggest against the diagnostic baseline.
 
 // WP28 deleted `compute_stale_set` and `MutationKind`. Three unit
 // tests stood here and pinned the tag-driven answer for a tool

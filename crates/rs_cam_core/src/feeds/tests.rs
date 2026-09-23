@@ -969,7 +969,7 @@ fn test_machine_feed_clamp() {
 /// Ruling R4 (2026-09-24): the machine safety factor is gone. The feed is
 /// the chipload times the combined factor times RPM times flutes, and the
 /// combined factor holds no machine factor: on this unclamped pocket it is
-/// the depth tier times the workholding (Medium, 1.0).
+/// the depth tier (the workholding factor is gone, ruling R4 Q8).
 #[test]
 fn no_machine_factor_multiplies_the_feed() {
     let material = Material::SolidWood {
@@ -998,10 +998,7 @@ fn no_machine_factor_multiplies_the_feed() {
 
     assert!(result.feed_rate_mm_min > 0.0);
     let d = &result.derates;
-    assert!(
-        (d.combined_factor() - d.depth_tier * d.workholding * d.power_limit * d.feed_clamp).abs()
-            < 1e-12
-    );
+    assert!((d.combined_factor() - d.depth_tier * d.power_limit * d.feed_clamp).abs() < 1e-12);
     let fpt = result.feed_rate_mm_min / (result.rpm * 2.0);
     assert!((fpt - d.effective_chip_load_mm()).abs() <= fpt * 1e-9);
 }
@@ -1328,7 +1325,6 @@ fn test_setup_derate_long_overhang() {
         vendor_lut: None,
         setup: SetupContext {
             tool_overhang_mm: Some(20.0), // L/D = 20/6 = 3.3, no derate
-            workholding_rigidity: WorkholdingRigidity::Medium,
         },
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
     });
@@ -1350,7 +1346,6 @@ fn test_setup_derate_long_overhang() {
         vendor_lut: None,
         setup: SetupContext {
             tool_overhang_mm: Some(40.0), // L/D = 40/6 = 6.67, 25% derate
-            workholding_rigidity: WorkholdingRigidity::Medium,
         },
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
     });
@@ -1391,7 +1386,6 @@ fn test_setup_derate_medium_overhang() {
         vendor_lut: None,
         setup: SetupContext {
             tool_overhang_mm: Some(20.0), // L/D = 3.3, no derate
-            workholding_rigidity: WorkholdingRigidity::Medium,
         },
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
     });
@@ -1413,7 +1407,6 @@ fn test_setup_derate_medium_overhang() {
         vendor_lut: None,
         setup: SetupContext {
             tool_overhang_mm: Some(30.0), // L/D = 30/6 = 5.0, 12% derate
-            workholding_rigidity: WorkholdingRigidity::Medium,
         },
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
     });
@@ -1425,64 +1418,6 @@ fn test_setup_derate_medium_overhang() {
         "the L/D share must not move the feed, got ratio {ratio}"
     );
     assert_eq!(medium.derates.ld_overhang, 0.88);
-}
-
-#[test]
-fn test_setup_derate_workholding_low() {
-    let material = Material::SolidWood {
-        species: WoodSpecies::GenericSoftwood,
-    };
-    let machine = MachineProfile::shapeoko_vfd();
-
-    let medium = calculate(&FeedsInput {
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 18.0,
-        tool_geometry: ToolGeometryHint::Flat,
-        shank_diameter: None,
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Adaptive,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: None,
-        setup: SetupContext {
-            tool_overhang_mm: None,
-            workholding_rigidity: WorkholdingRigidity::Medium,
-        },
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-    });
-
-    let low = calculate(&FeedsInput {
-        tool_diameter: 6.0,
-        flute_count: 2,
-        flute_length: 18.0,
-        tool_geometry: ToolGeometryHint::Flat,
-        shank_diameter: None,
-        material: &material,
-        machine: &machine,
-        operation: OperationFamily::Adaptive,
-        operation_kind: None,
-        pass_role: PassRole::Roughing,
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-        vendor_lut: None,
-        setup: SetupContext {
-            tool_overhang_mm: None,
-            workholding_rigidity: WorkholdingRigidity::Low,
-        },
-        spindle_strategy: crate::feeds::SpindleStrategy::default(),
-    });
-
-    let ratio = low.feed_rate_mm_min / medium.feed_rate_mm_min;
-    assert!(
-        (ratio - 0.85).abs() < 0.02,
-        "Low workholding should give 0.85x feed ratio, got {ratio}"
-    );
 }
 
 #[test]

@@ -22,8 +22,7 @@
 )]
 
 use rs_cam_core::feeds::{
-    FeedsInput, OperationFamily, PassRole, SetupContext, ToolGeometryHint, WorkholdingRigidity,
-    calculate,
+    FeedsInput, OperationFamily, PassRole, SetupContext, ToolGeometryHint, calculate,
 };
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
@@ -69,7 +68,6 @@ fn wanaka_adaptive3d_6mm_em_lands_stepover_at_target() {
         target_scallop_mm: None,
         vendor_lut: None,
         setup: SetupContext {
-            workholding_rigidity: WorkholdingRigidity::Medium,
             ..SetupContext::default()
         },
         spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
@@ -112,7 +110,6 @@ fn wanaka_1mm_tapered_ball_plunge_capped() {
             target_scallop_mm: None,
             vendor_lut: None,
             setup: SetupContext {
-                workholding_rigidity: WorkholdingRigidity::Medium,
                 ..SetupContext::default()
             },
             spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
@@ -151,7 +148,6 @@ fn wanaka_6mm_em_plunge_not_derated() {
         target_scallop_mm: None,
         vendor_lut: None,
         setup: SetupContext {
-            workholding_rigidity: WorkholdingRigidity::Medium,
             ..SetupContext::default()
         },
         spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),

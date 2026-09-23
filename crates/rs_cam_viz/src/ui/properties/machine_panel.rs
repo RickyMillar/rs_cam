@@ -6,8 +6,7 @@
 
 use super::PanelEdit;
 use super::panel_apply::{
-    apply_machine, apply_machine_import, apply_machine_kinematics, apply_stock_draft,
-    machine_panel_fields_moved,
+    apply_machine, apply_machine_import, apply_machine_kinematics, machine_panel_fields_moved,
 };
 use crate::state::AppState;
 use crate::ui::AppEvent;
@@ -229,63 +228,9 @@ pub(super) fn draw_machine_panel(
         state.history.machine_draft = Some(draft);
     }
 
-    ui.add_space(8.0);
-
-    // Workholding rigidity selector. WP6: the combo writes a DRAFT of
-    // the stock record, and one `SetStockConfig` lands it.
-    //
-    // BEHAVIOUR CHANGE, named: the row now drops every toolpath result,
-    // because the rigidity derates the feeds of every operation. The
-    // panel used to write `stock_mut()` in place and mark the project
-    // edited alone, so the cached results kept the previous derating
-    // (G-FRESHSTATE).
-    use rs_cam_core::feeds::WorkholdingRigidity;
-    let mut rigidity = state.session.stock_config().workholding_rigidity;
-    let mut rigidity_changed = false;
-    ui.horizontal(|ui| {
-        ui.label("Workholding:");
-        let label = match rigidity {
-            WorkholdingRigidity::Low => "Low",
-            WorkholdingRigidity::Medium => "Medium",
-            WorkholdingRigidity::High => "High",
-        };
-        egui::ComboBox::from_id_salt("workholding_rigidity")
-            .selected_text(label)
-            .show_ui(ui, |ui| {
-                if ui
-                    .selectable_value(&mut rigidity, WorkholdingRigidity::Low, "Low")
-                    .changed()
-                    || ui
-                        .selectable_value(&mut rigidity, WorkholdingRigidity::Medium, "Medium")
-                        .changed()
-                    || ui
-                        .selectable_value(&mut rigidity, WorkholdingRigidity::High, "High")
-                        .changed()
-                {
-                    rigidity_changed = true;
-                }
-            });
-    });
-    if rigidity_changed {
-        let mut stock = state.session.stock_config().clone();
-        stock.workholding_rigidity = rigidity;
-        apply_stock_draft(state, stock);
-    }
-    ui.label(
-        egui::RichText::new(match state.session.stock_config().workholding_rigidity {
-            rs_cam_core::feeds::WorkholdingRigidity::Low => {
-                "Low — tape/CA glue, vacuum table, thin stock"
-            }
-            rs_cam_core::feeds::WorkholdingRigidity::Medium => {
-                "Medium — clamps, toggle clamps, most setups"
-            }
-            rs_cam_core::feeds::WorkholdingRigidity::High => {
-                "High — heavy vise, bolted fixture, thick stock"
-            }
-        })
-        .small()
-        .color(crate::ui::tokens::TEXT_MUTED),
-    );
+    // Ruling R4 Q8 (2026-09-24): the workholding rigidity selector is
+    // gone. It was an unsourced feed scale; the aggressiveness dial above is
+    // the one load margin.
 }
 
 /// Kinematics editor (per-axis accel + junction deviation + optional
@@ -561,8 +506,9 @@ pub(super) fn draw_grbl_import(
 /// The hover of the aggressiveness slider: what the dial holds.
 const AGGRESSIVENESS_HOVER: &str = "The load of a Suggest recipe as a fraction of the load at full \
      engagement. The chipload stays in the vendor band; the depth per pass and \
-     the stepover scale together. A long tool lowers the target further. Repo \
-     default 0.85.";
+     the stepover scale together. A long tool lowers the target further. It is \
+     the one load margin: set it lower for weak workholding (tape, a vacuum \
+     table, thin stock). Repo default 0.85.";
 
 /// The threshold label under the aggressiveness slider, and its tone.
 ///

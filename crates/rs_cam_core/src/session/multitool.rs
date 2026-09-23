@@ -855,7 +855,6 @@ impl ProjectSession {
                 tool,
                 machine: &self.machine,
                 material: &self.stock.material,
-                workholding: self.stock.workholding_rigidity,
                 lut: crate::feeds::embedded_vendor_lut(),
                 spindle_strategy: crate::feeds::SpindleStrategy::default(),
                 // Q1: the bbox the runtime-sanity back-off reads.

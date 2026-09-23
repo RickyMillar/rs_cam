@@ -42,8 +42,8 @@ use rs_cam_core::feeds::support::{
 };
 use rs_cam_core::feeds::vendor_lut::{MaterialFamily, ToolFamily};
 use rs_cam_core::feeds::{
-    FeedsError, FeedsSupport, SpindleStrategy, WorkholdingRigidity, calculate, embedded_vendor_lut,
-    feeds_support, validate_tool_for_operation,
+    FeedsError, FeedsSupport, SpindleStrategy, calculate, embedded_vendor_lut, feeds_support,
+    validate_tool_for_operation,
 };
 use rs_cam_core::feeds::{OperationFamily, PassRole};
 use rs_cam_core::machine::MachineProfile;
@@ -121,7 +121,6 @@ fn every_cell() -> Vec<CellOutcome> {
                     &tool,
                     material,
                     &machine,
-                    WorkholdingRigidity::Medium,
                     lut,
                     SpindleStrategy::MatchChart,
                 );

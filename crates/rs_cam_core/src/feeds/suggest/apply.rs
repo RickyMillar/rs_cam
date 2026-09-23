@@ -9,7 +9,7 @@
 
 use crate::compute::catalog::OperationConfig;
 use crate::compute::tool_config::ToolConfig;
-use crate::feeds::{FeedsError, FeedsInput, FeedsResult, PassRole, VendorLut, WorkholdingRigidity};
+use crate::feeds::{FeedsError, FeedsInput, FeedsResult, PassRole, VendorLut};
 use crate::machine::MachineProfile;
 use crate::material::Material;
 
@@ -752,19 +752,11 @@ pub fn feeds_preview_for_operation(
     tool: &ToolConfig,
     material: &Material,
     machine: &MachineProfile,
-    workholding: WorkholdingRigidity,
     lut: &VendorLut,
     spindle_strategy: crate::feeds::SpindleStrategy,
 ) -> FeedsPreview {
-    let input = feeds_input_for_operation(
-        operation,
-        tool,
-        material,
-        machine,
-        workholding,
-        lut,
-        spindle_strategy,
-    );
+    let input =
+        feeds_input_for_operation(operation, tool, material, machine, lut, spindle_strategy);
     FeedsPreview::build(&input)
 }
 

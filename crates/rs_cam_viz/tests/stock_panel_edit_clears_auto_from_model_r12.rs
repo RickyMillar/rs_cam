@@ -21,7 +21,7 @@
 //! 2. a moved origin clears the flag and keeps the numbers;
 //! 3. the flag flipped on refits the numbers from the bbox;
 //! 4. a padding edit under auto refits with the new padding;
-//! 5. a rigidity edit under auto refits a record whose numbers lag the
+//! 5. a material edit under auto refits a record whose numbers lag the
 //!    model, which is what the commit path did before R12 and still does;
 //! 6. no model: the flag keeps its value and nothing refits.
 //!
@@ -148,7 +148,12 @@ fn a_padding_edit_under_auto_refits_with_the_new_padding() {
 }
 
 #[test]
-fn a_rigidity_edit_under_auto_refits_a_stale_record() {
+fn a_material_edit_under_auto_refits_a_stale_record() {
+    // Ruling R4 Q8 (2026-09-24) deleted the workholding rigidity, which was
+    // this test's non-dimension edit. The material is the substitute.
+    let oak = rs_cam_core::material::Material::SolidWood {
+        species: rs_cam_core::material::WoodSpecies::WhiteOak,
+    };
     // The record's numbers lag the model (the Corne file as found).
     let previous = StockConfig {
         x: 153.07,
@@ -159,7 +164,7 @@ fn a_rigidity_edit_under_auto_refits_a_stale_record() {
         ..StockConfig::default()
     };
     let mut draft = previous.clone();
-    draft.workholding_rigidity = rs_cam_core::feeds::WorkholdingRigidity::High;
+    draft.material = oak.clone();
 
     let reconciled = reconcile_auto_from_model(&previous, draft, Some(&corne_bbox()));
 
@@ -170,10 +175,7 @@ fn a_rigidity_edit_under_auto_refits_a_stale_record() {
         reconciled.y, expected.y,
         "no row moved and the flag is on, so the numbers follow the model"
     );
-    assert_eq!(
-        reconciled.workholding_rigidity,
-        rs_cam_core::feeds::WorkholdingRigidity::High
-    );
+    assert_eq!(reconciled.material, oak);
 }
 
 #[test]

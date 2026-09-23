@@ -975,7 +975,6 @@ fn wanaka_suggest_idempotent_on_second_run() {
     let lut = embedded_vendor_lut();
     let machine = session.machine().clone();
     let material = session.stock_config().material.clone();
-    let workholding = session.stock_config().workholding_rigidity;
     let stock_ctx = rs_cam_core::feeds::suggest::StockContext::from_stock_bbox(
         session.stock_bbox(),
         session.stock_config().padding,
@@ -1006,7 +1005,6 @@ fn wanaka_suggest_idempotent_on_second_run() {
         tool,
         machine: &machine,
         material: &material,
-        workholding,
         lut,
         spindle_strategy: SpindleStrategy::default(),
         context,
@@ -1018,7 +1016,6 @@ fn wanaka_suggest_idempotent_on_second_run() {
         tool,
         machine: &machine,
         material: &material,
-        workholding,
         lut,
         spindle_strategy: SpindleStrategy::default(),
         context,
@@ -1102,7 +1099,6 @@ fn session_cutter_op_profile_matches_gui_rationale_assembly() {
             tool,
             machine,
             material: &stock.material,
-            workholding: stock.workholding_rigidity,
             lut,
             spindle_strategy: session.post_config().spindle_strategy,
             context,

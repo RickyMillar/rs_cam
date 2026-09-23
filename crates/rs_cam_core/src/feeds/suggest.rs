@@ -8,9 +8,7 @@
 use crate::compute::catalog::{OperationConfig, OperationType};
 use crate::compute::cutter::build_cutter;
 use crate::compute::tool_config::ToolConfig;
-use crate::feeds::{
-    FeedsError, FeedsInput, FeedsResult, SetupContext, VendorLut, WorkholdingRigidity,
-};
+use crate::feeds::{FeedsError, FeedsInput, FeedsResult, SetupContext, VendorLut};
 use crate::machine::MachineProfile;
 use crate::material::Material;
 
@@ -386,7 +384,7 @@ pub enum SuggestWarning {
     /// Semantics for a future producer: paired with `FeedRaisedForChipload`
     /// when a binding cap stopped the correction before the observation
     /// reached the band. The deflection budget is too tight for the
-    /// configured (tool, material, workholding) combination — the
+    /// configured (tool, material) combination — the
     /// operator's options are to drop RPM (which raises chipload at
     /// constant feed) or accept the rubbing-floor recipe with the
     /// understanding that edge heating may shorten tool life.
@@ -814,7 +812,6 @@ pub struct SuggestParamsInput<'a> {
     pub tool: &'a ToolConfig,
     pub machine: &'a MachineProfile,
     pub material: &'a Material,
-    pub workholding: WorkholdingRigidity,
     pub lut: &'a VendorLut,
     pub stock_ctx: &'a StockContext,
     /// Spindle-RPM policy. See [`crate::feeds::SpindleStrategy`].
@@ -836,7 +833,6 @@ pub struct SuggestForOperationInput<'a> {
     pub tool: &'a ToolConfig,
     pub machine: &'a MachineProfile,
     pub material: &'a Material,
-    pub workholding: WorkholdingRigidity,
     pub lut: &'a VendorLut,
     /// Spindle-RPM policy. See [`crate::feeds::SpindleStrategy`].
     pub spindle_strategy: crate::feeds::SpindleStrategy,
@@ -864,7 +860,6 @@ pub fn suggest_params(input: SuggestParamsInput<'_>) -> Result<SuggestedParams, 
         tool: input.tool,
         machine: input.machine,
         material: input.material,
-        workholding: input.workholding,
         lut: input.lut,
         spindle_strategy: input.spindle_strategy,
         context: input.context,
@@ -897,7 +892,6 @@ pub fn suggest_for_operation(
         input.tool,
         input.material,
         input.machine,
-        input.workholding,
         input.lut,
         input.spindle_strategy,
     )?;
@@ -941,7 +935,6 @@ pub fn feeds_input_for_operation<'a>(
     tool: &'a ToolConfig,
     material: &'a Material,
     machine: &'a MachineProfile,
-    workholding: WorkholdingRigidity,
     lut: &'a VendorLut,
     spindle_strategy: crate::feeds::SpindleStrategy,
 ) -> FeedsInput<'a> {
@@ -970,7 +963,6 @@ pub fn feeds_input_for_operation<'a>(
         vendor_lut: Some(lut),
         setup: SetupContext {
             tool_overhang_mm: Some(tool.stickout),
-            workholding_rigidity: workholding,
         },
         spindle_strategy,
     }
@@ -990,19 +982,11 @@ pub fn feeds_result_for_operation(
     tool: &ToolConfig,
     material: &Material,
     machine: &MachineProfile,
-    workholding: WorkholdingRigidity,
     lut: &VendorLut,
     spindle_strategy: crate::feeds::SpindleStrategy,
 ) -> Result<FeedsResult, FeedsError> {
-    let input = feeds_input_for_operation(
-        operation,
-        tool,
-        material,
-        machine,
-        workholding,
-        lut,
-        spindle_strategy,
-    );
+    let input =
+        feeds_input_for_operation(operation, tool, material, machine, lut, spindle_strategy);
     crate::feeds::validate_tool_for_operation(&input)?;
     Ok(crate::feeds::calculate(&input))
 }
@@ -1016,19 +1000,11 @@ pub fn feeds_explain_for_operation(
     tool: &ToolConfig,
     material: &Material,
     machine: &MachineProfile,
-    workholding: WorkholdingRigidity,
     lut: &VendorLut,
     spindle_strategy: crate::feeds::SpindleStrategy,
 ) -> crate::feeds::FeedsExplain {
-    let input = feeds_input_for_operation(
-        operation,
-        tool,
-        material,
-        machine,
-        workholding,
-        lut,
-        spindle_strategy,
-    );
+    let input =
+        feeds_input_for_operation(operation, tool, material, machine, lut, spindle_strategy);
     crate::feeds::explain_feeds(&input)
 }
 

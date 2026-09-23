@@ -332,7 +332,6 @@ impl ProjectSession {
             tool,
             &self.stock.material,
             &self.machine,
-            self.stock.workholding_rigidity,
             crate::feeds::embedded_vendor_lut(),
             self.post.spindle_strategy,
         )
@@ -401,7 +400,6 @@ impl ProjectSession {
             tool,
             machine: &self.machine,
             material: &self.stock.material,
-            workholding: self.stock.workholding_rigidity,
             lut: crate::feeds::embedded_vendor_lut(),
             spindle_strategy: self.post.spindle_strategy,
             context: SuggestContext {

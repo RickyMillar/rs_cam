@@ -212,8 +212,8 @@ pub struct ProjectStockConfig {
     pub origin_z: f64,
     #[serde(default = "default_stock_padding")]
     pub padding: f64,
-    #[serde(default = "default_workholding_rigidity")]
-    pub workholding_rigidity: crate::feeds::WorkholdingRigidity,
+    // Ruling R4 Q8 (2026-09-24): `workholding_rigidity` is gone; an old
+    // file's key is ignored on load.
     #[serde(default = "default_true")]
     pub auto_from_model: bool,
     #[serde(default)]
@@ -234,7 +234,6 @@ impl Default for ProjectStockConfig {
             origin_y: 0.0,
             origin_z: 0.0,
             padding: 5.0,
-            workholding_rigidity: crate::feeds::WorkholdingRigidity::Medium,
             auto_from_model: true,
             material: crate::material::Material::default(),
             alignment_pins: Vec::new(),
@@ -251,9 +250,6 @@ fn default_stock_z() -> f64 {
 }
 fn default_stock_padding() -> f64 {
     5.0
-}
-fn default_workholding_rigidity() -> crate::feeds::WorkholdingRigidity {
-    crate::feeds::WorkholdingRigidity::Medium
 }
 
 // UI-07: `ProjectPostConfig` lived here — a second post config whose
@@ -577,7 +573,6 @@ pub(crate) fn stock_from_project(ps: &ProjectStockConfig) -> StockConfig {
         material: ps.material.clone(),
         alignment_pins: ps.alignment_pins.clone(),
         flip_axis: ps.flip_axis,
-        workholding_rigidity: ps.workholding_rigidity,
     }
 }
 

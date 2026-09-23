@@ -78,7 +78,7 @@ use rs_cam_core::feeds::predict::{
 use rs_cam_core::feeds::suggest::{
     SuggestContext, SuggestForOperationInput, SuggestWarning, suggest_for_operation,
 };
-use rs_cam_core::feeds::{SpindleStrategy, WorkholdingRigidity, embedded_vendor_lut};
+use rs_cam_core::feeds::{SpindleStrategy, embedded_vendor_lut};
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, PlasticFamily, WoodSpecies};
 use rs_cam_core::tool_load::verdict::UnmodeledReason;
@@ -402,7 +402,6 @@ fn suggest_warnings(material: &Material) -> Vec<SuggestWarning> {
         tool: &tool,
         machine: &machine,
         material,
-        workholding: WorkholdingRigidity::Medium,
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::MatchChart,
         context: SuggestContext::default(),

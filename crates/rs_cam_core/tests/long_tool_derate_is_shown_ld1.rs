@@ -36,7 +36,7 @@ use rs_cam_core::diagnostics::adapters::from_feeds::diagnostics_from_feeds_resul
 use rs_cam_core::diagnostics::{Severity, ids};
 use rs_cam_core::feeds::{
     FeedsInput, FeedsResult, FeedsWarning, OperationFamily, PassRole, SetupContext,
-    SpindleStrategy, ToolGeometryHint, WorkholdingRigidity, calculate, embedded_vendor_lut,
+    SpindleStrategy, ToolGeometryHint, calculate, embedded_vendor_lut,
 };
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
@@ -66,7 +66,6 @@ fn pocket(stickout_mm: Option<f64>) -> FeedsResult {
         vendor_lut: Some(embedded_vendor_lut()),
         setup: SetupContext {
             tool_overhang_mm: stickout_mm,
-            workholding_rigidity: WorkholdingRigidity::Medium,
         },
         spindle_strategy: SpindleStrategy::MatchChart,
     })

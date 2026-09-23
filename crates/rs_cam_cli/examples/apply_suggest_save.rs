@@ -32,7 +32,6 @@ fn main() -> Result<()> {
     let tools_snapshot: Vec<_> = session.tools().to_vec();
     let machine = session.machine().clone();
     let material = session.stock_config().material.clone();
-    let workholding = session.stock_config().workholding_rigidity;
     let lut = embedded_vendor_lut();
     let stock_ctx =
         StockContext::from_stock_bbox(session.stock_bbox(), session.stock_config().padding);
@@ -86,7 +85,6 @@ fn main() -> Result<()> {
             tool,
             machine: &machine,
             material: &material,
-            workholding,
             lut,
             spindle_strategy: SpindleStrategy::default(),
             context,

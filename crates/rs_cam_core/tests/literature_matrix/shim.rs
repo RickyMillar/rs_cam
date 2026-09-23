@@ -24,7 +24,6 @@ use rs_cam_core::feeds::suggest::{
 };
 use rs_cam_core::feeds::{
     self, FeedsInput, FeedsResult, OperationFamily, PassRole, SetupContext, SpindleStrategy,
-    WorkholdingRigidity,
 };
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::Material;
@@ -422,7 +421,6 @@ fn run_cell_in_material(
         vendor_lut: Some(lut),
         setup: SetupContext {
             tool_overhang_mm: Some(tool.stickout),
-            workholding_rigidity: WorkholdingRigidity::Medium,
         },
         spindle_strategy: SpindleStrategy::MaxSpeed,
     };

@@ -41,9 +41,7 @@ use rs_cam_core::feeds::suggest::{
     suggest_params,
 };
 use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
-use rs_cam_core::feeds::{
-    EMBEDDED_LUT, OperationFamily, PassRole, SpindleStrategy, WorkholdingRigidity,
-};
+use rs_cam_core::feeds::{EMBEDDED_LUT, OperationFamily, PassRole, SpindleStrategy};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
@@ -104,7 +102,6 @@ fn suggest(op: OperationType, tool: &ToolConfig) -> SuggestedParams {
         tool,
         machine: &m,
         material: &mat,
-        workholding: WorkholdingRigidity::Medium,
         lut: &EMBEDDED_LUT,
         stock_ctx: &s,
         spindle_strategy: SpindleStrategy::default(),

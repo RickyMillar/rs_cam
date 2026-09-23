@@ -81,7 +81,6 @@ fn try_recipe(
         tool,
         &stock.material,
         session.machine(),
-        stock.workholding_rigidity,
         rs_cam_core::feeds::embedded_vendor_lut(),
         session.post_config().spindle_strategy,
     )

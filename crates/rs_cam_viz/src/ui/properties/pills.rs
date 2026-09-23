@@ -261,7 +261,6 @@ mod tests {
             &tool,
             &stock.material,
             session.machine(),
-            stock.workholding_rigidity,
             rs_cam_core::feeds::embedded_vendor_lut(),
             session.post_config().spindle_strategy,
         )
@@ -292,7 +291,7 @@ mod tests {
     /// * raw feed = 18 000 x 0.127 x 2 x 1.0 = 4572 mm/min;
     /// * the long-tool share (stickout 45 mm, 7.5 x D) is a load target, not
     ///   a feed factor (ruling Q7), and the 0.75 safety factor is gone;
-    /// * workholding Medium: 1.0;
+    /// * no workholding factor (ruling R4 Q8 deleted it);
     /// * the cutting ceiling binds. This fixture's machine sets
     ///   `max_cutting_feed_mm_min` to 3999.9 mm/min;
     /// * the RPM follows the feed down to hold the chip (ruling R4 Q10): the
@@ -327,13 +326,11 @@ mod tests {
         let material = Material::SolidWood {
             species: WoodSpecies::GenericHardwood,
         };
-        let stock = session.stock_config();
         let result = rs_cam_core::feeds::suggest::feeds_result_for_operation(
             &op,
             &tool,
             &material,
             session.machine(),
-            stock.workholding_rigidity,
             rs_cam_core::feeds::embedded_vendor_lut(),
             session.post_config().spindle_strategy,
         )
@@ -526,7 +523,6 @@ mod tests {
             &tool,
             &stock.material,
             session.machine(),
-            stock.workholding_rigidity,
             rs_cam_core::feeds::embedded_vendor_lut(),
             session.post_config().spindle_strategy,
         )

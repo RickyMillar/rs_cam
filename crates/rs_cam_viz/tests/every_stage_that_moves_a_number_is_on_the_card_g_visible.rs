@@ -93,8 +93,7 @@ use rs_cam_core::feeds::suggest::{
     suggest_for_operation,
 };
 use rs_cam_core::feeds::{
-    FeedsWarning, OperationFamily, PassRole, SpindleStrategy, WorkholdingRigidity,
-    embedded_vendor_lut,
+    FeedsWarning, OperationFamily, PassRole, SpindleStrategy, embedded_vendor_lut,
 };
 use rs_cam_core::machine::{MachineProfile, PowerModel};
 use rs_cam_core::material::{Material, PlywoodGrade, SheetGoodKind, WoodSpecies};
@@ -502,7 +501,6 @@ fn records(state: &AppState) -> (Vec<FeedsWarning>, Vec<SuggestWarning>) {
         tool: &tool,
         machine: session.machine(),
         material: &session.stock_config().material,
-        workholding: session.stock_config().workholding_rigidity,
         lut: embedded_vendor_lut(),
         spindle_strategy: session.post_config().spindle_strategy,
         context: SuggestContext {
@@ -629,7 +627,6 @@ fn first_skip_cell(
                     tool: &tool,
                     machine: &machine,
                     material,
-                    workholding: WorkholdingRigidity::Medium,
                     lut: embedded_vendor_lut(),
                     spindle_strategy: SpindleStrategy::MatchChart,
                     context: SuggestContext::default(),

@@ -22,7 +22,6 @@ pub(super) fn calculate_and_apply_feeds(
     tool: &crate::state::job::ToolConfig,
     material: &rs_cam_core::material::Material,
     machine: &rs_cam_core::machine::MachineProfile,
-    workholding: rs_cam_core::feeds::WorkholdingRigidity,
     spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
     project_default_rpm: u32,
     load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
@@ -36,7 +35,6 @@ pub(super) fn calculate_and_apply_feeds(
         tool,
         material,
         machine,
-        workholding,
         rs_cam_core::feeds::embedded_vendor_lut(),
         spindle_strategy,
     ) {
@@ -50,7 +48,6 @@ pub(super) fn calculate_and_apply_feeds(
                 material,
                 project_default_rpm,
                 load_verdict,
-                workholding,
                 spindle_strategy,
                 model_bbox,
                 events,
@@ -167,7 +164,6 @@ fn draw_feeds_card(
     material: &rs_cam_core::material::Material,
     project_default_rpm: u32,
     load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
-    workholding: rs_cam_core::feeds::WorkholdingRigidity,
     spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
     model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
     events: &mut Vec<AppEvent>,
@@ -178,7 +174,6 @@ fn draw_feeds_card(
         tool,
         material,
         machine,
-        workholding,
         spindle_strategy,
     );
     let current = crate::ui::feeds::compare::current_values_for_operation(
@@ -197,7 +192,6 @@ fn draw_feeds_card(
             tool,
             machine,
             material,
-            workholding,
             lut: rs_cam_core::feeds::embedded_vendor_lut(),
             spindle_strategy,
             // Q1: the box the runtime-sanity stepover back-off reads.

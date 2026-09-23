@@ -29,9 +29,7 @@ use crate::feeds::suggest::{
     SuggestContext, SuggestForOperationInput, SuggestWarning, axial_envelope_for_operation,
     feeds_explain_for_operation, suggest_for_operation,
 };
-use crate::feeds::{
-    CutterKind, FeedsError, FeedsExplain, FeedsResult, VendorLut, WorkholdingRigidity,
-};
+use crate::feeds::{CutterKind, FeedsError, FeedsExplain, FeedsResult, VendorLut};
 use crate::machine::MachineProfile;
 use crate::material::Material;
 use crate::tool::ToolDefinition;
@@ -73,7 +71,6 @@ pub struct CutterOpProfileInput<'a, 'ctx> {
     pub tool: &'a ToolConfig,
     pub machine: &'a MachineProfile,
     pub material: &'a Material,
-    pub workholding: WorkholdingRigidity,
     pub lut: &'a VendorLut,
     /// Spindle-RPM policy. See [`crate::feeds::SpindleStrategy`].
     pub spindle_strategy: crate::feeds::SpindleStrategy,
@@ -152,7 +149,6 @@ impl<'a> CutterOpProfile<'a> {
             input.tool,
             input.material,
             input.machine,
-            input.workholding,
             input.lut,
             input.spindle_strategy,
         );
@@ -162,7 +158,6 @@ impl<'a> CutterOpProfile<'a> {
             tool: input.tool,
             machine: input.machine,
             material: input.material,
-            workholding: input.workholding,
             lut: input.lut,
             spindle_strategy: input.spindle_strategy,
             context: input.context,
@@ -244,7 +239,6 @@ mod tests {
             tool,
             machine,
             material,
-            workholding: WorkholdingRigidity::Medium,
             lut: embedded_vendor_lut(),
             spindle_strategy: crate::feeds::SpindleStrategy::default(),
             context: SuggestContext::default(),
@@ -269,7 +263,6 @@ mod tests {
             tool: &tool,
             machine: &machine,
             material: &material,
-            workholding: WorkholdingRigidity::Medium,
             lut: embedded_vendor_lut(),
             spindle_strategy: crate::feeds::SpindleStrategy::default(),
             context: SuggestContext::default(),

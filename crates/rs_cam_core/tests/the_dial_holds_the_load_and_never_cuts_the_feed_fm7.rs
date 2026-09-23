@@ -42,8 +42,7 @@ use rs_cam_core::feeds::suggest::{
     suggest_for_operation,
 };
 use rs_cam_core::feeds::{
-    FeedsWarning, OperationFamily, PassRole, SpindleStrategy, WorkholdingRigidity,
-    embedded_vendor_lut,
+    FeedsWarning, OperationFamily, PassRole, SpindleStrategy, embedded_vendor_lut,
 };
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::MachineProfile;
@@ -99,7 +98,6 @@ fn suggest(
         tool,
         machine,
         material,
-        workholding: WorkholdingRigidity::Medium,
         lut: embedded_vendor_lut(),
         spindle_strategy: SpindleStrategy::MatchChart,
         context: SuggestContext::default(),
@@ -219,7 +217,6 @@ fn the_dial_scales_the_engagement_and_holds_the_chip_fm7() {
     let dr = &r.derates;
     assert_eq!(dr.power_limit, 1.0, "precondition: no power limit");
     assert_eq!(dr.feed_clamp, 1.0, "precondition: no machine ceiling");
-    assert_eq!(dr.workholding, 1.0, "precondition: Medium workholding");
     let expected = dr.target_chip_load_mm * dr.depth_tier * r.rpm * 2.0;
     assert!(
         (r.feed_rate_mm_min - expected).abs() <= expected * REL_EPS,

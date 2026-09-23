@@ -328,9 +328,6 @@ fn draw_headline(ui: &mut egui::Ui, explain: &FeedsExplain) {
     }
     if held_back {
         let mut reasons: Vec<&str> = Vec::new();
-        if r.derates.workholding < 0.999 {
-            reasons.push("workholding rigidity");
-        }
         if r.derates.depth_tier < 0.999 {
             reasons.push("cut depth");
         }
@@ -656,9 +653,10 @@ pub(crate) fn draw_chart_c(
                 );
             }
             // Target (pre-derate) operating point. Shows where the
-            // recommendation *would* sit if the depth / workholding /
-            // power / feed-clamp derates weren't applied (ruling R4 removed
-            // the safety factor; the overhang share is a load target). The
+            // recommendation *would* sit if the depth / power / feed-clamp
+            // derates weren't applied (ruling R4 removed the safety factor
+            // and the workholding factor; the overhang share is a load
+            // target). The
             // arrow from target → recommended makes the derate visually
             // obvious.
             let target_chipload = explain.recommended.derates.target_chip_load_mm;

@@ -1969,13 +1969,6 @@
             "null"
           ]
         },
-        "workholding_rigidity": {
-          "description": "Workholding rigidity for the feeds calculation: \"low\", \"medium\"\nor \"high\". Omit to leave unchanged.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
         "x": {
           "description": "Stock width (X) in mm. Omit to leave unchanged.",
           "format": "double",

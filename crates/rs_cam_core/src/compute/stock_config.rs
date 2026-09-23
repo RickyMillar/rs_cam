@@ -97,13 +97,9 @@ pub struct StockConfig {
     /// must treat it as advisory and never as evidence about the pins.
     #[serde(default)]
     pub flip_axis: Option<FlipAxis>,
-    /// Workholding rigidity for feeds calculation.
-    #[serde(default = "default_workholding_rigidity")]
-    pub workholding_rigidity: crate::feeds::WorkholdingRigidity,
-}
-
-fn default_workholding_rigidity() -> crate::feeds::WorkholdingRigidity {
-    crate::feeds::WorkholdingRigidity::Medium
+    // Ruling R4 Q8 (2026-09-24): `workholding_rigidity` is gone. The machine
+    // aggressiveness dial is the one load margin. An old file's key is
+    // ignored on load (no alias, no `deny_unknown_fields`).
 }
 
 impl Default for StockConfig {
@@ -120,7 +116,6 @@ impl Default for StockConfig {
             material: crate::material::Material::default(),
             alignment_pins: Vec::new(),
             flip_axis: None,
-            workholding_rigidity: crate::feeds::WorkholdingRigidity::Medium,
         }
     }
 }

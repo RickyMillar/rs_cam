@@ -15,7 +15,6 @@ use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::config::StockSource;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::compute::transform::ZRotation;
-use rs_cam_core::feeds::WorkholdingRigidity;
 use rs_cam_core::material::Material;
 
 // ── Parameter structs ─────────────────────────────────────────────────
@@ -733,9 +732,6 @@ pub struct SetStockConfigParam {
     /// with the candidate list rather than guessed. Load-bearing: every
     /// feed, chipload band and power estimate depends on it.
     pub material: Option<String>,
-    /// Workholding rigidity for the feeds calculation: "low", "medium"
-    /// or "high". Omit to leave unchanged.
-    pub workholding_rigidity: Option<String>,
     /// Auto-fit the stock to the next imported model's bounding box.
     ///
     /// Setting any dimension or origin above CLEARS this flag
@@ -1211,20 +1207,6 @@ pub fn coerce_json_container_string(value: serde_json::Value) -> serde_json::Val
 
 // ── Stock config vocabulary ───────────────────────────────────────────
 
-/// Parse a workholding-rigidity name. Unknown input is an explicit
-/// error — this feeds the feeds calculation, so a silent fallback to
-/// `Medium` would be a wrong number with no trace.
-pub fn parse_workholding_rigidity(s: &str) -> Result<WorkholdingRigidity, String> {
-    match s.trim().to_ascii_lowercase().as_str() {
-        "low" => Ok(WorkholdingRigidity::Low),
-        "medium" | "med" => Ok(WorkholdingRigidity::Medium),
-        "high" => Ok(WorkholdingRigidity::High),
-        other => Err(format!(
-            "Unknown workholding rigidity '{other}'. Valid values: low, medium, high."
-        )),
-    }
-}
-
 /// Punctuation- and case-insensitive key for material-name matching.
 fn material_key(s: &str) -> String {
     s.chars()
@@ -1518,9 +1500,8 @@ pub fn build_info() -> serde_json::Value {
             // - `set_toolpath_param` / `set_tool_param` / `set_dressup_field`
             //   declare a typed `value`, so ARRAYS survive the wire.
             "typed_param_value",
-            // - `set_stock_config` carries origin, material and
-            //   workholding rigidity, and clears `auto_from_model` when
-            //   geometry is set explicitly.
+            // - `set_stock_config` carries origin and material, and
+            //   clears `auto_from_model` when geometry is set explicitly.
             "stock_config_origin_material",
             // - `add_tool` takes per-type geometry, REFUSES the
             //   type-defining angle/radius when it is missing, and
@@ -2127,14 +2108,12 @@ mod tests {
             "x": 240.0, "y": 250.0, "z": 25.0,
             "origin_x": 0.0, "origin_y": 0.0, "origin_z": -25.0,
             "material": "White Oak",
-            "workholding_rigidity": "high",
             "auto_from_model": false
         }))
         .unwrap();
         assert_eq!(p.x, Some(240.0));
         assert_eq!(p.origin_z, Some(-25.0));
         assert_eq!(p.material.as_deref(), Some("White Oak"));
-        assert_eq!(p.workholding_rigidity.as_deref(), Some("high"));
         assert_eq!(p.auto_from_model, Some(false));
 
         // The pre-existing three-field call still deserializes.
@@ -2169,24 +2148,6 @@ mod tests {
         assert!(err.contains("6061"), "{err}");
 
         assert!(resolve_material("   ").is_err());
-    }
-
-    #[test]
-    fn workholding_rigidity_parses_or_refuses() {
-        assert_eq!(
-            parse_workholding_rigidity("Low"),
-            Ok(WorkholdingRigidity::Low)
-        );
-        assert_eq!(
-            parse_workholding_rigidity(" medium "),
-            Ok(WorkholdingRigidity::Medium)
-        );
-        assert_eq!(
-            parse_workholding_rigidity("HIGH"),
-            Ok(WorkholdingRigidity::High)
-        );
-        let err = parse_workholding_rigidity("rigid").unwrap_err();
-        assert!(err.contains("low, medium, high"), "{err}");
     }
 
     /// Machine kinematics: all-optional patch, so a caller can set

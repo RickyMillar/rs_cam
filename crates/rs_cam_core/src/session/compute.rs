@@ -1147,8 +1147,8 @@ struct AdvisorContext {
     /// The post dials the candidate simulation reads: the default spindle
     /// speed and the rapid-feed pair.
     post: crate::gcode::PostConfig,
-    /// The stock. The ranking reads its material and its workholding
-    /// rigidity; the chipload envelope reads the material again.
+    /// The stock. The ranking reads its material; the chipload envelope
+    /// reads the material again.
     stock: crate::compute::StockConfig,
     /// The simulator-side id of the toolpath the advisor advises on.
     toolpath_id: ToolpathId,
@@ -1259,7 +1259,6 @@ pub fn execute_recommend_clearing_strategy(
 
     let machine = &context.machine;
     let material = &context.stock.material;
-    let workholding = context.stock.workholding_rigidity;
 
     // Plan each candidate at its load-limited params. Collect OWNED
     // toolpaths so the `StrategyCandidate` borrows outlive the ranking.
@@ -1284,7 +1283,6 @@ pub fn execute_recommend_clearing_strategy(
                 tool: &resolved.tool,
                 machine,
                 material,
-                workholding,
                 lut: crate::feeds::embedded_vendor_lut(),
                 spindle_strategy: crate::feeds::SpindleStrategy::default(),
                 // Q1: the bbox the runtime-sanity back-off and the

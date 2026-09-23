@@ -313,28 +313,14 @@ pub enum PassRole {
 }
 
 /// Setup context for derating feeds based on physical setup conditions.
+///
+/// **The workholding rigidity is gone (ruling R4 Q8, 2026-09-24).** It was an
+/// unsourced feed scale (0.85 / 1.00 / 1.03). The machine aggressiveness dial
+/// (`MachineProfile::aggressiveness`) is the one load margin.
+#[derive(Default)]
 pub struct SetupContext {
     /// Tool overhang from collet face (mm). Used for L/D derate.
     pub tool_overhang_mm: Option<f64>,
-    /// Workholding rigidity affects feed rate.
-    pub workholding_rigidity: WorkholdingRigidity,
-}
-
-impl Default for SetupContext {
-    fn default() -> Self {
-        Self {
-            tool_overhang_mm: None,
-            workholding_rigidity: WorkholdingRigidity::Medium,
-        }
-    }
-}
-
-/// Workholding rigidity level.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum WorkholdingRigidity {
-    Low,
-    Medium,
-    High,
 }
 
 /// Policy for choosing operating-point RPM along the constant-chipload
@@ -605,8 +591,6 @@ pub struct FeedsDerates {
     /// smaller engagement, not a thinner chip. It is therefore NOT part of
     /// [`Self::combined_factor`].
     pub ld_overhang: f64,
-    /// Workholding rigidity factor (0.85 / 1.00 / 1.03 for Low/Med/High).
-    pub workholding: f64,
     /// Power-limit factor (≤ 1.0). Applied when the calc had to back
     /// off feed to stay within the spindle's power envelope.
     pub power_limit: f64,
@@ -746,8 +730,9 @@ impl FeedsDerates {
         //
         // Ruling R4 (2026-09-24): the machine safety factor is gone, and the
         // long-tool share `ld_overhang` is a load target, not a feed factor
-        // (Q7), so neither is composed here.
-        self.depth_tier * self.workholding * self.power_limit * self.feed_clamp
+        // (Q7), so neither is composed here. The workholding factor is gone
+        // (Q8): the dial is the one load margin.
+        self.depth_tier * self.power_limit * self.feed_clamp
     }
 
     /// Effective chipload that the toolpath will actually cut at,
@@ -2105,15 +2090,6 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     } else {
         1.0
     };
-    // Workholding rigidity adjustment
-    const WORKHOLDING_LOW_FACTOR: f64 = 0.85;
-    const WORKHOLDING_HIGH_FACTOR: f64 = 1.03;
-    let workholding_factor = match input.setup.workholding_rigidity {
-        WorkholdingRigidity::Low => WORKHOLDING_LOW_FACTOR,
-        WorkholdingRigidity::High => WORKHOLDING_HIGH_FACTOR,
-        WorkholdingRigidity::Medium => 1.0,
-    };
-    raw_feed *= workholding_factor;
 
     // --- Step 6: Power check ---
     // Materials without a primary-source Kc skip the power-vs-machine
@@ -2776,7 +2752,6 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         observed_combined_chip_thinning: chip_thinning,
         depth_tier,
         ld_overhang: ld_factor,
-        workholding: workholding_factor,
         power_limit: power_factor,
         feed_clamp: feed_clamp_factor,
         spindle_scale,

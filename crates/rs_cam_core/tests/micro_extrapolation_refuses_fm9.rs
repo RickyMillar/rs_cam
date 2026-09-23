@@ -41,9 +41,7 @@ use rs_cam_core::feeds::support::{
     MICRO_ROW_RATIO_MAX, MICRO_ROW_RATIO_MIN, MICRO_TOOL_DIAMETER_MM, micro_extrapolation_refusal,
 };
 use rs_cam_core::feeds::vendor_lut::ToolFamily;
-use rs_cam_core::feeds::{
-    EMBEDDED_LUT, FeedsError, FeedsSupport, SpindleStrategy, WorkholdingRigidity,
-};
+use rs_cam_core::feeds::{EMBEDDED_LUT, FeedsError, FeedsSupport, SpindleStrategy};
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
 
@@ -84,7 +82,6 @@ fn suggest(
         tool,
         machine: &machine,
         material,
-        workholding: WorkholdingRigidity::Medium,
         lut: &EMBEDDED_LUT,
         stock_ctx: &stock,
         spindle_strategy: SpindleStrategy::default(),

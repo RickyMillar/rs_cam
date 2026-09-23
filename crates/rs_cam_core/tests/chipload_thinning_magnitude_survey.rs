@@ -85,7 +85,7 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::suggest::{
     StockContext, SuggestContext, SuggestParamsInput, suggest_params,
 };
-use rs_cam_core::feeds::{EMBEDDED_LUT, FeedsWarning, SpindleStrategy, WorkholdingRigidity};
+use rs_cam_core::feeds::{EMBEDDED_LUT, FeedsWarning, SpindleStrategy};
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, PlywoodGrade, SheetGoodKind, WoodSpecies};
 
@@ -261,7 +261,6 @@ fn sweep() -> Vec<Point> {
                         tool: &tool,
                         machine: &machine,
                         material: &material,
-                        workholding: WorkholdingRigidity::Medium,
                         lut: &EMBEDDED_LUT,
                         stock_ctx: &stock,
                         spindle_strategy: SpindleStrategy::default(),

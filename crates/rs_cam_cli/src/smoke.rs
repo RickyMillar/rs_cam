@@ -517,7 +517,6 @@ fn materialize_case_toolpath(
     };
     let machine = session.machine().clone();
     let material = session.stock_config().material.clone();
-    let workholding = session.stock_config().workholding_rigidity;
     // Q1: the model this case machines is the one the `ToolpathConfig`
     // below binds. Reading it BEFORE the Suggest call is the whole fix —
     // `SuggestContext::model_bbox` gates the runtime-sanity stepover
@@ -529,7 +528,6 @@ fn materialize_case_toolpath(
         tool: &tool,
         machine: &machine,
         material: &material,
-        workholding,
         lut: embedded_vendor_lut(),
         stock_ctx: &stock_ctx,
         spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),

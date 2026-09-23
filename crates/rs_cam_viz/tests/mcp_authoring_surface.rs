@@ -10,8 +10,8 @@
 //!   `invalid type: string "[[2.5,2.5],[237.5,247.5]]", expected a
 //!   sequence`. The pin-drill hole list had to be hand-written.
 //! - `set_stock_config` set only x/y/z — no origin, no material, no
-//!   workholding rigidity — and did not clear `auto_from_model`, so a
-//!   stock set explicitly to 240x250x25 kept an origin silently
+//!   workholding rigidity (deleted since, ruling R4 Q8) — and did not
+//!   clear `auto_from_model`, so a stock set explicitly to 240x250x25 kept an origin silently
 //!   re-derived from the last imported model's bounding box.
 //! - `add_tool` took only name/type/diameter and filled type-AGNOSTIC
 //!   defaults, so a 20-degree V-bit was created as a 90-degree one.
@@ -129,12 +129,12 @@ fn set_tool_param_description_lists_every_parameter_it_accepts() {
     }
 }
 
-/// Gaps 1 + 2 — origin, material and rigidity are expressible, every
+/// Gaps 1 + 2 — origin and material are expressible, every
 /// field is optional, and the description states the `auto_from_model`
 /// rule. The silent disagreement between "what I set" and "what is
 /// stored" is the actual defect, so the rule has to be on the surface.
 #[test]
-fn set_stock_config_carries_origin_material_and_rigidity() {
+fn set_stock_config_carries_origin_and_material() {
     let facts = tool_facts("set_stock_config");
     for field in [
         "x",
@@ -144,7 +144,6 @@ fn set_stock_config_carries_origin_material_and_rigidity() {
         "origin_y",
         "origin_z",
         "material",
-        "workholding_rigidity",
         "auto_from_model",
     ] {
         let _ = property(&facts, field);

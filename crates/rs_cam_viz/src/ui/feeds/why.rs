@@ -274,10 +274,9 @@ fn explain_advance(out: &mut String, explain: &FeedsExplain) {
     // Ruling R4 (2026-09-24): the machine safety factor is gone, and the
     // long-tool share is a load target, not a feed factor (Q7). Neither is
     // in this list; the long-tool line and the aggressiveness line on the
-    // card state them.
+    // card state them. The workholding factor is gone (Q8).
     for (label, value) in [
         ("depth tier", d.depth_tier),
-        ("workholding rigidity", d.workholding),
         ("power limit", d.power_limit),
         ("feed cap", d.feed_clamp),
     ] {

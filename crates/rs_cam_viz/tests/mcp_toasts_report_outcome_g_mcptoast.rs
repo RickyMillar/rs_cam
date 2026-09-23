@@ -278,7 +278,6 @@ fn suggest_for(
         tool,
         machine: session.machine(),
         material: &session.stock_config().material,
-        workholding: session.stock_config().workholding_rigidity,
         lut: rs_cam_core::feeds::embedded_vendor_lut(),
         stock_ctx: &stock_ctx,
         spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),

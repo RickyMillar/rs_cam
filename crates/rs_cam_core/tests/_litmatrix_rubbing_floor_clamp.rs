@@ -1,7 +1,26 @@
 //! Literature-matrix regression — the 0.025 mm/tooth rubbing floor and the
 //! extreme-Janka Ipe cell.
 //!
-//! ## RE-PINNED 2026-09-24 — ruling R4 WP3: the cell no longer reaches the floor
+//! ## RE-PINNED 2026-09-24 — ruling R4 Q8: no feed factor is left on the cell
+//!
+//! Ruling R4 Q8 deleted the workholding rigidity and its 0.85 / 1.00 / 1.03
+//! feed factor. The machine aggressiveness dial is the one load margin. The
+//! moved cell lost its `Low` workholding, because the selector is gone.
+//! Predicted chain:
+//!
+//! | setup | feed factors | advance (mm/tooth) | warns |
+//! |---|---|---:|---|
+//! | default (no stickout) | none | 0.034567 / 0.75 = **0.046089** | no |
+//! | stickout 45 mm | none | **0.046089** (x 1/0.85 against 0.039176) | no |
+//!
+//! Q8 changes the moved cell's advance by 1/0.85. It changes no warning: the
+//! cell was already above the floor after WP3. No lever that the repository
+//! still has puts this cell under the floor without a new species, tool or
+//! row, so the arms pin "above the floor, equal to the default-setup
+//! advance". The floor warning itself is pinned by
+//! `rubbing_floor_warns_and_never_lifts`.
+//!
+//! ## RE-PINNED 2026-09-24 (earlier) — ruling R4 WP3: the cell no longer reaches the floor
 //!
 //! Ruling R4 WP3 removed the 0.75 machine safety factor from the feed, and
 //! Q7 moved the long-tool share out of the feed into the dial's load target.
@@ -143,7 +162,7 @@
 
 use rs_cam_core::feeds::{
     FeedsInput, FeedsWarning, OperationFamily, PassRole, SetupContext, SpindleStrategy,
-    ToolGeometryHint, WorkholdingRigidity, calculate, embedded_vendor_lut,
+    ToolGeometryHint, calculate, embedded_vendor_lut,
 };
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
@@ -178,15 +197,12 @@ const DEFAULT_TOOL_STICKOUT_MM: f64 = 45.0;
 /// ruling R4 Q7 it is a load target, not a feed factor.
 const LONG_TOOL_FACTOR: f64 = 0.75;
 
-/// The low-rigidity workholding factor (`feeds/mod.rs`, Step 5b).
-const LOW_WORKHOLDING_FACTOR: f64 = 0.85;
-
-/// The moved cell's advance after ruling R4 WP3: 0.034567 / 0.75 x 0.85 =
-/// 0.039176, from the verifier's measured 0.034567 mm/tooth at the default
-/// setup before WP3 (a six-decimal print, so the pin carries a 1e-5
-/// tolerance). Was 0.022036 (x 0.75 L/D x 0.75 safety). RE-MEASURE if it
-/// moves.
-const IPE_MOVED_CELL_ADVANCE_MM_TOOTH: f64 = 0.039_176;
+/// The moved cell's advance after ruling R4 Q8: 0.034567 / 0.75 = 0.046089,
+/// from the verifier's measured 0.034567 mm/tooth at the default setup
+/// before WP3 (a six-decimal print, so the pin carries a 1e-5 tolerance).
+/// PREDICTED, not yet measured. Was 0.039176 (x 0.85 workholding, WP3) and
+/// before that 0.022036 (x 0.75 L/D x 0.75 safety). RE-MEASURE if it moves.
+const IPE_MOVED_CELL_ADVANCE_MM_TOOTH: f64 = 0.046_089;
 
 fn calc_ipe_6mm(setup: SetupContext) -> rs_cam_core::feeds::FeedsResult {
     let lut = embedded_vendor_lut();
@@ -215,12 +231,10 @@ fn calc_ipe_6mm(setup: SetupContext) -> rs_cam_core::feeds::FeedsResult {
     })
 }
 
-/// The moved cell: the Ipe Ø6 pocket with the default GUI stickout and
-/// low-rigidity workholding.
+/// The moved cell: the Ipe Ø6 pocket with the default GUI stickout.
 fn calc_ipe_6mm_long_tool() -> rs_cam_core::feeds::FeedsResult {
     calc_ipe_6mm(SetupContext {
         tool_overhang_mm: Some(DEFAULT_TOOL_STICKOUT_MM),
-        workholding_rigidity: WorkholdingRigidity::Low,
     })
 }
 
@@ -244,7 +258,8 @@ fn record_the_cell() {
 
 #[test]
 fn ipe_pocket_ships_its_computed_feed_above_the_floor_after_r4() {
-    // RE-PINNED 2026-09-24 (ruling R4 WP3). See the file doc for the chain.
+    // RE-PINNED 2026-09-24 (ruling R4 WP3, then Q8). See the file doc for the
+    // chain.
     let result = calc_ipe_6mm_long_tool();
     let rpm = result.rpm;
     let flutes = 2.0_f64;
@@ -286,20 +301,18 @@ fn ipe_pocket_ships_its_computed_feed_above_the_floor_after_r4() {
     assert!(
         (chipload - IPE_MOVED_CELL_ADVANCE_MM_TOOTH).abs() < 1e-5,
         "the moved cell's advance moved: {chipload:.6} vs pinned \
-         {IPE_MOVED_CELL_ADVANCE_MM_TOOTH} (0.034567 / 0.75 x 0.85)",
+         {IPE_MOVED_CELL_ADVANCE_MM_TOOTH} (0.034567 / 0.75)",
     );
 
-    // The only feed factor left between the two setups is the workholding
-    // 0.85. The long-tool share is a load target (ruling R4 Q7).
+    // No feed factor is left between the two setups: the long-tool share is
+    // a load target (ruling R4 Q7), and the workholding factor is gone (Q8).
     let short = calc_ipe_6mm(SetupContext::default());
     let short_chipload = short.feed_rate_mm_min / (short.rpm * flutes);
-    let expected = short_chipload * LOW_WORKHOLDING_FACTOR;
     assert!(
-        (chipload - expected).abs() <= short_chipload * 1e-9,
-        "the moved-cell advance {chipload:.9} is not {LOW_WORKHOLDING_FACTOR} x the \
-         default-setup advance {short_chipload:.9}",
+        (chipload - short_chipload).abs() <= short_chipload * 1e-9,
+        "the moved-cell advance {chipload:.9} is not the default-setup advance \
+         {short_chipload:.9}",
     );
-    assert_eq!(result.derates.workholding, LOW_WORKHOLDING_FACTOR);
     assert_eq!(
         result.derates.ld_overhang, LONG_TOOL_FACTOR,
         "L/D 7.5 takes the 0.75 long-tool share, on the record only"
@@ -314,7 +327,7 @@ fn ipe_pocket_does_not_warn_below_the_floor_after_r4() {
             .warnings
             .iter()
             .any(|w| matches!(w, FeedsWarning::ChiploadBelowRubbingFloor { .. })),
-        "the moved Ipe cell ships above the floor after ruling R4 WP3, so no floor \
+        "the moved Ipe cell ships above the floor after ruling R4 WP3 and Q8, so no floor \
          warning. Warnings: {:?}",
         result.warnings,
     );

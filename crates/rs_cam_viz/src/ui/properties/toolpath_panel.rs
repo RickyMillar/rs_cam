@@ -466,7 +466,6 @@ fn draw_geometry_tab(
     let rest_heatmap_on = inputs.rest_heatmap_on;
     let material = &inputs.material;
     let machine = &inputs.machine;
-    let workholding = inputs.workholding;
     let spindle_strategy = inputs.spindle_strategy;
     let model_has_enriched = inputs.model_has_enriched;
     let model_is_step_missing_brep = inputs.model_is_step_missing_brep;
@@ -548,7 +547,6 @@ fn draw_geometry_tab(
             tool_cfg,
             material,
             machine,
-            workholding,
             rs_cam_core::feeds::embedded_vendor_lut(),
             spindle_strategy,
         )
@@ -1025,7 +1023,6 @@ fn draw_feeds_tab(
     let tool_configs = inputs.tool_configs.as_slice();
     let material = &inputs.material;
     let machine = &inputs.machine;
-    let workholding = inputs.workholding;
     let spindle_strategy = inputs.spindle_strategy;
     let project_default_rpm = inputs.project_default_rpm;
     let load_verdict = inputs.load_verdict.as_ref();
@@ -1059,7 +1056,6 @@ fn draw_feeds_tab(
             tool_cfg,
             material,
             machine,
-            workholding,
             spindle_strategy,
             project_default_rpm,
             load_verdict,

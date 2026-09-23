@@ -454,7 +454,6 @@ impl RsCamApp {
             "material": stock.material.label(),
             "padding": stock.padding,
             "auto_from_model": stock.auto_from_model,
-            "workholding_rigidity": format!("{:?}", stock.workholding_rigidity),
             "alignment_pins": pins,
             "flip_axis": stock.flip_axis.map(|fa| fa.label()),
         }))

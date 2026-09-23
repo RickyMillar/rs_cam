@@ -44,8 +44,8 @@ use rs_cam_core::feeds::suggest::{
 use rs_cam_core::feeds::vendor_lut::VendorLut;
 use rs_cam_core::feeds::{
     EMBEDDED_LUT, FeedsInput, FeedsResult, FeedsWarning, OperationFamily, PassRole, RpmFloorSource,
-    SetupContext, SpindleScaleReason, SpindleStrategy, ToolGeometryHint, WorkholdingRigidity,
-    calculate, embedded_vendor_lut,
+    SetupContext, SpindleScaleReason, SpindleStrategy, ToolGeometryHint, calculate,
+    embedded_vendor_lut,
 };
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::MachineProfile;
@@ -274,7 +274,6 @@ fn suggest_ships_the_lowered_rpm_with_a_rationale_row_fm8() {
         tool: &tool,
         machine: &machine,
         material: &material,
-        workholding: WorkholdingRigidity::Medium,
         lut: &EMBEDDED_LUT,
         stock_ctx: &stock,
         spindle_strategy: SpindleStrategy::MatchChart,

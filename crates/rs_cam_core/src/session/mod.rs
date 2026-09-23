@@ -1571,7 +1571,7 @@ impl ProjectSession {
     /// `tc.model_id`), stock context from the stock bbox + padding,
     /// and default policy/scope — then runs
     /// [`CutterOpProfile::for_combo`] against the session's machine,
-    /// stock material, workholding, post-config spindle strategy, and
+    /// stock material, post-config spindle strategy, and
     /// the embedded vendor LUT.
     ///
     /// Returns `None` when the toolpath's tool id doesn't resolve —
@@ -1605,7 +1605,6 @@ impl ProjectSession {
             tool,
             machine: self.machine(),
             material: &stock.material,
-            workholding: stock.workholding_rigidity,
             lut: crate::feeds::embedded_vendor_lut(),
             spindle_strategy: self.post_config().spindle_strategy,
             context,

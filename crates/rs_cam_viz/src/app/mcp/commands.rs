@@ -52,7 +52,7 @@ use rs_cam_core::session::{
 
 use rs_cam_mcp::server::{
     BuiltTool, build_tool_config, coerce_json_container_string, json_str, parse_operation_type,
-    parse_workholding_rigidity, resolve_material, text,
+    resolve_material, text,
 };
 
 use crate::app::RsCamApp;
@@ -798,7 +798,6 @@ impl RsCamApp {
                     tool,
                     machine: session.machine(),
                     material: &session.stock_config().material,
-                    workholding: session.stock_config().workholding_rigidity,
                     lut: rs_cam_core::feeds::embedded_vendor_lut(),
                     stock_ctx: &stock_ctx,
                     spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
@@ -1032,18 +1031,6 @@ impl RsCamApp {
             },
             None => None,
         };
-        let rigidity = match spec.workholding_rigidity.as_deref() {
-            Some(name) => match parse_workholding_rigidity(name) {
-                Ok(r) => Some(r),
-                Err(e) => {
-                    return CorePlan::Answered(mutation_error_json(
-                        &format!("Error: {e}"),
-                        Some("workholding_rigidity"),
-                    ));
-                }
-            },
-            None => None,
-        };
         for (label, value) in [("x", spec.x), ("y", spec.y), ("z", spec.z)] {
             if let Some(v) = value
                 && (!v.is_finite() || v <= 0.0)
@@ -1099,9 +1086,6 @@ impl RsCamApp {
         }
         if let Some(m) = material {
             stock.material = m;
-        }
-        if let Some(r) = rigidity {
-            stock.workholding_rigidity = r;
         }
 
         let auto_after = match spec.auto_from_model {
@@ -2298,7 +2282,7 @@ impl RsCamApp {
             CommandId::SetStockConfig => {
                 self.controller.state_mut().gui.mark_edited();
                 let stale = self.core_stale(&effects);
-                let (x, y, z, origin_x, origin_y, origin_z, material_label, rigidity_label) = {
+                let (x, y, z, origin_x, origin_y, origin_z, material_label) = {
                     let stock = self.controller.state().session.stock_config();
                     (
                         stock.x,
@@ -2308,7 +2292,6 @@ impl RsCamApp {
                         stock.origin_y,
                         stock.origin_z,
                         stock.material.label(),
-                        format!("{:?}", stock.workholding_rigidity),
                     )
                 };
                 let auto_before = before
@@ -2342,7 +2325,7 @@ impl RsCamApp {
                 };
                 let summary = format!(
                     "Stock: {x:.1} x {y:.1} x {z:.1} mm at origin ({origin_x:.2}, {origin_y:.2}, \
-                     {origin_z:.2}), material {material_label}, workholding {rigidity_label}, \
+                     {origin_z:.2}), material {material_label}, \
                      auto_from_model {auto_after}. Regenerate toolpaths and simulation to apply."
                 );
                 CoreReply::quiet(self.mcp_mutation_result(
@@ -2354,7 +2337,6 @@ impl RsCamApp {
                         "origin": { "x": origin_x, "y": origin_y, "z": origin_z },
                         "stock_top_z": origin_z + z,
                         "material": material_label,
-                        "workholding_rigidity": rigidity_label,
                         "auto_from_model": auto_after,
                         "auto_from_model_was": auto_before,
                         "fields_set": geometry_set,

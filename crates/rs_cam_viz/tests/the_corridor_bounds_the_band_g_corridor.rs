@@ -332,7 +332,6 @@ fn suggested_mm(cutter: &Cutter) -> f64 {
         tool,
         &stock.material,
         state.session.machine(),
-        stock.workholding_rigidity,
         rs_cam_core::feeds::embedded_vendor_lut(),
         state.session.post_config().spindle_strategy,
     );
@@ -461,7 +460,6 @@ fn measured(cutter: &Cutter) -> (f64, Option<f64>, f64) {
         tool,
         &stock.material,
         state.session.machine(),
-        stock.workholding_rigidity,
         rs_cam_core::feeds::embedded_vendor_lut(),
         state.session.post_config().spindle_strategy,
     );

@@ -338,7 +338,6 @@ pub(crate) struct ToolpathPanelInputs {
     pub validation: ToolpathValidationContext,
     pub material: rs_cam_core::material::Material,
     pub machine: rs_cam_core::machine::MachineProfile,
-    pub workholding: rs_cam_core::feeds::WorkholdingRigidity,
     pub spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
     pub project_default_rpm: u32,
     pub model_has_enriched: bool,
@@ -443,7 +442,6 @@ pub(crate) fn toolpath_panel_inputs(
     let validation = ToolpathValidationContext::from_session(session);
     let material = session.stock_config().material.clone();
     let machine = session.machine().clone();
-    let workholding = session.stock_config().workholding_rigidity;
 
     // Check if the toolpath's model has enriched mesh (for face selection UI)
     let model_for_panel = session
@@ -566,7 +564,6 @@ pub(crate) fn toolpath_panel_inputs(
         validation,
         material,
         machine,
-        workholding,
         spindle_strategy: session.post_config().spindle_strategy,
         project_default_rpm: session.post_config().spindle_speed,
         model_has_enriched,

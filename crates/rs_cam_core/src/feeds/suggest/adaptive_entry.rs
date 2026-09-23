@@ -303,8 +303,8 @@ fn geometry_feed_factor(geom: ToolGeometryHint, tool: &ToolConfig, _ae_mm: f64, 
 ///
 /// The **implied target chipload**: commanded advance per tooth divided by the
 /// geometry terms. Every other factor in the calculator's feed expression
-/// (target chipload, RPM, flute count, the L/D overhang derate, the
-/// workholding factor, the power derate, the safety factor) is independent of
+/// (target chipload, RPM, flute count, the L/D overhang derate, the power
+/// derate, the safety factor) is independent of
 /// `ae` / `ap`, so holding the implied target fixed and re-multiplying by the
 /// factor at the final geometry reproduces exactly the feed the calculator
 /// would have produced had it been handed the final values — without

@@ -30,7 +30,7 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::suggest::{
     StockContext, SuggestContext, SuggestParamsInput, SuggestedParams, suggest_params,
 };
-use rs_cam_core::feeds::{EMBEDDED_LUT, FeedsError, SpindleStrategy, WorkholdingRigidity};
+use rs_cam_core::feeds::{EMBEDDED_LUT, FeedsError, SpindleStrategy};
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
 
@@ -84,7 +84,6 @@ fn suggest(op: OperationType, kind: ToolType) -> Result<SuggestedParams, FeedsEr
         tool: &tool,
         machine: &machine,
         material: &material,
-        workholding: WorkholdingRigidity::Medium,
         lut: &EMBEDDED_LUT,
         stock_ctx: &stock,
         spindle_strategy: SpindleStrategy::default(),

@@ -67,7 +67,7 @@
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::{
     FeedsInput, FeedsResult, FeedsWarning, OperationFamily, PassRole, SetupContext,
-    SpindleStrategy, ToolGeometryHint, WorkholdingRigidity, calculate, embedded_vendor_lut,
+    SpindleStrategy, ToolGeometryHint, calculate, embedded_vendor_lut,
 };
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
@@ -140,7 +140,6 @@ fn pocket_rough(machine: &MachineProfile, tool: &ToolConfig) -> FeedsResult {
         vendor_lut: Some(embedded_vendor_lut()),
         setup: SetupContext {
             tool_overhang_mm: Some(tool.stickout),
-            workholding_rigidity: WorkholdingRigidity::Medium,
         },
         spindle_strategy: SpindleStrategy::MatchChart,
     })
@@ -166,7 +165,6 @@ fn drill_cycle(machine: &MachineProfile, tool: &ToolConfig) -> FeedsResult {
         vendor_lut: Some(embedded_vendor_lut()),
         setup: SetupContext {
             tool_overhang_mm: Some(tool.stickout),
-            workholding_rigidity: WorkholdingRigidity::Medium,
         },
         spindle_strategy: SpindleStrategy::MatchChart,
     })

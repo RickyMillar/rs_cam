@@ -632,7 +632,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "inspect_stock",
-        description = "Inspect stock configuration: dimensions, origin, material, padding, alignment pins, workholding rigidity."
+        description = "Inspect stock configuration: dimensions, origin, material, padding, alignment pins."
     )]
     async fn inspect_stock(&self) -> String {
         self.cheap_read(McpRequestKind::InspectStock, McpReadKind::InspectStock)
@@ -1083,7 +1083,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "set_stock_config",
-        description = "Set stock geometry and material. Every field is optional — omit one to leave it unchanged. Dimensions x/y/z (mm); origin_x/origin_y/origin_z (mm, the stock spans origin..origin+size, so origin_z is the stock BOTTOM and a 2D job normally wants origin_z = -z to put the top at Z=0); material by name (\"White Oak\", \"Baltic Birch Plywood\", \"MDF\", \"Acrylic\", \"Aluminum 6061-T6\" — every feed, chipload band and power estimate depends on it, and an unknown or ambiguous name is refused with candidates rather than guessed); workholding_rigidity (\"low\"/\"medium\"/\"high\"). SETTING ANY DIMENSION OR ORIGIN CLEARS `auto_from_model`, and the reply says so under `auto_from_model`: otherwise the next import_model silently re-derives the stock from that model's bounding box and overwrites what you just set. Pass auto_from_model explicitly to override that. Invalidates simulation — re-run to update."
+        description = "Set stock geometry and material. Every field is optional — omit one to leave it unchanged. Dimensions x/y/z (mm); origin_x/origin_y/origin_z (mm, the stock spans origin..origin+size, so origin_z is the stock BOTTOM and a 2D job normally wants origin_z = -z to put the top at Z=0); material by name (\"White Oak\", \"Baltic Birch Plywood\", \"MDF\", \"Acrylic\", \"Aluminum 6061-T6\" — every feed, chipload band and power estimate depends on it, and an unknown or ambiguous name is refused with candidates rather than guessed). SETTING ANY DIMENSION OR ORIGIN CLEARS `auto_from_model`, and the reply says so under `auto_from_model`: otherwise the next import_model silently re-derives the stock from that model's bounding box and overwrites what you just set. Pass auto_from_model explicitly to override that. Invalidates simulation — re-run to update."
     )]
     async fn set_stock_config(&self, Parameters(param): Parameters<SetStockConfigParam>) -> String {
         Self::format_result(

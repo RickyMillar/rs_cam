@@ -204,14 +204,9 @@ fn vendor_sidebyside_chipload_spotcheck() {
             dr.observed_combined_chip_thinning
         );
         println!(
-            "           depth_tier={:.6}  ld={:.6}  workholding={:.6}  power={:.6}  \
+            "           depth_tier={:.6}  ld={:.6}  power={:.6}  \
              feed_clamp={:.6}  spindle_scale={:.6}",
-            dr.depth_tier,
-            dr.ld_overhang,
-            dr.workholding,
-            dr.power_limit,
-            dr.feed_clamp,
-            dr.spindle_scale
+            dr.depth_tier, dr.ld_overhang, dr.power_limit, dr.feed_clamp, dr.spindle_scale
         );
 
         match (&result.matched_lut_row, result.chipload_bounds) {
@@ -312,8 +307,11 @@ fn vendor_sidebyside_chipload_spotcheck() {
 /// commanded advance per tooth equals
 ///
 /// ```text
-/// target_chip_load_mm x depth_tier x workholding
+/// target_chip_load_mm x depth_tier
 /// ```
+///
+/// **`workholding` left this identity on 2026-09-24** (ruling R4 Q8): the
+/// workholding factor is gone. Every probe ran it at Medium (1.0).
 ///
 /// **`safety_factor` and `ld` left this identity on 2026-09-24** (ruling R4):
 /// the safety factor is gone, and the long-tool share `ld` is a load target
@@ -364,7 +362,7 @@ fn the_recommendation_is_the_transferred_band_midpoint_times_the_derate_stack() 
         let divisor = result.rpm * f64::from(probe.flutes);
         assert!(divisor > 0.0, "{}: no fpt divisor", probe.label);
         let commanded_fpt = result.feed_rate_mm_min / divisor;
-        let predicted = dr.target_chip_load_mm * dr.depth_tier * dr.workholding;
+        let predicted = dr.target_chip_load_mm * dr.depth_tier;
         assert!(
             (commanded_fpt - predicted).abs() < 1e-9,
             "{}: commanded {commanded_fpt:.9} != seed-midpoint identity {predicted:.9} \

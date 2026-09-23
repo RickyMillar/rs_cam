@@ -147,7 +147,6 @@ fn panel_recipe(
         &tool_of(controller),
         &stock.material,
         session.machine(),
-        stock.workholding_rigidity,
         rs_cam_core::feeds::embedded_vendor_lut(),
         session.post_config().spindle_strategy,
     )
@@ -168,7 +167,6 @@ fn modal_preview(
         &tool_of(controller),
         &stock.material,
         session.machine(),
-        stock.workholding_rigidity,
         rs_cam_core::feeds::embedded_vendor_lut(),
         session.post_config().spindle_strategy,
     )

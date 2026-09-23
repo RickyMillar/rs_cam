@@ -101,7 +101,6 @@ pub(crate) fn compute_preview_for_operation(
     tool: &crate::state::job::ToolConfig,
     material: &rs_cam_core::material::Material,
     machine: &rs_cam_core::machine::MachineProfile,
-    workholding: rs_cam_core::feeds::WorkholdingRigidity,
     spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
 ) -> FeedsPreview {
     rs_cam_core::feeds::suggest::feeds_preview_for_operation(
@@ -109,7 +108,6 @@ pub(crate) fn compute_preview_for_operation(
         tool,
         material,
         machine,
-        workholding,
         rs_cam_core::feeds::embedded_vendor_lut(),
         spindle_strategy,
     )
@@ -135,7 +133,6 @@ pub(crate) fn compute_preview(
         tool,
         &stock.material,
         state.session.machine(),
-        stock.workholding_rigidity,
         rs_cam_core::feeds::embedded_vendor_lut(),
         state.session.post_config().spindle_strategy,
     ))

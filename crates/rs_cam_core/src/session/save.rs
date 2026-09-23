@@ -148,7 +148,6 @@ impl ProjectSession {
             origin_y: self.stock.origin_y,
             origin_z: self.stock.origin_z,
             padding: self.stock.padding,
-            workholding_rigidity: self.stock.workholding_rigidity,
             auto_from_model: self.stock.auto_from_model,
             material: self.stock.material.clone(),
             alignment_pins: self.stock.alignment_pins.clone(),

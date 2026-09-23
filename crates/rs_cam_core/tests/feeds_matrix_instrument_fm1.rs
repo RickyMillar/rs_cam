@@ -61,7 +61,7 @@ use rs_cam_core::feeds::suggest::{
     StockContext, SuggestContext, SuggestParamsInput, SuggestedParams, suggest_params,
 };
 use rs_cam_core::feeds::vendor_lut::{MaterialFamily, VendorObservation};
-use rs_cam_core::feeds::{EMBEDDED_LUT, FeedsSupport, SpindleStrategy, WorkholdingRigidity};
+use rs_cam_core::feeds::{EMBEDDED_LUT, FeedsSupport, SpindleStrategy};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, PlywoodGrade, SheetGoodKind, WoodSpecies};
@@ -214,7 +214,6 @@ fn suggest(
         tool,
         machine,
         material,
-        workholding: WorkholdingRigidity::Medium,
         lut: &EMBEDDED_LUT,
         stock_ctx: stock,
         spindle_strategy: SpindleStrategy::default(),
@@ -933,7 +932,7 @@ fn summary(machine: &MachineProfile, cells: &[Cell], sim: &SimOutcome) -> String
     .expect("write");
     writeln!(
         w,
-        "- Workholding `Medium`, `SpindleStrategy::default()`, `SuggestContext::default()`, \
+        "- `SpindleStrategy::default()`, `SuggestContext::default()`, \
          stock context top 0, bottom -18, height 18, padding 2."
     )
     .expect("write");
