@@ -75,10 +75,14 @@ pub struct RigidityProfile {
 /// carries, so the bound and the provenance beside it cannot disagree.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct RigidityDepthCap {
-    /// The profile's own factor for this family: `doc_roughing_factor`,
-    /// `doc_finishing_factor` or `adaptive_doc_factor`.
+    /// The profile's own factor for this family: `doc_roughing_factor`
+    /// or `adaptive_doc_factor`.
     pub factor: f64,
-    /// The tool diameter the factor multiplies, in mm.
+    /// The diameter the factor multiplies, in mm: the engaged diameter
+    /// at the judged depth, from
+    /// `crate::feeds::geometry::depth_cap_diameter_mm`. On a flat, ball,
+    /// bull or V-bit tool that is the nominal diameter. On a tapered
+    /// ball it is the cone diameter at the depth, capped at the shank.
     pub diameter_mm: f64,
 }
 
@@ -94,11 +98,19 @@ impl RigidityProfile {
     /// **The axial depth cap this profile implies for one operation
     /// family, and the factor behind it.** S3 (2026-09-18).
     ///
-    /// `None` for a family with no axial cap. Today that is
-    /// [`OperationFamily::Drill`] alone: a drill cycle is Z-only, so
-    /// there is no radial engagement and no axial rule of thumb to
-    /// judge it by. A drill operation also carries no
-    /// `depth_per_pass`, so the Suggest clamp never reaches this arm.
+    /// `None` for an operation with no axial cap:
+    ///
+    /// - [`OperationFamily::Drill`]: a drill cycle is Z-only, so there
+    ///   is no radial engagement and no axial rule of thumb to judge it
+    ///   by. A drill operation also carries no `depth_per_pass`, so the
+    ///   Suggest clamp never reaches this arm.
+    /// - A `SemiFinish` or `Finish` pass outside the adaptive family.
+    ///   Feeds matrix R2 (2026-09-23): no vendor publishes an axial
+    ///   finishing cap as a fraction of D for wood (EVIDENCE 5.1-3,
+    ///   5.1-12), and the operator ruled for the most flexibility. The
+    ///   depth of a finishing pass is reported, and the deflection
+    ///   gate is its limit. `doc_finishing_factor` stays on the profile
+    ///   but no cap reads it.
     ///
     /// The factor follows the family first and the pass role second,
     /// which is the order `feeds::suggest::invariants::clamp_dpp_to_rigidity`
@@ -111,13 +123,16 @@ impl RigidityProfile {
     /// | `Drill` | none |
     /// | `Adaptive` | `adaptive_doc_factor` |
     /// | any other, `Roughing` | `doc_roughing_factor` |
-    /// | any other, `SemiFinish` or `Finish` | `doc_finishing_factor` |
+    /// | any other, `SemiFinish` or `Finish` | none (R2) |
     ///
     /// **This is the one producer of the cap.** The Suggest clamp calls
     /// it for its roughing branch and the post-simulation depth
     /// criterion (`tool_load::depth`) calls it for the bound it judges
     /// against, so the number the operator's recipe was lowered to and
-    /// the number the row draws against are the same number.
+    /// the number the row draws against are the same number. Both
+    /// callers pass `diameter_mm` from the one function
+    /// `crate::feeds::geometry::depth_cap_diameter_mm` at their own
+    /// depth (the shipped depth and the measured peak).
     #[must_use]
     pub fn depth_cap_mm(
         &self,
@@ -130,10 +145,10 @@ impl RigidityProfile {
             (OperationFamily::Drill, _) => return None,
             (OperationFamily::Adaptive, _) => self.adaptive_doc_factor,
             (_, PassRole::Roughing) => self.doc_roughing_factor,
-            // The profile publishes two milling factors, and the split
-            // is roughing against not-roughing. A semi-finish pass is
-            // not roughing, so it reads the finishing factor.
-            (_, PassRole::SemiFinish | PassRole::Finish) => self.doc_finishing_factor,
+            // Feeds matrix R2 (2026-09-23): a finishing or semi-finishing
+            // pass has no axial ceiling. Its depth is reported, and the
+            // deflection gate decides.
+            (_, PassRole::SemiFinish | PassRole::Finish) => return None,
         };
         Some(RigidityDepthCap {
             factor,

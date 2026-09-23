@@ -1888,7 +1888,19 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // says "at least", Amana says "feed rate"), keyed to the AXIAL depth.
     // `depth_tier_multiplier` is `geometry::doc_derating_scale`, the one
     // scale that the chipload band and the post-sim gate also use (R3).
-    let depth_tier = geometry::depth_tier_multiplier(ap, d);
+    //
+    // Feeds matrix R2 (2026-09-23): on a tapered ball the diameter is the
+    // engaged diameter at `ap`, the one the band below and the post-sim
+    // chipload gate de-rate at. Before R2 the feed used the tip `d`, so
+    // the feed and the band read two ratios on one tool. Every other shape
+    // keeps `d`; see `geometry::feed_ladder_diameter_mm`.
+    let ladder_d = geometry::feed_ladder_diameter_mm(
+        input.tool_geometry,
+        ap,
+        d,
+        input.shank_diameter.unwrap_or(d),
+    );
+    let depth_tier = geometry::depth_tier_multiplier(ap, ladder_d);
 
     let mut raw_feed = rpm * chip_load * input.flute_count as f64 * depth_tier;
 

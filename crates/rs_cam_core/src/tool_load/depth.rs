@@ -37,16 +37,33 @@
 //! ## The bound, and why it does not gate
 //!
 //! The cap is [`RigidityProfile::depth_cap_mm`]: the profile's own
-//! factor for the operation family, times the tool diameter. It is a
+//! factor for the operation family, times the diameter that
+//! `feeds::geometry::depth_cap_diameter_mm` gives at the measured peak
+//! (the engaged cone diameter on a tapered ball, the nominal diameter on
+//! every other shape). It is a
 //! RULE OF THUMB with no published source, so it carries
 //! [`BoundSource::RigidityRuleOfThumb`], whose `gates_export()` is
 //! false. An exceedance is reported; the export goes ahead. The day the
 //! machine is measured, the variant is replaced by a measured one and
 //! the row gates with no change to any renderer (`PLAN.md` §11).
 //!
-//! **This gate adds no number.** The one helper it calls is the one the
-//! Suggest clamp calls, so the cap the recipe was lowered to and the
+//! **This gate adds no number.** The two helpers it calls are the ones
+//! the Suggest clamp calls, so the cap the recipe was lowered to and the
 //! cap this row draws against cannot disagree.
+//!
+//! ## A finishing pass has no bound (feeds matrix R2, 2026-09-23)
+//!
+//! No vendor publishes an axial finishing cap as a fraction of D for
+//! wood. For a `Finish` or `SemiFinish` pass the profile gives no cap,
+//! and this gate returns [`DepthVerdict::Reported`]: the peak and its
+//! population, with no bound. The deflection gate is the limit on that
+//! pass.
+//!
+//! ## The comparison tolerance
+//!
+//! The dexel stock stores lengths in `f32`, so the peak carries `f32`
+//! noise. The comparison widens the cap by
+//! [`DEXEL_DEPTH_RESOLUTION_MM`] (EVIDENCE 5.1-6).
 //!
 //! ## Refusal cases
 //!
@@ -63,7 +80,6 @@
 //! the same contract `power.rs` and `deflection.rs` carry.
 
 use crate::stock::simulation_cut::SimulationCutSample;
-use crate::tool::MillingCutter;
 
 use super::locality::SpanLookup;
 use super::verdict::{
@@ -75,6 +91,17 @@ use super::verdict::{
 /// plunge-only cycle". Identical to the three milling gates', so a
 /// drill toolpath's rows read the same way across the whole tier.
 const DRILL_NOT_APPLICABLE: &str = "drill cycle — no continuous engagement";
+
+/// The depth resolution of the dexel stock, in mm. EVIDENCE 5.1-6.
+///
+/// The stock stores each segment end as an `f32`, so a removed column
+/// is the difference of two `f32` lengths, with an error of about two
+/// `f32` ulp of the ray length. One ulp at 256 to 512 mm is about
+/// 3.1e-5 mm, so 1e-4 mm covers a column in stock up to 512 mm deep.
+/// The 18 mm fixture of EVIDENCE 5.1-6 read 7.6e-7 mm. The 8-ulp `f64`
+/// slack in `boundary` does not cover it: that slack is about 2e-15 mm
+/// at a 1.2 mm cap.
+pub const DEXEL_DEPTH_RESOLUTION_MM: f64 = 1.0e-4;
 
 #[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id.0, op = ?ctx.operation_kind))]
 pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) -> DepthVerdict {
@@ -126,47 +153,13 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
         };
     };
 
-    // The family and the pass role the Suggest clamp keys on, read off
-    // the operation's own registry spec — the same pair, from the same
-    // place, so the two readers cannot classify one operation
-    // differently.
-    let spec = operation_kind.spec();
-    let bound =
-        machine
-            .rigidity
-            .depth_cap_mm(spec.feeds_family, spec.feeds_pass_role, tool.diameter());
-    let Some(bound) = bound else {
-        // Only the drill family has no axial cap, and the drill arm
-        // above already took it. Kept so a family added to the profile
-        // without a factor surfaces as "doesn't apply" rather than as a
-        // fabricated bound.
-        tracing::debug!(
-            reason = "NotApplicableForOp",
-            "depth gate refuses: this operation family carries no axial cap"
-        );
-        return DepthVerdict::Unmodeled {
-            reason: UnmodeledReason::NotApplicableForOp(DRILL_NOT_APPLICABLE.to_owned()),
-        };
-    };
-    let cap_mm = bound.cap_mm();
-    if !cap_mm.is_finite() || cap_mm <= 0.0 {
-        tracing::debug!(
-            reason = "NotImplemented",
-            diameter = tool.diameter(),
-            factor = bound.factor,
-            "depth gate refuses: the rigidity cap is not a usable depth"
-        );
-        return DepthVerdict::Unmodeled {
-            reason: UnmodeledReason::NotImplemented(
-                "the tool reports no usable diameter for the rigidity cap".to_owned(),
-            ),
-        };
-    }
-
     // X-VAC — the same population contract `power.rs` carries. With
     // `peak_mm == 0.0` and an empty population the verdict below is a
     // `Within` at zero depth, which is the most reassuring thing this
     // gate can print, so the population has to say it rests on nothing.
+    //
+    // Feeds matrix R2 (2026-09-23): the walk comes BEFORE the bound,
+    // because the bound's diameter is read at the measured peak.
     let span_lookup = spans.map(SpanLookup::new);
     let mut offered: usize = 0;
     let mut contributing: usize = 0;
@@ -198,7 +191,72 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     }
 
     let population = GatePopulation::new(contributing, offered, PopulationUnit::Samples);
-    let exceeds = super::boundary::exceeds_high(peak_mm, cap_mm, 0.0);
+    let evidence_with =
+        |statistic: ChiploadStatistic| match peak_idx {
+            Some(idx) => SampleEvidence::at_with_stat(idx, statistic)
+                .with_locality(trace.samples.get(idx).and_then(|s| {
+                    super::locality::classify_sample_locality(s, span_lookup.as_ref())
+                }))
+                .with_population(population),
+            None => SampleEvidence::empty().with_population(population),
+        };
+
+    // The family and the pass role the Suggest clamp keys on, read off
+    // the operation's own registry spec — the same pair, from the same
+    // place, so the two readers cannot classify one operation
+    // differently. The diameter is `depth_cap_diameter_mm` at the
+    // measured peak: the function the Suggest clamp calls at the depth
+    // it ships. On a tapered ball it is the engaged cone diameter at the
+    // peak, capped at the shank; on every other shape it is the nominal
+    // diameter.
+    let spec = operation_kind.spec();
+    let cap_diameter_mm = crate::feeds::geometry::depth_cap_diameter_mm(tool, peak_mm);
+    let bound =
+        machine
+            .rigidity
+            .depth_cap_mm(spec.feeds_family, spec.feeds_pass_role, cap_diameter_mm);
+    let Some(bound) = bound else {
+        // Feeds matrix R2 (2026-09-23): a finishing or semi-finishing
+        // pass has no axial cap. The drill family also has none, but the
+        // drill arm above already took it. The gate reports the peak and
+        // judges nothing; the deflection gate is the limit on this pass.
+        tracing::debug!(
+            verdict = "Reported",
+            peak_mm,
+            "depth gate reports: this pass role carries no axial cap"
+        );
+        return DepthVerdict::Reported {
+            peak_mm,
+            evidence: evidence_with(ChiploadStatistic::PeakInRange),
+            confidence: Confidence::Approximate(format!(
+                "peak engaged depth {peak_mm:.3} mm; a finishing pass has no \
+                 axial cap, and the deflection gate is its limit"
+            )),
+        };
+    };
+    let cap_mm = bound.cap_mm();
+    if !cap_mm.is_finite() || cap_mm <= 0.0 {
+        tracing::debug!(
+            reason = "NotImplemented",
+            diameter = cap_diameter_mm,
+            factor = bound.factor,
+            "depth gate refuses: the rigidity cap is not a usable depth"
+        );
+        return DepthVerdict::Unmodeled {
+            reason: UnmodeledReason::NotImplemented(
+                "the tool reports no usable diameter for the rigidity cap".to_owned(),
+            ),
+        };
+    }
+
+    // EVIDENCE 5.1-6 / 5.2-16: the dexel stock stores its segment ends
+    // in `f32`, so a removed column is an `f32` difference. A Profile
+    // cut at exactly the cap read 7.6e-7 mm above it and printed
+    // `Exceeds` at 1.2000 against 1.2000. The tolerance is the dexel
+    // resolution, as a fraction of the cap, in the form the other gates
+    // pass their own tolerance.
+    let exceeds =
+        super::boundary::exceeds_high(peak_mm, cap_mm, DEXEL_DEPTH_RESOLUTION_MM / cap_mm);
     // The statistic is the chipload gate's own vocabulary, and it is
     // the right one: a peak read against a high bound, `PeakHigh` when
     // it trips and `PeakInRange` when it does not. One deep excursion is
@@ -208,22 +266,14 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     } else {
         ChiploadStatistic::PeakInRange
     };
-    let evidence =
-        match peak_idx {
-            Some(idx) => SampleEvidence::at_with_stat(idx, statistic)
-                .with_locality(trace.samples.get(idx).and_then(|s| {
-                    super::locality::classify_sample_locality(s, span_lookup.as_ref())
-                }))
-                .with_population(population),
-            None => SampleEvidence::empty().with_population(population),
-        };
+    let evidence = evidence_with(statistic);
     // Every figure here is formatted from the value it describes. The
     // confidence is `Approximate` on both decided arms because the
     // bound is a rule of thumb, and that is a property of the bound,
     // not of this cut.
     let confidence = Confidence::Approximate(format!(
         "peak engaged depth {peak_mm:.3} mm against the machine rigidity \
-         factor {:.2} times the tool diameter {:.2} mm",
+         factor {:.2} times the engaged diameter {:.2} mm at that depth",
         bound.factor, bound.diameter_mm
     ));
 
@@ -477,17 +527,50 @@ mod tests {
         ));
     }
 
-    /// A finishing operation reads `doc_finishing_factor` (0.10 × Ø6 =
-    /// 0.6 mm), so the same 1.2 mm cut that passes as roughing trips
-    /// here. The family decides the bound, not the gate.
+    /// Feeds matrix R2 (2026-09-23): a finishing operation has no axial
+    /// cap. Before R2 this 1.2 mm Trace cut read `Exceeds` against
+    /// `doc_finishing_factor` (0.10 × Ø6 = 0.6 mm). Now the gate reports
+    /// the peak with no bound, and the state is `Within`.
     #[test]
-    fn a_finishing_pass_reads_the_finishing_factor() {
-        let t = trace(vec![sample(0, 1.2, true)]);
-        match run(OperationType::Trace, Some(&t)) {
-            DepthVerdict::Exceeds { bound, .. } => {
-                assert!((bound.factor - 0.10).abs() < 1e-12);
+    fn a_finishing_pass_reports_its_depth_with_no_bound() {
+        let t = trace(vec![sample(0, 0.4, true), sample(1, 1.2, true)]);
+        let v = run(OperationType::Trace, Some(&t));
+        match &v {
+            DepthVerdict::Reported {
+                peak_mm, evidence, ..
+            } => {
+                assert!((peak_mm - 1.2).abs() < 1e-12);
+                assert_eq!(evidence.population.unwrap().contributing, 2);
             }
-            other => panic!("expected Exceeds against the finishing factor, got {other:?}"),
+            other => panic!("expected Reported, got {other:?}"),
         }
+        let status = v.as_criterion_status();
+        assert_eq!(status.state, crate::tool_load::verdict::LoadState::Within);
+        assert_eq!(status.bound, None);
+        assert_eq!(status.bound_source, None);
+        assert_eq!(status.display_peak, Some(1.2));
+    }
+
+    /// EVIDENCE 5.1-6: a Profile cut at exactly the cap read 7.6e-7 mm
+    /// above it, because the dexel stock stores lengths in `f32`. That
+    /// noise is inside [`DEXEL_DEPTH_RESOLUTION_MM`], so it is `Within`.
+    #[test]
+    fn f32_noise_at_the_cap_is_within() {
+        let t = trace(vec![sample(0, 1.5 + 7.6e-7, true)]);
+        assert!(matches!(
+            run(OperationType::Pocket, Some(&t)),
+            DepthVerdict::Within { .. }
+        ));
+    }
+
+    /// A reading one tenth of a micrometre past the dexel resolution is
+    /// a real exceedance.
+    #[test]
+    fn a_depth_past_the_dexel_resolution_exceeds() {
+        let t = trace(vec![sample(0, 1.5 + 2.0 * DEXEL_DEPTH_RESOLUTION_MM, true)]);
+        assert!(matches!(
+            run(OperationType::Pocket, Some(&t)),
+            DepthVerdict::Exceeds { .. }
+        ));
     }
 }

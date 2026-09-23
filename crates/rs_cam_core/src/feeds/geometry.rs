@@ -291,6 +291,81 @@ pub fn depth_tier_multiplier(ap: f64, diameter: f64) -> f64 {
     doc_derating_scale(ap / diameter)
 }
 
+/// **The diameter the feed's depth ladder divides by, at axial depth
+/// `ap`.** Feeds matrix R2 (2026-09-23).
+///
+/// - Tapered ball: the engaged diameter at `ap`
+///   ([`crate::feeds::ToolGeometryHint::engaged_diameter_at_doc`]). That
+///   is the diameter at which `feeds::calculate` de-rates the band and at
+///   which the post-sim chipload gate de-rates at the peak
+///   (`lookup_diameter_at`, the parity twin; the ×0.704 of EVIDENCE
+///   6-10). Before R2 the feed divided by the tip, so the feed and the
+///   band read two ratios on one tool.
+/// - Flat, ball, bull: the nominal diameter, which is also the engaged
+///   diameter for these shapes.
+/// - V-bit: the nominal diameter, unchanged. The band de-rates a V-bit at
+///   its engaged width; moving the feed to that width changes narrow
+///   V-bit feeds, which R2 did not rule on.
+///
+/// `feeds::calculate` Step 5a, Suggest pass 9 and the pass 9 sentry all
+/// call this one function.
+#[must_use]
+pub fn feed_ladder_diameter_mm(
+    geom: crate::feeds::ToolGeometryHint,
+    ap: f64,
+    nominal_d: f64,
+    shank_d: f64,
+) -> f64 {
+    match geom {
+        crate::feeds::ToolGeometryHint::TaperedBall { .. } => {
+            geom.engaged_diameter_at_doc(ap.max(0.0), nominal_d, shank_d)
+        }
+        crate::feeds::ToolGeometryHint::Flat
+        | crate::feeds::ToolGeometryHint::Ball
+        | crate::feeds::ToolGeometryHint::Bull { .. }
+        | crate::feeds::ToolGeometryHint::VBit { .. } => nominal_d,
+    }
+}
+
+/// **The diameter the rigidity depth cap multiplies, at one axial depth.**
+/// Feeds matrix R2 (2026-09-23).
+///
+/// The cap is `factor × D` (`RigidityProfile::depth_cap_mm`). Before R2
+/// the Suggest clamp gave it the tip of a tapered ball and the
+/// post-simulation depth gate gave it the shank (EVIDENCE 5.1-7, 3.5-15).
+/// Both doors now call this function, each at its own depth: Suggest at
+/// the depth it ships, the gate at the measured peak.
+///
+/// - Tapered ball: [`MillingCutter::lookup_diameter_at`], the engaged
+///   diameter at the depth. That is the ball chord below the tangency
+///   height and the cone diameter above it, capped at the shank. It is
+///   the same diameter at which the chipload gate applies the depth
+///   ladder (the ×0.704 of EVIDENCE 6-10), and at which
+///   `feeds::calculate` de-rates the feed and the band
+///   (`ToolGeometryHint::engaged_diameter_at_doc`, the parity twin).
+/// - Flat, ball and bull: the nominal diameter, which is also
+///   `lookup_diameter_at` for these shapes.
+/// - V-bit: the nominal diameter. The engaged width of a V-bit goes to
+///   zero at the tip, so a cap of `factor × width` has no positive depth
+///   that satisfies it.
+///
+/// A negative or non-finite depth reads as zero.
+#[must_use]
+pub fn depth_cap_diameter_mm(cutter: &dyn crate::tool::MillingCutter, depth_mm: f64) -> f64 {
+    let depth = if depth_mm.is_finite() {
+        depth_mm.max(0.0)
+    } else {
+        0.0
+    };
+    match cutter.geometry_hint() {
+        crate::feeds::ToolGeometryHint::TaperedBall { .. } => cutter.lookup_diameter_at(depth),
+        crate::feeds::ToolGeometryHint::Flat
+        | crate::feeds::ToolGeometryHint::Ball
+        | crate::feeds::ToolGeometryHint::Bull { .. }
+        | crate::feeds::ToolGeometryHint::VBit { .. } => cutter.diameter(),
+    }
+}
+
 /// V-bit cut width at a given depth.
 ///
 /// `included_angle` — full V angle in degrees

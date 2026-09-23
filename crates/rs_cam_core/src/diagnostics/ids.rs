@@ -26,6 +26,20 @@ pub const LOAD_POWER_EXCEEDS: &str = "load.power.exceeds";
 pub const LOAD_POWER_WITHIN: &str = "load.power.within";
 pub const LOAD_DEFLECTION_EXCEEDS: &str = "load.deflection.exceeds";
 pub const LOAD_DEFLECTION_WITHIN: &str = "load.deflection.within";
+/// The measured depth of cut is inside the machine rigidity cap
+/// (`tool_load::depth`, a roughing pass). Feeds matrix R2 (2026-09-23).
+pub const LOAD_DEPTH_WITHIN: &str = "load.depth.within";
+/// The measured depth of cut is past the machine rigidity cap. The cap
+/// is a rule of thumb, so this finding never refuses an export
+/// (EVIDENCE 5.1-15: before R2 no depth finding reached this list).
+pub const LOAD_DEPTH_EXCEEDS: &str = "load.depth.exceeds";
+/// The measured depth of a finishing or semi-finishing pass, reported
+/// with no bound. Feeds matrix R2: no axial cap applies to that pass.
+pub const LOAD_DEPTH_REPORTED: &str = "load.depth.reported";
+/// The depth gate did not measure (no simulation, stale simulation, no
+/// machine profile). Its own id, so a reader of ids alone never reads
+/// "within" for a gate that measured nothing (EVIDENCE 5.1-14).
+pub const LOAD_DEPTH_UNMODELED: &str = "load.depth.unmodeled";
 
 // ── Drill gates ──────────────────────────────────────────────────────
 pub const DRILL_CHIP_WELDING: &str = "drill.chip_welding";
@@ -309,6 +323,10 @@ pub const ALL: &[&str] = &[
     LOAD_POWER_WITHIN,
     LOAD_DEFLECTION_EXCEEDS,
     LOAD_DEFLECTION_WITHIN,
+    LOAD_DEPTH_WITHIN,
+    LOAD_DEPTH_EXCEEDS,
+    LOAD_DEPTH_REPORTED,
+    LOAD_DEPTH_UNMODELED,
     DRILL_CHIP_WELDING,
     DRILL_PECK_ADEQUACY,
     DRILL_PLUNGE_FEED,

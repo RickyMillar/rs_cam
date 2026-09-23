@@ -364,26 +364,68 @@ fn clamp_dpp_to_rigidity(
     // against cannot disagree. The branch is unchanged: adaptive family
     // → `adaptive_doc_factor`, otherwise (this pass is roughing-only) →
     // `doc_roughing_factor`. The helper's `None` arm is the drill
-    // family, and a drill operation carries no `depth_per_pass`, so the
-    // `if let` below never binds there.
-    if let Some(current) = operation.depth_per_pass()
-        && matches!(pass_role, PassRole::Roughing)
-        && let Some(cap) = machine.rigidity.depth_cap_mm(
-            operation.op_type().spec().feeds_family,
-            pass_role,
-            tool.diameter,
-        )
-    {
-        let cap = cap.cap_mm();
-        if current.is_finite() && cap.is_finite() && cap > 0.0 && current > cap {
-            operation.set_depth_per_pass(cap);
-            warnings.push(SuggestWarning::RoughingDepthClampedToRigidity {
-                requested: current,
-                capped: cap,
-            });
-        }
+    // family and (feeds matrix R2, 2026-09-23) every finishing and
+    // semi-finishing pass, which gets no axial ceiling.
+    //
+    // R2: the diameter is `geometry::depth_cap_diameter_mm` at the depth
+    // under test, the function the gate calls at the measured peak. On a
+    // tapered ball that is the engaged cone diameter, not the tip.
+    let Some(current) = operation.depth_per_pass() else {
+        return warnings;
+    };
+    if !matches!(pass_role, PassRole::Roughing) || !current.is_finite() {
+        return warnings;
+    }
+    let family = operation.op_type().spec().feeds_family;
+    let cutter = crate::compute::cutter::build_cutter(tool);
+    let cap_at = |depth: f64| -> Option<f64> {
+        let diameter = crate::feeds::geometry::depth_cap_diameter_mm(&cutter, depth);
+        machine
+            .rigidity
+            .depth_cap_mm(family, pass_role, diameter)
+            .map(|c| c.cap_mm())
+            .filter(|cap| cap.is_finite() && *cap > 0.0)
+    };
+    let Some(cap_at_current) = cap_at(current) else {
+        return warnings;
+    };
+    if current > cap_at_current {
+        let capped = deepest_depth_within_cap(cap_at_current, &cap_at);
+        operation.set_depth_per_pass(capped);
+        warnings.push(SuggestWarning::RoughingDepthClampedToRigidity {
+            requested: current,
+            capped,
+        });
     }
     warnings
+}
+
+/// The deepest depth at or below `first_cap` that is inside the cap
+/// measured at that same depth. Feeds matrix R2 (2026-09-23).
+///
+/// When the cap diameter does not change with depth (flat, ball, bull,
+/// V-bit), the answer is `first_cap` itself, returned unchanged. On a
+/// tapered ball the cap grows with depth, so the cap at `first_cap` is
+/// smaller than `first_cap`. A bisection then finds the depth `d` where
+/// `d <= cap_at(d)`. The result is the low end of the bracket, so it is
+/// always inside its own cap, and the gate reads it as `Within`.
+fn deepest_depth_within_cap(first_cap: f64, cap_at: &dyn Fn(f64) -> Option<f64>) -> f64 {
+    const BISECTION_STEPS: usize = 64;
+    let inside = |d: f64| cap_at(d).is_some_and(|cap| d <= cap);
+    if inside(first_cap) {
+        return first_cap;
+    }
+    let mut lo = 0.0_f64;
+    let mut hi = first_cap;
+    for _ in 0..BISECTION_STEPS {
+        let mid = 0.5 * (lo + hi);
+        if inside(mid) {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    lo
 }
 
 /// Pass 5: clamp DPP to the tool's cutting length.

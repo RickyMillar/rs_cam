@@ -1,6 +1,7 @@
 //! Adapter: [`ToolpathLoadVerdict`] → [`Diagnostic`] list.
 //!
-//! Maps the sim-backed load gates (chipload / power / deflection) and
+//! Maps the sim-backed load gates (chipload / power / deflection /
+//! depth of cut) and
 //! the drill-specific gates (chip welding / peck adequacy / plunge
 //! feed) into the unified schema. Sets `state` correctly:
 //!
@@ -27,7 +28,7 @@ use crate::ids::ToolpathId;
 use crate::tool_load::drill_gates::{DrillGateOutcome, DrillGateSeverity, DrillGatesVerdict};
 use crate::tool_load::verdict::{
     ChipBoundsSource, ChiploadVerdict, Confidence as VerdictConfidence, DeflectionVerdict,
-    PowerVerdict, ToolpathLoadVerdict, UnmodeledReason,
+    DepthVerdict, PowerVerdict, ToolpathLoadVerdict, UnmodeledReason,
 };
 
 /// Translate one toolpath's load verdict into diagnostic rows.
@@ -66,6 +67,12 @@ pub fn diagnostics_from_load_verdict(verdict: &ToolpathLoadVerdict) -> Vec<Diagn
             out.push(d);
         }
         if let Some(d) = deflection_to_diagnostic(verdict.toolpath_id, &verdict.deflection) {
+            out.push(d);
+        }
+        // Feeds matrix R2 (2026-09-23), EVIDENCE 5.1-15: before R2 a
+        // depth `Exceeds` showed in the load report and the criterion
+        // rows but not in this list, so the surfaces disagreed.
+        if let Some(d) = depth_to_diagnostic(verdict.toolpath_id, &verdict.depth) {
             out.push(d);
         }
     }
@@ -593,6 +600,125 @@ fn deflection_to_diagnostic(tp_id: ToolpathId, v: &DeflectionVerdict) -> Option<
             "Deflection",
             reason,
             deflection_supersedes,
+        ),
+    }
+}
+
+// ── depth of cut ────────────────────────────────────────────────────
+
+/// The depth row. Feeds matrix R2 (2026-09-23).
+///
+/// - `Within` → `load.depth.within`, Info.
+/// - `Exceeds` → `load.depth.exceeds`, Caution. The cap is a rule of
+///   thumb that never refuses an export, so the severity is the power
+///   gate's `Caution`, not the deflection gate's `Critical`.
+/// - `Reported` → `load.depth.reported`, Info, with no threshold: a
+///   finishing pass has no axial cap.
+/// - `Unmodeled` → `load.depth.unmodeled`, never a `*.within` id
+///   (EVIDENCE 5.1-14).
+///
+/// No `supersedes`: `feeds.depth_beyond_published_table` is the depth
+/// ladder, a different quantity from this measured peak.
+fn depth_to_diagnostic(tp_id: ToolpathId, v: &DepthVerdict) -> Option<Diagnostic> {
+    let row = |id: &str,
+               severity: Severity,
+               confidence: &VerdictConfidence,
+               message: String,
+               evidence: &crate::tool_load::verdict::SampleEvidence,
+               peak_mm: f64,
+               threshold: Option<f64>| Diagnostic {
+        id: DiagnosticId::from(id),
+        scope: Scope::Toolpath { id: tp_id },
+        category: Category::ToolLoad,
+        severity,
+        confidence: confidence_to_kind(confidence),
+        state: DiagnosticState::Current,
+        source: Source::ToolLoad,
+        message,
+        evidence: Some(DiagnosticEvidence::SampleRange {
+            toolpath_id: tp_id,
+            sample_start: evidence.sample_range.start,
+            sample_end: evidence.sample_range.end,
+            observed: peak_mm,
+            threshold,
+            unit: "mm".to_owned(),
+            locality: evidence
+                .locality
+                .clone()
+                .map(EvidenceLocality::new)
+                .unwrap_or_default(),
+        }),
+        fix: None,
+        supersedes: vec![],
+        suppressed_diagnostics: vec![],
+    };
+    match v {
+        DepthVerdict::Within {
+            peak_mm,
+            bound,
+            evidence,
+            confidence,
+        } => Some(row(
+            ids::LOAD_DEPTH_WITHIN,
+            Severity::Info,
+            confidence,
+            format!(
+                "Depth of cut within the rigidity rule of thumb ({:.3} mm / {:.3} mm){}",
+                peak_mm,
+                bound.cap_mm(),
+                vacuity_clause(evidence)
+            ),
+            evidence,
+            *peak_mm,
+            Some(bound.cap_mm()),
+        )),
+        DepthVerdict::Exceeds {
+            peak_mm,
+            bound,
+            evidence,
+            confidence,
+        } => Some(row(
+            ids::LOAD_DEPTH_EXCEEDS,
+            Severity::Caution,
+            confidence,
+            format!(
+                "Depth of cut exceeds the rigidity rule of thumb: {:.3} mm > {:.3} mm \
+                 ({:.2} × {:.2} mm); the rule has no published source and does not \
+                 block export{}",
+                peak_mm,
+                bound.cap_mm(),
+                bound.factor,
+                bound.diameter_mm,
+                vacuity_clause(evidence)
+            ),
+            evidence,
+            *peak_mm,
+            Some(bound.cap_mm()),
+        )),
+        DepthVerdict::Reported {
+            peak_mm,
+            evidence,
+            confidence,
+        } => Some(row(
+            ids::LOAD_DEPTH_REPORTED,
+            Severity::Info,
+            confidence,
+            format!(
+                "Depth of cut {:.3} mm peak; a finishing pass has no axial cap, and \
+                 the deflection gate is its limit{}",
+                peak_mm,
+                vacuity_clause(evidence)
+            ),
+            evidence,
+            *peak_mm,
+            None,
+        )),
+        DepthVerdict::Unmodeled { reason } => unmodeled_to_diagnostic(
+            tp_id,
+            ids::LOAD_DEPTH_UNMODELED,
+            "Depth of cut",
+            reason,
+            Vec::new,
         ),
     }
 }

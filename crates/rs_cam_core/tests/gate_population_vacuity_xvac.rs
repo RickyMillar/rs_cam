@@ -367,7 +367,14 @@ fn the_diagnostics_surface_says_the_pass_is_vacuous() {
         .iter()
         .filter(|m| !m.starts_with("Chipload:"))
         .collect();
-    assert_eq!(gate_rows.len(), 2, "power + deflection: {vacuous_msgs:?}");
+    // Feeds matrix R2 (2026-09-23): the depth row joined the list
+    // (EVIDENCE 5.1-15). It reads the same trace, so it is vacuous on the
+    // same fixture and carries the same marker.
+    assert_eq!(
+        gate_rows.len(),
+        3,
+        "power + deflection + depth: {vacuous_msgs:?}"
+    );
     for m in gate_rows {
         assert!(
             m.contains("VACUOUS") && m.contains("0 of 12 samples"),

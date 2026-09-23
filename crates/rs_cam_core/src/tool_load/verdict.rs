@@ -835,9 +835,11 @@ pub enum BoundSource {
     /// finish-quality figure in MILLIMETRES.
     DeflectionBudget,
     /// `RigidityProfile::doc_roughing_factor` (or `adaptive_doc_factor`)
-    /// times the tool diameter. A rule of thumb with no published
-    /// source, so it does not gate ([`Self::gates_export`]). S3 is its
-    /// first producer; nothing in this crate emits it today.
+    /// times the engaged diameter at the judged depth
+    /// (`feeds::geometry::depth_cap_diameter_mm`). A rule of thumb with
+    /// no published source, so it does not gate ([`Self::gates_export`]).
+    /// The depth gate (`tool_load::depth`) is its producer. Feeds matrix
+    /// R2 (2026-09-23): a finishing pass has no such bound.
     RigidityRuleOfThumb { factor: f64, diameter_mm: f64 },
     /// The drill gates' own envelopes. All three are material-derived:
     /// `chip_welding_threshold`, `per_peck_max_depth_to_diameter` and
@@ -908,9 +910,9 @@ impl BoundSource {
                 factor,
                 diameter_mm,
             } => format!(
-                "the machine rigidity factor {factor:.2} times the tool diameter \
-                 {diameter_mm:.2} mm, which is {:.2} mm; a rule of thumb with no \
-                 published source",
+                "the machine rigidity factor {factor:.2} times the engaged diameter \
+                 {diameter_mm:.2} mm at that depth, which is {:.2} mm; a rule of thumb \
+                 with no published source",
                 factor * diameter_mm
             ),
             BoundSource::DrillEnvelope => {
@@ -956,7 +958,8 @@ pub struct CriterionStatus<'a> {
     pub unit: &'static str,
     /// **The bound `display_peak` was judged against, in `unit`.**
     /// `None` when the criterion is unmodelled, or when no bound
-    /// exists at all (the gantry-push row).
+    /// exists at all (the gantry-push row, and the depth row of a
+    /// finishing pass: [`DepthVerdict::Reported`]).
     ///
     /// S4 (2026-09-18). Before this field the GUI built two of the
     /// three caps it drew against, and one of them was an L over D
@@ -1859,6 +1862,11 @@ impl DeflectionVerdict {
 ///
 /// **This verdict never refuses an export.** The cap is a rule of
 /// thumb with no published source; see [`BoundSource::gates_export`].
+///
+/// Feeds matrix R2 (2026-09-23): a finishing or semi-finishing pass has
+/// no axial cap, because no vendor publishes one for wood. Its depth is
+/// a [`DepthVerdict::Reported`] reading with no bound. The deflection
+/// gate is the limit on that pass.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum DepthVerdict {
@@ -1878,6 +1886,19 @@ pub enum DepthVerdict {
         evidence: SampleEvidence,
         confidence: Confidence,
     },
+    /// **The measured depth, with no bound.** Feeds matrix R2
+    /// (2026-09-23). The operation's pass role has no axial cap
+    /// ([`crate::machine::RigidityProfile::depth_cap_mm`] returns `None`
+    /// for a finishing or semi-finishing pass), so the gate reports the
+    /// peak and judges nothing. The state is `Within`: a reading with no
+    /// bound cannot exceed. The criterion row carries `bound: None`.
+    Reported {
+        /// Peak `axial_engagement_mm` over the contributing cutting
+        /// samples. Read [`GatePopulation::is_vacuous`] before this.
+        peak_mm: f64,
+        evidence: SampleEvidence,
+        confidence: Confidence,
+    },
     Unmodeled {
         reason: UnmodeledReason,
     },
@@ -1886,7 +1907,7 @@ pub enum DepthVerdict {
 impl DepthVerdict {
     pub fn state(&self) -> LoadState {
         match self {
-            DepthVerdict::Within { .. } => LoadState::Within,
+            DepthVerdict::Within { .. } | DepthVerdict::Reported { .. } => LoadState::Within,
             DepthVerdict::Exceeds { .. } => LoadState::Exceeds,
             DepthVerdict::Unmodeled { .. } => LoadState::Unmodeled,
         }
@@ -1902,9 +1923,9 @@ impl DepthVerdict {
 
     pub fn confidence(&self) -> Option<&Confidence> {
         match self {
-            DepthVerdict::Within { confidence, .. } | DepthVerdict::Exceeds { confidence, .. } => {
-                Some(confidence)
-            }
+            DepthVerdict::Within { confidence, .. }
+            | DepthVerdict::Exceeds { confidence, .. }
+            | DepthVerdict::Reported { confidence, .. } => Some(confidence),
             DepthVerdict::Unmodeled { .. } => None,
         }
     }
@@ -1942,7 +1963,7 @@ impl DepthVerdict {
     /// The generic row. The bound is `factor × diameter` from the
     /// profile, and the source carries those two numbers, so a renderer
     /// formats the cap and its provenance without multiplying anything
-    /// itself.
+    /// itself. A [`DepthVerdict::Reported`] row has a peak and no bound.
     pub fn as_criterion_status(&self) -> CriterionStatus<'_> {
         let (state, peak, range, population, bound) = match self {
             DepthVerdict::Within {
@@ -1968,6 +1989,15 @@ impl DepthVerdict {
                 option_range(&evidence.sample_range),
                 evidence.population,
                 Some(*bound),
+            ),
+            DepthVerdict::Reported {
+                peak_mm, evidence, ..
+            } => (
+                LoadState::Within,
+                Some(*peak_mm),
+                option_range(&evidence.sample_range),
+                evidence.population,
+                None,
             ),
             DepthVerdict::Unmodeled { .. } => (LoadState::Unmodeled, None, None, None, None),
         };

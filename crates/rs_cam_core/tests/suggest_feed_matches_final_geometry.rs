@@ -100,14 +100,20 @@ fn wanaka_project_path() -> PathBuf {
 /// is allowed to depend on, and so the open `G-SUGGEST-POWERSTALE` row (the
 /// Step 6 power check, whose cross-section moves with both `ae` and `ap`) has
 /// an obvious home if it is ever instrumented.
+///
+/// Feeds matrix R2 (2026-09-23): the calculator reads the ladder at
+/// `geometry::feed_ladder_diameter_mm`, the engaged diameter at `ap` on a
+/// tapered ball and the nominal diameter on every other shape. The
+/// reconstruction calls the same function.
 fn geometry_factor(
-    _geom: ToolGeometryHint,
+    geom: ToolGeometryHint,
     nominal_d_mm: f64,
-    _shank_d_mm: f64,
+    shank_d_mm: f64,
     _ae_mm: f64,
     ap_mm: f64,
 ) -> f64 {
-    geometry::depth_tier_multiplier(ap_mm, nominal_d_mm)
+    let ladder_d = geometry::feed_ladder_diameter_mm(geom, ap_mm, nominal_d_mm, shank_d_mm);
+    geometry::depth_tier_multiplier(ap_mm, ladder_d)
 }
 
 struct Case {

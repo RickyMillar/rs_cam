@@ -335,8 +335,15 @@ fn the_depth_bound_does_not_gate_and_the_kind_is_not_a_known_absence() {
     );
 }
 
-// ── (b) three families, three factors ────────────────────────────────
+// ── (b) two capped families, and a finishing pass with no cap ────────
 
+/// Re-blessed under feeds matrix R2 (2026-09-23). Before R2 a finishing
+/// Trace read `doc_finishing_factor` (0.10 × Ø6.35 = 0.635 mm on this
+/// profile). The operator ruled that a finishing or semi-finishing pass
+/// gets no axial ceiling: no vendor publishes one for wood (EVIDENCE
+/// 5.1-3, 5.1-12). The finishing arm now reports the measured peak with
+/// no bound and no bound source, and the state is `Within`. The two
+/// roughing arms keep their two distinct factors.
 #[test]
 fn each_family_reads_the_factor_its_own_pass_role_implies() {
     let trace = measured_trace();
@@ -352,16 +359,32 @@ fn each_family_reads_the_factor_its_own_pass_role_implies() {
     let rough_status = rough.as_criterion_status();
     assert_eq!(rough_status.bound, Some(rough_cap));
 
-    // Finishing → `doc_finishing_factor`.
-    let (finish_factor, finish_cap) = cap_for(OperationFamily::Trace, PassRole::Finish);
+    // Finishing → no cap (R2). The peak is reported with no bound.
+    assert!(
+        machine()
+            .rigidity
+            .depth_cap_mm(OperationFamily::Trace, PassRole::Finish, DIAMETER_MM)
+            .is_none(),
+        "a finishing pass must carry no axial cap"
+    );
     let finish = depth_verdict_for(
         OperationType::Trace,
         LutOperationFamily::Trace,
         LutPassRole::Finish,
         &trace,
     );
+    assert!(
+        matches!(finish, DepthVerdict::Reported { .. }),
+        "a finishing pass must report its depth, got {finish:?}"
+    );
     let finish_status = finish.as_criterion_status();
-    assert_eq!(finish_status.bound, Some(finish_cap));
+    assert_eq!(finish_status.bound, None);
+    assert_eq!(finish_status.bound_source, None);
+    assert_eq!(finish_status.state, LoadState::Within);
+    assert_eq!(
+        finish_status.display_peak,
+        Some(peak_axial_engagement(&trace))
+    );
 
     // Adaptive → `adaptive_doc_factor`.
     let (adaptive_factor, adaptive_cap) = cap_for(OperationFamily::Adaptive, PassRole::Roughing);
@@ -374,18 +397,15 @@ fn each_family_reads_the_factor_its_own_pass_role_implies() {
     let adaptive_status = adaptive.as_criterion_status();
     assert_eq!(adaptive_status.bound, Some(adaptive_cap));
 
-    // Three DISTINCT factors, read back off the profile. Without this
-    // the three arms above could all be reading one field.
+    // Two DISTINCT factors, read back off the profile. Without this
+    // the two capped arms above could both be reading one field.
     let m = machine();
     assert_eq!(rough_factor, m.rigidity.doc_roughing_factor);
-    assert_eq!(finish_factor, m.rigidity.doc_finishing_factor);
     assert_eq!(adaptive_factor, m.rigidity.adaptive_doc_factor);
     assert!(
-        rough_factor != finish_factor
-            && finish_factor != adaptive_factor
-            && rough_factor != adaptive_factor,
-        "the fixture profile must publish three different factors, else \
-         this arm proves nothing: {rough_factor} {finish_factor} {adaptive_factor}"
+        rough_factor != adaptive_factor,
+        "the fixture profile must publish two different factors, else \
+         this arm proves nothing: {rough_factor} {adaptive_factor}"
     );
 }
 

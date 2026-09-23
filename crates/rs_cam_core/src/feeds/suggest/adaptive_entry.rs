@@ -272,13 +272,17 @@ pub(super) fn check_plunge_entry_stability(
 /// instrumented, this is where the term goes. Keeping the parameter also keeps
 /// the pass's mutation test honest: it still notices a stepover the invariants
 /// moved, and still declines to act on it, rather than becoming blind to one.
-fn geometry_feed_factor(
-    _geom: ToolGeometryHint,
-    tool: &ToolConfig,
-    _ae_mm: f64,
-    ap_mm: f64,
-) -> f64 {
-    crate::feeds::geometry::depth_tier_multiplier(ap_mm, tool.diameter)
+fn geometry_feed_factor(geom: ToolGeometryHint, tool: &ToolConfig, _ae_mm: f64, ap_mm: f64) -> f64 {
+    // Feeds matrix R2 (2026-09-23): the ladder diameter is the one the
+    // calculator's Step 5a reads. The shank is the one
+    // `suggest_for_operation` puts in `FeedsInput::shank_diameter`.
+    let ladder_d = crate::feeds::geometry::feed_ladder_diameter_mm(
+        geom,
+        ap_mm,
+        tool.diameter,
+        tool.shank_diameter,
+    );
+    crate::feeds::geometry::depth_tier_multiplier(ap_mm, ladder_d)
 }
 
 /// Pass 9 (G-SUGGEST-NOCLAMP, 2026-08-19): **re-derive the feed at the

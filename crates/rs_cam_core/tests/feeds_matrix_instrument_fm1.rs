@@ -325,8 +325,16 @@ fn recipe_diagnostics(s: &SuggestedParams, tool: &ToolConfig) -> Vec<Diagnostic>
     out
 }
 
-fn cap_columns(machine: &MachineProfile, op: &OperationConfig, diameter: f64) -> [String; 4] {
+/// The cap the one producer gives this cell. Feeds matrix R2
+/// (2026-09-23): the diameter is `depth_cap_diameter_mm` at the cell's
+/// depth per pass, the function the Suggest clamp and the depth gate
+/// call, and a finishing role prints empty cap columns (no cap).
+fn cap_columns(machine: &MachineProfile, op: &OperationConfig, tool: &ToolConfig) -> [String; 4] {
     let (family, role) = op.feeds_style();
+    let diameter = rs_cam_core::feeds::geometry::depth_cap_diameter_mm(
+        &rs_cam_core::compute::cutter::build_cutter(tool),
+        op.depth_per_pass().unwrap_or(tool.diameter),
+    );
     let cap = machine.rigidity.depth_cap_mm(family, role, diameter);
     [
         format!("{family:?}"),
@@ -372,7 +380,7 @@ fn walk_matrix(
                             fields.extend(cap_columns(
                                 machine,
                                 &OperationConfig::new_default(op),
-                                tool.diameter,
+                                &tool,
                             ));
                             cells.push(Cell {
                                 kind,
@@ -445,7 +453,7 @@ fn walk_matrix(
                             fields.push(sev.join(";"));
                             fields.push(fw.join(";"));
                             fields.push(sw.join(";"));
-                            fields.extend(cap_columns(machine, &s.operation, tool.diameter));
+                            fields.extend(cap_columns(machine, &s.operation, &tool));
                             cells.push(Cell {
                                 kind,
                                 op,
@@ -618,6 +626,15 @@ fn depth_cols(v: &DepthVerdict) -> [String; 5] {
             num(Some(bound.cap_mm())),
             num(Some(bound.factor)),
             String::new(),
+        ],
+        // Feeds matrix R2 (2026-09-23): a finishing pass has a peak and
+        // no cap.
+        DepthVerdict::Reported { peak_mm, .. } => [
+            format!("{:?}", v.state()),
+            num(Some(*peak_mm)),
+            String::new(),
+            String::new(),
+            "Reported".to_owned(),
         ],
         DepthVerdict::Unmodeled { reason } => [
             format!("{:?}", v.state()),
