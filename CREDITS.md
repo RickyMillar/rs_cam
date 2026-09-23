@@ -230,6 +230,43 @@ Visible sources recorded there include:
 
 The manifest includes URLs, titles, coverage notes, and access dates.
 
+Stored chart text (feeds matrix ruling R5, 2026-09-23). A vendor URL is not a
+stable source: the same URL has returned a different sheet on different
+fetches. For each PDF that R5 transcribes from, the repository stores the
+`pdftotext -layout` text under `crates/rs_cam_core/data/vendor_lut/sources/`,
+and the manifest records `stored_text`, the full `pdf_sha256` of the PDF and
+`stored_on`. The PDF binaries are not stored. The stored sources are:
+
+- Amana *Spiral Ball Nose Speed Chart v7* —
+  <https://www.amanatool.com/pub/media/productattachments/Spiral-Ball-Nose-Speed-Chart-v7.pdf>
+- Amana *Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24* —
+  <https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf>
+- Amana *ZrN 2D/3D Carving Feed and Chip Load Chart* —
+  <https://www.amanatool.com/pub/media/productattachments/ZrN-3D-Profiling-Feed-Chip-Load-Chart.pdf>
+- LMT Onsrud *Hard Wood*, *Soft Wood*, *MDF*, *Hard Plywood* and *Soft Plywood
+  Cutting Data Recommendations* — `https://www.onsrud.com/images/<sheet>.pdf`
+
+All were accessed 2026-09-23. Rows transcribed from them on that date:
+
+- Amana ball v7: the printed 1/8 in and 1/4 in Hardwood, Softwood and MDF rows
+  (`amana-ball-*-v7`, exact, grade a, pocket and adaptive, 1 x D).
+- Amana Spektra v24: the printed 2 and 3 flute rows at 1/8 in, 6 mm and 1/4 in
+  (`amana-flat-*-spektra` at those diameters). The chart prints one
+  Wood/Plywood column; the softwood, hardwood and plywood rows that apply it
+  are derived, grade b. The MDF/Laminate rows are exact, grade a.
+- Onsrud 77-100 tapered ball, 1/8 in and 1/4 in, from the Hard Wood, Soft Wood,
+  MDF and Hard Plywood sheets (`onsrud_tapered_ball.json`). The Soft Plywood
+  sheet prints no 77-100 row.
+- Onsrud Hard Plywood and Soft Plywood flat-end series (`onsrud_plywood.json`).
+
+Rows that cite a chart but are not printed on it are kept with
+`row_kind: derived`, `evidence_grade: c` and a `notes` field that names the
+nearest printed line and the reduction or origin: the reduced Amana ball rows
+at 3.175 mm and 6 mm, the Amana tapered-ball rows (the cited ZrN chart has no
+tapered section), the four `onsrud-bull-*` rows (no Onsrud sheet prints a bull
+or corner-radius series; they were derived from Amana flat-end seed rows at
+about x0.85) and the fourteen `amana_flat_end.json` rows that cite Spektra v24.
+
 ### Chipload column convention and scaling laws
 
 The vendor `chipload_*_mm_tooth` columns in
@@ -243,7 +280,9 @@ quotations, access dates and the per-family confidence table):
   <https://www.onsrud.com/images/Hard%20Wood.pdf>,
   <https://www.onsrud.com/images/Soft%20Wood.pdf> (accessed 2026-08-04).
   Column: "Recommended Chip Load per Tooth by Cutting Diameter". Prints
-  "Chip Load = Feed Rate / (RPM x # of cutting edges)".
+  "Chip Load = Feed Rate / (RPM x # of cutting edges)". The *MDF*, *Hard
+  Plywood* and *Soft Plywood* sheets (text stored 2026-09-23) print the same
+  column heading and the same formula.
 - **Freud**, *Router Bit Feed Rates and Speeds for CNC* (2017-08-22) —
   <https://www.freudtools.com/public/assets/freud/downloadables/freudtools-router-bit-feed-and-speed-for-cnc-20170822.pdf>
   (accessed 2026-08-04). Prints the same identity plus a worked example.

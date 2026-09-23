@@ -7,12 +7,12 @@
 name = "LMT Onsrud - Hard Wood Cutting Data Recommendations (PCT-19 p.115)"
 citation_url = "https://www.onsrud.com/images/Hard%20Wood.pdf"
 authority_tier = "gold"
-last_verified = "2026-08-13"
-url_verified = "2026-08-13"
+last_verified = "2026-09-23"
+url_verified = "2026-09-23"
 covers = ["flat", "ball", "vbit"]
 ops = ["pocket", "profile", "adaptive2d", "vcarve"]
 materials = ["hardwood", "softwood", "plywood"]
-notes = "De-facto wood-router standard. Industrial spindle assumed; apply hobby derate. NUMBERS RE-READ IN FULL 2026-08-13 (S-2 refresh; see planning/review_2026-08-08/LIT_MATRIX_REFRESH_S2.md). The chart is 'Recommended Chip Load per Tooth by Cutting Diameter (in)', 38 series rows across 21 diameter columns, and prints 'FORMULAS: Chip Load = Feed Rate / (RPM x # of cutting edges)'. Ten series carry a 1/8in (3.175 mm) entry; that whole column spans .002-.012 in/tooth = 0.0508-0.3048 mm/tooth. The chart's own APPLICATION guide names 52-200/57-200 as the GOOD choice for both Single Pass and Roughing, and its 1/8in value is .003-.005 in = 0.0762-0.1270 mm/tooth; the lowest 1/8in entry of any series (52-700 and 64-000/65-000) is .002-.004 in = 0.0508-0.1016 mm/tooth. Consequence for cells: this chart cannot support a Ø3 mm hardwood feed-per-tooth band below 0.0508 mm/tooth, and the Ipe cell's old 0.013-0.027 band cited it wrongly (Checkpoint K-(e1), fixed 2026-08-13). Its only depth-related rule is a CHIP-LOAD reduction keyed to depth of cut - see onsrud_doc_rule."
+notes = "De-facto wood-router standard. Industrial spindle assumed; apply hobby derate. NUMBERS RE-READ IN FULL 2026-08-13 (S-2 refresh; see planning/review_2026-08-08/LIT_MATRIX_REFRESH_S2.md). The chart is 'Recommended Chip Load per Tooth by Cutting Diameter (in)', 38 series rows across 21 diameter columns, and prints 'FORMULAS: Chip Load = Feed Rate / (RPM x # of cutting edges)'. Ten series carry a 1/8in (3.175 mm) entry; that whole column spans .002-.012 in/tooth = 0.0508-0.3048 mm/tooth. The chart's own APPLICATION guide names 52-200/57-200 as the GOOD choice for both Single Pass and Roughing, and its 1/8in value is .003-.005 in = 0.0762-0.1270 mm/tooth; the lowest 1/8in entry of any series (52-700 and 64-000/65-000) is .002-.004 in = 0.0508-0.1016 mm/tooth. Consequence for cells: this chart cannot support a Ø3 mm hardwood feed-per-tooth band below 0.0508 mm/tooth, and the Ipe cell's old 0.013-0.027 band cited it wrongly (Checkpoint K-(e1), fixed 2026-08-13). Its only depth-related rule is a CHIP-LOAD reduction keyed to depth of cut - see onsrud_doc_rule. RE-VERIFIED 2026-09-23 (feeds matrix R5, /refresh-lit-matrix run): fetched again, sheet title 'Hard Wood Cutting Data Recommendations' confirmed, PDF sha256 f123d5f67c03b3760cfd300c36d480747b176e4d9cc06db7d1ea97ff9bda69dc; the pdftotext -layout copy is stored at crates/rs_cam_core/data/vendor_lut/sources/onsrud_hard_wood_cutting_data.txt. Figures quoted above are unchanged. The chart also prints the tapered ball series 77-100: 1xD, 1/8in .003-.005 in/tooth (0.0762-0.1270 mm), 1/4in .005-.007 (0.1270-0.1778 mm); those rows are now in the LUT (onsrud_tapered_ball.json)."
 
 [amana_spektra]
 name = "Amana Tool / Spektra Wood-Router Chipload Chart"
@@ -131,26 +131,70 @@ materials = ["all"]
 notes = "Convenience alias used in Phase 1 cells that want a literal `shaw_chipload` key for the 0.025 mm/tooth rubbing floor. Same primary source as `shaw_metal_cutting`."
 
 [onsrud_swood]
-name = "Onsrud Cutter — Series 60/85 Softwood Feed Chart"
+name = "LMT Onsrud - Soft Wood Cutting Data Recommendations (SW, p.114)"
 citation_url = "https://www.onsrud.com/images/Soft%20Wood.pdf"
 authority_tier = "gold"
-last_verified = "2026-06-03"
-url_verified = "2026-08-13"
+last_verified = "2026-09-23"
+url_verified = "2026-09-23"
 covers = ["flat", "ball"]
 ops = ["pocket", "profile", "adaptive2d"]
 materials = ["softwood"]
-notes = "Onsrud softwood chart — chipload/SFM by tool series + diameter. Industrial spindle baseline; hobby derate applies."
+notes = "Onsrud softwood chart — chipload/SFM by tool series + diameter. Industrial spindle baseline; hobby derate applies. NAME CORRECTED and RE-VERIFIED 2026-09-23 (feeds matrix R5, /refresh-lit-matrix run): the old name 'Series 60/85 Softwood Feed Chart' matched no title on the document; the sheet title is 'Soft Wood Cutting Data Recommendations'. PDF sha256 a5b83da2433c64cb930dffe4a6de142124c894bd6aa982791a604b0048716c54; text stored at crates/rs_cam_core/data/vendor_lut/sources/onsrud_soft_wood_cutting_data.txt. Column 'Recommended Chip Load per Tooth by Cutting Diameter (in)'; depth rule 1 x D / 2 x D -25% / 3 x D -50%. Prints 77-100 tapered ball 1/8in .003-.005, 1/4in .005-.007 in/tooth, now in the LUT."
 
 [onsrud_plywood]
-name = "Onsrud Cutter — Plywood / Composite Feed Chart"
+name = "LMT Onsrud - Hard Plywood Cutting Data Recommendations (CW)"
 citation_url = "https://www.onsrud.com/images/Hard%20Plywood.pdf"
 authority_tier = "gold"
-last_verified = "2026-06-03"
-url_verified = "2026-08-13"
+last_verified = "2026-09-23"
+url_verified = "2026-09-23"
 covers = ["flat", "compression"]
 ops = ["pocket", "profile", "adaptive2d"]
 materials = ["plywood", "mdf"]
-notes = "Onsrud plywood chart — covers cabinet-grade & birch plywood. Compression cutters dominate; flat router-bit values are conservative."
+notes = "Onsrud plywood chart — covers cabinet-grade & birch plywood. Compression cutters dominate; flat router-bit values are conservative. NAME CORRECTED and RE-VERIFIED 2026-09-23 (feeds matrix R5, /refresh-lit-matrix run): the URL serves the Hard Plywood sheet only; Soft Plywood is a separate document (key onsrud_soft_plywood). PDF sha256 65874767572e1669fb39fcfb91c5a04a21f1eee16b1fa12f7f9bb30ed6775e24; text stored at crates/rs_cam_core/data/vendor_lut/sources/onsrud_hard_plywood_cutting_data.txt. Example: 52-200 1/8in .005-.007 in/tooth (0.127-0.178 mm); 60-100MW 1/8in .012-.014. Prints 77-100 tapered ball 1/8in .003-.005, 1/4in .005-.007 with no Cut value. Prints no 60-200 row. Its flat-end series rows are now in the LUT (onsrud_plywood.json)."
+
+[onsrud_soft_plywood]
+name = "LMT Onsrud - Soft Plywood Cutting Data Recommendations (CW, p.117)"
+citation_url = "https://www.onsrud.com/images/Soft%20Plywood.pdf"
+authority_tier = "gold"
+last_verified = "2026-09-23"
+url_verified = "2026-09-23"
+covers = ["flat", "compression"]
+ops = ["pocket", "profile", "adaptive2d"]
+materials = ["plywood"]
+notes = "ADDED 2026-09-23 (feeds matrix R5, /refresh-lit-matrix run) so the literature matrix and the LUT cite the same document by name. Retrieved and read in full; PDF sha256 f1c369ed8c8c15c918574bef0e9dfdc89c9885f9d8aaf3126e0d35c5c8be1ca1; text stored at crates/rs_cam_core/data/vendor_lut/sources/onsrud_soft_plywood_cutting_data.txt. Column 'Recommended Chip Load per Tooth by Cutting Diameter (in)'; prints 'Chip Load = Feed Rate / (RPM x # of cutting edges)'; depth rule 1 x D / 2 x D -25% / 3 x D -50%. Example: 52-200/57-200 1/8in .005-.007 in/tooth (0.127-0.178 mm). The APPLICATION table names 60-200 for finishing but the chip-load table has no 60-200 row, and there is no 77-100 row. No cell cites this key yet."
+
+[onsrud_mdf]
+name = "LMT Onsrud - MDF Cutting Data Recommendations (CW, p.116)"
+citation_url = "https://www.onsrud.com/images/MDF.pdf"
+authority_tier = "gold"
+last_verified = "2026-09-23"
+url_verified = "2026-09-23"
+covers = ["flat", "compression"]
+ops = ["pocket", "profile", "adaptive2d"]
+materials = ["mdf"]
+notes = "ADDED 2026-09-23 (feeds matrix R5, /refresh-lit-matrix run). Already the provenance of the onsrud-mdf-* rows in data/vendor_lut/observations/onsrud_ocr.json and of the MDF 77-100 rows in onsrud_tapered_ball.json. Retrieved and read in full; sheet title 'MDF Cutting Data Recommendations'; PDF sha256 94464ac393d93a6ad13e166f52aaf9cc9470860895ed97571dd4a07c710bdf4c; text stored at crates/rs_cam_core/data/vendor_lut/sources/onsrud_mdf_cutting_data.txt. Example: 52-200/57-200 1/8in .005-.007, 1/4in .006-.008 in/tooth; 77-100 1/8in .003-.005, 1/4in .005-.007. Every Onsrud and Amana chart prints MDF at or above wood for the same series and diameter. No cell cites this key yet."
+
+[amana_ball_nose_v7]
+name = "Amana Tool - Spiral Ball Nose Speed Chart v7"
+citation_url = "https://www.amanatool.com/pub/media/productattachments/Spiral-Ball-Nose-Speed-Chart-v7.pdf"
+authority_tier = "gold"
+last_verified = "2026-09-23"
+url_verified = "2026-09-23"
+covers = ["ball"]
+ops = ["pocket", "adaptive2d"]
+materials = ["hardwood", "softwood", "mdf", "aluminum_6061_t6"]
+notes = "ADDED 2026-09-23 (feeds matrix R5, /refresh-lit-matrix run). Provenance of the amana_ball_nose.json rows. Retrieved and read in full; PDF sha256 e851a270a9958a9affc17a24c8e6a8ef51d63a813f384b7043670d676cae3563; text stored at crates/rs_cam_core/data/vendor_lut/sources/amana_ball_nose_v7.txt. '2 Flute Solid Carbide CNC Spiral Ball Nose Router Bits', 'CNC Operating Spindle Speed: 18,000 RPM / Depth of Cut: 1 x Tool Diameter'. Chip load per tooth, 1/8in: Hardwood 0.003-0.005 in, Softwood 0.005-0.007, MDF 0.005-0.007; 1/4in: Hardwood 0.005-0.007, Softwood 0.007-0.009, MDF 0.006-0.008. Depth rule on FEED: 2 x D reduce feed rate by 25%, 3 x D by 50%. It is a 1 x D chart, not a 3D finishing chart; the LUT's reduced finish rows (about x0.16) are derived grade c. No cell cites this key yet."
+
+[amana_spektra_plunge_v24]
+name = "Amana Tool - Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24"
+citation_url = "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf"
+authority_tier = "gold"
+last_verified = "2026-09-23"
+url_verified = "2026-09-23"
+covers = ["flat"]
+ops = ["pocket", "profile", "adaptive2d"]
+materials = ["hardwood", "softwood", "plywood", "mdf"]
+notes = "ADDED 2026-09-23 (feeds matrix R5, /refresh-lit-matrix run). The document the LUT's amana_spektra_spiral_plunge_v24 rows cite. It is NOT the same as the key amana_spektra, whose URL is Amana's interactive calculator; that key is not repointed and no cell is rewired here. Retrieved and read in full; PDF sha256 5b6fef854b2cf6b422e2eb5bbc86e29b4dcab5b19195b7ff228b70f99cf86d3a; text stored at crates/rs_cam_core/data/vendor_lut/sources/amana_spektra_spiral_plunge_v24.txt. 18,000 RPM, depth of cut 1 x D. ONE chip load per tooth per diameter in two columns: 2 Flute 1/8in Wood/Plywood .0040 in (0.1016 mm), MDF/Laminate .0050 in; 6mm and 1/4in .0050 / .0060 in. No softwood/hardwood split, no range, no ap or ae range. Depth rule on FEED: 2 x D -25%, 3 x D -50%. No cell cites this key yet."
 
 [onsrud_plastic]
 name = "Onsrud Cutter — Plastics Feed Chart (HDPE / acrylic / phenolic)"
