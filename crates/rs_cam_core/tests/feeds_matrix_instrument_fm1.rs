@@ -279,6 +279,8 @@ const MATRIX_HEADER: &[&str] = &[
     "r_axial_depth_mm",
     "r_radial_width_mm",
     "r_chip_load_mm",
+    "force_n",
+    "power_kw",
     "chipload_bounds_min_mm",
     "chipload_bounds_max_mm",
     "support_arm",
@@ -370,9 +372,10 @@ fn walk_matrix(
                         Err(e) => {
                             fields.push("refused".to_owned());
                             fields.push(e.to_string());
-                            // 10 recipe columns, the support pair, 8 row
+                            // 12 recipe columns (incl. the force and power
+                            // at the shipped point), the support pair, 8 row
                             // columns, 4 diagnostic / warning columns.
-                            fields.extend(std::iter::repeat_n(String::new(), 10));
+                            fields.extend(std::iter::repeat_n(String::new(), 12));
                             fields.push("Refused".to_owned());
                             fields.push(String::new());
                             fields.extend(std::iter::repeat_n(String::new(), 8));
@@ -405,6 +408,32 @@ fn walk_matrix(
                             fields.push(num(Some(r.axial_depth_mm)));
                             fields.push(num(Some(r.radial_width_mm)));
                             fields.push(num(Some(r.chip_load_mm)));
+                            // The predicted load at the SHIPPED point (R4 WP3
+                            // baseline, 2026-09-24): the lateral force of
+                            // `feeds::force` at the recipe's depth, width and
+                            // advance per tooth, and the spindle power of the
+                            // one public power door. Both are the models the
+                            // dial holds; `None` where a model refuses.
+                            let force_n = rs_cam_core::feeds::force::lateral_cutting_force(
+                                material,
+                                r.axial_depth_mm,
+                                rs_cam_core::feeds::force::immersion_angle(
+                                    r.radial_width_mm,
+                                    tool.diameter / 2.0,
+                                ),
+                                r.chip_load_mm,
+                            );
+                            fields.push(num(force_n));
+                            let power_kw = rs_cam_core::feeds::power_at_operating_point(
+                                &s.operation,
+                                &tool,
+                                material,
+                                machine,
+                                None,
+                            )
+                            .ok()
+                            .map(|p| p.required_kw);
+                            fields.push(num(power_kw));
                             fields.push(num(r.chipload_bounds.map(|b| b.min_mm_per_tooth)));
                             fields.push(num(r.chipload_bounds.map(|b| b.max_mm_per_tooth)));
                             let (arm, detail) = support_columns(&r.support);
