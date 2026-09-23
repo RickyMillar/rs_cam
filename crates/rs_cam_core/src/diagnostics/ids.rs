@@ -121,7 +121,6 @@ pub const FEEDS_DPP_VS_LUT: &str = "feeds.dpp_vs_lut";
 // ── Static geometric / tool-op checks ────────────────────────────────
 pub const GEOM_STEPOVER_EXCEEDS_DIAMETER: &str = "geom.stepover_exceeds_diameter";
 pub const GEOM_DPP_EXCEEDS_CUTTING_LENGTH: &str = "geom.dpp_exceeds_cutting_length";
-pub const GEOM_DPP_OVER_1_5X_DIAMETER: &str = "geom.dpp_over_1_5x_diameter";
 pub const GEOM_BOTTOM_ABOVE_TOP_Z: &str = "geom.bottom_above_top_z";
 pub const GEOM_FEED_Z_BELOW_TOP_Z: &str = "geom.feed_z_below_top_z";
 pub const GEOM_RETRACT_Z_BELOW_FEED_Z: &str = "geom.retract_z_below_feed_z";
@@ -339,7 +338,6 @@ pub const ALL: &[&str] = &[
     FEEDS_DPP_VS_LUT,
     GEOM_STEPOVER_EXCEEDS_DIAMETER,
     GEOM_DPP_EXCEEDS_CUTTING_LENGTH,
-    GEOM_DPP_OVER_1_5X_DIAMETER,
     GEOM_BOTTOM_ABOVE_TOP_Z,
     GEOM_FEED_Z_BELOW_TOP_Z,
     GEOM_RETRACT_Z_BELOW_FEED_Z,

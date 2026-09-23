@@ -598,10 +598,7 @@ fn deflection_to_diagnostic(tp_id: ToolpathId, v: &DeflectionVerdict) -> Option<
 }
 
 fn deflection_supersedes() -> Vec<DiagnosticId> {
-    vec![
-        DiagnosticId::from(ids::GEOM_DPP_OVER_1_5X_DIAMETER),
-        DiagnosticId::from(ids::FEEDS_DPP_VS_LUT),
-    ]
+    vec![DiagnosticId::from(ids::FEEDS_DPP_VS_LUT)]
 }
 
 // ── drill gates ─────────────────────────────────────────────────────

@@ -121,10 +121,6 @@ fn all_diagnostic_ids_reachable_in_adapter_source() {
             "GEOM_DPP_EXCEEDS_CUTTING_LENGTH",
             ids::GEOM_DPP_EXCEEDS_CUTTING_LENGTH,
         ),
-        (
-            "GEOM_DPP_OVER_1_5X_DIAMETER",
-            ids::GEOM_DPP_OVER_1_5X_DIAMETER,
-        ),
         ("GEOM_BOTTOM_ABOVE_TOP_Z", ids::GEOM_BOTTOM_ABOVE_TOP_Z),
         ("GEOM_FEED_Z_BELOW_TOP_Z", ids::GEOM_FEED_Z_BELOW_TOP_Z),
         (
@@ -286,11 +282,11 @@ fn reducer_keeps_heuristic_when_authoritative_is_stale() {
         make_diag(
             ids::LOAD_DEFLECTION_WITHIN,
             DiagnosticState::StaleEvidence,
-            vec![ids::GEOM_DPP_OVER_1_5X_DIAMETER],
+            vec![ids::FEEDS_DPP_VS_LUT],
             Severity::Info,
         ),
         make_diag(
-            ids::GEOM_DPP_OVER_1_5X_DIAMETER,
+            ids::FEEDS_DPP_VS_LUT,
             DiagnosticState::Current,
             vec![],
             Severity::Hint,

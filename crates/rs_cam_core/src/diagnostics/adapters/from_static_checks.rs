@@ -364,29 +364,6 @@ fn depth_checks(scope: &Scope, op: &OperationConfig, tool: &ToolConfig) -> Vec<D
         });
     }
 
-    // Preflight hint: deep cut relative to diameter. Superseded by
-    // the rigorous deflection gate when sim evidence is current.
-    if tool.diameter > 0.0 && dpp > tool.diameter * 1.5 {
-        out.push(Diagnostic {
-            id: DiagnosticId::from(ids::GEOM_DPP_OVER_1_5X_DIAMETER),
-            scope: scope.clone(),
-            category: Category::ToolLoad,
-            severity: Severity::Hint,
-            confidence: Confidence::Heuristic,
-            state: DiagnosticState::Current,
-            source: Source::StaticValidation,
-            message: format!(
-                "Preflight hint: depth ({dpp:.1} mm) exceeds 1.5× tool diameter \
-                 ({:.1} mm) — verify deflection with simulation.",
-                tool.diameter
-            ),
-            evidence: None,
-            fix: None,
-            supersedes: vec![],
-            suppressed_diagnostics: vec![],
-        });
-    }
-
     out
 }
 
