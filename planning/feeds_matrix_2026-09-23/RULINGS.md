@@ -113,6 +113,21 @@ On R4_AGGRESSIVENESS_SPEC.md §5, in the spec's numbering:
   3–12 mm"; outside the range refuse or warn by R1. Same shape as R5.
   Operator: "do what you suggest! sounds good".
 
+## Operator rulings, fifth round, 2026-09-24 midday
+
+- **The size law becomes an extrapolation programme**, generic, not
+  centred on the operator's finishing bits: for every gap group a trend in
+  vendor (or sim) data, an equation with a range, per-group implementations
+  ("impl extrapolation"), generic only where confirmed. A whole session:
+  `planning/extrapolation_2026-09-24/PLAN.md` + `PROMPT.md`. The size rule
+  and the category ban are its stop-gaps until it lands.
+- Hover-only records for the ten number-moving warnings: fine as they are.
+- "Above the base" wording: one string (orchestrator's recommendation: the
+  panel uses core's `AGGRESSIVENESS_ABOVE_BASE_TEXT`).
+- WP2b lands now (orchestrator's recommendation); WP5 folds into the
+  extrapolation programme (the remaining feed scales are the same
+  question).
+
 ## Landed under the third and fourth rounds, 2026-09-24
 
 - Q9 06c75ed5 (floor = min(0.025, band min), source named); Q6 c8b6b358

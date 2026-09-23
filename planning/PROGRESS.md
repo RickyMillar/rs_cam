@@ -38,6 +38,14 @@
 - bounded typed simulation triage plus per-metric measurability abstention, consumed by GUI, MCP, CLI and narration through one contract
 - machine kinematics as an analysis dimension: per-axis max rates (`$110/$111/$112`) in the machine model, a per-toolpath kinematic utilization instrument (utilization, feed-bound headroom, machine-bound share, plunge-class peak) on every simulation surface, and a geometric plunge guard in the feed modulator
 
+## Extrapolation programme — 2026-09-24 (PLAN + PROMPT written; NOT started; its own session)
+
+`planning/extrapolation_2026-09-24/`: eight gap groups (size, material category,
+operation family, band, engaged geometry, drill, material physics, long/small tool
+loads), each an investigation (trend → equation with range → second witness) and
+its own `Extrapolation` impl, generic only when confirmed; replaces the size rule
+and the category ban of 87027060. Acceptance case: wanaka "3D Finish 6".
+
 ## Feeds matrix — 2026-09-23 (Phases 0-3 complete; Phase 4 in progress under the rulings)
 
 `planning/feeds_matrix_2026-09-23/`: PLAN.md, EVIDENCE.md (230 findings, 97 confirmed
