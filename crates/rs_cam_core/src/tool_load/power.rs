@@ -257,6 +257,80 @@ pub(crate) fn predicted_power_kw(inputs: PowerModelInputs, feed_mm_min: f64) -> 
     PowerTerms::of(inputs).kw_at_feed(feed_mm_min)
 }
 
+/// **The predicted spindle power (kW) of one simulation sample**, as the
+/// power gate computes it.
+///
+/// The gate ([`evaluate`]) calls this function for each sample, and the
+/// cut-metrics distribution ([`super::distribution`]) calls it too. Thus
+/// the histogram and the gate read one number.
+///
+/// - `kc_n_per_mm2` is the RAW material `Kc` from
+///   `Material::kc_n_per_mm2()`. Do not multiply it by the anisotropy
+///   factor; [`PowerTerms::of`] applies that factor.
+/// - `feed_mm_min` is the effective feed that
+///   [`super::effective_feed_for_sample`] resolves for the sample.
+///
+/// Returns `None` when the sample is not a usable cutting sample for this
+/// model: it is not cutting, it is an air cut (`radial_woc_fraction <
+/// 0.02`), it carries no arc engagement, or the engaged radial width is
+/// not positive. The gate skips such a sample. A `Some` value does not
+/// say that the gate COUNTED the sample: the gate also removes transit
+/// samples through [`super::locality::is_steady_state_for_gate`].
+#[must_use]
+pub fn sample_power_kw(
+    tool: &crate::tool::ToolDefinition,
+    kc_n_per_mm2: f64,
+    sample: &crate::stock::simulation_cut::SimulationCutSample,
+    feed_mm_min: f64,
+) -> Option<f64> {
+    if !sample.is_cutting || sample.engagement.radial_woc_fraction < 0.02 {
+        return None;
+    }
+    let arc = sample.arc_engagement_radians?;
+    // Power formula. Arc-equivalent radial slab width:
+    //   radial_width = (arc / π) × engagement_radius × 2
+    // For a half-engagement (arc = π/2), this gives `engagement_radius`.
+    // For a slot (arc = π), it gives 2× engagement_radius — the full
+    // tool diameter — which is the correct engaged width for slotting.
+    let engagement_radius = tool.engagement_radius(sample.axial_doc_mm).max(0.0);
+    let radial_width = (arc / std::f64::consts::PI) * engagement_radius * 2.0;
+    if radial_width <= 0.0 {
+        return None;
+    }
+    // Engaged chip cross-section is shape-dependent: rectangular slab
+    // for endmills, triangular groove for V-bits. The cutter owns that
+    // geometry; the gate owns the material + machine physics. Route
+    // through the canonical `predicted_power_kw` helper so this gate
+    // and the Suggest path (`feeds::calculate`) can't diverge.
+    //
+    // R1: the edge term needs the sample's own rotation and arc, not
+    // just its swept volume. `arc` IS ψ — the same immersion angle
+    // `dexel_stock::stamping` derived it from — and the engaged
+    // diameter is twice the engagement radius already computed above.
+    let cross_section_mm2 = tool.mrr_cross_section_mm2(sample.axial_doc_mm, radial_width);
+    Some(predicted_power_kw(
+        PowerModelInputs {
+            kc_n_per_mm2,
+            cross_section_mm2,
+            axial_doc_mm: sample.axial_doc_mm,
+            immersion_rad: arc,
+            engagement_diameter_mm: engagement_radius * 2.0,
+            spindle_rpm: f64::from(sample.spindle_rpm),
+            // The sample's own flute count, falling back to the
+            // tool's when the trace left it at zero — a zero would
+            // silently zero the edge term, which is the
+            // absence-rendered-as-a-reading shape this model exists
+            // to remove.
+            flute_count: if sample.flute_count > 0 {
+                f64::from(sample.flute_count)
+            } else {
+                f64::from(tool.flute_count)
+            },
+        },
+        feed_mm_min,
+    ))
+}
+
 #[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id.0, op = ?ctx.operation_kind))]
 pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) -> PowerVerdict {
     let &super::ToolpathLoadContext {
@@ -390,17 +464,6 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
         };
         any_arc_captured = true;
 
-        // Power formula. Arc-equivalent radial slab width:
-        //   radial_width = (arc / π) × engagement_radius × 2
-        // For a half-engagement (arc = π/2), this gives `engagement_radius`.
-        // For a slot (arc = π), it gives 2× engagement_radius — the full
-        // tool diameter — which is the correct engaged width for slotting.
-        let engagement_radius = tool.engagement_radius(s.axial_doc_mm).max(0.0);
-        let radial_width = (arc / std::f64::consts::PI) * engagement_radius * 2.0;
-        if radial_width <= 0.0 {
-            continue;
-        }
-
         // F-035: read the *effective* feed for this sample —
         // predicted (achieved) when the trace carries a populated
         // `predicted_feeds` map AND this `(toolpath_id, move_index)`
@@ -409,38 +472,12 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
         // proportionally; corner-decel reduction in predicted feed
         // shows up directly as reduced predicted power.
         let feed_for_power = super::effective_feed_for_sample(s, &trace.predicted_feeds);
-        // Engaged chip cross-section is shape-dependent: rectangular slab
-        // for endmills, triangular groove for V-bits. The cutter owns that
-        // geometry; the gate owns the material + machine physics. Route
-        // through the canonical `predicted_power_kw` helper so this gate
-        // and the Suggest path (`feeds::calculate`) can't diverge.
-        //
-        // R1: the edge term needs the sample's own rotation and arc, not
-        // just its swept volume. `arc` IS ψ — the same immersion angle
-        // `dexel_stock::stamping` derived it from — and the engaged
-        // diameter is twice the engagement radius already computed above.
-        let cross_section_mm2 = tool.mrr_cross_section_mm2(s.axial_doc_mm, radial_width);
-        let p_kw = predicted_power_kw(
-            PowerModelInputs {
-                kc_n_per_mm2: kc,
-                cross_section_mm2,
-                axial_doc_mm: s.axial_doc_mm,
-                immersion_rad: arc,
-                engagement_diameter_mm: engagement_radius * 2.0,
-                spindle_rpm: f64::from(s.spindle_rpm),
-                // The sample's own flute count, falling back to the
-                // tool's when the trace left it at zero — a zero would
-                // silently zero the edge term, which is the
-                // absence-rendered-as-a-reading shape this model exists
-                // to remove.
-                flute_count: if s.flute_count > 0 {
-                    f64::from(s.flute_count)
-                } else {
-                    f64::from(tool.flute_count)
-                },
-            },
-            feed_for_power,
-        );
+        // The per-sample prediction lives in `sample_power_kw`, so the
+        // cut-metrics distribution (`super::distribution`) reads the
+        // same number this gate compares.
+        let Some(p_kw) = sample_power_kw(tool, kc, s, feed_for_power) else {
+            continue;
+        };
         let avail = machine.power_at_rpm(s.spindle_rpm as f64) * machine.safety_factor;
 
         // Finding 3 split (2026-06-04): phantom-transit samples

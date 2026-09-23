@@ -6,15 +6,14 @@ Independent gates over a simulated cut. The entry point is
 ## Files
 
 - `mod.rs` — the monitor and the report entry point.
-- `chipload.rs`, `power.rs`, `deflection.rs`, `plunge_stress.rs` — the four
-  milling gates.
-- `drill_gates.rs` — chip welding, peck adequacy, plunge feed.
-- `locality.rs` — the locality classifier and the steady-state predicate.
-- `boundary.rs`, `verdict.rs`, `display.rs` — the gate boundary contract, the
-  verdict types, the typed display quantities.
-- `optimize/` and its children — the optimiser: search space and axes,
-  candidate generation and ranking, strategies, retargeters, the pre-flight
-  gate, the outcome narrative.
+- `chipload.rs`, `power.rs`, `deflection.rs`, `depth.rs`, `plunge_stress.rs` —
+  the milling gates; `drill_gates.rs` — chip welding, peck, plunge feed.
+- `locality.rs`, `boundary.rs`, `verdict.rs`, `display.rs` — the steady-state
+  predicate, the boundary contract, the verdict types, the display quantities.
+- `distribution.rs`, `metric_guide.rs` — histograms of each gate's own
+  population (call the gate filters; never copy them), and the hover copy.
+- `optimize/` — the optimiser: search space, candidates and ranking,
+  strategies, retargeters, the pre-flight gate, the outcome narrative.
 
 ## Invariants
 
@@ -34,7 +33,8 @@ Run one with `cargo test -p rs_cam_core -q --test <name>`: `gate_population_vacu
 `an_absent_limit_is_visibly_absent_g_gantry` (the gantry-push row is `Unmodeled`, never a reading, never
 a prompt), `a_criterion_carries_its_own_bound_g_s4bound` and `a_weak_bound_cannot_refuse_an_export_g_s4weak`
 (every row states its bound and its `BoundSource`; only a sourced bound may refuse an export),
-`the_depth_that_cut_is_a_measured_load_g_s3depth` (depth is a post-sim row; it exceeds, it never refuses).
+`the_depth_that_cut_is_a_measured_load_g_s3depth` (depth is a post-sim row; it exceeds, it never refuses),
+`histogram_population_is_the_gate_population_g_cuthist` (histogram max and count match the gate).
 
 ## Do not
 - A Kc or factor change needs the slow `--test` sims, not `--lib` alone.

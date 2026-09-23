@@ -254,7 +254,7 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
 /// reports a positive engaged depth. A cutting sample at zero depth
 /// contributes nothing to a maximum, and counting it would make an
 /// air pass look like a measured population.
-fn is_depth_sample(sample: &SimulationCutSample) -> bool {
+pub(super) fn is_depth_sample(sample: &SimulationCutSample) -> bool {
     sample.is_cutting && sample.axial_engagement_mm > 0.0
 }
 

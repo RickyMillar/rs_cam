@@ -112,6 +112,32 @@ pub fn sample_tip_deflection_mm(
     )
 }
 
+/// **The feed per tooth the deflection gate evaluates one sample at.**
+///
+/// The effective feed ([`super::effective_feed_for_sample`]) divided by
+/// `rpm × flutes`, with the flute count held at one or more. A sample
+/// with no spindle speed falls back to its commanded
+/// `chipload_mm_per_tooth`.
+///
+/// This is NOT [`super::display::achieved_advance_per_tooth`]: that
+/// function refuses a sample with no divisor, and this one falls back.
+/// The gate ([`evaluate`]) and the cut-metrics distribution
+/// ([`super::distribution`]) both call this function, so they cannot
+/// resolve the feed differently.
+#[must_use]
+pub fn deflection_feed_per_tooth_mm(
+    sample: &SimulationCutSample,
+    predicted_feeds: &crate::machine::kinematics::PredictedFeedMap,
+) -> f64 {
+    let eff_feed = super::effective_feed_for_sample(sample, predicted_feeds);
+    let flutes = sample.flute_count.max(1) as f64;
+    if sample.spindle_rpm > 0 {
+        eff_feed / (sample.spindle_rpm as f64 * flutes)
+    } else {
+        sample.chipload_mm_per_tooth
+    }
+}
+
 #[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id.0, op = ?ctx.operation_kind))]
 pub fn evaluate(
     ctx: &super::ToolpathLoadContext<'_>,
@@ -228,13 +254,7 @@ pub fn evaluate(
         // modulation), mirroring the power + chipload gates so all three
         // evaluate the cut that will actually run. With no predicted-feed
         // map this is the sample's commanded chipload (unchanged).
-        let eff_feed = super::effective_feed_for_sample(s, &trace.predicted_feeds);
-        let flutes = s.flute_count.max(1) as f64;
-        let eff_fz = if s.spindle_rpm > 0 {
-            eff_feed / (s.spindle_rpm as f64 * flutes)
-        } else {
-            s.chipload_mm_per_tooth
-        };
+        let eff_fz = deflection_feed_per_tooth_mm(s, &trace.predicted_feeds);
 
         let Some(delta_mm) = sample_tip_deflection_mm(tool, material, s, eff_fz) else {
             continue;

@@ -22,8 +22,10 @@ pub mod chipload;
 pub mod deflection;
 pub mod depth;
 pub mod display;
+pub mod distribution;
 pub mod drill_gates;
 pub mod locality;
+pub mod metric_guide;
 pub mod optimize;
 pub mod plunge_stress;
 pub mod power;
@@ -85,6 +87,11 @@ use crate::material::Material;
 use crate::tool::ToolDefinition;
 use serde::{Deserialize, Serialize};
 
+pub use distribution::{
+    DistributionMetric, DistributionOutcome, Histogram, MetricDistribution, NotMeasuredReason,
+    PopulationSample, metric_distribution,
+};
+pub use metric_guide::{MetricGuide, engagement_guide};
 pub use verdict::{
     BindingConstraint, ChiploadVerdict, Confidence, DeflectionVerdict, DepthVerdict,
     ModulationStrategyTag, ModulationSummary, PowerVerdict, ToolLoadReport, ToolpathLoadVerdict,
