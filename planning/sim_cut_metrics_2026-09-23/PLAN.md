@@ -379,3 +379,26 @@ Residual items, recorded by the editors and the verifier:
 - The guide copy is not on the MCP `get_tool_load_report` payload (optional
   in §4 D).
 - Not seen on screen. The operator's look decides the §7 answers.
+
+### §8 Follow-up 2026-09-24
+
+The operator looked at the cards on screen (screenshot of 2026-09-24
+06:51) and made four complaints. Each maps to one change:
+
+| Complaint | Change |
+|---|---|
+| The cards touch the panel edge. | `app::side_panel` keeps `SIDE_PANEL_GUTTER` (`SPACE_3`, 8 pt) between the content and the right edge of the scroll area, for every side panel. Cause: the egui 0.36 scroll bar floats over the content. `g_panelfit` asserts the gutter. |
+| The cards are too big. | No `Card` frame. One header row per metric (title, ⓘ, status glyph, muted peak as % of limit), a 38 pt bar area, a caption only when a share is out of band, hairlines between metrics. The limit row under the title is gone. The per-card "See time series" link is gone; the title opens the metric's track. A metric core could not measure is one muted line, sorted after the measured ones. |
+| The "100 % IN BAND" chip is too much. | A status glyph: ✓ (`OK`), ✕ and the out-of-band share (`DANGER`, or `CAUTION` when advisory), — (`UNKNOWN`) for no cut time, muted "no limit". Its hover holds the limit row: face, setting, population, in-band share, bound clause, confidence reason. The hover is built from `verdict_face`, `row_caption` and `verdict_tooltip`, so G-OWNBOUND holds. |
+| The band is hard to see; the limit line looks like a bar. | The band is a zone: a faint `OK` wash in band, faint `CAUTION` below the floor, faint `DANGER` above the ceiling. The limit marker is dashed, lower in contrast, starts above the bars under a filled cap, and ends in the label row. The overflow stubs are outlined. The x axis follows the data: core bins over the data only, and a bound more than 15 % of the data range outside it is an off-scale marker at the edge. |
+
+**Shading ruling.** The operator ruled that shading is correct for these
+cards. It replaces the §7 Q1 assumed answer. It is an exception: the feeds
+charts keep the "no shading" chart-display ruling of 2026-09-23.
+
+Sentries amended: `g_ownbound` finds a card row as the first line of the
+status hover (a hover paints in the tooltip layer, so the card titles now
+carry the order); `g_cutcards` asserts the hover parts, the caption rule,
+the status glyph and the off-scale rule; `g_panelfit` asserts the gutter.
+Core `Histogram::build` no longer widens its range to the bounds.
+
