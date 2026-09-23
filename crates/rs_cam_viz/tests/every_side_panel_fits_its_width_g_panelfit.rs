@@ -25,6 +25,11 @@
 //!    because the fixtures draw nothing wide.
 //! 3. Source: `app.rs` builds a left or right panel only in `side_panel`.
 //!
+//! Arms 1a and 1b also hold the right gutter (follow-up 2026-09-24): the
+//! content stops `SIDE_PANEL_GUTTER` short of the visible edge of the
+//! scroll area. The egui 0.36 scroll bar floats over the content, and the
+//! operator saw the cut-metric cards touch the panel edge.
+//!
 //! The b21e3294 lesson: a test that checks that a style is SET does not
 //! check that the layout is RIGHT. Arms 1 and 2 measure the layout.
 
@@ -44,7 +49,7 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::material::{Material, PlywoodGrade};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
-use rs_cam_viz::app::{SIDE_PANEL_MAX_WIDTH, SidePanelEdge, side_panel};
+use rs_cam_viz::app::{SIDE_PANEL_GUTTER, SIDE_PANEL_MAX_WIDTH, SidePanelEdge, side_panel};
 use rs_cam_viz::state::AppState;
 use rs_cam_viz::state::runtime::ToolpathRuntime;
 use rs_cam_viz::state::selection::Selection;
@@ -236,6 +241,9 @@ struct Frame {
     inner: f32,
     /// The width that the content used.
     content: f32,
+    /// The space between the content's right edge and the visible right
+    /// edge of the scroll area.
+    gutter: f32,
 }
 
 fn stored_width(ctx: &egui::Context, id: &'static str) -> f32 {
@@ -251,6 +259,7 @@ fn helper_frame(ctx: &egui::Context, case: &PanelCase, width: f32, state: &mut A
     let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
         side_panel(ui, case.edge, case.id, width, |ui| {
             frame.inner = ui.max_rect().width();
+            frame.gutter = ui.clip_rect().right() - ui.max_rect().right();
             let scope = ui.scope(|ui| (case.draw)(ui, state));
             frame.content = scope.response.rect.width();
         });
@@ -281,6 +290,16 @@ fn check_width(name: &str, case: &PanelCase, fixture: fn() -> AppState) {
             case.id,
             first.stored,
         );
+        for frame in [first, second] {
+            assert!(
+                frame.gutter >= SIDE_PANEL_GUTTER - SLACK,
+                "{name}: the panel {} left a right gutter of {:.2} points at a \
+                 default of {width}, under {SIDE_PANEL_GUTTER}. The floating \
+                 scroll bar then covers the content at the panel edge.",
+                case.id,
+                frame.gutter,
+            );
+        }
         assert!(
             second.stored <= first.stored + SLACK,
             "{name}: the panel {} grew from {:.2} to {:.2} points between two \

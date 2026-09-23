@@ -108,6 +108,10 @@ pub struct RsCamApp {
 /// one bounds a user drag, that one bounds the arithmetic.
 pub const SIDE_PANEL_MAX_WIDTH: f32 = 420.0;
 
+/// The space between a side panel's content and the right edge of its
+/// scroll area, in points. The floating scroll bar sits in it.
+pub const SIDE_PANEL_GUTTER: f32 = crate::ui::tokens::SPACE_3;
+
 /// The edge that a workspace side panel docks to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SidePanelEdge {
@@ -125,6 +129,11 @@ pub enum SidePanelEdge {
 /// content `Ui` gets the inner width as its minimum and maximum. Text that
 /// wraps keeps its wrap. A row that is still too wide shows a horizontal
 /// scroll bar, and the panel keeps its width.
+///
+/// The content stops [`SIDE_PANEL_GUTTER`] short of the right edge of the
+/// scroll area (follow-up 2026-09-24). The egui 0.36 vertical scroll bar
+/// floats over the content, so content at the full width touches the panel
+/// edge and sits under the scroll bar.
 ///
 /// Do not replace this with `Style::wrap_mode = Wrap` (reverted in
 /// b21e3294): that setting breaks grid labels mid-word.
@@ -147,7 +156,7 @@ pub fn side_panel(
             egui::ScrollArea::both()
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
-                    let width = ui.available_width();
+                    let width = (ui.available_width() - SIDE_PANEL_GUTTER).max(0.0);
                     ui.set_min_width(width);
                     ui.set_max_width(width);
                     add(ui);
