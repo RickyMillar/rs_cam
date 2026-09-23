@@ -690,7 +690,10 @@ mod tests {
         assert_eq!(*h.edges.first().unwrap(), 1.0);
         assert_eq!(h.below_s, 0.0);
         let h = Histogram::build(&pop(&[1.0, 1.1, 1.2]), None, Some(0.2), 4);
-        assert!((h.above_s - h.total_s).abs() < 1e-12, "every value is above");
+        assert!(
+            (h.above_s - h.total_s).abs() < 1e-12,
+            "every value is above"
+        );
     }
 
     #[test]
