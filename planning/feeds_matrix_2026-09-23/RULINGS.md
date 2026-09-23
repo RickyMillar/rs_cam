@@ -15,6 +15,10 @@ Recorded verbatim in substance; the operator's words are in FINDINGS-style quote
   per-cell arm is a declaration that agents write from the evidence: `FormulaOnly`
   where a published figure corroborates the formula's range for that cell class,
   `Refuse` where no evidence backs it. The code reads the table; it does not judge.
+  Threshold confirmed by the operator 2026-09-23 ("clueless sounds right to me"):
+  a formula result outside 0.5x to 2x of the published band is CLUELESS and
+  refuses. FORMULA_BACKING.md (e18d8155) is the judgement snapshot; the encoding
+  waits until R4 and R5 land and the judgement is run again.
 - **R2: NOT RULED.** "This is a blind spot for me. I have not seen any official docs
   on depth of cut. But I have seen people do it quite deep. tapered balls make it
   too complex for me to conceptualise." Needs a plain explanation and a smaller
