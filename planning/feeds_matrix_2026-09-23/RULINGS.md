@@ -53,6 +53,31 @@ Recorded verbatim in substance; the operator's words are in FINDINGS-style quote
   depth ceiling on finishing passes; depth reported; deflection decides; one
   engaged diameter at the shipped depth for tapered tools) proceeds as that.
 
+## Operator rulings, third round, 2026-09-24 morning (R4 WP3, the dial)
+
+On R4_AGGRESSIVENESS_SPEC.md §5, in the spec's numbering:
+
+- Q1 default: **0.85** (not the spec's 0.75).
+- Q2 power ceiling: yes, the rated curve `power_at_rpm` with no fraction.
+- Q3 values above 1.00: **warn, do not refuse** ("users might be doing
+  something odd").
+- Q4 finishing passes: orchestrator's call for the best UX → no dial action
+  on the Finish role; the deflection check (R2) is the finish limiter, and
+  the card says so.
+- Q5 plunge and ramp: orchestrator's call → the material base with no
+  factor, stated on the card.
+- Q6 the word: yes, rename the modulator's `modulation_aggressiveness`.
+- Q7 L/D into the dial target as a load fraction: yes.
+- Q8 workholding: fold it into the dial. Both are unsourced load margins; the
+  dial is the ONE margin. The workholding factor and its selector go.
+- Q9 floor threshold min(0.025, band min): yes.
+- Q10 RPM follows the feed down to hold the chip, bounded by the row and
+  machine minimums: yes.
+- Q11 one common scale on depth and width: yes.
+- Standing rule from the operator: **no invisible calculations or
+  de-rates**. Every scale that moves a number shows on the card with its
+  source status.
+
 ## Landed under the rulings, 2026-09-23 evening
 
 - R3: d8d8b0c7 (hint deleted), aef54c83 (one linear scale for the feed and
