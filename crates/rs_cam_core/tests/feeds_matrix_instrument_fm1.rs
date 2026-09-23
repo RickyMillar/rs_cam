@@ -416,19 +416,28 @@ fn walk_matrix(
                             fields.push(num(Some(r.radial_width_mm)));
                             fields.push(num(Some(r.chip_load_mm)));
                             // The predicted load at the SHIPPED point (R4 WP3
-                            // baseline, 2026-09-24): the lateral force of
-                            // `feeds::force` at the recipe's depth, width and
-                            // advance per tooth, and the spindle power of the
-                            // one public power door. Both are the models the
-                            // dial holds; `None` where a model refuses.
+                            // baseline, 2026-09-24; corrected the same day: the
+                            // first version read the calculator's inputs, which
+                            // the dial does not move). The depth and width are
+                            // the operation's shipped values (the calculator's
+                            // when the operation holds none), the advance per
+                            // tooth is the shipped feed over the shipped RPM and
+                            // the flutes, so the column moves with the dial and
+                            // the RPM follow-down. `None` where a model refuses.
+                            let shipped_rpm = s.operation.spindle_rpm().map_or(r.rpm, f64::from);
+                            let shipped_fz =
+                                s.operation.feed_rate() / (shipped_rpm * f64::from(FLUTES));
+                            let shipped_ap =
+                                s.operation.depth_per_pass().unwrap_or(r.axial_depth_mm);
+                            let shipped_ae = s.operation.stepover().unwrap_or(r.radial_width_mm);
                             let force_n = rs_cam_core::feeds::force::lateral_cutting_force(
                                 material,
-                                r.axial_depth_mm,
+                                shipped_ap,
                                 rs_cam_core::feeds::force::immersion_angle(
-                                    r.radial_width_mm,
+                                    shipped_ae,
                                     tool.diameter / 2.0,
                                 ),
-                                r.chip_load_mm,
+                                shipped_fz,
                             );
                             fields.push(num(force_n));
                             let power_kw = rs_cam_core::feeds::power_at_operating_point(
