@@ -1,6 +1,6 @@
 # Simulation cut metrics: distributions first, time series on request
 
-Status: IN PROGRESS (unattended run, 2026-09-23 night). Date: 2026-09-23. Owner-facing decisions: §7 (assumed answers recorded there).
+Status: LANDED packages A–F on 2026-09-23 night (unattended run; not yet seen on screen). Date: 2026-09-23. Owner-facing decisions: §7 (assumed answers recorded there). Landed commits and residual items: §8.
 
 ## 1. The request
 
@@ -338,3 +338,44 @@ until the operator rules otherwise):
    also a handle on the bottom bar?
 4. **Metric set.** Chipload, depth, deflection, power, engagement for v1.
    Add or drop any?
+
+## 8. Landed, and what is left
+
+| Package | Commit | Sentry |
+|---|---|---|
+| A duplicate capture control, G side-panel width helper | f1c62483 | `every_side_panel_fits_its_width_g_panelfit`, DC6 |
+| B distribution producer, D metric guide | a1cbff0d | `histogram_population_is_the_gate_population_g_cuthist` |
+| C right-panel cards, E time-series drawer | 22c3594c | `cut_metric_cards_read_the_gate_g_cutcards`, `the_limit_rows_read_their_own_bound_g_ownbound` |
+| F docs | c61041e8 and this section | — |
+
+Order change: the cards follow `criteria()` order (Chipload, Spindle power,
+Tool deflection, Depth of cut, Engagement), not the §3.1 order, so the
+Inspector, Readiness and the drawer list the kinds in one order.
+
+Residual items, recorded by the editors and the verifier:
+
+- The two content-width arms of `g_panelfit` are `#[ignore]` instruments:
+  the toolpath tree (284 pt) and the setup properties panel (249 pt) hold a
+  row wider than the 223 pt inner width at a 240 pt default (§6.1 residual
+  local work). Fixed widths seen: `properties/tool.rs` 120, `machine_panel.rs`
+  140, `components/compare.rs` 160, `stock.rs` 180.
+- The chipload population in `distribution.rs` composes the gate's predicates
+  in the gate's order but is not one shared function with `chipload.rs`; a
+  mismatch logs a warning and fails `g_cuthist`.
+- The depth gate has no `radial_woc_fraction < 0.02` air-cut rule, so its
+  population counts air-cut samples; the histogram follows the gate.
+- `distribution.rs` bins over the cap with zero tolerance; the depth gate
+  (R2) allows 1e-4 mm of f32 noise, so a bin at the cap can read "above"
+  while the badge reads Within.
+- The drawer rebuilds and thins its track points every frame while open.
+- The closed bottom panel never gets smaller than the height it last saved.
+- "Now playing" still shows a "Tool load" header for the gantry-push row alone.
+- No viz test draws the whole section on a real trace (no viz fixture builds
+  a `SimulationResults`; a hand-built trace reads as stale). Arm A of
+  `g_cutcards` holds the wiring instead.
+- `build_cut_metric_set` copies the context-building loop of
+  `project_load_report`; core should offer one public function that builds
+  a `ToolpathLoadContext` for one toolpath.
+- The guide copy is not on the MCP `get_tool_load_report` payload (optional
+  in §4 D).
+- Not seen on screen. The operator's look decides the §7 answers.
