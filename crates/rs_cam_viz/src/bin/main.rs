@@ -1,6 +1,13 @@
 fn main() -> eframe::Result {
     let mcp_mode = std::env::args().any(|arg| arg == "--mcp");
 
+    // Reject an unsupported MCP launch before tracing, warning setup, or any
+    // window-system work. `run` repeats the guard for library callers.
+    #[cfg(not(feature = "mcp"))]
+    if mcp_mode {
+        return rs_cam_viz::run(true);
+    }
+
     init_tracing(mcp_mode);
     install_panic_hook();
     if mcp_mode {

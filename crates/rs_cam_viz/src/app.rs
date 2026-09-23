@@ -58,7 +58,7 @@ pub struct RsCamApp {
     ///
     /// `pump_dispatch` reads the field inside its `#[cfg(feature = "mcp")]`
     /// arm alone, so a build without the `mcp` feature never reads it.
-    #[cfg_attr(not(feature = "mcp"), allow(dead_code))]
+    #[cfg(feature = "mcp")]
     egui_ctx: egui::Context,
     camera: OrbitCamera,
     /// Cached viewport rect for click detection.
@@ -109,13 +109,13 @@ pub struct RsCamApp {
 const SIDE_PANEL_MAX_WIDTH: f32 = 420.0;
 
 impl RsCamApp {
-    /// `waker` is the event-loop wakeup that survives a parked frame loop
-    /// (G-LV.1). `None` means "no host owns the loop" — the MCP server then
-    /// relies on `request_repaint` alone, which is the pre-B-4 behaviour.
-    pub fn new(
+    /// `mcp_exit` shares the MCP server thread's lifetime with the event-loop
+    /// host. It also carries the wakeup that survives a parked frame loop.
+    /// `None` is the normal interactive GUI path.
+    pub(crate) fn new(
         cc: &eframe::CreationContext<'_>,
         mcp_mode: bool,
-        waker: Option<crate::GuiWaker>,
+        #[cfg(feature = "mcp")] mcp_exit: Option<&crate::mcp_lifecycle::McpExitSignal>,
     ) -> Self {
         configure_theme(&cc.egui_ctx);
 
@@ -157,56 +157,82 @@ impl RsCamApp {
             let generation = controller.generation_control();
             let reads = mcp_reads.clone();
 
-            std::thread::Builder::new()
-                .name("mcp-server".into())
-                .spawn(move || {
-                    let rt = match tokio::runtime::Runtime::new() {
-                        Ok(rt) => rt,
-                        Err(e) => {
-                            tracing::error!("Failed to create tokio runtime for MCP: {e}");
-                            return;
-                        }
-                    };
-                    rt.block_on(async move {
-                        let server = crate::mcp_server::EmbeddedCamServer::new(
-                            tx, egui_ctx, generation, reads,
-                        );
-                        // G-LV.1: the wakeup that outlives a park. Absent
-                        // when no host owns the event loop.
-                        let server = match waker {
-                            Some(waker) => server.with_waker(waker),
-                            None => server,
-                        };
-                        let tool_router = crate::mcp_server::EmbeddedCamServer::into_tool_router();
-
-                        use rmcp::ServiceExt as _;
-
-                        let mut router = rmcp::handler::server::router::Router::new(server);
-                        router.tool_router = tool_router;
-
-                        tracing::info!("Starting embedded MCP server on stdio");
-                        match router.serve(rmcp::transport::stdio()).await {
-                            Ok(service) => match service.waiting().await {
-                                Ok(_quit_reason) => {}
+            if let Some(exit_signal) = mcp_exit {
+                let thread_exit = exit_signal.clone();
+                let spawn_result =
+                    std::thread::Builder::new()
+                        .name("mcp-server".into())
+                        .spawn(move || {
+                            // Created before any fallible setup. A return or an
+                            // unwind crossing this outer server-thread closure
+                            // reports failure unless `waiting()` completed
+                            // successfully. Detached handler-task panics do not
+                            // unwind this closure and are not covered here.
+                            let mut completion =
+                                crate::mcp_lifecycle::McpCompletionGuard::new(thread_exit.clone());
+                            let rt = match tokio::runtime::Runtime::new() {
+                                Ok(rt) => rt,
                                 Err(e) => {
-                                    tracing::error!("MCP service error: {e}");
+                                    tracing::error!("Failed to create tokio runtime for MCP: {e}");
+                                    return;
                                 }
-                            },
-                            Err(e) => {
-                                tracing::error!("MCP serve error: {e}");
+                            };
+                            let clean_eof = rt.block_on(async move {
+                                let waker = thread_exit.waker();
+                                let server = crate::mcp_server::EmbeddedCamServer::new(
+                                    tx, egui_ctx, generation, reads,
+                                )
+                                .with_waker(waker);
+                                let tool_router =
+                                    crate::mcp_server::EmbeddedCamServer::into_tool_router();
+
+                                use rmcp::ServiceExt as _;
+
+                                let mut router = rmcp::handler::server::router::Router::new(server);
+                                router.tool_router = tool_router;
+
+                                tracing::info!("Starting embedded MCP server on stdio");
+                                match router.serve(rmcp::transport::stdio()).await {
+                                    Ok(service) => match service.waiting().await {
+                                        Ok(rmcp::service::QuitReason::Closed) => true,
+                                        Ok(reason) => {
+                                            tracing::error!(
+                                                "MCP service stopped without clean EOF: {reason:?}"
+                                            );
+                                            false
+                                        }
+                                        Err(e) => {
+                                            tracing::error!("MCP service error: {e}");
+                                            false
+                                        }
+                                    },
+                                    Err(e) => {
+                                        tracing::error!("MCP serve error: {e}");
+                                        false
+                                    }
+                                }
+                            });
+                            if clean_eof {
+                                completion.mark_clean();
+                                tracing::info!("Embedded MCP server reached clean EOF");
+                            } else {
+                                tracing::error!("Embedded MCP server shut down after failure");
                             }
-                        }
-                        tracing::info!("Embedded MCP server shut down");
-                    });
-                })
-                .ok();
+                        });
+                if let Err(e) = spawn_result {
+                    tracing::error!("Failed to spawn MCP server thread: {e}");
+                    exit_signal.request_failure();
+                }
+            } else {
+                tracing::error!("MCP mode started without an event-loop exit signal");
+            }
 
             Some(rx)
         } else {
             None
         };
         #[cfg(not(feature = "mcp"))]
-        let _ = (mcp_mode, waker);
+        let _ = mcp_mode;
 
         // Load job file if RS_CAM_JOB is set
         let mut loaded_a_job = false;
@@ -251,6 +277,7 @@ impl RsCamApp {
 
         let mut app = Self {
             controller,
+            #[cfg(feature = "mcp")]
             egui_ctx: cc.egui_ctx.clone(),
             camera: OrbitCamera::new(),
             viewport_rect: egui::Rect::NOTHING,

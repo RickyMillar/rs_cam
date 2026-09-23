@@ -155,24 +155,60 @@ fn arm_pump_tick(event_loop: &winit::event_loop::ActiveEventLoop) {
 
 /// rs_cam's `ApplicationHandler`, wrapping eframe's.
 ///
-/// Every callback forwards to eframe **first** and takes the app borrow only
-/// after it returns, never across an inner call. That ordering is load-bearing:
-/// eframe can paint synchronously from inside `check_redraw_requests`
+/// Every ordinary callback forwards to eframe **first** and takes the app
+/// borrow only after it returns, never across an inner call. MCP completion is
+/// the deliberate exception: `user_event` / `about_to_wait` exit winit without
+/// forwarding. The ordinary ordering is load-bearing because eframe can paint
+/// synchronously from inside `check_redraw_requests`
 /// (`eframe .../native/run.rs:221-224`), which re-enters [`RsCamAppProxy::ui`]
 /// and takes the same borrow.
 pub(crate) struct RsCamHost<'a> {
     inner: eframe::EframeWinitApplication<'a>,
     latch: AppLatch,
     app: Option<AppCell>,
+    /// Present only for `--mcp`; normal window and unsaved-close handling does
+    /// not consult this signal.
+    #[cfg(feature = "mcp")]
+    mcp_exit: Option<crate::mcp_lifecycle::McpExitSignal>,
 }
 
 impl<'a> RsCamHost<'a> {
+    #[cfg(feature = "mcp")]
+    pub(crate) fn new(
+        inner: eframe::EframeWinitApplication<'a>,
+        latch: AppLatch,
+        mcp_exit: Option<crate::mcp_lifecycle::McpExitSignal>,
+    ) -> Self {
+        Self {
+            inner,
+            latch,
+            app: None,
+            mcp_exit,
+        }
+    }
+
+    #[cfg(not(feature = "mcp"))]
     pub(crate) fn new(inner: eframe::EframeWinitApplication<'a>, latch: AppLatch) -> Self {
         Self {
             inner,
             latch,
             app: None,
         }
+    }
+
+    #[cfg(feature = "mcp")]
+    fn exit_if_mcp_finished(&self, event_loop: &winit::event_loop::ActiveEventLoop) -> bool {
+        let requested = self
+            .mcp_exit
+            .as_ref()
+            .is_some_and(crate::mcp_lifecycle::McpExitSignal::is_requested);
+        if requested {
+            if let Some(signal) = self.mcp_exit.as_ref() {
+                signal.acknowledge();
+            }
+            event_loop.exit();
+        }
+        requested
     }
 
     /// Pick the app up out of the bootstrap latch, once.
@@ -213,6 +249,14 @@ impl winit::application::ApplicationHandler<eframe::UserEvent> for RsCamHost<'_>
         event_loop: &winit::event_loop::ActiveEventLoop,
         event: eframe::UserEvent,
     ) {
+        // MCP stdio owns an MCP-mode process. Its completion wake comes through
+        // this callback, and exits winit directly rather than entering the
+        // GUI's ViewportCommand/unsaved-changes close path.
+        #[cfg(feature = "mcp")]
+        if self.exit_if_mcp_finished(event_loop) {
+            return;
+        }
+
         // Swallow rs_cam's own wakeup. Its job was done the moment it woke the
         // poll: `about_to_wait` runs at the end of this iteration and pumps.
         // Forwarding it would have eframe set `ControlFlow::Poll` and spin.
@@ -238,6 +282,14 @@ impl winit::application::ApplicationHandler<eframe::UserEvent> for RsCamHost<'_>
     }
 
     fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        // Fallback for completion observed without its wake event (for
+        // example, if another event was already queued). Normal mode has no
+        // signal and follows the existing eframe/unsaved-close path unchanged.
+        #[cfg(feature = "mcp")]
+        if self.exit_if_mcp_finished(event_loop) {
+            return;
+        }
+
         // eframe first, always. It can paint synchronously from inside
         // `check_redraw_requests`, which re-enters `RsCamAppProxy::ui` and
         // takes the borrow this method is about to take.

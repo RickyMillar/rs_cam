@@ -10,6 +10,8 @@ pub mod io;
 #[cfg(feature = "mcp")]
 pub mod mcp_bridge;
 #[cfg(feature = "mcp")]
+mod mcp_lifecycle;
+#[cfg(feature = "mcp")]
 pub mod mcp_server;
 pub mod present_mode;
 pub mod render;
@@ -38,6 +40,13 @@ pub mod ui_command;
 pub type GuiWaker = std::sync::Arc<dyn Fn() + Send + Sync>;
 
 pub fn run(mcp_mode: bool) -> eframe::Result {
+    #[cfg(not(feature = "mcp"))]
+    if mcp_mode {
+        return Err(eframe::Error::AppCreation(Box::from(
+            "--mcp requires rs_cam_viz's `mcp` feature",
+        )));
+    }
+
     // Title carries the git desc so the running build is identifiable
     // at a glance (e.g. "rs_cam — 3f9a1c2-dirty").
     let title = format!("rs_cam — {}", rs_cam_core::util::build_info::GIT_DESC);
@@ -98,7 +107,9 @@ pub fn run(mcp_mode: bool) -> eframe::Result {
     // this reason (`eframe/src/native/wgpu_integration.rs:251-268`) — so the
     // mutex here is around a proxy handle, not around any app state, and it is
     // held for the duration of one channel write.
+    #[cfg(feature = "mcp")]
     let proxy = std::sync::Mutex::new(event_loop.create_proxy());
+    #[cfg(feature = "mcp")]
     let waker: GuiWaker = std::sync::Arc::new(move || {
         // `send_event` writes to a calloop channel registered as an event
         // source; the write wakes the poll directly. No compositor frame
@@ -119,22 +130,30 @@ pub fn run(mcp_mode: bool) -> eframe::Result {
             });
         }
     });
+    #[cfg(feature = "mcp")]
+    let mcp_exit =
+        mcp_mode.then(|| mcp_lifecycle::McpExitSignal::new(std::sync::Arc::clone(&waker)));
 
     // Bootstrap latch — see `host::AppLatch`. The creator closure below runs
     // on `resumed`, inside `run_app`, so this is the only way to hand the
     // host a reference to an app that does not exist yet.
     let latch: host::AppLatch = std::rc::Rc::new(std::cell::RefCell::new(None));
     let creator_latch = std::rc::Rc::clone(&latch);
+    #[cfg(feature = "mcp")]
+    let app_mcp_exit = mcp_exit.clone();
 
     let eframe_app = eframe::create_native(
         "rs_cam",
         options,
         Box::new(move |cc| {
+            #[cfg(feature = "mcp")]
             let app = std::rc::Rc::new(std::cell::RefCell::new(app::RsCamApp::new(
                 cc,
                 mcp_mode,
-                Some(std::sync::Arc::clone(&waker)),
+                app_mcp_exit.as_ref(),
             )));
+            #[cfg(not(feature = "mcp"))]
+            let app = std::rc::Rc::new(std::cell::RefCell::new(app::RsCamApp::new(cc, mcp_mode)));
             match creator_latch.try_borrow_mut() {
                 Ok(mut slot) => *slot = Some(std::rc::Rc::clone(&app)),
                 // Unreachable: the latch is touched here and in
@@ -151,7 +170,42 @@ pub fn run(mcp_mode: bool) -> eframe::Result {
         &event_loop,
     );
 
+    #[cfg(feature = "mcp")]
+    let mut host = host::RsCamHost::new(eframe_app, latch, mcp_exit.clone());
+    #[cfg(not(feature = "mcp"))]
     let mut host = host::RsCamHost::new(eframe_app, latch);
     event_loop.run_app(&mut host)?;
+
+    #[cfg(feature = "mcp")]
+    if mcp_mode {
+        match mcp_exit
+            .as_ref()
+            .and_then(mcp_lifecycle::McpExitSignal::outcome)
+        {
+            Some(mcp_lifecycle::McpExitOutcome::CleanEof) => {}
+            Some(mcp_lifecycle::McpExitOutcome::Failure) => {
+                return Err(eframe::Error::AppCreation(Box::from(
+                    "embedded MCP server exited after a runtime, spawn, serve, wait, or outer-thread failure",
+                )));
+            }
+            None => {
+                return Err(eframe::Error::AppCreation(Box::from(
+                    "MCP-mode event loop exited before the embedded server completed",
+                )));
+            }
+        }
+    }
+
     Ok(())
+}
+
+#[cfg(all(test, not(feature = "mcp")))]
+mod no_mcp_feature_tests {
+    #[test]
+    fn mcp_mode_fails_before_event_loop_creation() {
+        assert!(matches!(
+            super::run(true),
+            Err(eframe::Error::AppCreation(_))
+        ));
+    }
 }
