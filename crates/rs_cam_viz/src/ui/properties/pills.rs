@@ -241,6 +241,7 @@ mod tests {
     use crate::ui::components::value_row::near_match;
     use rs_cam_core::compute::catalog::OperationType;
     use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+    use rs_cam_core::material::{Material, WoodSpecies};
     use rs_cam_core::session::ProjectSession;
 
     /// The demo pocket of UX-R03-014: Ø6 two-flute flat end mill, fresh
@@ -262,6 +263,65 @@ mod tests {
         )
         .expect("valid pairing");
         (session, tool, op, result)
+    }
+
+    /// The feed-floor fixture: the demo pocket in generic hardwood (Janka
+    /// 1450), with a calculator feed that is not an integer.
+    ///
+    /// Feeds matrix R5 re-bless (2026-09-23). The demo pocket's default
+    /// stock resolves to the printed row `amana-zrn-flat-softwood-pocket-6000-2f`
+    /// (0.2032 mm/tooth). Its raw feed is 0.2032 x 18 000 x 2 x 0.75 (long
+    /// tool) = 5486.4 mm/min. The 4000 mm/min cutting ceiling clamps it, and
+    /// the safety factor gives 4000 x 0.75 = 3000 mm/min, an integer. A floor
+    /// and a nearest rounding agree on an integer, so the demo pocket can
+    /// no longer tell them apart.
+    ///
+    /// In generic hardwood the pocket resolves to the printed Spektra row
+    /// `amana-flat-hardwood-pocket-6000-2f-spektra`: 0.127 mm/tooth (one
+    /// value), Ø6.0, Janka 1450, `rpm_nominal` 18 000. The row is
+    /// VendorBacked, so R1 does not refuse it. The `feeds::calculate` stages:
+    ///
+    /// * chipload 0.127 mm/tooth: the diameter scale (6/6)^0.61 and the
+    ///   hardness scale (1450/1450)^0.5 are both 1.0;
+    /// * RPM 18 000, from the row, inside the 8000-24 000 machine range;
+    /// * depth scale 1.0: the default pocket depth is 4.2 mm = 0.7 x D;
+    /// * raw feed = 18 000 x 0.127 x 2 x 1.0 = 4572 mm/min;
+    /// * long-tool de-rate 0.75: the default stickout is 45 mm, and
+    ///   45 / 6 = 7.5 > 6, so the raw feed is 3429 mm/min;
+    /// * workholding Medium: 1.0;
+    /// * the 4000 mm/min cutting ceiling does not bind;
+    /// * safety factor 0.75: 3429 x 0.75 = 2571.75 mm/min;
+    /// * the rubbing floor does not fire: 2571.75 / 36 000 = 0.0714 mm/tooth,
+    ///   above 0.025.
+    ///
+    /// 2571.75 has a fraction above 0.5, so a nearest rounding gives 2572
+    /// and the floor gives 2571.
+    fn hardwood_pocket() -> (
+        ProjectSession,
+        ToolConfig,
+        OperationConfig,
+        FeedsResult,
+        Material,
+    ) {
+        let session = ProjectSession::new_empty();
+        let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+        tool.diameter = 6.0;
+        let op = OperationConfig::new_default(OperationType::Pocket);
+        let material = Material::SolidWood {
+            species: WoodSpecies::GenericHardwood,
+        };
+        let stock = session.stock_config();
+        let result = rs_cam_core::feeds::suggest::feeds_result_for_operation(
+            &op,
+            &tool,
+            &material,
+            session.machine(),
+            stock.workholding_rigidity,
+            rs_cam_core::feeds::embedded_vendor_lut(),
+            session.post_config().spindle_strategy,
+        )
+        .expect("valid pairing");
+        (session, tool, op, result, material)
     }
 
     /// The pill offers the funnel's 1.2, not the calculator's 4.2, and with
@@ -317,23 +377,18 @@ mod tests {
     /// the quantiser it is handed, on both directions side by side.
     #[test]
     fn the_feed_floors_while_the_depth_rounds_to_the_nearest() {
-        // Arm 1 — end to end. Measured on the demo pocket: the calculator
-        // gives 1290.9375 mm/min and the pill offers 1290. Before T-9 it
-        // offered 1291, which is ABOVE the value every ceiling was satisfied
-        // at, so this arm is red on the old code.
-        let (session, tool, op, result) = demo_pocket();
-        let pills = PillSuggestions::new(
-            &op,
-            &result,
-            &tool,
-            session.machine(),
-            &session.stock_config().material,
-            None,
-        );
+        // Arm 1 — end to end, on `hardwood_pocket` (the arithmetic is on
+        // that fixture): the calculator gives 2571.75 mm/min and the pill
+        // offers 2571. A nearest rounding offers 2572, which is ABOVE the
+        // value every ceiling was satisfied at, so this arm is red on the
+        // pre-T-9 code. Before feeds matrix R5 the demo pocket gave 1290.9375
+        // here; it now lands on the integer 3000.
+        let (session, tool, op, result, material) = hardwood_pocket();
+        let pills = PillSuggestions::new(&op, &result, &tool, session.machine(), &material, None);
         let feed_pill = pills.feed_rate();
         let calculator = result.feed_rate_mm_min;
         assert!(
-            (calculator - 1290.9375).abs() < 1e-9,
+            (calculator - 2571.75).abs() < 1e-9,
             "fixture drift: raw feed {calculator}"
         );
         assert!(
@@ -343,8 +398,8 @@ mod tests {
             feed_pill.suggestion.recommended
         );
         assert!(
-            (feed_pill.suggestion.recommended - 1290.0).abs() < 1e-9,
-            "the feed pill offers {}, not the floor 1290.0",
+            (feed_pill.suggestion.recommended - 2571.0).abs() < 1e-9,
+            "the feed pill offers {}, not the floor 2571.0",
             feed_pill.suggestion.recommended
         );
         // Non-vacuity: the nearest rounding really does go up on this
