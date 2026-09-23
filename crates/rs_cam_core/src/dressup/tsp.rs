@@ -139,7 +139,6 @@ fn split_into_segments(toolpath: &Toolpath, internal_link_ceiling_z: Option<f64>
     segments
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Total XY rapid travel distance for a given segment visitation order.
 ///
 /// Measures the sum of XY distances from the end of each segment to the
@@ -299,6 +298,8 @@ pub fn optimize_rapid_order(
 /// Run the single-group nearest-neighbor + 2-opt over `[group_start..group_end)`
 /// of the input, append the reordered moves to `result`, and update `old_to_new`
 /// so each input cutting move points to its new index.
+// SAFETY: `group` is a locally constructed, in-bounds input move range; all
+// `old_to_new` writes use indices from that same range.
 #[allow(clippy::indexing_slicing)]
 fn optimize_one_group(
     toolpath: &Toolpath,
@@ -343,9 +344,11 @@ fn optimize_one_group(
     rebuild_group(&segments, &order, safe_z, result, old_to_new);
 }
 
-/// Nearest-neighbor + 2-opt order computation over `segments`.
+/// Nearest-neighbor seed order over `segments`.
+// SAFETY: `order` contains only segment indices inserted from `0..n`, and is
+// non-empty before its final-element index is read.
 #[allow(clippy::indexing_slicing)]
-fn run_tsp(segments: &[Segment]) -> Vec<usize> {
+fn nearest_neighbor_order(segments: &[Segment]) -> Vec<usize> {
     let n = segments.len();
     let mut order = Vec::with_capacity(n);
 
@@ -370,20 +373,28 @@ fn run_tsp(segments: &[Segment]) -> Vec<usize> {
     for _ in 1..n {
         let current = order[order.len() - 1];
         let current_end = &segments[current].end;
-
         let best_idx = match picker.nearest(current_end.x, current_end.y) {
             Some((idx, d)) if d < f64::INFINITY => idx,
             _ => 0,
         };
-
         picker.remove(best_idx);
         order.push(best_idx);
     }
 
-    // 2-opt is O(N²) per sweep and each reverse is O(N), so a full pass is
-    // O(N³). With 100 iterations and N > ~500, this can hang the app for
-    // hours. On very fragmented toolpaths the nearest-neighbor pass from
-    // step 1 is already a strong solution — skip 2-opt beyond this threshold.
+    order
+}
+
+/// Nearest-neighbor + directed, fixed-orientation 2-opt over `segments`.
+// SAFETY: loop bounds keep every `order` index below `n`; a selected reversal
+// is exactly the in-bounds candidate range `i + 1..=j`.
+#[allow(clippy::indexing_slicing)]
+fn run_tsp(segments: &[Segment]) -> Vec<usize> {
+    let n = segments.len();
+    let mut order = nearest_neighbor_order(segments);
+
+    // 2-opt is O(N²) per iteration. With 100 iterations and N > ~500, this
+    // can hang the app for hours. On very fragmented toolpaths the
+    // nearest-neighbor pass is already a strong solution — skip refinement.
     const MAX_2OPT_SEGMENTS: usize = 500;
     if n > MAX_2OPT_SEGMENTS {
         tracing::info!(
@@ -392,37 +403,45 @@ fn run_tsp(segments: &[Segment]) -> Vec<usize> {
         );
         return order;
     }
-    let max_iterations = 100;
-    for _ in 0..max_iterations {
-        let mut improved = false;
 
+    const IMPROVEMENT_EPS: f64 = 1e-10;
+    for _ in 0..100 {
+        // Prefix sums cover the internal edges of a candidate reversal.
+        // Reversing fixed-orientation segments reverses every directed
+        // transition too, so its cost is not captured by boundary swaps alone.
+        let mut reverse_minus_forward = vec![0.0; n];
+        for k in 0..n.saturating_sub(1) {
+            let forward = xy_distance(&segments[order[k]].end, &segments[order[k + 1]].start);
+            let reverse = xy_distance(&segments[order[k + 1]].end, &segments[order[k]].start);
+            reverse_minus_forward[k + 1] = reverse_minus_forward[k] + reverse - forward;
+        }
+
+        let mut best_delta = -IMPROVEMENT_EPS;
+        let mut best_reversal = None;
         for i in 0..n.saturating_sub(1) {
             for j in (i + 2)..n {
-                let cost_before =
-                    xy_distance(&segments[order[i]].end, &segments[order[i + 1]].start)
-                        + if j + 1 < n {
-                            xy_distance(&segments[order[j]].end, &segments[order[j + 1]].start)
-                        } else {
-                            0.0
-                        };
+                let left_delta = xy_distance(&segments[order[i]].end, &segments[order[j]].start)
+                    - xy_distance(&segments[order[i]].end, &segments[order[i + 1]].start);
+                let right_delta = if j + 1 < n {
+                    xy_distance(&segments[order[i + 1]].end, &segments[order[j + 1]].start)
+                        - xy_distance(&segments[order[j]].end, &segments[order[j + 1]].start)
+                } else {
+                    0.0
+                };
+                let internal_delta = reverse_minus_forward[j] - reverse_minus_forward[i + 1];
+                let delta = left_delta + internal_delta + right_delta;
 
-                let cost_after = xy_distance(&segments[order[i]].end, &segments[order[j]].end)
-                    + if j + 1 < n {
-                        xy_distance(&segments[order[i + 1]].start, &segments[order[j + 1]].start)
-                    } else {
-                        0.0
-                    };
-
-                if cost_after < cost_before - 1e-10 {
-                    order[i + 1..=j].reverse();
-                    improved = true;
+                if delta < best_delta {
+                    best_delta = delta;
+                    best_reversal = Some((i + 1, j));
                 }
             }
         }
 
-        if !improved {
+        let Some((start, end)) = best_reversal else {
             break;
-        }
+        };
+        order[start..=end].reverse();
     }
 
     order
@@ -455,6 +474,8 @@ fn run_tsp(segments: &[Segment]) -> Vec<usize> {
 /// `LeadIn`, `EntryPlunge` and `FinishingCut` survive the pass untouched,
 /// which is the invariant the session's drill entry-strip predicate
 /// depends on.
+// SAFETY: `order` is a permutation of `segments` indices, and `src_range`
+// values were derived from the bounded input group used to size `old_to_new`.
 #[allow(clippy::indexing_slicing)]
 fn rebuild_group(
     segments: &[Segment],
@@ -522,6 +543,8 @@ fn rebuild_group(
 /// trailing rapids (after the last surviving cut) map to
 /// `group_new_end..group_new_end`. Mid-group rapids that lie between
 /// surviving cuts map to the next cut's slot.
+// SAFETY: `group` is an in-bounds range for `old_to_new`, constructed from
+// input move bounds before this helper is called.
 #[allow(clippy::indexing_slicing)]
 fn fill_group_rapids(
     old_to_new: &mut [Option<Range<usize>>],
@@ -590,7 +613,6 @@ fn fill_group_rapids(
 /// `MoveRemap::foreign_intrusion`) — this is the exact loop the index was
 /// built to retire, since a wanaka-class reorder can carry ~200k moves and
 /// dozens-to-hundreds of spans through it.
-#[allow(clippy::indexing_slicing)]
 fn remap_spans(spans: &[Span], remap: &MoveRemap, new_n: usize, moves: &[Move]) -> Vec<Span> {
     let index = RemapIndex::build(remap);
     spans
@@ -691,6 +713,15 @@ mod tests {
             None,
         ))
         .toolpath
+    }
+
+    fn segment(start: P3, end: P3) -> Segment {
+        Segment {
+            moves: vec![],
+            start,
+            end,
+            src_range: 0..0,
+        }
     }
 
     #[test]
@@ -931,6 +962,106 @@ mod tests {
             "XY distance should be 5.0, got {}",
             d
         );
+    }
+
+    /// True directed delta for reversing `order[i + 1..=j]`, matching the
+    /// fixed-orientation 2-opt candidate evaluated by `run_tsp`.
+    fn directed_reversal_delta(segments: &[Segment], order: &[usize], i: usize, j: usize) -> f64 {
+        let left = xy_distance(&segments[order[i]].end, &segments[order[j]].start)
+            - xy_distance(&segments[order[i]].end, &segments[order[i + 1]].start);
+        let internal = ((i + 1)..j).fold(0.0, |delta, k| {
+            delta + xy_distance(&segments[order[k + 1]].end, &segments[order[k]].start)
+                - xy_distance(&segments[order[k]].end, &segments[order[k + 1]].start)
+        });
+        let right = if j + 1 < order.len() {
+            xy_distance(&segments[order[i + 1]].end, &segments[order[j + 1]].start)
+                - xy_distance(&segments[order[j]].end, &segments[order[j + 1]].start)
+        } else {
+            0.0
+        };
+        left + internal + right
+    }
+
+    #[test]
+    fn directed_two_opt_rejects_asymmetric_false_improvement() {
+        // Boundary-only 2-opt accepts reversing segments 1 and 2 here, even
+        // though reversing their internal directed edge costs more than that
+        // apparent saving.
+        let segments = vec![
+            segment(P3::new(-15.0, -27.0, 0.0), P3::new(-23.0, -22.0, 0.0)),
+            segment(P3::new(2.0, 25.0, 0.0), P3::new(29.0, 7.0, 0.0)),
+            segment(P3::new(-26.0, 19.0, 0.0), P3::new(14.0, -6.0, 0.0)),
+            segment(P3::new(20.0, 17.0, 0.0), P3::new(26.0, -24.0, 0.0)),
+        ];
+        let seed = nearest_neighbor_order(&segments);
+        assert_eq!(seed, vec![0, 2, 3, 1]);
+
+        let boundary_delta = xy_distance(&segments[seed[0]].end, &segments[seed[2]].start)
+            - xy_distance(&segments[seed[0]].end, &segments[seed[1]].start)
+            + xy_distance(&segments[seed[1]].end, &segments[seed[3]].start)
+            - xy_distance(&segments[seed[2]].end, &segments[seed[3]].start);
+        assert!(boundary_delta < -1e-10);
+        assert!(directed_reversal_delta(&segments, &seed, 0, 2) > 1e-10);
+        assert_eq!(run_tsp(&segments), vec![0, 2, 1, 3]);
+    }
+
+    #[test]
+    fn directed_two_opt_accepts_multi_edge_reversal_with_right_boundary() {
+        // NN seeds [0, 3, 4, 2, 1, 5]. The best reversal is positions 1..=4:
+        // it has three directed internal edges and a right boundary to segment
+        // 5, so this fails if prefix indexing or refinement is removed.
+        let segments = vec![
+            segment(P3::new(18.0, -5.0, 0.0), P3::new(-18.0, -8.0, 0.0)),
+            segment(P3::new(-16.0, 1.0, 0.0), P3::new(18.0, -12.0, 0.0)),
+            segment(P3::new(-1.0, -13.0, 0.0), P3::new(12.0, 12.0, 0.0)),
+            segment(P3::new(-20.0, -16.0, 0.0), P3::new(-6.0, 19.0, 0.0)),
+            segment(P3::new(-3.0, 19.0, 0.0), P3::new(-19.0, -18.0, 0.0)),
+            segment(P3::new(-20.0, 10.0, 0.0), P3::new(-11.0, -7.0, 0.0)),
+        ];
+        let seed = nearest_neighbor_order(&segments);
+        assert_eq!(seed, vec![0, 3, 4, 2, 1, 5]);
+        assert!(directed_reversal_delta(&segments, &seed, 0, 4) < -1e-10);
+
+        let refined = run_tsp(&segments);
+        assert_eq!(refined, vec![0, 1, 2, 4, 3, 5]);
+        assert!(
+            total_rapid_distance(&refined, &segments)
+                < total_rapid_distance(&seed, &segments) - 1e-10,
+            "directed 2-opt must strictly improve the NN seed: seed={seed:?}, refined={refined:?}"
+        );
+    }
+
+    #[test]
+    fn directed_two_opt_never_exceeds_nearest_neighbor_objective() {
+        let segments = vec![
+            segment(P3::new(0.0, 0.0, 0.0), P3::new(8.0, 0.0, 0.0)),
+            segment(P3::new(9.0, 4.0, 0.0), P3::new(2.0, 10.0, 0.0)),
+            segment(P3::new(3.0, 11.0, 0.0), P3::new(11.0, 11.0, 0.0)),
+            segment(P3::new(12.0, 3.0, 0.0), P3::new(4.0, 2.0, 0.0)),
+            segment(P3::new(5.0, 3.0, 0.0), P3::new(13.0, 4.0, 0.0)),
+        ];
+        let seed = nearest_neighbor_order(&segments);
+        let refined = run_tsp(&segments);
+        assert!(
+            total_rapid_distance(&refined, &segments)
+                <= total_rapid_distance(&seed, &segments) + 1e-10,
+            "directed 2-opt must not worsen the NN seed: seed={seed:?}, refined={refined:?}"
+        );
+    }
+
+    #[test]
+    fn directed_two_opt_keeps_one_way_face_rows_monotone_and_local() {
+        // One-way Face rows have fixed left-to-right orientation. A reversal
+        // must not turn their local, increasing-row NN route into a long jump.
+        let segments: Vec<_> = (0..5)
+            .map(|row| {
+                let y = row as f64;
+                segment(P3::new(0.0, y, 0.0), P3::new(20.0, y, 0.0))
+            })
+            .collect();
+        let order = run_tsp(&segments);
+        assert_eq!(order, vec![0, 1, 2, 3, 4]);
+        assert!(order.windows(2).all(|pair| pair[1] == pair[0] + 1));
     }
 
     #[test]

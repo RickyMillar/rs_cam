@@ -81,6 +81,10 @@ pub struct OperationSpec {
 /// Safety metadata for dressups that can alter topology or move order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationTransformCapabilities {
+    /// Master permission for either rapid-order transform. Operations may
+    /// independently impose the narrower global/depth/continuity constraints
+    /// below, but this veto disables all rapid-order permutation.
+    pub allows_rapid_reorder: bool,
     /// Cutting segments can be globally reordered by XY proximity without
     /// violating depth/material assumptions.
     pub allows_global_rapid_reorder: bool,
@@ -131,11 +135,20 @@ impl OperationTransformCapabilities {
         allows_link_moves: bool,
     ) -> Self {
         Self {
+            allows_rapid_reorder: true,
             allows_global_rapid_reorder,
             requires_depth_order,
             continuous_path_required,
             allows_link_moves,
             ramp_fold_lap_cap: None,
+        }
+    }
+
+    /// Disable both barriered and unbarriered rapid-order permutation.
+    pub const fn without_rapid_reorder(self) -> Self {
+        Self {
+            allows_rapid_reorder: false,
+            ..self
         }
     }
 
@@ -148,11 +161,12 @@ impl OperationTransformCapabilities {
     }
 
     pub fn allows_barriered_rapid_reorder(self) -> bool {
-        !self.continuous_path_required
+        self.allows_rapid_reorder && !self.continuous_path_required
     }
 
     pub fn allows_unbarriered_rapid_reorder(self) -> bool {
-        self.allows_global_rapid_reorder
+        self.allows_rapid_reorder
+            && self.allows_global_rapid_reorder
             && !self.requires_depth_order
             && !self.continuous_path_required
     }
@@ -526,24 +540,24 @@ impl OperationType {
             // HorizontalFinish: generator sorts regions high-to-low Z for collision-avoidance
             // (horizontal_finish.rs:170 "machine top shelves first to avoid collisions"); TSP
             // would override that safety ordering.
-            // Face/Chamfer/Inlay/VCarve/Pencil/RadialFinish: no cross-segment material dependency,
-            // segments are retract-separated, so link moves and (eventually) barriered TSP are safe.
+            // Face's one-way rows and generated depth barriers encode the
+            // machining sequence. It must veto every rapid-order permutation,
+            // while retaining other dressups; it is neither continuous nor
+            // eligible for straight link moves.
+            Face => OperationTransformCapabilities::new(false, false, false, false)
+                .without_rapid_reorder(),
             // Measured gouging under link moves even WITH the swept-corridor
-            // check in `dressup::apply_link_moves` (2026-08-03): Face 9.21mm,
-            // Inlay 8.21mm, VCarve 5.78mm — all strictly DEEPER (25/110/103
-            // columns, zero columns left proud), pinned by the
-            // `*_link_moves_*` sentries. The corridor check is necessary but
-            // not sufficient here: VCarve and Inlay's female pass are V-bit
-            // paths whose cut WIDTH depends on depth, so "the tip passed
-            // within tool_radius at this Z" does not imply the corridor was
-            // cleared to the width the bridge needs. Until the check models
-            // depth-dependent width (or link decisions move into the
-            // generators, where geometry is in scope — the route pencil and
-            // unified_finish already took via surface_link::build_surface_link),
-            // these three forbid links. They keep every other transform.
-            Face | Inlay | VCarve => {
-                OperationTransformCapabilities::new(false, false, false, false)
-            }
+            // check in `dressup::apply_link_moves` (2026-08-03): Inlay 8.21mm,
+            // VCarve 5.78mm — all strictly DEEPER (110/103 columns, zero
+            // columns left proud), pinned by the `*_link_moves_*` sentries.
+            // The corridor check is necessary but not sufficient here: VCarve
+            // and Inlay's female pass are V-bit paths whose cut WIDTH depends
+            // on depth, so "the tip passed within tool_radius at this Z" does
+            // not imply the corridor was cleared to the width the bridge
+            // needs. Until the check models depth-dependent width (or link
+            // decisions move into the generators, where geometry is in scope),
+            // these forbid links but retain rapid-order eligibility.
+            Inlay | VCarve => OperationTransformCapabilities::new(false, false, false, false),
             HorizontalFinish | Chamfer | Pencil | RadialFinish => {
                 OperationTransformCapabilities::new(false, false, false, true)
             }

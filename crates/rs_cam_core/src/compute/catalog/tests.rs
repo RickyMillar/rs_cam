@@ -599,6 +599,25 @@ fn operation_transform_capabilities_are_explicit() {
             .transform_capabilities()
             .allows_global_rapid_reorder
     );
+
+    let face = OperationType::Face.transform_capabilities();
+    assert!(
+        !face.allows_barriered_rapid_reorder(),
+        "Face must veto barriered rapid-order permutation"
+    );
+    assert!(
+        !face.allows_unbarriered_rapid_reorder(),
+        "Face must veto unbarriered rapid-order permutation"
+    );
+    assert!(!face.continuous_path_required);
+    assert!(!face.allows_link_moves);
+
+    // Face's veto is narrower than the shared non-link capability: Inlay
+    // remains eligible for barriered reordering while retaining no links.
+    let inlay = OperationType::Inlay.transform_capabilities();
+    assert!(inlay.allows_barriered_rapid_reorder());
+    assert!(!inlay.allows_unbarriered_rapid_reorder());
+    assert!(!inlay.allows_link_moves);
 }
 
 #[test]

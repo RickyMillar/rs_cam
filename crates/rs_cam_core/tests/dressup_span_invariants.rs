@@ -35,7 +35,7 @@ use rs_cam_core::{
     },
     compute::execute::{DRESSUP_PIPELINE, apply_dressups},
     geo::P3,
-    toolpath::Toolpath,
+    toolpath::{MoveType, Toolpath},
     trace::debug_trace::ToolpathDebugRecorder,
     trace::toolpath_spans::{AnnotatedToolpath, Span, SpanKind},
     trace::transform_provenance::ReconcileSet,
@@ -354,6 +354,103 @@ fn face_op_dressup_pipeline_preserves_invariants() {
         assert_invariants(&output, &scope);
         assert_operation_span_tracks_moves(&output, &scope);
     }
+}
+
+#[test]
+fn one_way_face_vetoes_rapid_order_but_runs_other_dressups() {
+    use rs_cam_core::{
+        compute::{config::ArcFitParams, spans::spans_from_depth_runs},
+        geo::BoundingBox3,
+        ops::face::{FaceDirection, FaceParams, face_toolpath},
+    };
+
+    let bbox = BoundingBox3 {
+        min: P3::new(0.0, 0.0, 0.0),
+        max: P3::new(40.0, 30.0, 5.0),
+    };
+    let raw = face_toolpath(
+        &bbox,
+        &FaceParams {
+            tool_radius: 3.0,
+            stepover: 4.0,
+            depth: 4.0,
+            depth_per_pass: 2.0,
+            feed_rate: 1500.0,
+            plunge_rate: 500.0,
+            safe_z: 30.0,
+            stock_offset: 0.0,
+            direction: FaceDirection::OneWay,
+            stock_top_z: 0.0,
+        },
+    );
+    let rows_before: Vec<_> = raw
+        .moves
+        .iter()
+        .filter(|mv| matches!(mv.move_type, MoveType::Linear { .. }) && mv.target.z < 0.0)
+        .map(|mv| (mv.target.x, mv.target.y, mv.target.z))
+        .collect();
+    let mut row_ys: Vec<_> = rows_before.iter().map(|&(_, y, _)| y).collect();
+    row_ys.sort_by(f64::total_cmp);
+    row_ys.dedup();
+    assert!(
+        row_ys.len() > 1,
+        "Face fixture must contain multiple distinct row Y values"
+    );
+    let mut depths: Vec<_> = rows_before.iter().map(|&(_, _, z)| z).collect();
+    depths.sort_by(f64::total_cmp);
+    depths.dedup();
+    assert!(
+        depths.len() > 1,
+        "Face fixture must contain multiple distinct depth levels"
+    );
+    let spans = spans_from_depth_runs(&raw, &[]);
+    let annotated = AnnotatedToolpath::with_spans(raw, spans);
+    assert!(
+        !annotated.rapid_order_barriers().is_empty(),
+        "the real depth-stepped Face fixture must exercise the barriered gate"
+    );
+
+    let recorder = ToolpathDebugRecorder::new("Face rapid-order veto", "Face");
+    let root = recorder.root_context();
+    let cfg = DressupConfig {
+        arc_fitting: Some(ArcFitParams::default()),
+        optimize_rapid_order: true,
+        ..DressupConfig::default()
+    };
+    let output = apply_dressups(
+        annotated,
+        rs_cam_core::compute::execute::DressupContext {
+            cfg: &cfg,
+            nominal_feed_rate: 1500.0,
+            plunge_rate_mm_min: None,
+            tool_diameter: 6.0,
+            safe_z: 30.0,
+            stock_top: 0.0,
+            prior_stock: None,
+            feed_opt_stock: None,
+            cutter: None,
+            entry_surface: None,
+            transform_capabilities: OperationType::Face.transform_capabilities(),
+            debug_ctx: Some(&root),
+            semantic_ctx: None,
+        },
+        &mut ReconcileSet::empty(),
+    );
+    let rows_after: Vec<_> = output
+        .toolpath
+        .moves
+        .iter()
+        .filter(|mv| matches!(mv.move_type, MoveType::Linear { .. }) && mv.target.z < 0.0)
+        .map(|mv| (mv.target.x, mv.target.y, mv.target.z))
+        .collect();
+    assert_eq!(rows_after, rows_before, "Face cut row order changed");
+
+    let trace = recorder.finish();
+    assert!(trace.spans.iter().all(|span| span.kind != "rapid_order"));
+    assert!(
+        trace.spans.iter().any(|span| span.kind == "arc_fit"),
+        "the enabled non-order dressup must still run"
+    );
 }
 
 // ── CMP-20 / CUT-06: the pipeline is a list, and its order is pinned ─────
