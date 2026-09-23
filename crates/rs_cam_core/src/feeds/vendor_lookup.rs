@@ -828,7 +828,12 @@ mod tests {
         let lut = embedded_lut();
         let query = LookupQuery {
             tool_family: ToolFamily::FlatEnd,
-            tool_subfamily: Some("upcut".to_string()),
+            // The recipe path builds its query with no subfamily
+            // (`vendor_normalize::to_lookup_query_unrouted`). The old
+            // "upcut" tag matched the derived/c row's own tag and let it
+            // outscore the printed row by the subfamily bonus; the test
+            // now asks what production asks.
+            tool_subfamily: None,
             diameter_mm: 6.0,
             flute_count: 2,
             material_family: MaterialFamily::Softwood,
@@ -1040,18 +1045,17 @@ mod tests {
 
     #[test]
     fn diameter_scaling_linearly_scales_chipload_bounds() {
-        // A 6 mm tapered ball query against the 3.175 mm hardwood
-        // parallel/finish row should match (diameter ratio 1.89 is past
-        // the ±40 % Approximate threshold) and scale chipload bounds
-        // linearly. Compare against known LUT values: row chipload
-        // 0.018–0.032 (hardwood 3.175 mm parallel/finish) → scaled
-        // 0.018 × 1.89 ≈ 0.034, 0.032 × 1.89 ≈ 0.060. Hardness scale is
-        // 1.0 (both rows use janka 1450).
+        // Feeds matrix R5 (2026-09-23): the printed Onsrud 77-100 rows
+        // (exact/a) now win tapered-ball hardwood parallel/finish; the
+        // Amana 6.0 mm row this test used to name is derived/c. The
+        // exact-diameter row is the 1/4 in (6.35 mm) Onsrud line
+        // `77-100 1xD .005-.007 (1/4)`, so the query asks for 6.35 mm and
+        // the diameter scale must be 1.0.
         let lut = embedded_lut();
         let query = LookupQuery {
             tool_family: ToolFamily::TaperedBallNose,
             tool_subfamily: None,
-            diameter_mm: 6.0,
+            diameter_mm: 6.35,
             flute_count: 2,
             material_family: MaterialFamily::Hardwood,
             hardness_kind: Some(HardnessKind::Janka),
@@ -1060,10 +1064,11 @@ mod tests {
             pass_role: LutPassRole::Finish,
         };
         let result = lookup_best(&lut, &query).expect("must match a tapered-ball parallel row");
-        // The 6.0 mm hardwood row is an exact-diameter match.
+        // The 6.35 mm hardwood row is an exact-diameter match.
+        assert_eq!(result.observation_id, "onsrud-hardwood-77-100-1_4-parallel");
         assert!(
-            (result.row_diameter_mm - 6.0).abs() < 1e-9,
-            "expected exact 6.0 mm row, got {} mm",
+            (result.row_diameter_mm - 6.35).abs() < 1e-9,
+            "expected exact 6.35 mm row, got {} mm",
             result.row_diameter_mm
         );
         assert!((result.chipload_diameter_scale - 1.0).abs() < 1e-6);
@@ -1243,9 +1248,13 @@ mod tests {
             "Fusion360 preset row must not win a calibrated query, got {}",
             result.observation_id
         );
-        assert!(
-            result.observation_id.contains("amana"),
-            "calibrated Amana row expected, got {}",
+        // Feeds matrix R5 (2026-09-23): the printed Onsrud 77-100 1/4 in
+        // row (exact/a) now wins this query; the Amana 6.0 mm row is
+        // derived/c. The claim of this test is unchanged: a preset row
+        // never beats a printed vendor row.
+        assert_eq!(
+            result.observation_id, "onsrud-hardwood-77-100-1_4-parallel",
+            "a printed vendor row expected, got {}",
             result.observation_id
         );
         // The demoted rows keep their nominal as an upper reference but
@@ -1469,32 +1478,46 @@ mod tests {
     /// for the feeds calculator), but the chipload-ENVELOPE lookup
     /// must skip it and return the best chipload-bearing row instead
     /// of forcing the gate to `Unmodeled(NoVendorData)`. Replay case:
-    /// 9.525 mm 3F flat-end / plywood-hardwood / adaptive roughing —
-    /// plain winner is `whiteside-ru4000h-...-rpm` (chipload 0.0).
+    /// Replay case since feeds matrix R5 (2026-09-23): 6.35 mm 2F V-bit
+    /// / hardwood / trace finish — plain winner is the Whiteside 1540
+    /// RPM anchor `whiteside-1540-vgroove-60deg-quarter-rpm` (chipload
+    /// 0.0), the row every V-bit trace cell of the matrix resolves to
+    /// (EVIDENCE 4.4-5). The earlier plywood adaptive replay lost its
+    /// RPM-only winner when R5 added the Onsrud plywood sheets.
     #[test]
     fn chip_envelope_lookup_skips_rpm_only_rows() {
         let lut = embedded_lut();
         let query = LookupQuery {
-            tool_family: ToolFamily::FlatEnd,
+            tool_family: ToolFamily::ChamferVbit,
             tool_subfamily: None,
-            diameter_mm: 9.525,
-            flute_count: 3,
-            material_family: MaterialFamily::PlywoodHardwood,
+            diameter_mm: 6.35,
+            flute_count: 2,
+            material_family: MaterialFamily::Hardwood,
             hardness_kind: Some(HardnessKind::Janka),
-            hardness_value: Some(1000.0),
-            operation_family: LutOperationFamily::Adaptive,
-            pass_role: LutPassRole::Roughing,
+            hardness_value: Some(1450.0),
+            operation_family: LutOperationFamily::Trace,
+            pass_role: LutPassRole::Finish,
         };
-        let plain = lookup_best(&lut, &query).expect("plain lookup matches");
+        // The V-bit family resolves through the angle-aware lookup, the
+        // door `find_best_row_for_geometry` uses; the flat `lookup_best`
+        // ignores the included angle and would pick a 90 degree insert row.
+        let plain = find_best_vbit_row(&lut, &query, Some(60.0)).expect("plain lookup matches");
         assert_eq!(
-            plain.observation_id, "whiteside-ru4000h-roughing-up-spiral-3f-plywood-rpm",
+            plain.observation_id, "whiteside-1540-vgroove-60deg-quarter-rpm",
             "fixture drift: the RPM-only row no longer wins the plain lookup — \
              pick a query where it does, or this test loses its teeth"
         );
         assert!(plain.chip_load_mm <= 0.0, "RPM-only row has no chipload");
 
-        let env = find_best_chip_envelope_row(&lut, &query, &crate::feeds::ToolGeometryHint::Flat)
-            .expect("a chipload-bearing row exists underneath");
+        let env = find_best_chip_envelope_row(
+            &lut,
+            &query,
+            &crate::feeds::ToolGeometryHint::VBit {
+                included_angle: 60.0,
+                tip_diameter: 0.0,
+            },
+        )
+        .expect("a chipload-bearing row exists underneath");
         assert!(
             env.chip_load_min_mm.is_some() || env.chip_load_max_mm.is_some(),
             "envelope lookup must return a chipload-bearing row, got {}",

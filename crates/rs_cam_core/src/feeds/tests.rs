@@ -1082,11 +1082,14 @@ fn test_lut_chipload_overrides_formula() {
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
     });
 
-    // LUT chipload for 6mm softwood adaptive should be ~0.0875 (midpoint 0.065-0.11)
+    // Feeds matrix R5 (2026-09-23): the matched row is the printed Amana
+    // Spektra v24 line "2 Flute 6mm (48118-K/48218-K) Wood/Plywood
+    // 0.0050 in" = 0.127 mm/tooth, published as one value. The old
+    // 0.0875 midpoint came from a band that is not on the chart.
     // Formula chipload should be ~0.0716
     assert!(
-        (with_lut.chip_load_mm - 0.0875).abs() < 0.002,
-        "LUT chipload should be ~0.0875, got {}",
+        (with_lut.chip_load_mm - 0.127).abs() < 0.002,
+        "LUT chipload should be ~0.127, got {}",
         with_lut.chip_load_mm
     );
     assert!(
@@ -1119,6 +1122,12 @@ fn test_lut_chipload_overrides_formula() {
 /// This test pins the derating contract on a 3×D hardwood pocket-
 /// roughing case: bounds at axial_depth=D get the 1.0 scale (no
 /// change), bounds at axial_depth=3D get the 0.5 scale.
+///
+/// Fixture since feeds matrix R5 (2026-09-23): a Ø6.35 ball nose. The
+/// flat 6 mm hardwood pocket cell now resolves to the printed Amana
+/// Spektra row, which publishes one value and therefore no band; the
+/// printed Amana ball-nose v7 row `amana-ball-hardwood-pocket-6350-2f-v7`
+/// (0.127-0.1778 mm/tooth) publishes both bounds.
 #[test]
 fn chipload_bounds_derate_with_doc_ratio_for_milling() {
     let lut = vendor_lut::VendorLut::embedded();
@@ -1127,17 +1136,17 @@ fn chipload_bounds_derate_with_doc_ratio_for_milling() {
     };
     let machine = MachineProfile::shapeoko_vfd();
     let mut input = FeedsInput {
-        tool_diameter: 6.0,
+        tool_diameter: 6.35,
         flute_count: 2,
         flute_length: 24.0,
-        tool_geometry: ToolGeometryHint::Flat,
+        tool_geometry: ToolGeometryHint::Ball,
         shank_diameter: None,
         material: &material,
         machine: &machine,
         operation: OperationFamily::Pocket,
         operation_kind: None,
         pass_role: PassRole::Roughing,
-        axial_depth_mm: Some(6.0), // 1×D ratio → scale 1.0
+        axial_depth_mm: Some(6.35), // 1×D ratio → scale 1.0
         radial_width_mm: None,
         target_scallop_mm: None,
         vendor_lut: Some(&lut),
@@ -1145,10 +1154,10 @@ fn chipload_bounds_derate_with_doc_ratio_for_milling() {
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
     };
     let at_1x = calculate(&input);
-    input.axial_depth_mm = Some(18.0); // 3×D ratio → scale 0.5
+    input.axial_depth_mm = Some(19.05); // 3×D ratio → scale 0.5
     let at_3x = calculate(&input);
 
-    // LUT 6 mm hardwood pocket-roughing row publishes both bounds,
+    // The printed Amana ball-nose v7 row publishes both bounds,
     // so the orchestrator must produce `Some(ChiploadBounds)` here.
     let b1 = at_1x.chipload_bounds.unwrap();
     let b3 = at_3x.chipload_bounds.unwrap();

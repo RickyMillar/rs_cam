@@ -101,7 +101,9 @@
 
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::tool_config::ToolMaterial;
-use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
+use rs_cam_core::feeds::vendor_lut::{
+    EvidenceGrade, LutOperationFamily, LutPassRole, ObservationKind, VendorLut,
+};
 use rs_cam_core::feeds::{
     ChiploadBounds, FeedsInput, FeedsResult, FeedsWarning, OperationFamily, PassRole,
     RUBBING_FLOOR_MM_TOOTH, SetupContext, SpindleStrategy, ToolGeometryHint, calculate,
@@ -123,6 +125,36 @@ use rs_cam_core::tool_load::{BindingConstraint, GateEnv, ToleranceBands, Toolpat
 /// the round-trip census below is about **the observed defect**, not a
 /// re-derived approximation of it.
 const LEDGER_BAND_MAX: f64 = 0.012_781_077_012_073_16;
+
+/// A one-row LUT whose derated band sits wholly below the 0.025 mm/tooth
+/// floor. Feeds matrix R5 (2026-09-23) replaced the reduced Amana rows the
+/// live B3 cell used to match with the printed Onsrud 77-100 rows
+/// (0.0762-0.127 mm/tooth at 1/8 in), so no embedded wood row scales below
+/// the floor any more. The subordination rule this file pins is unchanged,
+/// so its fixture is now explicit: the printed Onsrud scallop row, cloned,
+/// re-labelled derived/c, with the ledger's B3 band (0.00378-0.00756) as
+/// its bounds.
+fn sub_floor_lut() -> VendorLut {
+    let mut row = embedded_vendor_lut()
+        .observations
+        .iter()
+        .find(|o| o.observation_id == "onsrud-hardwood-77-100-1_8-scallop")
+        .expect("the printed Onsrud 77-100 scallop row exists")
+        .clone();
+    row.observation_id = "synthetic-b3-sub-floor-scallop".to_owned();
+    row.diameter_mm = Some(1.0);
+    row.flute_count = 2;
+    row.chipload_min_mm_tooth = Some(0.003_78);
+    row.chipload_max_mm_tooth = Some(0.007_56);
+    row.row_kind = ObservationKind::Derived;
+    row.evidence_grade = EvidenceGrade::C;
+    row.notes = Some(
+        "test fixture: the ledger B3 band on a cloned printed row; not a vendor figure".to_owned(),
+    );
+    VendorLut {
+        observations: vec![row],
+    }
+}
 
 /// The B3 reference operation (`tests/rubbing_floor_never_exceeds_band.rs`,
 /// `tests/feed_explanation_snapshot_b3.rs`): Ø1 tapered ball, 2 flutes,
@@ -148,7 +180,7 @@ fn b3_scallop() -> FeedsResult {
         axial_depth_mm: Some(0.35),
         radial_width_mm: None,
         target_scallop_mm: Some(0.01),
-        vendor_lut: Some(embedded_vendor_lut()),
+        vendor_lut: Some(&sub_floor_lut()),
         setup: SetupContext::default(),
         spindle_strategy: SpindleStrategy::MatchChart,
     })
@@ -394,10 +426,17 @@ fn rider2_the_gate_flips_to_exceeds_on_a_feed_parked_on_its_own_ceiling() {
     let probe = gate_verdict(100.0, rpm_probe, flutes, axial_doc);
     let (band_min, band_max) = verdict_bounds(&probe);
     println!("gate band for the B3 scallop op: {band_min:?} .. {band_max:.17}");
+    // Feeds matrix R5 (2026-09-23): the gate reads the embedded LUT, and the
+    // B3 cell now resolves to the printed Onsrud 77-100 1/8 in row scaled to
+    // Ø1 (about 0.040-0.056 mm/tooth), which sits ABOVE the 0.025 floor. The
+    // floor-on-ceiling collision this rider measured is therefore not
+    // reachable through any embedded wood row. The pin below records that;
+    // the census that follows still holds on the gate's own ceiling.
     assert!(
-        band_max < RUBBING_FLOOR_MM_TOOTH,
-        "gate-side precondition: the gate's own derated max {band_max:.6} must also sit \
-         below the 0.025 floor for the collision to be reachable through this op"
+        band_max >= RUBBING_FLOOR_MM_TOOTH,
+        "the embedded LUT again holds a wood row whose derated max {band_max:.6} sits below \
+         the 0.025 floor; the floor-on-ceiling collision is reachable again — re-read \
+         G-CHIP-ULP rider 2 before citing it"
     );
 
     // Pass 2: sweep RPM for a combination where `(max × rpm × flutes) /

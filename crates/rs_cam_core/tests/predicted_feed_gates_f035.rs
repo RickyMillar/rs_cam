@@ -70,7 +70,7 @@ use rs_cam_core::session::{
 use rs_cam_core::stock::simulation_cut::{
     CutKinematics, Engagement, SimulationCutSample, SimulationCutSummary, SimulationCutTrace,
 };
-use rs_cam_core::tool::{FlatEndmill, ToolDefinition};
+use rs_cam_core::tool::{ToolDefinition, VBitEndmill};
 use rs_cam_core::tool_load::verdict::ChipSide;
 use rs_cam_core::tool_load::{ChiploadVerdict, DeflectionVerdict, ToleranceBands, chipload};
 use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
@@ -89,11 +89,24 @@ const TEST_LUT_NOMINAL_ARC_RAD: f64 = 1.0843860798928202;
 /// declared chipload consistent with each other.
 const RPM: u32 = 18_000;
 const FLUTES: u32 = 2;
+/// Inside the printed 0.028-0.060 mm/tooth band of the matched V-groove
+/// row, so the baseline reads Within and a 0.30x corner decel reads below it.
+const BASELINE_FPT: f64 = 0.045;
+/// The 90 degree cone is 6 mm wide at this depth: the printed row's diameter.
+const AXIAL_DOC_MM: f64 = 3.0;
 
+/// Feeds matrix R5 (2026-09-23): a Ø6.35 90 degree V-bit on a hard-maple
+/// trace finish, sampled 3 mm deep so the cone is 6 mm wide and the gate's
+/// LUT query lands on the printed Amana insert V-groove row
+/// `amana-vbit-hardwood-trace-6000-2f` (0.028-0.060 mm/tooth, ae
+/// 0.15-1.0 mm). The gate trips a HARD `Exceeds(Low)` only on a row that
+/// publishes both chipload bounds and an `ae` window without
+/// extrapolation; the flat 6 mm hardwood pocket cell this file used to
+/// read now resolves to a single-point row whose low side is advisory.
 fn make_endmill_6mm_carbide() -> ToolDefinition {
     ToolDefinition::new(
-        Box::new(FlatEndmill::new(6.0, 20.0)),
-        6.0,
+        Box::new(VBitEndmill::new(6.35, 90.0, 20.0)),
+        6.35,
         30.0,
         20.0,
         30.0,
@@ -141,8 +154,8 @@ fn sample(
         feed_rate_mm_min: chipload_mm * f64::from(RPM) * f64::from(FLUTES),
         spindle_rpm: RPM,
         flute_count: FLUTES,
-        axial_doc_mm: 1.0,
-        axial_engagement_mm: 1.0,
+        axial_doc_mm: AXIAL_DOC_MM,
+        axial_engagement_mm: AXIAL_DOC_MM,
         arc_engagement_radians: Some(TEST_LUT_NOMINAL_ARC_RAD),
         chipload_mm_per_tooth: chipload_mm,
         effective_chip_thickness_mm: Some(chipload_mm),
@@ -193,10 +206,10 @@ fn evaluate_chipload_at(trace: &SimulationCutTrace, commanded_fpt: f64) -> Chipl
             toolpath_id: ToolpathId(0),
             tool: &tool,
             material: &material,
-            operation_family: LutOperationFamily::Pocket,
-            pass_role: LutPassRole::Roughing,
+            operation_family: LutOperationFamily::Trace,
+            pass_role: LutPassRole::Finish,
             operation_feed_rate_mm_min: commanded_fpt * f64::from(RPM) * f64::from(FLUTES),
-            operation_kind: OperationType::Pocket,
+            operation_kind: OperationType::Trace,
             spans: None,
             drill_op: None,
         },
@@ -230,17 +243,19 @@ fn flag_on_corner_decel_drops_chipload_below_band() {
     // at 18 k rpm × 2 flutes, which IS 0.04 mm/tooth. (Pre-conversion
     // this fixture said 1000 mm/min beside 0.04 mm/tooth, two figures
     // 1.44× apart; the gate read the second and ignored the first.)
-    // 0.04 sits comfortably above the HardMaple/Pocket/Roughing LUT min.
-    let samples: Vec<SimulationCutSample> = (0..5).map(|i| sample(0, i + 1, 0.04, 0.5)).collect();
+    // The baseline sits inside the matched row's band.
+    let samples: Vec<SimulationCutSample> = (0..5)
+        .map(|i| sample(0, i + 1, BASELINE_FPT, 0.5))
+        .collect();
     let mut trace = empty_trace(samples);
 
     // Flag OFF: empty predicted_feeds → gate uses commanded; should
     // land `Within`.
-    let off_verdict = evaluate_chipload_at(&trace, 0.04);
+    let off_verdict = evaluate_chipload_at(&trace, BASELINE_FPT);
     assert!(
         matches!(off_verdict, ChiploadVerdict::Within { .. }),
         "F-035 AB2 baseline: chipload at commanded feed should be Within (0.04 mm/tooth is \
-         comfortably above HardMaple/Pocket/Roughing min). Got {off_verdict:?}"
+         inside the matched V-groove row's band). Got {off_verdict:?}"
     );
 
     // Flag ON: populate predicted_feeds with 30% of commanded for
@@ -252,7 +267,7 @@ fn flag_on_corner_decel_drops_chipload_below_band() {
             .predicted_feeds
             .insert((s.toolpath_id, s.move_index), s.feed_rate_mm_min * 0.30);
     }
-    let on_verdict = evaluate_chipload_at(&trace, 0.04);
+    let on_verdict = evaluate_chipload_at(&trace, BASELINE_FPT);
     let on_exceeds_low = matches!(
         on_verdict,
         ChiploadVerdict::Exceeds {
@@ -277,7 +292,9 @@ fn flag_on_corner_decel_drops_chipload_below_band() {
 /// extra transformation.
 #[test]
 fn flag_on_straight_line_chipload_unchanged() {
-    let samples: Vec<SimulationCutSample> = (0..5).map(|i| sample(0, i + 1, 0.04, 0.5)).collect();
+    let samples: Vec<SimulationCutSample> = (0..5)
+        .map(|i| sample(0, i + 1, BASELINE_FPT, 0.5))
+        .collect();
     let mut trace_on = empty_trace(samples.clone());
     let trace_off = empty_trace(samples);
     for s in &trace_on.samples {
@@ -286,8 +303,8 @@ fn flag_on_straight_line_chipload_unchanged() {
             .insert((s.toolpath_id, s.move_index), s.feed_rate_mm_min);
     }
 
-    let off_verdict = evaluate_chipload_at(&trace_off, 0.04);
-    let on_verdict = evaluate_chipload_at(&trace_on, 0.04);
+    let off_verdict = evaluate_chipload_at(&trace_off, BASELINE_FPT);
+    let on_verdict = evaluate_chipload_at(&trace_on, BASELINE_FPT);
 
     // Both arms should produce the same Within verdict. We pin
     // structural equality on the discriminant — the bounds + sample

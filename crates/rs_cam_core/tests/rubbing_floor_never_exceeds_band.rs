@@ -39,6 +39,7 @@
     clippy::print_stdout
 )]
 
+use rs_cam_core::feeds::vendor_lut::{EvidenceGrade, ObservationKind, VendorLut};
 use rs_cam_core::feeds::{
     ChiploadBounds, FeedsInput, FeedsResult, FeedsWarning, OperationFamily, PassRole, SetupContext,
     SpindleStrategy, ToolGeometryHint, calculate, embedded_vendor_lut,
@@ -46,13 +47,42 @@ use rs_cam_core::feeds::{
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
 
+/// A one-row LUT whose derated band sits wholly below the 0.025 mm/tooth
+/// floor. Feeds matrix R5 (2026-09-23) replaced the reduced Amana rows the
+/// live B3 cell used to match with the printed Onsrud 77-100 rows
+/// (0.0762-0.127 mm/tooth at 1/8 in), so no embedded wood row scales below
+/// the floor any more. The subordination rule this file pins is unchanged,
+/// so its fixture is now explicit: the printed Onsrud scallop row, cloned,
+/// re-labelled derived/c, with the ledger's B3 band (0.00378-0.00756) as
+/// its bounds.
+fn sub_floor_lut() -> VendorLut {
+    let mut row = embedded_vendor_lut()
+        .observations
+        .iter()
+        .find(|o| o.observation_id == "onsrud-hardwood-77-100-1_8-scallop")
+        .expect("the printed Onsrud 77-100 scallop row exists")
+        .clone();
+    row.observation_id = "synthetic-b3-sub-floor-scallop".to_owned();
+    row.diameter_mm = Some(1.0);
+    row.flute_count = 2;
+    row.chipload_min_mm_tooth = Some(0.003_78);
+    row.chipload_max_mm_tooth = Some(0.007_56);
+    row.row_kind = ObservationKind::Derived;
+    row.evidence_grade = EvidenceGrade::C;
+    row.notes = Some(
+        "test fixture: the ledger B3 band on a cloned printed row; not a vendor figure".to_owned(),
+    );
+    VendorLut {
+        observations: vec![row],
+    }
+}
+
 /// The B3 reference operation, verbatim from
 /// `tests/feed_explanation_snapshot_b3.rs`: a Ø1 mm tapered ball nose,
-/// 2 flutes, 5.26° half-angle, scallop finish in hard maple (Janka 1450 —
-/// the exact hardness the matched row publishes, so the hardness scale is
-/// 1.00 and only the diameter scale moves).
+/// 2 flutes, 5.26° half-angle, scallop finish in hard maple, against the
+/// sub-floor fixture LUT above.
 fn b3_scallop() -> FeedsResult {
-    let lut = embedded_vendor_lut();
+    let lut = &sub_floor_lut();
     let machine = MachineProfile::generic_wood_router();
     let material = Material::SolidWood {
         species: WoodSpecies::HardMaple,
@@ -127,11 +157,13 @@ fn the_floor_never_clamps_a_feed_above_the_matched_band_maximum() {
 
 #[test]
 fn a_tool_whose_band_sits_above_the_floor_is_unchanged() {
-    // CONTROL. Ø6 flat 2-flute pocket rough in white oak: the matched
-    // band (~0.034–0.059 mm/tooth) is entirely *above* the 0.025 floor,
-    // so `min(floor, band_max)` is the floor itself and nothing about
-    // this recipe may move. If this test ever changes value, the fix has
-    // leaked past the small-tool case it was scoped to.
+    // CONTROL. Ø6.35 ball 2-flute pocket rough in white oak: the matched
+    // printed Amana ball-nose v7 row (`amana-ball-hardwood-pocket-6350-2f-v7`,
+    // 0.127-0.1778 mm/tooth before the hardness scale) is entirely *above*
+    // the 0.025 floor, so `min(floor, band_max)` is the floor itself and
+    // nothing about this recipe may move. Feeds matrix R5 (2026-09-23): the
+    // flat 6 mm pocket cell resolves to a single-value Spektra row with no
+    // band, so the control moved to a printed row that publishes one.
     let lut = embedded_vendor_lut();
     let machine = MachineProfile::generic_wood_router();
     let material = Material::SolidWood {
@@ -139,11 +171,11 @@ fn a_tool_whose_band_sits_above_the_floor_is_unchanged() {
     };
 
     let result = calculate(&FeedsInput {
-        tool_diameter: 6.0,
+        tool_diameter: 6.35,
         flute_count: 2,
         flute_length: 22.0,
         shank_diameter: None,
-        tool_geometry: ToolGeometryHint::Flat,
+        tool_geometry: ToolGeometryHint::Ball,
         material: &material,
         machine: &machine,
         operation: OperationFamily::Pocket,
@@ -159,7 +191,7 @@ fn a_tool_whose_band_sits_above_the_floor_is_unchanged() {
 
     let bounds = band(&result);
     println!(
-        "Ø6 oak pocket control: rpm={:.0} feed={:.3} fpt={:.6} band={:.6}..{:.6}",
+        "Ø6.35 oak ball pocket control: rpm={:.0} feed={:.3} fpt={:.6} band={:.6}..{:.6}",
         result.rpm,
         result.feed_rate_mm_min,
         commanded_fpt(&result, 2.0),

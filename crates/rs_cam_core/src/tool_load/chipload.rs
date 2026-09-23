@@ -1618,20 +1618,20 @@ mod tests {
 
     #[test]
     fn chipload_far_below_min_is_exceeds_burn() {
-        // 0.001 mm/tooth — rubbing.
-        let t = trace(vec![sample(0, 0, 0.001, 0.5)]);
+        // 0.001 mm/tooth — rubbing, on the V-bit fixture (see `vbit_trace_lut_min`).
+        let t = trace(vec![vbit_sample(0.001)]);
         let v = evaluate_args(
             0,
-            &tool(),
+            &vbit_tool(),
             &Material::SolidWood {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
             None,
-            LutOperationFamily::Pocket,
-            LutPassRole::Roughing,
+            LutOperationFamily::Trace,
+            LutPassRole::Finish,
             1000.0,
-            OperationType::Pocket,
+            OperationType::Trace,
             &crate::tool_load::ToleranceBands::default(),
         );
         match v {
@@ -2119,30 +2119,59 @@ mod tests {
         }
     }
 
-    fn pocket_rough_lut_min() -> f64 {
-        let t = trace(vec![sample(0, 0, 0.04, 0.5)]);
+    /// The fixture whose matched row lets the gate trip a HARD `Exceeds(Low)`:
+    /// the Ø6.35 90 degree V-bit ([`vbit_tool`]) on a hard-maple trace
+    /// finish, sampled 3 mm deep so the cone is 6 mm wide and the LUT query
+    /// lands on the printed Amana insert V-groove row
+    /// `amana-vbit-hardwood-trace-6000-2f` (0.028-0.060 mm/tooth, ae
+    /// 0.15-1.0 mm, Janka 1450) without extrapolation.
+    ///
+    /// The low side is hard only on a row that publishes both chipload
+    /// bounds AND an `ae` window and is not extrapolated
+    /// (`ChipBoundsSource::VendorLut`). Feeds matrix R5 (2026-09-23): the
+    /// Ø6.35 flat hard-maple pocket cell this module used to read now
+    /// resolves to `amana-compression-wood-pocket-6350-2f`, a single-point
+    /// band whose low side is advisory by policy, and no printed flat
+    /// 6.35 mm row is two-sided and windowed.
+    const VBIT_LOOKUP_DOC_MM: f64 = 3.0;
+
+    fn vbit_sample(chipload: f64) -> SimulationCutSample {
+        let mut s = sample(0, 0, chipload, 0.5);
+        s.axial_doc_mm = VBIT_LOOKUP_DOC_MM;
+        s.axial_engagement_mm = VBIT_LOOKUP_DOC_MM;
+        s
+    }
+
+    /// The band minimum of the row the gate matches for [`vbit_tool`] on a
+    /// hard-maple trace finish.
+    fn vbit_trace_lut_min() -> f64 {
+        let t = trace(vec![vbit_sample(0.04)]);
         let v = evaluate_args(
             0,
-            &tool(),
+            &vbit_tool(),
             &Material::SolidWood {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
             None,
-            LutOperationFamily::Pocket,
-            LutPassRole::Roughing,
+            LutOperationFamily::Trace,
+            LutPassRole::Finish,
             1000.0,
-            OperationType::Pocket,
+            OperationType::Trace,
             &crate::tool_load::ToleranceBands::default(),
         );
         match v {
             ChiploadVerdict::Within {
                 approach_to_max, ..
+            }
+            | ChiploadVerdict::Exceeds {
+                triggering: approach_to_max,
+                ..
             } => approach_to_max
                 .bounds
                 .min_mm_per_tooth
                 .expect("LUT row carries a min for the chosen fixture"),
-            other => panic!("expected Within, got {other:?}"),
+            other => panic!("expected a judged verdict, got {other:?}"),
         }
     }
 
@@ -2218,25 +2247,25 @@ mod tests {
 
     #[test]
     fn chipload_low_just_below_min_within_tolerance_is_within() {
-        let min = pocket_rough_lut_min();
+        let min = vbit_trace_lut_min();
         let probe = min * 0.96;
-        let t = trace(vec![sample(0, 0, probe, 0.5)]);
+        let t = trace(vec![vbit_sample(probe)]);
         let bands = crate::tool_load::ToleranceBands {
             burn: 0.05,
             ..crate::tool_load::ToleranceBands::default()
         };
         let v = evaluate_args(
             0,
-            &tool(),
+            &vbit_tool(),
             &Material::SolidWood {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
             None,
-            LutOperationFamily::Pocket,
-            LutPassRole::Roughing,
+            LutOperationFamily::Contour,
+            LutPassRole::Finish,
             1000.0,
-            OperationType::Pocket,
+            OperationType::Profile,
             &bands,
         );
         assert!(
@@ -2247,25 +2276,25 @@ mod tests {
 
     #[test]
     fn chipload_low_below_tolerance_is_exceeds() {
-        let min = pocket_rough_lut_min();
+        let min = vbit_trace_lut_min();
         let probe = min * 0.94;
-        let t = trace(vec![sample(0, 0, probe, 0.5)]);
+        let t = trace(vec![vbit_sample(probe)]);
         let bands = crate::tool_load::ToleranceBands {
             burn: 0.05,
             ..crate::tool_load::ToleranceBands::default()
         };
         let v = evaluate_args(
             0,
-            &tool(),
+            &vbit_tool(),
             &Material::SolidWood {
                 species: WoodSpecies::HardMaple,
             },
             Some(&t),
             None,
-            LutOperationFamily::Pocket,
-            LutPassRole::Roughing,
+            LutOperationFamily::Trace,
+            LutPassRole::Finish,
             1000.0,
-            OperationType::Pocket,
+            OperationType::Trace,
             &bands,
         );
         assert!(

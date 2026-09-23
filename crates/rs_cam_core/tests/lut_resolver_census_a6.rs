@@ -659,17 +659,30 @@ fn a5_band_divergence_is_the_reroute_not_the_entry_point() {
         );
     }
 
-    // (2) The REROUTE is the cause: different family → different row →
-    //     a band maximum 1.273× apart, exactly A-5's figure.
+    // (2) The REROUTE selects a different row, as before. Since feeds
+    //     matrix R5 (2026-09-23) both rows are the printed Amana Spektra
+    //     v24 line "2 Flute 6mm Wood/Plywood 0.0050 in" filed once in the
+    //     adaptive family and once in the pocket family, so the band
+    //     maximum is the same value and A-5's historical 1.273x is gone.
+    //     The figure came from two repo-authored bands that are now
+    //     derived/c; re-derived here as x1.0000.
     let s = find_best_row_for_geometry(lut, &suggest_query, &geom).expect("row");
     let g = find_best_chip_envelope_row(lut, &gate_query, &geom).expect("row");
     assert_ne!(
         s.observation_id, g.observation_id,
         "the reroute must select a different row, or there is nothing to attribute"
     );
+    assert_eq!(
+        s.observation_id,
+        "amana-flat-hardwood-adaptive-6000-2f-spektra"
+    );
+    assert_eq!(
+        g.observation_id,
+        "amana-flat-hardwood-pocket-6000-2f-spektra"
+    );
     let (sm, gm) = (
-        s.chip_load_max_mm.expect("band"),
-        g.chip_load_max_mm.expect("band"),
+        s.chip_load_max_mm.expect("band max"),
+        g.chip_load_max_mm.expect("band max"),
     );
     let ratio = sm / gm;
     println!(
@@ -677,21 +690,13 @@ fn a5_band_divergence_is_the_reroute_not_the_entry_point() {
         s.observation_id, g.observation_id
     );
     assert!(
-        (ratio - 1.2727).abs() < 0.001,
-        "expected A-5's 1.273× to reproduce from the reroute alone; got ×{ratio:.4}. If the \
-         LUT moved, re-derive the figure before citing 1.273 anywhere."
+        (ratio - 1.0).abs() < 1e-9,
+        "the two families read one printed line, so the reroute must not move the band \
+         maximum; got ×{ratio:.4}. If the LUT moved, re-derive the figure before citing it."
     );
-    // And the band SHAPES differ, which no scale factor (diameter law,
-    // hardness law, DOC derate) can produce — the standing proof that
-    // this was never a scaling divergence.
-    let s_shape = sm / s.chip_load_min_mm.expect("band");
-    let g_shape = gm / g.chip_load_min_mm.expect("band");
-    println!("  band shapes (max÷min): Suggest {s_shape:.4} vs gate {g_shape:.4}");
-    assert!(
-        (s_shape - g_shape).abs() > 0.01,
-        "the two bands must differ in SHAPE, not just scale — that is the discriminator \
-         between 'two rows' and 'one row scaled twice'"
-    );
+    // The printed line is one value, so neither row publishes a minimum
+    // and there is no band SHAPE to compare any more.
+    assert!(s.chip_load_min_mm.is_none() && g.chip_load_min_mm.is_none());
 }
 
 /// **Structural invariant, not a number**: the envelope candidate set is
