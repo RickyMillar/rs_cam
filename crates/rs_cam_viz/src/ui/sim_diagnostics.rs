@@ -1,8 +1,6 @@
 use super::AppEvent;
 use super::components::histogram;
-use super::components::{
-    Card, CountPill, DistributionChart, FreshnessGate, NotMeasured, Role, StatusChip, text,
-};
+use super::components::{CountPill, DistributionChart, FreshnessGate, NotMeasured, text};
 use super::readiness;
 use super::sim_debug::{
     debug_span_math_summary, format_json_value, semantic_kind_color, semantic_kind_label,
@@ -1182,12 +1180,13 @@ fn row_caption(row: &LimitRow<'_>) -> String {
     parts.join(" \u{00b7} ")
 }
 
-/// Paint one limit row: the face, then the caption under it.
-fn verdict_badge(ui: &mut egui::Ui, row: &LimitRow<'_>) {
+/// The face of one limit row: its colour and its one-line text, for
+/// example `power 1%`. `verdict_badge` paints it; a cut-metric card puts it
+/// on the first line of its status hover.
+fn verdict_face(row: &LimitRow<'_>) -> (egui::Color32, String) {
     let status = &row.status;
     let label = status.kind.label();
     let peak = status.display_peak.unwrap_or(0.0);
-    let hover = verdict_tooltip(row);
     let (color, status_text) = if status.is_vacuous() {
         // X-VAC (2026-08-14) — a gate handed an empty population returns
         // `Within` and used to paint theme::SUCCESS with a "0%" or "OK"
@@ -1220,12 +1219,15 @@ fn verdict_badge(ui: &mut egui::Ui, row: &LimitRow<'_>) {
             LoadState::Unmodeled => (theme::TEXT_DIM, "\u{2014}".to_owned()),
         }
     };
-    ui.label(
-        egui::RichText::new(format!("{label} {status_text}"))
-            .small()
-            .color(color),
-    )
-    .on_hover_text(hover.clone());
+    (color, format!("{label} {status_text}"))
+}
+
+/// Paint one limit row: the face, then the caption under it.
+fn verdict_badge(ui: &mut egui::Ui, row: &LimitRow<'_>) {
+    let hover = verdict_tooltip(row);
+    let (color, face) = verdict_face(row);
+    ui.label(egui::RichText::new(face).small().color(color))
+        .on_hover_text(hover.clone());
     let caption = row_caption(row);
     if !caption.is_empty() {
         ui.horizontal(|ui| {
@@ -1423,9 +1425,10 @@ fn aggregate_stats(
 // ── Cut metrics section ─────────────────────────────────────────────────
 //
 // Package C of `planning/sim_cut_metrics_2026-09-23/PLAN.md` (§3.1, §3.2).
-// One card per metric of the focused toolpath: a time-weighted histogram of
-// the gate's own population, the gate's limit lines, and a headline chip
-// that the GATE verdict colours. The in-band share never colours it.
+// One compact row group per metric of the focused toolpath: a header row,
+// a time-weighted histogram of the gate's own population with the gate's
+// band as a zone, and a status glyph that the GATE verdict colours. The
+// in-band share never colours it (follow-up 2026-09-24, PLAN §8).
 
 /// True when the Inspector draws a cut-metric card for `kind`. Those kinds
 /// leave the text limit rows of "Now playing"; Readiness keeps the rows.
@@ -1626,13 +1629,14 @@ fn card_rank(metric: DistributionMetric, rows: &[LimitRow<'_>]) -> usize {
 ///
 /// DC6: the header is the summary, and the body opens by default only when
 /// a criterion exceeds. The drawer toggle sits under the header, so it is
-/// reachable with the body closed. It is the one route to the drawer
-/// (§7 Q3); the card footers only open it at a track.
+/// reachable with the body closed. It is the one toggle for the drawer
+/// (§7 Q3); a card title only opens the drawer at its track. The toggle
+/// state stays one state.
 ///
-/// Each card draws its criterion's limit row through `verdict_badge`, the
-/// renderer Readiness uses: the face, the setting, the population and the
-/// hover with the bound and the confidence reason. The rows with no card
-/// follow the cards.
+/// Each card carries its criterion's limit row in the hover of its status
+/// glyph: the face `verdict_badge` paints for Readiness, the setting, the
+/// population, the bound clause and the confidence reason. The rows with
+/// no card follow the cards through `verdict_badge`.
 fn draw_cut_metrics_section(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
@@ -1659,7 +1663,14 @@ fn draw_cut_metrics_section(
         .map(limit_rows)
         .unwrap_or_default();
     let mut cards: Vec<&CutMetricCard> = set.cards.iter().collect();
-    cards.sort_by_key(|card| card_rank(card.metric, &rows));
+    // Measured cards first, then the cards core could not measure. Inside
+    // each group the cards keep the `criteria()` order.
+    cards.sort_by_key(|card| {
+        (
+            matches!(card.outcome, DistributionOutcome::NotMeasured(_)),
+            card_rank(card.metric, &rows),
+        )
+    });
     let other_rows: Vec<&LimitRow<'_>> = rows
         .iter()
         .filter(|row| !has_cut_metric_card(row.status.kind))
@@ -1697,16 +1708,19 @@ fn draw_cut_metrics_section(
         }
     });
     state.show_body_indented(&header.response, ui, |ui| {
-        for card in cards {
+        for (index, card) in cards.into_iter().enumerate() {
             let row = match card.metric {
                 DistributionMetric::Criterion(kind) => {
                     rows.iter().find(|row| row.status.kind == kind)
                 }
                 DistributionMetric::Engagement => None,
             };
+            if index > 0 {
+                draw_hairline(ui);
+            }
             draw_cut_metric_card(ui, card, row, &mut actions);
-            ui.add_space(tokens::SPACE_2);
         }
+        ui.add_space(tokens::SPACE_2);
         if !other_rows.is_empty() {
             crate::ui::components::SectionHeader::new("Other limits").show(ui);
             for row in other_rows {
@@ -1736,6 +1750,19 @@ fn draw_cut_metrics_section(
     }
 }
 
+/// A hairline between two metrics, with a small space on each side.
+fn draw_hairline(ui: &mut egui::Ui) {
+    ui.add_space(tokens::SPACE_2);
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
+    ui.painter().hline(
+        rect.x_range(),
+        rect.center().y,
+        egui::Stroke::new(1.0, tokens::HAIRLINE),
+    );
+    ui.add_space(tokens::SPACE_2);
+}
+
 /// The section when nothing is measured: the header and the abstention
 /// mark with its reason.
 ///
@@ -1751,7 +1778,15 @@ fn draw_cut_metrics_empty(ui: &mut egui::Ui, reason: &str) {
     });
 }
 
-/// One card: title, (i), headline chip, histogram, caption, footer.
+/// One metric: a header row, the histogram, and a caption only when some
+/// cutting time is out of band.
+///
+/// The header row holds the title (a click opens this metric's track in the
+/// drawer), the (i) guide, the status glyph and the peak. The glyph's hover
+/// carries the criterion's limit row: the face, the setting, the population,
+/// the bound clause and the confidence reason (`cut_metric_status_hover`).
+/// A metric core could not measure draws one muted line with the
+/// abstention mark and core's reason.
 fn draw_cut_metric_card(
     ui: &mut egui::Ui,
     card: &CutMetricCard,
@@ -1759,137 +1794,242 @@ fn draw_cut_metric_card(
     actions: &mut Vec<CutMetricAction>,
 ) {
     let spec = CutMetricSpec::of(card.metric);
-    Card::new().show(ui, |ui| {
-        ui.set_width(ui.available_width());
-        ui.horizontal_wrapped(|ui| {
-            ui.label(egui::RichText::new(spec.title).color(tokens::TEXT_STRONG));
-            if let Some(guide) = cut_metric_guide(card.metric) {
-                ui.label(egui::RichText::new(tokens::GLYPH_DETAIL).color(tokens::TEXT_MUTED))
-                    .on_hover_text(guide);
-            }
-            if let DistributionOutcome::Measured(distribution) = &card.outcome {
-                ui.add(headline_chip(distribution));
-            }
-        });
-        // The criterion's limit row, drawn by the renderer Readiness uses:
-        // the face reads the peak against the gate's own bound, the caption
-        // names the setting and the population, and the hover carries the
-        // bound clause and the confidence reason (G-OWNBOUND).
-        if let Some(row) = row {
-            verdict_badge(ui, row);
+    let hover = cut_metric_status_hover(card, row, &spec);
+    ui.horizontal(|ui| {
+        let title = ui
+            .add(
+                egui::Label::new(egui::RichText::new(spec.title).color(tokens::TEXT_STRONG))
+                    .sense(egui::Sense::click())
+                    .truncate(),
+            )
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .on_hover_text("Show this metric's time series");
+        if title.clicked() {
+            actions.push(CutMetricAction::ShowSeries(card.metric));
         }
-        match &card.outcome {
-            DistributionOutcome::Measured(distribution) => {
-                let chart = DistributionChart::new(&distribution.histogram, spec.unit)
-                    .scale(spec.scale)
-                    .advisory(is_advisory(distribution))
-                    .show(ui);
-                if let Some(bin) = chart.clicked_bin
-                    && let Some(Some(local_move)) =
-                        distribution.histogram.first_move_per_bin.get(bin)
-                {
-                    actions.push(CutMetricAction::Seek {
-                        local_move: *local_move,
-                    });
-                }
-                ui.add(egui::Label::new(text::caption(card_caption(distribution, &spec))).wrap());
-                if ui.link("See time series \u{25b8}").clicked() {
-                    actions.push(CutMetricAction::ShowSeries(card.metric));
-                }
-            }
-            DistributionOutcome::NotMeasured(reason) => {
-                let reason = not_measured_text(reason);
-                ui.horizontal_wrapped(|ui| {
-                    ui.add(NotMeasured::new().reason(reason.clone()));
-                    ui.label(text::caption(reason));
+        if let Some(guide) = cut_metric_guide(card.metric) {
+            ui.label(egui::RichText::new(tokens::GLYPH_DETAIL).color(tokens::TEXT_MUTED))
+                .on_hover_text(guide);
+        }
+        if let DistributionOutcome::Measured(distribution) = &card.outcome {
+            let (glyph, colour) = status_glyph(distribution);
+            ui.add(egui::Label::new(egui::RichText::new(glyph).color(colour)).truncate())
+                .on_hover_text(hover.clone());
+            if let Some(peak) = peak_text(distribution, row, &spec) {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.add(egui::Label::new(text::caption(peak)).truncate());
                 });
             }
         }
     });
+    match &card.outcome {
+        DistributionOutcome::Measured(distribution) => {
+            let chart = DistributionChart::new(&distribution.histogram, spec.unit)
+                .scale(spec.scale)
+                .advisory(is_advisory(distribution))
+                .show(ui);
+            if let Some(bin) = chart.clicked_bin
+                && let Some(Some(local_move)) = distribution.histogram.first_move_per_bin.get(bin)
+            {
+                actions.push(CutMetricAction::Seek {
+                    local_move: *local_move,
+                });
+            }
+            if let Some(caption) = card_caption(distribution, &spec) {
+                ui.add(egui::Label::new(text::caption(caption)).wrap());
+            }
+        }
+        DistributionOutcome::NotMeasured(reason) => {
+            let reason = not_measured_text(reason);
+            ui.horizontal(|ui| {
+                ui.add(NotMeasured::new().reason(hover));
+                ui.add(egui::Label::new(text::caption(reason)).truncate());
+            });
+        }
+    }
 }
 
-/// The headline chip: the in-band share, in the gate verdict's role.
-fn headline_chip(distribution: &MetricDistribution) -> StatusChip {
+/// The status glyph of a measured card, and its colour.
+///
+/// The GATE verdict picks the glyph and the colour; the in-band share never
+/// does. Within reads `✓`. Exceeds reads `✕` and the out-of-band share, in
+/// `DANGER`, or in `CAUTION` when the bound is advisory. No cut time reads
+/// the abstention glyph. A metric with no bound reads "no limit".
+fn status_glyph(distribution: &MetricDistribution) -> (String, egui::Color32) {
     let hist = &distribution.histogram;
     if hist.floor.is_none() && hist.ceiling.is_none() {
         // Two cases have no bound, and neither gets an invented one:
         // engagement has no gate, and a gate can report a reading it does
         // not judge (feeds ruling R2: a finishing pass has no depth cap).
-        return match distribution.metric {
-            DistributionMetric::Engagement => StatusChip::new("no limit", Role::Info)
-                .hover("No gate judges this metric. Use it to compare cuts."),
-            DistributionMetric::Criterion(_) => {
-                StatusChip::new("reported \u{00b7} no limit", Role::Info).hover(format!(
-                    "The gate reports this reading and has no limit for this pass. \
-                     It measured {} of {} {}.",
-                    distribution.population.contributing,
-                    distribution.population.offered,
-                    distribution.population.unit.plural()
-                ))
-            }
-        };
+        return ("no limit".to_owned(), tokens::TEXT_MUTED);
     }
     let Some(share) = hist.in_band_share() else {
-        return StatusChip::new("no cut time", Role::Unknown);
+        return (tokens::GLYPH_UNKNOWN.to_owned(), tokens::UNKNOWN);
     };
-    let advisory = is_advisory(distribution);
-    let role = match distribution.state {
-        Some(LoadState::Within) => Role::Ok,
-        Some(LoadState::Exceeds) if advisory => Role::Caution,
-        Some(LoadState::Exceeds) => Role::Danger,
-        Some(LoadState::Unmodeled) => Role::Unknown,
-        None => Role::Info,
-    };
-    let population = distribution.population;
-    let mut hover = format!(
-        "The gate judged {} of {} {}.",
-        population.contributing,
-        population.offered,
-        population.unit.plural()
-    );
-    if let Some(source) = &distribution.bound_source {
-        hover.push_str(&format!("\nThe limit is {}.", source.clause()));
-        if advisory {
-            hover.push_str("\nThis limit is a rule of thumb. It does not stop an export.");
+    match distribution.state {
+        Some(LoadState::Within) => (tokens::GLYPH_OK.to_owned(), tokens::OK),
+        Some(LoadState::Exceeds) => {
+            let colour = if is_advisory(distribution) {
+                tokens::CAUTION
+            } else {
+                tokens::DANGER
+            };
+            let out = (1.0 - share).max(0.0);
+            let text = if out > 0.0 {
+                format!(
+                    "{} {}",
+                    tokens::GLYPH_DANGER,
+                    histogram::format_share(out * 100.0)
+                )
+            } else {
+                tokens::GLYPH_DANGER.to_owned()
+            };
+            (text, colour)
         }
+        Some(LoadState::Unmodeled) => (tokens::GLYPH_UNKNOWN.to_owned(), tokens::UNKNOWN),
+        None => (histogram::format_share(share * 100.0), tokens::TEXT_MUTED),
     }
-    StatusChip::new(
-        format!("{} in band", histogram::format_share(share * 100.0)),
-        role,
-    )
-    .hover(hover)
 }
 
-/// The caption: each out-of-band share with its one-word consequence.
-fn card_caption(distribution: &MetricDistribution, spec: &CutMetricSpec) -> String {
-    let hist = &distribution.histogram;
-    if hist.floor.is_none() && hist.ceiling.is_none() {
-        return match distribution.metric {
-            DistributionMetric::Criterion(CriterionKind::DepthOfCut) => {
-                "Depth is reported; the deflection limit decides.".to_owned()
-            }
-            _ => "No limit applies.".to_owned(),
-        };
-    }
-    let share = |seconds: f64| {
-        if hist.total_s > 0.0 {
-            histogram::format_share(seconds / hist.total_s * 100.0)
-        } else {
-            histogram::format_share(0.0)
-        }
+/// The muted peak at the right of the header row: the peak as a percent of
+/// the bound the gate judged it against, or the peak in its unit when there
+/// is no bound. Every figure comes from the criterion row or the histogram.
+fn peak_text(
+    distribution: &MetricDistribution,
+    row: Option<&LimitRow<'_>>,
+    spec: &CutMetricSpec,
+) -> Option<String> {
+    let unit_peak = |peak: f64| {
+        format!(
+            "peak {} {}",
+            histogram::format_value(peak * spec.scale),
+            spec.unit
+        )
     };
+    let Some(row) = row else {
+        // No criterion (engagement): the largest value in the histogram.
+        return distribution
+            .histogram
+            .edges
+            .last()
+            .map(|max| unit_peak(*max));
+    };
+    let status = &row.status;
+    let peak = status.display_peak?;
+    if row.burn_risk {
+        return Some(match pct_of_bound(peak, burn_floor(status)) {
+            Some(pct) => format!("peak {pct} % of floor"),
+            None => unit_peak(peak),
+        });
+    }
+    Some(match pct_of_bound(peak, status.bound) {
+        Some(pct) => format!("peak {pct} % of limit"),
+        None => unit_peak(peak),
+    })
+}
+
+/// The hover of a card's status glyph: the criterion's limit row, in the
+/// words `verdict_badge` paints (G-OWNBOUND). No figure is typed here.
+///
+/// 1. The face (`verdict_face`), for example `power 1%`. A row with no
+///    bound states the reading and the absence instead of "OK".
+/// 2. The caption (`row_caption`): the setting, the population, the source.
+/// 3. The in-band share of cutting time.
+/// 4. The tooltip (`verdict_tooltip`): the peak against the bound, the
+///    confidence reason, and the bound clause.
+/// 5. The advisory line, when the bound does not stop an export.
+fn cut_metric_status_hover(
+    card: &CutMetricCard,
+    row: Option<&LimitRow<'_>>,
+    spec: &CutMetricSpec,
+) -> String {
+    let distribution = match &card.outcome {
+        DistributionOutcome::Measured(distribution) => Some(distribution.as_ref()),
+        DistributionOutcome::NotMeasured(_) => None,
+    };
+    let unbounded =
+        distribution.is_some_and(|d| d.histogram.floor.is_none() && d.histogram.ceiling.is_none());
+    let mut lines: Vec<String> = Vec::new();
+    match row {
+        Some(row) => {
+            if unbounded {
+                let peak = row.status.display_peak.map_or_else(String::new, |peak| {
+                    format!(
+                        " {} {}",
+                        histogram::format_value(peak * spec.scale),
+                        spec.unit
+                    )
+                });
+                lines.push(format!(
+                    "{} peak{peak} \u{00b7} no limit",
+                    row.status.kind.label()
+                ));
+            } else {
+                lines.push(verdict_face(row).1);
+            }
+            let caption = row_caption(row);
+            if !caption.is_empty() {
+                lines.push(caption);
+            }
+        }
+        None => lines.push("No gate judges this metric. Use it to compare cuts.".to_owned()),
+    }
+    if let Some(distribution) = distribution {
+        let hist = &distribution.histogram;
+        if unbounded {
+            if matches!(
+                distribution.metric,
+                DistributionMetric::Criterion(CriterionKind::DepthOfCut)
+            ) {
+                lines.push("Depth is reported; the deflection limit decides.".to_owned());
+            }
+        } else if let Some(share) = hist.in_band_share() {
+            lines.push(format!(
+                "{} of cut time in band.",
+                histogram::format_share(share * 100.0)
+            ));
+        } else {
+            lines.push("No cut time was measured.".to_owned());
+        }
+        if row.is_none() {
+            let population = distribution.population;
+            lines.push(format!(
+                "The chart holds {} of {} {}.",
+                population.contributing,
+                population.offered,
+                population.unit.plural()
+            ));
+        }
+    }
+    if let Some(row) = row {
+        lines.push(verdict_tooltip(row));
+    }
+    if distribution.is_some_and(is_advisory) {
+        lines.push("This limit is a rule of thumb. It does not stop an export.".to_owned());
+    }
+    lines.join("\n")
+}
+
+/// The caption under the chart: each out-of-band share with its one-word
+/// consequence. `None` when no cutting time is out of band.
+fn card_caption(distribution: &MetricDistribution, spec: &CutMetricSpec) -> Option<String> {
+    let hist = &distribution.histogram;
+    if hist.total_s <= 0.0 {
+        return None;
+    }
+    let share = |seconds: f64| histogram::format_share(seconds / hist.total_s * 100.0);
     let mut parts: Vec<String> = Vec::new();
-    if hist.floor.is_some() {
+    if hist.floor.is_some() && hist.below_s > 0.0 {
         parts.push(format!("{} below floor (rubbing)", share(hist.below_s)));
     }
-    if hist.ceiling.is_some() {
+    if hist.ceiling.is_some() && hist.above_s > 0.0 {
         parts.push(format!(
             "{} above ceiling ({})",
             share(hist.above_s),
             spec.above
         ));
     }
-    parts.join(" \u{00b7} ")
+    (!parts.is_empty()).then(|| parts.join(" \u{00b7} "))
 }
 
 // ── Selected span section ───────────────────────────────────────────────

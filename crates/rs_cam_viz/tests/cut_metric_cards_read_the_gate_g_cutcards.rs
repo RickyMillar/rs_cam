@@ -146,11 +146,28 @@ fn the_inspector_draws_cut_metric_cards_from_the_gate_g_cutcards() {
         "the section is scoped to the focused toolpath: the limits are per \
          toolpath, so a project-wide histogram cannot carry a band"
     );
+    // Follow-up 2026-09-24: the card no longer paints the limit row as a
+    // second line under its title. The operator found the cards too tall.
+    // The row's facts moved into the hover of the status glyph, and that
+    // hover is built from the same renderer parts `verdict_badge` uses, so
+    // G-OWNBOUND still holds: no number in it is typed in the card.
     let card_fn = function_source(&diagnostics, "fn draw_cut_metric_card(");
     assert!(
-        card_fn.contains("verdict_badge("),
-        "each card draws its criterion's limit row with the shared renderer \
-         (G-OWNBOUND)"
+        card_fn.contains("cut_metric_status_hover("),
+        "each card carries its criterion's limit row in the status hover"
+    );
+    let hover_fn = function_source(&diagnostics, "fn cut_metric_status_hover(");
+    for part in ["verdict_face(", "row_caption(", "verdict_tooltip("] {
+        assert!(
+            hover_fn.contains(part),
+            "the status hover must build the limit row from `{part}`, the \
+             part `verdict_badge` paints for Readiness (G-OWNBOUND)"
+        );
+    }
+    assert!(
+        card_fn.contains("ShowSeries(") && !card_fn.contains("See time series"),
+        "the card title opens the metric's track; the card has no second \
+         \"See time series\" link (the section keeps its one toggle)"
     );
     assert!(
         section.contains("Play or select a toolpath."),
@@ -181,21 +198,30 @@ fn the_inspector_draws_cut_metric_cards_from_the_gate_g_cutcards() {
         "a metric core could not measure draws the abstention mark, never \
          an empty histogram (X-VAC)"
     );
-    let caption = function_source(&diagnostics, "fn card_caption(");
     assert!(
-        caption.contains("Depth is reported; the deflection limit decides."),
+        hover_fn.contains("Depth is reported; the deflection limit decides."),
         "a depth reading with no cap (feeds ruling R2) must say which gate \
          decides, not draw an invented limit"
     );
-    let chip = function_source(&diagnostics, "fn headline_chip(");
+    let caption = function_source(&diagnostics, "fn card_caption(");
     assert!(
-        chip.contains("no limit"),
-        "a card with no bound states the absence in its headline chip"
+        caption.contains("below_s > 0.0") && caption.contains("above_s > 0.0"),
+        "the caption names only a share that is out of band; a \"0 % above \
+         ceiling\" line is noise"
+    );
+    let glyph = function_source(&diagnostics, "fn status_glyph(");
+    assert!(
+        glyph.contains("no limit"),
+        "a card with no bound states the absence in its status glyph"
     );
     assert!(
-        chip.contains("distribution.state"),
-        "the headline chip takes its role from the GATE verdict, not from \
+        glyph.contains("distribution.state"),
+        "the status glyph takes its role from the GATE verdict, not from \
          the in-band share"
+    );
+    assert!(
+        !card_fn.contains("StatusChip") && !card_fn.contains("Card::new("),
+        "the card is a compact row group: no chip and no card frame"
     );
 
     let state = code_only(&read(STATE));
@@ -362,6 +388,73 @@ fn a_bin_is_placed_and_worded_against_the_gate_bounds_g_cutcards() {
     assert_eq!(histogram::format_share(0.0), "0 %");
     assert_eq!(histogram::format_share(14.4), "14 %");
     assert_eq!(histogram::format_value(0.0312), "0.031");
+}
+
+/// Follow-up 2026-09-24: the x axis follows the data. A spindle-power
+/// limit forty times the peak used to squash every sample into one bar at
+/// the left edge. A far bound is now off scale at the edge, and a near
+/// bound stays to scale.
+#[test]
+fn a_far_bound_is_off_scale_and_a_near_bound_is_to_scale_g_cutcards() {
+    let samples: Vec<PopulationSample> = (0..50)
+        .map(|i| PopulationSample {
+            value: 0.01 + 0.01 * f64::from(i) / 49.0,
+            weight_s: 0.1,
+            move_index: i as usize,
+            sample_index: i as usize,
+        })
+        .collect();
+    let far = Histogram::build(&samples, None, Some(0.84), 24);
+    assert!(
+        *far.edges.last().unwrap() < 0.84,
+        "core bins over the data; the far ceiling must not widen the edges"
+    );
+    assert_eq!(
+        histogram::bound_place(&far, 0.84),
+        histogram::BoundPlace::OffRight
+    );
+    let occupied = far.counts.iter().filter(|&&c| c > 0).count();
+    assert!(
+        occupied > 10,
+        "the bars keep their resolution: {occupied} bins hold samples"
+    );
+
+    let near = Histogram::build(&samples, None, Some(0.0205), 24);
+    assert_eq!(
+        histogram::bound_place(&near, 0.0205),
+        histogram::BoundPlace::ToScale,
+        "a bound just past the data range stays to scale"
+    );
+    let low = Histogram::build(&samples, Some(0.0001), None, 24);
+    assert_eq!(
+        histogram::bound_place(&low, 0.0001),
+        histogram::BoundPlace::OffLeft
+    );
+
+    // The chart still fits the rail with an off-scale marker.
+    let ctx = ctx();
+    let mut width = 0.0_f32;
+    for _ in 0..2 {
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            ui.set_max_width(RAIL_WIDTH);
+            width = DistributionChart::new(&far, "kW")
+                .show(ui)
+                .response
+                .rect
+                .width();
+        });
+        out.textures_delta.clear();
+    }
+    assert!(
+        width <= RAIL_WIDTH + SLACK,
+        "the chart is {width} points wide"
+    );
+
+    let stub = histogram::bin_hover_text(&far, far.weights_s.len() - 1, 1.0, "kW");
+    assert!(
+        stub.contains("Overflow bin"),
+        "the overflow stub's hover must say what it is: {stub:?}"
+    );
 }
 
 // ---------------------------------------------------------------------------

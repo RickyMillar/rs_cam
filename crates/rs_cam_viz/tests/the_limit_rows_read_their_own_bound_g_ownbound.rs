@@ -29,6 +29,19 @@
 //! once, in `criteria()` order. `every_banded_row_is_on_its_own_card_g_ownbound`
 //! holds the move.
 //!
+//! # The rows move into the status hover (2026-09-24)
+//!
+//! The operator found the cards too tall. A card no longer paints the row
+//! as lines under its title: the row's face, its caption and its tooltip
+//! are the first lines of the hover on the card's status glyph. The card
+//! builds that hover from `verdict_face`, `row_caption` and
+//! `verdict_tooltip`, the parts `verdict_badge` paints, so every contract
+//! below reads the same words. The arms find a row's face as a single-line
+//! run (a `verdict_badge` row) or as the FIRST LINE of a hover (a card
+//! row), and its caption as the next run or the next line. A hover paints
+//! in the tooltip layer, so the arms no longer read a card row's position
+//! among the faces; the card titles carry the order.
+//!
 //! # Rendered, not source-scanned
 //!
 //! Every arm runs the Simulation Inspector through a real `egui::Context` and
@@ -68,18 +81,47 @@ fn face_label(kind: CriterionKind) -> String {
     kind.label().to_owned()
 }
 
-/// The face of the row for `kind`: the single-line run that begins with the
+/// Every run that can carry a row's face: each single-line run, and the
+/// first line of each hover. Each entry is `(face, caption)`: the caption
+/// is the next single-line run for a face, and the next line for a hover.
+fn row_runs(texts: &[String]) -> Vec<(String, Option<String>)> {
+    let painted = faces(texts);
+    let mut runs: Vec<(String, Option<String>)> = painted
+        .iter()
+        .enumerate()
+        .map(|(i, t)| (t.clone(), painted.get(i + 1).cloned()))
+        .collect();
+    for hover in hovers(texts) {
+        let mut lines = hover.lines();
+        if let Some(first) = lines.next() {
+            runs.push((first.to_owned(), lines.next().map(str::to_owned)));
+        }
+    }
+    runs
+}
+
+/// The runs that carry the row for `kind`: the ones that begin with the
 /// row's label.
-fn row_face(texts: &[String], kind: CriterionKind) -> String {
+fn row_matches(texts: &[String], kind: CriterionKind) -> Vec<(String, Option<String>)> {
     let prefix = format!("{} ", face_label(kind));
-    faces(texts)
+    row_runs(texts)
         .into_iter()
-        .find(|t| t.starts_with(&prefix))
+        .filter(|(face, _)| face.starts_with(&prefix))
+        .collect()
+}
+
+/// The face of the row for `kind`: the run, or the first hover line, that
+/// begins with the row's label.
+fn row_face(texts: &[String], kind: CriterionKind) -> String {
+    row_matches(texts, kind)
+        .into_iter()
+        .next()
+        .map(|(face, _)| face)
         .unwrap_or_else(|| {
             panic!(
                 "no face painted for the {:?} row. Runs were {:#?}",
                 kind,
-                faces(texts)
+                row_runs(texts)
             )
         })
 }
@@ -225,29 +267,34 @@ fn a_milling_toolpath_paints_one_row_per_kind_g_ownbound() {
     );
 
     let texts = inspector_text(&mut state);
-    let painted = faces(&texts);
-    let mut last = None;
     for kind in MILLING_KINDS {
-        let prefix = format!("{} ", face_label(kind));
+        assert!(
+            !row_matches(&texts, kind).is_empty(),
+            "the {kind:?} row painted no face. The Inspector must draw every \
+             row of `criteria()`: a banded row in its card's status hover, \
+             the rest after the cards. Runs were {:#?}",
+            row_runs(&texts)
+        );
+    }
+    // The order: the card titles follow `criteria()` (arm
+    // `every_banded_row_is_on_its_own_card_g_ownbound`), and the gantry row,
+    // which has no card, paints after the last card title.
+    let painted = faces(&texts);
+    let gantry = painted
+        .iter()
+        .position(|t| t.starts_with(&format!("{} ", face_label(CriterionKind::GantryPush))))
+        .expect("the gantry row is a verdict_badge face");
+    for (_, title) in CARD_TITLES {
         let at = painted
             .iter()
-            .position(|t| t.starts_with(&prefix))
-            .unwrap_or_else(|| {
-                panic!(
-                    "the {kind:?} row painted no face. The Inspector must draw \
-                     every row of `criteria()`: a banded row on its card, the \
-                     rest after the cards. Runs were {painted:#?}"
-                )
-            });
-        if let Some(previous) = last {
-            assert!(
-                at > previous,
-                "the {kind:?} row painted out of `criteria()` order (at {at}, \
-                 after {previous}). One order, so the GUI, the CLI and the \
-                 MCP list the same rows the same way."
-            );
-        }
-        last = Some(at);
+            .position(|t| t == title)
+            .unwrap_or_else(|| panic!("no card titled {title:?}. Runs were {painted:#?}"));
+        assert!(
+            at < gantry,
+            "the gantry row (run {gantry}) painted before the {title:?} card \
+             (run {at}). One order, so the GUI, the CLI and the MCP list the \
+             same rows the same way."
+        );
     }
 }
 
@@ -269,64 +316,68 @@ fn every_banded_row_is_on_its_own_card_g_ownbound() {
     let mut state = simulated_state(Cut::InsideTheRigidityCap);
     let texts = inspector_text(&mut state);
     let painted = faces(&texts);
+    let report = load_report(&state);
+    let criteria = only_verdict(&report).criteria();
 
+    // The cards follow `criteria()` order, with the cards core could not
+    // measure after the measured ones (follow-up 2026-09-24).
+    let not_measured = |kind: CriterionKind| {
+        criteria
+            .iter()
+            .find(|s| s.kind == kind)
+            .is_none_or(|s| s.state == LoadState::Unmodeled || s.is_vacuous())
+    };
+    let mut expected: Vec<(CriterionKind, &str)> = CARD_TITLES.to_vec();
+    expected.sort_by_key(|(kind, _)| not_measured(*kind));
     let title_at = |title: &str| {
         painted
             .iter()
             .position(|t| t == title)
             .unwrap_or_else(|| panic!("no card titled {title:?}. Runs were {painted:#?}"))
     };
-    let titles: Vec<usize> = CARD_TITLES.iter().map(|(_, t)| title_at(t)).collect();
+    let titles: Vec<usize> = expected.iter().map(|(_, t)| title_at(t)).collect();
     for pair in titles.windows(2) {
         assert!(
             pair[0] < pair[1],
-            "the cards are out of `criteria()` order: {titles:?}. One order, \
-             so the GUI, the CLI and the MCP list the same rows the same way."
+            "the cards are out of order: {expected:?} painted at {titles:?}. \
+             One order, so the GUI, the CLI and the MCP list the same rows \
+             the same way."
         );
     }
 
-    for (index, (kind, title)) in CARD_TITLES.iter().enumerate() {
-        let prefix = format!("{} ", face_label(*kind));
-        let at: Vec<usize> = painted
-            .iter()
-            .enumerate()
-            .filter(|(_, t)| t.starts_with(&prefix))
-            .map(|(i, _)| i)
-            .collect();
+    for (kind, title) in CARD_TITLES {
+        let matches = row_matches(&texts, kind);
         assert_eq!(
-            at.len(),
+            matches.len(),
             1,
-            "the {kind:?} row painted {} faces, not one. The card carries the \
-             row; \"Now playing\" must not draw a second copy. Runs were \
-             {painted:#?}",
-            at.len()
+            "the {kind:?} row painted {} faces, not one. The {title:?} card \
+             carries the row; \"Now playing\" must not draw a second copy. \
+             Runs were {:#?}",
+            matches.len(),
+            row_runs(&texts)
         );
-        let start = titles[index];
-        let end = titles.get(index + 1).copied().unwrap_or(usize::MAX);
+        let prefix = format!("{} ", face_label(kind));
         assert!(
-            at[0] > start && at[0] < end,
-            "the {kind:?} row (run {}) is not on the {title:?} card (runs {start} \
-             to {end})",
-            at[0]
+            !painted.iter().any(|t| t.starts_with(&prefix)),
+            "the {kind:?} row painted a face line on the page. The card \
+             carries the row in its status hover, so a face on the page is \
+             a second copy or the old tall card."
         );
     }
 
     // Feeds ruling R2: a finishing or semi-finishing pass has no depth cap,
     // so the depth gate REPORTS its peak with no bound. The card still
     // draws, with no invented limit, and says which gate decides.
-    let report = load_report(&state);
-    let criteria = only_verdict(&report).criteria();
     let depth = criteria
         .iter()
         .find(|s| s.kind == CriterionKind::DepthOfCut)
         .expect("a depth row");
     if depth.state == LoadState::Within && depth.bound.is_none() {
-        let start = titles[3];
         let caption = "Depth is reported; the deflection limit decides.";
         assert!(
-            painted.iter().skip(start).any(|t| t == caption),
+            texts.iter().any(|t| t.contains(caption)),
             "the depth gate reported a peak with no bound, and the Depth of \
-             cut card never painted {caption:?}. Runs were {painted:#?}"
+             cut card never painted {caption:?}. Runs were {texts:#?}"
         );
         assert!(
             depth.bound_source.is_none(),
@@ -365,7 +416,6 @@ fn every_modelled_row_names_its_setting_and_its_bound_g_ownbound() {
     let report = load_report(&state);
     let criteria = only_verdict(&report).criteria();
     let texts = inspector_text(&mut state);
-    let painted = faces(&texts);
     let all = texts.join("\n\u{2500}\u{2500}\n");
 
     let mut checked = 0usize;
@@ -381,13 +431,14 @@ fn every_modelled_row_names_its_setting_and_its_bound_g_ownbound() {
         );
         checked += 1;
 
-        // The caption, which is the face that follows the row's own face.
-        let prefix = format!("{} ", face_label(status.kind));
-        let at = painted
-            .iter()
-            .position(|t| t.starts_with(&prefix))
-            .unwrap_or_else(|| panic!("no face for the {:?} row", status.kind));
-        let caption = painted.get(at + 1).unwrap_or_else(|| {
+        // The caption: the run after a `verdict_badge` face, or the line
+        // after the face in a card's status hover.
+        let caption = row_matches(&texts, status.kind)
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| panic!("no face for the {:?} row", status.kind))
+            .1;
+        let caption = caption.as_ref().unwrap_or_else(|| {
             panic!(
                 "the {:?} row painted no caption under its face. W1: the \
                  provenance rides in the caption the row already has, so a \
@@ -430,7 +481,6 @@ fn every_row_states_the_population_it_measured_g_ownbound() {
     let report = load_report(&state);
     let criteria = only_verdict(&report).criteria();
     let texts = inspector_text(&mut state);
-    let painted = faces(&texts);
 
     let mut checked = 0usize;
     for status in &criteria {
@@ -445,10 +495,10 @@ fn every_row_states_the_population_it_measured_g_ownbound() {
             population.unit.plural()
         );
         assert!(
-            painted.iter().any(|t| t.contains(&stated)),
+            texts.iter().any(|t| t.contains(&stated)),
             "the {:?} row never stated its population {stated:?}. W4: a \
              verdict drawn from three samples must not read like a measured \
-             run. Faces were {painted:#?}",
+             run. Runs were {texts:#?}",
             status.kind
         );
     }
