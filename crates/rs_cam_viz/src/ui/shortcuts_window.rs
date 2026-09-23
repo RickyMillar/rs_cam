@@ -38,14 +38,14 @@ pub fn draw(ctx: &egui::Context, show: &mut bool) {
             );
             ui.add_space(8.0);
 
-            // Overlays section (P6). Bound in every workspace that renders a
-            // viewport, so it is its own block rather than a Toolpaths row.
-            ui.heading("Overlays");
+            // Viewport options (redesign phase 2). Bound in every workspace
+            // that renders a viewport, so it is its own block rather than a
+            // Toolpaths row.
+            ui.heading("Viewport options");
             draw_shortcut_grid(
                 ui,
                 &[
-                    ("O", "Open / close the Overlays panel"),
-                    ("Shift+O", "Pin / unpin it"),
+                    ("O", "Open / close All viewport options"),
                     ("S", "Stock box"),
                     ("P", "Cutting paths"),
                     ("R", "Rapids"),

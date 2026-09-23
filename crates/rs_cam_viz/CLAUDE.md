@@ -19,7 +19,7 @@ directory; it holds the file map, invariants, sentries and traps.
 | `ui/` | Every egui panel, modal and workspace | `ui/CLAUDE.md` |
 | `ui/components/` | The shared component set | `ui/components/CLAUDE.md` |
 | `ui/feeds/` | The feeds and speeds surfaces | `ui/feeds/CLAUDE.md` |
-| `ui/overlays/` | The viewport Overlays panel and its registry | `ui/overlays/CLAUDE.md` |
+| `ui/overlays/` | The viewport dock, the All viewport options catalogue and their registry | `ui/overlays/CLAUDE.md` |
 | `ui/properties/` | The inspector tabs | `ui/properties/CLAUDE.md` |
 | `interaction/`, `io/` | Picking and mouse handling; project import, export and the setup sheet | — |
 

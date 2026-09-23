@@ -15,7 +15,7 @@ project. The entry point is `state::AppState` in `mod.rs`.
   lane state and the GUI-only runtime overlay state.
 - `simulation/` — `playback_state.rs`, `issue_triage.rs`, `semantic_trace.rs`.
 - `viewport.rs`, `selection.rs`, `overlays.rs` — the viewport, the selection
-  and the Overlays panel state.
+  and the viewport dock and catalogue state.
 - `history.rs`, `wizard.rs`, `multitool_planner.rs`, `rest_dependency.rs` —
   undo, the export wizard, the planner and the Rest predecessor rule.
 - `panels.rs` — the panel drafts that outlive a frame.

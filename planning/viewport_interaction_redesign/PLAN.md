@@ -1,6 +1,6 @@
 # Viewport interaction redesign
 
-**Status:** Proposed — not implemented  
+**Status:** Phases 1 and 2 landed 2026-09-23 night (171ec9c4 inventory + mockups, 2594fec7 dock + catalogue) against mockups the operator has not reviewed, by the operator's instruction to run unattended; phases 3 and 4 in progress  
 **Scope:** `crates/rs_cam_viz` viewport controls and their presentation; no core, MCP-wire, or compute-contract change is proposed by this document.
 
 ## Decision

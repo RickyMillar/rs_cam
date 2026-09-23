@@ -97,7 +97,24 @@ Recorded verbatim in substance; the operator's words are in FINDINGS-style quote
   (192 tool rule + 270 CLUELESS), as §3 of FORMULA_BACKING_v2 predicted.
   Sentries FM0 (re-blessed), FM4, FM5 (core and viz). The 270 CLUELESS cells
   are the targets: each `Clueless { reason }` names the missing chart.
-- R2, R4: no change (specs next).
+- R2, smaller step: LANDED 1ff9344a (+ 39278aec matrix re-run). No depth
+  ceiling on Finish/SemiFinish roles (`DepthVerdict::Reported`, cap columns
+  empty on 264 cells); one engaged diameter on a tapered ball for the clamp,
+  the gate and the feed ladder (`depth_cap_diameter_mm`,
+  `feed_ladder_diameter_mm`); `load.depth.exceeds` / `.unmodeled` /
+  `.within` / `.reported` ids; f32 tolerance at the cap. Sentry FM6.
+  Open from it: V-bit feed ladder at the nominal diameter (not ruled); the
+  same `*.within`-for-Unmodeled defect on chipload, power and deflection.
+- Chart display: LANDED 5199e06e (one line at the suggested value, fainter
+  band lines only where the row publishes both limits, no shading; the
+  Readiness scatter lost its shaded zones too). Sentry g_chartlines.
+- R4: spec written, R4_AGGRESSIVENESS_SPEC.md (171ec9c4). WP1 (long-tool
+  de-rate visible) and WP2a (floor warns, never lifts) run tonight; WP3
+  (dial + 0.75 removal) waits for the operator's look at §2 and §5.
+- Fixture casualties of R5/R3 found and re-blessed tonight: a8 retarget
+  (a579a9a9), up4 width fixture + chipverdict cells (cdecab2b), pills
+  feed-floor arm (0aeb3c82), t12_t15 pass-role arm (e7dcf475), wanaka
+  drills (14edc942).
 
 ## The three findings that change the frame
 
