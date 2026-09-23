@@ -172,7 +172,6 @@ species = "GenericHardwood"
 name = "Generic Wood Router"
 max_feed_mm_min = 4000.0
 max_shank_mm = 6.35
-safety_factor = 0.75
 
 [job.machine.spindle.Variable]
 min_rpm = 8000.0

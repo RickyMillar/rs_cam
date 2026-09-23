@@ -289,7 +289,27 @@ fn a_roughing_depth_still_clamps_at_the_producer_s_cap_fm6() {
         capped, expected,
         "the clamp must land on the producer's cap"
     );
-    assert_eq!(s.operation.depth_per_pass(), Some(expected));
+    // Ruling R4 WP3 (2026-09-24): the clamp still lands on the cap, and
+    // then the aggressiveness dial (default 0.85, x 0.75 long-tool share at
+    // the default 45 mm stickout = 0.6375) scales the depth down from it.
+    // Measured: 1.2 -> 0.8333 mm. The dial record starts from the cap, so
+    // the difference is on the card, not hidden.
+    let shipped = s.operation.depth_per_pass().expect("a pocket has a depth");
+    assert!(
+        shipped <= expected + 1e-12,
+        "the shipped depth {shipped} is above the cap {expected}"
+    );
+    let dial_from = s.warnings.iter().find_map(|w| match w {
+        SuggestWarning::EngagementReducedForAggressiveness {
+            dpp_from, dpp_to, ..
+        } => Some((*dpp_from, *dpp_to)),
+        _ => None,
+    });
+    assert_eq!(
+        dial_from,
+        Some((Some(expected), Some(shipped))),
+        "the dial record must start from the cap and end at the shipped depth"
+    );
 }
 
 // ── (c) one engaged diameter on a tapered ball ──────────────────────────

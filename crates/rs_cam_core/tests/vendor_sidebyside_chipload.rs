@@ -205,13 +205,12 @@ fn vendor_sidebyside_chipload_spotcheck() {
         );
         println!(
             "           depth_tier={:.6}  ld={:.6}  workholding={:.6}  power={:.6}  \
-             feed_clamp={:.6}  safety={:.6}  spindle_scale={:.6}",
+             feed_clamp={:.6}  spindle_scale={:.6}",
             dr.depth_tier,
             dr.ld_overhang,
             dr.workholding,
             dr.power_limit,
             dr.feed_clamp,
-            dr.safety_factor,
             dr.spindle_scale
         );
 
@@ -313,8 +312,12 @@ fn vendor_sidebyside_chipload_spotcheck() {
 /// commanded advance per tooth equals
 ///
 /// ```text
-/// target_chip_load_mm x depth_tier x ld x workholding x safety_factor
+/// target_chip_load_mm x depth_tier x workholding
 /// ```
+///
+/// **`safety_factor` and `ld` left this identity on 2026-09-24** (ruling R4):
+/// the safety factor is gone, and the long-tool share `ld` is a load target
+/// for Suggest pass 6b, not a feed factor (Q7).
 ///
 /// **`spindle_scale` left this identity on 2026-09-16.** It was in the
 /// product and it should never have been: the scale walks the CONSTANT-
@@ -361,11 +364,7 @@ fn the_recommendation_is_the_transferred_band_midpoint_times_the_derate_stack() 
         let divisor = result.rpm * f64::from(probe.flutes);
         assert!(divisor > 0.0, "{}: no fpt divisor", probe.label);
         let commanded_fpt = result.feed_rate_mm_min / divisor;
-        let predicted = dr.target_chip_load_mm
-            * dr.depth_tier
-            * dr.ld_overhang
-            * dr.workholding
-            * dr.safety_factor;
+        let predicted = dr.target_chip_load_mm * dr.depth_tier * dr.workholding;
         assert!(
             (commanded_fpt - predicted).abs() < 1e-9,
             "{}: commanded {commanded_fpt:.9} != seed-midpoint identity {predicted:.9} \

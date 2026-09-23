@@ -162,10 +162,11 @@ fn power_terms_kw(kc: f64, ap_mm: f64, ae_mm: f64, feed_mm_min: f64, rpm: f64) -
     (shear, edge)
 }
 
-/// The gate's ceiling — `power_at_rpm × safety_factor`, the axis every
-/// published power number is quoted against (`power.rs:214`).
+/// The gate's ceiling — the rated curve `power_at_rpm`, the axis every
+/// published power number is quoted against. Ruling R4 Q2 (2026-09-24)
+/// removed the `safety_factor` fraction.
 fn gate_ceiling_kw(machine: &MachineProfile, rpm: f64) -> f64 {
-    machine.power_at_rpm(rpm) * machine.safety_factor
+    machine.power_at_rpm(rpm)
 }
 
 /// A Ø12 two-flute carbide end mill long enough that neither the flute guard
@@ -177,7 +178,11 @@ fn tool() -> ToolConfig {
     t.diameter = DIAMETER_MM;
     t.flute_count = FLUTES;
     t.cutting_length = 40.0;
-    t.stickout = 50.0;
+    // Ruling R4 Q7 (2026-09-24): above 4 x D stickout the long-tool share
+    // (0.88) lowers the dial's load target, so even at aggressiveness 1.0
+    // pass 6b would scale the depth (measured 24 -> 20 mm here, 2.4 -> 1.8
+    // in g_s2). 48 mm = 4.0 x D takes no share, and the dial stays out.
+    t.stickout = 48.0;
     t
 }
 
@@ -186,11 +191,24 @@ fn tool() -> ToolConfig {
 /// `adaptive_doc_factor` is set to 2.0, the shipped `RigidityProfile::default()`
 /// value; the generic router ships 1.5, which caps at 1.5 × D and lands inside
 /// the same tier the entry depth is above.
+///
+/// Ruling R4 Q2 (2026-09-24) RE-TUNE. The ceiling was `power_at_rpm x 0.75`
+/// and is now `power_at_rpm`. An arm whose recipe Step 6 clamped onto the
+/// ceiling reproduces its old operating point exactly on a spindle of 0.75 x
+/// its old rating: the clamp solves the same feed against the same kW. So
+/// 2.0 -> 1.5, 1.6 -> 1.2 (the crossing arm) and 0.8 -> 0.6 kW (the refusal
+/// arm: the measured edge term 0.6975 kW must exceed the ceiling). The
+/// un-clamped arm is re-tuned on its own measurement, see there.
 fn machine_at(power_kw: f64) -> MachineProfile {
     let mut m = MachineProfile::generic_wood_router();
     m.name = format!("SYNTHETIC {power_kw:.2} kW (test only)");
     m.power = rs_cam_core::machine::PowerModel::ConstantPower { power_kw };
     m.rigidity.adaptive_doc_factor = 2.0;
+    // Ruling R4 (2026-09-24): this fixture tests the Step 6 / pass 9 / pass 10
+    // power interaction, not the aggressiveness dial. The dial at 1.0 keeps
+    // pass 6b out of the geometry (it would scale the depth and the stepover
+    // before pass 9 runs).
+    m.aggressiveness = 1.0;
     m
 }
 
@@ -244,10 +262,9 @@ impl Shipped {
     /// machine. 1.0 is exactly on the ceiling; above 1.0 the funnel commanded
     /// a cut the spindle cannot deliver.
     ///
-    /// Both sides sit on the gate's COMMANDED axis: `feed_mm_min` is the feed
-    /// that ships, so Step 9 has already applied `safety_factor` to it, and
-    /// the ceiling carries the factor on the other side. Applying it twice is
-    /// the defect the sibling instrument corrected in its own arithmetic.
+    /// Both sides sit on one axis: `feed_mm_min` is the feed that ships and
+    /// the ceiling is the rated curve. Since ruling R4 neither carries a
+    /// factor.
     fn shipped_utilisation(&self, machine: &MachineProfile, material: &Material) -> f64 {
         let kc = material
             .kc_n_per_mm2()
@@ -364,7 +381,8 @@ fn run_funnel(machine: &MachineProfile, material: &Material, requested_ap: f64) 
 /// proving nothing.
 #[test]
 fn pass_nine_raises_the_feed_across_the_tier_boundary() {
-    let machine = machine_at(1.6);
+    // R4 re-tune: 1.6 -> 1.2 kW (the old 1.6 x 0.75 ceiling).
+    let machine = machine_at(1.2);
     let material = Material::SolidWood {
         species: WoodSpecies::GenericHardwood,
     };
@@ -440,10 +458,11 @@ fn pass_nine_raises_the_feed_across_the_tier_boundary() {
 /// ceiling and files no warning; that silence is the pin.
 #[test]
 fn the_shipped_feed_fits_the_spindle_after_a_tier_crossing_rescale() {
-    // 2.0 kW: at the 30 mm entry the feed-free edge term is about 1.17 kW,
-    // so a 1.6 kW spindle (1.2 kW ceiling) leaves no shear budget above the
-    // rubbing floor and Step 6 cannot land the recipe on the ceiling.
-    let machine = machine_at(2.0);
+    // A 1.5 kW ceiling: at the 30 mm entry the feed-free edge term is about
+    // 1.17 kW, so a 1.2 kW ceiling would leave no shear budget above the
+    // rubbing floor and Step 6 could not land the recipe on the ceiling.
+    // R4 re-tune: 2.0 -> 1.5 kW spindle (the old 2.0 x 0.75 ceiling).
+    let machine = machine_at(1.5);
     let material = Material::SolidWood {
         species: WoodSpecies::GenericHardwood,
     };
@@ -536,7 +555,7 @@ fn the_shipped_feed_fits_the_spindle_after_a_tier_crossing_rescale() {
 /// touch. Pass 9 holds the same contract and
 /// `suggest_feed_matches_final_geometry` pins it from the other side.
 ///
-/// The machine here is the same 1.6 kW spindle, so the power branch is live:
+/// The machine here is a 1.6 kW spindle, so the power branch is live:
 /// the arm proves the gate, not an inactive ceiling.
 #[test]
 fn an_untouched_operation_keeps_its_feed_byte_identical() {
@@ -580,10 +599,12 @@ fn an_untouched_operation_keeps_its_feed_byte_identical() {
 /// derate. That is the shape this arm needs.
 #[test]
 fn no_feed_fits_when_the_edge_term_alone_is_over_budget() {
-    let mut machine = machine_at(0.8);
+    // R4 re-tune: 0.8 -> 0.6 kW (the old 0.8 x 0.75 ceiling), under the
+    // measured 0.6975 kW edge term, so no feed fits.
+    let mut machine = machine_at(0.6);
     // Step 6 ships this recipe unclamped (no feed fits), and at the 30 mm
-    // entry the unclamped feed reaches the default 4 000 x 0.75 cutting-feed
-    // ceiling, which would hide pass 9's lift behind the cap. A higher
+    // entry the unclamped feed reaches the default 4 000 cutting-feed ceiling
+    // (4 000 x 0.75 before ruling R4), which would hide pass 9's lift behind the cap. A higher
     // ceiling keeps the lift visible so pass 10 has a raise to withdraw.
     machine.max_feed_mm_min = 8000.0;
     let material = Material::SolidWood {
@@ -652,7 +673,11 @@ fn no_feed_fits_when_the_edge_term_alone_is_over_budget() {
 /// ceiling; the arm pins that the un-clamped case is not lifted over it.
 #[test]
 fn an_unclamped_recipe_is_not_lifted_over_the_ceiling() {
-    let machine = machine_at(1.75);
+    // R4 re-tune: 1.75 -> 1.53 kW. Measured after WP3 at 1.75 kW the
+    // calculator's point drew 74.27 % of the ceiling (the feed lost its 0.75
+    // factor). The recipe is un-clamped, so its power does not move with the
+    // spindle: 1.75 x 0.7427 / 1.53 = 84.95 %, inside the 80-90 % band.
+    let machine = machine_at(1.53);
     let material = Material::SolidWood {
         species: WoodSpecies::RadiataPine,
     };

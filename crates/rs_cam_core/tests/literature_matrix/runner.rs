@@ -395,11 +395,31 @@ fn eval_anti_patterns(
         if ap.name == RUBBING_FLOOR_ANTI_PATTERN {
             detail = rubbing_floor_rule(detail, snap);
         }
+        if let Some(gap) = ap.known_gap.as_deref() {
+            detail = known_gap_rule(detail, gap);
+        }
         rows.push(SubVerdictRow {
             label: format!("anti.{}", ap.name),
             detail,
             severity_on_fail: Severity::parse(&ap.severity),
         });
+    }
+}
+
+/// A known-gap anti-pattern (see `AntiPattern::known_gap`): a trigger is the
+/// expected state and passes as "KNOWN GAP"; a clear reading fails, because
+/// it means the gap closed and the entry must be re-graded.
+fn known_gap_rule(detail: SubVerdictDetail, gap: &str) -> SubVerdictDetail {
+    match detail.verdict {
+        SubVerdict::Outside => {
+            SubVerdictDetail::within(format!("KNOWN GAP ({gap}): {}", detail.reason))
+        }
+        SubVerdict::Within | SubVerdict::Edge => SubVerdictDetail::outside(format!(
+            "KNOWN GAP CLOSED: {}; the gap ({gap}) no longer shows, so a de-rate landed \
+             and this entry must be re-graded",
+            detail.reason
+        )),
+        SubVerdict::NA => detail,
     }
 }
 

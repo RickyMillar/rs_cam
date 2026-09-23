@@ -197,7 +197,28 @@ pub struct MachineProfile {
     pub max_cutting_feed_mm_min: Option<f64>,
     pub max_shank_mm: f64,
     pub rigidity: RigidityProfile,
-    pub safety_factor: f64,
+    /// The machine aggressiveness dial (ruling R4, 2026-09-24). It sets the
+    /// LOAD of a Suggest recipe as a fraction of the load at the base
+    /// engagement. The chipload does not move: Suggest makes the depth per
+    /// pass and the stepover smaller (one common scale) until the predicted
+    /// lateral force and spindle power are at or below this fraction of
+    /// their base values. See `feeds::suggest::aggressiveness`.
+    ///
+    /// - Default [`DEFAULT_AGGRESSIVENESS`] (0.85, operator ruling Q1).
+    /// - Range for the panel slider: [`AGGRESSIVENESS_MIN`] to
+    ///   [`AGGRESSIVENESS_MAX`] (0.50 to 1.50).
+    /// - 1.00: no dial action. Above 1.00 Suggest raises the engagement
+    ///   inside the existing clamps and files a Caution (ruling Q3: warn,
+    ///   do not refuse).
+    ///
+    /// It is not a feed factor and not a power fraction. The spindle power
+    /// ceiling is the rated curve [`Self::power_at_rpm`] (ruling Q2).
+    ///
+    /// Serde: a file without the key loads the default. The old key
+    /// `safety_factor` (a feed factor of 0.75 or 0.80) is ignored on load;
+    /// there is no alias (ruling 2026-09-16, "no legacy, breaking OK").
+    #[serde(default = "default_aggressiveness")]
+    pub aggressiveness: f64,
     /// Linear-axis kinematics limits used by the F-034 cycle-time
     /// integrator. **`None` for every built-in preset** — the absence
     /// of kinematics IS the feature flag for F-034. When `Some`, the
@@ -213,6 +234,20 @@ impl Default for MachineProfile {
     fn default() -> Self {
         Self::generic_wood_router()
     }
+}
+
+/// The default machine aggressiveness (operator ruling R4 Q1, 2026-09-24).
+pub const DEFAULT_AGGRESSIVENESS: f64 = 0.85;
+
+/// The lowest aggressiveness the machine panel offers.
+pub const AGGRESSIVENESS_MIN: f64 = 0.50;
+
+/// The highest aggressiveness the machine panel offers. Values above 1.00
+/// raise the engagement above the base and file a Caution (ruling Q3).
+pub const AGGRESSIVENESS_MAX: f64 = 1.50;
+
+fn default_aggressiveness() -> f64 {
+    DEFAULT_AGGRESSIVENESS
 }
 
 /// F4 — conservative cutting-feed cap used when a profile doesn't set
@@ -232,38 +267,6 @@ impl MachineProfile {
         self.max_cutting_feed_mm_min
             .unwrap_or(DEFAULT_CUTTING_FEED_CAP_MM_MIN)
             .min(self.max_feed_mm_min)
-    }
-
-    /// T-18 — the cutting-feed ceiling stated on the COMMANDED axis:
-    /// [`Self::cutting_feed_ceiling_mm_min`] × `safety_factor`.
-    ///
-    /// `feeds::calculate` names two axes (the F-2 block in `feeds/mod.rs`):
-    ///
-    /// - RAW axis — the feed before Step 9.
-    /// - COMMANDED axis — the feed the machine receives, after Step 9.
-    ///
-    /// Step 7 caps the RAW feed at [`Self::cutting_feed_ceiling_mm_min`] with
-    /// no factor. Step 9 then multiplies the feed by `safety_factor`. The
-    /// calculator's output invariant is therefore
-    ///
-    /// ```text
-    /// commanded_feed <= cutting_feed_ceiling_mm_min() * safety_factor
-    /// ```
-    ///
-    /// and this function is the right-hand side. Every clamp that runs AFTER
-    /// Step 9 — the Step 9b rubbing-floor lift, the Step 9c drill envelope
-    /// clamp, and Suggest pass 9 in `feeds/suggest/adaptive_entry.rs` — reads
-    /// this value. A clamp that reads `max_feed_mm_min * safety_factor`
-    /// instead caps a CUTTING feed against a fraction of the gantry TRAVEL
-    /// rate, which is a different quantity (T-18).
-    ///
-    /// On every shipped preset the travel rate sits under
-    /// [`DEFAULT_CUTTING_FEED_CAP_MM_MIN`], so the ceiling equals the travel
-    /// rate and this value equals `max_feed_mm_min * safety_factor`. The two
-    /// separate on a profile with an explicit `max_cutting_feed_mm_min` below
-    /// travel, or with a gantry faster than the default cap.
-    pub fn commanded_cutting_feed_ceiling_mm_min(&self) -> f64 {
-        self.cutting_feed_ceiling_mm_min() * self.safety_factor
     }
 
     /// Acceleration-aware kinematics for estimators that opt into them —
@@ -305,7 +308,7 @@ impl MachineProfile {
                 adaptive_doc_factor: 1.5,
                 adaptive_woc_factor: 0.20,
             },
-            safety_factor: 0.75,
+            aggressiveness: DEFAULT_AGGRESSIVENESS,
             // F-034: presets ship with `None` to keep runtime
             // behavior byte-identical. Callers opt in by setting
             // this field on the active profile.
@@ -334,7 +337,11 @@ impl MachineProfile {
             max_cutting_feed_mm_min: None,
             max_shank_mm: 7.0,
             rigidity: RigidityProfile::default(),
-            safety_factor: 0.80,
+            // Until ruling R4 (2026-09-24) the Shapeoko presets carried a
+            // FEED factor of 0.80 here. The dial is a load target, not a
+            // feed factor, so 0.80 has no meaning under it; the presets
+            // take the default.
+            aggressiveness: DEFAULT_AGGRESSIVENESS,
             kinematics: None,
         }
     }
@@ -356,7 +363,11 @@ impl MachineProfile {
             max_cutting_feed_mm_min: None,
             max_shank_mm: 6.35,
             rigidity: RigidityProfile::default(),
-            safety_factor: 0.80,
+            // Until ruling R4 (2026-09-24) the Shapeoko presets carried a
+            // FEED factor of 0.80 here. The dial is a load target, not a
+            // feed factor, so 0.80 has no meaning under it; the presets
+            // take the default.
+            aggressiveness: DEFAULT_AGGRESSIVENESS,
             kinematics: None,
         }
     }
@@ -521,46 +532,6 @@ mod tests {
         assert!((preset.cutting_feed_ceiling_mm_min() - preset.max_feed_mm_min).abs() < 1e-9);
     }
 
-    /// T-18 — the COMMANDED-axis ceiling. On every shipped preset the
-    /// travel rate sits under the default cutting cap, so the ceiling equals
-    /// the travel rate and the commanded ceiling equals
-    /// `max_feed_mm_min * safety_factor`. A post-Step-9 clamp therefore moves
-    /// no shipped number when it swaps one expression for the other. The two
-    /// separate on a fast gantry with a slow cutting ceiling.
-    #[test]
-    fn commanded_cutting_ceiling_is_the_ceiling_after_the_safety_factor() {
-        for preset in [
-            MachineProfile::generic_wood_router(),
-            MachineProfile::shapeoko_vfd(),
-            MachineProfile::shapeoko_makita(),
-        ] {
-            assert!(
-                (preset.cutting_feed_ceiling_mm_min() - preset.max_feed_mm_min).abs() < 1e-9,
-                "{}: travel sits under the default cutting cap",
-                preset.name
-            );
-            assert!(
-                (preset.commanded_cutting_feed_ceiling_mm_min()
-                    - preset.max_feed_mm_min * preset.safety_factor)
-                    .abs()
-                    < 1e-9,
-                "{}: the commanded ceiling must equal the travel rate after the safety \
-                 factor on a preset",
-                preset.name
-            );
-        }
-
-        let mut fast_gantry = MachineProfile::generic_wood_router();
-        fast_gantry.max_feed_mm_min = 10_000.0;
-        fast_gantry.max_cutting_feed_mm_min = Some(500.0);
-        fast_gantry.safety_factor = 0.8;
-        assert!((fast_gantry.commanded_cutting_feed_ceiling_mm_min() - 400.0).abs() < 1e-9);
-        assert!(
-            (fast_gantry.max_feed_mm_min * fast_gantry.safety_factor - 8_000.0).abs() < 1e-9,
-            "the travel-rate expression is the quantity T-18 replaced"
-        );
-    }
-
     #[test]
     fn test_vfd_power_scales_linearly() {
         let m = MachineProfile::shapeoko_vfd();
@@ -599,11 +570,27 @@ mod tests {
         assert_eq!(m.clamp_rpm(50000.0), 30000.0);
     }
 
+    /// Ruling R4 (2026-09-24): every preset carries the default dial, and
+    /// the default sits inside the panel range.
     #[test]
-    fn test_safety_factor_range() {
+    fn every_preset_carries_the_default_aggressiveness() {
+        assert!((AGGRESSIVENESS_MIN..=AGGRESSIVENESS_MAX).contains(&DEFAULT_AGGRESSIVENESS));
         for (_, p) in MachineProfile::presets() {
-            assert!(p.safety_factor >= 0.5 && p.safety_factor <= 1.0);
+            assert_eq!(p.aggressiveness, DEFAULT_AGGRESSIVENESS);
         }
+    }
+
+    /// Ruling R4 (2026-09-24): a profile written with the old key
+    /// `safety_factor` loads, the key is ignored, and the dial takes the
+    /// default. A profile with neither key also takes the default.
+    #[test]
+    fn the_old_safety_factor_key_is_ignored_on_load() {
+        let mut value = serde_json::to_value(MachineProfile::generic_wood_router()).unwrap();
+        let obj = value.as_object_mut().unwrap();
+        obj.remove("aggressiveness");
+        obj.insert("safety_factor".to_owned(), serde_json::json!(0.75));
+        let loaded: MachineProfile = serde_json::from_value(value).unwrap();
+        assert_eq!(loaded.aggressiveness, DEFAULT_AGGRESSIVENESS);
     }
 
     #[test]

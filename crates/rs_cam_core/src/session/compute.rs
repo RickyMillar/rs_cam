@@ -1811,8 +1811,8 @@ fn modulate_annotated_against_trace(
     // F-039 — wire optional deflection + power constraint
     // inputs. Material + tool data is enough to recover Kc,
     // stickout, engagement diameter, and Young's modulus; the
-    // machine's `power_at_rpm × safety_factor` gives the
-    // available power.
+    // machine's rated `power_at_rpm` gives the available power
+    // (ruling R4 Q2, 2026-09-24: no fraction).
     let material = context.material;
     // Materials without a primary-source Kc disable both the
     // deflection and power constraints in the constrained-max
@@ -1857,8 +1857,7 @@ fn modulate_annotated_against_trace(
         _ => None,
     };
     let machine_profile = context.machine;
-    let available_kw =
-        machine_profile.power_at_rpm(spindle_rpm as f64) * machine_profile.safety_factor;
+    let available_kw = machine_profile.power_at_rpm(spindle_rpm as f64);
     let power_inputs = match kc_opt {
         Some(kc) if available_kw > 0.0 => Some(PowerLimitInputs {
             // S2-9 (2026-05-31): pass raw Kc; the solver applies

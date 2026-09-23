@@ -1,6 +1,24 @@
-//! Literature-matrix regression — the 0.025 mm/tooth rubbing floor WARNS
-//! when an extreme-Janka material derates a vendor row below the
-//! chip-formation threshold. It does not lift the feed.
+//! Literature-matrix regression — the 0.025 mm/tooth rubbing floor and the
+//! extreme-Janka Ipe cell.
+//!
+//! ## RE-PINNED 2026-09-24 — ruling R4 WP3: the cell no longer reaches the floor
+//!
+//! Ruling R4 WP3 removed the 0.75 machine safety factor from the feed, and
+//! Q7 moved the long-tool share out of the feed into the dial's load target.
+//! The moved cell (stickout 45 mm, Low workholding) kept only the 0.85
+//! workholding factor (Q8 belongs to a later package). Predicted chain:
+//!
+//! | setup | feed factors | advance (mm/tooth) | warns |
+//! |---|---|---:|---|
+//! | default (no stickout, Medium) | none | 0.034567 / 0.75 = **0.046089** | no |
+//! | stickout 45 mm, **Low** | 0.85 | 0.046089 x 0.85 = **0.039176** | **no** |
+//!
+//! So the Ipe cell now ships above the floor, and the arms pin that: the
+//! advance, the relation (0.85 x the default-setup advance), and no floor
+//! warning. The long-tool share 0.75 is still on the record
+//! (`LongToolDerate`, `derates.ld_overhang`) as a load target, not a feed
+//! factor. The floor warning itself is pinned by
+//! `rubbing_floor_warns_and_never_lifts`.
 //!
 //! ## RE-PINNED 2026-09-23 — ruling R4 WP2a, and the cell moved
 //!
@@ -156,16 +174,19 @@ const BAND_PIN_TOLERANCE: f64 = 5e-9;
 /// Ø6 cell it is L/D 7.5, above the 6 x D threshold of the long-tool de-rate.
 const DEFAULT_TOOL_STICKOUT_MM: f64 = 45.0;
 
-/// The long-tool de-rate factor above 6 x D (`feeds/mod.rs`, Step 5b).
+/// The long-tool share above 6 x D (`feeds::long_tool_load_share`). Since
+/// ruling R4 Q7 it is a load target, not a feed factor.
 const LONG_TOOL_FACTOR: f64 = 0.75;
 
 /// The low-rigidity workholding factor (`feeds/mod.rs`, Step 5b).
 const LOW_WORKHOLDING_FACTOR: f64 = 0.85;
 
-/// The moved cell's advance, 0.025925 x 0.85, from the verifier's measured
-/// 0.025925 mm/tooth at stickout 45 mm and Medium workholding (a six-decimal
-/// print, so the pin carries a 1e-5 tolerance).
-const IPE_MOVED_CELL_ADVANCE_MM_TOOTH: f64 = 0.022_036;
+/// The moved cell's advance after ruling R4 WP3: 0.034567 / 0.75 x 0.85 =
+/// 0.039176, from the verifier's measured 0.034567 mm/tooth at the default
+/// setup before WP3 (a six-decimal print, so the pin carries a 1e-5
+/// tolerance). Was 0.022036 (x 0.75 L/D x 0.75 safety). RE-MEASURE if it
+/// moves.
+const IPE_MOVED_CELL_ADVANCE_MM_TOOTH: f64 = 0.039_176;
 
 fn calc_ipe_6mm(setup: SetupContext) -> rs_cam_core::feeds::FeedsResult {
     let lut = embedded_vendor_lut();
@@ -222,12 +243,8 @@ fn record_the_cell() {
 }
 
 #[test]
-fn ipe_pocket_ships_its_computed_feed_under_the_floor() {
-    // RE-PINNED 2026-09-23 (ruling R4 WP2a). This arm read "never drops
-    // below the effective rubbing floor"; the lift that made that true is
-    // gone. It now pins that the moved cell (Ipe Ø6, stickout 45 mm) ships
-    // the advance its derates compute, and that the advance is under the
-    // floor, which is what makes the warning arm below meaningful.
+fn ipe_pocket_ships_its_computed_feed_above_the_floor_after_r4() {
+    // RE-PINNED 2026-09-24 (ruling R4 WP3). See the file doc for the chain.
     let result = calc_ipe_6mm_long_tool();
     let rpm = result.rpm;
     let flutes = 2.0_f64;
@@ -259,94 +276,54 @@ fn ipe_pocket_ships_its_computed_feed_under_the_floor() {
     let computed = result.derates.effective_chip_load_mm();
     assert!(
         (chipload - computed).abs() <= computed * 1e-9,
-        "the shipped advance {chipload:.9} is not the computed advance \
-         {computed:.9}: a floor lift moved the feed, which ruling R4 WP2a removed.",
+        "the shipped advance {chipload:.9} is not the computed advance {computed:.9}",
     );
     assert!(
-        chipload < RUBBING_FLOOR_MM_TOOTH,
-        "the moved cell must sit under the floor: advance {chipload:.6} vs \
-         {RUBBING_FLOOR_MM_TOOTH}. If it does not, move the cell again (a harder \
-         species or a smaller tool), as this file's docstring says.",
+        chipload > RUBBING_FLOOR_MM_TOOTH,
+        "after ruling R4 WP3 the moved cell ships above the floor: advance {chipload:.6} \
+         vs {RUBBING_FLOOR_MM_TOOTH}",
     );
-
     assert!(
         (chipload - IPE_MOVED_CELL_ADVANCE_MM_TOOTH).abs() < 1e-5,
         "the moved cell's advance moved: {chipload:.6} vs pinned \
-         {IPE_MOVED_CELL_ADVANCE_MM_TOOTH} (0.025925 x 0.85)",
+         {IPE_MOVED_CELL_ADVANCE_MM_TOOTH} (0.034567 / 0.75 x 0.85)",
     );
 
-    // The move is the long-tool and workholding factors and nothing else:
-    // the default-setup cell's advance times 0.75 x 0.85. Neither cell
-    // touches the machine ceiling or the power ladder at this feed.
+    // The only feed factor left between the two setups is the workholding
+    // 0.85. The long-tool share is a load target (ruling R4 Q7).
     let short = calc_ipe_6mm(SetupContext::default());
     let short_chipload = short.feed_rate_mm_min / (short.rpm * flutes);
-    let expected = short_chipload * LONG_TOOL_FACTOR * LOW_WORKHOLDING_FACTOR;
+    let expected = short_chipload * LOW_WORKHOLDING_FACTOR;
     assert!(
         (chipload - expected).abs() <= short_chipload * 1e-9,
-        "the moved-cell advance {chipload:.9} is not {LONG_TOOL_FACTOR} x \
-         {LOW_WORKHOLDING_FACTOR} x the default-setup advance {short_chipload:.9}",
+        "the moved-cell advance {chipload:.9} is not {LOW_WORKHOLDING_FACTOR} x the \
+         default-setup advance {short_chipload:.9}",
     );
     assert_eq!(result.derates.workholding, LOW_WORKHOLDING_FACTOR);
     assert_eq!(
         result.derates.ld_overhang, LONG_TOOL_FACTOR,
-        "L/D 7.5 takes the 0.75 long-tool factor"
+        "L/D 7.5 takes the 0.75 long-tool share, on the record only"
     );
 }
 
 #[test]
-fn ipe_pocket_emits_chipload_below_floor_warning() {
+fn ipe_pocket_does_not_warn_below_the_floor_after_r4() {
     let result = calc_ipe_6mm_long_tool();
-    let warning = result
-        .warnings
-        .iter()
-        .find_map(|w| match w {
-            FeedsWarning::ChiploadBelowRubbingFloor {
-                commanded,
-                floor,
-                source,
-                band_max,
-                ..
-            } => Some((*commanded, *floor, *source, *band_max)),
-            _ => None,
-        })
-        .unwrap_or_else(|| {
-            panic!(
-                "Expected FeedsWarning::ChiploadBelowRubbingFloor for the Ipe Ø6 pocket \
-                 at stickout {DEFAULT_TOOL_STICKOUT_MM} mm, Low workholding. \
-                 Warnings: {:?}",
-                result.warnings,
-            )
-        });
-    let (commanded, floor, source, band_max) = warning;
-    let shipped = result.feed_rate_mm_min / (result.rpm * 2.0);
-
     assert!(
-        commanded < floor,
-        "the warning must report a genuine sub-floor advance: {commanded:.6} \
-         should be below the floor {floor:.6}",
-    );
-    assert!(
-        (commanded - shipped).abs() <= shipped * 1e-9,
-        "the warning reports {commanded:.9} but the recipe ships {shipped:.9}: \
-         the feed must ship unchanged (ruling R4 WP2a)",
-    );
-    assert!(
-        (floor - RUBBING_FLOOR_MM_TOOTH).abs() < 1e-12,
-        "the band minimum clears the global floor, so the floor is the global \
-         {RUBBING_FLOOR_MM_TOOTH} (ruling R4 Q9). Got {floor:.9}.",
-    );
-    assert_eq!(source, rs_cam_core::feeds::RubbingFloorSource::RepoConstant);
-    assert!(
-        band_max.is_some_and(|m| (m - IPE_DERATED_BAND_MAX_MM_TOOTH).abs() < BAND_PIN_TOLERANCE),
-        "the warning carries the band maximum that the floor read: {band_max:?}",
+        !result
+            .warnings
+            .iter()
+            .any(|w| matches!(w, FeedsWarning::ChiploadBelowRubbingFloor { .. })),
+        "the moved Ipe cell ships above the floor after ruling R4 WP3, so no floor \
+         warning. Warnings: {:?}",
+        result.warnings,
     );
     assert!(
         result
             .warnings
             .iter()
             .any(|w| matches!(w, FeedsWarning::LongToolDerate { .. })),
-        "the cause of the sub-floor advance, the long-tool de-rate, is visible \
-         too (R4 WP1). Warnings: {:?}",
+        "the long-tool share is still visible (R4 WP1). Warnings: {:?}",
         result.warnings,
     );
 }

@@ -161,6 +161,14 @@ pub(super) fn enforce_invariants(
     warnings.extend(backoff_dpp_for_deflection(
         operation, tool, material, machine, pass_role,
     ));
+    // Pass 6b (ruling R4, 2026-09-24): the machine aggressiveness dial. It
+    // reads the base engagement that passes 0 to 6 left, and scales the depth
+    // per pass and the stepover by one common factor to hold the load at the
+    // dial's fraction. Pass 9 and pass 10 below must see its result.
+    let dial_warnings = super::aggressiveness::apply_aggressiveness(
+        operation, tool, material, machine, pass_role, context, &warnings,
+    );
+    warnings.extend(dial_warnings);
     // v3.3b: strategy-aware entry-style rewrite must run BEFORE the
     // plunge-entry-stability warning — when scope = StrategyAndFeeds the
     // rewrite changes Plunge → Ramp and the downstream warning then

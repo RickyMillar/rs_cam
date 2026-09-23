@@ -21,6 +21,7 @@ use crate::compute::catalog::OperationConfig;
 use crate::compute::tool_config::ToolConfig;
 use crate::compute::validate::StaleDefault;
 use crate::feeds::FeedsResult;
+use crate::feeds::suggest::SuggestWarning;
 use crate::ids::ToolpathId;
 use crate::tool_load::ToolpathLoadVerdict;
 
@@ -41,6 +42,12 @@ pub struct ToolpathDiagnoseInputs<'a> {
     /// Feeds-calculator output. When present, calculator warnings and
     /// pre-sim heuristic hints are emitted.
     pub feeds_result: Option<&'a FeedsResult>,
+    /// The records of the Suggest run behind this recipe. When present,
+    /// each record that carries a rule id (ruling R4: the aggressiveness
+    /// record, `feeds.aggressiveness_engagement`) becomes a diagnostic, so
+    /// no Suggest calculation is invisible. `None` when the caller has no
+    /// Suggest run in hand.
+    pub suggest_warnings: Option<&'a [SuggestWarning]>,
     /// Sim-backed verdict for this toolpath. When present, supersedes
     /// the pre-sim heuristics.
     pub load_verdict: Option<&'a ToolpathLoadVerdict>,
@@ -72,8 +79,9 @@ pub struct ToolpathDiagnoseInputs<'a> {
 /// 2. stale-default defects (per-rule, carries a fix)
 /// 3. feeds-calculator warnings (`FeedsResult::warnings`)
 /// 4. feeds heuristic hints (`feed_vs_lut`, etc.)
-/// 5. tool-load gates (sim-backed)
-/// 6. generation-time findings (standing material)
+/// 5. Suggest records with a rule id (`feeds.aggressiveness_engagement`)
+/// 6. tool-load gates (sim-backed)
+/// 7. generation-time findings (standing material)
 ///
 /// Then [`apply_supersession`] drops the heuristic shadows once
 /// rigorous evidence is current.
@@ -115,6 +123,13 @@ pub fn diagnose_toolpath_inputs(inputs: &ToolpathDiagnoseInputs<'_>) -> Vec<Diag
             inputs.operation.depth_per_pass(),
             feeds,
         ));
+    }
+    if let Some(warnings) = inputs.suggest_warnings {
+        out.extend(
+            warnings
+                .iter()
+                .filter_map(|w| from_feeds::diagnostic_from_suggest_warning(inputs.toolpath_id, w)),
+        );
     }
     if let Some(load) = inputs.load_verdict {
         out.extend(from_tool_load::diagnostics_from_load_verdict(load));

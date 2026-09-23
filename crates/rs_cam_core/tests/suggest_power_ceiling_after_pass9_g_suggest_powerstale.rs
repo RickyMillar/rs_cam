@@ -201,10 +201,11 @@ fn predicted_power_kw(
     ANISOTROPY * (ks * cross_section_mm2 * feed_mm_min + f_edge * ap_mm * vc * duty) / 60_000_000.0
 }
 
-/// The gate's ceiling — `power_at_rpm × safety_factor`, the axis every
-/// published power number is quoted against (`power.rs:214`).
+/// The gate's ceiling — the rated curve `power_at_rpm`, the axis every
+/// published power number is quoted against. Ruling R4 Q2 (2026-09-24)
+/// removed the `safety_factor` fraction.
 fn gate_power_ceiling_kw(machine: &MachineProfile, rpm: f64) -> f64 {
-    machine.power_at_rpm(rpm) * machine.safety_factor
+    machine.power_at_rpm(rpm)
 }
 
 /// Synthetic under-powered spindle. Not a shipped preset and not a
@@ -216,6 +217,11 @@ fn underpowered_machine() -> MachineProfile {
     let mut machine = MachineProfile::generic_wood_router();
     machine.name = "SYNTHETIC 0.58 kW (test only)".to_owned();
     machine.power = rs_cam_core::machine::PowerModel::ConstantPower { power_kw: 0.58 };
+    // Ruling R4 (2026-09-24): this fixture tests the Step 6 / pass 9 / pass 10
+    // power interaction, not the aggressiveness dial. The dial at 1.0 keeps
+    // pass 6b out of the geometry (it would scale the depth and the stepover
+    // before pass 9 runs).
+    machine.aggressiveness = 1.0;
     machine
 }
 
@@ -341,10 +347,9 @@ fn shipped_utilisation(machine: &MachineProfile, material: &Material, s: &Shippe
     if ceiling <= 0.0 {
         return None;
     }
-    // Both terms on the gate's COMMANDED axis, matching every published
-    // power number and the sibling instrument: `s.feed_mm_min` is the
-    // feed that SHIPS, so Step 9 has already applied `safety_factor` to
-    // it, and `ceiling` already carries the factor on the other side.
+    // Both terms on one axis: `s.feed_mm_min` is the feed that SHIPS and
+    // `ceiling` is the rated curve. Since ruling R4 neither side carries a
+    // factor.
     //
     // R1 (2026-09-16): this line read `required * machine.safety_factor
     // / ceiling`, multiplying the factor in a second time and reporting

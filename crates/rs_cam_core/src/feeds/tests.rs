@@ -300,8 +300,8 @@ fn test_flat_endmill_plunge_unchanged_by_fix2() {
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
     });
 
-    // 6mm flat in hardwood: material_base/hardness × safety ≈
-    // 1000/1.42 × 0.75 ≈ 528 mm/min. Should NOT be capped.
+    // 6mm flat in hardwood: material_base/hardness ≈ 1000/1.42 ≈ 704 mm/min
+    // (no factor since ruling R4 Q5; was × 0.75 ≈ 528). Should NOT be capped.
     assert!(
         result.plunge_rate_mm_min > 400.0,
         "6mm flat plunge {} should not be derated by Fix 2 tool-geometry cap",
@@ -957,16 +957,21 @@ fn test_machine_feed_clamp() {
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
     });
 
+    // Ruling R4 (2026-09-24): no factor after the ceiling.
     assert!(
-        result.feed_rate_mm_min <= 500.0 * machine.safety_factor + 0.01,
+        result.feed_rate_mm_min <= 500.0 + 0.01,
         "feed {} should be clamped to max {}",
         result.feed_rate_mm_min,
         500.0
     );
 }
 
+/// Ruling R4 (2026-09-24): the machine safety factor is gone. The feed is
+/// the chipload times the combined factor times RPM times flutes, and the
+/// combined factor holds no machine factor: on this unclamped pocket it is
+/// the depth tier times the workholding (Medium, 1.0).
 #[test]
-fn test_safety_factor_applied() {
+fn no_machine_factor_multiplies_the_feed() {
     let material = Material::SolidWood {
         species: WoodSpecies::GenericSoftwood,
     };
@@ -991,9 +996,14 @@ fn test_safety_factor_applied() {
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
     });
 
-    // Feed should be < what it would be without safety factor
-    // The safety factor is 0.80, so feed should be roughly 80% of unclamped
     assert!(result.feed_rate_mm_min > 0.0);
+    let d = &result.derates;
+    assert!(
+        (d.combined_factor() - d.depth_tier * d.workholding * d.power_limit * d.feed_clamp).abs()
+            < 1e-12
+    );
+    let fpt = result.feed_rate_mm_min / (result.rpm * 2.0);
+    assert!((fpt - d.effective_chip_load_mm()).abs() <= fpt * 1e-9);
 }
 
 #[test]
@@ -1345,12 +1355,16 @@ fn test_setup_derate_long_overhang() {
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
     });
 
-    // L/D > 6 should reduce feed by 25%
+    // Ruling R4 Q7 (2026-09-24): the L/D share (0.75 above 6 x D) lowers the
+    // aggressiveness dial's load target in Suggest pass 6b. It does NOT cut
+    // the feed any more, so the ratio is 1.0 and the share is on the record.
     let ratio = long.feed_rate_mm_min / normal.feed_rate_mm_min;
     assert!(
-        (ratio - 0.75).abs() < 0.02,
-        "L/D>6 derate should give 0.75x feed ratio, got {ratio}"
+        (ratio - 1.0).abs() < 1e-12,
+        "the L/D share must not move the feed, got ratio {ratio}"
     );
+    assert_eq!(long.derates.ld_overhang, 0.75);
+    assert_eq!(normal.derates.ld_overhang, 1.0);
 }
 
 #[test]
@@ -1404,11 +1418,13 @@ fn test_setup_derate_medium_overhang() {
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
     });
 
+    // Ruling R4 Q7: the 0.88 share is a load target, not a feed factor.
     let ratio = medium.feed_rate_mm_min / normal.feed_rate_mm_min;
     assert!(
-        (ratio - 0.88).abs() < 0.02,
-        "L/D>4 derate should give 0.88x feed ratio, got {ratio}"
+        (ratio - 1.0).abs() < 1e-12,
+        "the L/D share must not move the feed, got ratio {ratio}"
     );
+    assert_eq!(medium.derates.ld_overhang, 0.88);
 }
 
 #[test]

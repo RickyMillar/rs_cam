@@ -240,6 +240,13 @@ pub struct AntiPattern {
     pub expr: String,
     #[serde(default = "default_severity")]
     pub severity: String,
+    /// A known gap (operator ruling 2026-09-24): the engine has no sourced
+    /// de-rate for this case yet, so the anti-pattern is EXPECTED to trigger
+    /// and is the target. The runner reads a trigger as a pass printed
+    /// "KNOWN GAP", and reads a CLEAR anti-pattern as a failure at the
+    /// entry's severity: a de-rate landed, and the entry must be re-graded.
+    #[serde(default)]
+    pub known_gap: Option<String>,
 }
 
 fn default_severity() -> String {

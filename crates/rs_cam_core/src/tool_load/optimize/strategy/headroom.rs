@@ -74,15 +74,13 @@ pub(crate) fn solve_headroom_scale(inputs: &Stage0Inputs<'_>) -> f64 {
     // 2. Machine feed cap (F4: cutting ceiling, not travel rate).
     let k_feed = inputs.machine.cutting_feed_ceiling_mm_min() / feed_baseline;
 
-    // 3. Power cap. `machine_max_power_kw × safety / peak_baseline`
-    //    works for both `ConstantPower` (rhs is constant) and
+    // 3. Power cap. `machine_max_power_kw / peak_baseline` (the rated
+    //    ceiling, ruling R4 Q2: no fraction) works for both `ConstantPower` (rhs is constant) and
     //    `VfdConstantTorque` (below rated_rpm both sides scale with k
     //    so the inequality is invariant; above rated_rpm the rhs caps
     //    at rated_power so the bound is the same scalar).
     let k_power = match inputs.peak_power_baseline_kw {
-        Some(peak) if peak > 0.0 => {
-            machine_max_power_kw(inputs.machine) * inputs.machine.safety_factor / peak
-        }
+        Some(peak) if peak > 0.0 => machine_max_power_kw(inputs.machine) / peak,
         _ => f64::INFINITY,
     };
 
@@ -453,12 +451,7 @@ mod stage0_solve_tests {
         ChipLoadFormula, MachineProfile, PowerModel, RigidityProfile, SpindleConfig,
     };
 
-    fn synthetic_machine(
-        max_rpm: f64,
-        max_feed: f64,
-        power: PowerModel,
-        safety: f64,
-    ) -> MachineProfile {
+    fn synthetic_machine(max_rpm: f64, max_feed: f64, power: PowerModel) -> MachineProfile {
         MachineProfile {
             name: "stage0 test".to_owned(),
             spindle: SpindleConfig::Variable {
@@ -473,7 +466,7 @@ mod stage0_solve_tests {
             max_cutting_feed_mm_min: Some(max_feed),
             max_shank_mm: 7.0,
             rigidity: RigidityProfile::default(),
-            safety_factor: safety,
+            aggressiveness: crate::machine::DEFAULT_AGGRESSIVENESS,
             kinematics: None,
         }
     }
@@ -481,17 +474,16 @@ mod stage0_solve_tests {
     #[test]
     fn k_is_one_when_all_caps_already_binding() {
         // rpm_baseline at machine max; feed_baseline at machine max;
-        // power_baseline at machine cap × safety. No headroom.
+        // power_baseline at the rated machine cap. No headroom.
         let machine = synthetic_machine(
             18_000.0,
             5_000.0,
             PowerModel::ConstantPower { power_kw: 1.5 },
-            0.8,
         );
         let inputs = Stage0Inputs {
             rpm_baseline: 18_000.0,
             feed_baseline_mm_min: 5_000.0,
-            peak_power_baseline_kw: Some(1.2), // 1.5 × 0.8 = 1.2
+            peak_power_baseline_kw: Some(1.5), // the rated 1.5 kW
             machine: &machine,
             lut_row: None,
         };
@@ -505,7 +497,6 @@ mod stage0_solve_tests {
             24_000.0,
             10_000.0,                                    // generous feed cap
             PowerModel::ConstantPower { power_kw: 5.0 }, // generous power
-            0.8,
         );
         let inputs = Stage0Inputs {
             rpm_baseline: 12_000.0,
@@ -516,7 +507,7 @@ mod stage0_solve_tests {
         };
         // k_rpm = 24000/12000 = 2.0
         // k_feed = 10000/1500 ≈ 6.67
-        // k_power = 5.0 × 0.8 / 0.5 = 8.0
+        // k_power = 5.0 / 0.5 = 10.0
         // k = 2.0 (rpm binds)
         let k = solve_headroom_scale(&inputs);
         assert!((k - 2.0).abs() < 1e-6, "expected k = 2.0, got {k}");
@@ -528,7 +519,6 @@ mod stage0_solve_tests {
             30_000.0, // generous rpm
             1_800.0,
             PowerModel::ConstantPower { power_kw: 5.0 },
-            0.8,
         );
         let inputs = Stage0Inputs {
             rpm_baseline: 12_000.0,
@@ -539,7 +529,7 @@ mod stage0_solve_tests {
         };
         // k_rpm = 30000/12000 = 2.5
         // k_feed = 1800/1500 = 1.2
-        // k_power = 5.0 × 0.8 / 0.5 = 8.0
+        // k_power = 5.0 / 0.5 = 10.0
         // k = 1.2
         let k = solve_headroom_scale(&inputs);
         assert!((k - 1.2).abs() < 1e-6, "expected k = 1.2, got {k}");
@@ -550,8 +540,7 @@ mod stage0_solve_tests {
         let machine = synthetic_machine(
             30_000.0,
             10_000.0,
-            PowerModel::ConstantPower { power_kw: 0.6 }, // tight
-            0.8,
+            PowerModel::ConstantPower { power_kw: 0.48 }, // tight
         );
         let inputs = Stage0Inputs {
             rpm_baseline: 12_000.0,
@@ -560,7 +549,7 @@ mod stage0_solve_tests {
             machine: &machine,
             lut_row: None,
         };
-        // k_power = 0.6 × 0.8 / 0.4 = 1.2
+        // k_power = 0.48 / 0.4 = 1.2
         let k = solve_headroom_scale(&inputs);
         assert!((k - 1.2).abs() < 1e-6, "expected k = 1.2, got {k}");
     }
@@ -573,10 +562,9 @@ mod stage0_solve_tests {
             24_000.0,
             10_000.0,
             PowerModel::VfdConstantTorque {
-                rated_power_kw: 1.0,
+                rated_power_kw: 0.8,
                 rated_rpm: 18_000.0,
             },
-            0.8,
         );
         let inputs = Stage0Inputs {
             rpm_baseline: 12_000.0,
@@ -585,7 +573,7 @@ mod stage0_solve_tests {
             machine: &machine,
             lut_row: None,
         };
-        // k_power = 1.0 × 0.8 / 0.4 = 2.0
+        // k_power = 0.8 / 0.4 = 2.0
         // k_rpm = 24000/12000 = 2.0 (also 2.0)
         // k_feed plenty
         let k = solve_headroom_scale(&inputs);
@@ -598,7 +586,6 @@ mod stage0_solve_tests {
             24_000.0,
             10_000.0,
             PowerModel::ConstantPower { power_kw: 5.0 },
-            0.8,
         );
         // LUT row carries an explicit rpm_max.
         let lut_row = MatchedRow {
@@ -648,7 +635,6 @@ mod stage0_solve_tests {
             24_000.0,
             10_000.0,
             PowerModel::ConstantPower { power_kw: 5.0 },
-            0.8,
         );
         // No rpm_max, no rpm_min, only rpm_nominal — Engineering
         // Default 5: ±20% bracket from nominal.
@@ -695,7 +681,6 @@ mod stage0_solve_tests {
             24_000.0,
             10_000.0,
             PowerModel::ConstantPower { power_kw: 5.0 },
-            0.8,
         );
         let inputs = Stage0Inputs {
             rpm_baseline: 12_000.0,
@@ -718,7 +703,6 @@ mod stage0_solve_tests {
             8_000.0, // baseline 12000 already over machine max
             500.0,   // baseline feed 1500 already over machine cap
             PowerModel::ConstantPower { power_kw: 0.1 },
-            0.8,
         );
         let inputs = Stage0Inputs {
             rpm_baseline: 12_000.0,

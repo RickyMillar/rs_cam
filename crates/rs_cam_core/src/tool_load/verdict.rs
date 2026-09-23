@@ -41,7 +41,7 @@ pub enum BindingConstraint {
     /// would have exceeded `EXCEEDS_BOUND_MM`).
     DeflectionMax,
     /// Spindle power cap bound the feed (`Kc × DOC × WOC × feed`
-    /// would have exceeded `available_kw × safety_factor`).
+    /// would have exceeded the rated `available_kw`).
     PowerMax,
     /// Machine's `max_feed_mm_min` hard cap (`$110`/`$111`/`$112`).
     MachineMaxFeed,
@@ -814,10 +814,11 @@ impl CriterionKind {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum BoundSource {
-    /// The power gate's ceiling: `MachineProfile::power_at_rpm(rpm)`
-    /// times `MachineProfile::safety_factor`, at the sample the
-    /// verdict's `available_kw` describes.
-    MachinePowerCurve { rpm: f64, safety_factor: f64 },
+    /// The power gate's ceiling: the rated curve
+    /// `MachineProfile::power_at_rpm(rpm)`, at the sample the verdict's
+    /// `available_kw` describes. Ruling R4 Q2 (2026-09-24) removed the
+    /// fraction that this variant carried before.
+    MachinePowerCurve { rpm: f64 },
     /// The matched vendor chip band.
     ///
     /// `floor_mm_per_tooth` is an `Option` because
@@ -858,8 +859,7 @@ impl BoundSource {
     #[must_use]
     pub fn setting(&self) -> &'static str {
         match self {
-            // The power curve and the safety factor are both
-            // `MachineProfile` fields.
+            // The power curve is a `MachineProfile` field.
             BoundSource::MachinePowerCurve { .. } => "machine",
             BoundSource::VendorChipBand { .. } => "vendor row",
             // The budget is a fixed constant, so no setting moves the
@@ -885,9 +885,9 @@ impl BoundSource {
     #[must_use]
     pub fn clause(&self) -> String {
         match self {
-            BoundSource::MachinePowerCurve { rpm, safety_factor } => format!(
-                "the machine power curve at {rpm:.0} rpm, times the {safety_factor:.2} safety factor"
-            ),
+            BoundSource::MachinePowerCurve { rpm } => {
+                format!("the rated machine power curve at {rpm:.0} rpm")
+            }
             BoundSource::VendorChipBand {
                 floor_mm_per_tooth,
                 ceiling_mm_per_tooth,
@@ -1611,15 +1611,15 @@ pub enum PowerVerdict {
         /// `available_kw` but was excluded from the gate trip.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         entry_spike: Option<EntrySpike>,
-        /// **S4 — where `available_kw` came from.** The two inputs the
-        /// gate multiplied: the sample's spindle speed and the
-        /// profile's safety factor.
+        /// **S4 — where `available_kw` came from.** The input the gate
+        /// read: the sample's spindle speed on the rated machine power
+        /// curve (ruling R4 Q2, 2026-09-24: no fraction).
         ///
         /// This is the one gate whose provenance is not already on the
         /// verdict. The band, the deflection budget and the drill
         /// envelopes each ride on a field the verdict already carries;
-        /// `available_kw` is a product, and the factors are gone by the
-        /// time a consumer reads it.
+        /// `available_kw` is a lookup at one rpm, and the rpm is gone by
+        /// the time a consumer reads it.
         ///
         /// `Option` and `#[serde(default)]` so an older serialized
         /// verdict still deserializes. `None` reads as "not stated" and
@@ -1679,9 +1679,9 @@ impl PowerVerdict {
     pub fn as_criterion_status(&self) -> CriterionStatus<'_> {
         // S4: the bound is `available_kw`, the ceiling this gate judged
         // against, and `bound_source` carries the two inputs that built
-        // it. The GUI used to build its own from `max_power_kw ×
-        // safety_factor`, which is the ceiling at the RATED speed, not
-        // at the speed the toolpath runs.
+        // it. The GUI used to build its own from `max_power_kw` and a
+        // fraction, which is the ceiling at the RATED speed, not at the
+        // speed the toolpath runs.
         let (state, peak, range, population, bound, source) = match self {
             PowerVerdict::Within {
                 peak_kw,

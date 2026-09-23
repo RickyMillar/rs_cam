@@ -299,7 +299,12 @@ fn fixtures() -> Vec<Fixture> {
             // no band. At 18 000 rpm x 2 flutes the commanded advance is
             // 3429 / 36 000 = 0.09525 mm/tooth, under the row's 0.127 and
             // still strictly below the legacy 6912.0 (point 3).
-            expected_suggest_feed: 3429.0,
+            //
+            // **RE-PINNED 2026-09-24, ruling R4 WP3: 3429.0 → 4572.0.** The
+            // 0.75 machine factor left the feed: 3429 / 0.75 = 4572 =
+            // 0.127 x 18 000 x 2, the printed row value itself (advance
+            // 0.127 mm/tooth, no factor).
+            expected_suggest_feed: 4572.0,
         },
         // Stock ceiling: what an operator on a normal machine actually gets.
         Fixture {
@@ -345,7 +350,12 @@ fn fixtures() -> Vec<Fixture> {
             // 2026-09-24 rows. Suggest carries no band here either (a
             // one-value row), and the feed is below the 6000 mm/min stock
             // ceiling: 4500 / (17 080 x 3) = 0.0878 mm/tooth.
-            expected_suggest_feed: 4500.0,
+            //
+            // **RE-PINNED 2026-09-24, ruling R4 WP3: 4500.0 → 6000.0.** With
+            // the 0.75 gone the un-capped feed is 4500 / 0.75 = 6000, which
+            // is exactly the 6000 mm/min stock cutting ceiling. It equals the
+            // legacy shipped feed, which the same ceiling also bound.
+            expected_suggest_feed: 6000.0,
         },
         Fixture {
             label: "DC-1 Ø3 ball / HardMaple / stock ceiling",
@@ -385,7 +395,14 @@ fn fixtures() -> Vec<Fixture> {
             // 0.00976 mm/tooth, under the band 0.011592-0.023184 and under
             // the floor, so the recipe carries the rubbing-floor warning.
             // Modulation lifts it into the band on the sim side (gate 0.02318).
-            expected_suggest_feed: 371.0,
+            //
+            // **RE-PINNED 2026-09-24, ruling R4 WP3: 371.0 → 660.0.** The 0.75
+            // machine factor and the 0.75 long-tool share left the feed:
+            // 371 / (0.75 x 0.75) = 659.6, measured 660. The advance is
+            // 660 / 38 000 = 0.01737 mm/tooth, inside the band
+            // 0.011592-0.023184, so the Q9 floor (the band minimum) does not
+            // warn.
+            expected_suggest_feed: 660.0,
         },
         // A small router: the ceiling binds on a DropCutter lift too.
         Fixture {
@@ -415,7 +432,12 @@ fn fixtures() -> Vec<Fixture> {
             // above the floor, so no floor acts. At 24 000 rpm x 2 flutes the
             // commanded advance is 1875 / 48 000 = 0.0391 mm/tooth, below
             // the 2500 mm/min machine ceiling.
-            expected_suggest_feed: 1875.0,
+            //
+            // **RE-PINNED 2026-09-24, ruling R4 WP3: 1875.0 → 2500.0.** The
+            // un-capped feed is 1875 / 0.75 = 2500, which is exactly the
+            // 2500 mm/min machine ceiling, and equals the legacy shipped feed
+            // that the same ceiling bound.
+            expected_suggest_feed: 2500.0,
         },
     ]
 }
@@ -590,7 +612,8 @@ fn suggest_read(session: &ProjectSession, fx: &Fixture) -> SuggestRead {
 ///
 /// 1. neither retired chipload-lift warning appears in `profile.warnings`;
 /// 2. `suggested_operation.feed_rate()` equals the pinned arm-B feed
-///    (3429.0 / 4500.0 / 371.0 / 1875.0, re-pinned 2026-09-24) within
+///    (4572.0 / 6000.0 / 660.0 / 2500.0, re-pinned 2026-09-24 for ruling R4
+///    WP3) within
 ///    0.5 mm/min — Suggest ships the calculator's own number, re-derived at
 ///    the geometry the operation ships (G-SUGGEST-NOCLAMP, 2026-08-19), no
 ///    longer multiplied by chip thinning (G-CHIPTHIN-HALFFIX), and no longer
@@ -598,9 +621,12 @@ fn suggest_read(session: &ProjectSession, fx: &Fixture) -> SuggestRead {
 ///    two Adaptive3d fixtures resolve one-value rows (no band), DC-1 ships
 ///    under its band and warns, and DC-2 ships under its R5 band; the
 ///    per-fixture comments carry the arithmetic;
-/// 3. the shipped feed is **strictly below** the pinned legacy feed, by the
-///    per-fixture ratio the retirement removes (6.91× / 3.32× / 5.00× /
-///    3.92×);
+/// 3. the shipped feed is **at or below** the pinned legacy feed. Until
+///    ruling R4 WP3 (2026-09-24) it was strictly below; with the 0.75 factor
+///    gone, A3D-2 and DC-2 ship exactly the machine ceiling that also bound
+///    the legacy lift (6000 and 2500 mm/min), so equality is the correct
+///    reading there. A partial retirement still lands ABOVE neither and is
+///    still caught on A3D-1 and DC-1, where no ceiling binds;
 /// 4. the closed form still reproduces off the pinned constants where no
 ///    ceiling truncated the legacy lift (A3D-1 4.00×, DC-1 6.67×).
 ///
@@ -662,12 +688,18 @@ fn retired_lift_leaves_feed_at_the_calculator_value() {
             ));
         }
 
-        // 3 — and that is strictly less than what it used to ship. A
-        //     partial retirement would land between the two.
-        if r.shipped_feed >= fx.legacy_shipped_feed - 0.5 {
+        // 3 — and that is no more than what it used to ship. Where the
+        //     cutting ceiling bound both (A3D-2, DC-2) the two are equal
+        //     since ruling R4 WP3; elsewhere the shipped feed is strictly
+        //     below, and a partial retirement would land between the two.
+        let ceiling_bound = (r.shipped_feed - r.cutting_ceiling).abs() < 0.5;
+        if r.shipped_feed > fx.legacy_shipped_feed + 0.5
+            || (!ceiling_bound && r.shipped_feed >= fx.legacy_shipped_feed - 0.5)
+        {
             mismatches.push(format!(
-                "{}: shipped feed {} must sit strictly below the retired lift's {}",
-                fx.label, r.shipped_feed, fx.legacy_shipped_feed
+                "{}: shipped feed {} must sit at or below the retired lift's {} (strictly \
+                 below unless the cutting ceiling {} binds both)",
+                fx.label, r.shipped_feed, fx.legacy_shipped_feed, r.cutting_ceiling
             ));
         }
 
@@ -907,6 +939,7 @@ fn modulation_default_is_on_and_closes_the_two_dropcutter_residuals() {
     // Non-vacuity for the band-less skip below: the fixtures that carry a
     // two-limit band must still be the majority.
     let mut banded = 0usize;
+    let mut modulated = 0usize;
     for fx in fixtures() {
         let mut session = build_session(&fx);
         let r = suggest_read(&session, &fx);
@@ -995,6 +1028,20 @@ fn modulation_default_is_on_and_closes_the_two_dropcutter_residuals() {
         }
         banded += 1;
 
+        // Ruling R4 WP3 (2026-09-24): a fixture whose shipped feed sits ON
+        // its cutting ceiling gives the modulator nothing to move (DC-2 ships
+        // exactly 2500 mm/min on a 2500 mm/min router). Skip it and say so;
+        // DC-1 is the fixture that must modulate.
+        if (r.shipped_feed - r.cutting_ceiling).abs() < 0.5 {
+            println!(
+                "      {}: shipped feed {:.1} sits on the {:.1} mm/min ceiling; \
+                 modulation checks skipped",
+                fx.label, r.shipped_feed, r.cutting_ceiling
+            );
+            continue;
+        }
+        modulated += 1;
+
         // 3 — the modulator ran, and on a non-empty population. Checked
         //     BEFORE the verdict so a vacuous pass cannot be read as a fix.
         let summary = v.modulation_summary.as_ref().unwrap_or_else(|| {
@@ -1031,6 +1078,11 @@ fn modulation_default_is_on_and_closes_the_two_dropcutter_residuals() {
     assert!(
         banded >= 2,
         "only {banded} fixtures carried a two-limit band; the modulation arm is vacuous"
+    );
+    assert!(
+        modulated >= 1,
+        "no banded fixture sat off its cutting ceiling, so nothing was checked to \
+         modulate; DC-1 must"
     );
 }
 

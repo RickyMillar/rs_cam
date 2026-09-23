@@ -1,5 +1,5 @@
-//! Power guardrail — per-sample instantaneous spindle power vs available
-//! power × machine safety factor.
+//! Power guardrail — per-sample instantaneous spindle power vs the rated
+//! machine power curve `power_at_rpm(rpm)` (ruling R4 Q2: no fraction).
 //!
 //! ## The model (R1, 2026-09-16)
 //!
@@ -423,8 +423,8 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     // still has a usable headroom number to surface.
     let mut last_available_kw: f64 = 0.0;
     // S4: the rpm that built `last_available_kw` / `peak_available_at_peak`.
-    // `available_kw` is a product, so the factors have to be carried out
-    // with it or the row cannot state where its ceiling came from.
+    // The rpm has to be carried out with `available_kw`, or the row cannot
+    // state where its ceiling came from.
     let mut last_rpm: f64 = 0.0;
     let mut peak_rpm_at_peak: f64 = 0.0;
     // D7 — span-aware entry filter. Configured Entry transients
@@ -478,7 +478,9 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
         let Some(p_kw) = sample_power_kw(tool, kc, s, feed_for_power) else {
             continue;
         };
-        let avail = machine.power_at_rpm(s.spindle_rpm as f64) * machine.safety_factor;
+        // Ruling R4 Q2 (2026-09-24): the ceiling is the rated spindle curve,
+        // with no fraction.
+        let avail = machine.power_at_rpm(s.spindle_rpm as f64);
 
         // Finding 3 split (2026-06-04): phantom-transit samples
         // (WaterlineCleanup / LinkBridge / LeadOut / DressupArtifact)
@@ -572,12 +574,8 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
     } else {
         last_rpm
     };
-    let bound_source = (available_kw > 0.0 && bound_rpm > 0.0).then_some(
-        super::verdict::BoundSource::MachinePowerCurve {
-            rpm: bound_rpm,
-            safety_factor: machine.safety_factor,
-        },
-    );
+    let bound_source = (available_kw > 0.0 && bound_rpm > 0.0)
+        .then_some(super::verdict::BoundSource::MachinePowerCurve { rpm: bound_rpm });
 
     // Layer 1 tolerance band: widen the peak-vs-available trigger by
     // `power_breach`. Default is 0 (preserves the strict machine-ceiling
@@ -596,7 +594,7 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
             peak_kw = peak_power,
             available_kw = peak_available_at_peak,
             ratio = peak_power / peak_available_at_peak,
-            "power gate Exceeds: peak instantaneous spindle power exceeds available × safety"
+            "power gate Exceeds: peak instantaneous spindle power exceeds the rated curve"
         );
         return PowerVerdict::Exceeds {
             peak_kw: peak_power,
@@ -890,9 +888,9 @@ mod tests {
         // 0.00229 kW here (Kc_eff 86.4 × 3.175 × 1000 / 60e6). The edge
         // term is 86 % of the honest answer at this thin chip — it is
         // the term the old model could not see. Bound widened from
-        // 0.01 to 0.1 kW; still two orders under the 0.568 kW ceiling,
+        // 0.01 to 0.1 kW; still well under the ~0.71 kW ceiling,
         // so "light cut" still means light.
-        // Shapeoko Makita ≈ 0.71 kW × 0.8 safety = 0.568. Within, and the
+        // Shapeoko Makita ≈ 0.71 kW rated (R4 Q2: no fraction). Within, and the
         // verdict must surface the available headroom for UI rendering.
         let trace = trace_with(vec![cutting_sample(
             0,
@@ -931,7 +929,7 @@ mod tests {
     #[test]
     fn heavy_cut_exceeds_machine_with_available_kw() {
         // Slot at 20mm DOC, 6000 mm/min in Ipe (Kc=28) → P ≈ 0.889 kW
-        // vs available × safety = 0.568 kW. Exceeds, and the verdict
+        // vs the rated ≈ 0.71 kW. Exceeds, and the verdict
         // must carry both peak_kw and available_kw.
         let trace = trace_with(vec![cutting_sample(0, 20.0, std::f64::consts::PI, 6000.0)]);
         let v = evaluate_args(
@@ -1067,7 +1065,8 @@ mod tests {
     /// and at 18 000 RPM that term alone is 0.078 kW per mm of DOC.
     /// Retuned to 7 mm DOC at 3000 mm/min ≈ 0.82 kW (edge 0.547 + shear
     /// 0.273): above the 0.568 kW strict ceiling, under the 1.136 kW
-    /// widened one. Both halves of "borderline" are asserted now, so a
+    /// widened one. Ruling R4 Q2 (2026-09-24) raised the strict ceiling to
+    /// the rated 0.71 kW (widened 1.42 kW); 0.82 kW is still between them. Both halves of "borderline" are asserted now, so a
     /// future drift cannot leave this passing vacuously.
     #[test]
     fn heavy_cut_within_with_power_breach_tolerance() {

@@ -124,9 +124,15 @@ pub const FEEDS_SCALLOP_INVALID: &str = "feeds.scallop_invalid";
 /// does not raise the feed (ruling R4 WP2a, 2026-09-23). Until then the id
 /// was `feeds.chipload_clamped_to_floor`.
 pub const FEEDS_CHIPLOAD_BELOW_FLOOR: &str = "feeds.chipload_below_floor";
-/// The feed took the long-tool (L/D) de-rate, a repo rule with no source
-/// (ruling R4 WP1, 2026-09-23). Info: it changes no number.
+/// The long-tool (L/D) share lowered the load target, a repo rule with no
+/// source (ruling R4 WP1, 2026-09-23; a load share since Q7, 2026-09-24).
+/// Info: the record of a share the dial applies; the feed does not take it.
 pub const FEEDS_LONG_TOOL_DERATE: &str = "feeds.long_tool_derate";
+/// Suggest pass 6b, the machine aggressiveness dial, changed the depth per
+/// pass and the stepover to hold the load at the dial's fraction (ruling R4,
+/// 2026-09-24). Info; Caution when the target was not met or the dial is
+/// above 1.0.
+pub const FEEDS_AGGRESSIVENESS_ENGAGEMENT: &str = "feeds.aggressiveness_engagement";
 pub const FEEDS_DRILL_FEED_CLAMPED_TO_ENVELOPE: &str = "feeds.drill_feed_clamped_to_envelope";
 pub const FEEDS_VENDOR_ROW_PUBLISHES_NO_CHIPLOAD: &str = "feeds.vendor_row_publishes_no_chipload";
 pub const FEEDS_NO_VENDOR_ROWS_FOR_ROUTED_OPERATION: &str =
@@ -357,6 +363,7 @@ pub const ALL: &[&str] = &[
     FEEDS_SCALLOP_INVALID,
     FEEDS_CHIPLOAD_BELOW_FLOOR,
     FEEDS_LONG_TOOL_DERATE,
+    FEEDS_AGGRESSIVENESS_ENGAGEMENT,
     FEEDS_DRILL_FEED_CLAMPED_TO_ENVELOPE,
     FEEDS_VENDOR_ROW_PUBLISHES_NO_CHIPLOAD,
     FEEDS_NO_VENDOR_ROWS_FOR_ROUTED_OPERATION,

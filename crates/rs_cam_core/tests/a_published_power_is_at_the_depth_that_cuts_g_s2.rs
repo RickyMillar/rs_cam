@@ -123,7 +123,11 @@ fn tool() -> ToolConfig {
     t.diameter = DIAMETER_MM;
     t.flute_count = FLUTES;
     t.cutting_length = 50.0;
-    t.stickout = 50.0;
+    // Ruling R4 Q7 (2026-09-24): above 4 x D stickout the long-tool share
+    // (0.88) lowers the dial's load target, so even at aggressiveness 1.0
+    // pass 6b would scale the depth (measured 24 -> 20 mm here, 2.4 -> 1.8
+    // in g_s2). 48 mm = 4.0 x D takes no share, and the dial stays out.
+    t.stickout = 48.0;
     t
 }
 
@@ -211,6 +215,19 @@ fn run_suggest_door(machine: &MachineProfile, material: &Material, requested_ap:
     }
 }
 
+/// The generic router with the aggressiveness dial at 1.0.
+///
+/// Ruling R4 (2026-09-24): at the default 0.85 Suggest pass 6b scales the
+/// depth 2.4 -> 1.8 mm and the stepover by the same factor (measured,
+/// s = 0.75). This file tests the rigidity clamp and the power door, and its
+/// headline arithmetic holds the width, so the dial is kept out. FM7 pins
+/// the dial.
+fn router() -> MachineProfile {
+    let mut machine = MachineProfile::generic_wood_router();
+    machine.aggressiveness = 1.0;
+    machine
+}
+
 // ── Non-vacuity for the claim ────────────────────────────────────────
 
 /// Three facts have to hold before the headline arm means anything: the
@@ -219,7 +236,7 @@ fn run_suggest_door(machine: &MachineProfile, material: &Material, requested_ap:
 /// the headline arm compares two copies of the same number.
 #[test]
 fn the_rigidity_clamp_moves_the_depth_on_this_fixture() {
-    let machine = MachineProfile::generic_wood_router();
+    let machine = router();
     let material = hardwood();
     let shipped = run_suggest_door(&machine, &material, REQUESTED_DPP_MM);
 
@@ -274,7 +291,7 @@ fn the_rigidity_clamp_moves_the_depth_on_this_fixture() {
 /// exactly what the model says they should.
 #[test]
 fn the_published_power_describes_a_depth_that_will_not_be_cut() {
-    let machine = MachineProfile::generic_wood_router();
+    let machine = router();
     let material = hardwood();
     let shipped = run_suggest_door(&machine, &material, REQUESTED_DPP_MM);
 
@@ -384,7 +401,7 @@ fn the_published_power_describes_a_depth_that_will_not_be_cut() {
 ///
 /// The fixture is the T-15 refusal one, restated rather than shared: a 2D
 /// Adaptive rough on a Ø12 two-flute end mill, an operator depth of 30 mm
-/// (2.5 x D, scale 0.625) and a synthetic 0.8 kW constant-power spindle
+/// (2.5 x D, scale 0.625) and a synthetic 0.6 kW constant-power spindle
 /// whose `adaptive_doc_factor` of 2.0 caps the depth at exactly 24.000 mm
 /// (scale 0.75). Pass 9 raises the feed 1.2x. Feeds matrix R3 (2026-09-23)
 /// put the feed on the continuous published scale, under which a depth
@@ -398,9 +415,19 @@ fn the_door_and_pass_ten_are_one_evaluation() {
     const T15_STEPOVER_MM: f64 = 10.0;
 
     let mut machine = MachineProfile::generic_wood_router();
-    machine.name = "SYNTHETIC 0.80 kW (test only)".to_owned();
-    machine.power = rs_cam_core::machine::PowerModel::ConstantPower { power_kw: 0.8 };
+    // RE-TUNED 0.8 -> 0.6 kW for ruling R4 Q2 (2026-09-24). The ceiling was
+    // 0.8 x 0.75 = 0.6 kW; it is now the rated curve, 0.8 kW, and the
+    // measured feed-free edge term 0.6975 kW sits UNDER it, so the fixture
+    // lost its refusal shape. A 0.6 kW spindle restores the 0.6 kW ceiling:
+    // 0.6975 > 0.6, no feed fits.
+    machine.name = "SYNTHETIC 0.60 kW (test only)".to_owned();
+    machine.power = rs_cam_core::machine::PowerModel::ConstantPower { power_kw: 0.6 };
     machine.rigidity.adaptive_doc_factor = 2.0;
+    // Ruling R4 (2026-09-24): this fixture tests the Step 6 / pass 9 / pass 10
+    // power interaction, not the aggressiveness dial. The dial at 1.0 keeps
+    // pass 6b out of the geometry (it would scale the depth and the stepover
+    // before pass 9 runs).
+    machine.aggressiveness = 1.0;
     let material = hardwood();
 
     let mut tool = tool();
@@ -470,7 +497,7 @@ fn the_door_and_pass_ten_are_one_evaluation() {
         figure.available_kw.to_bits() == reported_available.to_bits(),
         "the door and pass 10 disagree about the ceiling: door \
          {:.12} kW, pass 10 {reported_available:.12} kW. Both must be \
-         `power_at_rpm(rpm) x safety_factor` at the same RPM.",
+         `power_at_rpm(rpm)` at the same RPM (no fraction since ruling R4 Q2).",
         figure.available_kw,
     );
 

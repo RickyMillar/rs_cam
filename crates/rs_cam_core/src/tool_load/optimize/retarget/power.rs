@@ -18,7 +18,8 @@
 //!
 //! `available_kw` is injected at construction by the orchestrator
 //! (Step 6), which computes it as
-//! `machine.power_at_rpm(baseline_rpm) × machine.safety_factor`. The
+//! the rated curve `machine.power_at_rpm(baseline_rpm)` (ruling R4 Q2:
+//! no fraction), the same ceiling the power gate reads. The
 //! `SearchSpace` does not expose a power helper today; constructor
 //! injection keeps this retargeter testable in isolation without
 //! coupling it to the wider machine/space plumbing.
@@ -38,11 +39,11 @@ const POWER_DRIVING_AXES: &[SearchAxis] = &[SearchAxis::FeedRate];
 ///
 /// Constructed once per optimization run with the available power at
 /// baseline RPM already pinned in. The orchestrator (Step 6) does the
-/// `machine.power_at_rpm(rpm) × safety_factor` math at build time.
+/// `machine.power_at_rpm(rpm)` lookup at build time.
 #[derive(Debug, Clone, Copy)]
 pub struct PowerFeedRetargeter {
-    /// Available spindle power at the baseline RPM, including the
-    /// machine-level safety factor. kW.
+    /// Available spindle power at the baseline RPM: the rated machine
+    /// power curve, with no fraction. kW.
     pub available_kw: f64,
     /// Additional headroom factor applied on top of `available_kw`
     /// (typically `policy.retarget.power_headroom`, e.g. 0.85). Must

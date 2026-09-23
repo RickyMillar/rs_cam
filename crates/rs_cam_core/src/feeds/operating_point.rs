@@ -29,14 +29,11 @@
 //!
 //! ## The axis
 //!
-//! COMMANDED. [`power_at_operating_point`] reads the operation's feed, which
-//! calculator Step 9 has already multiplied by
-//! [`crate::machine::MachineProfile::safety_factor`], and it states the
-//! ceiling as `power_at_rpm(rpm) × safety_factor` — the ceiling
-//! `tool_load::power::evaluate` compares against. Both sides carry the factor
-//! once. A caller must NOT apply it a second time; Step 6's F-2 note records
-//! what a double derate costs (a measured further 25 % off a power-limited
-//! feed).
+//! One axis. [`power_at_operating_point`] reads the operation's feed and
+//! states the ceiling as the rated curve `power_at_rpm(rpm)`, the ceiling
+//! `tool_load::power::evaluate` compares against. Until ruling R4 (2026-09-24)
+//! both sides carried a `safety_factor`; the factor is gone (Q2), and the
+//! margin is the aggressiveness dial in Suggest pass 6b.
 //!
 //! ## Refusal
 //!
@@ -115,7 +112,7 @@ pub struct PowerFigure {
     /// Predicted spindle power (kW) at the operation's feed, on the
     /// COMMANDED axis. Finite and non-negative.
     pub required_kw: f64,
-    /// The gate's ceiling (kW): `power_at_rpm(rpm) × safety_factor`. Finite
+    /// The gate's ceiling (kW): the rated curve `power_at_rpm(rpm)`. Finite
     /// and positive.
     pub available_kw: f64,
     /// The axial depth of cut (mm) the figure was evaluated at.
@@ -153,7 +150,7 @@ impl PowerFigure {
     /// instead), or there is no shear slope at all.
     ///
     /// The answer is on the COMMANDED axis, like `budget_kw` and like
-    /// `self.feed_mm_min`. A caller must not apply `safety_factor` to it.
+    /// `self.feed_mm_min`.
     pub fn feed_for_kw(&self, budget_kw: f64) -> Option<f64> {
         self.terms.feed_for_kw(budget_kw)
     }
@@ -237,7 +234,7 @@ pub fn power_at_operating_point(
         return Err(PowerUnmodeled::NoSpindleSpeed);
     };
 
-    let available_kw = machine.power_at_rpm(rpm) * machine.safety_factor;
+    let available_kw = machine.power_at_rpm(rpm);
     if !usable(available_kw) {
         return Err(PowerUnmodeled::NoAvailablePower);
     }

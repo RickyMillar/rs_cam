@@ -546,7 +546,6 @@ fn a_power_exceedance_beside_the_depth_row_refuses_and_names_both() {
         confidence: Confidence::Validated,
         bound_source: Some(BoundSource::MachinePowerCurve {
             rpm: f64::from(SAMPLE_RPM),
-            safety_factor: 0.5,
         }),
     };
     let report = ToolLoadReport {
@@ -743,10 +742,24 @@ fn the_suggest_clamp_still_fires_at_the_helper_s_own_cap() {
         capped, expected,
         "the clamp and the criterion must read ONE cap"
     );
+    // Ruling R4 WP3 (2026-09-24): after the clamp, the aggressiveness dial
+    // (default 0.85) scales the depth down from the cap. Measured: 2.4 ->
+    // 1.8 mm. The dial record starts from the cap the helper returns.
+    let shipped = operation.depth_per_pass().unwrap();
+    assert!(
+        shipped <= expected + 1e-12,
+        "the shipped depth {shipped} is above the cap {expected}"
+    );
+    let dial = warnings.iter().find_map(|w| match w {
+        SuggestWarning::EngagementReducedForAggressiveness {
+            dpp_from, dpp_to, ..
+        } => Some((*dpp_from, *dpp_to)),
+        _ => None,
+    });
     assert_eq!(
-        operation.depth_per_pass().unwrap(),
-        expected,
-        "the shipped depth is the cap the helper returns"
+        dial,
+        Some((Some(expected), Some(shipped))),
+        "the dial record must start from the helper's cap and end at the shipped depth"
     );
     assert!(
         REQUESTED_DPP_MM > expected,

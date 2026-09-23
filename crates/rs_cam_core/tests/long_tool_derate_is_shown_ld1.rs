@@ -7,17 +7,23 @@
 //! stickout and by 0.75 above 6 x D. The rule is a repo rule with no source.
 //! Until WP1 only a hover sentence named it.
 //!
+//! Ruling R4 Q7 (2026-09-24) moved the share into the aggressiveness dial:
+//! Suggest pass 6b aims at `k_eff = aggressiveness x share`, so a long tool
+//! gets a smaller engagement, not a thinner chip. The feed does not take the
+//! share any more. The warning stays as the visible record, reworded
+//! "load target x0.75".
+//!
 //! What this sentry pins:
 //!
 //! 1. `FeedsWarning::LongToolDerate` fires if and only if
 //!    `derates.ld_overhang < 1.0`, over stickouts on both sides of both
 //!    thresholds and with no stickout at all.
-//! 2. The warning carries the factor the feed took, the stickout, the
-//!    diameter and the ratio.
+//! 2. The warning carries the share, the stickout, the diameter and the
+//!    ratio.
 //! 3. The diagnostics adapter turns it into the Info finding
 //!    `feeds.long_tool_derate`, and the id is in `ids::ALL`.
-//! 4. No number moves: the factor on the warning is the factor in the
-//!    derate record.
+//! 4. The factor on the warning is the share in the derate record, and the
+//!    feed is the same at every stickout (Q7: no feed cut).
 
 #![allow(
     clippy::unwrap_used,
@@ -90,8 +96,16 @@ fn the_warning_fires_exactly_when_the_feed_takes_the_derate_ld1() {
         (Some(60.0), 0.75),
     ];
     let mut fired = 0usize;
+    let no_stickout_feed = pocket(None).feed_rate_mm_min;
     for (stickout, expected_factor) in cases {
         let result = pocket(stickout);
+        assert!(
+            (result.feed_rate_mm_min - no_stickout_feed).abs() <= no_stickout_feed * 1e-12,
+            "stickout {stickout:?}: the feed {} moved from the no-stickout feed \
+             {no_stickout_feed}. Ruling R4 Q7: the long-tool share is a load target, \
+             not a feed factor.",
+            result.feed_rate_mm_min
+        );
         let ld = result.derates.ld_overhang;
         assert!(
             (ld - expected_factor).abs() < 1e-12,
@@ -149,7 +163,7 @@ fn the_diagnostic_is_an_info_finding_with_its_own_id_ld1() {
         });
     assert_eq!(finding.severity, Severity::Info);
     assert!(
-        finding.message.contains("x0.75") && finding.message.contains("7.5 x D"),
+        finding.message.contains("load target x0.75") && finding.message.contains("7.5 x D"),
         "the finding must carry the factor and the ratio: {:?}",
         finding.message
     );

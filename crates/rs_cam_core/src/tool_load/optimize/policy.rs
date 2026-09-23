@@ -104,7 +104,7 @@ pub struct RankingPolicy {
     /// `Within` instead of flipping to `Exceeds(Low)`.
     pub burn_tolerance: PolicyValue<f64>,
     /// Fractional widening of the power gate trigger above
-    /// `available_kw × safety_factor`. Default 0 preserves the existing
+    /// the rated `available_kw`. Default 0 preserves the existing
     /// hard machine-ceiling behaviour; the field exists for symmetry.
     pub power_breach_tolerance: PolicyValue<f64>,
     /// Fractional widening of the deflection-`Exceeds` trigger above the
@@ -550,7 +550,7 @@ impl Default for SearchPolicy {
                 },
                 power_breach_tolerance: PolicyValue {
                     value: 0.0,
-                    rationale: "Power has a real machine ceiling enforced upstream via MachineProfile::safety_factor; do not widen the trigger by default.",
+                    rationale: "Power has a real machine ceiling: the rated MachineProfile::power_at_rpm curve. Do not widen the trigger by default.",
                     source: PolicySource::TuningChoice {
                         hypothesis: "Field exists for symmetry; non-zero values would belong to a different machine-confidence regime than this codebase targets.",
                     },
@@ -571,7 +571,7 @@ impl Default for SearchPolicy {
                 },
                 beta_power_overuse: PolicyValue {
                     value: 3.0,
-                    rationale: "Cycle-time equivalent (s) at 100% of available_kw. Smaller than alpha because power-Within has a hard machine ceiling enforced upstream via MachineProfile::safety_factor.",
+                    rationale: "Cycle-time equivalent (s) at 100% of available_kw. Smaller than alpha because power-Within has a hard machine ceiling: the rated MachineProfile::power_at_rpm curve.",
                     source: PolicySource::TuningChoice {
                         hypothesis: "Calibrate against wanaka + 3 fixtures before changing; §11.3.",
                     },
@@ -585,7 +585,7 @@ impl Default for SearchPolicy {
                 },
                 power_warning_fraction: PolicyValue {
                     value: 0.80,
-                    rationale: "S6 peak / S1 continuous spindle ratings sit at ~1.15-1.25x per CADEM. 80% of available_kw (which already includes MachineProfile::safety_factor) marks the S1 continuous envelope inside the S6 peak.",
+                    rationale: "S6 peak / S1 continuous spindle ratings sit at ~1.15-1.25x per CADEM. 80% of available_kw (the rated MachineProfile::power_at_rpm curve, with no fraction since ruling R4 Q2) marks the S1 continuous envelope inside the S6 peak.",
                     source: PolicySource::TuningChoice {
                         hypothesis: "0.80 mirrors the S1/S6 motor-rating convention; revisit if calibration shows the ramp starts too early.",
                     },

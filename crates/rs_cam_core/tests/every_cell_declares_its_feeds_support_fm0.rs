@@ -195,6 +195,7 @@ fn a_cell_with_a_vendor_row_is_vendor_backed() {
     let mut vendor_backed = 0usize;
     let mut formula_only = 0usize;
     let mut refused = 0usize;
+    let mut size_refused = 0usize;
     for cell in &cells {
         assert_eq!(
             cell.support, cell.recorded,
@@ -202,13 +203,30 @@ fn a_cell_with_a_vendor_row_is_vendor_backed() {
             cell.label
         );
         if cell.has_row {
-            assert_eq!(
-                cell.support,
-                FeedsSupport::VendorBacked,
-                "{}: the lookup found a row, so the arm must be VendorBacked",
-                cell.label
-            );
-            vendor_backed += 1;
+            // Operator ruling 2026-09-24 (R1 applied to size): a row found
+            // for a micro tool more than 2x off its diameter refuses, and the
+            // reason names both sizes.
+            match &cell.support {
+                FeedsSupport::VendorBacked => vendor_backed += 1,
+                FeedsSupport::Refuse { reason } if is_size_refusal(reason) => {
+                    assert!(
+                        matches!(
+                            cell.validation,
+                            Err(FeedsError::Unbacked { .. })
+                                | Err(FeedsError::WrongToolForOperation { .. })
+                        ),
+                        "{}: the size rule refuses but validation did not: {:?}",
+                        cell.label,
+                        cell.validation
+                    );
+                    size_refused += 1;
+                }
+                other => panic!(
+                    "{}: the lookup found a row, so the arm must be VendorBacked or a \
+                     size refusal, got {other:?}",
+                    cell.label
+                ),
+            }
         } else {
             let judged = formula_backing(
                 cell.tool_family,
@@ -216,7 +234,7 @@ fn a_cell_with_a_vendor_row_is_vendor_backed() {
                 cell.role,
                 cell.material_family,
             );
-            match (cell.support, cell.declared) {
+            match (cell.support.clone(), cell.declared) {
                 (FeedsSupport::FormulaOnly { source }, Some(declared)) => {
                     assert_eq!(source, declared, "{}: wrong formula source", cell.label);
                     assert_eq!(
@@ -238,7 +256,7 @@ fn a_cell_with_a_vendor_row_is_vendor_backed() {
                 // judgement calls CLUELESS refuses, with the judgement's reason.
                 (FeedsSupport::Refuse { reason }, Some(_)) => {
                     assert!(
-                        matches!(judged, FormulaBacking::Clueless { reason: r } if r == reason),
+                        matches!(judged, FormulaBacking::Clueless { reason: r } if r == reason.as_ref()),
                         "{}: refuses with {reason:?} but the judgement says {judged:?}",
                         cell.label
                     );
@@ -270,6 +288,12 @@ fn a_cell_with_a_vendor_row_is_vendor_backed() {
         refused > 0,
         "no cell refuses; ruling R1 encodes a CLUELESS set"
     );
+    println!("the size rule refuses {size_refused} cells that found a row");
+}
+
+/// The size refusal's text starts with this (`support::micro_extrapolation_refusal`).
+fn is_size_refusal(reason: &str) -> bool {
+    reason.starts_with("no published figure for a ")
 }
 
 /// (c) The refusing cells are exactly the cells the R1 judgement calls
@@ -282,9 +306,14 @@ fn a_cell_with_a_vendor_row_is_vendor_backed() {
 #[test]
 fn the_refusing_cells_are_the_clueless_cells() {
     let cells = every_cell();
+    // The size rule (2026-09-24) refuses cells that DID find a row; this
+    // test is about the no-row CLUELESS set, so those are left out here and
+    // counted in `a_cell_with_a_vendor_row_is_vendor_backed`.
     let refused: Vec<&CellOutcome> = cells
         .iter()
-        .filter(|cell| matches!(cell.support, FeedsSupport::Refuse { .. }))
+        .filter(|cell| {
+            matches!(&cell.support, FeedsSupport::Refuse { reason } if !is_size_refusal(reason))
+        })
         .collect();
     let clueless: Vec<&CellOutcome> = cells
         .iter()
@@ -321,7 +350,7 @@ fn the_unbacked_refusal_names_its_cell() {
         operation: OperationType::Pencil,
         tool_family: ToolFamily::FlatEnd,
         material: MaterialFamily::Hardwood,
-        reason: NO_BASIS_REASON,
+        reason: NO_BASIS_REASON.into(),
     };
     let text = err.to_string();
     for needle in [

@@ -84,10 +84,7 @@ fn power_exceedance() -> CriterionStatus<'static> {
         display_peak: Some(1.4),
         unit: "kW",
         bound: Some(0.71),
-        bound_source: Some(BoundSource::MachinePowerCurve {
-            rpm: 18_000.0,
-            safety_factor: 0.8,
-        }),
+        bound_source: Some(BoundSource::MachinePowerCurve { rpm: 18_000.0 }),
         exceeded: Some(ExceededCriterion::power()),
     }
 }
@@ -123,10 +120,7 @@ fn within_row() -> CriterionStatus<'static> {
         display_peak: Some(0.4),
         unit: "kW",
         bound: Some(0.71),
-        bound_source: Some(BoundSource::MachinePowerCurve {
-            rpm: 18_000.0,
-            safety_factor: 0.8,
-        }),
+        bound_source: Some(BoundSource::MachinePowerCurve { rpm: 18_000.0 }),
         exceeded: None,
     }
 }
@@ -177,10 +171,7 @@ fn the_row_predicate_agrees_with_the_filter() {
 fn only_the_rule_of_thumb_declines_to_gate() {
     assert!(!weak_source().gates_export());
     for source in [
-        BoundSource::MachinePowerCurve {
-            rpm: 18_000.0,
-            safety_factor: 0.8,
-        },
+        BoundSource::MachinePowerCurve { rpm: 18_000.0 },
         BoundSource::DeflectionBudget,
         BoundSource::DrillEnvelope,
     ] {

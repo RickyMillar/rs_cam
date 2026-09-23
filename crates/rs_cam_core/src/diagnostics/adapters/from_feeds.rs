@@ -16,6 +16,7 @@ use crate::diagnostics::{
     Category, Confidence, Diagnostic, DiagnosticEvidence, DiagnosticId, DiagnosticState, Scope,
     Severity, Source, ids,
 };
+use crate::feeds::suggest::SuggestWarning;
 use crate::feeds::{FeedsResult, FeedsWarning};
 use crate::ids::ToolpathId;
 
@@ -26,6 +27,54 @@ pub fn diagnostics_from_feeds_result(tp_id: ToolpathId, result: &FeedsResult) ->
         .iter()
         .map(|w| feeds_warning_to_diagnostic(tp_id, w))
         .collect()
+}
+
+/// The diagnostic of one Suggest record, for the records that carry a rule
+/// id. `None` for every other [`SuggestWarning`]: those are rationale rows.
+///
+/// Ruling R4 (2026-09-24): the aggressiveness record maps to
+/// `feeds.aggressiveness_engagement`. Severity `Info`; `Caution` when the
+/// target was not met or the dial is above 1.0. The message is the rationale
+/// row's headline and detail, so the card and the finding print one text.
+#[must_use]
+pub fn diagnostic_from_suggest_warning(
+    tp_id: ToolpathId,
+    w: &SuggestWarning,
+) -> Option<Diagnostic> {
+    let SuggestWarning::EngagementReducedForAggressiveness {
+        aggressiveness,
+        target_met,
+        ..
+    } = w
+    else {
+        return None;
+    };
+    let row = crate::feeds::rationale::SuggestRationale::from_warnings(std::slice::from_ref(w))
+        .entries
+        .into_iter()
+        .next()?;
+    let severity = if !*target_met || *aggressiveness > 1.0 {
+        Severity::Caution
+    } else {
+        Severity::Info
+    };
+    Some(Diagnostic {
+        id: DiagnosticId::from(ids::FEEDS_AGGRESSIVENESS_ENGAGEMENT),
+        scope: Scope::Toolpath { id: tp_id },
+        category: Category::ToolLoad,
+        severity,
+        confidence: Confidence::Static,
+        state: DiagnosticState::Current,
+        source: Source::FeedsCalculator,
+        message: match row.detail {
+            Some(detail) => format!("{} {detail}", row.headline),
+            None => row.headline,
+        },
+        evidence: None,
+        fix: None,
+        supersedes: vec![],
+        suppressed_diagnostics: vec![],
+    })
 }
 
 fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnostic {
@@ -214,8 +263,8 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             supersedes: vec![],
             suppressed_diagnostics: vec![],
         },
-        // Ruling R4 WP1 (2026-09-23). Info: the de-rate changes no number
-        // that the recipe did not already carry; the finding makes it visible.
+        // Ruling R4 WP1 (2026-09-23). Info. Since ruling R4 Q7 (2026-09-24)
+        // the share lowers the dial's load target; the feed does not take it.
         FeedsWarning::LongToolDerate {
             stickout_mm,
             diameter_mm,
@@ -231,7 +280,8 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             source: Source::FeedsCalculator,
             message: format!(
                 "Long tool: stickout {stickout_mm:.1} mm is {ratio:.1} x D \
-                 (D {diameter_mm:.3} mm); feed x{factor:.2} (repo rule, unsourced)"
+                 (D {diameter_mm:.3} mm); load target x{factor:.2} (repo rule, unsourced). \
+                 The feed does not take it."
             ),
             evidence: None,
             fix: None,

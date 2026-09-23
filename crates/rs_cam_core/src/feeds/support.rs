@@ -19,6 +19,8 @@
 //! `Backed` entry refuses. Non-wood materials were not judged and keep the
 //! formula, as before.
 
+use std::borrow::Cow;
+
 use super::vendor_lookup::{self, LookupQuery, LookupResult};
 use super::vendor_lut::{MaterialFamily, ToolFamily};
 use super::{FeedsInput, OperationFamily, PassRole, VendorLut, vendor_normalize};
@@ -100,6 +102,68 @@ const DRILL_BULL: &str = "No published wood figure exists for a plunge drill wit
 const DRILL_VBIT: &str = "No published wood figure exists for a plunge drill with a V-bit, and a V-bit cuts a cone, not a bore.";
 const DRILL_TAPER: &str = "No published wood figure exists for a plunge drill with a tapered \
      ball-nose, and the drill multiplier 2.5 is unsourced.";
+
+/// Ruling R1 applied to size (operator, 2026-09-24): a tool whose lookup
+/// diameter is under this value (mm) is a micro tool. A micro tool ships only
+/// from a row within [`MICRO_ROW_RATIO_MIN`] to [`MICRO_ROW_RATIO_MAX`] of
+/// its own diameter.
+///
+/// The probe that found it: tapered ball tips of 0.5 / 0.8 / 1.0 mm on a
+/// Scallop shipped 0.0347 / 0.0454 / 0.0520 mm/tooth (6.9 / 5.7 / 5.2 % of
+/// the tip), scaled 6-8x down from the 1/8 in and 1/4 in Onsrud 77-100 rows by
+/// the `(d/D)^0.61` law, which was fitted on 3-12 mm rows. No chart publishes
+/// a figure at that size, so the engine has no basis.
+pub const MICRO_TOOL_DIAMETER_MM: f64 = 1.5;
+
+/// The largest row-diameter / tool-diameter ratio a micro tool may ship from.
+/// A row more than 2x the tool is an extrapolation the law was not fitted on.
+pub const MICRO_ROW_RATIO_MAX: f64 = 2.0;
+
+/// The smallest row-diameter / tool-diameter ratio a micro tool may ship
+/// from (a row under half the tool).
+pub const MICRO_ROW_RATIO_MIN: f64 = 0.5;
+
+/// The size rule on a matched row: `Some(reason)` when the tool is a micro
+/// tool and the row is outside the ratio window. Rows with no diameter
+/// (V-bit, diameter-window articles) are not judged by size.
+///
+/// The rule is keyed on the LOOKUP diameter (`lookup_diameter_mm`, the
+/// engaged diameter at the cut depth that the row lookup scales by), because
+/// that is the diameter the row's chipload is transferred to. The text names
+/// the tool's nominal (tip) diameter with two decimals, adds the engaged
+/// diameter when it differs, and names the row's diameter and the ratio:
+/// "no published figure for a 0.50 mm tapered ball nose (engaged 0.57 mm at
+/// the cut depth); the nearest chart row is 3.175 mm, 5.6x the tool, ...".
+#[must_use]
+pub fn micro_extrapolation_refusal(
+    tool: ToolFamily,
+    nominal_diameter_mm: f64,
+    lookup_diameter_mm: f64,
+    row_diameter_mm: f64,
+) -> Option<String> {
+    if !(lookup_diameter_mm.is_finite() && lookup_diameter_mm > 0.0)
+        || !(row_diameter_mm.is_finite() && row_diameter_mm > 0.0)
+        || lookup_diameter_mm >= MICRO_TOOL_DIAMETER_MM
+    {
+        return None;
+    }
+    let ratio = row_diameter_mm / lookup_diameter_mm;
+    if (MICRO_ROW_RATIO_MIN..=MICRO_ROW_RATIO_MAX).contains(&ratio) {
+        return None;
+    }
+    let engaged = if (lookup_diameter_mm - nominal_diameter_mm).abs() >= 0.005 {
+        format!(" (engaged {lookup_diameter_mm:.2} mm at the cut depth)")
+    } else {
+        String::new()
+    };
+    Some(format!(
+        "no published figure for a {nominal_diameter_mm:.2} mm {}{engaged}; the nearest chart \
+         row is {row_diameter_mm} mm, {ratio:.1}x the tool, outside the {MICRO_ROW_RATIO_MIN}x \
+         to {MICRO_ROW_RATIO_MAX}x window a tool under {MICRO_TOOL_DIAMETER_MM} mm needs \
+         (ruling R1 applied to size)",
+        tool.label()
+    ))
+}
 
 /// The four wood families the judgement covered.
 #[must_use]
@@ -217,14 +281,17 @@ pub fn formula_backing(
 /// `VendorBacked`: the RPM comes from the row, and
 /// [`super::ChiploadSource::FormulaFallback`] records that the chipload
 /// does not. Do not change this arm to follow the chipload source.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Not `Copy` since 2026-09-24: the size refusal builds its reason from the
+/// two diameters, so the reason is a `Cow`.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FeedsSupport {
     /// A vendor row answered for this cell; the LUT is the basis.
     VendorBacked,
     /// No row; the calculator's formula answers, and this names its source.
     FormulaOnly { source: &'static str },
     /// The engine has no basis. Suggest refuses with the reason.
-    Refuse { reason: &'static str },
+    Refuse { reason: Cow<'static, str> },
 }
 
 /// The result of the recipe row lookup that [`super::calculate`] does.
@@ -292,7 +359,8 @@ pub fn formula_source_for_input(input: &FeedsInput) -> Option<&'static str> {
 
 /// The support arm for the cell this input describes.
 ///
-/// - The recipe row lookup finds a row: `VendorBacked`.
+/// - The recipe row lookup finds a row: `VendorBacked`, unless the size
+///   rule refuses it ([`micro_extrapolation_refusal`]).
 /// - No row, and no formula source: `Refuse`.
 /// - No row, a formula source, an operation kind and a judged wood
 ///   material: [`formula_backing`] decides, `Backed` -> `FormulaOnly`,
@@ -309,12 +377,23 @@ pub fn feeds_support(input: &FeedsInput) -> FeedsSupport {
 /// The arm for a lookup that the caller already did. `calculate` uses
 /// this so that it does the lookup one time.
 pub(crate) fn support_for_lookup(input: &FeedsInput, lookup: &RecipeRowLookup) -> FeedsSupport {
-    if matches!(lookup, RecipeRowLookup::Row { .. }) {
+    if let RecipeRowLookup::Row { query, row, .. } = lookup {
+        let tool = input.tool_geometry.cutter_kind().lut_family();
+        if let Some(reason) = micro_extrapolation_refusal(
+            tool,
+            input.tool_diameter,
+            query.diameter_mm,
+            row.row_diameter_mm,
+        ) {
+            return FeedsSupport::Refuse {
+                reason: Cow::Owned(reason),
+            };
+        }
         return FeedsSupport::VendorBacked;
     }
     let Some(source) = formula_source_for_input(input) else {
         return FeedsSupport::Refuse {
-            reason: NO_BASIS_REASON,
+            reason: Cow::Borrowed(NO_BASIS_REASON),
         };
     };
     if input.operation_kind.is_none() {
@@ -327,6 +406,8 @@ pub(crate) fn support_for_lookup(input: &FeedsInput, lookup: &RecipeRowLookup) -
     let tool = input.tool_geometry.cutter_kind().lut_family();
     match formula_backing(tool, input.operation, input.pass_role, material) {
         FormulaBacking::Backed => FeedsSupport::FormulaOnly { source },
-        FormulaBacking::Clueless { reason } => FeedsSupport::Refuse { reason },
+        FormulaBacking::Clueless { reason } => FeedsSupport::Refuse {
+            reason: Cow::Borrowed(reason),
+        },
     }
 }

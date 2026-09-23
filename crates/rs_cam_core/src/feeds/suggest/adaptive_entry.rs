@@ -427,15 +427,12 @@ pub(super) fn rescale_feed_to_final_geometry(
     // limit, not a derate, so it survives a re-derivation the same way it
     // survived retired pass 8's lift.
     //
-    // T-18 (2026-09-18) — the axis. `rescaled` derives from
-    // `calc.feed_rate_mm_min`, which calculator Step 9 has already multiplied
-    // by `safety_factor`, so it sits on the COMMANDED axis. The cap therefore
-    // has to be the ceiling on that axis,
-    // `commanded_cutting_feed_ceiling_mm_min()`. The RAW-axis
-    // `cutting_feed_ceiling_mm_min()` that stood here let a rescaled feed
-    // exceed the highest value the calculator itself can ever emit.
+    // T-18 (2026-09-18) read the ceiling on the COMMANDED axis, after the
+    // safety factor. Ruling R4 (2026-09-24) removed the factor, so the
+    // commanded and the cutting ceilings are one number: the highest feed the
+    // calculator can emit.
     let mut cap_hit = None;
-    let ceiling = machine.commanded_cutting_feed_ceiling_mm_min();
+    let ceiling = machine.cutting_feed_ceiling_mm_min();
     if usable(ceiling) && rescaled > ceiling {
         rescaled = ceiling;
         cap_hit = Some(FeedRecalibrationCap::MaxFeed);
@@ -526,13 +523,10 @@ pub(super) fn rescale_feed_to_final_geometry(
 ///
 /// # The ceiling, and the axis
 ///
-/// `machine.power_at_rpm(rpm) × machine.safety_factor` — what Step 6 names
+/// `machine.power_at_rpm(rpm)`, the rated curve — what Step 6 names
 /// `gate_available_power` and what `tool_load::power::evaluate` compares
-/// against. Pass 9's feed is a COMMANDED feed (it derives from
-/// `calc.feed_rate_mm_min`, which Step 9 has already multiplied by
-/// `safety_factor`), so the comparison is direct and the factor must NOT be
-/// applied a second time. Step 6's own F-2 note records what a double derate
-/// costs: a measured further 25 % off a power-limited feed.
+/// against. Ruling R4 Q2 (2026-09-24) removed the `safety_factor` fraction
+/// from both sides, so the comparison is direct.
 ///
 /// # The clamp
 ///
@@ -580,7 +574,8 @@ pub(super) fn recheck_power_after_rescale(
     // (S2, 2026-09-18). It reads exactly what this pass read when T-15 landed
     // it — the operation's final `ap` / `ae` / RPM with the calculator's point
     // as the fallback, the chip-thinning effective diameter at the final
-    // depth, and the ceiling `power_at_rpm × safety_factor`. Pass 10 keeps the
+    // depth, and the ceiling `power_at_rpm` (no fraction since ruling R4 Q2).
+    // Pass 10 keeps the
     // decision: the clamp, the fallback feed and the warning.
     let figure = match crate::feeds::power_at_operating_point(
         operation,

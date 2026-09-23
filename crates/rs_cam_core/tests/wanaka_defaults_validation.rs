@@ -30,8 +30,8 @@ use rs_cam_core::material::{Material, WoodSpecies};
 
 /// The Wanaka100 machine profile (Generic Wood Router): 0.8 kW
 /// constant power, 8k–24k spindle, `adaptive_woc_factor = 0.20`,
-/// `safety_factor = 0.75`. This matches `inspect_machine` output
-/// from the assessment session.
+/// aggressiveness 0.85 since ruling R4 (it carried `safety_factor = 0.75`
+/// in the assessment session).
 fn wanaka_machine() -> MachineProfile {
     MachineProfile::generic_wood_router()
 }
@@ -157,8 +157,8 @@ fn wanaka_6mm_em_plunge_not_derated() {
         spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
     });
 
-    // Generic Hardwood (hardness ~1.42) → plunge_rate_base ~700
-    // × safety 0.75 ≈ 525 mm/min. Should not be derated.
+    // Generic Hardwood (hardness ~1.42) → plunge_rate_base ~700 mm/min, no
+    // factor since ruling R4 Q5 (was × 0.75 ≈ 525). Should not be derated.
     assert!(
         result.plunge_rate_mm_min > 300.0,
         "Wanaka 6mm EM plunge {} should not be capped by Fix 2 tool-geometry rule",

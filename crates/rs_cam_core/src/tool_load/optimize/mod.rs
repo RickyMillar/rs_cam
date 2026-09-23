@@ -698,7 +698,9 @@ fn run_retarget_strategy(
         })
     });
 
-    let available_kw = machine.power_at_rpm(baseline_rpm) * machine.safety_factor;
+    // The rated spindle curve at the baseline RPM, with no fraction
+    // (ruling R4 Q2, 2026-09-24): the same ceiling the power gate reads.
+    let available_kw = machine.power_at_rpm(baseline_rpm);
     let power = retarget::power::PowerFeedRetargeter {
         available_kw,
         headroom: policy.retarget.power_headroom.value,

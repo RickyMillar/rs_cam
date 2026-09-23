@@ -17,7 +17,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::feeds::suggest::{DEFLECTION_BACKOFF_TARGET_UM, FeedRecalibrationCap, SuggestWarning};
+use crate::feeds::suggest::{
+    AggressivenessShortfall, DEFLECTION_BACKOFF_TARGET_UM, FeedRecalibrationCap, SuggestWarning,
+};
 
 /// **The report-tier label on the two chipload-recalibration entries**
 /// (`ChiploadTarget`, `ChiploadCapBound`).
@@ -128,11 +130,6 @@ pub enum RationaleReason {
     /// v3.3 placeholder: caller explicitly pinned this field; Suggest
     /// did not rewrite it. Not emitted by current code.
     UserPin,
-    /// v3 placeholder: `SuggestAggressiveness::Speed` reached LUT max
-    /// but the deflection budget refused. Not yet emitted (today's
-    /// closed-form predictor is feed-independent so Speed never
-    /// trips the deflection refusal).
-    SpeedTargetGated,
     /// G-SUGGEST-NOCLAMP (2026-08-19): the feed was re-derived after the
     /// invariant passes settled the operation's final stepover / DPP,
     /// because `feeds::calculate` sizes the chip-thinning and depth-tier
@@ -149,6 +146,13 @@ pub enum RationaleReason {
     /// ceiling at the geometry the operation ships, after pass 9 had
     /// re-derived the feed, and lowered the feed onto that ceiling.
     PowerCeilingAfterRescale,
+    /// Ruling R4 (2026-09-24): Suggest pass 6b, the machine aggressiveness
+    /// dial, changed the depth per pass and the stepover to hold the load at
+    /// the dial's fraction. The chipload did not change.
+    Aggressiveness,
+    /// Ruling R4 (2026-09-24): the aggressiveness dial did not act on this
+    /// operation (a Finish pass or a drill). The entry reports a NON-change.
+    AggressivenessNotApplied,
 }
 
 /// One row in the rationale tree the GUI / MCP renders alongside a
@@ -186,9 +190,12 @@ pub struct SuggestRationale {
 impl SuggestRationale {
     /// Materialize a rationale tree from the warning vector returned
     /// by `apply_feeds_result_to_op` / `suggest_for_operation`.
+    ///
+    /// One warning gives one entry, except the aggressiveness record, which
+    /// gives one row for the depth per pass and one for the stepover.
     pub fn from_warnings(warnings: &[SuggestWarning]) -> Self {
         Self {
-            entries: warnings.iter().map(entry_for_warning).collect(),
+            entries: warnings.iter().flat_map(entries_for_warning).collect(),
         }
     }
 
@@ -202,6 +209,130 @@ impl SuggestRationale {
 /// Exhaustive match — adding a new [`SuggestWarning`] variant is a
 /// compile error here, which is by design. The renderer surface
 /// stays in lock-step with the warning enum.
+/// The rationale rows of one warning. See [`SuggestRationale::from_warnings`].
+fn entries_for_warning(w: &SuggestWarning) -> Vec<RationaleEntry> {
+    match aggressiveness_rows(w) {
+        Some((first, second)) => std::iter::once(first).chain(second).collect(),
+        None => vec![entry_for_warning(w)],
+    }
+}
+
+/// The card text of the aggressiveness dial when the target is above 1.0
+/// (ruling R4 Q3). Every surface prints this one string.
+pub const AGGRESSIVENESS_ABOVE_BASE_TEXT: &str =
+    "above 1.0: the load target exceeds the full-engagement base";
+
+/// The card text of the plunge and the ramp (ruling R4 Q5).
+pub const PLUNGE_AT_MATERIAL_BASE_TEXT: &str = "Plunge and ramp: material base, no factor.";
+
+/// The rows of the aggressiveness record: the depth-per-pass row first, then
+/// the stepover row when that lever exists. `None` for every other warning.
+fn aggressiveness_rows(w: &SuggestWarning) -> Option<(RationaleEntry, Option<RationaleEntry>)> {
+    let SuggestWarning::EngagementReducedForAggressiveness {
+        aggressiveness,
+        ld_factor,
+        target_share,
+        scale,
+        dpp_from,
+        dpp_to,
+        stepover_from,
+        stepover_to,
+        force_n_before,
+        force_n_after,
+        power_kw_before,
+        power_kw_after,
+        section_mm2_before,
+        section_mm2_after,
+        target_met,
+        shortfall,
+        applied,
+    } = w
+    else {
+        return None;
+    };
+    let pct = target_share * 100.0;
+    let mut loads = Vec::new();
+    if let (Some(a), Some(b)) = (force_n_before, force_n_after) {
+        loads.push(format!("force {a:.1} -> {b:.1} N"));
+    }
+    if let (Some(a), Some(b)) = (power_kw_before, power_kw_after) {
+        loads.push(format!("power {a:.3} -> {b:.3} kW"));
+    }
+    if let (Some(a), Some(b)) = (section_mm2_before, section_mm2_after) {
+        loads.push(format!(
+            "chip section {a:.3} -> {b:.3} mm² (proxy: no primary-source Kc)"
+        ));
+    }
+    let loads = if loads.is_empty() {
+        "no load model".to_owned()
+    } else {
+        loads.join(", ")
+    };
+    let target = if (*ld_factor - 1.0).abs() > 1e-12 {
+        format!(
+            "aggressiveness {aggressiveness:.2} x long-tool share {ld_factor:.2} = load \
+             target {pct:.1} %"
+        )
+    } else {
+        format!("aggressiveness {aggressiveness:.2}: load target {pct:.1} %")
+    };
+    let mut detail = format!(
+        "{target} of the base engagement (common scale {scale:.3}, before the depth snaps \
+         to a step the generator cuts); {loads}. The chipload does not change. \
+         {PLUNGE_AT_MATERIAL_BASE_TEXT}"
+    );
+    if *target_share > 1.0 {
+        detail.push_str(&format!(" Caution, {AGGRESSIVENESS_ABOVE_BASE_TEXT}."));
+    }
+    if !*target_met {
+        detail.push_str(match shortfall {
+            Some(AggressivenessShortfall::LeverFloor) | None => {
+                " Target not met: the depth and the stepover are at their floors. The feed is \
+                 not cut to close the gap."
+            }
+            Some(AggressivenessShortfall::EngagementCap) => {
+                " Target not reached: the depth and the stepover are at their caps (rigidity, \
+                 flute length, one diameter, rated power)."
+            }
+            Some(AggressivenessShortfall::NoLever) => {
+                " Target not met: this operation has no depth or stepover for the dial to \
+                 change."
+            }
+        });
+    }
+    let row =
+        |param: RationaleParam, name: &str, from: Option<f64>, to: Option<f64>| RationaleEntry {
+            param,
+            reason: RationaleReason::Aggressiveness,
+            from_value: from,
+            // Nothing was written under a speeds-only apply.
+            to_value: to.filter(|_| *applied),
+            headline: match (from, to, *applied) {
+                (Some(f), Some(t), true) => {
+                    format!("{name} {f:.3} -> {t:.3} mm: {target}")
+                }
+                (Some(_), Some(t), false) => format!(
+                    "{name}: apply the cut geometry ({t:.3} mm) to hold the load at {pct:.0} %"
+                ),
+                _ => format!("{name}: no change; {target}"),
+            },
+            detail: Some(detail.clone()),
+        };
+    let width_row = stepover_from.is_some().then(|| {
+        row(
+            RationaleParam::Stepover,
+            "Stepover",
+            *stepover_from,
+            *stepover_to,
+        )
+    });
+    if dpp_from.is_some() || width_row.is_none() {
+        let depth_row = row(RationaleParam::Dpp, "Depth per pass", *dpp_from, *dpp_to);
+        return Some((depth_row, width_row));
+    }
+    width_row.map(|width| (width, None))
+}
+
 fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
     match w {
         SuggestWarning::CutGeometryFieldNotHeld {
@@ -637,6 +768,34 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
                      the re-derivation. Take less depth, less stepover or a lower speed."
                 )
             }),
+        },
+        // Ruling R4 (2026-09-24). `entries_for_warning` gives this warning
+        // two rows; a caller of this single-row function gets the first.
+        SuggestWarning::EngagementReducedForAggressiveness { .. } => aggressiveness_rows(w)
+            .map_or_else(
+                || RationaleEntry {
+                    param: RationaleParam::Dpp,
+                    reason: RationaleReason::Aggressiveness,
+                    from_value: None,
+                    to_value: None,
+                    headline: "Aggressiveness".to_owned(),
+                    detail: None,
+                },
+                |(first, _)| first,
+            ),
+        SuggestWarning::AggressivenessNotApplied {
+            aggressiveness,
+            reason,
+        } => RationaleEntry {
+            param: RationaleParam::Dpp,
+            reason: RationaleReason::AggressivenessNotApplied,
+            from_value: None,
+            to_value: None,
+            headline: reason.card_text().to_owned(),
+            detail: Some(format!(
+                "Machine aggressiveness {aggressiveness:.2} did not change this operation. \
+                 {PLUNGE_AT_MATERIAL_BASE_TEXT}"
+            )),
         },
     }
 }

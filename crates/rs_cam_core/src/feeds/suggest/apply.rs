@@ -178,6 +178,16 @@ fn apply_feeds_subset(
 
     let write_speeds = matches!(subset, ApplyScope::Speeds | ApplyScope::Both);
     let write_geometry = matches!(subset, ApplyScope::CutGeometry | ApplyScope::Both);
+    // Ruling R4 (2026-09-24): pass 6b ran on the scratch copy. When this
+    // apply does not write the cut geometry, its record must not claim the
+    // operation carries the engagement it computed.
+    if !write_geometry {
+        for w in &mut warnings {
+            if let SuggestWarning::EngagementReducedForAggressiveness { applied, .. } = w {
+                *applied = false;
+            }
+        }
+    }
     if write_speeds {
         operation.set_feed_rate(scratch.feed_rate());
         operation.set_plunge_rate(scratch.plunge_rate());

@@ -91,6 +91,18 @@
 //! the modal's headroom bar, was a RAW-axis one. Both now sit on the
 //! gate's axis, as does the `PowerLimited` warning.
 
+//! ## Ruling R4 (2026-09-24): one ceiling, no factor
+//!
+//! Ruling R4 Q2 removed `safety_factor`. The gate's ceiling and Suggest's
+//! ceiling are both the rated curve `power_at_rpm(rpm)`, and the feed takes
+//! no factor at Step 9. The parity claims (tests 1, 2, 3, 6) hold on that one
+//! axis; the margin is the aggressiveness dial in Suggest pass 6b. With no
+//! factor the edge term no longer counts `1 / 0.75` times against the budget
+//! (old condition `edge / 0.75 + shear <= P`, new `edge + shear <= P`), so the
+//! power-limited set of test 4 can only shrink. Measured: 3 -> 2 fixtures
+//! (VFD / Jarrah / Ø12 left). A power-limited fixture now sits ON the rated curve (100 %), so
+//! the peak-utilisation band is `(0.5, 1.0]`.
+
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -179,23 +191,15 @@ const ALL_SPECIES: [WoodSpecies; 10] = [
 /// states the claim independently of the production expression it
 /// checks. Mirrors `tool_load::power::evaluate` (`power.rs:214`).
 fn gate_power_ceiling_kw(machine: &MachineProfile, rpm: f64) -> f64 {
-    machine.power_at_rpm(rpm) * machine.safety_factor
+    machine.power_at_rpm(rpm)
 }
 
 #[test]
 fn suggest_power_ceiling_equals_the_gate_power_ceiling() {
     // The parity claim. Every shipped preset, because the ceiling is a
-    // per-machine quantity and a single fixture could pass by accident
-    // on a profile whose safety_factor happened to be 1.0.
+    // per-machine quantity.
     let mut checked = 0usize;
     for (_preset_label, machine) in MachineProfile::presets() {
-        assert!(
-            machine.safety_factor < 1.0,
-            "preset {} ships safety_factor {} — a 1.0 factor would make this \
-             test vacuous for that preset",
-            machine.name,
-            machine.safety_factor
-        );
         for species in [
             WoodSpecies::HardMaple,
             WoodSpecies::WhiteOak,
@@ -207,16 +211,12 @@ fn suggest_power_ceiling_equals_the_gate_power_ceiling() {
             assert!(
                 (result.available_power_kw - expected).abs() < 1e-9,
                 "{}/{:?}: Suggest's available power {:.6} kW != the gate's ceiling \
-                 {:.6} kW (= power_at_rpm({:.0}) {:.6} × safety_factor {:.3}). \
-                 F-2: feeds/mod.rs Step 6 omitted the safety factor that \
-                 tool_load::power::evaluate applies.",
+                 {:.6} kW (= power_at_rpm({:.0})).",
                 machine.name,
                 species,
                 result.available_power_kw,
                 expected,
                 result.rpm,
-                machine.power_at_rpm(result.rpm),
-                machine.safety_factor,
             );
         }
     }
@@ -331,11 +331,15 @@ fn the_power_ceiling_binds_on_three_shipped_fixtures() {
         limited.len(),
     );
     limited.sort();
+    // RE-PINNED 2026-09-24, ruling R4 Q2 (measured): the VFD / Jarrah / Ø12
+    // fixture left the set. With no 0.75 factor its edge term no longer counts
+    // 1 / 0.75 times against the budget (`edge + shear <= P` instead of
+    // `edge / 0.75 + shear <= P`), so it fits. The peak is now 100.0 % on
+    // VFD / Ipe / Ø12: a power-limited recipe lands ON the rated curve.
     assert_eq!(
         limited,
         [
             "Shapeoko (1.5kW VFD) / Ipe / Ø12",
-            "Shapeoko (1.5kW VFD) / Jarrah / Ø12",
             "Shapeoko (Makita RT0701C) / Ipe / Ø12",
         ],
         "the power-limited set moved (peak {:.1}% at {worst_label}). Re-take the \
@@ -343,10 +347,10 @@ fn the_power_ceiling_binds_on_three_shipped_fixtures() {
         100.0 * worst
     );
     // Non-vacuity in the other direction: the branch must still be the
-    // exception, not the rule. 3 of 90 fixtures, and the peak sits under
-    // the unfactored ceiling.
+    // exception, not the rule. 2 of 90 fixtures since ruling R4, and the
+    // peak sits at or under the rated ceiling.
     assert!(
-        worst > 0.5 && worst < 1.0,
+        worst > 0.5 && worst <= 1.0 + 1e-9,
         "peak utilisation {worst} left the band this record describes"
     );
 }
@@ -378,10 +382,9 @@ fn a_power_limited_feed_lands_exactly_on_the_gate_ceiling() {
     // is measurable at all — no shipped preset is power-limited (test
     // above), so a synthetic under-powered spindle reaches the branch.
     //
-    // The Step 6 clamp caps `raw_feed` so that the feed Step 9 will
-    // actually command — `safety_factor · raw_feed` — draws exactly
-    // `power_at_rpm · safety_factor`: the gate's own bound, 100 %
-    // utilisation, no headroom wasted and none borrowed.
+    // The Step 6 clamp caps the feed so that it draws exactly
+    // `power_at_rpm`: the gate's own bound, 100 % utilisation, no headroom
+    // wasted and none borrowed. (Ruling R4: no factor on either side.)
     //
     // R1 (2026-09-16): pre-R1 that guarantee came free from linearity —
     // clamp the raw feed against the unfactored `power_at_rpm`, let
@@ -409,21 +412,19 @@ fn a_power_limited_feed_lands_exactly_on_the_gate_ceiling() {
     let utilisation = result.power_kw / gate_ceiling;
     eprintln!(
         "  {} | Ø12 slot maple: feed {:.1} mm/min, {:.5} kW of {:.5} kW gate \
-         ceiling = {:.1}% (safety_factor {:.2})",
+         ceiling = {:.1}%",
         machine.name,
         result.feed_rate_mm_min,
         result.power_kw,
         gate_ceiling,
         100.0 * utilisation,
-        machine.safety_factor,
     );
     assert!(
         (utilisation - 1.0).abs() < 0.02,
         "a power-limited op must land ON the gate ceiling (100 %), not below it. \
-         Observed utilisation {:.4}. Below 1.0 by roughly safety_factor ({:.3}) \
-         means the Step 6 clamp is double-applying it.",
+         Observed utilisation {:.4}. Below 1.0 means the Step 6 clamp applies a \
+         factor that ruling R4 removed.",
         utilisation,
-        machine.safety_factor
     );
 }
 

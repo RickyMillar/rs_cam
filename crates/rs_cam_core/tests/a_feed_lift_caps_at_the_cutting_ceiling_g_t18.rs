@@ -10,22 +10,17 @@
 //! - `cutting_feed_ceiling_mm_min()` — what the machine may CUT at. It never
 //!   exceeds the travel rate.
 //!
-//! ## The two axes
+//! ## One axis since ruling R4 (2026-09-24)
 //!
-//! `feeds::calculate` names them (`feeds/mod.rs`, the F-2 block):
-//!
-//! - RAW axis — the feed before Step 9 applies `safety_factor`.
-//! - COMMANDED axis — the feed the machine receives, after Step 9.
-//!
-//! Step 7 caps the RAW feed at the cutting ceiling with no factor. Step 9
-//! then multiplies by `safety_factor`. The calculator's output invariant is
-//! therefore:
+//! Until R4, Step 9 multiplied the feed by `safety_factor`, so the calculator
+//! had a RAW axis (before Step 9) and a COMMANDED axis (after it), and the
+//! commanded ceiling was `cutting_feed_ceiling_mm_min() * safety_factor`.
+//! Ruling R4 removed the factor. The two axes are one, and the calculator's
+//! output invariant is:
 //!
 //! ```text
-//! commanded_feed <= cutting_feed_ceiling_mm_min() * safety_factor
+//! commanded_feed <= cutting_feed_ceiling_mm_min()
 //! ```
-//!
-//! which is `MachineProfile::commanded_cutting_feed_ceiling_mm_min()`.
 //!
 //! ## The defect
 //!
@@ -47,11 +42,11 @@
 //!
 //! ## The fixture
 //!
-//! [`fast_gantry_slow_cut`]: travel 10 000 mm/min, an explicit cutting
-//! ceiling of 500 mm/min, `safety_factor` 0.8. The commanded cutting ceiling
-//! is 400 mm/min and a fraction of the travel rate is 8 000 mm/min. The drill
-//! plunge-feed envelope floor on a 12 mm cutter in solid wood is 600 mm/min,
-//! between the two. The defect lands the feed at 600, the fix at 400.
+//! [`fast_gantry_slow_cut`]: travel 10 000 mm/min and an explicit cutting
+//! ceiling of 500 mm/min. The drill plunge-feed envelope floor on a 12 mm
+//! cutter in solid wood is 600 mm/min, between the two. The defect lands the
+//! feed at 600, the fix at 500. (Before ruling R4 the fixture carried
+//! `safety_factor` 0.8, and the two caps were 400 and 8 000.)
 //!
 //! ## Non-vacuity
 //!
@@ -89,7 +84,6 @@ fn fast_gantry_slow_cut() -> MachineProfile {
     let mut machine = MachineProfile::generic_wood_router();
     machine.max_feed_mm_min = 10_000.0;
     machine.max_cutting_feed_mm_min = Some(500.0);
-    machine.safety_factor = 0.8;
     machine
 }
 
@@ -181,13 +175,13 @@ fn drill_cycle(machine: &MachineProfile, tool: &ToolConfig) -> FeedsResult {
 /// The cap the travel rate would give. The test states it in full so the
 /// failure message names both candidates.
 fn travel_rate_cap(machine: &MachineProfile) -> f64 {
-    machine.max_feed_mm_min * machine.safety_factor
+    machine.max_feed_mm_min
 }
 
 // ── 2. Step 9c — the drill envelope clamp ───────────────────────────────
 
 #[test]
-fn the_drill_envelope_clamp_caps_at_the_commanded_cutting_ceiling() {
+fn the_drill_envelope_clamp_caps_at_the_cutting_ceiling() {
     let machine = fast_gantry_slow_cut();
     let tool = drill_12mm();
     let result = drill_cycle(&machine, &tool);
@@ -203,10 +197,10 @@ fn the_drill_envelope_clamp_caps_at_the_commanded_cutting_ceiling() {
         result.rpm, result.feed_rate_mm_min, result.warnings
     );
 
-    let cap = machine.commanded_cutting_feed_ceiling_mm_min();
+    let cap = machine.cutting_feed_ceiling_mm_min();
     assert!(
         result.feed_rate_mm_min <= cap * (1.0 + EPS),
-        "the drill envelope clamp restored {:.3} mm/min at rpm {:.0}, above the commanded \
+        "the drill envelope clamp restored {:.3} mm/min at rpm {:.0}, above the \
          cutting ceiling {cap:.3} mm/min; it capped against the travel rate {:.3} mm/min \
          instead",
         result.feed_rate_mm_min,
@@ -233,7 +227,7 @@ fn the_fix_is_silent_on_every_shipped_preset() {
             preset.cutting_feed_ceiling_mm_min(),
             preset.max_feed_mm_min,
         );
-        let cutting_cap = preset.commanded_cutting_feed_ceiling_mm_min();
+        let cutting_cap = preset.cutting_feed_ceiling_mm_min();
         assert!(
             (cutting_cap - travel_rate_cap(preset)).abs() < 1e-9,
             "{}: the cap this change installs must equal the cap it replaces; \
@@ -247,7 +241,7 @@ fn the_fix_is_silent_on_every_shipped_preset() {
     // preset lands far above the slow-ceiling fixture's cap.
     let preset = MachineProfile::generic_wood_router();
     let result = pocket_rough(&preset, &flat_endmill_6mm());
-    let fixture_cap = fast_gantry_slow_cut().commanded_cutting_feed_ceiling_mm_min();
+    let fixture_cap = fast_gantry_slow_cut().cutting_feed_ceiling_mm_min();
     assert!(
         result.feed_rate_mm_min > fixture_cap,
         "the preset feed {:.3} must sit above the fixture cap {fixture_cap:.3}, or the \

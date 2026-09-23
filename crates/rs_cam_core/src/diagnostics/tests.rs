@@ -118,6 +118,10 @@ fn all_diagnostic_ids_reachable_in_adapter_source() {
             ids::FEEDS_CHIPLOAD_BELOW_FLOOR,
         ),
         ("FEEDS_LONG_TOOL_DERATE", ids::FEEDS_LONG_TOOL_DERATE),
+        (
+            "FEEDS_AGGRESSIVENESS_ENGAGEMENT",
+            ids::FEEDS_AGGRESSIVENESS_ENGAGEMENT,
+        ),
         ("FEEDS_FEED_VS_LUT_HIGH", ids::FEEDS_FEED_VS_LUT_HIGH),
         ("FEEDS_FEED_VS_LUT_LOW", ids::FEEDS_FEED_VS_LUT_LOW),
         ("FEEDS_STEPOVER_VS_LUT", ids::FEEDS_STEPOVER_VS_LUT),

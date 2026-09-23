@@ -155,6 +155,7 @@ impl ProjectSession {
                 &height_ctx,
             );
         let feeds_result = self.feeds_result_for_toolpath(tc, tool);
+        let suggest_warnings = self.suggest_warnings_for_toolpath(tc, tool);
         let preconditions = self.precondition_context_for_toolpath(tc);
         let model_refs = self.model_ref_context_for_toolpath(tc);
         // Generation-time findings ride on the stats of this toolpath's own
@@ -173,6 +174,7 @@ impl ProjectSession {
             tool,
             heights: Some(&heights),
             feeds_result: feeds_result.as_ref(),
+            suggest_warnings: suggest_warnings.as_deref(),
             load_verdict,
             stale_defaults: &stale_defaults,
             preconditions: Some(&preconditions),
@@ -335,6 +337,81 @@ impl ProjectSession {
             self.post.spindle_strategy,
         )
         .ok()
+    }
+
+    /// The records of the Suggest run behind this toolpath's recipe, for
+    /// [`Self::diagnose_toolpath_with_trace`] (ruling R4, 2026-09-24: no
+    /// invisible calculation).
+    ///
+    /// The session does not store the records of the last Suggest press.
+    /// This helper runs Suggest again on the operation, with the context
+    /// that [`Self::cutter_op_profile`] builds, the same way
+    /// [`Self::feeds_result_for_toolpath`] runs the calculator again. The
+    /// records describe what Suggest does to the recipe. They can differ
+    /// from what the operation holds after a speeds-only apply or a hand
+    /// edit.
+    ///
+    /// Returns `None` when no suggested field (feed, plunge, RPM, stepover,
+    /// depth per pass) carries a Suggest source in `feeds_provenance`, so a
+    /// hand-typed recipe gets no record of a calculation that did not occur.
+    /// A speeds-only apply still gets the record: the dial computed an
+    /// engagement that the operation does not hold, and the Caution says so.
+    /// An operation that the optimizer or the operator rewrote in every
+    /// field gets no record. Also `None` when Suggest refuses the tool and
+    /// operation pair.
+    pub fn suggest_warnings_for_toolpath(
+        &self,
+        tc: &super::ToolpathConfig,
+        tool: &ToolConfig,
+    ) -> Option<Vec<crate::feeds::suggest::SuggestWarning>> {
+        use crate::feeds::ProvenanceSource;
+        use crate::feeds::suggest::{StockContext, SuggestContext, SuggestForOperationInput};
+
+        let from_suggest = |v: &Option<crate::feeds::ValueProvenance>| {
+            v.as_ref().is_some_and(|p| {
+                matches!(
+                    p.source,
+                    ProvenanceSource::VendorLut
+                        | ProvenanceSource::Formula
+                        | ProvenanceSource::EdgeRadiusFloor
+                )
+            })
+        };
+        let prov = &tc.feeds_provenance;
+        let any_from_suggest = [
+            &prov.feed_rate,
+            &prov.plunge_rate,
+            &prov.spindle_rpm,
+            &prov.stepover,
+            &prov.depth_per_pass,
+        ]
+        .into_iter()
+        .any(from_suggest);
+        if !any_from_suggest {
+            return None;
+        }
+        let stock_ctx = StockContext::from_stock_bbox(self.stock_bbox(), self.stock.padding);
+        let model_bboxes = self.collect_model_bboxes();
+        let model_bbox = model_bboxes
+            .iter()
+            .find(|(id, _)| *id == tc.model_id)
+            .map(|(_, b)| b);
+        crate::feeds::suggest::suggest_for_operation(SuggestForOperationInput {
+            operation: &tc.operation,
+            tool,
+            machine: &self.machine,
+            material: &self.stock.material,
+            workholding: self.stock.workholding_rigidity,
+            lut: crate::feeds::embedded_vendor_lut(),
+            spindle_strategy: self.post.spindle_strategy,
+            context: SuggestContext {
+                model_bbox,
+                stock: Some(&stock_ctx),
+                ..SuggestContext::default()
+            },
+        })
+        .ok()
+        .map(|s| s.warnings)
     }
 
     /// Project-wide diagnostics derived from the

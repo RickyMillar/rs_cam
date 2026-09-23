@@ -451,12 +451,11 @@ pub enum ChiploadSource {
 pub struct ChiploadBounds {
     /// LUT-row chipload lower bound, post diameter/hardness scaling
     /// (mm/tooth). Suggest's feed-up loop uses this as the
-    /// `SuggestAggressiveness::Conservative` target.
+    /// band floor.
     pub min_mm_per_tooth: f64,
     /// LUT-row chipload upper bound, post diameter/hardness scaling
     /// (mm/tooth). Suggest's feed-up loop uses this as the
-    /// `SuggestAggressiveness::Speed` target; the midpoint is the
-    /// `SuggestAggressiveness::Default` (median) target.
+    /// band ceiling; the midpoint is the chipload the recipe ships.
     pub max_mm_per_tooth: f64,
 }
 
@@ -480,8 +479,9 @@ pub struct FeedsResult {
     /// the SHIPPED figure calls
     /// [`crate::feeds::power_at_operating_point`] on the final operation.
     pub power_kw: f64,
-    /// The ceiling `power_kw` is quoted against (kW):
-    /// `power_at_rpm(rpm) × safety_factor`, the gate's own ceiling.
+    /// The ceiling `power_kw` is quoted against (kW): the rated spindle
+    /// curve `power_at_rpm(rpm)`, the gate's own ceiling (ruling R4 Q2: no
+    /// fraction).
     ///
     /// It moves with the RPM, so it belongs to the calculator's operating
     /// point exactly as `power_kw` does. See `power_kw` for the shipped
@@ -596,7 +596,14 @@ pub struct FeedsDerates {
     /// Depth-tier feed derate (≤ 1.0). Deep cuts get slower feed to
     /// limit deflection.
     pub depth_tier: f64,
-    /// L/D (tool overhang) derate (≤ 1.0). Long tools deflect more.
+    /// The long-tool (L/D) share of the load target (≤ 1.0): 0.88 above
+    /// 4 x D stickout, 0.75 above 6 x D (repo rule, unsourced).
+    ///
+    /// **Not a feed factor since ruling R4 Q7 (2026-09-24).** The feed does
+    /// not take it. Suggest pass 6b multiplies the machine aggressiveness by
+    /// it (`k_eff = k × ld`), so a long tool gets a lower load target and a
+    /// smaller engagement, not a thinner chip. It is therefore NOT part of
+    /// [`Self::combined_factor`].
     pub ld_overhang: f64,
     /// Workholding rigidity factor (0.85 / 1.00 / 1.03 for Low/Med/High).
     pub workholding: f64,
@@ -606,8 +613,6 @@ pub struct FeedsDerates {
     /// Machine-feed-cap factor (≤ 1.0). Applied when the calc hit the
     /// machine's `max_feed_mm_min`.
     pub feed_clamp: f64,
-    /// Machine safety factor (0.75–0.80 typical).
-    pub safety_factor: f64,
     /// Multiplier applied to the RPM while holding the chipload — a walk
     /// along the constant-chipload line, in either direction. The feed
     /// scales with it, so the advance per tooth does not move.
@@ -693,12 +698,11 @@ impl FeedsDerates {
         // them. Composing them here would make this function — and the
         // `effective_chip_load_mm` identity built on it — disagree with the
         // feed the engine actually emits. See their field docs.
-        self.depth_tier
-            * self.ld_overhang
-            * self.workholding
-            * self.power_limit
-            * self.feed_clamp
-            * self.safety_factor
+        //
+        // Ruling R4 (2026-09-24): the machine safety factor is gone, and the
+        // long-tool share `ld_overhang` is a load target, not a feed factor
+        // (Q7), so neither is composed here.
+        self.depth_tier * self.workholding * self.power_limit * self.feed_clamp
     }
 
     /// Effective chipload that the toolpath will actually cut at,
@@ -793,11 +797,14 @@ pub enum FeedsWarning {
         /// exists.
         band_max: Option<f64>,
     },
-    /// The feed took the long-tool de-rate (ruling R4, 2026-09-23, WP1).
+    /// The long-tool share of the load target (ruling R4 WP1, 2026-09-23;
+    /// moved into the dial by ruling R4 Q7, 2026-09-24).
     ///
-    /// A stickout above 4 x D multiplies the feed by 0.88. A stickout above
-    /// 6 x D multiplies it by 0.75. The rule is a repo rule and it is
-    /// unsourced. The warning makes the cut visible; it changes no number.
+    /// A stickout above 4 x D gives the share 0.88. A stickout above 6 x D
+    /// gives 0.75. The rule is a repo rule and it is unsourced. Since Q7 the
+    /// feed does not take the share: Suggest pass 6b lowers the load target
+    /// to `aggressiveness × factor`, so the depth per pass and the stepover
+    /// get smaller and the chipload stays. The warning is the visible record.
     LongToolDerate {
         /// The tool stickout from the holder (mm).
         stickout_mm: f64,
@@ -805,7 +812,7 @@ pub enum FeedsWarning {
         diameter_mm: f64,
         /// `stickout_mm / diameter_mm`.
         ratio: f64,
-        /// The feed multiplier that the calculator applied (0.88 or 0.75).
+        /// The share of the load target (0.88 or 0.75). Not a feed factor.
         factor: f64,
     },
     /// **Checkpoint K (a3), 2026-08-13 — the recipe resolver matched a
@@ -822,7 +829,7 @@ pub enum FeedsWarning {
     ///
     /// In those cases the operator sees a vendor row id beside a
     /// chipload the vendor never published, `chipload_bounds` is `None`
-    /// (so `SuggestAggressiveness::target_chipload` has nothing to aim
+    /// (so the band midpoint has nothing to aim
     /// at), and the post-sim gate judges against a *different* row's
     /// band. Nothing said so before this warning.
     ///
@@ -945,7 +952,9 @@ pub enum FeedsError {
         operation: crate::compute::catalog::OperationType,
         tool_family: vendor_lut::ToolFamily,
         material: vendor_lut::MaterialFamily,
-        reason: &'static str,
+        /// Why. A `Cow` since 2026-09-24: the size refusal names the two
+        /// diameters (`support::micro_extrapolation_refusal`).
+        reason: std::borrow::Cow<'static, str>,
     },
 }
 
@@ -1384,6 +1393,42 @@ fn largest_fitting(current: f64, floor: f64, fits: impl Fn(f64) -> bool) -> Opti
         }
     }
     Some(lo)
+}
+
+/// The smallest axial depth the calculator writes (mm). Suggest pass 6b
+/// reads the same floor for its depth lever.
+pub(crate) const MIN_AP_MM: f64 = 0.05;
+/// The smallest radial width the calculator writes (mm). Suggest pass 6b
+/// reads the same floor for its stepover lever.
+pub(crate) const MIN_AE_MM: f64 = 0.02;
+
+/// L/D above which the long-tool share is [`LD_SEVERE_SHARE`].
+const LD_SEVERE_THRESHOLD: f64 = 6.0;
+/// L/D above which the long-tool share is [`LD_MODERATE_SHARE`].
+const LD_MODERATE_THRESHOLD: f64 = 4.0;
+/// The load-target share above 6 x D stickout (repo rule, unsourced).
+const LD_SEVERE_SHARE: f64 = 0.75;
+/// The load-target share above 4 x D stickout (repo rule, unsourced).
+const LD_MODERATE_SHARE: f64 = 0.88;
+
+/// The long-tool share of the load target for a stickout and a diameter
+/// (ruling R4 Q7, 2026-09-24): 0.75 above 6 x D, 0.88 above 4 x D, else 1.0.
+/// A repo rule with no source. `feeds::calculate` Step 5b reports it and
+/// Suggest pass 6b multiplies the aggressiveness by it. It never multiplies
+/// the feed.
+#[must_use]
+pub fn long_tool_load_share(stickout_mm: f64, diameter_mm: f64) -> f64 {
+    if !(stickout_mm.is_finite() && diameter_mm.is_finite()) || diameter_mm <= 0.0 {
+        return 1.0;
+    }
+    let ratio = stickout_mm / diameter_mm;
+    if ratio > LD_SEVERE_THRESHOLD {
+        LD_SEVERE_SHARE
+    } else if ratio > LD_MODERATE_THRESHOLD {
+        LD_MODERATE_SHARE
+    } else {
+        1.0
+    }
 }
 
 pub fn calculate(input: &FeedsInput) -> FeedsResult {
@@ -1857,8 +1902,6 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     }
 
     // Ensure minimum engagement
-    const MIN_AP_MM: f64 = 0.05;
-    const MIN_AE_MM: f64 = 0.02;
     ap = ap.max(MIN_AP_MM);
     ae = ae.max(MIN_AE_MM);
     // Cap ae to tool diameter
@@ -1972,23 +2015,13 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     let mut raw_feed = rpm * chip_load * input.flute_count as f64 * depth_tier;
 
     // --- Step 5b: Setup derates ---
-    // L/D ratio derating — long tools deflect more
-    const LD_SEVERE_THRESHOLD: f64 = 6.0;
-    const LD_MODERATE_THRESHOLD: f64 = 4.0;
-    const LD_SEVERE_FACTOR: f64 = 0.75;
-    const LD_MODERATE_FACTOR: f64 = 0.88;
+    // The long-tool (L/D) share. Ruling R4 Q7 (2026-09-24): a long tool
+    // bends more under force, and force is what the aggressiveness dial
+    // holds, so the share lowers the dial's load target in Suggest pass 6b.
+    // The feed does NOT take it. The warning is the visible record.
     let ld_factor = if let Some(overhang) = input.setup.tool_overhang_mm {
         let ld_ratio = overhang / d;
-        let factor = if ld_ratio > LD_SEVERE_THRESHOLD {
-            LD_SEVERE_FACTOR
-        } else if ld_ratio > LD_MODERATE_THRESHOLD {
-            LD_MODERATE_FACTOR
-        } else {
-            1.0
-        };
-        // Ruling R4 WP1 (2026-09-23): the de-rate is a repo rule with no
-        // source. The warning makes it visible on the card and in the
-        // diagnostics. It changes no number.
+        let factor = long_tool_load_share(overhang, d);
         if factor < 1.0 {
             warnings.push(FeedsWarning::LongToolDerate {
                 stickout_mm: overhang,
@@ -2001,7 +2034,6 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     } else {
         1.0
     };
-    raw_feed *= ld_factor;
     // Workholding rigidity adjustment
     const WORKHOLDING_LOW_FACTOR: f64 = 0.85;
     const WORKHOLDING_HIGH_FACTOR: f64 = 1.03;
@@ -2028,64 +2060,22 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // diameter and the RPM instead; `power_model_terms` assembles both
     // halves from one place.
     //
-    // ── F-2: the two power axes, and which one each number lives on ──
+    // ── The power ceiling (ruling R4 Q2, 2026-09-24) ──
     //
-    // Census §2.6 (C-8) / §6.3 F-2, ruled at Checkpoint B Q3: Suggest's
-    // ceiling omitted `machine.safety_factor` while
-    // `tool_load::power::evaluate` applies it (`power.rs:214`).
+    // The ceiling is the rated spindle curve `power_at_rpm(rpm)`, with no
+    // fraction. Until R4 it was `power_at_rpm × safety_factor`, and Step 9
+    // multiplied the feed by the same factor, so this step had to state its
+    // clamp on a "commanded" axis (F-2, R1). With the factor gone the raw
+    // feed IS the commanded feed, and there is one axis. The margin is the
+    // aggressiveness dial: Suggest pass 6b holds the predicted power at or
+    // below `aggressiveness × P0`.
     //
-    // There are two internally-consistent axes here, and the pre-fix bug
-    // was mixing them, not the absence of a multiply:
-    //
-    //   RAW axis    — `raw_feed` (pre-Step-9) vs `power_at_rpm(rpm)`.
-    //   COMMANDED   — the final feed (Step 9 has applied `safety_factor`)
-    //                 vs `power_at_rpm(rpm) · safety_factor`.
-    //
-    // The CLAMP below states the COMMANDED form: it caps `raw_feed` so
-    // that the feed Step 9 will actually command, `safety_factor ·
-    // raw_feed`, satisfies the gate's `required <= power_at_rpm ·
-    // safety_factor`. Steps 7/9c only reduce the feed further, so the
-    // guarantee survives them.
-    //
-    // R1 (2026-09-16) is why the form is written out. Pre-R1 power was
-    // linear in feed, so clamping the RAW feed against the unfactored
-    // `power_at_rpm` gave the same answer for free — Step 9's scale
-    // carried through the model. The two-term model's edge term carries
-    // no feed, so `P(safety_factor · f) != safety_factor · P(f)` and the
-    // composition had to stop being implicit. With no edge term the two
-    // expressions are algebraically identical, which is why this is a
-    // restatement rather than a new derate.
-    //
-    // Multiplying this clamp's ceiling by `safety_factor` as well would
-    // apply the factor TWICE — measured: it drops a power-limited feed a
-    // further 25 % and drove the literature-matrix cell
-    // `flat_6mm_pocket_al6061_lut` to `major` by pushing chipload to
-    // 0.0269 mm/tooth, within 10 % of the 0.025 rubbing floor. That is a
-    // feed-moving recalibration, which Q3 did not authorise and §7
-    // forbids re-pinning silently.
-    //
-    // What genuinely lacked parity is the PUBLISHED pair. `power_kw`
-    // (below, at the FINAL feed) is a COMMANDED-axis number, and
-    // `available_power_kw` — its denominator in the modal's headroom bar
-    // (`rs_cam_viz/src/ui/properties/mod.rs:1911`) — was a RAW-axis one.
-    // The modal therefore showed 1/safety_factor (1.25×–1.33×) more
-    // headroom than the verdict would allow. Both published numbers now
-    // sit on the gate's axis; the `PowerLimited` warning's pair is
-    // reported there too, preserving its ratio.
-    //
-    // Measured (tests/power_ceiling_parity_f2.rs,
-    // `the_power_ceiling_binds_on_three_shipped_fixtures`): across all
-    // three shipped presets × ten species × Ø3/Ø6/Ø12 slots, peak
-    // utilisation is 80 % and the branch fires on three of the ninety
-    // fixtures — Ø12 slots in Jarrah and Ipe. Before R1 (2026-09-16) the
-    // pre-R1 linear power model put that peak at 23.6 % and the branch
-    // never fired at all; the edge term is what made it live, and it is
-    // largest exactly here, where a full-width slot runs the duty cycle
-    // `z·ψ/2π` at its maximum of 1.
+    // Measured before R4 (tests/power_ceiling_parity_f2.rs): the branch
+    // fires on Ø12 slots in Jarrah and Ipe, where the edge term is largest.
     let available_power = machine.power_at_rpm(rpm);
-    // The gate's ceiling (`power.rs:214`) — what every published power
-    // number below is quoted against.
-    let gate_available_power = available_power * machine.safety_factor;
+    // The gate's ceiling — what every published power number below is
+    // quoted against. Since ruling R4 Q2 it is the rated curve itself.
+    let gate_available_power = available_power;
     let mut power_limited = false;
     let mut feed = raw_feed;
     let mut power_factor = 1.0;
@@ -2104,30 +2094,10 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     {
         let cross_section = input.tool_geometry.mrr_cross_section_mm2(ap, ae);
         let terms = power_model_terms(input, kc, cross_section, ap, ae, effective_d, rpm);
-        // R1 — the clamp is stated on the COMMANDED axis.
-        //
-        // Pre-R1 power was linear in feed, so clamping `raw_feed`
-        // against the unfactored `power_at_rpm` and letting Step 9's
-        // `safety_factor` scale the feed landed the commanded power
-        // exactly on the gate's `power_at_rpm × safety_factor`. That
-        // composition was linearity doing the work for free, and the
-        // two-term model does not have it: the edge term carries no
-        // feed, so scaling the feed by `safety_factor` does NOT scale
-        // the power by `safety_factor`.
-        //
-        // So the same statement is now made explicitly — cap `raw_feed`
-        // such that the feed Step 9 will actually command,
-        // `safety_factor × raw_feed`, draws no more than the gate's
-        // ceiling. With no edge term this reduces algebraically to the
-        // pre-R1 clamp, which is why the two axes above still describe
-        // the same guarantee.
-        let sf = machine.safety_factor.max(1e-9);
-        let required_at_commanded = terms.kw_at_feed(sf * raw_feed);
+        // The power the recipe draws at the feed it ships.
+        let required_at_commanded = terms.kw_at_feed(raw_feed);
         if required_at_commanded > gate_available_power {
-            // `feed_for_kw` answers on the commanded axis; divide back
-            // out to get the raw-axis cap Step 9 will scale.
-            //
-            // It returns `None` when the feed-free edge term ALONE is
+            // `feed_for_kw` returns `None` when the feed-free edge term ALONE is
             // over the budget — the power-side twin of
             // `DeflectionCapRefusal::EdgeForceOverBudget`. No feed
             // rescues that cut: thinning the chip leaves the ploughing
@@ -2185,15 +2155,12 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
             // See planning/load_model_2026-09-16/{DERATE_SPEC.md,
             // IMPLEMENTATION_PLAN.md} and derate_levers.py.
 
-            // Required kW at a candidate operating point, stated on the
-            // COMMANDED axis so it compares like-for-like with the budget.
+            // Required kW at a candidate operating point.
             let required_at = |rpm_c: f64, ap_c: f64, ae_c: f64, feed_c: f64| -> f64 {
                 let cs = input.tool_geometry.mrr_cross_section_mm2(ap_c, ae_c);
-                power_model_terms(input, kc, cs, ap_c, ae_c, effective_d, rpm_c)
-                    .kw_at_feed(sf * feed_c)
+                power_model_terms(input, kc, cs, ap_c, ae_c, effective_d, rpm_c).kw_at_feed(feed_c)
             };
-            let budget_at =
-                |rpm_c: f64| machine.power_at_rpm(rpm_c).max(0.0) * machine.safety_factor;
+            let budget_at = |rpm_c: f64| machine.power_at_rpm(rpm_c).max(0.0);
 
             // ── Rung 1: walk the constant-chipload line ───────────────
             //
@@ -2359,7 +2326,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
                 if let Some(commanded_cap) = terms_now.feed_for_kw(still_available)
                     && raw_feed > 0.0
                 {
-                    let f = (commanded_cap / sf / raw_feed).clamp(0.0, 1.0);
+                    let f = (commanded_cap / raw_feed).clamp(0.0, 1.0);
                     if f < 1.0 {
                         power_factor = f;
                         raw_feed *= f;
@@ -2435,10 +2402,17 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // Ramp feed: capped at 1.5× plunge rate (reference calcs.rs convention)
     let ramp_feed = (feed * 0.5).max(plunge).min(plunge * 1.5);
 
-    // --- Step 9: Safety factor ---
-    feed *= machine.safety_factor;
-    let mut plunge_rate = plunge * machine.safety_factor;
-    let ramp_feed_rate = ramp_feed * machine.safety_factor;
+    // --- Step 9: no factor (ruling R4, 2026-09-24) ---
+    //
+    // Until R4 this step multiplied the feed, the plunge and the ramp by
+    // `machine.safety_factor` (0.75), the "hidden 25 %". The factor is gone.
+    // The feed ships the band chipload times the published depth ladder; the
+    // aggressiveness dial holds the LOAD through the engagement (Suggest pass
+    // 6b). The plunge and the ramp ship the material base with no factor
+    // (ruling Q5): a plunge is full-width axial, so the dial has no
+    // engagement lever on it. The ball-tip cap below still applies.
+    let mut plunge_rate = plunge;
+    let ramp_feed_rate = ramp_feed;
 
     // Fix 2 (Wanaka audit): tool-geometry-aware plunge cap.
     // Material::plunge_rate_base returns one value per material with
@@ -2557,11 +2531,12 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     //    floor: a machine that can't reach the floor gets the honest
     //    conflict via the warning rather than an unreachable feed. This
     //    clamp runs after Step 9, so it works on the COMMANDED axis and
-    //    the cap it reads is
-    //    `machine.commanded_cutting_feed_ceiling_mm_min()` — the Step 7
-    //    ceiling on that axis. T-18 (2026-09-18) replaced
+    //    the cap it reads is `machine.cutting_feed_ceiling_mm_min()`, the
+    //    Step 7 ceiling. T-18 (2026-09-18) replaced
     //    `machine.max_feed_mm_min × safety_factor` here, which is a
     //    fraction of the gantry TRAVEL rate and a different quantity.
+    //    Ruling R4 removed the factor, so the commanded and the cutting
+    //    ceilings are one number.
     // 2. Alias `plunge_rate` to the final drill feed. Drill op configs
     //    alias `set_feed_rate` / `set_plunge_rate` onto one field
     //    ("feed IS plunge"), and `apply_feeds_subset` writes feed then
@@ -2574,7 +2549,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         let (env_lo_per_mm, env_hi_per_mm) = material.drill_plunge_feed_envelope_per_mm();
         let (env_lo, env_hi) = (env_lo_per_mm * d, env_hi_per_mm * d);
         if feed < env_lo || feed > env_hi {
-            let commanded_cut_ceiling = machine.commanded_cutting_feed_ceiling_mm_min();
+            let commanded_cut_ceiling = machine.cutting_feed_ceiling_mm_min();
             let requested = feed;
             let clamped = feed.clamp(env_lo, env_hi).min(commanded_cut_ceiling);
             warnings.push(FeedsWarning::DrillFeedClampedToEnvelope {
@@ -2653,7 +2628,6 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         workholding: workholding_factor,
         power_limit: power_factor,
         feed_clamp: feed_clamp_factor,
-        safety_factor: machine.safety_factor,
         spindle_scale,
         spindle_scale_reason,
     };

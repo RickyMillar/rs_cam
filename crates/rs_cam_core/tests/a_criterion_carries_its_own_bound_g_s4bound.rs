@@ -51,7 +51,8 @@ use rs_cam_core::tool_load::{GateEnv, ToleranceBands, ToolpathLoadContext};
 
 const TP: ToolpathId = ToolpathId(0);
 /// The spindle speed every sample of the measured trace runs at. The
-/// power gate's ceiling is `power_at_rpm(rpm) × safety_factor`, so this
+/// power gate's ceiling is the rated curve `power_at_rpm(rpm)` (no fraction
+/// since ruling R4 Q2, 2026-09-24), so this
 /// is the number the bound's provenance must carry back.
 const SAMPLE_RPM: u32 = 18_000;
 
@@ -344,11 +345,11 @@ fn the_deflection_bound_is_the_gates_own_millimetre_budget() {
 
 // ── (c) the power bound is the ceiling the gate used ─────────────────
 
-/// The power bound is `available_kw`, and its provenance carries the
-/// two inputs that built it: the spindle speed and the machine's
-/// safety factor.
+/// The power bound is `available_kw`, and its provenance carries the one
+/// input that built it: the spindle speed on the rated curve. Ruling R4 Q2
+/// (2026-09-24) removed the safety factor from the ceiling.
 #[test]
-fn the_power_bound_is_available_kw_and_names_the_rpm_and_the_safety_factor() {
+fn the_power_bound_is_available_kw_and_names_the_rpm() {
     let v = milling_verdict();
     let available = match &v.power {
         PowerVerdict::Within { available_kw, .. } | PowerVerdict::Exceeds { available_kw, .. } => {
@@ -371,22 +372,17 @@ fn the_power_bound_is_available_kw_and_names_the_rpm_and_the_safety_factor() {
     );
     let profile = machine();
     match row.bound_source {
-        Some(BoundSource::MachinePowerCurve { rpm, safety_factor }) => {
+        Some(BoundSource::MachinePowerCurve { rpm }) => {
             assert!(
                 (rpm - f64::from(SAMPLE_RPM)).abs() < 1e-9,
                 "the source must carry the toolpath's own rpm, got {rpm}"
             );
-            assert!(
-                (safety_factor - profile.safety_factor).abs() < 1e-12,
-                "the source must carry the profile's safety factor, got {safety_factor}"
-            );
-            // The two inputs reproduce the bound. No third number hides
+            // The one input reproduces the bound. No second number hides
             // in the gate.
-            let reproduced = profile.power_at_rpm(rpm) * safety_factor;
+            let reproduced = profile.power_at_rpm(rpm);
             assert!(
                 (reproduced - available).abs() < 1e-9,
-                "power_at_rpm({rpm}) × {safety_factor} = {reproduced}, \
-                 but the gate judged against {available}"
+                "power_at_rpm({rpm}) = {reproduced}, but the gate judged against {available}"
             );
         }
         other => panic!("expected MachinePowerCurve, got {other:?}"),

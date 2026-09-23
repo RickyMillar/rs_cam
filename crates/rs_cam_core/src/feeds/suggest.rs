@@ -15,6 +15,7 @@ use crate::machine::MachineProfile;
 use crate::material::Material;
 
 mod adaptive_entry;
+mod aggressiveness;
 mod apply;
 mod axial_envelope;
 mod invariants;
@@ -58,43 +59,6 @@ impl StockContext {
     }
 }
 
-/// v3.0b (2026-06-04): where inside the LUT chipload band the
-/// feed-up recalibration aims. Used by
-/// [`recalibrate_feed_for_chipload`] via [`SuggestPolicy`] on
-/// [`SuggestContext`].
-///
-/// Default (v3.0c, 2026-06-04) is `Default` (LUT band midpoint) per the
-/// 2026-06-03 directive. Conservative preserves the v2.1 / pre-v3 recipe
-/// (target = LUT band lower bound).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum SuggestAggressiveness {
-    /// Aim observed median chipload at LUT band minimum. v2.1
-    /// behaviour. Use when material variability is high, the tool
-    /// is new, or workholding is suspect.
-    Conservative,
-    /// Aim observed median chipload at LUT band midpoint
-    /// (`(min + max) / 2`). v3 default per directive 2026-06-03.
-    #[default]
-    Default,
-    /// Aim observed median chipload at LUT band maximum. Gated by
-    /// the deflection refusal (200 µm − 10 µm headroom) and
-    /// `machine.max_feed_mm_min`. Equivalent to the pre-v2
-    /// "push for speed" recipe.
-    Speed,
-}
-
-impl SuggestAggressiveness {
-    /// Resolve the chipload target this aggressiveness level aims
-    /// for inside the given LUT band.
-    pub fn target_chipload(self, bounds: crate::feeds::ChiploadBounds) -> f64 {
-        match self {
-            Self::Conservative => bounds.min_mm_per_tooth,
-            Self::Default => 0.5 * (bounds.min_mm_per_tooth + bounds.max_mm_per_tooth),
-            Self::Speed => bounds.max_mm_per_tooth,
-        }
-    }
-}
-
 /// v3.3a (2026-06-04): How aggressively the orchestrator rewrites
 /// strategy fields (entry_style, clearing_strategy, stock_to_leave_*).
 /// The chipload / DPP / stepover clamps and back-offs run under both
@@ -121,14 +85,15 @@ pub enum SuggestScope {
 }
 
 /// v3.0b (2026-06-04): caller-supplied policy that the combined-Suggest
-/// orchestrator threads through [`SuggestContext`]. v3.3a added the
-/// `scope` field — v3 design doc still proposes a third
-/// (`verbose_rationale`) which lands in a later phase.
+/// orchestrator threads through [`SuggestContext`].
+///
+/// Ruling R4 (2026-09-24) deleted the `aggressiveness` field and its enum
+/// `SuggestAggressiveness` (Conservative / Default / Speed). It placed the
+/// chipload inside the band, and it was inert since 2026-08-13. The ruling
+/// holds the chipload at the band midpoint times the depth ladder; the one
+/// meaning of "aggressiveness" is now `MachineProfile::aggressiveness`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SuggestPolicy {
-    /// Where inside the LUT chipload band the feed-up recalibration
-    /// aims. See [`SuggestAggressiveness`].
-    pub aggressiveness: SuggestAggressiveness,
     /// How aggressively to rewrite strategy fields. See [`SuggestScope`].
     pub scope: SuggestScope,
 }
@@ -209,9 +174,7 @@ pub struct SuggestContext<'a> {
     /// derived from a chip-thinning term, so there is nothing to re-derive.
     pub calculator_operating_point: Option<CalculatorOperatingPoint>,
     /// v3.0b: caller-supplied policy threading through the
-    /// orchestrator. Default = `SuggestPolicy::default()` =
-    /// aggressiveness `Default` (LUT band midpoint) since the v3.0c
-    /// flip per the 2026-06-03 directive.
+    /// orchestrator. Default = `SuggestPolicy::default()`.
     pub policy: SuggestPolicy,
 }
 
@@ -407,14 +370,8 @@ pub enum SuggestWarning {
         /// is `>= lut_target_mm_per_tooth`; when a cap binds, this is
         /// the best the loop could achieve under the constraint.
         predicted_observed_chipload_after: f64,
-        /// Policy-selected target inside the LUT band, set by
-        /// [`SuggestAggressiveness`] (mm/tooth). Sourced from
-        /// [`FeedsResult::chipload_bounds`] via
-        /// [`SuggestAggressiveness::target_chipload`]. v2.1 targeted
-        /// the band lower bound exactly; v3.0b makes this the
-        /// policy-selected target. Default policy
-        /// (`Conservative`) still resolves to the band lower bound
-        /// for bit-identical v2.1 behaviour.
+        /// The target inside the LUT band (mm/tooth), from
+        /// [`FeedsResult::chipload_bounds`].
         lut_target_mm_per_tooth: f64,
         /// `Some(_)` when the loop terminated on a constraint rather
         /// than reaching the LUT minimum. See [`FeedRecalibrationCap`]
@@ -437,10 +394,8 @@ pub enum SuggestWarning {
         /// Best predicted observed median chipload the loop achieved
         /// (mm/tooth), still below `lut_target_mm_per_tooth`.
         predicted_observed_mm_per_tooth: f64,
-        /// Policy-selected target inside the LUT band the loop was
-        /// aiming for (mm/tooth), set by [`SuggestAggressiveness`].
-        /// Default policy (`Conservative`) resolves to the band lower
-        /// bound; other policies aim higher inside the band.
+        /// The target inside the LUT band the loop was aiming for
+        /// (mm/tooth).
         lut_target_mm_per_tooth: f64,
         /// `feed_rate` at loop termination (mm/min) — what got written
         /// into the operation.
@@ -630,8 +585,8 @@ pub enum SuggestWarning {
     ///
     /// Pass 10 re-evaluates the canonical model
     /// ([`crate::tool_load::power::PowerTerms`]) at the final `ap`, `ae`, RPM
-    /// and feed, against the gate's ceiling `power_at_rpm(rpm) ×
-    /// safety_factor`, and lowers the feed onto that ceiling. The clamp is
+    /// and feed, against the gate's ceiling `power_at_rpm(rpm)` (the rated
+    /// curve, ruling R4 Q2), and lowers the feed onto that ceiling. The clamp is
     /// feed-only and downward: the geometry is final by then.
     ///
     /// `fits_at_any_feed` is `false` when the feed-free EDGE term alone meets
@@ -652,7 +607,7 @@ pub enum SuggestWarning {
         /// final geometry. On the gate's COMMANDED axis, so it compares
         /// directly with `available_kw`.
         required_kw_at_rescaled: f64,
-        /// The gate's ceiling (kW): `power_at_rpm(rpm) × safety_factor`.
+        /// The gate's ceiling (kW): the rated curve `power_at_rpm(rpm)`.
         available_kw: f64,
         /// `false` when the edge term alone is at or over the ceiling, so no
         /// feed satisfies it.
@@ -693,6 +648,106 @@ pub enum SuggestWarning {
         /// The value the calculator produced and the operation discarded.
         recommended_mm: f64,
     },
+    /// Ruling R4 (2026-09-24): Suggest pass 6b, the machine aggressiveness
+    /// dial, changed the engagement to hold the load at a fraction of the
+    /// load at the base engagement. The chipload did not change.
+    ///
+    /// The target is `k_eff = aggressiveness × ld_factor` (ruling Q7: the
+    /// long-tool share lowers the target, it does not cut the feed). Below
+    /// 1.0 the pass makes the depth per pass and the stepover smaller by one
+    /// common scale (Q11). Above 1.0 (Q3) it makes them larger, inside the
+    /// rigidity depth cap, the flute length and a stepover of one diameter.
+    ///
+    /// A `*_from` / `*_to` pair is `Some` exactly when that lever exists and
+    /// the pass evaluated it. The two load models are the lateral force
+    /// (`feeds::force`) and the spindle power (`tool_load::power`). When both
+    /// refuse (no primary-source `Kc`), the chip cross-section is the proxy.
+    ///
+    /// Sentry: `tests/the_dial_holds_the_load_and_never_cuts_the_feed_fm7.rs`.
+    EngagementReducedForAggressiveness {
+        /// `MachineProfile::aggressiveness`.
+        aggressiveness: f64,
+        /// The long-tool share of the target, `feeds::long_tool_load_share`.
+        ld_factor: f64,
+        /// `aggressiveness × ld_factor`, the load fraction the pass aimed at.
+        target_share: f64,
+        /// The common scale the pass applied to every lever.
+        scale: f64,
+        /// Depth per pass before and after (mm).
+        dpp_from: Option<f64>,
+        dpp_to: Option<f64>,
+        /// Stepover before and after (mm).
+        stepover_from: Option<f64>,
+        stepover_to: Option<f64>,
+        /// Peak lateral cutting force before and after (N).
+        force_n_before: Option<f64>,
+        force_n_after: Option<f64>,
+        /// Spindle power before and after (kW).
+        power_kw_before: Option<f64>,
+        power_kw_after: Option<f64>,
+        /// The chip cross-section proxy before and after (mm²). `Some` only
+        /// when both load models refuse.
+        section_mm2_before: Option<f64>,
+        section_mm2_after: Option<f64>,
+        /// `true` when every modelled load is at or below `target_share` x
+        /// its base value (below 1.0), or reached it (above 1.0).
+        target_met: bool,
+        /// Why the target was not met, when it was not.
+        shortfall: Option<AggressivenessShortfall>,
+        /// `false` when the apply wrote the speeds only
+        /// (`ApplyScope::Speeds`): the pass computed this engagement, and
+        /// the operation does not carry it. The card then says "Apply the cut
+        /// geometry to hold the load at N %" (spec §2.5).
+        applied: bool,
+    },
+    /// Ruling R4 (2026-09-24): the aggressiveness dial did not act on this
+    /// operation, and why. The engagement is unchanged. This record exists
+    /// so that the card states it (the "no invisible calculations" rule).
+    AggressivenessNotApplied {
+        /// `MachineProfile::aggressiveness`.
+        aggressiveness: f64,
+        /// Why the dial did not act.
+        reason: AggressivenessSkip,
+    },
+}
+
+/// Why the aggressiveness dial did not act (ruling R4, 2026-09-24).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AggressivenessSkip {
+    /// A Finish pass (ruling Q4). The finish depth is the stock allowance and
+    /// the finish width is the scallop target. The deflection check decides.
+    FinishRole,
+    /// A drill cycle (ruling Q5). A plunge is full-width axial; there is no
+    /// engagement lever. The plunge ships the material base with no factor.
+    Drill,
+}
+
+impl AggressivenessSkip {
+    /// The card text, one sentence. Every surface prints this.
+    #[must_use]
+    pub const fn card_text(self) -> &'static str {
+        match self {
+            Self::FinishRole => "Finish: no dial action; deflection decides.",
+            Self::Drill => "Plunge and ramp: material base, no factor; the dial does not act.",
+        }
+    }
+}
+
+/// Why the aggressiveness dial did not meet its load target (ruling R4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AggressivenessShortfall {
+    /// Below 1.0: every lever reached its floor (0.05 mm depth, 0.02 mm
+    /// stepover) and the load is still above the target. The feed is not
+    /// cut to close the gap.
+    LeverFloor,
+    /// Above 1.0: every lever reached its cap (the rigidity depth cap, the
+    /// flute length, a stepover of one diameter, a deflection back-off
+    /// depth, or the rated spindle power) before the load reached the
+    /// target.
+    EngagementCap,
+    /// The operation has no depth-per-pass field and no free stepover (a
+    /// scallop target set it), so the dial has no lever.
+    NoLever,
 }
 
 /// Reason the v2 step 2 feed-up recalibration terminated early

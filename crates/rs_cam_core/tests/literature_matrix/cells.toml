@@ -12,6 +12,19 @@
 ##     pass, because the warning is the required response;
 ##   - below the floor with NO warning: fail at the cell's own severity.
 ## A sub-floor cell is therefore not a failure. A silent sub-floor recipe is.
+##
+## KNOWN GAPS (operator ruling 2026-09-24). An anti-pattern may carry
+## `known_gap = "<why>"`. It marks a case the engine has no sourced de-rate
+## for yet, so the anti-pattern is EXPECTED to trigger and is the target:
+##   - the anti-pattern triggers: pass, printed "KNOWN GAP (<why>)";
+##   - the anti-pattern is clear: FAIL at the entry's severity ("KNOWN GAP
+##     CLOSED"), because a de-rate landed and the entry must be re-graded.
+## The hidden 0.75 feed factor (removed by ruling R4 WP3) used to keep these
+## cells clear; with it gone, the engine ships the vendor row's chipload and
+## the missing hardness / aluminium de-rate shows. Two entries carry it:
+## `flat_6mm_pocket_ipe_hardness` and `flat_6mm_pocket_al6061_lut`. The
+## micro-oak entry was a lookup defect (it borrowed an MDF row), not a gap;
+## the family ruling of the same day fixed it.
 
 [[cell]]
 id = "flat_6mm_pocket_oak"
@@ -340,7 +353,9 @@ hobby_derate = 0.7
 # 12.7 mm 60deg v-groove row; engine scales this linearly to the
 # engaged-D (3.464 mm @ 3 mm DOC) -> 0.0208 mm/tooth target.
 # After RCTF chip-thinning compensation (~2.66x) and safety (0.75)
-# the visible fpt = 0.0415. Band max stays at hobby-derated 0.040;
+# the visible fpt = 0.0415. (Ruling R4 WP3, 2026-09-24, removed the 0.75
+# safety factor from the feed; the visible fpt rises by 1 / 0.75. RE-MEASURE
+# this cell's verdict before citing the +3.7 % figure.) Band max stays at hobby-derated 0.040;
 # the +3.7% overshoot is documented as engine-defensible. Only
 # amana_vbit supports values above 0.040; vectric_default and
 # shapeoko_wiki actively support keeping the ceiling tight, so the
@@ -1075,6 +1090,9 @@ severity = "critical"
 name = "ipe_matches_oak_baseline_chipload"
 expr = "feed_rate / (rpm * flutes) > 0.045"
 severity = "critical"
+# Measured before R4 WP3 through the 0.75 factor: Ipe 0.034567, oak control
+# 0.035314 mm/tooth; without it about 0.0461 against 0.0471 (ratio 0.98).
+known_gap = "no sourced hardness de-rate for extreme-Janka hardwood exists yet; the anti-pattern is the target"
 
 
 [[cell]]
@@ -1952,7 +1970,8 @@ severity_on_fail = "moderate"
 # Floor widened 0.048→0.045 (2026-06-03 P3 round 5): Onsrud hardwood-
 # adaptive 6mm 2F flat row midpoint 0.054 mm/tooth × RCTF 1.667 (DAPRA
 # formula for ae/D=0.10) × stack derate (depth_tier 0.75 × ld 0.88 ×
-# safety 0.85 ≈ 0.56) lands at 0.050 nominal; lower edge of band lands
+# safety 0.85 ≈ 0.56; ruling R4 WP3 removed the safety and
+# L/D feed factors, so the shipped fpt only rises and the floor still holds) lands at 0.050 nominal; lower edge of band lands
 # at 0.045. Amana Spektra hardwood chipload window confirms baseline.
 # Engine RCTF is being applied (1.667× confirmed); pre-fix 0.048 floor
 # tracked midpoint, not band lower edge.
@@ -2064,7 +2083,8 @@ severity_on_fail = "moderate"
 # diameter/material. Onsrud bull-nose hardwood adaptive 6mm 2F row
 # (amana_3d_profiling.json): chipload 0.032-0.060, midpoint 0.046.
 # Apply RCTF 1.667 (DAPRA formula for ae/D=0.10) × stack derate
-# (depth_tier 0.75 × ld 0.88 × safety 0.85 ≈ 0.56) → post-RCTF
+# (depth_tier 0.75 × ld 0.88 × safety 0.85 ≈ 0.56; ruling R4 WP3 removed the safety and
+# L/D feed factors, so the shipped fpt only rises and the floor still holds) → post-RCTF
 # effective fpt midpoint 0.043, lower band edge 0.030. Floor 0.038
 # sits between band lower edge and midpoint, well above 0.025 rubbing
 # floor. Engine RCTF is being applied identically to flat (1.667×
@@ -2981,6 +3001,13 @@ severity = "critical"
 name = "micro_tool_uses_midrange_chipload"
 expr = "feed_rate / (rpm * flutes) > 0.030"
 severity = "critical"
+# NOT a known gap after the 2026-09-24 family ruling. This cell tripped
+# because the Ø1 hardwood query borrowed the MDF 0.794 mm Spektra row
+# (0.0508 mm/tooth). MDF is now a separate category; the solid-wood 0.794 mm
+# softwood Spektra row (0.0254, Janka default 500) answers, 0.794x the tool,
+# inside the size window. Predicted: 0.0254 x (1 / 0.794)^0.61 x
+# (500 / 1360)^0.5 = 0.0254 x 1.151 x 0.606 = 0.0177 mm/tooth, under 0.030
+# and inside the literature band 0.005-0.020. RE-MEASURE.
 
 
 [[cell]]
@@ -5338,6 +5365,7 @@ severity = "critical"
 name = "al_chipload_undated_industrial"
 expr = "feed_rate / (rpm * flutes) > 0.080"
 severity = "major"
+known_gap = "no sourced aluminium-on-a-wood-router de-rate exists yet; the anti-pattern is the target"
 
 [[cell.anti_patterns]]
 name = "al_doc_woc_industrial_envelope"

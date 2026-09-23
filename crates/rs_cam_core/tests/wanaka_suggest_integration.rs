@@ -31,6 +31,8 @@
 //!   `cap_hit == Some(MaxFeed)`. Suggest pass 8 is retired; the feed now
 //!   stays at the calculator's own value and neither chipload-lift
 //!   warning fires.
+//! - **3D Finish 6**: REFUSED since 2026-09-24 by the micro-tool size rule
+//!   (ruling R1 applied to size); the text below is its history.
 //! - **3D Finish 6** (DropCutter, 2 mm-tip tapered ball): scallop-height
 //!   target resolves to ~0.03 mm stepover (~4.6 M moves on the Wanaka
 //!   stock envelope) — `StepoverRaisedForRuntime` must fire raising
@@ -257,16 +259,33 @@ fn wanaka_suggest_baseline() {
         !cases.is_empty(),
         "Expected ≥1 enabled toolpath in wanaka.toml, got 0 — project shape regression"
     );
-    // Ruling R1 (2026-09-23): exactly the two drill toolpaths refuse, with
-    // the judgement's drill reason. Any other refusal is a regression.
+    // Ruling R1 (2026-09-23): the two drill toolpaths refuse, with the
+    // judgement's drill reason. Ruling R1 applied to size (2026-09-24): tp 11
+    // "3D Finish 6", a 1.0 mm-tip tapered ball DropCutter in hardwood, refuses
+    // too, because its nearest chart row is 3.175 mm or larger, more than 2x
+    // its engaged diameter. That is the ruled outcome on the operator's
+    // project; the size-law phase (a published micro-tool figure or a
+    // sourced size law) is what gives tp 11 a recipe again. Any other
+    // refusal is a regression.
     let mut refused_ids: Vec<ToolpathId> = refused.iter().map(|(id, _, _)| *id).collect();
     refused_ids.sort_by_key(|id| id.0);
     assert_eq!(
         refused_ids,
-        vec![ToolpathId(7), ToolpathId(14)],
-        "the Unbacked refusals must be the two drill toolpaths (Holes, Pin Drill): {refused:?}"
+        vec![ToolpathId(7), ToolpathId(11), ToolpathId(14)],
+        "the Unbacked refusals must be the two drill toolpaths (Holes, Pin Drill) and the \
+         micro tapered finish (3D Finish 6): {refused:?}"
     );
     for (id, name, text) in &refused {
+        if *id == ToolpathId(11) {
+            assert!(
+                text.contains("no published figure for a ")
+                    && text.contains("tapered ball nose")
+                    && text.contains("the nearest chart row is ")
+                    && !text.contains('{'),
+                "tp {id} ({name}): the refusal must be the size rule and name both sizes: {text}"
+            );
+            continue;
+        }
         assert!(
             text.contains("plunge drill") && text.contains("2.5") && !text.contains('{'),
             "tp {id} ({name}): the refusal must carry the drill reason as a sentence: {text}"
@@ -566,12 +585,82 @@ fn wanaka_suggest_baseline() {
                 | SuggestWarning::StrategyRewrote { .. }
                 | SuggestWarning::AxialDocClampedByEnvelope { .. }
                 | SuggestWarning::FeedRescaledToFinalGeometry { .. }
-                | SuggestWarning::ChiploadStillLowAfterRecalibration { .. } => {}
+                | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
+                // Ruling R4 WP3 (2026-09-24): the aggressiveness dial. Pinned
+                // below as the Wanaka baseline for the dial.
+                | SuggestWarning::EngagementReducedForAggressiveness { .. }
+                | SuggestWarning::AggressivenessNotApplied { .. } => {}
                 other => {
                     panic!("{ctx}: unexpected SuggestWarning variant slipped through: {other:?}")
                 }
             }
         }
+
+        // The dial's Wanaka baseline (ruling R4 WP3, measured 2026-09-24).
+        // Default dial 0.85 x long-tool share 0.75 (45 mm stickout on Ø6,
+        // 7.5 x D) = load target 0.6375. One common scale 0.68167 on the
+        // base the clamps left: depth 6.0 -> 4.09 mm, stepover 1.2 ->
+        // 0.818 mm. Force 58.44 -> 37.26 N (0.638 x) and power 0.1541 ->
+        // 0.0813 kW (0.528 x), both at or under 0.6375 x, so the target is
+        // met. The chipload does not change.
+        let dial = suggested
+            .warnings
+            .iter()
+            .find_map(|w| match w {
+                SuggestWarning::EngagementReducedForAggressiveness {
+                    aggressiveness,
+                    ld_factor,
+                    target_share,
+                    scale,
+                    dpp_from,
+                    dpp_to,
+                    stepover_from,
+                    stepover_to,
+                    force_n_before,
+                    force_n_after,
+                    power_kw_before,
+                    power_kw_after,
+                    target_met,
+                    ..
+                } => Some((
+                    *aggressiveness,
+                    *ld_factor,
+                    *target_share,
+                    *scale,
+                    (*dpp_from, *dpp_to),
+                    (*stepover_from, *stepover_to),
+                    (*force_n_before, *force_n_after),
+                    (*power_kw_before, *power_kw_after),
+                    *target_met,
+                )),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("{ctx}: the dial record must fire on Back Rough"));
+        let (k, ld, share, scale, dpp, so, force, power, met) = dial;
+        let near = |a: Option<f64>, b: f64, tol: f64| a.is_some_and(|a| (a - b).abs() <= tol);
+        assert!(
+            (k - 0.85).abs() < 1e-12 && (ld - 0.75).abs() < 1e-12,
+            "{ctx}: {dial:?}"
+        );
+        assert!((share - 0.6375).abs() < 1e-12, "{ctx}: {dial:?}");
+        assert!((scale - 0.68167).abs() < 1e-4, "{ctx}: {dial:?}");
+        assert!(
+            near(dpp.0, 6.0, 1e-9) && near(dpp.1, 4.09, 1e-6),
+            "{ctx}: {dial:?}"
+        );
+        assert!(
+            near(so.0, 1.2, 1e-9) && near(so.1, 0.818, 1e-6),
+            "{ctx}: {dial:?}"
+        );
+        assert!(
+            near(force.0, 58.44, 0.05) && near(force.1, 37.26, 0.05),
+            "{ctx}: {dial:?}"
+        );
+        assert!(
+            near(power.0, 0.1541, 5e-4) && near(power.1, 0.0813, 5e-4),
+            "{ctx}: {dial:?}"
+        );
+        assert!(met, "{ctx}: the Back Rough target must be met: {dial:?}");
     }
 
     // ── Toolpath 10: 3D Rough 6 — same op family + tool as Back Rough.
@@ -636,64 +725,15 @@ fn wanaka_suggest_baseline() {
         );
     }
 
-    // ── Toolpath 11: 3D Finish 6 (DropCutter, 2 mm-tip tapered ball)
+    // ── Toolpath 11: 3D Finish 6 (DropCutter, 1.0 mm-tip tapered ball)
     //
-    // The scallop-height target drives stepover to ~0.03 mm; the runtime
-    // back-off raises it to ~0.23 mm.
-    //
-    // F3.1 (2026-06-10): pre-F3 the tapered-ball lookup matched the
-    // Whiteside Fusion360 preset row (fabricated 0.1016 mm/tooth
-    // "range"), so feed recalibration chased an unreachable target and
-    // slammed into machine.max_feed → ChiploadStillLowAfterRecalibration.
-    // With the preset rows demoted, the calibrated Amana row wins
-    // (scaled target ~0.0053 mm/tooth) and the recalibration REACHES the
-    // target inside the machine envelope: feed 950 → ~1350 mm/min, no
-    // cap hit, no still-low warning.
-    {
-        let (_id, name, suggested) = find_case(&cases, ToolpathId(11));
-        let ctx = format!("3D Finish 6 (tp {_id} / {name})");
-
-        let stepover_hit = suggested.warnings.iter().find_map(|w| match w {
-            SuggestWarning::StepoverRaisedForRuntime {
-                requested_mm,
-                raised_mm,
-                ..
-            } => Some((*requested_mm, *raised_mm)),
-            _ => None,
-        });
-        let (requested_step, raised_step) = stepover_hit.unwrap_or_else(|| {
-            panic!(
-                "{ctx}: StepoverRaisedForRuntime must fire, got warnings: {:?}",
-                suggested.warnings
-            )
-        });
-        assert!(
-            requested_step < raised_step,
-            "{ctx}: raised stepover must exceed requested, got {requested_step} → {raised_step}"
-        );
-        assert!(
-            requested_step < 0.10,
-            "{ctx}: requested stepover must be the scallop-height target (~0.03 mm), got {requested_step}"
-        );
-        assert!(
-            raised_step > 0.10,
-            "{ctx}: raised stepover must clear 0.10 mm for runtime, got {raised_step}"
-        );
-
-        // RE-BASELINED 2026-08-13 (Checkpoint J-1). Pre-fix this pinned
-        // the DropCutter lift reaching its target uncapped (`cap_hit ==
-        // None`, `obs_after >= 0.95 × lut_target`, no still-low). Retired
-        // with pass 8. The A-5i log entry carried this block as a NOT
-        // EXERCISED row: at `719b92d7` the test never got here, because
-        // the operator had disabled toolpath 11 in their working copy of
-        // `wanaka.toml` and `find_case(ToolpathId(11))` panicked first.
-        // **That row is discharged 2026-08-16 (G-WANAKA-DPP):** the
-        // fixture re-pin reads the committed snapshot, toolpath 11 is
-        // enabled there, and the inversion is now verified by execution —
-        // measured warnings on this case are `FinishEnvelopeAdvisory` +
-        // `StepoverRaisedForRuntime { 0.03 → 0.22781 }` and nothing else.
-        assert_no_feed_raised(&suggested.warnings, &ctx);
-    }
+    // Refused since 2026-09-24 (ruling R1 applied to size, asserted above),
+    // so no recipe arm reads it. Until then this block pinned the runtime
+    // stepover back-off (0.03 -> 0.22781 mm) and the absence of a feed lift.
+    assert!(
+        cases.iter().all(|(tid, _, _)| *tid != ToolpathId(11)),
+        "tp 11: a size-refused toolpath must not also ship a recipe"
+    );
 
     // ── Toolpath 14: Pin Drill and toolpath 7: Holes (drill family)
     //
@@ -758,7 +798,7 @@ fn wanaka_suggest_baseline() {
                 //   tp 14 (Pin Drill)         AlignmentPinDrill depth + stepover
                 //   tp 5  (Rivers)            ProjectCurve      depth + stepover
                 //   tp 6  (Lakes)             ProjectCurve      depth + stepover
-                //   tp 11 (3D Finish 6)       DropCutter        depth only
+                //   tp 11 (3D Finish 6)       DropCutter        depth only (refused since 2026-09-24)
                 //
                 // A drill's depth IS the hole and it has no stepover. A
                 // ProjectCurve follows the curve. A DropCutter takes its
@@ -772,6 +812,13 @@ fn wanaka_suggest_baseline() {
                 // the operation can offer. Suppressing it here would
                 // re-create the silence T-12 exists to remove.
                 SuggestWarning::CutGeometryFieldNotHeld { .. } => {}
+                // Ruling R4 WP3 (2026-09-24): the aggressiveness dial
+                // (default 0.85) files one record per roughing Suggest,
+                // and a "no dial action" record per finish or drill. Both
+                // are EXPECTED on Wanaka. The mechanism is pinned by
+                // tests/the_dial_holds_the_load_and_never_cuts_the_feed_fm7.rs.
+                SuggestWarning::EngagementReducedForAggressiveness { .. }
+                | SuggestWarning::AggressivenessNotApplied { .. } => {}
                 // v3.3c: must NOT fire on Wanaka — both 3D-rough
                 // toolpaths pin `clearing_strategy = "agent_search"`,
                 // and heuristic-B pinning suppresses the warn-only

@@ -608,21 +608,31 @@ fn lookup_best_where(
     })
 }
 
-/// Group `MaterialFamily` into broad categories for cross-family
-/// extrapolation. Within a category we allow score-only matching (e.g.
-/// hardwood query against softwood row), with chipload bounds scaled by the
-/// hardness ratio. Across categories the lookup hard-rejects: cutting wood
-/// and cutting aluminum live in entirely different chipload regimes and
-/// linear extrapolation between them isn't meaningful.
+/// Group `MaterialFamily` into the categories a row may serve across.
+/// Within a category we allow score-only matching, with chipload bounds
+/// scaled by the hardness ratio. Across categories the lookup hard-rejects:
+/// cutting wood and cutting aluminum live in entirely different chipload
+/// regimes and linear extrapolation between them isn't meaningful.
+///
+/// **Operator ruling 2026-09-24 (the wood charts), as refined the same day.**
+/// Every vendor prints softwood, hardwood, plywood and MDF/HDF/particleboard
+/// as separate tables. The probe that raised it: a Ø1 flat pocket in
+/// HARDWOOD matched `amana-flat-mdf-pocket-0794-2f-spektra`, an MDF row.
+///
+/// - Softwood and hardwood are ONE solid-wood category. The 2026-05
+///   hardness ruling models exactly their difference through the Janka
+///   scale, and the card prints the row id and the "x hardness" factor, so
+///   that substitution is visible.
+/// - Plywood (both grades) is its own category, and MDF, HDF and
+///   particleboard are one more. They are glue boards with no Janka mapping,
+///   so no hardness scale can carry a solid-wood row onto them or back.
+///   A cross-category row is a non-match; the cell falls to the formula and
+///   the R1 judgement.
 fn material_category(family: MaterialFamily) -> u8 {
     match family {
-        MaterialFamily::Softwood
-        | MaterialFamily::Hardwood
-        | MaterialFamily::PlywoodSoftwood
-        | MaterialFamily::PlywoodHardwood
-        | MaterialFamily::Mdf
-        | MaterialFamily::Hdf
-        | MaterialFamily::Particleboard => 0,
+        MaterialFamily::Softwood | MaterialFamily::Hardwood => 0,
+        MaterialFamily::PlywoodSoftwood | MaterialFamily::PlywoodHardwood => 5,
+        MaterialFamily::Mdf | MaterialFamily::Hdf | MaterialFamily::Particleboard => 6,
         MaterialFamily::Acrylic
         | MaterialFamily::Hdpe
         | MaterialFamily::Polycarbonate
@@ -643,11 +653,13 @@ fn passes_must_match(query: &LookupQuery, obs: &VendorObservation) -> bool {
     if obs.operation_family != query.operation_family {
         return false;
     }
-    // Material category is a hard filter; exact family is now a score
-    // contributor in `score_observation`. Within wood/plastic/metal,
-    // chipload bounds are scaled by the hardness ratio so the engaged-edge
-    // truth carries through even when the LUT only has rows for a
-    // neighbouring family. See `LookupResult::chipload_hardness_scale`.
+    // Material category is a hard filter; exact family is a score
+    // contributor in `score_observation`. Since the 2026-09-24 ruling the
+    // solid woods, the plywoods and the MDF-class boards are separate
+    // categories (see `material_category`), so a hardwood query never
+    // borrows an MDF or plywood row. Within a
+    // category, chipload bounds are scaled by the hardness ratio. See
+    // `LookupResult::chipload_hardness_scale`.
     if !materials_compatible(query.material_family, obs.material_family) {
         return false;
     }

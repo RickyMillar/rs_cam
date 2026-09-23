@@ -1113,7 +1113,6 @@ fn plunge_entry_unstable_warning_fires_when_dpp_exceeds_half_diameter() {
             SuggestContext {
                 policy: SuggestPolicy {
                     scope: SuggestScope::FeedsWithGates,
-                    ..SuggestPolicy::default()
                 },
                 ..SuggestContext::default()
             },
@@ -1938,10 +1937,6 @@ fn retired_lift_leaves_wanaka_back_rough_feed_untouched() {
         PassRole::Roughing,
         SuggestContext {
             chipload_bounds: bounds,
-            policy: SuggestPolicy {
-                aggressiveness: SuggestAggressiveness::Conservative,
-                ..SuggestPolicy::default()
-            },
             ..SuggestContext::default()
         },
     );
@@ -2009,7 +2004,10 @@ fn retired_lift_fires_no_cap_on_a_deflection_bound_fixture() {
     });
     let initial_feed = 911.0_f64;
 
-    for aggressiveness in [SuggestAggressiveness::Default, SuggestAggressiveness::Speed] {
+    // Ruling R4 (2026-09-24) deleted `SuggestAggressiveness`; the two policy
+    // arms this loop ran are now one run.
+    {
+        let aggressiveness = "the one Suggest policy";
         let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
             feed_rate: initial_feed,
             plunge_rate: 300.0,
@@ -2059,10 +2057,6 @@ fn retired_lift_fires_no_cap_on_a_deflection_bound_fixture() {
             PassRole::Roughing,
             SuggestContext {
                 chipload_bounds: bounds,
-                policy: SuggestPolicy {
-                    aggressiveness,
-                    ..SuggestPolicy::default()
-                },
                 ..SuggestContext::default()
             },
         );
@@ -2221,15 +2215,6 @@ fn feed_recalibration_skipped_when_already_in_band() {
         PassRole::Roughing,
         SuggestContext {
             chipload_bounds: bounds,
-            // v3.0c: pin to Conservative so "already in band" means
-            // "above LUT min" — the v2.1 semantics the test was
-            // written against. Under the new Default (median)
-            // target this initial feed would still fall below band
-            // midpoint and the loop would fire.
-            policy: SuggestPolicy {
-                aggressiveness: SuggestAggressiveness::Conservative,
-                ..SuggestPolicy::default()
-            },
             ..SuggestContext::default()
         },
     );
@@ -2251,133 +2236,6 @@ fn feed_recalibration_skipped_when_already_in_band() {
             .any(|w| matches!(w, SuggestWarning::ChiploadStillLowAfterRecalibration { .. })),
         "ChiploadStillLowAfterRecalibration must not fire when initial observed ≥ LUT min, got {warnings:?}"
     );
-}
-
-/// **RE-BASELINED 2026-08-13 — Checkpoint J-1.**
-///
-/// **This site was NOT in the A-5 evidence package's §6.1 re-baseline
-/// list** (which named four in-crate tests); it is a fifth, found by
-/// compiling. Recorded here rather than quietly fixed.
-///
-/// v3.0b: same op × tool × material × machine with three
-/// SuggestAggressiveness levels. Pre-fix it asserted feed was
-/// *monotonically non-decreasing* Conservative → Default → Speed and
-/// pinned Conservative at the v2.1 closed-form solve **3456 mm/min**
-/// (`0.027 / 0.25 × 16000 × 2`), with Default and Speed above it.
-///
-/// `SuggestAggressiveness` reached the feed **only** through pass 8's
-/// `target_chipload` solve. With that pass retired, aggressiveness no
-/// longer moves feed at all, so the progression collapses from strictly
-/// spread to flat. Monotonicity is technically preserved (equality
-/// satisfies `<=`), which is exactly why asserting it alone would be a
-/// vacuous pass — the test now asserts the stronger, true statement:
-/// **all three levels return the calculator's own feed.**
-///
-/// This is a real loss of operator control and is named as such: the
-/// aggressiveness dial is inert on the pre-simulation path until a
-/// simulation-backed target lands (Checkpoint J-1's destination (c)).
-/// It is not inert on the rest of `feeds` — the dial still selects the
-/// target the rationale and the chipload envelopes report against.
-///
-/// Scaffolded against the Wanaka Back Rough operating point used by
-/// `feed_recalibration_raises_feed_for_wanaka_back_rough_case`
-/// (6 mm carbide endmill, HardMaple, Adaptive3d, DPP 9 mm /
-/// stepover 1.2 mm / feed 911 mm/min @ 16 kRPM, ChiploadBounds
-/// 0.027..0.060). At Conservative the closed-form solve targets
-/// the band min; at Default it targets the midpoint; at Speed it
-/// targets the band max. Speed may trip the deflection refusal /
-/// MaxFeed cap (we allow either as long as the feed is
-/// non-decreasing relative to Default).
-#[test]
-fn aggressiveness_monotone_feed_progression() {
-    use crate::compute::operation_configs::{Adaptive3dConfig, Adaptive3dEntryStyle};
-    use crate::feeds::ChiploadBounds;
-    use crate::material::WoodSpecies;
-
-    let bounds = Some(ChiploadBounds {
-        min_mm_per_tooth: 0.027,
-        max_mm_per_tooth: 0.060,
-    });
-    let material = Material::SolidWood {
-        species: WoodSpecies::HardMaple,
-    };
-
-    let feed_for = |aggressiveness: SuggestAggressiveness| -> f64 {
-        let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
-            feed_rate: 911.0,
-            plunge_rate: 300.0,
-            stepover: 1.2,
-            depth_per_pass: 3.69,
-            spindle_rpm: Some(16_000),
-            entry_style: Adaptive3dEntryStyle::Helix,
-            ..Adaptive3dConfig::default()
-        });
-        let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
-        tool.diameter = 6.0;
-        tool.cutting_length = 25.0;
-        // Milling-Kc calibration (2026-06-17, MILLING_KC_FACTOR = 2.7):
-        // at the original 45 mm stickout the deflection ceiling now
-        // binds at the baseline feed, so the closed-form feed-up can't
-        // reach the Conservative 3456 mm/min target this test asserts
-        // and the monotone progression collapses. This test verifies
-        // the aggressiveness→target→feed math, not the deflection cap;
-        // stiffen the tool (stickout 45 → 18 mm; δ ∝ stickout³ →
-        // ~0.064×) so deflection leaves headroom and the three
-        // aggressiveness levels can spread out monotonically.
-        tool.stickout = 18.0;
-        tool.flute_count = 2;
-        let mut machine = MachineProfile::default();
-        machine.rigidity.doc_roughing_factor = 0.20;
-        machine.rigidity.adaptive_doc_factor = 1.60;
-        // Generous feed cap so Speed has room to climb without
-        // immediately tripping MaxFeed.
-        machine.max_feed_mm_min = 20_000.0;
-
-        let _warnings = enforce_invariants(
-            &mut op,
-            &tool,
-            &machine,
-            &material,
-            PassRole::Roughing,
-            SuggestContext {
-                chipload_bounds: bounds,
-                policy: SuggestPolicy {
-                    aggressiveness,
-                    ..SuggestPolicy::default()
-                },
-                ..SuggestContext::default()
-            },
-        );
-        op.feed_rate()
-    };
-
-    let feed_conservative = feed_for(SuggestAggressiveness::Conservative);
-    let feed_default = feed_for(SuggestAggressiveness::Default);
-    let feed_speed = feed_for(SuggestAggressiveness::Speed);
-
-    assert!(
-        feed_conservative <= feed_default,
-        "Conservative feed ({feed_conservative}) must be ≤ Default feed ({feed_default})"
-    );
-    assert!(
-        feed_default <= feed_speed,
-        "Default feed ({feed_default}) must be ≤ Speed feed ({feed_speed})"
-    );
-    // The assertion that actually carries weight post-retirement: all
-    // three levels land on the calculator's own 911 mm/min. Pre-fix
-    // these were 3456 / 6144 / 7680 mm/min (band min / mid / max
-    // divided by the 0.25 arc-fit ratio, times 16000 × 2).
-    for (label, feed) in [
-        ("Conservative", feed_conservative),
-        ("Default", feed_default),
-        ("Speed", feed_speed),
-    ] {
-        assert!(
-            (feed - 911.0).abs() < 1e-6,
-            "{label}: aggressiveness must not move feed off the calculator value 911 \
-                 now that pass 8 is retired, got {feed}"
-        );
-    }
 }
 
 /// v3.3b: strategy-aware orchestrator rewrites Adaptive3d
@@ -2426,7 +2284,6 @@ fn strategy_aware_rewrites_plunge_to_ramp_under_default_scope() {
         SuggestContext {
             policy: SuggestPolicy {
                 scope: SuggestScope::StrategyAndFeeds,
-                ..SuggestPolicy::default()
             },
             ..SuggestContext::default()
         },
@@ -2476,7 +2333,6 @@ fn strategy_aware_rewrites_plunge_to_ramp_under_default_scope() {
         SuggestContext {
             policy: SuggestPolicy {
                 scope: SuggestScope::FeedsWithGates,
-                ..SuggestPolicy::default()
             },
             ..SuggestContext::default()
         },
@@ -2540,7 +2396,6 @@ fn strategy_aware_leaves_non_default_entry_style_alone() {
             SuggestContext {
                 policy: SuggestPolicy {
                     scope: SuggestScope::StrategyAndFeeds,
-                    ..SuggestPolicy::default()
                 },
                 ..SuggestContext::default()
             },
@@ -2603,7 +2458,6 @@ fn clearing_strategy_recommendation_is_warn_only() {
             model_bbox: Some(&bbox),
             policy: SuggestPolicy {
                 scope: SuggestScope::StrategyAndFeeds,
-                ..SuggestPolicy::default()
             },
             ..SuggestContext::default()
         },
@@ -2672,10 +2526,7 @@ fn clearing_strategy_recommendation_skips() {
             PassRole::Roughing,
             SuggestContext {
                 model_bbox,
-                policy: SuggestPolicy {
-                    scope,
-                    ..SuggestPolicy::default()
-                },
+                policy: SuggestPolicy { scope },
                 ..SuggestContext::default()
             },
         )

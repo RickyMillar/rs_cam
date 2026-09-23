@@ -53,7 +53,8 @@ use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::diagnostics::Diagnostic;
 use rs_cam_core::diagnostics::adapters::from_feeds::{
-    diagnostics_from_feeds_result, heuristic_hints_from_recommendation,
+    diagnostic_from_suggest_warning, diagnostics_from_feeds_result,
+    heuristic_hints_from_recommendation,
 };
 use rs_cam_core::diagnostics::adapters::from_static_checks::diagnostics_from_static_checks;
 use rs_cam_core::feeds::suggest::{
@@ -307,7 +308,7 @@ fn support_columns(s: &FeedsSupport) -> (String, String) {
     match s {
         FeedsSupport::VendorBacked => ("VendorBacked".to_owned(), String::new()),
         FeedsSupport::FormulaOnly { source } => ("FormulaOnly".to_owned(), (*source).to_owned()),
-        FeedsSupport::Refuse { reason } => ("Refuse".to_owned(), (*reason).to_owned()),
+        FeedsSupport::Refuse { reason } => ("Refuse".to_owned(), reason.to_string()),
     }
 }
 
@@ -324,6 +325,13 @@ fn recipe_diagnostics(s: &SuggestedParams, tool: &ToolConfig) -> Vec<Diagnostic>
         s.operation.depth_per_pass(),
         r,
     ));
+    // Ruling R4: the Suggest records that carry a rule id (the
+    // aggressiveness record) are diagnostics too.
+    out.extend(
+        s.warnings
+            .iter()
+            .filter_map(|w| diagnostic_from_suggest_warning(tp, w)),
+    );
     out
 }
 
