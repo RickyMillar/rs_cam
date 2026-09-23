@@ -109,8 +109,14 @@ Recorded verbatim in substance; the operator's words are in FINDINGS-style quote
   band lines only where the row publishes both limits, no shading; the
   Readiness scatter lost its shaded zones too). Sentry g_chartlines.
 - R4: spec written, R4_AGGRESSIVENESS_SPEC.md (171ec9c4). WP1 (long-tool
-  de-rate visible) and WP2a (floor warns, never lifts) run tonight; WP3
-  (dial + 0.75 removal) waits for the operator's look at §2 and §5.
+  de-rate visible: `FeedsWarning::LongToolDerate`, `feeds.long_tool_derate`)
+  and WP2a (floor warns, never lifts: `ChiploadBelowRubbingFloor`,
+  `feeds.chipload_below_floor`; the literature-matrix invariant follows the
+  ruling) LANDED 7af7d76b. WP2b (delete the lift's explainer types) not
+  taken. WP3 (dial + 0.75 removal) waits for the operator's look at §2 and
+  §5. Fixture casualties re-blessed inside 7af7d76b: a5 (measured un-lifted
+  feeds), a7 (synthetic sub-floor row), p1, the Ipe litmatrix cell, chip_ulp,
+  g_t18 lift arms retired, whyrow and up4 floor fixtures, chipverdict in_band.
 - Fixture casualties of R5/R3 found and re-blessed tonight: a8 retarget
   (a579a9a9), up4 width fixture + chipverdict cells (cdecab2b), pills
   feed-floor arm (0aeb3c82), t12_t15 pass-role arm (e7dcf475), wanaka

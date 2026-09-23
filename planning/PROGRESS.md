@@ -49,8 +49,8 @@ d8d8b0c7, aef54c83), R1 in both halves: Suggest refuses what the registry tool r
 (0007528f, 2d786d0c) and refuses a formula-only wood cell FORMULA_BACKING_v2 calls CLUELESS
 (94b80b24, 15b98aaa; the add doors still create the operation, without a recipe). Matrix on
 15b98aaa: 498 of 960 ship, 462 refuse (192 tool rule + 270 CLUELESS). R2 smaller step LANDED 1ff9344a (no finish depth ceiling; one tapered engaged diameter; depth
-diagnostics ids). Chart display LANDED 5199e06e. R4: spec 171ec9c4; WP1/WP2a in progress; WP3
-(dial + 0.75 removal) waits for the operator. Visible: flat-end pocket and adaptive cells at 1/8 in, 6 mm and 1/4 in read
+diagnostics ids). Chart display LANDED 5199e06e. R4: spec 171ec9c4; WP1 + WP2a LANDED 7af7d76b (floor warns, never lifts;
+long-tool de-rate visible); WP3 (dial + 0.75 removal) waits for the operator. Visible: flat-end pocket and adaptive cells at 1/8 in, 6 mm and 1/4 in read
 a single printed value, so no band and a silent burn gate there. Not pushed.
 
 ## Simulation cut metrics — 2026-09-23 night (packages A–E landed; F in progress)
@@ -61,12 +61,15 @@ a single printed value, so no band and a silent burn gate there. Not pushed.
 `g_cutcards`). §7 answers assumed (lines not shading; share of cutting time; one drawer
 route; five metrics). Not seen on screen. Residual too-wide rows are ignored instrument arms.
 
-## Viewport interaction redesign — 2026-09-23 night (phases 1–2 landed; 3–4 in progress)
+## Viewport interaction redesign — 2026-09-23/24 night (phases 1–4 landed; mockups NOT operator-reviewed)
 
 `planning/viewport_interaction_redesign/`: PHASE1_INVENTORY.md + MOCKUPS.md 171ec9c4 (NOT
 operator-reviewed), phase 2 dock + catalogue 2594fec7 (`g_vpdock`; `Shift+O` retired; the
-three strip commands rebuilt in the dock). Phase 3 (Computing / Stale / Failed states,
-Compute-rest confirm) and phase 4 (legend audit, measured widths) follow tonight.
+three strip commands rebuilt in the dock), phases 3–4 4eb46da8 (`g_vpstate`: seven live row
+states, async intent protection, Compute vs Compute & show, Compute-rest confirm "may", real
+legends incl. rest p95). Open: Q4 inspector reach checkbox bypasses `set_overlay`, Q5 deviation
+render substitution in `app/gpu_upload.rs`; three legend colour sets mirrored from render
+literals (move them into `render/colors.rs`). Not seen on screen.
 
 ## Generate ↔ simulate ↔ rest — 2026-09-18/19 (COMPLETE; MCP path and every indicator seen on screen, the GUI Auto click and the confirm modal not yet)
 

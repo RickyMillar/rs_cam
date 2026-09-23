@@ -350,7 +350,7 @@ pub struct SetUiViewParam {
     pub modal: Option<String>,
     /// Viewport overlays to switch on or off, as `{"<id>": true|false}`.
     ///
-    /// The ids are the rows of the GUI's Overlays panel — the same list the
+    /// The ids are the rows of the GUI's viewport catalogue (All viewport options) — the same list the
     /// panel renders, so anything the operator can switch, an agent can:
     /// `grid`, `model`, `stock_box`, `stock_solid`, `origin_axes`, `datum`,
     /// `fixtures`, `keep_outs`, `alignment_pins`, `flip_axis`, `curves`,
