@@ -85,21 +85,53 @@ use super::space::SearchSpace;
 /// candidate verdict is measured at.
 const CELL_MM: f64 = 0.5;
 
-/// Ø6.35 flat end mill, 2 flutes — `ToolConfig::new_default`'s end mill.
-const TOOL_DIAMETER_MM: f64 = 6.35;
-/// Single-pass axial depth. Chosen so `doc / diameter ≈ 3.1`, i.e. past the
+/// Ø6.0 flat end mill, 2 flutes — `ToolConfig::new_default`'s end mill at
+/// 6.0 mm.
+///
+/// Feeds matrix R5 (2026-09-23) re-bless. The fixture used Ø6.35 until
+/// R5. At Ø6.35 the hard-maple pocket query now ties at score 1825
+/// between `amana-compression-wood-pocket-6350-2f` and
+/// `amana-flat-hardwood-pocket-6350-2f-spektra`, and the tie-break picks
+/// the compression row. That row is a single-point preset (0.0787 min ==
+/// 0.0787 max). The high-side target `max / 1.2` is then below the band
+/// minimum, so the retargeter returns
+/// `Refused(ChiploadBandNarrowerThanHeadroom)` and never fires.
+///
+/// At Ø6.0 the query resolves to `amana-flat-hardwood-pocket-6000-2f-spektra`
+/// (score 1825, next 1808): max 0.127 mm/tooth, no published min, row
+/// diameter 6.0, row Janka 1450. The diameter and hardness scales are both
+/// 1.0, so the row max is 0.127 exactly. A row with no min has no low side,
+/// so `bounds.contains(max / 1.2)` is true and the retargeter fires.
+const TOOL_DIAMETER_MM: f64 = 6.0;
+/// The feed the control arm retargets to, from the arithmetic, not a
+/// measurement:
+///
+/// * baseline advance per tooth = 12 000 / (18 000 × 2) = 0.33333 mm/tooth;
+/// * target = 0.127 / 1.2 = 0.105833 mm/tooth (the derate is 1.0 at
+///   `DOC/Ø = 0.5`);
+/// * feed = 12 000 × 0.105833 / 0.33333 = 3810.0 mm/min.
+///
+/// A-8 measured 1708.1 mm/min on the old row
+/// (`amana-flat-hardwood-pocket-6000-2f`, max 0.055 × (6.35/6.0)^0.61 =
+/// 0.056935; 36 000 × 0.056935 / 1.2 = 1708.06). That match proves that the
+/// observed peak IS the commanded advance per tooth, so the same arithmetic
+/// gives 3810.0 on the new row.
+const CONTROL_RETARGET_FEED_MM_MIN: f64 = 3810.0;
+/// Single-pass axial depth. Chosen so `doc / diameter = 20 / 6 ≈ 3.33`, i.e. past the
 /// knee where `geometry::doc_derating_scale` bottoms out at 0.50 — the
 /// regime where the gate's ceiling and the retargeter's target are furthest
 /// apart. Any value above ~1.67 × diameter reproduces the finding; this one
 /// makes the size of it unmistakable.
 const DEEP_DEPTH_MM: f64 = 20.0;
-/// Control depth. `3.0 / 6.35 = 0.47 < 1`, so `doc_derating_scale` returns
+/// Control depth. `3.0 / 6.0 = 0.5 < 1`, so `doc_derating_scale` returns
 /// 1.0 and the gate's ceiling IS the matched row's maximum. The retarget
 /// reconciles here, which is what makes the deep arm's failure attributable
 /// to the derate and nothing else.
 const SHALLOW_DEPTH_MM: f64 = 3.0;
 /// Commanded feed. With the fixture's 18 000 rpm × 2 flutes this is an
-/// advance of 0.3333 mm/tooth, comfortably above any Ø6 hardwood pocket
+/// advance of 0.3333 mm/tooth, comfortably above the Ø6 hardwood pocket
+/// row max of 0.127 mm/tooth (2.6× over it at 1 × D, 5.2× over the 0.0635
+/// derated ceiling past 3 × D) and above any other Ø6 hardwood pocket
 /// band, so the HIGH side trips genuinely rather than by contrivance.
 ///
 /// The high side matters: **F-MISSAE** demotes the low (burn) side to an
@@ -538,7 +570,8 @@ fn a_retarget_reconciles_while_the_doc_derate_is_inactive() {
 
     // P-(1a) control: with the derate inactive the two bands coincide, so the
     // change of band source is a no-op here. Feed measured unchanged at
-    // 1708.1 mm/min across the ruling.
+    // 1708.1 mm/min across the ruling on the pre-R5 row; on the R5 row the
+    // same arithmetic gives CONTROL_RETARGET_FEED_MM_MIN.
     assert!(
         (shallow.retarget_target - shallow.pre_p1a_target).abs() < 1e-12,
         "CONTROL: P-(1a) must be a no-op below the knee; new target {:.6} vs \
@@ -547,9 +580,9 @@ fn a_retarget_reconciles_while_the_doc_derate_is_inactive() {
         shallow.pre_p1a_target
     );
     assert!(
-        (shallow.retargeted_feed - 1708.1).abs() < 1.0,
-        "CONTROL: the control arm's feed is unchanged across P-(1a) \
-         (A-8 measured 1708.1 mm/min); got {:.1}",
+        (shallow.retargeted_feed - CONTROL_RETARGET_FEED_MM_MIN).abs() < 1.0,
+        "CONTROL: the control arm's feed is 12 000 x (0.127 / 1.2) / 0.33333 \
+         = {CONTROL_RETARGET_FEED_MM_MIN:.1} mm/min; got {:.1}",
         shallow.retargeted_feed
     );
 
@@ -584,7 +617,8 @@ fn a_retarget_reconciles_while_the_doc_derate_is_inactive() {
 /// when the ruling landed it must be inverted deliberately with the old and
 /// new numbers recorded. This is that inversion. Measured on this fixture
 /// (Ø6.35 flat 2F, hard maple, 20 mm single pass, `DOC/Ø = 3.15`, cell
-/// 0.5 mm, row `amana-flat-hardwood-pocket-6000-2f`):
+/// 0.5 mm, row `amana-flat-hardwood-pocket-6000-2f`). These are the A-8
+/// numbers; the R5 re-bless below moves the fixture but not the claim:
 ///
 /// | quantity | before P-(1a) | after P-(1a) |
 /// |---|---|---|
@@ -614,6 +648,18 @@ fn a_retarget_reconciles_while_the_doc_derate_is_inactive() {
 /// **The control arm is what makes this attributable**: it did not move (the
 /// derate is inactive there, so the two bands were already the same number),
 /// which rules out a clamp, a stale trace or a population artifact.
+///
+/// # Feeds matrix R5 re-bless (2026-09-23)
+///
+/// The fixture is now Ø6.0 flat 2F on hard maple, row
+/// `amana-flat-hardwood-pocket-6000-2f-spektra` (max 0.127, no min), see
+/// [`TOOL_DIAMETER_MM`]. At 20 mm, `DOC/Ø = 3.33`, so the derate is 0.50:
+///
+/// * gate ceiling = 0.127 × 0.50 = 0.0635 mm/tooth;
+/// * target = 0.0635 / 1.2 = 0.052917 mm/tooth (0.8333× the ceiling);
+/// * pre-P-(1a) target = 0.127 / 1.2 = 0.105833 (1.6667× the ceiling);
+/// * retargeted feed = 12 000 × 0.052917 / 0.33333 = 1905.0 mm/min;
+/// * reconstructed pre-P-(1a) feed = 1905.0 / 0.50 = 3810.0 mm/min.
 #[test]
 fn a_retarget_reconciles_once_it_reads_the_derated_band() {
     let deep = measure_retarget_round(DEEP_DEPTH_MM);
@@ -659,14 +705,16 @@ fn a_retarget_reconciles_once_it_reads_the_derated_band() {
 
     // The feed drops by exactly the derate. The retarget multiplier is
     // `target / observed_peak` and only the numerator moved, so the feed this
-    // arm emits is `derate` times the one A-8 measured: 1708.1 -> 854.1.
+    // arm emits is `derate` times the control feed: 3810.0 -> 1905.0 on the
+    // R5 row (A-8 measured 1708.1 -> 854.1 on the pre-R5 row).
     // This is the "retargeted feeds drop up to 2x" the ruling anticipated,
     // measured rather than asserted.
     let pre_p1a_feed = deep.retargeted_feed / derate;
     assert!(
-        (pre_p1a_feed - 1708.1).abs() < 1.0,
-        "the reconstructed pre-P-(1a) feed must match A-8's measured 1708.1 \
-         mm/min or the arms are not comparable; got {pre_p1a_feed:.1} from \
+        (pre_p1a_feed - CONTROL_RETARGET_FEED_MM_MIN).abs() < 1.0,
+        "the reconstructed pre-P-(1a) feed must match the control arm's \
+         {CONTROL_RETARGET_FEED_MM_MIN:.1} mm/min or the arms are not \
+         comparable; got {pre_p1a_feed:.1} from \
          retargeted {:.1} / derate {derate:.4}",
         deep.retargeted_feed
     );
@@ -675,7 +723,7 @@ fn a_retarget_reconciles_once_it_reads_the_derated_band() {
         !deep.reconciled_is_exceeds,
         "P-(1a) INVERSION: the retarget must now reconcile to Within. \
          baseline feed {:.1} -> retargeted {:.1}, observed {:.5}, ceiling \
-         {:.5} (was Exceeds at 1708.1 mm/min before P-(1a))",
+         {:.5} (was Exceeds at the undivided row target before P-(1a))",
         deep.baseline_feed, deep.retargeted_feed, deep.reconciled_observed, deep.gate_ceiling
     );
 }
