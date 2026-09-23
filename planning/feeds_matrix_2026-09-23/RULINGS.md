@@ -117,6 +117,14 @@ Recorded verbatim in substance; the operator's words are in FINDINGS-style quote
   §5. Fixture casualties re-blessed inside 7af7d76b: a5 (measured un-lifted
   feeds), a7 (synthetic sub-floor row), p1, the Ipe litmatrix cell, chip_ulp,
   g_t18 lift arms retired, whyrow and up4 floor fixtures, chipverdict in_band.
+- Gap found by the whole core lib run (2026-09-24): the strategy advisor
+  keeps a band gate (`session/compute.rs::optimized_candidate`), so on the
+  6 mm flat-end pocket and adaptive cells that now resolve one-value Spektra
+  rows it does not optimise and times the raw path, while the simulation
+  pass modulates those cells bandless (251a5669). The advisor test pins the
+  gap and modulates on an aluminium two-limit row instead. Options: give
+  the advisor the bandless path, or author a derived band around the
+  printed value with a named rule (the R5 follow-up above).
 - Fixture casualties of R5/R3 found and re-blessed tonight: a8 retarget
   (a579a9a9), up4 width fixture + chipverdict cells (cdecab2b), pills
   feed-floor arm (0aeb3c82), t12_t15 pass-role arm (e7dcf475), wanaka

@@ -1699,7 +1699,7 @@ fn cut_move_feed(m: &crate::toolpath::Move) -> Option<f64> {
 /// reverted to timing raw paths this test fails: feeds would be untouched.
 #[test]
 fn advisor_modulates_candidate_feeds_before_timing() {
-    let session = terrain_adaptive3d_session(ClearingStrategy::ContourSpiral);
+    let mut session = terrain_adaptive3d_session(ClearingStrategy::ContourSpiral);
     let cancel = AtomicBool::new(false);
     let resolved = session
         .resolve_generation_inputs(0, &cancel)
@@ -1738,6 +1738,48 @@ fn advisor_modulates_candidate_feeds_before_timing() {
 
     // WP14a moved the optimizer behind the captured `AdvisorContext`, so
     // the test reads the same context the job's step (ii) reads.
+    // The advisor keeps its band gate: a candidate with no two-limit
+    // chipload band is not load-optimisable, and the advisor times the raw
+    // path. Since R5 (2026-09-23) the 6 mm flat-end adaptive cells in the
+    // four woods resolve the printed Amana Spektra rows, which publish one
+    // value (a maximum, no minimum), so the fixture's softwood stock gives
+    // no band. That is a product gap, recorded in the feeds-matrix
+    // rulings (the simulation modulates those cells bandless; the advisor
+    // does not optimise them). This arm pins the gap so a fix shows here.
+    let handle = session
+        .capture_recommend_clearing_strategy(0, &cancel)
+        .expect("capture the advisor job for the adaptive3d op");
+    assert!(
+        optimized_candidate(
+            &handle.context,
+            &annotated_arc,
+            &resolved.tool,
+            &resolved.operation,
+            &cancel,
+        )
+        .is_none(),
+        "the softwood 6 mm adaptive cell resolves a one-value Spektra row; the advisor \
+         must not invent a band there (if this fires, the advisor gained a bandless \
+         path or the row gained a minimum: update the rulings note)"
+    );
+
+    // Aluminium 6061 resolves `amana-flat-aluminum-adaptive-6000-3f`
+    // (0.018–0.035 mm/tooth, both limits printed), so the advisor has a
+    // band and modulates. The material is not one the R1 judgement covers,
+    // so nothing refuses the cell.
+    {
+        let mut stock = session.stock_config().clone();
+        stock.material = crate::material::Material::Aluminum {
+            alloy: crate::material::AluminumAlloy::Alloy6061T6,
+        };
+        let _effects = session
+            .apply(crate::session::Command::SetStockConfig(
+                crate::session::SetStockConfigArgs {
+                    stock: Box::new(stock),
+                },
+            ))
+            .expect("set the aluminium stock");
+    }
     let handle = session
         .capture_recommend_clearing_strategy(0, &cancel)
         .expect("capture the advisor job for the adaptive3d op");
@@ -1748,7 +1790,7 @@ fn advisor_modulates_candidate_feeds_before_timing() {
         &resolved.operation,
         &cancel,
     )
-    .expect("advisor optimizes the candidate (effective_kinematics is always Some)");
+    .expect("advisor optimizes the candidate on a two-limit band");
 
     // Geometry is untouched; only feeds change.
     assert_eq!(
