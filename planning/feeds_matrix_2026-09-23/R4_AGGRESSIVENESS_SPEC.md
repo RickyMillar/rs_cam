@@ -527,6 +527,8 @@ and the named sentries only. No full heavy gate (operator ruling
 
 ### WP2. The rubbing floor warns and does not lift (SAFE TONIGHT)
 
+Status: WP2a LANDED 7af7d76b; WP2b LANDED 63d7a5cd.
+
 - **Numbers:** the 80 floor cells drop (3.6). Nothing rises.
 - **WP2a files:** `crates/rs_cam_core/src/feeds/mod.rs` (Step 9b: keep the
   test, drop the lift; rename the warning); `feeds/suggest/adaptive_entry.rs`

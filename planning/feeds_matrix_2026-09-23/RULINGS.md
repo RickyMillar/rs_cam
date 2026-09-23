@@ -124,8 +124,9 @@ On R4_AGGRESSIVENESS_SPEC.md §5, in the spec's numbering:
 - Hover-only records for the ten number-moving warnings: fine as they are.
 - "Above the base" wording: one string (orchestrator's recommendation: the
   panel uses core's `AGGRESSIVENESS_ABOVE_BASE_TEXT`).
-- WP2b lands now (orchestrator's recommendation); WP5 folds into the
-  extrapolation programme (the remaining feed scales are the same
+- WP2b LANDED 63d7a5cd (orchestrator's recommendation): the lift explainer types
+  and the (c2) gate arm are gone; one "above the base" text. WP5 folds into
+  the extrapolation programme (the remaining feed scales are the same
   question).
 
 ## Landed under the third and fourth rounds, 2026-09-24

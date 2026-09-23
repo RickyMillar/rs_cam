@@ -59,7 +59,8 @@ d8d8b0c7, aef54c83), R1 in both halves: Suggest refuses what the registry tool r
 15b98aaa: 498 of 960 ship, 462 refuse (192 tool rule + 270 CLUELESS). R2 smaller step LANDED 1ff9344a (no finish depth ceiling; one tapered engaged diameter; depth
 diagnostics ids). Chart display LANDED 5199e06e. R4: spec 171ec9c4; WP1 + WP2a 7af7d76b; Q9 06c75ed5; Q6 c8b6b358; WP3 the dial LANDED
 87027060 + dcb53a47 (0.75 gone, `aggressiveness` 0.85, size rule, composite lookup categories);
-Q10 f82c1e70 + 674dbe73 (RPM follows the feed ceiling); open Q8, the size-law phase. Visible: flat-end pocket and adaptive cells at 1/8 in, 6 mm and 1/4 in read
+Q10 f82c1e70 + 674dbe73; Q8 b5675591; WP2b 63d7a5cd. R4 is CLOSED except WP5, which folds into the
+extrapolation programme. Visible: flat-end pocket and adaptive cells at 1/8 in, 6 mm and 1/4 in read
 a single printed value, so no band and a silent burn gate there. Not pushed.
 
 ## Simulation cut metrics — 2026-09-23 night (packages A–E landed; F in progress)
