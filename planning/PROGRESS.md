@@ -45,10 +45,14 @@ by a second fetch), RULINGS.md (the five rulings and what landed), DERATE_CHAIN_
 FORMULA_BACKING.md, the FM1 matrix outputs. Landed: `FeedsSupport` per cell (1784881d),
 the FM1 instrument (15f751c0), the printed vendor rows and re-graded seed rows (R5,
 3885cbf..bab9a236, 827f383e), one published depth de-rate for the feed and the band (R3,
-d8d8b0c7, aef54c83). Open: R1 evidence-backed refusals (re-judge after R5), R2 (finish
-depth criterion), R4 (which reductions may scale). Visible: flat-end pocket and adaptive
-cells at 1/8 in, 6 mm and 1/4 in now read a single printed value, so no band and a silent
-burn gate there. Not pushed.
+d8d8b0c7, aef54c83), R1 in both halves: Suggest refuses what the registry tool rule refuses
+(0007528f, 2d786d0c) and refuses a formula-only wood cell FORMULA_BACKING_v2 calls CLUELESS
+(94b80b24, 15b98aaa; the add doors still create the operation, without a recipe). Matrix on
+15b98aaa: 498 of 960 ship, 462 refuse (192 tool rule + 270 CLUELESS). Open: R2 (finish
+depth criterion, smaller step), R4 (aggressiveness-dial spec; hidden 0.75 factor; explicit
+long-tool de-rate; floor as a warning), chart display (one line, faint band lines only where
+a band exists). Visible: flat-end pocket and adaptive cells at 1/8 in, 6 mm and 1/4 in read
+a single printed value, so no band and a silent burn gate there. Not pushed.
 
 ## Generate ↔ simulate ↔ rest — 2026-09-18/19 (COMPLETE; MCP path and every indicator seen on screen, the GUI Auto click and the confirm modal not yet)
 

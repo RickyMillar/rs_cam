@@ -36,5 +36,6 @@ Run one with `cargo test -p rs_cam_core -q --test <name>`: `lut_resolver_census_
 (the feed quantisation rounds DOWN), `a_rescaled_feed_stays_inside_the_power_ceiling_g_t15` (pass 10
 re-checks power at the shipped point), `a_published_power_is_at_the_depth_that_cuts_g_s2` (the power door
 reads the final depth), `every_cell_declares_its_feeds_support_fm0` (every cell has a support arm), `one_depth_derate_for_feed_and_band_fm3`
-(feed and band read one depth scale). `feeds_matrix_instrument_fm1` is an `#[ignore]` instrument (`-- --ignored`);
+(feed and band read one depth scale), `suggest_refuses_what_the_registry_refuses_fm4` (the tool rule), `clueless_cells_refuse_and_backed_cells_ship_fm5`
+(`support::formula_backing` is the R1 judgement). `feeds_matrix_instrument_fm1` is an `#[ignore]` instrument (`-- --ignored`);
 it writes planning/feeds_matrix_2026-09-23/. `wanaka_suggest_integration` takes minutes: ask first.

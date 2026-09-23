@@ -85,7 +85,19 @@ Recorded verbatim in substance; the operator's words are in FINDINGS-style quote
   192 cells refuse today under the registry rule; 352 are formula-only, 82 of
   them BACKED and 270 CLUELESS; encoding the CLUELESS set would refuse 462 of
   960 cells.
-- R2, R4: no change.
+- R1, evidence part: LANDED 94b80b24 (core), 15b98aaa (doors), 19e98315
+  (matrix re-run). `feeds::support::formula_backing` encodes
+  FORMULA_BACKING_v2 for the four judged woods; `feeds_support` refuses a
+  no-row CLUELESS cell and `validate_tool_for_operation` raises
+  `FeedsError::Unbacked` with the judgement's reason. A material the
+  judgement did not cover keeps the formula. The GUI and MCP add doors add
+  the operation with `suggest::default_operation` and no recipe, and carry
+  the refusal (one Warning toast; the MCP reply text and `feeds_refusal`).
+  Matrix: 498 ship (416 vendor-backed, 82 formula-only BACKED), 462 refuse
+  (192 tool rule + 270 CLUELESS), as §3 of FORMULA_BACKING_v2 predicted.
+  Sentries FM0 (re-blessed), FM4, FM5 (core and viz). The 270 CLUELESS cells
+  are the targets: each `Clueless { reason }` names the missing chart.
+- R2, R4: no change (specs next).
 
 ## The three findings that change the frame
 
