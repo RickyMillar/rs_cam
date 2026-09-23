@@ -408,3 +408,57 @@ Run the test. Take these four precautions:
 To improve the V-bit margin before cutting, lower that operation's feed to
 about 900 mm/min. That reduces the descent rate by 22 % and costs about four
 minutes.
+
+## Addendum 3 — 2026-09-19: defect 2 verified by simulation; both defects fixed
+
+Re-simulated the two enabled paths (0.2 mm cell) before any code change:
+
+- TP 19 (Project Curve 7, 20° V-bit): `project.plunge_class_load`
+  **critical** — move 3700 at (100.5, 63.1, 17.40) descends at
+  1165 mm/min against the op's own 400 mm/min plunge rate (2.9x).
+  Simulation-verified, confirming the static analysis above.
+- TP 17 (Scallop Finish 10): `project.crosses_standing_material`
+  caution — 27.9% of samples remove > 1.39 mm vs a 0.46 mm median
+  bite, peaking at 7.44 mm. Cause is project state, not code: Back
+  Rough (index 1) is disabled, so the finish cuts standing material.
+  Also: triage flags `cell_too_coarse_for_tip_contact` on TP 17's
+  radial/air/chip engagement (cell 0.2 mm vs the 1.0 mm tip, blind
+  fraction 0.162).
+
+Root cause of the critical, pinned in code: `apply_adaptive_feed_modulation`
+(`session/compute/simulation.rs`) skipped every toolpath without a LUT
+chipload band, and the geometric Phase 3 plunge guard lives inside the
+modulator — so a bandless op (V-bit ProjectCurve, no vendor rows) could
+never reach it. Both defects compound into the one emitted move.
+
+Fix (work item A of `IMPLEMENTATION_PLAN.md`, same day):
+`ModulationContext::chipload_band` is now `Option`; a bandless run applies
+no chipload targeting but still binds the machine cutting ceiling and the
+geometric plunge guard, through the same shared modulate path the strategy
+advisor uses. New sentry `plunge_guard_bandless_p3`; `plunge_guard_p3`,
+`dressup_span_invariants`, `constrained_max_modulation_f039`,
+`lead_in_out_feed_rates_f040`, `modulation_reads_the_depth_in_mm_g_axialunits`
+and the `dressup::`/`feeds::` lib sets all pass; clippy `-D warnings` clean.
+The banded arm is pinned byte-identical by the new sentry's regression arm.
+
+Acceptance left to run once the GUI binary is rebuilt: re-sim TP 17 + TP 19
+at 0.2 mm and confirm `project.plunge_class_load` is gone from TP 19 and
+that TP 19 now carries a bandless modulation summary.
+
+## Addendum 4 — 2026-09-19: plunge-fix ACCEPTED on re-sim
+
+Re-simulated at 0.2 mm with the rebuilt binary, three enabled paths
+(3D Rough 8 id 20 added by the operator ahead of the finish):
+
+- TP 19: `project.plunge_class_load` **gone**. Plunge instrument reads
+  peak_ratio 1.0, worst achieved Z rate 400 mm/min (== the op plunge
+  rate), 0 moves over 1x/2x. Bandless modulation summary present:
+  3460 moves, 1 touched (the descent cap), bindings machine_max_feed
+  99.97% / plunge_rate 0.03%.
+- TP 17: banded modulation unchanged in shape (149,844/159,767 moves
+  touched, median delta −27.4%, bindings chipload_max 85%); plunge
+  population 698, worst achieved 300 mm/min, 0 over 1x.
+- Crosses-standing-material caution on TP 17 improved by the new
+  rough: 12.5% of samples > 1.13 mm, peak 3.50 mm (was 27.9%, 7.44).
+  Still present — geometrically the 6 mm flat rough cannot reach the
+  tight valleys the R1.0 tip must finish.

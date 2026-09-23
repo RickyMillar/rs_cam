@@ -24,8 +24,19 @@ one bad multiplier, not from many small ones.
 ### H1 — the vendor LUT row is wrong or misread
 Row `amana-tapered-hardwood-scallop-3175-2f`, maximum 0.0187 mm/tooth.
 
-Test: find the source of that row. Compare the stored value against what Amana
-publishes for that tool. `CREDITS.md` names the dataset origins.
+**Amendment (2026-09-19, verified):** 0.0187 is the POST-DERATE maximum.
+The raw row in
+`crates/rs_cam_core/data/vendor_lut/observations/amana_3d_profiling.json`
+publishes **0.012–0.024 mm/tooth** (Ø3.175, 2F tapered ball, scallop /
+semi-finish, Janka 1450, evidence grade A, source URL + access date).
+So the comparison target is **0.024**, not 0.0187 — and the gap
+pre-derates is only 1.16x against the most conservative chart
+(0.0279). The derating chain (H2) and the band-as-limit clamp (H4)
+account for the rest of the 1.5–7x. The test is still "compare the
+stored row against what Amana publishes", but against the raw band.
+
+Test: fetch the Amana ZrN 3D Profiling chart PDF and compare the
+stored row against it. `CREDITS.md` names the dataset origins.
 
 This is the first test because the modulator clamps to this row. Every other
 hypothesis is downstream of it.
@@ -38,14 +49,22 @@ derate. Each is small. The product may not be.
 Test: instrument one lookup. Print the value after every stage from the raw row
 to the shipped band. Name the stage with the largest single drop.
 
-### H3 — the 0.025 mm chip-formation floor has no source
+### H3 — the 0.025 mm chip-formation floor may not hold
 No vendor publishes a minimum chip thickness for wood. The only published
 rubbing threshold found anywhere is Ingersoll's 0.004 in for carbide in METAL,
 which is above the entire published wood band for a 1/8 in bit.
 
-Test: find where 0.025 entered the code and what it cites. If it cites nothing,
-the burnishing warning fires on an unsourced number, and the warning is what
-drove this whole review.
+**Amendment (2026-09-19):** the constant DOES carry named citations in code —
+`feeds/mod.rs:937` cites "Onsrud min-chip-thickness rule, GWizard minimum
+chipload, FPL Wood Handbook chip-formation regime", and the floor was
+already subordinated to band ceilings by `effective_rubbing_floor` (ruled
+2026-08-06, FEEDS_CENSUS C-12). The test is therefore **verify those three
+citations are real sources that say what the doc claims**, not "find where
+it entered". If none holds, the burnishing warning fires on an unsourced
+number, and the warning is what drove this whole review.
+
+Test: verify each citation. If it cites nothing that holds, the warning is
+unsourced.
 
 ### H4 — the modulator treats a band MAXIMUM as a LIMIT
 A vendor band is a recommended range. The modulator clamps the feed to the top
@@ -55,19 +74,36 @@ same value a commanded 782 mm/min delivered. The operator has no lever.
 Test: read the clamp site. Decide whether a band maximum should bind a feed at
 all, or only raise a diagnostic.
 
-### H5 — the LUT keys on diameter and material but not on tool series
+### H5 — the LUT has no coverage for most tool series
 Onsrud's own numbers vary by 2x at one diameter and one material: series 40-000
 reads .006 - .008 in/tooth against series 52-200's .003 - .005. A single
 chipload per diameter and material cannot describe the published data.
 
-Test: check what the row key holds. If series is absent, the LUT cannot be
-right for every tool at a diameter, and the error bar belongs in the band.
+**Amendment (2026-09-19):** the SCHEMA supports series — `LookupQuery`
+carries `tool_subfamily` and the lookup scores it (`vendor_lut.rs:531`), and
+rows are per-series observations with evidence grades. The hypothesis as
+originally written ("the LUT keys on diameter and material but not on tool
+series") is FALSE. The real weakness is **coverage sparsity**: only 4 Onsrud
+rows ship, so most tools at a diameter resolve to a row from a different
+series, and the error bar belongs in the band.
+
+Test: measure the coverage — for each shipped LUT family/diameter, how many
+distinct series exist in the published charts vs in the LUT. Quantify how far
+a typical query's matched row is from its own series. Coverage, not schema.
 
 ### H6 — the chip-thinning correction is metal practice
 No wood tooling vendor recommends a feed increase for chip thinning. Every
 source is metalworking. DAPRA's published tables reproduce both formulas used
 in `FINDINGS.md` exactly, so the FORMULAS are right. Their application to wood
 is unvalidated.
+
+**Amendment (2026-09-19):** the 2026-08-19 G-CHIPTHIN-HALFFIX ruling already
+deleted the chip-thinning MULTIPLICATION from Suggest and the gate
+("OBSERVED, NOT APPLIED", `feeds/mod.rs:551+`). The correction survived in
+ONE place: `dressup/feed_modulation.rs` still divides its BandMid target by
+`sqrt(radial_woc_fraction)` (the `band_mid_feed_for_move` thinning term). There
+are therefore **two chip-thinning policies alive in the repo**, and this
+hypothesis should be scoped to that residue plus the literature question.
 
 Test: literature only. Look for wood-machining work on chip thinning. Record
 the absence if there is one. Do not remove the correction on no evidence.
@@ -87,10 +123,16 @@ or whether the absence should be louder than a caution.
    carries a `modulation_summary`; toolpath 19 carries none. A 73 degree
    descent therefore runs at the full lateral feed and emits 1165 mm/min of
    vertical motion onto a 20 degree V point. Severity critical.
+   **Status (2026-09-19): FIXED** — bandless modulation path, see
+   `IMPLEMENTATION_PLAN.md` work item A and FINDINGS.md addendum 3.
+   Acceptance re-sim pending the GUI rebuild/restart.
 2. **A plunge rate cap exists for a small ball tip (300 mm/min) but no
    equivalent cap governs an untagged steep descent.** The cap guards the
    motion the planner labels a plunge and ignores the motion that behaves like
    one.
+   **Status (2026-09-19): SAME FIX** — the geometric Phase 3 guard now
+   runs for bandless ops; both defects shared the one root cause
+   (the guard was unreachable without a vendor band).
 
 ## Order of work
 
