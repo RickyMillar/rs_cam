@@ -10,7 +10,7 @@
 
 use crate::geometry::arc_util::linearize_arc;
 use crate::stock::stock_mesh::StockMesh;
-use crate::toolpath::{MoveType, Toolpath};
+use crate::toolpath::{MoveIntent, MoveType, Toolpath};
 
 /// Replace `mesh`'s vertex colours with a height-gradient colormap
 /// (blue → green → red) taken from the vertex Z positions. Easier to read
@@ -87,6 +87,23 @@ const SPAN_LEADOUT_COLOR: [f32; 3] = [0.95, 0.35, 0.85];
 const SPAN_LINK_BRIDGE_COLOR: [f32; 3] = [0.55, 0.55, 0.6];
 const SPAN_DRESSUP_COLOR: [f32; 3] = [0.65, 0.55, 0.4];
 
+/// Whether a move belongs in the ribbon under the requested visibility mode.
+///
+/// The cuts-only view is intentionally semantic: legacy untagged cutting
+/// moves remain visible, while tagged entry, linking, retract, and lead moves
+/// do not stand in for material removal.
+fn should_render_move(move_type: MoveType, intent: MoveIntent, include_rapids: bool) -> bool {
+    include_rapids
+        || (move_type.is_cutting()
+            && matches!(
+                intent,
+                MoveIntent::Drilling
+                    | MoveIntent::ClearingCut
+                    | MoveIntent::FinishingCut
+                    | MoveIntent::Unknown
+            ))
+}
+
 /// Per-pass lightness shift applied to [`CUT_COLOR`] from a
 /// [`crate::trace::toolpath_spans::SpanKind::DepthPass`] `pass_index`.
 ///
@@ -111,8 +128,9 @@ fn pass_shifted(base: [f32; 3], pass_index: Option<u32>) -> [f32; 3] {
 /// by [`crate::trace::toolpath_spans::AnnotatedToolpath::classify_span_path`] —
 /// Entry → cyan, LeadOut → magenta, LinkBridge → dim grey, DressupArtifact →
 /// muted brown, ordinary cuts green with a per-depth-pass lightness shift.
-/// Rapids stay orange-red. Falls through to the move-color path if the
-/// toolpath carries no spans.
+/// Rapids stay orange-red. With `include_rapids = false`, only material-removal
+/// intents (and legacy `Unknown` cutting moves) are rendered. Falls through to
+/// the move-color path if the toolpath carries no spans.
 ///
 /// The classification decision itself lives in core and is shared verbatim
 /// with the live GUI viewport. It used to be duplicated here with the walk
@@ -172,10 +190,10 @@ pub fn toolpath_to_tube_mesh_with_spans(
         let Some(from) = prev else { continue };
         prev = Some(mv.target);
 
-        let is_cutting = mv.move_type.is_cutting();
-        if !is_cutting && !include_rapids {
+        if !should_render_move(mv.move_type, mv.intent, include_rapids) {
             continue;
         }
+        let is_cutting = mv.move_type.is_cutting();
 
         let color = if is_cutting {
             span_color(m_idx)
@@ -206,7 +224,7 @@ pub fn toolpath_to_tube_mesh_with_spans(
 /// Convert a toolpath into a tube mesh for software rasterization.
 ///
 /// Each line segment becomes a thin rectangular prism visible from any angle.
-/// Cutting moves are green, rapids are orange-red.
+/// Material-removal moves are green, rapids are orange-red when included.
 /// `ribbon_radius` controls half-width of each tube in model units (mm).
 pub fn toolpath_to_tube_mesh(
     toolpath: &Toolpath,
@@ -234,10 +252,10 @@ pub fn toolpath_to_tube_mesh(
         let Some(from) = prev else { continue };
         prev = Some(mv.target);
 
-        let is_cutting = mv.move_type.is_cutting();
-        if !is_cutting && !include_rapids {
+        if !should_render_move(mv.move_type, mv.intent, include_rapids) {
             continue;
         }
+        let is_cutting = mv.move_type.is_cutting();
 
         let color = if is_cutting { CUT_COLOR } else { RAPID_COLOR };
 
@@ -377,5 +395,42 @@ fn push_tube_segment(
             mesh.indices.push(base + tri[1]);
             mesh.indices.push(base + tri[2]);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{toolpath_to_tube_mesh, toolpath_to_tube_mesh_with_spans};
+    use crate::geo::P3;
+    use crate::toolpath::{MoveIntent, Toolpath};
+    use crate::trace::toolpath_spans::AnnotatedToolpath;
+
+    fn face_like_toolpath() -> Toolpath {
+        let mut toolpath = Toolpath::new();
+        toolpath.rapid_to_with_intent(P3::new(0.0, 0.0, 10.0), MoveIntent::Linking);
+        toolpath.feed_to_with_intent(P3::new(0.0, 0.0, 0.0), 300.0, MoveIntent::EntryPlunge);
+        toolpath.feed_to_with_intent(P3::new(10.0, 0.0, 0.0), 1_000.0, MoveIntent::ClearingCut);
+        toolpath.rapid_to_with_intent(P3::new(10.0, 0.0, 10.0), MoveIntent::Retract);
+        toolpath
+    }
+
+    #[test]
+    fn cuts_only_ribbon_keeps_only_material_removal_moves() {
+        let mesh = toolpath_to_tube_mesh(&face_like_toolpath(), 0.5, false);
+
+        assert_eq!(mesh.vertices.len(), 8 * 3);
+        assert_eq!(mesh.indices.len(), 12 * 3);
+    }
+
+    #[test]
+    fn annotated_ribbon_applies_the_same_cuts_only_filter() {
+        let annotated = AnnotatedToolpath::new(face_like_toolpath());
+        let cuts_only = toolpath_to_tube_mesh_with_spans(&annotated, 0.5, false);
+        let with_rapids = toolpath_to_tube_mesh_with_spans(&annotated, 0.5, true);
+
+        assert_eq!(cuts_only.vertices.len(), 8 * 3);
+        assert_eq!(cuts_only.indices.len(), 12 * 3);
+        assert_eq!(with_rapids.vertices.len(), 3 * 8 * 3);
+        assert_eq!(with_rapids.indices.len(), 3 * 12 * 3);
     }
 }
