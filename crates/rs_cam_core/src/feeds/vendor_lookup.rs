@@ -843,15 +843,53 @@ mod tests {
             "score {} should be > 1400",
             result.score
         );
+        // Feeds matrix R5 (2026-09-23): the printed Spektra v24 row wins.
+        // Chart line: 2 Flute 6mm (48118-K/48218-K), Wood/Plywood
+        // 0.0050 in = 0.127 mm/tooth. The row publishes that one value as
+        // its maximum, so the midpoint is 0.127. The old winner
+        // amana-flat-softwood-adaptive-6000-2f (0.065-0.11) is not
+        // printed on the chart and is now derived/c.
         assert_eq!(
             result.observation_id,
-            "amana-flat-softwood-adaptive-6000-2f"
+            "amana-flat-softwood-adaptive-6000-2f-spektra"
         );
-        // Midpoint of 0.065-0.11 = 0.0875
         assert!(
-            (result.chip_load_mm - 0.0875).abs() < 0.001,
-            "chipload {} should be ~0.0875",
+            (result.chip_load_mm - 0.127).abs() < 0.001,
+            "chipload {} should be ~0.127",
             result.chip_load_mm
+        );
+    }
+
+    /// Feeds matrix R5 item 8 (EVIDENCE 5.2-10). An MDF query for a Ø6
+    /// 2-flute end mill in the Adaptive family borrowed the HARDWOOD row,
+    /// because no MDF row existed in that family and the hardness term
+    /// scores MDF (Janka proxy 1100) nearer hardwood (1450) than softwood
+    /// (600). The cause was a missing row, not the scorer: with the
+    /// printed Spektra MDF/Laminate row in the family, the MDF row wins
+    /// and carries the printed 0.0060 in = 0.1524 mm/tooth unscaled.
+    #[test]
+    fn mdf_adaptive_query_matches_the_printed_mdf_row() {
+        let lut = embedded_lut();
+        let query = LookupQuery {
+            tool_family: ToolFamily::FlatEnd,
+            tool_subfamily: None,
+            diameter_mm: 6.0,
+            flute_count: 2,
+            material_family: MaterialFamily::Mdf,
+            hardness_kind: Some(HardnessKind::Janka),
+            hardness_value: Some(1100.0),
+            operation_family: LutOperationFamily::Adaptive,
+            pass_role: LutPassRole::Roughing,
+        };
+        let result = lookup_best(&lut, &query).expect("MDF adaptive row");
+        assert_eq!(
+            result.observation_id,
+            "amana-flat-mdf-adaptive-6000-2f-spektra"
+        );
+        assert!(
+            (result.chip_load_max_mm.expect("printed value") - 0.1524).abs() < 1e-9,
+            "the printed MDF value must carry through unscaled, got {:?}",
+            result.chip_load_max_mm
         );
     }
 

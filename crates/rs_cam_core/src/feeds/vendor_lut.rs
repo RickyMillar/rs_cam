@@ -592,10 +592,12 @@ mod tests {
         let lut = VendorLut::embedded();
         assert_eq!(
             lut.observations.len(),
-            264,
-            "expected 264 embedded observations: 252 before feeds matrix R5 \
+            324,
+            "expected 324 embedded observations: 252 before feeds matrix R5 \
              (2026-09-23), + 12 printed Amana ball v7 rows (1/8 and 1/4 in, \
-             hardwood / softwood / MDF, pocket and adaptive)"
+             hardwood / softwood / MDF, pocket and adaptive), + 60 printed \
+             Amana Spektra v24 rows (2F and 3F at 1/8 in, 6 mm and 1/4 in; \
+             five material families; pocket and adaptive)"
         );
     }
 

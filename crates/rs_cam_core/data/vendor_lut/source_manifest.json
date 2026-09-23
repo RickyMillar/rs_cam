@@ -9,7 +9,7 @@
       "stored_text": "sources/amana_spektra_spiral_plunge_v24.txt",
       "pdf_sha256": "5b6fef854b2cf6b422e2eb5bbc86e29b4dcab5b19195b7ff228b70f99cf86d3a",
       "stored_on": "2026-09-23",
-      "coverage_notes": "Flat/compression wood tooling feed and chipload chart. Smallest diameters: 1/32\" (0.794mm), 1.5mm. Chart covers Wood/Plywood and MDF/Laminate columns; does NOT cover ball nose or tapered ball nose tools (these are flat/compression spirals only). Chart does NOT separate softwood from hardwood."
+      "coverage_notes": "Flat/compression wood tooling feed and chipload chart. Smallest diameters: 1/32\" (0.794mm), 1.5mm. Chart covers Wood/Plywood and MDF/Laminate columns; does NOT cover ball nose or tapered ball nose tools (these are flat/compression spirals only). Chart does NOT separate softwood from hardwood. The chart prints ONE chip load per tooth per diameter (no range), no finish rows and no ap or ae range; its only depth statement is 1 x D plus the feed de-rate (2 x D -25%, 3 x D -50%). Since 2026-09-23 (feeds matrix R5): the 14 amana_flat_end.json rows that cite this chart but are not printed on it (ranges, hardwood/HDF/particleboard splits, a contour finish row, ap ranges such as 0.5xD to 1.5xD) carry row_kind derived, evidence_grade c and a notes field; the printed 2F and 3F rows at 1/8\", 6mm and 1/4\" are bundled in amana_flat_end.json in the pocket and adaptive families, as exact grade a for MDF/Laminate and as derived grade b for the four wood and plywood families that share the one Wood/Plywood column. Single values are encoded as chipload_max_mm_tooth only."
     },
     {
       "source_id": "amana_ball_nose_v7",
