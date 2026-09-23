@@ -243,12 +243,16 @@ fn ipe_pocket_ships_its_computed_feed_under_the_floor() {
          A scaling-law change must re-pin this file, not slide past it.",
         band.max_mm_per_tooth,
     );
+    // Ruling R4 Q9 (2026-09-24): the floor is `min(0.025, band min)`. The
+    // row `amana-flat-hardwood-pocket-6000-2f` prints 0.032–0.055, so the
+    // derated minimum is 0.046088898 x 0.032 / 0.055 = 0.026815, above
+    // 0.025, and the floor stays the constant.
     assert!(
-        band.max_mm_per_tooth > RUBBING_FLOOR_MM_TOOTH,
-        "fixture precondition: the Ipe band ceiling {:.6} sits ABOVE the \
+        band.min_mm_per_tooth > RUBBING_FLOOR_MM_TOOTH,
+        "fixture precondition: the Ipe band minimum {:.6} sits ABOVE the \
          {RUBBING_FLOOR_MM_TOOTH} global floor, so this cell exercises the \
-         un-subordinated branch of `effective_rubbing_floor`.",
-        band.max_mm_per_tooth,
+         constant arm of `rubbing_floor`.",
+        band.min_mm_per_tooth,
     );
 
     let chipload = result.feed_rate_mm_min / (rpm * flutes);
@@ -299,8 +303,10 @@ fn ipe_pocket_emits_chipload_below_floor_warning() {
             FeedsWarning::ChiploadBelowRubbingFloor {
                 commanded,
                 floor,
+                source,
                 band_max,
-            } => Some((*commanded, *floor, *band_max)),
+                ..
+            } => Some((*commanded, *floor, *source, *band_max)),
             _ => None,
         })
         .unwrap_or_else(|| {
@@ -311,7 +317,7 @@ fn ipe_pocket_emits_chipload_below_floor_warning() {
                 result.warnings,
             )
         });
-    let (commanded, floor, band_max) = warning;
+    let (commanded, floor, source, band_max) = warning;
     let shipped = result.feed_rate_mm_min / (result.rpm * 2.0);
 
     assert!(
@@ -326,9 +332,10 @@ fn ipe_pocket_emits_chipload_below_floor_warning() {
     );
     assert!(
         (floor - RUBBING_FLOOR_MM_TOOTH).abs() < 1e-12,
-        "the band ceiling {IPE_DERATED_BAND_MAX_MM_TOOTH:.9} clears the global floor, \
-         so the floor is the global {RUBBING_FLOOR_MM_TOOTH}. Got {floor:.9}.",
+        "the band minimum clears the global floor, so the floor is the global \
+         {RUBBING_FLOOR_MM_TOOTH} (ruling R4 Q9). Got {floor:.9}.",
     );
+    assert_eq!(source, rs_cam_core::feeds::RubbingFloorSource::RepoConstant);
     assert!(
         band_max.is_some_and(|m| (m - IPE_DERATED_BAND_MAX_MM_TOOTH).abs() < BAND_PIN_TOLERANCE),
         "the warning carries the band maximum that the floor read: {band_max:?}",

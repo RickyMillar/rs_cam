@@ -11,8 +11,9 @@
 //!
 //! [`rs_cam_core::feeds::RUBBING_FLOOR_MM_TOOTH`] = 0.025 mm/tooth is the advance
 //! below which the crate says a cutter rubs instead of cutting. It is applied by
-//! [`rs_cam_core::feeds::effective_rubbing_floor`] as `min(floor, band_max)` when a
-//! vendor band was matched, and as the **bare constant** when none was — and it
+//! [`rs_cam_core::feeds::effective_rubbing_floor`] as `min(floor, band_min)` when a
+//! vendor band was matched (`min(floor, band_max)` before ruling R4 Q9,
+//! 2026-09-24), and as the **bare constant** when none was — and it
 //! carries no diameter and no material, while every other chipload quantity in the
 //! crate carries both:
 //!
@@ -171,7 +172,7 @@
 //! 2. **P1 changes no recipe on the LUT as shipped.** Measured, not assumed:
 //!    the cells where the two resolvers disagree are the Ø6-and-up flat/bull
 //!    ones, whose envelope bands sit above 0.025, so `min` returns the constant
-//!    unchanged. `the_fallback_does_not_lower_the_floor_on_todays_lut` is the
+//!    unchanged. `the_fallback_lowers_the_floor_only_to_a_published_bound` is the
 //!    tripwire that reports the day that stops being true.
 //!
 //! So the question this file exists to answer is **not** closed by P1. It is
@@ -714,7 +715,8 @@ fn sweep() -> Vec<Row> {
                         match warning {
                             // Ruling R4 WP2a (2026-09-23): the warning no longer
                             // lifts. `band_capped_from` is rebuilt from the floor:
-                            // `Some(global)` when the band maximum set it.
+                            // `Some(global)` when a band bound set it (the band
+                            // minimum since ruling R4 Q9).
                             FeedsWarning::ChiploadBelowRubbingFloor {
                                 commanded, floor, ..
                             } => {

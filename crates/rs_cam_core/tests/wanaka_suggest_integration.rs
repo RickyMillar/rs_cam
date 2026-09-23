@@ -805,9 +805,9 @@ fn wanaka_suggest_baseline() {
                 //     block above; allowed generically here.
                 //   * `FeedClampedToChiploadFloor` on the finish pass, whose
                 //     whole derated band sits under the 0.025 mm/tooth
-                //     chip-formation floor, so `effective_rubbing_floor`
-                //     collapses to the band maximum and the existing Step-9b
-                //     rule pins the op there.
+                //     chip-formation floor. Since ruling R4 Q9 the floor is
+                //     the band minimum, and since WP2a the warning does not
+                //     lift the feed; it fires only under the band minimum.
                 //
                 // Neither is tolerated blindly: the mechanism both speak for
                 // is asserted in tests/suggest_feed_matches_final_geometry.rs.

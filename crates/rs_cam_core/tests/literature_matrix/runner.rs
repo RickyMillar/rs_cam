@@ -423,9 +423,11 @@ const RUBBING_FLOOR_WARNING: &str = "ChiploadBelowRubbingFloor";
 /// - below the floor, and the warning is ABSENT: fail at the cell's own
 ///   severity (critical), because a sub-floor recipe shipped silently.
 ///
-/// The cell's floor and the engine's floor (`min(0.025, band max)`) can
-/// differ. A cell whose advance is under the cell floor and over the
-/// engine floor fails here, and that disagreement is worth a look.
+/// The cell's floor and the engine's floor can differ. Since ruling R4 Q9
+/// (2026-09-24) the engine floor is `min(0.025, band min)`, so a cell whose
+/// advance is under the cell floor but inside a published band below 0.025
+/// gets no warning and fails here. That disagreement is worth a look: the
+/// ruling says the published band minimum outranks the unsourced 0.025.
 fn rubbing_floor_rule(detail: SubVerdictDetail, snap: &ShimSnapshot) -> SubVerdictDetail {
     match detail.verdict {
         SubVerdict::Outside => {

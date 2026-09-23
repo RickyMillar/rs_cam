@@ -378,8 +378,11 @@ fn a_raised_stepover_does_not_move_the_feed_at_all() {
         .chipload_bounds
         .expect("wanaka's tapered-ball finish matches a vendor LUT row");
     // This fixture's whole derated band sits under the 0.025 mm/tooth
-    // chip-formation floor, so `effective_rubbing_floor` collapses to the band
-    // CEILING and Step 9b pins the advance exactly there.
+    // chip-formation floor. Until ruling R4 WP2a `effective_rubbing_floor`
+    // collapsed to the band CEILING and Step 9b pinned the advance there.
+    // WP2a removed the lift, and ruling R4 Q9 (2026-09-24) moved the floor
+    // to the band MINIMUM, so nothing pins the advance now; the bound below
+    // still holds.
     //
     // The tolerance used to be `0.5 / (rpm · flutes)` — the half-step of the
     // NEAREST feed rounding, which could push the pinned advance a hair OVER

@@ -11,15 +11,30 @@
 //! This file was `rubbing_floor_never_exceeds_band.rs`. That sentry pinned
 //! `effective_floor = min(RUBBING_FLOOR_MM_TOOTH, derated_band_max)` so the
 //! lift could not push a feed past the band. With no lift, the band rule
-//! holds trivially; the warning threshold is still that `min` (Q9 asks
-//! whether it becomes the band minimum).
+//! holds trivially.
+//!
+//! Ruling R4 Q9 (2026-09-24) moved the threshold to
+//! `min(0.025, band min)`: a published band minimum outranks the unsourced
+//! constant. A band with no minimum keeps `min(0.025, band max)`; no band
+//! keeps the constant. `feeds::rubbing_floor` names the bound that set it.
 //!
 //! What this sentry pins:
 //!
-//! 1. On the B3 sub-floor fixture the warning fires, the commanded advance
-//!    equals `derates.effective_chip_load_mm()` (the computed feed, no
-//!    lift) to 1e-9, and it is at or below the band maximum.
-//! 2. On the Ø6.35 oak ball control no warning fires.
+//! 1. The rule on three bands, by hand: 0.0036–0.0072 gives 0.0036
+//!    (band minimum); 0.034–0.059 gives 0.025 (constant); 0.0–0.012 gives
+//!    0.012 (band maximum, no minimum).
+//! 2. On the B3 sub-floor fixture (band wholly below 0.025) the floor is
+//!    the band minimum. The recipe ships inside the band: the fixture band
+//!    is 0.00378–0.00756, so the midpoint is 1.5 × the minimum, and the
+//!    shipped advance is the midpoint × the feed factors (× 0.75 before R4
+//!    WP3), at least 1.125 × the minimum. No warning fires, and the
+//!    shipped advance equals `derates.effective_chip_load_mm()` (no lift).
+//! 3. The same fixture on a machine with a 50 mm/min cutting ceiling: the
+//!    ceiling pushes the advance under the band minimum
+//!    (50 / (2 × 8000 rpm) = 0.0031 at the lowest RPM of the generic router,
+//!    and less at any higher RPM), so the warning fires with the source
+//!    `BandMinimum`, and the feed is not raised.
+//! 4. On the Ø6.35 oak ball control no warning fires.
 
 #![allow(
     clippy::unwrap_used,
@@ -31,8 +46,9 @@
 
 use rs_cam_core::feeds::vendor_lut::{EvidenceGrade, ObservationKind, VendorLut};
 use rs_cam_core::feeds::{
-    ChiploadBounds, FeedsInput, FeedsResult, FeedsWarning, OperationFamily, PassRole, SetupContext,
-    SpindleStrategy, ToolGeometryHint, calculate, embedded_vendor_lut,
+    ChiploadBounds, FeedsInput, FeedsResult, FeedsWarning, OperationFamily, PassRole,
+    RUBBING_FLOOR_MM_TOOTH, RubbingFloorSource, SetupContext, SpindleStrategy, ToolGeometryHint,
+    calculate, effective_rubbing_floor, embedded_vendor_lut, rubbing_floor,
 };
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
@@ -72,8 +88,12 @@ fn sub_floor_lut() -> VendorLut {
 /// 2 flutes, 5.26° half-angle, scallop finish in hard maple, against the
 /// sub-floor fixture LUT above.
 fn b3_scallop() -> FeedsResult {
+    b3_scallop_on(&MachineProfile::generic_wood_router())
+}
+
+/// The B3 operation on a given machine.
+fn b3_scallop_on(machine: &MachineProfile) -> FeedsResult {
     let lut = &sub_floor_lut();
-    let machine = MachineProfile::generic_wood_router();
     let material = Material::SolidWood {
         species: WoodSpecies::HardMaple,
     };
@@ -88,7 +108,7 @@ fn b3_scallop() -> FeedsResult {
             taper_angle_deg: 5.26,
         },
         material: &material,
-        machine: &machine,
+        machine,
         operation: OperationFamily::Scallop,
         operation_kind: None,
         pass_role: PassRole::Finish,
@@ -112,40 +132,125 @@ fn band(result: &FeedsResult) -> ChiploadBounds {
 }
 
 #[test]
-fn a_sub_floor_recipe_ships_its_computed_feed_and_warns() {
+fn the_floor_is_the_band_minimum_then_the_band_maximum_then_the_constant() {
+    let sub = ChiploadBounds {
+        min_mm_per_tooth: 0.0036,
+        max_mm_per_tooth: 0.0072,
+    };
+    assert_eq!(
+        rubbing_floor(Some(sub)),
+        (0.0036, RubbingFloorSource::BandMinimum)
+    );
+    let roomy = ChiploadBounds {
+        min_mm_per_tooth: 0.034,
+        max_mm_per_tooth: 0.059,
+    };
+    assert_eq!(
+        rubbing_floor(Some(roomy)),
+        (RUBBING_FLOOR_MM_TOOTH, RubbingFloorSource::RepoConstant)
+    );
+    let max_only = ChiploadBounds {
+        min_mm_per_tooth: 0.0,
+        max_mm_per_tooth: 0.012,
+    };
+    assert_eq!(
+        rubbing_floor(Some(max_only)),
+        (0.012, RubbingFloorSource::BandMaximum)
+    );
+    assert_eq!(
+        rubbing_floor(None),
+        (RUBBING_FLOOR_MM_TOOTH, RubbingFloorSource::RepoConstant)
+    );
+    assert_eq!(effective_rubbing_floor(Some(sub)), 0.0036);
+}
+
+#[test]
+fn a_recipe_inside_a_sub_floor_band_ships_its_computed_feed_and_does_not_warn() {
     let result = b3_scallop();
     let fpt = commanded_fpt(&result, 2.0);
     let bounds = band(&result);
     let computed = result.derates.effective_chip_load_mm();
 
-    let warning = result.warnings.iter().find_map(|w| match w {
-        FeedsWarning::ChiploadBelowRubbingFloor {
-            commanded,
-            floor,
-            band_max,
-        } => Some((*commanded, *floor, *band_max)),
-        _ => None,
-    });
-
     println!(
         "B3 scallop: rpm={:.0} feed={:.3} fpt={:.6} computed={computed:.6} \
-         band={:.6}..{:.6} warning={warning:?}",
-        result.rpm, result.feed_rate_mm_min, fpt, bounds.min_mm_per_tooth, bounds.max_mm_per_tooth,
+         band={:.6}..{:.6} warnings={:?}",
+        result.rpm,
+        result.feed_rate_mm_min,
+        fpt,
+        bounds.min_mm_per_tooth,
+        bounds.max_mm_per_tooth,
+        result.warnings,
     );
 
-    let (commanded, floor, band_max) = warning.unwrap_or_else(|| {
-        panic!(
-            "the B3 fixture derates below the rubbing floor, so the warning must \
-             fire. warnings: {:?}",
-            result.warnings
-        )
-    });
-
+    assert!(
+        bounds.max_mm_per_tooth < RUBBING_FLOOR_MM_TOOTH,
+        "precondition: the fixture band {:.6} must sit wholly below the 0.025 floor",
+        bounds.max_mm_per_tooth
+    );
+    assert_eq!(
+        rubbing_floor(Some(bounds)),
+        (bounds.min_mm_per_tooth, RubbingFloorSource::BandMinimum),
+        "a published band minimum below 0.025 is the floor (ruling R4 Q9)"
+    );
     assert!(
         (fpt - computed).abs() <= computed.abs() * 1e-9,
         "the shipped advance {fpt:.9} mm/tooth is not the computed advance \
          {computed:.9} (target x combined derates). A floor lift moved the feed; \
          ruling R4 WP2a removed it."
+    );
+    assert!(
+        fpt >= bounds.min_mm_per_tooth && fpt <= bounds.max_mm_per_tooth * (1.0 + 1e-9),
+        "the shipped advance {fpt:.6} is outside the derated band {:.6}..{:.6}",
+        bounds.min_mm_per_tooth,
+        bounds.max_mm_per_tooth
+    );
+    assert!(
+        !result
+            .warnings
+            .iter()
+            .any(|w| matches!(w, FeedsWarning::ChiploadBelowRubbingFloor { .. })),
+        "a recipe inside the published band must not warn. warnings: {:?}",
+        result.warnings
+    );
+}
+
+#[test]
+fn a_ceiling_that_pushes_the_advance_under_the_band_minimum_warns_and_does_not_lift() {
+    let mut machine = MachineProfile::generic_wood_router();
+    machine.max_cutting_feed_mm_min = Some(50.0);
+    let result = b3_scallop_on(&machine);
+    let fpt = commanded_fpt(&result, 2.0);
+    let bounds = band(&result);
+
+    let warning = result.warnings.iter().find_map(|w| match w {
+        FeedsWarning::ChiploadBelowRubbingFloor {
+            commanded,
+            floor,
+            source,
+            band_min,
+            band_max,
+        } => Some((*commanded, *floor, *source, *band_min, *band_max)),
+        _ => None,
+    });
+
+    println!(
+        "B3 scallop, 50 mm/min ceiling: rpm={:.0} feed={:.3} fpt={:.6} \
+         band={:.6}..{:.6} warning={warning:?}",
+        result.rpm, result.feed_rate_mm_min, fpt, bounds.min_mm_per_tooth, bounds.max_mm_per_tooth,
+    );
+
+    let (commanded, floor, source, band_min, band_max) = warning.unwrap_or_else(|| {
+        panic!(
+            "the 50 mm/min ceiling puts the advance under the band minimum, so the \
+             warning must fire. warnings: {:?}",
+            result.warnings
+        )
+    });
+
+    assert!(
+        result.feed_rate_mm_min <= 50.0 + 1e-9,
+        "the feed {:.3} is above the 50 mm/min ceiling; the floor must not lift it",
+        result.feed_rate_mm_min
     );
     assert!(
         (commanded - fpt).abs() <= fpt.abs() * 1e-9,
@@ -155,11 +260,9 @@ fn a_sub_floor_recipe_ships_its_computed_feed_and_warns() {
         commanded < floor,
         "the warning fired at {commanded:.6}, which is not below its floor {floor:.6}"
     );
-    assert!(
-        fpt <= bounds.max_mm_per_tooth * (1.0 + 1e-9),
-        "the shipped advance {fpt:.6} is above the derated band maximum {:.6}",
-        bounds.max_mm_per_tooth
-    );
+    assert_eq!(source, RubbingFloorSource::BandMinimum);
+    assert_eq!(floor, bounds.min_mm_per_tooth);
+    assert_eq!(band_min, Some(bounds.min_mm_per_tooth));
     assert_eq!(
         band_max,
         Some(bounds.max_mm_per_tooth),
@@ -172,7 +275,7 @@ fn a_tool_whose_band_sits_above_the_floor_does_not_warn() {
     // CONTROL. Ø6.35 ball 2-flute pocket rough in white oak: the matched
     // printed Amana ball-nose v7 row (`amana-ball-hardwood-pocket-6350-2f-v7`,
     // 0.127-0.1778 mm/tooth before the hardness scale) is entirely *above*
-    // the 0.025 floor, so `min(floor, band_max)` is the floor itself and
+    // the 0.025 floor, so `min(0.025, band_min)` is the constant and
     // nothing about this recipe may move. Feeds matrix R5 (2026-09-23): the
     // flat 6 mm pocket cell resolves to a single-value Spektra row with no
     // band, so the control moved to a printed row that publishes one.

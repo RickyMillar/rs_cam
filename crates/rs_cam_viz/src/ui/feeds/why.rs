@@ -530,23 +530,19 @@ fn warning_lines(warning: &rs_cam_core::feeds::FeedsWarning) -> (String, Option<
         // The face line names the consequence and the two levers, because
         // the operator now owns the fix.
         FeedsWarning::ChiploadBelowRubbingFloor {
-            commanded, floor, ..
-        } => {
-            let global = rs_cam_core::feeds::RUBBING_FLOOR_MM_TOOTH;
-            let source = if *floor < global {
-                format!("the vendor band maximum, below the {global:.3} repo floor")
-            } else {
-                "repo rule, unsourced".to_owned()
-            };
-            (
-                format!(
-                    "Advance per tooth below the rubbing floor: {commanded:.4} mm/tooth \
-                     (floor {floor:.4}, {source}). The feed is not raised. The tool can \
-                     rub and burn the work: raise the feed or lower the RPM."
-                ),
-                None,
-            )
-        }
+            commanded,
+            floor,
+            source,
+            ..
+        } => (
+            format!(
+                "Advance per tooth below the rubbing floor: {commanded:.4} mm/tooth \
+                 (floor {floor:.4}, {}). The feed is not raised. The tool can \
+                 rub and burn the work: raise the feed or lower the RPM.",
+                source.describe()
+            ),
+            None,
+        ),
         // Ruling R4 WP1 (2026-09-23): the long-tool de-rate is a repo rule
         // with no source. It fires on most default tools (stickout 45 mm), so
         // it is one short line with the numbers, on the face.

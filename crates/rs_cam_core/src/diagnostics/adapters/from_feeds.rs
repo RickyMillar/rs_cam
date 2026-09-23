@@ -191,7 +191,10 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
         // Ruling R4 WP2a (2026-09-23): the engine warns and does not raise
         // the feed. The message names the consequence and the two levers.
         FeedsWarning::ChiploadBelowRubbingFloor {
-            commanded, floor, ..
+            commanded,
+            floor,
+            source,
+            ..
         } => Diagnostic {
             id: DiagnosticId::from(ids::FEEDS_CHIPLOAD_BELOW_FLOOR),
             scope: Scope::Toolpath { id: tp_id },
@@ -204,7 +207,7 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
                 "Advance per tooth below the rubbing floor: {commanded:.4} mm/tooth \
                  (floor {floor:.4}, {}). The feed is not raised. The tool can rub and \
                  burn the work: raise the feed or lower the RPM.",
-                floor_source(*floor)
+                source.describe()
             ),
             evidence: None,
             fix: None,
@@ -321,17 +324,6 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             supersedes: vec![],
             suppressed_diagnostics: vec![],
         },
-    }
-}
-
-/// Where the rubbing floor came from, in words: the repo constant, or the
-/// vendor band maximum when the whole band sits below that constant.
-fn floor_source(floor: f64) -> String {
-    let global = crate::feeds::RUBBING_FLOOR_MM_TOOTH;
-    if floor < global {
-        format!("the vendor band maximum; the whole band sits below the {global:.3} repo floor")
-    } else {
-        "repo rule, unsourced".to_owned()
     }
 }
 

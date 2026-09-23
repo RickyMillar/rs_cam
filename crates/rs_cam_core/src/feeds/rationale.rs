@@ -581,7 +581,7 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
         SuggestWarning::FeedClampedToChiploadFloor {
             requested_mm_per_tooth,
             floor_mm_per_tooth,
-            band_capped_from,
+            source,
         } => RationaleEntry {
             param: RationaleParam::Feed,
             reason: RationaleReason::FinalGeometryRescale,
@@ -589,17 +589,15 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
             to_value: None,
             headline: format!(
                 "Advance per tooth below the rubbing floor after rescale: \
-                 {requested_mm_per_tooth:.4} mm/tooth (floor {floor_mm_per_tooth:.4}). \
-                 The feed is not raised."
+                 {requested_mm_per_tooth:.4} mm/tooth (floor {floor_mm_per_tooth:.4}, {}). \
+                 The feed is not raised.",
+                source.describe()
             ),
-            detail: Some(format!(
+            detail: Some(
                 "Below the floor the tool rubs instead of cutting and can burn the work. \
-                 Raise the feed or lower the RPM.{}",
-                band_capped_from.map_or_else(String::new, |global| format!(
-                    " The whole derated vendor band sits below the {global:.3} mm/tooth \
-                     repo floor, so the floor here is the band maximum."
-                ))
-            )),
+                 Raise the feed or lower the RPM."
+                    .to_owned(),
+            ),
         },
         // T-15: produced by Suggest pass 10 since 2026-09-18.
         SuggestWarning::PowerRecheckedAfterRescale {

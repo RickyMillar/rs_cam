@@ -24,6 +24,12 @@
 //! subordinated the floor to the band (2026-08-06) was correct. The
 //! consequence is that the boundary comparison becomes load-bearing.
 //!
+//! **Ruling R4 Q9 (2026-09-24) retires rider 1.** The floor is now
+//! `min(0.025, band min)`: a band with a minimum below 0.025 puts the floor
+//! on that minimum, the opposite end of the band. The floor==ceiling
+//! collision needs a band with no minimum. Rider 3's two quantities now
+//! coincide on such a band.
+//!
 //! ## Rider 2 — the observation is a float ROUND-TRIP, so the side is noise
 //!
 //! Suggest multiplies (`feed = fpt × rpm × flutes`); the gate divides
@@ -106,8 +112,8 @@ use rs_cam_core::feeds::vendor_lut::{
 };
 use rs_cam_core::feeds::{
     ChiploadBounds, FeedsInput, FeedsResult, FeedsWarning, OperationFamily, PassRole,
-    RUBBING_FLOOR_MM_TOOTH, SetupContext, SpindleStrategy, ToolGeometryHint, calculate,
-    effective_rubbing_floor, embedded_vendor_lut,
+    RUBBING_FLOOR_MM_TOOTH, RubbingFloorSource, SetupContext, SpindleStrategy, ToolGeometryHint,
+    calculate, effective_rubbing_floor, embedded_vendor_lut, rubbing_floor,
 };
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::MachineProfile;
@@ -190,14 +196,16 @@ fn b3_scallop() -> FeedsResult {
 // Rider 1 — floor == ceiling, and the recipe parks on the bound
 // ---------------------------------------------------------------------
 
-/// RE-BLESSED 2026-09-23 (ruling R4 WP2a). The floor still collapses onto the
-/// band ceiling, and the warning still fires and names that ceiling. The
-/// recipe no longer PARKS there: Step 9b does not lift, so the commanded
-/// advance is the computed one, below the ceiling. Rider 1 as a live
-/// mechanism is therefore retired; riders 2 and 4 stay, because an operator
-/// can still type a feed onto the bound.
+/// RE-BLESSED 2026-09-23 (ruling R4 WP2a), then 2026-09-24 (ruling R4 Q9).
+/// WP2a removed the lift, so no recipe parks on the floor. Q9 moved the floor
+/// to `min(0.025, band min)`, so on this band (0.00378–0.00756, derated) the
+/// floor is the band MINIMUM, not the ceiling. The computed advance is the
+/// band midpoint (1.5 x the minimum) times the feed factors (x 0.75 before R4
+/// WP3), at least 1.125 x the minimum, so it sits inside the band and no
+/// warning fires. Rider 1 as a live mechanism is retired; riders 2 and 4
+/// stay, because an operator can still type a feed onto the bound.
 #[test]
-fn rider1_the_floor_collapses_onto_the_band_ceiling_and_the_recipe_no_longer_parks() {
+fn rider1_the_floor_sits_on_the_band_minimum_and_the_recipe_does_not_warn() {
     let result = b3_scallop();
     let band: ChiploadBounds = result
         .chipload_bounds
@@ -206,48 +214,38 @@ fn rider1_the_floor_collapses_onto_the_band_ceiling_and_the_recipe_no_longer_par
     let floor = effective_rubbing_floor(Some(band));
 
     println!(
-        "B3 floor==ceiling: rpm={:.0} feed={:.6} fpt={:.17} band={:.17}..{:.17} \
+        "B3 floor: rpm={:.0} feed={:.6} fpt={:.17} band={:.17}..{:.17} \
          global_floor={RUBBING_FLOOR_MM_TOOTH} effective_floor={floor:.17}",
         result.rpm, result.feed_rate_mm_min, fpt, band.min_mm_per_tooth, band.max_mm_per_tooth,
     );
 
     assert!(
         band.max_mm_per_tooth < RUBBING_FLOOR_MM_TOOTH,
-        "fixture precondition (the ledger's 'trivial fixture': any band whose derated max \
-         < 0.025): band max {:.6} must sit below the global floor",
+        "fixture precondition: band max {:.6} must sit below the global floor",
         band.max_mm_per_tooth
     );
     assert_eq!(
-        floor, band.max_mm_per_tooth,
-        "the effective floor must have collapsed onto the band CEILING — that collapse is \
-         the whole mechanism, and if it stops happening this fixture measures nothing"
+        rubbing_floor(Some(band)),
+        (band.min_mm_per_tooth, RubbingFloorSource::BandMinimum),
+        "the floor must sit on the band MINIMUM (ruling R4 Q9)"
     );
-    // The warning fires and carries the band maximum that set the floor.
-    let (commanded, warned_floor, band_max) = result
-        .warnings
-        .iter()
-        .find_map(|w| match w {
-            FeedsWarning::ChiploadBelowRubbingFloor {
-                commanded,
-                floor,
-                band_max,
-            } => Some((*commanded, *floor, *band_max)),
-            _ => None,
-        })
-        .expect("Step 9b must warn on a band wholly below the floor");
-    assert_eq!(warned_floor, band.max_mm_per_tooth);
-    assert_eq!(band_max, Some(band.max_mm_per_tooth));
-    // And the commanded advance is NOT on the ceiling: no lift, so it is the
-    // computed advance, which sits below the ceiling.
+    assert!(
+        !result
+            .warnings
+            .iter()
+            .any(|w| matches!(w, FeedsWarning::ChiploadBelowRubbingFloor { .. })),
+        "a recipe inside the band must not warn: {:?}",
+        result.warnings
+    );
     let computed = result.derates.effective_chip_load_mm();
     assert!(
-        (fpt - computed).abs() <= computed * 1e-9 && (commanded - fpt).abs() <= fpt * 1e-9,
-        "the recipe must ship its computed advance {computed:.17}; got fpt {fpt:.17}, \
-         warning {commanded:.17}"
+        (fpt - computed).abs() <= computed * 1e-9,
+        "the recipe must ship its computed advance {computed:.17}; got fpt {fpt:.17}"
     );
     assert!(
-        fpt < band.max_mm_per_tooth,
-        "no lift, so the advance {fpt:.17} sits below the ceiling {:.17}",
+        fpt >= band.min_mm_per_tooth && fpt < band.max_mm_per_tooth,
+        "no lift, so the advance {fpt:.17} sits inside the band {:.17}..{:.17}",
+        band.min_mm_per_tooth,
         band.max_mm_per_tooth
     );
 }
@@ -687,20 +685,19 @@ fn rider3_no_binding_constraint_variant_denotes_the_rubbing_floor_clamp() {
         );
     }
 
-    // And the quantities genuinely differ in this regime: `ChiploadMin`
-    // is the band FLOOR, the clamp applies the band CEILING.
+    // Ruling R4 Q9 (2026-09-24): on a band with a minimum below 0.025 the
+    // rubbing floor IS the band minimum, the quantity `ChiploadMin` denotes.
+    // Before Q9 the floor was the band CEILING here, 2 x the minimum.
     let band = b3_scallop().chipload_bounds.expect("B3 band");
     let modulator_floor_fpt = band.min_mm_per_tooth;
-    let suggest_clamp_fpt = effective_rubbing_floor(Some(band));
+    let suggest_floor_fpt = effective_rubbing_floor(Some(band));
     println!(
         "rider 3: BindingConstraint::ChiploadMin denotes fpt {modulator_floor_fpt:.6} \
-         (band.min); the clamp that parked the feed applied {suggest_clamp_fpt:.6} \
-         (= band.max). Ratio {:.3}×",
-        suggest_clamp_fpt / modulator_floor_fpt
+         (band.min); the rubbing floor is {suggest_floor_fpt:.6}"
     );
-    assert!(
-        suggest_clamp_fpt > modulator_floor_fpt * 1.5,
-        "if these two ever coincide the rider is moot — recheck before citing it"
+    assert_eq!(
+        suggest_floor_fpt, modulator_floor_fpt,
+        "under ruling R4 Q9 the two quantities coincide on a band with a minimum"
     );
 }
 

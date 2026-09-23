@@ -775,19 +775,22 @@ pub enum FeedsWarning {
     /// The engine does NOT raise the feed to the floor (ruling R4,
     /// 2026-09-23, WP2a). The warning is the whole response. The operator
     /// has two levers: raise the feed, or lower the RPM. The floor value is
-    /// [`effective_rubbing_floor`]: the repo constant
-    /// [`RUBBING_FLOOR_MM_TOOTH`] (repo rule, unsourced), or the matched
-    /// band maximum when that is lower.
+    /// [`rubbing_floor`]: the matched band minimum when it is below the
+    /// repo constant [`RUBBING_FLOOR_MM_TOOTH`], otherwise the constant
+    /// (repo rule, unsourced). `source` names the bound (ruling R4 Q9).
     ChiploadBelowRubbingFloor {
         /// The commanded advance per tooth (mm/tooth). The engine ships it
         /// unchanged.
         commanded: f64,
-        /// The floor that the test used (mm/tooth). See
-        /// [`effective_rubbing_floor`].
+        /// The floor that the test used (mm/tooth). See [`rubbing_floor`].
         floor: f64,
+        /// The bound that set `floor`.
+        source: RubbingFloorSource,
+        /// The derated minimum of the band that the floor read, when a band
+        /// with a minimum exists.
+        band_min: Option<f64>,
         /// The derated maximum of the band that the floor read, when a band
-        /// exists. When it is below [`RUBBING_FLOOR_MM_TOOTH`], it is the
-        /// floor, and the whole vendor band sits below the repo floor.
+        /// exists.
         band_max: Option<f64>,
     },
     /// The feed took the long-tool de-rate (ruling R4, 2026-09-23, WP1).
@@ -1069,39 +1072,85 @@ pub fn validate_tool_for_operation(input: &FeedsInput) -> Result<(), FeedsError>
 /// It carries no diameter and no material, while every other chipload
 /// bound in the crate is a scaled vendor band. The warning tests
 /// [`effective_rubbing_floor`], which subordinates this constant to the
-/// matched row's band ceiling.
+/// matched band's minimum, or to its maximum when the band has no minimum
+/// (ruling R4 Q9).
 pub const RUBBING_FLOOR_MM_TOOTH: f64 = 0.025;
 
-/// The floor that the Step-9b warning tests:
-/// `min(RUBBING_FLOOR_MM_TOOTH, derated_band_max)`.
+/// The bound that set the rubbing floor (ruling R4 Q9, 2026-09-24).
+///
+/// The cards and the diagnostics read this value to state the source status
+/// of the floor. A number alone cannot say which bound set it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RubbingFloorSource {
+    /// The repo constant [`RUBBING_FLOOR_MM_TOOTH`] (repo rule, unsourced).
+    /// The band minimum is at or above it, or no band exists.
+    RepoConstant,
+    /// The published minimum of the matched vendor band. It is below the
+    /// repo constant, and a published value outranks the unsourced constant
+    /// (EVIDENCE 4.1-26).
+    BandMinimum,
+    /// The maximum of a band that publishes no minimum (a band with
+    /// `min_mm_per_tooth == 0.0`, for example the gate's band on a
+    /// maximum-only row). The maximum is below the repo constant.
+    BandMaximum,
+}
+
+impl RubbingFloorSource {
+    /// The source status of the floor, in words. The diagnostics adapter,
+    /// the Suggest rationale and the Feeds card print this one text.
+    #[must_use]
+    pub fn describe(self) -> String {
+        match self {
+            Self::RepoConstant => "repo rule, unsourced".to_owned(),
+            Self::BandMinimum => format!(
+                "the published vendor band minimum, below the {RUBBING_FLOOR_MM_TOOTH:.3} \
+                 repo floor"
+            ),
+            Self::BandMaximum => format!(
+                "the vendor band maximum; the band publishes no minimum and sits below \
+                 the {RUBBING_FLOOR_MM_TOOTH:.3} repo floor"
+            ),
+        }
+    }
+}
+
+/// The rubbing floor at a band, and the bound that set it.
+///
+/// The rule (ruling R4 Q9, 2026-09-24), in this order:
+///
+/// 1. The band has a minimum (`min > 0`): `min(0.025, band min)`.
+/// 2. The band has no minimum and has a maximum: `min(0.025, band max)`.
+/// 3. No band: the constant 0.025.
+///
+/// Arithmetic: a band 0.0036–0.0072 mm/tooth gives the floor 0.0036
+/// (`BandMinimum`). A band 0.034–0.059 gives 0.025 (`RepoConstant`). A band
+/// 0.0–0.012 gives 0.012 (`BandMaximum`).
+#[must_use]
+pub fn rubbing_floor(band: Option<ChiploadBounds>) -> (f64, RubbingFloorSource) {
+    let (bound, source) = match band {
+        Some(b) if b.min_mm_per_tooth > 0.0 => {
+            (b.min_mm_per_tooth, RubbingFloorSource::BandMinimum)
+        }
+        Some(b) if b.max_mm_per_tooth > 0.0 => {
+            (b.max_mm_per_tooth, RubbingFloorSource::BandMaximum)
+        }
+        _ => return (RUBBING_FLOOR_MM_TOOTH, RubbingFloorSource::RepoConstant),
+    };
+    if bound < RUBBING_FLOOR_MM_TOOTH {
+        (bound, source)
+    } else {
+        (RUBBING_FLOOR_MM_TOOTH, RubbingFloorSource::RepoConstant)
+    }
+}
+
+/// The floor that the Step-9b warning tests. It is the value half of
+/// [`rubbing_floor`]; read that function for the rule and the source.
 ///
 /// Until ruling R4 WP2a (2026-09-23) Step 9b also raised the feed to this
-/// floor. It now only warns. The history below explains why the floor is
-/// capped by the band; the cap still decides when the warning fires.
-///
-/// # Why the global constant cannot be used directly
-///
-/// `RUBBING_FLOOR_MM_TOOTH` is diameter- and material-independent;
-/// [`ChiploadBounds`] is the same vendor row's chipload window after the
-/// diameter, hardness and DOC derates. On small tools the two cross.
-/// Measured on the census's B3 reference row (Ø1 tapered ball, 2 flutes,
-/// scallop finish, hard maple — `tests/feed_explanation_snapshot_b3.rs`)
-/// the derated band is 0.003605–0.007211 mm/tooth and the global floor
-/// is **3.47× the band maximum**. Clamping *up* to 0.025 there commanded
-/// a chipload the post-sim chipload gate's own envelope
-/// (`tool_load::chipload`) reads as `Exceeds(High)` — breakage-side. A
-/// floor whose stated job is to stop the recipe *undershooting* a band
-/// was pushing it clean over the top of that band.
-///
-/// # What the warning says when the band is below the constant
-///
-/// Where the band has room above the constant (the common case: at Ø6 in
-/// oak the band is 0.034–0.059), `min` returns the constant. When the
-/// whole band sits under 0.025 mm/tooth, no feed both clears the constant
-/// and stays inside the vendor window. The floor is then the band
-/// maximum, and `FeedsWarning::ChiploadBelowRubbingFloor::band_max`
-/// carries that value so the surfaces can say so. Ruling R4 Q9 asks
-/// whether the threshold becomes `min(0.025, band min)` instead.
+/// floor. It now only warns. Until ruling R4 Q9 (2026-09-24) the floor was
+/// `min(0.025, band max)`, so a recipe inside a published band below 0.025
+/// warned. The published band minimum now outranks the unsourced constant:
+/// a recipe inside the vendor band does not warn.
 ///
 /// # Bands that do not exist
 ///
@@ -1110,13 +1159,10 @@ pub const RUBBING_FLOOR_MM_TOOTH: f64 = 0.025;
 /// to and the global constant applies unmodified. That path is pinned
 /// by `tests/_litmatrix_rpm_only_lut_chipload.rs`.
 ///
-/// FEEDS_CENSUS C-12 / T3.3 / T4.2; ruled 2026-08-06.
+/// FEEDS_CENSUS C-12 / T3.3 / T4.2; ruled 2026-08-06; re-ruled R4 Q9.
 #[must_use]
 pub fn effective_rubbing_floor(band: Option<ChiploadBounds>) -> f64 {
-    match band {
-        Some(b) if b.max_mm_per_tooth > 0.0 => RUBBING_FLOOR_MM_TOOTH.min(b.max_mm_per_tooth),
-        _ => RUBBING_FLOOR_MM_TOOTH,
-    }
+    rubbing_floor(band).0
 }
 
 /// Name the floor [`effective_rubbing_floor`] gives at this band, as a
@@ -1127,8 +1173,11 @@ pub fn effective_rubbing_floor(band: Option<ChiploadBounds>) -> f64 {
 /// [`recipe_parked_by_rubbing_floor`] calls it. WP2b deletes both.
 #[must_use]
 pub fn rubbing_floor_clamp_reason(band: Option<ChiploadBounds>) -> ClampReason {
-    let floor = effective_rubbing_floor(band);
-    if floor < RUBBING_FLOOR_MM_TOOTH {
+    // Ruling R4 Q9: only the band MAXIMUM arm parks a recipe on the band
+    // ceiling. A floor at the band minimum is the band floor, not its
+    // ceiling, so it takes the ordinary arm.
+    let (floor, source) = rubbing_floor(band);
+    if source == RubbingFloorSource::BandMaximum {
         ClampReason::RubbingFloorCappedToBandCeiling {
             floor_mm_per_tooth: floor,
             global_floor_mm_per_tooth: RUBBING_FLOOR_MM_TOOTH,
@@ -2430,7 +2479,8 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // The `> 0.0` guard keeps a zero-feed regression (for example on the
     // RPM-only LUT formula path) visible. The warning does not mask it.
     //
-    // The floor is `effective_rubbing_floor(band)` = `min(0.025, band max)`.
+    // The floor is `rubbing_floor(band)` = `min(0.025, band min)`, or
+    // `min(0.025, band max)` when the band has no minimum (ruling R4 Q9).
     // The band is the recipe resolver's band when it published one, and
     // otherwise the envelope resolver's band (P1, 2026-08-22): the band that
     // the post-sim gate also uses.
@@ -2479,11 +2529,13 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     if fpt_divisor > 0.0 {
         let commanded_fpt = feed / fpt_divisor;
         let floor_band = chipload_bounds.or(floor_band_fallback);
-        let floor = effective_rubbing_floor(floor_band);
+        let (floor, source) = rubbing_floor(floor_band);
         if commanded_fpt > 0.0 && commanded_fpt < floor {
             warnings.push(FeedsWarning::ChiploadBelowRubbingFloor {
                 commanded: commanded_fpt,
                 floor,
+                source,
+                band_min: floor_band.map(|b| b.min_mm_per_tooth).filter(|m| *m > 0.0),
                 band_max: floor_band.map(|b| b.max_mm_per_tooth),
             });
         }

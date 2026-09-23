@@ -120,6 +120,11 @@ pub enum ClampReason {
     /// Step-9b raised the advance to the **matched band's derated
     /// ceiling**, because the whole band sits below the global floor.
     ///
+    /// Since ruling R4 Q9 (2026-09-24) the floor is the band minimum when the
+    /// band has one, so only a band with no minimum (the gate's maximum-only
+    /// band, [`crate::feeds::RubbingFloorSource::BandMaximum`]) reaches this
+    /// arm.
+    ///
     /// This is the case that makes the boundary comparison load-bearing:
     /// the recipe is parked *exactly on the breakage-side bound*, with
     /// zero headroom, on the exact quantity the gate compares — by

@@ -458,23 +458,19 @@ pub(super) fn rescale_feed_to_final_geometry(
     // The band read is `context.chipload_bounds`, which pass 0 already
     // re-derated against its own DPP mutation. A DPP that the rigidity,
     // cutting-length or deflection clamps lowered further is *not* re-derated
-    // there, so the floor can read a slightly lower band maximum than the
+    // there, so the floor can read a slightly lower band minimum than the
     // final DOC deserves. That can only lower the floor, so the warning can
     // only fire less often, not more.
     if let Some(rpm) = op_rpm {
         let divisor = rpm * flutes;
         if divisor > 0.0 {
             let commanded = rescaled / divisor;
-            let floor = crate::feeds::effective_rubbing_floor(context.chipload_bounds);
+            let (floor, source) = crate::feeds::rubbing_floor(context.chipload_bounds);
             if commanded > 0.0 && commanded < floor {
-                // `band_capped_from` keeps its meaning: `Some(global)` when
-                // the band maximum, not the global constant, set the floor.
-                let band_capped_from = (floor < crate::feeds::RUBBING_FLOOR_MM_TOOTH)
-                    .then_some(crate::feeds::RUBBING_FLOOR_MM_TOOTH);
                 warnings.push(SuggestWarning::FeedClampedToChiploadFloor {
                     requested_mm_per_tooth: commanded,
                     floor_mm_per_tooth: floor,
-                    band_capped_from,
+                    source,
                 });
             }
         }

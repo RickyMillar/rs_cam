@@ -6,9 +6,10 @@
 //! below uses the retired name `ChiploadClampedToFloor`.
 //!
 //! `RUBBING_FLOOR_MM_TOOTH` (0.025 mm/tooth) is subordinated to the matched
-//! vendor band's ceiling by `effective_rubbing_floor`, so the clamp can never
-//! push a recipe past the very window it exists to keep it inside. That rule
-//! was already right; what it was handed was not.
+//! vendor band by `effective_rubbing_floor`. Until ruling R4 Q9 (2026-09-24)
+//! it took the band ceiling; it now takes the band minimum, or the ceiling
+//! of a band with no minimum. That rule was already right; what it was
+//! handed was not.
 //!
 //! `chipload_bounds` comes from the **recipe** resolver
 //! (`find_best_row_for_geometry`), which lets RPM-only anchors compete and
@@ -61,7 +62,7 @@
 //!
 //! **What P1 is worth, then, stated without inflation.** It aligns two
 //! resolvers that had no business disagreeing, it introduces no number, and on
-//! the LUT as shipped it changes **no recipe** — `the_fallback_does_not_lower_the_floor_on_todays_lut`
+//! the LUT as shipped it changes **no recipe** — `the_fallback_lowers_the_floor_only_to_a_published_bound`
 //! measures exactly that and will say so if it ever stops being true. It is
 //! kept because a floor consulting the resolver that cannot see bands is wrong
 //! whether or not it currently costs anything.
@@ -307,10 +308,18 @@ fn tapered_ball_sub_floor_lut() -> VendorLut {
 /// than on a row id: a tapered-ball band entirely below the global floor
 /// must bring the floor below the constant, and the recipe must warn (ruling
 /// R4 WP2a: warn, never lift).
+///
+/// Ruling R4 Q9 (2026-09-24): the floor is the band MINIMUM. The row prints
+/// 0.010–0.020, so the midpoint target is 1.5 x the minimum and the recipe
+/// ships inside the band at the Shapeoko's own ceiling. The machine here has
+/// a 20 mm/min cutting ceiling, which takes the advance under the minimum:
+/// 20 / (2 x 6000 rpm) = 0.0017 mm/tooth at the lowest Shapeoko RPM, and
+/// the scaled minimum is about 0.010 x 0.494 = 0.0049.
 #[test]
 fn tapered_ball_floor_lands_below_the_global_constant() {
     let lut = tapered_ball_sub_floor_lut();
-    let machine = MachineProfile::shapeoko_vfd();
+    let mut machine = MachineProfile::shapeoko_vfd();
+    machine.max_cutting_feed_mm_min = Some(20.0);
     let material = Material::SolidWood {
         species: WoodSpecies::HardMaple,
     };
@@ -383,17 +392,18 @@ fn tapered_ball_floor_lands_below_the_global_constant() {
         );
     }
 
-    // The warning fires on the subordinated floor: the band maximum, not the
-    // constant. The target is the band midpoint and every de-rate is at most
-    // 1.0 (the Shapeoko safety factor is 0.80), so the advance sits under the
-    // band maximum.
+    // The warning fires on the subordinated floor: the band minimum, not the
+    // constant. The 20 mm/min ceiling puts the advance under it.
     let warned = result.warnings.iter().find_map(|w| match w {
         FeedsWarning::ChiploadBelowRubbingFloor {
-            commanded, floor, ..
-        } => Some((*commanded, *floor)),
+            commanded,
+            floor,
+            source,
+            ..
+        } => Some((*commanded, *floor, *source)),
         _ => None,
     });
-    let (commanded, warned_floor) = warned.unwrap_or_else(|| {
+    let (commanded, warned_floor, source) = warned.unwrap_or_else(|| {
         panic!(
             "a recipe on a sub-floor band must warn; warnings: {:?}",
             result.warnings
@@ -401,8 +411,13 @@ fn tapered_ball_floor_lands_below_the_global_constant() {
     });
     assert!(
         warned_floor < RUBBING_FLOOR_MM_TOOTH && commanded < warned_floor,
-        "the warning must read the band maximum as its floor: commanded \
+        "the warning must read the band minimum as its floor: commanded \
          {commanded:.6}, floor {warned_floor:.6}"
+    );
+    assert_eq!(
+        source,
+        rs_cam_core::feeds::RubbingFloorSource::BandMinimum,
+        "the row publishes a minimum, so the minimum sets the floor (ruling R4 Q9)"
     );
 }
 
@@ -412,7 +427,12 @@ fn tapered_ball_floor_lands_below_the_global_constant() {
 /// test above proves it) but **never lowers the floor**. The cells where the
 /// two resolvers disagree are the Ø6-and-up flat/bull ones A-6 measured, whose
 /// envelope bands sit comfortably *above* 0.025, so `min(0.025, band_max)`
-/// returns the constant unchanged. The tapered-ball rows that publish sub-floor
+/// returned the constant unchanged. Ruling R4 Q9 (2026-09-24) moved the rule
+/// to `min(0.025, band_min)`: a band whose minimum is under 0.025 now lowers
+/// the floor. A cell whose envelope band spans 0.025 now reports a floor
+/// under the constant when its advance is under the band minimum, so this
+/// tripwire can fill for that reason alone. If it fills, re-measure the
+/// named cells before a re-bless. The tapered-ball rows that publish sub-floor
 /// bands are cells where both resolvers agree, so the floor already had the
 /// band before P1.
 ///
@@ -421,10 +441,11 @@ fn tapered_ball_floor_lands_below_the_global_constant() {
 /// written as a tripwire rather than a comment so that the day a LUT edit makes
 /// the fallback bite, something says so instead of the change landing silently.
 #[test]
-fn the_fallback_does_not_lower_the_floor_on_todays_lut() {
+fn the_fallback_lowers_the_floor_only_to_a_published_bound() {
     let lut = VendorLut::embedded();
     let machine = MachineProfile::shapeoko_vfd();
     let mut lowered = Vec::new();
+    let mut unexplained: Vec<String> = Vec::new();
 
     for &d in DIAMETERS {
         for (geom_label, geometry) in geometries(d) {
@@ -469,6 +490,8 @@ fn the_fallback_does_not_lower_the_floor_on_todays_lut() {
                                 // a band set it.
                                 if let FeedsWarning::ChiploadBelowRubbingFloor {
                                     floor,
+                                    source,
+                                    band_min,
                                     band_max,
                                     ..
                                 } = w
@@ -480,6 +503,23 @@ fn the_fallback_does_not_lower_the_floor_on_todays_lut() {
                                          {operation:?}/{pass_role:?} in {species:?}: \
                                          floor {floor:.5}"
                                     ));
+                                    // Ruling R4 Q9: a lowered floor is always a
+                                    // PUBLISHED bound, named by its source. Any
+                                    // other value would be an invisible rule.
+                                    use rs_cam_core::feeds::RubbingFloorSource as Src;
+                                    let bound = match source {
+                                        Src::BandMinimum => *band_min,
+                                        Src::BandMaximum => *band_max,
+                                        Src::RepoConstant => None,
+                                    };
+                                    if bound.is_none_or(|b| (b - floor).abs() > 1e-9) {
+                                        unexplained.push(format!(
+                                            "D{d} {geom_label} {flutes}F \
+                                             {operation:?}/{pass_role:?} in {species:?}: \
+                                             floor {floor:.5} from {source:?}, band \
+                                             {band_min:?}..{band_max:?}"
+                                        ));
+                                    }
                                 }
                             }
                         }
@@ -489,16 +529,25 @@ fn the_fallback_does_not_lower_the_floor_on_todays_lut() {
         }
     }
 
+    // Measured 2026-09-24 under ruling R4 Q9 on the LUT as shipped: the
+    // fallback lowers the floor on 36 bandless recipes (the small V-bit
+    // Trace cells whose envelope band minimum sits under 0.025). Before Q9
+    // the count was zero, because `min(0.025, band max)` never went under
+    // the constant for those bands. The tripwire now pins two things: the
+    // lowering still happens (Q9 is live on this path), and every lowered
+    // floor is the published bound its source names.
     assert!(
-        lowered.is_empty(),
-        "the envelope fallback now lowers the floor on {} bandless recipes, \
-         where it lowered none when P1 landed. That is not a failure — it means \
-         a LUT edit put a sub-0.025 band under a cell whose recipe row is an \
-         RPM-only anchor, so P1 has started changing recipes. Re-measure the \
-         affected cuts and update this tripwire with the new expectation. \
-         First few: {:?}",
-        lowered.len(),
-        lowered.iter().take(5).collect::<Vec<_>>()
+        !lowered.is_empty(),
+        "ruling R4 Q9 must lower the floor on the bandless V-bit Trace cells whose \
+         envelope band minimum is under 0.025; it lowered none, so the fallback no \
+         longer reaches the band minimum"
+    );
+    assert!(
+        unexplained.is_empty(),
+        "{} lowered floors are not the published bound their source names (an \
+         invisible rule): {:?}",
+        unexplained.len(),
+        unexplained.iter().take(5).collect::<Vec<_>>()
     );
 }
 

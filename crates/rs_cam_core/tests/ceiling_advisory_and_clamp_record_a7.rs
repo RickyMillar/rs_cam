@@ -23,9 +23,23 @@
 //!    band maximum reads `Exceeds(High)` and renders as too high; a feed ON
 //!    the ceiling reads `Within` with NO ceiling advisory, because nothing
 //!    parked it there.
-//! 3. The (c2) advisory precondition and the post-hoc identifier, unchanged.
+//! 3. The (c2) advisory precondition and the post-hoc identifier.
 //!    They stay until WP2b deletes `ClampReason`, `recipe_parked_by_rubbing_floor`
 //!    and the (c2) arm; WP2b retires arm 3.
+//!
+//! Ruling R4 Q9 (2026-09-24) moved the floor to `min(0.025, band min)`. Two
+//! consequences here:
+//!
+//! - Arm 1: the synthetic band is 0.00378–0.00756, so the midpoint is 1.5 x
+//!   the minimum and the computed advance (× 0.75 before R4 WP3) is at
+//!   least 1.125 x the minimum: inside the band, no warning. The arm now
+//!   runs on a machine with a 50 mm/min cutting ceiling. That puts the
+//!   advance under the band minimum (50 / (2 x 8000 rpm) = 0.0031 at the
+//!   lowest RPM of the generic router, and less at any higher RPM).
+//! - Arm 3: the band-ceiling regime exists only on a band with no minimum
+//!   (`min_mm_per_tooth == 0.0`, the gate's maximum-only band). A band with
+//!   a minimum below 0.025 puts the floor on that minimum, and the
+//!   identifier takes the ordinary arm.
 
 #![allow(
     clippy::unwrap_used,
@@ -217,10 +231,12 @@ fn sub_floor_lut() -> VendorLut {
     }
 }
 
-/// The B3 scallop through the calculator, on the sub-floor LUT.
+/// The B3 scallop through the calculator, on the sub-floor LUT, on a machine
+/// whose 50 mm/min cutting ceiling pushes the advance under the band minimum.
 fn b3_recipe() -> FeedsResult {
     let lut = sub_floor_lut();
-    let machine = MachineProfile::generic_wood_router();
+    let mut machine = MachineProfile::generic_wood_router();
+    machine.max_cutting_feed_mm_min = Some(50.0);
     let material = Material::SolidWood {
         species: WoodSpecies::HardMaple,
     };
@@ -247,9 +263,9 @@ fn b3_recipe() -> FeedsResult {
     })
 }
 
-/// Arm 1. The band maximum of the fixture is below 0.025, so the floor is the
-/// band maximum; the target is the band midpoint and the safety factor 0.75
-/// takes it lower, so the advance is under the floor and the recipe warns.
+/// Arm 1. The band minimum of the fixture is below 0.025, so the floor is the
+/// band minimum (ruling R4 Q9); the 50 mm/min cutting ceiling takes the
+/// advance under it, so the recipe warns.
 #[test]
 fn a_recipe_below_the_floor_reads_below_the_floor_and_is_not_clamped() {
     let result = b3_recipe();
@@ -262,10 +278,15 @@ fn a_recipe_below_the_floor_reads_below_the_floor_and_is_not_clamped() {
         band.max_mm_per_tooth
     );
     let fpt = result.feed_rate_mm_min / (result.rpm * f64::from(FLUTES));
-    let computed = result.derates.effective_chip_load_mm();
     assert!(
-        (fpt - computed).abs() <= computed * 1e-9,
-        "the recipe must ship its computed advance {computed:.9}, got {fpt:.9}"
+        result.feed_rate_mm_min <= 50.0 + 1e-9,
+        "the feed {:.3} must stay at or under the 50 mm/min ceiling: no lift",
+        result.feed_rate_mm_min
+    );
+    assert!(
+        fpt < band.min_mm_per_tooth,
+        "precondition: the advance {fpt:.9} must sit under the band minimum {:.9}",
+        band.min_mm_per_tooth
     );
 
     let rendered: Vec<String> = diagnostics_from_feeds_result(ToolpathId(0), &result)
@@ -283,7 +304,8 @@ fn a_recipe_below_the_floor_reads_below_the_floor_and_is_not_clamped() {
     assert!(
         floor_line.starts_with("[Caution]")
             && floor_line.contains("below the rubbing floor")
-            && floor_line.contains("The feed is not raised"),
+            && floor_line.contains("The feed is not raised")
+            && floor_line.contains("published vendor band minimum"),
         "the finding must read as below the floor, not as a clamp: {floor_line}"
     );
     assert!(
@@ -378,10 +400,31 @@ fn the_advisory_needs_both_conditions_and_never_demotes_a_real_exceedance() {
 /// The post-hoc identifier is exactly `effective_rubbing_floor` plus the
 /// boundary epsilon — one decision, consulted twice, so Step-9b and the
 /// gate cannot drift apart.
+///
+/// Ruling R4 Q9: the floor==ceiling regime needs a band with no minimum
+/// (the gate builds one with `min_mm_per_tooth: 0.0` on a maximum-only
+/// row). A band with a minimum of 0.005763 puts the floor on 0.005763, the
+/// band floor, and the identifier takes the ordinary arm.
 #[test]
 fn the_clamp_identifier_agrees_with_the_floor_it_reads() {
-    let band = ChiploadBounds {
+    let with_min = ChiploadBounds {
         min_mm_per_tooth: 0.005_762_689_177_314_92,
+        max_mm_per_tooth: 0.011_525_378_354_629_83,
+    };
+    let min_floor = effective_rubbing_floor(Some(with_min));
+    assert_eq!(
+        min_floor, with_min.min_mm_per_tooth,
+        "the floor==band-minimum regime"
+    );
+    let reason = recipe_parked_by_rubbing_floor(min_floor, Some(with_min))
+        .expect("a recipe on the band-minimum floor sits on the floor");
+    assert!(
+        !reason.parks_on_band_ceiling(),
+        "a floor on the band MINIMUM must not license the ceiling advisory: {reason:?}"
+    );
+
+    let band = ChiploadBounds {
+        min_mm_per_tooth: 0.0,
         max_mm_per_tooth: 0.011_525_378_354_629_83,
     };
     let floor = effective_rubbing_floor(Some(band));

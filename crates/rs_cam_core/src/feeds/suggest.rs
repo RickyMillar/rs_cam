@@ -610,13 +610,12 @@ pub enum SuggestWarning {
     FeedClampedToChiploadFloor {
         /// Advance per tooth the rescale asked for (mm/tooth), before the floor.
         requested_mm_per_tooth: f64,
-        /// The floor actually applied (mm/tooth) — the chip-formation floor,
-        /// or the band maximum where the whole derated band sits beneath it.
+        /// The floor that the test used (mm/tooth). See
+        /// [`crate::feeds::rubbing_floor`].
         floor_mm_per_tooth: f64,
-        /// `Some(_)` when the floor was itself capped to the matched band
-        /// maximum, mirroring `FeedsWarning::ChiploadClampedToFloor`'s
-        /// `band_capped_from`.
-        band_capped_from: Option<f64>,
+        /// The bound that set the floor (ruling R4 Q9): the repo constant,
+        /// the band minimum, or the maximum of a band with no minimum.
+        source: crate::feeds::RubbingFloorSource,
     },
     /// T-15 (2026-09-18): Suggest pass 10 re-evaluated the spindle power
     /// ceiling at the operating point the operation ships, after pass 9 had
