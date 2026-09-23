@@ -55,7 +55,7 @@
       "source_title": "Onsrud Cutting Data Recommendations",
       "source_url": "https://www.onsrud.com/Forms/Cutting-Data-Recommendations.asp",
       "accessed_on": "2026-03-10",
-      "coverage_notes": "Router guidance across wood/plastic/aluminum families. Per-material PDFs (Hard Wood, Soft Wood, MDF) reviewed 2026-05-02. Smallest diameter in any of those PDFs is 1/16\" (1.587mm) and only on series 64-000/65-000 (downcut spiral / compression spiral \u2014 flat-end, NOT ball nose). COVERAGE GAP: Onsrud cutting data PDFs do NOT include any ball nose or tapered ball nose entries at any diameter, sub-1mm or otherwise. For ball/tapered-ball sub-1mm coverage, Amana ZrN 3D Profiling is the only public vendor source we have."
+      "coverage_notes": "Router guidance across wood/plastic/aluminum families. Per-material PDFs (Hard Wood, Soft Wood, MDF) reviewed 2026-05-02. Smallest diameter in any of those PDFs is 1/16\" (1.587mm) and only on series 64-000/65-000 (downcut spiral / compression spiral \u2014 flat-end, NOT ball nose). CORRECTED 2026-09-23 (feeds matrix R5): the Hard Wood, Soft Wood, MDF and Hard Plywood PDFs DO print a tapered ball series, 77-100 (1/8 in .003-.005, 1/4 in .005-.007 in/tooth, 1 x D); the Soft Plywood PDF does not. These rows are bundled in onsrud_tapered_ball.json. The PDFs print no plain ball nose and no sub-1mm tapered entry; for ball/tapered-ball sub-1mm coverage, Amana ZrN 3D Profiling is the only public vendor source we have. This index page prints no bull, corner-radius or radius series; the four onsrud-bull-* rows that cite it are derived grade c since 2026-09-23 (see their notes)."
     },
     {
       "source_id": "harvey_speeds_and_feeds_library",
@@ -234,7 +234,7 @@
       "stored_text": "sources/onsrud_hard_wood_cutting_data.txt",
       "pdf_sha256": "f123d5f67c03b3760cfd300c36d480747b176e4d9cc06db7d1ea97ff9bda69dc",
       "stored_on": "2026-09-23",
-      "coverage_notes": "Bundled 2026-05-31 (Phase 4 bulk promotion). Per-material Onsrud cutting-data PDF for hardwood (OCR-extracted into onsrud_ocr.json). Series 64-000 / 65-000 (downcut spiral / compression spiral) and selected straight-flute rows."
+      "coverage_notes": "Bundled 2026-05-31 (Phase 4 bulk promotion). Per-material Onsrud cutting-data PDF for hardwood (OCR-extracted into onsrud_ocr.json). Series 64-000 / 65-000 (downcut spiral / compression spiral) and selected straight-flute rows. Since 2026-09-23 (feeds matrix R5) the 77-100 tapered ball row of this sheet is bundled in onsrud_tapered_ball.json, grade a, transcribed from the stored text."
     },
     {
       "source_id": "onsrud_soft_wood_cutting_data",
@@ -245,7 +245,7 @@
       "stored_text": "sources/onsrud_soft_wood_cutting_data.txt",
       "pdf_sha256": "a5b83da2433c64cb930dffe4a6de142124c894bd6aa982791a604b0048716c54",
       "stored_on": "2026-09-23",
-      "coverage_notes": "Bundled 2026-05-31 (Phase 4 bulk promotion). Per-material Onsrud cutting-data PDF for softwood (OCR-extracted into onsrud_ocr.json)."
+      "coverage_notes": "Bundled 2026-05-31 (Phase 4 bulk promotion). Per-material Onsrud cutting-data PDF for softwood (OCR-extracted into onsrud_ocr.json). Since 2026-09-23 (feeds matrix R5) the 77-100 tapered ball row of this sheet is bundled in onsrud_tapered_ball.json, grade a, transcribed from the stored text."
     },
     {
       "source_id": "onsrud_mdf_cutting_data",
@@ -256,7 +256,7 @@
       "stored_text": "sources/onsrud_mdf_cutting_data.txt",
       "pdf_sha256": "94464ac393d93a6ad13e166f52aaf9cc9470860895ed97571dd4a07c710bdf4c",
       "stored_on": "2026-09-23",
-      "coverage_notes": "Bundled 2026-05-31 (Phase 4 bulk promotion). Per-material Onsrud cutting-data PDF for MDF (OCR-extracted into onsrud_ocr.json)."
+      "coverage_notes": "Bundled 2026-05-31 (Phase 4 bulk promotion). Per-material Onsrud cutting-data PDF for MDF (OCR-extracted into onsrud_ocr.json). Since 2026-09-23 (feeds matrix R5) the 77-100 tapered ball row of this sheet is bundled in onsrud_tapered_ball.json, grade a, transcribed from the stored text."
     },
     {
       "source_id": "onsrud_hard_plywood_cutting_data",
