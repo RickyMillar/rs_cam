@@ -120,11 +120,12 @@ const FIXTURE_DIAMETER_MM: f64 = 6.0;
 ///   is 1.0 and the band stays 0.1778-0.2286.
 /// * The seed chipload is the band midpoint, 0.2032 mm/tooth. At 18 000 rpm
 ///   and 2 flutes that asks for 0.2032 x 18 000 x 2 = 7315 mm/min.
-/// * The machine cutting-feed ceiling clamps the feed to 3000 mm/min
-///   (`FeedRateClamped`).
-/// * chipload = 3000 / (18 000 x 2) = 0.0833 mm/tooth, below the 0.1778
+/// * The machine cutting-feed ceiling clamps the feed to 4000 mm/min
+///   (`FeedRateClamped`). Until ruling R4 (2026-09-24) the 0.75 safety
+///   factor took it on to 3000 mm/min; that factor is gone.
+/// * chipload = 4000 / (18 000 x 2) = 0.1111 mm/tooth, below the 0.1778
 ///   minimum, so the verdict is `Thin`. The band midpoint gives the time
-///   ratio 0.2032 / 0.0833 = 2.4x.
+///   ratio 0.2032 / 0.1111 = 1.8x.
 fn thin() -> Fixture {
     Fixture {
         tool_type: ToolType::EndMill,
@@ -138,27 +139,21 @@ fn thin() -> Fixture {
     }
 }
 
-/// Generic hardwood under a Ø3.175 flat 2F profile, on a short tool and a
-/// machine with the Shapeoko presets' safety factor 0.80: the recommendation
-/// lands inside the vendor band.
+/// Generic hardwood under a Ø3.175 flat 2F profile, on a short tool: the
+/// recommendation lands inside the vendor band.
 ///
 /// **RE-BLESSED 2026-09-23, ruling R4 WP2a.** Until then the rubbing floor
 /// LIFTED this cell's seed to 0.025 mm/tooth, which is inside the band, and
 /// that lift was the whole reason the fixture read "in band". With no lift
-/// the cell ships its computed chipload. On the old setup (stickout 18 mm,
-/// the generic router's safety factor 0.75) that is 0.0227 x 0.88 x 0.75 =
-/// 0.0150 mm/tooth, below the 0.0170 minimum, so it would read "thin".
-/// Spec §1.3 counts the general case: without the lift, 0 of 323 banded
-/// matrix cells land in the band at safety 0.75. A vendor range with a
-/// min/max ratio of 0.6 puts 0.75 x the midpoint exactly on the minimum.
+/// the cell ships its computed chipload.
 ///
-/// The cell and the row stay. Two setup facts move, and each is a real
-/// configuration:
+/// **RE-BLESSED 2026-09-24, ruling R4 WP3.** The machine safety factor is
+/// gone, and the long-tool share is a load target, not a feed factor (Q7).
+/// The fixture ran on a machine with `safety_factor` 0.80 until then; it now
+/// runs on the builder's generic router, and no factor touches the feed.
 ///
-/// * The stickout is 12 mm, 3.78 x D, under the 4 x D long-tool threshold,
-///   so the L/D factor is 1.0.
-/// * The machine is the generic router with `safety_factor` 0.80, the value
-///   the Shapeoko presets carry.
+/// The stickout is 12 mm, 3.78 x D, under the 4 x D long-tool threshold, so
+/// the long-tool share is 1.0 and no long-tool line paints either.
 ///
 /// The arithmetic, from the matrix CSV for the row and the band:
 ///
@@ -168,20 +163,13 @@ fn thin() -> Fixture {
 ///   0.0170-0.0284 mm/tooth and the seed chipload is the midpoint, 0.0227.
 /// * The depth scale applies to the feed and to the band alike (R3), so it
 ///   does not move the ratio.
-/// * chipload = 0.0227 x 1.0 x 0.80 = 0.0182 mm/tooth, inside 0.0170-0.0284
-///   (6.7 % above the minimum), so the verdict is `InBand`. It is below the
-///   0.025 floor, so the Caution line paints too; the row does not read it.
+/// * chipload = 0.0227 mm/tooth, inside 0.0170-0.0284, so the verdict is
+///   `InBand`. It is above the Q9 floor min(0.025, 0.0170) = 0.0170, so no
+///   floor line paints.
 ///
 /// The in-band fixture's stickout (mm): 12 / 3.175 = 3.78 x D, under the
 /// 4 x D long-tool threshold. Not 12.7, whose ratio sits on the threshold.
 const IN_BAND_STICKOUT_MM: f64 = 12.0;
-
-/// The generic router with the Shapeoko presets' safety factor 0.80.
-fn in_band_machine() -> MachineProfile {
-    let mut machine = MachineProfile::generic_wood_router();
-    machine.safety_factor = 0.80;
-    machine
-}
 
 fn in_band() -> Fixture {
     Fixture {
@@ -192,7 +180,7 @@ fn in_band() -> Fixture {
         },
         operation: OperationConfig::Profile(Default::default()),
         stickout_mm: IN_BAND_STICKOUT_MM,
-        machine: Some(in_band_machine()),
+        machine: None,
     }
 }
 
@@ -664,9 +652,9 @@ fn the_power_row_reads_zero_to_the_limit_g_chipverdict() {
         let hover = power_hover(&texts);
         for clause in [
             // BoundSource::MachinePowerCurve::clause(), formatted from the
-            // rpm and the safety factor the gate stores.
-            "the machine power curve at",
-            "safety factor",
+            // rpm the gate stores. Ruling R4 Q2 (2026-09-24): the rated
+            // curve, with no fraction.
+            "the rated machine power curve at",
             // BoundSource::MachinePowerCurve::setting().
             "machine",
             // The kW pair the face no longer carries.

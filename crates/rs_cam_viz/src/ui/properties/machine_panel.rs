@@ -14,6 +14,7 @@ use crate::ui::AppEvent;
 use crate::ui::components::UiExt as _;
 use crate::ui::components::ValueRow;
 use crate::ui_command::{NoArgs, UiCommand};
+use rs_cam_core::machine::{AGGRESSIVENESS_MAX, AGGRESSIVENESS_MIN};
 
 /// Machine-library UX (SNAPSHOT model, like the tool library): import a
 /// machine *out of* the library (copied into the project's inline machine,
@@ -196,31 +197,28 @@ pub(super) fn draw_machine_panel(
 
     ui.add_space(8.0);
 
-    // Safety factor / aggressiveness slider
+    // The aggressiveness dial (ruling R4, 2026-09-24). It is a LOAD target,
+    // not a feed factor: Suggest holds the chipload and scales the depth per
+    // pass and the stepover together. Values above 1.00 warn and do not
+    // refuse (ruling Q3).
     ui.horizontal(|ui| {
         ui.label("Aggressiveness:");
-        edit.drag(
-            &ui.add(
-                egui::Slider::new(&mut draft.safety_factor, 0.60..=0.95)
-                    .text("")
-                    .show_value(true),
-            ),
+        let slider = ui.add(
+            egui::Slider::new(
+                &mut draft.aggressiveness,
+                AGGRESSIVENESS_MIN..=AGGRESSIVENESS_MAX,
+            )
+            .step_by(0.05)
+            .text("")
+            .show_value(true),
         );
+        edit.drag(&slider.on_hover_text(AGGRESSIVENESS_HOVER));
     });
     // The label reads the DRAFT. Reading the session would leave it one
     // release behind the handle for the whole drag (plan section 4 WP6,
     // same-frame reader (a)).
-    ui.label(
-        egui::RichText::new(if draft.safety_factor < 0.72 {
-            "Conservative — safer for new setups"
-        } else if draft.safety_factor > 0.85 {
-            "Aggressive — experienced operators only"
-        } else {
-            "Balanced — good for most work"
-        })
-        .small()
-        .color(crate::ui::tokens::TEXT_MUTED),
-    );
+    let (band_text, band_color) = aggressiveness_band(draft.aggressiveness);
+    ui.add(egui::Label::new(egui::RichText::new(band_text).small().color(band_color)).wrap());
 
     // One `SetMachine` for the whole profile. `set_machine` writes the
     // profile alone.
@@ -558,4 +556,28 @@ pub(super) fn draw_grbl_import(
             );
         }
     });
+}
+
+/// The hover of the aggressiveness slider: what the dial holds.
+const AGGRESSIVENESS_HOVER: &str = "The load of a Suggest recipe as a fraction of the load at full \
+     engagement. The chipload stays in the vendor band; the depth per pass and \
+     the stepover scale together. A long tool lowers the target further. Repo \
+     default 0.85.";
+
+/// The threshold label under the aggressiveness slider, and its tone.
+///
+/// Below 0.70 the dial is gentle; up to 1.00 it is normal. Above 1.00 the
+/// load target exceeds the full-engagement cut, which Suggest allows with a
+/// Caution (ruling R4 Q3: warn, never refuse).
+fn aggressiveness_band(value: f64) -> (&'static str, egui::Color32) {
+    if value < 0.70 {
+        ("gentle", crate::ui::tokens::TEXT_MUTED)
+    } else if value <= 1.00 {
+        ("normal", crate::ui::tokens::TEXT_MUTED)
+    } else {
+        (
+            "above the base: the load target exceeds the full-engagement cut",
+            crate::ui::tokens::CAUTION,
+        )
+    }
 }

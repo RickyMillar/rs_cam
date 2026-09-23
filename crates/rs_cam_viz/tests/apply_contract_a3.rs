@@ -698,6 +698,19 @@ fn panel_cut_geometry_apply_goes_through_the_invariant_funnel() {
 /// the quantisation — and the feed lands on a whole number, so only the one
 /// value the cause touches moved.
 ///
+/// **The feed moved once more, with its cause: 3000 → 4000 at R4 WP3
+/// (2026-09-24).** The hidden ×0.75 safety factor left the calculator by the
+/// operator's ruling; the machine aggressiveness dial is the one margin and
+/// it scales the engagement, never the feed. The fixture's feed now lands on
+/// the 4000 mm/min cutting ceiling itself (4572 clamped, no factor), and the
+/// plunge moved 793 → 1058 with it: the plunge carried the same factor and
+/// now ships the material base (ruling Q5; 1058.33 floored). The dial acts
+/// through this door too, with one common scale on the engagement: the
+/// stepover 2.222 → 1.498 (×0.674) and the depth 1.27 → 0.75 (the same scale,
+/// then snapped to the generator's pass staircase). The RPM holds. Each
+/// moved value is on the Feeds card as a line, per the operator's rule that
+/// no calculation is invisible.
+///
 /// This pins all five through the validated panel path, which is the path
 /// whose numbers the census recorded.
 #[test]
@@ -733,14 +746,14 @@ fn pocket_fixture_recipe_fingerprint_is_unmoved() {
         ctx(),
     );
 
-    assert_eq!(op.feed_rate(), 3000.0, "feed");
+    assert_eq!(op.feed_rate(), 4000.0, "feed");
     // T-9 (`6a9330dc`) floors the plunge instead of rounding it to the
     // nearest, so this fixture's unrounded 793.75 ships as 793, not 794. The
     // figure is re-derived from the cause; it is not a widened tolerance.
-    assert_eq!(op.plunge_rate(), 793.0, "plunge");
+    assert_eq!(op.plunge_rate(), 1058.0, "plunge");
     assert_eq!(op.spindle_rpm(), Some(18_000), "rpm");
-    assert_eq!(op.stepover(), Some(2.222), "woc");
-    assert_eq!(op.depth_per_pass(), Some(1.27), "doc");
+    assert_eq!(op.stepover(), Some(1.498), "woc");
+    assert_eq!(op.depth_per_pass(), Some(0.75), "doc");
 }
 
 // ── the project batch is allowed to be partial, never quiet ────────────────

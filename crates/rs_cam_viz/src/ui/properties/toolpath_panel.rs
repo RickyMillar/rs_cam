@@ -46,6 +46,7 @@ pub(super) fn draw_toolpath_panel(
     let entry = &mut snapshot.entry;
     let preconditions = &snapshot.preconditions;
     let model_refs = &snapshot.model_refs;
+    let suggest_warnings = snapshot.suggest_warnings.as_deref();
     // Q1: what both Suggest sites below put in
     // `SuggestContext::model_bbox`. The pill funnel and the Feeds card
     // passed `SuggestContext::default()` before, so the runtime-sanity
@@ -228,6 +229,7 @@ pub(super) fn draw_toolpath_panel(
         height_ctx,
         preconditions,
         model_refs,
+        suggest_warnings,
         load_verdict,
     );
     // DC5 (Pattern C): the auto-regen workflow notice used to be synthesised

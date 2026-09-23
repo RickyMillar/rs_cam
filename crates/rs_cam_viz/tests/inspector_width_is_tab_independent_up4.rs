@@ -38,6 +38,7 @@ use std::sync::Arc;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
@@ -184,6 +185,14 @@ fn requested_width(ctx: &egui::Context, build: impl Fn(&mut egui::Ui)) -> f32 {
     width
 }
 
+/// The generic router with a cutting-feed ceiling of 200 mm/min (a slow
+/// gantry). See [`feeds_fixture`] for why the fixture needs it.
+fn feeds_fixture_machine() -> MachineProfile {
+    let mut machine = MachineProfile::generic_wood_router();
+    machine.max_cutting_feed_mm_min = Some(200.0);
+    machine
+}
+
 /// A real Feeds tab whose calculated recipe carries the rubbing-floor
 /// warning, so the tab renders a warning row beside its annotated rows.
 ///
@@ -211,12 +220,18 @@ fn requested_width(ctx: &egui::Context, build: impl Fn(&mut egui::Ui)) -> f32 {
 ///   0.0170-0.0284 and the seed chipload is the midpoint, 0.0227.
 /// * The matrix records the axial depth as 2.54 mm = 0.8 x D, so the depth
 ///   de-rate is 1.0 and the band maximum stays 0.0284.
-/// * The floor is min(0.025, 0.0284) = 0.025, the global floor. The line
-///   paints "Advance per tooth below the rubbing floor".
-/// * The commanded advance 0.0227 (or less, after a setup de-rate) is below
-///   0.025, so Step 9b emits the warning. Since ruling R4 WP2a (2026-09-23)
-///   it does not lift the feed; the warning, and so this fixture, is the
-///   same.
+/// * Ruling R4 (2026-09-24) removed the 0.75 safety factor, and the long-tool
+///   share moved into the load target (Q7), so the feed keeps the seed
+///   0.0227. Ruling Q9 made the floor min(0.025, band min) = 0.0170. 0.0227
+///   is above it, so the cell alone no longer raises the warning.
+/// * The fixture therefore runs on a machine with a cutting-feed ceiling of
+///   200 mm/min, a real configuration (a slow gantry). The ceiling clamps the
+///   feed to 200 mm/min. The RPM is at least the machine minimum 8000 RPM,
+///   so the commanded advance is at most 200 / (2 x 8000) = 0.0125 mm/tooth,
+///   below the 0.0170 floor. The calculator raises
+///   `ChiploadBelowRubbingFloor` and the line paints
+///   "Advance per tooth below the rubbing floor". The engine does not lift
+///   the feed (ruling R4 WP2a).
 fn feeds_fixture() -> AppState {
     let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
     tool.diameter = 3.175;
@@ -279,6 +294,7 @@ fn feeds_fixture() -> AppState {
     };
     let mut builder = ProjectSessionBuilder::new()
         .stock(stock)
+        .machine(feeds_fixture_machine())
         .tool(tool)
         .model(model);
     builder

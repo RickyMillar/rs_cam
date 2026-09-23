@@ -189,8 +189,9 @@ fn draw_feeds_card(
     // `FeedsPreview` carries calculator warnings; the rows also quote the
     // invariant pass's own account of what it did. Re-run the read-only
     // canonical Suggest path; its recommendation is the preview's validated
-    // recipe.
-    let rationale = rs_cam_core::feeds::suggest::suggest_for_operation(
+    // recipe. The warnings stay: the stages that move a number paint a line
+    // of their own below the card (ruling R4, 2026-09-24).
+    let suggest_warnings = rs_cam_core::feeds::suggest::suggest_for_operation(
         rs_cam_core::feeds::suggest::SuggestForOperationInput {
             operation: &entry.operation,
             tool,
@@ -210,9 +211,13 @@ fn draw_feeds_card(
         },
     )
     .ok()
-    .map(|suggested| {
-        rs_cam_core::feeds::rationale::SuggestRationale::from_warnings(&suggested.warnings)
-    });
+    .map(|suggested| suggested.warnings);
+    // The rationale gives the depth-per-pass and the stepover rows one entry
+    // each for the aggressiveness record, so each row's hover carries the
+    // dial's account of its own number.
+    let rationale = suggest_warnings
+        .as_deref()
+        .map(rs_cam_core::feeds::rationale::SuggestRationale::from_warnings);
 
     crate::ui::feeds::compare::draw_inspector_comparison(
         ui,
@@ -236,6 +241,8 @@ fn draw_feeds_card(
     crate::ui::feeds::why::draw_engaged_diameter_row(ui, &current, explain);
     crate::ui::feeds::why::draw_chipload_min_warning(ui, &current, explain);
     crate::ui::feeds::why::draw_warnings(ui, explain);
+    let suggest_warnings = suggest_warnings.as_deref().unwrap_or_default();
+    crate::ui::feeds::why::draw_suggest_lines(ui, suggest_warnings);
 
     // This is accepted simulation evidence, not a recommendation. Keep it
     // outside and below the recommendation disclosure so planned and measured

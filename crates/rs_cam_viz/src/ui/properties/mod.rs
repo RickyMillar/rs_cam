@@ -246,6 +246,12 @@ pub struct ToolpathPanelSnapshot {
     /// MCP surfaces read the real box. `None` means the id names no
     /// model, or the model carries no finite geometry.
     pub model_bbox: Option<rs_cam_core::geo::BoundingBox3>,
+    /// The records of the Suggest run behind this toolpath's recipe, from
+    /// `ProjectSession::suggest_warnings_for_toolpath`. The diagnostics
+    /// ribbon reads them, so the GUI and MCP report the same rule ids
+    /// (ruling R4, 2026-09-24). `None` when no field carries a Suggest
+    /// source, or when Suggest refuses the pairing.
+    pub suggest_warnings: Option<Vec<rs_cam_core::feeds::suggest::SuggestWarning>>,
 }
 
 /// Build the production panel snapshot from session config + GUI runtime.
@@ -300,6 +306,11 @@ pub fn toolpath_panel_snapshot(
         // STORED `tc.model_id`, so the box is the box of the model this
         // toolpath machines.
         model_bbox: session.model_bbox(tc.model_id),
+        suggest_warnings: session
+            .tools()
+            .iter()
+            .find(|tool| tool.id.0 == tc.tool_id)
+            .and_then(|tool| session.suggest_warnings_for_toolpath(tc, tool)),
     })
 }
 

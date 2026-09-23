@@ -744,10 +744,10 @@ const POWER_BAR_WIDTH: f32 = 84.0;
 /// The power row's payload: the figure at the point this operation ships, or
 /// the typed refusal, plus the provenance of the bound.
 ///
-/// The provenance is built from the figure's own RPM and the machine's own
-/// safety factor — the two numbers the post-simulation power gate stores on
-/// its own verdict — so the predicted row and the measured row name the same
-/// source. The GUI owns no limit: the ceiling is
+/// The provenance is built from the figure's own RPM — the number the
+/// post-simulation power gate stores on its own verdict — so the predicted row
+/// and the measured row name the same source. The limit is the rated power
+/// curve with no fraction (ruling R4 Q2, 2026-09-24). The GUI owns no limit: the ceiling is
 /// [`PowerFigure::available_kw`], and nothing here computes one.
 struct PowerReading {
     figure: Result<PowerFigure, PowerUnmodeled>,
@@ -787,10 +787,7 @@ impl PowerReading {
         let source = figure
             .as_ref()
             .ok()
-            .map(|figure| BoundSource::MachinePowerCurve {
-                rpm: figure.rpm,
-                safety_factor: machine.safety_factor,
-            });
+            .map(|figure| BoundSource::MachinePowerCurve { rpm: figure.rpm });
         Self { figure, source }
     }
 }

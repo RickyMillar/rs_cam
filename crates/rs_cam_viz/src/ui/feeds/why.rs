@@ -29,7 +29,10 @@
 //! measured value to show. The achieved figure lives on the properties
 //! panel's operating-point card, after a sim (Checkpoint H2, 2026-08-08).
 
-use rs_cam_core::feeds::rationale::SuggestRationale;
+use rs_cam_core::feeds::rationale::{
+    AGGRESSIVENESS_ABOVE_BASE_TEXT, PLUNGE_AT_MATERIAL_BASE_TEXT, SuggestRationale,
+};
+use rs_cam_core::feeds::suggest::{AggressivenessShortfall, FeedRecalibrationCap, SuggestWarning};
 use rs_cam_core::feeds::{FeedsExplain, SpindleScaleReason};
 
 use super::shared::{CurrentValues, engaged_diameter_context, vendor_band, vendor_single_value};
@@ -193,10 +196,12 @@ fn explain_plunge(out: &mut String, explain: &FeedsExplain) {
         explain.recommended.plunge_rate_mm_min
     ));
     out.push_str(
-        "The plunge baseline is derived from the cutting feed and the tool \
-         diameter: a small cutter plunges slower than a large one at the same \
-         feed.\n",
+        "The plunge is the material's base rate for the tool diameter: a \
+         small cutter plunges slower than a large one.\n",
     );
+    // Ruling R4 Q5 (2026-09-24): the dial has no lever on a plunge.
+    out.push_str(PLUNGE_AT_MATERIAL_BASE_TEXT);
+    out.push('\n');
 }
 
 fn explain_doc(out: &mut String, explain: &FeedsExplain) {
@@ -261,13 +266,15 @@ fn explain_advance(out: &mut String, explain: &FeedsExplain) {
     let combined = d.combined_factor();
     let pct = ((1.0 - combined) * 100.0).max(0.0);
     let mut moved: Vec<String> = Vec::new();
+    // Ruling R4 (2026-09-24): the machine safety factor is gone, and the
+    // long-tool share is a load target, not a feed factor (Q7). Neither is
+    // in this list; the long-tool line and the aggressiveness line on the
+    // card state them.
     for (label, value) in [
         ("depth tier", d.depth_tier),
-        ("L/D overhang", d.ld_overhang),
         ("workholding rigidity", d.workholding),
         ("power limit", d.power_limit),
         ("feed cap", d.feed_clamp),
-        ("machine safety factor", d.safety_factor),
     ] {
         if (value - 1.0).abs() > UNITY_TOLERANCE {
             moved.push(format!("{label} ×{value:.3}"));
@@ -279,6 +286,14 @@ fn explain_advance(out: &mut String, explain: &FeedsExplain) {
         out.push_str(&format!(
             "Derated ×{combined:.3} ({pct:.0}% reduction) by {}.\n",
             moved.join(", ")
+        ));
+    }
+
+    if d.ld_overhang < 1.0 - UNITY_TOLERANCE {
+        out.push_str(&format!(
+            "The long-tool share ×{:.2} does not change the feed. It lowers the \
+             aggressiveness load target; the depth and the stepover carry it.\n",
+            d.ld_overhang
         ));
     }
 
@@ -545,7 +560,8 @@ fn warning_lines(warning: &rs_cam_core::feeds::FeedsWarning) -> (String, Option<
         ),
         // Ruling R4 WP1 (2026-09-23): the long-tool de-rate is a repo rule
         // with no source. It fires on most default tools (stickout 45 mm), so
-        // it is one short line with the numbers, on the face.
+        // it is one short line with the numbers, on the face. Since ruling R4
+        // Q7 (2026-09-24) it scales the load target, not the feed.
         FeedsWarning::LongToolDerate {
             stickout_mm,
             diameter_mm,
@@ -553,7 +569,7 @@ fn warning_lines(warning: &rs_cam_core::feeds::FeedsWarning) -> (String, Option<
             factor,
         } => (
             format!(
-                "Long tool: feed ×{factor:.2} (stickout {stickout_mm:.0} mm is \
+                "Long tool: load target ×{factor:.2} (stickout {stickout_mm:.0} mm is \
                  {ratio:.1} × Ø{diameter_mm} mm; repo rule, unsourced)"
             ),
             None,
@@ -621,6 +637,171 @@ pub(crate) fn draw_warnings(ui: &mut egui::Ui, explain: &FeedsExplain) {
                 detail_line(ui, format!("⚠ {headline}"), theme::WARNING_MILD, &detail);
             }
             None => plain_line(ui, format!("⚠ {headline}"), theme::WARNING_MILD),
+        }
+    }
+}
+
+// ── The Suggest stages that move a number ────────────────────────────
+
+/// The face line of one Suggest record, and whether it is a Caution.
+///
+/// The operator's standing rule (ruling R4, 2026-09-24): every stage that
+/// moves a number is one line on the card, with its source status. The
+/// match is exhaustive, so a new record must choose here. A record that
+/// returns `None` either moves no number, or its row hover carries it (the
+/// declutter ruling of 2026-09-15); the sentry
+/// `every_stage_that_moves_a_number_is_on_the_card_g_visible` holds the
+/// list.
+fn suggest_line(warning: &SuggestWarning) -> Option<(String, bool)> {
+    match warning {
+        SuggestWarning::EngagementReducedForAggressiveness {
+            aggressiveness,
+            ld_factor,
+            target_share,
+            dpp_from,
+            dpp_to,
+            stepover_from,
+            stepover_to,
+            force_n_before,
+            force_n_after,
+            power_kw_before,
+            power_kw_after,
+            section_mm2_before,
+            section_mm2_after,
+            target_met,
+            shortfall,
+            applied,
+            ..
+        } => {
+            let pct = target_share * 100.0;
+            let head = if (ld_factor - 1.0).abs() > UNITY_TOLERANCE {
+                format!(
+                    "Aggressiveness {aggressiveness:.2} (× {ld_factor:.2} long tool = {pct:.0} %)"
+                )
+            } else {
+                format!("Aggressiveness {aggressiveness:.2} (= {pct:.0} %)")
+            };
+            let mut cut = Vec::new();
+            if let (Some(a), Some(b)) = (dpp_from, dpp_to) {
+                cut.push(format!("depth {a:.2} → {b:.2} mm"));
+            }
+            if let (Some(a), Some(b)) = (stepover_from, stepover_to) {
+                cut.push(format!("stepover {a:.2} → {b:.2} mm"));
+            }
+            let mut load = Vec::new();
+            if let (Some(a), Some(b)) = (force_n_before, force_n_after) {
+                load.push(format!("force {a:.0} → {b:.0} N"));
+            }
+            if let (Some(a), Some(b)) = (power_kw_before, power_kw_after) {
+                load.push(format!("power {a:.2} → {b:.2} kW"));
+            }
+            if let (Some(a), Some(b)) = (section_mm2_before, section_mm2_after) {
+                load.push(format!(
+                    "chip section {a:.2} → {b:.2} mm² (proxy, no primary-source Kc)"
+                ));
+            }
+            let mut line = head;
+            if !cut.is_empty() {
+                line.push_str(&format!(": {}", cut.join(", ")));
+            }
+            if !load.is_empty() {
+                line.push_str(&format!("; {}", load.join(", ")));
+            }
+            let above_base = *target_share > 1.0;
+            if above_base {
+                line.push_str(&format!(". Caution, {AGGRESSIVENESS_ABOVE_BASE_TEXT}"));
+            }
+            if !target_met {
+                let reason = match shortfall {
+                    Some(AggressivenessShortfall::LeverFloor) | None => {
+                        "the depth and the stepover are at their floors; the feed is not cut"
+                    }
+                    Some(AggressivenessShortfall::EngagementCap) => {
+                        "the depth and the stepover are at their caps"
+                    }
+                    Some(AggressivenessShortfall::NoLever) => {
+                        "this operation has no depth or stepover to change"
+                    }
+                };
+                line.push_str(&format!("; target not met: {reason}"));
+            }
+            if !applied {
+                line.push_str(&format!(
+                    ". Apply the cut geometry to hold the load at {pct:.0} %"
+                ));
+            }
+            Some((line, above_base || !target_met))
+        }
+        SuggestWarning::AggressivenessNotApplied {
+            aggressiveness,
+            reason,
+        } => Some((
+            format!("Aggressiveness {aggressiveness:.2}: {}", reason.card_text()),
+            false,
+        )),
+        SuggestWarning::FeedRescaledToFinalGeometry {
+            requested_mm_per_min,
+            rescaled_mm_per_min,
+            factor_at_calculator,
+            factor_at_final,
+            cap_hit,
+        } => Some((
+            format!(
+                "Feed re-derived at the final depth: {requested_mm_per_min:.0} → \
+                 {rescaled_mm_per_min:.0} mm/min (depth ladder ×{factor_at_calculator:.2} → \
+                 ×{factor_at_final:.2}, published charts){}",
+                match cap_hit {
+                    Some(FeedRecalibrationCap::MaxFeed) => "; held at the machine feed ceiling",
+                    Some(FeedRecalibrationCap::DeflectionThreshold) => {
+                        "; held by the deflection budget"
+                    }
+                    None => "",
+                }
+            ),
+            cap_hit.is_some(),
+        )),
+        // These records reach the card through the rationale rows, on the
+        // hover of the row whose number they move (`append_rationale`), or
+        // they move no number.
+        SuggestWarning::PlungeClampedToFeed { .. }
+        | SuggestWarning::StepoverClampedToToolDiameter { .. }
+        | SuggestWarning::RoughingDepthClampedToRigidity { .. }
+        | SuggestWarning::DepthClampedToCuttingLength { .. }
+        | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
+        | SuggestWarning::DppCappedByDeflection { .. }
+        | SuggestWarning::DeflectionBackoffUnmodeled { .. }
+        | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
+        | SuggestWarning::StepoverRaisedForRuntime { .. }
+        | SuggestWarning::FeedRaisedForChipload { .. }
+        | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
+        | SuggestWarning::StrategyRewrote { .. }
+        | SuggestWarning::StrategyRecommendedNotApplied { .. }
+        | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
+        | SuggestWarning::AxialDocClampedByEnvelope { .. }
+        | SuggestWarning::AxialDocBelowBurnFloor { .. }
+        | SuggestWarning::ProjectCurveDepthInfeasible { .. }
+        | SuggestWarning::FinishEnvelopeAdvisory { .. }
+        | SuggestWarning::FeedClampedToChiploadFloor { .. }
+        | SuggestWarning::PowerRecheckedAfterRescale { .. }
+        | SuggestWarning::CutGeometryFieldNotHeld { .. } => None,
+    }
+}
+
+/// The Suggest stages that move a number, one line each, on the face.
+///
+/// Ruling R4 (2026-09-24): the aggressiveness dial and the feed re-derive
+/// at the final depth change the recipe. A hover is not enough for them.
+/// A line that states a Caution (a target above the base, or a target not
+/// met) carries the warning mark and the Caution tone.
+pub(crate) fn draw_suggest_lines(ui: &mut egui::Ui, warnings: &[SuggestWarning]) {
+    for warning in warnings {
+        let Some((line, caution)) = suggest_line(warning) else {
+            continue;
+        };
+        if caution {
+            plain_line(ui, format!("⚠ {line}"), theme::WARNING_MILD);
+        } else {
+            plain_line(ui, line, tokens::TEXT_MUTED);
         }
     }
 }

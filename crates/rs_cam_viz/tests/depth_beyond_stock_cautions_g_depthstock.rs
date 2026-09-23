@@ -185,6 +185,7 @@ fn header_diagnostics(
         Some(&height_ctx),
         &snapshot.preconditions,
         &snapshot.model_refs,
+        snapshot.suggest_warnings.as_deref(),
         None,
     )
 }

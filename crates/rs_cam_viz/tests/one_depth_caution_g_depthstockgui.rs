@@ -240,6 +240,7 @@ fn read_case(case: &Case) -> (Option<String>, Vec<Diagnostic>) {
         Some(&height_ctx),
         &snapshot.preconditions,
         &snapshot.model_refs,
+        snapshot.suggest_warnings.as_deref(),
         None,
     );
     (row, header)

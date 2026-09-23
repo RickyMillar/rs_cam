@@ -449,6 +449,16 @@ pub fn profile_through_cut(
 /// Load-gate (chipload / power / deflection / drill) diagnostics are
 /// included when a `load_verdict` is supplied — they render in the
 /// same ribbon as the other findings.
+///
+/// `suggest_warnings` is the record of the Suggest run behind the recipe,
+/// from `ProjectSession::suggest_warnings_for_toolpath` (the call the MCP
+/// surface makes too). Ruling R4 (2026-09-24): the aggressiveness record
+/// becomes `feeds.aggressiveness_engagement` here, so no Suggest calculation
+/// is invisible in the ribbon.
+// SAFETY: the ribbon reads eight independent inputs of one toolpath. The
+// snapshot owns three of them, and the panel borrows its entry mutably
+// while it reads the others, so one struct would not remove a parameter.
+#[allow(clippy::too_many_arguments)]
 pub fn collect_diagnostics(
     entry: &ToolpathEntry,
     tool: Option<&rs_cam_core::compute::tool_config::ToolConfig>,
@@ -456,6 +466,7 @@ pub fn collect_diagnostics(
     height_ctx: Option<&HeightContext>,
     preconditions: &rs_cam_core::diagnostics::diagnose::PreconditionContext,
     model_refs: &rs_cam_core::diagnostics::diagnose::ModelRefContext,
+    suggest_warnings: Option<&[rs_cam_core::feeds::suggest::SuggestWarning]>,
     load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
 ) -> Vec<rs_cam_core::diagnostics::Diagnostic> {
     let Some(tool) = tool else {
@@ -468,6 +479,7 @@ pub fn collect_diagnostics(
         tool,
         heights: heights.as_ref(),
         feeds_result: entry.feeds_result.as_ref(),
+        suggest_warnings,
         load_verdict,
         stale_defaults,
         preconditions: Some(preconditions),

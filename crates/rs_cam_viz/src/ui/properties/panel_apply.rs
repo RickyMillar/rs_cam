@@ -289,7 +289,7 @@ pub(super) fn machine_panel_fields_moved(
 ) -> bool {
     draft.max_feed_mm_min != stored.max_feed_mm_min
         || draft.max_shank_mm != stored.max_shank_mm
-        || draft.safety_factor != stored.safety_factor
+        || draft.aggressiveness != stored.aggressiveness
 }
 
 /// Install a whole machine profile through `Command::SetMachine`.

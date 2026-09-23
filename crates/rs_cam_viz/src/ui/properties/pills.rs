@@ -242,7 +242,11 @@ mod tests {
     use rs_cam_core::compute::catalog::OperationType;
     use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
     use rs_cam_core::material::{Material, WoodSpecies};
-    use rs_cam_core::session::ProjectSession;
+    use rs_cam_core::session::{Command, ProjectSession, SetMachineArgs};
+
+    /// The depth per pass the funnel applies on the demo pocket (mm). See
+    /// `depth_per_pass_pill_offers_the_as_applied_value_and_greys_on_a_match`.
+    const DEMO_POCKET_APPLIED_DPP: f64 = 0.75;
 
     /// The demo pocket of UX-R03-014: Ø6 two-flute flat end mill, fresh
     /// Pocket op, default stock / material / Generic Wood Router.
@@ -266,36 +270,37 @@ mod tests {
     }
 
     /// The feed-floor fixture: the demo pocket in generic hardwood (Janka
-    /// 1450), with a calculator feed that is not an integer.
+    /// 1450), on a machine whose cutting-feed ceiling is not an integer.
     ///
     /// Feeds matrix R5 re-bless (2026-09-23). The demo pocket's default
     /// stock resolves to the printed row `amana-zrn-flat-softwood-pocket-6000-2f`
-    /// (0.2032 mm/tooth). Its raw feed is 0.2032 x 18 000 x 2 x 0.75 (long
-    /// tool) = 5486.4 mm/min. The 4000 mm/min cutting ceiling clamps it, and
-    /// the safety factor gives 4000 x 0.75 = 3000 mm/min, an integer. A floor
-    /// and a nearest rounding agree on an integer, so the demo pocket can
-    /// no longer tell them apart.
+    /// (0.2032 mm/tooth). Its raw feed is 0.2032 x 18 000 x 2 = 7315 mm/min,
+    /// which the 4000 mm/min cutting ceiling clamps to the integer 4000. A
+    /// floor and a nearest rounding agree on an integer, so the demo pocket
+    /// cannot tell them apart.
     ///
     /// In generic hardwood the pocket resolves to the printed Spektra row
     /// `amana-flat-hardwood-pocket-6000-2f-spektra`: 0.127 mm/tooth (one
     /// value), Ø6.0, Janka 1450, `rpm_nominal` 18 000. The row is
-    /// VendorBacked, so R1 does not refuse it. The `feeds::calculate` stages:
+    /// VendorBacked, so R1 does not refuse it. The `feeds::calculate` stages
+    /// (ruling R4 WP3, 2026-09-24):
     ///
     /// * chipload 0.127 mm/tooth: the diameter scale (6/6)^0.61 and the
     ///   hardness scale (1450/1450)^0.5 are both 1.0;
     /// * RPM 18 000, from the row, inside the 8000-24 000 machine range;
     /// * depth scale 1.0: the default pocket depth is 4.2 mm = 0.7 x D;
     /// * raw feed = 18 000 x 0.127 x 2 x 1.0 = 4572 mm/min;
-    /// * long-tool de-rate 0.75: the default stickout is 45 mm, and
-    ///   45 / 6 = 7.5 > 6, so the raw feed is 3429 mm/min;
+    /// * the long-tool share (stickout 45 mm, 7.5 x D) is a load target, not
+    ///   a feed factor (ruling Q7), and the 0.75 safety factor is gone;
     /// * workholding Medium: 1.0;
-    /// * the 4000 mm/min cutting ceiling does not bind;
-    /// * safety factor 0.75: 3429 x 0.75 = 2571.75 mm/min;
-    /// * the rubbing floor does not fire: 2571.75 / 36 000 = 0.0714 mm/tooth,
+    /// * the cutting ceiling binds. On the generic router it is 4000, an
+    ///   integer again, so this fixture's machine sets
+    ///   `max_cutting_feed_mm_min` to 3999.5 mm/min: 4572 clamps to 3999.5;
+    /// * the rubbing floor does not fire: 3999.5 / 36 000 = 0.1111 mm/tooth,
     ///   above 0.025.
     ///
-    /// 2571.75 has a fraction above 0.5, so a nearest rounding gives 2572
-    /// and the floor gives 2571.
+    /// 3999.5 has a fraction of 0.5, so a nearest rounding gives 4000 and the
+    /// floor gives 3999.
     fn hardwood_pocket() -> (
         ProjectSession,
         ToolConfig,
@@ -303,7 +308,14 @@ mod tests {
         FeedsResult,
         Material,
     ) {
-        let session = ProjectSession::new_empty();
+        let mut session = ProjectSession::new_empty();
+        let mut machine = session.machine().clone();
+        machine.max_cutting_feed_mm_min = Some(3999.5);
+        let _ = session
+            .apply(Command::SetMachine(SetMachineArgs {
+                machine: Box::new(machine),
+            }))
+            .expect("set the fixture machine");
         let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
         tool.diameter = 6.0;
         let op = OperationConfig::new_default(OperationType::Pocket);
@@ -324,8 +336,25 @@ mod tests {
         (session, tool, op, result, material)
     }
 
-    /// The pill offers the funnel's 1.2, not the calculator's 4.2, and with
-    /// the configured value already at 1.2 the near-match test greys it.
+    /// The pill offers the funnel's value, not the calculator's 4.2, and with
+    /// the configured value already at that value the near-match test greys
+    /// it.
+    ///
+    /// Ruling R4 WP3 (2026-09-24): the funnel now runs the aggressiveness
+    /// dial (Suggest pass 6b) after the rigidity cap. The chain:
+    ///
+    /// * the rigidity cap gives 0.2 x 6 = 1.2 mm, the base depth;
+    /// * the dial target is k x L/D share = 0.85 x 0.75 = 0.6375 (the default
+    ///   tool's stickout is 45 mm, 7.5 x D);
+    /// * the lateral force is about linear in the depth and weak in the
+    ///   stepover (the edge term), so the common scale is about 0.64 to 0.70,
+    ///   and the raw depth is about 0.77 to 0.84 mm;
+    /// * the dial snaps the depth to a step the generator cuts: the pocket is
+    ///   3.0 mm deep, so four passes of 0.75 mm.
+    ///
+    /// 0.75 is the editor's estimate; the orchestrator measures it. If the
+    /// funnel's context carries no calculator operating point, the dial does
+    /// not act and the pill stays at 1.2.
     #[test]
     fn depth_per_pass_pill_offers_the_as_applied_value_and_greys_on_a_match() {
         let (session, tool, op, result) = demo_pocket();
@@ -341,7 +370,7 @@ mod tests {
         assert!(dpp.suggestion.clamped);
         assert_eq!(dpp.field, Some(FeedsField::DepthPerPass));
         assert!(
-            (dpp.suggestion.recommended - 1.2).abs() < 1e-9,
+            (dpp.suggestion.recommended - DEMO_POCKET_APPLIED_DPP).abs() < 1e-9,
             "pill offers {}",
             dpp.suggestion.recommended
         );
@@ -350,13 +379,14 @@ mod tests {
             "fixture drift: raw DOC {}",
             result.axial_depth_mm
         );
-        // Configured 1.2 (what the add-time funnel wrote on the demo seed).
+        // Configured at the as-applied value (what the add-time funnel
+        // writes on the demo seed).
         assert!(
-            near_match(1.2, dpp.suggestion.recommended),
+            near_match(DEMO_POCKET_APPLIED_DPP, dpp.suggestion.recommended),
             "pill must be greyed"
         );
         assert!(
-            !near_match(1.2, result.axial_depth_mm),
+            !near_match(DEMO_POCKET_APPLIED_DPP, result.axial_depth_mm),
             "pre-fix comparison stayed lit"
         );
     }
@@ -378,17 +408,18 @@ mod tests {
     #[test]
     fn the_feed_floors_while_the_depth_rounds_to_the_nearest() {
         // Arm 1 — end to end, on `hardwood_pocket` (the arithmetic is on
-        // that fixture): the calculator gives 2571.75 mm/min and the pill
-        // offers 2571. A nearest rounding offers 2572, which is ABOVE the
+        // that fixture): the calculator gives 3999.5 mm/min and the pill
+        // offers 3999. A nearest rounding offers 4000, which is ABOVE the
         // value every ceiling was satisfied at, so this arm is red on the
         // pre-T-9 code. Before feeds matrix R5 the demo pocket gave 1290.9375
-        // here; it now lands on the integer 3000.
+        // here; it now lands on the integer 4000. Until ruling R4 WP3 this
+        // fixture gave 2571.75 (a 0.75 long-tool and a 0.75 safety factor).
         let (session, tool, op, result, material) = hardwood_pocket();
         let pills = PillSuggestions::new(&op, &result, &tool, session.machine(), &material, None);
         let feed_pill = pills.feed_rate();
         let calculator = result.feed_rate_mm_min;
         assert!(
-            (calculator - 2571.75).abs() < 1e-9,
+            (calculator - 3999.5).abs() < 1e-9,
             "fixture drift: raw feed {calculator}"
         );
         assert!(
@@ -398,8 +429,8 @@ mod tests {
             feed_pill.suggestion.recommended
         );
         assert!(
-            (feed_pill.suggestion.recommended - 2571.0).abs() < 1e-9,
-            "the feed pill offers {}, not the floor 2571.0",
+            (feed_pill.suggestion.recommended - 3999.0).abs() < 1e-9,
+            "the feed pill offers {}, not the floor 3999.0",
             feed_pill.suggestion.recommended
         );
         // Non-vacuity: the nearest rounding really does go up on this

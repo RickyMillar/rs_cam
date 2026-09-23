@@ -45,6 +45,7 @@ use std::sync::Arc;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, PlywoodGrade, WoodSpecies};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
@@ -102,16 +103,23 @@ fn fixture() -> AppState {
         config.feed_rate = 3_000.0;
         config.spindle_rpm = Some(18_000);
     }
-    state_with(tool, material, operation)
+    state_with(None, tool, material, operation)
 }
 
 /// The rubbing-floor fixture: the cell `inspector_width_is_tab_independent_up4`
-/// uses, a Ø3.175 flat 2F `Profile` in generic hardwood on stickout 20 mm.
-/// Its row `amana-flat-hardwood-contour-3175-2f` seeds 0.0227 mm/tooth. The
-/// safety factor 0.75 and the L/D factor 0.75 (20 / 3.175 = 6.3 x D, above
-/// 6 x D) take it to about 0.0128, under the 0.025 floor, so the calculator
-/// raises `ChiploadBelowRubbingFloor`. Since ruling R4 WP2a it does not lift
-/// the feed; the warning is the whole response and must be on the page.
+/// uses, a Ø3.175 flat 2F `Profile` in generic hardwood on stickout 20 mm,
+/// on the same slow-gantry machine.
+///
+/// Its row `amana-flat-hardwood-contour-3175-2f` seeds 0.0227 mm/tooth.
+/// Ruling R4 (2026-09-24) removed the 0.75 safety factor, and the L/D share
+/// (20 / 3.175 = 6.3 x D) is now a load target, not a feed factor, so the
+/// feed keeps 0.0227. That is above the Q9 floor min(0.025, band min 0.0170)
+/// = 0.0170, so the cell alone raises no warning. A cutting-feed ceiling of
+/// 200 mm/min clamps the feed; the RPM is at least the machine minimum
+/// 8000 RPM, so the advance is at most 200 / (2 x 8000) = 0.0125 mm/tooth,
+/// under the floor. The calculator raises `ChiploadBelowRubbingFloor`. Since
+/// ruling R4 WP2a it does not lift the feed; the warning is the whole
+/// response and must be on the page.
 ///
 /// The Baltic birch fixture above no longer paints the floor line on the
 /// 2026-09-24 rows (R5 moved its cell; ruling R4 WP2a changed the line), so
@@ -129,7 +137,10 @@ fn floor_fixture() -> AppState {
         config.feed_rate = 3_000.0;
         config.spindle_rpm = Some(18_000);
     }
+    let mut machine = MachineProfile::generic_wood_router();
+    machine.max_cutting_feed_mm_min = Some(200.0);
     state_with(
+        Some(machine),
         tool,
         Material::SolidWood {
             species: WoodSpecies::GenericHardwood,
@@ -138,8 +149,14 @@ fn floor_fixture() -> AppState {
     )
 }
 
-/// One session on `tool`, `material` and `operation`, with the Feeds tab open.
-fn state_with(tool: ToolConfig, material: Material, operation: OperationConfig) -> AppState {
+/// One session on `tool`, `material` and `operation`, with the Feeds tab open,
+/// on `machine` when the fixture needs one that is not the builder's.
+fn state_with(
+    machine: Option<MachineProfile>,
+    tool: ToolConfig,
+    material: Material,
+    operation: OperationConfig,
+) -> AppState {
     let stock = StockConfig {
         material,
         ..Default::default()
@@ -184,6 +201,9 @@ fn state_with(tool: ToolConfig, material: Material, operation: OperationConfig) 
         .stock(stock)
         .tool(tool)
         .model(model);
+    if let Some(machine) = machine {
+        builder = builder.machine(machine);
+    }
     builder
         .add_toolpath(0, config)
         .expect("add the Why-row fixture");
@@ -377,8 +397,10 @@ fn the_rubbing_floor_warning_stays_on_the_page_g_whyrow() {
 
 /// Ruling R4 WP1 (2026-09-23): the long-tool de-rate is on the PAGE. The
 /// fixture tool is `ToolConfig::new_default` at Ø6, so its stickout is
-/// 45 mm, L/D 7.5, above 6 x D: the calculator multiplies the feed by 0.75.
-/// Until WP1 only the "Derated ... by L/D overhang" hover sentence said so.
+/// 45 mm, L/D 7.5, above 6 x D: the share is 0.75. Since ruling R4 Q7
+/// (2026-09-24) the share multiplies the aggressiveness load target, not the
+/// feed. Until WP1 only the "Derated ... by L/D overhang" hover sentence said
+/// so.
 #[test]
 fn the_long_tool_derate_is_a_line_on_the_page_ld1() {
     let texts = painted_text();

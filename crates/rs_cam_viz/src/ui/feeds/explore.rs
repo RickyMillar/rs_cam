@@ -331,9 +331,6 @@ fn draw_headline(ui: &mut egui::Ui, explain: &FeedsExplain) {
         if r.derates.workholding < 0.999 {
             reasons.push("workholding rigidity");
         }
-        if r.derates.ld_overhang < 0.999 {
-            reasons.push("tool overhang");
-        }
         if r.derates.depth_tier < 0.999 {
             reasons.push("cut depth");
         }
@@ -342,9 +339,6 @@ fn draw_headline(ui: &mut egui::Ui, explain: &FeedsExplain) {
         }
         if r.derates.feed_clamp < 0.999 {
             reasons.push("machine feed cap");
-        }
-        if r.derates.safety_factor < 0.999 {
-            reasons.push("machine safety margin");
         }
         let why = if reasons.is_empty() {
             "machine limits".to_owned()
@@ -662,10 +656,11 @@ pub(crate) fn draw_chart_c(
                 );
             }
             // Target (pre-derate) operating point. Shows where the
-            // recommendation *would* sit if the safety factor and
-            // overhang / workholding / power / feed-clamp derates
-            // weren't applied. The arrow from target → recommended
-            // makes the derate visually obvious.
+            // recommendation *would* sit if the depth / workholding /
+            // power / feed-clamp derates weren't applied (ruling R4 removed
+            // the safety factor; the overhang share is a load target). The
+            // arrow from target → recommended makes the derate visually
+            // obvious.
             let target_chipload = explain.recommended.derates.target_chip_load_mm;
             if target_chipload > 0.0 && explain.recommended.rpm > 0.0 {
                 let target_feed = target_chipload * explain.recommended.rpm * flutes;
