@@ -33,6 +33,26 @@ Recorded verbatim in substance; the operator's words are in FINDINGS-style quote
 - **R5: YES.** "if they are broken that's a real f-up. yes please get those
   fixed."
 
+## Operator rulings, second round, 2026-09-23 evening
+
+- **R4:** the hidden 25 % safety factor goes; the only margin is the machine
+  aggressiveness dial, and it must keep the chipload in the vendor band and
+  reduce load through engagement (depth and width), not shave feed or depth
+  alone ("more finessed than that. keeping chiploads but reducing load"): a
+  spec before any number moves. The long-tool de-rate may stay as a minor cut
+  but must show in the UI when it fires. The floor: the operator asked whether
+  it is explicit; plan is keep the warning, drop the clamp.
+- **R1, evidence half:** "refuse for now! they can be our targets to work on!
+  the data must be out there?" Encode the CLUELESS set; the refusal list is
+  the data shopping list.
+- **Pencil and Spiral Finish:** ball-only stands ("happy for them to only be
+  ball end"); rasters keep accepting end mills.
+- **Chart display:** one line at the suggested value, fainter band lines only
+  when the row publishes a band, no shading, no invented width.
+- **R2:** "I want the most flexibility for the user" — the smaller step (no
+  depth ceiling on finishing passes; depth reported; deflection decides; one
+  engaged diameter at the shipped depth for tapered tools) proceeds as that.
+
 ## Landed under the rulings, 2026-09-23 evening
 
 - R3: d8d8b0c7 (hint deleted), aef54c83 (one linear scale for the feed and
