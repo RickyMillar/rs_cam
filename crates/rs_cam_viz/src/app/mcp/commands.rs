@@ -791,35 +791,47 @@ impl RsCamApp {
         // the model IS known here. The bbox gates the runtime-sanity
         // stepover back-off in Suggest.
         let model_bbox = session.model_bbox(p.model_id);
-        let (op_config, feeds_provenance) = match rs_cam_core::feeds::suggest::suggest_params(
-            rs_cam_core::feeds::suggest::SuggestParamsInput {
-                op_type,
-                tool,
-                machine: session.machine(),
-                material: &session.stock_config().material,
-                workholding: session.stock_config().workholding_rigidity,
-                lut: rs_cam_core::feeds::embedded_vendor_lut(),
-                stock_ctx: &stock_ctx,
-                spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
-                // Q1: the stock reaches Suggest through `stock_ctx`
-                // above, so `SuggestContext::stock` stays empty rather
-                // than carrying the same value twice.
-                // `upstream_leftover_stock_mm` stays `None`: no lookup
-                // here gives it, and v1 does not read it.
-                context: rs_cam_core::feeds::suggest::SuggestContext {
-                    model_bbox: model_bbox.as_ref(),
-                    ..rs_cam_core::feeds::suggest::SuggestContext::default()
+        let (op_config, feeds_provenance, feeds_refusal) =
+            match rs_cam_core::feeds::suggest::suggest_params(
+                rs_cam_core::feeds::suggest::SuggestParamsInput {
+                    op_type,
+                    tool,
+                    machine: session.machine(),
+                    material: &session.stock_config().material,
+                    workholding: session.stock_config().workholding_rigidity,
+                    lut: rs_cam_core::feeds::embedded_vendor_lut(),
+                    stock_ctx: &stock_ctx,
+                    spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
+                    // Q1: the stock reaches Suggest through `stock_ctx`
+                    // above, so `SuggestContext::stock` stays empty rather
+                    // than carrying the same value twice.
+                    // `upstream_leftover_stock_mm` stays `None`: no lookup
+                    // here gives it, and v1 does not read it.
+                    context: rs_cam_core::feeds::suggest::SuggestContext {
+                        model_bbox: model_bbox.as_ref(),
+                        ..rs_cam_core::feeds::suggest::SuggestContext::default()
+                    },
                 },
-            },
-        ) {
-            Ok(s) => (s.operation, s.provenance),
-            Err(e) => {
-                return CorePlan::Answered(mutation_error_json(
-                    &format!("Cannot add toolpath: {e}"),
-                    None,
-                ));
-            }
-        };
+            ) {
+                Ok(s) => (s.operation, s.provenance, None),
+                Err(e @ rs_cam_core::feeds::FeedsError::Unbacked { .. }) => {
+                    // Ruling R1 (2026-09-23): no checked basis for a recipe on
+                    // this cell. The operation is added with the registry and
+                    // stock defaults and no recipe; the reply carries the
+                    // refusal text, as the GUI toast does.
+                    (
+                        rs_cam_core::feeds::suggest::default_operation(op_type, &stock_ctx),
+                        rs_cam_core::feeds::FeedsProvenance::default(),
+                        Some(e.to_string()),
+                    )
+                }
+                Err(e) => {
+                    return CorePlan::Answered(mutation_error_json(
+                        &format!("Cannot add toolpath: {e}"),
+                        None,
+                    ));
+                }
+            };
 
         // Roadmap B.7 — boundary auto-enable for 3D ops on mesh models.
         // R2: silhouette plus one tool diameter, the same rule the GUI
@@ -853,7 +865,10 @@ impl RsCamApp {
             planner_origin: None,
         };
 
-        before.extra = serde_json::json!({ "operation": label });
+        before.extra = serde_json::json!({
+            "operation": label,
+            "feeds_refusal": feeds_refusal,
+        });
         CorePlan::Apply(
             Command::AddToolpath(AddToolpathArgs {
                 setup_index: p.setup_index,
@@ -2121,11 +2136,20 @@ impl RsCamApp {
                 }
                 self.controller.state_mut().gui.mark_edited();
                 let label = before.extra_str("operation");
+                let feeds_refusal = before.extra_str("feeds_refusal");
+                let message = if feeds_refusal.is_empty() {
+                    format!("Added toolpath {index} ({label}).")
+                } else {
+                    format!(
+                        "Added toolpath {index} ({label}) without a feeds recipe: {feeds_refusal}"
+                    )
+                };
                 let reply = self.mcp_mutation_result(
-                    format!("Added toolpath {index} ({label})."),
+                    message,
                     serde_json::json!({
                         "index": index,
                         "operation": label,
+                        "feeds_refusal": before.extra("feeds_refusal"),
                     }),
                     vec![index],
                     &before.diagnostics,

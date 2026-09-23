@@ -131,12 +131,24 @@ impl<B: ComputeBackend> AppController<B> {
             },
         ) {
             Ok(s) => (s.operation, s.provenance),
+            Err(e @ rs_cam_core::feeds::FeedsError::Unbacked { .. }) => {
+                // Ruling R1 (2026-09-23): the engine has no checked basis
+                // for a recipe on this cell. The operation is still added,
+                // with the registry and stock defaults and no recipe; the
+                // refusal is shown, and the Feeds tab repeats it.
+                let msg = format!("Added without a feeds recipe: {e}");
+                tracing::warn!("{msg}");
+                self.push_notification(msg, super::super::Severity::Warning);
+                (
+                    rs_cam_core::feeds::suggest::default_operation(op_type, &stock_ctx),
+                    rs_cam_core::feeds::FeedsProvenance::default(),
+                )
+            }
             Err(e) => {
-                // Engine refused the tool × operation combination
-                // (e.g. flat endmill on a Scallop op — no tip radius
-                // means the scallop-stepover formula is undefined).
-                // Surface the refusal to the user and bail; the
-                // toolpath is not added.
+                // The tool cannot run the operation (the registry's tool
+                // rule, or a scallop-height stepover on a tool with no tip
+                // radius). Surface the refusal and bail; the toolpath is
+                // not added.
                 let msg = format!("Cannot add toolpath: {e}");
                 tracing::warn!("{msg}");
                 self.push_notification(msg, super::super::Severity::Warning);
