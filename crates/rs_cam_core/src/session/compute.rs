@@ -1535,6 +1535,11 @@ fn optimized_candidate(
     )?;
     let band =
         crate::dressup::feed_modulation::ChiploadBand::new(band_range.start, band_range.end)?;
+    // The advisor keeps its band gate (documented above): a candidate
+    // with no chipload envelope is not load-optimizable, so it times
+    // the raw path with the Suggest-warning regime. The SIM pass goes
+    // bandless for the same toolpaths; see
+    // `session/compute/simulation.rs::apply_adaptive_feed_modulation`.
     // ConstrainedMax @ aggressiveness 1.0 — the "bomber feeds" operating
     // point and the `SimulationOptions` default, so the advisor times the
     // same path the user gets after a default sim.
@@ -1552,7 +1557,7 @@ fn optimized_candidate(
         tool_cfg,
         toolpath_id,
         &cut_trace,
-        band,
+        Some(band),
         kinematics,
         max_feed,
         rapid_feed,
@@ -1608,7 +1613,11 @@ fn modulate_annotated_against_trace(
     tool_cfg: &ToolConfig,
     toolpath_id: ToolpathId,
     cut_trace: &crate::stock::simulation_cut::SimulationCutTrace,
-    band: crate::dressup::feed_modulation::ChiploadBand,
+    // `None` = bandless: the shared path modulates without a vendor
+    // chipload band (machine ceiling + geometric plunge guard only),
+    // per `planning/wanaka200_feeds_check_2026-09-19/IMPLEMENTATION_PLAN.md`
+    // work item A.
+    band: Option<crate::dressup::feed_modulation::ChiploadBand>,
     kinematics: crate::machine::kinematics::MachineKinematics,
     max_feed: f64,
     rapid_feed: f64,

@@ -328,8 +328,12 @@ impl ProjectSession {
         //  - The vendor LUT has no `chip_load_min_mm` /
         //    `chip_load_max_mm` row for the active
         //    `(tool family, material, op family, pass role, diameter)`
-        //    tuple — modulator gets no `ChiploadBand`, the per-toolpath
-        //    call is skipped, the IR is untouched.
+        //    tuple — modulator gets no `ChiploadBand`. Since 2026-09-19
+        //    (wanaka200 IMPLEMENTATION_PLAN work item A) such a
+        //    toolpath modulates BANDLESS instead of being skipped: no
+        //    chipload targeting, but the machine cutting ceiling and the
+        //    geometric plunge guard still bind, so a bandless descent
+        //    cannot exceed its operation's plunge rate.
         //
         // Modulation no longer requires an explicit machine `kinematics`
         // block — it falls back to `effective_kinematics` (the generic
@@ -361,7 +365,7 @@ impl ProjectSession {
         tool_cfg: &ToolConfig,
         toolpath_id: ToolpathId,
         cut_trace: &crate::stock::simulation_cut::SimulationCutTrace,
-        band: crate::dressup::feed_modulation::ChiploadBand,
+        band: Option<crate::dressup::feed_modulation::ChiploadBand>,
         kinematics: crate::machine::kinematics::MachineKinematics,
         max_feed: f64,
         rapid_feed: f64,
@@ -459,12 +463,15 @@ impl ProjectSession {
     ///  - The simulation produced no `cut_trace` (`metrics_enabled =
     ///    false`).
     ///  - A toolpath has no cut samples (drill-only / all-rapid / etc.).
-    ///  - The vendor LUT has no chipload band for the toolpath.
     ///  - The modulator returns
     ///    `ModulationError::EngagementLengthMismatch` (defensive — only
     ///    fires when the toolpath has been re-generated between sim and
     ///    modulation; impossible inside `run_simulation`'s single
     ///    transaction).
+    ///
+    /// A toolpath with no vendor chipload band modulates BANDLESS
+    /// (machine ceiling + geometric plunge guard) rather than being
+    /// skipped — wanaka200 IMPLEMENTATION_PLAN work item A, 2026-09-19.
     ///
     /// The chipload band source is
     /// [`crate::tool_load::chipload_envelopes_for_session`] — the same
@@ -489,9 +496,9 @@ impl ProjectSession {
         // applies on every machine, matching the strategy advisor (step 5).
         let kinematics = self.machine.effective_kinematics();
         let envelopes = crate::tool_load::chipload_envelopes_for_session(self, Some(cut_trace_ref));
-        if envelopes.is_empty() {
-            return;
-        }
+        // No `envelopes.is_empty()` early return: a session with NO
+        // banded toolpath still bandless-modulates every candidate
+        // (machine ceiling + geometric plunge guard).
 
         // F-039 — accumulator for the per-(toolpath_id, move_index)
         // `(feed, binding)` map and the per-toolpath
@@ -525,12 +532,16 @@ impl ProjectSession {
             .collect();
 
         for (idx, toolpath_id) in candidate_indices {
-            let Some(band_range) = envelopes.get(&toolpath_id) else {
-                continue;
-            };
-            let Some(band) = ChiploadBand::new(band_range.start, band_range.end) else {
-                continue;
-            };
+            // Banded: the vendor envelope, exactly as before. Bandless
+            // (no envelope, or an envelope whose endpoints fail
+            // `ChiploadBand::new`): `None` — previously this arm
+            // `continue`d, which made the geometric plunge guard
+            // unreachable for bandless ops (the wanaka200 V-bit
+            // ProjectCurve emitted a 1165 mm/min vertical descent
+            // against its own 400 mm/min plunge rate).
+            let band = envelopes
+                .get(&toolpath_id)
+                .and_then(|band_range| ChiploadBand::new(band_range.start, band_range.end));
             let Some(tc) = self.toolpath_configs.get(idx) else {
                 continue;
             };

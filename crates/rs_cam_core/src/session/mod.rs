@@ -1149,13 +1149,14 @@ pub struct SimulationOptions {
     /// `kinematics: None`, so under the old claim A-5's modulated arms
     /// could not have fired; they did, on a default profile.
     ///
-    /// What DOES gate it: modulation requires a vendor `ChiploadBand`
-    /// (LUT `chip_load_min_mm` + `chip_load_max_mm`) for the active
-    /// `(tool family, material, op family, pass role, diameter)` tuple.
-    /// Custom materials, unsupported op families, and toolpaths whose
-    /// LUT row is missing either bound fall through as a no-op (the
-    /// per-toolpath feed_rate stays at the commanded value), as does a
-    /// simulation run with `metrics_enabled: false` (no cut trace).
+    /// What DOES gate it: chipload TARGETING requires a vendor
+    /// `ChiploadBand` (LUT `chip_load_min_mm` + `chip_load_max_mm`) for the
+    /// active `(tool family, material, op family, pass role, diameter)`
+    /// tuple. Since 2026-09-19 (wanaka200 IMPLEMENTATION_PLAN work item
+    /// A), a toolpath with no band modulates BANDLESS — machine
+    /// cutting ceiling + geometric plunge guard — instead of skipping,
+    /// and a simulation run with `metrics_enabled: false` (no cut trace)
+    /// still falls through as a no-op.
     ///
     /// **Consumer census taken at the flip** — no shipped surface changed
     /// behaviour, because not one of them inherits this default:

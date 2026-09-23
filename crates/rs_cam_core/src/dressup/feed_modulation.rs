@@ -251,8 +251,15 @@ pub struct ModulationContext<'a> {
     /// to thread the kinematics integrator correctly; rapids
     /// themselves are not modulated.
     pub rapid_feed_mm_min: f64,
-    /// LUT chipload band (mm/tooth).
-    pub chipload_band: ChiploadBand,
+    /// LUT chipload band (mm/tooth). **`None` = bandless**
+    /// (wanaka200 IMPLEMENTATION_PLAN work item A, 2026-09-19): a
+    /// toolpath whose `(tool, material, op)` tuple resolves no vendor
+    /// chipload row (e.g. a V-bit ProjectCurve — the LUT publishes no
+    /// V-bit contour rows). Bandless modulation does NO chipload
+    /// targeting: the only caps applied are the machine cutting-feed
+    /// ceiling and the Phase 3 geometric plunge guard, so a bandless
+    /// descent can never escape its operation's plunge rate.
+    pub chipload_band: Option<ChiploadBand>,
     /// Machine kinematics — drives the `predicted_feeds_for_toolpath`
     /// per-move achievable-velocity cap.
     pub kinematics: &'a MachineKinematics,
@@ -397,11 +404,11 @@ fn should_skip_modulation(move_type: MoveType, intent: MoveIntent) -> bool {
 /// the constraint and the chipload-min floor still applies.
 fn max_safe_feed_for_move(
     engagement: PerMoveEngagement,
+    band: ChiploadBand,
     ctx: &ModulationContext<'_>,
     predicted_cap_mm_min: f64,
 ) -> (f64, BindingConstraint) {
     let flutes = ctx.flute_count.max(1) as f64;
-    let band = ctx.chipload_band;
 
     // Effective WOC fraction: clamped to a small floor because the deflection
     // and power limits below divide by it. The simulator's air-cut samples are
@@ -642,18 +649,19 @@ fn band_mid_feed_for_move(
     engagement: PerMoveEngagement,
     predicted_cap_mm_min: f64,
     ctx: &ModulationContext<'_>,
+    band: ChiploadBand,
 ) -> (f64, BindingConstraint) {
     if engagement.radial_woc_fraction <= 1e-6 && engagement.axial_doc_fraction <= 1e-6 {
         return (commanded_feed_mm_min, BindingConstraint::ChiploadMax);
     }
     let woc = engagement.radial_woc_fraction.clamp(1e-3, 1.0);
     let thinning = woc.sqrt().max(1e-6);
-    let target_chipload = ctx.chipload_band.mid_mm_per_tooth() / thinning;
+    let target_chipload = band.mid_mm_per_tooth() / thinning;
     let flutes = ctx.flute_count.max(1) as f64;
     let base_feed = target_chipload * ctx.spindle_rpm * flutes;
 
-    let band_floor = ctx.chipload_band.min_mm_per_tooth * ctx.spindle_rpm * flutes;
-    let band_ceiling = ctx.chipload_band.max_mm_per_tooth * ctx.spindle_rpm * flutes;
+    let band_floor = band.min_mm_per_tooth * ctx.spindle_rpm * flutes;
+    let band_ceiling = band.max_mm_per_tooth * ctx.spindle_rpm * flutes;
 
     let cap = ctx
         .max_feed_mm_min
@@ -712,8 +720,11 @@ pub fn adaptive_feed_modulate(
     // junction limits. As in F-036b, rebuild a synthetic toolpath
     // commanded at the maximum candidate feed so the integrator
     // returns the geometric reach, not commanded-clipped reach.
-    let band_ceiling_feed =
-        ctx.chipload_band.max_mm_per_tooth * ctx.spindle_rpm * ctx.flute_count.max(1) as f64;
+    // Bandless: probe at the machine ceiling — there is no band
+    // ceiling to fold in.
+    let band_ceiling_feed = ctx.chipload_band.map_or(ctx.max_feed_mm_min, |band| {
+        band.max_mm_per_tooth * ctx.spindle_rpm * ctx.flute_count.max(1) as f64
+    });
     let probe_feed = ctx.max_feed_mm_min.min(band_ceiling_feed).max(1e-3);
     let mut probe = toolpath.clone();
     for m in probe.moves.iter_mut() {
@@ -746,18 +757,32 @@ pub fn adaptive_feed_modulate(
             .unwrap_or(ctx.max_feed_mm_min)
             .max(1e-3);
 
-        let (mut new_feed, mut binding) = match ctx.strategy {
-            ModulationStrategy::BandMid => {
-                band_mid_feed_for_move(commanded, engagement, predicted_cap, ctx)
+        let (mut new_feed, mut binding) = match (ctx.strategy, ctx.chipload_band) {
+            // BANDLESS (wanaka200 IMPLEMENTATION_PLAN work item A,
+            // 2026-09-19): no vendor chipload row, so no chipload
+            // targeting — clamp the commanded feed to the machine
+            // cutting ceiling only, then fall through to the geometric
+            // plunge guard below. This is the arm a V-bit ProjectCurve
+            // reaches: its 20° V point previously descended at the
+            // full lateral commanded feed (1165 mm/min against a 400
+            // mm/min plunge rate) because the guard lived downstream of
+            // a band gate it could never pass. Same binding tag as the
+            // banded no-engagement arm, for consistency.
+            (_, None) => (
+                commanded.min(ctx.max_feed_mm_min),
+                BindingConstraint::MachineMaxFeed,
+            ),
+            (ModulationStrategy::BandMid, Some(band)) => {
+                band_mid_feed_for_move(commanded, engagement, predicted_cap, ctx, band)
             }
-            ModulationStrategy::ConstrainedMax => {
+            (ModulationStrategy::ConstrainedMax, Some(band)) => {
                 if engagement.radial_woc_fraction <= 1e-6 && engagement.axial_doc_fraction <= 1e-6 {
                     // No engagement — leave the commanded feed
                     // alone. Record the per-move entry so the
                     // diagnostic surface can still see it.
                     (commanded, BindingConstraint::MachineMaxFeed)
                 } else {
-                    max_safe_feed_for_move(engagement, ctx, predicted_cap)
+                    max_safe_feed_for_move(engagement, band, ctx, predicted_cap)
                 }
             }
         };
@@ -824,7 +849,7 @@ mod tests {
             flute_count: 2,
             max_feed_mm_min: 4000.0,
             rapid_feed_mm_min: 5000.0,
-            chipload_band: band,
+            chipload_band: Some(band),
             kinematics: k,
             strategy: ModulationStrategy::BandMid,
             aggressiveness: 1.0,
@@ -952,7 +977,8 @@ mod tests {
             axial_doc_mm: 2.0,
         };
         // Large kinematic cap so deflection is the binding constraint.
-        let (feed_cap, binding) = max_safe_feed_for_move(engagement, &ctx, 1.0e9);
+        let (feed_cap, binding) =
+            max_safe_feed_for_move(engagement, ctx.chipload_band.unwrap(), &ctx, 1.0e9);
         assert_eq!(
             binding,
             BindingConstraint::DeflectionMax,
@@ -1142,8 +1168,13 @@ mod tests {
         // the cap, so the clamp — not the natural target — decides the
         // feed and lands exactly on the tie.
         let predicted_cap_mm_min = 10_000.0; // not the tightest constraint
-        let (feed, binding) =
-            band_mid_feed_for_move(1500.0, engagement, predicted_cap_mm_min, &ctx);
+        let (feed, binding) = band_mid_feed_for_move(
+            1500.0,
+            engagement,
+            predicted_cap_mm_min,
+            &ctx,
+            ctx.chipload_band.unwrap(),
+        );
         assert!(
             (feed - 2880.0).abs() < 1e-6,
             "expected tied cap 2880, got {feed}"
@@ -1255,8 +1286,9 @@ mod tests {
             }
             let f = m.move_type.feed_rate().unwrap();
             if let Some(&cap) = predicted_pre.get(&idx) {
-                let band_floor =
-                    ctx.chipload_band.min_mm_per_tooth * ctx.spindle_rpm * ctx.flute_count as f64;
+                let band_floor = ctx.chipload_band.unwrap().min_mm_per_tooth
+                    * ctx.spindle_rpm
+                    * ctx.flute_count as f64;
                 let effective_cap = cap.max(band_floor);
                 assert!(
                     f <= effective_cap + 1.0,

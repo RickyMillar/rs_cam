@@ -316,7 +316,7 @@ fn modulation_skips_lead_in_lead_out_moves() {
         flute_count: 2,
         max_feed_mm_min: 5000.0,
         rapid_feed_mm_min: 5000.0,
-        chipload_band: band,
+        chipload_band: Some(band),
         kinematics: &kinematics,
         strategy: ModulationStrategy::ConstrainedMax,
         aggressiveness: 1.0,

@@ -78,7 +78,7 @@ fn ctx<'a>(k: &'a MachineKinematics, available_kw: f64) -> ModulationContext<'a>
         flute_count: FLUTES,
         max_feed_mm_min: 10_000.0,
         rapid_feed_mm_min: 10_000.0,
-        chipload_band: ChiploadBand::new(0.01, 0.30).unwrap(),
+        chipload_band: Some(ChiploadBand::new(0.01, 0.30).unwrap()),
         kinematics: k,
         strategy: ModulationStrategy::ConstrainedMax,
         aggressiveness: 1.0,
