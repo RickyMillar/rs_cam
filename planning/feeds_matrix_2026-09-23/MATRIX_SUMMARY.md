@@ -40,13 +40,13 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 
 | class | EndMill | BallNose | BullNose | VBit | TaperedBallNose | all |
 |---|---|---|---|---|---|---|
-| Refused | 24 | 0 | 0 | 24 | 0 | 48 |
-| VendorBacked | 88 | 112 | 72 | 40 | 112 | 424 |
-| FormulaOnly | 80 | 80 | 120 | 128 | 80 | 488 |
+| Refused | 56 | 24 | 56 | 32 | 24 | 192 |
+| VendorBacked | 88 | 112 | 72 | 32 | 112 | 416 |
+| FormulaOnly | 48 | 56 | 64 | 128 | 56 | 352 |
 | Refuse | 0 | 0 | 0 | 0 | 0 | 0 |
-| fires-a-diagnostic | 104 | 137 | 114 | 128 | 154 | 637 |
-| has a FeedsWarning | 79 | 109 | 89 | 119 | 128 | 524 |
-| has a SuggestWarning | 160 | 184 | 184 | 168 | 184 | 880 |
+| fires-a-diagnostic | 77 | 118 | 78 | 120 | 131 | 524 |
+| has a FeedsWarning | 66 | 99 | 67 | 111 | 107 | 450 |
+| has a SuggestWarning | 128 | 160 | 128 | 160 | 160 | 736 |
 | total | 192 | 192 | 192 | 192 | 192 | 960 |
 
 ## Cell classes per operation (all tools, diameters and materials)
@@ -57,22 +57,22 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 | Pocket | 0 | 32 | 8 | 0 | 26 |
 | Profile | 0 | 16 | 24 | 0 | 28 |
 | Adaptive | 0 | 32 | 8 | 0 | 12 |
-| VCarve | 0 | 8 | 32 | 0 | 40 |
+| VCarve | 32 | 8 | 0 | 0 | 8 |
 | Rest | 0 | 32 | 8 | 0 | 18 |
-| Inlay | 0 | 8 | 32 | 0 | 40 |
+| Inlay | 32 | 8 | 0 | 0 | 8 |
 | Zigzag | 0 | 32 | 8 | 0 | 26 |
 | Trace | 0 | 8 | 32 | 0 | 24 |
 | Drill | 0 | 0 | 40 | 0 | 24 |
-| Chamfer | 0 | 8 | 32 | 0 | 24 |
+| Chamfer | 32 | 8 | 0 | 0 | 8 |
 | DropCutter | 0 | 24 | 16 | 0 | 40 |
 | Adaptive3d | 0 | 32 | 8 | 0 | 14 |
 | Waterline | 0 | 16 | 24 | 0 | 32 |
-| Pencil | 0 | 8 | 32 | 0 | 29 |
-| Scallop | 16 | 16 | 8 | 0 | 14 |
-| UnifiedFinish | 16 | 16 | 8 | 0 | 14 |
+| Pencil | 24 | 0 | 16 | 0 | 10 |
+| Scallop | 24 | 16 | 0 | 0 | 11 |
+| UnifiedFinish | 24 | 16 | 0 | 0 | 11 |
 | SteepShallow | 0 | 16 | 24 | 0 | 38 |
 | RampFinish | 0 | 16 | 24 | 0 | 25 |
-| SpiralFinish | 16 | 16 | 8 | 0 | 24 |
+| SpiralFinish | 24 | 16 | 0 | 0 | 16 |
 | RadialFinish | 0 | 16 | 24 | 0 | 21 |
 | HorizontalFinish | 0 | 16 | 24 | 0 | 40 |
 | ProjectCurve | 0 | 24 | 16 | 0 | 34 |
@@ -83,36 +83,35 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 | id | cells |
 |---|---|
 | `compat.ball_nose_on_flat_clearing` | 48 |
-| `compat.end_mill_on_scallop_pencil` | 8 |
-| `efficiency.very_fine_stepover` | 200 |
-| `feeds.chipload_clamped_to_floor` | 201 |
+| `efficiency.very_fine_stepover` | 128 |
+| `feeds.chipload_clamped_to_floor` | 147 |
 | `feeds.drill_feed_clamped_to_envelope` | 32 |
 | `feeds.feed_clamped` | 97 |
 | `feeds.no_vendor_rows_for_routed_operation` | 16 |
-| `feeds.shank_too_large` | 180 |
-| `feeds.vendor_row_publishes_no_chipload` | 22 |
+| `feeds.shank_too_large` | 164 |
+| `feeds.vendor_row_publishes_no_chipload` | 18 |
 
 ## FeedsWarning variants (cells that carry each)
 
 | id | cells |
 |---|---|
-| `ChiploadClampedToFloor` | 201 |
+| `ChiploadClampedToFloor` | 147 |
 | `DrillFeedClampedToEnvelope` | 32 |
 | `FeedRateClamped` | 97 |
 | `NoVendorRowsForRoutedOperation` | 16 |
-| `ShankTooLarge` | 180 |
-| `VendorRowPublishesNoChipload` | 22 |
+| `ShankTooLarge` | 164 |
+| `VendorRowPublishesNoChipload` | 18 |
 
 ## SuggestWarning variants (cells that carry each)
 
 | id | cells |
 |---|---|
 | `AxialDocClampedByEnvelope` | 24 |
-| `CutGeometryFieldNotHeld` | 672 |
+| `CutGeometryFieldNotHeld` | 528 |
 | `DeflectionBackoffFigureIsAFloor` | 56 |
 | `FeedRescaledToFinalGeometry` | 24 |
-| `FinishEnvelopeAdvisory` | 256 |
-| `PlungeClampedToFeed` | 69 |
+| `FinishEnvelopeAdvisory` | 232 |
+| `PlungeClampedToFeed` | 65 |
 | `ProjectCurveDepthInfeasible` | 8 |
 | `RoughingDepthClampedToRigidity` | 204 |
 | `StrategyRewrote` | 40 |
@@ -122,7 +121,7 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 - 2D: Pocket, Profile, Adaptive on a 40 mm square polygon, stock 44 × 44 × 18 below z = 0; end_mill and bull_nose at 6 mm; the four materials.
 - 3D: a dome height field (top z = 0, flat base z = -8, 46 mm footprint) in the same stock; heights pinned to top 0 and bottom -8 on all 3D cells (`bottom_z: Auto` collapses a waterline band). Waterline, DropCutter, Adaptive3d with end_mill; Scallop and DropCutter with ball_nose and tapered_ball_nose; 6 mm; softwood and hardwood.
 - Simulation: resolution 1.0, metrics on, auto resolution off, other fields from `SimulationOptions::default()`. That default has `adaptive_feed_modulation: true`, so the post-simulation verdicts read the modulated feed, as the GUI default does.
-- Cells run: 38; errors: 0; skipped on the 150 s budget: 0; wall-clock of the subset: 148.9 s.
+- Cells run: 38; errors: 0; skipped on the 150 s budget: 0; wall-clock of the subset: 150.1 s.
 
 ## Post-simulation diagnostic ids (cells that fire each id)
 

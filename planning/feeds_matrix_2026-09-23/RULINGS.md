@@ -60,8 +60,11 @@ Recorded verbatim in substance; the operator's words are in FINDINGS-style quote
   kinds in words (rows 2-1, 2-6, 2-7, 4.4-15, 3.5-18 closed). Generation and the
   MCP operation schema moved with Suggest on Pencil and SpiralFinish: their
   generators now refuse a non-ball tool, as Scallop's always did. The
-  evidence-backed refusals wait for FORMULA_BACKING_v2 (a fresh judgement on
-  the post-R5 matrix) and the operator's look at its count.
+  evidence-backed refusals wait for the operator's look at
+  FORMULA_BACKING_v2.md (v1 filtered mechanically against the re-run matrix):
+  192 cells refuse today under the registry rule; 352 are formula-only, 82 of
+  them BACKED and 270 CLUELESS; encoding the CLUELESS set would refuse 462 of
+  960 cells.
 - R2, R4: no change.
 
 ## The three findings that change the frame
