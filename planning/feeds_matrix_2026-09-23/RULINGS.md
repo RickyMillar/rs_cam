@@ -1,9 +1,33 @@
 # Feeds matrix Phase 3: the five rulings
 
-Date: 2026-09-23. Status: OPEN, waiting for the operator. Evidence rows are in
+Date: 2026-09-23. Status: RULED 2026-09-23 (see the operator rulings block). Evidence rows are in
 `EVIDENCE.md`; the row label (for example 4.1-12) is the reference. No fix lands
 before these rulings. The recommendations are the orchestrator's; the operator
 decides.
+
+## Operator rulings, 2026-09-23
+
+Recorded verbatim in substance; the operator's words are in FINDINGS-style quotes.
+
+- **R1: YES, gated.** "yes. but only once we have had some kind of sanity check that
+  it makes sense. We need evidence backing up formula results, refuse if we are
+  clueless (judgement made by agents not the code)." Reading: option (a), but the
+  per-cell arm is a declaration that agents write from the evidence: `FormulaOnly`
+  where a published figure corroborates the formula's range for that cell class,
+  `Refuse` where no evidence backs it. The code reads the table; it does not judge.
+- **R2: NOT RULED.** "This is a blind spot for me. I have not seen any official docs
+  on depth of cut. But I have seen people do it quite deep. tapered balls make it
+  too complex for me to conceptualise." Needs a plain explanation and a smaller
+  step before a ruling.
+- **R3: YES.** "yes, delete. 1.5 is arbitrary. if we have data to back up real
+  rules, go for it, but I think deflection is the main limiter." Delete the hint;
+  keep the published depth ladder in one implementation; the deflection gate is
+  the limiter the operator trusts.
+- **R4: NOT RULED.** "We need a solid review on how they combine and what the
+  value is!" A review package of the derate chain, stage by stage with numbers,
+  comes before the ruling.
+- **R5: YES.** "if they are broken that's a real f-up. yes please get those
+  fixed."
 
 ## The three findings that change the frame
 
