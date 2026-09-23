@@ -7,8 +7,8 @@
       "source_title": "Amana ZrN 3D Profiling Feed and Chip Load Chart",
       "source_url": "https://www.amanatool.com/pub/media/productattachments/ZrN-3D-Profiling-Feed-Chip-Load-Chart.pdf",
       "accessed_on": "2026-03-10",
-      "evidence_grade": "a",
-      "row_kind": "exact",
+      "evidence_grade": "c",
+      "row_kind": "derived",
       "tool_family": "tapered_ball_nose",
       "tool_subfamily": "3d_profiling",
       "operation_family": "parallel",
@@ -29,7 +29,8 @@
       "ae_min_mm": 0.08,
       "ae_max_mm": 0.45,
       "ap_rule": "3d profiling finish",
-      "ae_rule": "scallop driven"
+      "ae_rule": "scallop driven",
+      "notes": "No printed row at this diameter in the cited chart; extrapolated. The cited Amana ZrN 2D/3D carving chart (stored text sources/amana_zrn_3d_profiling.txt) has no tapered section: the word 'taper' does not occur in it, and its 2 Flute Ball Nose columns are 1mm, 1/16 in and 6mm-1/4 in only (Wood, MDF, Sign-Foam 6mm-1/4 in: 0.007-0.009 in/tooth). The row was seeded on 2026-03-21 (commit def88067) from the shapeoko_feeds_and_speeds reference project's Phase 1 seed fixtures; no derivation is recorded. Relabelled from exact/a to derived/c on 2026-09-23 (feeds matrix R5, EVIDENCE 4.1-15). The printed tapered-ball rows are the Onsrud 77-100 rows in onsrud_tapered_ball.json."
     },
     {
       "observation_id": "amana-tapered-softwood-parallel-6000-2f",
@@ -38,8 +39,8 @@
       "source_title": "Amana ZrN 3D Profiling Feed and Chip Load Chart",
       "source_url": "https://www.amanatool.com/pub/media/productattachments/ZrN-3D-Profiling-Feed-Chip-Load-Chart.pdf",
       "accessed_on": "2026-03-10",
-      "evidence_grade": "a",
-      "row_kind": "exact",
+      "evidence_grade": "c",
+      "row_kind": "derived",
       "tool_family": "tapered_ball_nose",
       "tool_subfamily": "3d_profiling",
       "operation_family": "parallel",
@@ -60,7 +61,8 @@
       "ae_min_mm": 0.12,
       "ae_max_mm": 0.8,
       "ap_rule": "3d profiling finish",
-      "ae_rule": "scallop driven"
+      "ae_rule": "scallop driven",
+      "notes": "No printed row at this diameter in the cited chart; extrapolated. The cited Amana ZrN 2D/3D carving chart (stored text sources/amana_zrn_3d_profiling.txt) has no tapered section: the word 'taper' does not occur in it, and its 2 Flute Ball Nose columns are 1mm, 1/16 in and 6mm-1/4 in only (Wood, MDF, Sign-Foam 6mm-1/4 in: 0.007-0.009 in/tooth). The row was seeded on 2026-03-21 (commit def88067) from the shapeoko_feeds_and_speeds reference project's Phase 1 seed fixtures; no derivation is recorded. Relabelled from exact/a to derived/c on 2026-09-23 (feeds matrix R5, EVIDENCE 4.1-15). The printed tapered-ball rows are the Onsrud 77-100 rows in onsrud_tapered_ball.json."
     },
     {
       "observation_id": "amana-tapered-hardwood-parallel-3175-2f",
@@ -69,8 +71,8 @@
       "source_title": "Amana ZrN 3D Profiling Feed and Chip Load Chart",
       "source_url": "https://www.amanatool.com/pub/media/productattachments/ZrN-3D-Profiling-Feed-Chip-Load-Chart.pdf",
       "accessed_on": "2026-03-10",
-      "evidence_grade": "a",
-      "row_kind": "exact",
+      "evidence_grade": "c",
+      "row_kind": "derived",
       "tool_family": "tapered_ball_nose",
       "tool_subfamily": "3d_profiling",
       "operation_family": "parallel",
@@ -91,7 +93,8 @@
       "ae_min_mm": 0.08,
       "ae_max_mm": 0.35,
       "ap_rule": "3d profiling finish",
-      "ae_rule": "scallop driven"
+      "ae_rule": "scallop driven",
+      "notes": "No printed row at this diameter in the cited chart; extrapolated. The cited Amana ZrN 2D/3D carving chart (stored text sources/amana_zrn_3d_profiling.txt) has no tapered section: the word 'taper' does not occur in it, and its 2 Flute Ball Nose columns are 1mm, 1/16 in and 6mm-1/4 in only (Wood, MDF, Sign-Foam 6mm-1/4 in: 0.007-0.009 in/tooth). The row was seeded on 2026-03-21 (commit def88067) from the shapeoko_feeds_and_speeds reference project's Phase 1 seed fixtures; no derivation is recorded. Relabelled from exact/a to derived/c on 2026-09-23 (feeds matrix R5, EVIDENCE 4.1-15). The printed tapered-ball rows are the Onsrud 77-100 rows in onsrud_tapered_ball.json."
     },
     {
       "observation_id": "amana-tapered-hardwood-parallel-6000-2f",
@@ -100,8 +103,8 @@
       "source_title": "Amana ZrN 3D Profiling Feed and Chip Load Chart",
       "source_url": "https://www.amanatool.com/pub/media/productattachments/ZrN-3D-Profiling-Feed-Chip-Load-Chart.pdf",
       "accessed_on": "2026-03-10",
-      "evidence_grade": "a",
-      "row_kind": "exact",
+      "evidence_grade": "c",
+      "row_kind": "derived",
       "tool_family": "tapered_ball_nose",
       "tool_subfamily": "3d_profiling",
       "operation_family": "parallel",
@@ -122,7 +125,8 @@
       "ae_min_mm": 0.1,
       "ae_max_mm": 0.65,
       "ap_rule": "3d profiling finish",
-      "ae_rule": "scallop driven"
+      "ae_rule": "scallop driven",
+      "notes": "No printed row at this diameter in the cited chart; extrapolated. The cited Amana ZrN 2D/3D carving chart (stored text sources/amana_zrn_3d_profiling.txt) has no tapered section: the word 'taper' does not occur in it, and its 2 Flute Ball Nose columns are 1mm, 1/16 in and 6mm-1/4 in only (Wood, MDF, Sign-Foam 6mm-1/4 in: 0.007-0.009 in/tooth). The row was seeded on 2026-03-21 (commit def88067) from the shapeoko_feeds_and_speeds reference project's Phase 1 seed fixtures; no derivation is recorded. Relabelled from exact/a to derived/c on 2026-09-23 (feeds matrix R5, EVIDENCE 4.1-15). The printed tapered-ball rows are the Onsrud 77-100 rows in onsrud_tapered_ball.json."
     },
     {
       "observation_id": "amana-tapered-mdf-parallel-3175-2f",
@@ -131,8 +135,8 @@
       "source_title": "Amana ZrN 3D Profiling Feed and Chip Load Chart",
       "source_url": "https://www.amanatool.com/pub/media/productattachments/ZrN-3D-Profiling-Feed-Chip-Load-Chart.pdf",
       "accessed_on": "2026-03-10",
-      "evidence_grade": "a",
-      "row_kind": "exact",
+      "evidence_grade": "c",
+      "row_kind": "derived",
       "tool_family": "tapered_ball_nose",
       "tool_subfamily": "3d_profiling",
       "operation_family": "parallel",
@@ -153,7 +157,8 @@
       "ae_min_mm": 0.08,
       "ae_max_mm": 0.35,
       "ap_rule": "3d profiling finish",
-      "ae_rule": "scallop driven"
+      "ae_rule": "scallop driven",
+      "notes": "No printed row at this diameter in the cited chart; extrapolated. The cited Amana ZrN 2D/3D carving chart (stored text sources/amana_zrn_3d_profiling.txt) has no tapered section: the word 'taper' does not occur in it, and its 2 Flute Ball Nose columns are 1mm, 1/16 in and 6mm-1/4 in only (Wood, MDF, Sign-Foam 6mm-1/4 in: 0.007-0.009 in/tooth). The row was seeded on 2026-03-21 (commit def88067) from the shapeoko_feeds_and_speeds reference project's Phase 1 seed fixtures; no derivation is recorded. Relabelled from exact/a to derived/c on 2026-09-23 (feeds matrix R5, EVIDENCE 4.1-15). The printed tapered-ball rows are the Onsrud 77-100 rows in onsrud_tapered_ball.json."
     },
     {
       "observation_id": "amana-tapered-mdf-parallel-6000-2f",
@@ -162,8 +167,8 @@
       "source_title": "Amana ZrN 3D Profiling Feed and Chip Load Chart",
       "source_url": "https://www.amanatool.com/pub/media/productattachments/ZrN-3D-Profiling-Feed-Chip-Load-Chart.pdf",
       "accessed_on": "2026-03-10",
-      "evidence_grade": "a",
-      "row_kind": "exact",
+      "evidence_grade": "c",
+      "row_kind": "derived",
       "tool_family": "tapered_ball_nose",
       "tool_subfamily": "3d_profiling",
       "operation_family": "parallel",
@@ -184,7 +189,8 @@
       "ae_min_mm": 0.1,
       "ae_max_mm": 0.7,
       "ap_rule": "3d profiling finish",
-      "ae_rule": "scallop driven"
+      "ae_rule": "scallop driven",
+      "notes": "No printed row at this diameter in the cited chart; extrapolated. The cited Amana ZrN 2D/3D carving chart (stored text sources/amana_zrn_3d_profiling.txt) has no tapered section: the word 'taper' does not occur in it, and its 2 Flute Ball Nose columns are 1mm, 1/16 in and 6mm-1/4 in only (Wood, MDF, Sign-Foam 6mm-1/4 in: 0.007-0.009 in/tooth). The row was seeded on 2026-03-21 (commit def88067) from the shapeoko_feeds_and_speeds reference project's Phase 1 seed fixtures; no derivation is recorded. Relabelled from exact/a to derived/c on 2026-09-23 (feeds matrix R5, EVIDENCE 4.1-15). The printed tapered-ball rows are the Onsrud 77-100 rows in onsrud_tapered_ball.json."
     },
     {
       "observation_id": "amana-tapered-acrylic-parallel-3175-2f",
@@ -193,8 +199,8 @@
       "source_title": "Amana ZrN 3D Profiling Feed and Chip Load Chart",
       "source_url": "https://www.amanatool.com/pub/media/productattachments/ZrN-3D-Profiling-Feed-Chip-Load-Chart.pdf",
       "accessed_on": "2026-03-10",
-      "evidence_grade": "a",
-      "row_kind": "exact",
+      "evidence_grade": "c",
+      "row_kind": "derived",
       "tool_family": "tapered_ball_nose",
       "tool_subfamily": "3d_profiling",
       "operation_family": "parallel",
@@ -215,7 +221,8 @@
       "ae_min_mm": 0.06,
       "ae_max_mm": 0.25,
       "ap_rule": "3d profiling finish",
-      "ae_rule": "scallop driven"
+      "ae_rule": "scallop driven",
+      "notes": "No printed row at this diameter in the cited chart; extrapolated. The cited Amana ZrN 2D/3D carving chart (stored text sources/amana_zrn_3d_profiling.txt) has no tapered section: the word 'taper' does not occur in it, and its 2 Flute Ball Nose columns are 1mm, 1/16 in and 6mm-1/4 in only (Wood, MDF, Sign-Foam 6mm-1/4 in: 0.007-0.009 in/tooth). The row was seeded on 2026-03-21 (commit def88067) from the shapeoko_feeds_and_speeds reference project's Phase 1 seed fixtures; no derivation is recorded. Relabelled from exact/a to derived/c on 2026-09-23 (feeds matrix R5, EVIDENCE 4.1-15). The printed tapered-ball rows are the Onsrud 77-100 rows in onsrud_tapered_ball.json."
     },
     {
       "observation_id": "amana-tapered-acrylic-parallel-6000-2f",
@@ -224,8 +231,8 @@
       "source_title": "Amana ZrN 3D Profiling Feed and Chip Load Chart",
       "source_url": "https://www.amanatool.com/pub/media/productattachments/ZrN-3D-Profiling-Feed-Chip-Load-Chart.pdf",
       "accessed_on": "2026-03-10",
-      "evidence_grade": "a",
-      "row_kind": "exact",
+      "evidence_grade": "c",
+      "row_kind": "derived",
       "tool_family": "tapered_ball_nose",
       "tool_subfamily": "3d_profiling",
       "operation_family": "parallel",
@@ -246,7 +253,8 @@
       "ae_min_mm": 0.08,
       "ae_max_mm": 0.45,
       "ap_rule": "3d profiling finish",
-      "ae_rule": "scallop driven"
+      "ae_rule": "scallop driven",
+      "notes": "No printed row at this diameter in the cited chart; extrapolated. The cited Amana ZrN 2D/3D carving chart (stored text sources/amana_zrn_3d_profiling.txt) has no tapered section: the word 'taper' does not occur in it, and its 2 Flute Ball Nose columns are 1mm, 1/16 in and 6mm-1/4 in only (Wood, MDF, Sign-Foam 6mm-1/4 in: 0.007-0.009 in/tooth). The row was seeded on 2026-03-21 (commit def88067) from the shapeoko_feeds_and_speeds reference project's Phase 1 seed fixtures; no derivation is recorded. Relabelled from exact/a to derived/c on 2026-09-23 (feeds matrix R5, EVIDENCE 4.1-15). The printed tapered-ball rows are the Onsrud 77-100 rows in onsrud_tapered_ball.json."
     },
     {
       "observation_id": "amana-tapered-hardwood-scallop-3175-2f",
@@ -255,8 +263,8 @@
       "source_title": "Amana ZrN 3D Profiling Feed and Chip Load Chart",
       "source_url": "https://www.amanatool.com/pub/media/productattachments/ZrN-3D-Profiling-Feed-Chip-Load-Chart.pdf",
       "accessed_on": "2026-03-10",
-      "evidence_grade": "a",
-      "row_kind": "exact",
+      "evidence_grade": "c",
+      "row_kind": "derived",
       "tool_family": "tapered_ball_nose",
       "tool_subfamily": "3d_profiling",
       "operation_family": "scallop",
@@ -277,7 +285,8 @@
       "ae_min_mm": 0.08,
       "ae_max_mm": 0.45,
       "ap_rule": "3d profiling semi",
-      "ae_rule": "scallop driven"
+      "ae_rule": "scallop driven",
+      "notes": "No printed row at this diameter in the cited chart; extrapolated. The cited Amana ZrN 2D/3D carving chart (stored text sources/amana_zrn_3d_profiling.txt) has no tapered section: the word 'taper' does not occur in it, and its 2 Flute Ball Nose columns are 1mm, 1/16 in and 6mm-1/4 in only (Wood, MDF, Sign-Foam 6mm-1/4 in: 0.007-0.009 in/tooth). The row was seeded on 2026-03-21 (commit def88067) from the shapeoko_feeds_and_speeds reference project's Phase 1 seed fixtures; no derivation is recorded. Relabelled from exact/a to derived/c on 2026-09-23 (feeds matrix R5, EVIDENCE 4.1-15). The printed tapered-ball rows are the Onsrud 77-100 rows in onsrud_tapered_ball.json."
     },
     {
       "observation_id": "amana-tapered-hardwood-scallop-6000-2f",
@@ -286,8 +295,8 @@
       "source_title": "Amana ZrN 3D Profiling Feed and Chip Load Chart",
       "source_url": "https://www.amanatool.com/pub/media/productattachments/ZrN-3D-Profiling-Feed-Chip-Load-Chart.pdf",
       "accessed_on": "2026-03-10",
-      "evidence_grade": "a",
-      "row_kind": "exact",
+      "evidence_grade": "c",
+      "row_kind": "derived",
       "tool_family": "tapered_ball_nose",
       "tool_subfamily": "3d_profiling",
       "operation_family": "scallop",
@@ -308,7 +317,8 @@
       "ae_min_mm": 0.1,
       "ae_max_mm": 0.65,
       "ap_rule": "3d profiling semi",
-      "ae_rule": "scallop driven"
+      "ae_rule": "scallop driven",
+      "notes": "No printed row at this diameter in the cited chart; extrapolated. The cited Amana ZrN 2D/3D carving chart (stored text sources/amana_zrn_3d_profiling.txt) has no tapered section: the word 'taper' does not occur in it, and its 2 Flute Ball Nose columns are 1mm, 1/16 in and 6mm-1/4 in only (Wood, MDF, Sign-Foam 6mm-1/4 in: 0.007-0.009 in/tooth). The row was seeded on 2026-03-21 (commit def88067) from the shapeoko_feeds_and_speeds reference project's Phase 1 seed fixtures; no derivation is recorded. Relabelled from exact/a to derived/c on 2026-09-23 (feeds matrix R5, EVIDENCE 4.1-15). The printed tapered-ball rows are the Onsrud 77-100 rows in onsrud_tapered_ball.json."
     },
     {
       "observation_id": "onsrud-bull-softwood-adaptive-6000-2f",
@@ -317,8 +327,8 @@
       "source_title": "Onsrud Cutting Data Recommendations",
       "source_url": "https://www.onsrud.com/Forms/Cutting-Data-Recommendations.asp",
       "accessed_on": "2026-03-10",
-      "evidence_grade": "b",
-      "row_kind": "exact",
+      "evidence_grade": "c",
+      "row_kind": "derived",
       "tool_family": "bull_nose",
       "tool_subfamily": "corner_radius",
       "operation_family": "adaptive",
@@ -341,7 +351,8 @@
       "ae_min_mm": 0.45,
       "ae_max_mm": 1.1,
       "ap_rule": "0.4xD to 1.25xD",
-      "ae_rule": "8% to 18%D"
+      "ae_rule": "8% to 18%D",
+      "notes": "Not printed by the cited source: the Onsrud cutting-data sheets (Hard Wood, Soft Wood, MDF, Hard Plywood, Soft Plywood) print no bull, corner-radius or radius series, and no Onsrud aluminum sheet is cited. The row was seeded on 2026-03-21 (commit def88067) from the shapeoko_feeds_and_speeds reference project, whose research note (docs/validation/ADAPTIVE_FEEDS_SPEEDS_RESEARCH_SHAPEOKO.md, section 'Bull nose') says: 'Treat roughing close to flat-end behavior but slightly derated'. The band is derived from the flat-end row amana-flat-softwood-adaptive-6000-2f (0.065-0.11 mm/tooth): x0.85 at the minimum and x0.86 at the maximum. That flat row is itself not printed on its cited chart (EVIDENCE 5.2-19). Relabelled from exact/b to derived/c on 2026-09-23 (feeds matrix R5, EVIDENCE 3.3-16, 3.3-17)."
     },
     {
       "observation_id": "onsrud-bull-hardwood-adaptive-6000-2f",
@@ -350,8 +361,8 @@
       "source_title": "Onsrud Cutting Data Recommendations",
       "source_url": "https://www.onsrud.com/Forms/Cutting-Data-Recommendations.asp",
       "accessed_on": "2026-03-10",
-      "evidence_grade": "b",
-      "row_kind": "exact",
+      "evidence_grade": "c",
+      "row_kind": "derived",
       "tool_family": "bull_nose",
       "tool_subfamily": "corner_radius",
       "operation_family": "adaptive",
@@ -374,7 +385,8 @@
       "ae_min_mm": 0.3,
       "ae_max_mm": 0.9,
       "ap_rule": "0.3xD to 0.85xD",
-      "ae_rule": "5% to 15%D"
+      "ae_rule": "5% to 15%D",
+      "notes": "Not printed by the cited source: the Onsrud cutting-data sheets (Hard Wood, Soft Wood, MDF, Hard Plywood, Soft Plywood) print no bull, corner-radius or radius series, and no Onsrud aluminum sheet is cited. The row was seeded on 2026-03-21 (commit def88067) from the shapeoko_feeds_and_speeds reference project, whose research note (docs/validation/ADAPTIVE_FEEDS_SPEEDS_RESEARCH_SHAPEOKO.md, section 'Bull nose') says: 'Treat roughing close to flat-end behavior but slightly derated'. The band is derived from the flat-end row amana-flat-hardwood-adaptive-6000-2f (0.038-0.07 mm/tooth): x0.84 at the minimum and x0.86 at the maximum. That flat row is itself not printed on its cited chart (EVIDENCE 5.2-19). Relabelled from exact/b to derived/c on 2026-09-23 (feeds matrix R5, EVIDENCE 3.3-16, 3.3-17)."
     },
     {
       "observation_id": "onsrud-bull-plywood-hardwood-pocket-6000-2f",
@@ -383,8 +395,8 @@
       "source_title": "Onsrud Cutting Data Recommendations",
       "source_url": "https://www.onsrud.com/Forms/Cutting-Data-Recommendations.asp",
       "accessed_on": "2026-03-10",
-      "evidence_grade": "b",
-      "row_kind": "exact",
+      "evidence_grade": "c",
+      "row_kind": "derived",
       "tool_family": "bull_nose",
       "tool_subfamily": "corner_radius",
       "operation_family": "pocket",
@@ -407,7 +419,8 @@
       "ae_min_mm": 0.8,
       "ae_max_mm": 1.8,
       "ap_rule": "0.3xD to 0.75xD",
-      "ae_rule": "13% to 30%D"
+      "ae_rule": "13% to 30%D",
+      "notes": "Not printed by the cited source: the Onsrud cutting-data sheets (Hard Wood, Soft Wood, MDF, Hard Plywood, Soft Plywood) print no bull, corner-radius or radius series, and no Onsrud aluminum sheet is cited. The row was seeded on 2026-03-21 (commit def88067) from the shapeoko_feeds_and_speeds reference project, whose research note (docs/validation/ADAPTIVE_FEEDS_SPEEDS_RESEARCH_SHAPEOKO.md, section 'Bull nose') says: 'Treat roughing close to flat-end behavior but slightly derated'. The band is derived from the flat-end row amana-flat-plywood-hardwood-pocket-6000-2f (0.035-0.06 mm/tooth): x1.00 at the minimum and x1.08 at the maximum. That flat row is itself not printed on its cited chart (EVIDENCE 5.2-19). Relabelled from exact/b to derived/c on 2026-09-23 (feeds matrix R5, EVIDENCE 3.3-16, 3.3-17)."
     },
     {
       "observation_id": "onsrud-bull-aluminum-adaptive-6000-3f",
@@ -416,8 +429,8 @@
       "source_title": "Onsrud Cutting Data Recommendations",
       "source_url": "https://www.onsrud.com/Forms/Cutting-Data-Recommendations.asp",
       "accessed_on": "2026-03-10",
-      "evidence_grade": "b",
-      "row_kind": "exact",
+      "evidence_grade": "c",
+      "row_kind": "derived",
       "tool_family": "bull_nose",
       "tool_subfamily": "zrn",
       "operation_family": "adaptive",
@@ -440,7 +453,8 @@
       "ae_min_mm": 0.15,
       "ae_max_mm": 0.7,
       "ap_rule": "0.12xD to 0.42xD",
-      "ae_rule": "2.5% to 12%D"
+      "ae_rule": "2.5% to 12%D",
+      "notes": "Not printed by the cited source: the Onsrud cutting-data sheets (Hard Wood, Soft Wood, MDF, Hard Plywood, Soft Plywood) print no bull, corner-radius or radius series, and no Onsrud aluminum sheet is cited. The row was seeded on 2026-03-21 (commit def88067) from the shapeoko_feeds_and_speeds reference project, whose research note (docs/validation/ADAPTIVE_FEEDS_SPEEDS_RESEARCH_SHAPEOKO.md, section 'Bull nose') says: 'Treat roughing close to flat-end behavior but slightly derated'. No flat-end aluminum row in the seed set matches this band; the derivation is not recorded. Relabelled from exact/b to derived/c on 2026-09-23 (feeds matrix R5, EVIDENCE 3.3-16, 3.3-17)."
     }
   ]
 }
