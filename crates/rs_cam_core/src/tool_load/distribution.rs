@@ -130,7 +130,10 @@ pub struct PopulationSample {
 ///   inner range. Its upper edge is the population maximum.
 /// - The inner bins between them divide the inner range into equal
 ///   widths. The inner range is the 0.5 to 99.5 percentile of the
-///   population, widened to include every bound.
+///   population. It does not widen to include a bound: a bound far from
+///   the data would squash every bar into a few bins. `floor` and
+///   `ceiling` carry the bounds, and a surface that draws one outside the
+///   inner range marks it at the chart edge.
 ///
 /// An overflow bin can have zero width and zero weight. Its width is not
 /// to scale with the inner bins: draw it as a fixed stub, so a spike is
@@ -202,12 +205,11 @@ impl Histogram {
                 }
             }
         };
+        // The inner range follows the data only. The shares below come
+        // from the exact values against the bounds, so a bound outside the
+        // range still sorts every sample.
         let mut lo = percentile(&values, RANGE_PERCENTILE_LOW).unwrap_or(pop_min);
         let mut hi = percentile(&values, RANGE_PERCENTILE_HIGH).unwrap_or(pop_max);
-        for b in finite_bounds() {
-            lo = lo.min(b);
-            hi = hi.max(b);
-        }
         if hi <= lo {
             // Every value is equal and no bound is apart from it. Give the
             // inner range a width so the bins do not divide by zero. This
@@ -670,10 +672,25 @@ mod tests {
     }
 
     #[test]
-    fn the_range_widens_to_include_a_bound_outside_the_population() {
+    fn the_range_follows_the_data_and_keeps_a_far_bound_apart() {
+        // 2026-09-24 follow-up: the bins cover the data, not the bound. A
+        // ceiling four times the peak used to put every sample in one bin.
         let h = Histogram::build(&pop(&[1.0, 1.1, 1.2]), None, Some(5.0), 4);
-        assert_eq!(*h.edges.last().unwrap(), 5.0);
+        assert!(*h.edges.last().unwrap() < 5.0, "the edges stop at the data");
+        assert_eq!(h.ceiling, Some(5.0), "the bound stays a separate field");
         assert_eq!(h.below_s, 0.0, "no floor, so nothing is below");
+        assert!((h.in_band_s - h.total_s).abs() < 1e-12);
+        let occupied = h.counts.iter().filter(|&&c| c > 0).count();
+        assert!(occupied >= 3, "three distinct values keep three bins");
+    }
+
+    #[test]
+    fn a_bound_below_every_value_still_sorts_the_shares() {
+        let h = Histogram::build(&pop(&[1.0, 1.1, 1.2]), Some(0.2), None, 4);
+        assert_eq!(*h.edges.first().unwrap(), 1.0);
+        assert_eq!(h.below_s, 0.0);
+        let h = Histogram::build(&pop(&[1.0, 1.1, 1.2]), None, Some(0.2), 4);
+        assert!((h.above_s - h.total_s).abs() < 1e-12, "every value is above");
     }
 
     #[test]
