@@ -492,22 +492,23 @@ fn face_full_chain_fingerprint() {
     current = clip_annotated_to_boundary_set(current, &[boundary], 30.0, None)
         .reconcile(&mut ReconcileSet::new(Some(&recorder), None))
         .into_inner();
-    // RE-PINNED 2026-09-09 (G-ISOCLIPRAPID): stage 1's six inserted lifts carry
-    // forward, 97 -> 103. Was `(97, 7_877_196_034_056_840_142)`.
+    // RE-PINNED 2026-09-21: interval boundary clipping now retains the
+    // in-boundary portions of seven inside→outside Face row feeds, adding
+    // seven safe emitted moves. Was `(103, 10_899_331_192_678_125_387)`.
     assert_eq!(
         fingerprint(&current.toolpath),
-        (103, 10_899_331_192_678_125_387),
-        "face stage-2 (boundary clip) geometry moved; re-pinned 2026-09-09 for the \
-         lead-in retract-plane lift (G-ISOCLIPRAPID) carried forward from stage 1, \
-         originally captured at HEAD 4787421 before C1"
+        (110, 367_139_339_389_144_814),
+        "face stage-2 (boundary clip) geometry moved; re-pinned 2026-09-21 for \
+         interval boundary clipping retaining in-boundary portions of seven \
+         inside-to-outside Face row feeds, originally captured at HEAD 4787421 \
+         before C1"
     );
 
     // Stage 3 — entry-descent split (no dexel stock: the fresh-stock top is
     // the ceiling, which is what the session passes for a first op).
     //
-    // B2: the cutter is a FLAT endmill of exactly the 3.0 mm search radius,
-    // so `height_at_radius` is `Some(0.0)` throughout the envelope and the
-    // profile-aware descent target reduces to the flat-disc one these
+    // B2: the cutter is a FLAT endmill with a 3.0 mm search radius, so the
+    // profile-aware descent target reduces to the flat-disc target these
     // constants were pinned against. They must not move.
     let (transformed, split_count) = optimize_entry_descents_annotated(
         current,
@@ -520,34 +521,33 @@ fn face_full_chain_fingerprint() {
     current = transformed
         .reconcile(&mut ReconcileSet::new(Some(&recorder), None))
         .into_inner();
-    // RE-PINNED 2026-09-09 (G-ISOCLIPRAPID): stage 1's six inserted lifts carry
-    // forward, 103 -> 109. The split COUNT is unchanged at 6 — the lift is a
-    // rapid and never creates or removes an entry descent. Was
-    // `(6, (103, 3_086_279_569_100_738_182))`.
+    // RE-PINNED 2026-09-21: stage 2 grows 103 -> 110 because interval clipping
+    // retains seven inside→outside Face row feeds. The unchanged six descent
+    // splits then grow stage 3 from 110 -> 116. Was
+    // `(6, (109, 2_717_567_159_789_683_815))`.
     assert_eq!(
         (split_count, fingerprint(&current.toolpath)),
-        (6, (109, 2_717_567_159_789_683_815)),
-        "face stage-3 (entry-descent split) geometry moved; re-pinned 2026-09-09 for \
-         the lead-in retract-plane lift (G-ISOCLIPRAPID) carried forward from stage 1, \
-         originally captured at HEAD 4787421 before C1"
+        (6, (116, 928_713_156_438_199_945)),
+        "face stage-3 (entry-descent split) geometry moved; re-pinned 2026-09-21 for \
+         interval clipping retaining seven inside-to-outside Face row feeds, then the \
+         unchanged six descent splits, originally captured at HEAD 4787421 before C1"
     );
 
     assert_eq!(
         link_sites(&recorder.finish()),
-        // RE-PINNED 2026-09-09 (G-ISOCLIPRAPID): the six inserted lifts push
-        // every landing site out by the number of them that precede it — two
-        // in the head, four more by the tail — and the four sites still tile
-        // 0..=108 contiguously with no gap and no overlap, which is the
-        // property this assertion is really about. Was `head (0, 32)`,
-        // `body (33, 74)`, `tail (75, 102)`, `whole (0, 102)`.
+        // RE-PINNED 2026-09-21: seven retained Face row feeds plus the six
+        // existing entry splits remap the sites; the four still tile 0..=115
+        // contiguously with no gap or overlap. Was `head (0, 34)`,
+        // `body (35, 79)`, `tail (80, 108)`, `whole (0, 108)`.
         expect_sites(&[
-            ("head", Some((0, 34))),
-            ("body", Some((35, 79))),
-            ("tail", Some((80, 108))),
-            ("whole", Some((0, 108))),
+            ("head", Some((0, 37))),
+            ("body", Some((38, 84))),
+            ("tail", Some((85, 115))),
+            ("whole", Some((0, 115))),
         ]),
-        "face full-chain semantic link landing sites moved; re-pinned 2026-09-09 for \
-         the lead-in retract-plane lift (G-ISOCLIPRAPID), originally captured at HEAD \
+        "face full-chain semantic link landing sites moved; re-pinned 2026-09-21 for \
+         seven retained Face row feeds plus the six existing entry splits, which remap the \
+         sites while preserving their contiguous 0..=115 tiling; originally captured at HEAD \
          4787421 before C1"
     );
 }

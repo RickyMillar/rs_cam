@@ -214,10 +214,10 @@ pub fn clip_annotated_to_boundary_set(
         )
     };
 
-    // The clipper never DROPS an input move — it only inserts retract/rapid
-    // pairs between them — so a span that covered "the moves cutting region
-    // X" still covers them, plus any retract inserted into the middle.
-    // `spans_valid` therefore survives the clip.
+    // The clipper never DROPS an input move — it clips fed moves into one or
+    // more retained intervals and inserts safety moves around them — so a span
+    // that covered "the moves cutting region X" still covers one contiguous
+    // output range. `spans_valid` therefore survives the clip.
     let spans: Vec<crate::trace::toolpath_spans::Span> =
         spans.iter().map(|s| s.remap(&mapping)).collect();
 
@@ -237,11 +237,13 @@ pub fn clip_annotated_to_boundary_set(
 /// Clip a toolpath to stay within a boundary polygon and return a per-input
 /// move provenance map for span remapping.
 ///
-/// Moves whose target is inside the boundary are kept. Moves that cross from
-/// inside to outside get a retract to `safe_z` and become rapids. Moves that
-/// cross from outside to inside get a rapid to `safe_z` above the target
-/// followed by a plunge. The first move is treated as if the previous position
-/// was outside the boundary (the tool starts from a safe location).
+/// Each linear fed segment is clipped to every maximal interval inside the
+/// boundary. At each entry the tool links at `safe_z` and plunges vertically;
+/// at each exit it retracts before linking across the excluded gap. This
+/// retains linear cuts even when both segment endpoints are outside, and
+/// splits them around holes. Arc moves are kept only when both endpoints are
+/// inside; other arcs become safe retract/link/re-entry moves. The first move
+/// has no segment to clip and is handled by target membership.
 ///
 /// Every move this function emits is tagged with a [`MoveIntent`]: the
 /// retract-up rapid is `Retract`, the over-to-target rapid (both on exit and
@@ -249,7 +251,8 @@ pub fn clip_annotated_to_boundary_set(
 /// Kept in-boundary moves clone the input's original intent unchanged.
 ///
 /// Re-entry always feeds the *entire* height from `safe_z` down to the
-/// target at `plunge_rate_mm_min` (G-BOUNDARYPLUNGE — see
+/// segment's interpolated entry point at `plunge_rate_mm_min`
+/// (G-BOUNDARYPLUNGE — see
 /// [`clip_toolpath_to_boundary_set_with_provenance`]). A
 /// rapid-down-to-clearance split is NOT done here — the actual input stock
 /// (not the boundary clip's view of the move) is the only safe source for a
@@ -260,9 +263,9 @@ pub fn clip_annotated_to_boundary_set(
 /// Returns `(clipped, mapping)` where `mapping` has length `tp.moves.len() + 1`:
 /// `mapping[i]` is the index of the first output move produced from input move
 /// `i`, and `mapping[tp.moves.len()]` is `clipped.moves.len()` (sentinel).
-/// Every input move produces ≥1 output move (no drops), so `mapping` is
-/// non-decreasing and a half-open input range `[a, b)` remaps to the
-/// half-open output range `[mapping[a], mapping[b])`.
+/// Every input move produces one contiguous range containing ≥1 output move
+/// (no drops), so `mapping` is strictly increasing and a half-open input range
+/// `[a, b)` remaps to `[mapping[a], mapping[b])`.
 ///
 /// Thin wrapper over [`clip_toolpath_to_boundary_set_with_provenance`] with a
 /// single-element boundary set — see that function for the shared walk.
@@ -316,7 +319,7 @@ pub fn clip_toolpath_to_boundary_with_provenance(
 /// (`planning/machine_kinematics_confidence_2026-09-07.md`).
 ///
 /// The descent this walk emits is pure-vertical BY CONSTRUCTION — the rapid
-/// before it goes to the target's own XY — so it is a plunge in
+/// before it goes to the interpolated entry point's XY — so it is a plunge in
 /// [`crate::machine::kinematic_utilization::classify_move`]'s terms too, not only by
 /// its tag. The rate does not depend on that: a descent that also moved in
 /// XY would still be tagged `EntryPlunge`, the modulator would still never
@@ -344,8 +347,11 @@ pub fn clip_toolpath_to_boundary_set_with_provenance(
         return (result, mapping);
     }
 
-    let mut prev_inside = false;
     let mut prev_pos: Option<P3> = None;
+    // Whether the prior input target was emitted at its original Z. A point
+    // can lie numerically on a ring, so membership alone is not sufficient to
+    // decide whether a t=0 interval needs a re-entry plunge.
+    let mut at_source_target = false;
 
     // G-BOUNDARYPLUNGE: the same disable condition the Phase 3 modulation
     // guard uses (`feed_modulation.rs`). `OperationConfig::plunge_rate`
@@ -360,67 +366,245 @@ pub fn clip_toolpath_to_boundary_set_with_provenance(
         mapping.push(result.moves.len());
 
         let target_xy = P2::new(m.target.x, m.target.y);
-        let cur_inside = inside_any(&target_xy);
-
-        match (prev_inside, cur_inside) {
-            (_, true) if prev_pos.is_none() => {
-                // First move, target is inside. Keep it (may be a rapid approach).
+        let target_inside = inside_any(&target_xy);
+        let Some(start) = prev_pos else {
+            // The first move has no input segment. Preserve an in-boundary
+            // target; otherwise establish the same safe outside position as
+            // the existing endpoint-only walk.
+            if target_inside {
                 result.moves.push(m.clone());
-            }
-            (false, true) => {
-                // Crossing from outside to inside: rapid above target, then plunge.
+                at_source_target = true;
+            } else {
                 result.rapid_to_with_intent(
                     P3::new(m.target.x, m.target.y, safe_z),
                     MoveIntent::Linking,
                 );
+                at_source_target = false;
+            }
+            prev_pos = Some(m.target);
+            continue;
+        };
 
-                // G-BOUNDARYPLUNGE. A rapid crossing stays a rapid (there is
-                // nothing to descend at a feed), so the plunge rate applies
-                // only where the crossing move was a fed one. The descent
-                // itself runs at the OPERATION's plunge rate, not the cut
-                // feed this arm used to preserve.
-                let feed = feed_rate_of(&m.move_type);
-                match feed {
-                    Some(fr) => {
-                        let descent_feed = usable_plunge_rate.unwrap_or(fr);
-                        result.feed_to_with_intent(m.target, descent_feed, MoveIntent::EntryPlunge);
-                    }
-                    None => {
-                        result.rapid_to_with_intent(m.target, MoveIntent::Linking);
-                    }
-                }
-            }
-            (true, true) => {
-                // Both inside: keep the move unchanged.
+        let Some(source_feed) = feed_rate_of(&m.move_type) else {
+            // A rapid is not a cutting segment. Preserve it only when the
+            // entire chord stays in the union; otherwise retract and link at
+            // safe Z across holes, concavities, and gaps between regions.
+            let intervals = maximal_inside_intervals(start, m.target, boundaries);
+            let entirely_inside = matches!(intervals.as_slice(), [(a, b)]
+                if *a <= CLIP_PARAMETER_EPSILON
+                    && *b >= 1.0 - CLIP_PARAMETER_EPSILON);
+            if entirely_inside {
                 result.moves.push(m.clone());
-            }
-            (true, false) => {
-                // Crossing from inside to outside: retract, then rapid.
-                if let Some(prev) = prev_pos {
-                    result
-                        .rapid_to_with_intent(P3::new(prev.x, prev.y, safe_z), MoveIntent::Retract);
+            } else {
+                if at_source_target {
+                    result.rapid_to_with_intent(
+                        P3::new(start.x, start.y, safe_z),
+                        MoveIntent::Retract,
+                    );
                 }
                 result.rapid_to_with_intent(
                     P3::new(m.target.x, m.target.y, safe_z),
                     MoveIntent::Linking,
                 );
+                if target_inside {
+                    result.rapid_to_with_intent(m.target, MoveIntent::Linking);
+                }
             }
-            (false, false) => {
-                // Both outside (or first move with outside target):
-                // convert to rapid at safe_z.
+            at_source_target = target_inside;
+            prev_pos = Some(m.target);
+            continue;
+        };
+
+        if matches!(
+            m.move_type,
+            MoveType::ArcCW { .. } | MoveType::ArcCCW { .. }
+        ) {
+            // A chord does not describe where an arc travels. Do not derive
+            // cutting intervals from it: retain an arc only when both of its
+            // endpoints are contained, otherwise replace it with the same
+            // safe retract/link/re-entry sequence as the former endpoint walk.
+            if target_inside && inside_any(&P2::new(start.x, start.y)) {
+                result.moves.push(m.clone());
+                at_source_target = true;
+            } else {
+                if at_source_target {
+                    result.rapid_to_with_intent(
+                        P3::new(start.x, start.y, safe_z),
+                        MoveIntent::Retract,
+                    );
+                }
                 result.rapid_to_with_intent(
                     P3::new(m.target.x, m.target.y, safe_z),
                     MoveIntent::Linking,
                 );
+                if target_inside {
+                    result.feed_to_with_intent(
+                        m.target,
+                        usable_plunge_rate.unwrap_or(source_feed),
+                        MoveIntent::EntryPlunge,
+                    );
+                }
+                at_source_target = target_inside;
+            }
+            prev_pos = Some(m.target);
+            continue;
+        }
+
+        let intervals = maximal_inside_intervals(start, m.target, boundaries);
+        if intervals.is_empty() {
+            // Preserve one contiguous, non-empty provenance range even when
+            // no part of the source segment may cut.
+            if at_source_target {
+                result.rapid_to_with_intent(P3::new(start.x, start.y, safe_z), MoveIntent::Retract);
+            }
+            result
+                .rapid_to_with_intent(P3::new(m.target.x, m.target.y, safe_z), MoveIntent::Linking);
+            at_source_target = false;
+            prev_pos = Some(m.target);
+            continue;
+        }
+
+        let descent_feed = usable_plunge_rate.unwrap_or(source_feed);
+        let mut ends_at_target = false;
+        for &(interval_start, interval_end) in &intervals {
+            let entry = interpolate_segment(start, m.target, interval_start);
+            let exit = interpolate_segment(start, m.target, interval_end);
+
+            if interval_start > CLIP_PARAMETER_EPSILON {
+                if at_source_target {
+                    result.rapid_to_with_intent(
+                        P3::new(start.x, start.y, safe_z),
+                        MoveIntent::Retract,
+                    );
+                    at_source_target = false;
+                }
+                result.rapid_to_with_intent(P3::new(entry.x, entry.y, safe_z), MoveIntent::Linking);
+                result.feed_to_with_intent(entry, descent_feed, MoveIntent::EntryPlunge);
+            } else if !at_source_target {
+                // The prior clipped input already left us above this same XY.
+                // Only the vertical descent is needed for a t=0 re-entry.
+                result.feed_to_with_intent(entry, descent_feed, MoveIntent::EntryPlunge);
+            }
+
+            result.moves.push(clipped_linear_move(m, exit));
+
+            ends_at_target = interval_end >= 1.0 - CLIP_PARAMETER_EPSILON;
+            if !ends_at_target {
+                result.rapid_to_with_intent(P3::new(exit.x, exit.y, safe_z), MoveIntent::Retract);
+                at_source_target = false;
             }
         }
 
-        prev_inside = cur_inside;
+        if !ends_at_target {
+            result
+                .rapid_to_with_intent(P3::new(m.target.x, m.target.y, safe_z), MoveIntent::Linking);
+        }
+        at_source_target = ends_at_target;
         prev_pos = Some(m.target);
     }
 
     mapping.push(result.moves.len());
     (result, mapping)
+}
+
+const CLIP_PARAMETER_EPSILON: f64 = 1e-9;
+
+/// Maximal parameter intervals on the linear `start`→`end` segment whose
+/// midpoint is inside the union of `boundaries`. Every exterior and hole ring
+/// contributes crossings. Arc moves do not use these chord-derived intervals.
+fn maximal_inside_intervals(start: P3, end: P3, boundaries: &[Polygon2]) -> Vec<(f64, f64)> {
+    let a = P2::new(start.x, start.y);
+    let b = P2::new(end.x, end.y);
+    let mut parameters = vec![0.0, 1.0];
+
+    for boundary in boundaries {
+        for ring in std::iter::once(&boundary.exterior).chain(boundary.holes.iter()) {
+            for (edge_start, edge_end) in ring
+                .iter()
+                .zip(ring.iter().cycle().skip(1))
+                .take(ring.len())
+            {
+                let Some(t) = segment_intersection_parameter(&a, &b, edge_start, edge_end) else {
+                    continue;
+                };
+                if t.is_finite() {
+                    parameters.push(t.clamp(0.0, 1.0));
+                }
+            }
+        }
+    }
+
+    parameters.sort_by(f64::total_cmp);
+    parameters.dedup_by(|a, b| (*a - *b).abs() <= CLIP_PARAMETER_EPSILON);
+    // Keep the exact sentinels even when an intersection deduplicates with
+    // one of them, so t=0/t=1 continuity matches the emitted endpoint.
+    if let Some(first) = parameters.first_mut() {
+        *first = 0.0;
+    }
+    if let Some(last) = parameters.last_mut() {
+        *last = 1.0;
+    }
+
+    let mut intervals: Vec<(f64, f64)> = Vec::new();
+    for window in parameters.windows(2) {
+        let [interval_start, interval_end] = window else {
+            continue;
+        };
+        if interval_end - interval_start <= CLIP_PARAMETER_EPSILON {
+            continue;
+        }
+        let midpoint = (interval_start + interval_end) * 0.5;
+        let midpoint_xy = P2::new(a.x + midpoint * (b.x - a.x), a.y + midpoint * (b.y - a.y));
+        if !boundaries
+            .iter()
+            .any(|boundary| boundary.contains_point(&midpoint_xy))
+        {
+            continue;
+        }
+
+        if let Some((_, previous_end)) = intervals.last_mut()
+            && *interval_start <= *previous_end + CLIP_PARAMETER_EPSILON
+        {
+            *previous_end = *interval_end;
+        } else {
+            intervals.push((*interval_start, *interval_end));
+        }
+    }
+    intervals
+}
+
+fn interpolate_segment(start: P3, end: P3, t: f64) -> P3 {
+    P3::new(
+        start.x + t * (end.x - start.x),
+        start.y + t * (end.y - start.y),
+        start.z + t * (end.z - start.z),
+    )
+}
+
+/// Parameter on `a`→`b` at a proper intersection with `c`→`d`.
+fn segment_intersection_parameter(a: &P2, b: &P2, c: &P2, d: &P2) -> Option<f64> {
+    let ab_x = b.x - a.x;
+    let ab_y = b.y - a.y;
+    let cd_x = d.x - c.x;
+    let cd_y = d.y - c.y;
+    let denom = ab_x * cd_y - ab_y * cd_x;
+    if denom.abs() <= 1e-12 {
+        return None;
+    }
+    let ac_x = c.x - a.x;
+    let ac_y = c.y - a.y;
+    let t = (ac_x * cd_y - ac_y * cd_x) / denom;
+    let u = (ac_x * ab_y - ac_y * ab_x) / denom;
+    let near_segment = -CLIP_PARAMETER_EPSILON..=1.0 + CLIP_PARAMETER_EPSILON;
+    (t.is_finite() && u.is_finite() && near_segment.contains(&t) && near_segment.contains(&u))
+        .then_some(t)
+}
+
+/// Preserve a linear fed move's feed and intent while ending it at a boundary.
+fn clipped_linear_move(m: &crate::toolpath::Move, target: P3) -> crate::toolpath::Move {
+    let mut clipped = m.clone();
+    clipped.target = target;
+    clipped
 }
 
 /// Extract the feed rate from a move type, if it has one.
@@ -922,10 +1106,12 @@ mod tests {
 
         let clipped = clip_toolpath_to_boundary(&tp, &boundary, safe_z);
 
-        // After re-entry, we should see a rapid to safe_z above (25,25) then a plunge
+        // Re-entry occurs at the segment's interpolated boundary point, not
+        // at the row's target. This segment reaches x=0 at t=2/7.
+        let entry_z = safe_z + (2.0 / 7.0) * (-5.0 - safe_z);
         let has_rapid_above_target = clipped.moves.iter().any(|m| {
             m.move_type == MoveType::Rapid
-                && (m.target.x - 25.0).abs() < 1e-10
+                && m.target.x.abs() < 1e-10
                 && (m.target.y - 25.0).abs() < 1e-10
                 && (m.target.z - safe_z).abs() < 1e-10
         });
@@ -936,20 +1122,122 @@ mod tests {
 
         let has_plunge = clipped.moves.iter().any(|m| {
             matches!(m.move_type, MoveType::Linear { feed_rate } if (feed_rate - feed).abs() < 1e-10)
-                && (m.target.x - 25.0).abs() < 1e-10
-                && (m.target.z - (-5.0)).abs() < 1e-10
+                && m.intent == MoveIntent::EntryPlunge
+                && m.target.x.abs() < 1e-10
+                && (m.target.z - entry_z).abs() < 1e-10
         });
         assert!(
             has_plunge,
-            "Re-entry should produce a plunge to cutting depth"
+            "Re-entry should plunge to the interpolated segment entry"
         );
     }
 
     #[test]
+    fn clip_face_like_crossings_retain_only_in_boundary_clearing_cuts() {
+        let boundary = Polygon2::rectangle(0.0, 0.0, 10.0, 10.0);
+        let safe_z = 20.0;
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(-5.0, 5.0, safe_z));
+        tp.feed_to_with_intent(P3::new(5.0, 5.0, -2.0), 1_000.0, MoveIntent::ClearingCut);
+        tp.feed_to_with_intent(P3::new(15.0, 5.0, -2.0), 1_000.0, MoveIntent::ClearingCut);
+
+        let clipped = clip_toolpath_to_boundary(&tp, &boundary, safe_z);
+        let cuts: Vec<_> = clipped
+            .moves
+            .iter()
+            .filter(|m| m.intent == MoveIntent::ClearingCut)
+            .collect();
+
+        assert_eq!(cuts.len(), 2, "both halves of the Face-like row survive");
+        assert!((cuts[0].target.x - 5.0).abs() < 1e-10);
+        assert!((cuts[1].target.x - 10.0).abs() < 1e-10);
+        assert!(clipped.moves.iter().all(|m| {
+            m.intent != MoveIntent::ClearingCut || (0.0..=10.0).contains(&m.target.x)
+        }));
+        assert!(
+            clipped
+                .moves
+                .iter()
+                .any(|m| { m.intent == MoveIntent::Retract && (m.target.x - 10.0).abs() < 1e-10 })
+        );
+    }
+
+    #[test]
+    fn clip_outside_to_outside_face_row_retains_full_inside_cut() {
+        let boundary = Polygon2::rectangle(0.0, 0.0, 10.0, 10.0);
+        let safe_z = 20.0;
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(-2.0, 5.0, safe_z));
+        tp.feed_to_with_intent(P3::new(-2.0, 5.0, -2.0), 300.0, MoveIntent::EntryPlunge);
+        tp.feed_to_with_intent(P3::new(12.0, 5.0, -2.0), 1_000.0, MoveIntent::ClearingCut);
+
+        let (clipped, mapping) = clip_toolpath_to_boundary_with_provenance(&tp, &boundary, safe_z);
+        let retained = clipped.moves.windows(2).find(|moves| {
+            moves[0].intent == MoveIntent::EntryPlunge && moves[1].intent == MoveIntent::ClearingCut
+        });
+        let Some([entry, cut]) = retained else {
+            panic!("retained cut should immediately follow its generated entry plunge");
+        };
+
+        // Move has no explicit start: the preceding plunge establishes x=0,
+        // and the retained source move's target establishes the x=10 exit.
+        assert!(entry.target.x.abs() < 1e-10);
+        assert!((entry.target.y - 5.0).abs() < 1e-10);
+        assert!((entry.target.z - (-2.0)).abs() < 1e-10);
+        assert!(
+            matches!(cut.move_type, MoveType::Linear { feed_rate } if (feed_rate - 1_000.0).abs() < 1e-10)
+        );
+        assert!((cut.target.x - 10.0).abs() < 1e-10);
+        assert!((cut.target.y - entry.target.y).abs() < 1e-10);
+        assert!((cut.target.z - entry.target.z).abs() < 1e-10);
+        assert_eq!(mapping, vec![0, 1, 2, 7]);
+    }
+
+    #[test]
+    fn outside_to_inside_arc_links_then_entry_plunges_without_arc_cut() {
+        let boundary = Polygon2::rectangle(0.0, 0.0, 10.0, 10.0);
+        let safe_z = 20.0;
+        let plunge_rate = 300.0;
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(-2.0, 5.0, safe_z));
+        tp.arc_cw_to_with_intent(
+            P3::new(5.0, 5.0, -2.0),
+            7.0,
+            0.0,
+            1_000.0,
+            MoveIntent::ClearingCut,
+        );
+
+        let clipped = clip_toolpath_to_boundary_set_with_provenance(
+            &tp,
+            std::slice::from_ref(&boundary),
+            safe_z,
+            Some(plunge_rate),
+        )
+        .0;
+
+        assert!(clipped.moves.iter().all(|m| {
+            !matches!(
+                m.move_type,
+                MoveType::ArcCW { .. } | MoveType::ArcCCW { .. }
+            )
+        }));
+        let arc_output = &clipped.moves[1..];
+        assert_eq!(arc_output.len(), 2);
+        assert!(matches!(arc_output[0].move_type, MoveType::Rapid));
+        assert_eq!(arc_output[0].intent, MoveIntent::Linking);
+        assert_eq!(arc_output[0].target, P3::new(5.0, 5.0, safe_z));
+        assert!(
+            matches!(arc_output[1].move_type, MoveType::Linear { feed_rate } if (feed_rate - plunge_rate).abs() < 1e-10)
+        );
+        assert_eq!(arc_output[1].intent, MoveIntent::EntryPlunge);
+        assert_eq!(arc_output[1].target, P3::new(5.0, 5.0, -2.0));
+    }
+
+    #[test]
     fn clip_tags_exit_retract_and_linking() {
-        // Crossing from inside to outside emits two rapids: the first
-        // (retract straight up from the previous position) is `Retract`,
-        // the second (over to the new target at safe_z) is `Linking`.
+        // Crossing from inside to outside retains the cut to the boundary,
+        // then retracts there before linking to the outside target.
         let boundary = Polygon2::rectangle(0.0, 0.0, 50.0, 50.0);
         let safe_z = 20.0;
 
@@ -962,13 +1250,13 @@ mod tests {
         let retract = clipped.moves.iter().any(|m| {
             m.move_type == MoveType::Rapid
                 && m.intent == MoveIntent::Retract
-                && (m.target.x - 25.0).abs() < 1e-10
+                && (m.target.x - 50.0).abs() < 1e-10
                 && (m.target.y - 25.0).abs() < 1e-10
                 && (m.target.z - safe_z).abs() < 1e-10
         });
         assert!(
             retract,
-            "exit should retract straight up from the previous position, tagged Retract"
+            "exit should retract at the boundary, tagged Retract"
         );
 
         let linking = clipped.moves.iter().any(|m| {
@@ -1137,11 +1425,11 @@ mod tests {
 
         let (clipped, mapping) = clip_toolpath_to_boundary_with_provenance(&tp, &boundary, 20.0);
         // input 0 → 1 output (rapid at safe_z)
-        // input 1 → 2 outputs (rapid up, then plunge)
+        // input 1 → 3 outputs (rapid, plunge, retained cut)
         // input 2 → 1 output (kept)
-        // sentinel = 4
-        assert_eq!(mapping, vec![0, 1, 3, 4]);
-        assert_eq!(clipped.moves.len(), 4);
+        // sentinel = 5
+        assert_eq!(mapping, vec![0, 1, 4, 5]);
+        assert_eq!(clipped.moves.len(), 5);
     }
 
     #[test]
@@ -1155,10 +1443,10 @@ mod tests {
         let (clipped, mapping) = clip_toolpath_to_boundary_with_provenance(&tp, &boundary, 20.0);
         // input 0 → 1 output (kept)
         // input 1 → 1 output (kept)
-        // input 2 → 2 outputs (retract from prev + rapid to outside)
-        // sentinel = 4
-        assert_eq!(mapping, vec![0, 1, 2, 4]);
-        assert_eq!(clipped.moves.len(), 4);
+        // input 2 → 3 outputs (retained cut to boundary + retract + rapid)
+        // sentinel = 5
+        assert_eq!(mapping, vec![0, 1, 2, 5]);
+        assert_eq!(clipped.moves.len(), 5);
     }
 
     #[test]
@@ -1185,9 +1473,9 @@ mod tests {
         let region = Span::new(1, 3, SpanKind::Region);
         let (_clipped, mapping) = clip_toolpath_to_boundary_with_provenance(&tp, &boundary, 20.0);
         let remapped = region.remap(&mapping);
-        // input 1..3 → output 1..4 per the prior crossing-in test.
+        // input 1..3 → output 1..5 per the prior crossing-in test.
         assert_eq!(remapped.start_move, 1);
-        assert_eq!(remapped.end_move, 4);
+        assert_eq!(remapped.end_move, 5);
     }
 
     #[test]
@@ -1266,6 +1554,76 @@ mod tests {
             });
             assert!(kept, "move to {target:?} should be preserved as a cut");
         }
+    }
+
+    #[test]
+    fn clip_segment_splits_around_hole_with_safe_gap() {
+        let mut hole = Polygon2::rectangle(4.0, 4.0, 6.0, 6.0).exterior;
+        hole.reverse();
+        let boundary = Polygon2::with_holes(
+            Polygon2::rectangle(0.0, 0.0, 10.0, 10.0).exterior,
+            vec![hole],
+        );
+        let safe_z = 20.0;
+        let mut tp = Toolpath::new();
+        tp.feed_to_with_intent(P3::new(2.0, 5.0, -2.0), 1_000.0, MoveIntent::ClearingCut);
+        tp.feed_to_with_intent(P3::new(8.0, 5.0, -2.0), 1_000.0, MoveIntent::ClearingCut);
+
+        let (clipped, mapping) = clip_toolpath_to_boundary_with_provenance(&tp, &boundary, safe_z);
+        let cuts: Vec<_> = clipped
+            .moves
+            .iter()
+            .filter(|m| m.intent == MoveIntent::ClearingCut)
+            .collect();
+
+        assert_eq!(cuts.len(), 3, "first move plus both sides of the hole");
+        assert!((cuts[1].target.x - 4.0).abs() < 1e-10);
+        assert!((cuts[2].target.x - 8.0).abs() < 1e-10);
+        assert!(clipped.moves.iter().any(|m| {
+            m.intent == MoveIntent::Retract
+                && (m.target.x - 4.0).abs() < 1e-10
+                && (m.target.z - safe_z).abs() < 1e-10
+        }));
+        assert!(clipped.moves.iter().any(|m| {
+            m.intent == MoveIntent::EntryPlunge
+                && (m.target.x - 6.0).abs() < 1e-10
+                && (m.target.z - (-2.0)).abs() < 1e-10
+        }));
+        assert_eq!(mapping, vec![0, 1, 6]);
+    }
+
+    #[test]
+    fn set_clip_one_segment_retains_each_disjoint_region() {
+        let regions = [
+            Polygon2::rectangle(0.0, 0.0, 2.0, 2.0),
+            Polygon2::rectangle(4.0, 0.0, 6.0, 2.0),
+        ];
+        let safe_z = 20.0;
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(-1.0, 1.0, safe_z));
+        tp.feed_to_with_intent(P3::new(7.0, 1.0, -2.0), 1_000.0, MoveIntent::ClearingCut);
+
+        let (clipped, mapping) =
+            clip_toolpath_to_boundary_set_with_provenance(&tp, &regions, safe_z, Some(250.0));
+        let cuts: Vec<_> = clipped
+            .moves
+            .iter()
+            .filter(|m| m.intent == MoveIntent::ClearingCut)
+            .collect();
+        let entries: Vec<_> = clipped
+            .moves
+            .iter()
+            .filter(|m| m.intent == MoveIntent::EntryPlunge)
+            .collect();
+
+        assert_eq!(cuts.len(), 2);
+        assert!((cuts[0].target.x - 2.0).abs() < 1e-10);
+        assert!((cuts[1].target.x - 6.0).abs() < 1e-10);
+        assert_eq!(entries.len(), 2);
+        assert!(entries.iter().all(|m| {
+            matches!(m.move_type, MoveType::Linear { feed_rate } if (feed_rate - 250.0).abs() < 1e-10)
+        }));
+        assert_eq!(mapping, vec![0, 1, 10]);
     }
 
     #[test]
