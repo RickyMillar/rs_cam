@@ -767,10 +767,7 @@ impl RsCamApp {
             Ok(effects) => effects,
             Err(why) => {
                 return self.mcp_mutation_error(
-                    format!(
-                        "Error: nothing applied to toolpath {index} — this tool cannot run \
-                         this operation: {why}"
-                    ),
+                    format!("Error: nothing applied to toolpath {index} — Suggest refused: {why}"),
                     Some("index"),
                 );
             }

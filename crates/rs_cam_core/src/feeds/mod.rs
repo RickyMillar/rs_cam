@@ -29,6 +29,7 @@ pub mod provenance;
 pub mod quantities;
 pub mod rationale;
 pub mod suggest;
+pub mod support;
 pub mod vendor_lookup;
 pub mod vendor_lut;
 pub mod vendor_normalize;
@@ -49,6 +50,7 @@ pub use quantities::{
     AdvancePerToothMm, ArcMeanChipThicknessMm, COMMANDED_ADVANCE_PER_TOOTH, ChiploadBandClass,
     CommandedFeedMmMin, VendorChiploadBand,
 };
+pub use support::{FeedsSupport, feeds_support};
 pub use vendor_lut::VendorLut;
 
 /// Global embedded vendor LUT, loaded once on first access.
@@ -479,6 +481,10 @@ pub struct FeedsResult {
     pub warnings: Vec<FeedsWarning>,
     /// Observation ID if vendor LUT was used for chipload.
     pub vendor_source: Option<String>,
+    /// The support arm of this cell ([`FeedsSupport`]). `calculate` sets it
+    /// from the same row lookup that sets `matched_lut_row`, so a consumer
+    /// reads the arm here and does not derive it again.
+    pub support: FeedsSupport,
     pub chipload_source: ChiploadSource,
     /// LUT-derived chipload band for the matched vendor row, when the
     /// match supplied one. `None` for formula-fallback / RPM-only LUT
@@ -882,6 +888,21 @@ pub enum FeedsError {
         actual_geometry: ToolGeometryHint,
         required: &'static str,
     },
+    /// The engine has no basis for this cell: no vendor row matches, and
+    /// the operation declares no formula source
+    /// (`OperationSpec::feeds_formula_source` is `None`). The resolver
+    /// [`feeds_support`] returns `FeedsSupport::Refuse` for it.
+    ///
+    /// This is a different refusal from `WrongToolForOperation`. That one
+    /// says the tool cannot make the cut. This one says the engine has no
+    /// source for a recipe. Every registry row declares a formula source
+    /// today (feeds-matrix Phase 0), so no production cell raises this.
+    Unbacked {
+        operation: crate::compute::catalog::OperationType,
+        tool_family: vendor_lut::ToolFamily,
+        material: vendor_lut::MaterialFamily,
+        reason: &'static str,
+    },
 }
 
 impl std::fmt::Display for FeedsError {
@@ -894,6 +915,16 @@ impl std::fmt::Display for FeedsError {
             } => write!(
                 f,
                 "scallop requires curved tip (need {required}; got {actual_geometry:?} on {operation:?})",
+            ),
+            FeedsError::Unbacked {
+                operation,
+                tool_family,
+                material,
+                reason,
+            } => write!(
+                f,
+                "Suggest has no basis for {} with a {tool_family:?} tool in {material:?}: {reason}",
+                operation.label(),
             ),
         }
     }
@@ -913,6 +944,11 @@ impl std::error::Error for FeedsError {}
 /// DropCutter + Flat|VBit when `target_scallop_mm.is_some()` (the
 /// DropCutter scallop hint routes through the same scallop-stepover
 /// block in `calculate`, so the same geometry constraint applies).
+///
+/// After the tool check, it refuses with [`FeedsError::Unbacked`] when
+/// [`feeds_support`] returns `FeedsSupport::Refuse`. This is the one place
+/// that constructs `Unbacked`. The lookup runs only for an operation that
+/// declares no formula source, because only such an operation can refuse.
 pub fn validate_tool_for_operation(input: &FeedsInput) -> Result<(), FeedsError> {
     let scallop_relevant = input.operation == OperationFamily::Scallop
         || (input.operation == OperationFamily::Parallel && input.target_scallop_mm.is_some());
@@ -929,6 +965,17 @@ pub fn validate_tool_for_operation(input: &FeedsInput) -> Result<(), FeedsError>
                 });
             }
         }
+    }
+    if let Some(operation) = input.operation_kind
+        && operation.spec().feeds_formula_source.is_none()
+        && let FeedsSupport::Refuse { reason } = feeds_support(input)
+    {
+        return Err(FeedsError::Unbacked {
+            operation,
+            tool_family: input.tool_geometry.cutter_kind().lut_family(),
+            material: vendor_normalize::material_to_lut(input.material).0,
+            reason,
+        });
     }
     Ok(())
 }
@@ -1365,6 +1412,25 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // rests on the RPM anchor, and re-pointing Suggest's *target* at another
     // row is a different change with a different justification.
     let mut floor_band_fallback: Option<ChiploadBounds> = None;
+    // The one recipe row lookup (`support::recipe_row_lookup`). The
+    // support arm below reads the same result, so the arm and the row
+    // cannot disagree.
+    let row_lookup = support::recipe_row_lookup(input);
+    if matches!(row_lookup, support::RecipeRowLookup::RoutingRefused) {
+        // Checkpoint K (a4) — the routing REFUSED. Ruled in on
+        // the Suggest side as well as the gate's: 378
+        // recommendations that carried a confident vendor band on
+        // a surface the gate declined to judge become honest
+        // no-vendor-data. Say which rows are missing, not just
+        // "no data".
+        let tool_family = input.tool_geometry.cutter_kind().lut_family();
+        warnings.push(FeedsWarning::NoVendorRowsForRoutedOperation {
+            operation_kind: format!("{:?}", input.operation_kind),
+            tool_family: format!("{tool_family:?}"),
+            missing_rows: vendor_normalize::missing_project_curve_rows(tool_family).to_owned(),
+        });
+    }
+    let support = support::support_for_lookup(input, &row_lookup);
     let (
         chip_load,
         vendor_rpm,
@@ -1373,149 +1439,126 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         vendor_source,
         chipload_source,
         chipload_bounds,
-    ) = if let Some(lut) = input.vendor_lut
-        && let Some(query) = vendor_normalize::to_lookup_query(input).or_else(|| {
-            // Checkpoint K (a4) — the routing REFUSED. Ruled in on
-            // the Suggest side as well as the gate's: 378
-            // recommendations that carried a confident vendor band on
-            // a surface the gate declined to judge become honest
-            // no-vendor-data. Say which rows are missing, not just
-            // "no data".
-            let tool_family = input.tool_geometry.cutter_kind().lut_family();
-            warnings.push(FeedsWarning::NoVendorRowsForRoutedOperation {
-                operation_kind: format!("{:?}", input.operation_kind),
-                tool_family: format!("{tool_family:?}"),
-                missing_rows: vendor_normalize::missing_project_curve_rows(tool_family).to_owned(),
-            });
-            None
-        }) {
-        if let Some(result) =
-            vendor_lookup::find_best_row_for_geometry(lut, &query, &input.tool_geometry)
-        {
-            matched_lut_row = Some(result.clone());
-            let observation_id = result.observation_id;
-            // Capture the LUT-derived chipload band (post diameter
-            // /hardness scaling) for Suggest v2 step 2's feed-up
-            // recalibration loop. Only populated when the row
-            // publishes both bounds — partial-band rows (one side
-            // only) leave it None so the loop doesn't fire on an
-            // ambiguous target.
-            //
-            // DOC derating (2026-06-04): the post-sim chipload gate
-            // scales the matched row's bounds by
-            // `geometry::doc_derating_scale(peak_axial_DOC /
-            // effective_d)`. Apply the same scale here using the
-            // commanded axial DPP so `SuggestAggressiveness::target_chipload`
-            // (median / max / min) aims at a value the gate will
-            // accept at this DOC ratio. Without this, v3.0c median
-            // targeting on high-DOC ops (e.g. wanaka Back Rough at
-            // ~3×D) lands above the gate's derated max and trips
-            // `Exceeds(High)` despite the toolpath being healthy.
-            //
-            // Drill ops are excluded because the post-sim gate
-            // short-circuits drill ops with `NotApplicableForOp` —
-            // the chip-evacuation rule that motivates DOC derating
-            // for milling doesn't apply to drill bands (peck depth,
-            // not engagement). Mirroring the gate's exclusion here
-            // keeps the two paths aligned for the cases where the
-            // gate actually fires. Forcing `chipload_doc_ratio` to
-            // `0.0` bypasses derating (`doc_derating_scale` maps
-            // any ratio `<= 1.0` to a scale of `1.0`), same effect
-            // as the pre-S.8 `chipload_doc_scale = 1.0` branch.
-            //
-            // Validation + scaling both now live in
-            // `geometry::derate_chipload_bounds` — the single home
-            // for this wrapper (S.8), also used by
-            // `suggest::recompute_chipload_bounds_for_dpp` and both
-            // `tool_load` chipload sites.
-            let chipload_doc_ratio = if input.operation == OperationFamily::Drill {
-                0.0
-            } else if effective_d > 0.0 {
-                axial_doc_for_eff_d / effective_d
-            } else {
-                0.0
-            };
-            let bounds = geometry::derate_chipload_bounds(
-                result.chip_load_min_mm,
-                result.chip_load_max_mm,
-                chipload_doc_ratio,
-                geometry::ChiploadBoundPolicy::RequireBoth,
-            )
-            .and_then(geometry::DeratedChiploadBand::into_pair)
-            .map(|(min, max)| ChiploadBounds {
-                min_mm_per_tooth: min,
-                max_mm_per_tooth: max,
-            });
-            // RPM-only vendor rows (e.g. whiteside-rd5218h-roughing-down-
-            // spiral-3f-rpm) publish rpm_nominal/rpm_max as anchors but
-            // leave chipload_min/max unset — `chipload_midpoint` then
-            // returns 0.0. Trusting that 0.0 collapses
-            // `raw_feed = rpm × chipload × flutes` to zero, producing a
-            // silent "do not cut" recipe with no diagnostic
-            // (literature-matrix cell flat_12mm_adaptive2d_oak_power:
-            // chipload=0.0000 / mrr=0 / power=0). Keep the vendor RPM
-            // anchor but fall back to formula_chipload when the row
-            // publishes none.
-            if result.chip_load_mm > 0.0 {
-                (
-                    result.chip_load_mm,
-                    result.rpm_nominal,
-                    result.rpm_max,
-                    result.rpm_min,
-                    Some(observation_id.clone()),
-                    ChiploadSource::VendorLut { observation_id },
-                    bounds,
-                )
-            } else {
-                // Checkpoint K (a3) — disclose the fallback. The RPM
-                // anchor is kept (that is why the two resolvers stay
-                // separate); what was invisible until now is that the
-                // chipload beside that row id is the empirical
-                // formula's, and that this recommendation therefore
-                // carries no band while the gate will judge it
-                // against one.
-                // P1: hand the floor the band the gate will use.
-                let mut floor_band_row: Option<String> = None;
-                if let Some(env) =
-                    vendor_lookup::find_best_chip_envelope_row(lut, &query, &input.tool_geometry)
-                    && let Some((min, max)) = geometry::derate_chipload_bounds(
-                        env.chip_load_min_mm,
-                        env.chip_load_max_mm,
-                        chipload_doc_ratio,
-                        geometry::ChiploadBoundPolicy::RequireBoth,
-                    )
-                    .and_then(geometry::DeratedChiploadBand::into_pair)
-                {
-                    floor_band_fallback = Some(ChiploadBounds {
-                        min_mm_per_tooth: min,
-                        max_mm_per_tooth: max,
-                    });
-                    floor_band_row = Some(env.observation_id);
-                }
-                warnings.push(FeedsWarning::VendorRowPublishesNoChipload {
-                    observation_id: observation_id.clone(),
-                    formula_chipload_mm: formula_chipload,
-                    floor_band_from: floor_band_row,
-                });
-                (
-                    formula_chipload,
-                    result.rpm_nominal,
-                    result.rpm_max,
-                    result.rpm_min,
-                    Some(observation_id),
-                    ChiploadSource::FormulaFallback,
-                    bounds,
-                )
-            }
+    ) = if let support::RecipeRowLookup::Row {
+        lut,
+        query,
+        row: result,
+    } = row_lookup
+    {
+        let result = *result;
+        matched_lut_row = Some(result.clone());
+        let observation_id = result.observation_id;
+        // Capture the LUT-derived chipload band (post diameter
+        // /hardness scaling) for Suggest v2 step 2's feed-up
+        // recalibration loop. Only populated when the row
+        // publishes both bounds — partial-band rows (one side
+        // only) leave it None so the loop doesn't fire on an
+        // ambiguous target.
+        //
+        // DOC derating (2026-06-04): the post-sim chipload gate
+        // scales the matched row's bounds by
+        // `geometry::doc_derating_scale(peak_axial_DOC /
+        // effective_d)`. Apply the same scale here using the
+        // commanded axial DPP so `SuggestAggressiveness::target_chipload`
+        // (median / max / min) aims at a value the gate will
+        // accept at this DOC ratio. Without this, v3.0c median
+        // targeting on high-DOC ops (e.g. wanaka Back Rough at
+        // ~3×D) lands above the gate's derated max and trips
+        // `Exceeds(High)` despite the toolpath being healthy.
+        //
+        // Drill ops are excluded because the post-sim gate
+        // short-circuits drill ops with `NotApplicableForOp` —
+        // the chip-evacuation rule that motivates DOC derating
+        // for milling doesn't apply to drill bands (peck depth,
+        // not engagement). Mirroring the gate's exclusion here
+        // keeps the two paths aligned for the cases where the
+        // gate actually fires. Forcing `chipload_doc_ratio` to
+        // `0.0` bypasses derating (`doc_derating_scale` maps
+        // any ratio `<= 1.0` to a scale of `1.0`), same effect
+        // as the pre-S.8 `chipload_doc_scale = 1.0` branch.
+        //
+        // Validation + scaling both now live in
+        // `geometry::derate_chipload_bounds` — the single home
+        // for this wrapper (S.8), also used by
+        // `suggest::recompute_chipload_bounds_for_dpp` and both
+        // `tool_load` chipload sites.
+        let chipload_doc_ratio = if input.operation == OperationFamily::Drill {
+            0.0
+        } else if effective_d > 0.0 {
+            axial_doc_for_eff_d / effective_d
         } else {
+            0.0
+        };
+        let bounds = geometry::derate_chipload_bounds(
+            result.chip_load_min_mm,
+            result.chip_load_max_mm,
+            chipload_doc_ratio,
+            geometry::ChiploadBoundPolicy::RequireBoth,
+        )
+        .and_then(geometry::DeratedChiploadBand::into_pair)
+        .map(|(min, max)| ChiploadBounds {
+            min_mm_per_tooth: min,
+            max_mm_per_tooth: max,
+        });
+        // RPM-only vendor rows (e.g. whiteside-rd5218h-roughing-down-
+        // spiral-3f-rpm) publish rpm_nominal/rpm_max as anchors but
+        // leave chipload_min/max unset — `chipload_midpoint` then
+        // returns 0.0. Trusting that 0.0 collapses
+        // `raw_feed = rpm × chipload × flutes` to zero, producing a
+        // silent "do not cut" recipe with no diagnostic
+        // (literature-matrix cell flat_12mm_adaptive2d_oak_power:
+        // chipload=0.0000 / mrr=0 / power=0). Keep the vendor RPM
+        // anchor but fall back to formula_chipload when the row
+        // publishes none.
+        if result.chip_load_mm > 0.0 {
+            (
+                result.chip_load_mm,
+                result.rpm_nominal,
+                result.rpm_max,
+                result.rpm_min,
+                Some(observation_id.clone()),
+                ChiploadSource::VendorLut { observation_id },
+                bounds,
+            )
+        } else {
+            // Checkpoint K (a3) — disclose the fallback. The RPM
+            // anchor is kept (that is why the two resolvers stay
+            // separate); what was invisible until now is that the
+            // chipload beside that row id is the empirical
+            // formula's, and that this recommendation therefore
+            // carries no band while the gate will judge it
+            // against one.
+            // P1: hand the floor the band the gate will use.
+            let mut floor_band_row: Option<String> = None;
+            if let Some(env) =
+                vendor_lookup::find_best_chip_envelope_row(lut, &query, &input.tool_geometry)
+                && let Some((min, max)) = geometry::derate_chipload_bounds(
+                    env.chip_load_min_mm,
+                    env.chip_load_max_mm,
+                    chipload_doc_ratio,
+                    geometry::ChiploadBoundPolicy::RequireBoth,
+                )
+                .and_then(geometry::DeratedChiploadBand::into_pair)
+            {
+                floor_band_fallback = Some(ChiploadBounds {
+                    min_mm_per_tooth: min,
+                    max_mm_per_tooth: max,
+                });
+                floor_band_row = Some(env.observation_id);
+            }
+            warnings.push(FeedsWarning::VendorRowPublishesNoChipload {
+                observation_id: observation_id.clone(),
+                formula_chipload_mm: formula_chipload,
+                floor_band_from: floor_band_row,
+            });
             (
                 formula_chipload,
-                None,
-                None,
-                None,
-                None,
+                result.rpm_nominal,
+                result.rpm_max,
+                result.rpm_min,
+                Some(observation_id),
                 ChiploadSource::FormulaFallback,
-                None,
+                bounds,
             )
         }
     } else {
@@ -2510,6 +2553,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         mrr_mm3_min: mrr,
         warnings,
         vendor_source,
+        support,
         chipload_source,
         chipload_bounds,
         matched_lut_row,

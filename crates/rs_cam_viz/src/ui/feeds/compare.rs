@@ -952,7 +952,7 @@ fn draw_apply_column(
         ui.add(
             egui::Label::new(
                 egui::RichText::new(format!(
-                    "Cannot apply — this tool cannot run this operation {}",
+                    "Cannot apply — Suggest refuses this recipe {}",
                     crate::ui::tokens::GLYPH_DETAIL
                 ))
                 .small()
@@ -962,9 +962,9 @@ fn draw_apply_column(
             .wrap(),
         )
         .on_hover_text(
-            "The numbers above show what the calculator would suggest, and \
-             why the pairing is refused. Change the tool or the operation to \
-             enable Apply.",
+            "The numbers above show what the calculator would suggest. The \
+             line below gives the reason for the refusal. Change the tool, \
+             the operation or the material to enable Apply.",
         );
         ui.add(
             egui::Label::new(

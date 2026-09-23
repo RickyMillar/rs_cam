@@ -1448,7 +1448,7 @@ impl<B: ComputeBackend> AppController<B> {
             self.push_notification(
                 format!(
                     "Applied Feeds recommendations to {applied} of {what}; skipped {} \
-                     the tool cannot run: {}",
+                     that Suggest refused: {}",
                     skipped.len(),
                     skipped.join("; ")
                 ),

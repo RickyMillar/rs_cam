@@ -170,6 +170,9 @@ fn operating_point(
         mrr_mm3_min: axial_doc_mm * radial_woc_mm * feed,
         warnings: Vec::new(),
         vendor_source: None,
+        support: rs_cam_core::feeds::FeedsSupport::FormulaOnly {
+            source: rs_cam_core::feeds::support::MILLING_FORMULA_SOURCE,
+        },
         chipload_source: ChiploadSource::FormulaFallback,
         chipload_bounds: band,
         matched_lut_row: None,

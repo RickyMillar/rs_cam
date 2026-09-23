@@ -641,6 +641,9 @@ fn feeds_hint_emits_high_feed_ratio() {
         mrr_mm3_min: 1200.0,
         warnings: vec![],
         vendor_source: None,
+        support: crate::feeds::FeedsSupport::FormulaOnly {
+            source: crate::feeds::support::MILLING_FORMULA_SOURCE,
+        },
         chipload_source: ChiploadSource::FormulaFallback,
         chipload_bounds: None,
         matched_lut_row: None,

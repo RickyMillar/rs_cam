@@ -76,6 +76,15 @@ pub struct OperationSpec {
     pub ui_process_role: UiProcessRole,
     pub feeds_family: FeedsOperationFamily,
     pub feeds_pass_role: PassRole,
+    /// The static half of the feeds support declaration
+    /// ([`crate::feeds::FeedsSupport`]).
+    ///
+    /// `Some(source)`: when no vendor row matches, the calculator's formula
+    /// may answer, and `source` is its citation. `None`: the operation has
+    /// no formula basis, so a cell with no row refuses with
+    /// [`crate::feeds::FeedsError::Unbacked`]. Every row is `Some` today
+    /// (feeds-matrix Phase 0); ruling R1 decides which rows change.
+    pub feeds_formula_source: Option<&'static str>,
 }
 
 /// Safety metadata for dressups that can alter topology or move order.

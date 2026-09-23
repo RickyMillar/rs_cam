@@ -602,7 +602,7 @@ fn draw_project_rollup(
         apply_btn = apply_btn.on_hover_text(
             "Apply Feeds recommendations to every checked toolpath. \
              CHANGES THE CUT: DOC and WOC move as well as the speeds. \
-             Rows whose tool cannot run their operation are skipped and reported.",
+             Rows that Suggest refuses are skipped and reported.",
         );
         if apply_btn.clicked() {
             events.push(AppEvent::ApplyFeedsProjectSelected);
@@ -612,7 +612,7 @@ fn draw_project_rollup(
             .on_hover_text(
                 "Apply to every enabled toolpath regardless of selection. \
                  CHANGES THE CUT: DOC and WOC move as well as the speeds. \
-                 Rows whose tool cannot run their operation are skipped and reported.",
+                 Rows that Suggest refuses are skipped and reported.",
             )
             .clicked()
         {
@@ -680,7 +680,7 @@ fn draw_project_rollup(
                                     .color(theme::WARNING),
                             )
                             .on_hover_text(format!(
-                                "This tool cannot run this operation, so no apply — batch or \
+                                "Suggest refuses this toolpath, so no apply — batch or \
                                  single — will write to it.\n{why}"
                             ));
                         }

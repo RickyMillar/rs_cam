@@ -945,7 +945,7 @@ fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> 
                 toolpath_id = tc.id.0,
                 tool_id = tc.tool_id,
                 error = %e,
-                "Suggest refused tool × operation combination, leaving existing values"
+                "Suggest refused this toolpath, leaving existing values"
             );
             continue;
         }

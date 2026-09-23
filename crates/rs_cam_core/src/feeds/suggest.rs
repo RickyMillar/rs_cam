@@ -848,7 +848,12 @@ pub fn suggest_for_operation(
 /// [`feeds_result_for_operation`] and [`feeds_explain_for_operation`]
 /// so the recommendation and the explanation are always derived from
 /// identical inputs.
-fn feeds_input_for_operation<'a>(
+///
+/// Public so that a test or an instrument can resolve
+/// [`crate::feeds::feeds_support`] on the input a production door builds,
+/// not on a second builder.
+#[must_use]
+pub fn feeds_input_for_operation<'a>(
     operation: &OperationConfig,
     tool: &'a ToolConfig,
     material: &'a Material,

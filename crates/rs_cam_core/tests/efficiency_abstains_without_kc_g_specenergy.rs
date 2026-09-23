@@ -114,6 +114,9 @@ fn operating_point(axial_doc_mm: f64, band: Option<ChiploadBounds>) -> FeedsResu
         mrr_mm3_min: axial_doc_mm * RADIAL_WOC_MM * feed,
         warnings: Vec::new(),
         vendor_source: None,
+        support: rs_cam_core::feeds::FeedsSupport::FormulaOnly {
+            source: rs_cam_core::feeds::support::MILLING_FORMULA_SOURCE,
+        },
         chipload_source: ChiploadSource::FormulaFallback,
         chipload_bounds: band,
         matched_lut_row: None,

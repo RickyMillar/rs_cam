@@ -391,6 +391,13 @@ mod tests {
             mrr_mm3_min: 1200.0,
             warnings: vec![],
             vendor_source: None,
+            support: if matched_lut_row.is_some() {
+                crate::feeds::FeedsSupport::VendorBacked
+            } else {
+                crate::feeds::FeedsSupport::FormulaOnly {
+                    source: crate::feeds::support::MILLING_FORMULA_SOURCE,
+                }
+            },
             chipload_source,
             chipload_bounds: None,
             matched_lut_row,
