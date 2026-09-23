@@ -1065,13 +1065,12 @@ fn desaturate(c: egui::Color32) -> egui::Color32 {
 /// TIM-003 — the signal spine's empty state.
 ///
 /// The spine does not early-return into a void. It paints a placeholder where
-/// the spine would be, and carries the capture control. Changing that option
-/// marks the last simulation stale; the workspace primary is the only run
-/// route.
-fn draw_spine_empty_placeholder(ui: &mut egui::Ui, sim: &mut SimulationState) {
-    // DC6 / Rule C — a state plus the control that changes the next run's
-    // recording. The abstention mark remains; toggling capture does not start
-    // work behind the operator's back.
+/// the spine would be. The placeholder shows state only. The one capture
+/// control is "Capture cutting metrics" in `sim_op_list.rs` (package A,
+/// 2026-09-23), and the workspace primary is the only run route.
+fn draw_spine_empty_placeholder(ui: &mut egui::Ui, sim: &SimulationState) {
+    // DC6 / Rule C — the abstention mark states why no metrics show. The
+    // placeholder does not start work and does not change the recording.
     let reason = if !sim.has_results() {
         "No simulation has run yet, so cutting metrics have not been measured."
     } else if sim
@@ -1100,14 +1099,6 @@ fn draw_spine_empty_placeholder(ui: &mut egui::Ui, sim: &mut SimulationState) {
                         .color(crate::ui::tokens::TEXT_MUTED),
                 );
                 ui.add(NotMeasured::new().reason(reason));
-                let mut enabled = sim.metric_options.enabled;
-                if ui
-                    .checkbox(&mut enabled, "Capture")
-                    .on_hover_text("Record cutting metrics on the next simulation run.")
-                    .changed()
-                {
-                    sim.set_metric_capture_enabled(enabled);
-                }
             });
         });
 }

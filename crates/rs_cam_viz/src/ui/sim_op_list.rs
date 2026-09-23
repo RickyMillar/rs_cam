@@ -98,7 +98,7 @@ fn draw_run_controls(
             if ui
                 .checkbox(&mut capture_metrics, "Capture cutting metrics")
                 .on_hover_text(
-                    "Records per-sample advance/tooth, engagement, MRR during simulation. Required for the bottom-panel signal graphs to show data. Re-run simulation to apply.",
+                    "Records per-sample chipload, engagement, depth and MRR during simulation. Required for the Cut metrics section. Re-run simulation to apply.",
                 )
                 .changed()
             {

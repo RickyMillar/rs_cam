@@ -106,7 +106,54 @@ pub struct RsCamApp {
 /// all. This is the ceiling on each side; `panel::MIN_VIEWPORT_WIDTH` is the
 /// floor under the view itself, and the two are deliberately separate: this
 /// one bounds a user drag, that one bounds the arithmetic.
-const SIDE_PANEL_MAX_WIDTH: f32 = 420.0;
+pub const SIDE_PANEL_MAX_WIDTH: f32 = 420.0;
+
+/// The edge that a workspace side panel docks to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SidePanelEdge {
+    Left,
+    Right,
+}
+
+/// The one wrapper for every workspace side panel (G-PANELFIT, 2026-09-23).
+///
+/// The panel width does not follow the content width. The old wrapper put a
+/// bare `ScrollArea::vertical()` in the panel. Its x axis took the content
+/// width, and the panel stored that width for the next frame. One wide row
+/// thus grew the panel to `SIDE_PANEL_MAX_WIDTH`, and the panel clipped the
+/// rest. Here `ScrollArea::both()` sizes the x axis from the panel, and the
+/// content `Ui` gets the inner width as its minimum and maximum. Text that
+/// wraps keeps its wrap. A row that is still too wide shows a horizontal
+/// scroll bar, and the panel keeps its width.
+///
+/// Do not replace this with `Style::wrap_mode = Wrap` (reverted in
+/// b21e3294): that setting breaks grid labels mid-word.
+pub fn side_panel(
+    ui: &mut egui::Ui,
+    edge: SidePanelEdge,
+    id: &'static str,
+    default_width: f32,
+    add: impl FnOnce(&mut egui::Ui),
+) {
+    let panel = match edge {
+        SidePanelEdge::Left => egui::Panel::left(id),
+        SidePanelEdge::Right => egui::Panel::right(id),
+    };
+    panel
+        .default_size(default_width)
+        .max_size(SIDE_PANEL_MAX_WIDTH)
+        .resizable(true)
+        .show(ui, |ui| {
+            egui::ScrollArea::both()
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    let width = ui.available_width();
+                    ui.set_min_width(width);
+                    ui.set_max_width(width);
+                    add(ui);
+                });
+        });
+}
 
 impl RsCamApp {
     /// `mcp_exit` shares the MCP server thread's lifetime with the event-loop
@@ -340,28 +387,16 @@ impl RsCamApp {
 
     fn draw_setup_layout(&mut self, ui: &mut egui::Ui) {
         // Left panel: setup list with summary cards
-        egui::Panel::left("setup_tree")
-            .default_size(240.0)
-            .max_size(SIDE_PANEL_MAX_WIDTH)
-            .resizable(true)
-            .show(ui, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    let (state, events) = self.controller.state_ref_and_events_mut();
-                    crate::ui::setup_panel::draw(ui, state, events);
-                });
-            });
+        side_panel(ui, SidePanelEdge::Left, "setup_tree", 240.0, |ui| {
+            let (state, events) = self.controller.state_ref_and_events_mut();
+            crate::ui::setup_panel::draw(ui, state, events);
+        });
 
         // Right panel: setup properties
-        egui::Panel::right("setup_properties")
-            .default_size(280.0)
-            .max_size(SIDE_PANEL_MAX_WIDTH)
-            .resizable(true)
-            .show(ui, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    let (state, events) = self.controller.state_and_events_mut();
-                    crate::ui::properties::draw(ui, state, events);
-                });
-            });
+        side_panel(ui, SidePanelEdge::Right, "setup_properties", 280.0, |ui| {
+            let (state, events) = self.controller.state_and_events_mut();
+            crate::ui::properties::draw(ui, state, events);
+        });
 
         let col_count = self
             .controller
@@ -476,28 +511,22 @@ impl RsCamApp {
         };
 
         // Left panel: operation queue
-        egui::Panel::left("toolpath_tree")
-            .default_size(240.0)
-            .max_size(SIDE_PANEL_MAX_WIDTH)
-            .resizable(true)
-            .show(ui, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    let (state, events) = self.controller.state_and_events_mut();
-                    crate::ui::toolpath_panel::draw(ui, state, &panel_ctx, events);
-                });
-            });
+        side_panel(ui, SidePanelEdge::Left, "toolpath_tree", 240.0, |ui| {
+            let (state, events) = self.controller.state_and_events_mut();
+            crate::ui::toolpath_panel::draw(ui, state, &panel_ctx, events);
+        });
 
         // Right panel: operation/tool parameters
-        egui::Panel::right("toolpath_properties")
-            .default_size(280.0)
-            .max_size(SIDE_PANEL_MAX_WIDTH)
-            .resizable(true)
-            .show(ui, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    let (state, events) = self.controller.state_and_events_mut();
-                    crate::ui::properties::draw(ui, state, events);
-                });
-            });
+        side_panel(
+            ui,
+            SidePanelEdge::Right,
+            "toolpath_properties",
+            280.0,
+            |ui| {
+                let (state, events) = self.controller.state_and_events_mut();
+                crate::ui::properties::draw(ui, state, events);
+            },
+        );
 
         let col_count = self
             .controller
@@ -564,41 +593,29 @@ impl RsCamApp {
             });
 
         // Left panel: operation list
-        egui::Panel::left("sim_op_list")
-            .default_size(240.0)
-            .max_size(SIDE_PANEL_MAX_WIDTH)
-            .resizable(true)
-            .show(ui, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    let (state, events) = self.controller.state_and_events_mut();
-                    crate::ui::sim_op_list::draw(
-                        ui,
-                        &mut state.simulation,
-                        &state.session,
-                        &state.gui,
-                        &mut state.viewport,
-                        events,
-                    );
-                });
-            });
+        side_panel(ui, SidePanelEdge::Left, "sim_op_list", 240.0, |ui| {
+            let (state, events) = self.controller.state_and_events_mut();
+            crate::ui::sim_op_list::draw(
+                ui,
+                &mut state.simulation,
+                &state.session,
+                &state.gui,
+                &mut state.viewport,
+                events,
+            );
+        });
 
         // Right panel: diagnostics
-        egui::Panel::right("sim_diagnostics")
-            .default_size(240.0)
-            .max_size(SIDE_PANEL_MAX_WIDTH)
-            .resizable(true)
-            .show(ui, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    let (state, events) = self.controller.state_and_events_mut();
-                    crate::ui::sim_diagnostics::draw(
-                        ui,
-                        &mut state.simulation,
-                        &state.session,
-                        &state.gui,
-                        events,
-                    );
-                });
-            });
+        side_panel(ui, SidePanelEdge::Right, "sim_diagnostics", 240.0, |ui| {
+            let (state, events) = self.controller.state_and_events_mut();
+            crate::ui::sim_diagnostics::draw(
+                ui,
+                &mut state.simulation,
+                &state.session,
+                &state.gui,
+                events,
+            );
+        });
 
         // Central panel: 3D viewport
         egui::CentralPanel::default()

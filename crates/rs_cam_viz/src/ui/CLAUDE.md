@@ -28,7 +28,7 @@ Every panel, modal and workspace. `ui::mod` runs once per frame from `../app.rs`
 - Declutter removes a control; it does not hide a duplicate route.
 - A dependency between operations is ONE line in the card gutter, read from
   `dependencies::primary_edges`. No surface draws a second badge for it.
-- The crate is on egui 0.34.3 with `egui_plot` 0.35; the two differ on purpose.
+- The crate is on egui 0.36 with `egui_plot` 0.37; the two differ on purpose.
 
 ## Sentries
 

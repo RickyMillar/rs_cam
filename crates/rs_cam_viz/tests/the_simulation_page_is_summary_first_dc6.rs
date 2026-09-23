@@ -351,9 +351,19 @@ fn simulation_workspace_has_one_direct_run_producer_ur3() {
     let timeline = code_only(&read(TIMELINE));
     let placeholder = function_source(&timeline, "fn draw_spine_empty_placeholder(");
     assert!(
-        placeholder.contains("NotMeasured::new()") && placeholder.contains("checkbox("),
-        "the cut-metrics placeholder must keep its abstention semantics and \
-         offer only the recording option."
+        placeholder.contains("NotMeasured::new()"),
+        "the cut-metrics placeholder must keep its abstention semantics."
+    );
+    assert!(
+        !placeholder.contains("checkbox("),
+        "the cut-metrics placeholder must not carry a capture control (package \
+         A, 2026-09-23): the one capture control is \"Capture cutting \
+         metrics\" in {SIM_OP_LIST}."
+    );
+    assert!(
+        code_only(&read(SIM_OP_LIST)).contains("\"Capture cutting metrics\""),
+        "{SIM_OP_LIST} must keep the one capture control, \"Capture cutting \
+         metrics\"."
     );
     assert!(
         !placeholder.contains("AppEvent::RunSimulation"),

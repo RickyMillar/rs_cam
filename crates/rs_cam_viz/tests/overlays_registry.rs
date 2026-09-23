@@ -833,11 +833,23 @@ fn the_viewport_keeps_a_minimum_width() {
         "the workspace side panels have no ceiling again; a pair dragged wide \
          on a big monitor survives into a 1400x900 capture"
     );
-    let caps = app.matches(".max_size(SIDE_PANEL_MAX_WIDTH)").count();
+    // Package G (sim-cut-metrics, 2026-09-23): one `side_panel` helper
+    // builds every workspace side panel and carries the ceiling once.
+    // The six workspaces call it: setup, toolpaths and simulation, two
+    // each. `every_side_panel_fits_its_width_g_panelfit` pins the rest.
+    let helper_start = app
+        .find("pub fn side_panel(")
+        .expect("the side_panel helper is gone from app.rs");
+    let helper = &app[helper_start..];
+    assert!(
+        helper.contains(".max_size(SIDE_PANEL_MAX_WIDTH)"),
+        "the side_panel helper no longer carries the ceiling"
+    );
+    let calls = app.matches("side_panel(").count();
     assert_eq!(
-        caps, 6,
-        "every left/right workspace panel must carry the ceiling — setup, \
-         toolpaths and simulation, two each; found {caps}"
+        calls, 7,
+        "every left/right workspace panel must go through side_panel — setup, \
+         toolpaths and simulation, two each, plus the definition; found {calls}"
     );
 
     let panel = source("src/ui/overlays/panel.rs");
