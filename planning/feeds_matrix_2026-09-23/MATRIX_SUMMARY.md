@@ -44,8 +44,8 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 | VendorBacked | 88 | 112 | 72 | 32 | 112 | 416 |
 | FormulaOnly | 32 | 20 | 0 | 24 | 6 | 82 |
 | Refuse | 0 | 0 | 0 | 0 | 0 | 0 |
-| fires-a-diagnostic | 69 | 98 | 37 | 46 | 83 | 333 |
-| has a FeedsWarning | 58 | 81 | 36 | 45 | 59 | 279 |
+| fires-a-diagnostic | 120 | 132 | 72 | 56 | 118 | 498 |
+| has a FeedsWarning | 120 | 132 | 72 | 56 | 118 | 498 |
 | has a SuggestWarning | 112 | 124 | 64 | 56 | 110 | 466 |
 | total | 192 | 192 | 192 | 192 | 192 | 960 |
 
@@ -53,29 +53,29 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 
 | operation | Refused | VendorBacked | FormulaOnly | Refuse | fires-a-diagnostic |
 |---|---|---|---|---|---|
-| Face | 4 | 32 | 4 | 0 | 24 |
-| Pocket | 4 | 32 | 4 | 0 | 24 |
-| Profile | 14 | 16 | 10 | 0 | 18 |
-| Adaptive | 8 | 32 | 0 | 0 | 8 |
+| Face | 4 | 32 | 4 | 0 | 36 |
+| Pocket | 4 | 32 | 4 | 0 | 36 |
+| Profile | 14 | 16 | 10 | 0 | 26 |
+| Adaptive | 8 | 32 | 0 | 0 | 32 |
 | VCarve | 32 | 8 | 0 | 0 | 8 |
-| Rest | 4 | 32 | 4 | 0 | 16 |
+| Rest | 4 | 32 | 4 | 0 | 36 |
 | Inlay | 32 | 8 | 0 | 0 | 8 |
-| Zigzag | 4 | 32 | 4 | 0 | 24 |
-| Trace | 18 | 8 | 14 | 0 | 13 |
+| Zigzag | 4 | 32 | 4 | 0 | 36 |
+| Trace | 18 | 8 | 14 | 0 | 22 |
 | Drill | 40 | 0 | 0 | 0 | 0 |
 | Chamfer | 32 | 8 | 0 | 0 | 8 |
 | DropCutter | 16 | 24 | 0 | 0 | 24 |
-| Adaptive3d | 8 | 32 | 0 | 0 | 10 |
-| Waterline | 20 | 16 | 4 | 0 | 15 |
-| Pencil | 34 | 0 | 6 | 0 | 2 |
-| Scallop | 24 | 16 | 0 | 0 | 11 |
-| UnifiedFinish | 24 | 16 | 0 | 0 | 11 |
-| SteepShallow | 20 | 16 | 4 | 0 | 19 |
-| RampFinish | 16 | 16 | 8 | 0 | 14 |
+| Adaptive3d | 8 | 32 | 0 | 0 | 32 |
+| Waterline | 20 | 16 | 4 | 0 | 20 |
+| Pencil | 34 | 0 | 6 | 0 | 6 |
+| Scallop | 24 | 16 | 0 | 0 | 16 |
+| UnifiedFinish | 24 | 16 | 0 | 0 | 16 |
+| SteepShallow | 20 | 16 | 4 | 0 | 20 |
+| RampFinish | 16 | 16 | 8 | 0 | 24 |
 | SpiralFinish | 24 | 16 | 0 | 0 | 16 |
-| RadialFinish | 16 | 16 | 8 | 0 | 14 |
+| RadialFinish | 16 | 16 | 8 | 0 | 24 |
 | HorizontalFinish | 16 | 16 | 8 | 0 | 24 |
-| ProjectCurve | 12 | 24 | 4 | 0 | 22 |
+| ProjectCurve | 12 | 24 | 4 | 0 | 28 |
 | AlignmentPinDrill | 40 | 0 | 0 | 0 | 0 |
 
 ## Pre-simulation diagnostic ids (cells that fire each id)
@@ -84,8 +84,9 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 |---|---|
 | `compat.ball_nose_on_flat_clearing` | 48 |
 | `efficiency.very_fine_stepover` | 90 |
-| `feeds.chipload_clamped_to_floor` | 80 |
+| `feeds.chipload_below_floor` | 80 |
 | `feeds.feed_clamped` | 95 |
+| `feeds.long_tool_derate` | 470 |
 | `feeds.no_vendor_rows_for_routed_operation` | 4 |
 | `feeds.shank_too_large` | 87 |
 | `feeds.vendor_row_publishes_no_chipload` | 18 |
@@ -94,8 +95,9 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 
 | id | cells |
 |---|---|
-| `ChiploadClampedToFloor` | 80 |
+| `ChiploadBelowRubbingFloor` | 80 |
 | `FeedRateClamped` | 95 |
+| `LongToolDerate` | 470 |
 | `NoVendorRowsForRoutedOperation` | 4 |
 | `ShankTooLarge` | 87 |
 | `VendorRowPublishesNoChipload` | 18 |
@@ -119,15 +121,16 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 - 2D: Pocket, Profile, Adaptive on a 40 mm square polygon, stock 44 × 44 × 18 below z = 0; end_mill and bull_nose at 6 mm; the four materials.
 - 3D: a dome height field (top z = 0, flat base z = -8, 46 mm footprint) in the same stock; heights pinned to top 0 and bottom -8 on all 3D cells (`bottom_z: Auto` collapses a waterline band). Waterline, DropCutter, Adaptive3d with end_mill; Scallop and DropCutter with ball_nose and tapered_ball_nose; 6 mm; softwood and hardwood.
 - Simulation: resolution 1.0, metrics on, auto resolution off, other fields from `SimulationOptions::default()`. That default has `adaptive_feed_modulation: true`, so the post-simulation verdicts read the modulated feed, as the GUI default does.
-- Cells run: 38; errors: 0; skipped on the 150 s budget: 0; wall-clock of the subset: 142.5 s.
+- Cells run: 38; errors: 0; skipped on the 150 s budget: 0; wall-clock of the subset: 145.0 s.
 
 ## Post-simulation diagnostic ids (cells that fire each id)
 
 | id | cells |
 |---|---|
 | `efficiency.very_fine_stepover` | 6 |
-| `feeds.chipload_clamped_to_floor` | 2 |
+| `feeds.chipload_below_floor` | 2 |
 | `feeds.feed_clamped` | 18 |
+| `feeds.long_tool_derate` | 38 |
 | `feeds.shank_too_large` | 4 |
 | `load.chipload.within` | 38 |
 | `load.deflection.within` | 38 |
