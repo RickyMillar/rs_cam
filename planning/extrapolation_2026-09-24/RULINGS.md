@@ -315,3 +315,11 @@ session): the step ladder is removed entirely** ("its more complexity
 than needed when the drape performs better"). The ladder readers
 (d1a0c184) and "keep my steps, only cap" (1ba1d8eb) are reverted; the
 readers read `depth_per_pass` again. The ladder rulings above are void.
+
+## Hand-off from the feeds/dial session (2026-09-24): G-RESTRES parity gap
+
+G-RESTRES (f06a11b0..65584991) stores one project simulation resolution.
+`tool_load/optimize/outcome.rs` still uses a per-request auto resolution
+for its search runs, so the Optimize search can simulate at another
+resolution from the project's. Owner: the extrapolation session (tool_load
+is its area). Not started.
