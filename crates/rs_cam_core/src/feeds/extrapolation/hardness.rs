@@ -99,6 +99,10 @@ pub fn soft_hard_cap(family: ToolFamily) -> SoftHardCap {
     }
 }
 
+/// The largest `|row / query - 1|` that counts as no transfer. The same
+/// tolerance as the size claim's Exact check.
+pub const HARDNESS_EXACT_TOL: f64 = 1e-3;
+
 /// The hardness basis of one matched row for one query.
 #[derive(Debug, Clone, PartialEq)]
 pub enum HardnessBasis {
@@ -273,7 +277,8 @@ fn family_default_janka(family: MaterialFamily) -> Option<f64> {
 ///    reads `family_default_janka` (`JankaFrom::FamilyGeneric`). So an
 ///    extreme hardwood such as Ipe (Janka 3510) derates below a generic
 ///    hardwood row.
-/// 4. Otherwise [`HardnessBasis::Unscaled`].
+/// 4. Otherwise [`HardnessBasis::Unscaled`], and also when the row and the
+///    query have the same hardness (within [`HARDNESS_EXACT_TOL`]).
 ///
 /// Chipload is roughly inverse with hardness: a softer material takes a
 /// larger chipload at the same RPM. So a hardwood row on a softwood query
@@ -308,6 +313,11 @@ pub fn hardness_basis(query: &LookupQuery, obs: &VendorObservation) -> HardnessB
         return HardnessBasis::Unscaled;
     };
     let ratio_raw = (row_hardness / query_hardness).clamp(SCALE_CLAMP_LO, SCALE_CLAMP_HI);
+    // A row at the query's own hardness transfers nothing: report it as
+    // Unscaled, with the same tolerance as the size claim's Exact check.
+    if (ratio_raw - 1.0).abs() <= HARDNESS_EXACT_TOL {
+        return HardnessBasis::Unscaled;
+    }
     let law_scale = apply_chipload_law(ratio_raw, CHIPLOAD_HARDNESS_EXPONENT);
     let solid_wood = material_category(query.material_family) == 0
         && material_category(obs.material_family) == 0;

@@ -38,13 +38,23 @@
 - bounded typed simulation triage plus per-metric measurability abstention, consumed by GUI, MCP, CLI and narration through one contract
 - machine kinematics as an analysis dimension: per-axis max rates (`$110/$111/$112`) in the machine model, a per-toolpath kinematic utilization instrument (utilization, feed-bound headroom, machine-bound share, plunge-class peak) on every simulation surface, and a geometric plunge guard in the feed modulator
 
-## Extrapolation programme — 2026-09-24 (PLAN + PROMPT written; NOT started; its own session)
+## Extrapolation programme — 2026-09-24 (ruled; P1 G1 and P2 G2 landed)
 
-`planning/extrapolation_2026-09-24/`: eight gap groups (size, material category,
+`planning/extrapolation_2026-09-24/`: nine gap groups (size, material category,
 operation family, band, engaged geometry, drill, material physics, long/small tool
-loads), each an investigation (trend → equation with range → second witness) and
-its own `Extrapolation` impl, generic only when confirmed; replaces the size rule
-and the category ban of 87027060. Acceptance case: wanaka "3D Finish 6".
+loads, machine class). Phase 0 INVENTORY; Phases 1-2 fetch + trend per group
+(`EXTRAPOLATION_G1..G9`, verified rows in `fetch/<G>/`); operator rulings in
+`RULINGS.md` (A1 tapered key = tip, A2 point mode, A3 visible family transfer,
+A4 "Wood" serves hardwood, B1-B8; G9 Shapeoko rows parked).
+P1 (G1) LANDED 07f575d5..aa7bea60, record 2030c5e2: 54 printed micro tapered rows,
+tapered lookup at the tip, `feeds::extrapolation` (size claim forms A/B/C with the
+family's vendor spread), `FeedsSupport::Extrapolated`, card line + MCP `basis`;
+wanaka "3D Finish 6" ships (acceptance). P2 (G2) LANDED 1b69ceaa, a32ea149,
+2a398130: Onsrud 37-series V-bit rows for MDF/plywood/chipboard (refusals 512 ->
+496), one Janka table (composites unscaled), soft/hard cap per tool family.
+Visible: the Feeds card states each size claim and hardness cap. Open: A2 point
+mode next; the hardwood V-bit 0.37x question (RULINGS); B3 sim witness (ask
+first); V-bit RPM depends on whether the row prints one (B4). Not pushed.
 
 ## Feeds matrix — 2026-09-23 (Phases 0-3 complete; Phase 4 in progress under the rulings)
 
