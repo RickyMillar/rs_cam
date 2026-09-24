@@ -10,9 +10,10 @@ use crate::state::toolpath::{
     UnifiedFinishConfig, WaterlineConfig,
 };
 
-use super::super::{dv, dv_pill, p};
-use crate::ui::components::UiExt as _;
+use super::super::{dv, dv_pill, help_for, p};
+use crate::ui::components::{Button, UiExt as _, ValueRow};
 use rs_cam_core::compute::catalog::OperationType;
+use rs_cam_core::compute::execute::adaptive3d_step_ladder_refusal;
 
 /// Fallback tool radius (1/8" endmill) when the active tool's radius is
 /// unavailable or non-physical — keeps the load↔stepover bridge finite.
@@ -98,6 +99,7 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
             0.1..=50.0,
             dpp_sugg,
         );
+        draw_coarse_steps(ui, cfg);
         dv(
             ui,
             p(
@@ -238,6 +240,101 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
         ui.checkbox(&mut cfg.z_blend, "");
         ui.end_row();
     });
+}
+
+/// The rows of the step ladder (`coarse_steps`) in the 3D Rough panel.
+///
+/// Step-ladder Phase 4. The rows edit the clone of the operation; the
+/// panel write-back sends it through `Command::ReplaceToolpathConfig`, as
+/// for every other row. The rows are:
+///
+/// - "Coarse Steps:" with the Add and Remove buttons;
+/// - one "Coarse Step N:" value row for each step, coarsest first;
+/// - one line that shows the whole ladder, Depth/Pass last.
+///
+/// A bad ladder is not clamped here. The line turns to the caution colour
+/// and its hover gives the adapter's own refusal
+/// (`adaptive3d_step_ladder_refusal`). The same text disables Generate
+/// through the validation arm on the registry row.
+fn draw_coarse_steps(ui: &mut egui::Ui, cfg: &mut Adaptive3dConfig) {
+    let help = help_for(OperationType::Adaptive3d, "coarse_steps");
+    let label = ui.label("Coarse Steps:");
+    if let Some(help) = help {
+        let _ = label.on_hover_text(help);
+    }
+    ui.horizontal(|ui| {
+        if ui
+            .add(Button::quiet("+ Add"))
+            .on_hover_text("Add a step between the last coarse step and Depth/Pass.")
+            .clicked()
+        {
+            let next = next_coarse_step(cfg);
+            cfg.coarse_steps.push(next);
+        }
+        if ui
+            .add(Button::quiet("Remove").enabled(!cfg.coarse_steps.is_empty()))
+            .on_hover_text("Remove the last coarse step.")
+            .clicked()
+        {
+            let _ = cfg.coarse_steps.pop();
+        }
+    });
+    ui.end_row();
+
+    for (i, step) in cfg.coarse_steps.iter_mut().enumerate() {
+        let label = format!("Coarse Step {}:", i + 1);
+        let _ = ValueRow::new(&label, step, " mm", 0.1, 0.1..=100.0)
+            .tooltip(help)
+            .show(ui);
+    }
+
+    let refusal = adaptive3d_step_ladder_refusal(cfg);
+    let color = if refusal.is_some() {
+        crate::ui::tokens::CAUTION
+    } else {
+        crate::ui::tokens::TEXT_MUTED
+    };
+    ui.label("");
+    let line = ui.label(egui::RichText::new(ladder_line(cfg)).small().color(color));
+    if let Some(refusal) = refusal {
+        let _ = line.on_hover_text(refusal);
+    } else if let Some(help) = help {
+        let _ = line.on_hover_text(help);
+    }
+    ui.end_row();
+}
+
+/// The one line that shows the ladder: the coarse steps, then Depth/Pass,
+/// for example "10 → 5 mm". With no coarse step it says "5 mm, one step".
+pub(in crate::ui::properties) fn ladder_line(cfg: &Adaptive3dConfig) -> String {
+    if cfg.coarse_steps.is_empty() {
+        return format!("{} mm, one step", mm_text(cfg.depth_per_pass));
+    }
+    let steps: Vec<String> = cfg
+        .coarse_steps
+        .iter()
+        .chain(std::iter::once(&cfg.depth_per_pass))
+        .map(|&v| mm_text(v))
+        .collect();
+    format!("{} mm", steps.join(" \u{2192} "))
+}
+
+/// A step in mm with no trailing zeros: 10, 5, 2.5, 0.25.
+fn mm_text(v: f64) -> String {
+    let text = format!("{v:.2}");
+    text.trim_end_matches('0').trim_end_matches('.').to_owned()
+}
+
+/// The step that "+ Add" writes. With no coarse step it is two times
+/// Depth/Pass (5 gives 10). Else it is halfway between the last coarse
+/// step and Depth/Pass, to 0.1 mm (10 above 1 gives 5.5). Both values are
+/// larger than Depth/Pass, so the new ladder is good when the old one was.
+pub(in crate::ui::properties) fn next_coarse_step(cfg: &Adaptive3dConfig) -> f64 {
+    let base = cfg.depth_per_pass;
+    match cfg.coarse_steps.last() {
+        None => 2.0 * base,
+        Some(&last) => (((last + base) / 2.0) * 10.0).round() / 10.0,
+    }
 }
 
 /// Clamp the active tool's radius to a finite, positive value for the
