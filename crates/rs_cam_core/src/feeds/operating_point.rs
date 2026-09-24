@@ -216,8 +216,11 @@ pub fn power_at_operating_point(
     else {
         return Err(PowerUnmodeled::NoRadialEngagement);
     };
+    // The step ladder (D7): the peak power is at the deepest axial step. On
+    // a 3D Rough with `coarse_steps` that is a coarse step; on every other
+    // operation it is `depth_per_pass`.
     let Some(ap_mm) = operation
-        .depth_per_pass()
+        .deepest_axial_step()
         .filter(|v| usable(*v))
         .or_else(|| fallback.map(|c| c.axial_depth_mm))
         .filter(|v| usable(*v))

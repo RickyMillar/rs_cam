@@ -135,6 +135,12 @@ pub(crate) struct CurrentValues {
     pub(crate) plunge_rate_mm_min: f64,
     pub(crate) spindle_rpm: Option<u32>,
     pub(crate) depth_per_pass: Option<f64>,
+    /// The deepest axial bite: `OperationConfig::deepest_axial_step`. It
+    /// differs from `depth_per_pass` only on a 3D Rough with a step ladder
+    /// (`coarse_steps`), where a coarse step bites deeper than the base
+    /// step. The DOC row stays on `depth_per_pass`, the field that
+    /// `⚡ Apply all` writes; a statement about the deepest bite reads this.
+    pub(crate) deepest_axial_step: Option<f64>,
     pub(crate) stepover: Option<f64>,
     pub(crate) flute_count: u32,
     /// Active scallop target (mm). `Some` means stepover is derived from
@@ -404,10 +410,11 @@ pub(crate) fn engaged_diameter_context(
         ToolGeometryHint::VBit { tip_diameter, .. } => (tip_diameter, "tip"),
         _ => return None,
     };
-    // Use the operator's per-pass DOC when set, else the DOC the
-    // recommendation itself was built on.
+    // Use the operator's deepest per-pass DOC when set, else the DOC the
+    // recommendation itself was built on. On a step ladder the deepest
+    // step engages the widest part of the cone (D7).
     let doc = current
-        .depth_per_pass
+        .deepest_axial_step
         .filter(|d| *d > 0.0)
         .unwrap_or(explain.recommended.axial_depth_mm);
     if doc <= 0.0 {

@@ -8,6 +8,12 @@
 //! Pass 9 then re-derives the feed at the final depth through the published
 //! depth ladder only, and pass 10 re-checks power.
 //!
+//! On a 3D Rough with a step ladder (`coarse_steps`), the depth lever is the
+//! deepest step, because the load is largest there. The common scale moves
+//! every step of the ladder, and the ladder stays valid (D7 of
+//! `planning/adaptive3d_step_ladder_roughing_2026-09-24/PLAN.md`). The record
+//! gives the deepest step in `dpp_from` / `dpp_to`.
+//!
 //! The target is `k_eff = k × ld`: `k` is `MachineProfile::aggressiveness`
 //! and `ld` is the long-tool share `feeds::long_tool_load_share` (ruling Q7).
 //!
@@ -80,8 +86,10 @@ impl LoadModel<'_> {
         let force_n =
             crate::feeds::force::lateral_cutting_force(self.material, ap, psi, self.fz_mm)
                 .filter(|f| f.is_finite() && *f > 0.0);
-        let mut probe = self.operation.clone();
-        probe.set_depth_per_pass(ap);
+        // The probe cuts at the one step `ap`. On a step ladder a coarse
+        // step of the operation would otherwise be the deepest step, and
+        // the power model reads the deepest step (D7).
+        let mut probe = super::ladder::at_single_step(self.operation, ap);
         probe.set_stepover(ae);
         let power_kw = crate::feeds::power_at_operating_point(
             &probe,
@@ -195,7 +203,11 @@ pub(super) fn apply_aggressiveness(
     }
     let fz_mm = feed / (rpm * flutes);
 
-    let dpp_now = operation.depth_per_pass().filter(|v| usable(*v));
+    // The step ladder (D7): the load that the dial holds is the load at the
+    // deepest step, so the depth lever is the deepest step. The dial moves
+    // the whole ladder by the one common scale (see the write below). With
+    // no ladder the deepest step is `depth_per_pass`.
+    let dpp_now = operation.deepest_axial_step().filter(|v| usable(*v));
     let scallop_set_stepover = super::operation_feeds_hints(operation).2.is_some();
     let stepover_now = operation
         .stepover()
@@ -364,7 +376,22 @@ pub(super) fn apply_aggressiveness(
     });
     let after = model.loads(ap_ship.unwrap_or(ap0), ae_ship.unwrap_or(ae0));
     if let Some(ap) = ap_ship {
-        operation.set_depth_per_pass(ap);
+        if super::ladder::has_ladder(operation) {
+            // The step ladder: `ap` is the new deepest step. Every step moves
+            // by the factor `ap / ap0`, and each rounds DOWN to 0.001 mm, so
+            // no step rises above its scaled value. Above 1.0 the base step
+            // does not fall under its old value. A lever the solve did not
+            // move leaves the whole ladder as it was.
+            if !unmoved(ap, ap0)
+                && let Some(base) = operation.depth_per_pass()
+            {
+                let scaled = round(base * ap / ap0);
+                let base_ship = if raising { scaled.max(base) } else { scaled };
+                super::ladder::set_deepest_axial_step(operation, ap, base_ship, &round);
+            }
+        } else {
+            operation.set_depth_per_pass(ap);
+        }
     }
     if let Some(ae) = ae_ship {
         operation.set_stepover(ae);

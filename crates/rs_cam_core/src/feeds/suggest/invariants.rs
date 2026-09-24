@@ -143,7 +143,14 @@ pub(super) fn enforce_invariants(
         pick_axial_envelope(operation, tool, material, working_context);
     let mut warnings = Vec::new();
     warnings.extend(axial_envelope_warnings);
-    if dpp_mutated && let Some(new_dpp) = operation.depth_per_pass() {
+    // The step ladder (D7): the band is derated at the DEEPEST step, because
+    // one feed serves every level and the deepest level has the smallest
+    // band. With no ladder the deepest step is `depth_per_pass`. With a
+    // ladder the calculator never saw the coarse steps, so the band is
+    // re-derived even when pass 0 moved no step.
+    if (dpp_mutated || super::ladder::has_ladder(operation))
+        && let Some(new_dpp) = operation.deepest_axial_step()
+    {
         let fresh_bounds = recompute_chipload_bounds_for_dpp(
             working_context.matched_lut_row,
             working_context.effective_diameter_mm,
@@ -378,7 +385,9 @@ fn clamp_dpp_to_rigidity(
     // R2: the diameter is `geometry::depth_cap_diameter_mm` at the depth
     // under test, the function the gate calls at the measured peak. On a
     // tapered ball that is the engaged cone diameter, not the tip.
-    let Some(current) = operation.depth_per_pass() else {
+    // The step ladder (D7): the cap applies to the deepest step. Each step
+    // above the cap moves down to it; a step below the cap does not move.
+    let Some(current) = operation.deepest_axial_step() else {
         return warnings;
     };
     if !matches!(pass_role, PassRole::Roughing) || !current.is_finite() {
@@ -399,7 +408,7 @@ fn clamp_dpp_to_rigidity(
     };
     if current > cap_at_current {
         let capped = deepest_depth_within_cap(cap_at_current, &cap_at);
-        operation.set_depth_per_pass(capped);
+        super::ladder::cap_axial_steps(operation, capped);
         warnings.push(SuggestWarning::RoughingDepthClampedToRigidity {
             requested: current,
             capped,
@@ -445,10 +454,12 @@ fn clamp_dpp_to_cutting_length(
     tool: &ToolConfig,
 ) -> Vec<SuggestWarning> {
     let mut warnings = Vec::new();
-    if let Some(current) = operation.depth_per_pass() {
+    // The step ladder (D7): a coarse step deeper than the flutes is the
+    // deepest step, and it moves down to the flute length with the base step.
+    if let Some(current) = operation.deepest_axial_step() {
         let cap = tool.cutting_length;
         if current.is_finite() && cap.is_finite() && cap > 0.0 && current > cap {
-            operation.set_depth_per_pass(cap);
+            super::ladder::cap_axial_steps(operation, cap);
             warnings.push(SuggestWarning::DepthClampedToCuttingLength {
                 requested: current,
                 capped: cap,
@@ -486,7 +497,12 @@ fn backoff_dpp_for_deflection(
     pass_role: PassRole,
 ) -> Vec<SuggestWarning> {
     let mut warnings = Vec::new();
-    if let Some(current) = operation.depth_per_pass()
+    // The step ladder (D7): the predictor reads the deepest step, so the
+    // back-off lowers the deepest step. Each step lowers to the new depth
+    // only when it is above it (`cap_axial_steps`), so a base step below the
+    // deflection limit keeps its value. With no ladder this is the old
+    // write to `depth_per_pass`.
+    if let Some(current) = operation.deepest_axial_step()
         && matches!(pass_role, PassRole::Roughing)
         && current.is_finite()
         && current > DEFLECTION_BACKOFF_DPP_FLOOR_MM
@@ -537,7 +553,8 @@ fn backoff_dpp_for_deflection(
             && dpp > DEFLECTION_BACKOFF_DPP_FLOOR_MM
         {
             let next_dpp = (dpp * DEFLECTION_BACKOFF_FACTOR).max(DEFLECTION_BACKOFF_DPP_FLOOR_MM);
-            operation.set_depth_per_pass(next_dpp);
+            let before_step = operation.clone();
+            super::ladder::cap_axial_steps(operation, next_dpp);
             match crate::feeds::predict::predict_peak_deflection_um(
                 operation, tool, material, machine,
             ) {
@@ -554,7 +571,7 @@ fn backoff_dpp_for_deflection(
                     // assumed. Step back to the last DPP the model
                     // evaluated, so the warning below cannot quote a
                     // deflection at a depth the operation does not run.
-                    operation.set_depth_per_pass(dpp);
+                    *operation = before_step;
                     warnings.push(SuggestWarning::DeflectionBackoffUnmodeled {
                         dpp_mm: dpp,
                         reason,

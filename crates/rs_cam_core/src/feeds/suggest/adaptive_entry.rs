@@ -77,7 +77,9 @@ pub(super) fn pick_adaptive3d_entry_style(
     if !tool.diameter.is_finite() || tool.diameter <= 0.0 {
         return warnings;
     }
-    let Some(dpp) = operation.depth_per_pass() else {
+    // The step ladder (D7): a coarse level enters at its own step, so the
+    // entry plunges the deepest step.
+    let Some(dpp) = operation.deepest_axial_step() else {
         return warnings;
     };
     if !dpp.is_finite() || dpp <= PLUNGE_ENTRY_UNSTABLE_DPP_OVER_D * tool.diameter {
@@ -225,14 +227,16 @@ pub(super) fn pick_adaptive3d_clearing_strategy(
 ///
 /// Reads the post-deflection-back-off DPP — this is the intentional
 /// ordering inherited from the monolithic enforce_invariants and only
-/// fires when `depth_per_pass()` is `Some`.
+/// fires when `deepest_axial_step()` is `Some` (the deepest step of a 3D
+/// Rough step ladder, else `depth_per_pass`).
 pub(super) fn check_plunge_entry_stability(
     operation: &OperationConfig,
     tool: &ToolConfig,
     pass_role: PassRole,
 ) -> Vec<SuggestWarning> {
     let mut warnings = Vec::new();
-    if let Some(current) = operation.depth_per_pass()
+    // The step ladder (D7): the deepest step is the deepest plunge.
+    if let Some(current) = operation.deepest_axial_step()
         && matches!(pass_role, PassRole::Roughing)
         && operation.op_type().spec().feeds_family == FeedsOperationFamily::Adaptive
         && tool.diameter.is_finite()
@@ -371,8 +375,13 @@ pub(super) fn rescale_feed_to_final_geometry(
         .stepover()
         .filter(|v| usable(*v))
         .unwrap_or(calc.radial_width_mm);
+    // The step ladder (D7): one feed serves every level, so the feed is
+    // re-derived at the deepest step. `entry_dpp` stays the base step that
+    // the apply funnel wrote (the calculator's depth), so a ladder always
+    // reads as a moved depth and the depth-tier factor of the deepest step
+    // applies. With no ladder the deepest step is `depth_per_pass`.
     let final_ap = operation
-        .depth_per_pass()
+        .deepest_axial_step()
         .filter(|v| usable(*v))
         .unwrap_or(calc.axial_depth_mm);
 

@@ -280,3 +280,16 @@ extrapolation session.
 Ruling (operator, relayed by the feeds/dial session, 2026-09-24): "I think
 its ok that it caps it. if its too deep, its too deep." Every ladder step
 over the axial envelope cap is clamped to the cap, and the card says so.
+Landed (the step-ladder readers): see the commit "every ladder step is
+seen and capped". Open for the ladder plan, found by the editor:
+- Pass 9 now re-derives the feed at the deepest step on every ladder
+  operation (one feed serves every level; the conservative choice).
+- The dial record carries the deepest step while the DOC row and the pill
+  show the base step; the card adds a "Deepest step" line.
+- Some writes change the base step alone (the pill, session params,
+  controller events, the optimizer patch). The adapter refuses a ladder
+  whose base reaches a coarse step, with a clear error.
+- Suggest writes the calculator's DOC as the base step; on the full door
+  the shipped base (4.09 mm) left no room for a coarse step and the
+  ladder shipped empty (sentry arm 3). Design question for the ladder plan.
+- The readiness panel DOC column shows the base step.

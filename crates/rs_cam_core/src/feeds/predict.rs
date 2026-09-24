@@ -368,7 +368,10 @@ pub fn predict_peak_deflection_um(
         return Err(DeflectionUnmodeled::NoDiameter);
     }
 
-    let Some(axial_doc_mm) = operation.depth_per_pass() else {
+    // The step ladder (D7): the peak deflection is at the deepest axial
+    // step. On a 3D Rough with `coarse_steps` that is a coarse step, not
+    // `depth_per_pass`. On every other operation the two are one value.
+    let Some(axial_doc_mm) = operation.deepest_axial_step() else {
         tracing::debug!(
             reason = "no_dpp",
             "predictor abstains — operation has no DPP"
@@ -768,6 +771,11 @@ pub fn predict_move_count(
                 return 0;
             }
             let passes_per_z = (dx * dy) / area_per_pass;
+            // The base step, not the deepest step (D7), on purpose. This
+            // is a count of Z levels, not a bite. The base step drapes the
+            // whole depth, so `dz / depth_per_pass` is the upper count, and
+            // this predictor over-counts by design (see the density note
+            // above). A coarse step removes levels; it cannot add one.
             let dpp = operation
                 .depth_per_pass()
                 .filter(|d| d.is_finite() && *d > 0.0)
@@ -857,7 +865,9 @@ pub struct DeflectionBreakdown {
     pub i_eff_mm4: f64,
     /// Computed feed-per-tooth (mm) — diagnostic, not in the δ formula.
     pub chipload_per_tooth_mm: f64,
-    /// Resolved axial DOC (mm) — `operation.depth_per_pass()` when set.
+    /// Resolved axial DOC (mm) — `operation.deepest_axial_step()`: the
+    /// deepest coarse step on a 3D Rough with a step ladder, else
+    /// `depth_per_pass`.
     pub axial_doc_mm: f64,
     /// Resolved radial WOC (mm) — `operation.stepover()` if set, else
     /// `adaptive_woc_factor × D` for Adaptive family, `0.35 × D` else.

@@ -248,7 +248,12 @@ pub(crate) fn axial_envelope_for_operation(
 /// policy to the operation:
 /// - `Adaptive3d` — picks `depth_per_pass` via policy C against the
 ///   envelope. Mutates DPP when the commanded value is above
-///   `safe_max_doc_mm`.
+///   `safe_max_doc_mm`. Each coarse step of the step ladder above
+///   `safe_max_doc_mm` moves down to it and gets its own
+///   `AxialDocClampedByEnvelope` (`param_name` `"coarse step depth"`,
+///   `commanded_mm` = the step). Then the ladder is made valid again: a
+///   coarse step that is not above `depth_per_pass` goes, and so does a
+///   second copy of one step.
 /// - `VCarve` — clamps `cfg.max_depth` via policy C. The V-bit
 ///   engaged width at the candidate depth is the radial WOC.
 /// - `ProjectCurve` — warning-only feasibility check on `cfg.depth`.
@@ -285,6 +290,43 @@ pub(super) fn pick_axial_envelope(
                 cfg.depth_per_pass = new_dpp;
                 dpp_mutated = true;
             }
+            // The step ladder (D7): every step must be at or below the cap,
+            // not only the base step. Each coarse step above the cap moves
+            // down to the cap, and gets its own clamp record. The record
+            // names the step by its commanded value. The warnings that
+            // `apply_axial_envelope` gives once per envelope (the empty
+            // safe band, the burn floor) are not given again per step: a
+            // coarse step is deeper than the base step, so the burn floor
+            // cannot apply to it when it does not apply to the base step.
+            // With an empty safe band the steps clamp with no clamp record,
+            // as the base step does: `AxialEnvelopeSafeBandEmpty` already
+            // names the cap, and a clamp record never carries that binding.
+            let safe_max = env.safe_max_doc_mm();
+            if safe_max > 0.0 {
+                let band_empty = matches!(
+                    env.binding_constraint,
+                    crate::feeds::cutter_constraints::AxialBindingConstraint::SafeBandEmpty
+                );
+                let binding = axial_binding_str(env.binding_constraint);
+                for (from, to) in super::ladder::cap_coarse_steps_of(cfg, safe_max) {
+                    if !band_empty {
+                        warnings.push(SuggestWarning::AxialDocClampedByEnvelope {
+                            op_kind: "adaptive3d",
+                            param_name: "coarse step depth",
+                            commanded_mm: from,
+                            clamped_mm: to,
+                            binding,
+                        });
+                    }
+                    dpp_mutated = true;
+                }
+            }
+            // Keep the ladder valid even when no step moved here. The apply
+            // funnel writes the calculator's base step before this pass,
+            // and that base step can be at or above an operator's coarse
+            // step. A coarse step that is no longer above the base step
+            // goes.
+            super::ladder::normalize_ladder_of(cfg);
         }
         OperationConfig::VCarve(cfg) => {
             let commanded = cfg.max_depth;

@@ -227,6 +227,15 @@ fn apply_feeds_subset(
         if let Some(v) = scratch.as_params().depth_per_pass() {
             operation.set_depth_per_pass(v);
         }
+        // The step ladder (D7): the invariant passes cap, scale and prune
+        // the coarse steps on the scratch copy. The ladder that ships is
+        // that one, or the operation keeps a coarse step that the envelope
+        // clamped, or one that is no longer above the new base step.
+        if let (OperationConfig::Adaptive3d(written), OperationConfig::Adaptive3d(checked)) =
+            (&mut *operation, &scratch)
+        {
+            written.coarse_steps.clone_from(&checked.coarse_steps);
+        }
         // T-12: this call was asked to write the cut geometry, and the
         // operation has no field to hold one of the values. Say so. The
         // pre-T-12 funnel returned success here, so a caller that needed a
