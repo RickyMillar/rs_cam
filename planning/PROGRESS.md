@@ -104,8 +104,16 @@ instrument, 9699f0d5) on the rivmap100 demo copy.
   764.5 s / 48457 mm³, By Area 728.2 s / 48360 mm³ (1 region). Every
   earlier dpp 8 rivmap100 time (580/595 s) lacks the Z 0.5 level. Open:
   Global is 36 s slower than By Area on one region (probably the
-  per-level waterline cleanup); Global has 1 rapid collision (move 6497,
-  before and after the fix).
+  per-level waterline cleanup). The 1 Global rapid collision (move 6497)
+  is a CHECK ARTEFACT: 0.1 mm replay clears by 0.21 mm; the rim read in
+  stock/collision.rs (conservative_top over a wall just outside the tool)
+  over-reads; count is 0 at 0.4/0.3/0.25 mm. Fix proposal (lower a safety
+  count) needs an operator ruling. Two real findings at that move:
+  G-WLENTRYDISC (waterline_cleanup reads the entry floor over the tool
+  radius only, the helix reaches 1.8 mm further) and G-PLANSIMGAP (planner
+  stock under-reads the sim by up to 0.29 mm there; rapid reorder is off,
+  so suspect segment merge / arc fitting). Probe:
+  planning/entry_stock_awareness_2026-09-24/probes/probe_rapid6497.rs.
   Adaptive have the same defect (it still allows the reorder)?
 - 2026-09-25: By Area pocket tree measured
   (`planning/by_area_merge_tree_2026-09-25/`, 6f52d7a3): 3 valleys at
