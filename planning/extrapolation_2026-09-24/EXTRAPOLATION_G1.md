@@ -527,3 +527,46 @@ each limit, where both limits are printed. A series with 2 sizes has no residual
 
 The per-point table (min, max, mid at each diameter, for all 63 series) is
 `trend_g1.py` §A, in `fetch/G1/trend_g1.out`.
+
+## 5. The landing (P1, 2026-09-24)
+
+Rulings: A1 (tip key), A4 ("Wood" serves hardwood), B1 (per-source size
+claim). Plan and the orchestrator's decisions: `P1_PLAN.md`.
+
+| Commit | Step |
+|---|---|
+| 07f575d5 | 54 micro tapered rows (Amana ZrN v8, SpeTool); D1: 2 rows deleted, 4 straight-ball rows kept; 389 -> 441 rows |
+| 43429a2e | A1: the lookup key of a tapered ball is the tip at all four lookup sites; tip under 0.5 mm refuses |
+| f615404b | FM1 after steps 1-2 |
+| 90aaf54b | `feeds::extrapolation` (trait, `Claim`, `SizeLaw`), `FeedsSupport::Extrapolated`, `load.chipload.unmodeled`; FM1 re-run |
+| aa7bea60 | the card line, the why text, MCP `basis`, FEATURE_CATALOG |
+
+Design departure from PLAN §4: the claim runs inside
+`vendor_lookup::build_result` on every off-size row match, not only when
+no row matches. The lookup finds a row inside 0.1-10x for almost every
+query, so "no row" is the rare case; the off-size match is the gap.
+
+The 42 SpeTool spiral flat-end rows are not loaded (RULINGS, note under
+B1). V-bits take no size claim until B4.
+
+### Cells that moved (FM1, 960 cells)
+
+- No status moves: 448 ship, 512 refuse.
+- Steps 1-2: the 108 shipping tapered cells feed at x0.928 (median). The
+  cone key had scaled the tip row up by about 1.08. 13 tapered cells
+  change row (11 MDF to Amana v8 / SpeTool).
+- Step 3: 108 cells move from VendorBacked to Extrapolated (form A 44,
+  form B 7, form C 57). 7 feeds move +1.4 % (form B).
+
+### Acceptance
+
+`wanaka_suggest_integration` passes (3/3, run 2026-09-24): tp 11
+"3D Finish 6" (1.0 mm tip, DropCutter, hardwood) ships on
+`amana-tapered-hardwood-parallel-1000-2f-zrn-v8`, scale 1.0, band
+0.01905-0.0508 mm/tooth. SpeTool's 0.0254 lies inside it (second vendor).
+
+### Known red, not caused by P1
+
+`feed_explanation_snapshot_b3` (no tapered row with `ae_*` that the gate
+judges) and `tapered_width_model_parity_c3` (feed 694 vs pinned 1200) fail
+on HEAD before P1 and after it.
