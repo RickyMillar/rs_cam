@@ -384,3 +384,41 @@ card line), after B4 and the ramp-feed wiring.
 3. **Hardwood V-bit formula-only cells: refuse.** Face, Pocket, Profile,
    Rest, Zigzag and ProjectCurve on a V-bit in hardwood refuse. The formula
    gives less than 0.5x of the only printed witness (the Onsrud band).
+
+## Operator rulings, 2026-09-25: G10 entry parameters
+
+The operator accepted all twelve recommendations of
+`EXTRAPOLATION_G10.md` §3.4 (Q1-Q12). In short:
+- Q1: on a flat end mill the ramp feed is the cut feed (landed as the G6
+  ramp, 043cece1); the card states the 1/Z derivation.
+- Q2: on every other kind the ramp holds its vertical rate at the plunge:
+  ramp feed = min(F, plunge / tan θ), card "no source; vertical rate =
+  plunge (repo rule)". This replaces the approval text's "the plunge rate".
+- Q3: Amana "Ramp Down" is the vertical (Z) rate.
+- Q4: the flat end-mill milling plunge = side feed / Z from the tool's own
+  row (the G6 form, 3.175-6.0 mm, 2-3 flutes); the card names the down-cut
+  spread.
+- Q5: the plunge is 0.50 / 0.50 / 0.33 of the side feed for ball / tapered
+  ball / 60° V-bit, per family; the tip cap stays a named rule.
+- Q6: helix radius cap (flat r <= D/2, bull r <= D/2 - rc); default
+  0.3 x D as a named rule.
+- Q7: the card shows the derived helix pip height for ball, tapered ball and
+  V-bit; no refusal.
+- Q8: helix pitch 1.0 / 2.0 mm stays a named rule; the card shows the
+  angle.
+- Q9: ramp 3° (dressup) and 10° (Adaptive3d) stay named rules; the CLI and
+  the GUI Adaptive3d default become one rule.
+- Q10: entry clearance card "no source; operator rule 0.5 mm".
+- Q11: remove the Suggest entry-style rewrite (`pick_adaptive3d_entry_style`
+  and `PreferHelix`); keep `check_plunge_entry_stability`. This closes
+  G-ENTRYREWRITE.
+- Q12: down-cut and compression tools are future work, with a card warning
+  on Plunge.
+
+Ownership (agreed with rs-cam-e2): this session does all of G10, including
+Q6, Q8, Q9 and G-RAMPCLAMP (the entry uses min(ramp_feed_rate, feed)) in
+the entry code, after rs-cam-e2's By Area WP1 merges; it sends rs-cam-e2
+the file list first.
+
+The other account transcribes the remaining Spektra sizes
+(`PROMPT_SPEKTRA.md`).
