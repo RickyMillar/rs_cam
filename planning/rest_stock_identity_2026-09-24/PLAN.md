@@ -224,7 +224,21 @@ No file on the two avoid lists is touched. Named, not fixed:
 `tool_load/optimize/outcome.rs` sets `auto_resolution` for its isolated runs
 (a parity gap for the power session); `smoke.rs` keeps its explicit cell.
 
-## 7. Open questions (each with a recommendation)
+## 7. Open questions and rulings
+
+**Rulings, 2026-09-24.** The operator (asked directly): Q1 ONE project
+value for every simulation, default `Auto` worked out project-wide; the
+operator accepts stale-on-dial-change and Q7's slower, finer prefix
+simulations. Q6 DROP a result whose source stock no longer matches (the row
+shows WAIT). Q3 the MCP resolution parameters SET the project value, and
+the reply says so. The coordinator, on my recommendations: Q2 store `Auto`
+as a mode; Q4 retire the "resolution required" refusal and keep "coarser
+than the rest needs"; Q5 fix G-MCPMODAL here (an MCP-started plan never
+opens the confirm modal and never waits on a click); Q8 connector hover in
+the GUI, full record on MCP and CLI.
+
+The questions as asked:
+
 
 - **Q1** One stored value for every simulation, or a rest-only value beside
   the panel? **One.** The parity ruling covers simulation metrics too. Note:
