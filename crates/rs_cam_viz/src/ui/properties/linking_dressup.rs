@@ -280,6 +280,13 @@ pub(super) fn draw_linking_params(
         )
         .then_some("This operation sets its entry move directly — the dressup entry style isn't used here.")
     });
+    // The rapid-order pass reads the op's own capability (Face, 3D Rough
+    // refuse it: the planner stock depends on the cut order). Grey the box
+    // out so it does not claim an effect compute never applies.
+    let reorder_ok = entry
+        .operation
+        .transform_capabilities()
+        .allows_rapid_reorder;
     let cfg = &mut entry.dressups;
 
     // ── Entry & Exit ──────────────────────────────────────────
@@ -487,8 +494,14 @@ pub(super) fn draw_linking_params(
         });
     }
 
-    ui.checkbox(&mut cfg.optimize_rapid_order, "Optimize rapid travel order")
-        .on_hover_text("Reorder disconnected toolpath segments to minimize total rapid travel distance (TSP heuristic). Pure optimization with no machining risk.");
+    ui.add_enabled_ui(reorder_ok, |ui| {
+        let resp = ui
+            .checkbox(&mut cfg.optimize_rapid_order, "Optimize rapid travel order")
+            .on_hover_text("Reorder disconnected toolpath segments to minimize total rapid travel distance (TSP heuristic). Only operations whose cut order does not change what later moves meet allow it.");
+        if !reorder_ok {
+            resp.on_disabled_hover_text("This operation keeps its planned cut order: its entries are planned against the stock that earlier cuts leave, so a reorder would plunge into uncut stock.");
+        }
+    });
 }
 
 /// Dressup tab (W3.2): edge work / path quality — arc fitting and dogbone
