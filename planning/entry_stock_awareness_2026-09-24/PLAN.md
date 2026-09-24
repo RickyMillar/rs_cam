@@ -214,3 +214,60 @@ Not re-blessed: `adaptive3d_emission_byte_parity` (its cases use plunge
 style) passes unchanged. Pre-existing on master: 
 `isoclip_entry_ramp_g_isoclipentry::c_the_ramp_hands_the_tool_back_where_the_plunge_would_have`
 fails on master `dec02006` too (not touched here).
+
+## RESULTS 3 — ramp feed, entry clearance, never helix air (rulings 2026-09-25)
+
+What changed:
+
+- `ramp_feed_rate: Option<f64>` (mm/min, `#[serde(default)]`) on all 22
+  operation configs that have `plunge_rate` (all but the two drill
+  configs); `OperationParams::ramp_feed_rate`; one catalog row per op;
+  CLI job key `ramp_feed_rate`. `None` keeps the feed of before. The helix
+  and ramp moves through material run at it; a straight feed through air
+  and a straight peck keep their own feeds. The feeds session owns the
+  value.
+- `entry_clearance_mm` (default 0.5) on `Adaptive3dConfig` and on the
+  dressup (`DressupConfig`, MCP `set_dressup_config`, GUI row beside the
+  helix and ramp fields). The helix or ramp starts at the material top +
+  this value. The rapid floor does not move (a measured top: + 0.5; a
+  nominal top: + 2); the air between is a straight feed. No helix or ramp
+  moves through air.
+- The helix and ramp start above the cell-centre stock read. The
+  conservative (sliver-safe) read still sets the rapid floor: it holds a
+  cut-edge cell at the height above the cut and started entries up to one
+  level high. The 2.5D door reads over the tool disc, not the helix circle
+  (the circle reaches the part wall beside the entry).
+- Sentry: no helix or ramp move starts more than the clearance (+ 0.3 mm
+  replay tolerance) above the material, on the plate and the pocket. Unit
+  tests: the ramp feed is used when set and the plunge feed when not; the
+  helix and ramp start at the material top + the clearance.
+
+What-ifs, rough-score, rivmap100 demo, By Area, helix (radius factor 0.3,
+pitch 1, plunge 500, feed 2400). (a) `ramp_feed_rate` None, (b) 2400, (c)
+(b) + `helix_pitch` 2, (d) (b) + `helix_radius_factor` 0.45.
+
+| dpp | (a) total / entry s | (b) | (c) | (d) |
+|---|---|---|---|---|
+| 2 | 1676.0 / 925.3 | 1280.8 / 530.6 | 1125.7 / 383.2 | 1560.7 / 796.7 |
+| 4 | 1199.7 / 720.0 | 894.5 / 414.8 | 730.4 / 259.8 | 1088.1 / 603.8 |
+| 8 | 1090.3 / 743.9 | 733.7 / 387.3 | 579.9 / 242.4 | 869.2 / 517.2 |
+
+- (a) against the full-depth helix before this change (1773 / 1255 /
+  1114 s): the 0.5 mm start saves 97 / 55 / 24 s.
+- (c) is the closest to the pre-ruling 431 s at dpp 8 (580 s, +35 %).
+- A 2400 mm/min helix is only about twice as fast as 500: its 10-degree
+  steps (0.31 mm) are accel-bound in the time integrator.
+- A larger helix radius (d) is slower: longer turns at the same pitch.
+- Rapid collisions 0 on every arm. `entry_load` is absent on every arm (it
+  needs rest context); the only verdict is `measurability_abstained`.
+
+Re-pinned again (the start moved from + 2 to + 0.5 mm):
+`transform_provenance_fingerprints` (all; the face chain reads 80 / 110 /
+116 moves and six splits again) and `arcfit_intent_key_cost_f1`
+(three_pass (27, 4), arc_raster (72, 21), face_full (80, 13) as on
+master). `entry_moves_stock_aware_g_rampterrain` reads its depth from the
+clearance. The MCP wire snapshot did not change.
+
+OPEN (by geometry, not measured): a 2.5D helix circle at a ring start
+reaches the helix radius past the tool into the part wall; the
+entry has no containment test for the helix (the ramp has G-RAMPCONTAIN).

@@ -26,8 +26,8 @@ order. Three run outside it: `apply_tabs`, in the per-level closure of
   The retract COUNT is the lever. Do not add a retract-strategy dial again.
 - Every linking arm calls the shared `relink_fragments` kernel in
   `finish/surface_link.rs`. Do not add a second linking implementation.
-- A helix or ramp takes the full depth from `stock_top`; a straight feed goes
-  only through air (ruling 2026-09-24). Segment merge keeps their points.
+- A helix or ramp starts `entry_clearance_mm` over the material and takes the
+  full depth at `ramp_feed_rate`; air is a straight move (rulings 09-24/25).
 - The feed modulator skips a plunge by geometry, not by intent tag.
 
 ## Sentries
