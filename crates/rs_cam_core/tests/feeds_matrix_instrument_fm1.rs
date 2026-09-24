@@ -60,6 +60,7 @@ use rs_cam_core::diagnostics::adapters::from_static_checks::diagnostics_from_sta
 use rs_cam_core::feeds::suggest::{
     StockContext, SuggestContext, SuggestParamsInput, SuggestedParams, suggest_params,
 };
+use rs_cam_core::feeds::vendor_lookup::vbit_key_text;
 use rs_cam_core::feeds::vendor_lut::{MaterialFamily, VendorObservation};
 use rs_cam_core::feeds::{EMBEDDED_LUT, FeedsSupport, SpindleStrategy};
 use rs_cam_core::ids::ToolpathId;
@@ -292,6 +293,7 @@ const MATRIX_HEADER: &[&str] = &[
     "lut_evidence_grade",
     "lut_row_kind",
     "lut_source_id",
+    "lut_key",
     "diameter_ratio_raw",
     "claim_form",
     "claim_scale",
@@ -340,6 +342,17 @@ fn support_columns(s: &FeedsSupport) -> (String, String) {
         FeedsSupport::FormulaOnly { source } => ("FormulaOnly".to_owned(), (*source).to_owned()),
         FeedsSupport::Refuse { reason } => ("Refuse".to_owned(), reason.to_string()),
     }
+}
+
+/// The `lut_key` column (ruling B4, 2026-09-25): the matched row's
+/// lookup key, in words, from `vendor_lookup::vbit_key_text`. Empty on a
+/// non-V-bit row; on a V-bit row it names the printed cutting diameter,
+/// or the printed included angle when the chart prints no diameter.
+fn lut_key_column(
+    tool_family: rs_cam_core::feeds::vendor_lut::ToolFamily,
+    m: &rs_cam_core::feeds::vendor_lookup::LookupResult,
+) -> String {
+    vbit_key_text(tool_family, m).unwrap_or_default()
 }
 
 /// The five G1 claim columns of a matched row (extrapolation P1 step 3):
@@ -466,6 +479,11 @@ fn walk_matrix(
     for &kind in ToolType::ALL {
         for diameter in diameters(kind) {
             let tool = tool_of(kind, diameter, FLUTES);
+            // The tool family the row-identity `lut_key` column reads
+            // (ruling B4): the same family `vendor_normalize::to_lookup_query`
+            // derives from the geometry hint, one per tool kind, not per
+            // cell.
+            let tool_family = kind.cutter_kind().lut_family();
             for &op in OperationType::ALL {
                 for (mat_label, material) in &wood_materials() {
                     let head = vec![
@@ -482,15 +500,15 @@ fn walk_matrix(
                             fields.push(e.to_string());
                             // 13 recipe columns (incl. the force and power
                             // at the shipped point, and the A2 point), the
-                            // support pair, 20 row
-                            // columns (6 row, 5 G1 claim, 3 G2 hardness,
-                            // 2 G3 family, 2 G6 drill, chipload source,
-                            // vendor source),
+                            // support pair, 21 row
+                            // columns (7 row incl. `lut_key`, 5 G1 claim,
+                            // 3 G2 hardness, 2 G3 family, 2 G6 drill,
+                            // chipload source, vendor source),
                             // 4 diagnostic / warning columns.
                             fields.extend(std::iter::repeat_n(String::new(), 13));
                             fields.push("Refused".to_owned());
                             fields.push(String::new());
-                            fields.extend(std::iter::repeat_n(String::new(), 20));
+                            fields.extend(std::iter::repeat_n(String::new(), 21));
                             fields.extend(std::iter::repeat_n(String::new(), 4));
                             fields.extend(cap_columns(
                                 machine,
@@ -579,12 +597,13 @@ fn walk_matrix(
                                             ));
                                         }
                                     }
+                                    fields.push(lut_key_column(tool_family, m));
                                     fields.extend(claim_columns(m));
                                     fields.extend(hardness_columns(m));
                                     fields.extend(family_columns(m));
                                     fields.extend(drill_columns(m));
                                 }
-                                None => fields.extend(std::iter::repeat_n(String::new(), 18)),
+                                None => fields.extend(std::iter::repeat_n(String::new(), 19)),
                             }
                             fields.push(format!("{:?}", r.chipload_source));
                             fields.push(r.vendor_source.clone().unwrap_or_default());

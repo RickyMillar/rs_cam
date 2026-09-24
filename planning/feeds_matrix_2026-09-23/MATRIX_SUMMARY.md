@@ -126,24 +126,24 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 - 2D: Pocket, Profile, Adaptive on a 40 mm square polygon, stock 44 × 44 × 18 below z = 0; end_mill and bull_nose at 6 mm; the four materials.
 - 3D: a dome height field (top z = 0, flat base z = -8, 46 mm footprint) in the same stock; heights pinned to top 0 and bottom -8 on all 3D cells (`bottom_z: Auto` collapses a waterline band). Waterline, DropCutter, Adaptive3d with end_mill; Scallop and DropCutter with ball_nose and tapered_ball_nose; 6 mm; softwood and hardwood.
 - Simulation: resolution 1.0, metrics on, auto resolution off, other fields from `SimulationOptions::default()`. That default has `adaptive_feed_modulation: true`, so the post-simulation verdicts read the modulated feed, as the GUI default does.
-- Cells run: 38; errors: 0; skipped on the 150 s budget: 0; wall-clock of the subset: 169.5 s.
+- Cells run: 37; errors: 0; skipped on the 150 s budget: 1; wall-clock of the subset: 151.8 s.
 
 ## Post-simulation diagnostic ids (cells that fire each id)
 
 | id | cells |
 |---|---|
-| `efficiency.very_fine_stepover` | 6 |
+| `efficiency.very_fine_stepover` | 5 |
 | `feeds.aggressiveness_engagement` | 28 |
 | `feeds.feed_clamped` | 5 |
-| `feeds.long_tool_derate` | 38 |
+| `feeds.long_tool_derate` | 37 |
 | `feeds.rpm_lowered_for_ceiling` | 27 |
-| `feeds.shank_too_large` | 4 |
+| `feeds.shank_too_large` | 3 |
 | `load.chipload.unmodeled` | 26 |
-| `load.chipload.within` | 12 |
-| `load.deflection.within` | 38 |
-| `load.depth.reported` | 12 |
+| `load.chipload.within` | 11 |
+| `load.deflection.within` | 37 |
+| `load.depth.reported` | 11 |
 | `load.depth.within` | 26 |
-| `load.power.within` | 38 |
+| `load.power.within` | 37 |
 
 ## Doors that could not answer
 

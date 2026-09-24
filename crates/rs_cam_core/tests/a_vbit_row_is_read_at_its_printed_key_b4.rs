@@ -19,7 +19,12 @@
 //! - the recipe resolver tries the chipload-bearing rows first for a
 //!   V-bit, so Suggest's row is the gate's row (before B4 the Whiteside
 //!   1540 / 1550 RPM anchors outscored the AMS-159 row);
-//! - a V-bit row with a printed diameter takes the G1 size claim.
+//! - a V-bit row with a printed diameter takes the G1 size claim;
+//! - `geometry::depth_derate_diameter_mm` and its cutter twin
+//!   `depth_derate_diameter_for_cutter` give the nominal diameter of a
+//!   V-bit at every depth too (step 2, G5 §3.3): the band de-rate no
+//!   longer reads the engaged width, so Suggest and the gate divide by
+//!   one diameter there as well.
 //!
 //! How the numbers were derived (python3 over
 //! `data/vendor_lut/observations/*.json`, with the scorer, the angle bonus
@@ -46,9 +51,17 @@
 //! - The parallel finish cells find no V-bit row (every V-bit row is Trace
 //!   or Contour), so the R1 judgement refuses them with the `VBIT_PARALLEL`
 //!   text.
-//!
-//! Step 2 of B4 (the band de-rate at the nominal diameter) adds its own
-//! arm to this file.
+//! - Step 2 (the band de-rate at the nominal diameter): a 15 deg V-bit's
+//!   ratio `ap / D` is 0.5 at `ap = 0.5 D`, inside `doc_derating_scale`'s
+//!   flat region, so the de-rate is 1.0. Before step 2 the band read the
+//!   engaged width `2 ap tan(7.5 deg)`, a ratio of `1 / (2 tan 7.5 deg)` =
+//!   3.798..., constant at every depth and past the last printed step
+//!   (3.0x): de-rate 0.5. At `ap = 2 D` the ratio is 2.0 and the de-rate
+//!   is `1.0 - 0.25 * (2.0 - 1.0)` = 0.75. Suggest (`feeds::calculate`,
+//!   through `geometry::depth_derate_diameter_mm`) and the gate
+//!   (`tool_load::chipload::evaluate`, through
+//!   `depth_derate_diameter_for_cutter`) read one nominal diameter, so
+//!   the two give one band at each depth.
 
 #![allow(
     clippy::unwrap_used,
@@ -62,7 +75,9 @@ use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::cutter::build_cutter;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::extrapolation::{ClaimResidual, SizeBasis, SizeForm, SpreadFamily};
-use rs_cam_core::feeds::geometry::{lut_key_diameter_for_cutter, lut_key_diameter_mm};
+use rs_cam_core::feeds::geometry::{
+    doc_derating_scale, lut_key_diameter_for_cutter, lut_key_diameter_mm,
+};
 use rs_cam_core::feeds::suggest::{
     StockContext, SuggestContext, SuggestParamsInput, SuggestedParams, feeds_input_for_operation,
     suggest_params,
@@ -525,4 +540,123 @@ fn the_vbit_parallel_finish_cells_refuse_b4() {
         }
     }
     assert_eq!(checked, 32);
+}
+
+/// (g, step 2) The band de-rate of a V-bit follows the nominal diameter,
+/// not the engaged width (G5 §3.3, ruling B4 step 2). Both doors read
+/// `amana-engrave-softwood-trace-15deg-1f` (single flute, a printed band
+/// 0.0762-0.1778 mm/tooth, angle 15 deg): Suggest through
+/// `feeds::calculate`, the gate through `tool_load::chipload::evaluate`.
+///
+/// Below 53.13 deg the engaged-width ratio `1 / (2 tan(angle / 2))` is
+/// CONSTANT at every depth: at 15 deg it is 3.798..., past the last
+/// printed step (3.0x), so before step 2 the band held x0.5 at every
+/// depth on this tool. The nominal-diameter ratio `ap / D` instead grows
+/// with depth: `doc_derating_scale` gives 1.0 up to `ap = D`, then the
+/// same piecewise scale as every other shape. At `ap = 0.5 D` (shallow)
+/// this reads 1.0, not the old constant 0.5. At `ap = 2 D` (deep) it
+/// reads 0.75, also not 0.5.
+#[test]
+fn the_band_de_rate_follows_the_nominal_diameter_not_the_engaged_width_b4() {
+    let d = 6.35;
+    let mut tool = vbit(d);
+    tool.included_angle = 15.0;
+    tool.flute_count = 1;
+    let material = softwood();
+    let row_id = "amana-engrave-softwood-trace-15deg-1f";
+    // A wide `ae` on a Trace op reads as a slot (Step 4b) and caps `ap` at
+    // 0.25 x D, which would confound the depth de-rate this test measures.
+    // A narrow `ae` keeps Step 4b out of the way, as in
+    // `feed_explanation_snapshot_b3.rs`'s DOC-ratio sweep.
+    let radial_width_mm = Some(0.3 * d);
+
+    for (label, ap, ratio) in [("shallow", 0.5 * d, 0.5_f64), ("deep", 2.0 * d, 2.0_f64)] {
+        let scale = doc_derating_scale(ratio);
+
+        // Suggest: `feeds::calculate` at this depth.
+        let machine = open_machine();
+        let result = calculate(&FeedsInput {
+            tool_diameter: d,
+            flute_count: 1,
+            flute_length: 19.05,
+            shank_diameter: Some(d),
+            tool_geometry: ToolGeometryHint::VBit {
+                included_angle: 15.0,
+                tip_diameter: 0.127,
+            },
+            material: &material,
+            machine: &machine,
+            operation: OperationFamily::Trace,
+            operation_kind: Some(OperationType::Trace),
+            pass_role: PassRole::Finish,
+            axial_depth_mm: Some(ap),
+            radial_width_mm,
+            target_scallop_mm: None,
+            vendor_lut: Some(embedded_vendor_lut()),
+            setup: SetupContext::default(),
+            spindle_strategy: SpindleStrategy::MatchChart,
+        });
+        // Non-vacuity: no clamp (the flute guard, the minimum engagement,
+        // Step 4b slotting) moved `ap` away from the depth this test means
+        // to measure.
+        assert!(
+            (result.axial_depth_mm - ap).abs() < 1e-9,
+            "{label}: calculate moved ap {ap} to {}",
+            result.axial_depth_mm
+        );
+        let row = result
+            .matched_lut_row
+            .as_ref()
+            .unwrap_or_else(|| panic!("{label}: no 15 deg V-bit row answers"));
+        assert_eq!(row.observation_id, row_id, "{label}: Suggest's row");
+        // The Amana engraving chart carries no Janka, so this row never
+        // scales for hardness: isolate the depth de-rate from that scale
+        // instead of assuming it, so a failure here does not masquerade
+        // as one there.
+        assert!(
+            (row.chipload_hardness_scale - 1.0).abs() < 1e-9,
+            "{label}: hardness scale {} is not 1.0",
+            row.chipload_hardness_scale
+        );
+        let row_min = row
+            .chip_load_min_mm
+            .unwrap_or_else(|| panic!("{label}: the row publishes no band minimum"));
+        let row_max = row
+            .chip_load_max_mm
+            .unwrap_or_else(|| panic!("{label}: the row publishes no band maximum"));
+        let bounds = result
+            .chipload_bounds
+            .unwrap_or_else(|| panic!("{label}: Suggest carries no band"));
+        let suggest_scale_min = bounds.min_mm_per_tooth / row_min;
+        let suggest_scale_max = bounds.max_mm_per_tooth / row_max;
+        assert!(
+            (suggest_scale_min - scale).abs() < 1e-9,
+            "{label}: Suggest's min de-rate {suggest_scale_min}, wanted {scale}"
+        );
+        assert!(
+            (suggest_scale_max - scale).abs() < 1e-9,
+            "{label}: Suggest's max de-rate {suggest_scale_max}, wanted {scale}"
+        );
+
+        // The gate, at the same depth: the same row, the same band. A
+        // matched row with a published minimum trips a hard `Exceeds` on
+        // the low side (`ChipBoundsSource::VendorLut` is not advisory
+        // there), but `gate_bounds` reads the bounds off either verdict,
+        // so the sample's own chip thickness does not matter here.
+        let gate = gate_bounds(OperationType::Trace, &tool, &material, ap);
+        let gate_min = gate
+            .min_mm_per_tooth
+            .unwrap_or_else(|| panic!("{label}: the gate carries no minimum"));
+        assert!(
+            (gate_min - bounds.min_mm_per_tooth).abs() < 1e-6,
+            "{label}: the gate min {gate_min} disagrees with Suggest {}",
+            bounds.min_mm_per_tooth
+        );
+        assert!(
+            (gate.max_mm_per_tooth - bounds.max_mm_per_tooth).abs() < 1e-6,
+            "{label}: the gate max {} disagrees with Suggest {}",
+            gate.max_mm_per_tooth,
+            bounds.max_mm_per_tooth
+        );
+    }
 }

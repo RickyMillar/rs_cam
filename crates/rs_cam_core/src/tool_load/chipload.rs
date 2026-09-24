@@ -86,7 +86,6 @@ use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use crate::feeds::vendor_normalize::material_to_lut;
 use crate::ids::ToolpathId;
 use crate::stock::simulation_cut::SimulationCutTrace;
-use crate::tool::MillingCutter;
 
 use super::locality::SpanLookup;
 
@@ -592,10 +591,16 @@ fn evaluate_inner(
     // `planning/finishing_stack_review_2026-07.md`), the single home
     // for this wrapper across Suggest and both `tool_load` gate sites.
     //
-    // The de-rate divides by the engaged diameter at the peak DOC (the
-    // cone of a tapered ball), not by the lookup key. Ruling A1 moved
-    // only the key; the depth half of R2 stands.
-    let lookup_diameter_at_peak = tool.lookup_diameter_at(lookup_axial_doc_mm).max(1e-9);
+    // The de-rate divides by `depth_derate_diameter_for_cutter` at the
+    // peak DOC, not by the lookup key: the engaged cone of a tapered
+    // ball, the nominal diameter of every other shape. Ruling A1 moved
+    // only the key; the depth half of R2 stands for a tapered ball.
+    // Ruling B4 step 2 moves this de-rate to the nominal diameter for a
+    // V-bit too, so it no longer reads `tool.lookup_diameter_at` (the
+    // engaged width) here.
+    let lookup_diameter_at_peak =
+        crate::feeds::geometry::depth_derate_diameter_for_cutter(tool, lookup_axial_doc_mm)
+            .max(1e-9);
     let doc_ratio = lookup_axial_doc_mm / lookup_diameter_at_peak;
     let Some(band) = crate::feeds::geometry::derate_chipload_bounds(
         result.chip_load_min_mm,

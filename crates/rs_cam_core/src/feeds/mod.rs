@@ -128,9 +128,15 @@ impl ToolGeometryHint {
     /// this diameter for a tapered ball: the row is read at the tip
     /// ([`geometry::lut_key_diameter_mm`]). Since ruling B4 (2026-09-25)
     /// the lookup does not use it for a V-bit either: the row is read at
-    /// the nominal diameter, or at its printed angle. The depth ladder, the
-    /// band de-rate and the depth cap still use this engaged diameter, and
-    /// so do the surface-speed RPM and the formula chip load.
+    /// the nominal diameter, or at its printed angle.
+    ///
+    /// For a tapered ball the depth ladder, the band de-rate and the depth
+    /// cap still use this engaged diameter
+    /// ([`geometry::depth_derate_diameter_mm`],
+    /// [`geometry::depth_derate_diameter_for_cutter`]). For a V-bit, B4
+    /// step 2 moves those three to the nominal diameter too; only the
+    /// surface-speed RPM and the formula chip load still use this engaged
+    /// diameter.
     ///
     /// This is a **second, hand-maintained implementation** of the
     /// same geometry as [`crate::tool::MillingCutter::lookup_diameter_at`]
@@ -1501,9 +1507,12 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     //
     // NAMING WARNING (census F-3, T1.4). This binding is the
     // **LUT-semantics** engaged diameter — before A1 it was "which vendor
-    // row applies"; since A1 that is the tip for a tapered ball — and
-    // the chipload band's depth de-rate uses the same kind of diameter,
-    // taken again at the shipped depth after the power ladder.
+    // row applies"; since A1 that is the tip for a tapered ball. On a
+    // tapered ball the chipload band's depth de-rate still uses the same
+    // kind of diameter, taken again at the shipped depth after the power
+    // ladder. On a V-bit it no longer does: B4 step 2 moves the band
+    // de-rate to the nominal diameter, so it diverges from this binding,
+    // which stays the engaged width.
     // Step 5 rebinds the same name `effective_d` to the **chip-thinning**
     // diameter (`feeds::effective_diameter`, "what actually touches
     // material"), shadowing this one for the rest of the function, and
@@ -2582,21 +2591,25 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     //
     // The band that this function returns is the band at the axial depth
     // that ships: `geometry::doc_derating_scale(ap / D_lut)`, where `D_lut`
-    // is the LUT-semantics engaged diameter at that depth. That is the
-    // scale and the diameter that the post-sim chipload gate applies at the
-    // measured depth, so Suggest's band, the UI's band and the gate's band
-    // are one number. Before R3 the band was de-rated at the depth HINT
-    // (or at 1 x D when no hint came), so every roughing cell showed the
-    // raw row band (EVIDENCE 5.2-7). The rubbing floor below reads this
-    // band too, which is the band the gate will use (P1).
+    // is `geometry::depth_derate_diameter_mm` at that depth (the engaged
+    // cone on a tapered ball, the nominal diameter on every other shape,
+    // a V-bit included since ruling B4 step 2). That is the scale and the
+    // diameter that the post-sim chipload gate applies at the measured
+    // depth (through the cutter twin, `depth_derate_diameter_for_cutter`),
+    // so Suggest's band, the UI's band and the gate's band are one number.
+    // Before R3 the band was de-rated at the depth HINT (or at 1 x D when
+    // no hint came), so every roughing cell showed the raw row band
+    // (EVIDENCE 5.2-7). The rubbing floor below reads this band too, which
+    // is the band the gate will use (P1).
     //
     // Drill ops are excluded, as in the gate (`NotApplicableForOp`):
     // a ratio of `0.0` gets a scale of `1.0`.
     let band_doc_ratio = if input.operation == OperationFamily::Drill {
         0.0
     } else {
-        let band_d = input.tool_geometry.engaged_diameter_at_doc(
-            ap.max(0.0),
+        let band_d = geometry::depth_derate_diameter_mm(
+            input.tool_geometry,
+            ap,
             d,
             input.shank_diameter.unwrap_or(d),
         );

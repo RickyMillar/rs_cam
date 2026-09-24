@@ -23,9 +23,10 @@
 //! - **Warnings.** A warning behind a hover is a warning that was deleted.
 //! - **The engaged-diameter row**, for tapered and V tools, where the
 //!   published tip size understates what is actually cutting.
-//! - **The row basis** ([`draw_row_basis_lines`]): the G1 size claim of an
-//!   off-size row, the G2 soft/hard cap of a capped hardness transfer, and
-//!   the printed material label of a derived row.
+//! - **The row basis** ([`draw_row_basis_lines`]): the V-bit lookup key
+//!   (ruling B4), the G1 size claim of an off-size row, the G2 soft/hard
+//!   cap of a capped hardness transfer, and the printed material label of
+//!   a derived row.
 //!
 //! Every quantity here is a **commanded** advance per tooth,
 //! `feed / (rpm · flutes)`. This surface runs before a simulation and has no
@@ -37,6 +38,7 @@ use rs_cam_core::feeds::rationale::{
     AGGRESSIVENESS_ABOVE_BASE_TEXT, PLUNGE_AT_MATERIAL_BASE_TEXT, SuggestRationale,
 };
 use rs_cam_core::feeds::suggest::{AggressivenessShortfall, FeedRecalibrationCap, SuggestWarning};
+use rs_cam_core::feeds::vendor_lookup::vbit_key_text;
 use rs_cam_core::feeds::vendor_lut::ObservationKind;
 use rs_cam_core::feeds::{FeedsExplain, FeedsField, SpindleScaleReason, ToolGeometryHint};
 
@@ -510,8 +512,9 @@ pub(crate) fn draw_engaged_diameter_row(
 }
 
 /// The hover of the engaged-diameter row. Ruling A1 (2026-09-24) keys a
-/// tapered-ball row at the tip, so the two cone tools need two texts:
-/// `geometry::lut_key_diameter_mm` reads a V-bit row at the engaged width.
+/// tapered-ball row at the tip; ruling B4 (2026-09-25) keys a V-bit row at
+/// the nominal diameter, not the engaged width, so the two cone tools need
+/// two texts.
 fn engaged_diameter_hover(geometry: ToolGeometryHint, kind: &str, tip_dia: f64) -> String {
     let opening = format!(
         "The published {kind} Ø is {tip_dia:.2} mm, but the cone shoulder does most of the \
@@ -522,10 +525,12 @@ fn engaged_diameter_hover(geometry: ToolGeometryHint, kind: &str, tip_dia: f64) 
             "{opening} Suggest reads the vendor row at the tip Ø (ruling A1). The RPM, the \
              depth ladder, the band's depth derate and the deflection check use the engaged Ø."
         ),
-        ToolGeometryHint::VBit { .. }
-        | ToolGeometryHint::Flat
-        | ToolGeometryHint::Ball
-        | ToolGeometryHint::Bull { .. } => format!(
+        ToolGeometryHint::VBit { .. } => format!(
+            "{opening} Suggest reads the vendor row, the depth ladder and the band's depth \
+             derate at the nominal Ø (ruling B4), not this engaged Ø. The RPM, the chip-load \
+             formula and the deflection check still use the engaged Ø."
+        ),
+        ToolGeometryHint::Flat | ToolGeometryHint::Ball | ToolGeometryHint::Bull { .. } => format!(
             "{opening} Suggest reads the vendor row at the engaged Ø, and every advance/tooth \
              figure on this surface uses the engaged Ø."
         ),
@@ -535,13 +540,16 @@ fn engaged_diameter_hover(geometry: ToolGeometryHint, kind: &str, tip_dia: f64) 
 /// The basis of the matched row, on the page (extrapolation P1 step 4,
 /// P2 step 4).
 ///
-/// Operator rule: no invisible calculation. When the row is off-size, the
-/// G1 size claim (`feeds::extrapolation::Claim`) moved the band. Its
-/// headline (the scale and the anchor row) is a visible line. Its detail
-/// (the rule, the range and the spread) and the hardness scale are on the
-/// hover. When the soft/hard cap stopped the hardness transfer
-/// (`HardnessBasis::Capped`), the cap headline is a visible line and the
-/// cap detail (the printed ratio and the law's value) is on its hover. When
+/// Operator rule: no invisible calculation. On a V-bit query the row's key
+/// (`vendor_lookup::vbit_key_text`, ruling B4) is a visible line: the
+/// printed cutting diameter, or the printed included angle when the chart
+/// prints no diameter. When the row is off-size, the G1 size claim
+/// (`feeds::extrapolation::Claim`) moved the band. Its headline (the scale
+/// and the anchor row) is a visible line. Its detail (the rule, the range
+/// and the spread) and the hardness scale are on the hover. When the
+/// soft/hard cap stopped the hardness transfer (`HardnessBasis::Capped`),
+/// the cap headline is a visible line and the cap detail (the printed
+/// ratio and the law's value) is on its hover. When
 /// a G3 family rule carries the row from its home operation family
 /// (`FamilyBasis::Transferred`, A3), the family headline is a visible line
 /// and the rule, the row and the served families are on its hover. When
@@ -554,6 +562,19 @@ pub(crate) fn draw_row_basis_lines(ui: &mut egui::Ui, explain: &FeedsExplain) {
     let Some(row) = explain.matched_row.as_ref() else {
         return;
     };
+    if let Some(key_text) = vbit_key_text(explain.query.tool_family, row) {
+        detail_line(
+            ui,
+            key_text,
+            theme::TEXT_DIM,
+            &format!(
+                "Suggest reads a V-bit row at its printed key (ruling B4): the printed \
+                 cutting diameter, or the printed included angle when the chart prints no \
+                 diameter.\nRow: {}.",
+                row.observation_id
+            ),
+        );
+    }
     if let Some(family) = row.family_basis.claim() {
         let (headline, detail) = family.card_text();
         detail_line(

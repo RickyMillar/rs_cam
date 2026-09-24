@@ -22,6 +22,9 @@
 //!    cap) states its cap: the cap headline (`HardnessBasis::card_text().0`)
 //!    is a visible line, the cap detail (the printed ratio and the Janka
 //!    law's value) is on its hover, and no `approx ×` token paints.
+//! 6. A V-bit row states its lookup key (`vendor_lookup::vbit_key_text`,
+//!    ruling B4, 2026-09-25): a visible line naming the printed cutting
+//!    diameter, or the printed included angle when the chart prints none.
 //!
 //! # The fixture
 //!
@@ -42,6 +45,13 @@
 //! its own size. The Janka law gives `(1450 / 600)^0.5 = x1.55`, above the
 //! ball-nose cap 1.50, so the scale is x1.50 and the raw ratio 2.42 keeps
 //! the extrapolation flag.
+//!
+//! The V-bit key fixture (ruling B4, 2026-09-25): a 6.35 mm 60 deg V-bit,
+//! 2 flutes, on a Trace in generic hardwood. The row is
+//! `amana-vgroove-hardwood-trace-60deg-2f`: the AMS-159 chart prints no
+//! cutting diameter, only the included angle, so `SizeBasis::AngleKey`
+//! answers and `vendor_lookup::vbit_key_text` reads "keyed at the printed
+//! angle 60 deg (the chart prints no cutting diameter)".
 
 #![allow(
     clippy::unwrap_used,
@@ -99,6 +109,27 @@ fn ball_nose(diameter: f64) -> ToolConfig {
     tool.shank_diameter = diameter;
     tool.cutting_length = 20.0;
     tool.flute_count = 2;
+    tool
+}
+
+/// The fixture of the V-bit key arm: the AMS-159 60 deg row (ruling B4).
+const VBIT_KEY_ANCHOR_ID: &str = "amana-vgroove-hardwood-trace-60deg-2f";
+
+/// The `vbit_key_text` line the AMS-159 row carries: no printed diameter,
+/// only the included angle.
+const VBIT_KEY_TEXT: &str =
+    "keyed at the printed angle 60 deg (the chart prints no cutting diameter)";
+
+fn vbit_60deg(diameter: f64) -> ToolConfig {
+    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::VBit);
+    tool.name = "Claim card V-bit".to_owned();
+    tool.diameter = diameter;
+    tool.flute_count = 2;
+    tool.included_angle = 60.0;
+    tool.cutting_length = 19.05;
+    tool.shank_diameter = diameter;
+    tool.shaft_diameter = diameter;
+    tool.stickout = 27.05;
     tool
 }
 
@@ -343,5 +374,34 @@ fn a_capped_hardness_transfer_states_its_cap_g_claimcard() {
     assert!(
         !texts.iter().any(|t| t.starts_with("approx ×")),
         "a capped row still paints the bare `approx ×` token; runs were {texts:#?}"
+    );
+}
+
+#[test]
+fn a_vbit_row_states_its_key_on_the_card_g_claimcard() {
+    let state = state_for(
+        vbit_60deg(6.35),
+        WoodSpecies::GenericHardwood,
+        OperationConfig::new_default(OperationType::Trace),
+    );
+    let explain = explain(&state);
+    let row = explain
+        .matched_row
+        .as_ref()
+        .expect("a vendor row answers the 6.35 mm 60 deg V-bit Trace in hardwood");
+
+    // Non-vacuity: the fixture IS the angle-keyed AMS-159 row.
+    assert_eq!(row.observation_id, VBIT_KEY_ANCHOR_ID, "{row:?}");
+    let key_text = rs_cam_core::feeds::vendor_lookup::vbit_key_text(explain.query.tool_family, row)
+        .unwrap_or_else(|| panic!("a V-bit query carries a key line: {row:?}"));
+    assert_eq!(key_text, VBIT_KEY_TEXT, "the key text changed shape");
+
+    let texts = painted_text(state);
+
+    // The key line is a visible, single-line run with the detail marker.
+    let marked = format!("{key_text} {}", tokens::GLYPH_DETAIL);
+    assert!(
+        texts.contains(&marked),
+        "the V-bit key line `{marked}` is not on the card; runs were {texts:#?}"
     );
 }

@@ -412,7 +412,6 @@ pub fn chip_target_for_toolpath(
     sim_trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
 ) -> Option<ChipTarget> {
     use crate::feeds::vendor_normalize::op_family_to_lut;
-    use crate::tool::MillingCutter;
 
     if matches!(material, Material::Custom { .. }) {
         return None;
@@ -459,9 +458,13 @@ pub fn chip_target_for_toolpath(
     // shared `geometry::derate_chipload_bounds` helper (S.8, single home
     // for this wrapper across Suggest and both `tool_load` gate sites;
     // see `planning/finishing_stack_review_2026-07.md`).
-    // The de-rate divides by the engaged (cone) diameter at the peak DOC,
-    // not by the lookup key: the depth half of R2 stands (ruling A1).
-    let lookup_diameter = tool_def.lookup_diameter_at(axial_doc).max(1e-9);
+    // The de-rate divides by `depth_derate_diameter_for_cutter` at the
+    // peak DOC, not by the lookup key: the engaged (cone) diameter on a
+    // tapered ball, the nominal diameter on every other shape (a V-bit
+    // included since ruling B4 step 2). The depth half of R2 stands for a
+    // tapered ball (ruling A1).
+    let lookup_diameter =
+        crate::feeds::geometry::depth_derate_diameter_for_cutter(&tool_def, axial_doc).max(1e-9);
     let doc_ratio = axial_doc / lookup_diameter;
     match matched.printed_chipload() {
         // Two printed limits: both must pass the shared validation.
