@@ -185,6 +185,15 @@ pub(crate) struct AppliedRecipe {
     dial: Option<DialRecord>,
 }
 
+/// Every field the funnel can write, in the order a hover names them.
+const WRITTEN_FIELDS: [rs_cam_core::feeds::FeedsField; 5] = [
+    rs_cam_core::feeds::FeedsField::FeedRate,
+    rs_cam_core::feeds::FeedsField::PlungeRate,
+    rs_cam_core::feeds::FeedsField::SpindleRpm,
+    rs_cam_core::feeds::FeedsField::Stepover,
+    rs_cam_core::feeds::FeedsField::DepthPerPass,
+];
+
 /// `true` when the dial evaluated a lever and moved it. A lever the dial
 /// left at its base value did not set the applied value; another clamp did.
 fn changed(from: Option<f64>, to: Option<f64>) -> bool {
@@ -239,6 +248,92 @@ impl AppliedRecipe {
     /// write that field.
     pub(crate) fn written(&self, field: rs_cam_core::feeds::FeedsField) -> Option<f64> {
         self.previews.as_ref()?.get(field).map(|p| p.value)
+    }
+
+    /// The operation and the operating point `⚡ Apply all` writes.
+    ///
+    /// The chipload verdict and the power row describe the cut the operator
+    /// will make, so they read this pair, the same as the rail rows. The
+    /// operation carries every field the funnel writes; the result carries
+    /// the applied feed, RPM, plunge, depth and width, and the MRR of that
+    /// geometry. On a refused pairing nothing is written, and the pair is
+    /// the operation and the calculator result.
+    pub(crate) fn applied_cut(
+        &self,
+        operation: &rs_cam_core::compute::catalog::OperationConfig,
+        recommended: &rs_cam_core::feeds::FeedsResult,
+    ) -> (
+        rs_cam_core::compute::catalog::OperationConfig,
+        rs_cam_core::feeds::FeedsResult,
+    ) {
+        use rs_cam_core::feeds::FeedsField;
+        let mut cut = operation.clone();
+        if let Some(previews) = &self.previews {
+            let mut scratch = rs_cam_core::feeds::FeedsProvenance::default();
+            for field in WRITTEN_FIELDS {
+                if let Some(preview) = previews.get(field) {
+                    preview.write_to(&mut cut, &mut scratch);
+                }
+            }
+        }
+        let mut point = recommended.clone();
+        point.feed_rate_mm_min = self.value(FeedsField::FeedRate, recommended.feed_rate_mm_min);
+        point.rpm = self.value(FeedsField::SpindleRpm, recommended.rpm);
+        point.plunge_rate_mm_min =
+            self.value(FeedsField::PlungeRate, recommended.plunge_rate_mm_min);
+        point.axial_depth_mm = self.value(FeedsField::DepthPerPass, recommended.axial_depth_mm);
+        point.radial_width_mm = self.value(FeedsField::Stepover, recommended.radial_width_mm);
+        point.mrr_mm3_min = point.axial_depth_mm * point.radial_width_mm * point.feed_rate_mm_min;
+        (cut, point)
+    }
+
+    /// The calculator's own cut: the operation with the raw calculator value
+    /// in every field the funnel writes. The row hovers quote this cut beside
+    /// the applied one.
+    pub(crate) fn calculator_cut(
+        &self,
+        operation: &rs_cam_core::compute::catalog::OperationConfig,
+        recommended: &rs_cam_core::feeds::FeedsResult,
+    ) -> rs_cam_core::compute::catalog::OperationConfig {
+        use rs_cam_core::feeds::FeedsField;
+        let mut cut = operation.clone();
+        for field in WRITTEN_FIELDS {
+            if self.written(field).is_none() {
+                continue;
+            }
+            match field {
+                FeedsField::FeedRate => cut.set_feed_rate(recommended.feed_rate_mm_min),
+                FeedsField::PlungeRate => cut.set_plunge_rate(recommended.plunge_rate_mm_min),
+                // The funnel writes the RPM as a whole number, and so does
+                // this. `rpm` is a finite spindle speed inside the machine
+                // range, so the cast cannot wrap.
+                FeedsField::SpindleRpm => {
+                    cut.set_spindle_rpm(Some(recommended.rpm.round().max(0.0) as u32));
+                }
+                FeedsField::Stepover => {
+                    cut.set_stepover(recommended.radial_width_mm);
+                }
+                FeedsField::DepthPerPass => {
+                    cut.set_depth_per_pass(recommended.axial_depth_mm);
+                }
+                FeedsField::ScallopHeight => {}
+            }
+        }
+        cut
+    }
+
+    /// Why the applied cut differs from the calculator's cut: the dial's
+    /// load target when the dial moved the depth or the stepover, else the
+    /// funnel as a whole.
+    pub(crate) fn cut_cause(&self) -> String {
+        use rs_cam_core::feeds::FeedsField;
+        match self
+            .dial_load_pct(FeedsField::DepthPerPass)
+            .or_else(|| self.dial_load_pct(FeedsField::Stepover))
+        {
+            Some(pct) => format!("the dial holds the load at {pct:.0} %"),
+            None => "the invariant funnel changes the cut".to_owned(),
+        }
     }
 
     /// The dial's load target in percent, when the dial set `field`.

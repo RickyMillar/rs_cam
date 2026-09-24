@@ -160,9 +160,38 @@ pub(crate) fn draw_inspector_comparison(
     let explain = preview.explain();
     // Core computes the verdict; this file renders it. `rs_cam_viz`'s rule:
     // do not recompute a narrower answer in the UI.
-    let efficiency = cut_efficiency(operation, tool, material, machine, &explain.recommended);
-    let power =
-        PowerReading::at_shipped_point(operation, tool, material, machine, &explain.recommended);
+    //
+    // G-RECOMAPPLIED: the verdict and the power row describe the cut that
+    // `⚡ Apply all` writes, the same cut the rail rows print. Until
+    // 2026-09-24 the verdict read the calculator's feed, RPM, depth and width
+    // (and the operation's current values for the force headroom), and the
+    // power row read the operation's current values. The calculator's cut is
+    // evaluated too, so each hover can quote it.
+    let (applied_op, applied_point) = applied.applied_cut(operation, &explain.recommended);
+    let calculator_op = applied.calculator_cut(operation, &explain.recommended);
+    let efficiency = cut_efficiency(&applied_op, tool, material, machine, &applied_point);
+    let calculator_efficiency = cut_efficiency(
+        &calculator_op,
+        tool,
+        material,
+        machine,
+        &explain.recommended,
+    );
+    let efficiency_note = headroom_note(
+        efficiency.as_ref(),
+        calculator_efficiency.as_ref(),
+        &applied.cut_cause(),
+    );
+    let mut power =
+        PowerReading::at_shipped_point(&applied_op, tool, material, machine, &applied_point);
+    let calculator_power = PowerReading::at_shipped_point(
+        &calculator_op,
+        tool,
+        material,
+        machine,
+        &explain.recommended,
+    );
+    power.calculator_note = power_note(&power, &calculator_power, &applied.cut_cause());
     draw_context_chip(ui, explain);
     ui.add_space(crate::ui::tokens::SPACE_2);
     draw_comparison_card(
@@ -173,6 +202,7 @@ pub(crate) fn draw_inspector_comparison(
         preview.refusal(),
         rationale,
         efficiency.as_ref(),
+        efficiency_note.as_deref(),
         &power,
         toolpath_id,
         events,
@@ -272,6 +302,7 @@ fn draw_comparison_card(
     refusal: Option<&rs_cam_core::feeds::FeedsError>,
     rationale: Option<&SuggestRationale>,
     efficiency: Option<&CutEfficiency>,
+    efficiency_note: Option<&str>,
     power: &PowerReading,
     toolpath_id: crate::state::toolpath::ToolpathId,
     events: &mut Vec<AppEvent>,
@@ -375,7 +406,7 @@ fn draw_comparison_card(
         }
 
         ui.add_space(4.0);
-        rail_efficiency_row(ui, efficiency, advance);
+        rail_efficiency_row(ui, efficiency, efficiency_note, advance);
         ui.add_space(2.0);
         rail_power_row(ui, power);
         ui.add_space(2.0);
@@ -500,6 +531,7 @@ fn verdict_row_label(ui: &mut egui::Ui, label: &str, hover: &str) {
 fn rail_efficiency_row(
     ui: &mut egui::Ui,
     efficiency: Option<&CutEfficiency>,
+    calculator_note: Option<&str>,
     fallback_advance_mm: Option<f64>,
 ) {
     // The advance per tooth is feed ÷ (RPM × flutes) — a commanded value,
@@ -518,10 +550,14 @@ fn rail_efficiency_row(
             theme::TEXT_DIM,
         ),
     };
-    let hover = match efficiency {
+    let mut hover = match efficiency {
         Some(e) => efficiency_hover(e),
         None => unmodelled_hover(advance_mm),
     };
+    if let Some(note) = calculator_note {
+        hover.push_str("\n\n");
+        hover.push_str(note);
+    }
     // `horizontal_wrapped` so the verdict phrase wraps to its own line inside
     // the Simulation workspace's 240-point rail rather than widening it.
     ui.horizontal_wrapped(|ui| {
@@ -595,6 +631,40 @@ fn verdict_face(efficiency: &CutEfficiency) -> (String, egui::Color32) {
             )
         }
     }
+}
+
+/// The verdict hover's sentence on the calculator's cut (G-RECOMAPPLIED).
+///
+/// `None` when the two cuts give the same phrase, or when either headroom is
+/// not modelled: the hover already states that refusal.
+fn headroom_note(
+    applied: Option<&CutEfficiency>,
+    calculator: Option<&CutEfficiency>,
+    cause: &str,
+) -> Option<String> {
+    let applied = headroom_phrase(applied?.force_headroom?);
+    let calculator = headroom_phrase(calculator?.force_headroom?);
+    (applied != calculator).then(|| {
+        format!(
+            "Force headroom: calculator {calculator}; {cause}, so the cut Apply \
+             writes has {applied}."
+        )
+    })
+}
+
+/// The power hover's sentence on the calculator's cut (G-RECOMAPPLIED).
+///
+/// `None` when the two cuts print the same percent, or when either figure is
+/// refused: the hover already states that refusal.
+fn power_note(applied: &PowerReading, calculator: &PowerReading, cause: &str) -> Option<String> {
+    let applied = power_face(applied.figure.as_ref().ok()?);
+    let calculator = power_face(calculator.figure.as_ref().ok()?);
+    (applied != calculator).then(|| {
+        format!(
+            "Power: calculator {calculator} of the limit; {cause}, so the cut \
+             Apply writes draws {applied}."
+        )
+    })
 }
 
 /// Force headroom as a phrase.
@@ -754,6 +824,9 @@ const POWER_BAR_WIDTH: f32 = 84.0;
 struct PowerReading {
     figure: Result<PowerFigure, PowerUnmodeled>,
     source: Option<BoundSource>,
+    /// The sentence on the calculator's cut, when it draws a different
+    /// percent (G-RECOMAPPLIED).
+    calculator_note: Option<String>,
 }
 
 impl PowerReading {
@@ -790,7 +863,11 @@ impl PowerReading {
             .as_ref()
             .ok()
             .map(|figure| BoundSource::MachinePowerCurve { rpm: figure.rpm });
-        Self { figure, source }
+        Self {
+            figure,
+            source,
+            calculator_note: None,
+        }
     }
 }
 
@@ -827,7 +904,14 @@ impl PowerReading {
 /// opposite of what an absent model says.
 fn rail_power_row(ui: &mut egui::Ui, power: &PowerReading) {
     let hover = match (&power.figure, &power.source) {
-        (Ok(figure), Some(source)) => power_hover(figure, source),
+        (Ok(figure), Some(source)) => {
+            let mut hover = power_hover(figure, source);
+            if let Some(note) = &power.calculator_note {
+                hover.push_str("\n\n");
+                hover.push_str(note);
+            }
+            hover
+        }
         (Err(reason), _) => power_unmodelled_hover(*reason),
         // `PowerReading` builds the source from the figure, so an `Ok` with
         // no source cannot occur. It is worded as an abstention rather than
@@ -895,11 +979,11 @@ fn power_hover(figure: &PowerFigure, source: &BoundSource) -> String {
     format!(
         "Power {:.3} kW of {:.3} kW available \u{2014} {} of the limit.\n\n\
          Limit from {}. Setting: {}.\n\n\
-         Evaluated at the point this operation will cut: depth of cut \
+         Evaluated at the cut `\u{26A1} Apply all` writes: depth of cut \
          {:.3} mm, width of cut {:.3} mm, {:.0} rpm, feed {:.0} mm/min. The \
          bar describes the depth that WILL be cut, not the depth the \
-         calculator sized its feed at \u{2014} the rigidity clamp can lower \
-         one without moving the other.",
+         calculator sized its feed at \u{2014} the rigidity clamp and the \
+         aggressiveness dial can lower one without moving the other.",
         figure.required_kw,
         figure.available_kw,
         power_face(figure),

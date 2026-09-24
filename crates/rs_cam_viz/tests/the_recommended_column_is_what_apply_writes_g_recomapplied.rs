@@ -21,6 +21,9 @@
 //! 3. The DOC hover keeps the calculator value and names the dial.
 //! 4. After the apply the Δ tag is "≈": the operation already carries the
 //!    recommendation.
+//! 5. The power row reads the same cut: its painted percent equals
+//!    `feeds::power_at_operating_point` on the operation that `⚡ Apply all`
+//!    writes, and its hover quotes the calculator's cut beside it.
 
 #![allow(
     clippy::unwrap_used,
@@ -351,4 +354,78 @@ fn the_delta_is_level_after_the_apply_g_recomapplied() {
             painted.delta
         );
     }
+}
+
+/// The percent the power row paints, parsed back off the face.
+fn painted_percent(face: &str) -> f64 {
+    let at = face
+        .find('%')
+        .unwrap_or_else(|| panic!("the power face paints no percent: {face:?}"));
+    let digits: String = face[..at]
+        .trim_end()
+        .chars()
+        .rev()
+        .take_while(|c| c.is_ascii_digit() || *c == '.')
+        .collect();
+    digits
+        .chars()
+        .rev()
+        .collect::<String>()
+        .parse()
+        .unwrap_or_else(|_| panic!("the power face paints no parsable percent: {face:?}"))
+}
+
+#[test]
+fn the_power_row_reads_the_applied_cut_g_recomapplied() {
+    let mut controller = controller();
+    let texts = painted_text(&mut controller);
+    let label = format!("Power {}", tokens::GLYPH_DETAIL);
+    let at = texts
+        .iter()
+        .position(|t| *t == label)
+        .unwrap_or_else(|| panic!("no power row painted; runs were {texts:#?}"));
+    let face: Vec<&String> = texts[at + 1..]
+        .iter()
+        .filter(|t| !t.contains('\n'))
+        .take(2)
+        .collect();
+    let painted = painted_percent(face[0]);
+
+    let id = controller.state.session.toolpath_configs()[0].id;
+    controller.handle_internal_event(AppEvent::ApplyFeedsAll(id));
+    let session = &controller.state.session;
+    let op = &session.toolpath_configs()[0].operation;
+    let figure = rs_cam_core::feeds::power_at_operating_point(
+        op,
+        &session.tools()[0],
+        &session.stock_config().material,
+        session.machine(),
+        None,
+    )
+    .unwrap_or_else(|reason| panic!("the applied pocket refuses the power door: {reason:?}"));
+    let expected = figure.required_kw / figure.available_kw * 100.0;
+    assert!(
+        (painted - expected).abs() <= 0.05,
+        "the power row painted {painted} % before the apply, and \
+         feeds::power_at_operating_point reads {expected:.2} % on the \
+         operation `⚡ Apply all` writes ({:.4} kW of {:.4} kW at {:.3} mm \
+         by {:.3} mm)",
+        figure.required_kw,
+        figure.available_kw,
+        figure.ap_mm,
+        figure.ae_mm,
+    );
+
+    let hover = texts
+        .iter()
+        .filter(|t| t.contains('\n') && t.starts_with("Power"))
+        .max_by_key(|t| t.len())
+        .unwrap_or_else(|| panic!("the power row painted no hover; runs were {texts:#?}"));
+    assert!(
+        hover.contains("Power: calculator")
+            && hover.contains("the dial holds the load at")
+            && hover.contains(&format!("so the cut Apply writes draws {expected:.1} %")),
+        "the power hover does not quote the calculator's cut beside the \
+         applied one: {hover}"
+    );
 }

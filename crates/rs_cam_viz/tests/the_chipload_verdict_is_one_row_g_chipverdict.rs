@@ -582,9 +582,26 @@ fn power_hover(texts: &[String]) -> String {
 }
 
 /// The figure the row must be showing, read from a session built the same way
-/// the painted frame's session is, and through the same public door the row
+/// the painted frame's session is, and through the same public doors the row
 /// calls. The test states no power expression of its own.
+///
+/// **RE-BLESSED 2026-09-24, G-RECOMAPPLIED.** The row reads the cut that
+/// `⚡ Apply all` writes, not the operation's current values. The chain:
+///
+/// * `feeds_preview_for_operation` gives the calculator result;
+/// * `preview_field_applies`, with the session's model box (the context the
+///   card and the controller's apply pass), gives the value the funnel
+///   writes for each field;
+/// * those values are written into a copy of the operation, and
+///   `power_at_operating_point` reads that copy. Its fallback point is the
+///   applied value of each field, or the calculator value where the funnel
+///   writes nothing.
+///
+/// Until then the door read the fixture's own feed 3000 mm/min and 18 000
+/// rpm and the operation's default depth and stepover. The in-band arm pins
+/// the ratio of the door, not a number, so it moves with the door.
 fn door_figure(fixture: Fixture) -> Result<PowerFigure, PowerUnmodeled> {
+    use rs_cam_core::feeds::FeedsField;
     let state = state_for(fixture);
     let tc = &state.session.toolpath_configs()[0];
     let tool = &state.session.tools()[0];
@@ -598,16 +615,43 @@ fn door_figure(fixture: Fixture) -> Result<PowerFigure, PowerUnmodeled> {
         state.session.post_config().spindle_strategy,
     );
     let recommended = preview.recommended();
-    feeds::power_at_operating_point(
+    let model_bbox = state.session.model_bbox(tc.model_id);
+    let previews = feeds::suggest::preview_field_applies(
         &tc.operation,
+        recommended,
+        tool,
+        state.session.machine(),
+        &stock.material,
+        tc.operation.feeds_style().1,
+        feeds::suggest::SuggestContext {
+            model_bbox: model_bbox.as_ref(),
+            ..feeds::suggest::SuggestContext::default()
+        },
+    );
+    let mut applied = tc.operation.clone();
+    let mut scratch = feeds::FeedsProvenance::default();
+    for field in [
+        FeedsField::FeedRate,
+        FeedsField::PlungeRate,
+        FeedsField::SpindleRpm,
+        FeedsField::Stepover,
+        FeedsField::DepthPerPass,
+    ] {
+        if let Some(p) = previews.get(field) {
+            p.write_to(&mut applied, &mut scratch);
+        }
+    }
+    let value = |field: FeedsField, raw: f64| previews.get(field).map_or(raw, |p| p.value);
+    feeds::power_at_operating_point(
+        &applied,
         tool,
         &stock.material,
         state.session.machine(),
         Some(feeds::suggest::CalculatorOperatingPoint {
-            radial_width_mm: recommended.radial_width_mm,
-            axial_depth_mm: recommended.axial_depth_mm,
-            feed_rate_mm_min: recommended.feed_rate_mm_min,
-            rpm: recommended.rpm,
+            radial_width_mm: value(FeedsField::Stepover, recommended.radial_width_mm),
+            axial_depth_mm: value(FeedsField::DepthPerPass, recommended.axial_depth_mm),
+            feed_rate_mm_min: value(FeedsField::FeedRate, recommended.feed_rate_mm_min),
+            rpm: value(FeedsField::SpindleRpm, recommended.rpm),
         }),
     )
 }

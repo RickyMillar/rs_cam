@@ -18,9 +18,9 @@
 - The window fits the screen at the smallest supported size.
 - A chart draws one line at the suggested value, and band lines only where the
   row publishes both limits; no shading.
-- Power reads through `feeds::power_at_operating_point` on the operation, never
-  `FeedsResult::power_kw` or a feed-scaled copy. The card's power row is 0 to
-  `PowerFigure::available_kw`; the kW pair and the provenance are on its hover.
+- Power and the verdict read the cut Apply writes; power through
+  `feeds::power_at_operating_point`, never `FeedsResult::power_kw` or a
+  feed-scaled copy. Power reads 0 to `available_kw`; kW and source on hover.
 
 ## Sentries
 
