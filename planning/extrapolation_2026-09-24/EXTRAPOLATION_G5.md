@@ -513,3 +513,28 @@ engine's radial rule only; it says nothing about the corner or the depth.
 - V-bit cells on MDF and plywood stay with G2. The verified Onsrud and
   Amana rows print those materials, but the two vendors disagree 2x on
   MDF (T4).
+
+## 5. The landing (B4, 2026-09-25)
+
+Ruling B4: key a V-bit row at its printed key; V-bit parallel finish
+refuses. Plan and decisions: `B4_PLAN.md`.
+
+| Commit | Step |
+|---|---|
+| d5b7e34d | the V-bit key is the nominal cutting diameter everywhere; the Amana AMS-159 / Spektra-engraving rows carry what the chart prints (no cutting diameter, Operating RPM 18 000); `SizeBasis::AngleKey`; chip rows first for a V-bit, so Suggest and the gate read one row |
+| 99586f99 | the band de-rate at the nominal diameter (tapered keeps the cone); the card line "keyed at the printed angle / cutting diameter"; FM1 `lut_key` |
+
+Measured (FM1): 18 V-bit cells ship the printed AMS 0.0762 mm/tooth at the
+printed 18 000 rpm (2743 mm/min): 12.7 mm Trace-family x2.25 (was the
+engine 8000 rpm); softwood VCarve x2.64; hardwood x1.31-1.39; softwood
+6.35 mm Trace-family x0.84; 12.7 mm MDF / plywood VCarve x1.62 (form C).
+8 cells refuse: the 6.35 mm V-bit in MDF / plywood (the only printed row
+is 25.4 mm, 4x). Refusals 410 -> 418. The RPM-only anchor population on
+the embedded LUT is now empty (every V-bit query finds a chip row).
+
+Kept open: the Onsrud softwood / hardwood 37-series rows stay parked (they
+win on hardness score, then refuse or halve their cells); Onsrud rows keep
+the engine RPM (a V-bit RPM claim is a later package); the insert-v16 and
+Whiteside 120 deg rows not on their cited documents; V-bit ProjectCurve
+routes to None; the axial envelope de-rates through the chip-thinning
+diameter (ball nose too).

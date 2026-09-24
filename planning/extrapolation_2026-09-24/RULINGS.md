@@ -328,12 +328,12 @@ is its area). Not started.
 
 - A2 point mode: fe1fbbd3, e7611194 (EXTRAPOLATION_G4 §5).
 - A3 family transfer: ee14e824, 5ca7fedf, 66c485bc (EXTRAPOLATION_G3 §5).
-- B5 drill: 7eef9ffa and the step-3 commit (EXTRAPOLATION_G6 §5).
+- B5 drill: 7eef9ffa, dec02006 (EXTRAPOLATION_G6 §5).
+- B4 V-bit key: d5b7e34d, 99586f99 (EXTRAPOLATION_G5 §5); refusals 410 -> 418.
 - Refusals on the FM1 matrix: 512 at the start -> 410.
 - Still open for the operator: B3 sim witness (ask first; the 42 ball finish
   cells and the 6 ball MDF cells), the hardwood V-bit 0.37x question, the
-  bull literature cells (banded on flat charts). Not started: B4 (V-bit
-  key), B7 (long-tool share -> deflection model), B6 (Kc), the Optimize
+  bull literature cells (banded on flat charts). Not started: B7 (long-tool share -> deflection model), B6 (Kc), the Optimize
   resolution parity gap.
 
 ## Open proposal (2026-09-25): a sourced helix / ramp entry feed
