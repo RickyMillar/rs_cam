@@ -307,3 +307,26 @@ project's machine (accel time in `cut_summary.total_runtime_s`).
   level lands differently. Check the finish before choosing it.
 - The CLI `--set` coercer cannot parse an array (`--set 1.coarse_steps=[]`
   is refused: "invalid type: string \"[]\""). Phase 4 follow-up.
+
+## Demo finding (operator, 2026-09-24): "it only did one pocket"
+
+The operator watched `[8] > 2` on rivmap100 and saw one pocket get a
+coarse pass; the rest cut like before. The arithmetic explains it:
+
+- G-LADDERANCHOR: the ladder starts at the stock BOX top
+  (`stock_top_z: ctx.stock_bbox.max.z`, `compute/execute/finish_3d.rs:194`),
+  Z 14 here (origin −11, height 25), not at the stock the operation reads
+  (the Face took it to Z 12). So the one coarse level lands at Z 6.
+- The fit rule then admits only floors below Z 5.5. Most rivmap100 floors
+  are at Z 2–4 but many pockets are shallower, so one pocket qualified. The
+  simulation's peak DOC 6.0 mm (12 → 6) confirms the coarse level cut there
+  only.
+- Quantisation (design, but against the operator's words): a pocket
+  shallower than `step + leave` below the slab top never gets a coarse pass,
+  even when its whole depth is less than the coarse step. The operator's
+  intent was "if a region fits into 10 mm, cut it in one".
+
+Fix candidates: (1) anchor the ladder at the seed stock's top when the
+operation reads prior stock; (2) a fit rule that lets a pocket whose whole
+remaining depth is less than the coarse step take one coarse pass to its
+floor, with finer steps only on the steep wall band.
