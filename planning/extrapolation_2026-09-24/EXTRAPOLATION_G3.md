@@ -422,7 +422,7 @@ the other operation families. Plan and decisions: `A3_PLAN.md`.
 |---|---|
 | ee14e824 | `extrapolation/family.rs`, `FeedsSupport::FamilyTransferred`, the Onsrud 77-100 tapered rule; TAPER_* judgements deleted |
 | 5ca7fedf | one Onsrud 77-100 row per printed cell (24 copies deleted; no number moves) |
-| (step 4) | the Amana corner-radius bull rows, the bull rule, bull ProjectCurve routed, the plywood-only bull text, the bull soft/hard cap 1.33, the nearer-diameter tie-break |
+| 66c485bc | the Amana corner-radius bull rows, the bull rule, bull ProjectCurve routed, the plywood-only bull text, the bull soft/hard cap 1.33, the nearer-diameter tie-break |
 
 Found in step 4: the lookup's diameter term saturates at 2x, so for a
 3.175 mm bull nose the 6.35 mm row (0.5x) and the 12.7 mm row (0.25x)
