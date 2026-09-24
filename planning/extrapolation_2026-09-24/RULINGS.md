@@ -1,7 +1,27 @@
 # Extrapolation programme: the rulings (Phase 4)
 
-Date: 2026-09-24. Status: **QUESTIONS, not ruled.** The recommendations are
-the orchestrator's; the operator decides. No number moves before a ruling.
+Date: 2026-09-24. Status: **RULED 2026-09-24** (see the block below). The
+recommendations are the orchestrator's; the operator decided.
+
+## Operator rulings, 2026-09-24 afternoon
+
+- **A1: the tip.** A tapered-ball row is looked up at the tip diameter. The
+  cone diameter stays for the depth ladder and the deflection gate. This
+  reopens the lookup half of R2.
+- **A2: point mode.** A single printed value is held as a point. No band is
+  derived. The modulator, the burn gate and the advisor get a point mode.
+- **A3: yes.** One row per printed cell; a G3 claim serves the other
+  families and the card shows the transfer (b1).
+- **A4: yes.** The "Wood" column serves hardwood as derived b, and the card
+  says so.
+- **B1-B8:** "I'll take your recommendations on all of these." B8 carried no
+  recommendation. The orchestrator's choice under this ruling: **(b), keep
+  the G9 rows parked**. The dial stays the one load margin (R4 Q8). The
+  Shapeoko 3 chart is withdrawn and older than the operator's machine, and
+  it is one chart. Reopen with a second machine-vendor chart or a measured
+  run on the operator's machine.
+- B3's simulation witness runs before the 42 ball-nose finish cells move.
+  It takes more than three minutes, so the orchestrator asks before the run.
 
 Evidence: `EXTRAPOLATION_G1.md` ... `EXTRAPOLATION_G9_machine_class.md`
 (section 3 of each), `INVENTORY.md`. Verified rows wait in
