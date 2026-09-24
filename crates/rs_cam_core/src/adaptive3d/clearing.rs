@@ -18,7 +18,7 @@ use std::collections::VecDeque;
 use std::time::Instant;
 use tracing::debug;
 
-use super::path::{Adaptive3dSegment, drape_path_to_leave, drape_point};
+use super::path::{Adaptive3dSegment, StayDownProof, drape_path_to_leave, drape_point};
 use super::search::{
     blend_corners_3d, is_clear_path_3d, material_remaining_at_level, material_remaining_in_region,
 };
@@ -266,6 +266,12 @@ pub(super) struct ClearZLevelContext<'a> {
     /// AgentSearch dispatch commits an entry plunge to it. Set to 0.0 to
     /// disable. See `clear_z_level_agent_2d_slice` for the apply site.
     pub(super) min_region_cut_length_mm: f64,
+    /// The disc radius of an entry's rapid floor read; see
+    /// `path.rs::entry_floor_radius`.
+    pub(super) entry_floor_radius: f64,
+    /// The resolved stay-down distance (`path.rs::resolved_stay_down_mm`).
+    /// The planner writes a keep-down stock proof only inside it.
+    pub(super) stay_down_mm: f64,
 }
 
 // ── Contour-parallel clearing ─────────────────────────────────────────
@@ -381,6 +387,11 @@ pub(super) struct StampDrape<'a> {
     pub(super) index: &'a SpatialIndex,
     pub(super) cutter: &'a dyn MillingCutter,
     pub(super) stock_to_leave: f64,
+    /// The disc radius of the entry rapid floor read (`plan_entry`).
+    pub(super) entry_floor_radius: f64,
+    /// The stay-down distance inside which `plan_entry` writes a keep-down
+    /// stock proof. `0.0` writes none.
+    pub(super) stay_down_mm: f64,
 }
 
 impl<'a> ClearZLevelContext<'a> {
@@ -390,6 +401,8 @@ impl<'a> ClearZLevelContext<'a> {
             index: self.index,
             cutter: self.cutter,
             stock_to_leave: self.stock_to_leave,
+            entry_floor_radius: self.entry_floor_radius,
+            stay_down_mm: self.stay_down_mm,
         }
     }
 }
@@ -464,9 +477,8 @@ fn stamp_emitted_segment(
             //
             // The emitter shadow-rebinds `entry` through `drape_point`
             // on this arm before it plunges, so the descent stops at the
-            // draped Z, not the raw one. Mirror that. (The
-            // `RapidWithFloor` arm below has no such rebind in the
-            // emitter, so it must not get one here either.)
+            // draped Z, not the raw one. Mirror that. The `RapidWithFloor`
+            // arm below gets the same rebind, as in the emitter.
             let entry = drape_point(
                 entry,
                 drape.mesh,
@@ -486,14 +498,25 @@ fn stamp_emitted_segment(
         Adaptive3dSegment::RapidWithFloor {
             entry,
             rapid_floor_z,
+            ..
         } => {
-            // Toolpath: rapid descent from safe_z down to ~rapid_floor_z
-            // (cleared air, no stamp), then peck-plunge from there to
-            // entry. Mirror segments_to_toolpath's `descent_floor` calc
-            // exactly so we don't stamp BELOW entry.z (which would
-            // happen if rapid_floor_z < entry.z, e.g. previous pass
-            // already cut DEEPER than this entry — clearing function
+            // Toolpath: rapid descent from safe_z (or a keep-down link) down
+            // to ~rapid_floor_z (cleared air, no stamp), then the style entry
+            // from there to entry. Mirror segments_to_toolpath's
+            // `descent_floor` calc exactly so we don't stamp BELOW entry.z
+            // (which would happen if rapid_floor_z < entry.z, e.g. previous
+            // pass already cut DEEPER than this entry — clearing function
             // sampled the post-stamp top).
+            //
+            // The emitter drapes this entry as it drapes a plain `Rapid`
+            // (the `fad3a56` gouge guard); mirror that too.
+            let entry = &drape_point(
+                entry,
+                drape.mesh,
+                drape.index,
+                drape.cutter,
+                drape.stock_to_leave,
+            );
             const RAPID_DESCENT_BUFFER_MM: f64 = 0.5;
             let descent_floor = (*rapid_floor_z + RAPID_DESCENT_BUFFER_MM)
                 .min(safe_z)
@@ -508,19 +531,156 @@ fn stamp_emitted_segment(
             );
         }
         Adaptive3dSegment::Link(target) => {
-            // Toolpath: feed at constant Z from last_pos to target.
+            // Toolpath: feed from last_pos to target, draped to hold the
+            // leave as the emitter drapes it.
             if let Some(prev) = last_pos {
-                material_stock.stamp_linear_segment(
-                    lut,
-                    tool_radius,
-                    *prev,
-                    *target,
-                    StockCutDirection::FromTop,
+                let draped = drape_path_to_leave(
+                    &[*prev, *target],
+                    drape.mesh,
+                    drape.index,
+                    drape.cutter,
+                    drape.stock_to_leave,
+                    drape.cutter.radius(),
                 );
+                stamp_along_path(material_stock, lut, tool_radius, &draped);
             }
         }
         Adaptive3dSegment::Marker(_) => {}
     }
+}
+
+/// Read an entry's rapid floor and its keep-down proof from the planner
+/// stock, BEFORE the entry is stamped.
+///
+/// - The floor is the conservative stock top over a disc of
+///   `drape.entry_floor_radius` at the entry XY: the highest the material
+///   can stand anywhere under the tool (and under the helix turns). Above it
+///   the emitter rapids; below it the entry style emitter feeds. This is the
+///   read the descent optimiser uses (A/M10), so a rib narrower than one cell
+///   cannot hide from it.
+/// - The proof ([`StayDownProof`]) is the conservative stock top on the
+///   swept tool disc from the previous planner position to the entry. It is
+///   written only inside the stay-down distance.
+///
+/// With no stock under the disc (off the grid), the entry stays a plain
+/// `Rapid`: the emitter then feeds from safe Z and takes no keep-down link.
+fn plan_entry(
+    material_stock: &TriDexelStock,
+    tool_radius: f64,
+    last_pos: Option<P3>,
+    entry: P3,
+    drape: &StampDrape<'_>,
+) -> Adaptive3dSegment {
+    let Some(rapid_floor_z) =
+        material_stock.max_conservative_top_z_in_disc(entry.x, entry.y, drape.entry_floor_radius)
+    else {
+        return Adaptive3dSegment::Rapid(entry);
+    };
+    let stay_down = last_pos.and_then(|from| {
+        let dx = entry.x - from.x;
+        let dy = entry.y - from.y;
+        let dist = (dx * dx + dy * dy).sqrt();
+        if drape.stay_down_mm <= 0.0 || dist > drape.stay_down_mm {
+            return None;
+        }
+        Some(StayDownProof {
+            from,
+            ceiling_z: corridor_ceiling_z(material_stock, from, entry, tool_radius),
+        })
+    });
+    Adaptive3dSegment::RapidWithFloor {
+        entry,
+        rapid_floor_z,
+        stay_down,
+    }
+}
+
+/// The planner's link gate: may the tool feed from `lp` to `first` at
+/// depth instead of an entry? The distance cap is
+/// `path.rs::default_max_link_dist`; `is_clear_path_3d` admits a bite of one
+/// Depth/Pass (a side entry cuts like a cut); a link that goes down must go
+/// through air (`link_footprint_ok`).
+fn side_link_ok(
+    ctx: &ClearZLevelContext<'_>,
+    material_stock: &TriDexelStock,
+    surface_hm: &SurfaceHeightmap,
+    lp: P3,
+    first: P3,
+) -> bool {
+    let dx = first.x - lp.x;
+    let dy = first.y - lp.y;
+    (dx * dx + dy * dy).sqrt() < ctx.max_link_dist
+        && is_clear_path_3d(
+            material_stock,
+            surface_hm,
+            lp,
+            first,
+            ctx.stock_to_leave,
+            ctx.depth_per_pass,
+        )
+        && link_footprint_ok(
+            material_stock,
+            lp,
+            first,
+            ctx.tool_radius,
+            ctx.depth_per_pass,
+        )
+}
+
+/// The footprint rule of a planner `Link`.
+///
+/// `is_clear_path_3d` reads the tool CENTRE line only. This test reads the
+/// whole tool footprint (cell centres inside `radius` minus one cell, so the
+/// wall that the tool just cut beside is not read as a bite) along the link:
+///
+/// - A level link (drop within the dexel noise) may bite at most `max_bite`
+///   (one Depth/Pass) above the link line: a side entry cuts like a cut.
+/// - A link that goes down may bite nothing: a steep link into stock is a
+///   plunge at the cutting feed.
+fn link_footprint_ok(stock: &TriDexelStock, from: P3, to: P3, radius: f64, max_bite: f64) -> bool {
+    let bite = if to.z >= from.z - LINK_DESCENT_NOISE_MM {
+        max_bite.max(0.0) + LINK_DESCENT_NOISE_MM
+    } else {
+        LINK_DESCENT_NOISE_MM
+    };
+    let cs = stock.z_grid.cell_size;
+    let probe = (radius - cs).max(cs);
+    let dx = to.x - from.x;
+    let dy = to.y - from.y;
+    let n = ((dx * dx + dy * dy).sqrt() / (cs * 0.5)).ceil().max(1.0) as usize;
+    (0..=n).all(|k| {
+        let t = k as f64 / n as f64;
+        let z = from.z + (to.z - from.z) * t;
+        stock
+            .max_top_z_in_disc(from.x + dx * t, from.y + dy * t, probe)
+            .is_none_or(|top| top <= z + bite)
+    })
+}
+
+/// Dexel noise on a link height reading (the value
+/// `search.rs::is_clear_path_3d` uses).
+const LINK_DESCENT_NOISE_MM: f64 = 0.5;
+
+/// The highest conservative stock top on the swept disc of `radius` from
+/// `from` to `to` (XY), both ends included. Samples every half cell, so no
+/// column the disc sweeps is skipped. `NEG_INFINITY` when the whole corridor
+/// is off the grid.
+fn corridor_ceiling_z(stock: &TriDexelStock, from: P3, to: P3, radius: f64) -> f64 {
+    let dx = to.x - from.x;
+    let dy = to.y - from.y;
+    let len = (dx * dx + dy * dy).sqrt();
+    let step = (stock.z_grid.cell_size * 0.5).max(1e-3);
+    let n = (len / step).ceil().max(1.0) as usize;
+    let mut ceiling = f64::NEG_INFINITY;
+    for k in 0..=n {
+        let t = k as f64 / n as f64;
+        if let Some(top) =
+            stock.max_conservative_top_z_in_disc(from.x + dx * t, from.y + dy * t, radius)
+        {
+            ceiling = ceiling.max(top);
+        }
+    }
+    ceiling
 }
 
 /// Helper to push a segment and stamp its simulator-equivalent swept
@@ -538,6 +698,14 @@ fn push_segment_with_stamp(
     min_cutting_radius: f64,
     drape: &StampDrape<'_>,
 ) {
+    // Every entry the planner emits passes this door, so every entry gets
+    // its floor and its keep-down proof from the same stock read.
+    let segment = match segment {
+        Adaptive3dSegment::Rapid(entry) | Adaptive3dSegment::RapidWithFloor { entry, .. } => {
+            plan_entry(material_stock, tool_radius, *last_pos, entry, drape)
+        }
+        other => other,
+    };
     stamp_emitted_segment(
         material_stock,
         lut,
@@ -744,20 +912,8 @@ pub(super) fn clear_z_level_contour_parallel(
                 // uncut terrain between rings at different Z heights
                 // (F-5 in planning/adaptive_review_2026-04.md). The gate
                 // matches the one in clear_z_level (the AgentSearch path).
-                let link_dist = ctx.max_link_dist;
-                let should_link = last_pos.is_some_and(|lp| {
-                    let dx = first.x - lp.x;
-                    let dy = first.y - lp.y;
-                    (dx * dx + dy * dy).sqrt() < link_dist
-                        && is_clear_path_3d(
-                            material_stock,
-                            surface_hm,
-                            lp,
-                            *first,
-                            ctx.stock_to_leave,
-                            ctx.depth_per_pass,
-                        )
-                });
+                let should_link = last_pos
+                    .is_some_and(|lp| side_link_ok(ctx, material_stock, surface_hm, lp, *first));
                 let entry_seg = if should_link {
                     Adaptive3dSegment::Link(*first)
                 } else {
@@ -893,15 +1049,31 @@ pub(super) fn clear_z_level_contour_parallel(
             }
         }
 
-        for path in &cleanup_pts {
+        for run in &cleanup_pts {
+            // Start the run at the end nearer to the tool, so the link gate
+            // below sees the short hop from the run before.
+            let mut path = run.clone();
+            if let (Some(lp), Some(a), Some(b)) = (*last_pos, path.first(), path.last()) {
+                let d = |p: &P3| (p.x - lp.x).powi(2) + (p.y - lp.y).powi(2);
+                if d(b) < d(a) {
+                    path.reverse();
+                }
+            }
             if let Some(first) = path.first() {
+                let should_link = last_pos
+                    .is_some_and(|lp| side_link_ok(ctx, material_stock, surface_hm, lp, *first));
+                let entry_seg = if should_link {
+                    Adaptive3dSegment::Link(*first)
+                } else {
+                    Adaptive3dSegment::Rapid(*first)
+                };
                 push_segment_with_stamp(
                     segments,
                     material_stock,
                     ctx.lut,
                     ctx.tool_radius,
                     last_pos,
-                    Adaptive3dSegment::Rapid(*first),
+                    entry_seg,
                     ctx.safe_z,
                     ctx.tolerance,
                     ctx.min_cutting_radius,
@@ -1072,20 +1244,8 @@ pub(super) fn clear_z_level_adaptive(
             // Entry (link or rapid) + cut segment. Matches the gate in
             // clear_z_level_contour_parallel — see F-5 rationale there.
             if let Some(first) = path_3d.first() {
-                let link_dist = ctx.max_link_dist;
-                let should_link = last_pos.is_some_and(|lp| {
-                    let dx = first.x - lp.x;
-                    let dy = first.y - lp.y;
-                    (dx * dx + dy * dy).sqrt() < link_dist
-                        && is_clear_path_3d(
-                            material_stock,
-                            surface_hm,
-                            lp,
-                            *first,
-                            ctx.stock_to_leave,
-                            ctx.depth_per_pass,
-                        )
-                });
+                let should_link = last_pos
+                    .is_some_and(|lp| side_link_ok(ctx, material_stock, surface_hm, lp, *first));
                 let entry_seg = if should_link {
                     Adaptive3dSegment::Link(*first)
                 } else {
@@ -1157,6 +1317,10 @@ pub(super) fn waterline_cleanup(
         index,
         cutter,
         stock_to_leave,
+        // A waterline contour is entered over its own footprint and gets
+        // no keep-down link.
+        entry_floor_radius: tool_radius,
+        stay_down_mm: 0.0,
     };
     #[cfg(not(target_arch = "wasm32"))]
     let t_waterline = Instant::now();
@@ -1764,17 +1928,10 @@ fn clear_one_region(
             }
             let path_3d: Vec<P3> = path_2d.iter().map(|&p| lift(p)).collect();
             if let Some(first) = path_3d.first().copied() {
-                // Sample the stock top BEFORE we stamp the rapid /
-                // cut for this loop, so the rapid-floor reflects
-                // material state from prior passes only.
-                let rapid_floor = sample_stock_top_at(material_stock, first.x, first.y);
-                let entry_seg = match rapid_floor {
-                    Some(top_z) => Adaptive3dSegment::RapidWithFloor {
-                        entry: first,
-                        rapid_floor_z: top_z,
-                    },
-                    None => Adaptive3dSegment::Rapid(first),
-                };
+                // `push_segment_with_stamp` reads the rapid floor
+                // (`plan_entry`) BEFORE it stamps the entry, so the floor
+                // reflects material state from prior passes only.
+                let entry_seg = Adaptive3dSegment::Rapid(first);
                 push_segment_with_stamp(
                     segments,
                     material_stock,
@@ -1822,14 +1979,8 @@ fn clear_one_region(
             }
             let path_3d: Vec<P3> = path_2d.iter().map(|&p| lift(p)).collect();
             if let Some(first) = path_3d.first().copied() {
-                let rapid_floor = sample_stock_top_at(material_stock, first.x, first.y);
-                let entry_seg = match rapid_floor {
-                    Some(top_z) => Adaptive3dSegment::RapidWithFloor {
-                        entry: first,
-                        rapid_floor_z: top_z,
-                    },
-                    None => Adaptive3dSegment::Rapid(first),
-                };
+                // `push_segment_with_stamp` reads the rapid floor (`plan_entry`).
+                let entry_seg = Adaptive3dSegment::Rapid(first);
                 push_segment_with_stamp(
                     segments,
                     material_stock,
@@ -2202,15 +2353,8 @@ fn clear_one_region(
                                 // traverses cleared territory). No
                                 // stamping (rapids don't cut).
                                 let end_pt = path_3d[i.saturating_sub(1)];
-                                let rapid_floor =
-                                    sample_stock_top_at(material_stock, end_pt.x, end_pt.y);
-                                let entry_seg = match rapid_floor {
-                                    Some(top_z) => Adaptive3dSegment::RapidWithFloor {
-                                        entry: end_pt,
-                                        rapid_floor_z: top_z,
-                                    },
-                                    None => Adaptive3dSegment::Rapid(end_pt),
-                                };
+                                // `push_segment_with_stamp` reads the rapid floor (`plan_entry`).
+                                let entry_seg = Adaptive3dSegment::Rapid(end_pt);
                                 push_segment_with_stamp(
                                     segments,
                                     material_stock,
@@ -2230,14 +2374,8 @@ fn clear_one_region(
                         // before continuing.
                         if large_z {
                             let p3 = path_3d[i];
-                            let rapid_floor = sample_stock_top_at(material_stock, p3.x, p3.y);
-                            let entry_seg = match rapid_floor {
-                                Some(top_z) => Adaptive3dSegment::RapidWithFloor {
-                                    entry: p3,
-                                    rapid_floor_z: top_z,
-                                },
-                                None => Adaptive3dSegment::Rapid(p3),
-                            };
+                            // `push_segment_with_stamp` reads the rapid floor (`plan_entry`).
+                            let entry_seg = Adaptive3dSegment::Rapid(p3);
                             push_segment_with_stamp(
                                 segments,
                                 material_stock,
@@ -2275,14 +2413,8 @@ fn clear_one_region(
                             *cut_count += 1;
                         }
                     } else if let Some(end_pt) = path_3d.last().copied() {
-                        let rapid_floor = sample_stock_top_at(material_stock, end_pt.x, end_pt.y);
-                        let entry_seg = match rapid_floor {
-                            Some(top_z) => Adaptive3dSegment::RapidWithFloor {
-                                entry: end_pt,
-                                rapid_floor_z: top_z,
-                            },
-                            None => Adaptive3dSegment::Rapid(end_pt),
-                        };
+                        // `push_segment_with_stamp` reads the rapid floor (`plan_entry`).
+                        let entry_seg = Adaptive3dSegment::Rapid(end_pt);
                         push_segment_with_stamp(
                             segments,
                             material_stock,
@@ -2306,14 +2438,8 @@ fn clear_one_region(
                 // safe_z down would burn time feeding through air.
                 // Pass the sampled top to the path emitter so it
                 // can rapid through the air gap before pecking.
-                let rapid_floor = sample_stock_top_at(material_stock, p3.x, p3.y);
-                let entry_seg = match rapid_floor {
-                    Some(top_z) => Adaptive3dSegment::RapidWithFloor {
-                        entry: p3,
-                        rapid_floor_z: top_z,
-                    },
-                    None => Adaptive3dSegment::Rapid(p3),
-                };
+                // `push_segment_with_stamp` reads the rapid floor (`plan_entry`).
+                let entry_seg = Adaptive3dSegment::Rapid(p3);
                 push_segment_with_stamp(
                     segments,
                     material_stock,
@@ -2336,14 +2462,8 @@ fn clear_one_region(
                 // safe_z) to guarantee no material collision. Same
                 // rapid-floor optimisation as the Rapid case.
                 let p3 = lift(p);
-                let rapid_floor = sample_stock_top_at(material_stock, p3.x, p3.y);
-                let entry_seg = match rapid_floor {
-                    Some(top_z) => Adaptive3dSegment::RapidWithFloor {
-                        entry: p3,
-                        rapid_floor_z: top_z,
-                    },
-                    None => Adaptive3dSegment::Rapid(p3),
-                };
+                // `push_segment_with_stamp` reads the rapid floor (`plan_entry`).
+                let entry_seg = Adaptive3dSegment::Rapid(p3);
                 push_segment_with_stamp(
                     segments,
                     material_stock,

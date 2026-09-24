@@ -20,8 +20,14 @@
 //!
 //! 1. **Stay-down emitted when terrain permits.** Two cut regions sit
 //!    on a flat-top peak; the gap between them is well below the cut Z.
-//!    With `max_stay_down_distance_mm = 50`, no `EntryPlunge`s are
-//!    emitted between the two regions — only `Linking` feeds at link Z.
+//!    With `max_stay_down_distance_mm = 50`, the rough retracts to safe
+//!    Z fewer times: `Linking` feeds at link Z replace retract + rapid.
+//!
+//!    Changed 2026-09-24 (`planning/entry_stock_awareness_2026-09-24/`):
+//!    this bar used to demand fewer `EntryPlunge`s. The old link got them
+//!    by a fed straight descent from link Z into uncut stock. The link now
+//!    ends above the planner's stock floor, and the entry style takes the
+//!    material under the entry, so the retract is what the link saves.
 //!
 //! 2. **Safety regression — peak between regions forces retract.** Same
 //!    fixture but with a peak inserted in the middle of the would-be
@@ -217,6 +223,18 @@ fn count_linking_feeds(tp: &Toolpath) -> usize {
         .count()
 }
 
+/// Count rapids that rise to safe Z from below it (retracts).
+fn count_retracts_to_safe_z(tp: &Toolpath, safe_z: f64) -> usize {
+    tp.moves
+        .windows(2)
+        .filter(|w| {
+            matches!(w[1].move_type, MoveType::Rapid)
+                && w[1].target.z >= safe_z - 1e-6
+                && w[0].target.z < safe_z - 1e-6
+        })
+        .count()
+}
+
 /// Maximum Z across all moves tagged `MoveIntent::Linking`. None if no
 /// linking move emitted.
 fn max_z_among_linking(tp: &Toolpath) -> Option<f64> {
@@ -252,10 +270,13 @@ fn stay_down_link_emitted_when_terrain_permits_f038b() {
     let entries_off = count_entry_plunges(&tp_off);
     let linking_on = count_linking_feeds(&tp_on);
     let linking_off = count_linking_feeds(&tp_off);
+    let retracts_on = count_retracts_to_safe_z(&tp_on, params_on.safe_z);
+    let retracts_off = count_retracts_to_safe_z(&tp_off, params_off.safe_z);
 
     eprintln!(
         "F-038b stay-down test: entries on/off = {entries_on}/{entries_off}, \
-         linking on/off = {linking_on}/{linking_off}"
+         linking on/off = {linking_on}/{linking_off}, \
+         retracts on/off = {retracts_on}/{retracts_off}"
     );
 
     // 1) At least one stay-down link must fire.
@@ -265,12 +286,17 @@ fn stay_down_link_emitted_when_terrain_permits_f038b() {
          when feature enabled ({linking_on} vs {linking_off})"
     );
 
-    // 2) Entry plunge count must drop when feature is on.
+    // 2) The retract count must drop when the feature is on. The entry
+    //    under the link stays: it cuts the material below the stock floor.
     assert!(
-        entries_on < entries_off,
+        retracts_on < retracts_off,
         "F-038b regression: stay-down should have replaced at least one \
-         entry plunge with a feed link, but entries_on={entries_on} \
-         >= entries_off={entries_off}"
+         retract with a feed link, but retracts_on={retracts_on} \
+         >= retracts_off={retracts_off}"
+    );
+    assert!(
+        entries_on <= entries_off,
+        "F-038b regression: the link added entries ({entries_on} > {entries_off})"
     );
 
     // 3) The max link Z must stay below safe_z (otherwise the guard is

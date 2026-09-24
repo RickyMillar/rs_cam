@@ -190,6 +190,23 @@ fn emit_peck_plunge(tp: &mut Toolpath, entry: &P3, start_z: f64, params: &Adapti
     tp.feed_to_with_intent(*entry, params.plunge_rate, MoveIntent::EntryPlunge);
 }
 
+/// The planner's stock proof for an F-038b keep-down link.
+///
+/// The planner reads its own dexel stock at the moment of the entry, so it
+/// knows what the op has already cut. The emitter reads only the mesh. The
+/// keep-down link therefore runs only with this proof.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct StayDownProof {
+    /// The planner tool position the corridor starts at. The emitter uses
+    /// the proof only when its own previous position has this XY; an entry
+    /// that coalescing removed leaves a proof for a different corridor.
+    pub(super) from: P3,
+    /// The highest conservative stock top on the swept tool disc from
+    /// `from` to the entry, both ends included. A link above this Z plus
+    /// the clearance cuts no stock.
+    pub(super) ceiling_z: f64,
+}
+
 pub(super) enum Adaptive3dSegment {
     /// 3D cutting path with variable Z
     Cut(Vec<P3>),
@@ -203,7 +220,16 @@ pub(super) enum Adaptive3dSegment {
     /// followed by a short peck through the remaining fresh material.
     /// Falls back to plain `Rapid` semantics when `rapid_floor_z >=
     /// safe_z` (no air gap to skip).
-    RapidWithFloor { entry: P3, rapid_floor_z: f64 },
+    ///
+    /// `rapid_floor_z` is the conservative stock top over the entry
+    /// footprint, read from the planner stock before the entry is stamped
+    /// (`clearing.rs::plan_entry`). `stay_down` is the planner's stock proof
+    /// for a keep-down link; without it the emitter always retracts.
+    RapidWithFloor {
+        entry: P3,
+        rapid_floor_z: f64,
+        stay_down: Option<StayDownProof>,
+    },
     /// Feed directly at cutting depth (no retract)
     Link(P3),
     /// Structured runtime marker at the current point in the toolpath
@@ -852,6 +878,8 @@ pub(super) fn adaptive_3d_segments(
         safe_z: params.safe_z,
         min_cutting_radius: params.geometry.min_cutting_radius,
         min_region_cut_length_mm: params.linking.min_region_cut_length_mm,
+        entry_floor_radius: entry_floor_radius(params, cutter.radius()),
+        stay_down_mm: resolved_stay_down_mm(params, cutter.radius()),
     };
 
     let mut segments = Vec::new();
@@ -1081,29 +1109,62 @@ fn max_mesh_z_along_line(
     if any_contact { Some(max_z) } else { None }
 }
 
+/// F-038b: the resolved stay-down distance. `None` on the ONE dial
+/// `max_stay_down_distance_mm` gives 8 x tool diameter (the Fusion HSM
+/// roughing default); `Some(0.0)` turns the keep-down link off. The planner
+/// (for the stock proof) and the emitter (for the link) read this one value.
+pub(super) fn resolved_stay_down_mm(params: &Adaptive3dParams, tool_radius: f64) -> f64 {
+    params
+        .linking
+        .max_stay_down_distance_mm
+        .unwrap_or(tool_radius * 2.0 * 8.0)
+}
+
+/// The radius over which the planner reads an entry's rapid floor: the tool
+/// radius, plus the helix radius for a helix entry, whose turns sweep that
+/// far from the entry XY.
+pub(super) fn entry_floor_radius(params: &Adaptive3dParams, tool_radius: f64) -> f64 {
+    match params.entry_style {
+        EntryStyle3d::Helix { radius, .. } => tool_radius + radius.max(0.0),
+        EntryStyle3d::Plunge | EntryStyle3d::Ramp { .. } => tool_radius,
+    }
+}
+
+/// The emitter uses a [`StayDownProof`] only when its previous tool position
+/// is this close in XY to the proof's `from`. The drape, the RDP and the
+/// corner blend keep a cut's end point, so a matching corridor agrees to
+/// far less than this.
+const STAY_DOWN_FROM_XY_EPS_MM: f64 = 0.05;
+
 /// F-038b: attempt to emit a keep-tool-down feed link between a previous
 /// tool position and a new entry point. Returns `true` if the link was
-/// emitted (caller skips the retract+rapid+plunge sequence), `false`
-/// otherwise (caller falls back to the legacy retract path).
+/// emitted (caller skips the retract and the rapids), `false` otherwise
+/// (caller falls back to the retract path).
 ///
-/// Algorithm (per F-038b spec):
-///   1. Require previous tool position (`from`); short-circuit if absent.
-///   2. Reject if `xy_distance(from, to) > max_stay_down_distance_mm`.
-///   3. Sample mesh heightfield (`samples` evenly spaced incl. endpoints).
-///   4. `link_z = max(samples_max, from.z, to.z) + clearance_mm`.
-///   5. Reject if `link_z > safe_z` (terrain peak exceeds safe-Z guard).
-///   6. Reject if `link_z > to.z + cutter_length` (shank would enter
-///      uncut material above the new entry point that the tool can't
-///      cut).
-///   7. Emit three feed moves @ feed_rate, all tagged `MoveIntent::Linking`:
-///      (a) ascend at the start XY to link_z, (b) XY traverse at
-///      link_z to the entry XY, (c) descend to the entry point. Each
-///      step is skipped if the start/end Z is already at link_z.
+/// The link ends at `(to.xy, descend_to_z)`, the entry's rapid floor. It
+/// never descends into stock: the entry style emitter (peck, helix, ramp)
+/// takes the material below `descend_to_z`, as it does after a retract.
+///
+/// Algorithm:
+///   1. Reject if `xy_distance(from, to) > max_stay_down_distance_mm`.
+///   2. Sample mesh heightfield (`samples` evenly spaced incl. endpoints).
+///   3. `link_z = max(samples_max + clearance, from.z, to.z,
+///      stock_ceiling + clearance, descend_to_z)`. `stock_ceiling` is the
+///      planner's [`StayDownProof::ceiling_z`]: the traverse cuts no stock.
+///   4. Reject if `link_z > safe_z` (the retract is no longer).
+///   5. Reject if `link_z > to.z + cutter_length` (the shank would enter
+///      uncut material above the new entry point that the tool can't cut).
+///   6. Emit up to three feed moves @ feed_rate, all tagged
+///      `MoveIntent::Linking`: (a) ascend at the start XY to link_z, (b) XY
+///      traverse at link_z to the entry XY, (c) descend through air to
+///      `descend_to_z`. Each step is skipped if it has no length.
 #[allow(clippy::too_many_arguments)]
 fn try_emit_stay_down_link(
     tp: &mut Toolpath,
     from: P3,
     to: P3,
+    descend_to_z: f64,
+    stock_ceiling: f64,
     mesh: &crate::mesh::TriangleMesh,
     index: &crate::mesh::SpatialIndex,
     cutter: &dyn crate::tool::MillingCutter,
@@ -1131,9 +1192,13 @@ fn try_emit_stay_down_link(
     // Hold the stock-to-leave under the link, not just a bare clearance: the
     // link must clear `terrain + stock_to_leave` so it doesn't shave the leave
     // off material it passes over. Still at least `clearance_mm` above terrain.
+    // The stock ceiling is the planner's reading of what the op has NOT cut
+    // yet; the surface alone let the link descend into that stock.
     let link_z = (terrain_max + stock_to_leave.max(clearance_mm))
+        .max(stock_ceiling + clearance_mm)
         .max(from.z)
-        .max(to.z);
+        .max(to.z)
+        .max(descend_to_z);
 
     // Safety guard 1: link Z above safe_z means the terrain peak is
     // above the safe height. Retract is the right answer.
@@ -1159,10 +1224,16 @@ fn try_emit_stay_down_link(
         );
     }
     // Step (b): XY traverse at link_z.
-    tp.feed_to_with_intent(P3::new(to.x, to.y, link_z), feed_rate, MoveIntent::Linking);
-    // Step (c): descend to the entry point.
-    if to.z < link_z - 1e-9 {
-        tp.feed_to_with_intent(to, feed_rate, MoveIntent::Linking);
+    if xy_dist > 1e-9 {
+        tp.feed_to_with_intent(P3::new(to.x, to.y, link_z), feed_rate, MoveIntent::Linking);
+    }
+    // Step (c): descend through air to the entry's rapid floor.
+    if descend_to_z < link_z - 1e-9 {
+        tp.feed_to_with_intent(
+            P3::new(to.x, to.y, descend_to_z),
+            feed_rate,
+            MoveIntent::Linking,
+        );
     }
     true
 }
@@ -1276,10 +1347,7 @@ pub(super) fn segments_to_toolpath(
     // F-038b: resolve the stay-down distance knob. `None` ⇒ planner
     // default of 8 × tool diameter (Fusion HSM roughing default). The
     // operator can override with `Some(x)` (incl. `Some(0.0)` to disable).
-    let stay_down_dist = params
-        .linking
-        .max_stay_down_distance_mm
-        .unwrap_or_else(|| (cutter.radius() * 2.0) * 8.0);
+    let stay_down_dist = resolved_stay_down_mm(params, cutter.radius());
     let stay_down_clearance = params.linking.stay_down_clearance_mm.max(0.0);
 
     // Lift the tool to safe_z above its current XY before any
@@ -1342,29 +1410,55 @@ pub(super) fn segments_to_toolpath(
                     event: event.clone(),
                 });
             }
-            Adaptive3dSegment::Rapid(entry) => {
+            Adaptive3dSegment::Rapid(_) | Adaptive3dSegment::RapidWithFloor { .. } => {
+                let (raw_entry, rapid_floor_z, stay_down) = match segment {
+                    Adaptive3dSegment::RapidWithFloor {
+                        entry,
+                        rapid_floor_z,
+                        stay_down,
+                    } => (entry, Some(*rapid_floor_z), stay_down.as_ref()),
+                    Adaptive3dSegment::Rapid(entry) => (entry, None, None),
+                    _ => continue,
+                };
                 // Gouge guard: lift the entry destination to hold the leave, so
                 // a peck-plunge / helix / ramp whose footprint laps higher
                 // neighbouring material can't descend below `surface + leave`.
-                // Shadows the matched ref so every downstream use (stay-down
-                // link, plunge, annotations) sees the protected Z.
-                let entry_owned =
-                    drape_point(entry, mesh, index, cutter, params.depth.stock_to_leave);
-                let entry = &entry_owned;
+                // Both arms apply it; the planner mirror in
+                // `clearing.rs::stamp_emitted_segment` does the same.
+                let entry =
+                    drape_point(raw_entry, mesh, index, cutter, params.depth.stock_to_leave);
+                let entry = &entry;
                 let entry_start = tp.moves.len();
+                // The rapid floor: the planner's conservative stock top over
+                // the entry footprint, plus a buffer. Above it is air the op
+                // has already cleared (or never had). With no floor (off the
+                // stock grid) the column below safe_z may hold uncut stock, so
+                // the floor is safe_z and the style emitter feeds from there
+                // (UX-dial-in B1).
+                const RAPID_DESCENT_BUFFER_MM: f64 = 0.5;
+                let descent_floor = rapid_floor_z.map_or(params.safe_z, |floor| {
+                    (floor + RAPID_DESCENT_BUFFER_MM)
+                        .min(params.safe_z)
+                        .max(entry.z)
+                });
                 // F-038b: try a keep-tool-down feed link from the previous
-                // tool position to `entry` before falling back to retract.
-                // Only attempted for Plunge entries — Helix and Ramp have
-                // their own entry geometry and aren't candidates for a
-                // direct feed-to-depth link (the helix/ramp's plunge angle
-                // is what protects the cutter on those styles).
+                // tool position before falling back to retract. Every entry
+                // style is a candidate, but only with the planner's stock
+                // proof for this corridor. The link ends at the rapid floor;
+                // the style emitter below takes the material, as it does after
+                // a retract. A link never feeds straight down into stock.
                 let prev_pos = tp.moves.last().map(|m| m.target);
-                let stay_down_used = matches!(params.entry_style, EntryStyle3d::Plunge)
-                    && prev_pos.is_some_and(|from| {
+                let stay_down_used = match (prev_pos, stay_down) {
+                    (Some(from), Some(proof))
+                        if (from.x - proof.from.x).abs() < STAY_DOWN_FROM_XY_EPS_MM
+                            && (from.y - proof.from.y).abs() < STAY_DOWN_FROM_XY_EPS_MM =>
+                    {
                         try_emit_stay_down_link(
                             &mut tp,
                             from,
                             *entry,
+                            descent_floor,
+                            proof.ceiling_z,
                             mesh,
                             index,
                             cutter,
@@ -1374,79 +1468,61 @@ pub(super) fn segments_to_toolpath(
                             params.safe_z,
                             params.feed_rate,
                         )
-                    });
-                if stay_down_used {
-                    let entry_end = tp.moves.len();
-                    if entry_end > entry_start {
-                        annotations.push(Adaptive3dRuntimeAnnotation {
-                            move_index: entry_start,
-                            event: Adaptive3dRuntimeEvent::PassEntry {
-                                pass_index: pass_counter,
-                                entry_x: entry.x,
-                                entry_y: entry.y,
-                                entry_z: entry.z,
-                                entry_end_move_idx: entry_end,
-                                style_label: "keep-down link",
-                            },
-                        });
-                        pass_counter += 1;
                     }
-                    continue;
-                }
-                match params.entry_style {
-                    EntryStyle3d::Plunge => {
-                        lift_to_safe_z(&mut tp, params.safe_z);
-                        tp.rapid_to_with_intent(
-                            P3::new(entry.x, entry.y, params.safe_z),
-                            crate::toolpath::MoveIntent::Linking,
-                        );
-                        emit_peck_plunge(&mut tp, entry, params.safe_z, params);
-                    }
-                    EntryStyle3d::Helix { radius, pitch } => {
-                        lift_to_safe_z(&mut tp, params.safe_z);
-                        tp.rapid_to_with_intent(
-                            P3::new(entry.x, entry.y, params.safe_z),
-                            crate::toolpath::MoveIntent::Linking,
-                        );
-                        let helix_start = P3::new(entry.x, entry.y, params.safe_z);
-                        // No `rapid_floor_z` was supplied for this entry, so the
-                        // column below safe_z may still hold uncut stock. Pass
-                        // `safe_z` as the stock_top guard so emit_helix does not
-                        // emit a rapid descent below safe_z; it will plunge-feed
-                        // instead. (UX-dial-in B1.)
-                        crate::dressup::emit_helix(
-                            &mut tp,
-                            &helix_start,
-                            entry,
-                            radius,
-                            pitch,
-                            params.plunge_rate,
-                            &entry_safety(params.safe_z),
-                        );
-                    }
-                    EntryStyle3d::Ramp { max_angle_deg } => {
-                        lift_to_safe_z(&mut tp, params.safe_z);
-                        tp.rapid_to_with_intent(
-                            P3::new(entry.x, entry.y, params.safe_z),
-                            crate::toolpath::MoveIntent::Linking,
-                        );
-                        let ramp_start = P3::new(entry.x, entry.y, params.safe_z);
-                        crate::dressup::emit_ramp(
-                            &mut tp,
-                            &ramp_start,
-                            entry,
-                            (1.0, 0.0),
-                            max_angle_deg,
-                            params.plunge_rate,
-                            &entry_safety(params.safe_z),
-                            // G-RAMPCONTAIN: no fold. This door enters PRISM
-                            // stock with `dir = (1.0, 0.0)`; a leg past the
-                            // mesh footprint cuts stock this operation is
-                            // allowed to cut (R0.2 section 2.2).
-                            None,
-                        );
-                    }
+                    _ => false,
                 };
+                if !stay_down_used {
+                    lift_to_safe_z(&mut tp, params.safe_z);
+                    tp.rapid_to_with_intent(
+                        P3::new(entry.x, entry.y, params.safe_z),
+                        crate::toolpath::MoveIntent::Linking,
+                    );
+                    if descent_floor < params.safe_z - 1e-6 {
+                        tp.rapid_to_with_intent(
+                            P3::new(entry.x, entry.y, descent_floor),
+                            crate::toolpath::MoveIntent::Linking,
+                        );
+                    }
+                }
+                // The tool now stands at (entry.xy, descent_floor). Everything
+                // below is uncut material: the style emitter takes it, with
+                // `descent_floor` as its stock-top guard. When the floor is at
+                // the entry, the entry column is open and no entry is needed.
+                if descent_floor > entry.z + 1e-6 {
+                    let start = P3::new(entry.x, entry.y, descent_floor);
+                    match params.entry_style {
+                        EntryStyle3d::Plunge => {
+                            emit_peck_plunge(&mut tp, entry, descent_floor, params);
+                        }
+                        EntryStyle3d::Helix { radius, pitch } => {
+                            crate::dressup::emit_helix(
+                                &mut tp,
+                                &start,
+                                entry,
+                                radius,
+                                pitch,
+                                params.plunge_rate,
+                                &entry_safety(descent_floor),
+                            );
+                        }
+                        EntryStyle3d::Ramp { max_angle_deg } => {
+                            crate::dressup::emit_ramp(
+                                &mut tp,
+                                &start,
+                                entry,
+                                (1.0, 0.0),
+                                max_angle_deg,
+                                params.plunge_rate,
+                                &entry_safety(descent_floor),
+                                // G-RAMPCONTAIN: no fold. This door enters PRISM
+                                // stock with `dir = (1.0, 0.0)`; a leg past the
+                                // mesh footprint cuts stock this operation is
+                                // allowed to cut (R0.2 section 2.2).
+                                None,
+                            );
+                        }
+                    }
+                }
                 let entry_end = tp.moves.len();
                 if entry_end > entry_start {
                     annotations.push(Adaptive3dRuntimeAnnotation {
@@ -1457,183 +1533,36 @@ pub(super) fn segments_to_toolpath(
                             entry_y: entry.y,
                             entry_z: entry.z,
                             entry_end_move_idx: entry_end,
-                            style_label: entry_style_label,
-                        },
-                    });
-                    pass_counter += 1;
-                }
-            }
-            Adaptive3dSegment::RapidWithFloor {
-                entry,
-                rapid_floor_z,
-            } => {
-                let entry_start = tp.moves.len();
-                // F-038b: same keep-tool-down attempt as the plain Rapid
-                // arm above. Only Plunge entries are candidates.
-                let prev_pos = tp.moves.last().map(|m| m.target);
-                let stay_down_used = matches!(params.entry_style, EntryStyle3d::Plunge)
-                    && prev_pos.is_some_and(|from| {
-                        try_emit_stay_down_link(
-                            &mut tp,
-                            from,
-                            *entry,
-                            mesh,
-                            index,
-                            cutter,
-                            stay_down_dist,
-                            stay_down_clearance,
-                            params.depth.stock_to_leave,
-                            params.safe_z,
-                            params.feed_rate,
-                        )
-                    });
-                if stay_down_used {
-                    let entry_end = tp.moves.len();
-                    if entry_end > entry_start {
-                        annotations.push(Adaptive3dRuntimeAnnotation {
-                            move_index: entry_start,
-                            event: Adaptive3dRuntimeEvent::PassEntry {
-                                pass_index: pass_counter,
-                                entry_x: entry.x,
-                                entry_y: entry.y,
-                                entry_z: entry.z,
-                                entry_end_move_idx: entry_end,
-                                style_label: "keep-down link",
+                            style_label: if stay_down_used {
+                                "keep-down link"
+                            } else {
+                                entry_style_label
                             },
-                        });
-                        pass_counter += 1;
-                    }
-                    // Silence the unused-warning for `rapid_floor_z` in
-                    // the stay-down branch — it's only consulted when we
-                    // fall through to the rapid-descent code path below.
-                    let _ = rapid_floor_z;
-                    continue;
-                }
-                match params.entry_style {
-                    EntryStyle3d::Plunge => {
-                        // Skip the peck-feed through cleared air. The clearing
-                        // function sampled stock_top at this XY and tells us
-                        // there's nothing solid down to `rapid_floor_z` —
-                        // rapid through it, then peck only the remaining
-                        // fresh-material descent.
-                        //
-                        // Buffer above the sampled stock_top in case the dexel
-                        // sample under-reports by a fraction of a cell height
-                        // (sub-mm safety margin keeps the plunge from biting
-                        // material at rapid speed if the sample was slightly
-                        // off).
-                        const RAPID_DESCENT_BUFFER_MM: f64 = 0.5;
-                        lift_to_safe_z(&mut tp, params.safe_z);
-                        tp.rapid_to_with_intent(
-                            P3::new(entry.x, entry.y, params.safe_z),
-                            crate::toolpath::MoveIntent::Linking,
-                        );
-                        let descent_floor = (*rapid_floor_z + RAPID_DESCENT_BUFFER_MM)
-                            .min(params.safe_z)
-                            .max(entry.z);
-                        if descent_floor < params.safe_z - 1e-6 {
-                            tp.rapid_to_with_intent(
-                                P3::new(entry.x, entry.y, descent_floor),
-                                crate::toolpath::MoveIntent::Linking,
-                            );
-                        }
-                        emit_peck_plunge(&mut tp, entry, descent_floor, params);
-                    }
-                    // Fix 4 (helix/agent_search RCA): honor `rapid_floor_z`
-                    // for Helix and Ramp the same way Plunge does. Rapid
-                    // through pre-cleared air down to the floor, then start
-                    // the controlled descent from there. Without this, the
-                    // helix/ramp descends at plunge_rate from safe_z through
-                    // every previously-cleared Z level — which (a) inflates
-                    // air-cut % and (b) can intersect uncleared neighbouring
-                    // stock at the helix radius during the multi-Z drop,
-                    // producing rapid-into-material collisions. See
-                    // `planning/F4_HELIX_AGENT_SEARCH_RCA.md`.
-                    EntryStyle3d::Helix { radius, pitch } => {
-                        const RAPID_DESCENT_BUFFER_MM: f64 = 0.5;
-                        let descent_floor = (*rapid_floor_z + RAPID_DESCENT_BUFFER_MM)
-                            .min(params.safe_z)
-                            .max(entry.z);
-                        lift_to_safe_z(&mut tp, params.safe_z);
-                        tp.rapid_to_with_intent(
-                            P3::new(entry.x, entry.y, params.safe_z),
-                            crate::toolpath::MoveIntent::Linking,
-                        );
-                        if descent_floor < params.safe_z - 1e-6 {
-                            tp.rapid_to_with_intent(
-                                P3::new(entry.x, entry.y, descent_floor),
-                                crate::toolpath::MoveIntent::Linking,
-                            );
-                        }
-                        let helix_start = P3::new(entry.x, entry.y, descent_floor);
-                        // `descent_floor` already sits at the dexel-sampled
-                        // cleared-air floor; everything below is uncut material.
-                        // Pass it as `stock_top` so emit_helix plunge-feeds the
-                        // rest rather than rapid-descending into stock.
-                        crate::dressup::emit_helix(
-                            &mut tp,
-                            &helix_start,
-                            entry,
-                            radius,
-                            pitch,
-                            params.plunge_rate,
-                            &entry_safety(descent_floor),
-                        );
-                    }
-                    EntryStyle3d::Ramp { max_angle_deg } => {
-                        const RAPID_DESCENT_BUFFER_MM: f64 = 0.5;
-                        let descent_floor = (*rapid_floor_z + RAPID_DESCENT_BUFFER_MM)
-                            .min(params.safe_z)
-                            .max(entry.z);
-                        lift_to_safe_z(&mut tp, params.safe_z);
-                        tp.rapid_to_with_intent(
-                            P3::new(entry.x, entry.y, params.safe_z),
-                            crate::toolpath::MoveIntent::Linking,
-                        );
-                        if descent_floor < params.safe_z - 1e-6 {
-                            tp.rapid_to_with_intent(
-                                P3::new(entry.x, entry.y, descent_floor),
-                                crate::toolpath::MoveIntent::Linking,
-                            );
-                        }
-                        let ramp_start = P3::new(entry.x, entry.y, descent_floor);
-                        // Same rationale as the helix variant above: descent_floor
-                        // is the boundary between cleared air and uncut material.
-                        crate::dressup::emit_ramp(
-                            &mut tp,
-                            &ramp_start,
-                            entry,
-                            (1.0, 0.0),
-                            max_angle_deg,
-                            params.plunge_rate,
-                            &entry_safety(descent_floor),
-                            // G-RAMPCONTAIN: no fold — see the sibling call.
-                            None,
-                        );
-                    }
-                };
-                let entry_end = tp.moves.len();
-                if entry_end > entry_start {
-                    annotations.push(Adaptive3dRuntimeAnnotation {
-                        move_index: entry_start,
-                        event: Adaptive3dRuntimeEvent::PassEntry {
-                            pass_index: pass_counter,
-                            entry_x: entry.x,
-                            entry_y: entry.y,
-                            entry_z: entry.z,
-                            entry_end_move_idx: entry_end,
-                            style_label: entry_style_label,
                         },
                     });
                     pass_counter += 1;
                 }
             }
             Adaptive3dSegment::Link(target) => {
-                tp.feed_to_with_intent(
-                    *target,
-                    params.feed_rate,
-                    crate::toolpath::MoveIntent::Linking,
+                // Gouge guard: a link is a feed at depth, so it holds the leave
+                // as a cut does (`drape_path_to_leave`). The planner mirror in
+                // `clearing.rs::stamp_emitted_segment` drapes it the same way.
+                let from = tp.moves.last().map_or(*target, |m| m.target);
+                let draped = drape_path_to_leave(
+                    &[from, *target],
+                    mesh,
+                    index,
+                    cutter,
+                    params.depth.stock_to_leave,
+                    cutter.radius(),
                 );
+                for pt in draped.iter().skip(1) {
+                    tp.feed_to_with_intent(
+                        *pt,
+                        params.feed_rate,
+                        crate::toolpath::MoveIntent::Linking,
+                    );
+                }
             }
             Adaptive3dSegment::Cut(path) => {
                 if path.len() < 2 {
