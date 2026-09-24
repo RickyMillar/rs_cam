@@ -909,9 +909,8 @@ const RAW_DRAG_VALUE_ALLOWANCE: &[(&str, usize, &str)] = &[
     ),
     (
         "ui/properties/operations/surface_3d.rs",
-        4,
-        "two integer fields (`ValueRow` edits an `f64`) and two rows whose \
-         value cell holds a horizontal with extra content",
+        2,
+        "two integer fields (`ValueRow` edits an `f64`)",
     ),
     (
         "ui/properties/operations/boundary_2d.rs",
