@@ -352,3 +352,20 @@ an entry; the entry code uses it for helix and ramp descents through
 material. The compute session adds the field and the read; this session
 owns the value (the G6 sourced ramp feed, the plunge fallback with the
 card note) and the Suggest apply write, after the field is on master.
+
+## Work item G10: entry parameters per tool and material (operator request, relayed 2026-09-25)
+
+The entry parameters are probably not generic across tools. For EVERY tool
+type and material in the FM1 matrix, find which cells have a printed or
+vendor source, which fall back, and what the card says, for:
+ramp angle (`ramp_angle_deg`, default 10), helix pitch (1-2 mm) and helix
+radius (`helix_radius_factor` 0.3), plunge rate (Suggest), and the new
+`ramp_feed_rate`. Today these are fixed defaults that no source backs for
+most tools. Context: on the 6 mm flat in hardwood a full-depth helix at
+the plunge rate made roughs 2-2.6x slower. Operator rules: never helix
+air; the entry style (helix / plunge / ramp) is the operator's setting;
+the helix start clearance above material becomes a setting (default
+0.5 mm, compute session).
+Plan: a G10 group in the programme's shape (inventory -> fetch vendor
+ramp / helix guidance per tool family -> trend -> ruling -> claim with the
+card line), after B4 and the ramp-feed wiring.
