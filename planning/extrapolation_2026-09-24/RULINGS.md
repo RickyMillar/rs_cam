@@ -255,3 +255,11 @@ was ruled as the one margin (R4 Q8).
 5. B8 if ruled (a).
 
 Each landing re-runs the FM1 matrix and commits the CSV.
+
+## Open after P2 design (2026-09-24)
+
+- **Hardwood V-bit Pocket / Contour / Trace (Backed today).** The printed
+  Onsrud 37-series rows (60 deg, stored text) put the formula at 0.37x of the
+  band at 6.35 mm, under the R1 0.5x threshold. The FORMULA_BACKING v1
+  verdict used the Amana derived row and IDC. A strict re-judgement would
+  refuse these cells. Not changed in P2; the operator decides.
