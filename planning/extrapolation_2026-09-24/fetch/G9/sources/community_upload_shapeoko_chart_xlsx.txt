@@ -1,0 +1,58 @@
+MATERIAL        DOC Inch        DOC mm          Dewalt 611 RPM       Makita 0701 RPM     3 Phase Spindle     FEED Inch         FEED mm         PLUNGE Inch        PLUNGE mm
+PLASTICS                                                                                                                                                                                     Inch        mm
+ABS                      0.07            1.75                  1.5                               290 Hertz               65          1625                    22            550                      1"        25
+Acrylic                  0.06             1.5                  2.5                                     315               65          1625                    25            625
+Delrin                   0.08              2                   3.5                                     345               65          1625                    32            800
+HDPE                    0.125           3.125                    4                                     360               80          2000                    40           1000
+Kydex                    0.08              2                     2                                     300               55          1375                    22            550
+Nylon                    0.08              2                     1                 3.0                 275               75          1875                    40           1000
+Linoleum                 0.03            0.75                    1                 3.0                 275               75          1875                    35            875
+PEEK                     0.03            0.75                    1                 3.0                 275               65          1625                    30            750
+Polycarbonate            0.08              2                     2                                     300               55          1375                    25            625
+Polypropylene            0.08              2                     5                                     400               90          2250                    15            375
+PVC                      0.09            2.25                    1                 3.0                 275               35              875                 17            425
+Styrene                  0.03            0.75                    1                                     275               40          1000                    15            375
+UHMW                      0.1             2.5                  1.5                 3.0                 290               75          1875                    22            550
+Sintra                   0.13            3.25                    1                 3.0                 275               100         2500                    80           2000
+Resin                    0.09            2.25                 1.25                                     280               60          1500                    50           1250
+
+
+COMPOSITES
+AL/PVC panel             0.13            3.25                 1.25                               280 Hertz               50          1250                    25            625
+Carbonfiber              0.06             1.5                    1                 3.0                 275               45          1125                    20            500 Hazardous
+Garolite                 0.08              2                   2.5                                     315               75          1875                    30            750
+G10                      0.09            2.25                  1.5                                     290               60          1500                    28            700 Hazardous
+G10 XX                   0.08              2                     2                                     300               55          1375                    25            625 Hazardous
+Phenolic                 0.08              2                     1                 3.0                 275               65          1625                    35            875
+Foamcore                  0.1             2.5                    1                 3.0                 275               65          1625                    35            875
+Renshape                 0.18             4.5                  2.5                                     315               75          1875                    35            875
+
+
+METALS
+6061 AL                  0.03            0.75                  1.5                               290 Hertz               30              750                 10            250
+360 Brass                0.02             0.5                    2                                     300               25              625                 11            275
+Lead                    0.065           1.625                    1                 3.0                 275               50          1250                    20            500
+Magnesium                0.04              1                   1.5                                     290               40          1000                    15            375 Fire Hazard
+Steel                    0.02             0.5                  1.5                                     290               12              300                 5             125 Use Coolant
+
+WOOD
+Bamboo                   0.22             5.5                  2.5                               315 Hertz                65         1625                    30            750
+Pine                      0.4              10                  3.5                                    345                 75         1875                    40           1000
+Mahogany                  0.1             2.5                    3                                    330                 65         1625                    32            800
+Plywood                  0.25            6.25                    3                                    330                100         2500                    50           1250
+MDF                       0.3             7.5                    1                 3.0                275                 80         2000                    30            750 Hazardous
+
+OTHER
+Cork                      0.3             7.5                    5                               400 Hertz                60         1500                    30            750
+Graphite                  0.1             2.5                    3                                    330                 20          500                    15            375 Hazardous
+Limestone                 0.1             2.5                    1                 3.0                275                 40         1000                    12            300 Hazardous
+HD Wax                    0.3             7.5                    1                 3.0                275                100         2500                    50           1250
+
+Dewalt 611
+Dial #             1              2       3            4         5           6
+RPM               16k           18.2K    20.4K        22.6K      24.8k       27K
+
+Makita 0701
+Dial #              1             2        3          4              5       6
+RPM               10k            12K      17K         22K        27k         30K
+

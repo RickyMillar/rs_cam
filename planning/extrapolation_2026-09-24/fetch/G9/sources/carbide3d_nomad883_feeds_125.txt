@@ -1,0 +1,73 @@
+MATERIAL             DOC RPM        FEED PLUNGE
+PLASTICS
+ABS                  .015″   9000   42   15
+Acrylic              .019″   9000   44   14
+Delrin               .02″    5900   65   18
+HDPE                 .02″    6250   80   21
+Kydex                .03″    9000   55   13
+Nylon                .018″   6250   75    8
+Linoleum             .03″    3600   75    9
+PEEK                 .017″   7400   65   14
+Polycarbonate        .013″   9000   55   18
+Polypropylene        .02″    9100   90   15
+PVC                  .03″    6000   40   15
+Styrene              .03″    6000   40   15
+UHMW                 .02″    7200   60   22
+Sintra               .03″    6300   85   80
+Resin                .02″    9000   60   50
+
+
+
+COMPOSITES
+AL/PVC panel         .065″   9200   35   17
+Carbon fiber        .02″    6500   45   20 
+Garolite             .01″    9200   75   30
+G10                  .015″   7300   60   28
+G10 XX               .015″   6500   55   25
+Phenolic             .01″    8000   40   15
+Foamcore             .1″     7500   75   35
+Renshape             .04″    9000   35   15
+
+
+
+
+METALS
+6061 AL              .01″    9200    8    1
+360 Brass            .01″    9200    8    1
+Lead                 .013″   8000   15    3
+Magnesium Hazard
+              Fire
+                     .015″   9200    8    1 Hazard
+                                            Fire
+
+
+
+Steel Coolant
+      Use
+                     .008″   8800    3    1 Coolant
+                                            Use
+
+
+
+Titanium             .01″    9000    3    1
+
+WOOD
+Bamboo               .04″    9000   55   23
+Pine                 .03″    4500   72   32
+Mahogany             .014″   9200   75   19
+Plywood              .034″   7800   50   22
+MDF                  .017″   4000   75   18
+
+
+OTHER
+Cork                 .03″    9000   20   15
+Graphite             .02″    6000   20   15
+Limestone            .04″    9000   20    9
+HD Wax               .04″    5000   80   40
+
+
+                      ROUTER RPM CHART
+Dial #             1    2     3     4     5            6
+Carbide/Makita    10K 12.5K 17.2K 22.3K 27.2K         30K
+Dewalt DWP611    16.5K 18K 19.8K 21.5K 24.2K          27K
+

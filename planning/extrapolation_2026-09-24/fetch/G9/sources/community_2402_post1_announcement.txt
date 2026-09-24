@@ -1,0 +1,16 @@
+We Real World Tested 30+ materials, Plastics, Woods and Metals.
+This is really exciting and should open up the options for all of us in exploring new materials for our Projects.
+From Acrylic to Wax and Cork to Limestone We have Feeds and Speeds numbers for both the Nomad 883 and the Shapeoko3.
+
+On the Shapeoko 3 we used the #201 and #202  3 flute .25" endmill, 100% engagement, 
+
+For the Nomad 883 testing we used the #101 and #102  .125" 2 flute Carbide endmills 100% engagement.
+
+These numbers will work for roughing and waterline cutting toolpaths.  
+
+These aren't aggressive promotional numbers, and these aren't super conservative, they work very well- and were refined to give optimal efficiency and the best surface finish possible.
+
+More tool sizes for each machine will be added, but for now please enjoy the range of materials we have tested.
+
+The Speeds and Feeds charts can be found on the Documents page here:
+http://carbide3d.com/docs/

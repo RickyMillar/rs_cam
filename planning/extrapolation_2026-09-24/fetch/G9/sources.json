@@ -1,0 +1,13 @@
+[
+  {
+    "source_id": "carbide3d_s3_feeds_250",
+    "source_vendor": "carbide3d",
+    "source_title": "Carbide 3D Shapeoko 3 Feeds & Speeds chart (#201 .25\" Square / #202 .25\" Ball), S3_feeds_250",
+    "source_url": "https://web.archive.org/web/20211118030340/https://docs.carbide3d.com/support/supportfiles/S3_feeds_250.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/carbide3d_s3_feeds_250.txt",
+    "pdf_sha256": "288543263d3fec1bb96ecdf0fadc292d46b50e650f20409c6de3d9975097501d",
+    "stored_on": "2026-09-24",
+    "coverage_notes": "Extrapolation programme G9 (machine class), 2026-09-24. The machine vendor's own chart for its own cutters on its own hobby gantry router (Shapeoko 3, trim-router spindle). The original URL https://docs.carbide3d.com/support/supportfiles/S3_feeds_250.pdf returns 301 since 2022-10-27 and no current carbide3d.com, guides.carbide3d.com or shop page prints feeds; the PDF (InDesign, created 2019-07-30) comes from the Internet Archive, captures 2020-09-22 to 2021-11-18 with one digest. One 1-page table: DOC, RPM, router dial, FEED (ipm), PLUNGE (ipm) per material, one value per material, for the #201 .25 in 3-flute square and #202 .25 in 2-flute ball (the header is an image; the stored pdftotext text does not carry it). The chart prints no chipload; observation rows derive it from feed / (rpm x flutes) and are max-only. Transcribed materials: Pine, Mahogany, Plywood (derived b for both plywood families), MDF, Acrylic, HDPE, Delrin, Polycarbonate, 6061 AL, G10. Not transcribed (no material family): Bamboo, ABS, Kydex, Nylon, Linoleum, PEEK, Polypropylene, PVC, Styrene, UHMW, Sintra, Resin, AL/PVC panel, Carbon fiber, Garolite, G10 XX, Phenolic, Foamcore, Renshape, 360 Brass, Lead, Magnesium, Steel, Cork, Graphite, Limestone, HD Wax. No 1/8 in, V-bit, downcut, single-flute or Shapeoko 4 / Pro / 5 Pro rows exist. The companion Nomad 883 chart (Nomad883_feeds_125.pdf, sha256 e4cd0a15950886efea4849ead1877bcd3a2bda73a63c9213a8ad564cddb9aa32) is a different machine class and is not transcribed; see planning/extrapolation_2026-09-24/EXTRAPOLATION_G9_machine_class.md."
+  }
+]
