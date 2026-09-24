@@ -677,7 +677,10 @@ fn an_unclamped_recipe_is_not_lifted_over_the_ceiling() {
     // calculator's point drew 74.27 % of the ceiling (the feed lost its 0.75
     // factor). The recipe is un-clamped, so its power does not move with the
     // spindle: 1.75 x 0.7427 / 1.53 = 84.95 %, inside the 80-90 % band.
-    let machine = machine_at(1.53);
+    // Extrapolation P2 re-tune (a32ea149, one Janka table): the row's
+    // softwood default moved 500 -> 600 lbf, so the band rose x1.061 and the
+    // point drew 90.14 % at 1.53 kW. 1.53 x 0.9014 / 1.62 = 85.13 %.
+    let machine = machine_at(1.62);
     let material = Material::SolidWood {
         species: WoodSpecies::RadiataPine,
     };
