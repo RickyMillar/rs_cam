@@ -65,8 +65,20 @@ Finish check (Scallop after A-regen, B5, B10): running.
 
 `rs_cam_cli rough-score <project.toml> --toolpath <i> --resolution 0.5
 [--set <i>.<param>=<value> …]` prints one JSON record per toolpath. From
-Phase 2 on, every arm uses this one instrument; do not mix its numbers with
-the MCP + `nc-time` numbers above (different feeds basis and machine).
+Phase 2 on, every arm uses this one instrument.
+
+Parity rule (operator, 2026-09-24): the GUI, MCP and CLI must give IDENTICAL
+numbers for the same project state. The first comparison (MCP B5 871 s
+against `rough-score` 902 s) was NOT paired, so it proves nothing either
+way:
+
+- the CLI read the on-disk TOML, which has `region_ordering = "global"`;
+  the MCP arm B5 used `by_area`;
+- `nc-time` replays the G-code with the built-in preset; `rough-score`
+  integrates the IR with the project's machine profile.
+
+A paired check (the GUI state saved to a scratch TOML, then `rough-score` on
+that file) is queued. With identical inputs, any difference is a defect.
 
 Corrections to PLAN.md section 4 found while it was built:
 
@@ -78,8 +90,7 @@ Corrections to PLAN.md section 4 found while it was built:
 - The simulation reads the feed before modulation; `accel_time` reads the
   modulated feed that the export uses. Each block names its `feeds_basis`.
 
-First reading (rivmap100, index 1, `depth_per_pass=5`, By Area as in the
-TOML at that time): accel total 902 s; entry moves 310 s (34 %); 124 plunge
+First reading (rivmap100 on-disk TOML, index 1, `depth_per_pass=5`, Global): accel total 902 s; entry moves 310 s (34 %); 124 plunge
 entries against 15 helix entries although the operation asks for helix;
 rough-only removed volume 47 611 mm³. The entry share is a lever of its own
 (cause not checked: a helix that falls back to a plunge, or the untagged vertical descents); it is outside this package.
