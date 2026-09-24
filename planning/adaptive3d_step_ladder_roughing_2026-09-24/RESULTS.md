@@ -280,3 +280,30 @@ as slivers at the wall, which §3.3 exists to stop.
 - The full clippy line and `fmt --check` are clean.
 - rivmap100 parses: 4 toolpaths; the 3D Rough has dpp 2 and an empty
   ladder.
+
+## Arm C preview on rivmap100 (master b1a8fda5, before Phase 2b)
+
+One instrument: `rough-score --toolpath 1 --resolution 0.5`, By Area, the
+project's machine (accel time in `cut_summary.total_runtime_s`).
+
+| arm | moves | total s | cutting s | entry s | rapid s | removed mm³ | peak DOC mm |
+|---|---|---|---|---|---|---|---|
+| 2 only | 8 905 | 1379 | 637 | 538 | 199 | 49 088 | 2.0 |
+| [8] > 2 | 9 405 | 1396 | 630 | 552 | 208 | 49 096 | 6.0 |
+| 4 only | 6 740 | 1045 | 507 | 398 | 137 | 48 648 | 4.0 |
+| [8] > 4 | 7 148 | 1055 | 505 | 405 | 141 | 48 673 | 6.0 |
+| 5 only | 5 373 | 814 | 431 | 271 | 111 | 47 299 | 5.07 |
+| 8 only | 3 175 | 472 | 256 | 156 | 59 | 43 175 | 6.0 |
+| 10 only | 3 922 | 586 | 268 | 242 | 76 | 47 007 | 8.0 |
+
+- On rivmap100 the ladder gives NO time gain: [8] > 2 equals 2 only, and
+  [8] > 4 equals 4 only (+1 %). The pockets are narrow and intricate; after
+  the one-diameter erosion almost no area fits the coarse tier. The
+  pre-registered bound (Arm C between B10 and B5) is therefore not met in the
+  useful direction: the ladder takes the base step's time.
+- The time on this model comes from a larger BASE step. Entry time is 36–40 %
+  of every arm.
+- "8 only" is fastest but removes 4 000 mm³ less than "10 only"; its bottom
+  level lands differently. Check the finish before choosing it.
+- The CLI `--set` coercer cannot parse an array (`--set 1.coarse_steps=[]`
+  is refused: "invalid type: string \"[]\""). Phase 4 follow-up.
