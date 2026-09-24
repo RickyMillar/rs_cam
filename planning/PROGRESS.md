@@ -105,10 +105,11 @@ instrument, 9699f0d5) on the rivmap100 demo copy.
   earlier dpp 8 rivmap100 time (580/595 s) lacks the Z 0.5 level. Open:
   Global is 36 s slower than By Area on one region (probably the
   per-level waterline cleanup). The 1 Global rapid collision (move 6497)
-  is a CHECK ARTEFACT: 0.1 mm replay clears by 0.21 mm; the rim read in
-  stock/collision.rs (conservative_top over a wall just outside the tool)
-  over-reads; count is 0 at 0.4/0.3/0.25 mm. Fix proposal (lower a safety
-  count) needs an operator ruling. Two real findings at that move:
+  is a TRUE POSITIVE of G-PLANSIMGAP, not a check artefact (first read as
+  an artefact, corrected the same day): the segment merge left a ~2.3 mm
+  wall the planner never stamped, about 0.05 mm from the tool edge
+  (0.21 mm vertical at a 0.1 mm replay). Not a gouge, but far under the
+  0.5 mm the planner intends. Do not loosen the check.
   G-WLENTRYDISC (waterline_cleanup reads the entry floor over the tool
   radius only, the helix reaches 1.8 mm further) and G-PLANSIMGAP (planner
   stock under-reads the sim by up to 0.29 mm there; rapid reorder is off,
@@ -124,6 +125,9 @@ instrument, 9699f0d5) on the rivmap100 demo copy.
   planner mirrors the merge (structural), or merge off for adaptive3d
   (op tolerance simplifies; 9138 vs 8222 moves), or cap merge tol at op
   tol (mitigation). Do NOT raise entry clearance to cover it.
+  Also open: before any dressup, the sim cuts deeper than the planner
+  stamps in 699 cells (> 0.5 mm, min -2.0 mm): a second planner/emitter
+  gap, in the safe direction.
   Adaptive have the same defect (it still allows the reorder)?
 - 2026-09-25: By Area pocket tree measured
   (`planning/by_area_merge_tree_2026-09-25/`, 6f52d7a3): 3 valleys at
