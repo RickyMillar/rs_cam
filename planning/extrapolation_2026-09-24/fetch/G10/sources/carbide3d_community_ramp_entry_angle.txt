@@ -1,0 +1,149 @@
+# source_url: https://community.carbide3d.com/t/ramp-entry-angle/75578
+# accessed_on: 2026-09-25
+# raw_html_sha256: f8a99500b27f7d852a0ddf07462bc277396aa8653c84aedfe40848185c3f0927
+
+Carbide 3D Community Site
+
+Ramp Entry Angle
+
+CNC Machines
+
+Shapeoko
+
+machinemoney
+(Chris Hayes)
+
+March 27, 2024, 2:27pm
+
+1
+
+Could someone aware me about ramp entry angle for contours and pockets?
+
+I’m cutting aluminum, acrylic and hardwood.
+
+I notice the default is 20 degrees which doesn’t increase cutting time much. If I try 2 degrees the total cutting time almost doubles for my pockets.
+
+Should I generally always use it and leave it at 20 degrees?
+
+I’m mostly using cheap $5 end mills and speed of production matters to me a lot more than tool life to be honest.
+
+Tod1d
+(Tod (with 1 'd'))
+
+March 27, 2024, 3:57pm
+
+2
+
+It depends on the geometry of the tool. If it’s a center cutting tool, you can ramp at any angle.
+
+If it’s a solid center, side cutting tool, you don’t want to ramp or plunge at all.
+
+If it’s an inserted tool, or a tool with relief in the center, the max ramp angle is determined by the cutting edges on the tool…
+
+For aluminum, I usually use 2-3°
+
+3 Likes
+
+machinemoney
+(Chris Hayes)
+
+March 27, 2024, 4:36pm
+
+3
+
+Appreciate the advice as always! For a center cutting tool does that generally mean drill bits and engraving tools?
+
+I’m not really knowledgeable on end mills, but typically I use 0 flute upcut end mills and make very shallow DOC. Those seem to cut down and sideways at the same time.
+
+How does ramping angle change in something like hardwood compared to aluminum? Do you generally take a larger angle?
+
+WillAdams
+(William Adams (Carbide 3D))
+
+March 27, 2024, 5:13pm
+
+4
+
+machinemoney:
+
+For a center cutting tool does that generally mean drill bits and engraving tools?
+
+Typical drill bits are not suited for use in a CNC spindle — spins too fast.
+
+Whether or no an endmill can center-cut/plunge is an attribute which is determined by a given tool geometry.
+
+1 Like
+
+machinemoney
+(Chris Hayes)
+
+March 27, 2024, 11:32pm
+
+5
+
+No ramping = direct plunge and then sideways movement.
+
+Ramping = diagonal cut easing into the material.
+
+Aren’t ALL ramping angles superior to direct plunging? Even highly aggressive ones?
+
+I should take 20% ramping over plunging right? It’s seems to be generally superior in all ways especially if the cut time is the same. At the moment I’m not cutting anything that needs to be precise, just basic shapes that have to look symmetrical to the eye.
+
+Here’s what ChatGPT says
+
+If production speed is your primary concern and you need to choose between a higher ramp angle (10-20%) and no ramping at all, it’s important to consider the trade-offs involved:
+
+Higher Ramp Angle (10-20%):
+Pros:
+Faster material removal rate compared to no ramping at all.
+Reduced cycle time due to more aggressive cutting action.
+Cons:
+Increased stress on the cutting tool, potentially leading to shorter tool life.
+Greater likelihood of tool breakage or chipping, which can halt production and incur tool replacement costs.
+Higher risk of vibration and chatter, which can affect surface finish and machining accuracy.
+
+No Ramping at All:
+Pros:
+Reduced stress on the cutting tool, potentially prolonging tool life.
+Lower risk of tool breakage or chipping, leading to fewer interruptions in production.
+Improved surface finish and machining accuracy compared to using a higher ramp angle.
+Cons:
+Slower material removal rate compared to using a higher ramp angle.
+Longer cycle time due to more conservative cutting action.
+
+It claims plunging with no ramp reduces stress on the cutting tool compared to an aggressive ramp. Is that true or is AI making things up and sabotaging me again
+
+machinemoney
+(Chris Hayes)
+
+March 28, 2024, 12:55am
+
+6
+
+Seems to be a non-issue now that I set my retract height at 2mm.
+
+It did some testing and the reason it was taking so long was my retract height was too high. It was doing a suuuper slow downward spiral. The time difference now is barely anything.
+
+1 Like
+
+system
+(system)
+Closed
+
+April 27, 2024, 12:55am
+
+7
+
+This topic was automatically closed 30 days after the last reply. New replies are no longer allowed.
+
+Home
+
+Categories
+
+Guidelines
+
+Terms of Service
+
+Privacy Policy
+
+Powered by Discourse, best viewed with JavaScript enabled

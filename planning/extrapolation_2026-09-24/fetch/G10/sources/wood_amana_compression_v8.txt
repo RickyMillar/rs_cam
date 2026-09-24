@@ -1,0 +1,54 @@
+# source_url: https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Compression-Spirals-v8.pdf
+# accessed_on: 2026-09-25
+# pdf_sha256: 9a80df42506f8cd72540c795ec9272c2abb21d76e4ab0febba715c6678f59a0b
+                                                                                                                                   INDUSTRIAL
+                                                 Solid Carbide Compression Spiral Router Bits
+                                             CNC Operating Spindle Speed: 18,000 RPM / Depth of Cut: 1 x Tool Diameter †
+
+ 1 Flute
+  Diameter                       Wood                         MDF/Laminate                         Plywood                        Plastic                 Tool Reference #’s
+                     Feed Rate Chip Load       Ramp      Feed Rate Chip Load      Ramp    Feed Rate Chip Load   Ramp   Feed Rate Chip Load   Ramp
+                       IPM *   Per Tooth       Down        IPM *   Per Tooth      Down      IPM *   Per Tooth   Down     IPM *   Per Tooth   Down          1 Flute    Dia.
+
+       1/8"             60"       .0031"        60"        110"       .0062"       110"     60"      .0031"     60"      60"       .0031"    60"           46137      1/8"
+       1/4"             60"       .0031"        60"        110"       .0062"       110"     60"      .0031"     60"      60"       .0031"    60"           46139      1/8"
+                                                                                                                                                           46140      1/4"
+       1/2"            140"       .0077"       140"        280"       .0153"       280"     170"     .0092"     170"     220"      .0123"    220"          46159      1/2"
+                                                                                                                                                           46160      1/2"
+ 2 Flute
+                                                                                                                                                           2 Flute    Dia.
+   Diameter                      Wood                         MDF/Laminate                         Plywood                        Plastic
+                     Feed Rate Chip Load       Ramp      Feed Rate Chip Load      Ramp    Feed Rate Chip Load   Ramp   Feed Rate Chip Load   Ramp
+                                                                                                                                                          46170      1/4"
+                       IPM *   Per Tooth       Down        IPM *   Per Tooth      Down      IPM *   Per Tooth   Down     IPM *   Per Tooth   Down        46170-LH    1/4"
+                                                                                                                                                          46171      3/8"
+       1/8"             40"       .0011"        20"         80"       .0022"       40"      40"      .0011"     20"      40"       .0011"    20"          46172      3/8"
+       5/32"            60"       .0017"        30"        110"       .0031"       55"      60"      .0017"     30"      60"       .0017"    30"          46173      3/8"
+                                                                                                                                                          46174      3/8"
+       3/16"            80"       .0022"        40"        160"       .0044"       80"      80"      .0022"     40"      80"       .0022"    40"          46176      1/8"
+       1/4"            110"       .0031"        55"        220"       .0061"       110"     110"     .0031"     55"      110"      .0031"    55"          46178      3/8"
+                                                                                                                                                          46180      1/8"
+       3/8"            200"       .0056"       100"        400"       .0111"       200"     200"     .0056"     100"     200"      .0056"    100"         46181      3/16"
+       1/2"            280"       .0077"       140"        400"       .0111"       200"     280"     .0077"     140"     280"      .0077"    140"         46182      1/2"
+                                                                                                                                                          46183      5/32"
+                                                                                                                                                          46186      1/2"
+ 3 Flute                                                                                                                                                  46188      1/2"
+                                                                                                                                                         46188-LH    1/2"
+   Diameter                      Wood                         MDF/Laminate                         Plywood                        Plastic                 46189      1/2"
+                     Feed Rate Chip Load       Ramp      Feed Rate Chip Load      Ramp    Feed Rate Chip Load   Ramp   Feed Rate Chip Load   Ramp         46190      1/2"
+                       IPM *   Per Tooth       Down        IPM *   Per Tooth      Down      IPM *   Per Tooth   Down     IPM *   Per Tooth   Down        46190-LH    1/2"
+       3/8"            300"       .0056"       100"        400"       .0074"       133"     300"     .0056"     100"     300"      .0056"    100"         46191      1/2"
+       1/2"            350"       .0065"       117"        450"       .0080"       150"     350"     .0065"     117"     350"      .0065"    117"          3 Flute    Dia.
+* IPM: Inches Per Minute                                                                                                                                   46010      3/8"
+† Depth of Cut: 1 x D Use recommended chip load                                                                                                            46011      3/8"
+                 2 x D Reduce chip load by 25%                                                                                                             46012      1/2"
+                                                                                                                                                           46013      1/2"
+                 3 x D Reduce chip load by 50%                                                                                                             46014      1/2"
+  Simple Machining Calculations:
+  To find RPM: (SFM x 3.82) / diameter of tool
+  To find SFM: 0.262 x diameter of tool x RPM
+  To find Feed Rate IPM: RPM x # of flutes x chip load
+  To find Chip Load: Feed Rate IPM / (RPM x # of flutes)
+  To find Ramp Down: Feed Rate IPM / # of flutes
+ Disclaimer: It is important to understand that these values are only recommendations.                                         © Copyright Amana Tool® All Rights Reserved
+

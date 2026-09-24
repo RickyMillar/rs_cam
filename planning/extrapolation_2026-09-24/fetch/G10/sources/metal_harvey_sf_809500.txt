@@ -1,0 +1,52 @@
+# source_url: https://harveyperformance.widen.net/content/mrt84hhfmn/pdf/SF_809500.pdf?u=d9orjt
+# accessed_on: 2026-09-25
+# pdf_sha256: b5be3211a863a407e47b4ebdbb32d7683b9aac453e731a53cee2950fe7a3d9e6
+
+             Speeds & Feeds
+             Product Table: End Mills for Wood - Square Upcut
+             Characteristics: 3x Length of Cut
+             Series: 8095xx, 8096xx
+
+                                       Janka                                                                           Chip Load (IPT) By Cutter Diameter                                                  Depth of Cut
+Material                                           SFM
+                                      Hardness                             .015    .031    .047    .062    .078    .093     .125      .187     .250     .312    .375    .500    .625    .750    1.000   Radial     Axial
+Softer Woods                                     400 - 2000 Slot - Rough   .0007   .0015   .0022   .0029   .0037   .0044    .0059    .0088    .0118     .0125   .0150   .0200   .0250   .0300   .0400   1 x Dia    1 x Dia
+White Pine, Sugar Pine, Western
+                                       < 1200
+Red Cedar, Douglas Fir, Redwood
+                                                 800 - 2400 Finishing      .0005   .0011   .0017   .0022   .0028   .0033    .0045    .0067    .0090     .0097   .0116   .0155   .0194   .0233   .0310   .1 x Dia   3 x Dia
+
+Harder Woods
+                                                 400 - 2000 Slot - Rough   .0006   .0013   .0020   .0026   .0033   .0039    .0053    .0079    .0106     .0112   .0135   .0180   .0225   .0270   .0360   1 x Dia    1 x Dia
+Red Oak, Maple, Ash, Hickory, Black
+                                       > 1200
+Walnut, Cherry, Beech
+                                                 800 - 2400 Finishing      .0005   .0010   .0015   .0020   .0025   .0030    .0041    .0061    .0081     .0087   .0105   .0140   .0174   .0209   .0279   .1 x Dia   3 x Dia
+
+Engineered Woods                                 400 - 2000 Slot - Rough   .0008   .0016   .0024   .0032   .0040   .0048    .0065    .0097    .0129     .0137   .0165   .0220   .0275   .0330   .0440   1 x Dia    1 x Dia
+Medium Density Fiberboard (MDF),       Varies
+Particle Board, Laminated Board                  800 - 2400 Finishing      .0006   .0012   .0019   .0025   .0031   .0037    .0050    .0074    .0099     .0106   .0128   .0171   .0213   .0256   .0341   .1 x Dia   3 x Dia
+Phenolic Wood
+                                                 400 - 1200 Slot - Rough   .0003   .0006   .0009   .0012   .0015   .0017    .0024    .0035    .0047     .0050   .0060   .0080   .0100   .0120   .0160   1 x Dia    1 x Dia
+                                       Varies
+                                                 800 - 1600 Finishing      .0002   .0004   .0007   .0009   .0011   .0013    .0018    .0027    .0036     .0039   .0047   .0062   .0078   .0093   .0124   .1 x Dia   3 x Dia
+
+Product Notes:
+  Softer wood and harder wood do not mean "softwood and hardwood" as some softwood is harder and some hardwood
+  Starting RPM should be between 10,000 and 20,000 RPM, the ideal cutting condition will depend on the wood and moisture content
+  Increase IPT proportionally at RPMs higher than 20,000, decrease IPT proportionally for RPMs less than 10,000
+  Harder engineered woods such as Phenolic Wood should be machined closer to 10,000 RPM
+  When machining high density areas or "knots" speeds & feeds should be reduced
+
+    Moisture Content:
+       - Ideal moisture content for machining = 6% - 8%
+       - For higher moisture content woods, decrease SFM proportionally to moisture content percentage to prevent excessive heat in cut
+
+    Engineered Woods:
+       - MDF and other engineered woods are considered more abrasive than hardwoods and softwoods because of the adhesive which holds them together
+General Notes:
+  All posted speed and feed parameters are suggested starting values that may be increased given optimal setup conditions. Chip loads reflect uncoated cutters and
+  may be increased, remain unchanged or even decreased if coated.
+    If you require additional information, Harvey Tool has a team of technical experts available to assist you through even the most challenging applications. Please
+    contact us at 800-645-5609 or Harveytech@harveyperformance.com.
+

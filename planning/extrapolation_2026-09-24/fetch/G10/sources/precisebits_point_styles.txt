@@ -1,0 +1,473 @@
+# source_url: https://www.precisebits.com/reference/point_styles.htm
+# accessed_on: 2026-09-25
+# raw_html_sha256: 7d8ee8e5e68034dc362e439e6841827194fd24de0d35e62a5087c335928fc87c
+
+Think
+
+&
+
+Tinker
+, Ltd. ™
+
+0 item(s) - $0.00
+
+Your shopping cart is empty!
+
+Menu
+
+Home
+
+Products
+
+Application Specific Tools
+
+3D Signs & Plaques
+
+Cutting Composites
+
+Engraving
+
+Jewelry
+
+Musical Instruments
+
+Pool Cues
+
+Printed Circuit Boards
+
+Steel Rule Dies
+
+3D Carving Tools
+
+Backing & Mounting
+
+Calibration Blanks
+
+Inch
+
+Metric
+
+Cleaners & Lubricants
+
+ColletCare
+
+Metal Cutting Fluid
+
+PCB Engraving Lubricant
+
+Collets & Toolholders
+
+Drill bits
+
+Number (wire gauge)
+
+Fractional inch
+
+Letter
+
+Metric
+
+Medical & Slotting
+
+Drill Bit Sets
+
+Drill Bit Diameter Chart
+
+Feeds/Speeds for FR-4 & Carbon-fiber
+
+End-mills
+
+Engraving Tools
+
+1/8in. shank
+
+Micro-engraving tools
+
+Tapered-stubs
+
+Engraving / Cut-out tools
+
+1/4in. shank
+
+Signage / Engraving tools
+
+Miscellaneous
+
+Depth Setting Rings
+
+FuzzBrush
+
+SecureBits
+
+Router Bits
+
+Chip breaker (CB)
+
+Diamond cut (DC)
+
+Feeds/Speeds
+
+CB feeds/speeds
+
+DC feeds/speeds
+
+Specialty Bits
+
+Acrylic/polycarbonate tools
+
+Antler / horn cutters
+
+Countersinks
+
+Extended-reach end-mills
+
+Fret slot cutters
+
+Fretboard planing/radiusing
+
+Shell cutters
+
+Steel Rule Die Tools
+
+Zero-helix cutters
+
+Substrates
+
+Backing material
+
+Copperclad
+
+Entry foil
+
+Tool Packs
+
+Single bit packs
+
+10-bit packs
+
+50-bits packs
+
+SecureBits
+
+Applications
+
+3D Signs & Plaques
+
+Cutting Composites
+
+Engraving
+
+Jewelry
+
+Musical Instruments
+
+Pool Cues
+
+Printed Circuit Boards
+
+Steel Rule Dies
+
+Resources
+
+FAQ
+
+Cutter terminology
+
+Depth Setting Rings
+
+Extended-reach Geometry
+
+Feeds & Speeds Calculator
+
+Glossary
+
+Point styles
+
+Reference library
+
+Sweet-spot Test
+
+Tutorials
+
+Charts/Tables
+
+Chipbreaker Feeds & Speeds
+
+Diamondcut Feeds & Speeds
+
+Drill Bit Diameter Chart
+
+Drill Bit Feeds & Speeds
+
+ER Torque Chart
+
+Metal Gauge Conversion Chart
+
+Relative Wood Hardness Table
+
+Support
+
+Contact us
+
+Limited Warranty
+
+Policies
+
+Sales Quotes
+
+Technical Support
+
+Distributors
+
+Domestic Distributors
+
+International Distributors
+
+Account
+
+My Account
+
+Order History
+
+Wish list
+
+Cutting Tool Tip Styles
+
+Tip style |
+description |
+Used In |
+
+|
+Ball
+end |
+Ball points are characterized by a
+radially relieved flute geometry that wraps around the tip of the
+cutter. Two opposing flutes meet slightly offset, creating a
+center cutting plunge point.
+The cutting profile is a smooth radius, ideal for
+3D profile milling where "topo" steps are undesirable.
+
+|
+
+PreciseBIT soft media milling cutters
+
+PreciseBIT non-ferrous milling cutters
+
+|
+
+|
+Drill Point |
+This is a shallow V tip style with a four facet grind.
+The tip is shallow so that there is minimal penetration into backing
+material being used.
+
+The four facet approach ensures low stress plunge cutting.
+Efficient
+material removal ensures longer bit life.
+
+|
+
+PreciseBIT soft media drills
+
+PreciseBIT non-ferrous drills
+
+UltraBIT 3 flute inlay cutters
+
+UltraBIT 2 flute ivory/Horn cutters
+
+UltraBIT 5 flute steel rule die cutters
+
+UltraBIT 2 flute steel rule die-board contour cutter
+
+|
+
+|
+radical
+fish-tail |
+The radical fish-tail point style has a minimum 20°angle
+that provides effective plunge cuts with a minimum amount of surface
+fray on the lunge. This design also eliminates back surface
+breakout.
+The radical fish-tail design produces a rougher bottom cut than a
+dado style. This ensures a mechanically active surface for gluing.
+
+|
+
+PreciseBIT soft media milling cutters
+
+PreciseBIT non-ferrous milling cutters
+
+|
+
+|
+shallow
+fish-tail |
+The shallow fish-tail point style ensures efficient
+plunging for end cutting. It combines minimal backside breakout
+with a smooth dado cutting style.
+This approach provides a smooth finish in metals and plastics.
+
+|
+
+PreciseBIT soft media engraving mills (dado)
+
+PreciseBIT non-ferrous engraving mills (dado)
+
+|
+
+|
+"V"
+Point |
+Available in 30°, 60°, and 90°.
+Designed for engraving letters and line art where you want to see
+both sides of the cut.
+
+|
+
+PreciseBIT soft media scoring tools
+
+PreciseBIT non-ferrous scoring tools
+
+|
+
+|
+"Y"
+Point |
+Combines radical fish-tail end cutting with a
+"Y" shaped cutting profile.
+The "Y" point includes an entry groove and capture
+slot for steel rule die insertion.
+
+|
+
+UltraBIT steel rule die kerf cutters
+
+|
+
+Support
+
+About us
+
+Contact us
+
+Educational Discount
+
+Limited Warranty
+
+No-fault Returns
+
+Policies
+
+Sales Quotes
+
+Tech Support
+
+Products
+
+Collets, Toolholders
+
+Composite Cutting
+
+Metal Machining
+
+Woodworking
+
+Plastic Cutting
+
+Applications
+
+3D Signs & Plaques
+
+Engraving
+
+Jewelry
+
+Musical Instruments
+
+Pool Cues
+
+Printed Circuit Boards
+
+Steel Rule Dies
+
+Calculators
+
+Resources
+
+FAQ
+
+Tool terms
+
+Glossary
+
+Point styles
+
+Reference library
+
+Sweet-spot Test
+
+Tutorials
+
+Support
+
+About us
+
+Contact us
+
+Educational Discount
+
+Limited Warranty
+
+No-fault Returns
+
+Policies
+
+Sales Quotes
+
+Tech Support
+
+Products
+
+Collets, Toolholders
+
+Composite Cutting
+
+Metal Machining
+
+Woodworking
+
+Plastic Cutting
+
+Applications
+
+3D Signs & Plaques
+
+Engraving
+
+Jewelry
+
+Musical Instruments
+
+Pool Cues
+
+Printed Circuit Boards
+
+Steel Rule Dies
+
+Resources
+
+FAQ
+
+Tool terms
+
+Glossary
+
+Point styles
+
+Reference library
+
+Sweet-spot Test
+
+Tutorials
+
+Feed and Speed Calculators

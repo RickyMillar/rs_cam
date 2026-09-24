@@ -1,0 +1,1126 @@
+{
+ "sources": [
+  {
+   "source_id": "wood_amana_compression_v8",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "9a80df42506f8cd72540c795ec9272c2abb21d76e4ab0febba715c6678f59a0b",
+   "note": "Fresh bytes equal the stored raw_sha256. The re-use claim is correct: the same raw sha256 occurs in G4 amana_compression_spirals_v8 (fetch/G*/sources.json)."
+  },
+  {
+   "source_id": "wood_amana_spektra_plunge_v24",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "5b6fef854b2cf6b422e2eb5bbc86e29b4dcab5b19195b7ff228b70f99cf86d3a",
+   "note": "Fresh bytes equal the stored raw_sha256. The re-use claim is correct: the same raw sha256 occurs in G4 and G6 amana_spektra_spiral_plunge_v24 (fetch/G*/sources.json)."
+  },
+  {
+   "source_id": "wood_amana_ball_nose_v7",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "e851a270a9958a9affc17a24c8e6a8ef51d63a813f384b7043670d676cae3563",
+   "note": "Fresh bytes equal the stored raw_sha256. The re-use claim is correct: the same raw sha256 occurs in G2, G3 and G6 amana_ball_nose_v7 (fetch/G*/sources.json)."
+  },
+  {
+   "source_id": "wood_amana_corner_radius_plunge",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "a8fb36819675f9f9f3b864c7a10af82b0a6e107b10468ffaeec3ffd3261840a3",
+   "note": "Fresh bytes equal the stored raw_sha256. The re-use claim is correct: the same raw sha256 occurs in G3 amana_corner_radius_spiral_plunge_2f (fetch/G*/sources.json)."
+  },
+  {
+   "source_id": "wood_amana_insert_vgroove_v16",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "d3da2d5fd7b60aba024da22c1142898eeaf5879d2477a54752f6110943067029",
+   "note": "Fresh bytes equal the stored raw_sha256. The re-use claim is correct: the same raw sha256 occurs in G5 amana_insert_v_groove_v16 (fetch/G*/sources.json)."
+  },
+  {
+   "source_id": "wood_amana_spektra_engraving_v4",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "30e58f4d88e163f92bc8b95527cd96633390e79c7f7e9f839b0b608278490ec2",
+   "note": "Fresh bytes equal the stored raw_sha256. The re-use claim is correct: the same raw sha256 occurs in G5 amana_spektra_engraving_v4 (fetch/G*/sources.json)."
+  },
+  {
+   "source_id": "wood_vortex_catalog",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "3553d2f3a1c0409b40b04d46e158dbd77df1b8e6f7fc32eee34f98fc1364e2e5",
+   "note": "Fresh bytes equal the stored raw_sha256."
+  },
+  {
+   "source_id": "wood_onsrud_routing_guide",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "79dd5f6ef135ab94d90d7b67b7e8aef678a775fab970ff093943f215bfad4cd1",
+   "note": "Fresh bytes equal the stored raw_sha256. The re-use claim is correct: the same raw sha256 occurs in G8 onsrud_cnc_production_routing_guide (fetch/G*/sources.json)."
+  },
+  {
+   "source_id": "wood_onsrud_pct19",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "83dbf74242ca1f578df8a7ca7d8e093a66d8488a7d573d0294df40b2ed58144b",
+   "note": "Fresh bytes equal the stored raw_sha256. The re-use claim is correct: the same raw sha256 occurs in G2, G5 and G6 onsrud_pct19_catalog (fetch/G*/sources.json)."
+  },
+  {
+   "source_id": "wood_onsrud_plastics_faq2",
+   "rehash": "changed",
+   "http_status": 200,
+   "fresh_sha256": "d22d073213475b0277d0b741b15ec83d371dca2d214cf14c01cbae3acbb15dc7",
+   "note": "HTML page; the raw bytes differ (dynamic parts). The shared converter g5_html_to_text.py applied to the fresh copy gives a body text identical to the stored text (0 changed lines), so every quoted sentence still occurs."
+  },
+  {
+   "source_id": "wood_idc_feeds_speeds",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "87405efbd74696b0e105699274d39cb1eae67867acf4ad1e83ce03c13b413785",
+   "note": "Fresh bytes equal the stored raw_sha256. The re-use claim is correct: the same raw sha256 occurs in G3 idcwoodcraft_feeds_speeds_pdf (fetch/G*/sources.json)."
+  },
+  {
+   "source_id": "wood_whiteside_cnc_brochure",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "00c71165ee906b3a8a844079f1de50ae83440daa09c0554d16858212dc82e46b",
+   "note": "Fresh bytes equal the stored raw_sha256. The re-use claim is correct: the same raw sha256 occurs in G1 whiteside_cnc_brochure_1-14-19 (fetch/G*/sources.json)."
+  },
+  {
+   "source_id": "wood_toolstoday_calc_video",
+   "rehash": "changed",
+   "http_status": 200,
+   "fresh_sha256": "a18b4eedb5a1cdf63558fefeb1f54eb66d4aa722454fdde582153d5ac4333363",
+   "note": "HTML page; the raw bytes differ (dynamic parts). The shared converter g5_html_to_text.py applied to the fresh copy gives a body text identical to the stored text (0 changed lines), so every quoted sentence still occurs."
+  },
+  {
+   "source_id": "wood_toolstoday_understanding_feeds_speeds",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "ecbffa90b4aec6f3c0654db93ecb8cc8649ef529463ee541f3d6e2b2fd0389c7",
+   "note": "Fresh bytes equal the stored raw_sha256."
+  },
+  {
+   "source_id": "wood_axyz_compression_bit_tip",
+   "rehash": "changed",
+   "http_status": 200,
+   "fresh_sha256": "5e61f9be0b3722a766f0fd6ddd4a5c69bc8f66ce2f2f11022087f284fb1fddee",
+   "note": "HTML page; the raw bytes differ (dynamic parts). The shared converter g5_html_to_text.py applied to the fresh copy gives a body text identical to the stored text (0 changed lines), so every quoted sentence still occurs."
+  },
+  {
+   "source_id": "wood_dead_freud_cnc_2017",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "ff1a29ea5a669e24c6ed18e2bd21e10321cee024c65a6b23a1197cbbfdc71976",
+   "note": "Fresh bytes equal the stored raw_sha256. The re-use claim is correct: the same raw sha256 occurs in G2, G3, G4 and G6 Freud 20170822 (fetch/G*/sources.json)."
+  },
+  {
+   "source_id": "wood_dead_vortex_chipload_chart",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "b74bb49cd2932d51a8aeba73988237bbaab625311369ee6514adb981cae0e7f0",
+   "note": "Fresh bytes equal the stored raw_sha256."
+  },
+  {
+   "source_id": "wood_dead_amana_product_46350",
+   "rehash": "not_checked",
+   "http_status": 403,
+   "fresh_sha256": null,
+   "note": "Dead end with no stored bytes; not re-downloaded."
+  },
+  {
+   "source_id": "wood_dead_amana_tech_info",
+   "rehash": "not_checked",
+   "http_status": 403,
+   "fresh_sha256": null,
+   "note": "Dead end with no stored bytes; not re-downloaded."
+  },
+  {
+   "source_id": "metal_harvey_ramping_success",
+   "rehash": "changed",
+   "http_status": 200,
+   "fresh_sha256": "759665ab77b73a5150a7a892b25c34e0338080117c0d26ccb363482eef151e68",
+   "note": "HTML page; the raw bytes differ (dynamic parts). The shared converter g5_html_to_text.py applied to the fresh copy gives a body text identical to the stored text (0 changed lines), so every quoted sentence still occurs. The requested agent string (X11 Linux, Chrome/124.0) got HTTP 403 (75 kB block page); a Windows Chrome/126.0.0.0 agent got 200."
+  },
+  {
+   "source_id": "metal_harvey_tool_entry",
+   "rehash": "changed",
+   "http_status": 200,
+   "fresh_sha256": "d83e3895bbc42d58c0aadbad37d2348837075bdfd5df410e058fe4a6deb00d58",
+   "note": "HTML page; the raw bytes differ (dynamic parts). The shared converter g5_html_to_text.py applied to the fresh copy gives a body text identical to the stored text (0 changed lines), so every quoted sentence still occurs. The requested agent string (X11 Linux, Chrome/124.0) got HTTP 403 (75 kB block page); a Windows Chrome/126.0.0.0 agent got 200."
+  },
+  {
+   "source_id": "metal_helical_guidebook_2016",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "6d6ca79db0b491368e0de925e840caed8a8492e376581665018226d26705e33d",
+   "note": "Fresh bytes equal the stored raw_sha256. The re-use claim is correct: the same raw sha256 occurs in G8 helical_machining_guidebook_2016 (fetch/G*/sources.json)."
+  },
+  {
+   "source_id": "metal_harvey_sf_18700",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "496173bab219ba5a3a3b92697b9c2347b7ba3121be163ff50d3499f1dd92b206",
+   "note": "Fresh bytes equal the stored raw_sha256."
+  },
+  {
+   "source_id": "metal_harvey_sf_25000",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "65da065ac2c7e62a4e22f426105f741fcd9a48270d0057e73c0ff9036117ad17",
+   "note": "Fresh bytes equal the stored raw_sha256."
+  },
+  {
+   "source_id": "metal_harvey_sf_809500",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "b5be3211a863a407e47b4ebdbb32d7683b9aac453e731a53cee2950fe7a3d9e6",
+   "note": "Fresh bytes equal the stored raw_sha256."
+  },
+  {
+   "source_id": "metal_harvey_helical_interp_tv",
+   "rehash": "changed",
+   "http_status": 200,
+   "fresh_sha256": "c476ef52c2425b7204ffa8f432a5b328a679f4f5bf3bb4945e92dcc809239670",
+   "note": "HTML page; the raw bytes differ (dynamic parts). The shared converter g5_html_to_text.py applied to the fresh copy gives a body text identical to the stored text (0 changed lines), so every quoted sentence still occurs. The requested agent string (X11 Linux, Chrome/124.0) got HTTP 403 (75 kB block page); a Windows Chrome/126.0.0.0 agent got 200."
+  },
+  {
+   "source_id": "metal_sgs_catalog_2021",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "27a309c563b43c35ac7a5de40dcf7c7692840f1ef1fcbf557b026176a2c26395",
+   "note": "Fresh bytes equal the stored raw_sha256."
+  },
+  {
+   "source_id": "metal_imco_helical_ramp",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "d51a2c6ce8b8407af4b880d3430e12423efe896b8a9560f2ed3405f4f663f015",
+   "note": "Fresh bytes equal the stored raw_sha256."
+  },
+  {
+   "source_id": "metal_garr_technical",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "967eb211c24c5288ce082d04d227d79907785b52d3bbe73fcd04af44aa794d6f",
+   "note": "Fresh bytes equal the stored raw_sha256."
+  },
+  {
+   "source_id": "metal_sandvik_ramping",
+   "rehash": "changed",
+   "http_status": 200,
+   "fresh_sha256": "eacef768937fe8680c73a78d8dcdab3ca00cf88d16feabfbc7ae571906c6ac2d",
+   "note": "HTML page; the raw bytes differ (dynamic parts). The shared converter g5_html_to_text.py applied to the fresh copy gives a body text identical to the stored text (0 changed lines), so every quoted sentence still occurs. A plain request gets the 8 kB shell (HTTP 200); the full page needs --compressed plus Accept and Accept-Language headers."
+  },
+  {
+   "source_id": "metal_kennametal_ramping_blog",
+   "rehash": "changed",
+   "http_status": 200,
+   "fresh_sha256": "d97b69f2e3bcbbfd4d37de7427fca0cf653c6dee10ec2d346543a3901478f87c",
+   "note": "HTML page; the raw bytes differ (dynamic parts). The shared converter g5_html_to_text.py applied to the fresh copy gives a body text identical to the stored text (0 changed lines), so every quoted sentence still occurs."
+  },
+  {
+   "source_id": "metal_dead_kennametal_msc_interp",
+   "rehash": "not_checked",
+   "http_status": 403,
+   "fresh_sha256": null,
+   "note": "Dead end with no stored bytes; not re-downloaded."
+  },
+  {
+   "source_id": "metal_dead_kennametal_sem_2023",
+   "rehash": "not_checked",
+   "http_status": 404,
+   "fresh_sha256": null,
+   "note": "Dead end with no stored bytes; not re-downloaded."
+  },
+  {
+   "source_id": "metal_dead_kennametal_sem_2018",
+   "rehash": "not_checked",
+   "http_status": 404,
+   "fresh_sha256": null,
+   "note": "Dead end with no stored bytes; not re-downloaded."
+  },
+  {
+   "source_id": "metal_dead_kennametal_harvi_guide",
+   "rehash": "not_checked",
+   "http_status": 403,
+   "fresh_sha256": null,
+   "note": "Dead end with no stored bytes; not re-downloaded."
+  },
+  {
+   "source_id": "metal_dead_kennametal_product_pages",
+   "rehash": "not_checked",
+   "http_status": 200,
+   "fresh_sha256": null,
+   "note": "Dead end with no stored bytes; not re-downloaded."
+  },
+  {
+   "source_id": "metal_dead_kennametal_helical_calc",
+   "rehash": "not_checked",
+   "http_status": 200,
+   "fresh_sha256": null,
+   "note": "Dead end with no stored bytes; not re-downloaded."
+  },
+  {
+   "source_id": "metal_dead_helical_sf_index",
+   "rehash": "not_checked",
+   "http_status": 200,
+   "fresh_sha256": null,
+   "note": "Dead end with no stored bytes; not re-downloaded."
+  },
+  {
+   "source_id": "metal_dead_lakeshore_sf",
+   "rehash": "not_checked",
+   "http_status": 200,
+   "fresh_sha256": null,
+   "note": "Dead end with no stored bytes; not re-downloaded."
+  }
+ ],
+ "statements": [
+  {
+   "statement_id": "g10-wood-amana-comp-rule",
+   "verdict": "confirmed",
+   "checked_against": "PDF p1 (pdftotext -layout of fresh bytes)",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-amana-comp-1f-half-wood",
+   "verdict": "confirmed",
+   "checked_against": "PDF p1 (pdftotext -layout of fresh bytes)",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-amana-comp-2f-quarter-wood",
+   "verdict": "confirmed",
+   "checked_against": "PDF p1 (pdftotext -layout of fresh bytes)",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-amana-comp-2f-half-mdf",
+   "verdict": "confirmed",
+   "checked_against": "PDF p1 (pdftotext -layout of fresh bytes)",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-amana-comp-3f-half-wood",
+   "verdict": "confirmed",
+   "checked_against": "PDF p1 (pdftotext -layout of fresh bytes)",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "117/350 = 0.3343; 117 x 25.4 = 2971.8."
+  },
+  {
+   "statement_id": "g10-wood-amana-spektra-rule",
+   "verdict": "confirmed",
+   "checked_against": "PDF p1 (pdftotext -layout of fresh bytes); v27 of the same chart prints the same rows",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-amana-spektra-2f-quarter",
+   "verdict": "confirmed",
+   "checked_against": "PDF p1 (pdftotext -layout of fresh bytes); v27 of the same chart prints the same rows",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-amana-spektra-3f-quarter",
+   "verdict": "confirmed",
+   "checked_against": "PDF p1 (pdftotext -layout of fresh bytes); v27 of the same chart prints the same rows",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-amana-spektra-3f-3-4",
+   "verdict": "confirmed",
+   "checked_against": "PDF p1 (pdftotext -layout of fresh bytes); v27 of the same chart prints the same rows",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-amana-ballnose-rule",
+   "verdict": "confirmed",
+   "checked_against": "PDF p1 footer",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-amana-bullnose-rule",
+   "verdict": "confirmed",
+   "checked_against": "PDF p1 footer",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-amana-engraving-rule",
+   "verdict": "confirmed",
+   "checked_against": "PDF p1 footer",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-amana-vgroove-rule",
+   "verdict": "confirmed",
+   "checked_against": "PDF p1, all 36 rows read",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "The footer prints the rule as quoted, with the U+FB01 ligature and the stray \")\". The 1-flute rows do not follow it (see flagged)."
+  },
+  {
+   "statement_id": "g10-wood-amana-vgroove-1f-60",
+   "verdict": "confirmed",
+   "checked_against": "PDF p1, all 36 rows read",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "RC-1108 prints 40/20 in Hardwood, Softwood and Plywood/Chipboard; MDF and Foam print 90/45. All 1-flute rows from 40 to 110 deg print ramp = feed/2."
+  },
+  {
+   "statement_id": "g10-wood-amana-vgroove-1f-120",
+   "verdict": "confirmed",
+   "checked_against": "PDF p1, all 36 rows read",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "RC-1146 prints 90/90. The row is also inconsistent with its own chip load: 14,000 x 1 x .0024 = 33.6 IPM, not 90. It looks like a copied 2-flute row."
+  },
+  {
+   "statement_id": "g10-wood-amana-vgroove-2f-120",
+   "verdict": "confirmed",
+   "checked_against": "PDF p1, all 36 rows read",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-tt-compression-mdf",
+   "verdict": "confirmed",
+   "checked_against": "fresh HTML (converted text)",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "The quote is right. Two remarks: (1) parameter is plunge_feed but the derived names say ramp; ToolsToday says \"ramp-down or plunge rate\", so both readings are the source text. (2) The current Amana v8 chart prints 3/8 in 2-flute MDF as 400/200, not 260/130; the video used an earlier chart edition."
+  },
+  {
+   "statement_id": "g10-wood-tt-46172-740",
+   "verdict": "confirmed",
+   "checked_against": "fresh HTML (converted text)",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-tt-rc1108",
+   "verdict": "confirmed",
+   "checked_against": "fresh HTML (converted text)",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-tt-half",
+   "verdict": "confirmed",
+   "checked_against": "fresh HTML",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-vortex-downcut-noplunge",
+   "verdict": "confirmed",
+   "checked_against": "PDF (layout text): p13, p20, p32/p49",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-vortex-1300-noplunge",
+   "verdict": "confirmed",
+   "checked_against": "PDF (layout text): p13, p20, p32/p49",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-vortex-upcut-plunge",
+   "verdict": "confirmed",
+   "checked_against": "PDF (layout text): p13, p20, p32/p49",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-vortex-veining-plunge",
+   "verdict": "grade_wrong",
+   "checked_against": "PDF (layout text): p13, p20, p32/p49",
+   "correct_value": null,
+   "correct_grade": "c (unchanged); tool_family other (veining bit with top-edge roundover), not ball_nose",
+   "note": "The Series 3700 table prints SMALL DIA .094/.125 and RADIUS .125/.250; the text says the bits groove \"while rounding the top edges of the slot\". The radius is a top-edge roundover, not a radiused end. The end shape is not printed. The quote and centre_cutting true (\"end cutting so they can plunge\") are right."
+  },
+  {
+   "statement_id": "g10-wood-onsrud-guide-ramped-plunge",
+   "verdict": "confirmed",
+   "checked_against": "PDF p4, p8, p15",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p8, under \"Additional methods of heat reduction\", next to \"Typical feed rates in wood\"."
+  },
+  {
+   "statement_id": "g10-wood-onsrud-guide-oscillate",
+   "verdict": "confirmed",
+   "checked_against": "PDF p4, p8, p15",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-onsrud-guide-pcd",
+   "verdict": "confirmed",
+   "checked_against": "PDF p4, p8, p15",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Quote right. centre_cutting false is an inference from \"cannot plunge\"; the guide does not print it."
+  },
+  {
+   "statement_id": "g10-wood-onsrud-pct19-potted",
+   "verdict": "confirmed",
+   "checked_against": "PDF p32 and p72",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Values right. The page is p32 (printed and PDF), not p31."
+  },
+  {
+   "statement_id": "g10-wood-onsrud-pct19-burr",
+   "verdict": "confirmed",
+   "checked_against": "PDF p32 and p72",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-onsrud-faq2-helical",
+   "verdict": "confirmed",
+   "checked_against": "fresh HTML",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-onsrud-faq2-plungefeed",
+   "verdict": "confirmed",
+   "checked_against": "fresh HTML",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-idc-down-eighth",
+   "verdict": "confirmed",
+   "checked_against": "PDF p11 and p14-p19",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-idc-down-quarter",
+   "verdict": "confirmed",
+   "checked_against": "PDF p11 and p14-p19",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-idc-up-eighth",
+   "verdict": "confirmed",
+   "checked_against": "PDF p11 and p14-p19",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-idc-up-quarter",
+   "verdict": "confirmed",
+   "checked_against": "PDF p11 and p14-p19",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-idc-ball-eighth",
+   "verdict": "confirmed",
+   "checked_against": "PDF p11 and p14-p19",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-idc-ball-quarter",
+   "verdict": "confirmed",
+   "checked_against": "PDF p11 and p14-p19",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-idc-v30",
+   "verdict": "confirmed",
+   "checked_against": "PDF p11 and p14-p19",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-idc-v60",
+   "verdict": "confirmed",
+   "checked_against": "PDF p11 and p14-p19",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Section 2 (PDF p17) prints 60/20. The starter-set table (PDF p11) prints 40/20 (fraction 0.5)."
+  },
+  {
+   "statement_id": "g10-wood-idc-v90",
+   "verdict": "confirmed",
+   "checked_against": "PDF p11 and p14-p19",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Section 2 (PDF p17) prints 45/25. The starter-set table (PDF p11) prints 50/25 (fraction 0.5); the fetch notes do not mention this second conflict."
+  },
+  {
+   "statement_id": "g10-wood-idc-v120",
+   "verdict": "confirmed",
+   "checked_against": "PDF p11 and p14-p19",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-idc-taperball",
+   "verdict": "confirmed",
+   "checked_against": "PDF p11 and p14-p19",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-idc-surfacing-1",
+   "verdict": "confirmed",
+   "checked_against": "PDF p11 and p14-p19",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-idc-bowl",
+   "verdict": "confirmed",
+   "checked_against": "PDF p11 and p14-p19",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-wood-idc-spiral-drill",
+   "verdict": "confirmed",
+   "checked_against": "PDF p11 and p14-p19",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p11. The asterisk occurs only on the Drilling row value 60*; the footnote covers that one cell. centre_cutting true is an inference (up-cut endmill used to plunge)."
+  },
+  {
+   "statement_id": "g10-wood-whiteside-upcut",
+   "verdict": "confirmed",
+   "checked_against": "PDF p1",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Quote right. The brochure has 2 PDF pages; the text is on p1, not p2."
+  },
+  {
+   "statement_id": "g10-wood-axyz-compression-ramp",
+   "verdict": "confirmed",
+   "checked_against": "fresh HTML",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-metal-harvey-rs-ramp-soft",
+   "verdict": "confirmed",
+   "checked_against": "fresh HTML",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-metal-harvey-rs-ramp-hard",
+   "verdict": "confirmed",
+   "checked_against": "fresh HTML",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-metal-harvey-rs-circular",
+   "verdict": "confirmed",
+   "checked_against": "fresh HTML",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-metal-harvey-te-predrill",
+   "verdict": "confirmed",
+   "checked_against": "fresh HTML",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-metal-harvey-te-helix-dia",
+   "verdict": "confirmed",
+   "checked_against": "fresh HTML",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-metal-harvey-te-helix-nonferrous",
+   "verdict": "confirmed",
+   "checked_against": "fresh HTML",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-metal-harvey-te-ramp-soft",
+   "verdict": "confirmed",
+   "checked_against": "fresh HTML",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-metal-harvey-te-plunge-cc",
+   "verdict": "confirmed",
+   "checked_against": "fresh HTML",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-metal-harvey-te-straight-entry",
+   "verdict": "confirmed",
+   "checked_against": "fresh HTML",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-metal-harvey-te-rollin",
+   "verdict": "confirmed",
+   "checked_against": "fresh HTML",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-metal-helical-gb-ramp-soft",
+   "verdict": "confirmed",
+   "checked_against": "PDF p4-p6, rendered image of the visible layer",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Visible layer p4: \"Soft/Non-Ferrous Materials: 3° – 10°\". The hidden layers print \"Non-Ferrous Materials\" with the same numbers."
+  },
+  {
+   "statement_id": "g10-metal-helical-gb-ramp-hard",
+   "verdict": "confirmed",
+   "checked_against": "PDF p4-p6, rendered image of the visible layer",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-metal-helical-gb-helix-dia",
+   "verdict": "confirmed",
+   "checked_against": "PDF p4-p6, rendered image of the visible layer",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Visible layer p4 prints \">110-120% of tool diameter\" and \"decrease tool wear\"."
+  },
+  {
+   "statement_id": "g10-metal-helical-gb-cc-descent",
+   "verdict": "confirmed",
+   "checked_against": "PDF p4-p6, rendered image of the visible layer",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-metal-helical-gb-plunge-cc",
+   "verdict": "confirmed",
+   "checked_against": "PDF p4-p6, rendered image of the visible layer",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "In the visible layer the Straight Plunge block is on p5."
+  },
+  {
+   "statement_id": "g10-metal-harvey-sf18700-plunge",
+   "verdict": "wrong",
+   "checked_against": "PDF p1",
+   "correct_value": "diameter_mm [0.381, 12.7] (0.015 in .. 0.500 in)",
+   "correct_grade": null,
+   "note": "The quote is right. The chart has one page, and its Effective Cutter Diameter columns run 0.015 to 0.500 in in every table. No 1.000 in column exists, so the derived span 0.015-1.000 in is wrong."
+  },
+  {
+   "statement_id": "g10-metal-harvey-sf25000-plunge",
+   "verdict": "wrong",
+   "checked_against": "PDF p1 (layout and raw text)",
+   "correct_value": "material.printed: 'Plastics (Non-Filled, Glass Filled, Carbon Fiber, G10); Non-Ferrous (Aluminum, Magnesium, Copper Alloys); cast iron; steels; high temp alloys'; normalised must include plastics, not any_metal",
+   "correct_grade": null,
+   "note": "The 50% value and the quote are right ('5 0%' is a kerning gap). The chart's first material column is Plastics, so 'chart materials (metals)' under-states the scope. The plastics column matters for a wood reading."
+  },
+  {
+   "statement_id": "g10-metal-harvey-sf25000-ramp-pref",
+   "verdict": "wrong",
+   "checked_against": "PDF p1 (layout and raw text)",
+   "correct_value": "material as for g10-metal-harvey-sf25000-plunge (plastics included)",
+   "correct_grade": null,
+   "note": "The quote is right. The material label has the same error as the plunge statement."
+  },
+  {
+   "statement_id": "g10-metal-sgs-ramp-feed-1-2deg",
+   "verdict": "confirmed",
+   "checked_against": "PDF p7-p9 and p19, rendered images of p7-p8",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-metal-sgs-ramp-feed-6deg",
+   "verdict": "confirmed",
+   "checked_against": "PDF p7-p9 and p19, rendered images of p7-p8",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-metal-sgs-ramp-general",
+   "verdict": "confirmed",
+   "checked_against": "PDF p7-p9 and p19, rendered images of p7-p8",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-metal-sgs-plunge-feed",
+   "verdict": "confirmed",
+   "checked_against": "PDF p7-p9 and p19, rendered images of p7-p8",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "All text layers of PDF p9 agree. centre_cutting true is an inference."
+  },
+  {
+   "statement_id": "g10-metal-sgs-matrix-footnote",
+   "verdict": "confirmed",
+   "checked_against": "PDF p7-p9 and p19, rendered images of p7-p8",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-metal-sgs-mx-z5",
+   "verdict": "confirmed",
+   "checked_against": "PDF p7-p9 and p19, rendered images of p7-p8",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Row 6 on both pages (same row height and position in the rendered images). Center Cutting No, 7 deg, helix 37, 6-25 mm. Conflicts with the Z5 chart (5 deg)."
+  },
+  {
+   "statement_id": "g10-metal-sgs-mx-77",
+   "verdict": "confirmed",
+   "checked_against": "PDF p7-p9 and p19, rendered images of p7-p8",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Row 9 (H-Carb 77): No, 1 deg, chipbreaker \"In Stock Available\"."
+  },
+  {
+   "statement_id": "g10-metal-sgs-mx-66",
+   "verdict": "confirmed",
+   "checked_against": "PDF p7-p9 and p19, rendered images of p7-p8",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Row 10 (Multi Carb 66): No, 1 deg. The matrix prints flute count 7, 9, 11."
+  },
+  {
+   "statement_id": "g10-metal-sgs-mx-56b",
+   "verdict": "confirmed",
+   "checked_against": "PDF p7-p9 and p19, rendered images of p7-p8",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Row 11 (Turbo Carb 56B): Yes, 25 deg."
+  },
+  {
+   "statement_id": "g10-metal-sgs-mx-47",
+   "verdict": "confirmed",
+   "checked_against": "PDF p7-p9 and p19, rendered images of p7-p8",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Row 15: Yes, 90 deg."
+  },
+  {
+   "statement_id": "g10-metal-sgs-mx-43",
+   "verdict": "confirmed",
+   "checked_against": "PDF p7-p9 and p19, rendered images of p7-p8",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Row 16: Yes, 90 deg."
+  },
+  {
+   "statement_id": "g10-metal-sgs-mx-series7",
+   "verdict": "confirmed",
+   "checked_against": "PDF p7-p9 and p19, rendered images of p7-p8",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Row 5: Yes, 1 deg."
+  },
+  {
+   "statement_id": "g10-metal-sgs-mx-ccr",
+   "verdict": "confirmed",
+   "checked_against": "PDF p7-p9 and p19, rendered images of p7-p8",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Row 22 (20-CCR): \"Based upon end style\" / \"5 (for end cut styles)\". Row 23 (31-CCR) prints the same."
+  },
+  {
+   "statement_id": "g10-metal-sgs-mx-compression",
+   "verdict": "confirmed",
+   "checked_against": "PDF p7-p9 and p19, rendered images of p7-p8",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Row 24 (Compression Router 25): Yes, 5 deg. Colour code: Non Ferrous N5 to N7 only. The matrix prints flutes 4, 6, 8."
+  },
+  {
+   "statement_id": "g10-metal-sgs-mx-upcut",
+   "verdict": "confirmed",
+   "checked_against": "PDF p7-p9 and p19, rendered images of p7-p8",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Row 25 (Up Cut Router 21): Yes, 90 deg. The matrix prints flute count 2; the statement has flutes null."
+  },
+  {
+   "statement_id": "g10-metal-sgs-mx-downcut",
+   "verdict": "confirmed",
+   "checked_against": "PDF p7-p9 and p19, rendered images of p7-p8",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Row 26 (Down Cut Router 22): Yes, \"–\". The matrix prints flute count 2. The catalogue does not define the dash; no_ramp stays a tentative reading."
+  },
+  {
+   "statement_id": "g10-metal-sgs-z5-ramp5",
+   "verdict": "confirmed",
+   "checked_against": "PDF p7-p9 and p19, rendered images of p7-p8",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p19 = catalogue p34. The chart materials on this page are super alloys, titanium, tool steels and hardened steels; the label \"steels ... hardened steels\" is loose but not wrong."
+  },
+  {
+   "statement_id": "g10-metal-sgs-z5-noplunge",
+   "verdict": "confirmed",
+   "checked_against": "PDF p7-p9 and p19, rendered images of p7-p8",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-metal-imco-bore-2d-2r",
+   "verdict": "confirmed",
+   "checked_against": "PDF p1-p2 (printed pp. 130-131)",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Derived values recomputed: bore/D = 2 - 2r/D; path/D = (bore - D)/D = 1 - 2r/D; 1.0 at r = 0. centre_cutting true is not printed."
+  },
+  {
+   "statement_id": "g10-metal-imco-flute-steps",
+   "verdict": "confirmed",
+   "checked_against": "PDF p1-p2 (printed pp. 130-131)",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Quote right. Internal conflict: Step 2 Method A lists IPT/C 7 (7 flutes) for the second step, but the rule says 7 or fewer flutes need one step."
+  },
+  {
+   "statement_id": "g10-metal-imco-iptc-angle",
+   "verdict": "confirmed",
+   "checked_against": "PDF p1-p2 (printed pp. 130-131)",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-metal-imco-iptc-feed",
+   "verdict": "confirmed",
+   "checked_against": "PDF p1-p2 (printed pp. 130-131)",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-metal-imco-aptc-angle",
+   "verdict": "confirmed",
+   "checked_against": "PDF p1-p2 (printed pp. 130-131)",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-metal-imco-m5-angle",
+   "verdict": "confirmed",
+   "checked_against": "PDF p1-p2 (printed pp. 130-131)",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-metal-imco-m2-angle",
+   "verdict": "confirmed",
+   "checked_against": "PDF p1-p2 (printed pp. 130-131)",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-metal-imco-expand",
+   "verdict": "confirmed",
+   "checked_against": "PDF p1-p2 (printed pp. 130-131)",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-metal-garr-plunge-50",
+   "verdict": "confirmed",
+   "checked_against": "PDF p3 and p8-p9",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-metal-garr-chipping-ramp",
+   "verdict": "confirmed",
+   "checked_against": "PDF p3 and p8-p9",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-metal-sandvik-linear-75",
+   "verdict": "confirmed",
+   "checked_against": "fresh HTML",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-metal-sandvik-max-hole",
+   "verdict": "confirmed",
+   "checked_against": "fresh HTML",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Derived (2D3 - D3)/D3 = 1.0 is right. The page adds that at 2 x D3 a pip stays in a blind hole and is removed by feeding to centre."
+  },
+  {
+   "statement_id": "g10-metal-sandvik-core",
+   "verdict": "confirmed",
+   "checked_against": "fresh HTML",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-metal-sandvik-pitch",
+   "verdict": "confirmed",
+   "checked_against": "fresh HTML",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-metal-sandvik-prefer-circular",
+   "verdict": "confirmed",
+   "checked_against": "fresh HTML",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-metal-sandvik-slot-30",
+   "verdict": "confirmed",
+   "checked_against": "fresh HTML",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  },
+  {
+   "statement_id": "g10-metal-kennametal-angle-basis",
+   "verdict": "confirmed",
+   "checked_against": "fresh HTML",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Value, unit, quote and fields agree with the document; derived values recomputed."
+  }
+ ],
+ "skipped": [],
+ "flagged": [
+  {
+   "topic": "Amana insert V-groove v16, 1-flute ramp column",
+   "finding": "The reading is right. I read all 36 rows. Every 1-flute row from 40 to 110 deg (RC-1040 to RC-1105, 24 rows) prints Ramp Down = Feed/2 in all six materials (40/20, 90/45, 80/40). Only RC-1146 (120 deg) and RC-1101 (150 deg), both at 14,000 RPM, print Ramp = Feed (90/90, 180/180). Every 2-flute row prints Feed/2. The footer rule 'Feed Rate IPM / # of Flutes' gives 1.0 for 1 flute. So the printed 1-flute column fraction is 0.5, and the rule is not followed. Extra: the 1-flute 18,000 RPM rows agree with their chip load (18,000 x 1 x .0024 = 43 IPM, printed 40). RC-1146 and RC-1101 do not (14,000 x 1 x .0024 = 33.6, printed 90); these two rows look like copied 2-flute rows. ToolsToday prints RC-1108 as 30 -> 15, the same 0.5."
+  },
+  {
+   "topic": "Amana 'Ramp Down' definition",
+   "finding": "Not defined. I searched the 33 Amana text files under fetch/G*/sources and the 6 G10 Amana PDFs. 'Ramp' occurs only as the column header 'Ramp Down' and the rule 'To find Ramp Down: Feed Rate IPM / # of flutes' (MPM on the metric page of Spektra v27). 'Plunge' occurs only in product names. amanatool.com HTML pages (knowledge_base, router-bit-technical-information) return 403. The only reading in text is the distributor ToolsToday: 'ramp-down or plunge rate'. The current Spektra chart v27 prints the same rows as v24."
+  },
+  {
+   "topic": "IDC plunge column and spiral drilling footnote",
+   "finding": "Confirmed from PDF p14-p19 (section 2) and p11 (starter set). All 14 fractions recompute. The asterisk sits only on the Plunge cell '60*' of the 'Drilling' row of the 1/8 in DRILLING ENDMILL table (PDF p11); the 'Conventional' row (Plunge 25) has no asterisk. So the footnote 'The plunge value is for using the spiral drilling technique' covers that one cell only. Two table conflicts: 60 deg V-bit 60/20 (section 2) against 40/20 (starter set), and 90 deg V-bit 45/25 against 50/25; the fetch notes give only the first. A separate asterisk on the starter-set 1/8 in ballnose step-over '40%*' has no footnote on that page."
+  },
+  {
+   "topic": "SGS End Mill Matrix row mapping",
+   "finding": "Confirmed. I rendered PDF p7 and p8 (catalogue pp. 22-23). They are a two-page spread with 26 rows each, at the same vertical positions (for example Series 33 and the first value row are both at the top line; Down Cut Router and the last value row are both at the bottom). The order mapping is therefore also a position mapping. Every ramp value in the statements is right: Series 7 = 1, Z5 = 7, H-Carb 77 = 1, Multi Carb 66 = 1, Turbo Carb 56B = 25, S-Carb 47 = 90, S-Carb 43 = 90, 20-CCR and 31-CCR = 'Based upon end style' / '5 (for end cut styles)', Compression Router 25 = 5, Up Cut Router 21 = 90, Down Cut Router 22 = '–'. The Center Cutting column is also right for each. For the other rows: Series 33 90, Z1 90, Z1P 90, ZH1 20, V-Carb 5, T-Carb 3, ZD1 2, Power-Carb 1, Ski-Carb 90, 43CB 90, APR-3 90, APR-4 90, APF 25, Slow Helix 5. The Z1 and Z1P rows look plausible to me (R,B and S,R,B), but the part did not use them, so no statement depends on them. Z5 conflict: confirmed. The matrix prints 7 deg; the Z5 chart (PDF p19, catalogue p34) prints 'ramp up to 5 degrees using slotting speed and feed rates. Do not plunge.' The catalogue gives no reason for the difference. The dash for Down Cut Router has no legend. Missed data: the colour code is readable in the image. Compression, Up Cut and Down Cut Router, CCR and Slow Helix are coded only 'Non Ferrous N5 to N7'. The legend also marks 'Plunging not recommended in these materials' for Stainless M1-M3, High Temp S1-S3, Titanium S4 and Hardened H1-H4. It gives no plunge mark for N1-N7. The part has no statement for this legend."
+  },
+  {
+   "topic": "IMCO helical bore formula and helix angles",
+   "finding": "Confirmed from PDF p1 (printed p130): 'The diameter of the starting hole will be: (tool diameter x 2) - (corner radius x 2)'. Angles: IPT/C 7, 9, 11, 13 = 0.5 deg; APT/C 5 = 3 deg; M525, M527, M503, M726, M706, M806, M924, M904, M905, E14, E13, E12, M104 = 1-2.5 deg; M223, M233, M203, M202 = 3-5 deg. Feed: IPT/C and APT/C 'IPT or MMPT x 1.6' (high-pressure coolant) and 'x 1.25' (flood); M and E series 'Slotting feed in chart'. Step 2 (p131): 3xD for IPT/C 7, 9 and 3.75xD for 11, 13. Method B uses 1.6 and 0.5 deg for 9, 11, 13. Internal conflict: Method A lists IPT/C 7 for a second step, but the text says seven or fewer flutes need one step. No material is printed per series."
+  },
+  {
+   "topic": "Harvey / Helical 'helix diameter >110-120%'",
+   "finding": "The documents do not define it. Exact sentences: (1) types-tool-entry blog: 'Helical Interpolation is a very common and safe practice of tool entry with ferrous materials. Employing corner radius end mills during this operation will decrease tool wear and lessen corner breakdown. With this method, use a programmed helix diameter of greater than 110-120% of the cutter diameter.' (2) Helical guidebook 2016 p4, visible layer: 'We recommend a programmed helix diameter >110-120% of tool diameter.' The word 'programmed' suggests the CAM helix setting, but CAM systems use this word for both the bore and the path, so the text does not decide it. The part's two derived readings (path 0.1-0.2 D if bore; bore 2.1-2.2 D if path) recompute correctly."
+  },
+  {
+   "topic": "Helical 2016 PDF hidden layers",
+   "finding": "Confirmed. I rendered p4 and p5. The visible layer prints: 'Employing corner radius end mills during this operation will decrease tool wear', 'We recommend a programmed helix diameter >110-120% of tool diameter', 'Soft/Non-Ferrous Materials: 3° – 10°', 'Hard/Ferrous Materials: 1° – 3°' (p4); 'The tool must be center cutting', 'the feed rate upon entry is recommended to be reduced by at least 50%', 'The feed rate in this scenario should be reduced by 50%' (p5). All quoted numbers are in the visible layer. The hidden layers carry 'increase tool wear', 'must be reduced by at least 50%' and 'Non-Ferrous / Ferrous' labels with the same numbers. The SGS PDF p9 also carries 3-4 text layers of the Entry Methods block; all layers give the same numbers."
+  },
+  {
+   "topic": "Burnette 'Amana 10 deg ramp limit'",
+   "finding": "Not found in a primary source. The Burnette page (a reseller) prints: 'For deep pockets where axial depth exceeds 1.5 times the tool diameter, reduce the chip load by 25% and utilize a ramp-in entry angle of no more than 10° to mitigate vertical plunge stresses.' It cites no Amana document. No Amana PDF I checked prints a ramp angle; amanatool.com HTML pages return 403. The refusal to store it is right."
+  },
+  {
+   "topic": "'Vortex 45 deg ramp at 1/3 feed'",
+   "finding": "Found, but not from Vortex. The text is on https://clebitco.com/speeds-and-feeds/ (Cle Bit Co, a reseller and sharpening shop that sells Vortex and Amana; HTTP 200, fresh copy in verify/a_work/clebitco_speeds_and_feeds.html, sha256 8d4fc3c1...4e77): 'Feeding the the Tool into the material Plunge the material at a 45 DEG angle over 2-4 inches if possible at ⅓ of the calculated feed rate.' It follows a paragraph about the Vortex #3420 compression bit, which explains the misattribution. The Vortex catalogue does not contain it. At most grade c reseller advice; it must not be cited as Vortex."
+  },
+  {
+   "topic": "Text header date",
+   "finding": "Five metal text files carry '# accessed_on: 2026-09-24' (from g5_html_to_text.py): metal_harvey_ramping_success.txt, metal_harvey_tool_entry.txt, metal_harvey_helical_interp_tv.txt, metal_sandvik_ramping.txt, metal_kennametal_ramping_blog.txt. All other wood and metal text files carry 2026-09-25. Not fixed."
+  },
+  {
+   "topic": "centre_cutting inferred",
+   "finding": "Several statements set centre_cutting where the document does not print it: g10-wood-onsrud-guide-pcd (false), g10-wood-idc-spiral-drill (true), g10-metal-sgs-plunge-feed (true), all g10-metal-imco-* (true), g10-metal-sandvik-linear-75 (false). None changes a value; a ruling that uses centre_cutting as a key must treat these as inferred. The SGS matrix rows and the Harvey/Helical 'must be center cutting' rows are printed."
+  }
+ ]
+}

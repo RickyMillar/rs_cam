@@ -1,0 +1,1381 @@
+[
+  {
+    "statement_id": "g10-wood-amana-comp-rule",
+    "source_id": "wood_amana_compression_v8",
+    "source_page": "p1, Simple Machining Calculations",
+    "parameter": "ramp_feed_fraction",
+    "tool_family": "compression",
+    "tool_subfamily": "solid carbide compression spiral",
+    "flutes": null,
+    "centre_cutting": null,
+    "diameter_mm": null,
+    "material": {
+      "class": "any",
+      "label": "all chart materials"
+    },
+    "value_printed": "To find Ramp Down: Feed Rate IPM / # of flutes",
+    "unit": "IPM",
+    "value_si": null,
+    "derived": [
+      {
+        "quantity": "ramp_feed_fraction for z flutes",
+        "value": "1/z (1 flute 1.0, 2 flute 0.5, 3 flute 0.333)",
+        "formula": "(Feed / z) / Feed = 1 / z"
+      }
+    ],
+    "verbatim": "To find Ramp Down: Feed Rate IPM / # of flutes",
+    "grade": "b",
+    "notes": "Amana does not say whether 'Ramp Down' is a pure Z plunge feed or the feed along a ramp. ToolsToday (wood_toolstoday_calc_video) reads it as 'ramp-down or plunge rate'. The chart gives compression bits a ramp-down feed; it does not forbid plunge or ramp."
+  },
+  {
+    "statement_id": "g10-wood-amana-comp-1f-half-wood",
+    "source_id": "wood_amana_compression_v8",
+    "source_page": "p1, 1 Flute table, 1/2\" row, Wood",
+    "parameter": "ramp_feed",
+    "tool_family": "compression",
+    "tool_subfamily": "1 flute compression",
+    "flutes": 1,
+    "centre_cutting": null,
+    "diameter_mm": 12.7,
+    "material": {
+      "class": "wood",
+      "label": "Wood"
+    },
+    "value_printed": "140\" feed, 140\" ramp down",
+    "unit": "IPM",
+    "value_si": 3556.0,
+    "derived": [
+      {
+        "quantity": "1 flute ramp/feed fraction",
+        "value": 1.0,
+        "formula": "140 / 140"
+      },
+      {
+        "quantity": "ramp_feed_mm_per_min",
+        "value": 3556.0,
+        "formula": "140 IPM x 25.4"
+      }
+    ],
+    "verbatim": "1/2\" 140\" .0077\" 140\" 280\" .0153\" 280\"",
+    "grade": "a",
+    "notes": "Printed ramp = feed for 1 flute; this agrees with Feed / # of flutes."
+  },
+  {
+    "statement_id": "g10-wood-amana-comp-2f-quarter-wood",
+    "source_id": "wood_amana_compression_v8",
+    "source_page": "p1, 2 Flute table, 1/4\" row, Wood",
+    "parameter": "ramp_feed",
+    "tool_family": "compression",
+    "tool_subfamily": "2 flute compression",
+    "flutes": 2,
+    "centre_cutting": null,
+    "diameter_mm": 6.35,
+    "material": {
+      "class": "wood",
+      "label": "Wood"
+    },
+    "value_printed": "110\" feed, 55\" ramp down",
+    "unit": "IPM",
+    "value_si": 1397.0,
+    "derived": [
+      {
+        "quantity": "2 flute ramp/feed fraction",
+        "value": 0.5,
+        "formula": "55 / 110"
+      },
+      {
+        "quantity": "ramp_feed_mm_per_min",
+        "value": 1397.0,
+        "formula": "55 IPM x 25.4"
+      }
+    ],
+    "verbatim": "1/4\" 110\" .0031\" 55\" 220\" .0061\" 110\"",
+    "grade": "a",
+    "notes": ""
+  },
+  {
+    "statement_id": "g10-wood-amana-comp-2f-half-mdf",
+    "source_id": "wood_amana_compression_v8",
+    "source_page": "p1, 2 Flute table, 1/2\" row, MDF/Laminate",
+    "parameter": "ramp_feed",
+    "tool_family": "compression",
+    "tool_subfamily": "2 flute compression",
+    "flutes": 2,
+    "centre_cutting": null,
+    "diameter_mm": 12.7,
+    "material": {
+      "class": "mdf",
+      "label": "MDF/Laminate"
+    },
+    "value_printed": "400\" feed, 200\" ramp down",
+    "unit": "IPM",
+    "value_si": 5080.0,
+    "derived": [
+      {
+        "quantity": "2 flute ramp/feed fraction",
+        "value": 0.5,
+        "formula": "200 / 400"
+      },
+      {
+        "quantity": "ramp_feed_mm_per_min",
+        "value": 5080.0,
+        "formula": "200 IPM x 25.4"
+      }
+    ],
+    "verbatim": "1/2\" 280\" .0077\" 140\" 400\" .0111\" 200\" 280\" .0077\" 140\"",
+    "grade": "a",
+    "notes": "Same row also prints Wood 280/140 and Plywood 280/140."
+  },
+  {
+    "statement_id": "g10-wood-amana-comp-3f-half-wood",
+    "source_id": "wood_amana_compression_v8",
+    "source_page": "p1, 3 Flute table, 1/2\" row, Wood",
+    "parameter": "ramp_feed",
+    "tool_family": "compression",
+    "tool_subfamily": "3 flute compression",
+    "flutes": 3,
+    "centre_cutting": null,
+    "diameter_mm": 12.7,
+    "material": {
+      "class": "wood",
+      "label": "Wood"
+    },
+    "value_printed": "350\" feed, 117\" ramp down",
+    "unit": "IPM",
+    "value_si": 2971.8,
+    "derived": [
+      {
+        "quantity": "3 flute ramp/feed fraction",
+        "value": 0.3343,
+        "formula": "117 / 350"
+      },
+      {
+        "quantity": "ramp_feed_mm_per_min",
+        "value": 2971.8,
+        "formula": "117 IPM x 25.4"
+      }
+    ],
+    "verbatim": "1/2\" 350\" .0065\" 117\" 450\" .0080\" 150\"",
+    "grade": "a",
+    "notes": "117 = 350/3 rounded."
+  },
+  {
+    "statement_id": "g10-wood-amana-spektra-rule",
+    "source_id": "wood_amana_spektra_plunge_v24",
+    "source_page": "p1, Simple Machining Calculations",
+    "parameter": "ramp_feed_fraction",
+    "tool_family": "flat_end_mill",
+    "tool_subfamily": "up-cut and down-cut spiral plunge",
+    "flutes": null,
+    "centre_cutting": null,
+    "diameter_mm": null,
+    "material": {
+      "class": "any",
+      "label": "Wood/Plywood, MDF/Laminate"
+    },
+    "value_printed": "Feed Rate IPM / # of flutes",
+    "unit": "IPM",
+    "value_si": null,
+    "derived": [
+      {
+        "quantity": "ramp_feed_fraction for z flutes",
+        "value": "1/z (1 flute 1.0, 2 flute 0.5, 3 flute 0.333)",
+        "formula": "(Feed / z) / Feed = 1 / z"
+      }
+    ],
+    "verbatim": "Feed Rate IPM / # of flutes",
+    "grade": "b",
+    "notes": "Amana does not say whether 'Ramp Down' is a pure Z plunge feed or the feed along a ramp. ToolsToday (wood_toolstoday_calc_video) reads it as 'ramp-down or plunge rate'. The two-column layout puts 'To find Ramp Down:' on the line above the formula, with table cells between them."
+  },
+  {
+    "statement_id": "g10-wood-amana-spektra-2f-quarter",
+    "source_id": "wood_amana_spektra_plunge_v24",
+    "source_page": "p1, 2 Flute table, 46102-K / 46202-K 1/4\" row",
+    "parameter": "ramp_feed",
+    "tool_family": "flat_end_mill",
+    "tool_subfamily": "2 flute up-cut / down-cut spiral",
+    "flutes": 2,
+    "centre_cutting": null,
+    "diameter_mm": 6.35,
+    "material": {
+      "class": "wood",
+      "label": "Wood/Plywood"
+    },
+    "value_printed": "180\" feed, 90\" ramp down",
+    "unit": "IPM",
+    "value_si": 2286.0,
+    "derived": [
+      {
+        "quantity": "2 flute ramp/feed fraction",
+        "value": 0.5,
+        "formula": "90 / 180"
+      },
+      {
+        "quantity": "ramp_feed_mm_per_min",
+        "value": 2286.0,
+        "formula": "90 IPM x 25.4"
+      }
+    ],
+    "verbatim": "46102-K 46202-K 1/4\" 180\" .0050\" 90\" 215\" .0060\" 107.5\"",
+    "grade": "a",
+    "notes": "Same row, MDF/Laminate: 215/107.5 (fraction 0.5). The same numbers apply to the up-cut and the down-cut part number."
+  },
+  {
+    "statement_id": "g10-wood-amana-spektra-3f-quarter",
+    "source_id": "wood_amana_spektra_plunge_v24",
+    "source_page": "p1, 3 Flute table, 46002-K / 46052-K 1/4\" row",
+    "parameter": "ramp_feed",
+    "tool_family": "flat_end_mill",
+    "tool_subfamily": "3 flute up-cut / down-cut spiral",
+    "flutes": 3,
+    "centre_cutting": null,
+    "diameter_mm": 6.35,
+    "material": {
+      "class": "wood",
+      "label": "Wood/Plywood"
+    },
+    "value_printed": "270\" feed, 90\" ramp down",
+    "unit": "IPM",
+    "value_si": 2286.0,
+    "derived": [
+      {
+        "quantity": "3 flute ramp/feed fraction",
+        "value": 0.3333,
+        "formula": "90 / 270"
+      },
+      {
+        "quantity": "ramp_feed_mm_per_min",
+        "value": 2286.0,
+        "formula": "90 IPM x 25.4"
+      }
+    ],
+    "verbatim": "46002-K 46052-K 1/4\" 270\" .0050\" 90\" 325\" .0060\" 109\"",
+    "grade": "a",
+    "notes": ""
+  },
+  {
+    "statement_id": "g10-wood-amana-spektra-3f-3-4",
+    "source_id": "wood_amana_spektra_plunge_v24",
+    "source_page": "p1, 3 Flute table, 46500-K 3/4\" row",
+    "parameter": "ramp_feed",
+    "tool_family": "flat_end_mill",
+    "tool_subfamily": "3 flute down-cut spiral",
+    "flutes": 3,
+    "centre_cutting": null,
+    "diameter_mm": 19.05,
+    "material": {
+      "class": "wood",
+      "label": "Wood/Plywood"
+    },
+    "value_printed": "330\" feed, 110\" ramp down",
+    "unit": "IPM",
+    "value_si": 2794.0,
+    "derived": [
+      {
+        "quantity": "3 flute ramp/feed fraction",
+        "value": 0.3333,
+        "formula": "110 / 330"
+      },
+      {
+        "quantity": "ramp_feed_mm_per_min",
+        "value": 2794.0,
+        "formula": "110 IPM x 25.4"
+      }
+    ],
+    "verbatim": "46500-K 3/4\" 330\" .009\" 110\" 360\" .010\" 120\"",
+    "grade": "a",
+    "notes": ""
+  },
+  {
+    "statement_id": "g10-wood-amana-ballnose-rule",
+    "source_id": "wood_amana_ball_nose_v7",
+    "source_page": "p1, Simple Machining Calculations",
+    "parameter": "ramp_feed_fraction",
+    "tool_family": "ball_nose",
+    "tool_subfamily": "2 flute spiral ball nose",
+    "flutes": 2,
+    "centre_cutting": null,
+    "diameter_mm": null,
+    "material": {
+      "class": "any",
+      "label": "Softwood, Hardwood, MDF and others"
+    },
+    "value_printed": "Feed Rate IPM / # of flutes",
+    "unit": "IPM",
+    "value_si": null,
+    "derived": [
+      {
+        "quantity": "ramp_feed_fraction (2 flute)",
+        "value": 0.5,
+        "formula": "(Feed / 2) / Feed"
+      }
+    ],
+    "verbatim": "To find Ramp Down: Feed Rate IPM / # of flutes",
+    "grade": "b",
+    "notes": "Amana does not say whether 'Ramp Down' is a pure Z plunge feed or the feed along a ramp. ToolsToday (wood_toolstoday_calc_video) reads it as 'ramp-down or plunge rate'. No ramp column is printed for the ball nose."
+  },
+  {
+    "statement_id": "g10-wood-amana-bullnose-rule",
+    "source_id": "wood_amana_corner_radius_plunge",
+    "source_page": "p1, Simple Machining Calculations",
+    "parameter": "ramp_feed_fraction",
+    "tool_family": "bull_nose",
+    "tool_subfamily": "2 flute spiral plunge with corner radius",
+    "flutes": 2,
+    "centre_cutting": null,
+    "diameter_mm": [
+      6.35,
+      12.7
+    ],
+    "material": {
+      "class": "any",
+      "label": "Soft Wood, Hard Wood, MDF, Plastics, Aluminum"
+    },
+    "value_printed": "Feed Rate IPM / # of flutes",
+    "unit": "IPM",
+    "value_si": null,
+    "derived": [
+      {
+        "quantity": "ramp_feed_fraction (2 flute)",
+        "value": 0.5,
+        "formula": "(Feed / 2) / Feed"
+      }
+    ],
+    "verbatim": "To find Ramp Down: Feed Rate IPM / # of flutes",
+    "grade": "b",
+    "notes": "Amana does not say whether 'Ramp Down' is a pure Z plunge feed or the feed along a ramp. ToolsToday (wood_toolstoday_calc_video) reads it as 'ramp-down or plunge rate'. No ramp column is printed."
+  },
+  {
+    "statement_id": "g10-wood-amana-engraving-rule",
+    "source_id": "wood_amana_spektra_engraving_v4",
+    "source_page": "p1, Simple Machining Calculations",
+    "parameter": "ramp_feed_fraction",
+    "tool_family": "v_bit",
+    "tool_subfamily": "single flute engraving 15/30/45/120 degree",
+    "flutes": 1,
+    "centre_cutting": null,
+    "diameter_mm": null,
+    "material": {
+      "class": "any",
+      "label": "Soft Wood, Hard Wood, plastics, Solid Surface"
+    },
+    "value_printed": "Feed Rate IPM / # of flutes",
+    "unit": "IPM",
+    "value_si": null,
+    "derived": [
+      {
+        "quantity": "ramp_feed_fraction (1 flute)",
+        "value": 1.0,
+        "formula": "(Feed / 1) / Feed"
+      }
+    ],
+    "verbatim": "To find Ramp Down: Feed Rate IPM / # of flutes",
+    "grade": "b",
+    "notes": "Amana does not say whether 'Ramp Down' is a pure Z plunge feed or the feed along a ramp. ToolsToday (wood_toolstoday_calc_video) reads it as 'ramp-down or plunge rate'. The insert V-groove chart prints Feed/2 for 1-flute V-bits (g10-wood-amana-vgroove-1f-60); the rule and the printed values disagree."
+  },
+  {
+    "statement_id": "g10-wood-amana-vgroove-rule",
+    "source_id": "wood_amana_insert_vgroove_v16",
+    "source_page": "p1, footer Simple Machining Calculations",
+    "parameter": "ramp_feed_fraction",
+    "tool_family": "v_bit",
+    "tool_subfamily": "insert carbide V-groove",
+    "flutes": null,
+    "centre_cutting": null,
+    "diameter_mm": null,
+    "material": {
+      "class": "any",
+      "label": "all chart materials"
+    },
+    "value_printed": "Feed Rate IPM / # of Flutes)",
+    "unit": "IPM",
+    "value_si": null,
+    "derived": [
+      {
+        "quantity": "ramp_feed_fraction for z flutes",
+        "value": "1/z (1 flute 1.0, 2 flute 0.5, 3 flute 0.333)",
+        "formula": "(Feed / z) / Feed = 1 / z"
+      }
+    ],
+    "verbatim": "To ﬁnd Ramp Down: Feed Rate IPM / # of Flutes)",
+    "grade": "b",
+    "notes": "The text copy carries the ligature 'fi' as U+FB01. The printed 1-flute rows below 120 degree do not follow this rule; see NOTES section 5."
+  },
+  {
+    "statement_id": "g10-wood-amana-vgroove-1f-60",
+    "source_id": "wood_amana_insert_vgroove_v16",
+    "source_page": "p1, RC-1108 row (60 deg, 1 flute, 18,000 RPM)",
+    "parameter": "ramp_feed",
+    "tool_family": "v_bit",
+    "tool_subfamily": "insert V-groove 60 deg",
+    "flutes": 1,
+    "centre_cutting": null,
+    "diameter_mm": null,
+    "material": {
+      "class": "hardwood",
+      "label": "Hardwood (Softwood and Plywood/Chipboard print the same)"
+    },
+    "value_printed": "40\" feed, 20\" ramp down",
+    "unit": "IPM",
+    "value_si": 508.0,
+    "derived": [
+      {
+        "quantity": "1 flute V-bit ramp/feed fraction",
+        "value": 0.5,
+        "formula": "20 / 40"
+      },
+      {
+        "quantity": "ramp_feed_mm_per_min",
+        "value": 508.0,
+        "formula": "20 IPM x 25.4"
+      }
+    ],
+    "verbatim": "RC-1108 60° 1 18,000 40\" .0024\" 20\" 40\" .0024\" 20\"",
+    "grade": "a",
+    "notes": "Fraction 0.5 at 1 flute. The chart rule gives Feed/1 = 40. Every 1-flute row from 40 to 110 degree prints Feed/2; MDF prints 90/45."
+  },
+  {
+    "statement_id": "g10-wood-amana-vgroove-1f-120",
+    "source_id": "wood_amana_insert_vgroove_v16",
+    "source_page": "p1, RC-1146 row (120 deg, 1 flute, 14,000 RPM)",
+    "parameter": "ramp_feed",
+    "tool_family": "v_bit",
+    "tool_subfamily": "insert V-groove 120 deg",
+    "flutes": 1,
+    "centre_cutting": null,
+    "diameter_mm": null,
+    "material": {
+      "class": "hardwood",
+      "label": "Hardwood"
+    },
+    "value_printed": "90\" feed, 90\" ramp down",
+    "unit": "IPM",
+    "value_si": 2286.0,
+    "derived": [
+      {
+        "quantity": "1 flute V-bit ramp/feed fraction",
+        "value": 1.0,
+        "formula": "90 / 90"
+      },
+      {
+        "quantity": "ramp_feed_mm_per_min",
+        "value": 2286.0,
+        "formula": "90 IPM x 25.4"
+      }
+    ],
+    "verbatim": "RC-1146 120° 1 14,000 90\" .0024\" 90\" 90\" .0024\" 90\"",
+    "grade": "a",
+    "notes": "Fraction 1.0; this row follows the rule. RC-1101 (150 deg, 1 flute) prints the same."
+  },
+  {
+    "statement_id": "g10-wood-amana-vgroove-2f-120",
+    "source_id": "wood_amana_insert_vgroove_v16",
+    "source_page": "p1, RC-1104 row (120 deg, 2 flute, 18,000 RPM)",
+    "parameter": "ramp_feed",
+    "tool_family": "v_bit",
+    "tool_subfamily": "insert V-groove 120 deg",
+    "flutes": 2,
+    "centre_cutting": null,
+    "diameter_mm": null,
+    "material": {
+      "class": "hardwood",
+      "label": "Hardwood"
+    },
+    "value_printed": "90\" feed, 45\" ramp down",
+    "unit": "IPM",
+    "value_si": 1143.0,
+    "derived": [
+      {
+        "quantity": "2 flute V-bit ramp/feed fraction",
+        "value": 0.5,
+        "formula": "45 / 90"
+      },
+      {
+        "quantity": "ramp_feed_mm_per_min",
+        "value": 1143.0,
+        "formula": "45 IPM x 25.4"
+      }
+    ],
+    "verbatim": "RC-1104 120° 2 18,000 90\" .0024\" 45\" 90\" .0024\" 45\"",
+    "grade": "a",
+    "notes": "Fraction 0.5; every 2-flute row prints Feed/2."
+  },
+  {
+    "statement_id": "g10-wood-tt-compression-mdf",
+    "source_id": "wood_toolstoday_calc_video",
+    "source_page": "transcript, 46172-K example",
+    "parameter": "plunge_feed",
+    "tool_family": "compression",
+    "tool_subfamily": "2 flute Spektra compression (up-down)",
+    "flutes": 2,
+    "centre_cutting": null,
+    "diameter_mm": 9.525,
+    "material": {
+      "class": "mdf",
+      "label": "MDF"
+    },
+    "value_printed": "260 IPM feed, ramp-down or plunge rate 130 IPM",
+    "unit": "IPM",
+    "value_si": 3302.0,
+    "derived": [
+      {
+        "quantity": "2 flute ramp/feed fraction",
+        "value": 0.5,
+        "formula": "130 / 260"
+      },
+      {
+        "quantity": "ramp_feed_mm_per_min",
+        "value": 3302.0,
+        "formula": "130 IPM x 25.4"
+      }
+    ],
+    "verbatim": "feed rate is 260 inches per minute, producing a chip load of 0.0072 with a ramp-down or plunge rate of 130 inches per minute",
+    "grade": "b",
+    "notes": "Distributor reads the Amana chart. The phrase shows that the distributor treats 'Ramp Down' as the plunge rate."
+  },
+  {
+    "statement_id": "g10-wood-tt-46172-740",
+    "source_id": "wood_toolstoday_calc_video",
+    "source_page": "description, running parameters, 46172-K",
+    "parameter": "ramp_feed",
+    "tool_family": "compression",
+    "tool_subfamily": "2 flute Spektra compression",
+    "flutes": 2,
+    "centre_cutting": null,
+    "diameter_mm": 9.525,
+    "material": {
+      "class": "other",
+      "label": "melamine / laminate (video demo)"
+    },
+    "value_printed": "Feed 740, Ramp Down 370 IPM",
+    "unit": "IPM",
+    "value_si": 9398.0,
+    "derived": [
+      {
+        "quantity": "2 flute ramp/feed fraction",
+        "value": 0.5,
+        "formula": "370 / 740"
+      },
+      {
+        "quantity": "ramp_feed_mm_per_min",
+        "value": 9398.0,
+        "formula": "370 IPM x 25.4"
+      }
+    ],
+    "verbatim": "Feed Rate (IPM): 740 Speed (RPM): 18,000 Chip Load (Per Tooth): 0.020\" Ramp Down: 370 IPM",
+    "grade": "b",
+    "notes": "Operator values above the chart; the ramp stays at Feed/2."
+  },
+  {
+    "statement_id": "g10-wood-tt-rc1108",
+    "source_id": "wood_toolstoday_calc_video",
+    "source_page": "description, running parameters, RC-1108",
+    "parameter": "ramp_feed",
+    "tool_family": "v_bit",
+    "tool_subfamily": "60 deg insert V-groove, 1 flute",
+    "flutes": 1,
+    "centre_cutting": null,
+    "diameter_mm": null,
+    "material": {
+      "class": "other",
+      "label": "melamine / laminate (video demo)"
+    },
+    "value_printed": "Feed 30, Ramp Down 15 IPM",
+    "unit": "IPM",
+    "value_si": 381.0,
+    "derived": [
+      {
+        "quantity": "1 flute V-bit ramp/feed fraction",
+        "value": 0.5,
+        "formula": "15 / 30"
+      },
+      {
+        "quantity": "ramp_feed_mm_per_min",
+        "value": 381.0,
+        "formula": "15 IPM x 25.4"
+      }
+    ],
+    "verbatim": "Feed Rate (IPM): 30 Speed (RPM): 18,000 Chip Load (Per Tooth): 0.002\" Ramp Down: 15 IPM",
+    "grade": "b",
+    "notes": "1-flute V-bit at Feed/2; this agrees with the printed chart rows, not with the rule Feed/# of flutes."
+  },
+  {
+    "statement_id": "g10-wood-tt-half",
+    "source_id": "wood_toolstoday_understanding_feeds_speeds",
+    "source_page": "section 'Ramp and Plunge Feed Rates'",
+    "parameter": "plunge_feed_fraction",
+    "tool_family": "any",
+    "tool_subfamily": null,
+    "flutes": null,
+    "centre_cutting": null,
+    "diameter_mm": null,
+    "material": {
+      "class": "wood",
+      "label": "not stated (router bit retailer)"
+    },
+    "value_printed": "about half the main feed rate",
+    "unit": "fraction",
+    "value_si": 0.5,
+    "derived": [],
+    "verbatim": "many CNC users reduce ramp or plunge feed to about half the main feed rate",
+    "grade": "c",
+    "notes": "Applies to ramp and plunge alike. 'The right number depends on the bit, material, depth of cut, and toolpath strategy.'"
+  },
+  {
+    "statement_id": "g10-wood-vortex-downcut-noplunge",
+    "source_id": "wood_vortex_catalog",
+    "source_page": "p12-13, Downcut Spirals",
+    "parameter": "no_plunge",
+    "tool_family": "flat_end_mill",
+    "tool_subfamily": "down-cut spiral",
+    "flutes": null,
+    "centre_cutting": null,
+    "diameter_mm": null,
+    "material": {
+      "class": "wood",
+      "label": "wood"
+    },
+    "value_printed": "CANNOT be used to plunge straight into wood",
+    "unit": null,
+    "value_si": null,
+    "derived": [],
+    "verbatim": "Downcut tools CANNOT be used to plunge straight into wood and should be ramped into the part.",
+    "grade": "c",
+    "notes": ""
+  },
+  {
+    "statement_id": "g10-wood-vortex-1300-noplunge",
+    "source_id": "wood_vortex_catalog",
+    "source_page": "Series 1300 two flute downcut finishing spirals",
+    "parameter": "no_plunge",
+    "tool_family": "flat_end_mill",
+    "tool_subfamily": "down-cut spiral",
+    "flutes": 2,
+    "centre_cutting": null,
+    "diameter_mm": null,
+    "material": {
+      "class": "wood",
+      "label": "wood tooling"
+    },
+    "value_printed": "Never plunge straight down with downcut tooling",
+    "unit": null,
+    "value_si": null,
+    "derived": [],
+    "verbatim": "Never plunge straight down with downcut tooling as this may cause fire or breakage.",
+    "grade": "c",
+    "notes": ""
+  },
+  {
+    "statement_id": "g10-wood-vortex-upcut-plunge",
+    "source_id": "wood_vortex_catalog",
+    "source_page": "p12, Upcut Spirals",
+    "parameter": "entry_general",
+    "tool_family": "flat_end_mill",
+    "tool_subfamily": "up-cut spiral",
+    "flutes": null,
+    "centre_cutting": true,
+    "diameter_mm": null,
+    "material": {
+      "class": "wood",
+      "label": "wood"
+    },
+    "value_printed": "straight plunge/drill",
+    "unit": null,
+    "value_si": null,
+    "derived": [],
+    "verbatim": "Upcut spirals straight plunge/drill and have good end cutting geometry.",
+    "grade": "c",
+    "notes": ""
+  },
+  {
+    "statement_id": "g10-wood-vortex-veining-plunge",
+    "source_id": "wood_vortex_catalog",
+    "source_page": "Series 3700 solid carbide veining bits",
+    "parameter": "entry_general",
+    "tool_family": "ball_nose",
+    "tool_subfamily": "veining bit (radius end)",
+    "flutes": null,
+    "centre_cutting": true,
+    "diameter_mm": null,
+    "material": {
+      "class": "any",
+      "label": "wide variety of materials"
+    },
+    "value_printed": "end cutting so they can plunge",
+    "unit": null,
+    "value_si": null,
+    "derived": [],
+    "verbatim": "so they can plunge and be used to groove material while",
+    "grade": "c",
+    "notes": ""
+  },
+  {
+    "statement_id": "g10-wood-onsrud-guide-ramped-plunge",
+    "source_id": "wood_onsrud_routing_guide",
+    "source_page": "p (CNC Feed & Speeds), Additional methods of heat reduction",
+    "parameter": "entry_general",
+    "tool_family": "any",
+    "tool_subfamily": null,
+    "flutes": null,
+    "centre_cutting": null,
+    "diameter_mm": null,
+    "material": {
+      "class": "wood",
+      "label": "wood (page lists typical feed rates in wood)"
+    },
+    "value_printed": "Ramped Plunging into the workpiece",
+    "unit": null,
+    "value_si": null,
+    "derived": [],
+    "verbatim": "- Ramped Plunging into the workpiece",
+    "grade": "c",
+    "notes": "The same list names '- Higher Plunge Speeds' and 'Get in and start making chips'."
+  },
+  {
+    "statement_id": "g10-wood-onsrud-guide-oscillate",
+    "source_id": "wood_onsrud_routing_guide",
+    "source_page": "Oscillating to improve tool life",
+    "parameter": "entry_general",
+    "tool_family": "any",
+    "tool_subfamily": null,
+    "flutes": null,
+    "centre_cutting": null,
+    "diameter_mm": null,
+    "material": {
+      "class": "plywood",
+      "label": "plywood, laminated MDF, particleboard"
+    },
+    "value_printed": "ramp the tool up and down through each tangent of the part",
+    "unit": null,
+    "value_si": null,
+    "derived": [],
+    "verbatim": "is to ramp the tool up and down through each",
+    "grade": "c",
+    "notes": "Oscillation for glue-line wear; not an entry rule."
+  },
+  {
+    "statement_id": "g10-wood-onsrud-guide-pcd",
+    "source_id": "wood_onsrud_routing_guide",
+    "source_page": "p4, PCD Diamond cons",
+    "parameter": "no_plunge",
+    "tool_family": "other",
+    "tool_subfamily": "PCD diamond tipped",
+    "flutes": null,
+    "centre_cutting": false,
+    "diameter_mm": null,
+    "material": {
+      "class": "any",
+      "label": "not stated"
+    },
+    "value_printed": "TIPICALLY CANNOT PLUNGE",
+    "unit": null,
+    "value_si": null,
+    "derived": [],
+    "verbatim": "TIPICALLY CANNOT PLUNGE",
+    "grade": "c",
+    "notes": "Spelling as printed. The same page lists solid carbide 'BEST PLUNGING CAPABIITIES'."
+  },
+  {
+    "statement_id": "g10-wood-onsrud-pct19-potted",
+    "source_id": "wood_onsrud_pct19",
+    "source_page": "p31, 34-100 Series Potted Fastener Tools Technical Data",
+    "parameter": "plunge_feed_fraction",
+    "tool_family": "other",
+    "tool_subfamily": "potted fastener tool",
+    "flutes": null,
+    "centre_cutting": null,
+    "diameter_mm": null,
+    "material": {
+      "class": "other",
+      "label": "composite honeycomb panels (aluminium: pre-drill)"
+    },
+    "value_printed": "RPM 10,000; Plunge Feed Rate 40 IPM; Feed Rate 80 IPM",
+    "unit": "IPM",
+    "value_si": 1016.0,
+    "derived": [
+      {
+        "quantity": "plunge/feed fraction",
+        "value": 0.5,
+        "formula": "40 / 80"
+      }
+    ],
+    "verbatim": "10,000 40 IPM 80 IPM",
+    "grade": "c",
+    "notes": "Only printed plunge feed in the Onsrud catalog; not a wood tool."
+  },
+  {
+    "statement_id": "g10-wood-onsrud-pct19-burr",
+    "source_id": "wood_onsrud_pct19",
+    "source_page": "66-500 Series point styles",
+    "parameter": "entry_general",
+    "tool_family": "other",
+    "tool_subfamily": "diamond-coated composite router (burr / end mill / drill point)",
+    "flutes": null,
+    "centre_cutting": null,
+    "diameter_mm": [
+      3.175,
+      6.35
+    ],
+    "material": {
+      "class": "other",
+      "label": "carbon fiber laminates"
+    },
+    "value_printed": "Burr end for ramping and helical interpolation; End mill point for plunging and helical interpolation",
+    "unit": null,
+    "value_si": null,
+    "derived": [],
+    "verbatim": "Burr end for ramping and helical interpolation.",
+    "grade": "c",
+    "notes": "Implies that the burr end is not for plunging. The next line prints '■ End mill point for plunging and helical interpolation.'"
+  },
+  {
+    "statement_id": "g10-wood-onsrud-faq2-helical",
+    "source_id": "wood_onsrud_plastics_faq2",
+    "source_page": "How Can Chip Wrap, Crazing, or Keyhole Slots Be Prevented When Plunging?",
+    "parameter": "entry_general",
+    "tool_family": "any",
+    "tool_subfamily": null,
+    "flutes": null,
+    "centre_cutting": null,
+    "diameter_mm": null,
+    "material": {
+      "class": "other",
+      "label": "plastics"
+    },
+    "value_printed": "ramp into transverse cuts and use a helical ramp with interpolation for holes",
+    "unit": null,
+    "value_si": null,
+    "derived": [],
+    "verbatim": "A better approach is to ramp into transverse cuts and use a helical ramp with interpolation for holes.",
+    "grade": "c",
+    "notes": "No helix diameter or pitch is printed."
+  },
+  {
+    "statement_id": "g10-wood-onsrud-faq2-plungefeed",
+    "source_id": "wood_onsrud_plastics_faq2",
+    "source_page": "Crazing",
+    "parameter": "plunge_feed",
+    "tool_family": "any",
+    "tool_subfamily": "flat-bottom cutter",
+    "flutes": null,
+    "centre_cutting": null,
+    "diameter_mm": null,
+    "material": {
+      "class": "other",
+      "label": "plastics"
+    },
+    "value_printed": "reducing plunge feed rate can reduce stress",
+    "unit": null,
+    "value_si": null,
+    "derived": [],
+    "verbatim": "If ramping is not possible, increasing spindle speed or reducing plunge feed rate can reduce stress",
+    "grade": "c",
+    "notes": ""
+  },
+  {
+    "statement_id": "g10-wood-idc-down-eighth",
+    "source_id": "wood_idc_feeds_speeds",
+    "source_page": "Section 2, DOWN CUT ENDMILL, 1/8\" row",
+    "parameter": "plunge_feed",
+    "tool_family": "flat_end_mill",
+    "tool_subfamily": "down cut",
+    "flutes": 2,
+    "centre_cutting": null,
+    "diameter_mm": 3.175,
+    "material": {
+      "class": "wood",
+      "label": "soft, medium and moderately hard wood (benchtop CNC)"
+    },
+    "value_printed": "Feed 50 in/min, Plunge 15 in/min",
+    "unit": "in/min",
+    "value_si": 381.0,
+    "derived": [
+      {
+        "quantity": "plunge/feed fraction",
+        "value": 0.3,
+        "formula": "15 / 50"
+      },
+      {
+        "quantity": "plunge_feed_mm_per_min",
+        "value": 381.0,
+        "formula": "15 x 25.4"
+      }
+    ],
+    "verbatim": "1/8\" 0.125 2 0.750 2.00 0.125 50 15 0.125 40% 22,000",
+    "grade": "a",
+    "notes": ""
+  },
+  {
+    "statement_id": "g10-wood-idc-down-quarter",
+    "source_id": "wood_idc_feeds_speeds",
+    "source_page": "Section 2, DOWN CUT ENDMILL, 1/4\" row",
+    "parameter": "plunge_feed",
+    "tool_family": "flat_end_mill",
+    "tool_subfamily": "down cut",
+    "flutes": 2,
+    "centre_cutting": null,
+    "diameter_mm": 6.35,
+    "material": {
+      "class": "wood",
+      "label": "soft, medium and moderately hard wood (benchtop CNC)"
+    },
+    "value_printed": "Feed 70 in/min, Plunge 30 in/min",
+    "unit": "in/min",
+    "value_si": 762.0,
+    "derived": [
+      {
+        "quantity": "plunge/feed fraction",
+        "value": 0.4286,
+        "formula": "30 / 70"
+      },
+      {
+        "quantity": "plunge_feed_mm_per_min",
+        "value": 762.0,
+        "formula": "30 x 25.4"
+      }
+    ],
+    "verbatim": "1/4\" 0.25 2 1.000 3.00 0.25 70 30 0.25 40% 19,000",
+    "grade": "a",
+    "notes": ""
+  },
+  {
+    "statement_id": "g10-wood-idc-up-eighth",
+    "source_id": "wood_idc_feeds_speeds",
+    "source_page": "Section 2, UP CUT ENDMILL, 1/8\" row",
+    "parameter": "plunge_feed",
+    "tool_family": "flat_end_mill",
+    "tool_subfamily": "up cut",
+    "flutes": 2,
+    "centre_cutting": null,
+    "diameter_mm": 3.175,
+    "material": {
+      "class": "wood",
+      "label": "soft, medium and moderately hard wood (benchtop CNC)"
+    },
+    "value_printed": "Feed 50 in/min, Plunge 25 in/min",
+    "unit": "in/min",
+    "value_si": 635.0,
+    "derived": [
+      {
+        "quantity": "plunge/feed fraction",
+        "value": 0.5,
+        "formula": "25 / 50"
+      },
+      {
+        "quantity": "plunge_feed_mm_per_min",
+        "value": 635.0,
+        "formula": "25 x 25.4"
+      }
+    ],
+    "verbatim": "1/8\" 0.125 2 0.750 2.00 0.125 50 25 0.125 40% 22,000",
+    "grade": "a",
+    "notes": "Up cut 1/8\" plunges at 25 against down cut 15 at the same feed."
+  },
+  {
+    "statement_id": "g10-wood-idc-up-quarter",
+    "source_id": "wood_idc_feeds_speeds",
+    "source_page": "Section 2, UP CUT ENDMILL, 1/4\" row",
+    "parameter": "plunge_feed",
+    "tool_family": "flat_end_mill",
+    "tool_subfamily": "up cut",
+    "flutes": 2,
+    "centre_cutting": null,
+    "diameter_mm": 6.35,
+    "material": {
+      "class": "wood",
+      "label": "soft, medium and moderately hard wood (benchtop CNC)"
+    },
+    "value_printed": "Feed 80 in/min, Plunge 40 in/min",
+    "unit": "in/min",
+    "value_si": 1016.0,
+    "derived": [
+      {
+        "quantity": "plunge/feed fraction",
+        "value": 0.5,
+        "formula": "40 / 80"
+      },
+      {
+        "quantity": "plunge_feed_mm_per_min",
+        "value": 1016.0,
+        "formula": "40 x 25.4"
+      }
+    ],
+    "verbatim": "1/4\" 0.25 2 1.00 3.00 0.25 80 40 0.250 40% 19,000",
+    "grade": "a",
+    "notes": ""
+  },
+  {
+    "statement_id": "g10-wood-idc-ball-eighth",
+    "source_id": "wood_idc_feeds_speeds",
+    "source_page": "Section 2, BALLNOSE, 1/8\" row",
+    "parameter": "plunge_feed",
+    "tool_family": "ball_nose",
+    "tool_subfamily": "ball nose",
+    "flutes": 2,
+    "centre_cutting": null,
+    "diameter_mm": 3.175,
+    "material": {
+      "class": "wood",
+      "label": "soft, medium and moderately hard wood (benchtop CNC)"
+    },
+    "value_printed": "Feed 60 in/min, Plunge 15 in/min",
+    "unit": "in/min",
+    "value_si": 381.0,
+    "derived": [
+      {
+        "quantity": "plunge/feed fraction",
+        "value": 0.25,
+        "formula": "15 / 60"
+      },
+      {
+        "quantity": "plunge_feed_mm_per_min",
+        "value": 381.0,
+        "formula": "15 x 25.4"
+      }
+    ],
+    "verbatim": "1/8\" Ballnose 0.125 2 0.500 2.00 0.125 60 15 0.05 8%",
+    "grade": "a",
+    "notes": ""
+  },
+  {
+    "statement_id": "g10-wood-idc-ball-quarter",
+    "source_id": "wood_idc_feeds_speeds",
+    "source_page": "Section 2, BALLNOSE, 1/4\" row",
+    "parameter": "plunge_feed",
+    "tool_family": "ball_nose",
+    "tool_subfamily": "ball nose",
+    "flutes": 2,
+    "centre_cutting": null,
+    "diameter_mm": 6.35,
+    "material": {
+      "class": "wood",
+      "label": "soft, medium and moderately hard wood (benchtop CNC)"
+    },
+    "value_printed": "Feed 70 in/min, Plunge 30 in/min",
+    "unit": "in/min",
+    "value_si": 762.0,
+    "derived": [
+      {
+        "quantity": "plunge/feed fraction",
+        "value": 0.4286,
+        "formula": "30 / 70"
+      },
+      {
+        "quantity": "plunge_feed_mm_per_min",
+        "value": 762.0,
+        "formula": "30 x 25.4"
+      }
+    ],
+    "verbatim": "1/4\" Ballnose 0.25 2 1.00 3.00 0.25 70 30 0.12 8%",
+    "grade": "a",
+    "notes": ""
+  },
+  {
+    "statement_id": "g10-wood-idc-v30",
+    "source_id": "wood_idc_feeds_speeds",
+    "source_page": "Section 2, V-BIT, 30 deg row",
+    "parameter": "plunge_feed",
+    "tool_family": "v_bit",
+    "tool_subfamily": "30 deg V-bit (side angle 15)",
+    "flutes": 1,
+    "centre_cutting": null,
+    "diameter_mm": 6.35,
+    "material": {
+      "class": "wood",
+      "label": "soft, medium and moderately hard wood (benchtop CNC)"
+    },
+    "value_printed": "Feed 35 in/min, Plunge 20 in/min",
+    "unit": "in/min",
+    "value_si": 508.0,
+    "derived": [
+      {
+        "quantity": "plunge/feed fraction",
+        "value": 0.5714,
+        "formula": "20 / 35"
+      },
+      {
+        "quantity": "plunge_feed_mm_per_min",
+        "value": 508.0,
+        "formula": "20 x 25.4"
+      }
+    ],
+    "verbatim": "30° V-bit 0.25 1 0.750 2.00 0.25 15 35 20 0.025",
+    "grade": "a",
+    "notes": ""
+  },
+  {
+    "statement_id": "g10-wood-idc-v60",
+    "source_id": "wood_idc_feeds_speeds",
+    "source_page": "Section 2, V-BIT, 60 deg row",
+    "parameter": "plunge_feed",
+    "tool_family": "v_bit",
+    "tool_subfamily": "60 deg V-bit (side angle 30)",
+    "flutes": 2,
+    "centre_cutting": null,
+    "diameter_mm": 6.35,
+    "material": {
+      "class": "wood",
+      "label": "soft, medium and moderately hard wood (benchtop CNC)"
+    },
+    "value_printed": "Feed 60 in/min, Plunge 20 in/min",
+    "unit": "in/min",
+    "value_si": 508.0,
+    "derived": [
+      {
+        "quantity": "plunge/feed fraction",
+        "value": 0.3333,
+        "formula": "20 / 60"
+      },
+      {
+        "quantity": "plunge_feed_mm_per_min",
+        "value": 508.0,
+        "formula": "20 x 25.4"
+      }
+    ],
+    "verbatim": "60° V-bit 0.25 2 0.216 2.00 0.25 30 60 20 0.05",
+    "grade": "a",
+    "notes": "The starter-set table on p3 prints Feed 40 for the same bit."
+  },
+  {
+    "statement_id": "g10-wood-idc-v90",
+    "source_id": "wood_idc_feeds_speeds",
+    "source_page": "Section 2, V-BIT, 90 deg row",
+    "parameter": "plunge_feed",
+    "tool_family": "v_bit",
+    "tool_subfamily": "90 deg V-bit (side angle 45)",
+    "flutes": 2,
+    "centre_cutting": null,
+    "diameter_mm": 6.35,
+    "material": {
+      "class": "wood",
+      "label": "soft, medium and moderately hard wood (benchtop CNC)"
+    },
+    "value_printed": "Feed 45 in/min, Plunge 25 in/min",
+    "unit": "in/min",
+    "value_si": 635.0,
+    "derived": [
+      {
+        "quantity": "plunge/feed fraction",
+        "value": 0.5556,
+        "formula": "25 / 45"
+      },
+      {
+        "quantity": "plunge_feed_mm_per_min",
+        "value": 635.0,
+        "formula": "25 x 25.4"
+      }
+    ],
+    "verbatim": "90° V-bit 0.25 2 0.125 2.00 0.25 45 45 25 0.1",
+    "grade": "a",
+    "notes": ""
+  },
+  {
+    "statement_id": "g10-wood-idc-v120",
+    "source_id": "wood_idc_feeds_speeds",
+    "source_page": "Section 2, V-BIT, 120 deg row",
+    "parameter": "plunge_feed",
+    "tool_family": "v_bit",
+    "tool_subfamily": "120 deg V-bit (side angle 60)",
+    "flutes": 2,
+    "centre_cutting": null,
+    "diameter_mm": 25.4,
+    "material": {
+      "class": "wood",
+      "label": "soft, medium and moderately hard wood (benchtop CNC)"
+    },
+    "value_printed": "Feed 80 in/min, Plunge 30 in/min",
+    "unit": "in/min",
+    "value_si": 762.0,
+    "derived": [
+      {
+        "quantity": "plunge/feed fraction",
+        "value": 0.375,
+        "formula": "30 / 80"
+      },
+      {
+        "quantity": "plunge_feed_mm_per_min",
+        "value": 762.0,
+        "formula": "30 x 25.4"
+      }
+    ],
+    "verbatim": "120° V-bit 1.0 2 0.288 2.00 0.25 60 80 30 0.19",
+    "grade": "a",
+    "notes": ""
+  },
+  {
+    "statement_id": "g10-wood-idc-taperball",
+    "source_id": "wood_idc_feeds_speeds",
+    "source_page": "Section 2, TAPER BALLNOSE CARVING BIT, first row",
+    "parameter": "plunge_feed",
+    "tool_family": "tapered_ball_nose",
+    "tool_subfamily": "taper ball nose, tip radius 0.015, 10 deg",
+    "flutes": 2,
+    "centre_cutting": null,
+    "diameter_mm": 6.35,
+    "material": {
+      "class": "wood",
+      "label": "soft, medium and moderately hard wood (benchtop CNC)"
+    },
+    "value_printed": "Feed 60 in/min, Plunge 25 in/min",
+    "unit": "in/min",
+    "value_si": 635.0,
+    "derived": [
+      {
+        "quantity": "plunge/feed fraction",
+        "value": 0.4167,
+        "formula": "25 / 60"
+      },
+      {
+        "quantity": "plunge_feed_mm_per_min",
+        "value": 635.0,
+        "formula": "25 x 25.4"
+      }
+    ],
+    "verbatim": "0.250 2 0.750 2.00 0.25 0.015 10 60 25 0.25 5-8%",
+    "grade": "a",
+    "notes": "Cut Dia 0.250 is the shank-end diameter; the tip radius is 0.015 in. The 0.045 tip-radius row prints the same feeds."
+  },
+  {
+    "statement_id": "g10-wood-idc-surfacing-1",
+    "source_id": "wood_idc_feeds_speeds",
+    "source_page": "Section 2, SURFACING BIT, 1\" row",
+    "parameter": "plunge_feed",
+    "tool_family": "flat_end_mill",
+    "tool_subfamily": "4 flute surfacing bit",
+    "flutes": 4,
+    "centre_cutting": null,
+    "diameter_mm": 25.4,
+    "material": {
+      "class": "wood",
+      "label": "soft, medium and moderately hard wood (benchtop CNC)"
+    },
+    "value_printed": "Feed 150 in/min, Plunge 7 in/min",
+    "unit": "in/min",
+    "value_si": 177.8,
+    "derived": [
+      {
+        "quantity": "plunge/feed fraction",
+        "value": 0.0467,
+        "formula": "7 / 150"
+      },
+      {
+        "quantity": "plunge_feed_mm_per_min",
+        "value": 177.8,
+        "formula": "7 x 25.4"
+      }
+    ],
+    "verbatim": "1“ Surfacing 1.0 4 0.250 2.00 0.25 150 7 0.125 70%",
+    "grade": "a",
+    "notes": "Fraction 0.047; a surfacing bit barely plunges."
+  },
+  {
+    "statement_id": "g10-wood-idc-bowl",
+    "source_id": "wood_idc_feeds_speeds",
+    "source_page": "Section 2, BOWL BIT, row",
+    "parameter": "plunge_feed",
+    "tool_family": "bull_nose",
+    "tool_subfamily": "bowl bit (radiused endmill)",
+    "flutes": 2,
+    "centre_cutting": null,
+    "diameter_mm": 25.4,
+    "material": {
+      "class": "wood",
+      "label": "soft, medium and moderately hard wood (benchtop CNC)"
+    },
+    "value_printed": "Feed 80 in/min, Plunge 15 in/min",
+    "unit": "in/min",
+    "value_si": 381.0,
+    "derived": [
+      {
+        "quantity": "plunge/feed fraction",
+        "value": 0.1875,
+        "formula": "15 / 80"
+      },
+      {
+        "quantity": "plunge_feed_mm_per_min",
+        "value": 381.0,
+        "formula": "15 x 25.4"
+      }
+    ],
+    "verbatim": "Bowl 1.00 2 .75 2.00 0.25 80 15 0.250 40%",
+    "grade": "a",
+    "notes": ""
+  },
+  {
+    "statement_id": "g10-wood-idc-spiral-drill",
+    "source_id": "wood_idc_feeds_speeds",
+    "source_page": "p3, 1/8\" DRILLING ENDMILL table and note",
+    "parameter": "entry_general",
+    "tool_family": "flat_end_mill",
+    "tool_subfamily": "1/8 in up-cut endmill used for spiral drilling",
+    "flutes": 2,
+    "centre_cutting": true,
+    "diameter_mm": 3.175,
+    "material": {
+      "class": "wood",
+      "label": "soft, medium and moderately hard wood (benchtop CNC)"
+    },
+    "value_printed": "Drilling: Feed 50, Plunge 60*; Conventional: Feed 50, Plunge 25",
+    "unit": "in/min",
+    "value_si": null,
+    "derived": [
+      {
+        "quantity": "spiral-drilling plunge/feed",
+        "value": 1.2,
+        "formula": "60 / 50"
+      },
+      {
+        "quantity": "conventional plunge/feed",
+        "value": 0.5,
+        "formula": "25 / 50"
+      }
+    ],
+    "verbatim": "* The plunge value is for using the spiral drilling technique.",
+    "grade": "b",
+    "notes": "Spiral drilling is a helical entry; the chart gives no helix diameter or pitch. The metric table prints 1270/635 and 1270/638 mm/min."
+  },
+  {
+    "statement_id": "g10-wood-whiteside-upcut",
+    "source_id": "wood_whiteside_cnc_brochure",
+    "source_page": "p2, Up Cut Benefits",
+    "parameter": "entry_general",
+    "tool_family": "flat_end_mill",
+    "tool_subfamily": "up cut spiral",
+    "flutes": null,
+    "centre_cutting": null,
+    "diameter_mm": null,
+    "material": {
+      "class": "wood",
+      "label": "not stated"
+    },
+    "value_printed": "Best At Plunge Cuts",
+    "unit": null,
+    "value_si": null,
+    "derived": [],
+    "verbatim": "Best At Plunge Cuts",
+    "grade": "c",
+    "notes": "The only Whiteside entry statement found."
+  },
+  {
+    "statement_id": "g10-wood-axyz-compression-ramp",
+    "source_id": "wood_axyz_compression_bit_tip",
+    "source_page": "How do I use this tool correctly?",
+    "parameter": "entry_general",
+    "tool_family": "compression",
+    "tool_subfamily": "compression and down-cut spiral",
+    "flutes": null,
+    "centre_cutting": null,
+    "diameter_mm": null,
+    "material": {
+      "class": "plywood",
+      "label": "double side laminates, melamine, plywood"
+    },
+    "value_printed": "best to ramp into the material",
+    "unit": null,
+    "value_si": null,
+    "derived": [],
+    "verbatim": "However, for downward spirals and/or compression tools, it is best to ramp into the material.",
+    "grade": "c",
+    "notes": "Advice, not a prohibition. The page also says 'a direct plunge into the material will be fine for your standard upwards tool'. Machine builder, not tool vendor."
+  }
+]

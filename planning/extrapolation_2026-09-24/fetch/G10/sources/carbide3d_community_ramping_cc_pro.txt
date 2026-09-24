@@ -1,0 +1,357 @@
+# source_url: https://community.carbide3d.com/t/ramping-in-carbide-create-pro/50824
+# accessed_on: 2026-09-25
+# raw_html_sha256: 8401947341d1d2acba2e2dd910cb8c4f02032f88d86d216ed1755d608d9a07b7
+
+Carbide 3D Community Site
+
+Ramping in Carbide Create Pro
+
+Software
+
+Carbide Create
+
+robgrz
+(Rob Grzesek (Carbide 3D))
+
+September 29, 2022, 12:07pm
+
+1
+
+We just posted an update to CC to include ramping in Pro. Right now it works well in contours, and it’s a little wonky in pockets. We’re in the middle of a big update to the pocket linking code that should fix this, and, hopefully, make the normal pocket linking better in many cases.
+
+If ramping is enabled, the feedrate is 1/3 of the feerate, or 100% of the plunge rate, whichever is higher. It’s conceivable that we’d add a dedicated ramping rate field in the tool database in the future.
+
+Check it out at:
+
+carbide3d.com
+
+Carbide Create Beta Downloads
+
+Carbide 3D, makers of The Nomad 3 desktop CNC machines and Shapeoko CNC Routers.
+
+If you poke at @KevBarn14, he might post some of the before and after videos of his aluminum test cuts using ramping. They look pretty good.
+
+14 Likes
+
+Tod1d
+(Tod (with 1 'd'))
+
+September 29, 2022, 1:25pm
+
+2
+
+Way cool!!!
+
+I love the “Ramp on shape” pattern used in contouring.
+
+The ramp starting right at the part surface could become an issue for those who aren’t super precise in setting their zero, or if the stock is not perfectly flat.
+
+I can see this replacing the “Make the slot just a hair wider & use pocket instead of contour” solution for a fully embedded tool when cutting a slot.
+
+The picture above is a typical use of ramping to essentially rough the shape down to the final profile at the bottom. In which case, I would want to use the full cut feedrate for the ramp.
+
+Although for that path I could set the plunge feedrate the same as the cut feedrate, it might be nice to have a separate ramping feedrate.
+
+Can also be used for “hole milling”
+
+Pocket path does some strange things, so I will wait for the next development to get critical.
+
+image445×577 108 KB
+
+How does it decide the diameter of the spiral in the top example? Would it make sense to make this diameter the same as the stepover? Then you are essentially “hole milling” like the example above where you’re not doing much, or any cutting with the center of the tool.
+
+I think in both of these cases the “Ramp on shape” like the contour path would be a better option.
+
+Nice addition!! This will open up a lot of possibilities.
+
+1 Like
+
+robgrz
+(Rob Grzesek (Carbide 3D))
+
+September 29, 2022, 1:45pm
+
+3
+
+Pocketing prefers to spiral if it’s far enough away from the edge because that’s easier and more reliable. (Also, Winston and I always prefer a helical plunge rather than a ramp when pocketing so we went with that). The helical behavior also ensures that if you have a pocket with a very tiny central vector, the ramp doesn’t devolve into a plunge if there’s room for a helix.
+
+If the path is close to the edge then we have to zigzag (instead of a straight ramp) to end up in the same X/Y location that we began. If the X/Y location changed, then everything would have to relinked, maybe in a less optimal way, or we’d have to add retracts to get back to the start for the next layer.
+
+It looks a little strange because it makes the path as long as possible and then reverses back. I can see changing it to a length that makes it look better, probably based on a multiple of the tool diameter.
+
+The helical bore should be 75% of the tool diameter right now. We could make that a little bigger to create more clearance for chips but 90% would probably be the upper limit.
+
+I assume we’ll also add a little extra height for the initial plunge prior to ramping but we kept the current behavior to make sure we’re not making too many changes at one time.
+
+3 Likes
+
+Tod1d
+(Tod (with 1 'd'))
+
+September 29, 2022, 2:15pm
+
+4
+
+Understood. 75% sounds about right for chip clearance on the helix.
+
+The zig-zag is totally OK.
+
+The last linear move in this engage, I think will leave a ‘chatter ring’ on the part when it reaches the final depth. Would it be better to spiral all the way down to the final depth, then move in just XY to get to the start point?
+
+P.S. These all look backward to me because I’m so used to mostly climb cutting.
+
+P.P.S. I find myself when looking at simulations trying to determine where the tool starts & finishes.
+
+Possible to make engages a different color, and retracts another color???
+
+2 Likes
+
+robgrz
+(Rob Grzesek (Carbide 3D))
+
+September 29, 2022, 2:30pm
+
+5
+
+Tod1d:
+
+The last linear move in this engage, I think will leave a ‘chatter ring’ on the part when it reaches the final depth. Would it be better to spiral all the way down to the final depth, then move in just XY to get to the start point?
+
+I’m not sure, I had the same thought. I ended up settling on the idea that it’s still ramping at the defined angle so it “should” be OK. it’s not a big deal to change so we’re open to feedback.
+
+Tod1d:
+
+These all look backward to me because I’m so used to mostly climb cutting.
+
+Climb/conventional options will likely make an appearance. The helix should be flipped in the mean time.
+
+Tod1d:
+
+I find myself when looking at simulations trying to determine where the tool starts & finishes.
+
+Possible to make engages a different color, and retracts another color???
+
+Very possible. I think the simulation view would benefit from a number of updates but it’s a big undertaking so it’s probably a V8 thing.
+
+5 Likes
+
+robgrz
+(Rob Grzesek (Carbide 3D))
+
+September 30, 2022, 2:01pm
+
+7
+
+We just uploaded 733 to Carbide Create Beta Downloads
+
+(NEW) New pocket linking code looks for more opportunities to connect the pocket sections.
+
+(NEW PRO) Linear ramping in pockets tries to keep the x/y length of the ramp shorter to look better. (There’s no functional value.)
+
+(NEW PRO) Flipped helix ramp direction.
+
+That new pocket code could be a big win for a lot of files, with or without ramping, but it’s a big change. Please let me know if you find any part of a pocket being dropped or dangerously linked (it shouldn’t happen, but you never know).
+
+2 Likes
+
+robgrz
+(Rob Grzesek (Carbide 3D))
+
+September 30, 2022, 5:41pm
+
+8
+
+We just reset all of the prior trials for Pro so if you’d like to play with the new ramping feature, you should be able to get a trial code at Carbide Create Pro , even if you’ve had one in the past.
+
+5 Likes
+
+neilferreri
+(Neil Ferreri Ω)
+
+September 30, 2022, 5:49pm
+
+9
+
+This looks like great stuff @robgrz! Excited to look at this more in depth.
+
+robgrz
+(Rob Grzesek (Carbide 3D))
+
+September 30, 2022, 8:35pm
+
+10
+
+Not related to ramping, but we just uploaded another build to Carbide Create Beta Downloads
+
+(NEW) Reworked scale command. Now allows editing width and height separately and undo during command.
+
+Normally, we’d queue this up a build with bigger updates but it’s the weekend, and we know a lot of you are going to be in the shop. Maybe this will help someone out a bit.
+
+4 Likes
+
+GJM
+(Gary Morgen)
+
+September 30, 2022, 8:37pm
+
+11
+
+@robgrz Getting “No Content”
+
+robgrz
+(Rob Grzesek (Carbide 3D))
+
+September 30, 2022, 8:38pm
+
+12
+
+I jumped the gun. I just noticed that it’s not done uploading yet so it might be another 5 minutes.
+
+1 Like
+
+GJM
+(Gary Morgen)
+
+September 30, 2022, 8:39pm
+
+13
+
+Sounds like I’m the one who jumped the gun. Can’t get those updates fast enough, you know?
+
+robgrz
+(Rob Grzesek (Carbide 3D))
+
+September 30, 2022, 8:43pm
+
+14
+
+Ok, you should be good to go now.
+
+1 Like
+
+GJM
+(Gary Morgen)
+
+September 30, 2022, 8:49pm
+
+15
+
+Yup. Loads fine. Thanks.
+
+robgrz
+(Rob Grzesek (Carbide 3D))
+
+October 1, 2022, 2:33pm
+
+16
+
+We may have added a bug in that last build se we just uploaded 735 to Carbide Create Beta Downloads
+
+(NEW) 2D shape parameter edit boxes apply immediately after the editing is complete, not with the enter button only.
+
+(NEW) Move and Rotate commands allow undo within the command and do not require an enter press for inputs.
+
+(NEW) Rotate command does a better job of keeping the rotation point constant after rotation.
+
+robgrz
+(Rob Grzesek (Carbide 3D))
+
+October 1, 2022, 9:30pm
+
+17
+
+We found a crash in the new pocket code. Grab 7373 from Carbide Create Beta Downloads and you should be good to go.
+
+1 Like
+
+Tod1d
+(Tod (with 1 'd'))
+
+October 3, 2022, 11:50am
+
+18
+
+robgrz:
+
+(NEW) Reworked scale command. Now allows editing width and height separately and undo during command.
+
+I noticed the scale factor doesn’t update when you change the width or height.
+
+And greys out when you uncheck “Keep Proportions”.
+
+How about “X scale” & “Y Scale” when non-proportional?
+
+If I change the scale factor & hit tab or enter, the width & height update, and the scale factor goes back to 1.000. This also seems odd.
+
+I’m kinda missing a Cancel button on that function too.
+
+1 Like
+
+robgrz
+(Rob Grzesek (Carbide 3D))
+
+October 3, 2022, 12:33pm
+
+19
+
+Tod1d:
+
+I noticed the scale factor doesn’t update when you change the width or height.
+
+Nope, it doesn’t change because the new size takes effect immediately, making the new scale 1.0
+
+Tod1d:
+
+How about “X scale” & “Y Scale” when non-proportional?
+
+We generally try to keep options as minimal as possible because more options makes things more confusing for folks.
+
+What you can do is add " *1.5 " to the end of the current size if you’d like to scale that dimension by 1.5 on it’s own. This is functionally identical to a separate scale x/y field.
+
+Tod1d:
+
+If I change the scale factor & hit tab or enter, the width & height update, and the scale factor goes back to 1.000. This also seems odd.
+
+We did have a build that left it at the prior value (1.5 for instance), but it wasn’t immediately clear how to scale by that same value again. You could either go back and just hit enter or add/remove a 0 and hit enter. Neither were intuitive.
+
+Tod1d:
+
+I’m kinda missing a Cancel button on that function too.
+
+Since the changes take effect immediately, there’s no need for both Ok and Cancel. They’d have the same effect. The current “Done” ends the command just like cancel would have.
+
+1 Like
+
+Tod1d
+(Tod (with 1 'd'))
+
+October 3, 2022, 1:23pm
+
+20
+
+Seems inconsistent with other features that “Apply”, “OK”, “Cancel”, where if you cancel it returns the feature to it’s original state before the dialog appeared. Sure, I can “Done” then Ctrl-Z to undo.
+
+robgrz
+(Rob Grzesek (Carbide 3D))
+
+October 3, 2022, 7:48pm
+
+21
+
+One more update, 738, at Carbide Create Beta Downloads to speed up the calculations:
+
+2 Likes
+
+next page →
+
+Home
+
+Categories
+
+Guidelines
+
+Terms of Service
+
+Privacy Policy
+
+Powered by Discourse, best viewed with JavaScript enabled

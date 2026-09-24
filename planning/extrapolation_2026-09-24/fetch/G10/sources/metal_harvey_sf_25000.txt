@@ -1,0 +1,54 @@
+# source_url: https://harveyperformance.widen.net/content/tfcdc7pipl/pdf/SF_25000.pdf?u=d9orjt
+# accessed_on: 2026-09-25
+# pdf_sha256: 65da065ac2c7e62a4e22f426105f741fcd9a48270d0057e73c0ff9036117ad17
+
+               Speeds & Feeds
+               Product Table: Engraving Cutters - Pointed
+               Characteristics: 1 Flute, Pointed Tip
+
+
+
+
+                                                                                                                               Chip Load (IPT) by Material
+                                          Plastics                   Non-Ferrous                               Iron                               Carbon Steels                      Stainless Steels            Titanium          High Temp Alloys
+ Series or Item        RPM                                                                                                                                                                                                                            Axial DOC
+                                  Non-Filled, Glass Filled,    Aluminum, Magnesium,          Cast Iron       Cast Iron       Ductile,                                                                                                 Inconel,
+                                                                                                                                           < 29 Rc    30 < 39 Rc 40 < 45 Rc        < 30 Rc     32 < 45 Rc   < 30 Rc   32 < 45 Rc
+                                    Carbon Fiber, G10              Copper Alloys             (< 30 Rc)       (30+ Rc)       Malleable                                                                                              Waspaloy, Monel
+     250xx            6000+                .00126                       .00084                 .00084         .00034         .00042         .00050       .00038       .00021        .00042       .00021     .00042     .00021           .00034         < .010
+     251xx            6000+                .00144                       .00096                 .00096         .00038         .00048         .00058       .00043       .00024        .00048       .00024     .00048     .00024           .00038         < .010
+     300xx            6000+                .00180                       .00120                 .00120         .00048         .00060         .00072       .00054       .00030        .00060       .00030     .00060     .00030           .00048         < .010
+     301xx            6000+                .00198                       .00132                 .00132         .00053         .00066         .00079       .00059       .00033        .00066       .00033     .00066     .00033           .00053         < .010
+     304xx            6000+                .00171                       .00114                 .00114         .00046         .00057         .00068       .00051       .00029        .00057       .00029     .00057     .00029           .00046         < .010
+     305xx            6000+                .00188                       .00125                 .00125         .00050         .00063         .00075       .00056       .00031        .00063       .00031     .00063     .00031           .00050         < .010
+    8535xx            6000+                .00135                       .00090                 .00090         .00036         .00045         .00054       .00041       .00023        .00045       .00023     .00045     .00023           .00036         < .010
+    8555xx            6000+                .00171                       .00114                 .00114         .00046         .00057         .00068       .00051       .00029        .00057       .00029     .00057     .00029           .00046         < .010
+    8841xx            6000+                .00198                       .00132                 .00132         .00053         .00066         .00079       .00059       .00033        .00066       .00033     .00066     .00033           .00053         < .010
+    8986xx            6000+                .00180                       .00120                 .00120         .00048         .00060         .00072       .00054       .00030        .00060       .00030     .00060     .00030           .00048         < .010
+    9372xx            6000+                .00180                       .00120                 .00120         .00048         .00060         .00072       .00054       .00030        .00060       .00030     .00060     .00030           .00048         < .010
+    9378xx            6000+                .00144                       .00096                 .00096         .00038         .00048         .00058       .00043       .00024        .00048       .00024     .00048     .00024           .00038         < .010
+    9417xx            6000+                .00126                       .00084                 .00084         .00034         .00042         .00050       .00038       .00021        .00042       .00021     .00042     .00021           .00034         < .010
+    9717xx            6000+                .00189                       .00126                 .00126         .00050         .00063         .00076       .00057       .00032        .00063       .00032     .00063     .00032           .00050         < .010
+    9786xx            6000+                .00144                       .00096                 .00096         .00038         .00048         .00058       .00043       .00024        .00048       .00024     .00048     .00024           .00038         < .010
+    9815xx            6000+                .00126                       .00084                 .00084         .00034         .00042         .00050       .00038       .00021        .00042       .00021     .00042     .00021           .00034         < .010
+    9835xx            6000+                .00207                       .00138                 .00138         .00055         .00069         .00083       .00062       .00035        .00069       .00035     .00069     .00035           .00055         < .010
+    9838xx            6000+                .00117                       .00078                 .00078         .00031         .00039         .00047       .00035       .00020        .00039       .00020     .00039     .00020           .00031         < .010
+    9905xx            6000+                .00216                       .00144                 .00144         .00058         .00072         .00086       .00065       .00036        .00072       .00036     .00072     .00036           .00058         < .010
+    9965xx            6000+                .00090                       .00060                 .00060         .00024         .00030         .00036       .00027       .00015        .00030       .00015     .00030     .00015           .00024         < .010
+    9973xx            6000+                .00153                       .00102                 .00102         .00041         .00051         .00061       .00046       .00026        .00051       .00026     .00051     .00026           .00041         < .010
+    9981xx            6000+                .00099                       .00066                 .00066         .00026         .00033         .00040       .00030       .00017        .00033       .00017     .00033     .00017           .00026         < .010
+    9984xx            6000+                .00162                       .00108                 .00108         .00043         .00054         .00065       .00049       .00027        .00054       .00027     .00054     .00027           .00043         < .010
+    9997xx            6000+                .00108                       .00072                 .00072         .00029         .00036         .00043       .00032       .00018        .00036       .00018     .00036     .00018           .00029         < .010
+
+Please note:
+   All posted speed and feed parameters are suggested starting values that may be increased given optimal setup conditions (mini mal runout is required for best results).
+
+   Suggested speed is 6000 rpm or more. Choose an rpm value that creates the least amount of internal machine vibration. In ma ny cases, a speed increaser is helpful.
+   Posted chip loads reflect axial depths of cut up to .009. For depths of cut = .010" -.015", reduce posted chip loads by 20%. F or depths of cut = .016" -.020", reduce posted chip loads by 30%.
+   Posted chip loads reflect uncoated cutters. Coating is better suited to prolong tool life rather than decrease cycle times.
+   Posted chip loads reflect HORIZONTAL milling conditions. For VERTICAL plunge milling to depth, reduce posted chip loads by 5 0% (ramping is preferred to maintain tip integrity).
+
+   If you require additional information, Harvey Tool has a team of technical experts available to assist you through even the most challenging applications. Please contact us at 800-645-5609 or Harveytech@harveyperformance.com.
+
+   WARNING: Cutting tools may shatter under improper use. Government regulations require use of safety glasses and other approp riate safety equipment in the vicinity of use.
+

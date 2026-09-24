@@ -1,0 +1,1301 @@
+{
+ "sources": [
+  {
+   "source_id": "precisebits_fret_plane",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "7ea1ad3fd8cd2cd79d2f9a302ee032eeee12efbe5db2312f50d7fa795bd0cc9f",
+   "note": "Fresh bytes equal raw_sha256; stored text_sha256 equals the stored file."
+  },
+  {
+   "source_id": "precisebits_vtip_2500",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "0e57846f903d20c118dac8988dd1a31e367694a1264aaafbf098574925eacd2a",
+   "note": "Fresh bytes equal raw_sha256; stored text_sha256 equals the stored file."
+  },
+  {
+   "source_id": "precisebits_vtip_scoreengrave",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "35a04123edc1843feb862102a6708cdf198a3e51704a035f529a172d8897159b",
+   "note": "Fresh bytes equal raw_sha256; stored text_sha256 equals the stored file."
+  },
+  {
+   "source_id": "precisebits_tapered_ball_2f",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "cd0b38a9c270bf214dfa5685f38fc80580114ee56c8c03ce944d90676b0ee50a",
+   "note": "Fresh bytes equal raw_sha256; stored text_sha256 equals the stored file."
+  },
+  {
+   "source_id": "precisebits_point_styles",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "7d8ee8e5e68034dc362e439e6841827194fd24de0d35e62a5087c335928fc87c",
+   "note": "Fresh bytes equal raw_sha256; stored text_sha256 equals the stored file."
+  },
+  {
+   "source_id": "carbide3d_community_ramping_cc_pro",
+   "rehash": "changed",
+   "http_status": 200,
+   "fresh_sha256": "80e0ef4afe7c9834e1638bf1355b887c3dc24323f85fb9ee33a2ecad66210bae",
+   "note": "Discourse HTML differs (dynamic parts). The quoted posts 1 and 3 occur verbatim in the fresh HTML and in /t/50824.json. robgrz: staff=true, admin=true, moderator=true; post 1 created 2022-09-29T12:07Z."
+  },
+  {
+   "source_id": "carbide3d_community_ramp_entry_angle",
+   "rehash": "changed",
+   "http_status": 200,
+   "fresh_sha256": "94c5b793e1212dce004ffad0ee3a11a2b950e2fa58d7b46f318f0dfd5f768d17",
+   "note": "Discourse HTML differs (dynamic parts). Both quoted sentences occur verbatim in the fresh HTML and /t/75578.json. machinemoney and Tod1d: staff=false. The only staff reply (WillAdams, post 4) gives no angle."
+  },
+  {
+   "source_id": "sienci_feeds_speeds_metric",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "e7c4519025ce1a285733138d1295423995617a80e2b4f2b5c135d4607a6167d8",
+   "note": "Same bytes also at the vendor URL https://resources.sienci.com/wp-content/uploads/2022/10/FeedsSpeedsMetric.pdf (sha256 e7c45190...). PDF CreationDate 2022-11-08."
+  },
+  {
+   "source_id": "sienci_lm_feeds_and_speeds",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "8459a9484662552ed5b750bf3fa8282d7f71d94ffe2cc487431516149001efef",
+   "note": "Live page resources.sienci.com/view/lm-feeds-and-speeds/ also prints the 100-300 mm/min sentence; datePublished 2021-04-19, dateModified 2025-11-18."
+  },
+  {
+   "source_id": "vectric_v12_profile_toolpath",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "b42d9d95ace0f28b4b0f65bc34777b5cb3647ca4a586ced2f5ce9341ed927885",
+   "note": "Fresh bytes equal raw_sha256; stored text_sha256 equals the stored file."
+  },
+  {
+   "source_id": "vectric_tool_database_v11",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "dc4881ed6115fdae8c43917f744245a91aff8586b7b8375adbf957b9d40668af",
+   "note": "Fresh bytes equal raw_sha256; stored text_sha256 equals the stored file."
+  },
+  {
+   "source_id": "fusion_adaptive_roughing_reference",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "780839ed3ad78a1cc9c0faeed849f01fb9e13fa43414097cedb8277329619b2d",
+   "note": "The Ramping Angle figure (images/diagram/helical-ramp-angle.png, alt \"ramping angle - 2 degrees\") prints 2 deg as an example. The fetch did not record it."
+  },
+  {
+   "source_id": "cnccookbook_helical_ramp_angle",
+   "rehash": "match",
+   "http_status": 200,
+   "fresh_sha256": "67b162a8c484c09d3a142bc493eae211255582dac295641e7bed6b5df1db8807",
+   "note": "Fresh bytes equal raw_sha256; stored text_sha256 equals the stored file."
+  },
+  {
+   "source_id": "carbide3d_s3_feeds_250",
+   "rehash": "unreachable",
+   "http_status": 0,
+   "fresh_sha256": null,
+   "note": "web.archive.org: connect timeout / refused twice (id_ and plain URL). Live docs.carbide3d.com URL returns 200 with a 38134 B HTML page (sha256 fb344538...), not the PDF. Stored PDF is byte-identical to fetch/G9/pdf/S3_feeds_250.pdf and equals the G9 sources.json pdf_sha256 288543263d3f..."
+  },
+  {
+   "source_id": "carbide3d_nomad883_feeds_125",
+   "rehash": "unreachable",
+   "http_status": 0,
+   "fresh_sha256": null,
+   "note": "web.archive.org unreachable; live URL gives the same 38134 B HTML page. Stored PDF is byte-identical to fetch/G9/pdf/Nomad883_feeds_125.pdf. G9 sources.json has NO record for the Nomad chart (only the S3 record mentions it), so the \"sha256 equals the G9 record\" header claim has no G9 record to match; it matches the G9 file only."
+  },
+  {
+   "source_id": "shopbot_user_guide_2015",
+   "rehash": "unreachable",
+   "http_status": 403,
+   "fresh_sha256": null,
+   "note": "shopbottools.com returns nginx 403 to this host for every URL (also the home page), with and without a referer. Checked against the stored PDF (Adobe PDF Library 11.0, CreationDate 2015-03-21); the quote is on PDF page 40 (printed \"Page -40-\")."
+  }
+ ],
+ "statements": [
+  {
+   "statement_id": "g10-hobby-001",
+   "verdict": "confirmed",
+   "checked_against": "fresh copy precisebits_fret_plane",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Verbatim, value, unit and derived values recomputed and found in the source."
+  },
+  {
+   "statement_id": "g10-hobby-002",
+   "verdict": "confirmed",
+   "checked_against": "fresh copy precisebits_fret_plane",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Verbatim, value, unit and derived values recomputed and found in the source."
+  },
+  {
+   "statement_id": "g10-hobby-003",
+   "verdict": "confirmed",
+   "checked_against": "fresh copy precisebits_fret_plane",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Verbatim, value, unit and derived values recomputed and found in the source."
+  },
+  {
+   "statement_id": "g10-hobby-004",
+   "verdict": "confirmed",
+   "checked_against": "fresh copy precisebits_vtip_2500",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Material label omits the metals the page also lists (zinc, aluminum, copper, brass...). Class \"any\" is correct. diameter_mm 6.35 is the shank; max cutting diameter 0.248 in."
+  },
+  {
+   "statement_id": "g10-hobby-005",
+   "verdict": "confirmed",
+   "checked_against": "fresh copy precisebits_vtip_scoreengrave",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Material label is incomplete: the page lists plastic, G-10/FR-4, aluminum, hardwood, softwood, MDF. Class \"any\" is correct. Shank 0.1250 in confirmed."
+  },
+  {
+   "statement_id": "g10-hobby-006",
+   "verdict": "confirmed",
+   "checked_against": "fresh copy precisebits_vtip_scoreengrave",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Verbatim, value, unit and derived values recomputed and found in the source."
+  },
+  {
+   "statement_id": "g10-hobby-007",
+   "verdict": "confirmed",
+   "checked_against": "fresh copy precisebits_tapered_ball_2f",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Verbatim, value, unit and derived values recomputed and found in the source."
+  },
+  {
+   "statement_id": "g10-hobby-008",
+   "verdict": "confirmed",
+   "checked_against": "fresh copy precisebits_point_styles",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Verbatim, value, unit and derived values recomputed and found in the source."
+  },
+  {
+   "statement_id": "g10-hobby-009",
+   "verdict": "confirmed",
+   "checked_against": "fresh copy precisebits_point_styles",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Reading \"tip angle, not ramp angle\" is reasonable; the page does not define the angle."
+  },
+  {
+   "statement_id": "g10-hobby-010",
+   "verdict": "confirmed",
+   "checked_against": "fresh copy carbide3d_community_ramping_cc_pro",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Post 1 by robgrz, Discourse staff/admin/moderator flags true, 2022-09-29T12:07Z. It states CC Pro behaviour (\"If ramping is enabled, the feedrate is...\"), not advice."
+  },
+  {
+   "statement_id": "g10-hobby-011",
+   "verdict": "confirmed",
+   "checked_against": "fresh copy carbide3d_community_ramping_cc_pro",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Post 3 by robgrz, staff, 2022-09-29T13:45Z."
+  },
+  {
+   "statement_id": "g10-hobby-012",
+   "verdict": "confirmed",
+   "checked_against": "fresh copy carbide3d_community_ramp_entry_angle",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "User post (staff=false). No staff post in the thread confirms 20 deg. Carbide 3D guides/hub toolpath pages and the v5 manual print no ramp angle."
+  },
+  {
+   "statement_id": "g10-hobby-013",
+   "verdict": "confirmed",
+   "checked_against": "fresh copy carbide3d_community_ramp_entry_angle",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Tod1d staff=false (forum regular)."
+  },
+  {
+   "statement_id": "g10-hobby-014",
+   "verdict": "confirmed",
+   "checked_against": "fresh copy sienci_lm_feeds_and_speeds",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Verbatim, value, unit and derived values recomputed and found in the source."
+  },
+  {
+   "statement_id": "g10-hobby-015",
+   "verdict": "confirmed",
+   "checked_against": "fresh copy vectric_v12_profile_toolpath",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Verbatim, value, unit and derived values recomputed and found in the source."
+  },
+  {
+   "statement_id": "g10-hobby-016",
+   "verdict": "confirmed",
+   "checked_against": "fresh copy vectric_v12_profile_toolpath",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Verbatim, value, unit and derived values recomputed and found in the source."
+  },
+  {
+   "statement_id": "g10-hobby-017",
+   "verdict": "confirmed",
+   "checked_against": "fresh copy vectric_tool_database_v11",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Verbatim, value, unit and derived values recomputed and found in the source."
+  },
+  {
+   "statement_id": "g10-hobby-018",
+   "verdict": "confirmed",
+   "checked_against": "fresh copy fusion_adaptive_roughing_reference",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "The reading \"helix path radius <= 0.5 x D\" is fair: the Fusion value is the helix path diameter (\"causes the tool to overlap its center\"); a boss stays when path radius > tool radius. Exact for a flat-bottom tool only."
+  },
+  {
+   "statement_id": "g10-hobby-019",
+   "verdict": "grade_wrong",
+   "checked_against": "fresh copy fusion_adaptive_roughing_reference",
+   "correct_value": "0.8 x D as an example good helix path diameter; maximum 1.0 x D",
+   "correct_grade": "c (parameter: example, not max)",
+   "note": "Captions confirmed (\"Value of 1.8 x the Dia\" / \"Value of 0.8 x the Dia\", table under the helix-diameter-3/-4 animations). But 0.8 x D is an example of a good value, not a maximum. Parameter helix_diameter_max_frac with value 0.8 over-claims; the printed maximum is 1.0 x D (g10-hobby-018). Record 0.8 as an example, grade c."
+  },
+  {
+   "statement_id": "g10-hobby-020",
+   "verdict": "confirmed",
+   "checked_against": "fresh copy fusion_adaptive_roughing_reference",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Verbatim, value, unit and derived values recomputed and found in the source."
+  },
+  {
+   "statement_id": "g10-hobby-021",
+   "verdict": "confirmed",
+   "checked_against": "fresh copy fusion_adaptive_roughing_reference",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Verbatim, value, unit and derived values recomputed and found in the source."
+  },
+  {
+   "statement_id": "g10-hobby-022",
+   "verdict": "confirmed",
+   "checked_against": "fresh copy cnccookbook_helical_ramp_angle",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Verbatim, value, unit and derived values recomputed and found in the source."
+  },
+  {
+   "statement_id": "g10-hobby-023",
+   "verdict": "confirmed",
+   "checked_against": "fresh copy cnccookbook_helical_ramp_angle",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Verbatim, value, unit and derived values recomputed and found in the source."
+  },
+  {
+   "statement_id": "g10-hobby-024",
+   "verdict": "confirmed",
+   "checked_against": "fresh copy cnccookbook_helical_ramp_angle",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Verbatim, value, unit and derived values recomputed and found in the source."
+  },
+  {
+   "statement_id": "g10-hobby-025",
+   "verdict": "confirmed",
+   "checked_against": "fresh copy cnccookbook_helical_ramp_angle",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Second-hand. One search for the OSG primary found no OSG document with 10-20 deg."
+  },
+  {
+   "statement_id": "g10-hobby-026",
+   "verdict": "confirmed",
+   "checked_against": "fresh copy cnccookbook_helical_ramp_angle",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Verbatim, value, unit and derived values recomputed and found in the source."
+  },
+  {
+   "statement_id": "g10-hobby-027",
+   "verdict": "confirmed",
+   "checked_against": "stored PDF, p.40 (site 403)",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Page ~40 is exactly PDF page 40. 0.5/1.7 = 0.2941. XY 1.7 in/s is a start value for \"most woods\"."
+  },
+  {
+   "statement_id": "g10-hobby-028",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Carving/Detailing - Regular Speed): 90, 60 Degree V-bit - V-Carving feed 2240 plunge 750 RPM 22000; fraction 750/2240=0.335. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-029",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Carving/Detailing - Regular Speed): 30, 90, 60 Degree V-bit - Fine Detail/Engraving feed 1120 plunge 370 RPM 22000; fraction 370/1120=0.330. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-030",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Carving/Detailing - Regular Speed): 1/4\" - D1/16\" Tapered Ball End Mill - Coarse feed 3170 plunge 1580 RPM 28500; fraction 1580/3170=0.498. Tier from End Mills block order, checked on the rendered page. NOTE: the newer live web table (resources.sienci.com/view/cnc-feeds-speeds/, dateModified 2026-05-13) differs: 1/4\" tapered Coarse, soft: live web table 2470/820 (0.332)."
+  },
+  {
+   "statement_id": "g10-hobby-031",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Carving/Detailing - Regular Speed): 1/4\" - D1/16\" Tapered Ball End Mill - Fine feed 3800 plunge 1270 RPM 28500; fraction 1270/3800=0.334. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-032",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Carving/Detailing - Regular Speed): 1/8\" - D0.5mm Tapered Ball End Mill - Coarse feed 2000 plunge 1000 RPM 28500; fraction 1000/2000=0.500. Tier from End Mills block order, checked on the rendered page. NOTE: the newer live web table (resources.sienci.com/view/cnc-feeds-speeds/, dateModified 2026-05-13) differs: 1/8\" tapered Coarse, soft: live web table 2000/670 (0.335)."
+  },
+  {
+   "statement_id": "g10-hobby-033",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Carving/Detailing - Regular Speed): 1/8\" - D0.5mm Tapered Ball End Mill - Fine feed 3640 plunge 1820 RPM 28500; fraction 1820/3640=0.500. Tier from End Mills block order, checked on the rendered page. NOTE: the newer live web table (resources.sienci.com/view/cnc-feeds-speeds/, dateModified 2026-05-13) differs: 1/8\" tapered Fine, soft: live web table 3640/1210 (0.332)."
+  },
+  {
+   "statement_id": "g10-hobby-034",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Carving/Detailing - Regular Speed): 1/4\" Ball End Mill - Finishing feed 2790 plunge 1400 RPM 22000; fraction 1400/2790=0.502. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-035",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Carving/Detailing - Regular Speed): 1/8\" Ball End Mill - Finishing feed 2060 plunge 1030 RPM 27000; fraction 1030/2060=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-036",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Reduced Speed - Finishing, or mild cutting): 1/4\" Single Flute Flat End Mill UC feed 1620 plunge 810 RPM 17000; fraction 810/1620=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-037",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Reduced Speed - Finishing, or mild cutting): 1/4\" Flat End Mill UC feed 1650 plunge 830 RPM 12000; fraction 830/1650=0.503. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-038",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Reduced Speed - Finishing, or mild cutting): 1/4\" Flat End Mill DC feed 1650 plunge 830 RPM 12000; fraction 830/1650=0.503. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-039",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Reduced Speed - Finishing, or mild cutting): 1/4\" Ball End Mill feed 1650 plunge 830 RPM 12000; fraction 830/1650=0.503. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-040",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Reduced Speed - Finishing, or mild cutting): 1/8\" Single Flute Flat End Mill UC feed 1050 plunge 530 RPM 22000; fraction 530/1050=0.505. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-041",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Reduced Speed - Finishing, or mild cutting): 1/8\" Flat End Mill UC feed 1620 plunge 810 RPM 17000; fraction 810/1620=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-042",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Reduced Speed - Finishing, or mild cutting): 1/8\" Flat End Mill DC feed 1620 plunge 810 RPM 17000; fraction 810/1620=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-043",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Reduced Speed - Finishing, or mild cutting): 1/8\" Ball End Mill feed 1620 plunge 810 RPM 17000; fraction 810/1620=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-044",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Reduced Speed - Finishing, or mild cutting): 1/16\" Flat End Mill UC feed 860 plunge 430 RPM 17000; fraction 430/860=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-045",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Reduced Speed - Finishing, or mild cutting): 1/16\" Flat End Mill DC feed 860 plunge 430 RPM 17000; fraction 430/860=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-046",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Reduced Speed - Finishing, or mild cutting): 1/16\" Corncob End Mill feed 860 plunge 430 RPM 17000; fraction 430/860=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-047",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Reduced Speed - Finishing, or mild cutting): 22mm Surfacing Bit feed 1550 plunge 780 RPM 17000; fraction 780/1550=0.503. Tier from End Mills block order, checked on the rendered page. Family flat_end_mill for a 22 mm surfacing bit is an inference; keep it out of end-mill fits."
+  },
+  {
+   "statement_id": "g10-hobby-048",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Reduced Speed - Finishing, or mild cutting): 1/2\" Round Groove Bit feed 860 plunge 430 RPM 17000; fraction 430/860=0.500. Tier from End Mills block order, checked on the rendered page. centre_cutting true and family ball_nose are inferred (core box bit); the chart prints only a plunge rate."
+  },
+  {
+   "statement_id": "g10-hobby-049",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Reduced Speed - Finishing, or mild cutting): 3/4\" Round Groove Bit feed 860 plunge 430 RPM 17000; fraction 430/860=0.500. Tier from End Mills block order, checked on the rendered page. centre_cutting true and family ball_nose are inferred (core box bit); the chart prints only a plunge rate."
+  },
+  {
+   "statement_id": "g10-hobby-050",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Reduced Speed - Finishing, or mild cutting): 1\" Round Groove Bit feed 860 plunge 430 RPM 17000; fraction 430/860=0.500. Tier from End Mills block order, checked on the rendered page. centre_cutting true and family ball_nose are inferred (core box bit); the chart prints only a plunge rate."
+  },
+  {
+   "statement_id": "g10-hobby-051",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Regular Speed): 1/4\" Single Flute Flat End Mill UC feed 2160 plunge 1080 RPM 17000; fraction 1080/2160=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-052",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Regular Speed): 1/4\" Flat End Mill UC feed 2190 plunge 1100 RPM 12000; fraction 1100/2190=0.502. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-053",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Regular Speed): 1/4\" Flat End Mill DC feed 2190 plunge 1100 RPM 12000; fraction 1100/2190=0.502. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-054",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Regular Speed): 1/4\" Ball End Mill feed 2190 plunge 1100 RPM 12000; fraction 1100/2190=0.502. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-055",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Regular Speed): 1/8\" Single Flute Flat End Mill UC feed 1400 plunge 700 RPM 22000; fraction 700/1400=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-056",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Regular Speed): 1/8\" Flat End Mill UC feed 2160 plunge 1080 RPM 17000; fraction 1080/2160=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-057",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Regular Speed): 1/8\" Flat End Mill DC feed 2160 plunge 1080 RPM 17000; fraction 1080/2160=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-058",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Regular Speed): 1/8\" Ball End Mill feed 2160 plunge 1080 RPM 17000; fraction 1080/2160=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-059",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Regular Speed): 1/16\" Flat End Mill UC feed 1080 plunge 540 RPM 17000; fraction 540/1080=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-060",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Regular Speed): 1/16\" Flat End Mill DC feed 1080 plunge 540 RPM 17000; fraction 540/1080=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-061",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Regular Speed): 1/16\" Corncob End Mill feed 1080 plunge 540 RPM 17000; fraction 540/1080=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-062",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Regular Speed): 22mm Surfacing Bit feed 2070 plunge 1040 RPM 17000; fraction 1040/2070=0.502. Tier from End Mills block order, checked on the rendered page. Family flat_end_mill for a 22 mm surfacing bit is an inference; keep it out of end-mill fits."
+  },
+  {
+   "statement_id": "g10-hobby-063",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Regular Speed): 1/2\" Round Groove Bit feed 1040 plunge 520 RPM 17000; fraction 520/1040=0.500. Tier from End Mills block order, checked on the rendered page. centre_cutting true and family ball_nose are inferred (core box bit); the chart prints only a plunge rate."
+  },
+  {
+   "statement_id": "g10-hobby-064",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Regular Speed): 3/4\" Round Groove Bit feed 1300 plunge 650 RPM 17000; fraction 650/1300=0.500. Tier from End Mills block order, checked on the rendered page. centre_cutting true and family ball_nose are inferred (core box bit); the chart prints only a plunge rate."
+  },
+  {
+   "statement_id": "g10-hobby-065",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Regular Speed): 1\" Round Groove Bit feed 1300 plunge 650 RPM 17000; fraction 650/1300=0.500. Tier from End Mills block order, checked on the rendered page. centre_cutting true and family ball_nose are inferred (core box bit); the chart prints only a plunge rate."
+  },
+  {
+   "statement_id": "g10-hobby-066",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Full Speed - Roughing or aggressive cutting): 1/4\" Single Flute Flat End Mill UC feed 2700 plunge 1350 RPM 17000; fraction 1350/2700=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-067",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Full Speed - Roughing or aggressive cutting): 1/4\" Flat End Mill UC feed 2740 plunge 1370 RPM 12000; fraction 1370/2740=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-068",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Full Speed - Roughing or aggressive cutting): 1/4\" Flat End Mill DC feed 2740 plunge 1370 RPM 12000; fraction 1370/2740=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-069",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Full Speed - Roughing or aggressive cutting): 1/4\" Ball End Mill feed 2740 plunge 1370 RPM 12000; fraction 1370/2740=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-070",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Full Speed - Roughing or aggressive cutting): 1/8\" Single Flute Flat End Mill UC feed 1750 plunge 880 RPM 22000; fraction 880/1750=0.503. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-071",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Full Speed - Roughing or aggressive cutting): 1/8\" Flat End Mill UC feed 2700 plunge 1350 RPM 17000; fraction 1350/2700=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-072",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Full Speed - Roughing or aggressive cutting): 1/8\" Flat End Mill DC feed 2700 plunge 1350 RPM 17000; fraction 1350/2700=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-073",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Full Speed - Roughing or aggressive cutting): 1/8\" Ball End Mill feed 2700 plunge 1350 RPM 17000; fraction 1350/2700=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-074",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Full Speed - Roughing or aggressive cutting): 1/16\" Flat End Mill UC feed 1350 plunge 680 RPM 17000; fraction 680/1350=0.504. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-075",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Full Speed - Roughing or aggressive cutting): 1/16\" Flat End Mill DC feed 1350 plunge 680 RPM 17000; fraction 680/1350=0.504. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-076",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Full Speed - Roughing or aggressive cutting): 1/16\" Corncob End Mill feed 1350 plunge 680 RPM 17000; fraction 680/1350=0.504. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-077",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Full Speed - Roughing or aggressive cutting): 22mm Surfacing Bit feed 2590 plunge 1300 RPM 17000; fraction 1300/2590=0.502. Tier from End Mills block order, checked on the rendered page. Family flat_end_mill for a 22 mm surfacing bit is an inference; keep it out of end-mill fits."
+  },
+  {
+   "statement_id": "g10-hobby-078",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Full Speed - Roughing or aggressive cutting): 1/2\" Round Groove Bit feed 1300 plunge 650 RPM 17000; fraction 650/1300=0.500. Tier from End Mills block order, checked on the rendered page. centre_cutting true and family ball_nose are inferred (core box bit); the chart prints only a plunge rate."
+  },
+  {
+   "statement_id": "g10-hobby-079",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Full Speed - Roughing or aggressive cutting): 3/4\" Round Groove Bit feed 1300 plunge 650 RPM 17000; fraction 650/1300=0.500. Tier from End Mills block order, checked on the rendered page. centre_cutting true and family ball_nose are inferred (core box bit); the chart prints only a plunge rate."
+  },
+  {
+   "statement_id": "g10-hobby-080",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.1 (Full Speed - Roughing or aggressive cutting): 1\" Round Groove Bit feed 1300 plunge 650 RPM 17000; fraction 650/1300=0.500. Tier from End Mills block order, checked on the rendered page. centre_cutting true and family ball_nose are inferred (core box bit); the chart prints only a plunge rate."
+  },
+  {
+   "statement_id": "g10-hobby-081",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Carving/Detailing - Regular Speed): 90, 60 Degree V-bit - V-Carving feed 1730 plunge 580 RPM 17000; fraction 580/1730=0.335. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-082",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Carving/Detailing - Regular Speed): 30, 90, 60 Degree V-bit - Fine Detail/Engraving feed 1120 plunge 370 RPM 22000; fraction 370/1120=0.330. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-083",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Carving/Detailing - Regular Speed): 1/4\" - D1/16\" Tapered Ball End Mill - Coarse feed 3170 plunge 1580 RPM 28500; fraction 1580/3170=0.498. Tier from End Mills block order, checked on the rendered page. NOTE: the newer live web table (resources.sienci.com/view/cnc-feeds-speeds/, dateModified 2026-05-13) differs: 1/4\" tapered Coarse, hard: live web table 1630/815 (0.500)."
+  },
+  {
+   "statement_id": "g10-hobby-084",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Carving/Detailing - Regular Speed): 1/4\" - D1/16\" Tapered Ball End Mill - Fine feed 3800 plunge 1900 RPM 28500; fraction 1900/3800=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-085",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Carving/Detailing - Regular Speed): 1/8\" - D0.5mm Tapered Ball End Mill - Coarse feed 1290 plunge 650 RPM 28500; fraction 650/1290=0.504. Tier from End Mills block order, checked on the rendered page. NOTE: the newer live web table (resources.sienci.com/view/cnc-feeds-speeds/, dateModified 2026-05-13) differs: 1/8\" tapered Coarse, hard: live web table 1290/645 (0.500)."
+  },
+  {
+   "statement_id": "g10-hobby-086",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Carving/Detailing - Regular Speed): 1/8\" - D0.5mm Tapered Ball End Mill - Fine feed 3640 plunge 1820 RPM 28500; fraction 1820/3640=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-087",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Carving/Detailing - Regular Speed): 1/4\" Ball End Mill - Finishing feed 2790 plunge 1400 RPM 22000; fraction 1400/2790=0.502. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-088",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Carving/Detailing - Regular Speed): 1/8\" Ball End Mill - Finishing feed 2060 plunge 1030 RPM 27000; fraction 1030/2060=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-089",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Reduced Speed - Finishing, or mild cutting): 1/4\" Single Flute Flat End Mill UC feed 1620 plunge 810 RPM 17000; fraction 810/1620=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-090",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Reduced Speed - Finishing, or mild cutting): 1/4\" Flat End Mill UC feed 1650 plunge 830 RPM 12000; fraction 830/1650=0.503. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-091",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Reduced Speed - Finishing, or mild cutting): 1/4\" Flat End Mill DC feed 1650 plunge 830 RPM 12000; fraction 830/1650=0.503. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-092",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Reduced Speed - Finishing, or mild cutting): 1/4\" Ball End Mill feed 1650 plunge 830 RPM 12000; fraction 830/1650=0.503. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-093",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Reduced Speed - Finishing, or mild cutting): 1/8\" Single Flute Flat End Mill UC feed 1050 plunge 530 RPM 22000; fraction 530/1050=0.505. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-094",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Reduced Speed - Finishing, or mild cutting): 1/8\" Flat End Mill UC feed 1620 plunge 810 RPM 17000; fraction 810/1620=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-095",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Reduced Speed - Finishing, or mild cutting): 1/8\" Flat End Mill DC feed 1620 plunge 810 RPM 17000; fraction 810/1620=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-096",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Reduced Speed - Finishing, or mild cutting): 1/8\" Ball End Mill feed 1620 plunge 810 RPM 17000; fraction 810/1620=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-097",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Reduced Speed - Finishing, or mild cutting): 1/16\" Flat End Mill UC feed 860 plunge 430 RPM 17000; fraction 430/860=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-098",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Reduced Speed - Finishing, or mild cutting): 1/16\" Flat End Mill DC feed 860 plunge 430 RPM 17000; fraction 430/860=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-099",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Reduced Speed - Finishing, or mild cutting): 1/16\" Corncob End Mill feed 860 plunge 430 RPM 17000; fraction 430/860=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-100",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Reduced Speed - Finishing, or mild cutting): 22mm Surfacing Bit feed 1550 plunge 780 RPM 17000; fraction 780/1550=0.503. Tier from End Mills block order, checked on the rendered page. Family flat_end_mill for a 22 mm surfacing bit is an inference; keep it out of end-mill fits."
+  },
+  {
+   "statement_id": "g10-hobby-101",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Reduced Speed - Finishing, or mild cutting): 1/2\" Round Groove Bit feed 780 plunge 390 RPM 17000; fraction 390/780=0.500. Tier from End Mills block order, checked on the rendered page. centre_cutting true and family ball_nose are inferred (core box bit); the chart prints only a plunge rate."
+  },
+  {
+   "statement_id": "g10-hobby-102",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Reduced Speed - Finishing, or mild cutting): 3/4\" Round Groove Bit feed 860 plunge 430 RPM 17000; fraction 430/860=0.500. Tier from End Mills block order, checked on the rendered page. centre_cutting true and family ball_nose are inferred (core box bit); the chart prints only a plunge rate."
+  },
+  {
+   "statement_id": "g10-hobby-103",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Reduced Speed - Finishing, or mild cutting): 1\" Round Groove Bit feed 780 plunge 390 RPM 17000; fraction 390/780=0.500. Tier from End Mills block order, checked on the rendered page. centre_cutting true and family ball_nose are inferred (core box bit); the chart prints only a plunge rate."
+  },
+  {
+   "statement_id": "g10-hobby-104",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Regular Speed): 1/4\" Single Flute Flat End Mill UC feed 2160 plunge 1080 RPM 17000; fraction 1080/2160=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-105",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Regular Speed): 1/4\" Flat End Mill UC feed 2190 plunge 1100 RPM 12000; fraction 1100/2190=0.502. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-106",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Regular Speed): 1/4\" Flat End Mill DC feed 2190 plunge 1100 RPM 12000; fraction 1100/2190=0.502. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-107",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Regular Speed): 1/4\" Ball End Mill feed 2190 plunge 1100 RPM 12000; fraction 1100/2190=0.502. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-108",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Regular Speed): 1/8\" Single Flute Flat End Mill UC feed 1400 plunge 700 RPM 22000; fraction 700/1400=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-109",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Regular Speed): 1/8\" Flat End Mill UC feed 2160 plunge 1080 RPM 17000; fraction 1080/2160=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-110",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Regular Speed): 1/8\" Flat End Mill DC feed 2160 plunge 1080 RPM 17000; fraction 1080/2160=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-111",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Regular Speed): 1/8\" Ball End Mill feed 2160 plunge 1080 RPM 17000; fraction 1080/2160=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-112",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Regular Speed): 1/16\" Flat End Mill UC feed 1080 plunge 540 RPM 17000; fraction 540/1080=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-113",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Regular Speed): 1/16\" Flat End Mill DC feed 1080 plunge 540 RPM 17000; fraction 540/1080=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-114",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Regular Speed): 1/16\" Corncob End Mill feed 1080 plunge 540 RPM 17000; fraction 540/1080=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-115",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Regular Speed): 22mm Surfacing Bit feed 2070 plunge 1040 RPM 17000; fraction 1040/2070=0.502. Tier from End Mills block order, checked on the rendered page. Family flat_end_mill for a 22 mm surfacing bit is an inference; keep it out of end-mill fits."
+  },
+  {
+   "statement_id": "g10-hobby-116",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Regular Speed): 1/2\" Round Groove Bit feed 1040 plunge 520 RPM 17000; fraction 520/1040=0.500. Tier from End Mills block order, checked on the rendered page. centre_cutting true and family ball_nose are inferred (core box bit); the chart prints only a plunge rate."
+  },
+  {
+   "statement_id": "g10-hobby-117",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Regular Speed): 3/4\" Round Groove Bit feed 1300 plunge 650 RPM 17000; fraction 650/1300=0.500. Tier from End Mills block order, checked on the rendered page. centre_cutting true and family ball_nose are inferred (core box bit); the chart prints only a plunge rate."
+  },
+  {
+   "statement_id": "g10-hobby-118",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Regular Speed): 1\" Round Groove Bit feed 1300 plunge 650 RPM 17000; fraction 650/1300=0.500. Tier from End Mills block order, checked on the rendered page. centre_cutting true and family ball_nose are inferred (core box bit); the chart prints only a plunge rate."
+  },
+  {
+   "statement_id": "g10-hobby-119",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Full Speed - Roughing or aggressive cutting): 1/4\" Single Flute Flat End Mill UC feed 2700 plunge 1350 RPM 17000; fraction 1350/2700=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-120",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Full Speed - Roughing or aggressive cutting): 1/4\" Flat End Mill UC feed 2740 plunge 1370 RPM 12000; fraction 1370/2740=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-121",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Full Speed - Roughing or aggressive cutting): 1/4\" Flat End Mill DC feed 2740 plunge 1370 RPM 12000; fraction 1370/2740=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-122",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Full Speed - Roughing or aggressive cutting): 1/4\" Ball End Mill feed 2740 plunge 1370 RPM 12000; fraction 1370/2740=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-123",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Full Speed - Roughing or aggressive cutting): 1/8\" Single Flute Flat End Mill UC feed 1750 plunge 880 RPM 22000; fraction 880/1750=0.503. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-124",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Full Speed - Roughing or aggressive cutting): 1/8\" Flat End Mill UC feed 2700 plunge 1350 RPM 17000; fraction 1350/2700=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-125",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Full Speed - Roughing or aggressive cutting): 1/8\" Flat End Mill DC feed 2700 plunge 1350 RPM 17000; fraction 1350/2700=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-126",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Full Speed - Roughing or aggressive cutting): 1/8\" Ball End Mill feed 2700 plunge 1350 RPM 17000; fraction 1350/2700=0.500. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-127",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Full Speed - Roughing or aggressive cutting): 1/16\" Flat End Mill UC feed 1350 plunge 680 RPM 17000; fraction 680/1350=0.504. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-128",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Full Speed - Roughing or aggressive cutting): 1/16\" Flat End Mill DC feed 1350 plunge 680 RPM 17000; fraction 680/1350=0.504. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-129",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Full Speed - Roughing or aggressive cutting): 1/16\" Corncob End Mill feed 1350 plunge 680 RPM 17000; fraction 680/1350=0.504. Tier from End Mills block order, checked on the rendered page."
+  },
+  {
+   "statement_id": "g10-hobby-130",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Full Speed - Roughing or aggressive cutting): 22mm Surfacing Bit feed 2590 plunge 1300 RPM 17000; fraction 1300/2590=0.502. Tier from End Mills block order, checked on the rendered page. Family flat_end_mill for a 22 mm surfacing bit is an inference; keep it out of end-mill fits."
+  },
+  {
+   "statement_id": "g10-hobby-131",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Full Speed - Roughing or aggressive cutting): 1/2\" Round Groove Bit feed 1300 plunge 650 RPM 17000; fraction 650/1300=0.500. Tier from End Mills block order, checked on the rendered page. centre_cutting true and family ball_nose are inferred (core box bit); the chart prints only a plunge rate."
+  },
+  {
+   "statement_id": "g10-hobby-132",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Full Speed - Roughing or aggressive cutting): 3/4\" Round Groove Bit feed 1300 plunge 650 RPM 17000; fraction 650/1300=0.500. Tier from End Mills block order, checked on the rendered page. centre_cutting true and family ball_nose are inferred (core box bit); the chart prints only a plunge rate."
+  },
+  {
+   "statement_id": "g10-hobby-133",
+   "verdict": "confirmed",
+   "checked_against": "sienci_feeds_speeds_metric.pdf (fresh, sha match), own pdftotext + render",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "PDF p.2 (Full Speed - Roughing or aggressive cutting): 1\" Round Groove Bit feed 1300 plunge 650 RPM 17000; fraction 650/1300=0.500. Tier from End Mills block order, checked on the rendered page. centre_cutting true and family ball_nose are inferred (core box bit); the chart prints only a plunge rate."
+  },
+  {
+   "statement_id": "g10-hobby-134",
+   "verdict": "confirmed",
+   "checked_against": "stored PDF (= G9 bytes), own pdftotext + rendered header \"#201 .25\\\" Square / #202 .25\\\" Ball\"",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Row, FEED/PLUNGE and derived fraction confirmed. Flutes not printed (null is right). Row is shared by square and ball; family flat_end_mill grade b is fair."
+  },
+  {
+   "statement_id": "g10-hobby-135",
+   "verdict": "confirmed",
+   "checked_against": "stored PDF (= G9 bytes), own pdftotext + rendered header \"#201 .25\\\" Square / #202 .25\\\" Ball\"",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Row, FEED/PLUNGE and derived fraction confirmed. Flutes not printed (null is right). Row is shared by square and ball; family flat_end_mill grade b is fair."
+  },
+  {
+   "statement_id": "g10-hobby-136",
+   "verdict": "confirmed",
+   "checked_against": "stored PDF (= G9 bytes), own pdftotext + rendered header \"#201 .25\\\" Square / #202 .25\\\" Ball\"",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Row, FEED/PLUNGE and derived fraction confirmed. Flutes not printed (null is right). Row is shared by square and ball; family flat_end_mill grade b is fair."
+  },
+  {
+   "statement_id": "g10-hobby-137",
+   "verdict": "confirmed",
+   "checked_against": "stored PDF (= G9 bytes), own pdftotext + rendered header \"#201 .25\\\" Square / #202 .25\\\" Ball\"",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Row, FEED/PLUNGE and derived fraction confirmed. Flutes not printed (null is right). Row is shared by square and ball; family flat_end_mill grade b is fair."
+  },
+  {
+   "statement_id": "g10-hobby-138",
+   "verdict": "confirmed",
+   "checked_against": "stored PDF (= G9 bytes), own pdftotext + rendered header \"#201 .25\\\" Square / #202 .25\\\" Ball\"",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Row, FEED/PLUNGE and derived fraction confirmed. Flutes not printed (null is right). Row is shared by square and ball; family flat_end_mill grade b is fair."
+  },
+  {
+   "statement_id": "g10-hobby-139",
+   "verdict": "confirmed",
+   "checked_against": "stored PDF (= G9 bytes), own pdftotext + rendered header \"#101 .125\\\" Square / #102 .125\\\" Ball\"",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Row, FEED/PLUNGE and derived fraction confirmed. Flutes not printed (null is right). Row is shared by square and ball; family flat_end_mill grade b is fair."
+  },
+  {
+   "statement_id": "g10-hobby-140",
+   "verdict": "confirmed",
+   "checked_against": "stored PDF (= G9 bytes), own pdftotext + rendered header \"#101 .125\\\" Square / #102 .125\\\" Ball\"",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Row, FEED/PLUNGE and derived fraction confirmed. Flutes not printed (null is right). Row is shared by square and ball; family flat_end_mill grade b is fair."
+  },
+  {
+   "statement_id": "g10-hobby-141",
+   "verdict": "confirmed",
+   "checked_against": "stored PDF (= G9 bytes), own pdftotext + rendered header \"#101 .125\\\" Square / #102 .125\\\" Ball\"",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Row, FEED/PLUNGE and derived fraction confirmed. Flutes not printed (null is right). Row is shared by square and ball; family flat_end_mill grade b is fair."
+  },
+  {
+   "statement_id": "g10-hobby-142",
+   "verdict": "confirmed",
+   "checked_against": "stored PDF (= G9 bytes), own pdftotext + rendered header \"#101 .125\\\" Square / #102 .125\\\" Ball\"",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Row, FEED/PLUNGE and derived fraction confirmed. Flutes not printed (null is right). Row is shared by square and ball; family flat_end_mill grade b is fair."
+  },
+  {
+   "statement_id": "g10-hobby-143",
+   "verdict": "confirmed",
+   "checked_against": "stored PDF (= G9 bytes), own pdftotext + rendered header \"#101 .125\\\" Square / #102 .125\\\" Ball\"",
+   "correct_value": null,
+   "correct_grade": null,
+   "note": "Row, FEED/PLUNGE and derived fraction confirmed. Flutes not printed (null is right). Row is shared by square and ball; family flat_end_mill grade b is fair."
+  }
+ ],
+ "skipped": [],
+ "flagged": [
+  {
+   "topic": "Sienci web page vs Sienci chart",
+   "finding": "Page (lm-feeds-and-speeds.md, live page datePublished 2021-04-19, dateModified 2025-11-18): \"we usually recommended lower plunge rates (100mm/min to 300mm/min) for most materials\", for 2-flute 1/8 in end mills. Chart (FeedsSpeedsMetric.pdf, created 2022-11-08): plunge about 0.50 x feed on flat/ball rows, e.g. \"1/8\\\" Flat End Mill UC 1620 810\" (Reduced). The chart is newer. Sienci names it as its guide: blog 2022-11-28 (\"standardized testing method ... downloadable PDF guides\") and the current page resources.sienci.com/view/cnc-feeds-speeds/ (dateModified 2026-05-13) links the same PDF (same sha256) and prints the same tables. Use the chart. New finding: that live web table differs from the PDF on 5 tapered-ball rows (030, 032, 033, 083, 085), where the web plunge is lower (fraction about 0.33 on the soft page). All other flat/ball/V/round-groove feed/plunge values are the same."
+  },
+  {
+   "topic": "Carbide 3D staff ramp-feed post",
+   "finding": "robgrz, post 1 of /t/50824, 2022-09-29T12:07Z. Discourse JSON: staff=true, admin=true, moderator=true (the forum shows the staff badge). Text: \"We just posted an update to CC to include ramping in Pro ... If ramping is enabled, the feedrate is 1/3 of the feerate, or 100% of the plunge rate, whichever is higher.\" This is a description of Carbide Create Pro behaviour at that build, not advice. It can have changed in later builds (\"we'd add a dedicated ramping rate field ... in the future\")."
+  },
+  {
+   "topic": "Fusion adaptive helix diameter",
+   "finding": "Confirmed: \"If the value is bigger than the diameter of the tool it can leave a boss standing in the center of the helix.\" Captions \"Value of 1.8 x the Dia\" and \"Value of 0.8 x the Dia\" sit in a table cell row under two animations. The value is the helix path diameter (\"causes the tool to overlap it's center\"), so \"path radius <= 0.5 x D\" is a fair and geometrically exact reading for a flat tool. 0.8 x D is an example, not a maximum or a default (g10-hobby-019 grade_wrong on the parameter mapping). Extra: the Ramping Angle figure prints \"2°\" (alt \"ramping angle - 2 degrees\"): an example value in the vendor help, which the dead-end table says the help does not print."
+  },
+  {
+   "topic": "Carbide Create 20 deg default",
+   "finding": "User post only (machinemoney, staff=false, 2024-03-27). No staff reply gives an angle. One search plus guides.carbide3d.com/create/toolpaths/ and carbide3d.com/hub/courses/create/toolpaths/: no ramp/helix text. No Carbide 3D document found."
+  },
+  {
+   "topic": "CNCCookbook OSG 10-20 deg",
+   "finding": "One search found no OSG primary; only CNCCookbook repeats it. Keep grade c, second hand."
+  },
+  {
+   "topic": "PreciseBits V-tip and tapered-ball pages",
+   "finding": "V-tip EM2E4: \"Plunge rate = 40 IPM to 250 IPM (again depending on material being cut)\". Micro EM2E8: \"Plunge rate = 5 IPM to 25 IPM\"; \"plunge style tip geometry\". Tapered ball 2F: \"Plunge rate = depends on speed (RPM)\", no number. None of the four pages has ramp, helix or a must-not-plunge rule (the only \"helix\" hits are menu text and the fret-plane flute helix angle)."
+  },
+  {
+   "topic": "Carbide 3D S3 / Nomad shared rows",
+   "finding": "Rendered header: S3 \"#201 .25\\\" Square\" / \"#202 .25\\\" Ball\"; Nomad \"#101 .125\\\" Square\" / \"#102 .125\\\" Ball\". One FEED/PLUNGE column pair for both. S3 wood: Bamboo 65/30, Pine 75/40, Mahogany 65/32, Plywood 100/50, MDF 80/30. Nomad wood: 55/23, 72/32, 75/19, 50/22, 75/18. All ten statements and fractions confirmed. Flutes are not printed."
+  },
+  {
+   "topic": "Text headers and hashes",
+   "finding": "All 16 stored texts: header \"# accessed_on: 2026-09-25\", and sha256 of each stored file equals text_sha256. All raw files in html/ and pdf/ equal raw_sha256."
+  },
+  {
+   "topic": "Sienci tier assignment (notes 5.1)",
+   "finding": "Confirmed on the rendered page 1: \"1/4\\\" Flat End Mill UC 1650 830\" is in the Reduced block and \"2190 1100\" in the Regular block. All 106 rows: page, tier, feed, plunge, RPM, verbatim and fraction match an independent parse."
+  }
+ ]
+}

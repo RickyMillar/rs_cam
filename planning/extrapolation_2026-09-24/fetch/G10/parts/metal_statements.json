@@ -1,0 +1,1357 @@
+[
+ {
+  "statement_id": "g10-metal-harvey-rs-ramp-soft",
+  "source_id": "metal_harvey_ramping_success",
+  "source_page": "web page",
+  "parameter": "ramp_angle_recommended",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "end mill (general)",
+  "flutes": null,
+  "centre_cutting": null,
+  "diameter_mm": null,
+  "material": {
+   "printed": "Soft/Non-Ferrous Materials",
+   "normalised": "non_ferrous"
+  },
+  "value_printed": "3° – 10°",
+  "unit": "deg",
+  "value_si": null,
+  "derived": [
+   {
+    "quantity": "range_min_deg",
+    "value": 3,
+    "formula": "printed lower bound"
+   },
+   {
+    "quantity": "range_max_deg",
+    "value": 10,
+    "formula": "printed upper bound"
+   }
+  ],
+  "verbatim": "Suggested Starting Ramp Angles: Soft/Non-Ferrous Materials: 3° – 10°",
+  "grade": "c",
+  "notes": "A starting range, not a maximum. No split by flutes, diameter or centre cutting. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-harvey-rs-ramp-hard",
+  "source_id": "metal_harvey_ramping_success",
+  "source_page": "web page",
+  "parameter": "ramp_angle_recommended",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "end mill (general)",
+  "flutes": null,
+  "centre_cutting": null,
+  "diameter_mm": null,
+  "material": {
+   "printed": "Hard/Ferrous Materials",
+   "normalised": "ferrous"
+  },
+  "value_printed": "1° – 3°",
+  "unit": "deg",
+  "value_si": null,
+  "derived": [],
+  "verbatim": "Hard/Ferrous Materials 1° – 3°",
+  "grade": "c",
+  "notes": "A starting range. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-harvey-rs-circular",
+  "source_id": "metal_harvey_ramping_success",
+  "source_page": "web page",
+  "parameter": "entry_general",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "end mill (general)",
+  "flutes": null,
+  "centre_cutting": null,
+  "diameter_mm": null,
+  "material": {
+   "printed": "not printed",
+   "normalised": "any"
+  },
+  "value_printed": "Circular Ramping (Helical Interpolation) ... recommended method",
+  "unit": null,
+  "value_si": null,
+  "derived": [],
+  "verbatim": "This is the recommended method, as it ensures the longest tool life.",
+  "grade": "c",
+  "notes": "The sentence follows the Circular Ramping definition: helical entry is preferred over linear ramp. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-harvey-te-predrill",
+  "source_id": "metal_harvey_tool_entry",
+  "source_page": "web page",
+  "parameter": "entry_general",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "end mill (general)",
+  "flutes": null,
+  "centre_cutting": null,
+  "diameter_mm": null,
+  "material": {
+   "printed": "not printed",
+   "normalised": "any"
+  },
+  "value_printed": "5-10% larger than the end mill diameter",
+  "unit": "fraction of D",
+  "value_si": null,
+  "derived": [
+   {
+    "quantity": "predrill_diameter_over_D",
+    "value": [
+     1.05,
+     1.1
+    ],
+    "formula": "1 + 0.05 .. 1 + 0.10"
+   }
+  ],
+  "verbatim": "Pre-drilling a hole to full pocket depth (and 5-10% larger than the end mill diameter) is the safest practice",
+  "grade": "c",
+  "notes": "Pre-drill entry, not a toolpath entry. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-harvey-te-helix-dia",
+  "source_id": "metal_harvey_tool_entry",
+  "source_page": "web page",
+  "parameter": "helix_diameter_min_frac",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "end mill (general); corner radius end mills advised",
+  "flutes": null,
+  "centre_cutting": null,
+  "diameter_mm": null,
+  "material": {
+   "printed": "ferrous materials (a vendor reply adds non-ferrous)",
+   "normalised": "any"
+  },
+  "value_printed": "greater than 110-120% of the cutter diameter",
+  "unit": "fraction of D",
+  "value_si": 1.1,
+  "derived": [
+   {
+    "quantity": "path_diameter_over_D_if_bore",
+    "value": [
+     0.1,
+     0.2
+    ],
+    "formula": "helix_dia/D - 1"
+   },
+   {
+    "quantity": "bore_over_D_if_path",
+    "value": [
+     2.1,
+     2.2
+    ],
+    "formula": "helix_dia/D + 1"
+   }
+  ],
+  "verbatim": "use a programmed helix diameter of greater than 110-120% of the cutter diameter",
+  "grade": "c",
+  "notes": "AMBIGUOUS: 'helix diameter' is not defined. If it is the bore (hole) diameter, the tool-centre path diameter is 0.1-0.2 x D (derived). If it is the path diameter, the bore is 2.1-2.2 x D. See NOTES section 5. value_si = lower bound 1.1. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-harvey-te-helix-nonferrous",
+  "source_id": "metal_harvey_tool_entry",
+  "source_page": "web page (vendor reply in comments)",
+  "parameter": "entry_general",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "end mill (general)",
+  "flutes": null,
+  "centre_cutting": null,
+  "diameter_mm": null,
+  "material": {
+   "printed": "non-ferrous material",
+   "normalised": "non_ferrous"
+  },
+  "value_printed": "Helical Interpolation is also recommended in non-ferrous material.",
+  "unit": null,
+  "value_si": null,
+  "derived": [],
+  "verbatim": "Helical Interpolation is also recommended in non-ferrous material.",
+  "grade": "c",
+  "notes": "Harvey's own reply to a reader question. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-harvey-te-ramp-soft",
+  "source_id": "metal_harvey_tool_entry",
+  "source_page": "web page",
+  "parameter": "ramp_angle_recommended",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "end mill (general); corner radius advised",
+  "flutes": null,
+  "centre_cutting": null,
+  "diameter_mm": null,
+  "material": {
+   "printed": "Soft/Non-Ferrous Materials",
+   "normalised": "non_ferrous"
+  },
+  "value_printed": "3°-10°",
+  "unit": "deg",
+  "value_si": null,
+  "derived": [],
+  "verbatim": "Soft/Non-Ferrous Materials: 3°-10°",
+  "grade": "c",
+  "notes": "Same numbers as g10-metal-harvey-rs-ramp-soft (same publisher). The page also says 'A strong core is key'. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-harvey-te-plunge-cc",
+  "source_id": "metal_harvey_tool_entry",
+  "source_page": "web page",
+  "parameter": "no_plunge",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "non-centre-cutting end mill",
+  "flutes": null,
+  "centre_cutting": false,
+  "diameter_mm": null,
+  "material": {
+   "printed": "not printed",
+   "normalised": "any"
+  },
+  "value_printed": "The tool must be center cutting",
+  "unit": null,
+  "value_si": null,
+  "derived": [],
+  "verbatim": "The tool must be center cutting, as end milling incorporates a flat entry point making chip evacuation extremely difficult.",
+  "grade": "c",
+  "notes": "Straight plunge: a non-centre-cutting end mill must not plunge. The page calls straight plunge 'often problematic' and points to drills for plunging. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-harvey-te-straight-entry",
+  "source_id": "metal_harvey_tool_entry",
+  "source_page": "web page",
+  "parameter": "entry_general",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "end mill (general)",
+  "flutes": null,
+  "centre_cutting": null,
+  "diameter_mm": null,
+  "material": {
+   "printed": "not printed",
+   "normalised": "any"
+  },
+  "value_printed": "reduced by at least 50%",
+  "unit": "fraction of feed",
+  "value_si": 0.5,
+  "derived": [
+   {
+    "quantity": "entry_feed_multiplier_max",
+    "value": 0.5,
+    "formula": "1 - 0.50"
+   }
+  ],
+  "verbatim": "Until the cutter is fully engaged, the feed rate upon entry is recommended to be reduced by at least 50% during this operation.",
+  "grade": "c",
+  "notes": "Straight (side) entry, not plunge. value_si = the feed multiplier at most 0.5. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-harvey-te-rollin",
+  "source_id": "metal_harvey_tool_entry",
+  "source_page": "web page",
+  "parameter": "entry_general",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "end mill (general)",
+  "flutes": null,
+  "centre_cutting": null,
+  "diameter_mm": null,
+  "material": {
+   "printed": "not printed",
+   "normalised": "any"
+  },
+  "value_printed": "reduced by 50%",
+  "unit": "fraction of feed",
+  "value_si": 0.5,
+  "derived": [
+   {
+    "quantity": "entry_feed_multiplier",
+    "value": 0.5,
+    "formula": "1 - 0.50"
+   }
+  ],
+  "verbatim": "The feed rate in this scenario should be reduced by 50%.",
+  "grade": "c",
+  "notes": "Roll-in (arc) entry into the cut. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-helical-gb-ramp-soft",
+  "source_id": "metal_helical_guidebook_2016",
+  "source_page": "p. 4 (visible layer)",
+  "parameter": "ramp_angle_recommended",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "end mill (general)",
+  "flutes": null,
+  "centre_cutting": null,
+  "diameter_mm": null,
+  "material": {
+   "printed": "Soft/Non-Ferrous Materials",
+   "normalised": "non_ferrous"
+  },
+  "value_printed": "3º – 10º",
+  "unit": "deg",
+  "value_si": null,
+  "derived": [],
+  "verbatim": "Soft/Non-Ferrous Materials: 3º – 10º",
+  "grade": "c",
+  "notes": "The PDF prints the degree as U+00BA. Hidden layers print 'Non-Ferrous Materials: 3º – 10º'. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-helical-gb-ramp-hard",
+  "source_id": "metal_helical_guidebook_2016",
+  "source_page": "p. 4 (visible layer)",
+  "parameter": "ramp_angle_recommended",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "end mill (general)",
+  "flutes": null,
+  "centre_cutting": null,
+  "diameter_mm": null,
+  "material": {
+   "printed": "Hard/Ferrous Materials",
+   "normalised": "ferrous"
+  },
+  "value_printed": "1º – 3º",
+  "unit": "deg",
+  "value_si": null,
+  "derived": [],
+  "verbatim": "Hard/Ferrous Materials: 1º – 3º",
+  "grade": "c",
+  "notes": "Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-helical-gb-helix-dia",
+  "source_id": "metal_helical_guidebook_2016",
+  "source_page": "p. 4",
+  "parameter": "helix_diameter_min_frac",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "end mill (general); corner radius advised",
+  "flutes": null,
+  "centre_cutting": null,
+  "diameter_mm": null,
+  "material": {
+   "printed": "ferrous materials",
+   "normalised": "ferrous"
+  },
+  "value_printed": ">110-120% of tool diameter",
+  "unit": "fraction of D",
+  "value_si": 1.1,
+  "derived": [
+   {
+    "quantity": "path_diameter_over_D_if_bore",
+    "value": [
+     0.1,
+     0.2
+    ],
+    "formula": "helix_dia/D - 1"
+   }
+  ],
+  "verbatim": "We recommend a programmed helix diameter >110-120% of tool diameter.",
+  "grade": "c",
+  "notes": "Same rule and same ambiguity as g10-metal-harvey-te-helix-dia. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-helical-gb-cc-descent",
+  "source_id": "metal_helical_guidebook_2016",
+  "source_page": "p. 6",
+  "parameter": "entry_general",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "centre-cutting and non-centre-cutting end mills",
+  "flutes": null,
+  "centre_cutting": null,
+  "diameter_mm": null,
+  "material": {
+   "printed": "not printed",
+   "normalised": "any"
+  },
+  "value_printed": "the angle of descent will vary depending on end style",
+  "unit": null,
+  "value_si": null,
+  "derived": [],
+  "verbatim": "End mills with either center cutting or non-center cutting geometry can be used for both forms of ramping, however the angle of descent will vary depending on end style.",
+  "grade": "c",
+  "notes": "Shape of the rule: the max ramp angle depends on the end style (centre cutting or not). No number. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-helical-gb-plunge-cc",
+  "source_id": "metal_helical_guidebook_2016",
+  "source_page": "p. 4-5",
+  "parameter": "no_plunge",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "non-centre-cutting end mill",
+  "flutes": null,
+  "centre_cutting": false,
+  "diameter_mm": null,
+  "material": {
+   "printed": "not printed",
+   "normalised": "any"
+  },
+  "value_printed": "The tool must be center cutting.",
+  "unit": null,
+  "value_si": null,
+  "derived": [],
+  "verbatim": "The least preferred method and one that can easily break a tool. The tool must be center cutting.",
+  "grade": "c",
+  "notes": "Straight plunge. The page adds 'Drill bits are intended for straight plunging'. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-harvey-sf18700-plunge",
+  "source_id": "metal_harvey_sf_18700",
+  "source_page": "p. 1 (notes)",
+  "parameter": "plunge_feed_fraction",
+  "tool_family": "chamfer_v",
+  "tool_subfamily": "Chamfer Cutters - Pointed & Flat End, 2 Flutes, Type I",
+  "flutes": 2,
+  "centre_cutting": null,
+  "diameter_mm": [
+   0.381,
+   25.4
+  ],
+  "material": {
+   "printed": "chart materials: aluminium alloys, magnesium, zinc, copper alloys, steels to 45 Rc and more",
+   "normalised": "any_metal"
+  },
+  "value_printed": "reduce Chip Loads to 40%-50% depending on finish",
+  "unit": "fraction of chip load",
+  "value_si": 0.4,
+  "derived": [
+   {
+    "quantity": "plunge_chipload_multiplier",
+    "value": [
+     0.4,
+     0.5
+    ],
+    "formula": "printed 40%-50% / 100"
+   },
+   {
+    "quantity": "diameter_mm",
+    "value": [
+     0.381,
+     25.4
+    ],
+    "formula": "0.015 in x 25.4 .. 1.000 in x 25.4"
+   }
+  ],
+  "verbatim": "For vertical plunging, reduce Chip Loads to 40%-50% depending on finish",
+  "grade": "c",
+  "notes": "'reduce ... to 40%-50%' reads as: the plunge chip load = 0.40-0.50 x the posted side-milling chip load. value_si = the lower bound. diameter_mm = the chart's effective-diameter span 0.015-1.000 in (derived). Grade a for the printed metals; grade c for wood. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-harvey-sf25000-plunge",
+  "source_id": "metal_harvey_sf_25000",
+  "source_page": "p. 1 (notes)",
+  "parameter": "plunge_feed_fraction",
+  "tool_family": "chamfer_v",
+  "tool_subfamily": "Engraving Cutters - Pointed, 1 Flute, Pointed Tip",
+  "flutes": 1,
+  "centre_cutting": null,
+  "diameter_mm": null,
+  "material": {
+   "printed": "chart materials (metals)",
+   "normalised": "any_metal"
+  },
+  "value_printed": "reduce posted chip loads by 5 0%",
+  "unit": "fraction of chip load",
+  "value_si": 0.5,
+  "derived": [
+   {
+    "quantity": "plunge_chipload_multiplier",
+    "value": 0.5,
+    "formula": "1 - 0.50"
+   }
+  ],
+  "verbatim": "For VERTICAL plunge milling to depth, reduce posted chip loads by 5 0%",
+  "grade": "c",
+  "notes": "The PDF text prints '5 0%' (a kerning gap); the value is 50%. The plunge chip load = 0.5 x the posted horizontal chip load. Grade a for the printed metals; grade c for wood. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-harvey-sf25000-ramp-pref",
+  "source_id": "metal_harvey_sf_25000",
+  "source_page": "p. 1 (notes)",
+  "parameter": "entry_general",
+  "tool_family": "chamfer_v",
+  "tool_subfamily": "Engraving Cutters - Pointed, 1 Flute, Pointed Tip",
+  "flutes": 1,
+  "centre_cutting": null,
+  "diameter_mm": null,
+  "material": {
+   "printed": "chart materials (metals)",
+   "normalised": "any_metal"
+  },
+  "value_printed": "ramping is preferred to maintain tip integrity",
+  "unit": null,
+  "value_si": null,
+  "derived": [],
+  "verbatim": "(ramping is preferred to maintain tip integrity).",
+  "grade": "c",
+  "notes": "A V / pointed tool: ramp, do not plunge where possible. No angle printed. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-sgs-ramp-feed-1-2deg",
+  "source_id": "metal_sgs_catalog_2021",
+  "source_page": "catalogue p. 24 (PDF p. 9), Entry Methods",
+  "parameter": "ramp_feed_fraction",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "SGS solid carbide end mills (general)",
+  "flutes": null,
+  "centre_cutting": null,
+  "diameter_mm": null,
+  "material": {
+   "printed": "not printed (all materials)",
+   "normalised": "any"
+  },
+  "value_printed": "Use slotting speeds and feeds for ramp angles of 1° to 2°.",
+  "unit": "fraction of slotting feed",
+  "value_si": 1.0,
+  "derived": [
+   {
+    "quantity": "ramp_feed_over_slot_feed",
+    "value": 1.0,
+    "formula": "printed 'slotting ... feeds' = 1.0 x slot feed"
+   }
+  ],
+  "verbatim": "Use slotting speeds and feeds for ramp angles of 1° to 2°.",
+  "grade": "c",
+  "notes": "Ramp feed = 1.0 x slotting feed for 1-2 deg. Read from the -raw section. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-sgs-ramp-feed-6deg",
+  "source_id": "metal_sgs_catalog_2021",
+  "source_page": "catalogue p. 24 (PDF p. 9), Entry Methods",
+  "parameter": "ramp_feed_fraction",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "SGS solid carbide end mills (general)",
+  "flutes": null,
+  "centre_cutting": null,
+  "diameter_mm": null,
+  "material": {
+   "printed": "not printed (all materials)",
+   "normalised": "any"
+  },
+  "value_printed": "Reduce feed to 25% when ramp angles approach 6°.",
+  "unit": "fraction of slotting feed",
+  "value_si": 0.25,
+  "derived": [],
+  "verbatim": "Reduce feed to 25% when ramp angles approach 6°.",
+  "grade": "c",
+  "notes": "With the 1-2 deg line this gives two points of ramp feed against angle: 1.0 at 1-2 deg, 0.25 at about 6 deg. The document prints no curve between them. The base of '25%' is read as the slotting feed of the line before. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-sgs-ramp-general",
+  "source_id": "metal_sgs_catalog_2021",
+  "source_page": "catalogue p. 24 (PDF p. 9), Entry Methods",
+  "parameter": "entry_general",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "SGS solid carbide end mills (general)",
+  "flutes": null,
+  "centre_cutting": null,
+  "diameter_mm": null,
+  "material": {
+   "printed": "difficult to machine materials",
+   "normalised": "any"
+  },
+  "value_printed": "General purpose tools ... will require lower ramp angles and reduced feed.",
+  "unit": null,
+  "value_si": null,
+  "derived": [],
+  "verbatim": "General purpose tools and/or difficult to machine materials will require lower ramp angles and reduced feed.",
+  "grade": "c",
+  "notes": "Also: 'High ramp angles require reduced feed. Lower ramp angles will allow higher feed rates and extend tool life.' Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-sgs-plunge-feed",
+  "source_id": "metal_sgs_catalog_2021",
+  "source_page": "catalogue p. 24 (PDF p. 9), Entry Methods",
+  "parameter": "plunge_feed_fraction",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "SGS solid carbide end mills (general)",
+  "flutes": null,
+  "centre_cutting": true,
+  "diameter_mm": null,
+  "material": {
+   "printed": "non-ferrous and short-chipping materials",
+   "normalised": "non_ferrous"
+  },
+  "value_printed": "25% slotting feeds",
+  "unit": "fraction of slotting feed",
+  "value_si": 0.25,
+  "derived": [],
+  "verbatim": "Plunge only in non-ferrous and short-chipping materials using slotting speeds and 25% slotting feeds.",
+  "grade": "c",
+  "notes": "Plunge feed = 0.25 x slotting feed, at slotting speed. Plunge is limited to non-ferrous / short-chipping materials. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-sgs-matrix-footnote",
+  "source_id": "metal_sgs_catalog_2021",
+  "source_page": "catalogue p. 23 (PDF p. 8), End Mill Matrix footnote ***",
+  "parameter": "entry_general",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "SGS series",
+  "flutes": null,
+  "centre_cutting": null,
+  "diameter_mm": null,
+  "material": {
+   "printed": "most materials",
+   "normalised": "any"
+  },
+  "value_printed": "shown is general recommendation for most materials, lower ramp angles are required for materials with lower machinability",
+  "unit": null,
+  "value_si": null,
+  "derived": [],
+  "verbatim": "shown is general recommendation for most materials, lower",
+  "grade": "c",
+  "notes": "Qualifies every 'Maximum Recommended Ramp Angle' in the matrix. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-sgs-mx-z5",
+  "source_id": "metal_sgs_catalog_2021",
+  "source_page": "catalogue pp. 22-23 (PDF pp. 7-8), End Mill Matrix, column 'Maximum Recommended Ramp Angle ***'",
+  "parameter": "ramp_angle_max",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "Z-Carb-HPR Z5 (5 flute rougher; S, R end styles)",
+  "flutes": 5,
+  "centre_cutting": false,
+  "diameter_mm": [
+   6,
+   25
+  ],
+  "material": {
+   "printed": "not printed per row (colour-coded)",
+   "normalised": "any_metal"
+  },
+  "value_printed": "7",
+  "unit": "deg",
+  "value_si": 7,
+  "derived": [],
+  "verbatim": "1 to 3 – S, R By Request SR, WF, CH No 7 37 Unequal",
+  "grade": "c",
+  "notes": "Row read across two pages: the series name is on p. 22, the values on p. 23, by row order (see NOTES section 5). The material fit is colour-coded and is not in the text. Non-centre-cutting: 7 deg. CONFLICT: the Z5 chart (p. 34) says 'ramp up to 5 degrees'. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-sgs-mx-77",
+  "source_id": "metal_sgs_catalog_2021",
+  "source_page": "catalogue pp. 22-23 (PDF pp. 7-8), End Mill Matrix, column 'Maximum Recommended Ramp Angle ***'",
+  "parameter": "ramp_angle_max",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "H-Carb 77 (7 flute high efficiency)",
+  "flutes": 7,
+  "centre_cutting": false,
+  "diameter_mm": [
+   6,
+   25
+  ],
+  "material": {
+   "printed": "not printed per row (colour-coded)",
+   "normalised": "any_metal"
+  },
+  "value_printed": "1",
+  "unit": "deg",
+  "value_si": 1,
+  "derived": [],
+  "verbatim": "2.5 to 4 – S, R SR No 1 37 Unequal",
+  "grade": "c",
+  "notes": "Row read across two pages: the series name is on p. 22, the values on p. 23, by row order (see NOTES section 5). The material fit is colour-coded and is not in the text. Non-centre-cutting, 7 flutes: 1 deg. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-sgs-mx-66",
+  "source_id": "metal_sgs_catalog_2021",
+  "source_page": "catalogue pp. 22-23 (PDF pp. 7-8), End Mill Matrix, column 'Maximum Recommended Ramp Angle ***'",
+  "parameter": "ramp_angle_max",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "Multi-Carb 66 (multi-flute finisher)",
+  "flutes": null,
+  "centre_cutting": false,
+  "diameter_mm": [
+   6,
+   25
+  ],
+  "material": {
+   "printed": "not printed per row (colour-coded)",
+   "normalised": "any_metal"
+  },
+  "value_printed": "1",
+  "unit": "deg",
+  "value_si": 1,
+  "derived": [],
+  "verbatim": "1.5 to 3.25 – S, R By Request SR No 1 35 Equal Ti-Namite-A",
+  "grade": "c",
+  "notes": "Row read across two pages: the series name is on p. 22, the values on p. 23, by row order (see NOTES section 5). The material fit is colour-coded and is not in the text. Non-centre-cutting multi-flute finisher: 1 deg. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-sgs-mx-56b",
+  "source_id": "metal_sgs_catalog_2021",
+  "source_page": "catalogue pp. 22-23 (PDF pp. 7-8), End Mill Matrix, column 'Maximum Recommended Ramp Angle ***'",
+  "parameter": "ramp_angle_max",
+  "tool_family": "ball_nose",
+  "tool_subfamily": "Turbo-Carb 56B (2 flute contouring long reach ball end)",
+  "flutes": 2,
+  "centre_cutting": true,
+  "diameter_mm": [
+   1,
+   20
+  ],
+  "material": {
+   "printed": "not printed per row (colour-coded)",
+   "normalised": "any_metal"
+  },
+  "value_printed": "25",
+  "unit": "deg",
+  "value_si": 25,
+  "derived": [],
+  "verbatim": "1 2 to 2.25 B By Request SR Yes 25 30 Equal Ti-Namite-A",
+  "grade": "c",
+  "notes": "Row read across two pages: the series name is on p. 22, the values on p. 23, by row order (see NOTES section 5). The material fit is colour-coded and is not in the text. The only ball-only row: 25 deg, centre cutting. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-sgs-mx-47",
+  "source_id": "metal_sgs_catalog_2021",
+  "source_page": "catalogue pp. 22-23 (PDF pp. 7-8), End Mill Matrix, column 'Maximum Recommended Ramp Angle ***'",
+  "parameter": "ramp_angle_max",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "S-Carb 2 Flute, series 47 (S, B end styles)",
+  "flutes": 2,
+  "centre_cutting": true,
+  "diameter_mm": [
+   3,
+   25
+  ],
+  "material": {
+   "printed": "not printed per row (colour-coded)",
+   "normalised": "any_metal"
+  },
+  "value_printed": "90",
+  "unit": "deg",
+  "value_si": 90,
+  "derived": [],
+  "verbatim": "1 to 3 3 to 9 S, B By Request SR Yes 90 35 Equal Ti-Namite-B",
+  "grade": "c",
+  "notes": "Row read across two pages: the series name is on p. 22, the values on p. 23, by row order (see NOTES section 5). The material fit is colour-coded and is not in the text. S-Carb is the SGS non-ferrous line (the name, not the matrix, says so). Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-sgs-mx-43",
+  "source_id": "metal_sgs_catalog_2021",
+  "source_page": "catalogue pp. 22-23 (PDF pp. 7-8), End Mill Matrix, column 'Maximum Recommended Ramp Angle ***'",
+  "parameter": "ramp_angle_max",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "S-Carb 3 Flute, series 43 (S, R, B end styles)",
+  "flutes": 3,
+  "centre_cutting": true,
+  "diameter_mm": [
+   3,
+   25
+  ],
+  "material": {
+   "printed": "not printed per row (colour-coded)",
+   "normalised": "any_metal"
+  },
+  "value_printed": "90",
+  "unit": "deg",
+  "value_si": 90,
+  "derived": [],
+  "verbatim": "1 to 7 2.25 to 8.5 S, R, B By Request SR Yes 90 38 Equal Ti-Namite-B",
+  "grade": "c",
+  "notes": "Row read across two pages: the series name is on p. 22, the values on p. 23, by row order (see NOTES section 5). The material fit is colour-coded and is not in the text. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-sgs-mx-series7",
+  "source_id": "metal_sgs_catalog_2021",
+  "source_page": "catalogue pp. 22-23 (PDF pp. 7-8), End Mill Matrix, column 'Maximum Recommended Ramp Angle ***'",
+  "parameter": "ramp_angle_max",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "Series 7 (4 flute variable geometry long length; S, B)",
+  "flutes": 4,
+  "centre_cutting": true,
+  "diameter_mm": [
+   3,
+   25
+  ],
+  "material": {
+   "printed": "not printed per row (colour-coded)",
+   "normalised": "any_metal"
+  },
+  "value_printed": "1",
+  "unit": "deg",
+  "value_si": 1,
+  "derived": [],
+  "verbatim": "2.25 to 8.25 – S, B By Request SR Yes 1 38 Unequal Ti-Namite-A",
+  "grade": "c",
+  "notes": "Row read across two pages: the series name is on p. 22, the values on p. 23, by row order (see NOTES section 5). The material fit is colour-coded and is not in the text. Centre cutting but long length: 1 deg. So centre cutting alone does not set the limit; length does too. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-sgs-mx-ccr",
+  "source_id": "metal_sgs_catalog_2021",
+  "source_page": "catalogue pp. 22-23 (PDF pp. 7-8), End Mill Matrix, column 'Maximum Recommended Ramp Angle ***'",
+  "parameter": "ramp_angle_max",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "CCR series 20-CCR (composite cutting router; end style varies)",
+  "flutes": null,
+  "centre_cutting": null,
+  "diameter_mm": [
+   2,
+   12
+  ],
+  "material": {
+   "printed": "not printed per row (colour-coded)",
+   "normalised": "composite"
+  },
+  "value_printed": "Based upon end style / 5 (for end cut styles)",
+  "unit": "deg",
+  "value_si": 5,
+  "derived": [],
+  "verbatim": "Based upon 5 (for end cut Di-Namite 2.75 to 4 – S Standard SR 15 Equal 2 to 12 end style styles)",
+  "grade": "c",
+  "notes": "Row read across two pages: the series name is on p. 22, the values on p. 23, by row order (see NOTES section 5). The material fit is colour-coded and is not in the text. Centre cutting 'Based upon end style'; max ramp 5 deg for end-cut styles. 31-CCR (6-12 mm) prints the same. Router for composites (CCR). Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-sgs-mx-compression",
+  "source_id": "metal_sgs_catalog_2021",
+  "source_page": "catalogue pp. 22-23 (PDF pp. 7-8), End Mill Matrix, column 'Maximum Recommended Ramp Angle ***'",
+  "parameter": "ramp_angle_max",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "Compression Router, series 25",
+  "flutes": null,
+  "centre_cutting": true,
+  "diameter_mm": [
+   6,
+   12
+  ],
+  "material": {
+   "printed": "not printed per row (colour-coded)",
+   "normalised": "composite"
+  },
+  "value_printed": "5",
+  "unit": "deg",
+  "value_si": 5,
+  "derived": [],
+  "verbatim": "2.75 to 4 – S By Request SR Yes 5 30 Equal",
+  "grade": "c",
+  "notes": "Row read across two pages: the series name is on p. 22, the values on p. 23, by row order (see NOTES section 5). The material fit is colour-coded and is not in the text. Compression router: 5 deg, centre cutting. Nearest tool to a wood compression bit in this set. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-sgs-mx-upcut",
+  "source_id": "metal_sgs_catalog_2021",
+  "source_page": "catalogue pp. 22-23 (PDF pp. 7-8), End Mill Matrix, column 'Maximum Recommended Ramp Angle ***'",
+  "parameter": "ramp_angle_max",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "Up Cut Router, series 21",
+  "flutes": null,
+  "centre_cutting": true,
+  "diameter_mm": [
+   3,
+   12
+  ],
+  "material": {
+   "printed": "not printed per row (colour-coded)",
+   "normalised": "composite"
+  },
+  "value_printed": "90",
+  "unit": "deg",
+  "value_si": 90,
+  "derived": [],
+  "verbatim": "2.5 to 4.25 – S By Request SR Yes 90 35 Equal various optional",
+  "grade": "c",
+  "notes": "Row read across two pages: the series name is on p. 22, the values on p. 23, by row order (see NOTES section 5). The material fit is colour-coded and is not in the text. Up-cut router: 90 deg (plunge allowed). Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-sgs-mx-downcut",
+  "source_id": "metal_sgs_catalog_2021",
+  "source_page": "catalogue pp. 22-23 (PDF pp. 7-8), End Mill Matrix, column 'Maximum Recommended Ramp Angle ***'",
+  "parameter": "no_ramp",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "Down Cut Router, series 22",
+  "flutes": null,
+  "centre_cutting": true,
+  "diameter_mm": [
+   3,
+   12
+  ],
+  "material": {
+   "printed": "not printed per row (colour-coded)",
+   "normalised": "composite"
+  },
+  "value_printed": "–",
+  "unit": "deg",
+  "value_si": null,
+  "derived": [],
+  "verbatim": "2.5 to 4.25 – S By Request SR Yes – 35 Equal various optional",
+  "grade": "c",
+  "notes": "Row read across two pages: the series name is on p. 22, the values on p. 23, by row order (see NOTES section 5). The material fit is colour-coded and is not in the text. Down-cut router: the ramp-angle cell is a dash. The document does not say if the dash means 'do not ramp' or 'no data'. Parameter no_ramp is a tentative reading; a verifier must decide. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-sgs-z5-ramp5",
+  "source_id": "metal_sgs_catalog_2021",
+  "source_page": "catalogue p. 34 (PDF p. 19), Z-Carb-HPR Z5 chart notes",
+  "parameter": "ramp_angle_max",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "Z-Carb-HPR Z5 (5 flute rougher square end)",
+  "flutes": 5,
+  "centre_cutting": false,
+  "diameter_mm": null,
+  "material": {
+   "printed": "chart materials (steels ... hardened steels)",
+   "normalised": "steel"
+  },
+  "value_printed": "ramp up to 5 degrees",
+  "unit": "deg",
+  "value_si": 5,
+  "derived": [
+   {
+    "quantity": "ramp_feed_over_slot_feed",
+    "value": 1.0,
+    "formula": "printed 'using slotting speed and feed rates'"
+   }
+  ],
+  "verbatim": "ramp up to 5 degrees using slotting speed and feed rates. Do not plunge.",
+  "grade": "c",
+  "notes": "Ramp feed at up to 5 deg = slotting feed (1.0 x). Conflicts with the matrix value 7 for Z5. flutes = 5 from 'ipm = Fz x 5 x rpm' and the index line '5 Flute Rougher Square End'. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-sgs-z5-noplunge",
+  "source_id": "metal_sgs_catalog_2021",
+  "source_page": "catalogue p. 34 (PDF p. 19), Z-Carb-HPR Z5 chart notes",
+  "parameter": "no_plunge",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "Z-Carb-HPR Z5 (5 flute rougher square end)",
+  "flutes": 5,
+  "centre_cutting": false,
+  "diameter_mm": null,
+  "material": {
+   "printed": "chart materials (steels ... hardened steels)",
+   "normalised": "steel"
+  },
+  "value_printed": "Do not plunge.",
+  "unit": null,
+  "value_si": null,
+  "derived": [],
+  "verbatim": "Do not plunge.",
+  "grade": "c",
+  "notes": "A non-centre-cutting rougher (matrix: Center Cutting 'No'). Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-imco-bore-2d-2r",
+  "source_id": "metal_imco_helical_ramp",
+  "source_page": "p. 130, Step 1",
+  "parameter": "helix_diameter_max_frac",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "IMCO end mills (square and corner radius)",
+  "flutes": null,
+  "centre_cutting": true,
+  "diameter_mm": null,
+  "material": {
+   "printed": "not printed",
+   "normalised": "any"
+  },
+  "value_printed": "(tool diameter x 2) - (corner radius x 2)",
+  "unit": "bore diameter",
+  "value_si": 2.0,
+  "derived": [
+   {
+    "quantity": "bore_over_D",
+    "value": "2 - 2r/D",
+    "formula": "(2D - 2r)/D"
+   },
+   {
+    "quantity": "path_diameter_over_D",
+    "value": "1 - 2r/D",
+    "formula": "bore - D, divided by D"
+   },
+   {
+    "quantity": "path_diameter_over_D_at_r0",
+    "value": 1.0,
+    "formula": "1 - 0"
+   }
+  ],
+  "verbatim": "The diameter of the starting hole will be: (tool diameter x 2) - (corner radius x 2)",
+  "grade": "c",
+  "notes": "The bore of the helical entry hole = 2D - 2r. For r = 0 the bore is 2.0 x D and the tool-centre path diameter is 1.0 x D, so the flat end just passes the hole centre: the largest bore that leaves no core. value_si = 2.0 (bore/D at r = 0). Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-imco-flute-steps",
+  "source_id": "metal_imco_helical_ramp",
+  "source_page": "p. 130",
+  "parameter": "entry_general",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "IMCO end mills",
+  "flutes": null,
+  "centre_cutting": null,
+  "diameter_mm": null,
+  "material": {
+   "printed": "not printed",
+   "normalised": "any"
+  },
+  "value_printed": "seven or fewer flutes only require one step; ... more than seven flutes require two steps",
+  "unit": null,
+  "value_si": null,
+  "derived": [],
+  "verbatim": "Tools with seven or fewer flutes only require one step; tools with more than seven flutes require two steps.",
+  "grade": "c",
+  "notes": "Flute count sets the entry procedure: > 7 flutes must open the hole in a second step. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-imco-iptc-angle",
+  "source_id": "metal_imco_helical_ramp",
+  "source_page": "p. 130, Step 1 table",
+  "parameter": "helix_ramp_angle",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "IPT/C 7, 9, 11, 13 (7-13 flute)",
+  "flutes": [
+   7,
+   13
+  ],
+  "centre_cutting": true,
+  "diameter_mm": null,
+  "material": {
+   "printed": "not printed",
+   "normalised": "any"
+  },
+  "value_printed": "0.5°",
+  "unit": "deg",
+  "value_si": 0.5,
+  "derived": [],
+  "verbatim": "IPT/C 13 Same as chart IPT or MMPT x 1.6 IPT or MMPT x 1.25 0.5°",
+  "grade": "c",
+  "notes": "Same 0.5 deg for IPT/C 7, 9, 11 and 13. Flute counts from p. 131 '7-, 9-, 11- and 13-flute tools'. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-imco-iptc-feed",
+  "source_id": "metal_imco_helical_ramp",
+  "source_page": "p. 130, Step 1 table",
+  "parameter": "ramp_feed_fraction",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "IPT/C 7, 9, 11, 13 (7-13 flute)",
+  "flutes": [
+   7,
+   13
+  ],
+  "centre_cutting": true,
+  "diameter_mm": null,
+  "material": {
+   "printed": "not printed",
+   "normalised": "any"
+  },
+  "value_printed": "IPT or MMPT x 1.6 (high-pressure coolant); IPT or MMPT x 1.25 (standard flood coolant)",
+  "unit": "fraction of chart IPT",
+  "value_si": 1.25,
+  "derived": [],
+  "verbatim": "IPT/C 7 Same as chart IPT or MMPT x 1.6 IPT or MMPT x 1.25 0.5°",
+  "grade": "c",
+  "notes": "Helical ramp feed per tooth = 1.6 x (HP coolant) or 1.25 x (flood) the chart IPT, at 0.5 deg. The chart IPT is the series chart value (the page does not say which column; Step 2 cites the Peripheral-HEM values). A shallow ramp with a feed ABOVE 1.0 x. value_si = the flood value. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-imco-aptc-angle",
+  "source_id": "metal_imco_helical_ramp",
+  "source_page": "p. 130, Step 1 table",
+  "parameter": "helix_ramp_angle",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "APT/C 5",
+  "flutes": null,
+  "centre_cutting": true,
+  "diameter_mm": null,
+  "material": {
+   "printed": "not printed",
+   "normalised": "any"
+  },
+  "value_printed": "3°",
+  "unit": "deg",
+  "value_si": 3.0,
+  "derived": [],
+  "verbatim": "APT/C 5 Same as chart IPT or MMPT x 1.6 IPT or MMPT x 1.25 3°",
+  "grade": "c",
+  "notes": "Feed as the IPT/C rows. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-imco-m5-angle",
+  "source_id": "metal_imco_helical_ramp",
+  "source_page": "p. 130, Step 1 table",
+  "parameter": "helix_ramp_angle",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "M525, M527, M503, M726, M706, M806, M924, M904, M905, E14, E13, E12, M104",
+  "flutes": null,
+  "centre_cutting": true,
+  "diameter_mm": null,
+  "material": {
+   "printed": "not printed",
+   "normalised": "any"
+  },
+  "value_printed": "1° - 2.5°",
+  "unit": "deg",
+  "value_si": null,
+  "derived": [
+   {
+    "quantity": "ramp_feed_over_slot_feed",
+    "value": 1.0,
+    "formula": "printed 'Slotting feed in chart'"
+   }
+  ],
+  "verbatim": "M525 Slotting speed in chart Slotting feed in chart Slotting feed in chart 1° - 2.5°",
+  "grade": "c",
+  "notes": "Speed and feed = the slotting values of the series chart (ramp feed fraction 1.0 of slot feed). Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-imco-m2-angle",
+  "source_id": "metal_imco_helical_ramp",
+  "source_page": "p. 130, Step 1 table",
+  "parameter": "helix_ramp_angle",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "M223, M233, M203, M202",
+  "flutes": null,
+  "centre_cutting": true,
+  "diameter_mm": null,
+  "material": {
+   "printed": "not printed in this document",
+   "normalised": "aluminium"
+  },
+  "value_printed": "3° - 5°",
+  "unit": "deg",
+  "value_si": null,
+  "derived": [
+   {
+    "quantity": "ramp_feed_over_slot_feed",
+    "value": 1.0,
+    "formula": "printed 'Slotting feed in chart'"
+   }
+  ],
+  "verbatim": "M223 Slotting speed in chart Slotting feed in chart Slotting feed in chart 3° - 5°",
+  "grade": "c",
+  "notes": "The steepest row. The document does not name the material. A reseller page (cuttingtooldepot.com, not stored) calls M203/M223/M233 aluminium end mills; treat the aluminium label as unverified. Feed = slotting feed (1.0 x). Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-imco-expand",
+  "source_id": "metal_imco_helical_ramp",
+  "source_page": "p. 131, Step 2",
+  "parameter": "entry_general",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "IPT/C 7, 9 (3xD); IPT/C 11, 13 (3.75xD)",
+  "flutes": [
+   7,
+   13
+  ],
+  "centre_cutting": true,
+  "diameter_mm": null,
+  "material": {
+   "printed": "not printed",
+   "normalised": "any"
+  },
+  "value_printed": "3xD; 3.75 x D",
+  "unit": "bore diameter",
+  "value_si": null,
+  "derived": [],
+  "verbatim": "IPT/C 11 3.75 x D IPT or MMPT x .75 RDOC x .5",
+  "grade": "c",
+  "notes": "For 7-13 flute tools the entry hole is opened to 3xD or 3.75xD before full HEM cutting: feed x .75, step-over RDOC x .5 (method A), or a second helix at x 1.6 feed and 0.5 deg (method B). Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-garr-plunge-50",
+  "source_id": "metal_garr_technical",
+  "source_page": "PDF p. 8 (printed p. 290), General Purpose Milling Guide",
+  "parameter": "plunge_feed_fraction",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "GARR general purpose solid carbide end mills",
+  "flutes": null,
+  "centre_cutting": null,
+  "diameter_mm": [
+   1.5875,
+   25.4
+  ],
+  "material": {
+   "printed": "chart rows incl. Aluminum, Magnesium, Copper, Brass, 'Fiberglass, Plastics, G10'",
+   "normalised": "any"
+  },
+  "value_printed": "drop feed by approximately 50%",
+  "unit": "fraction of feed",
+  "value_si": 0.5,
+  "derived": [
+   {
+    "quantity": "plunge_feed_multiplier",
+    "value": 0.5,
+    "formula": "1 - 0.50"
+   },
+   {
+    "quantity": "diameter_mm",
+    "value": [
+     1.5875,
+     25.4
+    ],
+    "formula": "1/16 in x 25.4 .. 1 in x 25.4"
+   }
+  ],
+  "verbatim": "When plunging into a solid, drop feed by approximately 50%.",
+  "grade": "c",
+  "notes": "Plunge chip load = about 0.5 x the chart chip load per tooth. The chart has a plastics row (Fiberglass, Plastics, G10), so the rule covers plastics; it names no wood. The metric page (PDF p. 9) prints the same line. diameter_mm = the chart span 1/16 in to 1 in (derived). Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-garr-chipping-ramp",
+  "source_id": "metal_garr_technical",
+  "source_page": "PDF p. 3, Troubleshooting: End Mills, Chipping",
+  "parameter": "entry_general",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "end mill (general)",
+  "flutes": null,
+  "centre_cutting": null,
+  "diameter_mm": null,
+  "material": {
+   "printed": "not printed",
+   "normalised": "any"
+  },
+  "value_printed": "Decrease ramp angle or slow down approach",
+  "unit": null,
+  "value_si": null,
+  "derived": [],
+  "verbatim": "Decrease ramp angle or slow down approach",
+  "grade": "c",
+  "notes": "A remedy for edge chipping. No number. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-sandvik-linear-75",
+  "source_id": "metal_sandvik_ramping",
+  "source_page": "web page, Two axes ramping - linear",
+  "parameter": "ramp_feed_fraction",
+  "tool_family": "indexable",
+  "tool_subfamily": "indexable milling cutters (insert context)",
+  "flutes": null,
+  "centre_cutting": false,
+  "diameter_mm": null,
+  "material": {
+   "printed": "not printed",
+   "normalised": "any_metal"
+  },
+  "value_printed": "Reduce feed to 75% of normal",
+  "unit": "fraction of feed",
+  "value_si": 0.75,
+  "derived": [],
+  "verbatim": "Reduce feed to 75% of normal",
+  "grade": "c",
+  "notes": "Linear ramping (full slot, ae = Dc). Keep the lower feed for one cutter diameter after the ramp. Indexable context. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-sandvik-max-hole",
+  "source_id": "metal_sandvik_ramping",
+  "source_page": "web page, Two axes ramping - circular",
+  "parameter": "helix_diameter_max_frac",
+  "tool_family": "indexable",
+  "tool_subfamily": "cutters that are not centre cutters",
+  "flutes": null,
+  "centre_cutting": false,
+  "diameter_mm": null,
+  "material": {
+   "printed": "not printed",
+   "normalised": "any_metal"
+  },
+  "value_printed": "2 x D3",
+  "unit": "bore diameter",
+  "value_si": 2.0,
+  "derived": [
+   {
+    "quantity": "path_diameter_over_D3",
+    "value": 1.0,
+    "formula": "(Dm - D3)/D3 at Dm = 2 x D3"
+   }
+  ],
+  "verbatim": "The maximum hole diameter, Dm, which can be produced in one continuous spiral, is 2 x D3",
+  "grade": "c",
+  "notes": "Above 2 x D3 a core stays ('Cutter diameter is too small and will leave a core in the middle'). At 2 x D3 a pip stays in a blind hole; feed to centre to remove it. D3 is the cutter diameter symbol in the figure (not defined in the text). value_si = 2.0 (Dm/D3). Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-sandvik-core",
+  "source_id": "metal_sandvik_ramping",
+  "source_page": "web page, Two axes ramping - circular",
+  "parameter": "helix_diameter_max_frac",
+  "tool_family": "indexable",
+  "tool_subfamily": "cutters that are not centre cutters",
+  "flutes": null,
+  "centre_cutting": false,
+  "diameter_mm": null,
+  "material": {
+   "printed": "not printed",
+   "normalised": "any_metal"
+  },
+  "value_printed": "will leave a core in the middle",
+  "unit": null,
+  "value_si": null,
+  "derived": [],
+  "verbatim": "Cutter diameter is too small and will leave a core in the middle – like trepanning.",
+  "grade": "c",
+  "notes": "The 'no core left' rule in words. Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-sandvik-pitch",
+  "source_id": "metal_sandvik_ramping",
+  "source_page": "web page, 2. Pitch (P)",
+  "parameter": "helix_pitch",
+  "tool_family": "indexable",
+  "tool_subfamily": "indexable milling cutters",
+  "flutes": null,
+  "centre_cutting": null,
+  "diameter_mm": null,
+  "material": {
+   "printed": "not printed",
+   "normalised": "any_metal"
+  },
+  "value_printed": "never larger then the maximum ap",
+  "unit": null,
+  "value_si": null,
+  "derived": [],
+  "verbatim": "The pitch can never be larger then the maximum ap for the cutter concept, and depends on the hole diameter, the cutter diameter and the ramp angle.",
+  "grade": "c",
+  "notes": "Helix pitch cap = the tool's maximum axial depth of cut. ('then' is the page's spelling.) Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-sandvik-prefer-circular",
+  "source_id": "metal_sandvik_ramping",
+  "source_page": "web page",
+  "parameter": "entry_general",
+  "tool_family": "indexable",
+  "tool_subfamily": "milling cutters",
+  "flutes": null,
+  "centre_cutting": null,
+  "diameter_mm": null,
+  "material": {
+   "printed": "not printed",
+   "normalised": "any_metal"
+  },
+  "value_printed": "Circular ramping is always preferred to linear ramping",
+  "unit": null,
+  "value_si": null,
+  "derived": [],
+  "verbatim": "Circular ramping is always preferred to linear ramping (full slotting), because helical interpolation is a much smoother process as the radial cut is reduced.",
+  "grade": "c",
+  "notes": "Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-sandvik-slot-30",
+  "source_id": "metal_sandvik_ramping",
+  "source_page": "web page, Two axes ramping - linear",
+  "parameter": "entry_general",
+  "tool_family": "indexable",
+  "tool_subfamily": "milling cutters",
+  "flutes": null,
+  "centre_cutting": null,
+  "diameter_mm": null,
+  "material": {
+   "printed": "not printed",
+   "normalised": "any_metal"
+  },
+  "value_printed": "narrow slots less than 30 mm wide",
+  "unit": "mm",
+  "value_si": 30,
+  "derived": [],
+  "verbatim": "Linear ramping should be limited to narrow slots less than 30 mm wide, if access for circular ramping is limited",
+  "grade": "c",
+  "notes": "Grade c for wood: the document names no wood."
+ },
+ {
+  "statement_id": "g10-metal-kennametal-angle-basis",
+  "source_id": "metal_kennametal_ramping_blog",
+  "source_page": "web page",
+  "parameter": "entry_general",
+  "tool_family": "flat_end_mill",
+  "tool_subfamily": "milling cutters (general)",
+  "flutes": null,
+  "centre_cutting": null,
+  "diameter_mm": null,
+  "material": {
+   "printed": "not printed",
+   "normalised": "any_metal"
+  },
+  "value_printed": "chosen based on the geometry of the tool, the material being machined, and the depth of cut",
+  "unit": null,
+  "value_si": null,
+  "derived": [],
+  "verbatim": "The ramp angle should be chosen based on the geometry of the tool, the material being machined, and the depth of cut.",
+  "grade": "c",
+  "notes": "No number printed. The page recommends to contact a Kennametal expert. Grade c for wood: the document names no wood."
+ }
+]

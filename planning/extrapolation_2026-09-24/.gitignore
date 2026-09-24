@@ -3,3 +3,4 @@ fetch/*/raw/
 fetch/*/html/
 __pycache__/
 *.pdf
+fetch/*/verify/*_work/

@@ -1,0 +1,695 @@
+# source_url: https://www.precisebits.com/products/carbidebits/scoreengrave.asp
+# accessed_on: 2026-09-25
+# raw_html_sha256: 35a04123edc1843feb862102a6708cdf198a3e51704a035f529a172d8897159b
+
+Think
+
+&
+
+Tinker
+, Ltd. ™
+
+0 item(s) - $0.00
+
+Your shopping cart is empty!
+
+Menu
+
+Home
+
+Products
+
+Application Specific Tools
+
+3D Signs & Plaques
+
+Cutting Composites
+
+Engraving
+
+Jewelry
+
+Musical Instruments
+
+Pool Cues
+
+Printed Circuit Boards
+
+Steel Rule Dies
+
+3D Carving Tools
+
+Backing & Mounting
+
+Calibration Blanks
+
+Inch
+
+Metric
+
+Cleaners & Lubricants
+
+ColletCare
+
+Metal Cutting Fluid
+
+PCB Engraving Lubricant
+
+Collets & Toolholders
+
+Drill bits
+
+Number (wire gauge)
+
+Fractional inch
+
+Letter
+
+Metric
+
+Medical & Slotting
+
+Drill Bit Sets
+
+Drill Bit Diameter Chart
+
+Feeds/Speeds for FR-4 & Carbon-fiber
+
+End-mills
+
+Engraving Tools
+
+1/8in. shank
+
+Micro-engraving tools
+
+Tapered-stubs
+
+Engraving / Cut-out tools
+
+1/4in. shank
+
+Signage / Engraving tools
+
+Miscellaneous
+
+Depth Setting Rings
+
+FuzzBrush
+
+SecureBits
+
+Router Bits
+
+Chip breaker (CB)
+
+Diamond cut (DC)
+
+Feeds/Speeds
+
+CB feeds/speeds
+
+DC feeds/speeds
+
+Specialty Bits
+
+Acrylic/polycarbonate tools
+
+Antler / horn cutters
+
+Countersinks
+
+Extended-reach end-mills
+
+Fret slot cutters
+
+Fretboard planing/radiusing
+
+Shell cutters
+
+Steel Rule Die Tools
+
+Zero-helix cutters
+
+Substrates
+
+Backing material
+
+Copperclad
+
+Entry foil
+
+Tool Packs
+
+Single bit packs
+
+10-bit packs
+
+50-bits packs
+
+SecureBits
+
+Applications
+
+3D Signs & Plaques
+
+Cutting Composites
+
+Engraving
+
+Jewelry
+
+Musical Instruments
+
+Pool Cues
+
+Printed Circuit Boards
+
+Steel Rule Dies
+
+Resources
+
+FAQ
+
+Cutter terminology
+
+Depth Setting Rings
+
+Extended-reach Geometry
+
+Feeds & Speeds Calculator
+
+Glossary
+
+Point styles
+
+Reference library
+
+Sweet-spot Test
+
+Tutorials
+
+Charts/Tables
+
+Chipbreaker Feeds & Speeds
+
+Diamondcut Feeds & Speeds
+
+Drill Bit Diameter Chart
+
+Drill Bit Feeds & Speeds
+
+ER Torque Chart
+
+Metal Gauge Conversion Chart
+
+Relative Wood Hardness Table
+
+Support
+
+Contact us
+
+Limited Warranty
+
+Policies
+
+Sales Quotes
+
+Technical Support
+
+Distributors
+
+Domestic Distributors
+
+International Distributors
+
+Account
+
+My Account
+
+Order History
+
+Wish list
+
+2-flute, Micro-engraving, PCB Traces Isolation Bits (EM2E8) - (0.125" shank)
+
+Engraving / Metal Cutting
+
+Micro-Engraving (0.005 in. tip)
+
+Tapered-stub 3-Flute Fish-tail
+
+Engraving V-tip (0.015 in. tip)
+
+Signage V-tip (0.015 in. tip)
+
+Stub End-mills
+
+Overview
+
+Specifications
+
+Benefits
+
+Applications
+
+Application Data
+
+Tutorials
+
+Compatibility
+
+Overview
+
+PreciseBits 2-flute spiral V-tip mechanical etching and PCB trace isolation tools offer an optimum combination of high-resolution cutting and tip strength. The plunge style tip geometry insures burr-free material removal at all plunge depths and cutting widths.
+
+Manufactured in the USA, every tool is:
+
+100% measured / optically inspected to insure that EVERY tool meets, or exceeds, our published specifications
+
+available with depth rings precisely positioned to ±0.004 in. (0.038mm), virtually eliminating the need for resetting Z-axis zero between tool changes (with bits of same overall length)
+
+made from premium grade submicrograin tungsten carbide (HRa 92, HRc 80)
+
+This attention to detail and the use of top quality materials result in tools with dependable cutting characteristics and one of the longest tool lives in the market. Combined with comprehensive customer support, our cutters have become the tools of choice for sign makers, model makers, artists and instrument builders around the world.
+
+Specifications
+
+Geometry - 2-flute, "V" point
+
+Tip diameter - 0.0050 in. ±0.0002 in.
+
+Length - indicated ±0.010 in. (30° 1.50 in. ±0.010 in.)
+
+Tip angle - nominal ± 0.5°
+
+Max. depth of cut - DOC (penetration) varies by tip angle
+
+30° - 0.177 in. (4.5mm)
+
+40° - 0.070 in. (1.8mm)
+45° - 0.075 in. (1.9mm)
+60° - 0.054 in. (1.4mm)
+
+90° - 0.031 in. (0.8mm)
+
+Max runout (TIR) - < 0.0005 in.
+
+Shank dia. - 0.1250 in. (3.18 mm) +0.00, -0.0002 in.
+
+Anticipated Life - 3,000 linear inches (fiberglass, CNC milling)
+
+Material - solid submicrograin carbide
+
+Ring Set - 0.800 in. ± 0.002 in. (optional)
+
+Operating RPM - CNC certified operation 20k RPM to 100k RPM
+
+Benefits
+
+spiral geometry insures efficient debris removal
+
+Cutting edge geometry virtually eliminates chatter at high feed rates
+
+60° & 90° tips optimized for engraving non-ferrous metals, hardwoods, phenolics, stabilized woods and composite minerals.
+
+Proprietary ZrN coating extends bit life and improves cut quality
+
+Applications
+
+Print circuit trace isolation
+
+Engraving plaques, awards, medallions, and labels
+
+Custom jewelry fabrication and marking
+
+Application Data
+
+Tool Type:Engraving (or Flat-tip Engraving)
+
+Diameter (D) = 0.1250 in. (30°), 0.0625 in. (45°, 60°, 90°)
+
+30° D = 0.125 in.
+
+45° D = 0.0625 in.
+
+60° D = 0.0625 in.
+
+90° D = 0.0625 in.
+
+Side Angle (A, half or draft-angle)
+
+30V: A = 15°
+
+45V: A = 22.5°
+
+60V: A = 30°
+
+90V: A = 45°
+
+Flat Diameter (F)
+
+30°: F = 0.005 in.
+
+45°: F = 0.005 in.
+
+60°: F = 0.005 in.
+
+90°: F = 0.005 in.
+
+Stepdown = Depth per Pass, Pass Depth:
+
+Plastic - 0.015 in. (0.38mm)
+
+G-10 / FR-4 - 0.010 in. (0.25mm)
+
+Aluminum - 0.005 in. (0.13mm)
+
+Hardwood - 0.020 in. (0.51mm)
+
+Softwood - 0.030 in. (0.76mm)
+
+MDF - 0.020 in. (0.51mm)
+
+Depth of Cut (DOC):
+
+30° - 0.177 in. (4.48mm)
+
+45° - 0.075 in. (1.92mm)
+
+60° - 0.054 in. (1.38mm)
+
+90° - 0.031 in. (0.8mm)
+
+Stepover (for final cleanup pass) = 0.002 in. (0.13mm)
+
+Stepover (for roughing, clearance pass) = 0.005 in. (0.25mm)
+
+Spindle RPM (SPEED) = 5 KRPM to 60 KRPM
+
+Feedrate (IPM) = Depends on the material being cut. Do the Sweetspot Test before setting this parameter
+(go to: http://www.precisebits.com/tutorials/calibrating_feeds_n_speeds.htm).
+
+Plunge rate = 5 IPM to 25 IPM (again depending on material being cut)
+
+Tutorials
+
+Mechanical Etching of Printed Circuit Boards (PCB)
+
+Finding the best combination of feed and speed
+
+Calculating engraving width and plunge depth
+
+Compatibility
+
+PCB prototyping systems from AccurateCNC, LPKF, T-Tech, MITS, Sun & EverPrecision
+
+Engraving systems from Roland, GravoGraph, Vision, AliExpress & Datron.
+
+MADE IN USA
+
+LPKF and T-Tech users must specify the make and model number of their CNC routers
+to insure that the rings are properly positioned!
+
+30° V-tip tools are NOT intended for metal engraving, or PCB trace isolation
+
+NEW PART NUMBERING! EM2E8-0625-**V now ship as EM2E8-0050-**V
+
+Product Compare (0)
+
+Product Filter
+
+| Tip Diameter | MaxDiameter | LOC | Flutes | Angle | Coating | Shank |
+OAL |
+Depth Rings | Reviews | Part Number |
+Price |
+
+| 0.0030" (0.076mm) | 0.0625" (1.59mm) | 0.0718" (1.824mm) | 2 | 45° | | 1/8" |
+1.42" (36.1mm) |
+Available |
+Leave the first review Add to wishlist
+Compare
+Product Page
+| EM2E8-0030-45V |
+$13.11
+
+|
+
+| 0.0030" (0.076mm) | 0.0625" (1.59mm) | 0.0515" (1.31mm) | 2 | 60° | | 1/8" |
+1.42" (36.1mm) |
+Available |
+Leave the first review Add to wishlist
+Compare
+Product Page
+| EM2E8-0030-60V |
+$13.11
+
+|
+| 0.0050" (0.13mm) | 0.0945" (2.40mm) | 0.1670" (4.24mm) | 2 | 30° | | 1/8" |
+1.50" (38.1mm) |
+Available |
+Leave the first review Add to wishlist
+Compare
+Product Page
+| EM2E8-0050-30V |
+$12.23
+
+|
+| 0.0050" (0.13mm) | 0.0945" (2.40mm) | 0.1670" (4.24mm) | 2 | 30° | ZrN | 1/8" |
+1.50" (38.1mm) |
+Available |
+Leave the first review Add to wishlist
+Compare
+Product Page
+| EM2E8-0050-30VC |
+$16.22
+
+|
+| 0.0050" (0.13mm) | 0.0625" (1.59mm) | 0.0835" (2.12mm) | 2 | 45° | | 1/8" |
+1.42" (36.1mm) |
+Available |
+Leave the first review Add to wishlist
+Compare
+Product Page
+| EM2E8-0050-38V |
+$13.11
+
+|
+| 0.0050" (0.13mm) | 0.0625" (1.59mm) | 0.0790" (2.01mm) | 2 | 40° | | 1/8" |
+1.42" (36.1mm) |
+Available |
+Leave the first review Add to wishlist
+Compare
+Product Page
+| EM2E8-0050-40V |
+$13.11
+
+|
+| 0.0050" (0.13mm) | 0.0625" (1.59mm) | 0.0790" (2.01mm) | 2 | 40° | ZrN | 1/8" |
+1.42" (36.1mm) |
+Available |
+Leave the first review Add to wishlist
+Compare
+Product Page
+| EM2E8-0050-40VC |
+$17.09
+
+|
+| 0.0050" (0.13mm) | 0.0625" (1.59mm) | 0.0694" (1.76mm) | 2 | 45° | | 1/8" |
+1.42" (36.1mm) |
+Available |
+Leave the first review Add to wishlist
+Compare
+Product Page
+| EM2E8-0050-45V |
+$13.11
+
+|
+| 0.0050" (0.13mm) | 0.0625" (1.59mm) | 0.0694" (1.76mm) | 2 | 45° | ZrN | 1/8" |
+1.42" (36.1mm) |
+Available |
+Leave the first review Add to wishlist
+Compare
+Product Page
+| EM2E8-0050-45VC |
+$17.09
+
+|
+| 0.0050" (0.13mm) | 0.0625" (1.59mm) | 0.0541" (1.37mm) | 2 | 56° | | 1/8" |
+1.42" (36.1mm) |
+Available |
+Leave the first review Add to wishlist
+Compare
+Product Page
+| EM2E8-0050-56V |
+$13.11$9.91
+
+|
+| 0.0050" (0.13mm) | 0.0625" (1.59mm) | 0.0498" (1.26mm) | 2 | 60° | | 1/8" |
+1.42" (36.1mm) |
+Available |
+Leave the first review Add to wishlist
+Compare
+Product Page
+| EM2E8-0050-60V |
+$13.11
+
+|
+| 0.0050" (0.13mm) | 0.0625" (1.59mm) | 0.0498" (1.26mm) | 2 | 60° | ZrN | 1/8" |
+1.42" (36.1mm) |
+Available |
+Leave the first review Add to wishlist
+Compare
+Product Page
+| EM2E8-0050-60VC |
+$17.09
+
+|
+| 0.0050" (0.13mm) | 0.0625" (1.59mm) | 0.0288" (0.73mm) | 2 | 90° | | 1/8" |
+1.42" (36.1mm) |
+Available |
+Leave the first review Add to wishlist
+Compare
+Product Page
+| EM2E8-0050-90V |
+$13.10
+
+|
+| 0.0050" (0.13mm) | 0.0625" (1.59mm) | 0.0288" (0.73mm) | 2 | 90° | ZrN | 1/8" |
+1.42" (36.1mm) |
+Available |
+Leave the first review Add to wishlist
+Compare
+Product Page
+| EM2E8-0050-90VC |
+$17.09
+
+|
+
+Support
+
+About us
+
+Contact us
+
+Educational Discount
+
+Limited Warranty
+
+No-fault Returns
+
+Policies
+
+Sales Quotes
+
+Tech Support
+
+Products
+
+Collets, Toolholders
+
+Composite Cutting
+
+Metal Machining
+
+Woodworking
+
+Plastic Cutting
+
+Applications
+
+3D Signs & Plaques
+
+Engraving
+
+Jewelry
+
+Musical Instruments
+
+Pool Cues
+
+Printed Circuit Boards
+
+Steel Rule Dies
+
+Calculators
+
+Resources
+
+FAQ
+
+Tool terms
+
+Glossary
+
+Point styles
+
+Reference library
+
+Sweet-spot Test
+
+Tutorials
+
+Support
+
+About us
+
+Contact us
+
+Educational Discount
+
+Limited Warranty
+
+No-fault Returns
+
+Policies
+
+Sales Quotes
+
+Tech Support
+
+Products
+
+Collets, Toolholders
+
+Composite Cutting
+
+Metal Machining
+
+Woodworking
+
+Plastic Cutting
+
+Applications
+
+3D Signs & Plaques
+
+Engraving
+
+Jewelry
+
+Musical Instruments
+
+Pool Cues
+
+Printed Circuit Boards
+
+Steel Rule Dies
+
+Resources
+
+FAQ
+
+Tool terms
+
+Glossary
+
+Point styles
+
+Reference library
+
+Sweet-spot Test
+
+Tutorials
+
+Feed and Speed Calculators

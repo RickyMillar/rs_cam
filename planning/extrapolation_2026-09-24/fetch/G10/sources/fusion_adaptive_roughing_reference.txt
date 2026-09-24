@@ -1,0 +1,782 @@
+# source_url: https://help.autodesk.com/cloudhelp/ENU/Fusion-CAM/files/GUID09E44604-DAD8-47D6-ADC6-C100869DE724.htm
+# accessed_on: 2026-09-25
+# raw_html_sha256: 780839ed3ad78a1cc9c0faeed849f01fb9e13fa43414097cedb8277329619b2d
+
+3D Adaptive Roughing reference
+
+3D Adaptive Roughing (previously known as Adaptive Clearing) is a high speed machining (HSM) strategy for efficiently removing large areas of material.
+
+Manufacture > Milling > 3D > 3D Adaptive Roughing
+
+It is unique in that it guarantees a maximum tool load at all stages of the machining cycle, and makes it possible to cut deep and with the flank of the tool without risk of breakage.
+
+The strategy first makes a series of constant Z-layers through the part, and then clears them in stages from the bottom upwards. Because it can cut so deeply, the first step down at each stage should be the effective cutting length of the tool. Then clearing of the intermediate layers proceeds into the shallower layers to maximize the efficiency of the tool use.
+
+This strategy is extremely effective for machining cores because it uses the shape of the original stock to maximum effect when machining from the outside inwards towards the finished shape of the part.
+
+3D Adaptive Roughing can also be used to great effect for rest machining where a previous larger tool has removed the majority of the material, but a smaller tool is necessary for accessing the finer details. When a previous toolpath is selected, this strategy takes account of the state of the stock after the selected machining operations and limits itself to the yet non-machined areas.
+
+Retract levels in an 3D Adaptive Roughing toolpath. The numbers indicate the order in which the Z levels are machined.
+
+Guidelines for Cutting Conditions
+Steel
+The depth of a cut can be the same as the tool's flute length; up to 20% of the tool diameter can be used for sideways step.
+
+Hardened steel
+The depth of cut can be up to the tool's flute length, and sideways step should be limited to 5% of the tool diameter.
+
+Aluminum
+The depth of cut is recommended to be 1.5 to 2 times the tool diameter (but can be up to the flute length). A sideways step of 30% of the tool diameter is recommended, and up to 50% of the tool diameter is in some circumstances achievable.
+
+These values are for cutters suited for roughing. Multi flute cutters should only be set to half or less of the above sideways steps.
+
+Tool tab settings
+
+Tool
+Press Select to access the tool library. See the Tool Library reference documentation for more information on selecting tools.
+
+Coolant
+Select the type of coolant used with the machine tool. Not all types will work with all machine postprocessors.
+
+Feed & Speed
+Spindle and Feedrate cutting parameters.
+
+Spindle Speed - The rotational speed of the spindle expressed in Rotations Per Minute (RPM)
+
+Surface Speed - The speed which the material moves past the cutting edge of the tool (SFM or m/min)
+
+Ramp Spindle Speed - The rotational speed of the spindle when performing ramp movements
+
+Cutting Feedrate - Feedrate used in regular cutting moves. Expressed as Inches/Min (IPM) or MM/Min
+
+Feed per Tooth - The cutting feedrate expressed as the feed per tooth (FPT)
+
+Lead-In Feedrate - Feed used when leading in to a cutting move.
+
+Lead-Out Feedrate - Feed used when leading out from a cutting move
+
+Ramp Feedrate - Feed used when doing helical ramps into stock
+
+Plunge Feedrate - Feed used when plunging into stock
+
+Feed per Revolution - The plunge feedrate expressed as the feed per revolution
+
+Shaft & Holder
+When enabled, this provides additional controls for collision handling. Collision detection can be done for both the tool shaft and holder, and they can be given separate clearances. Choose between several modes, depending on the machining strategy.
+
+This function increases the number of calculations that need to be performed. This may effect the performance of your system on very large projects.
+
+Shaft and Holder Modes
+
+|
+|
+|
+
+Disabled |
+|
+Pull away |
+
+|
+|
+|
+
+Does not calculate for any shaft/holder collisions. |
+|
+Pulls the toolpath away from the workpiece to maintain a safe distance between the shaft and/or holder. |
+
+Trimmed |
+|
+Detect tool length |
+
+|
+|
+|
+
+Reduces the travel of the cut to avoid a collision with the holder. |
+|
+Automatically extended the tool further out of the holder to maintain the specified safe distance between the shaft and/or holder and the workpiece. A message indicating how the far the tool is extended out of the holder is logged. |
+
+Fail on collision - The toolpath calculation is aborted and an error message logged when the safe distance is violated.
+
+Settings
+
+Use Shaft - Enable to include the shaft of the selected tool, in the toolpath calculation, to avoid collisions.
+
+Shaft Clearance - The tool shaft always stays this distance from the part.
+
+Use Holder - Enable to include the holder of the selected tool, in the toolpath calculation, to avoid collisions.
+
+Holder Clearance - The tool holder always stays this distance from the part.
+
+Geometry tab settings
+
+Machining Boundary
+Machining Boundary specifies how the toolpath boundary is defined. The following images are shown using a 3D Radial toolpath.
+
+|
+|
+|
+
+Silhouette |
+|
+Selection |
+
+|
+|
+|
+
+Boundary modes:
+
+|
+|
+|
+
+Bounding box |
+Silhouette |
+Selection |
+
+|
+|
+|
+
+Defined by the rectangular extents of the part as viewed from the WCS tool plane view (Top) |
+Defined by the shadow edge of the part profile as viewed from the WCS tool plane view (Top) |
+Defined by a selection that can be edges of the model or a sketch boundary. |
+
+None - Defined by the stock size specified in the Setup. Not available for all machining strategies.
+
+Tool Containment
+Use tool containment to control the tools position in relation to the selected boundary or boundaries.
+
+|
+|
+|
+
+Tool inside boundary |
+Tool center on boundary |
+Tool outside boundary |
+
+|
+|
+|
+
+The entire tool stays inside the boundary. As a result, the entire surface contained by the boundary might not be machined. |
+The boundary limits the center of the tool. This setting ensures that the entire surface inside the boundary is machined. However, areas outside the boundary or boundaries might also be machined. |
+The toolpath is created inside the boundary, but the tool edge can move on the outside edge of the boundary. |
+
+Additional Offset
+An additional offset can be applied to the selected boundary/boundaries and tool containment. A positive value offsets the boundary outwards unless the tool containment is Inside, in which case a positive value offsets inwards.
+
+Examples shown with Tool Containment set to Tool center on boundary.
+
+|
+|
+|
+
+Negative offset |
+No offset |
+Positive offset |
+
+|
+|
+|
+
+Tool is offset inside |
+Tool stays on the boundary |
+Tool is offset outside |
+
+To ensure that the edge of the tool overlaps the boundary, select the Outside tool containment method and specify a small positive value.
+
+To ensure that the edge of the tool is completely clear of the boundary, select the Inside tool containment method and specify a small positive value.
+
+Rest Machining
+When checked this limits the operation to only remove material that a previous tool or operation could not remove.
+
+Rest stands for REmaining STock.
+
+|
+|
+|
+
+|
+|
+Area to Machine - Pocket shown in green.
+Previous Operation - Not all stock is removed.
+Rest Machining Off - All areas are machined.
+Rest Machining On - Previously un-cut areas are machined. |
+
+Source
+Specifies the source from which the rest machining is to be calculated.
+
+From previous operation(s)
+
+From file
+
+From bodies
+
+From setup stock
+
+Bodies
+Select the bodies that represent the Rest Stock.
+
+File
+Specifies the rest material file.
+
+Ignore Stock Less Than
+Specifies the amount of stock from previous operations to ignore. It is a positive value expressed in distance units. The parameter helps you avoid machining of minor rest material.
+
+Tool Orientation
+Allows you to change the orientation of the tool axes orientation using a combination of triad orientation and origin options.
+
+The Tool Orientation drop-down menu provides the following options to set the orientation of the X, Y, and Z triad axes:
+
+Model orientation - Uses the coordinate system (WCS) of the current part for the tool orientation.
+
+Setup WCS orientation - Uses the workpiece coordinate system (WCS) of the current setup for the tool orientation.
+
+Select Z axis/plane & X axis - Select a face or an edge to define the Z axis and another face or edge to define the X axis. Both the Z and X axes can be flipped 180 degrees.
+
+Select Z axis/plane & Y axis - Select a face or an edge to define the Z axis and another face or edge to define the Y axis. Both the Z and Y axes can be flipped 180 degrees.
+
+Select X & Y axes - Select a face or an edge to define the X axis and another face or edge to define the Y axis. Both the X and Y axes can be flipped 180 degrees.
+
+Select coordinate system - Sets a specific tool orientation for this operation from a defined user coordinate system in the model. This uses both the origin and orientation of the existing coordinate system. Use this if your model does not contain a suitable point & plane for your operation.
+
+Surface normal and X axis - Selecting a curved surface puts the Z axis perpendicular to the selected point and matches the X of the coordinate system. X can be flipped.
+
+Surface normal and Y axis - Selecting a curved surface puts the Z axis perpendicular to the selected point and matches the Y of the coordinate system. Y can be flipped.
+
+Flip X, Flip Y, Flip Z - Reverses the axis direction.
+
+X axis, Y axis, Z axis - Select the edge that represents the axis direction.
+
+Turn - Use the manipulators to rotate the selected X Y plane.
+
+Tilt - Use the manipulators to rotate the Z tool axis.
+
+Align to View - Sett the X and Y plane through the currently selected view. Your current view represents the Z axis of the new plane.
+
+The Origin drop-down menu offers the following options for locating the triad origin:
+
+Setup WCS origin - Uses the workpiece coordinate system (WCS) origin of the current setup for the tool origin.
+
+Surface Point - Uses the selected surface point for the tool orientation.
+
+Model origin - Uses the coordinate system (WCS) origin of the current part for the tool origin.
+
+Selected point - Select a vertex or an edge for the triad origin.
+
+Model box point - Select a point on the model bounding box for the triad origin.
+
+Stock box point - Select a point on the stock bounding box for the triad origin.
+
+Model
+Enable to override the model geometry (surfaces/bodies) defined in the setup.
+
+Include Setup Model
+Enabled by default, the model selected in the setup is included in addition to the model surfaces selected in the operation. If you disable this checkbox, then the toolpath is generated only on the surfaces selected in the operation.
+
+Heights tab settings
+
+For Clearance Geometry, see Clearance geometry.
+
+For machining heights, see Setting machining heights and:
+
+Clearance height
+
+Retract height
+
+Top height
+
+Bottom height
+
+Passes tab settings
+
+Tolerance
+The machining tolerance is the sum of the tolerances used for toolpath generation and geometry triangulation. Any additional filtering tolerances must be added to this tolerance to get the total tolerance.
+
+|
+|
+
+|
+|
+
+Loose Tolerance .100 |
+Tight Tolerance .001 |
+
+CNC machine contouring motion is controlled using line G1 and arc G2 G3 commands. To accommodate this, Fusion approximates spline and surface toolpaths by linearizing them; creating many short line segments to approximate the desired shape. How accurately the toolpath matches the desired shape depends largely on the number of lines used. More lines result in a toolpath that more closely approximates the nominal shape of the spline or surface.
+
+Data Starving
+
+It is tempting to always use very tight tolerances, but there are trade-offs including longer toolpath calculation times, large G-code files, and very short line moves. The first two are not much of a problem because Fusion calculates very quickly and most modern controls have at least 1MB of RAM. However, short line moves, coupled with high feedrates, may result in a phenomenon known as data starving.
+
+Data starving occurs when the control becomes so overwhelmed with data that it cannot keep up. CNC controls can only process a finite number of lines of code (blocks) per second. That can be as few as 40 blocks/second on older machines and 1,000 blocks/second or more on a newer machine like the Haas Automation control. Short line moves and high feedrates can force the processing rate beyond what the control can handle. When that happens, the machine must pause after each move and wait for the next servo command from the control.
+
+Machine Shallow Areas
+Specifies that additional Z-levels should be cut in the shallow areas. The following two images are shown with 3D Contour.
+
+|
+|
+|
+
+Disabled |
+|
+Enabled |
+
+|
+|
+|
+
+Minimum Shallow Stepdown
+This parameter controls the minimum allowed stepdown between the extra Z-levels. This parameter takes precedence over the maximum shallow stepover.
+
+Maximum Shallow Stepover
+This parameter controls the stepover used to detect areas where extra Z-levels should be inserted. If the normal stepdown results in a stepover of more than this value extra levels will be inserted until the stepover or the minimum stepdown is reached.
+
+Optimal Load
+The maximum amount of engagement the Adaptive toolpath should maintain. This can be considered the stepover amount, but Adaptive High Speed Machining will vary the stepover to reduce overloading the tool.
+
+Traditional pocket toolpaths can overload the tool. 3D Adaptive Roughing results in 40% faster material removal, allowing you to take longer depth cuts with full confidence. High Speed Machining - HSM, Adaptive eliminates spikes in tool engagement that could break cutters.
+
+|
+|
+|
+
+|
+|
+|
+
+Adaptive HSM |
+Adaptive High Speed - clearing toolpath |
+Traditional Pocket - clearing toolpath |
+
+Minimum Cutting Radius
+Defines the smallest toolpath radius to generate in a sharp corner. Minimum Cutting Radius creates a blend at all inside sharp corners.
+
+Forcing the tool into a sharp corner, or a corner where the radius is equal to the tool radius, can create chatter and distort the surface finish.
+
+|
+|
+|
+
+|
+|
+|
+
+Set to Zero - The toolpath is forced into all inside sharp corners. |
+|
+Set to 0.07 in - The toolpath will have a blend of .070 radius in all sharp corners. |
+
+Note: Setting this parameter leaves more material in internal corners requiring subsequent rest machining operations with a smaller tool.
+
+Machine Cavities
+If enabled, the strategy ramps into pocket cavities for machining.
+
+If disabled, the strategy only machines from the outside-in, and leaves pockets unmachined.
+
+|
+|
+|
+
+Enabled |
+|
+Disabled |
+
+|
+|
+|
+
+Cavities will be machined. |
+|
+Cavities will be ignored. |
+
+Use Slot Clearing
+Enable this setting to start pocket clearing with a slot along its middle, before continuing with a spiral motion towards the pocket wall. This feature can be used to reduce linking motion at corners for some pockets.
+
+|
+|
+|
+
+Enabled |
+|
+Disabled |
+
+|
+|
+|
+
+Slot Clearing Width
+The width of the initial clearing slot along the middle of the pocket before continuing with a spiral motion towards the pocket wall.
+
+Slot clearing width
+
+Direction
+The Direction option lets you control if Fusion should try to maintain either Climb or Conventional milling. Depending on the geometry, it is not always possible to maintain climb or conventional milling throughout the entire toolpath.
+
+|
+|
+|
+
+|
+|
+|
+
+1 - Climb cut
+2 - Conventional Cut
+3 - Both Ways |
+Climb Cut |
+Conventional Cut |
+
+Maximum Roughing Stepdown
+Specifies the distance for the maximum stepdown between Z-levels. The maximum stepdown is applied to the full depth, less any remaining stock and finish pass amounts.
+
+|
+|
+
+|
+|
+
+The final pass may be less than the Max Stepdown.
+
+Shown without finishing stepdown.
+
+Fine Stepdown
+Specifies the finer intermediate steps, taken to smooth the rough steps. These smaller steps are taken between the larger Maximum Roughing Stepdowns, to smooth the part closer to the final size. In spite of its name, this is actually a step up, in the direction of the tool axis.
+
+|
+|
+
+|
+|
+
+Fine Step Distance. |
+Fine steps, moving up along the part profile. |
+
+Flat Area Detection
+If enabled, the strategy attempts to detect the heights of flat areas and peaks, and machine at these levels. Allows input for minimum engagement.
+
+If disabled, the strategy machines at exactly the specified stepdowns.
+
+Important: Enabling this feature may increase calculation time considerably.
+
+Minimum Stepdown - This is the smallest allowable stepdown to make on a flat area.
+
+Minimum Axial Engagement - Enable to ensure that at least one flute is constantly engaged as it turns during the intermediate steps to avoid chatter and reduce tool wear.
+
+Important: Skipping intermediate steps will leave extra stock for the semi-roughing operation that follows.
+
+Order by Depth
+When enabled, this orders the cuts of multiple contours or cavities by Z level.
+
+|
+|
+|
+
+|
+|
+|
+
+Model with multiple
+cavity selections |
+|
+All cavities
+cut by Z level |
+
+Order by Area
+When enabled, this completes all depth cuts for each contour or cavity before moving on to the next.
+
+|
+|
+|
+
+|
+|
+|
+
+Model with multiple
+cavity selections |
+|
+Complete the first contour or cavity
+before moving on to the next |
+
+Stock to Leave
+A positive stock value leaves material for subsequent roughing or finishing operations. Roughing operations generally leave a small amount of material for a precision finish cut.
+
+A negative stock value removes material beyond the part surface or boundary. This technique is often used in Electrode Machining to allow for a spark gap, or to meet tolerance requirements of a part.
+
+A zero stock amount (0.0) value remove all excess material up to the selected geometry.
+
+|
+|
+|
+
+Positive |
+No Stock |
+Negative |
+
+|
+|
+|
+
+Radial (wall) Stock to Leave
+The Radial Stock to Leave parameter controls the amount of material to leave in the radial (perpendicular to the tool axis) direction, i.e. at the side of the tool.
+
+Axial (floor) Stock to Leave
+The Axial Stock to Leave parameter controls the amount of material to leave in the axial (along the Z-axis) direction, i.e. at the bottom of the tool.
+
+|
+|
+|
+
+Radial - Wall stock |
+Radial and Axial |
+Axial - Floor stock |
+
+|
+|
+|
+
+For surfaces that are not exactly vertical, Fusion interpolates between the axial (floor) and radial (wall) stock to leave values, so the stock left in the radial direction on these surfaces might be different from the specified value, depending on surface slope and the axial stock to leave value.
+
+Changing the radial stock to leave automatically sets the axial stock to leave to the same amount, unless you manually enter the axial stock to leave.
+
+When using a ball or radius cutter, the negative axial stock must be less than or equal to the corner radius of the selected tool.
+
+Fillets
+Enable to enter a fillet radius.
+
+Fillet Radius
+Specify a fillet radius.
+
+Smoothing
+Smooths the toolpath by removing excessive points and fitting arcs where possible within the given filtering tolerance.
+
+|
+|
+
+|
+|
+
+Smoothing Off |
+Smoothing On |
+
+Smoothing is used to reduce code size without sacrificing accuracy. Smoothing works by replacing collinear lines with one line and tangent arcs to replace multiple lines in curved areas.
+
+The effects of smoothing can be dramatic. G-code file size may be reduced by as much as 50% or more. The machine will run faster and more smoothly and surface finish improves. The amount of code reduction depends on how well the toolpath lends itself to smoothing. Toolpaths that lay primarily in a major plane (XY, XZ, YZ), like parallel paths, filter well. Those that do not, such as 3D Scallop, are reduced less.
+
+Smoothing Tolerance
+Specifies the smoothing filter tolerance.
+
+Smoothing works best when the Tolerance (the accuracy with which the original linearized path is generated) is equal to or greater than the Smoothing (line arc fitting) tolerance.
+
+Note: Total tolerance, or the distance the toolpath can stray from the ideal spline or surface shape, is the sum of the cut Tolerance and Smoothing Tolerance. For example, setting a cut Tolerance of .0004 in and Smoothing Tolerance of .0004 in means the toolpath can vary from the original spline or surface by as much as .0008 in from the ideal path.
+
+Feed Optimization
+Specifies that the feed should be reduced at corners.
+
+Maximum Directional Change - Specifies the maximum angular change allowed before the feedrate is reduced.
+
+Reduced Feed Radius - Specifies the minimum radius allowed before the feed is reduced.
+
+Reduced Feed Distance - Specifies the distance to reduce the feed before a corner.
+
+Reduced Feedrate - Specifies the reduced feedrate to be used at corners.
+
+Only Inner Corners - Enable to only reduce the feedrate on inner corners.
+
+Linking tab settings
+
+Retraction Policy
+Controls how the tool moves between cutting passes. The following images are shown using the Flow strategy.
+
+Full retraction - completely retracts the tool to the Retract Height at the end of the pass before moving above the start of the next pass.
+
+Minimum retraction - moves straight up to the lowest height where the tool clears the workpiece, plus any specified safe distance.
+
+Shortest path - moves the tool the shortest possible distance in a straight line between paths.
+
+|
+|
+|
+
+Full Retract |
+Minimum Retraction |
+Shortest Path |
+
+|
+|
+|
+
+Important: The Shortest path option should not be used on machines that do not support linearized rapid movements where G0 moves are straight-line (versus G0 moves that drive all axes at maximum speed, sometimes referred to as "dogleg" moves). Failure to obey this rule will result in machine motion that cannot be properly simulated by the software and may result in tool crashes.
+
+For CNC machines that do not support linearized rapid moves, the post processor can be modified to convert all G0 moves to high-feed G1 moves. Contact technical support for more information or instructions how to modify post processors as described.
+
+High Feedrate Mode
+Specifies when rapid movements should be output as true rapids (G0) and when they should be output as high feedrate movements (G1).
+
+Preserve rapid movement - All rapid movements are preserved.
+
+Preserve axial and radial rapid movement - Rapid movements moving only horizontally (radial) or vertically (axial) are output as true rapids.
+
+Preserve axial rapid movement - Only rapid movements moving vertically.
+
+Preserve radial rapid movement - Only rapid movements moving horizontally.
+
+Preserve single axis rapid movement - Only rapid movements moving in one axis (X, Y or Z).
+
+Always use high feed - Outputs rapid movements as (high feed moves) G01 moves instead of rapid movements (G0).
+
+This parameter is usually set to avoid collisions at rapids on machines which perform "dog-leg" movements at rapid.
+
+High Feedrate
+The feedrate to use for rapids movements output as G1 instead of G0.
+
+Allow Rapid Retract
+When enabled, retracts are done as rapid movements (G0). Disable to force retracts at lead-out feedrate.
+
+Maximum Stay-Down Distance
+Specifies the maximum distance allowed for stay-down moves.
+
+|
+|
+|
+
+|
+|
+|
+
+1" Maximum stay-down |
+|
+2" Maximum stay-down distance |
+
+Minimum Stay-Down Clearance
+Specifies the minimum radial clearance for the stay down moves.
+
+Stay-Down Level
+Use this setting to control when to stay down rather than doing retracts when moving around obstacles. Generally, you will want the Adaptive strategy to stay-down more if your CNC machine does slow retracts compared to high feed moves. In such cases, increase the level value in the Stay-down level: drop-down menu. Values increase by increments of 10% with the Least setting at 0% and the Most setting at 100%.
+
+Related: Keep in mind that calculation time can increase significantly as you increase the stay-down level.
+
+Lift Height
+Specifies the lift distance during repositioning moves.
+
+|
+|
+|
+
+|
+|
+|
+
+Lift height 0 |
+|
+Lift height .1 inch |
+
+No-Engagement Feedrate
+Specifies the feedrate used for movements where the tool is not in engagement on the material, but is also not retracted.
+
+Leads and Transitions
+These parameters control how the toolpath should lead into and lead off-of the toolpath cuts. This consist of a combination of circular and sometimes linear motion.
+
+Horizontal Lead In and Lead Out Moves
+
+|
+|
+|
+
+Horizontal Lead-In Radius |
+|
+Horizontal Lead-Out Radius |
+
+|
+|
+|
+
+The radius for smoothing the entry into the toolpath. |
+|
+The radius for smoothing the exit off of the toolpath. |
+
+Vertical Lead-In Lead-Out Radius
+
+|
+|
+|
+
+Vertical Lead-In Radius |
+|
+Vertical Lead-Out Radius |
+
+|
+|
+|
+
+The radius of the vertical arc for smoothing into the toolpath. |
+|
+The radius of the vertical arc for smoothing off of the toolpath. |
+
+Ramp Type
+Specifies how the cutter enters the part for each depth cut.
+
+Note: Predrill requires you to specify a Predrill location.
+
+|
+|
+|
+
+Predrill |
+Plunge |
+Helix |
+
+|
+|
+|
+
+Ramping Angle (deg)
+Specifies the maximum ramping angle of the helix during the cut.
+
+Ramp Taper Angle
+Creates a conical helix entry into the part. Excellent for chip clearance.
+
+Maximum Ramp Stepdown
+Specifies the maximum stepdown per revolution on the ramping profile. This parameter allows the tool load to be constrained when doing full-width cuts during ramping.
+
+Ramp Clearance Height
+The Height above the stock where the helix start its ramping move.
+
+Helical Ramp Diameter
+The maximum diameter to use for a helical entry into the cavity.
+
+An optimal value causes the tool to overlap it's center, while still creating the maximum helical bore for the entry into the cavity. The goal is for good chip evacuation. If the value is bigger than the diameter of the tool it can leave a boss standing in the center of the helix.
+
+|
+|
+|
+
+|
+|
+|
+
+Value of 1.8 x the Dia |
+|
+Value of 0.8 x the Dia |
+
+Minimum Ramp Diameter
+The smallest Helix Ramp Diameter that is acceptable.
+
+This value should always be smaller than the Helix Ramp Diameter, so the system can calculate a range that fits the available pocket or channel. Smaller diameters can reduce the chip evacuation, create jerking machine motion and can cause tool breakage.
+
+Predrill Positions
+Select points where holes have been drilled to provide clearance for the cutter to enter the material.
+
+Entry Positions
+Select geometry near the location where you want the tool to enter.
+
+Pages in this section
+
+Conventional and Climb Milling reference
+
+Shallow Area Machining reference
+
+Slot Clearing reference
+
+Parent page: 3D Adaptive Roughing milling strategy

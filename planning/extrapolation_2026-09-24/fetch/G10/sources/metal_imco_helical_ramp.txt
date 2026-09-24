@@ -1,0 +1,123 @@
+# source_url: https://cms.imcousa.com/wp-content/uploads/2021/01/Helical-Ramp-PDF.pdf
+# accessed_on: 2026-09-25
+# pdf_sha256: d51a2c6ce8b8407af4b880d3430e12423efe896b8a9560f2ed3405f4f663f015
+
+      Technical Resources
+
+      H E L I C A L R A M P T O C R E AT E A N E N T RY H O L E
+      Using a helical ramp move to generate an entry hole is a preferred method to enter the middle of a part. The creation of
+      the entry hole can be either a one-step or a two-step process depending on the number of flutes on the end mill. Tools
+      with seven or fewer flutes only require one step; tools with more than seven flutes require two steps.
+
+      Step 1: Create helical ramp entry hole
+      The diameter of the starting hole will be: (tool diameter x 2) - (corner radius x 2)                                    Step 1
+                                                                                                                 Create helical ramp entry hole
+      Use the following guide for speed, feed and ramp angle parameters.
+      Note that the terms “Same as chart,” “Slotting speed in chart,” “Slotting feed
+      in chart,” and IPT and MMPT reference the data that is shown in the speed and
+      feed charts located in each tool series section.
+
+                                              Feed Adjustment –        Feed Adjustment –
+                                                                                                Ramp
+          Tool              Speed             with high-pressure       with standard flood
+                                                                                                Angle
+                                                    coolant                  coolant
+         IPT/C 7        Same as chart          IPT or MMPT x 1.6        IPT or MMPT x 1.25        0.5°
+         IPT/C 9        Same as chart          IPT or MMPT x 1.6        IPT or MMPT x 1.25        0.5°                                            Ramp angle
+                                                                                                                                                  per chart
+        IPT/C 11        Same as chart          IPT or MMPT x 1.6        IPT or MMPT x 1.25        0.5°
+        IPT/C 13        Same as chart          IPT or MMPT x 1.6        IPT or MMPT x 1.25        0.5°
+        APT/C 5         Same as chart          IPT or MMPT x 1.6        IPT or MMPT x 1.25         3°
+                                                                                                                           Starting Hole 0
+          M525      Slotting speed in chart   Slotting feed in chart   Slotting feed in chart   1° - 2.5°
+                                                                                                                                        CW path
+          M527      Slotting speed in chart   Slotting feed in chart   Slotting feed in chart   1° - 2.5°     entry hole
+
+          M503      Slotting speed in chart   Slotting feed in chart   Slotting feed in chart   1° - 2.5°
+          M726      Slotting speed in chart   Slotting feed in chart   Slotting feed in chart   1° - 2.5°
+          M706      Slotting speed in chart   Slotting feed in chart   Slotting feed in chart   1° - 2.5°
+          M806      Slotting speed in chart   Slotting feed in chart   Slotting feed in chart   1° - 2.5°
+                                                                                                            CW = Clockwise
+          M924      Slotting speed in chart   Slotting feed in chart   Slotting feed in chart   1° - 2.5°
+          M904      Slotting speed in chart   Slotting feed in chart   Slotting feed in chart   1° - 2.5°
+          M905      Slotting speed in chart   Slotting feed in chart   Slotting feed in chart   1° - 2.5°
+          M223      Slotting speed in chart   Slotting feed in chart   Slotting feed in chart    3° - 5°
+          M233      Slotting speed in chart   Slotting feed in chart   Slotting feed in chart    3° - 5°
+          M203      Slotting speed in chart   Slotting feed in chart   Slotting feed in chart    3° - 5°
+          M202      Slotting speed in chart   Slotting feed in chart   Slotting feed in chart    3° - 5°
+          E14       Slotting speed in chart   Slotting feed in chart   Slotting feed in chart   1° - 2.5°
+          E13       Slotting speed in chart   Slotting feed in chart   Slotting feed in chart   1° - 2.5°
+          E12       Slotting speed in chart   Slotting feed in chart   Slotting feed in chart   1° - 2.5°
+          M104      Slotting speed in chart   Slotting feed in chart   Slotting feed in chart   1° - 2.5°
+
+      IPT = Inch per tooth from the speed and feed charts
+      MMPT = Millimeter per tooth from the speed and feed charts
+      Speed = Surface feet per minute (SFM) or meters per min (M/Min)
+
+
+
+130
+Step 2: There are two common methods to open up the
+starter hole.
+
+METHOD A – Expand the entry hole from inside out.                                              Step 2 Method A
+                                                                                            With end mill at depth,
+                                                                                     expand the entry hole from inside out
+7-, 9-, 11- and 13-flute tools
+                                                                                                         F&S adjustments
+After reaching the desired entry hole depth in Step 1, and with the                                          per chart
+end mill still at depth, expand the hole outwards using the feed rate
+adjustment found in the chart below. Continue until the entry hole is
+enlarged to the expanded diameter shown below.
+
+
+               Expanded       Feed Rate         Step-Over
+   Tool
+                Hole 0        Adjustment        Adjustment
+ IPT/C 7,9          3xD    IPT or MMPT x .75    RDOC x .5
+ IPT/C 11       3.75 x D   IPT or MMPT x .75    RDOC x .5                                  Expanded Hole Ø per Chart
+
+ IPT/C 13       3.75 x D   IPT or MMPT x .75    RDOC x .5
+                                                                                   expanded hole                          CCW path
+D = Tool Diameter
+
+Once the expanded entry hole diameter is achieved, climb cut
+machining can begin at 100% of the Peripheral-HEM values in
+the feed and speed chart for the tool series you’re using.
+                                                                                                                              removed
+                                                                                                                              in step 1
+
+                                                                        CCW = Counter-Clockwise
+
+
+METHOD B – Expand the entry hole with a second helical 		
+                                                                                                      Step 2 Method
+           ramp move.                                                                     Expand the entry hole with a second
+                                                                                             helical ramp move of bigger Ø
+Method B will expand the entry hole by doing a second helical
+ramp entry hole of a larger diameter than in Step 1. After
+completing Step 1, retract the end from the hole, and machine the
+second helical ramp entry hole using the same speed, feed and
+location as the first hole.
+
+               Expanded       Feed Rate
+    Tool                                        Ramp Angle
+                Hole 0        Adjustment
+  IPT/C 9           3xD     IPT or MMPT x 1.6      0.5°                                                                                   Ramp angle
+                                                                                                                                          per chart
+  IPT/C 11      3.75 x D    IPT or MMPT x 1.6      0.5°
+  IPT/C 13      3.75 x D    IPT or MMPT x 1.6      0.5°
+D = Tool Diameter
+                                                                                                  Expanded Hole Ø per Chart
+
+                                                                                         expanded hole                   CW path
+Once the expanded entry hole diameter is achieved, climb cut
+machining can begin at 100% of the Peripheral-HEM values in the
+feed and speed chart for the tool series you’re using.
+
+                                                                                                                              removed
+                                                                                                                              in step 1
+                                                                        CW = Clockwise
+
+                                                                                                                                                       131
+

@@ -1,0 +1,370 @@
+# source_url: https://www.sandvik.coromant.com/en-gb/knowledge/milling/milling-holes-cavities-pockets/ramping
+# accessed_on: 2026-09-24
+# raw_html_sha256: ad7b072ce0edf83d5b6c982b6781efd0fecadab61f4a6e1c0ac6cc568998b118
+
+close Close
+account_circleSign inCart
+
+Products Learning Manufacturing solutions Support
+
+close
+Productschevron_right
+
+Learningchevron_right
+
+Manufacturing solutionschevron_right
+
+Supportchevron_right
+
+chevron_left Back
+close
+
+chevron_left Back
+close
+
+chevron_left Back
+close
+
+account_circleshopping_cart
+menu
+
+close
+
+chevron_rightStart page
+...
+chevron_rightMetal cutting knowledge
+chevron_rightMilling
+chevron_rightMilling holes and cavities / pockets
+chevron_rightRamping: Two axis linear and circular
+
+Milling
+Millingexpand_moreShoulder milling
+
+Face milling
+
+Profile milling
+
+Groove or slot milling
+
+Chamfer milling
+
+Turn milling
+
+Gear manufacturing
+
+Milling holes and cavities / pocketsexpand_less
+Ramping: Two axis linear and circular
+
+Widening a hole
+
+Plunge milling
+
+Peck milling
+
+Slicing methods
+
+Closed pockets or angles
+
+How to choose cutter pitch
+
+Entering angle and chip thickness
+
+Down milling vs. up milling
+
+Cutter path and chip formation
+
+Milling inside corners
+
+Programming
+
+Dry milling or with cutting fluid
+
+Surface generation
+
+Vibration
+
+Tool maintenance
+
+Troubleshooting
+
+Milling different materials
+
+Milling
+Millingexpand_moreShoulder milling
+
+Face milling
+
+Profile milling
+
+Groove or slot milling
+
+Chamfer milling
+
+Turn milling
+
+Gear manufacturing
+
+Milling holes and cavities / pocketsexpand_less
+Ramping: Two axis linear and circular
+
+Widening a hole
+
+Plunge milling
+
+Peck milling
+
+Slicing methods
+
+Closed pockets or angles
+
+How to choose cutter pitch
+
+Entering angle and chip thickness
+
+Down milling vs. up milling
+
+Cutter path and chip formation
+
+Milling inside corners
+
+Programming
+
+Dry milling or with cutting fluid
+
+Surface generation
+
+Vibration
+
+Tool maintenance
+
+Troubleshooting
+
+Milling different materials
+
+Ramping: two axis linear and circular
+
+What is successful ramping?
+
+Linear ramping is a commonly used, efficient way of approaching the workpiece when machining closed slots/pockets/cavities, and it eliminates the need for a drill.
+
+Linear ramping is defined as simultaneous feeding in the axial direction (Z) and in one radial direction (X or Y), i.e. two-axes ramping.
+
+Circular ramping (also called helical interpolation, spiral interpolation, orbital drilling, etc.) is a simultaneous movement in a circular path (X and Y) together with an axial feed (Z) at a defined pitch, and also an alternative to drilling.
+
+Circular ramping is always preferred to linear ramping (full slotting), because helical interpolation is a much smoother process as the radial cut is reduced. It allows for pure down-milling, and provides better chip evacuation. An anti-clockwise rotation ensures down-milling.
+
+Two axes ramping – linear
+
+How to apply rampingA demanding cutting process
+
+There are three cutting processes that occur simultaneously during the linear ramping operation:
+
+1) Periphery cutting with the leading insert.
+
+2) Bottom cutting with the leading insert.
+
+3) Bottom cutting with the trailing insert.
+
+The cutting forces are both axial and radial.
+
+There is also added stress on the tool due to full slotting, which means that ae=Dc, creating large radial forces and long chips.
+
+Machining recommendations
+
+Reduce feed to 75% of normal
+
+When slot milling is performed directly after ramping, it is important to continue at a lower feed, for a distance that corresponds to the cutter diameter, until the trailing insert has stopped cutting
+
+Use cutting fluid to help with chip evacuation
+
+Reduce the tool radius to reduce the area of contact
+
+Linear ramping should be limited to narrow slots less than 30 mm wide, if access for circular ramping is limited
+
+Progressive ramping
+
+When ramping for several passes to produce a deep slot, productivity can be easily increased by ramping in both directions (progressive ramping) instead of ramping in only one (single pass ramping).
+
+Note: When feeding the cutter at the maximum ramping angle, it must be lifted distance h before changing direction. This prevents damage to the central part of the cutter body.
+
+Single pass ramping.
+
+Tool path correction
+
+Progressive ramping at maximum ramping angle.
+
+Insert radius affects maximum ramping angle
+
+Example:
+
+The curves in the diagram are valid for minimum and maximum radii. For intermediate radii, please interpolate.
+
+Tool diameter, Dc mm
+
+= Insert size 22
+
+= Insert size 16
+
+All milling tools
+Explore the assortment chevron_right
+
+Unsure which tool to choose?
+View our selection of recommended tools and cutting data chevron_right
+
+Want to learn more about the metal cutting basics?
+Register for our free e-learning programme chevron_right
+
+Two axes ramping – circular
+
+Process considerations
+
+There are three key considerations in circular ramping; if not correctly applied, problems will occur.
+
+Cutter diameter selection for hole size
+
+Pitch per revolution
+
+Feed rate
+
+1. Cutter diameter selection for hole size
+
+The cutter size selection is very important when using cutters that are not centre cutters. Cutter diameter ensures that the insert cuts over the centre line of the hole.
+
+Cutter diameter is too small and will leave a core in the middle – like trepanning. This is acceptable for large cut-outs (‘man holes’) but the core needs to be supported as it drops off.
+
+If the cutter is too large, the insert does not inscribe the centre line of the hole, and a pip will be formed which will foul on the bottom of the cutter.Maximum diameter hole
+
+The maximum hole diameter, Dm, which can be produced in one continuous spiral, is 2 x D3
+
+This is full slotting and will leave a pip in the centre of a blind hole
+
+The pip is removed by feeding to centre for a flat bottom
+
+Max. hole diameter Dm
+
+Milling diameter flat bottom
+
+Ensure that no pip is left on the bottom of a blind hole, the insert radius size needs to be considered
+
+The cutter is too big, the pip cannot be removed by feeding to centre
+
+Min. hole diameter Dm
+
+Min. hole diameter Dm
+
+Minimum diameter through hole
+
+The minimum diameter that avoids collision of the cutter body due to non-centre cutting
+
+b is the maximum stepover allowed for plunging, and is the same for the maximum overlap
+
+For round inserts, b should be calculated as b = 0.8 x iC
+
+Pip cannot be removed.
+
+2. Pitch (P)
+
+The pitch can never be larger then the maximum ap for the cutter concept, and depends on the hole diameter, the cutter diameter and the ramp angle.
+
+3. Feed rate
+
+The feed value always depends on the hex-value which corresponds with the peripheral feed rate, vfm. However, many machines require a tool centre feed, vf, which has to be calculated accordingly:
+
+Dvf = programmed cutter path
+
+Programmed feed rate:
+
+vfm = when using radius compensation
+
+vf = when using the tool centre feed
+
+Circular external ramping
+
+External circular ramping (3-axes)
+
+External circular milling (2-axes)
+
+What is successful circular external ramping?
+
+Compared to internal circular milling/ramping:
+
+The tool centre feed, vf, is increased instead of reduced
+
+The radial depth, ae, becomes much smaller when milling externally, therefore, a higher cutting speed can be used
+
+hex is calculated in the same way as for edging
+
+The programming technique is otherwise very similar to internal milling of holes
+
+All milling tools
+Explore the assortment chevron_right
+
+Unsure which tool to choose?
+View our selection of recommended tools and cutting data chevron_right
+
+Want to learn more about the metal cutting basics?
+Register for our free e-learning programme chevron_right
+
+Related information
+
+Circular Ramping Drills
+This text explains how and when to use circular ramping with indexable insert drills for holemaking operations. chevron_right
+
+Milling Holes and Pockets
+This article explains methods for opening and enlarging holes and cavities by milling and compares ramping, plunge, circular and shoulder milling with drilling and boring for different setups. chevron_right
+
+Hole Widening Milling
+This article describes methods and parameters for widening existing holes by milling using circular ramping and circular milling strategies. chevron_right
+
+Interpolation Turning
+This article explains interpolation turning on machining centres, its limitations, benefits, and tooling considerations for machining symmetrical features on non-symmetrical components. chevron_right
+
+edit_square3p
+
+account_circle Create account chevron_rightPlace orders, view prices and check tool availability
+
+mail Subscribe to our newsletter chevron_rightJoin us. Stay updated.
+
+Sandvik Thailand Limited
+phone +66 2 016 2120 51, JL Tower, 19th Floor, Room No. 1904-6, Rama 9 Road, Kwaeng Huamark, Khet Bangkapi
+
+Products All tools All software Recycling Reconditioning Tailor Made
+Support Customer service Distributors and specialists Guides and tutorials Calculators and apps Catalogues and handbooks
+Ordering How to buy Order Return Track your order Make a quotation
+About us About Sandvik Coromant Manufacturing wellness Career Sustainable business Articles For press
+
+Productskeyboard_arrow_down
+All tools All software Recycling Reconditioning Tailor Made
+
+Supportkeyboard_arrow_down
+Customer service Distributors and specialists Guides and tutorials Calculators and apps Catalogues and handbooks
+
+Orderingkeyboard_arrow_down
+How to buy Order Return Track your order Make a quotation
+
+About uskeyboard_arrow_down
+About Sandvik Coromant Manufacturing wellness Career Sustainable business Articles For press
+
+emoji_objectsHELP US IMPROVE OUR WEBSITE Share your feedback or ideas chevron_right
+
+MetricInch
+Thailand | English chevron_right Legal notice Privacy policy Security General Terms and Conditions
+MetricInch
+Thailand | English chevron_right
+
+AB Sandvik Coromant, 811 81 Sandviken, Sweden
+
+account_circle
+Welcome,
+
+Request customer access
+Products
+keyboard_arrow_down
+Settings
+keyboard_arrow_down
+Sign out
+
+close
+
+Continue shopping
+Go to cart

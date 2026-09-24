@@ -1,0 +1,579 @@
+# source_url: https://community.carbide3d.com/uploads/short-url/fwPIYiWQNjUx8eEwsA7qmYiLMxv.pdf
+# accessed_on: 2026-09-25
+# pdf_sha256: 87405efbd74696b0e105699274d39cb1eae67867acf4ad1e83ce03c13b413785
+CNC ROUTER BIT FEEDS & SPEEDS
+     IMPERIAL (INCH) & METRIC
+
+     Provided by IDC Woodcraft
+       www.idcwoodcraft.com
+
+
+
+
+    SUBSCRIBE TO IDC WOODCRAFT ON YOUTUBE
+  CNC ROUTER BIT FEEDS & SPEEDS
+                        PLEASE READ
+Hello CNC’er!
+The following table will guide you through feeds & speeds for
+most CNC router bits you will use, as well as less common ones.
+The feeds & speeds provided are average accepted values for
+benchtop CNC routers. These will work with soft, medium and
+moderately hard wood.
+For extremely hard wood (Ex. Brazilian Ebony, Snakewood),
+please do some research before you run projects.
+You may see values on this table that are not in listed in your
+software. Some programs require more information than usual.
+Don’t worry, if you don’t see it in yours. It won’t be needed.
+    CNC ROUTER BIT FEEDS & SPEEDS
+This table has been built to make ordering bits easy for you. All bits listed have a BUY
+NOW link to save you from searching when you need to get bits.
+If the IDC Woodcraft store does not carry a bit listed in this table, you will be directed
+to the best source to get it.
+Make sure to put this document on your desktop so you always have immediate
+access to it.
+Some router bits will be highlighted like this example → 1/4” Down Cut
+When you see this, it means the bit is used a lot.
+If you do not have backups for those bits, you’ll want to consider getting them,
+because no one wants to wait on a project because of a broken or worn bit.
+NOTE: Only high-quality bits are listed. For lower-quality, or practice bits, please
+search Amazon.
+          CNC ROUTER BIT FEEDS & SPEEDS
+                                                                         Manual CNC Router
+             SPECIAL NOTE                          Makita RT0701C Dial
+                                                         Settings
+Feeds & Speeds tables always refer to speed in       1          10,000
+rpm (revolutions per minute). This is fine when      2          12,000
+the router uses a spindle controlled by the CNC.     3          17,000
+                                                     4          22,000
+However, for those that have manual routers,         5          27,000
+the rpm number is not very helpful.                  6          30,000
+
+To help with this, you will see an unusual field
+titled “Router Dial”. This is for users with                                  Spindle
+manual routers.
+Note: The “Router Dial” number refers to
+Makita model RT0701C that commonly comes
+with benchtop CNC routers (shown at right top).
+  CNC ROUTER BIT FEEDS & SPEEDS
+                      IMPORTANT
+Different CNC routers have different levels of rigidity.
+The rigidity of a machine will determine the feeds &
+speeds limits a machine can handle. A rigid machine
+will work well with these settings. One with flex in
+the gantry will not.
+If your machine has flex, you will want to back the
+feeds off by about 20%.
+How to tell if you need to tone down the feeds.
+Grab your router and push back and forth. If it moves
+easily, reduce the feed rates in this table.
+     WHEN IS IT TIME TO REPLACE A BIT?
+Setting up appropriate Feeds & Speeds are designed to get the best life from your bit, as well as the
+best cuts. However, router bits do not last forever.
+Router bits eventually get dull, just like a kitchen knife. And there are many factors that contribute to
+this, such as:
+ • Quality of the bit
+ • Material being cut
+ • How it is used
+ • Stiffness of your CNC router
+ • Etc.
+                    INDICATIONS IT IS TIME TO REPLACE A CNC ROUTER BIT
+• The sound from the bit seems to be at a higher, and louder, pitch
+• The bit seems to be working harder than normal
+• A low-pitch rumble is coming from your machine while cutting
+• The bit gets very hot (the nut will be hot as well)
+• The cut is rougher than usual, and has a fuzzy finish
+• Chips from the cut tend to be more dust than chips
+• Edges and corners of raised letters seem to be breaking more often, or leaving jagged edges
+• Brown lines (burn marks) start showing up at the bottom of cuts
+• You can smell burning wood
+Resharpening – It is not cost-effective to resharpen smaller spiral bits. Flat-blade bits are easy to
+resharpen.
+Do not throw away worn or broken carbide bits. Save them. Carbide will give you a return of $5 per
+pound at a metal recycling center.
+ CNC ROUTER BIT FEEDS & SPEEDS
+                 Learning About Router Bits
+
+
+
+If you are brand new
+to CNC routers and
+router bits, this tutorial
+video will teach you
+everything you need to
+know about router
+bits.
+Click the image to
+watch →                              BE SURE TO SUBSCRIBE
+    CNC ROUTER BIT FEEDS & SPEEDS
+            Learn How To Set Up Your Router Bits In Vectric
+
+
+
+Setting up your bits
+properly in the Vectric
+software can feel a little
+intimidating at first.
+This video will walk you
+through the process, so you
+get it right the first time.
+Click the image to watch →
+
+                                       BE SURE TO SUBSCRIBE
+  CNC ROUTER BIT FEEDS & SPEEDS
+                    FOR METRIC USERS
+The first section of this Feeds & Speeds table is in imperial
+(inch) units for imperial router bits.
+Section 2 refers to the same imperial bits, except all units
+are list in proper metric values.
+Look for the page titled “METRIC FEEDS AND SPEEDS”.
+Your information is after that.
+Please be sure to read the header information in that
+section.
+  CNC ROUTER BIT FEEDS & SPEEDS
+This table is set up in 2 sections…
+The next page is for the 8-piece starter pack provided
+by IDC Woodcraft (see image below).
+The rest are broken down by bit type, with feeds &
+speeds for each size of that type.
+                ROUTER BIT STARTER SET
+                                           6 VECTOR
+                                             FILES
+
+             LEARN MORE ABOUT THIS SET NOW
+    FEEDS & SPEEDS for the Complete CNC Router Bit Starter Set
+                                                                ENDMILLS
+
+                                       Flute Overall Shank Feed    Plunge Depth Per Step                   Spindle   Router
+       Bit        Cut Dia. # Flutes
+                                      Length Length Dia. (in/min) (in/min)  Pass    Over                    (rpm)     Dial
+
+1/16" Down Cut 0.0625          2      0.250       2     0.125      20         10           0.032    40%    27,000      5       BUY NOW
+ 1/8" Down Cut      0.125      2      0.750       2     0.125      50         15           0.125    40%    22,000      4       BUY NOW
+ 1/4" Down Cut      0.25       2      1.000       3      0.25      70         30           0.25     40%    19,000     3.5      BUY NOW
+ 1/8" Ballnose      0.125      2      0.500       2     0.125      60         15           0.05    40%*    22,000      4       BUY NOW
+ 1/4" Ballnose      0.25       2      0.750       3      0.25      70         30           0.12     40%    19,000     3.5      BUY NOW               ENDMILLS
+                                                                                   V-BIT
+
+                                                                                                   Depth Clear
+                                       Flute Overall Shank        Side       Feed    Plunge                       Final Pass   Spindle   Router
+       Bit        Cut Dia. # Flutes                                                                 Per    Pass
+                                      Length Length Dia.         Angle     (in/min) (in/min)                      Stepover      (rpm)     Dial
+                                                                                                    Pass Stepover
+
+    30° V-bit       0.25       1      0.750     2.00     0.25      15         35            20     0.025    20%      0.005      27,000     5      BUY NOW
+                                                                                                                                                          BUY THE
+    60° V-bit       0.25       2      0.216     2.00     0.25      30         40            20     0.05     20%      0.005      22,000     4      BUY NOW SET (save
+                                                                                                                                                             $$)
+    90° V-bit       0.25       2      0.125     2.00     0.25      45         50            25      0.1     20%      0.005      17,000     3      BUY NOW
+                                                                                                                                                                      V-BITS
+                                               1/8" DRILLING ENDMILL *See notes below
+
+       Bit        Cut Dia. # Flutes
+                                       Flute Overall Shank Feed    Plunge Depth Per Step                   Spindle   Router                                 SPIRAL DRILLING
+                                      Length Length Dia. (in/min) (in/min)  Pass    Over                    (rpm)     Dial
+                                                                                                                                                            UP-CUT ENDMILL
+     Drilling       0.125      2      0.750       2     0.125      50        60*           0.125    40%    22,000      4
+                                                                                                                               BUY NOW
+ Conventional       0.125      2      0.750       2     0.125      50         25           0.125    40%    22,000      4
+* The plunge value is for using the spiral drilling technique. Watch this video to learn how        Watch Video
+
+
+ NOTE: When peck drilling with this bit, do not exceed 0.01” peck depth for holes deeper than 0.375”
+CNC ROUTER BIT FEEDS & SPEEDS
+
+                 SECTION 2
+  ALL COMMON CNC ROUTER BITS FEEDS & SPEEDS
+          IMPERIAL (INCH)
+              FEEDS & SPEEDS
+            FOR CNC ROUTER BITS
+                         PLEASE READ
+All Feeds & Speeds information in this section are in inches (in).
+NOTE: All units use the CNC industry standard inches per
+minute (ipm)
+  FEEDS & SPEEDS – DOWN CUTTING ENDMILLS
+Down cutting endmills, also known as ‘down bits’, are the most common bit you will use for material removal and
+getting squared edges on your projects.
+Despite the benefits of creating clean sharp corners and edge, they do have a drawback. This MUST WATCH video
+will explain what it is and how to overcome it.
+Items with GREEN ‘→’ are bits you want to have backups of. You will use these most often.
+
+                                         DOWN CUT ENDMILL
+                                                                  Depth
+                           Flute Overall Shank Feed Plunge              Step Spindle Router
+  Bit   Cut Dia. # Flutes                                          Per
+                          Length Length Dia. (in/min) (in/min)          Over (rpm)    Dial
+                                                                   Pass
+                                                                                                  BUY
+ 1/32" 0.031      2     0.188    2.00   0.125     10        7     0.015   40%   27,000      5
+                                                                                                  NOW
+                                                                                                  BUY
+ 1/16" 0.0625     2     0.250    2.00   0.125     20       10     0.032   40%   27,000      5
+                                                                                                  NOW
+                                                                                                  BUY
+ 1/8"   0.125     2     0.750    2.00   0.125     50       15     0.125   40%   22,000      4
+                                                                                                  NOW
+                                                                                                  BUY
+ 3/16" 0.1875     2     1.000    2.00    0.25     75       35     0.187   40%   19,000      3.5
+                                                                                                  NOW
+                                                                                                  BUY
+ 1/4"    0.25     2     1.000    3.00    0.25     70       30     0.25    40%   19,000      3.5
+                                                                                                  NOW
+         FEEDS & SPEEDS – UP CUTTING ENDMILLS
+Up cutting endmills, also known as ‘up bits’, are best used to remove lots of material quickly while leaving a very
+good finish along the bottom surface.
+They can be used in place of down cutters with proper feeds and speeds. A ggod time to use this bit is when a V-bit
+is used to accent an edge of a large area that is recessed.
+The bit with the GREEN ‘→’ is the one you want to have. If you plan on using this often, get a backup bit.
+
+                                                   UP CUT ENDMILL
+                              Flute   Overall   Shank     Feed    Plunge Depth Step       Spindle   Router
+  Bit    Cut Dia. # Flutes
+                             Length   Length     Dia.   (in/min) (in/min) Per Pass Over    (rpm)     Dial
+                                                                                                             BUY
+ 1/32"    0.031      2       0.125     2.00     0.125     10        7     0.015    40%    27,000      5
+                                                                                                             NOW
+                                                                                                             BUY
+ 1/16" 0.0625        2       0.813     2.50     0.125     20        10    0.032    40%    27,000      5
+                                                                                                             NOW
+                                                                                                             BUY
+ 1/8"     0.125      2       0.750     2.00     0.125     50        25    0.125    40%    22,000      4
+                                                                                                             NOW
+                                                                                                             BUY
+ 3/16" 0.1875        2       0.750     2.00     0.25      80        40     0.28    40%    19,000     3.5
+                                                                                                             NOW
+                                                                                                             BUY
+ 1/4"     0.25       2        1.00     3.00     0.25      80        40    0.250    40%    19,000     3.5
+                                                                                                             NOW
+             FEEDS & SPEEDS – BALL NOSE ENDMILL
+The ball nose endmill is categorized as an endmill. The difference is the rounded end.
+It is used to accent your projects, such as putting a rounded edge on a sign. You can also use them to do 2.5D or 3D
+relief carves when extremely high detail is not a concern, but you still want a good-looking project.
+To learn about this application, watch this video.
+It is standard to have both in your set of bits. You do not need backups of these unless you find you use them a lot.
+
+                                                       BALLNOSE
+
+                              #    Flute Overall Shank Feed    Plunge Depth Step Spindle Router
+     Bit        Cut Dia.
+                           Flutes Length Length Dia. (in/min) (in/min) Per Pass Over (rpm) Dial
+
+
+1/8" Ballnose 0.125          2   0.500   2.00 0.125       60      15   0.05   8% 22,000       4    BUY NOW
+
+1/4" Ballnose    0.25        2    1.00   3.00   0.25      70      30   0.12   8% 19,000      3.5   BUY NOW
+
+Note: Stepover is set for 3D modeling work.
+                                        FEEDS & SPEEDS – V-BITS
+You will notice more fields in this section for V-bits than for the previous bits. That’s because more information is required for your software to create
+toolpaths.
+You might find some fields aren’t even in your software. Don’t worry., you won’t need them. They are for more advanced engineering type software
+programs.
+The bit with the GREEN ‘→’ are typical backups. However, it is suggested to get the 120 V-bit since it easily does the job of the 90-degree bit. And it can do
+much larger projects efficiently.
+
+
+
+                                                                       V-BIT
+                                                                                           Depth
+             Cut     #    Flute Overall Shank Side  Feed Plunge                                  Step Final Pass Spindle Router
+   Bit                                                                                      Per
+             Dia. Flutes Length Length Dia. Angle (in/min) (in/min)                              Over Stepover (rpm)      Dial
+                                                                                            Pass
+                                                                                                                                               BUY
+30° V-bit 0.25         1      0.750       2.00      0.25      15        35         20       0.025 20%          0.005      27,000        5      NOW
+                                                                                                                                               BUY
+60° V-bit 0.25         2      0.216       2.00      0.25      30        60         20       0.05     20%       0.005      22,000        4      NOW
+                                                                                                                                               BUY
+90° V-bit 0.25         2      0.125       2.00      0.25      45        45         25        0.1     20%       0.005      17,000        3      NOW
+                                                                                                                                               BUY
+120° V-bit 1.0         2      0.288       2.00      0.25      60        80         30       0.19     30%       0.02       17,000        3      NOW
+                                                                                                                                               BUY
+150° V-bit 1.5         2      0.200       2.00      0.25      75        60         20       0.150 30%          0.02       17,000        3      NOW
+            FEEDS & SPEEDS – SURFACING & BOWL BITS
+   Here, you will find 2 types of bits. The surfacing bit and bowl bit. Each serve a different purpose.
+   The surfacing bit is an ABSOLUTE MUST HAVE! It is used to surface your spoilboard and smooth warped
+   material or botched projects. Watch this video to learn more about surfacing a spoilboard.
+   The bowl bit is used to remove large amounts of material without a lot of force applied to your machine.
+   This is commonly used to remove material from deep pockets. It is an extremely handy bit to have.
+
+                     SURFACING BIT - FOR SURFACING SPOILBOARD (Category: Endmill)
+                                #    Flute Overall Shank Feed Plunge Depth Step Spindle Router
+      Bit         Cut Dia.
+                             Flutes Length Length Dia. (in/min) (in/min) Per Pass Over (rpm) Dial
+
+0.75” Surfacing    0.75       4    0.125   1.00   0.125   100   8      0.050   70%   17000    3     BUY NOW
+ 1“ Surfacing       1.0       4    0.250   2.00   0.25    150   7      0.125   70%   10,000   1-2   BUY NOW
+1.5“ Surfacing      1.5       4    0.250   2.00   0.25    120   7      0.070   70%   12,000   2     BUY NOW
+                               BOWL BIT - HOGGING (Category: Radiused Endmill)
+                                #    Flute Overall Shank Feed Plunge Depth Step Spindle Router
+      Bit         Cut Dia.
+                             Flutes Length Length Dia. (in/min) (in/min) Per Pass Over (rpm) Dial
+
+     Bowl          1.00       2     .75    2.00   0.25    80    15     0.250   40%   14,000   2     BUY NOW
+
+      A note about surfacing bits
+      • When surfacing your spoilboard, use the high feed rate setting
+      • When hoggin out material, use the lower feed rate setting
+      • If you see burn marks, increase the feed rate or reduce spindle speed
+         FEEDS & SPEEDS – TAPER BALL NOSE CARVING BIT
+ The taper ball nose bit is use for fine detail carving. This is the bit to use for exquisite projects.
+ You may notice the image is a bit ‘stumpy’ for this type of bit. Most carving bits tend to be longer. The major
+ drawback to long, narrow bits in this family is ‘tool deflection’.
+ A long narrow bit will have side bounce which will show up as lines in your project.
+ To learn more about taper ball nose bits and how they are used, watch this video.
+
+
+
+                                         TAPER BALLNOSE CARVING BIT
+
+              #    Flute Overall Shank Tip               Feed Plunge Depth Per Step Spindle Router
+Cut Dia.                                       Angle
+           Flutes Length Length Dia. Radius            (in/min) (in/min) Pass  Over (rpm)    Dial
+
+                                                                                                          BUY
+ 0.250       2   0.750   2.00   0.25   0.015    10       60     25      0.25   5-8% 19,000      3.5       NOW
+                                                                                                          BUY
+ 0.250       2    0.75   2.00   0.25   0.045    10       60     25      0.25   5-8% 19,000      3.5       NOW
+                              FEEDS & SPEEDS – 0-FLUTE
+The 0-flute bit is used for acrylic and aluminum, depending on the design of the bit. The bits and settings
+listed here are for acrylic only.
+Always use CAST ACRYLIC when creating these types of projects. Click these links to see it on Amazon.
+1/8” thick clear – 1/4” thick clear
+
+
+
+
+                                             0-FLUTE BIT (For Acrylic)
+
+                           #    Flute Overall Shank Feed    Plunge Depth Step Spindle Router
+    Bit      Cut Dia.
+                        Flutes Length Length Dia. (in/min) (in/min) Per Pass Over (rpm) Dial
+
+   1/8"       0.125       1   0.500   2.00 0.125        60        15     0.125   70% 17,000   3   BUY NOW
+
+   1/4"       0.25        1   1.000   2.00     0.25     60        15     0.25    70% 17,000   3   BUY NOW
+                        METRIC
+                FEEDS & SPEEDS
+              FOR CNC ROUTER BITS
+                             PLEASE READ
+All Feeds & Speeds from this point forward are in millimeters (mm).
+The ‘Bit’ column refers to the inch size the bits are normally labeled
+as.
+NOTE: All feed units use the CNC industry standard of mm/second
+METRIC FEEDS & SPEEDS for Complete CNC Router Bit Starter Set
+                                                                 ENDMILLS
+
+                                        Flute Overall Shank Feed    Plunge   Depth Step                        Spindle   Router
+       Bit         Cut Dia. # Flutes
+                                       Length Length Dia. (mm/min) (mm/min) Per Pass Over                       (rpm)     Dial
+
+  1/16" Up Cut      1.587       2      6.350      38     3.175      508         254         0.813     40%      27,000        5       BUY NOW
+ 1/8" Down Cut      3.175       2       19.0      44     3.175     1270         381         3.175     40%      22,000        4       BUY NOW
+ 1/4" Down Cut      6.350       2       25.4      64     6.35      1778         762          6.35     40%      19,000        3.5     BUY NOW
+ 1/8" Ballnose      3.175       2       12.7      44     3.175     1524         381         1.270     40%*     22,000        4       BUY NOW
+ 1/4" Ballnose      6.35        2        36       64     6.35      1778         762         3.048     40%      19,000        3.5     BUY NOW            ENDMILLS
+                                                                                   V-BIT
+
+                                                                                                               Clear
+                                        Flute Overall Shank        Side   Feed    Plunge   Depth                      Final Pass     Spindle   Router
+       Bit        Cut Dia. # Flutes                                                                            Pass
+                                       Length Length Dia.         Angle (mm/min) (mm/min) Per Pass                    Stepover        (rpm)     Dial
+                                                                                                             Stepover
+
+                                                                                                                                                        BUY
+    30° V-bit       6.35       1       19.050    51      6.35      15֯       889           508       0.635     20%       0.13        27,000      5
+                                                                                                                                                        NOW
+                                                                                                                                                              BUY THE
+                                                                                                                                                        BUY
+    60° V-bit       6.35       2       5.486     51      6.35      30֯      1524           508       1.270     20%       0.13        22,000      4            SET (save
+                                                                                                                                                        NOW
+    90° V-bit       6.35       2       3.175     51      6.35      45֯      1143           635        2.5      20%       0.13        17,000      3
+                                                                                                                                                        BUY
+                                                                                                                                                        NOW
+                                                                                                                                                                 $$)
+                                                                                                                                                                          V-BITS
+                                                1/8" DRILLING ENDMILL *See notes below
+
+                                        Flute Overall Shank Feed    Plunge Depth Per Step Spindle Router
+                                                                                                                                                              SPIRAL DRILLING
+       Bit        Cut Dia. # Flutes
+                                       Length Length Dia. (mm/min) (mm/min) Pass     Over (rpm)    Dial                                                       UP-CUT ENDMILL
+     Drilling       3.175      2        19       38     3.175      1270         635         3.175     40%     22,000     4
+                                                                                                                                   BUY NOW
+ Conventional       3.175      2        19       38     3.175      1270         638              5    40%     22,000     4
+* The plunge value is for using the spiral drilling technique. Watch this video to learn how          Watch Video
+ NOTE: When peck drilling with this bit, do not exceed 0.05mm peck depth for holes deeper than 10mm
+METRIC CNC ROUTER BIT FEEDS &
+           SPEEDS
+
+                 SECTION 2
+  ALL COMMON CNC ROUTER BITS FEEDS & SPEEDS
+         METRIC FEEDS & SPEEDS – DOWN CUTTING
+                                             ENDMILLS
+Down cutting endmills, also known as ‘down bits’, are the most common bit you will use for material removal and
+getting squared edges on your projects.
+Despite the benefits of creating clean sharp corners and edge, they do have a drawback. This MUST WATCH video
+will explain what it is and how to overcome it.
+Items with GREEN ‘→’ are bits you want to have backups of. You will use these most often.
+
+                                              DOWN CUT ENDMILL
+                       #    Flute Overall   Shank   Feed    Plunge Depth Step        Spindle   Router
+  Bit    Cut Dia.
+                    Flutes Length Length     Dia. (mm/min) (mm/min) Per Pass Over     (rpm)     Dial
+                                                                                                        BUY
+ 1/32"    0.79        2    4.762    38      3.175   254       178     0.381   40%    27,000      5
+                                                                                                        NOW
+                                                                                                        BUY
+ 1/16"    1.587       2    6.35     38      3.175   508       254     0.813   40%    27,000      5
+                                                                                                        NOW
+                                                                                                        BUY
+ 1/8"     3.175       2     19      44      3.175   1270      381     3.175   40%    22,000      4
+                                                                                                        NOW
+                                                                                                        BUY
+ 3/16"    4.763       2     25      60      6.35    762      13762    6.350   40%    19,000     3.5
+                                                                                                        NOW
+                                                                                                        BUY
+ 1/4"     6.35        2     25      63      6.35    1778      762      6.35   40%    19,000     3.5
+                                                                                                        NOW
+    METRIC FEEDS & SPEEDS – UP CUTTING ENDMILLS
+Up cutting endmills, also known as ‘up bits’, are best used to remove lots of material quickly while leaving a very
+good finish along the bottom surface.
+They can be used in place of down cutters with proper feeds and speeds. A ggod time to use this bit is when a V-bit
+is used to accent an edge of a large area that is recessed.
+The bit with the GREEN ‘→’ is the one you want to have. If you plan on using this often, get a backup bit.
+
+                                                 UP CUT ENDMILL
+                              Flute   Overall Shank Feed    Plunge Depth Step             Spindle   Router
+  Bit    Cut Dia. # Flutes
+                             Length   Length Dia. (mm/min) (mm/min) Per Pass Over          (rpm)     Dial
+                                                                                                             BUY
+ 1/32"    0.79       2       3.175     51    3.175     240       180       0.4     40%    15,000      5
+                                                                                                             NOW
+                                                                                                             BUY
+ 1/16"    1.587      2        60       63    3.175     480       240       0.8     40%    15,000      5
+                                                                                                             NOW
+                                                                                                             BUY
+ 1/8"     3.175      2        19       38    3.175    1270       635      4.375    40%    15,000      4
+                                                                                                             NOW
+                                                                                                             BUY
+ 3/16"    4.763      2        19       51     6.35    2040       1020       7      40%    15,000    3-3.5
+                                                                                                             NOW
+                                                                                                             BUY
+ 1/4"     6.35       2        19       63     6.35    2032       1020     6.350    40%    15,000    3-3.5
+                                                                                                             NOW
+        METRIC FEEDS & SPEEDS – BALL NOSE ENDMILL
+The ball nose endmill is categorized as an endmill. The difference is the rounded end.
+It is used to accent your projects, such as putting a rounded edge on a sign. You can also use them to do 2.5D or 3D
+relief carves when extremely high detail is not a concern, but you still want a good-looking project.
+To learn about this application, watch this video.
+It is standard to have both in your set of bits. You do not need backups of these unless you find you use them a lot.
+
+                                                        BALLNOSE
+                                                                     Depth
+                            #    Flute Overall Shank Feed    Plunge        Step Spindle Router
+      Bit       Cut Dia.                                              Per
+                         Flutes Length Length Dia. (mm/min) (mm/min)       Over (rpm) Dial
+                                                                      Pass
+
+1/8" Ballnose    3.175     2      12      44    3.175     1524        381      1.3 20%* 14,000     4    BUY NOW
+
+1/4" Ballnose    6.35      2      36      63     6.35     1778        762      3.0   20% 13,000 3-3.5 BUY NOW
+
+* When using 1/8“ ballnose for 2.5D & 3D relief carves, set stepover to 5-8%
+                                METRIC FEEDS & SPEEDS – V-BITS
+You will notice more fields in this section for V-bits than for the previous bits. That’s because more information is required for your software to create
+toolpaths.
+You might find some fields aren’t even in your software. Don’t worry., you won’t need them. They are for more advanced engineering type software
+programs.
+The bit with the GREEN ‘→’ are typical backups. However, it is suggested to get the 120 V-bit since it easily does the job of the 90-degree bit. And it can do
+much larger projects efficiently.
+
+
+
+                                                                       V-BIT
+                                                                                              Depth                 Spindl
+             Cut     #    Flute Overall Shank Side  Feed    Plunge                                  Step Final Pass        Router
+   Bit                                                                                         Per                    e
+             Dia. Flutes Length Length Dia. Angle (mm/min) (mm/min)                                 Over Stepover           Dial
+                                                                                               Pass                 (rpm)
+                                                                                                                                               BUY
+30° V-bit 6.35         1        19         51       6.35      15       889          508         0.6    20%        0.13     27,000       5      NOW
+                                                                                                                                               BUY
+60° V-bit 6.35         2        5.5        51       6.35      30      1524          508         1.3    20%        0.13     22,000       4      NOW
+                                                                                                                                               BUY
+90° V-bit 6.35         2        3.2        51       6.35      45      1143          635         2.5    20%        0.13     17,000       3      NOW
+                                                                                                                                               BUY
+120° V-bit 25.4        2      7.315        46       6.35      60      2032          762         4.8    30%        0.25     17,000       3      NOW
+                                                                                                                                               BUY
+150° V-bit    38       2      5.080        46       6.35      75      1524          508        3.81    30%        0.25     17,000       3      NOW
+  METRIC FEEDS & SPEEDS – SURFACING & BOWL BITS
+Here, you will find 2 types of bits. The surfacing bit and bowl bit. Each serve a different purpose.
+The surfacing bit is an ABSOLUTE MUST HAVE! It is used to surface your spoilboard and smooth warped
+material or botched projects. Watch this video to learn more about surfacing a spoilboard.
+The bowl bit is used to remove large amounts of material without a lot of force applied to your machine.
+This is commonly used to remove material from deep pockets. It is an extremely handy bit to have.
+
+             SURFACING BIT - FOR SURFACING SPOILBOARD (Category: Endmill)
+                                                     Feed           Depth
+                      #    Flute Overall     Shank         Plunge         Step            Spindle   Router
+  Bit     Cut Dia.                                 (mm/min           Per
+                   Flutes Length Length       Dia.         (mm/min)       Over             (rpm)     Dial
+                                                       )             Pass
+                                                                                                              BUY
+ 0.75”     19.050       4    3.175    32     3.175      2540         203     1.270 70%     17,000       3
+                                                                                                              NOW
+                                                                                                              BUY
+  1"        25.4        4     6.35    51      6.35      3810         178     3.175 70%     17,000       3
+                                                                                                              NOW
+                                                                                                              BUY
+ 1.5”        38         4    6.350    51      6.35      3048         203     1.778 70%     12,000       1.5   NOW
+                              BOWL BIT - HOGGING (Category: Endmill)
+                                                       Plunge                Spindl
+                      #    Flute Overall Shank Feed           Depth Per Step
+  Bit     Cut Dia.                                    (mm/min                  e    Router Dial
+                   Flutes Length Length Dia. (mm/min)           Pass    Over
+                                                          )                  (rpm)
+                                                                                         17,00                BUY
+1” Bowl    25.4     2       19.05    51    6.35      2032      400         6.350   40%              3
+                                                                                           0                  NOW
+    METRIC FEEDS & SPEEDS – TAPER BALL NOSE CARVING BIT
+ The taper ball nose bit is use for fine detail carving. This is the bit to use for exquisite projects.
+ You may notice the image is a bit ‘stumpy’ for this type of bit. Most carving bits tend to be longer. The major
+ drawback to long, narrow bits in this family is ‘tool deflection’.
+ A long narrow bit will have side bounce which will show up as lines in your project.
+ To learn more about taper ball nose bits and how they are used, watch this video.
+
+
+
+                                         TAPER BALLNOSE CARVING BIT
+
+           #                             Angle /
+                Flute Overall Shank Tip            Feed    Plunge Depth Per Step Spindle Router
+Cut Dia. Flute                             Side
+               Length Length Dia. Radius         (mm/min) (mm/min) Pass     Over (rpm) Dial
+           s                              Angle
+
+                                                                                                            BUY
+1mm rad.   2     19      56    6.35    0.5     12/6     1524       635       6.35    5-8% 19,000      3.5   NOW
+1.143mm                                                                                                     BUY
+   rad.    2     19      56    6.35    0.5     12/6     1524       635       6.35    5-8% 19,000      3.5   NOW
+                       METRIC FEEDS & SPEEDS - 0-FLUTE
+The 0-flute bit is used for acrylic and aluminum, depending on the design of the bit. The bits and settings
+listed here are for acrylic only.
+Always use CAST ACRYLIC when creating these types of projects. Click these links to see it on Amazon.
+1/8” thick clear – 1/4” thick clear
+
+
+
+
+                                           0-FLUTE BIT (For Acrylic)
+                                                           Plunge Depth
+                          #    Flute Overall Shank Feed                 Step Spindle Router
+    Bit       Cut Dia.                                    (mm/min Per
+                       Flutes Length Length Dia. (mm/min)               Over (rpm)    Dial
+                                                              )    Pass
+
+    1/8"       3.175    1      12     41    3.175    1524       381    3.175 70% 17,000    3     BUY NOW
+
+    1/4"       6.35     1      25     55    3.175    1524       381    6.35   70% 17,000   3     BUY NOW
+

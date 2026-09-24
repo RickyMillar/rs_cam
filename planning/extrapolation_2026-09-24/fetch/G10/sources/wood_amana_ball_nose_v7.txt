@@ -1,0 +1,42 @@
+# source_url: https://www.amanatool.com/pub/media/productattachments/Spiral-Ball-Nose-Speed-Chart-v7.pdf
+# accessed_on: 2026-09-25
+# pdf_sha256: e851a270a9958a9affc17a24c8e6a8ef51d63a813f384b7043670d676cae3563
+                                                                                                                                                                                             INDUSTRIAL
+                                                                        2 Flute Solid Carbide CNC Spiral Ball Nose Router Bits
+                                                                             CNC Operating Spindle Speed: 18,000 RPM / Depth of Cut: 1 x Tool Diameter †
+
+
+
+
+                                  1/16"                             1/8"                              1/4"                        3/8"                        1/2"                        5/8"                            3/4"
+                     Feed Rate        Chip Load        Feed Rate        Chip Load         Feed Rate       Chip Load   Feed Rate       Chip Load   Feed Rate       Chip Load   Feed Rate       Chip Load       Feed Rate       Chip Load
+    Material           IPM*           Per Tooth          IPM*           Per Tooth           IPM*          Per Tooth     IPM*          Per Tooth     IPM*          Per Tooth     IPM*          Per Tooth         IPM*          Per Tooth
+
+    Aluminum         70" - 150"    0.002" - 0.004" 110" - 190" 0.003" - 0.005" 150" - 220" 0.004" - 0.006" 220" - 290" 0.006" - 0.008" 360" - 430" 0.010" - 0.012" 430" - 500" 0.012" - 0.014" 430" - 580" 0.014" - 0.016"
+    Softwood        110" - 190" 0.003" - 0.005" 190" - 260" 0.005" - 0.007" 260" - 330" 0.007" - 0.009" 290" - 360" 0.008" - 0.010" 330" - 400" 0.009" - 0.011" 360" - 430" 0.010" - 0.012" 400" - 470" 0.011" - 0.013"
+    Hardwood         70" - 150"    0.002" - 0.004" 110" - 190" 0.003" - 0.005" 190" - 260" 0.005" - 0.007" 220" - 290" 0.006" - 0.008" 260" - 330" 0.007" - 0.009" 290" - 360" 0.008" - 0.010" 330" - 400" 0.009" - 0.011"
+    MDF             110" - 190" 0.003" - 0.005" 190" - 260" 0.005" - 0.007" 220" - 290" 0.006" - 0.008" 260" - 330" 0.007" - 0.009" 290" - 360" 0.008" - 0.010" 330" - 400" 0.009" - 0.011" 360" - 430" 0.010" - 0.012"
+    Soft Plastic     70" - 150"    0.002" - 0.004"     70" - 150"    0.002" - 0.004" 150" - 220" 0.004" - 0.006" 150" - 220" 0.004" - 0.006" 220" - 290" 0.006" - 0.008" 360" - 430" 0.010" - 0.012" 430" - 500" 0.012" - 0.014"
+    Hard Plastic     70" - 150"    0.002" - 0.004"     70" - 150"    0.002" - 0.004" 150" - 220" 0.004" - 0.006" 150" - 220" 0.004" - 0.006" 220" - 290" 0.006" - 0.008" 290" - 360" 0.008" - 0.010" 360" - 430" 0.010" - 0.012"
+    Sign Foam       110" - 190" 0.003" - 0.005" 110" - 190" 0.005" - 0.007" 220" - 290" 0.006" - 0.008" 260" - 330" 0.007" - 0.009" 290" - 360" 0.008" - 0.010" 330" - 400" 0.009" - 0.011" 360" - 430" 0.010" - 0.012"
+
+  * IPM Inches per minute
+                                                                                                                                                                                                                Tool Reference #’s
+                                                                                                                                                                                                          Up-Cut Down-Cut           Dia.
+                                                                                                                                                                                                          46369         —           1/8"
+                                                                                                                                                                                                          46373         —          1/16"
+                                                                                                                                                                                                          46374       46475        1/4"
+† Depth of Cut: 1 x D Use recommended feed rate
+                                                                                                                                                                                                          46375         —           1/8"
+                 2 x D Reduce feed rate by 25%                                                                                                                                                            46376       46476        1/4"
+                 3 x D Reduce feed rate by 50%                                                                                                                                                            46378       46478        3/8"
+  Simple Machining Calculations:                                                                                                                                                                          46380       46477        1/2"
+  To find RPM: (SFM x 3.82) / diameter of tool                                                                                                                                                            46384         —           1/2"
+  To find SFM: 0.262 x diameter of tool x RPM                                                                                                                                                             46386         —           5/8"
+  To find Feed Rate IPM: RPM x # of flutes x chip load                                                                                                                                                    46387         —           3/4"
+                                                                                                                                                                                                          46510         —          1/16"
+  To find Chip Load: Feed Rate IPM / (RPM x # of flutes)
+                                                                                                                                                                                                          46512         —           1/8"
+  To find Ramp Down: Feed Rate IPM / # of flutes
+  Disclaimer: It is important to understand that these values are only recommendations.                                                                                                    © Copyright Amana Tool® All Rights Reserved
+

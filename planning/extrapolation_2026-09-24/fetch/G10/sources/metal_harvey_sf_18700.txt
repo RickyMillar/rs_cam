@@ -1,0 +1,124 @@
+# source_url: https://harveyperformance.widen.net/content/olyhfjr4yu/pdf/SF_18700.pdf?u=d9orjt
+# accessed_on: 2026-09-25
+# pdf_sha256: 496173bab219ba5a3a3b92697b9c2347b7ba3121be163ff50d3499f1dd92b206
+
+                                                                                                     Hardness: ≤ 28 Rc (≤ 271 HBn)                                                         Depth
+MATERIAL                                                                                            Chip Load (IPT) By Effective Cutter Diameter                                           of Cut
+                                           SFM
+                                                                         0.015    0.031    0.047      0.062      0.078     0.093      0.125    0.187   0.250    0.312    0.375    0.500    Passes
+ALUMINUM ALLOYS                                   Edge Break             .00023   .00047   .00071     .00093    .00117    .00140    .00188    .00281   .00375   .00468   .00563   .00750     1
+Casting (2xx, 5xx, 7xx, 8xx)               750
+                                                                         .00019   .00039   .00059     .00078    .00098    .00116    .00156    .00234   .00313   .00390   .00469   .00625     2
+                                                  Full Chamfer (≥ 25°)
+                                                                                                                                                                                                                   Speeds & Feeds
+Wrought (1xxx, 2xxx, 3xxx, 5xxx, 6xxx,
+                                           1000 Full Chamfer (< 25°)     .00014   .00029   .00044     .00058    .00073    .00087    .00117    .00175   .00234   .00293   .00352   .00469     3
+7xxx, 8xxx)                                                                                                                                                                                                        Product Table: Chamfer Cutters - Pointed & Flat End
+Casting - 3%-5% Si (3xx, A3xx, C3xx,
+4xx, A4xx, B4xx)
+                                           750 Edge Break
+                                                                         .00020   .00042   .00063     .00084    .00105    .00126    .00169    .00252   .00338   .00421   .00506   .00675     1                     Characteristics: 2 Flutes
+Casting - 5%-8% Si (3xx, A3xx, C3xx,
+                                           700
+                                                                                                                                                                                                                   Series: 187xx, 476xx, 506xx, 724xx, 725xx, 7903xx, 7917xx, 8400xx, 8784xx,
+4xx, A4xx, B4xx)                                                                                                                                                                                                   8803xx, 9002xx, 9604xx, 9869xx
+Casting - 8%-12% Si (3xx, A3xx, C3xx,
+                                           650 Full Chamfer (≥ 25°)      .00017   .00035   .00053     .00070    .00088    .00105    .00141    .00210   .00281   .00351   .00422   .00563     2            Product notes:
+4xx, A4xx, B4xx)
+Casting - 12%-16% Si (3xx, A3xx, C3xx,     475                                                                                                                                                              Due to a varying diameter, an Effective Cutter Diameter is needed for Chip Load selection and RPM calculation:
+4xx, A4xx, B4xx)                                                                                                                                                                                               Effective Cutter Diameter = (Major Diameter + Minor Diameter)/2.
+Wrought - 5%-8% Si (4xxx)                  1000 Full Chamfer (< 25°)     .00013   .00026   .00040     .00052    .00066    .00078    .00105    .00158   .00211   .00263   .00316   .00422     3                 Or consider the actual diameter along the angle that is engaged with the workpiece.
+Wrought - 8%-12% Si (4xxx)                  800
+                                                                                                                                                                                                            Depth of Cut is shown as number of Passes with each pass resulting in a descending stepover
+                                                  Edge Break             .00023   .00047   .00071     .00093    .00117    .00140    .00188    .00281   .00375   .00468   .00563   .00750     1
+MAGNESIUM ALLOYS                           1500
+                                                                                                                                                                                                            Chip Loads are given 3 ways:
+                                                  Full Chamfer (≥ 25°)   .00019   .00039   .00059     .00078    .00098    .00116    .00156    .00234   .00313   .00390   .00469   .00625     2                  Traditional Edge Break of .010"-.015"
+ZINC ALLOYS                                800                                                                                                                                                                  Full Chamfer engagement for cutters with angles GREATER than or equal to 25° per side (50° included)
+                                                  Full Chamfer (< 25°)   .00014   .00029   .00044     .00058    .00073    .00087    .00117    .00175   .00234   .00293   .00352   .00469     3
+                                                                                                                                                                                                                Full Chamfer engagement for cutters with angles LESS than 25° per side (50° included)
+COPPER ALLOYS
+High Coppers - 90%+ (C1xxxx)               225                                                                                                                                                              Chip Loads within table pertain to machining on one side of workpiece.
+Brass (Copper Zinc alloys, C2xxxx,                Edge Break             .00018   .00037   .00056     .00074    .00094    .00112    .00150    .00224   .00300   .00374   .00450   .00600     1                  For machining on two sides, reduce Chip Loads to 60%-80% depending on contact length and finish
+                                           500                                                                                                                                                                  For vertical plunging, reduce Chip Loads to 40%-50% depending on finish
+C3xxxx, C4xxxx, C66400-C69800)
+Phosphor Bronzes (Copper Tin alloys,
+                                           225
+C5xxxx)
+                                                                                                                                                                                                          General notes:
+Aluminum Bronzes (Copper Aluminum
+                                           500                                                                                                                                                              All posted speed and feed parameters are suggested starting values that may be increased given optimal setup conditions. Chip loads
+alloys, C60600-C64200)                            Full Chamfer (≥ 25°)   .00015   .00031   .00047     .00062    .00078    .00093    .00125    .00187   .00250   .00312   .00375   .00500     2              reflect uncoated cutters and may be increased 10%-20% if coated. For ferrous materials with hardness ≤ 28 Rc, chip loads can be
+Silicon Bronzes (Copper Silicon alloys,                                                                                                                                                                     increased 10%-20%.
+                                           500
+C64700-C66100)
+Copper Nickels, Nickel Silvers (Copper                                                                                                                                                                      If you require additional information, Harvey Tool has a team of technical experts available to assist you through even the most
+                                           225
+Nickel alloys, C7xxxx)                                                                                                                                                                                      challenging applications. Please contact us at 800-645-5609 or Harveytech@harveyperformance.com.
+Cast Copper Alloys (C83300-C86200,                Full Chamfer (< 25°)   .00011   .00023   .00035     .00047    .00059    .00070    .00094    .00140   .00188   .00234   .00281   .00375     3              WARNING: Cutting tools may shatter under improper use. Government regulations require use of safety glasses and other appropriate
+C86400-C87900, C92200-C95800,              550
+                                                                                                                                                                                                            safety equipment in the vicinity of use.
+C97300-C97800, C99400-C99700)
+
+                                                                                                    Hardness: 29-37 Rc (279-344 HBn)                                                       Depth                                                            Hardness: 38-45 Rc (353-421 HBn)                                                       Depth
+MATERIAL                                                                                            Chip Load (IPT) By Effective Cutter Diameter                                           of Cut                                                           Chip Load (IPT) By Effective Cutter Diameter                                           of Cut
+                                           SFM                                                                                                                                                      SFM
+                                                                         0.015    0.031    0.047      0.062      0.078     0.093      0.125    0.187   0.250    0.312    0.375    0.500    Passes                                0.015    0.031    0.047      0.062      0.078     0.093      0.125    0.187   0.250    0.312    0.375    0.500    Passes
+CARBON STEELS                                     Edge Break             .00009   .00018   .00027     .00035    .00044    .00053    .00071    .00106   .00142   .00177   .00213   .00284     1                      -              -        -        -          -         -         -          -         -       -        -        -        -        -
+
+Free-Machining/Low Carbon steels, 10xx            Full Chamfer (≥ 25°)   .00007   .00015   .00022     .00029    .00037    .00044    .00059    .00088   .00118   .00147   .00177   .00236     3                      -              -        -        -          -         -         -          -         -       -        -        -        -        -
+- 1029 & all 10Lxx, 11xx - 1139 & all      600                                                                                                                                                       -
+11Lxx, 12xx - 1215 & all 12Lxx                    Full Chamfer (< 25°)   .00005   .00011   .00017     .00022    .00028    .00033    .00044    .00066   .00089   .00111   .00133   .00177     4                      -              -        -        -          -         -         -          -         -       -        -        -        -        -
+
+                                                  Edge Break             .00008   .00016   .00024     .00032    .00040    .00048    .00065    .00097   .00130   .00162   .00194   .00259     1                      -              -        -        -          -         -         -          -         -       -        -        -        -        -
+1030 - 1095, 1140 - 1151, 13xx, 15xx,
+2xxx, 3xxx, 4xxx & 4xLxx, 5xxx & 5xLxx,
+                                           200 Full Chamfer (≥ 25°)      .00006   .00013   .00020     .00027    .00034    .00040    .00054    .00081   .00108   .00135   .00162   .00216     3       -              -              -        -        -          -         -         -          -         -       -        -        -        -        -
+50xxx & 50Lxxx, 51xxx & 51Lxxx, 52xxx
+& 52Lxxx, 6xxx, 8xxx, 9xxx
+                                                  Full Chamfer (< 25°)   .00005   .00010   .00015     .00020    .00025    .00030    .00041    .00061   .00081   .00101   .00122   .00162     4                      -              -        -        -          -         -         -          -         -       -        -        -        -        -
+
+STAINLESS STEELS                                  Edge Break             .00009   .00018   .00027     .00035    .00044    .00053    .00071    .00106   .00142   .00177   .00213   .00284     1                      -              -        -        -          -         -         -          -         -       -        -        -        -        -
+
+203 EZ, 303 (all types), 416, 416Se, 416          Full Chamfer (≥ 25°)   .00007   .00015   .00022     .00029    .00037    .00044    .00059    .00088   .00118   .00147   .00177   .00236     3                      -              -        -        -          -         -         -          -         -       -        -        -        -        -
+Plus X, 420F, 420FSe, 430F, 430FSe,        450                                                                                                                                                       -
+440F, 440FSe                                      Full Chamfer (< 25°)   .00005   .00011   .00017     .00022    .00028    .00033    .00044    .00066   .00089   .00111   .00133   .00177     4                      -              -        -        -          -         -         -          -         -       -        -        -        -        -
+
+201, 202, 203, 205, 301, 302, 304,                Edge Break             .00008   .00016   .00024     .00032    .00040    .00048    .00065    .00097   .00130   .00162   .00194   .00259     1            Edge Break             .00008   .00016   .00024     .00032    .00040    .00048    .00065    .00097   .00130   .00162   .00194   .00259     1
+304L, 308, 309, 310, 314, 316, 316L,
+317, 321, 329, 330, 347, 348, 385, 403,    200 Full Chamfer (≥ 25°)      .00006   .00013   .00020     .00027    .00034    .00040    .00054    .00081   .00108   .00135   .00162   .00216     3      100 Full Chamfer (≥ 25°)     .00006   .00013   .00020     .00027    .00034    .00040    .00054    .00081   .00108   .00135   .00162   .00216     4
+405, 409, 410, 413, 420, 429, 430, 434,
+436, 442, 446, 501, 502                           Full Chamfer (< 25°)   .00005   .00010   .00015     .00020    .00025    .00030    .00041    .00061   .00081   .00101   .00122   .00162     4            Full Chamfer (< 25°)   .00005   .00010   .00015     .00020    .00025    .00030    .00041    .00061   .00081   .00101   .00122   .00162     5
+
+                                                  Edge Break             .00005   .00010   .00015     .00020    .00025    .00030    .00041    .00061   .00081   .00101   .00122   .00162     1            Edge Break             .00005   .00010   .00015     .00020    .00025    .00030    .00041    .00061   .00081   .00101   .00122   .00162     1
+414, 431, 440A, 440B, 440C,
+                                           150 Full Chamfer (≥ 25°)      .00004   .00008   .00013     .00017    .00021    .00025    .00034    .00050   .00068   .00084   .00101   .00135     3      90    Full Chamfer (≥ 25°)   .00004   .00008   .00013     .00017    .00021    .00025    .00034    .00050   .00068   .00084   .00101   .00135     4
+13-8, 15-5, 15-7, 17-4, 17-7
+                                                  Full Chamfer (< 25°)   .00003   .00006   .00010     .00013    .00016    .00019    .00025    .00038   .00051   .00063   .00076   .00101     4            Full Chamfer (< 25°)   .00003   .00006   .00010     .00013    .00016    .00019    .00025    .00038   .00051   .00063   .00076   .00101     5
+
+TOOL STEELS                                       Edge Break             .00008   .00016   .00024     .00032    .00040    .00048    .00065    .00097   .00130   .00162   .00194   .00259     1            Edge Break             .00008   .00016   .00024     .00032    .00040    .00048    .00065    .00097   .00130   .00162   .00194   .00259     1
+
+                                                  Full Chamfer (≥ 25°)   .00006   .00013   .00020     .00027    .00034    .00040    .00054    .00081   .00108   .00135   .00162   .00216     3            Full Chamfer (≥ 25°)   .00006   .00013   .00020     .00027    .00034    .00040    .00054    .00081   .00108   .00135   .00162   .00216     4
+A, L, O, P, W series                       200                                                                                                                                                      100
+                                                  Full Chamfer (< 25°)   .00005   .00010   .00015     .00020    .00025    .00030    .00041    .00061   .00081   .00101   .00122   .00162     4            Full Chamfer (< 25°)   .00005   .00010   .00015     .00020    .00025    .00030    .00041    .00061   .00081   .00101   .00122   .00162     5
+
+                                                  Edge Break             .00005   .00010   .00015     .00020    .00025    .00030    .00041    .00061   .00081   .00101   .00122   .00162     1            Edge Break             .00005   .00010   .00015     .00020    .00025    .00030    .00041    .00061   .00081   .00101   .00122   .00162     1
+
+D, H, M, T, S series                       150 Full Chamfer (≥ 25°)      .00004   .00008   .00013     .00017    .00021    .00025    .00034    .00050   .00068   .00084   .00101   .00135     3      90    Full Chamfer (≥ 25°)   .00004   .00008   .00013     .00017    .00021    .00025    .00034    .00050   .00068   .00084   .00101   .00135     4
+
+                                                  Full Chamfer (< 25°)   .00003   .00006   .00010     .00013    .00016    .00019    .00025    .00038   .00051   .00063   .00076   .00101     4            Full Chamfer (< 25°)   .00003   .00006   .00010     .00013    .00016    .00019    .00025    .00038   .00051   .00063   .00076   .00101     5
+
+                                                  Edge Break             .00005   .00010   .00015     .00020    .00025    .00030    .00041    .00061   .00081   .00101   .00122   .00162     1            Edge Break             .00005   .00010   .00015     .00020    .00025    .00030    .00041    .00061   .00081   .00101   .00122   .00162     1
+
+TITANIUM ALLOYS                            150 Full Chamfer (≥ 25°)      .00004   .00008   .00013     .00017    .00021    .00025    .00034    .00050   .00068   .00084   .00101   .00135     3      75    Full Chamfer (≥ 25°)   .00004   .00008   .00013     .00017    .00021    .00025    .00034    .00050   .00068   .00084   .00101   .00135     4
+
+                                                  Full Chamfer (< 25°)   .00003   .00006   .00010     .00013    .00016    .00019    .00025    .00038   .00051   .00063   .00076   .00101     4            Full Chamfer (< 25°)   .00003   .00006   .00010     .00013    .00016    .00019    .00025    .00038   .00051   .00063   .00076   .00101     5
+
+HIGH TEMP ALLOYS                                  Edge Break             .00005   .00010   .00015     .00020    .00025    .00030    .00041    .00061   .00081   .00101   .00122   .00162     1            Edge Break             .00005   .00010   .00015     .00020    .00025    .00030    .00041    .00061   .00081   .00101   .00122   .00162     1
+
+                                                  Full Chamfer (≥ 25°)   .00004   .00008   .00013     .00017    .00021    .00025    .00034    .00050   .00068   .00084   .00101   .00135     3            Full Chamfer (≥ 25°)   .00004   .00008   .00013     .00017    .00021    .00025    .00034    .00050   .00068   .00084   .00101   .00135     4
+Inconel, Hastelloy, Waspalloy, Monel,
+                                            70                                                                                                                                                      50
+Nimonic, Haynes, Discoloy, Incoloy
+                                                  Full Chamfer (< 25°)   .00003   .00006   .00010     .00013    .00016    .00019    .00025    .00038   .00051   .00063   .00076   .00101     4            Full Chamfer (< 25°)   .00003   .00006   .00010     .00013    .00016    .00019    .00025    .00038   .00051   .00063   .00076   .00101     5
+

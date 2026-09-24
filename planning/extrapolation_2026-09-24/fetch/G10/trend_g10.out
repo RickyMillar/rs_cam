@@ -1,0 +1,433 @@
+trend_g10.py: G10 entry parameters, Phase 2 tables. Every computed number is derived.
+
+==============================================================================
+T0. Engine entry constants read from the source (regex, no cargo)
+==============================================================================
+  a3d_ramp_deg                 10.000   crates/rs_cam_core/src/compute/operation_configs.rs:832
+  a3d_helix_factor              0.300   crates/rs_cam_core/src/compute/operation_configs.rs:836
+  a3d_helix_pitch               2.000   crates/rs_cam_core/src/compute/operation_configs.rs:840
+  dr_ramp_deg                   3.000   crates/rs_cam_core/src/compute/config.rs:1036
+  dr_helix_r_mm                 2.000   crates/rs_cam_core/src/compute/config.rs:1037
+  dr_helix_pitch                1.000   crates/rs_cam_core/src/compute/config.rs:1038
+  entry_contact_clearance       0.500   crates/rs_cam_core/src/dressup/entry_descent.rs:356
+  entry_clearance_nominal       2.000   crates/rs_cam_core/src/dressup/entry_descent.rs:131
+  pencil_ramp_deg              12.000   crates/rs_cam_core/src/finish/pencil/emission.rs:70
+  plunge_wood_6mm            1000.000   crates/rs_cam_core/src/material/mod.rs:1174
+  plunge_sheet_6mm            900.000   crates/rs_cam_core/src/material/mod.rs:1175
+  ball_cap_per_mm             150.000   crates/rs_cam_core/src/feeds/mod.rs:2558
+  cli_2d_ramp_deg               3.000   crates/rs_cam_cli/src/job.rs:1116
+  cli_2d_helix_r_mm             2.000   crates/rs_cam_cli/src/job.rs:1120
+  cli_2d_helix_pitch            1.000   crates/rs_cam_cli/src/job.rs:1121
+  cli_3d_helix_factor           0.400   crates/rs_cam_cli/src/job.rs:1351
+  cli_3d_helix_pitch            1.000   crates/rs_cam_cli/src/job.rs:1352
+  cli_3d_ramp_deg               3.000   crates/rs_cam_cli/src/job.rs:1356
+  FM1: Z = 2 on every tool kind; bull corner 0.15 x D; V-bit 60 deg; tapered ball diameter = tip.
+
+==============================================================================
+T1. Ramp angle: every printed statement (max and recommended)
+==============================================================================
+  statement                          kind        family        subfamily                                  Z    cc deg (printed)          grade material
+  g10-metal-harvey-rs-ramp-soft      recommend   flat_end_mill end mill (general)                         -     - 3° – 10°               c     Soft/Non-Ferrous Materials
+  g10-metal-harvey-rs-ramp-hard      recommend   flat_end_mill end mill (general)                         -     - 1° – 3°                c     Hard/Ferrous Materials
+  g10-metal-harvey-te-ramp-soft      recommend   flat_end_mill end mill (general); corner radius advi     -     - 3°-10°                 c     Soft/Non-Ferrous Materials
+  g10-metal-helical-gb-ramp-soft     recommend   flat_end_mill end mill (general)                         -     - 3º – 10º               c     Soft/Non-Ferrous Materials
+  g10-metal-helical-gb-ramp-hard     recommend   flat_end_mill end mill (general)                         -     - 1º – 3º                c     Hard/Ferrous Materials
+  g10-metal-sgs-mx-z5                max         flat_end_mill Z-Carb-HPR Z5 (5 flute rougher; S, R e     5    no 7                      c     not printed per row (colour-co
+  g10-metal-sgs-mx-77                max         flat_end_mill H-Carb 77 (7 flute high efficiency)        7    no 1                      c     not printed per row (colour-co
+  g10-metal-sgs-mx-66                max         flat_end_mill Multi-Carb 66 (multi-flute finisher)       -    no 1                      c     not printed per row (colour-co
+  g10-metal-sgs-mx-56b               max         ball_nose     Turbo-Carb 56B (2 flute contouring lon     2   yes 25                     c     not printed per row (colour-co
+  g10-metal-sgs-mx-47                max         flat_end_mill S-Carb 2 Flute, series 47 (S, B end st     2   yes 90                     c     not printed per row (colour-co
+  g10-metal-sgs-mx-43                max         flat_end_mill S-Carb 3 Flute, series 43 (S, R, B end     3   yes 90                     c     not printed per row (colour-co
+  g10-metal-sgs-mx-series7           max         flat_end_mill Series 7 (4 flute variable geometry lo     4   yes 1                      c     not printed per row (colour-co
+  g10-metal-sgs-mx-ccr               max         flat_end_mill CCR series 20-CCR (composite cutting r     -     - Based upon end style / c     not printed per row (colour-co
+  g10-metal-sgs-mx-compression       max         flat_end_mill Compression Router, series 25              -   yes 5                      c     not printed per row (colour-co
+  g10-metal-sgs-mx-upcut             max         flat_end_mill Up Cut Router, series 21                   -   yes 90                     c     not printed per row (colour-co
+  g10-metal-sgs-mx-downcut           no ramp     flat_end_mill Down Cut Router, series 22                 -   yes –                      c     not printed per row (colour-co
+  g10-metal-sgs-z5-ramp5             max         flat_end_mill Z-Carb-HPR Z5 (5 flute rougher square      5    no ramp up to 5 degrees   c     chart materials (steels ... ha
+  g10-hobby-012                      recommend   any                                                      -     - 20 degrees             c     any
+  g10-hobby-013                      no ramp     any                                                      -    no don't want to ramp or  c     any
+  g10-hobby-024                      recommend   flat_end_mill                                            -     - 1.5 degrees or 2.5 deg c     metal (general)
+  g10-hobby-025                      max         flat_end_mill                                            -     - 10 to 20 degrees       c     tough materials (metal)
+
+  Summary (derived):
+  - wood or router vendor statements at grade a/b: 0
+  - every ramp-angle number is grade c: metal / non-ferrous vendors (Harvey, Helical, SGS, IMCO),
+    a CAM article (CNCCookbook), or a user post (Carbide Create 20 deg).
+  - SGS centre-cutting 2-3 flute and up-cut router: 90 deg (a plunge is allowed); non-centre-cutting
+    or 4-7 flute: 1-7 deg; compression router 5 deg; down-cut router '-' (no legend).
+
+  Repo ramp angles:
+    dressup (E1 Face/Pocket/Profile/Rest/Zigzag) 3.0 deg   crates/rs_cam_core/src/compute/config.rs:1036
+    Adaptive3d (E3, Suggest rewrite to Ramp)     10.0 deg   crates/rs_cam_core/src/compute/operation_configs.rs:832
+    CLI ramp (2.5D and Adaptive3d)               3.0 / 3.0 deg
+    Pencil internal ramp cap                      12.0 deg
+  Position against the metal ranges (context, not a source): 3 deg is the low end and 10 deg the top of
+  Harvey/Helical 'soft / non-ferrous 3-10 deg'. 3 deg is below the SGS compression-router maximum (5 deg);
+  10 deg is above it. No statement prints a ramp angle for a ball, tapered ball or V-bit in wood.
+
+==============================================================================
+T2. Helix size: printed statements in one frame, path radius / D (derived)
+==============================================================================
+  Frames: bore diameter B, path (tool-centre) diameter P, path radius r. B = P + D; r = P / 2 = (B - D) / 2.
+  No core for a flat tool: r <= D/2, so P <= D and B <= 2D. With corner radius rc: r <= D/2 - rc (IMCO 2D - 2rc).
+
+  statement                        frame      bound    r/D         grade  reading
+  g10-metal-harvey-te-helix-dia    ambiguous  min      0.05-0.10   c      '>110-120% of the cutter diameter' read as BORE: r = (1.1..1.2 - 1)/2
+  g10-metal-helical-gb-helix-dia   ambiguous  min      0.55-0.60   c      same text, read as PATH diameter: r = 1.1..1.2 / 2 (leaves a core)
+  g10-metal-imco-bore-2d-2r        bore       max      0.50        c      B = 2D - 2rc; r = D/2 - rc; flat rc = 0
+  g10-metal-sandvik-max-hole       bore       max      0.50        c      max hole 2 x D3 (non-centre-cutting inserts): r = D/2
+  g10-metal-sandvik-core           bore       -        -           c      a smaller hole-to-cutter ratio leaves a core (text only)
+  g10-hobby-018                    path       max      0.50        c      helix diameter must not exceed D (boss stays): r = D/2
+  g10-hobby-019                    path       example  0.40        c      figure example 0.8 x Dia (good) vs 1.8 x Dia (boss): r = 0.4 D
+  g10-hobby-020                    path       -        -           c      no minimum printed
+  Note: the two Harvey/Helical statements print the SAME words; the table shows each of the two readings once.
+  Bore reading: r/D 0.05-0.10 (a near-plunge). Path reading: r/D 0.55-0.60 (a core of 0.1-0.2 D for a flat tool).
+
+  Repo helix radius per matrix size, path radius / D (derived):
+  kind                  D no-core r/D |  A3d 0.3D dressup 2.0mm CLI3d 0.4D | centre pip height (mm) at A3d / dressup / CLI3d
+  EndMill           3.175       0.500 |     0.300         0.630      0.400 | 0 / core 0.82 / 0
+  EndMill           6.000       0.500 |     0.300         0.333      0.400 | 0 / 0 / 0
+  BullNose          3.175       0.350 |     0.300         0.630      0.400 | 0 / core 1.78 / 0.027
+  BullNose          6.000       0.350 |     0.300         0.333      0.400 | 0 / 0 / 0.051
+  BallNose          3.175       0.000 |     0.300         0.630      0.400 | 0.317 / core 0.82 / 0.635
+  BallNose          6.000       0.000 |     0.300         0.333      0.400 | 0.600 / 0.764 / 1.200
+  TaperedBallNose   3.175       0.000 |     0.300         0.630      0.400 | 0.317 / core 0.82 / 0.635
+  TaperedBallNose   6.000       0.000 |     0.300         0.333      0.400 | 0.600 / 0.764 / 1.200
+  VBit              6.350       0.000 |     0.300         0.315      0.400 | 3.300 / 3.464 / 4.399
+  VBit             12.700       0.000 |     0.300         0.157      0.400 | 6.599 / 3.464 / 8.799
+  no-core r/D: flat 0.5; bull 0.5 - 0.15 = 0.35; ball, tapered ball, V-bit 0 (any r > 0 leaves a centre pip).
+  pip height: flat/bull 0 up to the flat bottom radius; past it a core stands ('core' = its diameter, 2 (r - flat));
+  ball / tapered ball R - sqrt(R^2 - r^2) with R = D/2 (core when r > R); V-bit r / tan(30 deg).
+  Caution: Adaptive3d multiplies the factor by the ENVELOPE diameter (INVENTORY_G10 1.3); for the tapered ball
+  the FM1 diameter is the tip, so the real A3d radius on that tool is larger than the table shows.
+
+==============================================================================
+T3. Helix ramp angle = atan(pitch / (2 pi r_path)), derived, per matrix size
+==============================================================================
+  arm                    r rule     pitch | D=3.175  D=6      D=6.35   D=12.7  
+  A3d default            0.3D         2.0 |  18.48    10.03     9.49     4.78  
+  A3d, pitch 1           0.3D         1.0 |   9.49     5.05     4.78     2.39  
+  dressup default        2.0 mm       1.0 |   4.55     4.55     4.55     4.55  
+  dressup, pitch 2       2.0 mm       2.0 |   9.04     9.04     9.04     9.04  
+  CLI Adaptive3d         0.4D         1.0 |   7.14     3.79     3.59     1.79  
+  CLI Adaptive3d, p 2    0.4D         2.0 |  14.07     7.55     7.14     3.59  
+
+  Printed helix / ramp angles (all grade c, metal):
+    g10-metal-imco-iptc-angle    IPT/C 7, 9, 11, 13 (7-13 flute)          0.5°
+    g10-metal-imco-aptc-angle    APT/C 5                                  3°
+    g10-metal-imco-m5-angle      M525, M527, M503, M726, M706, M806, M924 1° - 2.5°
+    g10-metal-imco-m2-angle      M223, M233, M203, M202                   3° - 5°
+    Harvey / Helical ramp (linear or circular), soft / non-ferrous 3-10 deg, hard / ferrous 1-3 deg
+    Sandvik: pitch never larger than the maximum ap of the insert (no angle)
+  No wood, router or hobby source prints a pitch or a helix angle. Fusion defines the fields with no value.
+
+==============================================================================
+T4a. Plunge (and Amana 'Ramp Down') as a fraction of the side feed: printed operands, derived fraction
+==============================================================================
+  source                                   family            what     gr   n fraction      median  Z / D notes
+  carbide3d_community_ramping_cc_pro       any               ramp     c    1 0.333          0.333  Z None; D None
+  shopbot_user_guide_2015                  any               plunge   c    1 0.294          0.294  Z None; D None
+  wood_toolstoday_understanding_feeds_spee any               plunge   c    1 0.500          0.500  Z None; D None
+  sienci_feeds_speeds_metric               ball_nose         plunge   a   34 0.500-0.503    0.500  Z None; D 12.7,19.05,25.4,3.175,6.35
+  wood_amana_ball_nose_v7                  ball_nose         RampDown b    1 0.500          0.500  Z 2; D None
+  wood_idc_feeds_speeds                    ball_nose         plunge   a    2 0.250-0.429    0.339  Z 2; D 3.175,6.35
+  wood_amana_corner_radius_plunge          bull_nose         RampDown b    1 0.500          0.500  Z 2; D [6.35, 12.7]
+  wood_idc_feeds_speeds                    bull_nose         plunge   a    1 0.188          0.188  Z 2; D 25.4
+  metal_harvey_sf_18700                    chamfer_v         plunge   c    1 0.400          0.400  Z 2; D [0.381, 12.7]
+  metal_harvey_sf_25000                    chamfer_v         plunge   c    1 0.500          0.500  Z 1; D None
+  wood_amana_compression_v8                compression       RampDown a    4 0.334-1.000    0.500  Z 1,2,3; D 12.7,6.35
+  wood_toolstoday_calc_video               compression       RampDown b    2 0.500          0.500  Z 2; D 9.525
+  carbide3d_nomad883_feeds_125             flat_end_mill     plunge   b    5 0.240-0.444    0.418  Z None; D 3.175
+  carbide3d_s3_feeds_250                   flat_end_mill     plunge   b    5 0.375-0.533    0.492  Z None; D 6.35
+  metal_garr_technical                     flat_end_mill     plunge   c    1 0.500          0.500  Z None; D [1.5875, 25.4]
+  metal_imco_helical_ramp                  flat_end_mill     ramp     c    1 1.250          1.250  Z [7, 13]; D None
+  metal_sgs_catalog_2021                   flat_end_mill     ramp     c    2 0.250-1.000    0.625  Z None; D None
+  metal_sgs_catalog_2021                   flat_end_mill     plunge   c    1 0.250          0.250  Z None; D None
+  sienci_feeds_speeds_metric               flat_end_mill     plunge   a   60 0.500-0.505    0.500  Z 1,None; D 1.587,22.0,3.175,6.35
+  wood_amana_spektra_plunge_v24            flat_end_mill     RampDown a    3 0.333-0.500    0.333  Z 2,3; D 19.05,6.35
+  wood_idc_feeds_speeds                    flat_end_mill     plunge   a    5 0.047-0.500    0.429  Z 2,4; D 25.4,3.175,6.35
+  metal_sandvik_ramping                    indexable         ramp     c    1 0.750          0.750  Z None; D None
+  wood_onsrud_pct19                        other             plunge   c    1 0.500          0.500  Z None; D None
+  sienci_feeds_speeds_metric               tapered_ball_nose plunge   a    8 0.334-0.504    0.500  Z None; D 0.5,1.5875
+  wood_idc_feeds_speeds                    tapered_ball_nose plunge   a    1 0.417          0.417  Z 2; D 6.35
+  sienci_feeds_speeds_metric               v_bit             plunge   a    4 0.330-0.335    0.333  Z None; D None
+  wood_amana_insert_vgroove_v16            v_bit             RampDown a    3 0.500-1.000    0.500  Z 1,2; D None
+  wood_amana_spektra_engraving_v4          v_bit             RampDown b    1 1.000          1.000  Z 1; D None
+  wood_idc_feeds_speeds                    v_bit             plunge   a    4 0.333-0.571    0.465  Z 1,2; D 25.4,6.35
+  wood_toolstoday_calc_video               v_bit             RampDown b    1 0.500          0.500  Z 1; D None
+  Metal chip-load reductions (fraction of chip load at the same RPM = fraction of feed):
+    Harvey SF_18700 chamfer 2F 0.40-0.50; Harvey SF_25000 pointed engraver 1F 0.50 (plastics and metals); Garr 0.50;
+    SGS plunge 0.25 x slot feed; CNCCookbook plunge = slot feed / Z. All grade c.
+  Caution: an Amana 'Ramp Down' column is not defined as a plunge or a ramp feed (verifier a, 33 files searched).
+
+  Printed plunge fraction per matrix tool kind (grade a/b, D <= 20 mm, Amana Ramp Down apart;
+  BullNose has no printed plunge column, so its reference is the Amana corner-radius Ramp Down rule):
+    EndMill          plunge n= 68 median 0.500 range 0.240-0.533;  Amana Ramp Down n=3 0.333-0.500
+    BullNose         plunge n=  1 median 0.500 range 0.500;  Amana Ramp Down n=1 0.500
+    BallNose         plunge n= 30 median 0.500 range 0.250-0.503;  Amana Ramp Down n=1 0.500
+    TaperedBallNose  plunge n=  9 median 0.500 range 0.334-0.504;  Amana Ramp Down n=0 -
+    VBit             plunge n=  7 median 0.335 range 0.330-0.571;  Amana Ramp Down n=5 0.500-1.000
+
+==============================================================================
+T4b. Repo plunge / feed per FM1 cell (ok, non-drill), against the printed median for the tool kind
+==============================================================================
+  kind                  D material            n repo frac     median printed med ratio repo/printed plunge mm/min per mm D 
+  BallNose          3.175 hardwood           19 0.101-0.542    0.297       0.500 0.20-1.08          371           117
+  BallNose          3.175 mdf                11 0.093-0.492    0.093       0.500 0.19-0.98          373           117
+  BallNose          3.175 softwood           19 0.119-0.472    0.244       0.500 0.24-0.94          476           150
+  BallNose          6.000 hardwood           19 0.175-0.721    0.629       0.500 0.35-1.44          702           117
+  BallNose          6.000 mdf                11 0.176-0.620    0.177       0.500 0.35-1.24          706           118
+  BallNose          6.000 softwood           19 0.225-0.625    0.592       0.500 0.45-1.25          900           150
+  BullNose          3.175 hardwood           15 0.101-0.103    0.103       0.500 0.20-0.21          371           117
+  BullNose          3.175 mdf                15 0.093-0.093    0.093       0.500 0.19-0.19          373           117
+  BullNose          3.175 plywood_hardwood    9 0.090-0.098    0.098       0.500 0.18-0.20          360           113
+  BullNose          3.175 softwood           15 0.132-0.145    0.132       0.500 0.26-0.29          529           167
+  BullNose          6.000 hardwood           15 0.175-0.176    0.176       0.500 0.35-0.35          702           117
+  BullNose          6.000 mdf                15 0.176-0.177    0.177       0.500 0.35-0.35          706           118
+  BullNose          6.000 plywood_hardwood    9 0.171-0.426    0.426       0.500 0.34-0.85          682           114
+  BullNose          6.000 softwood           15 0.250-0.250    0.250       0.500 0.50-0.50          1000          167
+  EndMill           3.175 hardwood           15 0.101-0.389    0.297       0.500 0.20-0.78          371           117
+  EndMill           3.175 mdf                15 0.093-0.306    0.093       0.500 0.19-0.61          373           117
+  EndMill           3.175 plywood_hardwood   15 0.090-0.291    0.098       0.500 0.18-0.58          360           113
+  EndMill           3.175 softwood           15 0.132-0.272    0.145       0.500 0.26-0.54          529           167
+  EndMill           6.000 hardwood           15 0.175-0.721    0.176       0.500 0.35-1.44          702           117
+  EndMill           6.000 mdf                15 0.176-0.742    0.177       0.500 0.35-1.48          706           118
+  EndMill           6.000 plywood_hardwood   15 0.171-0.707    0.171       0.500 0.34-1.41          682           114
+  EndMill           6.000 softwood           15 0.250-0.658    0.316       0.500 0.50-1.32          1000          167
+  TaperedBallNose   3.175 hardwood           19 0.093-0.103    0.103       0.500 0.19-0.21          371           117
+  TaperedBallNose   3.175 mdf                19 0.100-0.122    0.122       0.500 0.20-0.24          373           117
+  TaperedBallNose   3.175 plywood_hardwood   19 0.090-0.111    0.111       0.500 0.18-0.22          360           113
+  TaperedBallNose   3.175 softwood           19 0.119-0.132    0.132       0.500 0.24-0.26          476           150
+  TaperedBallNose   6.000 hardwood           19 0.176-0.254    0.254       0.500 0.35-0.51          702           117
+  TaperedBallNose   6.000 mdf                19 0.177-0.300    0.300       0.500 0.35-0.60          706           118
+  TaperedBallNose   6.000 plywood_hardwood   19 0.171-0.274    0.274       0.500 0.34-0.55          682           114
+  TaperedBallNose   6.000 softwood           19 0.225-0.326    0.326       0.500 0.45-0.65          900           150
+  VBit              6.350 hardwood           10 0.271-0.780    0.780       0.335 0.81-2.33          743           117
+  VBit              6.350 softwood           10 0.386-0.712    0.712       0.335 1.15-2.13          1058          167
+  VBit             12.700 hardwood           10 0.542-1.000    1.000       0.335 1.62-2.99          1160-1487     91-117
+  VBit             12.700 mdf                 4 0.958-1.000    1.000       0.335 2.86-2.99          1331-1494     105-118
+  VBit             12.700 plywood_hardwood    4 0.874-1.000    1.000       0.335 2.61-2.99          1331-1443     105-114
+  VBit             12.700 softwood           10 0.771-1.000    1.000       0.335 2.30-2.99          1809-2116     142-167
+
+  Summary per tool kind and size (all materials; the Pocket cell is the rough the plunge serves):
+  kind                  D   n repo frac     ratio       Pocket frac   Pocket ratio
+  BallNose          3.175  49 0.093-0.542   0.19-1.08   0.093-0.119   0.19-0.24   
+  BallNose          6.000  49 0.175-0.721   0.35-1.44   0.176-0.225   0.35-0.45   
+  BullNose          3.175  54 0.090-0.145   0.18-0.29   0.093-0.145   0.19-0.29   
+  BullNose          6.000  54 0.171-0.426   0.34-0.85   0.176-0.426   0.35-0.85   
+  EndMill           3.175  60 0.090-0.389   0.18-0.78   0.093-0.145   0.19-0.29   
+  EndMill           6.000  60 0.171-0.742   0.34-1.48   0.171-0.250   0.34-0.50   
+  TaperedBallNose   3.175  76 0.090-0.132   0.18-0.26   0.103-0.132   0.21-0.26   
+  TaperedBallNose   6.000  76 0.171-0.326   0.34-0.65   0.254-0.326   0.51-0.65   
+  VBit              6.350  20 0.271-0.780   0.81-2.33   0.712-0.780   2.13-2.33   
+  VBit             12.700  28 0.542-1.000   1.62-2.99   1.000         2.99        
+  all ok non-drill cells: n=526, ratio repo/printed median 0.35, range 0.18-2.99
+  A ratio < 1: the repo plunges slower, relative to its own feed, than the printed charts do relative to theirs.
+
+==============================================================================
+T4c. Absolute plunge per mm of D: printed (wood) against the repo base
+==============================================================================
+    g10-hobby-001  bull_nose  D  3.175 (Softwood (Janka < 1,500)    ) plunge       1905 mm/min =       600 per mm (D = shank / cutter)
+    g10-hobby-002  bull_nose  D  3.175 (Medium hardness hardwood (1,) plunge       1270 mm/min =       400 per mm (D = shank / cutter)
+    g10-hobby-003  bull_nose  D  3.175 (High hardness hardwood (Jank) plunge       1016 mm/min =       320 per mm (D = shank / cutter)
+    g10-hobby-004  v_bit      D  6.350 (depending on material being ) plunge  1016-6350 mm/min =  160-1000 per mm (D = shank / cutter)
+    g10-hobby-005  v_bit      D  3.175 (depending on material being ) plunge    127-635 mm/min =    40-200 per mm (D = shank / cutter)
+    Sienci flat rows (1.587-6.35 mm): plunge 430-1370 mm/min = 128-428 per mm
+    Repo base: wood 1000/h, sheet 900/h at 6 mm, linear in D: 167/h and 150/h per mm; h = (Janka/600)^0.4
+    Repo ball / tapered-ball cap: 150 per mm of tip diameter (FSWizard / GWizard cited in a comment only)
+
+==============================================================================
+T4d. The G6 drill claim against the milling plunge on the same flat end mill (FM1 CSV)
+==============================================================================
+       D material          Drill feed=plunge Drill RPM Pocket plunge Pocket feed Pocket F/Z Drill/Pocket plunge
+   3.175 softwood                       1422     14000           529        3657       1828                2.69
+   3.175 hardwood                       1422     14000           371        3657       1828                3.83
+   3.175 mdf                            1778     14000           373        3999       2000                4.77
+   3.175 plywood_hardwood               1422     14000           360        3657       1828                3.95
+   6.000 softwood                       1778     14000          1000        3999       2000                1.78
+   6.000 hardwood                       1778     14000           702        3999       2000                2.53
+   6.000 mdf                            2133     14000           706        3999       2000                3.02
+   6.000 plywood_hardwood               1778     14000           682        3999       2000                2.61
+  Pocket F/Z is the Amana 'Ramp Down' form at the pocket RPM (derived). The milling plunge reads the material
+  base; it does not read the G6 row.
+
+==============================================================================
+T5a. Ramp feed: printed rules
+==============================================================================
+    g10-metal-sgs-ramp-feed-1-2deg   c  flat_end_mill  Use slotting speeds and feeds for ramp angles of 1° to 2°.
+    g10-metal-sgs-ramp-feed-6deg     c  flat_end_mill  Reduce feed to 25% when ramp angles approach 6°.
+    g10-metal-imco-iptc-feed         c  flat_end_mill  IPT or MMPT x 1.6 (high-pressure coolant); IPT or MMPT x 1.25 (standar
+    g10-metal-sandvik-linear-75      c  indexable      Reduce feed to 75% of normal
+    g10-hobby-010                    c  any            1/3 of the feerate, or 100% of the plunge rate, whichever is higher
+    g10-hobby-015                    c  any            at the plunge rate
+    g10-hobby-017                    c  any            plunge rate used during ramping moves
+    g10-hobby-021                    c  any            separate field
+    Amana (6 charts): 'To find Ramp Down: Feed Rate IPM / # of flutes' (grade b rule, grade a columns); meaning not defined.
+    Harvey: straight and roll-in entries 'reduced by 50%' (metal, grade c).
+
+==============================================================================
+T5b. The approved design, checked: ramp feed = min(F, a_z x n x Z / tan(theta))
+==============================================================================
+  With the G6 axial chip a_z = f_z,side / Z (Amana), and the side feed F = f_z,side x n x Z:
+    a_z x n x Z = f_z,side x n = F / Z, so the second term = F / (Z tan theta).
+  It binds (is below F) only when tan theta > 1/Z. Z = 2: theta > 26.57 deg; Z = 3: theta > 18.43 deg.
+  Where the feed F is capped below f_z,side x n x Z (the machine cap 4000), the threshold is higher still.
+  Physical check: the vertical rate on a ramp is F_ramp x sin theta (along-path feed). Holding it at the plunge
+  F/Z gives F_ramp = F / (Z sin theta); tan and sin differ by cos theta (0.14 % at 3 deg, 1.5 % at 10 deg).
+
+  theta (deg) arm                         1/(Z tan) Z=2    Z=3  SGS (metal)
+         1.00 SGS lower                           28.64  19.10         1.00
+         2.00 SGS 'slotting feed'                 14.32   9.55         1.00
+         3.00 dressup ramp                         9.54   6.36            -
+         4.55 dressup helix 2.0 mm / 1.0           6.28   4.19            -
+         6.00 SGS '25 %'                           4.76   3.17         0.25
+        10.00 A3d ramp                             2.84   1.89            -
+        18.48 A3d helix, D 3.175                   1.50   1.00            -
+        12.00 pencil cap                           2.35   1.57            -
+        20.00 Carbide Create (user post)           1.37   0.92            -
+  Values > 1 mean the approved form ships the full cutting feed F.
+  SGS vertical rate (derived, frac x sin theta, fraction of slot feed): 1 deg 0.017, 2 deg 0.035, 6 deg 0.026;
+  the SGS plunge is 0.25. So SGS holds its ramp far below its own plunge rate: its rule is not an axial-chip rule.
+
+==============================================================================
+T5c. The approved design per FM1 cell (ok cells of E1-E3), derived
+==============================================================================
+  kind                  D cls basis        n  theta term/F      ships F F mm/min    literal plunge today (derived)
+  BallNose          3.175 E1  plunge/tan  14   3.00 1.8-5.7      14/14  1248-3999   371-476        186-238        
+  BallNose          3.175 E2  plunge/tan   3   4.55 1.2-1.5       3/3   3658-4000   371-476        186-238        
+  BallNose          3.175 E3  plunge/tan   3  10.00 0.5-0.7       0/3   3658-4000   371-476        371-476        
+  BallNose          6.000 E1  plunge/tan  14   3.00 3.3-13.8     14/14  973-3999    702-900        351-450        
+  BallNose          6.000 E2  plunge/tan   3   4.55 2.2-2.8       3/3   4000        702-900        351-450        
+  BallNose          6.000 E3  plunge/tan   3  10.00 1.0-1.3       2/3   4000        702-900        702-900        
+  BullNose          3.175 E1  plunge/tan  20   3.00 1.7-2.8      20/20  3594-4000   360-529        180-264        
+  BullNose          3.175 E2  plunge/tan   4   4.55 1.2-1.8       4/4   3658-4000   360-529        180-264        
+  BullNose          3.175 E3  plunge/tan   4  10.00 0.5-0.8       0/4   3658-4000   360-529        360-529        
+  BullNose          6.000 E1  plunge/tan  20   3.00 3.3-8.1      20/20  1600-4000   682-1000       341-500        
+  BullNose          6.000 E2  plunge/tan   4   4.55 2.1-3.1       4/4   4000        682-1000       341-500        
+  BullNose          6.000 E3  plunge/tan   4  10.00 1.0-2.4       3/4   1600-4000   682-1000       682-1000       
+  EndMill           3.175 E1  G6 chip     20   3.00 3.9-42.7     20/20  954-4000    360-529        180-264        
+  EndMill           3.175 E2  G6 chip      4   4.55 6.3-7.2       4/4   3658-4000   360-529        180-264        
+  EndMill           3.175 E3  G6 chip      4  10.00 2.8-3.2       4/4   3658-4000   360-529        360-529        
+  EndMill           6.000 E1  G6 chip     20   3.00 4.8-9.5      20/20  3165-4000   682-1000       341-500        
+  EndMill           6.000 E2  G6 chip      4   4.55 7.2-7.2       4/4   4000        682-1000       341-500        
+  EndMill           6.000 E3  G6 chip      4  10.00 2.0-3.2       4/4   4000        682-1000       682-1000       
+  TaperedBallNose   3.175 E1  plunge/tan  20   3.00 2.0-2.5      20/20  3063-3604   360-476        180-238        
+  TaperedBallNose   3.175 E2  plunge/tan   4   4.55 1.3-1.7       4/4   3064-3605   360-476        180-238        
+  TaperedBallNose   3.175 E3  plunge/tan   4  10.00 0.6-0.7       0/4   3064-3605   360-476        360-476        
+  TaperedBallNose   6.000 E1  plunge/tan  20   3.00 4.8-6.2      20/20  2355-2763   682-900        341-450        
+  TaperedBallNose   6.000 E2  plunge/tan   4   4.55 3.2-4.1       4/4   2356-2764   682-900        341-450        
+  TaperedBallNose   6.000 E3  plunge/tan   4  10.00 1.4-1.8       4/4   2356-2764   682-900        682-900        
+  VBit              6.350 E1  plunge/tan  10   3.00 13.6-14.9    10/10  952-1486    743-1058       372-529        
+  VBit             12.700 E1  plunge/tan  10   3.00 19.1         10/10  1160-1809   1160-1809      580-904        
+  G6 chip: 56 cells; the second term binds on 0; the cutting feed ships on the rest.
+  plunge/tan: 172 cells; the second term binds on 13; the cutting feed ships on the rest.
+  'literal plunge' = the fallback read as 'ramp feed = plunge rate, as today' (the RULINGS text).
+  'today (derived)' = the dressup entry feed 0.5 x plunge (E1, E2) or the plunge (E3), INVENTORY_G10 section 2.3.
+  Caution: the commanded feed is not the time. The rivmap100 arms (INVENTORY_G10 3.5) show the gain is accel-bound.
+
+==============================================================================
+T6. Entry style: families a source says must not plunge, or should ramp
+==============================================================================
+    no_plunge     c flat_end_mill  down-cut spiral                -      CANNOT be used to plunge straight into wood
+    no_plunge     c flat_end_mill  down-cut spiral                -      Never plunge straight down with downcut tooling
+    entry_general c flat_end_mill  up-cut spiral                  cc     straight plunge/drill
+    entry_general c other          veining bit (radius end)       cc     end cutting so they can plunge
+    entry_general c any                                           -      Ramped Plunging into the workpiece
+    entry_general c any                                           -      ramp the tool up and down through each tangent of the part
+    no_plunge     c other          PCD diamond tipped             non-cc TIPICALLY CANNOT PLUNGE
+    entry_general c other          diamond-coated composite route -      Burr end for ramping and helical interpolation; End mill point
+    entry_general c any                                           -      ramp into transverse cuts and use a helical ramp with interpol
+    entry_general b flat_end_mill  1/8 in up-cut endmill used for cc     Drilling: Feed 50, Plunge 60*; Conventional: Feed 50, Plunge 2
+    entry_general c flat_end_mill  up cut spiral                  -      Best At Plunge Cuts
+    entry_general c compression    compression and down-cut spira -      best to ramp into the material
+    entry_general c flat_end_mill  end mill (general)             -      Helical Interpolation is also recommended in non-ferrous mater
+    no_plunge     c flat_end_mill  non-centre-cutting end mill    non-cc The tool must be center cutting
+    entry_general c flat_end_mill  centre-cutting and non-centre- -      the angle of descent will vary depending on end style
+    no_plunge     c flat_end_mill  non-centre-cutting end mill    non-cc The tool must be center cutting.
+    entry_general c chamfer_v      Engraving Cutters - Pointed, 1 -      ramping is preferred to maintain tip integrity
+    entry_general c flat_end_mill  SGS solid carbide end mills (g -      General purpose tools ... will require lower ramp angles and r
+    no_ramp       c flat_end_mill  Down Cut Router, series 22     cc     –
+    no_plunge     c flat_end_mill  Z-Carb-HPR Z5 (5 flute rougher non-cc Do not plunge.
+    entry_general c flat_end_mill  end mill (general)             -      Decrease ramp angle or slow down approach
+    entry_general c indexable      milling cutters                -      Circular ramping is always preferred to linear ramping
+    entry_general c indexable      milling cutters                -      narrow slots less than 30 mm wide
+    entry_general c flat_end_mill  milling cutters (general)      -      chosen based on the geometry of the tool, the material being m
+    entry_general c v_bit          EM2E8 micro-engraving          cc     plunge style tip geometry
+    entry_general c ball_nose                                     cc     center cutting plunge point
+    entry_general c flat_end_mill  radical fish-tail tip          cc     minimum 20°angle
+    entry_general c any                                           -      helical plunge rather than a ramp when pocketing
+    no_ramp       c any                                           non-cc don't want to ramp or plunge at all
+    entry_general c any                                           non-cc entry angle specified by the manufacturer
+    no_plunge     c flat_end_mill                                 non-cc center cutting endmill required
+    entry_general c flat_end_mill                                 non-cc limit
+  Also (verifier a, from the SGS matrix image): 'Plunging not recommended' in Stainless M1-M3, High Temp S1-S3,
+  Titanium S4, Hardened H1-H4 (metal material classes, not wood).
+  Statements that forbid a plunge or a ramp for a V-bit, chamfer or tapered tool: 0.
+  Statements that print a plunge or ramp-down feed for a V-bit or tapered ball: 24 (precisebits_tapered_ball_2f, precisebits_vtip_2500, precisebits_vtip_scoreengrave, sienci_feeds_speeds_metric, wood_amana_insert_vgroove_v16, wood_idc_feeds_speeds, wood_toolstoday_calc_video).
+
+==============================================================================
+T7. Helix start clearance above the material
+==============================================================================
+  Statements with a start clearance, start height or feed height: 0
+  Stored texts with a start-height or clearance-above-material phrase: 0 of 43.
+  Result: not published. Repo: entry_clearance_mm 0.5 mm (operator ruling 2026-09-25),
+  2.0 mm over a nominal stock top.
+
+==============================================================================
+T8. Cells each ruling reaches (g10_inventory_cells.csv, ok / all)
+==============================================================================
+  kind                   E1       E2       E3      E4a      E4b       E5       E6       E7   ok total
+  EndMill           40/40     8/8      8/8      0/24    40/64     8/8     16/24    16/16     136
+  BullNose          40/40     8/8      8/8      0/24    34/64     6/8     12/24     0/16     108
+  BallNose          28/40     6/8      6/8      0/24    38/64     4/8     16/24     0/16     98
+  TaperedBallNose   40/40     8/8      8/8      0/24    64/64     8/8     24/24     0/16     152
+  VBit              20/40     0/8      0/8     18/24     0/64     6/8      4/24     0/16     48
+  ok per class: E1 168, E2 30, E3 30, E4a 18, E4b 176, E5 32, E6 72, E7 16; all 542
+
+==============================================================================
+T9. Sources: statements and verdicts per stored source
+==============================================================================
+  wood_amana_compression_v8                  n=  5 grade ab  rehash match       confirmed 5  raw 9a80df42506f8cd7
+  wood_amana_spektra_plunge_v24              n=  4 grade ab  rehash match       confirmed 4  raw 5b6fef854b2cf6b4
+  wood_amana_ball_nose_v7                    n=  1 grade b   rehash match       confirmed 1  raw e851a270a9958a9a
+  wood_amana_corner_radius_plunge            n=  1 grade b   rehash match       confirmed 1  raw a8fb36819675f9f9
+  wood_amana_insert_vgroove_v16              n=  4 grade ab  rehash match       confirmed 4  raw d3da2d5fd7b60aba
+  wood_amana_spektra_engraving_v4            n=  1 grade b   rehash match       confirmed 1  raw 30e58f4d88e163f9
+  wood_vortex_catalog                        n=  4 grade c   rehash match       confirmed 3 grade_wrong 1  raw 3553d2f3a1c0409b
+  wood_onsrud_routing_guide                  n=  3 grade c   rehash match       confirmed 3  raw 79dd5f6ef135ab94
+  wood_onsrud_pct19                          n=  2 grade c   rehash match       confirmed 2  raw 83dbf74242ca1f57
+  wood_onsrud_plastics_faq2                  n=  2 grade c   rehash changed     confirmed 2  raw 82ff87594367a900
+  wood_idc_feeds_speeds                      n= 14 grade ab  rehash match       confirmed 14  raw 87405efbd74696b0
+  wood_whiteside_cnc_brochure                n=  1 grade c   rehash match       confirmed 1  raw 00c71165ee906b3a
+  wood_toolstoday_calc_video                 n=  3 grade b   rehash changed     confirmed 3  raw d67334f1d5ba8b12
+  wood_toolstoday_understanding_feeds_speeds n=  1 grade c   rehash match       confirmed 1  raw ecbffa90b4aec6f3
+  wood_axyz_compression_bit_tip              n=  1 grade c   rehash changed     confirmed 1  raw a650eedc85c91087
+  metal_harvey_ramping_success               n=  3 grade c   rehash changed     confirmed 3  raw 459eeab5cc8970e6
+  metal_harvey_tool_entry                    n=  7 grade c   rehash changed     confirmed 7  raw 85cc3e6e561fd7b5
+  metal_helical_guidebook_2016               n=  5 grade c   rehash match       confirmed 5  raw 6d6ca79db0b49136
+  metal_harvey_sf_18700                      n=  1 grade c   rehash match       wrong 1  raw 496173bab219ba5a
+  metal_harvey_sf_25000                      n=  2 grade c   rehash match       wrong 2  raw 65da065ac2c7e62a
+  metal_harvey_sf_809500                     n=  0 grade -   rehash match         raw b5be3211a863a407
+  metal_harvey_helical_interp_tv             n=  0 grade -   rehash changed       raw a6eed1f6196bffeb
+  metal_sgs_catalog_2021                     n= 18 grade c   rehash match       confirmed 18  raw 27a309c563b43c35
+  metal_imco_helical_ramp                    n=  8 grade c   rehash match       confirmed 8  raw d51a2c6ce8b8407a
+  metal_garr_technical                       n=  2 grade c   rehash match       confirmed 2  raw 967eb211c24c5288
+  metal_sandvik_ramping                      n=  6 grade c   rehash changed     confirmed 6  raw ad7b072ce0edf83d
+  metal_kennametal_ramping_blog              n=  1 grade c   rehash changed     confirmed 1  raw 0fc049680184914f
+  precisebits_fret_plane                     n=  3 grade a   rehash match       confirmed 3  raw 7ea1ad3fd8cd2cd7
+  precisebits_vtip_2500                      n=  1 grade b   rehash match       confirmed 1  raw 0e57846f903d20c1
+  precisebits_vtip_scoreengrave              n=  2 grade bc  rehash match       confirmed 2  raw 35a04123edc1843f
+  precisebits_tapered_ball_2f                n=  1 grade c   rehash match       confirmed 1  raw cd0b38a9c270bf21
+  precisebits_point_styles                   n=  2 grade c   rehash match       confirmed 2  raw 7d8ee8e5e68034dc
+  carbide3d_s3_feeds_250                     n=  5 grade b   rehash unreachable confirmed 5  raw 288543263d3fec1b
+  carbide3d_nomad883_feeds_125               n=  5 grade b   rehash unreachable confirmed 5  raw e4cd0a15950886ef
+  carbide3d_community_ramping_cc_pro         n=  2 grade c   rehash changed     confirmed 2  raw 8401947341d1d2ac
+  carbide3d_community_ramp_entry_angle       n=  2 grade c   rehash changed     confirmed 2  raw f8a99500b27f7d85
+  sienci_feeds_speeds_metric                 n=106 grade a   rehash match       confirmed 106  raw e7c4519025ce1a28
+  sienci_lm_feeds_and_speeds                 n=  1 grade c   rehash match       confirmed 1  raw 8459a9484662552e
+  vectric_v12_profile_toolpath               n=  2 grade c   rehash match       confirmed 2  raw b42d9d95ace0f28b
+  vectric_tool_database_v11                  n=  1 grade c   rehash match       confirmed 1  raw dc4881ed6115fdae
+  fusion_adaptive_roughing_reference         n=  4 grade c   rehash match       confirmed 3 grade_wrong 1  raw 780839ed3ad78a1c
+  cnccookbook_helical_ramp_angle             n=  5 grade c   rehash match       confirmed 5  raw 67b162a8c484c09d
+  shopbot_user_guide_2015                    n=  1 grade c   rehash unreachable confirmed 1  raw 676bdd3a04a11f1b
+  stored 43 of 60; statements 243: confirmed 238, grade_wrong 2, wrong 3

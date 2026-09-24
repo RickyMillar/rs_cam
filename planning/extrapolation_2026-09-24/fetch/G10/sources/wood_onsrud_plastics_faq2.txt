@@ -1,0 +1,1097 @@
+# source_url: https://onsrud.com/articles/Frequently-Asked-Questions-in-the-Routing-of-Plastics-2.asp
+# accessed_on: 2026-09-25
+# raw_html_sha256: 82ff87594367a900905fd0a2589bd21cdd15913123c50ba08da8b28ed592837b
+
+Products
+Menu
+
+MetalworkingNon-Ferrous Materials - Roughing2 Flute ChipbreakerARS-2
+ARM-2
+ARNM-2
+
+2 Flute Chipbreaker Coolant ThroughARCS-2
+ARCNS-2
+ARCNM-2
+
+3 Flute ChipbreakerARS-3
+ARM-3
+ARNS-3
+ARNM-3
+ARNL-3
+
+3 Flute Chipbreaker Coolant ThroughARCS-3
+ARCM-3
+ARCNS-3
+AUCM-3
+ARCNM-3
+ARCNL-3
+
+Non-Ferrous Materials - Slotting and Finishing2 Flute SlottingAFS-2
+AFNS-2
+AFM-2
+AFNM-2
+AFL-2
+AFNL-2
+AUM-2
+AUS-2
+AUNS-2
+AUNM-2
+AUL-2
+AUNL-2
+
+2 Flute Slotting Coolant ThroughAFCNS-2
+AFCM-2
+AFCNM-2
+AFCNL-2
+
+3 Flute SlottingAFS-3
+AFNS-3
+AFM-3
+AFNM-3
+AFL-3
+AFNL-3
+AFX-3
+AFNX-3
+AUS-3
+AUNS-3
+AUM-3
+AUNM-3
+AUL-3
+AUNL-3
+AUX-3
+
+3 Flute Slotting Coolant ThroughAFCNS-3
+AUCNS-3
+AFCM-3
+AUCL-3
+AFCNM-3
+AUCNM-3
+AFCNL-3
+AUCNL-3
+AHRNS-3
+AHRNM-3
+AHRNL-3
+
+Ferrous and Exotic Materials - Maximum Material RemovalMXV 4 FluteMXVNS-4
+MXVS-4
+MXVM-4
+MXVNM-4
+MXVL-4
+MXVNL-4
+
+MXV 5 FluteMXVNS-5
+MXVS-5
+MXVM-5
+MXVNM-5
+MXVL-5
+MXVNL-5
+MXVXL-5
+
+TRX 5 FluteTRXM-5
+TRXS-5
+TRXL-5
+TRXXL-5
+TRXNS-5
+TRXNM-5
+TRXNL-5
+
+MXR 4 FluteMXRS-4
+MXRM-4
+
+MXR 5 FluteMXRS-5
+MXRM-5
+MXRL-5
+
+MaxQ 4 FluteMXPS-4
+MXQS-4
+MXQNS-4
+MXQM-4
+MXQNM-4
+MXQL-4
+
+MaxQ 4 Flute Ball NoseMXBS-4
+MXBNS-4
+MXBM-4
+MXBNM-4
+MXBL-4
+MXBNL-4
+
+MaxQ 5 FluteMXPM-5
+MXQNS-5
+MXQM-5
+MXQNM-5
+MXQL-5
+MXQS-5
+MXQNL-5
+
+MaxQ 5 Flute Ball NoseMXBS-5
+MXBM-5
+MXBNM-5
+MXBNL-5
+MXBXL-5
+
+SMC PremiumSMCPM-4
+
+Ferrous and Exotic Materials - High-Speed MachiningTRX 7 FluteTRXM-7
+TRXS-7
+TRXL-7
+TRXXL-7
+TRXNM-7
+TRXNL-7
+
+MDR Ball NoseMDR-2
+
+HXRHXRS
+HXRM
+HXRL
+
+7 Flute High Efficiency MachiningTVS-7
+TVNS-7
+TVM-7
+TVNM-7
+TVL-7
+TVNL-7
+
+Ferrous and Exotic Materials - Slotting, Roughing and Semi-FinishingRXR 7 FluteRXRS-7
+RXRM-7
+RXRL-7
+
+4 Flute Multi-purposeTVS-4
+TVM-4
+TVNM-4
+
+5 Flute Multi-purposeTVM-5
+TVNM-5
+
+Ferrous and Exotic Materials - Finishing6-10 Flute FinisherTFS-6
+TFNM-6
+TFNL-6
+TFNL-10
+
+Radial Milling CuttersRMC-B
+RMC-CTA
+RMC-L
+RMC-CTB
+RMC-O
+
+RoutingAluminumSolid Carbide 1 Flute Upcut63-600
+63-300
+65-000
+63-900
+63-600ONX
+63-000
+63-400
+
+Solid Carbide 2 Flute Upcut52-200B
+52-000
+52-200BL
+66-300
+81-100
+
+Solid Carbide 1 Flute Downcut64-000
+62-600
+62-100
+62-300
+
+HSS 1-2 Flute Upcut and Downcut40-000
+40-100
+49-000
+81-000
+
+Solid Carbide 1 Flute Straight61-000
+
+Solid Carbide 2 Flute Downcut57-000
+
+Solid Carbide Tapered Ball Nose
+HSS 3 Flute Taper Pin80-000
+
+Engraving Tools
+
+CompositesSolid Carbide Upcut and Downcut Tools54-200
+52-000
+63-000
+54-775
+
+Solid Carbide Multi-Flute Composite Router (Burr)66-900
+66-900
+67-000
+67-000
+67-500
+67-500
+67-400
+67-400
+
+Diamond Film Coated (DFC) Multi-Flute Composite Router66-500
+
+Diamond Film Coated (DFC) Spiral66-750
+66-775
+66-700
+
+Diamond Film Coated (DFC) Compression66-800
+66-600
+
+Solid Carbide Phenolic Cutters67-200
+
+Polycrystalline Diamond (PCD) Tools68-000
+68-300
+68-200
+68-400
+68-100
+68-500
+67-220
+68-900
+
+Diamond Grit Tools67-250
+
+Solid Carbide Straight Flute56-000P
+56-000
+53-000
+56-450
+
+Composite Drills67-800
+86-150
+85-800
+68-900
+
+Construction MaterialsHSS Drywall and Panel Bits20-10
+18-00
+20-00
+
+Door Lite Router Bits (Dor-Bits)15-50
+15-40
+15-75
+
+Honeycomb Cutting ToolsAircraft Panel Tools34-000
+34-100
+29-000
+
+Integral Shank Honeycomb Cutters29-100
+29-050
+30-300
+31-000
+29-050B
+66-400
+29-100B
+31-100
+
+Modular Honeycomb Cutters30-BLD
+32-000
+32-200
+30-700
+30-000
+30-SPP
+
+Plastics, Solid Surface and FoamSolid Carbide 1-2 Flute Upcut63-700
+52-700
+63-750
+65-000
+52-600
+63-100
+63-800
+52-200B
+63-850
+63-500
+65-100
+52-000
+52-200BL
+52-550
+
+Solid Carbide and Carbide Tipped 1-2 Flute Straight61-000P
+56-000P
+56-000
+56-600
+61-400
+56-450
+56-430
+48-000
+
+Solid Carbide 1-2 Flute Downcut - Plastics64-000
+62-700
+62-750
+57-600
+62-800
+62-850
+
+Solid Carbide Roughing Tools
+Solid Carbide Finishing Tools60-200
+65-200B
+75-100
+60-470
+65-300B
+
+Solid Carbide Tapered Ball Nose
+HSS 1-2 Flute Straight11-00
+10-00
+
+HSS 4 Flute Foam Cutter40-550
+
+HSS and Solid Carbide Drills67-800
+70-500
+
+Trim Tools for Plastics
+Edge Rounding and Beveling66-000
+40-50
+42-00
+37-60
+37-50
+66-200
+
+Engraving Tools
+
+Special PurposeDibond and Alucobond Folding Tools37-70
+
+Spoilboard Cutters91-000
+91-100
+
+Stainless Steel Cutters83-300
+
+Trim Tools for Plastics27-00
+70-300
+70-200
+27-50
+28-20
+28-50
+70-100
+
+Engraving Tools
+
+Wood and Composite WoodSolid Carbide and Carbide Tipped Straight Flute61-000
+56-200
+61-200
+48-000
+
+Solid Carbide 1-4 Flute Upcut52-200
+52-700
+60-200
+65-000
+63-100
+52-200B
+52-200BL
+60-090
+52-400
+52-900
+63-200
+
+Solid Carbide 1-2 Flute Downcut - Wood57-200
+57-200MD
+64-000
+57-900
+57-400
+
+Solid Carbide and Polycrystalline Diamond (PCD) Compression60-100EC
+60-100MC
+60-100MW
+60-100C
+60-100PLR
+60-100UMC
+68-100
+PROMO60-100U
+60-600
+
+Solid Carbide Roughing Tools60-000
+66-775
+60-800
+60-900
+54-775
+
+Solid Carbide Chipbreaker60-300
+60-350
+60-700
+60-950
+
+Solid Carbide Tapered Ball Nose77-100
+
+Solid Carbide Boring Tools72-000
+
+HSS Straight and Spiral40-000
+10-00
+40-100
+
+Profile, T-Slot and Trim47-00
+27-00
+27-50
+40-50
+42-00
+28-50
+29-50
+37-60
+37-80
+37-50
+90-00
+
+Engraving Tools37-00
+37-20
+
+Cutting Tool AccessoriesBearings28-75
+
+Cleaning Supplies33-60
+33-10
+33-21
+
+Collets33-50
+34-150
+34-200
+34-250
+34-300
+34-350
+34-400
+34-450
+34-500
+34-520
+34-550
+34-60
+34-650
+34-70
+34-90
+
+Collet Nuts and Accessories33-00
+34-700
+34-743
+34-50
+
+Tool Holders and Accessories33-100
+33-110
+33-120
+33-140
+33-30
+33-40
+33-70
+33-80
+33-90
+
+Wrenches34-750
+34-800
+34-820
+34-850
+
+1-800-234-1560 Call
+
+Distributor Locator
+
+Login/Register
+
+Shopping Cart
+Cart
+0
+
+Your shopping cart is empty.
+
+View Cart
+
+ProductsOrdersBackordersShipmentsInvoicesMy AddressesPaymentsPrice ListFavorite Lists
+
+Company
+
+LMT Onsrud
+
+Company History
+
+News
+
+Tradeshows
+
+Announcements
+
+Careers
+
+Highlights
+
+TRX
+
+Downloads
+
+Forms
+
+Catalogs
+
+Cutting Tool Data
+
+Promotions
+
+Articles
+
+Products Menu
+MetalworkingNon-Ferrous Materials - Roughing2 Flute ChipbreakerARS-2
+ARM-2
+ARNM-2
+
+2 Flute Chipbreaker Coolant ThroughARCS-2
+ARCNS-2
+ARCNM-2
+
+3 Flute ChipbreakerARS-3
+ARM-3
+ARNS-3
+ARNM-3
+ARNL-3
+
+3 Flute Chipbreaker Coolant ThroughARCS-3
+ARCM-3
+ARCNS-3
+AUCM-3
+ARCNM-3
+ARCNL-3
+
+Non-Ferrous Materials - Slotting and Finishing2 Flute SlottingAFS-2
+AFNS-2
+AFM-2
+AFNM-2
+AFL-2
+AFNL-2
+AUM-2
+AUS-2
+AUNS-2
+AUNM-2
+AUL-2
+AUNL-2
+
+2 Flute Slotting Coolant ThroughAFCNS-2
+AFCM-2
+AFCNM-2
+AFCNL-2
+
+3 Flute SlottingAFS-3
+AFNS-3
+AFM-3
+AFNM-3
+AFL-3
+AFNL-3
+AFX-3
+AFNX-3
+AUS-3
+AUNS-3
+AUM-3
+AUNM-3
+AUL-3
+AUNL-3
+AUX-3
+
+3 Flute Slotting Coolant ThroughAFCNS-3
+AUCNS-3
+AFCM-3
+AUCL-3
+AFCNM-3
+AUCNM-3
+AFCNL-3
+AUCNL-3
+AHRNS-3
+AHRNM-3
+AHRNL-3
+
+Ferrous and Exotic Materials - Maximum Material RemovalMXV 4 FluteMXVNS-4
+MXVS-4
+MXVM-4
+MXVNM-4
+MXVL-4
+MXVNL-4
+
+MXV 5 FluteMXVNS-5
+MXVS-5
+MXVM-5
+MXVNM-5
+MXVL-5
+MXVNL-5
+MXVXL-5
+
+TRX 5 FluteTRXM-5
+TRXS-5
+TRXL-5
+TRXXL-5
+TRXNS-5
+TRXNM-5
+TRXNL-5
+
+MXR 4 FluteMXRS-4
+MXRM-4
+
+MXR 5 FluteMXRS-5
+MXRM-5
+MXRL-5
+
+MaxQ 4 FluteMXPS-4
+MXQS-4
+MXQNS-4
+MXQM-4
+MXQNM-4
+MXQL-4
+
+MaxQ 4 Flute Ball NoseMXBS-4
+MXBNS-4
+MXBM-4
+MXBNM-4
+MXBL-4
+MXBNL-4
+
+MaxQ 5 FluteMXPM-5
+MXQNS-5
+MXQM-5
+MXQNM-5
+MXQL-5
+MXQS-5
+MXQNL-5
+
+MaxQ 5 Flute Ball NoseMXBS-5
+MXBM-5
+MXBNM-5
+MXBNL-5
+MXBXL-5
+
+SMC PremiumSMCPM-4
+
+Ferrous and Exotic Materials - High-Speed MachiningTRX 7 FluteTRXM-7
+TRXS-7
+TRXL-7
+TRXXL-7
+TRXNM-7
+TRXNL-7
+
+MDR Ball NoseMDR-2
+
+HXRHXRS
+HXRM
+HXRL
+
+7 Flute High Efficiency MachiningTVS-7
+TVNS-7
+TVM-7
+TVNM-7
+TVL-7
+TVNL-7
+
+Ferrous and Exotic Materials - Slotting, Roughing and Semi-FinishingRXR 7 FluteRXRS-7
+RXRM-7
+RXRL-7
+
+4 Flute Multi-purposeTVS-4
+TVM-4
+TVNM-4
+
+5 Flute Multi-purposeTVM-5
+TVNM-5
+
+Ferrous and Exotic Materials - Finishing6-10 Flute FinisherTFS-6
+TFNM-6
+TFNL-6
+TFNL-10
+
+Radial Milling CuttersRMC-B
+RMC-CTA
+RMC-L
+RMC-CTB
+RMC-O
+
+RoutingAluminumSolid Carbide 1 Flute Upcut63-600
+63-300
+65-000
+63-900
+63-600ONX
+63-000
+63-400
+
+Solid Carbide 2 Flute Upcut52-200B
+52-000
+52-200BL
+66-300
+81-100
+
+Solid Carbide 1 Flute Downcut64-000
+62-600
+62-100
+62-300
+
+HSS 1-2 Flute Upcut and Downcut40-000
+40-100
+49-000
+81-000
+
+Solid Carbide 1 Flute Straight61-000
+
+Solid Carbide 2 Flute Downcut57-000
+
+Solid Carbide Tapered Ball Nose
+HSS 3 Flute Taper Pin80-000
+
+Engraving Tools
+
+CompositesSolid Carbide Upcut and Downcut Tools54-200
+52-000
+63-000
+54-775
+
+Solid Carbide Multi-Flute Composite Router (Burr)66-900
+66-900
+67-000
+67-000
+67-500
+67-500
+67-400
+67-400
+
+Diamond Film Coated (DFC) Multi-Flute Composite Router66-500
+
+Diamond Film Coated (DFC) Spiral66-750
+66-775
+66-700
+
+Diamond Film Coated (DFC) Compression66-800
+66-600
+
+Solid Carbide Phenolic Cutters67-200
+
+Polycrystalline Diamond (PCD) Tools68-000
+68-300
+68-200
+68-400
+68-100
+68-500
+67-220
+68-900
+
+Diamond Grit Tools67-250
+
+Solid Carbide Straight Flute56-000P
+56-000
+53-000
+56-450
+
+Composite Drills67-800
+86-150
+85-800
+68-900
+
+Construction MaterialsHSS Drywall and Panel Bits20-10
+18-00
+20-00
+
+Door Lite Router Bits (Dor-Bits)15-50
+15-40
+15-75
+
+Honeycomb Cutting ToolsAircraft Panel Tools34-000
+34-100
+29-000
+
+Integral Shank Honeycomb Cutters29-100
+29-050
+30-300
+31-000
+29-050B
+66-400
+29-100B
+31-100
+
+Modular Honeycomb Cutters30-BLD
+32-000
+32-200
+30-700
+30-000
+30-SPP
+
+Plastics, Solid Surface and FoamSolid Carbide 1-2 Flute Upcut63-700
+52-700
+63-750
+65-000
+52-600
+63-100
+63-800
+52-200B
+63-850
+63-500
+65-100
+52-000
+52-200BL
+52-550
+
+Solid Carbide and Carbide Tipped 1-2 Flute Straight61-000P
+56-000P
+56-000
+56-600
+61-400
+56-450
+56-430
+48-000
+
+Solid Carbide 1-2 Flute Downcut - Plastics64-000
+62-700
+62-750
+57-600
+62-800
+62-850
+
+Solid Carbide Roughing Tools
+Solid Carbide Finishing Tools60-200
+65-200B
+75-100
+60-470
+65-300B
+
+Solid Carbide Tapered Ball Nose
+HSS 1-2 Flute Straight11-00
+10-00
+
+HSS 4 Flute Foam Cutter40-550
+
+HSS and Solid Carbide Drills67-800
+70-500
+
+Trim Tools for Plastics
+Edge Rounding and Beveling66-000
+40-50
+42-00
+37-60
+37-50
+66-200
+
+Engraving Tools
+
+Special PurposeDibond and Alucobond Folding Tools37-70
+
+Spoilboard Cutters91-000
+91-100
+
+Stainless Steel Cutters83-300
+
+Trim Tools for Plastics27-00
+70-300
+70-200
+27-50
+28-20
+28-50
+70-100
+
+Engraving Tools
+
+Wood and Composite WoodSolid Carbide and Carbide Tipped Straight Flute61-000
+56-200
+61-200
+48-000
+
+Solid Carbide 1-4 Flute Upcut52-200
+52-700
+60-200
+65-000
+63-100
+52-200B
+52-200BL
+60-090
+52-400
+52-900
+63-200
+
+Solid Carbide 1-2 Flute Downcut - Wood57-200
+57-200MD
+64-000
+57-900
+57-400
+
+Solid Carbide and Polycrystalline Diamond (PCD) Compression60-100EC
+60-100MC
+60-100MW
+60-100C
+60-100PLR
+60-100UMC
+68-100
+PROMO60-100U
+60-600
+
+Solid Carbide Roughing Tools60-000
+66-775
+60-800
+60-900
+54-775
+
+Solid Carbide Chipbreaker60-300
+60-350
+60-700
+60-950
+
+Solid Carbide Tapered Ball Nose77-100
+
+Solid Carbide Boring Tools72-000
+
+HSS Straight and Spiral40-000
+10-00
+40-100
+
+Profile, T-Slot and Trim47-00
+27-00
+27-50
+40-50
+42-00
+28-50
+29-50
+37-60
+37-80
+37-50
+90-00
+
+Engraving Tools37-00
+37-20
+
+Cutting Tool AccessoriesBearings28-75
+
+Cleaning Supplies33-60
+33-10
+33-21
+
+Collets33-50
+34-150
+34-200
+34-250
+34-300
+34-350
+34-400
+34-450
+34-500
+34-520
+34-550
+34-60
+34-650
+34-70
+34-90
+
+Collet Nuts and Accessories33-00
+34-700
+34-743
+34-50
+
+Tool Holders and Accessories33-100
+33-110
+33-120
+33-140
+33-30
+33-40
+33-70
+33-80
+33-90
+
+Wrenches34-750
+34-800
+34-820
+34-850
+
+Home
+/
+
+Articles
+/
+
+Frequently Asked Questions in the Routing of Plastics #2
+
+Frequently Asked Questions in the Routing of Plastics #2
+
+The following questions commonly arise during the setup and machining of plastics. The answers are general in nature, but provide a useful starting point for further optimization of the cutting process.
+
+What Is the Difference Between Climb and Conventional Cutting?
+
+Climb and conventional cutting describe the direction in which the cutter moves around the part relative to the direction of cutter rotation.
+
+With a right-hand rotation spindle, which is the most common type, moving around the outside of a finished part counter-clockwise is considered conventional cutting. Moving clockwise is considered climb cutting. The terminology is reversed with a left-hand rotation spindle or when cutting a pocket or hole from the finished part.
+
+Climb cutting is prevalent in metalworking, while conventional cutting dominates woodworking. Plastic routing falls somewhere between the two. Significant differences can occur between the finish produced by climb and conventional cutting, and the degree of difference varies by plastic and cutter geometry.
+
+As a general starting point, soft plastics such as HDPE, UHMW, and polypropylene tend to respond best to conventional cutting. Some harder plastics, including acrylic, polycarbonate, and nylon, may occasionally respond better to climb cutting.
+
+Climb cutting typically shows improved performance only at smaller cutter diameters, generally below 3/8 inch, although exceptions exist.
+
+Cutter aggressiveness and part hold-down must also be considered. Climb cutting is more aggressive and can cause chatter or move small parts that are not fixtured securely.
+
+Soft chips that are difficult to extract are also more likely to weld to the climb-cut side than the conventional-cut side. When working with a new material, the best approach is often to run sample parts using both methods at identical speeds and feeds and compare the results.
+
+What Is the Best Method for Fixturing Small Parts That Are Difficult to Hold With Vacuum?
+
+One effective method is to use the paper masking on the plastic sheet as an additional source of holding power.
+
+By precisely setting cutter depth in relation to the spoilboard, many fabricators are able to cut completely through the plastic sheet without perforating the bottom masking sheet. This allows both universal and conventional vacuum systems to act on a larger surface area.
+
+The method also provides the benefit of simple “single sheet on, single sheet off” loading and unloading.
+
+The primary difficulty is maintaining a precise cutting depth across multiple areas of the spoilboard without cutting through the paper masking.
+
+Although CNC routers have sufficient positioning accuracy, spoilboards can bow or flex enough to exceed the approximately 0.010-inch thickness of the masking paper.
+
+The standard solution is to fly-cut the spoilboard before use with a large-diameter cutter, making the surface flat and parallel to the router head.
+
+Dedicated spoilboard surfacing cutters are available, although nearly any large carbide-tipped cutter can work for occasional surfacing.
+
+Many fabricators fly-cut before each shift or more frequently depending on humidity and warpage. Typically, only 0.010 to 0.020 inch must be removed, allowing a 3/4-inch MDF universal spoilboard to provide considerable service life.
+
+How Can Chip Wrap, Crazing, or “Keyhole” Slots Be Prevented When Plunging?
+
+These problems are not unique to plastics, but they can be more difficult to solve than similar issues in metalworking or woodworking.
+
+Chip Wrap
+
+Chip wrap can be particularly difficult because it does not always respond well to standard peck or chipbreak drilling cycles.
+
+In very soft and tough plastics such as polypropylene, peck amounts may need to be reduced to as little as 0.010 inch to prevent long chips from wrapping around the plunging cutter. This can significantly increase cycle time and Z-axis wear.
+
+A better approach is to ramp into transverse cuts and use a helical ramp with interpolation for holes. This can prevent chip wrap while often reducing cycle time.
+
+Crazing
+
+Crazing, or cracking of the material, occurs when a flat-bottom cutter places excessive stress on the part during the plunge.
+
+Ramping eases the cutter into the material and helps prevent stress fracturing at the bottom of the part. If ramping is not possible, increasing spindle speed or reducing plunge feed rate can reduce stress, although edge finish may suffer.
+
+Keyhole Slots
+
+Keyhole slots are caused by the router bit “walking” during a plunge. Drill bits have a centering point and cylindrical land that help keep them aligned. Router bits lack this centering action and naturally try to move laterally.
+
+As a result, the entry hole can be slightly larger than the cutter diameter, creating a visible transition where the plunge turns into the routed slot.
+
+Ramping is the common solution for chip wrap, crazing, and keyhole slots because it reduces direct plunge forces and allows the cutter to enter the material while moving laterally.
+
+What Causes Inconsistent Hole Sizes in Stacked Sheets or Thick Plastics?
+
+The first cause is cutter walking during the plunge. Because a router cutter tends to move laterally as it enters the material, a plunged hole can become larger than intended.
+
+This is another reason that interpolating the hole is often preferable to plunging it. Interpolated holes generally provide better diameter consistency.
+
+The second factor is heat and material expansion. In some cases, a plunged hole can actually become smaller than the router bit that created it.
+
+Heat buildup causes thermal expansion of the hole wall, particularly in soft plastics.
+
+Because heat buildup is the cause, possible solutions include slower spindle speed, faster plunging, air blast, or coolant.
+
+Peck or chipbreak drilling cycles can produce mixed results depending on the cutter and plastic. In some applications they eliminate the problem, while in others they can make it worse.
+
+Van Niser
+
+For more information about LMT Onsrud cutting tools, call 800-234-1560 or visit www.onsrud.com.
+
+Contact Us
+
+800-234-1560
+
+info@onsrud.com
+
+LMT Onsrud LP
+1081 S. Northpoint Blvd.
+Waukegan, IL USA 60085
+Toll Free 800-234-1560
+
+Customer Service
+
+Distributor Locator
+
+Career Opportunities
+
+Terms and Condition
+
+Company
+
+Contact Us
+
+News and Events
+
+Catalog Request
+
+©2026. LMT Onsrud LP.
+
+Ecommerce & ERP Integration by Website Pipeline
+
+×
+Estimate Shipping
+
+Close

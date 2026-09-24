@@ -1,0 +1,80 @@
+# source_url: https://web.archive.org/web/20211118030340/https://docs.carbide3d.com/support/supportfiles/S3_feeds_250.pdf
+# accessed_on: 2026-09-25
+# pdf_sha256: 288543263d3fec1bb96ecdf0fadc292d46b50e650f20409c6de3d9975097501d
+# note: bytes copied from fetch/G9/pdf/S3_feeds_250.pdf (G9 fetch 2026-09-24); web.archive.org timed out on 2026-09-25; sha256 equals the G9 record
+
+                                    Carbide
+MATERIAL             DOC RPM        Compact
+                                    /Makita   Dewalt
+                                                       FEED PLUNGE
+PLASTICS
+ABS                  .07″ 17000     3    2    65             22
+Acrylic              .06″ 19000     3.5 3     65             25
+Delrin               .08″ 20115     3.75 3.5 65              32
+HDPE                 .125″ 21280    4    4    80             40
+Kydex                .08″ 17000     3    2    55             22
+Nylon                .08″ 15820     2.75 1.5 75              40
+Linoleum             .03″ 17000     3    2    75             35
+PEEK                 .03″ 17000     3    2    65             30
+Polycarbonate        .08″ 17000     3    2    55             25
+Polypropylene        .08″ 24200     4.5 5     90             15
+PVC                  .09″ 17000     3    2    35             17
+Styrene              .03″ 17000     3    2    40             15
+UHMW                 .1″   16390    1.5 3     75             22
+Sintra               .13″ 17000     3    2   100             80
+Resin                .09″ 17500     3.25 2.25 60             50
+
+
+
+COMPOSITES
+AL/PVC panel         .13″ 17500     3.25 2.25          50    25
+Carbon fiber        .06″ 17000     3    2             45    20 
+Garolite             .08″ 18500     3.5 2.75           75    30
+G10                  .09″ 18500     3.5 2.75           60    28
+G10 XX               .08″ 16390     3    1.5           55    25
+Phenolic             .08″ 17000     3    2             65    35
+Foamcore             .1″  17000     3    2             65    35
+Renshape             .18″ 19000     3.5 3              75    35
+
+
+
+
+METALS
+6061 AL              .03″ 17500     3.25 2.25          30    10
+360 Brass            .02″ 17000     3    2             25    11
+Lead                 .065″ 15820    2.75 1             50    20
+Magnesium Hazard
+              Fire
+                     .04″ 17500     3.25 2.25          40    15 Hazard
+                                                                Fire
+
+
+
+Steel Coolant
+      Use
+                     .02″ 17500     3.25 2.25          12     5 Coolant
+                                                                Use
+
+
+
+
+WOOD
+Bamboo               .22″   19000   3.5 3     65             30
+Pine                 .4″    21000   3.75 3.5 75              40
+Mahogany             .1″    18950   3.5 3     65             32
+Plywood              .25″   18950   3.5 3    100             50
+MDF                  .3″    17000   3    2    80             30
+
+
+OTHER
+Cork                 .3″    24000   4.5       5         60   30
+Graphite             .1″    19700   3.5       3         20   15
+Limestone            .1″    17000   3         2         40   12
+HD Wax               .3″    17000   3         2        100   50
+
+
+                      ROUTER RPM CHART
+Dial #             1    2     3     4     5                      6
+Carbide/Makita    10K 12.5K 17.2K 22.3K 27.2K                   30K
+Dewalt DWP611    16.5K 18K 19.8K 21.5K 24.2K                    27K
+

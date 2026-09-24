@@ -1,0 +1,571 @@
+# source_url: https://www.precisebits.com/products/carbidebits/fret-plane.asp
+# accessed_on: 2026-09-25
+# raw_html_sha256: 7ea1ad3fd8cd2cd79d2f9a302ee032eeee12efbe5db2312f50d7fa795bd0cc9f
+
+Think
+
+&
+
+Tinker
+, Ltd. ™
+
+0 item(s) - $0.00
+
+Your shopping cart is empty!
+
+Menu
+
+Home
+
+Products
+
+Application Specific Tools
+
+3D Signs & Plaques
+
+Cutting Composites
+
+Engraving
+
+Jewelry
+
+Musical Instruments
+
+Pool Cues
+
+Printed Circuit Boards
+
+Steel Rule Dies
+
+3D Carving Tools
+
+Backing & Mounting
+
+Calibration Blanks
+
+Inch
+
+Metric
+
+Cleaners & Lubricants
+
+ColletCare
+
+Metal Cutting Fluid
+
+PCB Engraving Lubricant
+
+Collets & Toolholders
+
+Drill bits
+
+Number (wire gauge)
+
+Fractional inch
+
+Letter
+
+Metric
+
+Medical & Slotting
+
+Drill Bit Sets
+
+Drill Bit Diameter Chart
+
+Feeds/Speeds for FR-4 & Carbon-fiber
+
+End-mills
+
+Engraving Tools
+
+1/8in. shank
+
+Micro-engraving tools
+
+Tapered-stubs
+
+Engraving / Cut-out tools
+
+1/4in. shank
+
+Signage / Engraving tools
+
+Miscellaneous
+
+Depth Setting Rings
+
+FuzzBrush
+
+SecureBits
+
+Router Bits
+
+Chip breaker (CB)
+
+Diamond cut (DC)
+
+Feeds/Speeds
+
+CB feeds/speeds
+
+DC feeds/speeds
+
+Specialty Bits
+
+Acrylic/polycarbonate tools
+
+Antler / horn cutters
+
+Countersinks
+
+Extended-reach end-mills
+
+Fret slot cutters
+
+Fretboard planing/radiusing
+
+Shell cutters
+
+Steel Rule Die Tools
+
+Zero-helix cutters
+
+Substrates
+
+Backing material
+
+Copperclad
+
+Entry foil
+
+Tool Packs
+
+Single bit packs
+
+10-bit packs
+
+50-bits packs
+
+SecureBits
+
+Applications
+
+3D Signs & Plaques
+
+Cutting Composites
+
+Engraving
+
+Jewelry
+
+Musical Instruments
+
+Pool Cues
+
+Printed Circuit Boards
+
+Steel Rule Dies
+
+Resources
+
+FAQ
+
+Cutter terminology
+
+Depth Setting Rings
+
+Extended-reach Geometry
+
+Feeds & Speeds Calculator
+
+Glossary
+
+Point styles
+
+Reference library
+
+Sweet-spot Test
+
+Tutorials
+
+Charts/Tables
+
+Chipbreaker Feeds & Speeds
+
+Diamondcut Feeds & Speeds
+
+Drill Bit Diameter Chart
+
+Drill Bit Feeds & Speeds
+
+ER Torque Chart
+
+Metal Gauge Conversion Chart
+
+Relative Wood Hardness Table
+
+Support
+
+Contact us
+
+Limited Warranty
+
+Policies
+
+Sales Quotes
+
+Technical Support
+
+Distributors
+
+Domestic Distributors
+
+International Distributors
+
+Account
+
+My Account
+
+Order History
+
+Wish list
+
+3-flute Fingerboard Planing and Radiusing Bits (MM3I8) - (0.125 in. and 3.0mm shanks)
+
+Overview
+
+Specifications
+
+Benefits
+
+Application Data
+
+Tutorials
+
+Feeds/Speeds
+
+Overview
+
+PreciseBits 3-flute 0-helix and low helix-angle planing and radiusing cutters were designed for use with automated fretboard tuning and optimizing systems. The flute design and shallow helix angles minimize resonance during cutting and are capable of cutting with an 18% stepover while producing a smooth, artifact free surface. The corner-radiused high-rake tip-geometry is specifically intended to plane and/or radius fingerboards that have already been inlaid with mother-of-pearl, reconstituted mineral, thermoplastic, composite and/or precious-metal inlay components.
+
+Manufactured in the USA, every tool is:
+
+100% measured / optically inspected to insure that EVERY tool meets, or exceeds, our published specifications
+
+available with depth rings precisely positioned to ±0.004 in. (0.038mm), virtually eliminating the need for resetting Z-axis zero between tool changes (with bits of same overall length)
+
+made from premium grade submicrograin tungsten carbide (HRa 92, HRc 80)
+
+Application Notes
+
+Although these tools look a lot alike, they are made for very specific applications.
+
+MM3I8-1250-014FR, MM3I3-1250-014FR - zero-helix (0° helix-angle) - designed specifically for use with the Plek® Fingerboard Tuning System to eliminate resonance and bit-pull-out
+
+MM3I8-1250-016FR - low-helix (14° helix-angle) - designed for use with conventional CNC routing systems where the fingerboard can be securely clamped
+
+MM3I8-1250-031FR - high-helix (30° helix-angle) - designed for use with high-chipload CNC routing systems where the fingerboard can be securely clamped
+
+Our thanks to Adam Geraldson and Gary Brethorst for the excellent videos.
+
+MADE IN USA
+
+Specifications
+
+Geometry - 3 flute, 1/8 in. and 3.0mm shanks, corner-radius (bull-nose) tip style
+
+Length - 1.5 in. ±0.010 in.
+
+Cut diameter -
+
+0.1250 in. +0.0000, -0.0020 in.
+
+3.0mm +0.00, -0.05
+
+Flute corner-radius - 0.025 in. (0.64mm) ±0.001 in.
+
+Max runout (TIR) - < 0.0005 in.
+
+Max. depth of cut - nominal ±0.005 in.
+
+Anticipated Life - 3,000 linear inches (cross-grain ebony, CNC milling)
+
+Material - solid submicrograin carbide
+
+Ring Set - 0.800 in. ±0.002 in. (optional)
+
+Operating RPM - CNC certified operation 20k RPM to 100k RPM
+
+Feeds/speeds - to determine the optimum Feed/Speed combinations,
+click on the Feeds/Speeds tab
+
+Benefits
+
+Bull-nose tip-style minimizes "witness" lines and provides smooth, scallop-free cutting at high chiploads
+
+High flute volume supports high feed rates / chip loads
+
+3-Flute design eliminates chatter at high feed rates
+
+3-Flute design brings the rigidity and precision of a stub mill to a high-aspect ratio cutter
+
+Cutting edge geometry tuned for cutting all common fingerboard materials that have inlaid components of mother-of-pearl, recon stone and precious metal
+
+Application Data
+
+Tool Type: Radiused End Mill
+
+Diameter (D) =
+
+0.1250 inches (3.18mm)
+
+3.0mm (0.1181 in.)
+
+Tip Radius (R) = 0.0250 inches (0.64mm)
+
+Stepdown (pass depth, depth per pass)
+
+0.1250 inches (3.18mm)
+
+3.0mm (0.1181 in.)
+
+Stepover:
+
+0.023 inches (5.72mm)
+
+18% (of tip diameter)
+
+Spindle RPM (SPEED): click on the Feeds/Speeds tab
+
+Feedrate (IPM): click on the Feeds/Speeds tab
+
+Plunge rate (based on wood hardness):
+
+Softwood (Janka < 1,500) = 75 inches/minute
+
+Medium hardness hardwood(1,500 < Janka < 2,500) = 50 inches/minute
+
+High hardness hardwoodwood (Janka > 2,500) = 40 inches/minute
+
+Tutorials
+
+Finding the best combination of feed and speed
+
+Selecting the proper Collet Grade for your application
+
+Minimizing system runout with proper spindle maintenance
+
+Look up Janka values for common and exotic hardwoods in the Wood Hardness Table
+
+Feeds and Speeds
+
+You can use the Feed and Speed Calculator link below to accurately determine the the optimum RPM and feed rate to use when planing or radiusing your fretboard. These number assume the you have used the tool parameters under the Application Data tab to set up the bit in your CAM tool database (CAM tool table).
+
+After you click on the Feed and Speed Calculator:
+
+Enter the RPM (for bits this small, use your maximum RPM)
+
+Enter 3 for the number of flutes
+
+Enter 0.125 (or 3.0mm for metric calculation using 3mm shank tool) for the tool diameter
+
+In the "Percent of tool Diameter" field, enter:
+
+3 if you are planing or radiusing a naked hardwood fretboard
+
+1 if you are planing, or radiusing, a hardwood fret board that has already been inlaid with components made of mother-of-pearl or similar materials
+
+In the "Runout" field, enter:
+
+0.0003 if you are using a spindle with certified Extreme Precision collets
+
+0.0005 if you are using a consumer-grade router with certified Extreme Precision collets
+
+0.005 if you are using a consumer-grade router with a non-certified after-market collet
+
+NOTE:If you are using a consumer-grade router with a non-certified 1/8 in. collet adapter you will probably NOT be able to use this bit due to excessive runout.
+
+Click on the "Calculate Feed"
+
+Feed and Speed Calculator
+
+Product Compare (0)
+
+Product Filter
+
+| Diameter | LOC | Flutes | Corner Radius | Coating | Shank |
+OAL |
+Depth Rings | Reviews | Part Number |
+Price |
+
+| 0.1181" (3.0mm) | 0.14" (3.56mm) | 3 | 0.025" (0.64mm) | | 3.0mm |
+1.50" (38.1mm) |
+Available |
+Leave the first review Add to wishlist
+Compare
+Product Page
+| MM3I3-1181-014FR |
+$44.05
+
+|
+
+| 0.1250" (3.18mm) | 0.14" (3.56mm) | 3 | 0.025" (0.64mm) | | 1/8" |
+1.50" (38.1mm) |
+Available |
+
+Add to wishlist
+Compare
+Product Page
+| MM3I8-1250-014FR |
+$41.55
+
+|
+| 0.1250" (3.18mm) | 0.16" (4.06mm) | 3 | 0.025" (0.64mm) | | 1/8" |
+1.50" (38.1mm) |
+Available |
+Leave the first review Add to wishlist
+Compare
+Product Page
+| MM3I8-1250-016FR |
+$41.55
+
+|
+| 0.1250" (3.18mm) | 0.16" (4.06mm) | 3 | 0.025" (0.64mm) | ZrN | 1/8" |
+1.50" (38.1mm) |
+Available |
+Leave the first review Add to wishlist
+Compare
+Product Page
+| MM3I8-1250-016FRC |
+$44.97
+
+|
+
+Support
+
+About us
+
+Contact us
+
+Educational Discount
+
+Limited Warranty
+
+No-fault Returns
+
+Policies
+
+Sales Quotes
+
+Tech Support
+
+Products
+
+Collets, Toolholders
+
+Composite Cutting
+
+Metal Machining
+
+Woodworking
+
+Plastic Cutting
+
+Applications
+
+3D Signs & Plaques
+
+Engraving
+
+Jewelry
+
+Musical Instruments
+
+Pool Cues
+
+Printed Circuit Boards
+
+Steel Rule Dies
+
+Calculators
+
+Resources
+
+FAQ
+
+Tool terms
+
+Glossary
+
+Point styles
+
+Reference library
+
+Sweet-spot Test
+
+Tutorials
+
+Support
+
+About us
+
+Contact us
+
+Educational Discount
+
+Limited Warranty
+
+No-fault Returns
+
+Policies
+
+Sales Quotes
+
+Tech Support
+
+Products
+
+Collets, Toolholders
+
+Composite Cutting
+
+Metal Machining
+
+Woodworking
+
+Plastic Cutting
+
+Applications
+
+3D Signs & Plaques
+
+Engraving
+
+Jewelry
+
+Musical Instruments
+
+Pool Cues
+
+Printed Circuit Boards
+
+Steel Rule Dies
+
+Resources
+
+FAQ
+
+Tool terms
+
+Glossary
+
+Point styles
+
+Reference library
+
+Sweet-spot Test
+
+Tutorials
+
+Feed and Speed Calculators

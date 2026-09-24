@@ -1,0 +1,966 @@
+# source_url: https://docs.vectric.com/docs/V12.0/VCarvePro/ENU/Help/form/uiProfileMachineForm/index.html
+# accessed_on: 2026-09-25
+# raw_html_sha256: b42d9d95ace0f28b4b0f65bc34777b5cb3647ca4a586ced2f5ce9341ed927885
+
+What's New
+Keyboard Shortcuts
+Single Page
+User Guide
+Vectric Website
+Tutorial Videos
+User Forum
+
+English
+
+German
+
+Italian
+
+Japanese
+
+French
+
+Spanish
+
+Getting Started
+
+How to Get Started
+
+License Dialog
+
+Getting Started: Online Machine Configuration
+
+Manual Machine Configuration
+
+Makerspace Initialization Dialog
+
+License Registration
+
+Signing In
+
+Migration Dialog
+
+Makerspace Login
+
+Kickstarter Wizard
+
+Interface
+
+Edit Sheet - Single Sided
+
+SketchUp Files
+
+Job Setup - Single Sided
+
+Edit Sheet - Rotary
+
+Edit Sheet - Double Sided
+
+2D View Controls
+
+Document Variables
+
+Job Setup - Double Sided
+
+Options Dialog
+
+View Toolbar
+
+Job Setup Form
+
+Job Setup - Rotary
+
+Edit Sheet Form
+
+PDF Export
+
+Calculation Edit Boxes
+
+File Types
+
+View Controls
+
+Sheets Tab
+
+Sheet Management
+
+Job Templates
+
+3D View Controls
+
+Design
+
+Move Selection
+
+Join Open Vectors
+
+Distort Object
+
+Redo Operation
+
+Text Selection
+
+Circular Copy
+
+Nest Parts
+
+Trace Bitmap
+
+Interactive Vector Trim
+
+Edit Picture
+
+Draw Star
+
+Create Text
+
+Undo Operation
+
+Draw Arc
+
+Interactive Selection Mode
+
+Import Bitmap / Vectors
+
+Snapping Options Dialog
+
+Join / Close Vector with a Straight Line
+
+Grouping and Ungrouping
+
+Overlap Vectors
+
+Group Selected Objects
+
+Draw Ellipse
+
+Object Selection Tools
+
+Crop Bitmap
+
+Set Size
+
+Mirror
+
+Draw Polygon
+
+Offset Vectors
+
+Join / Close Vector with a Smooth Curve
+
+Copy Along Vectors
+
+Vector Boundary
+
+Fit Curves To Vectors
+
+Vector Texture
+
+Trim Objects
+
+Rotate
+
+Open a File
+
+Draw Circle
+
+Freehand Drawing
+
+Create Fillets
+
+Extend Vectors
+
+Plate Production
+
+Dimensions
+
+Join/Close by Moving End Points
+
+Cut Operation
+
+Vector Selection Mode
+
+Transform Mode
+
+Draw Line
+
+Node Editing Mode
+
+Weld Vectors
+
+Text On A Curve
+
+Vector Validator
+
+Measure - Inspect
+
+Ungroup Selection
+
+Array Copy
+
+Copy Operation
+
+Subtract Vectors
+
+Import Component / 3D Model
+
+Convert text to Curves
+
+Create a New File
+
+Save a File
+
+Alignment Tools
+
+Paste Operation
+
+Draw Rectangle
+
+Layers
+
+Layer Management
+
+Clipart
+
+Clipart Tab
+
+Toolpaths
+
+Moulding Toolpath
+
+V-Carve Toolpath
+
+Preview Toolpaths
+
+2D Profile Toolpath
+
+Chamfer Toolpath
+
+Load Toolpath Template
+
+Material Setup
+
+Sketch Carving
+
+Edit Toolpath
+
+VCarve Inlay Toolpath
+
+Thread Milling Toolpath
+
+Delete Toolpath
+
+Vector Selector
+
+Save All Visible Toolpaths as a Template
+
+Duplicate Toolpath
+
+VCarve Inlay Toolpath - Pocket
+
+Toolpath Templates
+
+Toolpath Tree
+
+Array Copy Toolpath
+
+Fluting Toolpath
+
+Texture Toolpath
+
+3D Finish Toolpath
+
+Quick Engraving Toolpath
+
+Laser Cut And Fill
+
+Female Inlay - Pocket
+
+Toolpath Tabs
+
+VCarve Inlay Toolpath - Plug
+
+Photo V-Carve Toolpath
+
+Inlay Toolpath
+
+3D Rough Toolpath
+
+Prism Carving Toolpath
+
+Recalculate All Toolpaths
+
+Drilling Toolpaths
+
+Merged Toolpath
+
+Material Setup - Flat
+
+Pocketing Toolpath
+
+Laser Picture
+
+Save Toolpath Template
+
+Material Setup - Rotary
+
+Tooling, Machines and Saving
+
+Tool Database
+
+Post-Processor Content
+
+Save Toolpaths
+
+Estimating Machining Times
+
+Toolpath Tiling Manager
+
+Tool Database - Custom Naming Variables
+
+Create Job Sheet
+
+Post-Processor Change Log
+
+Machine Configuration Management
+
+Tool Database - Name Format
+
+Tool Database - Remote Tool Databases
+
+Material Management
+
+Post-Processor Management
+
+Keep-out Zones
+
+Search for Machine Online
+
+Tool Database - Cloud Version Selector
+
+Preinstalled Gadgets
+
+Create Rounding Toolpath
+
+Keyhole Toolpath
+
+Wrapped Fluting Layout
+
+Wrapped Spiral Layout
+
+Drag Knife Toolpath
+
+Job Setup Sheet Editor
+
+Modules
+
+Laser Module
+
+Adapting a post-processor for Lasers
+
+VTransfer
+
+Menus
+
+Help
+
+Edit
+
+Gadgets
+
+Right Mouse Click Menu
+
+Model
+
+Machine
+
+Toolpaths
+
+View
+
+File
+
+Getting Started
+
+How to Get Started
+
+License Dialog
+
+Getting Started: Online Machine Configuration
+
+Manual Machine Configuration
+
+Makerspace Initialization Dialog
+
+License Registration
+
+Signing In
+
+Migration Dialog
+
+Makerspace Login
+
+Kickstarter Wizard
+
+Interface
+
+Edit Sheet - Single Sided
+
+SketchUp Files
+
+Job Setup - Single Sided
+
+Edit Sheet - Rotary
+
+Edit Sheet - Double Sided
+
+2D View Controls
+
+Document Variables
+
+Job Setup - Double Sided
+
+Options Dialog
+
+View Toolbar
+
+Job Setup Form
+
+Job Setup - Rotary
+
+Edit Sheet Form
+
+PDF Export
+
+Calculation Edit Boxes
+
+File Types
+
+View Controls
+
+Sheets Tab
+
+Sheet Management
+
+Job Templates
+
+3D View Controls
+
+Design
+
+Move Selection
+
+Join Open Vectors
+
+Distort Object
+
+Redo Operation
+
+Text Selection
+
+Circular Copy
+
+Nest Parts
+
+Trace Bitmap
+
+Interactive Vector Trim
+
+Edit Picture
+
+Draw Star
+
+Create Text
+
+Undo Operation
+
+Draw Arc
+
+Interactive Selection Mode
+
+Import Bitmap / Vectors
+
+Snapping Options Dialog
+
+Join / Close Vector with a Straight Line
+
+Grouping and Ungrouping
+
+Overlap Vectors
+
+Group Selected Objects
+
+Draw Ellipse
+
+Object Selection Tools
+
+Crop Bitmap
+
+Set Size
+
+Mirror
+
+Draw Polygon
+
+Offset Vectors
+
+Join / Close Vector with a Smooth Curve
+
+Copy Along Vectors
+
+Vector Boundary
+
+Fit Curves To Vectors
+
+Vector Texture
+
+Trim Objects
+
+Rotate
+
+Open a File
+
+Draw Circle
+
+Freehand Drawing
+
+Create Fillets
+
+Extend Vectors
+
+Plate Production
+
+Dimensions
+
+Join/Close by Moving End Points
+
+Cut Operation
+
+Vector Selection Mode
+
+Transform Mode
+
+Draw Line
+
+Node Editing Mode
+
+Weld Vectors
+
+Text On A Curve
+
+Vector Validator
+
+Measure - Inspect
+
+Ungroup Selection
+
+Array Copy
+
+Copy Operation
+
+Subtract Vectors
+
+Import Component / 3D Model
+
+Convert text to Curves
+
+Create a New File
+
+Save a File
+
+Alignment Tools
+
+Paste Operation
+
+Draw Rectangle
+
+Layers
+
+Layer Management
+
+Clipart
+
+Clipart Tab
+
+Toolpaths
+
+Moulding Toolpath
+
+V-Carve Toolpath
+
+Preview Toolpaths
+
+2D Profile Toolpath
+
+Chamfer Toolpath
+
+Load Toolpath Template
+
+Material Setup
+
+Sketch Carving
+
+Edit Toolpath
+
+VCarve Inlay Toolpath
+
+Thread Milling Toolpath
+
+Delete Toolpath
+
+Vector Selector
+
+Save All Visible Toolpaths as a Template
+
+Duplicate Toolpath
+
+VCarve Inlay Toolpath - Pocket
+
+Toolpath Templates
+
+Toolpath Tree
+
+Array Copy Toolpath
+
+Fluting Toolpath
+
+Texture Toolpath
+
+3D Finish Toolpath
+
+Quick Engraving Toolpath
+
+Laser Cut And Fill
+
+Female Inlay - Pocket
+
+Toolpath Tabs
+
+VCarve Inlay Toolpath - Plug
+
+Photo V-Carve Toolpath
+
+Inlay Toolpath
+
+3D Rough Toolpath
+
+Prism Carving Toolpath
+
+Recalculate All Toolpaths
+
+Drilling Toolpaths
+
+Merged Toolpath
+
+Material Setup - Flat
+
+Pocketing Toolpath
+
+Laser Picture
+
+Save Toolpath Template
+
+Material Setup - Rotary
+
+Tooling, Machines and Saving
+
+Tool Database
+
+Post-Processor Content
+
+Save Toolpaths
+
+Estimating Machining Times
+
+Toolpath Tiling Manager
+
+Tool Database - Custom Naming Variables
+
+Create Job Sheet
+
+Post-Processor Change Log
+
+Machine Configuration Management
+
+Tool Database - Name Format
+
+Tool Database - Remote Tool Databases
+
+Material Management
+
+Post-Processor Management
+
+Keep-out Zones
+
+Search for Machine Online
+
+Tool Database - Cloud Version Selector
+
+Preinstalled Gadgets
+
+Create Rounding Toolpath
+
+Keyhole Toolpath
+
+Wrapped Fluting Layout
+
+Wrapped Spiral Layout
+
+Drag Knife Toolpath
+
+Job Setup Sheet Editor
+
+Modules
+
+Laser Module
+
+Adapting a post-processor for Lasers
+
+VTransfer
+
+Menus
+
+Help
+
+Edit
+
+Gadgets
+
+Right Mouse Click Menu
+
+Model
+
+Machine
+
+Toolpaths
+
+View
+
+File
+
+Build Date: 8/11/2025, 5:03:21 AM
+
+2D Profile Toolpath
+
+Profile Machining is used to cut around or along a vector. Options provide the flexibility for cutting shapes out with optional Tabs / bridges plus an Allowance over/undercut to ensure perfect edge quality.
+Profile toolpaths can be outside, inside or on the selected vectors, automatically compensating for the tool diameter and angle for the chosen cut depth.
+When working with open vectors the profile toolpaths can be to the Left, to the Right or On the selected vectors.
+Clicking this icon opens the 2D Profile Toolpath form which is shown at the right; the functions in this form are described on the following pages.
+If you have vectors which are nested (like the letter 'O'), the program will automatically determine the nesting and cut the correct side of the inner and outer vectors. In addition, the program will always cut the inner vectors before the outer vectors to ensure the part remains attached to the original material as long as possible.
+Watch this video to see this in action:
+
+Cutting Depths
+
+Start Depth (D)
+
+This specifies the depth at which the toolpath is calculated from.
+When cutting directly into the surface of a job the Start Depth will often be 0. If machining into the bottom of an existing pocket or 3D region, the depth needs be entered.
+
+Cut Depth (C)
+
+The depth of the toolpath relative to the Start Depth.
+
+Pass Depth Control
+
+When a toolpath is created, the Pass Depth value associated with the selected tool (part of the tool's description) is used to determine the number of passes needed to profile down to the specified Cut Depth. However, by default the software will also modify the precise step down by up to 15% in either direction, if by doing so it is able to total number of passes required to reach the desired cut depth. It is nearly always desirable to benefit from the significantly reduced machining time of cutting using less passes if possible. Nevertheless, there are some occasions where the exact step down for a given profile pass needs to be more precisely controlled - when cutting into laminated material, for example. The Passes section page indicates how many passes will be created with the current settings.The Edit Passes... button will open a new dialog that enables the specific number and height of passes to be set directly.
+
+Specify Pass Depths
+
+The Pass Depths section at the top of the form shows a list of the current pass depths. The relative spacing of the passes is indicated in the diagram next to the list. Left click on a depth value in the list, or a depth line on the diagram, to select it. The currently selected pass is highlighted in red on the diagram.
+To edit the depth of the selected pass, change the value in the Depth edit box and click Apply.
+The Delete button will delete the selected pass.
+The Clear All Passes button will delete all the passes.
+To add a new pass, double left click at the approximate location in the passes diagram that you wish to add the pass. A new pass will be added and automatically selected. Edit the precise Depth value if required and then click Apply.
+The Set Last Pass Thickness option will enable an edit box where you can specify the last pass in terms of the remaining thickness of material you wish to cut with the last pass (instead of in terms of its depth). This is often a more intuitive way to specify this value.
+
+Pass Depth List Utilities
+
+Note
+Setting the number of passes with either of these utilities will discard any custom passes you may have added.
+
+The first method simply sets the passes based on the Depth of Step property of the selected tool. By default, this is the method used by Aspire when initially creating profile passes. However, if the Maintain Exact Step Depth option is checked, the software will not vary the step size to try to optimize the number of passes (see above).
+
+The second method creates evenly spaced passes based on the value specified in the Number of passes edit box.
+
+To apply either method, click the Set Associated Passes button to create the resulting set of pass depths in the pass list and diagram.
+
+Machine Vectors...
+
+There are 3 options to choose from to determine how the tool is positioned relative to the selected vectors.
+Outside
+
+Inside
+
+On
+
+Direction
+
+Can be set to either Conventional or Climb machining where the cutting direction depends upon the strategy selected - see above for details. Using Climb or Conventional cutting will largely be dictated by the material is being machined and the tooling.
+
+Allowance offset
+
+An Allowance can be specified to either Overcut (negative number will cut smaller) or Undercut (positive numbers will cut larger) the selected shape. If the Allowance = 0 then the toolpaths will machine to the exact size.
+
+Do Separate Last Pass
+
+A separate allowance can be specified for the last pass. If this allowance is given then all but the last pass will be undercut by the specified allowance with the final pass being the only pass which cuts to size.
+
+Note
+This is intended to be just a thin skin of material to be cut away as the tool will have to cut through this allowance at the full depth of the cut where all the previous passes undercut. There will be a warning displayed if the last pass allowance is greater than 1/3rd of the tool diameter but the last pass allowance should ideally be kept a lot smaller than this. Keeping this as small as possible reduces the chances the final pass will fit in areas where the previous passes will not and reduces the amount of material the last pass is having to cut through. If using a last pass allowance for the toolpath you should check that you are happy with the amount of material left for the last pass to cut through. The toolpath will fail to calculate if the last pass is cutting a significant distance into material which has not been cleared by the previous passes.
+
+If the Reverse direction button is checked ✓ then the cutting direction of the last pass is reversed. This feature is can be useful if for minimizing witness marks on the edge of profile cuts.
+The last pass allowance will also take into account any allowance offset and so the two options can be used together.
+
+Use Vector Start Point
+
+Use Start Point can be selected to force the toolpath to plunge and start cutting at the first point on the shape. This is very useful if you need to ensure the cutter doesn't plunge onto a critical part of the job. For example, setting the Start Point to be on a corner will often be the best position to plunge and cut from as this will not leave a witness / dwell mark on the machined surface.
+
+The Start Points are displayed as Green boxes on all vectors when this option is selected. Start Point on a vector can be moved using the Node Editing Tools. Select Node Editing cursor or press N. Place the cursor over the node to be used as the Start Point. Click Right mouse button and select Make Start Point (or press P) Remember, you can also insert a new point anywhere on a vector using the Right mouse menu or pressing the letter P - this will insert a new point and make it the start point.
+Note
+Selecting Use Start Point may result in less efficient toolpaths (increased cutting times) because it may take the machine longer to move between each shape being cut. If this option is not selected the software will try to calculate the shortest toolpath, minimizing the distance between link up moves. But the downside is that the cutter may plunge/mark important surfaces on the machined edge.
+
+Tabs (Bridges)
+
+Tabs are added to open and closed vector shapes to hold parts in place when cutting them out of material.
+
+Add tabs to toolpath
+
+Checking ✓ the Add tabs option will activate tab creation for this toolpath. The Length and Thickness specify the size of each tab. Checking ✓ the Create 3D Tabs option will create 3D Tabs, the difference between this and 2D Tabs is described below.
+
+Create 3D Tabs
+
+When this option is selected the tab will be triangular in section. This is shape is created as the cutter ramps up to the specified Tab Thickness then down the other side. The 3D Tabs will often allow the machine to run quicker and smoother because it does not have to stop to move in Z at the start and end of each tab.
+
+3D Tab
+
+If this option is unchecked, the 2D tabs will be used. The cutter stops at the start point for each tab, lifts vertically by the specified Thickness runs across the ramp, stops and plunges down the other side.
+Tab thickness is measured from the bottom of the CUT DEPTH, not the Material bottom.
+How the lenght and thickness change the tab size
+
+Profile Options
+
+The Profiling options section of the toolpath form contains five additional pages, each of which allows a particular set of Profile machining options to be specified. The precise number of option pages will depend on which Toolpath strategy you are currently using. The full range of option pages are:
+Ramps
+Leads
+Order
+Start At
+Corners
+
+These help control ways to ensure the parts are held in place and machined as easily as possible while ensuring the highest quality edge finish.
+Each set of options can be accessed by the tabs at the top of the Profile options section.
+
+Ramp
+
+Ramp moves are used to prevent the cutter from plunging vertically into the material. The cutter gradually cuts at an angle dropping into the material significantly reducing cutter wear, heat build-up and also the load on the router spindle and Z axis of the machine. If multiple passes are required due to the Pass Depth being less than the Cut Depth, the ramp moves are applied at the start of each level. All ramp moves are performed at the plunge rate selected for the current tool.
+
+Smooth
+
+This option creates a smooth ramp into the material using either the specified Distance or Angle.
+
+When a Lead In distance has been specified, the option Ramp on Lead In disables the distance and angle options and automatically limits the ramp moves to only be on the lead in portion of the toolpath.
+
+Zig Zag
+
+This option ramps into the material by Zig-Zag backwards and forwards using either the specified Distance or Angle and Distance.
+The Distance option ramps into the material, zigging for the specified distance in one direction then zagging back over the same distance.
+The Angle option is typically used for cutters that cannot plunge vertically but have an entry angle specified by the manufacturer.
+
+Spiral
+
+Checking ✓ this creates a continual spiral ramp, these are only available when the toolpath does not include lead in moves.
+
+This option ramps into the material over the complete circumference of the profile pass. The angle is automatically calculated to ramp from the start point to full depth over the perimeter distance around the job.
+
+The rate at which the cutter ramps into the material is determined by the Pass Depth specified for the cutter. For example, Spiral Profiling 0.5 inch deep with a cutter that has a Pass depth of 0.5 or greater will spiral down in 1 pass. Editing the Pass depth to be 0.25 inch results in the 2 spiral passes around the profile.
+
+Leads
+
+Lead in / out moves can be added to profile toolpaths to help preventing marking the edges of components with dwell marks that are typically created when a cutter is plunged vertically on the edge of the job.
+
+Straight Line Lead
+
+This option creates a linear lead onto the cutter path using the Angle and Lead length distance specified.
+
+The toolpath will lead onto the selected edge at the specified Angle.
+
+Checking ✓ the Do lead out option results in an exit lead being added at the end of the toolpath off the machined edge.
+
+The Overcut Distance forces the cutter to machine past the start point and is often used to help produce a better edge quality on parts.
+
+Circular Lead
+
+This option creates an arc lead onto the toolpath using the Radius and Lead length distance specified.
+The Radius and Angle will automatically inform the Length when entered, and the angle range is 0.1 to 90 degree.
+The toolpath will curve onto the selected edge, tangent to the direction of the vector at the point it reaches the actual geometry edge.
+Checking ✓ the Do lead out option results in an exit lead being added at the end of the toolpath off the machined edge.
+The Overcut Distance forces the cutter to machine past the start point and is often used to help produce a better edge quality on parts.
+
+Order
+
+The order tab allows you to specify the approaches the program will use to determine the best order to cut your vectors. You can specify multiple options, in which case the program will calculate the result of using each option and select the one which results in the shortest machining time.
+
+Vector Selection Order
+
+This option will machine the vectors in the order in which you selected them. If you have vectors inside each other (like in the letter 'O'), the inner vector will always be machined before the outer one regardless of the selection order.
+
+Left to Right
+
+This option will join up parts on the left of the material first and move across to the right.
+
+Bottom to Top
+
+This option will join up parts on the bottom of the material first and move up to the top.
+
+Grid
+
+This option will join using a grid based approach with the size of the grid based on the size of the parts. The algorithm will try to join up parts within a particular section of the grid before moving on.
+
+Start At
+
+Keep Current Start Points
+
+The start point of the vector will dictate the start of the toolpath.
+
+Optimize Start Points
+
+The software will automatically attempt to optimize each profile start position based on speed of completing the job.
+
+Closest on Bounding Box
+
+Influence the start point by defining which part of the bounding box of the profiled vector it should start near.
+This will look for the nearest point, from all of the spans' endpoints, and will start the toolpath from that point.
+
+Corners
+
+When using a sharp tool, such as a VBit, you can select to have the profile toolpath sharpen the corners on a cut vector.
+
+Sharp External Corner:
+Sharpens the exteral corner of the cut by having the tools movement mimic the angle of the vector instead of maintaining constant contact with the vector itself.
+Sharp Internal Corner (3D):
+Similar to the External corner but inclused a small angled movement to run the tip of the VBit up the inside of the corner to achieve a sharp angle on the cut.
+
+Position and Selection Properties
+
+Safe Z
+
+The height above the job at which it is safe to move the cutter at rapid / max feed rate. This dimension can be changed by opening the Material Setup form.
+
+Home Position
+
+Position from and to that the tool will travel before and after machining. This dimension can be changed by opening the Material Setup form.
+
+Project toolpath onto 3D Model
+
+This option is only available if a 3D model has been defined. If this option is checked, ✓ after the toolpath has been calculated, it will be projected (or 'dropped') down in Z onto the surface of the 3D model. The depth of the original toolpath below the surface of the material will be used as the projected depth below the surface of the model.
+Note:
+When a toolpath is projected onto the 3D model, its depth is limited so that it does not exceed the bottom of the material.
+
+Vector Selection
+
+This area of the toolpath page allows you to automatically select vectors to machine using the vector's properties or position. It is also the method by which you can create Toolpath Templates to re-use your toolpath settings on similar projects in the future. For more information, see the sections Vector Selector and Advanced Toolpath Templates.
+
+Name
+
+The name of the toolpath can be entered or the default name can be used.
+
+Copyright © 2025 Vectric Ltd
