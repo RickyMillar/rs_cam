@@ -19,6 +19,12 @@
    Flat 1.43, V-bit 1.42, Tapered 1.00, Facing 1.30, Bull borrows Flat 1.43),
    as a typed clamp with a card line (hardness.rs), not an Extrapolation impl.
 5. The 15 v7 rows are pocket rows only, with no adaptive copies, until G3 lands.
+7. AMENDED at step 1 (measured): the softwood and hardwood 37-series rows
+   are parked too (40 V-bit rows load, not 60; 441 -> 496). Loaded, they
+   displaced the Whiteside 1/4 in RPM anchor of 5 softwood V-bit cells, and
+   the engine RPM (10 026) replaced a printed 22 000: feed x0.34, not the
+   -26 % the plan predicted from the chipload alone. G2 is the MDF / plywood
+   gap; the solid-wood V-bit size key is ruling B4's question.
 6. why.rs is free (the feeds/dial session moved to adaptive3d).
 
 ---

@@ -19,7 +19,12 @@
 //!   unjudged material keeps the formula);
 //! - (e) `suggest::default_operation` gives an add door an operation with
 //!   the stock defaults and no recipe, so a refused cell still creates its
-//!   operation.
+//!   operation;
+//! - (f) extrapolation P2 (G2, 2026-09-24), strict ruling: a V-bit Pocket in
+//!   MDF refuses with the Onsrud 37-series text, a V-bit Waterline in MDF
+//!   refuses with the contour-finish text, a ball Pocket in plywood refuses
+//!   with the ball-nose plywood text, and no V-bit reason in MDF or plywood
+//!   says that no V-bit chipload exists there (the Onsrud rows print one).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -31,7 +36,7 @@ use rs_cam_core::feeds::suggest::{
 };
 use rs_cam_core::feeds::{EMBEDDED_LUT, FeedsError, FeedsSupport, SpindleStrategy};
 use rs_cam_core::machine::MachineProfile;
-use rs_cam_core::material::{AluminumAlloy, Material, PlywoodGrade, WoodSpecies};
+use rs_cam_core::material::{AluminumAlloy, Material, PlywoodGrade, SheetGoodKind, WoodSpecies};
 
 fn tool_of(kind: ToolType) -> ToolConfig {
     let mut t = ToolConfig::new_default(ToolId(1), kind);
@@ -164,4 +169,78 @@ fn the_default_operation_carries_the_stock_defaults_and_no_recipe_fm5() {
         "the stock default was not applied: depth {}",
         cfg.depth
     );
+}
+
+/// The reason of an `Unbacked` refusal; any other outcome fails the test.
+fn unbacked_reason(result: Result<SuggestedParams, FeedsError>, cell: &str) -> String {
+    match result {
+        Err(FeedsError::Unbacked { reason, .. }) => reason.into_owned(),
+        Err(other) => panic!("{cell}: expected Unbacked, got {other:?}"),
+        Ok(p) => panic!(
+            "{cell}: expected Unbacked, got a recipe on {:?}",
+            p.feeds_result.support
+        ),
+    }
+}
+
+/// (f) The G2 judgement (strict): the Onsrud 37-series V-bit rows serve
+/// trace passes in MDF and plywood, and the formula cells stay refused with
+/// texts that name the figure.
+#[test]
+fn the_vbit_mdf_and_plywood_cells_refuse_with_the_g2_texts_fm5() {
+    let mdf = Material::SheetGood {
+        kind: SheetGoodKind::Mdf,
+    };
+    let plywood = Material::Plywood {
+        grade: PlywoodGrade::BalticBirch,
+    };
+
+    // A V-bit Pocket in MDF: no pocket row, and the formula is below half of
+    // the Onsrud 37-series bands at 1/4 in.
+    let pocket = unbacked_reason(
+        suggest(OperationType::Pocket, ToolType::VBit, &mdf),
+        "V-bit Pocket in MDF",
+    );
+    assert_eq!(
+        pocket,
+        "No published figure backs the formula for a V-bit on pocket, contour or trace passes \
+         in MDF or plywood: for a 1/4 in V-bit the formula is below half of the Onsrud \
+         37-series bands (0.41x to 0.48x)."
+    );
+
+    // A V-bit Waterline in MDF: the contour-finish text holds in MDF too.
+    let waterline = unbacked_reason(
+        suggest(OperationType::Waterline, ToolType::VBit, &mdf),
+        "V-bit Waterline in MDF",
+    );
+    assert_eq!(
+        waterline,
+        "No published figure backs the formula for a V-bit on waterline or steep-shallow \
+         passes: no vendor prints a V-bit 3D finish chart."
+    );
+
+    // A ball Pocket in plywood: no V-bit row changes the ball-nose verdict.
+    let ball = unbacked_reason(
+        suggest(OperationType::Pocket, ToolType::BallNose, &plywood),
+        "ball Pocket in plywood",
+    );
+    assert_eq!(
+        ball,
+        "No published chipload exists for a ball-nose cutter on adaptive, pocket, contour or \
+         trace passes in plywood."
+    );
+
+    // No V-bit reason in MDF or plywood says that no V-bit chipload exists.
+    for material in [&mdf, &plywood] {
+        for op in OperationType::ALL.iter().copied() {
+            if let Err(FeedsError::Unbacked { reason, .. }) = suggest(op, ToolType::VBit, material)
+            {
+                assert!(
+                    !reason.contains("No published V-bit chipload exists for MDF"),
+                    "{op:?} with a V-bit in {material:?} still says no V-bit chipload exists: \
+                     {reason}"
+                );
+            }
+        }
+    }
 }

@@ -88,8 +88,9 @@ const VBIT_PARALLEL: &str = "No published figure backs the formula for a V-bit o
      passes: at the engaged width the chip is below half of every V-bit figure.";
 const VBIT_CONTOUR_FINISH: &str = "No published figure backs the formula for a V-bit on waterline \
      or steep-shallow passes: no vendor prints a V-bit 3D finish chart.";
-const VBIT_MDF_PLY: &str = "No published V-bit chipload exists for MDF or plywood on pocket, \
-     contour, parallel or trace passes.";
+const VBIT_MDF_PLY: &str = "No published figure backs the formula for a V-bit on pocket, contour \
+     or trace passes in MDF or plywood: for a 1/4 in V-bit the formula is below half of the Onsrud \
+     37-series bands (0.41x to 0.48x).";
 const TAPER_ROUGH: &str = "No published figure backs the formula for a tapered ball-nose on \
      adaptive, pocket, contour or trace passes: Onsrud 77-100 puts it below half.";
 const TAPER_CONTOUR_FINISH: &str = "No published figure backs the formula for a tapered ball-nose \
@@ -263,14 +264,18 @@ pub fn formula_backing(
             reason: BULL_SCALLOP,
         },
         (ToolFamily::BullNose, Trace, Finish) => Clueless { reason: BULL_TRACE },
-        // V-bit: trace and clearing charts exist for the two solid woods only.
+        // V-bit: no figure backs adaptive, parallel or 3D contour finish
+        // passes in any judged wood. Pocket, contour and trace passes are
+        // backed in the two solid woods. In MDF and plywood the Onsrud
+        // 37-series rows (extrapolation P2, G2) put the formula below half
+        // at 1/4 in (ruling R1, strict: decision 2).
         (ToolFamily::ChamferVbit, Adaptive, Roughing) => Clueless {
             reason: VBIT_ADAPTIVE,
         },
-        (ToolFamily::ChamferVbit, Parallel, Finish) if sw_hw => Clueless {
+        (ToolFamily::ChamferVbit, Parallel, Finish) => Clueless {
             reason: VBIT_PARALLEL,
         },
-        (ToolFamily::ChamferVbit, Contour, SemiFinish | Finish) if sw_hw => Clueless {
+        (ToolFamily::ChamferVbit, Contour, SemiFinish | Finish) => Clueless {
             reason: VBIT_CONTOUR_FINISH,
         },
         (ToolFamily::ChamferVbit, Pocket | Contour, Roughing)
@@ -279,9 +284,14 @@ pub fn formula_backing(
         {
             Backed
         }
-        (ToolFamily::ChamferVbit, Pocket | Contour | Parallel | Trace, _) if mdf_ply => Clueless {
-            reason: VBIT_MDF_PLY,
-        },
+        (ToolFamily::ChamferVbit, Pocket | Contour, Roughing)
+        | (ToolFamily::ChamferVbit, Trace, Finish)
+            if mdf_ply =>
+        {
+            Clueless {
+                reason: VBIT_MDF_PLY,
+            }
+        }
         // Tapered ball: the Onsrud 77-100 rows back softwood only.
         (ToolFamily::TaperedBallNose, Adaptive | Pocket | Contour, Roughing)
         | (ToolFamily::TaperedBallNose, Trace, Finish)

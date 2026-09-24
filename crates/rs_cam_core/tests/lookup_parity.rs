@@ -1,7 +1,9 @@
 //! Behavioural-parity test for Item B of the tool-load fidelity plan.
 //!
 //! Calculator (`feeds::calculate`) and gate (`tool_load::chipload::evaluate`)
-//! both query the vendor LUT via `find_best_row`. The plan requires that —
+//! both query the vendor LUT via `find_best_row_for_geometry` (the plain
+//! `find_best_row` for a flat, ball, bull or tapered tool, the angle-aware
+//! lookup for a V-bit). The plan requires that —
 //! for the same conceptual input — both pick the same observation_id, so a
 //! suggested feed can't disagree with the gate's verdict bounds.
 //!
@@ -17,16 +19,16 @@
 
 use rs_cam_core::compute::tool_config::ToolMaterial;
 use rs_cam_core::feeds::geometry::lut_key_diameter_for_cutter;
-use rs_cam_core::feeds::vendor_lookup::{LookupQuery, find_best_row};
+use rs_cam_core::feeds::vendor_lookup::{LookupQuery, find_best_row_for_geometry};
 use rs_cam_core::feeds::vendor_lut::{
     HardnessKind, LutOperationFamily, LutPassRole, MaterialFamily, ToolFamily, VendorLut,
 };
 use rs_cam_core::feeds::{FeedsInput, OperationFamily, PassRole, SetupContext, ToolGeometryHint};
 use rs_cam_core::feeds::{vendor_lookup, vendor_normalize};
 use rs_cam_core::machine::MachineProfile;
-use rs_cam_core::material::{Material, WoodSpecies};
+use rs_cam_core::material::{Material, SheetGoodKind, WoodSpecies};
 use rs_cam_core::tool::{
-    BallEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill, ToolDefinition,
+    BallEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill, ToolDefinition, VBitEndmill,
 };
 
 struct Case {
@@ -35,7 +37,7 @@ struct Case {
     flute_count: u32,
     tool_geometry: ToolGeometryHint,
     cutter: Box<dyn MillingCutter>,
-    species: WoodSpecies,
+    material: Material,
     operation: OperationFamily,
     pass_role: PassRole,
     /// The op_family/pass_role tuple the gate sees after `routed_lookup_family`.
@@ -52,7 +54,9 @@ fn cases() -> Vec<Case> {
             flute_count: 2,
             tool_geometry: ToolGeometryHint::Flat,
             cutter: Box::new(FlatEndmill::new(6.0, 18.0)),
-            species: WoodSpecies::GenericSoftwood,
+            material: Material::SolidWood {
+                species: WoodSpecies::GenericSoftwood,
+            },
             operation: OperationFamily::Pocket,
             pass_role: PassRole::Roughing,
             gate_op_family: LutOperationFamily::Pocket,
@@ -64,7 +68,9 @@ fn cases() -> Vec<Case> {
             flute_count: 2,
             tool_geometry: ToolGeometryHint::Flat,
             cutter: Box::new(FlatEndmill::new(6.0, 18.0)),
-            species: WoodSpecies::GenericSoftwood,
+            material: Material::SolidWood {
+                species: WoodSpecies::GenericSoftwood,
+            },
             operation: OperationFamily::Adaptive,
             pass_role: PassRole::Roughing,
             gate_op_family: LutOperationFamily::Adaptive,
@@ -76,7 +82,9 @@ fn cases() -> Vec<Case> {
             flute_count: 2,
             tool_geometry: ToolGeometryHint::Flat,
             cutter: Box::new(FlatEndmill::new(3.175, 12.0)),
-            species: WoodSpecies::HardMaple,
+            material: Material::SolidWood {
+                species: WoodSpecies::HardMaple,
+            },
             operation: OperationFamily::Contour,
             pass_role: PassRole::Finish,
             gate_op_family: LutOperationFamily::Contour,
@@ -88,7 +96,9 @@ fn cases() -> Vec<Case> {
             flute_count: 2,
             tool_geometry: ToolGeometryHint::Ball,
             cutter: Box::new(BallEndmill::new(3.175, 12.0)),
-            species: WoodSpecies::GenericSoftwood,
+            material: Material::SolidWood {
+                species: WoodSpecies::GenericSoftwood,
+            },
             operation: OperationFamily::Parallel,
             pass_role: PassRole::Finish,
             gate_op_family: LutOperationFamily::Parallel,
@@ -100,7 +110,9 @@ fn cases() -> Vec<Case> {
             flute_count: 2,
             tool_geometry: ToolGeometryHint::Ball,
             cutter: Box::new(BallEndmill::new(6.0, 18.0)),
-            species: WoodSpecies::HardMaple,
+            material: Material::SolidWood {
+                species: WoodSpecies::HardMaple,
+            },
             operation: OperationFamily::Scallop,
             pass_role: PassRole::Finish,
             gate_op_family: LutOperationFamily::Scallop,
@@ -119,10 +131,34 @@ fn cases() -> Vec<Case> {
                 taper_angle_deg: 7.0,
             },
             cutter: Box::new(TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0)),
-            species: WoodSpecies::HardMaple,
+            material: Material::SolidWood {
+                species: WoodSpecies::HardMaple,
+            },
             operation: OperationFamily::Parallel,
             pass_role: PassRole::Finish,
             gate_op_family: LutOperationFamily::Parallel,
+            gate_pass_role: LutPassRole::Finish,
+        },
+        // Extrapolation P2 (G2, 2026-09-24): a 60 degree V-bit on a trace
+        // finish in MDF. Both paths key the cone at the tool diameter (the
+        // engaged width at a 6.35 mm depth is clamped to 6.35 mm) and resolve
+        // through the angle-aware door, so both land on the Onsrud 37-80 row
+        // of the MDF sheet.
+        Case {
+            name: "mdf-vbit-60deg-6.35mm-trace-finish",
+            diameter_mm: 6.35,
+            flute_count: 2,
+            tool_geometry: ToolGeometryHint::VBit {
+                included_angle: 60.0,
+                tip_diameter: 0.0,
+            },
+            cutter: Box::new(VBitEndmill::new(6.35, 60.0, 19.05)),
+            material: Material::SheetGood {
+                kind: SheetGoodKind::Mdf,
+            },
+            operation: OperationFamily::Trace,
+            pass_role: PassRole::Finish,
+            gate_op_family: LutOperationFamily::Trace,
             gate_pass_role: LutPassRole::Finish,
         },
     ]
@@ -136,9 +172,7 @@ fn calculator_and_gate_match_same_observation_id() {
     let mut mismatches: Vec<String> = Vec::new();
 
     for case in cases() {
-        let material = Material::SolidWood {
-            species: case.species,
-        };
+        let material = case.material.clone();
 
         // --- Calculator path ---
         let input = FeedsInput {
@@ -165,7 +199,7 @@ fn calculator_and_gate_match_same_observation_id() {
         // axis), so a refusal here would be a real finding.
         let calc_query = vendor_normalize::to_lookup_query(&input)
             .expect("no case in this file is a rerouted operation, so the query cannot refuse");
-        let calc_result = find_best_row(&lut, &calc_query);
+        let calc_result = find_best_row_for_geometry(&lut, &calc_query, &case.tool_geometry);
 
         // --- Gate path ---
         let tool = ToolDefinition::new(
@@ -196,7 +230,7 @@ fn calculator_and_gate_match_same_observation_id() {
             operation_family: case.gate_op_family,
             pass_role: case.gate_pass_role,
         };
-        let gate_result = find_best_row(&lut, &gate_query);
+        let gate_result = find_best_row_for_geometry(&lut, &gate_query, &case.tool_geometry);
 
         // --- Compare ---
         match (&calc_result, &gate_result) {
@@ -272,6 +306,14 @@ fn material_to_lut_for_test(material: &Material) -> (MaterialFamily, HardnessKin
             };
             (family, HardnessKind::Janka, janka)
         }
-        _ => panic!("test cases only use solid wood"),
+        Material::SheetGood { kind } => {
+            let family = match kind {
+                SheetGoodKind::Mdf => MaterialFamily::Mdf,
+                SheetGoodKind::Hdf => MaterialFamily::Hdf,
+                SheetGoodKind::Particleboard => MaterialFamily::Particleboard,
+            };
+            (family, HardnessKind::Janka, kind.effective_janka_lbf())
+        }
+        _ => panic!("test cases only use solid wood and sheet goods"),
     }
 }

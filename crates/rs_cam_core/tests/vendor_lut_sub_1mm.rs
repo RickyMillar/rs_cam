@@ -167,11 +167,13 @@ fn embedded_count_matches_after_expansion() {
     let lut = VendorLut::embedded();
     assert_eq!(
         lut.observations.len(),
-        441,
-        "expected 441 embedded observations, the same total that \
+        496,
+        "expected 496 embedded observations, the same total that \
          vendor_lut::tests::test_embedded_loads_all_observations pins: 389 \
          after feeds matrix R5 (2026-09-23), - 2 Amana ZrN ball_nose rows in \
          cells that list only tapered tools, + 27 Amana ZrN v8 tapered rows, \
-         + 27 SpeTool 2D/3D tapered rows (extrapolation P1, 2026-09-24)"
+         + 27 SpeTool 2D/3D tapered rows (extrapolation P1, 2026-09-24), \
+         + 40 Onsrud 37-series V-bit rows (MDF, plywood, chipboard) and + 15 Amana ball v7 pocket rows \
+         (extrapolation P2, G2)"
     );
 }

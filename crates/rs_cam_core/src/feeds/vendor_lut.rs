@@ -440,6 +440,14 @@ const EMBEDDED_FILES: &[(&str, &str)] = &[
         "spetool_tapered.json",
         include_str!("../../data/vendor_lut/observations/spetool_tapered.json"),
     ),
+    // 2026-09-24 (extrapolation programme P2, G2): the Onsrud 37-series
+    // V-bit rows of the five wood sheets and the Laminated Chipboard table.
+    // The stored texts are data/vendor_lut/sources/onsrud_*_cutting_data.txt;
+    // the flute counts and the angles come from onsrud_pct19_catalog.txt.
+    (
+        "onsrud_vbit_37.json",
+        include_str!("../../data/vendor_lut/observations/onsrud_vbit_37.json"),
+    ),
 ];
 
 impl VendorLut {
@@ -661,8 +669,8 @@ mod tests {
         let lut = VendorLut::embedded();
         assert_eq!(
             lut.observations.len(),
-            441,
-            "expected 441 embedded observations: 252 before feeds matrix R5 \
+            496,
+            "expected 496 embedded observations: 252 before feeds matrix R5 \
              (2026-09-23), + 12 printed Amana ball v7 rows (1/8 and 1/4 in, \
              hardwood / softwood / MDF, pocket and adaptive), + 60 printed \
              Amana Spektra v24 rows (2F and 3F at 1/8 in, 6 mm and 1/4 in; \
@@ -672,7 +680,13 @@ mod tests {
              Hard Plywood (17) and Soft Plywood (16) flat-end rows = 389; \
              then extrapolation P1 (2026-09-24): - 2 Amana ZrN ball_nose rows \
              in cells that list only tapered tools (1/16 in 2F, 1.5 mm 4F), \
-             + 27 Amana ZrN v8 tapered rows, + 27 SpeTool 2D/3D tapered rows"
+             + 27 Amana ZrN v8 tapered rows, + 27 SpeTool 2D/3D tapered rows \
+             = 441; then extrapolation P2 (2026-09-24, G2): + 40 printed Onsrud \
+             37-series V-bit rows (MDF, hard and soft plywood, Laminated \
+             Chipboard x 10; the softwood and hardwood sheets' rows, the 11 \
+             laminated plywood rows and the 11 angle-less 37-80 rows are \
+             parked), + 15 printed Amana ball v7 pocket rows \
+             (1/16, 3/8, 1/2, 5/8, 3/4 in x hardwood / softwood / MDF)"
         );
     }
 
@@ -730,6 +744,9 @@ mod tests {
         "3d profiling semi",
         "semi-finish",
         "Finishing Axial = Max LOC",
+        // Onsrud 37-00/37-20 and 37-80 V-bit rows (extrapolation P2, G2):
+        // the sheets print "Varies" in the Cut column and give no depth.
+        "printed Cut column: 'Varies'",
         // upcut O-flute single-window row — chip-evacuation prose only.
         "side-entry or ramp entry required (no straight plunge); upcut \
          O-flute for chip evacuation. Phase 5 promotion (2026-06-01) — \
