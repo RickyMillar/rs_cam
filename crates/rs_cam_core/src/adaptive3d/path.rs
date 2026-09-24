@@ -390,6 +390,7 @@ fn push_slab(steps: &[f64], tier: usize, z_top: f64, z_bot: f64, out: &mut Vec<P
 
 /// Where a level sits in its run: its index and the run length for the
 /// runtime marker, the tier count, and the region for By Area.
+#[derive(Clone, Copy)]
 struct LevelSlot<'r> {
     index: usize,
     total: usize,
@@ -576,7 +577,7 @@ fn clear_planned_level(
             )?;
         }
     }
-    let seg_tally = tally_segments_for_z_level(&segments[segs_before..]);
+    let seg_tally = tally_segments_for_z_level(segments.get(segs_before..).unwrap_or(&[]));
     let mut level_tally = LevelTally {
         cut_mm: seg_tally.cut_mm,
         entries: seg_tally.rapid_segs,
