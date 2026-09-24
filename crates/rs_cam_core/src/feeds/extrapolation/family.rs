@@ -323,8 +323,12 @@ mod tests {
             let q = query(family, LutOperationFamily::Trace, LutPassRole::Finish);
             assert!(transfer_rule(&q, &home).is_none(), "{family:?}");
         }
-        // A copy that is not filed under the home does not transfer.
-        let copy = row(&lut, "onsrud-hardwood-77-100-1_8-parallel");
+        // A copy that is not filed under the home does not transfer. The
+        // LUT holds no copy since A3 step 3, so the test makes one.
+        let mut copy = home.clone();
+        copy.observation_id = "onsrud-hardwood-77-100-1_8-parallel".to_owned();
+        copy.operation_family = LutOperationFamily::Parallel;
+        copy.pass_role = LutPassRole::Finish;
         assert!(transfer_rule(&trace, &copy).is_none());
         // Another source or another subfamily does not transfer.
         let mut other_source = home.clone();

@@ -39,7 +39,7 @@
 //! - 3.175 mm ball: form C scale `(3.175 / 6.0)^0.61 = 0.678252514240`, band
 //!   `0.025 * 0.678252514240 * 1.50 = 0.025434469284` to
 //!   `0.04 * 0.678252514240 * 1.50 = 0.040695150854`;
-//! - tapered: `onsrud-hardwood-77-100-1_4-scallop` prints 0.127-0.1778 at
+//! - tapered: `onsrud-hardwood-77-100-1_4-pocket` prints 0.127-0.1778 at
 //!   6.35 mm with a per-row 1450. The cap 1.00 keeps the printed band. On a
 //!   1000 lbf hardwood query the law gives `1.45^0.5 = 1.204159457879`,
 //!   capped to 1.00 on the tapered row, and kept on the ball row (under
@@ -83,7 +83,7 @@ const BALL_SCALLOP_ROW: &str = "amana-ball-hardwood-scallop-6000-2f";
 
 /// A tapered hardwood row with a per-row Janka 1450 (Onsrud 77-100, 1/4 in,
 /// 0.127-0.1778 mm/tooth).
-const TAPERED_ROW: &str = "onsrud-hardwood-77-100-1_4-scallop";
+const TAPERED_ROW: &str = "onsrud-hardwood-77-100-1_4-pocket";
 
 /// `1450 / 600`.
 const RAW: f64 = 1450.0 / 600.0;

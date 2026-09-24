@@ -329,8 +329,9 @@ fn a_cell_with_a_vendor_row_is_vendor_backed() {
     // Extrapolation P1 step 3: the default Ø6.35 ball nose sits on the Ø6.0
     // ball rows, so the grid holds form C claims.
     assert!(extrapolated > 0, "no cell shipped through a G1 size claim");
-    // A3 step 2: the default Ø3.175 tapered ball reads the Onsrud 77-100
-    // pocket row on Profile, Trace, Pencil, Waterline and SteepShallow.
+    // A3 steps 2-3: the default Ø3.175 tapered ball reads the Onsrud 77-100
+    // pocket row on Profile, Trace, Pencil, Waterline and SteepShallow, and
+    // since step 3 also on Adaptive, Scallop and the Parallel family.
     assert!(
         family_transferred > 0,
         "no cell shipped through a G3 family claim"

@@ -138,17 +138,21 @@ const LEDGER_BAND_MAX: f64 = 0.012_781_077_012_073_16;
 /// live B3 cell used to match with the printed Onsrud 77-100 rows
 /// (0.0762-0.127 mm/tooth at 1/8 in), so no embedded wood row scales below
 /// the floor any more. The subordination rule this file pins is unchanged,
-/// so its fixture is now explicit: the printed Onsrud scallop row, cloned,
+/// so its fixture is now explicit: the printed Onsrud row, cloned,
 /// re-labelled derived/c, with the ledger's B3 band (0.00378-0.00756) as
-/// its bounds.
+/// its bounds. Since A3 step 3 the LUT files the printed row once, under
+/// pocket/roughing. The fixture files its clone under scallop/finish. Thus
+/// the row is printed in the queried family, and no family rule applies.
 fn sub_floor_lut() -> VendorLut {
     let mut row = embedded_vendor_lut()
         .observations
         .iter()
-        .find(|o| o.observation_id == "onsrud-hardwood-77-100-1_8-scallop")
-        .expect("the printed Onsrud 77-100 scallop row exists")
+        .find(|o| o.observation_id == "onsrud-hardwood-77-100-1_8-pocket")
+        .expect("the printed Onsrud 77-100 pocket row exists")
         .clone();
     row.observation_id = "synthetic-b3-sub-floor-scallop".to_owned();
+    row.operation_family = LutOperationFamily::Scallop;
+    row.pass_role = LutPassRole::Finish;
     row.diameter_mm = Some(1.0);
     row.flute_count = 2;
     row.chipload_min_mm_tooth = Some(0.003_78);

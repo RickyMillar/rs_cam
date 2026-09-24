@@ -7,28 +7,33 @@
 //! (`feeds::extrapolation::FAMILY_RULES`) carries the home row into each
 //! family that it serves, at x1.00 (copy semantics).
 //!
-//! This file holds the tapered arms of the sentry (A3 step 2). Step 3 adds
-//! arm (f), and step 4 adds the arms (a), (c), (g) and (h).
+//! This file holds the tapered arms of the sentry (A3 steps 2 and 3). Step
+//! 4 adds the arms (a), (c), (g) and (h).
 //!
-//! - (b) For each routed operation of a served family with no printed
-//!   tapered row (Profile, Waterline, SteepShallow, Trace, Pencil), at both
+//! - (b) For each routed operation of a served family (Profile, Waterline,
+//!   SteepShallow, Trace, Pencil, Adaptive, DropCutter, Scallop), at both
 //!   home sizes and in the four judged woods, the recipe and the envelope
 //!   resolvers return the Onsrud 77-100 pocket row, marked `Transferred`,
-//!   with a band identical to the home band. Step 3 widens this arm to
-//!   Adaptive, Parallel and Scallop: until the copies in those families are
-//!   deleted, the tie rule keeps the copies, which are `Printed`.
+//!   with a band identical to the home band. Step 3 deleted the copies in
+//!   the Adaptive, Parallel and Scallop families, so these families read
+//!   the home row too. One exception: in MDF a printed Parallel row wins
+//!   (SpeTool at 3.175 mm on score, Amana ZrN v8 at 6.35 mm on the tie
+//!   rule), and the arm pins that row as `Printed`.
 //! - (d) On a tapered Trace in hardwood, Suggest, the envelope resolver and
 //!   the modulator's door read the same row and the same band, and the card
 //!   states the rule and the row.
 //! - (e) A synthetic LUT: on an equal score, a row printed in the queried
 //!   family beats a transferred row, although the transferred row's id
 //!   sorts first. With no printed row, the transferred row answers.
+//! - (f) A3 step 3: each rule has one row per (source, material, diameter,
+//!   flutes), filed under the rule's home. The LUT holds no copy of a
+//!   printed cell in another family.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::feeds::extrapolation::{FAMILY_RULE_TEXT, FamilyBasis};
+use rs_cam_core::feeds::extrapolation::{FAMILY_RULE_TEXT, FAMILY_RULES, FamilyBasis};
 use rs_cam_core::feeds::suggest::{
     StockContext, SuggestContext, SuggestParamsInput, feeds_input_for_operation, suggest_params,
 };
@@ -110,7 +115,19 @@ fn both_rows(op: OperationType, tool: &ToolConfig, material: &Material) -> [Look
     [recipe, envelope]
 }
 
-/// (b) The routed operations with no printed tapered row read the home row
+/// The printed MDF Parallel rows that beat the transfer (arm (b)): the
+/// SpeTool 3.175 mm 2-flute row (exact, 2 flutes: 1875 against 1855) and
+/// the Amana ZrN v8 6.35 mm 2-flute row (1905 against 1905; the tie rule
+/// gives it to the printed row).
+fn printed_mdf_parallel_row(tip: f64) -> &'static str {
+    if tip < 5.0 {
+        "spetool-tapered-mdf-parallel-3175-2f"
+    } else {
+        "amana-tapered-mdf-parallel-6350-2f-zrn-v8"
+    }
+}
+
+/// (b) The routed operations of the served families read the home row
 /// through one claim, with the home band.
 #[test]
 fn the_home_row_serves_the_unprinted_families_through_one_claim_g3() {
@@ -120,8 +137,13 @@ fn the_home_row_serves_the_unprinted_families_through_one_claim_g3() {
         (OperationType::SteepShallow, LutOperationFamily::Contour),
         (OperationType::Trace, LutOperationFamily::Trace),
         (OperationType::Pencil, LutOperationFamily::Trace),
+        // A3 step 3: the copies in these families are gone.
+        (OperationType::Adaptive, LutOperationFamily::Adaptive),
+        (OperationType::DropCutter, LutOperationFamily::Parallel),
+        (OperationType::Scallop, LutOperationFamily::Scallop),
     ];
     let mut checked = 0;
+    let mut printed_wins = 0;
     for (tip, column) in [(3.175, "1_8"), (6.35, "1_4")] {
         let tool = tapered(tip);
         for (key, material) in &woods() {
@@ -134,6 +156,15 @@ fn the_home_row_serves_the_unprinted_families_through_one_claim_g3() {
             assert_eq!(home.family_basis, FamilyBasis::Printed, "{home_id}");
             for (op, family) in transfers {
                 let label = format!("{op:?} {tip} mm {key}");
+                if *key == "mdf" && family == LutOperationFamily::Parallel {
+                    // A row printed in the family beats the transfer.
+                    for row in both_rows(op, &tool, material) {
+                        assert_eq!(row.observation_id, printed_mdf_parallel_row(tip), "{label}");
+                        assert_eq!(row.family_basis, FamilyBasis::Printed, "{label}");
+                        printed_wins += 1;
+                    }
+                    continue;
+                }
                 for row in both_rows(op, &tool, material) {
                     assert_eq!(row.observation_id, home_id, "{label}");
                     let claim = row
@@ -159,8 +190,58 @@ fn the_home_row_serves_the_unprinted_families_through_one_claim_g3() {
             }
         }
     }
-    // 2 sizes x 4 woods x 5 operations x 2 resolvers.
-    assert_eq!(checked, 80);
+    // 2 sizes x 4 woods x 8 operations x 2 resolvers = 128, of which the
+    // MDF DropCutter cells (2 sizes x 2 resolvers = 4) read a printed row.
+    assert_eq!(checked, 124);
+    assert_eq!(printed_wins, 4);
+}
+
+/// (f) A3 step 3: one row per printed cell. For each rule, the rows of its
+/// sources and subfamily have one row per (source, material, diameter,
+/// flutes), and that row is filed under the rule's home. A copy of a
+/// printed cell in another family would fail here.
+#[test]
+fn a_rule_has_one_row_per_printed_cell_g3() {
+    use std::collections::BTreeMap;
+    for rule in FAMILY_RULES {
+        let mut cells: BTreeMap<(String, String, u64, u32), Vec<String>> = BTreeMap::new();
+        for obs in EMBEDDED_LUT.observations.iter().filter(|o| {
+            o.tool_family == rule.tool_family
+                && rule.source_ids.contains(&o.source_id.as_str())
+                && o.tool_subfamily.as_deref() == Some(rule.tool_subfamily)
+        }) {
+            assert_eq!(
+                (obs.operation_family, obs.pass_role),
+                rule.home,
+                "{}: a rule row is filed under the rule's home",
+                obs.observation_id
+            );
+            let key = (
+                obs.source_id.clone(),
+                format!("{:?}", obs.material_family),
+                obs.diameter_mm
+                    .expect("a rule row has a diameter")
+                    .to_bits(),
+                obs.flute_count,
+            );
+            cells
+                .entry(key)
+                .or_default()
+                .push(obs.observation_id.clone());
+        }
+        assert!(!cells.is_empty(), "{rule:?} has no rows");
+        for (key, ids) in &cells {
+            assert_eq!(
+                ids.len(),
+                1,
+                "{key:?}: one row per printed cell, got {ids:?}"
+            );
+        }
+        if rule.tool_family == ToolFamily::TaperedBallNose {
+            // 4 sheets x 2 tip diameters.
+            assert_eq!(cells.len(), 8, "{cells:?}");
+        }
+    }
 }
 
 /// (d) Suggest, the envelope resolver and the modulator's door read one row

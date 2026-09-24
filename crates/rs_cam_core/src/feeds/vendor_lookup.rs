@@ -1172,7 +1172,9 @@ mod tests {
         // Amana 6.0 mm row this test used to name is derived/c. The
         // exact-diameter row is the 1/4 in (6.35 mm) Onsrud line
         // `77-100 1xD .005-.007 (1/4)`, so the query asks for 6.35 mm and
-        // the diameter scale must be 1.0.
+        // the diameter scale must be 1.0. Since A3 step 3 the LUT files
+        // that line once, under pocket/roughing, and the G3 family rule
+        // serves the parallel query from it.
         let lut = embedded_lut();
         let query = LookupQuery {
             tool_family: ToolFamily::TaperedBallNose,
@@ -1187,7 +1189,9 @@ mod tests {
         };
         let result = lookup_best(&lut, &query).expect("must match a tapered-ball parallel row");
         // The 6.35 mm hardwood row is an exact-diameter match.
-        assert_eq!(result.observation_id, "onsrud-hardwood-77-100-1_4-parallel");
+        assert_eq!(result.observation_id, "onsrud-hardwood-77-100-1_4-pocket");
+        assert_eq!(result.row_pass_role, LutPassRole::Roughing);
+        assert_eq!(result.family_basis.name(), "Transferred");
         assert!(
             (result.row_diameter_mm - 6.35).abs() < 1e-9,
             "expected exact 6.35 mm row, got {} mm",
@@ -1400,10 +1404,11 @@ mod tests {
         );
         // Feeds matrix R5 (2026-09-23): the printed Onsrud 77-100 1/4 in
         // row (exact/a) now wins this query; the Amana 6.0 mm row is
-        // derived/c. The claim of this test is unchanged: a preset row
-        // never beats a printed vendor row.
+        // derived/c. Since A3 step 3 the row is the pocket row, which the
+        // G3 family rule serves to the parallel query. The claim of this
+        // test is unchanged: a preset row never beats a printed vendor row.
         assert_eq!(
-            result.observation_id, "onsrud-hardwood-77-100-1_4-parallel",
+            result.observation_id, "onsrud-hardwood-77-100-1_4-pocket",
             "a printed vendor row expected, got {}",
             result.observation_id
         );

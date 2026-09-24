@@ -356,9 +356,10 @@ fn every_chipload_message_discloses_row_scaling_and_pass_role() {
     );
     // The query is a Finish role (`verdict()`). Until R5 (2026-09-23) the
     // only tapered scallop row was SemiFinish, so the substitution had to
-    // be disclosed. The printed rows that win now (Onsrud 77-100 after R5,
-    // Amana ZrN v8 after extrapolation P1) carry `finish`, so no
-    // substitution exists. The
+    // be disclosed. The printed rows that win now (Amana ZrN v8 after
+    // extrapolation P1) carry `finish`, so no substitution exists. The
+    // Onsrud 77-100 rows are filed under pocket/roughing since A3 step 3,
+    // and a G3 family rule carries them (see the arm below). The
     // rule stays: a row of another role must say so; a row of the same
     // role must not claim a substitution. The winning row is read from the
     // message, so the arm follows the table.
@@ -373,6 +374,20 @@ fn every_chipload_message_discloses_row_scaling_and_pass_role() {
         .iter()
         .find(|o| o.observation_id == row_id)
         .unwrap_or_else(|| panic!("the named row {row_id:?} is not in the embedded LUT"));
+    // A3 (G3): a row that a family rule carries from another operation
+    // family states the rule in place of a role substitution. Since A3
+    // step 3 the Onsrud 77-100 rows are filed only under pocket/roughing,
+    // so an Onsrud winner here is such a row.
+    if row.operation_family != LutOperationFamily::Parallel {
+        assert!(
+            chipload.message.contains("G3 family rule") && !chipload.message.contains("pass role"),
+            "row {row_id} is filed under {:?}; the message must state the family rule and no \
+             role substitution: {}",
+            row.operation_family,
+            chipload.message
+        );
+        return;
+    }
     let substituted = row.pass_role != LutPassRole::Finish;
     assert_eq!(
         chipload.message.contains("pass role"),

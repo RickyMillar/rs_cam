@@ -442,7 +442,10 @@ fn a_refused_cell_has_no_band_anywhere_g1() {
     // The envelope resolver still matches the row, and the row carries the
     // refusal and publishes no band.
     let env = envelope_row(op, &tool, &material);
-    assert_eq!(env.observation_id, "onsrud-hardwood-77-100-1_4-scallop");
+    // Since A3 step 3 the row is the pocket row, which the G3 family rule
+    // serves to the scallop query.
+    assert_eq!(env.observation_id, "onsrud-hardwood-77-100-1_4-pocket");
+    assert_eq!(env.family_basis.name(), "Transferred");
     assert!(env.size_basis.is_refused(), "{:?}", env.size_basis);
     assert_eq!(env.chip_load_mm, 0.0);
     assert_eq!(env.chip_load_min_mm, None);

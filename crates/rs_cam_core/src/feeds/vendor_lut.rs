@@ -696,8 +696,8 @@ mod tests {
         let lut = VendorLut::embedded();
         assert_eq!(
             lut.observations.len(),
-            496,
-            "expected 496 embedded observations: 252 before feeds matrix R5 \
+            472,
+            "expected 472 embedded observations: 252 before feeds matrix R5 \
              (2026-09-23), + 12 printed Amana ball v7 rows (1/8 and 1/4 in, \
              hardwood / softwood / MDF, pocket and adaptive), + 60 printed \
              Amana Spektra v24 rows (2F and 3F at 1/8 in, 6 mm and 1/4 in; \
@@ -713,7 +713,11 @@ mod tests {
              Chipboard x 10; the softwood and hardwood sheets' rows, the 11 \
              laminated plywood rows and the 11 angle-less 37-80 rows are \
              parked), + 15 printed Amana ball v7 pocket rows \
-             (1/16, 3/8, 1/2, 5/8, 3/4 in x hardwood / softwood / MDF)"
+             (1/16, 3/8, 1/2, 5/8, 3/4 in x hardwood / softwood / MDF) \
+             = 496; then A3 step 3 (2026-09-24, G3): - 24 Onsrud 77-100 \
+             copy rows (4 sheets x 1/8 and 1/4 in x parallel / scallop / \
+             adaptive); the 8 pocket rows stay and the G3 family rule serves \
+             the other families = 472"
         );
     }
 

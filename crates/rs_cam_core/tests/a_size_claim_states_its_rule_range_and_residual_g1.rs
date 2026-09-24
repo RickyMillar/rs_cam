@@ -218,8 +218,9 @@ fn form_a_interpolates_between_two_printed_sizes_g1() {
 }
 
 /// Form A across charts (step 6). A 1.0 mm 3-flute tapered tip on the
-/// Onsrud 77-100 1/8 in hardwood parallel row (3.175 mm, band 0.0762-0.127,
-/// mid 0.1016). The Onsrud series has no bracket, so the rule tries the
+/// Onsrud 77-100 1/8 in hardwood row (3.175 mm, band 0.0762-0.127, mid
+/// 0.1016). The LUT files it under pocket/roughing, and the G3 family rule
+/// serves it to the parallel query (A3). The Onsrud series has no bracket, so the rule tries the
 /// other tapered charts with the same material, flutes, family and role.
 /// The Amana v8 3-flute series (0.79375 mm: 0.01905-0.0508, mid 0.034925;
 /// 3.175 mm: 0.0381-0.0635, mid 0.0508) brackets 1.0 mm:
@@ -228,7 +229,7 @@ fn form_a_interpolates_between_two_printed_sizes_g1() {
 /// Onsrud anchor is `0.037174943265 / 0.1016 = 0.365895110877`.
 #[test]
 fn form_a_reads_another_chart_for_a_micro_tapered_tip_g1() {
-    let anchor = row("onsrud-hardwood-77-100-1_8-parallel");
+    let anchor = row("onsrud-hardwood-77-100-1_8-pocket");
     let q = query(
         ToolFamily::TaperedBallNose,
         1.0,
@@ -382,14 +383,14 @@ fn form_c_on_a_ball_borrows_the_flat_spread_g1() {
 }
 
 /// Form C on a tapered tip at 1.5 mm or more (decision 2). The anchor
-/// `onsrud-hardwood-77-100-1_4-parallel` (6.35 mm) is the only 2-flute size
-/// of its series. `r = 6.0 / 6.35 = 0.944881889764`, scale
+/// `onsrud-hardwood-77-100-1_4-pocket` (6.35 mm, served to the parallel
+/// query by the G3 family rule) is the only 2-flute size of its series. `r = 6.0 / 6.35 = 0.944881889764`, scale
 /// `r^0.61 = 0.966007037458`; the tapered spread gives
 /// `r^(0.00 - 0.61) = 1.035189145859` and `r^(1.06 - 0.61) = 0.974809799301`.
 /// At 2x the tapered spread is `2^-0.61 = 0.66` to `2^0.45 = 1.37`.
 #[test]
 fn form_c_on_a_tapered_tip_states_the_tapered_spread_g1() {
-    let anchor = row("onsrud-hardwood-77-100-1_4-parallel");
+    let anchor = row("onsrud-hardwood-77-100-1_4-pocket");
     let q = query(
         ToolFamily::TaperedBallNose,
         6.0,
@@ -602,8 +603,8 @@ fn a_size_outside_every_form_refuses_g1() {
          0.5 mm (ruling B1)"
     );
 
-    // A 1.0 mm tapered Scallop on the Onsrud 1/4 in Scallop row (6.35 mm,
-    // 6.35x). No tapered Scallop chart of grade a or b brackets 1.0 mm.
+    // A 1.0 mm tapered Scallop on the Onsrud 1/4 in row (6.35 mm, 6.35x),
+    // which the G3 family rule serves to the Scallop query. No tapered Scallop chart of grade a or b brackets 1.0 mm.
     let scallop = SizeLaw.basis(
         lut,
         &query(
@@ -615,7 +616,7 @@ fn a_size_outside_every_form_refuses_g1() {
             LutOperationFamily::Scallop,
             LutPassRole::Finish,
         ),
-        &row("onsrud-hardwood-77-100-1_4-scallop"),
+        &row("onsrud-hardwood-77-100-1_4-pocket"),
     );
     assert_eq!(
         refusal_of(&scallop),

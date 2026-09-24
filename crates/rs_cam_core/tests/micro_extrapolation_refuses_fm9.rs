@@ -31,7 +31,8 @@
 //! - a 1.0 mm ball nose Scallop in hardwood refuses: the only ball Scallop
 //!   rows are the Ø6 hardwood rows (6x); the 1 mm ball rows are Parallel
 //!   rows, and the MDF one is another material category;
-//! - a 3.175 mm tapered ball Scallop in hardwood ships (not a micro tool);
+//! - a 3.175 mm tapered ball Scallop in hardwood ships (not a micro tool),
+//!   through the G3 family claim on the Onsrud pocket row;
 //! - a 1.0 mm flat end mill pocket in SOFTWOOD ships: the printed Spektra
 //!   0.794 mm softwood row is 0.79x the tool, inside the window. Since
 //!   extrapolation P1 step 3 it ships `Extrapolated` through a G1 form A
@@ -248,7 +249,17 @@ fn a_standard_tapered_scallop_ships_fm9() {
         &hardwood(),
     )
     .expect("a 3.175 mm tapered ball is not a micro tool");
-    assert_eq!(s.feeds_result.support, FeedsSupport::VendorBacked);
+    // Since A3 step 3 the printed Onsrud 1/8 in row is filed once, under
+    // pocket/roughing, and the G3 family rule serves it to the Scallop
+    // query. The tip is the printed size, so there is no size claim.
+    assert!(
+        matches!(
+            &s.feeds_result.support,
+            FeedsSupport::FamilyTransferred { size: None, .. }
+        ),
+        "{:?}",
+        s.feeds_result.support
+    );
     assert!(s.operation.feed_rate() > 0.0);
 }
 

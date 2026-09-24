@@ -206,17 +206,20 @@ fn divisor() -> f64 {
 }
 
 /// A one-row LUT whose derated band sits wholly below the 0.025 mm/tooth
-/// floor: the printed Onsrud 77-100 1/8 in scallop row, cloned, re-labelled
-/// derived/c, with the ledger's B3 band (0.00378-0.00756 mm/tooth) as its
-/// bounds. Same fixture as `rubbing_floor_warns_and_never_lifts.rs`.
+/// floor: the printed Onsrud 77-100 1/8 in pocket row, cloned, filed under
+/// scallop/finish, re-labelled derived/c, with the ledger's B3 band
+/// (0.00378-0.00756 mm/tooth) as its bounds. Same fixture as
+/// `rubbing_floor_warns_and_never_lifts.rs`.
 fn sub_floor_lut() -> VendorLut {
     let mut row = embedded_vendor_lut()
         .observations
         .iter()
-        .find(|o| o.observation_id == "onsrud-hardwood-77-100-1_8-scallop")
-        .expect("the printed Onsrud 77-100 scallop row exists")
+        .find(|o| o.observation_id == "onsrud-hardwood-77-100-1_8-pocket")
+        .expect("the printed Onsrud 77-100 pocket row exists")
         .clone();
     row.observation_id = "synthetic-b3-sub-floor-scallop".to_owned();
+    row.operation_family = LutOperationFamily::Scallop;
+    row.pass_role = LutPassRole::Finish;
     row.diameter_mm = Some(1.0);
     row.flute_count = 2;
     row.chipload_min_mm_tooth = Some(0.003_78);

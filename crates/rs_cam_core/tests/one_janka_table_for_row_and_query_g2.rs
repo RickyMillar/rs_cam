@@ -168,7 +168,7 @@ fn baltic_birch_on_a_hard_plywood_row_has_no_hardness_scale_g2() {
     );
     for id in no_janka
         .into_iter()
-        .chain(["onsrud-plywood-hardwood-77-100-1_4-parallel"])
+        .chain(["onsrud-plywood-hardwood-77-100-1_4-pocket"])
     {
         let r = alone(id, MaterialFamily::PlywoodHardwood, birch);
         assert!(
