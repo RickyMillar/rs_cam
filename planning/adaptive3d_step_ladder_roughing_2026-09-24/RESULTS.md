@@ -139,3 +139,13 @@ The GUI state (DPP 5, By Area) was saved to a scratch TOML and scored with
   distance. It must print the GUI's published fields, same names, same
   values.
 - MCP gives removed volume only for the whole project, not per toolpath.
+
+Instrument fixed (9699f0d5): `rough-score` prints the core
+`ToolpathDiagnostic` and `SimulationToolpathCutSummary` as the session
+publishes them. On the parity TOML it matches the GUI on moves (5373), cut
+and rapid distance, `total_runtime_s` (813.7110364401705) and
+`cutting_runtime_s` (703.1247). A test (`rough_score_publishes_the_gui_numbers`)
+holds the parity. Follow-up G-MCPCUTROW: the MCP `get_cut_trace`
+`toolpath_summaries` row leaves out `average_engagement`,
+`total_removed_volume_est_mm3`, `peak_axial_doc_mm` and `per_kinematics`,
+which the core struct has.
