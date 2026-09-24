@@ -406,6 +406,77 @@ fn cell_index_ceil(offset_mm: f64, cell_mm: f64) -> usize {
     }
 }
 
+// ── Third producer: the By Area region map ────────────────────────────
+
+/// Vertical lift (mm) of the By Area region overlay above the top Z of the
+/// map. The overlay is a flat sheet at the stock top, so a small lift keeps
+/// it off a stock face at the same Z.
+pub const AREA_REGION_LIFT_MM: f32 = 0.2;
+
+/// The categorical fill colours of the By Area regions, in region order.
+/// The palette repeats after the last colour; the order number on the
+/// overlay tells two regions of one colour apart.
+const AREA_REGION_COLORS: [[f32; 3]; 8] = [
+    [0.20, 0.55, 0.95],
+    [0.95, 0.55, 0.10],
+    [0.30, 0.75, 0.35],
+    [0.85, 0.25, 0.55],
+    [0.55, 0.35, 0.85],
+    [0.90, 0.80, 0.20],
+    [0.15, 0.75, 0.75],
+    [0.65, 0.45, 0.25],
+];
+
+/// The fill colour of the By Area region with `order` (1-based). `pub` so
+/// the legend and the order labels use the colour that the mesh draws.
+/// Order 0 is "no region" and has no colour.
+#[must_use]
+pub fn area_region_color(order: u16) -> Option<[f32; 3]> {
+    let index = usize::from(order).checked_sub(1)?;
+    AREA_REGION_COLORS
+        .get(index % AREA_REGION_COLORS.len())
+        .copied()
+}
+
+/// Colored mesh for the By Area region overlay: one flat quad per row run
+/// of same-region cells, at the top Z of the map plus
+/// [`AREA_REGION_LIFT_MM`], in the colour of the region.
+///
+/// Unlike the two draped producers above, the quads do not share vertices:
+/// a region boundary is a hard colour edge, not a blend. Returns `None`
+/// when the map has no region cell.
+#[must_use]
+pub fn area_regions_to_mesh(map: &crate::adaptive3d::AreaRegionMap) -> Option<StockMesh> {
+    let runs = map.row_runs();
+    if runs.is_empty() {
+        return None;
+    }
+    let z = map.top_z as f32 + AREA_REGION_LIFT_MM;
+    let mut vertices = Vec::with_capacity(runs.len() * 12);
+    let mut colors = Vec::with_capacity(runs.len() * 12);
+    let mut indices = Vec::with_capacity(runs.len() * 6);
+    for run in &runs {
+        let Some(color) = area_region_color(run.order) else {
+            continue;
+        };
+        let [x0, y0, x1, y1] = map.run_rect(run);
+        let base = u32::try_from(vertices.len() / 3).ok()?;
+        for (x, y) in [(x0, y0), (x1, y0), (x1, y1), (x0, y1)] {
+            vertices.extend_from_slice(&[x as f32, y as f32, z]);
+            colors.extend_from_slice(&color);
+        }
+        indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+    if indices.is_empty() {
+        return None;
+    }
+    Some(StockMesh {
+        vertices,
+        indices,
+        colors,
+    })
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,

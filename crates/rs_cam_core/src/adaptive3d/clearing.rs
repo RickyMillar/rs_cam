@@ -80,21 +80,40 @@ pub(super) struct MaterialRegion {
     pub(super) cell_count: usize,
     pub(super) surface_z_min: f64,
     pub(super) surface_z_max: f64,
+    /// The flood-fill id of the region in the label grid of
+    /// [`detect_material_regions_labeled`].
+    pub(super) bfs_label: usize,
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Detect connected material regions via 8-connected BFS flood fill.
 ///
 /// A cell "has material" if the top-Z of the dexel ray exceeds
 /// `surface_z + stock_to_leave + 0.01`.
 /// Regions with fewer than `min_cells` (default 4) are filtered out.
 /// Returns regions sorted by cell_count descending (largest first).
+/// The unit tests read this form; the planner reads
+/// [`detect_material_regions_labeled`].
+#[cfg(test)]
 pub(super) fn detect_material_regions(
     material_stock: &TriDexelStock,
     surface_hm: &SurfaceHeightmap,
     stock_to_leave: f64,
     tool_radius: f64,
 ) -> Vec<MaterialRegion> {
+    detect_material_regions_labeled(material_stock, surface_hm, stock_to_leave, tool_radius).0
+}
+
+/// [`detect_material_regions`] and its flood-fill label grid (row-major,
+/// one id per cell; `usize::MAX` is a cell with no material). Each region
+/// carries its id in `bfs_label`. The By Area overlay reads the grid.
+// SAFETY: bounded indexing in algorithmic code; every index is below rows * cols.
+#[allow(clippy::indexing_slicing)]
+pub(super) fn detect_material_regions_labeled(
+    material_stock: &TriDexelStock,
+    surface_hm: &SurfaceHeightmap,
+    stock_to_leave: f64,
+    tool_radius: f64,
+) -> (Vec<MaterialRegion>, Vec<usize>) {
     let rows = material_stock.z_grid.rows;
     let cols = material_stock.z_grid.cols;
     let min_cells = 4usize;
@@ -182,6 +201,7 @@ pub(super) fn detect_material_regions(
                     cell_count: count,
                     surface_z_min: sz_min,
                     surface_z_max: sz_max,
+                    bfs_label: region_id,
                 });
             }
 
@@ -191,7 +211,7 @@ pub(super) fn detect_material_regions(
 
     // Sort largest first
     regions.sort_by_key(|a| std::cmp::Reverse(a.cell_count));
-    regions
+    (regions, labels)
 }
 
 // ── Z-level clearing helper ──────────────────────────────────────────

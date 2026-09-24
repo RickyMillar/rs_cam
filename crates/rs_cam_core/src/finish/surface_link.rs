@@ -676,6 +676,7 @@ pub fn relink_fragments_with_kinds(
         planner_engagement,
         rest_grid,
         rest_regions,
+        area_regions,
     } = annotated;
     let n_in = toolpath.moves.len();
 
@@ -723,6 +724,7 @@ pub fn relink_fragments_with_kinds(
                 planner_engagement,
                 rest_grid,
                 rest_regions,
+                area_regions,
             }),
             report,
         );
@@ -1175,6 +1177,7 @@ pub fn relink_fragments_with_kinds(
         planner_engagement,
         rest_grid,
         rest_regions,
+        area_regions,
     };
     // A reorder needs the drop rule a plain remap cannot state — see
     // `MoveProvenance::Permutation`.

@@ -583,7 +583,8 @@ fn push_adaptive3d_spans(
         }
         spans.push(
             Span::new(*start, end, SpanKind::Region)
-                .with_label(format!("Adaptive region {}", region_id + 1))
+                // `region_id` is the 1-based planner order of the region.
+                .with_label(format!("Adaptive region {region_id}"))
                 .with_payload(SpanPayload::Region {
                     region_id: *region_id,
                     role: RegionSpanRole::GeneratorPass,

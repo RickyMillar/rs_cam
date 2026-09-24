@@ -598,6 +598,7 @@ impl ProjectSession {
                 rest_grid: annotated_arc.rest_grid.clone(),
                 // Same for the derived machining-region polygons.
                 rest_regions: annotated_arc.rest_regions.clone(),
+                area_regions: annotated_arc.area_regions.clone(),
             };
             let new_arc = Arc::new(new_annotated);
             // Rebuild the op_data variant with the swapped Arc.

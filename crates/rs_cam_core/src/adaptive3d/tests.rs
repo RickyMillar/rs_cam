@@ -798,6 +798,7 @@ fn test_material_remaining_in_region() {
         cell_count: (material_stock.z_grid.rows / 2) * (material_stock.z_grid.cols / 2),
         surface_z_min: 0.0,
         surface_z_max: 0.0,
+        bfs_label: 1,
     };
 
     let rem = material_remaining_in_region(&material_stock, &surface_hm, 10.0, 0.5, &region);
@@ -2457,4 +2458,128 @@ fn level_anchor_reads_the_top_of_the_prior_stock() {
         }
     }
     assert_eq!(anchor(&stock, true), 14.0);
+}
+
+// ── By Area region map ───────────────────────────────────────────
+
+/// A heightfield mesh on a 1 mm grid over `[0, w] x [0, h]`: Z = 10 on the
+/// top face, Z = 0 inside each `(x0, y0, x1, y1)` pocket.
+fn make_pocket_plate(w: usize, h: usize, pockets: &[(f64, f64, f64, f64)]) -> TriangleMesh {
+    let z_at = |x: f64, y: f64| -> f64 {
+        if pockets
+            .iter()
+            .any(|&(x0, y0, x1, y1)| x >= x0 && x <= x1 && y >= y0 && y <= y1)
+        {
+            0.0
+        } else {
+            10.0
+        }
+    };
+    let mut vertices = Vec::with_capacity((w + 1) * (h + 1));
+    for j in 0..=h {
+        for i in 0..=w {
+            let (x, y) = (i as f64, j as f64);
+            vertices.push(P3::new(x, y, z_at(x, y)));
+        }
+    }
+    let mut triangles = Vec::with_capacity(w * h * 2);
+    let stride = (w + 1) as u32;
+    for j in 0..h as u32 {
+        for i in 0..w as u32 {
+            let a = j * stride + i;
+            let b = a + 1;
+            let c = a + stride + 1;
+            let d = a + stride;
+            triangles.push([a, b, c]);
+            triangles.push([a, c, d]);
+        }
+    }
+    TriangleMesh::from_raw(vertices, triangles)
+}
+
+/// The By Area planner records its detection. Two pockets under a plate
+/// whose top is the stock top are two regions; the larger one is region 1;
+/// each region's span carries its order as the `region_id`; the moves of
+/// region 1 stay in the region 1 box.
+#[test]
+fn by_area_exports_two_pocket_region_map() {
+    use crate::trace::toolpath_spans::{SpanKind, SpanPayload};
+
+    // Pocket A (30 x 30 mm) is larger than pocket B (25 x 20 mm).
+    let mesh = make_pocket_plate(80, 40, &[(5.0, 5.0, 35.0, 35.0), (45.0, 10.0, 70.0, 30.0)]);
+    let si = SpatialIndex::build(&mesh, 10.0);
+    let cutter = flat_cutter();
+    let mut params = default_params();
+    params.depth.stock_top_z = 10.0;
+    params.depth.depth_per_pass = 4.0;
+    params.linking.region_ordering = RegionOrdering::ByArea;
+
+    let out =
+        adaptive_3d_toolpath_output_with_cancel(&mesh, &si, &cutter, &params, &|| false, None)
+            .unwrap();
+    let map = out
+        .area_regions
+        .as_ref()
+        .expect("By Area records its regions");
+    assert_eq!(map.regions.len(), 2, "two pockets are two regions");
+    assert_eq!(map.labels.len(), map.rows * map.cols);
+    let (r1, r2) = (&map.regions[0], &map.regions[1]);
+    assert_eq!((r1.order, r2.order), (1, 2));
+    assert!(r1.cell_count > r2.cell_count, "the larger region is first");
+    // Region 1 is pocket A (x < 40), region 2 is pocket B (x > 40).
+    assert!(r1.bbox_xy[2] < 40.0, "region 1 box {:?}", r1.bbox_xy);
+    assert!(r2.bbox_xy[0] > 40.0, "region 2 box {:?}", r2.bbox_xy);
+    for r in &map.regions {
+        let cells = map.labels.iter().filter(|&&l| l == r.order).count();
+        assert_eq!(cells, r.cell_count, "label count of region {}", r.order);
+        assert!(r.level_count > 0, "region {} has levels", r.order);
+        let [z_top, z_bottom] = r.level_z_range.unwrap();
+        assert!(z_top >= z_bottom);
+    }
+    let run_cells: usize = map
+        .row_runs()
+        .iter()
+        .map(|run| run.col_end - run.col_start)
+        .sum();
+    assert_eq!(run_cells, r1.cell_count + r2.cell_count);
+
+    // The spans name the same orders, in the same sequence.
+    let spans = crate::compute::spans::spans_from_adaptive3d_annotations(
+        &out.annotations,
+        out.toolpath.moves.len(),
+    );
+    let region_spans: Vec<_> = spans
+        .iter()
+        .filter(|s| s.kind == SpanKind::Region && !s.is_boundary())
+        .collect();
+    let ids: Vec<u32> = region_spans
+        .iter()
+        .filter_map(|s| match &s.payload {
+            Some(SpanPayload::Region { region_id, .. }) => Some(*region_id),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(ids, vec![1, 2]);
+    assert_eq!(&*region_spans[0].label, "Adaptive region 1");
+
+    // Region 1's feed moves stay in the region 1 box plus one tool radius.
+    let slack = params.geometry.tool_radius + 0.5;
+    let first = region_spans[0];
+    for m in &out.toolpath.moves[first.start_move..first.end_move] {
+        if m.move_type == crate::toolpath::MoveType::Rapid {
+            continue;
+        }
+        assert!(
+            m.target.x <= r1.bbox_xy[2] + slack,
+            "a region 1 move at x {:.2} is outside the region 1 box",
+            m.target.x
+        );
+    }
+
+    // Global ordering records no regions.
+    params.linking.region_ordering = RegionOrdering::Global;
+    let global =
+        adaptive_3d_toolpath_output_with_cancel(&mesh, &si, &cutter, &params, &|| false, None)
+            .unwrap();
+    assert!(global.area_regions.is_none());
 }

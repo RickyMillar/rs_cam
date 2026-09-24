@@ -25,8 +25,10 @@ use tracing::info;
 
 mod clearing;
 mod path;
+mod region_map;
 mod search;
 use path::{adaptive_3d_segments, segments_to_toolpath};
+pub use region_map::{AreaRegion, AreaRegionMap, AreaRegionRun};
 
 // F-029 probe: re-export the planner-state probe for the F-029 acceptance
 // test. Internal — hidden from rustdoc. Will be removed once F-029 lands and
@@ -283,6 +285,8 @@ pub struct ZLevelPlanMetrics {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Adaptive3dRuntimeEvent {
     RegionStart {
+        /// The By Area region order, 1-based. It is the `order` of the
+        /// region in [`AreaRegionMap`] and the `region_id` of its span.
         region_index: usize,
         region_total: usize,
         cell_count: usize,
@@ -485,20 +489,28 @@ pub(crate) fn adaptive_3d_toolpath_annotated_with_cancel(
     adaptive_3d_toolpath_annotated_traced_with_cancel(mesh, index, cutter, params, cancel, None)
 }
 
-// Stage 4 — the third tuple element carries planner-predicted leading-arc
-// engagement samples `(cut_point, α/2π)`; empty for non-ContourSpiral
-// strategies. The return is a 3-tuple rather than a named struct to keep
-// the existing callers' destructuring; the `type_complexity` allow is
-// scoped to this one signature.
-#[allow(clippy::type_complexity)]
-pub fn adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
+/// The full output of one adaptive3d run.
+#[derive(Debug, Clone)]
+pub struct Adaptive3dOutput {
+    pub toolpath: Toolpath,
+    pub annotations: Vec<Adaptive3dRuntimeAnnotation>,
+    /// Stage 4 — planner-predicted leading-arc engagement samples
+    /// `(cut_point, α/2π)`; empty for non-ContourSpiral strategies.
+    pub planner_engagement: Vec<(P3, f64)>,
+    /// The regions that By Area detected. `None` for Global.
+    pub area_regions: Option<AreaRegionMap>,
+}
+
+/// Run the planner and return every output. The compute adapter calls
+/// this form.
+pub fn adaptive_3d_toolpath_output_with_cancel(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &Adaptive3dParams,
     cancel: &dyn CancelCheck,
     debug: Option<&ToolpathDebugContext>,
-) -> Result<(Toolpath, Vec<Adaptive3dRuntimeAnnotation>, Vec<(P3, f64)>), Cancelled> {
+) -> Result<Adaptive3dOutput, Cancelled> {
     let result = adaptive_3d_segments(mesh, index, cutter, params, debug, cancel)?;
     let segments = result.segments;
     let planner_engagement = result.planner_engagement;
@@ -520,7 +532,31 @@ pub fn adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
         "3D adaptive toolpath complete"
     );
 
-    Ok((tp, annotations, planner_engagement))
+    Ok(Adaptive3dOutput {
+        toolpath: tp,
+        annotations,
+        planner_engagement,
+        area_regions: result.area_regions,
+    })
+}
+
+// Stage 4 — the third tuple element carries planner-predicted leading-arc
+// engagement samples `(cut_point, α/2π)`; empty for non-ContourSpiral
+// strategies. The return is a 3-tuple rather than a named struct to keep
+// the existing callers' destructuring; the `type_complexity` allow is
+// scoped to this one signature.
+// SAFETY: the 3-tuple return keeps the destructuring of the existing callers.
+#[allow(clippy::type_complexity)]
+pub fn adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &Adaptive3dParams,
+    cancel: &dyn CancelCheck,
+    debug: Option<&ToolpathDebugContext>,
+) -> Result<(Toolpath, Vec<Adaptive3dRuntimeAnnotation>, Vec<(P3, f64)>), Cancelled> {
+    let out = adaptive_3d_toolpath_output_with_cancel(mesh, index, cutter, params, cancel, debug)?;
+    Ok((out.toolpath, out.annotations, out.planner_engagement))
 }
 
 pub fn adaptive_3d_toolpath_annotated_traced_with_cancel(

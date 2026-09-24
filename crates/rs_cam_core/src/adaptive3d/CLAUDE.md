@@ -14,7 +14,7 @@ Constant-engagement clearing on a mesh surface. The entry point is
 - `search.rs` — the material-remaining query, the clear-path test and two 3D
   path helpers. No direction search and no entry finding (those are in
   `clearing.rs` and `path.rs`); the sibling `adaptive/search.rs` has them.
-- `tests.rs` — the unit tests.
+- `region_map.rs` — the By Area map (overlay evidence); `tests.rs` — tests.
 
 ## Invariants
 

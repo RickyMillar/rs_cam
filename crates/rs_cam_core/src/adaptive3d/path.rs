@@ -84,8 +84,9 @@ use tracing::{debug, info};
 
 use super::clearing::{
     ClearZLevelContext, MaterialRegion, clear_z_level_adaptive, clear_z_level_agent_2d_slice,
-    clear_z_level_contour_parallel, detect_material_regions, waterline_cleanup,
+    clear_z_level_contour_parallel, detect_material_regions_labeled, waterline_cleanup,
 };
+use super::region_map::AreaRegionMap;
 use super::search::{blend_corners_3d, material_remaining_at_level_diag};
 
 use super::{
@@ -477,6 +478,9 @@ pub(super) struct Adaptive3dSegmentsResult {
     /// α/2π)` collected across all ContourSpiral slices. Empty for other
     /// strategies. Consumed by the feed modulator via positional lookup.
     pub planner_engagement: Vec<(P3, f64)>,
+    /// The regions that By Area detected, for the overlay and MCP. `None`
+    /// for Global. Evidence only: no planner stage reads it.
+    pub area_regions: Option<AreaRegionMap>,
     /// Test-only: planner's internal dexel state at the end of the run.
     #[allow(dead_code)]
     pub final_material_stock: TriDexelStock,
@@ -856,17 +860,22 @@ pub(super) fn adaptive_3d_segments(
     // returned for the feed modulator's positional lookup.
     let mut planner_eng: Vec<(P3, f64)> = Vec::new();
     let mut last_pos: Option<P3> = None;
+    let mut area_regions: Option<AreaRegionMap> = None;
 
     match params.linking.region_ordering {
         RegionOrdering::ByArea => {
             let region_scope =
                 debug_ctx.map(|ctx| ctx.start_span("region_detect", "Detect regions"));
-            let regions = detect_material_regions(
+            let (regions, bfs_labels) = detect_material_regions_labeled(
                 &material_stock,
                 &surface_hm,
                 params.depth.stock_to_leave,
                 tool_radius,
             );
+            // Record the detection for the overlay. No planner stage reads it.
+            let mut region_map =
+                AreaRegionMap::from_detection(&material_stock, &bfs_labels, &regions);
+            drop(bfs_labels);
             info!(
                 regions = regions.len(),
                 "Detected material regions for by-area ordering"
@@ -907,6 +916,10 @@ pub(super) fn adaptive_3d_segments(
                     .copied()
                     .filter(|&z| z >= region.surface_z_min + params.depth.stock_to_leave - 0.01)
                     .collect();
+                region_map.set_levels(
+                    u16::try_from(region_idx + 1).unwrap_or(u16::MAX),
+                    &region_levels,
+                );
 
                 for (li, &z_level) in region_levels.iter().enumerate() {
                     check_cancel(cancel)?;
@@ -927,6 +940,8 @@ pub(super) fn adaptive_3d_segments(
                     )?;
                 }
             }
+
+            area_regions = Some(region_map);
 
             // Waterline cleanup once at bottom Z, after every region.
             //
@@ -1013,6 +1028,7 @@ pub(super) fn adaptive_3d_segments(
     Ok(Adaptive3dSegmentsResult {
         segments,
         planner_engagement: planner_eng,
+        area_regions,
         final_material_stock: material_stock,
         surface_heightmap: surface_hm,
     })

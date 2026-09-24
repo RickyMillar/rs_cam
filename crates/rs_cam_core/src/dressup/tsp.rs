@@ -210,6 +210,7 @@ pub fn optimize_rapid_order(
         planner_engagement,
         rest_grid,
         rest_regions,
+        area_regions,
     } = annotated;
 
     if toolpath.moves.is_empty() {
@@ -220,6 +221,7 @@ pub fn optimize_rapid_order(
             planner_engagement,
             rest_grid,
             rest_regions,
+            area_regions,
         });
     }
 
@@ -290,6 +292,7 @@ pub fn optimize_rapid_order(
             planner_engagement,
             rest_grid,
             rest_regions,
+            area_regions,
         },
         remap,
     )

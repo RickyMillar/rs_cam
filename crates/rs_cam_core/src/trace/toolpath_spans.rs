@@ -491,6 +491,14 @@ pub struct AnnotatedToolpath {
     /// Frame contract: emission-frame coordinates; must be re-framed
     /// anywhere `toolpath.moves` are re-framed — see [`Self::translated`].
     pub rest_regions: Option<Arc<Vec<Polygon2>>>,
+    /// The regions that a 3D Rough with By Area ordering detected (label
+    /// grid + region list), for the viewport overlay and MCP
+    /// `inspect_spans`. `None` for every other operation and for Global
+    /// ordering. Evidence only: no downstream stage reads it.
+    ///
+    /// Frame contract: emission-frame coordinates; must be re-framed
+    /// anywhere `toolpath.moves` are re-framed — see [`Self::translated`].
+    pub area_regions: Option<Arc<crate::adaptive3d::AreaRegionMap>>,
 }
 
 impl AnnotatedToolpath {
@@ -504,6 +512,7 @@ impl AnnotatedToolpath {
             planner_engagement: Vec::new(),
             rest_grid: None,
             rest_regions: None,
+            area_regions: None,
         }
     }
 
@@ -515,6 +524,7 @@ impl AnnotatedToolpath {
             planner_engagement: Vec::new(),
             rest_grid: None,
             rest_regions: None,
+            area_regions: None,
         }
     }
 
@@ -541,6 +551,9 @@ impl AnnotatedToolpath {
     /// - `rest_regions` (if present): every exterior/hole point of every
     ///   polygon is shifted by `shift.x`/`shift.y` (XY-only — polygons carry
     ///   no Z).
+    /// - `area_regions` (if present): the grid origin, the region boxes and
+    ///   anchors shift in XY; the top Z and the region Z ranges shift by
+    ///   `shift.z`. The labels are cell-indexed and are untouched.
     /// - `spans` / `spans_valid` are move-index-based, not coordinate-based,
     ///   and are copied unchanged.
     pub fn translated(&self, shift: P3) -> Self {
@@ -551,6 +564,7 @@ impl AnnotatedToolpath {
             planner_engagement,
             rest_grid,
             rest_regions,
+            area_regions,
         } = self;
 
         let mut toolpath = toolpath.clone();
@@ -594,6 +608,11 @@ impl AnnotatedToolpath {
             regions
         });
 
+        let area_regions = area_regions.clone().map(|mut map| {
+            Arc::make_mut(&mut map).translate(shift.x, shift.y, shift.z);
+            map
+        });
+
         Self {
             toolpath,
             spans: spans.clone(),
@@ -601,6 +620,7 @@ impl AnnotatedToolpath {
             planner_engagement,
             rest_grid,
             rest_regions,
+            area_regions,
         }
     }
 

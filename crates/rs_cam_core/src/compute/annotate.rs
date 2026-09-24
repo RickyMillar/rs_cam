@@ -253,7 +253,8 @@ pub(super) fn annotate_adaptive3d(
                 }
                 let scope = op_context.start_item(
                     ToolpathSemanticKind::Region,
-                    format!("Region {}", region_index + 1),
+                    // `region_index` is already 1-based (the planner order).
+                    format!("Region {region_index}"),
                 );
                 scope.set_param(SemanticKey::RegionIndex, *region_index);
                 scope.set_param(SemanticKey::RegionTotal, *region_total);

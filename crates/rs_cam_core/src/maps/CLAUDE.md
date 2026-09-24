@@ -8,7 +8,7 @@ are `maps::tier_map::compute_tier_map` and `maps::reach_map::compute_reach_map`.
 - `mod.rs`, `grid.rs` — the facade, the grid and the row walk.
 - `tier_map.rs`, `tier_islands.rs` — the multi-tool tier label per cell, and
   the per-tier island sets. `reach_map.rs` — the per-tool reach map.
-- `rest_heatmap_mesh.rs` — a rest grid to a coloured quad mesh;
+- `rest_heatmap_mesh.rs` — a rest grid, tier map or By Area map to a mesh;
   `tool_shape_key.rs` — the bit-exact identity of a cutter shape.
 - `memo.rs`, `geom_cache.rs`, `tier_map_cache.rs`, `reach_map_cache.rs`,
   `finish_surface_cache.rs` — the bounded, mesh-identity memos.

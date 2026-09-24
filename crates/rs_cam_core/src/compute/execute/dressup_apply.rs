@@ -857,6 +857,7 @@ pub fn apply_dressups(
         planner_engagement: current.planner_engagement,
         rest_grid: current.rest_grid,
         rest_regions: current.rest_regions,
+        area_regions: current.area_regions,
     }
 }
 

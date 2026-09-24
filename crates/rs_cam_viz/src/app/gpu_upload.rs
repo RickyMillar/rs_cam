@@ -1591,6 +1591,7 @@ mod tests {
             planner_engagement: Vec::new(),
             rest_grid: None,
             rest_regions: None,
+            area_regions: None,
         };
 
         let shifted = translate_annotated(&annotated, P3::new(0.0, 0.0, 19.0));

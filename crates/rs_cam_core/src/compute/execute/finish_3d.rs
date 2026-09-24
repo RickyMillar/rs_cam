@@ -164,16 +164,20 @@ pub(crate) fn generate_adaptive3d(
         engagement_measure: cfg.engagement_measure,
         z_blend: cfg.z_blend,
     };
-    let (tp, annotations, planner_engagement) =
-        crate::adaptive3d::adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
-            m,
-            idx,
-            ctx.tool_def,
-            &params,
-            &(|| ctx.cancel.load(Ordering::SeqCst)),
-            ctx.debug_ctx,
-        )
-        .map_err(|_e| OperationError::Cancelled)?;
+    let crate::adaptive3d::Adaptive3dOutput {
+        toolpath: tp,
+        annotations,
+        planner_engagement,
+        area_regions,
+    } = crate::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
+        m,
+        idx,
+        ctx.tool_def,
+        &params,
+        &(|| ctx.cancel.load(Ordering::SeqCst)),
+        ctx.debug_ctx,
+    )
+    .map_err(|_e| OperationError::Cancelled)?;
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_adaptive3d(&annotations, &tp, sem);
     }
@@ -183,6 +187,9 @@ pub(crate) fn generate_adaptive3d(
     // AnnotatedToolpath so the feed modulator can read them post-dressup.
     let mut annotated = generated_with_spans(tp, spans);
     annotated.planner_engagement = planner_engagement;
+    // The By Area detection, for the viewport overlay and MCP. `None` for
+    // Global.
+    annotated.area_regions = area_regions.map(std::sync::Arc::new);
     Ok(annotated)
 }
 

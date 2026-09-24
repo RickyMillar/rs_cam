@@ -201,6 +201,7 @@ pub fn apply_entry(
         planner_engagement,
         rest_grid,
         rest_regions,
+        area_regions,
     } = annotated;
 
     let mut result = Toolpath::new();
@@ -300,6 +301,7 @@ pub fn apply_entry(
             planner_engagement,
             rest_grid,
             rest_regions,
+            area_regions,
         },
         remap,
     )
@@ -468,6 +470,7 @@ pub fn optimize_entry_descents_annotated(
         planner_engagement,
         rest_grid,
         rest_regions,
+        area_regions,
     } = annotated;
 
     let (split_count, mapping) = optimize_entry_descents_with_provenance(
@@ -494,6 +497,7 @@ pub fn optimize_entry_descents_annotated(
                 planner_engagement,
                 rest_grid,
                 rest_regions,
+                area_regions,
             },
             mapping,
         ),
@@ -1105,6 +1109,7 @@ pub fn apply_lead_in_out(
         planner_engagement,
         rest_grid,
         rest_regions,
+        area_regions,
     } = annotated;
     let mut result = Toolpath::new();
     let moves = &toolpath.moves;
@@ -1116,6 +1121,7 @@ pub fn apply_lead_in_out(
             planner_engagement,
             rest_grid,
             rest_regions,
+            area_regions,
         });
     }
 
@@ -1427,6 +1433,7 @@ pub fn apply_lead_in_out(
             planner_engagement,
             rest_grid,
             rest_regions,
+            area_regions,
         },
         remap,
     )
@@ -1464,6 +1471,7 @@ pub fn apply_dogbones(
         planner_engagement,
         rest_grid,
         rest_regions,
+        area_regions,
     } = annotated;
     let max_angle_rad = max_angle_deg.to_radians();
     let mut result = Toolpath::new();
@@ -1478,6 +1486,7 @@ pub fn apply_dogbones(
             planner_engagement,
             rest_grid,
             rest_regions,
+            area_regions,
         });
     }
 
@@ -1585,6 +1594,7 @@ pub fn apply_dogbones(
             planner_engagement,
             rest_grid,
             rest_regions,
+            area_regions,
         },
         remap,
     )
@@ -1651,6 +1661,7 @@ pub fn apply_link_moves(annotated: AnnotatedToolpath, params: &LinkMoveParams) -
         planner_engagement,
         rest_grid,
         rest_regions,
+        area_regions,
     } = annotated;
     let moves = &toolpath.moves;
     if moves.len() < 4 {
@@ -1661,6 +1672,7 @@ pub fn apply_link_moves(annotated: AnnotatedToolpath, params: &LinkMoveParams) -
             planner_engagement,
             rest_grid,
             rest_regions,
+            area_regions,
         });
     }
 
@@ -1785,6 +1797,7 @@ pub fn apply_link_moves(annotated: AnnotatedToolpath, params: &LinkMoveParams) -
             planner_engagement,
             rest_grid,
             rest_regions,
+            area_regions,
         },
         remap,
     )
@@ -1996,6 +2009,7 @@ pub fn filter_air_cuts(
         planner_engagement,
         rest_grid,
         rest_regions,
+        area_regions,
     } = annotated;
     let moves = &toolpath.moves;
     if moves.is_empty() {
@@ -2006,6 +2020,7 @@ pub fn filter_air_cuts(
             planner_engagement,
             rest_grid,
             rest_regions,
+            area_regions,
         });
     }
 
@@ -2177,6 +2192,7 @@ pub fn filter_air_cuts(
             planner_engagement,
             rest_grid,
             rest_regions,
+            area_regions,
         },
         remap,
     )
