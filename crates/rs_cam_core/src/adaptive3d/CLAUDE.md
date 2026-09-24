@@ -10,11 +10,10 @@ Constant-engagement clearing on a mesh surface. The entry point is
   AgentSearch slice runs three stages (CUT-09): `detect_and_order_regions`,
   `clear_one_region` per region over a `LevelEmission`, then
   `coalesce_level_entries`. Put new per-region work in the middle stage.
-- `path.rs` — the loop over Z levels and the segment linking.
-- `search.rs` — the material-remaining query, the clear-path test and two
-  3D path helpers. It holds no direction search and no entry-point finding;
-  those live in `clearing.rs` and `path.rs`. The sibling `adaptive/search.rs`
-  does hold them, so the two file names do different jobs.
+- `path.rs` — the step-ladder schedule, the level loop, the segment linking.
+- `search.rs` — the material-remaining query, the clear-path test and two 3D
+  path helpers. No direction search and no entry finding (those are in
+  `clearing.rs` and `path.rs`); the sibling `adaptive/search.rs` has them.
 - `tests.rs` — the unit tests.
 
 ## Invariants
@@ -38,3 +37,4 @@ Constant-engagement clearing on a mesh surface. The entry point is
 - `cargo test -p rs_cam_core -q --test adaptive3d_entry_coalescing_f038`
 - `cargo test -p rs_cam_core -q --test agent_search_coverage`
 - `cargo test -p rs_cam_core -q --test adaptive3d_subtool_channel_gouge`
+- `cargo test -p rs_cam_core -q --test adaptive3d_step_ladder` (the ladder)
