@@ -55,14 +55,14 @@ and a refused adopt keeps it (`controller/events/compute.rs:583-613`).
 
 **G-RESTRES: confirmed, with one correction.** The result does record a cell
 and a digest (S-4), but no surface shows it and no rule reads it. Causes:
-1. The snapshot cell depends on the plan scope: the rest rule reads only this
-   plan's Simulate steps, and GUI auto reads only this request's tools.
+1. The cell depends on the plan scope: the rest rule reads only this plan's
+   Simulate steps; GUI auto reads only this request's tools.
 2. The scallop's plan simulates at 0.2 mm and stores a snapshot for EVERY
    carved entry, the rough included. A later Generate on the rough plans no
    Simulate (key present), so the rough reads a 0.2 mm Face stock.
 3. A snapshot has no provenance, so `plan`, `state` and `start` cannot tell
-   0.2 mm from 0.5 mm, and a simulation at another cell drops nothing.
-4. The project file has no key: the CLI takes an argument, the GUI a GUI dial.
+   0.2 mm from 0.5 mm; a simulation at another cell drops nothing.
+4. The project file has no key: the CLI takes an argument, the GUI a dial.
 
 **G-RESTSTALE: three candidate paths. RESULTS says only "at the restore".
 NOT MEASURED.** Each gives the scallop B5's count:
@@ -79,7 +79,8 @@ NOT MEASURED.** Each gives the scallop B5's count:
 - **M-B (held result).** A disabled consumer has no Stock edge, so an edit
   above it does not drop it, and re-enable keeps it. The scallop was
   disabled in Phase 1.
-§3 closes all three. §5 has one reproduction test for each.
+Load is not a door for M-C: it seeds `rt` with no result
+(`controller/io.rs:469-474`). §3 closes all three. §5 has one reproduction test for each.
 
 ## 3. Design
 
@@ -90,19 +91,30 @@ for `Auto`, so old files load. One function,
 `ProjectSession::simulation_resolution_mm()`, gives the cell for EVERY
 simulation: plan prefixes, the closing SimulateAll, Run Simulation, the CLI.
 `Auto` is project-wide, never per scope or request: min(tool rule, rest rule),
-where tool rule = smallest enabled tool radius / 5, clamp [0.02, 0.5], grid
-cap (today's formula), and rest rule = finest TIP radius / 5 over enabled
+where tool rule = smallest tool radius over enabled ops (generated or not) / 5,
+clamp [0.02, 0.5], grid cap (today's formula), and rest rule = finest TIP radius / 5 over enabled
 `FromRemainingStock` ops, floor 0.02 (R1's rule). The two auto copies call it
 or go. `Command::SetSimulationResolution` is the one setter; it drops the
-simulation (epoch bump), then runs the §3.3 sweep.
+simulation (epoch bump), then runs the §3.3 sweep. The panel slider keeps a
+draft and sends ONE command on release, not one per drag frame (the
+`panel_drafts_leave_egui_memory_ui09` / `egui_draw_sites_..._wp6` pattern).
 
 **3.2 The recorded source stock.** `SourceStock { cell_mm, after:
-Vec<SourceEntry { id, revision, stock: Option<StockSnapshotStamp> }> }`.
+Vec<SourceEntry { id, output: u64, stock: Option<StockSnapshotStamp> }> }`.
 `after` lists, in carve order, every enabled op the simulator carves before
-the consumer: all earlier setups (R2), then the rows above it. `revision`
-fixes a predecessor's inputs and its `stock` stamp fixes what it read, so a
-regenerate with equal inputs and equal stock keeps the identity, and a
+the consumer: all earlier setups (R2), then the rows above it. `output` is a
+content digest of the predecessor's emitted toolpath (one pass, like
+`StockSnapshotStamp::of`), not its revision: `drop_result` bumps a revision
+on every call (`mutation/toolpath.rs:827`), and the D1 walk calls it on
+Regions consumers, so a revision would stale a chain whose carve did not
+move. Tool, setup and stock edits already drop the simulation and the chain
+through the walker. So an equal regenerate keeps the identity, and a
 re-simulation that changes nothing stales nothing.
+- `cell_mm` on BOTH sides comes from one function that applies the
+  simulator's grid clamp (`DexelGrid::would_exceed_grid`, `stock/dexel.rs`;
+  `simulate.rs:1375`). If one side used the stored cell and the other the
+  clamped cell, a `Fixed` below the cap would never match, and the sweep
+  would drop every rest result after every simulation.
 - `ProjectSession::expected_source(id)` derives it from the current state;
   `None` when an op in `after` has no result.
 - Both builders record `sources: HashMap<ToolpathId, SourceStock>` at SUBMIT
@@ -113,12 +125,16 @@ re-simulation that changes nothing stales nothing.
   `expected_source(id)`. `start()`, `plan()` and `dependencies::state` read
   it. `start()` refuses a stale snapshot and names the reason (cell, or the
   op that changed), and writes `stats.source_stock` beside `stock_snapshot`.
-- The GUI builder carves `session.results` (M-C). `rt.result` stays for the
-  viewport only.
+- The GUI builder takes geometry and `drill_op` from `session.results`
+  (M-C), and the semantic trace from `rt` by id only when `rt`'s annotated
+  `Arc` is the core one. `rt.result` stays for the viewport. (Ledger item,
+  not this package: the core builder already carves GUI-adopted results
+  with no trace, because viz adopts `semantic_trace: None`, `compute.rs:566`.)
 
 **3.3 The stale rule.** A rest result is out of date when its
 `stats.source_stock` differs from `expected_source`. One function,
-`rest_results_out_of_date()`, runs at the end of `ProjectSession::apply`. It
+`rest_results_out_of_date()`, runs at the end of `ProjectSession::apply`,
+INSIDE the `try_with_effects` closure so the revision diff reports it. It
 drops each hit, walks dependents with the pure `walk_output_dependents` (no
 simulation drop), and adds them to `Effects.stale`. It covers M-A, M-B, a
 stored-value change, and an `Auto` cell that moves after a tool or op edit.
@@ -140,10 +156,9 @@ and `summary.json` carry `simulation_resolution {mode, mm, source}`.
 ## 4. The gen_sim_rest_ux rulings
 
 - **R1** holds in intent (the panel is the standing choice; auto takes the
-  finer of auto and required; a coarser pinned value asks). Three details
-  change because of the 2026-09-24 ruling (2): the panel becomes project
-  state; auto becomes project-wide, not per request (IMPL_W1 §3); "MCP keeps
-  its explicit argument" goes.
+  finer of auto and required; a coarser pinned value asks). Ruling (2) of
+  2026-09-24 changes three details: the panel is project state; auto is
+  project-wide (IMPL_W1 §3 said per request); "MCP keeps its argument" goes.
 - **A/M10** and `rs_cam_cli/CLAUDE.md` ("refused, never defaulted") conflict
   with ruling (2). The stored value is a recorded choice, not a silent
   default. I update both texts and retire `REST_NEEDS_RESOLUTION` (Q4).
@@ -157,8 +172,9 @@ Core, new `rs_cam_core/tests/rest_stock_identity_g_restres.rs`:
 1. The result records the stored cell; the plan walk needs no argument.
 2. `SetSimulationResolution` drops the rest result and the simulation;
    `Effects.stale` names it.
-3. Idempotency: re-simulate at the same cell over the same results; nothing
-   drops, and `plan()` emits zero Simulate steps.
+3. Idempotency: re-simulate at the same cell over the same results, and
+   regenerate a predecessor with equal output; nothing drops, and `plan()`
+   emits zero Simulate steps. Repeat with a `Fixed` cell below the grid cap.
 4. M-A: a predecessor adopts a new identity with no edit; the consumer drops,
    `plan()` emits Simulate, `start()` refuses the old snapshot.
 5. M-B: disable the consumer, change the predecessor, re-enable: no result.
@@ -171,17 +187,14 @@ Viz, new `rs_cam_viz/tests/rest_sim_reads_core_results_g_reststale.rs`:
    `stock_snapshot` digest, equal `source_stock` (precedent
    `export_parity_core_vs_gui_p0.rs`). In `rs_cam_cli`: `run_generation_plan`
    with no `--resolution` gives the same digest.
-Sentries (`scripts/cargo_lane.sh`, one job at a time): core `--test`
-`command_registry_completeness`, `mutation_paths_invalidate_alike_p0`,
-`adopt_result_rejects_stale_completion`, `stale_set_has_one_answer_wp28`,
-`dependency_edges_are_the_walker_dep1`, `generation_plan_is_the_edge_walk_w0b`,
-`a_late_simulation_does_not_refill_the_core_d7`,
-`adopt_simulation_stores_prior_stocks`, `save_keeps_the_simulation_wp17`,
-`sim_prefix_memo_s5`; core `--lib session::`; viz `generate_all_fixpoint_parity`,
-`mcp_wire_surface_pin`, `command_registry_surfaces`, `command_surface_completeness`,
-`egui_draw_sites_write_through_commands_wp6`, `connector_reads_edge_state_g_connector`,
-`awaiting_prior_stock_has_one_shape_d4`, viz lib; `rs_cam_cli -q`;
-`rs_cam_mcp -q`; workspace clippy; fmt. No heavy gate.
+Sentries (`scripts/cargo_lane.sh`, one job at a time, no heavy gate): the
+seven `session/CLAUDE.md` sentries, `adopt_simulation_stores_prior_stocks`,
+`save_keeps_the_simulation_wp17`, `sim_prefix_memo_s5`, core `--lib session::`;
+viz `generate_all_fixpoint_parity`, `mcp_wire_surface_pin`,
+`command_registry_surfaces`, `command_surface_completeness`,
+`egui_draw_sites_write_through_commands_wp6`,
+`connector_reads_edge_state_g_connector`, `awaiting_prior_stock_has_one_shape_d4`,
+viz lib; `rs_cam_cli -q`; `rs_cam_mcp -q`; workspace clippy; fmt.
 
 ## 6. Files and commits (blast radius from `rg`)
 
@@ -199,26 +212,25 @@ Sentries (`scripts/cargo_lane.sh`, one job at a time): core `--test`
    `controller/generate_all.rs` (`PlanResolution`, `require_resolution`: 11
    hits, 3 files), `state/simulation.rs`, `state/simulation/playback_state.rs`,
    `ui/sim_op_list.rs`, `app/simulation.rs`, `app/mcp/{simulation,diagnostics,
-   project}.rs`, `mcp_server.rs`, tests 8-9.
+   project,generation}.rs`, `ui/mod.rs` (event origin), `mcp_server.rs`,
+   tests 8-9.
 4. **wire + CLI.** `rs_cam_mcp/src/server.rs`, `tests/mcp_wire_surface.json`,
    `rs_cam_cli/src/{project,main,rough_score}.rs`, `compute/config.rs`
    (`REST_NEEDS_RESOLUTION`: 11 hits, 4 files), `rs_cam_cli/CLAUDE.md`. The
    commit states the break: MCP param meaning and the CLI refusal change; the
    file format does not break.
 
-Not touched: `feeds/*`, `tool_load/*`, `data/vendor_lut/*`, `material/mod.rs`,
-`adaptive3d/*`, `compute/execute/finish_3d.rs`, `compute/operation_configs.rs`,
-`compute/catalog/registry.rs`, `rs_cam_cli/src/{job,sweep}.rs`,
-`ui/properties/operations/surface_3d.rs`. Named, not fixed:
+No file on the two avoid lists is touched. Named, not fixed:
 `tool_load/optimize/outcome.rs` sets `auto_resolution` for its isolated runs
 (a parity gap for the power session); `smoke.rs` keeps its explicit cell.
 
 ## 7. Open questions (each with a recommendation)
 
 - **Q1** One stored value for every simulation, or a rest-only value beside
-  the panel? **One.** The parity ruling covers simulation metrics too, and a
-  simulation at another cell then happens only after a stored change, which
-  stales (ruling 1).
+  the panel? **One.** The parity ruling covers simulation metrics too. Note:
+  this stales rest results on the DIAL change, which is stronger than the
+  ruling's words ("a simulation at another resolution"). With one stored
+  cell the two are the same event, so I recommend it.
 - **Q2** Store `Auto` as a mode (key absent), or always write the number?
   **Mode.** A tool change then moves the cell and stales honestly. Every
   output prints the resolved number and its source.
@@ -228,7 +240,8 @@ Not touched: `feeds/*`, `tool_load/*`, `data/vendor_lut/*`, `material/mod.rs`,
 - **Q4** Retire the MCP/CLI "resolution required" refusal (A/M10) and keep
   only "coarser than the rest needs" (GUI asks, MCP/CLI refuse)? **Yes.**
 - **Q5** Fold G-MCPMODAL in (an MCP-origin plan never opens the modal)?
-  **Yes**; the same function changes.
+  **Yes.** `AppEvent::GenerateToolpath` (`ui/mod.rs:151`) then carries an
+  origin from `app/mcp/generation.rs:822` to `start_gui_plan`.
 - **Q6** Drop an out-of-date result (row reads WAIT), or flag it? **Drop.**
   Freshness, the rail and export read `get_result().is_some()`; a flag is a
   second truth.
