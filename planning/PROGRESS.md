@@ -76,7 +76,14 @@ instrument, 9699f0d5) on the rivmap100 demo copy.
 - 2026-09-25: GUI release at 40f2b744 installed. Operator look found an
   entry defect: at a helix entry the tool feeds straight down through
   standing stock (rivmap100 span 59, Z 12 -> 7.8), then helixes in air;
-  `project.entry_load` 448 samples, peak 6.08 mm. Fix in progress.
+  `project.entry_load` 448 samples, peak 6.08 mm. FIXED fc82d85f: the
+  cause was the rapid-order dressup, which reordered 3D Rough runs after
+  planning, so entries met stock the planner had seen cut. 3D Rough now
+  refuses rapid reorder (as Face does); the GUI box greys out (984dec55).
+  rivmap100 dpp 8: 580 -> 595 s; entry samples > 2x bite 448 -> 0; peak
+  entry bite 6.08 -> 1.61 mm. Sentry
+  `session_rough_keeps_the_planner_order_for_its_entries`. Open: does 2D
+  Adaptive have the same defect (it still allows the reorder)?
 - 2026-09-25: By Area pocket tree measured
   (`planning/by_area_merge_tree_2026-09-25/`, 6f52d7a3): 3 valleys at
   h 2 mm / 400 mm² where By Area finds 1. Phase 3 blocker: the planner
