@@ -471,7 +471,17 @@ pub(super) fn rescale_feed_to_final_geometry(
         let divisor = rpm * flutes;
         if divisor > 0.0 {
             let commanded = rescaled / divisor;
-            let (floor, source) = crate::feeds::rubbing_floor(context.chipload_bounds);
+            // A2: with no band, the floor reads the printed point of the
+            // matched row at the deepest step that ships.
+            let point = operation.deepest_axial_step().and_then(|dpp| {
+                super::axial_envelope::chip_point_for_dpp(
+                    context.matched_lut_row,
+                    context.effective_diameter_mm,
+                    operation,
+                    dpp,
+                )
+            });
+            let (floor, source) = crate::feeds::rubbing_floor_at(context.chipload_bounds, point);
             if commanded > 0.0 && commanded < floor {
                 warnings.push(SuggestWarning::FeedClampedToChiploadFloor {
                     requested_mm_per_tooth: commanded,

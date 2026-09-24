@@ -526,6 +526,9 @@ fn the_fallback_lowers_the_floor_only_to_a_published_bound() {
                                         Src::BandMinimum => *band_min,
                                         Src::BandMaximum => *band_max,
                                         Src::RepoConstant => None,
+                                        // A2: a point floor carries no band, so
+                                        // `band_max.is_some()` above keeps it out.
+                                        Src::PrintedPoint => None,
                                     };
                                     if bound.is_none_or(|b| (b - floor).abs() > 1e-9) {
                                         unexplained.push(format!(

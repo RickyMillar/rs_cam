@@ -889,6 +889,11 @@ impl BoundSource {
                     "the vendor chip band {floor:.4} to {ceiling_mm_per_tooth:.4} mm/tooth ({})",
                     source.row_id()
                 ),
+                // A2: a point is one printed value, not a band.
+                None if *source == ChipBoundsSource::VendorLutPointPreset => format!(
+                    "the printed point {ceiling_mm_per_tooth:.4} mm/tooth, no band ({})",
+                    source.row_id()
+                ),
                 None => format!(
                     "the vendor chip band, ceiling {ceiling_mm_per_tooth:.4} mm/tooth, \
                      no published floor ({})",
@@ -1270,10 +1275,12 @@ pub enum ChipBoundsSource {
     /// The diagnostic detail (scale factors, calibrated row id) lives
     /// on the verdict's `Confidence::Approximate` payload.
     VendorLutExtrapolated,
-    /// F3.3 (defect class C1) — the matched row publishes a
-    /// single-point "range" (raw min == max): a nominal preset, not a
-    /// calibrated envelope. The implied burn floor is fabricated
-    /// precision.
+    /// One printed value (A2, point mode): the matched row prints a
+    /// maximum only, or two equal limits. The bounds carry no minimum
+    /// (a point is not a band). The high side is a hard trip at the
+    /// point. A median chip below the point gives a burn advisory only
+    /// ([`ChipBounds::burn_reference_mm`]), because no vendor printed a
+    /// minimum.
     VendorLutPointPreset,
     /// F3.3 — the matched row carries no `ae_min`/`ae_max`
     /// calibration, so the engagement-arc normalization was skipped
@@ -1393,6 +1400,33 @@ impl ChipBounds {
             .map(|min| super::boundary::below_low(observed, min, burn_tolerance))
     }
 
+    /// The value the burn side reads (A2). It is the band minimum when
+    /// one exists. For a point (`VendorLutPointPreset` with no minimum) it
+    /// is the printed point, `max_mm_per_tooth`. Otherwise `None`.
+    ///
+    /// A point is not a band: [`Self::below_low`] and [`Self::contains`]
+    /// still see no minimum. Only the gate's burn advisory reads this
+    /// value, and for a point that advisory never becomes `Exceeds(Low)`
+    /// (`ChipBoundsSource::low_side_is_advisory`).
+    #[must_use]
+    pub fn burn_reference_mm(&self) -> Option<f64> {
+        self.min_mm_per_tooth.or_else(|| {
+            (self.source == ChipBoundsSource::VendorLutPointPreset).then_some(self.max_mm_per_tooth)
+        })
+    }
+
+    /// The name of [`Self::burn_reference_mm`] in operator text: "printed
+    /// point" for a point, "burn floor" for a band minimum.
+    #[must_use]
+    pub fn burn_reference_label(&self) -> &'static str {
+        if self.min_mm_per_tooth.is_none() && self.source == ChipBoundsSource::VendorLutPointPreset
+        {
+            "printed point"
+        } else {
+            "burn floor"
+        }
+    }
+
     /// `true` when `observed` trips neither side at zero tolerance. A
     /// row with no minimum can only fail on the high side.
     #[must_use]
@@ -1429,9 +1463,10 @@ pub struct ChiploadMetric {
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum ChiploadVerdict {
     Within {
-        /// Distance-to-min metric. `None` when the matched row has no
-        /// `chip_load_min_mm` — burn-risk arm is `Unmodeled` for that
-        /// row.
+        /// Distance-to-min metric. `None` when the matched row prints no
+        /// minimum — burn-risk arm is `Unmodeled` for that row. A point
+        /// row (A2) also has `None`; its burn check is the advisory only
+        /// (`burn_advisory`, against the printed point).
         approach_to_min: Option<ChiploadMetric>,
         /// Distance-to-max metric. Always present (the evaluator
         /// rejects rows with no max).

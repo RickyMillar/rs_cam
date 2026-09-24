@@ -260,12 +260,16 @@ fn chipload_to_diagnostic(
             let provenance = row_provenance_clause(explanation);
             let vacuity = vacuity_clause(&approach_to_max.evidence);
             let message = match burn_advisory.as_deref() {
+                // A2: for a point row the reference is "the printed
+                // point" (`ChipBounds::burn_reference_mm`); the bounds
+                // carry no minimum.
                 Some(advisory) => format!(
-                    "Observed feed-per-tooth {:.4} mm is BELOW the {:.4} mm/tooth burn floor \
-                     — not refused because the floor's provenance is {} (advisory only)\
+                    "Observed feed-per-tooth {:.4} mm is BELOW the {:.4} mm/tooth {} \
+                     — not refused because its provenance is {} (advisory only)\
                      {qualifier}{provenance}",
                     advisory.observed_mm_per_tooth,
-                    advisory.bounds.min_mm_per_tooth.unwrap_or(f64::NAN),
+                    advisory.bounds.burn_reference_mm().unwrap_or(f64::NAN),
+                    advisory.bounds.burn_reference_label(),
                     advisory.bounds.source.row_id(),
                 ),
                 None => format!(

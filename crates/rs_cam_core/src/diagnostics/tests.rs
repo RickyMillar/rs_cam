@@ -665,6 +665,7 @@ fn feeds_hint_emits_high_feed_ratio() {
         },
         chipload_source: ChiploadSource::FormulaFallback,
         chipload_bounds: None,
+        chipload_point_mm: None,
         matched_lut_row: None,
         effective_diameter_mm: 6.0,
         derates: crate::feeds::FeedsDerates::default(),

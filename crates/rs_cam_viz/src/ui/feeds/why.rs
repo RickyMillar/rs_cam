@@ -404,7 +404,8 @@ fn explain_advance(out: &mut String, explain: &FeedsExplain, applied: &AppliedRe
     }
 
     // Where it landed. A band only when the row publishes both limits
-    // (G-CHARTLINES); a one-value row names its one value and claims no band.
+    // (G-CHARTLINES); a one-value row names its one value as a point (A2)
+    // and claims no band.
     if effective > 0.0 {
         if let Some((lo, hi)) = vendor_band(explain) {
             out.push_str(&format!(
@@ -413,8 +414,8 @@ fn explain_advance(out: &mut String, explain: &FeedsExplain, applied: &AppliedRe
             ));
         } else if let Some(value) = vendor_single_value(explain) {
             out.push_str(&format!(
-                "Vendor value {value:.4} (the row publishes one value); this sits \
-                 at {:.0}% of it.\n",
+                "Vendor value {value:.4} (one printed value, held as a point; no \
+                 band); this sits at {:.0}% of it.\n",
                 (effective / value) * 100.0
             ));
         }

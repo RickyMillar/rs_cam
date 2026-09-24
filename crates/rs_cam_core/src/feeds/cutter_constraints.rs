@@ -124,7 +124,7 @@ pub struct CutterAxialConstraints {
     /// Minimum axial DOC before arc-mean chip thickness drops below
     /// `chipload_min` (burn / rubbing risk). `None` for flat endmills
     /// (chip thickness has no axial dependence) and when no LUT row
-    /// supplies a `chip_load_min_mm`.
+    /// prints a band (a point has no minimum, A2).
     pub min_doc_chipload_floor_mm: Option<f64>,
     /// Which `max_doc_*` field produced [`safe_max_doc_mm`](Self::safe_max_doc_mm).
     /// [`AxialBindingConstraint::SafeBandEmpty`] when
@@ -219,8 +219,11 @@ pub fn cutter_axial_constraints(
         .filter(|h| *h > 0.0)
         .and_then(|h| max_doc_scallop(geometry, h));
 
+    // A2 (Q8): only a printed band has a minimum; a point gives no floor.
+    // The 3 grade-c idcwoodcraft ball rows lose this floor as a result.
     let min_doc_chipload_floor_mm = lut_row
-        .and_then(|row| row.chip_load_min_mm)
+        .and_then(|row| row.printed_chipload().band_mm())
+        .map(|(cl_min, _)| cl_min)
         .filter(|&cl_min| cl_min > 0.0)
         .filter(|_| feed_per_tooth_mm > 0.0)
         .and_then(|cl_min| {

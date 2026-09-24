@@ -40,7 +40,8 @@ pub struct LookupResult {
     /// Scaled chipload midpoint (mm/tooth).
     pub chip_load_mm: f64,
     /// Scaled lower bound of the observation's chipload range, if reported.
-    /// Below this is rubbing/burning territory.
+    /// Below this is rubbing/burning territory. A row that prints one value
+    /// (`min == max`) gets `None` here (A2): read [`Self::printed_chipload`].
     pub chip_load_min_mm: Option<f64>,
     /// Scaled upper bound of the observation's chipload range, if reported.
     /// Above this is breakage territory.
@@ -149,6 +150,62 @@ pub struct LookupResult {
     pub evidence_grade: EvidenceGrade,
     /// The matched row's kind (exact, derived or fallback).
     pub row_kind: ObservationKind,
+}
+
+/// The printed chipload of a matched row, classified (A2, point mode).
+///
+/// A vendor that prints one value gives a point, not a band. No consumer
+/// derives a band from a point.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PrintedChipload {
+    /// Two printed limits with `min_mm < max_mm` (scaled).
+    Band { min_mm: f64, max_mm: f64 },
+    /// One printed value (scaled): a maximum only, a minimum only, or
+    /// two equal limits.
+    Point { value_mm: f64 },
+    /// No printed chipload (or a refused size basis).
+    Unpublished,
+}
+
+impl PrintedChipload {
+    /// The point value, or `None` for a band or no print.
+    pub fn point_mm(self) -> Option<f64> {
+        match self {
+            Self::Point { value_mm } => Some(value_mm),
+            _ => None,
+        }
+    }
+
+    /// The band limits `(min, max)`, or `None` for a point or no print.
+    pub fn band_mm(self) -> Option<(f64, f64)> {
+        match self {
+            Self::Band { min_mm, max_mm } => Some((min_mm, max_mm)),
+            _ => None,
+        }
+    }
+}
+
+impl LookupResult {
+    /// Classify the two stored limits as a band, a point or no print.
+    ///
+    /// - Both limits with `lo < hi` give `Band`.
+    /// - One limit, or `lo == hi`, gives `Point`.
+    /// - Anything else gives `Unpublished`.
+    pub fn printed_chipload(&self) -> PrintedChipload {
+        let finite_pos = |v: f64| v.is_finite() && v > 0.0;
+        match (
+            self.chip_load_min_mm.filter(|v| finite_pos(*v)),
+            self.chip_load_max_mm.filter(|v| finite_pos(*v)),
+        ) {
+            (Some(lo), Some(hi)) if lo < hi => PrintedChipload::Band {
+                min_mm: lo,
+                max_mm: hi,
+            },
+            (Some(lo), Some(hi)) if lo == hi => PrintedChipload::Point { value_mm: hi },
+            (None, Some(v)) | (Some(v), None) => PrintedChipload::Point { value_mm: v },
+            _ => PrintedChipload::Unpublished,
+        }
+    }
 }
 
 /// Diameter + hardness-scored LUT lookup for non-angle-aware cutters.
@@ -514,9 +571,13 @@ fn build_result(
         } else {
             chipload_midpoint(obs) * total_scale
         },
+        // A2: a row that prints one value (min == max) is a point. The
+        // minimum becomes `None`, so a point always reaches consumers as
+        // "max present, min absent" (`LookupResult::printed_chipload`).
         chip_load_min_mm: obs
             .chipload_min_mm_tooth
             .filter(|_| !refused)
+            .filter(|&lo| obs.chipload_max_mm_tooth != Some(lo))
             .map(|v| v * total_scale),
         chip_load_max_mm: obs
             .chipload_max_mm_tooth

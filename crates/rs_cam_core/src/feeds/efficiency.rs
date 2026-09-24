@@ -54,7 +54,7 @@
 use crate::compute::catalog::OperationConfig;
 use crate::compute::tool_config::ToolConfig;
 use crate::feeds::quantities::{AdvancePerToothMm, ChiploadBandClass, VendorChiploadBand};
-use crate::feeds::{ChiploadBounds, FeedsResult, effective_rubbing_floor, force};
+use crate::feeds::{ChiploadBounds, FeedsResult, force, rubbing_floor_at};
 use crate::machine::MachineProfile;
 use crate::material::Material;
 use crate::tool_load::deflection::EXCEEDS_BOUND_MM;
@@ -104,8 +104,8 @@ pub struct CutEfficiency {
     /// usable bounds. Every ratio below is derived from this band, so a
     /// `None` here and a `None` ratio always agree.
     pub band: Option<ChiploadBounds>,
-    /// The chip-formation floor this band implies —
-    /// [`effective_rubbing_floor`]. Below it the cutter burnishes
+    /// The chip-formation floor this band implies, or the printed point
+    /// when no band exists (A2) — [`rubbing_floor_at`]. Below it the cutter burnishes
     /// instead of cutting.
     pub rubbing_floor_mm: f64,
     /// The largest advance per tooth (mm) that keeps the predicted tip
@@ -250,7 +250,8 @@ pub fn cut_efficiency(
         ploughing_share,
         verdict,
         band,
-        rubbing_floor_mm: effective_rubbing_floor(band),
+        // A2: with no band, a printed point sets the floor.
+        rubbing_floor_mm: rubbing_floor_at(band, result.chipload_point_mm).0,
         deflection_ceiling_mm,
         wear_ratio_vs_band_mid,
         time_ratio_vs_band_mid,

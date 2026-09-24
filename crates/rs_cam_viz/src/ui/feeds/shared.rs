@@ -385,15 +385,12 @@ pub(crate) fn vendor_band(explain: &FeedsExplain) -> Option<(f64, f64)> {
 ///
 /// `None` when the row publishes a band (use [`vendor_band`]), when no row
 /// matched, or when the row publishes no chipload. A max-only row gives its
-/// maximum. A point row gives its one point.
+/// maximum. A point row gives its one point. The rule is
+/// `FeedsExplain::published_chipload_point` in core (A2).
 pub(crate) fn vendor_single_value(explain: &FeedsExplain) -> Option<f64> {
-    if vendor_band(explain).is_some() {
-        return None;
-    }
-    let row = explain.matched_row.as_ref()?;
-    row.chip_load_max_mm
-        .or(row.chip_load_min_mm)
-        .filter(|value| value.is_finite() && *value > 0.0)
+    // A2: the core classifies the row (`LookupResult::printed_chipload`);
+    // a point is never a band, so this reads the point alone.
+    explain.published_chipload_point()
 }
 
 /// For tapered-ball / V-bit tools, describe the engaged cutting diameter

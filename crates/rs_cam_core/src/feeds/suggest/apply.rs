@@ -671,6 +671,9 @@ impl ApplicableRecommendation<'_> {
         owned.feed_rate_mm_min = feed_mm_min.max(1.0);
         owned.rpm = rpm.max(1.0);
         owned.chipload_bounds = None;
+        // A2: the point goes with the band. An explored feed is the
+        // operator's, so no printed chipload describes it.
+        owned.chipload_point_mm = None;
         Self {
             result: std::borrow::Cow::Owned(owned),
             speeds_explored: true,

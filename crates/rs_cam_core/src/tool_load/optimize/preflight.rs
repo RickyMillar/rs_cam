@@ -92,12 +92,16 @@ pub(crate) fn preflight_classify(
         }
     }
 
-    // 2. Bipolar chipload — needs both LUT bounds to be defined,
+    // 2. Bipolar chipload — needs a printed band (two limits, min < max),
     //    otherwise we can't classify against an undefined floor or
-    //    ceiling. Many vendor rows publish only `chip_load_max_mm`,
-    //    so this gate is opt-in by row coverage.
+    //    ceiling. A point (one printed value, A2) has no floor, so a
+    //    spread either side of it is not bipolar. Many vendor rows print
+    //    one value only, so this gate is opt-in by row coverage.
     if let Some(row) = matched_lut_row
-        && let (Some(cl_min), Some(cl_max)) = (row.chip_load_min_mm, row.chip_load_max_mm)
+        && let crate::feeds::vendor_lookup::PrintedChipload::Band {
+            min_mm: cl_min,
+            max_mm: cl_max,
+        } = row.printed_chipload()
     {
         let steady = crate::tool_load::chipload::steady_state_samples_for_toolpath(
             baseline_trace,

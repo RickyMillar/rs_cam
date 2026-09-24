@@ -500,6 +500,12 @@ pub struct FeedsResult {
     /// rationale, the chipload envelopes and the post-sim gate; it no longer
     /// moves a feed before simulation.
     pub chipload_bounds: Option<ChiploadBounds>,
+    /// The one printed chipload of a point row (A2, point mode), in
+    /// mm/tooth. The row prints a maximum only, or two equal limits
+    /// (`LookupResult::printed_chipload`). The depth de-rate is the one
+    /// that [`Self::chipload_bounds`] takes. At most one of the two is
+    /// `Some`: a point never becomes a band.
+    pub chipload_point_mm: Option<f64>,
     /// Matched vendor row (post-scaling) from the LUT lookup, when one
     /// was found. Cloned through so the Suggest orchestrator's axial-DOC
     /// envelope pass ([`crate::feeds::cutter_constraints`]) and the
@@ -911,7 +917,8 @@ pub enum FeedsWarning {
         /// P1 (2026-08-22) — the row the **rubbing floor** was subordinated
         /// to instead, from the envelope resolver, or `None` when that
         /// resolver found nothing either and the bare
-        /// [`RUBBING_FLOOR_MM_TOOTH`] still applies.
+        /// [`RUBBING_FLOOR_MM_TOOTH`] still applies. The row can print a
+        /// band or one value (a point, A2; see [`rubbing_floor_at`]).
         ///
         /// This is the one thing the recommendation now *does* take from a
         /// chipload-bearing row. The target still comes from the formula and
@@ -1161,6 +1168,9 @@ pub enum RubbingFloorSource {
     /// `min_mm_per_tooth == 0.0`, for example the gate's band on a
     /// maximum-only row). The maximum is below the repo constant.
     BandMaximum,
+    /// The one printed value of a point row (A2, point mode). The row
+    /// prints no band, and the point is below the repo constant.
+    PrintedPoint,
 }
 
 impl RubbingFloorSource {
@@ -1177,6 +1187,10 @@ impl RubbingFloorSource {
             Self::BandMaximum => format!(
                 "the vendor band maximum; the band publishes no minimum and sits below \
                  the {RUBBING_FLOOR_MM_TOOTH:.3} repo floor"
+            ),
+            Self::PrintedPoint => format!(
+                "the one printed vendor value (a point, no band), below the \
+                 {RUBBING_FLOOR_MM_TOOTH:.3} repo floor"
             ),
         }
     }
@@ -1208,6 +1222,31 @@ pub fn rubbing_floor(band: Option<ChiploadBounds>) -> (f64, RubbingFloorSource) 
         (bound, source)
     } else {
         (RUBBING_FLOOR_MM_TOOTH, RubbingFloorSource::RepoConstant)
+    }
+}
+
+/// The rubbing floor at a band or at a printed point (A2, point mode).
+///
+/// A band gives [`rubbing_floor`] unchanged. With no band, a point `v`
+/// gives `min(0.025, v)`: the point with [`RubbingFloorSource::PrintedPoint`]
+/// when `v` is below the constant, else the constant. With neither, the
+/// constant applies.
+///
+/// A row that prints one value has no band (`chipload_bounds` is `None`),
+/// so before A2 this rule (R4 Q9 rule 2) did not reach it.
+#[must_use]
+pub fn rubbing_floor_at(
+    band: Option<ChiploadBounds>,
+    point_mm_per_tooth: Option<f64>,
+) -> (f64, RubbingFloorSource) {
+    if band.is_some() {
+        return rubbing_floor(band);
+    }
+    match point_mm_per_tooth {
+        Some(v) if v.is_finite() && v > 0.0 && v < RUBBING_FLOOR_MM_TOOTH => {
+            (v, RubbingFloorSource::PrintedPoint)
+        }
+        _ => rubbing_floor(None),
     }
 }
 
@@ -1582,6 +1621,12 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // rests on the RPM anchor, and re-pointing Suggest's *target* at another
     // row is a different change with a different justification.
     let mut floor_band_fallback_raw: Option<ChiploadBounds> = None;
+    // A2 (point mode): the raw printed point of the recipe row, and of the
+    // envelope row that the floor falls back to (the P1 sidecar above).
+    // A point is never a band, so `RequireBoth` drops it from both bands;
+    // these two carry it. The depth de-rate is applied below, with the band.
+    let mut chipload_point_raw: Option<f64> = None;
+    let mut floor_point_fallback_raw: Option<f64> = None;
     // The one recipe row lookup (`support::recipe_row_lookup`). The
     // support arm below reads the same result, so the arm and the row
     // cannot disagree.
@@ -1618,6 +1663,8 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         let result = *result;
         matched_lut_row = Some(result.clone());
         let size_refused = result.size_basis.is_refused();
+        // Read the printed point before `observation_id` moves out of `result`.
+        let printed_point = result.printed_chipload().point_mm();
         let observation_id = result.observation_id;
         // Capture the LUT-derived chipload band (post diameter
         // /hardness scaling) for Suggest v2 step 2's feed-up
@@ -1671,6 +1718,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
                 None,
             )
         } else if result.chip_load_mm > 0.0 {
+            chipload_point_raw = printed_point;
             (
                 result.chip_load_mm,
                 result.rpm_nominal,
@@ -1692,19 +1740,26 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
             let mut floor_band_row: Option<String> = None;
             if let Some(env) =
                 vendor_lookup::find_best_chip_envelope_row(lut, &query, &input.tool_geometry)
-                && let Some((min, max)) = geometry::derate_chipload_bounds(
+            {
+                if let Some((min, max)) = geometry::derate_chipload_bounds(
                     env.chip_load_min_mm,
                     env.chip_load_max_mm,
                     0.0,
                     geometry::ChiploadBoundPolicy::RequireBoth,
                 )
                 .and_then(geometry::DeratedChiploadBand::into_pair)
-            {
-                floor_band_fallback_raw = Some(ChiploadBounds {
-                    min_mm_per_tooth: min,
-                    max_mm_per_tooth: max,
-                });
-                floor_band_row = Some(env.observation_id);
+                {
+                    floor_band_fallback_raw = Some(ChiploadBounds {
+                        min_mm_per_tooth: min,
+                        max_mm_per_tooth: max,
+                    });
+                    floor_band_row = Some(env.observation_id);
+                } else if let Some(v) = env.printed_chipload().point_mm() {
+                    // A2: the envelope row prints one value. The floor
+                    // reads the point (`rubbing_floor_at`).
+                    floor_point_fallback_raw = Some(v);
+                    floor_band_row = Some(env.observation_id);
+                }
             }
             warnings.push(FeedsWarning::VendorRowPublishesNoChipload {
                 observation_id: observation_id.clone(),
@@ -2542,6 +2597,8 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     //
     // The floor is `rubbing_floor(band)` = `min(0.025, band min)`, or
     // `min(0.025, band max)` when the band has no minimum (ruling R4 Q9).
+    // With no band, a printed point gives `min(0.025, point)`
+    // (`rubbing_floor_at`, A2).
     // The band is the recipe resolver's band when it published one, and
     // otherwise the envelope resolver's band (P1, 2026-08-22): the band that
     // the post-sim gate also uses.
@@ -2585,12 +2642,27 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     };
     let chipload_bounds = chipload_band_raw.and_then(band_at_depth);
     let floor_band_fallback = floor_band_fallback_raw.and_then(band_at_depth);
+    // A2: the point takes the same depth de-rate as the band.
+    let point_at_depth = |raw: f64| {
+        geometry::derate_chipload_bounds(
+            None,
+            Some(raw),
+            band_doc_ratio,
+            geometry::ChiploadBoundPolicy::AllowHalfBand,
+        )
+        .map(|b| b.max_mm_per_tooth)
+    };
+    let chipload_point_mm = chipload_point_raw.and_then(point_at_depth);
+    let floor_point_fallback = floor_point_fallback_raw.and_then(point_at_depth);
 
     let fpt_divisor = rpm * input.flute_count as f64;
     if fpt_divisor > 0.0 {
         let commanded_fpt = feed / fpt_divisor;
         let floor_band = chipload_bounds.or(floor_band_fallback);
-        let (floor, source) = rubbing_floor(floor_band);
+        // The recipe row's point when it has one; else the envelope row's
+        // point. A band outranks a point (`rubbing_floor_at`).
+        let floor_point = chipload_point_mm.or(floor_point_fallback);
+        let (floor, source) = rubbing_floor_at(floor_band, floor_point);
         if commanded_fpt > 0.0 && commanded_fpt < floor {
             warnings.push(FeedsWarning::ChiploadBelowRubbingFloor {
                 commanded: commanded_fpt,
@@ -2738,6 +2810,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         support,
         chipload_source,
         chipload_bounds,
+        chipload_point_mm,
         matched_lut_row,
         effective_diameter_mm: effective_d,
         derates,

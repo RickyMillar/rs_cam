@@ -120,6 +120,7 @@ fn operating_point(axial_doc_mm: f64, band: Option<ChiploadBounds>) -> FeedsResu
         },
         chipload_source: ChiploadSource::FormulaFallback,
         chipload_bounds: band,
+        chipload_point_mm: None,
         matched_lut_row: None,
         effective_diameter_mm: DIAMETER_MM,
         derates: FeedsDerates::default(),

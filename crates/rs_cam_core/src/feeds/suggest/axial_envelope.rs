@@ -438,3 +438,33 @@ pub(super) fn recompute_chipload_bounds_for_dpp(
         max_mm_per_tooth: max,
     })
 }
+
+/// The printed point of the matched row at a new DPP (A2, point mode).
+///
+/// This is the point twin of [`recompute_chipload_bounds_for_dpp`]: the
+/// same row, the same DOC ratio and the same de-rate. It reads the row
+/// (`SuggestContext::matched_lut_row`), so no `SuggestContext` field is
+/// added. `None` when the row is absent or prints a band or no chipload.
+pub(super) fn chip_point_for_dpp(
+    matched_row: Option<&crate::feeds::vendor_lookup::LookupResult>,
+    effective_diameter_mm: f64,
+    operation: &OperationConfig,
+    new_dpp_mm: f64,
+) -> Option<f64> {
+    let point = matched_row?.printed_chipload().point_mm()?;
+    // Drill ops take no DOC de-rate, as in the band twin above.
+    let op_family = operation.feeds_style().0;
+    let is_drill = matches!(op_family, FeedsOperationFamily::Drill);
+    let doc_ratio = if is_drill || effective_diameter_mm <= 0.0 {
+        0.0
+    } else {
+        new_dpp_mm / effective_diameter_mm
+    };
+    crate::feeds::geometry::derate_chipload_bounds(
+        None,
+        Some(point),
+        doc_ratio,
+        crate::feeds::geometry::ChiploadBoundPolicy::AllowHalfBand,
+    )
+    .map(|b| b.max_mm_per_tooth)
+}

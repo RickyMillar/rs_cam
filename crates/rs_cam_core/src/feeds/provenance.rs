@@ -408,6 +408,7 @@ mod tests {
             },
             chipload_source,
             chipload_bounds: None,
+            chipload_point_mm: None,
             matched_lut_row,
             effective_diameter_mm: 6.0,
             derates: FeedsDerates::default(),

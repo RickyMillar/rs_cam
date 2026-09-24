@@ -283,6 +283,7 @@ const MATRIX_HEADER: &[&str] = &[
     "power_kw",
     "chipload_bounds_min_mm",
     "chipload_bounds_max_mm",
+    "chipload_point_mm",
     "support_arm",
     "support_detail",
     "lut_observation_id",
@@ -435,12 +436,13 @@ fn walk_matrix(
                         Err(e) => {
                             fields.push("refused".to_owned());
                             fields.push(e.to_string());
-                            // 12 recipe columns (incl. the force and power
-                            // at the shipped point), the support pair, 16 row
+                            // 13 recipe columns (incl. the force and power
+                            // at the shipped point, and the A2 point), the
+                            // support pair, 16 row
                             // columns (6 row, 5 G1 claim, 3 G2 hardness,
                             // chipload source, vendor source), 4 diagnostic /
                             // warning columns.
-                            fields.extend(std::iter::repeat_n(String::new(), 12));
+                            fields.extend(std::iter::repeat_n(String::new(), 13));
                             fields.push("Refused".to_owned());
                             fields.push(String::new());
                             fields.extend(std::iter::repeat_n(String::new(), 16));
@@ -510,6 +512,7 @@ fn walk_matrix(
                             fields.push(num(power_kw));
                             fields.push(num(r.chipload_bounds.map(|b| b.min_mm_per_tooth)));
                             fields.push(num(r.chipload_bounds.map(|b| b.max_mm_per_tooth)));
+                            fields.push(num(r.chipload_point_mm));
                             let (arm, detail) = support_columns(&r.support);
                             fields.push(arm.clone());
                             fields.push(detail);

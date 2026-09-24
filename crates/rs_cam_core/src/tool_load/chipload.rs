@@ -609,10 +609,19 @@ fn evaluate_inner(
             reason: UnmodeledReason::NoVendorData,
         };
     };
+    // A2 (point mode): a row that prints one value is a point
+    // (`LookupResult::printed_chipload`). A point is not a band: the
+    // bounds keep no minimum. The high side stays a hard trip at the
+    // derated point v'. A median chip below v' gives a burn advisory
+    // only (decision Q1 (a); `ChipBounds::burn_reference_mm`). The gate
+    // never gives `Exceeds(Low)` for a point.
+    let is_point = matches!(
+        result.printed_chipload(),
+        crate::feeds::vendor_lookup::PrintedChipload::Point { .. }
+    );
     let (min, max) = (band.min_mm_per_tooth, band.max_mm_per_tooth);
-    // F3.3 — provenance classification, worst-first. A single-point
-    // "range" (raw min == max — scaling preserves equality) is a
-    // nominal preset, not a calibrated envelope; extrapolation past
+    // F3.3 — provenance classification, worst-first. A point (one
+    // printed value, A2) is not a calibrated envelope; extrapolation past
     // ±40 % stretches whatever the row published; a row with no `ae`
     // window is the crate's weakest-annotated class. All three make the
     // LOW side advisory-only (`low_side_is_advisory`); the HIGH side
@@ -628,11 +637,7 @@ fn evaluate_inner(
     // annotated row class in the LUT", which is a defensible reason to
     // soften a burn floor and an indefensible one to keep calling it an
     // arc problem. Re-open: Checkpoint item, owner unassigned.
-    let source = if result
-        .chip_load_min_mm
-        .zip(result.chip_load_max_mm)
-        .is_some_and(|(lo, hi)| lo >= hi)
-    {
+    let source = if is_point {
         ChipBoundsSource::VendorLutPointPreset
     } else if result.is_extrapolated {
         ChipBoundsSource::VendorLutExtrapolated
@@ -894,11 +899,16 @@ fn evaluate_inner(
     // shortfall. The deviation `min_value - median_cl` reported on the
     // verdict still uses the strict LUT min so downstream displays read
     // the real distance to the nominal envelope.
-    let peak_below: Option<(f64, usize)> = if let Some(min_value) = min
+    //
+    // A2: the burn reference is the band minimum, or the printed point for
+    // a point row (`burn_reference_mm`). For a point the source is
+    // `VendorLutPointPreset`, so the trip below is an advisory only.
+    let burn_reference = bounds.burn_reference_mm();
+    let peak_below: Option<(f64, usize)> = if let Some(reference) = burn_reference
         && let Some((median_cl, median_sample_idx)) = median_sample
-        && bounds.below_low(median_cl, tolerance.burn).unwrap_or(false)
+        && super::boundary::below_low(median_cl, reference, tolerance.burn)
     {
-        Some((min_value - median_cl, median_sample_idx))
+        Some((reference - median_cl, median_sample_idx))
     } else {
         None
     };
@@ -974,7 +984,7 @@ fn evaluate_inner(
     // operator or the optimizer; the breakage side above stays hard.
     let mut burn_advisory: Option<Box<ChiploadMetric>> = None;
     if let Some((dev, idx)) = peak_below {
-        let observed = min.map(|m| m - dev).unwrap_or_default().max(0.0);
+        let observed = burn_reference.map(|m| m - dev).unwrap_or_default().max(0.0);
         let metric = ChiploadMetric {
             observed_mm_per_tooth: observed,
             statistic: ChiploadStatistic::MedianLow,
@@ -989,8 +999,8 @@ fn evaluate_inner(
                 advisory = "burn",
                 source = ?bounds.source,
                 observed_mm_per_tooth = observed,
-                bound_min_mm_per_tooth = min.unwrap_or(f64::NAN),
-                "chipload gate: median below vendor min but the burn floor's \
+                burn_reference_mm_per_tooth = burn_reference.unwrap_or(f64::NAN),
+                "chipload gate: median below the burn reference but its \
                  provenance is weak — surfacing a burn advisory instead of Exceeds(Low)"
             );
             burn_advisory = Some(Box::new(metric));

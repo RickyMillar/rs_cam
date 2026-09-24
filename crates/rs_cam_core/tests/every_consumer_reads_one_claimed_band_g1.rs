@@ -34,7 +34,10 @@
 //!   scale `2^t = 1.286034051728` (see `a_size_claim_states_...`), hardness
 //!   scale 1.0 (the row has no Janka, so it reads the query table:
 //!   `WoodSpecies::GenericSoftwood`, 600 on a 600 query), band
-//!   `0.0254 * 1.286034051728 = 0.032665264914` at both ends. RE-PINNED
+//!   `0.0254 * 1.286034051728 = 0.032665264914` at both ends. Since A2 (point
+//!   mode) the row is a point: min `None`, max 0.032665264914,
+//!   `printed_chipload() == Point`, and the gate bounds are `{ min: None,
+//!   max: v' }`. RE-PINNED
 //!   2026-09-24 (extrapolation P2 step 3, one Janka table): was
 //!   `0.0254 * 1.286034 * (500 / 600)^0.5 = 0.029819170734`, when the row
 //!   default was a separate 500 lbf anchor;
@@ -56,16 +59,21 @@
 )]
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
+use rs_cam_core::compute::tool_config::ToolMaterial;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::diagnostics::adapters::from_tool_load::diagnostics_from_load_verdict;
 use rs_cam_core::diagnostics::ids;
 use rs_cam_core::feeds::extrapolation::{SizeBasis, SizeForm};
+use rs_cam_core::feeds::geometry::doc_derating_scale;
 use rs_cam_core::feeds::provenance::ValueProvenance;
 use rs_cam_core::feeds::suggest::{
     StockContext, SuggestContext, SuggestParamsInput, SuggestedParams, feeds_input_for_operation,
     suggest_params,
 };
-use rs_cam_core::feeds::vendor_lookup::{LookupResult, find_best_chip_envelope_row};
+use rs_cam_core::feeds::vendor_lookup::{
+    LookupResult, PrintedChipload, find_best_chip_envelope_row,
+};
+use rs_cam_core::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use rs_cam_core::feeds::vendor_normalize::to_lookup_query;
 use rs_cam_core::feeds::{
     ChiploadSource, EMBEDDED_LUT, FeedsError, FeedsSupport, FeedsWarning, SpindleStrategy,
@@ -74,11 +82,16 @@ use rs_cam_core::feeds::{
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
+use rs_cam_core::stock::simulation_cut::{
+    CutKinematics, Engagement, SimulationCutSample, SimulationCutTrace,
+};
+use rs_cam_core::tool::{FlatEndmill, ToolDefinition};
 use rs_cam_core::tool_load::chipload_envelope_for_toolpath;
 use rs_cam_core::tool_load::verdict::{
-    ChiploadVerdict, DeflectionVerdict, DepthVerdict, PowerVerdict, ToolpathLoadVerdict,
-    UnmodeledReason,
+    ChipBoundsSource, ChiploadVerdict, DeflectionVerdict, DepthVerdict, PowerVerdict,
+    ToolpathLoadVerdict, UnmodeledReason,
 };
+use rs_cam_core::tool_load::{GateEnv, ToleranceBands, ToolpathLoadContext};
 
 const TOL: f64 = 1e-9;
 
@@ -233,14 +246,43 @@ fn assert_one_claimed_band(
             assert!((range.end - band.1).abs() < TOL, "{label}: {range:?}");
         }
         None => {
+            // A2 (point mode): a row that prints one value is a claimed
+            // POINT. No consumer makes a band from it; every consumer reads
+            // the one claimed value.
             assert!(door.is_none(), "{label}: {door:?}");
             assert!(s.feeds_result.chipload_bounds.is_none(), "{label}");
+            for (who, row) in [("recipe", recipe), ("envelope", &env)] {
+                match row.printed_chipload() {
+                    PrintedChipload::Point { value_mm } => assert!(
+                        (value_mm - band.1).abs() < TOL,
+                        "{label} {who}: point {value_mm} vs claimed {}",
+                        band.1
+                    ),
+                    other => panic!("{label} {who}: expected a point, got {other:?}"),
+                }
+            }
+            // Suggest's point takes the depth de-rate of the band at the
+            // calculator's depth (flat end: the ratio divides by D).
+            let ap = s.feeds_result.axial_depth_mm;
+            let expected = band.1 * doc_derating_scale(ap / tool.diameter);
+            let point = s
+                .feeds_result
+                .chipload_point_mm
+                .unwrap_or_else(|| panic!("{label}: Suggest carries no point"));
+            assert!(
+                (point - expected).abs() < TOL,
+                "{label}: Suggest point {point} vs {expected} (ap {ap})"
+            );
         }
     }
 }
 
+/// Form A on a point row (A2): the anchor
+/// `amana-flat-softwood-pocket-0794-2f-spektra` prints one value (0.0254,
+/// min = max), so the claim is a claimed POINT, 0.0254 x 1.286034051728 =
+/// 0.032665264914, and no consumer holds a minimum.
 #[test]
-fn a_form_a_cell_has_one_band_g1() {
+fn a_form_a_cell_has_one_point_g1() {
     assert_one_claimed_band(
         OperationType::Pocket,
         &tool_of(ToolType::EndMill, 1.0),
@@ -248,8 +290,108 @@ fn a_form_a_cell_has_one_band_g1() {
         "amana-flat-softwood-pocket-0794-2f-spektra",
         "A",
         1.286_034_051_728,
-        (Some(0.032_665_264_914), 0.032_665_264_914),
+        (None, FORM_A_POINT_MM_TOOTH),
     );
+}
+
+/// The form A claimed point (see [`a_form_a_cell_has_one_point_g1`]).
+const FORM_A_POINT_MM_TOOTH: f64 = 0.032_665_264_914;
+
+/// The gate on the form A cell (A2): the bounds are `{ min: None, max: v' }`
+/// with the source `VendorLutPointPreset`. The samples cut at 0.5 mm on a
+/// 1.0 mm tool (DOC/D = 0.5), so the de-rate is 1.0 and v' is the claimed
+/// point. The advance 0.02 mm/tooth (720 mm/min at 18 000 rpm x 2 flutes)
+/// is below the point, so the verdict is `Within` with a burn advisory
+/// against the printed point, never `Exceeds(Low)` (decision Q1 (a)).
+#[test]
+fn the_gate_holds_the_form_a_point_with_no_minimum_g1() {
+    const RPM: u32 = 18_000;
+    const FEED: f64 = 720.0;
+    let tool = ToolDefinition::new(
+        Box::new(FlatEndmill::new(1.0, 6.0)),
+        1.0,
+        12.0,
+        6.0,
+        12.0,
+        2,
+        ToolMaterial::Carbide,
+    );
+    let material = softwood();
+    let samples: Vec<SimulationCutSample> = (0..12)
+        .map(|idx| SimulationCutSample {
+            toolpath_id: ToolpathId(0),
+            move_index: idx,
+            sample_index: idx,
+            position: [0.0, 0.0, -0.5],
+            cumulative_time_s: 0.1 * idx as f64,
+            segment_time_s: 0.1,
+            is_cutting: true,
+            cut_kinematics: CutKinematics::Linear,
+            feed_rate_mm_min: FEED,
+            spindle_rpm: RPM,
+            flute_count: 2,
+            axial_doc_mm: 0.5,
+            axial_engagement_mm: 0.5,
+            arc_engagement_radians: Some(std::f64::consts::FRAC_PI_2),
+            chipload_mm_per_tooth: FEED / (f64::from(RPM) * 2.0),
+            effective_chip_thickness_mm: Some(FEED / (f64::from(RPM) * 2.0)),
+            engagement: Engagement::with_radial_woc(0.5),
+            removed_volume_est_mm3: 0.1,
+            mrr_mm3_s: 1.0,
+            in_transit_span: false,
+            ..SimulationCutSample::test_fixture()
+        })
+        .collect();
+    let trace = SimulationCutTrace {
+        sample_step_mm: 1.0,
+        samples,
+        ..SimulationCutTrace::test_fixture()
+    };
+    let machine = MachineProfile::default();
+    let tolerance = ToleranceBands::default();
+    let ctx = ToolpathLoadContext {
+        toolpath_id: ToolpathId(0),
+        tool: &tool,
+        material: &material,
+        operation_family: LutOperationFamily::Pocket,
+        pass_role: LutPassRole::Roughing,
+        operation_feed_rate_mm_min: FEED,
+        operation_kind: OperationType::Pocket,
+        spans: None,
+        drill_op: None,
+    };
+    let env = GateEnv {
+        sim_trace: Some(&trace),
+        machine: Some(&machine),
+        tolerance: &tolerance,
+    };
+    let verdict = rs_cam_core::tool_load::chipload::evaluate(&ctx, &env);
+    let ChiploadVerdict::Within {
+        approach_to_min,
+        approach_to_max,
+        burn_advisory,
+        ..
+    } = &verdict
+    else {
+        panic!("a chip below the point is advisory, never Exceeds(Low): {verdict:?}");
+    };
+    let bounds = &approach_to_max.bounds;
+    assert_eq!(bounds.source, ChipBoundsSource::VendorLutPointPreset);
+    assert_eq!(bounds.min_mm_per_tooth, None, "a point is not a band");
+    assert!(
+        (bounds.max_mm_per_tooth - FORM_A_POINT_MM_TOOTH).abs() < TOL,
+        "gate max {} vs the claimed point {FORM_A_POINT_MM_TOOTH}",
+        bounds.max_mm_per_tooth
+    );
+    assert!(approach_to_min.is_none(), "{approach_to_min:?}");
+    let advisory = burn_advisory
+        .as_deref()
+        .expect("a chip below the point gives a burn advisory");
+    assert_eq!(
+        advisory.bounds.burn_reference_mm(),
+        Some(bounds.max_mm_per_tooth)
+    );
+    assert_eq!(advisory.bounds.burn_reference_label(), "printed point");
 }
 
 #[test]
