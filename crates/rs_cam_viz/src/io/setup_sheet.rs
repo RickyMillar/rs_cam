@@ -277,17 +277,17 @@ tr:nth-child(even) {{ background: #24242e; }}
         &mut html,
         "<h2>Tools</h2>\n\
          <table>\n\
-         <tr><th>#</th><th>Name</th><th>Type</th><th>Diameter</th><th>Flute Length</th></tr>\n",
+         <tr><th>#</th><th>Name</th><th>Type</th><th>Size</th><th>Flute Length</th></tr>\n",
     );
     for (i, tool) in session.tools().iter().enumerate() {
         let _ = std::fmt::Write::write_fmt(
             &mut html,
             format_args!(
-                "<tr><td>{}</td><td>{}</td><td>{}</td><td>{:.2} mm</td><td>{:.2} mm</td></tr>\n",
+                "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{:.2} mm</td></tr>\n",
                 i + 1,
                 escape_html(&tool.name),
                 tool.tool_type.label(),
-                tool.diameter,
+                escape_html(&tool.size_label()),
                 tool.cutting_length,
             ),
         );

@@ -20,6 +20,9 @@ One module per cutter family. The trait and the shared radius queries live in
   one the caller's question asks for.
 - A holder and shank envelope is part of the tool, not of the operation.
   Collision reads the envelope.
+- A person reads a tool size through `ToolConfig::size_label`
+  (`compute/tool_config.rs`): `Ø` is a diameter, `R` a radius. G-code
+  comments are the exception: their bytes stay as they are.
 
 ## Sentries
 
@@ -27,6 +30,7 @@ One module per cutter family. The trait and the shared radius queries live in
 - `cargo test -p rs_cam_core -q --test bull_nose_cusp_radius_g_bullcusp`
 - `cargo test -p rs_cam_core -q --test tapered_cusp_radius_sentry`
 - `cargo test -p rs_cam_core -q --test tool_geometry_hygiene`
+- `cargo test -p rs_cam_viz -q --test a_tool_size_reads_diameter_and_radius_g_toolsize`
 
 ## Do not
 

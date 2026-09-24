@@ -126,6 +126,39 @@ impl ResolvedHeights {
     }
 }
 
+// ── tool name against tool geometry ─────────────────────────────────
+
+/// The tool-scoped static check: does a size token in the tool NAME that
+/// clearly names the tip disagree with the tool's `diameter`?
+///
+/// The verdict is [`ToolConfig::name_tip_size_mismatch`]; this adapter
+/// only converts it. The finding is per TOOL, not per toolpath, so the
+/// session raises it once per tool from `ProjectSession::diagnose_project`
+/// rather than from [`diagnostics_from_static_checks`], which runs once
+/// per toolpath.
+pub fn diagnostics_from_tool_name(tool: &ToolConfig) -> Vec<Diagnostic> {
+    let Some(mismatch) = tool.name_tip_size_mismatch() else {
+        return Vec::new();
+    };
+    let Some(caution) = mismatch.caution_line() else {
+        return Vec::new();
+    };
+    vec![Diagnostic {
+        id: DiagnosticId::from(ids::TOOL_NAME_SIZE_MISMATCH),
+        scope: Scope::Tool { id: tool.id.0 },
+        category: Category::Geometry,
+        severity: Severity::Info,
+        confidence: Confidence::Static,
+        state: DiagnosticState::Current,
+        source: Source::StaticValidation,
+        message: format!("Tool \"{}\": {caution}", tool.name),
+        evidence: None,
+        fix: None,
+        supersedes: vec![],
+        suppressed_diagnostics: vec![],
+    }]
+}
+
 // ── tool/operation compatibility ────────────────────────────────────
 
 fn tool_op_compat_checks(

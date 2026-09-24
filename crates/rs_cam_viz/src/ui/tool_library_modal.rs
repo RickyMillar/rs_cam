@@ -316,17 +316,17 @@ fn draw_catalog_panel(
         });
 }
 
-/// Compact one-line summary for a tool row: type, diameter, flutes, angle.
+/// Compact one-line summary for a tool row: type, size (in the `Ø`/`R`
+/// convention of `ToolConfig::size_label`), flutes, taper.
 fn row_summary(tool: &ToolConfig) -> String {
-    let angle = match tool.tool_type {
-        ToolType::VBit => format!(" · {:.0}°", tool.included_angle),
+    let taper = match tool.tool_type {
         ToolType::TaperedBallNose => format!(" · {:.1}° taper", tool.taper_half_angle),
         _ => String::new(),
     };
     format!(
-        "{} · ⌀{:.2}mm · {}F{angle}",
+        "{} · {} · {}F{taper}",
         tool.tool_type.label(),
-        tool.diameter,
+        tool.size_label(),
         tool.flute_count
     )
 }
@@ -455,7 +455,9 @@ fn draw_detail_panel(
 fn draw_readonly_grid(ui: &mut egui::Ui, tool: &ToolConfig) {
     ui.param_grid("toollib_detail_grid", |ui| {
         row(ui, "Type", tool.tool_type.label().to_owned());
-        row(ui, "Diameter", format!("{:.3} mm", tool.diameter));
+        row(ui, "Size", tool.size_label());
+        let diameter_label = tool.diameter_field_label().trim_end_matches(':');
+        row(ui, diameter_label, format!("{:.3} mm", tool.diameter));
         row(
             ui,
             "Cutting length",
@@ -474,7 +476,7 @@ fn draw_readonly_grid(ui: &mut egui::Ui, tool: &ToolConfig) {
                 );
                 row(
                     ui,
-                    "Shaft diameter",
+                    "Upper shaft \u{00D8} (taper top)",
                     format!("{:.3} mm", tool.shaft_diameter),
                 );
             }
@@ -485,7 +487,7 @@ fn draw_readonly_grid(ui: &mut egui::Ui, tool: &ToolConfig) {
         }
         row(
             ui,
-            "Shank diameter",
+            "Shank \u{00D8} (in collet)",
             format!("{:.3} mm", tool.shank_diameter),
         );
         row(ui, "Material", tool.tool_material.label().to_owned());

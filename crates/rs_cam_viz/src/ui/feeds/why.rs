@@ -496,10 +496,10 @@ pub(crate) fn draw_engaged_diameter_row(
     };
     detail_line(
         ui,
-        format!("{icon}Engaged ⌀ {engaged:.2} mm at DOC {doc:.2} mm"),
+        format!("{icon}Engaged Ø {engaged:.2} mm at DOC {doc:.2} mm"),
         color,
         &format!(
-            "The published {kind} ⌀ is {tip_dia:.2} mm, but the cone shoulder \
+            "The published {kind} Ø is {tip_dia:.2} mm, but the cone shoulder \
              does most of the cutting at this depth. Every advance/tooth \
              figure on this surface is computed at the engaged diameter, not \
              at the tool tip."

@@ -281,6 +281,14 @@ pub const CONFIG_INERT_CLAIMS_DIAL: &str = "config.inert_claims_dial";
 pub const COMPAT_END_MILL_SCALLOP_PENCIL: &str = "compat.end_mill_on_scallop_pencil";
 pub const COMPAT_BALL_NOSE_FLAT_CLEARING: &str = "compat.ball_nose_on_flat_clearing";
 
+// ── Tool definition ──────────────────────────────────────────────────
+/// A size token in the tool NAME that clearly names the tip ("R1.0mm",
+/// "2mm tip", a first "Ø6") disagrees with the tool's `diameter`. The
+/// motivating case: "Tapered Ball 2mm tip / 7° / 6mm shank" with
+/// `diameter = 1.0`. Info tier and advisory: names are free text, so no
+/// surface refuses on it. One finding per tool, `Scope::Tool`.
+pub const TOOL_NAME_SIZE_MISMATCH: &str = "tool.name_size_mismatch";
+
 // ── Surface quality / cycle-time hints ───────────────────────────────
 pub const QUALITY_STEPOVER_OVER_80_PCT: &str = "quality.stepover_over_80_pct_diameter";
 pub const QUALITY_FINISH_STEPOVER_OVER_50_PCT: &str = "quality.finish_stepover_over_50_pct";
@@ -392,6 +400,7 @@ pub const ALL: &[&str] = &[
     CONFIG_INERT_CLAIMS_DIAL,
     COMPAT_END_MILL_SCALLOP_PENCIL,
     COMPAT_BALL_NOSE_FLAT_CLEARING,
+    TOOL_NAME_SIZE_MISMATCH,
     QUALITY_STEPOVER_OVER_80_PCT,
     QUALITY_FINISH_STEPOVER_OVER_50_PCT,
     QUALITY_BALL_SCALLOP_HEIGHT,

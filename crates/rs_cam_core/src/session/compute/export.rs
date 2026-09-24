@@ -420,7 +420,19 @@ impl ProjectSession {
         // Batch entry point — same full-evidence semantics as
         // `diagnostics()`, including the holder-collision sweep.
         let diag = self.diagnostics();
-        crate::diagnostics::diagnose_project_diagnostics(&diag)
+        let mut out = crate::diagnostics::diagnose_project_diagnostics(&diag);
+        out.extend(self.tool_name_diagnostics());
+        out
+    }
+
+    /// The tool-scoped static findings: one `tool.name_size_mismatch`
+    /// for each tool whose name names a tip size the geometry does not
+    /// have. It reads no simulation, so it is cheap.
+    pub fn tool_name_diagnostics(&self) -> Vec<crate::diagnostics::Diagnostic> {
+        self.tools()
+            .iter()
+            .flat_map(crate::diagnostics::adapters::from_static_checks::diagnostics_from_tool_name)
+            .collect()
     }
 
     /// Same as [`Self::diagnose_project`] but takes a borrow view
@@ -430,6 +442,8 @@ impl ProjectSession {
         evidence: &ProjectEvidence<'_>,
     ) -> Vec<crate::diagnostics::Diagnostic> {
         let diag = self.diagnostics_with_evidence(evidence);
-        crate::diagnostics::diagnose_project_diagnostics(&diag)
+        let mut out = crate::diagnostics::diagnose_project_diagnostics(&diag);
+        out.extend(self.tool_name_diagnostics());
+        out
     }
 }

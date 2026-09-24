@@ -239,7 +239,7 @@ fn draw_tools_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent
                             }
                             Ok(catalog) => {
                                 for tool in &catalog.tools {
-                                    let label = format!("{} — ⌀{:.2}mm", tool.name, tool.diameter);
+                                    let label = format!("{} — {}", tool.name, tool.size_label());
                                     if ui.button(label).clicked() {
                                         events.push(AppEvent::AddToolFromLibrary(Box::new(
                                             tool.clone(),

@@ -1222,11 +1222,9 @@ fn execute_op_via_session(
     let trace = if debug_trace {
         let tp_name = format!("op_{}_{}", i, op_type.kind_str());
         let op_label = format!("Op {} \u{2014} {}", i, op.op_type);
-        let tool_summary = format!(
-            "{:.2}mm {}",
-            tool_def.diameter,
-            tool_def.tool_type.serde_token()
-        );
+        // The one size convention (`Ø` diameter, `R` radius) shared by
+        // every surface; see `ToolConfig::size_label`.
+        let tool_summary = tool_config_from_def(tool_def, &op.tool).summary();
         let operation_json = session
             .get_toolpath_config(tp_index)
             .map(|tc| serde_json::to_value(&tc.operation).unwrap_or_default())

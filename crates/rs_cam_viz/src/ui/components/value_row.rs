@@ -86,6 +86,7 @@ pub struct ValueRow<'a> {
     suggest: Option<Suggestion<'a>>,
     tooltip: Option<&'a str>,
     changes_geometry: bool,
+    note: Option<&'a str>,
 }
 
 impl<'a> ValueRow<'a> {
@@ -106,6 +107,7 @@ impl<'a> ValueRow<'a> {
             suggest: None,
             tooltip: None,
             changes_geometry: false,
+            note: None,
         }
     }
 
@@ -133,6 +135,13 @@ impl<'a> ValueRow<'a> {
     /// Append a "· changes cut" marker — for DOC/WOC under Feeds (W3.1).
     pub fn changes_geometry(mut self) -> Self {
         self.changes_geometry = true;
+        self
+    }
+
+    /// Append read-only text after the input, for a value derived from
+    /// this one (the tool editor's `= R1.00` beside a ball diameter).
+    pub fn note(mut self, text: Option<&'a str>) -> Self {
+        self.note = text;
         self
     }
 
@@ -204,6 +213,10 @@ impl<'a> ValueRow<'a> {
                         .reference_opt(reference)
                         .compact(),
                 );
+            }
+
+            if let Some(note) = self.note {
+                ui.label(egui::RichText::new(note).color(crate::ui::tokens::TEXT_FAINT));
             }
 
             if self.changes_geometry {

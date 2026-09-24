@@ -238,3 +238,64 @@ fn switching_type_in_place_reports_the_geometry_it_now_needs() {
     tool.shaft_diameter = defaults.shaft_diameter;
     assert!(tool.missing_defining_geometry().is_empty());
 }
+
+/// The finding on the real fixtures. The wanaka project still carries
+/// the "2mm tip" tool at `diameter = 1.0`, and the session raises one
+/// `tool.name_size_mismatch` for it, scoped to that tool. The rivmap
+/// project's "R1.0mm x 6mm" tool at `diameter = 2.0` is correct and
+/// raises nothing.
+#[test]
+fn project_diagnostics_carry_the_name_size_mismatch() {
+    use rs_cam_core::diagnostics::{Scope, Severity, ids};
+    use rs_cam_core::session::ProjectSession;
+
+    let fixture = |name: &str| {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join(name)
+    };
+
+    let wanaka = ProjectSession::load(&fixture("wanaka_2026-08-16_f530995a.toml"))
+        .expect("load the wanaka fixture");
+    let tip_tool = wanaka
+        .tools()
+        .iter()
+        .find(|t| t.name == "Tapered Ball 2mm tip / 7° / 6mm shank")
+        .expect("the 2mm-tip tool is in the fixture");
+    assert_eq!(tip_tool.diameter, 1.0, "the fixture changed");
+    let found: Vec<_> = wanaka
+        .tool_name_diagnostics()
+        .into_iter()
+        .filter(|d| d.id.as_str() == ids::TOOL_NAME_SIZE_MISMATCH)
+        .collect();
+    assert_eq!(found.len(), 1, "expected one finding, got {found:?}");
+    let d = &found[0];
+    assert!(matches!(d.scope, Scope::Tool { id } if id == tip_tool.id.0));
+    assert_eq!(d.severity, Severity::Info);
+    assert!(
+        d.message
+            .contains("The name says \u{00D8}2.00 mm but the tool is \u{00D8}1.00 mm."),
+        "{}",
+        d.message
+    );
+
+    let rivmap = ProjectSession::load(&fixture("t3b_r10_scallop_islands_2026-09-08_e4d817e9.toml"))
+        .expect("load the rivmap fixture");
+    let r1 = rivmap
+        .tools()
+        .iter()
+        .find(|t| t.name == "R1.0mm x 6mm x 20mm 2F Tapered Ball")
+        .expect("the R1.0 tool is in the fixture");
+    assert_eq!(r1.diameter, 2.0, "the fixture changed");
+    assert!(r1.name_tip_size_mismatch().is_none());
+    let rivmap_found: Vec<_> = rivmap
+        .tool_name_diagnostics()
+        .into_iter()
+        .filter(|d| d.id.as_str() == ids::TOOL_NAME_SIZE_MISMATCH)
+        .collect();
+    assert!(
+        rivmap_found.is_empty(),
+        "correct names raised {rivmap_found:?}"
+    );
+}

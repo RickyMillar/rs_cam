@@ -161,6 +161,7 @@ fn all_diagnostic_ids_reachable_in_adapter_source() {
             "COMPAT_BALL_NOSE_FLAT_CLEARING",
             ids::COMPAT_BALL_NOSE_FLAT_CLEARING,
         ),
+        ("TOOL_NAME_SIZE_MISMATCH", ids::TOOL_NAME_SIZE_MISMATCH),
         (
             "QUALITY_STEPOVER_OVER_80_PCT",
             ids::QUALITY_STEPOVER_OVER_80_PCT,

@@ -2044,6 +2044,7 @@ impl RsCamApp {
                                 "name": t.name,
                                 "tool_type": t.tool_type,
                                 "diameter": t.diameter,
+                                "size_label": t.size_label(),
                             })
                         })
                         .unwrap_or(serde_json::Value::Null)

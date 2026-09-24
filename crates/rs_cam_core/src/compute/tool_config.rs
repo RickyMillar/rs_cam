@@ -249,32 +249,80 @@ impl ToolConfig {
         }
     }
 
-    /// Short description for the project tree.
+    /// Short description for the project tree, the toolpath picker and
+    /// the simulation list: the type label, then [`Self::size_label`].
+    /// A tapered ball also gives the taper half-angle, as it did before.
     pub fn summary(&self) -> String {
+        let size = self.size_label();
         match self.tool_type {
-            ToolType::EndMill | ToolType::BallNose => {
-                format!("{:.2}mm {}", self.diameter, self.tool_type.label())
-            }
-            ToolType::BullNose => {
-                format!(
-                    "{:.2}mm {} (r={:.1})",
-                    self.diameter,
-                    self.tool_type.label(),
-                    self.corner_radius
-                )
-            }
-            ToolType::VBit => {
-                format!("{:.0}deg {}", self.included_angle, self.tool_type.label())
-            }
-            ToolType::TaperedBallNose => {
-                format!(
-                    "{:.2}mm {} ({:.0}deg)",
-                    self.diameter,
-                    self.tool_type.label(),
-                    self.taper_half_angle
-                )
-            }
+            ToolType::TaperedBallNose => format!(
+                "{} {size}, {:.1}\u{00B0} half-angle",
+                self.tool_type.label(),
+                self.taper_half_angle
+            ),
+            _ => format!("{} {size}", self.tool_type.label()),
         }
+    }
+
+    /// The tool size in one convention, for every human-facing surface.
+    ///
+    /// `Ø` always prefixes a DIAMETER and `R` always prefixes a RADIUS,
+    /// so a vendor name such as "R1.0mm x 6mm" can stand next to the
+    /// label and the operator can compare the two. The stored values
+    /// are not changed; `diameter` stays the wire key.
+    ///
+    /// - End mill: `Ø6.00 mm` (with `, corner R0.50` when it has one)
+    /// - Ball nose: `Ø6.00 mm (R3.00)`
+    /// - Tapered ball: `tip Ø2.00 mm (R1.00), shank Ø6.00`
+    /// - Bull nose: `Ø6.00 mm, corner R1.00`
+    /// - V-bit: `Ø12.70 mm, 60°` (the nominal diameter and the
+    ///   included angle)
+    pub fn size_label(&self) -> String {
+        let d = self.diameter;
+        match self.tool_type {
+            ToolType::EndMill if self.corner_radius_mm > 0.0 => {
+                format!("\u{00D8}{d:.2} mm, corner R{:.2}", self.corner_radius_mm)
+            }
+            ToolType::EndMill => format!("\u{00D8}{d:.2} mm"),
+            ToolType::BallNose => format!("\u{00D8}{d:.2} mm (R{:.2})", d / 2.0),
+            ToolType::BullNose => {
+                format!("\u{00D8}{d:.2} mm, corner R{:.2}", self.corner_radius)
+            }
+            ToolType::VBit => format!("\u{00D8}{d:.2} mm, {:.0}\u{00B0}", self.included_angle),
+            ToolType::TaperedBallNose => format!(
+                "tip \u{00D8}{d:.2} mm (R{:.2}), shank \u{00D8}{:.2}",
+                d / 2.0,
+                self.upper_diameter_mm()
+            ),
+        }
+    }
+
+    /// The diameter above the cutting tip that the size label calls the
+    /// shank: the collet shank when it is set, else the cone base.
+    fn upper_diameter_mm(&self) -> f64 {
+        if self.shank_diameter > 0.0 {
+            self.shank_diameter
+        } else {
+            self.envelope_diameter()
+        }
+    }
+
+    /// The label for the `diameter` field on an edit form. On a tapered
+    /// ball `diameter` is the TIP diameter, so the label says so.
+    pub fn diameter_field_label(&self) -> &'static str {
+        match self.tool_type {
+            ToolType::TaperedBallNose => "Tip \u{00D8}:",
+            _ => "Diameter \u{00D8}:",
+        }
+    }
+
+    /// The tip radius as read-only text beside the diameter field
+    /// (`= R1.00`), for the two types whose tip is a ball. `None` for
+    /// the other types.
+    pub fn derived_tip_radius_text(&self) -> Option<String> {
+        self.tool_type
+            .has_ball_tip()
+            .then(|| format!("= R{:.2}", self.diameter / 2.0))
     }
 
     /// Cross-type geometry this tool is carrying: fields owned by a
@@ -357,8 +405,8 @@ impl ToolConfig {
     /// legitimately odd name is worse than the defect it guards. It
     /// prefers silence to a guess, and deliberately does NOT flag:
     ///
-    /// - imperial names ("1/4in", "1/8\"") — no unit conversion is
-    ///   attempted, so an inch figure is never compared;
+    /// - a `Ø` or `D` figure that is not the FIRST figure in the name
+    ///   ("R1.0 x Ø6" may name the shank);
     /// - a number with no unit ("2F", "Amana 46200", "T3") — that is
     ///   not a dimension;
     /// - a phrase carrying several united numbers or several role words
@@ -374,12 +422,15 @@ impl ToolConfig {
     /// - a field reading zero, which means unset, not contradicted;
     /// - anything inside [`NAME_MATCH_REL_TOL`], which is loose enough
     ///   to cover "6mm" written for a 6.35 mm (1/4") shank.
+    ///
+    /// Inch figures ("1/4\"", "1/8in", "0.25in") are converted to
+    /// millimetres and then read as any other millimetre figure.
     pub fn name_geometry_mismatches(&self) -> Vec<NameGeometryMismatch> {
         let numbers = parse_name_numbers(&self.name);
         let mut out: Vec<NameGeometryMismatch> = Vec::new();
 
-        for n in &numbers {
-            let Some(claim) = self.name_claim(n) else {
+        for (i, n) in numbers.iter().enumerate() {
+            let Some(claim) = self.name_claim(n, i == 0) else {
                 continue;
             };
             push_mismatch(&mut out, claim.against(n.value));
@@ -389,7 +440,12 @@ impl ToolConfig {
         // carries exactly ONE — then it is "the size".
         let bare: Vec<&NameNumber> = numbers
             .iter()
-            .filter(|n| n.unit == NameUnit::Mm && n.role.is_none() && !n.radius_prefixed)
+            .filter(|n| {
+                n.unit == NameUnit::Mm
+                    && n.role.is_none()
+                    && !n.radius_prefixed
+                    && !n.diameter_prefixed
+            })
             .collect();
         if let [only] = bare.as_slice() {
             let claim = self.bare_length_claim();
@@ -399,9 +455,24 @@ impl ToolConfig {
         out
     }
 
+    /// The one name/geometry disagreement about the TIP size, if any.
+    ///
+    /// This is the subset of [`Self::name_geometry_mismatches`] that a
+    /// token CLEARLY names the cutting size: an `R` figure, a figure
+    /// with the word "tip", a `Ø`/`D` figure first in the name, or the
+    /// single millimetre figure of a name. The tool panel shows it as a
+    /// caution, and the diagnostics carry it as
+    /// `tool.name_size_mismatch`. It is advisory: no caller refuses on it.
+    pub fn name_tip_size_mismatch(&self) -> Option<NameGeometryMismatch> {
+        self.name_geometry_mismatches()
+            .into_iter()
+            .find(|m| m.quantity.is_tip_size())
+    }
+
     /// What a single figure from the name would be claiming about this
-    /// tool — or `None` where this parse declines to read it.
-    fn name_claim(&self, n: &NameNumber) -> Option<NameClaim> {
+    /// tool — or `None` where this parse declines to read it. `is_first`
+    /// is true for the first figure in the name.
+    fn name_claim(&self, n: &NameNumber, is_first: bool) -> Option<NameClaim> {
         let tip_radius = self.diameter / 2.0;
         if n.radius_prefixed {
             // An `R` prefix names a RADIUS, whatever unit follows it.
@@ -424,7 +495,17 @@ impl ToolConfig {
         if n.unit != NameUnit::Mm {
             return None;
         }
-        match n.role? {
+        let Some(role) = n.role else {
+            // A `Ø` or `D` figure first in the name is the cutting size.
+            // Later in the name it can be the shank, so it is not read.
+            return (n.diameter_prefixed && is_first).then(|| NameClaim {
+                quantity: NamedQuantity::TipDiameter,
+                candidates: vec![self.diameter],
+                reported: self.diameter,
+                field: "diameter",
+            });
+        };
+        match role {
             NameRole::Tip => Some(NameClaim {
                 quantity: NamedQuantity::TipDiameter,
                 candidates: vec![self.diameter],
@@ -661,6 +742,11 @@ impl NamedQuantity {
             _ => "mm",
         }
     }
+
+    /// True for the two quantities that name the cutting (tip) size.
+    pub const fn is_tip_size(self) -> bool {
+        matches!(self, NamedQuantity::TipDiameter | NamedQuantity::TipRadius)
+    }
 }
 
 /// One advisory disagreement between a tool's free-text `name` and its
@@ -689,6 +775,28 @@ impl NameGeometryMismatch {
             self.quantity.unit(),
             self.field,
         )
+    }
+
+    /// The operator caution for a tip-size disagreement, in the
+    /// `Ø`/`R` convention of [`ToolConfig::size_label`]:
+    /// "The name says R1.00 (Ø2.00 mm) but the tool is Ø1.00 mm. Check
+    /// the diameter." `None` for a quantity that is not the tip size.
+    pub fn caution_line(&self) -> Option<String> {
+        match self.quantity {
+            NamedQuantity::TipRadius => Some(format!(
+                "The name says R{:.2} (\u{00D8}{:.2} mm) but the tool is \u{00D8}{:.2} mm. \
+                 Check the diameter.",
+                self.name_value,
+                self.name_value * 2.0,
+                self.config_value * 2.0,
+            )),
+            NamedQuantity::TipDiameter => Some(format!(
+                "The name says \u{00D8}{:.2} mm but the tool is \u{00D8}{:.2} mm. \
+                 Check the diameter.",
+                self.name_value, self.config_value,
+            )),
+            _ => None,
+        }
     }
 }
 
@@ -766,7 +874,10 @@ fn push_mismatch(out: &mut Vec<NameGeometryMismatch>, found: Option<NameGeometry
 enum NameUnit {
     Mm,
     Degrees,
-    /// No unit, or one this parse deliberately does not read (inches).
+    /// Inches (`"`, `in`, `inch`). The scan converts the value to
+    /// millimetres and stores [`NameUnit::Mm`].
+    Inch,
+    /// No unit.
     None,
 }
 
@@ -786,6 +897,8 @@ struct NameNumber {
     unit: NameUnit,
     /// An `R` glued to the digits ("R0.5") — a radius, not a diameter.
     radius_prefixed: bool,
+    /// A `Ø`, `⌀` or `D` glued to the digits ("Ø6", "D6") — a diameter.
+    diameter_prefixed: bool,
     role: Option<NameRole>,
 }
 
@@ -793,7 +906,7 @@ struct NameNumber {
 /// word beside each. See [`ToolConfig::name_geometry_mismatches`] for
 /// what this deliberately will not read.
 fn parse_name_numbers(name: &str) -> Vec<NameNumber> {
-    let lower = name.to_ascii_lowercase();
+    let lower = fold_inch_fractions(&name.to_ascii_lowercase());
     let mut out = Vec::new();
     // Segment on the separators names actually use, so a role word
     // binds only to the number it shares a phrase with:
@@ -837,15 +950,25 @@ fn scan_segment(segment: &str) -> (Vec<NameNumber>, Vec<NameRole>) {
                     break;
                 }
             }
-            let (unit, resume) = read_unit(&chars, i);
+            let (mut unit, resume) = read_unit(&chars, i);
             i = resume;
             let is_radius = radius_prefixed(&chars, start);
+            let is_diameter = diameter_prefixed(&chars, start);
             let parsed = digits.trim_end_matches('.').parse::<f64>().ok();
-            if let Some(value) = parsed.filter(|v| v.is_finite() && *v > 0.0) {
+            if let Some(mut value) = parsed.filter(|v| v.is_finite() && *v > 0.0) {
+                if unit == NameUnit::Inch {
+                    value *= MM_PER_INCH;
+                    unit = NameUnit::Mm;
+                }
+                // "Ø6" and "D6" carry no unit: a diameter prefix means mm.
+                if is_diameter && unit == NameUnit::None {
+                    unit = NameUnit::Mm;
+                }
                 numbers.push(NameNumber {
                     value,
                     unit,
                     radius_prefixed: is_radius,
+                    diameter_prefixed: is_diameter,
                     role: None,
                 });
             }
@@ -892,8 +1015,82 @@ fn radius_prefixed(chars: &[char], start: usize) -> bool {
     }
 }
 
+/// Is the number starting at `start` preceded by a bare `Ø`, `⌀` or `D`
+/// ("Ø6", "D6"), rather than by the tail of a word ("hd6")?
+fn diameter_prefixed(chars: &[char], start: usize) -> bool {
+    let Some(prev) = start.checked_sub(1) else {
+        return false;
+    };
+    if !matches!(
+        chars.get(prev),
+        Some('d' | '\u{00D8}' | '\u{00F8}' | '\u{2300}')
+    ) {
+        return false;
+    }
+    match start.checked_sub(2) {
+        None => true,
+        Some(before) => chars.get(before).is_none_or(|c| !c.is_alphanumeric()),
+    }
+}
+
+/// Millimetres per inch, for the inch figures of a tool name.
+const MM_PER_INCH: f64 = 25.4;
+
+/// Rewrite each inch fraction ("1/4\"", "1/8in") as a decimal ("0.25\"")
+/// before the name is split on `/`. A fraction with no inch unit after
+/// it is left alone: "2mm tip / 7°" is two phrases, not a fraction.
+fn fold_inch_fractions(lower: &str) -> String {
+    let chars: Vec<char> = lower.chars().collect();
+    let mut out = String::with_capacity(lower.len());
+    let mut i = 0usize;
+    while i < chars.len() {
+        if let Some((value, end)) = inch_fraction_at(&chars, i) {
+            out.push_str(&value.to_string());
+            i = end;
+            continue;
+        }
+        if let Some(&c) = chars.get(i) {
+            out.push(c);
+        }
+        i += 1;
+    }
+    out
+}
+
+/// An inch fraction `<digits>/<digits>` that starts at `i` (not inside a
+/// longer number) and is followed by an inch unit. Returns the decimal
+/// value and the index of the unit.
+fn inch_fraction_at(chars: &[char], i: usize) -> Option<(f64, usize)> {
+    let starts_number = i
+        .checked_sub(1)
+        .and_then(|p| chars.get(p))
+        .is_none_or(|c| !c.is_ascii_digit() && *c != '.');
+    if !starts_number {
+        return None;
+    }
+    let digits_from = |from: usize| -> (String, usize) {
+        let mut j = from;
+        let mut d = String::new();
+        while let Some(&c) = chars.get(j).filter(|c| c.is_ascii_digit()) {
+            d.push(c);
+            j += 1;
+        }
+        (d, j)
+    };
+    let (num, slash) = digits_from(i);
+    if num.is_empty() || chars.get(slash) != Some(&'/') {
+        return None;
+    }
+    let (den, end) = digits_from(slash + 1);
+    let numerator = num.parse::<f64>().ok()?;
+    let denominator = den.parse::<f64>().ok().filter(|d| *d > 0.0)?;
+    let (unit, _) = read_unit(chars, end);
+    (unit == NameUnit::Inch).then_some((numerator / denominator, end))
+}
+
 /// Read the unit following a number, allowing one space ("6mm", "7 °",
-/// "90 deg"). Returns the unit and the index to resume scanning at.
+/// "90 deg", "1/4\"", "0.25in"). Returns the unit and the index to resume
+/// scanning at.
 fn read_unit(chars: &[char], from: usize) -> (NameUnit, usize) {
     let mut i = from;
     if chars.get(i) == Some(&' ') {
@@ -901,6 +1098,21 @@ fn read_unit(chars: &[char], from: usize) -> (NameUnit, usize) {
     }
     if chars.get(i) == Some(&'°') {
         return (NameUnit::Degrees, i + 1);
+    }
+    // An inch mark directly after the digits (no space: `6 "` is not a
+    // unit), or the word "in" / "inch" / "inches".
+    if matches!(chars.get(from), Some('"' | '\u{201D}')) {
+        return (NameUnit::Inch, from + 1);
+    }
+    if chars.get(i) == Some(&'i') && chars.get(i + 1) == Some(&'n') {
+        let mut j = i;
+        while chars.get(j).is_some_and(|c| c.is_alphabetic()) {
+            j += 1;
+        }
+        let word: String = chars.get(i..j).unwrap_or_default().iter().collect();
+        if matches!(word.as_str(), "in" | "inch" | "inches") {
+            return (NameUnit::Inch, j);
+        }
     }
     if chars.get(i) == Some(&'m')
         && chars.get(i + 1) == Some(&'m')
@@ -1200,8 +1412,16 @@ product_id = ""
     #[test]
     fn quiet_on_names_this_parse_declines_to_read() {
         let quiet: &[(&str, ToolType, f64)] = &[
-            // Imperial: no conversion is attempted.
+            // Imperial: 1/4" converts to 6.35 mm and agrees.
             ("1/4\" 2F Compression", ToolType::EndMill, 6.35),
+            // A 1" name with the millimetre figure beside it (wanaka).
+            ("1\" (25.4mm)", ToolType::EndMill, 25.4),
+            // A Ø figure that is not first may name the shank.
+            (
+                "R1.0mm x \u{00D8}6 shank Tapered Ball",
+                ToolType::TaperedBallNose,
+                2.0,
+            ),
             // A bare "6mm" for a 6.35 mm 1/4" tool is rounding.
             ("6mm 2F Carbide End Mill", ToolType::EndMill, 6.35),
             // Product codes and flute counts are not dimensions.
@@ -1281,6 +1501,135 @@ product_id = ""
         assert_eq!(found[0].quantity, NamedQuantity::ShankDiameter);
         assert_eq!(found[0].name_value, 3.0);
         assert_eq!(found[0].config_value, 6.0);
+    }
+
+    /// One convention on every surface: `Ø` prefixes a diameter, `R` a
+    /// radius, and a tapered ball says "tip".
+    #[test]
+    fn size_label_per_tool_type() {
+        let mut end_mill = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+        end_mill.diameter = 6.0;
+        assert_eq!(end_mill.size_label(), "\u{00D8}6.00 mm");
+        end_mill.corner_radius_mm = 0.5;
+        assert_eq!(end_mill.size_label(), "\u{00D8}6.00 mm, corner R0.50");
+
+        let mut ball = ToolConfig::new_default(ToolId(0), ToolType::BallNose);
+        ball.diameter = 6.0;
+        assert_eq!(ball.size_label(), "\u{00D8}6.00 mm (R3.00)");
+
+        let mut taper = ToolConfig::new_default(ToolId(0), ToolType::TaperedBallNose);
+        taper.diameter = 2.0;
+        taper.shank_diameter = 6.0;
+        taper.shaft_diameter = 6.0;
+        taper.taper_half_angle = 5.7;
+        assert_eq!(
+            taper.size_label(),
+            "tip \u{00D8}2.00 mm (R1.00), shank \u{00D8}6.00"
+        );
+        assert_eq!(
+            taper.summary(),
+            "Tapered Ball Nose tip \u{00D8}2.00 mm (R1.00), shank \u{00D8}6.00, 5.7\u{00B0} half-angle"
+        );
+        assert_eq!(taper.diameter_field_label(), "Tip \u{00D8}:");
+        assert_eq!(taper.derived_tip_radius_text().as_deref(), Some("= R1.00"));
+
+        let mut bull = ToolConfig::new_default(ToolId(0), ToolType::BullNose);
+        bull.diameter = 6.0;
+        bull.corner_radius = 1.0;
+        assert_eq!(bull.size_label(), "\u{00D8}6.00 mm, corner R1.00");
+        assert_eq!(bull.derived_tip_radius_text(), None);
+
+        let mut vbit = ToolConfig::new_default(ToolId(0), ToolType::VBit);
+        vbit.diameter = 12.7;
+        vbit.included_angle = 60.0;
+        assert_eq!(vbit.size_label(), "\u{00D8}12.70 mm, 60\u{00B0}");
+        assert_eq!(vbit.summary(), "V-Bit \u{00D8}12.70 mm, 60\u{00B0}");
+        assert_eq!(vbit.diameter_field_label(), "Diameter \u{00D8}:");
+    }
+
+    /// The tokens the parse reads, each checked against a tool whose
+    /// geometry disagrees by a factor of two, and against one that
+    /// agrees.
+    #[test]
+    fn tip_size_tokens_are_read() {
+        let cases: &[(&str, ToolType, f64, f64)] = &[
+            // (name, type, agreeing diameter, disagreeing diameter)
+            (
+                "R1.0mm x 6mm x 20mm 2F Tapered Ball",
+                ToolType::TaperedBallNose,
+                2.0,
+                1.0,
+            ),
+            ("R1 Ball", ToolType::BallNose, 2.0, 4.0),
+            ("\u{00D8}6 2F Upcut", ToolType::EndMill, 6.0, 3.0),
+            ("D6 Flat", ToolType::EndMill, 6.0, 3.0),
+            (
+                "Tapered Ball 2mm tip / 7\u{00B0} / 6mm shank",
+                ToolType::TaperedBallNose,
+                2.0,
+                1.0,
+            ),
+            ("1/4\" Downcut", ToolType::EndMill, 6.35, 3.175),
+            ("1/8in Ball", ToolType::BallNose, 3.175, 6.35),
+            ("0.25in End Mill", ToolType::EndMill, 6.35, 3.175),
+            ("6mm 2F Carbide End Mill", ToolType::EndMill, 6.0, 3.0),
+        ];
+        for &(name, tool_type, agrees, disagrees) in cases {
+            let mut tool = ToolConfig::new_default(ToolId(0), tool_type);
+            tool.name = name.to_owned();
+            tool.diameter = agrees;
+            tool.shank_diameter = 6.0;
+            tool.shaft_diameter = 6.0_f64.max(agrees);
+            tool.cutting_length = 20.0;
+            tool.shank_length = 20.0;
+            tool.stickout = 35.0;
+            tool.holder_diameter = 25.0;
+            assert!(
+                tool.name_tip_size_mismatch().is_none(),
+                "{name}: agreeing geometry raised {:?}",
+                tool.name_tip_size_mismatch()
+            );
+            // The disagreeing tool is really that size, shank included:
+            // a lone figure that matches the shank is not a mismatch.
+            tool.diameter = disagrees;
+            tool.shank_diameter = disagrees;
+            let m = tool.name_tip_size_mismatch();
+            assert!(m.is_some(), "{name}: Ø{disagrees} raised nothing");
+            assert!(
+                m.and_then(|m| m.caution_line()).is_some(),
+                "{name}: no caution line"
+            );
+        }
+    }
+
+    /// The caution names the name's figure and the tool's figure in the
+    /// `Ø`/`R` convention.
+    #[test]
+    fn caution_line_names_both_sizes() {
+        let mut tool = ToolConfig::new_default(ToolId(0), ToolType::TaperedBallNose);
+        tool.name = "R1.0mm x 6mm x 20mm 2F Tapered Ball".to_owned();
+        tool.diameter = 1.0;
+        tool.shaft_diameter = 6.0;
+        tool.shank_diameter = 6.0;
+        tool.cutting_length = 20.0;
+        let line = tool
+            .name_tip_size_mismatch()
+            .and_then(|m| m.caution_line())
+            .expect("a caution");
+        assert_eq!(
+            line,
+            "The name says R1.00 (\u{00D8}2.00 mm) but the tool is \u{00D8}1.00 mm. Check the diameter."
+        );
+
+        tool.name = "Tapered Ball 2mm tip / 7\u{00B0} / 6mm shank".to_owned();
+        let line = tool
+            .name_tip_size_mismatch()
+            .and_then(|m| m.caution_line())
+            .expect("a caution");
+        assert_eq!(
+            line,
+            "The name says \u{00D8}2.00 mm but the tool is \u{00D8}1.00 mm. Check the diameter."
+        );
     }
 
     /// The tolerance has to be loose enough for shorthand and tight

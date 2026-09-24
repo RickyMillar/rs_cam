@@ -28,6 +28,7 @@ pub fn draw(
     panels: &mut crate::state::panels::PanelDrafts,
 ) -> ToolEditAction {
     ui.heading(&tool.name);
+    ui.label(egui::RichText::new(tool.summary()).color(crate::ui::tokens::TEXT_FAINT));
     ui.separator();
 
     draw_tool_fields(ui, tool);
@@ -160,9 +161,27 @@ pub(crate) fn draw_tool_fields(ui: &mut egui::Ui, tool: &mut ToolConfig) {
 
     ui.add_space(8.0);
 
+    // The name names a tip size the geometry does not have (for example
+    // "2mm tip" on a Ø1.00 tool). Advisory: the name is free text.
+    if let Some(caution) = tool.name_tip_size_mismatch().and_then(|m| m.caution_line()) {
+        ui.label(
+            egui::RichText::new(format!("{} {caution}", crate::ui::tokens::GLYPH_CAUTION))
+                .color(crate::ui::tokens::CAUTION),
+        );
+        ui.add_space(4.0);
+    }
+
     // Parameters grid
     ui.param_grid("tool_params", |ui| {
-        ValueRow::new("Diameter:", &mut tool.diameter, " mm", 0.1, 0.1..=100.0).show(ui);
+        // One convention: `Ø` is a diameter, `R` a radius. A tapered
+        // ball's `diameter` is the TIP, so its label says "Tip Ø", and a
+        // ball tip shows its radius beside the field so the operator can
+        // compare it with an "R1.0" vendor name.
+        let diameter_label = tool.diameter_field_label();
+        let tip_radius = tool.derived_tip_radius_text();
+        ValueRow::new(diameter_label, &mut tool.diameter, " mm", 0.1, 0.1..=100.0)
+            .note(tip_radius.as_deref())
+            .show(ui);
 
         ValueRow::new(
             "Cutting Length:",
@@ -262,14 +281,14 @@ pub(crate) fn draw_tool_fields(ui: &mut egui::Ui, tool: &mut ToolConfig) {
     });
 
     // TOO-005 — "Cutter geometry" group: the tapered ball-nose upper-shaft
-    // diameter (taper top), separated from the holder "Shank ⌀ (in collet)"
+    // diameter (taper top), separated from the holder "Shank Ø (in collet)"
     // so the two diameters live under distinct headers, not as sibling rows.
     if matches!(tool.tool_type, ToolType::TaperedBallNose) {
         ui.add_space(8.0);
         ui.label(egui::RichText::new("Cutter geometry").strong());
         ui.param_grid("tool_cutter_geometry", |ui| {
             ValueRow::new(
-                "Upper shaft ⌀ (taper top):",
+                "Upper shaft \u{00D8} (taper top):",
                 &mut tool.shaft_diameter,
                 " mm",
                 0.1,
@@ -313,9 +332,9 @@ pub(crate) fn draw_tool_fields(ui: &mut egui::Ui, tool: &mut ToolConfig) {
                 .show(ui);
 
                 // TOO-005: role-bearing label, distinct from the tapered
-                // "Upper shaft ⌀" in the Cutter geometry group above.
+                // "Upper shaft Ø" in the Cutter geometry group above.
                 ValueRow::new(
-                    "Shank \u{2300} (in collet):",
+                    "Shank \u{00D8} (in collet):",
                     &mut tool.shank_diameter,
                     " mm",
                     0.1,

@@ -1087,6 +1087,11 @@ pub struct ToolSummary {
     pub included_angle_deg: f64,
     /// Flute count — used by both feeds/speeds and chipload-per-tooth.
     pub flute_count: u32,
+    /// The size as a person reads it, from [`ToolConfig::size_label`]:
+    /// `Ø` prefixes a diameter and `R` a radius, for example
+    /// "tip Ø2.00 mm (R1.00), shank Ø6.00". The numeric fields above stay
+    /// the wire; this string is for display only.
+    pub size_label: String,
 }
 
 fn is_zero_f64(v: &f64) -> bool {
@@ -1448,6 +1453,7 @@ impl ProjectSession {
                 corner_radius_mm: t.corner_radius_mm.max(t.corner_radius),
                 included_angle_deg: t.included_angle,
                 flute_count: t.flute_count,
+                size_label: t.size_label(),
             })
             .collect()
     }

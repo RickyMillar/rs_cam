@@ -192,7 +192,7 @@ pub(crate) fn draw_inspector_comparison(
         &explain.recommended,
     );
     power.calculator_note = power_note(&power, &calculator_power, &applied.cut_cause());
-    draw_context_chip(ui, explain);
+    draw_context_chip(ui, explain, tool);
     ui.add_space(crate::ui::tokens::SPACE_2);
     draw_comparison_card(
         ui,
@@ -212,7 +212,15 @@ pub(crate) fn draw_inspector_comparison(
 /// Tool, material and recommendation-source context belongs with the
 /// canonical comparison, not in the Explore window. `horizontal_wrapped`
 /// keeps this compact line within the narrow inspector (UR1/UR4).
-fn draw_context_chip(ui: &mut egui::Ui, explain: &FeedsExplain) {
+///
+/// The size reads `ToolConfig::size_label`, so a tapered ball says
+/// "tip Ø2.00 mm (R1.00)" and never a bare "2.00 mm" beside an "R1.0"
+/// vendor name.
+fn draw_context_chip(
+    ui: &mut egui::Ui,
+    explain: &FeedsExplain,
+    tool: &crate::state::job::ToolConfig,
+) {
     ui.horizontal_wrapped(|ui| {
         ui.add(
             egui::Label::new(egui::RichText::new("Tool:").small().color(theme::TEXT_DIM)).wrap(),
@@ -220,8 +228,8 @@ fn draw_context_chip(ui: &mut egui::Ui, explain: &FeedsExplain) {
         ui.add(
             egui::Label::new(
                 egui::RichText::new(format!(
-                    "{:.2} mm · {} flute · {}",
-                    explain.tool_diameter_mm,
+                    "{} · {} flute · {}",
+                    tool.size_label(),
                     explain.flute_count,
                     tool_family_label(explain.query.tool_family),
                 ))
