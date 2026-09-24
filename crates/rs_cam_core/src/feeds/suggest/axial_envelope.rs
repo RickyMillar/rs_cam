@@ -253,8 +253,7 @@ pub(crate) fn axial_envelope_for_operation(
 ///   `AxialDocClampedByEnvelope` (`param_name` `"coarse step depth"`,
 ///   `commanded_mm` = the step). Then the ladder is made valid again: a
 ///   coarse step that is not above `depth_per_pass` goes, and so does a
-///   second copy of one step. Each step that goes gets a
-///   `CoarseStepRemoved` note.
+///   second copy of one step.
 /// - `VCarve` — clamps `cfg.max_depth` via policy C. The V-bit
 ///   engaged width at the candidate depth is the radial WOC.
 /// - `ProjectCurve` — warning-only feasibility check on `cfg.depth`.
@@ -309,8 +308,7 @@ pub(super) fn pick_axial_envelope(
                     crate::feeds::cutter_constraints::AxialBindingConstraint::SafeBandEmpty
                 );
                 let binding = axial_binding_str(env.binding_constraint);
-                let capped = super::ladder::cap_coarse_steps_of(cfg, safe_max);
-                for &(from, to) in &capped.moved {
+                for (from, to) in super::ladder::cap_coarse_steps_of(cfg, safe_max) {
                     if !band_empty {
                         warnings.push(SuggestWarning::AxialDocClampedByEnvelope {
                             op_kind: "adaptive3d",
@@ -322,22 +320,13 @@ pub(super) fn pick_axial_envelope(
                     }
                     dpp_mutated = true;
                 }
-                // A capped step that is no longer above the next step goes,
-                // with its note (operator ruling 1, 2026-09-24). The note is
-                // filed also with an empty safe band: a removed step always
-                // has a note.
-                warnings.extend(super::ladder::removal_notes(
-                    &capped.removed,
-                    "axial envelope",
-                ));
             }
-            // Keep the ladder valid even when no step moved here. With a
-            // ladder the apply funnel keeps the operator's base step (ruling
-            // 1), so this removes a step only when the operator's own ladder
-            // breaks the rule. The adapter refuses such a ladder; the note
-            // says why the step went.
-            let invalid = super::ladder::normalize_ladder_of(cfg);
-            warnings.extend(super::ladder::removal_notes(&invalid, "ladder rule"));
+            // Keep the ladder valid even when no step moved here. The apply
+            // funnel writes the calculator's base step before this pass,
+            // and that base step can be at or above an operator's coarse
+            // step. A coarse step that is no longer above the base step
+            // goes.
+            super::ladder::normalize_ladder_of(cfg);
         }
         OperationConfig::VCarve(cfg) => {
             let commanded = cfg.max_depth;

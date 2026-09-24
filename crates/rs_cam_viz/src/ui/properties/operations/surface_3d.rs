@@ -306,8 +306,7 @@ fn draw_coarse_steps(ui: &mut egui::Ui, cfg: &mut Adaptive3dConfig) {
 
 /// The one line that shows the ladder: the coarse steps, then Depth/Pass,
 /// for example "10 → 5 mm". With no coarse step it says "5 mm, one step".
-/// The readiness panel's DOC column shows the ladder with this text.
-pub(crate) fn ladder_line(cfg: &Adaptive3dConfig) -> String {
+pub(in crate::ui::properties) fn ladder_line(cfg: &Adaptive3dConfig) -> String {
     if cfg.coarse_steps.is_empty() {
         return format!("{} mm, one step", mm_text(cfg.depth_per_pass));
     }

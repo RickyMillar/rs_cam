@@ -43,11 +43,6 @@
 //!   Raises `PowerLadderReducedCut`.
 //! - `short_flute`: the adaptive cell on a tool with 2 mm of flute. Raises
 //!   `DocExceedsFlute`.
-//! - `ladder_collapse`: the short-flute tool on the adaptive cell with a
-//!   step ladder, Depth/Pass 2 mm and a coarse step of 7 mm. Suggest keeps
-//!   the operator's steps and only caps (operator ruling 1, 2026-09-24).
-//!   The cap puts the 7 mm step on Depth/Pass, so Suggest removes it.
-//!   Raises `CoarseStepRemoved`.
 //! - `finish`: the first Finish-role operation and tool type that ships a
 //!   recipe, in generic hardwood, else softwood plywood. Raises
 //!   `AggressivenessNotApplied` (`FinishRole`).
@@ -177,9 +172,6 @@ fn classify_suggest(w: &SuggestWarning) -> (&'static str, Class) {
         SuggestWarning::RpmLoweredForFeedCeiling { .. } => {
             ("SuggestRpmLoweredForFeedCeiling", Class::OnTheFace)
         }
-        // Operator ruling 1 (2026-09-24): a removed ladder step is on the
-        // face.
-        SuggestWarning::CoarseStepRemoved { .. } => ("CoarseStepRemoved", Class::OnTheFace),
         SuggestWarning::PlungeClampedToFeed { .. } => ("PlungeClampedToFeed", Class::RowHover),
         SuggestWarning::StepoverClampedToToolDiameter { .. } => {
             ("StepoverClampedToToolDiameter", Class::RowHover)
@@ -370,16 +362,6 @@ fn suggest_numbers(w: &SuggestWarning) -> Vec<String> {
             out.push(at(*rpm_from, 0));
             out.push(at(*rpm_to, 0));
             out.push(at(*feed_ceiling_mm_min, 0));
-        }
-        SuggestWarning::CoarseStepRemoved {
-            step_mm,
-            lowered_to_mm,
-            next_step_mm,
-            ..
-        } => {
-            out.push(at(*step_mm, 2));
-            out.push(at(*lowered_to_mm, 2));
-            out.push(at(*next_step_mm, 2));
         }
         _ => {}
     }
@@ -605,19 +587,6 @@ fn adaptive_operation() -> OperationConfig {
     operation
 }
 
-/// The adaptive cell with a step ladder: Depth/Pass 2 mm (the flute length
-/// of the short-flute tool) and one coarse step of 7 mm. Every cap that
-/// reaches the 7 mm step puts it at or below Depth/Pass, and the flute
-/// length reaches it at the latest, so Suggest removes it.
-fn ladder_operation() -> OperationConfig {
-    let mut operation = adaptive_operation();
-    if let OperationConfig::Adaptive3d(config) = &mut operation {
-        config.depth_per_pass = 2.0;
-        config.coarse_steps = vec![7.0];
-    }
-    operation
-}
-
 fn baltic_birch() -> Material {
     Material::Plywood {
         grade: PlywoodGrade::BalticBirch,
@@ -755,14 +724,6 @@ fn cases() -> Vec<Case> {
             must_raise: &["PowerLadderReducedCut"],
         },
         Case {
-            name: "ladder_collapse",
-            tool: short_flute.clone(),
-            material: baltic_birch(),
-            operation: ladder_operation(),
-            machine: None,
-            must_raise: &["CoarseStepRemoved"],
-        },
-        Case {
             name: "short_flute",
             tool: short_flute,
             material: baltic_birch(),
@@ -806,7 +767,6 @@ fn every_stage_that_moves_a_number_is_on_the_card_g_visible() {
         "EngagementReducedForAggressiveness",
         "AggressivenessNotApplied",
         "LongToolDerate",
-        "CoarseStepRemoved",
     ] {
         assert!(
             checked.contains(&name),

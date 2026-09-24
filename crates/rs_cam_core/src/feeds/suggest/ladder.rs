@@ -16,21 +16,13 @@
 //! - [`set_deepest_axial_step`] is for a common SCALE (the aggressiveness
 //!   dial). Every step moves by the same factor.
 //!
-//! Both keep the ladder valid: coarsest first, and each coarse step larger
-//! than `depth_per_pass`. The adapter check `check_adaptive3d_step_ladder`
-//! (compute/execute/finish_3d.rs) states the same rule; it is not reachable
-//! from this module.
-//!
-//! A write only lowers a step ("keep my steps, only cap", operator ruling 1
-//! of 2026-09-24). When a lowered step is no longer above the next step, it
-//! goes. Each write returns the steps that went, as [`RemovedStep`], and the
-//! caller files a [`SuggestWarning::CoarseStepRemoved`] for each one. A
-//! ladder never goes empty with no note.
+//! Both keep the ladder valid with [`normalize_ladder`]: coarsest first,
+//! and each coarse step larger than `depth_per_pass`. The adapter check
+//! `check_adaptive3d_step_ladder` (compute/execute/finish_3d.rs) states the
+//! same rule; it is not reachable from this module.
 
 use crate::compute::catalog::OperationConfig;
 use crate::compute::operation_configs::Adaptive3dConfig;
-
-use super::SuggestWarning;
 
 /// Two steps closer than this are one step. The dial writes to 0.001 mm,
 /// so two different written steps are always further apart than this.
@@ -63,112 +55,42 @@ pub(super) fn at_single_step(operation: &OperationConfig, depth_mm: f64) -> Oper
     probe
 }
 
-/// One coarse step that a write removed from the ladder. The step moved to
-/// a value that is not above the next step, so it was no longer a step of
-/// its own. The caller turns it into a [`SuggestWarning::CoarseStepRemoved`]
-/// with [`removal_notes`], so no removal is silent.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct RemovedStep {
-    /// The index of the step in the ladder before the write.
-    pub(super) index: usize,
-    /// The coarse step before the write.
-    pub(super) step_mm: f64,
-    /// The value that the write gave the step.
-    pub(super) lowered_to_mm: f64,
-    /// The step that it is no longer above.
-    pub(super) next_step_mm: f64,
-    /// `true` when the next step is the base step `depth_per_pass`.
-    pub(super) next_is_base: bool,
-}
-
-/// The removal notes for `removed`, one for each step. `cap` names the
-/// limit that lowered the steps, in the words of the card.
-pub(super) fn removal_notes(removed: &[RemovedStep], cap: &'static str) -> Vec<SuggestWarning> {
-    removed
-        .iter()
-        .map(|r| SuggestWarning::CoarseStepRemoved {
-            step_mm: r.step_mm,
-            lowered_to_mm: r.lowered_to_mm,
-            next_step_mm: r.next_step_mm,
-            next_is_base: r.next_is_base,
-            cap,
-        })
-        .collect()
-}
-
 /// Remove the coarse steps that break the ladder rule, and keep the rest in
 /// their order. A coarse step that is not larger than `depth_per_pass` goes,
-/// and so does a second copy of one step. Returns each step that went.
+/// and so does a second copy of one step. Returns `true` when a step went.
 ///
-/// `before` is the ladder before the write that the caller made, index for
-/// index. The writes in this module change the values in place and do not
-/// change the order (a cap and a positive scale keep the order of two
-/// values), so index `i` of `before` is the same step as index `i` now.
-/// Without a write, pass the ladder itself.
-fn prune_ladder_of(cfg: &mut Adaptive3dConfig, before: &[f64]) -> Vec<RemovedStep> {
-    let base = cfg.depth_per_pass;
-    let mut kept: Vec<f64> = Vec::with_capacity(cfg.coarse_steps.len());
-    let mut removed = Vec::new();
-    for (i, &step) in cfg.coarse_steps.iter().enumerate() {
-        let was = before.get(i).copied().unwrap_or(step);
-        if step <= base + SAME_STEP_EPS_MM {
-            removed.push(RemovedStep {
-                index: i,
-                step_mm: was,
-                lowered_to_mm: step,
-                next_step_mm: base,
-                next_is_base: true,
-            });
-            continue;
-        }
-        if let Some(&last) = kept.last()
-            && (last - step).abs() <= SAME_STEP_EPS_MM
-        {
-            removed.push(RemovedStep {
-                index: i,
-                step_mm: was,
-                lowered_to_mm: step,
-                next_step_mm: last,
-                next_is_base: false,
-            });
-            continue;
-        }
-        kept.push(step);
+/// The function does not sort. The writes in this module keep the order: a
+/// cap and a positive scale do not change the order of two values.
+pub(super) fn normalize_ladder(operation: &mut OperationConfig) -> bool {
+    match operation {
+        OperationConfig::Adaptive3d(cfg) => normalize_ladder_of(cfg),
+        _ => false,
     }
-    cfg.coarse_steps = kept;
-    removed
 }
 
-/// Remove the coarse steps that break the ladder rule when no write moved
-/// them (see [`prune_ladder_of`]). Returns each step that went; for each,
-/// `lowered_to_mm` equals `step_mm`.
-pub(super) fn normalize_ladder_of(cfg: &mut Adaptive3dConfig) -> Vec<RemovedStep> {
-    let before = cfg.coarse_steps.clone();
-    prune_ladder_of(cfg, &before)
-}
-
-/// What a cap did to the coarse steps.
-#[derive(Debug, Default)]
-pub(super) struct CoarseCap {
-    /// The `(from, to)` pair of each coarse step that moved, coarsest first.
-    pub(super) moved: Vec<(f64, f64)>,
-    /// Each coarse step that the cap removed from the ladder.
-    pub(super) removed: Vec<RemovedStep>,
+/// [`normalize_ladder`] on the 3D Rough config itself.
+pub(super) fn normalize_ladder_of(cfg: &mut Adaptive3dConfig) -> bool {
+    let before = cfg.coarse_steps.len();
+    let base = cfg.depth_per_pass;
+    cfg.coarse_steps.retain(|s| *s > base + SAME_STEP_EPS_MM);
+    cfg.coarse_steps
+        .dedup_by(|a, b| (*a - *b).abs() <= SAME_STEP_EPS_MM);
+    cfg.coarse_steps.len() != before
 }
 
 /// Move each coarse step above `cap_mm` down to `cap_mm`, then keep the
-/// ladder valid. The base step does not move here; the caller caps it on
-/// its own path, before this call.
-pub(super) fn cap_coarse_steps(operation: &mut OperationConfig, cap_mm: f64) -> CoarseCap {
+/// ladder valid. Returns the `(from, to)` pair of each coarse step that
+/// moved, coarsest first. The base step does not move here; the caller
+/// caps it on its own path, before this call.
+pub(super) fn cap_coarse_steps(operation: &mut OperationConfig, cap_mm: f64) -> Vec<(f64, f64)> {
     match operation {
         OperationConfig::Adaptive3d(cfg) => cap_coarse_steps_of(cfg, cap_mm),
-        _ => CoarseCap::default(),
+        _ => Vec::new(),
     }
 }
 
 /// [`cap_coarse_steps`] on the 3D Rough config itself.
-pub(super) fn cap_coarse_steps_of(cfg: &mut Adaptive3dConfig, cap_mm: f64) -> CoarseCap {
-    let before = cfg.coarse_steps.clone();
+pub(super) fn cap_coarse_steps_of(cfg: &mut Adaptive3dConfig, cap_mm: f64) -> Vec<(f64, f64)> {
     let mut moved = Vec::new();
     for step in &mut cfg.coarse_steps {
         if *step > cap_mm {
@@ -176,20 +98,18 @@ pub(super) fn cap_coarse_steps_of(cfg: &mut Adaptive3dConfig, cap_mm: f64) -> Co
             *step = cap_mm;
         }
     }
-    let removed = prune_ladder_of(cfg, &before);
-    CoarseCap { moved, removed }
+    normalize_ladder_of(cfg);
+    moved
 }
 
 /// Put every axial step at or below `cap_mm`: the base step and each coarse
 /// step. With no ladder this is `set_depth_per_pass(cap_mm)` when the base
-/// step is above the cap, and nothing when it is not. Returns each coarse
-/// step that the cap removed; the caller gives each one a note with
-/// [`removal_notes`].
-pub(super) fn cap_axial_steps(operation: &mut OperationConfig, cap_mm: f64) -> Vec<RemovedStep> {
+/// step is above the cap, and nothing when it is not.
+pub(super) fn cap_axial_steps(operation: &mut OperationConfig, cap_mm: f64) {
     if operation.depth_per_pass().is_some_and(|d| d > cap_mm) {
         operation.set_depth_per_pass(cap_mm);
     }
-    cap_coarse_steps(operation, cap_mm).removed
+    cap_coarse_steps(operation, cap_mm);
 }
 
 /// Scale the whole ladder so that its deepest step is `deepest_mm`. Every
@@ -199,18 +119,16 @@ pub(super) fn cap_axial_steps(operation: &mut OperationConfig, cap_mm: f64) -> V
 /// The deepest coarse step gets `deepest_mm` exactly. `round` maps each
 /// other scaled coarse step to the value that ships (the dial rounds DOWN
 /// to 0.001 mm). The base step is the caller's to write, with its own snap;
-/// pass it as `base_mm`. Returns each coarse step that the scale removed
-/// (a rounding can put two steps on one value).
+/// pass it as `base_mm`.
 pub(super) fn set_deepest_axial_step(
     operation: &mut OperationConfig,
     deepest_mm: f64,
     base_mm: f64,
     round: &dyn Fn(f64) -> f64,
-) -> Vec<RemovedStep> {
+) {
     let Some(deepest_now) = operation.deepest_axial_step() else {
-        return Vec::new();
+        return;
     };
-    let before = coarse_steps(operation).to_vec();
     if let OperationConfig::Adaptive3d(cfg) = operation
         && !cfg.coarse_steps.is_empty()
         && deepest_now.is_finite()
@@ -226,8 +144,5 @@ pub(super) fn set_deepest_axial_step(
         }
     }
     operation.set_depth_per_pass(base_mm);
-    match operation {
-        OperationConfig::Adaptive3d(cfg) => prune_ladder_of(cfg, &before),
-        _ => Vec::new(),
-    }
+    normalize_ladder(operation);
 }

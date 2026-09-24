@@ -882,13 +882,6 @@ fn wanaka_suggest_baseline() {
                 // toolpaths pin `clearing_strategy = "agent_search"`,
                 // and heuristic-B pinning suppresses the warn-only
                 // recommendation. If this trips, pinning regressed.
-                // Ladder ruling "keep my steps, only cap" (2026-09-24): the
-                // note fires only when a capped coarse step collapses. No
-                // Wanaka toolpath carries a step ladder, so it must not fire.
-                SuggestWarning::CoarseStepRemoved { step_mm, cap, .. } => panic!(
-                    "tp {id} ({name}): CoarseStepRemoved({step_mm} mm, {cap}) fired on \
-                     Wanaka, which has no step ladder"
-                ),
                 SuggestWarning::StrategyRecommendedNotApplied { param, .. } => panic!(
                     "tp {id} ({name}): StrategyRecommendedNotApplied({param}) fired on Wanaka — \
                      heuristic-B pinning must suppress it (clearing_strategy is pinned to agent_search)"

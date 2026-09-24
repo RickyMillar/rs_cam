@@ -28,21 +28,9 @@
 //!   whole funnel. Every step that ships is at or below every clamp that a
 //!   record states, and the ladder that ships is valid. The funnel writes the
 //!   ladder back from its scratch copy, so a missing write-back fails here.
-//!   Operator ruling 1 (2026-09-24, "keep my steps, only cap"): the funnel
-//!   keeps the operator's base step 3.0 and does not write the calculator's
-//!   depth. The base ships at 3.0, or at a lower value that a record states.
-//!   The ladder ships non-empty, or each step that went has a
-//!   `CoarseStepRemoved` note. The arm sets the dial to a load share of 1.0
-//!   (aggressiveness = 1 / long-tool share), so the dial does not scale the
-//!   steps and the base pin is exact.
 //! - `an_empty_ladder_moves_no_number`: an empty ladder and a config that
 //!   never carried the key give the same Suggest output, and no coarse-step
 //!   record.
-//! - `a_capped_step_that_meets_the_base_is_removed_with_a_note`: the
-//!   invariant passes on their own, with the base step AT the envelope cap.
-//!   The envelope lowers the 20 mm step to the cap, which is not above the
-//!   base step, so the step goes. Exactly one `CoarseStepRemoved` note says
-//!   so, and names 20 mm, the cap, the base step and "axial envelope".
 //!
 //! The editor could not derive the envelope cap and the shipped ladder by
 //! hand; the arms print them (`eprintln!`) for the orchestrator to record.
@@ -157,44 +145,6 @@ fn stated_caps(warnings: &[SuggestWarning]) -> Vec<f64> {
             _ => None,
         })
         .collect()
-}
-
-/// Each `CoarseStepRemoved` note: `(step, lowered to, next step, next is
-/// the base, cap)`.
-fn removal_notes(warnings: &[SuggestWarning]) -> Vec<(f64, f64, f64, bool, &'static str)> {
-    warnings
-        .iter()
-        .filter_map(|w| match w {
-            SuggestWarning::CoarseStepRemoved {
-                step_mm,
-                lowered_to_mm,
-                next_step_mm,
-                next_is_base,
-                cap,
-            } => Some((*step_mm, *lowered_to_mm, *next_step_mm, *next_is_base, *cap)),
-            _ => None,
-        })
-        .collect()
-}
-
-/// Operator ruling 1 (2026-09-24): no step leaves the ladder with no note.
-/// Each coarse step of the input either ships or has one removal note.
-fn assert_no_silent_removal(
-    op: &OperationConfig,
-    warnings: &[SuggestWarning],
-    input_steps: usize,
-    ctx: &str,
-) {
-    let shipped = coarse_steps(op).len();
-    let notes = removal_notes(warnings);
-    assert_eq!(
-        shipped + notes.len(),
-        input_steps,
-        "{ctx}: {input_steps} coarse step(s) went in, {shipped} shipped and \
-         {} removal note(s) were filed: a step left the ladder with no note. \
-         Notes {notes:?}; warnings {warnings:?}",
-        notes.len()
-    );
 }
 
 fn coarse_records(warnings: &[SuggestWarning]) -> Vec<(f64, f64, &'static str)> {
@@ -347,7 +297,6 @@ fn the_envelope_clamps_the_coarse_step_with_a_record() {
         );
     }
     assert_ladder_valid(&op, "arm 2");
-    assert_no_silent_removal(&op, &warnings, 1, "arm 2");
 }
 
 // ── Arm 3: the whole Suggest door ───────────────────────────────────
@@ -382,69 +331,19 @@ fn run_suggest(op: &mut OperationConfig, machine: &MachineProfile) -> Vec<Sugges
     )
 }
 
-/// The generic router with the dial at a load share of 1.0 for this tool:
-/// aggressiveness = 1 / long-tool share. The dial then does not act, so the
-/// base step that ships is the operator's value or a stated cap.
-fn neutral_dial_machine() -> MachineProfile {
-    let mut machine = MachineProfile::generic_wood_router();
-    let t = tool();
-    let share = rs_cam_core::feeds::long_tool_load_share(t.stickout, t.diameter);
-    assert!(share.is_finite() && share > 0.0, "long-tool share {share}");
-    machine.aggressiveness = 1.0 / share;
-    machine
-}
-
 #[test]
 fn the_full_suggest_door_ships_every_step_at_or_below_every_cap() {
-    let machine = neutral_dial_machine();
+    let machine = MachineProfile::generic_wood_router();
     let mut op = rough(BASE_STEP_MM, vec![COARSE_STEP_MM]);
     let warnings = run_suggest(&mut op, &machine);
     eprintln!(
         "G-LADDER arm 3: shipped base {:?}, ladder {:?}, deepest {:?}; coarse \
-         records {:?}; removal notes {:?}",
+         records {:?}",
         op.depth_per_pass(),
         coarse_steps(&op),
         op.deepest_axial_step(),
-        coarse_records(&warnings),
-        removal_notes(&warnings)
+        coarse_records(&warnings)
     );
-    assert!(
-        !warnings
-            .iter()
-            .any(|w| matches!(w, SuggestWarning::EngagementReducedForAggressiveness { .. })),
-        "the neutral dial must not act, else the base pin is not exact: {warnings:?}"
-    );
-
-    // Ruling 1: the funnel keeps the operator's base step. It ships at 3.0,
-    // or lower only where a record states the cap that lowered it. Before
-    // the ruling the funnel wrote the calculator's DOC (4.09 mm) here.
-    let base = op.depth_per_pass().unwrap();
-    assert!(
-        base <= BASE_STEP_MM,
-        "Suggest raised the operator's base step {BASE_STEP_MM} mm to {base} mm; \
-         with a ladder it may only lower a step. Warnings {warnings:?}"
-    );
-    if base < BASE_STEP_MM {
-        assert!(
-            stated_caps(&warnings)
-                .iter()
-                .any(|c| (base - c).abs() < 1e-9),
-            "the base step moved {BASE_STEP_MM} -> {base} mm and no record states \
-             that cap: {warnings:?}"
-        );
-    } else {
-        assert_eq!(base, BASE_STEP_MM, "the base step is the operator's value");
-    }
-    // The ladder ships non-empty, or its step went with a note.
-    assert_no_silent_removal(&op, &warnings, 1, "arm 3");
-    if coarse_steps(&op).is_empty() {
-        assert_eq!(
-            removal_notes(&warnings).len(),
-            1,
-            "an empty ladder must carry the note: {warnings:?}"
-        );
-    }
-
     let deepest = op.deepest_axial_step().unwrap();
     let caps = stated_caps(&warnings);
     for c in &caps {
@@ -496,76 +395,4 @@ fn an_empty_ladder_moves_no_number() {
     let p =
         power_at_operating_point(&explicit, &tool, &material, &machine, None).expect("modelled");
     assert_eq!(p.ap_mm, BASE_STEP_MM);
-}
-
-// ── Arm 5: a capped step that meets the base step ───────────────────
-
-#[test]
-fn a_capped_step_that_meets_the_base_is_removed_with_a_note() {
-    let machine = MachineProfile::generic_wood_router();
-    let material = hardwood();
-    let tool = tool();
-    let cap = envelope_cap_without_a_row();
-    assert!(
-        cap > 0.0 && cap < COARSE_STEP_MM,
-        "fixture is vacuous: the envelope cap {cap} mm is not under the 20 mm \
-         coarse step"
-    );
-
-    // The base step sits at the cap, so the capped 20 mm step lands on it.
-    let mut op = rough(cap, vec![COARSE_STEP_MM]);
-    let warnings = resolve_operation_invariants(
-        &mut op,
-        &tool,
-        &machine,
-        &material,
-        PassRole::Roughing,
-        SuggestContext::default(),
-    );
-    eprintln!(
-        "G-LADDER arm 5: cap {cap:.4} mm; shipped base {:?}, ladder {:?}; notes {:?}",
-        op.depth_per_pass(),
-        coarse_steps(&op),
-        removal_notes(&warnings)
-    );
-
-    assert!(
-        coarse_steps(&op).is_empty(),
-        "the 20 mm step capped onto the base step must go: {:?}",
-        coarse_steps(&op)
-    );
-    let notes = removal_notes(&warnings);
-    assert_eq!(
-        notes.len(),
-        1,
-        "exactly one removal note for the one step: {warnings:?}"
-    );
-    let (step, lowered_to, next, next_is_base, why) = notes[0];
-    assert_eq!(step, COARSE_STEP_MM, "the note names the step as written");
-    assert!(
-        (lowered_to - cap).abs() < 1e-9,
-        "the note gives the cap {cap} mm as the new value, got {lowered_to} mm"
-    );
-    assert!(
-        (next - cap).abs() < 1e-9,
-        "the step it is no longer above is the base step at the cap, got {next} mm"
-    );
-    assert!(next_is_base, "the next step is Depth/Pass");
-    assert_eq!(why, "axial envelope");
-    // The clamp record of the step is still filed, before its note.
-    let records = coarse_records(&warnings);
-    assert_eq!(records.len(), 1, "{warnings:?}");
-    assert_eq!(records[0].0, COARSE_STEP_MM);
-    assert_no_silent_removal(&op, &warnings, 1, "arm 5");
-    // The card text names the step, the cap and Depth/Pass.
-    let text = rs_cam_core::feeds::suggest::coarse_step_removed_text(
-        step,
-        lowered_to,
-        next,
-        next_is_base,
-        why,
-    );
-    assert!(text.contains("20.00"), "{text}");
-    assert!(text.contains("axial envelope"), "{text}");
-    assert!(text.contains("Depth/Pass"), "{text}");
 }

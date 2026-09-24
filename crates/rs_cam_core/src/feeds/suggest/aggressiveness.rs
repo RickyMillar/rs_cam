@@ -14,13 +14,6 @@
 //! `planning/adaptive3d_step_ladder_roughing_2026-09-24/PLAN.md`). The record
 //! gives the deepest step in `dpp_from` / `dpp_to`.
 //!
-//! The ladder holds the operator's steps (ruling 1 of 2026-09-24, "keep my
-//! steps, only cap"). So on a ladder the dial only LOWERS the steps: below
-//! 1.0 it scales the whole ladder down to hold the load, and the record
-//! states the lowering. Above 1.0 the depth lever is capped at the deepest
-//! step as it stands, so no step rises; the stepover alone takes the
-//! raise. A step that a scale removes gets a `CoarseStepRemoved` note.
-//!
 //! The target is `k_eff = k × ld`: `k` is `MachineProfile::aggressiveness`
 //! and `ld` is the long-tool share `feeds::long_tool_load_share` (ruling Q7).
 //!
@@ -249,10 +242,7 @@ pub(super) fn apply_aggressiveness(
 
     // The levers and their bounds. A raise above 1.0 stays inside the caps
     // that already bound the base engagement.
-    // Ruling 1 of 2026-09-24: a ladder holds the operator's steps, and the
-    // dial may only lower them. Its depth cap is the deepest step as it
-    // stands, so a raise above 1.0 moves the stepover alone.
-    let depth_cap = if target_share > 1.0 && !super::ladder::has_ladder(operation) {
+    let depth_cap = if target_share > 1.0 {
         depth_cap_for_raise(operation, tool, machine, pass_role, ap0, earlier)
     } else {
         ap0
@@ -385,7 +375,6 @@ pub(super) fn apply_aggressiveness(
         if raising { r.max(l.base) } else { r }
     });
     let after = model.loads(ap_ship.unwrap_or(ap0), ae_ship.unwrap_or(ae0));
-    let mut removal_notes = Vec::new();
     if let Some(ap) = ap_ship {
         if super::ladder::has_ladder(operation) {
             // The step ladder: `ap` is the new deepest step. Every step moves
@@ -398,9 +387,7 @@ pub(super) fn apply_aggressiveness(
             {
                 let scaled = round(base * ap / ap0);
                 let base_ship = if raising { scaled.max(base) } else { scaled };
-                let removed =
-                    super::ladder::set_deepest_axial_step(operation, ap, base_ship, &round);
-                removal_notes = super::ladder::removal_notes(&removed, "aggressiveness dial");
+                super::ladder::set_deepest_axial_step(operation, ap, base_ship, &round);
             }
         } else {
             operation.set_depth_per_pass(ap);
@@ -422,7 +409,7 @@ pub(super) fn apply_aggressiveness(
         Some(shortfall.unwrap_or(AggressivenessShortfall::LeverFloor))
     };
 
-    let mut records = vec![engagement_record(
+    vec![engagement_record(
         k,
         ld_factor,
         target_share,
@@ -433,9 +420,7 @@ pub(super) fn apply_aggressiveness(
         after,
         target_met,
         shortfall,
-    )];
-    records.extend(removal_notes);
-    records
+    )]
 }
 
 /// The deepest depth per pass a raise above 1.0 may write: the rigidity

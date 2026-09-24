@@ -602,16 +602,6 @@ fn suggest_warning_defect(w: &SuggestWarning) -> Option<&'static str> {
         SuggestWarning::AggressivenessNotApplied { aggressiveness, .. } => {
             aggressiveness.is_finite()
         }
-        SuggestWarning::CoarseStepRemoved {
-            step_mm,
-            lowered_to_mm,
-            next_step_mm,
-            ..
-        } => {
-            finite(&[*step_mm, *lowered_to_mm, *next_step_mm])
-                && lowered_to_mm <= step_mm
-                && *lowered_to_mm <= next_step_mm + 1e-9
-        }
     };
     (!ok).then_some("a SuggestWarning pair or factor is missing or not finite")
 }

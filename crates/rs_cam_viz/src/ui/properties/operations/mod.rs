@@ -21,9 +21,6 @@ pub(super) use finishing::{
     draw_spiral_finish_params,
 };
 pub(super) use project::draw_project_curve_params;
-// The readiness panel's DOC column reuses the ladder line (ruling 4,
-// 2026-09-24).
-pub(crate) use surface_3d::ladder_line;
 pub(super) use surface_3d::{
     draw_adaptive3d_params, draw_dropcutter_params, draw_pencil_params, draw_scallop_params,
     draw_steep_shallow_params, draw_unified_finish_params, draw_waterline_params,

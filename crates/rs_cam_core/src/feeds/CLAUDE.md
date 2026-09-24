@@ -24,7 +24,7 @@ The calculator for RPM, feed, plunge rate, DOC and WOC. The validated entry poin
 - R4: the rubbing floor `min(0.025, band min)` warns, never lifts; no machine or L/D feed factor. The
   dial `MachineProfile::aggressiveness` (0.85) scales depth and stepover to hold load at
   `k × L/D share`; it never cuts the feed. Power ceiling = `power_at_rpm`, no fraction.
-- On an adaptive rough the simulated chipload outranks the Suggest verdict. Step ladder (D7): a reader of the deepest bite reads `deepest_axial_step()`; a depth write goes through `suggest/ladder.rs` (cap every step, or scale the whole ladder). With a ladder Suggest keeps the operator's steps and only lowers them (ruling 1, 2026-09-24); a removed step files `CoarseStepRemoved`.
+- On an adaptive rough the simulated chipload outranks the Suggest verdict.
 - One claimed band: every consumer reads `LookupResult::size_basis`; a `Refused` row has no band anywhere. A2: one printed value is a point (`printed_chipload()`); no band is derived; the modulator caps at it with no floor; the gate is hard above it and advisory below it.
 
 ## Sentries

@@ -952,25 +952,6 @@ fn suggest_line(warning: &SuggestWarning) -> Option<(String, bool)> {
             format!("Aggressiveness {aggressiveness:.2}: {}", reason.card_text()),
             false,
         )),
-        // Operator ruling 1 (2026-09-24): a coarse step that a cap removed
-        // is a line on the face with the Caution mark. A ladder must not
-        // lose a step, or go empty, where the operator cannot see it.
-        SuggestWarning::CoarseStepRemoved {
-            step_mm,
-            lowered_to_mm,
-            next_step_mm,
-            next_is_base,
-            cap,
-        } => Some((
-            rs_cam_core::feeds::suggest::coarse_step_removed_text(
-                *step_mm,
-                *lowered_to_mm,
-                *next_step_mm,
-                *next_is_base,
-                cap,
-            ),
-            true,
-        )),
         SuggestWarning::FeedRescaledToFinalGeometry {
             requested_mm_per_min,
             rescaled_mm_per_min,
