@@ -369,3 +369,25 @@ unchanged in v41.
 No document says what a single printed value is. Every G4 form depends on
 that reading, and only one grade-a sheet (AMS-159, a different tool line)
 shows a single value next to a band.
+
+## 5. The landing (A2 point mode, 2026-09-24)
+
+Ruling A2: a single printed value is held as a point; no band is derived.
+Plan and decisions: `A2_PLAN.md`.
+
+| Commit | Step |
+|---|---|
+| fe1fbbd3 | `PrintedChipload`, the build_result normalization (min == max -> min absent), the gate (`{min None, max v'}`, hard above, burn advisory below naming "the printed point"), `chipload_point_mm`, the rubbing floor at the point, the card text |
+| e7611194 | the modulator's point arms (cap at v', no floor), `ChipTarget`, `modulation_bands_for_session`, the two session/ sites (sim modulation, advisor) |
+
+Measured (FM1): no recipe number moves; 88 cells carry
+`chipload_point_mm` (75 Spektra, 5 SpeTool, 8 AMS-159); the 8 AMS-159
+cells lose their zero-width band columns; the sim CSV power / deflection
+peaks move with the modulated point feeds. The advisor optimises the
+Spektra point cells (it skipped them before). `g_dcflat` is green.
+
+Decisions taken on the way: the gate keeps no minimum for a point (the
+retargeter and the ranking must not see a fake band); a pin arm on a point
+keeps its own binding tag. Known: the AMS-159 V-bit gate reads another,
+extrapolated row at the engaged width (B4). f036b AB5 ("never below the
+minimum") is empty on a point and says so.
