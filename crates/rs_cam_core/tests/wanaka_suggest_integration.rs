@@ -57,8 +57,14 @@
 //!   must NOT fire. Pre-2026-08-13 this held because V-bit chipload was
 //!   `NotApplicable` and `project_curve`'s arc-fit ratio was `Default`
 //!   rather than `Calibrated`; since the retirement it holds for every op
-//!   family, so this case no longer distinguishes anything. Kept because
-//!   the negative catch-all below still guards the variant list.
+//!   family, so this case no longer distinguishes anything. Operator
+//!   ruling 2026-09-25 ("a ProjectCurve on a V-bit routes ... as a
+//!   trace") additionally moved these two cells onto a REAL vendor row
+//!   (the printed AMS-159 60 deg Trace row, a point with no floor, ruling
+//!   B4/A2) instead of the empirical formula; a point row still has no
+//!   floor to raise against, so the "must NOT fire" claim is unaffected.
+//!   Kept because the negative catch-all below still guards the variant
+//!   list.
 //!
 //! And a negative catch-all: any `SuggestWarning` variant that
 //! shouldn't appear on this project — e.g. an unexpected

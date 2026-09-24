@@ -17,7 +17,9 @@
 //! between core and the modal. Build with [`explain`].
 
 use super::vendor_lookup::{LookupQuery, MatchedRow, find_best_row_for_geometry};
+use super::vendor_lut::ToolFamily;
 use super::{FeedsInput, FeedsResult, calculate, vendor_normalize};
+use crate::compute::catalog::OperationType;
 use crate::machine::{MachineProfile, PowerModel};
 
 /// Snapshot of the machine envelope used by the nomogram chart.
@@ -87,6 +89,14 @@ pub struct FeedsExplain {
     pub query_hardness_value: Option<f64>,
     /// Machine envelope for the nomogram.
     pub machine: MachineEnvelope,
+    /// Operator rule: no invisible calculation. True when this cell is a
+    /// `ProjectCurve` on a V-bit, so [`vendor_normalize::lut_query_for`]
+    /// routed it to the printed Trace rows instead of the operation's own
+    /// declared family (operator ruling 2026-09-25). The matched row's own
+    /// fields (a Trace row) look identical to a real Trace/VCarve cell's,
+    /// so the UI cannot recover this fact from `matched_row` alone; the
+    /// modal reads this flag to name the routing decision.
+    pub project_curve_vbit_routed_to_trace: bool,
 }
 
 impl FeedsExplain {
@@ -136,14 +146,19 @@ pub fn explain(input: &FeedsInput<'_>) -> FeedsExplain {
     let recommended = calculate(input);
     let machine = MachineEnvelope::from_machine(input.machine);
 
-    // Checkpoint K (a4) — `to_lookup_query` can now REFUSE (a
-    // `ProjectCurve` on a V-bit / facing cutter has no vendor
-    // family). The modal then shows the formula-fallback state with the
-    // unrouted query echoed for context; `recommended.warnings` carries
+    // Checkpoint K (a4) — `to_lookup_query` can now REFUSE (today, a
+    // `ProjectCurve` on a facing cutter has no vendor family). The modal
+    // then shows the formula-fallback state with the unrouted query echoed
+    // for context; `recommended.warnings` carries
     // `NoVendorRowsForRoutedOperation`, which is what the modal prints.
     let routed_query = input
         .vendor_lut
         .and(vendor_normalize::to_lookup_query(input));
+    // Operator ruling 2026-09-25: a `ProjectCurve` on a V-bit routes to the
+    // printed Trace rows. Named here, once, for the field below.
+    let project_curve_vbit_routed_to_trace = input.operation_kind
+        == Some(OperationType::ProjectCurve)
+        && input.tool_geometry.cutter_kind().lut_family() == ToolFamily::ChamferVbit;
     let (query, matched_row) = match (input.vendor_lut, routed_query) {
         (Some(lut), Some(query)) => {
             // Use the geometry-aware dispatcher so the V-bit "matched row"
@@ -171,6 +186,7 @@ pub fn explain(input: &FeedsInput<'_>) -> FeedsExplain {
         query_hardness_kind: query.hardness_kind,
         query_hardness_value: query.hardness_value,
         machine,
+        project_curve_vbit_routed_to_trace,
     }
 }
 

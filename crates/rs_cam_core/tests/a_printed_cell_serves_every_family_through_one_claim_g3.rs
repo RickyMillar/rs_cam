@@ -39,7 +39,11 @@
 //!   in its family, with no transfer.
 //! - (h) A bull-nose finish pass in plywood refuses with
 //!   `support::BULL_FINISH_PLYWOOD` (the chart prints no plywood column). A
-//!   `ProjectCurve` on a bull nose routes; on a V-bit it still refuses.
+//!   `ProjectCurve` on a bull nose routes to (Parallel, Finish); on a
+//!   facing bit it still refuses. Operator ruling 2026-09-25 ("a
+//!   ProjectCurve on a V-bit routes ... as a trace") means a V-bit no
+//!   longer belongs beside the facing bit here: it routes to
+//!   (Trace, Finish) instead.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -58,7 +62,7 @@ use rs_cam_core::feeds::vendor_lookup::{
 use rs_cam_core::feeds::vendor_lut::{
     HardnessKind, LutOperationFamily, LutPassRole, MaterialFamily, ToolFamily, VendorLut,
 };
-use rs_cam_core::feeds::vendor_normalize::to_lookup_query;
+use rs_cam_core::feeds::vendor_normalize::{lut_query_for, to_lookup_query};
 use rs_cam_core::feeds::{
     EMBEDDED_LUT, FeedsSupport, SpindleStrategy, ToolGeometryHint, feeds_support,
 };
@@ -574,10 +578,12 @@ fn the_ball_finish_row_is_not_transferred_b3_pin_g3() {
 
 /// (h) A bull-nose finish in plywood refuses with the plywood text, on a
 /// DropCutter (declared Parallel) and on a `ProjectCurve` (declared Trace,
-/// routed to Parallel). A `ProjectCurve` on a V-bit still refuses the
-/// routing.
+/// routed to Parallel). A `ProjectCurve` on a V-bit routes to
+/// (Trace, Finish) and ships the printed AMS-159 row (operator ruling
+/// 2026-09-25); on a facing bit — the only cutter class the LUT truly has
+/// no `ProjectCurve` rows for — the routing still refuses.
 #[test]
-fn a_plywood_bull_finish_refuses_and_a_vbit_curve_still_refuses_g3() {
+fn a_plywood_bull_finish_refuses_and_a_vbit_curve_routes_to_trace_g3() {
     let machine = MachineProfile::default();
     let plywood = Material::Plywood {
         grade: PlywoodGrade::BalticBirch,
@@ -623,8 +629,37 @@ fn a_plywood_bull_finish_refuses_and_a_vbit_curve_still_refuses_g3() {
         &EMBEDDED_LUT,
         SpindleStrategy::MatchChart,
     );
+    // Operator ruling 2026-09-25 ("a ProjectCurve on a V-bit routes ... as
+    // a trace"): the tool follows the curve at a set depth, the same
+    // engagement a v-carve or trace pass has, so the query routes to the
+    // printed V-bit Trace rows instead of refusing.
+    let query =
+        to_lookup_query(&input).expect("a ProjectCurve on a V-bit now routes to Trace/Finish");
+    assert_eq!(
+        (query.operation_family, query.pass_role),
+        (LutOperationFamily::Trace, LutPassRole::Finish)
+    );
     assert!(
-        to_lookup_query(&input).is_none(),
-        "a ProjectCurve on a V-bit still refuses the routing"
+        find_best_row_for_geometry(&EMBEDDED_LUT, &query, &input.tool_geometry).is_some(),
+        "a 60 deg V-bit ProjectCurve in hardwood must read the printed AMS-159 trace row"
+    );
+    match feeds_support(&input) {
+        FeedsSupport::VendorBacked => {}
+        other => panic!("expected VendorBacked, got {other:?}"),
+    }
+
+    // A facing bit is the one cutter class the LUT truly has no
+    // `ProjectCurve` rows for (no `ToolGeometryHint` maps to it — there is
+    // no facing-bit `FeedsInput` to build — so the routing itself is
+    // exercised directly).
+    assert_eq!(
+        lut_query_for(
+            OperationType::ProjectCurve,
+            ToolFamily::FacingBit,
+            LutOperationFamily::Trace,
+            LutPassRole::Finish,
+        ),
+        None,
+        "a ProjectCurve on a facing bit still refuses the routing"
     );
 }

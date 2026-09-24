@@ -562,10 +562,26 @@ fn engaged_diameter_hover(geometry: ToolGeometryHint, kind: &str, tip_dia: f64) 
 /// peck rule are on its hover. When
 /// the row is `Derived` (ruling A4: a "Wood, MDF, Sign-Foam" row that
 /// serves hardwood), the row's printed material label is a visible line.
+/// When the cell is a `ProjectCurve` on a V-bit (operator ruling
+/// 2026-09-25), the row is a printed Trace row reached by a route, not the
+/// operation's own declared family — that route is a visible line too.
 pub(crate) fn draw_row_basis_lines(ui: &mut egui::Ui, explain: &FeedsExplain) {
     let Some(row) = explain.matched_row.as_ref() else {
         return;
     };
+    if explain.project_curve_vbit_routed_to_trace {
+        detail_line(
+            ui,
+            "ProjectCurve on a V-bit reads the V-bit trace rows",
+            theme::TEXT_DIM,
+            &format!(
+                "Operator ruling 2026-09-25: the tool follows the curve at a set depth, the \
+                 same engagement a v-carve or trace pass has, so the query is routed to the \
+                 printed V-bit Trace rows instead of a made-up ProjectCurve family.\nRow: {}.",
+                row.observation_id
+            ),
+        );
+    }
     if let Some(key_text) = vbit_key_text(explain.query.tool_family, row) {
         detail_line(
             ui,

@@ -2092,12 +2092,24 @@ unit = "rpm"
 sources = ["onsrud_hwood", "amana_spektra", "gwizard_hwood", "whiteside_wood"]
 
 [cell.expected.feed_per_tooth]
-min = 0.034
-max = 0.093
+# Re-banded 2026-09-25 (operator ruling, "the bull literature cells:
+# re-band from Amana"): the printed value, not a hobby-derated one
+# (ruling R4 WP3 removed the hidden 0.75 feed factor, so the engine now
+# ships the vendor row's chipload — the flat_6mm_drill_oak precedent,
+# ruling B5, re-bands the same way). The printed Amana corner-radius row
+# amana-bull-hardwood-pocket-6350-2f-cr (1/4 in, hardwood): 0.127-0.1778
+# mm/tooth at Janka 1450 (the engine's hardwood proxy), 2 flute, 18 000
+# rpm. The A3 family rule serves adaptive2d from the pocket home row at
+# x1.00, so this cell reads the same printed band as bull_6mm_pocket_oak.
+# Not applied here (left for the harness's 10% edge fraction to absorb):
+# the G1 size claim from the row's 6.35 mm to this cell's 6.0 mm tool
+# (~0.97x, form C); the hardness law from Janka 1450 to this cell's 1290.
+# Replaces a band derived from a flat-end chart.
+min = 0.127
+max = 0.1778
 mode = "band"
 unit = "mm/tooth"
-hobby_derate = 0.7
-sources = ["onsrud_hwood", "amana_spektra", "whiteside_chipload", "dapra_rctf"]
+sources = ["amana_corner_radius_spiral_plunge_2f"]
 
 [cell.expected.axial_doc]
 min = 4.0
@@ -2207,12 +2219,25 @@ unit = "rpm"
 sources = ["onsrud_hwood", "amana_spektra", "gwizard_hwood", "whiteside_wood"]
 
 [cell.expected.feed_per_tooth]
-min = 0.028
-max = 0.070
+# Re-banded 2026-09-25 (operator ruling, "the bull literature cells:
+# re-band from Amana"): the printed value, not a hobby-derated one
+# (ruling R4 WP3 removed the hidden 0.75 feed factor, so the engine now
+# ships the vendor row's chipload — the flat_6mm_drill_oak precedent,
+# ruling B5, re-bands the same way). The printed Amana corner-radius row
+# amana-bull-hardwood-pocket-6350-2f-cr (1/4 in, hardwood): 0.127-0.1778
+# mm/tooth at Janka 1450 (the engine's hardwood proxy), 2 flute, 18 000
+# rpm. This is the pocket home row the A3 family rule serves adaptive2d
+# from at x1.00, so this cell reads the same printed band as
+# bull_6mm_adaptive2d_oak. Not applied here (left for the harness's 10%
+# edge fraction to absorb): the G1 size claim from the row's 6.35 mm to
+# this cell's 6.0 mm tool (~0.97x, form C); the hardness law from Janka
+# 1450 to this cell's 1290. Replaces a band derived from a flat-end
+# chart.
+min = 0.127
+max = 0.1778
 mode = "band"
 unit = "mm/tooth"
-hobby_derate = 0.7
-sources = ["onsrud_hwood", "amana_spektra", "whiteside_chipload"]
+sources = ["amana_corner_radius_spiral_plunge_2f"]
 
 [cell.expected.axial_doc]
 min = 0.75
@@ -4194,12 +4219,24 @@ unit = "rpm"
 sources = ["onsrud_hwood", "amana_spektra", "whiteside_wood"]
 
 [cell.expected.feed_per_tooth]
-min = 0.063
-max = 0.126
+# Re-banded 2026-09-25 (operator ruling, "the bull literature cells:
+# re-band from Amana"): the printed value, not a hobby-derated one
+# (ruling R4 WP3 removed the hidden 0.75 feed factor, so the engine now
+# ships the vendor row's chipload — the flat_6mm_drill_oak precedent,
+# ruling B5, re-bands the same way). The printed Amana corner-radius row
+# amana-bull-hardwood-pocket-12700-2f-cr (1/2 in, hardwood): 0.1778-0.2286
+# mm/tooth at Janka 1450 (the engine's hardwood proxy), 2 flute, 18 000
+# rpm. Chip load is per tooth, so the row's 2 flutes do not need scaling
+# for this cell's 4-flute tool. Not applied here (left for the harness's
+# 10% edge fraction to absorb): the G1 size claim from the row's 12.7 mm
+# to this cell's 12.0 mm tool (~0.96x, form C); the hardness law from
+# Janka 1450 to this cell's 1360. Replaces a band derived from a
+# flat-end chart.
+min = 0.1778
+max = 0.2286
 mode = "band"
 unit = "mm/tooth"
-hobby_derate = 0.7
-sources = ["onsrud_hwood", "amana_spektra", "whiteside_chipload"]
+sources = ["amana_corner_radius_spiral_plunge_2f"]
 
 [cell.expected.axial_doc]
 min = 1.5

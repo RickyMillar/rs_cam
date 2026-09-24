@@ -94,6 +94,22 @@ const VBIT_CONTOUR_FINISH: &str = "No published figure backs the formula for a V
 const VBIT_MDF_PLY: &str = "No published figure backs the formula for a V-bit on pocket, contour \
      or trace passes in MDF or plywood: for a 1/4 in V-bit the formula is below half of the Onsrud \
      37-series bands (0.41x to 0.48x).";
+/// The refusal of a V-bit on pocket, contour or trace passes in hardwood
+/// (operator ruling 2026-09-25, "Hardwood V-bit formula-only cells:
+/// refuse"). Face, Pocket, Profile, Rest and Zigzag always land here: no
+/// wood chart prints a hardwood row for any of them, and the only printed
+/// witness is the Onsrud V-bit band, which the formula is 0.37x to 0.57x
+/// of. A Trace-family cell (VCarve, Trace, Inlay, or a `ProjectCurve`)
+/// can also land here, but only at an angle no hardwood chart prints
+/// (the printed angles are 15/18/30/45/60/90/120 deg); at a printed angle
+/// it reads the row instead, `VendorBacked`. Since a second ruling the
+/// same day ("a ProjectCurve on a V-bit routes ... as a trace"),
+/// `ProjectCurve` reaches this arm exactly like any other Trace-family
+/// cell — through the row lookup, not through a routing refusal.
+const VBIT_HARDWOOD: &str = "No published figure backs the formula for a V-bit on pocket, \
+     contour or trace passes in hardwood: the formula is 0.37x (6.35 mm) to 0.57x (12.7 mm) of \
+     the Onsrud V-bit band, the only printed witness, and no printed hardwood row serves this \
+     operation (operator ruling 2026-09-25).";
 /// The refusal of a flat end mill plunge that the G6 drill claim does not
 /// serve (ruling B5): a diameter outside 3.175-6.0 mm, a flute count other
 /// than 2 or 3, or a material with no Spektra row.
@@ -289,7 +305,9 @@ pub fn formula_backing(
         }
         // V-bit: no figure backs adaptive, parallel or 3D contour finish
         // passes in any judged wood. Pocket, contour and trace passes are
-        // backed in the two solid woods. In MDF and plywood the Onsrud
+        // backed in softwood only (ruling R1). In hardwood the formula
+        // falls under 0.5x of the Onsrud V-bit band, so these cells refuse
+        // (operator ruling 2026-09-25). In MDF and plywood the Onsrud
         // 37-series rows (extrapolation P2, G2) put the formula below half
         // at 1/4 in (ruling R1, strict: decision 2).
         (ToolFamily::ChamferVbit, Adaptive, Roughing) => Clueless {
@@ -303,9 +321,17 @@ pub fn formula_backing(
         },
         (ToolFamily::ChamferVbit, Pocket | Contour, Roughing)
         | (ToolFamily::ChamferVbit, Trace, Finish)
-            if sw_hw =>
+            if material == Softwood =>
         {
             Backed
+        }
+        (ToolFamily::ChamferVbit, Pocket | Contour, Roughing)
+        | (ToolFamily::ChamferVbit, Trace, Finish)
+            if material == Hardwood =>
+        {
+            Clueless {
+                reason: VBIT_HARDWOOD,
+            }
         }
         (ToolFamily::ChamferVbit, Pocket | Contour, Roughing)
         | (ToolFamily::ChamferVbit, Trace, Finish)
@@ -417,7 +443,8 @@ pub(crate) enum RecipeRowLookup<'a> {
     /// The input carries no LUT.
     NoLut,
     /// `vendor_normalize::to_lookup_query` refused the routing (today, a
-    /// `ProjectCurve` on a V-bit or facing cutter).
+    /// `ProjectCurve` on a facing cutter; operator ruling 2026-09-25 routes
+    /// a V-bit `ProjectCurve` to the printed Trace rows instead).
     RoutingRefused,
     /// The routed query ran and no row matched.
     NoRow,

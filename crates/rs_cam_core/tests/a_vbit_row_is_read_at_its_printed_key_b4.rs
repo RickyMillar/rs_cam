@@ -51,6 +51,19 @@
 //! - The parallel finish cells find no V-bit row (every V-bit row is Trace
 //!   or Contour), so the R1 judgement refuses them with the `VBIT_PARALLEL`
 //!   text.
+//! - Operator ruling 2026-09-25 ("Hardwood V-bit formula-only cells:
+//!   refuse", `planning/extrapolation_2026-09-24/RULINGS.md`): Face,
+//!   Pocket, Profile, Rest and Zigzag on a V-bit in hardwood find no row
+//!   (every V-bit row is Trace, keyed by angle) and now refuse; the
+//!   formula is under 0.5x of the Onsrud V-bit band. The same cells in
+//!   softwood are unchanged, and a real Trace/VCarve cell that finds the
+//!   printed AMS row (part (c) above) is unchanged too, since it never
+//!   reaches this judgement.
+//! - A second operator ruling the same day ("a ProjectCurve on a V-bit
+//!   routes ... as a trace") takes `ProjectCurve` OUT of the set above:
+//!   `lut_query_for` now routes a V-bit `ProjectCurve` to `(Trace,
+//!   Finish)`, so it reads the same printed AMS-159 row a real Trace/
+//!   VCarve cell reads, `VendorBacked`, in both woods.
 //! - Step 2 (the band de-rate at the nominal diameter): a 15 deg V-bit's
 //!   ratio `ap / D` is 0.5 at `ap = 0.5 D`, inside `doc_derating_scale`'s
 //!   flat region, so the de-rate is 1.0. Before step 2 the band read the
@@ -116,6 +129,13 @@ const REFUSAL_1_4_IN: &str = "no published figure for a 6.35 mm V-bit; the neare
 /// The R1 judgement for a V-bit parallel finish (`support::VBIT_PARALLEL`).
 const VBIT_PARALLEL: &str = "No published figure backs the formula for a V-bit on parallel \
      finish passes: at the engaged width the chip is below half of every V-bit figure.";
+
+/// The operator ruling 2026-09-25 judgement for a formula-only V-bit cell
+/// in hardwood (`support::VBIT_HARDWOOD`).
+const VBIT_HARDWOOD: &str = "No published figure backs the formula for a V-bit on pocket, \
+     contour or trace passes in hardwood: the formula is 0.37x (6.35 mm) to 0.57x (12.7 mm) of \
+     the Onsrud V-bit band, the only printed witness, and no printed hardwood row serves this \
+     operation (operator ruling 2026-09-25).";
 
 /// A 60 deg 2-flute pointed V-bit of `diameter` mm.
 fn vbit(diameter: f64) -> ToolConfig {
@@ -540,6 +560,74 @@ fn the_vbit_parallel_finish_cells_refuse_b4() {
         }
     }
     assert_eq!(checked, 32);
+}
+
+/// (h) Operator ruling 2026-09-25: Face, Pocket, Profile, Rest and Zigzag
+/// on a V-bit in hardwood find no row (every V-bit row is Trace, keyed by
+/// angle) and now refuse with `VBIT_HARDWOOD`. The same five operations in
+/// softwood are unchanged (still `FormulaOnly`). `ProjectCurve` is NOT in
+/// this set: a second operator ruling the same day ("a ProjectCurve on a
+/// V-bit routes ... as a trace") routes it to the printed Trace rows
+/// instead — see
+/// [`a_hardwood_vbit_project_curve_ships_the_printed_trace_row_b4`].
+#[test]
+fn the_hardwood_formula_only_vbit_cells_refuse_b4() {
+    let ops = [
+        OperationType::Face,
+        OperationType::Pocket,
+        OperationType::Profile,
+        OperationType::Rest,
+        OperationType::Zigzag,
+    ];
+    for op in ops {
+        for d in [6.35, 12.7] {
+            let cell = format!("{op:?} {d} mm in hardwood");
+            match suggest(op, &vbit(d), &hardwood()) {
+                Err(FeedsError::Unbacked { reason, .. }) => {
+                    assert_eq!(reason, VBIT_HARDWOOD, "{cell}");
+                }
+                other => panic!("{cell}: expected Unbacked, got {other:?}"),
+            }
+
+            let softwood_cell = format!("{op:?} {d} mm in softwood");
+            let s = suggest(op, &vbit(d), &softwood())
+                .unwrap_or_else(|e| panic!("{softwood_cell}: still BACKED, got {e}"));
+            assert!(
+                matches!(s.feeds_result.support, FeedsSupport::FormulaOnly { .. }),
+                "{softwood_cell}: expected FormulaOnly, got {:?}",
+                s.feeds_result.support
+            );
+        }
+    }
+}
+
+/// (i) Operator ruling 2026-09-25 ("a ProjectCurve on a V-bit routes ...
+/// as a trace"): `ProjectCurve` on a 60 deg V-bit in hardwood routes to
+/// `(Trace, Finish)` and reads the SAME printed AMS-159 row a real
+/// Trace/VCarve cell reads (part (c) above), `VendorBacked`, at both
+/// diameters and in softwood too — it never reaches the R1 judgement.
+#[test]
+fn a_hardwood_vbit_project_curve_ships_the_printed_trace_row_b4() {
+    for (label, material) in [("softwood", softwood()), ("hardwood", hardwood())] {
+        let expected = format!("amana-vgroove-{label}-trace-60deg-2f");
+        for d in [6.35, 12.7] {
+            let cell = format!("ProjectCurve {d} mm in {label}");
+            let s = suggest(OperationType::ProjectCurve, &vbit(d), &material)
+                .unwrap_or_else(|e| panic!("{cell}: {e}"));
+            assert_eq!(s.feeds_result.support, FeedsSupport::VendorBacked, "{cell}");
+            let row = s
+                .feeds_result
+                .matched_lut_row
+                .as_ref()
+                .unwrap_or_else(|| panic!("{cell}: no recipe row"));
+            assert_eq!(row.observation_id, expected, "{cell}: recipe row");
+            assert_eq!(
+                row.size_basis,
+                SizeBasis::AngleKey { angle_deg: 60.0 },
+                "{cell}"
+            );
+        }
+    }
 }
 
 /// (g, step 2) The band de-rate of a V-bit follows the nominal diameter,

@@ -43,8 +43,12 @@ use crate::material::{Material, PlasticHardness};
 ///   tools route to `(Parallel, Finish)`, and flat tools to `(Contour,
 ///   Finish)`. A bull nose has no printed Parallel row: the G3 family rule
 ///   (`extrapolation::family`, A3 step 4) serves the query from the Amana
-///   corner-radius pocket row. V-bit and facing bits **refuse**: the LUT
-///   has no rows for those, and a made-up family is worse than a refusal.
+///   corner-radius pocket row. A V-bit routes to `(Trace, Finish)`
+///   (operator ruling 2026-09-25): the tool follows the curve at a set
+///   depth, the same engagement a v-carve or trace pass has, so the
+///   printed V-bit Trace rows serve it. A facing bit still **refuses**:
+///   the LUT has no rows for it outside the Face family, and a made-up
+///   family is worse than a refusal.
 ///
 /// # Why this function exists, and what it cost before it did
 ///
@@ -96,7 +100,13 @@ pub fn lut_query_for(
             Some((LutOperationFamily::Parallel, LutPassRole::Finish))
         }
         ToolFamily::FlatEnd => Some((LutOperationFamily::Contour, LutPassRole::Finish)),
-        ToolFamily::ChamferVbit | ToolFamily::FacingBit => None,
+        // Operator ruling 2026-09-25 ("a ProjectCurve on a V-bit routes ...
+        // as a trace"): the tool follows the curve at a set depth, the same
+        // engagement a v-carve or trace pass has, so the printed V-bit
+        // Trace rows serve it. `FacingBit` is unchanged: no vendor row
+        // exists outside the Face family for it.
+        ToolFamily::ChamferVbit => Some((LutOperationFamily::Trace, LutPassRole::Finish)),
+        ToolFamily::FacingBit => None,
     }
 }
 
@@ -104,21 +114,23 @@ pub fn lut_query_for(
 /// so a refusal message can say **which rows are missing** rather than
 /// "no data". Checkpoint K (a4) ruled the refusal in on the Suggest side
 /// too, so this string is now operator-facing.
+///
+/// Operator ruling 2026-09-25: `ChamferVbit` is no longer refused here —
+/// `lut_query_for` routes it to the printed Trace rows — so this only
+/// names `FacingBit` now.
 #[must_use]
 pub fn missing_project_curve_rows(tool_family: ToolFamily) -> &'static str {
     match tool_family {
-        ToolFamily::ChamferVbit => {
-            "the vendor LUT publishes no V-bit contour/parallel rows for a curve-following pass \
-             (its V-bit rows are v-carve and trace rows, whose engagement is set by depth, not \
-             by following a 3D curve at fixed offset)"
-        }
         ToolFamily::FacingBit => {
             "the vendor LUT publishes no facing-bit rows outside the Face family"
         }
         ToolFamily::FlatEnd
         | ToolFamily::BallNose
         | ToolFamily::TaperedBallNose
-        | ToolFamily::BullNose => "no rows are missing for this cutter class — it is not refused",
+        | ToolFamily::BullNose
+        | ToolFamily::ChamferVbit => {
+            "no rows are missing for this cutter class — it is not refused"
+        }
     }
 }
 
@@ -142,7 +154,8 @@ pub fn op_family_to_lut(family: OperationFamily) -> LutOperationFamily {
 /// Convert a FeedsInput to a LookupQuery for vendor LUT lookup.
 ///
 /// **Returns `None` when [`lut_query_for`] refuses** — today, a
-/// `ProjectCurve` on a V-bit or facing cutter. Checkpoint K
+/// `ProjectCurve` on a facing cutter (operator ruling 2026-09-25 routes a
+/// V-bit `ProjectCurve` to the printed Trace rows instead). Checkpoint K
 /// (a4) ruled that refusal in on the Suggest side as well as the gate's:
 /// 378 recommendations that used to carry a confident vendor band on a
 /// surface the gate would not judge become honest no-vendor-data. The
@@ -494,8 +507,11 @@ mod tests {
     }
 
     /// A3 step 4 (G3): a `ProjectCurve` on a bull nose routes to
-    /// `(Parallel, Finish)` with the ball and the tapered ball. A V-bit and a
-    /// facing bit still refuse.
+    /// `(Parallel, Finish)` with the ball and the tapered ball. Operator
+    /// ruling 2026-09-25: a `ProjectCurve` on a V-bit routes to
+    /// `(Trace, Finish)` — the tool follows the curve at a set depth, the
+    /// same engagement a v-carve or trace pass has. A facing bit still
+    /// refuses.
     #[test]
     fn project_curve_routes_a_bull_nose_to_parallel_finish() {
         let declared = (LutOperationFamily::Trace, LutPassRole::Finish);
@@ -514,12 +530,29 @@ mod tests {
                 "no rows are missing for this cutter class — it is not refused"
             );
         }
-        for family in [ToolFamily::ChamferVbit, ToolFamily::FacingBit] {
-            assert_eq!(
-                lut_query_for(OperationType::ProjectCurve, family, declared.0, declared.1),
-                None,
-                "{family:?}"
-            );
-        }
+        assert_eq!(
+            lut_query_for(
+                OperationType::ProjectCurve,
+                ToolFamily::ChamferVbit,
+                declared.0,
+                declared.1
+            ),
+            Some((LutOperationFamily::Trace, LutPassRole::Finish)),
+            "ChamferVbit"
+        );
+        assert_eq!(
+            missing_project_curve_rows(ToolFamily::ChamferVbit),
+            "no rows are missing for this cutter class — it is not refused"
+        );
+        assert_eq!(
+            lut_query_for(
+                OperationType::ProjectCurve,
+                ToolFamily::FacingBit,
+                declared.0,
+                declared.1
+            ),
+            None,
+            "FacingBit"
+        );
     }
 }

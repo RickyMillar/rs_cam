@@ -506,14 +506,17 @@ fn operation_family_reroute_band_delta_report() {
     // in-process, not quoted.
     let (before, after) = refusal_asymmetry_through_calculate();
     println!(
-        "\n**{refusals} pairs are REFUSALS** (ProjectCurve on V-bit: \
-         `lut_query_for` returns `None`). Post-a4 BOTH sides refuse — the gate as \
+        "\n**{refusals} pairs are REFUSALS** (`lut_query_for` returns `None`; since operator \
+         ruling 2026-09-25 that is `ProjectCurve` on a facing bit only, and no \
+         `ToolGeometryHint` this sweep's `geometry_classes()` returns maps to a facing bit, so \
+         this is usually 0). Where it is non-zero, both sides refuse — the gate as \
          `Unmodeled(NoVendorData)`, Suggest as \
          `FeedsWarning::NoVendorRowsForRoutedOperation`.\n\n\
-         Through `feeds::calculate` on the refused surface: **{before} of {before} \
+         Through `feeds::calculate` on the V-bit `ProjectCurve` surface: **{before} of {before} \
          recommendations were vendor-banded pre-a4 (routing disabled), {after} are \
-         post-a4.** Pre-a4 the full census counted 378 such pairs: an operator got a \
-         vendor-backed number on a surface where the gate had declined to judge at all."
+         post-a4.** Pre-a4 the full census counted 378 asymmetric pairs across every cutter; \
+         post ruling 2026-09-25 the V-bit routes to the SAME family it already declares, so \
+         `before` and `after` are now equal by construction, not zero."
     );
     assert!(
         before > 0,
@@ -521,9 +524,10 @@ fn operation_family_reroute_band_delta_report() {
          vacuous and proves nothing about the 378 class"
     );
     assert_eq!(
-        after, 0,
-        "**a4 regression** — Suggest still returns a vendor-banded recommendation on {after} \
-         refused surface(s) through the production `calculate` path"
+        after, before,
+        "operator ruling 2026-09-25 routes a V-bit `ProjectCurve` to the same (Trace, Finish) \
+         family it already declares, so routing it on or off must not change whether it bands: \
+         before {before}, after {after}"
     );
     println!(
         "\nA ratio **above 1.0** would mean Suggest recommending against a WIDER band than \
@@ -542,10 +546,21 @@ fn operation_family_reroute_band_delta_report() {
     );
 }
 
-/// Run the production feeds calculator over every cutter class the a4
-/// routing refuses `ProjectCurve` on, with the routing DISABLED and then
-/// ENABLED, and count how many recommendations come back carrying a
-/// vendor band.
+/// Run the production feeds calculator over the V-bit `ProjectCurve`
+/// surface, with the routing DISABLED and then ENABLED, and count how
+/// many recommendations come back carrying a vendor band.
+///
+/// Operator ruling 2026-09-25 ("a ProjectCurve on a V-bit routes ... as a
+/// trace") retired the last cutter this function could reach through
+/// `calculate()` and still see refuse: `ProjectCurve` on a V-bit now
+/// routes to `(Trace, Finish)`, the SAME family the operation already
+/// declares (`OperationFamily::Trace` below), so routing it on or off no
+/// longer changes the query at all. `ToolFamily::FacingBit` is the only
+/// family that still refuses, and it cannot be driven through this path:
+/// no `ToolGeometryHint` maps to it (`facing_bit_is_a_lut_only_family`,
+/// `feeds/mod.rs`). So `before` and `after` are now expected to be EQUAL,
+/// not the asymmetry this function was built to catch — see the caller's
+/// assertion.
 ///
 /// Returns `(pre_a4_banded, post_a4_banded)`.
 fn refusal_asymmetry_through_calculate() -> (usize, usize) {
@@ -560,7 +575,11 @@ fn refusal_asymmetry_through_calculate() -> (usize, usize) {
     let (mut before, mut after) = (0usize, 0usize);
     // A3 step 4 (G3): a bull nose is no longer refused. `ProjectCurve`
     // routes it to (Parallel, Finish), and the family rule serves it from
-    // the Amana corner-radius row. The V-bit is the one cutter class left.
+    // the Amana corner-radius row. Operator ruling 2026-09-25: a V-bit is
+    // no longer refused either — `ProjectCurve` routes it to
+    // (Trace, Finish), the printed V-bit Trace rows. It stays the cutter
+    // swept here (see the doc comment above) even though it no longer
+    // refuses, because it is the only one `calculate()` can reach.
     let geom = ToolGeometryHint::VBit {
         included_angle: 60.0,
         tip_diameter: 0.2,

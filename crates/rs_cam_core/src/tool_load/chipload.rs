@@ -365,11 +365,12 @@ pub(crate) fn steady_state_samples_for_toolpath<'a>(
 /// `operation_kind` is the toolpath's `OperationType`. For most kinds
 /// the (operation_family, pass_role) tuple from the operation spec is
 /// what gets passed to the LUT lookup. Two kinds get rerouted by
-/// `routed_lookup_family`: `ProjectCurve` (ball/tapered-ball → Parallel,
-/// flat → Contour; v-bit / bull-nose return `Unmodeled(NoVendorData)`
-/// — Item D of the tool-load fidelity plan) and `Adaptive3d`
-/// (Adaptive → Pocket so the LUT envelope reflects pocket-style
-/// clearing instead of 2D adaptive HSM — design doc §1.3, §10).
+/// `routed_lookup_family`: `ProjectCurve` (ball/tapered-ball/bull-nose →
+/// Parallel, flat → Contour, v-bit → Trace since operator ruling
+/// 2026-09-25; facing bit returns `Unmodeled(NoVendorData)` — Item D of
+/// the tool-load fidelity plan) and `Adaptive3d` (Adaptive → Pocket so
+/// the LUT envelope reflects pocket-style clearing instead of 2D
+/// adaptive HSM — design doc §1.3, §10).
 /// Every stage of [`crate::feeds::FeedExplanation`] except the gate
 /// observation, which cannot be filled until the verdict has chosen
 /// between its median and peak statistics.
@@ -1344,9 +1345,18 @@ mod tests {
         );
     }
 
+    /// Operator ruling 2026-09-25 ("a ProjectCurve on a V-bit routes ...
+    /// as a trace"): `lut_query_for` now routes `ChamferVbit` to
+    /// `(Trace, Finish)` instead of refusing, so this cell is no longer
+    /// `Unmodeled`. The gate's LUT query lands on the same printed row
+    /// `predicted_feed_gates_f035.rs`'s `OperationType::Trace` fixture
+    /// reads for this tool: `amana-vbit-hardwood-trace-6000-2f`
+    /// (0.028-0.060 mm/tooth printed at 6.0 mm; 0.028985-0.062111 at the
+    /// 6.35 mm key, ruling B4 form C x1.035189). 0.045 mm/tooth sits
+    /// inside that band.
     #[test]
-    fn project_curve_vbit_stays_unmodeled() {
-        let t = trace(vec![sample(0, 0, 0.02, 0.5)]);
+    fn project_curve_vbit_routes_to_the_printed_trace_row() {
+        let t = trace(vec![sample(0, 0, 0.045, 0.5)]);
         let v = evaluate_args(
             0,
             &vbit_tool(),
@@ -1361,12 +1371,11 @@ mod tests {
             OperationType::ProjectCurve,
             &crate::tool_load::ToleranceBands::default(),
         );
-        assert!(matches!(
-            v,
-            ChiploadVerdict::Unmodeled {
-                reason: UnmodeledReason::NoVendorData
-            }
-        ));
+        assert!(
+            matches!(v, ChiploadVerdict::Within { .. }),
+            "expected Within (routing landed in the printed V-bit trace row with the sample in \
+             band), got {v:?}"
+        );
     }
 
     #[test]
