@@ -242,8 +242,16 @@ pub struct OperationDef {
     pub entry_3d: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detect_flat_areas: Option<bool>,
+    /// Region order for 3D Rough: `global` (the default) or `by_area`.
+    /// Another value is refused, not read as `global` (F7).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_by: Option<String>,
+    /// The step ladder of 3D Rough (`coarse_steps`): Z steps larger than
+    /// `depth_per_pass`, coarsest first, in mm. For example `[10.0]` or
+    /// `[10.0, 5.0]`. The core refuses a bad ladder, and a ladder on a
+    /// strategy other than `contour`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub coarse_steps: Option<Vec<f64>>,
     /// Clearing strategy: "agent" (default) or "contour"/"contour_parallel".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub strategy: Option<String>,
@@ -1343,11 +1351,20 @@ fn job_params_for(
                 }
                 _ => p.push(("entry_style", json!("plunge"))),
             }
-            let ordering = match op.order_by.as_deref().unwrap_or("global") {
-                "by-area" | "by_area" | "byarea" => "by_area",
-                _ => "global",
+            // F7: an unknown value is refused. It was read as `global` in
+            // silence, so a typo ran the other order with no message. The
+            // tokens are the `region_ordering` tokens of the GUI and MCP.
+            let ordering = match op.order_by.as_deref() {
+                None | Some("global") => "global",
+                Some("by_area") => "by_area",
+                Some(other) => bail!(
+                    "order_by = \"{other}\" is not a region order. Use \"global\" or \"by_area\"."
+                ),
             };
             p.push(("region_ordering", json!(ordering)));
+            if let Some(steps) = &op.coarse_steps {
+                p.push(("coarse_steps", json!(steps)));
+            }
             let strategy = match op.strategy.as_deref().unwrap_or("contour") {
                 "adaptive" => "adaptive",
                 "agent" | "agent_search" => "agent_search",
@@ -1395,6 +1412,14 @@ fn job_params_for(
 /// so the same `3` on the command line was `3` in one artifact and `3.0` in
 /// the other, and a reader comparing them saw two types for one value.
 pub(crate) fn param_value_from_str(s: &str) -> serde_json::Value {
+    // A list value (`coarse_steps=[10]`, `coarse_steps=[]`) is a JSON array,
+    // as MCP `set_toolpath_param` unwraps a stringified container. Text in
+    // brackets that is not JSON stays a string, so the refusal quotes it.
+    if s.trim_start().starts_with('[')
+        && let Ok(list @ serde_json::Value::Array(_)) = serde_json::from_str(s.trim())
+    {
+        return list;
+    }
     if let Ok(i) = s.parse::<i64>() {
         return serde_json::Value::Number(i.into());
     }
@@ -1556,6 +1581,93 @@ mod tests {
                 .iter()
                 .any(|(k, _)| *k == "max_stay_down_distance_mm"),
             "the deleted key still sets the param; the coalesce survived"
+        );
+    }
+
+    /// Step-ladder Phase 4: a job file sets `coarse_steps`, and the key
+    /// reaches the core param of the same name.
+    #[test]
+    fn the_job_file_sets_the_step_ladder() {
+        let op: OperationDef = toml::from_str(
+            "type = \"adaptive3d\"\ninput = \"m.stl\"\ntool = \"a\"\ncoarse_steps = [10.0]\n",
+        )
+        .unwrap();
+        assert_eq!(op.coarse_steps, Some(vec![10.0]));
+        let params = job_params_for(&op, OperationType::Adaptive3d, None, None).unwrap();
+        assert_eq!(
+            params
+                .iter()
+                .find(|(k, _)| *k == "coarse_steps")
+                .map(|(_, v)| v.clone()),
+            Some(serde_json::json!([10.0]))
+        );
+        assert!(
+            OperationType::Adaptive3d
+                .registry_entry()
+                .param_defs
+                .iter()
+                .any(|d| d.name == "coarse_steps"),
+            "the key must name a registry param, or the job skips it with a warning"
+        );
+
+        // With no key, the job sends no ladder.
+        let op: OperationDef =
+            toml::from_str("type = \"adaptive3d\"\ninput = \"m.stl\"\ntool = \"a\"\n").unwrap();
+        let params = job_params_for(&op, OperationType::Adaptive3d, None, None).unwrap();
+        assert!(!params.iter().any(|(k, _)| *k == "coarse_steps"));
+    }
+
+    /// F7: an unknown `order_by` is refused with a message that names the
+    /// value and the two tokens. It was read as `global` in silence.
+    #[test]
+    fn an_unknown_order_by_is_refused() {
+        for (value, expected) in [("global", "global"), ("by_area", "by_area")] {
+            let op: OperationDef = toml::from_str(&format!(
+                "type = \"adaptive3d\"\ninput = \"m.stl\"\ntool = \"a\"\norder_by = \"{value}\"\n"
+            ))
+            .unwrap();
+            let params = job_params_for(&op, OperationType::Adaptive3d, None, None).unwrap();
+            assert_eq!(
+                params
+                    .iter()
+                    .find(|(k, _)| *k == "region_ordering")
+                    .map(|(_, v)| v.clone()),
+                Some(serde_json::json!(expected))
+            );
+        }
+        for value in ["depth", "by-area", "byarea"] {
+            let op: OperationDef = toml::from_str(&format!(
+                "type = \"adaptive3d\"\ninput = \"m.stl\"\ntool = \"a\"\norder_by = \"{value}\"\n"
+            ))
+            .unwrap();
+            let err = job_params_for(&op, OperationType::Adaptive3d, None, None)
+                .unwrap_err()
+                .to_string();
+            assert!(
+                err.contains(value) && err.contains("by_area") && err.contains("global"),
+                "the refusal must name the value and the two tokens: {err}"
+            );
+        }
+    }
+
+    /// `--set coarse_steps=[10]` and `=[]` reach the core as JSON arrays.
+    /// They were strings, and the core refused them ("invalid type:
+    /// string \"[]\", expected a sequence").
+    #[test]
+    fn a_set_value_in_brackets_is_a_list() {
+        assert_eq!(param_value_from_str("[]"), serde_json::json!([]));
+        assert_eq!(param_value_from_str("[10]"), serde_json::json!([10]));
+        assert_eq!(
+            param_value_from_str("[10.0, 5]"),
+            serde_json::json!([10.0, 5])
+        );
+        // Not JSON: it stays the text the caller sent.
+        assert_eq!(param_value_from_str("[10"), serde_json::json!("[10"));
+        // Scalars are unchanged.
+        assert_eq!(param_value_from_str("3"), serde_json::json!(3));
+        assert_eq!(
+            param_value_from_str("by_area"),
+            serde_json::json!("by_area")
         );
     }
 
