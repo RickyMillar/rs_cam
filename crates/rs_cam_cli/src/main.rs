@@ -305,14 +305,14 @@ enum Commands {
         rapid_feed: Option<f64>,
     },
 
-    /// Score toolpaths for a roughing A/B: accel-aware time, whole-cycle
-    /// engagement, axial DOC and entry and retract counts.
+    /// Score toolpaths for a roughing A/B with the numbers the GUI and MCP
+    /// publish, plus the whole-cycle engagement and entry and retract counts.
     ///
     /// Loads a project, applies `--set` overrides, walks the generation plan
     /// the `project` command walks, runs the closing simulation, and prints
-    /// one JSON object per toolpath and one total object on stdout. The log
-    /// goes to stderr. See `planning/adaptive3d_step_ladder_roughing_2026-09-24/`
-    /// section 4 for the rules of the two time bases.
+    /// one JSON object per toolpath and one total object on stdout. Each
+    /// record carries the core `ToolpathDiagnostic` and cut-trace summary
+    /// under their own field names. The log goes to stderr.
     RoughScore {
         /// Path to the project .toml file (GUI format, format_version=3)
         input: PathBuf,

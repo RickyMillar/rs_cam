@@ -8,20 +8,26 @@
 //! closing simulation, and prints one JSON object per toolpath and one
 //! total object.
 //!
-//! # Two time bases, never mixed in one ratio
+//! # One set of numbers on every surface
 //!
-//! - `accel_time` is the kinematics integrator
-//!   (`machine::kinematics::compute_cycle_time_breakdown`) on the toolpath
-//!   IR that the G-code export reads. It includes the acceleration.
-//! - `sim_nominal` is the simulation cut-trace samples, accumulated again
-//!   through the shipped `SummaryAccumulator`. Every time there is the
-//!   nominal `length / feed` of one sample. The published trace summary is
-//!   not read for time: on a machine with a `kinematics` block the
-//!   simulation writes the integrator time into `total_runtime_s`, so the
-//!   published fields can hold two time bases.
+//! Operator rule 2026-09-24: the GUI, MCP and CLI give IDENTICAL numbers for
+//! the same project state, under the SAME names. The command therefore
+//! computes no time and no engagement of its own. It serialises the core
+//! structs the session publishes:
 //!
-//! The one cross-base number is `removed_mm3_per_accel_s`. Its numerator is
-//! a volume, not a time, so it mixes no time base.
+//! - `diagnostic` is the core `ToolpathDiagnostic` from
+//!   `ProjectSession::diagnostics`, the row of MCP `get_project_diagnostics`
+//!   `per_toolpath`: `move_count`, `cutting_distance_mm`,
+//!   `rapid_distance_mm` and the finding areas.
+//! - `cut_summary` is the core `SimulationToolpathCutSummary` from the cut
+//!   trace, the row of MCP `get_cut_trace` `toolpath_summaries`:
+//!   `total_runtime_s`, `cutting_runtime_s`, `runtime_by_intent`,
+//!   `average_engagement`, `total_removed_volume_est_mm3` and the rest. The
+//!   MCP row omits some of these fields; the core struct has all of them.
+//!
+//! The derived fields (`whole_cycle_engagement`, `cutting_duty`) and the
+//! move `counts` have no GUI twin. Each one names the published fields it
+//! reads.
 //!
 //! # None is not zero
 //!
@@ -33,10 +39,11 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use rs_cam_core::ToolpathId;
-use rs_cam_core::machine::kinematics::{CycleTimeBreakdown, compute_cycle_time_breakdown};
 use rs_cam_core::session::generation_plan::Scope;
-use rs_cam_core::session::{Command, ProjectSession, SetToolpathParamArgs};
-use rs_cam_core::stock::simulation_cut::{SimulationCutTrace, SummaryAccumulator};
+use rs_cam_core::session::{Command, ProjectSession, SetToolpathParamArgs, ToolpathDiagnostic};
+use rs_cam_core::stock::simulation_cut::{
+    SimulationCutSummary, SimulationCutTrace, SimulationToolpathCutSummary,
+};
 use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
 
 use crate::command::apply_command;
@@ -62,85 +69,20 @@ pub(crate) struct ScoreOptions {
     pub adaptive_feed_modulation: bool,
 }
 
-/// The machine the accel time integrates on.
+/// The machine of the run.
 #[derive(Debug, Serialize)]
 pub(crate) struct MachineReport {
     pub name: String,
-    /// False when the profile has no `[kinematics]` block. The integrator
-    /// then uses the generic wood-router default, which is not the named
-    /// machine's answer.
+    /// False when the profile has no `[kinematics]` block. The simulation
+    /// then publishes no `runtime_by_intent` and keeps the nominal
+    /// `length / feed` time in `total_runtime_s` (N7).
     pub kinematics_declared: bool,
-    /// The cap on commanded cutting feeds.
-    pub max_feed_mm_min: f64,
-    /// The rate of `G0` moves.
-    pub rapid_feed_mm_min: f64,
 }
 
-/// The kinematics integrator buckets for one toolpath, in seconds.
-#[derive(Debug, Default, Clone, Copy, Serialize)]
-pub(crate) struct AccelTime {
-    pub total_s: f64,
-    pub cutting_s: f64,
-    pub entry_s: f64,
-    pub linking_s: f64,
-    pub retract_s: f64,
-    pub rapid_s: f64,
-    /// Untagged feed moves (`MoveIntent::Unknown`). Adaptive 3D emits some
-    /// vertical descents untagged, so this bucket is reported, not dropped.
-    pub unknown_s: f64,
-    /// `cutting_s / total_s`. `null` when `total_s` is zero.
-    pub duty_cutting_over_total: Option<f64>,
-}
-
-impl AccelTime {
-    fn from_breakdown(b: &CycleTimeBreakdown) -> Self {
-        Self {
-            total_s: b.total_s,
-            cutting_s: b.cutting_s,
-            entry_s: b.entry_s,
-            linking_s: b.linking_s,
-            retract_s: b.retract_s,
-            rapid_s: b.rapid_s,
-            unknown_s: b.unknown_s,
-            duty_cutting_over_total: ratio(b.cutting_s, b.total_s),
-        }
-    }
-}
-
-/// The simulation figures for one toolpath, all on the nominal
-/// `length / feed` time base of the cut-trace samples.
-#[derive(Debug, Serialize)]
-pub(crate) struct SimNominal {
-    /// Which feeds the sample times read. The samples carry the feed the
-    /// simulation ran at, before the modulation. `accel_time` reads the
-    /// modulated feeds, so the two blocks can read different feeds. Use
-    /// `--no-adaptive-feed-modulation` to put both blocks on one feed set.
-    pub feeds_basis: &'static str,
-    pub total_runtime_s: f64,
-    /// The time of every sample that engages at feed, entries and links
-    /// included. It is not the `accel_time.cutting_s` bucket, which holds
-    /// only the clearing, finishing and drilling intents.
-    pub cutting_runtime_s: f64,
-    /// Time-weighted mean radial engagement over the CUTTING time. The
-    /// shipped `average_engagement`. `null` when the toolpath has no
-    /// cutting time or its kinematics make the metric not applicable.
-    pub average_engagement_over_cutting_s: Option<f64>,
-    /// `average_engagement * cutting_runtime_s / total_runtime_s`: the mean
-    /// engagement over the WHOLE cycle, rapids and links included.
-    pub whole_cycle_engagement_over_total_s: Option<f64>,
-    /// Time-weighted mean axial DOC fraction over the cutting samples that
-    /// carry one, pooled over every kinematics class.
-    pub average_axial_doc_fraction_over_cutting_s: Option<f64>,
-    /// Peak axial engagement. Transit-span samples do not count.
-    pub peak_axial_doc_mm: f64,
-    pub total_removed_volume_est_mm3: f64,
-    pub sample_count: usize,
-}
-
-/// Move counts on the accel-time IR.
+/// Move counts on the toolpath IR that the export reads. The GUI publishes
+/// no twin of these counts.
 #[derive(Debug, Default, Clone, Serialize)]
 pub(crate) struct MoveCounts {
-    pub moves: usize,
     pub rapid_moves: usize,
     /// Moves with an entry intent (plunge, helix, ramp, lead-in).
     pub entry_moves: usize,
@@ -151,8 +93,8 @@ pub(crate) struct MoveCounts {
     /// `entry_runs` split by the intent of the first move of the run.
     pub entry_runs_by_kind: BTreeMap<String, usize>,
     /// Runs of `MoveIntent::Retract` moves, at feed or rapid. The
-    /// integrator puts a rapid retract in `rapid_s`, so `accel_time.retract_s`
-    /// holds only the feed retracts.
+    /// integrator puts a rapid retract in `runtime_by_intent.rapid_s`, so
+    /// `runtime_by_intent.retract_s` holds only the feed retracts.
     pub retract_runs: usize,
     /// Moves that rise from below `top_z_mm` to `top_z_mm`. The toolpath
     /// does not carry its safe Z, so the command uses the highest Z the
@@ -163,40 +105,57 @@ pub(crate) struct MoveCounts {
 }
 
 /// One scored toolpath.
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 pub(crate) struct ToolpathScore {
     pub record: &'static str,
     pub index: usize,
     pub id: ToolpathId,
     pub name: String,
-    pub operation: String,
-    pub accel_time: AccelTime,
-    /// `null` when the closing simulation did not run, or when the trace
-    /// holds no sample of this toolpath.
-    pub sim_nominal: Option<SimNominal>,
-    /// `sim_nominal.total_removed_volume_est_mm3 / accel_time.total_s`.
-    pub removed_mm3_per_accel_s: Option<f64>,
+    /// The core per-toolpath diagnostic, as MCP `get_project_diagnostics`
+    /// publishes it. `null` when the core builds no row for the toolpath.
+    pub diagnostic: Option<ToolpathDiagnostic>,
+    /// The core cut-trace summary, as the session publishes it. `null` when
+    /// the closing simulation did not run, or when the trace has no summary
+    /// row for the toolpath (a drill has none).
+    pub cut_summary: Option<SimulationToolpathCutSummary>,
+    /// `cut_summary.average_engagement * cut_summary.cutting_runtime_s /
+    /// cut_summary.total_runtime_s`: the mean engagement over the whole
+    /// cycle, rapids and links included. Both times are published fields on
+    /// one clock. `null` when the metric does not apply or a time is zero.
+    pub whole_cycle_engagement: Option<f64>,
+    /// `cut_summary.runtime_by_intent.cutting_s /
+    /// cut_summary.runtime_by_intent.total_s`. `null` when the machine
+    /// declares no kinematics (no `runtime_by_intent`) or the total is zero.
+    pub cutting_duty: Option<f64>,
     pub counts: MoveCounts,
 }
 
-/// The total over the scored toolpaths.
+/// The total record.
 #[derive(Serialize)]
 pub(crate) struct TotalScore {
     pub record: &'static str,
     pub project: String,
-    /// `project`, or the one toolpath the `--toolpath` filter names.
+    /// `project`, or the one toolpath the `--toolpath` filter names and its
+    /// ancestors. `project_diagnostics` and `cut_summary` below cover every
+    /// toolpath with a result, so under a filter they include the
+    /// ancestors.
     pub scope: String,
     pub toolpaths_scored: usize,
     pub machine: MachineReport,
-    /// Which feeds the accel time reads.
+    /// Which feeds the published figures read.
     pub feeds_basis: &'static str,
     /// The cell size of the simulations. `null` when no simulation ran.
     pub resolution_mm: Option<f64>,
     pub closing_simulation: bool,
     pub set_overrides: Vec<String>,
-    pub accel_time: AccelTime,
-    pub sim_nominal: Option<SimNominal>,
-    pub removed_mm3_per_accel_s: Option<f64>,
+    /// The core `ProjectDiagnostics`, as MCP `get_project_diagnostics`
+    /// publishes it, without the `per_toolpath` rows (each toolpath record
+    /// carries its own). `null` when the closing simulation did not run.
+    pub project_diagnostics: Option<serde_json::Value>,
+    /// The core project cut-trace summary. `null` when the closing
+    /// simulation did not run.
+    pub cut_summary: Option<SimulationCutSummary>,
+    /// The sum of the per-toolpath counts of the scored toolpaths.
     pub counts: MoveCounts,
     /// Operations that did not generate because an upstream simulated
     /// stock was missing. An EMPTY list means none were blocked.
@@ -270,25 +229,7 @@ pub(crate) fn score_session(
         },
     )?;
 
-    // 3. The machine. `machine_from_profile` is the `LinkKinematics`
-    // mapping. The rapid rate follows the session's own clock (the
-    // modulation re-time and `kinematic_utilization_of`), which reads
-    // `post.high_feedrate` when `high_feedrate_mode` is on.
-    let profile = crate::nc_replay::machine_from_profile(session.machine());
-    let post = session.post_config();
-    let rapid_feed_mm_min = if post.high_feedrate_mode {
-        post.high_feedrate.max(1.0)
-    } else {
-        profile.rapid_feed_mm_min
-    };
-    let machine = MachineReport {
-        name: profile.label.clone(),
-        kinematics_declared: profile.kinematics_declared,
-        max_feed_mm_min: profile.max_feed_mm_min,
-        rapid_feed_mm_min,
-    };
-
-    // 4. The toolpaths to score.
+    // 3. The toolpaths to score.
     let indices: Vec<usize> = match target {
         Some((index, _)) => vec![index],
         None => (0..session.toolpath_count())
@@ -310,6 +251,9 @@ pub(crate) fn score_session(
         );
     }
 
+    // 4. The published figures. Without the closing simulation the session
+    // can hold a prefix simulation that does not include the scored
+    // toolpaths, so the command reads no simulation figure then.
     let trace: Option<&SimulationCutTrace> = if opts.no_sim {
         None
     } else {
@@ -317,11 +261,9 @@ pub(crate) fn score_session(
             .simulation_result()
             .and_then(|sim| sim.cut_trace.as_deref())
     };
+    let diagnostics = session.diagnostics();
 
-    // 5. Score each toolpath, and pool the totals from the same parts.
     let mut toolpaths = Vec::with_capacity(indices.len());
-    let mut total_breakdown = CycleTimeBreakdown::default();
-    let mut total_acc = SimPool::default();
     let mut total_counts = MoveCounts::default();
     for index in indices {
         let (Some(tc), Some(result)) = (
@@ -330,40 +272,40 @@ pub(crate) fn score_session(
         ) else {
             continue;
         };
-        let toolpath = result.toolpath();
-        let breakdown = compute_cycle_time_breakdown(
-            toolpath,
-            &profile.kinematics,
-            profile.max_feed_mm_min,
-            rapid_feed_mm_min,
-        );
-        check_session_clock(trace, tc.id, &breakdown);
-        let pool = trace.and_then(|t| SimPool::of_toolpath(t, tc.id));
-        let sim_nominal = pool.as_ref().map(SimPool::report);
-        let counts = count_moves(toolpath);
-
-        total_breakdown += breakdown;
-        if let Some(pool) = pool {
-            total_acc.merge(&pool);
-        }
+        let cut_summary = trace.and_then(|t| {
+            t.toolpath_summaries
+                .iter()
+                .find(|s| s.toolpath_id == tc.id)
+                .cloned()
+        });
+        let counts = count_moves(result.toolpath());
         total_counts.merge(&counts);
-
         toolpaths.push(ToolpathScore {
             record: "toolpath",
             index,
             id: tc.id,
             name: tc.name.clone(),
-            operation: tc.operation.op_type().label().to_owned(),
-            accel_time: AccelTime::from_breakdown(&breakdown),
-            removed_mm3_per_accel_s: sim_nominal
-                .as_ref()
-                .and_then(|s| ratio(s.total_removed_volume_est_mm3, breakdown.total_s)),
-            sim_nominal,
+            diagnostic: diagnostics
+                .per_toolpath
+                .iter()
+                .find(|d| d.toolpath_id == tc.id)
+                .cloned(),
+            whole_cycle_engagement: cut_summary.as_ref().and_then(whole_cycle_engagement),
+            cutting_duty: cut_summary.as_ref().and_then(cutting_duty),
+            cut_summary,
             counts,
         });
     }
 
-    let total_sim = (total_acc.sample_count > 0).then(|| total_acc.report());
+    let project_diagnostics = if opts.no_sim {
+        None
+    } else {
+        let mut value = serde_json::to_value(&diagnostics)?;
+        if let Some(map) = value.as_object_mut() {
+            let _ = map.remove("per_toolpath");
+        }
+        Some(value)
+    };
     let feeds_basis = match (opts.no_sim, opts.adaptive_feed_modulation) {
         (true, _) => "planned: no closing simulation, so the feeds are the generated feeds",
         (false, true) => "emitted: the IR the export reads, after the closing modulation",
@@ -378,47 +320,38 @@ pub(crate) fn score_session(
         project: session.name().to_owned(),
         scope: scope_label,
         toolpaths_scored: toolpaths.len(),
-        machine,
+        machine: MachineReport {
+            name: session.machine().name.clone(),
+            kinematics_declared: session.machine().kinematics.is_some(),
+        },
         feeds_basis,
         resolution_mm: (walk.simulations > 0).then_some(walk.resolution),
         closing_simulation: !opts.no_sim,
         set_overrides: opts.set.clone(),
-        accel_time: AccelTime::from_breakdown(&total_breakdown),
-        removed_mm3_per_accel_s: total_sim
-            .as_ref()
-            .and_then(|s| ratio(s.total_removed_volume_est_mm3, total_breakdown.total_s)),
-        sim_nominal: total_sim,
+        project_diagnostics,
+        cut_summary: trace.map(|t| t.summary.clone()),
         counts: total_counts,
         awaiting_prior_stock: walk.blocked,
     };
     Ok(ScoreReport { toolpaths, total })
 }
 
-/// Warn when the accel time differs from the time the session published.
-///
-/// On a machine with a `kinematics` block the modulation re-time writes
-/// `runtime_by_intent` from the same IR and the same machine mapping. A
-/// difference means that the two mappings of the machine disagree.
-fn check_session_clock(
-    trace: Option<&SimulationCutTrace>,
-    id: ToolpathId,
-    breakdown: &CycleTimeBreakdown,
-) {
-    let Some(published) = trace
-        .and_then(|t| t.toolpath_summaries.iter().find(|s| s.toolpath_id == id))
-        .and_then(|s| s.runtime_by_intent)
-    else {
-        return;
-    };
-    let delta = (published.total_s - breakdown.total_s).abs();
-    if delta > 1e-6 * breakdown.total_s.max(1.0) {
-        tracing::warn!(
-            toolpath = %id,
-            accel_total_s = breakdown.total_s,
-            session_total_s = published.total_s,
-            "the rough-score accel time differs from the session's published cycle time"
-        );
+/// `average_engagement * cutting_runtime_s / total_runtime_s`, from the
+/// published summary only.
+fn whole_cycle_engagement(s: &SimulationToolpathCutSummary) -> Option<f64> {
+    if s.metrics_not_applicable || s.cutting_runtime_s <= TIME_EPS_S {
+        return None;
     }
+    ratio(
+        s.average_engagement * s.cutting_runtime_s,
+        s.total_runtime_s,
+    )
+}
+
+/// `runtime_by_intent.cutting_s / runtime_by_intent.total_s`.
+fn cutting_duty(s: &SimulationToolpathCutSummary) -> Option<f64> {
+    let b = s.runtime_by_intent?;
+    ratio(b.cutting_s, b.total_s)
 }
 
 /// `a / b`, or `None` when `b` is zero or the answer is not finite.
@@ -488,7 +421,7 @@ fn intent_token(intent: MoveIntent) -> String {
         .unwrap_or_else(|| format!("{intent:?}"))
 }
 
-/// Count the moves, the entry runs and the retracts of one toolpath.
+/// Count the entry runs and the retracts of one toolpath.
 fn count_moves(toolpath: &Toolpath) -> MoveCounts {
     let top_z = toolpath
         .moves
@@ -498,7 +431,6 @@ fn count_moves(toolpath: &Toolpath) -> MoveCounts {
             Some(acc.map_or(z, |a| a.max(z)))
         });
     let mut counts = MoveCounts {
-        moves: toolpath.moves.len(),
         top_z_mm: top_z,
         ..MoveCounts::default()
     };
@@ -541,7 +473,6 @@ fn count_moves(toolpath: &Toolpath) -> MoveCounts {
 
 impl MoveCounts {
     fn merge(&mut self, other: &Self) {
-        self.moves += other.moves;
         self.rapid_moves += other.rapid_moves;
         self.entry_moves += other.entry_moves;
         self.entry_runs += other.entry_runs;
@@ -557,114 +488,6 @@ impl MoveCounts {
     }
 }
 
-/// The sums behind [`SimNominal`], on the nominal time base.
-///
-/// The sums come from the shipped `SummaryAccumulator::observe`, so the
-/// engagement, the transit-span peak rule and the removed volume are the
-/// shipped definitions. Only the time base is fixed here.
-#[derive(Default)]
-struct SimPool {
-    total_runtime_s: f64,
-    cutting_runtime_s: f64,
-    engagement_weighted_s: f64,
-    /// Cutting time of the toolpaths whose engagement metric applies.
-    engagement_cutting_s: f64,
-    /// Whole time of the toolpaths whose engagement metric applies.
-    engagement_total_s: f64,
-    axial_weighted_s: f64,
-    axial_observed_s: f64,
-    peak_axial_doc_mm: f64,
-    removed_mm3: f64,
-    sample_count: usize,
-}
-
-impl SimPool {
-    /// Accumulate the samples of `id`. `None` when the trace holds none.
-    fn of_toolpath(trace: &SimulationCutTrace, id: ToolpathId) -> Option<Self> {
-        let mut acc = SummaryAccumulator::default();
-        for sample in trace.samples.iter().filter(|s| s.toolpath_id == id) {
-            acc.observe(sample);
-        }
-        if acc.sample_count == 0 {
-            return None;
-        }
-        // A drill cycle has no engagement summary row, or a row that says
-        // the metric does not apply. Either way the engagement is not
-        // measured for it.
-        let applicable = trace
-            .toolpath_summaries
-            .iter()
-            .find(|s| s.toolpath_id == id)
-            .is_some_and(|s| !s.metrics_not_applicable);
-        let (axial_weighted_s, axial_observed_s) =
-            acc.per_kinematics.iter().fold((0.0, 0.0), |(w, o), k| {
-                (
-                    w + k.axial_doc_fraction_time_weighted_sum,
-                    o + k.axial_doc_observed_runtime_s,
-                )
-            });
-        Some(Self {
-            total_runtime_s: acc.total_runtime_s,
-            cutting_runtime_s: acc.cutting_runtime_s,
-            engagement_weighted_s: if applicable {
-                acc.engagement_time_weighted_sum
-            } else {
-                0.0
-            },
-            engagement_cutting_s: if applicable {
-                acc.cutting_runtime_s
-            } else {
-                0.0
-            },
-            engagement_total_s: if applicable { acc.total_runtime_s } else { 0.0 },
-            axial_weighted_s,
-            axial_observed_s,
-            peak_axial_doc_mm: acc.peak_axial_doc_mm,
-            removed_mm3: acc.total_removed_volume_est_mm3,
-            sample_count: acc.sample_count,
-        })
-    }
-
-    fn merge(&mut self, other: &Self) {
-        self.total_runtime_s += other.total_runtime_s;
-        self.cutting_runtime_s += other.cutting_runtime_s;
-        self.engagement_weighted_s += other.engagement_weighted_s;
-        self.engagement_cutting_s += other.engagement_cutting_s;
-        self.engagement_total_s += other.engagement_total_s;
-        self.axial_weighted_s += other.axial_weighted_s;
-        self.axial_observed_s += other.axial_observed_s;
-        self.peak_axial_doc_mm = self.peak_axial_doc_mm.max(other.peak_axial_doc_mm);
-        self.removed_mm3 += other.removed_mm3;
-        self.sample_count += other.sample_count;
-    }
-
-    fn report(&self) -> SimNominal {
-        // `average_engagement * cutting / total` is `weighted / total`. The
-        // command divides the weighted sum by the total time directly, so
-        // the two figures share one numerator and one time base.
-        SimNominal {
-            feeds_basis: "commanded: the feed each sample ran at, before the modulation",
-            total_runtime_s: self.total_runtime_s,
-            cutting_runtime_s: self.cutting_runtime_s,
-            average_engagement_over_cutting_s: ratio(
-                self.engagement_weighted_s,
-                self.engagement_cutting_s,
-            ),
-            whole_cycle_engagement_over_total_s: ratio(
-                self.engagement_weighted_s,
-                self.engagement_total_s,
-            ),
-            average_axial_doc_fraction_over_cutting_s: ratio(
-                self.axial_weighted_s,
-                self.axial_observed_s,
-            ),
-            peak_axial_doc_mm: self.peak_axial_doc_mm,
-            total_removed_volume_est_mm3: self.removed_mm3,
-            sample_count: self.sample_count,
-        }
-    }
-}
-
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -675,13 +498,29 @@ impl SimPool {
 mod tests {
     use super::*;
     use rs_cam_core::compute::catalog::OperationType;
-    use rs_cam_core::session::{AddToolpathArgs, ToolpathConfig};
+    use rs_cam_core::session::{
+        AddToolpathArgs, SetMachineKinematicsArgs, SimulationOptions, ToolpathConfig,
+    };
+    use std::sync::atomic::AtomicBool;
+
+    const RESOLUTION_MM: f64 = 1.0;
+    const OVERRIDE: &str = "0.depth_per_pass=3";
 
     /// The 2D pocket fixture with one pocket toolpath added through the
-    /// session door, as `run` adds one.
+    /// session door, as `run` adds one. The machine gets a kinematics block,
+    /// so the simulation publishes `runtime_by_intent`.
     fn pocket_session() -> ProjectSession {
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data/ux_2d_pocket.toml");
         let mut session = ProjectSession::load(&path).expect("load ux_2d_pocket.toml");
+        let _ = apply_command(
+            &mut session,
+            Command::SetMachineKinematics(SetMachineKinematicsArgs {
+                kinematics: Box::new(
+                    rs_cam_core::machine::kinematics::MachineKinematics::shapeoko_xxl_stock(),
+                ),
+            }),
+        )
+        .expect("set the machine kinematics");
         let tool_id = session.tools()[0].id.0;
         let model_id = session.models()[0].id;
         let _ = apply_command(
@@ -717,104 +556,196 @@ mod tests {
         session
     }
 
-    fn get<'a>(v: &'a serde_json::Value, path: &[&str]) -> &'a serde_json::Value {
-        let mut at = v;
-        for key in path {
-            at = at
-                .get(*key)
-                .unwrap_or_else(|| panic!("the JSON has no field {path:?} (missing '{key}')"));
-        }
-        at
-    }
-
-    #[test]
-    fn the_score_has_every_field_and_its_ratios_hold() {
-        let mut session = pocket_session();
-        let report = score_session(
-            &mut session,
+    fn score(session: &mut ProjectSession) -> ScoreReport {
+        score_session(
+            session,
             &ScoreOptions {
                 toolpath: None,
-                resolution: Some(1.0),
+                resolution: Some(RESOLUTION_MM),
                 no_sim: false,
-                set: vec!["0.depth_per_pass=3".to_owned()],
+                set: vec![OVERRIDE.to_owned()],
                 adaptive_feed_modulation: true,
             },
         )
-        .expect("score the pocket");
+        .expect("score the pocket")
+    }
+
+    fn same_f64(name: &str, gui: f64, cli: f64) {
+        let tol = 1e-9 * gui.abs().max(cli.abs()).max(1.0);
+        assert!(
+            (gui - cli).abs() <= tol,
+            "{name}: the GUI path gives {gui}, rough-score gives {cli}"
+        );
+    }
+
+    /// The GUI path: set the parameter, generate, simulate with the GUI
+    /// options (metrics on, modulation on). Then compare every published
+    /// field with the rough-score record of the same state.
+    #[test]
+    fn rough_score_publishes_the_gui_numbers() {
+        let mut gui = pocket_session();
+        let (index, param, value) = split_set(OVERRIDE).unwrap();
+        let _ = apply_command(
+            &mut gui,
+            Command::SetToolpathParam(SetToolpathParamArgs {
+                index,
+                param: param.to_owned(),
+                value: crate::job::param_value_from_str(value),
+            }),
+        )
+        .unwrap();
+        let cancel = AtomicBool::new(false);
+        gui.generate_toolpath(0, &cancel).expect("generate");
+        let _ = gui
+            .run_simulation(
+                &SimulationOptions {
+                    resolution: RESOLUTION_MM,
+                    skip_ids: Vec::new(),
+                    metrics_enabled: true,
+                    auto_resolution: false,
+                    use_predicted_feed_in_gates: false,
+                    adaptive_feed_modulation: true,
+                    modulation_strategy:
+                        rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
+                    modulation_feed_scale: 1.0,
+                },
+                &cancel,
+            )
+            .expect("simulate");
+        let gui_diag = gui.diagnostics().per_toolpath[0].clone();
+        let gui_sum = gui
+            .simulation_result()
+            .and_then(|s| s.cut_trace.as_deref())
+            .expect("a cut trace")
+            .toolpath_summaries[0]
+            .clone();
+
+        let mut cli_session = pocket_session();
+        let report = score(&mut cli_session);
         assert_eq!(report.toolpaths.len(), 1, "one pocket, one record");
+        let tp = &report.toolpaths[0];
+        let cli_diag = tp.diagnostic.as_ref().expect("a diagnostic row");
+        let cli_sum = tp.cut_summary.as_ref().expect("a cut summary");
 
-        let tp = serde_json::to_value(&report.toolpaths[0]).unwrap();
-        let total = serde_json::to_value(&report.total).unwrap();
-        for record in [&tp, &total] {
-            for key in [
-                "total_s",
-                "cutting_s",
-                "entry_s",
-                "linking_s",
-                "retract_s",
-                "rapid_s",
-                "unknown_s",
-                "duty_cutting_over_total",
-            ] {
-                let _ = get(record, &["accel_time", key]);
-            }
-            for key in [
-                "total_runtime_s",
-                "cutting_runtime_s",
-                "average_engagement_over_cutting_s",
-                "whole_cycle_engagement_over_total_s",
-                "average_axial_doc_fraction_over_cutting_s",
-                "peak_axial_doc_mm",
-                "total_removed_volume_est_mm3",
-            ] {
-                let _ = get(record, &["sim_nominal", key]);
-            }
-            for key in [
-                "entry_runs",
-                "retract_runs",
-                "rapid_moves",
-                "rises_to_top_z",
-            ] {
-                let _ = get(record, &["counts", key]);
-            }
-            let _ = get(record, &["removed_mm3_per_accel_s"]);
+        // Counts: bitwise.
+        assert_eq!(gui_diag.move_count, cli_diag.move_count, "move_count");
+        assert_eq!(gui_sum.sample_count, cli_sum.sample_count, "sample_count");
+        assert!(gui_diag.move_count > 0, "the pocket must move");
 
-            let total_s = get(record, &["accel_time", "total_s"]).as_f64().unwrap();
-            let cutting_s = get(record, &["accel_time", "cutting_s"]).as_f64().unwrap();
-            assert!(total_s > 0.0, "the pocket must take time: {total_s}");
-            assert!(total_s >= cutting_s, "{total_s} < {cutting_s}");
+        // Floats: 1e-9 relative.
+        same_f64(
+            "cutting_distance_mm",
+            gui_diag.cutting_distance_mm,
+            cli_diag.cutting_distance_mm,
+        );
+        same_f64(
+            "rapid_distance_mm",
+            gui_diag.rapid_distance_mm,
+            cli_diag.rapid_distance_mm,
+        );
+        same_f64(
+            "total_runtime_s",
+            gui_sum.total_runtime_s,
+            cli_sum.total_runtime_s,
+        );
+        same_f64(
+            "cutting_runtime_s",
+            gui_sum.cutting_runtime_s,
+            cli_sum.cutting_runtime_s,
+        );
+        same_f64(
+            "rapid_runtime_s",
+            gui_sum.rapid_runtime_s,
+            cli_sum.rapid_runtime_s,
+        );
+        same_f64(
+            "average_engagement",
+            gui_sum.average_engagement,
+            cli_sum.average_engagement,
+        );
+        same_f64(
+            "total_removed_volume_est_mm3",
+            gui_sum.total_removed_volume_est_mm3,
+            cli_sum.total_removed_volume_est_mm3,
+        );
+        same_f64(
+            "peak_axial_doc_mm",
+            gui_sum.peak_axial_doc_mm,
+            cli_sum.peak_axial_doc_mm,
+        );
+        let gui_b = gui_sum.runtime_by_intent.expect("kinematics are declared");
+        let cli_b = cli_sum.runtime_by_intent.expect("kinematics are declared");
+        for (name, g, c) in [
+            ("runtime_by_intent.total_s", gui_b.total_s, cli_b.total_s),
+            (
+                "runtime_by_intent.cutting_s",
+                gui_b.cutting_s,
+                cli_b.cutting_s,
+            ),
+            ("runtime_by_intent.entry_s", gui_b.entry_s, cli_b.entry_s),
+            (
+                "runtime_by_intent.linking_s",
+                gui_b.linking_s,
+                cli_b.linking_s,
+            ),
+            (
+                "runtime_by_intent.retract_s",
+                gui_b.retract_s,
+                cli_b.retract_s,
+            ),
+            ("runtime_by_intent.rapid_s", gui_b.rapid_s, cli_b.rapid_s),
+            (
+                "runtime_by_intent.unknown_s",
+                gui_b.unknown_s,
+                cli_b.unknown_s,
+            ),
+        ] {
+            same_f64(name, g, c);
+        }
 
-            let avg = get(
-                record,
-                &["sim_nominal", "average_engagement_over_cutting_s"],
-            )
-            .as_f64()
+        // The derived fields read only the published fields.
+        let whole = tp
+            .whole_cycle_engagement
             .expect("a pocket measures engagement");
-            let whole = get(
-                record,
-                &["sim_nominal", "whole_cycle_engagement_over_total_s"],
-            )
-            .as_f64()
-            .expect("a pocket measures the whole-cycle engagement");
+        same_f64(
+            "whole_cycle_engagement",
+            gui_sum.average_engagement * gui_sum.cutting_runtime_s / gui_sum.total_runtime_s,
+            whole,
+        );
+        assert!(whole <= cli_sum.average_engagement + 1e-12);
+        assert!(cli_b.total_s >= cli_b.cutting_s);
+        assert!(tp.cutting_duty.is_some());
+
+        // The JSON keeps the GUI names.
+        let json = serde_json::to_value(tp).unwrap();
+        for path in [
+            ["diagnostic", "move_count"],
+            ["diagnostic", "cutting_distance_mm"],
+            ["diagnostic", "rapid_distance_mm"],
+            ["cut_summary", "total_runtime_s"],
+            ["cut_summary", "cutting_runtime_s"],
+            ["cut_summary", "runtime_by_intent"],
+            ["cut_summary", "average_engagement"],
+            ["cut_summary", "total_removed_volume_est_mm3"],
+        ] {
             assert!(
-                whole <= avg + 1e-12,
-                "the whole-cycle engagement {whole} exceeds the cutting-time one {avg}"
+                json.get(path[0]).and_then(|v| v.get(path[1])).is_some(),
+                "the JSON has no field {path:?}"
             );
         }
-        for key in [
-            "name",
-            "kinematics_declared",
-            "max_feed_mm_min",
-            "rapid_feed_mm_min",
-        ] {
-            let _ = get(&total, &["machine", key]);
-        }
+        let total = serde_json::to_value(&report.total).unwrap();
         assert_eq!(
-            get(&total, &["machine", "kinematics_declared"]).as_bool(),
-            Some(false),
-            "the fixture machine declares no kinematics"
+            total
+                .pointer("/machine/kinematics_declared")
+                .and_then(|v| v.as_bool()),
+            Some(true)
         );
-        let _ = get(&total, &["awaiting_prior_stock"]);
+        assert!(
+            total
+                .pointer("/project_diagnostics/total_runtime_s")
+                .is_some()
+        );
+        assert!(total.pointer("/project_diagnostics/per_toolpath").is_none());
     }
 
     #[test]
@@ -824,7 +755,7 @@ mod tests {
             &mut session,
             &ScoreOptions {
                 toolpath: None,
-                resolution: Some(1.0),
+                resolution: Some(RESOLUTION_MM),
                 no_sim: true,
                 set: vec!["7.depth_per_pass=3".to_owned()],
                 adaptive_feed_modulation: true,
