@@ -442,6 +442,29 @@ collision and no gouge below the leave. Then the operator looks at the cut
 in the GUI. This is a plan-level comparison; it is not a cutting
 certification.
 
+### Phase 2b — graded link margin (small)
+
+Tier 1 of [10, 5] + 1 cut almost nothing (RESULTS "Phase 2 result"): both
+clip tiers eroded by the same margin from the same keep-out. Clip tier k of
+n uses (n − k) tool diameters, so each finer tier gets its own band. One
+clip tier keeps today's single margin. Needed before any multi-step ladder
+can be measured.
+
+### Phase 6 — how to choose the ladder (experiment, later)
+
+Operator 2026-09-24: "10 5 1 is just a demo. … if you are given the
+smallest step you just double and double until max or something? thats
+something to test later." Candidate rules, scored with `rough-score` on
+rivmap100 and the deep fixture:
+
+- doubling from the base step up to the axial cap (1, 2, 4, 8);
+- a two-step ladder: base + the cap;
+- today's single step.
+
+The axial envelope cap bounds every step (operator 2026-09-24: "its ok that
+it caps it. if its too deep, its too deep"; the feeds session clamps a
+step over the cap and the card says so).
+
 ## 6. Rulings and open questions
 
 Ruled 2026-09-24:
