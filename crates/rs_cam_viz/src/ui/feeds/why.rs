@@ -33,9 +33,11 @@ use rs_cam_core::feeds::rationale::{
     AGGRESSIVENESS_ABOVE_BASE_TEXT, PLUNGE_AT_MATERIAL_BASE_TEXT, SuggestRationale,
 };
 use rs_cam_core::feeds::suggest::{AggressivenessShortfall, FeedRecalibrationCap, SuggestWarning};
-use rs_cam_core::feeds::{FeedsExplain, SpindleScaleReason};
+use rs_cam_core::feeds::{FeedsExplain, FeedsField, SpindleScaleReason};
 
-use super::shared::{CurrentValues, engaged_diameter_context, vendor_band, vendor_single_value};
+use super::shared::{
+    AppliedRecipe, CurrentValues, engaged_diameter_context, vendor_band, vendor_single_value,
+};
 use crate::ui::{theme, tokens};
 
 /// A factor within this of 1.0 changed nothing.
@@ -91,27 +93,69 @@ fn plain_line(ui: &mut egui::Ui, text: impl Into<String>, color: egui::Color32) 
 /// Returns the hover text for `row`. Always non-empty: a row that did not
 /// move still answers "why is this NOT moving", which is the same question
 /// inverted and is asked just as often.
+///
+/// G-RECOMAPPLIED (2026-09-24): the row prints what `⚡ Apply all` writes
+/// (`applied`). The first line of the hover is that value. When the funnel
+/// moved it, one sentence gives the raw calculator value and the cause.
 pub(crate) fn row_explanation(
     row: RecipeRow,
     current: &CurrentValues,
     explain: &FeedsExplain,
+    applied: &AppliedRecipe,
     rationale: Option<&SuggestRationale>,
 ) -> String {
     let mut out = String::new();
     match row {
-        RecipeRow::Rpm => explain_rpm(&mut out, explain),
-        RecipeRow::Feed => explain_feed(&mut out, current, explain),
-        RecipeRow::Plunge => explain_plunge(&mut out, explain),
-        RecipeRow::Doc => explain_doc(&mut out, explain),
-        RecipeRow::Woc => explain_woc(&mut out, current, explain),
-        RecipeRow::Advance => explain_advance(&mut out, explain),
+        RecipeRow::Rpm => explain_rpm(&mut out, explain, applied),
+        RecipeRow::Feed => explain_feed(&mut out, current, explain, applied),
+        RecipeRow::Plunge => explain_plunge(&mut out, explain, applied),
+        RecipeRow::Doc => explain_doc(&mut out, explain, applied),
+        RecipeRow::Woc => explain_woc(&mut out, current, explain, applied),
+        RecipeRow::Advance => explain_advance(&mut out, explain, applied),
     }
     append_rationale(&mut out, row, rationale);
     out
 }
 
-fn explain_rpm(out: &mut String, explain: &FeedsExplain) {
-    out.push_str(&format!("{:.0} RPM.\n", explain.recommended.rpm));
+/// The first lines of a row hover: the value Apply writes and, when the
+/// funnel moved it, the raw calculator value and the cause.
+///
+/// `decimals` is the precision the row prints at. A value that prints the
+/// same as the calculator value did not move, and gets no sentence.
+fn applied_lines(
+    out: &mut String,
+    applied: &AppliedRecipe,
+    field: FeedsField,
+    calculator: f64,
+    unit: &str,
+    decimals: usize,
+) {
+    let written = applied.value(field, calculator);
+    let shown = format!("{written:.decimals$}{unit}");
+    let raw = format!("{calculator:.decimals$}{unit}");
+    out.push_str(&format!("{shown}.\n"));
+    if shown == raw {
+        return;
+    }
+    match applied.dial_load_pct(field) {
+        Some(pct) => out.push_str(&format!(
+            "calculator {raw}; the dial holds the load at {pct:.0} %, so Apply writes {shown}.\n"
+        )),
+        None => out.push_str(&format!(
+            "calculator {raw}; the invariant funnel changes it, so Apply writes {shown}.\n"
+        )),
+    }
+}
+
+fn explain_rpm(out: &mut String, explain: &FeedsExplain, applied: &AppliedRecipe) {
+    applied_lines(
+        out,
+        applied,
+        FeedsField::SpindleRpm,
+        explain.recommended.rpm,
+        " RPM",
+        0,
+    );
     match &explain.matched_row {
         Some(row) => match row.rpm_min.zip(row.rpm_max) {
             Some((lo, hi)) => out.push_str(&format!(
@@ -166,7 +210,12 @@ fn explain_rpm(out: &mut String, explain: &FeedsExplain) {
     }
 }
 
-fn explain_feed(out: &mut String, current: &CurrentValues, explain: &FeedsExplain) {
+fn explain_feed(
+    out: &mut String,
+    current: &CurrentValues,
+    explain: &FeedsExplain,
+    applied: &AppliedRecipe,
+) {
     let r = &explain.recommended;
     let flutes = current.flute_count.max(1);
     let advance = if r.rpm > 0.0 {
@@ -174,9 +223,16 @@ fn explain_feed(out: &mut String, current: &CurrentValues, explain: &FeedsExplai
     } else {
         0.0
     };
-    out.push_str(&format!("{:.0} mm/min.\n", r.feed_rate_mm_min));
+    applied_lines(
+        out,
+        applied,
+        FeedsField::FeedRate,
+        r.feed_rate_mm_min,
+        " mm/min",
+        0,
+    );
     out.push_str(&format!(
-        "feed = advance/tooth × RPM × flutes = {advance:.4} × {:.0} × {flutes}.\n",
+        "calculator feed = advance/tooth × RPM × flutes = {advance:.4} × {:.0} × {flutes}.\n",
         r.rpm
     ));
     let d = &r.derates;
@@ -195,11 +251,15 @@ fn explain_feed(out: &mut String, current: &CurrentValues, explain: &FeedsExplai
     out.push_str("Change the advance/tooth to change this; see that row.\n");
 }
 
-fn explain_plunge(out: &mut String, explain: &FeedsExplain) {
-    out.push_str(&format!(
-        "{:.0} mm/min.\n",
-        explain.recommended.plunge_rate_mm_min
-    ));
+fn explain_plunge(out: &mut String, explain: &FeedsExplain, applied: &AppliedRecipe) {
+    applied_lines(
+        out,
+        applied,
+        FeedsField::PlungeRate,
+        explain.recommended.plunge_rate_mm_min,
+        " mm/min",
+        0,
+    );
     out.push_str(
         "The plunge is the material's base rate for the tool diameter: a \
          small cutter plunges slower than a large one.\n",
@@ -209,9 +269,16 @@ fn explain_plunge(out: &mut String, explain: &FeedsExplain) {
     out.push('\n');
 }
 
-fn explain_doc(out: &mut String, explain: &FeedsExplain) {
-    out.push_str(&format!("{:.2} mm.\n", explain.recommended.axial_depth_mm));
-    out.push_str(CALCULATOR_CAVEAT);
+fn explain_doc(out: &mut String, explain: &FeedsExplain, applied: &AppliedRecipe) {
+    applied_lines(
+        out,
+        applied,
+        FeedsField::DepthPerPass,
+        explain.recommended.axial_depth_mm,
+        " mm",
+        2,
+    );
+    applied_note(out, applied, FeedsField::DepthPerPass);
     let tier = explain.recommended.derates.depth_tier;
     if tier < 0.999 {
         out.push_str(&format!(
@@ -221,23 +288,39 @@ fn explain_doc(out: &mut String, explain: &FeedsExplain) {
     }
 }
 
-fn explain_woc(out: &mut String, current: &CurrentValues, explain: &FeedsExplain) {
-    out.push_str(&format!("{:.2} mm.\n", explain.recommended.radial_width_mm));
+fn explain_woc(
+    out: &mut String,
+    current: &CurrentValues,
+    explain: &FeedsExplain,
+    applied: &AppliedRecipe,
+) {
+    applied_lines(
+        out,
+        applied,
+        FeedsField::Stepover,
+        explain.recommended.radial_width_mm,
+        " mm",
+        2,
+    );
     if current.supports_scallop_override && current.scallop_height.is_some() {
         out.push_str(
             "This stepover is derived from your target scallop height and the \
              tool's ball-tip radius, not from the vendor row.\n",
         );
     }
-    out.push_str(CALCULATOR_CAVEAT);
+    applied_note(out, applied, FeedsField::Stepover);
 }
 
-fn explain_advance(out: &mut String, explain: &FeedsExplain) {
+fn explain_advance(out: &mut String, explain: &FeedsExplain, applied: &AppliedRecipe) {
     let r = &explain.recommended;
     let d = &r.derates;
     let flutes = explain.flute_count.max(1) as f64;
-    let effective = if r.rpm > 0.0 {
-        r.feed_rate_mm_min / (r.rpm * flutes)
+    // The advance the applied feed and RPM give (G-RECOMAPPLIED), which is
+    // the value the row prints.
+    let feed = applied.value(FeedsField::FeedRate, r.feed_rate_mm_min);
+    let rpm = applied.value(FeedsField::SpindleRpm, r.rpm);
+    let effective = if rpm > 0.0 {
+        feed / (rpm * flutes)
     } else {
         0.0
     };
@@ -374,10 +457,18 @@ const RECIPE_ROWS: [RecipeRow; 6] = [
     RecipeRow::Advance,
 ];
 
-/// Why the DOC and WOC rows are not what the operation will end up with.
-const CALCULATOR_CAVEAT: &str = "This is the raw calculator value. `⚡ Apply all` passes it through \
-     the invariant funnel, which can lower it — the rigidity cap put 1.2 mm \
-     where this row read 4.2 mm on the R03 pocket.";
+/// Say where the row gets its value, when the funnel writes `field`. On a
+/// refused pairing Apply writes nothing, and the row shows the calculator
+/// value, so the note does not apply.
+fn applied_note(out: &mut String, applied: &AppliedRecipe, field: FeedsField) {
+    if applied.written(field).is_some() {
+        out.push_str(APPLIED_NOTE);
+    }
+}
+
+/// Where the DOC and WOC rows get their value (G-RECOMAPPLIED).
+const APPLIED_NOTE: &str = "The row shows what `⚡ Apply all` writes: the calculator value \
+     after the invariant funnel (the rigidity cap and the aggressiveness dial).";
 
 // ── What stays on the page ───────────────────────────────────────────
 

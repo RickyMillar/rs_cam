@@ -212,11 +212,32 @@ fn draw_feeds_card(
     let rationale = suggest_warnings
         .as_deref()
         .map(rs_cam_core::feeds::rationale::SuggestRationale::from_warnings);
+    // G-RECOMAPPLIED: the card's recommended column prints what `⚡ Apply
+    // all` writes. This is the dry run the ⚡ pills make, with the context
+    // the controller's apply passes. A refused pairing has no apply, so the
+    // column keeps the calculator values there.
+    let previews = preview.refusal().is_none().then(|| {
+        rs_cam_core::feeds::suggest::preview_field_applies(
+            &entry.operation,
+            preview.recommended(),
+            tool,
+            machine,
+            material,
+            entry.operation.feeds_style().1,
+            rs_cam_core::feeds::suggest::SuggestContext {
+                model_bbox,
+                ..rs_cam_core::feeds::suggest::SuggestContext::default()
+            },
+        )
+    });
+    let applied =
+        crate::ui::feeds::shared::AppliedRecipe::new(previews, suggest_warnings.as_deref());
 
     crate::ui::feeds::compare::draw_inspector_comparison(
         ui,
         &current,
         &preview,
+        &applied,
         rationale.as_ref(),
         &entry.operation,
         tool,

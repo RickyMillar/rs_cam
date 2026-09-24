@@ -14,15 +14,15 @@
 
 use rs_cam_core::feeds::efficiency::{ChipVerdict, CutEfficiency, cut_efficiency};
 use rs_cam_core::feeds::suggest::FeedsPreview;
-use rs_cam_core::feeds::{FeedsExplain, PowerFigure, PowerUnmodeled};
+use rs_cam_core::feeds::{FeedsExplain, FeedsField, PowerFigure, PowerUnmodeled};
 use rs_cam_core::tool_load::deflection::EXCEEDS_BOUND_MM;
 use rs_cam_core::tool_load::verdict::BoundSource;
 
 use rs_cam_core::feeds::rationale::SuggestRationale;
 
 use super::shared::{
-    CurrentValues, ball_tip_radius, combined_scale, hardness_label, material_family_label,
-    tool_family_label,
+    AppliedRecipe, CurrentValues, ball_tip_radius, combined_scale, hardness_label,
+    material_family_label, tool_family_label,
 };
 use super::why;
 use crate::state::AppState;
@@ -148,6 +148,7 @@ pub(crate) fn draw_inspector_comparison(
     ui: &mut egui::Ui,
     current: &CurrentValues,
     preview: &FeedsPreview,
+    applied: &AppliedRecipe,
     rationale: Option<&SuggestRationale>,
     operation: &crate::state::toolpath::OperationConfig,
     tool: &crate::state::job::ToolConfig,
@@ -168,6 +169,7 @@ pub(crate) fn draw_inspector_comparison(
         ui,
         current,
         explain,
+        applied,
         preview.refusal(),
         rationale,
         efficiency.as_ref(),
@@ -266,6 +268,7 @@ fn draw_comparison_card(
     ui: &mut egui::Ui,
     current: &CurrentValues,
     explain: &FeedsExplain,
+    applied: &AppliedRecipe,
     refusal: Option<&rs_cam_core::feeds::FeedsError>,
     rationale: Option<&SuggestRationale>,
     efficiency: Option<&CutEfficiency>,
@@ -277,7 +280,17 @@ fn draw_comparison_card(
     // here?` disclosure that used to sit under this card explained the recipe
     // as a whole, which is not the question an operator asks while reading a
     // row that tripled.
-    let why = |row: why::RecipeRow| why::row_explanation(row, current, explain, rationale);
+    let why = |row: why::RecipeRow| why::row_explanation(row, current, explain, applied, rationale);
+    // G-RECOMAPPLIED: the recommended column is what `⚡ Apply all` writes,
+    // read off the funnel's dry run. The raw calculator value is on each
+    // row's hover.
+    let r = &explain.recommended;
+    let rpm = applied.value(FeedsField::SpindleRpm, r.rpm);
+    let feed = applied.value(FeedsField::FeedRate, r.feed_rate_mm_min);
+    let plunge = applied.value(FeedsField::PlungeRate, r.plunge_rate_mm_min);
+    let doc = applied.value(FeedsField::DepthPerPass, r.axial_depth_mm);
+    let woc = applied.value(FeedsField::Stepover, r.radial_width_mm);
+    let advance = advance_per_tooth_mm(feed, rpm, current.flute_count);
     ui.label(
         egui::RichText::new("Recommendation")
             .strong()
@@ -306,7 +319,7 @@ fn draw_comparison_card(
             ui,
             "RPM",
             current.spindle_rpm.map(f64::from),
-            Some(explain.recommended.rpm),
+            Some(rpm),
             "",
             1.0,
             &why(why::RecipeRow::Rpm),
@@ -315,7 +328,7 @@ fn draw_comparison_card(
             ui,
             "Feed",
             Some(current.feed_rate_mm_min),
-            Some(explain.recommended.feed_rate_mm_min),
+            Some(feed),
             " mm/min",
             1.0,
             &why(why::RecipeRow::Feed),
@@ -324,35 +337,33 @@ fn draw_comparison_card(
             ui,
             "Plunge",
             Some(current.plunge_rate_mm_min),
-            Some(explain.recommended.plunge_rate_mm_min),
+            Some(plunge),
             " mm/min",
             1.0,
             &why(why::RecipeRow::Plunge),
         );
-        // G-FEEDSLABEL (UX-R03-005): the recommended DOC / WOC are the RAW
-        // calculator values — `⚡ Apply all` passes them through
-        // `enforce_invariants`, which can lower them — so each row's hover
-        // says so. The advance row prints feed ÷ (RPM × flutes) in both
-        // columns.
+        // G-FEEDSLABEL (UX-R03-005), G-RECOMAPPLIED (2026-09-24): the
+        // recommended DOC / WOC are the values `⚡ Apply all` writes, after
+        // `enforce_invariants` and the aggressiveness dial. Until 2026-09-24
+        // this column printed the raw calculator values. On a Ø6 hardwood
+        // pocket it recommended 4.20 mm of DOC where the apply wrote 0.81 mm.
+        // Each row's hover keeps the calculator value. The advance row prints
+        // feed ÷ (RPM × flutes) in both columns.
         rail_row(
             ui,
             "DOC",
             current.depth_per_pass,
-            Some(explain.recommended.axial_depth_mm),
+            Some(doc),
             " mm",
             0.01,
             &why(why::RecipeRow::Doc),
         );
-        woc_row(ui, current, explain, &why(why::RecipeRow::Woc));
+        woc_row(ui, current, explain, woc, &why(why::RecipeRow::Woc));
         rail_row(
             ui,
             ADVANCE_ROW_LABEL,
             Some(current.chipload_mm()),
-            advance_per_tooth_mm(
-                explain.recommended.feed_rate_mm_min,
-                explain.recommended.rpm,
-                current.flute_count,
-            ),
+            advance,
             " mm/tooth",
             0.0001,
             &why(why::RecipeRow::Advance),
@@ -364,19 +375,13 @@ fn draw_comparison_card(
         }
 
         ui.add_space(4.0);
-        rail_efficiency_row(
-            ui,
-            efficiency,
-            advance_per_tooth_mm(
-                explain.recommended.feed_rate_mm_min,
-                explain.recommended.rpm,
-                current.flute_count,
-            ),
-        );
+        rail_efficiency_row(ui, efficiency, advance);
         ui.add_space(2.0);
         rail_power_row(ui, power);
         ui.add_space(2.0);
-        rail_mrr_row(ui, explain.recommended.mrr_mm3_min);
+        // MRR = DOC × WOC × feed, the calculator's own product (Step 5),
+        // on the values Apply writes.
+        rail_mrr_row(ui, doc * woc * feed);
 
         ui.add_space(6.0);
         draw_apply_column(ui, refusal, toolpath_id, events);
@@ -1032,14 +1037,23 @@ fn draw_apply_column(
 /// the label gains an "(auto from scallop)" marker and a tooltip
 /// spelling out the chord-height math, so it's visually distinct from a
 /// manually-entered stepover.
-fn woc_row(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExplain, explanation: &str) {
+///
+/// `woc` is the stepover `⚡ Apply all` writes (G-RECOMAPPLIED). The derived
+/// value of the scallop formula stays on the hover.
+fn woc_row(
+    ui: &mut egui::Ui,
+    current: &CurrentValues,
+    explain: &FeedsExplain,
+    woc: f64,
+    explanation: &str,
+) {
     let scallop_active = current.supports_scallop_override && current.scallop_height.is_some();
     if !scallop_active {
         rail_row(
             ui,
             "WOC",
             current.stepover,
-            Some(explain.recommended.radial_width_mm),
+            Some(woc),
             " mm",
             0.01,
             explanation,
@@ -1062,13 +1076,20 @@ fn woc_row(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExplain, e
                  the formula default is used instead."
             .to_owned(),
     };
+    // G-RECOMAPPLIED: the face prints what `⚡ Apply all` writes. When the
+    // funnel moves the derived value, the hover says so.
+    let math = if format!("{woc:.2}") == format!("{derived:.2}") {
+        math
+    } else {
+        format!("{math}\nThe invariant funnel changes it, so Apply writes {woc:.2} mm.")
+    };
 
     // The scallop-derived variant of the per-field WOC apply (census row M6)
     // was deleted with the other five at Checkpoint I-1: it wrote
     // `explain.recommended.radial_width_mm` raw, so it skipped
     // `clamp_stepover_to_diameter` and the runtime back-off along with
-    // everything else. The derived value is still *shown* — reading it is
-    // the row's job — and `⚡ Apply all` writes the clamped form of it.
+    // everything else. The derived value is on the hover; the face shows the
+    // clamped form of it that `⚡ Apply all` writes (G-RECOMAPPLIED).
     ui.horizontal_wrapped(|ui| {
         ui.add(
             egui::Label::new(egui::RichText::new("WOC ⓢ").small().color(theme::TEXT_DIM)).wrap(),
@@ -1092,14 +1113,14 @@ fn woc_row(ui: &mut egui::Ui, current: &CurrentValues, explain: &FeedsExplain, e
         );
         ui.add(
             egui::Label::new(
-                egui::RichText::new(format!("{derived:.2} mm (auto)"))
+                egui::RichText::new(format!("{woc:.2} mm (auto)"))
                     .small()
                     .color(theme::SUCCESS),
             )
             .wrap(),
         )
         .on_hover_text(&math);
-        ui.add(egui::Label::new(compare::delta_tag(current.stepover, Some(derived))).wrap());
+        ui.add(egui::Label::new(compare::delta_tag(current.stepover, Some(woc))).wrap());
     });
     ui.add_space(2.0);
 }

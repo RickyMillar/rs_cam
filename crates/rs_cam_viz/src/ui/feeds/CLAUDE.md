@@ -1,6 +1,4 @@
-# `ui/feeds/` — the feeds and speeds surfaces
-
-The Explore window and the per-operation inspector card; entry `ui::feeds::mod`.
+# `ui/feeds/` — the Explore window and the per-operation inspector card
 
 ## Files
 
@@ -13,6 +11,7 @@ The Explore window and the per-operation inspector card; entry `ui::feeds::mod`.
 
 - The Feeds tab NEVER auto-locks a numeric field; Suggest is an explicit button.
 - The apply writes through the core command path; the write stales the result.
+- The recommended column is what `⚡ Apply all` writes; the hover has the raw value.
 - Every stage that moves a number is one line on the card, with its source
   status (ruling R4). `why::draw_suggest_lines` paints the Suggest stages.
 - A nomogram readout outside the measured band must abstain, not extrapolate.
@@ -33,6 +32,7 @@ The Explore window and the per-operation inspector card; entry `ui::feeds::mod`.
 - `cargo test -p rs_cam_viz -q --test the_chipload_verdict_is_one_row_g_chipverdict`
 - `cargo test -p rs_cam_viz -q --test feeds_charts_draw_lines_not_shading_g_chartlines`
 - `cargo test -p rs_cam_viz -q --test every_stage_that_moves_a_number_is_on_the_card_g_visible`
+- `cargo test -p rs_cam_viz -q --test the_recommended_column_is_what_apply_writes_g_recomapplied`
 
 ## Do not
 

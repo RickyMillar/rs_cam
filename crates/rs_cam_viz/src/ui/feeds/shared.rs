@@ -166,6 +166,94 @@ impl CurrentValues {
     }
 }
 
+/// What `⚡ Apply all` writes on each row of the comparison card.
+///
+/// G-RECOMAPPLIED (2026-09-24). The card's recommended column printed the
+/// raw calculator DOC and WOC. `⚡ Apply all` writes the values after
+/// `enforce_invariants`, and the aggressiveness dial (Suggest pass 6b)
+/// scales them by one common factor. On a Ø6 hardwood pocket the column
+/// read "DOC 0.81 mm → 4.20 mm" while the apply wrote 0.81 mm again.
+///
+/// This record holds the funnel's own dry run,
+/// `feeds::suggest::preview_field_applies`, which is the call the ⚡ pills
+/// make (G-PILLCLAMP). The card prints its value for each field it writes.
+/// A field the funnel does not write, and every field on a refused pairing,
+/// falls back to the raw calculator value.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct AppliedRecipe {
+    previews: Option<rs_cam_core::feeds::suggest::FieldApplyPreviews>,
+    dial: Option<DialRecord>,
+}
+
+/// `true` when the dial evaluated a lever and moved it. A lever the dial
+/// left at its base value did not set the applied value; another clamp did.
+fn changed(from: Option<f64>, to: Option<f64>) -> bool {
+    from.zip(to).is_some_and(|(f, t)| (f - t).abs() > 1e-9)
+}
+
+/// The part of the aggressiveness record the row hovers quote.
+#[derive(Debug, Clone, Copy)]
+struct DialRecord {
+    /// `aggressiveness × long-tool share`, the load fraction of the base.
+    target_share: f64,
+    /// The dial moved the depth per pass.
+    moved_depth: bool,
+    /// The dial moved the stepover.
+    moved_stepover: bool,
+}
+
+impl AppliedRecipe {
+    /// Build the record from the funnel's dry run and the Suggest pass's
+    /// warnings. `previews` is `None` when the pairing is refused: Apply then
+    /// writes nothing, and the card shows the calculator values.
+    pub(crate) fn new(
+        previews: Option<rs_cam_core::feeds::suggest::FieldApplyPreviews>,
+        warnings: Option<&[rs_cam_core::feeds::suggest::SuggestWarning]>,
+    ) -> Self {
+        let dial = warnings.unwrap_or_default().iter().find_map(|w| match w {
+            rs_cam_core::feeds::suggest::SuggestWarning::EngagementReducedForAggressiveness {
+                target_share,
+                dpp_from,
+                dpp_to,
+                stepover_from,
+                stepover_to,
+                applied: true,
+                ..
+            } => Some(DialRecord {
+                target_share: *target_share,
+                moved_depth: changed(*dpp_from, *dpp_to),
+                moved_stepover: changed(*stepover_from, *stepover_to),
+            }),
+            _ => None,
+        });
+        Self { previews, dial }
+    }
+
+    /// The value Apply writes for `field`, or `raw` when the funnel does not
+    /// write that field.
+    pub(crate) fn value(&self, field: rs_cam_core::feeds::FeedsField, raw: f64) -> f64 {
+        self.written(field).unwrap_or(raw)
+    }
+
+    /// The value Apply writes for `field`, or `None` when the funnel does not
+    /// write that field.
+    pub(crate) fn written(&self, field: rs_cam_core::feeds::FeedsField) -> Option<f64> {
+        self.previews.as_ref()?.get(field).map(|p| p.value)
+    }
+
+    /// The dial's load target in percent, when the dial set `field`.
+    pub(crate) fn dial_load_pct(&self, field: rs_cam_core::feeds::FeedsField) -> Option<f64> {
+        use rs_cam_core::feeds::FeedsField;
+        let dial = self.dial?;
+        let moved = match field {
+            FeedsField::DepthPerPass => dial.moved_depth,
+            FeedsField::Stepover => dial.moved_stepover,
+            _ => false,
+        };
+        moved.then_some(dial.target_share * 100.0)
+    }
+}
+
 /// Ball-tip radius (mm) used for scallop/cusp geometry, or `None` for
 /// tools without a spherical tip (the scallop override has no effect on
 /// those — the cusp curve is undefined).
