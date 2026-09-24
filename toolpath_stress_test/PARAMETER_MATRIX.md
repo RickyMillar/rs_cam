@@ -215,7 +215,7 @@ Source: `Adaptive3dConfig` → `Adaptive3dParams` (`adaptive3d.rs`)
 | `tolerance` | `tolerance` | Yes | 0.1 mm | 0.01–1 | Path simplification tolerance | gcode: point count |
 | `min_cutting_radius` | `min_cutting_radius` | Yes | 0.0 mm | 0–50 | Min corner radius to prevent chatter | visual: sharp corners become arcs |
 | `entry_style` | `entry_style` | Yes | Plunge | Plunge, Helix, Ramp | How tool enters material at each pocket | visual/gcode: entry motion changes |
-| `fine_stepdown` | `fine_stepdown` | Yes | 0.0 mm | 0–10 | Insert intermediate Z levels; 0 = disabled | gcode: extra Z levels appear |
+| `coarse_steps` | `coarse_steps` | Yes | [] (empty) | each > the next and > `depth_per_pass` | The step ladder: Z steps larger than Depth/Pass, coarsest first. A coarse step cuts only where its whole slab fits above the part. Contour Parallel only. Empty = one step | gcode: coarse Z bites in open floor; finer bites next to walls |
 | `detect_flat_areas` | `detect_flat_areas` | Yes | false | bool | Auto-insert Z levels at mesh shelf heights | gcode: Z levels align with flat areas |
 | `region_ordering` | `region_ordering` | Yes | Global | Global, ByArea | Global = all pockets per Z; ByArea = each pocket fully then next | debug: ordering changes in trace |
 | `clearing_strategy` | `clearing_strategy` | Yes | ContourParallel | ContourParallel, Adaptive | Contour = EDT offset; Adaptive = curvature-adjusted | debug: strategy trace differs |

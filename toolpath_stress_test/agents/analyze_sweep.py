@@ -79,10 +79,10 @@ EXPECTED_EFFECTS = {
         "should_not_change": [],
         "rule": "smaller_stepdown_means_more_revolutions",
     },
-    "fine_stepdown": {
+    "coarse_steps": {
         "should_change": ["z_level_count"],
         "should_not_change": [],
-        "rule": "enables_intermediate_z_levels",
+        "rule": "adds_coarse_z_levels_above_depth_per_pass",
     },
     "max_depth": {
         "should_change": ["min_z"],

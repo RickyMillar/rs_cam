@@ -330,3 +330,45 @@ Fix candidates: (1) anchor the ladder at the seed stock's top when the
 operation reads prior stock; (2) a fit rule that lets a pocket whose whole
 remaining depth is less than the coarse step take one coarse pass to its
 floor, with finer steps only on the steep wall band.
+
+## Phase 4 result (2026-09-24)
+
+State: the step ladder is on every surface. The work is on branch
+`worktree-agent-a737ec733f11473dc`, not merged.
+
+### What the operator sees
+
+- The 3D Rough panel (Geometry tab) has a "Coarse Steps:" row under
+  Depth/Pass, with "+ Add" and "Remove" buttons.
+- "+ Add" writes two times Depth/Pass when the ladder is empty (5 gives
+  10). Else it writes a step halfway between the last coarse step and
+  Depth/Pass, to 0.1 mm. "Remove" removes the last step.
+- Each step has its own "Coarse Step N:" value row (mm).
+- One line shows the ladder, Depth/Pass last: "10 → 5 mm". With no
+  coarse step it reads "5 mm, one step".
+- A bad ladder, or a ladder on a strategy other than Contour Parallel,
+  turns the line to the caution colour. The adapter's own sentence
+  (`compute::execute::adaptive3d_step_ladder_refusal`) shows under
+  Generate, and Generate is disabled. The panel does not clamp.
+
+### Surfaces
+
+- MCP: an empty `coarse_steps` reads back as `[]`, not `null`.
+  `set_toolpath_param` accepts `[]` on an empty ladder (the setter's
+  "was the key consumed" check refused it, because serde does not write an
+  empty list). `null` clears the ladder, as it clears `spindle_rpm`.
+  `get_operation_schema` gives `vec<f64>` with the default `[]`. No
+  `rs_cam_mcp` type changed.
+- CLI job files: `coarse_steps = [10.0]`. `order_by` takes `global` or
+  `by_area`; another value is refused (F7). BREAK: `by-area` and
+  `byarea` are refused now.
+- CLI `--set` (`run`, `rough-score`): a value in brackets is a JSON
+  array, so `--set 1.coarse_steps=[10]` and `=[]` work.
+- `sweep`: a list value uses `;` between its items:
+  `--values "[10],[10;5]"`.
+
+### Follow-ups
+
+- `strategy` in the job file still maps an unknown value to
+  `contour_parallel` in silence (the same defect as F7).
+- The graded per-tier margin (Phase 2 design finding) is not decided.

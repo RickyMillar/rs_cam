@@ -1,7 +1,8 @@
 # Adaptive 3D step-ladder roughing — plan (2026-09-24)
 
-State: **PLAN, not started.** Operator rulings of 2026-09-24 are in section 5.
-Every other "recommend" is a proposal.
+State (2026-09-24): Phases 0, 1, 2 and 4 are done; `RESULTS.md` has the
+results. Phase 3 is gated. Phase 5 needs the operator. Operator rulings of
+2026-09-24 are in section 5. Every other "recommend" is a proposal.
 
 ## 1. Goal
 
