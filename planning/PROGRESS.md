@@ -114,6 +114,16 @@ instrument, 9699f0d5) on the rivmap100 demo copy.
   stock under-reads the sim by up to 0.29 mm there; rapid reorder is off,
   so suspect segment merge / arc fitting). Probe:
   planning/entry_stock_awareness_2026-09-24/probes/probe_rapid6497.rs.
+  G-PLANSIMGAP MEASURED: the cause is segment merge
+  (dressup::condition::merge_linear_runs, 0.3 mm) after the planner;
+  stamp_emitted_segment does not mirror it. Sim above planner: 4016 cells
+  > 0.25 mm, max +2.34 mm (slopes amplify the lateral shift). Merge off:
+  0 cells, every in-stock entry exactly 0.500 mm clear. Arc fitting, links,
+  feed opt, boundary and cutter: no part. Evidence:
+  planning/entry_stock_awareness_2026-09-24/plansimgap/. Fix options:
+  planner mirrors the merge (structural), or merge off for adaptive3d
+  (op tolerance simplifies; 9138 vs 8222 moves), or cap merge tol at op
+  tol (mitigation). Do NOT raise entry clearance to cover it.
   Adaptive have the same defect (it still allows the reorder)?
 - 2026-09-25: By Area pocket tree measured
   (`planning/by_area_merge_tree_2026-09-25/`, 6f52d7a3): 3 valleys at

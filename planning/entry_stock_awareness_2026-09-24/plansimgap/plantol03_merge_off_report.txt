@@ -1,0 +1,44 @@
+=== arm plantol03_merge_off  (gen+2 sims 2.0s)
+cutter: type EndMill radius 3 corner_radius_mm 0 tool_cfg.corner_radius 2 diameter 6
+grid planner 221x221 cs 0.5 o (-5,-5)  prior 221x221 cs 0.5 o (-5,-5)
+final result moves 9138 (G0 347, G1 4318, G2/3 4473); last stage 'entry_split' moves 9138 (G0 347, G1 4318, G2/3 4473); equal len true
+[session-sim checkpoint vs own replay (d=ckpt-replay)] cells 48841 (excluded planner-empty 0)
+  hist d=sim-plan: <-0.5 0 | -0.5..-0.25 0 | -0.25..-0.1 0 | +-0.1 0 | 0.1..0.25 0 | 0.25..0.5 0 | 0.5..1 0 | 1..2 0 | >2 48841
+  max +11.000 at (88.50,88.50) plan 8.018 sim 19.018; min 11.000 at (13.50,20.50)
+  sim higher: >0.1 48841  >0.25 48841  >0.5 48841;  plan higher: >0.1 0  >0.25 0  >0.5 0
+[PLANNER vs SESSION SIM] cells 41816 (excluded planner-empty 7025)
+  hist d=sim-plan: <-0.5 0 | -0.5..-0.25 0 | -0.25..-0.1 0 | +-0.1 0 | 0.1..0.25 0 | 0.25..0.5 0 | 0.5..1 0 | 1..2 0 | >2 41816
+  max +11.090 at (36.50,75.50) plan 3.472 sim 14.562; min 8.988 at (15.00,21.50)
+  sim higher: >0.1 41816  >0.25 41816  >0.5 41816;  plan higher: >0.1 0  >0.25 0  >0.5 0
+[PLANNER vs final path replay] cells 41816 (excluded planner-empty 7025)
+  hist d=sim-plan: <-0.5 1322 | -0.5..-0.25 1153 | -0.25..-0.1 1152 | +-0.1 38189 | 0.1..0.25 0 | 0.25..0.5 0 | 0.5..1 0 | 1..2 0 | >2 0
+  max +0.090 at (36.50,75.50) plan 3.472 sim 3.562; min -2.012 at (15.00,21.50)
+  sim higher: >0.1 0  >0.25 0  >0.5 0;  plan higher: >0.1 3627  >0.25 2475  >0.5 1322
+  point (48,82.5): planner 4.651 final-sim 4.535 prior 12.000
+  point (48,83): planner 4.515 final-sim 4.451 prior 12.000
+  point (48,83.5): planner 4.312 final-sim 4.258 prior 12.000
+  point (47,82.5): planner 7.303 final-sim 5.381 prior 12.000
+[stage 0 'raw' moves 38455 (G0 162, G1 38293, G2/3 0)] cells 41816 (excluded planner-empty 7025)
+  hist d=sim-plan: <-0.5 1366 | -0.5..-0.25 1195 | -0.25..-0.1 1185 | +-0.1 38070 | 0.1..0.25 0 | 0.25..0.5 0 | 0.5..1 0 | 1..2 0 | >2 0
+  max +0.090 at (36.50,75.50) plan 3.472 sim 3.562; min -2.048 at (47.50,82.50)
+  sim higher: >0.1 0  >0.25 0  >0.5 0;  plan higher: >0.1 3746  >0.25 2561  >0.5 1366
+[stage 1 'arc_fit' moves 9084 (G0 162, G1 4409, G2/3 4513)] cells 41816 (excluded planner-empty 7025)
+  hist d=sim-plan: <-0.5 1322 | -0.5..-0.25 1153 | -0.25..-0.1 1152 | +-0.1 38189 | 0.1..0.25 0 | 0.25..0.5 0 | 0.5..1 0 | 1..2 0 | >2 0
+  max +0.090 at (36.50,75.50) plan 3.472 sim 3.562; min -2.012 at (15.00,21.50)
+  sim higher: >0.1 0  >0.25 0  >0.5 0;  plan higher: >0.1 3627  >0.25 2475  >0.5 1322
+[stage 2 'air_cut_filter' moves 9135 (G0 344, G1 4318, G2/3 4473)] cells 41816 (excluded planner-empty 7025)
+  hist d=sim-plan: <-0.5 1322 | -0.5..-0.25 1153 | -0.25..-0.1 1152 | +-0.1 38189 | 0.1..0.25 0 | 0.25..0.5 0 | 0.5..1 0 | 1..2 0 | >2 0
+  max +0.090 at (36.50,75.50) plan 3.472 sim 3.562; min -2.012 at (15.00,21.50)
+  sim higher: >0.1 0  >0.25 0  >0.5 0;  plan higher: >0.1 3627  >0.25 2475  >0.5 1322
+[stage 3 'boundary_clip' moves 9138 (G0 347, G1 4318, G2/3 4473)] cells 41816 (excluded planner-empty 7025)
+  hist d=sim-plan: <-0.5 1322 | -0.5..-0.25 1153 | -0.25..-0.1 1152 | +-0.1 38189 | 0.1..0.25 0 | 0.25..0.5 0 | 0.5..1 0 | 1..2 0 | >2 0
+  max +0.090 at (36.50,75.50) plan 3.472 sim 3.562; min -2.012 at (15.00,21.50)
+  sim higher: >0.1 0  >0.25 0  >0.5 0;  plan higher: >0.1 3627  >0.25 2475  >0.5 1322
+[stage 4 'entry_split' moves 9138 (G0 347, G1 4318, G2/3 4473)] cells 41816 (excluded planner-empty 7025)
+  hist d=sim-plan: <-0.5 1322 | -0.5..-0.25 1153 | -0.25..-0.1 1152 | +-0.1 38189 | 0.1..0.25 0 | 0.25..0.5 0 | 0.5..1 0 | 1..2 0 | >2 0
+  max +0.090 at (36.50,75.50) plan 3.472 sim 3.562; min -2.012 at (15.00,21.50)
+  sim higher: >0.1 0  >0.25 0  >0.5 0;  plan higher: >0.1 3627  >0.25 2475  >0.5 1322
+final >0.25 cells by first stage that shows >0.25:
+  (none earlier) 0
+final >0.25 cells: neighbour step >1 mm (wall) 0, else 0
+entries 93: min clearance 0.212; < 0.5 46 | < 0.4 9 | < 0.25 7 | < 0.1 0 | < 0 0; incremental vs full replay differing cells 0

@@ -1,0 +1,86 @@
+diff --git a/crates/rs_cam_core/src/adaptive3d/path.rs b/crates/rs_cam_core/src/adaptive3d/path.rs
+index 1d93e274..6d4ffa3a 100644
+--- a/crates/rs_cam_core/src/adaptive3d/path.rs
++++ b/crates/rs_cam_core/src/adaptive3d/path.rs
+@@ -1110,6 +1110,9 @@ pub(super) fn adaptive_3d_segments(
+         }
+     }
+ 
++    if crate::psg_stash::on() {
++        *crate::psg_stash::PLANNER.lock().unwrap() = Some(material_stock.clone());
++    }
+     Ok(Adaptive3dSegmentsResult {
+         segments,
+         planner_engagement: planner_eng,
+diff --git a/crates/rs_cam_core/src/compute/execute/dressup_apply.rs b/crates/rs_cam_core/src/compute/execute/dressup_apply.rs
+index c43ad0e3..b9c3344d 100644
+--- a/crates/rs_cam_core/src/compute/execute/dressup_apply.rs
++++ b/crates/rs_cam_core/src/compute/execute/dressup_apply.rs
+@@ -315,6 +315,7 @@ fn apply_dressup_traced(
+ 
+     let (result, provenance) = transform(annotated).reconcile(channels).into_parts();
+     let n = result.toolpath.moves.len();
++    crate::psg_stash::push(info.debug_key, &result.toolpath);
+ 
+     if let Some(scope) = semantic_scope.as_ref() {
+         // C1 item 4a: every per-dressup item used to bind `0..len`, so each
+diff --git a/crates/rs_cam_core/src/compute/execute/finish_3d.rs b/crates/rs_cam_core/src/compute/execute/finish_3d.rs
+index 36860b0a..8e7525d4 100644
+--- a/crates/rs_cam_core/src/compute/execute/finish_3d.rs
++++ b/crates/rs_cam_core/src/compute/execute/finish_3d.rs
+@@ -180,6 +180,7 @@ pub(crate) fn generate_adaptive3d(
+         ctx.debug_ctx,
+     )
+     .map_err(|_e| OperationError::Cancelled)?;
++    crate::psg_stash::push("raw", &tp);
+     if let Some(sem) = ctx.semantic_ctx {
+         crate::compute::annotate::annotate_adaptive3d(&annotations, &tp, sem);
+     }
+diff --git a/crates/rs_cam_core/src/lib.rs b/crates/rs_cam_core/src/lib.rs
+index 8bfa6b41..b5e4be71 100644
+--- a/crates/rs_cam_core/src/lib.rs
++++ b/crates/rs_cam_core/src/lib.rs
+@@ -60,3 +60,20 @@ pub mod trace;
+ pub mod util;
+ 
+ pub use ids::ToolpathId;
++
++// PSG-TEMP: G-PLANSIMGAP probe stash. Remove before any commit.
++#[doc(hidden)]
++#[allow(clippy::unwrap_used)]
++pub mod psg_stash {
++    use std::sync::Mutex;
++    pub static PATHS: Mutex<Vec<(String, crate::toolpath::Toolpath)>> = Mutex::new(Vec::new());
++    pub static PLANNER: Mutex<Option<crate::dexel_stock::TriDexelStock>> = Mutex::new(None);
++    pub fn on() -> bool {
++        std::env::var_os("PSG").is_some()
++    }
++    pub fn push(name: &str, tp: &crate::toolpath::Toolpath) {
++        if on() {
++            PATHS.lock().unwrap().push((name.to_owned(), tp.clone()));
++        }
++    }
++}
+diff --git a/crates/rs_cam_core/src/session/compute.rs b/crates/rs_cam_core/src/session/compute.rs
+index f44c1f32..4bcba761 100644
+--- a/crates/rs_cam_core/src/session/compute.rs
++++ b/crates/rs_cam_core/src/session/compute.rs
+@@ -833,6 +833,7 @@ impl JobPhases<'_, '_> {
+                     feed_rate: self.context.feed_rate,
+                     plunge_rate: self.context.plunge_rate,
+                 });
++        crate::psg_stash::push("boundary_clip", &annotated.toolpath);
+         let (transformed, _split_count) = crate::dressup::optimize_entry_descents_annotated(
+             annotated,
+             self.gen_initial_stock,
+@@ -841,7 +842,9 @@ impl JobPhases<'_, '_> {
+             &self.inputs.tool_def,
+             rest_entry_ramp.as_ref(),
+         );
+-        Ok(transformed.reconcile(channels).into_inner())
++        let out = transformed.reconcile(channels).into_inner();
++        crate::psg_stash::push("entry_split", &out.toolpath);
++        Ok(out)
+     }
+ 
+     /// Phase 4 — the empty gate, then the stats and the result.

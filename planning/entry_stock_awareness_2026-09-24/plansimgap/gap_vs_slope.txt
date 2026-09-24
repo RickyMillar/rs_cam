@@ -1,0 +1,5 @@
+gap 0.1-0.25: 4128 cells; neighbour step median 0.45, share >0.5 0.43, share >1 0.09
+gap 0.25-0.5: 2543 cells; neighbour step median 0.59, share >0.5 0.61, share >1 0.16
+gap 0.5-1: 1229 cells; neighbour step median 0.75, share >0.5 0.83, share >1 0.25
+gap 1-9: 235 cells; neighbour step median 0.89, share >0.5 0.96, share >1 0.35
+all cells median step 0.40 share>0.5 0.40 share>1 0.16
