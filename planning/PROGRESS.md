@@ -98,8 +98,14 @@ instrument, 9699f0d5) on the rivmap100 demo copy.
   material gate and level filter fixed for By Area. rivmap100 By Area
   595 -> 728 s: the fix adds the Z 0.5 level the old filter dropped.
   FOUND: Global has the same gate defect and never cuts Z 0.5 on
-  rivmap100 (about 1200 mm³ left for the finish tool). Fix in progress;
-  every earlier Global/By Area rivmap100 time at dpp 8 lacks that level.
+  rivmap100 (about 1200 mm³ left for the finish tool). FIXED 93ce4e29
+  (Global gate counts the level grid; sentry
+  adaptive3d_global_gate_drapes_below_floor). rivmap100 dpp 8 now: Global
+  764.5 s / 48457 mm³, By Area 728.2 s / 48360 mm³ (1 region). Every
+  earlier dpp 8 rivmap100 time (580/595 s) lacks the Z 0.5 level. Open:
+  Global is 36 s slower than By Area on one region (probably the
+  per-level waterline cleanup); Global has 1 rapid collision (move 6497,
+  before and after the fix).
   Adaptive have the same defect (it still allows the reorder)?
 - 2026-09-25: By Area pocket tree measured
   (`planning/by_area_merge_tree_2026-09-25/`, 6f52d7a3): 3 valleys at
