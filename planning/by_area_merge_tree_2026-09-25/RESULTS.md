@@ -40,7 +40,7 @@ ground above Z 7.585 (4427 mm², 11.8 mm deep).
 | 2 | 400 | 5 | 3 | 3878 | 2.86–7.38 |
 | 2 | 1600 | 3 | 2 | 4334 | 5.95–7.38 |
 | 4 | any | 3 | 2 | 4334 | 5.95–7.38 |
-| 8 | any | 1 | 0 | – | – |
+| 8 | any | 1 | 1 (the root; no split) | – | – |
 | 2 (0.25 mm cell) | 400 | 5 | 3 | 3857 | 2.86–7.34 |
 
 The current detector finds 1 region (8703 mm², box 3.25–96.75). It
@@ -69,6 +69,9 @@ E 2.9 mm), `images/pockets_h1_a100_ids.png` (6 valleys),
    pocket's cells, or the boxes cut other pockets' material.
 4. The "children first" order is not global deepest-first. A sibling
    order rule must be chosen.
+
+`build_pocket_tree` is `pub` with no product reader yet. The probe and
+Phase 3 are its readers. A dead-pub sweep must not delete it.
 
 Proposed default for Phase 3: h = 2 mm, min area = 400 mm² (3 valleys on
 rivmap100). The operator has not chosen a setting yet.

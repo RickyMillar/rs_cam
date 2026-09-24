@@ -73,6 +73,14 @@ instrument, 9699f0d5) on the rivmap100 demo copy.
   wall has no containment check; dome-slope steep drops; G-MCPCUTROW; CLI job
   `strategy` silent fallback. Feeds session owns: `ramp_feed_rate` value +
   Suggest write, G10 (entry params per tool), optimize-resolution parity gap.
+- 2026-09-25: GUI release at 40f2b744 installed. Operator look found an
+  entry defect: at a helix entry the tool feeds straight down through
+  standing stock (rivmap100 span 59, Z 12 -> 7.8), then helixes in air;
+  `project.entry_load` 448 samples, peak 6.08 mm. Fix in progress.
+- 2026-09-25: By Area pocket tree measured
+  (`planning/by_area_merge_tree_2026-09-25/`, 6f52d7a3): 3 valleys at
+  h 2 mm / 400 mm² where By Area finds 1. Phase 3 blocker: the planner
+  cuts a region by its box, not its cells. Operator has not chosen h/area.
 
 ## Extrapolation programme — 2026-09-24/25 (ruled; G1, G2, G3, G4, G5, G6 landed)
 

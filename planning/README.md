@@ -44,6 +44,7 @@ is retrievable the same way.
 | [`adaptive3d_step_ladder_roughing_2026-09-24/`](adaptive3d_step_ladder_roughing_2026-09-24/) | REMOVED 2026-09-24 (drape makes a plain large Depth/Pass win); results + valley/entry probe kept |
 | [`rest_stock_identity_2026-09-24/`](rest_stock_identity_2026-09-24/) | Landed 2026-09-24 (G-RESTRES, G-RESTSTALE, G-STALECARDS, G-MCPMODAL); on-screen look open |
 | [`entry_stock_awareness_2026-09-24/`](entry_stock_awareness_2026-09-24/) | Landed 2026-09-25 (stock-aware entries, full-depth helix, ramp_feed_rate); open: ring order, 2.5D helix wall containment |
+| [`by_area_merge_tree_2026-09-25/`](by_area_merge_tree_2026-09-25/) | Measured 2026-09-25: pocket join tree finds 3 valleys (h 2 mm, 400 mm²) where By Area finds 1; Phase 3 not started |
 
 ## Other packages held under this directory
 
