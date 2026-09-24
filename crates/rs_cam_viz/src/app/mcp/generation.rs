@@ -48,9 +48,23 @@ impl RsCamApp {
                 // Extrapolation P1 step 4: the support arm's card text. An
                 // off-size row states its G1 claim (the scale, the rule, the
                 // range and the spread) in `detail`, as the Feeds card does.
+                // Extrapolation P2 step 4: a capped hardness transfer lives on
+                // the matched row, not on the support arm; `hardness` carries
+                // its card text, so MCP states the cap as the card does.
                 let basis = profile.feeds.as_ref().map(|feeds| {
                     let (headline, detail) = feeds.support.card_text();
-                    serde_json::json!({ "headline": headline, "detail": detail })
+                    let hardness = feeds
+                        .matched_lut_row
+                        .as_ref()
+                        .and_then(|row| row.hardness_basis.card_text())
+                        .map(|(headline, detail)| {
+                            serde_json::json!({ "headline": headline, "detail": detail })
+                        });
+                    serde_json::json!({
+                        "headline": headline,
+                        "detail": detail,
+                        "hardness": hardness,
+                    })
                 });
                 json_str(serde_json::json!({
                     "toolpath_id": tc.id,

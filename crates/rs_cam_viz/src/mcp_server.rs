@@ -537,7 +537,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "get_suggest_rationale",
-        description = "Run combined-Suggest against the toolpath at `index` and return the structured rationale tree explaining every parameter the orchestrator backed off or rewrote: DPP deflection back-off, runtime stepover floor, plunge-entry warnings, chipload-target feed lift, etc. Each entry carries param + reason + from/to values + a human-readable headline. `basis` gives the vendor support of the recipe as {headline, detail}: vendor-backed, formula only, refused, or an extrapolated G1 size claim whose detail states the scale, the rule, the valid range and the spread. Read this before set_toolpath_param when you want to know why Suggest chose a value. Does not mutate the project."
+        description = "Run combined-Suggest against the toolpath at `index` and return the structured rationale tree explaining every parameter the orchestrator backed off or rewrote: DPP deflection back-off, runtime stepover floor, plunge-entry warnings, chipload-target feed lift, etc. Each entry carries param + reason + from/to values + a human-readable headline. `basis` gives the vendor support of the recipe as {headline, detail}: vendor-backed, formula only, refused, or an extrapolated G1 size claim whose detail states the scale, the rule, the valid range and the spread; `basis.hardness` is {headline, detail} when the hardness transfer is capped at the printed soft/hard ratio (G2), else null. Read this before set_toolpath_param when you want to know why Suggest chose a value. Does not mutate the project."
     )]
     async fn get_suggest_rationale(
         &self,
