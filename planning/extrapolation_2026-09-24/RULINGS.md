@@ -422,3 +422,16 @@ the file list first.
 
 The other account transcribes the remaining Spektra sizes
 (`PROMPT_SPEKTRA.md`).
+
+## Operator rulings, 2026-09-25: the Spektra sizes (fetch/G6/SPEKTRA_SIZES.md §6)
+
+1. Load the 24 transcribed rows (hardwood, plywood_softwood,
+   plywood_hardwood; 2F 1.5-12.7 mm, 3F 9.525 and 12.7 mm) and widen
+   `DRILL_RULES` `range_mm` to (3.0, 12.7). The 1.5 mm rows are side rows
+   only.
+2. Hold out the 3 rows at 3F 3/4 in (the printed feed agrees with about
+   12 000 RPM, not 18 000). Mark the two `amana_long_tail.json` rows at
+   19.05 mm with this fault so that they stop serving cells.
+3. Re-grade the 13 `amana_long_tail.json` softwood rows from exact / A to
+   derived / B (R5), and give the 26 long_tail rows the `hardness_value`
+   that the `amana_flat_end.json` rows carry. FM1 records the moves.
