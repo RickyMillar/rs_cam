@@ -463,6 +463,19 @@ After the demo ("it only did one pocket"), the operator ruled:
 - Anchor: when the operation reads prior stock, the ladder starts at the
   top of the remaining material it can reach, not at the stock box top.
 
+### Feeds and the ladder (RULED 2026-09-24; owner: the feeds session)
+
+The feeds readers moved to the deepest step (d1a0c184; every step capped at
+the axial envelope). Operator rulings:
+
+- Suggest keeps the operator's Depth/Pass and ladder. It only lowers a step
+  over the cap, and the card says so. A capped step that is no longer above
+  the next one is removed with a visible note.
+- One feed, derived at the deepest step, serves every level (per-tier feed
+  stays D6).
+- A base-only write that reaches a coarse step gets the adapter refusal.
+- The readiness panel's DOC column shows the whole ladder ("10 → 5").
+
 ### Phase 6 — how to choose the ladder (experiment, later)
 
 Operator 2026-09-24: "10 5 1 is just a demo. … if you are given the
