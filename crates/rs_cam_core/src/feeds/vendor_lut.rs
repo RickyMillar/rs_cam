@@ -35,6 +35,11 @@ pub enum Vendor {
     /// rows in `vendor_breadth.json`. JSON tag: `idcwoodcraft`.
     #[serde(rename = "idcwoodcraft")]
     Idcwoodcraft,
+    /// SpeTool. Added 2026-09-24 (extrapolation programme P1) for the
+    /// 2D/3D tapered router bit chart in `spetool_tapered.json`. The
+    /// chart keys the chip load on the tip diameter. JSON tag: `spetool`.
+    #[serde(rename = "spetool")]
+    Spetool,
 }
 
 impl std::fmt::Display for Vendor {
@@ -53,6 +58,7 @@ impl std::fmt::Display for Vendor {
             Self::Helical => "Helical Solutions",
             Self::Freud => "Freud",
             Self::Idcwoodcraft => "IDC Woodcraft",
+            Self::Spetool => "SpeTool",
         };
         f.write_str(s)
     }
@@ -420,6 +426,20 @@ const EMBEDDED_FILES: &[(&str, &str)] = &[
         "onsrud_plywood.json",
         include_str!("../../data/vendor_lut/observations/onsrud_plywood.json"),
     ),
+    // 2026-09-24 (extrapolation programme P1, G1): the Amana ZrN 2D/3D
+    // carving chart v8 tapered ball rows, keyed on the tip diameter. The
+    // stored text is data/vendor_lut/sources/amana_zrn_3d_v8.txt.
+    (
+        "amana_zrn_tapered_v8.json",
+        include_str!("../../data/vendor_lut/observations/amana_zrn_tapered_v8.json"),
+    ),
+    // 2026-09-24 (extrapolation programme P1, G1): the SpeTool 2D/3D
+    // tapered router bit chart rows, keyed on the tip diameter. The
+    // stored text is data/vendor_lut/sources/spetool_2d3d_tapered.txt.
+    (
+        "spetool_tapered.json",
+        include_str!("../../data/vendor_lut/observations/spetool_tapered.json"),
+    ),
 ];
 
 impl VendorLut {
@@ -641,15 +661,18 @@ mod tests {
         let lut = VendorLut::embedded();
         assert_eq!(
             lut.observations.len(),
-            389,
-            "expected 389 embedded observations: 252 before feeds matrix R5 \
+            441,
+            "expected 441 embedded observations: 252 before feeds matrix R5 \
              (2026-09-23), + 12 printed Amana ball v7 rows (1/8 and 1/4 in, \
              hardwood / softwood / MDF, pocket and adaptive), + 60 printed \
              Amana Spektra v24 rows (2F and 3F at 1/8 in, 6 mm and 1/4 in; \
              five material families; pocket and adaptive), + 32 printed \
              Onsrud 77-100 tapered ball rows (4 sheets x 1/8 and 1/4 in x \
              parallel / scallop / pocket / adaptive), + 33 printed Onsrud \
-             Hard Plywood (17) and Soft Plywood (16) flat-end rows"
+             Hard Plywood (17) and Soft Plywood (16) flat-end rows = 389; \
+             then extrapolation P1 (2026-09-24): - 2 Amana ZrN ball_nose rows \
+             in cells that list only tapered tools (1/16 in 2F, 1.5 mm 4F), \
+             + 27 Amana ZrN v8 tapered rows, + 27 SpeTool 2D/3D tapered rows"
         );
     }
 

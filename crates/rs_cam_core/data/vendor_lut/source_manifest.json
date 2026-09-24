@@ -31,7 +31,7 @@
       "stored_text": "sources/amana_zrn_3d_profiling.txt",
       "pdf_sha256": "52465d1d774c8b37e18c96b439a028d23d8c5a4e6f770542b1cd430a60a5def2",
       "stored_on": "2026-09-23",
-      "coverage_notes": "Ball/tapered-ball/flat profiling guidance. Diameters covered: 1/32\" (0.794mm), 1mm, 1.5mm, 1/16\" (1.587mm), 1/8\" (3.175mm), 3/16\" (4.762mm), 6mm, 1/4\", 3/8\", 1/2\". COVERAGE GAP: chart conflates softwood/hardwood/MDF/sign-foam under one 'Wood, MDF, Sign-Foam' row \u2014 does NOT separate softwood from hardwood at any diameter. Sub-1mm rows added 2026-05-02 (1mm 2-flute, 1/16\" 2-flute, 1/32\" 3-flute, 1.5mm 4-flute) are emitted as softwood and MDF only; HARDWOOD AT SUB-1MM IS A DOCUMENTED GAP \u2014 vendor's wood data is not split, and per refusal-first we do not invent reduced-CPT hardwood rows. The chart's printed CPT for 2-flute 1/16\" Wood (0.003-0.005 inch) is INCONSISTENT with the printed IPM (55-90 IPM at 18000 RPM 2-flute \u2192 0.00153-0.0025 inch); the 1/16\" 2-flute row in observations uses the IPM-derived value and is marked row_kind='derived'."
+      "coverage_notes": "Ball/tapered-ball/flat profiling guidance. Diameters covered: 1/32\" (0.794mm), 1mm, 1.5mm, 1/16\" (1.587mm), 1/8\" (3.175mm), 3/16\" (4.762mm), 6mm, 1/4\", 3/8\", 1/2\". COVERAGE GAP: chart conflates softwood/hardwood/MDF/sign-foam under one 'Wood, MDF, Sign-Foam' row \u2014 does NOT separate softwood from hardwood at any diameter. Sub-1mm rows added 2026-05-02 (1mm 2-flute, 1/16\" 2-flute, 1/32\" 3-flute, 1.5mm 4-flute) were emitted as ball_nose rows, softwood and MDF only. SUPERSEDED 2026-09-24 (extrapolation programme P1): ruling A4 serves hardwood (and softwood) from the shared 'Wood, MDF, Sign-Foam' row as derived, grade b, and the card says so; hardwood at sub-1mm is no longer a gap. The v8 rows (amana_zrn_3d_profiling_v8, amana_zrn_tapered_v8.json) carry these cells as tapered_ball_nose rows keyed on the tip. D1 change (P1 decision 3): the 2026-05-02 rows filed tapered tools as ball_nose. The two rows in cells that list only tapered tools (amana-ball-softwood-parallel-1587-2f-zrn, amana-ball-softwood-parallel-1500-4f-zrn) are deleted. The four rows in the 1mm 2-flute and 1/32\"-1mm 3-flute cells are kept as ball_nose rows, because those cells also list the straight ball 46471 (sources/amana_46xxx_identity.txt); their notes say so. The chart's printed CPT for 2-flute 1/16\" Wood (0.003-0.005 inch) is INCONSISTENT with the printed IPM (55-90 IPM at 18000 RPM 2-flute \u2192 0.00153-0.0025 inch); the 1/16\" 2-flute row in observations used the IPM-derived value and was marked row_kind='derived' (deleted 2026-09-24, see the D1 change above; the v8 row keeps the printed band at grade b)."
     },
     {
       "source_id": "amana_insert_v_groove_v16",
@@ -223,7 +223,32 @@
       "source_title": "Amana ZrN 3D Profiling Feed and Chip Load Chart (v8)",
       "source_url": "https://www.amanatool.com/pub/media/productattachments/ZrN-3D-Profiling-Feed-Chip-Load-Chart-v8.pdf",
       "accessed_on": "2026-05-30",
-      "coverage_notes": "Bundled 2026-05-31 (Phase 4 bulk promotion). v8 revision of the ZrN 3D profiling chart used by amana_long_tail.json — captures diameter / flute-count rows beyond the v7 ball-nose chart's coverage."
+      "stored_text": "sources/amana_zrn_3d_v8.txt",
+      "pdf_sha256": "5cdfb9c01ec218e9db992fee90855f005a02902f49a3897c448188cd7cd4479b",
+      "stored_on": "2026-09-24",
+      "coverage_notes": "Bundled 2026-05-31 (Phase 4 bulk promotion). v8 revision of the ZrN 3D profiling chart used by amana_long_tail.json — captures diameter / flute-count rows beyond the v7 ball-nose chart's coverage. Stored 2026-09-24 (extrapolation programme G1, P1 step 1): stored_text is the pdftotext -layout output; pdf_sha256 is the hash of the PDF. Tip frame: the chart keys the chip load on the tool 'Dia.'. The tool numbers in each section are tapered carving balls (sources/amana_46xxx_identity.txt), so the diameter is the ball tip. amana_zrn_tapered_v8.json carries 27 tapered_ball_nose rows (9 cells x softwood, hardwood, MDF) in parallel / finish, subfamily zrn_2d3d_carving_tapered. The MDF rows are exact, because the printed row names MDF. The softwood and hardwood rows are derived, grade b (ruling A4: one printed 'Wood, MDF, Sign-Foam' row; the card says so). The 2-flute 1/16\" cell is self-inconsistent (the printed IPM gives half the printed chip load). Its rows keep the printed chip load at grade b, the MDF row included. The chart names no operation; parallel / finish is an assignment."
+    },
+    {
+      "source_id": "spetool_2d3d_tapered_router_bit_chart",
+      "source_vendor": "spetool",
+      "source_title": "SpeTool WOODWORKING 2D/3D ROUTER BIT FEED&SPEED CHART",
+      "source_url": "https://cdn.shopify.com/s/files/1/0404/1582/1977/files/SpeTool_2D_3D_Tapered_router_bit_a51e0653-1672-4ba2-98bc-8852cde4fc0f.pdf?v=1676951061",
+      "accessed_on": "2026-09-24",
+      "stored_text": "sources/spetool_2d3d_tapered.txt",
+      "pdf_sha256": "0ae9e84094f9f0b31709a4534f26d8e9f525a6ba614349278dd8893ff8f98b63",
+      "stored_on": "2026-09-24",
+      "coverage_notes": "Bundled 2026-09-24 (extrapolation programme G1, P1 step 1) in spetool_tapered.json: 27 tapered_ball_nose rows (9 tip sizes x softwood, hardwood, MDF) in parallel / finish, subfamily spetool_2d3d_tapered, all grade b. The chart is a one-page scan. The stored text has a transcription from the page image and the raw OCR layer. The chart keys the chip load on 'Tip Diameter' at 0.5, 1.0, 1.5, 2.0, 3.0 and 4.0 mm and 1/32, 1/16 and 1/8 in. It prints one chip load per size (no band), one 'Wood, MDF, Sign-Foam' row, 18,000 RPM and a depth of cut of 1 x cutting diameter. Single values are encoded as chipload_max_mm_tooth only. The chart prints no unit and no flute count: feed / (RPM x chip load) = 2.00 on all 9 wood rows, so inch per tooth and 2 flutes are derived. The tapered identity comes from the PDF file name and the SpeTool index page (planning/extrapolation_2026-09-24/fetch/G1/sources/spetool_speed_feeds_index.txt); the chart page does not print 'tapered'. The MDF rows are exact; the softwood and hardwood rows are derived (ruling A4: one printed 'Wood' row; the card says so). It is the only printed 0.5 mm wood figure found."
+    },
+    {
+      "source_id": "amana_46xxx_tool_identity",
+      "source_vendor": "amana",
+      "source_title": "Amana 46xxx carving bits: product spec per tool number listed on the ZrN 2D/3D carving chart",
+      "source_url": "https://fastoolnow.com/search.php?search_query=<tool number> (one product page per number; each URL and raw-page sha256 is in the stored text)",
+      "accessed_on": "2026-09-24",
+      "stored_text": "sources/amana_46xxx_identity.txt",
+      "pdf_sha256": "0f4b08e1ed8c2dcde3b8a01671451ae68ad3fcd0723c4184a8c01c72b3f9e5f7",
+      "stored_on": "2026-09-24",
+      "coverage_notes": "Evidence for the tool family and the tip frame of the Amana ZrN v8 rows. No observation rows cite this source. pdf_sha256 is the hash of the stored text, not of a PDF: the sources are HTML product pages from distributors (fastoolnow.com first, toolstoday.com or arrowtooling.com where the search is empty), because amanatool.com returns a Cloudflare challenge to curl. Identified: 34 of 39 unique numbers. Not identified: 46285, 46289, 46496, 46593, 46596. Key facts: 46256 = 5.4 deg taper, 1mm D x 0.5mm R, 2 flutes; 46471 = 0.10 deg (straight) 1mm ball; 46280/46291/46580 = 6.2 deg taper 1/32\" D, 3 flutes; 46470 = 6.2 deg 0.8 D; 46473 = 6.2 deg 0.5 D; 46472 = 5.4 deg 1.5 D 4 flutes. The chart lists 46471 in the 2-flute 1mm cell and, as '46471 0.8mm Dia.', in the 3-flute list; the ball_nose rows in those two cells are kept for it (P1 decision 3). The 46280 page prints only 'Tapered ... 1/32\" D'; its 6.2 deg and 3 flutes are derived from the chart section and the siblings 46291/46580. Built by the G1 fetch (planning/extrapolation_2026-09-24/fetch/G1/sources.json)."
     },
     {
       "source_id": "onsrud_hard_wood_cutting_data",

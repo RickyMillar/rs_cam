@@ -1,0 +1,178 @@
+# Amana ZrN 2D/3D carving chart: tool identity per listed tool number
+# Accessed 2026-09-24. Each block: the page URL, the sha256 of the raw
+# page, the product title and the spec lines, copied verbatim.
+
+## chart section: 2 Flute Ball Nose
+46252	url=https://fastoolnow.com/amana-46252-cnc-2d-3d-carving-5-5-deg-tapered-angle-ball-nose-x-1-16-d-x-1-32-r/	sha256=df01a4ed5d0027d4bddb408a62e6d0870d93db1dcc4522e82a4894a123fa4d82
+  title: Amana 46252 - SC Carving 5.5° Taper Ball Nose Bit, 1/16" D x 1/32" R x 1" CH x 1/4" Shank, ZrN | FastoolNow.com
+  spec: Diameter (D) 1/16"
+  spec: Radius (R) 1/32"
+  spec: Cutting Height (B) 1"
+  spec: Shank (d) 1/4"
+  spec: Overall Length (L) 2-23/64"
+  spec: Angle (a°) 5.5°
+  spec: Flutes 2
+46256	url=https://fastoolnow.com/amana-46256-cnc-2d-3d-carving-5-4-deg-tapered-angle-ball-nose-x-1mm-d-x-0-5mm-r/	sha256=c55c41f93ce9854f1374fc2ac7383f019845d00e443d36091259018331371ea8
+  title: Amana 46256 - SC Carving 5.4° Taper Ball Nose, 1mm D x 0.5mm R x 1-7/64" CH x 1/4" Shank, ZrN | FastoolNow.com
+  spec: Diameter (D) 1mm
+  spec: Radius (R) 0.5mm
+  spec: Cutting Height (B) 1-7/64"
+  spec: Shank (d) 1/4"
+  spec: Overall Length (L) 2-23/64"
+  spec: Angle (a°) 5.4°
+  spec: Flutes 2
+46471	url=https://fastoolnow.com/amana-46471-metric-cnc-2d-3d-carving-0-10-deg-tapered-angle-ball-nose-x-1mm-d-x/	sha256=be06ab4aa453296e30293ee7dd34bab52b6c38abca96fa67fbb15eb33036b1d0
+  title: Amana 46471 Metric CNC 2D/3D Carving 0.10 Deg Tapered Angle Ball Nose x 1mm D x 0.50mm R x 3mm CH x 1/8 Shank x 1-1/2" x | FastoolNow.com
+46283	url=https://fastoolnow.com/amana-46283-cnc-2d-3d-carving-3-deg-tapered-angle-ball-nose-x-1-4-d-x-1-8-r-x-2/	sha256=c7e2dd9a38934798a6aa4fd65e008d29647ec0d907708968bbdddb7de3d269d0
+  title: Amana 46283 - SC Carving 3° Taper Ball Nose Bit, 1/4" D x 1/8" R x 2" CH x 1/2" Shank, ZrN | FastoolNow.com
+  spec: Diameter (D) 1/4"
+  spec: Radius (R) 1/8"
+  spec: Cutting Height (B) 2"
+  spec: Shank (d) 1/2"
+  spec: Overall Length (L) 4"
+  spec: Angle (a°) 3°
+  spec: Flutes 2
+46285	NOT FOUND (fastoolnow search empty, no fallback)
+46289	NOT FOUND (fastoolnow search empty, no fallback)
+46294	url=https://fastoolnow.com/amana-46294-5-5-pack-cnc-2d-3d-carving-0-10-deg-straight-angle-ball-nose-x-1-4/	sha256=b0f70542a669cec9b48dd067cb198ae4d997fa8dd4ceeff59cdd23554c4c4685
+  title: Amana 46294-5, 5-Pack CNC 2D/3D Carving 0.10 Deg Straight Angle Ball Nose x 1/4 D x 1/8 R x 1-1/2 CH x 1/4 Shank x 3" x | FastoolNow.com
+46479	url=https://fastoolnow.com/amana-46479-metric-cnc-2d-3d-carving-0-10-deg-straight-angle-ball-nose-x-6-d-x-3/	sha256=224ec31dc96ec3a91949a216cc75abb001e984c742cd260be1e67eed2ea5b572
+  title: Amana 46479 Metric CNC 2D/3D Carving 0.10 Deg Straight Angle Ball Nose x 6 D x 3 R x 38 CH x 6 Shank x 75mm Long x 2 Flu | FastoolNow.com
+
+## chart section: 3 Flute Ball Nose
+46280	url=https://fastoolnow.com/amana-46280-k-5-5-pc-cnc-spektra-tapered-spiral-2d-3d-carving-1-32-dia-x-1-4/	sha256=64049f9252ceeef7c26e813bb4154e4ce4e63f86eea8a600e4b9a3936fae1d62
+  title: Amana 46280-K-5 - 5-pc Spektra Tapered Spiral 2D/3D Carving Bit Set, 1/32" D x 1/4" Shank | FastoolNow.com
+46281	url=https://fastoolnow.com/amana-46281-cnc-2d-3d-carving-3-6-deg-tapered-angle-ball-nose-x-1-16-d-x-1-32-r/	sha256=205d848099abb35f0e5efc1f5850be8a9d202901e430fe32104652f26f0ea765
+  title: Amana 46281 - SC Carving 3.6° Taper Ball Nose, 1/16" D x 1/32" R x 1-1/2" CH x 1/4" Shank, ZrN | FastoolNow.com
+  spec: Diameter (D) 1/16"
+  spec: Radius (R) 1/32"
+  spec: Cutting Height (B) 1-1/2"
+  spec: Shank (d) 1/4"
+  spec: Overall Length (L) 3"
+  spec: Angle (a°) 3.6°
+  spec: Flutes 3
+46284	url=https://fastoolnow.com/amana-46284-cnc-2d-3d-carving-1-deg-tapered-angle-ball-nose-x-1-8-d-x-1-16-r-x/	sha256=badea9bb62049a8cde6838da40c3d51852bf4b3d48f6cabb4da183c5ea3edd68
+  title: Amana 46284 - SC Carving 1° Taper Ball Nose Bit, 1/8" D x 1/16" R x 1-1/2" CH x 1/4" Shank, ZrN | FastoolNow.com
+  spec: Diameter (D) 1/8"
+  spec: Radius (R) 1/16"
+  spec: Cutting Height (B) 1-1/2"
+  spec: Shank (d) 1/4"
+  spec: Overall Length (L) 3"
+  spec: Angle (a°) 1°
+  spec: Flutes 3
+46286	url=https://fastoolnow.com/amana-46286-k-5-5-pc-cnc-spektra-tapered-spiral-2d-3d-carving-1-8-dia-x-1-4/	sha256=f8d49708373d19c7760cec0612fb3321d5b06247122975a9a0345693397cf867
+  title: Amana 46286-K-5 - 5-pc SC Spektra Tapered Spiral 2D/3D Carving Bit Set, 1/8" D x 1/4" Shank | FastoolNow.com
+  spec: Diameter (D) 1/8"
+  spec: Radius (R) 1/16"
+  spec: Cutting Height (B) 1"
+  spec: Shank (d) 1/4"
+  spec: Overall Length (L) 3"
+  spec: Angle (a°) 3.6°
+  spec: Flutes 3
+46287	url=https://fastoolnow.com/amana-46287-cnc-2d-3d-carving-5-deg-tapered-angle-ball-nose-x-1-8-d-x-1-16-r-x/	sha256=836cf7d35cb9840f92ca8c91cb604814c5dadf41465ab9116a0732b85c3ae5df
+  title: Amana 46287 - SC Carving 5° Taper Ball Nose Bit, 1/8" D x 1/16" R x 3/4" CH x 1/4" Shank, ZrN | FastoolNow.com
+  spec: Diameter (D) 1/8"
+  spec: Radius (R) 1/16"
+  spec: Cutting Height (B) 3/4"
+  spec: Shank (d) 1/4"
+  spec: Overall Length (L) 3"
+  spec: Angle (a°) 5°
+  spec: Flutes 3
+46288	url=https://fastoolnow.com/amana-46288-k-cnc-spektra-2d-3d-carving-7-deg-tapered-angle-ball-nose-x-1-8-d-x/	sha256=a1e5e07d410942616ede343bc123f3d6b4cc11d58d810dd9c0e5b2640bf8a1a2
+  title: Amana 46288-K - Spektra SC Carving 7° Taper Ball Nose, 1/8" D x 1/16" R x 1/2" CH x 1/4" Shank | FastoolNow.com
+  spec: Diameter (D) 1/8"
+  spec: Radius (R) 1/16"
+  spec: Cutting Height (B) 1/2"
+  spec: Shank (d) 1/4"
+  spec: Overall Length (L) 3"
+  spec: Angle (a°) 7°
+  spec: Flutes 3
+46291	url=https://fastoolnow.com/amana-46291-cnc-2d-3d-carving-6-2-deg-tapered-angle-ball-nose-x-1-32-d-x-1-64-r/	sha256=0fa54850e477c4b8fb3b89e3b1d432b39babc3e55660f00dbeaf4f3440053e5c
+  title: Amana 46291 - SC Carving 6.2° Taper Ball Nose, 1/32" D x 1/64" R x 0.445" CH x 1/8" Shank, ZrN | FastoolNow.com
+  spec: Diameter (D) 1/32"
+  spec: Radius (R) 1/64"
+  spec: Cutting Height (B) 0.445"
+  spec: Shank (d) 1/8"
+  spec: Overall Length (L) 3"
+  spec: Angle (a°) 6.2°
+  spec: Flutes 3
+46295	url=https://fastoolnow.com/amana-46295-cnc-2d-3d-carving-0-10-deg-straight-angle-ball-nose-x-1-8-d-x-1-16-r/	sha256=e881ccbae913ad6357fcd48ac2ef9d559c5497a55305ca750ff2c42fccb7d455
+  title: Amana 46295 CNC 2D/3D Carving 0.10 Deg Straight Angle Ball Nose x 1/8 D x 1/16 R x 1-1/2 CH x 1/8 Shank x 3" x 3 Flute Z | FastoolNow.com
+46298	url=https://toolstoday.com/v-12357-46298.html	sha256=b14d01c4a427dcea9d5189997896459d7e73f4cab6d41f3b2c7570721197c43c
+  title: Ball Nose CNC Router Bit, Amana Tool 46298, 3 Flute ZrN Coated
+  spec: toolstoday spec header: DDiameter BCutting Height dShank LOverall Length RRadius a°a° Degree Flute Description Surface Coating
+  spec: toolstoday spec row: 3/16 1 1/4 3 3/32 1° 3 Tapered Ball Nose ZrN Amana Tool 46298 CNC 2D and 3D Carving 1 Deg Tapered Angle Ball Nose x 3/16 D x 3/32 R x 1 CH x 1/4 SHK x 3 Inch Long x 3 Flute SC ZrN Coated Upcut Router BitMore info
+46470	url=https://fastoolnow.com/amana-46470-metric-cnc-2d-3d-carving-6-2-deg-tapered-angle-ball-nose-x-0-8-d-x/	sha256=08c91eb5b11cbff2c21c7ba520fd3c6f50ce4b21c1c92306662070a521de9948
+  title: Amana 46470 Metric CNC 2D/3D Carving 6.2 Deg Tapered Angle Ball Nose x 0.8 D x 0.40 R x 25 CH x 6 Shank x 75mm Long x 3 | FastoolNow.com
+46471	url=https://fastoolnow.com/amana-46471-metric-cnc-2d-3d-carving-0-10-deg-tapered-angle-ball-nose-x-1mm-d-x/	sha256=60be8c895b5aad8256e2e9fd30061d3f69b8b71bfa20095f0d610e457847e50f
+  title: Amana 46471 Metric CNC 2D/3D Carving 0.10 Deg Tapered Angle Ball Nose x 1mm D x 0.50mm R x 3mm CH x 1/8 Shank x 1-1/2" x | FastoolNow.com
+46473	url=https://fastoolnow.com/amana-46473-metric-cnc-2d-3d-carving-6-2-deg-tapered-angle-ball-nose-x-0-5-d-x/	sha256=97d6215b694c18eac9e5e7975a070ea4c27cdce817bef41a2571707ada333230
+  title: Amana 46473 Metric CNC 2D/3D Carving 6.2 Deg Tapered Angle Ball Nose x 0.5 D x 0.25 R x 26.5 CH x 6 Shank x 75mm Long x | FastoolNow.com
+46474	url=https://fastoolnow.com/amana-46474-metric-cnc-2d-3d-carving-1-deg-tapered-angle-ball-nose-x-3-2-d-x-1-6/	sha256=7b582c4cb6e9b63046f99420ca44354f23b670f8e909786a80f2bdebec23f956
+  title: Amana 46474 Metric CNC 2D/3D Carving 1 Deg Tapered Angle Ball Nose x 3.2 D x 1.6 R x 38 CH x 6 Shank x 75mm Long x 3 Flu | FastoolNow.com
+46494	url=https://www.toolstoday.com/v-12287-46494.html	sha256=06fb942df06161600c40d021e000bed0e6bdc8245b146df5b7085c57d858fad2
+  title: CNC Carving Ball Nose Router Bit - Amana Tool 46494, 3 Flute, ZrN Coated
+  spec: toolstoday spec header: DDiameter BCutting Height dShank LOverall Length RRadius a°a° Degree Flute Description Surface Coating
+  spec: toolstoday spec row: 3/8 2-1/4 3/8 4 3/16 0.10° 3 Straight Ball Nose ZrN Amana Tool 46494 CNC 2D and 3D Carving 0.10 Deg Straight Angle Ball Nose x 3/8 D x 3/16 R x 2-1/4 CH x 3/8 SHK x 4 Inch Long x 3 Flute SC ZrN Coated Upcut Router BitMore info
+46495	url=https://toolstoday.com/v-12083-46495.html	sha256=beae32479df9aa4b1a2b6942584c875dc7637858542d0a076df3234fec64e80b
+  title: CNC Carving Ball Nose Router Bit - Amana Tool 46495, 0.10 Deg, ZrN Coated
+  spec: toolstoday spec header: DDiameter BCutting Height dShank LOverall Length RRadius a°a° Degree Flute Description Surface Coating
+  spec: toolstoday spec row: 1/2 2-1/4 1/2 4 1/4 0.10° 3 Straight Ball Nose ZrN Amana Tool 46495 CNC 2D and 3D Carving 0.10 Deg Straight Angle Ball Nose x 1/2 D x 1/4 R x 2-1/4 CH x 1/2 SHK x 4 Inch Long x 3 Flute SC ZrN Coated Upcut Router BitMore info
+46580	url=https://www.arrowtooling.com/index.php?l=product_detail&p=32359	sha256=15316970bda5eef19cfa5c480b137468155dcb4e400592c9822e43714c1c0620
+  title: Amana Tool 46580 CNC 2D and 3D Carving 6.2 Deg Tapered Angle Ball Nose x 1/32 D x 1/64 R x 1-1/2 CH x 3/8 SHK x 3-1/2 Inch Long x 3 Flute SC ZrN Coated Router Bit
+
+## chart section: 3 Flute Extra Long Ball Nose & Flat Bottom
+46490	url=https://fastoolnow.com/amana-46490-k-extra-long-cnc-spektra-2d-3d-carving-tapered-ball-nose-0-10-deg/	sha256=daf4224a51e634738273bd95fe50a1fce91fff947926756442871b932211874f
+  title: Amana 46490-K Extra Long CNC Spektra 2D/3D Carving Tapered Ball Nose 0.10 Deg Angle x 1/4 Dia x 1/8 Radius x 1/2 CH x 1/ | FastoolNow.com
+46491	url=https://fastoolnow.com/amana-46491-extra-long-cnc-2d-3d-carving-tapered-ball-nose-0-10-deg-angle-x-3-8/	sha256=10a0c9fc3669b2770ae4b30294c13b2283761d795b61808ef2618861c494f2d3
+  title: Amana 46491 Extra Long CNC 2D/3D Carving Tapered Ball Nose 0.10 Deg Angle x 3/8 Dia x 3/16 Radius x 3/4 Cut Height x 3/8 | FastoolNow.com
+46493	url=https://toolstoday.com/v-11871-46493.html	sha256=380cd20604e6372d03163578c103fe47bbbcc998f5312c4b9992540bd110279b
+  title: CNC Carving Tapered Ball Nose Amana Tool 46493 - 6" Long ZrN Coated Router Bit
+  spec: toolstoday spec header: DDiameter BCutting Height dShank LOverall Length RRadius a°a° Degree D1 L1 Flute Description Surface Coating
+  spec: toolstoday spec row: 1/2 1 1/2 6 1/4 0.10° 15/32 (.470) 1-1/4 3 Extra-Long Ball Nose ZrN Amana Tool 46493 Extra Long CNC 2D and 3D Carving Tapered Ball Nose 0.10 Deg x 1/2 D x 1/4 R x 1 CH x 1/2 SHK x 6 Inch Long x 3 Flute Solid Sub Micrograin Carbide ZrN Coated Reduced SHK Router BitMore info
+46496	NOT FOUND (fastoolnow search empty, no fallback)
+46590	url=https://fastoolnow.com/amana-46590-extra-long-cnc-2d-3d-carving-flat-bottom-x-0-10-deg-x-1-4-d-x-1-2-ch/	sha256=02b48cb5597d4dd696f723a41fd41385898675cb9dbbce4355370c10760950ca
+  title: Amana 46590 Extra Long CNC 2D/3D Carving Flat Bottom x 0.10 Deg x 1/4 D x 1/2 CH x 1/4 Shank x 4" x 3 Flute Solid Sub Mi | FastoolNow.com
+46591	url=https://fastoolnow.com/amana-46591-extra-long-cnc-2d-3d-carving-flat-bottom-x-0-10-deg-x-3-8-d-x-3-4-ch/	sha256=9504bd98da9a33a839274bd9912714f6e602f400410d26d30a1f24d44d1f9e68
+  title: Amana 46591 Extra Long CNC 2D/3D Carving Flat Bottom x 0.10 Deg x 3/8 D x 3/4 CH x 3/8 Shank x 4" x 3 Flute Solid Sub Mi | FastoolNow.com
+46593	NOT FOUND (fastoolnow search empty, no fallback)
+46596	NOT FOUND (fastoolnow search empty, no fallback)
+
+## chart section: 4 Flute Ball Nose & Flat Bottom
+46282	url=https://fastoolnow.com/amana-46282-k-5-5-pc-cnc-spektra-tapered-spiral-2d-3d-carving-1-16-dia-x-1-4/	sha256=912d84fe337120f744da0190fe71bd64c8a73e124d64300e9b882607044ce080
+  title: Amana 46282-K-5 - 5-pc SC Spektra Tapered Spiral 2D/3D Carving Bit Set, 1/16" D x 1/4" Shank | FastoolNow.com
+  spec: Diameter (D) 1/16"
+  spec: Radius (R) 1/32"
+  spec: Cutting Height (B) 1"
+  spec: Shank (d) 1/4"
+  spec: Overall Length (L) 3"
+  spec: Angle (a°) 5.4°
+  spec: Flutes 4
+46292	url=https://fastoolnow.com/amana-46292-u-cnc-2d-3d-carving-0-10-deg-tapered-angle-flat-bottom-x-1-8-d-x/	sha256=481e6bca55a5d21dd6cc457aaf4cbc31f79f7d6af99171b295204abc8c919a3d
+  title: Amana 46292-U CNC 2D/3D Carving 0.10 Deg Tapered Angle Flat Bottom x 1/8 D x 1-3/32 CH x 1/4 Shank x 2-1/2" x 4 Flute Ro | FastoolNow.com
+46293	url=https://fastoolnow.com/amana-46293-cnc-2d-3d-carving-5-4-deg-tapered-angle-ball-nose-x-1-16-d-x-1-32-r/	sha256=470104eb13aecff39fdaa2a881eceeca741d1738ff94903fb31841c884e45898
+  title: Amana 46293 CNC 2D/3D Carving 5.4 Deg Tapered Angle Ball Nose x 1/16 D x 1/32 R x 0.362 CH x 1/8 Shank x 3" x 4 Flute Zr | FastoolNow.com
+46472	url=https://fastoolnow.com/amana-46472-metric-cnc-2d-3d-carving-5-4-deg-tapered-angle-ball-nose-x-1-5-d-x/	sha256=f62eeabe4dda7a9935badce6ddfe5729f52cd4ee193c44ae32e87c6d0a03edb1
+  title: Amana 46472 Metric CNC 2D/3D Carving 5.4 Deg Tapered Angle Ball Nose x 1.5 D x 0.75 R x 25 CH x 6 Shank x 75mm Long x 4 | FastoolNow.com
+46572	url=https://fastoolnow.com/amana-46572-cnc-2d-3d-carving-5-4-deg-tapered-angle-flat-bottom-x-1-16-d-x-1-ch/	sha256=6bce1e519909c074fc6af9385ffcffe8a3f952e977b5fcafc6ece03bed808044
+  title: Amana 46572 - SC 2D/3D Carving 5.4° Taper Flat Bottom Bit, 1/16" D x 1" CH x 1/4" Shank, ZrN | FastoolNow.com
+  spec: Diameter (D) 1/16"
+  spec: Cutting Height (B) 1"
+  spec: Shank (d) 1/4"
+  spec: Overall Length (L) 3"
+  spec: Angle (a°) 5.4°
+  spec: Flutes 4
+46582	url=https://fastoolnow.com/amana-46582-cnc-2d-3d-carving-5-4-deg-tapered-angle-ball-nose-x-1-16-d-x-1-32-r/	sha256=316b8826e1d43dd6f7b8aaa6ac1221af54c2a469b0e0c8920482646034b7be36
+  title: Amana 46582 - SC Carving 5.4° Taper Ball Nose, 1/16" D x 1/32" R x 1-1/2" CH x 3/8" Shank, ZrN | FastoolNow.com
+  spec: Diameter (D) 1/16"
+  spec: Radius (R) 1/32"
+  spec: Cutting Height (B) 1-1/2"
+  spec: Shank (d) 3/8"
+  spec: Overall Length (L) 3-1/2"
+  spec: Angle (a°) 5.4°
+  spec: Flutes 4
+46583	url=https://fastoolnow.com/amana-46583-cnc-2d-3d-carving-3-6-deg-tapered-angle-ball-nose-x-1-8-d-x-1-16-r-x/	sha256=9d39adf8cd05ebe5064626984a0372b538de79b10af7e271446709827b703f5d
+  title: Amana 46583 CNC 2D/3D Carving 3.6 Deg Tapered Angle Ball Nose x 1/8 D x 1/16 R x 1 CH x 1/4 Shank x 3" x 4 Flute ZrN Coa | FastoolNow.com
+46584	url=https://fastoolnow.com/amana-46584-cnc-2d-3d-carving-0-10-deg-straight-angle-ball-nose-x-1-4-d-x-1-8-r/	sha256=7e0a8b84f5341838c64a9f232a6454e84e018290b25e7e7ab697a16f417968a1
+  title: Amana 46584 CNC 2D/3D Carving 0.10 Deg Straight Angle Ball Nose x 1/4 D x 1/8 R x 1 CH x 1/4 Shank x 3" x 4 Flute ZrN Co | FastoolNow.com
+

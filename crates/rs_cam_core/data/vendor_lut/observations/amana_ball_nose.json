@@ -377,7 +377,8 @@
       "chipload_max_mm_tooth": 0.0508,
       "ap_rule": "1xD per chart; 3D-finish DOC unspecified by source",
       "ae_rule": "scallop driven; not specified by source",
-      "ap_max_factor": 1.0
+      "ap_max_factor": 1.0,
+      "notes": "Kept on 2026-09-24 as a ball_nose row (extrapolation programme P1, decision 3). The Amana ZrN v8 chart (sources/amana_zrn_3d_v8.txt, section '2 Flute Ball Nose', column 1mm) lists the straight ball 46471 (0.10 deg, 1mm D x 0.50mm R, sources/amana_46xxx_identity.txt) in this cell, so a straight 1 mm ball keeps a printed row. The same cell lists the tapered ball 46256 (5.4 deg); the tapered rows for this cell are in amana_zrn_tapered_v8.json (amana-tapered-*-parallel-1000-2f-zrn-v8). v8 prints the same values as v1 in this cell."
     },
     {
       "observation_id": "amana-ball-mdf-parallel-1000-2f-zrn",
@@ -404,34 +405,8 @@
       "chipload_max_mm_tooth": 0.0508,
       "ap_rule": "1xD per chart; 3D-finish DOC unspecified by source",
       "ae_rule": "scallop driven; not specified by source",
-      "ap_max_factor": 1.0
-    },
-    {
-      "observation_id": "amana-ball-softwood-parallel-1587-2f-zrn",
-      "source_id": "amana_zrn_3d_profiling",
-      "source_vendor": "amana",
-      "source_title": "Amana ZrN 3D Profiling Feed and Chip Load Chart",
-      "source_url": "https://www.amanatool.com/pub/media/productattachments/ZrN-3D-Profiling-Feed-Chip-Load-Chart.pdf",
-      "accessed_on": "2026-05-02",
-      "source_page": "page 1, 2 Flute Ball Nose, 1/16\" column, Wood/MDF/Sign-Foam row (CPT recomputed from IPM; printed 0.003-0.005 inch CPT is inconsistent with printed 55-90 IPM at 18000 RPM 2-flute, so we use the IPM-derived 0.00153-0.0025 inch range)",
-      "evidence_grade": "a",
-      "row_kind": "derived",
-      "tool_family": "ball_nose",
-      "tool_subfamily": "zrn",
-      "operation_family": "parallel",
-      "pass_role": "finish",
-      "material_family": "softwood",
-      "material_label": "wood (chart conflates softwood/hardwood/sign-foam)",
-      "hardness_kind": "janka",
-      "hardness_value": 600.0,
-      "diameter_mm": 1.5875,
-      "flute_count": 2,
-      "rpm_nominal": 18000.0,
-      "chipload_min_mm_tooth": 0.0388,
-      "chipload_max_mm_tooth": 0.0635,
-      "ap_rule": "1xD per chart; 3D-finish DOC unspecified by source",
-      "ae_rule": "scallop driven; not specified by source",
-      "ap_max_factor": 1.0
+      "ap_max_factor": 1.0,
+      "notes": "Kept on 2026-09-24 as a ball_nose row (extrapolation programme P1, decision 3). The Amana ZrN v8 chart (sources/amana_zrn_3d_v8.txt, section '2 Flute Ball Nose', column 1mm) lists the straight ball 46471 (0.10 deg, 1mm D x 0.50mm R, sources/amana_46xxx_identity.txt) in this cell, so a straight 1 mm ball keeps a printed row. The same cell lists the tapered ball 46256 (5.4 deg); the tapered rows for this cell are in amana_zrn_tapered_v8.json (amana-tapered-*-parallel-1000-2f-zrn-v8). v8 prints the same values as v1 in this cell."
     },
     {
       "observation_id": "amana-ball-softwood-parallel-0794-3f-zrn",
@@ -458,7 +433,8 @@
       "chipload_max_mm_tooth": 0.0508,
       "ap_rule": "1xD per chart; 3D-finish DOC unspecified by source",
       "ae_rule": "scallop driven; not specified by source",
-      "ap_max_factor": 1.0
+      "ap_max_factor": 1.0,
+      "notes": "Kept on 2026-09-24 as a ball_nose row (extrapolation programme P1, decision 3). The Amana ZrN v8 chart (sources/amana_zrn_3d_v8.txt, section '3 Flute Ball Nose', column 1/32\"-1mm) lists the straight ball 46471 as '46471 0.8mm Dia.' in this section, so a straight ball keeps a printed row. The product page (sources/amana_46xxx_identity.txt) gives 46471 as 0.10 deg, 1mm D x 0.50mm R; the chart and the page do not agree on the diameter. The same cell lists tapered balls (46280, 46291, 46580, 46470); the tapered rows for this cell are in amana_zrn_tapered_v8.json (amana-tapered-*-parallel-0794-3f-zrn-v8). v8 prints the same values as v1 in this cell."
     },
     {
       "observation_id": "amana-ball-mdf-parallel-0794-3f-zrn",
@@ -485,34 +461,8 @@
       "chipload_max_mm_tooth": 0.0508,
       "ap_rule": "1xD per chart; 3D-finish DOC unspecified by source",
       "ae_rule": "scallop driven; not specified by source",
-      "ap_max_factor": 1.0
-    },
-    {
-      "observation_id": "amana-ball-softwood-parallel-1500-4f-zrn",
-      "source_id": "amana_zrn_3d_profiling",
-      "source_vendor": "amana",
-      "source_title": "Amana ZrN 3D Profiling Feed and Chip Load Chart",
-      "source_url": "https://www.amanatool.com/pub/media/productattachments/ZrN-3D-Profiling-Feed-Chip-Load-Chart.pdf",
-      "accessed_on": "2026-05-02",
-      "source_page": "page 2, 4 Flute Ball Nose & Flat Bottom, 1.5mm column, Wood/MDF/Sign-Foam row",
-      "evidence_grade": "a",
-      "row_kind": "exact",
-      "tool_family": "ball_nose",
-      "tool_subfamily": "zrn",
-      "operation_family": "parallel",
-      "pass_role": "finish",
-      "material_family": "softwood",
-      "material_label": "wood (chart conflates softwood/hardwood/sign-foam)",
-      "hardness_kind": "janka",
-      "hardness_value": 600.0,
-      "diameter_mm": 1.5,
-      "flute_count": 4,
-      "rpm_nominal": 18000.0,
-      "chipload_min_mm_tooth": 0.0127,
-      "chipload_max_mm_tooth": 0.01651,
-      "ap_rule": "1xD per chart; 3D-finish DOC unspecified by source",
-      "ae_rule": "scallop driven; not specified by source",
-      "ap_max_factor": 1.0
+      "ap_max_factor": 1.0,
+      "notes": "Kept on 2026-09-24 as a ball_nose row (extrapolation programme P1, decision 3). The Amana ZrN v8 chart (sources/amana_zrn_3d_v8.txt, section '3 Flute Ball Nose', column 1/32\"-1mm) lists the straight ball 46471 as '46471 0.8mm Dia.' in this section, so a straight ball keeps a printed row. The product page (sources/amana_46xxx_identity.txt) gives 46471 as 0.10 deg, 1mm D x 0.50mm R; the chart and the page do not agree on the diameter. The same cell lists tapered balls (46280, 46291, 46580, 46470); the tapered rows for this cell are in amana_zrn_tapered_v8.json (amana-tapered-*-parallel-0794-3f-zrn-v8). v8 prints the same values as v1 in this cell."
     },
     {
       "observation_id": "amana-ball-hardwood-pocket-3175-2f-v7",
