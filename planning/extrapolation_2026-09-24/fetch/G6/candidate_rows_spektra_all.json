@@ -1,0 +1,1422 @@
+{
+  "group": "G6",
+  "written_on": "2026-09-25",
+  "generator": "planning/extrapolation_2026-09-24/scripts/spektra_candidate_rows.py",
+  "source_id": "amana_spektra_spiral_plunge_v24",
+  "pdf_sha256": "5b6fef854b2cf6b422e2eb5bbc86e29b4dcab5b19195b7ff228b70f99cf86d3a",
+  "rule": "The candidates are the chart sizes from 1/4 in / 6.35 mm up and the metric sizes (1.5, 3, 5 and 12 mm, 2 Flute only), less the sizes where amana_flat_end.json already holds all five families (1/8 in, 6 mm and 1/4 in, 2F and 3F). amana_long_tail.json already holds softwood and mdf at every candidate size, so the file holds hardwood, plywood_softwood and plywood_hardwood only. The Ramp Down values are a check (ramp_down_check), not a row field.",
+  "counts": {
+    "candidate_sizes": 9,
+    "families_per_size_emitted": 3,
+    "observations_emitted": 27,
+    "already_in_lut": 18,
+    "printed_rows_total": 20
+  },
+  "already_in_lut": [
+    {
+      "observation_id": "amana-flat-softwood-pocket-1500-2f-spektra",
+      "file": "amana_long_tail.json"
+    },
+    {
+      "observation_id": "amana-flat-mdf-pocket-1500-2f-spektra",
+      "file": "amana_long_tail.json"
+    },
+    {
+      "observation_id": "amana-flat-softwood-pocket-3000-2f-spektra",
+      "file": "amana_long_tail.json"
+    },
+    {
+      "observation_id": "amana-flat-mdf-pocket-3000-2f-spektra",
+      "file": "amana_long_tail.json"
+    },
+    {
+      "observation_id": "amana-flat-softwood-pocket-5000-2f-spektra",
+      "file": "amana_long_tail.json"
+    },
+    {
+      "observation_id": "amana-flat-mdf-pocket-5000-2f-spektra",
+      "file": "amana_long_tail.json"
+    },
+    {
+      "observation_id": "amana-flat-softwood-pocket-9525-2f-spektra",
+      "file": "amana_long_tail.json"
+    },
+    {
+      "observation_id": "amana-flat-mdf-pocket-9525-2f-spektra",
+      "file": "amana_long_tail.json"
+    },
+    {
+      "observation_id": "amana-flat-softwood-pocket-12000-2f-spektra",
+      "file": "amana_long_tail.json"
+    },
+    {
+      "observation_id": "amana-flat-mdf-pocket-12000-2f-spektra",
+      "file": "amana_long_tail.json"
+    },
+    {
+      "observation_id": "amana-flat-softwood-pocket-12700-2f-spektra",
+      "file": "amana_long_tail.json"
+    },
+    {
+      "observation_id": "amana-flat-mdf-pocket-12700-2f-spektra",
+      "file": "amana_long_tail.json"
+    },
+    {
+      "observation_id": "amana-flat-softwood-pocket-9525-3f-spektra",
+      "file": "amana_long_tail.json"
+    },
+    {
+      "observation_id": "amana-flat-mdf-pocket-9525-3f-spektra",
+      "file": "amana_long_tail.json"
+    },
+    {
+      "observation_id": "amana-flat-softwood-pocket-12700-3f-spektra",
+      "file": "amana_long_tail.json"
+    },
+    {
+      "observation_id": "amana-flat-mdf-pocket-12700-3f-spektra",
+      "file": "amana_long_tail.json"
+    },
+    {
+      "observation_id": "amana-flat-softwood-pocket-19050-3f-spektra",
+      "file": "amana_long_tail.json"
+    },
+    {
+      "observation_id": "amana-flat-mdf-pocket-19050-3f-spektra",
+      "file": "amana_long_tail.json"
+    }
+  ],
+  "observations": [
+    {
+      "observation_id": "amana-flat-hardwood-pocket-1500-2f-spektra",
+      "source_id": "amana_spektra_spiral_plunge_v24",
+      "source_vendor": "amana",
+      "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
+      "accessed_on": "2026-09-25",
+      "source_page": "page 1, 2 Flute, 1.5mm row (48210-K, 48212-K), Wood/Plywood column: 70\" IPM, .0020\" chip load per tooth",
+      "evidence_grade": "b",
+      "row_kind": "derived",
+      "tool_family": "flat_end",
+      "tool_subfamily": "spektra_spiral_plunge",
+      "operation_family": "pocket",
+      "pass_role": "roughing",
+      "material_family": "hardwood",
+      "material_label": "Wood/Plywood",
+      "hardness_kind": "janka",
+      "hardness_value": 1450.0,
+      "diameter_mm": 1.5,
+      "flute_count": 2,
+      "rpm_nominal": 18000.0,
+      "chipload_max_mm_tooth": 0.0508,
+      "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
+      "ap_max_factor": 1.0,
+      "machine_assumption": "chart at 18000 rpm; single printed CPT 0.0020 in = 0.0508 mm, encoded as chipload_max only",
+      "notes": "Chart prints one Wood/Plywood column; this row applies it to hardwood. Transcribed 2026-09-25 from the PDF text (G6 Spektra sizes, B5 clean-up). The chart prints one value, not a range, so the row publishes only chipload_max_mm_tooth. The chart does not name an operation; the row sits in the pocket family with pass_role roughing at the chart's 1 x D condition. hardness_value is the engine's own Janka proxy for this material family (GenericSoftwood 600, GenericHardwood 1450, softwood plywood 600, hardwood-faced plywood 1000, MDF 1100), so the printed value reaches the generic material unscaled; the chart prints no hardness."
+    },
+    {
+      "observation_id": "amana-flat-plywood-softwood-pocket-1500-2f-spektra",
+      "source_id": "amana_spektra_spiral_plunge_v24",
+      "source_vendor": "amana",
+      "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
+      "accessed_on": "2026-09-25",
+      "source_page": "page 1, 2 Flute, 1.5mm row (48210-K, 48212-K), Wood/Plywood column: 70\" IPM, .0020\" chip load per tooth",
+      "evidence_grade": "b",
+      "row_kind": "derived",
+      "tool_family": "flat_end",
+      "tool_subfamily": "spektra_spiral_plunge",
+      "operation_family": "pocket",
+      "pass_role": "roughing",
+      "material_family": "plywood_softwood",
+      "material_label": "Wood/Plywood",
+      "hardness_kind": "janka",
+      "hardness_value": 600.0,
+      "diameter_mm": 1.5,
+      "flute_count": 2,
+      "rpm_nominal": 18000.0,
+      "chipload_max_mm_tooth": 0.0508,
+      "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
+      "ap_max_factor": 1.0,
+      "machine_assumption": "chart at 18000 rpm; single printed CPT 0.0020 in = 0.0508 mm, encoded as chipload_max only",
+      "notes": "Chart prints one Wood/Plywood column; this row applies it to plywood_softwood. Transcribed 2026-09-25 from the PDF text (G6 Spektra sizes, B5 clean-up). The chart prints one value, not a range, so the row publishes only chipload_max_mm_tooth. The chart does not name an operation; the row sits in the pocket family with pass_role roughing at the chart's 1 x D condition. hardness_value is the engine's own Janka proxy for this material family (GenericSoftwood 600, GenericHardwood 1450, softwood plywood 600, hardwood-faced plywood 1000, MDF 1100), so the printed value reaches the generic material unscaled; the chart prints no hardness."
+    },
+    {
+      "observation_id": "amana-flat-plywood-hardwood-pocket-1500-2f-spektra",
+      "source_id": "amana_spektra_spiral_plunge_v24",
+      "source_vendor": "amana",
+      "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
+      "accessed_on": "2026-09-25",
+      "source_page": "page 1, 2 Flute, 1.5mm row (48210-K, 48212-K), Wood/Plywood column: 70\" IPM, .0020\" chip load per tooth",
+      "evidence_grade": "b",
+      "row_kind": "derived",
+      "tool_family": "flat_end",
+      "tool_subfamily": "spektra_spiral_plunge",
+      "operation_family": "pocket",
+      "pass_role": "roughing",
+      "material_family": "plywood_hardwood",
+      "material_label": "Wood/Plywood",
+      "hardness_kind": "janka",
+      "hardness_value": 1000.0,
+      "diameter_mm": 1.5,
+      "flute_count": 2,
+      "rpm_nominal": 18000.0,
+      "chipload_max_mm_tooth": 0.0508,
+      "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
+      "ap_max_factor": 1.0,
+      "machine_assumption": "chart at 18000 rpm; single printed CPT 0.0020 in = 0.0508 mm, encoded as chipload_max only",
+      "notes": "Chart prints one Wood/Plywood column; this row applies it to plywood_hardwood. Transcribed 2026-09-25 from the PDF text (G6 Spektra sizes, B5 clean-up). The chart prints one value, not a range, so the row publishes only chipload_max_mm_tooth. The chart does not name an operation; the row sits in the pocket family with pass_role roughing at the chart's 1 x D condition. hardness_value is the engine's own Janka proxy for this material family (GenericSoftwood 600, GenericHardwood 1450, softwood plywood 600, hardwood-faced plywood 1000, MDF 1100), so the printed value reaches the generic material unscaled; the chart prints no hardness."
+    },
+    {
+      "observation_id": "amana-flat-hardwood-pocket-3000-2f-spektra",
+      "source_id": "amana_spektra_spiral_plunge_v24",
+      "source_vendor": "amana",
+      "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
+      "accessed_on": "2026-09-25",
+      "source_page": "page 1, 2 Flute, 3mm row (48214-K, 48116-K/48216-K), Wood/Plywood column: 145\" IPM, .0040\" chip load per tooth",
+      "evidence_grade": "b",
+      "row_kind": "derived",
+      "tool_family": "flat_end",
+      "tool_subfamily": "spektra_spiral_plunge",
+      "operation_family": "pocket",
+      "pass_role": "roughing",
+      "material_family": "hardwood",
+      "material_label": "Wood/Plywood",
+      "hardness_kind": "janka",
+      "hardness_value": 1450.0,
+      "diameter_mm": 3.0,
+      "flute_count": 2,
+      "rpm_nominal": 18000.0,
+      "chipload_max_mm_tooth": 0.1016,
+      "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
+      "ap_max_factor": 1.0,
+      "machine_assumption": "chart at 18000 rpm; single printed CPT 0.0040 in = 0.1016 mm, encoded as chipload_max only",
+      "notes": "Chart prints one Wood/Plywood column; this row applies it to hardwood. Transcribed 2026-09-25 from the PDF text (G6 Spektra sizes, B5 clean-up). The chart prints one value, not a range, so the row publishes only chipload_max_mm_tooth. The chart does not name an operation; the row sits in the pocket family with pass_role roughing at the chart's 1 x D condition. hardness_value is the engine's own Janka proxy for this material family (GenericSoftwood 600, GenericHardwood 1450, softwood plywood 600, hardwood-faced plywood 1000, MDF 1100), so the printed value reaches the generic material unscaled; the chart prints no hardness."
+    },
+    {
+      "observation_id": "amana-flat-plywood-softwood-pocket-3000-2f-spektra",
+      "source_id": "amana_spektra_spiral_plunge_v24",
+      "source_vendor": "amana",
+      "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
+      "accessed_on": "2026-09-25",
+      "source_page": "page 1, 2 Flute, 3mm row (48214-K, 48116-K/48216-K), Wood/Plywood column: 145\" IPM, .0040\" chip load per tooth",
+      "evidence_grade": "b",
+      "row_kind": "derived",
+      "tool_family": "flat_end",
+      "tool_subfamily": "spektra_spiral_plunge",
+      "operation_family": "pocket",
+      "pass_role": "roughing",
+      "material_family": "plywood_softwood",
+      "material_label": "Wood/Plywood",
+      "hardness_kind": "janka",
+      "hardness_value": 600.0,
+      "diameter_mm": 3.0,
+      "flute_count": 2,
+      "rpm_nominal": 18000.0,
+      "chipload_max_mm_tooth": 0.1016,
+      "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
+      "ap_max_factor": 1.0,
+      "machine_assumption": "chart at 18000 rpm; single printed CPT 0.0040 in = 0.1016 mm, encoded as chipload_max only",
+      "notes": "Chart prints one Wood/Plywood column; this row applies it to plywood_softwood. Transcribed 2026-09-25 from the PDF text (G6 Spektra sizes, B5 clean-up). The chart prints one value, not a range, so the row publishes only chipload_max_mm_tooth. The chart does not name an operation; the row sits in the pocket family with pass_role roughing at the chart's 1 x D condition. hardness_value is the engine's own Janka proxy for this material family (GenericSoftwood 600, GenericHardwood 1450, softwood plywood 600, hardwood-faced plywood 1000, MDF 1100), so the printed value reaches the generic material unscaled; the chart prints no hardness."
+    },
+    {
+      "observation_id": "amana-flat-plywood-hardwood-pocket-3000-2f-spektra",
+      "source_id": "amana_spektra_spiral_plunge_v24",
+      "source_vendor": "amana",
+      "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
+      "accessed_on": "2026-09-25",
+      "source_page": "page 1, 2 Flute, 3mm row (48214-K, 48116-K/48216-K), Wood/Plywood column: 145\" IPM, .0040\" chip load per tooth",
+      "evidence_grade": "b",
+      "row_kind": "derived",
+      "tool_family": "flat_end",
+      "tool_subfamily": "spektra_spiral_plunge",
+      "operation_family": "pocket",
+      "pass_role": "roughing",
+      "material_family": "plywood_hardwood",
+      "material_label": "Wood/Plywood",
+      "hardness_kind": "janka",
+      "hardness_value": 1000.0,
+      "diameter_mm": 3.0,
+      "flute_count": 2,
+      "rpm_nominal": 18000.0,
+      "chipload_max_mm_tooth": 0.1016,
+      "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
+      "ap_max_factor": 1.0,
+      "machine_assumption": "chart at 18000 rpm; single printed CPT 0.0040 in = 0.1016 mm, encoded as chipload_max only",
+      "notes": "Chart prints one Wood/Plywood column; this row applies it to plywood_hardwood. Transcribed 2026-09-25 from the PDF text (G6 Spektra sizes, B5 clean-up). The chart prints one value, not a range, so the row publishes only chipload_max_mm_tooth. The chart does not name an operation; the row sits in the pocket family with pass_role roughing at the chart's 1 x D condition. hardness_value is the engine's own Janka proxy for this material family (GenericSoftwood 600, GenericHardwood 1450, softwood plywood 600, hardwood-faced plywood 1000, MDF 1100), so the printed value reaches the generic material unscaled; the chart prints no hardness."
+    },
+    {
+      "observation_id": "amana-flat-hardwood-pocket-5000-2f-spektra",
+      "source_id": "amana_spektra_spiral_plunge_v24",
+      "source_vendor": "amana",
+      "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
+      "accessed_on": "2026-09-25",
+      "source_page": "page 1, 2 Flute, 5mm row (46211-K), Wood/Plywood column: 180\" IPM, .0050\" chip load per tooth",
+      "evidence_grade": "b",
+      "row_kind": "derived",
+      "tool_family": "flat_end",
+      "tool_subfamily": "spektra_spiral_plunge",
+      "operation_family": "pocket",
+      "pass_role": "roughing",
+      "material_family": "hardwood",
+      "material_label": "Wood/Plywood",
+      "hardness_kind": "janka",
+      "hardness_value": 1450.0,
+      "diameter_mm": 5.0,
+      "flute_count": 2,
+      "rpm_nominal": 18000.0,
+      "chipload_max_mm_tooth": 0.127,
+      "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
+      "ap_max_factor": 1.0,
+      "machine_assumption": "chart at 18000 rpm; single printed CPT 0.0050 in = 0.127 mm, encoded as chipload_max only",
+      "notes": "Chart prints one Wood/Plywood column; this row applies it to hardwood. Transcribed 2026-09-25 from the PDF text (G6 Spektra sizes, B5 clean-up). The chart prints one value, not a range, so the row publishes only chipload_max_mm_tooth. The chart does not name an operation; the row sits in the pocket family with pass_role roughing at the chart's 1 x D condition. hardness_value is the engine's own Janka proxy for this material family (GenericSoftwood 600, GenericHardwood 1450, softwood plywood 600, hardwood-faced plywood 1000, MDF 1100), so the printed value reaches the generic material unscaled; the chart prints no hardness."
+    },
+    {
+      "observation_id": "amana-flat-plywood-softwood-pocket-5000-2f-spektra",
+      "source_id": "amana_spektra_spiral_plunge_v24",
+      "source_vendor": "amana",
+      "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
+      "accessed_on": "2026-09-25",
+      "source_page": "page 1, 2 Flute, 5mm row (46211-K), Wood/Plywood column: 180\" IPM, .0050\" chip load per tooth",
+      "evidence_grade": "b",
+      "row_kind": "derived",
+      "tool_family": "flat_end",
+      "tool_subfamily": "spektra_spiral_plunge",
+      "operation_family": "pocket",
+      "pass_role": "roughing",
+      "material_family": "plywood_softwood",
+      "material_label": "Wood/Plywood",
+      "hardness_kind": "janka",
+      "hardness_value": 600.0,
+      "diameter_mm": 5.0,
+      "flute_count": 2,
+      "rpm_nominal": 18000.0,
+      "chipload_max_mm_tooth": 0.127,
+      "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
+      "ap_max_factor": 1.0,
+      "machine_assumption": "chart at 18000 rpm; single printed CPT 0.0050 in = 0.127 mm, encoded as chipload_max only",
+      "notes": "Chart prints one Wood/Plywood column; this row applies it to plywood_softwood. Transcribed 2026-09-25 from the PDF text (G6 Spektra sizes, B5 clean-up). The chart prints one value, not a range, so the row publishes only chipload_max_mm_tooth. The chart does not name an operation; the row sits in the pocket family with pass_role roughing at the chart's 1 x D condition. hardness_value is the engine's own Janka proxy for this material family (GenericSoftwood 600, GenericHardwood 1450, softwood plywood 600, hardwood-faced plywood 1000, MDF 1100), so the printed value reaches the generic material unscaled; the chart prints no hardness."
+    },
+    {
+      "observation_id": "amana-flat-plywood-hardwood-pocket-5000-2f-spektra",
+      "source_id": "amana_spektra_spiral_plunge_v24",
+      "source_vendor": "amana",
+      "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
+      "accessed_on": "2026-09-25",
+      "source_page": "page 1, 2 Flute, 5mm row (46211-K), Wood/Plywood column: 180\" IPM, .0050\" chip load per tooth",
+      "evidence_grade": "b",
+      "row_kind": "derived",
+      "tool_family": "flat_end",
+      "tool_subfamily": "spektra_spiral_plunge",
+      "operation_family": "pocket",
+      "pass_role": "roughing",
+      "material_family": "plywood_hardwood",
+      "material_label": "Wood/Plywood",
+      "hardness_kind": "janka",
+      "hardness_value": 1000.0,
+      "diameter_mm": 5.0,
+      "flute_count": 2,
+      "rpm_nominal": 18000.0,
+      "chipload_max_mm_tooth": 0.127,
+      "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
+      "ap_max_factor": 1.0,
+      "machine_assumption": "chart at 18000 rpm; single printed CPT 0.0050 in = 0.127 mm, encoded as chipload_max only",
+      "notes": "Chart prints one Wood/Plywood column; this row applies it to plywood_hardwood. Transcribed 2026-09-25 from the PDF text (G6 Spektra sizes, B5 clean-up). The chart prints one value, not a range, so the row publishes only chipload_max_mm_tooth. The chart does not name an operation; the row sits in the pocket family with pass_role roughing at the chart's 1 x D condition. hardness_value is the engine's own Janka proxy for this material family (GenericSoftwood 600, GenericHardwood 1450, softwood plywood 600, hardwood-faced plywood 1000, MDF 1100), so the printed value reaches the generic material unscaled; the chart prints no hardness."
+    },
+    {
+      "observation_id": "amana-flat-hardwood-pocket-9525-2f-spektra",
+      "source_id": "amana_spektra_spiral_plunge_v24",
+      "source_vendor": "amana",
+      "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
+      "accessed_on": "2026-09-25",
+      "source_page": "page 1, 2 Flute, 3/8 row (46203-K, 46320-K/46420-K, 46449-K), Wood/Plywood column: 230\" IPM, .0064\" chip load per tooth",
+      "evidence_grade": "b",
+      "row_kind": "derived",
+      "tool_family": "flat_end",
+      "tool_subfamily": "spektra_spiral_plunge",
+      "operation_family": "pocket",
+      "pass_role": "roughing",
+      "material_family": "hardwood",
+      "material_label": "Wood/Plywood",
+      "hardness_kind": "janka",
+      "hardness_value": 1450.0,
+      "diameter_mm": 9.525,
+      "flute_count": 2,
+      "rpm_nominal": 18000.0,
+      "chipload_max_mm_tooth": 0.1626,
+      "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
+      "ap_max_factor": 1.0,
+      "machine_assumption": "chart at 18000 rpm; single printed CPT 0.0064 in = 0.1626 mm, encoded as chipload_max only",
+      "notes": "Chart prints one Wood/Plywood column; this row applies it to hardwood. Transcribed 2026-09-25 from the PDF text (G6 Spektra sizes, B5 clean-up). The chart prints one value, not a range, so the row publishes only chipload_max_mm_tooth. The chart does not name an operation; the row sits in the pocket family with pass_role roughing at the chart's 1 x D condition. hardness_value is the engine's own Janka proxy for this material family (GenericSoftwood 600, GenericHardwood 1450, softwood plywood 600, hardwood-faced plywood 1000, MDF 1100), so the printed value reaches the generic material unscaled; the chart prints no hardness."
+    },
+    {
+      "observation_id": "amana-flat-plywood-softwood-pocket-9525-2f-spektra",
+      "source_id": "amana_spektra_spiral_plunge_v24",
+      "source_vendor": "amana",
+      "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
+      "accessed_on": "2026-09-25",
+      "source_page": "page 1, 2 Flute, 3/8 row (46203-K, 46320-K/46420-K, 46449-K), Wood/Plywood column: 230\" IPM, .0064\" chip load per tooth",
+      "evidence_grade": "b",
+      "row_kind": "derived",
+      "tool_family": "flat_end",
+      "tool_subfamily": "spektra_spiral_plunge",
+      "operation_family": "pocket",
+      "pass_role": "roughing",
+      "material_family": "plywood_softwood",
+      "material_label": "Wood/Plywood",
+      "hardness_kind": "janka",
+      "hardness_value": 600.0,
+      "diameter_mm": 9.525,
+      "flute_count": 2,
+      "rpm_nominal": 18000.0,
+      "chipload_max_mm_tooth": 0.1626,
+      "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
+      "ap_max_factor": 1.0,
+      "machine_assumption": "chart at 18000 rpm; single printed CPT 0.0064 in = 0.1626 mm, encoded as chipload_max only",
+      "notes": "Chart prints one Wood/Plywood column; this row applies it to plywood_softwood. Transcribed 2026-09-25 from the PDF text (G6 Spektra sizes, B5 clean-up). The chart prints one value, not a range, so the row publishes only chipload_max_mm_tooth. The chart does not name an operation; the row sits in the pocket family with pass_role roughing at the chart's 1 x D condition. hardness_value is the engine's own Janka proxy for this material family (GenericSoftwood 600, GenericHardwood 1450, softwood plywood 600, hardwood-faced plywood 1000, MDF 1100), so the printed value reaches the generic material unscaled; the chart prints no hardness."
+    },
+    {
+      "observation_id": "amana-flat-plywood-hardwood-pocket-9525-2f-spektra",
+      "source_id": "amana_spektra_spiral_plunge_v24",
+      "source_vendor": "amana",
+      "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
+      "accessed_on": "2026-09-25",
+      "source_page": "page 1, 2 Flute, 3/8 row (46203-K, 46320-K/46420-K, 46449-K), Wood/Plywood column: 230\" IPM, .0064\" chip load per tooth",
+      "evidence_grade": "b",
+      "row_kind": "derived",
+      "tool_family": "flat_end",
+      "tool_subfamily": "spektra_spiral_plunge",
+      "operation_family": "pocket",
+      "pass_role": "roughing",
+      "material_family": "plywood_hardwood",
+      "material_label": "Wood/Plywood",
+      "hardness_kind": "janka",
+      "hardness_value": 1000.0,
+      "diameter_mm": 9.525,
+      "flute_count": 2,
+      "rpm_nominal": 18000.0,
+      "chipload_max_mm_tooth": 0.1626,
+      "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
+      "ap_max_factor": 1.0,
+      "machine_assumption": "chart at 18000 rpm; single printed CPT 0.0064 in = 0.1626 mm, encoded as chipload_max only",
+      "notes": "Chart prints one Wood/Plywood column; this row applies it to plywood_hardwood. Transcribed 2026-09-25 from the PDF text (G6 Spektra sizes, B5 clean-up). The chart prints one value, not a range, so the row publishes only chipload_max_mm_tooth. The chart does not name an operation; the row sits in the pocket family with pass_role roughing at the chart's 1 x D condition. hardness_value is the engine's own Janka proxy for this material family (GenericSoftwood 600, GenericHardwood 1450, softwood plywood 600, hardwood-faced plywood 1000, MDF 1100), so the printed value reaches the generic material unscaled; the chart prints no hardness."
+    },
+    {
+      "observation_id": "amana-flat-hardwood-pocket-12000-2f-spektra",
+      "source_id": "amana_spektra_spiral_plunge_v24",
+      "source_vendor": "amana",
+      "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
+      "accessed_on": "2026-09-25",
+      "source_page": "page 1, 2 Flute, 12mm row (48228-K), Wood/Plywood column: 200\" IPM, .0057\" chip load per tooth",
+      "evidence_grade": "b",
+      "row_kind": "derived",
+      "tool_family": "flat_end",
+      "tool_subfamily": "spektra_spiral_plunge",
+      "operation_family": "pocket",
+      "pass_role": "roughing",
+      "material_family": "hardwood",
+      "material_label": "Wood/Plywood",
+      "hardness_kind": "janka",
+      "hardness_value": 1450.0,
+      "diameter_mm": 12.0,
+      "flute_count": 2,
+      "rpm_nominal": 18000.0,
+      "chipload_max_mm_tooth": 0.1448,
+      "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
+      "ap_max_factor": 1.0,
+      "machine_assumption": "chart at 18000 rpm; single printed CPT 0.0057 in = 0.1448 mm, encoded as chipload_max only",
+      "notes": "Chart prints one Wood/Plywood column; this row applies it to hardwood. Transcribed 2026-09-25 from the PDF text (G6 Spektra sizes, B5 clean-up). The chart prints one value, not a range, so the row publishes only chipload_max_mm_tooth. The chart does not name an operation; the row sits in the pocket family with pass_role roughing at the chart's 1 x D condition. hardness_value is the engine's own Janka proxy for this material family (GenericSoftwood 600, GenericHardwood 1450, softwood plywood 600, hardwood-faced plywood 1000, MDF 1100), so the printed value reaches the generic material unscaled; the chart prints no hardness."
+    },
+    {
+      "observation_id": "amana-flat-plywood-softwood-pocket-12000-2f-spektra",
+      "source_id": "amana_spektra_spiral_plunge_v24",
+      "source_vendor": "amana",
+      "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
+      "accessed_on": "2026-09-25",
+      "source_page": "page 1, 2 Flute, 12mm row (48228-K), Wood/Plywood column: 200\" IPM, .0057\" chip load per tooth",
+      "evidence_grade": "b",
+      "row_kind": "derived",
+      "tool_family": "flat_end",
+      "tool_subfamily": "spektra_spiral_plunge",
+      "operation_family": "pocket",
+      "pass_role": "roughing",
+      "material_family": "plywood_softwood",
+      "material_label": "Wood/Plywood",
+      "hardness_kind": "janka",
+      "hardness_value": 600.0,
+      "diameter_mm": 12.0,
+      "flute_count": 2,
+      "rpm_nominal": 18000.0,
+      "chipload_max_mm_tooth": 0.1448,
+      "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
+      "ap_max_factor": 1.0,
+      "machine_assumption": "chart at 18000 rpm; single printed CPT 0.0057 in = 0.1448 mm, encoded as chipload_max only",
+      "notes": "Chart prints one Wood/Plywood column; this row applies it to plywood_softwood. Transcribed 2026-09-25 from the PDF text (G6 Spektra sizes, B5 clean-up). The chart prints one value, not a range, so the row publishes only chipload_max_mm_tooth. The chart does not name an operation; the row sits in the pocket family with pass_role roughing at the chart's 1 x D condition. hardness_value is the engine's own Janka proxy for this material family (GenericSoftwood 600, GenericHardwood 1450, softwood plywood 600, hardwood-faced plywood 1000, MDF 1100), so the printed value reaches the generic material unscaled; the chart prints no hardness."
+    },
+    {
+      "observation_id": "amana-flat-plywood-hardwood-pocket-12000-2f-spektra",
+      "source_id": "amana_spektra_spiral_plunge_v24",
+      "source_vendor": "amana",
+      "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
+      "accessed_on": "2026-09-25",
+      "source_page": "page 1, 2 Flute, 12mm row (48228-K), Wood/Plywood column: 200\" IPM, .0057\" chip load per tooth",
+      "evidence_grade": "b",
+      "row_kind": "derived",
+      "tool_family": "flat_end",
+      "tool_subfamily": "spektra_spiral_plunge",
+      "operation_family": "pocket",
+      "pass_role": "roughing",
+      "material_family": "plywood_hardwood",
+      "material_label": "Wood/Plywood",
+      "hardness_kind": "janka",
+      "hardness_value": 1000.0,
+      "diameter_mm": 12.0,
+      "flute_count": 2,
+      "rpm_nominal": 18000.0,
+      "chipload_max_mm_tooth": 0.1448,
+      "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
+      "ap_max_factor": 1.0,
+      "machine_assumption": "chart at 18000 rpm; single printed CPT 0.0057 in = 0.1448 mm, encoded as chipload_max only",
+      "notes": "Chart prints one Wood/Plywood column; this row applies it to plywood_hardwood. Transcribed 2026-09-25 from the PDF text (G6 Spektra sizes, B5 clean-up). The chart prints one value, not a range, so the row publishes only chipload_max_mm_tooth. The chart does not name an operation; the row sits in the pocket family with pass_role roughing at the chart's 1 x D condition. hardness_value is the engine's own Janka proxy for this material family (GenericSoftwood 600, GenericHardwood 1450, softwood plywood 600, hardwood-faced plywood 1000, MDF 1100), so the printed value reaches the generic material unscaled; the chart prints no hardness."
+    },
+    {
+      "observation_id": "amana-flat-hardwood-pocket-12700-2f-spektra",
+      "source_id": "amana_spektra_spiral_plunge_v24",
+      "source_vendor": "amana",
+      "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
+      "accessed_on": "2026-09-25",
+      "source_page": "page 1, 2 Flute, 1/2 row (46106-K/46206-K), Wood/Plywood column: 200\" IPM, .0057\" chip load per tooth",
+      "evidence_grade": "b",
+      "row_kind": "derived",
+      "tool_family": "flat_end",
+      "tool_subfamily": "spektra_spiral_plunge",
+      "operation_family": "pocket",
+      "pass_role": "roughing",
+      "material_family": "hardwood",
+      "material_label": "Wood/Plywood",
+      "hardness_kind": "janka",
+      "hardness_value": 1450.0,
+      "diameter_mm": 12.7,
+      "flute_count": 2,
+      "rpm_nominal": 18000.0,
+      "chipload_max_mm_tooth": 0.1448,
+      "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
+      "ap_max_factor": 1.0,
+      "machine_assumption": "chart at 18000 rpm; single printed CPT 0.0057 in = 0.1448 mm, encoded as chipload_max only",
+      "notes": "Chart prints one Wood/Plywood column; this row applies it to hardwood. Transcribed 2026-09-25 from the PDF text (G6 Spektra sizes, B5 clean-up). The chart prints one value, not a range, so the row publishes only chipload_max_mm_tooth. The chart does not name an operation; the row sits in the pocket family with pass_role roughing at the chart's 1 x D condition. hardness_value is the engine's own Janka proxy for this material family (GenericSoftwood 600, GenericHardwood 1450, softwood plywood 600, hardwood-faced plywood 1000, MDF 1100), so the printed value reaches the generic material unscaled; the chart prints no hardness."
+    },
+    {
+      "observation_id": "amana-flat-plywood-softwood-pocket-12700-2f-spektra",
+      "source_id": "amana_spektra_spiral_plunge_v24",
+      "source_vendor": "amana",
+      "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
+      "accessed_on": "2026-09-25",
+      "source_page": "page 1, 2 Flute, 1/2 row (46106-K/46206-K), Wood/Plywood column: 200\" IPM, .0057\" chip load per tooth",
+      "evidence_grade": "b",
+      "row_kind": "derived",
+      "tool_family": "flat_end",
+      "tool_subfamily": "spektra_spiral_plunge",
+      "operation_family": "pocket",
+      "pass_role": "roughing",
+      "material_family": "plywood_softwood",
+      "material_label": "Wood/Plywood",
+      "hardness_kind": "janka",
+      "hardness_value": 600.0,
+      "diameter_mm": 12.7,
+      "flute_count": 2,
+      "rpm_nominal": 18000.0,
+      "chipload_max_mm_tooth": 0.1448,
+      "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
+      "ap_max_factor": 1.0,
+      "machine_assumption": "chart at 18000 rpm; single printed CPT 0.0057 in = 0.1448 mm, encoded as chipload_max only",
+      "notes": "Chart prints one Wood/Plywood column; this row applies it to plywood_softwood. Transcribed 2026-09-25 from the PDF text (G6 Spektra sizes, B5 clean-up). The chart prints one value, not a range, so the row publishes only chipload_max_mm_tooth. The chart does not name an operation; the row sits in the pocket family with pass_role roughing at the chart's 1 x D condition. hardness_value is the engine's own Janka proxy for this material family (GenericSoftwood 600, GenericHardwood 1450, softwood plywood 600, hardwood-faced plywood 1000, MDF 1100), so the printed value reaches the generic material unscaled; the chart prints no hardness."
+    },
+    {
+      "observation_id": "amana-flat-plywood-hardwood-pocket-12700-2f-spektra",
+      "source_id": "amana_spektra_spiral_plunge_v24",
+      "source_vendor": "amana",
+      "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
+      "accessed_on": "2026-09-25",
+      "source_page": "page 1, 2 Flute, 1/2 row (46106-K/46206-K), Wood/Plywood column: 200\" IPM, .0057\" chip load per tooth",
+      "evidence_grade": "b",
+      "row_kind": "derived",
+      "tool_family": "flat_end",
+      "tool_subfamily": "spektra_spiral_plunge",
+      "operation_family": "pocket",
+      "pass_role": "roughing",
+      "material_family": "plywood_hardwood",
+      "material_label": "Wood/Plywood",
+      "hardness_kind": "janka",
+      "hardness_value": 1000.0,
+      "diameter_mm": 12.7,
+      "flute_count": 2,
+      "rpm_nominal": 18000.0,
+      "chipload_max_mm_tooth": 0.1448,
+      "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
+      "ap_max_factor": 1.0,
+      "machine_assumption": "chart at 18000 rpm; single printed CPT 0.0057 in = 0.1448 mm, encoded as chipload_max only",
+      "notes": "Chart prints one Wood/Plywood column; this row applies it to plywood_hardwood. Transcribed 2026-09-25 from the PDF text (G6 Spektra sizes, B5 clean-up). The chart prints one value, not a range, so the row publishes only chipload_max_mm_tooth. The chart does not name an operation; the row sits in the pocket family with pass_role roughing at the chart's 1 x D condition. hardness_value is the engine's own Janka proxy for this material family (GenericSoftwood 600, GenericHardwood 1450, softwood plywood 600, hardwood-faced plywood 1000, MDF 1100), so the printed value reaches the generic material unscaled; the chart prints no hardness."
+    },
+    {
+      "observation_id": "amana-flat-hardwood-pocket-9525-3f-spektra",
+      "source_id": "amana_spektra_spiral_plunge_v24",
+      "source_vendor": "amana",
+      "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
+      "accessed_on": "2026-09-25",
+      "source_page": "page 1, 3 Flute, 3/8 row (46055-K), Wood/Plywood column: 345\" IPM, .0064\" chip load per tooth",
+      "evidence_grade": "b",
+      "row_kind": "derived",
+      "tool_family": "flat_end",
+      "tool_subfamily": "spektra_spiral_plunge",
+      "operation_family": "pocket",
+      "pass_role": "roughing",
+      "material_family": "hardwood",
+      "material_label": "Wood/Plywood",
+      "hardness_kind": "janka",
+      "hardness_value": 1450.0,
+      "diameter_mm": 9.525,
+      "flute_count": 3,
+      "rpm_nominal": 18000.0,
+      "chipload_max_mm_tooth": 0.1626,
+      "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
+      "ap_max_factor": 1.0,
+      "machine_assumption": "chart at 18000 rpm; single printed CPT 0.0064 in = 0.1626 mm, encoded as chipload_max only",
+      "notes": "Chart prints one Wood/Plywood column; this row applies it to hardwood. Transcribed 2026-09-25 from the PDF text (G6 Spektra sizes, B5 clean-up). The chart prints one value, not a range, so the row publishes only chipload_max_mm_tooth. The chart does not name an operation; the row sits in the pocket family with pass_role roughing at the chart's 1 x D condition. hardness_value is the engine's own Janka proxy for this material family (GenericSoftwood 600, GenericHardwood 1450, softwood plywood 600, hardwood-faced plywood 1000, MDF 1100), so the printed value reaches the generic material unscaled; the chart prints no hardness."
+    },
+    {
+      "observation_id": "amana-flat-plywood-softwood-pocket-9525-3f-spektra",
+      "source_id": "amana_spektra_spiral_plunge_v24",
+      "source_vendor": "amana",
+      "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
+      "accessed_on": "2026-09-25",
+      "source_page": "page 1, 3 Flute, 3/8 row (46055-K), Wood/Plywood column: 345\" IPM, .0064\" chip load per tooth",
+      "evidence_grade": "b",
+      "row_kind": "derived",
+      "tool_family": "flat_end",
+      "tool_subfamily": "spektra_spiral_plunge",
+      "operation_family": "pocket",
+      "pass_role": "roughing",
+      "material_family": "plywood_softwood",
+      "material_label": "Wood/Plywood",
+      "hardness_kind": "janka",
+      "hardness_value": 600.0,
+      "diameter_mm": 9.525,
+      "flute_count": 3,
+      "rpm_nominal": 18000.0,
+      "chipload_max_mm_tooth": 0.1626,
+      "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
+      "ap_max_factor": 1.0,
+      "machine_assumption": "chart at 18000 rpm; single printed CPT 0.0064 in = 0.1626 mm, encoded as chipload_max only",
+      "notes": "Chart prints one Wood/Plywood column; this row applies it to plywood_softwood. Transcribed 2026-09-25 from the PDF text (G6 Spektra sizes, B5 clean-up). The chart prints one value, not a range, so the row publishes only chipload_max_mm_tooth. The chart does not name an operation; the row sits in the pocket family with pass_role roughing at the chart's 1 x D condition. hardness_value is the engine's own Janka proxy for this material family (GenericSoftwood 600, GenericHardwood 1450, softwood plywood 600, hardwood-faced plywood 1000, MDF 1100), so the printed value reaches the generic material unscaled; the chart prints no hardness."
+    },
+    {
+      "observation_id": "amana-flat-plywood-hardwood-pocket-9525-3f-spektra",
+      "source_id": "amana_spektra_spiral_plunge_v24",
+      "source_vendor": "amana",
+      "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
+      "accessed_on": "2026-09-25",
+      "source_page": "page 1, 3 Flute, 3/8 row (46055-K), Wood/Plywood column: 345\" IPM, .0064\" chip load per tooth",
+      "evidence_grade": "b",
+      "row_kind": "derived",
+      "tool_family": "flat_end",
+      "tool_subfamily": "spektra_spiral_plunge",
+      "operation_family": "pocket",
+      "pass_role": "roughing",
+      "material_family": "plywood_hardwood",
+      "material_label": "Wood/Plywood",
+      "hardness_kind": "janka",
+      "hardness_value": 1000.0,
+      "diameter_mm": 9.525,
+      "flute_count": 3,
+      "rpm_nominal": 18000.0,
+      "chipload_max_mm_tooth": 0.1626,
+      "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
+      "ap_max_factor": 1.0,
+      "machine_assumption": "chart at 18000 rpm; single printed CPT 0.0064 in = 0.1626 mm, encoded as chipload_max only",
+      "notes": "Chart prints one Wood/Plywood column; this row applies it to plywood_hardwood. Transcribed 2026-09-25 from the PDF text (G6 Spektra sizes, B5 clean-up). The chart prints one value, not a range, so the row publishes only chipload_max_mm_tooth. The chart does not name an operation; the row sits in the pocket family with pass_role roughing at the chart's 1 x D condition. hardness_value is the engine's own Janka proxy for this material family (GenericSoftwood 600, GenericHardwood 1450, softwood plywood 600, hardwood-faced plywood 1000, MDF 1100), so the printed value reaches the generic material unscaled; the chart prints no hardness."
+    },
+    {
+      "observation_id": "amana-flat-hardwood-pocket-12700-3f-spektra",
+      "source_id": "amana_spektra_spiral_plunge_v24",
+      "source_vendor": "amana",
+      "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
+      "accessed_on": "2026-09-25",
+      "source_page": "page 1, 3 Flute, 1/2 row (46116-K/46216-K), Wood/Plywood column: 300\" IPM, .0057\" chip load per tooth",
+      "evidence_grade": "b",
+      "row_kind": "derived",
+      "tool_family": "flat_end",
+      "tool_subfamily": "spektra_spiral_plunge",
+      "operation_family": "pocket",
+      "pass_role": "roughing",
+      "material_family": "hardwood",
+      "material_label": "Wood/Plywood",
+      "hardness_kind": "janka",
+      "hardness_value": 1450.0,
+      "diameter_mm": 12.7,
+      "flute_count": 3,
+      "rpm_nominal": 18000.0,
+      "chipload_max_mm_tooth": 0.1448,
+      "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
+      "ap_max_factor": 1.0,
+      "machine_assumption": "chart at 18000 rpm; single printed CPT 0.0057 in = 0.1448 mm, encoded as chipload_max only",
+      "notes": "Chart prints one Wood/Plywood column; this row applies it to hardwood. Transcribed 2026-09-25 from the PDF text (G6 Spektra sizes, B5 clean-up). The chart prints one value, not a range, so the row publishes only chipload_max_mm_tooth. The chart does not name an operation; the row sits in the pocket family with pass_role roughing at the chart's 1 x D condition. hardness_value is the engine's own Janka proxy for this material family (GenericSoftwood 600, GenericHardwood 1450, softwood plywood 600, hardwood-faced plywood 1000, MDF 1100), so the printed value reaches the generic material unscaled; the chart prints no hardness."
+    },
+    {
+      "observation_id": "amana-flat-plywood-softwood-pocket-12700-3f-spektra",
+      "source_id": "amana_spektra_spiral_plunge_v24",
+      "source_vendor": "amana",
+      "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
+      "accessed_on": "2026-09-25",
+      "source_page": "page 1, 3 Flute, 1/2 row (46116-K/46216-K), Wood/Plywood column: 300\" IPM, .0057\" chip load per tooth",
+      "evidence_grade": "b",
+      "row_kind": "derived",
+      "tool_family": "flat_end",
+      "tool_subfamily": "spektra_spiral_plunge",
+      "operation_family": "pocket",
+      "pass_role": "roughing",
+      "material_family": "plywood_softwood",
+      "material_label": "Wood/Plywood",
+      "hardness_kind": "janka",
+      "hardness_value": 600.0,
+      "diameter_mm": 12.7,
+      "flute_count": 3,
+      "rpm_nominal": 18000.0,
+      "chipload_max_mm_tooth": 0.1448,
+      "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
+      "ap_max_factor": 1.0,
+      "machine_assumption": "chart at 18000 rpm; single printed CPT 0.0057 in = 0.1448 mm, encoded as chipload_max only",
+      "notes": "Chart prints one Wood/Plywood column; this row applies it to plywood_softwood. Transcribed 2026-09-25 from the PDF text (G6 Spektra sizes, B5 clean-up). The chart prints one value, not a range, so the row publishes only chipload_max_mm_tooth. The chart does not name an operation; the row sits in the pocket family with pass_role roughing at the chart's 1 x D condition. hardness_value is the engine's own Janka proxy for this material family (GenericSoftwood 600, GenericHardwood 1450, softwood plywood 600, hardwood-faced plywood 1000, MDF 1100), so the printed value reaches the generic material unscaled; the chart prints no hardness."
+    },
+    {
+      "observation_id": "amana-flat-plywood-hardwood-pocket-12700-3f-spektra",
+      "source_id": "amana_spektra_spiral_plunge_v24",
+      "source_vendor": "amana",
+      "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
+      "accessed_on": "2026-09-25",
+      "source_page": "page 1, 3 Flute, 1/2 row (46116-K/46216-K), Wood/Plywood column: 300\" IPM, .0057\" chip load per tooth",
+      "evidence_grade": "b",
+      "row_kind": "derived",
+      "tool_family": "flat_end",
+      "tool_subfamily": "spektra_spiral_plunge",
+      "operation_family": "pocket",
+      "pass_role": "roughing",
+      "material_family": "plywood_hardwood",
+      "material_label": "Wood/Plywood",
+      "hardness_kind": "janka",
+      "hardness_value": 1000.0,
+      "diameter_mm": 12.7,
+      "flute_count": 3,
+      "rpm_nominal": 18000.0,
+      "chipload_max_mm_tooth": 0.1448,
+      "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
+      "ap_max_factor": 1.0,
+      "machine_assumption": "chart at 18000 rpm; single printed CPT 0.0057 in = 0.1448 mm, encoded as chipload_max only",
+      "notes": "Chart prints one Wood/Plywood column; this row applies it to plywood_hardwood. Transcribed 2026-09-25 from the PDF text (G6 Spektra sizes, B5 clean-up). The chart prints one value, not a range, so the row publishes only chipload_max_mm_tooth. The chart does not name an operation; the row sits in the pocket family with pass_role roughing at the chart's 1 x D condition. hardness_value is the engine's own Janka proxy for this material family (GenericSoftwood 600, GenericHardwood 1450, softwood plywood 600, hardwood-faced plywood 1000, MDF 1100), so the printed value reaches the generic material unscaled; the chart prints no hardness."
+    },
+    {
+      "observation_id": "amana-flat-hardwood-pocket-19050-3f-spektra",
+      "source_id": "amana_spektra_spiral_plunge_v24",
+      "source_vendor": "amana",
+      "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
+      "accessed_on": "2026-09-25",
+      "source_page": "page 1, 3 Flute, 3/4 row (46500-K), Wood/Plywood column: 330\" IPM, .009\" chip load per tooth",
+      "evidence_grade": "b",
+      "row_kind": "derived",
+      "tool_family": "flat_end",
+      "tool_subfamily": "spektra_spiral_plunge",
+      "operation_family": "pocket",
+      "pass_role": "roughing",
+      "material_family": "hardwood",
+      "material_label": "Wood/Plywood",
+      "hardness_kind": "janka",
+      "hardness_value": 1450.0,
+      "diameter_mm": 19.05,
+      "flute_count": 3,
+      "rpm_nominal": 18000.0,
+      "chipload_max_mm_tooth": 0.2286,
+      "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
+      "ap_max_factor": 1.0,
+      "machine_assumption": "chart at 18000 rpm; single printed CPT 0.009 in = 0.2286 mm, encoded as chipload_max only",
+      "notes": "Chart prints one Wood/Plywood column; this row applies it to hardwood. Transcribed 2026-09-25 from the PDF text (G6 Spektra sizes, B5 clean-up). The chart prints one value, not a range, so the row publishes only chipload_max_mm_tooth. The chart does not name an operation; the row sits in the pocket family with pass_role roughing at the chart's 1 x D condition. hardness_value is the engine's own Janka proxy for this material family (GenericSoftwood 600, GenericHardwood 1450, softwood plywood 600, hardwood-faced plywood 1000, MDF 1100), so the printed value reaches the generic material unscaled; the chart prints no hardness."
+    },
+    {
+      "observation_id": "amana-flat-plywood-softwood-pocket-19050-3f-spektra",
+      "source_id": "amana_spektra_spiral_plunge_v24",
+      "source_vendor": "amana",
+      "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
+      "accessed_on": "2026-09-25",
+      "source_page": "page 1, 3 Flute, 3/4 row (46500-K), Wood/Plywood column: 330\" IPM, .009\" chip load per tooth",
+      "evidence_grade": "b",
+      "row_kind": "derived",
+      "tool_family": "flat_end",
+      "tool_subfamily": "spektra_spiral_plunge",
+      "operation_family": "pocket",
+      "pass_role": "roughing",
+      "material_family": "plywood_softwood",
+      "material_label": "Wood/Plywood",
+      "hardness_kind": "janka",
+      "hardness_value": 600.0,
+      "diameter_mm": 19.05,
+      "flute_count": 3,
+      "rpm_nominal": 18000.0,
+      "chipload_max_mm_tooth": 0.2286,
+      "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
+      "ap_max_factor": 1.0,
+      "machine_assumption": "chart at 18000 rpm; single printed CPT 0.009 in = 0.2286 mm, encoded as chipload_max only",
+      "notes": "Chart prints one Wood/Plywood column; this row applies it to plywood_softwood. Transcribed 2026-09-25 from the PDF text (G6 Spektra sizes, B5 clean-up). The chart prints one value, not a range, so the row publishes only chipload_max_mm_tooth. The chart does not name an operation; the row sits in the pocket family with pass_role roughing at the chart's 1 x D condition. hardness_value is the engine's own Janka proxy for this material family (GenericSoftwood 600, GenericHardwood 1450, softwood plywood 600, hardwood-faced plywood 1000, MDF 1100), so the printed value reaches the generic material unscaled; the chart prints no hardness."
+    },
+    {
+      "observation_id": "amana-flat-plywood-hardwood-pocket-19050-3f-spektra",
+      "source_id": "amana_spektra_spiral_plunge_v24",
+      "source_vendor": "amana",
+      "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
+      "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
+      "accessed_on": "2026-09-25",
+      "source_page": "page 1, 3 Flute, 3/4 row (46500-K), Wood/Plywood column: 330\" IPM, .009\" chip load per tooth",
+      "evidence_grade": "b",
+      "row_kind": "derived",
+      "tool_family": "flat_end",
+      "tool_subfamily": "spektra_spiral_plunge",
+      "operation_family": "pocket",
+      "pass_role": "roughing",
+      "material_family": "plywood_hardwood",
+      "material_label": "Wood/Plywood",
+      "hardness_kind": "janka",
+      "hardness_value": 1000.0,
+      "diameter_mm": 19.05,
+      "flute_count": 3,
+      "rpm_nominal": 18000.0,
+      "chipload_max_mm_tooth": 0.2286,
+      "ap_rule": "1xD use recommended feed rate; 2xD reduce 25%; 3xD reduce 50%",
+      "ap_max_factor": 1.0,
+      "machine_assumption": "chart at 18000 rpm; single printed CPT 0.009 in = 0.2286 mm, encoded as chipload_max only",
+      "notes": "Chart prints one Wood/Plywood column; this row applies it to plywood_hardwood. Transcribed 2026-09-25 from the PDF text (G6 Spektra sizes, B5 clean-up). The chart prints one value, not a range, so the row publishes only chipload_max_mm_tooth. The chart does not name an operation; the row sits in the pocket family with pass_role roughing at the chart's 1 x D condition. hardness_value is the engine's own Janka proxy for this material family (GenericSoftwood 600, GenericHardwood 1450, softwood plywood 600, hardwood-faced plywood 1000, MDF 1100), so the printed value reaches the generic material unscaled; the chart prints no hardness."
+    }
+  ],
+  "ramp_down_check": [
+    {
+      "size": "1.5mm",
+      "diam_mm": 1.5,
+      "flute_count": 2,
+      "column": "Wood/Plywood",
+      "printed_feed_ipm": "70",
+      "printed_ramp_down": "35",
+      "feed_over_z": 35.0
+    },
+    {
+      "size": "1.5mm",
+      "diam_mm": 1.5,
+      "flute_count": 2,
+      "column": "MDF/Laminate",
+      "printed_feed_ipm": "105",
+      "printed_ramp_down": "52.5",
+      "feed_over_z": 52.5
+    },
+    {
+      "size": "3mm",
+      "diam_mm": 3.0,
+      "flute_count": 2,
+      "column": "Wood/Plywood",
+      "printed_feed_ipm": "145",
+      "printed_ramp_down": "72.5",
+      "feed_over_z": 72.5
+    },
+    {
+      "size": "3mm",
+      "diam_mm": 3.0,
+      "flute_count": 2,
+      "column": "MDF/Laminate",
+      "printed_feed_ipm": "180",
+      "printed_ramp_down": "90",
+      "feed_over_z": 90.0
+    },
+    {
+      "size": "5mm",
+      "diam_mm": 5.0,
+      "flute_count": 2,
+      "column": "Wood/Plywood",
+      "printed_feed_ipm": "180",
+      "printed_ramp_down": "90",
+      "feed_over_z": 90.0
+    },
+    {
+      "size": "5mm",
+      "diam_mm": 5.0,
+      "flute_count": 2,
+      "column": "MDF/Laminate",
+      "printed_feed_ipm": "215",
+      "printed_ramp_down": "107.5",
+      "feed_over_z": 107.5
+    },
+    {
+      "size": "3/8\"",
+      "diam_mm": 9.525,
+      "flute_count": 2,
+      "column": "Wood/Plywood",
+      "printed_feed_ipm": "230",
+      "printed_ramp_down": "115",
+      "feed_over_z": 115.0
+    },
+    {
+      "size": "3/8\"",
+      "diam_mm": 9.525,
+      "flute_count": 2,
+      "column": "MDF/Laminate",
+      "printed_feed_ipm": "390",
+      "printed_ramp_down": "195",
+      "feed_over_z": 195.0
+    },
+    {
+      "size": "12mm",
+      "diam_mm": 12.0,
+      "flute_count": 2,
+      "column": "Wood/Plywood",
+      "printed_feed_ipm": "200",
+      "printed_ramp_down": "100",
+      "feed_over_z": 100.0
+    },
+    {
+      "size": "12mm",
+      "diam_mm": 12.0,
+      "flute_count": 2,
+      "column": "MDF/Laminate",
+      "printed_feed_ipm": "350",
+      "printed_ramp_down": "175",
+      "feed_over_z": 175.0
+    },
+    {
+      "size": "1/2\"",
+      "diam_mm": 12.7,
+      "flute_count": 2,
+      "column": "Wood/Plywood",
+      "printed_feed_ipm": "200",
+      "printed_ramp_down": "100",
+      "feed_over_z": 100.0
+    },
+    {
+      "size": "1/2\"",
+      "diam_mm": 12.7,
+      "flute_count": 2,
+      "column": "MDF/Laminate",
+      "printed_feed_ipm": "350",
+      "printed_ramp_down": "175",
+      "feed_over_z": 175.0
+    },
+    {
+      "size": "3/8\"",
+      "diam_mm": 9.525,
+      "flute_count": 3,
+      "column": "Wood/Plywood",
+      "printed_feed_ipm": "345",
+      "printed_ramp_down": "115",
+      "feed_over_z": 115.0
+    },
+    {
+      "size": "3/8\"",
+      "diam_mm": 9.525,
+      "flute_count": 3,
+      "column": "MDF/Laminate",
+      "printed_feed_ipm": "580",
+      "printed_ramp_down": "195",
+      "feed_over_z": 193.33
+    },
+    {
+      "size": "1/2\"",
+      "diam_mm": 12.7,
+      "flute_count": 3,
+      "column": "Wood/Plywood",
+      "printed_feed_ipm": "300",
+      "printed_ramp_down": "100",
+      "feed_over_z": 100.0
+    },
+    {
+      "size": "1/2\"",
+      "diam_mm": 12.7,
+      "flute_count": 3,
+      "column": "MDF/Laminate",
+      "printed_feed_ipm": "500",
+      "printed_ramp_down": "167",
+      "feed_over_z": 166.67
+    },
+    {
+      "size": "3/4\"",
+      "diam_mm": 19.05,
+      "flute_count": 3,
+      "column": "Wood/Plywood",
+      "printed_feed_ipm": "330",
+      "printed_ramp_down": "110",
+      "feed_over_z": 110.0
+    },
+    {
+      "size": "3/4\"",
+      "diam_mm": 19.05,
+      "flute_count": 3,
+      "column": "MDF/Laminate",
+      "printed_feed_ipm": "360",
+      "printed_ramp_down": "120",
+      "feed_over_z": 120.0
+    }
+  ],
+  "printed_table": [
+    {
+      "z": 2,
+      "diam": "1/32\"",
+      "d_mm": 0.7937,
+      "tools": [
+        [
+          "\u2014",
+          "46229-K"
+        ],
+        [
+          "\u2014",
+          "46242-K"
+        ]
+      ],
+      "feed_wp_ipm": "35",
+      "chip_wp_in": ".0010",
+      "ramp_wp_in": "17.5",
+      "feed_mdf_ipm": "70",
+      "chip_mdf_in": ".0020",
+      "ramp_mdf_in": "35",
+      "in_lut": "no (out of scope)"
+    },
+    {
+      "z": 2,
+      "diam": "1.5mm",
+      "d_mm": 1.5,
+      "tools": [
+        [
+          "\u2014",
+          "48210-K"
+        ],
+        [
+          "\u2014",
+          "48212-K"
+        ]
+      ],
+      "feed_wp_ipm": "70",
+      "chip_wp_in": ".0020",
+      "ramp_wp_in": "35",
+      "feed_mdf_ipm": "105",
+      "chip_mdf_in": ".0030",
+      "ramp_mdf_in": "52.5",
+      "in_lut": "candidate"
+    },
+    {
+      "z": 2,
+      "diam": "1/16\"",
+      "d_mm": 1.5875,
+      "tools": [
+        [
+          "\u2014",
+          "46237-K"
+        ],
+        [
+          "\u2014",
+          "46213-K"
+        ],
+        [
+          "\u2014",
+          "46233-K"
+        ],
+        [
+          "\u2014",
+          "46448-K"
+        ],
+        [
+          "46009-K",
+          "46403-K"
+        ]
+      ],
+      "feed_wp_ipm": "70",
+      "chip_wp_in": ".0020",
+      "ramp_wp_in": "35",
+      "feed_mdf_ipm": "105",
+      "chip_mdf_in": ".0030",
+      "ramp_mdf_in": "52.5",
+      "in_lut": "no (out of scope)"
+    },
+    {
+      "z": 2,
+      "diam": "3/32\"",
+      "d_mm": 2.3813,
+      "tools": [
+        [
+          "\u2014",
+          "46239-K"
+        ],
+        [
+          "\u2014",
+          "46244-K"
+        ]
+      ],
+      "feed_wp_ipm": "80",
+      "chip_wp_in": ".0023",
+      "ramp_wp_in": "40",
+      "feed_mdf_ipm": "160",
+      "chip_mdf_in": ".0046",
+      "ramp_mdf_in": "80",
+      "in_lut": "no (out of scope)"
+    },
+    {
+      "z": 2,
+      "diam": "3mm",
+      "d_mm": 3.0,
+      "tools": [
+        [
+          "\u2014",
+          "48214-K"
+        ],
+        [
+          "48116-K",
+          "48216-K"
+        ]
+      ],
+      "feed_wp_ipm": "145",
+      "chip_wp_in": ".0040",
+      "ramp_wp_in": "72.5",
+      "feed_mdf_ipm": "180",
+      "chip_mdf_in": ".0050",
+      "ramp_mdf_in": "90",
+      "in_lut": "candidate"
+    },
+    {
+      "z": 2,
+      "diam": "1/8\"",
+      "d_mm": 3.175,
+      "tools": [
+        [
+          "46127-K",
+          "46227-K"
+        ],
+        [
+          "46100-K",
+          "46200-K"
+        ],
+        [
+          "46125-K",
+          "46225-K"
+        ]
+      ],
+      "feed_wp_ipm": "145",
+      "chip_wp_in": ".0040",
+      "ramp_wp_in": "72.5",
+      "feed_mdf_ipm": "180",
+      "chip_mdf_in": ".0050",
+      "ramp_mdf_in": "90",
+      "in_lut": "yes"
+    },
+    {
+      "z": 2,
+      "diam": "3/16\"",
+      "d_mm": 4.7625,
+      "tools": [
+        [
+          "46101-K",
+          "46201-K"
+        ]
+      ],
+      "feed_wp_ipm": "180",
+      "chip_wp_in": ".0050",
+      "ramp_wp_in": "90",
+      "feed_mdf_ipm": "215",
+      "chip_mdf_in": ".0060",
+      "ramp_mdf_in": "107.5",
+      "in_lut": "no (out of scope)"
+    },
+    {
+      "z": 2,
+      "diam": "5mm",
+      "d_mm": 5.0,
+      "tools": [
+        [
+          "\u2014",
+          "46211-K"
+        ]
+      ],
+      "feed_wp_ipm": "180",
+      "chip_wp_in": ".0050",
+      "ramp_wp_in": "90",
+      "feed_mdf_ipm": "215",
+      "chip_mdf_in": ".0060",
+      "ramp_mdf_in": "107.5",
+      "in_lut": "candidate"
+    },
+    {
+      "z": 2,
+      "diam": "6mm",
+      "d_mm": 6.0,
+      "tools": [
+        [
+          "48118-K",
+          "48218-K"
+        ],
+        [
+          "48120-K",
+          "48220-K"
+        ]
+      ],
+      "feed_wp_ipm": "180",
+      "chip_wp_in": ".0050",
+      "ramp_wp_in": "90",
+      "feed_mdf_ipm": "215",
+      "chip_mdf_in": ".0060",
+      "ramp_mdf_in": "107.5",
+      "in_lut": "yes"
+    },
+    {
+      "z": 2,
+      "diam": "1/4\"",
+      "d_mm": 6.35,
+      "tools": [
+        [
+          "46102-K",
+          "46202-K"
+        ],
+        [
+          "46315-K",
+          "46415-K"
+        ],
+        [
+          "46316-K",
+          "46416-K"
+        ],
+        [
+          "46321-K",
+          "46421-K"
+        ],
+        [
+          "46399-K",
+          "\u2014"
+        ]
+      ],
+      "feed_wp_ipm": "180",
+      "chip_wp_in": ".0050",
+      "ramp_wp_in": "90",
+      "feed_mdf_ipm": "215",
+      "chip_mdf_in": ".0060",
+      "ramp_mdf_in": "107.5",
+      "in_lut": "yes"
+    },
+    {
+      "z": 2,
+      "diam": "3/8\"",
+      "d_mm": 9.525,
+      "tools": [
+        [
+          "\u2014",
+          "46203-K"
+        ],
+        [
+          "46320-K",
+          "46420-K"
+        ],
+        [
+          "\u2014",
+          "46449-K"
+        ]
+      ],
+      "feed_wp_ipm": "230",
+      "chip_wp_in": ".0064",
+      "ramp_wp_in": "115",
+      "feed_mdf_ipm": "390",
+      "chip_mdf_in": ".0108",
+      "ramp_mdf_in": "195",
+      "in_lut": "candidate"
+    },
+    {
+      "z": 2,
+      "diam": "12mm",
+      "d_mm": 12.0,
+      "tools": [
+        [
+          "\u2014",
+          "48228-K"
+        ]
+      ],
+      "feed_wp_ipm": "200",
+      "chip_wp_in": ".0057",
+      "ramp_wp_in": "100",
+      "feed_mdf_ipm": "350",
+      "chip_mdf_in": ".0096",
+      "ramp_mdf_in": "175",
+      "in_lut": "candidate"
+    },
+    {
+      "z": 2,
+      "diam": "1/2\"",
+      "d_mm": 12.7,
+      "tools": [
+        [
+          "46106-K",
+          "46206-K"
+        ]
+      ],
+      "feed_wp_ipm": "200",
+      "chip_wp_in": ".0057",
+      "ramp_wp_in": "100",
+      "feed_mdf_ipm": "350",
+      "chip_mdf_in": ".0096",
+      "ramp_mdf_in": "175",
+      "in_lut": "candidate"
+    },
+    {
+      "z": 3,
+      "diam": "0.023\"",
+      "d_mm": 0.5842,
+      "tools": [
+        [
+          "51629-K",
+          "\u2014"
+        ]
+      ],
+      "feed_wp_ipm": "55",
+      "chip_wp_in": ".0010",
+      "ramp_wp_in": "27.5",
+      "feed_mdf_ipm": "110",
+      "chip_mdf_in": ".0020",
+      "ramp_mdf_in": "55",
+      "in_lut": "no (out of scope)"
+    },
+    {
+      "z": 3,
+      "diam": "1/8\"",
+      "d_mm": 3.175,
+      "tools": [
+        [
+          "46001-K",
+          "46051-K"
+        ],
+        [
+          "\u2014",
+          "46053-K"
+        ]
+      ],
+      "feed_wp_ipm": "215",
+      "chip_wp_in": ".0040",
+      "ramp_wp_in": "72",
+      "feed_mdf_ipm": "270",
+      "chip_mdf_in": ".0050",
+      "ramp_mdf_in": "90",
+      "in_lut": "yes"
+    },
+    {
+      "z": 3,
+      "diam": "6mm",
+      "d_mm": 6.0,
+      "tools": [
+        [
+          "\u2014",
+          "48502-K"
+        ]
+      ],
+      "feed_wp_ipm": "270",
+      "chip_wp_in": ".0050",
+      "ramp_wp_in": "90",
+      "feed_mdf_ipm": "325",
+      "chip_mdf_in": ".0060",
+      "ramp_mdf_in": "109",
+      "in_lut": "yes"
+    },
+    {
+      "z": 3,
+      "diam": "1/4\"",
+      "d_mm": 6.35,
+      "tools": [
+        [
+          "46002-K",
+          "46052-K"
+        ],
+        [
+          "\u2014",
+          "46054-K"
+        ]
+      ],
+      "feed_wp_ipm": "270",
+      "chip_wp_in": ".0050",
+      "ramp_wp_in": "90",
+      "feed_mdf_ipm": "325",
+      "chip_mdf_in": ".0060",
+      "ramp_mdf_in": "109",
+      "in_lut": "yes"
+    },
+    {
+      "z": 3,
+      "diam": "1/2\"",
+      "d_mm": 12.7,
+      "tools": [
+        [
+          "46116-K",
+          "46216-K"
+        ]
+      ],
+      "feed_wp_ipm": "300",
+      "chip_wp_in": ".0057",
+      "ramp_wp_in": "100",
+      "feed_mdf_ipm": "500",
+      "chip_mdf_in": ".0096",
+      "ramp_mdf_in": "167",
+      "in_lut": "candidate"
+    },
+    {
+      "z": 3,
+      "diam": "3/8\"",
+      "d_mm": 9.525,
+      "tools": [
+        [
+          "\u2014",
+          "46055-K"
+        ]
+      ],
+      "feed_wp_ipm": "345",
+      "chip_wp_in": ".0064",
+      "ramp_wp_in": "115",
+      "feed_mdf_ipm": "580",
+      "chip_mdf_in": ".0108",
+      "ramp_mdf_in": "195",
+      "in_lut": "candidate"
+    },
+    {
+      "z": 3,
+      "diam": "3/4\"",
+      "d_mm": 19.05,
+      "tools": [
+        [
+          "\u2014",
+          "46500-K"
+        ]
+      ],
+      "feed_wp_ipm": "330",
+      "chip_wp_in": ".009",
+      "ramp_wp_in": "110",
+      "feed_mdf_ipm": "360",
+      "chip_mdf_in": ".010",
+      "ramp_mdf_in": "120",
+      "in_lut": "candidate"
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+parsed 39 chart lines, 20 (Z, diameter) keys
+
+chart identities (every parsed line, one per key):
+Z  dia     col  feed   ramp   feed/Z   ramp-feed/Z  feed/(18000*Z*chip)
+2  1/32"   wp   35     17.5   17.50    +0.00        0.972
+2  1/32"   mdf  70     35     35.00    +0.00        0.972
+2  1.5mm   wp   70     35     35.00    +0.00        0.972
+2  1.5mm   mdf  105    52.5   52.50    +0.00        0.972
+2  1/16"   wp   70     35     35.00    +0.00        0.972
+2  1/16"   mdf  105    52.5   52.50    +0.00        0.972
+2  3/32"   wp   80     40     40.00    +0.00        0.966
+2  3/32"   mdf  160    80     80.00    +0.00        0.966
+2  3mm     wp   145    72.5   72.50    +0.00        1.007
+2  3mm     mdf  180    90     90.00    +0.00        1.000
+2  1/8"    wp   145    72.5   72.50    +0.00        1.007
+2  1/8"    mdf  180    90     90.00    +0.00        1.000
+2  3/16"   wp   180    90     90.00    +0.00        1.000
+2  3/16"   mdf  215    107.5  107.50   +0.00        0.995
+2  5mm     wp   180    90     90.00    +0.00        1.000
+2  5mm     mdf  215    107.5  107.50   +0.00        0.995
+2  6mm     wp   180    90     90.00    +0.00        1.000
+2  6mm     mdf  215    107.5  107.50   +0.00        0.995
+2  1/4"    wp   180    90     90.00    +0.00        1.000
+2  1/4"    mdf  215    107.5  107.50   +0.00        0.995
+2  3/8"    wp   230    115    115.00   +0.00        0.998
+2  3/8"    mdf  390    195    195.00   +0.00        1.003
+2  12mm    wp   200    100    100.00   +0.00        0.975
+2  12mm    mdf  350    175    175.00   +0.00        1.013
+2  1/2"    wp   200    100    100.00   +0.00        0.975
+2  1/2"    mdf  350    175    175.00   +0.00        1.013
+3  0.023"  wp   55     27.5   18.33    +9.17        1.019 RAMP
+3  0.023"  mdf  110    55     36.67    +18.33        1.019 RAMP
+3  1/8"    wp   215    72     71.67    +0.33        0.995
+3  1/8"    mdf  270    90     90.00    +0.00        1.000
+3  6mm     wp   270    90     90.00    +0.00        1.000
+3  6mm     mdf  325    109    108.33   +0.67        1.003 RAMP
+3  1/4"    wp   270    90     90.00    +0.00        1.000
+3  1/4"    mdf  325    109    108.33   +0.67        1.003 RAMP
+3  3/8"    wp   345    115    115.00   +0.00        0.998
+3  3/8"    mdf  580    195    193.33   +1.67        0.995 RAMP
+3  1/2"    wp   300    100    100.00   +0.00        0.975
+3  1/2"    mdf  500    167    166.67   +0.33        0.965
+3  3/4"    wp   330    110    110.00   +0.00        0.679 RPM
+3  3/4"    mdf  360    120    120.00   +0.00        0.667 RPM
+
+LUT: 86 Spektra rows (ids ending -spektra)
+  LUT GRADE amana_long_tail.json amana-flat-softwood-pocket-0794-2f-spektra: exact/a
+  LUT GRADE amana_long_tail.json amana-flat-softwood-pocket-1500-2f-spektra: exact/a
+  LUT GRADE amana_long_tail.json amana-flat-softwood-pocket-1587-2f-spektra: exact/a
+  LUT GRADE amana_long_tail.json amana-flat-softwood-pocket-2381-2f-spektra: exact/a
+  LUT GRADE amana_long_tail.json amana-flat-softwood-pocket-3000-2f-spektra: exact/a
+  LUT GRADE amana_long_tail.json amana-flat-softwood-pocket-4763-2f-spektra: exact/a
+  LUT GRADE amana_long_tail.json amana-flat-softwood-pocket-5000-2f-spektra: exact/a
+  LUT GRADE amana_long_tail.json amana-flat-softwood-pocket-9525-2f-spektra: exact/a
+  LUT GRADE amana_long_tail.json amana-flat-softwood-pocket-12000-2f-spektra: exact/a
+  LUT GRADE amana_long_tail.json amana-flat-softwood-pocket-12700-2f-spektra: exact/a
+  LUT GRADE amana_long_tail.json amana-flat-softwood-pocket-9525-3f-spektra: exact/a
+  LUT GRADE amana_long_tail.json amana-flat-softwood-pocket-12700-3f-spektra: exact/a
+  LUT GRADE amana_long_tail.json amana-flat-softwood-pocket-19050-3f-spektra: exact/a
+  pocket families per chart key (LUT | candidate):
+    2F 1/32"   LUT ['mdf', 'softwood'] | candidate []
+    2F 1.5mm   LUT ['mdf', 'softwood'] | candidate ['hardwood', 'plywood_hardwood', 'plywood_softwood']
+    2F 1/16"   LUT ['mdf', 'softwood'] | candidate []
+    2F 3/32"   LUT ['mdf', 'softwood'] | candidate []
+    2F 3mm     LUT ['mdf', 'softwood'] | candidate ['hardwood', 'plywood_hardwood', 'plywood_softwood']
+    2F 1/8"    LUT ['hardwood', 'mdf', 'plywood_hardwood', 'plywood_softwood', 'softwood'] | candidate []
+    2F 3/16"   LUT ['mdf', 'softwood'] | candidate []
+    2F 5mm     LUT ['mdf', 'softwood'] | candidate ['hardwood', 'plywood_hardwood', 'plywood_softwood']
+    2F 6mm     LUT ['hardwood', 'mdf', 'plywood_hardwood', 'plywood_softwood', 'softwood'] | candidate []
+    2F 1/4"    LUT ['hardwood', 'mdf', 'plywood_hardwood', 'plywood_softwood', 'softwood'] | candidate []
+    2F 3/8"    LUT ['mdf', 'softwood'] | candidate ['hardwood', 'plywood_hardwood', 'plywood_softwood']
+    2F 12mm    LUT ['mdf', 'softwood'] | candidate ['hardwood', 'plywood_hardwood', 'plywood_softwood']
+    2F 1/2"    LUT ['mdf', 'softwood'] | candidate ['hardwood', 'plywood_hardwood', 'plywood_softwood']
+    3F 0.023"  LUT [] | candidate []
+    3F 1/8"    LUT ['hardwood', 'mdf', 'plywood_hardwood', 'plywood_softwood', 'softwood'] | candidate []
+    3F 6mm     LUT ['hardwood', 'mdf', 'plywood_hardwood', 'plywood_softwood', 'softwood'] | candidate []
+    3F 1/4"    LUT ['hardwood', 'mdf', 'plywood_hardwood', 'plywood_softwood', 'softwood'] | candidate []
+    3F 3/8"    LUT ['mdf', 'softwood'] | candidate ['hardwood', 'plywood_hardwood', 'plywood_softwood']
+    3F 1/2"    LUT ['mdf', 'softwood'] | candidate ['hardwood', 'plywood_hardwood', 'plywood_softwood']
+    3F 3/4"    LUT ['mdf', 'softwood'] | candidate ['hardwood', 'plywood_hardwood', 'plywood_softwood']
+
+candidate observations: 27
+transcription failures: 0
