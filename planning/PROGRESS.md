@@ -128,6 +128,11 @@ instrument, 9699f0d5) on the rivmap100 demo copy.
   Also open: before any dressup, the sim cuts deeper than the planner
   stamps in 699 cells (> 0.5 mm, min -2.0 mm): a second planner/emitter
   gap, in the safe direction.
+  Rapid-check sentries (8d5930eb, no change to the check): side strikes,
+  sub-cell slivers and rim walls are caught. OPEN G-RAPIDPLUNGETOL: the
+  check subtracts 2.207 cells in Z, so a rapid tip 0.3 mm into material
+  under the whole footprint is NOT flagged (1.10 mm at 0.5 mm cells,
+  0.55 mm at 0.25 mm); a 1 mm plunge is missed at 0.5 mm cells.
   Adaptive have the same defect (it still allows the reorder)?
 - 2026-09-25: By Area pocket tree measured
   (`planning/by_area_merge_tree_2026-09-25/`, 6f52d7a3): 3 valleys at
