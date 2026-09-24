@@ -84,7 +84,9 @@ instrument, 9699f0d5) on the rivmap100 demo copy.
   entry bite 6.08 -> 1.61 mm. Sentry
   `session_rough_keeps_the_planner_order_for_its_entries`. Seen on screen
   by the operator 2026-09-25 (GUI 984dec55): "looking very good"; MCP
-  shows entry_load gone. Open: does 2D
+  shows entry_load gone. The operator also saw a more logical cut order
+  with no thin walls left standing: the reorder had split the planned
+  ring sequence. Open: does 2D
   Adaptive have the same defect (it still allows the reorder)?
 - 2026-09-25: By Area pocket tree measured
   (`planning/by_area_merge_tree_2026-09-25/`, 6f52d7a3): 3 valleys at
