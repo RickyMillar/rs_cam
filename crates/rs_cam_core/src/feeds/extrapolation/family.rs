@@ -72,18 +72,35 @@ const SERVES_MILLING: &[LutOperationFamily] = &[
     LutOperationFamily::Trace,
 ];
 
-/// The family rules (A3). There is no ball-nose rule: the 42 ball-nose
-/// finish cells stay separate until ruling B3 (orchestrator decision 6).
-pub const FAMILY_RULES: &[FamilyRule] = &[FamilyRule {
-    tool_family: ToolFamily::TaperedBallNose,
-    source_ids: ONSRUD_77_100_SOURCES,
-    tool_subfamily: "77_100_series",
-    home: (LutOperationFamily::Pocket, LutPassRole::Roughing),
-    serves: SERVES_MILLING,
-    printed_mm: (3.175, 6.35),
-    witness: "vendor structure: the Onsrud sheets print one 77-100 chip load per tip diameter \
-              and material, and name no operation",
-}];
+/// The Amana corner-radius chart (46460 and 46462) that prints the bull
+/// nose rows.
+const AMANA_CORNER_RADIUS_SOURCES: &[&str] = &["amana_corner_radius_spiral_plunge_2f"];
+
+/// The family rules (A3): the tapered ball (step 2) and the bull nose
+/// (step 4). There is no ball-nose rule: the 42 ball-nose finish cells stay
+/// separate until ruling B3 (orchestrator decision 6).
+pub const FAMILY_RULES: &[FamilyRule] = &[
+    FamilyRule {
+        tool_family: ToolFamily::TaperedBallNose,
+        source_ids: ONSRUD_77_100_SOURCES,
+        tool_subfamily: "77_100_series",
+        home: (LutOperationFamily::Pocket, LutPassRole::Roughing),
+        serves: SERVES_MILLING,
+        printed_mm: (3.175, 6.35),
+        witness: "vendor structure: the Onsrud sheets print one 77-100 chip load per tip \
+                  diameter and material, and name no operation",
+    },
+    FamilyRule {
+        tool_family: ToolFamily::BullNose,
+        source_ids: AMANA_CORNER_RADIUS_SOURCES,
+        tool_subfamily: "corner_radius",
+        home: (LutOperationFamily::Pocket, LutPassRole::Roughing),
+        serves: SERVES_MILLING,
+        printed_mm: (6.35, 12.7),
+        witness: "vendor structure: the Amana corner-radius chart prints one chip load per \
+                  diameter and material, and names no operation",
+    },
+];
 
 /// The rule that carries `obs` into the queried operation family, or
 /// `None`.
@@ -368,6 +385,42 @@ mod tests {
                 obs.observation_id
             );
         }
+    }
+
+    /// The bull rule carries the Amana corner-radius home row into each
+    /// served family. The derived Onsrud bull plywood row is from another
+    /// source, so it does not transfer.
+    #[test]
+    fn the_bull_rule_serves_only_its_families_and_its_source() {
+        use LutOperationFamily::{
+            Adaptive, Contour, Drill, Face, Parallel, Pocket, Scallop, Trace,
+        };
+        let lut = VendorLut::embedded();
+        let home = row(&lut, "amana-bull-hardwood-pocket-6350-2f-cr");
+        for family in [Adaptive, Contour, Parallel, Scallop, Trace] {
+            let q = query(ToolFamily::BullNose, family, LutPassRole::Finish);
+            let rule = transfer_rule(&q, &home)
+                .unwrap_or_else(|| panic!("{family:?}: the rule must carry the row"));
+            assert_eq!(rule.tool_subfamily, "corner_radius");
+        }
+        for family in [Pocket, Face, Drill] {
+            let q = query(ToolFamily::BullNose, family, LutPassRole::Roughing);
+            assert!(transfer_rule(&q, &home).is_none(), "{family:?}");
+        }
+        // A flat query never reads a bull row through the rule.
+        let flat = query(
+            ToolFamily::FlatEnd,
+            LutOperationFamily::Parallel,
+            LutPassRole::Finish,
+        );
+        assert!(transfer_rule(&flat, &home).is_none());
+        let plywood = row(&lut, "onsrud-bull-plywood-hardwood-pocket-6000-2f");
+        let parallel = query(
+            ToolFamily::BullNose,
+            LutOperationFamily::Parallel,
+            LutPassRole::Finish,
+        );
+        assert!(transfer_rule(&parallel, &plywood).is_none());
     }
 
     /// The rule's printed range is the range of its home rows.

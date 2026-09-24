@@ -20,11 +20,11 @@ The calculator for RPM, feed, plunge rate, DOC and WOC. The validated entry poin
 ## Invariants
 - `ChiploadBounds` in Suggest mirrors the gate's piecewise-linear DOC derating (canonical scale: `feeds::geometry`).
 - One Janka table (`WoodSpecies` generics); no hardness scale on plywood/MDF; in solid wood an upward scale stops at the row family's printed soft/hard max.
-- Suggest is the validated application path; a raw parameter write is an override and stales the result.
+- Suggest is the validated application path; a raw parameter write is an override and stales the result. On an adaptive rough the simulated chipload outranks the Suggest verdict.
 - R4: the rubbing floor `min(0.025, band min)` warns, never lifts; no machine or L/D feed factor. The
   dial `MachineProfile::aggressiveness` (0.85) scales depth and stepover to hold load at
   `k × L/D share`; it never cuts the feed. Power ceiling = `power_at_rpm`, no fraction.
-- On an adaptive rough the simulated chipload outranks the Suggest verdict.
+- G3 (A3): a chart that names no operation gives one row per printed cell under (Pocket, Roughing); `FAMILY_RULES` (tapered: Onsrud 77-100; bull: Amana corner radius) serve adaptive, contour, parallel, scallop and trace at x1.00. No copy rows, no ball rule (B3). `ProjectCurve` routes ball, tapered and bull to (Parallel, Finish).
 - One claimed band: every consumer reads `LookupResult::size_basis`; a `Refused` row has no band anywhere. A2: one printed value is a point (`printed_chipload()`); no band is derived; the modulator caps at it with no floor; the gate is hard above it and advisory below it.
 
 ## Sentries

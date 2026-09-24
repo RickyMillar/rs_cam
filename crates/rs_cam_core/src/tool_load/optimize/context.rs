@@ -127,7 +127,7 @@ pub(crate) fn diameter_for_lut_lookup(
 /// Look up the best-matching LUT row for the toolpath's tool /
 /// material / operation combination. Mirrors `suggest::evaluate`'s
 /// LUT plumbing so the optimizer reads from the same calibration data
-/// the gate does. Returns `None` for ProjectCurve+VBit/BullNose etc.
+/// the gate does. Returns `None` for ProjectCurve+VBit/FacingBit
 /// where [`crate::feeds::vendor_normalize::lut_query_for`] refuses, or
 /// for `Custom` material.
 ///

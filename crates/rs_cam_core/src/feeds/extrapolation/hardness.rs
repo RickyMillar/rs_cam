@@ -38,16 +38,20 @@ use crate::feeds::vendor_lut::{HardnessKind, MaterialFamily, ToolFamily, VendorO
 /// - flat end 1.43: range [1.00, 1.43], n 14;
 /// - V-bit 1.42: range [1.00, 1.42], n 19 (Amana insert V-groove v16, §1.3);
 /// - tapered ball 1.00: 1.00, n 2 (Onsrud 77-100 prints one band for both);
-/// - facing bit 1.30: 1.30, n 1.
-///
-/// A bull nose has no printed row in two categories (§1.9), so it borrows
-/// the flat-end value ([`soft_hard_cap`]).
+/// - facing bit 1.30: 1.30, n 1;
+/// - bull nose 1.33: range [1.25, 1.33], n 2 (A3 step 4, orchestrator
+///   decision 3). The Amana corner-radius chart prints both columns
+///   (EXTRAPOLATION_G3 §1.6; rows `amana-bull-*-cr`): at 1/4 in soft
+///   0.007-0.009 and hard 0.005-0.007 in, so the mid ratio is 0.008 / 0.006
+///   = 1.33; at 1/2 in 0.010 / 0.008 = 1.25. Before A3 the bull nose had no
+///   printed pair and borrowed the flat-end 1.43.
 pub const SOFT_OVER_HARD_PRINTED_MAX: &[(ToolFamily, f64)] = &[
     (ToolFamily::BallNose, 1.50),
     (ToolFamily::FlatEnd, 1.43),
     (ToolFamily::ChamferVbit, 1.42),
     (ToolFamily::TaperedBallNose, 1.00),
     (ToolFamily::FacingBit, 1.30),
+    (ToolFamily::BullNose, 1.33),
 ];
 
 /// Where the row's hardness value comes from.
@@ -68,35 +72,19 @@ pub struct SoftHardCap {
     pub family: ToolFamily,
     /// The largest printed softwood/hardwood ratio of that family.
     pub ratio: f64,
-    /// True when the family has no printed pair and the flat-end value
-    /// stands in (a bull nose).
-    pub borrowed_from_flat: bool,
 }
 
-/// The cap for the row's tool family. A bull nose borrows the flat-end
-/// value.
+/// The cap for the row's tool family.
 #[must_use]
 pub fn soft_hard_cap(family: ToolFamily) -> SoftHardCap {
-    let (printed, borrowed_from_flat) = match family {
-        ToolFamily::BullNose => (ToolFamily::FlatEnd, true),
-        ToolFamily::FlatEnd
-        | ToolFamily::BallNose
-        | ToolFamily::TaperedBallNose
-        | ToolFamily::ChamferVbit
-        | ToolFamily::FacingBit => (family, false),
-    };
-    // Every family except the bull nose has an entry, and the sentry pins
-    // them. The fallback 1.0 blocks all upward transfer, which is the
-    // conservative side.
+    // Every tool family has an entry, and the sentry pins them. The
+    // fallback 1.0 blocks all upward transfer, which is the conservative
+    // side.
     let ratio = SOFT_OVER_HARD_PRINTED_MAX
         .iter()
-        .find(|(f, _)| *f == printed)
+        .find(|(f, _)| *f == family)
         .map_or(1.0, |(_, r)| *r);
-    SoftHardCap {
-        family,
-        ratio,
-        borrowed_from_flat,
-    }
+    SoftHardCap { family, ratio }
 }
 
 /// The largest `|row / query - 1|` that counts as no transfer. The same
@@ -203,23 +191,15 @@ impl HardnessBasis {
             gap.group(),
             gap.label()
         );
-        let whose = if cap.borrowed_from_flat {
-            format!(
-                "flat end mill charts print; no {} chart prints both columns, so the flat end \
-                 mill value stands in",
-                cap.family.label()
-            )
-        } else {
-            format!("{} charts print", cap.family.label())
-        };
+        let family = cap.family.label();
         let origin = match from {
             JankaFrom::Row => "printed on the row",
             JankaFrom::FamilyGeneric => "the generic species of the row's family",
         };
         let detail = format!(
             "hardness transfer capped at x{ratio:.2} (the largest softwood/hardwood ratio that \
-             {whose}); the Janka law gives x{law_scale:.2} (raw ratio {ratio_raw:.2}, row \
-             {row_hardness:.0} lbf, {origin})"
+             {family} charts print); the Janka law gives x{law_scale:.2} (raw ratio \
+             {ratio_raw:.2}, row {row_hardness:.0} lbf, {origin})"
         );
         Some((headline, detail))
     }

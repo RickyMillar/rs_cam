@@ -403,8 +403,8 @@ pub enum LutQueryStamp {
         queried_family: crate::feeds::vendor_lut::LutOperationFamily,
         queried_pass_role: crate::feeds::vendor_lut::LutPassRole,
     },
-    /// `lut_query_for` **refused**: `ProjectCurve` on a bull nose,
-    /// V-bit or facing bit, where the LUT publishes no rows and
+    /// `lut_query_for` **refused**: `ProjectCurve` on a V-bit or facing
+    /// bit, where the LUT publishes no rows and
     /// inventing a family would be worse than saying so. A refusal is
     /// not a fallback to the declared family.
     Refused {

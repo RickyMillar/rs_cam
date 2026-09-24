@@ -8,14 +8,17 @@
 //! ratio that high: the largest printed ratio is 1.50 on a ball nose, 1.43
 //! on a flat end mill, 1.42 on a V-bit, 1.30 on a facing bit and 1.00 on a
 //! tapered ball (EXTRAPOLATION_G2 §1.2, table T2, the upper end of each
-//! "softwood / hardwood" range). A bull nose prints no pair and borrows the
-//! flat-end value. `feeds::extrapolation::hardness_basis` clamps the scale
+//! "softwood / hardwood" range). A3 step 4 (orchestrator decision 3) gives
+//! the bull nose its own printed value, 1.33, from the Amana corner-radius
+//! chart (EXTRAPOLATION_G3 §1.6: mid ratios 1.33 at 1/4 in and 1.25 at 1/2
+//! in); before A3 it borrowed the flat-end 1.43.
+//! `feeds::extrapolation::hardness_basis` clamps the scale
 //! at the cap of the ROW's tool family. The raw ratio stays unchanged, so
 //! the extrapolation flag stays set.
 //!
 //! The sentry pins:
 //!
-//! - the constants, and the bull nose's borrowed flat-end cap;
+//! - the constants, the bull nose's printed cap 1.33 included;
 //! - the 6.0 mm ball Scallop in generic softwood, on
 //!   `amana-ball-hardwood-scallop-6000-2f`: scale 1.50, raw ratio 2.416667
 //!   unchanged, the flag set; the recipe band, the gate band and the
@@ -211,7 +214,6 @@ fn assert_ball_capped(r: &LookupResult, label: &str) {
         SoftHardCap {
             family: ToolFamily::BallNose,
             ratio: 1.50,
-            borrowed_from_flat: false,
         },
         "{label}"
     );
@@ -278,27 +280,36 @@ fn the_caps_are_the_largest_printed_soft_hard_ratios_g2() {
             (ToolFamily::ChamferVbit, 1.42),
             (ToolFamily::TaperedBallNose, 1.00),
             (ToolFamily::FacingBit, 1.30),
+            (ToolFamily::BullNose, 1.33),
         ]
     );
     for &(family, ratio) in SOFT_OVER_HARD_PRINTED_MAX {
-        assert_eq!(
-            soft_hard_cap(family),
-            SoftHardCap {
-                family,
-                ratio,
-                borrowed_from_flat: false,
-            }
-        );
+        assert_eq!(soft_hard_cap(family), SoftHardCap { family, ratio });
     }
+    // A3 step 4: the bull nose reads its own printed pair (Amana corner
+    // radius, 0.008 / 0.006 in at 1/4 in), not the flat-end 1.43.
     assert_eq!(
         soft_hard_cap(ToolFamily::BullNose),
         SoftHardCap {
             family: ToolFamily::BullNose,
-            ratio: 1.43,
-            borrowed_from_flat: true,
+            ratio: 1.33,
         },
-        "a bull nose borrows the flat-end cap"
+        "a bull nose caps at its own printed ratio"
     );
+    // Every tool family has an entry.
+    for family in [
+        ToolFamily::FlatEnd,
+        ToolFamily::BallNose,
+        ToolFamily::BullNose,
+        ToolFamily::ChamferVbit,
+        ToolFamily::TaperedBallNose,
+        ToolFamily::FacingBit,
+    ] {
+        assert!(
+            SOFT_OVER_HARD_PRINTED_MAX.iter().any(|(f, _)| *f == family),
+            "{family:?} has no printed cap"
+        );
+    }
 }
 
 // ── The ball Scallop cells ───────────────────────────────────────────
@@ -452,7 +463,7 @@ fn a_capped_basis_states_its_cap_on_the_card_g2() {
          on the row)"
     );
 
-    // A bull nose names the borrowed flat-end value.
+    // A bull nose names its own printed value (A3 step 4).
     let bull = HardnessBasis::Capped {
         ratio_raw: RAW,
         law_scale: LAW,
@@ -463,8 +474,8 @@ fn a_capped_basis_states_its_cap_on_the_card_g2() {
     let (_, bull_detail) = bull.card_text().expect("capped");
     assert!(
         bull_detail.starts_with(
-            "hardness transfer capped at x1.43 (the largest softwood/hardwood ratio that flat \
-             end mill charts print; no bull nose chart prints both columns"
+            "hardness transfer capped at x1.33 (the largest softwood/hardwood ratio that bull \
+             nose charts print); the Janka law gives x1.55"
         ),
         "{bull_detail}"
     );

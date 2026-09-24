@@ -412,7 +412,7 @@ fn run_cell_in_material(
         // production path, so it supplies the operation's own kind and
         // gets the same LUT routing (and the same refusals) a GUI / CLI
         // / MCP user gets. No matrix cell currently exercises a
-        // ProjectCurve on a bull-nose or V-bit, so no cell moves.
+        // ProjectCurve on a V-bit, so no cell moves.
         operation_kind: Some(operation.op_type()),
         pass_role,
         axial_depth_mm: pinned_doc.or(auto_axial),

@@ -288,8 +288,17 @@ fn find_best_vbit_row_where(
         // `lut.observations`, so the index is in range.
         #[allow(clippy::indexing_slicing)]
         if beats(
-            (score, transferred, obs.observation_id.as_str()),
-            best.map(|(s, _, t, bi)| (s, t, lut.observations[bi].observation_id.as_str())),
+            (
+                score,
+                // V-bits keep the id tie-break until ruling B4.
+                None,
+                transferred,
+                obs.observation_id.as_str(),
+            ),
+            best.map(|(s, _, t, bi)| {
+                let b = &lut.observations[bi];
+                (s, None, t, b.observation_id.as_str())
+            }),
         ) {
             best = Some((score, diam_score, transferred, i));
         }
@@ -637,19 +646,41 @@ fn build_result(
 /// A3 (G3): each side is `(score, transferred, id)`. On an equal score, a
 /// row printed in the queried family beats a row that a family rule
 /// transfers (`extrapolation::transfer_rule`); after that the id decides.
-fn beats(candidate: (i64, bool, &str), best: Option<(i64, bool, &str)>) -> bool {
-    let (candidate_score, candidate_transferred, candidate_id) = candidate;
+fn beats(
+    candidate: (i64, Option<f64>, bool, &str),
+    best: Option<(i64, Option<f64>, bool, &str)>,
+) -> bool {
+    let (candidate_score, candidate_distance, candidate_transferred, candidate_id) = candidate;
     match best {
         None => true,
-        Some((best_score, best_transferred, best_id)) => {
+        Some((best_score, best_distance, best_transferred, best_id)) => {
             if candidate_score != best_score {
                 return candidate_score > best_score;
+            }
+            // Extrapolation A3 step 4 (2026-09-24): the diameter term of the
+            // score saturates at 2x, so a row at 0.5x and a row at 0.25x of the
+            // query score the same. On an equal score the row nearer in
+            // diameter (smaller |ln(query / row)|) wins before the id. The
+            // test applies only when both rows carry a diameter.
+            if let (Some(c), Some(b)) = (candidate_distance, best_distance)
+                && (c - b).abs() > 1e-12
+            {
+                return c < b;
             }
             if candidate_transferred != best_transferred {
                 return !candidate_transferred;
             }
             candidate_id < best_id
         }
+    }
+}
+
+/// `|ln(query / row)|` for a row with a diameter, else `None`. The tie-break
+/// of [`beats`] reads it.
+fn diameter_distance(query: &LookupQuery, obs: &VendorObservation) -> Option<f64> {
+    match obs.diameter_mm {
+        Some(d) if d > 0.0 && query.diameter_mm > 0.0 => Some((query.diameter_mm / d).ln().abs()),
+        _ => None,
     }
 }
 
@@ -675,8 +706,16 @@ fn lookup_best_where(
         // `lut.observations`, so the index is in range.
         #[allow(clippy::indexing_slicing)]
         if beats(
-            (score, transferred, obs.observation_id.as_str()),
-            best.map(|(s, _, t, bi)| (s, t, lut.observations[bi].observation_id.as_str())),
+            (
+                score,
+                diameter_distance(query, obs),
+                transferred,
+                obs.observation_id.as_str(),
+            ),
+            best.map(|(s, _, t, bi)| {
+                let b = &lut.observations[bi];
+                (s, diameter_distance(query, b), t, b.observation_id.as_str())
+            }),
         ) {
             best = Some((score, diam_score, transferred, i));
         }
@@ -1109,6 +1148,8 @@ mod tests {
             operation_family: LutOperationFamily::Adaptive,
             pass_role: LutPassRole::Roughing,
         };
+        // Since A3 step 4 (G3) the Amana corner-radius pocket row serves this
+        // query through the family rule, ahead of the flat-end fallback.
         let result =
             lookup_best(&lut, &query).expect("bull nose should fallback to flat/bull rows");
         assert!(result.chip_load_mm > 0.03);
@@ -1264,7 +1305,8 @@ mod tests {
             operation_family: LutOperationFamily::Adaptive,
             pass_role: LutPassRole::Roughing,
         };
-        let result = lookup_best(&lut, &query).expect("hardwood bull-nose adaptive row exists");
+        let result = lookup_best(&lut, &query)
+            .expect("a hardwood bull-nose row serves the adaptive query (G3 transfer)");
         // The aluminum row in `amana_3d_profiling.json` must not be
         // selected — its observation_id contains "aluminum".
         assert!(

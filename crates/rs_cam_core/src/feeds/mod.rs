@@ -932,12 +932,13 @@ pub enum FeedsWarning {
     /// this operation × cutter pairing, so there is no vendor row at all
     /// and the recommendation is entirely formula-derived.**
     ///
-    /// Today this is exactly one case: a `ProjectCurve` on a bull-nose,
-    /// V-bit or facing cutter. `ProjectCurve` is not a vendor family; it
-    /// is geometrically a 3D contour trace, and
-    /// [`vendor_normalize::lut_query_for`] routes it to `Parallel` /
-    /// `Contour` for ball and flat cutters and refuses for the rest,
-    /// because the LUT has no rows there.
+    /// Today this is exactly one case: a `ProjectCurve` on a V-bit or
+    /// facing cutter. `ProjectCurve` is not a vendor family; it is
+    /// geometrically a 3D contour trace, and
+    /// [`vendor_normalize::lut_query_for`] routes it to `Parallel` for
+    /// ball, tapered-ball and bull-nose cutters (the bull nose since A3
+    /// step 4, through the G3 family rule), to `Contour` for flat cutters,
+    /// and refuses for the rest, because the LUT has no rows there.
     ///
     /// The gate has refused these all along
     /// (`Unmodeled(NoVendorData)`). Until a4 **Suggest did not** — it

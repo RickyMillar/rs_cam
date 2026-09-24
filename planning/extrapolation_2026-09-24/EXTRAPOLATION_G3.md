@@ -412,3 +412,85 @@ Cells that F1 could move, at most: 18 bull + 34 tapered + 6 ball = **58 of
    "up-cut" come from unstored Toolstoday product pages.
    `verified_rows.json` marks them derived. A loader must not treat them as
    printed.
+
+## 5. The landing (A3, 2026-09-24)
+
+Ruling A3 (b1): one row per printed cell; a visible G3 family claim serves
+the other operation families. Plan and decisions: `A3_PLAN.md`.
+
+| Commit | Step |
+|---|---|
+| ee14e824 | `extrapolation/family.rs`, `FeedsSupport::FamilyTransferred`, the Onsrud 77-100 tapered rule; TAPER_* judgements deleted |
+| 5ca7fedf | one Onsrud 77-100 row per printed cell (24 copies deleted; no number moves) |
+| (step 4) | the Amana corner-radius bull rows, the bull rule, bull ProjectCurve routed, the plywood-only bull text, the bull soft/hard cap 1.33, the nearer-diameter tie-break |
+
+Found in step 4: the lookup's diameter term saturates at 2x, so for a
+3.175 mm bull nose the 6.35 mm row (0.5x) and the 12.7 mm row (0.25x)
+tied and the id picked 12.7; the size law then refused. Fix: on an equal
+score the row nearer in diameter wins before the id (V-bits keep the id
+tie-break until B4). No other matrix cell moved.
+
+### Cells that moved (FM1)
+
+- Refusals 496 (before A3) -> 426: 34 tapered cells and 36 bull cells ship.
+- 6 softwood tapered Profile / Trace / Pencil cells: formula -> the printed
+  Onsrud band.
+- 36 shipping bull cells change row, from a flat end-mill stand-in or the
+  deleted repo-derived onsrud-bull rows to the bull's own printed Amana
+  corner-radius row:
+
+| D mm | Operation | Material | Old row, chip | New row, chip | Ratio |
+|---|---|---|---|---|---|
+| 3.1750 | Profile | hardwood | amana-flat-hardwood-contour-3175-2f 0.0227 | amana-bull-hardwood-pocket-6350-2f-cr 0.0999 | x4.40 |
+| 3.1750 | Profile | mdf | onsrud-mdf-60-100mw-1_8-finish 0.2794 | amana-bull-mdf-pocket-6350-2f-cr 0.1165 | x0.42 |
+| 3.1750 | Profile | softwood | onsrud-softwood-60-100mw-1_8-finish 0.3048 | amana-bull-softwood-pocket-6350-2f-cr 0.1331 | x0.44 |
+| 3.1750 | SteepShallow | hardwood | amana-flat-hardwood-contour-3175-2f 0.0227 | amana-bull-hardwood-pocket-6350-2f-cr 0.0999 | x4.40 |
+| 3.1750 | SteepShallow | mdf | onsrud-mdf-60-100mw-1_8-finish 0.2794 | amana-bull-mdf-pocket-6350-2f-cr 0.1165 | x0.42 |
+| 3.1750 | SteepShallow | softwood | onsrud-softwood-60-100mw-1_8-finish 0.3048 | amana-bull-softwood-pocket-6350-2f-cr 0.1331 | x0.44 |
+| 3.1750 | Waterline | hardwood | amana-flat-hardwood-contour-3175-2f 0.0227 | amana-bull-hardwood-pocket-6350-2f-cr 0.0999 | x4.40 |
+| 3.1750 | Waterline | mdf | onsrud-mdf-60-100mw-1_8-finish 0.2794 | amana-bull-mdf-pocket-6350-2f-cr 0.1165 | x0.42 |
+| 3.1750 | Waterline | softwood | onsrud-softwood-60-100mw-1_8-finish 0.3048 | amana-bull-softwood-pocket-6350-2f-cr 0.1331 | x0.44 |
+| 6.0000 | Adaptive | hardwood | onsrud-bull-hardwood-adaptive-6000-2f 0.0460 | amana-bull-hardwood-pocket-6350-2f-cr 0.1472 | x3.20 |
+| 6.0000 | Adaptive | mdf | amana-flat-mdf-adaptive-6000-2f-spektra 0.1524 | amana-bull-mdf-pocket-6350-2f-cr 0.1718 | x1.13 |
+| 6.0000 | Adaptive | softwood | onsrud-bull-softwood-adaptive-6000-2f 0.0750 | amana-bull-softwood-pocket-6350-2f-cr 0.1963 | x2.62 |
+| 6.0000 | Adaptive3d | hardwood | amana-flat-hardwood-pocket-6000-2f-spektra 0.1270 | amana-bull-hardwood-pocket-6350-2f-cr 0.1472 | x1.16 |
+| 6.0000 | Adaptive3d | mdf | amana-flat-mdf-pocket-6000-2f-spektra 0.1524 | amana-bull-mdf-pocket-6350-2f-cr 0.1718 | x1.13 |
+| 6.0000 | Adaptive3d | softwood | amana-zrn-flat-softwood-pocket-6000-2f 0.2032 | amana-bull-softwood-pocket-6350-2f-cr 0.1963 | x0.97 |
+| 6.0000 | Face | hardwood | amana-flat-hardwood-pocket-6000-2f-spektra 0.1270 | amana-bull-hardwood-pocket-6350-2f-cr 0.1472 | x1.16 |
+| 6.0000 | Face | mdf | amana-flat-mdf-pocket-6000-2f-spektra 0.1524 | amana-bull-mdf-pocket-6350-2f-cr 0.1718 | x1.13 |
+| 6.0000 | Face | softwood | amana-zrn-flat-softwood-pocket-6000-2f 0.2032 | amana-bull-softwood-pocket-6350-2f-cr 0.1963 | x0.97 |
+| 6.0000 | Pocket | hardwood | amana-flat-hardwood-pocket-6000-2f-spektra 0.1270 | amana-bull-hardwood-pocket-6350-2f-cr 0.1472 | x1.16 |
+| 6.0000 | Pocket | mdf | amana-flat-mdf-pocket-6000-2f-spektra 0.1524 | amana-bull-mdf-pocket-6350-2f-cr 0.1718 | x1.13 |
+| 6.0000 | Pocket | softwood | amana-zrn-flat-softwood-pocket-6000-2f 0.2032 | amana-bull-softwood-pocket-6350-2f-cr 0.1963 | x0.97 |
+| 6.0000 | Profile | hardwood | onsrud-hardwood-60-100mw-1_4-finish 0.3704 | amana-bull-hardwood-pocket-6350-2f-cr 0.1472 | x0.40 |
+| 6.0000 | Profile | mdf | onsrud-mdf-60-100mw-1_4-finish 0.3391 | amana-bull-mdf-pocket-6350-2f-cr 0.1718 | x0.51 |
+| 6.0000 | Profile | softwood | onsrud-softwood-60-200-1_4-finish 0.1492 | amana-bull-softwood-pocket-6350-2f-cr 0.1963 | x1.32 |
+| 6.0000 | Rest | hardwood | amana-flat-hardwood-pocket-6000-2f-spektra 0.1270 | amana-bull-hardwood-pocket-6350-2f-cr 0.1472 | x1.16 |
+| 6.0000 | Rest | mdf | amana-flat-mdf-pocket-6000-2f-spektra 0.1524 | amana-bull-mdf-pocket-6350-2f-cr 0.1718 | x1.13 |
+| 6.0000 | Rest | softwood | amana-zrn-flat-softwood-pocket-6000-2f 0.2032 | amana-bull-softwood-pocket-6350-2f-cr 0.1963 | x0.97 |
+| 6.0000 | SteepShallow | hardwood | onsrud-hardwood-60-100mw-1_4-finish 0.3704 | amana-bull-hardwood-pocket-6350-2f-cr 0.1472 | x0.40 |
+| 6.0000 | SteepShallow | mdf | onsrud-mdf-60-100mw-1_4-finish 0.3391 | amana-bull-mdf-pocket-6350-2f-cr 0.1718 | x0.51 |
+| 6.0000 | SteepShallow | softwood | onsrud-softwood-60-200-1_4-finish 0.1492 | amana-bull-softwood-pocket-6350-2f-cr 0.1963 | x1.32 |
+| 6.0000 | Waterline | hardwood | onsrud-hardwood-60-100mw-1_4-finish 0.3704 | amana-bull-hardwood-pocket-6350-2f-cr 0.1472 | x0.40 |
+| 6.0000 | Waterline | mdf | onsrud-mdf-60-100mw-1_4-finish 0.3391 | amana-bull-mdf-pocket-6350-2f-cr 0.1718 | x0.51 |
+| 6.0000 | Waterline | softwood | onsrud-softwood-60-200-1_4-finish 0.1492 | amana-bull-softwood-pocket-6350-2f-cr 0.1963 | x1.32 |
+| 6.0000 | Zigzag | hardwood | amana-flat-hardwood-pocket-6000-2f-spektra 0.1270 | amana-bull-hardwood-pocket-6350-2f-cr 0.1472 | x1.16 |
+| 6.0000 | Zigzag | mdf | amana-flat-mdf-pocket-6000-2f-spektra 0.1524 | amana-bull-mdf-pocket-6350-2f-cr 0.1718 | x1.13 |
+| 6.0000 | Zigzag | softwood | amana-zrn-flat-softwood-pocket-6000-2f 0.2032 | amana-bull-softwood-pocket-6350-2f-cr 0.1963 | x0.97 |
+
+The large moves are the flat finish rows (Onsrud 60-100mw finish, 0.28-0.37
+mm/tooth on a 6 mm tool) going to the bull row (x0.40-0.51), and the
+repo-derived onsrud-bull adaptive rows (0.30-0.37 of the printed band)
+going to the printed band (x2.6-3.2).
+
+### Open for the operator
+
+- The four bull literature cells (`bull_6mm_adaptive2d_oak`,
+  `bull_6mm_pocket_oak`, `bull_12mm_pocket_oak`,
+  `bull_6mm_scallop_oak_unadvised`) band the bull on FLAT-END charts
+  (their feed-per-tooth bands copy the flat twin cells). The printed Amana
+  corner-radius chart puts the bull at about 0.13-0.18 mm/tooth at 6 mm,
+  above those bands. Proposal: add the Amana chart to sources.toml and
+  re-band the cells from it, or keep the flat proxy and accept a HIGH
+  verdict. `bull_12mm_pocket_oak` reads its pocket envelope Outside.
+- B3 still owns the 42 ball-nose finish cells and the 6 ball-nose MDF cells.

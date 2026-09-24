@@ -259,13 +259,27 @@ All were accessed 2026-09-23. Rows transcribed from them on that date:
   sheet prints no 77-100 row.
 - Onsrud Hard Plywood and Soft Plywood flat-end series (`onsrud_plywood.json`).
 
+Added 2026-09-24 (extrapolation A3 step 4, G3):
+
+- Amana *2 Flute Solid Carbide Spiral Plunge with Corner Radius Router Bit*
+  speed chart (tools 46460 and 46462), the Toolstoday product attachment —
+  <https://toolstoday.com/content/ProductFile/Attachments/Solid-Carbide-Spiral-Plunge-w-Corner-Radius.pdf>.
+  The printed 1/4 in and 1/2 in Soft Wood, Hard Wood and MDF rows
+  (`amana_corner_radius.json`, `amana-bull-*-cr`, exact, grade a) are bull-nose
+  rows, one row per printed cell under pocket / roughing. The chart prints no
+  operation, no pass role and no plywood column. The corner radius and "up-cut"
+  come from the Toolstoday product pages, which are not stored; the rows mark
+  them as derived.
+
 Rows that cite a chart but are not printed on it are kept with
 `row_kind: derived`, `evidence_grade: c` and a `notes` field that names the
 nearest printed line and the reduction or origin: the reduced Amana ball rows
 at 3.175 mm and 6 mm, the Amana tapered-ball rows (the cited ZrN chart has no
-tapered section), the four `onsrud-bull-*` rows (no Onsrud sheet prints a bull
-or corner-radius series; they were derived from Amana flat-end seed rows at
-about x0.85) and the fourteen `amana_flat_end.json` rows that cite Spektra v24.
+tapered section), the two remaining `onsrud-bull-*` rows, plywood and aluminum
+(no Onsrud sheet prints a bull or corner-radius series; they were derived from
+Amana flat-end seed rows at about x0.85; the softwood and hardwood rows were
+deleted on 2026-09-24, when the printed Amana corner-radius rows replaced
+them) and the fourteen `amana_flat_end.json` rows that cite Spektra v24.
 
 ### Chipload column convention and scaling laws
 

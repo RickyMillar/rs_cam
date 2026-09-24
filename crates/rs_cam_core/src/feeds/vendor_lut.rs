@@ -475,6 +475,14 @@ const EMBEDDED_FILES: &[(&str, &str)] = &[
         "onsrud_vbit_37.json",
         include_str!("../../data/vendor_lut/observations/onsrud_vbit_37.json"),
     ),
+    // 2026-09-24 (extrapolation A3 step 4, G3): the printed Amana
+    // corner-radius (bull nose) rows, one row per printed cell under
+    // pocket / roughing. The G3 family rule serves the other families. The
+    // stored text is data/vendor_lut/sources/amana_corner_radius_spiral_plunge.txt.
+    (
+        "amana_corner_radius.json",
+        include_str!("../../data/vendor_lut/observations/amana_corner_radius.json"),
+    ),
 ];
 
 impl VendorLut {
@@ -696,8 +704,8 @@ mod tests {
         let lut = VendorLut::embedded();
         assert_eq!(
             lut.observations.len(),
-            472,
-            "expected 472 embedded observations: 252 before feeds matrix R5 \
+            476,
+            "expected 476 embedded observations: 252 before feeds matrix R5 \
              (2026-09-23), + 12 printed Amana ball v7 rows (1/8 and 1/4 in, \
              hardwood / softwood / MDF, pocket and adaptive), + 60 printed \
              Amana Spektra v24 rows (2F and 3F at 1/8 in, 6 mm and 1/4 in; \
@@ -717,7 +725,10 @@ mod tests {
              = 496; then A3 step 3 (2026-09-24, G3): - 24 Onsrud 77-100 \
              copy rows (4 sheets x 1/8 and 1/4 in x parallel / scallop / \
              adaptive); the 8 pocket rows stay and the G3 family rule serves \
-             the other families = 472"
+             the other families = 472; then A3 step 4 (2026-09-24, G3): - 2 \
+             derived onsrud-bull softwood and hardwood adaptive rows, + 6 \
+             printed Amana corner-radius bull rows (1/4 and 1/2 in x softwood \
+             / hardwood / MDF, pocket only) = 476"
         );
     }
 

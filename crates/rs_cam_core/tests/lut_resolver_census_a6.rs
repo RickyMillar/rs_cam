@@ -501,7 +501,7 @@ fn operation_family_reroute_band_delta_report() {
     // in-process, not quoted.
     let (before, after) = refusal_asymmetry_through_calculate();
     println!(
-        "\n**{refusals} pairs are REFUSALS** (ProjectCurve on bull-nose / V-bit: \
+        "\n**{refusals} pairs are REFUSALS** (ProjectCurve on V-bit: \
          `lut_query_for` returns `None`). Post-a4 BOTH sides refuse — the gate as \
          `Unmodeled(NoVendorData)`, Suggest as \
          `FeedsWarning::NoVendorRowsForRoutedOperation`.\n\n\
@@ -553,59 +553,58 @@ fn refusal_asymmetry_through_calculate() -> (usize, usize) {
     let machine = MachineProfile::generic_wood_router();
     let lut = embedded_vendor_lut();
     let (mut before, mut after) = (0usize, 0usize);
-    for geom in [
-        ToolGeometryHint::Bull { corner_radius: 0.5 },
-        ToolGeometryHint::VBit {
-            included_angle: 60.0,
-            tip_diameter: 0.2,
-        },
-    ] {
-        for species in [WoodSpecies::HardMaple, WoodSpecies::WhiteOak] {
-            let material = Material::SolidWood { species };
-            for d in [3.175_f64, 6.0, 12.0] {
-                for flutes in [2u32, 3] {
-                    let make = |kind: Option<OperationType>| {
-                        calculate(&FeedsInput {
-                            tool_diameter: d,
-                            flute_count: flutes,
-                            flute_length: 20.0,
-                            shank_diameter: Some(6.0),
-                            tool_geometry: geom,
-                            material: &material,
-                            machine: &machine,
-                            // What a ProjectCurve op declares.
-                            operation: OperationFamily::Trace,
-                            operation_kind: kind,
-                            pass_role: PassRole::Finish,
-                            axial_depth_mm: Some(d * 0.25),
-                            radial_width_mm: Some(d * 0.4),
-                            target_scallop_mm: Some(0.01),
-                            vendor_lut: Some(lut),
-                            setup: SetupContext::default(),
-                            spindle_strategy: SpindleStrategy::MatchChart,
-                        })
-                    };
-                    // Pre-a4: no operation identity, so no routing, so
-                    // the query goes out at the declared `Trace` family
-                    // and can match a row.
-                    if make(None).vendor_source.is_some() {
-                        before += 1;
-                    }
-                    // Post-a4: routed, and refused.
-                    let routed = make(Some(OperationType::ProjectCurve));
-                    if routed.vendor_source.is_some() {
-                        after += 1;
-                    } else {
-                        assert!(
-                            routed.warnings.iter().any(|w| matches!(
-                                w,
-                                rs_cam_core::feeds::FeedsWarning::NoVendorRowsForRoutedOperation { .. }
-                            )),
-                            "a refusal must be TYPED, not silent — the operator has to be able \
-                             to tell 'no vendor row for this cutter class' from 'the formula \
-                             happened to agree'"
-                        );
-                    }
+    // A3 step 4 (G3): a bull nose is no longer refused. `ProjectCurve`
+    // routes it to (Parallel, Finish), and the family rule serves it from
+    // the Amana corner-radius row. The V-bit is the one cutter class left.
+    let geom = ToolGeometryHint::VBit {
+        included_angle: 60.0,
+        tip_diameter: 0.2,
+    };
+    for species in [WoodSpecies::HardMaple, WoodSpecies::WhiteOak] {
+        let material = Material::SolidWood { species };
+        for d in [3.175_f64, 6.0, 12.0] {
+            for flutes in [2u32, 3] {
+                let make = |kind: Option<OperationType>| {
+                    calculate(&FeedsInput {
+                        tool_diameter: d,
+                        flute_count: flutes,
+                        flute_length: 20.0,
+                        shank_diameter: Some(6.0),
+                        tool_geometry: geom,
+                        material: &material,
+                        machine: &machine,
+                        // What a ProjectCurve op declares.
+                        operation: OperationFamily::Trace,
+                        operation_kind: kind,
+                        pass_role: PassRole::Finish,
+                        axial_depth_mm: Some(d * 0.25),
+                        radial_width_mm: Some(d * 0.4),
+                        target_scallop_mm: Some(0.01),
+                        vendor_lut: Some(lut),
+                        setup: SetupContext::default(),
+                        spindle_strategy: SpindleStrategy::MatchChart,
+                    })
+                };
+                // Pre-a4: no operation identity, so no routing, so
+                // the query goes out at the declared `Trace` family
+                // and can match a row.
+                if make(None).vendor_source.is_some() {
+                    before += 1;
+                }
+                // Post-a4: routed, and refused.
+                let routed = make(Some(OperationType::ProjectCurve));
+                if routed.vendor_source.is_some() {
+                    after += 1;
+                } else {
+                    assert!(
+                        routed.warnings.iter().any(|w| matches!(
+                            w,
+                            rs_cam_core::feeds::FeedsWarning::NoVendorRowsForRoutedOperation { .. }
+                        )),
+                        "a refusal must be TYPED, not silent — the operator has to be able \
+                         to tell 'no vendor row for this cutter class' from 'the formula \
+                         happened to agree'"
+                    );
                 }
             }
         }

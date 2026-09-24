@@ -76,12 +76,12 @@ const BALL_MDF: &str = "No published figure backs the formula for a ball-nose cu
      pocket, contour or trace passes in MDF: the 1/4 in charts put it below half.";
 const BALL_PLY: &str = "No published chipload exists for a ball-nose cutter on adaptive, pocket, \
      contour or trace passes in plywood.";
-const BULL_PARALLEL: &str =
-    "No published wood chipload exists for a bull-nose cutter on a parallel finish pass.";
-const BULL_SCALLOP: &str =
-    "No published wood chipload exists for a bull-nose cutter on a scallop-family finish pass.";
-const BULL_TRACE: &str = "No published wood chipload exists for a bull-nose cutter on a trace, \
-     pencil or projected-curve pass.";
+/// The refusal of a bull-nose finish pass in plywood (A3 step 4, G3). The
+/// Amana corner-radius chart has no plywood column, so no family rule
+/// serves this cell.
+pub const BULL_FINISH_PLYWOOD: &str = "No published plywood chipload exists for a bull-nose \
+     cutter on a finish pass: the Amana corner-radius chart prints softwood, hardwood and MDF \
+     only.";
 const VBIT_ADAPTIVE: &str = "No published figure exists for a V-bit on adaptive clearing, and the \
      recipe depth passes the end of the cone.";
 const VBIT_PARALLEL: &str = "No published figure backs the formula for a V-bit on parallel finish \
@@ -252,14 +252,19 @@ pub fn formula_backing(
         {
             Clueless { reason: BALL_PLY }
         }
-        // Bull nose: no wood vendor prints a bull row for any finish family.
-        (ToolFamily::BullNose, Parallel, Finish) => Clueless {
-            reason: BULL_PARALLEL,
-        },
-        (ToolFamily::BullNose, Scallop, Finish) => Clueless {
-            reason: BULL_SCALLOP,
-        },
-        (ToolFamily::BullNose, Trace, Finish) => Clueless { reason: BULL_TRACE },
+        // Bull nose, finish pass in plywood. Since A3 step 4 (G3) the Amana
+        // corner-radius pocket rows serve the parallel, scallop and trace
+        // families through the family rule (`extrapolation::family`) in
+        // softwood, hardwood and MDF. The chart prints no plywood column, so
+        // a plywood finish pass finds no row and refuses here. In the other
+        // judged woods a cell with no row falls to the unjudged reason below.
+        (ToolFamily::BullNose, Parallel | Scallop | Trace, Finish)
+            if material == PlywoodHardwood =>
+        {
+            Clueless {
+                reason: BULL_FINISH_PLYWOOD,
+            }
+        }
         // V-bit: no figure backs adaptive, parallel or 3D contour finish
         // passes in any judged wood. Pocket, contour and trace passes are
         // backed in the two solid woods. In MDF and plywood the Onsrud
@@ -373,7 +378,7 @@ pub(crate) enum RecipeRowLookup<'a> {
     /// The input carries no LUT.
     NoLut,
     /// `vendor_normalize::to_lookup_query` refused the routing (today, a
-    /// `ProjectCurve` on a bull-nose, V-bit or facing cutter).
+    /// `ProjectCurve` on a V-bit or facing cutter).
     RoutingRefused,
     /// The routed query ran and no row matched.
     NoRow,

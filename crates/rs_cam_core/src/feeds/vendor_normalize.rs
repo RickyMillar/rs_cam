@@ -39,10 +39,12 @@ use crate::material::{Material, PlasticHardness};
 ///   design doc §1.3. **This wave does not re-open that judgement** — it
 ///   applies it to both consumers instead of one.)
 /// - **`ProjectCurve`** is not a vendor family at all; it is
-///   geometrically a 3D contour trace. Ball / tapered-ball tools route to
-///   `(Parallel, Finish)`, flat tools to `(Contour, Finish)`, and bull
-///   nose / V-bit / facing bits **refuse** — the LUT has no rows for
-///   those and inventing a family would be worse than saying so.
+///   geometrically a 3D contour trace. Ball, tapered-ball and bull-nose
+///   tools route to `(Parallel, Finish)`, and flat tools to `(Contour,
+///   Finish)`. A bull nose has no printed Parallel row: the G3 family rule
+///   (`extrapolation::family`, A3 step 4) serves the query from the Amana
+///   corner-radius pocket row. V-bit and facing bits **refuse**: the LUT
+///   has no rows for those, and a made-up family is worse than a refusal.
 ///
 /// # Why this function exists, and what it cost before it did
 ///
@@ -90,11 +92,11 @@ pub fn lut_query_for(
         return Some((operation_family, pass_role));
     }
     match tool_family {
-        ToolFamily::BallNose | ToolFamily::TaperedBallNose => {
+        ToolFamily::BallNose | ToolFamily::TaperedBallNose | ToolFamily::BullNose => {
             Some((LutOperationFamily::Parallel, LutPassRole::Finish))
         }
         ToolFamily::FlatEnd => Some((LutOperationFamily::Contour, LutPassRole::Finish)),
-        ToolFamily::BullNose | ToolFamily::ChamferVbit | ToolFamily::FacingBit => None,
+        ToolFamily::ChamferVbit | ToolFamily::FacingBit => None,
     }
 }
 
@@ -105,10 +107,6 @@ pub fn lut_query_for(
 #[must_use]
 pub fn missing_project_curve_rows(tool_family: ToolFamily) -> &'static str {
     match tool_family {
-        ToolFamily::BullNose => {
-            "the vendor LUT publishes no bull-nose contour/parallel rows for a curve-following \
-             pass (it has bull-nose adaptive, pocket and scallop rows only)"
-        }
         ToolFamily::ChamferVbit => {
             "the vendor LUT publishes no V-bit contour/parallel rows for a curve-following pass \
              (its V-bit rows are v-carve and trace rows, whose engagement is set by depth, not \
@@ -117,9 +115,10 @@ pub fn missing_project_curve_rows(tool_family: ToolFamily) -> &'static str {
         ToolFamily::FacingBit => {
             "the vendor LUT publishes no facing-bit rows outside the Face family"
         }
-        ToolFamily::FlatEnd | ToolFamily::BallNose | ToolFamily::TaperedBallNose => {
-            "no rows are missing for this cutter class — it is not refused"
-        }
+        ToolFamily::FlatEnd
+        | ToolFamily::BallNose
+        | ToolFamily::TaperedBallNose
+        | ToolFamily::BullNose => "no rows are missing for this cutter class — it is not refused",
     }
 }
 
@@ -143,7 +142,7 @@ pub fn op_family_to_lut(family: OperationFamily) -> LutOperationFamily {
 /// Convert a FeedsInput to a LookupQuery for vendor LUT lookup.
 ///
 /// **Returns `None` when [`lut_query_for`] refuses** — today, a
-/// `ProjectCurve` on a bull-nose, V-bit or facing cutter. Checkpoint K
+/// `ProjectCurve` on a V-bit or facing cutter. Checkpoint K
 /// (a4) ruled that refusal in on the Suggest side as well as the gate's:
 /// 378 recommendations that used to carry a confident vendor band on a
 /// surface the gate would not judge become honest no-vendor-data. The
@@ -473,5 +472,35 @@ mod tests {
         let query = to_lookup_query(&input).expect("no routing refusal in this fixture");
         assert_eq!(query.material_family, MaterialFamily::Mdf);
         assert_eq!(query.hardness_value, Some(1100.0));
+    }
+
+    /// A3 step 4 (G3): a `ProjectCurve` on a bull nose routes to
+    /// `(Parallel, Finish)` with the ball and the tapered ball. A V-bit and a
+    /// facing bit still refuse.
+    #[test]
+    fn project_curve_routes_a_bull_nose_to_parallel_finish() {
+        let declared = (LutOperationFamily::Trace, LutPassRole::Finish);
+        for family in [
+            ToolFamily::BullNose,
+            ToolFamily::BallNose,
+            ToolFamily::TaperedBallNose,
+        ] {
+            assert_eq!(
+                lut_query_for(OperationType::ProjectCurve, family, declared.0, declared.1),
+                Some((LutOperationFamily::Parallel, LutPassRole::Finish)),
+                "{family:?}"
+            );
+            assert_eq!(
+                missing_project_curve_rows(family),
+                "no rows are missing for this cutter class — it is not refused"
+            );
+        }
+        for family in [ToolFamily::ChamferVbit, ToolFamily::FacingBit] {
+            assert_eq!(
+                lut_query_for(OperationType::ProjectCurve, family, declared.0, declared.1),
+                None,
+                "{family:?}"
+            );
+        }
     }
 }

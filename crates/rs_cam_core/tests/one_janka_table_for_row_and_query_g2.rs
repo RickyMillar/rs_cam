@@ -236,7 +236,6 @@ fn a_hardwood_row_with_no_janka_reads_the_query_table_g2() {
     assert!((law_scale - 1.554_563_175_515).abs() < 1e-11, "{law_scale}");
     assert_eq!(*from, JankaFrom::FamilyGeneric);
     assert_eq!(cap.family, ToolFamily::FlatEnd);
-    assert!(!cap.borrowed_from_flat);
     assert!((soft.chip_load_min_mm.unwrap() - 0.508_508).abs() < 1e-11);
     assert!((soft.chip_load_max_mm.unwrap() - 0.581_152).abs() < 1e-11);
     assert!(soft.is_extrapolated, "the raw ratio 2.42 is past 1.4");

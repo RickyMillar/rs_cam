@@ -137,7 +137,7 @@ pub fn explain(input: &FeedsInput<'_>) -> FeedsExplain {
     let machine = MachineEnvelope::from_machine(input.machine);
 
     // Checkpoint K (a4) — `to_lookup_query` can now REFUSE (a
-    // `ProjectCurve` on a bull-nose / V-bit / facing cutter has no vendor
+    // `ProjectCurve` on a V-bit / facing cutter has no vendor
     // family). The modal then shows the formula-fallback state with the
     // unrouted query echoed for context; `recommended.warnings` carries
     // `NoVendorRowsForRoutedOperation`, which is what the modal prints.

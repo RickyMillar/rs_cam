@@ -7,9 +7,11 @@
 //! (`feeds::extrapolation::FAMILY_RULES`) carries the home row into each
 //! family that it serves, at x1.00 (copy semantics).
 //!
-//! This file holds the tapered arms of the sentry (A3 steps 2 and 3). Step
-//! 4 adds the arms (a), (c), (g) and (h).
+//! The tapered arms are from A3 steps 2 and 3. Step 4 adds the bull-nose
+//! rule (the Amana corner-radius chart) and the arms (a), (c), (g) and (h).
 //!
+//! - (a) `FAMILY_RULES` holds exactly one rule for the bull nose and one for
+//!   the tapered ball; there is no ball-nose rule (ruling B3).
 //! - (b) For each routed operation of a served family (Profile, Waterline,
 //!   SteepShallow, Trace, Pencil, Adaptive, DropCutter, Scallop), at both
 //!   home sizes and in the four judged woods, the recipe and the envelope
@@ -19,6 +21,10 @@
 //!   the home row too. One exception: in MDF a printed Parallel row wins
 //!   (SpeTool at 3.175 mm on score, Amana ZrN v8 at 6.35 mm on the tie
 //!   rule), and the arm pins that row as `Printed`.
+//! - (c) A 6.0 mm bull nose on a DropCutter in hardwood reads the 6.35 mm
+//!   Amana corner-radius pocket row through two claims: the family claim
+//!   and a G1 form C size claim. The band is the home band x the size scale
+//!   x the hardness scale, on both resolvers and at the modulator's door.
 //! - (d) On a tapered Trace in hardwood, Suggest, the envelope resolver and
 //!   the modulator's door read the same row and the same band, and the card
 //!   states the rule and the row.
@@ -28,15 +34,24 @@
 //! - (f) A3 step 3: each rule has one row per (source, material, diameter,
 //!   flutes), filed under the rule's home. The LUT holds no copy of a
 //!   printed cell in another family.
+//! - (g) The B3 pin: a 3.175 mm ball nose on a DropCutter in hardwood still
+//!   reads the derived `amana-ball-hardwood-parallel-3175-2f` row, printed
+//!   in its family, with no transfer.
+//! - (h) A bull-nose finish pass in plywood refuses with
+//!   `support::BULL_FINISH_PLYWOOD` (the chart prints no plywood column). A
+//!   `ProjectCurve` on a bull nose routes; on a V-bit it still refuses.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::feeds::extrapolation::{FAMILY_RULE_TEXT, FAMILY_RULES, FamilyBasis};
+use rs_cam_core::feeds::extrapolation::{
+    FAMILY_RULE_TEXT, FAMILY_RULES, FamilyBasis, HardnessBasis,
+};
 use rs_cam_core::feeds::suggest::{
     StockContext, SuggestContext, SuggestParamsInput, feeds_input_for_operation, suggest_params,
 };
+use rs_cam_core::feeds::support::BULL_FINISH_PLYWOOD;
 use rs_cam_core::feeds::vendor_lookup::{
     LookupQuery, LookupResult, find_best_chip_envelope_row, find_best_row_for_geometry,
 };
@@ -44,7 +59,9 @@ use rs_cam_core::feeds::vendor_lut::{
     HardnessKind, LutOperationFamily, LutPassRole, MaterialFamily, ToolFamily, VendorLut,
 };
 use rs_cam_core::feeds::vendor_normalize::to_lookup_query;
-use rs_cam_core::feeds::{EMBEDDED_LUT, FeedsSupport, SpindleStrategy, ToolGeometryHint};
+use rs_cam_core::feeds::{
+    EMBEDDED_LUT, FeedsSupport, SpindleStrategy, ToolGeometryHint, feeds_support,
+};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, PlywoodGrade, SheetGoodKind, WoodSpecies};
@@ -60,6 +77,21 @@ fn tapered(tip_mm: f64) -> ToolConfig {
     t.cutting_length = (tip_mm * 3.0).max(12.0);
     t.taper_half_angle = 7.0;
     t.shank_diameter = (tip_mm + 3.0).max(6.0);
+    t.shaft_diameter = t.shank_diameter;
+    t.stickout = t.cutting_length + 8.0;
+    t
+}
+
+/// A bull nose of diameter `d` with a corner radius of `d / 4` (the Amana
+/// 46460 and 46462 proportion; derived, see the row notes).
+fn bull(d: f64) -> ToolConfig {
+    let mut t = ToolConfig::new_default(ToolId(1), ToolType::BullNose);
+    t.diameter = d;
+    t.flute_count = 2;
+    t.corner_radius = d / 4.0;
+    t.corner_radius_mm = d / 4.0;
+    t.cutting_length = (d * 3.0).max(12.0);
+    t.shank_diameter = d.max(6.0);
     t.shaft_diameter = t.shank_diameter;
     t.stickout = t.cutting_length + 8.0;
     t
@@ -241,6 +273,10 @@ fn a_rule_has_one_row_per_printed_cell_g3() {
             // 4 sheets x 2 tip diameters.
             assert_eq!(cells.len(), 8, "{cells:?}");
         }
+        if rule.tool_family == ToolFamily::BullNose {
+            // 2 diameters (1/4 and 1/2 in) x softwood, hardwood and MDF.
+            assert_eq!(cells.len(), 6, "{cells:?}");
+        }
     }
 }
 
@@ -387,4 +423,208 @@ fn a_printed_row_wins_a_tie_over_a_transfer_g3() {
             assert_eq!(row.family_basis, FamilyBasis::Printed);
         }
     }
+}
+
+/// (a) One rule per tool family that has a chart with no operation: the
+/// bull nose and the tapered ball. No ball-nose rule (ruling B3).
+#[test]
+fn the_rules_are_the_bull_and_the_tapered_ball_g3() {
+    let families: Vec<ToolFamily> = FAMILY_RULES.iter().map(|r| r.tool_family).collect();
+    assert_eq!(families.len(), 2, "{families:?}");
+    assert!(families.contains(&ToolFamily::BullNose), "{families:?}");
+    assert!(
+        families.contains(&ToolFamily::TaperedBallNose),
+        "{families:?}"
+    );
+    let bull = FAMILY_RULES
+        .iter()
+        .find(|r| r.tool_family == ToolFamily::BullNose)
+        .expect("a bull rule");
+    assert_eq!(bull.source_ids, &["amana_corner_radius_spiral_plunge_2f"]);
+    assert_eq!(bull.tool_subfamily, "corner_radius");
+    assert_eq!(
+        bull.home,
+        (LutOperationFamily::Pocket, LutPassRole::Roughing)
+    );
+    assert_eq!(
+        bull.serves,
+        &[
+            LutOperationFamily::Adaptive,
+            LutOperationFamily::Contour,
+            LutOperationFamily::Parallel,
+            LutOperationFamily::Scallop,
+            LutOperationFamily::Trace,
+        ]
+    );
+    assert_eq!(bull.printed_mm, (6.35, 12.7));
+}
+
+/// (c) A 6.0 mm bull nose on a DropCutter in hardwood: the family claim and
+/// a G1 form C size claim on the 6.35 mm home row. The row prints Janka
+/// 1450 and the query is `GenericHardwood` 1450, so the hardness scale is
+/// 1.0. The band is 0.127-0.1778 x (6.0 / 6.35)^0.61 = 0.122683-0.171756.
+#[test]
+fn a_bull_finish_reads_the_home_row_through_two_claims_g3() {
+    const HOME: &str = "amana-bull-hardwood-pocket-6350-2f-cr";
+    let tool = bull(6.0);
+    let material = Material::SolidWood {
+        species: WoodSpecies::GenericHardwood,
+    };
+    let machine = MachineProfile::default();
+    let stock = StockContext {
+        stock_top_z: 0.0,
+        stock_bottom_z: -18.0,
+        stock_z: 18.0,
+        stock_padding: 2.0,
+    };
+    let s = suggest_params(SuggestParamsInput {
+        op_type: OperationType::DropCutter,
+        tool: &tool,
+        machine: &machine,
+        material: &material,
+        lut: &EMBEDDED_LUT,
+        stock_ctx: &stock,
+        spindle_strategy: SpindleStrategy::default(),
+        context: SuggestContext::default(),
+    })
+    .expect("a bull DropCutter in hardwood ships through the family claim");
+    let FeedsSupport::FamilyTransferred { family, size } = &s.feeds_result.support else {
+        panic!(
+            "expected FamilyTransferred, got {:?}",
+            s.feeds_result.support
+        );
+    };
+    assert_eq!(family.source_rows, vec![HOME.to_owned()]);
+    assert_eq!(
+        family.query,
+        (LutOperationFamily::Parallel, LutPassRole::Finish)
+    );
+    let size = size
+        .as_ref()
+        .expect("6.0 on the 6.35 mm row is a size claim");
+    assert_eq!(size.form.name(), "C", "{size:?}");
+    let expected_scale = (6.0_f64 / 6.35).powf(0.61);
+    assert!((size.scale - expected_scale).abs() < 1e-12, "{size:?}");
+    let (headline, detail) = s.feeds_result.support.card_text();
+    assert!(
+        headline.starts_with(
+            "vendor row, family transferred (G3 family): the pocket row serves this parallel \
+             pass; "
+        ),
+        "{headline}"
+    );
+    assert!(detail.starts_with(FAMILY_RULE_TEXT), "{detail}");
+    assert!(detail.contains(HOME), "{detail}");
+
+    let recipe = s
+        .feeds_result
+        .matched_lut_row
+        .as_ref()
+        .expect("a vendor row answered");
+    assert_eq!(recipe.observation_id, HOME);
+    assert_eq!(recipe.hardness_basis, HardnessBasis::Unscaled, "{recipe:?}");
+    let hardness = recipe.chipload_hardness_scale;
+    assert!((hardness - 1.0).abs() < TOL, "{recipe:?}");
+    let min = 0.127 * size.scale * hardness;
+    let max = 0.1778 * size.scale * hardness;
+    assert!((min - 0.122_683).abs() < 1e-6, "{min}");
+    assert!((max - 0.171_756).abs() < 1e-6, "{max}");
+    assert!((recipe.chip_load_min_mm.expect("min") - min).abs() < 1e-12);
+    assert!((recipe.chip_load_max_mm.expect("max") - max).abs() < 1e-12);
+
+    let [recipe2, envelope] = both_rows(OperationType::DropCutter, &tool, &material);
+    for row in [&recipe2, &envelope] {
+        assert_eq!(row.observation_id, HOME);
+        assert_eq!(row.family_basis, recipe.family_basis);
+        assert_eq!(row.size_basis, recipe.size_basis);
+        assert_eq!(row.chip_load_min_mm, recipe.chip_load_min_mm);
+        assert_eq!(row.chip_load_max_mm, recipe.chip_load_max_mm);
+    }
+    let door = chipload_envelope_for_toolpath(
+        &material,
+        &tool,
+        &OperationConfig::new_default(OperationType::DropCutter),
+        ToolpathId(0),
+        None,
+    )
+    .expect("the modulator's door reads the transferred band");
+    assert!((door.start - min).abs() < 1e-12, "{door:?}");
+    assert!((door.end - max).abs() < 1e-12, "{door:?}");
+}
+
+/// (g) The B3 pin: the ball nose has no family rule, so a 3.175 mm ball on a
+/// DropCutter in hardwood keeps the derived row printed in its family.
+#[test]
+fn the_ball_finish_row_is_not_transferred_b3_pin_g3() {
+    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
+    tool.diameter = 3.175;
+    tool.flute_count = 2;
+    tool.cutting_length = 12.0;
+    tool.shank_diameter = 3.175;
+    tool.shaft_diameter = 3.175;
+    tool.stickout = 20.0;
+    let material = Material::SolidWood {
+        species: WoodSpecies::GenericHardwood,
+    };
+    for row in both_rows(OperationType::DropCutter, &tool, &material) {
+        assert_eq!(row.observation_id, "amana-ball-hardwood-parallel-3175-2f");
+        assert_eq!(row.family_basis, FamilyBasis::Printed);
+    }
+}
+
+/// (h) A bull-nose finish in plywood refuses with the plywood text, on a
+/// DropCutter (declared Parallel) and on a `ProjectCurve` (declared Trace,
+/// routed to Parallel). A `ProjectCurve` on a V-bit still refuses the
+/// routing.
+#[test]
+fn a_plywood_bull_finish_refuses_and_a_vbit_curve_still_refuses_g3() {
+    let machine = MachineProfile::default();
+    let plywood = Material::Plywood {
+        grade: PlywoodGrade::BalticBirch,
+    };
+    let tool = bull(6.0);
+    for op in [OperationType::DropCutter, OperationType::ProjectCurve] {
+        let input = feeds_input_for_operation(
+            &OperationConfig::new_default(op),
+            &tool,
+            &plywood,
+            &machine,
+            &EMBEDDED_LUT,
+            SpindleStrategy::MatchChart,
+        );
+        let query = to_lookup_query(&input).expect("a bull nose routes on every operation");
+        assert_eq!(
+            (query.operation_family, query.pass_role),
+            (LutOperationFamily::Parallel, LutPassRole::Finish),
+            "{op:?}"
+        );
+        assert!(
+            find_best_row_for_geometry(&EMBEDDED_LUT, &query, &input.tool_geometry).is_none(),
+            "{op:?}: no bull row serves a plywood finish"
+        );
+        match feeds_support(&input) {
+            FeedsSupport::Refuse { reason } => assert_eq!(reason, BULL_FINISH_PLYWOOD, "{op:?}"),
+            other => panic!("{op:?}: expected the plywood refusal, got {other:?}"),
+        }
+    }
+
+    let mut vbit = ToolConfig::new_default(ToolId(1), ToolType::VBit);
+    vbit.diameter = 6.35;
+    vbit.flute_count = 2;
+    vbit.included_angle = 60.0;
+    let hardwood = Material::SolidWood {
+        species: WoodSpecies::GenericHardwood,
+    };
+    let input = feeds_input_for_operation(
+        &OperationConfig::new_default(OperationType::ProjectCurve),
+        &vbit,
+        &hardwood,
+        &machine,
+        &EMBEDDED_LUT,
+        SpindleStrategy::MatchChart,
+    );
+    assert!(
+        to_lookup_query(&input).is_none(),
+        "a ProjectCurve on a V-bit still refuses the routing"
+    );
 }
