@@ -398,7 +398,7 @@ Ruling B2. Plan and the orchestrator's decisions 1-7: `P2_PLAN.md`.
 |---|---|
 | 1b69ceaa | Steps 1-2: 40 Onsrud 37-series V-bit rows (MDF, hard and soft plywood, laminated chipboard -> particleboard) and 15 Amana ball v7 pocket rows; 441 -> 496 rows. Strict V-bit judgement (decision 2). |
 | a32ea149 | Step 3: one Janka table. A solid-wood row with no Janka reads `WoodSpecies::GenericSoftwood` (600) or `GenericHardwood` (1450); the composite categories take no hardness scale. |
-| TODO (not committed) | Step 4: the soft/hard cap, `feeds/extrapolation/hardness.rs`. |
+| 2a398130 | Step 4: the soft/hard cap, `feeds/extrapolation/hardness.rs`. |
 
 ### Amendment 7 (step 1, measured)
 
