@@ -191,6 +191,14 @@ fn run(finish_stepover: f64) -> RestArmResult {
     let mut session = cascade_session(finish_stepover);
     let cancel = AtomicBool::new(false);
     generate(&mut session, 0);
+    // G-RESTRES: the project stores the ONE cell every simulation reads.
+    let _ = session
+        .apply(rs_cam_core::session::Command::SetSimulationResolution(
+            rs_cam_core::session::SetSimulationResolutionArgs {
+                resolution: rs_cam_core::session::SimulationResolution::Fixed(SIM_CELL_MM),
+            },
+        ))
+        .expect("a positive cell");
     session
         .run_simulation(
             &SimulationOptions {

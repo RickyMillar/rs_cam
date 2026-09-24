@@ -716,6 +716,14 @@ fn run_single_op_arm(
         .unwrap_or_else(|e| panic!("{label}: generation failed: {e:?}"));
     let gen_s = t0.elapsed().as_secs_f64();
 
+    // G-RESTRES: the project stores the ONE cell every simulation reads.
+    let _ = session
+        .apply(rs_cam_core::session::Command::SetSimulationResolution(
+            rs_cam_core::session::SetSimulationResolutionArgs {
+                resolution: rs_cam_core::session::SimulationResolution::Fixed(sim_mm),
+            },
+        ))
+        .expect("a positive cell");
     let opts = SimulationOptions {
         resolution: sim_mm,
         ..Default::default()
@@ -790,6 +798,14 @@ fn run_cascade_arm(
     let mut session = builder.build();
 
     let cancel = AtomicBool::new(false);
+    // G-RESTRES: the project stores the ONE cell every simulation reads.
+    let _ = session
+        .apply(rs_cam_core::session::Command::SetSimulationResolution(
+            rs_cam_core::session::SetSimulationResolutionArgs {
+                resolution: rs_cam_core::session::SimulationResolution::Fixed(sim_mm),
+            },
+        ))
+        .expect("a positive cell");
     let opts = SimulationOptions {
         resolution: sim_mm,
         ..Default::default()
@@ -1623,6 +1639,14 @@ fn run_probe_arm(label: &str, op: OperationConfig, sim_mm: f64) -> ProbeArm {
     session
         .generate_toolpath(0, &cancel)
         .unwrap_or_else(|e| panic!("{label}: generation failed: {e:?}"));
+    // G-RESTRES: the project stores the ONE cell every simulation reads.
+    let _ = session
+        .apply(rs_cam_core::session::Command::SetSimulationResolution(
+            rs_cam_core::session::SetSimulationResolutionArgs {
+                resolution: rs_cam_core::session::SimulationResolution::Fixed(sim_mm),
+            },
+        ))
+        .expect("a positive cell");
     session
         .run_simulation(
             &SimulationOptions {

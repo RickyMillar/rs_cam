@@ -9,7 +9,6 @@
       "move_count": 64,
       "source_stock": {
         "cell_mm": 0.5,
-        "metrics": true,
         "stock_digest": "f458a84ed55e097f",
         "after": [
           {

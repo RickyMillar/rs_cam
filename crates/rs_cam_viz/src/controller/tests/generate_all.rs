@@ -369,12 +369,7 @@ fn a_gui_simulation_reaches_the_session_so_start_sees_the_prior_stock_n12_item10
     );
 
     assert!(
-        {
-            // G-RESTRES: only the metrics carve (the kernel the CLI and MCP
-            // use) leaves a snapshot a rest operation may read.
-            controller.state.simulation.set_metric_capture_enabled(true);
-            controller.run_simulation_with_all()
-        },
+        controller.run_simulation_with_all(),
         "the simulation must submit, or this arm measures nothing"
     );
     controller.drain_compute_results();
@@ -465,12 +460,7 @@ fn a_save_keeps_the_simulation_so_a_rest_op_still_starts_wp17() {
     controller.submit_toolpath_compute(ids[0]);
     controller.drain_compute_results();
     assert!(
-        {
-            // G-RESTRES: only the metrics carve (the kernel the CLI and MCP
-            // use) leaves a snapshot a rest operation may read.
-            controller.state.simulation.set_metric_capture_enabled(true);
-            controller.run_simulation_with_all()
-        },
+        controller.run_simulation_with_all(),
         "the simulation must submit, or this arm measures nothing"
     );
     controller.drain_compute_results();

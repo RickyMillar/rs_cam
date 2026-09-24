@@ -1941,7 +1941,7 @@ impl<B: ComputeBackend> AppController<B> {
                     return;
                 }
                 // The last simulation leaves no snapshot behind.
-                if self.run_simulation_all(false, true) {
+                if self.run_simulation_all(false) {
                     if let Some(plan) = self.plan.as_mut() {
                         plan.simulations += 1;
                     }

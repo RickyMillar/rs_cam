@@ -296,7 +296,6 @@ impl<B: ComputeBackend> AppController<B> {
         stock_bbox: BoundingBox3,
         _model_setup_idx: Option<usize>,
         memoize_prefix: bool,
-        for_plan: bool,
     ) {
         let _ = all_tools_flat;
         // G-RESTRES: ONE stored project value sets the cell of every
@@ -315,17 +314,6 @@ impl<B: ComputeBackend> AppController<B> {
 
         if self.state.simulation.metric_options.enabled {
             self.state.simulation.metric_options.capture_arc_engagement = true;
-        }
-        // G-RESTRES: a plan's simulation feeds rest operations, so it carves
-        // with the cutting-metrics kernel whatever the panel's capture toggle
-        // says. The two kernels leave different stock, and the CLI and MCP
-        // always carve with metrics; a rest snapshot records which kernel
-        // made it, and only the metrics carve is current. The toggle stays a
-        // view choice for a plain Run Simulation.
-        let mut metric_options = self.state.simulation.metric_options;
-        if for_plan {
-            metric_options.enabled = true;
-            metric_options.capture_arc_engagement = true;
         }
 
         // G-LATESIM (F2.10): record the project's edit state as it is NOW,
@@ -362,7 +350,7 @@ impl<B: ComputeBackend> AppController<B> {
                 stock_bbox,
                 stock_top_z: stock_bbox.max.z,
                 resolution: request_resolution,
-                metric_options,
+                metric_options: self.state.simulation.metric_options,
                 spindle_rpm: self.state.gui.post.spindle_speed,
                 rapid_feed_mm_min: if self.state.gui.post.high_feedrate_mode {
                     self.state.gui.post.high_feedrate.max(1.0)
@@ -382,7 +370,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// submitted. A plan step must know that, or it would wait forever for a
     /// completion that will never drain.
     pub(crate) fn run_simulation_with_all(&mut self) -> bool {
-        self.run_simulation_all(false, false)
+        self.run_simulation_all(false)
     }
 
     /// [`Self::run_simulation_with_all`] with the S5 prefix memo and the
@@ -391,10 +379,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// `memoize_prefix` is `false` for the plan's CLOSING simulation: it is
     /// the last one and leaves nothing behind. Only
     /// [`Self::run_simulation_prefix`] memoises.
-    ///
-    /// `for_plan` is `true` for a plan's closing simulation: it carves with
-    /// the metrics kernel, so the rest snapshots it leaves stay current.
-    pub(crate) fn run_simulation_all(&mut self, memoize_prefix: bool, for_plan: bool) -> bool {
+    pub(crate) fn run_simulation_all(&mut self, memoize_prefix: bool) -> bool {
         let Some((groups, all_tools_flat, stock_bbox)) =
             self.build_simulation_groups(|_setup_idx, tc| tc.enabled, |_setup_idx| false)
         else {
@@ -411,7 +396,6 @@ impl<B: ComputeBackend> AppController<B> {
             stock_bbox,
             Some(0),
             memoize_prefix,
-            for_plan,
         );
         true
     }
@@ -439,7 +423,6 @@ impl<B: ComputeBackend> AppController<B> {
             stock_bbox,
             Some(setup_idx),
             memoize_prefix,
-            true,
         );
         true
     }
@@ -482,7 +465,6 @@ impl<B: ComputeBackend> AppController<B> {
             &all_tools_flat,
             stock_bbox,
             Some(target_setup_idx),
-            false,
             false,
         );
     }

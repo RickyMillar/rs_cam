@@ -1256,6 +1256,7 @@ pub(super) fn build_session_from_project(
         simulation_epoch: 0,
         simulation: None,
         simulation_resolution: project.job.simulation.resolution(),
+        rest_identity_enforced: true,
         next_toolpath_id,
         next_tool_id,
         next_setup_id,

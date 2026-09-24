@@ -1314,6 +1314,10 @@ pub struct ProjectSession {
     /// of the project runs at [`Self::simulation_resolution_mm`]. Saved as
     /// `[job.simulation] resolution_mm`; see [`SimulationResolution`].
     pub(crate) simulation_resolution: SimulationResolution,
+    /// `false` on a WHAT-IF copy (the optimizer's private session): the
+    /// rest-stock identity rule is not enforced there. See
+    /// [`Self::what_if_copy`].
+    pub(crate) rest_identity_enforced: bool,
 
     // ID generators (max existing ID + 1)
     pub(crate) next_toolpath_id: usize,
@@ -1353,6 +1357,7 @@ impl ProjectSession {
             simulation_epoch: 0,
             simulation: None,
             simulation_resolution: SimulationResolution::Auto,
+            rest_identity_enforced: true,
             next_toolpath_id: 0,
             next_tool_id: 0,
             next_setup_id: 1,

@@ -777,6 +777,14 @@ fn run_single_case_inner(
 
     let cancel = AtomicBool::new(false);
 
+    // G-RESTRES: the smoke cell is the project's ONE stored simulation cell,
+    // so a chained case's rest snapshot is current.
+    let _ = session.apply(rs_cam_core::session::Command::SetSimulationResolution(
+        rs_cam_core::session::SetSimulationResolutionArgs {
+            resolution: rs_cam_core::session::SimulationResolution::Fixed(resolution),
+        },
+    ));
+
     // ONE `SimulationOptions` value serves both the priming pass and the
     // measurement pass, so the two dexel grids are the same grid. Hoisted
     // above the measured-case materialisation for exactly that reason.

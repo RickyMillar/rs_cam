@@ -231,6 +231,14 @@ fn cascade_session() -> ProjectSession {
 
 fn simulate(session: &mut ProjectSession, cell_mm: f64) {
     let cancel = AtomicBool::new(false);
+    // G-RESTRES: the project stores the ONE cell every simulation reads.
+    let _ = session
+        .apply(rs_cam_core::session::Command::SetSimulationResolution(
+            rs_cam_core::session::SetSimulationResolutionArgs {
+                resolution: rs_cam_core::session::SimulationResolution::Fixed(cell_mm),
+            },
+        ))
+        .expect("a positive cell");
     session
         .run_simulation(
             &SimulationOptions {

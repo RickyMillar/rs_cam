@@ -138,14 +138,6 @@ pub struct SourceStock {
     /// requests give equal grids. The cell the grid actually used is on
     /// `ToolpathStats::stock_snapshot`.
     pub cell_mm: f64,
-    /// The simulation carved with the cutting-metrics kernel.
-    ///
-    /// The metrics kernel and the plain kernel leave DIFFERENT stock
-    /// (measured 2026-09-24 on the G-RESTRES parity fixture: the snapshot
-    /// digests differ with every other input equal). The CLI and MCP always
-    /// carve with metrics, and the GUI's capture toggle is a view choice, so
-    /// a rest snapshot is current only when this is `true`.
-    pub metrics: bool,
     /// Every toolpath the simulation carved before the consumer, in carve
     /// order: every earlier setup group, then the rows above it.
     pub after: Vec<SourceEntry>,
@@ -175,7 +167,6 @@ pub fn snapshot_sources(
                     phantom_id,
                     SourceStock {
                         cell_mm: request.resolution,
-                        metrics: request.metric_options.enabled,
                         after: carved.clone(),
                     },
                 );
@@ -185,7 +176,6 @@ pub fn snapshot_sources(
                     entry.id,
                     SourceStock {
                         cell_mm: request.resolution,
-                        metrics: request.metric_options.enabled,
                         after: carved.clone(),
                     },
                 );
@@ -200,7 +190,6 @@ pub fn snapshot_sources(
                 phantom_id,
                 SourceStock {
                     cell_mm: request.resolution,
-                    metrics: request.metric_options.enabled,
                     after: carved.clone(),
                 },
             );
@@ -219,8 +208,6 @@ pub fn snapshot_sources(
 pub struct SourceStockWire {
     /// The cell the simulation was asked for, in mm.
     pub cell_mm: f64,
-    /// The simulation carved with the cutting-metrics kernel.
-    pub metrics: bool,
     /// The content digest of the snapshot the generation read
     /// (`ToolpathStats::stock_snapshot`), or `None` when none was stamped.
     pub stock_digest: Option<String>,
@@ -246,7 +233,6 @@ impl SourceStockWire {
     ) -> Self {
         Self {
             cell_mm: source.cell_mm,
-            metrics: source.metrics,
             stock_digest: stamp.map(|s| format!("{:016x}", s.digest)),
             after: source
                 .after

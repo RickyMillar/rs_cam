@@ -342,6 +342,14 @@ fn swept_wanaka_ab_s1() {
             break;
         }
         let t_round = Instant::now();
+        // G-RESTRES: the project stores the ONE cell every simulation reads.
+        let _ = s
+            .apply(rs_cam_core::session::Command::SetSimulationResolution(
+                rs_cam_core::session::SetSimulationResolutionArgs {
+                    resolution: rs_cam_core::session::SimulationResolution::Fixed(resolution),
+                },
+            ))
+            .expect("a positive cell");
         if let Err(e) = s.run_simulation(&sim_options(resolution), &cancel) {
             println!(
                 "S1AB mode={mode} scope=project metric=ladder_sim_error \
@@ -386,6 +394,14 @@ fn swept_wanaka_ab_s1() {
 
     // ── Final simulation over the complete chain ──
     let t_sim = Instant::now();
+    // G-RESTRES: the project stores the ONE cell every simulation reads.
+    let _ = s
+        .apply(rs_cam_core::session::Command::SetSimulationResolution(
+            rs_cam_core::session::SetSimulationResolutionArgs {
+                resolution: rs_cam_core::session::SimulationResolution::Fixed(resolution),
+            },
+        ))
+        .expect("a positive cell");
     if let Err(e) = s.run_simulation(&sim_options(resolution), &cancel) {
         println!("S1AB mode={mode} scope=project metric=final_sim_error text=\"{e}\"");
         return;

@@ -230,6 +230,14 @@ fn run_cascade(tool: ToolConfig, sim_resolution: f64, rest_claims: RestArm) -> C
     let cancel = AtomicBool::new(false);
 
     generate(&mut session, 0);
+    // G-RESTRES: the project stores the ONE cell every simulation reads.
+    let _ = session
+        .apply(rs_cam_core::session::Command::SetSimulationResolution(
+            rs_cam_core::session::SetSimulationResolutionArgs {
+                resolution: rs_cam_core::session::SimulationResolution::Fixed(sim_resolution),
+            },
+        ))
+        .expect("a positive cell");
     session
         .run_simulation(
             &SimulationOptions {
@@ -560,6 +568,14 @@ fn the_footgun_produces_a_caution_diagnostic_naming_the_consequence() {
     );
     let cancel = AtomicBool::new(false);
     generate(&mut session, 0);
+    // G-RESTRES: the project stores the ONE cell every simulation reads.
+    let _ = session
+        .apply(rs_cam_core::session::Command::SetSimulationResolution(
+            rs_cam_core::session::SetSimulationResolutionArgs {
+                resolution: rs_cam_core::session::SimulationResolution::Fixed(0.2),
+            },
+        ))
+        .expect("a positive cell");
     session
         .run_simulation(
             &SimulationOptions {
@@ -622,6 +638,14 @@ fn the_derived_resolution_is_reported_as_info() {
     );
     let cancel = AtomicBool::new(false);
     generate(&mut session, 0);
+    // G-RESTRES: the project stores the ONE cell every simulation reads.
+    let _ = session
+        .apply(rs_cam_core::session::Command::SetSimulationResolution(
+            rs_cam_core::session::SetSimulationResolutionArgs {
+                resolution: rs_cam_core::session::SimulationResolution::Fixed(0.2),
+            },
+        ))
+        .expect("a positive cell");
     session
         .run_simulation(
             &SimulationOptions {

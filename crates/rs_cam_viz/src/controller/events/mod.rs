@@ -1538,7 +1538,8 @@ impl<B: ComputeBackend> AppController<B> {
 
         // The walk mutates what it scores, so it needs a session of its
         // own. It takes a COPY; the view keeps the original.
-        let session = self.state.session.clone();
+        // G-RESTRES: the optimizer searches on a what-if copy.
+        let session = self.state.session.what_if_copy();
         // The stamp runs AFTER the exclusivity call, for the reason
         // `open_optimize_modal` records: the rule spares a RUNNING
         // Optimize, so a stamp before it would spare the previous settled

@@ -722,7 +722,8 @@ impl ProjectSession {
             })?;
         Ok(OptimizeToolpathHandle {
             index,
-            session: self.clone(),
+            // G-RESTRES: a what-if copy (`ProjectSession::what_if_copy`).
+            session: self.what_if_copy(),
             trace,
             // WP29 — a SILENT sink at the construction site. A caller that
             // wants to read the search's progress attaches its own with

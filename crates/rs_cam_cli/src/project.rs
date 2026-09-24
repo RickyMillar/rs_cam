@@ -1357,7 +1357,6 @@ mod tests {
             // G-RESTRES: a rest record, so its shape is pinned below.
             source_stock: Some(rs_cam_core::compute::source_stock::SourceStockWire {
                 cell_mm: 0.25,
-                metrics: true,
                 stock_digest: Some("00000000000000ab".to_owned()),
                 after: vec![rs_cam_core::compute::source_stock::SourceEntryWire {
                     id: rs_cam_core::ToolpathId(3),
@@ -1413,7 +1412,6 @@ mod tests {
   },
   "source_stock": {
     "cell_mm": 0.25,
-    "metrics": true,
     "stock_digest": "00000000000000ab",
     "after": [
       {

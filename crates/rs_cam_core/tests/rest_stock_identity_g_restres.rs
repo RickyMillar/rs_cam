@@ -108,9 +108,9 @@ fn simulate_at(session: &mut ProjectSession, cell_mm: f64) {
     let cancel = AtomicBool::new(false);
     let opts = SimulationOptions {
         resolution: cell_mm,
-        // The rest identity requires the metrics carve, the kernel the CLI
-        // and MCP always use.
-        metrics_enabled: true,
+        // Metrics observe the carve and never change it
+        // (`metric_and_plain_carve_agree_g_restres.rs`).
+        metrics_enabled: false,
         adaptive_feed_modulation: false,
         ..SimulationOptions::default()
     };

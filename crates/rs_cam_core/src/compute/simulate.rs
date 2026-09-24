@@ -1192,14 +1192,22 @@ struct CarveEnv<'a> {
 
 /// CMP-18 seam: remove one entry's material from the group stock.
 ///
-/// Three kernels, chosen by the entry and the request:
+/// Two kernels, chosen by the entry:
 ///
 /// - a drill entry removes its cone/cylinder envelope analytically and
 ///   emits the drill-native per-peck samples and per-toolpath summary;
-/// - a metric-enabled milling entry stamps per segment and accumulates
-///   `SimulationCutSample`s;
-/// - a metric-disabled milling entry stamps per segment and accumulates
-///   nothing but rapid hits.
+/// - a milling entry takes the ONE milling carve, the metric route. With
+///   metrics off the samples are dropped, not the route: metrics OBSERVE
+///   the carve and never choose it.
+///
+/// G-RESTRES (operator ruling 2026-09-24, "mcp and gui should cut the
+/// same"). A metric-disabled entry used to take the playback replay
+/// (`simulate_toolpath_with_lut_cancel_rapid_checked`), a different
+/// stamping route that also stamps `Retract` feeds. The two left different
+/// stock: 15 Z rays by up to 2.2 mm on the parity fixture's plunge ring
+/// (`tests/metric_and_plain_carve_agree_g_restres.rs`). The GUI's
+/// "Capture cutting metrics" toggle therefore changed the stock a rest
+/// operation read, and the CLI and MCP always carve with metrics.
 ///
 /// Every kernel appends its rapid hits to the run. The caller advances
 /// `total_moves` afterwards, so `run.total_moves` still reads as this
@@ -1232,7 +1240,7 @@ fn carve_entry(
             crate::ops::drill_metrics::build_drill_toolpath_summary(entry.id, drill_op_arc, &pecks);
         run.drill_samples_all.extend(pecks);
         run.drill_summaries_all.push(summary);
-    } else if env.request.metric_options.enabled {
+    } else {
         let entry_rpm = entry.spindle_rpm.unwrap_or(env.request.spindle_rpm);
         // F2.2 (defect class C3): honor `spans_valid`. When a
         // transform invalidated the spans (legacy invalidators;
@@ -1283,25 +1291,11 @@ fn carve_entry(
                 Some(&mut rapid_check),
             )
             .map_err(|_cancelled| SimulationError::Cancelled)?;
-        run.cut_samples.append(&mut samples);
-        collect_rapid_hits(
-            rapid_check,
-            run.total_moves,
-            &mut run.rapid_collisions,
-            &mut run.rapid_collision_move_indices,
-        );
-    } else {
-        let mut rapid_check = RapidClearanceCheck::new(entry.tool.as_ref());
-        group_stock
-            .simulate_toolpath_with_lut_cancel_rapid_checked(
-                entry_toolpath,
-                env.lut,
-                env.radius,
-                env.direction,
-                &|| env.cancel.load(Ordering::SeqCst),
-                Some(&mut rapid_check),
-            )
-            .map_err(|_cancelled| SimulationError::Cancelled)?;
+        // Metrics observe: with capture off the carve is the same, and the
+        // samples go nowhere.
+        if env.request.metric_options.enabled {
+            run.cut_samples.append(&mut samples);
+        }
         collect_rapid_hits(
             rapid_check,
             run.total_moves,

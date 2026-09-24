@@ -674,6 +674,14 @@ fn verdict_delta_probe_on_the_committed_fixture() {
     let mut session = ProjectSession::load(&path).expect("test_job.toml loads");
 
     let cancel = AtomicBool::new(false);
+    // G-RESTRES: the project stores the ONE cell every simulation reads.
+    let _ = session
+        .apply(rs_cam_core::session::Command::SetSimulationResolution(
+            rs_cam_core::session::SetSimulationResolutionArgs {
+                resolution: rs_cam_core::session::SimulationResolution::Fixed(0.5),
+            },
+        ))
+        .expect("a positive cell");
     let opts = SimulationOptions {
         resolution: 0.5,
         skip_ids: Vec::new(),

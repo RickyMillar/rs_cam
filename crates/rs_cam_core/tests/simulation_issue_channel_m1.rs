@@ -207,6 +207,14 @@ fn issue_channel_census_synthetic_2d() {
             .generate_toolpath(i, &cancel)
             .unwrap_or_else(|e| panic!("generate {name}: {e:?}"));
     }
+    // G-RESTRES: the project stores the ONE cell every simulation reads.
+    let _ = session
+        .apply(rs_cam_core::session::Command::SetSimulationResolution(
+            rs_cam_core::session::SetSimulationResolutionArgs {
+                resolution: rs_cam_core::session::SimulationResolution::Fixed(0.5),
+            },
+        ))
+        .expect("a positive cell");
     session
         .run_simulation(&sim_options(0.5), &cancel)
         .expect("simulation completes");
@@ -353,6 +361,14 @@ fn engagement_is_unmeasurable_below_the_fresh_material_floor() {
     let cancel = AtomicBool::new(false);
     session.generate_toolpath(0, &cancel).expect("gen shallow");
     session.generate_toolpath(1, &cancel).expect("gen deep");
+    // G-RESTRES: the project stores the ONE cell every simulation reads.
+    let _ = session
+        .apply(rs_cam_core::session::Command::SetSimulationResolution(
+            rs_cam_core::session::SetSimulationResolutionArgs {
+                resolution: rs_cam_core::session::SimulationResolution::Fixed(0.5),
+            },
+        ))
+        .expect("a positive cell");
     session
         .run_simulation(&sim_options(0.5), &cancel)
         .expect("simulation completes");
@@ -473,12 +489,28 @@ fn rivers_b4_probe_project_curve_on_remaining_stock() {
 
     let cancel = AtomicBool::new(false);
     let _ = session.generate_all(&[], &cancel);
+    // G-RESTRES: the project stores the ONE cell every simulation reads.
+    let _ = session
+        .apply(rs_cam_core::session::Command::SetSimulationResolution(
+            rs_cam_core::session::SetSimulationResolutionArgs {
+                resolution: rs_cam_core::session::SimulationResolution::Fixed(0.5),
+            },
+        ))
+        .expect("a positive cell");
     session
         .run_simulation(&sim_options(0.5), &cancel)
         .expect("simulation completes");
     // FromRemainingStock ops need the simulated upstream stock, so
     // regenerate after the first sim and re-simulate.
     let _ = session.generate_all(&[], &cancel);
+    // G-RESTRES: the project stores the ONE cell every simulation reads.
+    let _ = session
+        .apply(rs_cam_core::session::Command::SetSimulationResolution(
+            rs_cam_core::session::SetSimulationResolutionArgs {
+                resolution: rs_cam_core::session::SimulationResolution::Fixed(0.5),
+            },
+        ))
+        .expect("a positive cell");
     session
         .run_simulation(&sim_options(0.5), &cancel)
         .expect("second simulation completes");

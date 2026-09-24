@@ -808,6 +808,14 @@ struct ArmRead {
 
 fn simulate(session: &mut ProjectSession, modulation: bool) {
     let cancel = AtomicBool::new(false);
+    // G-RESTRES: the project stores the ONE cell every simulation reads.
+    let _ = session
+        .apply(rs_cam_core::session::Command::SetSimulationResolution(
+            rs_cam_core::session::SetSimulationResolutionArgs {
+                resolution: rs_cam_core::session::SimulationResolution::Fixed(SIM_CELL_MM),
+            },
+        ))
+        .expect("a positive cell");
     session
         .run_simulation(
             &SimulationOptions {
@@ -997,6 +1005,14 @@ fn modulation_default_is_on_and_closes_the_two_dropcutter_residuals() {
         session
             .generate_toolpath(1, &cancel)
             .expect("measured op generates");
+        // G-RESTRES: the project stores the ONE cell every simulation reads.
+        let _ = session
+            .apply(rs_cam_core::session::Command::SetSimulationResolution(
+                rs_cam_core::session::SetSimulationResolutionArgs {
+                    resolution: rs_cam_core::session::SimulationResolution::Fixed(SIM_CELL_MM),
+                },
+            ))
+            .expect("a positive cell");
         session
             .run_simulation(
                 &SimulationOptions {
@@ -1313,6 +1329,16 @@ fn arc_fit_arms_gate_observation() {
         // result, re-checked here because this file leans on it).
         if fx_index == 0 {
             let cancel = AtomicBool::new(false);
+            // G-RESTRES: the project stores the ONE cell every simulation reads.
+            let _ = session
+                .apply(rs_cam_core::session::Command::SetSimulationResolution(
+                    rs_cam_core::session::SetSimulationResolutionArgs {
+                        resolution: rs_cam_core::session::SimulationResolution::Fixed(
+                            SIM_CELL_MM * 2.0,
+                        ),
+                    },
+                ))
+                .expect("a positive cell");
             session
                 .run_simulation(
                     &SimulationOptions {

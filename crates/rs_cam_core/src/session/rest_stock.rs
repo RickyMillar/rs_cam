@@ -15,9 +15,7 @@
 //!
 //! A [`SourceStock`] is current for a consumer when all three hold:
 //!
-//! 1. its cell is [`ProjectSession::simulation_resolution_mm`], and the
-//!    simulation carved with the cutting-metrics kernel (the one the CLI and
-//!    MCP always use);
+//! 1. its cell is [`ProjectSession::simulation_resolution_mm`];
 //! 2. every toolpath it carved is still enabled, still holds a result, and
 //!    that result carries the same moves;
 //! 3. every enabled toolpath before the consumer (all earlier setups, then
@@ -76,9 +74,6 @@ pub enum SnapshotMiss {
         /// The project's cell, in mm.
         project_mm: f64,
     },
-    /// The simulation carved without the cutting-metrics kernel, which
-    /// leaves different stock from the one the CLI and MCP carve.
-    NoMetricsCarve,
     /// A toolpath the snapshot carved has changed, or a toolpath it did not
     /// carve now cuts before the consumer.
     SourceMoved {
@@ -100,9 +95,6 @@ impl SnapshotMiss {
                 "the simulated stock is at {snapshot_mm:.3} mm cells and the project \
                  resolution is {project_mm:.3} mm"
             ),
-            Self::NoMetricsCarve => {
-                "the simulated stock was carved without cutting metrics".to_owned()
-            }
             Self::SourceMoved { toolpath } => {
                 format!("'{toolpath}' changed after the stock was simulated")
             }
@@ -205,6 +197,9 @@ impl ProjectSession {
         if !sim.prior_stocks.contains_key(&id) {
             return Err(SnapshotMiss::Missing);
         }
+        if !self.rest_identity_enforced {
+            return Ok(());
+        }
         let Some(source) = sim.prior_stock_sources.get(&id) else {
             return Err(SnapshotMiss::Missing);
         };
@@ -226,9 +221,6 @@ impl ProjectSession {
                 snapshot_mm: source.cell_mm,
                 project_mm,
             });
-        }
-        if !source.metrics {
-            return Err(SnapshotMiss::NoMetricsCarve);
         }
         // (2) every carved toolpath is unchanged.
         for entry in &source.after {
@@ -297,7 +289,6 @@ impl ProjectSession {
         }
         Some(SourceStock {
             cell_mm: self.simulation_resolution_mm(),
-            metrics: true,
             after,
         })
     }
@@ -355,6 +346,9 @@ impl ProjectSession {
     /// drop can make a later record name a toolpath that no longer holds a
     /// result.
     pub(crate) fn drop_out_of_date_rest_results(&mut self) {
+        if !self.rest_identity_enforced {
+            return;
+        }
         loop {
             let hits = self.rest_results_out_of_date();
             if hits.is_empty() {
@@ -428,6 +422,24 @@ impl ProjectSession {
                  the resolution to {required} mm or finer, or to auto."
             )
         })
+    }
+
+    /// A private copy for a WHAT-IF search: the optimizer's session.
+    ///
+    /// The optimizer writes a candidate's parameters, regenerates it and
+    /// re-simulates at its own search cells, once per candidate, and it
+    /// needs the other results to STAND while it does (the narrow apply
+    /// path). The rest-stock identity rule would drop those results and
+    /// refuse a rest candidate whose snapshot sits at a search cell. The
+    /// copy is never adopted back: only its scores leave it, and every
+    /// surface runs the same search on the same copy, so GUI, MCP and CLI
+    /// still agree. On the copy, a snapshot is current when it exists (the
+    /// rule before G-RESTRES) and no rest result is swept.
+    #[must_use]
+    pub fn what_if_copy(&self) -> ProjectSession {
+        let mut copy = self.clone();
+        copy.rest_identity_enforced = false;
+        copy
     }
 
     /// The door of `Command::SetSimulationResolution`.
