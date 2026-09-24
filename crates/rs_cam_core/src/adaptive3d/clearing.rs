@@ -366,6 +366,9 @@ fn build_material_bool_grid(
         }
     };
     let wall_slope = FIT_WALL_SLOPE_DEG.to_radians();
+    // The fit rule v2 classes of a clip level, for the debug log: the part
+    // above the slab, a steep wall inside it, a gentle floor inside it.
+    let (mut above, mut steep, mut gentle) = (0usize, 0usize, 0usize);
 
     for row in 0..rows {
         for col in 0..cols {
@@ -376,8 +379,18 @@ fn build_material_bool_grid(
             // keep-out.
             if let Some(ko) = keep_out.as_mut() {
                 let floor = surf_z + stock_to_leave;
-                let blocked = floor > z_level
-                    && (floor >= slab_top_z || slope_map.angle_at(row, col) >= wall_slope);
+                let blocked = if floor <= z_level {
+                    false
+                } else if floor >= slab_top_z {
+                    above += 1;
+                    true
+                } else if slope_map.angle_at(row, col) >= wall_slope {
+                    steep += 1;
+                    true
+                } else {
+                    gentle += 1;
+                    false
+                };
                 if blocked {
                     ko[(row + 1) * padded_cols + (col + 1)] = true;
                     continue;
@@ -398,6 +411,13 @@ fn build_material_bool_grid(
                 padded_grid[(row + 1) * padded_cols + (col + 1)] = true;
             }
         }
+    }
+
+    if keep_out.is_some() {
+        debug!(
+            z = z_level,
+            slab_top_z, above, steep, gentle, "fit rule v2: cells with the floor above the level"
+        );
     }
 
     MaterialBoolGrid {
@@ -430,8 +450,9 @@ fn build_material_bool_grid(
 /// one tool diameter (`min_extent_cells`) is dropped: the next tier takes
 /// it, so a coarse tier never makes a deep entry for a small patch.
 ///
-/// Returns the field (0 outside the kept eligible area) and the kept
-/// eligible mask, which also bounds the raster cleanup of the level.
+/// Returns the field (0 outside the kept eligible area), the kept eligible
+/// mask, which also bounds the raster cleanup of the level, and for the
+/// debug log the kept part count and the eligible cells before the drop.
 #[allow(clippy::indexing_slicing)] // SAFETY: every index is below rows * cols
 fn clip_offset_field(
     material: &[bool],
@@ -441,7 +462,7 @@ fn clip_offset_field(
     first_threshold: f64,
     margin_cells: f64,
     min_extent_cells: f64,
-) -> (Vec<f64>, Vec<bool>, usize) {
+) -> (Vec<f64>, Vec<bool>, (usize, usize)) {
     let n = rows * cols;
     let air: Vec<bool> = material
         .iter()
@@ -457,6 +478,7 @@ fn clip_offset_field(
     let mut eligible: Vec<bool> = (0..n)
         .map(|i| material[i] && d_keep_out[i] >= margin_cells)
         .collect();
+    let before_drop = eligible.iter().filter(|&&e| e).count();
     let parts = drop_small_components(&mut eligible, rows, cols, min_extent_cells);
     let field = (0..n)
         .map(|i| {
@@ -467,7 +489,7 @@ fn clip_offset_field(
             }
         })
         .collect();
-    (field, eligible, parts)
+    (field, eligible, (parts, before_drop))
 }
 
 /// Clear every 8-connected `true` component of `mask` whose bounding box is
@@ -857,7 +879,7 @@ pub(super) fn clear_z_level_contour_parallel(
         }
         Some(keep_out) => {
             let margin_cells = 2.0 * ctx.tool_radius * ctx.link_margin_diameters / cell_size;
-            let (field, eligible, parts) = clip_offset_field(
+            let (field, eligible, (parts, before_drop)) = clip_offset_field(
                 &material_grid,
                 keep_out,
                 rows,
@@ -870,6 +892,7 @@ pub(super) fn clear_z_level_contour_parallel(
                 z = z_level,
                 parts,
                 cells = eligible.iter().filter(|&&e| e).count(),
+                eligible_before_drop = before_drop,
                 "CP: clip level eligible parts"
             );
             (field, Some(eligible))

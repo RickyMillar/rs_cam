@@ -39,7 +39,7 @@
 //!   the next tier at one level is at least one tool diameter wide, and
 //!   each finer tier cuts in closed runs.
 //! - A6 (plan Phase 2b): with `[10, 5]` + 1 each clip tier removes a real
-//!   share of the volume. With a uniform margin tier 1 removed 0.7 %.
+//!   share of the volume. With a uniform margin tier 1 removed 0.0 %.
 //! - A7 (plan Phase 2c): in the interior of the shallow pocket D, tier 0
 //!   cuts the whole depth in one pass to the floor, and no other level
 //!   removes material there.
@@ -729,10 +729,10 @@ fn assert_ladder_claims(label: &str, coarse: &[f64], dpp: f64, base_run: &Run) {
     // margin gives each finer tier its own band of one diameter. With a
     // uniform margin every clip tier eroded from the same keep-out by the
     // same distance, so the finer tier could not enter the band of the
-    // coarser tier: on this fixture tier 1 of `[10, 5]` removed 0.7 % of
-    // the volume (uniform) against 25.9 % (graded); tier 0 removed 15.6 %
-    // (graded). The bound of 10 % sits between the two with room for
-    // either side.
+    // coarser tier: on this fixture (with pocket D and the fit rule v2)
+    // tier 1 of `[10, 5]` removed 0.0 % of the volume (uniform) against
+    // 27.6 % (graded); tier 0 removed 16.7 % (graded). The bound of 10 %
+    // sits between the two with room for either side.
     for t in 0..base_index {
         let share = r.stats[&t].removed_mm3 / total_removed.max(1e-9);
         eprintln!(
