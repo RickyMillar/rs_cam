@@ -277,3 +277,6 @@ cutter_constraints.rs (via Suggest), tool_load/optimize/axes.rs (the base
 step is probably right), viz pills.rs and feeds/compare.rs. Until then a
 coarse step is invisible to Suggest and to the axial envelope. Owner: the
 extrapolation session.
+Ruling (operator, relayed by the feeds/dial session, 2026-09-24): "I think
+its ok that it caps it. if its too deep, its too deep." Every ladder step
+over the axial envelope cap is clamped to the cap, and the card says so.
