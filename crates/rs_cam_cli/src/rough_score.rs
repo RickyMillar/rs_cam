@@ -111,7 +111,15 @@ impl AccelTime {
 /// `length / feed` time base of the cut-trace samples.
 #[derive(Debug, Serialize)]
 pub(crate) struct SimNominal {
+    /// Which feeds the sample times read. The samples carry the feed the
+    /// simulation ran at, before the modulation. `accel_time` reads the
+    /// modulated feeds, so the two blocks can read different feeds. Use
+    /// `--no-adaptive-feed-modulation` to put both blocks on one feed set.
+    pub feeds_basis: &'static str,
     pub total_runtime_s: f64,
+    /// The time of every sample that engages at feed, entries and links
+    /// included. It is not the `accel_time.cutting_s` bucket, which holds
+    /// only the clearing, finishing and drilling intents.
     pub cutting_runtime_s: f64,
     /// Time-weighted mean radial engagement over the CUTTING time. The
     /// shipped `average_engagement`. `null` when the toolpath has no
@@ -142,7 +150,9 @@ pub(crate) struct MoveCounts {
     pub entry_runs: usize,
     /// `entry_runs` split by the intent of the first move of the run.
     pub entry_runs_by_kind: BTreeMap<String, usize>,
-    /// Runs of `MoveIntent::Retract` moves.
+    /// Runs of `MoveIntent::Retract` moves, at feed or rapid. The
+    /// integrator puts a rapid retract in `rapid_s`, so `accel_time.retract_s`
+    /// holds only the feed retracts.
     pub retract_runs: usize,
     /// Moves that rise from below `top_z_mm` to `top_z_mm`. The toolpath
     /// does not carry its safe Z, so the command uses the highest Z the
@@ -327,6 +337,7 @@ pub(crate) fn score_session(
             profile.max_feed_mm_min,
             rapid_feed_mm_min,
         );
+        check_session_clock(trace, tc.id, &breakdown);
         let pool = trace.and_then(|t| SimPool::of_toolpath(t, tc.id));
         let sim_nominal = pool.as_ref().map(SimPool::report);
         let counts = count_moves(toolpath);
@@ -381,6 +392,33 @@ pub(crate) fn score_session(
         awaiting_prior_stock: walk.blocked,
     };
     Ok(ScoreReport { toolpaths, total })
+}
+
+/// Warn when the accel time differs from the time the session published.
+///
+/// On a machine with a `kinematics` block the modulation re-time writes
+/// `runtime_by_intent` from the same IR and the same machine mapping. A
+/// difference means that the two mappings of the machine disagree.
+fn check_session_clock(
+    trace: Option<&SimulationCutTrace>,
+    id: ToolpathId,
+    breakdown: &CycleTimeBreakdown,
+) {
+    let Some(published) = trace
+        .and_then(|t| t.toolpath_summaries.iter().find(|s| s.toolpath_id == id))
+        .and_then(|s| s.runtime_by_intent)
+    else {
+        return;
+    };
+    let delta = (published.total_s - breakdown.total_s).abs();
+    if delta > 1e-6 * breakdown.total_s.max(1.0) {
+        tracing::warn!(
+            toolpath = %id,
+            accel_total_s = breakdown.total_s,
+            session_total_s = published.total_s,
+            "the rough-score accel time differs from the session's published cycle time"
+        );
+    }
 }
 
 /// `a / b`, or `None` when `b` is zero or the answer is not finite.
@@ -605,6 +643,7 @@ impl SimPool {
         // command divides the weighted sum by the total time directly, so
         // the two figures share one numerator and one time base.
         SimNominal {
+            feeds_basis: "commanded: the feed each sample ran at, before the modulation",
             total_runtime_s: self.total_runtime_s,
             cutting_runtime_s: self.cutting_runtime_s,
             average_engagement_over_cutting_s: ratio(
