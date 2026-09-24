@@ -98,9 +98,8 @@ pub enum EntryStyle3d {
 /// The cutter and the XY frame it works in: what cuts, how wide it steps,
 /// and where it may not go.
 pub struct Adaptive3dGeometry {
-    /// Engagement radius — the cutter's actual contact radius at the
-    /// deepest step of the ladder ([`Adaptive3dDepth::deepest_step`]) below
-    /// the tip. Used for stepover, region detection,
+    /// Engagement radius — the cutter's actual contact radius at
+    /// `depth_per_pass` below the tip. Used for stepover, region detection,
     /// and material clearing modeling. For flat/ball cutters this equals the
     /// nominal radius; for tapered cutters it is narrower than the shank
     /// radius.
@@ -142,7 +141,6 @@ pub struct Adaptive3dGeometry {
 /// The Z plan: how deep each pass goes and which extra levels join the
 /// ladder.
 pub struct Adaptive3dDepth {
-    /// The base step of the ladder: the last, finest entry. It drapes.
     pub depth_per_pass: f64,
     /// Vertical (Z) leave-stock offset above the surface heightmap —
     /// the only stock-to-leave axis this planner supports. All uses key
@@ -160,36 +158,7 @@ pub struct Adaptive3dDepth {
     /// surface-derived floor.
     pub z_floor: Option<f64>,
     /// Detect flat areas in the mesh and insert Z levels at shelf heights.
-    /// A shelf level is also a slab boundary of the step ladder.
     pub detect_flat_areas: bool,
-    /// The coarser steps of the step ladder, coarsest first, e.g. `[10.0]`
-    /// with `depth_per_pass` 5.0, or `[10.0, 5.0]` with `depth_per_pass`
-    /// 1.0. Each entry is larger than the next entry and larger than
-    /// `depth_per_pass`. An empty list gives the single-step plan.
-    ///
-    /// A coarse step cuts its slab where the floor is below the slab, and
-    /// cuts a gentle floor inside the slab down to the floor in one pass
-    /// (the fit rule v2). A steep wall is a keep-out for it; the finer
-    /// steps cut the wall band. `depth_per_pass` is the base step: it drapes to the
-    /// surface as before. The adapter refuses a list that is not strictly
-    /// descending; the planner trusts it. See
-    /// `planning/adaptive3d_step_ladder_roughing_2026-09-24/PLAN.md` §3.
-    pub coarse_steps: Vec<f64>,
-}
-
-impl Adaptive3dDepth {
-    /// The deepest axial bite the ladder commands:
-    /// `max(coarse_steps ∪ {depth_per_pass})`.
-    ///
-    /// Every reader that treats the pass depth as "the deepest bite" must
-    /// read this value, not `depth_per_pass`. Otherwise a coarse bite is
-    /// invisible to it (D7 in the step-ladder plan).
-    pub fn deepest_step(&self) -> f64 {
-        self.coarse_steps
-            .iter()
-            .copied()
-            .fold(self.depth_per_pass, f64::max)
-    }
 }
 
 /// What the planner does between cuts: the order it takes the regions in,
@@ -311,50 +280,6 @@ pub struct ZLevelPlanMetrics {
     pub dropped_short_region_count: usize,
 }
 
-/// The step-ladder tier of one Z level (Phase 0 observability).
-///
-/// `index` 0 is the coarsest tier. The last tier (`index == total - 1`) is
-/// the base tier: it drapes to the surface. Every other tier clips to the
-/// cells that the fit rule v2 admits: the slab fits, or a gentle floor lies
-/// inside the slab. A single-step plan has
-/// one tier, and its levels are base-tier levels.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct LadderTier {
-    pub index: usize,
-    pub total: usize,
-    /// The step of this tier in mm.
-    pub step_mm: f64,
-    /// True for a clip (coarse) tier, false for the base (drape) tier.
-    pub clip: bool,
-}
-
-impl LadderTier {
-    /// The one tier of a single-step plan.
-    pub fn single(step_mm: f64) -> Self {
-        Self {
-            index: 0,
-            total: 1,
-            step_mm,
-            clip: false,
-        }
-    }
-
-    /// A label suffix for a multi-tier plan; empty for a single-step plan,
-    /// so that the labels of today's plans do not change.
-    pub fn label_suffix(&self) -> String {
-        if self.total <= 1 {
-            return String::new();
-        }
-        format!(
-            " — tier {}/{} {} {:.1} mm",
-            self.index + 1,
-            self.total,
-            if self.clip { "clip" } else { "drape" },
-            self.step_mm
-        )
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum Adaptive3dRuntimeEvent {
     RegionStart {
@@ -367,16 +292,12 @@ pub enum Adaptive3dRuntimeEvent {
         z_level: f64,
         level_index: usize,
         level_total: usize,
-        /// The step-ladder tier of this level.
-        tier: LadderTier,
         metrics: ZLevelPlanMetrics,
     },
     GlobalZLevel {
         z_level: f64,
         level_index: usize,
         level_total: usize,
-        /// The step-ladder tier of this level.
-        tier: LadderTier,
         metrics: ZLevelPlanMetrics,
     },
     WaterlineCleanup,
@@ -435,24 +356,17 @@ impl Adaptive3dRuntimeEvent {
                 z_level,
                 level_index,
                 level_total,
-                tier,
                 metrics: _,
             } => format!(
-                "Region {region_index} — Z {:.1} ({level_index}/{level_total}){}",
-                z_level,
-                tier.label_suffix()
+                "Region {region_index} — Z {:.1} ({level_index}/{level_total})",
+                z_level
             ),
             Self::GlobalZLevel {
                 z_level,
                 level_index,
                 level_total,
-                tier,
                 metrics: _,
-            } => format!(
-                "Adaptive Z {:.1} ({level_index}/{level_total}){}",
-                z_level,
-                tier.label_suffix()
-            ),
+            } => format!("Adaptive Z {:.1} ({level_index}/{level_total})", z_level),
             Self::WaterlineCleanup => "Waterline cleanup".to_owned(),
             Self::PassEntry {
                 pass_index,

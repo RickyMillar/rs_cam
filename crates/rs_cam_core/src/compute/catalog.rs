@@ -1128,18 +1128,6 @@ impl OperationConfig {
         self.as_params().depth_per_pass()
     }
 
-    /// The deepest axial bite the operation commands. It is
-    /// [`Self::depth_per_pass`] for every operation except a 3D Rough with
-    /// a step ladder, where a coarse step bites deeper than
-    /// `depth_per_pass` (D7 in the step-ladder plan). A check or a
-    /// narration that compares a bite against "the pass depth" reads this.
-    pub fn deepest_axial_step(&self) -> Option<f64> {
-        match self {
-            Self::Adaptive3d(cfg) => Some(cfg.deepest_step()),
-            _ => self.depth_per_pass(),
-        }
-    }
-
     pub fn total_depth(&self) -> Option<f64> {
         self.as_params().total_depth()
     }
@@ -1185,8 +1173,7 @@ impl OperationConfig {
     ///
     /// A list field (type `vec<…>`) that serde skips when it is empty reads
     /// back as `[]`, not `null`. `null` is not a value of a list, so an
-    /// agent that sent the read value back got a refusal
-    /// (`Adaptive3dConfig::coarse_steps`, step-ladder Phase 4).
+    /// agent that sent the read value back got a refusal.
     pub fn params_value_including_nulls(&self) -> serde_json::Value {
         let mut value = serde_json::to_value(self).unwrap_or_else(|_| serde_json::json!({}));
         let mut params = value

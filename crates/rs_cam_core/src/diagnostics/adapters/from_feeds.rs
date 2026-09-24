@@ -416,9 +416,7 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
 ///
 /// Inputs:
 /// - `feed_rate_mm_min` / `stepover` / `dpp` — the toolpath's
-///   commanded values (zero / `None` skips the check). `dpp` is the
-///   deepest axial step (`OperationConfig::deepest_axial_step`): the
-///   depth per pass, or the coarsest step of a 3D Rough step ladder.
+///   commanded values (zero / `None` skips the check)
 /// - `recommendation` — the calculator output for the same op
 pub fn heuristic_hints_from_recommendation(
     tp_id: ToolpathId,
@@ -493,11 +491,10 @@ pub fn heuristic_hints_from_recommendation(
             tp_id,
             ids::FEEDS_DPP_VS_LUT,
             format!(
-                "Deepest axial step {dpp:.2} mm is {ratio:.1}× recommendation \
-                 ({rec_axial:.2})",
+                "Depth/pass {dpp:.2} mm is {ratio:.1}× recommendation ({rec_axial:.2})",
                 ratio = dpp / rec_axial
             ),
-            "deepest_axial_step",
+            "depth_per_pass",
             dpp,
             "recommended",
             rec_axial,

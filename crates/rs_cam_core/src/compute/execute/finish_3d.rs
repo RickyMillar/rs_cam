@@ -41,73 +41,6 @@ pub(super) fn adaptive3d_effective_stock_to_leave(
     cfg.stock_to_leave_axial
 }
 
-/// The refusal for the step ladder of an adaptive3d operation (plan §3.1,
-/// §3.7), or `None` when the ladder is good.
-///
-/// The planner trusts the ladder; the adapter is the one gate, through
-/// [`check_adaptive3d_step_ladder`]. The GUI validation reads this same
-/// function, so the Generate button and the generator say the same
-/// sentence. A refusal names the bad value, so the operator can correct it.
-///
-/// - Each coarse step is finite and above zero.
-/// - The list is strictly descending, and its last entry is larger than
-///   `depth_per_pass` (the base step).
-/// - A non-empty ladder runs on `contour_parallel` only (ruled
-///   2026-09-24). Another strategy refuses; it does not fall back.
-pub fn adaptive3d_step_ladder_refusal(
-    cfg: &crate::compute::operation_configs::Adaptive3dConfig,
-) -> Option<String> {
-    if cfg.coarse_steps.is_empty() {
-        return None;
-    }
-    if cfg.clearing_strategy != crate::compute::operation_configs::ClearingStrategy::ContourParallel
-    {
-        return Some(format!(
-            "3D Rough: the step ladder (coarse_steps {:?}) runs on the contour parallel \
-             strategy only; the selected strategy is {:?}. Clear coarse_steps or select \
-             contour parallel.",
-            cfg.coarse_steps, cfg.clearing_strategy
-        ));
-    }
-    let mut finer_than = f64::INFINITY;
-    for &step in &cfg.coarse_steps {
-        if !step.is_finite() || step <= 0.0 {
-            return Some(format!(
-                "3D Rough: coarse step {step} is not a finite step above zero \
-                 (coarse_steps {:?}).",
-                cfg.coarse_steps
-            ));
-        }
-        if step >= finer_than {
-            return Some(format!(
-                "3D Rough: coarse_steps {:?} is not strictly descending; list the \
-                 coarsest step first.",
-                cfg.coarse_steps
-            ));
-        }
-        finer_than = step;
-    }
-    if finer_than <= cfg.depth_per_pass {
-        return Some(format!(
-            "3D Rough: each coarse step must be larger than Depth/Pass {} (the base \
-             step); coarse_steps is {:?}.",
-            cfg.depth_per_pass, cfg.coarse_steps
-        ));
-    }
-    None
-}
-
-/// Check the step ladder of an adaptive3d operation. The adapter calls
-/// this before it plans; the text is [`adaptive3d_step_ladder_refusal`].
-pub(super) fn check_adaptive3d_step_ladder(
-    cfg: &crate::compute::operation_configs::Adaptive3dConfig,
-) -> Result<(), OperationError> {
-    match adaptive3d_step_ladder_refusal(cfg) {
-        Some(msg) => Err(OperationError::Other(msg)),
-        None => Ok(()),
-    }
-}
-
 /// Adaptive3d family adapter. Cancellable; consumes `ctx.boundary`
 /// (F-027 world-stock XY bounds + machining-boundary pre-clear) and
 /// `ctx.initial_stock`; spans come from
@@ -119,7 +52,6 @@ pub(crate) fn generate_adaptive3d(
     let cfg = config_guard!(op, Adaptive3d, "generate_adaptive3d");
     let m = require_mesh(ctx.mesh, op.op_type().name())?;
     let idx = require_index(ctx.index, op.op_type().name())?;
-    check_adaptive3d_step_ladder(cfg)?;
 
     let entry_style = match cfg.entry_style {
         crate::compute::operation_configs::Adaptive3dEntryStyle::Plunge => {
@@ -162,12 +94,10 @@ pub(crate) fn generate_adaptive3d(
     // Adaptive3d spaces passes by the tool's *engagement* radius at
     // the depth-of-cut, not the envelope radius — for tapered tools
     // these differ a lot. Floor at 0.01mm to keep stepover math safe
-    // for degenerate (zero-tip) geometry. The depth is the DEEPEST step
-    // of the ladder (D7): a coarse step bites deeper than
-    // `depth_per_pass`, and on a taper the contact radius grows with it.
+    // for degenerate (zero-tip) geometry.
     let engagement_radius = ctx
         .tool_def
-        .engagement_radius_mm(cfg.deepest_step())
+        .engagement_radius_mm(cfg.depth_per_pass)
         .max(0.01);
     let params = crate::adaptive3d::Adaptive3dParams {
         geometry: crate::adaptive3d::Adaptive3dGeometry {
@@ -213,7 +143,6 @@ pub(crate) fn generate_adaptive3d(
             // meaning for surface-driven roughing).
             z_floor: ctx.heights.bottom_pinned.then_some(ctx.heights.bottom_z),
             detect_flat_areas: cfg.detect_flat_areas,
-            coarse_steps: cfg.coarse_steps.clone(),
         },
         linking: crate::adaptive3d::Adaptive3dLinking {
             region_ordering, // F-038: drop marching-squares regions whose forecast cut

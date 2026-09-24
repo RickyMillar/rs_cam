@@ -867,50 +867,44 @@ fn a_param_name_resolves_to_at_most_one_row_ui04() {
     }
 }
 
-/// Step-ladder Phase 4: the MCP wire carries `coarse_steps` as a list.
+/// The step ladder was removed on 2026-09-24 (operator ruling). The
+/// `coarse_steps` key is gone from the wire:
 ///
-/// Before the fix an empty ladder read back as `null`, and a set of
-/// `null` or of `[]` on an empty ladder was refused. The second refusal
-/// came from the setter's "was the key consumed" check: serde does not
-/// write an empty list, so the key was not in the re-serialized params.
-///
-/// This test drives the same `set_toolpath_param` door MCP uses. A `null`
-/// clears the ladder, as it clears `spindle_rpm`.
+/// - `get_operation_schema` does not list it,
+/// - the read does not publish it,
+/// - `set_toolpath_param` refuses it as an unknown name,
+/// - an old operation that sets it still loads, and the key is ignored.
 #[test]
 #[allow(clippy::indexing_slicing)]
-fn coarse_steps_round_trips_as_a_list_on_the_wire() {
+fn coarse_steps_is_gone_from_the_wire() {
     use crate::compute::operation_configs::Adaptive3dConfig;
     use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
     use crate::session::{ProjectSession, ToolpathConfig};
 
-    let ladder = |s: &ProjectSession| match &s.toolpath_configs()[0].operation {
-        OperationConfig::Adaptive3d(cfg) => cfg.coarse_steps.clone(),
-        other => panic!("expected Adaptive3d, got {other:?}"),
-    };
-    let read_back = |s: &ProjectSession| {
-        s.toolpath_configs()[0]
-            .operation
+    let schema = OperationConfig::schema_for_type(OperationType::Adaptive3d);
+    assert!(
+        !schema.params.iter().any(|p| p.name == "coarse_steps"),
+        "get_operation_schema still lists coarse_steps"
+    );
+
+    // An old operation with the key loads; the key is ignored.
+    let mut old =
+        serde_json::to_value(OperationConfig::Adaptive3d(Adaptive3dConfig::default())).unwrap();
+    old["params"]["coarse_steps"] = serde_json::json!([10.0, 5.0]);
+    let loaded: OperationConfig = serde_json::from_value(old).expect("an old operation loads");
+    assert!(
+        loaded
             .params_value_including_nulls()
             .get("coarse_steps")
-            .cloned()
-            .expect("the read publishes coarse_steps")
-    };
-
-    // The schema names the type and gives the empty list as the default.
-    let schema = OperationConfig::schema_for_type(OperationType::Adaptive3d);
-    let param = schema
-        .params
-        .iter()
-        .find(|p| p.name == "coarse_steps")
-        .expect("get_operation_schema lists coarse_steps");
-    assert_eq!(param.type_name, "vec<f64>");
-    assert_eq!(param.default, serde_json::json!([]));
+            .is_none(),
+        "the read still publishes coarse_steps"
+    );
 
     let mut s = ProjectSession::new_empty();
     let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
     let tc = ToolpathConfig {
         id: crate::ToolpathId(0),
-        name: "ladder".to_owned(),
+        name: "rough".to_owned(),
         enabled: true,
         operation: OperationConfig::Adaptive3d(Adaptive3dConfig::default()),
         dressups: Default::default(),
@@ -930,47 +924,11 @@ fn coarse_steps_round_trips_as_a_list_on_the_wire() {
         planner_origin: None,
     };
     let _ = s.add_toolpath(0, tc).unwrap();
-
-    // An empty ladder reads back as [], and [] writes back.
-    assert_eq!(read_back(&s), serde_json::json!([]));
-    let _ = s
-        .set_toolpath_param(0, "coarse_steps", serde_json::json!([]))
-        .expect("[] on an empty ladder is accepted");
-    assert!(ladder(&s).is_empty());
-
-    // A one-step ladder writes and reads back.
-    let _ = s
-        .set_toolpath_param(0, "coarse_steps", serde_json::json!([10.0]))
-        .expect("[10.0] is accepted");
-    assert_eq!(ladder(&s), vec![10.0]);
-    assert_eq!(read_back(&s), serde_json::json!([10.0]));
-
-    // [] clears it.
-    let _ = s
-        .set_toolpath_param(0, "coarse_steps", serde_json::json!([]))
-        .expect("[] clears the ladder");
-    assert!(ladder(&s).is_empty());
-
-    // null clears it too.
-    let _ = s
-        .set_toolpath_param(0, "coarse_steps", serde_json::json!([10.0, 5.0]))
-        .unwrap();
-    assert_eq!(ladder(&s), vec![10.0, 5.0]);
-    let _ = s
-        .set_toolpath_param(0, "coarse_steps", serde_json::Value::Null)
-        .expect("null clears the ladder");
-    assert!(ladder(&s).is_empty());
-
-    // A value that is not a list of numbers is still refused.
-    let err = s
-        .set_toolpath_param(0, "coarse_steps", serde_json::json!("ten"))
-        .unwrap_err()
-        .to_string();
-    assert!(err.contains("coarse_steps"), "{err}");
-
-    // An unknown name is still refused (the check the fix narrowed).
-    assert!(
-        s.set_toolpath_param(0, "not_a_param", serde_json::json!(1.0))
-            .is_err()
-    );
+    for value in [serde_json::json!([10.0]), serde_json::json!([])] {
+        let err = s
+            .set_toolpath_param(0, "coarse_steps", value.clone())
+            .expect_err("set_toolpath_param refuses coarse_steps")
+            .to_string();
+        assert!(err.contains("coarse_steps"), "{value}: {err}");
+    }
 }

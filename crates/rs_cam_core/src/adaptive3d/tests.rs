@@ -128,7 +128,6 @@ fn default_params() -> Adaptive3dParams {
             stock_top_z: 25.0,
             z_floor: None,
             detect_flat_areas: false,
-            coarse_steps: Vec::new(),
         },
         linking: Adaptive3dLinking {
             region_ordering: RegionOrdering::Global, // Disabled by default in tests — tests that need to exercise
@@ -548,14 +547,14 @@ fn test_helix_entry_no_vertical_plunge() {
     );
 }
 
-// ── The step ladder schedule (plan §3.4) ──────────────────────────────
+// ── The Z levels ──────────────────────────────────────────────────────
 
-/// The schedule of a single-step plan must be the old level loop, bit for
-/// bit: the byte-parity fixtures of every existing job depend on it. The
-/// step 0.7 and the odd stock top make the repeated subtraction drift, so a
-/// `top - k * step` form would fail here.
+/// The level plan must be the old level loop, bit for bit: the byte-parity
+/// fixtures of every existing job depend on it. The step 0.7 and the odd
+/// stock top make the repeated subtraction drift, so a `top - k * step`
+/// form would fail here.
 #[test]
-fn step_ladder_single_step_is_the_legacy_loop_bitwise() {
+fn step_levels_are_the_legacy_loop_bitwise() {
     let stock_top = 12.345_f64;
     let dpp = 0.7_f64;
     let z_bottom = -3.21_f64;
@@ -569,133 +568,11 @@ fn step_ladder_single_step_is_the_legacy_loop_bitwise() {
         legacy.push(z_bottom);
     }
 
-    let top = super::path::tier_levels(stock_top, z_bottom, dpp, 0.0);
-    let plan = super::path::plan_step_ladder(&[dpp], stock_top, &top);
+    let plan = super::path::step_levels(stock_top, z_bottom, dpp);
     assert_eq!(plan.len(), legacy.len());
     for (l, z) in plan.iter().zip(&legacy) {
-        assert_eq!(l.z.to_bits(), z.to_bits(), "level {l:?} vs legacy {z}");
-        assert_eq!(l.tier, 0);
-        assert!(!l.clip, "a single-step level is a base (drape) level");
-        assert_eq!(l.step.to_bits(), dpp.to_bits());
+        assert_eq!(l.to_bits(), z.to_bits(), "level {l} vs legacy {z}");
     }
-}
-
-/// The plan's worked example: ladder [10, 5, 1] from Z 0 to Z -10 cuts
-/// `10@-10 clip → {5@-5 clip → 1@-1..-5 drape} → {5@-10 clip → 1@-6..-10
-/// drape}`. It is NOT "all 5 mm levels, then all 1 mm levels".
-#[test]
-fn step_ladder_nests_each_slab_and_steps_down() {
-    let steps = [10.0, 5.0, 1.0];
-    let top = super::path::tier_levels(0.0, -10.0, 10.0, 0.0);
-    assert_eq!(top, vec![-10.0]);
-    let plan = super::path::plan_step_ladder(&steps, 0.0, &top);
-    let got: Vec<(f64, usize, bool)> = plan.iter().map(|l| (l.z, l.tier, l.clip)).collect();
-    let want = vec![
-        (-10.0, 0, true),
-        (-5.0, 1, true),
-        (-1.0, 2, false),
-        (-2.0, 2, false),
-        (-3.0, 2, false),
-        (-4.0, 2, false),
-        (-5.0, 2, false),
-        (-10.0, 1, true),
-        (-6.0, 2, false),
-        (-7.0, 2, false),
-        (-8.0, 2, false),
-        (-9.0, 2, false),
-        (-10.0, 2, false),
-    ];
-    assert_eq!(got.len(), want.len(), "schedule {got:?}");
-    for (g, w) in got.iter().zip(&want) {
-        assert!(
-            (g.0 - w.0).abs() < 1e-9 && g.1 == w.1 && g.2 == w.2,
-            "schedule {got:?}"
-        );
-    }
-    for l in &plan {
-        assert_eq!(l.step, steps[l.tier]);
-    }
-}
-
-/// Plan Phase 2b: the link margin is graded. Clip tier `k` of `n` clip
-/// tiers uses `(n - k)` tool diameters, so each finer tier has its own
-/// band. One clip tier keeps the single margin of before.
-#[test]
-fn step_ladder_grades_the_link_margin_per_clip_tier() {
-    let unit = super::clearing::LINK_MARGIN_TOOL_DIAMETERS;
-    let margins = |steps: &[f64]| -> Vec<(usize, f64)> {
-        let top = super::path::tier_levels(0.0, -20.0, steps[0], 0.0);
-        let plan = super::path::plan_step_ladder(steps, 0.0, &top);
-        let mut seen: Vec<(usize, f64)> = plan
-            .iter()
-            .map(|l| (l.tier, l.link_margin_diameters))
-            .collect();
-        seen.sort_by_key(|a| a.0);
-        seen.dedup();
-        seen
-    };
-    assert_eq!(margins(&[10.0, 5.0]), vec![(0, unit), (1, 0.0)]);
-    assert_eq!(
-        margins(&[10.0, 5.0, 1.0]),
-        vec![(0, 2.0 * unit), (1, unit), (2, 0.0)]
-    );
-    assert_eq!(
-        margins(&[12.0, 6.0, 3.0, 1.0]),
-        vec![(0, 3.0 * unit), (1, 2.0 * unit), (2, unit), (3, 0.0)]
-    );
-    // The single-step plan has no clip tier.
-    assert_eq!(margins(&[5.0]), vec![(0, 0.0)]);
-}
-
-/// F8: a Detect Flat shelf level is a slab boundary. The finer tier stops
-/// at the shelf and starts again below it; it never uses
-/// `z_level - depth_per_pass` as the next level.
-#[test]
-fn step_ladder_shelf_level_is_a_slab_boundary() {
-    let steps = [10.0, 5.0];
-    // Coarse boundaries -10 and -20 with a shelf at -13.
-    let top = [-10.0, -13.0, -20.0];
-    let plan = super::path::plan_step_ladder(&steps, 0.0, &top);
-    let got: Vec<(f64, usize)> = plan.iter().map(|l| (l.z, l.tier)).collect();
-    let want = [
-        (-10.0, 0),
-        (-5.0, 1),
-        (-10.0, 1),
-        (-13.0, 0),
-        (-13.0, 1),
-        (-20.0, 0),
-        (-18.0, 1),
-        (-20.0, 1),
-    ];
-    assert_eq!(got.len(), want.len(), "schedule {got:?}");
-    for (g, w) in got.iter().zip(&want) {
-        assert!((g.0 - w.0).abs() < 1e-9 && g.1 == w.1, "schedule {got:?}");
-    }
-    // Every base level lies inside its coarse slab: none below the next
-    // coarse boundary.
-    let mut slab_bottom = f64::INFINITY;
-    for l in &plan {
-        if l.tier == 0 {
-            slab_bottom = l.z;
-        } else {
-            assert!(l.z >= slab_bottom - 1e-9, "level {l:?} left its slab");
-        }
-    }
-}
-
-/// The short last step keeps its old handling: the last coarse slab ends at
-/// `z_bottom`, and the base tier ends there too.
-#[test]
-fn step_ladder_short_last_step_ends_at_z_bottom() {
-    let steps = [10.0, 5.0];
-    let z_bottom = -24.5;
-    let top = super::path::tier_levels(0.0, z_bottom, 10.0, 0.0);
-    assert_eq!(top, vec![-10.0, -20.0, z_bottom]);
-    let plan = super::path::plan_step_ladder(&steps, 0.0, &top);
-    let last = plan.last().copied().unwrap();
-    assert_eq!(last.z, z_bottom);
-    assert!(!last.clip, "the last level is a base-tier level");
-    assert!(plan.iter().all(|l| l.z >= z_bottom));
 }
 
 // ── Fix 5: Flat area detection test ────────────────────────────────
@@ -2539,11 +2416,11 @@ fn planner_sim_dexel_parity_contour_parallel_world_stock_declared() {
     );
 }
 
-/// G-LADDERANCHOR (plan Phase 2c): on prior stock the ladder starts at the
+/// G-LADDERANCHOR (plan Phase 2c): on prior stock the levels start at the
 /// top of the material that the operation can still cut, not at the stock
-/// box top. On fresh stock it stays at `stock_top_z`.
+/// box top. On fresh stock they start at `stock_top_z`.
 #[test]
-fn ladder_anchor_reads_the_top_of_the_prior_stock() {
+fn level_anchor_reads_the_top_of_the_prior_stock() {
     let (mesh, si) = make_flat_mesh(); // 50x50mm flat at z=0
     let cutter = flat_cutter();
     let cell_size = 0.5;
@@ -2560,12 +2437,12 @@ fn ladder_anchor_reads_the_top_of_the_prior_stock() {
         -1.0,
     );
     let anchor = |stock: &TriDexelStock, prior: bool| {
-        super::path::ladder_anchor_z(stock, &hm, 0.5, 14.0, prior)
+        super::path::level_anchor_z(stock, &hm, 0.5, 14.0, prior)
     };
     // Fresh stock: the box top, whatever the stock holds.
     assert_eq!(anchor(&stock, false), 14.0);
     assert_eq!(anchor(&stock, true), 14.0);
-    // A Face took the stock to Z 12: the ladder starts at Z 12.
+    // A Face took the stock to Z 12: the levels start at Z 12.
     for row in 0..stock.z_grid.rows {
         for col in 0..stock.z_grid.cols {
             crate::stock::dexel::ray_subtract_above(stock.z_grid.ray_mut(row, col), 12.0);

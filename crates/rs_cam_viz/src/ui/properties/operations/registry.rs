@@ -411,22 +411,6 @@ fn val_stepover_under_diameter(
     }
 }
 
-/// Step-ladder Phase 4: a bad `coarse_steps` ladder, or a ladder on a
-/// strategy other than Contour Parallel, disables Generate with the
-/// adapter's own sentence. The text comes from core, so the panel and the
-/// generator cannot say two things.
-fn val_adaptive3d_step_ladder(
-    op: &OperationConfig,
-    _cx: &OpValidateCtx<'_>,
-    errs: &mut Vec<String>,
-) {
-    if let OperationConfig::Adaptive3d(cfg) = op
-        && let Some(refusal) = rs_cam_core::compute::execute::adaptive3d_step_ladder_refusal(cfg)
-    {
-        errs.push(refusal);
-    }
-}
-
 fn val_needs_v_bit(op: &OperationConfig, cx: &OpValidateCtx<'_>, errs: &mut Vec<String>) {
     if cx.tool.tool_type != crate::state::job::ToolType::VBit {
         errs.push(format!("{} requires a V-Bit tool", op.op_type().name()));
@@ -545,7 +529,7 @@ pub const OP_UI_ROWS: &[OpUiRow] = &[
         op: OperationType::Adaptive3d,
         draw: ed_adaptive3d,
         diagram: OpDiagram::Draw(dia_adaptive3d),
-        validate: Some(val_adaptive3d_step_ladder),
+        validate: None,
     },
     OpUiRow {
         op: OperationType::Waterline,

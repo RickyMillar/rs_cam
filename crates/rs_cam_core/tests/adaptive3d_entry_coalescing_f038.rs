@@ -159,7 +159,6 @@ fn make_params(tool_radius: f64, min_region_cut_length_mm: f64) -> Adaptive3dPar
             stock_top_z: PEAK_Z,
             z_floor: None,
             detect_flat_areas: false,
-            coarse_steps: Vec::new(),
         },
         linking: Adaptive3dLinking {
             region_ordering: RegionOrdering::Global,

@@ -293,9 +293,7 @@ impl ProjectSession {
             toolpath_name: Some(tc.name.as_str()),
             operation_label: Some(tc.operation.label()),
             operation_kind: Some(tc.operation.op_type()),
-            // The deepest commanded bite: a step-ladder coarse step is a
-            // commanded DOC, not an anomaly against `depth_per_pass`.
-            depth_per_pass_mm: tc.operation.deepest_axial_step(),
+            depth_per_pass_mm: tc.operation.depth_per_pass(),
             stepover_mm: tc.operation.stepover(),
             tool_diameter_mm: Some(tool.diameter),
             feed_rate_mm_min: Some(tc.operation.feed_rate()),

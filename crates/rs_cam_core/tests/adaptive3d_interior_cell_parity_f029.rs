@@ -131,7 +131,6 @@ fn build_as013_terrain_session() -> ProjectSession {
         ramp_angle_deg: 3.0,
         helix_radius_factor: 0.4,
         helix_pitch: 1.0,
-        coarse_steps: Vec::new(),
         detect_flat_areas: false,
         region_ordering: RegionOrdering::Global,
         clearing_strategy: ClearingStrategy::ContourParallel,

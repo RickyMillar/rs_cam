@@ -639,18 +639,6 @@ pub struct Adaptive3dConfig {
     /// Helix entry: vertical pitch in mm. Only honored when `entry_style == Helix`.
     #[serde(default = "default_adaptive3d_helix_pitch")]
     pub helix_pitch: f64,
-    /// The coarser steps of the step ladder, coarsest first (mm). Each
-    /// entry is larger than the next one and larger than `depth_per_pass`,
-    /// which stays the base step. A coarse step cuts its slab where the
-    /// floor is below it, and cuts a gentle floor inside the slab in one
-    /// pass (fit rule v2); steep walls go to the finer steps. The base step
-    /// drapes as before. Empty =
-    /// the single-step plan. Only `contour_parallel` runs a ladder; the
-    /// adapter refuses one on another strategy. The GUI edits this key
-    /// in the 3D Rough panel ("Coarse steps"); MCP reads an empty list
-    /// as `[]`.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub coarse_steps: Vec<f64>,
     pub detect_flat_areas: bool,
     pub region_ordering: RegionOrdering,
     #[serde(default = "default_clearing_strategy")]
@@ -732,7 +720,6 @@ impl Default for Adaptive3dConfig {
             ramp_angle_deg: default_adaptive3d_ramp_angle(),
             helix_radius_factor: default_adaptive3d_helix_radius_factor(),
             helix_pitch: default_adaptive3d_helix_pitch(),
-            coarse_steps: Vec::new(),
             detect_flat_areas: false,
             region_ordering: RegionOrdering::Global,
             clearing_strategy: ClearingStrategy::ContourParallel,
@@ -747,19 +734,6 @@ impl Default for Adaptive3dConfig {
             max_stay_down_distance_mm: None,
             stay_down_clearance_mm: default_stay_down_clearance_mm(),
         }
-    }
-}
-
-impl Adaptive3dConfig {
-    /// The deepest axial bite the step ladder commands:
-    /// `max(coarse_steps ∪ {depth_per_pass})`. A reader that treats the
-    /// pass depth as the deepest bite must read this value (D7 in the
-    /// step-ladder plan).
-    pub fn deepest_step(&self) -> f64 {
-        self.coarse_steps
-            .iter()
-            .copied()
-            .fold(self.depth_per_pass, f64::max)
     }
 }
 

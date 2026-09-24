@@ -1516,7 +1516,6 @@ fn default_adaptive3d_params() -> Adaptive3dParams {
             stock_top_z: 22.0,
             z_floor: None,
             detect_flat_areas: false,
-            coarse_steps: Vec::new(),
         },
         linking: Adaptive3dLinking {
             region_ordering: RegionOrdering::Global,

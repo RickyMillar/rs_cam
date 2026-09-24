@@ -366,15 +366,8 @@ fn stepover_checks(
 
 fn depth_checks(scope: &Scope, op: &OperationConfig, tool: &ToolConfig) -> Vec<Diagnostic> {
     let mut out = Vec::new();
-    // The deepest commanded bite: a coarse step of a 3D Rough step ladder
-    // bites deeper than `depth_per_pass`, and the shank check must see it.
-    let Some(dpp) = op.deepest_axial_step() else {
+    let Some(dpp) = op.depth_per_pass() else {
         return out;
-    };
-    let what = if op.depth_per_pass().is_some_and(|base| dpp > base) {
-        "The deepest step of the step ladder"
-    } else {
-        "Depth per pass"
     };
 
     if tool.cutting_length > 0.0 && dpp > tool.cutting_length {
@@ -387,7 +380,7 @@ fn depth_checks(scope: &Scope, op: &OperationConfig, tool: &ToolConfig) -> Vec<D
             state: DiagnosticState::Current,
             source: Source::StaticValidation,
             message: format!(
-                "{what} ({dpp:.1} mm) exceeds cutting length ({:.1} mm). \
+                "Depth per pass ({dpp:.1} mm) exceeds cutting length ({:.1} mm). \
                  Tool shank will contact material.",
                 tool.cutting_length
             ),
@@ -421,7 +414,7 @@ fn depth_checks(scope: &Scope, op: &OperationConfig, tool: &ToolConfig) -> Vec<D
             state: DiagnosticState::Current,
             source: Source::StaticValidation,
             message: format!(
-                "{what} ({dpp:.1} mm) is {:.1}× the tool diameter ({:.1} mm). \
+                "Depth per pass ({dpp:.1} mm) is {:.1}× the tool diameter ({:.1} mm). \
                  The vendors print the depth de-rate to {last_ratio:.0}× diameter only. \
                  The feed and the chipload band hold the last printed point, 50 %.",
                 dpp / tool.diameter,
