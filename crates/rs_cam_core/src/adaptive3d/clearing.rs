@@ -1457,6 +1457,7 @@ pub(super) fn waterline_cleanup(
     material_stock: &mut TriDexelStock,
     z_level: f64,
     tool_radius: f64,
+    entry_floor_radius: f64,
     cell_size: f64,
     safe_z: f64,
     tolerance: f64,
@@ -1474,9 +1475,12 @@ pub(super) fn waterline_cleanup(
         index,
         cutter,
         stock_to_leave,
-        // A waterline contour is entered over its own footprint and gets
-        // no keep-down link.
-        entry_floor_radius: tool_radius,
+        // The operation's entry style enters a waterline contour. A helix
+        // sweeps the tool radius plus the helix radius from the entry XY,
+        // so the planner reads the entry floor over that disc
+        // (`path.rs::entry_floor_radius`, G-WLENTRYDISC). A waterline
+        // contour gets no keep-down link.
+        entry_floor_radius,
         stay_down_mm: 0.0,
     };
     #[cfg(not(target_arch = "wasm32"))]

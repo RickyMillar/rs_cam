@@ -51,7 +51,7 @@ use std::sync::atomic::AtomicBool;
 
 use rs_cam_core::adaptive3d::{
     Adaptive3dDepth, Adaptive3dGeometry, Adaptive3dLinking, Adaptive3dParams, ClearingStrategy3d,
-    EntryStyle3d, RegionOrdering, adaptive_3d_toolpath,
+    EntryStyle3d, RegionOrdering, adaptive_3d_toolpath, adaptive_3d_toolpath_annotated,
 };
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::config::{
@@ -219,6 +219,12 @@ struct Descent {
     /// How far the move's start stands above the material top under the
     /// entry footprint (tool radius plus the helix radius) at either end.
     above: f64,
+    /// How far the move's end stands below the material top under the
+    /// helix sweep (tool radius plus the helix radius, less the probe
+    /// inset) at the end. A
+    /// straight descent that ends below this top goes under material that
+    /// the helix turns then meet from the side.
+    below_wide: f64,
 }
 
 impl Descent {
@@ -285,12 +291,18 @@ fn replay_on(
                         .unwrap_or(f64::NEG_INFINITY)
                 };
                 let wide = wide_at(a).max(wide_at(b));
+                // The material the helix turns meet: under the helix sweep,
+                // read a little inside it as `probe_r` is.
+                let below_wide = stock
+                    .max_top_z_in_disc(b.x, b.y, r + HELIX_RADIUS - PROBE_INSET)
+                    .map_or(f64::NEG_INFINITY, |top| top - b.z);
                 audit.descents.push(Descent {
                     move_index: i,
                     intent: m.intent,
                     depth: (top - b.z).max(0.0),
                     slope: if xy > 1e-9 { dz / xy } else { f64::INFINITY },
                     above: a.z - wide,
+                    below_wide,
                 });
             }
             _ => {}
@@ -780,5 +792,77 @@ fn session_rough_keeps_the_planner_order_for_its_entries() {
                 d.depth
             );
         }
+    }
+}
+
+/// The cone of the waterline fixture: its apex Z and its flank slope
+/// (dz / dr, 60 degrees).
+const CONE_TOP_Z: f64 = 14.0;
+const CONE_SLOPE: f64 = 1.732;
+
+/// G-WLENTRYDISC. A waterline cleanup contour is entered with the entry
+/// style of the operation. The helix turns sweep the tool radius plus the
+/// helix radius from the entry XY, so the planner must read the entry floor
+/// over that disc, as the level clearing does.
+///
+/// The fixture: a 60 degree cone on a plate, Global order (a waterline
+/// cleanup after each level), helix entries, Depth/Pass 4. Each waterline
+/// contour stands one tool radius from the flank. Over the helix turns the
+/// flank rises about 3 mm above the level. Before the fix the planner read
+/// the floor over the tool disc only. The straight `EntryPlunge` then went
+/// down to the level, below the flank that the helix turns meet.
+#[test]
+fn waterline_helix_entry_reads_its_floor_over_the_helix_turns() {
+    let mesh = common::meshes::height_field(PLATE / 2.0, 0.25, |x, y| {
+        (CONE_TOP_Z - CONE_SLOPE * x.hypot(y)).max(0.0)
+    });
+    let index = SpatialIndex::build(&mesh, 8.0);
+    let tool = FlatEndmill::new(6.0, 25.0);
+    let mut p = params(Style::Helix.adaptive3d(), None, 4.0);
+    p.linking.region_ordering = RegionOrdering::Global;
+    let (tp, annotations) = adaptive_3d_toolpath_annotated(&mesh, &index, &tool, &p);
+    let waterline_starts: Vec<usize> = annotations
+        .iter()
+        .filter(|(_, label)| label.contains("Waterline"))
+        .map(|(i, _)| *i)
+        .collect();
+    let first_waterline = *waterline_starts
+        .first()
+        .expect("the rough emitted no waterline cleanup marker");
+    let mut stock = seed_stock(PLATE / 2.0);
+    let audit = replay_on(&tp, &tool, &mut stock, SAFE_Z);
+    // The fixture must enter at least one waterline contour with a helix.
+    let waterline_helices = audit
+        .descents
+        .iter()
+        .filter(|d| d.move_index > first_waterline && d.intent == MoveIntent::EntryHelix)
+        .count();
+    let plunges: Vec<&Descent> = audit
+        .descents
+        .iter()
+        .filter(|d| d.steep() && d.intent == MoveIntent::EntryPlunge)
+        .collect();
+    let worst = plunges
+        .iter()
+        .max_by(|a, b| a.below_wide.total_cmp(&b.below_wide));
+    eprintln!(
+        "waterline cone, Helix: waterline markers at {waterline_starts:?}, helix moves \
+         after the first {waterline_helices}, straight EntryPlunge {}, worst below the \
+         helix-disc material {:?}",
+        plunges.len(),
+        worst.map(|d| (d.move_index, d.below_wide))
+    );
+    assert!(
+        waterline_helices > 0,
+        "no helix entry after the first waterline marker, so the fixture tests nothing"
+    );
+    if let Some(d) = worst {
+        assert!(
+            d.below_wide <= AIR_TOL_MM,
+            "a straight EntryPlunge at move {} ends {:.2} mm below the material \
+             under the helix turns",
+            d.move_index,
+            d.below_wide
+        );
     }
 }
