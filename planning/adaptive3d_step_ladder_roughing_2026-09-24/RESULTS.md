@@ -431,3 +431,117 @@ from tier 0 to tier 1. It does not add much clip volume.
   test checks the margins of `[10, 5]`, `[10, 5, 1]` and
   `[12, 6, 3, 1]`).
 - The full clippy line and `fmt --check` are clean.
+
+## Fit rule v2 / anchor (Phase 2c, 2026-09-24)
+
+State: on branch `worktree-agent-a3ba5cbdb757c5148`, commits `dc2e27ff`
+(the rule, the anchor, the sentry) and `adb66f0c` (debug counts), not
+merged.
+
+### Finding first: on rivmap100 the coarse tier cuts nothing
+
+With `[8]` + dpp 2 and `[8]` + dpp 4 the ladder emits the same toolpath
+as the single-step plan at the same dpp. Both clip levels have 0
+eligible cells. The debug counts at the first coarse level (Z 4.0, slab
+top Z 12.0) explain it:
+
+| Class (floor above Z 4.0) | Cells |
+|---|---|
+| Part above the slab (keep-out) | 10 499 |
+| Steep wall inside the slab, ≥ 30° (keep-out) | 16 052 |
+| Gentle floor inside the slab (eligible) | 17 286 |
+
+On relief terrain the steep cells lie along every bank, so the keep-out
+is a fine web over the grid, not a compact wall. The link margin (one
+tool diameter, 6 mm) erodes from each keep-out cell and removes every
+eligible cell (0 before the small-part drop). This is a measured result
+for an operator ruling. The 30° angle, the margin and the drop rule are
+not tuned here.
+
+One probe (not committed): with the link margin forced to 0, the level
+at Z 4.0 has 39 parts (18 227 cells). The run is slower than the
+single-step plan: 11 093 moves, 1 728 s, entry 951 s, peak DOC 8.0 mm,
+48 036 mm³. The small parts add entries.
+
+### rivmap100, `rough-score --toolpath 1 --resolution 0.5`
+
+| Arm | Moves | Total (s) | Entry (s) | Removed (mm³) | Peak DOC (mm) | Coarse parts | First level |
+|---|---|---|---|---|---|---|---|
+| Demo on master: `[8]` + 2, anchor at box top | 9 405 | 1 396 | 552 | 49 096 | 6.0 | 1 pocket | Z 6.0 |
+| `[8]` + dpp 2 | 8 905 | 1 379 | 538 | 49 088 | 2.0 | 0 | Z 4.0 |
+| `[8]` + dpp 4 | 5 780 | 864 | 351 | 47 442 | 4.0 | 0 | Z 4.0 |
+| No ladder, dpp 2 | 8 905 | 1 379 | 538 | 49 088 | 2.0 | — | Z 10.0 |
+| No ladder, dpp 4 | 5 780 | 864 | 351 | 47 442 | 4.0 | — | Z 8.0 |
+| No ladder, dpp 8 | 3 922 | 586 | 242 | 47 007 | 8.0 | — | Z 4.0 |
+| Probe: `[8]` + 2, margin 0 | 11 093 | 1 728 | 951 | 48 036 | 8.0 | 39 | Z 4.0 |
+
+"First level" is the first Z of the schedule. The single-step arms and
+the demo row also move with the anchor: the 3D Rough reads the stock
+after the Face (top Z 12), so every level is now 2 mm lower than before.
+
+### The anchor (G-LADDERANCHOR)
+
+`path.rs::ladder_anchor_z`: when the operation reads prior stock
+(`initial_stock` is set), the ladder starts at the highest stock top
+over the planner cells that still have material above
+`surface + stock_to_leave`. The border and boundary clears run first, so
+cells outside the mesh footprint or the boundary do not count. The
+anchor is never above `stock_top_z`, and it falls back to `stock_top_z`
+when no material is left. Fresh stock keeps `stock_top_z`: the parity
+fixtures and `adaptive3d_commanded_ladder` pass unchanged. On rivmap100
+the first 8 mm level moves from Z 6.0 to Z 4.0 (12 − 8). A unit test
+(`ladder_anchor_reads_the_top_of_the_prior_stock`) checks the fresh
+case, a faced stock (Z 12) and an empty stock.
+
+### The rule
+
+A coarse level at the bottom of the slab `(top, bottom)` reads
+`floor = surf + leave` per cell:
+
+- `floor <= bottom`: eligible, cut at `bottom` (as before).
+- `bottom < floor < top` and slope below `FIT_WALL_SLOPE_DEG` (30°):
+  eligible; the drape takes the cut down to the floor in the same pass.
+- `bottom < floor < top` on a steep cell, or `floor >= top`: keep-out.
+  The graded link margin erodes from these cells.
+
+The base tier does not change. By Area keeps a clip level for a region
+whose floor is inside the slab. A clip level gates on its own material
+grid: the old remaining-material gate counts only cells whose floor is
+below the level, so pocket D was skipped until this change.
+
+### Fixture (`adaptive3d_step_ladder`, now 155 × 100 mm)
+
+Pocket D is new: 50 mm square, 6 mm deep. Per-tier volumes (mm³):
+
+| Run | Tier 0 | Tier 1 | Base | Waterline |
+|---|---|---|---|---|
+| `[10, 5]` + 1 | 22 257 | 36 676 | 70 218 | 3 817 |
+| `[10]` + 5 | 57 563 | — | 71 613 | 3 422 |
+
+- A7: in the interior of D one level cuts (tier 0 at Z -10, 825 mm³);
+  tier 0 takes the whole 5.5 mm in one bite; the interior ends on its
+  floor.
+- A2 v2: no clip point is below its level; 85 lifted clip points
+  (`[10, 5]`) sit on their floor (0.000 mm) at slope 0.0°. With the wall
+  test forced off, A2 fails: "rides a wall (slope 85.9°)".
+- A6: tier 0 16.7 %, tier 1 27.6 %; with a uniform margin tier 1 removes
+  0.0 %.
+- A3 at dpp 5: the base area bite falls from 8.5 mm to 5.0 mm. The
+  shelf and the gentle floors now get their coarse pass, so the base tier
+  no longer drapes a full terrace down the wall there.
+- A4 limit: the sentry's keep-out mask reads the slab top as
+  `min(z + step, stock top)`. For a short last sub-slab this is above the
+  real slab top, so the mask can miss some gentle cells that the planner
+  keeps out. The measured distance is then larger: the check is weaker
+  there, not wrong.
+
+### Tests
+
+- `adaptive3d_step_ladder` 7/7, `adaptive3d_emission_byte_parity` 5/5,
+  `adaptive3d_commanded_ladder` 1/1, the five folder sentries,
+  `--lib adaptive3d` 66/66.
+- Heavy, by name: `adaptive3d_interior_cell_parity_f029` 2/2 (47 s),
+  `adaptive3d_planner_stock_xy_f027` 2/2 (42 s).
+- viz: `the_coarse_steps_row_writes_the_ladder_g_ladder` 3/3,
+  `ui_string_hygiene` 1/1 (after the help text change).
+- The full clippy line and `fmt --check` are clean.
