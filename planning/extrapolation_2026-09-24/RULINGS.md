@@ -293,3 +293,19 @@ seen and capped". Open for the ladder plan, found by the editor:
   the shipped base (4.09 mm) left no room for a coarse step and the
   ladder shipped empty (sentry arm 3). Design question for the ladder plan.
 - The readiness panel DOC column shows the base step.
+
+Operator rulings on the ladder notes (2026-09-24, asked directly by the
+feeds/dial session, relayed):
+1. Suggest KEEPS the operator's Depth/Pass and ladder when a ladder exists.
+   It only lowers a step that is over the axial envelope cap, and the card
+   says so. A capped step that is no longer above the next one is removed
+   with a visible note (never an unannounced empty ladder). Suggest still
+   sets feed, speed and stepover. ("Keep my steps, only cap".)
+2. One feed re-derived at the deepest step for every level: accepted for
+   now (per-tier feed open as D6 in the ladder plan).
+3. Base-only writes that raise the base to or over a coarse step -> the
+   adapter refusal: acceptable as is.
+4. Readiness DOC column: show the whole ladder ("10 -> 5"), with the
+   panel's own formatter (ui/properties/operations/surface_3d.rs,
+   5593803e); do not duplicate it.
+Owner: the extrapolation session; after A2 step 1 (the files overlap).
