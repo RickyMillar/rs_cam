@@ -302,9 +302,12 @@ impl FeedsResult {
     pub fn provenance(&self) -> FeedsProvenance {
         let chip = ValueProvenance::from_chipload_source(&self.chipload_source);
 
+        // A row that the G1 size claim refused is not a basis for any value
+        // (`calculate` takes the formula tuple for it), so it labels nothing
+        // `VendorLut`.
         let row_vendor_or_formula = |row_supplies: bool| -> ValueProvenance {
             match self.matched_lut_row.as_ref() {
-                Some(row) if row_supplies => {
+                Some(row) if row_supplies && !row.size_basis.is_refused() => {
                     ValueProvenance::vendor_lut(row.observation_id.clone())
                 }
                 _ => ValueProvenance::formula(),
@@ -370,6 +373,10 @@ mod tests {
             chipload_hardness_ratio_raw: 1.0,
             is_extrapolated: false,
             row_pass_role: crate::feeds::vendor_lut::LutPassRole::Roughing,
+            size_basis: crate::feeds::extrapolation::SizeBasis::Exact,
+            material_label: String::new(),
+            evidence_grade: crate::feeds::vendor_lut::EvidenceGrade::A,
+            row_kind: crate::feeds::vendor_lut::ObservationKind::Exact,
         }
     }
 

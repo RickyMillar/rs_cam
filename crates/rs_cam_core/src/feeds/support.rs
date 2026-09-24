@@ -21,6 +21,7 @@
 
 use std::borrow::Cow;
 
+use super::extrapolation::{Claim, SizeBasis};
 use super::vendor_lookup::{self, LookupQuery, LookupResult};
 use super::vendor_lut::{MaterialFamily, ToolFamily};
 use super::{FeedsInput, OperationFamily, PassRole, VendorLut, vendor_normalize};
@@ -311,15 +312,40 @@ pub fn formula_backing(
 /// does not. Do not change this arm to follow the chipload source.
 ///
 /// Not `Copy` since 2026-09-24: the size refusal builds its reason from the
-/// two diameters, so the reason is a `Cow`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// two diameters, so the reason is a `Cow`. Not `Eq` since extrapolation
+/// P1 step 3: a [`Claim`] holds `f64` values.
+#[derive(Debug, Clone, PartialEq)]
 pub enum FeedsSupport {
-    /// A vendor row answered for this cell; the LUT is the basis.
+    /// A vendor row answered for this cell at its printed size (or the row
+    /// has no diameter, or it publishes an RPM and no chipload); the LUT is
+    /// the basis.
     VendorBacked,
+    /// A vendor row answered through a stated G1 size claim: the row is
+    /// off the tool's size, and the claim names the rule, the range and the
+    /// residual (`feeds::extrapolation`). The claim is boxed because it is
+    /// much larger than the other variants.
+    Extrapolated { claim: Box<Claim> },
     /// No row; the calculator's formula answers, and this names its source.
     FormulaOnly { source: &'static str },
     /// The engine has no basis. Suggest refuses with the reason.
     Refuse { reason: Cow<'static, str> },
+}
+
+impl FeedsSupport {
+    /// The card text of the arm: a headline and a detail line, in plain
+    /// words. The MCP and the FM1 instrument read it.
+    #[must_use]
+    pub fn card_text(&self) -> (String, String) {
+        match self {
+            Self::VendorBacked => (
+                "vendor-backed".to_owned(),
+                "a vendor row prints this cell".to_owned(),
+            ),
+            Self::Extrapolated { claim } => claim.card_text(),
+            Self::FormulaOnly { source } => ("formula only".to_owned(), (*source).to_owned()),
+            Self::Refuse { reason } => ("refused".to_owned(), reason.to_string()),
+        }
+    }
 }
 
 /// The result of the recipe row lookup that [`super::calculate`] does.
@@ -389,8 +415,11 @@ pub fn formula_source_for_input(input: &FeedsInput) -> Option<&'static str> {
 ///
 /// - A tapered ball whose tip is under [`TAPERED_MIN_TIP_MM`]: `Refuse`
 ///   ([`tapered_tip_floor_refusal`], ruling B1), with or without a row.
-/// - The recipe row lookup finds a row: `VendorBacked`, unless the size
-///   rule refuses it ([`micro_extrapolation_refusal`]).
+/// - The recipe row lookup finds a row: the row's G1 size basis
+///   (`LookupResult::size_basis`) decides. A claim gives `Extrapolated`; a
+///   refusal gives `Refuse` (its text for a tool under 1.5 mm is
+///   [`micro_extrapolation_refusal`]); every other basis gives
+///   `VendorBacked`.
 /// - No row, and no formula source: `Refuse`.
 /// - No row, a formula source, an operation kind and a judged wood
 ///   material: [`formula_backing`] decides, `Backed` -> `FormulaOnly`,
@@ -427,17 +456,42 @@ pub(crate) fn support_for_lookup(input: &FeedsInput, lookup: &RecipeRowLookup) -
         };
     }
     if let RecipeRowLookup::Row { query, row, .. } = lookup {
-        if let Some(reason) = micro_extrapolation_refusal(
-            tool,
-            input.tool_diameter,
-            query.diameter_mm,
-            row.row_diameter_mm,
-        ) {
-            return FeedsSupport::Refuse {
-                reason: Cow::Owned(reason),
-            };
-        }
-        return FeedsSupport::VendorBacked;
+        return match &row.size_basis {
+            SizeBasis::Claim(claim) => FeedsSupport::Extrapolated {
+                claim: claim.clone(),
+            },
+            SizeBasis::Refused { reason, .. } => {
+                // The claim sees only the lookup key. For a V-bit the key is
+                // the engaged width, so the size rule's text is built again
+                // here with the nominal diameter beside the key.
+                let reason = micro_extrapolation_refusal(
+                    tool,
+                    input.tool_diameter,
+                    query.diameter_mm,
+                    row.row_diameter_mm,
+                )
+                .unwrap_or_else(|| reason.clone());
+                FeedsSupport::Refuse {
+                    reason: Cow::Owned(reason),
+                }
+            }
+            // A V-bit keeps the pre-P1 arm exactly: the size rule on the
+            // Suggest key (the engaged width at the operation's depth).
+            SizeBasis::VBitExempt => match micro_extrapolation_refusal(
+                tool,
+                input.tool_diameter,
+                query.diameter_mm,
+                row.row_diameter_mm,
+            ) {
+                Some(reason) => FeedsSupport::Refuse {
+                    reason: Cow::Owned(reason),
+                },
+                None => FeedsSupport::VendorBacked,
+            },
+            SizeBasis::Exact | SizeBasis::NoDiameterAnchor | SizeBasis::NoChipload => {
+                FeedsSupport::VendorBacked
+            }
+        };
     }
     let Some(source) = formula_source_for_input(input) else {
         return FeedsSupport::Refuse {

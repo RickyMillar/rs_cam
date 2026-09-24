@@ -21,7 +21,8 @@
 //! - [`a_cell_with_a_vendor_row_is_vendor_backed`] (b) — over
 //!   `OperationType::ALL × ToolType::ALL × four wood families`, the
 //!   resolver does not panic, it agrees with the arm `calculate` records,
-//!   and a cell whose lookup found a row is `VendorBacked`.
+//!   and a cell whose lookup found a row is `VendorBacked`, `Extrapolated`
+//!   (a G1 size claim, extrapolation P1) or a size refusal.
 //! - [`no_cell_refuses_today`] (c) — the set of `Refuse` cells is empty.
 //! - [`the_unbacked_refusal_names_its_cell`] (d) — the `Display` text of
 //!   `FeedsError::Unbacked` names the operation, the tool family and the
@@ -192,6 +193,7 @@ fn a_cell_with_a_vendor_row_is_vendor_backed() {
     assert_eq!(cells.len(), 24 * 5 * 4, "the matrix is not the full grid");
 
     let mut vendor_backed = 0usize;
+    let mut extrapolated = 0usize;
     let mut formula_only = 0usize;
     let mut refused = 0usize;
     let mut size_refused = 0usize;
@@ -205,8 +207,24 @@ fn a_cell_with_a_vendor_row_is_vendor_backed() {
             // Operator ruling 2026-09-24 (R1 applied to size): a row found
             // for a micro tool more than 2x off its diameter refuses, and the
             // reason names both sizes.
+            // Extrapolation P1 step 3: an off-size row answers through a
+            // stated G1 size claim (`Extrapolated`), and the claim names
+            // the row's diameter and the query key.
             match &cell.support {
                 FeedsSupport::VendorBacked => vendor_backed += 1,
+                FeedsSupport::Extrapolated { claim } => {
+                    assert!(
+                        claim.scale.is_finite() && claim.scale > 0.0,
+                        "{}: a claim must carry a positive scale: {claim:?}",
+                        cell.label
+                    );
+                    assert!(
+                        claim.range_mm.contains(&claim.query_diameter_mm),
+                        "{}: the claim's range must hold the query key: {claim:?}",
+                        cell.label
+                    );
+                    extrapolated += 1;
+                }
                 FeedsSupport::Refuse { reason } if is_size_refusal(reason) => {
                     assert!(
                         matches!(
@@ -221,8 +239,8 @@ fn a_cell_with_a_vendor_row_is_vendor_backed() {
                     size_refused += 1;
                 }
                 other => panic!(
-                    "{}: the lookup found a row, so the arm must be VendorBacked or a \
-                     size refusal, got {other:?}",
+                    "{}: the lookup found a row, so the arm must be VendorBacked, \
+                     Extrapolated or a size refusal, got {other:?}",
                     cell.label
                 ),
             }
@@ -283,11 +301,17 @@ fn a_cell_with_a_vendor_row_is_vendor_backed() {
     // Non-vacuity: the grid holds all three arms.
     assert!(vendor_backed > 0, "no cell found a vendor row");
     assert!(formula_only > 0, "no cell fell back to the formula");
+    // Extrapolation P1 step 3: the default Ø6.35 ball nose sits on the Ø6.0
+    // ball rows, so the grid holds form C claims.
+    assert!(extrapolated > 0, "no cell shipped through a G1 size claim");
     assert!(
         refused > 0,
         "no cell refuses; ruling R1 encodes a CLUELESS set"
     );
-    println!("the size rule refuses {size_refused} cells that found a row");
+    println!(
+        "the size rule refuses {size_refused} cells that found a row; \
+         {extrapolated} cells ship through a G1 size claim"
+    );
 }
 
 /// The size refusal's text starts with this (`support::micro_extrapolation_refusal`).

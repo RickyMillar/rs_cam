@@ -73,7 +73,20 @@ use rs_cam_core::tool::{TaperedBallEndmill, ToolDefinition};
 use rs_cam_core::tool_load::verdict::ToolpathLoadVerdict;
 use rs_cam_core::tool_load::{ToleranceBands, ToolpathLoadContext, evaluate_toolpath};
 
-const TIP_DIAMETER_MM: f64 = 1.0;
+/// RE-PREMISED at extrapolation P1 step 3 (2026-09-24). The fixture ran a
+/// 1.0 mm tip on a hardwood Scallop. The G1 size claim refuses that cell
+/// (no Scallop row near a 1.0 mm tip), so the gate no longer judges it. The
+/// fixture now runs a 1.1 mm tip on a Parallel finish (`DropCutter`), a
+/// G1 form A claim: the anchor is `amana-tapered-hardwood-parallel-1000-2f-zrn-v8`
+/// (score 1797, tied with the SpeTool 1.0 mm row and kept by id), and the
+/// Amana v8 2-flute hardwood series brackets 1.1 mm between the 1.0 mm row
+/// (mid 0.034925) and the 1.5875 mm row (mid 0.1016). With
+/// `t = ln(1.1) / ln(1.5875) = 0.206396`, the scale is
+/// `(0.1016 / 0.034925)^t = 1.246348491430`, so the band is
+/// 0.023743-0.063315 mm/tooth (Janka 1450 on both sides, hardness x1.0).
+/// The commanded 0.0714 mm/tooth is 1.128x the band maximum, so the T1.5
+/// alarm still fires, and the row is scaled, so T1.6 still discloses it.
+const TIP_DIAMETER_MM: f64 = 1.1;
 const TAPER_HALF_ANGLE_DEG: f64 = 5.26;
 const SHANK_DIAMETER_MM: f64 = 6.0;
 const RPM: u32 = 18_000;
@@ -158,10 +171,10 @@ fn verdict() -> ToolpathLoadVerdict {
             toolpath_id: TOOLPATH,
             tool: &tool,
             material: &material,
-            operation_family: LutOperationFamily::Scallop,
+            operation_family: LutOperationFamily::Parallel,
             pass_role: LutPassRole::Finish,
             operation_feed_rate_mm_min: COMMANDED_FEED_MM_MIN,
-            operation_kind: OperationType::Scallop,
+            operation_kind: OperationType::DropCutter,
             spans: None,
             drill_op: None,
         },
@@ -337,14 +350,15 @@ fn every_chipload_message_discloses_row_scaling_and_pass_role() {
     );
     assert!(
         chipload.message.contains("scaled"),
-        "this fixture's Ø1-tip tapered ball is far from the row's calibrated \
-         diameter, so the scaling must be disclosed: {}",
+        "this fixture's Ø1.1-tip tapered ball sits off the row's printed \
+         diameter (a G1 form A claim, x1.2463), so the scaling must be disclosed: {}",
         chipload.message
     );
     // The query is a Finish role (`verdict()`). Until R5 (2026-09-23) the
     // only tapered scallop row was SemiFinish, so the substitution had to
-    // be disclosed. The printed Onsrud 77-100 rows carry `finish`, so the
-    // row that wins now is a Finish row and no substitution exists. The
+    // be disclosed. The printed rows that win now (Onsrud 77-100 after R5,
+    // Amana ZrN v8 after extrapolation P1) carry `finish`, so no
+    // substitution exists. The
     // rule stays: a row of another role must say so; a row of the same
     // role must not claim a substitution. The winning row is read from the
     // message, so the arm follows the table.

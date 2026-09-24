@@ -105,8 +105,11 @@ fn sub_half_mm_tapered_ball_hardwood_finish_extrapolates_with_scaling() {
     // keeps the guard on a 0.3 mm query against that row (ratio 0.6). This is
     // a raw lookup test: the lookup itself does not refuse a tip under 0.5 mm.
     // Only the Suggest support arm refuses it (`support::TAPERED_MIN_TIP_MM`,
-    // ruling B1, P1 step 2). Step 3 puts the size claim into `build_result`
-    // and must re-check this test.
+    // ruling B1, P1 step 2). Step 3 puts the size claim into `build_result`:
+    // the lookup still matches the 0.5 mm row, but its G1 basis is `Refused`
+    // (the tip floor), so the row publishes no band. The two ratio fields keep
+    // their meaning, because a refusal is not a claim and applies no scale of
+    // its own.
     let lut = VendorLut::embedded();
     let query = LookupQuery {
         tool_family: ToolFamily::TaperedBallNose,
@@ -137,6 +140,13 @@ fn sub_half_mm_tapered_ball_hardwood_finish_extrapolates_with_scaling() {
         result.row_diameter_mm,
         result.chipload_diameter_ratio_raw
     );
+    assert!(
+        result.size_basis.is_refused(),
+        "a 0.3 mm tip is under the 0.5 mm floor: {:?}",
+        result.size_basis
+    );
+    assert_eq!(result.chip_load_min_mm, None);
+    assert_eq!(result.chip_load_max_mm, None);
     let expected_scale = result
         .chipload_diameter_ratio_raw
         .powf(rs_cam_core::feeds::vendor_lookup::CHIPLOAD_DIAMETER_EXPONENT);

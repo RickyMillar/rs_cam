@@ -21,7 +21,8 @@
 //!    `feeds.chipload_below_floor` "Advance per tooth below the rubbing
 //!    floor ... The feed is not raised". This is the operator's only record
 //!    of a sub-floor recipe, so it must not read as a clamp.
-//! 2. **Above the band** (the gate on the shipped row): a feed 5 % over the
+//! 2. **Above the band** (the gate on the shipped row, at a 3.175 mm tip
+//!    since extrapolation P1 step 3): a feed 5 % over the
 //!    band maximum reads `Exceeds(High)` and renders as too high; a feed ON
 //!    the ceiling reads `Within`. This keeps the boundary contract: a real
 //!    exceedance trips, and a feed on the bound does not.
@@ -67,9 +68,17 @@ const RPM: u32 = 18_000;
 const FLUTES: u32 = 2;
 const AXIAL_DOC: f64 = 0.35;
 
+/// The gate's tool for arm 2. Extrapolation P1 step 3 (2026-09-24): the
+/// B3 tool (a 1.0 mm tip) on a hardwood Scallop is refused by the G1 size
+/// claim (the nearest Scallop row is 3.175 mm or more, with no printed tip
+/// series), so the gate no longer judges it. Arm 2 needs a judged band, so
+/// the tip is 3.175 mm: the printed Onsrud 77-100 1/8 in hardwood Scallop
+/// row (0.0762-0.127 mm/tooth, Janka 1450) at its own size (G1 basis
+/// `Exact`, both scales 1.0 in hard maple). Arm 1 keeps the 1.0 mm B3 tool
+/// in its own `FeedsInput`.
 fn b3_tool() -> ToolDefinition {
     ToolDefinition::new(
-        Box::new(TaperedBallEndmill::new(1.0, 5.26, 6.0, 20.0)),
+        Box::new(TaperedBallEndmill::new(3.175, 5.26, 6.0, 20.0)),
         6.0,
         30.0,
         20.0,

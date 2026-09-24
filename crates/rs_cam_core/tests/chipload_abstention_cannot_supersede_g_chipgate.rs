@@ -31,10 +31,13 @@
 //!
 //! # The thing that *would* have been the defect
 //!
-//! An abstention is published under the id `LOAD_CHIPLOAD_WITHIN` — the same
-//! id a real pass uses — and it carries a populated `supersedes` list naming
-//! the `feeds.*_vs_lut.*` heuristics. If the supersession reducer keyed on the
-//! id alone, an abstention really would silently delete the breakage caution,
+//! Until extrapolation P1 (decision 6, 2026-09-24) an abstention was
+//! published under the id `LOAD_CHIPLOAD_WITHIN` — the same id a real pass
+//! uses. It now has its own id, `LOAD_CHIPLOAD_UNMODELED`, as the depth gate
+//! does (FM6), so a reader of ids alone never reads "within" for a gate that
+//! measured nothing. It still carries a populated `supersedes` list naming
+//! the `feeds.*_vs_lut.*` heuristics. If the supersession reducer ignored the
+//! state, an abstention really would silently delete the breakage caution,
 //! which is the failure the report described even though it is not the one
 //! that happened.
 //!
@@ -139,17 +142,22 @@ fn every_chipload_abstention_is_published_non_current() {
     let mut seen = 0;
     for reason in reasons {
         let rows = diagnostics_from_load_verdict(&abstaining_verdict(reason.clone()));
+        // Decision 6: an abstention never reports under a `*.within` id.
+        assert!(
+            !rows.iter().any(|d| d.id.0 == ids::LOAD_CHIPLOAD_WITHIN),
+            "abstention {reason:?} published under the `within` id"
+        );
         let chip = rows
             .iter()
-            .find(|d| d.id.0 == ids::LOAD_CHIPLOAD_WITHIN)
+            .find(|d| d.id.0 == ids::LOAD_CHIPLOAD_UNMODELED)
             .unwrap_or_else(|| panic!("no chipload row published for abstention {reason:?}"));
         seen += 1;
         assert_ne!(
             chip.state,
             DiagnosticState::Current,
-            "abstention {reason:?} published a CURRENT diagnostic under the \
-             `within` id — the reducer keys on exactly that, so this would let \
-             an abstention delete the pre-sim breakage caution"
+            "abstention {reason:?} published a CURRENT diagnostic; the reducer \
+             lets a Current row supersede, so this would let an abstention \
+             delete the pre-sim breakage caution"
         );
     }
     // Non-vacuity: the loop must have actually inspected rows.
@@ -174,7 +182,7 @@ fn an_abstention_does_not_delete_the_pre_sim_breakage_caution() {
         "fixture must contain the caution"
     );
     assert!(
-        rows.iter().any(|d| d.id.0 == ids::LOAD_CHIPLOAD_WITHIN),
+        rows.iter().any(|d| d.id.0 == ids::LOAD_CHIPLOAD_UNMODELED),
         "fixture must contain the abstention"
     );
 

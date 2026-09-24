@@ -18,6 +18,7 @@
 pub mod cutter_constraints;
 pub mod efficiency;
 pub mod explain_payload;
+pub mod extrapolation;
 pub mod feed_explanation;
 pub mod force;
 pub mod geometry;
@@ -1616,6 +1617,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     {
         let result = *result;
         matched_lut_row = Some(result.clone());
+        let size_refused = result.size_basis.is_refused();
         let observation_id = result.observation_id;
         // Capture the LUT-derived chipload band (post diameter
         // /hardness scaling) for Suggest v2 step 2's feed-up
@@ -1651,7 +1653,24 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         // chipload=0.0000 / mrr=0 / power=0). Keep the vendor RPM
         // anchor but fall back to formula_chipload when the row
         // publishes none.
-        if result.chip_load_mm > 0.0 {
+        if size_refused {
+            // Extrapolation P1 step 3: the G1 size claim refused this row
+            // (`LookupResult::size_basis`). The row publishes no band and
+            // the support arm is `Refuse`, so nothing of the row may ship:
+            // the formula chipload, no vendor RPM, no band. This is not an
+            // RPM-only row, so `VendorRowPublishesNoChipload` does not
+            // apply. The row stays in `matched_lut_row` so that a reader
+            // can see which row the size rule refused.
+            (
+                formula_chipload,
+                None,
+                None,
+                None,
+                None,
+                ChiploadSource::FormulaFallback,
+                None,
+            )
+        } else if result.chip_load_mm > 0.0 {
             (
                 result.chip_load_mm,
                 result.rpm_nominal,

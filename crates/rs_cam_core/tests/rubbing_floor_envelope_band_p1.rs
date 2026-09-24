@@ -298,12 +298,22 @@ fn floor_falls_back_to_the_envelope_band_not_the_bare_constant() {
 /// so the premise stands. Ruling A1 keys the lookup at the 1.0 mm tip (it was
 /// the 0.92 mm engaged ball chord at the 0.3 mm depth), so the "Ø1" in the
 /// scale above is now the exact key.
+///
+/// RE-PREMISED at extrapolation P1 step 3 (2026-09-24). The G1 size claim
+/// now runs inside the lookup, and it refuses a 1.0 mm tapered tip on a
+/// grade-c Ø3.175 row (3.175x the tip, no printed series): that row now
+/// publishes no band for this query. The premise (a printed tapered-ball
+/// band wholly under the 0.025 floor) is still real on a printed row: the
+/// Amana ZrN v8 4-flute 1.5 mm tip row, 0.0127-0.01651 mm/tooth at Janka
+/// 1450 (`amana_zrn_tapered_v8.json`). The fixture queries that row at its
+/// own size (1.5 mm tip, 4 flutes), so the G1 basis is `Exact` and both
+/// scales are 1.0 in hard maple (Janka 1450).
 fn tapered_ball_sub_floor_lut() -> VendorLut {
     let row = VendorLut::embedded()
         .observations
         .iter()
-        .find(|o| o.observation_id == "amana-tapered-hardwood-parallel-3175-2f")
-        .expect("the shipped Amana ZrN tapered-ball parallel row exists")
+        .find(|o| o.observation_id == "amana-tapered-hardwood-parallel-1500-4f-zrn-v8")
+        .expect("the printed Amana ZrN v8 4-flute 1.5 mm tip row exists")
         .clone();
     VendorLut {
         observations: vec![row],
@@ -315,12 +325,11 @@ fn tapered_ball_sub_floor_lut() -> VendorLut {
 /// must bring the floor below the constant, and the recipe must warn (ruling
 /// R4 WP2a: warn, never lift).
 ///
-/// Ruling R4 Q9 (2026-09-24): the floor is the band MINIMUM. The row prints
-/// 0.010–0.020, so the midpoint target is 1.5 x the minimum and the recipe
-/// ships inside the band at the Shapeoko's own ceiling. The machine here has
-/// a 20 mm/min cutting ceiling, which takes the advance under the minimum:
-/// 20 / (2 x 6000 rpm) = 0.0017 mm/tooth at the lowest Shapeoko RPM, and
-/// the scaled minimum is about 0.010 x 0.494 = 0.0049.
+/// Ruling R4 Q9 (2026-09-24): the floor is the band MINIMUM. Since P1 step 3
+/// the row prints 0.0127–0.01651 at the 1.5 mm tip, 4 flutes. The machine
+/// here has a 20 mm/min cutting ceiling, which takes the advance under the
+/// minimum: 20 / (4 x 6000 rpm) = 0.00083 mm/tooth at the lowest Shapeoko
+/// RPM, under the 0.0127 minimum.
 #[test]
 fn tapered_ball_floor_lands_below_the_global_constant() {
     let lut = tapered_ball_sub_floor_lut();
@@ -330,11 +339,11 @@ fn tapered_ball_floor_lands_below_the_global_constant() {
         species: WoodSpecies::HardMaple,
     };
     let input = FeedsInput {
-        tool_diameter: 1.0,
-        flute_count: 2,
+        tool_diameter: 1.5,
+        flute_count: 4,
         flute_length: 4.0,
         tool_geometry: ToolGeometryHint::TaperedBall {
-            tip_radius: 0.5,
+            tip_radius: 0.75,
             taper_angle_deg: 7.0,
         },
         shank_diameter: Some(6.0),

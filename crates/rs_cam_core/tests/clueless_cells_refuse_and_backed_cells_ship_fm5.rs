@@ -139,7 +139,9 @@ fn backed_and_unjudged_cells_ship_the_formula_fm5() {
     assert!(
         matches!(
             parallel.feeds_result.support,
-            FeedsSupport::FormulaOnly { .. } | FeedsSupport::VendorBacked
+            FeedsSupport::FormulaOnly { .. }
+                | FeedsSupport::VendorBacked
+                | FeedsSupport::Extrapolated { .. }
         ),
         "got {:?}",
         parallel.feeds_result.support

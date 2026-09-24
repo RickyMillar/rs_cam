@@ -14,6 +14,12 @@
 pub const LOAD_CHIPLOAD_HIGH: &str = "load.chipload.high";
 pub const LOAD_CHIPLOAD_LOW: &str = "load.chipload.low";
 pub const LOAD_CHIPLOAD_WITHIN: &str = "load.chipload.within";
+/// The chipload gate did not measure (`ChiploadVerdict::Unmodeled`: no
+/// simulation, stale simulation, no vendor band, or a row that the G1 size
+/// claim refused). Its own id, so a reader of ids alone never reads
+/// "within" for a gate that measured nothing (extrapolation P1 decision 6,
+/// as [`LOAD_DEPTH_UNMODELED`] for the depth gate).
+pub const LOAD_CHIPLOAD_UNMODELED: &str = "load.chipload.unmodeled";
 /// T1.5 (census P-10) — the commanded feed-per-tooth sits above the
 /// matched vendor row's published maximum. This is the ONLY same-unit,
 /// same-stage comparison the chipload pipeline can make (both sides are
@@ -341,6 +347,7 @@ pub const ALL: &[&str] = &[
     LOAD_CHIPLOAD_HIGH,
     LOAD_CHIPLOAD_LOW,
     LOAD_CHIPLOAD_WITHIN,
+    LOAD_CHIPLOAD_UNMODELED,
     LOAD_CHIPLOAD_COMMANDED_ABOVE_BAND,
     LOAD_POWER_EXCEEDS,
     LOAD_POWER_WITHIN,

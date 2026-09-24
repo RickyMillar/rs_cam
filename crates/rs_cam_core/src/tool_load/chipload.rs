@@ -112,6 +112,10 @@ use super::locality::SpanLookup;
 /// - Only chipload-bearing rows compete
 ///   ([`find_best_chip_envelope_row`]) — RPM-only rows are feeds-
 ///   calculator anchors, not envelopes.
+/// - A row whose G1 size basis is `Refused` gives `None` (extrapolation P1
+///   step 3). Suggest refuses that cell, so the gate, the optimizer and the
+///   viewport do not judge it against a band either: the gate reports
+///   `Unmodeled(NoVendorData)`.
 pub(crate) fn matched_chip_envelope(
     tool: &crate::tool::ToolDefinition,
     material: &crate::material::Material,
@@ -150,6 +154,7 @@ pub(crate) fn matched_chip_envelope(
         pass_role,
     };
     find_best_chip_envelope_row(embedded_lut(), &query, &geometry_hint)
+        .filter(|row| !row.size_basis.is_refused())
 }
 
 /// The gate's observed quantity: the **advance per tooth this sample
@@ -1526,29 +1531,29 @@ mod tests {
     }
 
     /// F3.3 — a low-side trip against weakly-provenanced bounds
-    /// (extrapolated here: 0.5 mm tapered ball against a ≥1 mm
-    /// calibrated row, the documented ±40 % extrapolation case) must
+    /// (extrapolated here: a 3.175 mm ball against a 6.0 mm row, past
+    /// the documented ±40 % extrapolation threshold) must
     /// NOT hard-refuse with `Exceeds(Low)`: it lands `Within` with a
     /// structured `burn_advisory` carrying the same MedianLow metric
     /// the trip would have reported. The breakage side stays hard for
     /// every provenance.
     ///
     /// RE-PREMISED 2026-09-24 (extrapolation P1, ruling A1). This test
-    /// ran a Parallel finish. Extrapolation P1 loaded the printed SpeTool
-    /// tapered tip rows (0.5 mm and 0.794 mm), and ruling A1 keys the
-    /// lookup at the 0.5 mm tip. The Parallel query now matches
-    /// `spetool-tapered-hardwood-parallel-0500-2f` at its own size: not
-    /// extrapolated, and with no printed minimum, so no low side exists
-    /// to demote. The Scallop family has no row under 3.175 mm, so a
-    /// Scallop query at the 0.5 mm tip still matches the Onsrud 77-100
-    /// 1/8 in row (0.0762-0.127 mm/tooth) at a raw ratio of 0.157. That
-    /// is the extrapolated, banded row this test needs.
+    /// ran a Parallel finish, then a Scallop at a 0.5 mm tapered tip. P1
+    /// step 3 refuses that tip on the Onsrud 1/8 in Scallop row (6.35x, no
+    /// printed series), so the gate no longer judges it. The test now uses a
+    /// G1 form C claim that stays extrapolated: a 3.175 mm ball nose on a
+    /// hardwood Scallop matches `amana-ball-hardwood-scallop-6000-2f`
+    /// (0.025-0.04 mm/tooth, Janka 1450) at a raw ratio of
+    /// 3.175 / 6.0 = 0.529, inside the 0.5x-2x window of form C and past the
+    /// ln 1.4 extrapolation flag (|ln 0.529| = 0.64). The claimed band is
+    /// 0.0170-0.0271 mm/tooth, so 0.0001 is far below the minimum.
     #[test]
     fn weak_provenance_low_trip_demotes_to_burn_advisory() {
-        use crate::tool::TaperedBallEndmill;
-        let tapered = ToolDefinition::new(
-            Box::new(TaperedBallEndmill::new(0.5, 7.0, 6.0, 30.0)),
-            0.5,
+        use crate::tool::BallEndmill;
+        let ball = ToolDefinition::new(
+            Box::new(BallEndmill::new(3.175, 12.0)),
+            3.175,
             10.0,
             25.0,
             35.0,
@@ -1560,7 +1565,7 @@ mod tests {
         let t = trace(vec![sample(0, 0, 0.0001, 0.5)]);
         let v = evaluate_args(
             0,
-            &tapered,
+            &ball,
             &Material::SolidWood {
                 species: WoodSpecies::HardMaple,
             },

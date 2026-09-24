@@ -6,8 +6,9 @@
 //! `tests/feed_explanation_snapshot_b3.rs`, the test-only assembler
 //! whose five stages this record now carries in production.
 //!
-//! The fixture is the same shape as the B3 assembler's — the live
-//! 2026-07-30 scallop operation, synthesised in-test, with a hand-built
+//! The fixture was the same shape as the B3 assembler's — the live
+//! 2026-07-30 scallop operation — until extrapolation P1 step 3 moved it to
+//! a 4.0 mm ball Parallel finish (see `BALL_DIAMETER_MM`). It is synthesised in-test, with a hand-built
 //! trace so no generator, arc fitter, lead-in or depth planner
 //! participates. `planning/airrun_2026-06-01/wanaka.toml` is NOT an
 //! input (plan §2 rule 9).
@@ -75,11 +76,22 @@ use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::stock::simulation_cut::{
     CutKinematics, Engagement, SimulationCutSample, SimulationCutTrace,
 };
-use rs_cam_core::tool::{TaperedBallEndmill, ToolDefinition};
+use rs_cam_core::tool::{BallEndmill, ToolDefinition};
 use rs_cam_core::tool_load::{ToleranceBands, ToolpathLoadContext, evaluate_toolpath};
 
-const TIP_DIAMETER_MM: f64 = 1.0;
-const TAPER_HALF_ANGLE_DEG: f64 = 5.26;
+/// RE-PREMISED at extrapolation P1 step 3 (2026-09-24). The fixture ran a
+/// 1.0 mm tapered tip on a hardwood Scallop. The G1 size claim refuses that
+/// cell (no Scallop row near a 1.0 mm tip), so the gate no longer judges it.
+/// No printed tapered row publishes an `ae` window, and this record test
+/// needs one (stage 2). The fixture is now a 4.0 mm ball nose on a Parallel
+/// finish (`DropCutter`) in hard maple. It matches
+/// `amana-ball-hardwood-parallel-3175-2f` (0.012-0.024 mm/tooth, ae
+/// 0.07-0.35 mm, Janka 1450, grade c: no series) through a G1 form C
+/// claim: `r = 4.0 / 3.175 = 1.2598`, scale `r^0.61 = 1.151311704009`.
+/// `|ln r| = 0.231` is under ln 1.4, so the row is scaled but NOT
+/// extrapolated, which is the T1.6 case. The band is 0.013816-0.027631
+/// mm/tooth; the commanded 0.0714 mm/tooth is 2.58x its maximum.
+const BALL_DIAMETER_MM: f64 = 4.0;
 const SHANK_DIAMETER_MM: f64 = 6.0;
 const RPM: u32 = 18_000;
 const FLUTES: u32 = 2;
@@ -92,12 +104,7 @@ const TOOLPATH: ToolpathId = ToolpathId(0);
 
 fn tool() -> ToolDefinition {
     ToolDefinition::new(
-        Box::new(TaperedBallEndmill::new(
-            TIP_DIAMETER_MM,
-            TAPER_HALF_ANGLE_DEG,
-            SHANK_DIAMETER_MM,
-            20.0,
-        )),
+        Box::new(BallEndmill::new(BALL_DIAMETER_MM, 20.0)),
         SHANK_DIAMETER_MM,
         30.0,
         20.0,
@@ -178,10 +185,10 @@ fn verdict_for(
             toolpath_id: TOOLPATH,
             tool: &tool,
             material: &material,
-            operation_family: LutOperationFamily::Scallop,
+            operation_family: LutOperationFamily::Parallel,
             pass_role: LutPassRole::Finish,
             operation_feed_rate_mm_min: COMMANDED_FEED_MM_MIN,
-            operation_kind: OperationType::Scallop,
+            operation_kind: OperationType::DropCutter,
             spans: None,
             drill_op: None,
         },
@@ -376,9 +383,12 @@ fn the_record_discloses_scaling_on_an_unextrapolated_row() {
     );
     assert!(
         explanation.band.is_scaled(),
-        "this fixture's Ø1-tip tapered ball is nowhere near the row's \
-         calibrated diameter, so the band must report as scaled"
+        "this fixture's Ø4.0 ball sits off the row's Ø3.175 printed diameter \
+         (a G1 form C claim), so the band must report as scaled"
     );
+    // The T1.6 case: scaled, and the ±40 % flag is clear.
+    assert!(!explanation.band.is_extrapolated);
+    assert!((explanation.band.diameter_scale - 1.151_311_704_009).abs() < 1e-9);
 }
 
 #[test]

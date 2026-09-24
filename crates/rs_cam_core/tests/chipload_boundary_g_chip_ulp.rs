@@ -376,6 +376,17 @@ fn b3_tool(flutes: u32) -> ToolDefinition {
     )
 }
 
+/// The gate on the B3 tool (a 1.0 mm tip, 5.26 deg taper) in hard maple.
+///
+/// RE-PREMISED at extrapolation P1 step 3 (2026-09-24). This ran a Scallop
+/// finish. The G1 size claim refuses a 1.0 mm tapered tip on every Scallop
+/// row (the nearest is 3.175 mm or more and no chart prints a Scallop tip
+/// series), so the gate no longer judges that cell. The gate now runs a
+/// Parallel finish (`DropCutter`), where the printed Amana ZrN v8 1.0 mm tip
+/// row answers at its own size (`amana-tapered-hardwood-parallel-1000-2f-zrn-v8`,
+/// 0.01905-0.0508 mm/tooth at Janka 1450, basis `Exact`, both scales 1.0 in
+/// hard maple). The tip stays 1.0 mm, so the DOC ratios of rider 2b are the
+/// ones W10-LV recorded.
 fn gate_verdict(feed: f64, rpm: u32, flutes: u32, axial_doc_mm: f64) -> ChiploadVerdict {
     let tool = b3_tool(flutes);
     let material = Material::SolidWood {
@@ -389,10 +400,10 @@ fn gate_verdict(feed: f64, rpm: u32, flutes: u32, axial_doc_mm: f64) -> Chipload
             toolpath_id: id,
             tool: &tool,
             material: &material,
-            operation_family: LutOperationFamily::Scallop,
+            operation_family: LutOperationFamily::Parallel,
             pass_role: LutPassRole::Finish,
             operation_feed_rate_mm_min: feed,
-            operation_kind: OperationType::Scallop,
+            operation_kind: OperationType::DropCutter,
             spans: None,
             drill_op: None,
         },
@@ -435,8 +446,10 @@ fn rider2_the_gate_flips_to_exceeds_on_a_feed_parked_on_its_own_ceiling() {
     let (band_min, band_max) = verdict_bounds(&probe);
     println!("gate band for the B3 scallop op: {band_min:?} .. {band_max:.17}");
     // Feeds matrix R5 (2026-09-23): the gate reads the embedded LUT, and the
-    // B3 cell now resolves to the printed Onsrud 77-100 1/8 in row scaled to
-    // Ø1 (about 0.040-0.056 mm/tooth), which sits ABOVE the 0.025 floor. The
+    // B3 cell resolved to the printed Onsrud 77-100 1/8 in row scaled to
+    // Ø1 (about 0.040-0.056 mm/tooth). Since extrapolation P1 step 3 the
+    // gate runs the Parallel cell on the printed Amana v8 1.0 mm tip row
+    // (max 0.0508 mm/tooth), which also sits ABOVE the 0.025 floor. The
     // floor-on-ceiling collision this rider measured is therefore not
     // reachable through any embedded wood row. The pin below records that;
     // the census that follows still holds on the gate's own ceiling.

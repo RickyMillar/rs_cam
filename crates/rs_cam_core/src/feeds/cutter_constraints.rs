@@ -565,6 +565,10 @@ mod tests {
             chipload_hardness_ratio_raw: 1.0,
             is_extrapolated: false,
             row_pass_role: crate::feeds::vendor_lut::LutPassRole::Roughing,
+            size_basis: crate::feeds::extrapolation::SizeBasis::Exact,
+            material_label: String::new(),
+            evidence_grade: crate::feeds::vendor_lut::EvidenceGrade::A,
+            row_kind: crate::feeds::vendor_lut::ObservationKind::Exact,
         }
     }
 

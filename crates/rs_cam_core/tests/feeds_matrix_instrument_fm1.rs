@@ -291,6 +291,11 @@ const MATRIX_HEADER: &[&str] = &[
     "lut_evidence_grade",
     "lut_row_kind",
     "lut_source_id",
+    "diameter_ratio_raw",
+    "claim_form",
+    "claim_scale",
+    "claim_range",
+    "claim_residual",
     "chipload_source",
     "vendor_source",
     "diagnostic_ids",
@@ -306,8 +311,44 @@ const MATRIX_HEADER: &[&str] = &[
 fn support_columns(s: &FeedsSupport) -> (String, String) {
     match s {
         FeedsSupport::VendorBacked => ("VendorBacked".to_owned(), String::new()),
+        FeedsSupport::Extrapolated { claim } => {
+            let (headline, detail) = claim.card_text();
+            ("Extrapolated".to_owned(), format!("{headline}; {detail}"))
+        }
         FeedsSupport::FormulaOnly { source } => ("FormulaOnly".to_owned(), (*source).to_owned()),
         FeedsSupport::Refuse { reason } => ("Refuse".to_owned(), reason.to_string()),
+    }
+}
+
+/// The five G1 claim columns of a matched row (extrapolation P1 step 3):
+/// the raw diameter ratio, the form (A, B, C, or the basis name when there
+/// is no claim), the scale, the range in mm, and the residual.
+fn claim_columns(m: &rs_cam_core::feeds::vendor_lookup::LookupResult) -> [String; 5] {
+    use rs_cam_core::feeds::extrapolation::ClaimResidual;
+    let ratio = num(Some(m.chipload_diameter_ratio_raw));
+    match m.size_basis.claim() {
+        Some(c) => [
+            ratio,
+            c.form.name().to_owned(),
+            num(Some(c.scale)),
+            format!("{:.4}-{:.4}", c.range_mm.start(), c.range_mm.end()),
+            match &c.residual {
+                ClaimResidual::Bracket { lo_value, hi_value } => {
+                    format!("bracket {lo_value:.4}-{hi_value:.4}")
+                }
+                ClaimResidual::FitRms { fraction } => format!("rms {fraction:.4}"),
+                ClaimResidual::VendorSpread { lo, hi, family, .. } => {
+                    format!("spread x{lo:.2}-{hi:.2} ({family:?})")
+                }
+            },
+        ],
+        None => [
+            ratio,
+            m.size_basis.name().to_owned(),
+            String::new(),
+            String::new(),
+            String::new(),
+        ],
     }
 }
 
@@ -380,12 +421,13 @@ fn walk_matrix(
                             fields.push("refused".to_owned());
                             fields.push(e.to_string());
                             // 12 recipe columns (incl. the force and power
-                            // at the shipped point), the support pair, 8 row
-                            // columns, 4 diagnostic / warning columns.
+                            // at the shipped point), the support pair, 13 row
+                            // columns (6 row, 5 G1 claim, chipload source,
+                            // vendor source), 4 diagnostic / warning columns.
                             fields.extend(std::iter::repeat_n(String::new(), 12));
                             fields.push("Refused".to_owned());
                             fields.push(String::new());
-                            fields.extend(std::iter::repeat_n(String::new(), 8));
+                            fields.extend(std::iter::repeat_n(String::new(), 13));
                             fields.extend(std::iter::repeat_n(String::new(), 4));
                             fields.extend(cap_columns(
                                 machine,
@@ -473,8 +515,9 @@ fn walk_matrix(
                                             ));
                                         }
                                     }
+                                    fields.extend(claim_columns(m));
                                 }
-                                None => fields.extend(std::iter::repeat_n(String::new(), 6)),
+                                None => fields.extend(std::iter::repeat_n(String::new(), 11)),
                             }
                             fields.push(format!("{:?}", r.chipload_source));
                             fields.push(r.vendor_source.clone().unwrap_or_default());
@@ -984,14 +1027,20 @@ fn summary(machine: &MachineProfile, cells: &[Cell], sim: &SimOutcome) -> String
     writeln!(
         w,
         "The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacked`, \
-         `FormulaOnly`, `Refuse` (the `FeedsSupport` arm). `fires-a-diagnostic` is a separate \
+         `Extrapolated` (a G1 size claim), `FormulaOnly`, `Refuse` (the `FeedsSupport` arm). `fires-a-diagnostic` is a separate \
          flag: the cell has one or more diagnostic ids from the three pre-simulation doors. \
          A vendor-backed cell can also fire. The `FeedsWarning` and `SuggestWarning` counts \
          are separate columns."
     )
     .expect("write");
     writeln!(w).expect("write");
-    let classes = ["Refused", "VendorBacked", "FormulaOnly", "Refuse"];
+    let classes = [
+        "Refused",
+        "VendorBacked",
+        "Extrapolated",
+        "FormulaOnly",
+        "Refuse",
+    ];
     write!(w, "| class |").expect("write");
     for &kind in ToolType::ALL {
         write!(w, " {kind:?} |").expect("write");
@@ -1035,10 +1084,11 @@ fn summary(machine: &MachineProfile, cells: &[Cell], sim: &SimOutcome) -> String
     writeln!(w).expect("write");
     writeln!(
         w,
-        "| operation | Refused | VendorBacked | FormulaOnly | Refuse | fires-a-diagnostic |"
+        "| operation | Refused | VendorBacked | Extrapolated | FormulaOnly | Refuse | \
+         fires-a-diagnostic |"
     )
     .expect("write");
-    writeln!(w, "|---|---|---|---|---|---|").expect("write");
+    writeln!(w, "|---|---|---|---|---|---|---|").expect("write");
     for &op in OperationType::ALL {
         let of = |class: &str| {
             cells
@@ -1052,9 +1102,10 @@ fn summary(machine: &MachineProfile, cells: &[Cell], sim: &SimOutcome) -> String
             .count();
         writeln!(
             w,
-            "| {op:?} | {} | {} | {} | {} | {fires} |",
+            "| {op:?} | {} | {} | {} | {} | {} | {fires} |",
             of("Refused"),
             of("VendorBacked"),
+            of("Extrapolated"),
             of("FormulaOnly"),
             of("Refuse")
         )

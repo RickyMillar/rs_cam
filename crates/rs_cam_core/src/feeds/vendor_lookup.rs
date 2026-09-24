@@ -3,9 +3,10 @@
 //! Filters observations by must-match criteria, scores remaining candidates,
 //! and returns the best match with chipload midpoint.
 
+use super::extrapolation::{Extrapolation, SizeBasis, SizeLaw};
 use super::vendor_lut::{
-    HardnessKind, LutOperationFamily, LutPassRole, MaterialFamily, ToolFamily, VendorLut,
-    VendorObservation,
+    EvidenceGrade, HardnessKind, LutOperationFamily, LutPassRole, MaterialFamily, ObservationKind,
+    ToolFamily, VendorLut, VendorObservation,
 };
 
 /// Query parameters for LUT lookup.
@@ -73,9 +74,12 @@ pub struct LookupResult {
     /// debug/UI to show how far the query's diameter diverged from the
     /// row's calibration.
     pub row_diameter_mm: f64,
-    /// Scale factor **applied** to the chipload bounds for diameter:
-    /// `(query.diameter_mm / row.diameter_mm) ^ CHIPLOAD_DIAMETER_EXPONENT`.
-    /// 1.0 = exact match, no scaling. **Diverges from
+    /// Scale factor **applied** to the chipload bounds for diameter. For a
+    /// G1 size claim ([`Self::size_basis`] is `SizeBasis::Claim`) it is the
+    /// claim's scale (form A, B or C, `feeds::extrapolation::size`).
+    /// Otherwise it is
+    /// `(query.diameter_mm / row.diameter_mm) ^ CHIPLOAD_DIAMETER_EXPONENT`,
+    /// which is 1.0 (or within 6e-4 of it) on an exact row. **Diverges from
     /// [`Self::chipload_diameter_ratio_raw`] since 2026-08-06**, when the
     /// exponent moved off 1.0; the two are stored separately precisely so
     /// they cannot be conflated now that they differ.
@@ -120,6 +124,18 @@ pub struct LookupResult {
     /// Census T1.6 (2026-08-04); whether pass role should become a hard
     /// filter is Checkpoint B item T4.4 and is **not** decided here.
     pub row_pass_role: crate::feeds::vendor_lut::LutPassRole,
+    /// The G1 size basis of this row for this query
+    /// (`feeds::extrapolation::SizeLaw`, extrapolation P1 step 3). A
+    /// `Refused` basis publishes no band: `chip_load_mm` is 0 and both
+    /// bounds are `None`, so no consumer can judge or ship against it.
+    pub size_basis: SizeBasis,
+    /// The matched row's printed material label (the A4 channel: a
+    /// "Wood, MDF, Sign-Foam" row that serves hardwood says so here).
+    pub material_label: String,
+    /// The matched row's evidence grade.
+    pub evidence_grade: EvidenceGrade,
+    /// The matched row's kind (exact, derived or fallback).
+    pub row_kind: ObservationKind,
 }
 
 /// Diameter + hardness-scored LUT lookup for non-angle-aware cutters.
@@ -201,7 +217,7 @@ fn find_best_vbit_row_where(
         // SAFETY: `i` was stored from a valid iteration over `lut.observations`
         #[allow(clippy::indexing_slicing)]
         let obs = &lut.observations[i];
-        build_result(obs, criteria, score, diameter_match_score, i)
+        build_result(lut, obs, criteria, score, diameter_match_score)
     })
 }
 
@@ -508,12 +524,17 @@ fn hardness_ratio_raw(query: &LookupQuery, obs: &VendorObservation) -> f64 {
     }
 }
 
+/// The one place a matched row becomes a `LookupResult`. Both resolvers
+/// (recipe and envelope) pass through here, so the G1 size claim below is
+/// the one number that every consumer reads (extrapolation P1 step 3; the
+/// claim runs on every off-size match, not only when no row matches:
+/// orchestrator decision 8).
 fn build_result(
+    lut: &VendorLut,
     obs: &VendorObservation,
     query: &LookupQuery,
     score: i64,
     diameter_match_score: i64,
-    _idx: usize,
 ) -> LookupResult {
     // The rider (B-lit §4.1 ⚠): the extrapolation flag reads the RAW
     // transfer ratios; only the band reads the applied scales. While both
@@ -523,14 +544,33 @@ fn build_result(
     let diameter_ratio_raw = diameter_ratio_raw(query.diameter_mm, obs.diameter_mm);
     let hardness_ratio_raw = hardness_ratio_raw(query, obs);
     let is_extrapolated = is_extrapolated_for_ratios(diameter_ratio_raw, hardness_ratio_raw);
-    let diameter_scale = apply_chipload_law(diameter_ratio_raw, CHIPLOAD_DIAMETER_EXPONENT);
+    // The G1 size claim. A claim replaces the generic law with its own
+    // scale (one scalar on min, mid and max). Every other basis keeps the
+    // generic law, so an exact row moves by no number.
+    let size_basis = SizeLaw.basis(lut, query, obs);
+    let diameter_scale = match size_basis.claim() {
+        Some(claim) => claim.scale,
+        None => apply_chipload_law(diameter_ratio_raw, CHIPLOAD_DIAMETER_EXPONENT),
+    };
     let hardness_scale = apply_chipload_law(hardness_ratio_raw, CHIPLOAD_HARDNESS_EXPONENT);
     let total_scale = diameter_scale * hardness_scale;
+    // A refused basis publishes no band, so no consumer can use it.
+    let refused = size_basis.is_refused();
 
     LookupResult {
-        chip_load_mm: chipload_midpoint(obs) * total_scale,
-        chip_load_min_mm: obs.chipload_min_mm_tooth.map(|v| v * total_scale),
-        chip_load_max_mm: obs.chipload_max_mm_tooth.map(|v| v * total_scale),
+        chip_load_mm: if refused {
+            0.0
+        } else {
+            chipload_midpoint(obs) * total_scale
+        },
+        chip_load_min_mm: obs
+            .chipload_min_mm_tooth
+            .filter(|_| !refused)
+            .map(|v| v * total_scale),
+        chip_load_max_mm: obs
+            .chipload_max_mm_tooth
+            .filter(|_| !refused)
+            .map(|v| v * total_scale),
         rpm_nominal: obs.rpm_nominal,
         rpm_min: obs.rpm_min,
         rpm_max: obs.rpm_max,
@@ -554,6 +594,10 @@ fn build_result(
         chipload_hardness_ratio_raw: hardness_ratio_raw,
         is_extrapolated,
         row_pass_role: obs.pass_role,
+        size_basis,
+        material_label: obs.material_label.clone(),
+        evidence_grade: obs.evidence_grade,
+        row_kind: obs.row_kind,
     }
 }
 
@@ -605,7 +649,7 @@ fn lookup_best_where(
         // SAFETY: `i` was stored from a valid iteration over `lut.observations`
         #[allow(clippy::indexing_slicing)]
         let obs = &lut.observations[i];
-        build_result(obs, query, score, diameter_match_score, i)
+        build_result(lut, obs, query, score, diameter_match_score)
     })
 }
 
@@ -783,8 +827,9 @@ fn tool_family_score(query: ToolFamily, obs: ToolFamily) -> i64 {
     }
 }
 
-/// Extract chipload as midpoint of min/max.
-fn chipload_midpoint(obs: &VendorObservation) -> f64 {
+/// Extract chipload as midpoint of min/max. The G1 size claim reads the
+/// same mid (`feeds::extrapolation::size`).
+pub(crate) fn chipload_midpoint(obs: &VendorObservation) -> f64 {
     match (obs.chipload_min_mm_tooth, obs.chipload_max_mm_tooth) {
         (Some(min), Some(max)) => (min + max) / 2.0,
         (Some(v), None) | (None, Some(v)) => v,

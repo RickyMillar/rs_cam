@@ -360,9 +360,13 @@ fn chipload_to_diagnostic(
                 suppressed_diagnostics: vec![],
             })
         }
+        // Extrapolation P1 decision 6: an abstention has its own id, never
+        // a `*.within` id (the depth gate's rule, FM6). It keeps the
+        // chipload supersedes list; the reducer is state-gated, and an
+        // abstention is never `Current`.
         ChiploadVerdict::Unmodeled { reason } => unmodeled_to_diagnostic(
             tp_id,
-            ids::LOAD_CHIPLOAD_WITHIN,
+            ids::LOAD_CHIPLOAD_UNMODELED,
             "Chipload",
             reason,
             chipload_supersedes,

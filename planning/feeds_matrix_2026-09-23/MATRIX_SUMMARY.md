@@ -36,12 +36,13 @@ Wood rows in `EMBEDDED_LUT`, read by the instrument:
 
 ## Cell classes per tool type
 
-The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacked`, `FormulaOnly`, `Refuse` (the `FeedsSupport` arm). `fires-a-diagnostic` is a separate flag: the cell has one or more diagnostic ids from the three pre-simulation doors. A vendor-backed cell can also fire. The `FeedsWarning` and `SuggestWarning` counts are separate columns.
+The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacked`, `Extrapolated` (a G1 size claim), `FormulaOnly`, `Refuse` (the `FeedsSupport` arm). `fires-a-diagnostic` is a separate flag: the cell has one or more diagnostic ids from the three pre-simulation doors. A vendor-backed cell can also fire. The `FeedsWarning` and `SuggestWarning` counts are separate columns.
 
 | class | EndMill | BallNose | BullNose | VBit | TaperedBallNose | all |
 |---|---|---|---|---|---|---|
 | Refused | 72 | 94 | 120 | 152 | 74 | 512 |
-| VendorBacked | 88 | 78 | 72 | 16 | 112 | 366 |
+| VendorBacked | 72 | 54 | 60 | 16 | 56 | 258 |
+| Extrapolated | 16 | 24 | 12 | 0 | 56 | 108 |
 | FormulaOnly | 32 | 20 | 0 | 24 | 6 | 82 |
 | Refuse | 0 | 0 | 0 | 0 | 0 | 0 |
 | fires-a-diagnostic | 120 | 98 | 72 | 40 | 118 | 448 |
@@ -51,32 +52,32 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 
 ## Cell classes per operation (all tools, diameters and materials)
 
-| operation | Refused | VendorBacked | FormulaOnly | Refuse | fires-a-diagnostic |
-|---|---|---|---|---|---|
-| Face | 6 | 30 | 4 | 0 | 34 |
-| Pocket | 6 | 30 | 4 | 0 | 34 |
-| Profile | 14 | 16 | 10 | 0 | 26 |
-| Adaptive | 10 | 30 | 0 | 0 | 30 |
-| VCarve | 36 | 4 | 0 | 0 | 4 |
-| Rest | 6 | 30 | 4 | 0 | 34 |
-| Inlay | 36 | 4 | 0 | 0 | 4 |
-| Zigzag | 6 | 30 | 4 | 0 | 34 |
-| Trace | 22 | 4 | 14 | 0 | 18 |
-| Drill | 40 | 0 | 0 | 0 | 0 |
-| Chamfer | 36 | 4 | 0 | 0 | 4 |
-| DropCutter | 18 | 22 | 0 | 0 | 22 |
-| Adaptive3d | 10 | 30 | 0 | 0 | 30 |
-| Waterline | 20 | 16 | 4 | 0 | 20 |
-| Pencil | 34 | 0 | 6 | 0 | 6 |
-| Scallop | 28 | 12 | 0 | 0 | 12 |
-| UnifiedFinish | 28 | 12 | 0 | 0 | 12 |
-| SteepShallow | 20 | 16 | 4 | 0 | 20 |
-| RampFinish | 18 | 14 | 8 | 0 | 22 |
-| SpiralFinish | 28 | 12 | 0 | 0 | 12 |
-| RadialFinish | 18 | 14 | 8 | 0 | 22 |
-| HorizontalFinish | 18 | 14 | 8 | 0 | 22 |
-| ProjectCurve | 14 | 22 | 4 | 0 | 26 |
-| AlignmentPinDrill | 40 | 0 | 0 | 0 | 0 |
+| operation | Refused | VendorBacked | Extrapolated | FormulaOnly | Refuse | fires-a-diagnostic |
+|---|---|---|---|---|---|---|
+| Face | 6 | 23 | 7 | 4 | 0 | 34 |
+| Pocket | 6 | 23 | 7 | 4 | 0 | 34 |
+| Profile | 14 | 8 | 8 | 10 | 0 | 26 |
+| Adaptive | 10 | 23 | 7 | 0 | 0 | 30 |
+| VCarve | 36 | 4 | 0 | 0 | 0 | 4 |
+| Rest | 6 | 23 | 7 | 4 | 0 | 34 |
+| Inlay | 36 | 4 | 0 | 0 | 0 | 4 |
+| Zigzag | 6 | 23 | 7 | 4 | 0 | 34 |
+| Trace | 22 | 4 | 0 | 14 | 0 | 18 |
+| Drill | 40 | 0 | 0 | 0 | 0 | 0 |
+| Chamfer | 36 | 4 | 0 | 0 | 0 | 4 |
+| DropCutter | 18 | 18 | 4 | 0 | 0 | 22 |
+| Adaptive3d | 10 | 23 | 7 | 0 | 0 | 30 |
+| Waterline | 20 | 8 | 8 | 4 | 0 | 20 |
+| Pencil | 34 | 0 | 0 | 6 | 0 | 6 |
+| Scallop | 28 | 6 | 6 | 0 | 0 | 12 |
+| UnifiedFinish | 28 | 6 | 6 | 0 | 0 | 12 |
+| SteepShallow | 20 | 8 | 8 | 4 | 0 | 20 |
+| RampFinish | 18 | 10 | 4 | 8 | 0 | 22 |
+| SpiralFinish | 28 | 6 | 6 | 0 | 0 | 12 |
+| RadialFinish | 18 | 10 | 4 | 8 | 0 | 22 |
+| HorizontalFinish | 18 | 10 | 4 | 8 | 0 | 22 |
+| ProjectCurve | 14 | 14 | 8 | 4 | 0 | 26 |
+| AlignmentPinDrill | 40 | 0 | 0 | 0 | 0 | 0 |
 
 ## Pre-simulation diagnostic ids (cells that fire each id)
 
@@ -125,7 +126,7 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 - 2D: Pocket, Profile, Adaptive on a 40 mm square polygon, stock 44 × 44 × 18 below z = 0; end_mill and bull_nose at 6 mm; the four materials.
 - 3D: a dome height field (top z = 0, flat base z = -8, 46 mm footprint) in the same stock; heights pinned to top 0 and bottom -8 on all 3D cells (`bottom_z: Auto` collapses a waterline band). Waterline, DropCutter, Adaptive3d with end_mill; Scallop and DropCutter with ball_nose and tapered_ball_nose; 6 mm; softwood and hardwood.
 - Simulation: resolution 1.0, metrics on, auto resolution off, other fields from `SimulationOptions::default()`. That default has `adaptive_feed_modulation: true`, so the post-simulation verdicts read the modulated feed, as the GUI default does.
-- Cells run: 38; errors: 0; skipped on the 150 s budget: 0; wall-clock of the subset: 152.1 s.
+- Cells run: 38; errors: 0; skipped on the 150 s budget: 0; wall-clock of the subset: 166.4 s.
 
 ## Post-simulation diagnostic ids (cells that fire each id)
 
@@ -137,7 +138,8 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 | `feeds.long_tool_derate` | 38 |
 | `feeds.rpm_lowered_for_ceiling` | 22 |
 | `feeds.shank_too_large` | 4 |
-| `load.chipload.within` | 38 |
+| `load.chipload.unmodeled` | 23 |
+| `load.chipload.within` | 15 |
 | `load.deflection.within` | 38 |
 | `load.depth.reported` | 12 |
 | `load.depth.within` | 26 |

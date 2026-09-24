@@ -33,7 +33,13 @@
 //!   rows, and the MDF one is another material category;
 //! - a 3.175 mm tapered ball Scallop in hardwood ships (not a micro tool);
 //! - a 1.0 mm flat end mill pocket in SOFTWOOD ships: the printed Spektra
-//!   0.794 mm softwood row is 0.79x the tool, inside the window.
+//!   0.794 mm softwood row is 0.79x the tool, inside the window. Since
+//!   extrapolation P1 step 3 it ships `Extrapolated` through a G1 form A
+//!   claim between the printed 0.79375 mm and 1.5 mm rows.
+//!
+//! Since extrapolation P1 step 3 the size rule runs inside the lookup
+//! (`feeds::extrapolation::SizeLaw`, `LookupResult::size_basis`), and the
+//! refusal texts above are its texts for a tool under 1.5 mm.
 
 #![allow(
     clippy::unwrap_used,
@@ -246,20 +252,68 @@ fn a_standard_tapered_scallop_ships_fm9() {
     assert!(s.operation.feed_rate() > 0.0);
 }
 
+/// Extrapolation P1 step 3: the 1.0 mm tool sits between two printed sizes
+/// of the anchor's own Spektra series, so it ships through a G1 form A claim
+/// (log-log interpolation), not through the generic 0.61 law.
+///
+/// The numbers, from `amana_flat_end.json` (the Spektra softwood pocket 2F
+/// series of `amana_spektra_spiral_plunge_v24`): the 0.79375 mm row prints
+/// 0.0254 mm/tooth, the 1.5 mm row 0.0508 (both min = max, so the mid is the
+/// printed value). The anchor is the 0.79375 mm row (score 1758 against 1708
+/// for the 1.5 mm row: the diameter term is 133 against 83). With
+/// `t = ln(1.0 / 0.79375) / ln(1.5 / 0.79375) = 0.362928842984`, the mid at
+/// 1.0 mm is `0.0254 * 2^t = 0.0326652649139`, so the scale on the anchor is
+/// `2^t = 1.286034051728` (python3 over the JSON; the ratio 0.0508 / 0.0254
+/// is exactly 2).
 #[test]
 fn a_micro_tool_with_a_near_row_ships_fm9() {
+    use rs_cam_core::feeds::extrapolation::{ClaimResidual, SizeForm};
     let s = suggest(
         OperationType::Pocket,
         &tool_of(ToolType::EndMill, 1.0),
         &softwood(),
     )
     .expect("the printed 0.794 mm softwood Spektra row is within 2x of 1 mm");
-    assert_eq!(s.feeds_result.support, FeedsSupport::VendorBacked);
+    let FeedsSupport::Extrapolated { claim } = &s.feeds_result.support else {
+        panic!(
+            "a 1.0 mm tool between the 0.79375 and 1.5 mm printed rows ships through a \
+             form A claim, got {:?}",
+            s.feeds_result.support
+        );
+    };
+    assert_eq!(
+        claim.form,
+        SizeForm::Interpolated {
+            lo_mm: 0.79375,
+            hi_mm: 1.5
+        }
+    );
+    assert!((claim.scale - 1.286_034_051_728).abs() < 1e-9, "{claim:?}");
+    assert_eq!(
+        claim.source_rows,
+        vec![
+            "amana-flat-softwood-pocket-0794-2f-spektra".to_owned(),
+            "amana-flat-softwood-pocket-1500-2f-spektra".to_owned(),
+        ]
+    );
+    assert_eq!(
+        claim.residual,
+        ClaimResidual::Bracket {
+            lo_value: 0.0254,
+            hi_value: 0.0508
+        }
+    );
     let row = s
         .feeds_result
         .matched_lut_row
         .as_ref()
         .expect("a vendor row answered");
+    assert_eq!(
+        row.observation_id,
+        "amana-flat-softwood-pocket-0794-2f-spektra"
+    );
+    // The row carries the claimed scale, the one number every consumer reads.
+    assert!((row.chipload_diameter_scale - claim.scale).abs() < 1e-12);
     let ratio = row.row_diameter_mm / 1.0;
     assert!(
         (MICRO_ROW_RATIO_MIN..=MICRO_ROW_RATIO_MAX).contains(&ratio),
