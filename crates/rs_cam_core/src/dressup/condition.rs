@@ -28,7 +28,7 @@
 //! reads region-level geometry off a `segment_merge`-enabled operation.
 
 use crate::geo::P3;
-use crate::toolpath::{MoveType, Toolpath, simplify_path_3d_keep_mask};
+use crate::toolpath::{MoveIntent, MoveType, Toolpath, simplify_path_3d_keep_mask};
 use crate::trace::toolpath_spans::{AnnotatedToolpath, MoveRemap};
 use crate::trace::transform_provenance::Transformed;
 use std::collections::BTreeSet;
@@ -123,10 +123,18 @@ pub fn merge_linear_runs(annotated: AnnotatedToolpath, tolerance: f64) -> Transf
         }
 
         let run_len = end - run_start;
-        if run_len < 2 {
-            let n = result.moves.len();
-            result.moves.push(moves[run_start].clone());
-            old_to_new.push(Some(n..n + 1));
+        // An entry helix or ramp keeps every point. RDP moves the Z of the
+        // points it keeps within `tolerance`, and on a ramp that folds back
+        // over a short run it made a leg steeper than the ramp angle
+        // (operator ruling 2026-09-24: a ramp descends at most at its angle,
+        // a helix at most its pitch per revolution).
+        let is_entry_run = matches!(run_intent, MoveIntent::EntryRamp | MoveIntent::EntryHelix);
+        if run_len < 2 || is_entry_run {
+            for m in &moves[run_start..end] {
+                let n = result.moves.len();
+                result.moves.push(m.clone());
+                old_to_new.push(Some(n..n + 1));
+            }
             i = end;
             continue;
         }

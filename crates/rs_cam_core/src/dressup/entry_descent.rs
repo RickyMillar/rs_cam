@@ -349,6 +349,44 @@ fn fold_ramp_points(
     points
 }
 
+/// The shared first half of a helix or ramp entry (operator ruling
+/// 2026-09-24): go down through AIR only, and return the Z the controlled
+/// descent starts at.
+///
+/// - `material_top` is the highest the material can stand under the entry
+///   (the caller's best stock top). At or below the target there is no
+///   material: the tool rapids to the clearance above the target and feeds
+///   straight down through air to it. Then it returns `None`: the entry is
+///   done.
+/// - Otherwise the tool rapids to `material_top + ENTRY_CLEARANCE` (never
+///   up) and the function returns that Z. The helix or ramp takes every
+///   millimetre below it.
+fn rapid_to_entry_top(
+    tp: &mut Toolpath,
+    start: &P3,
+    end: &P3,
+    material_top: f64,
+    feed_rate: f64,
+) -> Option<f64> {
+    use crate::toolpath::MoveIntent;
+    let clearance = ENTRY_CLEARANCE;
+    if material_top <= end.z + 1e-6 {
+        let air_z = (end.z + clearance).min(start.z);
+        if start.z - air_z > 0.1 {
+            tp.rapid_to_with_intent(P3::new(start.x, start.y, air_z), MoveIntent::Linking);
+        }
+        tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryPlunge);
+        return None;
+    }
+    let top = material_top + clearance;
+    if start.z - top > 0.1 {
+        tp.rapid_to_with_intent(P3::new(start.x, start.y, top), MoveIntent::Linking);
+        Some(top)
+    } else {
+        Some(start.z)
+    }
+}
+
 // SAFETY: eight parameters, one over clippy's threshold. The eighth is
 // `fold`, and grouping the rest into a struct would move the emitter's
 // existing contract for one added argument.
@@ -451,57 +489,44 @@ pub(crate) fn emit_ramp(
         return;
     }
 
-    // Only ramp the last portion of the descent (max 5mm above target).
-    // Rapid down to clearance first, then ramp the rest.
-    let clearance = ENTRY_CLEARANCE;
-    let ramp_start_z = end.z + clearance;
+    // Full-depth rule (operator ruling 2026-09-24): the ramp takes ALL the
+    // material. The tool rapids to the clearance above the material top
+    // (`stock_top`, the best top the caller has) and ramps from there at
+    // `max_angle_deg` down to the target. A straight feed goes only through
+    // air. (Before the ruling the ramp took the last `ENTRY_CLEARANCE` only
+    // and fed a straight plunge through the material above it.)
+    let Some(ramp_start_z) = rapid_to_entry_top(tp, start, end, stock_top, feed_rate) else {
+        return;
+    };
 
-    if start.z > ramp_start_z + 0.1 {
-        // Split the descent so the rapid stays in air.
-        //
-        // The cutter starts at `start.z` (above stock, by `safe_z`
-        // convention) and wants to be at `ramp_start_z` (which is
-        // typically below `stock_top` for any cut into material). A
-        // straight rapid would punch through uncut stock at the new
-        // contour's XY column (UX-dial-in B1 — pre-fix this fired 28
-        // collisions on a default-skeleton pocket). Instead, rapid
-        // only down to `stock_top + clearance` (still in air), then
-        // feed-plunge through material to `ramp_start_z` before the
-        // angled ramp begins.
-        let safe_rapid_floor = stock_top + clearance;
-        let rapid_target_z = ramp_start_z.max(safe_rapid_floor).min(start.z);
-        if start.z - rapid_target_z > 0.1 {
-            tp.rapid_to_with_intent(
-                P3::new(start.x, start.y, rapid_target_z),
-                MoveIntent::Linking,
-            );
-        }
-        if rapid_target_z - ramp_start_z > 0.1 {
-            tp.feed_to_with_intent(
-                P3::new(start.x, start.y, ramp_start_z),
-                feed_rate,
-                MoveIntent::EntryPlunge,
-            );
-        }
+    let ramp_dz = (ramp_start_z - end.z).max(0.1);
+    let tan = max_angle_deg.to_radians().tan();
+    let ramp_xy_len = ramp_dz / tan;
+
+    // The zigzag goes out along `dir` and back, so each leg descends at the
+    // angle. A leg is no longer than the one leg of the old 2 mm ramp; a
+    // deeper ramp laps the same ground more times.
+    let half_len = ramp_xy_len / 2.0;
+    let leg_cap = ENTRY_CLEARANCE / tan / 2.0;
+    let legs = (2.0 * (ramp_xy_len / (2.0 * leg_cap)).ceil()).max(2.0) as usize;
+    let leg = ramp_xy_len / legs as f64;
+    let mut planned = Vec::with_capacity(legs + 1);
+    planned.push(P3::new(start.x, start.y, ramp_start_z));
+    for k in 1..=legs {
+        let out = k % 2 == 1;
+        let z = ramp_start_z - ramp_dz * (k as f64 / legs as f64);
+        let (x, y) = if out {
+            (start.x + dir.0 * leg, start.y + dir.1 * leg)
+        } else {
+            (start.x, start.y)
+        };
+        planned.push(if k == legs {
+            P3::new(start.x, start.y, end.z)
+        } else {
+            P3::new(x, y, z)
+        });
     }
 
-    let ramp_dz = (ramp_start_z - end.z).abs().max(0.1);
-    let max_angle_rad = max_angle_deg.to_radians();
-    let ramp_xy_len = ramp_dz / max_angle_rad.tan();
-
-    // Ramp out along direction, then back (zigzag ramp)
-    let half_len = ramp_xy_len / 2.0;
-    let mid_z = (ramp_start_z + end.z) / 2.0;
-
-    let planned = [
-        P3::new(start.x, start.y, ramp_start_z),
-        P3::new(
-            start.x + dir.0 * half_len,
-            start.y + dir.1 * half_len,
-            mid_z,
-        ),
-        P3::new(start.x, start.y, end.z),
-    ];
     if let Some(probe) = &safety.surface {
         // G-RAMPTERRAIN: clip the legs to the drop-cutter floor. On a
         // lost surface contact, fall back to the straight plunge — the
@@ -551,8 +576,9 @@ pub(crate) fn emit_ramp(
         // Legacy blind legs — honest only with no mesh surface to probe AND
         // no following cut to fold along. The adaptive3d door is the one
         // caller that lands here (R0.2 section 2.2).
-        tp.feed_to_with_intent(planned[1], feed_rate, MoveIntent::EntryRamp);
-        tp.feed_to_with_intent(planned[2], feed_rate, MoveIntent::EntryRamp);
+        for p in planned.iter().skip(1) {
+            tp.feed_to_with_intent(*p, feed_rate, MoveIntent::EntryRamp);
+        }
     }
 }
 
@@ -615,79 +641,105 @@ pub(crate) fn emit_helix(
     safety: &EntrySafety<'_>,
 ) {
     use crate::toolpath::MoveIntent;
-    let stock_top = safety.stock_top;
-    // Only helix the last portion — rapid down to clearance first
-    let clearance = ENTRY_CLEARANCE;
-    let helix_start_z = end.z + clearance;
+    // Full-depth rule (operator ruling 2026-09-24): the helix takes ALL the
+    // material at `pitch` per revolution, from the clearance above the
+    // material top (`safety.stock_top`) down to the target. A straight feed
+    // goes only through air. (Before the ruling the helix took the last
+    // `ENTRY_CLEARANCE` only and fed a straight plunge above it.)
+    let Some(helix_top) = rapid_to_entry_top(tp, start, end, safety.stock_top, feed_rate) else {
+        return;
+    };
 
-    if start.z > helix_start_z + 0.1 {
-        // Same lift-bridge guard as `emit_ramp` (UX-dial-in B1): only
-        // rapid through air; plunge-feed any portion that would
-        // otherwise punch through uncut material above `helix_start_z`.
-        let safe_rapid_floor = stock_top + clearance;
-        let rapid_target_z = helix_start_z.max(safe_rapid_floor).min(start.z);
-        if start.z - rapid_target_z > 0.1 {
-            tp.rapid_to_with_intent(
-                P3::new(start.x, start.y, rapid_target_z),
-                MoveIntent::Linking,
-            );
-        }
-        if rapid_target_z - helix_start_z > 0.1 {
-            tp.feed_to_with_intent(
-                P3::new(start.x, start.y, helix_start_z),
-                feed_rate,
-                MoveIntent::EntryPlunge,
-            );
-        }
-    }
-
-    let dz = (helix_start_z.min(start.z) - end.z).abs();
+    let dz = helix_top - end.z;
     if dz < 0.01 || pitch < 0.01 || radius <= 0.0 {
         tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryPlunge);
         return;
     }
 
-    let revolutions = dz / pitch;
-    let total_angle = revolutions * std::f64::consts::TAU;
-    let steps_per_rev = 36; // 10° per step
-    let total_steps = (revolutions * steps_per_rev as f64).ceil() as usize;
-    if total_steps == 0 {
-        tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryPlunge);
-        return;
-    }
-
+    // One step is 10 degrees of turn and descends at most `pitch / 36`.
+    // G-RAMPTERRAIN: every step is clipped up to the drop-cutter floor. The
+    // descent after a lift starts from the LIFTED height, so the helix never
+    // falls faster than its pitch; it takes more turns instead. On a lost
+    // surface contact, fall back to the straight plunge.
+    const STEPS_PER_REV: f64 = 36.0;
+    let step_angle = std::f64::consts::TAU / STEPS_PER_REV;
+    let step_dz = pitch / STEPS_PER_REV;
+    // A floor that never lets the helix reach the target (a pit narrower
+    // than the turn) stops the turns; the return to the centre then ends it.
+    let max_steps = (dz / step_dz).ceil() as usize * 4 + 2 * STEPS_PER_REV as usize;
     let center_x = end.x;
     let center_y = end.y;
-    let helix_top = helix_start_z.min(start.z);
-
-    let mut turns = Vec::with_capacity(total_steps);
-    for i in 1..=total_steps {
-        let t = i as f64 / total_steps as f64;
-        let angle = total_angle * t;
-        let z = helix_top - dz * t;
+    let mut turns = Vec::new();
+    let mut z = helix_top;
+    for k in 1..=max_steps {
+        let angle = step_angle * k as f64;
         let (sin_a, cos_a) = angle.sin_cos();
         let x = center_x + radius * cos_a;
         let y = center_y + radius * sin_a;
-        turns.push(P3::new(x, y, z));
-    }
-
-    // G-RAMPTERRAIN: clip every turn sample to the drop-cutter floor.
-    // The 10-degree step is already finer than the leg-clip spacing.
-    // On a lost surface contact, fall back to the straight plunge.
-    if let Some(probe) = &safety.surface {
-        for q in &mut turns {
-            let Some(floor) = probe.floor_z(q.x, q.y) else {
-                match probe.off_mesh {
-                    OffMeshEntry::PlungeFallback => {
+        let mut zq = (z - step_dz).max(end.z);
+        if let Some(probe) = &safety.surface {
+            match probe.floor_z(x, y) {
+                Some(floor) => zq = zq.max(floor),
+                None => {
+                    if probe.off_mesh == OffMeshEntry::PlungeFallback {
                         tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryPlunge);
                         return;
                     }
-                    OffMeshEntry::Unconstrained => continue,
                 }
-            };
-            if floor > q.z {
-                q.z = floor;
             }
+        }
+        turns.push(P3::new(x, y, zq));
+        z = zq;
+        if z <= end.z + 1e-9 {
+            break;
+        }
+    }
+    // A slope can hold the turn circle above the target for good: the floor
+    // on the uphill side stays above `end.z`. Then the helix spirals in to
+    // the centre at no more than its pitch per turn length, instead of
+    // one steep step down to the centre.
+    if z > end.z + 1e-6 {
+        let last_angle = step_angle * turns.len() as f64;
+        // An inward spiral of `revs` turns is about `revs * PI * radius`
+        // long; half a pitch per turn keeps its slope under the helix's.
+        let revs = ((z - end.z) / (pitch * 0.5)).ceil().max(1.0);
+        let n = (revs * STEPS_PER_REV) as usize;
+        let z0 = z;
+        // Lay the points out first, then spread the drop by arc length: the
+        // steps near the centre are short, and an even drop per step would
+        // make them steep.
+        let mut xy = Vec::with_capacity(n);
+        let mut prev = turns
+            .last()
+            .map_or((center_x + radius, center_y), |p| (p.x, p.y));
+        let mut lens = Vec::with_capacity(n);
+        for k in 1..=n {
+            let t = k as f64 / n as f64;
+            let r = radius * (1.0 - t);
+            let angle = last_angle + step_angle * k as f64;
+            let (sin_a, cos_a) = angle.sin_cos();
+            let p = (center_x + r * cos_a, center_y + r * sin_a);
+            lens.push(((p.0 - prev.0).powi(2) + (p.1 - prev.1).powi(2)).sqrt());
+            xy.push(p);
+            prev = p;
+        }
+        let total: f64 = lens.iter().sum::<f64>().max(1e-9);
+        let max_slope = pitch / (std::f64::consts::TAU * radius);
+        let mut acc = 0.0;
+        for ((x, y), len) in xy.into_iter().zip(lens) {
+            acc += len;
+            // The schedule, never faster than the helix slope after a lift.
+            let mut zq = (z0 - (z0 - end.z) * (acc / total))
+                .max(end.z)
+                .max(z - len * max_slope)
+                .min(z);
+            if let Some(probe) = &safety.surface
+                && let Some(floor) = probe.floor_z(x, y)
+            {
+                zq = zq.max(floor);
+            }
+            turns.push(P3::new(x, y, zq));
+            z = zq;
         }
     }
     for q in turns {

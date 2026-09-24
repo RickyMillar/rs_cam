@@ -170,6 +170,102 @@ pub struct EntrySafety<'a> {
     /// `OperationType::ramp_fold_lap_cap` (finishing roles only); the
     /// adaptive3d door passes `None`.
     pub fold_lap_cap: Option<u32>,
+    /// The op's own stock, for the dressup door (operator ruling
+    /// 2026-09-24). `apply_entry` replays the toolpath on it and reads the
+    /// material top under each entry, so a helix or ramp that takes the full
+    /// material depth starts at the floor that the op's earlier moves left,
+    /// not at the nominal `stock_top`. `None` keeps `stock_top` for every
+    /// entry; the adaptive3d door passes `None` (its planner floor is the
+    /// `stock_top` of each entry).
+    pub own_stock: Option<EntryStockReplay<'a>>,
+}
+
+/// What `apply_entry` needs to replay an op's own moves on a stock.
+#[derive(Clone, Copy)]
+pub struct EntryStockReplay<'a> {
+    /// The op's cutter. The replay stamps its real profile, so the read
+    /// material top is never below the true one.
+    pub cutter: &'a dyn MillingCutter,
+    /// The stock before the op, when the session has one. `None` starts a
+    /// prism at `EntrySafety::stock_top` over the toolpath's XY box.
+    pub prior: Option<&'a TriDexelStock>,
+}
+
+/// The op's own stock, replayed move by move as `apply_entry` walks the
+/// toolpath. See [`EntrySafety::own_stock`].
+struct OwnStockReplay {
+    stock: TriDexelStock,
+    lut: crate::stock::radial_profile::RadialProfileLUT,
+    radius: f64,
+}
+
+impl OwnStockReplay {
+    /// Most Z-grid cells the fresh prism may hold. A larger box gets
+    /// coarser cells; the conservative read only errs high, so a coarse
+    /// cell costs air time, never a collision.
+    const MAX_CELLS: f64 = 4.0e6;
+
+    fn new(replay: EntryStockReplay<'_>, toolpath: &Toolpath, stock_top: f64) -> Option<Self> {
+        let radius = replay.cutter.radius();
+        let stock = match replay.prior {
+            Some(prior) => prior.clone(),
+            None => {
+                let (mut x0, mut y0, mut z0) = (f64::INFINITY, f64::INFINITY, f64::INFINITY);
+                let (mut x1, mut y1) = (f64::NEG_INFINITY, f64::NEG_INFINITY);
+                for m in &toolpath.moves {
+                    x0 = x0.min(m.target.x);
+                    y0 = y0.min(m.target.y);
+                    z0 = z0.min(m.target.z);
+                    x1 = x1.max(m.target.x);
+                    y1 = y1.max(m.target.y);
+                }
+                if !(x0.is_finite() && z0 < stock_top) {
+                    return None;
+                }
+                // Entries are read at move XYs. A lap outside the box is not
+                // stamped, which can only leave a read top higher (safe).
+                let margin = radius + 5.0;
+                let (w, h) = (x1 - x0 + 2.0 * margin, y1 - y0 + 2.0 * margin);
+                let cell = (radius / 3.0)
+                    .clamp(0.25, 0.5)
+                    .max((w * h / Self::MAX_CELLS).sqrt());
+                TriDexelStock::from_bounds(
+                    &crate::geo::BoundingBox3 {
+                        min: P3::new(x0 - margin, y0 - margin, z0 - 1.0),
+                        max: P3::new(x1 + margin, y1 + margin, stock_top),
+                    },
+                    cell,
+                )
+            }
+        };
+        Some(Self {
+            stock,
+            lut: crate::stock::radial_profile::RadialProfileLUT::from_cutter(
+                replay.cutter,
+                crate::stock::radial_profile::LUT_SAMPLES,
+            ),
+            radius,
+        })
+    }
+
+    /// Stamp one move. A feed cuts; a rapid does not; an arc is left out,
+    /// which can only leave the read material top higher (safe).
+    fn stamp(&mut self, from: P3, m: &Move) {
+        if let MoveType::Linear { .. } = m.move_type {
+            self.stock.stamp_linear_segment(
+                &self.lut,
+                self.radius,
+                from,
+                m.target,
+                crate::dexel_stock::StockCutDirection::FromTop,
+            );
+        }
+    }
+
+    /// The highest material may stand under a disc of `reach` at `(x, y)`.
+    fn material_top(&self, x: f64, y: f64, reach: f64) -> Option<f64> {
+        self.stock.max_conservative_top_z_in_disc(x, y, reach)
+    }
 }
 
 /// Replace straight plunges in a toolpath with ramped or helical entries.
@@ -208,6 +304,29 @@ pub fn apply_entry(
     let mut old_to_new: Vec<Option<std::ops::Range<usize>>> =
         Vec::with_capacity(toolpath.moves.len());
     let mut entry_ranges: Vec<std::ops::Range<usize>> = Vec::new();
+    let mut own = safety
+        .own_stock
+        .and_then(|r| OwnStockReplay::new(r, &toolpath, safety.stock_top));
+    // The stamp walks the EMITTED moves: `stamped` is how many of `result`
+    // the replay holds.
+    let mut stamped = 0usize;
+    let catch_up = |own: &mut Option<OwnStockReplay>, result: &Toolpath, stamped: &mut usize| {
+        if let Some(own) = own.as_mut() {
+            while *stamped < result.moves.len() {
+                if *stamped > 0 {
+                    own.stamp(result.moves[*stamped - 1].target, &result.moves[*stamped]);
+                }
+                *stamped += 1;
+            }
+        } else {
+            *stamped = result.moves.len();
+        }
+    };
+    let entry_reach = tool_radius_mm
+        + match style {
+            EntryStyle::Helix { radius, .. } => radius.max(0.0),
+            EntryStyle::Ramp { .. } => 0.0,
+        };
 
     let mut i = 0;
     while i < toolpath.moves.len() {
@@ -218,6 +337,16 @@ pub fn apply_entry(
             && i > 0
             && is_plunge(&toolpath.moves[i - 1], m)
         {
+            // The material top under this entry: the op's own stock after
+            // every move before it, or the nominal stock top.
+            catch_up(&mut own, &result, &mut stamped);
+            let safety = EntrySafety {
+                stock_top: own
+                    .as_ref()
+                    .and_then(|o| o.material_top(m.target.x, m.target.y, entry_reach))
+                    .unwrap_or(safety.stock_top),
+                ..safety
+            };
             let entry_start = result.moves.len();
             match style {
                 EntryStyle::Ramp { max_angle_deg } => {

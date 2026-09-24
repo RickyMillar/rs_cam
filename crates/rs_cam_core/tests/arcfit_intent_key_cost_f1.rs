@@ -364,6 +364,15 @@ fn run(
 /// PR-6 to price.
 #[test]
 fn pr6_measure_arcfit_intent_key_cost() {
+    // RE-PINNED 2026-09-25 (operator ruling 2026-09-24: an entry helix or
+    // ramp takes the full material depth; a straight feed only through air).
+    // `intent_breaks_unknown_strict`, the F1 Q3 quantity, is unchanged on
+    // every fixture. What moved is the entry shape: a ramp from the stock
+    // top laps more (arc_raster 48 -> 64 moves, arcs 16 -> 24); a face pass
+    // at the stock top enters through air, so its entry is one straight feed
+    // (face_full 80 -> 49 moves, arcs 13 -> 7); the semantic seams between
+    // entry and cut moved with them (three_pass 2 -> 0, arc_raster 4 -> 0,
+    // face_full 20 -> 7).
     run(
         "three_pass",
         three_pass(),
@@ -372,7 +381,7 @@ fn pr6_measure_arcfit_intent_key_cost() {
         OperationType::Adaptive3d,
         &Expect {
             out: (23, 3),
-            census: (28, 2, 3, 0),
+            census: (28, 0, 3, 0),
         },
     );
     // RE-PINNED 2026-09-10 (J2, G-RAMPCONTAIN): (40, 8) -> (48, 16), census
@@ -388,8 +397,8 @@ fn pr6_measure_arcfit_intent_key_cost() {
         1200.0,
         OperationType::Adaptive3d,
         &Expect {
-            out: (48, 16),
-            census: (232, 4, 4, 0),
+            out: (64, 24),
+            census: (256, 0, 4, 0),
         },
     );
     // MOVES RE-PINNED 74 -> 80 on 2026-09-10 (J1). `d30b7520` (G-ISOCLIPRAPID)
@@ -412,8 +421,8 @@ fn pr6_measure_arcfit_intent_key_cost() {
         1500.0,
         OperationType::Face,
         &Expect {
-            out: (80, 13),
-            census: (118, 20, 0, 0),
+            out: (49, 7),
+            census: (63, 7, 0, 0),
         },
     );
     // Pass radii far from the shipped `lead_radius` (2.0): the lead arcs are

@@ -1400,6 +1400,8 @@ pub(super) fn segments_to_toolpath(
         }),
         // R10: a rough keeps folding; the cap is for the finishing roles.
         fold_lap_cap: None,
+        // The planner floor is already each entry's `stock_top`.
+        own_stock: None,
     };
 
     for segment in segments {
@@ -1484,10 +1486,13 @@ pub(super) fn segments_to_toolpath(
                         );
                     }
                 }
-                // The tool now stands at (entry.xy, descent_floor). Everything
-                // below is uncut material: the style emitter takes it, with
-                // `descent_floor` as its stock-top guard. When the floor is at
-                // the entry, the entry column is open and no entry is needed.
+                // The tool now stands at (entry.xy, descent_floor). The style
+                // emitter takes the material below. Its material top is the
+                // planner floor, or the op's stock top for an entry off the
+                // planner grid (operator ruling 2026-09-24: the helix and the
+                // ramp take the full material depth from there). When the
+                // floor is at the entry, the column is open: no entry.
+                let material_top = rapid_floor_z.unwrap_or(params.depth.stock_top_z);
                 if descent_floor > entry.z + 1e-6 {
                     let start = P3::new(entry.x, entry.y, descent_floor);
                     match params.entry_style {
@@ -1502,7 +1507,7 @@ pub(super) fn segments_to_toolpath(
                                 radius,
                                 pitch,
                                 params.plunge_rate,
-                                &entry_safety(descent_floor),
+                                &entry_safety(material_top),
                             );
                         }
                         EntryStyle3d::Ramp { max_angle_deg } => {
@@ -1513,7 +1518,7 @@ pub(super) fn segments_to_toolpath(
                                 (1.0, 0.0),
                                 max_angle_deg,
                                 params.plunge_rate,
-                                &entry_safety(descent_floor),
+                                &entry_safety(material_top),
                                 // G-RAMPCONTAIN: no fold. This door enters PRISM
                                 // stock with `dir = (1.0, 0.0)`; a leg past the
                                 // mesh footprint cuts stock this operation is

@@ -202,9 +202,14 @@ fn helix_entry_never_cuts_below_surface() {
 
 /// No-intrusion parity: an entry at x = -8 ramping toward -X never
 /// meets the ridge (the legs reach x = -27, still on the mesh), so the
-/// fix must keep the legacy two-leg shape.
+/// clip must keep the planned zigzag.
+///
+/// Changed 2026-09-24 (operator ruling: a ramp takes the full material
+/// depth). The ramp starts at the stock top + `ENTRY_CLEARANCE` and each
+/// leg drops at most `ENTRY_CLEARANCE / 2` (the legacy leg), so the planned
+/// zigzag has `2 * ceil(depth / ENTRY_CLEARANCE)` legs, not two.
 #[test]
-fn unclipped_ramp_keeps_two_legs() {
+fn unclipped_ramp_keeps_its_planned_legs() {
     let mesh = ridge_mesh();
     let index = SpatialIndex::build_auto(&mesh);
     let cutter = FlatEndmill::new(1.0, 25.0);
@@ -251,11 +256,16 @@ fn unclipped_ramp_keeps_two_legs() {
         },
         &mut ReconcileSet::empty(),
     );
+    let depth = RIDGE_HEIGHT_MM + 2.0 - z0;
+    let planned_legs = 2 * (depth / 2.0).ceil() as usize;
+    assert!(
+        planned_legs > 2,
+        "the fixture must take more than the old 2 mm"
+    );
     assert_eq!(
         count_intent(&dressed.toolpath, MoveIntent::EntryRamp),
-        2,
-        "an entry the terrain never intrudes on keeps the legacy \
-         two-leg ramp"
+        planned_legs,
+        "an entry the terrain never intrudes on keeps the planned zigzag"
     );
     let d = Dressed {
         toolpath: dressed.toolpath,

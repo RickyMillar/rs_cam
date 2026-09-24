@@ -581,6 +581,12 @@ pub fn apply_dressups(
         stock_top,
         surface: entry_surface,
         fold_lap_cap: transform_capabilities.ramp_fold_lap_cap,
+        // Operator ruling 2026-09-24: a helix or ramp takes the full material
+        // depth, so it reads the op's own replayed stock for its start.
+        own_stock: cutter.map(|cutter| crate::dressup::EntryStockReplay {
+            cutter,
+            prior: prior_stock,
+        }),
     };
     match entry_style {
         DressupEntryStyle::Ramp => {

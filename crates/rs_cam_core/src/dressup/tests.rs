@@ -1038,6 +1038,7 @@ fn no_probe(stock_top: f64) -> EntrySafety<'static> {
         // The finishing cap: these tests pin the folded ramp as a
         // finishing contour sees it.
         fold_lap_cap: Some(super::entry_descent::RAMP_FOLD_MAX_LAPS),
+        own_stock: None,
     }
 }
 
@@ -1277,6 +1278,7 @@ fn a_rough_keeps_folding_over_a_short_run_r10() {
         stock_top: 0.0,
         surface: None,
         fold_lap_cap: None,
+        own_stock: None,
     };
     let result = without_provenance(apply_entry(
         AnnotatedToolpath::new(plunge_then_run(2.0)),
