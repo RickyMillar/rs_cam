@@ -220,6 +220,31 @@ fn apply_feeds_subset(
             operation.set_spindle_rpm(scratch.spindle_rpm());
         }
     }
+    // G6 ramp (2026-09-25): the entry feed. It reads the real `operation`
+    // after the copy-back, so it uses the feed and the RPM that ship and
+    // the entry that ships (a strategy rewrite on the scratch does not
+    // reach the operation). An operation with no ramp field (a drill cycle)
+    // refuses the write, and then no record is filed.
+    let mut ramp_record = None;
+    if write_speeds {
+        let from_mm_min = operation.ramp_feed_rate();
+        let entry = crate::feeds::ramp::entry_geometry(operation, context.dressups, tool.diameter);
+        let record = crate::feeds::ramp::resolve_ramp_feed(
+            &result.ramp,
+            entry,
+            operation.feed_rate(),
+            operation.spindle_rpm(),
+            tool.flute_count,
+            operation.plunge_rate(),
+        );
+        if operation.as_params_mut().set_ramp_feed_rate(record.value()) {
+            ramp_record = Some(record.clone());
+            warnings.push(SuggestWarning::RampFeed {
+                from_mm_min,
+                record,
+            });
+        }
+    }
     if write_geometry {
         if let Some(v) = scratch.as_params().stepover() {
             operation.set_stepover(v);
@@ -253,6 +278,9 @@ fn apply_feeds_subset(
     // recalibrated feed/DPP, but the values remain suggest-derived, so the
     // source labels still hold.
     provenance.apply_suggested_subset(result, operation, rpm_written, write_speeds, write_geometry);
+    if let Some(record) = &ramp_record {
+        provenance.stamp_ramp(record);
+    }
     warnings
 }
 
@@ -411,6 +439,13 @@ impl FieldApplyPreview {
                 operation.set_depth_per_pass(self.value);
             }
             FeedsField::ScallopHeight => operation.set_scallop_height(self.value),
+            // No pill writes the ramp today; the arm keeps the per-field
+            // contract whole. A drill cycle has no field and refuses it.
+            FeedsField::RampFeedRate => {
+                operation
+                    .as_params_mut()
+                    .set_ramp_feed_rate(Some(self.value));
+            }
         }
         provenance.set(self.field, self.provenance.clone());
     }
@@ -441,6 +476,9 @@ impl FieldApplyPreviews {
             FeedsField::DepthPerPass => self.depth_per_pass.as_ref(),
             // Never suggested, never written by the funnel.
             FeedsField::ScallopHeight => None,
+            // Written by the funnel, but no pill offers it: the
+            // `SuggestWarning::RampFeed` record carries the value.
+            FeedsField::RampFeedRate => None,
         }
     }
 }

@@ -18,9 +18,13 @@
 //! of the comparison card, and `compare.rs` hangs each one on the row it
 //! explains. See `planning/feeds_rework_2026-09-15/PLAN.md` W2.
 //!
-//! Three things deliberately stay on the page rather than moving to a hover:
+//! Four things deliberately stay on the page rather than moving to a hover:
 //!
 //! - **Warnings.** A warning behind a hover is a warning that was deleted.
+//! - **The ramp record** (G6 ramp, 2026-09-25): one face line from the
+//!   funnel's `SuggestWarning::RampFeed`. The card has no ramp row, so the
+//!   line names the ramp feed, the arm that set it and θ
+//!   ([`draw_suggest_lines`]).
 //! - **The engaged-diameter row**, for tapered and V tools, where the
 //!   published tip size understates what is actually cutting.
 //! - **The row basis** ([`draw_row_basis_lines`]): the V-bit lookup key
@@ -1026,6 +1030,27 @@ fn suggest_line(warning: &SuggestWarning) -> Option<(String, bool)> {
         // paints on the face with the same core text. A second face line
         // would repeat it; the rationale row carries it on the RPM hover.
         SuggestWarning::RpmLoweredForFeedCeiling { .. } => None,
+        // G6 ramp (2026-09-25): the card has no ramp row, so the record is a
+        // face line. It names the arm and θ, and the value the operation
+        // holds now.
+        SuggestWarning::RampFeed {
+            from_mm_min,
+            record,
+        } => {
+            let (line, _) = record.card_text();
+            let now = match from_mm_min {
+                Some(from) => format!("now {from:.0} mm/min"),
+                None => "now the plunge rate".to_owned(),
+            };
+            // A sourced line ends in its chip limit; a fallback line ends in
+            // a full sentence.
+            let line = if record.value().is_some() {
+                format!("{line}; {now}")
+            } else {
+                format!("{line} It is {now}.")
+            };
+            Some((line, false))
+        }
         // These records reach the card through the rationale rows, on the
         // hover of the row whose number they move (`append_rationale`), or
         // they move no number.

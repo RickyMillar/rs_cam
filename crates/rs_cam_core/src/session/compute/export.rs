@@ -383,6 +383,7 @@ impl ProjectSession {
             &prov.spindle_rpm,
             &prov.stepover,
             &prov.depth_per_pass,
+            &prov.ramp_feed_rate,
         ]
         .into_iter()
         .any(from_suggest);
@@ -405,6 +406,7 @@ impl ProjectSession {
             context: SuggestContext {
                 model_bbox,
                 stock: Some(&stock_ctx),
+                dressups: Some(&tc.dressups),
                 ..SuggestContext::default()
             },
         })

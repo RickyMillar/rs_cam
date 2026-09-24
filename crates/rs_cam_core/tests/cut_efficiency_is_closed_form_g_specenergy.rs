@@ -51,7 +51,9 @@ use rs_cam_core::compute::tool_config::{
     BitCutDirection, ToolConfig, ToolId, ToolMaterial, ToolType,
 };
 use rs_cam_core::feeds::efficiency::{ChipVerdict, cut_efficiency};
-use rs_cam_core::feeds::{ChiploadBounds, ChiploadSource, FeedsDerates, FeedsResult};
+use rs_cam_core::feeds::{
+    ChiploadBounds, ChiploadSource, FeedsDerates, FeedsResult, RampBasis, RampFallback,
+};
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
 
@@ -162,7 +164,9 @@ fn operating_point(
         chip_load_mm: advance_per_tooth_mm,
         feed_rate_mm_min: feed,
         plunge_rate_mm_min: feed * 0.4,
-        ramp_feed_mm_min: feed * 0.6,
+        ramp: RampBasis::PlungeRate {
+            reason: RampFallback::NoLut,
+        },
         axial_depth_mm: axial_doc_mm,
         radial_width_mm: radial_woc_mm,
         power_kw: 0.0,

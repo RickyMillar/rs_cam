@@ -28,6 +28,7 @@ pub mod predict;
 pub mod profile;
 pub mod provenance;
 pub mod quantities;
+pub mod ramp;
 pub mod rationale;
 pub mod suggest;
 pub mod support;
@@ -51,6 +52,7 @@ pub use quantities::{
     AdvancePerToothMm, ArcMeanChipThicknessMm, COMMANDED_ADVANCE_PER_TOOTH, ChiploadBandClass,
     CommandedFeedMmMin, VendorChiploadBand,
 };
+pub use ramp::{EntryGeometry, RampBasis, RampFallback, RampFeed};
 pub use support::{FeedsSupport, feeds_support};
 pub use vendor_lut::VendorLut;
 
@@ -463,7 +465,11 @@ pub struct FeedsResult {
     pub chip_load_mm: f64,
     pub feed_rate_mm_min: f64,
     pub plunge_rate_mm_min: f64,
-    pub ramp_feed_mm_min: f64,
+    /// The sourced half of the ramp feed (G6 ramp): the axial chip of the
+    /// drill claim, or why there is none. The number needs θ and the
+    /// shipped feed and RPM, so `suggest::apply` resolves it
+    /// ([`ramp::resolve_ramp_feed`]).
+    pub ramp: ramp::RampBasis,
     pub axial_depth_mm: f64,
     pub radial_width_mm: f64,
     /// Predicted spindle power (kW) **at the CALCULATOR's geometry** — the
@@ -2525,8 +2531,11 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // rule-of-thumb (150-300 mm/min per mm of diameter for wood).
     let plunge = material.plunge_rate_base(d);
 
-    // Ramp feed: capped at 1.5× plunge rate (reference calcs.rs convention)
-    let ramp_feed = (feed * 0.5).max(plunge).min(plunge * 1.5);
+    // --- Step 8b: the sourced half of the ramp feed (G6 ramp) ---
+    // The G6 drill claim gives the axial chip of a helix or ramp entry, or
+    // the record says why there is none. The number needs θ and the shipped
+    // feed and RPM, so `suggest::apply` resolves it. No clamp rule remains.
+    let ramp = ramp::ramp_basis(input);
 
     // --- Step 9: no factor (ruling R4, 2026-09-24) ---
     //
@@ -2534,11 +2543,11 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // `machine.safety_factor` (0.75), the "hidden 25 %". The factor is gone.
     // The feed ships the band chipload times the published depth ladder; the
     // aggressiveness dial holds the LOAD through the engagement (Suggest pass
-    // 6b). The plunge and the ramp ship the material base with no factor
-    // (ruling Q5): a plunge is full-width axial, so the dial has no
-    // engagement lever on it. The ball-tip cap below still applies.
+    // 6b). The plunge ships the material base with no factor (ruling Q5): a
+    // plunge is full-width axial, so the dial has no engagement lever on it.
+    // The ramp is sourced by G6 (Step 8b), or it falls back to the plunge.
+    // The ball-tip cap below still applies.
     let mut plunge_rate = plunge;
-    let ramp_feed_rate = ramp_feed;
 
     // Fix 2 (Wanaka audit): tool-geometry-aware plunge cap.
     // Material::plunge_rate_base returns one value per material with
@@ -2782,7 +2791,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         chip_load_mm: chip_load,
         feed_rate_mm_min: feed,
         plunge_rate_mm_min: plunge_rate,
-        ramp_feed_mm_min: ramp_feed_rate,
+        ramp,
         axial_depth_mm: ap,
         radial_width_mm: ae,
         power_kw: actual_power,

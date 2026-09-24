@@ -56,6 +56,16 @@ impl RsCamApp {
                 // `detail` too, joined with the size claim when there is one.
                 // B5 (G6): a drill claim is a support arm (`DrillTransferred`)
                 // in the same way.
+                // G6 ramp: `ramp.source` is the claim that does not use θ;
+                // `headline`, `detail` and `value_mm_min` come from the
+                // `RampFeed` record of the funnel, which holds the number,
+                // the arm and θ. A drill files no record, so they are null.
+                let ramp_record = profile.warnings.iter().find_map(|w| match w {
+                    rs_cam_core::feeds::suggest::SuggestWarning::RampFeed { record, .. } => {
+                        Some(record)
+                    }
+                    _ => None,
+                });
                 let basis = profile.feeds.as_ref().map(|feeds| {
                     let (headline, detail) = feeds.support.card_text();
                     let hardness = feeds
@@ -65,10 +75,22 @@ impl RsCamApp {
                         .map(|(headline, detail)| {
                             serde_json::json!({ "headline": headline, "detail": detail })
                         });
+                    let (ramp_source_headline, ramp_source_detail) = feeds.ramp.card_text();
+                    let (ramp_headline, ramp_detail) =
+                        ramp_record.map(|record| record.card_text()).unzip();
                     serde_json::json!({
                         "headline": headline,
                         "detail": detail,
                         "hardness": hardness,
+                        "ramp": {
+                            "source": {
+                                "headline": ramp_source_headline,
+                                "detail": ramp_source_detail,
+                            },
+                            "headline": ramp_headline,
+                            "detail": ramp_detail,
+                            "value_mm_min": ramp_record.and_then(|record| record.value()),
+                        },
                     })
                 });
                 json_str(serde_json::json!({
@@ -819,6 +841,7 @@ impl RsCamApp {
                     "spindle_rpm": tc.operation.spindle_rpm(),
                     "stepover": tc.operation.stepover(),
                     "depth_per_pass": tc.operation.depth_per_pass(),
+                    "ramp_feed_rate": tc.operation.ramp_feed_rate(),
                 })
             })
             .unwrap_or(serde_json::Value::Null);

@@ -609,6 +609,10 @@ fn suggest_warning_defect(w: &SuggestWarning) -> Option<&'static str> {
         SuggestWarning::AggressivenessNotApplied { aggressiveness, .. } => {
             aggressiveness.is_finite()
         }
+        SuggestWarning::RampFeed {
+            from_mm_min,
+            record,
+        } => from_mm_min.is_none_or(f64::is_finite) && record.value().is_none_or(f64::is_finite),
     };
     (!ok).then_some("a SuggestWarning pair or factor is missing or not finite")
 }

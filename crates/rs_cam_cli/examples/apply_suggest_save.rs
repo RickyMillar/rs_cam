@@ -79,6 +79,7 @@ fn main() -> Result<()> {
             effective_diameter_mm: 0.0,
             calculator_operating_point: None,
             policy: SuggestPolicy::default(),
+            dressups: Some(&tc.dressups),
         };
         let suggested = match suggest_for_operation(SuggestForOperationInput {
             operation: &tc.operation,

@@ -464,22 +464,29 @@ impl ProjectSession {
             .copied()
             .unwrap_or_default();
         let mut operation = plan_tier_operation(tier, cusp, spec, strategy);
-        let feeds_provenance =
-            self.suggest_feeds_for(&mut operation, tool, ctx.model_bbox.as_ref());
+        let dressup_op = match strategy {
+            TierStrategy::UnifiedFinish => OperationType::UnifiedFinish,
+            TierStrategy::Scallop | TierStrategy::IsoScallop => OperationType::Scallop,
+        };
+        // G6 ramp: the tier's own dressups, so Suggest reads the entry the
+        // tier ships ("entry off" on a finish tier, not "entry unknown").
+        let dressups = DressupConfig::for_op(dressup_op);
+        let feeds_provenance = self.suggest_feeds_for(
+            &mut operation,
+            tool,
+            ctx.model_bbox.as_ref(),
+            Some(&dressups),
+        );
         let strategy_tag = match strategy {
             TierStrategy::UnifiedFinish => "",
             TierStrategy::Scallop => " scallop",
             TierStrategy::IsoScallop => " iso",
         };
-        let dressup_op = match strategy {
-            TierStrategy::UnifiedFinish => OperationType::UnifiedFinish,
-            TierStrategy::Scallop | TierStrategy::IsoScallop => OperationType::Scallop,
-        };
         ToolpathConfig {
             id: ToolpathId(0),
             name: format!("Finish tier {tier}{strategy_tag} (R{cusp:.1})"),
             enabled: true,
-            dressups: DressupConfig::for_op(dressup_op),
+            dressups,
             heights: ctx.heights.clone(),
             tool_id: tool.id.0,
             model_id: spec.model_id,
@@ -847,6 +854,7 @@ impl ProjectSession {
         operation: &mut OperationConfig,
         tool: &ToolConfig,
         model_bbox: Option<&crate::geo::BoundingBox3>,
+        dressups: Option<&DressupConfig>,
     ) -> crate::feeds::FeedsProvenance {
         let planned = operation.clone();
         let suggested = crate::feeds::suggest::suggest_for_operation(
@@ -866,6 +874,8 @@ impl ProjectSession {
                 // here gives it, and v1 does not read it.
                 context: crate::feeds::suggest::SuggestContext {
                     model_bbox,
+                    // G6 ramp: the entry θ of the tier.
+                    dressups,
                     ..crate::feeds::suggest::SuggestContext::default()
                 },
             },

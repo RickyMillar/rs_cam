@@ -37,6 +37,8 @@
 //!   ceiling, so the RPM follows it down, 18 000 -> 15 748 (ruling R4 Q10).
 //!   Raises `RpmLoweredForFeedCeiling` in the calculator and its Suggest
 //!   copy. The card paints the line once, from the calculator's record.
+//!   The fixture takes the add door's dressups (`DressupConfig::for_op`), so
+//!   the roughing ramp of 3° gives a sourced G6 ramp: it raises `RampFeed`.
 //! - `slow_gantry`: the `inspector_width_is_tab_independent_up4` cell on a
 //!   cutting-feed ceiling of 200 mm/min. Raises `FeedRateClamped`.
 //! - `weak_spindle`: the adaptive cell on a 0.05 kW constant-power spindle.
@@ -87,14 +89,16 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
+use rs_cam_core::compute::config::DressupConfig;
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::feeds::ramp::RampArm;
 use rs_cam_core::feeds::suggest::{
     AggressivenessSkip, SuggestContext, SuggestForOperationInput, SuggestWarning,
     suggest_for_operation,
 };
 use rs_cam_core::feeds::{
-    FeedsWarning, OperationFamily, PassRole, SpindleStrategy, embedded_vendor_lut,
+    FeedsWarning, OperationFamily, PassRole, RampFeed, SpindleStrategy, embedded_vendor_lut,
 };
 use rs_cam_core::machine::{MachineProfile, PowerModel};
 use rs_cam_core::material::{Material, PlywoodGrade, SheetGoodKind, WoodSpecies};
@@ -173,6 +177,9 @@ fn classify_suggest(w: &SuggestWarning) -> (&'static str, Class) {
         SuggestWarning::RpmLoweredForFeedCeiling { .. } => {
             ("SuggestRpmLoweredForFeedCeiling", Class::OnTheFace)
         }
+        // G6 ramp (2026-09-25): the card has no ramp row, so the record is
+        // a face line.
+        SuggestWarning::RampFeed { .. } => ("RampFeed", Class::OnTheFace),
         SuggestWarning::PlungeClampedToFeed { .. } => ("PlungeClampedToFeed", Class::RowHover),
         SuggestWarning::StepoverClampedToToolDiameter { .. } => {
             ("StepoverClampedToToolDiameter", Class::RowHover)
@@ -364,6 +371,14 @@ fn suggest_numbers(w: &SuggestWarning) -> Vec<String> {
             out.push(at(*rpm_to, 0));
             out.push(at(*feed_ceiling_mm_min, 0));
         }
+        // The value and θ of a sourced ramp; the plunge rate of a fallback.
+        SuggestWarning::RampFeed { record, .. } => match record {
+            RampFeed::Sourced(ramp) => {
+                out.push(at(ramp.value_mm_min, 0));
+                out.push(at(ramp.theta_deg, 2));
+            }
+            RampFeed::PlungeRate { plunge_mm_min, .. } => out.push(at(*plunge_mm_min, 0)),
+        },
         _ => {}
     }
     out
@@ -404,7 +419,9 @@ fn state_for(case: &Case) -> AppState {
         name: "Visible-stage fixture".to_owned(),
         enabled: true,
         operation: case.operation.clone(),
-        dressups: Default::default(),
+        // The dressups an add door gives the operation: a roughing pocket
+        // gets the 3° ramp that the G6 ramp line reads.
+        dressups: DressupConfig::for_op(case.operation.op_type()),
         heights: Default::default(),
         tool_id: 1,
         model_id: 1,
@@ -506,6 +523,7 @@ fn records(state: &AppState) -> (Vec<FeedsWarning>, Vec<SuggestWarning>) {
         spindle_strategy: session.post_config().spindle_strategy,
         context: SuggestContext {
             model_bbox: snapshot.model_bbox.as_ref(),
+            dressups: Some(&snapshot.entry.dressups),
             ..SuggestContext::default()
         },
     })
@@ -703,6 +721,7 @@ fn cases() -> Vec<Case> {
             must_raise: &[
                 "RpmLoweredForFeedCeiling",
                 "SuggestRpmLoweredForFeedCeiling",
+                "RampFeed",
             ],
         },
         Case {
@@ -773,6 +792,7 @@ fn every_stage_that_moves_a_number_is_on_the_card_g_visible() {
         "EngagementReducedForAggressiveness",
         "AggressivenessNotApplied",
         "LongToolDerate",
+        "RampFeed",
     ] {
         assert!(
             checked.contains(&name),
@@ -796,5 +816,52 @@ fn the_dial_line_names_the_long_tool_share_g_visible() {
     assert!(
         line.contains("× 0.75 long tool = 64 %"),
         "the dial line must name the long-tool share and the target: {line:?}"
+    );
+}
+
+/// G6 ramp (2026-09-25): the ramp line names the arm and θ. On the
+/// `feed_ceiling_rpm` cell (Ø6 2F flat pocket, generic hardwood, the
+/// registry's roughing ramp of 3°) the RPM follows the 4000 mm/min ceiling
+/// down to 15 748. The chip term is 0.0635 x 15 748 x 2 / tan 3° = 38 162
+/// mm/min, far above the cut feed, so the cut feed sets the ramp feed.
+#[test]
+fn the_ramp_line_names_the_arm_and_the_angle_g_visible() {
+    let case = cases()
+        .into_iter()
+        .find(|c| c.name == "feed_ceiling_rpm")
+        .expect("the feed_ceiling_rpm fixture");
+    let mut state = state_for(&case);
+    let texts = painted_text(&mut state);
+    let (_, suggest) = records(&state);
+    let ramp = suggest
+        .iter()
+        .find_map(|w| match w {
+            SuggestWarning::RampFeed {
+                record: RampFeed::Sourced(ramp),
+                ..
+            } => Some(ramp),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("the pocket must ship a sourced ramp: {suggest:?}"));
+    assert_eq!(ramp.arm, RampArm::CutFeed);
+    assert!((ramp.theta_deg - 3.0).abs() < 1e-9, "{}", ramp.theta_deg);
+    assert!(
+        (ramp.chip_term_mm_min - 38_162.0).abs() < 1.0,
+        "{}",
+        ramp.chip_term_mm_min
+    );
+    assert!(
+        ramp.value_mm_min <= 4000.0 && ramp.value_mm_min >= 3990.0,
+        "the cut feed at the 4000 mm/min ceiling: {}",
+        ramp.value_mm_min
+    );
+    let head = format!("Ramp feed {}", at(ramp.value_mm_min, 0));
+    let line = texts
+        .iter()
+        .find(|t| !t.contains('\n') && t.contains(&head))
+        .unwrap_or_else(|| panic!("no ramp line on the face: {texts:?}"));
+    assert!(
+        line.contains("cut feed") && line.contains("3.00°"),
+        "the ramp line must name the arm and the angle: {line:?}"
     );
 }

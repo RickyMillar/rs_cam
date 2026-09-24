@@ -82,6 +82,9 @@ pub enum RationaleParam {
     /// operator to coordinate the rough allowance with the finish
     /// per-pass DOC.
     StockToLeave,
+    /// `operation.ramp_feed_rate` (mm/min), the helix and ramp entry feed
+    /// (G6 ramp).
+    RampFeed,
 }
 
 /// Why a rationale entry exists. One-to-one with the nine
@@ -158,6 +161,10 @@ pub enum RationaleReason {
     /// Ruling R4 Q10 (2026-09-24): the RPM came down to hold the chipload
     /// at the machine feed ceiling.
     RpmLoweredForFeedCeiling,
+    /// G6 ramp (2026-09-25): Suggest wrote the entry feed, from the G6
+    /// axial chip and the entry slope, or `None` with the plunge-rate
+    /// fallback reason.
+    RampFeed,
 }
 
 /// One row in the rationale tree the GUI / MCP renders alongside a
@@ -227,8 +234,9 @@ fn entries_for_warning(w: &SuggestWarning) -> Vec<RationaleEntry> {
 pub const AGGRESSIVENESS_ABOVE_BASE_TEXT: &str =
     "above 1.0: the load target exceeds the full-engagement base";
 
-/// The card text of the plunge and the ramp (ruling R4 Q5).
-pub const PLUNGE_AT_MATERIAL_BASE_TEXT: &str = "Plunge and ramp: material base, no factor.";
+/// The card text of the plunge (ruling R4 Q5). The ramp has its own record
+/// since G6 ramp (`SuggestWarning::RampFeed`).
+pub const PLUNGE_AT_MATERIAL_BASE_TEXT: &str = "Plunge: material base, no factor.";
 
 /// The rows of the aggressiveness record: the depth-per-pass row first, then
 /// the stepover row when that lever exists. `None` for every other warning.
@@ -828,6 +836,20 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
                  {PLUNGE_AT_MATERIAL_BASE_TEXT}"
             )),
         },
+        SuggestWarning::RampFeed {
+            from_mm_min,
+            record,
+        } => {
+            let (headline, detail) = record.card_text();
+            RationaleEntry {
+                param: RationaleParam::RampFeed,
+                reason: RationaleReason::RampFeed,
+                from_value: *from_mm_min,
+                to_value: record.value(),
+                headline,
+                detail: Some(detail),
+            }
+        }
     }
 }
 

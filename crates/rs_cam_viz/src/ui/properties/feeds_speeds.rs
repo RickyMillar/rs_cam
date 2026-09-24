@@ -200,6 +200,8 @@ fn draw_feeds_card(
             // would not have produced.
             context: rs_cam_core::feeds::suggest::SuggestContext {
                 model_bbox,
+                // G6 ramp: the entry θ the apply writes the ramp feed for.
+                dressups: Some(&entry.dressups),
                 ..rs_cam_core::feeds::suggest::SuggestContext::default()
             },
         },
@@ -226,6 +228,7 @@ fn draw_feeds_card(
             entry.operation.feeds_style().1,
             rs_cam_core::feeds::suggest::SuggestContext {
                 model_bbox,
+                dressups: Some(&entry.dressups),
                 ..rs_cam_core::feeds::suggest::SuggestContext::default()
             },
         )

@@ -316,7 +316,8 @@ impl AppliedRecipe {
                 FeedsField::DepthPerPass => {
                     cut.set_depth_per_pass(recommended.axial_depth_mm);
                 }
-                FeedsField::ScallopHeight => {}
+                // No row and no pill: the `RampFeed` record is its line.
+                FeedsField::ScallopHeight | FeedsField::RampFeedRate => {}
             }
         }
         cut

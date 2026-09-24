@@ -58,6 +58,7 @@ fn read(op: &OperationConfig, field: FeedsField) -> Option<f64> {
         FeedsField::Stepover => op.stepover(),
         FeedsField::DepthPerPass => op.depth_per_pass(),
         FeedsField::ScallopHeight => op.scallop_height(),
+        FeedsField::RampFeedRate => op.ramp_feed_rate(),
     }
 }
 

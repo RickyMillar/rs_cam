@@ -16,6 +16,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::ramp::{RampArm, RampFeed};
 use super::{ChiploadSource, FeedsResult};
 use crate::compute::catalog::OperationConfig;
 
@@ -123,6 +124,10 @@ pub struct FeedsProvenance {
     pub depth_per_pass: Option<ValueProvenance>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scallop_height: Option<ValueProvenance>,
+    /// The helix and ramp entry feed (G6 ramp). Suggest stamps it with
+    /// [`Self::stamp_ramp`]; a hand edit stamps `Manual`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ramp_feed_rate: Option<ValueProvenance>,
 }
 
 impl FeedsProvenance {
@@ -171,6 +176,23 @@ impl FeedsProvenance {
         }
     }
 
+    /// Stamp the ramp feed from the record Suggest wrote (G6 ramp). Call it
+    /// after the feed and the plunge are stamped:
+    ///
+    /// - a chip term that sets the feed stamps the G6 side row (`VendorLut`);
+    /// - the cut feed that sets it copies the feed's stamp;
+    /// - the plunge-rate fallback copies the plunge's stamp, because the
+    ///   entry then runs at the plunge rate.
+    pub fn stamp_ramp(&mut self, ramp: &RampFeed) {
+        self.ramp_feed_rate = match ramp {
+            RampFeed::Sourced(s) => match s.arm {
+                RampArm::ChipTerm => Some(ValueProvenance::vendor_lut(s.drill.side_row.clone())),
+                RampArm::CutFeed => self.feed_rate.clone(),
+            },
+            RampFeed::PlungeRate { .. } => self.plunge_rate.clone(),
+        };
+    }
+
     /// Stamp a single dimension. Used by per-field GUI/controller apply and by
     /// manual / optimizer / auto-correct write sites.
     pub fn set(&mut self, field: FeedsField, prov: ValueProvenance) {
@@ -187,6 +209,7 @@ impl FeedsProvenance {
             FeedsField::Stepover => self.stepover.as_ref(),
             FeedsField::DepthPerPass => self.depth_per_pass.as_ref(),
             FeedsField::ScallopHeight => self.scallop_height.as_ref(),
+            FeedsField::RampFeedRate => self.ramp_feed_rate.as_ref(),
         }
     }
 
@@ -227,6 +250,9 @@ impl FeedsProvenance {
         if o.scallop_height() != n.scallop_height() && self.scallop_height == old.scallop_height {
             self.scallop_height = manual();
         }
+        if o.ramp_feed_rate() != n.ramp_feed_rate() && self.ramp_feed_rate == old.ramp_feed_rate {
+            self.ramp_feed_rate = manual();
+        }
     }
 
     /// Stamp [`ProvenanceSource::Optimizer`] on every feeds dimension whose
@@ -259,6 +285,9 @@ impl FeedsProvenance {
         if b.scallop_height() != c.scallop_height() {
             self.scallop_height = Some(ValueProvenance::optimizer());
         }
+        if b.ramp_feed_rate() != c.ramp_feed_rate() {
+            self.ramp_feed_rate = Some(ValueProvenance::optimizer());
+        }
         self
     }
 
@@ -270,6 +299,7 @@ impl FeedsProvenance {
             FeedsField::Stepover => &mut self.stepover,
             FeedsField::DepthPerPass => &mut self.depth_per_pass,
             FeedsField::ScallopHeight => &mut self.scallop_height,
+            FeedsField::RampFeedRate => &mut self.ramp_feed_rate,
         }
     }
 }
@@ -289,6 +319,9 @@ pub enum FeedsField {
     /// Kept for symmetry. Scallop height is stamped through the struct
     /// fields, not through `set()`.
     ScallopHeight,
+    /// The helix and ramp entry feed (G6 ramp). Suggest writes it through
+    /// its own record, so no pill preview carries it.
+    RampFeedRate,
 }
 
 impl FeedsResult {
@@ -336,6 +369,9 @@ impl FeedsResult {
             stepover: Some(woc),
             depth_per_pass: Some(doc),
             scallop_height: None,
+            // The ramp needs θ and the shipped feed; the apply funnel stamps
+            // it (`FeedsProvenance::stamp_ramp`).
+            ramp_feed_rate: None,
         }
     }
 }
@@ -392,7 +428,9 @@ mod tests {
             chip_load_mm: 0.02,
             feed_rate_mm_min: 1000.0,
             plunge_rate_mm_min: 400.0,
-            ramp_feed_mm_min: 500.0,
+            ramp: crate::feeds::RampBasis::PlungeRate {
+                reason: crate::feeds::RampFallback::NoLut,
+            },
             axial_depth_mm: 4.0,
             radial_width_mm: 1.0,
             power_kw: 0.3,

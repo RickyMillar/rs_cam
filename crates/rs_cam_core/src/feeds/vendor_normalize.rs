@@ -195,6 +195,24 @@ pub fn to_lookup_query_unrouted(input: &FeedsInput) -> LookupQuery {
     }
 }
 
+/// The G6 ramp query: the tool's plunge in the drill family, for the axial
+/// chip of a helix or ramp entry (`feeds::ramp::ramp_basis`).
+///
+/// It starts from the **unrouted** query on purpose. [`to_lookup_query`]
+/// runs [`lut_query_for`] for the operation kind, and that would turn a
+/// `ProjectCurve` query into (Contour, Finish) before this function sets the
+/// family. The ramp asks about the tool's plunge, not about the operation's
+/// side cut, so the family is always (Drill, Roughing), and the drill family
+/// routes to itself. The tool, the lookup diameter, the flute count and the
+/// material stay as the operation declares them.
+#[must_use]
+pub fn ramp_drill_query(input: &FeedsInput) -> LookupQuery {
+    let mut query = to_lookup_query_unrouted(input);
+    query.operation_family = LutOperationFamily::Drill;
+    query.pass_role = LutPassRole::Roughing;
+    query
+}
+
 /// The LUT lookup key for this input: [`super::geometry::lut_key_diameter_mm`]
 /// at the operation's axial depth. A tapered ball is keyed at its tip
 /// (ruling A1, 2026-09-24); a V-bit at its nominal diameter (ruling B4,

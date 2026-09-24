@@ -582,7 +582,10 @@ fn wanaka_suggest_baseline() {
                 | SuggestWarning::EngagementReducedForAggressiveness { .. }
                 // Ruling R4 Q10 (2026-09-24): the RPM follows the feed ceiling.
                 | SuggestWarning::RpmLoweredForFeedCeiling { .. }
-                | SuggestWarning::AggressivenessNotApplied { .. } => {}
+                | SuggestWarning::AggressivenessNotApplied { .. }
+                // G6 ramp (2026-09-25): one record per apply that writes
+                // the speeds, on an operation with the field.
+                | SuggestWarning::RampFeed { .. } => {}
                 other => {
                     panic!("{ctx}: unexpected SuggestWarning variant slipped through: {other:?}")
                 }
@@ -925,7 +928,10 @@ fn wanaka_suggest_baseline() {
                 SuggestWarning::EngagementReducedForAggressiveness { .. }
                 | SuggestWarning::AggressivenessNotApplied { .. }
                 // Ruling R4 Q10 (2026-09-24): allowed where the ceiling binds.
-                | SuggestWarning::RpmLoweredForFeedCeiling { .. } => {}
+                | SuggestWarning::RpmLoweredForFeedCeiling { .. }
+                // G6 ramp (2026-09-25): the entry feed record, EXPECTED on
+                // every speeds apply of an operation with the field.
+                | SuggestWarning::RampFeed { .. } => {}
                 // v3.3c: must NOT fire on Wanaka — both 3D-rough
                 // toolpaths pin `clearing_strategy = "agent_search"`,
                 // and heuristic-B pinning suppresses the warn-only
@@ -1196,6 +1202,9 @@ fn session_cutter_op_profile_matches_gui_rationale_assembly() {
             effective_diameter_mm: 0.0,
             calculator_operating_point: None,
             policy: SuggestPolicy::default(),
+            // G6 ramp: the toolpath's dressups, as `cutter_op_profile`
+            // passes them, so the two assemblies stay one.
+            dressups: Some(&tc.dressups),
         };
         let direct = suggest_for_operation(SuggestForOperationInput {
             operation: &tc.operation,

@@ -651,7 +651,9 @@ fn feeds_hint_emits_high_feed_ratio() {
         chip_load_mm: 0.02,
         feed_rate_mm_min: 1000.0,
         plunge_rate_mm_min: 400.0,
-        ramp_feed_mm_min: 500.0,
+        ramp: crate::feeds::RampBasis::PlungeRate {
+            reason: crate::feeds::RampFallback::NoLut,
+        },
         axial_depth_mm: 4.0,
         radial_width_mm: 1.0,
         power_kw: 0.3,

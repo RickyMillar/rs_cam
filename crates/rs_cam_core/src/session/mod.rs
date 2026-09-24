@@ -1621,6 +1621,9 @@ impl ProjectSession {
         let context = SuggestContext {
             model_bbox,
             stock: Some(&stock_ctx),
+            // G6 ramp: the toolpath's entry θ, so MCP and the CLI write and
+            // report the ramp feed the card shows.
+            dressups: Some(&tc.dressups),
             ..SuggestContext::default()
         };
         Some(CutterOpProfile::for_combo(CutterOpProfileInput {

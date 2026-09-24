@@ -515,7 +515,10 @@ mod tests {
     #[test]
     fn vcarve_max_depth_falls_back_to_the_raw_value_labelled_not_clamped() {
         let session = ProjectSession::new_empty();
-        let tool = ToolConfig::new_default(ToolId(1), ToolType::VBit);
+        // A 6 mm V-bit: the default 12.7 mm V-bit has no chart row within
+        // the size law's window since ruling B4 keys a V-bit at its size.
+        let mut tool = ToolConfig::new_default(ToolId(1), ToolType::VBit);
+        tool.diameter = 6.0;
         let op = OperationConfig::new_default(OperationType::VCarve);
         let stock = session.stock_config();
         let result = rs_cam_core::feeds::suggest::feeds_result_for_operation(

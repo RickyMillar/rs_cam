@@ -1500,6 +1500,7 @@ fn suggest_context_is_no_op_in_v1_1() {
         effective_diameter_mm: 0.0,
         calculator_operating_point: None,
         policy: SuggestPolicy::default(),
+        dressups: None,
     };
 
     let baseline = suggest_params(SuggestParamsInput {

@@ -1075,6 +1075,15 @@ fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> 
         let rpm_written = feeds.rpm.is_finite() && feeds.rpm > 0.0;
         let mut provenance = rs_cam_core::feeds::FeedsProvenance::default();
         provenance.apply_suggested(&feeds, &operation, rpm_written);
+        // G6 ramp: the funnel's record says where the ramp feed came from.
+        // Stamp it after the feed and the plunge, as the funnel does.
+        let ramp = profile.warnings.iter().find_map(|w| match w {
+            rs_cam_core::feeds::suggest::SuggestWarning::RampFeed { record, .. } => Some(record),
+            _ => None,
+        });
+        if let Some(record) = ramp {
+            provenance.stamp_ramp(record);
+        }
         suggestions.push((idx, operation, feeds.rpm, provenance));
     }
 

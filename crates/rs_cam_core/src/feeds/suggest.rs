@@ -174,6 +174,10 @@ pub struct SuggestContext<'a> {
     /// v3.0b: caller-supplied policy threading through the
     /// orchestrator. Default = `SuggestPolicy::default()`.
     pub policy: SuggestPolicy,
+    /// The toolpath's dressups, for the entry θ of a dressup operation (G6
+    /// ramp). `None` means not known; the ramp then falls back to the plunge
+    /// rate. Adaptive3d reads its own entry and does not use this slot.
+    pub dressups: Option<&'a crate::compute::config::DressupConfig>,
 }
 
 /// The point [`crate::feeds::calculate`] evaluated its feed expression at.
@@ -726,6 +730,16 @@ pub enum SuggestWarning {
         /// Why the dial did not act.
         reason: AggressivenessSkip,
     },
+    /// G6 ramp (2026-09-25): the entry feed Suggest wrote. One record per
+    /// apply that wrote the speeds, on an operation with the field. The
+    /// record carries the number, the arm that set it and θ, or the reason
+    /// for the plunge-rate fallback.
+    RampFeed {
+        /// The operation's `ramp_feed_rate` before the write.
+        from_mm_min: Option<f64>,
+        /// What Suggest wrote, and why.
+        record: crate::feeds::RampFeed,
+    },
 }
 
 /// Why the aggressiveness dial did not act (ruling R4, 2026-09-24).
@@ -745,7 +759,7 @@ impl AggressivenessSkip {
     pub const fn card_text(self) -> &'static str {
         match self {
             Self::FinishRole => "Finish: no dial action; deflection decides.",
-            Self::Drill => "Plunge and ramp: material base, no factor; the dial does not act.",
+            Self::Drill => "Plunge: material base, no factor; the dial does not act.",
         }
     }
 }
@@ -855,6 +869,9 @@ pub struct SuggestForOperationInput<'a> {
 /// to the user instead of writing a meaningless recipe into the op.
 pub fn suggest_params(input: SuggestParamsInput<'_>) -> Result<SuggestedParams, FeedsError> {
     let operation = default_operation(input.op_type, input.stock_ctx);
+    // G6 ramp: an add door builds `DressupConfig::for_op(op_type)` after
+    // this call, so the entry θ it will ship is known here.
+    let default_dressups = crate::compute::config::DressupConfig::for_op(input.op_type);
     suggest_for_operation(SuggestForOperationInput {
         operation: &operation,
         tool: input.tool,
@@ -862,7 +879,10 @@ pub fn suggest_params(input: SuggestParamsInput<'_>) -> Result<SuggestedParams, 
         material: input.material,
         lut: input.lut,
         spindle_strategy: input.spindle_strategy,
-        context: input.context,
+        context: SuggestContext {
+            dressups: input.context.dressups.or(Some(&default_dressups)),
+            ..input.context
+        },
     })
 }
 

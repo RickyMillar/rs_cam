@@ -1236,6 +1236,9 @@ impl<B: ComputeBackend> AppController<B> {
                 pass_role,
                 suggest: rs_cam_core::feeds::suggest::SuggestContext {
                     model_bbox: model_bbox.as_ref(),
+                    // G6 ramp: the entry θ of this toolpath, as the card
+                    // passes it, so the two show one number.
+                    dressups: Some(&draft.dressups),
                     ..rs_cam_core::feeds::suggest::SuggestContext::default()
                 },
             },

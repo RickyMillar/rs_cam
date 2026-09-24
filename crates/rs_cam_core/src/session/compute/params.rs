@@ -437,6 +437,14 @@ impl ProjectSession {
                     }
                 }
                 tc.operation = new_op;
+                // G6 ramp: a hand-set entry feed is an override, as
+                // `feed_rate` is above.
+                if param == "ramp_feed_rate" {
+                    tc.feeds_provenance.set(
+                        crate::feeds::FeedsField::RampFeedRate,
+                        crate::feeds::ValueProvenance::manual(),
+                    );
+                }
             }
         }
 
