@@ -519,3 +519,35 @@ pub fn l_and_basin_plate() -> TriangleMesh {
             .map_or(L_AND_BASIN_TOP_Z, |p| p.4)
     })
 }
+
+// ── Global level-gate fixture ───────────────────────────────────────────
+
+/// The XY box `[x0, x1] x [y0, y1]` and the floor Z of the basin of
+/// [`pitted_basin_plate`].
+pub const PITTED_BASIN: (f64, f64, f64, f64, f64) = (20.0, 12.0, 60.0, 38.0, 3.0);
+
+/// The top Z of the [`pitted_basin_plate`] plate.
+pub const PITTED_BASIN_TOP_Z: f64 = 10.0;
+
+/// A plate at Z 10 over `[0, 80] x [0, 50]` with one basin (see
+/// [`PITTED_BASIN`], floor Z 3). One mesh vertex of the basin floor, at
+/// `(40, 25)`, is at Z 0. This pit is 2 mm wide, so a tool of 2 mm or more
+/// in diameter does not go into it.
+///
+/// The pit puts the bottom of the mesh box at Z 0, below every floor that
+/// the tool can reach. The cells beside the model read that box bottom, so
+/// the lowest level of the plan is below the basin floor. The basin floor
+/// plus a leave of 0.5 (Z 3.5) is between the levels Z 6 and Z 2 at
+/// Depth/Pass 4.
+pub fn pitted_basin_plate() -> TriangleMesh {
+    let (x0, y0, x1, y1, floor) = PITTED_BASIN;
+    height_field_grid(0.0, 1.0, 81, 0.0, 1.0, 51, |x, y| {
+        if (x - 40.0).abs() < 1e-9 && (y - 25.0).abs() < 1e-9 {
+            0.0
+        } else if x >= x0 && x <= x1 && y >= y0 && y <= y1 {
+            floor
+        } else {
+            PITTED_BASIN_TOP_Z
+        }
+    })
+}

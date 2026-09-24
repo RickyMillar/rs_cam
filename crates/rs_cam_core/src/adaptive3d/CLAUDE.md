@@ -12,9 +12,8 @@ Constant-engagement clearing on a mesh surface. The entry point is
   `clear_one_region` per region over a `LevelEmission`, then
   `coalesce_level_entries`. Put new per-region work in the middle stage.
 - `path.rs` — the Z levels, the level loop, the segment linking.
-- `search.rs` — the material-remaining query, the clear-path test and two 3D
-  path helpers. No direction search and no entry finding (those are in
-  `clearing.rs` and `path.rs`); the sibling `adaptive/search.rs` has them.
+- `search.rs` — the floor-cell diagnostic, the clear-path test, two path
+  helpers. No direction search or entry finding (`adaptive/search.rs`).
 - `region_map.rs` — the By Area map (overlay evidence); `tests.rs` — tests.
 
 ## Invariants
@@ -36,5 +35,6 @@ Constant-engagement clearing on a mesh surface. The entry point is
 - `adaptive3d_boundary_clear_parity`, `adaptive3d_keep_down_link_f038b`
 - `adaptive3d_entry_stock_aware`, `adaptive3d_entry_coalescing_f038`
 - `agent_search_coverage`, `adaptive3d_subtool_channel_gouge`
+- `adaptive3d_global_gate_drapes_below_floor` (a level drapes below a floor)
 - By Area: `adaptive3d_by_area_cells_confine_jobs`,
   `adaptive3d_by_area_matches_global_stock`

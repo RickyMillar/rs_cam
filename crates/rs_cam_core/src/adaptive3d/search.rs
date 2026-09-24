@@ -1,4 +1,4 @@
-//! The material-remaining query, the clear-path test and the 3D path
+//! The floor-cell diagnostic, the clear-path test and the 3D path
 //! helpers for adaptive3d clearing.
 //!
 //! There is no direction search and no entry-point finding here. Those live
@@ -15,9 +15,10 @@ use super::{stock_has_material_above, stock_top_z_at};
 // ── 3D engagement ─────────────────────────────────────────────────────
 
 /// Per-Z floor and material diagnostics. Returned by
-/// [`material_remaining_at_level_diag`] for debug-trace consumers; the
-/// scalar [`material_remaining_at_level`] keeps its existing signature
-/// for the planner's cheap exit check.
+/// [`material_remaining_at_level_diag`] for the debug-trace counters only.
+/// The level gate does not read it: `clearing.rs::level_gate` counts the
+/// cells of the level grid, because a level below a floor still drapes
+/// onto that floor.
 ///
 /// Cell-bucket semantics (matches the planner's `floor` calc
 /// `(surf_z + stock_to_leave).max(z_level)`):
@@ -42,9 +43,8 @@ pub(super) struct MaterialFloorDiagnostic {
 }
 
 #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-/// Diagnostic counterpart to [`material_remaining_at_level`]. Only call
-/// when a debug span is open — this is the slightly-more-expensive path
-/// that records the floor-cell histogram.
+/// The floor-cell histogram for the debug counters. Only call when a debug
+/// span is open.
 pub(super) fn material_remaining_at_level_diag(
     material_stock: &TriDexelStock,
     surface_hm: &SurfaceHeightmap,
@@ -78,57 +78,6 @@ pub(super) fn material_remaining_at_level_diag(
         diag.cells_with_material as f64 / diag.cells_at_z as f64
     };
     diag
-}
-
-/// Compact result for the planner's per-level early-exit check.
-/// Returned by [`material_remaining_at_level`].
-#[derive(Debug, Clone, Copy, Default)]
-pub(super) struct MaterialRemaining {
-    pub cells_with_material: u64,
-    pub cells_at_z: u64,
-}
-
-impl MaterialRemaining {
-    pub fn fraction(self) -> f64 {
-        if self.cells_at_z == 0 {
-            0.0
-        } else {
-            self.cells_with_material as f64 / self.cells_at_z as f64
-        }
-    }
-}
-
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-/// Cells where material remains above the effective floor at a given
-/// z_level. Used to decide when a level is done — callers should gate on
-/// the absolute `cells_with_material` count (not the fraction), because at
-/// small depth-per-pass a real island contributes very few cells per level
-/// and a fraction-based gate would silently skip it.
-pub(super) fn material_remaining_at_level(
-    material_stock: &TriDexelStock,
-    surface_hm: &SurfaceHeightmap,
-    z_level: f64,
-    stock_to_leave: f64,
-) -> MaterialRemaining {
-    let grid = &material_stock.z_grid;
-    let mut out = MaterialRemaining::default();
-    for row in 0..grid.rows {
-        for col in 0..grid.cols {
-            let i = row * grid.cols + col;
-            // Bbox-floor by intent (C2 audit): a cell with no mesh over it is
-            // stock beside the model, and clearing must take it to the floor —
-            // `z_or_bbox_floor_values` says so at the call site.
-            let surf_z = surface_hm.z_or_bbox_floor_values()[i];
-            let floor = (surf_z + stock_to_leave).max(z_level);
-            if surf_z + stock_to_leave <= z_level + 0.01 {
-                out.cells_at_z += 1;
-                if stock_has_material_above(material_stock, row, col, floor + 0.01) {
-                    out.cells_with_material += 1;
-                }
-            }
-        }
-    }
-    out
 }
 
 // ── Link vs retract ───────────────────────────────────────────────────

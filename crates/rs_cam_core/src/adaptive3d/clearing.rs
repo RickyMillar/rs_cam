@@ -19,7 +19,7 @@ use std::time::Instant;
 use tracing::debug;
 
 use super::path::{Adaptive3dSegment, StayDownProof, drape_path_to_leave, drape_point};
-use super::search::{blend_corners_3d, is_clear_path_3d, material_remaining_at_level};
+use super::search::{blend_corners_3d, is_clear_path_3d};
 use super::{
     Adaptive3dRuntimeEvent, ClearingStrategy3d, ZLevelPlanMetrics, stock_has_material_above,
     stock_top_z_at,
@@ -319,7 +319,9 @@ fn cell_has_material(
 /// - With a mask, the count is [`AreaMask::material_cells`]: every owned
 ///   cell with material above its effective floor. A job of high ground or
 ///   a job whose floor is between two levels still has cells to cut.
-/// - Without a mask (Global), the count is `material_remaining_at_level`.
+/// - Without a mask (Global), the count is the same test on every cell of
+///   the grid. A level below every floor still drapes onto the floors, so
+///   the gate must not ask for a floor at or below the level.
 fn level_gate(
     material_stock: &TriDexelStock,
     surface_hm: &SurfaceHeightmap,
@@ -333,9 +335,23 @@ fn level_gate(
             (cells, cells as f64 / m.owned_count.max(1) as f64)
         }
         None => {
-            let r =
-                material_remaining_at_level(material_stock, surface_hm, z_level, stock_to_leave);
-            (r.cells_with_material, r.fraction())
+            let grid = &material_stock.z_grid;
+            let mut cells = 0u64;
+            for row in 0..grid.rows {
+                for col in 0..grid.cols {
+                    if cell_has_material(
+                        material_stock,
+                        surface_hm,
+                        row,
+                        col,
+                        z_level,
+                        stock_to_leave,
+                    ) {
+                        cells += 1;
+                    }
+                }
+            }
+            (cells, cells as f64 / (grid.rows * grid.cols).max(1) as f64)
         }
     }
 }
