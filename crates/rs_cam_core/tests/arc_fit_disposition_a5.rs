@@ -92,6 +92,15 @@
 //! snapshot stamp `Some` — a fresh-stock generation consumes no machined
 //! stock and would stamp `None`, making the equality assertion vacuous.
 //!
+//! **2026-09-25 — the rough leaves a skin.** Op 0 has one level, at the
+//! bottom height plus its stock-to-leave. Until `93ce4e29` the Global level
+//! gate skipped that level: no surface cell was at or below it. Op 0 was then
+//! nearly empty (155 mm of cut), and op 1 cut near-fresh stock. After the
+//! gate fix, op 0 drapes onto the surface (1608 mm of cut). A3D-2 (Ø8) then
+//! found no material above its own floor and emitted 0 moves, so its gate
+//! had no population. Op 0 now leaves [`ROUGH_STOCK_TO_LEAVE`], and op 1
+//! reads a skin of real material.
+//!
 //! Two fixtures per affected family, differing in tool, species and machine
 //! feed ceiling, because whether the machine ceiling binds decides whether
 //! the lift is realised at all.
@@ -137,6 +146,13 @@ const STOCK_Z: f64 = 8.0;
 
 /// Peak-to-trough of the fixture surface (mm).
 const RELIEF: f64 = 3.0;
+
+/// Axial stock-to-leave of op 0, the upstream rough (mm).
+///
+/// It is larger than the measured op's 0.5 mm default, so op 0 leaves a skin
+/// for op 1 to cut. With the default on both ops, the Ø8 measured op finds no
+/// material above its floor: the Ø6 rough already cut to that floor or below.
+const ROUGH_STOCK_TO_LEAVE: f64 = 1.5;
 
 /// The simulation cell (mm). Reported beside every measurement, per §0
 /// rule 10 — a collision count or an engagement reading without its cell
@@ -473,9 +489,13 @@ fn build_session(fx: &Fixture) -> ProjectSession {
 
     let heights = pinned_heights(STOCK_Z, STOCK_Z - RELIEF);
 
+    let mut rough_op = adaptive3d_op(1500.0, 16_000, 2.5, 3.0);
+    if let OperationConfig::Adaptive3d(cfg) = &mut rough_op {
+        cfg.stock_to_leave_axial = ROUGH_STOCK_TO_LEAVE;
+    }
     let mut rough = toolpath_config(
         "Rough (upstream, fresh stock)",
-        adaptive3d_op(1500.0, 16_000, 2.5, 3.0),
+        rough_op,
         rough_id,
         model_id,
     );
