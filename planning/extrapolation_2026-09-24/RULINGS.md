@@ -346,3 +346,9 @@ axial_chip x rpm x Z / tan(ramp angle)), where the axial chip is the G6
 printed plunge chip (flat end mill, 3.175-6 mm); elsewhere the plunge rate
 as today, on the card. A new op field `ramp_feed_rate` (Option; compute
 session) that Suggest's apply writes (this session). Waits for the operator.
+Ruled (operator, relayed by the feeds/dial session, 2026-09-25): approved.
+Field `ramp_feed_rate: Option<f64>` on every op config with plunge_rate and
+an entry; the entry code uses it for helix and ramp descents through
+material. The compute session adds the field and the read; this session
+owns the value (the G6 sourced ramp feed, the plunge fallback with the
+card note) and the Suggest apply write, after the field is on master.
