@@ -141,8 +141,7 @@ pub fn run_sweep(
 
         let arts = SweepArtifacts::generate(var_tp);
 
-        // A list value uses `;` between its items (see `format_toml_field`).
-        let json_val = crate::job::param_value_from_str(&val_str.replace(';', ","));
+        let json_val = crate::job::param_value_from_str(val_str);
         sweep_variants.push(SweepVariant {
             value: json_val,
             fingerprint: var_fp,
@@ -304,12 +303,6 @@ fn patch_toml_field(toml_str: &str, field: &str, value: &str) -> Result<String> 
 }
 
 fn format_toml_field(field: &str, value: &str) -> String {
-    // A list value (`coarse_steps`) goes in as a TOML array. `--values`
-    // splits on commas, so the steps of one list are split with `;`:
-    // `--values "[10],[10;5]"` sweeps `[10.0]` and `[10.0, 5.0]`.
-    if value.starts_with('[') {
-        return format!("{field} = {}", value.replace(';', ", "));
-    }
     // Try to parse as number/bool, otherwise quote as string
     if value.parse::<f64>().is_ok() || value.parse::<bool>().is_ok() {
         format!("{field} = {value}")
@@ -395,7 +388,7 @@ fn simulate_and_export(
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
-    use super::{patch_job_param, resolve_base_value};
+    use super::resolve_base_value;
     use crate::job::JobFile;
     use rs_cam_core::compute::tool_config::ToolType;
 
@@ -484,23 +477,6 @@ tool = "flat_6mm"
         assert_eq!(
             resolve_base_value(&base, "min_region_cut_length_mm", "3.0").unwrap(),
             serde_json::Value::Null
-        );
-    }
-
-    /// Step-ladder Phase 4: a sweep varies `coarse_steps` with list values.
-    /// The steps of one list are split with `;`, because `--values` splits
-    /// on commas.
-    #[test]
-    fn a_sweep_patches_the_step_ladder_as_a_list() {
-        let job = sweepable_job();
-        let one = patch_job_param(&job, "coarse_steps", "[10]").unwrap();
-        assert_eq!(one.operation[0].coarse_steps, Some(vec![10.0]));
-        let two = patch_job_param(&job, "coarse_steps", "[10;5]").unwrap();
-        assert_eq!(two.operation[0].coarse_steps, Some(vec![10.0, 5.0]));
-        assert_eq!(
-            resolve_base_value(&job, "coarse_steps", "[10]").unwrap(),
-            serde_json::Value::Null,
-            "the base job sets no ladder"
         );
     }
 
@@ -611,7 +587,6 @@ stock_to_leave = 0.3
 entry_3d = "helix"
 detect_flat_areas = true
 order_by = "by_area"
-coarse_steps = [10.0, 5.0]
 strategy = "contour"
 min_region_cut_length_mm = 4.0
 max_stay_down_distance_mm = 18.0
@@ -653,7 +628,6 @@ stay_down_clearance_mm = 0.75
         assert_eq!(op.prev_tool.as_deref(), Some("flat_6mm"));
         assert_eq!(op.strategy.as_deref(), Some("contour"));
         assert_eq!(op.order_by.as_deref(), Some("by_area"));
-        assert_eq!(op.coarse_steps, Some(vec![10.0, 5.0]));
     }
 
     /// The emitted tool-type strings must re-parse as the same variants.

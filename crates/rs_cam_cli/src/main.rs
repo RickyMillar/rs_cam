@@ -118,9 +118,7 @@ enum Commands {
         #[arg(long)]
         param: String,
 
-        /// Comma-separated values to sweep (e.g. "0.5,1.0,2.0,4.0"). A list
-        /// value is in brackets, with `;` between its items (e.g.
-        /// "[10],[10;5]" for `coarse_steps`).
+        /// Comma-separated values to sweep (e.g. "0.5,1.0,2.0,4.0")
         #[arg(long)]
         values: String,
 
