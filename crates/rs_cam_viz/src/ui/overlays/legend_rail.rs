@@ -825,6 +825,11 @@ pub fn category_entries(state: &AppState, kind: Categories) -> Vec<LegendEntry> 
         ],
         Categories::AreaRegions => registry::selected_area_regions(state)
             .map(|map| {
+                if map.regions.is_empty() {
+                    // A By Area run that found no region is evidence too:
+                    // the rail says so rather than draw a name over nothing.
+                    return vec![("no region detected".to_owned(), None)];
+                }
                 map.regions
                     .iter()
                     .map(|r| {

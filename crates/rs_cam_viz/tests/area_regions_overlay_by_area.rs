@@ -305,6 +305,25 @@ fn the_legend_names_each_region_in_its_mesh_colour() {
     assert_eq!(entries[1].1, area_region_color(2));
     assert_ne!(area_region_color(1), area_region_color(2));
 
+    // A By Area run that found no region names that on the rail.
+    let empty = add(
+        &mut state,
+        rough(RegionOrdering::ByArea),
+        Some(AreaRegionMap {
+            regions: Vec::new(),
+            labels: vec![0; 24],
+            ..two_region_map()
+        }),
+        true,
+    );
+    state.selection = Selection::Toolpath(empty);
+    let entries = legend_rail::category_entries(&state, Categories::AreaRegions);
+    assert_eq!(
+        entries,
+        vec![("no region detected".to_owned(), None)],
+        "the empty legend says so"
+    );
+
     // The mesh paints the same colours: one quad per row run.
     let map = two_region_map();
     let mesh = area_regions_to_mesh(&map).expect("two regions make a mesh");

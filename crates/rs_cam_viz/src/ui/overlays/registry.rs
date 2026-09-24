@@ -990,11 +990,11 @@ pub const ROWS: &[OverlayRow] = &[
         precondition: area_regions_precondition,
         default_for: no_default,
         hover: "The regions that the selected 3D Rough detected with By Area \
-                ordering: one colour and one order number per region, and a \
-                thin box that is the filter the planner cuts each region by. \
-                The planner detects the regions once, from the stock before \
-                the first level. One colour over the full part means one \
-                region, and By Area then cuts as Global does.",
+                ordering. Each region has one colour and one order number. \
+                The thin box is the filter the planner cuts the region by. \
+                The planner detects the regions once, before the first level. \
+                One colour over the full part means one region: By Area then \
+                cuts as Global does.",
     },
     OverlayRow {
         id: "planner_islands",
