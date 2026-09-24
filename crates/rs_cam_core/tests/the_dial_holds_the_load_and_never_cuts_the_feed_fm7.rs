@@ -340,6 +340,13 @@ fn a_finish_and_a_drill_get_no_dial_action_fm7() {
         }
         for &tool_type in ToolType::ALL {
             let mut tool = ToolConfig::new_default(ToolId(0), tool_type);
+            // Ruling B5 (G6): a drill ships only through the drill claim (a
+            // 2- or 3-flute flat end mill at 3.175-6.0 mm). The default
+            // 6.35 mm end mill is outside it, so the drill cells use 6.0 mm.
+            // Before B5 the plywood cells shipped the unjudged formula.
+            if is_drill && tool_type == ToolType::EndMill {
+                tool.diameter = 6.0;
+            }
             tool.stickout = 3.0 * tool.diameter;
             for material in &materials {
                 let Some(dialled) = suggest(op, &tool, material, &machine(0.85)) else {

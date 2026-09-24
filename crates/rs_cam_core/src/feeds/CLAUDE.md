@@ -11,15 +11,15 @@ The calculator for RPM, feed, plunge rate, DOC and WOC. The validated entry poin
   `efficiency.rs`, `operating_point.rs` — effective diameter, chip thinning, the DOC scale, the axial
   envelope, force, deflection, efficiency, and spindle power at the shipped operating point.
 - `vendor_lut.rs`, `vendor_lookup.rs`, `vendor_normalize.rs` — vendor table, lookup, type mapping.
-- `extrapolation.rs` + `extrapolation/{size,hardness,family}.rs` — `SizeLaw` (G1 size claim, form A/B/C or refusal),
-  `hardness_basis` (G2 Janka + soft/hard cap), `family_basis` (G3 `FAMILY_RULES`) run in `build_result` on every row.
-- `profile.rs`, `quantities.rs`, `provenance.rs`, `support.rs` — the pre-sim profile, the boundary
-  newtypes, the per-value provenance, the `FeedsSupport` arm.
+- `extrapolation.rs` + `extrapolation/{size,hardness,family,drill}.rs` — `SizeLaw` (G1 size claim, form A/B/C or refusal),
+  `hardness_basis` (G2 Janka + soft/hard cap), `family_basis` (G3 `FAMILY_RULES`), `drill_basis` (G6 `DRILL_RULES`) run in `build_result`.
+- `profile.rs`, `quantities.rs`, `provenance.rs`, `support.rs` — the pre-sim profile, the boundary newtypes, the per-value provenance, the `FeedsSupport` arm.
 - `rationale.rs`, `feed_explanation.rs`, `explain_payload.rs` — rationale tree, stage record, UI contract.
 
 ## Invariants
 - `ChiploadBounds` in Suggest mirrors the gate's piecewise-linear DOC derating (canonical scale: `feeds::geometry`).
 - One Janka table (`WoodSpecies` generics); no hardness scale on plywood/MDF; in solid wood an upward scale stops at the row family's printed soft/hard max.
+- G6 (B5): no drill rows, no drill multiplier. `DRILL_RULES` (Amana Spektra flat, 3.175-6.0 mm, 2/3 F) read the (Pocket, Roughing) side row x 1/Z (a point stays a point); the drill RPM cap replaces the chart's 18 000; every other drill cell refuses, in every material.
 - Suggest is the validated application path; a raw parameter write is an override and stales the result. On an adaptive rough the simulated chipload outranks the Suggest verdict.
 - R4: the rubbing floor `min(0.025, band min)` warns, never lifts; no machine or L/D feed factor. The
   dial `MachineProfile::aggressiveness` (0.85) scales depth and stepover to hold load at
@@ -36,5 +36,5 @@ Run one with `cargo test -p rs_cam_core -q --test <name>`: `lut_resolver_census_
 `the_dial_holds_the_load_and_never_cuts_the_feed_fm7`, `rpm_follows_the_feed_ceiling_fm8`, `micro_extrapolation_refuses_fm9`,
 `a_tapered_row_is_read_at_the_tip_a1`, `the_micro_tapered_finish_ships_the_printed_tip_row_g1`, `a_size_claim_states_its_rule_range_and_residual_g1`,
 `every_consumer_reads_one_claimed_band_g1`, `the_onsrud_vbit_rows_serve_mdf_and_plywood_g2`, `one_janka_table_for_row_and_query_g2`,
-`a_hardness_transfer_caps_at_the_printed_soft_hard_ratio_g2`, `a_printed_value_is_held_as_a_point_a2`, `a_printed_cell_serves_every_family_through_one_claim_g3`.
-`feeds_matrix_instrument_fm1` is an `#[ignore]` instrument (`-- --ignored`) that writes planning/feeds_matrix_2026-09-23/. `wanaka_suggest_integration` takes minutes: ask first.
+`a_hardness_transfer_caps_at_the_printed_soft_hard_ratio_g2`, `a_printed_value_is_held_as_a_point_a2`, `a_printed_cell_serves_every_family_through_one_claim_g3`,
+`a_flat_end_plunge_is_the_side_chip_over_z_g6`. `feeds_matrix_instrument_fm1` is an `#[ignore]` instrument (`-- --ignored`) that writes planning/feeds_matrix_2026-09-23/. `wanaka_suggest_integration` takes minutes: ask first.

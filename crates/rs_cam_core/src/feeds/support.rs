@@ -17,11 +17,12 @@
 //! (`FORMULA_BACKING.md`, `FORMULA_BACKING_v2.md`). [`formula_backing`] is
 //! that judgement as a table; a wood cell with no vendor row and no
 //! `Backed` entry refuses. Non-wood materials were not judged and keep the
-//! formula, as before.
+//! formula, as before, except a drill: ruling B5 (G6) refuses every drill
+//! cell that no drill claim serves, in every material.
 
 use std::borrow::Cow;
 
-use super::extrapolation::{Claim, FamilyClaim, SizeBasis};
+use super::extrapolation::{Claim, DrillClaim, FamilyClaim, SizeBasis};
 use super::vendor_lookup::{self, LookupQuery, LookupResult};
 use super::vendor_lut::{MaterialFamily, ToolFamily};
 use super::{FeedsInput, OperationFamily, PassRole, VendorLut, vendor_normalize};
@@ -39,15 +40,17 @@ pub const MILLING_FORMULA_SOURCE: &str = "repo-derived chipload formula k0*D^p*(
      'Chipload column convention and scaling laws'; k0 uncited (code comment \
      'Shapeoko empirical data' only)";
 
-/// The source of the drill chipload in step 2 of [`super::calculate`]:
-/// the milling formula times `DRILL_CHIPLOAD_MULTIPLIER`.
+/// The source of the drill chipload preview in step 2 of
+/// [`super::calculate`]: the milling formula with no multiplier.
 ///
-/// CREDITS.md, "Drill-subsystem provenance", declares the multiplier
-/// unsourced. The LUT has no drill rows, so every drill cell uses this
-/// formula.
-pub const DRILL_FORMULA_SOURCE: &str = "repo-derived chipload formula k0*D^p*(1/H)^q \
-     x DRILL_CHIPLOAD_MULTIPLIER 2.5 (feeds::calculate step 2); CREDITS.md \
-     'Drill-subsystem provenance' declares the multiplier unsourced";
+/// Ruling B5 (2026-09-24) deleted the unsourced drill multiplier (2.5).
+/// The symbol stays, because the drill registry rows and FM0 name it. The
+/// number is a preview only: Suggest refuses every drill cell that no G6
+/// claim serves ([`support_for_lookup`]), so no drill recipe ships from
+/// this formula.
+pub const DRILL_FORMULA_SOURCE: &str = "repo-derived milling formula k0*D^p*(1/H)^q with no \
+     drill multiplier (deleted, ruling B5); a preview only: Suggest refuses every drill cell \
+     that no G6 claim serves";
 
 /// The reason on the `Refuse` arm. The error that carries it,
 /// [`super::FeedsError::Unbacked`], names the operation, the tool family
@@ -91,15 +94,24 @@ const VBIT_CONTOUR_FINISH: &str = "No published figure backs the formula for a V
 const VBIT_MDF_PLY: &str = "No published figure backs the formula for a V-bit on pocket, contour \
      or trace passes in MDF or plywood: for a 1/4 in V-bit the formula is below half of the Onsrud \
      37-series bands (0.41x to 0.48x).";
-const DRILL_FLAT: &str = "No published wood figure exists for a plunge drill with a flat end mill, \
-     and the drill multiplier 2.5 is unsourced.";
-const DRILL_BALL: &str = "No published wood figure exists for a plunge drill with a ball-nose \
-     cutter, and the drill multiplier 2.5 is unsourced.";
-const DRILL_BULL: &str = "No published wood figure exists for a plunge drill with a bull-nose \
-     cutter, and the drill multiplier 2.5 is unsourced.";
-const DRILL_VBIT: &str = "No published wood figure exists for a plunge drill with a V-bit, and a V-bit cuts a cone, not a bore.";
-const DRILL_TAPER: &str = "No published wood figure exists for a plunge drill with a tapered \
-     ball-nose, and the drill multiplier 2.5 is unsourced.";
+/// The refusal of a flat end mill plunge that the G6 drill claim does not
+/// serve (ruling B5): a diameter outside 3.175-6.0 mm, a flute count other
+/// than 2 or 3, or a material with no Spektra row.
+pub const DRILL_FLAT: &str = "No published figure for this flat end mill plunge: the Amana \
+     Spektra Ramp Down claim covers 3.175-6.0 mm, 2 or 3 flutes, in wood, plywood and MDF (G6 \
+     drill, ruling B5).";
+const DRILL_BALL: &str = "No published figure exists for a plunge drill with a ball-nose cutter \
+     (G6 drill, ruling B5).";
+/// The refusal of a bull-nose plunge (ruling B5, orchestrator decision 4).
+pub const DRILL_BULL: &str = "No published figure exists for a plunge drill with a bull-nose \
+     cutter: the one printed bull plunge (PreciseBits) is a feed with no RPM for one 3-flute \
+     tool (G6 drill, ruling B5).";
+const DRILL_VBIT: &str = "No published figure exists for a plunge drill with a V-bit, and a V-bit \
+     cuts a cone, not a bore (G6 drill, ruling B5).";
+const DRILL_TAPER: &str = "No published figure exists for a plunge drill with a tapered \
+     ball-nose (G6 drill, ruling B5).";
+const DRILL_OTHER: &str = "No published figure exists for a plunge drill with this cutter (G6 \
+     drill, ruling B5).";
 
 /// Ruling R1 applied to size (operator, 2026-09-24): a tool whose lookup
 /// diameter is under this value (mm) is a micro tool. A micro tool ships only
@@ -205,7 +217,8 @@ pub fn is_judged_wood(material: MaterialFamily) -> bool {
 
 /// The R1 judgement for a formula-only cell class. Only meaningful for a
 /// judged wood family ([`is_judged_wood`]); the caller keeps the formula
-/// for every other material.
+/// for every other material. The drill arms are the exception: they ignore
+/// the material, and the caller reads them for every material (ruling B5).
 #[must_use]
 pub fn formula_backing(
     tool: ToolFamily,
@@ -220,13 +233,20 @@ pub fn formula_backing(
     let sw_hw = matches!(material, Softwood | Hardwood);
     let mdf_ply = matches!(material, Mdf | PlywoodHardwood);
     match (tool, family, role) {
-        // Drill: no vendor row for any tool; the 2.5 multiplier is unsourced.
+        // Drill (G6, ruling B5): no row is filed under the drill family. The
+        // drill claim (`extrapolation::drill`) serves a 2- or 3-flute flat
+        // end mill at 3.175-6.0 mm from its Spektra side row; every other
+        // drill cell reaches this table and refuses, in every material
+        // (`support_for_lookup`).
         (ToolFamily::FlatEnd, Drill, _) => Clueless { reason: DRILL_FLAT },
         (ToolFamily::BallNose, Drill, _) => Clueless { reason: DRILL_BALL },
         (ToolFamily::BullNose, Drill, _) => Clueless { reason: DRILL_BULL },
         (ToolFamily::ChamferVbit, Drill, _) => Clueless { reason: DRILL_VBIT },
         (ToolFamily::TaperedBallNose, Drill, _) => Clueless {
             reason: DRILL_TAPER,
+        },
+        (_, Drill, _) => Clueless {
+            reason: DRILL_OTHER,
         },
         // Flat end mill: Onsrud and Amana 1 x D charts back trace and parallel finishes.
         (ToolFamily::FlatEnd, Trace | Parallel, Finish) => Backed,
@@ -336,6 +356,15 @@ pub enum FeedsSupport {
         family: Box<FamilyClaim>,
         size: Option<Box<Claim>>,
     },
+    /// A vendor row answered through the G6 drill claim: the drill rule
+    /// reads a flat end mill's printed side row for a plunge, and the chip
+    /// is the side chip / Z (`feeds::extrapolation::drill`, ruling B5).
+    /// `size` is the G1 size claim when the row is also off the tool's
+    /// size, and `None` at the printed size.
+    DrillTransferred {
+        drill: Box<DrillClaim>,
+        size: Option<Box<Claim>>,
+    },
     /// No row; the calculator's formula answers, and this names its source.
     FormulaOnly { source: &'static str },
     /// The engine has no basis. Suggest refuses with the reason.
@@ -355,20 +384,28 @@ impl FeedsSupport {
             Self::Extrapolated { claim } => claim.card_text(),
             // The two claims: the headlines joined, then the details joined.
             Self::FamilyTransferred { family, size } => {
-                let (headline, detail) = family.card_text();
-                match size {
-                    None => (headline, detail),
-                    Some(claim) => {
-                        let (size_headline, size_detail) = claim.card_text();
-                        (
-                            format!("{headline}; {size_headline}"),
-                            format!("{detail}; {size_detail}"),
-                        )
-                    }
-                }
+                join_size_claim(family.card_text(), size.as_deref())
+            }
+            Self::DrillTransferred { drill, size } => {
+                join_size_claim(drill.card_text(), size.as_deref())
             }
             Self::FormulaOnly { source } => ("formula only".to_owned(), (*source).to_owned()),
             Self::Refuse { reason } => ("refused".to_owned(), reason.to_string()),
+        }
+    }
+}
+
+/// A claim's card text, joined with the size claim's text when there is one:
+/// the headlines joined, then the details joined.
+fn join_size_claim((headline, detail): (String, String), size: Option<&Claim>) -> (String, String) {
+    match size {
+        None => (headline, detail),
+        Some(claim) => {
+            let (size_headline, size_detail) = claim.card_text();
+            (
+                format!("{headline}; {size_headline}"),
+                format!("{detail}; {size_detail}"),
+            )
         }
     }
 }
@@ -448,6 +485,11 @@ pub fn formula_source_for_input(input: &FeedsInput) -> Option<&'static str> {
 ///   (`LookupResult::family_basis`), `VendorBacked` becomes
 ///   `FamilyTransferred { size: None }` and `Extrapolated` becomes
 ///   `FamilyTransferred { size: Some(claim) }`. A size `Refuse` stays.
+///   In the same way, when the G6 drill rule reads the row
+///   (`LookupResult::drill_basis`), the arm becomes `DrillTransferred`.
+/// - No row on a drill cell: `Refuse` with the [`formula_backing`] drill
+///   reason, in every material and with or without an operation kind
+///   (ruling B5, orchestrator decision 3).
 /// - No row, and no formula source: `Refuse`.
 /// - No row, a formula source, an operation kind and a judged wood
 ///   material: [`formula_backing`] decides, `Backed` -> `FormulaOnly`,
@@ -522,21 +564,61 @@ pub(crate) fn support_for_lookup(input: &FeedsInput, lookup: &RecipeRowLookup) -
         };
         // A3 (G3): a transferred row states its family claim beside the size
         // arm. A size refusal still wins: a refused row has no band.
-        let Some(family) = row.family_basis.claim() else {
-            return arm;
+        if let Some(family) = row.family_basis.claim() {
+            return match arm {
+                FeedsSupport::VendorBacked => FeedsSupport::FamilyTransferred {
+                    family: Box::new(family.clone()),
+                    size: None,
+                },
+                FeedsSupport::Extrapolated { claim } => FeedsSupport::FamilyTransferred {
+                    family: Box::new(family.clone()),
+                    size: Some(claim),
+                },
+                other @ (FeedsSupport::Refuse { .. }
+                | FeedsSupport::FormulaOnly { .. }
+                | FeedsSupport::FamilyTransferred { .. }
+                | FeedsSupport::DrillTransferred { .. }) => other,
+            };
+        }
+        // B5 (G6): a row that the drill rule reads states its drill claim
+        // beside the size arm, in the same shape as G3. A size refusal still
+        // wins. No family rule serves the drill family, so the two remaps
+        // never meet on one row.
+        if let Some(drill) = row.drill_basis.claim() {
+            return match arm {
+                FeedsSupport::VendorBacked => FeedsSupport::DrillTransferred {
+                    drill: Box::new(drill.clone()),
+                    size: None,
+                },
+                FeedsSupport::Extrapolated { claim } => FeedsSupport::DrillTransferred {
+                    drill: Box::new(drill.clone()),
+                    size: Some(claim),
+                },
+                other @ (FeedsSupport::Refuse { .. }
+                | FeedsSupport::FormulaOnly { .. }
+                | FeedsSupport::FamilyTransferred { .. }
+                | FeedsSupport::DrillTransferred { .. }) => other,
+            };
+        }
+        return arm;
+    }
+    // Ruling B5 (G6, orchestrator decision 3): a drill cell that no drill
+    // claim serves refuses, in every material. Without the drill multiplier
+    // the formula is an unjudged milling number on a plunge, so plastics,
+    // aluminium and a raw `calculate` with no operation kind refuse too.
+    // `calculate` still computes the formula preview; the arm says it has
+    // no basis.
+    if input.operation == OperationFamily::Drill {
+        let material = vendor_normalize::material_to_lut(input.material).0;
+        let reason = match formula_backing(tool, OperationFamily::Drill, input.pass_role, material)
+        {
+            FormulaBacking::Clueless { reason } => reason,
+            // Every drill arm of the judgement is `Clueless`; this arm
+            // keeps the refusal if a future arm says otherwise.
+            FormulaBacking::Backed => DRILL_OTHER,
         };
-        return match arm {
-            FeedsSupport::VendorBacked => FeedsSupport::FamilyTransferred {
-                family: Box::new(family.clone()),
-                size: None,
-            },
-            FeedsSupport::Extrapolated { claim } => FeedsSupport::FamilyTransferred {
-                family: Box::new(family.clone()),
-                size: Some(claim),
-            },
-            other @ (FeedsSupport::Refuse { .. }
-            | FeedsSupport::FormulaOnly { .. }
-            | FeedsSupport::FamilyTransferred { .. }) => other,
+        return FeedsSupport::Refuse {
+            reason: Cow::Borrowed(reason),
         };
     }
     let Some(source) = formula_source_for_input(input) else {

@@ -952,10 +952,17 @@ mod tests {
     /// `vendor_lookup::passes_must_match` returns `false` immediately on
     /// family mismatch — so every drill query is a guaranteed miss, and
     /// has been since the family was added. Nothing anywhere said so.
-    /// Every drill number in this engine is a hardcoded material
-    /// constant or the `k0·D^p·(1/H)^q × DRILL_CHIPLOAD_MULTIPLIER`
-    /// formula, and softening the LUT diameter/hardness exponents
-    /// cannot move any of them.
+    ///
+    /// Ruling B5 (G6, 2026-09-24) keeps the family empty on purpose. The
+    /// one printed end mill plunge figure (Amana Spektra "Ramp Down") is
+    /// not loaded as drill rows: loaded, it would read "vendor-backed" and
+    /// hide the 1/Z derivation, and the size law and the bull-to-flat
+    /// fallback would stretch it. The G6 drill rule
+    /// (`extrapolation::drill`) reads the Spektra (Pocket, Roughing) side
+    /// rows for a flat end mill plunge instead, so a drill query can match
+    /// a row that is filed under another family. Every other drill cell
+    /// refuses (`support::support_for_lookup`); the formula chipload has no
+    /// drill multiplier and is a preview only.
     ///
     /// This test does not fail on an empty family — authoring drill LUT
     /// rows is not in scope and inventing them would be worse than
@@ -968,9 +975,10 @@ mod tests {
         use crate::compute::catalog::OperationType;
         use crate::feeds::vendor_normalize::op_family_to_lut;
 
-        /// Queryable families with zero bundled rows, as of 2026-08-04.
-        /// Every query for one of these is a guaranteed miss that falls
-        /// back to the formula path.
+        /// Queryable families with zero bundled rows, as of 2026-08-04
+        /// (held by ruling B5, 2026-09-24). No row is filed under one of
+        /// these; a drill query reads the Spektra side rows only through
+        /// the G6 drill rule.
         const KNOWN_EMPTY: &[LutOperationFamily] = &[LutOperationFamily::Drill];
 
         let queryable: std::collections::HashSet<LutOperationFamily> = OperationType::ALL

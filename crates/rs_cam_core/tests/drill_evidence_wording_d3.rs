@@ -171,7 +171,7 @@ fn elevated_chip_welding_must_not_claim_exceedance_below_its_threshold() {
 /// ```
 ///
 /// Fixture D5: Ø6, 12 mm, `Peck(2)`, feed 100 → 16.67 mm/min per mm Ø
-/// against the wood envelope (50, 400).
+/// against the wood envelope (50, 580).
 #[test]
 fn below_floor_plunge_feed_must_not_be_worded_as_an_exceedance() {
     let d = op(DrillCycle::Peck(2.0), 6.0, 12.0, 100.0);

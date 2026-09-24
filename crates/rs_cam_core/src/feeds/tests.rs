@@ -442,10 +442,15 @@ fn test_plunge_rate_base_scales_with_diameter() {
 
 /// Fix #3 (2026-06-02 audit): Drill ops are routed through their
 /// own `OperationFamily::Drill` (was `OperationFamily::Pocket`),
-/// and the calculate() path clamps drill RPM to 8-14k regardless
-/// of diameter — milling SFM/RPM derivation push small-D drills
-/// past 16k where chipload starves. With the multiplier, drill
-/// chipload lands in the 0.05-0.15 mm/rev softwood band.
+/// and the calculate() path clamps drill RPM into the diameter tier
+/// (8-14k at Ø6) — milling SFM/RPM derivation push small-D drills
+/// past 16k where chipload starves.
+///
+/// Ruling B5 (2026-09-24) deleted the drill multiplier (2.5). The old
+/// "0.05 mm/rev softwood drill floor" was a band fitted to formula x
+/// 2.5 (W6 audit), so this test no longer asserts it. It asserts that
+/// the preview chip IS the milling formula with no multiplier. With no
+/// LUT the cell refuses (no G6 claim), and the number is a preview.
 #[test]
 fn test_drill_family_rpm_in_drill_band() {
     let material = Material::SolidWood {
@@ -479,14 +484,21 @@ fn test_drill_family_rpm_in_drill_band() {
         result.rpm
     );
 
-    // Implied chipload = feed / (flutes * rpm). With the drill
-    // multiplier, this must clear the 0.05 mm/rev softwood drill
-    // floor. Pre-fix lands at 0.026 (audit finding).
+    // Implied chipload = feed / (flutes * rpm). GenericSoftwood has a
+    // feed scale of 1.0, so the milling formula is k0 * D^p. No drill
+    // multiplier applies (ruling B5).
+    let cl = &machine.chip_load;
+    let formula = cl.k0 * 6.0_f64.powf(cl.p);
     let implied_chipload = result.feed_rate_mm_min / (2.0 * result.rpm);
     assert!(
-        implied_chipload >= 0.05,
-        "drill implied chipload {} must clear softwood drill floor of 0.05",
-        implied_chipload
+        (implied_chipload / formula - 1.0).abs() < 1e-9,
+        "drill implied chipload {implied_chipload} must be the milling formula {formula} \
+         with no multiplier"
+    );
+    assert!(
+        matches!(result.support, FeedsSupport::Refuse { .. }),
+        "a drill with no G6 claim refuses; the number is a preview: {:?}",
+        result.support
     );
 }
 
@@ -537,20 +549,30 @@ fn test_drill_feed_within_envelope_and_plunge_aliased() {
 }
 
 /// F1: when the envelope ceiling binds, RPM follows the feed down
-/// (bounded by the drill band floor) so the shipped recipe keeps
-/// its commanded chipload instead of thinning toward rubbing. Ø3
-/// oak: target ~0.107 mm/tooth at 14 kRPM ⇒ ~3000 mm/min, envelope
-/// caps at 1200 — without the follow-down the implied chipload
-/// collapses to 0.043 at 14 k.
+/// (bounded by the drill band floor) so the result keeps its chipload
+/// instead of thinning toward rubbing.
+///
+/// Rebaselined for ruling B5 (2026-09-24). The old fixture (Ø3 oak,
+/// "~0.107 mm/tooth") rested on formula x 2.5; without the multiplier
+/// Ø3 oak sits at about 290 mm/min per mm, under the 580 ceiling. The
+/// new fixture is a Ø2 3-flute formula preview in GenericSoftwood (no
+/// LUT, so the cell refuses and the number is a preview):
+///
+/// - RPM: 200 000 / (π × 2) = 31 831 → machine 24 000 → drill cap 14 000;
+/// - chip: k0 × 2^p = 0.024 × 2^0.61 = 0.03663 mm/tooth;
+/// - feed: 14 000 × 0.03663 × 3 = 1 538.5 mm/min, over the ceiling
+///   580 × 2 = 1 160;
+/// - follow-down: 1 160 / (0.03663 × 3) = 10 556 RPM, above the 8 000
+///   floor, so the chip holds at 0.03663.
 #[test]
 fn test_drill_envelope_ceiling_drops_rpm_to_hold_chipload() {
     let material = Material::SolidWood {
-        species: WoodSpecies::WhiteOak,
+        species: WoodSpecies::GenericSoftwood,
     };
     let machine = MachineProfile::shapeoko_vfd();
     let result = calculate(&FeedsInput {
-        tool_diameter: 3.0,
-        flute_count: 2,
+        tool_diameter: 2.0,
+        flute_count: 3,
         flute_length: 12.0,
         tool_geometry: ToolGeometryHint::Flat,
         shank_diameter: None,
@@ -570,7 +592,17 @@ fn test_drill_envelope_ceiling_drops_rpm_to_hold_chipload() {
         .warnings
         .iter()
         .any(|w| matches!(w, FeedsWarning::DrillFeedClampedToEnvelope { .. }));
-    assert!(clamp_fired, "Ø3 oak drill must hit the envelope ceiling");
+    assert!(
+        clamp_fired,
+        "Ø2 3-flute softwood drill must hit the envelope ceiling"
+    );
+    let (_, hi) = material.drill_plunge_feed_envelope_per_mm();
+    assert!(
+        (result.feed_rate_mm_min - hi * 2.0).abs() < 1e-9,
+        "the feed must land on the ceiling {}, got {}",
+        hi * 2.0,
+        result.feed_rate_mm_min
+    );
     assert!(
         result.rpm < 14_000.0,
         "RPM must follow the capped feed down, got {}",
@@ -581,17 +613,22 @@ fn test_drill_envelope_ceiling_drops_rpm_to_hold_chipload() {
         "follow-down bounded by the drill band floor, got {}",
         result.rpm
     );
-    let implied = result.feed_rate_mm_min / (2.0 * result.rpm);
+    let cl = &machine.chip_load;
+    let formula = cl.k0 * 2.0_f64.powf(cl.p);
+    let implied = result.feed_rate_mm_min / (3.0 * result.rpm);
     assert!(
-        implied >= 0.05,
-        "implied chipload {implied:.4} must stay clear of the rubbing regime"
+        (implied / formula - 1.0).abs() < 1e-9,
+        "the follow-down must hold the chip {formula:.5}, got {implied:.5}"
     );
 }
 
 /// F1: the envelope clamp warns when it binds — never a silent
-/// rewrite. Hardwood Ø3 drives the chipload-derived feed above the
-/// small-diameter envelope max (400 × 3 = 1200), so the clamp must
-/// fire with the honest before/after.
+/// rewrite. The Ø2 3-flute softwood preview of
+/// `test_drill_envelope_ceiling_drops_rpm_to_hold_chipload` drives the
+/// feed (1 538.5) above the envelope max (580 × 2 = 1 160; ruling B5), so
+/// the clamp must fire with the honest before/after. Before B5 the
+/// fixture was Ø3 2-flute, which formula x 2.5 put over 400 × 3; without
+/// the multiplier it sits in band and the warning check was vacuous.
 #[test]
 fn test_drill_feed_clamp_emits_warning_when_binding() {
     let material = Material::SolidWood {
@@ -599,8 +636,8 @@ fn test_drill_feed_clamp_emits_warning_when_binding() {
     };
     let machine = MachineProfile::shapeoko_vfd();
     let result = calculate(&FeedsInput {
-        tool_diameter: 3.0,
-        flute_count: 2,
+        tool_diameter: 2.0,
+        flute_count: 3,
         flute_length: 12.0,
         tool_geometry: ToolGeometryHint::Flat,
         shank_diameter: None,
@@ -616,28 +653,28 @@ fn test_drill_feed_clamp_emits_warning_when_binding() {
         setup: SetupContext::default(),
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
     });
-    let ratio = result.feed_rate_mm_min / 3.0;
+    let ratio = result.feed_rate_mm_min / 2.0;
     let (lo, hi) = material.drill_plunge_feed_envelope_per_mm();
     assert!(ratio >= lo - 1e-9 && ratio <= hi + 1e-9);
-    // If the pre-clamp feed was out of band the warning must exist;
-    // verify consistency rather than hardcoding which side binds.
     let clamped = result.warnings.iter().find_map(|w| match w {
         FeedsWarning::DrillFeedClampedToEnvelope {
             requested, actual, ..
         } => Some((*requested, *actual)),
         _ => None,
     });
-    if let Some((requested, actual)) = clamped {
-        assert!(
-            (actual - result.feed_rate_mm_min).abs() < 1e-9,
-            "warning's actual {actual} must match the shipped feed {}",
-            result.feed_rate_mm_min
-        );
-        assert!(
-            requested < lo * 3.0 || requested > hi * 3.0,
-            "warning fired but requested {requested} was in band"
-        );
-    }
+    let Some((requested, actual)) = clamped else {
+        panic!("non-vacuity: the fixture must bind the envelope ceiling");
+    };
+    assert!(
+        (actual - result.feed_rate_mm_min).abs() < 1e-9,
+        "warning's actual {actual} must match the shipped feed {}",
+        result.feed_rate_mm_min
+    );
+    assert!(
+        requested > hi * 2.0,
+        "warning fired but requested {requested} was not above the ceiling {}",
+        hi * 2.0
+    );
 }
 
 /// Fix #3 regression guard: a Pocket op on the same tool/material
@@ -1231,6 +1268,22 @@ fn chipload_bounds_skip_doc_derating_for_drill_ops() {
     // If the LUT doesn't publish drill chipload bounds (None on either
     // depth), the test is moot — derating exclusion is what we care
     // about and both being None already satisfies the contract.
+    //
+    // Ruling B5 (G6): this cell (a 6 mm 2-flute flat end mill in hard
+    // maple) reads the Spektra 6 mm side row through the drill claim. The
+    // row prints one value, so it is a point (0.127 / 2 = 0.0635), not a
+    // band, and the point must not derate with the peck depth either.
+    let (Some(sp), Some(dp)) = (shallow.chipload_point_mm, deep.chipload_point_mm) else {
+        panic!(
+            "the G6 drill claim serves this cell, so both depths carry a point: {:?} {:?}",
+            shallow.chipload_point_mm, deep.chipload_point_mm
+        );
+    };
+    assert!((sp - 0.0635).abs() < 1e-12, "point {sp}");
+    assert!(
+        (sp - dp).abs() < 1e-12,
+        "drill point must not derate with peck depth"
+    );
 }
 
 #[test]

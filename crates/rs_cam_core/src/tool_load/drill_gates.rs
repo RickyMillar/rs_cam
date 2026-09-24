@@ -451,7 +451,7 @@ mod tests {
     fn benign_drill_passes_all_three_gates() {
         // Ø6 hole, 18 mm deep softwood with Peck(2) and feed 300 mm/min.
         // D/d=3 (well below softwood threshold 8). Peck/diameter=0.33 (well below 2).
-        // Feed/diameter=50 (at the low edge of envelope 50..400 — within).
+        // Feed/diameter=50 (at the low edge of envelope 50..580 — within).
         let v = evaluate_one(&op(DrillCycle::Peck(2.0), 6.0, 18.0, 300.0));
         assert!(!v.chip_welding.is_exceeded());
         assert!(!v.peck_adequacy.is_exceeded());
@@ -539,8 +539,9 @@ mod tests {
     #[test]
     fn criterion_status_maps_critical_to_exceeds_and_elevated_to_within() {
         use crate::tool_load::verdict::{CriterionKind, LoadState};
-        // Ø3 @ 1500 mm/min → 500 per mm Ø > 400 hi → Critical.
-        let critical = evaluate_one(&op(DrillCycle::Peck(1.0), 3.0, 6.0, 1500.0));
+        // Ø3 @ 2100 mm/min → 700 per mm Ø > 580 hi → Critical. The wood
+        // ceiling is the Amana Ramp Down figure per mm since ruling B5.
+        let critical = evaluate_one(&op(DrillCycle::Peck(1.0), 3.0, 6.0, 2100.0));
         let status = critical.plunge_feed.as_criterion_status(
             CriterionKind::DrillPlungeFeed,
             DrillCycleKind::Peck,
@@ -574,8 +575,8 @@ mod tests {
 
     #[test]
     fn too_fast_feed_flags_plunge_feed_critical() {
-        // Ø3, feed 1500 mm/min → feed/diameter = 500, hi=400 → above.
-        let v = evaluate_one(&op(DrillCycle::Peck(1.0), 3.0, 6.0, 1500.0));
+        // Ø3, feed 2100 mm/min → feed/diameter = 700, hi=580 → above.
+        let v = evaluate_one(&op(DrillCycle::Peck(1.0), 3.0, 6.0, 2100.0));
         match v.plunge_feed {
             DrillGateOutcome::Exceeds { severity, .. } => {
                 assert_eq!(severity, DrillGateSeverity::Critical);

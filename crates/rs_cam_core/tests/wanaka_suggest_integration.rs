@@ -46,8 +46,12 @@
 //!   `wanaka_suggest_baseline` never reached this block. The G-WANAKA-DPP
 //!   fixture re-pin restores it — **measured, not asserted-in-hope**:
 //!   stepover 0.030 → 0.22781 mm and neither lift warning fires.
-//! - **Pin Drill / Holes** (drill family): chipload is `NotApplicable` —
-//!   neither `FeedRaisedForChipload` nor `DppCappedByDeflection` may
+//! - **Pin Drill / Holes** (drill family): refused under ruling R1
+//!   (2026-09-23), shipped again under ruling B5 (G6, 2026-09-24). Both
+//!   run a 6 mm 2-flute flat end mill in GenericHardwood, which the G6
+//!   drill claim serves from the Amana Spektra 6 mm side row / 2: chip
+//!   0.0635 mm/tooth at the 14 000 RPM drill cap, about 1778 mm/min.
+//!   Neither `FeedRaisedForChipload` nor `DppCappedByDeflection` may
 //!   leak through.
 //! - **Rivers / Lakes** (V-bit `project_curve`): `FeedRaisedForChipload`
 //!   must NOT fire. Pre-2026-08-13 this held because V-bit chipload was
@@ -159,10 +163,10 @@ fn wanaka_project_path() -> PathBuf {
 /// session order so individual assertions can find their case by id.
 ///
 /// Feeds matrix ruling R1 (2026-09-23): a cell the R1 judgement calls
-/// CLUELESS refuses with `FeedsError::Unbacked`. On this project both
-/// drill toolpaths (7 Holes, 14 Pin Drill: a 6 mm flat end mill in
-/// hardwood) refuse. The helper records them in `refused`; every other
-/// refusal still panics.
+/// CLUELESS refuses with `FeedsError::Unbacked`. The helper records such
+/// refusals in `refused`; every other refusal still panics. Since ruling
+/// B5 (G6, 2026-09-24) no toolpath of this project refuses: the two drill
+/// toolpaths (7 Holes, 14 Pin Drill) ship through the drill claim.
 fn run_suggest_for_enabled(session: &ProjectSession) -> SuggestRun {
     let mut out = Vec::new();
     let mut refused = Vec::new();
@@ -262,28 +266,22 @@ fn wanaka_suggest_baseline() {
         !cases.is_empty(),
         "Expected ≥1 enabled toolpath in wanaka.toml, got 0 — project shape regression"
     );
-    // Ruling R1 (2026-09-23): the two drill toolpaths refuse, with the
-    // judgement's drill reason. Any other refusal is a regression.
+    // No toolpath refuses. Any refusal is a regression.
     //
-    // History: ruling R1 applied to size (2026-09-24) refused tp 11 "3D
+    // History: ruling R1 (2026-09-23) refused the two drill toolpaths (7
+    // Holes, 14 Pin Drill) with the judgement's drill reason ("... the drill
+    // multiplier 2.5 is unsourced"). Ruling B5 (G6, 2026-09-24) deleted the
+    // multiplier and ships both through the drill claim (their arms are
+    // below). Ruling R1 applied to size (2026-09-24) refused tp 11 "3D
     // Finish 6" too, a 1.0 mm-tip tapered ball DropCutter in hardwood. Its
     // nearest chart row was 3.175 mm or larger, more than 2x its engaged
     // diameter. The same day, ruling A1 moved the lookup key to the tip and
     // extrapolation P1 loaded the printed 1.0 mm tip rows, so tp 11 ships
     // again (its arm is below).
-    let mut refused_ids: Vec<ToolpathId> = refused.iter().map(|(id, _, _)| *id).collect();
-    refused_ids.sort_by_key(|id| id.0);
-    assert_eq!(
-        refused_ids,
-        vec![ToolpathId(7), ToolpathId(14)],
-        "the Unbacked refusals must be the two drill toolpaths (Holes, Pin Drill): {refused:?}"
+    assert!(
+        refused.is_empty(),
+        "no Wanaka toolpath may refuse since ruling B5: {refused:?}"
     );
-    for (id, name, text) in &refused {
-        assert!(
-            text.contains("plunge drill") && text.contains("2.5") && !text.contains('{'),
-            "tp {id} ({name}): the refusal must carry the drill reason as a sentence: {text}"
-        );
-    }
 
     // Baseline snapshot (visible with `cargo test -- --nocapture`).
     // Useful to recover the on-disk Wanaka numbers without having to
@@ -794,15 +792,65 @@ fn wanaka_suggest_baseline() {
 
     // ── Toolpath 14: Pin Drill and toolpath 7: Holes (drill family)
     //
-    // Until 2026-09-23 these two blocks asserted that no chipload-lift or
-    // DppCappedByDeflection warning fired on a drill. Ruling R1 refuses
-    // every drill cell in the judged woods (no published figure; the 2.5
-    // multiplier is unsourced), so both toolpaths are in `refused` (asserted
-    // above) and ship no warnings at all.
+    // Ruling R1 (2026-09-23) refused both; ruling B5 (G6, 2026-09-24) ships
+    // both through the drill claim. The no-lift assertions that stood here
+    // until 2026-09-23 are restored, and the claim's numbers are pinned.
+    //
+    // The numbers (python3 over `amana_flat_end.json` and
+    // `fetch/G6/verified_rows.json`): the tool is a 6.0 mm 2-flute flat end
+    // mill (fixture tool 3) in GenericHardwood (Janka 1450). The row is
+    // `amana-flat-hardwood-pocket-6000-2f-spektra`, side chip 0.127
+    // mm/tooth, Janka 1450 on a 1450 query (no hardness scale), at the
+    // printed size (no size claim). The drill claim divides by Z = 2:
+    // 0.0635 mm/tooth, the verified Ramp Down chip (90 in/min / (18 000 x
+    // 2)). The chart's 18 000 RPM is clamped to the 14 000 drill cap, so the
+    // feed is 14 000 x 0.0635 x 2 = 1778 mm/min (float rounding and the
+    // round-down on apply decide 1777 or 1778), 0.78x the printed 2286.
     for id in [ToolpathId(14), ToolpathId(7)] {
+        let (_id, name, suggested) = find_case(&cases, id);
+        let ctx = format!("drill (tp {_id} / {name})");
+        assert_no_feed_raised(&suggested.warnings, &ctx);
         assert!(
-            cases.iter().all(|(tid, _, _)| *tid != id),
-            "tp {id}: a refused drill must not also ship a recipe"
+            !suggested
+                .warnings
+                .iter()
+                .any(|w| matches!(w, SuggestWarning::DppCappedByDeflection { .. })),
+            "{ctx}: DppCappedByDeflection must NOT fire on a drill, got {:?}",
+            suggested.warnings
+        );
+        let r = &suggested.feeds_result;
+        assert!(
+            matches!(
+                r.support,
+                rs_cam_core::feeds::FeedsSupport::DrillTransferred { size: None, .. }
+            ),
+            "{ctx}: the G6 drill claim serves the cell, got {:?}",
+            r.support
+        );
+        let matched = r
+            .matched_lut_row
+            .as_ref()
+            .unwrap_or_else(|| panic!("{ctx}: the recipe names its row"));
+        assert_eq!(
+            matched.observation_id, "amana-flat-hardwood-pocket-6000-2f-spektra",
+            "{ctx}"
+        );
+        let chip = matched
+            .chip_load_max_mm
+            .unwrap_or_else(|| panic!("{ctx}: the claimed row prints a point"));
+        assert!(
+            (chip - 0.0635).abs() < 1e-12,
+            "{ctx}: chip must be 0.127 / 2 = 0.0635, got {chip}"
+        );
+        assert!(
+            (r.rpm - 14_000.0).abs() < 1e-9,
+            "{ctx}: the drill RPM cap must replace the chart's 18 000, got {}",
+            r.rpm
+        );
+        let feed = suggested.operation.feed_rate();
+        assert!(
+            (1777.0..=1778.0 + 1e-9).contains(&feed),
+            "{ctx}: feed must be 14 000 x 0.0635 x 2 = 1778 (rounded down), got {feed}"
         );
     }
 
@@ -1163,8 +1211,9 @@ fn session_cutter_op_profile_matches_gui_rationale_assembly() {
             .cutter_op_profile(tc)
             .unwrap_or_else(|| panic!("profile tool lookup failed for toolpath {}", tc.id));
 
-        // Ruling R1 (2026-09-23): the two drills refuse. Both assemblies
-        // must refuse with the same text; nothing else is comparable.
+        // Ruling R1 (2026-09-23) refused the two drills; ruling B5 ships
+        // them. A refusal must come from both assemblies with the same
+        // text; nothing else is comparable.
         let direct = match direct {
             Ok(direct) => direct,
             Err(e @ FeedsError::Unbacked { .. }) => {

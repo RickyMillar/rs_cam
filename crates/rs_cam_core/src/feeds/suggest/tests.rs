@@ -53,6 +53,7 @@ fn unpopulated_effective_diameter_skips_doc_derating() {
         size_basis: crate::feeds::extrapolation::SizeBasis::Exact,
         hardness_basis: crate::feeds::extrapolation::HardnessBasis::Unscaled,
         family_basis: crate::feeds::extrapolation::FamilyBasis::Printed,
+        drill_basis: crate::feeds::extrapolation::DrillBasis::Printed,
         material_label: String::new(),
         evidence_grade: crate::feeds::vendor_lut::EvidenceGrade::A,
         row_kind: crate::feeds::vendor_lut::ObservationKind::Exact,
@@ -204,15 +205,17 @@ fn vendor_lut_row_present_path_is_used() {
 /// plunge to the envelope-clamped drill feed, so write order is
 /// irrelevant and the stored value equals the suggestion.
 ///
-/// FM5 (2026-09-23): every drill cell in the four judged woods is CLUELESS
-/// and refuses (`FeedsError::Unbacked`), so the round trip runs in a plastic,
-/// a material the judgement did not cover. The funnel is material-free.
+/// Ruling B5 (G6, 2026-09-24): a drill in plastic now refuses (every drill
+/// cell with no G6 claim refuses, in every material), and a 6 mm 2-flute
+/// flat end mill in GenericHardwood ships through the drill claim (the
+/// Amana Spektra 6 mm side row / 2). So the round trip runs there. The
+/// funnel is material-free.
 #[test]
 fn drill_apply_round_trips_suggested_feed() {
     let tool = tool(6.0);
     let machine = MachineProfile::default();
-    let material = Material::Plastic {
-        family: crate::material::PlasticFamily::Generic,
+    let material = Material::SolidWood {
+        species: crate::material::WoodSpecies::GenericHardwood,
     };
     for op_type in [OperationType::Drill, OperationType::AlignmentPinDrill] {
         let s = suggest_params(SuggestParamsInput {
@@ -225,7 +228,15 @@ fn drill_apply_round_trips_suggested_feed() {
             spindle_strategy: crate::feeds::SpindleStrategy::default(),
             context: SuggestContext::default(),
         })
-        .expect("drill + flat is not a refused combination");
+        .expect("a 6 mm 2-flute flat plunge in hardwood ships through the G6 claim");
+        assert!(
+            matches!(
+                s.feeds_result.support,
+                crate::feeds::FeedsSupport::DrillTransferred { size: None, .. }
+            ),
+            "{op_type:?}: the drill claim serves the cell, got {:?}",
+            s.feeds_result.support
+        );
         let stored = s.operation.feed_rate();
         let suggested = s.feeds_result.feed_rate_mm_min;
         assert_eq!(

@@ -611,6 +611,30 @@ pub enum Material {
 pub const JANKA_CALIBRATED_BAND_LOW_LBF: f64 = 200.0;
 pub const JANKA_CALIBRATED_BAND_HIGH_LBF: f64 = 4000.0;
 
+/// The drill plunge-feed ceiling in solid wood (mm/min per mm of
+/// diameter; ruling B5). Amana Spektra v24, 1/8 in 2-flute, "Wood/Plywood"
+/// Ramp Down 72.5 in/min: 72.5 × 25.4 / 3.175 = 580. The printed figure
+/// per mm falls with the diameter (381 at 6 mm); see
+/// [`Material::drill_plunge_feed_envelope_per_mm`].
+pub const DRILL_PLUNGE_CEILING_WOOD_PER_MM: f64 = 580.0;
+
+/// The drill plunge-feed ceiling in plywood (mm/min per mm; ruling B5).
+/// The same Amana "Wood/Plywood" column as solid wood: 580.
+pub const DRILL_PLUNGE_CEILING_PLYWOOD_PER_MM: f64 = 580.0;
+
+/// The drill plunge-feed ceiling in sheet goods (MDF, HDF, particleboard;
+/// mm/min per mm; ruling B5). Amana Spektra v24, 1/8 in 2-flute,
+/// "MDF/Laminate" Ramp Down 90 in/min: 90 × 25.4 / 3.175 = 720.
+pub const DRILL_PLUNGE_CEILING_SHEET_PER_MM: f64 = 720.0;
+
+/// The drill plunge-feed floor in solid wood (mm/min per mm). Repo rule,
+/// unsourced (W6 audit 2026-08-04, item R-10).
+pub const DRILL_PLUNGE_FLOOR_WOOD_PER_MM: f64 = 50.0;
+
+/// The drill plunge-feed floor in plywood and sheet goods (mm/min per mm).
+/// Repo rule, unsourced (W6 audit 2026-08-04, item R-10).
+pub const DRILL_PLUNGE_FLOOR_BOARD_PER_MM: f64 = 40.0;
+
 /// Shared Janka → Kc fallback for parametric wood species.
 ///
 /// **Formula:** `Kc = janka_lbf / 100.0`. Folklore-grade — the
@@ -1261,36 +1285,50 @@ impl Material {
     /// min the cutter rubs / burns; above the max it breaks or
     /// stalls. Same dispatch pattern as the chip-welding methods.
     ///
-    /// Provenance, corrected 2026-08-04 (W6 audit §6.2/§6.4, item
-    /// R-10 — the numbers are held, the citation is not). The claim
-    /// this comment used to carry was **circular**: it derived the
-    /// wood band from "0.08–0.18 mm/tooth" attributed to an Onsrud
-    /// wood-drilling bulletin, but that band is the literature
-    /// matrix's own `feed_per_tooth` cell, and the cell was fitted to
-    /// this code's output (it brackets the shipped formula to three
-    /// decimals at both ends). No Onsrud wood-drilling bulletin
-    /// stating it was located; the retrieved Onsrud drill chart
-    /// (`https://www.onsrud.com/images/Drill.pdf`, 2026-08-04) prints
-    /// 0.229–0.432 mm/tooth for series 72-000 Wood, which does not
-    /// overlap that band at any diameter. The 50 floor was attributed
-    /// to "FPL Wood Handbook Ch.19"; Ch.19 is *Specialty Treatments*
-    /// and the handbook has no drilling content in either edition.
+    /// The wood ceilings (ruling B5, 2026-09-24) are the largest printed
+    /// plunge feeds per mm of diameter: the Amana Spektra Spiral Plunge
+    /// chart v24 "Ramp Down" column (`amana_spektra_spiral_plunge_v24`,
+    /// `planning/extrapolation_2026-09-24/fetch/G6/verified_rows.json`),
+    /// at 1/8 in (3.175 mm), 2 flutes:
     ///
-    /// So: the envelope is **repo-authored**, defensible in order of
-    /// magnitude and consistent across the four sites that use it
-    /// (this accessor, `feeds::calculate` Step 9c, `drill_gates`,
-    /// `narrate`) — see the audit's unit-consistency PASS in §2.3 —
-    /// but it is not sourced. Non-wood rows remain engineering
-    /// placeholders pending vendor data (esp. Aluminum / Fiberglass —
-    /// noted inline).
+    /// - solid wood and plywood: the "Wood/Plywood" column prints 72.5
+    ///   in/min = 1841.5 mm/min, so 580 mm/min per mm
+    ///   ([`DRILL_PLUNGE_CEILING_WOOD_PER_MM`], [`DRILL_PLUNGE_CEILING_PLYWOOD_PER_MM`]);
+    /// - sheet goods: the "MDF/Laminate" column prints 90 in/min =
+    ///   2286 mm/min, so 720 mm/min per mm
+    ///   ([`DRILL_PLUNGE_CEILING_SHEET_PER_MM`]).
+    ///
+    /// The printed figure per mm falls with the diameter: at 6 mm the
+    /// same chart prints 90 in/min (Wood/Plywood) = 381 per mm and 107.5
+    /// in/min (MDF) = 455 per mm. At 6 mm the ceiling is therefore about
+    /// 1.5x the printed figure, and above 6 mm no chart states it (B5
+    /// decision 5: the ceiling is held per material).
+    ///
+    /// The floors (50 wood, 40 plywood and sheet goods) are repo-authored
+    /// and unsourced (W6 audit 2026-08-04, §6.2/§6.4, item R-10). The
+    /// band that the audit found circular (a literature-matrix cell fitted
+    /// to this code) no longer sets any number here. The non-wood rows
+    /// remain engineering placeholders pending vendor data (esp. Aluminum
+    /// / Fiberglass — noted inline); Suggest refuses a drill in those
+    /// materials (B5 decision 3), so only the gate reads them.
     ///
     /// Consumed by `tool_load::drill_gates` (gate + narrate via
     /// `classify_plunge_feed`) and `feeds::calculate` Step 9c (suggest
     /// clamp) — one envelope source for all three.
     pub fn drill_plunge_feed_envelope_per_mm(&self) -> (f64, f64) {
         match self {
-            Material::SolidWood { .. } | Material::SolidWoodByJanka { .. } => (50.0, 400.0),
-            Material::Plywood { .. } | Material::SheetGood { .. } => (40.0, 350.0),
+            Material::SolidWood { .. } | Material::SolidWoodByJanka { .. } => (
+                DRILL_PLUNGE_FLOOR_WOOD_PER_MM,
+                DRILL_PLUNGE_CEILING_WOOD_PER_MM,
+            ),
+            Material::Plywood { .. } => (
+                DRILL_PLUNGE_FLOOR_BOARD_PER_MM,
+                DRILL_PLUNGE_CEILING_PLYWOOD_PER_MM,
+            ),
+            Material::SheetGood { .. } => (
+                DRILL_PLUNGE_FLOOR_BOARD_PER_MM,
+                DRILL_PLUNGE_CEILING_SHEET_PER_MM,
+            ),
             Material::Plastic { .. } => (60.0, 500.0),
             // Aluminum on a wood router is application-edge —
             // conservative envelope (slower than wood min, lower than

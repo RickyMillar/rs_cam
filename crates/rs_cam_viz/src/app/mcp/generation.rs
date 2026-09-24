@@ -54,6 +54,8 @@ impl RsCamApp {
                 // A3 (G3): a family transfer is a support arm
                 // (`FamilyTransferred`), so its claim is in `headline` and
                 // `detail` too, joined with the size claim when there is one.
+                // B5 (G6): a drill claim is a support arm (`DrillTransferred`)
+                // in the same way.
                 let basis = profile.feeds.as_ref().map(|feeds| {
                     let (headline, detail) = feeds.support.card_text();
                     let hardness = feeds

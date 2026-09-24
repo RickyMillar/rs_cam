@@ -519,3 +519,42 @@ fn the_ams159_trace_cell_is_held_as_a_point_a2() {
 fn the_spektra_pocket_cell_is_held_as_a_point_a2() {
     assert_the_cell_is_held_as_a_point(&spektra_pocket());
 }
+
+/// (c) Ruling B5 (G6): the drill claim scales a printed point by 1 / Z, and
+/// the scaled value is still a point. A 6.0 mm 2-flute flat plunge in
+/// hardwood reads `amana-flat-hardwood-pocket-6000-2f-spektra` (a maximum
+/// 0.127 only) at x0.5: a point at 0.0635 with no minimum, on both
+/// resolvers.
+#[test]
+fn a_drill_claim_keeps_a_printed_point_a_point_a2() {
+    use rs_cam_core::feeds::vendor_lookup::find_best_row_for_geometry;
+    use rs_cam_core::feeds::vendor_lut::{HardnessKind, MaterialFamily, ToolFamily};
+    let lut = embedded_vendor_lut();
+    let query = LookupQuery {
+        tool_family: ToolFamily::FlatEnd,
+        tool_subfamily: None,
+        diameter_mm: 6.0,
+        flute_count: 2,
+        material_family: MaterialFamily::Hardwood,
+        hardness_kind: Some(HardnessKind::Janka),
+        hardness_value: Some(1450.0),
+        operation_family: LutOperationFamily::Drill,
+        pass_role: LutPassRole::Roughing,
+    };
+    let recipe = find_best_row_for_geometry(lut, &query, &ToolGeometryHint::Flat)
+        .expect("the drill claim reads the Spektra side row");
+    let gate = find_best_chip_envelope_row(lut, &query, &ToolGeometryHint::Flat)
+        .expect("the envelope resolver reads the same row");
+    for row in [&recipe, &gate] {
+        assert_eq!(
+            row.observation_id,
+            "amana-flat-hardwood-pocket-6000-2f-spektra"
+        );
+        assert!(row.drill_basis.claim().is_some(), "{row:?}");
+        assert_eq!(row.chip_load_min_mm, None, "a point carries no minimum");
+        let PrintedChipload::Point { value_mm } = row.printed_chipload() else {
+            panic!("a scaled point stays a point: {row:?}");
+        };
+        assert!((value_mm - 0.0635).abs() < TOL, "0.127 / 2, got {value_mm}");
+    }
+}

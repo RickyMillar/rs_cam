@@ -4,8 +4,8 @@
 //! and returns the best match with chipload midpoint.
 
 use super::extrapolation::{
-    Extrapolation, FamilyBasis, HardnessBasis, SizeBasis, SizeLaw, family_basis, hardness_basis,
-    transfer_rule,
+    DrillBasis, Extrapolation, FamilyBasis, HardnessBasis, SizeBasis, SizeLaw, drill_basis,
+    drill_rule, family_basis, hardness_basis, transfer_rule,
 };
 use super::vendor_lut::{
     EvidenceGrade, HardnessKind, LutOperationFamily, LutPassRole, MaterialFamily, ObservationKind,
@@ -31,7 +31,8 @@ pub type MatchedRow = LookupResult;
 
 /// Result of a successful LUT lookup.
 ///
-/// Chipload fields are **scaled** to the query's diameter and hardness. The
+/// Chipload fields are **scaled** to the query's diameter and hardness (and,
+/// on a G6 drill claim, by 1 / Z: [`Self::drill_basis`]). The
 /// query diameter is the lookup key (`feeds::geometry::lut_key_diameter_mm`):
 /// the tip of a tapered ball (ruling A1, 2026-09-24), the engaged width of a
 /// V-bit, and the nominal diameter otherwise. When `is_extrapolated` is true the scaling
@@ -154,6 +155,12 @@ pub struct LookupResult {
     /// family rule carries the row from its home operation family into the
     /// queried family; the band is the home row's band (copy semantics).
     pub family_basis: FamilyBasis,
+    /// The G6 drill basis of this row for this query
+    /// (`feeds::extrapolation::drill_basis`, ruling B5). `Transferred` when
+    /// the drill rule reads a flat end mill's printed side row for a
+    /// plunge: the chip fields carry the side chip / Z
+    /// ([`DrillBasis::scale`]), and a printed point stays a point.
+    pub drill_basis: DrillBasis,
     /// The matched row's printed material label (the A4 channel: a
     /// "Wood, MDF, Sign-Foam" row that serves hardwood says so here).
     pub material_label: String,
@@ -268,7 +275,7 @@ fn find_best_vbit_row_where(
 ) -> Option<MatchedRow> {
     let mut best: Option<(i64, i64, bool, usize)> = None;
     for (i, obs) in lut.observations.iter().enumerate() {
-        let transferred = transfer_rule(criteria, obs).is_some();
+        let transferred = is_transferred(criteria, obs);
         if !passes_must_match(criteria, obs, transferred) || !extra(obs) {
             continue;
         }
@@ -581,7 +588,11 @@ fn build_result(
         None => apply_chipload_law(diameter_ratio_raw, CHIPLOAD_DIAMETER_EXPONENT),
     };
     let hardness_scale = hardness_basis.scale();
-    let total_scale = diameter_scale * hardness_scale;
+    // The G6 drill basis (ruling B5): a flat end mill plunge reads the side
+    // chip / Z. One more scalar on min, mid and max, so a printed point
+    // stays a point.
+    let drill_basis = drill_basis(query, obs);
+    let total_scale = diameter_scale * hardness_scale * drill_basis.scale();
     // The G3 family basis: a mark only. The band is the row's own band.
     let family_basis = family_basis(query, obs);
     // A refused basis publishes no band, so no consumer can use it.
@@ -631,6 +642,7 @@ fn build_result(
         size_basis,
         hardness_basis,
         family_basis,
+        drill_basis,
         material_label: obs.material_label.clone(),
         evidence_grade: obs.evidence_grade,
         row_kind: obs.row_kind,
@@ -697,7 +709,7 @@ fn lookup_best_where(
     let mut best: Option<(i64, i64, bool, usize)> = None;
 
     for (i, obs) in lut.observations.iter().enumerate() {
-        let transferred = transfer_rule(query, obs).is_some();
+        let transferred = is_transferred(query, obs);
         if !passes_must_match(query, obs, transferred) || !extra(obs) {
             continue;
         }
@@ -772,10 +784,18 @@ fn materials_compatible(query: MaterialFamily, obs: MaterialFamily) -> bool {
     material_category(query) == material_category(obs)
 }
 
-/// `transferred` is `extrapolation::transfer_rule(query, obs).is_some()`:
-/// a row from another operation family passes only when a G3 family rule
-/// carries it into the queried family (A3). Every other filter applies to
-/// a transferred row too.
+/// True when a stated rule carries `obs` from its home operation family
+/// into the queried family: a G3 family rule (`extrapolation::transfer_rule`,
+/// A3) or the G6 drill rule (`extrapolation::drill_rule`, ruling B5). Both
+/// resolvers call this one predicate, so Suggest and the gate read one row.
+fn is_transferred(query: &LookupQuery, obs: &VendorObservation) -> bool {
+    transfer_rule(query, obs).is_some() || drill_rule(query, obs).is_some()
+}
+
+/// `transferred` is [`is_transferred`]: a row from another operation family
+/// passes only when a G3 family rule (A3) or the G6 drill rule (B5) carries
+/// it into the queried family. Every other filter applies to a transferred
+/// row too.
 fn passes_must_match(query: &LookupQuery, obs: &VendorObservation, transferred: bool) -> bool {
     if obs.operation_family != query.operation_family && !transferred {
         return false;

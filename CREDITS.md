@@ -683,7 +683,7 @@ The integrated feeds/material stack also depends on direct material and formula 
 
 Those sources underpin material hardness anchors, sheet-good ordering, and conservative cutting-force assumptions used by the current integrated model.
 
-### Drill-subsystem provenance (corrected 2026-08-04)
+### Drill-subsystem provenance (corrected 2026-08-04, ruling B5 2026-09-24)
 
 The drilling stack — the three drill gates (chip welding, peck adequacy,
 plunge feed), the drill RPM tiers, and the drill chipload multiplier — was
@@ -725,15 +725,51 @@ Declared repo-authored / unsourced (values held, not moved):
   cited is a total-hole regime number, not a per-peck ceiling.
 - Chip-welding thresholds (`drill_chip_welding_threshold_dtd`: 8 / 6 / 5;
   plywood 5; plastic 4; aluminum 3; foam 12).
-- Plunge-feed envelopes (`drill_plunge_feed_envelope_per_mm`, wood
-  50–400 mm/min per mm Ø). The band previously cited to Onsrud/Vectric was
-  the literature matrix's own cell, which had been fitted to this code's
-  output; it does not overlap the retrieved Onsrud chart at any diameter.
-- Drill RPM tiers (8–14k / 6–10k / 4–8k by diameter).
-- `DRILL_CHIPLOAD_MULTIPLIER = 2.5` (`feeds/mod.rs`). Unsourced; its former
-  justification was arithmetically false and has been removed from the code.
-  Against the Onsrud chart above the implied factor is ~5, but that row is a
-  fixed-RPM gang-drill datum and is not usable as a recalibration target.
+- Plunge-feed envelope floors (`drill_plunge_feed_envelope_per_mm`: wood
+  50, plywood and sheet goods 40 mm/min per mm Ø). The band previously cited
+  to Onsrud/Vectric was the literature matrix's own cell, which had been
+  fitted to this code's output; it does not overlap the retrieved Onsrud
+  chart at any diameter. The wood ceilings are sourced since ruling B5
+  (below).
+- Drill RPM tiers (8–14k / 6–10k / 4–8k by diameter,
+  `drill_rpm_envelope_for_diameter`). A named repo cap: on a G6-claimed
+  plunge it replaces Amana's printed 18,000 RPM (below).
+- Peck depth: no vendor prints a per-peck depth (the G6 search found none).
+  Suggest writes half the per-peck maximum above.
+
+Ruling B5 (G6 drill, 2026-09-24; `planning/extrapolation_2026-09-24/B5_PLAN.md`):
+
+- **The 2.5 drill multiplier is deleted.** `DRILL_CHIPLOAD_MULTIPLIER` was
+  unsourced; its former justification was arithmetically false. Against the
+  Onsrud chart above the implied factor is ~5, but that row is a fixed-RPM
+  gang-drill datum and is not usable as a recalibration target. The drill
+  formula chipload is now the milling formula, a preview only.
+- **The flat end mill plunge claim.** Amana, *Solid Carbide Spektra Spiral
+  Plunge 2/3 Flute Chart v24*
+  (<https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf>,
+  retrieved 2026-09-24) prints "Ramp Down" = Feed Rate IPM / # of flutes at
+  its 18,000 RPM. The feed rate is RPM x side chip x Z, so the axial advance
+  per tooth is the side chip / Z. `feeds::extrapolation::drill` reads the
+  tool's own side row (`amana_flat_end.json`) and divides by Z, for a 2- or
+  3-flute flat end mill at 3.175–6.0 mm, where the 8 verified Ramp Down
+  cells sit (`fetch/G6/verified_rows.json`). The chip is held per tooth; the
+  engine RPM cap (14,000 at D ≤ 6 mm) replaces the chart's 18,000, so the
+  feed is about 0.78x the printed Ramp Down. "Ramp Down" is read as a
+  straight plunge; Amana does not print the word "plunge". Softwood and
+  hardwood read the "Wood/Plywood" column as derived grade b (R5).
+- **The plunge envelope ceilings** are the largest printed Ramp Down per mm
+  Ø (1/8 in, 2 flutes): wood and plywood 72.5 in/min / 3.175 mm = 580, MDF
+  and sheet goods 90 in/min / 3.175 mm = 720 mm/min per mm. The printed
+  figure per mm falls with the diameter (381 Wood/Plywood and 455 MDF at
+  6 mm), so at 6 mm the ceiling is about 1.5x the printed figure, and above
+  6 mm no chart states it.
+- **Every other drill cell refuses**, in every material (ball, tapered
+  ball, V-bit, bull nose; a flat end mill outside the claim; plastics and
+  aluminium). The one printed bull plunge (PreciseBits fret plane) is a feed
+  with no RPM for one 3-flute tool.
+- **Real wood drills are out of scope.** Onsrud 72-000, Leitz and CMT print
+  19 wood drill rows (0.13–0.50 mm per lip), but they need a drill
+  `ToolFamily` first, and they must never serve an end mill plunge.
 - `vectric_drill_default` (literature-matrix registry): Vectric publishes a
   documentation portal, not a retrievable drill-defaults table. The row is
   community-tier and represents community CAM practice, not a cited document.

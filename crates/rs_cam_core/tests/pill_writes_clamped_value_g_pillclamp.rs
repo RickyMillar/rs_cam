@@ -87,6 +87,23 @@ fn try_recipe(
     .ok()
 }
 
+/// The tool of a fixture: the type's default, except on a drill. Ruling B5
+/// (G6, 2026-09-24): a drill ships only through the drill claim (a 2- or
+/// 3-flute flat end mill at 3.175-6.0 mm), and the default end mill is
+/// 6.35 mm, so a drill fixture takes a 6.0 mm end mill. Before B5 every
+/// drill cell in softwood refused (ruling R1).
+fn fixture_tool(op_type: OperationType, tool_type: ToolType) -> ToolConfig {
+    let mut tool = ToolConfig::new_default(ToolId(1), tool_type);
+    if matches!(
+        op_type,
+        OperationType::Drill | OperationType::AlignmentPinDrill
+    ) && tool_type == ToolType::EndMill
+    {
+        tool.diameter = 6.0;
+    }
+    tool
+}
+
 fn recipe(session: &ProjectSession, tool: &ToolConfig, op: &OperationConfig) -> FeedsResult {
     try_recipe(session, tool, op).expect("valid tool × operation pairing")
 }
@@ -230,7 +247,7 @@ fn every_field_the_funnel_writes_previews_exactly_what_it_writes() {
     let session = ProjectSession::new_empty();
     let mut covered = 0;
     for (op_type, tool_type) in pill_fixtures() {
-        let tool = ToolConfig::new_default(ToolId(1), tool_type);
+        let tool = fixture_tool(op_type, tool_type);
         let op = OperationConfig::new_default(op_type);
         let Some(result) = try_recipe(&session, &tool, &op) else {
             panic!("{op_type:?} on {tool_type:?} is refused — pick a valid tool for the fixture");
@@ -295,7 +312,7 @@ fn every_field_the_funnel_writes_previews_exactly_what_it_writes() {
 fn pill_site_classification_is_pinned() {
     let session = ProjectSession::new_empty();
     let classify = |op_type: OperationType, tool_type: ToolType, field: FeedsField| -> bool {
-        let tool = ToolConfig::new_default(ToolId(1), tool_type);
+        let tool = fixture_tool(op_type, tool_type);
         let op = OperationConfig::new_default(op_type);
         let result = recipe(&session, &tool, &op);
         previews(&session, &tool, &op, &result).get(field).is_some()

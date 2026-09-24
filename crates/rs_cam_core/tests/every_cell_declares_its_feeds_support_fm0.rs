@@ -23,7 +23,10 @@
 //!   resolver does not panic, it agrees with the arm `calculate` records,
 //!   and a cell whose lookup found a row is `VendorBacked`, `Extrapolated`
 //!   (a G1 size claim, extrapolation P1), `FamilyTransferred` (a G3 family
-//!   claim, A3) or a size refusal.
+//!   claim, A3), `DrillTransferred` (the G6 drill claim, ruling B5) or a
+//!   size refusal. The default 6.35 mm end mill is outside the G6 range
+//!   (3.175-6.0 mm), so this grid holds no `DrillTransferred` cell; the arm
+//!   is checked where it occurs.
 //! - [`no_cell_refuses_today`] (c) — the set of `Refuse` cells is empty.
 //! - [`the_unbacked_refusal_names_its_cell`] (d) — the `Display` text of
 //!   `FeedsError::Unbacked` names the operation, the tool family and the
@@ -196,6 +199,7 @@ fn a_cell_with_a_vendor_row_is_vendor_backed() {
     let mut vendor_backed = 0usize;
     let mut extrapolated = 0usize;
     let mut family_transferred = 0usize;
+    let mut drill_transferred = 0usize;
     let mut formula_only = 0usize;
     let mut refused = 0usize;
     let mut size_refused = 0usize;
@@ -250,6 +254,30 @@ fn a_cell_with_a_vendor_row_is_vendor_backed() {
                     );
                     family_transferred += 1;
                 }
+                // B5 (G6): the drill rule reads a flat end mill's side row
+                // for a plunge. The cell ships, so the evidence half must
+                // not raise `Unbacked`.
+                FeedsSupport::DrillTransferred { drill, size } => {
+                    assert!(
+                        drill.scale > 0.0
+                            && (drill.scale * f64::from(drill.flutes) - 1.0).abs() < 1e-12,
+                        "{}: a drill claim scales its row by 1 / Z: {drill:?}",
+                        cell.label
+                    );
+                    if let Some(claim) = size {
+                        assert!(
+                            claim.range_mm.contains(&claim.query_diameter_mm),
+                            "{}: the size claim's range must hold the query key: {claim:?}",
+                            cell.label
+                        );
+                    }
+                    assert!(
+                        !matches!(cell.validation, Err(FeedsError::Unbacked { .. })),
+                        "{}: a drill-claimed cell must not raise Unbacked",
+                        cell.label
+                    );
+                    drill_transferred += 1;
+                }
                 FeedsSupport::Refuse { reason } if is_size_refusal(reason) => {
                     assert!(
                         matches!(
@@ -265,7 +293,8 @@ fn a_cell_with_a_vendor_row_is_vendor_backed() {
                 }
                 other => panic!(
                     "{}: the lookup found a row, so the arm must be VendorBacked, \
-                     Extrapolated, FamilyTransferred or a size refusal, got {other:?}",
+                     Extrapolated, FamilyTransferred, DrillTransferred or a size refusal, \
+                     got {other:?}",
                     cell.label
                 ),
             }
@@ -343,7 +372,8 @@ fn a_cell_with_a_vendor_row_is_vendor_backed() {
     println!(
         "the size rule refuses {size_refused} cells that found a row; \
          {extrapolated} cells ship through a G1 size claim; \
-         {family_transferred} cells ship through a G3 family claim"
+         {family_transferred} cells ship through a G3 family claim; \
+         {drill_transferred} cells ship through the G6 drill claim"
     );
 }
 

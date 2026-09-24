@@ -545,6 +545,9 @@ fn engaged_diameter_hover(geometry: ToolGeometryHint, kind: &str, tip_dia: f64) 
 /// a G3 family rule carries the row from its home operation family
 /// (`FamilyBasis::Transferred`, A3), the family headline is a visible line
 /// and the rule, the row and the served families are on its hover. When
+/// the G6 drill rule reads the row (`DrillBasis::Transferred`, ruling B5),
+/// the drill headline is a visible line and the rule, the RPM cap and the
+/// peck rule are on its hover. When
 /// the row is `Derived` (ruling A4: a "Wood, MDF, Sign-Foam" row that
 /// serves hardwood), the row's printed material label is a visible line.
 pub(crate) fn draw_row_basis_lines(ui: &mut egui::Ui, explain: &FeedsExplain) {
@@ -553,6 +556,18 @@ pub(crate) fn draw_row_basis_lines(ui: &mut egui::Ui, explain: &FeedsExplain) {
     };
     if let Some(family) = row.family_basis.claim() {
         let (headline, detail) = family.card_text();
+        detail_line(
+            ui,
+            headline,
+            theme::WARNING_MILD,
+            &format!("{detail}.\nRow: {}.", row.observation_id),
+        );
+    }
+    // B5 (G6): a flat end mill plunge reads the side row's chip / Z. The
+    // claim moves the chip, so its headline is a visible line; the rule,
+    // the RPM cap and the peck rule are on its hover.
+    if let Some(drill) = row.drill_basis.claim() {
+        let (headline, detail) = drill.card_text();
         detail_line(
             ui,
             headline,

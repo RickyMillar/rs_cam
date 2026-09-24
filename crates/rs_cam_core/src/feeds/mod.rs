@@ -962,7 +962,10 @@ pub enum FeedsWarning {
     /// mm/min). Below the envelope the drill rubs and burns; above it
     /// the bit risks breakage. Mirrors the drill plunge-feed gate
     /// (`tool_load/drill_gates.rs`) so Suggest and the verdict share
-    /// one envelope source.
+    /// one envelope source. Since ruling B5 the wood ceilings are the
+    /// largest Amana Ramp Down figures per mm (580 wood and plywood,
+    /// 720 MDF), so no G6-claimed cell reaches them; the floor and a
+    /// formula preview still can.
     DrillFeedClampedToEnvelope {
         requested: f64,
         actual: f64,
@@ -1273,23 +1276,24 @@ pub fn effective_rubbing_floor(band: Option<ChiploadBounds>) -> f64 {
     rubbing_floor(band).0
 }
 
-/// Diameter-tiered RPM envelope for wood-drilling ops. The drill RPM
-/// band narrows and drops as diameter grows: chip evacuation scales
-/// with chip volume per revolution, which grows roughly with D², so
-/// big drills need *fewer* revolutions per second to clear chips than
-/// small drills. Sources: Onsrud wood-drilling bulletin (3-8k for
-/// 10-13 mm drills in hardwood), Vectric default drill cycle, FPL
-/// Wood Handbook Ch.19 (drilling), Sandvik Coromant rotating-tools
-/// handbook.
+/// Diameter-tiered RPM envelope for wood-drilling ops: a named repo cap
+/// (repo rule, unsourced; CREDITS.md "Drill-subsystem provenance"). The
+/// band narrows and drops as the diameter grows, because chip evacuation
+/// scales with the chip volume per revolution. The W6 audit (2026-08-04)
+/// found that the sources this doc used to cite do not state these tiers.
+///
+/// On a G6-claimed plunge (ruling B5) this cap replaces the 18 000 RPM
+/// that the Amana Spektra chart prints: Step 2c clamps the vendor RPM to
+/// it, the chip per tooth holds, and the feed follows. The claim card
+/// states it (`extrapolation::drill::DrillClaim::card_text`).
 ///
 /// Tiers (inclusive upper bound):
-/// - D ≤ 6 mm:  (8000, 14000) — small drills, milling-formula RPM is
-///   already in band; floor keeps SFM-derived RPM from dropping below
-///   the rubbing-onset RPM.
-/// - D ≤ 10 mm: (6000, 10000) — mid drills.
-/// - D > 10 mm: (4000, 8000) — big drills; the 8 kRPM ceiling matches
-///   the literature-matrix `flat_12mm_drill_oak_big` cell.
-fn drill_rpm_envelope_for_diameter(d_mm: f64) -> (f64, f64) {
+/// - D ≤ 6 mm:  (8000, 14000).
+/// - D ≤ 10 mm: (6000, 10000).
+/// - D > 10 mm: (4000, 8000); the 8 kRPM ceiling matches the
+///   literature-matrix `flat_12mm_drill_oak_big` cell.
+#[must_use]
+pub(crate) fn drill_rpm_envelope_for_diameter(d_mm: f64) -> (f64, f64) {
     if d_mm <= 6.0 {
         (8_000.0, 14_000.0)
     } else if d_mm <= 10.0 {
@@ -1549,51 +1553,14 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // fallback path matches the LUT path's band semantics. For Flat /
     // Ball / Bull this collapses to nominal D.
     //
-    // Drill ops get a multiplier on top: drilling cuts at full radius
-    // and needs feed-per-rev to chip-evacuate, while the milling
-    // formula was calibrated against partial-engagement cuts.
-    //
-    // **The value is REPO-AUTHORED and UNSOURCED. Its former
-    // justification was arithmetically false and has been removed**
-    // (W6 audit, 2026-08-04, §5 / item R-11 —
-    // `planning/review_2026-08-04/DRILL_GATE_EVIDENCE_AUDIT.md`).
-    // What that comment claimed, and what is actually true:
-    //   - Claimed "milling-formula chipload lands at ~0.03 mm/rev" for
-    //     a softwood drill. With the shipped `ChipLoadFormula::default`
-    //     (k0 0.024, p 0.61, q 1.26) and GenericSoftwood the
-    //     un-multiplied formula reads 0.094 mm/rev at Ø3, 0.143 at Ø6
-    //     and 0.219 at Ø12 — 3.1×–7.3× the quoted figure, and already
-    //     inside or above the "0.05–0.15 mm/rev" band the comment said
-    //     it fell below.
-    //   - Claimed the audit observation "implied chipload 0.026 on
-    //     Wanaka Pin Drill / Holes". Real, but it was the *stored* op's
-    //     feed/(rpm × flutes) AFTER the milling plunge baseline
-    //     clobbered the drill-tuned feed — the mechanism Step 9c fixed
-    //     separately (see the plunge-rate aliasing below). This factor
-    //     and that clamp were two corrections for one defect.
-    //   - Claimed drill bands are "~2.5× higher" than milling. No
-    //     retrievable source states any such ratio. Against the one
-    //     primary wood-drill chart located (Onsrud series 72-000 Wood,
-    //     `https://www.onsrud.com/images/Drill.pdf`, retrieved
-    //     2026-08-04) the factor implied is 4.76–5.41 — i.e. 2.5 is
-    //     directionally right and roughly HALF the size that chart
-    //     implies, not an over-correction.
-    //
-    // The value is deliberately HELD at Checkpoint D 2026-08-04. Two
-    // reasons, both stated: the Onsrud wood row is footnoted "gang
-    // drills run at 4,500 RPM and 150 IPM" (a rigid multi-spindle
-    // production borer, not a hobby router with collet stickout), so
-    // it cannot be used as a recalibration target on its own; and this
-    // is the one drill number that rides the formula chipload, so it
-    // sequences behind the gate-side unit conversion (T3.1) and the
-    // optimizer-target re-derivation. Do not move it before then.
-    const DRILL_CHIPLOAD_MULTIPLIER: f64 = 2.5;
-    let milling_chipload = cl.k0 * effective_d.powf(cl.p) * (1.0 / feed_scale).powf(cl.q);
-    let formula_chipload = if input.operation == OperationFamily::Drill {
-        milling_chipload * DRILL_CHIPLOAD_MULTIPLIER
-    } else {
-        milling_chipload
-    };
+    // A drill cycle takes no multiplier (ruling B5, 2026-09-24). The repo
+    // multiplier `DRILL_CHIPLOAD_MULTIPLIER` (2.5, unsourced; W6 audit
+    // 2026-08-04 item R-11) is deleted. On a drill cell this formula is
+    // now only the preview number of a refused cell (the explain modal, a
+    // raw `calculate`): Suggest refuses every drill cell that no G6 claim
+    // serves (`support::support_for_lookup`). A claimed cell reads its
+    // chip from the vendor row (`extrapolation::drill`).
+    let formula_chipload = cl.k0 * effective_d.powf(cl.p) * (1.0 / feed_scale).powf(cl.q);
 
     // Sidecar: when the LUT lookup returns a match, stash the row so
     // FeedsResult can propagate it to the Suggest orchestrator's
@@ -2701,8 +2668,8 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     //    alias `set_feed_rate` / `set_plunge_rate` onto one field
     //    ("feed IS plunge"), and `apply_feeds_subset` writes feed then
     //    plunge — pre-fix, the milling plunge baseline from Step 8
-    //    clobbered the drill-tuned feed (RPM band + 2.5× chipload from
-    //    Steps 1-2), landing every suggested drill at the milling
+    //    clobbered the drill-tuned feed (the RPM band and the chipload
+    //    of Steps 1-2), landing every suggested drill at the milling
     //    plunge value instead. Making the result self-consistent here
     //    keeps any write order safe.
     if input.operation == OperationFamily::Drill {
@@ -2724,11 +2691,10 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
             // feed-capped drill that keeps spinning fast takes thinner
             // and thinner bites per rev; drilling chip evacuation
             // prefers fewer revolutions anyway (same sources as
-            // `drill_rpm_envelope_for_diameter`). Small drills make
-            // this concrete: Ø3 oak targets ~0.107 mm/tooth at 14 kRPM
-            // ⇒ ~3000 mm/min, but the envelope caps feed at 1200 —
-            // without the follow-down the shipped recipe implies
-            // 0.043 mm/tooth at 14 k, well under the chart band.
+            // `drill_rpm_envelope_for_diameter`). Since ruling B5 no
+            // claimed G6 cell reaches this ceiling (296-560 mm/min per mm
+            // at 14 kRPM against 580 / 720); a formula preview of a small
+            // drill can (`feeds::tests`).
             let flutes = input.flute_count as f64;
             if clamped < requested && rpm > 0.0 && flutes > 0.0 {
                 let kept_fpt = requested / (rpm * flutes);

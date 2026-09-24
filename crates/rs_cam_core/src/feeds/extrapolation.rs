@@ -26,10 +26,22 @@
 //! operation family into the queried family. The rule table
 //! ([`FAMILY_RULES`]) widens the lookup's must-match filter, and the row's
 //! band moves by no number (A3, copy semantics).
+//!
+//! G6 (drill) is not an [`Extrapolation`] impl either: [`drill_basis`] in
+//! [`drill`] marks a flat end mill plunge that the Amana Spektra rule
+//! ([`DRILL_RULES`]) serves from the tool's printed side row. The rule
+//! widens the must-match filter as a family rule does, and it moves one
+//! number: the chip is the side chip / Z (ruling B5).
 
+pub mod drill;
 pub mod family;
 pub mod hardness;
 pub mod size;
+
+pub use drill::{
+    DRILL_PECK_TEXT, DRILL_RULE_TEXT, DRILL_RULES, DrillBasis, DrillClaim, DrillRule, drill_basis,
+    drill_rule,
+};
 
 pub use family::{
     FAMILY_RULE_TEXT, FAMILY_RULES, FamilyBasis, FamilyClaim, FamilyRule, family_basis,
@@ -60,6 +72,10 @@ pub enum Gap {
     /// G3: a row exists for the tool, but it is filed under another
     /// operation family (a family rule carries it, `family`).
     Family,
+    /// G6: no row is filed under the drill family; a flat end mill plunge
+    /// reads the tool's printed side row through the drill rule (`drill`,
+    /// ruling B5).
+    Drill,
 }
 
 impl Gap {
@@ -70,6 +86,7 @@ impl Gap {
             Self::Size => "G1",
             Self::Hardness => "G2",
             Self::Family => "G3",
+            Self::Drill => "G6",
         }
     }
 
@@ -80,6 +97,7 @@ impl Gap {
             Self::Size => "size",
             Self::Hardness => "hardness",
             Self::Family => "family",
+            Self::Drill => "drill",
         }
     }
 }

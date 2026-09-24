@@ -10,8 +10,9 @@
 //!
 //! The sentry pins four named cells and the door behaviour they imply:
 //!
-//! - (a) Drill with a flat end mill in hardwood refuses (no drill row for
-//!   any tool; the 2.5 multiplier is unsourced);
+//! - (a) Drill with a 6.35 mm flat end mill in hardwood refuses: the G6
+//!   drill claim (ruling B5) covers 3.175-6.0 mm only, and the text names
+//!   the group;
 //! - (b) Waterline with a ball nose in plywood refuses (no ball plywood row);
 //! - (c) Trace with a flat end mill in hardwood ships FormulaOnly (Onsrud
 //!   and Amana 1 x D charts back it);
@@ -98,15 +99,15 @@ fn hardwood() -> Material {
 #[test]
 fn clueless_cells_refuse_with_the_judgement_reason_fm5() {
     let drill = suggest(OperationType::Drill, ToolType::EndMill, &hardwood())
-        .expect_err("Drill with a flat end mill in hardwood has no published figure");
+        .expect_err("a 6.35 mm flat plunge is outside the G6 claim's 3.175-6.0 mm");
     match &drill {
         FeedsError::Unbacked {
             operation, reason, ..
         } => {
             assert_eq!(*operation, OperationType::Drill);
             assert!(
-                reason.contains("plunge drill") && reason.contains("2.5"),
-                "reason must name the drill gap and the unsourced multiplier: {reason:?}"
+                reason.contains("plunge") && reason.contains("G6") && !reason.contains("2.5"),
+                "reason must name the drill gap and the G6 group, and no multiplier: {reason:?}"
             );
         }
         other => panic!("expected Unbacked, got {other:?}"),

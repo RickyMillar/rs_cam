@@ -9,9 +9,10 @@
 //! (`FeedsError::WrongToolForOperation`) still stops the add, as before.
 //!
 //! Fixture: a flat end mill, the generic wood router, the default stock
-//! material. `AlignmentPinDrill` is stock-based (no model needed) and every
-//! drill cell is CLUELESS (no vendor drill row; the 2.5 multiplier is
-//! unsourced). `Scallop` with the same tool is the tool-rule control.
+//! material. `AlignmentPinDrill` is stock-based (no model needed), and the
+//! default 6.35 mm end mill is outside the G6 drill claim (3.175-6.0 mm,
+//! ruling B5), so the drill cell refuses. `Scallop` with the same tool is
+//! the tool-rule control.
 
 #![allow(
     clippy::unwrap_used,

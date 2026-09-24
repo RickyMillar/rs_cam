@@ -208,6 +208,7 @@ fn synthetic_lut_row(ap_min: Option<f64>, ap_max: Option<f64>) -> MatchedRow {
         size_basis: crate::feeds::extrapolation::SizeBasis::Exact,
         hardness_basis: crate::feeds::extrapolation::HardnessBasis::Unscaled,
         family_basis: crate::feeds::extrapolation::FamilyBasis::Printed,
+        drill_basis: crate::feeds::extrapolation::DrillBasis::Printed,
         material_label: String::new(),
         evidence_grade: crate::feeds::vendor_lut::EvidenceGrade::A,
         row_kind: crate::feeds::vendor_lut::ObservationKind::Exact,

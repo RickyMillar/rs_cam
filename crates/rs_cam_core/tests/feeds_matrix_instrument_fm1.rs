@@ -302,6 +302,8 @@ const MATRIX_HEADER: &[&str] = &[
     "hardness_basis",
     "family_basis",
     "family_home",
+    "drill_basis",
+    "drill_scale",
     "chipload_source",
     "vendor_source",
     "diagnostic_ids",
@@ -325,6 +327,13 @@ fn support_columns(s: &FeedsSupport) -> (String, String) {
             let (headline, detail) = s.card_text();
             (
                 "FamilyTransferred".to_owned(),
+                format!("{headline}; {detail}"),
+            )
+        }
+        FeedsSupport::DrillTransferred { .. } => {
+            let (headline, detail) = s.card_text();
+            (
+                "DrillTransferred".to_owned(),
                 format!("{headline}; {detail}"),
             )
         }
@@ -386,6 +395,19 @@ fn family_columns(m: &rs_cam_core::feeds::vendor_lookup::LookupResult) -> [Strin
         m.family_basis
             .claim()
             .map(|c| format!("{:?}/{:?}", c.home.0, c.home.1))
+            .unwrap_or_default(),
+    ]
+}
+
+/// The two G6 drill columns of a matched row (ruling B5): the basis name
+/// (`Printed` or `Transferred`) and the scale on the row's chip (1 / Z for
+/// a claim, empty for a printed row).
+fn drill_columns(m: &rs_cam_core::feeds::vendor_lookup::LookupResult) -> [String; 2] {
+    [
+        m.drill_basis.name().to_owned(),
+        m.drill_basis
+            .claim()
+            .map(|c| num(Some(c.scale)))
             .unwrap_or_default(),
     ]
 }
@@ -460,14 +482,15 @@ fn walk_matrix(
                             fields.push(e.to_string());
                             // 13 recipe columns (incl. the force and power
                             // at the shipped point, and the A2 point), the
-                            // support pair, 18 row
+                            // support pair, 20 row
                             // columns (6 row, 5 G1 claim, 3 G2 hardness,
-                            // 2 G3 family, chipload source, vendor source),
+                            // 2 G3 family, 2 G6 drill, chipload source,
+                            // vendor source),
                             // 4 diagnostic / warning columns.
                             fields.extend(std::iter::repeat_n(String::new(), 13));
                             fields.push("Refused".to_owned());
                             fields.push(String::new());
-                            fields.extend(std::iter::repeat_n(String::new(), 18));
+                            fields.extend(std::iter::repeat_n(String::new(), 20));
                             fields.extend(std::iter::repeat_n(String::new(), 4));
                             fields.extend(cap_columns(
                                 machine,
@@ -559,8 +582,9 @@ fn walk_matrix(
                                     fields.extend(claim_columns(m));
                                     fields.extend(hardness_columns(m));
                                     fields.extend(family_columns(m));
+                                    fields.extend(drill_columns(m));
                                 }
-                                None => fields.extend(std::iter::repeat_n(String::new(), 16)),
+                                None => fields.extend(std::iter::repeat_n(String::new(), 18)),
                             }
                             fields.push(format!("{:?}", r.chipload_source));
                             fields.push(r.vendor_source.clone().unwrap_or_default());
@@ -1071,6 +1095,7 @@ fn summary(machine: &MachineProfile, cells: &[Cell], sim: &SimOutcome) -> String
         w,
         "The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacked`, \
          `Extrapolated` (a G1 size claim), `FamilyTransferred` (a G3 family claim), \
+         `DrillTransferred` (the G6 drill claim), \
          `FormulaOnly`, `Refuse` (the `FeedsSupport` arm). `fires-a-diagnostic` is a separate \
          flag: the cell has one or more diagnostic ids from the three pre-simulation doors. \
          A vendor-backed cell can also fire. The `FeedsWarning` and `SuggestWarning` counts \
@@ -1083,6 +1108,7 @@ fn summary(machine: &MachineProfile, cells: &[Cell], sim: &SimOutcome) -> String
         "VendorBacked",
         "Extrapolated",
         "FamilyTransferred",
+        "DrillTransferred",
         "FormulaOnly",
         "Refuse",
     ];
@@ -1129,11 +1155,11 @@ fn summary(machine: &MachineProfile, cells: &[Cell], sim: &SimOutcome) -> String
     writeln!(w).expect("write");
     writeln!(
         w,
-        "| operation | Refused | VendorBacked | Extrapolated | FamilyTransferred | FormulaOnly | \
-         Refuse | fires-a-diagnostic |"
+        "| operation | Refused | VendorBacked | Extrapolated | FamilyTransferred | \
+         DrillTransferred | FormulaOnly | Refuse | fires-a-diagnostic |"
     )
     .expect("write");
-    writeln!(w, "|---|---|---|---|---|---|---|---|").expect("write");
+    writeln!(w, "|---|---|---|---|---|---|---|---|---|").expect("write");
     for &op in OperationType::ALL {
         let of = |class: &str| {
             cells
@@ -1147,11 +1173,12 @@ fn summary(machine: &MachineProfile, cells: &[Cell], sim: &SimOutcome) -> String
             .count();
         writeln!(
             w,
-            "| {op:?} | {} | {} | {} | {} | {} | {} | {fires} |",
+            "| {op:?} | {} | {} | {} | {} | {} | {} | {} | {fires} |",
             of("Refused"),
             of("VendorBacked"),
             of("Extrapolated"),
             of("FamilyTransferred"),
+            of("DrillTransferred"),
             of("FormulaOnly"),
             of("Refuse")
         )

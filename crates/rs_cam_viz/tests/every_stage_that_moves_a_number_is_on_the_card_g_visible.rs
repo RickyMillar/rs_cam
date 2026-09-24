@@ -47,9 +47,10 @@
 //!   recipe, in generic hardwood, else softwood plywood. Raises
 //!   `AggressivenessNotApplied` (`FinishRole`).
 //! - `drill`: the first drill operation and tool type that ships a recipe in
-//!   softwood plywood, else HDF (materials the R1 judgement does not cover,
-//!   so the drill is not refused). Raises `AggressivenessNotApplied`
-//!   (`Drill`).
+//!   softwood plywood, else HDF. Since ruling B5 (G6, 2026-09-24) a drill
+//!   ships only through the drill claim (a 2- or 3-flute flat end mill at
+//!   3.175-6.0 mm), so the search gives a drill a 6.0 mm end mill (the
+//!   default is 6.35 mm). Raises `AggressivenessNotApplied` (`Drill`).
 //!
 //! # `OnTheFace` variants that no fixture here is known to raise
 //!
@@ -621,7 +622,12 @@ fn first_skip_cell(
                 continue;
             }
             for &tool_type in ToolType::ALL {
-                let tool = ToolConfig::new_default(ToolId(1), tool_type);
+                let mut tool = ToolConfig::new_default(ToolId(1), tool_type);
+                // Ruling B5 (G6): the drill claim covers a flat end mill at
+                // 3.175-6.0 mm; the default end mill is 6.35 mm.
+                if skip == AggressivenessSkip::Drill && tool_type == ToolType::EndMill {
+                    tool.diameter = 6.0;
+                }
                 let Ok(suggested) = suggest_for_operation(SuggestForOperationInput {
                     operation: &operation,
                     tool: &tool,
