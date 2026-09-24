@@ -290,13 +290,25 @@ Deviations from the plan:
 - §3.2 said revision; the code uses a geometry digest (review point 2).
 - The comparison uses the REQUESTED cell on both sides, not the clamped
   one: the clamp is a pure function of the request and the stock.
-- The parity test found a new gap: the cutting-metrics kernel and the plain
-  kernel carve DIFFERENT stock (fixture snapshot digest `b491…` against
-  `f458…`, every other input equal). The CLI and MCP always carve with
-  metrics; the GUI followed its capture toggle. Fix: the record carries the
-  kernel, only the metrics carve is current, and every GUI plan simulation
-  carves with metrics. A plain GUI Run Simulation with capture off leaves
-  rest snapshots that read Pending ("carved without cutting metrics").
+- The parity test found a new gap: the metric carve and the plain carve
+  left DIFFERENT stock (15 Z rays, by up to 2.2 mm, on the pocket's first
+  plunge ring). The CLI and MCP always carve with metrics; the GUI followed
+  its capture toggle. Operator ruling Q9 (2026-09-24, "mcp and gui should
+  cut the same"): the root fix. `compute/simulate.rs::carve_entry` now
+  sends every milling entry through the ONE metric carve, and drops the
+  samples when metrics are off. Sentry
+  `metric_and_plain_carve_agree_g_restres` (red before, green after). The
+  record carries no kernel field, because one kernel remains. Residual: the
+  global playback replay (the GUI scrub stock, `playback.rs`) is still its
+  own route; no snapshot or published number reads it.
+- The optimizer searches on a what-if copy
+  (`ProjectSession::what_if_copy`): it regenerates a candidate and
+  re-simulates at its own search cells, and needs the other results to
+  stand. On the copy no rest result is swept and a present snapshot is
+  current (the rule before G-RESTRES). The copy is never adopted back.
+- Eight core tests and the CLI smoke harness simulated at a cell of their
+  own and then generated a rest operation. They now write that cell as the
+  stored value first. No pinned number moved.
 - The core builder skipped no disabled row with a result; it now does, as
   the GUI builder does.
 - One code commit, not four: the struct changes cross all four crates, and
@@ -304,8 +316,7 @@ Deviations from the plan:
 
 Open for the operator:
 
-- **Q9** The two carve kernels disagree. Recommendation: every GUI
-  simulation carves with metrics and the capture toggle goes, or the two
-  kernels are made to carve the same stock (a `dexel_stock/` change).
+- **Q9** RULED 2026-09-24: one carve (see above). Cost: a metrics-off
+  simulation now computes the per-sample metrics and drops them.
 - `tool_load/optimize/outcome.rs` still sets `auto_resolution` for its
   isolated runs (power session).
