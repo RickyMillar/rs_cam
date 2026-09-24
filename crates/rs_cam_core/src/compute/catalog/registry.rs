@@ -5,7 +5,7 @@
 //! `OperationType::registry_entry` is the only reader of the `REG_*`
 //! statics, so they carry `pub(super)`.
 
-use crate::feeds::support::{DRILL_FORMULA_SOURCE, MILLING_FORMULA_SOURCE};
+use crate::feeds::support::MILLING_FORMULA_SOURCE;
 use crate::feeds::{CutterKind, OperationFamily as FeedsOperationFamily, PassRole};
 
 use super::schema::{
@@ -921,7 +921,7 @@ pub(super) static REG_DRILL: OpRegistryEntry = OpRegistryEntry {
         ui_process_role: UiProcessRole::Roughing,
         feeds_family: FeedsOperationFamily::Drill,
         feeds_pass_role: PassRole::Roughing,
-        feeds_formula_source: Some(DRILL_FORMULA_SOURCE),
+        feeds_formula_source: None,
     },
     param_defs: DRILL_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
@@ -1276,7 +1276,7 @@ pub(super) static REG_ALIGNMENT_PIN_DRILL: OpRegistryEntry = OpRegistryEntry {
         ui_process_role: UiProcessRole::Roughing,
         feeds_family: FeedsOperationFamily::Drill,
         feeds_pass_role: PassRole::Roughing,
-        feeds_formula_source: Some(DRILL_FORMULA_SOURCE),
+        feeds_formula_source: None,
     },
     param_defs: ALIGNMENT_PIN_DRILL_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,

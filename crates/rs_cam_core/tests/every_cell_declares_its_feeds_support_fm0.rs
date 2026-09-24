@@ -43,7 +43,7 @@ use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::suggest::feeds_input_for_operation;
 use rs_cam_core::feeds::support::{
-    DRILL_FORMULA_SOURCE, FormulaBacking, MILLING_FORMULA_SOURCE, NO_BASIS_REASON, formula_backing,
+    FormulaBacking, MILLING_FORMULA_SOURCE, NO_BASIS_REASON, formula_backing,
 };
 use rs_cam_core::feeds::vendor_lut::{MaterialFamily, ToolFamily};
 use rs_cam_core::feeds::{
@@ -155,7 +155,8 @@ fn every_cell() -> Vec<CellOutcome> {
 fn every_operation_declares_its_formula_source() {
     for &op in OperationType::ALL {
         let expected: Option<&str> = match op {
-            OperationType::Drill | OperationType::AlignmentPinDrill => Some(DRILL_FORMULA_SOURCE),
+            // No drill cell may ship the formula (7eef9ffa): the rows carry none.
+            OperationType::Drill | OperationType::AlignmentPinDrill => None,
             OperationType::Face
             | OperationType::Pocket
             | OperationType::Profile
@@ -325,7 +326,9 @@ fn a_cell_with_a_vendor_row_is_vendor_backed() {
                 }
                 // Ruling R1 (2026-09-23): a wood cell with no row that the
                 // judgement calls CLUELESS refuses, with the judgement's reason.
-                (FeedsSupport::Refuse { reason }, Some(_)) => {
+                // A drill row declares no formula source (7eef9ffa), and its
+                // refusal holds the same rule.
+                (FeedsSupport::Refuse { reason }, _) => {
                     assert!(
                         matches!(judged, FormulaBacking::Clueless { reason: r } if r == reason.as_ref()),
                         "{}: refuses with {reason:?} but the judgement says {judged:?}",
