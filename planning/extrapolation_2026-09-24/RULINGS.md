@@ -42,8 +42,13 @@ scales a tip row by 0.70x-1.22x, a scale no chart prints.
 - (b) Keep the cone key. The card shows the `(d / tip)^0.61` scale as an
   `Extrapolated` claim, valid for a depth of 0.5-2x tip (PreciseBits).
 
-**Recommendation: (a).** It reads the chart as printed. The R2 rule that
-Suggest and the gate use one diameter still holds for the depth ladder.
+**Recommendation: (a).** It reads the chart as printed.
+
+**This reopens part of R2** (ruled 2026-09-23, landed 1ff9344a). R2 put one
+engaged diameter on the clamp, the gate, the feed ladder and the lookup.
+(a) moves the lookup back to the tip. The depth-ladder and gate half of R2
+stands. It also changes what the size rule measures: FM9 and
+`micro_extrapolation_refusal` key on `lookup_diameter_mm`.
 
 ### A2. A single printed value: a top or a start? (G4 §3.1)
 
@@ -55,16 +60,18 @@ low edge. That evidence leans to "start".
 
 - (a) Top: the value is the maximum. Derived minimum = value - 0.002 in
   (the printed band width of the flat-end charts): 0.50-0.67x the value,
-  inside R1 for all 75 flat-end cells.
+  inside R1 for all 75 flat-end cells. No printed text supports this
+  reading; it is only today's encoding.
 - (b) Start: the value is the minimum. A derived band above it raises the
   breakage cap. That needs a second witness first.
 - (c) Neither: keep one line, no band. Give the modulator and the advisor a
-  "point" mode.
+  "point" mode that holds the printed value.
 
-**Recommendation: (a) for Spektra flat end at 3 mm and above, labelled
-derived on the card. Refuse a derived band below 3 mm and for V-bits.** It
-keeps the printed value as the cap, which is the safe side, and closes the
-advisor gap. Rule (b) waits for a second witness.
+**Recommendation: (c).** The evidence leans to "start", and (a) contradicts
+it: if the value is a start point, a derived minimum at 0.50-0.67x puts the
+modulator's floor under the vendor's start, on the burn and rubbing side.
+(a) is safe only against breakage. (c) keeps the printed value, invents no
+band, and closes the advisor gap. Rule (b) waits for a second witness.
 
 ### A3. A printed value that names no operation: does it serve every family? (G3 §3.2)
 
@@ -100,8 +107,10 @@ Without this, "3D Finish 6" stays refused.
   filed as `tapered_ball_nose` (G1-R2: six LUT `amana-ball-*-zrn` rows file
   tapered tools as ball nose today).
 - A size claim is **per source**: interpolate between the printed sizes of
-  the anchor's own series. Outside the series span plus one step, refuse.
-  Retire the generic 0.61 exponent.
+  the anchor's own series, then use the series' own slope inside its span
+  plus one step. The generic 0.61 stays only as a fallback inside 0.5-2x of
+  a row, with the vendor spread on the card (0.80-1.56x at 2x). Outside
+  that, refuse.
 - The size rule (`micro_extrapolation_refusal`) is replaced for tapered
   balls by "inside a chart's printed tips". It stays for ball, bull and
   V-bit, which have no micro series. Refuse a tip under 0.5 mm.
@@ -113,7 +122,12 @@ Without this, "3D Finish 6" stays refused.
 ### B2. G2 material category
 
 - Load the 76 Onsrud 37-series V-bit rows (MDF, plywood, chipboard). This
-  is transcription. Then run the `VBIT_MDF_PLY` judgement again.
+  is transcription, but it moves only 16 of the 64 cells, and not cleanly.
+  The engine skips a row more than 20 deg from the 60 deg tool, so only the
+  37-80 1 in row reaches them. It scales x0.43 (6.35 mm) and x0.66
+  (12.7 mm), so those 16 cells ship as G1 size transfers flagged
+  "extrapolated". 24 cells wait for the `VBIT_MDF_PLY` judgement to run
+  again; 24 stay refused (G3 / G5).
 - **Defect:** one Janka table for the row default and the query. The
   26 MDF cells lose the x0.80. Only particleboard has a sourced Janka.
 - The hardwood-to-softwood transfer (x1.55) is above every printed ratio
@@ -132,6 +146,11 @@ Without this, "3D Finish 6" stays refused.
   simulation witness first** (a ball finish pass at the printed band on the
   wanaka fixture: the chip after thinning against the band and the rubbing
   floor). Then replace the derived rows.
+  - Prerequisite: the witness runs on ROUGHED stock, with
+    `claims_reference` = the machined stock. On fresh stock a finish
+    recipe measures roughing removal (feeds-matrix finding 3).
+  - The rs-cam MCP is down, so it runs through a core test. It takes more
+    than three minutes, so I will ask before I run it.
 - The derived `onsrud-bull-*` rows (0.30-0.37 of the printed Amana bull
   band, 7 cells): replace them with the printed Amana corner-radius rows.
 - V-bit adaptive (16) and V-bit 3D finish (8): refuse.
