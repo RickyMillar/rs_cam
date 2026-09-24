@@ -23,6 +23,15 @@
 //! anchor is still used, which is precisely why option (a1) ("unify on
 //! the envelope resolver") was rejected — it would take the anchor away
 //! from those 141 queries.
+//!
+//! **Ruling B4 (2026-09-25).** For a V-bit the recipe resolver now tries
+//! the chipload-bearing rows first; an RPM anchor answers a V-bit only when
+//! no chip row matches. On the embedded LUT no swept recipe rests on an RPM
+//! anchor any more (`trace/vbit60` was the last cell; the two flat RPM rows
+//! win no swept query). So the property runs twice: on the embedded LUT it
+//! must find no silent fallback, no false positive and, since B4, no
+//! disclosure; on a fixture LUT that holds only the two Whiteside V-bit RPM
+//! anchors, the `trace/vbit60` cells rest on an anchor and must disclose it.
 
 #![allow(
     clippy::unwrap_used,
@@ -32,10 +41,36 @@
     clippy::print_stdout
 )]
 
+use rs_cam_core::feeds::vendor_lut::VendorLut;
 use rs_cam_core::feeds::{
     ChiploadSource, FeedsInput, FeedsWarning, OperationFamily, PassRole, SetupContext,
     SpindleStrategy, ToolGeometryHint, calculate, embedded_vendor_lut,
 };
+
+/// The two Whiteside V-bit RPM anchors of the embedded LUT (60 deg, 1/4 in
+/// and 1/2 in, hardwood Trace; RPM only, no chipload), alone. With no chip
+/// row beside them, a 60 deg V-bit Trace recipe in solid wood rests on one
+/// of them (ruling B4 keeps an RPM anchor for a V-bit when no chip row
+/// matches).
+fn rpm_anchor_lut() -> VendorLut {
+    let observations: Vec<_> = embedded_vendor_lut()
+        .observations
+        .iter()
+        .filter(|o| {
+            o.observation_id == "whiteside-1540-vgroove-60deg-quarter-rpm"
+                || o.observation_id == "whiteside-1550-vgroove-60deg-half-rpm"
+        })
+        .cloned()
+        .collect();
+    assert_eq!(observations.len(), 2, "the two Whiteside RPM anchors exist");
+    assert!(
+        observations
+            .iter()
+            .all(|o| o.chipload_min_mm_tooth.is_none() && o.chipload_max_mm_tooth.is_none()),
+        "the fixture rows are RPM anchors"
+    );
+    VendorLut { observations }
+}
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
 
@@ -78,8 +113,13 @@ fn sweep_inputs() -> Vec<(&'static str, OperationFamily, ToolGeometryHint)> {
 /// **Rendered evidence (rule 3)** — what the a3 disclosure actually
 /// reads as, through the core diagnostics adapter that the CLI report
 /// and MCP `get_diagnostics` both consume.
+///
+/// Ruling B4: on the embedded LUT this cut now rests on the AMS-159 chip
+/// row, so the fixture LUT of the two Whiteside RPM anchors carries the
+/// case. The 3.175 mm key is 0.5x of the 1/4 in anchor.
 #[test]
 fn the_rpm_anchor_disclosure_renders_as_operator_text() {
+    let lut = rpm_anchor_lut();
     let machine = MachineProfile::generic_wood_router();
     let result = calculate(&FeedsInput {
         tool_diameter: 3.175,
@@ -100,7 +140,7 @@ fn the_rpm_anchor_disclosure_renders_as_operator_text() {
         axial_depth_mm: Some(1.0),
         radial_width_mm: Some(1.2),
         target_scallop_mm: Some(0.01),
-        vendor_lut: Some(embedded_vendor_lut()),
+        vendor_lut: Some(&lut),
         setup: SetupContext::default(),
         spindle_strategy: SpindleStrategy::MatchChart,
     });
@@ -125,12 +165,22 @@ fn the_rpm_anchor_disclosure_renders_as_operator_text() {
         text.contains("this recommendation carries no band"),
         "and it must say the consequence, not only the cause:\n{text}"
     );
+    assert!(
+        text.contains("No chipload-bearing row matches this cut"),
+        "the fixture has no chip row, so the text must not claim a gate row:\n{text}"
+    );
 }
 
-#[test]
-fn rpm_anchor_fallback_is_disclosed_exactly_where_it_happens() {
+/// The disclosure count of one sweep.
+struct Sweep {
+    total: usize,
+    disclosed: usize,
+    silent_fallbacks: Vec<String>,
+    false_positives: Vec<String>,
+}
+
+fn sweep(lut: &VendorLut) -> Sweep {
     let machine = MachineProfile::generic_wood_router();
-    let lut = embedded_vendor_lut();
     let mut disclosed = 0usize;
     let mut silent_fallbacks: Vec<String> = Vec::new();
     let mut false_positives: Vec<String> = Vec::new();
@@ -212,31 +262,63 @@ fn rpm_anchor_fallback_is_disclosed_exactly_where_it_happens() {
         }
     }
 
+    Sweep {
+        total,
+        disclosed,
+        silent_fallbacks,
+        false_positives,
+    }
+}
+
+/// No silent fallback and no false positive in one sweep.
+fn assert_disclosed_exactly(label: &str, s: &Sweep) {
     println!(
-        "a3 disclosure sweep: {total} queries, {disclosed} rested on an RPM anchor and were \
+        "a3 disclosure sweep ({label}): {} queries, {} rested on an RPM anchor and were \
          disclosed, {} silent, {} false positives",
-        silent_fallbacks.len(),
-        false_positives.len()
+        s.total,
+        s.disclosed,
+        s.silent_fallbacks.len(),
+        s.false_positives.len()
     );
     assert!(
-        silent_fallbacks.is_empty(),
-        "**a3 regression**: {} recipe(s) fell back to the formula on a matched vendor row \
-         with no disclosure: {:?}",
-        silent_fallbacks.len(),
-        &silent_fallbacks[..silent_fallbacks.len().min(5)]
+        s.silent_fallbacks.is_empty(),
+        "**a3 regression** ({label}): {} recipe(s) fell back to the formula on a matched \
+         vendor row with no disclosure: {:?}",
+        s.silent_fallbacks.len(),
+        &s.silent_fallbacks[..s.silent_fallbacks.len().min(5)]
     );
     assert!(
-        false_positives.is_empty(),
-        "**a3 over-reach**: the disclosure fired on {} recipe(s) that did NOT rest on an \
-         RPM anchor: {:?}",
-        false_positives.len(),
-        &false_positives[..false_positives.len().min(5)]
+        s.false_positives.is_empty(),
+        "**a3 over-reach** ({label}): the disclosure fired on {} recipe(s) that did NOT rest \
+         on an RPM anchor: {:?}",
+        s.false_positives.len(),
+        &s.false_positives[..s.false_positives.len().min(5)]
     );
+}
+
+#[test]
+fn rpm_anchor_fallback_is_disclosed_exactly_where_it_happens() {
+    // The embedded LUT: the property holds, and since ruling B4 no swept
+    // recipe rests on an RPM anchor (derived with python3 over the JSON
+    // files and the scorer of `vendor_lookup.rs`). A non-zero count is a
+    // new RPM-anchor recipe: name it before a re-pin.
+    let embedded = sweep(embedded_vendor_lut());
+    assert_disclosed_exactly("embedded LUT", &embedded);
+    assert_eq!(
+        embedded.disclosed, 0,
+        "ruling B4 left no RPM-anchor recipe on the embedded LUT in this sweep; {} now rest \
+         on one",
+        embedded.disclosed
+    );
+
+    // The fixture LUT: only the two Whiteside RPM anchors. The trace/vbit60
+    // cells rest on them and must disclose; every other cell finds no row.
+    let fixture = sweep(&rpm_anchor_lut());
+    assert_disclosed_exactly("RPM-anchor fixture", &fixture);
     assert!(
-        disclosed > 0,
-        "the sweep found no RPM-anchor fallback at all, so this test asserts nothing. Either \
-         the LUT's RPM-only rows stopped winning any query (say so and re-scope), or the \
-         sweep drifted off A-6's three divergent cells (adaptive/flat, adaptive/bull, \
-         trace/vbit60)."
+        fixture.disclosed > 0,
+        "the fixture of two RPM anchors gave no RPM-anchor recipe, so this test asserts \
+         nothing: the V-bit recipe no longer falls back to an RPM anchor when no chip row \
+         matches"
     );
 }

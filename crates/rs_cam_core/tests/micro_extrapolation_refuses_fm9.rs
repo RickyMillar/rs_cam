@@ -15,7 +15,10 @@
 //!
 //! Ruling A1 (2026-09-24): the lookup key of a tapered ball is its tip,
 //! not the engaged cone diameter. So a tapered refusal names the tip only,
-//! with no "(engaged ...)" note. Ruling B1: a tapered tip under
+//! with no "(engaged ...)" note. Ruling B4 (2026-09-25) keys a V-bit at its
+//! nominal diameter, so no production caller passes two different
+//! diameters now; the "(engaged ...)" form is reachable only from a direct
+//! call, which `the_rule_by_hand_fm9` keeps. Ruling B1: a tapered tip under
 //! `TAPERED_MIN_TIP_MM` (0.5 mm) refuses before the size rule runs.
 //!
 //! The arms:
@@ -135,9 +138,10 @@ fn the_rule_by_hand_fm9() {
     // The function reads the key that it is given. Nominal 0.5 mm, key
     // 0.5651 mm: 3.175 / 0.5651 = 5.6x, so refuse, and the text names the
     // nominal diameter, the engaged key and the row. Since ruling A1 a
-    // tapered caller passes its tip as the key, so this pair of diameters
-    // now comes only from a V-bit caller (key = engaged width). The raw
-    // call keeps the text format under test.
+    // tapered caller passes its tip as the key, and since ruling B4 a V-bit
+    // caller passes its nominal diameter, so no production caller passes
+    // this pair of diameters. The raw call keeps the text format under
+    // test.
     let r = micro_extrapolation_refusal(ToolFamily::TaperedBallNose, 0.5, 0.5651, 3.175)
         .expect("5.6x off a 0.57 mm engaged diameter refuses");
     assert!(
@@ -157,7 +161,8 @@ fn the_rule_by_hand_fm9() {
     assert!(micro_extrapolation_refusal(ToolFamily::FlatEnd, 1.0, 1.0, 2.01).is_some());
     // The rule reads the LOOKUP diameter: a key of 1.6 mm is not a micro
     // tool, whatever the nominal diameter. (Since ruling A1 a tapered caller
-    // passes its tip as the key; a V-bit caller passes its engaged width.)
+    // passes its tip as the key; since ruling B4 a V-bit caller passes its
+    // nominal diameter.)
     assert!(micro_extrapolation_refusal(ToolFamily::TaperedBallNose, 1.4, 1.6, 6.35).is_none());
     // A 1.5 mm tool is not a micro tool.
     assert!(micro_extrapolation_refusal(ToolFamily::FlatEnd, 1.5, 1.5, 6.0).is_none());

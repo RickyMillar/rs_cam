@@ -160,18 +160,20 @@ pub fn tapered_tip_floor_refusal(tool: ToolFamily, lookup_diameter_mm: f64) -> O
 
 /// The size rule on a matched row: `Some(reason)` when the tool is a micro
 /// tool and the row is outside the ratio window. Rows with no diameter
-/// (V-bit, diameter-window articles) are not judged by size.
+/// (an angle-keyed V-bit row, a diameter-window article) are not judged by
+/// size.
 ///
 /// The rule is keyed on the LOOKUP diameter (`lookup_diameter_mm`, the key
 /// that the row lookup scales by), because that is the diameter the row's
 /// chipload is transferred to. Since ruling A1 (2026-09-24) the key of a
-/// tapered ball is its tip, so for a tapered ball the two diameters agree
-/// and the text names no engaged diameter. A V-bit is keyed at its engaged
-/// width at the cut depth, so for a V-bit the two can differ. The text
-/// names the tool's nominal diameter with two decimals, adds the engaged
-/// diameter when it differs, and names the row's diameter and the ratio:
-/// "no published figure for a 0.50 mm tapered ball nose; the nearest chart
-/// row is 3.175 mm, 6.3x the tool, ...".
+/// tapered ball is its tip, and since ruling B4 (G5) the key of a V-bit is
+/// its nominal diameter. So every production caller (the G1 size claim,
+/// `extrapolation::size`) passes one diameter twice, and the text names no
+/// engaged diameter. The text names the tool's nominal diameter with two
+/// decimals, adds the key as "(engaged ...)" only when a caller passes two
+/// different diameters (FM9 pins that form), and names the row's diameter
+/// and the ratio: "no published figure for a 0.50 mm tapered ball nose; the
+/// nearest chart row is 3.175 mm, 6.3x the tool, ...".
 #[must_use]
 pub fn micro_extrapolation_refusal(
     tool: ToolFamily,
@@ -479,9 +481,10 @@ pub fn formula_source_for_input(input: &FeedsInput) -> Option<&'static str> {
 ///   ([`tapered_tip_floor_refusal`], ruling B1), with or without a row.
 /// - The recipe row lookup finds a row: the row's G1 size basis
 ///   (`LookupResult::size_basis`) decides. A claim gives `Extrapolated`; a
-///   refusal gives `Refuse` (its text for a tool under 1.5 mm is
-///   [`micro_extrapolation_refusal`]); every other basis gives
-///   `VendorBacked`. Then, when a G3 family rule carries the row
+///   refusal gives `Refuse` with the claim's reason (for a tool under
+///   1.5 mm that text is [`micro_extrapolation_refusal`]); every other
+///   basis (`Exact`, `NoDiameterAnchor`, `NoChipload`, the V-bit
+///   `AngleKey` of ruling B4) gives `VendorBacked`. Then, when a G3 family rule carries the row
 ///   (`LookupResult::family_basis`), `VendorBacked` becomes
 ///   `FamilyTransferred { size: None }` and `Extrapolated` becomes
 ///   `FamilyTransferred { size: Some(claim) }`. A size `Refuse` stays.
@@ -525,42 +528,22 @@ pub(crate) fn support_for_lookup(input: &FeedsInput, lookup: &RecipeRowLookup) -
             reason: Cow::Owned(reason),
         };
     }
-    if let RecipeRowLookup::Row { query, row, .. } = lookup {
+    if let RecipeRowLookup::Row { row, .. } = lookup {
         let arm = match &row.size_basis {
             SizeBasis::Claim(claim) => FeedsSupport::Extrapolated {
                 claim: claim.clone(),
             },
-            SizeBasis::Refused { reason, .. } => {
-                // The claim sees only the lookup key. For a V-bit the key is
-                // the engaged width, so the size rule's text is built again
-                // here with the nominal diameter beside the key.
-                let reason = micro_extrapolation_refusal(
-                    tool,
-                    input.tool_diameter,
-                    query.diameter_mm,
-                    row.row_diameter_mm,
-                )
-                .unwrap_or_else(|| reason.clone());
-                FeedsSupport::Refuse {
-                    reason: Cow::Owned(reason),
-                }
-            }
-            // A V-bit keeps the pre-P1 arm exactly: the size rule on the
-            // Suggest key (the engaged width at the operation's depth).
-            SizeBasis::VBitExempt => match micro_extrapolation_refusal(
-                tool,
-                input.tool_diameter,
-                query.diameter_mm,
-                row.row_diameter_mm,
-            ) {
-                Some(reason) => FeedsSupport::Refuse {
-                    reason: Cow::Owned(reason),
-                },
-                None => FeedsSupport::VendorBacked,
+            // The claim's reason is the Suggest text. The lookup key is the
+            // nominal diameter for every family (the tip of a tapered ball,
+            // ruling A1; the nominal diameter of a V-bit, ruling B4), so
+            // the claim already names the tool's own size.
+            SizeBasis::Refused { reason, .. } => FeedsSupport::Refuse {
+                reason: Cow::Owned(reason.clone()),
             },
-            SizeBasis::Exact | SizeBasis::NoDiameterAnchor | SizeBasis::NoChipload => {
-                FeedsSupport::VendorBacked
-            }
+            SizeBasis::Exact
+            | SizeBasis::NoDiameterAnchor
+            | SizeBasis::NoChipload
+            | SizeBasis::AngleKey { .. } => FeedsSupport::VendorBacked,
         };
         // A3 (G3): a transferred row states its family claim beside the size
         // arm. A size refusal still wins: a refused row has no band.

@@ -444,7 +444,8 @@ pub fn chip_target_for_toolpath(
         })
         .unwrap_or(0.0);
     // F3.4 — same canonical resolver as the gate / optimizer, at the same
-    // lookup key (ruling A1: the tip of a tapered ball).
+    // lookup key (ruling A1: the tip of a tapered ball; ruling B4: the
+    // nominal diameter of a V-bit).
     let matched = chipload::matched_chip_envelope(
         &tool_def,
         material,

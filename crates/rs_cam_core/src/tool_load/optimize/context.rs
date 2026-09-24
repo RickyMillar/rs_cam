@@ -95,15 +95,14 @@ pub(crate) fn baseline_rpm_from_trace(
 ///
 /// - Tapered ball: the ball tip at every depth (ruling A1, 2026-09-24).
 ///   Not `tool.diameter()`, which is the shaft of a tapered ball.
-/// - V-bit: the engaged width at the commanded DOC.
+/// - V-bit: the nominal diameter at every DOC (ruling B4, 2026-09-25).
 /// - Cylindrical tools (end mill, bull nose, drill, plain ball nose):
 ///   the nominal diameter.
 ///
 /// When the operation has no commanded DOC (drilling per peck, V-carve,
-/// scallop, ...) or the value is not positive and finite, a V-bit falls
-/// back to its nominal diameter. Its engaged width at zero depth is
-/// zero, and a nominal key is still better than no lookup. The other
-/// shapes do not depend on the DOC.
+/// scallop, ...) or the value is not positive and finite, a V-bit takes
+/// its nominal diameter. Since B4 that is the same key as with a DOC. No
+/// shape depends on the DOC now.
 pub(crate) fn diameter_for_lut_lookup(
     tool: &crate::tool::ToolDefinition,
     commanded_doc_mm: Option<f64>,

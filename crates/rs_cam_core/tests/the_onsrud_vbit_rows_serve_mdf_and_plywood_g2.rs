@@ -23,24 +23,33 @@
 //!   (not a laminated row), at both matrix sizes;
 //! - a 150 deg V-bit gets no row in any wood family, and every wood V-bit
 //!   row carries an angle;
-//! - a 1-flute 60 deg V-bit in MDF gets the 37-00 row, unscaled;
-//! - Suggest ships a 60 deg V-bit Trace in MDF from the 37-80 row.
+//! - a 1-flute 60 deg V-bit in MDF gets the 37-00 row, unscaled
+//!   (`AngleKey`: the row prints no diameter);
+//! - since ruling B4 (2026-09-25) the 37-80 1 in row is read at its printed
+//!   25.4 mm through the G1 size claim. Suggest refuses a 6.35 mm V-bit
+//!   Trace in MDF (4.0x, outside the window: orchestrator decision Q1) and
+//!   ships a 12.7 mm one through form C.
 //!
 //! How the numbers were derived (python3 over the JSON files, with the
 //! scorer of `vendor_lookup.rs`): at 60 deg, 6.35 mm, 2 flutes, the 37-80
 //! 1 in row scores 1905 in MDF and the 37-00 row 1855 (flute term 80 against
 //! 30); in Baltic birch (1200 lbf) the hard plywood rows score 1889 and 1839.
-//! The 37-80 band is 0.1016-0.1524 mm at 25.4 mm; the V-bit size basis is
-//! `VBitExempt`, so the generic law gives (6.35 / 25.4)^0.61 =
-//! 0.429282718219 and a band of 0.043615124171-0.065422686257 mm in MDF
-//! (hardness scale 1.0: an MDF query gets no hardness scale since P2 step 3;
-//! see `one_janka_table_for_row_and_query_g2`).
+//! The 37-80 band is 0.1016-0.1524 mm at 25.4 mm, and the row is the only
+//! size of its 37-80 series (no form A or B). Since B4 a V-bit takes the G1
+//! claim: at 6.35 mm the ratio 6.35 / 25.4 = 0.25 is outside the 0.5x-2x
+//! window, so the row is refused and publishes no band (the generic law
+//! (6.35 / 25.4)^0.61 = 0.429282718219 stays in `chipload_diameter_scale`,
+//! and the raw ratio still flags the row extrapolated). At 12.7 mm the ratio
+//! is 0.5, the inclusive window edge: form C, 0.5^0.61 = 0.655196701929,
+//! and a band of 0.066567984916-0.099851977374 mm in MDF (hardness scale
+//! 1.0: an MDF query gets no hardness scale since P2 step 3; see
+//! `one_janka_table_for_row_and_query_g2`).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::feeds::extrapolation::SizeBasis;
+use rs_cam_core::feeds::extrapolation::{ClaimResidual, SizeBasis, SizeForm, SpreadFamily};
 use rs_cam_core::feeds::suggest::{
     StockContext, SuggestContext, SuggestParamsInput, suggest_params,
 };
@@ -48,12 +57,20 @@ use rs_cam_core::feeds::vendor_lookup::{LookupQuery, LookupResult, find_best_vbi
 use rs_cam_core::feeds::vendor_lut::{
     HardnessKind, LutOperationFamily, LutPassRole, MaterialFamily, ToolFamily,
 };
-use rs_cam_core::feeds::{EMBEDDED_LUT, FeedsSupport, SpindleStrategy};
+use rs_cam_core::feeds::{EMBEDDED_LUT, FeedsError, FeedsSupport, SpindleStrategy};
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, SheetGoodKind};
 
 /// `(6.35 / 25.4)^0.61`: the generic size law from the 1 in row to 1/4 in.
 const SCALE_1_IN_TO_1_4_IN: f64 = 0.429_282_718_219;
+
+/// `(12.7 / 25.4)^0.61 = 0.5^0.61`: form C from the 1 in row to 1/2 in.
+const SCALE_1_IN_TO_1_2_IN: f64 = 0.655_196_701_929;
+
+/// The G1 refusal of the 1 in row for a 1/4 in V-bit (ruling B4).
+const REFUSAL_1_4_IN: &str = "no published figure for a 6.35 mm V-bit; the nearest chart row is \
+     25.4 mm, 4.0x the tool, outside the 0.5x to 2x window of the generic size law and past one \
+     printed step of the row's chart series (extrapolation G1)";
 
 fn trace_query(diameter_mm: f64, flutes: u32, material: MaterialFamily, janka: f64) -> LookupQuery {
     LookupQuery {
@@ -114,17 +131,47 @@ fn the_mdf_and_plywood_trace_rows_are_the_onsrud_sheet_rows_g2() {
         }
     }
 
-    // The MDF band at 1/4 in: the 1 in row carried by the generic law,
-    // hardness scale 1.0, flagged extrapolated (raw ratio 0.25).
+    // The MDF row at 1/4 in (ruling B4): the G1 claim refuses the 1 in row
+    // (0.25x), so the row publishes no band. The generic law stays in the
+    // diameter scale, and the raw ratio 0.25 still flags it extrapolated.
     let mdf = row_at(&trace_query(6.35, 2, MaterialFamily::Mdf, 1100.0), 60.0);
-    assert!(matches!(mdf.size_basis, SizeBasis::VBitExempt));
+    assert_eq!(
+        mdf.size_basis.refusal_reason(),
+        Some(REFUSAL_1_4_IN),
+        "{:?}",
+        mdf.size_basis
+    );
     assert!((mdf.chipload_diameter_scale - SCALE_1_IN_TO_1_4_IN).abs() < 1e-12);
-    assert!((mdf.chipload_hardness_scale - 1.0).abs() < 1e-15);
     assert!(mdf.is_extrapolated);
-    let min = mdf.chip_load_min_mm.expect("the row prints a band");
-    let max = mdf.chip_load_max_mm.expect("the row prints a band");
-    assert!((min - 0.043_615_124_171).abs() < 1e-12, "min {min}");
-    assert!((max - 0.065_422_686_257).abs() < 1e-12, "max {max}");
+    assert_eq!(mdf.chip_load_mm, 0.0);
+    assert_eq!(mdf.chip_load_min_mm, None);
+    assert_eq!(mdf.chip_load_max_mm, None);
+
+    // The MDF band at 1/2 in: form C at the inclusive 0.5x edge, hardness
+    // scale 1.0, flagged extrapolated (raw ratio 0.5).
+    let half = row_at(&trace_query(12.7, 2, MaterialFamily::Mdf, 1100.0), 60.0);
+    let claim = half
+        .size_basis
+        .claim()
+        .unwrap_or_else(|| panic!("form C at 0.5x, got {:?}", half.size_basis));
+    assert_eq!(claim.form, SizeForm::GenericFallback { exponent: 0.61 });
+    assert!((claim.scale - SCALE_1_IN_TO_1_2_IN).abs() < 1e-12);
+    assert_eq!(claim.anchor_diameter_mm, 25.4);
+    assert_eq!(claim.range_mm, 12.7..=50.8);
+    assert!(matches!(
+        claim.residual,
+        ClaimResidual::VendorSpread {
+            family: SpreadFamily::BorrowedFromFlatEnd,
+            ..
+        }
+    ));
+    assert!((half.chipload_diameter_scale - SCALE_1_IN_TO_1_2_IN).abs() < 1e-12);
+    assert!((half.chipload_hardness_scale - 1.0).abs() < 1e-15);
+    assert!(half.is_extrapolated);
+    let min = half.chip_load_min_mm.expect("the row prints a band");
+    let max = half.chip_load_max_mm.expect("the row prints a band");
+    assert!((min - 0.066_567_984_916).abs() < 1e-12, "min {min}");
+    assert!((max - 0.099_851_977_374).abs() < 1e-12, "max {max}");
 }
 
 /// A 150 deg V-bit gets no row in any wood family: every wood V-bit row
@@ -175,6 +222,8 @@ fn a_one_flute_60_degree_vbit_gets_the_37_00_row_unscaled_g2() {
         row.row_diameter_mm < f64::EPSILON,
         "the 37-00 row has no diameter"
     );
+    // Ruling B4: the row is keyed at its printed angle.
+    assert_eq!(row.size_basis, SizeBasis::AngleKey { angle_deg: 60.0 });
     assert!((row.chipload_diameter_scale - 1.0).abs() < 1e-15);
     assert!((row.chipload_hardness_scale - 1.0).abs() < 1e-15);
     assert!(!row.is_extrapolated);
@@ -188,18 +237,24 @@ fn a_one_flute_60_degree_vbit_gets_the_37_00_row_unscaled_g2() {
     assert_eq!(row_30.observation_id, "onsrud-mdf-37-20-trace");
 }
 
-/// Suggest ships a 60 deg V-bit Trace in MDF from the 37-80 row (the cell
-/// refused before G2).
-#[test]
-fn suggest_ships_a_vbit_trace_in_mdf_from_the_onsrud_row_g2() {
+/// A 60 deg 2-flute V-bit of `diameter` mm for a Trace in MDF.
+fn vbit_tool(diameter: f64) -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId(1), ToolType::VBit);
-    tool.diameter = 6.35;
+    tool.diameter = diameter;
     tool.flute_count = 2;
     tool.included_angle = 60.0;
     tool.cutting_length = 19.05;
-    tool.shank_diameter = 6.35;
-    tool.shaft_diameter = 6.35;
+    tool.shank_diameter = diameter;
+    tool.shaft_diameter = diameter;
     tool.stickout = 27.05;
+    tool
+}
+
+/// Suggest on a 60 deg V-bit Trace in MDF, with the tool of `diameter` mm.
+fn suggest_mdf_trace(
+    diameter: f64,
+) -> Result<rs_cam_core::feeds::suggest::SuggestedParams, FeedsError> {
+    let tool = vbit_tool(diameter);
     let machine = MachineProfile::default();
     let stock = StockContext {
         stock_top_z: 0.0,
@@ -210,7 +265,7 @@ fn suggest_ships_a_vbit_trace_in_mdf_from_the_onsrud_row_g2() {
     let material = Material::SheetGood {
         kind: SheetGoodKind::Mdf,
     };
-    let params = suggest_params(SuggestParamsInput {
+    suggest_params(SuggestParamsInput {
         op_type: OperationType::Trace,
         tool: &tool,
         machine: &machine,
@@ -220,8 +275,33 @@ fn suggest_ships_a_vbit_trace_in_mdf_from_the_onsrud_row_g2() {
         spindle_strategy: SpindleStrategy::default(),
         context: SuggestContext::default(),
     })
-    .expect("a V-bit Trace in MDF ships from the Onsrud 37-80 row");
-    assert_eq!(params.feeds_result.support, FeedsSupport::VendorBacked);
+}
+
+/// Ruling B4 (orchestrator decision Q1): Suggest refuses a 6.35 mm V-bit
+/// Trace in MDF. The one 60 deg 2-flute row is the 37-80 1 in row, 4.0x the
+/// tool, outside the window of the G1 size claim. Suggest ships a 12.7 mm
+/// V-bit Trace in MDF from the same row through form C.
+#[test]
+fn suggest_reads_the_onsrud_vbit_row_at_its_printed_diameter_b4() {
+    match suggest_mdf_trace(6.35) {
+        Err(FeedsError::Unbacked { reason, .. }) => assert_eq!(reason, REFUSAL_1_4_IN),
+        Err(other) => panic!("expected Unbacked, got {other:?}"),
+        Ok(p) => panic!(
+            "a 6.35 mm V-bit Trace in MDF must refuse, got {:?}",
+            p.feeds_result.support
+        ),
+    }
+
+    let params = suggest_mdf_trace(12.7).expect("a 12.7 mm V-bit Trace in MDF ships form C");
+    let FeedsSupport::Extrapolated { claim } = &params.feeds_result.support else {
+        panic!(
+            "expected the G1 claim, got {:?}",
+            params.feeds_result.support
+        );
+    };
+    assert_eq!(claim.form, SizeForm::GenericFallback { exponent: 0.61 });
+    assert!((claim.scale - SCALE_1_IN_TO_1_2_IN).abs() < 1e-12);
+    assert_eq!(claim.anchor_diameter_mm, 25.4);
     let row = params
         .feeds_result
         .matched_lut_row

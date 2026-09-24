@@ -388,17 +388,23 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
                 "Vendor row {observation_id} is an RPM anchor and publishes no chipload \
                  column — the recommended {formula_chipload_mm:.4} mm/tooth is the \
                  empirical formula's, not this vendor's, and this recommendation carries \
-                 no band. The post-simulation gate resolves a different, chipload-bearing \
-                 row, so its verdict is judged against bounds this recipe never saw.{}",
+                 no band.{}",
                 match floor_band_from {
                     // P1: the floor is the one clamp that now DOES see that
                     // row. Say which, or the operator reads the sentence
                     // above and assumes nothing did.
                     Some(row) => format!(
-                        " The rubbing floor was subordinated to that row ({row}) rather \
+                        " The post-simulation gate resolves a different, chipload-bearing \
+                         row, so its verdict is judged against bounds this recipe never \
+                         saw. The rubbing floor was subordinated to that row ({row}) rather \
                          than to the global constant."
                     ),
-                    None => String::new(),
+                    // Ruling B4: a V-bit recipe rests on an RPM anchor only
+                    // when no chipload-bearing row matches, so the gate has
+                    // no row either.
+                    None => " No chipload-bearing row matches this cut, so the \
+                             post-simulation gate has no band to judge it against."
+                        .to_owned(),
                 }
             ),
             evidence: None,

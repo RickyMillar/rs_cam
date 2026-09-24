@@ -7,7 +7,7 @@
 //! matched row (the anchor) and the LUT, and returns a [`SizeBasis`]:
 //!
 //! - the anchor answers the query as printed (`Exact`, `NoDiameterAnchor`,
-//!   `NoChipload`);
+//!   `NoChipload`, `AngleKey`);
 //! - a [`Claim`] states the rule, the range where the rule is valid, the
 //!   residual, and the scale it applies to the anchor's band;
 //! - `Refused` states why no rule may answer.
@@ -124,8 +124,9 @@ pub enum SizeForm {
     /// band mids on the log diameters), one printed step past the span.
     SeriesSlope { slope: f64, r2: f64, sizes: usize },
     /// Form C: the generic size law `(d / d_row)^exponent` inside the
-    /// 0.5x-2x window of the row. A V-bit takes no claim in P1
-    /// ([`SizeBasis::VBitExempt`]).
+    /// 0.5x-2x window of the row. A V-bit row with a printed diameter takes
+    /// it too (B4); a V-bit row keyed only by its angle takes no claim
+    /// ([`SizeBasis::AngleKey`]).
     GenericFallback { exponent: f64 },
 }
 
@@ -296,19 +297,19 @@ pub enum SizeBasis {
     /// The anchor prints the queried size (within
     /// [`EXACT_DIAMETER_TOLERANCE`]).
     Exact,
-    /// The anchor has no diameter (a V-bit row, a diameter-window
+    /// The anchor has no diameter and no angle (a diameter-window
     /// article). The band carries through unscaled.
     NoDiameterAnchor,
     /// The anchor publishes an RPM and no chipload (an RPM-only anchor).
     /// The RPM carries; the calculator uses the formula chipload.
     NoChipload,
-    /// A V-bit takes no size claim and no size window in P1 (P1_PLAN §4
-    /// risk 5, until ruling B4). The gate keys a V-bit at the engaged width
-    /// at the sample depth, which is under 1.5 mm on a shallow cut, so a
-    /// window here would turn judged V-bit verdicts into `Unmodeled`. The
-    /// row keeps the generic `(d / d_row)^0.61` scale, and the Suggest
-    /// support arm keeps the pre-P1 micro rule on its own key.
-    VBitExempt,
+    /// A V-bit row that prints no cutting diameter is keyed at its printed
+    /// included angle (ruling B4, G5). The chart (Amana AMS-159, Spektra
+    /// engraving, Onsrud 37-00 / 37-20) prints one chip load per angle, so
+    /// the band carries through unscaled at every tool size: no claim, no
+    /// size window, scale 1.0. A V-bit row with a printed diameter takes
+    /// the normal G1 path (`Exact`, form A/B/C or `Refused`).
+    AngleKey { angle_deg: f64 },
     /// A stated claim carries the band to the queried size.
     Claim(Box<Claim>),
     /// No rule may answer. The reason starts with
@@ -325,7 +326,7 @@ impl SizeBasis {
             Self::Exact
             | Self::NoDiameterAnchor
             | Self::NoChipload
-            | Self::VBitExempt
+            | Self::AngleKey { .. }
             | Self::Refused { .. } => None,
         }
     }
@@ -344,7 +345,7 @@ impl SizeBasis {
             Self::Exact
             | Self::NoDiameterAnchor
             | Self::NoChipload
-            | Self::VBitExempt
+            | Self::AngleKey { .. }
             | Self::Claim(_) => None,
         }
     }
@@ -356,7 +357,7 @@ impl SizeBasis {
             Self::Exact => "Exact",
             Self::NoDiameterAnchor => "NoDiameterAnchor",
             Self::NoChipload => "NoChipload",
-            Self::VBitExempt => "VBitExempt",
+            Self::AngleKey { .. } => "AngleKey",
             Self::Claim(_) => "Claim",
             Self::Refused { .. } => "Refused",
         }

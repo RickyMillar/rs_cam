@@ -17,12 +17,14 @@
       "material_family": "acrylic",
       "material_label": "Hard Plastic (acrylic-class)",
       "flute_count": 1,
+      "rpm_nominal": 18000.0,
       "chipload_min_mm_tooth": 0.0762,
       "chipload_max_mm_tooth": 0.1778,
       "ap_rule": "1xD use recommended chip load; 2xD reduce chip load 25%; 3xD reduce 50%",
       "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; chart row labeled 'Hard Plastic'",
-      "diameter_mm": 6.35,
-      "ap_max_factor": 1.0
+      "diameter_mm": null,
+      "ap_max_factor": 1.0,
+      "notes": "B4 (2026-09-25): the AMS-159 chart prints no cutting diameter, so diameter_mm is null and the row is keyed at its printed angle. SKU 45771 has a 1/4 in (6.35 mm) body (the diameter_mm this row held before B4). rpm_nominal is the printed header 'Operating RPM: 18,000', which covers every material column."
     },
     {
       "observation_id": "amana-vgroove-aluminum-trace-45deg-1f",
@@ -41,12 +43,14 @@
       "material_family": "aluminum",
       "material_label": "Aluminum",
       "flute_count": 1,
+      "rpm_nominal": 18000.0,
       "chipload_min_mm_tooth": 0.0762,
       "chipload_max_mm_tooth": 0.1778,
       "ap_rule": "1xD use recommended chip load; 2xD reduce chip load 25%; 3xD reduce 50%",
       "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; aluminum N/A for 60/90 deg, available 18/30/45 deg",
-      "diameter_mm": 6.35,
-      "ap_max_factor": 1.0
+      "diameter_mm": null,
+      "ap_max_factor": 1.0,
+      "notes": "B4 (2026-09-25): the AMS-159 chart prints no cutting diameter, so diameter_mm is null and the row is keyed at its printed angle. SKU 45623 has a 1/4 in (6.35 mm) body (the diameter_mm this row held before B4). rpm_nominal is the printed header 'Operating RPM: 18,000', which covers every material column."
     },
     {
       "observation_id": "amana-engrave-acrylic-trace-45deg-1f",
@@ -66,12 +70,14 @@
       "material_family": "acrylic",
       "material_label": "Hard Plastic (acrylic-class)",
       "flute_count": 1,
+      "rpm_nominal": 18000.0,
       "chipload_min_mm_tooth": 0.0762,
       "chipload_max_mm_tooth": 0.1778,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce feed rate 25%; 3xD reduce 50%",
       "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; chart row labeled 'Hard Plastic'; 45 deg tip width 0.042 in",
-      "diameter_mm": 6.35,
-      "ap_max_factor": 1.0
+      "diameter_mm": null,
+      "ap_max_factor": 1.0,
+      "notes": "B4 (2026-09-25): the Spektra engraving v4 chart prints no cutting diameter, so diameter_mm is null and the row is keyed at its printed angle. SKU body 1/4 in (6.35 mm), the tool's shank (the diameter_mm this row held before B4). rpm_nominal is the printed header 'CNC Operating Spindle Speed: 18,000 RPM', which covers every material column."
     }
   ]
 }

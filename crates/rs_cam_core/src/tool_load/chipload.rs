@@ -107,7 +107,9 @@ use super::locality::SpanLookup;
 ///   gate at the peak steady-state DOC, the viewport at its peak DOC, and
 ///   the optimizer through `diameter_for_lut_lookup(tool, commanded DOC)`.
 ///   A tapered ball is keyed at its tip at every depth (ruling A1,
-///   2026-09-24); a V-bit at its engaged width.
+///   2026-09-24); a V-bit at its nominal diameter (ruling B4, 2026-09-25).
+/// - Since B4 the recipe resolver tries the same chipload-bearing rows
+///   first for a V-bit, so Suggest's chip row is this row.
 /// - Angle-aware dispatch for V-bit / chamfer geometry.
 /// - Only chipload-bearing rows compete
 ///   ([`find_best_chip_envelope_row`]) — RPM-only rows are feeds-
@@ -548,8 +550,9 @@ fn evaluate_inner(
     // (angle-aware dispatch, ProjectCurve/Adaptive3d routing, RPM-only
     // rows excluded) so the gate, the optimizer, and the viewport read
     // the SAME row. Ruling A1 (2026-09-24): the lookup key is
-    // `lut_key_diameter_for_cutter`, the tip of a tapered ball. The key
-    // that Suggest uses (`vendor_normalize::lookup_diameter_for_input`)
+    // `lut_key_diameter_for_cutter`, the tip of a tapered ball; ruling B4
+    // (2026-09-25): the nominal diameter of a V-bit, at every depth. The
+    // key that Suggest uses (`vendor_normalize::lookup_diameter_for_input`)
     // is the same, so Suggest and the gate read one row.
     let lookup_key_mm =
         crate::feeds::geometry::lut_key_diameter_for_cutter(tool, lookup_axial_doc_mm);
@@ -2118,10 +2121,13 @@ mod tests {
 
     /// The fixture whose matched row lets the gate trip a HARD `Exceeds(Low)`:
     /// the Ø6.35 90 degree V-bit ([`vbit_tool`]) on a hard-maple trace
-    /// finish, sampled 3 mm deep so the cone is 6 mm wide and the LUT query
-    /// lands on the printed Amana insert V-groove row
-    /// `amana-vbit-hardwood-trace-6000-2f` (0.028-0.060 mm/tooth, ae
-    /// 0.15-1.0 mm, Janka 1450) without extrapolation.
+    /// finish, sampled 3 mm deep (the cone is 6 mm wide, so the depth
+    /// de-rate is 1.0). The LUT query lands on the printed Amana insert
+    /// V-groove row `amana-vbit-hardwood-trace-6000-2f` (0.028-0.060
+    /// mm/tooth, ae 0.15-1.0 mm, Janka 1450). Since ruling B4 (2026-09-25)
+    /// the key is the nominal 6.35 mm: the G1 form C claim scales the band
+    /// x1.035 (0.028985-0.062111), and the raw ratio 1.058 is not flagged
+    /// extrapolated, so the low side stays hard.
     ///
     /// The low side is hard only on a row that publishes both chipload
     /// bounds AND an `ae` window and is not extrapolated

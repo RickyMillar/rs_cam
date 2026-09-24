@@ -89,20 +89,26 @@ const TEST_LUT_NOMINAL_ARC_RAD: f64 = 1.0843860798928202;
 /// declared chipload consistent with each other.
 const RPM: u32 = 18_000;
 const FLUTES: u32 = 2;
-/// Inside the printed 0.028-0.060 mm/tooth band of the matched V-groove
-/// row, so the baseline reads Within and a 0.30x corner decel reads below it.
+/// Inside the band of the matched V-groove row (0.028-0.060 mm/tooth
+/// printed at 6.0 mm; 0.028985-0.062111 mm/tooth at the 6.35 mm key since
+/// ruling B4, form C (6.35 / 6.0)^0.61 = 1.035189), so the baseline reads
+/// Within and a 0.30x corner decel (0.0135) reads below it.
 const BASELINE_FPT: f64 = 0.045;
-/// The 90 degree cone is 6 mm wide at this depth: the printed row's diameter.
+/// The 90 degree cone is 6 mm wide at this depth, so the depth de-rate is
+/// 1.0 (3 / 6 <= 1).
 const AXIAL_DOC_MM: f64 = 3.0;
 
 /// Feeds matrix R5 (2026-09-23): a Ø6.35 90 degree V-bit on a hard-maple
-/// trace finish, sampled 3 mm deep so the cone is 6 mm wide and the gate's
-/// LUT query lands on the printed Amana insert V-groove row
-/// `amana-vbit-hardwood-trace-6000-2f` (0.028-0.060 mm/tooth, ae
-/// 0.15-1.0 mm). The gate trips a HARD `Exceeds(Low)` only on a row that
-/// publishes both chipload bounds and an `ae` window without
-/// extrapolation; the flat 6 mm hardwood pocket cell this file used to
-/// read now resolves to a single-point row whose low side is advisory.
+/// trace finish. The gate's LUT query lands on the printed Amana insert
+/// V-groove row `amana-vbit-hardwood-trace-6000-2f` (0.028-0.060 mm/tooth,
+/// ae 0.15-1.0 mm). Since ruling B4 (2026-09-25) the gate keys the V-bit at
+/// its nominal 6.35 mm, not at the 6 mm cone width at the 3 mm sample
+/// depth: the row takes the G1 form C claim x1.035 and is not flagged
+/// extrapolated (raw ratio 1.058, inside 1.4). The gate trips a HARD
+/// `Exceeds(Low)` only on a row that publishes both chipload bounds and an
+/// `ae` window without extrapolation; the flat 6 mm hardwood pocket cell
+/// this file used to read now resolves to a single-point row whose low side
+/// is advisory.
 fn make_endmill_6mm_carbide() -> ToolDefinition {
     ToolDefinition::new(
         Box::new(VBitEndmill::new(6.35, 90.0, 20.0)),

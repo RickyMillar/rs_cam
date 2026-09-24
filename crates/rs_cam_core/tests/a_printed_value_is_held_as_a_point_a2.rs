@@ -25,13 +25,21 @@
 //!
 //! - 496 rows; 344 print two limits with `min < max`; 148 print one value
 //!   (100 a maximum only, 48 two equal limits, 0 a minimum only); 4 print no
-//!   chipload. Every one-value row carries a `diameter_mm`.
+//!   chipload. Every one-value row carries a `diameter_mm` except the three
+//!   AMS-159 60 and 90 deg rows: since ruling B4 (2026-09-25) they carry
+//!   none, because the chart prints none, and they are keyed at their angle
+//!   (`SizeBasis::AngleKey`). Test (a) queries them at 6.35 mm; an
+//!   angle-keyed row is not scaled at any key.
 //! - The AMS-159 60 deg hardwood Trace cell (a 12.7 mm 2-flute V-bit):
 //!   `amana-vgroove-hardwood-trace-60deg-2f`, min = max = 0.0762, no Janka
-//!   on the row (the hardness scale reads the query table: 1.0). The V-bit
-//!   depth-to-diameter ratio is `ap / (2 ap tan 30 deg) = 0.866 <= 1`, so
-//!   the depth de-rate is 1.0 at every depth and v' = 0.0762. The FM1 matrix
-//!   (`matrix_2026-09-23.csv`) reads `chipload_point_mm = 0.0762` here.
+//!   on the row (the hardness scale reads the query table: 1.0), no
+//!   diameter (`AngleKey`, scale 1.0). The V-bit depth-to-diameter ratio is
+//!   `ap / (2 ap tan 30 deg) = 0.866 <= 1`, so the depth de-rate is 1.0 at
+//!   every depth and v' = 0.0762. The FM1 matrix (`matrix_2026-09-23.csv`)
+//!   reads `chipload_point_mm = 0.0762` here. Since B4 the gate keys the
+//!   V-bit at its nominal 12.7 mm and the envelope resolver gives the same
+//!   AMS-159 row (score 1825; the next chip row is the softwood 60 deg row
+//!   at 1725), so the gate holds the point too.
 //! - The Spektra 6 mm hardwood Pocket cell (a 6.0 mm 2-flute end mill):
 //!   `amana-flat-hardwood-pocket-6000-2f-spektra`, max 0.127 only, Janka
 //!   1450 on a 1450 query (`WoodSpecies::GenericHardwood`), diameter ratio
@@ -157,9 +165,16 @@ fn every_one_value_row_resolves_as_a_point_a2() {
     let mut self_resolved = 0usize;
     let mut lost: Vec<(String, String)> = Vec::new();
     for obs in &one_value {
-        let diameter = obs
-            .diameter_mm
-            .unwrap_or_else(|| panic!("{}: a one-value row with no diameter", obs.observation_id));
+        // Ruling B4: an angle-keyed V-bit row prints no diameter and is not
+        // scaled at any key, so it is queried at a 1/4 in tool.
+        let diameter = obs.diameter_mm.unwrap_or_else(|| {
+            assert!(
+                obs.included_angle_deg.is_some(),
+                "{}: a one-value row with no diameter and no angle",
+                obs.observation_id
+            );
+            6.35
+        });
         let query = LookupQuery {
             tool_family: obs.tool_family,
             tool_subfamily: obs.tool_subfamily.clone(),
@@ -214,10 +229,10 @@ struct PointCell {
     pass_role: LutPassRole,
     /// The axial depth the gate samples cut at.
     sample_doc_mm: f64,
-    /// True when the gate resolves the same point row as Suggest. A V-bit is
-    /// false: the gate keys a V-bit at its engaged width at the sample depth
-    /// (P1 exempts V-bits until ruling B4), so it resolves another row, a
-    /// band that is flagged extrapolated.
+    /// True when the gate resolves the same point row as Suggest. Both
+    /// cells are true since ruling B4: the gate keys a V-bit at its nominal
+    /// diameter, as Suggest does, and the recipe resolver tries the chip
+    /// rows first for a V-bit.
     gate_reads_the_point: bool,
 }
 
@@ -253,7 +268,7 @@ fn ams159_trace() -> PointCell {
         operation_family: LutOperationFamily::Trace,
         pass_role: LutPassRole::Finish,
         sample_doc_mm: 0.762,
-        gate_reads_the_point: false,
+        gate_reads_the_point: true,
     }
 }
 
@@ -412,14 +427,13 @@ fn assert_the_cell_is_held_as_a_point(cell: &PointCell) {
     };
     let bounds = &approach_to_max.bounds;
     if !cell.gate_reads_the_point {
-        // Measured 2026-09-24: the gate keys this V-bit at its engaged width
-        // at the sample depth and resolves a banded row flagged extrapolated,
-        // not the AMS-159 point that Suggest reads. The gate's V-bit key is
-        // ruling B4's question; until then the gate still never trips low.
-        assert_eq!(
-            bounds.source,
-            ChipBoundsSource::VendorLutExtrapolated,
-            "{label}: the gate's V-bit row (B4)"
+        // A cell whose gate reads another row. None since ruling B4 (before
+        // B4 the gate keyed the AMS-159 V-bit at its engaged width and read
+        // a banded row flagged extrapolated). The gate still never trips low.
+        assert!(
+            bounds.source.low_side_is_advisory(),
+            "{label}: {:?}",
+            bounds.source
         );
         return;
     }
@@ -467,8 +481,8 @@ fn assert_the_cell_is_held_as_a_point(cell: &PointCell) {
         bounds.max_mm_per_tooth
     );
     if (target_point - cell.point_mm).abs() >= TOL {
-        // Not derived: the gate keys the row at the engaged size at the
-        // sample depth, which can scale the printed value.
+        // Not derived: the gate de-rates the point at the sample depth. Both
+        // cells here are at a depth ratio <= 1, so this is not expected.
         eprintln!(
             "{label}: gate v' {target_point} differs from the printed point {} at the \
              sample depth {} mm (a2 sentry `the_*_cell_is_held_as_a_point_a2`)",

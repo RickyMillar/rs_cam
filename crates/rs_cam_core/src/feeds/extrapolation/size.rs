@@ -4,11 +4,15 @@
 //! [`SizeLaw::basis`] applies the rule of P1_PLAN §2.3 in this order. `d`
 //! is the query's lookup key and `d_row` is the anchor's diameter.
 //!
-//! 0. A V-bit query: `VBitExempt`, no claim and no window (P1_PLAN §4
-//!    risk 5, until ruling B4).
-//! 1. No anchor diameter: `NoDiameterAnchor`. No anchor chipload (an
-//!    RPM-only row): `NoChipload`, except that a tool under 1.5 mm keeps the
-//!    size window of ruling R1 (`micro_extrapolation_refusal`).
+//! 1. No anchor diameter: `AngleKey` for a V-bit row that prints an
+//!    included angle (ruling B4: the chart keys the row at its angle), else
+//!    `NoDiameterAnchor`. No anchor chipload (an RPM-only row): `NoChipload`,
+//!    except that a tool under 1.5 mm keeps the size window of ruling R1
+//!    (`micro_extrapolation_refusal`).
+//!
+//! A V-bit row with a printed diameter takes the steps below like every
+//! other family (ruling B4). Its lookup key is the nominal diameter
+//! (`feeds::geometry::lut_key_diameter_mm`), not the engaged width.
 //! 2. `|d / d_row - 1| <= 1e-3`: `Exact`.
 //! 3. A tapered ball with `d < 0.5` mm: `Refused` (ruling B1). The code runs
 //!    this step before step 2, so that a tip just under 0.5 mm on the 0.5 mm
@@ -359,15 +363,14 @@ impl Extrapolation for SizeLaw {
     fn basis(&self, lut: &VendorLut, query: &LookupQuery, anchor: &VendorObservation) -> SizeBasis {
         let d = query.diameter_mm;
         let family = query.tool_family;
-        // P1_PLAN §4 risk 5 (orchestrator, 2026-09-24): a V-bit takes no
-        // size claim and no window until ruling B4. The gate keys it at
-        // the engaged width at the sample depth; a window here refused
-        // rows that the gate judged before P1.
-        if family == ToolFamily::ChamferVbit {
-            return SizeBasis::VBitExempt;
-        }
-        // Step 1.
+        // Step 1. Ruling B4 (G5): a V-bit row that prints no cutting
+        // diameter is keyed at its printed angle, unscaled at every size.
         let Some(d_row) = anchor.diameter_mm.filter(|v| v.is_finite() && *v > 0.0) else {
+            if family == ToolFamily::ChamferVbit
+                && let Some(angle_deg) = anchor.included_angle_deg
+            {
+                return SizeBasis::AngleKey { angle_deg };
+            }
             return SizeBasis::NoDiameterAnchor;
         };
         if !(d.is_finite() && d > 0.0) {

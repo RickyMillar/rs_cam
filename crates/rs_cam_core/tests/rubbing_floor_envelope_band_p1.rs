@@ -67,6 +67,19 @@
 //! kept because a floor consulting the resolver that cannot see bands is wrong
 //! whether or not it currently costs anything.
 //!
+//! # Ruling B4 (2026-09-25): the embedded LUT has no P1 case any more
+//!
+//! For a V-bit the recipe resolver now tries the chipload-bearing rows
+//! first, so a V-bit recipe rests on an RPM anchor only when no chip row
+//! matches, and then the envelope resolver has no row either. The P1 shape
+//! (an RPM-anchor recipe with a chip row underneath) cannot occur for a
+//! V-bit. The two flat RPM anchors (Whiteside RU4000H, RD5218H) win no swept
+//! query on the embedded LUT (python3 over the JSON files and the scorer of
+//! `vendor_lookup.rs`). So the P1 claims run on a fixture LUT
+//! ([`rpm_anchor_flat_lut`]): the RD5218H anchor and one printed Onsrud
+//! 60-000LH 3/8 in row that it outscores. The embedded LUT is pinned empty,
+//! as a tripwire.
+//!
 //! # Non-vacuity
 //!
 //! This repo has four recorded cases of a bar reading healthy over an empty
@@ -154,6 +167,27 @@ fn geometries(d: f64) -> Vec<(&'static str, ToolGeometryHint)> {
     ]
 }
 
+/// The P1 fixture (ruling B4): the Whiteside RD5218H RPM anchor (12.7 mm,
+/// 3 flutes, hardwood adaptive roughing, no chipload) and the printed
+/// Onsrud row `onsrud-hardwood-60-000lh-3_8-roughing` (9.525 mm, 2 flutes,
+/// 0.3302-0.381 mm/tooth), both from the embedded LUT. Derived with python3
+/// and the scorer of `vendor_lookup.rs`: for a 12.0 mm 3-flute flat or bull
+/// adaptive cut the anchor wins the recipe (flat, hard maple, roughing: 1728
+/// against 1678) and the Onsrud row is the envelope. 24 swept cuts have
+/// that shape (flat and bull, six species, roughing and finish).
+fn rpm_anchor_flat_lut() -> VendorLut {
+    let observations: Vec<_> = VendorLut::embedded()
+        .observations
+        .into_iter()
+        .filter(|o| {
+            o.observation_id == "whiteside-rd5218h-roughing-down-spiral-3f-rpm"
+                || o.observation_id == "onsrud-hardwood-60-000lh-3_8-roughing"
+        })
+        .collect();
+    assert_eq!(observations.len(), 2, "both fixture rows exist");
+    VendorLut { observations }
+}
+
 /// The warning we are looking for, plus what the floor did with it.
 struct Observed {
     label: String,
@@ -222,28 +256,43 @@ fn observe(lut: &VendorLut) -> Vec<Observed> {
     out
 }
 
-/// The population this file's claims are made over must exist. If the LUT is
-/// edited so that no recipe row is ever an RPM-only anchor for these cuts,
-/// this fails rather than quietly passing every test below.
+/// The population this file's claims are made over must exist. Since ruling
+/// B4 it is the fixture's ([`rpm_anchor_flat_lut`]); if the fixture stops
+/// giving an RPM-only recipe row, this fails rather than quietly passing
+/// every test below. The embedded LUT is pinned empty as a tripwire: a cut
+/// that rests on an RPM anchor there again is a new P1 case to name.
 #[test]
 fn the_rpm_only_recipe_row_population_is_not_empty() {
-    let lut = VendorLut::embedded();
-    let hits = observe(&lut);
+    let hits = observe(&rpm_anchor_flat_lut());
     assert!(
         !hits.is_empty(),
-        "no swept cut resolved an RPM-only recipe row, so every claim in this \
-         file would be vacuous. Widen the sweep (DIAMETERS, geometries, \
-         OPERATIONS, PASS_ROLES, SPECIES) until at least one fires — do not \
-         delete the assertion."
+        "no swept cut resolved an RPM-only recipe row on the fixture, so every \
+         claim in this file would be vacuous. Re-derive the fixture (the anchor \
+         must outscore the printed row) — do not delete the assertion."
+    );
+
+    let embedded = observe(&VendorLut::embedded());
+    assert!(
+        embedded.is_empty(),
+        "ruling B4 left no RPM-only recipe row on the embedded LUT for this sweep; \
+         {} cuts rest on one now, first: {:?}",
+        embedded.len(),
+        embedded
+            .iter()
+            .take(5)
+            .map(|h| (&h.label, &h.recipe_row))
+            .collect::<Vec<_>>()
     );
 }
 
 /// The core of P1: where the recipe row publishes no chipload but a
 /// chipload-bearing row exists, the floor is the envelope band's ceiling, not
 /// the bare constant.
+///
+/// Ruling B4: on the fixture LUT ([`rpm_anchor_flat_lut`]).
 #[test]
 fn floor_falls_back_to_the_envelope_band_not_the_bare_constant() {
-    let lut = VendorLut::embedded();
+    let lut = rpm_anchor_flat_lut();
     let hits = observe(&lut);
 
     let with_band: Vec<&Observed> = hits
@@ -548,17 +597,25 @@ fn the_fallback_lowers_the_floor_only_to_a_published_bound() {
     }
 
     // Measured 2026-09-24 under ruling R4 Q9 on the LUT as shipped: the
-    // fallback lowers the floor on 36 bandless recipes (the small V-bit
-    // Trace cells whose envelope band minimum sits under 0.025). Before Q9
-    // the count was zero, because `min(0.025, band max)` never went under
-    // the constant for those bands. The tripwire now pins two things: the
-    // lowering still happens (Q9 is live on this path), and every lowered
-    // floor is the published bound its source names.
+    // fallback lowered the floor on 36 bandless recipes (the small V-bit
+    // Trace cells, whose recipe rested on the Whiteside RPM anchor and whose
+    // envelope band minimum sat under 0.025).
+    //
+    // Ruling B4 (2026-09-25): a V-bit recipe tries the chip rows first, so
+    // those cells now carry the envelope row as their own recipe row, and no
+    // swept recipe on the embedded LUT rests on an RPM anchor
+    // (`the_rpm_only_recipe_row_population_is_not_empty`). A bandless recipe
+    // now has no fallback band, and the set is empty (derived with python3;
+    // an A2 point recipe carries no `band_max`, so it stays out). The
+    // tripwire pins the new state: if a bandless recipe lowers the floor
+    // again, name the cells and re-measure before a re-pin. Every lowered
+    // floor must still be the published bound its source names.
     assert!(
-        !lowered.is_empty(),
-        "ruling R4 Q9 must lower the floor on the bandless V-bit Trace cells whose \
-         envelope band minimum is under 0.025; it lowered none, so the fallback no \
-         longer reaches the band minimum"
+        lowered.is_empty(),
+        "ruling B4 left no bandless recipe whose floor a fallback band lowers; {} \
+         now do: {:?}",
+        lowered.len(),
+        lowered.iter().take(5).collect::<Vec<_>>()
     );
     assert!(
         unexplained.is_empty(),

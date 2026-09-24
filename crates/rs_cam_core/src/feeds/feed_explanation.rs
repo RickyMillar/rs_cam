@@ -134,8 +134,8 @@ pub struct LutBandStage {
     pub row_diameter_mm: f64,
     /// The LUT lookup key the gate queried with (mm):
     /// [`crate::feeds::geometry::lut_key_diameter_for_cutter`] at the peak
-    /// DOC. That is the tip of a tapered ball (ruling A1, 2026-09-24), the
-    /// engaged width of a V-bit, and the nominal diameter otherwise. The
+    /// DOC. That is the tip of a tapered ball (ruling A1, 2026-09-24), and
+    /// the nominal diameter otherwise, a V-bit included (ruling B4). The
     /// depth de-rate in `min_mm_per_tooth` / `max_mm_per_tooth` divides by
     /// the engaged diameter, not by this key.
     pub queried_diameter_mm: f64,

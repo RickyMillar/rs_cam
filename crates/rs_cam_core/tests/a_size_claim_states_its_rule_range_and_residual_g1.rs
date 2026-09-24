@@ -29,8 +29,9 @@
 //!   exactly 2x (the flat spread);
 //! - the inclusive 0.5x and 2.0x edges on a flat end mill under 1.5 mm,
 //!   and the refusal just past 2x;
-//! - a V-bit takes no claim and no window in P1 (`VBitExempt`, P1_PLAN §4
-//!   risk 5);
+//! - a V-bit row with a printed diameter takes the G1 path like every other
+//!   family, and a V-bit row keyed only by its printed angle is `AngleKey`
+//!   (ruling B4, 2026-09-25; `VBitExempt` is deleted);
 //! - the refusals: a 25.4 mm flat end mill 8x off its row, a 1.0 mm ball
 //!   nose 6x off its row, a 0.3 mm tapered tip, a 1.0 mm tapered Scallop, and
 //!   a 1.0 mm 4-flute tapered tip that no chart brackets;
@@ -504,15 +505,25 @@ fn the_window_edges_are_inclusive_g1() {
     );
 }
 
-/// A V-bit takes no claim and no window in P1 (P1_PLAN §4 risk 5, until
-/// ruling B4): the basis is `VBitExempt` at any ratio, and the lookup keeps
-/// the generic `raw^0.61` scale. The anchor is a clone of a flat row with
-/// the family set to V-bit, alone in its LUT.
+/// Ruling B4 (2026-09-25): a V-bit row with a printed diameter takes the G1
+/// path like every other family. The anchor is a clone of a flat row with
+/// the family set to V-bit, alone in its LUT, so its series has one size
+/// (no form A or B).
+///
+/// - row 2.0 mm, key 1.0 mm: 1.0 / 2.0 = 0.5, the inclusive window edge.
+///   Form C, scale 0.5^0.61 = 0.655196701929, range 1.0-4.0 mm, and the
+///   spread is borrowed from the flat end mills.
+/// - row 2.01 mm, key 1.0 mm: 1.0 / 2.01 = 0.4975, past the edge, and the
+///   key is under 1.5 mm: the micro text (2.01 / 1.0 = 2.0x).
+/// - row 1.0 mm, key 6.0 mm: 6x, past the window, and the key is 1.5 mm or
+///   more: the large-tool text (1.0 / 6.0 = 0.1667, "0.2x"; `{d_row}`
+///   prints 1.0 as "1").
+/// - row 1.0 mm, key 1.0 mm: `Exact`.
 #[test]
-fn a_v_bit_takes_no_size_claim_in_p1_g1() {
+fn a_v_bit_row_with_a_printed_diameter_takes_the_g1_path_b4() {
     let mut anchor = row("amana-flat-softwood-pocket-0794-2f-spektra");
     anchor.tool_family = ToolFamily::ChamferVbit;
-    for (row_d, key) in [(2.0, 1.0), (2.01, 1.0), (1.0, 6.0), (1.0, 1.0)] {
+    let at = |row_d: f64, key: f64| {
         let mut a = anchor.clone();
         a.diameter_mm = Some(row_d);
         let q = query(
@@ -524,12 +535,89 @@ fn a_v_bit_takes_no_size_claim_in_p1_g1() {
             LutOperationFamily::Pocket,
             LutPassRole::Roughing,
         );
-        assert_eq!(
-            SizeLaw.basis(&one_row_lut(&a), &q, &a),
-            SizeBasis::VBitExempt,
-            "row {row_d} mm, key {key} mm"
+        SizeLaw.basis(&one_row_lut(&a), &q, &a)
+    };
+
+    let edge = at(2.0, 1.0);
+    let c = claim_of(&edge);
+    assert_eq!(c.form, SizeForm::GenericFallback { exponent: 0.61 });
+    assert!((c.scale - 0.655_196_701_929).abs() < 1e-12, "{}", c.scale);
+    assert_eq!(c.range_mm, 1.0..=4.0);
+    let ClaimResidual::VendorSpread { family, .. } = c.residual else {
+        panic!("expected the vendor spread, got {c:?}");
+    };
+    assert_eq!(family, SpreadFamily::BorrowedFromFlatEnd);
+
+    assert_eq!(
+        refusal_of(&at(2.01, 1.0)),
+        "no published figure for a 1.00 mm V-bit; the nearest chart row is 2.01 mm, 2.0x the \
+         tool, outside the 0.5x to 2x window a tool under 1.5 mm needs (ruling R1 applied to \
+         size)"
+    );
+    assert_eq!(
+        refusal_of(&at(1.0, 6.0)),
+        "no published figure for a 6.00 mm V-bit; the nearest chart row is 1 mm, 0.2x the \
+         tool, outside the 0.5x to 2x window of the generic size law and past one printed step \
+         of the row's chart series (extrapolation G1)"
+    );
+    assert_eq!(at(1.0, 1.0), SizeBasis::Exact);
+}
+
+/// Ruling B4: a V-bit row that prints no cutting diameter is keyed at its
+/// printed angle. The basis is `AngleKey` at every key, with no claim, no
+/// refusal and the name "AngleKey". A row with neither a diameter nor an
+/// angle stays `NoDiameterAnchor`, and so does a diameter-less row queried
+/// by another family.
+#[test]
+fn a_v_bit_row_with_no_diameter_is_keyed_at_its_angle_b4() {
+    let lut = embedded_vendor_lut();
+    let ams = row("amana-vgroove-hardwood-trace-60deg-2f");
+    assert_eq!(
+        ams.diameter_mm, None,
+        "the AMS-159 chart prints no diameter"
+    );
+    for key in [1.0, 6.35, 12.7, 50.8] {
+        let q = query(
+            ToolFamily::ChamferVbit,
+            key,
+            2,
+            MaterialFamily::Hardwood,
+            1450.0,
+            LutOperationFamily::Trace,
+            LutPassRole::Finish,
         );
+        let basis = SizeLaw.basis(lut, &q, &ams);
+        assert_eq!(basis, SizeBasis::AngleKey { angle_deg: 60.0 }, "key {key}");
+        assert_eq!(basis.name(), "AngleKey");
+        assert!(basis.claim().is_none());
+        assert!(!basis.is_refused());
+        assert_eq!(basis.refusal_reason(), None);
     }
+
+    let mut no_angle = ams.clone();
+    no_angle.included_angle_deg = None;
+    let q = query(
+        ToolFamily::ChamferVbit,
+        6.35,
+        2,
+        MaterialFamily::Hardwood,
+        1450.0,
+        LutOperationFamily::Trace,
+        LutPassRole::Finish,
+    );
+    assert_eq!(
+        SizeLaw.basis(&one_row_lut(&no_angle), &q, &no_angle),
+        SizeBasis::NoDiameterAnchor
+    );
+
+    let flat_q = LookupQuery {
+        tool_family: ToolFamily::FlatEnd,
+        ..q
+    };
+    assert_eq!(
+        SizeLaw.basis(&one_row_lut(&ams), &flat_q, &ams),
+        SizeBasis::NoDiameterAnchor
+    );
 }
 
 /// The refusals. Each text starts with "no published figure for a ".

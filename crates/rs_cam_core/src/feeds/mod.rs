@@ -126,9 +126,11 @@ impl ToolGeometryHint {
     /// `shank_diameter_mm` caps the tapered-ball growth at the shank.
     /// Since ruling A1 (2026-09-24) the vendor-LUT lookup does not use
     /// this diameter for a tapered ball: the row is read at the tip
-    /// ([`geometry::lut_key_diameter_mm`]). The depth ladder, the band
-    /// de-rate and the depth cap still use this engaged diameter. A V-bit
-    /// row is still looked up at this engaged width.
+    /// ([`geometry::lut_key_diameter_mm`]). Since ruling B4 (2026-09-25)
+    /// the lookup does not use it for a V-bit either: the row is read at
+    /// the nominal diameter, or at its printed angle. The depth ladder, the
+    /// band de-rate and the depth cap still use this engaged diameter, and
+    /// so do the surface-speed RPM and the formula chip load.
     ///
     /// This is a **second, hand-maintained implementation** of the
     /// same geometry as [`crate::tool::MillingCutter::lookup_diameter_at`]
@@ -1485,8 +1487,13 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // `vendor_normalize::lookup_diameter_for_input`. It does not now for a
     // tapered ball: the LUT key is the tip (`geometry::lut_key_diameter_mm`),
     // and this binding stays the engaged cone diameter for the SFM, the
-    // RPM and the formula chipload. For a V-bit the two are still the same
-    // engaged width. Pre-2026-06-02 the
+    // RPM and the formula chipload. Since ruling B4 (2026-09-25) a V-bit
+    // is keyed at its nominal diameter too, and this binding stays its
+    // engaged width for the SFM, the RPM and the formula chipload
+    // (`feeds::tests::test_vbit_rpm_uses_engaged_diameter` pins it). A
+    // V-bit row that prints an RPM (Amana AMS-159 and Spektra engraving,
+    // 18 000) overrides this RPM as every vendor RPM does.
+    // Pre-2026-06-02 the
     // formula path used nominal D, producing wrong-low RPM for V-bits
     // (e.g. a 5.5 mm-tip 20° V-bit at DOC=0.5 saw SFM derived from
     // 5.5 mm instead of the ~0.18 mm engaged tip) — audit finding

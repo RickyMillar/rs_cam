@@ -140,10 +140,12 @@ fn cases() -> Vec<Case> {
             gate_pass_role: LutPassRole::Finish,
         },
         // Extrapolation P2 (G2, 2026-09-24): a 60 degree V-bit on a trace
-        // finish in MDF. Both paths key the cone at the tool diameter (the
-        // engaged width at a 6.35 mm depth is clamped to 6.35 mm) and resolve
-        // through the angle-aware door, so both land on the Onsrud 37-80 row
-        // of the MDF sheet.
+        // finish in MDF. Since ruling B4 (2026-09-25) both paths key a V-bit
+        // at its nominal 6.35 mm at every depth and resolve through the
+        // angle-aware door, so both land on the Onsrud 37-80 row of the MDF
+        // sheet. The G1 claim refuses that 25.4 mm row for a 6.35 mm tool
+        // (4.0x, outside the window), so the row carries a `Refused` size
+        // basis on both paths; parity is on the row and its basis.
         Case {
             name: "mdf-vbit-60deg-6.35mm-trace-finish",
             diameter_mm: 6.35,
@@ -255,10 +257,13 @@ fn calculator_and_gate_match_same_observation_id() {
 
         // --- Compare ---
         // The row and its hardness basis (P2 step 4): a capped transfer on
-        // one path and the law on the other would give two bands.
+        // one path and the law on the other would give two bands. The size
+        // basis too (ruling B4): one key gives one G1 claim or refusal.
         match (&calc_result, &gate_result) {
             (Some(c), Some(g))
-                if c.observation_id == g.observation_id && c.hardness_basis == g.hardness_basis =>
+                if c.observation_id == g.observation_id
+                    && c.hardness_basis == g.hardness_basis
+                    && c.size_basis == g.size_basis =>
             { /* parity */ }
             (None, None) => { /* both refused — also parity */ }
             (c, g) => {

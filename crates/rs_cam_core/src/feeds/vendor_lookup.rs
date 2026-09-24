@@ -34,8 +34,10 @@ pub type MatchedRow = LookupResult;
 /// Chipload fields are **scaled** to the query's diameter and hardness (and,
 /// on a G6 drill claim, by 1 / Z: [`Self::drill_basis`]). The
 /// query diameter is the lookup key (`feeds::geometry::lut_key_diameter_mm`):
-/// the tip of a tapered ball (ruling A1, 2026-09-24), the engaged width of a
-/// V-bit, and the nominal diameter otherwise. When `is_extrapolated` is true the scaling
+/// the tip of a tapered ball (ruling A1, 2026-09-24), and the nominal
+/// diameter otherwise, a V-bit included (ruling B4, 2026-09-25). A V-bit row
+/// that prints no diameter is keyed at its printed angle
+/// (`SizeBasis::AngleKey`) and is not scaled. When `is_extrapolated` is true the scaling
 /// factors diverge from 1.0 by more than ±40 %, and downstream consumers
 /// must demote verdict confidence to `Approximate` with a detail describing
 /// the scaling.
@@ -226,6 +228,33 @@ impl LookupResult {
     }
 }
 
+/// The card line that names the key a V-bit row is read at (ruling B4,
+/// G5). `None` for every other tool family, and for a V-bit row that
+/// prints neither a diameter nor an angle.
+///
+/// - An angle-keyed row (`SizeBasis::AngleKey`): "keyed at the printed
+///   angle 60 deg (the chart prints no cutting diameter)".
+/// - A row with a printed diameter: "keyed at the printed cutting diameter
+///   25.4 mm". The G1 size claim (or refusal) of that row states how the
+///   band moves to the tool's nominal diameter.
+#[must_use]
+pub fn vbit_key_text(tool: ToolFamily, row: &LookupResult) -> Option<String> {
+    if tool != ToolFamily::ChamferVbit {
+        return None;
+    }
+    if let SizeBasis::AngleKey { angle_deg } = row.size_basis {
+        return Some(format!(
+            "keyed at the printed angle {angle_deg} deg (the chart prints no cutting diameter)"
+        ));
+    }
+    (row.row_diameter_mm.is_finite() && row.row_diameter_mm > 0.0).then(|| {
+        format!(
+            "keyed at the printed cutting diameter {} mm",
+            row.row_diameter_mm
+        )
+    })
+}
+
 /// Diameter + hardness-scored LUT lookup for non-angle-aware cutters.
 ///
 /// Thin wrapper around `lookup_best`; kept as a named entry point so
@@ -297,14 +326,20 @@ fn find_best_vbit_row_where(
         if beats(
             (
                 score,
-                // V-bits keep the id tie-break until ruling B4.
-                None,
+                // Ruling B4: a V-bit is keyed at its nominal diameter, so it
+                // takes the nearer-diameter tie-break of every other family.
+                diameter_distance(criteria, obs),
                 transferred,
                 obs.observation_id.as_str(),
             ),
             best.map(|(s, _, t, bi)| {
                 let b = &lut.observations[bi];
-                (s, None, t, b.observation_id.as_str())
+                (
+                    s,
+                    diameter_distance(criteria, b),
+                    t,
+                    b.observation_id.as_str(),
+                )
             }),
         ) {
             best = Some((score, diam_score, transferred, i));
@@ -360,6 +395,21 @@ fn find_best_vbit_row_where(
 /// **Do not** call this where a chipload *envelope* is required; call
 /// [`find_best_chip_envelope_row`], which is the contract every gate,
 /// the optimizer and the viewport are written against.
+///
+/// # The V-bit exception to Checkpoint K — ruling B4, 2026-09-25
+///
+/// A V-bit query does not let every row compete at once. The chip rows
+/// (`has_chipload`) compete first; an RPM-only row answers a V-bit only
+/// when no chip row matches. So for a V-bit this resolver returns the same
+/// row as [`find_best_chip_envelope_row`] whenever that resolver matches,
+/// and Suggest and the gate read one row by construction. Before B4 the
+/// Whiteside 1540 / 1550 RPM anchors (22 000 / 20 000 rpm, no chipload)
+/// outscored the printed Amana AMS-159 point for a 60 degree V-bit in
+/// solid wood, and Suggest shipped the formula chipload while the gate
+/// judged the Amana row. The other families keep the rule above. After B4
+/// no RPM-only row wins a query on the embedded LUT, so the census
+/// (`tests/lut_resolver_census_a6.rs`, `f_lut2_divergence_surface_is_pinned`)
+/// reads no divergent query.
 pub fn find_best_row_for_geometry(
     lut: &VendorLut,
     criteria: &LookupCriteria,
@@ -367,7 +417,8 @@ pub fn find_best_row_for_geometry(
 ) -> Option<MatchedRow> {
     match geometry {
         crate::feeds::ToolGeometryHint::VBit { included_angle, .. } => {
-            find_best_vbit_row(lut, criteria, Some(*included_angle))
+            find_best_vbit_row_where(lut, criteria, Some(*included_angle), has_chipload)
+                .or_else(|| find_best_vbit_row(lut, criteria, Some(*included_angle)))
         }
         crate::feeds::ToolGeometryHint::Flat
         | crate::feeds::ToolGeometryHint::Ball
@@ -392,7 +443,9 @@ pub fn find_best_row_for_geometry(
 /// # Its purpose, declared — Checkpoint K (a3), 2026-08-13
 ///
 /// The extra filter here is the **only** difference from the recipe
-/// resolver: same scorer, same tie-break, same angle-aware dispatch.
+/// resolver: same scorer, same tie-break, same angle-aware dispatch. For a
+/// V-bit the recipe resolver runs this filter first (ruling B4), so the two
+/// give one row whenever this one matches.
 /// So the two are not redundant and neither is "the right one" — a
 /// recommendation may legitimately rest on an RPM anchor, and a verdict
 /// may not. Pinned by
@@ -408,9 +461,6 @@ pub fn find_best_chip_envelope_row(
     criteria: &LookupCriteria,
     geometry: &crate::feeds::ToolGeometryHint,
 ) -> Option<MatchedRow> {
-    let has_chipload = |obs: &VendorObservation| {
-        obs.chipload_min_mm_tooth.is_some() || obs.chipload_max_mm_tooth.is_some()
-    };
     match geometry {
         crate::feeds::ToolGeometryHint::VBit { included_angle, .. } => {
             find_best_vbit_row_where(lut, criteria, Some(*included_angle), has_chipload)
@@ -422,6 +472,13 @@ pub fn find_best_chip_envelope_row(
             lookup_best_where(lut, criteria, has_chipload)
         }
     }
+}
+
+/// The envelope filter: the row prints at least one chipload bound. The
+/// envelope resolver admits only these rows, and the recipe resolver tries
+/// them first for a V-bit (ruling B4).
+fn has_chipload(obs: &VendorObservation) -> bool {
+    obs.chipload_min_mm_tooth.is_some() || obs.chipload_max_mm_tooth.is_some()
 }
 
 /// Cap on extrapolation scaling so a wildly mismatched row can't return
@@ -1616,11 +1673,11 @@ mod tests {
         let query = vbit_query(3.175, MaterialFamily::Softwood, 600.0);
         let result = find_best_vbit_row(&lut, &query, Some(30.0))
             .expect("30° angle-only v-bit row must be reachable for a 30° query");
-        // Either the new Spektra engrave row OR the legacy
-        // `amana-vgroove-softwood-trace-30deg-1f` row (which carries
-        // diameter_mm = 6.35) can win on score; both have the same
-        // chipload data. Assert we land a 30° softwood-class row,
-        // not a far-angle row.
+        // Either the Spektra engrave row OR the AMS-159
+        // `amana-vgroove-softwood-trace-30deg-1f` row can win on score;
+        // both have the same chipload data. Since ruling B4 (2026-09-25)
+        // neither row carries a diameter (the charts print none). Assert
+        // we land a 30° softwood-class row, not a far-angle row.
         let won_an_angle_only_row = result.row_diameter_mm < f64::EPSILON;
         let won_the_legacy_row = result.observation_id == "amana-vgroove-softwood-trace-30deg-1f";
         assert!(
@@ -1698,9 +1755,13 @@ mod tests {
     /// Replay case since feeds matrix R5 (2026-09-23): 6.35 mm 2F V-bit
     /// / hardwood / trace finish — plain winner is the Whiteside 1540
     /// RPM anchor `whiteside-1540-vgroove-60deg-quarter-rpm` (chipload
-    /// 0.0), the row every V-bit trace cell of the matrix resolves to
-    /// (EVIDENCE 4.4-5). The earlier plywood adaptive replay lost its
-    /// RPM-only winner when R5 added the Onsrud plywood sheets.
+    /// 0.0, score 1945 against 1825 for the AMS-159 60 deg row). Before
+    /// ruling B4 every V-bit trace cell of the matrix resolved to it
+    /// (EVIDENCE 4.4-5). Since B4 the recipe door
+    /// (`find_best_row_for_geometry`) tries the chip rows first for a
+    /// V-bit, so only the plain `find_best_vbit_row` still reaches it.
+    /// The earlier plywood adaptive replay lost its RPM-only winner when
+    /// R5 added the Onsrud plywood sheets.
     #[test]
     fn chip_envelope_lookup_skips_rpm_only_rows() {
         let lut = embedded_lut();
@@ -1741,6 +1802,23 @@ mod tests {
             env.observation_id
         );
         assert!(env.chip_load_mm > 0.0);
+
+        // Ruling B4: the recipe door gives the envelope row, not the RPM
+        // anchor, for a V-bit.
+        let recipe = find_best_row_for_geometry(
+            &lut,
+            &query,
+            &crate::feeds::ToolGeometryHint::VBit {
+                included_angle: 60.0,
+                tip_diameter: 0.0,
+            },
+        )
+        .expect("the recipe door matches");
+        assert_eq!(recipe.observation_id, env.observation_id);
+        assert_eq!(
+            recipe.observation_id,
+            "amana-vgroove-hardwood-trace-60deg-2f"
+        );
     }
 
     /// F3.2 rule 8 — equal-score ties break on observation_id, not on

@@ -17,13 +17,15 @@
       "pass_role": "finish",
       "material_family": "softwood",
       "material_label": "Soft Wood",
-      "diameter_mm": 6.35,
+      "diameter_mm": null,
       "flute_count": 1,
+      "rpm_nominal": 18000.0,
       "chipload_min_mm_tooth": 0.0762,
       "chipload_max_mm_tooth": 0.1778,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce feed rate 25%; 3xD reduce 50%",
       "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; conical engraving bit, 1/4in (6.35mm) body, 15 deg tip width 0.005in; chipload identical across all material columns (verified)",
-      "ap_max_factor": 1.0
+      "ap_max_factor": 1.0,
+      "notes": "B4 (2026-09-25): the Spektra engraving v4 chart prints no cutting diameter, so diameter_mm is null and the row is keyed at its printed angle. SKU body 1/4 in (6.35 mm), the tool's shank (the diameter_mm this row held before B4). rpm_nominal is the printed header 'CNC Operating Spindle Speed: 18,000 RPM', which covers every material column."
     },
     {
       "observation_id": "amana-engrave-hardwood-trace-15deg-1f",
@@ -42,13 +44,15 @@
       "pass_role": "finish",
       "material_family": "hardwood",
       "material_label": "Hard Wood",
-      "diameter_mm": 6.35,
+      "diameter_mm": null,
       "flute_count": 1,
+      "rpm_nominal": 18000.0,
       "chipload_min_mm_tooth": 0.0762,
       "chipload_max_mm_tooth": 0.1778,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce feed rate 25%; 3xD reduce 50%",
       "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; conical engraving bit, 1/4in (6.35mm) body, 15 deg tip width 0.005in; chipload identical across all material columns (verified)",
-      "ap_max_factor": 1.0
+      "ap_max_factor": 1.0,
+      "notes": "B4 (2026-09-25): the Spektra engraving v4 chart prints no cutting diameter, so diameter_mm is null and the row is keyed at its printed angle. SKU body 1/4 in (6.35 mm), the tool's shank (the diameter_mm this row held before B4). rpm_nominal is the printed header 'CNC Operating Spindle Speed: 18,000 RPM', which covers every material column."
     },
     {
       "observation_id": "amana-vgroove-softwood-trace-18deg-1f",
@@ -66,13 +70,15 @@
       "pass_role": "finish",
       "material_family": "softwood",
       "material_label": "Soft Wood",
-      "diameter_mm": 6.35,
+      "diameter_mm": null,
       "flute_count": 1,
+      "rpm_nominal": 18000.0,
       "chipload_min_mm_tooth": 0.0762,
       "chipload_max_mm_tooth": 0.1778,
       "ap_rule": "1xD use recommended chip load; 2xD reduce chip load 25%; 3xD reduce 50%",
       "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; SKU 45783 1/4in (6.35mm); chipload identical across all material columns (verified)",
-      "ap_max_factor": 1.0
+      "ap_max_factor": 1.0,
+      "notes": "B4 (2026-09-25): the AMS-159 chart prints no cutting diameter, so diameter_mm is null and the row is keyed at its printed angle. SKU 45783 is 1/4 in (6.35 mm) (the diameter_mm this row held before B4). rpm_nominal is the printed header 'Operating RPM: 18,000', which covers every material column."
     },
     {
       "observation_id": "amana-vgroove-hardwood-trace-18deg-1f",
@@ -90,13 +96,15 @@
       "pass_role": "finish",
       "material_family": "hardwood",
       "material_label": "Hard Wood",
-      "diameter_mm": 6.35,
+      "diameter_mm": null,
       "flute_count": 1,
+      "rpm_nominal": 18000.0,
       "chipload_min_mm_tooth": 0.0762,
       "chipload_max_mm_tooth": 0.1778,
       "ap_rule": "1xD use recommended chip load; 2xD reduce chip load 25%; 3xD reduce 50%",
       "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; SKU 45783 1/4in (6.35mm); chipload identical across all material columns (verified)",
-      "ap_max_factor": 1.0
+      "ap_max_factor": 1.0,
+      "notes": "B4 (2026-09-25): the AMS-159 chart prints no cutting diameter, so diameter_mm is null and the row is keyed at its printed angle. SKU 45783 is 1/4 in (6.35 mm) (the diameter_mm this row held before B4). rpm_nominal is the printed header 'Operating RPM: 18,000', which covers every material column."
     },
     {
       "observation_id": "amana-vgroove-softwood-trace-30deg-1f",
@@ -114,13 +122,15 @@
       "pass_role": "finish",
       "material_family": "softwood",
       "material_label": "Soft Wood",
-      "diameter_mm": 6.35,
+      "diameter_mm": null,
       "flute_count": 1,
+      "rpm_nominal": 18000.0,
       "chipload_min_mm_tooth": 0.0762,
       "chipload_max_mm_tooth": 0.1778,
       "ap_rule": "1xD use recommended chip load; 2xD reduce chip load 25%; 3xD reduce 50%",
       "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; conical engraving bit (SKU 45771), 1/4in (6.35mm) body, no fixed cutting diameter; chipload identical across all material columns (verified)",
-      "ap_max_factor": 1.0
+      "ap_max_factor": 1.0,
+      "notes": "B4 (2026-09-25): the AMS-159 chart prints no cutting diameter, so diameter_mm is null and the row is keyed at its printed angle. SKU 45771 has a 1/4 in (6.35 mm) body (the diameter_mm this row held before B4). rpm_nominal is the printed header 'Operating RPM: 18,000', which covers every material column."
     },
     {
       "observation_id": "amana-vgroove-hardwood-trace-30deg-1f",
@@ -138,13 +148,15 @@
       "pass_role": "finish",
       "material_family": "hardwood",
       "material_label": "Hard Wood",
-      "diameter_mm": 6.35,
+      "diameter_mm": null,
       "flute_count": 1,
+      "rpm_nominal": 18000.0,
       "chipload_min_mm_tooth": 0.0762,
       "chipload_max_mm_tooth": 0.1778,
       "ap_rule": "1xD use recommended chip load; 2xD reduce chip load 25%; 3xD reduce 50%",
       "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; conical engraving bit (SKU 45771), 1/4in (6.35mm) body, no fixed cutting diameter; chipload identical across all material columns (verified)",
-      "ap_max_factor": 1.0
+      "ap_max_factor": 1.0,
+      "notes": "B4 (2026-09-25): the AMS-159 chart prints no cutting diameter, so diameter_mm is null and the row is keyed at its printed angle. SKU 45771 has a 1/4 in (6.35 mm) body (the diameter_mm this row held before B4). rpm_nominal is the printed header 'Operating RPM: 18,000', which covers every material column."
     },
     {
       "observation_id": "amana-vgroove-softwood-trace-45deg-1f",
@@ -162,13 +174,15 @@
       "pass_role": "finish",
       "material_family": "softwood",
       "material_label": "Soft Wood",
-      "diameter_mm": 6.35,
+      "diameter_mm": null,
       "flute_count": 1,
+      "rpm_nominal": 18000.0,
       "chipload_min_mm_tooth": 0.0762,
       "chipload_max_mm_tooth": 0.1778,
       "ap_rule": "1xD use recommended chip load; 2xD reduce chip load 25%; 3xD reduce 50%",
       "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; conical engraving bit (SKU 45623, derived ~0.242in -> 1/4in/6.35mm body); chipload identical across all material columns (verified)",
-      "ap_max_factor": 1.0
+      "ap_max_factor": 1.0,
+      "notes": "B4 (2026-09-25): the AMS-159 chart prints no cutting diameter, so diameter_mm is null and the row is keyed at its printed angle. SKU 45623 has a 1/4 in (6.35 mm) body (the diameter_mm this row held before B4). rpm_nominal is the printed header 'Operating RPM: 18,000', which covers every material column."
     },
     {
       "observation_id": "amana-vgroove-hardwood-trace-45deg-1f",
@@ -186,13 +200,15 @@
       "pass_role": "finish",
       "material_family": "hardwood",
       "material_label": "Hard Wood",
-      "diameter_mm": 6.35,
+      "diameter_mm": null,
       "flute_count": 1,
+      "rpm_nominal": 18000.0,
       "chipload_min_mm_tooth": 0.0762,
       "chipload_max_mm_tooth": 0.1778,
       "ap_rule": "1xD use recommended chip load; 2xD reduce chip load 25%; 3xD reduce 50%",
       "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; conical engraving bit (SKU 45623, derived ~0.242in -> 1/4in/6.35mm body); chipload identical across all material columns (verified)",
-      "ap_max_factor": 1.0
+      "ap_max_factor": 1.0,
+      "notes": "B4 (2026-09-25): the AMS-159 chart prints no cutting diameter, so diameter_mm is null and the row is keyed at its printed angle. SKU 45623 has a 1/4 in (6.35 mm) body (the diameter_mm this row held before B4). rpm_nominal is the printed header 'Operating RPM: 18,000', which covers every material column."
     },
     {
       "observation_id": "amana-vgroove-softwood-trace-60deg-2f",
@@ -210,13 +226,15 @@
       "pass_role": "finish",
       "material_family": "softwood",
       "material_label": "Soft Wood",
-      "diameter_mm": 12.7,
+      "diameter_mm": null,
       "flute_count": 2,
+      "rpm_nominal": 18000.0,
       "chipload_min_mm_tooth": 0.0762,
       "chipload_max_mm_tooth": 0.0762,
       "ap_rule": "1xD use recommended chip load; 2xD reduce chip load 25%; 3xD reduce 50%",
       "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; SKU 45707 1/2in (12.7mm) Zero-Point V-groove; single 90 IPM / 0.003in chipload; identical across material columns (verified)",
-      "ap_max_factor": 1.0
+      "ap_max_factor": 1.0,
+      "notes": "B4 (2026-09-25): the AMS-159 chart prints no cutting diameter, so diameter_mm is null and the row is keyed at its printed angle. SKU 45707 is 1/2 in (12.7 mm) (the diameter_mm this row held before B4). rpm_nominal is the printed header 'Operating RPM: 18,000', which covers every material column."
     },
     {
       "observation_id": "amana-vgroove-hardwood-trace-60deg-2f",
@@ -234,13 +252,15 @@
       "pass_role": "finish",
       "material_family": "hardwood",
       "material_label": "Hard Wood",
-      "diameter_mm": 12.7,
+      "diameter_mm": null,
       "flute_count": 2,
+      "rpm_nominal": 18000.0,
       "chipload_min_mm_tooth": 0.0762,
       "chipload_max_mm_tooth": 0.0762,
       "ap_rule": "1xD use recommended chip load; 2xD reduce chip load 25%; 3xD reduce 50%",
       "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; SKU 45707 1/2in (12.7mm) Zero-Point V-groove; single 90 IPM / 0.003in chipload; identical across material columns (verified)",
-      "ap_max_factor": 1.0
+      "ap_max_factor": 1.0,
+      "notes": "B4 (2026-09-25): the AMS-159 chart prints no cutting diameter, so diameter_mm is null and the row is keyed at its printed angle. SKU 45707 is 1/2 in (12.7 mm) (the diameter_mm this row held before B4). rpm_nominal is the printed header 'Operating RPM: 18,000', which covers every material column."
     },
     {
       "observation_id": "amana-vgroove-softwood-trace-90deg-2f",
@@ -258,13 +278,15 @@
       "pass_role": "finish",
       "material_family": "softwood",
       "material_label": "Soft Wood",
-      "diameter_mm": 9.525,
+      "diameter_mm": null,
       "flute_count": 2,
+      "rpm_nominal": 18000.0,
       "chipload_min_mm_tooth": 0.0762,
       "chipload_max_mm_tooth": 0.0762,
       "ap_rule": "1xD use recommended chip load; 2xD reduce chip load 25%; 3xD reduce 50%",
       "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; SKU 45701 3/8in (9.525mm) Zero-Point V-groove; single 90 IPM / 0.003in chipload; identical across material columns (verified)",
-      "ap_max_factor": 1.0
+      "ap_max_factor": 1.0,
+      "notes": "B4 (2026-09-25): the AMS-159 chart prints no cutting diameter, so diameter_mm is null and the row is keyed at its printed angle. SKU 45701 is 3/8 in (9.525 mm) (the diameter_mm this row held before B4). rpm_nominal is the printed header 'Operating RPM: 18,000', which covers every material column."
     },
     {
       "observation_id": "amana-engrave-softwood-trace-120deg-1f",
@@ -283,13 +305,15 @@
       "pass_role": "finish",
       "material_family": "softwood",
       "material_label": "Soft Wood",
-      "diameter_mm": 6.35,
+      "diameter_mm": null,
       "flute_count": 1,
+      "rpm_nominal": 18000.0,
       "chipload_min_mm_tooth": 0.0508,
       "chipload_max_mm_tooth": 0.1524,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce feed rate 25%; 3xD reduce 50%",
       "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; conical engraving bit, 1/4in (6.35mm) body, 120 deg tip width 0.015in; chipload identical across all material columns (verified)",
-      "ap_max_factor": 1.0
+      "ap_max_factor": 1.0,
+      "notes": "B4 (2026-09-25): the Spektra engraving v4 chart prints no cutting diameter, so diameter_mm is null and the row is keyed at its printed angle. SKU body 1/4 in (6.35 mm), the tool's shank (the diameter_mm this row held before B4). rpm_nominal is the printed header 'CNC Operating Spindle Speed: 18,000 RPM', which covers every material column."
     },
     {
       "observation_id": "amana-engrave-hardwood-trace-120deg-1f",
@@ -308,13 +332,15 @@
       "pass_role": "finish",
       "material_family": "hardwood",
       "material_label": "Hard Wood",
-      "diameter_mm": 6.35,
+      "diameter_mm": null,
       "flute_count": 1,
+      "rpm_nominal": 18000.0,
       "chipload_min_mm_tooth": 0.0508,
       "chipload_max_mm_tooth": 0.1524,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce feed rate 25%; 3xD reduce 50%",
       "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; conical engraving bit, 1/4in (6.35mm) body, 120 deg tip width 0.015in; chipload identical across all material columns (verified)",
-      "ap_max_factor": 1.0
+      "ap_max_factor": 1.0,
+      "notes": "B4 (2026-09-25): the Spektra engraving v4 chart prints no cutting diameter, so diameter_mm is null and the row is keyed at its printed angle. SKU body 1/4 in (6.35 mm), the tool's shank (the diameter_mm this row held before B4). rpm_nominal is the printed header 'CNC Operating Spindle Speed: 18,000 RPM', which covers every material column."
     },
     {
       "observation_id": "amana-engrave-softwood-trace-30deg-1f",
@@ -333,11 +359,13 @@
       "material_family": "softwood",
       "material_label": "Soft Wood",
       "flute_count": 1,
+      "rpm_nominal": 18000.0,
       "chipload_min_mm_tooth": 0.0762,
       "chipload_max_mm_tooth": 0.1778,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce feed rate 25%; 3xD reduce 50%",
       "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; 30 deg tip width 0.005-0.030 in. Phase 5 promotion (2026-06-01) — diameter_mm omitted; v-bit chart is angle-driven.",
-      "ap_max_factor": 1.0
+      "ap_max_factor": 1.0,
+      "notes": "B4 (2026-09-25): the Spektra engraving v4 chart prints no cutting diameter; the row is keyed at its printed angle. rpm_nominal is the printed header 'CNC Operating Spindle Speed: 18,000 RPM', which covers every material column."
     },
     {
       "observation_id": "amana-engrave-hardwood-trace-30deg-1f",
@@ -356,11 +384,13 @@
       "material_family": "hardwood",
       "material_label": "Hard Wood",
       "flute_count": 1,
+      "rpm_nominal": 18000.0,
       "chipload_min_mm_tooth": 0.0762,
       "chipload_max_mm_tooth": 0.1778,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce feed rate 25%; 3xD reduce 50%",
       "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; 30 deg tip width 0.005-0.030 in. Phase 5 promotion (2026-06-01) — diameter_mm omitted; v-bit chart is angle-driven.",
-      "ap_max_factor": 1.0
+      "ap_max_factor": 1.0,
+      "notes": "B4 (2026-09-25): the Spektra engraving v4 chart prints no cutting diameter; the row is keyed at its printed angle. rpm_nominal is the printed header 'CNC Operating Spindle Speed: 18,000 RPM', which covers every material column."
     },
     {
       "observation_id": "amana-engrave-softwood-trace-45deg-1f",
@@ -380,11 +410,13 @@
       "material_family": "softwood",
       "material_label": "Soft Wood",
       "flute_count": 1,
+      "rpm_nominal": 18000.0,
       "chipload_min_mm_tooth": 0.0762,
       "chipload_max_mm_tooth": 0.1778,
       "ap_rule": "1xD use recommended feed rate; 2xD reduce feed rate 25%; 3xD reduce 50%",
       "machine_assumption": "chart at 18000 rpm, doc 1x tool diameter; 45 deg tip width 0.042 in. Phase 5 promotion (2026-06-01) — diameter_mm omitted; v-bit chart is angle-driven.",
-      "ap_max_factor": 1.0
+      "ap_max_factor": 1.0,
+      "notes": "B4 (2026-09-25): the Spektra engraving v4 chart prints no cutting diameter; the row is keyed at its printed angle. rpm_nominal is the printed header 'CNC Operating Spindle Speed: 18,000 RPM', which covers every material column."
     }
   ]
 }

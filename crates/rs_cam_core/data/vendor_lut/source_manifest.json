@@ -138,7 +138,10 @@
       "source_title": "Amana 18/30/45/60/90 Degree V-Groove Speed Chart v2 (AMS-159)",
       "source_url": "https://www.amanatool.com/pub/media/productattachments/AMS-159-18-30-45-60-90-Degree-V-Groove-Speed-Chart-v2.pdf",
       "accessed_on": "2026-05-29",
-      "coverage_notes": "V-groove/chamfer chipload by included angle (18/30/45/60/90 deg). Bundled wood rows only (softwood/hardwood); acrylic+aluminum rows staged in planning/data_ingest_2026-05-29/ pending Material-enum extension. Chart states feed+chipload identical across all material columns (verified); only N/A availability varies. Chart states NO cutting diameter; diameters from per-SKU specs: 18deg=6.35mm(45783), 60deg=12.7mm(45707), 90deg=9.525mm(45701). 30/45deg SKUs are conical engraving bits (same as Spektra chart), 1/4in body, deduped against engraving rows."
+      "stored_text": "sources/amana_ams159_vgroove_v2.txt",
+      "pdf_sha256": "69628c747676f93080a011b93f3a5175d709c149adc7a13046e3eac9c6c5fa93",
+      "stored_on": "2026-09-25",
+      "coverage_notes": "V-groove/chamfer chipload by included angle (18/30/45/60/90 deg). The wood rows (softwood/hardwood) are in amana_vgroove_engraving.json; the acrylic (30 deg) and aluminium (45 deg) rows are in amana_vgroove_aluminum_acrylic.json. Chart states feed+chipload identical across all material columns (verified); only N/A availability varies. Stored 2026-09-25 (extrapolation B4, G5): stored_text is the pdftotext -layout output (sha256 19fed534d9cbefe973f674cc4aba5cff28b835fbc2e567a8c0f5840f983d3a6e); pdf_sha256 is the hash of the PDF. The header prints 'Operating RPM: 18,000 / Depth of Cut: 1 x Tool Diameter' for every material column, so every row carries rpm_nominal 18000. The chart prints NO cutting diameter, so since B4 every row carries diameter_mm null and the lookup keys the row at its printed angle (SizeBasis::AngleKey). The per-SKU diameters are in each row's notes only: 18deg=6.35mm(45783), 60deg=12.7mm(45707), 90deg=9.525mm(45701); the 30/45deg SKUs are conical engraving bits (same as Spektra chart), 1/4in body, deduped against engraving rows."
     },
     {
       "source_id": "amana_spektra_engraving_v4",
@@ -146,7 +149,7 @@
       "source_title": "Amana Spektra 15/30/45/120 Degree Engraving Speed Chart v4",
       "source_url": "https://www.amanatool.com/pub/media/productattachments/Spektra-15-30-45-120-Degree-Engraving-Speed-Chart-v4.pdf",
       "accessed_on": "2026-05-29",
-      "coverage_notes": "Conical engraving bit chipload by included angle (15/120 deg bundled as wood rows; 30/45 deg covered by the AMS-159 entry to avoid duplicates). Carries tip_diameter_mm. 1/4in (6.35mm) body, no fixed cutting diameter. Chipload identical across material columns (verified)."
+      "coverage_notes": "Conical engraving bit chipload by included angle (15/120 deg bundled as wood rows; 30/45 deg covered by the AMS-159 entry to avoid duplicates). Carries tip_diameter_mm. 1/4in (6.35mm) body, no fixed cutting diameter. Chipload identical across material columns (verified). Since 2026-09-25 (extrapolation B4, G5): the header prints 'CNC Operating Spindle Speed: 18,000 RPM' for every material column, so every row carries rpm_nominal 18000; the chart prints no cutting diameter, so every row carries diameter_mm null (or no diameter_mm) and the lookup keys the row at its printed angle (SizeBasis::AngleKey). The 1/4in body is in each row's notes only. The text is not stored here yet: planning/extrapolation_2026-09-24/fetch/G5/sources/amana_spektra_engraving_v4.txt holds the pdftotext output (PDF sha256 30e58f4d88e163f92bc8b95527cd96633390e79c7f7e9f839b0b608278490ec2)."
     },
     {
       "source_id": "amana_compression_spirals_v8",

@@ -22,6 +22,11 @@
 //!   Suggest recipe built on one row and a gate verdict built on
 //!   another.
 //!
+//! Ruling B4 (2026-09-25): for a V-bit the geometry resolver tries the
+//! chipload-bearing rows first, so for a V-bit the two resolvers give one
+//! row wherever the envelope resolver matches. The census then reads no
+//! divergent query (`f_lut2_divergence_surface_is_pinned`).
+//!
 //! A-5 (2026-08-12) measured one cell of this live: on both of its
 //! endmill fixtures Suggest's band maximum was **1.273×** the gate's.
 //! This file measures the whole surface, changes nothing, and pins the
@@ -712,11 +717,22 @@ fn envelope_resolver_never_matches_where_geometry_resolver_does_not() {
 }
 
 /// Pins the census headline so a silent LUT edit cannot move the
-/// divergence surface before Checkpoint K rules on it. **This asserts
-/// the CURRENT (defective) state on purpose** — it is the pre-fix
-/// reproduction F-LUT2 has lacked since Checkpoint B item 5.
+/// divergence surface unnoticed.
 ///
-/// Measured 2026-08-13, branch `tech-debt-3`, parent `64f017a4`.
+/// Measured 2026-08-13, branch `tech-debt-3`, parent `64f017a4`: 141
+/// divergent queries, the pre-fix reproduction F-LUT2 had lacked since
+/// Checkpoint B item 5. On the LUT as B4 found it, only V-bit queries
+/// still diverged: the two flat RPM-only rows (Whiteside RU4000H, RD5218H)
+/// win no swept query (python3, the same derivation as below).
+///
+/// **Re-pinned at ruling B4 (2026-09-25): the surface is empty.** The
+/// recipe resolver tries the chipload-bearing rows first for a V-bit, so a
+/// V-bit query diverges only where no chip row matches and an RPM-only row
+/// does, and no swept V-bit query is like that. No other family has an
+/// RPM-only row that outscores every chip row (derived with python3 over
+/// `data/vendor_lut/observations/*.json`, the scorer and the tie-break of
+/// `vendor_lookup.rs`, on this sweep). A non-zero count is a new
+/// divergence: re-read the census report before a re-pin.
 #[test]
 fn f_lut2_divergence_surface_is_pinned() {
     let cells = run_census();
@@ -727,17 +743,24 @@ fn f_lut2_divergence_surface_is_pinned() {
         .collect();
     let total_queries: usize = cells.values().map(|c| c.queries).sum();
     let total_divergent: usize = cells.values().map(|c| c.divergent()).sum();
-    // The bar is stated as a floor on the DEFECT, so this test fails
-    // loudly the moment the resolvers are unified (Checkpoint K (a)) —
-    // which is exactly when it should be re-baselined or retired.
-    assert!(
-        total_divergent > 0,
-        "F-LUT2 census found NO divergence across {total_queries} queries. Either the \
-         resolvers were unified (retire this pin, cite the commit) or the sweep stopped \
-         covering the divergent region."
+    eprintln!(
+        "F-LUT2 census (B4): {total_divergent} divergent of {total_queries} queries, in \
+         {} cells: {diverging:?}",
+        diverging.len()
     );
     assert!(
-        !diverging.is_empty(),
-        "divergent query count {total_divergent} with no divergent cell — classification bug"
+        total_queries > 0,
+        "the census swept no query, so the pin below is vacuous"
+    );
+    assert_eq!(
+        total_divergent, 0,
+        "ruling B4 (2026-09-25) left no divergent query on the embedded LUT; {total_divergent} \
+         of {total_queries} now diverge, in {diverging:?}. Re-read the census report \
+         (`lut_resolver_selection_census_report`) before a re-pin."
+    );
+    assert!(
+        diverging.is_empty(),
+        "divergent query count {total_divergent} with a divergent cell list {diverging:?} — \
+         classification bug"
     );
 }
