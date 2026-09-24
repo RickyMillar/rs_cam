@@ -87,7 +87,8 @@ pub struct LookupResult {
     /// Scale factor **applied** to the chipload bounds for hardness:
     /// `(row.hardness_value / query.hardness_value) ^ CHIPLOAD_HARDNESS_EXPONENT`
     /// when kinds match, 1.0 otherwise. Softer query → larger factor →
-    /// higher chipload.
+    /// higher chipload. The factor is 1.0 for a composite-board query
+    /// (plywood, MDF, HDF, particleboard): see `hardness_ratio_raw`.
     pub chipload_hardness_scale: f64,
     /// The **raw** diameter transfer ratio `query.diameter_mm /
     /// row.diameter_mm`, before any scaling law is applied (clamped only by
@@ -97,8 +98,11 @@ pub struct LookupResult {
     /// of the exponent the crate currently believes relates them.
     pub chipload_diameter_ratio_raw: f64,
     /// The **raw** hardness transfer ratio `row.hardness_value /
-    /// query.hardness_value` (or the family-anchor substitute), before any
-    /// scaling law. See [`Self::chipload_diameter_ratio_raw`].
+    /// query.hardness_value`, before any scaling law. A solid-wood row with
+    /// no Janka reads its value from the query table
+    /// (`WoodSpecies::GenericSoftwood` or `GenericHardwood`). A
+    /// composite-board query gives 1.0. See
+    /// [`Self::chipload_diameter_ratio_raw`].
     pub chipload_hardness_ratio_raw: f64,
     /// True when the combined **raw** transfer ratio diverges from 1.0 by
     /// more than ±40 % (`|ln(raw_diameter × raw_hardness)| > ln(1.4)`).
@@ -458,32 +462,36 @@ fn diameter_ratio_raw(query_d: f64, row_d: Option<f64>) -> f64 {
     }
 }
 
-/// Family-default Janka anchor used when a wood-family vendor row
-/// carries no per-row `hardness_value`. Picked to match the typical
-/// species/grade the vendor preset was tuned against (red oak for
-/// hardwood, SPF for softwood, panel medians for engineered sheet
-/// goods).
+/// The Janka value (lbf) of a solid-wood row that has no per-row
+/// `hardness_value`. The row and the query read ONE table: the generic
+/// species of `material::WoodSpecies` (extrapolation P2 step 3,
+/// orchestrator decision 3).
 ///
-/// Without this fallback the LUT's hardness-scaling pipeline silently
-/// degrades to identity (scale = 1.0) for the ~dozen Whiteside
-/// Fusion360 rows that ship with `material_family = hardwood` but no
-/// per-row hardness reading. Consequence: an extreme hardwood (Ipe,
-/// Janka 3510) query matched against one of those rows would inherit
-/// the row's full chipload target unscaled — driving fpt 2–3× above
-/// the rubbing-floor / safety envelope without any compensating
-/// derate. See `planning/feeds_literature_matrix_2026-06-03.md`
-/// (round 4 D_ipe_chipload finding).
+/// - A softwood row reads `WoodSpecies::GenericSoftwood.janka_lbf()` (600).
+/// - A hardwood row reads `WoodSpecies::GenericHardwood.janka_lbf()` (1450).
+/// - Every other family returns `None`.
+///
+/// Before 2026-09-24 this function had its own table (softwood 500,
+/// hardwood 1290, MDF 700, plywood 550 / 1100, HDF 900, particleboard
+/// 600). The query side read other values (`WoodSpecies`, `PlywoodGrade`,
+/// `SheetGoodKind`). So a printed row on a query of its own family got a
+/// hardness scale. Example: a printed MDF row with no Janka scaled from
+/// 700 on an MDF query (1100). The result was (700 / 1100)^0.5 = x0.80 and
+/// the "extrapolated" flag (extrapolation INVENTORY §2, item 2).
+///
+/// The row default still has a function. A hardwood row with no Janka
+/// on an Ipe query (Janka 3510) derates by (1450 / 3510)^0.5. Without the
+/// default, the query gets the full chipload of the row, 2 to 3 times too
+/// high (`planning/feeds_literature_matrix_2026-06-03.md`, round 4
+/// D_ipe_chipload finding).
 fn family_default_janka(family: MaterialFamily) -> Option<f64> {
+    use crate::material::WoodSpecies;
     match family {
-        MaterialFamily::Softwood => Some(500.0), // SPF / pine baseline
-        MaterialFamily::Hardwood => Some(1290.0), // red oak baseline
-        MaterialFamily::PlywoodSoftwood => Some(550.0),
-        MaterialFamily::PlywoodHardwood => Some(1100.0),
-        MaterialFamily::Mdf => Some(700.0),
-        MaterialFamily::Hdf => Some(900.0),
-        MaterialFamily::Particleboard => Some(600.0),
-        // Plastics / aluminum / fiberglass have no canonical "family
-        // Janka" — fall through to identity scaling for those rows.
+        MaterialFamily::Softwood => Some(WoodSpecies::GenericSoftwood.janka_lbf()),
+        MaterialFamily::Hardwood => Some(WoodSpecies::GenericHardwood.janka_lbf()),
+        // The composite boards have no sourced Janka (see
+        // `hardness_ratio_raw`). Plastics, aluminium and fibreglass have no
+        // family Janka. The ratio is 1.0 for these families.
         _ => None,
     }
 }
@@ -491,7 +499,20 @@ fn family_default_janka(family: MaterialFamily) -> Option<f64> {
 /// The RAW hardness transfer ratio `row / query`, clamped only against
 /// absurd extrapolation. No law is applied here — see
 /// [`apply_chipload_law`].
+///
+/// A composite-board query (`material_category` 5, the plywoods, or 6,
+/// MDF, HDF and particleboard) gives 1.0. This rule comes first, so it
+/// applies to per-row values and to defaults. A composite board has no
+/// sourced Janka. The only sourced figure is the particleboard minimum of
+/// 500 lbf (ANSI A208.1), and a minimum is not a value to scale on. The
+/// `PlywoodGrade` and `SheetGoodKind` values are density proxies for the
+/// formula path; they do not scale a printed row (extrapolation
+/// INVENTORY §2: a printed MDF row read x0.80 on an MDF query). A ratio of
+/// 1.0 also clears the hardness part of `is_extrapolated`.
 fn hardness_ratio_raw(query: &LookupQuery, obs: &VendorObservation) -> f64 {
+    if matches!(material_category(query.material_family), 5 | 6) {
+        return 1.0;
+    }
     match (
         query.hardness_kind,
         query.hardness_value,
@@ -506,14 +527,10 @@ fn hardness_ratio_raw(query: &LookupQuery, obs: &VendorObservation) -> f64 {
             // chipload allowed), and vice versa.
             (ov / qv).clamp(SCALE_CLAMP_LO, SCALE_CLAMP_HI)
         }
-        // Row carries no per-row hardness annotation. If the query is
-        // Janka-tagged (every wood-class query is) and the row's
-        // `material_family` has a canonical family anchor, scale
-        // against that anchor instead of silently returning identity.
-        // This restores Janka-inverse chipload scaling for the
-        // Whiteside Fusion360 wood rows (`material_family = hardwood`
-        // without `hardness_value`) so extreme hardwoods like Ipe
-        // (Janka 3510) derate below oak's chipload baseline.
+        // The row has no per-row hardness. When the query has a Janka value
+        // and the row is solid wood, the ratio uses the value of the query
+        // table (`family_default_janka`). So an extreme hardwood such as
+        // Ipe (Janka 3510) derates below a generic hardwood row.
         (Some(HardnessKind::Janka), Some(qv), _, _) if qv > 0.0 => {
             match family_default_janka(obs.material_family) {
                 Some(ov) => (ov / qv).clamp(SCALE_CLAMP_LO, SCALE_CLAMP_HI),
@@ -655,7 +672,9 @@ fn lookup_best_where(
 
 /// Group `MaterialFamily` into the categories a row may serve across.
 /// Within a category we allow score-only matching, with chipload bounds
-/// scaled by the hardness ratio. Across categories the lookup hard-rejects:
+/// scaled by the hardness ratio. The composite categories 5 and 6 get no
+/// hardness scale (`hardness_ratio_raw`). Across categories the lookup
+/// hard-rejects:
 /// cutting wood and cutting aluminum live in entirely different chipload
 /// regimes and linear extrapolation between them isn't meaningful.
 ///
@@ -703,7 +722,8 @@ fn passes_must_match(query: &LookupQuery, obs: &VendorObservation) -> bool {
     // solid woods, the plywoods and the MDF-class boards are separate
     // categories (see `material_category`), so a hardwood query never
     // borrows an MDF or plywood row. Within a
-    // category, chipload bounds are scaled by the hardness ratio. See
+    // category, chipload bounds are scaled by the hardness ratio, except in
+    // the composite categories 5 and 6. See
     // `LookupResult::chipload_hardness_scale`.
     if !materials_compatible(query.material_family, obs.material_family) {
         return false;

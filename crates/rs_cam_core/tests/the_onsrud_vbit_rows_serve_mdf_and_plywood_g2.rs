@@ -33,7 +33,8 @@
 //! The 37-80 band is 0.1016-0.1524 mm at 25.4 mm; the V-bit size basis is
 //! `VBitExempt`, so the generic law gives (6.35 / 25.4)^0.61 =
 //! 0.429282718219 and a band of 0.043615124171-0.065422686257 mm in MDF
-//! (1100 lbf on a 1100 lbf row: hardness scale 1.0).
+//! (hardness scale 1.0: an MDF query gets no hardness scale since P2 step 3;
+//! see `one_janka_table_for_row_and_query_g2`).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 

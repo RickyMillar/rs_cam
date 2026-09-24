@@ -160,10 +160,12 @@ pub enum PlywoodGrade {
 
 impl PlywoodGrade {
     /// Effective Janka hardness (lbf) for the plywood grade — driven by
-    /// the dominant veneer species. Used by both `feed_scale_factor()`
-    /// (the feed-rate scaling normaliser) and
-    /// `feeds::vendor_normalize::material_to_lut` (the LUT hardness
-    /// query) so the two paths can't drift.
+    /// the dominant veneer species. `feed_scale_factor()` (the formula
+    /// path) and `literature_parity` use it. No source prints a Janka
+    /// value for plywood, so this is a proxy. `material_to_lut` puts it on
+    /// the LUT query, but the lookup applies no hardness scale to a
+    /// plywood query (`feeds::vendor_lookup::hardness_ratio_raw`,
+    /// extrapolation P2 step 3).
     pub fn effective_janka_lbf(self) -> f64 {
         match self {
             PlywoodGrade::Softwood => 600.0,
@@ -191,11 +193,15 @@ pub enum SheetGoodKind {
 
 impl SheetGoodKind {
     /// Effective Janka hardness (lbf) for the engineered-wood sheet
-    /// good — used by both `feed_scale_factor()` and the LUT hardness
-    /// query in `feeds::vendor_normalize::material_to_lut`. These
-    /// values are the substrate density proxy; the actual cutting-
-    /// force `Kc` lives on `Material::kc_n_per_mm2()` and is
-    /// independent.
+    /// good. `feed_scale_factor()` (the formula path) and
+    /// `literature_parity` use it. These values are the substrate density
+    /// proxy; the actual cutting-force `Kc` lives on
+    /// `Material::kc_n_per_mm2()` and is independent. The only sourced
+    /// figure is the particleboard minimum of 500 lbf (ANSI A208.1).
+    /// `material_to_lut` puts the value on the LUT query, but the lookup
+    /// applies no hardness scale to a sheet-good query
+    /// (`feeds::vendor_lookup::hardness_ratio_raw`, extrapolation P2
+    /// step 3).
     pub fn effective_janka_lbf(self) -> f64 {
         match self {
             SheetGoodKind::Mdf => 1100.0,

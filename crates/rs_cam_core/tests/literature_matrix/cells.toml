@@ -3023,10 +3023,12 @@ severity = "critical"
 # NOT a known gap after the 2026-09-24 family ruling. This cell tripped
 # because the Ø1 hardwood query borrowed the MDF 0.794 mm Spektra row
 # (0.0508 mm/tooth). MDF is now a separate category; the solid-wood 0.794 mm
-# softwood Spektra row (0.0254, Janka default 500) answers, 0.794x the tool,
+# softwood Spektra row (0.0254, no Janka) answers, 0.794x the tool,
 # inside the size window. Predicted: 0.0254 x (1 / 0.794)^0.61 x
-# (500 / 1360)^0.5 = 0.0254 x 1.151 x 0.606 = 0.0177 mm/tooth, under 0.030
-# and inside the literature band 0.005-0.020. RE-MEASURE.
+# (600 / 1360)^0.5 = 0.0254 x 1.151 x 0.664 = 0.0194 mm/tooth, under 0.030
+# and inside the literature band 0.005-0.020. RE-MEASURE. (2026-09-24,
+# extrapolation P2 step 3: the row default is now the query table,
+# GenericSoftwood 600. The prediction was 0.0177 with the old 500 anchor.)
 
 
 [[cell]]
@@ -5072,7 +5074,10 @@ sources = ["onsrud_hwood", "gwizard_hwood", "whiteside_wood"]
 # literature-vs-engine. The engine's commanded 0.0360 is Freud's own
 # published Ø1/8 in hardwood band (0.0508–0.1270) scaled down 39 % for
 # Ipe's density — 0.0508 × 0.6062 × 0.9660 = 0.0297, reproducing A-6's
-# measured band exactly.
+# measured band exactly. (2026-09-24, extrapolation P2 step 3: a hardwood
+# row with no Janka now reads GenericHardwood 1450, not 1290. If the Freud
+# row still answers, the factor is (1450 / 3510)^0.5 = 0.6427 and the
+# figure is 0.0508 × 0.6427 × 0.9660 = 0.0315, still inside the band.)
 #
 # The new band is a UNION WITH A HOLE IN IT and that is deliberate: the
 # community band tops out at 0.025, the industrial band starts at

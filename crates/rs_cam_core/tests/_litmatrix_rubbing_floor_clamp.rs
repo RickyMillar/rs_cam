@@ -10,7 +10,7 @@
 //!
 //! | setup | feed factors | advance (mm/tooth) | warns |
 //! |---|---|---:|---|
-//! | default (no stickout) | none | 0.034567 / 0.75 = **0.046089** | no |
+//! | default (no stickout) | none | 0.034567 / 0.75 = **0.046089** (0.048864 since P2 step 3, one Janka table) | no |
 //! | stickout 45 mm | none | **0.046089** (x 1/0.85 against 0.039176) | no |
 //!
 //! Q8 changes the moved cell's advance by 1/0.85. It changes no warning: the
@@ -176,6 +176,12 @@ const RUBBING_FLOOR_MM_TOOTH: f64 = 0.025;
 /// the scaling law shows up here as a diff and not as a silently-tracking
 /// assertion.
 ///
+/// **RE-PINNED 2026-09-24: 0.046088898 → 0.048863601** (x1.0602 =
+/// (1450/1290)^0.5), measured after extrapolation P2 step 3: the row
+/// `amana-flat-hardwood-pocket-6000-2f` carries no Janka, and its family
+/// default is now the query table's GenericHardwood 1450 (was 1290), so the
+/// Ipe transfer starts from 1450/3510.
+///
 /// **RE-PINNED 2026-09-23: 0.035350302 → 0.046088898** (x1.304), measured by
 /// the verifier on the tree after R3 (aef54c83, the linear depth scale) and
 /// the R5 printed rows (3885c8bf..bab9a236). Before that: measured
@@ -183,7 +189,7 @@ const RUBBING_FLOOR_MM_TOOTH: f64 = 0.025;
 /// 1290/3510 = 0.3675 applied at `^0.5`); **was 0.022720797720797720**
 /// under the retired `^1.0` hardness law. The stickout does not enter the
 /// band, so the moved cell reads the same ceiling.
-const IPE_DERATED_BAND_MAX_MM_TOOTH: f64 = 0.046_088_898;
+const IPE_DERATED_BAND_MAX_MM_TOOTH: f64 = 0.048_863_601;
 
 /// The pin above came from a nine-decimal print, so it can be off by up to
 /// 5e-10. The tolerance is ten times that.
@@ -202,7 +208,10 @@ const LONG_TOOL_FACTOR: f64 = 0.75;
 /// before WP3 (a six-decimal print, so the pin carries a 1e-5 tolerance).
 /// PREDICTED, not yet measured. Was 0.039176 (x 0.85 workholding, WP3) and
 /// before that 0.022036 (x 0.75 L/D x 0.75 safety). RE-MEASURE if it moves.
-const IPE_MOVED_CELL_ADVANCE_MM_TOOTH: f64 = 0.046_089;
+/// RE-MEASURED 2026-09-24 after extrapolation P2 step 3 (one Janka table:
+/// the row's hardwood default is 1450, was 1290): 0.048864 = 0.046089 x
+/// (1450/1290)^0.5. The advance sits at the derated band maximum.
+const IPE_MOVED_CELL_ADVANCE_MM_TOOTH: f64 = 0.048_864;
 
 fn calc_ipe_6mm(setup: SetupContext) -> rs_cam_core::feeds::FeedsResult {
     let lut = embedded_vendor_lut();
@@ -277,7 +286,7 @@ fn ipe_pocket_ships_its_computed_feed_above_the_floor_after_r4() {
     );
     // Ruling R4 Q9 (2026-09-24): the floor is `min(0.025, band min)`. The
     // row `amana-flat-hardwood-pocket-6000-2f` prints 0.032–0.055, so the
-    // derated minimum is 0.046088898 x 0.032 / 0.055 = 0.026815, above
+    // derated minimum is 0.048863601 x 0.032 / 0.055 = 0.028430, above
     // 0.025, and the floor stays the constant.
     assert!(
         band.min_mm_per_tooth > RUBBING_FLOOR_MM_TOOTH,

@@ -20,7 +20,7 @@ point is `feeds::suggest`.
 
 ## Invariants
 - `ChiploadBounds` in Suggest mirrors the gate's piecewise-linear DOC derating (canonical scale: `feeds::geometry`).
-- The lookup is hardness-agnostic within a family; wood families (soft, hard, ply, MDF) never substitute.
+- One Janka table: a solid-wood row with no Janka reads `WoodSpecies` generics; plywood/MDF queries get no hardness scale.
 - Suggest is the validated application path; a raw parameter write is an override and stales the result.
 - R4: the rubbing floor `min(0.025, band min)` warns, never lifts; no machine or L/D feed factor. The
   dial `MachineProfile::aggressiveness` (0.85) scales depth and stepover to hold load at
@@ -36,5 +36,5 @@ Run one with `cargo test -p rs_cam_core -q --test <name>`: `lut_resolver_census_
 `suggest_refuses_what_the_registry_refuses_fm4`, `clueless_cells_refuse_and_backed_cells_ship_fm5`, `finish_depth_is_reported_not_capped_fm6`,
 `the_dial_holds_the_load_and_never_cuts_the_feed_fm7`, `rpm_follows_the_feed_ceiling_fm8`, `micro_extrapolation_refuses_fm9`,
 `a_tapered_row_is_read_at_the_tip_a1`, `the_micro_tapered_finish_ships_the_printed_tip_row_g1`, `a_size_claim_states_its_rule_range_and_residual_g1`,
-`every_consumer_reads_one_claimed_band_g1`, `the_onsrud_vbit_rows_serve_mdf_and_plywood_g2`. `feeds_matrix_instrument_fm1` is an `#[ignore]` instrument (`-- --ignored`) that writes
+`every_consumer_reads_one_claimed_band_g1`, `the_onsrud_vbit_rows_serve_mdf_and_plywood_g2`, `one_janka_table_for_row_and_query_g2`. `feeds_matrix_instrument_fm1` is an `#[ignore]` instrument (`-- --ignored`) that writes
 planning/feeds_matrix_2026-09-23/. `wanaka_suggest_integration` takes minutes: ask first.

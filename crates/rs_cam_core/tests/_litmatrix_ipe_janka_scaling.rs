@@ -16,6 +16,11 @@
 //! `Hardwood`) when the row has no per-row hardness and the query is
 //! Janka-tagged, so Ipe (3510) derates against the Hardwood anchor.
 //!
+//! Since 2026-09-24 (extrapolation P2 step 3, one Janka table) the anchor
+//! is the query table: `WoodSpecies::GenericHardwood`, 1450. The Ipe scale
+//! on the row is `(1450 / 3510)^0.5 = 0.643`, not `(1290 / 3510)^0.5 =
+//! 0.606`. The assertion is directional, so it does not move.
+//!
 //! This sentry locks in: for the 3 mm flat-end pocket query, Ipe must
 //! command a strictly lower chipload than red oak. **The assertion is
 //! DIRECTIONAL** — it pins the sign of the derate, not its size, and
@@ -111,10 +116,11 @@ fn ipe_chipload_derates_below_oak_when_row_lacks_hardness_annotation() {
     let oak_fpt = chipload(&oak, flutes);
     let ipe_fpt = chipload(&ipe, flutes);
 
-    // Ipe (Janka 3510) is ~2.7× harder than red oak (Janka 1290).
+    // Ipe (Janka 3510) is ~2.6× harder than white oak (Janka 1360).
     // After the family-anchor fix, the LUT row (no hardness_value,
     // material_family = hardwood) derates Ipe against the Hardwood
-    // default (1290) — by `(1290/3510)^q` where `q` is
+    // default (GenericHardwood, 1450, since 2026-09-24) — by
+    // `(1450/3510)^q` where `q` is
     // `vendor_lookup::CHIPLOAD_HARDNESS_EXPONENT`. The SIGN of that
     // derate is what this test pins; its size is a law parameter and
     // deliberately not asserted here (see the module docstring).

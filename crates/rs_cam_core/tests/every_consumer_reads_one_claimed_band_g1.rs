@@ -32,9 +32,12 @@
 //! - form A, a 1.0 mm flat Pocket in softwood: anchor
 //!   `amana-flat-softwood-pocket-0794-2f-spektra` (0.0254, min = max), claim
 //!   scale `2^t = 1.286034051728` (see `a_size_claim_states_...`), hardness
-//!   scale `(500 / 600)^0.5` (the row has no Janka, so the softwood family
-//!   anchor 500 stands in), band `0.0254 * 1.286034 * 0.912871 =
-//!   0.029819170734` at both ends;
+//!   scale 1.0 (the row has no Janka, so it reads the query table:
+//!   `WoodSpecies::GenericSoftwood`, 600 on a 600 query), band
+//!   `0.0254 * 1.286034051728 = 0.032665264914` at both ends. RE-PINNED
+//!   2026-09-24 (extrapolation P2 step 3, one Janka table): was
+//!   `0.0254 * 1.286034 * (500 / 600)^0.5 = 0.029819170734`, when the row
+//!   default was a separate 500 lbf anchor;
 //! - form B, a 2.5 mm flat Pocket in hardwood: anchor
 //!   `amana-flat-hardwood-pocket-3175-2f-spektra` (max 0.1016 only, Janka
 //!   1450); series 3.175 / 6.0 / 6.35 mm (mids 0.1016 / 0.127 / 0.127), slope
@@ -245,7 +248,7 @@ fn a_form_a_cell_has_one_band_g1() {
         "amana-flat-softwood-pocket-0794-2f-spektra",
         "A",
         1.286_034_051_728,
-        (Some(0.029_819_170_734), 0.029_819_170_734),
+        (Some(0.032_665_264_914), 0.032_665_264_914),
     );
 }
 
