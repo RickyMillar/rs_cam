@@ -20,6 +20,14 @@ recommendations are the orchestrator's; the operator decided.
   Shapeoko 3 chart is withdrawn and older than the operator's machine, and
   it is one chart. Reopen with a second machine-vendor chart or a measured
   run on the operator's machine.
+- **Orchestrator's note under B1 (P1 design, 2026-09-24):** of the 96
+  verified G1 rows, P1 loads the 54 micro tapered rows. The 42 SpeTool
+  spiral rows are 1/16-1/2 in flat end mills, not micro rows. Loaded, they
+  outscore the Spektra rows and move every 3-6 mm solid-wood pocket cell to
+  a new vendor. They wait for their own landing with an FM1 diff.
+  Form C (the 0.61 fallback) states the spread of the tool family's own
+  printed slopes: flat 0.29-1.25, tapered 0.00-1.06. Ball, bull and V-bit
+  have no series; their card says the spread is borrowed from flat.
 - B3's simulation witness runs before the 42 ball-nose finish cells move.
   It takes more than three minutes, so the orchestrator asks before the run.
 
