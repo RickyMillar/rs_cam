@@ -18,25 +18,30 @@
 //! of the comparison card, and `compare.rs` hangs each one on the row it
 //! explains. See `planning/feeds_rework_2026-09-15/PLAN.md` W2.
 //!
-//! Two things deliberately stay on the page rather than moving to a hover:
+//! Three things deliberately stay on the page rather than moving to a hover:
 //!
 //! - **Warnings.** A warning behind a hover is a warning that was deleted.
 //! - **The engaged-diameter row**, for tapered and V tools, where the
 //!   published tip size understates what is actually cutting.
+//! - **The row basis** ([`draw_row_basis_lines`]): the G1 size claim of an
+//!   off-size row and the printed material label of a derived row.
 //!
 //! Every quantity here is a **commanded** advance per tooth,
 //! `feed / (rpm · flutes)`. This surface runs before a simulation and has no
 //! measured value to show. The achieved figure lives on the properties
 //! panel's operating-point card, after a sim (Checkpoint H2, 2026-08-08).
 
+use rs_cam_core::feeds::extrapolation::Claim;
 use rs_cam_core::feeds::rationale::{
     AGGRESSIVENESS_ABOVE_BASE_TEXT, PLUNGE_AT_MATERIAL_BASE_TEXT, SuggestRationale,
 };
 use rs_cam_core::feeds::suggest::{AggressivenessShortfall, FeedRecalibrationCap, SuggestWarning};
-use rs_cam_core::feeds::{FeedsExplain, FeedsField, SpindleScaleReason};
+use rs_cam_core::feeds::vendor_lut::ObservationKind;
+use rs_cam_core::feeds::{FeedsExplain, FeedsField, SpindleScaleReason, ToolGeometryHint};
 
 use super::shared::{
-    AppliedRecipe, CurrentValues, engaged_diameter_context, vendor_band, vendor_single_value,
+    AppliedRecipe, CurrentValues, engaged_diameter_context, material_family_label, vendor_band,
+    vendor_single_value,
 };
 use crate::ui::{theme, tokens};
 
@@ -498,13 +503,83 @@ pub(crate) fn draw_engaged_diameter_row(
         ui,
         format!("{icon}Engaged Ø {engaged:.2} mm at DOC {doc:.2} mm"),
         color,
-        &format!(
-            "The published {kind} Ø is {tip_dia:.2} mm, but the cone shoulder \
-             does most of the cutting at this depth. Every advance/tooth \
-             figure on this surface is computed at the engaged diameter, not \
-             at the tool tip."
-        ),
+        &engaged_diameter_hover(explain.tool_geometry, kind, tip_dia),
     );
+}
+
+/// The hover of the engaged-diameter row. Ruling A1 (2026-09-24) keys a
+/// tapered-ball row at the tip, so the two cone tools need two texts:
+/// `geometry::lut_key_diameter_mm` reads a V-bit row at the engaged width.
+fn engaged_diameter_hover(geometry: ToolGeometryHint, kind: &str, tip_dia: f64) -> String {
+    let opening = format!(
+        "The published {kind} Ø is {tip_dia:.2} mm, but the cone shoulder does most of the \
+         cutting at this depth."
+    );
+    match geometry {
+        ToolGeometryHint::TaperedBall { .. } => format!(
+            "{opening} Suggest reads the vendor row at the tip Ø (ruling A1). The RPM, the \
+             depth ladder, the band's depth derate and the deflection check use the engaged Ø."
+        ),
+        ToolGeometryHint::VBit { .. }
+        | ToolGeometryHint::Flat
+        | ToolGeometryHint::Ball
+        | ToolGeometryHint::Bull { .. } => format!(
+            "{opening} Suggest reads the vendor row at the engaged Ø, and every advance/tooth \
+             figure on this surface uses the engaged Ø."
+        ),
+    }
+}
+
+/// The basis of the matched row, on the page (extrapolation P1 step 4).
+///
+/// Operator rule: no invisible calculation. When the row is off-size, the
+/// G1 size claim (`feeds::extrapolation::Claim`) moved the band. Its
+/// headline (the scale and the anchor row) is a visible line. Its detail
+/// (the rule, the range and the spread) and the hardness scale are on the
+/// hover. When the row is `Derived` (ruling A4: a "Wood, MDF, Sign-Foam"
+/// row that serves hardwood), the row's printed material label is a
+/// second visible line.
+pub(crate) fn draw_row_basis_lines(ui: &mut egui::Ui, explain: &FeedsExplain) {
+    let Some(row) = explain.matched_row.as_ref() else {
+        return;
+    };
+    if let Some(claim) = row.size_basis.claim() {
+        let (headline, detail) = claim.card_text();
+        detail_line(
+            ui,
+            headline,
+            theme::WARNING_MILD,
+            &claim_hover(claim, &detail, row.chipload_hardness_scale),
+        );
+    }
+    if row.row_kind == ObservationKind::Derived && !row.material_label.is_empty() {
+        detail_line(
+            ui,
+            format!("Row material: {}", row.material_label),
+            theme::TEXT_DIM,
+            &format!(
+                "The vendor prints one row for the material in the label. The LUT \
+                 derives this {} row ({}) from it.",
+                material_family_label(explain.query.material_family),
+                row.observation_id
+            ),
+        );
+    }
+}
+
+/// The hover of the claim line: the claim's detail, its source rows, and
+/// the hardness scale that applies after the claim.
+fn claim_hover(claim: &Claim, detail: &str, hardness_scale: f64) -> String {
+    let mut out = format!("{detail}.");
+    if !claim.source_rows.is_empty() {
+        out.push_str(&format!("\nRows: {}.", claim.source_rows.join(", ")));
+    }
+    out.push_str(&format!(
+        "\nThe hardness scale x{hardness_scale:.2} applies after the claim; the band \
+         scale is x{:.2} in total.",
+        claim.scale * hardness_scale
+    ));
+    out
 }
 
 /// S3 — chipload-min warning. For finishing operations a chipload below

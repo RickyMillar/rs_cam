@@ -1576,6 +1576,10 @@ pub fn build_info() -> serde_json::Value {
             // findings under `default_findings`. `stale_defaults` above
             // stays: it records a shipped CAPABILITY, not a key name.
             "default_findings",
+            // Extrapolation P1 step 4 (2026-09-24): `get_suggest_rationale`
+            // carries `basis` {headline, detail}, the support arm's card
+            // text. An off-size vendor row states its G1 size claim there.
+            "suggest_rationale_basis",
         ],
     })
 }
@@ -1651,6 +1655,7 @@ mod tests {
             "toolpath_depends_on",
             "generation_plan_progress",
             "default_findings",
+            "suggest_rationale_basis",
         ] {
             assert!(
                 features.contains(&flag),

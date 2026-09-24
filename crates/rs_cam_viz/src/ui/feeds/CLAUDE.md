@@ -13,9 +13,9 @@
 - The apply writes through the core command path; the write stales the result.
 - The recommended column is what `⚡ Apply all` writes; the hover has the raw value.
 - Every stage that moves a number is one line on the card, with its source
-  status (ruling R4). `why::draw_suggest_lines` paints the Suggest stages.
-- A nomogram readout outside the measured band must abstain, not extrapolate.
-- The window fits the screen at the smallest supported size.
+  status (ruling R4). `why::draw_suggest_lines` paints the Suggest stages;
+  `why::draw_row_basis_lines` paints the G1 size claim and the A4 row label.
+- A nomogram readout outside the band abstains; the window fits the screen.
 - A chart draws one line at the suggested value, and band lines only where the
   row publishes both limits; no shading.
 - Power and the verdict read the cut Apply writes; power through
@@ -33,8 +33,8 @@
 - `cargo test -p rs_cam_viz -q --test feeds_charts_draw_lines_not_shading_g_chartlines`
 - `cargo test -p rs_cam_viz -q --test every_stage_that_moves_a_number_is_on_the_card_g_visible`
 - `cargo test -p rs_cam_viz -q --test the_recommended_column_is_what_apply_writes_g_recomapplied`
+- `cargo test -p rs_cam_viz -q --test a_claimed_row_states_its_claim_on_the_card_g_claimcard`
 
 ## Do not
 
-- A numeric input can lose focus while the operator types. A wrong-looking
-  value is sometimes that bug, not operator error.
+- An input can lose focus mid-typing; a wrong-looking value can be that bug.

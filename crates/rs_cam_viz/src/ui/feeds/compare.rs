@@ -216,6 +216,9 @@ pub(crate) fn draw_inspector_comparison(
 /// The size reads `ToolConfig::size_label`, so a tapered ball says
 /// "tip Ø2.00 mm (R1.00)" and never a bare "2.00 mm" beside an "R1.0"
 /// vendor name.
+///
+/// Below the chip, the row's basis: the G1 size claim and the A4 material
+/// label, as visible lines (extrapolation P1 step 4).
 fn draw_context_chip(
     ui: &mut egui::Ui,
     explain: &FeedsExplain,
@@ -278,7 +281,11 @@ fn draw_context_chip(
                         .reference(&row.observation_id)
                         .compact(),
                 );
-                if row.is_extrapolated {
+                // A G1 size claim states its own scale on the line below
+                // (`why::draw_row_basis_lines`). A row that is far from the
+                // query but has no claim (a V-bit, or a hardness-only
+                // transfer) keeps the combined scale here.
+                if row.is_extrapolated && row.size_basis.claim().is_none() {
                     ui.add(
                         egui::Label::new(
                             egui::RichText::new(format!("approx ×{:.2}", combined_scale(row)))
@@ -294,6 +301,7 @@ fn draw_context_chip(
             }
         }
     });
+    why::draw_row_basis_lines(ui, explain);
 }
 
 // SAFETY: the card carries one more borrowed payload than the argument

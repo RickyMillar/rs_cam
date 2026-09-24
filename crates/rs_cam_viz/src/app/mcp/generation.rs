@@ -45,9 +45,17 @@ impl RsCamApp {
                 let rationale = rs_cam_core::feeds::rationale::SuggestRationale::from_warnings(
                     &profile.warnings,
                 );
+                // Extrapolation P1 step 4: the support arm's card text. An
+                // off-size row states its G1 claim (the scale, the rule, the
+                // range and the spread) in `detail`, as the Feeds card does.
+                let basis = profile.feeds.as_ref().map(|feeds| {
+                    let (headline, detail) = feeds.support.card_text();
+                    serde_json::json!({ "headline": headline, "detail": detail })
+                });
                 json_str(serde_json::json!({
                     "toolpath_id": tc.id,
                     "toolpath_name": tc.name,
+                    "basis": basis,
                     "rationale": serde_json::to_value(&rationale).unwrap_or_default(),
                 }))
             }
