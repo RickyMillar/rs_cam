@@ -63,10 +63,12 @@ The groups are by the axis that is missing, not by the operator's tools.
 | G6 | **Drill** | any wood drill chipload or plunge rate | 80 refuse | vendor drill charts for wood (Onsrud, Amana boring bits, Freud brad-point) — the 2026-08 audit found none for peck depth; chipload columns exist for some |
 | G7 | **Material physics** (no Kc) | force and power for MDF, plywood, plastics | power on 208 of 448 cells only | Wood Handbook specific cutting energy, published Kc for MDF/plywood, or a sim-derived proxy with its spread |
 | G8 | **Long tool and small tool loads** | the 0.88/0.75 long-tool share and the micro-tool concern the literature cell flags | 428 cells carry the long-tool share (repo rule) | deflection model already in the engine (`feeds::force`); vendor overhang notes; PreciseBits micro-tool rules |
+| G9 | **Machine class** (the cutter vendor's chart is written for an industrial router) | a chip the FRAME can take, not only the cutter: on a Shapeoko a 6 mm two-flute in hardwood ships Amana's 0.131 mm/tooth (4720 mm/min at 18 000) where hobby practice is 0.05–0.09 | every vendor-backed cell on a hobby profile | the machine vendor's own published feeds (Carbide 3D's Shapeoko chart; Onefinity, Sienci charts), loaded as rows keyed by machine class so the profile matches its own vendor first and the card names it; the retired ×0.75 was this gap as an unsourced factor |
 
 Groups G1–G4 are ratios inside vendor data (trend-then-equation). G5 and
-G7 are geometry and physics (model-then-confirm). G6 is a fetch. G8 is a
-model the engine already has, to be preferred over a factor.
+G7 are geometry and physics (model-then-confirm). G6 and G9 are fetches
+(G9 first: it is the gap the operator sees on every roughing card today).
+G8 is a model the engine already has, to be preferred over a factor.
 
 ## 3. What one investigation produces
 

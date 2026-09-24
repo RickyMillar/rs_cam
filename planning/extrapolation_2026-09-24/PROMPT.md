@@ -34,7 +34,7 @@ Rules for the session:
   workflow"): one research agent per group, URL verifiers per finding, one
   reconciler per group file. Everything else is ordinary orchestration.
 
-Deliverables: `EXTRAPOLATION_<group>.md` per group (G1–G8), a `RULINGS.md`
+Deliverables: `EXTRAPOLATION_<group>.md` per group (G1–G9), a `RULINGS.md`
 for the session, the `Extrapolation` trait and its arms with sentries, the
 matrix CSV per landing, `FEATURE_CATALOG.md` and the memory note. The
 acceptance case for G1 is the wanaka "3D Finish 6" pass (a 1 mm tip tapered

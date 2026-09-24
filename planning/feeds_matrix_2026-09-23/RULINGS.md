@@ -129,6 +129,20 @@ On R4_AGGRESSIVENESS_SPEC.md §5, in the spec's numbering:
   the extrapolation programme (the remaining feed scales are the same
   question).
 
+## Operator observation, 2026-09-24 12:01 (screenshot)
+
+A 6 mm two-flute in hardwood on the Shapeoko Pro XXL profile ships 4720
+mm/min at 18 000 rpm (0.131 mm/tooth): the Amana Spektra printed value
+×1.03 hardness, no factor, the 6000 mm/min ceiling not binding. The
+operator: "in my head a rough with a 6mm bit would not have these stats".
+Reading: the cutter vendor's chart is written for an industrial router;
+machine class is an axis the data lacks, and the retired ×0.75 was that
+gap as an unsourced factor. Recorded as group G9 of the extrapolation
+programme (fetch the machine vendor's own chart, key rows by machine
+class). Card defect found on the same screenshot: the recommended DOC/WOC
+column printed the raw calculator values (4.20 / 2.10, "↑5.17×") while
+Apply writes the dial's (0.81 / 1.42); fix in flight.
+
 ## Landed under the third and fourth rounds, 2026-09-24
 
 - Q9 06c75ed5 (floor = min(0.025, band min), source named); Q6 c8b6b358
