@@ -320,3 +320,14 @@ Open for the operator:
   simulation now computes the per-sample metrics and drops them.
 - `tool_load/optimize/outcome.rs` still sets `auto_resolution` for its
   isolated runs (power session).
+
+## 9. G-STALECARDS (added to the package 2026-09-24)
+
+Reproduction `05e62234` (cherry-picked). Fix: (1) the simulation builder
+already carved core results only (M-C); `simulation_request_is_buildable`
+now reads core results too. (2) `SimFreshness::Ungenerated(id)` names the
+first enabled operation with no core result, and the preflight and the
+cut-metric cards say "regenerate <op> first". (3) Staleness is per
+operation: `gcode::sim_trace_is_fresh_for` judges one row's provenance,
+`project_load_report` and the card memo read it, and only that row is
+rewritten to `StaleSimulation`. `SimEvidenceMeta` is gone.
