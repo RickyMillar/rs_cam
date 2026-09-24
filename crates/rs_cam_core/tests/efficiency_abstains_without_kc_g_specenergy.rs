@@ -84,6 +84,7 @@ fn endmill(stickout: f64) -> ToolConfig {
         cut_direction: BitCutDirection::UpCut,
         vendor: String::new(),
         product_id: String::new(),
+        size_units: None,
     }
 }
 

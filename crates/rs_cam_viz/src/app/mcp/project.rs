@@ -173,6 +173,7 @@ impl RsCamApp {
                     "type": ttype,
                     "diameter_mm": t.diameter,
                     "size_label": t.size_label(),
+                    "size_units": t.effective_size_units(),
                     "flutes": t.flute_count,
                     "cutting_length_mm": t.cutting_length,
                     "shank_diameter_mm": t.shank_diameter,

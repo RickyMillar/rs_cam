@@ -125,6 +125,29 @@
             "null"
           ]
         },
+        "size_units": {
+          "anyOf": [
+            {
+              "description": "The unit a tool size is shown in. Inline for the same reason as\n[`StockSourceParam`]: the tool schema carries no `$defs`.",
+              "oneOf": [
+                {
+                  "const": "metric",
+                  "description": "Millimetres: `Ø6.00 mm`.",
+                  "type": "string"
+                },
+                {
+                  "const": "imperial",
+                  "description": "Inches first, mm in parentheses: `Ø1/4\" (6.35 mm)`.",
+                  "type": "string"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The unit the tool's size is SHOWN in: \"metric\" or \"imperial\". Omit\nto infer it from the name (an inch token such as `1/4\"` or `0.25in`\nselects imperial). Display only: every length here is still mm."
+        },
         "stickout": {
           "description": "Tool stickout from the holder in mm — drives the deflection\nmodel. Default 45.0.",
           "format": "double",
@@ -2045,11 +2068,11 @@
           "type": "integer"
         },
         "param": {
-          "description": "Parameter name. The COMPLETE accepted set (anything else is\nrefused): \"diameter\", \"flute_count\", \"stickout\", \"corner_radius\"\n(bull-nose corner), \"cutting_length\", \"included_angle\" (V-bit,\ndegrees), \"taper_half_angle\" (tapered ball nose, degrees),\n\"shaft_diameter\", \"shank_diameter\", \"shank_length\",\n\"holder_diameter\".",
+          "description": "Parameter name. The COMPLETE accepted set (anything else is\nrefused): \"diameter\", \"flute_count\", \"stickout\", \"corner_radius\"\n(bull-nose corner), \"cutting_length\", \"included_angle\" (V-bit,\ndegrees), \"taper_half_angle\" (tapered ball nose, degrees),\n\"shaft_diameter\", \"shank_diameter\", \"shank_length\",\n\"holder_diameter\", \"size_units\" (display unit: \"metric\" or\n\"imperial\"; changes no length and invalidates nothing).",
           "type": "string"
         },
         "value": {
-          "description": "New value (numeric — `flute_count` must be a whole number).",
+          "description": "New value (numeric — `flute_count` must be a whole number;\n`size_units` takes the string \"metric\" or \"imperial\").",
           "type": [
             "number",
             "string",

@@ -497,9 +497,11 @@ pub struct SetToolParamInput {
     /// (bull-nose corner), "cutting_length", "included_angle" (V-bit,
     /// degrees), "taper_half_angle" (tapered ball nose, degrees),
     /// "shaft_diameter", "shank_diameter", "shank_length",
-    /// "holder_diameter".
+    /// "holder_diameter", "size_units" (display unit: "metric" or
+    /// "imperial"; changes no length and invalidates nothing).
     pub param: String,
-    /// New value (numeric — `flute_count` must be a whole number).
+    /// New value (numeric — `flute_count` must be a whole number;
+    /// `size_units` takes the string "metric" or "imperial").
     #[schemars(schema_with = "any_json_value_schema")]
     pub value: serde_json::Value,
 }
@@ -681,6 +683,31 @@ pub struct AddToolParam {
     /// an M6 tool change re-trigger — identical numbers silently
     /// collapse the changes).
     pub tool_number: Option<u32>,
+    /// The unit the tool's size is SHOWN in: "metric" or "imperial". Omit
+    /// to infer it from the name (an inch token such as `1/4"` or `0.25in`
+    /// selects imperial). Display only: every length here is still mm.
+    pub size_units: Option<SizeUnitsParam>,
+}
+
+/// The unit a tool size is shown in. Inline for the same reason as
+/// [`StockSourceParam`]: the tool schema carries no `$defs`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum SizeUnitsParam {
+    /// Millimetres: `Ø6.00 mm`.
+    Metric,
+    /// Inches first, mm in parentheses: `Ø1/4" (6.35 mm)`.
+    Imperial,
+}
+
+impl From<SizeUnitsParam> for rs_cam_core::compute::tool_config::SizeUnits {
+    fn from(p: SizeUnitsParam) -> Self {
+        match p {
+            SizeUnitsParam::Metric => Self::Metric,
+            SizeUnitsParam::Imperial => Self::Imperial,
+        }
+    }
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
@@ -1402,6 +1429,10 @@ pub fn build_tool_config(spec: &AddToolParam) -> Result<BuiltTool, String> {
         None => defaulted.push("flute_count"),
     }
 
+    // Display only, so never reported as defaulted: `None` infers the
+    // unit from the name.
+    config.size_units = spec.size_units.map(Into::into);
+
     Ok(BuiltTool { config, defaulted })
 }
 
@@ -1474,6 +1505,10 @@ pub fn build_info() -> serde_json::Value {
             // add_tool_from_library. Probe to confirm agent-driven tool
             // selection from the user's catalogs is available.
             "tool_library_mcp",
+            // Tool size units (2026-09-24): `list_tools` / `project_summary`
+            // rows carry `size_label` and `size_units`; `add_tool` and
+            // `set_tool_param` accept `size_units` ("metric" | "imperial").
+            "tool_size_units",
             // GUI capture surface (2026-06-11): screenshot_gui (full-window
             // PNG capture) + set_ui_view (workspace/selection/tab/modal
             // navigation). Probe to confirm agent-driven UI inspection.
@@ -1607,6 +1642,7 @@ mod tests {
             "gradient_follow_narrow_strip",
             "spiral_cleanup_overlap",
             "tool_library_mcp",
+            "tool_size_units",
             "gui_screenshot",
             "set_ui_view",
             "multitool_finishing_planner",
@@ -2027,6 +2063,30 @@ mod tests {
         assert_eq!(built.config.taper_half_angle, 5.6);
         assert_eq!(built.config.included_angle, 0.0);
         assert_eq!(built.config.corner_radius, 0.0);
+    }
+
+    /// `size_units` is optional and display-only: omitted, it stays
+    /// `None` (infer from the name) and is not reported as defaulted.
+    #[test]
+    fn size_units_is_optional_and_display_only() {
+        let built = build_tool_config(&add_tool_spec("end_mill", 6.35)).unwrap();
+        assert_eq!(built.config.size_units, None);
+        assert!(!built.defaulted.contains(&"size_units"));
+        let spec = AddToolParam {
+            size_units: Some(SizeUnitsParam::Imperial),
+            ..add_tool_spec("end_mill", 6.35)
+        };
+        let built = build_tool_config(&spec).unwrap();
+        assert_eq!(
+            built.config.size_units,
+            Some(rs_cam_core::compute::tool_config::SizeUnits::Imperial)
+        );
+        assert_eq!(built.config.diameter, 6.35, "the unit converts nothing");
+        let parsed: AddToolParam = serde_json::from_value(serde_json::json!({
+            "name": "T", "tool_type": "end_mill", "diameter": 6.35, "size_units": "imperial"
+        }))
+        .unwrap();
+        assert_eq!(parsed.size_units, Some(SizeUnitsParam::Imperial));
     }
 
     /// Defaults that remain are NAMED, so "25 mm of cutting length" can

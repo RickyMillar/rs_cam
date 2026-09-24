@@ -885,6 +885,7 @@ mod tests {
         ToolConfig {
             id: ToolId(0),
             name: "test endmill".to_owned(),
+            size_units: None,
             tool_number: 1,
             tool_type: ToolType::EndMill,
             diameter,

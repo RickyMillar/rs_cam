@@ -192,6 +192,7 @@ impl ProjectSession {
                 cut_direction: cut_direction_to_key(t.cut_direction),
                 vendor: t.vendor.clone(),
                 product_id: t.product_id.clone(),
+                size_units: t.size_units,
             })
             .collect();
 

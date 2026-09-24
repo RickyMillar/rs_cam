@@ -2,6 +2,13 @@ use crate::state::job::{BitCutDirection, ToolConfig, ToolMaterial, ToolType};
 use crate::ui::components::UiExt as _;
 use crate::ui::components::ValueRow;
 use crate::ui::theme;
+use rs_cam_core::compute::tool_config::SizeUnits;
+
+/// The "Size in" choices, in the order the selector shows them.
+const SIZE_UNIT_CHOICES: &[(SizeUnits, &str)] = &[
+    (SizeUnits::Metric, SizeUnits::Metric.label()),
+    (SizeUnits::Imperial, SizeUnits::Imperial.label()),
+];
 
 /// TOO-003 — what the operator asked the tool editor to do this frame.
 /// The properties panel edits a draft clone; the caller commits or
@@ -171,15 +178,33 @@ pub(crate) fn draw_tool_fields(ui: &mut egui::Ui, tool: &mut ToolConfig) {
         ui.add_space(4.0);
     }
 
+    // The unit the size is shown and typed in. A display and entry
+    // convention only: the draft keeps every length in mm, and the edit
+    // reaches the session through the same Apply as every other field.
+    // Until the operator picks one, the unit follows the name (a `1/4"`
+    // name reads in inches).
+    let mut units = tool.effective_size_units();
+    if ui
+        .add(
+            crate::ui::components::ChoiceRow::new("Size in", &mut units, SIZE_UNIT_CHOICES)
+                .hover("The unit the tool size is shown and typed in. Lengths stay in mm."),
+        )
+        .changed()
+    {
+        tool.size_units = Some(units);
+    }
+
     // Parameters grid
     ui.param_grid("tool_params", |ui| {
         // One convention: `Ø` is a diameter, `R` a radius. A tapered
         // ball's `diameter` is the TIP, so its label says "Tip Ø", and a
         // ball tip shows its radius beside the field so the operator can
-        // compare it with an "R1.0" vendor name.
+        // compare it with an "R1.0" vendor name. The field shows and
+        // accepts the size in `units` (`1/4`, `1/4"`, `0.25in`, `6mm`).
         let diameter_label = tool.diameter_field_label();
         let tip_radius = tool.derived_tip_radius_text();
         ValueRow::new(diameter_label, &mut tool.diameter, " mm", 0.1, 0.1..=100.0)
+            .length_units(units)
             .note(tip_radius.as_deref())
             .show(ui);
 

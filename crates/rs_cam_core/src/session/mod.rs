@@ -1092,6 +1092,10 @@ pub struct ToolSummary {
     /// "tip Ø2.00 mm (R1.00), shank Ø6.00". The numeric fields above stay
     /// the wire; this string is for display only.
     pub size_label: String,
+    /// The unit `size_label` is written in: the tool's stored unit, else
+    /// the one its name implies (`ToolConfig::effective_size_units`).
+    /// Display only; every numeric field stays in mm.
+    pub size_units: crate::compute::tool_config::SizeUnits,
 }
 
 fn is_zero_f64(v: &f64) -> bool {
@@ -1454,6 +1458,7 @@ impl ProjectSession {
                 included_angle_deg: t.included_angle,
                 flute_count: t.flute_count,
                 size_label: t.size_label(),
+                size_units: t.effective_size_units(),
             })
             .collect()
     }
@@ -2295,6 +2300,7 @@ mod tests {
                 cut_direction: "up_cut".to_owned(),
                 vendor: String::new(),
                 product_id: String::new(),
+                size_units: None,
             }],
             models: Vec::new(),
             setups: vec![ProjectSetupSection {

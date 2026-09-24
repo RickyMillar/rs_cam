@@ -12,6 +12,8 @@ One module per cutter family. The trait and the shared radius queries live in
 - `bullnose.rs` — the bull nose, that is the toroidal cutter (`BullCutter`).
 - `tapered_ball.rs` — the tapered ball (`BallConeCutter`).
 - `vbit.rs` — the V-bit, that is the cone cutter.
+- `size_units.rs` — `SizeUnits` (mm or inch), inch fractions and the
+  length entry parser. Display and entry only: every length stays in mm.
 
 ## Invariants
 
@@ -21,8 +23,9 @@ One module per cutter family. The trait and the shared radius queries live in
 - A holder and shank envelope is part of the tool, not of the operation.
   Collision reads the envelope.
 - A person reads a tool size through `ToolConfig::size_label`
-  (`compute/tool_config.rs`): `Ø` is a diameter, `R` a radius. G-code
-  comments are the exception: their bytes stay as they are.
+  (`compute/tool_config.rs`): `Ø` is a diameter, `R` a radius, in the
+  tool's `effective_size_units`. G-code comments are the exception: their
+  bytes stay as they are.
 
 ## Sentries
 

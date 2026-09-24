@@ -21,6 +21,9 @@
 //! test that greys the pill compares the configured value against THAT value,
 //! so a pill never stays lit for a click that would change nothing.
 
+use rs_cam_core::compute::tool_config::SizeUnits;
+use rs_cam_core::tool::size_units;
+
 use super::provenance::{ProvKind, ProvenanceBadge};
 use super::suggest::{SuggestButton, Suggestion};
 use crate::ui::theme;
@@ -87,6 +90,7 @@ pub struct ValueRow<'a> {
     tooltip: Option<&'a str>,
     changes_geometry: bool,
     note: Option<&'a str>,
+    length_units: Option<SizeUnits>,
 }
 
 impl<'a> ValueRow<'a> {
@@ -108,6 +112,7 @@ impl<'a> ValueRow<'a> {
             tooltip: None,
             changes_geometry: false,
             note: None,
+            length_units: None,
         }
     }
 
@@ -145,6 +150,16 @@ impl<'a> ValueRow<'a> {
         self
     }
 
+    /// Show and accept a LENGTH in `units`. The stored value stays in mm;
+    /// the field converts at the boundary. In inches it shows the nearest
+    /// 1/64" fraction (`1/4"`) or decimal inches, and drops the mm suffix.
+    /// In either unit it accepts a typed `1/4`, `1/4"`, `0.25in` or `6mm`
+    /// (`rs_cam_core::tool::size_units::parse_length_entry`).
+    pub fn length_units(mut self, units: SizeUnits) -> Self {
+        self.length_units = Some(units);
+        self
+    }
+
     /// Draw the row and call `ui.end_row()` (grid-friendly).
     pub fn show(self, ui: &mut egui::Ui) -> ValueRowOutcome {
         // The label never wraps and never breaks mid-word. A parameter label
@@ -169,15 +184,24 @@ impl<'a> ValueRow<'a> {
             // right edge whatever the digit count. Without it every row sized
             // its own DragValue and the column read as ragged — `AUDIT.md`
             // D-15, the two-indent defect, seen from the value side.
+            let mut drag = egui::DragValue::new(self.value)
+                .speed(self.speed)
+                .range(self.range.clone());
+            drag = match self.length_units {
+                Some(units @ SizeUnits::Imperial) => drag
+                    .custom_formatter(move |mm, _| size_units::entry_text(mm, units))
+                    .custom_parser(move |text| size_units::parse_length_entry(text, units)),
+                Some(units @ SizeUnits::Metric) => drag
+                    .suffix(self.suffix)
+                    .custom_parser(move |text| size_units::parse_length_entry(text, units)),
+                None => drag.suffix(self.suffix),
+            };
             let mut resp = ui.add_sized(
                 [
                     crate::ui::tokens::WELL_MIN_WIDTH,
                     crate::ui::tokens::WELL_HEIGHT,
                 ],
-                egui::DragValue::new(self.value)
-                    .suffix(self.suffix)
-                    .speed(self.speed)
-                    .range(self.range.clone()),
+                drag,
             );
             if let Some(tip) = self.tooltip {
                 resp = resp.on_hover_text(tip);

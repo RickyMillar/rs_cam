@@ -247,3 +247,127 @@ fn the_feeds_card_header_names_the_tip_g_toolsize() {
         "a surface painted \u{2300} instead of \u{00D8}: {other_glyph:?}"
     );
 }
+
+// ── Imperial (operator ruling 2026-09-24: "if it's in imperial, we just need
+// to keep that convention") ─────────────────────────────────────────────────
+
+fn end_mill(name: &str, diameter: f64) -> ToolConfig {
+    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    tool.name = name.to_owned();
+    tool.diameter = diameter;
+    tool.shank_diameter = 6.35;
+    tool.flute_count = 2;
+    tool
+}
+
+/// One frame of the inspector: every painted text run with its rectangle.
+fn frame(
+    ctx: &egui::Context,
+    state: &mut AppState,
+    events: Vec<egui::Event>,
+) -> Vec<(String, egui::Rect)> {
+    let input = egui::RawInput {
+        events,
+        ..Default::default()
+    };
+    let mut out = ctx.run_ui(input, |ui| {
+        egui::Panel::right("toolsize_properties")
+            .default_size(PANEL_WIDTH)
+            .max_size(PANEL_WIDTH)
+            .resizable(true)
+            .show(ui, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    let mut app_events = Vec::new();
+                    properties::draw(ui, state, &mut app_events);
+                });
+            });
+    });
+    let mut texts = Vec::new();
+    for clipped in &out.shapes {
+        if let egui::epaint::Shape::Text(text) = &clipped.shape {
+            let rect = egui::Rect::from_min_size(text.pos, text.galley.size());
+            texts.push((text.galley.job.text.clone(), rect));
+        }
+    }
+    out.textures_delta.clear();
+    texts
+}
+
+#[test]
+fn an_imperial_tool_reads_in_inches_g_toolsize() {
+    // Carbide-style name: the 1/4" selects Imperial with no stored unit.
+    let texts = painted_text(state_for(end_mill("#201 1/4\" Square", 6.35), true));
+    assert!(
+        texts
+            .iter()
+            .any(|t| t.contains("End Mill \u{00D8}1/4\" (6.35 mm)")),
+        "no imperial size summary; runs were {texts:#?}"
+    );
+    // The field shows the size in inches, and the name agrees with it.
+    assert!(
+        texts.iter().any(|t| t == "1/4\""),
+        "the diameter field is not in inches; runs were {texts:#?}"
+    );
+    assert!(
+        !texts.iter().any(|t| t.contains("The name says")),
+        "a caution painted on a correct imperial tool; runs were {texts:#?}"
+    );
+}
+
+#[test]
+fn the_size_selector_switches_the_field_unit_g_toolsize() {
+    // A metric name on a 1/4" tool: the field starts in mm.
+    let mut state = state_for(end_mill("Square end mill", 6.35), true);
+    let ctx = ctx();
+    let _ = frame(&ctx, &mut state, Vec::new());
+    let before = frame(&ctx, &mut state, Vec::new());
+    assert!(
+        !before.iter().any(|(t, _)| t == "1/4\""),
+        "the field is in inches before the switch; runs were {before:#?}"
+    );
+    assert!(
+        before.iter().any(|(t, _)| t == "Size in"),
+        "no size unit selector; runs were {before:#?}"
+    );
+    let inch = before
+        .iter()
+        .find(|(t, _)| t == "inch")
+        .map(|(_, rect)| rect.center())
+        .unwrap_or_else(|| panic!("no \"inch\" option; runs were {before:#?}"));
+
+    // Click "inch": move, press, release, then one frame to repaint.
+    let _ = frame(&ctx, &mut state, vec![egui::Event::PointerMoved(inch)]);
+    let press = |pressed| egui::Event::PointerButton {
+        pos: inch,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: egui::Modifiers::default(),
+    };
+    let _ = frame(&ctx, &mut state, vec![press(true)]);
+    let _ = frame(&ctx, &mut state, vec![press(false)]);
+    let after = frame(&ctx, &mut state, Vec::new());
+    assert!(
+        after.iter().any(|(t, _)| t == "1/4\""),
+        "the field did not switch to inches; runs were {after:#?}"
+    );
+    assert!(
+        after
+            .iter()
+            .any(|(t, _)| t.contains("End Mill \u{00D8}1/4\" (6.35 mm)")),
+        "the summary did not switch to inches; runs were {after:#?}"
+    );
+    // Display only: the stored diameter is still mm.
+    let draft = state
+        .history
+        .tool_draft
+        .as_ref()
+        .map(|(_, t)| (t.diameter, t.size_units))
+        .expect("the tool panel holds a draft");
+    assert_eq!(
+        draft,
+        (
+            6.35,
+            Some(rs_cam_core::compute::tool_config::SizeUnits::Imperial)
+        )
+    );
+}

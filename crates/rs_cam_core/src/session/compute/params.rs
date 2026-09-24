@@ -470,9 +470,12 @@ impl ProjectSession {
     ///
     /// Supported parameters: `diameter`, `flute_count`, `stickout`, `corner_radius`,
     /// `cutting_length`, `included_angle`, `taper_half_angle`, `shaft_diameter`,
-    /// `shank_diameter`, `shank_length`, `holder_diameter`.
+    /// `shank_diameter`, `shank_length`, `holder_diameter`, and `size_units`
+    /// (`"metric"` or `"imperial"`).
     ///
     /// Invalidates cached results for all toolpaths that reference this tool.
+    /// `size_units` is the exception: it changes how the size is SHOWN, no
+    /// stored length, so it invalidates nothing.
     ///
     /// The door of the `SetToolParam` command row. WP3 missed this
     /// method because it calls no invalidator directly; WP4 converts it
@@ -559,6 +562,20 @@ impl ProjectSession {
                 tool.holder_diameter = value.as_f64().ok_or_else(|| {
                     SessionError::InvalidParam("holder_diameter must be a number".to_owned())
                 })?;
+            }
+            "size_units" => {
+                let units = value
+                    .as_str()
+                    .and_then(crate::compute::tool_config::SizeUnits::parse_lenient)
+                    .ok_or_else(|| {
+                        SessionError::InvalidParam(format!(
+                            "size_units must be \"metric\" or \"imperial\" (got {value})"
+                        ))
+                    })?;
+                tool.size_units = Some(units);
+                // Display only: no stored length changed, so no result is
+                // dropped.
+                return Ok(());
             }
             _ => {
                 return Err(SessionError::InvalidParam(format!(

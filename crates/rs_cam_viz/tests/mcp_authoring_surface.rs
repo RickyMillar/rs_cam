@@ -120,6 +120,7 @@ fn set_tool_param_description_lists_every_parameter_it_accepts() {
         "shank_diameter",
         "shank_length",
         "holder_diameter",
+        "size_units",
     ] {
         assert!(
             facts.description.contains(param),

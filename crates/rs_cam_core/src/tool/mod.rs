@@ -9,6 +9,7 @@
 mod ball;
 mod bullnose;
 mod flat;
+pub mod size_units;
 mod tapered_ball;
 mod vbit;
 

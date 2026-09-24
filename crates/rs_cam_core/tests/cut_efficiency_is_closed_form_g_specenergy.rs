@@ -131,6 +131,7 @@ fn six_mm_flat() -> ToolConfig {
         cut_direction: BitCutDirection::UpCut,
         vendor: String::new(),
         product_id: String::new(),
+        size_units: None,
     }
 }
 

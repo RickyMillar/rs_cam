@@ -609,8 +609,17 @@ impl ProjectSession {
             let Some(slot) = session.tools.iter_mut().find(|t| t.id == ToolId(tool_id)) else {
                 return Err(SessionError::ToolNotFound(ToolId(tool_id)));
             };
+            // A change of `size_units` alone is display only: it moves how
+            // the size is SHOWN, no stored length, so no result is dropped.
+            let display_only = slot.size_units != tool.size_units && {
+                let mut same_units = slot.clone();
+                same_units.size_units = tool.size_units;
+                same_units == tool
+            };
             *slot = tool;
-            session.drop_tool_results(tool_id);
+            if !display_only {
+                session.drop_tool_results(tool_id);
+            }
             Ok(())
         })
     }

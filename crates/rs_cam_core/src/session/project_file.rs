@@ -303,6 +303,10 @@ pub struct ProjectToolSection {
     pub vendor: String,
     #[serde(default)]
     pub product_id: String,
+    /// The unit the tool's size is shown and entered in. Absent means
+    /// "infer from the name". Display only: every length above is mm.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size_units: Option<crate::compute::tool_config::SizeUnits>,
 }
 
 fn default_tool_name() -> String {
@@ -677,6 +681,7 @@ pub(crate) fn tool_from_project_section(
         cut_direction: parse_cut_direction(&ts.cut_direction),
         vendor: ts.vendor.clone(),
         product_id: ts.product_id.clone(),
+        size_units: ts.size_units,
     }
 }
 
