@@ -36,3 +36,5 @@ that reads it. The entry point for an operator answer is
 - `cargo test -p rs_cam_core -q --test air_cut_one_time_base_g_airdenom`
 - `cargo test -p rs_cam_core -q --test narration_denominator_and_hints_d7`
 - `cargo test -p rs_cam_core -q --test engagement_denominator_m3`
+- `cargo test -p rs_cam_core -q --test rapid_check_catches_real_side_strikes_g_rapid6497`
+  — the rapid strike classes a change to the rapid check must keep.
