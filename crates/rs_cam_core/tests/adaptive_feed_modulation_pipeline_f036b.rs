@@ -27,8 +27,9 @@
 //!    byte-identical G-code to the same session without modulation.
 //!  - `modulated_path_has_per_segment_feed_variation` — flag ON,
 //!    distinct per-move feeds appear in `Toolpath::moves[i]`.
-//!  - `modulated_gates_within_constant_chipload_band` — modulated
-//!    chipload per tooth stays inside `[band.min, band.max]`.
+//!  - `modulation_caps_cutting_chipload_at_the_point` — AS001's row is
+//!    a printed point (A2); the modulator caps each cutting move at it
+//!    with no floor.
 //!  - `modulated_cycle_time_lower_than_unmodulated` — F-034 cycle-time
 //!    integrator reports a shorter (or equal) cycle for the modulated
 //!    path vs the commanded path.
@@ -537,54 +538,59 @@ fn modulation_runs_and_stays_fresh_without_kinematics() {
     );
 }
 
-// ===== AB3: modulation raises the cutting chipload toward the band =====
+// ===== AB3: modulation holds the cutting chipload at the printed point =====
 
-/// AB3 (rescoped 2026-06-20).
+/// AB3 (rescoped 2026-06-20; re-premised 2026-09-24 for A2, point mode).
 ///
-/// The modulator's real, testable contract is to raise the *cutting* feeds
-/// toward the LUT chipload band — NOT to land every per-sample reading inside
-/// it. AS001's pocket is under-fed at its default: `feed_rate = 770` gives a
-/// chipload of `770 / (18000·2) = 0.0214 mm/tooth`, below the band min (0.032).
-/// Modulation raises the bulk of cutting moves into the band, but it cannot
-/// (and should not) re-feed lead-in / linking / plunge moves, so the aggregate
-/// verdict can still carry a non-cut-driven low sample. Asserting "every sample
-/// in band" was therefore unreachable — and, before the unified-load-model
-/// freshness fix, this test only passed because the post-modulation trace read
-/// `StaleSimulation` (so the gate degraded to `Unmodeled`). It now evaluates a
-/// fresh, modulation-aware trace, so it pins the honest contract:
-///   1. the flag-OFF median feed sits below the band (the under-fed default),
-///   2. modulation raises the median feed, and
-///   3. the flag-ON median feed lands inside the band.
+/// **The fixture's row is a point.** Since R5 (2026-09-23) AS001's Ø6 2F
+/// flat end mill in hardwood, pocket, roughing, resolves
+/// `amana-flat-hardwood-pocket-6000-2f-spektra`. That row prints one value
+/// (max 0.127 mm/tooth, no minimum). The two-limit row for the same cell,
+/// `amana-flat-hardwood-pocket-6000-2f` (0.032–0.055, grade c, repo
+/// authored), is still in the LUT but loses to the grade-b print. No
+/// two-limit row wins for this tool, material and operation, and a move to
+/// aluminium or another tool would change the AS001 identity that AB1, AB4,
+/// AB6 and AB7 pin. So the fixture stays, and this arm pins the point
+/// behaviour.
 ///
-/// **RT-5 (2026-09-17) — the population.** All three medians read the CUTTING
-/// F words only, through [`cutting_feed_words`]. The median used to read every
-/// F word in the program, entry feeds included, which measures a different
-/// population from the one the arm claims. The doc comment on
-/// [`cutting_feed_words`] carries the diagnosis and the classifier.
+/// **What changed.** Before A2 the modulator floored every move it wrote at
+/// `band.min × rpm × flutes` (1152 mm/min, the old median). A point has no
+/// minimum, so the modulator applies no floor. It caps each move at
+/// `v' × rpm × flutes` (v' is the DOC-derated point) and the other caps
+/// (deflection, power, machine, reach, plunge) can take a move below the
+/// commanded feed. The old claim "the flag-ON median lands inside the band"
+/// has no anchor now, and "the median rises" is not safe: the moves that the
+/// old floor lifted fall to their real caps.
 ///
-/// The measurement on that population, flag ON: 228 F words, of which 180 are
-/// cutting words `{770: 56, 773: 10, 781: 6, 795: 9, 1152: 15, 1472: 3,
-/// 1980: 81}`. The median is 1152, the modulator's own floor clamp
-/// (`band.min × rpm × flutes`), so the chipload lands ON the band floor,
-/// 0.0320. That equality is exact in `f64`: `band_min × 36000 == 1152.0` and
-/// `1152.0 / 36000.0 == band_min`.
+/// The arm pins the honest point contract:
+///   1. flag OFF, the gate reads `Within` with point bounds (no minimum,
+///      source `VendorLutPointPreset`, max v'). The under-fed default is a
+///      burn ADVISORY (decision Q1 (a)), never `Exceeds(Low)`;
+///   2. the flag-OFF median cutting chipload is below v';
+///   3. every cutting move the modulator wrote is at or below the point cap
+///      `v' × rpm × flutes`; and
+///   4. at least one cutting move the modulator wrote is above the
+///      commanded 770 mm/min (the cap sits above the default, so the
+///      modulator raised some feed toward the point).
 ///
-/// The margin is about 19 F words. The below-band buckets (770 to 795) hold
-/// the sorted indices 0 to 80 and the median index is 90, so the median falls
-/// back into them only after about 19 words move from the 1152-and-higher
-/// buckets to the lower ones. The median index moves at half the rate of a
-/// population change, which is where the 19 comes from.
+/// **RT-5 (2026-09-17) — the population.** The medians read the CUTTING F
+/// words only, through [`cutting_feed_words`]. Items 3 and 4 read the
+/// modulated IR and diff it against the pre-modulation IR by move index, as
+/// AB5 does, so a move the feed-optimisation dressup wrote does not count.
+/// The test prints both medians and the flag-ON histogram; no median value
+/// is pinned.
 #[test]
-fn modulation_raises_cutting_chipload_toward_band() {
+fn modulation_caps_cutting_chipload_at_the_point() {
     use rs_cam_core::tool_load::ChiploadVerdict;
+    use rs_cam_core::tool_load::verdict::ChipBoundsSource;
+    use rs_cam_core::toolpath::MoveIntent;
 
     // RPM × flutes for AS001's 6 mm 2-flute end mill (`build_as001_pocket_session`).
     const RPM_X_FLUTES: f64 = 18_000.0 * 2.0;
     let chip = |feed: f64| feed / RPM_X_FLUTES;
 
-    // Flag OFF: the under-fed default. The gate (now fresh) grades it
-    // chipload-low and carries the LUT band bounds — derive the band from it
-    // rather than hard-coding the LUT row.
+    // 1. Flag OFF: the gate reads the point. Derive v' from the gate
+    //    rather than hard-coding the LUT row.
     let session_off = run_session(true, false);
     let report_off = session_off.tool_load_report();
     let v_off = report_off
@@ -592,47 +598,148 @@ fn modulation_raises_cutting_chipload_toward_band() {
         .iter()
         .find(|v| v.toolpath_id == ToolpathId(0))
         .expect("tool-load verdict for pocket toolpath");
-    let ChiploadVerdict::Exceeds { triggering, .. } = &v_off.chipload else {
+    let ChiploadVerdict::Within {
+        approach_to_min,
+        approach_to_max,
+        burn_advisory,
+        ..
+    } = &v_off.chipload
+    else {
         panic!(
-            "AS001's default-fed pocket should read chipload-low (under-fed); got {:?}",
+            "A2: AS001's default-fed pocket resolves a point row, so the gate must read \
+             Within with a burn advisory (never Exceeds(Low)); got {:?}",
             v_off.chipload
         );
     };
-    let band_min = triggering
-        .bounds
-        .min_mm_per_tooth
-        .expect("LUT band carries a chipload min");
-    let band_max = triggering.bounds.max_mm_per_tooth;
-
-    let words_off = cutting_feed_words(&session_off);
-    let words_on = cutting_feed_words(&run_session(true, true));
-    let median_off = words_off.median();
-    let median_on = words_on.median();
-
-    // 1. flag-OFF median sits below the band (documents the under-fed default).
     assert!(
-        chip(median_off) < band_min,
-        "flag-OFF median chipload {:.4} should be below band min {:.4} (under-fed default). \
-         Flag-OFF population: {}",
+        approach_to_min.is_none(),
+        "A2: a point has no minimum, so the gate carries no approach-to-min metric; \
+         got {approach_to_min:?}"
+    );
+    let bounds = &approach_to_max.bounds;
+    assert_eq!(
+        bounds.source,
+        ChipBoundsSource::VendorLutPointPreset,
+        "A2: AS001's row prints one value, so the gate bounds are a point preset"
+    );
+    assert_eq!(
+        bounds.min_mm_per_tooth, None,
+        "A2: the point bounds carry no minimum"
+    );
+    let point = bounds.max_mm_per_tooth;
+    assert!(
+        burn_advisory.is_some(),
+        "A2 Q1 (a): the under-fed default (770 mm/min = {:.4} mm/tooth, below the point \
+         {point:.4}) must give a burn ADVISORY",
+        chip(770.0)
+    );
+
+    // The modulator reads the same point (one resolver).
+    let words_off = cutting_feed_words(&session_off);
+    let median_off = words_off.median();
+
+    let mut session_on = build_as001_pocket_session(true);
+    let cancel = AtomicBool::new(false);
+    session_on
+        .generate_toolpath(0, &cancel)
+        .expect("generate pocket toolpath");
+    let pre_feeds: Vec<Option<f64>> = session_on
+        .get_result(0)
+        .expect("session result before the simulation")
+        .annotated()
+        .toolpath
+        .moves
+        .iter()
+        .map(|mv| mv.move_type.feed_rate())
+        .collect();
+    session_on
+        .run_simulation(&opts(true), &cancel)
+        .expect("simulation completes");
+    let trace_on = session_on
+        .simulation_result()
+        .and_then(|s| s.cut_trace.as_ref())
+        .expect("cut trace flag-on");
+    let bands_on =
+        rs_cam_core::tool_load::modulation_bands_for_session(&session_on, Some(trace_on));
+    let band_on = bands_on
+        .get(&ToolpathId(0))
+        .expect("A2: the modulator has a target for AS001's pocket");
+    assert!(
+        band_on.is_point(),
+        "A2: the modulator reads AS001's row as a point; got {band_on:?}"
+    );
+    let cap_feed = band_on.max_mm_per_tooth * RPM_X_FLUTES;
+
+    let words_on = cutting_feed_words(&session_on);
+    let median_on = words_on.median();
+    eprintln!(
+        "F-036b AB3 (A2): point v' = {point:.5} mm/tooth (gate), {:.5} (modulator); \
+         cap {cap_feed:.1} mm/min; median off {median_off:.1} ({:.5} mm/tooth), \
+         median on {median_on:.1} ({:.5} mm/tooth). Flag-ON population: {}",
+        band_on.max_mm_per_tooth,
         chip(median_off),
-        band_min,
+        chip(median_on),
+        words_on.report()
+    );
+
+    // 2. flag-OFF median sits below the point (the under-fed default).
+    assert!(
+        chip(median_off) < point,
+        "flag-OFF median chipload {:.4} should be below the point {point:.4} (under-fed \
+         default). Flag-OFF population: {}",
+        chip(median_off),
         words_off.report()
     );
-    // 2. modulation raised the median feed.
-    assert!(
-        median_on > median_off,
-        "modulation must raise the median cutting feed: off={median_off:.0}, on={median_on:.0}. \
-         Flag-ON population: {}",
-        words_on.report()
+
+    // 3 and 4: read the moves the modulator wrote.
+    let toolpath = &session_on
+        .get_result(0)
+        .expect("session result for toolpath 0")
+        .annotated()
+        .toolpath;
+    assert_eq!(
+        pre_feeds.len(),
+        toolpath.moves.len(),
+        "F-036b AB3: the per-index diff reads one move list, not two"
     );
-    // 3. the flag-ON median lands inside the band — the bulk of cutting moves
-    //    are now correctly fed.
-    let chip_on = chip(median_on);
+    let commanded = 770.0;
+    let mut written = 0usize;
+    let mut above_cap: Vec<(usize, f64)> = Vec::new();
+    let mut raised = 0usize;
+    for (i, mv) in toolpath.moves.iter().enumerate() {
+        if !matches!(
+            mv.intent,
+            MoveIntent::ClearingCut | MoveIntent::FinishingCut
+        ) {
+            continue;
+        }
+        let (Some(feed), Some(pre_feed)) = (mv.move_type.feed_rate(), pre_feeds[i]) else {
+            continue;
+        };
+        if (feed - pre_feed).abs() == 0.0 {
+            continue;
+        }
+        written += 1;
+        // 0.5 mm/min absorbs the f64 product; the cap is exact otherwise.
+        if feed > cap_feed + 0.5 {
+            above_cap.push((i, feed));
+        }
+        if feed > commanded + 0.5 {
+            raised += 1;
+        }
+    }
     assert!(
-        (band_min..=band_max).contains(&chip_on),
-        "flag-ON median chipload {chip_on:.4} should land in band [{band_min:.4}, {band_max:.4}]. \
-         Flag-ON population: {}",
-        words_on.report()
+        above_cap.is_empty(),
+        "A2: the modulator must cap every cutting move at the point \
+         ({cap_feed:.1} mm/min); {} of {written} written moves are above it: {:?}",
+        above_cap.len(),
+        above_cap
+    );
+    assert!(
+        raised > 0,
+        "A2: the modulator wrote {written} cutting moves and raised none above the \
+         commanded {commanded} mm/min. The point cap ({cap_feed:.1} mm/min) sits above \
+         the default, so modulation must raise some feed toward it."
     );
 }
 
@@ -763,12 +870,13 @@ fn modulated_path_never_emits_below_min_chipload() {
 
     let envelopes = rs_cam_core::tool_load::chipload_envelopes_for_session(&session, Some(trace));
     let Some(band) = envelopes.get(&ToolpathId(0)) else {
-        // No LUT band → modulator was a no-op. Vacuously satisfied;
-        // pinned here so a future calibration shift doesn't silently
-        // downgrade the assertion.
+        // No two-limit band → no floor to check. Vacuously satisfied.
+        // Since R5 AS001 resolves a printed point (A2): the modulator
+        // runs, capped at the point with no floor, and AB3 pins that cap.
         eprintln!(
-            "F-036b AB5: no LUT chipload band for AS001 pocket — modulator was a no-op. \
-             Recalibrate the test fixture if this becomes unintentional."
+            "F-036b AB5: no two-limit LUT chipload band for AS001 pocket (a printed point \
+             has no floor, A2), so this arm checks nothing. Recalibrate the test fixture \
+             if this becomes unintentional."
         );
         return;
     };
@@ -948,7 +1056,14 @@ fn modulated_path_preserves_zero_rapid_collision_invariant() {
 // ============== Sanity: modulation actually fires ==================
 //
 // Defensive check that the test fixture's LUT path actually returns a
-// chipload band — if it doesn't, AB2/AB3/AB4 are vacuously passing.
+// chipload target for the modulator — if it doesn't, AB2/AB3/AB4 are
+// vacuously passing.
+//
+// A2 (point mode, 2026-09-24): AS001's row prints one value
+// (`amana-flat-hardwood-pocket-6000-2f-spektra`, max 0.127, no minimum), so
+// the target is a point. The modulator reads it through
+// `modulation_bands_for_session`. The band-only envelope map (the viewport
+// colouring, decision Q3) does not carry it.
 #[test]
 fn fixture_sanity_lut_band_resolves_for_as001() {
     let session = run_session(true, false);
@@ -956,11 +1071,41 @@ fn fixture_sanity_lut_band_resolves_for_as001() {
         .simulation_result()
         .and_then(|s| s.cut_trace.as_ref())
         .expect("cut trace");
+    let bands = rs_cam_core::tool_load::modulation_bands_for_session(&session, Some(trace));
+    let band = bands.get(&ToolpathId(0)).unwrap_or_else(|| {
+        panic!(
+            "F-036b sanity: AS001 pocket must resolve a vendor LUT chipload target so the \
+             flag-ON tests actually exercise modulation. Got modulation bands = {bands:?}"
+        )
+    });
+    assert!(
+        band.is_point(),
+        "A2: AS001's row prints one value, so the modulator target is a point; got {band:?}"
+    );
+
+    let tc = session.get_toolpath_config(0).expect("toolpath config 0");
+    let tool = session
+        .get_tool(ToolId(tc.tool_id))
+        .expect("tool referenced by toolpath");
+    let target = rs_cam_core::tool_load::chip_target_for_toolpath(
+        &session.stock_config().material,
+        tool,
+        &tc.operation,
+        tc.id,
+        Some(trace),
+    );
+    assert_eq!(
+        target,
+        Some(rs_cam_core::tool_load::ChipTarget::Point(
+            band.max_mm_per_tooth
+        )),
+        "A2: chip_target_for_toolpath gives the point the modulator reads"
+    );
+
     let envelopes = rs_cam_core::tool_load::chipload_envelopes_for_session(&session, Some(trace));
     assert!(
-        envelopes.contains_key(&ToolpathId(0)),
-        "F-036b sanity: AS001 pocket must resolve a vendor LUT chipload band so the \
-         flag-ON tests actually exercise modulation. Got envelopes = {envelopes:?}"
+        !envelopes.contains_key(&ToolpathId(0)),
+        "A2 Q3: the band-only envelope map must not carry a point; got {envelopes:?}"
     );
 }
 

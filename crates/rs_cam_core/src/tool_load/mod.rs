@@ -264,10 +264,67 @@ impl RefuseReason {
 /// surviving arc-mean chip-thickness track is drawn **unbanded**,
 /// because a shaded envelope is a comparison and no source publishes one
 /// for that quantity.
+///
+/// # A printed point (A2, point mode)
+///
+/// This map holds two-limit bands only. A toolpath whose row prints one
+/// value ([`ChipTarget::Point`]) is absent, so the viewport draws it grey
+/// (decision Q3). The modulator reads [`modulation_bands_for_session`],
+/// which carries the point.
 pub fn chipload_envelopes_for_session(
     session: &crate::session::ProjectSession,
     sim_trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
 ) -> std::collections::HashMap<ToolpathId, std::ops::Range<f64>> {
+    chip_targets_for_session(session, sim_trace)
+        .into_iter()
+        .filter_map(|(id, target)| target.band_range().map(|band| (id, band)))
+        .collect()
+}
+
+/// The chipload target of a toolpath (A2, point mode): the DOC-derated
+/// printed band, or the DOC-derated printed point.
+///
+/// A vendor row that prints one value gives a point, not a band
+/// ([`crate::feeds::vendor_lookup::PrintedChipload`]). No consumer derives
+/// a band from a point.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ChipTarget {
+    /// Two printed limits, DOC-derated (mm/tooth), `start < end`.
+    Band(std::ops::Range<f64>),
+    /// One printed value, DOC-derated (mm/tooth).
+    Point(f64),
+}
+
+impl ChipTarget {
+    /// The modulator's band: [`ChiploadBand::new`] for a band,
+    /// [`ChiploadBand::point`] for a point. `None` when the values are
+    /// not valid for a `ChiploadBand`.
+    ///
+    /// [`ChiploadBand::new`]: crate::dressup::feed_modulation::ChiploadBand::new
+    /// [`ChiploadBand::point`]: crate::dressup::feed_modulation::ChiploadBand::point
+    pub fn modulation_band(&self) -> Option<crate::dressup::feed_modulation::ChiploadBand> {
+        use crate::dressup::feed_modulation::ChiploadBand;
+        match self {
+            Self::Band(range) => ChiploadBand::new(range.start, range.end),
+            Self::Point(value) => ChiploadBand::point(*value),
+        }
+    }
+
+    /// The two-limit band, or `None` for a point.
+    pub fn band_range(&self) -> Option<std::ops::Range<f64>> {
+        match self {
+            Self::Band(range) => Some(range.clone()),
+            Self::Point(_) => None,
+        }
+    }
+}
+
+/// The chipload target of every enabled toolpath in the session. A
+/// toolpath with no target (see [`chip_target_for_toolpath`]) is absent.
+fn chip_targets_for_session(
+    session: &crate::session::ProjectSession,
+    sim_trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
+) -> std::collections::HashMap<ToolpathId, ChipTarget> {
     let mut out = std::collections::HashMap::new();
     let material = &session.stock_config().material;
     for tc in session.toolpath_configs() {
@@ -278,27 +335,48 @@ pub fn chipload_envelopes_for_session(
         else {
             continue;
         };
-        if let Some(band) =
-            chipload_envelope_for_toolpath(material, tool_cfg, &tc.operation, tc.id, sim_trace)
+        if let Some(target) =
+            chip_target_for_toolpath(material, tool_cfg, &tc.operation, tc.id, sim_trace)
         {
-            out.insert(tc.id, band);
+            out.insert(tc.id, target);
         }
     }
     out
 }
 
-/// The DOC-derated advance-per-tooth envelope of ONE toolpath.
+/// The modulator's chipload band for every enabled toolpath in the
+/// session (A2, point mode). A band row gives [`ChiploadBand::new`]; a
+/// point row gives [`ChiploadBand::point`]. A toolpath with no target is
+/// absent, and the modulator runs it bandless.
 ///
-/// The per-toolpath half of [`chipload_envelopes_for_session`], and the
-/// only place the band is derived. It takes the toolpath's STORED
-/// operation and the cutter that toolpath is bound to, so a caller that
-/// holds no session — the strategy advisor's `Job` step (ii) — reads the
-/// same row the session-wide resolver would have written for it.
+/// The adaptive feed modulation pass in `session/` reads this map, so a
+/// point toolpath modulates capped at its point with no floor.
+///
+/// [`ChiploadBand::new`]: crate::dressup::feed_modulation::ChiploadBand::new
+/// [`ChiploadBand::point`]: crate::dressup::feed_modulation::ChiploadBand::point
+pub fn modulation_bands_for_session(
+    session: &crate::session::ProjectSession,
+    sim_trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
+) -> std::collections::HashMap<ToolpathId, crate::dressup::feed_modulation::ChiploadBand> {
+    chip_targets_for_session(session, sim_trace)
+        .into_iter()
+        .filter_map(|(id, target)| target.modulation_band().map(|band| (id, band)))
+        .collect()
+}
+
+/// The DOC-derated advance-per-tooth envelope of ONE toolpath: a band
+/// only. A thin wrapper over [`chip_target_for_toolpath`].
+///
+/// The per-toolpath half of [`chipload_envelopes_for_session`]. It takes
+/// the toolpath's STORED operation and the cutter that toolpath is bound
+/// to, so a caller that holds no session — the strategy advisor's `Job`
+/// step (ii) — reads the same row the session-wide resolver would have
+/// written for it.
 ///
 /// `None` means NOT AVAILABLE: a custom material publishes no vendor row,
 /// the resolver matched no row for this tool and pass role, or the row
-/// carries only one of the two bounds (a `Range` cannot express a
-/// one-sided band).
+/// prints one value (a point, A2). A `Range` does not express a point;
+/// read [`chip_target_for_toolpath`] for it.
 pub fn chipload_envelope_for_toolpath(
     material: &Material,
     tool_cfg: &crate::compute::tool_config::ToolConfig,
@@ -306,6 +384,33 @@ pub fn chipload_envelope_for_toolpath(
     toolpath_id: ToolpathId,
     sim_trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
 ) -> Option<std::ops::Range<f64>> {
+    chip_target_for_toolpath(material, tool_cfg, operation, toolpath_id, sim_trace)?.band_range()
+}
+
+/// The DOC-derated chipload target of ONE toolpath (A2, point mode), and
+/// the only place the target is derived.
+///
+/// The matched row's [`crate::feeds::vendor_lookup::LookupResult::printed_chipload`]
+/// decides the shape:
+///
+/// - `Band` gives [`ChipTarget::Band`], both limits DOC-derated.
+/// - `Point` gives [`ChipTarget::Point`], the point DOC-derated the same
+///   way. No band is derived from it.
+/// - `Unpublished` gives `None`.
+///
+/// `None` also means a custom material, or no matched row for this tool
+/// and pass role.
+///
+/// The band arm is the pre-A2 envelope. The point arm reaches the
+/// modulator through [`modulation_bands_for_session`] (the sim pass) and
+/// through the strategy advisor's `optimized_candidate`.
+pub fn chip_target_for_toolpath(
+    material: &Material,
+    tool_cfg: &crate::compute::tool_config::ToolConfig,
+    operation: &crate::compute::catalog::OperationConfig,
+    toolpath_id: ToolpathId,
+    sim_trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
+) -> Option<ChipTarget> {
     use crate::feeds::vendor_normalize::op_family_to_lut;
     use crate::tool::MillingCutter;
 
@@ -348,26 +453,40 @@ pub fn chipload_envelope_for_toolpath(
         lut_pass_role,
         crate::feeds::geometry::lut_key_diameter_for_cutter(&tool_def, axial_doc),
     )?;
-    // Keep envelope rows where both bounds exist and are sane,
-    // DOC-derated exactly like the gate's trip bounds so the
-    // operator-facing colors agree with the export verdict. Both
-    // bounds are required here — the `Range<f64>` this function
-    // returns can't express a one-sided band — via the shared
-    // `geometry::derate_chipload_bounds` helper (S.8, single home
-    // for this wrapper across Suggest and both `tool_load` gate
-    // sites; see `planning/finishing_stack_review_2026-07.md`).
+    // DOC-derate exactly like the gate's trip bounds, so the
+    // operator-facing colors agree with the export verdict, via the
+    // shared `geometry::derate_chipload_bounds` helper (S.8, single home
+    // for this wrapper across Suggest and both `tool_load` gate sites;
+    // see `planning/finishing_stack_review_2026-07.md`).
     // The de-rate divides by the engaged (cone) diameter at the peak DOC,
     // not by the lookup key: the depth half of R2 stands (ruling A1).
     let lookup_diameter = tool_def.lookup_diameter_at(axial_doc).max(1e-9);
     let doc_ratio = axial_doc / lookup_diameter;
-    crate::feeds::geometry::derate_chipload_bounds(
-        matched.chip_load_min_mm,
-        matched.chip_load_max_mm,
-        doc_ratio,
-        crate::feeds::geometry::ChiploadBoundPolicy::RequireBoth,
-    )
-    .and_then(crate::feeds::geometry::DeratedChiploadBand::into_pair)
-    .map(|(lo, hi)| lo..hi)
+    match matched.printed_chipload() {
+        // Two printed limits: both must pass the shared validation.
+        crate::feeds::vendor_lookup::PrintedChipload::Band { min_mm, max_mm } => {
+            crate::feeds::geometry::derate_chipload_bounds(
+                Some(min_mm),
+                Some(max_mm),
+                doc_ratio,
+                crate::feeds::geometry::ChiploadBoundPolicy::RequireBoth,
+            )
+            .and_then(crate::feeds::geometry::DeratedChiploadBand::into_pair)
+            .map(|(lo, hi)| ChipTarget::Band(lo..hi))
+        }
+        // One printed value: the same de-rate as the gate's point v'
+        // (`chipload::evaluate_inner`) and Suggest's `chip_point_for_dpp`.
+        crate::feeds::vendor_lookup::PrintedChipload::Point { value_mm } => {
+            crate::feeds::geometry::derate_chipload_bounds(
+                None,
+                Some(value_mm),
+                doc_ratio,
+                crate::feeds::geometry::ChiploadBoundPolicy::AllowHalfBand,
+            )
+            .map(|derated| ChipTarget::Point(derated.max_mm_per_tooth))
+        }
+        crate::feeds::vendor_lookup::PrintedChipload::Unpublished => None,
+    }
 }
 
 /// Soft fractional widenings on the chipload + power hard-gate triggers.

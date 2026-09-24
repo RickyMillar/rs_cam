@@ -469,15 +469,17 @@ impl ProjectSession {
     ///    modulation; impossible inside `run_simulation`'s single
     ///    transaction).
     ///
-    /// A toolpath with no vendor chipload band modulates BANDLESS
+    /// A toolpath with no vendor chipload row modulates BANDLESS
     /// (machine ceiling + geometric plunge guard) rather than being
     /// skipped — wanaka200 IMPLEMENTATION_PLAN work item A, 2026-09-19.
     ///
     /// The chipload band source is
-    /// [`crate::tool_load::chipload_envelopes_for_session`] — the same
-    /// helper the chipload viewport coloring + timeline envelope readout
-    /// already use, so band semantics match the rest of the load-gates
-    /// surface.
+    /// [`crate::tool_load::modulation_bands_for_session`]. It reads the
+    /// same per-toolpath resolver as the chipload viewport coloring and
+    /// the timeline envelope readout, so band semantics match the rest of
+    /// the load-gates surface. A2 (point mode): a row that prints one
+    /// value gives a point, and the modulator caps the toolpath at the
+    /// point with no floor. The viewport map stays band-only.
     fn apply_adaptive_feed_modulation(
         &mut self,
         cut_trace: &mut Option<Arc<crate::stock::simulation_cut::SimulationCutTrace>>,
@@ -485,9 +487,7 @@ impl ProjectSession {
     ) {
         // Engagement aggregation + `ModulationContext` build now live in the
         // shared `modulate_annotated_against_trace`; this pass only needs the
-        // chipload band to gate which toolpaths are eligible.
-        use crate::dressup::feed_modulation::ChiploadBand;
-
+        // chipload band (or point, A2) of each toolpath.
         let Some(cut_trace_ref) = cut_trace.as_deref() else {
             return;
         };
@@ -495,8 +495,8 @@ impl ProjectSession {
         // generic-wood-router fallback when no explicit block is set — so it
         // applies on every machine, matching the strategy advisor (step 5).
         let kinematics = self.machine.effective_kinematics();
-        let envelopes = crate::tool_load::chipload_envelopes_for_session(self, Some(cut_trace_ref));
-        // No `envelopes.is_empty()` early return: a session with NO
+        let bands = crate::tool_load::modulation_bands_for_session(self, Some(cut_trace_ref));
+        // No `bands.is_empty()` early return: a session with NO
         // banded toolpath still bandless-modulates every candidate
         // (machine ceiling + geometric plunge guard).
 
@@ -532,16 +532,14 @@ impl ProjectSession {
             .collect();
 
         for (idx, toolpath_id) in candidate_indices {
-            // Banded: the vendor envelope, exactly as before. Bandless
-            // (no envelope, or an envelope whose endpoints fail
-            // `ChiploadBand::new`): `None` — previously this arm
-            // `continue`d, which made the geometric plunge guard
-            // unreachable for bandless ops (the wanaka200 V-bit
-            // ProjectCurve emitted a 1165 mm/min vertical descent
+            // Banded: the vendor envelope. Point (A2): the printed value,
+            // a cap with no floor. Bandless (no row, or values that fail
+            // `ChiploadBand::new` / `ChiploadBand::point`): `None` —
+            // previously this arm `continue`d, which made the geometric
+            // plunge guard unreachable for bandless ops (the wanaka200
+            // V-bit ProjectCurve emitted a 1165 mm/min vertical descent
             // against its own 400 mm/min plunge rate).
-            let band = envelopes
-                .get(&toolpath_id)
-                .and_then(|band_range| ChiploadBand::new(band_range.start, band_range.end));
+            let band = bands.get(&toolpath_id).copied();
             let Some(tc) = self.toolpath_configs.get(idx) else {
                 continue;
             };

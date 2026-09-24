@@ -25,7 +25,7 @@ The calculator for RPM, feed, plunge rate, DOC and WOC. The validated entry poin
   dial `MachineProfile::aggressiveness` (0.85) scales depth and stepover to hold load at
   `k × L/D share`; it never cuts the feed. Power ceiling = `power_at_rpm`, no fraction.
 - On an adaptive rough the simulated chipload outranks the Suggest verdict. Step ladder (D7): a reader of the deepest bite reads `deepest_axial_step()`; a depth write goes through `suggest/ladder.rs` (cap every step, or scale the whole ladder). With a ladder Suggest keeps the operator's steps and only lowers them (ruling 1, 2026-09-24); a removed step files `CoarseStepRemoved`.
-- One claimed band: every consumer reads `LookupResult::size_basis`; a `Refused` row has no band anywhere.
+- One claimed band: every consumer reads `LookupResult::size_basis`; a `Refused` row has no band anywhere. A2: one printed value is a point (`printed_chipload()`); no band is derived; the modulator caps at it with no floor; the gate is hard above it and advisory below it.
 
 ## Sentries
 Run one with `cargo test -p rs_cam_core -q --test <name>`: `lut_resolver_census_a6`, `lookup_parity`, `rubbing_floor_warns_and_never_lifts`,
@@ -36,5 +36,5 @@ Run one with `cargo test -p rs_cam_core -q --test <name>`: `lut_resolver_census_
 `the_dial_holds_the_load_and_never_cuts_the_feed_fm7`, `rpm_follows_the_feed_ceiling_fm8`, `micro_extrapolation_refuses_fm9`,
 `a_tapered_row_is_read_at_the_tip_a1`, `the_micro_tapered_finish_ships_the_printed_tip_row_g1`, `a_size_claim_states_its_rule_range_and_residual_g1`,
 `every_consumer_reads_one_claimed_band_g1`, `the_onsrud_vbit_rows_serve_mdf_and_plywood_g2`, `one_janka_table_for_row_and_query_g2`,
-`a_hardness_transfer_caps_at_the_printed_soft_hard_ratio_g2`, `a_coarse_step_is_seen_by_suggest_and_the_envelope_g_ladder`. `feeds_matrix_instrument_fm1` is an `#[ignore]` instrument (`-- --ignored`)
-that writes planning/feeds_matrix_2026-09-23/. `wanaka_suggest_integration` takes minutes: ask first.
+`a_hardness_transfer_caps_at_the_printed_soft_hard_ratio_g2`, `a_coarse_step_is_seen_by_suggest_and_the_envelope_g_ladder`, `a_printed_value_is_held_as_a_point_a2`.
+`feeds_matrix_instrument_fm1` is an `#[ignore]` instrument (`-- --ignored`) that writes planning/feeds_matrix_2026-09-23/. `wanaka_suggest_integration` takes minutes: ask first.

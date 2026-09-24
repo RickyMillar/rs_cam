@@ -517,6 +517,10 @@ struct SuggestRead {
     lut_target: f64,
     /// The derated vendor band on the matched row.
     band: Option<(f64, f64)>,
+    /// The derated printed point on the matched row (A2, point mode):
+    /// `FeedsResult::chipload_point_mm`. At most one of `band` and
+    /// `point` is `Some`.
+    point: Option<f64>,
     /// `feeds_result.rpm` — what the calculator recommended, for the record.
     feeds_rpm: f64,
     /// The RPM on the operation the fixture was *authored* with, kept only
@@ -585,6 +589,7 @@ fn suggest_read(session: &ProjectSession, fx: &Fixture) -> SuggestRead {
         // uses) targets the band midpoint.
         lut_target: band.map_or(f64::NAN, |(lo, hi)| (lo + hi) / 2.0),
         band,
+        point: feeds.chipload_point_mm,
         feeds_rpm: feeds.rpm,
         authored_rpm: fx.rpm,
         cutting_ceiling: session.machine().cutting_feed_ceiling_mm_min(),
@@ -947,10 +952,14 @@ fn modulation_default_is_on_and_closes_the_two_dropcutter_residuals() {
         "Checkpoint J-3: SimulationOptions::default() must have adaptive_feed_modulation = true"
     );
 
-    // Non-vacuity for the band-less skip below: the fixtures that carry a
-    // two-limit band must still be the majority.
-    let mut banded = 0usize;
+    // Non-vacuity for the target-less skip below. A2 (point mode): the
+    // modulator caps a point toolpath at its printed point, so a fixture
+    // with a band OR a point is a modulation target. The arm needs at
+    // least one modulated fixture of each kind.
+    let mut targeted = 0usize;
     let mut modulated = 0usize;
+    let mut modulated_bands = 0usize;
+    let mut modulated_points = 0usize;
     for fx in fixtures() {
         let mut session = build_session(&fx);
         let r = suggest_read(&session, &fx);
@@ -1027,17 +1036,18 @@ fn modulation_default_is_on_and_closes_the_two_dropcutter_residuals() {
             )),
         );
 
-        // 2026-09-23 (feeds matrix R5): a fixture whose row prints one value
-        // has no band for the modulator to aim at, so 2 and 3 do not apply.
-        // A3D-1 is that fixture since the Spektra rows landed.
-        if r.band.is_none() {
+        // A2 (point mode, 2026-09-24): a fixture whose row prints one value
+        // modulates capped at the point, so 2 and 3 apply to it. Only a
+        // fixture with no chipload row at all (no band and no point) has
+        // nothing for the modulator to aim at.
+        if r.band.is_none() && r.point.is_none() {
             println!(
-                "      {}: no two-limit band; modulation checks skipped",
+                "      {}: no band and no point; modulation checks skipped",
                 fx.label
             );
             continue;
         }
-        banded += 1;
+        targeted += 1;
 
         // Ruling R4 WP3 (2026-09-24): a fixture whose shipped feed sits ON
         // its cutting ceiling gives the modulator nothing to move (DC-2 ships
@@ -1054,6 +1064,20 @@ fn modulation_default_is_on_and_closes_the_two_dropcutter_residuals() {
             continue;
         }
         modulated += 1;
+        if r.band.is_some() {
+            modulated_bands += 1;
+        } else {
+            modulated_points += 1;
+        }
+        println!(
+            "      {}: modulation target {}",
+            fx.label,
+            match (r.band, r.point) {
+                (Some((lo, hi)), _) => format!("band {lo:.5}-{hi:.5}"),
+                (None, Some(v)) => format!("point {v:.5}"),
+                (None, None) => "none".to_owned(),
+            }
+        );
 
         // 3 — the modulator ran, and on a non-empty population. Checked
         //     BEFORE the verdict so a vacuous pass cannot be read as a fix.
@@ -1086,16 +1110,25 @@ fn modulation_default_is_on_and_closes_the_two_dropcutter_residuals() {
             fx.label, verdict
         );
     }
-    // DC-1 and DC-2 carry two-limit bands on the 2026-09-24 rows; A3D-1 and
-    // A3D-2 resolve one-value rows.
+    // DC-1 carries a two-limit band on the 2026-09-24 rows; A3D-1 and A3D-2
+    // resolve one-value rows (points, A2). A3D-2 and DC-2 ship on their
+    // cutting ceilings, so DC-1 (band) and A3D-1 (point) must modulate.
     assert!(
-        banded >= 2,
-        "only {banded} fixtures carried a two-limit band; the modulation arm is vacuous"
+        targeted >= 2,
+        "only {targeted} fixtures carried a band or a point; the modulation arm is vacuous"
     );
     assert!(
         modulated >= 1,
-        "no banded fixture sat off its cutting ceiling, so nothing was checked to \
-         modulate; DC-1 must"
+        "no targeted fixture sat off its cutting ceiling, so nothing was checked to \
+         modulate; DC-1 and A3D-1 must"
+    );
+    assert!(
+        modulated_bands >= 1,
+        "no two-limit band fixture was checked to modulate; DC-1 must"
+    );
+    assert!(
+        modulated_points >= 1,
+        "no point fixture was checked to modulate (A2); A3D-1 must"
     );
 }
 

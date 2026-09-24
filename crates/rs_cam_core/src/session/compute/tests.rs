@@ -1683,35 +1683,69 @@ fn advisor_modulates_candidate_feeds_before_timing() {
 
     // WP14a moved the optimizer behind the captured `AdvisorContext`, so
     // the test reads the same context the job's step (ii) reads.
-    // The advisor keeps its band gate: a candidate with no two-limit
-    // chipload band is not load-optimisable, and the advisor times the raw
-    // path. Since R5 (2026-09-23) the 6 mm flat-end adaptive cells in the
-    // four woods resolve the printed Amana Spektra rows, which publish one
-    // value (a maximum, no minimum), so the fixture's softwood stock gives
-    // no band. That is a product gap, recorded in the feeds-matrix
-    // rulings (the simulation modulates those cells bandless; the advisor
-    // does not optimise them). This arm pins the gap so a fix shows here.
+    // A2 (point mode): since R5 (2026-09-23) the 6 mm flat-end adaptive
+    // cells in the four woods resolve the printed Amana Spektra rows,
+    // which print one value (a maximum, no minimum). The fixture's
+    // softwood stock gives a point, and the advisor optimises the
+    // candidate capped at the point with no floor. Before A2 this arm
+    // returned `None` (the advisor had no band there).
+    let changed_cut_feeds = |modulated: &crate::toolpath::Toolpath| {
+        modulated
+            .moves
+            .iter()
+            .zip(&raw_feeds)
+            .filter(|(m, raw)| match (cut_move_feed(m), raw) {
+                (Some(a), Some(b)) => (a - b).abs() > 0.5,
+                _ => false,
+            })
+            .count()
+    };
     let handle = session
         .capture_recommend_clearing_strategy(0, &cancel)
         .expect("capture the advisor job for the adaptive3d op");
+    let softwood_target = crate::tool_load::chip_target_for_toolpath(
+        &handle.context.stock.material,
+        handle
+            .context
+            .stored_tool
+            .as_ref()
+            .expect("the stored toolpath has a bound cutter"),
+        &handle.context.stored_operation,
+        handle.context.toolpath_id,
+        None,
+    );
     assert!(
-        optimized_candidate(
-            &handle.context,
-            &annotated_arc,
-            &resolved.tool,
-            &resolved.operation,
-            &cancel,
-        )
-        .is_none(),
-        "the softwood 6 mm adaptive cell resolves a one-value Spektra row; the advisor \
-         must not invent a band there (if this fires, the advisor gained a bandless \
-         path or the row gained a minimum: update the rulings note)"
+        matches!(
+            softwood_target,
+            Some(crate::tool_load::ChipTarget::Point(_))
+        ),
+        "the softwood 6 mm adaptive cell resolves a one-value Spektra row, so its \
+         target is a point; got {softwood_target:?}"
+    );
+    let (point_modulated, _point_regime) = optimized_candidate(
+        &handle.context,
+        &annotated_arc,
+        &resolved.tool,
+        &resolved.operation,
+        &cancel,
+    )
+    .expect("A2: the advisor optimizes the candidate capped at the printed point");
+    assert_eq!(
+        point_modulated.moves.len(),
+        annotated_arc.toolpath.moves.len(),
+        "modulation rewrites feeds, not geometry"
+    );
+    let point_changed = changed_cut_feeds(&point_modulated);
+    assert!(
+        point_changed > 0,
+        "A2: on a point cell ConstrainedMax modulation must rewrite at least one \
+         cut-move feed before the advisor times the path"
     );
 
     // Aluminium 6061 resolves `amana-flat-aluminum-adaptive-6000-3f`
     // (0.018–0.035 mm/tooth, both limits printed), so the advisor has a
     // band and modulates. The material is not one the R1 judgement covers,
-    // so nothing refuses the cell.
+    // so nothing refuses the cell. This arm is the two-limit band witness.
     {
         let mut stock = session.stock_config().clone();
         stock.material = crate::material::Material::Aluminum {
@@ -1728,6 +1762,24 @@ fn advisor_modulates_candidate_feeds_before_timing() {
     let handle = session
         .capture_recommend_clearing_strategy(0, &cancel)
         .expect("capture the advisor job for the adaptive3d op");
+    let aluminium_target = crate::tool_load::chip_target_for_toolpath(
+        &handle.context.stock.material,
+        handle
+            .context
+            .stored_tool
+            .as_ref()
+            .expect("the stored toolpath has a bound cutter"),
+        &handle.context.stored_operation,
+        handle.context.toolpath_id,
+        None,
+    );
+    assert!(
+        matches!(
+            aluminium_target,
+            Some(crate::tool_load::ChipTarget::Band(_))
+        ),
+        "the aluminium adaptive cell resolves a two-limit row; got {aluminium_target:?}"
+    );
     let (modulated, regime) = optimized_candidate(
         &handle.context,
         &annotated_arc,
@@ -1743,15 +1795,7 @@ fn advisor_modulates_candidate_feeds_before_timing() {
         annotated_arc.toolpath.moves.len(),
         "modulation rewrites feeds, not geometry"
     );
-    let changed = modulated
-        .moves
-        .iter()
-        .zip(&raw_feeds)
-        .filter(|(m, raw)| match (cut_move_feed(m), raw) {
-            (Some(a), Some(b)) => (a - b).abs() > 0.5,
-            _ => false,
-        })
-        .count();
+    let changed = changed_cut_feeds(&modulated);
     assert!(
         changed > 0,
         "ConstrainedMax modulation must rewrite at least one cut-move feed \

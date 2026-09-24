@@ -1485,14 +1485,21 @@ pub fn execute_optimize_toolpath(
 /// (`modulate_annotated_against_trace`) so the timed path carries
 /// modulated feeds. Returns `None` (the caller times the raw path with the
 /// Suggest-warning regime) when the machine has no kinematics block, the
-/// candidate can't be simulated, no chipload band is available, or
+/// candidate can't be simulated, no chipload row is available, or
 /// modulation refuses.
 ///
 /// A free function over the captured [`AdvisorContext`]. It holds no
-/// session, and it reaches the chipload envelope through
-/// [`crate::tool_load::chipload_envelope_for_toolpath`] — the per-toolpath
-/// half of the session-wide resolver, which the gate and the viewport read
-/// through the same function.
+/// session, and it reaches the chipload target through
+/// [`crate::tool_load::chip_target_for_toolpath`] — the per-toolpath half
+/// of the session-wide resolver, which the gate, the viewport and the sim
+/// pass read through the same function.
+///
+/// A2 (point mode): a row that prints two limits gives a band. A row that
+/// prints one value gives a point ([`ChiploadBand::point`]), and the
+/// advisor optimises the candidate capped at the point with no floor. A
+/// cell with no chipload row still returns `None` (decision Q6).
+///
+/// [`ChiploadBand::point`]: crate::dressup::feed_modulation::ChiploadBand::point
 fn optimized_candidate(
     context: &AdvisorContext,
     annotated: &Arc<crate::trace::toolpath_spans::AnnotatedToolpath>,
@@ -1524,19 +1531,21 @@ fn optimized_candidate(
     if !context.toolpath_enabled {
         return None;
     }
-    let band_range = crate::tool_load::chipload_envelope_for_toolpath(
+    // A2: a band row gives `ChiploadBand::new`, a point row gives
+    // `ChiploadBand::point`. The sim pass reads the same target through
+    // `tool_load::modulation_bands_for_session`.
+    let band = crate::tool_load::chip_target_for_toolpath(
         &context.stock.material,
         context.stored_tool.as_ref()?,
         &context.stored_operation,
         toolpath_id,
         Some(&cut_trace),
-    )?;
-    let band =
-        crate::dressup::feed_modulation::ChiploadBand::new(band_range.start, band_range.end)?;
-    // The advisor keeps its band gate (documented above): a candidate
-    // with no chipload envelope is not load-optimizable, so it times
-    // the raw path with the Suggest-warning regime. The SIM pass goes
-    // bandless for the same toolpaths; see
+    )?
+    .modulation_band()?;
+    // The advisor keeps its chipload-row gate (documented above, Q6): a
+    // candidate with no band and no point is not load-optimizable, so it
+    // times the raw path with the Suggest-warning regime. The SIM pass
+    // goes bandless for the same toolpaths; see
     // `session/compute/simulation.rs::apply_adaptive_feed_modulation`.
     // ConstrainedMax @ feed scale 1.0 — the "bomber feeds" operating
     // point and the `SimulationOptions` default, so the advisor times the

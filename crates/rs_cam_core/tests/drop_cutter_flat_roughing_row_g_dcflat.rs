@@ -17,6 +17,10 @@
 //! material, so the band cannot be read as an invented row. It also
 //! keeps the pre-fix reproduction (the unrouted query still finds no
 //! row) and pins that ball tools on `DropCutter` are untouched.
+//!
+//! A2 (point mode, 2026-09-24): since R5 the cell resolves a Spektra row
+//! that prints one value. The row is a point, and the modulator caps the
+//! toolpath at it with no floor (`ChipTarget::Point`).
 
 #![allow(
     clippy::unwrap_used,
@@ -25,14 +29,21 @@
     clippy::indexing_slicing
 )]
 
-use rs_cam_core::compute::catalog::OperationType;
+use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
+use rs_cam_core::compute::operation_configs::DropCutterConfig;
+use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::ToolGeometryHint;
 use rs_cam_core::feeds::embedded_vendor_lut;
-use rs_cam_core::feeds::vendor_lookup::{LookupQuery, find_best_chip_envelope_row};
+use rs_cam_core::feeds::vendor_lookup::{
+    LookupQuery, PrintedChipload, find_best_chip_envelope_row,
+};
 use rs_cam_core::feeds::vendor_lut::{
     HardnessKind, LutOperationFamily, LutPassRole, MaterialFamily, ToolFamily,
 };
 use rs_cam_core::feeds::vendor_normalize::lut_query_for;
+use rs_cam_core::ids::ToolpathId;
+use rs_cam_core::material::{Material, PlywoodGrade};
+use rs_cam_core::tool_load::{ChipTarget, chip_target_for_toolpath};
 
 /// The Arm G tuple: 6 mm two-flute flat end mill in Baltic birch
 /// plywood (Janka 1200, `PlywoodGrade::BalticBirch`).
@@ -53,7 +64,11 @@ fn flat_6mm_plywood_query(family: LutOperationFamily, role: LutPassRole) -> Look
 /// The observation the `Adaptive3d` rough resolves for this tuple. The
 /// route identity below is the load-bearing assertion; this id is the
 /// human-readable cross-check against the LUT file.
-const EXPECTED_ROW: &str = "amana-flat-plywood-hardwood-pocket-6000-2f";
+///
+/// Since R5 (2026-09-23) the grade-b Spektra print wins this cell. The
+/// old id `amana-flat-plywood-hardwood-pocket-6000-2f` (a repo-authored
+/// band, grade c) is still in `amana_flat_end.json` but no longer wins.
+const EXPECTED_ROW: &str = "amana-flat-plywood-hardwood-pocket-6000-2f-spektra";
 
 #[test]
 fn flat_drop_cutter_routes_to_the_roughing_pocket_row() {
@@ -109,10 +124,39 @@ fn flat_drop_cutter_resolves_the_same_row_as_the_adaptive3d_rough() {
     assert_eq!(dc_row.observation_id, EXPECTED_ROW);
     assert_eq!(dc_row.chip_load_min_mm, ad_row.chip_load_min_mm);
     assert_eq!(dc_row.chip_load_max_mm, ad_row.chip_load_max_mm);
-    assert!(
-        dc_row.chip_load_min_mm.is_some() && dc_row.chip_load_max_mm.is_some(),
-        "the modulator needs BOTH bounds; the row must publish a full band"
+    // A2 (point mode): the row prints one value, so it is a point, not a
+    // band. The modulator reads the point as a cap with no floor.
+    let printed = dc_row.printed_chipload();
+    let PrintedChipload::Point { value_mm } = printed else {
+        panic!("A2: the Spektra row prints one value, so it is a point; got {printed:?}");
+    };
+    assert_eq!(
+        dc_row.chip_load_min_mm, None,
+        "A2: a point carries no minimum"
     );
+    assert_eq!(dc_row.chip_load_max_mm, Some(value_mm));
+
+    // The modulator's target on a flat drop_cutter toolpath is the same
+    // point. With no simulation trace the peak axial DOC is 0, so no DOC
+    // de-rate applies and the target is the resolved point itself.
+    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    tool.diameter = 6.0;
+    tool.flute_count = 2;
+    let material = Material::Plywood {
+        grade: PlywoodGrade::BalticBirch,
+    };
+    let operation = OperationConfig::DropCutter(DropCutterConfig::default());
+    let target = chip_target_for_toolpath(&material, &tool, &operation, ToolpathId(0), None);
+    assert_eq!(
+        target,
+        Some(ChipTarget::Point(value_mm)),
+        "A2: the modulator's target for a flat drop_cutter on this tuple is the point"
+    );
+    let band = target
+        .as_ref()
+        .and_then(ChipTarget::modulation_band)
+        .expect("a valid point gives a modulation band");
+    assert!(band.is_point(), "A2: the modulation band is a point");
 
     // The raw row bounds, before the diameter and hardness scaling laws.
     let raw = lut
@@ -120,8 +164,8 @@ fn flat_drop_cutter_resolves_the_same_row_as_the_adaptive3d_rough() {
         .iter()
         .find(|obs| obs.observation_id == EXPECTED_ROW)
         .expect("the expected row is in the embedded LUT");
-    assert_eq!(raw.chipload_min_mm_tooth, Some(0.035));
-    assert_eq!(raw.chipload_max_mm_tooth, Some(0.06));
+    assert_eq!(raw.chipload_min_mm_tooth, None);
+    assert_eq!(raw.chipload_max_mm_tooth, Some(0.127));
     assert_eq!(raw.operation_family, LutOperationFamily::Pocket);
     assert_eq!(raw.pass_role, LutPassRole::Roughing);
 }

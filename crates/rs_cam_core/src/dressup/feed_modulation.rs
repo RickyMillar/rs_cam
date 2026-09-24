@@ -5,7 +5,8 @@
 //! - [`ModulationStrategy::ConstrainedMax`] (F-039, default) — solves a
 //!   per-move constrained-optimisation problem. Six candidate limits
 //!   compete; the smallest wins, scaled by `feed_scale`, then
-//!   floored at the chipload-min band edge. Each per-move decision
+//!   floored at the chipload-min band edge. A printed point
+//!   ([`ChiploadBand::point`], A2) gets no floor. Each per-move decision
 //!   records the [`BindingConstraint`] that drove it so the diagnostic
 //!   surface can explain *why* a given feed landed where it did.
 //! - [`ModulationStrategy::BandMid`] (F-036, fallback) — the original
@@ -113,12 +114,32 @@ impl ModulationStrategy {
 /// [`crate::feeds::effective_rubbing_floor`] subordinates it to
 /// `band.max`. On a sub-Ø2 tool the two land at **opposite ends of this
 /// band**. This field is `band.min` and nothing else.
+///
+/// ## A printed point (A2, point mode)
+///
+/// A vendor row that prints one value gives a point, not a band
+/// ([`crate::feeds::vendor_lookup::PrintedChipload::Point`]).
+/// [`Self::point`] holds it as `min == max == v` and marks it, so
+/// [`Self::is_point`] is `true`. The modulator reads a point so:
+///
+/// - `v × rpm × flutes` is the chipload cap (both strategies).
+/// - No floor applies, because nothing printed a minimum. The feed scale
+///   can take the feed below the point.
+/// - The deflection and power "pin" arms pin to `v`.
+/// - A move held at the point keeps the `ChiploadMax` tag (decision Q7).
+///
+/// [`Self::new`] with `min == max` is NOT a point: it stays a zero-width
+/// band with a floor, as before A2.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ChiploadBand {
-    /// Minimum chipload (mm per tooth). Must be > 0 and ≤ `max`.
+    /// Minimum chipload (mm per tooth). Must be > 0 and ≤ `max`. For a
+    /// point it equals `max`, and the modulator applies no floor.
     pub min_mm_per_tooth: f64,
     /// Maximum chipload (mm per tooth). Must be ≥ `min`.
     pub max_mm_per_tooth: f64,
+    /// `true` when this holds one printed value (A2). Only
+    /// [`Self::point`] sets it.
+    point: bool,
 }
 
 impl ChiploadBand {
@@ -135,7 +156,29 @@ impl ChiploadBand {
         Some(Self {
             min_mm_per_tooth,
             max_mm_per_tooth,
+            point: false,
         })
+    }
+
+    /// Construct a printed point `v` (A2, point mode). It stores
+    /// `min = max = v` and [`Self::is_point`] is `true`. Returns `None`
+    /// if `v` is non-finite or ≤ 0.
+    pub fn point(value_mm_per_tooth: f64) -> Option<Self> {
+        if !value_mm_per_tooth.is_finite() || value_mm_per_tooth <= 0.0 {
+            return None;
+        }
+        Some(Self {
+            min_mm_per_tooth: value_mm_per_tooth,
+            max_mm_per_tooth: value_mm_per_tooth,
+            point: true,
+        })
+    }
+
+    /// `true` when this holds one printed value, not a band. The
+    /// modulator then applies no chipload floor.
+    #[inline]
+    pub fn is_point(&self) -> bool {
+        self.point
     }
 
     /// Geometric midpoint of the band — the [`ModulationStrategy::BandMid`]
@@ -259,6 +302,9 @@ pub struct ModulationContext<'a> {
     /// targeting: the only caps applied are the machine cutting-feed
     /// ceiling and the Phase 3 geometric plunge guard, so a bandless
     /// descent can never escape its operation's plunge rate.
+    ///
+    /// A printed point ([`ChiploadBand::point`], A2) caps at the point
+    /// with no floor.
     pub chipload_band: Option<ChiploadBand>,
     /// Machine kinematics — drives the `predicted_feeds_for_toolpath`
     /// per-move achievable-velocity cap.
@@ -408,6 +454,10 @@ fn should_skip_modulation(move_type: MoveType, intent: MoveIntent) -> bool {
 /// the move's feed landed where it did. `ctx.feed_scale` multiplies the
 /// minimum *before* the chipload-min floor; values above 1.0 push past
 /// the constraint and the chipload-min floor still applies.
+///
+/// A2 (point mode): for a point band ([`ChiploadBand::is_point`]) the
+/// chipload cap is `v × rpm × flutes`, the pin arms pin to `v`, and the
+/// step-6 floor is skipped. The feed scale still applies.
 fn max_safe_feed_for_move(
     engagement: PerMoveEngagement,
     band: ChiploadBand,
@@ -443,6 +493,10 @@ fn max_safe_feed_for_move(
     let target_chipload = band.max_mm_per_tooth;
 
     let mut limits: Vec<(f64, BindingConstraint)> = Vec::with_capacity(6);
+    // The first pin arm that fired (deflection or power), if any. For a
+    // point the pin value equals the chipload cap, so the tie-break below
+    // needs it.
+    let mut pinned: Option<(f64, BindingConstraint)> = None;
 
     // 1. Chipload-max constraint (with chip-thinning correction).
     limits.push((
@@ -483,9 +537,12 @@ fn max_safe_feed_for_move(
                 // over budget), or no lateral engagement: feed cannot rescue
                 // deflection — pin to the chipload-min floor and let the
                 // binding tag name deflection. Dropping DOC/stepover is the
-                // real fix (out of scope for per-move feed).
+                // real fix (out of scope for per-move feed). For a point
+                // (A2) `min == v`, so this pins to the point.
                 let floor = band.min_mm_per_tooth * ctx.spindle_rpm * flutes;
-                limits.push((floor.max(1e-9), BindingConstraint::DeflectionMax));
+                let pin = (floor.max(1e-9), BindingConstraint::DeflectionMax);
+                pinned = pinned.or(Some(pin));
+                limits.push(pin);
             }
             // No DOC, no compliance, no Ks: the deflection constraint has
             // no signal here. It contributes no cap, and it must not claim
@@ -540,9 +597,12 @@ fn max_safe_feed_for_move(
                         // to the chipload-min floor and let the binding
                         // tag name power. The real fix is less DOC,
                         // less stepover or less RPM, none of which a
-                        // per-move feed solver can reach for.
+                        // per-move feed solver can reach for. For a point
+                        // (A2) `min == v`, so this pins to the point.
                         let floor = band.min_mm_per_tooth * ctx.spindle_rpm * flutes;
-                        limits.push((floor.max(1e-9), BindingConstraint::PowerMax));
+                        let pin = (floor.max(1e-9), BindingConstraint::PowerMax);
+                        pinned = pinned.or(Some(pin));
+                        limits.push(pin);
                     }
                 }
             }
@@ -564,8 +624,26 @@ fn max_safe_feed_for_move(
         .min_by(|(a, _), (b, _)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
         .unwrap_or((ctx.max_feed_mm_min, BindingConstraint::MachineMaxFeed));
 
+    // A2 (point mode): a pin arm pins to `v`, which is also the chipload
+    // cap, so the two tie. `min_by` keeps the first entry of a tie, which
+    // is `ChiploadMax`. The pin names the load-bearing constraint (no feed
+    // satisfies it), so for a point the pin tag wins a tie. A band pins at
+    // `min < max`, so this changes nothing for a band.
+    let binding = match pinned {
+        Some((pin_feed, pin_tag)) if band.is_point() && pin_feed <= limit => pin_tag,
+        _ => binding,
+    };
+
     let scale = ctx.feed_scale.max(0.0);
     let after_scale = limit * scale;
+
+    // A2 (point mode): no floor for a point. Nothing printed a minimum,
+    // so the feed scale can take the feed below the point. The binding
+    // tag stays the tag of the smallest cap (Q7: a move held at the
+    // point keeps `ChiploadMax`).
+    if band.is_point() {
+        return (after_scale, binding);
+    }
 
     // 6. Chipload-min floor — the matched row's own `band.min`, NOT
     // `feeds::effective_rubbing_floor` (see `ChiploadBand`). Applied last so
@@ -650,6 +728,10 @@ fn effective_axial_mm(engagement: PerMoveEngagement, ctx: &ModulationContext<'_>
 }
 
 /// F-036 — "target band-mid" per-move feed (legacy heuristic).
+///
+/// A2 (point mode): for a point band the target and the ceiling are
+/// `v × rpm × flutes`, and no floor applies. The kinematic cap is then
+/// not raised to a floor.
 fn band_mid_feed_for_move(
     commanded_feed_mm_min: f64,
     engagement: PerMoveEngagement,
@@ -665,6 +747,27 @@ fn band_mid_feed_for_move(
     let target_chipload = band.mid_mm_per_tooth() / thinning;
     let flutes = ctx.flute_count.max(1) as f64;
     let base_feed = target_chipload * ctx.spindle_rpm * flutes;
+
+    if band.is_point() {
+        // A2: the target and the ceiling are the point. No floor, and no
+        // chip-thinning lift (the ceiling is the point, so a lift above it
+        // is always clamped back).
+        let ceiling = band.max_mm_per_tooth * ctx.spindle_rpm * flutes;
+        let feed = ceiling
+            .min(ctx.max_feed_mm_min)
+            .min(predicted_cap_mm_min)
+            .max(0.0);
+        let binding = if (feed - ctx.max_feed_mm_min).abs() < 1e-6 {
+            BindingConstraint::MachineMaxFeed
+        } else if (feed - ceiling).abs() < 1e-6 {
+            BindingConstraint::ChiploadMax
+        } else if (feed - predicted_cap_mm_min).abs() < 1e-6 {
+            BindingConstraint::KinematicReach
+        } else {
+            BindingConstraint::ChiploadMax
+        };
+        return (feed, binding);
+    }
 
     let band_floor = band.min_mm_per_tooth * ctx.spindle_rpm * flutes;
     let band_ceiling = band.max_mm_per_tooth * ctx.spindle_rpm * flutes;
@@ -1352,5 +1455,178 @@ mod tests {
                 "expected >= 2 distinct feeds under {strategy:?}, got {feeds:?}"
             );
         }
+    }
+
+    // ── A2 (point mode) ────────────────────────────────────────────────
+
+    /// A full-slot engagement at 2 mm axial depth.
+    fn full_slot() -> PerMoveEngagement {
+        PerMoveEngagement {
+            radial_woc_fraction: 1.0,
+            axial_doc_fraction: 1.0,
+            axial_doc_mm: 2.0,
+        }
+    }
+
+    /// A2: `point(v)` stores `min = max = v` and is a point. `new(v, v)`
+    /// is not a point. A non-finite or non-positive value is refused.
+    #[test]
+    fn point_band_holds_one_value() {
+        let p = ChiploadBand::point(0.05).unwrap();
+        assert!(p.is_point());
+        assert!((p.min_mm_per_tooth - 0.05).abs() < 1e-12);
+        assert!((p.max_mm_per_tooth - 0.05).abs() < 1e-12);
+        assert!(!ChiploadBand::new(0.05, 0.05).unwrap().is_point());
+        assert!(!band().is_point());
+        assert!(ChiploadBand::point(0.0).is_none());
+        assert!(ChiploadBand::point(-0.01).is_none());
+        assert!(ChiploadBand::point(f64::NAN).is_none());
+        assert!(ChiploadBand::point(f64::INFINITY).is_none());
+    }
+
+    /// A2 ConstrainedMax: the point is the chipload cap.
+    /// 0.05 × 18000 × 2 = 1800 mm/min, tag `ChiploadMax` (Q7).
+    #[test]
+    fn point_constrained_max_caps_at_the_point() {
+        let k = shapeoko();
+        let mut ctx = make_ctx(&k, ChiploadBand::point(0.05).unwrap());
+        ctx.strategy = ModulationStrategy::ConstrainedMax;
+        let (feed, binding) =
+            max_safe_feed_for_move(full_slot(), ctx.chipload_band.unwrap(), &ctx, 1.0e9);
+        assert!((feed - 1800.0).abs() < 1e-6, "expected 1800, got {feed}");
+        assert_eq!(binding, BindingConstraint::ChiploadMax);
+    }
+
+    /// A2 ConstrainedMax: the feed scale applies and no floor restores the
+    /// feed. At scale 0.7 a point emits 0.7 × 1800 = 1260 mm/min with the
+    /// `ChiploadMax` tag. The zero-width band `new(v, v)` restores its
+    /// floor at 1800 and keeps the cap's tag (the pre-A2 behaviour: the
+    /// cap equals the floor, so the floor does not re-tag the move).
+    #[test]
+    fn point_feed_scale_has_no_floor() {
+        let k = shapeoko();
+        let mut ctx = make_ctx(&k, ChiploadBand::point(0.05).unwrap());
+        ctx.strategy = ModulationStrategy::ConstrainedMax;
+        ctx.feed_scale = 0.7;
+        let (feed, binding) =
+            max_safe_feed_for_move(full_slot(), ctx.chipload_band.unwrap(), &ctx, 1.0e9);
+        assert!((feed - 1260.0).abs() < 1e-6, "expected 1260, got {feed}");
+        assert_eq!(binding, BindingConstraint::ChiploadMax);
+
+        let zero_width = ChiploadBand::new(0.05, 0.05).unwrap();
+        let (feed, binding) = max_safe_feed_for_move(full_slot(), zero_width, &ctx, 1.0e9);
+        assert!(
+            (feed - 1800.0).abs() < 1e-6,
+            "expected floor 1800, got {feed}"
+        );
+        assert_eq!(binding, BindingConstraint::ChiploadMax);
+
+        // The same through the public entry point: every engaged move
+        // emits about 1260, and no floor lifts it back to the point. The
+        // kinematic cap on these moves can tie the chipload cap, so this
+        // part does not assert the tag. The tolerance matches the sibling
+        // tests on this fixture.
+        let mut tp = straight_toolpath(3, 1500.0);
+        let engagements: Vec<_> = (0..tp.moves.len())
+            .map(|i| {
+                if i == 0 {
+                    PerMoveEngagement::default()
+                } else {
+                    full_slot()
+                }
+            })
+            .collect();
+        let outcome = adaptive_feed_modulate(&mut tp, &engagements, &ctx).unwrap();
+        assert_eq!(outcome.changed, 3);
+        for (feed, _) in outcome.per_move.values() {
+            assert!(*feed < 1800.0 - 1.0, "a floor lifted the feed: {feed}");
+            assert!((feed - 1260.0).abs() < 5.0, "expected ~1260, got {feed}");
+        }
+    }
+
+    /// A2 ConstrainedMax: the deflection pin arm pins to the point. The
+    /// edge force alone is over budget (0.1 mm/N × 2 mm × 4.53 N/mm =
+    /// 0.906 mm > 0.2 mm), so the move pins to 1800 mm/min. The pin
+    /// value ties the chipload cap; the tag names deflection. At scale
+    /// 0.7 the pin gets no floor: 1260 mm/min.
+    #[test]
+    fn point_deflection_pin_is_the_point() {
+        let k = shapeoko();
+        let mut ctx = make_ctx(&k, ChiploadBand::point(0.05).unwrap());
+        ctx.strategy = ModulationStrategy::ConstrainedMax;
+        ctx.deflection_inputs = Some(DeflectionLimitInputs {
+            ks_n_per_mm2: 42.7,
+            f_edge_n_per_mm: 4.53,
+            compliance_mm_per_n: 0.1,
+            max_tip_deflection_mm: 0.2,
+        });
+        let (feed, binding) =
+            max_safe_feed_for_move(full_slot(), ctx.chipload_band.unwrap(), &ctx, 1.0e9);
+        assert!(
+            (feed - 1800.0).abs() < 1e-6,
+            "expected pin 1800, got {feed}"
+        );
+        assert_eq!(binding, BindingConstraint::DeflectionMax);
+
+        ctx.feed_scale = 0.7;
+        let (feed, binding) =
+            max_safe_feed_for_move(full_slot(), ctx.chipload_band.unwrap(), &ctx, 1.0e9);
+        assert!((feed - 1260.0).abs() < 1e-6, "expected 1260, got {feed}");
+        assert_eq!(binding, BindingConstraint::DeflectionMax);
+    }
+
+    /// A2 ConstrainedMax: the power pin arm pins to the point. A budget
+    /// of 1 W is below the edge-force power, so no feed satisfies it and
+    /// the move pins to 1800 mm/min with the `PowerMax` tag.
+    #[test]
+    fn point_power_pin_is_the_point() {
+        let k = shapeoko();
+        let mut ctx = make_ctx(&k, ChiploadBand::point(0.05).unwrap());
+        ctx.strategy = ModulationStrategy::ConstrainedMax;
+        ctx.power_inputs = Some(PowerLimitInputs {
+            kc_n_per_mm2: 20.0,
+            engagement_diameter_mm: 6.0,
+            available_kw: 0.001,
+        });
+        let (feed, binding) =
+            max_safe_feed_for_move(full_slot(), ctx.chipload_band.unwrap(), &ctx, 1.0e9);
+        assert!(
+            (feed - 1800.0).abs() < 1e-6,
+            "expected pin 1800, got {feed}"
+        );
+        assert_eq!(binding, BindingConstraint::PowerMax);
+    }
+
+    /// A2 BandMid: the target and the ceiling are the point, and no floor
+    /// lifts a lower kinematic cap. Full slot: 1800 mm/min, `ChiploadMax`.
+    /// A kinematic cap of 500 mm/min binds at 500 (`KinematicReach`); the
+    /// zero-width band `new(v, v)` lifts that cap to its floor, 1800.
+    #[test]
+    fn point_band_mid_targets_the_point_with_no_floor() {
+        let k = shapeoko();
+        let point = ChiploadBand::point(0.05).unwrap();
+        let ctx = make_ctx(&k, point);
+        let (feed, binding) = band_mid_feed_for_move(1500.0, full_slot(), 1.0e9, &ctx, point);
+        assert!((feed - 1800.0).abs() < 1e-6, "expected 1800, got {feed}");
+        assert_eq!(binding, BindingConstraint::ChiploadMax);
+
+        // Light engagement: the chip-thinning lift does not pass the point.
+        let light = PerMoveEngagement {
+            radial_woc_fraction: 0.1,
+            ..full_slot()
+        };
+        let (feed, _) = band_mid_feed_for_move(1500.0, light, 1.0e9, &ctx, point);
+        assert!((feed - 1800.0).abs() < 1e-6, "expected 1800, got {feed}");
+
+        let (feed, binding) = band_mid_feed_for_move(1500.0, full_slot(), 500.0, &ctx, point);
+        assert!((feed - 500.0).abs() < 1e-6, "expected 500, got {feed}");
+        assert_eq!(binding, BindingConstraint::KinematicReach);
+
+        let zero_width = ChiploadBand::new(0.05, 0.05).unwrap();
+        let (feed, _) = band_mid_feed_for_move(1500.0, full_slot(), 500.0, &ctx, zero_width);
+        assert!(
+            (feed - 1800.0).abs() < 1e-6,
+            "expected floor 1800, got {feed}"
+        );
     }
 }
