@@ -11,6 +11,7 @@
 //! `stale_since` keeps its remaining job, the 500 ms auto-regeneration
 //! debounce clock, and stops being a claim about correctness.
 
+use crate::state::toolpath::ToolpathId;
 use rs_cam_core::compute::config::{AwaitingPriorStock, ComputeStatus};
 use rs_cam_core::session::{ProjectSession, ToolpathConfig};
 
@@ -146,6 +147,11 @@ pub enum SimFreshness {
     /// is a true answer about geometry and an incomplete one about
     /// metrics, so it needs a re-run to answer what is asked now.
     CaptureOptionsChanged,
+    /// An enabled operation holds no core result (G-STALECARDS). An edit
+    /// dropped it and nothing regenerated it, so no simulation can carve it:
+    /// a re-run does not help, a regenerate of this operation does. The id
+    /// is the first such operation in plan order.
+    Ungenerated(ToolpathId),
 }
 
 impl SimFreshness {
@@ -157,6 +163,7 @@ impl SimFreshness {
             Self::Current => "current",
             Self::EditedSince => "edited_since",
             Self::CaptureOptionsChanged => "capture_options_changed",
+            Self::Ungenerated(_) => "operation_not_generated",
         }
     }
 
@@ -166,7 +173,10 @@ impl SimFreshness {
     /// holds a result to mislabel. A reader that wants "there is nothing
     /// to show" asks for the arm, not for this predicate.
     pub fn is_stale(self) -> bool {
-        matches!(self, Self::EditedSince | Self::CaptureOptionsChanged)
+        matches!(
+            self,
+            Self::EditedSince | Self::CaptureOptionsChanged | Self::Ungenerated(_)
+        )
     }
 }
 
@@ -191,8 +201,24 @@ pub fn simulation_freshness(
     if session.simulation_result().is_none() {
         return SimFreshness::EditedSince;
     }
+    // G-STALECARDS: the builder carves core results only, so an enabled
+    // operation without one is missing from the run. The core's per-row
+    // evidence calls that row stale, and so does this.
+    if let Some(ungenerated) = first_ungenerated(session) {
+        return SimFreshness::Ungenerated(ungenerated);
+    }
     if sim.metric_options_are_stale() {
         return SimFreshness::CaptureOptionsChanged;
     }
     SimFreshness::Current
+}
+
+/// The first enabled operation, in plan order, with no core result.
+fn first_ungenerated(session: &ProjectSession) -> Option<ToolpathId> {
+    session.list_setups().iter().find_map(|setup| {
+        setup.toolpath_indices.iter().find_map(|&index| {
+            let tc = session.get_toolpath_config(index)?;
+            (tc.enabled && session.get_result(index).is_none()).then_some(tc.id)
+        })
+    })
 }

@@ -81,10 +81,8 @@ fn the_primary_and_the_builder_agree_about_a_runnable_project_ur3() {
             .all(|rt| rt.result.is_none()),
         "fixture 1: the sample project must start ungenerated"
     );
-    let predicate = crate::ui::readiness::simulation_request_is_buildable(
-        &controller.state.session,
-        &controller.state.gui,
-    );
+    let predicate =
+        crate::ui::readiness::simulation_request_is_buildable(&controller.state.session);
     let builder = controller
         .build_simulation_groups(|_, tc| tc.enabled, |_| false)
         .is_some();
@@ -109,10 +107,8 @@ fn the_primary_and_the_builder_agree_about_a_runnable_project_ur3() {
             .any(|rt| rt.result.is_some()),
         "fixture 2: generate_all_for_test must leave a generated result"
     );
-    let predicate = crate::ui::readiness::simulation_request_is_buildable(
-        &controller.state.session,
-        &controller.state.gui,
-    );
+    let predicate =
+        crate::ui::readiness::simulation_request_is_buildable(&controller.state.session);
     let builder = controller
         .build_simulation_groups(|_, tc| tc.enabled, |_| false)
         .is_some();
@@ -135,10 +131,8 @@ fn the_primary_and_the_builder_agree_about_a_runnable_project_ur3() {
         999,
         "fixture 3 precondition failed: the corrupt tool id did not reach the session"
     );
-    let predicate = crate::ui::readiness::simulation_request_is_buildable(
-        &controller.state.session,
-        &controller.state.gui,
-    );
+    let predicate =
+        crate::ui::readiness::simulation_request_is_buildable(&controller.state.session);
     let builder = controller
         .build_simulation_groups(|_, tc| tc.enabled, |_| false)
         .is_some();
@@ -180,10 +174,8 @@ fn the_primary_and_the_builder_agree_about_a_runnable_project_ur3() {
             .all(|rt| rt.result.is_none()),
         "fixture 4: the phantom prior stock needs an ungenerated op"
     );
-    let predicate = crate::ui::readiness::simulation_request_is_buildable(
-        &controller.state.session,
-        &controller.state.gui,
-    );
+    let predicate =
+        crate::ui::readiness::simulation_request_is_buildable(&controller.state.session);
     let builder = controller
         .build_simulation_groups(|_, tc| tc.enabled, |_| false)
         .is_some();

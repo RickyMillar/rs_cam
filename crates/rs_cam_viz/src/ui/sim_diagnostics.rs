@@ -80,7 +80,7 @@ pub fn draw(
         let cards_shown = matches!(cut_metrics, CutMetricsView::Cards(..));
         draw_toolpath_section(ui, sim, &load_report, cards_shown, events);
         ui.add_space(6.0);
-        draw_cut_metrics_section(ui, sim, &cut_metrics, &load_report, events);
+        draw_cut_metrics_section(ui, sim, session, &cut_metrics, &load_report, events);
 
         let trace_arc = sim
             .results
@@ -1640,6 +1640,7 @@ fn card_rank(metric: DistributionMetric, rows: &[LimitRow<'_>]) -> usize {
 fn draw_cut_metrics_section(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
+    session: &rs_cam_core::session::ProjectSession,
     view: &CutMetricsView,
     load_report: &ToolLoadReport,
     events: &mut Vec<AppEvent>,
@@ -1707,6 +1708,12 @@ fn draw_cut_metrics_section(
             actions.push(CutMetricAction::ToggleSeries);
         }
     });
+    // G-STALECARDS: an operation with no core result was not simulated at
+    // all. Its cards say to regenerate it, because a re-run cannot help.
+    let regenerate_first: Option<String> = session
+        .find_toolpath_config_by_id(toolpath_id)
+        .filter(|(index, _)| session.get_result(*index).is_none())
+        .map(|(_, tc)| tc.name.clone());
     state.show_body_indented(&header.response, ui, |ui| {
         for (index, card) in cards.into_iter().enumerate() {
             let row = match card.metric {
@@ -1718,7 +1725,7 @@ fn draw_cut_metrics_section(
             if index > 0 {
                 draw_hairline(ui);
             }
-            draw_cut_metric_card(ui, card, row, &mut actions);
+            draw_cut_metric_card(ui, card, row, regenerate_first.as_deref(), &mut actions);
         }
         ui.add_space(tokens::SPACE_2);
         if !other_rows.is_empty() {
@@ -1791,6 +1798,7 @@ fn draw_cut_metric_card(
     ui: &mut egui::Ui,
     card: &CutMetricCard,
     row: Option<&LimitRow<'_>>,
+    regenerate_first: Option<&str>,
     actions: &mut Vec<CutMetricAction>,
 ) {
     let spec = CutMetricSpec::of(card.metric);
@@ -1840,7 +1848,12 @@ fn draw_cut_metric_card(
             }
         }
         DistributionOutcome::NotMeasured(reason) => {
-            let reason = not_measured_text(reason);
+            let reason = match (reason, regenerate_first) {
+                (NotMeasuredReason::Unmodeled(UnmodeledReason::StaleSimulation), Some(name)) => {
+                    format!("Unmodeled: '{name}' is not generated — regenerate it first")
+                }
+                _ => not_measured_text(reason),
+            };
             ui.horizontal(|ui| {
                 ui.add(NotMeasured::new().reason(hover));
                 ui.add(egui::Label::new(text::caption(reason)).truncate());

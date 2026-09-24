@@ -199,8 +199,10 @@ fn generated_fixture() -> (AppController, ToolpathId) {
     controller
         .open_job_from_path(&stale_cards_fixture())
         .expect("the fixture opens");
-    controller.state.simulation.auto_resolution = false;
-    controller.state.simulation.resolution = 0.5;
+    // G-RESTRES: the ONE stored project resolution.
+    let _ = controller
+        .set_simulation_resolution(rs_cam_core::session::SimulationResolution::Fixed(0.5))
+        .expect("a positive cell");
     controller.state.simulation.set_metric_capture_enabled(true);
     controller.handle_generate_all();
     if controller.pending_plan_confirm.is_some() {
@@ -244,7 +246,6 @@ fn a_plain_generate_and_simulate_gives_measured_cards_g_stalecards() {
 /// `Current`, and the cards call the same trace stale. The two answers must
 /// agree. Stage 2 decides which side moves.
 #[test]
-#[ignore = "reproduces G-STALECARDS; fixed in stage 2"]
 fn the_cards_and_the_gui_agree_on_a_simulation_that_just_landed_g_stalecards() {
     let (mut controller, rough) = generated_fixture();
     panel_edit(&mut controller, rough, |entry| {
@@ -273,6 +274,56 @@ fn the_cards_and_the_gui_agree_on_a_simulation_that_just_landed_g_stalecards() {
              landed as {:?}, and the cut-metric cards read it as stale \
              ({stale:?}). \"Re-run simulation\" cannot clear this.\n{evidence}",
             controller.state.simulation_freshness(),
+        );
+        // Stage 2 (2): the GUI names the operation to regenerate, not
+        // "re-run simulation".
+        assert_eq!(
+            controller.state.simulation_freshness(),
+            crate::state::freshness::SimFreshness::Ungenerated(rough),
+            "run {run}: the freshness must name the rough\n{evidence}"
+        );
+        // Stage 2 (3): the stale rewrite is per operation. The Face did
+        // not change, so its cards keep their measured verdicts.
+        let face = controller
+            .state
+            .session
+            .toolpath_configs()
+            .iter()
+            .find(|tc| tc.id != rough && tc.enabled)
+            .map(|tc| tc.id)
+            .expect("the fixture holds a face");
+        let face_stale = stale_cards(&mut controller, face);
+        assert!(
+            face_stale.is_empty(),
+            "run {run}: the unchanged Face reads stale ({face_stale:?})\n{evidence}"
+        );
+        // The core load report: the Face row keeps its own verdict; only
+        // the rough's row is rewritten to StaleSimulation.
+        let trace = controller
+            .state
+            .session
+            .simulation_result()
+            .and_then(|sim| sim.cut_trace.clone());
+        let report =
+            rs_cam_core::gcode::project_load_report(&controller.state.session, trace.as_deref());
+        let stale_rows: Vec<ToolpathId> = report
+            .per_toolpath
+            .iter()
+            .filter(|verdict| {
+                matches!(
+                    verdict.chipload,
+                    rs_cam_core::tool_load::verdict::ChiploadVerdict::Unmodeled {
+                        reason: UnmodeledReason::StaleSimulation,
+                        ..
+                    }
+                )
+            })
+            .map(|verdict| verdict.toolpath_id)
+            .collect();
+        assert_eq!(
+            stale_rows,
+            vec![rough],
+            "run {run}: only the rough's row reads stale\n{evidence}"
         );
     }
 }

@@ -137,7 +137,7 @@ pub fn operations_check(state: &AppState) -> (CheckStatus, usize, usize) {
 /// is a button that starts nothing; the controller test
 /// `the_primary_and_the_builder_agree_about_a_runnable_project` holds the two
 /// together.
-pub fn simulation_request_is_buildable(session: &ProjectSession, gui: &GuiState) -> bool {
+pub fn simulation_request_is_buildable(session: &ProjectSession) -> bool {
     for setup in session.list_setups() {
         let mut phantom_scan = rs_cam_core::compute::simulate::PhantomPriorStockScan::default();
         let mut admissible = 0_usize;
@@ -145,11 +145,9 @@ pub fn simulation_request_is_buildable(session: &ProjectSession, gui: &GuiState)
             let Some(tc) = session.toolpath_configs().get(tp_idx) else {
                 continue;
             };
-            let generated = gui
-                .toolpath_rt
-                .get(&tc.id)
-                .and_then(|rt| rt.result.as_ref())
-                .is_some();
+            // G-RESTSTALE (M-C) / G-STALECARDS: the builder carves CORE
+            // results only; the GUI copy is display-only.
+            let generated = session.get_result(tp_idx).is_some();
             phantom_scan.visit(admissible, tc.enabled, generated, tc.id, tc.stock_source);
             if !tc.enabled || !generated {
                 continue;

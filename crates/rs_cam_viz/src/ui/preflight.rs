@@ -80,20 +80,31 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
             // W4: the arm names the reason, so the card can say which of the
             // two stale readings it has. The old text called a capture-option
             // change a parameter change.
-            let sim_detail = match state.simulation_freshness() {
-                crate::state::freshness::SimFreshness::NoRun => "Not run",
-                crate::state::freshness::SimFreshness::Running => "Running",
-                crate::state::freshness::SimFreshness::Current => "Up to date",
-                crate::state::freshness::SimFreshness::EditedSince => "Stale — parameters changed",
-                crate::state::freshness::SimFreshness::CaptureOptionsChanged => {
-                    "Stale — capture options changed"
+            let sim_detail: String = match state.simulation_freshness() {
+                crate::state::freshness::SimFreshness::NoRun => "Not run".to_owned(),
+                crate::state::freshness::SimFreshness::Running => "Running".to_owned(),
+                crate::state::freshness::SimFreshness::Current => "Up to date".to_owned(),
+                crate::state::freshness::SimFreshness::EditedSince => {
+                    "Stale — parameters changed".to_owned()
                 }
+                crate::state::freshness::SimFreshness::CaptureOptionsChanged => {
+                    "Stale — capture options changed".to_owned()
+                }
+                // G-STALECARDS: a re-run cannot help; the operation needs a
+                // regenerate first.
+                crate::state::freshness::SimFreshness::Ungenerated(id) => format!(
+                    "Stale — regenerate {} first",
+                    state
+                        .session
+                        .find_toolpath_config_by_id(id)
+                        .map_or("an operation", |(_, tc)| tc.name.as_str())
+                ),
             };
             check_card(
                 ui,
                 sim_status,
                 "Simulation",
-                sim_detail,
+                &sim_detail,
                 "Simulation",
                 Some(AppEvent::Ui(UiCommand::SwitchWorkspace(
                     crate::state::Workspace::Simulation,

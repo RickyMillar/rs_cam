@@ -116,8 +116,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     // window, so the feeds maths runs once per frame, not once per surface.
     let feeds_rows = project_rows(state);
     let feeds_status = project_feeds_status(&feeds_rows);
-    let simulation_buildable =
-        readiness::simulation_request_is_buildable(&state.session, &state.gui);
+    let simulation_buildable = readiness::simulation_request_is_buildable(&state.session);
     let first_unmet = first_unmet_action(
         ops_status,
         sim_status,

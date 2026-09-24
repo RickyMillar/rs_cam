@@ -336,7 +336,10 @@ fn build_cut_metric_set(
     };
     let tolerance = ToleranceBands::default();
     let env = GateEnv {
-        sim_trace: trace.filter(|trace| rs_cam_core::gcode::sim_trace_is_fresh(session, trace)),
+        // G-STALECARDS: this operation's own provenance, not the whole
+        // project's. An edit to another row leaves these cards measured.
+        sim_trace: trace
+            .filter(|trace| rs_cam_core::gcode::sim_trace_is_fresh_for(session, trace, index)),
         machine: Some(session.machine()),
         tolerance: &tolerance,
     };

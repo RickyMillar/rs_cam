@@ -229,7 +229,8 @@ fn the_inspector_draws_cut_metric_cards_from_the_gate_g_cutcards() {
     for call in [
         "metric_distribution(",
         "gate_population(",
-        "sim_trace_is_fresh(",
+        // G-STALECARDS: the per-operation freshness, not the project-wide one.
+        "sim_trace_is_fresh_for(",
     ] {
         assert!(
             build.contains(call),

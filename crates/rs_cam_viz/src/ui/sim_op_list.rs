@@ -25,7 +25,7 @@ pub fn draw(
     viewport: &mut ViewportState,
     events: &mut Vec<AppEvent>,
 ) {
-    draw_run_controls(ui, sim, session, gui, events);
+    draw_run_controls(ui, sim, session, events);
     draw_toolpath_rows(ui, sim, session, gui, viewport, events);
 }
 
@@ -39,7 +39,6 @@ fn draw_run_controls(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
     session: &ProjectSession,
-    gui: &GuiState,
     events: &mut Vec<AppEvent>,
 ) {
     ui.heading("Verification");
@@ -48,7 +47,7 @@ fn draw_run_controls(
     // The one predicate for "would a run actually simulate something" —
     // shared with the Readiness Run-sim affordances so no surface keeps
     // a second copy of the builder's admission rules.
-    let can_run = crate::ui::readiness::simulation_request_is_buildable(session, gui);
+    let can_run = crate::ui::readiness::simulation_request_is_buildable(session);
 
     // The one workspace primary comes before its recording settings, matching
     // Toolpaths' Generate All placement.

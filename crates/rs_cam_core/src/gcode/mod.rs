@@ -398,46 +398,57 @@ pub fn export_gcode_checked(
 /// Cheap: only iterates enabled toolpaths and hashes the cached
 /// annotated toolpath. Doesn't recompute anything heavy.
 pub fn sim_trace_is_fresh(project: &ProjectSession, trace: &SimulationCutTrace) -> bool {
-    let Some(provenance) = trace.provenance.as_ref() else {
-        // L7: no provenance, no evidence. The simulator stamps the
-        // block on every trace it produces (`compute/simulate.rs`), so
-        // a trace without one came from somewhere that cannot say what
-        // it simulated. Stale is the conservative answer, and the
-        // operator can run the simulation to get a stamped trace.
+    // L7: no provenance, no evidence. The simulator stamps the block on
+    // every trace it produces (`compute/simulate.rs`), so a trace without
+    // one came from somewhere that cannot say what it simulated.
+    if trace.provenance.is_none() {
+        return false;
+    }
+    (0..project.toolpath_count()).all(|index| {
+        project
+            .get_toolpath_config(index)
+            .is_none_or(|tc| !tc.enabled)
+            || sim_trace_is_fresh_for(project, trace, index)
+    })
+}
+
+/// [`sim_trace_is_fresh`] for ONE operation: its own provenance only.
+///
+/// G-STALECARDS (2026-09-24). The project-wide answer let one edited
+/// operation stale every other operation's verdicts, and a re-run could
+/// never clear it while the edited operation had no core result. The load
+/// report and the cut-metric cards now judge each operation by its own
+/// row: it holds a core result, the trace carved that result, and the
+/// configuration has not moved since. A config-hash entry that is missing
+/// (a pre-PR-4 trace) reads as a match, as before.
+pub fn sim_trace_is_fresh_for(
+    project: &ProjectSession,
+    trace: &SimulationCutTrace,
+    index: usize,
+) -> bool {
+    let Some(tc) = project.get_toolpath_config(index) else {
         return false;
     };
-    for (idx, tc) in project.toolpath_configs().iter().enumerate() {
-        if !tc.enabled {
-            continue;
-        }
-        let Some(result) = project.get_result(idx) else {
-            // A new toolpath that was never simulated — sim trace
-            // covers fewer toolpaths than the project now has.
-            // Treat as stale so the new toolpath's gates surface
-            // as "needs current simulation".
-            return false;
-        };
-        let expected = match provenance.toolpath_hashes.get(&tc.id) {
-            Some(h) => *h,
-            None => return false,
-        };
-        let actual = crate::compute::simulate::hash_toolpath(&result.annotated().toolpath);
-        if expected != actual {
-            return false;
-        }
-        // Config-level hash comparison — catches edits that don't
-        // change move geometry (e.g. `feed_rate`, `plunge_rate`) but
-        // do invalidate the cached load verdicts. Pre-PR-4 traces
-        // have an empty `operation_config_hashes` map; treat a
-        // missing entry as a config match for backward-compat.
-        if let Some(expected_cfg) = provenance.operation_config_hashes.get(&tc.id) {
-            let actual_cfg = crate::compute::simulate::hash_operation_config(&tc.operation);
-            if *expected_cfg != actual_cfg {
-                return false;
-            }
-        }
+    let Some(provenance) = trace.provenance.as_ref() else {
+        return false;
+    };
+    // A toolpath with no core result was not simulated: the trace covers
+    // fewer toolpaths than the project now holds.
+    let Some(result) = project.get_result(index) else {
+        return false;
+    };
+    let Some(expected) = provenance.toolpath_hashes.get(&tc.id) else {
+        return false;
+    };
+    if *expected != crate::compute::simulate::hash_toolpath(&result.annotated().toolpath) {
+        return false;
     }
-    true
+    provenance
+        .operation_config_hashes
+        .get(&tc.id)
+        .is_none_or(|expected_cfg| {
+            *expected_cfg == crate::compute::simulate::hash_operation_config(&tc.operation)
+        })
 }
 
 /// Rewrite a verdict's [`UnmodeledReason::SimulationRequired`] into
@@ -494,67 +505,15 @@ fn rewrite_sim_required_to_stale_depth(v: &mut crate::tool_load::verdict::DepthV
     }
 }
 
-/// Classification of the cached simulation trace's relationship to the
-/// current project state. Resolves the ambiguity between "no trace ever
-/// existed" (e.g. project just loaded) and "trace exists but is stale"
-/// (e.g. user edited a toolpath since the last sim).
-///
-/// Down-stream gates use [`Self::effective_trace`] to decide whether
-/// to evaluate against the cached trace; the diagnostics layer reads
-/// [`Self::is_stale`] to know whether to rewrite
-/// `Unmodeled::SimulationRequired` into `Unmodeled::StaleSimulation`.
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum SimEvidenceMeta<'a> {
-    /// No simulation trace has been cached on this evidence path.
-    Missing,
-    /// The cached trace's hashes match the current project state.
-    Fresh(&'a SimulationCutTrace),
-    /// The cached trace exists but the project has drifted since it
-    /// was captured. Down-stream gates are evaluated *without* the
-    /// trace so verdicts read as `Unmodeled::SimulationRequired`;
-    /// the post-process step then promotes those to
-    /// `Unmodeled::StaleSimulation`.
-    Stale,
-}
-
-impl<'a> SimEvidenceMeta<'a> {
-    /// Classify a trace against the current project state.
-    pub fn resolve(project: &ProjectSession, trace: Option<&'a SimulationCutTrace>) -> Self {
-        match trace {
-            None => Self::Missing,
-            Some(t) if sim_trace_is_fresh(project, t) => Self::Fresh(t),
-            Some(_) => Self::Stale,
-        }
-    }
-
-    /// The trace to feed to the load-gate evaluators. `None` for
-    /// `Missing` and `Stale` — gates surface as
-    /// `Unmodeled::SimulationRequired` and the stale-rewrite pass
-    /// fixes that up afterwards.
-    pub(crate) fn effective_trace(self) -> Option<&'a SimulationCutTrace> {
-        match self {
-            Self::Fresh(t) => Some(t),
-            _ => None,
-        }
-    }
-
-    /// True iff a stale trace was discarded — drives the
-    /// `SimulationRequired` → `StaleSimulation` rewrite at the end of
-    /// `project_load_report`.
-    pub fn is_stale(self) -> bool {
-        matches!(self, Self::Stale)
-    }
-}
-
 /// Build a `ToolLoadReport` from a `ProjectSession`. Delegates each
 /// toolpath to `tool_load::evaluate_toolpath` (the single verdict
 /// assembly site), which runs all three criteria: `chipload` and
 /// `power` (per-sample, require `sim_trace`) and `deflection`
 /// (per-sample tip deflection from cutting force).
 ///
-/// PR-4: when `sim_trace` is `Some` but `sim_trace_is_fresh` returns
-/// false (project state has drifted since the trace was captured),
-/// the evaluators run with `sim_trace = None` and the resulting
+/// PR-4: when `sim_trace` is `Some` but a row's own provenance fails
+/// (`sim_trace_is_fresh_for`, per operation since G-STALECARDS), that
+/// row's evaluators run with `sim_trace = None` and the resulting
 /// `Unmodeled::SimulationRequired` verdicts are post-processed into
 /// `Unmodeled::StaleSimulation`. The diagnostics adapter renders
 /// `StaleSimulation` as `DiagnosticState::StaleEvidence`, which the
@@ -568,9 +527,10 @@ pub fn project_load_report(
     use crate::feeds::{OperationFamily, PassRole};
 
     // Freshness gate — see [`sim_trace_is_fresh`] for the contract.
-    let sim_evidence = SimEvidenceMeta::resolve(project, sim_trace);
-    let sim_trace = sim_evidence.effective_trace();
-    let sim_is_stale = sim_evidence.is_stale();
+    // G-STALECARDS: freshness is judged PER OPERATION, below. A trace
+    // exists or not for the whole report; each row then uses it only when
+    // its own provenance holds.
+    let offered_trace = sim_trace;
 
     let material = &project.stock_config().material;
     let mut per_toolpath = Vec::new();
@@ -642,6 +602,9 @@ pub fn project_load_report(
             spans,
             drill_op: drill_op.map(|arc| arc.as_ref()),
         };
+        let row_is_fresh =
+            offered_trace.is_some_and(|trace| sim_trace_is_fresh_for(project, trace, idx));
+        let sim_trace = offered_trace.filter(|_| row_is_fresh);
         let mut verdict = crate::tool_load::evaluate_toolpath(
             &load_ctx,
             sim_trace,
@@ -660,15 +623,12 @@ pub fn project_load_report(
         // `None` when it was thrown away as stale), so it is what decides
         // whether the reading describes planned or emitted feeds.
         verdict.kinematic_utilization = project.kinematic_utilization_for(idx, sim_trace);
-        per_toolpath.push(verdict);
-    }
-    // PR-4: if we threw away a stale trace upstream, rewrite the
-    // resulting `SimulationRequired` verdicts to `StaleSimulation`
-    // so the diagnostics adapter surfaces them as
-    // `DiagnosticState::StaleEvidence` ("re-run sim") instead of
-    // `NeedsSimulation` ("never simulated").
-    if sim_is_stale {
-        for verdict in &mut per_toolpath {
+        // PR-4: a row whose trace was thrown away as stale rewrites its
+        // `SimulationRequired` verdicts to `StaleSimulation`, so the
+        // diagnostics adapter surfaces `StaleEvidence` instead of
+        // `NeedsSimulation`. G-STALECARDS: only THIS row; the others keep
+        // their verdicts.
+        if offered_trace.is_some() && !row_is_fresh {
             rewrite_sim_required_to_stale_chipload(&mut verdict.chipload);
             rewrite_sim_required_to_stale_power(&mut verdict.power);
             rewrite_sim_required_to_stale_deflection(&mut verdict.deflection);
@@ -679,6 +639,7 @@ pub fn project_load_report(
             // trace.
             rewrite_sim_required_to_stale_depth(&mut verdict.depth);
         }
+        per_toolpath.push(verdict);
     }
 
     crate::tool_load::ToolLoadReport { per_toolpath }
@@ -1397,7 +1358,7 @@ mod tests {
     ///
     /// The simulator stamps the block on every trace it builds
     /// (`compute/simulate.rs`), so an unstamped trace cannot say what
-    /// it simulated. `SimEvidenceMeta::resolve` must therefore drop it,
+    /// it simulated. `sim_trace_is_fresh_for` must therefore drop it,
     /// and the gates read `SimulationRequired` rather than being
     /// honoured against a configuration nobody checked.
     ///
@@ -1412,11 +1373,9 @@ mod tests {
             !sim_trace_is_fresh(&project, &trace),
             "an unstamped trace carries no evidence, so it is stale"
         );
-        let evidence = SimEvidenceMeta::resolve(&project, Some(&trace));
-        assert!(evidence.is_stale());
         assert!(
-            evidence.effective_trace().is_none(),
-            "a stale trace must not reach the gate evaluators"
+            !sim_trace_is_fresh_for(&project, &trace, 0),
+            "a stale trace must not reach any row's gate evaluators"
         );
     }
 
