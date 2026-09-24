@@ -1182,6 +1182,11 @@ impl OperationConfig {
     /// Operation params serialized as a plain object, with optional fields
     /// explicitly present as JSON null instead of omitted by
     /// `skip_serializing_if = "Option::is_none"`.
+    ///
+    /// A list field (type `vec<…>`) that serde skips when it is empty reads
+    /// back as `[]`, not `null`. `null` is not a value of a list, so an
+    /// agent that sent the read value back got a refusal
+    /// (`Adaptive3dConfig::coarse_steps`, step-ladder Phase 4).
     pub fn params_value_including_nulls(&self) -> serde_json::Value {
         let mut value = serde_json::to_value(self).unwrap_or_else(|_| serde_json::json!({}));
         let mut params = value
@@ -1190,9 +1195,12 @@ impl OperationConfig {
             .cloned()
             .unwrap_or_default();
         for def in param_defs_for_type(self.op_type()) {
-            params
-                .entry(def.name.to_owned())
-                .or_insert(serde_json::Value::Null);
+            let absent = if def.type_name.starts_with("vec<") {
+                serde_json::Value::Array(Vec::new())
+            } else {
+                serde_json::Value::Null
+            };
+            params.entry(def.name.to_owned()).or_insert(absent);
         }
         serde_json::Value::Object(params)
     }

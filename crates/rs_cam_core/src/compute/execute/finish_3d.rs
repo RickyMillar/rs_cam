@@ -41,57 +41,71 @@ pub(super) fn adaptive3d_effective_stock_to_leave(
     cfg.stock_to_leave_axial
 }
 
-/// Check the step ladder of an adaptive3d operation (plan §3.1, §3.7).
+/// The refusal for the step ladder of an adaptive3d operation (plan §3.1,
+/// §3.7), or `None` when the ladder is good.
 ///
-/// The planner trusts the ladder; this adapter is the one gate. A refusal
-/// names the bad value, so the operator can correct it.
+/// The planner trusts the ladder; the adapter is the one gate, through
+/// [`check_adaptive3d_step_ladder`]. The GUI validation reads this same
+/// function, so the Generate button and the generator say the same
+/// sentence. A refusal names the bad value, so the operator can correct it.
 ///
 /// - Each coarse step is finite and above zero.
 /// - The list is strictly descending, and its last entry is larger than
 ///   `depth_per_pass` (the base step).
 /// - A non-empty ladder runs on `contour_parallel` only (ruled
 ///   2026-09-24). Another strategy refuses; it does not fall back.
-pub(super) fn check_adaptive3d_step_ladder(
+pub fn adaptive3d_step_ladder_refusal(
     cfg: &crate::compute::operation_configs::Adaptive3dConfig,
-) -> Result<(), OperationError> {
+) -> Option<String> {
     if cfg.coarse_steps.is_empty() {
-        return Ok(());
+        return None;
     }
     if cfg.clearing_strategy != crate::compute::operation_configs::ClearingStrategy::ContourParallel
     {
-        return Err(OperationError::Other(format!(
+        return Some(format!(
             "3D Rough: the step ladder (coarse_steps {:?}) runs on the contour parallel \
              strategy only; the selected strategy is {:?}. Clear coarse_steps or select \
              contour parallel.",
             cfg.coarse_steps, cfg.clearing_strategy
-        )));
+        ));
     }
     let mut finer_than = f64::INFINITY;
     for &step in &cfg.coarse_steps {
         if !step.is_finite() || step <= 0.0 {
-            return Err(OperationError::Other(format!(
+            return Some(format!(
                 "3D Rough: coarse step {step} is not a finite step above zero \
                  (coarse_steps {:?}).",
                 cfg.coarse_steps
-            )));
+            ));
         }
         if step >= finer_than {
-            return Err(OperationError::Other(format!(
+            return Some(format!(
                 "3D Rough: coarse_steps {:?} is not strictly descending; list the \
                  coarsest step first.",
                 cfg.coarse_steps
-            )));
+            ));
         }
         finer_than = step;
     }
     if finer_than <= cfg.depth_per_pass {
-        return Err(OperationError::Other(format!(
+        return Some(format!(
             "3D Rough: each coarse step must be larger than Depth/Pass {} (the base \
              step); coarse_steps is {:?}.",
             cfg.depth_per_pass, cfg.coarse_steps
-        )));
+        ));
     }
-    Ok(())
+    None
+}
+
+/// Check the step ladder of an adaptive3d operation. The adapter calls
+/// this before it plans; the text is [`adaptive3d_step_ladder_refusal`].
+pub(super) fn check_adaptive3d_step_ladder(
+    cfg: &crate::compute::operation_configs::Adaptive3dConfig,
+) -> Result<(), OperationError> {
+    match adaptive3d_step_ladder_refusal(cfg) {
+        Some(msg) => Err(OperationError::Other(msg)),
+        None => Ok(()),
+    }
 }
 
 /// Adaptive3d family adapter. Cancellable; consumes `ctx.boundary`

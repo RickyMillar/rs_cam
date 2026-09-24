@@ -644,9 +644,9 @@ pub struct Adaptive3dConfig {
     /// which stays the base step. A coarse step cuts only where its whole
     /// slab fits above the part; the base step drapes as before. Empty =
     /// the single-step plan. Only `contour_parallel` runs a ladder; the
-    /// adapter refuses one on another strategy. The GUI cannot set this
-    /// key until Phase 4 of
-    /// `planning/adaptive3d_step_ladder_roughing_2026-09-24/PLAN.md`.
+    /// adapter refuses one on another strategy. The GUI edits this key
+    /// in the 3D Rough panel ("Coarse steps"); MCP reads an empty list
+    /// as `[]`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub coarse_steps: Vec<f64>,
     pub detect_flat_areas: bool,

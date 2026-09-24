@@ -300,10 +300,12 @@ const ADAPTIVE3D_PARAMS: &[ParamDef] = &[
     ParamDef::required("helix_pitch", "f64")
         .with_help("Vertical drop per revolution of the helical entry move."),
     ParamDef::optional("coarse_steps", "vec<f64>").with_help(
-        "Step ladder: coarser Z steps above Depth/Pass, coarsest first (for \
-         example [10] or [10, 5]). A coarse step cuts only where its whole \
-         slab fits above the part; Depth/Pass then drapes the rest. Empty = \
-         one step. Contour parallel only.",
+        "The step ladder: Z steps larger than Depth/Pass, coarsest first, in \
+         mm (for example [10] or [10, 5]). The coarse step cuts only where \
+         the whole slab fits above the part. The finer steps then cut the \
+         wall bands in the same slab, and they step down. Depth/Pass is the \
+         last step and follows the surface. An empty list gives one step. \
+         Only the Contour Parallel strategy runs a ladder.",
     ),
     ParamDef::required("detect_flat_areas", "bool"),
     ParamDef::required("region_ordering", "enum:global|by_area"),

@@ -446,6 +446,7 @@ pub use drilling::{
 pub(crate) use drilling::{generate_alignment_pin_drill, generate_drill};
 pub use findings::record_boundary_clip_dropped;
 pub(crate) use findings::record_offset_library_failures;
+pub use finish_3d::adaptive3d_step_ladder_refusal;
 pub(crate) use finish_3d::{
     generate_adaptive3d, generate_horizontal_finish, generate_pencil, generate_radial_finish,
     generate_ramp_finish, generate_spiral_finish, generate_steep_shallow, generate_unified_finish,

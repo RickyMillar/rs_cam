@@ -390,6 +390,14 @@ impl ProjectSession {
                             Err(_) => value,
                         }
                     }
+                    // A list field clears with `null` as well as with `[]`,
+                    // as `spindle_rpm` and `prev_tool_id` clear with `null`
+                    // (step-ladder Phase 4, `coarse_steps`).
+                    (_, serde_json::Value::Null)
+                        if target_type.is_some_and(|ty| ty.starts_with("vec<")) =>
+                    {
+                        serde_json::Value::Array(Vec::new())
+                    }
                     _ => value,
                 };
                 // DR-LIVE, now through the helper the named arms share
@@ -409,8 +417,11 @@ impl ProjectSession {
                     })?;
                 // Verify the param was actually consumed: re-serialize and check.
                 // Serde ignores unknown fields by default, so a truly unknown param
-                // would deserialize successfully but be silently dropped.
-                if !existed {
+                // would deserialize successfully but be silently dropped. A
+                // registry param needs no check: CMP-10 holds each def to a
+                // real field, and an empty list that serde skips on write
+                // (`coarse_steps = []`) is not in the re-serialized params.
+                if !existed && target_type.is_none() {
                     let check = serde_json::to_value(&new_op).map_err(|e| {
                         tracing::error!(%e, "failed to re-serialize operation config for param verification");
                         SessionError::InvalidParam(format!(
