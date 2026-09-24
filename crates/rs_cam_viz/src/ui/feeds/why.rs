@@ -542,12 +542,24 @@ fn engaged_diameter_hover(geometry: ToolGeometryHint, kind: &str, tip_dia: f64) 
 /// hover. When the soft/hard cap stopped the hardness transfer
 /// (`HardnessBasis::Capped`), the cap headline is a visible line and the
 /// cap detail (the printed ratio and the law's value) is on its hover. When
+/// a G3 family rule carries the row from its home operation family
+/// (`FamilyBasis::Transferred`, A3), the family headline is a visible line
+/// and the rule, the row and the served families are on its hover. When
 /// the row is `Derived` (ruling A4: a "Wood, MDF, Sign-Foam" row that
 /// serves hardwood), the row's printed material label is a visible line.
 pub(crate) fn draw_row_basis_lines(ui: &mut egui::Ui, explain: &FeedsExplain) {
     let Some(row) = explain.matched_row.as_ref() else {
         return;
     };
+    if let Some(family) = row.family_basis.claim() {
+        let (headline, detail) = family.card_text();
+        detail_line(
+            ui,
+            headline,
+            theme::WARNING_MILD,
+            &format!("{detail}.\nRow: {}.", row.observation_id),
+        );
+    }
     if let Some(claim) = row.size_basis.claim() {
         let (headline, detail) = claim.card_text();
         detail_line(

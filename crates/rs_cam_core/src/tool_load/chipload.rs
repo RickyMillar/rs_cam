@@ -872,6 +872,7 @@ fn evaluate_inner(
             is_extrapolated: result.is_extrapolated,
             queried_pass_role: pass_role,
             row_pass_role: result.row_pass_role,
+            family_transferred_from: result.family_basis.claim().map(|c| c.home.0),
             min_mm_per_tooth: min,
             max_mm_per_tooth: max,
             // Report-only since 2026-08-06: nothing computes with this.

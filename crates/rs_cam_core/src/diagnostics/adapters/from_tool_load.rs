@@ -150,7 +150,16 @@ fn row_provenance_clause(explanation: Option<&crate::feeds::FeedExplanation>) ->
             e.band.diameter_scale, e.band.hardness_scale, e.band.row_diameter_mm
         ));
     }
-    if e.band.pass_role_substituted() {
+    // A3 decision 5: a row that a G3 family rule carries states the rule
+    // in place of a role substitution.
+    if let Some(home) = e.band.family_transferred_from {
+        parts.push(format!(
+            "filed as {}/{} and carried to this pass by the G3 family rule ({})",
+            home.label(),
+            e.band.row_pass_role.label(),
+            crate::feeds::extrapolation::FAMILY_RULE_TEXT
+        ));
+    } else if e.band.pass_role_substituted() {
         parts.push(format!(
             "pass role {:?} substituted for the requested {:?}",
             e.band.row_pass_role, e.band.queried_pass_role

@@ -22,7 +22,8 @@
 //!   `OperationType::ALL × ToolType::ALL × four wood families`, the
 //!   resolver does not panic, it agrees with the arm `calculate` records,
 //!   and a cell whose lookup found a row is `VendorBacked`, `Extrapolated`
-//!   (a G1 size claim, extrapolation P1) or a size refusal.
+//!   (a G1 size claim, extrapolation P1), `FamilyTransferred` (a G3 family
+//!   claim, A3) or a size refusal.
 //! - [`no_cell_refuses_today`] (c) — the set of `Refuse` cells is empty.
 //! - [`the_unbacked_refusal_names_its_cell`] (d) — the `Display` text of
 //!   `FeedsError::Unbacked` names the operation, the tool family and the
@@ -194,6 +195,7 @@ fn a_cell_with_a_vendor_row_is_vendor_backed() {
 
     let mut vendor_backed = 0usize;
     let mut extrapolated = 0usize;
+    let mut family_transferred = 0usize;
     let mut formula_only = 0usize;
     let mut refused = 0usize;
     let mut size_refused = 0usize;
@@ -225,6 +227,29 @@ fn a_cell_with_a_vendor_row_is_vendor_backed() {
                     );
                     extrapolated += 1;
                 }
+                // A3 (G3): a family rule carries a home row into this
+                // family. The cell ships, so the evidence half must not
+                // raise `Unbacked`.
+                FeedsSupport::FamilyTransferred { family, size } => {
+                    assert!(
+                        family.source_rows.len() == 1 && family.home.0 != family.query.0,
+                        "{}: a family claim names one row and two families: {family:?}",
+                        cell.label
+                    );
+                    if let Some(claim) = size {
+                        assert!(
+                            claim.range_mm.contains(&claim.query_diameter_mm),
+                            "{}: the size claim's range must hold the query key: {claim:?}",
+                            cell.label
+                        );
+                    }
+                    assert!(
+                        !matches!(cell.validation, Err(FeedsError::Unbacked { .. })),
+                        "{}: a transferred cell must not raise Unbacked",
+                        cell.label
+                    );
+                    family_transferred += 1;
+                }
                 FeedsSupport::Refuse { reason } if is_size_refusal(reason) => {
                     assert!(
                         matches!(
@@ -240,7 +265,7 @@ fn a_cell_with_a_vendor_row_is_vendor_backed() {
                 }
                 other => panic!(
                     "{}: the lookup found a row, so the arm must be VendorBacked, \
-                     Extrapolated or a size refusal, got {other:?}",
+                     Extrapolated, FamilyTransferred or a size refusal, got {other:?}",
                     cell.label
                 ),
             }
@@ -304,13 +329,20 @@ fn a_cell_with_a_vendor_row_is_vendor_backed() {
     // Extrapolation P1 step 3: the default Ø6.35 ball nose sits on the Ø6.0
     // ball rows, so the grid holds form C claims.
     assert!(extrapolated > 0, "no cell shipped through a G1 size claim");
+    // A3 step 2: the default Ø3.175 tapered ball reads the Onsrud 77-100
+    // pocket row on Profile, Trace, Pencil, Waterline and SteepShallow.
+    assert!(
+        family_transferred > 0,
+        "no cell shipped through a G3 family claim"
+    );
     assert!(
         refused > 0,
         "no cell refuses; ruling R1 encodes a CLUELESS set"
     );
     println!(
         "the size rule refuses {size_refused} cells that found a row; \
-         {extrapolated} cells ship through a G1 size claim"
+         {extrapolated} cells ship through a G1 size claim; \
+         {family_transferred} cells ship through a G3 family claim"
     );
 }
 

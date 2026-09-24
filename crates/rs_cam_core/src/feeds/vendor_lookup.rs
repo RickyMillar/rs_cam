@@ -3,7 +3,10 @@
 //! Filters observations by must-match criteria, scores remaining candidates,
 //! and returns the best match with chipload midpoint.
 
-use super::extrapolation::{Extrapolation, HardnessBasis, SizeBasis, SizeLaw, hardness_basis};
+use super::extrapolation::{
+    Extrapolation, FamilyBasis, HardnessBasis, SizeBasis, SizeLaw, family_basis, hardness_basis,
+    transfer_rule,
+};
 use super::vendor_lut::{
     EvidenceGrade, HardnessKind, LutOperationFamily, LutPassRole, MaterialFamily, ObservationKind,
     ToolFamily, VendorLut, VendorObservation,
@@ -130,6 +133,9 @@ pub struct LookupResult {
     ///
     /// Census T1.6 (2026-08-04); whether pass role should become a hard
     /// filter is Checkpoint B item T4.4 and is **not** decided here.
+    ///
+    /// A G3 family transfer ([`Self::family_basis`]) also gives a row role
+    /// that differs from the query: the row's role is its home role.
     pub row_pass_role: crate::feeds::vendor_lut::LutPassRole,
     /// The G1 size basis of this row for this query
     /// (`feeds::extrapolation::SizeLaw`, extrapolation P1 step 3). A
@@ -143,6 +149,11 @@ pub struct LookupResult {
     /// `scale()`. A `Capped` basis applies the soft/hard cap of the row's
     /// tool family and keeps the raw ratio.
     pub hardness_basis: HardnessBasis,
+    /// The G3 family basis of this row for this query
+    /// (`feeds::extrapolation::family_basis`, A3). `Transferred` when a
+    /// family rule carries the row from its home operation family into the
+    /// queried family; the band is the home row's band (copy semantics).
+    pub family_basis: FamilyBasis,
     /// The matched row's printed material label (the A4 channel: a
     /// "Wood, MDF, Sign-Foam" row that serves hardwood says so here).
     pub material_label: String,
@@ -255,9 +266,10 @@ fn find_best_vbit_row_where(
     query_included_angle_deg: Option<f64>,
     extra: impl Fn(&VendorObservation) -> bool,
 ) -> Option<MatchedRow> {
-    let mut best: Option<(i64, i64, usize)> = None;
+    let mut best: Option<(i64, i64, bool, usize)> = None;
     for (i, obs) in lut.observations.iter().enumerate() {
-        if !passes_must_match(criteria, obs) || !extra(obs) {
+        let transferred = transfer_rule(criteria, obs).is_some();
+        if !passes_must_match(criteria, obs, transferred) || !extra(obs) {
             continue;
         }
         let angle_bonus = match (query_included_angle_deg, obs.included_angle_deg) {
@@ -270,20 +282,19 @@ fn find_best_vbit_row_where(
             }
             _ => 0,
         };
-        let (base_score, diam_score) = score_observation(criteria, obs);
+        let (base_score, diam_score) = score_observation(criteria, obs, transferred);
         let score = base_score + angle_bonus;
         // SAFETY: `best.i` was stored from this same iteration over
         // `lut.observations`, so the index is in range.
         #[allow(clippy::indexing_slicing)]
         if beats(
-            score,
-            &obs.observation_id,
-            best.map(|(s, _, bi)| (s, lut.observations[bi].observation_id.as_str())),
+            (score, transferred, obs.observation_id.as_str()),
+            best.map(|(s, _, t, bi)| (s, t, lut.observations[bi].observation_id.as_str())),
         ) {
-            best = Some((score, diam_score, i));
+            best = Some((score, diam_score, transferred, i));
         }
     }
-    best.map(|(score, diameter_match_score, i)| {
+    best.map(|(score, diameter_match_score, _, i)| {
         // SAFETY: `i` was stored from a valid iteration over `lut.observations`
         #[allow(clippy::indexing_slicing)]
         let obs = &lut.observations[i];
@@ -562,6 +573,8 @@ fn build_result(
     };
     let hardness_scale = hardness_basis.scale();
     let total_scale = diameter_scale * hardness_scale;
+    // The G3 family basis: a mark only. The band is the row's own band.
+    let family_basis = family_basis(query, obs);
     // A refused basis publishes no band, so no consumer can use it.
     let refused = size_basis.is_refused();
 
@@ -608,6 +621,7 @@ fn build_result(
         row_pass_role: obs.pass_role,
         size_basis,
         hardness_basis,
+        family_basis,
         material_label: obs.material_label.clone(),
         evidence_grade: obs.evidence_grade,
         row_kind: obs.row_kind,
@@ -619,12 +633,22 @@ fn build_result(
 /// broken by `EMBEDDED_FILES` iteration order, so reordering the
 /// include list (or loading an external directory) could silently flip
 /// which vendor row drives a verdict.
-fn beats(candidate_score: i64, candidate_id: &str, best: Option<(i64, &str)>) -> bool {
+///
+/// A3 (G3): each side is `(score, transferred, id)`. On an equal score, a
+/// row printed in the queried family beats a row that a family rule
+/// transfers (`extrapolation::transfer_rule`); after that the id decides.
+fn beats(candidate: (i64, bool, &str), best: Option<(i64, bool, &str)>) -> bool {
+    let (candidate_score, candidate_transferred, candidate_id) = candidate;
     match best {
         None => true,
-        Some((best_score, best_id)) => {
-            candidate_score > best_score
-                || (candidate_score == best_score && candidate_id < best_id)
+        Some((best_score, best_transferred, best_id)) => {
+            if candidate_score != best_score {
+                return candidate_score > best_score;
+            }
+            if candidate_transferred != best_transferred {
+                return !candidate_transferred;
+            }
+            candidate_id < best_id
         }
     }
 }
@@ -639,26 +663,26 @@ fn lookup_best_where(
     query: &LookupQuery,
     extra: impl Fn(&VendorObservation) -> bool,
 ) -> Option<LookupResult> {
-    let mut best: Option<(i64, i64, usize)> = None;
+    let mut best: Option<(i64, i64, bool, usize)> = None;
 
     for (i, obs) in lut.observations.iter().enumerate() {
-        if !passes_must_match(query, obs) || !extra(obs) {
+        let transferred = transfer_rule(query, obs).is_some();
+        if !passes_must_match(query, obs, transferred) || !extra(obs) {
             continue;
         }
-        let (score, diam_score) = score_observation(query, obs);
+        let (score, diam_score) = score_observation(query, obs, transferred);
         // SAFETY: `best.i` was stored from this same iteration over
         // `lut.observations`, so the index is in range.
         #[allow(clippy::indexing_slicing)]
         if beats(
-            score,
-            &obs.observation_id,
-            best.map(|(s, _, bi)| (s, lut.observations[bi].observation_id.as_str())),
+            (score, transferred, obs.observation_id.as_str()),
+            best.map(|(s, _, t, bi)| (s, t, lut.observations[bi].observation_id.as_str())),
         ) {
-            best = Some((score, diam_score, i));
+            best = Some((score, diam_score, transferred, i));
         }
     }
 
-    best.map(|(score, diameter_match_score, i)| {
+    best.map(|(score, diameter_match_score, _, i)| {
         // SAFETY: `i` was stored from a valid iteration over `lut.observations`
         #[allow(clippy::indexing_slicing)]
         let obs = &lut.observations[i];
@@ -709,8 +733,12 @@ fn materials_compatible(query: MaterialFamily, obs: MaterialFamily) -> bool {
     material_category(query) == material_category(obs)
 }
 
-fn passes_must_match(query: &LookupQuery, obs: &VendorObservation) -> bool {
-    if obs.operation_family != query.operation_family {
+/// `transferred` is `extrapolation::transfer_rule(query, obs).is_some()`:
+/// a row from another operation family passes only when a G3 family rule
+/// carries it into the queried family (A3). Every other filter applies to
+/// a transferred row too.
+fn passes_must_match(query: &LookupQuery, obs: &VendorObservation, transferred: bool) -> bool {
+    if obs.operation_family != query.operation_family && !transferred {
         return false;
     }
     // Material category is a hard filter; exact family is a score
@@ -754,7 +782,13 @@ fn passes_must_match(query: &LookupQuery, obs: &VendorObservation) -> bool {
     true
 }
 
-fn score_observation(query: &LookupQuery, obs: &VendorObservation) -> (i64, i64) {
+/// `transferred` marks a row that a G3 family rule carries (see
+/// [`passes_must_match`]). It changes only the role term.
+fn score_observation(
+    query: &LookupQuery,
+    obs: &VendorObservation,
+    transferred: bool,
+) -> (i64, i64) {
     let mut score: i64 = 1000;
     score += tool_family_score(query.tool_family, obs.tool_family);
     score += obs.row_kind.score();
@@ -799,7 +833,10 @@ fn score_observation(query: &LookupQuery, obs: &VendorObservation) -> (i64, i64)
         score += 50;
     }
 
-    if query.pass_role == obs.pass_role {
+    // A3 (G3), copy semantics: a transferred row scores as its copy in the
+    // queried family would. The home row's role is a filing label; the
+    // vendor printed no role.
+    if transferred || query.pass_role == obs.pass_role {
         score += 45;
     } else {
         score -= 25;

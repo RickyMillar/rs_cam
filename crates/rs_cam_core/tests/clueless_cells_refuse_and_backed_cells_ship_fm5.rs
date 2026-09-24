@@ -24,7 +24,13 @@
 //!   MDF refuses with the Onsrud 37-series text, a V-bit Waterline in MDF
 //!   refuses with the contour-finish text, a ball Pocket in plywood refuses
 //!   with the ball-nose plywood text, and no V-bit reason in MDF or plywood
-//!   says that no V-bit chipload exists there (the Onsrud rows print one).
+//!   says that no V-bit chipload exists there (the Onsrud rows print one);
+//! - (g) extrapolation A3 (G3, family transfer): the tapered ball-nose
+//!   formula arms are gone. A Ø3.175 tapered Profile, Trace and Waterline
+//!   in hardwood ship the Onsrud 77-100 pocket row through the family claim;
+//!   a 1.0 mm tapered Trace in softwood (the formula before A3) refuses on
+//!   the size rule (orchestrator decision 4); a 0.4 mm tip refuses on the
+//!   tip floor (ruling B1).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -147,6 +153,7 @@ fn backed_and_unjudged_cells_ship_the_formula_fm5() {
             FeedsSupport::FormulaOnly { .. }
                 | FeedsSupport::VendorBacked
                 | FeedsSupport::Extrapolated { .. }
+                | FeedsSupport::FamilyTransferred { .. }
         ),
         "got {:?}",
         parallel.feeds_result.support
@@ -243,4 +250,89 @@ fn the_vbit_mdf_and_plywood_cells_refuse_with_the_g2_texts_fm5() {
             }
         }
     }
+}
+
+/// A tapered ball with the tip `tip_mm` and a shank wider than the tip.
+fn tapered(tip_mm: f64) -> ToolConfig {
+    let mut t = ToolConfig::new_default(ToolId(1), ToolType::TaperedBallNose);
+    t.diameter = tip_mm;
+    t.flute_count = 2;
+    t.cutting_length = (tip_mm * 3.0).max(12.0);
+    t.taper_half_angle = 7.0;
+    t.shank_diameter = (tip_mm + 3.0).max(6.0);
+    t.shaft_diameter = t.shank_diameter;
+    t.stickout = t.cutting_length + 8.0;
+    t
+}
+
+fn suggest_tool(
+    op: OperationType,
+    tool: &ToolConfig,
+    material: &Material,
+) -> Result<SuggestedParams, FeedsError> {
+    let machine = MachineProfile::default();
+    let stock = stock_ctx();
+    suggest_params(SuggestParamsInput {
+        op_type: op,
+        tool,
+        machine: &machine,
+        material,
+        lut: &EMBEDDED_LUT,
+        stock_ctx: &stock,
+        spindle_strategy: SpindleStrategy::default(),
+        context: SuggestContext::default(),
+    })
+}
+
+/// (g) The tapered cells after A3 step 2: the family claim ships the
+/// printed band, and the micro and sub-floor tips refuse.
+#[test]
+fn the_tapered_cells_ship_the_family_claim_or_refuse_on_size_fm5() {
+    let tool = tapered(3.175);
+    for op in [
+        OperationType::Profile,
+        OperationType::Trace,
+        OperationType::Waterline,
+    ] {
+        let s = suggest_tool(op, &tool, &hardwood())
+            .unwrap_or_else(|e| panic!("{op:?}: a tapered ball in hardwood ships, got {e}"));
+        let FeedsSupport::FamilyTransferred { family, size } = &s.feeds_result.support else {
+            panic!(
+                "{op:?}: expected FamilyTransferred, got {:?}",
+                s.feeds_result.support
+            );
+        };
+        assert!(size.is_none(), "{op:?}: the tip is the printed size");
+        assert_eq!(
+            family.source_rows,
+            vec!["onsrud-hardwood-77-100-1_8-pocket".to_owned()],
+            "{op:?}"
+        );
+    }
+
+    let softwood = Material::SolidWood {
+        species: WoodSpecies::GenericSoftwood,
+    };
+    // Decision 4: the 1.0 mm tip reads the 1/4 in pocket row (6.35 mm, the
+    // exact flute count), 6.3x the tool, and no chart prints a trace series
+    // that brackets the tip.
+    let micro = unbacked_reason(
+        suggest_tool(OperationType::Trace, &tapered(1.0), &softwood),
+        "1.0 mm tapered Trace in softwood",
+    );
+    assert!(
+        micro.starts_with(
+            "no published figure for a 1.00 mm tapered ball nose; the nearest chart row is 6.35 \
+             mm,"
+        ),
+        "{micro}"
+    );
+    let floor = unbacked_reason(
+        suggest_tool(OperationType::Trace, &tapered(0.4), &softwood),
+        "0.4 mm tapered Trace in softwood",
+    );
+    assert!(
+        floor.starts_with("no published figure for a 0.40 mm tapered ball nose: no wood chart"),
+        "{floor}"
+    );
 }

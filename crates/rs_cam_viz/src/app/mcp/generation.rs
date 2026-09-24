@@ -51,6 +51,9 @@ impl RsCamApp {
                 // Extrapolation P2 step 4: a capped hardness transfer lives on
                 // the matched row, not on the support arm; `hardness` carries
                 // its card text, so MCP states the cap as the card does.
+                // A3 (G3): a family transfer is a support arm
+                // (`FamilyTransferred`), so its claim is in `headline` and
+                // `detail` too, joined with the size claim when there is one.
                 let basis = profile.feeds.as_ref().map(|feeds| {
                     let (headline, detail) = feeds.support.card_text();
                     let hardness = feeds

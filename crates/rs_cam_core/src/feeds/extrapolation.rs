@@ -20,9 +20,21 @@
 //! G2 (hardness) is not an [`Extrapolation`] impl: [`hardness_basis`] in
 //! [`hardness`] is a typed clamp on the Janka law (the soft/hard cap). It
 //! runs in `build_result` too, beside the size claim (P2 step 4).
+//!
+//! G3 (family) is not an [`Extrapolation`] impl either: [`family_basis`] in
+//! [`family`] marks a row that a stated family rule carries from its home
+//! operation family into the queried family. The rule table
+//! ([`FAMILY_RULES`]) widens the lookup's must-match filter, and the row's
+//! band moves by no number (A3, copy semantics).
 
+pub mod family;
 pub mod hardness;
 pub mod size;
+
+pub use family::{
+    FAMILY_RULE_TEXT, FAMILY_RULES, FamilyBasis, FamilyClaim, FamilyRule, family_basis,
+    transfer_rule,
+};
 
 pub use hardness::{
     HardnessBasis, JankaFrom, SOFT_OVER_HARD_PRINTED_MAX, SoftHardCap, hardness_basis,
@@ -45,6 +57,9 @@ pub enum Gap {
     /// G2: a row exists in the material category, but at another hardness
     /// (the Janka law and its soft/hard cap). Only the card uses it.
     Hardness,
+    /// G3: a row exists for the tool, but it is filed under another
+    /// operation family (a family rule carries it, `family`).
+    Family,
 }
 
 impl Gap {
@@ -54,6 +69,7 @@ impl Gap {
         match self {
             Self::Size => "G1",
             Self::Hardness => "G2",
+            Self::Family => "G3",
         }
     }
 
@@ -63,6 +79,7 @@ impl Gap {
         match self {
             Self::Size => "size",
             Self::Hardness => "hardness",
+            Self::Family => "family",
         }
     }
 }

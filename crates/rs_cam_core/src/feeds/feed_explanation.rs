@@ -64,7 +64,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::feeds::vendor_lut::LutPassRole;
+use crate::feeds::vendor_lut::{LutOperationFamily, LutPassRole};
 use crate::tool_load::verdict::ChipBoundsSource;
 
 /// Which order statistic over the steady-state sample set the gate
@@ -148,8 +148,15 @@ pub struct LutBandStage {
     /// Pass role the gate asked for.
     pub queried_pass_role: LutPassRole,
     /// Pass role the winning row actually publishes. **May differ** —
-    /// pass role is a scoring term, not a filter (census §5, T4.4).
+    /// pass role is a scoring term, not a filter (census §5, T4.4), and a
+    /// G3 family transfer keeps the home row's role.
     pub row_pass_role: LutPassRole,
+    /// The home operation family of a row that a G3 family rule carries
+    /// into the queried family (`LookupResult::family_basis`, A3 decision
+    /// 5). `None` for a row printed in the queried family. The report
+    /// prints a family clause in place of the role substitution.
+    #[serde(default)]
+    pub family_transferred_from: Option<LutOperationFamily>,
     /// The row's calibrated radial-engagement window (mm), if it carries
     /// one. **Report-only and deliberately inert.**
     ///
@@ -193,10 +200,12 @@ impl LutBandStage {
     }
 
     /// True when the winning row answers a different pass role than the
-    /// one queried. Report-only: it does not change any verdict.
+    /// one queried. Report-only: it does not change any verdict. A row that
+    /// a G3 family rule carries is not a substitution: its role is the home
+    /// row's filing label ([`Self::family_transferred_from`]).
     #[must_use]
     pub fn pass_role_substituted(&self) -> bool {
-        self.queried_pass_role != self.row_pass_role
+        self.family_transferred_from.is_none() && self.queried_pass_role != self.row_pass_role
     }
 
     /// True when either chipload scale moved the published band at all.

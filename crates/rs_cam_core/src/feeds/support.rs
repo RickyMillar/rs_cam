@@ -21,7 +21,7 @@
 
 use std::borrow::Cow;
 
-use super::extrapolation::{Claim, SizeBasis};
+use super::extrapolation::{Claim, FamilyClaim, SizeBasis};
 use super::vendor_lookup::{self, LookupQuery, LookupResult};
 use super::vendor_lut::{MaterialFamily, ToolFamily};
 use super::{FeedsInput, OperationFamily, PassRole, VendorLut, vendor_normalize};
@@ -91,10 +91,6 @@ const VBIT_CONTOUR_FINISH: &str = "No published figure backs the formula for a V
 const VBIT_MDF_PLY: &str = "No published figure backs the formula for a V-bit on pocket, contour \
      or trace passes in MDF or plywood: for a 1/4 in V-bit the formula is below half of the Onsrud \
      37-series bands (0.41x to 0.48x).";
-const TAPER_ROUGH: &str = "No published figure backs the formula for a tapered ball-nose on \
-     adaptive, pocket, contour or trace passes: Onsrud 77-100 puts it below half.";
-const TAPER_CONTOUR_FINISH: &str = "No published figure backs the formula for a tapered ball-nose \
-     on waterline or steep-shallow passes: it is below half of the Onsrud 77-100 band.";
 const DRILL_FLAT: &str = "No published wood figure exists for a plunge drill with a flat end mill, \
      and the drill multiplier 2.5 is unsourced.";
 const DRILL_BALL: &str = "No published wood figure exists for a plunge drill with a ball-nose \
@@ -292,20 +288,11 @@ pub fn formula_backing(
                 reason: VBIT_MDF_PLY,
             }
         }
-        // Tapered ball: the Onsrud 77-100 rows back softwood only.
-        (ToolFamily::TaperedBallNose, Adaptive | Pocket | Contour, Roughing)
-        | (ToolFamily::TaperedBallNose, Trace, Finish)
-            if material == Softwood =>
-        {
-            Backed
-        }
-        (ToolFamily::TaperedBallNose, Adaptive | Pocket | Contour, Roughing)
-        | (ToolFamily::TaperedBallNose, Trace, Finish) => Clueless {
-            reason: TAPER_ROUGH,
-        },
-        (ToolFamily::TaperedBallNose, Contour, SemiFinish | Finish) => Clueless {
-            reason: TAPER_CONTOUR_FINISH,
-        },
+        // Tapered ball: no formula arm since A3 (G3). The Onsrud 77-100
+        // pocket rows serve the adaptive, contour, parallel, scallop and trace
+        // families through the family rule (`extrapolation::family`), in all
+        // four judged woods. A tip under 0.5 mm refuses on the tip floor
+        // first; a cell with no row falls to the unjudged reason below.
         _ => Clueless {
             reason: UNJUDGED_REASON,
         },
@@ -335,6 +322,15 @@ pub enum FeedsSupport {
     /// residual (`feeds::extrapolation`). The claim is boxed because it is
     /// much larger than the other variants.
     Extrapolated { claim: Box<Claim> },
+    /// A vendor row answered through a stated G3 family claim: a family
+    /// rule carries the row from its home operation family into this one
+    /// (`feeds::extrapolation::family`, A3). `size` is the G1 size claim
+    /// when the row is also off the tool's size, and `None` at the printed
+    /// size.
+    FamilyTransferred {
+        family: Box<FamilyClaim>,
+        size: Option<Box<Claim>>,
+    },
     /// No row; the calculator's formula answers, and this names its source.
     FormulaOnly { source: &'static str },
     /// The engine has no basis. Suggest refuses with the reason.
@@ -352,6 +348,20 @@ impl FeedsSupport {
                 "a vendor row prints this cell".to_owned(),
             ),
             Self::Extrapolated { claim } => claim.card_text(),
+            // The two claims: the headlines joined, then the details joined.
+            Self::FamilyTransferred { family, size } => {
+                let (headline, detail) = family.card_text();
+                match size {
+                    None => (headline, detail),
+                    Some(claim) => {
+                        let (size_headline, size_detail) = claim.card_text();
+                        (
+                            format!("{headline}; {size_headline}"),
+                            format!("{detail}; {size_detail}"),
+                        )
+                    }
+                }
+            }
             Self::FormulaOnly { source } => ("formula only".to_owned(), (*source).to_owned()),
             Self::Refuse { reason } => ("refused".to_owned(), reason.to_string()),
         }
@@ -429,7 +439,10 @@ pub fn formula_source_for_input(input: &FeedsInput) -> Option<&'static str> {
 ///   (`LookupResult::size_basis`) decides. A claim gives `Extrapolated`; a
 ///   refusal gives `Refuse` (its text for a tool under 1.5 mm is
 ///   [`micro_extrapolation_refusal`]); every other basis gives
-///   `VendorBacked`.
+///   `VendorBacked`. Then, when a G3 family rule carries the row
+///   (`LookupResult::family_basis`), `VendorBacked` becomes
+///   `FamilyTransferred { size: None }` and `Extrapolated` becomes
+///   `FamilyTransferred { size: Some(claim) }`. A size `Refuse` stays.
 /// - No row, and no formula source: `Refuse`.
 /// - No row, a formula source, an operation kind and a judged wood
 ///   material: [`formula_backing`] decides, `Backed` -> `FormulaOnly`,
@@ -466,7 +479,7 @@ pub(crate) fn support_for_lookup(input: &FeedsInput, lookup: &RecipeRowLookup) -
         };
     }
     if let RecipeRowLookup::Row { query, row, .. } = lookup {
-        return match &row.size_basis {
+        let arm = match &row.size_basis {
             SizeBasis::Claim(claim) => FeedsSupport::Extrapolated {
                 claim: claim.clone(),
             },
@@ -501,6 +514,24 @@ pub(crate) fn support_for_lookup(input: &FeedsInput, lookup: &RecipeRowLookup) -
             SizeBasis::Exact | SizeBasis::NoDiameterAnchor | SizeBasis::NoChipload => {
                 FeedsSupport::VendorBacked
             }
+        };
+        // A3 (G3): a transferred row states its family claim beside the size
+        // arm. A size refusal still wins: a refused row has no band.
+        let Some(family) = row.family_basis.claim() else {
+            return arm;
+        };
+        return match arm {
+            FeedsSupport::VendorBacked => FeedsSupport::FamilyTransferred {
+                family: Box::new(family.clone()),
+                size: None,
+            },
+            FeedsSupport::Extrapolated { claim } => FeedsSupport::FamilyTransferred {
+                family: Box::new(family.clone()),
+                size: Some(claim),
+            },
+            other @ (FeedsSupport::Refuse { .. }
+            | FeedsSupport::FormulaOnly { .. }
+            | FeedsSupport::FamilyTransferred { .. }) => other,
         };
     }
     let Some(source) = formula_source_for_input(input) else {

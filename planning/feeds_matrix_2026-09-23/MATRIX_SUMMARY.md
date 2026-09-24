@@ -36,61 +36,62 @@ Wood rows in `EMBEDDED_LUT`, read by the instrument:
 
 ## Cell classes per tool type
 
-The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacked`, `Extrapolated` (a G1 size claim), `FormulaOnly`, `Refuse` (the `FeedsSupport` arm). `fires-a-diagnostic` is a separate flag: the cell has one or more diagnostic ids from the three pre-simulation doors. A vendor-backed cell can also fire. The `FeedsWarning` and `SuggestWarning` counts are separate columns.
+The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacked`, `Extrapolated` (a G1 size claim), `FamilyTransferred` (a G3 family claim), `FormulaOnly`, `Refuse` (the `FeedsSupport` arm). `fires-a-diagnostic` is a separate flag: the cell has one or more diagnostic ids from the three pre-simulation doors. A vendor-backed cell can also fire. The `FeedsWarning` and `SuggestWarning` counts are separate columns.
 
 | class | EndMill | BallNose | BullNose | VBit | TaperedBallNose | all |
 |---|---|---|---|---|---|---|
-| Refused | 72 | 94 | 120 | 136 | 74 | 496 |
+| Refused | 72 | 94 | 120 | 136 | 40 | 462 |
 | VendorBacked | 72 | 54 | 60 | 32 | 56 | 274 |
 | Extrapolated | 16 | 24 | 12 | 0 | 56 | 108 |
-| FormulaOnly | 32 | 20 | 0 | 24 | 6 | 82 |
+| FamilyTransferred | 0 | 0 | 0 | 0 | 40 | 40 |
+| FormulaOnly | 32 | 20 | 0 | 24 | 0 | 76 |
 | Refuse | 0 | 0 | 0 | 0 | 0 | 0 |
-| fires-a-diagnostic | 120 | 98 | 72 | 56 | 118 | 464 |
-| has a FeedsWarning | 120 | 98 | 72 | 56 | 118 | 464 |
-| has a SuggestWarning | 120 | 98 | 72 | 56 | 118 | 464 |
+| fires-a-diagnostic | 120 | 98 | 72 | 56 | 152 | 498 |
+| has a FeedsWarning | 120 | 98 | 72 | 56 | 152 | 498 |
+| has a SuggestWarning | 120 | 98 | 72 | 56 | 152 | 498 |
 | total | 192 | 192 | 192 | 192 | 192 | 960 |
 
 ## Cell classes per operation (all tools, diameters and materials)
 
-| operation | Refused | VendorBacked | Extrapolated | FormulaOnly | Refuse | fires-a-diagnostic |
-|---|---|---|---|---|---|---|
-| Face | 6 | 23 | 7 | 4 | 0 | 34 |
-| Pocket | 6 | 23 | 7 | 4 | 0 | 34 |
-| Profile | 14 | 8 | 8 | 10 | 0 | 26 |
-| Adaptive | 10 | 23 | 7 | 0 | 0 | 30 |
-| VCarve | 32 | 8 | 0 | 0 | 0 | 8 |
-| Rest | 6 | 23 | 7 | 4 | 0 | 34 |
-| Inlay | 32 | 8 | 0 | 0 | 0 | 8 |
-| Zigzag | 6 | 23 | 7 | 4 | 0 | 34 |
-| Trace | 18 | 8 | 0 | 14 | 0 | 22 |
-| Drill | 40 | 0 | 0 | 0 | 0 | 0 |
-| Chamfer | 32 | 8 | 0 | 0 | 0 | 8 |
-| DropCutter | 18 | 18 | 4 | 0 | 0 | 22 |
-| Adaptive3d | 10 | 23 | 7 | 0 | 0 | 30 |
-| Waterline | 20 | 8 | 8 | 4 | 0 | 20 |
-| Pencil | 34 | 0 | 0 | 6 | 0 | 6 |
-| Scallop | 28 | 6 | 6 | 0 | 0 | 12 |
-| UnifiedFinish | 28 | 6 | 6 | 0 | 0 | 12 |
-| SteepShallow | 20 | 8 | 8 | 4 | 0 | 20 |
-| RampFinish | 18 | 10 | 4 | 8 | 0 | 22 |
-| SpiralFinish | 28 | 6 | 6 | 0 | 0 | 12 |
-| RadialFinish | 18 | 10 | 4 | 8 | 0 | 22 |
-| HorizontalFinish | 18 | 10 | 4 | 8 | 0 | 22 |
-| ProjectCurve | 14 | 14 | 8 | 4 | 0 | 26 |
-| AlignmentPinDrill | 40 | 0 | 0 | 0 | 0 | 0 |
+| operation | Refused | VendorBacked | Extrapolated | FamilyTransferred | FormulaOnly | Refuse | fires-a-diagnostic |
+|---|---|---|---|---|---|---|---|
+| Face | 6 | 23 | 7 | 0 | 4 | 0 | 34 |
+| Pocket | 6 | 23 | 7 | 0 | 4 | 0 | 34 |
+| Profile | 8 | 8 | 8 | 8 | 8 | 0 | 32 |
+| Adaptive | 10 | 23 | 7 | 0 | 0 | 0 | 30 |
+| VCarve | 32 | 8 | 0 | 0 | 0 | 0 | 8 |
+| Rest | 6 | 23 | 7 | 0 | 4 | 0 | 34 |
+| Inlay | 32 | 8 | 0 | 0 | 0 | 0 | 8 |
+| Zigzag | 6 | 23 | 7 | 0 | 4 | 0 | 34 |
+| Trace | 12 | 8 | 0 | 8 | 12 | 0 | 28 |
+| Drill | 40 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Chamfer | 32 | 8 | 0 | 0 | 0 | 0 | 8 |
+| DropCutter | 18 | 18 | 4 | 0 | 0 | 0 | 22 |
+| Adaptive3d | 10 | 23 | 7 | 0 | 0 | 0 | 30 |
+| Waterline | 12 | 8 | 8 | 8 | 4 | 0 | 28 |
+| Pencil | 28 | 0 | 0 | 8 | 4 | 0 | 12 |
+| Scallop | 28 | 6 | 6 | 0 | 0 | 0 | 12 |
+| UnifiedFinish | 28 | 6 | 6 | 0 | 0 | 0 | 12 |
+| SteepShallow | 12 | 8 | 8 | 8 | 4 | 0 | 28 |
+| RampFinish | 18 | 10 | 4 | 0 | 8 | 0 | 22 |
+| SpiralFinish | 28 | 6 | 6 | 0 | 0 | 0 | 12 |
+| RadialFinish | 18 | 10 | 4 | 0 | 8 | 0 | 22 |
+| HorizontalFinish | 18 | 10 | 4 | 0 | 8 | 0 | 22 |
+| ProjectCurve | 14 | 14 | 8 | 0 | 4 | 0 | 26 |
+| AlignmentPinDrill | 40 | 0 | 0 | 0 | 0 | 0 | 0 |
 
 ## Pre-simulation diagnostic ids (cells that fire each id)
 
 | id | cells |
 |---|---|
 | `compat.ball_nose_on_flat_clearing` | 42 |
-| `efficiency.very_fine_stepover` | 84 |
-| `feeds.aggressiveness_engagement` | 242 |
+| `efficiency.very_fine_stepover` | 88 |
+| `feeds.aggressiveness_engagement` | 256 |
 | `feeds.feed_clamped` | 42 |
-| `feeds.long_tool_derate` | 436 |
+| `feeds.long_tool_derate` | 470 |
 | `feeds.no_vendor_rows_for_routed_operation` | 4 |
-| `feeds.rpm_lowered_for_ceiling` | 141 |
-| `feeds.shank_too_large` | 87 |
+| `feeds.rpm_lowered_for_ceiling` | 149 |
+| `feeds.shank_too_large` | 104 |
 | `feeds.vendor_row_publishes_no_chipload` | 8 |
 
 ## FeedsWarning variants (cells that carry each)
@@ -98,27 +99,27 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 | id | cells |
 |---|---|
 | `FeedRateClamped` | 42 |
-| `LongToolDerate` | 436 |
+| `LongToolDerate` | 470 |
 | `NoVendorRowsForRoutedOperation` | 4 |
-| `RpmLoweredForFeedCeiling` | 141 |
-| `ShankTooLarge` | 87 |
+| `RpmLoweredForFeedCeiling` | 149 |
+| `ShankTooLarge` | 104 |
 | `VendorRowPublishesNoChipload` | 8 |
 
 ## SuggestWarning variants (cells that carry each)
 
 | id | cells |
 |---|---|
-| `AggressivenessNotApplied` | 222 |
+| `AggressivenessNotApplied` | 242 |
 | `AxialDocClampedByEnvelope` | 22 |
-| `CutGeometryFieldNotHeld` | 268 |
+| `CutGeometryFieldNotHeld` | 302 |
 | `DeflectionBackoffFigureIsAFloor` | 20 |
-| `EngagementReducedForAggressiveness` | 242 |
+| `EngagementReducedForAggressiveness` | 256 |
 | `FeedRescaledToFinalGeometry` | 60 |
-| `FinishEnvelopeAdvisory` | 130 |
+| `FinishEnvelopeAdvisory` | 146 |
 | `PlungeClampedToFeed` | 28 |
 | `ProjectCurveDepthInfeasible` | 6 |
-| `RoughingDepthClampedToRigidity` | 160 |
-| `RpmLoweredForFeedCeiling` | 141 |
+| `RoughingDepthClampedToRigidity` | 166 |
+| `RpmLoweredForFeedCeiling` | 149 |
 | `StrategyRewrote` | 30 |
 
 ## Simulation subset (`matrix_2026-09-23_sim.csv`)
@@ -126,7 +127,7 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 - 2D: Pocket, Profile, Adaptive on a 40 mm square polygon, stock 44 × 44 × 18 below z = 0; end_mill and bull_nose at 6 mm; the four materials.
 - 3D: a dome height field (top z = 0, flat base z = -8, 46 mm footprint) in the same stock; heights pinned to top 0 and bottom -8 on all 3D cells (`bottom_z: Auto` collapses a waterline band). Waterline, DropCutter, Adaptive3d with end_mill; Scallop and DropCutter with ball_nose and tapered_ball_nose; 6 mm; softwood and hardwood.
 - Simulation: resolution 1.0, metrics on, auto resolution off, other fields from `SimulationOptions::default()`. That default has `adaptive_feed_modulation: true`, so the post-simulation verdicts read the modulated feed, as the GUI default does.
-- Cells run: 38; errors: 0; skipped on the 150 s budget: 0; wall-clock of the subset: 163.4 s.
+- Cells run: 38; errors: 0; skipped on the 150 s budget: 0; wall-clock of the subset: 154.3 s.
 
 ## Post-simulation diagnostic ids (cells that fire each id)
 

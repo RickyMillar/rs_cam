@@ -284,6 +284,22 @@ pub enum LutOperationFamily {
     Drill,
 }
 
+impl LutOperationFamily {
+    /// The name a card prints for the family.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Adaptive => "adaptive",
+            Self::Pocket => "pocket",
+            Self::Contour => "contour",
+            Self::Parallel => "parallel",
+            Self::Scallop => "scallop",
+            Self::Trace => "trace",
+            Self::Face => "face",
+            Self::Drill => "drill",
+        }
+    }
+}
+
 /// Pass role as used in vendor LUT JSON.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -291,6 +307,17 @@ pub enum LutPassRole {
     Roughing,
     SemiFinish,
     Finish,
+}
+
+impl LutPassRole {
+    /// The name a card prints for the role.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Roughing => "roughing",
+            Self::SemiFinish => "semi-finish",
+            Self::Finish => "finish",
+        }
+    }
 }
 
 /// JSON wrapper for observation arrays.
