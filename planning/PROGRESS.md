@@ -94,6 +94,12 @@ instrument, 9699f0d5) on the rivmap100 demo copy.
   owned by the feeds session (G10: Q11 removes the Suggest entry-style
   rewrite; Q6/Q8/Q9 helix radius cap, pitch and ramp-angle named rules),
   landing after By Area WP1; By Area WP2/WP3 rebase on it. Open: does 2D
+  WP1 of By Area (e93cb4ce): a job cuts its cells, not its box; the
+  material gate and level filter fixed for By Area. rivmap100 By Area
+  595 -> 728 s: the fix adds the Z 0.5 level the old filter dropped.
+  FOUND: Global has the same gate defect and never cuts Z 0.5 on
+  rivmap100 (about 1200 mm³ left for the finish tool). Fix in progress;
+  every earlier Global/By Area rivmap100 time at dpp 8 lacks that level.
   Adaptive have the same defect (it still allows the reorder)?
 - 2026-09-25: By Area pocket tree measured
   (`planning/by_area_merge_tree_2026-09-25/`, 6f52d7a3): 3 valleys at
