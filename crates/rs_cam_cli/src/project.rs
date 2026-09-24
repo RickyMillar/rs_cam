@@ -192,7 +192,7 @@ struct ToolpathSummaryEntry {
 /// an operation that has a result, and both per-toolpath loops skip the same
 /// set. An absent row cannot say "waiting".
 #[derive(Serialize)]
-struct BlockedEntry {
+pub(crate) struct BlockedEntry {
     toolpath_id: rs_cam_core::ToolpathId,
     toolpath_index: usize,
     name: String,
@@ -253,7 +253,7 @@ fn blocked_entry(
 /// - when the plan has to simulate and no cell size arrived;
 /// - when what arrived is not a positive number;
 /// - when what arrived is coarser than the rest the plan machines needs.
-fn resolve_cell_size(
+pub(crate) fn resolve_cell_size(
     supplied: Option<f64>,
     plans_a_simulation: bool,
     required: Option<f64>,
@@ -285,6 +285,162 @@ fn resolve_cell_size(
         );
     }
     Ok(cell)
+}
+
+/// The options of one walk over the generation plan.
+pub(crate) struct PlanWalkOptions {
+    /// The part of the project the walk makes current.
+    pub scope: Scope,
+    /// The cell size the caller supplied. `None` is refused when the plan
+    /// simulates (W5 item f).
+    pub resolution: Option<f64>,
+    /// Toolpaths the walk does not generate and the simulation skips.
+    pub skip_ids: Vec<rs_cam_core::ToolpathId>,
+    pub adaptive_feed_modulation: bool,
+    pub modulation_strategy: rs_cam_core::dressup::feed_modulation::ModulationStrategy,
+    pub modulation_feed_scale: f64,
+    /// Run one simulation over the whole project after the last step. The
+    /// plan emits no trailing full step, so every reading of metrics,
+    /// collisions and diagnostics needs this simulation.
+    pub closing_simulation: bool,
+}
+
+/// What one walk over the generation plan did.
+pub(crate) struct PlanWalk {
+    /// The cell size the walk simulated at.
+    pub resolution: f64,
+    /// The number of simulations the walk ran, the closing one included.
+    pub simulations: usize,
+    /// Operations that never generated because an upstream simulated stock
+    /// was missing. An EMPTY list means none were blocked.
+    pub blocked: Vec<BlockedEntry>,
+}
+
+/// Walk `session::generation_plan::plan` for `opts.scope`, and optionally run
+/// the closing simulation.
+///
+/// # Errors
+/// - when [`resolve_cell_size`] refuses the cell size;
+/// - when a simulation step fails.
+pub(crate) fn run_generation_plan(
+    session: &mut ProjectSession,
+    opts: &PlanWalkOptions,
+) -> Result<PlanWalk> {
+    let combined_skip = &opts.skip_ids;
+    let resolution = opts.resolution;
+    let adaptive_feed_modulation = opts.adaptive_feed_modulation;
+    let modulation_strategy = opts.modulation_strategy;
+    let modulation_feed_scale = opts.modulation_feed_scale;
+    // 2c. W5 item (f): the cell size is REFUSED, never guessed, whenever the
+    // plan has to simulate. `--resolution` no longer carries a clap default,
+    // because clap cannot see the project and the question only has an answer
+    // once the edges are known.
+    let steps = generation_plan::plan(session, opts.scope);
+    let plans_a_simulation = steps
+        .iter()
+        .any(|step| matches!(step, generation_plan::Step::Simulate { .. }));
+    let required = generation_plan::required_resolution_mm(session, opts.scope);
+    let resolution = resolve_cell_size(resolution, plans_a_simulation, required)?;
+
+    // 3. Walk the plan core owns. Setup order, then `toolpath_indices`, with
+    // a Simulate step immediately before every operation that starts from
+    // remaining stock and has no snapshot. There is no cap and no ladder: the
+    // list is finite and no step is retried, so the GUI, the MCP server and
+    // this command cannot disagree about what "make the project current"
+    // means.
+    let cancel = AtomicBool::new(false);
+    let sim_opts = SimulationOptions {
+        resolution,
+        skip_ids: combined_skip.clone(),
+        metrics_enabled: true,
+        auto_resolution: false,
+        // F-035: predicted-feed plumbing off by default for CLI runs;
+        // protects the smoke baseline from spurious verdict drift.
+        use_predicted_feed_in_gates: false,
+        adaptive_feed_modulation,
+        modulation_strategy,
+        modulation_feed_scale,
+    };
+    // CMP-23: the S5 prefix memo. The plan's simulations are prefixes of one
+    // another — exactly the shape the memo exists for. The cache is local to
+    // this run: it holds one snapshot, it is single-slot and in-process, and
+    // it dies with the command.
+    let mut sim_cache = rs_cam_core::compute::sim_prefix::SimPrefixCache::new();
+    let mut simulations = 0usize;
+    let mut blocked: Vec<BlockedEntry> = Vec::new();
+    for step in &steps {
+        match *step {
+            generation_plan::Step::Simulate { upto, .. } => {
+                // A setup whose earlier operation is already blocked cannot
+                // be unlocked by another simulation: the phantom scan latches
+                // on the first enabled operation with no result, which is
+                // that one. Skip the step instead of paying for it.
+                if blocked.iter().any(|b| b.toolpath_id == upto) {
+                    continue;
+                }
+                simulations += 1;
+                session.run_simulation_memoized(
+                    &sim_opts,
+                    &cancel,
+                    Some(rs_cam_core::compute::sim_prefix::SimMemo {
+                        cache: &mut sim_cache,
+                        store: true,
+                    }),
+                )?;
+            }
+            generation_plan::Step::Generate { toolpath, index } => {
+                if combined_skip.contains(&toolpath) {
+                    continue;
+                }
+                if let Err(error) = session.generate_toolpath(index, &cancel) {
+                    match blocked_entry(session, toolpath, index, &error) {
+                        Some(entry) => {
+                            warn!(
+                                toolpath = %entry.name,
+                                "operation is waiting on upstream simulated stock"
+                            );
+                            blocked.push(entry);
+                        }
+                        None => warn!(index, error = %error, "toolpath generation failed"),
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. The closing simulation. The plan emits no trailing full step, and
+    // every reading below (metrics, collisions, the diagnostics) is taken
+    // from one simulation over the whole project.
+    if opts.closing_simulation {
+        simulations += 1;
+        session.run_simulation_memoized(
+            &sim_opts,
+            &cancel,
+            Some(rs_cam_core::compute::sim_prefix::SimMemo {
+                cache: &mut sim_cache,
+                store: true,
+            }),
+        )?;
+    }
+    info!(
+        steps = steps.len(),
+        simulations,
+        blocked = blocked.len(),
+        "generation plan finished"
+    );
+
+    let sim_memo_stats = sim_cache.stats();
+    tracing::info!(
+        lookups = sim_memo_stats.lookups,
+        hits = sim_memo_stats.hits,
+        entries_reused = sim_memo_stats.entries_reused,
+        "S5 prefix memo over the generation plan"
+    );
+    Ok(PlanWalk {
+        resolution,
+        simulations,
+        blocked,
+    })
 }
 
 #[derive(Serialize)]
@@ -433,109 +589,24 @@ pub fn run_project_command(
         apply_suggested_feeds_to_session(&mut session)?;
     }
 
-    // 2c. W5 item (f): the cell size is REFUSED, never guessed, whenever the
-    // plan has to simulate. `--resolution` no longer carries a clap default,
-    // because clap cannot see the project and the question only has an answer
-    // once the edges are known.
-    let steps = generation_plan::plan(&session, Scope::Project);
-    let plans_a_simulation = steps
-        .iter()
-        .any(|step| matches!(step, generation_plan::Step::Simulate { .. }));
-    let required = generation_plan::required_resolution_mm(&session, Scope::Project);
-    let resolution = resolve_cell_size(resolution, plans_a_simulation, required)?;
-
-    // 3. Walk the plan core owns. Setup order, then `toolpath_indices`, with
-    // a Simulate step immediately before every operation that starts from
-    // remaining stock and has no snapshot. There is no cap and no ladder: the
-    // list is finite and no step is retried, so the GUI, the MCP server and
-    // this command cannot disagree about what "make the project current"
-    // means.
-    let cancel = AtomicBool::new(false);
-    let sim_opts = SimulationOptions {
-        resolution,
-        skip_ids: combined_skip.clone(),
-        metrics_enabled: true,
-        auto_resolution: false,
-        // F-035: predicted-feed plumbing off by default for CLI runs;
-        // protects the smoke baseline from spurious verdict drift.
-        use_predicted_feed_in_gates: false,
-        adaptive_feed_modulation,
-        modulation_strategy,
-        modulation_feed_scale,
-    };
-    // CMP-23: the S5 prefix memo. The plan's simulations are prefixes of one
-    // another — exactly the shape the memo exists for. The cache is local to
-    // this run: it holds one snapshot, it is single-slot and in-process, and
-    // it dies with the command.
-    let mut sim_cache = rs_cam_core::compute::sim_prefix::SimPrefixCache::new();
-    let mut simulations = 0usize;
-    let mut blocked: Vec<BlockedEntry> = Vec::new();
-    for step in &steps {
-        match *step {
-            generation_plan::Step::Simulate { upto, .. } => {
-                // A setup whose earlier operation is already blocked cannot
-                // be unlocked by another simulation: the phantom scan latches
-                // on the first enabled operation with no result, which is
-                // that one. Skip the step instead of paying for it.
-                if blocked.iter().any(|b| b.toolpath_id == upto) {
-                    continue;
-                }
-                simulations += 1;
-                session.run_simulation_memoized(
-                    &sim_opts,
-                    &cancel,
-                    Some(rs_cam_core::compute::sim_prefix::SimMemo {
-                        cache: &mut sim_cache,
-                        store: true,
-                    }),
-                )?;
-            }
-            generation_plan::Step::Generate { toolpath, index } => {
-                if combined_skip.contains(&toolpath) {
-                    continue;
-                }
-                if let Err(error) = session.generate_toolpath(index, &cancel) {
-                    match blocked_entry(&session, toolpath, index, &error) {
-                        Some(entry) => {
-                            warn!(
-                                toolpath = %entry.name,
-                                "operation is waiting on upstream simulated stock"
-                            );
-                            blocked.push(entry);
-                        }
-                        None => warn!(index, error = %error, "toolpath generation failed"),
-                    }
-                }
-            }
-        }
-    }
-
-    // 4. The closing simulation. The plan emits no trailing full step, and
-    // every reading below (metrics, collisions, the diagnostics) is taken
-    // from one simulation over the whole project.
-    simulations += 1;
-    session.run_simulation_memoized(
-        &sim_opts,
-        &cancel,
-        Some(rs_cam_core::compute::sim_prefix::SimMemo {
-            cache: &mut sim_cache,
-            store: true,
-        }),
+    // 2c-4. Walk the generation plan core owns, then run the closing
+    // simulation. `run_generation_plan` holds the steps; `rough-score` takes
+    // the same function, so the two commands cannot walk the plan in two ways.
+    let walk = run_generation_plan(
+        &mut session,
+        &PlanWalkOptions {
+            scope: Scope::Project,
+            resolution,
+            skip_ids: combined_skip.clone(),
+            adaptive_feed_modulation,
+            modulation_strategy,
+            modulation_feed_scale,
+            closing_simulation: true,
+        },
     )?;
-    info!(
-        steps = steps.len(),
-        simulations,
-        blocked = blocked.len(),
-        "generation plan finished"
-    );
-
-    let sim_memo_stats = sim_cache.stats();
-    tracing::info!(
-        lookups = sim_memo_stats.lookups,
-        hits = sim_memo_stats.hits,
-        entries_reused = sim_memo_stats.entries_reused,
-        "S5 prefix memo over the generation plan"
-    );
+    let resolution = walk.resolution;
+    let blocked = walk.blocked;
+    let cancel = AtomicBool::new(false);
 
     // 5. Run collision checks per toolpath and collect results
     let tp_count = session.toolpath_count();

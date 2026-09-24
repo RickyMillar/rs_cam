@@ -6,6 +6,7 @@ mod command;
 mod job;
 mod nc_replay;
 mod project;
+mod rough_score;
 mod run;
 mod smoke;
 mod sweep;
@@ -303,18 +304,66 @@ enum Commands {
         #[arg(long)]
         rapid_feed: Option<f64>,
     },
+
+    /// Score toolpaths for a roughing A/B: accel-aware time, whole-cycle
+    /// engagement, axial DOC and entry and retract counts.
+    ///
+    /// Loads a project, applies `--set` overrides, walks the generation plan
+    /// the `project` command walks, runs the closing simulation, and prints
+    /// one JSON object per toolpath and one total object on stdout. The log
+    /// goes to stderr. See `planning/adaptive3d_step_ladder_roughing_2026-09-24/`
+    /// section 4 for the rules of the two time bases.
+    RoughScore {
+        /// Path to the project .toml file (GUI format, format_version=3)
+        input: PathBuf,
+
+        /// Score only this toolpath (its id, or its exact name). The plan
+        /// then makes only this toolpath and its ancestors current.
+        #[arg(long)]
+        toolpath: Option<String>,
+
+        /// Simulation resolution in mm. NOT defaulted when the plan
+        /// simulates, the same rule as `project` (W5 item f). A plan that
+        /// does not simulate uses 0.5 mm.
+        #[arg(long)]
+        resolution: Option<f64>,
+
+        /// Skip the closing simulation: time and counts only. The plan still
+        /// runs the simulations that a `from_remaining_stock` operation needs
+        /// before it generates. Every simulation field is then null.
+        #[arg(long)]
+        no_sim: bool,
+
+        /// Override one operation parameter before generation, as
+        /// `<index>.<param>=<value>` (repeatable). `<index>` is the toolpath
+        /// position in the session, the index `set_toolpath_param` takes.
+        #[arg(long = "set")]
+        set: Vec<String>,
+
+        /// Disable the per-segment adaptive feed modulation of the closing
+        /// simulation. Default ON, the same as `project` and the GUI.
+        #[arg(long = "no-adaptive-feed-modulation", action = clap::ArgAction::SetTrue)]
+        no_adaptive_feed_modulation: bool,
+    },
 }
 
 fn main() -> Result<()> {
-    tracing_subscriber::fmt()
+    let cli = Cli::parse();
+
+    // `rough-score` prints JSON records on stdout, so its log goes to
+    // stderr. The other commands keep the stdout log they always had.
+    let log_to_stderr = matches!(cli.command, Commands::RoughScore { .. });
+    let subscriber = tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
-        .with_timer(tracing_subscriber::fmt::time::uptime())
-        .init();
-
-    let cli = Cli::parse();
+        .with_timer(tracing_subscriber::fmt::time::uptime());
+    if log_to_stderr {
+        subscriber.with_writer(std::io::stderr).init();
+    } else {
+        subscriber.init();
+    }
 
     match cli.command {
         Commands::Version => {
@@ -464,6 +513,25 @@ fn main() -> Result<()> {
             rapid_feed,
         } => {
             nc_replay::run_nc_time(&inputs, machine.as_deref(), max_feed, rapid_feed)?;
+        }
+        Commands::RoughScore {
+            input,
+            toolpath,
+            resolution,
+            no_sim,
+            set,
+            no_adaptive_feed_modulation,
+        } => {
+            rough_score::run_rough_score(
+                &input,
+                &rough_score::ScoreOptions {
+                    toolpath,
+                    resolution,
+                    no_sim,
+                    set,
+                    adaptive_feed_modulation: !no_adaptive_feed_modulation,
+                },
+            )?;
         }
     }
 
