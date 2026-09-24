@@ -125,6 +125,13 @@ pub struct ViewportState {
     /// be a checkbox the planner keeps overwriting. It is a TERRITORY
     /// overlay, so it stacks with whatever colours the model surface.
     pub show_tier_preview: bool,
+    /// The By Area regions overlay: the regions that the SELECTED 3D Rough
+    /// detected with By Area ordering, one colour per region, with its
+    /// order number. It reads `AnnotatedToolpath::area_regions`.
+    ///
+    /// Defaults **off**. It is a diagnostic that the operator switches on.
+    /// It is a TERRITORY overlay, so it stacks with the model colour.
+    pub show_area_regions: bool,
     /// Per-tool reach-map overlay (P5). The model is drawn in the reach
     /// colours of the SELECTED toolpath's cutter: green where the cutter can
     /// form the surface to the operation's tolerance, red where it cannot.
@@ -230,6 +237,7 @@ impl ViewportState {
             show_tool_profile_preview: false,
             show_rest_heatmap: false,
             show_tier_preview: false,
+            show_area_regions: false,
             show_reach_map: true,
             show_sim_stock: false,
             show_tool_deflection: false,

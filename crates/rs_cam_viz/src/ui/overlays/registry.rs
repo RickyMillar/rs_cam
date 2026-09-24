@@ -382,6 +382,60 @@ pub fn rest_ramp_top(grid: &rs_cam_core::surface::rest_field::RestGrid) -> f32 {
         .max(threshold + 1e-6)
 }
 
+/// The By Area region map of the toolpath selected RIGHT NOW, if its
+/// result carries one. The overlay mesh, the order labels, the legend and
+/// the row precondition all read this one function.
+pub fn selected_area_regions(
+    state: &AppState,
+) -> Option<&std::sync::Arc<rs_cam_core::adaptive3d::AreaRegionMap>> {
+    let tp_id = selected_toolpath(state)?;
+    state
+        .gui
+        .toolpath_rt
+        .get(&tp_id)
+        .and_then(|rt| rt.result.as_ref())
+        .and_then(|r| r.annotated.area_regions.as_ref())
+}
+
+/// Does the viewport draw the By Area regions this frame? The flag is on
+/// and the row precondition is `Ready`. The callback gate, the order labels
+/// and the legend read this one function.
+pub fn area_regions_drawn(state: &AppState) -> bool {
+    state.viewport.show_area_regions && area_regions_precondition(state).is_ready()
+}
+
+/// Can the By Area regions overlay draw, and if not, why not?
+fn area_regions_precondition(state: &AppState) -> Precondition {
+    use rs_cam_core::compute::catalog::OperationConfig;
+    use rs_cam_core::compute::operation_configs::RegionOrdering;
+    if state.workspace != Workspace::Toolpaths {
+        return Precondition::no("the By Area regions draw in the Toolpaths workspace");
+    }
+    if selected_area_regions(state).is_some() {
+        return Precondition::Ready;
+    }
+    let Some(tp_id) = selected_toolpath(state) else {
+        return Precondition::no("select a 3D Rough with By Area ordering");
+    };
+    let ordering = state
+        .session
+        .find_toolpath_config_by_id(tp_id)
+        .and_then(|(_, tc)| match &tc.operation {
+            OperationConfig::Adaptive3d(cfg) => Some(cfg.region_ordering),
+            _ => None,
+        });
+    match ordering {
+        None => Precondition::no("this operation is not a 3D Rough"),
+        Some(RegionOrdering::Global) => {
+            Precondition::no("this 3D Rough uses Global ordering \u{2014} it detects no regions")
+        }
+        Some(RegionOrdering::ByArea) => Precondition::no_with(
+            "generate this toolpath to see its regions".to_owned(),
+            OverlayAction::GenerateAll,
+        ),
+    }
+}
+
 /// `Some(setup_index)` when the planner holds a `Ready` preview.
 fn ready_preview_setup(state: &AppState) -> Option<usize> {
     state
@@ -922,6 +976,25 @@ pub const ROWS: &[OverlayRow] = &[
         default_for: no_default,
         hover: "One colour per tool tier over the territory that tier owns, \
                 with each fine tier's overlap band in a lighter tint.",
+    },
+    OverlayRow {
+        id: "area_regions",
+        group: OverlayGroup::Regions,
+        label: "By Area regions",
+        surface: OverlaySurface::None,
+        mechanism: OverlayMechanism::DrawTime,
+        flag: Some("viewport.show_area_regions"),
+        radio: false,
+        get: |s| s.viewport.show_area_regions,
+        set: |s, on| s.viewport.show_area_regions = on,
+        precondition: area_regions_precondition,
+        default_for: no_default,
+        hover: "The regions that the selected 3D Rough detected with By Area \
+                ordering: one colour and one order number per region, and a \
+                thin box that is the filter the planner cuts each region by. \
+                The planner detects the regions once, from the stock before \
+                the first level. One colour over the full part means one \
+                region, and By Area then cuts as Global does.",
     },
     OverlayRow {
         id: "planner_islands",

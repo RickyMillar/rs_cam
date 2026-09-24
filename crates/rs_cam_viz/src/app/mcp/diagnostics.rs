@@ -546,7 +546,15 @@ impl RsCamApp {
             region_id,
             max_spans,
         ) {
-            Ok(value) => json_str(value),
+            Ok(mut value) => {
+                if let serde_json::Value::Object(map) = &mut value {
+                    map.insert(
+                        "area_regions".into(),
+                        area_regions_json(result.annotated.area_regions.as_deref()),
+                    );
+                }
+                json_str(value)
+            }
             Err(msg) => json_str(serde_json::json!({ "error": msg })),
         }
     }
@@ -725,6 +733,32 @@ pub(super) fn parse_span_kind_filter(
             "unknown span_kind {s:?} — known kinds: {}",
             known.join(", ")
         )
+    })
+}
+
+/// The `area_regions` key of `inspect_spans`: the regions that a 3D Rough
+/// with By Area ordering detected, the same data the viewport overlay
+/// draws. `null` for every other toolpath and for Global ordering.
+///
+/// Each region's `order` is the `region_id` of its `region` span. The
+/// coordinates are in the emission frame, the frame of the moves.
+pub(super) fn area_regions_json(
+    map: Option<&rs_cam_core::adaptive3d::AreaRegionMap>,
+) -> serde_json::Value {
+    let Some(map) = map else {
+        return serde_json::Value::Null;
+    };
+    serde_json::json!({
+        "region_count": map.regions.len(),
+        "cell_mm": map.cell_mm,
+        "grid_rows": map.rows,
+        "grid_cols": map.cols,
+        "top_z": map.top_z,
+        "regions": serde_json::to_value(&map.regions).unwrap_or(serde_json::Value::Null),
+        "note": "Detected once, from the stock before the first level. The planner \
+                 cuts each region by its bbox_xy, not by its cells, so a cell of \
+                 another region inside the box is cut with this region. One region \
+                 means By Area cuts as Global does.",
     })
 }
 

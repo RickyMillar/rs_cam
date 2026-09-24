@@ -57,6 +57,10 @@ const REST_HEATMAP_OPACITY: f32 = 0.6;
 /// still letting the surface it drapes read through.
 const TIER_PREVIEW_OPACITY: f32 = 0.7;
 
+/// Fixed opacity for the By Area regions overlay. The overlay is a flat
+/// sheet at the stock top, so the model under it must stay visible.
+const AREA_REGIONS_OPACITY: f32 = 0.55;
+
 /// GPU uniform data for line rendering.
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -158,6 +162,11 @@ pub struct RenderResources {
     /// be visible in one frame, so they cannot take turns writing one buffer.
     tier_preview_uniform_buffer: wgpu::Buffer,
     tier_preview_bind_group: wgpu::BindGroup,
+    /// The By Area regions overlay's own uniform buffer + bind group, for
+    /// the same reason as the tier preview: it can be on screen with the
+    /// other two overlays, each at its own opacity.
+    area_regions_uniform_buffer: wgpu::Buffer,
+    area_regions_bind_group: wgpu::BindGroup,
 
     // Blit pipeline (copy offscreen to egui render pass)
     blit_pipeline: wgpu::RenderPipeline,
@@ -191,6 +200,11 @@ pub struct RenderResources {
     /// be on screen together. Same `SimMeshGpuData` machinery and same
     /// depth-read-only pipeline.
     pub tier_preview_data: Option<SimMeshGpuData>,
+    /// The By Area regions overlay: the selected 3D Rough's detected
+    /// regions, one flat colour per region at the stock top. Same
+    /// `SimMeshGpuData` machinery and same depth-read-only pipeline as the
+    /// tier preview.
+    pub area_regions_data: Option<SimMeshGpuData>,
     /// Per-tool reach-map overlay (P5) — the MODEL mesh uploaded with one
     /// reach colour per vertex.
     ///
@@ -228,6 +242,10 @@ pub struct RenderResources {
     /// preview is held, which is also a cacheable state — so toggling the
     /// overlay's visibility checkbox rebuilds nothing.
     pub tier_preview_upload_key: Option<upload_cache::TierPreviewUploadKey>,
+    /// Inputs `area_regions_data` was last built from. `None` means the
+    /// selected toolpath carries no region map, which is also a cacheable
+    /// state — so toggling the overlay's checkbox rebuilds nothing.
+    pub area_regions_upload_key: Option<upload_cache::AreaRegionsUploadKey>,
     /// Inputs `reach_overlay_data` was last built from. `None` means no map
     /// is held, which is also a cacheable state — so toggling the overlay's
     /// visibility checkbox rebuilds nothing.
@@ -382,6 +400,23 @@ impl RenderResources {
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: tier_preview_uniform_buffer.as_entire_binding(),
+            }],
+        });
+
+        // --- By Area regions uniform buffer + bind group (own opacity) ---
+        let area_regions_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("area_regions_uniforms"),
+            size: std::mem::size_of::<ColoredMeshUniforms>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let area_regions_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("area_regions_bg"),
+            layout: &mesh_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: area_regions_uniform_buffer.as_entire_binding(),
             }],
         });
 
@@ -694,6 +729,8 @@ impl RenderResources {
             rest_heatmap_bind_group,
             tier_preview_uniform_buffer,
             tier_preview_bind_group,
+            area_regions_uniform_buffer,
+            area_regions_bind_group,
             blit_pipeline,
             blit_bind_group_layout,
             blit_sampler,
@@ -711,6 +748,7 @@ impl RenderResources {
             height_planes_data: None,
             rest_heatmap_data: None,
             tier_preview_data: None,
+            area_regions_data: None,
             reach_overlay_data: None,
             tool_model_data: None,
             collision_vertex_buffer: None,
@@ -722,6 +760,7 @@ impl RenderResources {
             collision_upload_key: None,
             rest_heatmap_upload_key: None,
             tier_preview_upload_key: None,
+            area_regions_upload_key: None,
             reach_overlay_upload_key: None,
             upload_stats: upload_cache::UploadStats::default(),
         }
@@ -832,6 +871,10 @@ pub struct ViewportCallback {
     /// holds a Ready preview>` — see `app/viewport.rs`. Independent of
     /// `show_rest_heatmap`: both may be true in one frame.
     pub show_tier_preview: bool,
+    /// The By Area regions overlay. Derived as `viewport.show_area_regions
+    /// && <the row precondition is Ready>` — see `app/viewport.rs`. Stacks
+    /// with the two overlays above.
+    pub show_area_regions: bool,
     /// Per-tool reach-map overlay (P5). Derived as
     /// `viewport.show_reach_map && workspace == Toolpaths &&
     /// viewport.show_model && <a Ready map is held for the selected
@@ -956,6 +999,20 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                 &resources.tier_preview_uniform_buffer,
                 0,
                 bytemuck::bytes_of(&tier_uniforms),
+            );
+        }
+        if self.show_area_regions {
+            let area_uniforms = ColoredMeshUniforms {
+                view_proj: self.mesh_uniforms.view_proj,
+                light_dir: self.mesh_uniforms.light_dir,
+                _pad0: 0.0,
+                camera_pos: self.mesh_uniforms.camera_pos,
+                opacity: AREA_REGIONS_OPACITY,
+            };
+            queue.write_buffer(
+                &resources.area_regions_uniform_buffer,
+                0,
+                bytemuck::bytes_of(&area_uniforms),
             );
         }
         queue.write_buffer(
@@ -1170,6 +1227,19 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                 pass.set_pipeline(&resources.height_plane_pipeline);
                 pass.set_bind_group(0, &resources.tier_preview_bind_group, &[]);
                 for chunk in &preview.chunks {
+                    pass.set_vertex_buffer(0, chunk.vertex_buffer.slice(..));
+                    pass.set_index_buffer(chunk.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                    pass.draw_indexed(0..chunk.index_count, 0, 0..1);
+                }
+            }
+
+            // Draw the By Area regions overlay — the same treatment again.
+            if self.show_area_regions
+                && let Some(regions) = &resources.area_regions_data
+            {
+                pass.set_pipeline(&resources.height_plane_pipeline);
+                pass.set_bind_group(0, &resources.area_regions_bind_group, &[]);
+                for chunk in &regions.chunks {
                     pass.set_vertex_buffer(0, chunk.vertex_buffer.slice(..));
                     pass.set_index_buffer(chunk.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                     pass.draw_indexed(0..chunk.index_count, 0, 0..1);

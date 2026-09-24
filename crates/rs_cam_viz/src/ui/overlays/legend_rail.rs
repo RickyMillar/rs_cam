@@ -113,6 +113,8 @@ pub enum Categories {
     HeightPlanes,
     /// The collision markers and their density ramp.
     Collisions,
+    /// The By Area regions of the selected 3D Rough, one colour each.
+    AreaRegions,
 }
 
 impl Categories {
@@ -124,6 +126,7 @@ impl Categories {
             Self::EntryMarkers => "Entry markers",
             Self::HeightPlanes => "Height planes",
             Self::Collisions => "Collisions",
+            Self::AreaRegions => "By Area regions",
         }
     }
 }
@@ -280,6 +283,9 @@ pub fn active_lines(state: &AppState) -> Vec<RailLine> {
     }
     if ready_on(state, "collisions") && collision_count(state) > 0 {
         out.push(RailLine::Categories(Categories::Collisions));
+    }
+    if registry::area_regions_drawn(state) {
+        out.push(RailLine::Categories(Categories::AreaRegions));
     }
     out.extend(status.into_iter().map(RailLine::Status));
     out
@@ -444,7 +450,7 @@ fn categories_name(state: &AppState, kind: Categories) -> String {
         Categories::ToolpathPalette | Categories::Moves => {
             format!("{} \u{00B7} {}", kind.name(), moves_target(state))
         }
-        Categories::EntryMarkers | Categories::HeightPlanes => {
+        Categories::EntryMarkers | Categories::HeightPlanes | Categories::AreaRegions => {
             format!("{} \u{00B7} {}", kind.name(), selected_tag(state))
         }
         Categories::Collisions => {
@@ -817,6 +823,19 @@ pub fn category_entries(state: &AppState, kind: Categories) -> Vec<LegendEntry> 
             ("top".to_owned(), Some(colors::HEIGHT_TOP)),
             ("bottom".to_owned(), Some(colors::HEIGHT_BOTTOM)),
         ],
+        Categories::AreaRegions => registry::selected_area_regions(state)
+            .map(|map| {
+                map.regions
+                    .iter()
+                    .map(|r| {
+                        (
+                            format!("{} \u{00B7} {} cells", r.order, r.cell_count),
+                            rs_cam_core::maps::rest_heatmap_mesh::area_region_color(r.order),
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
         Categories::Collisions => vec![
             (
                 "isolated".to_owned(),
@@ -857,6 +876,19 @@ fn draw_categories(ui: &mut egui::Ui, state: &AppState, kind: Categories, caveat
             entry_row(ui, &entries);
             caveats.push(
                 "the Heights tab of the inspector gives each Z in mm",
+                tokens::TEXT_FAINT,
+            );
+        }
+        Categories::AreaRegions => {
+            entry_row(ui, &entries);
+            if entries.len() == 1 {
+                caveats.push(
+                    "one region: By Area cuts the part as Global does",
+                    tokens::TEXT_FAINT,
+                );
+            }
+            caveats.push(
+                "detected once, before the first level \u{00B7} the box is the cut filter",
                 tokens::TEXT_FAINT,
             );
         }

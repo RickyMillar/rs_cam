@@ -695,3 +695,53 @@ fn workspace_keys_round_trip() {
     assert_eq!(parse_workspace("sim"), Some(Workspace::Simulation));
     assert_eq!(parse_workspace("not_a_workspace"), None);
 }
+
+// ── By Area regions on inspect_spans ─────────────────────────────────
+
+/// `inspect_spans` carries `area_regions`: `null` without a map, and the
+/// region list (order, cell count, box, Z ranges) with one.
+#[test]
+fn inspect_spans_area_regions_field_is_present() {
+    use rs_cam_core::adaptive3d::{AreaRegion, AreaRegionMap};
+    assert_eq!(
+        super::diagnostics::area_regions_json(None),
+        serde_json::Value::Null
+    );
+    let map = AreaRegionMap {
+        origin_x: 0.0,
+        origin_y: 0.0,
+        cell_mm: 0.5,
+        rows: 2,
+        cols: 2,
+        labels: vec![1, 1, 0, 2],
+        top_z: 10.0,
+        regions: vec![
+            AreaRegion {
+                order: 1,
+                cell_count: 2,
+                bbox_xy: [-0.25, -0.25, 0.75, 0.25],
+                surface_z_range: [0.0, 1.0],
+                level_z_range: Some([8.0, 2.0]),
+                level_count: 4,
+                anchor_xy: [0.0, 0.0],
+            },
+            AreaRegion {
+                order: 2,
+                cell_count: 1,
+                bbox_xy: [0.25, 0.25, 0.75, 0.75],
+                surface_z_range: [0.5, 0.5],
+                level_z_range: None,
+                level_count: 0,
+                anchor_xy: [0.5, 0.5],
+            },
+        ],
+    };
+    let v = super::diagnostics::area_regions_json(Some(&map));
+    assert_eq!(v["region_count"], 2);
+    assert_eq!(v["regions"][0]["order"], 1);
+    assert_eq!(v["regions"][0]["cell_count"], 2);
+    assert_eq!(v["regions"][0]["bbox_xy"][2], 0.75);
+    assert_eq!(v["regions"][0]["level_z_range"][1], 2.0);
+    assert!(v["regions"][1]["level_z_range"].is_null());
+    assert!(v["note"].as_str().unwrap().contains("bbox_xy"));
+}

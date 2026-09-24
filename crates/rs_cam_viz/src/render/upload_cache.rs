@@ -167,6 +167,11 @@ pub struct RestHeatmapUploadKey {
     pub shift: [f64; 3],
 }
 
+/// Key for the By Area regions overlay. The same three inputs as the rest
+/// heatmap: the map rides the selected toolpath's `AnnotatedToolpath`, so
+/// its `Arc` identity changes exactly when a new generation lands.
+pub type AreaRegionsUploadKey = RestHeatmapUploadKey;
+
 /// Key for the multi-tool tier-map preview overlay (Phase U).
 ///
 /// A **generation counter**, not the dials that produced the preview: the

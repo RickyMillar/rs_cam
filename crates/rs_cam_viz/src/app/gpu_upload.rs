@@ -1415,6 +1415,42 @@ impl RsCamApp {
                 });
         }
 
+        // Upload the By Area regions overlay of the selected toolpath. Keyed
+        // like the rest heatmap on the toolpath's `Arc` identity and the
+        // display frame, so a checkbox toggle rebuilds nothing. The map is in
+        // the emission frame; the mesh is shifted, not the map, so no
+        // `AnnotatedToolpath` clone is needed.
+        let area_key = {
+            let state = self.controller.state();
+            match state.selection {
+                Selection::Toolpath(tp_id) => state
+                    .gui
+                    .toolpath_rt
+                    .get(&tp_id)
+                    .and_then(|rt| rt.result.as_ref())
+                    .filter(|result| result.annotated.area_regions.is_some())
+                    .map(|result| upload_cache::AreaRegionsUploadKey {
+                        toolpath: tp_id,
+                        annotated: upload_cache::ArcId::new(&result.annotated),
+                        shift: shift_arr,
+                    }),
+                _ => None,
+            }
+        };
+        if upload_cache::refresh_key(&mut resources.area_regions_upload_key, area_key) {
+            resources.area_regions_data =
+                crate::ui::overlays::registry::selected_area_regions(self.controller.state())
+                    .and_then(|map| rs_cam_core::maps::rest_heatmap_mesh::area_regions_to_mesh(map))
+                    .map(|hm| shift_stock_mesh(hm, display_shift))
+                    .and_then(|hm| {
+                        SimMeshGpuData::from_heightmap_mesh(
+                            &render_state.device,
+                            &resources.gpu_limits,
+                            &hm,
+                        )
+                    });
+        }
+
         // Upload the per-tool reach-map overlay (P5). Keyed on the overlay's
         // own generation, the model mesh identity and the display frame — so
         // a re-selection that hits the reach memo rebuilds nothing, while a

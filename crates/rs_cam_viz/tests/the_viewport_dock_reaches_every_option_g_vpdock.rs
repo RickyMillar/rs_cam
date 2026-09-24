@@ -100,7 +100,8 @@ fn every_registry_row_has_one_dock_home_g_vpdock() {
     );
     assert_eq!(count(DockSection::Scene), 14, "Scene holds 14 rows");
     assert_eq!(count(DockSection::Paths), 13, "Paths holds 13 rows");
-    assert_eq!(count(DockSection::Inspect), 11, "Inspect holds 11 rows");
+    // 12 since the By Area regions row (2026-09-24) joined Inspect.
+    assert_eq!(count(DockSection::Inspect), 12, "Inspect holds 12 rows");
     for (id, section) in [
         ("orientation_gizmo", DockSection::View),
         ("simulated_stock", DockSection::Scene),
@@ -108,6 +109,7 @@ fn every_registry_row_has_one_dock_home_g_vpdock() {
         ("move_colour_engagement", DockSection::Paths),
         ("all_toolpaths", DockSection::Paths),
         ("reach_map", DockSection::Inspect),
+        ("area_regions", DockSection::Inspect),
         ("stock_colour_deviation", DockSection::Inspect),
     ] {
         let row = registry::row(id).unwrap_or_else(|| panic!("row `{id}` is gone"));

@@ -432,6 +432,12 @@ impl RsCamApp {
             _ => false,
         };
 
+        // The By Area regions draw when their row is on and Ready. The row
+        // precondition requires the Toolpaths workspace and a region map on
+        // the selected toolpath, so this one answer gates the mesh and the
+        // order labels.
+        let area_regions_drawn = crate::ui::overlays::registry::area_regions_drawn(state);
+
         let callback = ViewportCallback {
             mesh_uniforms: MeshUniforms {
                 view_proj,
@@ -498,6 +504,10 @@ impl RsCamApp {
                 && state.multitool_planner.as_ref().is_some_and(|p| {
                     p.ready_preview().is_some() && state.active_setup_index() == Some(p.setup_index)
                 }),
+            // The By Area regions: the flag and the row precondition, which
+            // requires the Toolpaths workspace and a region map on the
+            // SELECTED toolpath (WP27: the selected toolpath only).
+            show_area_regions: area_regions_drawn,
             // P5 — the reach overlay REPLACES the model draw, so its gate
             // also carries `show_model`: with the model hidden there is no
             // surface to re-colour, and drawing a coloured copy would
@@ -561,6 +571,10 @@ impl RsCamApp {
 
         let cb = egui_wgpu::Callback::new_paint_callback(rect, callback);
         ui.painter().add(cb);
+
+        if area_regions_drawn {
+            self.draw_area_region_labels(ui, rect);
+        }
 
         // Draw orientation gizmo overlay (2D, on top of the 3D viewport)
         if self.controller.state().viewport.show_orientation_gizmo {
@@ -718,6 +732,82 @@ impl RsCamApp {
                 egui::FontId::proportional(10.0),
                 *color,
             );
+        }
+    }
+
+    /// Draw the order number of each By Area region at its anchor, and its
+    /// filter box (F4: the planner cuts a region by this box, not by its
+    /// cells), over the region mesh. The map is in the emission frame; the
+    /// display shift of the selected toolpath's setup places it.
+    fn draw_area_region_labels(&self, ui: &mut egui::Ui, viewport_rect: egui::Rect) {
+        let state = self.controller.state();
+        let Some(map) = crate::ui::overlays::registry::selected_area_regions(state) else {
+            return;
+        };
+        let shift = match state.selection {
+            Selection::Toolpath(id) => state
+                .session
+                .setup_of_toolpath_id(id)
+                .and_then(|idx| state.session.list_setups().get(idx))
+                .map_or(rs_cam_core::geo::P3::new(0.0, 0.0, 0.0), |sd| {
+                    crate::state::job::SetupFrame::of(sd)
+                        .emission_to_display_shift(state.session.stock_config())
+                }),
+            _ => return,
+        };
+        let width = viewport_rect.width().max(1.0);
+        let height = viewport_rect.height().max(1.0);
+        let aspect = width / height;
+        let z = (map.top_z + shift.z) as f32
+            + rs_cam_core::maps::rest_heatmap_mesh::AREA_REGION_LIFT_MM;
+        let project = |x: f64, y: f64| -> Option<egui::Pos2> {
+            self.camera
+                .project_to_screen(
+                    [(x + shift.x) as f32, (y + shift.y) as f32, z],
+                    aspect,
+                    width,
+                    height,
+                )
+                .map(|p| egui::pos2(viewport_rect.min.x + p[0], viewport_rect.min.y + p[1]))
+        };
+        let painter = ui.painter_at(viewport_rect);
+        for region in &map.regions {
+            let rgb = rs_cam_core::maps::rest_heatmap_mesh::area_region_color(region.order)
+                .unwrap_or([1.0, 1.0, 1.0]);
+            let color = crate::ui::tokens::from_linear_rgb(rgb);
+            let [x0, y0, x1, y1] = region.bbox_xy;
+            let corners = [
+                project(x0, y0),
+                project(x1, y0),
+                project(x1, y1),
+                project(x0, y1),
+            ];
+            if corners.iter().all(Option::is_some) {
+                let points: Vec<egui::Pos2> = corners.iter().flatten().copied().collect();
+                painter.add(egui::Shape::closed_line(
+                    points,
+                    egui::Stroke::new(1.0_f32, color),
+                ));
+            }
+            if let Some(anchor) = project(region.anchor_xy[0], region.anchor_xy[1]) {
+                let text = region.order.to_string();
+                let font = egui::FontId::proportional(14.0);
+                let galley = painter.layout_no_wrap(text, font, crate::ui::tokens::TEXT_STRONG);
+                let pill =
+                    egui::Rect::from_center_size(anchor, galley.size() + egui::vec2(8.0, 4.0));
+                painter.rect_filled(pill, 4.0, crate::ui::tokens::SURFACE_RAISED);
+                painter.rect_stroke(
+                    pill,
+                    4.0,
+                    egui::Stroke::new(1.5_f32, color),
+                    egui::StrokeKind::Inside,
+                );
+                painter.galley(
+                    pill.center() - galley.size() * 0.5,
+                    galley,
+                    crate::ui::tokens::TEXT_STRONG,
+                );
+            }
         }
     }
 
