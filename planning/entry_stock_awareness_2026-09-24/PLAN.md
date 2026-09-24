@@ -141,3 +141,76 @@ bound for them, not the helix pitch or the ramp angle.
 not changed. Its split target is the seed conservative top + 2, which is at
 or above the planner floor + 0.5 where the rapid now stops, so it splits
 nothing (`entry_optimiser_leaves_the_planner_entries_alone`).
+
+## RESULTS 2 — full-depth helix and ramp (operator ruling 2026-09-24)
+
+Ruling: a helix or ramp takes the full material depth. The tool rapids to
+the clearance above the real local material top, then helixes (at the
+pitch) or ramps (at the angle) down to the target. A straight feed goes
+only through air.
+
+What changed:
+
+- `dressup/entry_descent.rs`: `emit_helix` and `emit_ramp` share
+  `rapid_to_entry_top`. It rapids to `stock_top + ENTRY_CLEARANCE` and the
+  helix or ramp takes everything below. With no material above the target,
+  it rapids to the clearance and feeds straight down through air.
+- The helix descends at most `pitch / 36` per 10-degree step, also after a
+  G-RAMPTERRAIN lift. Where the uphill floor holds the circle above the
+  target, it spirals in to the centre at the helix slope.
+- The ramp zigzag keeps the old leg length (`ENTRY_CLEARANCE / tan / 2`)
+  and laps more legs for a deeper descent.
+- `dressup/mod.rs` `apply_entry` (the 2.5D door: pocket, adaptive 2D and
+  every op with an entry dressup): `EntrySafety::own_stock` replays the
+  op's own emitted moves on its prior stock (or a prism at the stock top)
+  with the real cutter, and each entry reads its material top there.
+- `dressup/condition.rs`: segment merge keeps every point of an entry
+  helix or ramp run. RDP moved Z within 0.3 mm and made a folded ramp leg
+  2.7 % steeper than the angle.
+- adaptive3d: the helix and ramp read the planner floor as the material
+  top, or the op's stock top for an entry off the planner grid.
+
+rough-score, rivmap100 demo, By Area, helix (radius 1.8, pitch 1, plunge
+rate 500). Before is master `dec02006`.
+
+| Arm | Total s | Entry s | Moves | Entries | Vol mm3 |
+|---|---|---|---|---|---|
+| dpp 2 helix | 983.2 → 1773.0 (+80 %) | 255.1 → 1032.6 | 7991 → 13001 | 181 → 207 | 49088.9 → 49048.2 |
+| dpp 4 helix | 618.9 → 1254.7 (+103 %) | 159.9 → 779.8 | 5196 → 9434 | 115 → 142 | 47443.6 → 47424.6 |
+| dpp 8 helix | 430.5 → 1113.6 (+159 %) | 105.0 → 769.0 | 3577 → 7937 | 71 → 98 | 47012.7 → 46975.4 |
+| dpp 8 plunge | 370.1 → 370.1 | 43.7 → 43.7 | 2653 → 2653 | 71 → 71 | 46755.6 → 46755.6 |
+
+- The helix arms are much slower. A closed entry now helixes its whole
+  material depth at 1 mm per turn of 11.3 mm at 500 mm/min (about 1.4 s per
+  mm of depth). Plunge style does not change.
+- Rapid collisions 0 and collisions 0 on every arm.
+- A new verdict on the helix arms: `measurability_abstained` (60 % of the
+  removing samples read zero engagement at the 0.5 mm cell). The air-cut %
+  is withheld; it is a statement about the simulation cell, not a defect.
+- Finished stock, dpp 8 helix, G-code replay at 0.25 mm: +60.9 mm3 left
+  (0.13 %), 36 cells > 1 mm (max 1.40 mm, at the stock edge), 0 rapid hits.
+
+Sentry `adaptive3d_entry_stock_aware` now holds the ruling's bounds on the
+plate (all styles) and on a new 2.5D pocket fixture (helix, ramp): helix
+slope ≤ pitch / (2 pi r), ramp slope ≤ tan(angle), and no straight feed
+into material except a plunge-style peck. OPEN, reported and not asserted:
+on the dome, where the surface is steeper than the entry slope, the
+G-RAMPTERRAIN clip still makes steep entry drops (helix: 16 moves, deepest
+3.08 mm; ramp: 62 moves, deepest 2.81 mm). The ramp clip does not
+rate-limit; the helix does, but cannot reach a target that the uphill
+floor holds above its circle.
+
+Re-pinned (geometry intentionally moves):
+- `transform_provenance_fingerprints`: all pins (three_pass, arc_raster,
+  face stages 1-3 and link sites). The face chain loses its six descent
+  splits, because its entries at the stock top are straight feeds through
+  air now.
+- `arcfit_intent_key_cost_f1`: three_pass, arc_raster, face_full. The F1 Q3
+  quantity (`unknown_strict`) is unchanged on every fixture.
+- `entry_moves_stock_aware_g_rampterrain`: the unclipped ramp keeps its
+  planned zigzag, `2 * ceil(depth / ENTRY_CLEARANCE)` legs, not two.
+
+Not re-blessed: `adaptive3d_emission_byte_parity` (its cases use plunge
+style) passes unchanged. Pre-existing on master: 
+`isoclip_entry_ramp_g_isoclipentry::c_the_ramp_hands_the_tool_back_where_the_plunge_would_have`
+fails on master `dec02006` too (not touched here).

@@ -13,9 +13,9 @@ order. Three run outside it: `apply_tabs`, in the per-level closure of
 - `mod.rs` — the dressup configuration and the facade. `entry_descent.rs` —
   the ramp and helix emitters. `entry_audit.rs` — the burial audit of a fed
   move against the surface.
-- `link.rs` — the swept-corridor test that decides link against retract.
-  `arcfit.rs` — linear segments to arcs. `condition.rs` — segment merge:
-  dense cut runs into fewer, longer moves.
+- `link.rs` — link against retract. `arcfit.rs` — lines to arcs.
+  `condition.rs` — segment merge (default-on for roughing; a spiral alarm is
+  usually an accel problem, not a syntax problem).
 - `feedopt.rs`, `feed_modulation.rs` — feed-rate optimisation and the
   per-move adaptive modulation. `air_cut.rs` — air-cut classification.
   `tsp.rs` — rapid order. `tests.rs` — the unit tests.
@@ -26,8 +26,8 @@ order. Three run outside it: `apply_tabs`, in the per-level closure of
   The retract COUNT is the lever. Do not add a retract-strategy dial again.
 - Every linking arm calls the shared `relink_fragments` kernel in
   `finish/surface_link.rs`. Do not add a second linking implementation.
-- Accel-friendly segment-merge conditioning is default-on for roughing. A
-  spiral alarm is usually an accel problem, not a syntax problem.
+- A helix or ramp takes the full depth from `stock_top`; a straight feed goes
+  only through air (ruling 2026-09-24). Segment merge keeps their points.
 - The feed modulator skips a plunge by geometry, not by intent tag.
 
 ## Sentries
@@ -35,6 +35,6 @@ order. Three run outside it: `apply_tabs`, in the per-level closure of
 - `cargo test -p rs_cam_core -q --test capability_link_moves_safety`
 - `cargo test -p rs_cam_core -q --test dressup_span_invariants`
 - `cargo test -p rs_cam_core -q --test constrained_max_modulation_f039`
-- `cargo test -p rs_cam_core -q --test entry_moves_stock_aware_g_rampterrain --test finishing_defaults_have_no_ramp_entry_r10`
+- `cargo test -p rs_cam_core -q --test entry_moves_stock_aware_g_rampterrain --test finishing_defaults_have_no_ramp_entry_r10 --test adaptive3d_entry_stock_aware`
 - `cargo test -p rs_cam_core -q --test lead_in_out_feed_rates_f040`
 - `cargo test -p rs_cam_core -q --test plunge_guard_p3`
