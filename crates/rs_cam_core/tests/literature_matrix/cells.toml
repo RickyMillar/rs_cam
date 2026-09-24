@@ -425,7 +425,7 @@ severity = "critical"
 id = "flat_3mm_drill_oak"
 category = "normal-use"
 description = "3mm 2F flat used as drill in red oak; tests Drill OperationFamily routing"
-rationale = "Drill family must clamp RPM 8-14k, bump chipload ~2.5x (drill-mode), and emit peck cycles. Catches missing-routing where pocket-class params leak into drill ops."
+rationale = "Drill family must clamp RPM 8-14k and emit peck cycles. Catches missing-routing where pocket-class params leak into drill ops. Since ruling B5 (G6, 2026-09-24) the engine refuses this cell: 3.0 mm is outside the claim range 3.175-6.0 mm, so every check reads NA."
 profile_tag = "either"
 
 [cell.inputs]
@@ -448,12 +448,13 @@ mode = "band"
 unit = "rpm"
 sources = ["onsrud_drill", "vectric_drill_default", "amana_spektra"]
 
-# REPO-AUTHORED band, marked 2026-08-04 (W6 audit §6.4, item R-14). This
-# band was fitted to the engine's own output — it brackets the shipped
-# formula x DRILL_CHIPLOAD_MULTIPLIER to three decimals at both ends. The
-# retrieved Onsrud 72-000 Wood row is 0.229-0.432 mm/tooth and does not
-# overlap it at any diameter. Cited sources below are the ROW's subject
-# matter, not the origin of these numbers.
+# REFUSED, and so NA (ruling B5, G6 drill, 2026-09-24): 3.0 mm is outside the claim range 3.175-6.0 mm.
+# The engine refuses the cell with a text that names G6, and the runner
+# reads a refusal on a values cell as NA. This band was fitted in
+# 2026-08 to the formula x DRILL_CHIPLOAD_MULTIPLIER (2.5). Ruling B5
+# deleted the multiplier, so the band has no source. No check reads it
+# while the cell refuses. If the G6 claim range widens to this cell,
+# re-band it from the printed chart, as flat_6mm_drill_oak does.
 [cell.expected.feed_per_tooth]
 min = 0.08
 max = 0.18
@@ -541,12 +542,21 @@ severity = "major"
 # result) into the material plunge-feed envelope — a regression of the
 # drill feed/plunge setter clobber (suggested ~2400 -> stored ~595)
 # or of the Step 9c envelope clamp fails here at critical.
+# Ruling B5 (G6, 2026-09-24): the ceiling moved from 400 (repo-authored)
+# to 580, the engine's solid-wood plunge ceiling. The Amana Spektra
+# Spiral Plunge chart v24 prints a 2-flute 1/8 in "Ramp Down" of 72.5
+# in/min (Wood/Plywood column) = 1841.5 mm/min; 1841.5 / 3.175 = 580
+# mm/min per mm. This is the largest printed figure per mm. The figure
+# per mm falls with the diameter (90 in/min at 6 mm = 381 per mm), so at
+# 6 mm the ceiling is about 1.5x the printed figure. Every drill cell in
+# this file is solid wood, so none reads the sheet-good ceiling (720).
+# The floor 50 is repo-authored; no source prints it.
 name = "drill_final_feed_in_plunge_envelope"
 expr = "feed_rate / D"
 floor = 50
-ceiling = 400
+ceiling = 580
 unit = "mm/min per mm dia"
-sources = ["onsrud_drill", "vectric_drill_default"]
+sources = ["amana_spektra_plunge_v24", "onsrud_drill", "vectric_drill_default"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]
@@ -1684,7 +1694,9 @@ stickout_mm = 25.0
 operation = "drill"
 material = "white_oak"
 material_class = "hardwood"
-janka_lbf = 1290
+# The shim does not read janka_lbf. `white_oak` resolves to
+# WoodSpecies::WhiteOak, Janka 1360, and the engine uses that value.
+janka_lbf = 1360
 machine_class = "shapeoko_xxl"
 drill_depth_mm = 20.0
 
@@ -1695,18 +1707,35 @@ mode = "band"
 unit = "rpm"
 sources = ["onsrud_drill", "vectric_drill_default", "amana_spektra"]
 
-# REPO-AUTHORED band, marked 2026-08-04 (W6 audit §6.4, item R-14). This
-# band was fitted to the engine's own output — it brackets the shipped
-# formula x DRILL_CHIPLOAD_MULTIPLIER to three decimals at both ends. The
-# retrieved Onsrud 72-000 Wood row is 0.229-0.432 mm/tooth and does not
-# overlap it at any diameter. Cited sources below are the ROW's subject
-# matter, not the origin of these numbers.
+# PRINTED CHART VALUE, re-banded under ruling B5 (G6 drill, 2026-09-24,
+# decision 7). The band is the printed chart value, not the LUT and not
+# the engine output. The old band (0.10-0.22) was fitted to the formula x
+# DRILL_CHIPLOAD_MULTIPLIER (2.5), which ruling B5 deleted.
+# The derivation, from the Amana Spektra Spiral Plunge chart v24
+# (`amana_spektra_plunge_v24`), 2 Flute, 6mm row, Wood/Plywood column, at
+# the chart's 18,000 RPM:
+#   - printed Feed Rate 180 in/min, Chip Load Per Tooth .0050 in
+#     (0.127 mm), Ramp Down 90 in/min (2286 mm/min);
+#   - the chart prints "To find Ramp Down: Feed Rate IPM / # of flutes",
+#     so the axial chip per tooth = side chip / Z:
+#     90 / (18,000 x 2) = .0025 in = 0.0635 mm/tooth;
+#   - the white-oak hardness transfer that the engine applies: the chart
+#     prints no hardness, the engine files the column at Janka 1450
+#     (GenericHardwood), and `white_oak` is Janka 1360. The law is
+#     (1450 / 1360)^0.5 = x1.0326 (below the flat-end cap 1.43), so
+#     0.0635 x 1.0326 = 0.0656 mm/tooth.
+# The engine drill RPM cap (14,000, a repo rule) replaces the chart's
+# 18,000 RPM. The chip per tooth is held, so the band does not move with
+# the RPM. The feed is 14,000 x 2 x 0.0656 = 1836 mm/min.
+# The band width (+/-2 %, 0.0643-0.0669) is a repo tolerance for the
+# chart's in/min rounding (the 6 mm MDF cell reads 0.0762 against the
+# derived 0.0758). The width is not printed.
 [cell.expected.feed_per_tooth]
-min = 0.10
-max = 0.22
+min = 0.0643
+max = 0.0669
 mode = "band"
 unit = "mm/tooth"
-sources = ["onsrud_drill", "vectric_drill_default"]
+sources = ["amana_spektra_plunge_v24"]
 
 [cell.expected.axial_doc]
 min = 0.0
@@ -1791,12 +1820,21 @@ severity = "major"
 # result) into the material plunge-feed envelope — a regression of the
 # drill feed/plunge setter clobber (suggested ~2400 -> stored ~595)
 # or of the Step 9c envelope clamp fails here at critical.
+# Ruling B5 (G6, 2026-09-24): the ceiling moved from 400 (repo-authored)
+# to 580, the engine's solid-wood plunge ceiling. The Amana Spektra
+# Spiral Plunge chart v24 prints a 2-flute 1/8 in "Ramp Down" of 72.5
+# in/min (Wood/Plywood column) = 1841.5 mm/min; 1841.5 / 3.175 = 580
+# mm/min per mm. This is the largest printed figure per mm. The figure
+# per mm falls with the diameter (90 in/min at 6 mm = 381 per mm), so at
+# 6 mm the ceiling is about 1.5x the printed figure. Every drill cell in
+# this file is solid wood, so none reads the sheet-good ceiling (720).
+# The floor 50 is repo-authored; no source prints it.
 name = "drill_final_feed_in_plunge_envelope"
 expr = "feed_rate / D"
 floor = 50
-ceiling = 400
+ceiling = 580
 unit = "mm/min per mm dia"
-sources = ["onsrud_drill", "vectric_drill_default"]
+sources = ["amana_spektra_plunge_v24", "onsrud_drill", "vectric_drill_default"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]
@@ -2252,12 +2290,13 @@ mode = "band"
 unit = "rpm"
 sources = ["onsrud_drill", "vectric_drill_default", "amana_spektra"]
 
-# REPO-AUTHORED band, marked 2026-08-04 (W6 audit §6.4, item R-14). This
-# band was fitted to the engine's own output — it brackets the shipped
-# formula x DRILL_CHIPLOAD_MULTIPLIER to three decimals at both ends. The
-# retrieved Onsrud 72-000 Wood row is 0.229-0.432 mm/tooth and does not
-# overlap it at any diameter. Cited sources below are the ROW's subject
-# matter, not the origin of these numbers.
+# REFUSED, and so NA (ruling B5, G6 drill, 2026-09-24): 3.0 mm is outside the claim range 3.175-6.0 mm.
+# The engine refuses the cell with a text that names G6, and the runner
+# reads a refusal on a values cell as NA. This band was fitted in
+# 2026-08 to the formula x DRILL_CHIPLOAD_MULTIPLIER (2.5). Ruling B5
+# deleted the multiplier, so the band has no source. No check reads it
+# while the cell refuses. If the G6 claim range widens to this cell,
+# re-band it from the printed chart, as flat_6mm_drill_oak does.
 [cell.expected.feed_per_tooth]
 min = 0.10
 max = 0.22
@@ -2354,12 +2393,21 @@ severity = "moderate"
 # result) into the material plunge-feed envelope — a regression of the
 # drill feed/plunge setter clobber (suggested ~2400 -> stored ~595)
 # or of the Step 9c envelope clamp fails here at critical.
+# Ruling B5 (G6, 2026-09-24): the ceiling moved from 400 (repo-authored)
+# to 580, the engine's solid-wood plunge ceiling. The Amana Spektra
+# Spiral Plunge chart v24 prints a 2-flute 1/8 in "Ramp Down" of 72.5
+# in/min (Wood/Plywood column) = 1841.5 mm/min; 1841.5 / 3.175 = 580
+# mm/min per mm. This is the largest printed figure per mm. The figure
+# per mm falls with the diameter (90 in/min at 6 mm = 381 per mm), so at
+# 6 mm the ceiling is about 1.5x the printed figure. Every drill cell in
+# this file is solid wood, so none reads the sheet-good ceiling (720).
+# The floor 50 is repo-authored; no source prints it.
 name = "drill_final_feed_in_plunge_envelope"
 expr = "feed_rate / D"
 floor = 50
-ceiling = 400
+ceiling = 580
 unit = "mm/min per mm dia"
-sources = ["onsrud_drill", "vectric_drill_default"]
+sources = ["amana_spektra_plunge_v24", "onsrud_drill", "vectric_drill_default"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]
@@ -3371,12 +3419,13 @@ mode = "band"
 unit = "rpm"
 sources = ["onsrud_drill", "vectric_drill_default", "amana_spektra"]
 
-# REPO-AUTHORED band, marked 2026-08-04 (W6 audit §6.4, item R-14). This
-# band was fitted to the engine's own output — it brackets the shipped
-# formula x DRILL_CHIPLOAD_MULTIPLIER to three decimals at both ends. The
-# retrieved Onsrud 72-000 Wood row is 0.229-0.432 mm/tooth and does not
-# overlap it at any diameter. Cited sources below are the ROW's subject
-# matter, not the origin of these numbers.
+# REFUSED, and so NA (ruling B5, G6 drill, 2026-09-24): 2.0 mm is outside the claim range 3.175-6.0 mm.
+# The engine refuses the cell with a text that names G6, and the runner
+# reads a refusal on a values cell as NA. This band was fitted in
+# 2026-08 to the formula x DRILL_CHIPLOAD_MULTIPLIER (2.5). Ruling B5
+# deleted the multiplier, so the band has no source. No check reads it
+# while the cell refuses. If the G6 claim range widens to this cell,
+# re-band it from the printed chart, as flat_6mm_drill_oak does.
 [cell.expected.feed_per_tooth]
 min = 0.05
 max = 0.12
@@ -3464,12 +3513,21 @@ severity = "critical"
 # result) into the material plunge-feed envelope — a regression of the
 # drill feed/plunge setter clobber (suggested ~2400 -> stored ~595)
 # or of the Step 9c envelope clamp fails here at critical.
+# Ruling B5 (G6, 2026-09-24): the ceiling moved from 400 (repo-authored)
+# to 580, the engine's solid-wood plunge ceiling. The Amana Spektra
+# Spiral Plunge chart v24 prints a 2-flute 1/8 in "Ramp Down" of 72.5
+# in/min (Wood/Plywood column) = 1841.5 mm/min; 1841.5 / 3.175 = 580
+# mm/min per mm. This is the largest printed figure per mm. The figure
+# per mm falls with the diameter (90 in/min at 6 mm = 381 per mm), so at
+# 6 mm the ceiling is about 1.5x the printed figure. Every drill cell in
+# this file is solid wood, so none reads the sheet-good ceiling (720).
+# The floor 50 is repo-authored; no source prints it.
 name = "drill_final_feed_in_plunge_envelope"
 expr = "feed_rate / D"
 floor = 50
-ceiling = 400
+ceiling = 580
 unit = "mm/min per mm dia"
-sources = ["onsrud_drill", "vectric_drill_default"]
+sources = ["amana_spektra_plunge_v24", "onsrud_drill", "vectric_drill_default"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]
@@ -3890,12 +3948,13 @@ mode = "band"
 unit = "rpm"
 sources = ["onsrud_drill", "vectric_drill_default"]
 
-# REPO-AUTHORED band, marked 2026-08-04 (W6 audit §6.4, item R-14). This
-# band was fitted to the engine's own output — it brackets the shipped
-# formula x DRILL_CHIPLOAD_MULTIPLIER to three decimals at both ends. The
-# retrieved Onsrud 72-000 Wood row is 0.229-0.432 mm/tooth and does not
-# overlap it at any diameter. Cited sources below are the ROW's subject
-# matter, not the origin of these numbers.
+# REFUSED, and so NA (ruling B5, G6 drill, 2026-09-24): 12 mm is outside the claim range 3.175-6.0 mm.
+# The engine refuses the cell with a text that names G6, and the runner
+# reads a refusal on a values cell as NA. This band was fitted in
+# 2026-08 to the formula x DRILL_CHIPLOAD_MULTIPLIER (2.5). Ruling B5
+# deleted the multiplier, so the band has no source. No check reads it
+# while the cell refuses. If the G6 claim range widens to this cell,
+# re-band it from the printed chart, as flat_6mm_drill_oak does.
 [cell.expected.feed_per_tooth]
 min = 0.15
 max = 0.35
@@ -3984,12 +4043,21 @@ severity = "major"
 # result) into the material plunge-feed envelope — a regression of the
 # drill feed/plunge setter clobber (suggested ~2400 -> stored ~595)
 # or of the Step 9c envelope clamp fails here at critical.
+# Ruling B5 (G6, 2026-09-24): the ceiling moved from 400 (repo-authored)
+# to 580, the engine's solid-wood plunge ceiling. The Amana Spektra
+# Spiral Plunge chart v24 prints a 2-flute 1/8 in "Ramp Down" of 72.5
+# in/min (Wood/Plywood column) = 1841.5 mm/min; 1841.5 / 3.175 = 580
+# mm/min per mm. This is the largest printed figure per mm. The figure
+# per mm falls with the diameter (90 in/min at 6 mm = 381 per mm), so at
+# 6 mm the ceiling is about 1.5x the printed figure. Every drill cell in
+# this file is solid wood, so none reads the sheet-good ceiling (720).
+# The floor 50 is repo-authored; no source prints it.
 name = "drill_final_feed_in_plunge_envelope"
 expr = "feed_rate / D"
 floor = 50
-ceiling = 400
+ceiling = 580
 unit = "mm/min per mm dia"
-sources = ["onsrud_drill", "vectric_drill_default"]
+sources = ["amana_spektra_plunge_v24", "onsrud_drill", "vectric_drill_default"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]
@@ -4674,7 +4742,9 @@ stickout_mm = 25.0
 operation = "drill"
 material = "white_oak"
 material_class = "hardwood"
-janka_lbf = 1290
+# The shim does not read janka_lbf. `white_oak` resolves to
+# WoodSpecies::WhiteOak, Janka 1360, and the engine uses that value.
+janka_lbf = 1360
 machine_class = "shapeoko_xxl"
 drill_depth_mm = 18.0
 
@@ -4685,19 +4755,38 @@ mode = "band"
 unit = "rpm"
 sources = ["onsrud_drill", "vectric_drill_default", "amana_spektra"]
 
-# REPO-AUTHORED band, marked 2026-08-04 (W6 audit §6.4, item R-14). This
-# band was fitted to the engine's own output — it brackets the shipped
-# formula x DRILL_CHIPLOAD_MULTIPLIER to three decimals at both ends. The
-# retrieved Onsrud 72-000 Wood row is 0.229-0.432 mm/tooth and does not
-# overlap it at any diameter. Cited sources below are the ROW's subject
-# matter, not the origin of these numbers.
+# PRINTED CHART VALUE, re-banded under ruling B5 (G6 drill, 2026-09-24,
+# decision 7). The band is the printed chart value, not the LUT and not
+# the engine output. The old band (0.10-0.22) was fitted to the formula x
+# DRILL_CHIPLOAD_MULTIPLIER (2.5), which ruling B5 deleted.
+# The derivation, from the Amana Spektra Spiral Plunge chart v24
+# (`amana_spektra_plunge_v24`), 2 Flute, 6mm row, Wood/Plywood column, at
+# the chart's 18,000 RPM:
+#   - printed Feed Rate 180 in/min, Chip Load Per Tooth .0050 in
+#     (0.127 mm), Ramp Down 90 in/min (2286 mm/min);
+#   - the chart prints "To find Ramp Down: Feed Rate IPM / # of flutes",
+#     so the axial chip per tooth = side chip / Z:
+#     90 / (18,000 x 2) = .0025 in = 0.0635 mm/tooth;
+#   - the white-oak hardness transfer that the engine applies: the chart
+#     prints no hardness, the engine files the column at Janka 1450
+#     (GenericHardwood), and `white_oak` is Janka 1360. The law is
+#     (1450 / 1360)^0.5 = x1.0326 (below the flat-end cap 1.43), so
+#     0.0635 x 1.0326 = 0.0656 mm/tooth.
+# The engine drill RPM cap (14,000, a repo rule) replaces the chart's
+# 18,000 RPM. The chip per tooth is held, so the band does not move with
+# the RPM. The feed is 14,000 x 2 x 0.0656 = 1836 mm/min.
+# The band width (+/-2 %, 0.0643-0.0669) is a repo tolerance for the
+# chart's in/min rounding (the 6 mm MDF cell reads 0.0762 against the
+# derived 0.0758). The width is not printed.
+# This cell is the same query as flat_6mm_drill_oak, so it gets the same
+# band. The old `hobby_derate = 0.7` field is removed: the runner never
+# applied it, and the printed point carries no derate.
 [cell.expected.feed_per_tooth]
-min = 0.04
-max = 0.15
+min = 0.0643
+max = 0.0669
 mode = "band"
 unit = "mm/tooth"
-hobby_derate = 0.7
-sources = ["onsrud_drill", "vectric_drill_default"]
+sources = ["amana_spektra_plunge_v24"]
 
 [cell.expected.axial_doc]
 min = 0.0
@@ -4772,12 +4861,21 @@ expected_warning_pattern = "endmill|center.?cut|drill|peck|plunge"
 # result) into the material plunge-feed envelope — a regression of the
 # drill feed/plunge setter clobber (suggested ~2400 -> stored ~595)
 # or of the Step 9c envelope clamp fails here at critical.
+# Ruling B5 (G6, 2026-09-24): the ceiling moved from 400 (repo-authored)
+# to 580, the engine's solid-wood plunge ceiling. The Amana Spektra
+# Spiral Plunge chart v24 prints a 2-flute 1/8 in "Ramp Down" of 72.5
+# in/min (Wood/Plywood column) = 1841.5 mm/min; 1841.5 / 3.175 = 580
+# mm/min per mm. This is the largest printed figure per mm. The figure
+# per mm falls with the diameter (90 in/min at 6 mm = 381 per mm), so at
+# 6 mm the ceiling is about 1.5x the printed figure. Every drill cell in
+# this file is solid wood, so none reads the sheet-good ceiling (720).
+# The floor 50 is repo-authored; no source prints it.
 name = "drill_final_feed_in_plunge_envelope"
 expr = "feed_rate / D"
 floor = 50
-ceiling = 400
+ceiling = 580
 unit = "mm/min per mm dia"
-sources = ["onsrud_drill", "vectric_drill_default"]
+sources = ["amana_spektra_plunge_v24", "onsrud_drill", "vectric_drill_default"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]
@@ -4902,12 +5000,13 @@ mode = "band"
 unit = "rpm"
 sources = ["onsrud_drill", "vectric_drill_default", "gwizard_swood"]
 
-# REPO-AUTHORED band, marked 2026-08-04 (W6 audit §6.4, item R-14). This
-# band was fitted to the engine's own output — it brackets the shipped
-# formula x DRILL_CHIPLOAD_MULTIPLIER to three decimals at both ends. The
-# retrieved Onsrud 72-000 Wood row is 0.229-0.432 mm/tooth and does not
-# overlap it at any diameter. Cited sources below are the ROW's subject
-# matter, not the origin of these numbers.
+# REFUSED, and so NA (ruling B5, G6 drill, 2026-09-24): the claim serves a flat end mill only; a ball nose drill has no published figure.
+# The engine refuses the cell with a text that names G6, and the runner
+# reads a refusal on an unadvised cell as NA. This band was fitted in
+# 2026-08 to the formula x DRILL_CHIPLOAD_MULTIPLIER (2.5). Ruling B5
+# deleted the multiplier, so the band has no source. No check reads it
+# while the cell refuses. If the G6 claim range widens to this cell,
+# re-band it from the printed chart, as flat_6mm_drill_oak does.
 [cell.expected.feed_per_tooth]
 min = 0.05
 max = 0.18
@@ -4992,12 +5091,21 @@ expected_warning_pattern = "ball|drill|tip|center.?cut|plunge"
 # result) into the material plunge-feed envelope — a regression of the
 # drill feed/plunge setter clobber (suggested ~2400 -> stored ~595)
 # or of the Step 9c envelope clamp fails here at critical.
+# Ruling B5 (G6, 2026-09-24): the ceiling moved from 400 (repo-authored)
+# to 580, the engine's solid-wood plunge ceiling. The Amana Spektra
+# Spiral Plunge chart v24 prints a 2-flute 1/8 in "Ramp Down" of 72.5
+# in/min (Wood/Plywood column) = 1841.5 mm/min; 1841.5 / 3.175 = 580
+# mm/min per mm. This is the largest printed figure per mm. The figure
+# per mm falls with the diameter (90 in/min at 6 mm = 381 per mm), so at
+# 6 mm the ceiling is about 1.5x the printed figure. Every drill cell in
+# this file is solid wood, so none reads the sheet-good ceiling (720).
+# The floor 50 is repo-authored; no source prints it.
 name = "drill_final_feed_in_plunge_envelope"
 expr = "feed_rate / D"
 floor = 50
-ceiling = 400
+ceiling = 580
 unit = "mm/min per mm dia"
-sources = ["onsrud_drill", "vectric_drill_default"]
+sources = ["amana_spektra_plunge_v24", "onsrud_drill", "vectric_drill_default"]
 severity_on_fail = "critical"
 
 [[cell.invariants]]

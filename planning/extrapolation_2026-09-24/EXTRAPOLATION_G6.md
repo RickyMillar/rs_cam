@@ -1,6 +1,6 @@
 # G6: Drill (any wood drill chipload or plunge rate)
 
-Status: Phase 2 (trend) done 2026-09-24; Phase 3 (fit, witness) not started; nothing lands before the Phase 4 rulings.
+Status: LANDED under ruling B5 (2026-09-24): steps 1-2 in `7eef9ffa`, step 3 after it; see §5. Phase 2 (trend) done 2026-09-24.
 
 Inputs: the LUT in the working tree on 67e98529 (`crates/rs_cam_core/data/vendor_lut/observations/*.json`,
 433 rows; 389 committed plus an uncommitted peer file `carbide3d_shapeoko.json`
@@ -418,3 +418,96 @@ the rulings.
   hardwood cells stay refused as well.
 
 Best case: 60 of 80 cells stay refused and 20 ship (16 EndMill, 4 BullNose).
+
+## 5. The landing (B5, 2026-09-24)
+
+Commit `7eef9ffa` (steps 1-2 of `B5_PLAN.md`) lands the flat end mill
+plunge claim. Step 3 (this section, the literature matrix, `narrate` and
+the `apply_drill_defaults` doc) follows it.
+
+### 5.1 What changed
+
+- `DRILL_CHIPLOAD_MULTIPLIER` (2.5) is deleted. No figure supported it.
+- `feeds::extrapolation::drill` holds the G6 claim (`DrillRule`,
+  `DrillClaim`, `Gap::Drill`). The claim serves a flat end mill, 3.175-6.0
+  mm, 2 or 3 flutes, from the tool's own Amana Spektra side row (the pocket
+  home row). Amana prints "Ramp Down = Feed Rate IPM / # of flutes" at one
+  RPM, so the axial chip per tooth = side chip / Z. The support arm is
+  `FeedsSupport::DrillTransferred`.
+- The chip is held per tooth. The engine drill RPM cap (a repo rule, 14 000
+  at D <= 6 mm) replaces the chart's 18 000 RPM, so the feed is about 0.78x
+  the printed Ramp Down. The card says so.
+- The plunge envelope ceiling moves to the largest printed plunge per mm:
+  solid wood and plywood 580 mm/min per mm (72.5 in/min / 3.175 mm), sheet
+  goods 720 (90 in/min / 3.175 mm). It was 400 / 350. The floors (50 / 40)
+  stay repo rules.
+- Every drill cell that no G6 claim serves refuses, in every material
+  (plastics and aluminium too), with a text that names G6 and ruling B5.
+
+### 5.2 The 16 cells that ship
+
+Flat end mill (EndMill), 2 flutes, Drill and AlignmentPinDrill (identical
+numbers), 14 000 RPM in every cell. The FM1 CSV
+(`planning/feeds_matrix_2026-09-23/matrix_2026-09-23.csv`) is committed in
+`7eef9ffa`.
+
+| D (mm) | Material | Side row chip (mm) | Axial chip = side / Z (mm) | Feed = plunge (mm/min) | Printed Ramp Down (mm/min) |
+|---|---|---|---|---|---|
+| 3.175 | softwood, hardwood, plywood_hardwood | 0.1016 | 0.0508 | 1422 | 1841.5 |
+| 3.175 | mdf | 0.127 | 0.0635 | 1778 | 2286 |
+| 6.0 | softwood, hardwood, plywood_hardwood | 0.127 | 0.0635 | 1778 | 2286 |
+| 6.0 | mdf | 0.1524 | 0.0762 | 2133 | 2730.5 |
+
+- The feed rounds down. Float rounding decides 1777 or 1778.
+- The 6.0 mm MDF chip is 0.0762 against the derived 0.0758 (107.5 / (18 000
+  x 2) in), because Amana rounded its printed in/min.
+- Refusals in the matrix: 426 -> 410.
+
+### 5.3 Wanaka
+
+Toolpaths 7 (Holes) and 14 (Pin Drill) now ship. Both run a 6 mm 2-flute
+flat end mill in GenericHardwood (Janka 1450, the row's own Janka, so no
+hardness scale). The row is `amana-flat-hardwood-pocket-6000-2f-spektra`:
+chip 0.127 / 2 = 0.0635 mm/tooth, 14 000 RPM, feed 1777-1778 mm/min. No
+Wanaka toolpath refuses. `wanaka_suggest_integration` pins these numbers
+and the restored drill no-lift assertions.
+
+### 5.4 The literature matrix (step 3)
+
+- `flat_6mm_drill_oak` and `flat_6mm_drill_oak_using_endmill_unadvised`
+  ship. Their `feed_per_tooth` bands (0.10-0.22 and 0.04-0.15) were fitted
+  to the formula x 2.5. They are re-banded from the printed chart
+  (decision 7), not from the LUT: 90 / (18 000 x 2) in = 0.0635 mm, x
+  (1450 / 1360)^0.5 = x1.0326 for white oak = 0.0656 mm/tooth. The band is
+  0.0643-0.0669 (+/-2 %, a repo tolerance for the chart's in/min
+  rounding). The source key is `amana_spektra_plunge_v24`.
+- `drill_final_feed_in_plunge_envelope` moves from 400 to 580 on every
+  drill cell. All seven drill cells are solid wood.
+- The cells at 3.0 mm (two), 2.0 mm, 12 mm and the 3 mm ball nose refuse,
+  and the runner reads them as NA. Their comments say so.
+
+### 5.5 What stays refused, and why
+
+- 48 cells: every BallNose, TaperedBallNose and VBit drill cell. No
+  published plunge figure exists for these families (section 3.1).
+- 16 cells: every BullNose drill cell. The one printed bull plunge
+  (PreciseBits) is a feed with no RPM, for one 3-flute tool (decision 4).
+- A flat end mill outside 3.175-6.0 mm, or with 1 or 4 flutes: no verified
+  Ramp Down row covers it (decision 6).
+- A drill cell in plastic or aluminium: without the 2.5 the formula is an
+  unjudged milling number on a plunge (decision 3).
+
+### 5.6 Follow-ups
+
+- Real wood drills (Onsrud 72-000, Leitz, CMT; 0.13-0.50 mm per lip) need
+  a drill tool kind (a `ToolFamily` drill arm) first. Those rows must never
+  serve an end-mill plunge.
+- The other Spektra sizes (1/4 in and up) are a transcription job. The
+  chart prints the same rule for every size. Transcribe and verify the
+  rows, then widen `range_mm`. No new law is necessary.
+- The registry rows in `compute/catalog/registry.rs` must set
+  `feeds_formula_source: None` for the two drill operations. The compute
+  session owns that file.
+- Open question 1 stays open: whether Amana's printed 18 000 RPM may win
+  over the 14 000 cap on a claimed row. If it wins, the 3.175 mm MDF cell
+  lands at exactly 720 mm/min per mm, the new ceiling.

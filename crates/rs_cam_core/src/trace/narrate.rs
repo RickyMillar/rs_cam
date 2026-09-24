@@ -1974,8 +1974,13 @@ fn append_air_cut_anomaly(
                     )
                 })
                 .unwrap_or((f64::NAN, f64::NAN));
+            // Ruling B5 (G6 drill, 2026-09-24): the per-peck bar is a repo
+            // rule, not a vendor figure. The line says so, with the same
+            // words as the G6 drill claim card.
             let bars = if welding_bar.is_finite() {
-                format!(" [material bars: chip welding {welding_bar:.1}×, per-peck {peck_bar:.1}×]")
+                format!(
+                    " [material bars: chip welding {welding_bar:.1}×, per-peck {peck_bar:.1}×; peck depth: repo rule (per-peck max 6/5/4 x D by Janka, 1.5 x D sheet; Suggest writes half); no vendor prints a per-peck depth]"
+                )
             } else {
                 String::new()
             };

@@ -88,7 +88,14 @@ def engine_constants():
                   mach, re.S)
     k0, p, q = (float(x) for x in m.groups())
     feeds = (SRC / "feeds" / "mod.rs").read_text()
-    mult = float(re.search(r"const DRILL_CHIPLOAD_MULTIPLIER: f64 = ([\d.]+);", feeds).group(1))
+    m_mult = re.search(r"const DRILL_CHIPLOAD_MULTIPLIER: f64 = ([\d.]+);", feeds)
+    if m_mult is None:
+        # B5 (7eef9ffa, 2026-09-24) deleted the multiplier. This script is the
+        # Phase 2 trend record of the engine before B5; run it on a tree at or
+        # before 55ed85a5 (`git worktree add ... 55ed85a5`).
+        raise SystemExit("trend_g6.py reads the pre-B5 engine: DRILL_CHIPLOAD_MULTIPLIER "
+                         "is deleted (7eef9ffa). Run it on 55ed85a5 or earlier.")
+    mult = float(m_mult.group(1))
     env = re.search(r"fn drill_rpm_envelope_for_diameter.*?\{(.*?)\n\}", feeds, re.S).group(1)
     tiers = [tuple(float(v.replace("_", "")) for v in t)
              for t in re.findall(r"\(([\d_]+\.0),\s*([\d_]+\.0)\)", env)]

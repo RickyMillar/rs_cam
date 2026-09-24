@@ -776,6 +776,14 @@ pub fn feeds_preview_for_operation(
 /// is a hardcoded constant with no diameter/material scaling",
 /// workflow `w39ma2j1y`, fix #6).
 ///
+/// # Source status (ruling B5, G6 drill, 2026-09-24)
+///
+/// The peck depth is a repo rule. The per-peck maximum is 6, 5 or 4 x D
+/// by Janka band, and 1.5 x D for plywood and sheet goods
+/// ([`Material::drill_per_peck_max_dtd`]). Suggest writes half of that
+/// maximum. No vendor prints a per-peck depth: the G6 fetch found none.
+/// The G6 drill claim card and `trace::narrate` state the same rule.
+///
 /// Non-drill ops are untouched.
 ///
 /// # Why `stock` (DR-PIN, 2026-08-14)

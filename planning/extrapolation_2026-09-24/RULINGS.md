@@ -323,3 +323,15 @@ G-RESTRES (f06a11b0..65584991) stores one project simulation resolution.
 for its search runs, so the Optimize search can simulate at another
 resolution from the project's. Owner: the extrapolation session (tool_load
 is its area). Not started.
+
+## Landed after the rulings (2026-09-24/25)
+
+- A2 point mode: fe1fbbd3, e7611194 (EXTRAPOLATION_G4 §5).
+- A3 family transfer: ee14e824, 5ca7fedf, 66c485bc (EXTRAPOLATION_G3 §5).
+- B5 drill: 7eef9ffa and the step-3 commit (EXTRAPOLATION_G6 §5).
+- Refusals on the FM1 matrix: 512 at the start -> 410.
+- Still open for the operator: B3 sim witness (ask first; the 42 ball finish
+  cells and the 6 ball MDF cells), the hardwood V-bit 0.37x question, the
+  bull literature cells (banded on flat charts). Not started: B4 (V-bit
+  key), B7 (long-tool share -> deflection model), B6 (Kc), the Optimize
+  resolution parity gap.
