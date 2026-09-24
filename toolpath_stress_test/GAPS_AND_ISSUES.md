@@ -76,7 +76,6 @@ Where the core `impl Default` and GUI `impl Default` disagree:
 |------|-----------|----------|---------|
 | `depth` vs `bottom_z` (Heights) | 2.5D ops | Both control how deep to cut. `depth` is on the Params tab, `bottom_z` is on Heights tab. | **Potential confusion**: changing depth should update bottom_z and vice versa. Currently `bottom_z` Auto mode uses `op_depth`, which comes from the depth field. This is correct but the interaction is implicit. |
 | `safe_z` (core) vs `retract_z` / `clearance_z` (Heights) | All ops | Core param `safe_z` is derived from Heights, not a separate user control. | **OK** — no overlap; Heights system produces safe_z for core. |
-| `depth_per_pass` vs `coarse_steps` (Adaptive3D) | Adaptive3D | `depth_per_pass` = the base (last) step, which follows the surface; `coarse_steps` = larger steps above it, which cut only where the whole slab fits above the part. `fine_stepdown` was removed on 2026-09-24. | **OK** — one ladder; the adapter refuses a step that is not larger than the next one. |
 | `stock_to_leave_axial` vs `stock_to_leave_radial` (Adaptive3D) | Adaptive3D | Axial = floor; Radial = walls. Different dimensions. | **OK** — independent. |
 | `tolerance` vs `sampling` | Various 3D ops | Tolerance = path simplification; Sampling = fiber/grid spacing. Different things. | **OK** — independent. |
 | `stepover` vs `scallop_height` (Scallop) | Scallop | Scallop uses scallop_height as primary control, computes stepover internally. No explicit stepover. | **OK** — scallop_height IS the stepover control, just expressed differently. |
@@ -94,7 +93,7 @@ No two parameters on the same operation do the same thing. The closest is `depth
 | Concept | Different names used | Operations |
 |---------|---------------------|------------|
 | Cut depth | `depth`, `cut_depth`, `pocket_depth`, `max_depth` | Face vs Pocket vs Inlay vs VCarve |
-| Step down | `depth_per_pass`, `max_stepdown`, `z_step`, `coarse_steps` | Most ops vs RampFinish vs Waterline vs Adaptive3D |
+| Step down | `depth_per_pass`, `max_stepdown`, `z_step` | Most ops vs RampFinish vs Waterline |
 | Stock to leave | `stock_to_leave`, `stock_to_leave_axial`, `stock_to_leave_radial` | Core vs GUI config |
 | Sampling | `sampling`, `point_spacing`, `tolerance` | Waterline/Pencil vs Radial/ProjectCurve vs VCarve |
 | Cut direction | `climb: bool`, `CutDirection` enum, `FaceDirection` enum | Pocket/Profile vs RampFinish vs Face |

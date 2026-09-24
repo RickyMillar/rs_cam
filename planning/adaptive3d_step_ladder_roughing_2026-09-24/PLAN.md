@@ -1,8 +1,19 @@
 # Adaptive 3D step-ladder roughing — plan (2026-09-24)
 
-State (2026-09-24): Phases 0, 1, 2 and 4 are done; `RESULTS.md` has the
-results. Phase 3 is gated. Phase 5 needs the operator. Operator rulings of
-2026-09-24 are in section 5. Every other "recommend" is a proposal.
+State (2026-09-24, end of day): the step ladder is REMOVED by operator
+ruling. Quote: "lets remove the ladder… its more complexity than needed
+when the drape performs better". Each Z level already drapes to the
+surface, so a large plain Depth/Pass cuts pockets and valleys in one pass
+(rivmap100: Depth/Pass 8 = 586 s against 2 mm = 1379 s; the ladder gave no
+gain). `RESULTS.md` "Removal" lists what went and what stays. This plan is
+closed; the text below is the record of the work.
+
+Kept: the deletion of Fine Stepdown and Mill Shallow, the level anchor on
+prior stock (G-LADDERANCHOR), `rough-score`, the CLI `--set` list parsing,
+the `order_by` refusal (F7) and the MCP `null` to `[]` list handling.
+
+Earlier state: Phases 0, 1, 2 and 4 were done; Phase 3 was gated; Phase 5
+needed the operator.
 
 ## 1. Goal
 

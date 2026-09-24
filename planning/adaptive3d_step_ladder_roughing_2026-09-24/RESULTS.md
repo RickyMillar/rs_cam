@@ -545,3 +545,52 @@ Pocket D is new: 50 mm square, 6 mm deep. Per-tier volumes (mm³):
 - viz: `the_coarse_steps_row_writes_the_ladder_g_ladder` 3/3,
   `ui_string_hygiene` 1/1 (after the help text change).
 - The full clippy line and `fmt --check` are clean.
+
+## Removal (2026-09-24, operator ruling)
+
+The operator removed the step ladder: "lets remove the ladder… its more
+complexity than needed when the drape performs better". Each Z level
+drapes to the surface, so a large plain Depth/Pass already cuts a pocket or
+a valley in one pass. On rivmap100 Depth/Pass 8 takes 586 s against 1379 s
+at 2 mm, and no ladder arm beat the single step at the same base step
+("Arm C preview", "Fit rule v2 / anchor").
+
+### What went
+
+- Core: `Adaptive3dDepth::coarse_steps`, `deepest_step()`, the slab
+  schedule (`plan_step_ladder`, `PlannedLevel`, the graded link margin),
+  `LadderTier` and the `tier` field of the level events, the clip rule
+  (`LevelRule`, the keep-out mask, the two-source EDT, the small-part
+  drop, fit rule v2 and its slope classes), the per-tier counters and the
+  `ladder_tier` debug spans. The Global waterline cleanup runs after every
+  level again. `clearing.rs` is byte-for-byte the file of `8aba209e`.
+- Config and surfaces: `Adaptive3dConfig::coarse_steps`,
+  `OperationConfig::deepest_axial_step()`, the adapter refusal
+  (`adaptive3d_step_ladder_refusal`), the catalog row, the GUI "Coarse
+  Steps" rows and their validation, the CLI job key and the sweep list
+  values (`[10;5]`).
+- Tests: `tests/adaptive3d_step_ladder.rs`, the viz test
+  `the_coarse_steps_row_writes_the_ladder_g_ladder.rs`, the adapter refusal
+  test and the schedule unit tests.
+- The diagnostics read `depth_per_pass` again ("Depth/pass …", param
+  `depth_per_pass`).
+
+No shim remains: the feeds session removed its ladder readers first
+(`d576a732`, `5dafe512`).
+
+### What stays
+
+- The deletion of Fine Stepdown and Mill Shallow.
+- G-LADDERANCHOR: on prior stock the levels start at the top of the
+  remaining material (`path.rs::level_anchor_z`; unit test
+  `level_anchor_reads_the_top_of_the_prior_stock`).
+- `rough-score`, the CLI `--set` list parsing, the `order_by` refusal (F7)
+  and the MCP `null` to `[]` list handling.
+- F8 does not apply any more: no sub-level loop is left.
+
+### The break
+
+- A project file or an MCP operation that sets `coarse_steps` loads; the
+  key is ignored.
+- MCP `set_toolpath_param coarse_steps …` is refused as an unknown name.
+- A CLI job file with `coarse_steps` parses; the key is ignored.

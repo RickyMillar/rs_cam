@@ -133,7 +133,6 @@ For each parameter test:
 | stock_top_z | 30→10 mm | First Z level starts at 10 instead of 30 | gcode: first Z level = 10 | |
 | entry_style | Plunge→Helix | Plunge moves become helical spirals | gcode: arcs at entry; visual: helix visible | |
 | entry_style | Plunge→Ramp | Plunge moves become angled ramps | gcode: simultaneous XZ at entry | |
-| coarse_steps | []→[10] (dpp 5) | Open floor is cut in 10 mm slabs; the wall bands are cut at 5 mm | gcode: 10 mm Z bites where the slab fits above the part | |
 | detect_flat_areas | false→true | Z levels align with mesh shelves/plateaus | gcode: Z levels snap to flat area heights | |
 | region_ordering | Global→ByArea | Each pocket cleared fully before next | debug: ordering trace changes | |
 | clearing_strategy | ContourParallel→Adaptive | Curvature-adjusted offsets instead of uniform | debug: strategy trace differs | |
@@ -250,7 +249,7 @@ For each operation:
 | Text SVG ("CAM") | VCarve, inlay, chamfer, rest machining |
 | Hemisphere STL | 3D finish, waterline, pencil, scallop, steep/shallow |
 | Terrain STL (irregular surface) | Adaptive3D z_blend, horizontal finish, ramp finish |
-| Multi-level step STL | Adaptive3D detect_flat_areas, coarse_steps |
+| Multi-level step STL | Adaptive3D detect_flat_areas |
 | Bowl STL (concave) | Spiral finish, radial finish, scallop direction |
 
 ### Diagnostic output to capture per test
