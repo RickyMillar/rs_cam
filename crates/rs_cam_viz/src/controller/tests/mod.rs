@@ -31,6 +31,7 @@ mod setup_only_plan_g_setuponly;
 mod sim_stale_is_the_core_answer_g_freshnessdisagree;
 mod simulation_state;
 mod smoke;
+mod stale_cards_g_stalecards;
 mod stock_frame;
 mod undo;
 mod view_simulation;
