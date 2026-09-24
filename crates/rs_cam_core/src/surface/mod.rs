@@ -6,6 +6,7 @@
 
 pub mod dropcutter;
 pub mod flow_accum;
+pub mod merge_tree;
 pub mod pushcutter;
 pub mod reach;
 pub mod rest_field;

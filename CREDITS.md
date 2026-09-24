@@ -199,6 +199,9 @@ The repo text or code explicitly references these algorithm families or techniqu
 - constant-scallop-height formulas
 - marching-squares-style contour extraction
 - Kasa least-squares circle fitting for arc fitting
+- join (merge) tree of sublevel sets by union-find over sorted cells
+  (Carr, Snoeyink & Axen 2003) with h-minima / dynamics simplification
+  (Grimaud 1992; Soille 2003), for pocket detection on a tool-CL grid
 
 Key repo references:
 
@@ -209,6 +212,7 @@ Key repo references:
 - `crates/rs_cam_core/src/finish/scallop_math.rs`
 - `crates/rs_cam_core/src/dressup/arcfit.rs`
 - `crates/rs_cam_core/src/geometry/contour_extract.rs`
+- `crates/rs_cam_core/src/surface/merge_tree.rs`
 
 ## Data sources and formulas
 
