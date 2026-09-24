@@ -164,8 +164,8 @@ impl PlywoodGrade {
     /// path) and `literature_parity` use it. No source prints a Janka
     /// value for plywood, so this is a proxy. `material_to_lut` puts it on
     /// the LUT query, but the lookup applies no hardness scale to a
-    /// plywood query (`feeds::vendor_lookup::hardness_ratio_raw`,
-    /// extrapolation P2 step 3).
+    /// plywood query (`feeds::extrapolation::hardness_basis`,
+    /// extrapolation P2 steps 3 and 4).
     pub fn effective_janka_lbf(self) -> f64 {
         match self {
             PlywoodGrade::Softwood => 600.0,
@@ -200,8 +200,8 @@ impl SheetGoodKind {
     /// figure is the particleboard minimum of 500 lbf (ANSI A208.1).
     /// `material_to_lut` puts the value on the LUT query, but the lookup
     /// applies no hardness scale to a sheet-good query
-    /// (`feeds::vendor_lookup::hardness_ratio_raw`, extrapolation P2
-    /// step 3).
+    /// (`feeds::extrapolation::hardness_basis`, extrapolation P2 steps 3
+    /// and 4).
     pub fn effective_janka_lbf(self) -> f64 {
         match self {
             SheetGoodKind::Mdf => 1100.0,

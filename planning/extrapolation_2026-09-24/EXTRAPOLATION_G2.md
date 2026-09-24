@@ -1,7 +1,7 @@
 # G2: Material category (a row exists for another wood category)
 
-Status: Phase 2 (trend) done 2026-09-24; Phase 3 (fit, witness) not started;
-nothing lands before the Phase 4 rulings.
+Status: Phase 2 (trend) done 2026-09-24. Ruling B2 taken the same day;
+P2 steps 1-4 landed (§5).
 
 Inputs: the LUT (389 rows), `fetch/G2/verified_rows.json` (91 rows),
 `inventory_cells.csv` and the FM1 matrix
@@ -389,3 +389,119 @@ Dead ends (FETCH_NOTES.md §1, §7):
 **Biggest open gap:** no reachable vendor chart prints a ball-nose chipload
 in plywood. The 24 plywood ball cells have no printed witness in their own
 family.
+
+## 5. The landing (P2, 2026-09-24)
+
+Ruling B2. Plan and the orchestrator's decisions 1-7: `P2_PLAN.md`.
+
+| Commit | Step |
+|---|---|
+| 1b69ceaa | Steps 1-2: 40 Onsrud 37-series V-bit rows (MDF, hard and soft plywood, laminated chipboard -> particleboard) and 15 Amana ball v7 pocket rows; 441 -> 496 rows. Strict V-bit judgement (decision 2). |
+| a32ea149 | Step 3: one Janka table. A solid-wood row with no Janka reads `WoodSpecies::GenericSoftwood` (600) or `GenericHardwood` (1450); the composite categories take no hardness scale. |
+| TODO (not committed) | Step 4: the soft/hard cap, `feeds/extrapolation/hardness.rs`. |
+
+### Amendment 7 (step 1, measured)
+
+The softwood and hardwood 37-series V-bit rows are parked too: 40 V-bit
+rows load, not 60 (441 -> 496, not 516). When they loaded, they displaced
+the Whiteside 1/4 in RPM anchor of 5 softwood V-bit cells. The engine RPM
+(10 026) replaced a printed 22 000, and the feed moved x0.34, not the -26 %
+that the plan predicted from the chipload alone. G2 is the MDF / plywood
+gap; the solid-wood V-bit size key is the question of ruling B4.
+
+### Step 4: the soft/hard cap (decision 4)
+
+`feeds::extrapolation::hardness_basis(query, row)` is the one place where
+the hardness ratio and the hardness scale of a matched row come from.
+`build_result` reads it, and `LookupResult::hardness_basis` carries it.
+The basis is `Unscaled`, `CompositeBoard`, `Law` or `Capped`. It is a typed
+clamp, not an `Extrapolation` impl (P2_PLAN §4).
+
+The rule: when the query and the row are solid wood, the Janka law's scale
+is above 1, and the scale is above the cap of the ROW's tool family, the
+applied scale is the cap. The raw ratio is unchanged, so
+`is_extrapolated` still reads it and a capped row stays flagged.
+
+The caps (`SOFT_OVER_HARD_PRINTED_MAX`) are the upper ends of the
+"softwood / hardwood" ranges in §1.2, table T2. Each value was checked
+against that table; no value differs from the plan.
+
+| Row family | Cap | Evidence (§1.2 T2) | The cap acts below (query Janka, hardwood row 1450) |
+|---|---|---|---|
+| ball nose | 1.50 | [1.20, 1.50], n 7 (Amana v7; §1.5 T5 at 3.175 mm: 0.006 / 0.004 in) | 644 lbf |
+| flat end | 1.43 | [1.00, 1.43], n 14 | 709 lbf |
+| V-bit | 1.42 | [1.00, 1.42], n 19 (Amana insert v16, §1.3) | 719 lbf |
+| tapered ball | 1.00 | 1.00, n 2 (Onsrud 77-100) | every query under the row's Janka |
+| facing bit | 1.30 | 1.30, n 1 | 858 lbf |
+| bull nose | 1.43 (flat end, borrowed) | no printed pair (§1.9) | 709 lbf |
+
+The threshold column is `row / cap^2`. The tapered cap blocks every upward
+transfer on a tapered row, also a softwood row (600) on a softer softwood.
+
+The card: `why::draw_row_basis_lines` paints the cap headline as a
+visible line, with the detail on its hover. The claim hover names a
+capped hardness scale. The `approx x` token does not paint for a capped
+row. Example (a 6.0 mm ball Scallop in generic softwood):
+
+- headline: "extrapolated (G2 hardness): capped at x1.50";
+- detail: "hardness transfer capped at x1.50 (the largest
+  softwood/hardwood ratio that ball nose charts print); the Janka law gives
+  x1.55 (raw ratio 2.42, row 1450 lbf, printed on the row)".
+
+FM1 has three new columns after `claim_residual`: `hardness_ratio_raw`,
+`hardness_scale`, `hardness_basis`.
+
+Sentries: `a_hardness_transfer_caps_at_the_printed_soft_hard_ratio_g2`
+(new); `one_janka_table_for_row_and_query_g2` (its softwood arm re-pinned
+from the law 1.554563175515 to the flat-end cap 1.43, band
+0.508508-0.581152); `lookup_parity` (a capped case, and the calculator and
+the gate must carry the same hardness basis); viz
+`a_claimed_row_states_its_claim_on_the_card_g_claimcard` (a capped cell
+shows its cap line).
+
+### Cells that move (step 4)
+
+Predicted (P2_PLAN §4): 6 cells, the softwood ball Scallop, UnifiedFinish
+and SpiralFinish at 3.175 and 6.0 mm on
+`amana-ball-hardwood-scallop-6000-2f`. The hardness scale goes x1.555 ->
+x1.50 (-3.5 %). No V-bit cell is capped: the 3 Whiteside softwood V-bit
+cells left that row in step 1. No status moves.
+
+Off the matrix the cap acts on every solid-wood query softer than the
+threshold of the table above. Predicted moves in the literature matrix
+(run `literature_matrix` for this step):
+
+- `ball_3mm_scallop_softwood` (Janka 380, on the Amana ball scallop row):
+  the law x1.953 goes to x1.50; the band goes from 0.0320-0.0512 to
+  0.0246-0.0393 mm/tooth. The expected band is 0.025-0.055. Expect green;
+  verify.
+- `tapered_ball_2mm_scallop_oak` (Janka 1290): on a 1450 tapered row the
+  law x1.062 goes to x1.00 (the printed band).
+
+The two `#[ignore]` harnesses in `law_magnitude_measurement.rs` recover
+the unscaled band as `band / (law_d * law_h)`. On a capped row that
+divisor is not the applied scale, so their "unscaled" column is wrong
+there. The FM1 column `hardness_basis` reads `Law` also for a row at the
+query's own hardness (scale 1.00): count the moved cells by `Capped`.
+
+Measured (FM1 re-run after step 4, 2026-09-24):
+
+- No status moves: 464 ship (274 VendorBacked, 108 Extrapolated, 82
+  FormulaOnly), 496 refuse.
+- 9 cells carry `hardness_basis = Capped`:
+  - 6 ball-nose softwood cells (Scallop, UnifiedFinish, SpiralFinish at
+    3.175 and 6.0 mm) on `amana-ball-hardwood-scallop-6000-2f`: the law
+    gave x1.555, the cap x1.50; band maximum x0.964 (0.0600 at 6.0 mm,
+    0.0407 at 3.175 mm).
+  - 3 V-bit softwood cells (Trace, Chamfer, Inlay at 6.35 mm) on the
+    Whiteside RPM-only row: capped at x1.42, but the row prints no
+    chipload, so no band moves.
+- Shipping cells per basis: Law 199, CompositeBoard 174, Capped 9, none
+  (FormulaOnly) 82.
+
+### Known reds, not caused by P2
+
+- `feed_explanation_snapshot_b3` and `tapered_width_model_parity_c3`: red
+  on HEAD before P1 and after it (EXTRAPOLATION_G1 §5).
+- `drop_cutter_flat_roughing_row_g_dcflat`: red before and after step 3
+  (a stale R5 id, a bandless Spektra row: the A2 point-mode package).

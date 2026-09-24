@@ -24,14 +24,15 @@
 //! - **The engaged-diameter row**, for tapered and V tools, where the
 //!   published tip size understates what is actually cutting.
 //! - **The row basis** ([`draw_row_basis_lines`]): the G1 size claim of an
-//!   off-size row and the printed material label of a derived row.
+//!   off-size row, the G2 soft/hard cap of a capped hardness transfer, and
+//!   the printed material label of a derived row.
 //!
 //! Every quantity here is a **commanded** advance per tooth,
 //! `feed / (rpm · flutes)`. This surface runs before a simulation and has no
 //! measured value to show. The achieved figure lives on the properties
 //! panel's operating-point card, after a sim (Checkpoint H2, 2026-08-08).
 
-use rs_cam_core::feeds::extrapolation::Claim;
+use rs_cam_core::feeds::extrapolation::{Claim, HardnessBasis};
 use rs_cam_core::feeds::rationale::{
     AGGRESSIVENESS_ABOVE_BASE_TEXT, PLUNGE_AT_MATERIAL_BASE_TEXT, SuggestRationale,
 };
@@ -530,15 +531,18 @@ fn engaged_diameter_hover(geometry: ToolGeometryHint, kind: &str, tip_dia: f64) 
     }
 }
 
-/// The basis of the matched row, on the page (extrapolation P1 step 4).
+/// The basis of the matched row, on the page (extrapolation P1 step 4,
+/// P2 step 4).
 ///
 /// Operator rule: no invisible calculation. When the row is off-size, the
 /// G1 size claim (`feeds::extrapolation::Claim`) moved the band. Its
 /// headline (the scale and the anchor row) is a visible line. Its detail
 /// (the rule, the range and the spread) and the hardness scale are on the
-/// hover. When the row is `Derived` (ruling A4: a "Wood, MDF, Sign-Foam"
-/// row that serves hardwood), the row's printed material label is a
-/// second visible line.
+/// hover. When the soft/hard cap stopped the hardness transfer
+/// (`HardnessBasis::Capped`), the cap headline is a visible line and the
+/// cap detail (the printed ratio and the law's value) is on its hover. When
+/// the row is `Derived` (ruling A4: a "Wood, MDF, Sign-Foam" row that
+/// serves hardwood), the row's printed material label is a visible line.
 pub(crate) fn draw_row_basis_lines(ui: &mut egui::Ui, explain: &FeedsExplain) {
     let Some(row) = explain.matched_row.as_ref() else {
         return;
@@ -549,7 +553,15 @@ pub(crate) fn draw_row_basis_lines(ui: &mut egui::Ui, explain: &FeedsExplain) {
             ui,
             headline,
             theme::WARNING_MILD,
-            &claim_hover(claim, &detail, row.chipload_hardness_scale),
+            &claim_hover(claim, &detail, &row.hardness_basis),
+        );
+    }
+    if let Some((headline, detail)) = row.hardness_basis.card_text() {
+        detail_line(
+            ui,
+            headline,
+            theme::WARNING_MILD,
+            &format!("{detail}.\nRow: {}.", row.observation_id),
         );
     }
     if row.row_kind == ObservationKind::Derived && !row.material_label.is_empty() {
@@ -568,14 +580,24 @@ pub(crate) fn draw_row_basis_lines(ui: &mut egui::Ui, explain: &FeedsExplain) {
 }
 
 /// The hover of the claim line: the claim's detail, its source rows, and
-/// the hardness scale that applies after the claim.
-fn claim_hover(claim: &Claim, detail: &str, hardness_scale: f64) -> String {
+/// the hardness scale that applies after the claim. A capped hardness scale
+/// says so, with the law's value.
+fn claim_hover(claim: &Claim, detail: &str, hardness: &HardnessBasis) -> String {
     let mut out = format!("{detail}.");
     if !claim.source_rows.is_empty() {
         out.push_str(&format!("\nRows: {}.", claim.source_rows.join(", ")));
     }
+    let hardness_scale = hardness.scale();
+    let capped = match hardness {
+        HardnessBasis::Capped { law_scale, .. } => {
+            format!(" (capped at the soft/hard cap; the Janka law gives x{law_scale:.2})")
+        }
+        HardnessBasis::Unscaled | HardnessBasis::CompositeBoard | HardnessBasis::Law { .. } => {
+            String::new()
+        }
+    };
     out.push_str(&format!(
-        "\nThe hardness scale x{hardness_scale:.2} applies after the claim; the band \
+        "\nThe hardness scale x{hardness_scale:.2}{capped} applies after the claim; the band \
          scale is x{:.2} in total.",
         claim.scale * hardness_scale
     ));

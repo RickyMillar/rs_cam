@@ -281,11 +281,15 @@ fn draw_context_chip(
                         .reference(&row.observation_id)
                         .compact(),
                 );
-                // A G1 size claim states its own scale on the line below
-                // (`why::draw_row_basis_lines`). A row that is far from the
-                // query but has no claim (a V-bit, or a hardness-only
-                // transfer) keeps the combined scale here.
-                if row.is_extrapolated && row.size_basis.claim().is_none() {
+                // A G1 size claim and a G2 soft/hard cap state their own
+                // scale on the lines below (`why::draw_row_basis_lines`). A
+                // row that is far from the query but has neither (a V-bit,
+                // or a hardness transfer under the cap) keeps the combined
+                // scale here.
+                if row.is_extrapolated
+                    && row.size_basis.claim().is_none()
+                    && row.hardness_basis.cap().is_none()
+                {
                     ui.add(
                         egui::Label::new(
                             egui::RichText::new(format!("approx ×{:.2}", combined_scale(row)))

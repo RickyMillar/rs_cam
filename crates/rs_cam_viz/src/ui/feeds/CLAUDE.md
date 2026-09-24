@@ -14,7 +14,7 @@
 - The recommended column is what `⚡ Apply all` writes; the hover has the raw value.
 - Every stage that moves a number is one line on the card, with its source
   status (ruling R4). `why::draw_suggest_lines` paints the Suggest stages;
-  `why::draw_row_basis_lines` paints the G1 size claim and the A4 row label.
+  `why::draw_row_basis_lines` paints the G1 size claim, the G2 soft/hard cap and the A4 row label.
 - A nomogram readout outside the band abstains; the window fits the screen.
 - A chart draws one line at the suggested value, and band lines only where the
   row publishes both limits; no shading.

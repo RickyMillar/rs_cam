@@ -161,6 +161,27 @@ fn cases() -> Vec<Case> {
             gate_op_family: LutOperationFamily::Trace,
             gate_pass_role: LutPassRole::Finish,
         },
+        // Extrapolation P2 step 4 (G2, 2026-09-24): a 6.0 mm ball on a
+        // scallop finish in generic softwood. No softwood ball row prints a
+        // scallop, so both paths land on the hardwood row
+        // `amana-ball-hardwood-scallop-6000-2f` (per-row Janka 1450). The
+        // Janka law gives (1450 / 600)^0.5 = x1.55, and the ball-nose
+        // soft/hard cap stops it at x1.50. Both paths must carry the same
+        // capped basis, not only the same row.
+        Case {
+            name: "softwood-ball-6mm-scallop-finish-capped",
+            diameter_mm: 6.0,
+            flute_count: 2,
+            tool_geometry: ToolGeometryHint::Ball,
+            cutter: Box::new(BallEndmill::new(6.0, 18.0)),
+            material: Material::SolidWood {
+                species: WoodSpecies::GenericSoftwood,
+            },
+            operation: OperationFamily::Scallop,
+            pass_role: PassRole::Finish,
+            gate_op_family: LutOperationFamily::Scallop,
+            gate_pass_role: LutPassRole::Finish,
+        },
     ]
 }
 
@@ -233,15 +254,21 @@ fn calculator_and_gate_match_same_observation_id() {
         let gate_result = find_best_row_for_geometry(&lut, &gate_query, &case.tool_geometry);
 
         // --- Compare ---
+        // The row and its hardness basis (P2 step 4): a capped transfer on
+        // one path and the law on the other would give two bands.
         match (&calc_result, &gate_result) {
-            (Some(c), Some(g)) if c.observation_id == g.observation_id => { /* parity */ }
+            (Some(c), Some(g))
+                if c.observation_id == g.observation_id && c.hardness_basis == g.hardness_basis =>
+            { /* parity */ }
             (None, None) => { /* both refused — also parity */ }
             (c, g) => {
                 mismatches.push(format!(
                     "case '{}': calc={:?}, gate={:?}",
                     case.name,
-                    c.as_ref().map(|r| r.observation_id.as_str()),
-                    g.as_ref().map(|r| r.observation_id.as_str()),
+                    c.as_ref()
+                        .map(|r| (r.observation_id.as_str(), &r.hardness_basis)),
+                    g.as_ref()
+                        .map(|r| (r.observation_id.as_str(), &r.hardness_basis)),
                 ));
             }
         }
@@ -316,4 +343,28 @@ fn material_to_lut_for_test(material: &Material) -> (MaterialFamily, HardnessKin
         }
         _ => panic!("test cases only use solid wood and sheet goods"),
     }
+}
+
+/// Extrapolation P2 step 4: the capped case above is capped (non-vacuity
+/// for the basis comparison in `calculator_and_gate_match_same_observation_id`,
+/// which then shows that the gate path carries the same capped basis).
+#[test]
+fn the_capped_case_is_capped_on_the_calculator_path() {
+    let lut = VendorLut::embedded();
+    let query = LookupQuery {
+        tool_family: ToolFamily::BallNose,
+        tool_subfamily: None,
+        diameter_mm: 6.0,
+        flute_count: 2,
+        material_family: MaterialFamily::Softwood,
+        hardness_kind: Some(HardnessKind::Janka),
+        hardness_value: Some(WoodSpecies::GenericSoftwood.janka_lbf()),
+        operation_family: LutOperationFamily::Scallop,
+        pass_role: LutPassRole::Finish,
+    };
+    let r = find_best_row_for_geometry(&lut, &query, &ToolGeometryHint::Ball)
+        .expect("a ball scallop row matches");
+    assert_eq!(r.observation_id, "amana-ball-hardwood-scallop-6000-2f");
+    assert_eq!(r.hardness_basis.name(), "Capped", "{r:?}");
+    assert!((r.chipload_hardness_scale - 1.50).abs() < 1e-12, "{r:?}");
 }

@@ -51,6 +51,7 @@ fn unpopulated_effective_diameter_skips_doc_derating() {
         is_extrapolated: false,
         row_pass_role: crate::feeds::vendor_lut::LutPassRole::Roughing,
         size_basis: crate::feeds::extrapolation::SizeBasis::Exact,
+        hardness_basis: crate::feeds::extrapolation::HardnessBasis::Unscaled,
         material_label: String::new(),
         evidence_grade: crate::feeds::vendor_lut::EvidenceGrade::A,
         row_kind: crate::feeds::vendor_lut::ObservationKind::Exact,

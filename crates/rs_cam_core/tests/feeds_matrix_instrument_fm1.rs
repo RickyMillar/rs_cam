@@ -296,6 +296,9 @@ const MATRIX_HEADER: &[&str] = &[
     "claim_scale",
     "claim_range",
     "claim_residual",
+    "hardness_ratio_raw",
+    "hardness_scale",
+    "hardness_basis",
     "chipload_source",
     "vendor_source",
     "diagnostic_ids",
@@ -350,6 +353,18 @@ fn claim_columns(m: &rs_cam_core::feeds::vendor_lookup::LookupResult) -> [String
             String::new(),
         ],
     }
+}
+
+/// The three G2 hardness columns of a matched row (extrapolation P2 step
+/// 4): the raw hardness ratio, the applied hardness scale, and the basis
+/// name (`Unscaled`, `CompositeBoard`, `Law` or `Capped`). A capped row
+/// keeps its raw ratio, so the two numbers differ from the law there.
+fn hardness_columns(m: &rs_cam_core::feeds::vendor_lookup::LookupResult) -> [String; 3] {
+    [
+        num(Some(m.chipload_hardness_ratio_raw)),
+        num(Some(m.chipload_hardness_scale)),
+        m.hardness_basis.name().to_owned(),
+    ]
 }
 
 /// The diagnostics every pre-simulation door raises on the suggested recipe.
@@ -421,13 +436,14 @@ fn walk_matrix(
                             fields.push("refused".to_owned());
                             fields.push(e.to_string());
                             // 12 recipe columns (incl. the force and power
-                            // at the shipped point), the support pair, 13 row
-                            // columns (6 row, 5 G1 claim, chipload source,
-                            // vendor source), 4 diagnostic / warning columns.
+                            // at the shipped point), the support pair, 16 row
+                            // columns (6 row, 5 G1 claim, 3 G2 hardness,
+                            // chipload source, vendor source), 4 diagnostic /
+                            // warning columns.
                             fields.extend(std::iter::repeat_n(String::new(), 12));
                             fields.push("Refused".to_owned());
                             fields.push(String::new());
-                            fields.extend(std::iter::repeat_n(String::new(), 13));
+                            fields.extend(std::iter::repeat_n(String::new(), 16));
                             fields.extend(std::iter::repeat_n(String::new(), 4));
                             fields.extend(cap_columns(
                                 machine,
@@ -516,8 +532,9 @@ fn walk_matrix(
                                         }
                                     }
                                     fields.extend(claim_columns(m));
+                                    fields.extend(hardness_columns(m));
                                 }
-                                None => fields.extend(std::iter::repeat_n(String::new(), 11)),
+                                None => fields.extend(std::iter::repeat_n(String::new(), 14)),
                             }
                             fields.push(format!("{:?}", r.chipload_source));
                             fields.push(r.vendor_source.clone().unwrap_or_default());

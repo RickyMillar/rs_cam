@@ -28,8 +28,10 @@
 //!   a per-row 1100;
 //! - Baltic birch (1200) on the `onsrud-plywood-hardwood-60-100mw` rows (no
 //!   Janka) and on an Onsrud 77-100 plywood row (per-row 1000) gives 1.0;
-//! - a hardwood row with no Janka gives 1.0 on a `GenericHardwood` query, and
-//!   `(1450 / 600)^0.5` on a `GenericSoftwood` query;
+//! - a hardwood row with no Janka gives 1.0 on a `GenericHardwood` query. On
+//!   a `GenericSoftwood` query it reads the raw ratio 1450 / 600 and the law
+//!   `(1450 / 600)^0.5`, which the flat-end soft/hard cap stops at 1.43 (P2
+//!   step 4);
 //! - Ipe still derates below a `GenericHardwood` query on that row.
 //!
 //! Each arm except the first reads a one-row LUT built from the embedded
@@ -39,6 +41,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use rs_cam_core::feeds::EMBEDDED_LUT;
+use rs_cam_core::feeds::extrapolation::{HardnessBasis, JankaFrom};
 use rs_cam_core::feeds::vendor_lookup::{LookupQuery, LookupResult, lookup_best};
 use rs_cam_core::feeds::vendor_lut::{
     HardnessKind, LutOperationFamily, LutPassRole, MaterialFamily, ToolFamily, VendorLut,
@@ -180,12 +183,15 @@ fn baltic_birch_on_a_hard_plywood_row_has_no_hardness_scale_g2() {
 /// `GenericHardwood` query the scale is 1.0 (was (1290 / 1450)^0.5 =
 /// 0.9432).
 ///
-/// On a `GenericSoftwood` query (600) the law gives the raw ratio
-/// 1450 / 600 = 2.416667 and the scale `(1450 / 600)^0.5 = 1.554563175515`
-/// (was (1290 / 600)^0.5 = 1.4663). The raw ratio sets the extrapolation
-/// flag. This is today's law value before any cap. P2 step 4 adds the
-/// soft/hard cap (flat end mills 1.43) and changes this scale; the raw
-/// ratio and the flag stay.
+/// On a `GenericSoftwood` query (600) the raw ratio is 1450 / 600 =
+/// 2.416667, and the law gives `(1450 / 600)^0.5 = 1.554563175515` (step
+/// 3 pinned this value; before step 3 it was (1290 / 600)^0.5 = 1.4663).
+/// RE-PINNED 2026-09-24 (P2 step 4, the soft/hard cap): the row is a flat
+/// end mill, and the largest softwood/hardwood ratio that flat-end charts
+/// print is 1.43 (EXTRAPOLATION_G2 §1.2). So the applied scale is 1.43 and
+/// the band is `0.3556 * 1.43 = 0.508508` to `0.4064 * 1.43 = 0.581152`.
+/// The basis keeps the law value 1.554563175515. The raw ratio and the flag
+/// stay.
 #[test]
 fn a_hardwood_row_with_no_janka_reads_the_query_table_g2() {
     assert_eq!(
@@ -215,9 +221,24 @@ fn a_hardwood_row_with_no_janka_reads_the_query_table_g2() {
         "{soft:?}"
     );
     assert!(
-        (soft.chipload_hardness_scale - 1.554_563_175_515).abs() < 1e-11,
+        (soft.chipload_hardness_scale - 1.43).abs() < TOL,
         "{soft:?}"
     );
+    let HardnessBasis::Capped {
+        law_scale,
+        from,
+        cap,
+        ..
+    } = &soft.hardness_basis
+    else {
+        panic!("expected the flat-end cap: {:?}", soft.hardness_basis);
+    };
+    assert!((law_scale - 1.554_563_175_515).abs() < 1e-11, "{law_scale}");
+    assert_eq!(*from, JankaFrom::FamilyGeneric);
+    assert_eq!(cap.family, ToolFamily::FlatEnd);
+    assert!(!cap.borrowed_from_flat);
+    assert!((soft.chip_load_min_mm.unwrap() - 0.508_508).abs() < 1e-11);
+    assert!((soft.chip_load_max_mm.unwrap() - 0.581_152).abs() < 1e-11);
     assert!(soft.is_extrapolated, "the raw ratio 2.42 is past 1.4");
 }
 

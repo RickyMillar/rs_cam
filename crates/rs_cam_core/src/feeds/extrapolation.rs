@@ -16,8 +16,18 @@
 //! inside `vendor_lookup::build_result`, so every consumer of a
 //! `LookupResult` (Suggest, the gate, the modulator, the advisor, the
 //! viewport, explain) reads one claimed band.
+//!
+//! G2 (hardness) is not an [`Extrapolation`] impl: [`hardness_basis`] in
+//! [`hardness`] is a typed clamp on the Janka law (the soft/hard cap). It
+//! runs in `build_result` too, beside the size claim (P2 step 4).
 
+pub mod hardness;
 pub mod size;
+
+pub use hardness::{
+    HardnessBasis, JankaFrom, SOFT_OVER_HARD_PRINTED_MAX, SoftHardCap, hardness_basis,
+    soft_hard_cap,
+};
 
 pub use size::{
     EXACT_DIAMETER_TOLERANCE, FLAT_END_SLOPE_SPREAD, SIZE_WINDOW_EDGE_TOLERANCE, SIZE_WINDOW_MAX,
@@ -32,6 +42,9 @@ use super::vendor_lut::{VendorLut, VendorObservation};
 pub enum Gap {
     /// G1: a row exists for the family, but not at this diameter.
     Size,
+    /// G2: a row exists in the material category, but at another hardness
+    /// (the Janka law and its soft/hard cap). Only the card uses it.
+    Hardness,
 }
 
 impl Gap {
@@ -40,6 +53,7 @@ impl Gap {
     pub const fn group(self) -> &'static str {
         match self {
             Self::Size => "G1",
+            Self::Hardness => "G2",
         }
     }
 
@@ -48,6 +62,7 @@ impl Gap {
     pub const fn label(self) -> &'static str {
         match self {
             Self::Size => "size",
+            Self::Hardness => "hardness",
         }
     }
 }

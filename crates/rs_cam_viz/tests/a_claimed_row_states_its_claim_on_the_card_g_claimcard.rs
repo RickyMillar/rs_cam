@@ -18,6 +18,10 @@
 //!    The fixture's row is an A4 row: "Wood, MDF, Sign-Foam (one printed
 //!    row); hardwood is not printed apart".
 //! 4. The old `approx ×` token does not also paint for a claimed row.
+//! 5. A capped hardness transfer (extrapolation P2 step 4, the G2 soft/hard
+//!    cap) states its cap: the cap headline (`HardnessBasis::card_text().0`)
+//!    is a visible line, the cap detail (the printed ratio and the Janka
+//!    law's value) is on its hover, and no `approx ×` token paints.
 //!
 //! # The fixture
 //!
@@ -31,6 +35,13 @@
 //! chart's printed 1.0 mm and 1.5875 mm 2-flute rows. The test reads the
 //! claim from the explain payload and pins only its shape, so a scale change
 //! in `extrapolation/size.rs` does not break it.
+//!
+//! The cap fixture: a 6.0 mm ball nose, 2 flutes, on a Scallop in generic
+//! softwood (Janka 600). No softwood ball row prints a scallop, so the
+//! anchor is `amana-ball-hardwood-scallop-6000-2f` (per-row Janka 1450) at
+//! its own size. The Janka law gives `(1450 / 600)^0.5 = x1.55`, above the
+//! ball-nose cap 1.50, so the scale is x1.50 and the raw ratio 2.42 keeps
+//! the extrapolation flag.
 
 #![allow(
     clippy::unwrap_used,
@@ -42,10 +53,11 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use rs_cam_core::compute::catalog::OperationConfig;
+use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::FeedsExplain;
+use rs_cam_core::feeds::extrapolation::HardnessBasis;
 use rs_cam_core::feeds::vendor_lut::ObservationKind;
 use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::polygon::Polygon2;
@@ -76,18 +88,39 @@ fn tapered_ball(tip_diameter: f64) -> ToolConfig {
     tool
 }
 
+/// The fixture of the cap arm: the row with the soft/hard cap.
+const CAP_ANCHOR_ID: &str = "amana-ball-hardwood-scallop-6000-2f";
+
+fn ball_nose(diameter: f64) -> ToolConfig {
+    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
+    tool.name = "Cap card ball nose".to_owned();
+    tool.diameter = diameter;
+    tool.shaft_diameter = diameter;
+    tool.shank_diameter = diameter;
+    tool.cutting_length = 20.0;
+    tool.flute_count = 2;
+    tool
+}
+
+/// The claim fixture: a 1.2 mm tapered tip on a 3D Finish in hardwood.
 fn state() -> AppState {
+    state_for(
+        tapered_ball(1.2),
+        WoodSpecies::GenericHardwood,
+        OperationConfig::DropCutter(Default::default()),
+    )
+}
+
+fn state_for(tool: ToolConfig, species: WoodSpecies, operation: OperationConfig) -> AppState {
     let stock = StockConfig {
-        material: Material::SolidWood {
-            species: WoodSpecies::GenericHardwood,
-        },
+        material: Material::SolidWood { species },
         ..Default::default()
     };
     let config = ToolpathConfig {
         id: rs_cam_core::ToolpathId(0),
         name: "Claim card fixture".to_owned(),
         enabled: true,
-        operation: OperationConfig::DropCutter(Default::default()),
+        operation,
         dressups: Default::default(),
         heights: Default::default(),
         tool_id: 1,
@@ -120,7 +153,7 @@ fn state() -> AppState {
     };
     let mut builder = ProjectSessionBuilder::new()
         .stock(stock)
-        .tool(tapered_ball(1.2))
+        .tool(tool)
         .model(model);
     builder
         .add_toolpath(0, config)
@@ -245,5 +278,70 @@ fn a_claimed_row_states_its_claim_and_its_a4_label_g_claimcard() {
     assert!(
         !texts.iter().any(|t| t.starts_with("approx ×")),
         "a claimed row still paints the bare `approx ×` token; runs were {texts:#?}"
+    );
+}
+
+#[test]
+fn a_capped_hardness_transfer_states_its_cap_g_claimcard() {
+    let state = state_for(
+        ball_nose(6.0),
+        WoodSpecies::GenericSoftwood,
+        OperationConfig::new_default(OperationType::Scallop),
+    );
+    let explain = explain(&state);
+    let row = explain
+        .matched_row
+        .as_ref()
+        .expect("a vendor row answers the 6.0 mm ball Scallop in softwood");
+
+    // Non-vacuity: the fixture IS a capped cell at the row's own size.
+    assert_eq!(row.observation_id, CAP_ANCHOR_ID, "{row:?}");
+    assert!(row.size_basis.claim().is_none(), "{row:?}");
+    assert!(
+        matches!(row.hardness_basis, HardnessBasis::Capped { .. }),
+        "a hardwood ball row on a softwood query is capped: {row:?}"
+    );
+    assert!(
+        (row.chipload_hardness_scale - 1.50).abs() < 1e-12,
+        "{row:?}"
+    );
+    assert!(row.is_extrapolated, "the raw ratio 2.42 keeps the flag");
+    let (headline, detail) = row
+        .hardness_basis
+        .card_text()
+        .expect("a capped basis has a card text");
+    assert_eq!(headline, "extrapolated (G2 hardness): capped at x1.50");
+    assert!(
+        detail.starts_with(
+            "hardness transfer capped at x1.50 (the largest softwood/hardwood ratio that \
+             ball nose charts print); the Janka law gives x1.55"
+        ),
+        "the cap detail changed shape: {detail}"
+    );
+
+    let texts = painted_text(state);
+
+    // 5a. The cap headline is a visible, single-line run with the detail
+    //     marker.
+    let marked = format!("{headline} {}", tokens::GLYPH_DETAIL);
+    assert!(
+        texts.contains(&marked),
+        "the cap headline `{marked}` is not on the card; runs were {texts:#?}"
+    );
+
+    // 5b. The hover holds the cap detail and the row.
+    let hover = texts
+        .iter()
+        .find(|t| t.contains(&detail))
+        .unwrap_or_else(|| panic!("the cap detail `{detail}` is on no hover; runs {texts:#?}"));
+    assert!(
+        hover.contains(CAP_ANCHOR_ID),
+        "the cap hover does not name the row: {hover}"
+    );
+
+    // 5c. The cap line replaces the bare combined-scale token.
+    assert!(
+        !texts.iter().any(|t| t.starts_with("approx ×")),
+        "a capped row still paints the bare `approx ×` token; runs were {texts:#?}"
     );
 }
