@@ -264,3 +264,48 @@ The questions as asked:
   speed. The rivmap100 Phase 1 arms need `Fixed(0.5)` to reproduce.
 - **Q8** Show the source stock in the GUI? **Rail hover only** ("After 3D
   Rough · 0.20 mm"); the full record on MCP and CLI.
+
+## 8. Stage 2 result (2026-09-24)
+
+What landed, against §3:
+
+- One stored `SimulationResolution { Auto, Fixed }` on the session and in
+  `[job.simulation] resolution_mm`; one setter row
+  `SetSimulationResolution`; `Auto` project-wide (`session/rest_stock.rs`).
+- `SourceStock` (`compute/source_stock.rs`): cell, carve kernel, and a
+  geometry digest of each carved toolpath. The digest leaves out feeds,
+  because the adaptive feed modulation rewrites feeds after each
+  simulation. The simulator writes one record per snapshot
+  (`SimulationResult::prior_stock_sources`); `start` copies it onto
+  `ToolpathStats::source_stock`; the sweep in `try_with_effects` drops a
+  rest result whose record no longer matches.
+- The GUI builder carves core results (M-C). MCP `generate_toolpath` never
+  opens the confirm modal (G-MCPMODAL). MCP `run_simulation`,
+  `generate_all` and the new `set_simulation_resolution` tool set the
+  stored value and say so. The CLI reads the stored value; `--resolution`
+  is an override that `summary.json` names.
+
+Deviations from the plan:
+
+- §3.2 said revision; the code uses a geometry digest (review point 2).
+- The comparison uses the REQUESTED cell on both sides, not the clamped
+  one: the clamp is a pure function of the request and the stock.
+- The parity test found a new gap: the cutting-metrics kernel and the plain
+  kernel carve DIFFERENT stock (fixture snapshot digest `b491…` against
+  `f458…`, every other input equal). The CLI and MCP always carve with
+  metrics; the GUI followed its capture toggle. Fix: the record carries the
+  kernel, only the metrics carve is current, and every GUI plan simulation
+  carves with metrics. A plain GUI Run Simulation with capture off leaves
+  rest snapshots that read Pending ("carved without cutting metrics").
+- The core builder skipped no disabled row with a result; it now does, as
+  the GUI builder does.
+- One code commit, not four: the struct changes cross all four crates, and
+  a split commit would not build.
+
+Open for the operator:
+
+- **Q9** The two carve kernels disagree. Recommendation: every GUI
+  simulation carves with metrics and the capture toggle goes, or the two
+  kernels are made to carve the same stock (a `dexel_stock/` change).
+- `tool_load/optimize/outcome.rs` still sets `auto_resolution` for its
+  isolated runs (power session).
