@@ -74,23 +74,24 @@ instrument, 9699f0d5) on the rivmap100 demo copy.
   `strategy` silent fallback. Feeds session owns: `ramp_feed_rate` value +
   Suggest write, G10 (entry params per tool), optimize-resolution parity gap.
 
-## Extrapolation programme — 2026-09-24 (ruled; P1 G1 and P2 G2 landed)
+## Extrapolation programme — 2026-09-24/25 (ruled; G1, G2, G3, G4, G5, G6 landed)
 
-`planning/extrapolation_2026-09-24/`: nine gap groups (size, material category,
-operation family, band, engaged geometry, drill, material physics, long/small tool
-loads, machine class). Phase 0 INVENTORY; Phases 1-2 fetch + trend per group
-(`EXTRAPOLATION_G1..G9`, verified rows in `fetch/<G>/`); operator rulings in
-`RULINGS.md` (A1 tapered key = tip, A2 point mode, A3 visible family transfer,
-A4 "Wood" serves hardwood, B1-B8; G9 Shapeoko rows parked).
-P1 (G1) LANDED 07f575d5..aa7bea60, record 2030c5e2: 54 printed micro tapered rows,
-tapered lookup at the tip, `feeds::extrapolation` (size claim forms A/B/C with the
-family's vendor spread), `FeedsSupport::Extrapolated`, card line + MCP `basis`;
-wanaka "3D Finish 6" ships (acceptance). P2 (G2) LANDED 1b69ceaa, a32ea149,
-2a398130: Onsrud 37-series V-bit rows for MDF/plywood/chipboard (refusals 512 ->
-496), one Janka table (composites unscaled), soft/hard cap per tool family.
-Visible: the Feeds card states each size claim and hardness cap. Open: A2 point
-mode next; the hardwood V-bit 0.37x question (RULINGS); B3 sim witness (ask
-first); V-bit RPM depends on whether the row prints one (B4). Not pushed.
+`planning/extrapolation_2026-09-24/`: ten gap groups. Phase 0 INVENTORY; Phases
+1-2 fetch + trend (`EXTRAPOLATION_G1..G9`, verified rows in `fetch/<G>/`);
+operator rulings in `RULINGS.md` (A1 tapered key = tip, A2 point mode, A3
+visible family transfer, A4 "Wood" serves hardwood, B1-B8; G9 parked). Landed,
+each with its §5 record: P1 G1 size (tip key, `feeds::extrapolation` size
+claim, card + MCP basis; wanaka "3D Finish 6" ships), P2 G2 (Onsrud V-bit rows
+for MDF/plywood, one Janka table, soft/hard cap), A2 G4 point mode (gate,
+modulator, advisor), A3 G3 family transfer (tapered + bull), B5 G6 drill (the
+2.5 multiplier deleted; flat end-mill plunge = side chip / Z), B4 G5 V-bit key
+(printed key, Amana 18 000 rpm transcribed). Refusals on the FM1 matrix 512 ->
+418. Visible: the Feeds card states every claim, cap, transfer and key. Next:
+the ramp-feed Suggest write (field landed 9887735d), G10 entry parameters (its
+Phases 0-2 run in another account's session, `PROMPT_G10.md`), B7, B6, the
+Optimize resolution gap. The operator owes: the B3 sim run, the bull literature
+cells, the hardwood V-bit 0.37x question. Next-session prompt:
+`planning/extrapolation_2026-09-24/PROMPT_NEXT.md`. Not pushed.
 
 ## Feeds matrix — 2026-09-23 (Phases 0-3 complete; Phase 4 in progress under the rulings)
 
