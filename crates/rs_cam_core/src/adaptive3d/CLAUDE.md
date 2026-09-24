@@ -20,10 +20,10 @@ Constant-engagement clearing on a mesh surface. The entry point is
 
 - All three `ClearingStrategy3d` variants are live. `clear_z_level` is not
   dead code. Do not propose a deletion of the AgentSearch arm.
-- This engine emits UNTAGGED vertical descents. A guard that reads the intent
-  tag alone misses them; see `../dressup/CLAUDE.md`.
-- `max_stay_down_distance_mm` is the ONE stay-down distance dial (CUT-05). The
-  unset case takes `path.rs::default_max_link_dist`. Add no second name.
+- This engine emits UNTAGGED vertical descents; see `../dressup/CLAUDE.md`.
+- `max_stay_down_distance_mm` is the ONE stay-down dial (CUT-05, unset 8 x D).
+  Add no second name. Every entry reads its floor and keep-down proof from the
+  planner stock (`clearing.rs::plan_entry`). No link feeds down into stock.
 - `Adaptive3dParams` has three groups (CUT-04): `geometry`, `depth` (the Z
   plan), `linking`. A new dial joins its group, not the top level.
 - The Z plan is ONE Depth/Pass (`path.rs::step_levels` from
@@ -34,6 +34,7 @@ Constant-engagement clearing on a mesh surface. The entry point is
 
 - `cargo test -p rs_cam_core -q --test adaptive3d_boundary_clear_parity`
 - `cargo test -p rs_cam_core -q --test adaptive3d_keep_down_link_f038b`
+- `cargo test -p rs_cam_core -q --test adaptive3d_entry_stock_aware`
 - `cargo test -p rs_cam_core -q --test adaptive3d_entry_coalescing_f038`
 - `cargo test -p rs_cam_core -q --test agent_search_coverage`
 - `cargo test -p rs_cam_core -q --test adaptive3d_subtool_channel_gouge`
