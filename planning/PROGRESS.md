@@ -90,7 +90,10 @@ instrument, 9699f0d5) on the rivmap100 demo copy.
   write): G-ENTRYREWRITE (pick_adaptive3d_entry_style writes entry_style
   on a scratch op that apply_feeds_subset never copies back, so the
   StrategyRewrote warning names a change that never ships); G-RAMPCLAMP
-  (a hand-lowered feed can leave ramp_feed_rate above the feed). Open: does 2D
+  (a hand-lowered feed can leave ramp_feed_rate above the feed). Both now
+  owned by the feeds session (G10: Q11 removes the Suggest entry-style
+  rewrite; Q6/Q8/Q9 helix radius cap, pitch and ramp-angle named rules),
+  landing after By Area WP1; By Area WP2/WP3 rebase on it. Open: does 2D
   Adaptive have the same defect (it still allows the reorder)?
 - 2026-09-25: By Area pocket tree measured
   (`planning/by_area_merge_tree_2026-09-25/`, 6f52d7a3): 3 valleys at
