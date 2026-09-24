@@ -67,8 +67,7 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
     tool_radius: f64,
     pills: Option<&PillSuggestions>,
 ) {
-    // Spec: pill stepover + depth_per_pass; leave fine_stepdown alone
-    // (finishing-pass param the LUT doesn't speak to).
+    // Spec: pill stepover + depth_per_pass.
     let stepover_sugg = pills.map(PillSuggestions::stepover);
     let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
     // The ContourSpiral strategy holds engagement flat by construction, so
@@ -180,14 +179,6 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
                 );
             }
         }
-        dv(
-            ui,
-            p(OperationType::Adaptive3d, "fine_stepdown", "Fine Stepdown:"),
-            &mut cfg.fine_stepdown,
-            " mm",
-            0.1,
-            0.0..=10.0,
-        );
         ui.label("Detect Flat:");
         ui.checkbox(&mut cfg.detect_flat_areas, "");
         ui.end_row();
@@ -246,48 +237,6 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
         ui.label("Z Blend:");
         ui.checkbox(&mut cfg.z_blend, "");
         ui.end_row();
-        ui.label("Mill Shallow:").on_hover_text(
-            "Insert fine sub-passes on low-slope cells within each \
-                     DPP descent. Steep walls keep the normal DPP cadence; \
-                     shallow areas come off the rough nearly smooth. \
-                     Works with any clearing strategy.",
-        );
-        ui.checkbox(&mut cfg.mill_shallow_areas, "");
-        ui.end_row();
-        if cfg.mill_shallow_areas {
-            let mut angle = cfg.shallow_angle_deg.unwrap_or(30.0);
-            ui.label("Shallow Angle:");
-            ui.horizontal(|ui| {
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut angle)
-                            .speed(1.0)
-                            .range(5.0..=60.0)
-                            .suffix("°"),
-                    )
-                    .changed()
-                {
-                    cfg.shallow_angle_deg = Some(angle);
-                }
-            });
-            ui.end_row();
-            let mut step = cfg.shallow_stepdown.unwrap_or(cfg.depth_per_pass * 0.5);
-            ui.label("Shallow Step:");
-            ui.horizontal(|ui| {
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut step)
-                            .speed(0.05)
-                            .range(0.05..=cfg.depth_per_pass.max(0.1))
-                            .suffix(" mm"),
-                    )
-                    .changed()
-                {
-                    cfg.shallow_stepdown = Some(step);
-                }
-            });
-            ui.end_row();
-        }
     });
 }
 

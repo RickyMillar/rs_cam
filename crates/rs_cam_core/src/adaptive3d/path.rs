@@ -83,15 +83,14 @@ use std::time::Instant;
 use tracing::{debug, info};
 
 use super::clearing::{
-    ClearZLevelContext, clear_z_level_adaptive, clear_z_level_agent_2d_slice,
-    clear_z_level_contour_parallel, clear_z_level_dispatch_no_marker, detect_material_regions,
-    waterline_cleanup,
+    ClearZLevelContext, MaterialRegion, clear_z_level_adaptive, clear_z_level_agent_2d_slice,
+    clear_z_level_contour_parallel, detect_material_regions, waterline_cleanup,
 };
 use super::search::{blend_corners_3d, material_remaining_at_level_diag};
 
 use super::{
     Adaptive3dParams, Adaptive3dRuntimeAnnotation, Adaptive3dRuntimeEvent, ClearingStrategy3d,
-    EntryStyle3d, RegionOrdering, ZLevelPlanMetrics,
+    EntryStyle3d, LadderTier, RegionOrdering, ZLevelPlanMetrics,
 };
 
 /// The stay-down link distance this engine uses. There is no dial.
@@ -263,6 +262,268 @@ fn tally_segments_for_z_level(segments: &[Adaptive3dSegment]) -> ZLevelSegmentTa
     tally
 }
 
+// ── The step ladder ───────────────────────────────────────────────────
+
+/// Slab boundaries closer than this to the slab bottom are not a level of
+/// their own. The same 0.01 mm merges shelf levels into the ladder.
+const NESTED_LEVEL_EPS_MM: f64 = 0.01;
+
+/// One level of the step-ladder schedule.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct PlannedLevel {
+    /// The level Z.
+    pub(super) z: f64,
+    /// The tier index. 0 is the coarsest tier; the last tier is the base.
+    pub(super) tier: usize,
+    /// The step of the tier. The clearing engine bounds the bite of the
+    /// level with it (the link check and the F-029 raster clamp).
+    pub(super) step: f64,
+    /// True on a coarse tier: the level cuts only the cells where the whole
+    /// slab fits above the part (the fit rule). False on the base tier: the
+    /// level drapes to `surface + stock_to_leave`.
+    pub(super) clip: bool,
+}
+
+/// The ladder steps, coarsest first, with `depth_per_pass` last.
+pub(super) fn ladder_steps(depth: &super::Adaptive3dDepth) -> Vec<f64> {
+    depth
+        .coarse_steps
+        .iter()
+        .copied()
+        .chain(std::iter::once(depth.depth_per_pass))
+        .collect()
+}
+
+/// The levels of one tier in the span `(z_top, z_bot)`: `z_top - step`,
+/// `z_top - 2 step`, … while above `z_bot + eps`, then `z_bot` itself.
+///
+/// The loop subtracts the step again and again, as the planner always did,
+/// so that the single-step plan keeps its exact float values. The top call
+/// passes `eps = 0.0` for that reason. A nested call passes
+/// [`NESTED_LEVEL_EPS_MM`] so that float drift cannot put a level a hair
+/// above the slab bottom.
+pub(super) fn tier_levels(z_top: f64, z_bot: f64, step: f64, eps: f64) -> Vec<f64> {
+    let mut levels = Vec::new();
+    if step.is_nan() || step <= 0.0 {
+        if z_bot < z_top {
+            levels.push(z_bot);
+        }
+        return levels;
+    }
+    let mut z = z_top - step;
+    while z > z_bot + eps {
+        levels.push(z);
+        z -= step;
+    }
+    if z_bot < z_top {
+        levels.push(z_bot); // Always include the final level of the span.
+    }
+    levels
+}
+
+/// The whole schedule, in cut order (plan §3.4, ruled 2026-09-24).
+///
+/// `top_levels` are the boundaries of the coarsest tier, top down (the
+/// coarsest-step levels, the short last level at `z_bottom` and the shelf
+/// levels of Detect Flat). Each pair of consecutive boundaries is one slab.
+/// For each slab the tier cuts the slab bottom first, then each finer
+/// sub-slab runs top down, recursively:
+///
+/// ```text
+/// [10, 5, 1] from Z 0:
+///   10@-10 clip → { 5@-5 clip → 1@-1 … 1@-5 drape }
+///               → { 5@-10 clip → 1@-6 … 1@-10 drape }
+/// ```
+///
+/// With one step (empty `coarse_steps`) the schedule is `top_levels` in
+/// order, each a base-tier level: the plan of before.
+pub(super) fn plan_step_ladder(
+    steps: &[f64],
+    stock_top_z: f64,
+    top_levels: &[f64],
+) -> Vec<PlannedLevel> {
+    let mut out = Vec::new();
+    let mut z_top = stock_top_z;
+    for &z_bot in top_levels {
+        push_slab(steps, 0, z_top, z_bot, &mut out);
+        z_top = z_bot;
+    }
+    out
+}
+
+/// One slab of tier `tier`: its bottom level, then its finer sub-slabs.
+fn push_slab(steps: &[f64], tier: usize, z_top: f64, z_bot: f64, out: &mut Vec<PlannedLevel>) {
+    let Some(&step) = steps.get(tier) else {
+        return;
+    };
+    let is_base = tier + 1 >= steps.len();
+    out.push(PlannedLevel {
+        z: z_bot,
+        tier,
+        step,
+        clip: !is_base,
+    });
+    if is_base {
+        return;
+    }
+    let Some(&finer) = steps.get(tier + 1) else {
+        return;
+    };
+    let mut sub_top = z_top;
+    for sub_bot in tier_levels(z_top, z_bot, finer, NESTED_LEVEL_EPS_MM) {
+        push_slab(steps, tier + 1, sub_top, sub_bot, out);
+        sub_top = sub_bot;
+    }
+}
+
+/// Where a level sits in its run: its index and the run length for the
+/// runtime marker, the tier count, and the region for By Area.
+struct LevelSlot<'r> {
+    index: usize,
+    total: usize,
+    tiers: usize,
+    region: Option<(usize, &'r MaterialRegion)>,
+}
+
+/// Clear one planned level. The ByArea and the Global branches both call
+/// this function; it pushes the level marker, runs the clearing strategy
+/// and fills the `z_level_clear` debug span.
+///
+/// The caller sets `ctx.depth_per_pass` to the tier step first.
+#[allow(clippy::too_many_arguments)]
+fn clear_planned_level(
+    ctx: &ClearZLevelContext<'_>,
+    material_stock: &mut TriDexelStock,
+    surface_hm: &SurfaceHeightmap,
+    level: &PlannedLevel,
+    slot: LevelSlot<'_>,
+    segments: &mut Vec<Adaptive3dSegment>,
+    last_pos: &mut Option<P3>,
+    planner_eng: &mut Vec<(P3, f64)>,
+    cancel: &dyn CancelCheck,
+) -> Result<(), Cancelled> {
+    let z_level = level.z;
+    let tier = LadderTier {
+        index: level.tier,
+        total: slot.tiers,
+        step_mm: level.step,
+        clip: level.clip,
+    };
+    let level_event = match slot.region {
+        Some((region_idx, _)) => Adaptive3dRuntimeEvent::RegionZLevel {
+            region_index: region_idx + 1,
+            z_level,
+            level_index: slot.index + 1,
+            level_total: slot.total,
+            tier,
+            metrics: ZLevelPlanMetrics::default(),
+        },
+        None => Adaptive3dRuntimeEvent::GlobalZLevel {
+            z_level,
+            level_index: slot.index + 1,
+            level_total: slot.total,
+            tier,
+            metrics: ZLevelPlanMetrics::default(),
+        },
+    };
+    let region = slot.region.map(|(_, r)| r);
+    let level_scope = ctx.debug.as_ref().map(|dctx| {
+        let title = match slot.region {
+            Some((region_idx, _)) => format!(
+                "Region {} Z {:.3} ({}/{}){}",
+                region_idx + 1,
+                z_level,
+                slot.index + 1,
+                slot.total,
+                tier.label_suffix()
+            ),
+            None => format!(
+                "Z {:.3} ({}/{}){}",
+                z_level,
+                slot.index + 1,
+                slot.total,
+                tier.label_suffix()
+            ),
+        };
+        let scope = dctx.start_span("z_level_clear", title);
+        scope.set_z_level(z_level);
+        if let Some((region_idx, _)) = slot.region {
+            scope.set_counter("region_index", (region_idx + 1) as f64);
+        }
+        scope.set_counter("tier_index", level.tier as f64);
+        scope.set_counter("tier_clip", if level.clip { 1.0 } else { 0.0 });
+        scope.set_counter("tier_step_mm", level.step);
+        let diag =
+            material_remaining_at_level_diag(material_stock, surface_hm, z_level, ctx.stock_to_leave);
+        scope.set_counter("material_remaining_pre", diag.fraction);
+        scope.set_counter("floor_cells_total", diag.cells_total as f64);
+        scope.set_counter("floor_cells_at_z", diag.cells_at_z as f64);
+        scope.set_counter("floor_cells_surf_above", diag.cells_surf_above as f64);
+        scope.set_counter("floor_cells_with_material", diag.cells_with_material as f64);
+        scope
+    });
+    let segs_before = segments.len();
+    match ctx.clearing_strategy {
+        ClearingStrategy3d::ContourParallel => {
+            segments.push(Adaptive3dSegment::Marker(level_event));
+            clear_z_level_contour_parallel(
+                ctx,
+                material_stock,
+                surface_hm,
+                z_level,
+                segments,
+                last_pos,
+                region,
+                cancel,
+            )?;
+        }
+        ClearingStrategy3d::Adaptive => {
+            segments.push(Adaptive3dSegment::Marker(level_event));
+            clear_z_level_adaptive(
+                ctx,
+                material_stock,
+                surface_hm,
+                z_level,
+                segments,
+                last_pos,
+                region,
+                cancel,
+            )?;
+        }
+        ClearingStrategy3d::AgentSearch | ClearingStrategy3d::ContourSpiral => {
+            clear_z_level_agent_2d_slice(
+                ctx,
+                material_stock,
+                surface_hm,
+                z_level,
+                segments,
+                last_pos,
+                planner_eng,
+                region,
+                Some(level_event),
+                cancel,
+            )?;
+        }
+    }
+    if let Some(scope) = level_scope {
+        let tally = tally_segments_for_z_level(&segments[segs_before..]);
+        scope.set_counter("planner_cut_segments", tally.cut_segs as f64);
+        scope.set_counter("planner_rapid_segments", tally.rapid_segs as f64);
+        scope.set_counter("planner_link_segments", tally.link_segs as f64);
+        scope.set_counter("planner_cut_mm", tally.cut_mm);
+        scope.set_counter("planner_cut_path_points", tally.cut_path_points as f64);
+        let diag_post =
+            material_remaining_at_level_diag(material_stock, surface_hm, z_level, ctx.stock_to_leave);
+        scope.set_counter("material_remaining_post", diag_post.fraction);
+        scope.set_counter(
+            "floor_cells_with_material_post",
+            diag_post.cells_with_material as f64,
+        );
+        scope.finish();
+    }
+    Ok(())
+}
+
 // ── Main loop ─────────────────────────────────────────────────────────
 
 /// Output of [`adaptive_3d_segments`]. The `final_material_stock` and
@@ -429,24 +690,6 @@ pub(super) fn adaptive_3d_segments(
     // Compute slope map for slope-aware pre-stamping and selective waterline cleanup.
     let slope_map = surface_hm.slope_map();
 
-    // Pre-compute the shallow-area mask once (it only depends on the
-    // surface geometry, not on the running stock). Indexed row-major,
-    // same layout as the surface heightmap / slope_map.angles. Cell is
-    // `true` when its surface slope < the tier angle. We toggle
-    // ctx.shallow_mask between this and None at the per-Z-level loop
-    // boundary: None for the main DPP clear, Some(mask) for shallow
-    // sub-passes within each DPP descent.
-    let shallow_mask: Option<Vec<bool>> = match params.depth.shallow_tier {
-        Some(tier) if tier.stepdown > 0.0 && tier.stepdown < params.depth.depth_per_pass => Some(
-            slope_map
-                .angles
-                .iter()
-                .map(|&a| a < tier.angle_rad)
-                .collect(),
-        ),
-        _ => None,
-    };
-
     // Clear material at cells outside the mesh XY footprint.
     // Drop-cutter returns min_z for cells beyond the mesh edge, creating phantom
     // "deep material" that the tool can never reach. Mark these as already cleared
@@ -567,26 +810,28 @@ pub(super) fn adaptive_3d_segments(
         }
     }
 
-    // Compute Z levels: stock_top down to surface bottom + stock_to_leave.
-    // A user-pinned heights `bottom_z` (params.depth.z_floor) clamps the plan —
-    // the surface heightmap reads the mesh-bbox floor through holes in
-    // open meshes, and pre-clamp there was no lever to stop the final
-    // level diving there (heights audit 2026-06-12, findings 2 + 3).
+    // The Z plan: the step ladder (plan §3.4). A user-pinned heights
+    // `bottom_z` (params.depth.z_floor) clamps the plan — the surface
+    // heightmap reads the mesh-bbox floor through holes in open meshes, and
+    // pre-clamp there was no lever to stop the final level diving there
+    // (heights audit 2026-06-12, findings 2 + 3).
     let z_plan_scope = debug_ctx.map(|ctx| ctx.start_span("z_level_plan", "Compute Z levels"));
     let surface_bottom = surface_hm.min_z_or_bbox_floor();
     let z_bottom = (surface_bottom + params.depth.stock_to_leave)
         .max(params.depth.z_floor.unwrap_or(f64::NEG_INFINITY));
-    let mut z_levels = Vec::new();
-    let mut z = params.depth.stock_top_z - params.depth.depth_per_pass;
-    while z > z_bottom {
-        z_levels.push(z);
-        z -= params.depth.depth_per_pass;
-    }
-    if z_bottom < params.depth.stock_top_z {
-        z_levels.push(z_bottom); // Always include final level at the surface
-    }
+    let steps = ladder_steps(&params.depth);
+    // The boundaries of the coarsest tier: stock top down to `z_bottom` at
+    // the coarsest step, plus one short last level at `z_bottom`. With an
+    // empty `coarse_steps` this is the single-step ladder of before.
+    let coarsest = steps
+        .first()
+        .copied()
+        .unwrap_or(params.depth.depth_per_pass);
+    let mut z_levels = tier_levels(params.depth.stock_top_z, z_bottom, coarsest, 0.0);
 
-    // Fix 5: Flat area detection — histogram surface Z, insert levels at shelves
+    // Fix 5: Flat area detection — histogram surface Z, insert levels at
+    // shelves. A shelf level is a boundary of the coarsest tier, so every
+    // finer tier sees it as a slab boundary (F8).
     if params.depth.detect_flat_areas {
         let flat_levels = flat_shelf_levels(
             &surface_hm,
@@ -605,51 +850,21 @@ pub(super) fn adaptive_3d_segments(
         }
     }
 
-    // Fix 4: Fine stepdown — insert intermediate Z levels between major levels
-    if let Some(fine_step) = params.depth.fine_stepdown
-        && fine_step > 0.0
-        && fine_step < params.depth.depth_per_pass
-    {
-        let major_levels = z_levels.clone();
-        let mut all_levels = Vec::new();
-        // Insert intermediates between stock_top and first level
-        let first_start = params.depth.stock_top_z;
-        for window in std::iter::once(&first_start)
-            .chain(major_levels.iter())
-            .collect::<Vec<_>>()
-            .windows(2)
-        {
-            let z_top = *window[0];
-            let z_bot = *window[1];
-            let mut iz = z_top - fine_step;
-            while iz > z_bot + fine_step * 0.5 {
-                all_levels.push(iz);
-                iz -= fine_step;
-            }
-            all_levels.push(z_bot); // Always include the major level
-        }
-        all_levels.sort_by(|a, b| b.total_cmp(a));
-        all_levels.dedup_by(|a, b| (*a - *b).abs() < 0.01);
-        debug!(
-            from = z_levels.len(),
-            to = all_levels.len(),
-            fine_step = fine_step,
-            "Fine stepdown expanded Z levels"
-        );
-        z_levels = all_levels;
-    }
+    let schedule = plan_step_ladder(&steps, params.depth.stock_top_z, &z_levels);
 
     info!(
-        count = z_levels.len(),
-        z_top = z_levels.first().copied().unwrap_or(0.0),
-        z_bottom = z_levels.last().copied().unwrap_or(0.0),
+        count = schedule.len(),
+        tiers = steps.len(),
+        z_top = schedule.first().map_or(0.0, |l| l.z),
+        z_bottom = schedule.last().map_or(0.0, |l| l.z),
         depth_per_pass = params.depth.depth_per_pass,
         "Z levels computed"
     );
     if let Some(scope) = z_plan_scope.as_ref() {
-        scope.set_counter("count", z_levels.len() as f64);
-        scope.set_counter("z_top", z_levels.first().copied().unwrap_or(0.0));
-        scope.set_counter("z_bottom", z_levels.last().copied().unwrap_or(0.0));
+        scope.set_counter("count", schedule.len() as f64);
+        scope.set_counter("tiers", steps.len() as f64);
+        scope.set_counter("z_top", schedule.first().map_or(0.0, |l| l.z));
+        scope.set_counter("z_bottom", schedule.last().map_or(0.0, |l| l.z));
     }
 
     let target_frac = target_engagement_fraction(params.geometry.stepover, tool_radius);
@@ -693,9 +908,6 @@ pub(super) fn adaptive_3d_segments(
         z_blend: params.z_blend,
         safe_z: params.safe_z,
         min_cutting_radius: params.geometry.min_cutting_radius,
-        // Default to no mask. The per-Z-level loop toggles this to
-        // Some(&shallow_mask) for the shallow sub-passes only.
-        shallow_mask: None,
         min_region_cut_length_mm: params.linking.min_region_cut_length_mm,
     };
 
@@ -749,146 +961,46 @@ pub(super) fn adaptive_3d_segments(
                     },
                 ));
 
-                let region_z_levels: Vec<f64> = z_levels
+                // The region's part of the schedule, in schedule order. A
+                // level below the region's lowest surface has nothing to cut.
+                let region_levels: Vec<PlannedLevel> = schedule
                     .iter()
                     .copied()
-                    .filter(|&z| z >= region.surface_z_min + params.depth.stock_to_leave - 0.01)
+                    .filter(|l| l.z >= region.surface_z_min + params.depth.stock_to_leave - 0.01)
                     .collect();
 
-                for (li, &z_level) in region_z_levels.iter().enumerate() {
+                for (li, level) in region_levels.iter().enumerate() {
                     check_cancel(cancel)?;
-                    let level_event = Adaptive3dRuntimeEvent::RegionZLevel {
-                        region_index: region_idx + 1,
-                        z_level,
-                        level_index: li + 1,
-                        level_total: region_z_levels.len(),
-                        metrics: ZLevelPlanMetrics::default(),
-                    };
-                    let level_scope = debug_ctx.map(|dctx| {
-                        let scope = dctx.start_span(
-                            "z_level_clear",
-                            format!(
-                                "Region {} Z {:.3} ({}/{})",
-                                region_idx + 1,
-                                z_level,
-                                li + 1,
-                                region_z_levels.len()
-                            ),
-                        );
-                        scope.set_z_level(z_level);
-                        scope.set_counter("region_index", (region_idx + 1) as f64);
-                        let diag = material_remaining_at_level_diag(
-                            &material_stock,
-                            &surface_hm,
-                            z_level,
-                            ctx.stock_to_leave,
-                        );
-                        scope.set_counter("material_remaining_pre", diag.fraction);
-                        scope.set_counter("floor_cells_total", diag.cells_total as f64);
-                        scope.set_counter("floor_cells_at_z", diag.cells_at_z as f64);
-                        scope.set_counter("floor_cells_surf_above", diag.cells_surf_above as f64);
-                        scope.set_counter(
-                            "floor_cells_with_material",
-                            diag.cells_with_material as f64,
-                        );
-                        scope
-                    });
-                    let segs_before = segments.len();
-                    match ctx.clearing_strategy {
-                        ClearingStrategy3d::ContourParallel => {
-                            segments.push(Adaptive3dSegment::Marker(level_event));
-                            clear_z_level_contour_parallel(
-                                &ctx,
-                                &mut material_stock,
-                                &surface_hm,
-                                z_level,
-                                &mut segments,
-                                &mut last_pos,
-                                Some(region),
-                                cancel,
-                            )?;
-                        }
-                        ClearingStrategy3d::Adaptive => {
-                            segments.push(Adaptive3dSegment::Marker(level_event));
-                            clear_z_level_adaptive(
-                                &ctx,
-                                &mut material_stock,
-                                &surface_hm,
-                                z_level,
-                                &mut segments,
-                                &mut last_pos,
-                                Some(region),
-                                cancel,
-                            )?;
-                        }
-                        ClearingStrategy3d::AgentSearch | ClearingStrategy3d::ContourSpiral => {
-                            clear_z_level_agent_2d_slice(
-                                &ctx,
-                                &mut material_stock,
-                                &surface_hm,
-                                z_level,
-                                &mut segments,
-                                &mut last_pos,
-                                &mut planner_eng,
-                                Some(region),
-                                Some(level_event),
-                                cancel,
-                            )?;
-                        }
-                    }
-                    // Shallow sub-passes within this DPP descent — strategy-
-                    // agnostic. Restricted to low-slope cells via
-                    // ctx.shallow_mask, then dispatched back into the same
-                    // clear function the main pass used.
-                    if let (Some(mask), Some(step)) = (
-                        shallow_mask.as_deref(),
-                        params.depth.shallow_tier.map(|t| t.stepdown),
-                    ) {
-                        ctx.shallow_mask = Some(mask);
-                        let next_main_z = z_level - params.depth.depth_per_pass;
-                        let mut sub_z = z_level - step;
-                        while sub_z > next_main_z + 1e-3 {
-                            check_cancel(cancel)?;
-                            clear_z_level_dispatch_no_marker(
-                                &ctx,
-                                &mut material_stock,
-                                &surface_hm,
-                                sub_z,
-                                &mut segments,
-                                &mut last_pos,
-                                &mut planner_eng,
-                                Some(region),
-                                cancel,
-                            )?;
-                            sub_z -= step;
-                        }
-                        ctx.shallow_mask = None;
-                    }
-                    if let Some(scope) = level_scope {
-                        let tally = tally_segments_for_z_level(&segments[segs_before..]);
-                        scope.set_counter("planner_cut_segments", tally.cut_segs as f64);
-                        scope.set_counter("planner_rapid_segments", tally.rapid_segs as f64);
-                        scope.set_counter("planner_link_segments", tally.link_segs as f64);
-                        scope.set_counter("planner_cut_mm", tally.cut_mm);
-                        scope.set_counter("planner_cut_path_points", tally.cut_path_points as f64);
-                        let diag_post = material_remaining_at_level_diag(
-                            &material_stock,
-                            &surface_hm,
-                            z_level,
-                            ctx.stock_to_leave,
-                        );
-                        scope.set_counter("material_remaining_post", diag_post.fraction);
-                        scope.set_counter(
-                            "floor_cells_with_material_post",
-                            diag_post.cells_with_material as f64,
-                        );
-                        scope.finish();
-                    }
+                    ctx.depth_per_pass = level.step;
+                    clear_planned_level(
+                        &ctx,
+                        &mut material_stock,
+                        &surface_hm,
+                        level,
+                        LevelSlot {
+                            index: li,
+                            total: region_levels.len(),
+                            tiers: steps.len(),
+                            region: Some((region_idx, region)),
+                        },
+                        &mut segments,
+                        &mut last_pos,
+                        &mut planner_eng,
+                        cancel,
+                    )?;
                 }
             }
 
-            // Waterline cleanup once at bottom Z
-            if let Some(&z_bottom_level) = z_levels.last() {
+            // Waterline cleanup once at bottom Z, after every region.
+            //
+            // F9 (known limit, 2026-09-24): the cleanup does not run per
+            // region after the last slab of the region. `waterline_cleanup`
+            // traces every mesh contour at the Z and has no region filter,
+            // and a region is only a bounding box (F4). A per-region run
+            // would cut the contours of regions that are not roughed yet,
+            // through their full stock. A region filter by label mask (plan
+            // Phase 3) must come first.
+            if let Some(bottom) = schedule.last() {
                 segments.push(Adaptive3dSegment::Marker(
                     Adaptive3dRuntimeEvent::WaterlineCleanup,
                 ));
@@ -899,7 +1011,7 @@ pub(super) fn adaptive_3d_segments(
                     &lut,
                     &slope_map,
                     &mut material_stock,
-                    z_bottom_level,
+                    bottom.z,
                     tool_radius,
                     cell_size,
                     params.safe_z,
@@ -914,128 +1026,41 @@ pub(super) fn adaptive_3d_segments(
             }
         }
         RegionOrdering::Global => {
-            for (level_idx, &z_level) in z_levels.iter().enumerate() {
+            for (level_idx, level) in schedule.iter().enumerate() {
                 check_cancel(cancel)?;
-                let level_event = Adaptive3dRuntimeEvent::GlobalZLevel {
-                    z_level,
-                    level_index: level_idx + 1,
-                    level_total: z_levels.len(),
-                    metrics: ZLevelPlanMetrics::default(),
-                };
-                let level_scope = debug_ctx.map(|dctx| {
-                    let scope = dctx.start_span(
-                        "z_level_clear",
-                        format!("Z {:.3} ({}/{})", z_level, level_idx + 1, z_levels.len()),
-                    );
-                    scope.set_z_level(z_level);
-                    let diag = material_remaining_at_level_diag(
-                        &material_stock,
-                        &surface_hm,
-                        z_level,
-                        ctx.stock_to_leave,
-                    );
-                    scope.set_counter("material_remaining_pre", diag.fraction);
-                    scope.set_counter("floor_cells_total", diag.cells_total as f64);
-                    scope.set_counter("floor_cells_at_z", diag.cells_at_z as f64);
-                    scope.set_counter("floor_cells_surf_above", diag.cells_surf_above as f64);
-                    scope.set_counter("floor_cells_with_material", diag.cells_with_material as f64);
-                    scope
-                });
-                let segs_before = segments.len();
-                match ctx.clearing_strategy {
-                    ClearingStrategy3d::ContourParallel => {
-                        segments.push(Adaptive3dSegment::Marker(level_event));
-                        clear_z_level_contour_parallel(
-                            &ctx,
-                            &mut material_stock,
-                            &surface_hm,
-                            z_level,
-                            &mut segments,
-                            &mut last_pos,
-                            None,
-                            cancel,
-                        )?;
-                    }
-                    ClearingStrategy3d::Adaptive => {
-                        segments.push(Adaptive3dSegment::Marker(level_event));
-                        clear_z_level_adaptive(
-                            &ctx,
-                            &mut material_stock,
-                            &surface_hm,
-                            z_level,
-                            &mut segments,
-                            &mut last_pos,
-                            None,
-                            cancel,
-                        )?;
-                    }
-                    ClearingStrategy3d::AgentSearch | ClearingStrategy3d::ContourSpiral => {
-                        clear_z_level_agent_2d_slice(
-                            &ctx,
-                            &mut material_stock,
-                            &surface_hm,
-                            z_level,
-                            &mut segments,
-                            &mut last_pos,
-                            &mut planner_eng,
-                            None,
-                            Some(level_event),
-                            cancel,
-                        )?;
-                    }
-                }
-                // Shallow sub-passes — strategy-agnostic, see ByArea branch
-                // for rationale.
-                if let (Some(mask), Some(step)) = (
-                    shallow_mask.as_deref(),
-                    params.depth.shallow_tier.map(|t| t.stepdown),
-                ) {
-                    ctx.shallow_mask = Some(mask);
-                    let next_main_z = z_level - params.depth.depth_per_pass;
-                    let mut sub_z = z_level - step;
-                    while sub_z > next_main_z + 1e-3 {
-                        check_cancel(cancel)?;
-                        clear_z_level_dispatch_no_marker(
-                            &ctx,
-                            &mut material_stock,
-                            &surface_hm,
-                            sub_z,
-                            &mut segments,
-                            &mut last_pos,
-                            &mut planner_eng,
-                            None,
-                            cancel,
-                        )?;
-                        sub_z -= step;
-                    }
-                    ctx.shallow_mask = None;
-                }
-                if let Some(scope) = level_scope {
-                    let tally = tally_segments_for_z_level(&segments[segs_before..]);
-                    scope.set_counter("planner_cut_segments", tally.cut_segs as f64);
-                    scope.set_counter("planner_rapid_segments", tally.rapid_segs as f64);
-                    scope.set_counter("planner_link_segments", tally.link_segs as f64);
-                    scope.set_counter("planner_cut_mm", tally.cut_mm);
-                    scope.set_counter("planner_cut_path_points", tally.cut_path_points as f64);
-                    let diag_post = material_remaining_at_level_diag(
-                        &material_stock,
-                        &surface_hm,
-                        z_level,
-                        ctx.stock_to_leave,
-                    );
-                    scope.set_counter("material_remaining_post", diag_post.fraction);
-                    scope.set_counter(
-                        "floor_cells_with_material_post",
-                        diag_post.cells_with_material as f64,
-                    );
-                    scope.finish();
-                }
+                ctx.depth_per_pass = level.step;
+                clear_planned_level(
+                    &ctx,
+                    &mut material_stock,
+                    &surface_hm,
+                    level,
+                    LevelSlot {
+                        index: level_idx,
+                        total: schedule.len(),
+                        tiers: steps.len(),
+                        region: None,
+                    },
+                    &mut segments,
+                    &mut last_pos,
+                    &mut planner_eng,
+                    cancel,
+                )?;
 
-                // Waterline cleanup at every Z-level. Historically this only
-                // ran on `is_last_level`, which meant adaptive misses at upper
-                // levels stayed for the finish pass to deal with. Running it
-                // per-level trades some generation time for cleaner roughing
-                // output and reduces load on the subsequent finish.
+                // Waterline cleanup after every base-tier level. Historically
+                // this only ran on `is_last_level`, which meant adaptive
+                // misses at upper levels stayed for the finish pass to deal
+                // with. Running it per-level trades some generation time for
+                // cleaner roughing output and reduces load on the subsequent
+                // finish.
+                //
+                // A clip (coarse) level gets no cleanup: the mesh contour at
+                // its Z lies on the wall, where the keep-out band still
+                // stands to the slab top, so a waterline there is a full
+                // coarse-step slot along the wall. The fit rule exists to
+                // stop that bite.
+                if level.clip {
+                    continue;
+                }
                 segments.push(Adaptive3dSegment::Marker(
                     Adaptive3dRuntimeEvent::WaterlineCleanup,
                 ));
@@ -1046,7 +1071,7 @@ pub(super) fn adaptive_3d_segments(
                     &lut,
                     &slope_map,
                     &mut material_stock,
-                    z_level,
+                    level.z,
                     tool_radius,
                     cell_size,
                     params.safe_z,
@@ -1805,9 +1830,8 @@ mod tests {
                 stock_to_leave: 0.5,
                 stock_top_z: 5.0,
                 z_floor: None,
-                fine_stepdown: None,
                 detect_flat_areas: false,
-                shallow_tier: None,
+                coarse_steps: Vec::new(),
             },
             linking: crate::adaptive3d::Adaptive3dLinking {
                 region_ordering: RegionOrdering::Global,

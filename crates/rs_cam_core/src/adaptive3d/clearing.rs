@@ -63,68 +63,6 @@ fn quantize_coord(v: f64) -> i64 {
     (v * 1000.0).round() as i64
 }
 
-// ── Strategy-agnostic dispatch ────────────────────────────────────────
-
-/// Run a single Z-level clear pass via the strategy on `ctx`, with no
-/// per-level marker (used for shallow sub-passes that should slot under
-/// the parent major-Z level's marker, not emit their own).
-///
-/// The main per-Z-level loops in `path.rs` push their own markers
-/// directly for the major levels — this helper exists only for the
-/// shallow sub-pass loop, which calls into the same clear function the
-/// strategy already uses for its main pass.
-#[allow(clippy::too_many_arguments)]
-pub(super) fn clear_z_level_dispatch_no_marker(
-    ctx: &ClearZLevelContext<'_>,
-    material_stock: &mut TriDexelStock,
-    surface_hm: &SurfaceHeightmap,
-    z_level: f64,
-    segments: &mut Vec<Adaptive3dSegment>,
-    last_pos: &mut Option<P3>,
-    // Stage 4 — forwarded to the spiral arm only (the other strategies
-    // produce no planner engagement).
-    planner_eng: &mut Vec<(P3, f64)>,
-    region: Option<&MaterialRegion>,
-    cancel: &dyn CancelCheck,
-) -> Result<(), Cancelled> {
-    match ctx.clearing_strategy {
-        ClearingStrategy3d::ContourParallel => clear_z_level_contour_parallel(
-            ctx,
-            material_stock,
-            surface_hm,
-            z_level,
-            segments,
-            last_pos,
-            region,
-            cancel,
-        ),
-        ClearingStrategy3d::Adaptive => clear_z_level_adaptive(
-            ctx,
-            material_stock,
-            surface_hm,
-            z_level,
-            segments,
-            last_pos,
-            region,
-            cancel,
-        ),
-        ClearingStrategy3d::AgentSearch | ClearingStrategy3d::ContourSpiral => {
-            clear_z_level_agent_2d_slice(
-                ctx,
-                material_stock,
-                surface_hm,
-                z_level,
-                segments,
-                last_pos,
-                planner_eng,
-                region,
-                None,
-                cancel,
-            )
-        }
-    }
-}
-
 // ── Region detection ──────────────────────────────────────────────────
 
 /// A connected region of material detected by flood fill on the heightmap.
@@ -303,12 +241,6 @@ pub(super) struct ClearZLevelContext<'a> {
     /// simulator will replay (segments_to_toolpath blends Cut paths
     /// before emitting feeds).
     pub(super) min_cutting_radius: f64,
-    /// When `Some`, restricts `build_material_bool_grid` to cells where
-    /// the mask is true. Row-major, indexed `row * surface_cols + col`
-    /// (matches `SurfaceHeightmap::z_values`). Used by the "mill shallow
-    /// areas" feature to run sub-passes only on low-slope cells without
-    /// disturbing the steep-side dexel state.
-    pub(super) shallow_mask: Option<&'a [bool]>,
     /// F-038: minimum forecast horizontal cutting length (mm) a marching-
     /// squares region must produce in its 2D adaptive sub-pass before the
     /// AgentSearch dispatch commits an entry plunge to it. Set to 0.0 to
@@ -325,12 +257,6 @@ pub(super) struct ClearZLevelContext<'a> {
 /// a 1-cell false border so marching squares and EDT detect edge boundaries.
 ///
 /// Returns `(padded_grid, padded_rows, padded_cols, origin_x, origin_y, cell_size)`.
-///
-/// `shallow_mask`, when `Some`, is an additional row-major filter
-/// indexed `row * cols + col` (matches `SurfaceHeightmap::z_values` /
-/// `SlopeMap` layout). Cells where the mask is `false` are treated as
-/// "no material" regardless of stock state — used by the
-/// `mill_shallow_areas` sub-pass to restrict clearing to low-slope cells.
 #[allow(clippy::indexing_slicing)] // SAFETY: padded grid indices bounded by loop ranges
 fn build_material_bool_grid(
     material_stock: &TriDexelStock,
@@ -338,7 +264,6 @@ fn build_material_bool_grid(
     z_level: f64,
     stock_to_leave: f64,
     region: Option<&MaterialRegion>,
-    shallow_mask: Option<&[bool]>,
 ) -> (Vec<bool>, usize, usize, f64, f64, f64) {
     let grid = &material_stock.z_grid;
     let rows = grid.rows;
@@ -360,14 +285,6 @@ fn build_material_bool_grid(
                 && (row < r.row_min || row > r.row_max || col < r.col_min || col > r.col_max)
             {
                 continue;
-            }
-
-            // Skip cells excluded by the shallow-area mask.
-            if let Some(mask) = shallow_mask {
-                let idx = row * cols + col;
-                if idx >= mask.len() || !mask[idx] {
-                    continue;
-                }
             }
 
             let surf_z = surface_hm.z_or_bbox_floor_at(row, col);
@@ -677,7 +594,6 @@ pub(super) fn clear_z_level_contour_parallel(
         z_level,
         ctx.stock_to_leave,
         region,
-        ctx.shallow_mask,
     );
 
     let mat_count = material_grid.iter().filter(|&&b| b).count();
@@ -866,7 +782,6 @@ pub(super) fn clear_z_level_contour_parallel(
         z_level,
         ctx.stock_to_leave,
         region,
-        ctx.shallow_mask,
     );
     let cleanup_count = cleanup_grid.iter().filter(|&&b| b).count();
     if cleanup_count > 0 {
@@ -1043,7 +958,6 @@ pub(super) fn clear_z_level_adaptive(
         z_level,
         ctx.stock_to_leave,
         region,
-        ctx.shallow_mask,
     );
 
     if !material_grid.iter().any(|&b| b) {
@@ -1493,7 +1407,6 @@ fn detect_and_order_regions(
         z_level,
         ctx.stock_to_leave,
         region,
-        ctx.shallow_mask,
     );
     if !material_grid.iter().any(|&b| b) {
         return None;

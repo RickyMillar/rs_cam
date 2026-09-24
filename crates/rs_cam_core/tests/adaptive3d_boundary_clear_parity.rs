@@ -130,9 +130,8 @@ fn base_params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
             stock_to_leave: 0.5,
             stock_top_z: STOCK_TOP_Z,
             z_floor: None,
-            fine_stepdown: None,
             detect_flat_areas: false,
-            shallow_tier: None,
+            coarse_steps: Vec::new(),
         },
         linking: Adaptive3dLinking {
             region_ordering: RegionOrdering::Global,

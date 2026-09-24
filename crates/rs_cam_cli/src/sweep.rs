@@ -585,13 +585,9 @@ scale = 2.0
 stock_top_z = 1.0
 stock_to_leave = 0.3
 entry_3d = "helix"
-fine_stepdown = 0.4
 detect_flat_areas = true
 order_by = "depth"
 strategy = "contour"
-mill_shallow_areas = true
-shallow_angle_deg = 25.0
-shallow_stepdown = 0.6
 min_region_cut_length_mm = 4.0
 max_stay_down_distance_mm = 18.0
 stay_down_clearance_mm = 0.75
@@ -624,9 +620,6 @@ stay_down_clearance_mm = 0.75
 
         let op = &back.operation[0];
         assert_eq!(op.coolant, rs_cam_core::gcode::CoolantMode::Mist);
-        assert_eq!(op.mill_shallow_areas, Some(true));
-        assert_eq!(op.shallow_angle_deg, Some(25.0));
-        assert_eq!(op.shallow_stepdown, Some(0.6));
         assert_eq!(op.min_region_cut_length_mm, Some(4.0));
         assert_eq!(op.max_stay_down_distance_mm, Some(18.0));
         assert_eq!(op.stay_down_clearance_mm, Some(0.75));

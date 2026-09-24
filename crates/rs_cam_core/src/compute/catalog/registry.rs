@@ -299,8 +299,12 @@ const ADAPTIVE3D_PARAMS: &[ParamDef] = &[
         .with_help("Helix entry radius as a multiple of the tool diameter."),
     ParamDef::required("helix_pitch", "f64")
         .with_help("Vertical drop per revolution of the helical entry move."),
-    ParamDef::required("fine_stepdown", "f64")
-        .with_help("Optional finer Z step for final passes. 0 = disabled."),
+    ParamDef::optional("coarse_steps", "vec<f64>").with_help(
+        "Step ladder: coarser Z steps above Depth/Pass, coarsest first (for \
+         example [10] or [10, 5]). A coarse step cuts only where its whole \
+         slab fits above the part; Depth/Pass then drapes the rest. Empty = \
+         one step. Contour parallel only.",
+    ),
     ParamDef::required("detect_flat_areas", "bool"),
     ParamDef::required("region_ordering", "enum:global|by_area"),
     ParamDef::required(
@@ -316,9 +320,6 @@ const ADAPTIVE3D_PARAMS: &[ParamDef] = &[
     ParamDef::required("engagement_measure", "enum:DiskArea|LeadingArc"),
     ParamDef::required("z_blend", "bool"),
     ParamDef::optional("spindle_rpm", "option<u32>"),
-    ParamDef::required("mill_shallow_areas", "bool"),
-    ParamDef::optional("shallow_angle_deg", "option<f64>"),
-    ParamDef::optional("shallow_stepdown", "option<f64>"),
     ParamDef::required("min_region_cut_length_mm", "f64"),
     // F-038b: keep-tool-down link knobs.
     ParamDef::optional("max_stay_down_distance_mm", "option<f64>"),

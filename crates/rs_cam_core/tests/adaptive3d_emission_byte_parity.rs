@@ -23,14 +23,13 @@
 //! One per `ClearingStrategy3d` variant, so the AgentSearch arm CUT-09 cuts
 //! is measured, and so is the `ContourSpiral` arm that dispatches through it.
 //! The cases deliberately turn the optional dials ON, because a rig that
-//! runs only the all-`None` parameter set cannot see a mis-threaded
-//! `shallow_stepdown`:
+//! runs only the all-`None` parameter set cannot see a mis-threaded dial:
 //!
 //! | case | strategy | dials exercised |
 //! |---|---|---|
 //! | `contour_parallel` | `ContourParallel` | the plain baseline |
-//! | `adaptive` | `Adaptive` | `fine_stepdown`, `detect_flat_areas`, `z_blend` |
-//! | `agent_search` | `AgentSearch` | `boundary`, the shallow tier, stay-down, `min_region_cut_length_mm` |
+//! | `adaptive` | `Adaptive` | `detect_flat_areas`, `z_blend` |
+//! | `agent_search` | `AgentSearch` | `boundary`, stay-down, `min_region_cut_length_mm` |
 //! | `contour_spiral` | `ContourSpiral` | `trochoid_cap_mult`, `RegionOrdering::ByArea` |
 //!
 //! ## Determinism
@@ -57,7 +56,7 @@
 
 use rs_cam_core::adaptive3d::{
     Adaptive3dDepth, Adaptive3dGeometry, Adaptive3dLinking, Adaptive3dParams, ClearingStrategy3d,
-    EntryStyle3d, RegionOrdering, ShallowTier, adaptive_3d_toolpath_with_cancel,
+    EntryStyle3d, RegionOrdering, adaptive_3d_toolpath_with_cancel,
 };
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere};
 use rs_cam_core::polygon::Polygon2;
@@ -94,9 +93,8 @@ fn base_params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
             stock_to_leave: 0.5,
             stock_top_z: STOCK_TOP_Z,
             z_floor: None,
-            fine_stepdown: None,
             detect_flat_areas: false,
-            shallow_tier: None,
+            coarse_steps: Vec::new(),
         },
         linking: Adaptive3dLinking {
             region_ordering: RegionOrdering::Global,
@@ -121,7 +119,6 @@ fn case_params(case: &str) -> Adaptive3dParams {
         "contour_parallel" => base_params(ClearingStrategy3d::ContourParallel),
         "adaptive" => {
             let mut p = base_params(ClearingStrategy3d::Adaptive);
-            p.depth.fine_stepdown = Some(1.5);
             p.depth.detect_flat_areas = true;
             p.z_blend = true;
             p
@@ -129,10 +126,6 @@ fn case_params(case: &str) -> Adaptive3dParams {
         "agent_search" => {
             let mut p = base_params(ClearingStrategy3d::AgentSearch);
             p.geometry.boundary = Some(Polygon2::rectangle(-12.0, -12.0, 6.0, 12.0));
-            p.depth.shallow_tier = Some(ShallowTier {
-                angle_rad: 30.0_f64.to_radians(),
-                stepdown: 1.0,
-            });
             p.linking.max_stay_down_distance_mm = Some(8.0);
             p.linking.min_region_cut_length_mm = 3.0;
             p

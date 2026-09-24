@@ -241,20 +241,12 @@ pub struct OperationDef {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entry_3d: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub fine_stepdown: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub detect_flat_areas: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_by: Option<String>,
     /// Clearing strategy: "agent" (default) or "contour"/"contour_parallel".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub strategy: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mill_shallow_areas: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub shallow_angle_deg: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub shallow_stepdown: Option<f64>,
     /// F-038: minimum forecast cut length (mm) for a marching-squares region
     /// to be retained in AgentSearch. Default 5.0 mm. Set to 0.0 to disable.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1368,19 +1360,6 @@ fn job_params_for(
                 "detect_flat_areas",
                 json!(op.detect_flat_areas.unwrap_or(false)),
             ));
-            if let Some(fs) = op.fine_stepdown {
-                p.push(("fine_stepdown", json!(fs)));
-            }
-            p.push((
-                "mill_shallow_areas",
-                json!(op.mill_shallow_areas.unwrap_or(false)),
-            ));
-            if let Some(a) = op.shallow_angle_deg {
-                p.push(("shallow_angle_deg", json!(a)));
-            }
-            if let Some(s) = op.shallow_stepdown {
-                p.push(("shallow_stepdown", json!(s)));
-            }
             p.push((
                 "min_region_cut_length_mm",
                 json!(op.min_region_cut_length_mm.unwrap_or(15.0)),

@@ -101,9 +101,8 @@ fn agent_search_axial_doc_diag() {
             stock_to_leave: 0.5,
             stock_top_z: stock_top,
             z_floor: None,
-            fine_stepdown: None,
             detect_flat_areas: false,
-            shallow_tier: None,
+            coarse_steps: Vec::new(),
         },
         linking: Adaptive3dLinking {
             region_ordering: RegionOrdering::Global,

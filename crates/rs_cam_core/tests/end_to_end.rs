@@ -530,9 +530,8 @@ fn test_adaptive3d_rapids_lift_before_xy_traverse() {
             stock_to_leave: 0.5,
             stock_top_z: mesh.bbox.max.z + 5.0,
             z_floor: None,
-            fine_stepdown: None,
             detect_flat_areas: false,
-            shallow_tier: None,
+            coarse_steps: Vec::new(),
         },
         linking: Adaptive3dLinking {
             region_ordering: RegionOrdering::Global,

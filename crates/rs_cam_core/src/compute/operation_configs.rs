@@ -639,7 +639,16 @@ pub struct Adaptive3dConfig {
     /// Helix entry: vertical pitch in mm. Only honored when `entry_style == Helix`.
     #[serde(default = "default_adaptive3d_helix_pitch")]
     pub helix_pitch: f64,
-    pub fine_stepdown: f64,
+    /// The coarser steps of the step ladder, coarsest first (mm). Each
+    /// entry is larger than the next one and larger than `depth_per_pass`,
+    /// which stays the base step. A coarse step cuts only where its whole
+    /// slab fits above the part; the base step drapes as before. Empty =
+    /// the single-step plan. Only `contour_parallel` runs a ladder; the
+    /// adapter refuses one on another strategy. The GUI cannot set this
+    /// key until Phase 4 of
+    /// `planning/adaptive3d_step_ladder_roughing_2026-09-24/PLAN.md`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub coarse_steps: Vec<f64>,
     pub detect_flat_areas: bool,
     pub region_ordering: RegionOrdering,
     #[serde(default = "default_clearing_strategy")]
@@ -665,22 +674,6 @@ pub struct Adaptive3dConfig {
     pub z_blend: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
-    /// Insert fine sub-passes within each DPP descent, restricted to
-    /// cells whose surface slope is below `shallow_angle_deg`. Steep
-    /// areas keep stepping down at `depth_per_pass` as before; shallow
-    /// areas get a finer staircase straight from the rough so finishing
-    /// passes have less terracing to remove. Off by default.
-    #[serde(default)]
-    pub mill_shallow_areas: bool,
-    /// Slope angle threshold (degrees from horizontal) below which a
-    /// cell counts as "shallow." Typical 25-35°. `None` ⇒ defaults to
-    /// 30° at planning time.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub shallow_angle_deg: Option<f64>,
-    /// Stepdown within shallow regions. `None` ⇒ defaults to half of
-    /// `depth_per_pass` at planning time.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub shallow_stepdown: Option<f64>,
     /// F-038: minimum total horizontal cutting length (mm) a marching-squares
     /// region must produce in its 2D adaptive sub-pass (perimeter sweep +
     /// adaptive walk) before the planner commits an entry plunge to it.
@@ -737,7 +730,7 @@ impl Default for Adaptive3dConfig {
             ramp_angle_deg: default_adaptive3d_ramp_angle(),
             helix_radius_factor: default_adaptive3d_helix_radius_factor(),
             helix_pitch: default_adaptive3d_helix_pitch(),
-            fine_stepdown: 0.0,
+            coarse_steps: Vec::new(),
             detect_flat_areas: false,
             region_ordering: RegionOrdering::Global,
             clearing_strategy: ClearingStrategy::ContourParallel,
@@ -745,9 +738,6 @@ impl Default for Adaptive3dConfig {
             engagement_measure: crate::adaptive::EngagementMeasure::DiskArea,
             z_blend: false,
             spindle_rpm: None,
-            mill_shallow_areas: false,
-            shallow_angle_deg: None,
-            shallow_stepdown: None,
             min_region_cut_length_mm: default_min_region_cut_length_mm(),
             // F-038b: leave the planner to pick 8×diameter at toolpath
             // build time (None) unless the operator explicitly overrides
@@ -755,6 +745,19 @@ impl Default for Adaptive3dConfig {
             max_stay_down_distance_mm: None,
             stay_down_clearance_mm: default_stay_down_clearance_mm(),
         }
+    }
+}
+
+impl Adaptive3dConfig {
+    /// The deepest axial bite the step ladder commands:
+    /// `max(coarse_steps ∪ {depth_per_pass})`. A reader that treats the
+    /// pass depth as the deepest bite must read this value (D7 in the
+    /// step-ladder plan).
+    pub fn deepest_step(&self) -> f64 {
+        self.coarse_steps
+            .iter()
+            .copied()
+            .fold(self.depth_per_pass, f64::max)
     }
 }
 

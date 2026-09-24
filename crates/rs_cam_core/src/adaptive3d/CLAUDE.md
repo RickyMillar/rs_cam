@@ -28,7 +28,8 @@ Constant-engagement clearing on a mesh surface. The entry point is
 - `Adaptive3dParams` carries three groups (CUT-04): `geometry` (the cutter and
   the XY frame), `depth` (the Z plan) and `linking` (order, entry floor,
   stay-down). A new dial joins the group it belongs to, not the top level.
-  The shallow tier is ONE `Option<ShallowTier>`; do not split it again.
+- The Z plan is ONE step ladder (`path.rs::plan_step_ladder`). Add no second
+  level source. "The deepest bite" is `deepest_step()`, not `depth_per_pass`.
 
 ## Sentries
 

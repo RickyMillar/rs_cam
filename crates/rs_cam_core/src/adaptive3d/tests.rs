@@ -127,9 +127,8 @@ fn default_params() -> Adaptive3dParams {
             stock_to_leave: 0.5,
             stock_top_z: 25.0,
             z_floor: None,
-            fine_stepdown: None,
             detect_flat_areas: false,
-            shallow_tier: None,
+            coarse_steps: Vec::new(),
         },
         linking: Adaptive3dLinking {
             region_ordering: RegionOrdering::Global, // Disabled by default in tests — tests that need to exercise
@@ -549,61 +548,121 @@ fn test_helix_entry_no_vertical_plunge() {
     );
 }
 
-// ── Fix 4: Fine stepdown test ──────────────────────────────────────
+// ── The step ladder schedule (plan §3.4) ──────────────────────────────
 
+/// The schedule of a single-step plan must be the old level loop, bit for
+/// bit: the byte-parity fixtures of every existing job depend on it. The
+/// step 0.7 and the odd stock top make the repeated subtraction drift, so a
+/// `top - k * step` form would fail here.
 #[test]
-fn test_fine_stepdown_inserts_levels() {
-    // Verify that fine_stepdown produces more Z levels
-    let stock_top: f64 = 20.0;
-    let depth_per_pass: f64 = 5.0;
-    let fine_step: f64 = 1.0;
-    let surface_bottom: f64 = 0.0;
-    let stock_to_leave: f64 = 0.5;
-    let z_bottom = surface_bottom + stock_to_leave;
-
-    // Major levels only
-    let mut major_levels = Vec::new();
-    let mut z = stock_top - depth_per_pass;
+fn step_ladder_single_step_is_the_legacy_loop_bitwise() {
+    let stock_top = 12.345_f64;
+    let dpp = 0.7_f64;
+    let z_bottom = -3.21_f64;
+    let mut legacy = Vec::new();
+    let mut z = stock_top - dpp;
     while z > z_bottom {
-        major_levels.push(z);
-        z -= depth_per_pass;
+        legacy.push(z);
+        z -= dpp;
     }
-    major_levels.push(z_bottom);
-    let n_major = major_levels.len(); // Should be 4: [15, 10, 5, 0.5]
+    if z_bottom < stock_top {
+        legacy.push(z_bottom);
+    }
 
-    // Fine stepdown levels
-    let mut all_levels = Vec::new();
-    let first_start = stock_top;
-    for window in std::iter::once(&first_start)
-        .chain(major_levels.iter())
-        .collect::<Vec<_>>()
-        .windows(2)
-    {
-        let z_top = *window[0];
-        let z_bot = *window[1];
-        let mut iz = z_top - fine_step;
-        while iz > z_bot + fine_step * 0.5 {
-            all_levels.push(iz);
-            iz -= fine_step;
+    let top = super::path::tier_levels(stock_top, z_bottom, dpp, 0.0);
+    let plan = super::path::plan_step_ladder(&[dpp], stock_top, &top);
+    assert_eq!(plan.len(), legacy.len());
+    for (l, z) in plan.iter().zip(&legacy) {
+        assert_eq!(l.z.to_bits(), z.to_bits(), "level {l:?} vs legacy {z}");
+        assert_eq!(l.tier, 0);
+        assert!(!l.clip, "a single-step level is a base (drape) level");
+        assert_eq!(l.step.to_bits(), dpp.to_bits());
+    }
+}
+
+/// The plan's worked example: ladder [10, 5, 1] from Z 0 to Z -10 cuts
+/// `10@-10 clip → {5@-5 clip → 1@-1..-5 drape} → {5@-10 clip → 1@-6..-10
+/// drape}`. It is NOT "all 5 mm levels, then all 1 mm levels".
+#[test]
+fn step_ladder_nests_each_slab_and_steps_down() {
+    let steps = [10.0, 5.0, 1.0];
+    let top = super::path::tier_levels(0.0, -10.0, 10.0, 0.0);
+    assert_eq!(top, vec![-10.0]);
+    let plan = super::path::plan_step_ladder(&steps, 0.0, &top);
+    let got: Vec<(f64, usize, bool)> = plan.iter().map(|l| (l.z, l.tier, l.clip)).collect();
+    let want = vec![
+        (-10.0, 0, true),
+        (-5.0, 1, true),
+        (-1.0, 2, false),
+        (-2.0, 2, false),
+        (-3.0, 2, false),
+        (-4.0, 2, false),
+        (-5.0, 2, false),
+        (-10.0, 1, true),
+        (-6.0, 2, false),
+        (-7.0, 2, false),
+        (-8.0, 2, false),
+        (-9.0, 2, false),
+        (-10.0, 2, false),
+    ];
+    assert_eq!(got.len(), want.len(), "schedule {got:?}");
+    for (g, w) in got.iter().zip(&want) {
+        assert!((g.0 - w.0).abs() < 1e-9 && g.1 == w.1 && g.2 == w.2, "schedule {got:?}");
+    }
+    for l in &plan {
+        assert_eq!(l.step, steps[l.tier]);
+    }
+}
+
+/// F8: a Detect Flat shelf level is a slab boundary. The finer tier stops
+/// at the shelf and starts again below it; it never uses
+/// `z_level - depth_per_pass` as the next level.
+#[test]
+fn step_ladder_shelf_level_is_a_slab_boundary() {
+    let steps = [10.0, 5.0];
+    // Coarse boundaries -10 and -20 with a shelf at -13.
+    let top = [-10.0, -13.0, -20.0];
+    let plan = super::path::plan_step_ladder(&steps, 0.0, &top);
+    let got: Vec<(f64, usize)> = plan.iter().map(|l| (l.z, l.tier)).collect();
+    let want = [
+        (-10.0, 0),
+        (-5.0, 1),
+        (-10.0, 1),
+        (-13.0, 0),
+        (-13.0, 1),
+        (-20.0, 0),
+        (-18.0, 1),
+        (-20.0, 1),
+    ];
+    assert_eq!(got.len(), want.len(), "schedule {got:?}");
+    for (g, w) in got.iter().zip(&want) {
+        assert!((g.0 - w.0).abs() < 1e-9 && g.1 == w.1, "schedule {got:?}");
+    }
+    // Every base level lies inside its coarse slab: none below the next
+    // coarse boundary.
+    let mut slab_bottom = f64::INFINITY;
+    for l in &plan {
+        if l.tier == 0 {
+            slab_bottom = l.z;
+        } else {
+            assert!(l.z >= slab_bottom - 1e-9, "level {l:?} left its slab");
         }
-        all_levels.push(z_bot);
     }
-    all_levels.sort_by(|a, b| b.total_cmp(a));
-    all_levels.dedup_by(|a, b| (*a - *b).abs() < 0.01);
+}
 
-    assert!(
-        all_levels.len() > n_major * 3,
-        "Fine stepdown should produce significantly more levels: {} vs {}",
-        all_levels.len(),
-        n_major
-    );
-    // With fine_step=1 and depth_per_pass=5, each major interval gets ~4 intermediates
-    // Total should be around 19-20 levels
-    assert!(
-        all_levels.len() >= 15,
-        "Expected at least 15 fine levels, got {}",
-        all_levels.len()
-    );
+/// The short last step keeps its old handling: the last coarse slab ends at
+/// `z_bottom`, and the base tier ends there too.
+#[test]
+fn step_ladder_short_last_step_ends_at_z_bottom() {
+    let steps = [10.0, 5.0];
+    let z_bottom = -24.5;
+    let top = super::path::tier_levels(0.0, z_bottom, 10.0, 0.0);
+    assert_eq!(top, vec![-10.0, -20.0, z_bottom]);
+    let plan = super::path::plan_step_ladder(&steps, 0.0, &top);
+    let last = plan.last().copied().unwrap();
+    assert_eq!(last.z, z_bottom);
+    assert!(!last.clip, "the last level is a base-tier level");
+    assert!(plan.iter().all(|l| l.z >= z_bottom));
 }
 
 // ── Fix 5: Flat area detection test ────────────────────────────────
@@ -1439,61 +1498,6 @@ fn test_small_dpp_hemisphere_clears_without_islands() {
         uncleared_count,
         total_checked,
         worst_excess,
-    );
-}
-
-/// Mill-shallow-areas regression: when `mill_shallow_areas` is false
-/// (the default), output must be byte-identical to leaving the field
-/// off entirely. Guards against accidental sub-pass insertion in the
-/// disabled branch.
-#[test]
-fn test_ignored_shallow_tier_matches_baseline() {
-    let radius = 5.0_f64;
-    let mesh = crate::mesh::make_test_hemisphere(radius, 12);
-    let si = SpatialIndex::build(&mesh, 10.0);
-    let cutter = flat_cutter();
-    let tool_radius = cutter.radius();
-
-    let common = |shallow_tier: Option<crate::adaptive3d::ShallowTier>| -> Adaptive3dParams {
-        let mut p = default_params();
-        p.geometry.tool_radius = tool_radius;
-        p.geometry.stepover = 2.0;
-        p.depth.depth_per_pass = 1.0;
-        p.depth.stock_to_leave = 0.3;
-        p.geometry.tolerance = 0.3;
-        p.depth.stock_top_z = 6.0;
-        p.clearing_strategy = ClearingStrategy3d::AgentSearch;
-        p.depth.shallow_tier = shallow_tier;
-        p
-    };
-
-    let tp_base = adaptive_3d_toolpath(&mesh, &si, &cutter, &common(None));
-    // The tier the planner still ignores at run time: a stepdown that is not
-    // smaller than `depth_per_pass` buys no sub-pass. CUT-04 removed the OTHER
-    // "off" state this test used to cover — `mill_shallow_areas: false` beside
-    // a live angle and stepdown — by making it unrepresentable.
-    let tp_off = adaptive_3d_toolpath(
-        &mesh,
-        &si,
-        &cutter,
-        &common(Some(crate::adaptive3d::ShallowTier {
-            angle_rad: 0.5,
-            stepdown: 1.0,
-        })),
-    );
-
-    assert_eq!(
-        tp_base.moves.len(),
-        tp_off.moves.len(),
-        "a tier whose stepdown is not below depth_per_pass must match baseline; got {} vs {}",
-        tp_base.moves.len(),
-        tp_off.moves.len()
-    );
-    let cut_base = tp_base.total_cutting_distance();
-    let cut_off = tp_off.total_cutting_distance();
-    assert!(
-        (cut_base - cut_off).abs() < 0.001,
-        "an ignored tier must match the baseline cutting distance; got {cut_base:.3} vs {cut_off:.3}"
     );
 }
 

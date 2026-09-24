@@ -267,14 +267,17 @@ pub(super) fn annotate_adaptive3d(
                 z_level,
                 level_index,
                 level_total,
+                tier,
                 metrics,
             } => {
                 if let Some(ls) = level_scope.take() {
                     ls.finish();
                 }
                 let parent = region_ctx.as_ref().unwrap_or(op_context);
-                let scope =
-                    parent.start_item(ToolpathSemanticKind::DepthLevel, format!("Z {z_level:.2}"));
+                let scope = parent.start_item(
+                    ToolpathSemanticKind::DepthLevel,
+                    format!("Z {z_level:.2}{}", tier.label_suffix()),
+                );
                 scope.set_param(SemanticKey::ZLevel, *z_level);
                 scope.set_param(SemanticKey::LevelIndex, *level_index);
                 scope.set_param(SemanticKey::LevelTotal, *level_total);
@@ -288,6 +291,7 @@ pub(super) fn annotate_adaptive3d(
                 z_level,
                 level_index,
                 level_total,
+                tier,
                 metrics,
             } => {
                 // Close any prior level/region scopes
@@ -301,7 +305,7 @@ pub(super) fn annotate_adaptive3d(
                 region_ctx.take();
                 let scope = op_context.start_item(
                     ToolpathSemanticKind::DepthLevel,
-                    format!("Global Z {z_level:.2}"),
+                    format!("Global Z {z_level:.2}{}", tier.label_suffix()),
                 );
                 scope.set_param(SemanticKey::ZLevel, *z_level);
                 scope.set_param(SemanticKey::LevelIndex, *level_index);
