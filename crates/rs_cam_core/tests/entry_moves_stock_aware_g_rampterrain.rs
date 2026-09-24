@@ -44,6 +44,8 @@ use rs_cam_core::trace::transform_provenance::ReconcileSet;
 
 const RIDGE_HEIGHT_MM: f64 = 6.0;
 const SAFE_Z: f64 = 15.0;
+/// The default `entry_clearance_mm`.
+const ENTRY_CLEARANCE_MM: f64 = 0.5;
 const FEED: f64 = 800.0;
 /// S1 tolerance: facet sag plus 0.5 mm sampling (FINDINGS.md §S1).
 const TOL_MM: f64 = 0.2;
@@ -115,6 +117,7 @@ fn dress_on_ridge(entry_x: f64, style: DressupEntryStyle) -> Dressed {
     let dressed = apply_dressups(
         AnnotatedToolpath::new(tp),
         rs_cam_core::compute::execute::DressupContext {
+            ramp_feed_rate_mm_min: None,
             cfg: &cfg,
             nominal_feed_rate: FEED,
             plunge_rate_mm_min: None,
@@ -205,7 +208,8 @@ fn helix_entry_never_cuts_below_surface() {
 /// clip must keep the planned zigzag.
 ///
 /// Changed 2026-09-24 (operator ruling: a ramp takes the full material
-/// depth). The ramp starts at the stock top + `ENTRY_CLEARANCE` and each
+/// depth; 2026-09-25: never ramp air). The ramp starts at the stock top +
+/// the entry clearance (0.5 mm) and each
 /// leg drops at most `ENTRY_CLEARANCE / 2` (the legacy leg), so the planned
 /// zigzag has `2 * ceil(depth / ENTRY_CLEARANCE)` legs, not two.
 #[test]
@@ -240,6 +244,7 @@ fn unclipped_ramp_keeps_its_planned_legs() {
     let dressed = apply_dressups(
         AnnotatedToolpath::new(tp),
         rs_cam_core::compute::execute::DressupContext {
+            ramp_feed_rate_mm_min: None,
             cfg: &cfg,
             nominal_feed_rate: FEED,
             plunge_rate_mm_min: None,
@@ -256,7 +261,7 @@ fn unclipped_ramp_keeps_its_planned_legs() {
         },
         &mut ReconcileSet::empty(),
     );
-    let depth = RIDGE_HEIGHT_MM + 2.0 - z0;
+    let depth = RIDGE_HEIGHT_MM + ENTRY_CLEARANCE_MM - z0;
     let planned_legs = 2 * (depth / 2.0).ceil() as usize;
     assert!(
         planned_legs > 2,

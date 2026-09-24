@@ -635,6 +635,12 @@ impl DressupEntryStyle {
     }
 }
 
+/// Default height (mm) above the material top where a helix or ramp entry
+/// starts: the 0.5 mm the adaptive3d rapid floor keeps over its stock read.
+pub fn default_entry_clearance_mm() -> f64 {
+    crate::dressup::ENTRY_CONTACT_CLEARANCE
+}
+
 /// Default deviation budget (mm) for [`DressupConfig::segment_merge`].
 fn default_segment_merge_tolerance() -> f64 {
     0.3
@@ -752,6 +758,10 @@ pub struct DressupConfig {
     pub ramp_angle: f64,
     pub helix_radius: f64,
     pub helix_pitch: f64,
+    /// The height (mm) above the material top where a helix or ramp entry
+    /// starts. The air above it is a straight move (operator ruling
+    /// 2026-09-25: never helix air).
+    pub entry_clearance_mm: f64,
     /// `Some` when the dogbone dressup runs.
     pub dogbone: Option<DogboneParams>,
     /// `Some` when the lead-in / lead-out dressup runs.
@@ -795,6 +805,8 @@ struct DressupConfigWire {
     ramp_angle: f64,
     helix_radius: f64,
     helix_pitch: f64,
+    #[serde(default = "default_entry_clearance_mm")]
+    entry_clearance_mm: f64,
     dogbone: bool,
     dogbone_angle: f64,
     lead_in_out: bool,
@@ -827,6 +839,7 @@ impl From<DressupConfigWire> for DressupConfig {
             ramp_angle: w.ramp_angle,
             helix_radius: w.helix_radius,
             helix_pitch: w.helix_pitch,
+            entry_clearance_mm: w.entry_clearance_mm,
             dogbone: w.dogbone.then_some(DogboneParams {
                 angle: w.dogbone_angle,
             }),
@@ -866,6 +879,7 @@ impl From<DressupConfig> for DressupConfigWire {
             ramp_angle: c.ramp_angle,
             helix_radius: c.helix_radius,
             helix_pitch: c.helix_pitch,
+            entry_clearance_mm: c.entry_clearance_mm,
             dogbone: c.dogbone.is_some(),
             dogbone_angle: dogbone.angle,
             lead_in_out: c.lead_in_out.is_some(),
@@ -925,6 +939,10 @@ impl DressupConfig {
         DressupFieldDef {
             name: "helix_pitch",
             description: "helix entry pitch per turn (mm)",
+        },
+        DressupFieldDef {
+            name: "entry_clearance_mm",
+            description: "height above the material where a helix or ramp entry starts (mm)",
         },
         DressupFieldDef {
             name: "dogbone",
@@ -1018,6 +1036,7 @@ impl Default for DressupConfig {
             ramp_angle: 3.0,
             helix_radius: 2.0,
             helix_pitch: 1.0,
+            entry_clearance_mm: default_entry_clearance_mm(),
             dogbone: None,
             lead_in_out: None,
             link_moves: Some(LinkDressupParams::default()),

@@ -121,6 +121,7 @@ fn build_as001_pocket_session() -> ProjectSession {
     let model_id = builder.add_model(model);
 
     let pocket = PocketConfig {
+        ramp_feed_rate: None,
         stepover: 2.0,
         depth: 6.0,
         depth_per_pass: 2.0,

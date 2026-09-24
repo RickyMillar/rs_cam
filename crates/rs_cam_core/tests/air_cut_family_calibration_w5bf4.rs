@@ -500,6 +500,7 @@ fn flat_cases() -> Vec<FlatCase> {
             "2.5D clearing",
             || {
                 OperationConfig::Pocket(PocketConfig {
+                    ramp_feed_rate: None,
                     stepover: 3.0,
                     depth: 6.0,
                     depth_per_pass: 3.0,
@@ -519,6 +520,7 @@ fn flat_cases() -> Vec<FlatCase> {
             "2.5D clearing",
             || {
                 OperationConfig::Zigzag(ZigzagConfig {
+                    ramp_feed_rate: None,
                     stepover: 3.0,
                     depth: 3.0,
                     depth_per_pass: 3.0,
@@ -568,6 +570,7 @@ fn flat_cases() -> Vec<FlatCase> {
             "2D contour",
             || {
                 OperationConfig::Profile(ProfileConfig {
+                    ramp_feed_rate: None,
                     side: ProfileSide::Outside,
                     depth: 6.0,
                     depth_per_pass: 3.0,
@@ -620,6 +623,7 @@ fn flat_cases() -> Vec<FlatCase> {
             "2D contour",
             || {
                 OperationConfig::Chamfer(ChamferConfig {
+                    ramp_feed_rate: None,
                     chamfer_width: 1.5,
                     tip_offset: 0.1,
                     feed_rate: 800.0,
@@ -658,6 +662,7 @@ fn hemi_cases() -> Vec<HemiCase> {
             "3D finish",
             || {
                 OperationConfig::DropCutter(DropCutterConfig {
+                    ramp_feed_rate: None,
                     stepover: 1.5,
                     feed_rate: 1000.0,
                     plunge_rate: 400.0,
@@ -676,6 +681,7 @@ fn hemi_cases() -> Vec<HemiCase> {
             "3D finish",
             || {
                 OperationConfig::Waterline(WaterlineConfig {
+                    ramp_feed_rate: None,
                     z_step: 1.5,
                     sampling: 0.4,
                     feed_rate: 1000.0,

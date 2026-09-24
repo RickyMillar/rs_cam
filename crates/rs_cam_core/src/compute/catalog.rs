@@ -740,6 +740,17 @@ pub trait OperationParams {
     fn plunge_rate(&self) -> f64;
     fn set_plunge_rate(&mut self, value: f64);
 
+    /// Feed (mm/min) of a helix or ramp entry through material, when the
+    /// operator set one. `None` uses the plunge feed.
+    fn ramp_feed_rate(&self) -> Option<f64> {
+        None
+    }
+    /// Write the entry ramp feed. Returns `false` when this config has no
+    /// such field (a drill cycle has no entry).
+    fn set_ramp_feed_rate(&mut self, _value: Option<f64>) -> bool {
+        false
+    }
+
     fn stepover(&self) -> Option<f64> {
         None
     }
@@ -1112,6 +1123,12 @@ impl OperationConfig {
 
     pub fn set_plunge_rate(&mut self, value: f64) {
         self.as_params_mut().set_plunge_rate(value);
+    }
+
+    /// The helix and ramp entry feed through material; see
+    /// [`OperationParams::ramp_feed_rate`].
+    pub fn ramp_feed_rate(&self) -> Option<f64> {
+        self.as_params().ramp_feed_rate()
     }
 
     pub fn stepover(&self) -> Option<f64> {

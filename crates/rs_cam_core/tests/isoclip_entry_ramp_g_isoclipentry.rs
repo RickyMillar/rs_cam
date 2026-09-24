@@ -505,6 +505,7 @@ fn dressed_entry(stock: &TriDexelStock, carry_rest_stock: bool) -> Toolpath {
     apply_dressups(
         AnnotatedToolpath::new(plunge_then_cut()),
         rs_cam_core::compute::execute::DressupContext {
+            ramp_feed_rate_mm_min: None,
             cfg: &cfg,
             nominal_feed_rate: CUT_FEED,
             plunge_rate_mm_min: None,
@@ -635,6 +636,7 @@ fn dressed_entry_wide(stock: &TriDexelStock) -> Toolpath {
     apply_dressups(
         AnnotatedToolpath::new(plunge_then_cut()),
         rs_cam_core::compute::execute::DressupContext {
+            ramp_feed_rate_mm_min: None,
             cfg: &cfg,
             nominal_feed_rate: CUT_FEED,
             plunge_rate_mm_min: None,

@@ -785,6 +785,7 @@ fn chained_junctions_survive_the_rapid_order_dressup() {
     let after = apply_dressups(
         on,
         crate::compute::execute::DressupContext {
+            ramp_feed_rate_mm_min: None,
             cfg: &dressups,
             nominal_feed_rate: 800.0,
             plunge_rate_mm_min: None,

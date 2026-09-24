@@ -16,6 +16,12 @@ use super::{
     UiProcessRole,
 };
 
+/// The help of `ramp_feed_rate`, the same on every operation that has an
+/// entry (operator ruling 2026-09-24/25).
+const RAMP_FEED_RATE_HELP: &str = "Feed (mm/min) of a helix or ramp entry through \
+     material. Empty uses the plunge rate. A straight feed through air and a straight \
+     plunge keep their own feeds.";
+
 const FACE_PARAMS: &[ParamDef] = &[
     ParamDef::required("stepover", "f64").with_help(
         "Distance between passes. 40-60% of diameter for roughing, 10-20% for \
@@ -28,6 +34,7 @@ const FACE_PARAMS: &[ParamDef] = &[
     ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
+    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
     ParamDef::required("stock_offset", "f64")
         .with_help("Extra distance beyond stock boundary to ensure full coverage."),
     ParamDef::required("direction", "enum:one_way|zigzag"),
@@ -46,6 +53,7 @@ const POCKET_PARAMS: &[ParamDef] = &[
     ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
+    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
     ParamDef::required("climb", "bool"),
     ParamDef::required("pattern", "enum:contour|zigzag"),
     ParamDef::required("angle", "f64")
@@ -67,6 +75,7 @@ const PROFILE_PARAMS: &[ParamDef] = &[
     ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
+    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
     ParamDef::required("climb", "bool"),
     ParamDef::required("tab_count", "usize"),
     ParamDef::required("tab_width", "f64")
@@ -90,6 +99,7 @@ const ADAPTIVE_PARAMS: &[ParamDef] = &[
     ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
+    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
     ParamDef::required("tolerance", "f64").with_help(
         "Geometric tolerance for path approximation. Smaller = more accurate, \
          slower.",
@@ -118,6 +128,7 @@ const VCARVE_PARAMS: &[ParamDef] = &[
     ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
+    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
     ParamDef::required("tolerance", "f64").with_help(
         "Geometric tolerance for path approximation. Smaller = more accurate, \
          slower.",
@@ -142,6 +153,7 @@ const REST_PARAMS: &[ParamDef] = &[
     ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
+    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
     ParamDef::required("angle", "f64")
         .with_help("Zigzag/raster angle in degrees. 0 = along X axis."),
     ParamDef::optional("spindle_rpm", "option<u32>"),
@@ -164,6 +176,7 @@ const INLAY_PARAMS: &[ParamDef] = &[
         .with_help("Radius of the flat endmill used to clear the pocket floor."),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
+    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
     ParamDef::required("tolerance", "f64").with_help(
         "Geometric tolerance for path approximation. Smaller = more accurate, \
          slower.",
@@ -183,6 +196,7 @@ const ZIGZAG_PARAMS: &[ParamDef] = &[
     ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
+    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
     ParamDef::required("angle", "f64")
         .with_help("Zigzag/raster angle in degrees. 0 = along X axis."),
     ParamDef::optional("spindle_rpm", "option<u32>"),
@@ -196,6 +210,7 @@ const TRACE_PARAMS: &[ParamDef] = &[
     ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
+    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
     // G-SCHEMAENUM: the variant is `none`, not `center`.
     ParamDef::required("compensation", "enum:none|left|right"),
     ParamDef::optional("spindle_rpm", "option<u32>"),
@@ -232,6 +247,7 @@ const CHAMFER_PARAMS: &[ParamDef] = &[
     ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
+    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
     ParamDef::optional("spindle_rpm", "option<u32>"),
 ];
 
@@ -242,6 +258,7 @@ const DROP_CUTTER_PARAMS: &[ParamDef] = &[
     ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
+    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
     ParamDef::required("min_z", "f64")
         .with_help("Lowest Z the tool will descend to during drop-cutter."),
     ParamDef::required("slope_from", "f64").with_help(
@@ -284,6 +301,7 @@ const ADAPTIVE3D_PARAMS: &[ParamDef] = &[
     ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
+    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
     ParamDef::required("tolerance", "f64").with_help(
         "Geometric tolerance for path approximation. Smaller = more accurate, \
          slower.",
@@ -299,6 +317,10 @@ const ADAPTIVE3D_PARAMS: &[ParamDef] = &[
         .with_help("Helix entry radius as a multiple of the tool diameter."),
     ParamDef::required("helix_pitch", "f64")
         .with_help("Vertical drop per revolution of the helical entry move."),
+    ParamDef::required("entry_clearance_mm", "f64").with_help(
+        "Height (mm) above the material top where the helix or ramp entry starts. \
+         The air above it is a straight move.",
+    ),
     ParamDef::required("detect_flat_areas", "bool"),
     ParamDef::required("region_ordering", "enum:global|by_area"),
     ParamDef::required(
@@ -330,6 +352,7 @@ const WATERLINE_PARAMS: &[ParamDef] = &[
     ParamDef::required("sampling", "f64").with_help("XY grid resolution for push-cutter sampling."),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
+    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
     ParamDef::required("continuous", "bool"),
     ParamDef::optional("spindle_rpm", "option<u32>"),
     // G-LINKSTAGE (2026-09-09). Absent, or 0.0, is OFF and byte-identical.
@@ -352,6 +375,7 @@ const PENCIL_PARAMS: &[ParamDef] = &[
     ParamDef::required("sampling", "f64").with_help("XY grid resolution for push-cutter sampling."),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
+    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
     ParamDef::required("stock_to_leave", "f64").with_help(
         "Finishing allowance kept on the surface for a later pass. Applied as \
          a vertical offset: on a wall sloped at angle A, what remains \
@@ -412,6 +436,7 @@ const SCALLOP_PARAMS: &[ParamDef] = &[
     ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
+    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
     ParamDef::required("stock_to_leave", "f64").with_help(
         "Finishing allowance kept on the surface for a later pass. Applied as \
          a vertical offset: on a wall sloped at angle A, what remains \
@@ -456,6 +481,7 @@ const UNIFIED_FINISH_PARAMS: &[ParamDef] = &[
     ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
+    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
     // v3 S1/S2 claims pipeline: serde-defaulted for project-file back-compat
     // (older files omit them), always serialized.
     ParamDef::required("pencil_claims", "bool"),
@@ -555,6 +581,7 @@ const STEEP_SHALLOW_PARAMS: &[ParamDef] = &[
     ParamDef::required("z_step", "f64").with_help("Vertical distance between waterline Z levels."),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
+    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
     ParamDef::required("sampling", "f64").with_help("XY grid resolution for push-cutter sampling."),
     ParamDef::required("stock_to_leave", "f64").with_help(
         "Finishing allowance kept on the surface for a later pass. Applied as \
@@ -585,6 +612,7 @@ const RAMP_FINISH_PARAMS: &[ParamDef] = &[
     ParamDef::required("order_bottom_up", "bool"),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
+    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
     ParamDef::required("sampling", "f64").with_help("XY grid resolution for push-cutter sampling."),
     ParamDef::required("stock_to_leave", "f64").with_help(
         "Finishing allowance kept on the surface for a later pass. Applied as \
@@ -608,6 +636,7 @@ const SPIRAL_FINISH_PARAMS: &[ParamDef] = &[
     ParamDef::required("direction", "enum:inside_out|outside_in"),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
+    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
     ParamDef::required("stock_to_leave", "f64").with_help(
         "Finishing allowance kept on the surface for a later pass. Applied as \
          a vertical offset: on a wall sloped at angle A, what remains \
@@ -639,6 +668,7 @@ const RADIAL_FINISH_PARAMS: &[ParamDef] = &[
     ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
+    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
     ParamDef::required("stock_to_leave", "f64").with_help(
         "Finishing allowance kept on the surface for a later pass. Applied as \
          a vertical offset: on a wall sloped at angle A, what remains \
@@ -656,6 +686,7 @@ const HORIZONTAL_FINISH_PARAMS: &[ParamDef] = &[
     ),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
+    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
     ParamDef::required("stock_to_leave", "f64").with_help(
         "Finishing allowance kept on the surface for a later pass. Applied as \
          a vertical offset: on a wall sloped at angle A, what remains \
@@ -670,6 +701,7 @@ const PROJECT_CURVE_PARAMS: &[ParamDef] = &[
         .with_help("Distance between sample points along curves. Smaller = smoother."),
     ParamDef::required("feed_rate", "f64"),
     ParamDef::required("plunge_rate", "f64"),
+    ParamDef::optional_desc("ramp_feed_rate", "option<f64>", RAMP_FEED_RATE_HELP),
     ParamDef::optional("surface_model_id", "option<usize>"),
     ParamDef::required("direction", "enum:from_above|from_below"),
     ParamDef::required("side", "enum:center|inside|outside"),

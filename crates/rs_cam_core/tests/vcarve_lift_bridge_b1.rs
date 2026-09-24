@@ -114,6 +114,7 @@ fn build_vcarve_session() -> ProjectSession {
     let model_id = builder.add_model(model);
 
     let vcarve = VCarveConfig {
+        ramp_feed_rate: None,
         max_depth: 3.0,
         stepover: 0.5,
         feed_rate: 800.0,

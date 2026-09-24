@@ -418,6 +418,7 @@ fn session_builders_drive_a_real_generation() {
         polygon_model(vec![square_polygon(10.0)], "square"),
         "Pocket",
         OperationConfig::Pocket(PocketConfig {
+            ramp_feed_rate: None,
             stepover: 2.0,
             depth: 2.0,
             depth_per_pass: 2.0,

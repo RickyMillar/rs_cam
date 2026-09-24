@@ -155,6 +155,8 @@ fn make_params(
     // the cutter, not the params.
     let _ = cutting_length_safe;
     Adaptive3dParams {
+        entry_clearance_mm: 0.5,
+        ramp_feed_rate: None,
         geometry: Adaptive3dGeometry {
             tool_radius,
             envelope_radius: tool_radius,

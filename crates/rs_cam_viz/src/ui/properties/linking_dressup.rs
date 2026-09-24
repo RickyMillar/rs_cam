@@ -319,6 +319,15 @@ pub(super) fn draw_linking_params(
                     0.5,
                     0.5..=15.0,
                 );
+                dv_dressup(
+                    ui,
+                    "entry_clearance_mm",
+                    "  Clearance:",
+                    &mut cfg.entry_clearance_mm,
+                    " mm",
+                    0.1,
+                    0.0..=5.0,
+                );
             });
         }
         DressupEntryStyle::Helix => {
@@ -340,6 +349,15 @@ pub(super) fn draw_linking_params(
                     " mm",
                     0.1,
                     0.2..=10.0,
+                );
+                dv_dressup(
+                    ui,
+                    "entry_clearance_mm",
+                    "  Clearance:",
+                    &mut cfg.entry_clearance_mm,
+                    " mm",
+                    0.1,
+                    0.0..=5.0,
                 );
             });
         }

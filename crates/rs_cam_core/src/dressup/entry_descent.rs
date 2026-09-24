@@ -349,42 +349,68 @@ fn fold_ramp_points(
     points
 }
 
-/// The shared first half of a helix or ramp entry (operator ruling
-/// 2026-09-24): go down through AIR only, and return the Z the controlled
-/// descent starts at.
+/// How far above a measured material top the rapid stops, and the default
+/// `entry_clearance_mm` (operator ruling 2026-09-25: never helix or ramp
+/// air). The same 0.5 mm the adaptive3d planner's rapid floor keeps over
+/// its conservative stock read.
+pub const ENTRY_CONTACT_CLEARANCE: f64 = 0.5;
+
+/// The shared first half of a helix or ramp entry (operator rulings
+/// 2026-09-24 and 2026-09-25): go down through AIR with straight moves only,
+/// and return the Z the helix or ramp starts at.
 ///
-/// - `material_top` is the highest the material can stand under the entry
-///   (the caller's best stock top). At or below the target there is no
-///   material: the tool rapids to the clearance above the target and feeds
-///   straight down through air to it. Then it returns `None`: the entry is
-///   done.
-/// - Otherwise the tool rapids to `material_top + ENTRY_CLEARANCE` (never
-///   up) and the function returns that Z. The helix or ramp takes every
-///   millimetre below it.
+/// - `safety.stock_top` (`material_top`) is the highest the material can
+///   stand under the entry. `stock_top_measured` says it is a stock read (the planner's or the op's replayed
+///   stock), not the nominal stock top.
+/// - A rapid goes down to `material_top + ENTRY_CONTACT_CLEARANCE` on a
+///   measured top. On a nominal top the rapid stops at `+ ENTRY_CLEARANCE`
+///   (real stock can be thicker than nominal). A straight feed then goes
+///   down to `material_top + contact_clearance` (the operation's
+///   `entry_clearance_mm`), where the helix or ramp starts and takes
+///   everything below. A clearance above the rapid floor starts the helix
+///   where the rapid stopped. `contact_top`, when the caller has a closer
+///   read than the conservative `material_top`, sets the start instead.
+/// - At or below the target there is no material: the same straight moves
+///   go down to the target. Then it returns `None`: the entry is done.
 fn rapid_to_entry_top(
     tp: &mut Toolpath,
     start: &P3,
     end: &P3,
-    material_top: f64,
+    safety: &EntrySafety<'_>,
     feed_rate: f64,
 ) -> Option<f64> {
     use crate::toolpath::MoveIntent;
-    let clearance = ENTRY_CLEARANCE;
-    if material_top <= end.z + 1e-6 {
-        let air_z = (end.z + clearance).min(start.z);
-        if start.z - air_z > 0.1 {
-            tp.rapid_to_with_intent(P3::new(start.x, start.y, air_z), MoveIntent::Linking);
-        }
-        tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryPlunge);
-        return None;
-    }
-    let top = material_top + clearance;
-    if start.z - top > 0.1 {
-        tp.rapid_to_with_intent(P3::new(start.x, start.y, top), MoveIntent::Linking);
-        Some(top)
+    let material_top = safety.stock_top;
+    let measured = safety.stock_top_measured;
+    let contact_clearance = safety.contact_clearance;
+    let contact_top = safety.contact_top;
+    let air = contact_top.unwrap_or(material_top) <= end.z + 1e-6;
+    let top = material_top.max(end.z);
+    let contact = if air {
+        end.z
     } else {
-        Some(start.z)
+        contact_top.unwrap_or(material_top).max(end.z) + contact_clearance.max(0.0)
+    };
+    let rapid_floor = if measured {
+        top + ENTRY_CONTACT_CLEARANCE
+    } else {
+        top + ENTRY_CLEARANCE
+    };
+    let mut z = start.z;
+    if z - rapid_floor > 0.1 {
+        tp.rapid_to_with_intent(P3::new(start.x, start.y, rapid_floor), MoveIntent::Linking);
+        z = rapid_floor;
     }
+    if z - contact > 1e-6 {
+        let target = if air {
+            *end
+        } else {
+            P3::new(start.x, start.y, contact)
+        };
+        tp.feed_to_with_intent(target, feed_rate, MoveIntent::EntryPlunge);
+        z = contact;
+    }
+    if air { None } else { Some(z) }
 }
 
 // SAFETY: eight parameters, one over clippy's threshold. The eighth is
@@ -402,7 +428,9 @@ pub(crate) fn emit_ramp(
     fold: Option<&RampFold<'_>>,
 ) {
     use crate::toolpath::MoveIntent;
-    let stock_top = safety.stock_top;
+    // The operation's ramp feed rides the ramp moves through material; a
+    // straight feed through air and the plunge fallback keep `feed_rate`.
+    let ramp_feed = safety.ramp_feed.unwrap_or(feed_rate);
     if max_angle_deg <= 0.0 || max_angle_deg >= 90.0 {
         // Invalid angle — fall back to straight plunge
         tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryPlunge);
@@ -460,7 +488,7 @@ pub(crate) fn emit_ramp(
                     );
                 }
                 for p in &plan.points {
-                    tp.feed_to_with_intent(*p, feed_rate, MoveIntent::EntryRamp);
+                    tp.feed_to_with_intent(*p, ramp_feed, MoveIntent::EntryRamp);
                 }
             }
             None => {
@@ -495,7 +523,7 @@ pub(crate) fn emit_ramp(
     // `max_angle_deg` down to the target. A straight feed goes only through
     // air. (Before the ruling the ramp took the last `ENTRY_CLEARANCE` only
     // and fed a straight plunge through the material above it.)
-    let Some(ramp_start_z) = rapid_to_entry_top(tp, start, end, stock_top, feed_rate) else {
+    let Some(ramp_start_z) = rapid_to_entry_top(tp, start, end, safety, feed_rate) else {
         return;
     };
 
@@ -534,7 +562,7 @@ pub(crate) fn emit_ramp(
         match clip_polyline_to_floor(&planned, probe) {
             Some(points) => {
                 for p in points {
-                    tp.feed_to_with_intent(p, feed_rate, MoveIntent::EntryRamp);
+                    tp.feed_to_with_intent(p, ramp_feed, MoveIntent::EntryRamp);
                 }
             }
             None => {
@@ -569,7 +597,7 @@ pub(crate) fn emit_ramp(
             tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryPlunge);
         } else {
             for p in folded {
-                tp.feed_to_with_intent(p, feed_rate, MoveIntent::EntryRamp);
+                tp.feed_to_with_intent(p, ramp_feed, MoveIntent::EntryRamp);
             }
         }
     } else {
@@ -577,7 +605,7 @@ pub(crate) fn emit_ramp(
         // no following cut to fold along. The adaptive3d door is the one
         // caller that lands here (R0.2 section 2.2).
         for p in planned.iter().skip(1) {
-            tp.feed_to_with_intent(*p, feed_rate, MoveIntent::EntryRamp);
+            tp.feed_to_with_intent(*p, ramp_feed, MoveIntent::EntryRamp);
         }
     }
 }
@@ -641,12 +669,15 @@ pub(crate) fn emit_helix(
     safety: &EntrySafety<'_>,
 ) {
     use crate::toolpath::MoveIntent;
+    // The operation's ramp feed rides the helix turns; a straight feed
+    // through air and the plunge fallback keep `feed_rate`.
+    let ramp_feed = safety.ramp_feed.unwrap_or(feed_rate);
     // Full-depth rule (operator ruling 2026-09-24): the helix takes ALL the
     // material at `pitch` per revolution, from the clearance above the
     // material top (`safety.stock_top`) down to the target. A straight feed
     // goes only through air. (Before the ruling the helix took the last
     // `ENTRY_CLEARANCE` only and fed a straight plunge above it.)
-    let Some(helix_top) = rapid_to_entry_top(tp, start, end, safety.stock_top, feed_rate) else {
+    let Some(helix_top) = rapid_to_entry_top(tp, start, end, safety, feed_rate) else {
         return;
     };
 
@@ -743,9 +774,9 @@ pub(crate) fn emit_helix(
         }
     }
     for q in turns {
-        tp.feed_to_with_intent(q, feed_rate, MoveIntent::EntryHelix);
+        tp.feed_to_with_intent(q, ramp_feed, MoveIntent::EntryHelix);
     }
 
     // Return to center at final Z
-    tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryHelix);
+    tp.feed_to_with_intent(*end, ramp_feed, MoveIntent::EntryHelix);
 }

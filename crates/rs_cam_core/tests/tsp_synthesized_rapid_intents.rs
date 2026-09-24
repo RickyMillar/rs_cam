@@ -228,6 +228,7 @@ fn no_milling_family_emits_a_drilling_tagged_move() {
         (
             "pocket",
             OperationConfig::Pocket(PocketConfig {
+                ramp_feed_rate: None,
                 stepover: 3.0,
                 depth: 6.0,
                 depth_per_pass: 3.0,
@@ -255,6 +256,7 @@ fn no_milling_family_emits_a_drilling_tagged_move() {
         (
             "profile",
             OperationConfig::Profile(ProfileConfig {
+                ramp_feed_rate: None,
                 side: ProfileSide::Outside,
                 depth: 6.0,
                 depth_per_pass: 3.0,

@@ -155,6 +155,18 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
                     0.5,
                     0.5..=45.0,
                 );
+                dv(
+                    ui,
+                    p(
+                        OperationType::Adaptive3d,
+                        "entry_clearance_mm",
+                        "Entry Clearance:",
+                    ),
+                    &mut cfg.entry_clearance_mm,
+                    " mm",
+                    0.1,
+                    0.0..=5.0,
+                );
             }
             Adaptive3dEntryStyle::Helix => {
                 dv(
@@ -176,6 +188,18 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
                     " mm",
                     0.1,
                     0.1..=10.0,
+                );
+                dv(
+                    ui,
+                    p(
+                        OperationType::Adaptive3d,
+                        "entry_clearance_mm",
+                        "Entry Clearance:",
+                    ),
+                    &mut cfg.entry_clearance_mm,
+                    " mm",
+                    0.1,
+                    0.0..=5.0,
                 );
             }
         }

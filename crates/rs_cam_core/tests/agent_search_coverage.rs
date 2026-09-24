@@ -216,6 +216,8 @@ fn agent_search_clears_concave_interior_at_every_z_level() {
     let depth_per_pass: f64 = 3.0;
     let stock_to_leave: f64 = 0.5;
     let params = Adaptive3dParams {
+        entry_clearance_mm: 0.5,
+        ramp_feed_rate: None,
         geometry: Adaptive3dGeometry {
             tool_radius: cutter.radius(),
             envelope_radius: cutter.radius(),

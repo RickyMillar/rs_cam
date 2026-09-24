@@ -144,6 +144,8 @@ fn micro_peak_terrain() -> TriangleMesh {
 
 fn make_params(tool_radius: f64, min_region_cut_length_mm: f64) -> Adaptive3dParams {
     Adaptive3dParams {
+        entry_clearance_mm: 0.5,
+        ramp_feed_rate: None,
         geometry: Adaptive3dGeometry {
             tool_radius,
             envelope_radius: tool_radius,

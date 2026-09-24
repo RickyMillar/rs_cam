@@ -112,6 +112,7 @@ fn build_flipped_pocket_session() -> ProjectSession {
     let flipped_setup = builder.add_setup("Flipped".to_owned(), FaceUp::Bottom);
 
     let pocket = PocketConfig {
+        ramp_feed_rate: None,
         stepover: 2.0,
         depth: 6.0,
         depth_per_pass: 2.0,

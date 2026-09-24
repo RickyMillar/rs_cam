@@ -317,6 +317,7 @@ fn fixture_session_2d() -> ProjectSession {
         (
             "Pocket",
             OperationConfig::Pocket(PocketConfig {
+                ramp_feed_rate: None,
                 stepover: 3.0,
                 depth: 6.0,
                 depth_per_pass: 3.0,
@@ -332,6 +333,7 @@ fn fixture_session_2d() -> ProjectSession {
         (
             "Zigzag",
             OperationConfig::Zigzag(ZigzagConfig {
+                ramp_feed_rate: None,
                 stepover: 3.0,
                 depth: 3.0,
                 depth_per_pass: 3.0,
@@ -344,6 +346,7 @@ fn fixture_session_2d() -> ProjectSession {
         (
             "Profile",
             OperationConfig::Profile(ProfileConfig {
+                ramp_feed_rate: None,
                 side: ProfileSide::Outside,
                 depth: 6.0,
                 depth_per_pass: 3.0,
@@ -471,6 +474,7 @@ fn fixture_session_3d() -> ProjectSession {
     });
 
     let drop_cutter = OperationConfig::DropCutter(DropCutterConfig {
+        ramp_feed_rate: None,
         stepover: 1.5,
         feed_rate: 1000.0,
         plunge_rate: 400.0,
@@ -482,6 +486,7 @@ fn fixture_session_3d() -> ProjectSession {
         hookup_mm: 0.0,
     });
     let waterline = OperationConfig::Waterline(WaterlineConfig {
+        ramp_feed_rate: None,
         z_step: 1.5,
         sampling: 0.4,
         feed_rate: 1000.0,

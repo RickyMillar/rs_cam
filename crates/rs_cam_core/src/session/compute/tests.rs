@@ -1580,6 +1580,8 @@ fn terrain_adaptive3d_session(strategy: ClearingStrategy) -> ProjectSession {
         .map(|m| m.id)
         .expect("ux_3d_terrain.toml loads terrain_small.stl");
     let adaptive3d = Adaptive3dConfig {
+        entry_clearance_mm: 0.5,
+        ramp_feed_rate: None,
         trochoid_cap_mult: 1.6,
         engagement_measure: crate::adaptive::EngagementMeasure::DiskArea,
         stepover: 1.2,

@@ -158,6 +158,7 @@ fn build_project(dir: &Path, format: PostFormat) -> PathBuf {
         name: "Pocket".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(PocketConfig {
+            ramp_feed_rate: None,
             stepover: 3.0,
             depth: 2.0,
             depth_per_pass: 2.0,

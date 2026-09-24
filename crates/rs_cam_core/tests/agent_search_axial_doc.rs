@@ -87,6 +87,8 @@ fn agent_search_axial_doc_diag() {
     // Setup-local stock_top = effective_stock_bbox.max.z = stock_z = 25.
     let stock_top = stock_z;
     let params = Adaptive3dParams {
+        entry_clearance_mm: 0.5,
+        ramp_feed_rate: None,
         geometry: Adaptive3dGeometry {
             tool_radius: 3.0,
             envelope_radius: 3.0,

@@ -407,6 +407,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
     let tp_with_links = apply_dressups(
         AnnotatedToolpath::new(all_moves.clone()),
         rs_cam_core::compute::execute::DressupContext {
+            ramp_feed_rate_mm_min: None,
             cfg: &with_links,
             nominal_feed_rate: 1000.0,
             plunge_rate_mm_min: None,
@@ -430,6 +431,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
     let tp_no_links = apply_dressups(
         AnnotatedToolpath::new(all_moves.clone()),
         rs_cam_core::compute::execute::DressupContext {
+            ramp_feed_rate_mm_min: None,
             cfg: &DressupConfig::default(),
             nominal_feed_rate: 1000.0,
             plunge_rate_mm_min: None,
@@ -463,6 +465,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
     let tp_finish = apply_dressups(
         AnnotatedToolpath::new(all_moves.clone()),
         rs_cam_core::compute::execute::DressupContext {
+            ramp_feed_rate_mm_min: None,
             cfg: &finish_defaults,
             nominal_feed_rate: 1000.0,
             plunge_rate_mm_min: None,
@@ -489,6 +492,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
     let tp_ramp = apply_dressups(
         AnnotatedToolpath::new(all_moves.clone()),
         rs_cam_core::compute::execute::DressupContext {
+            ramp_feed_rate_mm_min: None,
             cfg: &ramp_only,
             nominal_feed_rate: 1000.0,
             plunge_rate_mm_min: None,

@@ -109,6 +109,7 @@ fn build_as004_face_session() -> ProjectSession {
 
     // AS004 face params (from `planning/toolpath_acceptance/cases_agent_smoke.csv`).
     let face = FaceConfig {
+        ramp_feed_rate: None,
         stepover: 3.0,
         depth: 1.0,
         depth_per_pass: 0.5,
@@ -375,6 +376,7 @@ fn build_as001_pocket_session_from_file() -> ProjectSession {
     // AS001 pocket params (depth=6, dpp=2, stepover=2.4, feed=900, plunge=350)
     // from `planning/toolpath_acceptance/cases_agent_smoke.csv`.
     let pocket = PocketConfig {
+        ramp_feed_rate: None,
         stepover: 2.4,
         depth: 6.0,
         depth_per_pass: 2.0,

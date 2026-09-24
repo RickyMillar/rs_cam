@@ -1501,6 +1501,8 @@ fn sweep_rest_prev_tool_radius() {
 
 fn default_adaptive3d_params() -> Adaptive3dParams {
     Adaptive3dParams {
+        entry_clearance_mm: 0.5,
+        ramp_feed_rate: None,
         geometry: Adaptive3dGeometry {
             tool_radius: 3.175,
             envelope_radius: 3.175,

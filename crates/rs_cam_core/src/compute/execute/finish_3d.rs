@@ -156,6 +156,8 @@ pub(crate) fn generate_adaptive3d(
         },
         feed_rate: op.feed_rate(),
         plunge_rate: op.plunge_rate(),
+        ramp_feed_rate: op.ramp_feed_rate(),
+        entry_clearance_mm: cfg.entry_clearance_mm,
         entry_style,
         initial_stock: ctx.initial_stock.cloned(),
         safe_z: ctx.heights.retract_z,

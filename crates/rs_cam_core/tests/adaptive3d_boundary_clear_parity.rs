@@ -116,6 +116,8 @@ fn half_stock_boundary() -> Polygon2 {
 
 fn base_params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
     Adaptive3dParams {
+        entry_clearance_mm: 0.5,
+        ramp_feed_rate: None,
         geometry: Adaptive3dGeometry {
             tool_radius: TOOL_RADIUS,
             envelope_radius: TOOL_RADIUS,

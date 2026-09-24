@@ -363,6 +363,7 @@ fn rest_session(profile: DressupProfile) -> ProjectSession {
     let tool_id = add_tool(&mut builder, ToolType::EndMill, 3.0, "w6 census rest");
     let model_id = add_rect_polygon(&mut builder);
     let op = OperationConfig::Rest(RestConfig {
+        ramp_feed_rate: None,
         prev_tool_id: Some(ToolId(prev_tool_id)),
         stepover: 1.0,
         depth: 4.0,
@@ -542,6 +543,7 @@ fn flat_cases() -> Vec<FlatCase> {
         (
             || {
                 OperationConfig::Pocket(PocketConfig {
+                    ramp_feed_rate: None,
                     stepover: 3.0,
                     depth: 6.0,
                     depth_per_pass: 3.0,
@@ -560,6 +562,7 @@ fn flat_cases() -> Vec<FlatCase> {
         (
             || {
                 OperationConfig::Zigzag(ZigzagConfig {
+                    ramp_feed_rate: None,
                     stepover: 3.0,
                     depth: 3.0,
                     depth_per_pass: 3.0,
@@ -606,6 +609,7 @@ fn flat_cases() -> Vec<FlatCase> {
         (
             || {
                 OperationConfig::Profile(ProfileConfig {
+                    ramp_feed_rate: None,
                     side: ProfileSide::Outside,
                     depth: 6.0,
                     depth_per_pass: 3.0,
@@ -655,6 +659,7 @@ fn flat_cases() -> Vec<FlatCase> {
         (
             || {
                 OperationConfig::Chamfer(ChamferConfig {
+                    ramp_feed_rate: None,
                     chamfer_width: 1.5,
                     tip_offset: 0.1,
                     feed_rate: 800.0,
@@ -731,6 +736,7 @@ fn hemi_cases() -> Vec<HemiCase> {
         (
             || {
                 OperationConfig::DropCutter(DropCutterConfig {
+                    ramp_feed_rate: None,
                     stepover: 1.5,
                     feed_rate: 1000.0,
                     plunge_rate: 400.0,
@@ -748,6 +754,7 @@ fn hemi_cases() -> Vec<HemiCase> {
         (
             || {
                 OperationConfig::Waterline(WaterlineConfig {
+                    ramp_feed_rate: None,
                     z_step: 1.5,
                     sampling: 0.4,
                     feed_rate: 1000.0,

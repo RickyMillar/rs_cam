@@ -192,6 +192,7 @@ fn drill_model() -> LoadedModel {
 
 fn pocket_toolpath(tool_id: usize, model_id: usize) -> ToolpathConfig {
     let pocket = PocketConfig {
+        ramp_feed_rate: None,
         stepover: 2.0,
         depth: 6.0,
         depth_per_pass: 2.0,

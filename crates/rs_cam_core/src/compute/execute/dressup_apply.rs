@@ -450,6 +450,10 @@ pub struct DressupContext<'a> {
     /// apply. This is NOT the `plunge_rate` local inside the pipeline,
     /// which is a heuristic for the entry and link dressups.
     pub plunge_rate_mm_min: Option<f64>,
+    /// The operation's helix and ramp entry feed through material
+    /// (mm/min). `None` keeps the entry dressup's own feed (the plunge
+    /// feed it derives), which was the behaviour before the field.
+    pub ramp_feed_rate_mm_min: Option<f64>,
     pub tool_diameter: f64,
     pub safe_z: f64,
     pub stock_top: f64,
@@ -477,6 +481,7 @@ pub fn apply_dressups(
         cfg,
         nominal_feed_rate,
         plunge_rate_mm_min,
+        ramp_feed_rate_mm_min,
         tool_diameter,
         safe_z,
         stock_top,
@@ -581,6 +586,10 @@ pub fn apply_dressups(
         stock_top,
         surface: entry_surface,
         fold_lap_cap: transform_capabilities.ramp_fold_lap_cap,
+        ramp_feed: ramp_feed_rate_mm_min,
+        stock_top_measured: false,
+        contact_clearance: cfg.entry_clearance_mm,
+        contact_top: None,
         // Operator ruling 2026-09-24: a helix or ramp takes the full material
         // depth, so it reads the op's own replayed stock for its start.
         own_stock: cutter.map(|cutter| crate::dressup::EntryStockReplay {

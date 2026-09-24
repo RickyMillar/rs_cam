@@ -1064,6 +1064,7 @@ fn three_op_session() -> rs_cam_core::session::ProjectSession {
     add(
         "Pocket",
         OperationConfig::Pocket(PocketConfig {
+            ramp_feed_rate: None,
             stepover: 3.0,
             depth: 6.0,
             depth_per_pass: 3.0,
@@ -1079,6 +1080,7 @@ fn three_op_session() -> rs_cam_core::session::ProjectSession {
     add(
         "Zigzag",
         OperationConfig::Zigzag(ZigzagConfig {
+            ramp_feed_rate: None,
             stepover: 3.0,
             depth: 3.0,
             depth_per_pass: 3.0,

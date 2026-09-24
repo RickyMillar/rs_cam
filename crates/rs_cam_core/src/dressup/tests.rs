@@ -1039,6 +1039,10 @@ fn no_probe(stock_top: f64) -> EntrySafety<'static> {
         // finishing contour sees it.
         fold_lap_cap: Some(super::entry_descent::RAMP_FOLD_MAX_LAPS),
         own_stock: None,
+        ramp_feed: None,
+        stock_top_measured: false,
+        contact_clearance: 0.5,
+        contact_top: None,
     }
 }
 
@@ -1279,6 +1283,10 @@ fn a_rough_keeps_folding_over_a_short_run_r10() {
         surface: None,
         fold_lap_cap: None,
         own_stock: None,
+        ramp_feed: None,
+        stock_top_measured: false,
+        contact_clearance: 0.5,
+        contact_top: None,
     };
     let result = without_provenance(apply_entry(
         AnnotatedToolpath::new(plunge_then_run(2.0)),
@@ -1906,4 +1914,120 @@ fn filter_air_cuts_preserves_invalid_flag() {
     ));
     assert!(!result.spans_valid);
     assert_eq!(result.spans, vec![Span::new(0, 1, SpanKind::Operation)]);
+}
+
+// ── Ramp feed and entry clearance (operator rulings 2026-09-25) ────────
+
+/// Feed of every `EntryHelix` / `EntryRamp` move, and of every other fed
+/// move, in `tp`.
+fn entry_feeds(tp: &Toolpath) -> (Vec<f64>, Vec<f64>) {
+    let mut ramp = Vec::new();
+    let mut other = Vec::new();
+    for m in &tp.moves {
+        if let MoveType::Linear { feed_rate } = m.move_type {
+            if matches!(m.intent, MoveIntent::EntryHelix | MoveIntent::EntryRamp) {
+                ramp.push(feed_rate);
+            } else {
+                other.push(feed_rate);
+            }
+        }
+    }
+    (ramp, other)
+}
+
+/// A helix and a ramp take their descent through material at the
+/// operation's `ramp_feed_rate` when it is set, and at the feed they are
+/// handed (the plunge feed) when it is not. The straight feed through air
+/// above the material keeps the handed feed.
+#[test]
+fn helix_and_ramp_descend_at_the_ramp_feed_when_set() {
+    const PLUNGE: f64 = 300.0;
+    const RAMP: f64 = 2400.0;
+    let start = P3::new(10.0, 10.0, 20.0);
+    let end = P3::new(10.0, 10.0, 0.0);
+    for ramp_feed in [None, Some(RAMP)] {
+        let safety = EntrySafety {
+            ramp_feed,
+            ..no_probe(8.0)
+        };
+        let mut helix = Toolpath::new();
+        helix.rapid_to(start);
+        super::entry_descent::emit_helix(&mut helix, &start, &end, 2.0, 1.0, PLUNGE, &safety);
+        let mut ramp = Toolpath::new();
+        ramp.rapid_to(start);
+        super::entry_descent::emit_ramp(
+            &mut ramp,
+            &start,
+            &end,
+            (1.0, 0.0),
+            3.0,
+            PLUNGE,
+            &safety,
+            None,
+        );
+        let want = ramp_feed.unwrap_or(PLUNGE);
+        for (name, tp) in [("helix", &helix), ("ramp", &ramp)] {
+            let (entry, other) = entry_feeds(tp);
+            assert!(!entry.is_empty(), "{name}: no entry moves");
+            assert!(
+                entry.iter().all(|f| (f - want).abs() < 1e-9),
+                "{name}: entry feeds {entry:?}, want {want}"
+            );
+            assert!(
+                other.iter().all(|f| (f - PLUNGE).abs() < 1e-9),
+                "{name}: the straight air feed must keep the plunge feed: {other:?}"
+            );
+        }
+    }
+}
+
+/// The helix and the ramp start at the material top plus the entry
+/// clearance (`entry_clearance_mm`); every move above that is straight.
+#[test]
+fn helix_and_ramp_start_at_the_entry_clearance() {
+    let start = P3::new(10.0, 10.0, 20.0);
+    let end = P3::new(10.0, 10.0, 0.0);
+    let top = 8.0;
+    for clearance in [0.2, 0.5, 1.5] {
+        let safety = EntrySafety {
+            contact_clearance: clearance,
+            ..no_probe(top)
+        };
+        let mut helix = Toolpath::new();
+        helix.rapid_to(start);
+        super::entry_descent::emit_helix(&mut helix, &start, &end, 2.0, 1.0, 300.0, &safety);
+        let mut ramp = Toolpath::new();
+        ramp.rapid_to(start);
+        super::entry_descent::emit_ramp(
+            &mut ramp,
+            &start,
+            &end,
+            (1.0, 0.0),
+            3.0,
+            300.0,
+            &safety,
+            None,
+        );
+        for (name, tp) in [("helix", &helix), ("ramp", &ramp)] {
+            let first = tp
+                .moves
+                .iter()
+                .position(|m| matches!(m.intent, MoveIntent::EntryHelix | MoveIntent::EntryRamp))
+                .expect("an entry move");
+            let from = tp.moves[first - 1].target;
+            assert!(
+                (from.z - (top + clearance)).abs() < 1e-9,
+                "{name}, clearance {clearance}: the entry starts at z {:.3}, want {:.3}",
+                from.z,
+                top + clearance
+            );
+            for w in tp.moves[..first].windows(2) {
+                let (a, b) = (w[0].target, w[1].target);
+                assert!(
+                    (a.x - b.x).abs() < 1e-9 && (a.y - b.y).abs() < 1e-9,
+                    "{name}: a move above the entry is not straight down"
+                );
+            }
+        }
+    }
 }

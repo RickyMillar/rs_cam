@@ -22,6 +22,7 @@ mod air_cut;
 mod entry_descent;
 mod link;
 
+pub use entry_descent::ENTRY_CONTACT_CLEARANCE;
 pub(crate) use entry_descent::{ENTRY_CLEARANCE, emit_helix, emit_ramp};
 
 use crate::dexel_stock::TriDexelStock;
@@ -178,6 +179,27 @@ pub struct EntrySafety<'a> {
     /// entry; the adaptive3d door passes `None` (its planner floor is the
     /// `stock_top` of each entry).
     pub own_stock: Option<EntryStockReplay<'a>>,
+    /// The feed (mm/min) of a helix or ramp move through material (the
+    /// operation's `ramp_feed_rate`). `None` uses the feed the caller hands
+    /// the emitter. A straight feed through air and a straight plunge keep
+    /// the caller's feed.
+    pub ramp_feed: Option<f64>,
+    /// `stock_top` is a stock READ (the planner's floor or the op's replayed
+    /// stock), not the nominal stock top. A read lets the rapid go down to
+    /// the contact clearance; a nominal top keeps the rapid
+    /// `ENTRY_CLEARANCE` above it and feeds the rest through air.
+    pub stock_top_measured: bool,
+    /// The height (mm) above the material top where a helix or ramp starts
+    /// (the operation's `entry_clearance_mm`). The rapid floor does not move
+    /// with it; see `entry_descent::rapid_to_entry_top`.
+    pub contact_clearance: f64,
+    /// A closer read of the material top for the helix or ramp start, when
+    /// the caller has one: the cell-centre read of the op's replayed stock.
+    /// `stock_top` stays the conservative (sliver-safe) read and sets the
+    /// rapid floor; the conservative read holds a tube edge cell at the
+    /// height above the cut, which started entries up to one level high.
+    /// `None` uses `stock_top` for both.
+    pub contact_top: Option<f64>,
 }
 
 /// What `apply_entry` needs to replay an op's own moves on a stock.
@@ -226,8 +248,8 @@ impl OwnStockReplay {
                 // stamped, which can only leave a read top higher (safe).
                 let margin = radius + 5.0;
                 let (w, h) = (x1 - x0 + 2.0 * margin, y1 - y0 + 2.0 * margin);
-                let cell = (radius / 3.0)
-                    .clamp(0.25, 0.5)
+                let cell = (radius / 6.0)
+                    .clamp(0.1, 0.25)
                     .max((w * h / Self::MAX_CELLS).sqrt());
                 TriDexelStock::from_bounds(
                     &crate::geo::BoundingBox3 {
@@ -262,9 +284,16 @@ impl OwnStockReplay {
         }
     }
 
-    /// The highest material may stand under a disc of `reach` at `(x, y)`.
+    /// The highest material may stand under a disc of `reach` at `(x, y)`
+    /// (the sliver-safe bound, for the rapid floor).
     fn material_top(&self, x: f64, y: f64, reach: f64) -> Option<f64> {
         self.stock.max_conservative_top_z_in_disc(x, y, reach)
+    }
+
+    /// The highest cell-centre material top under a disc of `reach` (for
+    /// the helix or ramp start).
+    fn contact_top(&self, x: f64, y: f64, reach: f64) -> Option<f64> {
+        self.stock.max_top_z_in_disc(x, y, reach)
     }
 }
 
@@ -322,11 +351,11 @@ pub fn apply_entry(
             *stamped = result.moves.len();
         }
     };
-    let entry_reach = tool_radius_mm
-        + match style {
-            EntryStyle::Helix { radius, .. } => radius.max(0.0),
-            EntryStyle::Ramp { .. } => 0.0,
-        };
+    // The entry column's own footprint (the tool radius, not the helix
+    // circle). On a 2.5D op the disc of the helix circle reaches the part
+    // wall beside the entry, and that wall top is not material the entry
+    // descends into: reading it would helix down through the cleared column.
+    let entry_reach = tool_radius_mm;
 
     let mut i = 0;
     while i < toolpath.moves.len() {
@@ -340,11 +369,16 @@ pub fn apply_entry(
             // The material top under this entry: the op's own stock after
             // every move before it, or the nominal stock top.
             catch_up(&mut own, &result, &mut stamped);
+            let read = own
+                .as_ref()
+                .and_then(|o| o.material_top(m.target.x, m.target.y, entry_reach));
+            let contact = own
+                .as_ref()
+                .and_then(|o| o.contact_top(m.target.x, m.target.y, entry_reach));
             let safety = EntrySafety {
-                stock_top: own
-                    .as_ref()
-                    .and_then(|o| o.material_top(m.target.x, m.target.y, entry_reach))
-                    .unwrap_or(safety.stock_top),
+                stock_top: read.unwrap_or(safety.stock_top),
+                stock_top_measured: read.is_some(),
+                contact_top: contact.or(safety.contact_top),
                 ..safety
             };
             let entry_start = result.moves.len();

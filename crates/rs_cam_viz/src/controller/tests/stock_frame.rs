@@ -230,6 +230,7 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
 
     // AS001 pocket params: depth=6, dpp=2, stepover=2.4, feed=900, plunge=350.
     let pocket = PocketConfig {
+        ramp_feed_rate: None,
         stepover: 2.4,
         depth: 6.0,
         depth_per_pass: 2.0,

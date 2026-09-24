@@ -85,6 +85,7 @@ fn build_pocket_session() -> ProjectSession {
         .map(|m| m.id)
         .expect("ux_2d_pocket ships a model");
     let pocket = PocketConfig {
+        ramp_feed_rate: None,
         stepover: 2.4,
         depth: 3.0,
         depth_per_pass: 1.5,

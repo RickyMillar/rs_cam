@@ -183,6 +183,9 @@ pub struct GenContext {
     feed_rate: f64,
     /// The RAW operation's plunge rate, in mm/min.
     plunge_rate: f64,
+    /// The RAW operation's helix and ramp entry feed through material, in
+    /// mm/min. `None` uses the plunge feed.
+    ramp_feed_rate: Option<f64>,
     /// The RAW operation's transform capabilities.
     transform_capabilities: crate::compute::catalog::OperationTransformCapabilities,
     /// The simulated machined-stock snapshot this toolpath's id names,
@@ -690,6 +693,7 @@ impl JobPhases<'_, '_> {
                 cfg: &self.context.dressups,
                 nominal_feed_rate: self.context.feed_rate,
                 plunge_rate_mm_min: Some(self.context.plunge_rate),
+                ramp_feed_rate_mm_min: self.context.ramp_feed_rate,
                 tool_diameter: self.inputs.tool_def.diameter(),
                 safe_z: self.inputs.heights.retract_z,
                 stock_top: self.inputs.emission_stock_bbox.max.z,
@@ -2262,6 +2266,7 @@ impl ProjectSession {
             entry_probe_leave: tc.operation.entry_probe_leave(),
             feed_rate: tc.operation.feed_rate(),
             plunge_rate: tc.operation.plunge_rate(),
+            ramp_feed_rate: tc.operation.ramp_feed_rate(),
             transform_capabilities: tc.operation.transform_capabilities(),
             prior_stock,
             source_stock,

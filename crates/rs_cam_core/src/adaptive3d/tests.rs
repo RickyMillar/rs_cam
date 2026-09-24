@@ -113,6 +113,8 @@ fn flat_cutter() -> FlatEndmill {
 
 fn default_params() -> Adaptive3dParams {
     Adaptive3dParams {
+        entry_clearance_mm: 0.5,
+        ramp_feed_rate: None,
         geometry: Adaptive3dGeometry {
             tool_radius: 3.175,
             envelope_radius: 3.175,

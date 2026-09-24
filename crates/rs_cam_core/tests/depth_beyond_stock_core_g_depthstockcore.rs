@@ -302,6 +302,7 @@ fn pocket_session(depth: f64) -> ProjectSession {
         name: "Pocket".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(PocketConfig {
+            ramp_feed_rate: None,
             stepover: 2.0,
             depth,
             depth_per_pass: 2.0,

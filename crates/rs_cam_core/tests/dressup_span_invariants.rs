@@ -132,6 +132,7 @@ fn run_full_pipeline(
     apply_dressups(
         annotated,
         rs_cam_core::compute::execute::DressupContext {
+            ramp_feed_rate_mm_min: None,
             cfg,
             nominal_feed_rate: 1000.0,
             plunge_rate_mm_min: None,
@@ -192,6 +193,7 @@ fn synthetic_three_pass_preserves_invariants_across_all_combos() {
         let output = apply_dressups(
             input,
             rs_cam_core::compute::execute::DressupContext {
+                ramp_feed_rate_mm_min: None,
                 cfg: &cfg,
                 nominal_feed_rate: 1000.0,
                 plunge_rate_mm_min: None,
@@ -237,6 +239,7 @@ fn synthetic_three_pass_link_moves_never_straddles_barrier() {
     let output = apply_dressups(
         input,
         rs_cam_core::compute::execute::DressupContext {
+            ramp_feed_rate_mm_min: None,
             cfg: &cfg,
             nominal_feed_rate: 1000.0,
             plunge_rate_mm_min: None,
@@ -298,6 +301,7 @@ fn synthetic_with_invalid_input_spans_stays_invalid() {
     let output = apply_dressups(
         input,
         rs_cam_core::compute::execute::DressupContext {
+            ramp_feed_rate_mm_min: None,
             cfg: &cfg,
             nominal_feed_rate: 1000.0,
             plunge_rate_mm_min: None,
@@ -420,6 +424,7 @@ fn one_way_face_vetoes_rapid_order_but_runs_other_dressups() {
     let output = apply_dressups(
         annotated,
         rs_cam_core::compute::execute::DressupContext {
+            ramp_feed_rate_mm_min: None,
             cfg: &cfg,
             nominal_feed_rate: 1500.0,
             plunge_rate_mm_min: None,
@@ -494,6 +499,7 @@ fn dressup_stages_run_in_the_order_the_pipeline_lists() {
     let _ = apply_dressups(
         synthetic_three_pass(),
         rs_cam_core::compute::execute::DressupContext {
+            ramp_feed_rate_mm_min: None,
             cfg: &cfg,
             nominal_feed_rate: 1000.0,
             plunge_rate_mm_min: None,

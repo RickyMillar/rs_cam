@@ -211,6 +211,12 @@ pub struct Adaptive3dParams {
     pub linking: Adaptive3dLinking,
     pub feed_rate: f64,
     pub plunge_rate: f64,
+    /// Feed (mm/min) of a helix or ramp entry through material. `None`
+    /// uses `plunge_rate`. A peck plunge keeps `plunge_rate`.
+    pub ramp_feed_rate: Option<f64>,
+    /// Height (mm) above the material top where a helix or ramp entry
+    /// starts. The rapid floor stays 0.5 mm over the planner read.
+    pub entry_clearance_mm: f64,
     pub safe_z: f64,
     /// Entry strategy (default: Plunge for backward compat).
     pub entry_style: EntryStyle3d,

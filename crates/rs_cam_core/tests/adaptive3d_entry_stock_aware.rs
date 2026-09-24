@@ -86,6 +86,11 @@ const DEPTH_TOL: f64 = 0.25;
 /// material. A helix step descends pitch / 36 (0.028 mm at pitch 1).
 const ENTERS_MATERIAL_MM: f64 = 0.01;
 const HELIX_RADIUS: f64 = 1.8;
+/// The default `entry_clearance_mm`.
+const ENTRY_CLEARANCE_MM: f64 = 0.5;
+/// The replay reads a fresh stock at cell centres; the planner reads a
+/// conservative (sliver-safe) bound. They differ by up to about a cell.
+const AIR_TOL_MM: f64 = 0.3;
 const HELIX_PITCH: f64 = 1.0;
 const RAMP_ANGLE_DEG: f64 = 3.0;
 
@@ -127,6 +132,8 @@ const STYLES: [Style; 3] = [Style::Plunge, Style::Helix, Style::Ramp];
 
 fn params(style: EntryStyle3d, stay_down: Option<f64>, dpp: f64) -> Adaptive3dParams {
     Adaptive3dParams {
+        entry_clearance_mm: 0.5,
+        ramp_feed_rate: None,
         geometry: Adaptive3dGeometry {
             tool_radius: 3.0,
             envelope_radius: 3.0,
@@ -209,6 +216,9 @@ struct Descent {
     depth: f64,
     /// dz / dxy of the move (infinite for a vertical move).
     slope: f64,
+    /// How far the move's start stands above the material top under the
+    /// entry footprint (tool radius plus the helix radius) at either end.
+    above: f64,
 }
 
 impl Descent {
@@ -267,11 +277,20 @@ fn replay_on(
             }
             _ if dz > 0.01 => {
                 let top = top_at(stock, b.x, b.y).min(a.z);
+                // The material the move descends into: under the entry
+                // footprint (tool plus helix radius) at either end.
+                let wide_at = |p: P3| {
+                    stock
+                        .max_top_z_in_disc(p.x, p.y, r + HELIX_RADIUS + CELL)
+                        .unwrap_or(f64::NEG_INFINITY)
+                };
+                let wide = wide_at(a).max(wide_at(b));
                 audit.descents.push(Descent {
                     move_index: i,
                     intent: m.intent,
                     depth: (top - b.z).max(0.0),
                     slope: if xy > 1e-9 { dz / xy } else { f64::INFINITY },
+                    above: a.z - wide,
                 });
             }
             _ => {}
@@ -389,6 +408,28 @@ fn check_safe_with(label: &str, audit: &Audit, style: Style, dpp: f64, surface_b
             "{label}: a cut at move {} goes {:.2} mm straight into stock",
             d.move_index,
             d.depth
+        );
+    }
+    // Operator ruling 2026-09-25: never helix or ramp air. No descending
+    // helix or ramp move starts more than the entry clearance above the
+    // material under it.
+    let highest_entry = audit
+        .descents
+        .iter()
+        .filter(|d| is_entry(d.intent))
+        .max_by(|a, b| a.above.total_cmp(&b.above));
+    eprintln!(
+        "{label}: highest helix/ramp start above the material {:?}",
+        highest_entry.map(|d| (d.move_index, d.intent, d.above))
+    );
+    if let Some(d) = highest_entry.filter(|_| !surface_blocked) {
+        assert!(
+            d.above <= ENTRY_CLEARANCE_MM + AIR_TOL_MM,
+            "{label}: a {:?} at move {} starts {:.2} mm above the material \
+             (clearance {ENTRY_CLEARANCE_MM})",
+            d.intent,
+            d.move_index,
+            d.above
         );
     }
     if let Some(d) = steepest_entry.filter(|_| !surface_blocked) {
@@ -560,6 +601,7 @@ fn pocket_toolpath(style: Style) -> Toolpath {
         name: "Pocket".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(PocketConfig {
+            ramp_feed_rate: None,
             stepover: 2.0,
             depth: 12.0,
             depth_per_pass: POCKET_DPP,

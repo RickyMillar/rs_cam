@@ -152,6 +152,7 @@ fn build_session(retract_z: HeightMode) -> ProjectSession {
         name: "Collision population pocket".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(PocketConfig {
+            ramp_feed_rate: None,
             stepover: 2.4,
             depth: 4.0,
             depth_per_pass: 2.0,

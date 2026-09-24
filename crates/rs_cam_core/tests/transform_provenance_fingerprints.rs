@@ -36,7 +36,7 @@
 //! | C1 capture | `4787421` | — (original capture) | all five |
 //! | PR-6 (H2.2 / Checkpoint F1) | `96717b0` | arc-fit's run key gained `intent`, so four dressup-inserted `LeadOut` segments stopped being swallowed into an `Unknown`-labelled arc — LABEL only | `arc_raster` |
 //! | W8 / F23-impl (Checkpoints F2+F3, ruled 2026-08-06) | `f86a38c` | the closing retract now lifts from the lead-out ARC endpoint instead of the stale cut endpoint — XY of N rapids per fixture | **all five** |
-//! | Full-depth entries (operator ruling 2026-09-24) | this branch | a ramp or helix takes the full material depth from the stock top; an entry through air is one straight feed, so the face chain loses its six descent splits; the link sites move and still tile the path | **all** |
+//! | Full-depth entries (operator ruling 2026-09-24) | this branch | a ramp or helix takes the full material depth from 0.5 mm above the material; the air above is a straight move; move counts and the six face descent splits hold except where the deeper ramp laps more; the link sites move and still tile the path | **all** |
 //!
 //! `f86a38c`'s move went un-re-pinned for eight days: that lane re-pinned
 //! `crease_own_region_pr6b` in its own preceding commit (`3f2e84e`) but did not
@@ -276,6 +276,7 @@ fn three_pass_full_dressups_fingerprint() {
     let out = apply_dressups(
         input,
         rs_cam_core::compute::execute::DressupContext {
+            ramp_feed_rate_mm_min: None,
             cfg: &full_dressups(),
             nominal_feed_rate: 1000.0,
             plunge_rate_mm_min: None,
@@ -310,7 +311,7 @@ fn three_pass_full_dressups_fingerprint() {
     // are UNCHANGED.
     assert_eq!(
         fingerprint(&out.toolpath),
-        (23, 13_179_299_424_696_327_943),
+        (27, 11_349_734_258_744_810_814),
         "three_pass geometry moved; re-pinned 2026-09-25 for the full-depth entry helix and ramp (operator ruling 2026-09-24), re-pinned 2026-08-14 for the lead-out retract \
          lift (f86a38c), previously re-pinned by PR-6, originally captured at \
          HEAD 4787421 before C1"
@@ -319,9 +320,9 @@ fn three_pass_full_dressups_fingerprint() {
         link_sites(&recorder.finish()),
         expect_sites(&[
             ("head", Some((0, 4))),
-            ("body", Some((5, 12))),
-            ("tail", Some((13, 22))),
-            ("whole", Some((0, 22))),
+            ("body", Some((5, 17))),
+            ("tail", Some((18, 26))),
+            ("whole", Some((0, 26))),
         ]),
         "three_pass semantic link landing sites moved; re-pinned 2026-09-25 for the full-depth entry helix and ramp (operator ruling 2026-09-24), captured at HEAD 4787421 before C1"
     );
@@ -338,6 +339,7 @@ fn arc_raster_full_dressups_fingerprint() {
     let out = apply_dressups(
         input,
         rs_cam_core::compute::execute::DressupContext {
+            ramp_feed_rate_mm_min: None,
             cfg: &full_dressups(),
             nominal_feed_rate: 1200.0,
             plunge_rate_mm_min: None,
@@ -398,7 +400,7 @@ fn arc_raster_full_dressups_fingerprint() {
     // STRAIGHT are byte-identical under the same change.
     assert_eq!(
         fingerprint(&out.toolpath),
-        (64, 532_445_911_757_141_355),
+        (72, 16_066_745_990_077_881_327),
         "arc_raster geometry moved; re-pinned 2026-09-25 for the full-depth entry helix and ramp (operator ruling 2026-09-24), re-pinned 2026-09-10 for the G-RAMPCONTAIN \
          ramp fold, 2026-08-14 for the lead-out retract lift (f86a38c), before \
          that by PR-6 (arcfit intent key), originally captured at HEAD 4787421 \
@@ -420,10 +422,10 @@ fn arc_raster_full_dressups_fingerprint() {
     assert_eq!(
         link_sites(&recorder.finish()),
         expect_sites(&[
-            ("head", Some((0, 24))),
-            ("body", Some((24, 42))),
-            ("tail", Some((42, 63))),
-            ("whole", Some((0, 63))),
+            ("head", Some((0, 30))),
+            ("body", Some((30, 51))),
+            ("tail", Some((51, 71))),
+            ("whole", Some((0, 71))),
         ]),
         "arc_raster semantic link landing sites moved; re-pinned 2026-09-25 for the full-depth entry helix and ramp (operator ruling 2026-09-24), captured at HEAD 4787421 before C1"
     );
@@ -441,6 +443,7 @@ fn face_full_chain_fingerprint() {
     let mut current = apply_dressups(
         input,
         rs_cam_core::compute::execute::DressupContext {
+            ramp_feed_rate_mm_min: None,
             cfg: &full_dressups(),
             nominal_feed_rate: 1500.0,
             plunge_rate_mm_min: None,
@@ -479,7 +482,7 @@ fn face_full_chain_fingerprint() {
     // `Retract` intent and the 30.0 safe-Z are untouched.
     assert_eq!(
         fingerprint(&current.toolpath),
-        (49, 14_892_507_883_933_373_725),
+        (80, 767_530_421_739_535_607),
         "face stage-1 (dressups) geometry moved; re-pinned 2026-09-25 for the full-depth entry helix and ramp (operator ruling 2026-09-24), re-pinned 2026-08-14 for the \
          lead-out retract lift (f86a38c), originally captured at HEAD 4787421 \
          before C1"
@@ -498,7 +501,7 @@ fn face_full_chain_fingerprint() {
     // seven safe emitted moves. Was `(103, 10_899_331_192_678_125_387)`.
     assert_eq!(
         fingerprint(&current.toolpath),
-        (66, 11_341_807_287_893_485_174),
+        (110, 6_464_368_178_452_633_664),
         "face stage-2 (boundary clip) geometry moved; re-pinned 2026-09-25 for the full-depth entry helix and ramp (operator ruling 2026-09-24), re-pinned 2026-09-21 for \
          interval boundary clipping retaining in-boundary portions of seven \
          inside-to-outside Face row feeds, originally captured at HEAD 4787421 \
@@ -528,9 +531,9 @@ fn face_full_chain_fingerprint() {
     // `(6, (109, 2_717_567_159_789_683_815))`.
     assert_eq!(
         (split_count, fingerprint(&current.toolpath)),
-        (0, (66, 11_341_807_287_893_485_174)),
-        "face stage-3 (entry-descent split) geometry moved; re-pinned 2026-09-25 for the full-depth entry helix and ramp (operator ruling 2026-09-24), the face entries at the \
-         stock top are now straight feeds through air, so the optimiser splits none; re-pinned 2026-09-21 for \
+        (6, (116, 11_850_581_506_010_120_143)),
+        "face stage-3 (entry-descent split) geometry moved; re-pinned 2026-09-25 for the full-depth entry helix and ramp (operator ruling 2026-09-24), the six descent \
+         splits hold; re-pinned 2026-09-21 for \
          interval clipping retaining seven inside-to-outside Face row feeds, then the \
          unchanged six descent splits, originally captured at HEAD 4787421 before C1"
     );
@@ -542,13 +545,13 @@ fn face_full_chain_fingerprint() {
         // contiguously with no gap or overlap. Was `head (0, 34)`,
         // `body (35, 79)`, `tail (80, 108)`, `whole (0, 108)`.
         expect_sites(&[
-            ("head", Some((0, 20))),
-            ("body", Some((21, 43))),
-            ("tail", Some((44, 65))),
-            ("whole", Some((0, 65))),
+            ("head", Some((0, 37))),
+            ("body", Some((38, 84))),
+            ("tail", Some((85, 115))),
+            ("whole", Some((0, 115))),
         ]),
         "face full-chain semantic link landing sites moved; re-pinned 2026-09-25 for the full-depth entry helix and ramp (operator ruling 2026-09-24), the sites still tile \
-         0..=65 contiguously; re-pinned 2026-09-21 for \
+         0..=115 contiguously; re-pinned 2026-09-21 for \
          seven retained Face row feeds plus the six existing entry splits, which remap the \
          sites while preserving their contiguous 0..=115 tiling; originally captured at HEAD \
          4787421 before C1"

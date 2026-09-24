@@ -588,9 +588,15 @@ fn plan_entry(
             ceiling_z: corridor_ceiling_z(material_stock, from, entry, tool_radius),
         })
     });
+    // The helix or ramp starts above the cell-centre read; the rapid floor
+    // keeps the sliver-safe one.
+    let contact_z = material_stock
+        .max_top_z_in_disc(entry.x, entry.y, drape.entry_floor_radius)
+        .map_or(rapid_floor_z, |z| z.min(rapid_floor_z));
     Adaptive3dSegment::RapidWithFloor {
         entry,
         rapid_floor_z,
+        contact_z,
         stay_down,
     }
 }

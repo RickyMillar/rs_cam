@@ -181,6 +181,10 @@ pub struct OperationDef {
     pub feed_rate: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plunge_rate: Option<f64>,
+    /// Feed (mm/min) of a helix or ramp entry through material. Empty uses
+    /// the plunge rate. A drill cycle has no entry and ignores it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ramp_feed_rate: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub safe_z: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1262,6 +1266,14 @@ fn job_params_for(
     ];
     if let Some(rpm) = op.spindle_speed {
         p.push(("spindle_rpm", json!(rpm)));
+    }
+    if let Some(ramp) = op.ramp_feed_rate
+        && !matches!(
+            op_type,
+            OperationType::Drill | OperationType::AlignmentPinDrill
+        )
+    {
+        p.push(("ramp_feed_rate", json!(ramp)));
     }
     match op_type {
         OperationType::Pocket => {

@@ -185,6 +185,8 @@ fn build_session() -> ProjectSession {
     let model_id = builder.add_model(model);
 
     let adaptive3d = Adaptive3dConfig {
+        entry_clearance_mm: 0.5,
+        ramp_feed_rate: None,
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
         stepover: 1.2,

@@ -225,9 +225,13 @@ pub(super) enum Adaptive3dSegment {
     /// footprint, read from the planner stock before the entry is stamped
     /// (`clearing.rs::plan_entry`). `stay_down` is the planner's stock proof
     /// for a keep-down link; without it the emitter always retracts.
+    /// `contact_z` is the cell-centre stock top over the same footprint: the
+    /// helix or ramp starts above it (the conservative read holds a cut
+    /// edge cell at the height above the cut).
     RapidWithFloor {
         entry: P3,
         rapid_floor_z: f64,
+        contact_z: f64,
         stay_down: Option<StayDownProof>,
     },
     /// Feed directly at cutting depth (no retract)
@@ -1383,25 +1387,31 @@ pub(super) fn segments_to_toolpath(
     // G-RAMPTERRAIN: hand the entry emitters the drop-cutter surface so
     // ramp legs and helix turns clip to `surface + stock_to_leave` —
     // the same floor `drape_point` holds for the entry destination.
-    let entry_safety = |stock_top: f64| crate::dressup::EntrySafety {
-        stock_top,
-        surface: Some(crate::dressup::EntrySurfaceProbe {
-            mesh,
-            index,
-            cutter,
-            stock_to_leave: params.depth.stock_to_leave,
-            // Beyond the mesh footprint stands prism stock a 2.5D
-            // rough may cut; the planned leg z stands there
-            // (FINDINGS.md amendment 2).
-            off_mesh: crate::dressup::OffMeshEntry::Unconstrained,
-            // Adaptive3d clears PRISM stock and plans its own peck ladder;
-            // the bite-budgeted rest ramp is the surface family's door.
-            rest_stock: None,
-        }),
-        // R10: a rough keeps folding; the cap is for the finishing roles.
-        fold_lap_cap: None,
-        // The planner floor is already each entry's `stock_top`.
-        own_stock: None,
+    let entry_safety = |stock_top: f64, stock_top_measured: bool, contact_top: Option<f64>| {
+        crate::dressup::EntrySafety {
+            stock_top,
+            stock_top_measured,
+            contact_clearance: params.entry_clearance_mm,
+            contact_top,
+            surface: Some(crate::dressup::EntrySurfaceProbe {
+                mesh,
+                index,
+                cutter,
+                stock_to_leave: params.depth.stock_to_leave,
+                // Beyond the mesh footprint stands prism stock a 2.5D
+                // rough may cut; the planned leg z stands there
+                // (FINDINGS.md amendment 2).
+                off_mesh: crate::dressup::OffMeshEntry::Unconstrained,
+                // Adaptive3d clears PRISM stock and plans its own peck ladder;
+                // the bite-budgeted rest ramp is the surface family's door.
+                rest_stock: None,
+            }),
+            // R10: a rough keeps folding; the cap is for the finishing roles.
+            fold_lap_cap: None,
+            ramp_feed: params.ramp_feed_rate,
+            // The planner floor is already each entry's `stock_top`.
+            own_stock: None,
+        }
     };
 
     for segment in segments {
@@ -1413,13 +1423,19 @@ pub(super) fn segments_to_toolpath(
                 });
             }
             Adaptive3dSegment::Rapid(_) | Adaptive3dSegment::RapidWithFloor { .. } => {
-                let (raw_entry, rapid_floor_z, stay_down) = match segment {
+                let (raw_entry, rapid_floor_z, contact_z, stay_down) = match segment {
                     Adaptive3dSegment::RapidWithFloor {
                         entry,
                         rapid_floor_z,
+                        contact_z,
                         stay_down,
-                    } => (entry, Some(*rapid_floor_z), stay_down.as_ref()),
-                    Adaptive3dSegment::Rapid(entry) => (entry, None, None),
+                    } => (
+                        entry,
+                        Some(*rapid_floor_z),
+                        Some(*contact_z),
+                        stay_down.as_ref(),
+                    ),
+                    Adaptive3dSegment::Rapid(entry) => (entry, None, None, None),
                     _ => continue,
                 };
                 // Gouge guard: lift the entry destination to hold the leave, so
@@ -1507,7 +1523,7 @@ pub(super) fn segments_to_toolpath(
                                 radius,
                                 pitch,
                                 params.plunge_rate,
-                                &entry_safety(material_top),
+                                &entry_safety(material_top, rapid_floor_z.is_some(), contact_z),
                             );
                         }
                         EntryStyle3d::Ramp { max_angle_deg } => {
@@ -1518,7 +1534,7 @@ pub(super) fn segments_to_toolpath(
                                 (1.0, 0.0),
                                 max_angle_deg,
                                 params.plunge_rate,
-                                &entry_safety(material_top),
+                                &entry_safety(material_top, rapid_floor_z.is_some(), contact_z),
                                 // G-RAMPCONTAIN: no fold. This door enters PRISM
                                 // stock with `dir = (1.0, 0.0)`; a leg past the
                                 // mesh footprint cuts stock this operation is
@@ -1697,6 +1713,8 @@ mod tests {
 
     fn minimal_params() -> Adaptive3dParams {
         Adaptive3dParams {
+            entry_clearance_mm: 0.5,
+            ramp_feed_rate: None,
             geometry: crate::adaptive3d::Adaptive3dGeometry {
                 tool_radius: 3.175,
                 envelope_radius: 3.175,

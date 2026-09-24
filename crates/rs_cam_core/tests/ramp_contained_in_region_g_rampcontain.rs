@@ -148,6 +148,7 @@ fn pocket_session(dressups: DressupConfig) -> ProjectSession {
         name: "Pocket".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(PocketConfig {
+            ramp_feed_rate: None,
             stepover: 2.0,
             depth: 12.0,
             // The R03 depth per pass. The straight legs were 19.08 mm at

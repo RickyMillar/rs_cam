@@ -1473,6 +1473,7 @@ fn feed_optimization_uses_configured_nominal_feed_not_entry_plunge() {
     let _result = apply_dressups(
         AnnotatedToolpath::new(tp),
         crate::compute::execute::DressupContext {
+            ramp_feed_rate_mm_min: None,
             cfg: &cfg,
             nominal_feed_rate: configured_feed,
             plunge_rate_mm_min: None,
@@ -1517,6 +1518,7 @@ fn apply_dressups_preserves_moves() {
     let result = apply_dressups(
         AnnotatedToolpath::new(tp),
         crate::compute::execute::DressupContext {
+            ramp_feed_rate_mm_min: None,
             cfg: &cfg,
             nominal_feed_rate: 1000.0,
             plunge_rate_mm_min: None,

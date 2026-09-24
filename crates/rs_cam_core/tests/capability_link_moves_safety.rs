@@ -238,6 +238,7 @@ fn dressup(tp: Toolpath, cfg: &DressupConfig, op: OperationType, tool_diameter: 
     apply_dressups(
         rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::with_spans(tp, spans),
         rs_cam_core::compute::execute::DressupContext {
+            ramp_feed_rate_mm_min: None,
             cfg,
             nominal_feed_rate: 1000.0,
             plunge_rate_mm_min: None,
@@ -273,6 +274,7 @@ fn dressup_with_caps(
     apply_dressups(
         rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp),
         rs_cam_core::compute::execute::DressupContext {
+            ramp_feed_rate_mm_min: None,
             cfg,
             nominal_feed_rate: 1000.0,
             plunge_rate_mm_min: None,
@@ -1718,6 +1720,7 @@ fn unified_finish_node_barriers_allow_intra_region_reorder_and_pin_depth() {
         apply_dressups(
             AnnotatedToolpath::with_spans(raw.clone(), spans),
             rs_cam_core::compute::execute::DressupContext {
+                ramp_feed_rate_mm_min: None,
                 cfg,
                 nominal_feed_rate: 1000.0,
                 plunge_rate_mm_min: None,
@@ -1936,6 +1939,7 @@ fn steep_shallow_split_barriers_allow_intra_half_reorder_and_pin_depth() {
         apply_dressups(
             AnnotatedToolpath::with_spans(raw.clone(), steep_shallow_spans(&raw, &split)),
             rs_cam_core::compute::execute::DressupContext {
+                ramp_feed_rate_mm_min: None,
                 cfg,
                 nominal_feed_rate: 1000.0,
                 plunge_rate_mm_min: None,

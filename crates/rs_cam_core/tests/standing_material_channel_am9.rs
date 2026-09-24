@@ -132,6 +132,7 @@ fn collapsing_cascade_session(tool: ToolConfig) -> ProjectSession {
 /// measure does not exist for it.
 fn no_cascade_session() -> ProjectSession {
     let op = OperationConfig::Pocket(PocketConfig {
+        ramp_feed_rate: None,
         stepover: 2.0,
         depth: 2.0,
         depth_per_pass: 2.0,
