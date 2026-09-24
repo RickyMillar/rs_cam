@@ -241,6 +241,10 @@ pub(super) struct ClearZLevelContext<'a> {
     /// simulator will replay (segments_to_toolpath blends Cut paths
     /// before emitting feeds).
     pub(super) min_cutting_radius: f64,
+    /// The step-ladder rule of the level being cleared: drape (the base
+    /// tier) or clip (a coarse tier). The level loop in `path.rs` sets it
+    /// per level, beside `depth_per_pass`.
+    pub(super) level_rule: LevelRule,
     /// F-038: minimum forecast horizontal cutting length (mm) a marching-
     /// squares region must produce in its 2D adaptive sub-pass before the
     /// AgentSearch dispatch commits an entry plunge to it. Set to 0.0 to
@@ -250,13 +254,59 @@ pub(super) struct ClearZLevelContext<'a> {
 
 // ── Contour-parallel clearing ─────────────────────────────────────────
 
+/// How one level treats a cell (step-ladder plan §3.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(super) enum LevelRule {
+    /// The base tier. A cell is material when it has stock above
+    /// `max(surf + stock_to_leave, z_level)`; the cut drapes onto the
+    /// surface. This is the rule of every level before the step ladder.
+    #[default]
+    Drape,
+    /// A coarse tier: the fit rule. A cell is eligible only when the whole
+    /// slab fits above the part there, `surf + stock_to_leave <= z_level`,
+    /// and it has stock above `z_level`. Every cell where the slab does
+    /// not fit is a keep-out, not air. `surf` is the per-cell drop-cutter
+    /// rest height of the operation's cutter, so the test is aware of the
+    /// whole footprint: a tool centre on an eligible cell at `z_level`
+    /// cannot touch the part.
+    Clip,
+}
+
+/// The one-tool-diameter link margin of a coarse tier (plan §3.3).
+///
+/// A coarse tier erodes its eligible area by this margin from the keep-out
+/// cells, in tool-centre space. The band that the coarse tier leaves next
+/// to a wall is thus at least this wide, so the next tier can cut it as a
+/// linked, closed pass and not as slivers. The operator ruled a fixed
+/// value, not a dial (2026-09-24). One tool diameter is the plan's
+/// proposal; it is not a universal formula.
+pub(super) const LINK_MARGIN_TOOL_DIAMETERS: f64 = 1.0;
+
+/// A padded boolean material grid at one Z level.
+pub(super) struct MaterialBoolGrid {
+    /// `true` where the level has material to cut. Padded with a 1-cell
+    /// `false` border.
+    pub(super) cells: Vec<bool>,
+    pub(super) rows: usize,
+    pub(super) cols: usize,
+    pub(super) origin_x: f64,
+    pub(super) origin_y: f64,
+    pub(super) cell_size: f64,
+    /// [`LevelRule::Clip`] only: `true` where the slab does not fit above
+    /// the part (`surf + stock_to_leave > z_level`), in the same padded
+    /// layout. The region filter does not apply to it: the wall is the
+    /// wall, whatever region the level clears. `None` for a drape level.
+    pub(super) keep_out: Option<Vec<bool>>,
+}
+
 /// Build a padded boolean grid of material cells at a given Z level.
 ///
-/// A cell is `true` if the stock has material above the effective floor
-/// (max of surface_z + stock_to_leave, z_level). The grid is padded with
-/// a 1-cell false border so marching squares and EDT detect edge boundaries.
-///
-/// Returns `(padded_grid, padded_rows, padded_cols, origin_x, origin_y, cell_size)`.
+/// [`LevelRule::Drape`]: a cell is `true` if the stock has material above
+/// the effective floor (max of surface_z + stock_to_leave, z_level).
+/// [`LevelRule::Clip`]: a cell is `true` only if the slab also fits above
+/// the part there; the other cells go into the keep-out mask. The grid is
+/// padded with a 1-cell false border so marching squares and EDT detect
+/// edge boundaries.
 #[allow(clippy::indexing_slicing)] // SAFETY: padded grid indices bounded by loop ranges
 fn build_material_bool_grid(
     material_stock: &TriDexelStock,
@@ -264,7 +314,8 @@ fn build_material_bool_grid(
     z_level: f64,
     stock_to_leave: f64,
     region: Option<&MaterialRegion>,
-) -> (Vec<bool>, usize, usize, f64, f64, f64) {
+    rule: LevelRule,
+) -> MaterialBoolGrid {
     let grid = &material_stock.z_grid;
     let rows = grid.rows;
     let cols = grid.cols;
@@ -277,9 +328,24 @@ fn build_material_bool_grid(
     let padded_rows = rows + 2;
     let padded_cols = cols + 2;
     let mut padded_grid = vec![false; padded_rows * padded_cols];
+    let mut keep_out = match rule {
+        LevelRule::Drape => None,
+        LevelRule::Clip => Some(vec![false; padded_rows * padded_cols]),
+    };
 
     for row in 0..rows {
         for col in 0..cols {
+            let surf_z = surface_hm.z_or_bbox_floor_at(row, col);
+
+            // The fit rule: on a clip level the tool may not reach
+            // `z_level` over this cell, so the cell is a keep-out.
+            if let Some(ko) = keep_out.as_mut()
+                && surf_z + stock_to_leave > z_level
+            {
+                ko[(row + 1) * padded_cols + (col + 1)] = true;
+                continue;
+            }
+
             // Skip cells outside the region if one is specified.
             if let Some(r) = region
                 && (row < r.row_min || row > r.row_max || col < r.col_min || col > r.col_max)
@@ -287,7 +353,6 @@ fn build_material_bool_grid(
                 continue;
             }
 
-            let surf_z = surface_hm.z_or_bbox_floor_at(row, col);
             let effective_floor = (surf_z + stock_to_leave).max(z_level);
 
             if stock_has_material_above(material_stock, row, col, effective_floor + 0.01) {
@@ -297,14 +362,121 @@ fn build_material_bool_grid(
         }
     }
 
-    (
-        padded_grid,
-        padded_rows,
-        padded_cols,
-        origin_u - cell_size,
-        origin_v - cell_size,
+    MaterialBoolGrid {
+        cells: padded_grid,
+        rows: padded_rows,
+        cols: padded_cols,
+        origin_x: origin_u - cell_size,
+        origin_y: origin_v - cell_size,
         cell_size,
-    )
+        keep_out,
+    }
+}
+
+/// The contour offset field of a clip level, with its two boundary kinds
+/// (plan §3.2 trap, §3.3).
+///
+/// - The AIR boundary keeps the first-contour offset of a drape level,
+///   `first_threshold = min(tool_radius, stepover / 2)` in cells.
+/// - The KEEP-OUT boundary needs only the link margin: the first contour
+///   sits `margin_cells` from the nearest keep-out cell, in tool-centre
+///   space. One EDT over both sources would add a tool radius to the band
+///   next to each wall.
+///
+/// The field is `min(d_air, d_keep_out - margin + first_threshold)`, so its
+/// `first_threshold` level set is the first contour for both kinds, and the
+/// rings step inwards by the stepover as before.
+///
+/// The eligible area is the material cells at least `margin_cells` from a
+/// keep-out cell. An 8-connected part of it that fits inside a square of
+/// one tool diameter (`min_extent_cells`) is dropped: the next tier takes
+/// it, so a coarse tier never makes a deep entry for a small patch.
+///
+/// Returns the field (0 outside the kept eligible area) and the kept
+/// eligible mask, which also bounds the raster cleanup of the level.
+#[allow(clippy::indexing_slicing)] // SAFETY: every index is below rows * cols
+fn clip_offset_field(
+    material: &[bool],
+    keep_out: &[bool],
+    rows: usize,
+    cols: usize,
+    first_threshold: f64,
+    margin_cells: f64,
+    min_extent_cells: f64,
+) -> (Vec<f64>, Vec<bool>) {
+    let n = rows * cols;
+    let air: Vec<bool> = material
+        .iter()
+        .zip(keep_out)
+        .map(|(&m, &k)| !m && !k)
+        .collect();
+    let d_air = crate::geometry::grid_field::distance_transform_2d(&air, rows, cols);
+    let d_keep_out = if keep_out.iter().any(|&k| k) {
+        crate::geometry::grid_field::distance_transform_2d(keep_out, rows, cols)
+    } else {
+        vec![f64::INFINITY; n]
+    };
+    let mut eligible: Vec<bool> = (0..n)
+        .map(|i| material[i] && d_keep_out[i] >= margin_cells)
+        .collect();
+    drop_small_components(&mut eligible, rows, cols, min_extent_cells);
+    let field = (0..n)
+        .map(|i| {
+            if eligible[i] {
+                d_air[i].min(d_keep_out[i] - margin_cells + first_threshold)
+            } else {
+                0.0
+            }
+        })
+        .collect();
+    (field, eligible)
+}
+
+/// Clear every 8-connected `true` component of `mask` whose bounding box is
+/// smaller than `min_extent_cells` on both axes.
+#[allow(clippy::indexing_slicing)] // SAFETY: every index is below rows * cols
+fn drop_small_components(mask: &mut [bool], rows: usize, cols: usize, min_extent_cells: f64) {
+    let mut seen = vec![false; rows * cols];
+    let mut queue = VecDeque::new();
+    let mut members = Vec::new();
+    for start in 0..rows * cols {
+        if !mask[start] || seen[start] {
+            continue;
+        }
+        seen[start] = true;
+        queue.push_back(start);
+        members.clear();
+        let (mut rmin, mut rmax, mut cmin, mut cmax) = (usize::MAX, 0usize, usize::MAX, 0usize);
+        while let Some(i) = queue.pop_front() {
+            members.push(i);
+            let (r, c) = (i / cols, i % cols);
+            rmin = rmin.min(r);
+            rmax = rmax.max(r);
+            cmin = cmin.min(c);
+            cmax = cmax.max(c);
+            for dr in [-1i64, 0, 1] {
+                for dc in [-1i64, 0, 1] {
+                    let nr = r as i64 + dr;
+                    let nc = c as i64 + dc;
+                    if nr < 0 || nc < 0 || nr >= rows as i64 || nc >= cols as i64 {
+                        continue;
+                    }
+                    let ni = nr as usize * cols + nc as usize;
+                    if mask[ni] && !seen[ni] {
+                        seen[ni] = true;
+                        queue.push_back(ni);
+                    }
+                }
+            }
+        }
+        let height = (rmax - rmin + 1) as f64;
+        let width = (cmax - cmin + 1) as f64;
+        if height < min_extent_cells && width < min_extent_cells {
+            for &i in &members {
+                mask[i] = false;
+            }
+        }
+    }
 }
 
 /// Stamp dexel stock along a 3D cutting path with **swept** segment
@@ -588,12 +760,21 @@ pub(super) fn clear_z_level_contour_parallel(
     }
 
     // 1. Build boolean material grid (material = true)
-    let (material_grid, rows, cols, origin_x, origin_y, cell_size) = build_material_bool_grid(
+    let MaterialBoolGrid {
+        cells: material_grid,
+        rows,
+        cols,
+        origin_x,
+        origin_y,
+        cell_size,
+        keep_out,
+    } = build_material_bool_grid(
         material_stock,
         surface_hm,
         z_level,
         ctx.stock_to_leave,
         region,
+        ctx.level_rule,
     );
 
     let mat_count = material_grid.iter().filter(|&&b| b).count();
@@ -607,15 +788,40 @@ pub(super) fn clear_z_level_contour_parallel(
     //    This gives distance to nearest air cell for each material cell.
     //    Material cells near the boundary have small distance.
     //    Interior material cells have large distance.
-    let air_grid: Vec<bool> = material_grid.iter().map(|&b| !b).collect();
-    let edt = crate::geometry::grid_field::distance_transform_2d(&air_grid, rows, cols);
+    //
+    //    A clip level has a second boundary kind, the keep-out; see
+    //    `clip_offset_field`. Its field replaces the EDT, and its eligible
+    //    mask bounds the raster cleanup below.
+    let tool_radius_cells = ctx.tool_radius / cell_size;
+    let stepover_cells = ctx.stepover / cell_size;
+    let (edt, clip_eligible) = match keep_out.as_deref() {
+        None => {
+            let air_grid: Vec<bool> = material_grid.iter().map(|&b| !b).collect();
+            (
+                crate::geometry::grid_field::distance_transform_2d(&air_grid, rows, cols),
+                None,
+            )
+        }
+        Some(keep_out) => {
+            let margin_cells =
+                2.0 * ctx.tool_radius * LINK_MARGIN_TOOL_DIAMETERS / cell_size;
+            let (field, eligible) = clip_offset_field(
+                &material_grid,
+                keep_out,
+                rows,
+                cols,
+                tool_radius_cells.min(stepover_cells * 0.5).max(1.0),
+                margin_cells,
+                2.0 * tool_radius_cells,
+            );
+            (field, Some(eligible))
+        }
+    };
 
     // 3. Find max distance (determines number of offset levels)
     let max_dist = edt.iter().copied().fold(0.0f64, f64::max);
 
     // 4. Generate contours at each stepover threshold
-    let tool_radius_cells = ctx.tool_radius / cell_size;
-    let stepover_cells = ctx.stepover / cell_size;
 
     debug!(
         z = z_level,
@@ -632,7 +838,9 @@ pub(super) fn clear_z_level_contour_parallel(
     // Z-blend: when enabled, outer contours stay flat at z_level and inner
     // contours progressively descend toward the terrain surface.
     let offset_range = max_dist - tool_radius_cells;
-    let z_blend_enabled = ctx.z_blend;
+    // A clip level cuts at exactly `z_level` (plan §3.2, A2): the blend
+    // toward the terrain would take inner rings below the slab.
+    let z_blend_enabled = ctx.z_blend && ctx.level_rule == LevelRule::Drape;
 
     // The starting threshold determines the outermost contour offset. For wide
     // material regions (max_dist >> tool_radius), start at tool_radius_cells so
@@ -776,13 +984,29 @@ pub(super) fn clear_z_level_contour_parallel(
     // Cleanup: narrow sections of the material region (annular rings near steep
     // walls) may have EDT below the starting threshold, leaving them without a
     // contour pass. Identify remaining material cells and stamp a raster cleanup.
-    let (cleanup_grid, cr, cc, co_x, co_y, c_cs) = build_material_bool_grid(
+    let MaterialBoolGrid {
+        cells: mut cleanup_grid,
+        rows: cr,
+        cols: cc,
+        origin_x: co_x,
+        origin_y: co_y,
+        cell_size: c_cs,
+        ..
+    } = build_material_bool_grid(
         material_stock,
         surface_hm,
         z_level,
         ctx.stock_to_leave,
         region,
+        ctx.level_rule,
     );
+    // A clip level rasters only its kept eligible cells. The band next to
+    // a keep-out and a dropped small patch belong to the next tier.
+    if let Some(eligible) = clip_eligible.as_ref() {
+        for (cell, &ok) in cleanup_grid.iter_mut().zip(eligible) {
+            *cell &= ok;
+        }
+    }
     let cleanup_count = cleanup_grid.iter().filter(|&&b| b).count();
     if cleanup_count > 0 {
         // Raster through remaining material rows.  For each row with material
@@ -952,12 +1176,21 @@ pub(super) fn clear_z_level_adaptive(
     }
 
     // ── 1. Build boolean material grid ─────────────────────────────────
-    let (material_grid, rows, cols, origin_x, origin_y, cell_size) = build_material_bool_grid(
+    let MaterialBoolGrid {
+        cells: material_grid,
+        rows,
+        cols,
+        origin_x,
+        origin_y,
+        cell_size,
+        ..
+    } = build_material_bool_grid(
         material_stock,
         surface_hm,
         z_level,
         ctx.stock_to_leave,
         region,
+        ctx.level_rule,
     );
 
     if !material_grid.iter().any(|&b| b) {
@@ -1000,7 +1233,9 @@ pub(super) fn clear_z_level_adaptive(
 
     // Z-blend setup (identical to contour-parallel)
     let offset_range = max_dist - tool_radius_cells;
-    let z_blend_enabled = ctx.z_blend;
+    // A clip level cuts at exactly `z_level` (plan §3.2, A2): the blend
+    // toward the terrain would take inner rings below the slab.
+    let z_blend_enabled = ctx.z_blend && ctx.level_rule == LevelRule::Drape;
 
     debug!(
         z = z_level,
@@ -1401,12 +1636,21 @@ fn detect_and_order_regions(
     last_pos: Option<P3>,
 ) -> Option<OrderedRegions> {
     // 1. Material boolean grid at this Z-level (includes 1-cell air padding).
-    let (material_grid, rows, cols, origin_x, origin_y, cell_size) = build_material_bool_grid(
+    let MaterialBoolGrid {
+        cells: material_grid,
+        rows,
+        cols,
+        origin_x,
+        origin_y,
+        cell_size,
+        ..
+    } = build_material_bool_grid(
         material_stock,
         surface_hm,
         z_level,
         ctx.stock_to_leave,
         region,
+        ctx.level_rule,
     );
     if !material_grid.iter().any(|&b| b) {
         return None;

@@ -83,7 +83,7 @@ use std::time::Instant;
 use tracing::{debug, info};
 
 use super::clearing::{
-    ClearZLevelContext, MaterialRegion, clear_z_level_adaptive, clear_z_level_agent_2d_slice,
+    ClearZLevelContext, LevelRule, MaterialRegion, clear_z_level_adaptive, clear_z_level_agent_2d_slice,
     clear_z_level_contour_parallel, detect_material_regions, waterline_cleanup,
 };
 use super::search::{blend_corners_3d, material_remaining_at_level_diag};
@@ -284,6 +284,17 @@ pub(super) struct PlannedLevel {
     pub(super) clip: bool,
 }
 
+impl PlannedLevel {
+    /// The clearing rule of this level.
+    pub(super) fn rule(&self) -> LevelRule {
+        if self.clip {
+            LevelRule::Clip
+        } else {
+            LevelRule::Drape
+        }
+    }
+}
+
 /// The ladder steps, coarsest first, with `depth_per_pass` last.
 pub(super) fn ladder_steps(depth: &super::Adaptive3dDepth) -> Vec<f64> {
     depth
@@ -389,7 +400,8 @@ struct LevelSlot<'r> {
 /// this function; it pushes the level marker, runs the clearing strategy
 /// and fills the `z_level_clear` debug span.
 ///
-/// The caller sets `ctx.depth_per_pass` to the tier step first.
+/// The caller sets `ctx.depth_per_pass` to the tier step and
+/// `ctx.level_rule` to the tier rule first.
 #[allow(clippy::too_many_arguments)]
 fn clear_planned_level(
     ctx: &ClearZLevelContext<'_>,
@@ -908,6 +920,7 @@ pub(super) fn adaptive_3d_segments(
         z_blend: params.z_blend,
         safe_z: params.safe_z,
         min_cutting_radius: params.geometry.min_cutting_radius,
+        level_rule: LevelRule::Drape,
         min_region_cut_length_mm: params.linking.min_region_cut_length_mm,
     };
 
@@ -972,6 +985,7 @@ pub(super) fn adaptive_3d_segments(
                 for (li, level) in region_levels.iter().enumerate() {
                     check_cancel(cancel)?;
                     ctx.depth_per_pass = level.step;
+                    ctx.level_rule = level.rule();
                     clear_planned_level(
                         &ctx,
                         &mut material_stock,
@@ -1029,6 +1043,7 @@ pub(super) fn adaptive_3d_segments(
             for (level_idx, level) in schedule.iter().enumerate() {
                 check_cancel(cancel)?;
                 ctx.depth_per_pass = level.step;
+                ctx.level_rule = level.rule();
                 clear_planned_level(
                     &ctx,
                     &mut material_stock,
