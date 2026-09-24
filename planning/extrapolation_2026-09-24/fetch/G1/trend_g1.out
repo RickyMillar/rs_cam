@@ -10,34 +10,34 @@ material (a shared chart row); it is not a second witness.
 ### tapered_ball_nose: 12 series
 | source | subfamily | material | fl | role | grade/kind | frame | d mm | min | max | mid |
 |---|---|---|---|---|---|---|---|---|---|---|
-| amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_tapered | hardwood | 2 | finish | b/derived | tip | 1 | 0.01905 | 0.0508 | 0.0349 |
+| amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_tapered | hardwood (copy of mdf) | 2 | finish | b/derived | tip | 1 | 0.01905 | 0.0508 | 0.0349 |
 | | | | | | | | 1.5875 | 0.0762 | 0.127 | 0.1016 |
 | | | | | | | | 6.35 | 0.1778 | 0.2286 | 0.2032 |
-| amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_tapered | hardwood | 3 | finish | b/derived | tip | 0.7937 | 0.01905 | 0.0508 | 0.0349 |
+| amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_tapered | hardwood (copy of mdf) | 3 | finish | b/derived | tip | 0.7937 | 0.01905 | 0.0508 | 0.0349 |
 | | | | | | | | 3.175 | 0.0381 | 0.0635 | 0.0508 |
 | | | | | | | | 4.7625 | 0.0635 | 0.1016 | 0.0825 |
-| amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_tapered | hardwood | 4 | finish | b/derived | tip | 1.5 | 0.0127 | 0.01651 | 0.0146 |
+| amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_tapered | hardwood (copy of mdf) | 4 | finish | b/derived | tip | 1.5 | 0.0127 | 0.01651 | 0.0146 |
 | | | | | | | | 1.5875 | 0.0127 | 0.01651 | 0.0146 |
 | | | | | | | | 3.175 | 0.0127 | 0.01651 | 0.0146 |
-| amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_tapered | mdf (copy of hardwood) | 2 | finish | a+b/exact | tip | 1 | 0.01905 | 0.0508 | 0.0349 |
+| amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_tapered | mdf | 2 | finish | a+b/exact | tip | 1 | 0.01905 | 0.0508 | 0.0349 |
 | | | | | | | | 1.5875 | 0.0762 | 0.127 | 0.1016 |
 | | | | | | | | 6.35 | 0.1778 | 0.2286 | 0.2032 |
-| amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_tapered | mdf (copy of hardwood) | 3 | finish | a/exact | tip | 0.7937 | 0.01905 | 0.0508 | 0.0349 |
+| amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_tapered | mdf | 3 | finish | a/exact | tip | 0.7937 | 0.01905 | 0.0508 | 0.0349 |
 | | | | | | | | 3.175 | 0.0381 | 0.0635 | 0.0508 |
 | | | | | | | | 4.7625 | 0.0635 | 0.1016 | 0.0825 |
-| amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_tapered | mdf (copy of hardwood) | 4 | finish | a/exact | tip | 1.5 | 0.0127 | 0.01651 | 0.0146 |
+| amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_tapered | mdf | 4 | finish | a/exact | tip | 1.5 | 0.0127 | 0.01651 | 0.0146 |
 | | | | | | | | 1.5875 | 0.0127 | 0.01651 | 0.0146 |
 | | | | | | | | 3.175 | 0.0127 | 0.01651 | 0.0146 |
-| amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_tapered | softwood (copy of hardwood) | 2 | finish | b/derived | tip | 1 | 0.01905 | 0.0508 | 0.0349 |
+| amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_tapered | softwood (copy of mdf) | 2 | finish | b/derived | tip | 1 | 0.01905 | 0.0508 | 0.0349 |
 | | | | | | | | 1.5875 | 0.0762 | 0.127 | 0.1016 |
 | | | | | | | | 6.35 | 0.1778 | 0.2286 | 0.2032 |
-| amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_tapered | softwood (copy of hardwood) | 3 | finish | b/derived | tip | 0.7937 | 0.01905 | 0.0508 | 0.0349 |
+| amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_tapered | softwood (copy of mdf) | 3 | finish | b/derived | tip | 0.7937 | 0.01905 | 0.0508 | 0.0349 |
 | | | | | | | | 3.175 | 0.0381 | 0.0635 | 0.0508 |
 | | | | | | | | 4.7625 | 0.0635 | 0.1016 | 0.0825 |
-| amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_tapered | softwood (copy of hardwood) | 4 | finish | b/derived | tip | 1.5 | 0.0127 | 0.01651 | 0.0146 |
+| amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_tapered | softwood (copy of mdf) | 4 | finish | b/derived | tip | 1.5 | 0.0127 | 0.01651 | 0.0146 |
 | | | | | | | | 1.5875 | 0.0127 | 0.01651 | 0.0146 |
 | | | | | | | | 3.175 | 0.0127 | 0.01651 | 0.0146 |
-| spetool_2d3d_tapered_router_bit_c~ | spetool_2d3d_tapered | hardwood | 2 | finish | b/derived | tip | 0.5 | - | 0.01778 | 0.0178 |
+| spetool_2d3d_tapered_router_bit_c~ | spetool_2d3d_tapered | hardwood (copy of mdf) | 2 | finish | b/derived | tip | 0.5 | - | 0.01778 | 0.0178 |
 | | | | | | | | 0.7937 | - | 0.02032 | 0.0203 |
 | | | | | | | | 1 | - | 0.0254 | 0.0254 |
 | | | | | | | | 1.5 | - | 0.0381 | 0.0381 |
@@ -46,7 +46,7 @@ material (a shared chart row); it is not a second witness.
 | | | | | | | | 3 | - | 0.1016 | 0.1016 |
 | | | | | | | | 3.175 | - | 0.1016 | 0.1016 |
 | | | | | | | | 4 | - | 0.127 | 0.1270 |
-| spetool_2d3d_tapered_router_bit_c~ | spetool_2d3d_tapered | mdf (copy of hardwood) | 2 | finish | b/exact | tip | 0.5 | - | 0.01778 | 0.0178 |
+| spetool_2d3d_tapered_router_bit_c~ | spetool_2d3d_tapered | mdf | 2 | finish | b/exact | tip | 0.5 | - | 0.01778 | 0.0178 |
 | | | | | | | | 0.7937 | - | 0.02032 | 0.0203 |
 | | | | | | | | 1 | - | 0.0254 | 0.0254 |
 | | | | | | | | 1.5 | - | 0.0381 | 0.0381 |
@@ -55,7 +55,7 @@ material (a shared chart row); it is not a second witness.
 | | | | | | | | 3 | - | 0.1016 | 0.1016 |
 | | | | | | | | 3.175 | - | 0.1016 | 0.1016 |
 | | | | | | | | 4 | - | 0.127 | 0.1270 |
-| spetool_2d3d_tapered_router_bit_c~ | spetool_2d3d_tapered | softwood (copy of hardwood) | 2 | finish | b/derived | tip | 0.5 | - | 0.01778 | 0.0178 |
+| spetool_2d3d_tapered_router_bit_c~ | spetool_2d3d_tapered | softwood (copy of mdf) | 2 | finish | b/derived | tip | 0.5 | - | 0.01778 | 0.0178 |
 | | | | | | | | 0.7937 | - | 0.02032 | 0.0203 |
 | | | | | | | | 1 | - | 0.0254 | 0.0254 |
 | | | | | | | | 1.5 | - | 0.0381 | 0.0381 |
@@ -326,18 +326,18 @@ material (a shared chart row); it is not a second witness.
 | flat_end | spetool_carbide_spiral_router~ | spetool_upcut_spiral | hardwood | 2 | roughing | 5 | 8.0x | +0.86 | 0.98 | - | +0.86 |  |
 | flat_end | spetool_carbide_spiral_router~ | spetool_upcut_spiral | mdf | 2 | roughing | 5 | 8.0x | +1.04 | 0.97 | - | +1.04 |  |
 | flat_end | spetool_carbide_spiral_router~ | spetool_upcut_spiral | softwood | 2 | roughing | 5 | 8.0x | +0.96 | 0.98 | - | +0.96 |  |
-| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | hardwood | 2 | finish | 3 | 6.3x | +0.85 | 0.85 | +1.07 | +0.72 |  |
-| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | hardwood | 3 | finish | 3 | 6.0x | +0.43 | 0.86 | +0.63 | +0.33 |  |
-| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | hardwood | 4 | finish | 3 | 2.1x | +0.00 | n/a | +0.00 | +0.00 | constant |
-| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | mdf | 2 | finish | 3 | 6.3x | +0.85 | 0.85 | +1.07 | +0.72 | copy of hardwood |
-| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | mdf | 3 | finish | 3 | 6.0x | +0.43 | 0.86 | +0.63 | +0.33 | copy of hardwood |
-| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | mdf | 4 | finish | 3 | 2.1x | +0.00 | n/a | +0.00 | +0.00 | constant; copy of hardwood |
-| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | softwood | 2 | finish | 3 | 6.3x | +0.85 | 0.85 | +1.07 | +0.72 | copy of hardwood |
-| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | softwood | 3 | finish | 3 | 6.0x | +0.43 | 0.86 | +0.63 | +0.33 | copy of hardwood |
-| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | softwood | 4 | finish | 3 | 2.1x | +0.00 | n/a | +0.00 | +0.00 | constant; copy of hardwood |
-| tapered_ball_nose | spetool_2d3d_tapered_router_b~ | spetool_2d3d_tapered | hardwood | 2 | finish | 9 | 8.0x | +1.06 | 0.95 | - | +1.06 |  |
-| tapered_ball_nose | spetool_2d3d_tapered_router_b~ | spetool_2d3d_tapered | mdf | 2 | finish | 9 | 8.0x | +1.06 | 0.95 | - | +1.06 | copy of hardwood |
-| tapered_ball_nose | spetool_2d3d_tapered_router_b~ | spetool_2d3d_tapered | softwood | 2 | finish | 9 | 8.0x | +1.06 | 0.95 | - | +1.06 | copy of hardwood |
+| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | hardwood | 2 | finish | 3 | 6.3x | +0.85 | 0.85 | +1.07 | +0.72 | copy of mdf |
+| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | hardwood | 3 | finish | 3 | 6.0x | +0.43 | 0.86 | +0.63 | +0.33 | copy of mdf |
+| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | hardwood | 4 | finish | 3 | 2.1x | +0.00 | n/a | +0.00 | +0.00 | constant; copy of mdf |
+| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | mdf | 2 | finish | 3 | 6.3x | +0.85 | 0.85 | +1.07 | +0.72 |  |
+| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | mdf | 3 | finish | 3 | 6.0x | +0.43 | 0.86 | +0.63 | +0.33 |  |
+| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | mdf | 4 | finish | 3 | 2.1x | +0.00 | n/a | +0.00 | +0.00 | constant |
+| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | softwood | 2 | finish | 3 | 6.3x | +0.85 | 0.85 | +1.07 | +0.72 | copy of mdf |
+| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | softwood | 3 | finish | 3 | 6.0x | +0.43 | 0.86 | +0.63 | +0.33 | copy of mdf |
+| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | softwood | 4 | finish | 3 | 2.1x | +0.00 | n/a | +0.00 | +0.00 | constant; copy of mdf |
+| tapered_ball_nose | spetool_2d3d_tapered_router_b~ | spetool_2d3d_tapered | hardwood | 2 | finish | 9 | 8.0x | +1.06 | 0.95 | - | +1.06 | copy of mdf |
+| tapered_ball_nose | spetool_2d3d_tapered_router_b~ | spetool_2d3d_tapered | mdf | 2 | finish | 9 | 8.0x | +1.06 | 0.95 | - | +1.06 |  |
+| tapered_ball_nose | spetool_2d3d_tapered_router_b~ | spetool_2d3d_tapered | softwood | 2 | finish | 9 | 8.0x | +1.06 | 0.95 | - | +1.06 | copy of mdf |
 
 ## C. Slopes grouped per tool family (distinct printed series only; copies left out)
 | family | series >=3 sizes | median | range | series 2 sizes | median | range | widest span |
@@ -420,10 +420,10 @@ Under 1 = the law gives MORE than the chart prints at the small end (permissive)
 | flat_end | spetool_carbide_spiral_router~ | spetool_upcut_spiral | hardwood | 2 | 1.5875-12.7 | +0.86 | 0.53 |
 | flat_end | spetool_carbide_spiral_router~ | spetool_upcut_spiral | mdf | 2 | 1.5875-12.7 | +1.04 | 0.36 |
 | flat_end | spetool_carbide_spiral_router~ | spetool_upcut_spiral | softwood | 2 | 1.5875-12.7 | +0.96 | 0.44 |
-| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | hardwood | 2 | 1-6.35 | +0.85 | 0.53 |
-| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | hardwood | 3 | 0.7937-4.7625 | +0.43 | 1.26 |
-| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | hardwood | 4 | 1.5-3.175 | +0.00 | 1.58 |
-| tapered_ball_nose | spetool_2d3d_tapered_router_b~ | spetool_2d3d_tapered | hardwood | 2 | 0.5-4 | +1.06 | 0.50 |
+| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | mdf | 2 | 1-6.35 | +0.85 | 0.53 |
+| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | mdf | 3 | 0.7937-4.7625 | +0.43 | 1.26 |
+| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | mdf | 4 | 1.5-3.175 | +0.00 | 1.58 |
+| tapered_ball_nose | spetool_2d3d_tapered_router_b~ | spetool_2d3d_tapered | mdf | 2 | 0.5-4 | +1.06 | 0.50 |
 
 | family | n | median ratio | range |
 |---|---|---|---|

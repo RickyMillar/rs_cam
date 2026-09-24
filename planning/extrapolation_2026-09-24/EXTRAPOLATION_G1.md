@@ -41,7 +41,9 @@ Two facts about these 4 cells:
   the cell's own size, as a roughing row. The gap for these cells is the
   pass role (G3), not the size.
 - The V-bit cell scales a size-flat row. The only V-bit series in the LUT
-  prints 0.0762 mm at 9.525 mm and at 12.7 mm (slope 0.00). The 0.61 law
+  prints 0.0762 mm at 9.525 mm and at 12.7 mm (slope 0.00). The two sizes
+  also have two angles (90 deg and 60 deg), so the pair does not isolate
+  size. The 0.61 law
   still multiplies the row by (6.35 / 12.7)^0.61 = 0.66.
 
 ### 0.2 The cells outside the matrix
@@ -165,7 +167,9 @@ The table has every distinct printed cell under 2.0 mm. `*` marks a size under 1
 - **% of D**: chipload / D x 100.
 - **Law value**: the shipped law applied to the tapered row that the lookup
   finds today (Onsrud 77-100 1/8 in, 3 flutes, hardwood, 0.0762-0.127 mm),
-  scaled by (d / 3.175)^0.61. It is the value that the size rule stops.
+  scaled by (d / 3.175)^0.61. It is the value that the size rule stops. The
+  column uses one of the two Onsrud rows. The 1/4 in row (2 flutes) gives
+  0.041-0.058 mm at 1.0 mm.
 - **Frame**: the diameter that the row keys on.
 
 | Family | Source | Subfamily | Fl | D mm | Frame | Printed min-max mm | % of D | Law value mm | Law % of D | Printed mid / law mid |

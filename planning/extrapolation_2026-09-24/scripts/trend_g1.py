@@ -176,7 +176,12 @@ def main():
     # applied to several materials).
     sig = {}
     first = {}
-    for k in sorted(multi):
+    # The series whose rows are all printed (row_kind exact) is the canonical
+    # one; the derived shared-column copies name it (the MDF column of the
+    # Spektra chart is exact, the wood columns are derived b).
+    def canon_order(k):
+        return (0 if meta[k]["kinds"] == {"exact"} else 1, k)
+    for k in sorted(multi, key=canon_order):
         pts = tuple((d, lo, hi) for d, lo, hi, _, _ in points(multi[k]))
         s = (k[0], k[1], k[2], k[4], k[5], pts)
         if s in first:
