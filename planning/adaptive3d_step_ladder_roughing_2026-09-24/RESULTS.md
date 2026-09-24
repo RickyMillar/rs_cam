@@ -149,3 +149,134 @@ holds the parity. Follow-up G-MCPCUTROW: the MCP `get_cut_trace`
 `toolpath_summaries` row leaves out `average_engagement`,
 `total_removed_volume_est_mm3`, `peak_axial_doc_mm` and `per_kinematics`,
 which the core struct has.
+
+## Phase 2 result (2026-09-24)
+
+State: the step ladder is in core, on branch
+`worktree-agent-acc0c9c065ae21db6`, not merged. The GUI cannot set
+`coarse_steps` until Phase 4.
+
+### Commits
+
+| Commit | Content |
+|---|---|
+| `102987b2` | BREAKING: deletes `fine_stepdown`, `mill_shallow_areas`, `shallow_angle_deg`, `shallow_stepdown` and `ShallowTier`. Adds `coarse_steps` (serde default, not written when empty), `plan_step_ladder` (the nested slab schedule of §3.4) and one level function for By Area and Global. The adapter refuses a bad ladder and a ladder on a strategy other than `contour_parallel`. The engagement radius reads the deepest step (D7). |
+| `bf15be13` | The fit rule (`LevelRule::Clip` in `build_material_bool_grid`, with a keep-out mask). Contour parallel on a clip level uses two boundary kinds: the air offset `min(r, stepover/2)` and the link margin (one tool diameter) from the keep-out. It drops eligible parts smaller than one tool diameter. |
+| `5ce55f6f` | The fixture sentry `tests/adaptive3d_step_ladder.rs`. |
+| `66a2ce8e` | Per-tier counters in the debug trace. `OperationConfig::deepest_axial_step()` goes to the static checks and the narration. |
+| `671492e5`, `9771153d`, `ad1bce7c`, `8d5c1d7d` | A GUI test allowance (4 to 2), clippy, a refusal test, and the feeds depth-hint label ("deepest axial step"). |
+
+With an empty ladder the emission is byte-identical. Before the deletion
+the parity fixtures were re-blessed on the OLD code with the two dials
+off. Only `adaptive.txt` moved (it ran `fine_stepdown` 1.5). The new code
+matches all four fixtures with no second bless.
+
+### Acceptance on the fixture
+
+The fixture is a height field 90 × 85 mm and 26 mm deep. It has a deep
+flat pocket, a 20° floor into a 60° wall, and two L-shaped pockets joined
+by a shelf at Z -12. An independent top-height replay of a flat end mill
+reads the emitted path. Runs: By Area, `[10]` with dpp 5, and `[10, 5]`
+with dpp 1.
+
+| Claim | Result |
+|---|---|
+| A1 | The coarse tier cuts 10 mm bites in the open floor. No finer tier removes material there (0.0 mm³). |
+| A2 | The drape lifts no clip-tier cut point (lift 0.000 mm). |
+| A3 | The largest coarse bite is 10.000 mm (tier 0) and 5.000 mm (tier 1). The base area bite is 1.500 mm at dpp 1. At dpp 5 it is 8.500 mm; see the deviations. |
+| A4 | Every clip-tier tool centre is at least 5.77 mm from the keep-out of its level (margin 6 mm, tolerance two cells). The next tier cuts 100 % of its length in closed runs. |
+| A5 | At dpp 1 the final stock equals the one-step plan (0.000 mm). At dpp 5, see the deviations. |
+
+Two injected defects make the test fail: the clip rule off (A2, lift
+9.1 mm) and a zero link margin (A2, lift 13 mm).
+
+### Deviations from the plan
+
+- A3, base tier: at dpp 5 the base tier bites 8.5 mm (area measure) on the
+  60° wall. The one-step plan bites the same 8.5 mm at the same place: the
+  drape of a base level on a wall takes the terrace that the level above
+  left (F3). This is not a ladder regression. The test bounds the base
+  tier by `max(dpp, one-step bite) + one cell`.
+- A5 at dpp 5: the plan says "within the leave". The two plans differ by
+  up to 2.6 mm on the 60° wall, because their rings put the terraces in
+  different places. The test asserts three weaker claims: the difference
+  is at most one base terrace; the ladder leaves no more material above
+  the leave (9062 mm³ against 9117 mm³); the ladder adds no cut below the
+  leave.
+- Global runs the waterline cleanup after base-tier levels only. On a clip
+  level the mesh contour lies on the wall, where the band still stands to
+  the slab top, so a cleanup there is a full coarse-step slot. With an
+  empty ladder every level is a base level, so nothing changes.
+- F9 is a known limit: By Area still runs the cleanup once, at the end.
+  `waterline_cleanup` has no region filter and a region is a bounding box
+  (F4). A per-region cleanup needs the region filter of Phase 3 first.
+- Entry pecks still step at `depth_per_pass`. A peck is a chip-break
+  schedule, not a bite bound.
+
+### Design finding: tier 1 of [10, 5] cuts almost nothing
+
+With `[10, 5]` and dpp 1, tier 1 (5 mm, clip) cuts 32 mm of path and
+892 mm³, against 27 715 mm³ for tier 0 and 59 578 mm³ for the base tier.
+Cause: both clip tiers erode their eligible area by the same link margin
+from the same keep-out. At `5@-10` the keep-out is the keep-out of
+`10@-10`, so tier 1 sees the same band that tier 0 left and may not enter
+it. The band goes to the 1 mm base tier. On a vertical wall this is true
+at every slab; on a sloped wall tier 1 gets only the thin strip where the
+keep-out recedes between `-5` and `-10`.
+
+Proposal (not implemented): a graded margin per tier. Clip tier `k` of
+`n` clip tiers uses `margin_k = (n - k) × D`. For `[10, 5]` + 1:
+tier 0 uses 2 D, tier 1 uses 1 D. Reasoning:
+
+- Each finer tier then has its own band of width D inside the band of the
+  tier above, so it can cut one linked closed loop at its own step. The
+  bands step in toward the wall like terraces, which is the shape §3.3
+  asks for.
+- The base tier still receives a band of width D, as today.
+- The cost is a smaller coarse area: tier 0 loses one more D next to each
+  wall. With one clip tier (`[10]` + 5) the rule gives `1 × D`, which is
+  today's behaviour, so the tested case does not change.
+
+An alternative is to give tier 1 no margin at a level that is also a
+tier-0 level. It is simpler but it lets tier 1 cut the whole tier-0 band
+as slivers at the wall, which §3.3 exists to stop.
+
+### Follow-ups
+
+- feeds readers of `depth_per_pass` as the deepest bite (the other
+  session owns them): `feeds/suggest/axial_envelope.rs:280-285` (it reads
+  and writes the field; with a ladder it must decide which step it
+  clamps), `feeds/predict.rs:371` and `:772`,
+  `feeds/operating_point.rs:220`, `feeds/suggest/aggressiveness.rs:198`,
+  `feeds/cutter_constraints.rs` through Suggest.
+  `tool_load/optimize/axes.rs:216` searches the base step, which is
+  probably correct.
+- viz feeds readers: `ui/properties/pills.rs:371/503/538` and
+  `ui/feeds/compare.rs:57/87`.
+- The feeds depth-hint label is done (`8d5c1d7d`).
+- Phase 3, region split: in the fixture, the joined pockets C1 and C2 are
+  one region (region 1 of 3, 9211 cells). Region detection at each level
+  (Phase 3 item 2) is necessary to separate them.
+- Phase 4, MCP wire: `params_value_including_nulls`
+  (`compute/catalog.rs:1180`) shows an empty `coarse_steps` as `null`, and
+  `set_toolpath_param coarse_steps null` does not deserialize. An array
+  works. Accept `null` as empty, or write the empty list.
+- Phase 5, instrument: `tests/common/zladder.rs` and the ceiling in
+  `adaptive3d_commanded_ladder.rs` assume that Z goes down level by level.
+  The nested schedule goes back up (-10, -5, …, -10). The instrument
+  needs a per-tier ladder before it can measure Arm C.
+- D5: decide `[10, 5]` against `[10]` + 5 after the margin fix.
+
+### Tests after the rebase onto `5da59417`
+
+- `adaptive3d_step_ladder` 7/7, `adaptive3d_emission_byte_parity` 5/5,
+  `adaptive3d_commanded_ladder` 1/1.
+- Heavy, run by name: `adaptive3d_interior_cell_parity_f029` 2/2 (54 s),
+  `adaptive3d_planner_stock_xy_f027` 2/2 (49 s).
+- `rs_cam_core --lib diagnostics` 47/47; `rs_cam_cli` 57/57.
+- Before the rebase: the five folder sentries, `--lib` adaptive3d /
+  catalog / spans / annotate / execute / diagnostics 178/178,
+  `session::compute` 70/70, `rs_cam_viz` 1011/1011.
+- The full clippy line and `fmt --check` are clean.
+- rivmap100 parses: 4 toolpaths; the 3D Rough has dpp 2 and an empty
+  ladder.
