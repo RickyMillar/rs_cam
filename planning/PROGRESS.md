@@ -82,7 +82,9 @@ instrument, 9699f0d5) on the rivmap100 demo copy.
   refuses rapid reorder (as Face does); the GUI box greys out (984dec55).
   rivmap100 dpp 8: 580 -> 595 s; entry samples > 2x bite 448 -> 0; peak
   entry bite 6.08 -> 1.61 mm. Sentry
-  `session_rough_keeps_the_planner_order_for_its_entries`. Open: does 2D
+  `session_rough_keeps_the_planner_order_for_its_entries`. Seen on screen
+  by the operator 2026-09-25 (GUI 984dec55): "looking very good"; MCP
+  shows entry_load gone. Open: does 2D
   Adaptive have the same defect (it still allows the reorder)?
 - 2026-09-25: By Area pocket tree measured
   (`planning/by_area_merge_tree_2026-09-25/`, 6f52d7a3): 3 valleys at
