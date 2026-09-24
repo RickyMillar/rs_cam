@@ -51,7 +51,25 @@ Notes:
 - Radial engagement is not measurable at 0.5 mm for these roughs (31–69 %
   blind). The whole-cycle engagement number waits for a finer grid.
 
-Finish check (Scallop after A-regen, B5, B10): running.
+## Finish check (Scallop after each rough)
+
+Scallop generated against a 0.2 mm simulation of each rough (the planner's
+own pre-simulation); scored at 0.5 mm; accel time from `nc-time`.
+
+| arm | rough accel s | scallop accel s | rough + scallop accel s |
+|---|---|---|---|
+| A-regen | 1741 | 5598 | 7339 |
+| B5 | 871 | 5568 | 6439 |
+| B10 | 635 | 5580 | **6215 (−15 %)** |
+
+- The finish time does not change with the rough. The extra stock that
+  larger steps leave costs the scallop nothing measurable.
+- The finished part is the same: Face + Rough + Scallop removed volume
+  89 187.7 / 89 188.4 / 89 188.1 mm³; uncut, truncated and untouched areas
+  0.0 on every arm; the finish renders differ by 0 pixels over 20.
+- So on rivmap100 the zero-code B10 + By Area already takes the whole gain
+  in time. The ladder's value on this model is load (no 8 mm bites at the
+  walls), not time.
 
 ## Follow-up found during the finish check
 
@@ -94,3 +112,30 @@ First reading (rivmap100 on-disk TOML, index 1, `depth_per_pass=5`, Global): acc
 entries against 15 helix entries although the operation asks for helix;
 rough-only removed volume 47 611 mm³. The entry share is a lever of its own
 (cause not checked: a helix that falls back to a plunge, or the untagged vertical descents); it is outside this package.
+
+## Parity check: GUI/MCP against `rough-score` (paired)
+
+The GUI state (DPP 5, By Area) was saved to a scratch TOML and scored with
+`rough-score` on that file.
+
+- With the same prior-stock resolution, the move count is identical (5373)
+  and the GUI toolpath `total_runtime_s` equals `rough-score`
+  `accel_time.total_s` to 13 digits (813.711 s). The shared session works.
+- G-RESTRES (defect): the same parameters give different geometry
+  depending on the resolution of the LAST simulation. The GUI generated the
+  rough from a Face stock simulated at 0.2 mm (left by the scallop's
+  pre-simulation) and got 7925 moves; at 0.5 mm, 5373. The generated result
+  does not record the stock resolution it read, and a simulation at another
+  resolution does not mark it stale. This also explains the pre-session
+  arm A that did not reproduce (19 624 against 10 442 moves). The CLI takes
+  the resolution as an argument; the project file does not carry it.
+- G-RESTSTALE (defect): at the restore, the scallop generated 245 584 moves
+  against the A rough, which is B5's count: it read a stale stock snapshot
+  and nothing flagged it. See also G-FRESHNESSDISAGREE
+  (`arch_consolidation_2026-09-09/STATUS.md`).
+- Instrument defect (being fixed): `rough-score` printed a second,
+  re-accumulated nominal time base under look-alike names
+  (`cutting_runtime_s` 760.90 against the GUI's 703.12) and no cut / rapid
+  distance. It must print the GUI's published fields, same names, same
+  values.
+- MCP gives removed volume only for the whole project, not per toolpath.
