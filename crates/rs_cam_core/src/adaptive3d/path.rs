@@ -894,11 +894,19 @@ pub(super) fn adaptive_3d_segments(
 
             for (region_idx, region) in regions.iter().enumerate() {
                 check_cancel(cancel)?;
+                let bbox = region_map
+                    .regions
+                    .get(region_idx)
+                    .map_or([0.0; 4], |r| r.bbox_xy);
                 debug!(
                     region = region_idx,
                     cells = region.cell_count,
                     z_min = format!("{:.1}", region.surface_z_min),
                     z_max = format!("{:.1}", region.surface_z_max),
+                    bbox_xy = format!(
+                        "[{:.1}, {:.1}, {:.1}, {:.1}]",
+                        bbox[0], bbox[1], bbox[2], bbox[3]
+                    ),
                     "Processing region"
                 );
                 segments.push(Adaptive3dSegment::Marker(
