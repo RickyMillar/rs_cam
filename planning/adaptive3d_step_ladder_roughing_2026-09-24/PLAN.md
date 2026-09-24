@@ -450,6 +450,18 @@ n uses (n − k) tool diameters, so each finer tier gets its own band. One
 clip tier keeps today's single margin. Needed before any multi-step ladder
 can be measured.
 
+### Phase 2c — fit rule v2 and ladder anchor (RULED 2026-09-24)
+
+After the demo ("it only did one pocket"), the operator ruled:
+
+- Fit rule v2, "pocket depth fits": a pocket whose floor lies inside the
+  coarse slab gets ONE coarse pass down to its floor; only steep wall cells
+  (slope ≥ a named constant, 30° to start) are keep-out and get the finer
+  steps. Cells whose floor is below the slab are cut at the slab bottom as
+  before. This replaces 3.2's "whole slab fits" test for coarse tiers.
+- Anchor: when the operation reads prior stock, the ladder starts at the
+  top of the remaining material it can reach, not at the stock box top.
+
 ### Phase 6 — how to choose the ladder (experiment, later)
 
 Operator 2026-09-24: "10 5 1 is just a demo. … if you are given the
