@@ -617,6 +617,36 @@ fn step_ladder_nests_each_slab_and_steps_down() {
     }
 }
 
+/// Plan Phase 2b: the link margin is graded. Clip tier `k` of `n` clip
+/// tiers uses `(n - k)` tool diameters, so each finer tier has its own
+/// band. One clip tier keeps the single margin of before.
+#[test]
+fn step_ladder_grades_the_link_margin_per_clip_tier() {
+    let unit = super::clearing::LINK_MARGIN_TOOL_DIAMETERS;
+    let margins = |steps: &[f64]| -> Vec<(usize, f64)> {
+        let top = super::path::tier_levels(0.0, -20.0, steps[0], 0.0);
+        let plan = super::path::plan_step_ladder(steps, 0.0, &top);
+        let mut seen: Vec<(usize, f64)> = plan
+            .iter()
+            .map(|l| (l.tier, l.link_margin_diameters))
+            .collect();
+        seen.sort_by_key(|a| a.0);
+        seen.dedup();
+        seen
+    };
+    assert_eq!(margins(&[10.0, 5.0]), vec![(0, unit), (1, 0.0)]);
+    assert_eq!(
+        margins(&[10.0, 5.0, 1.0]),
+        vec![(0, 2.0 * unit), (1, unit), (2, 0.0)]
+    );
+    assert_eq!(
+        margins(&[12.0, 6.0, 3.0, 1.0]),
+        vec![(0, 3.0 * unit), (1, 2.0 * unit), (2, unit), (3, 0.0)]
+    );
+    // The single-step plan has no clip tier.
+    assert_eq!(margins(&[5.0]), vec![(0, 0.0)]);
+}
+
 /// F8: a Detect Flat shelf level is a slab boundary. The finer tier stops
 /// at the shelf and starts again below it; it never uses
 /// `z_level - depth_per_pass` as the next level.

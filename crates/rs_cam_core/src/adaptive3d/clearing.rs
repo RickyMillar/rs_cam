@@ -247,6 +247,10 @@ pub(super) struct ClearZLevelContext<'a> {
     /// tier) or clip (a coarse tier). The level loop in `path.rs` sets it
     /// per level, beside `depth_per_pass`.
     pub(super) level_rule: LevelRule,
+    /// The link margin of a clip level, in tool diameters (plan §3.3 and
+    /// Phase 2b). The level loop sets it per level from
+    /// `PlannedLevel::link_margin_diameters`. A drape level does not read it.
+    pub(super) link_margin_diameters: f64,
     /// F-038: minimum forecast horizontal cutting length (mm) a marching-
     /// squares region must produce in its 2D adaptive sub-pass before the
     /// AgentSearch dispatch commits an entry plunge to it. Set to 0.0 to
@@ -274,14 +278,17 @@ pub(super) enum LevelRule {
     Clip,
 }
 
-/// The one-tool-diameter link margin of a coarse tier (plan §3.3).
+/// The link margin unit of a coarse tier, in tool diameters (plan §3.3).
 ///
-/// A coarse tier erodes its eligible area by this margin from the keep-out
-/// cells, in tool-centre space. The band that the coarse tier leaves next
-/// to a wall is thus at least this wide, so the next tier can cut it as a
-/// linked, closed pass and not as slivers. The operator ruled a fixed
-/// value, not a dial (2026-09-24). One tool diameter is the plan's
-/// proposal; it is not a universal formula.
+/// A coarse tier erodes its eligible area by its link margin from the
+/// keep-out cells, in tool-centre space. The margin is graded (plan
+/// Phase 2b): clip tier `k` of `n` clip tiers uses `(n - k)` units, see
+/// [`super::path::link_margin_diameters`]. Thus each finer tier has its own
+/// band of one unit inside the band of the tier above, and it cuts that
+/// band as a linked, closed pass and not as slivers. With one clip tier
+/// the margin is one unit. The operator ruled a fixed value, not a dial
+/// (2026-09-24). One tool diameter is the plan's proposal; it is not a
+/// universal formula.
 pub(super) const LINK_MARGIN_TOOL_DIAMETERS: f64 = 1.0;
 
 /// A padded boolean material grid at one Z level.
@@ -805,7 +812,7 @@ pub(super) fn clear_z_level_contour_parallel(
             )
         }
         Some(keep_out) => {
-            let margin_cells = 2.0 * ctx.tool_radius * LINK_MARGIN_TOOL_DIAMETERS / cell_size;
+            let margin_cells = 2.0 * ctx.tool_radius * ctx.link_margin_diameters / cell_size;
             let (field, eligible) = clip_offset_field(
                 &material_grid,
                 keep_out,

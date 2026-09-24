@@ -83,9 +83,9 @@ use std::time::Instant;
 use tracing::{debug, info};
 
 use super::clearing::{
-    ClearZLevelContext, LevelRule, MaterialRegion, clear_z_level_adaptive,
-    clear_z_level_agent_2d_slice, clear_z_level_contour_parallel, detect_material_regions,
-    waterline_cleanup,
+    ClearZLevelContext, LINK_MARGIN_TOOL_DIAMETERS, LevelRule, MaterialRegion,
+    clear_z_level_adaptive, clear_z_level_agent_2d_slice, clear_z_level_contour_parallel,
+    detect_material_regions, waterline_cleanup,
 };
 use super::search::{blend_corners_3d, material_remaining_at_level_diag};
 
@@ -283,6 +283,28 @@ pub(super) struct PlannedLevel {
     /// slab fits above the part (the fit rule). False on the base tier: the
     /// level drapes to `surface + stock_to_leave`.
     pub(super) clip: bool,
+    /// The link margin of a clip level, in tool diameters: see
+    /// [`link_margin_diameters`]. It is 0 on the base tier, which has no
+    /// keep-out.
+    pub(super) link_margin_diameters: f64,
+}
+
+/// The graded link margin of clip tier `tier` in a ladder of `steps`, in
+/// tool diameters (plan Phase 2b).
+///
+/// Clip tier `k` of `n` clip tiers uses `(n - k)` ×
+/// [`LINK_MARGIN_TOOL_DIAMETERS`]. For `[10, 5]` + 1, tier 0 uses two
+/// diameters and tier 1 uses one, so each tier leaves a band of one
+/// diameter to the next tier at the same level. A uniform margin gave
+/// tier 1 the same band that tier 0 left, and tier 1 cut almost nothing.
+/// With one clip tier the margin is one unit, as before. The base tier
+/// gets 0.
+pub(super) fn link_margin_diameters(steps: &[f64], tier: usize) -> f64 {
+    let clip_tiers = steps.len().saturating_sub(1);
+    if tier >= clip_tiers {
+        return 0.0;
+    }
+    (clip_tiers - tier) as f64 * LINK_MARGIN_TOOL_DIAMETERS
 }
 
 impl PlannedLevel {
@@ -374,6 +396,7 @@ fn push_slab(steps: &[f64], tier: usize, z_top: f64, z_bot: f64, out: &mut Vec<P
         tier,
         step,
         clip: !is_base,
+        link_margin_diameters: link_margin_diameters(steps, tier),
     });
     if is_base {
         return;
@@ -1037,6 +1060,7 @@ pub(super) fn adaptive_3d_segments(
         safe_z: params.safe_z,
         min_cutting_radius: params.geometry.min_cutting_radius,
         level_rule: LevelRule::Drape,
+        link_margin_diameters: LINK_MARGIN_TOOL_DIAMETERS,
         min_region_cut_length_mm: params.linking.min_region_cut_length_mm,
     };
 
@@ -1103,6 +1127,7 @@ pub(super) fn adaptive_3d_segments(
                     check_cancel(cancel)?;
                     ctx.depth_per_pass = level.step;
                     ctx.level_rule = level.rule();
+                    ctx.link_margin_diameters = level.link_margin_diameters;
                     let tally = clear_planned_level(
                         &ctx,
                         &mut material_stock,
@@ -1164,6 +1189,7 @@ pub(super) fn adaptive_3d_segments(
                 check_cancel(cancel)?;
                 ctx.depth_per_pass = level.step;
                 ctx.level_rule = level.rule();
+                ctx.link_margin_diameters = level.link_margin_diameters;
                 let tally = clear_planned_level(
                     &ctx,
                     &mut material_stock,

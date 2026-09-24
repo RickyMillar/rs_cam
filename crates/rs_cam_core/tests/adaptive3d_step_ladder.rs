@@ -3,10 +3,13 @@
 //!
 //! # The fixture
 //!
-//! One synthetic height field, 90 × 85 mm, top at Z 0 (= the stock top),
+//! One synthetic height field, 105 × 100 mm, top at Z 0 (= the stock top),
 //! 26 mm deep at its lowest point:
 //!
-//! - (a) pocket A: a deep flat-floor pocket, the "plunge deep" case;
+//! - (a) pocket A: a deep flat-floor pocket, the "plunge deep" case. It is
+//!   45 mm square: the coarsest tier of `[10, 5]` has a link margin of two
+//!   tool diameters (plan Phase 2b), so its tool centre stays
+//!   `R + 2 D = 15 mm` from each wall. A 30 mm pocket gave it no area.
 //! - (b) pocket B: a 20° floor that rises into a 60° wall;
 //! - (c) pockets C1 and C2: two L-shaped pockets whose bounding boxes
 //!   overlap. A shelf at Z -12 joins them above their dividing walls.
@@ -25,9 +28,13 @@
 //!   coarse bound uses the DEEPEST step on the raw bite. The base bound uses
 //!   `depth_per_pass` on the area bite, or the one-step plan's own bite where
 //!   that is larger (a drape on a steep wall, F3).
-//! - A4: every clip-tier tool centre is at least the link margin (one tool
-//!   diameter) from the keep-out cells of its level, so the band next to a
-//!   wall is at least the margin wide; the next tier cuts in closed runs.
+//! - A4: every clip-tier tool centre is at least the graded link margin of
+//!   its tier from the keep-out cells of its level: clip tier `k` of `n`
+//!   uses `(n - k)` tool diameters. Thus the band that each tier leaves to
+//!   the next tier at one level is at least one tool diameter wide, and
+//!   each finer tier cuts in closed runs.
+//! - A6 (plan Phase 2b): with `[10, 5]` + 1 each clip tier removes a real
+//!   share of the volume. With a uniform margin tier 1 removed 0.7 %.
 //! - A5: the final stock matches the one-step plan at the base step: no cut
 //!   below the leave that the one-step plan does not make, no more material
 //!   left above the leave, and pointwise
@@ -71,10 +78,11 @@ const STEPOVER: f64 = 2.4;
 const TOLERANCE: f64 = 0.1;
 /// The planner grid cell: `max(tool_radius / 6, tolerance)` in `path.rs`.
 const CELL: f64 = TOOL_RADIUS / 6.0;
-/// One tool diameter: `LINK_MARGIN_TOOL_DIAMETERS` × the diameter.
+/// One tool diameter: the unit `LINK_MARGIN_TOOL_DIAMETERS` × the diameter.
+/// Clip tier `k` of `n` clip tiers uses `(n - k)` units (plan Phase 2b).
 const LINK_MARGIN: f64 = 2.0 * TOOL_RADIUS;
-const X_MAX: f64 = 90.0;
-const Y_MAX: f64 = 85.0;
+const X_MAX: f64 = 105.0;
+const Y_MAX: f64 = 100.0;
 /// The replay grid step. Finer than the planner cell, so the replay does
 /// not share the planner's cell rounding.
 const REPLAY_CELL: f64 = 0.25;
@@ -93,7 +101,7 @@ fn in_rect(x: f64, y: f64, x0: f64, x1: f64, y0: f64, y1: f64) -> bool {
 }
 
 /// Pocket A, the deep flat floor.
-const A: (f64, f64, f64, f64) = (5.0, 35.0, 5.0, 35.0);
+const A: (f64, f64, f64, f64) = (5.0, 50.0, 5.0, 50.0);
 const FLOOR: f64 = -26.0;
 const SHELF: f64 = -12.0;
 
@@ -102,21 +110,21 @@ fn surface_z(x: f64, y: f64) -> f64 {
     if in_rect(x, y, A.0, A.1, A.2, A.3) {
         return FLOOR;
     }
-    // (b) a 20° floor from x = 45 up to x = 65, then a 60° wall up to Z 0.
-    if in_rect(x, y, 45.0, 85.0, 5.0, 35.0) {
+    // (b) a 20° floor from x = 60 up to x = 80, then a 60° wall up to Z 0.
+    if in_rect(x, y, 60.0, 100.0, 5.0, 35.0) {
         let floor_top = FLOOR + 20.0_f64.to_radians().tan() * 20.0;
-        let z = if x <= 65.0 {
-            FLOOR + 20.0_f64.to_radians().tan() * (x - 45.0)
+        let z = if x <= 80.0 {
+            FLOOR + 20.0_f64.to_radians().tan() * (x - 60.0)
         } else {
-            floor_top + 60.0_f64.to_radians().tan() * (x - 65.0)
+            floor_top + 60.0_f64.to_radians().tan() * (x - 80.0)
         };
         return z.min(0.0);
     }
     // (c) two L-shaped pockets with overlapping bounding boxes, joined by
     // the shelf at Z -12 above their dividing walls.
-    if in_rect(x, y, 5.0, 85.0, 45.0, 80.0) {
-        let c1 = in_rect(x, y, 8.0, 50.0, 48.0, 60.0) || in_rect(x, y, 8.0, 20.0, 48.0, 77.0);
-        let c2 = in_rect(x, y, 26.0, 82.0, 64.0, 77.0) || in_rect(x, y, 70.0, 82.0, 48.0, 77.0);
+    if in_rect(x, y, 5.0, 85.0, 60.0, 95.0) {
+        let c1 = in_rect(x, y, 8.0, 50.0, 63.0, 75.0) || in_rect(x, y, 8.0, 20.0, 63.0, 92.0);
+        let c2 = in_rect(x, y, 26.0, 82.0, 79.0, 92.0) || in_rect(x, y, 70.0, 82.0, 63.0, 92.0);
         return if c1 || c2 { FLOOR } else { SHELF };
     }
     0.0
@@ -298,11 +306,15 @@ struct Run {
     replay: Replay,
 }
 
-/// The open floor of pocket A: the pocket inset by the link margin, the
-/// keep-out offset (one radius) and one more radius, so no band sits there.
-/// A cell of the replay grid is in it when its centre is.
+/// The most clip tiers of a ladder in this file (`[10, 5]`).
+const MAX_CLIP_TIERS: f64 = 2.0;
+
+/// The open floor of pocket A: the pocket inset by the widest link margin
+/// (tier 0 of `[10, 5]`, two tool diameters), the keep-out offset (one
+/// radius) and one more radius, so no band sits there. A cell of the replay
+/// grid is in it when its centre is.
 fn in_open_floor(x: f64, y: f64) -> bool {
-    let inset = LINK_MARGIN + 2.0 * TOOL_RADIUS + 1.0;
+    let inset = MAX_CLIP_TIERS * LINK_MARGIN + 2.0 * TOOL_RADIUS + 1.0;
     in_rect(x, y, A.0 + inset, A.1 - inset, A.2 + inset, A.3 - inset)
 }
 
@@ -457,8 +469,32 @@ fn run(coarse_steps: &[f64], dpp: f64, ordering: RegionOrdering) -> Run {
     }
 }
 
+/// An FNV-1a digest of the emitted moves (type, intent and the bit pattern
+/// of each coordinate and feed). Two runs with one digest are byte-identical
+/// in emission for this purpose.
+fn emission_digest(tp: &Toolpath) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut eat = |bytes: &[u8]| {
+        for b in bytes {
+            h ^= u64::from(*b);
+            h = h.wrapping_mul(0x0100_0000_01b3);
+        }
+    };
+    for m in &tp.moves {
+        eat(format!("{:?}|{:?}", m.move_type, m.intent).as_bytes());
+        for v in [m.target.x, m.target.y, m.target.z] {
+            eat(&v.to_bits().to_le_bytes());
+        }
+    }
+    h
+}
+
 fn describe(label: &str, r: &Run) -> String {
-    let mut out = format!("{label}: {} moves\n", r.tp.moves.len());
+    let mut out = format!(
+        "{label}: {} moves, emission digest {:016x}\n",
+        r.tp.moves.len(),
+        emission_digest(&r.tp)
+    );
     for (k, s) in &r.stats {
         let name = if *k == usize::MAX {
             "waterline".to_owned()
@@ -595,10 +631,33 @@ fn assert_ladder_claims(label: &str, coarse: &[f64], dpp: f64, base_run: &Run) {
         !r.stats[&base_index].clip,
         "the base tier must drape\n{report}"
     );
+    let total_removed: f64 = r.stats.values().map(|s| s.removed_mm3).sum();
+    let clip_removed: f64 = (0..base_index).map(|t| r.stats[&t].removed_mm3).sum();
     assert!(
-        coarse_stats.removed_mm3 > 0.3 * r.stats.values().map(|s| s.removed_mm3).sum::<f64>(),
-        "the coarse tier removed too little to matter\n{report}"
+        clip_removed > 0.3 * total_removed,
+        "the clip tiers removed too little to matter\n{report}"
     );
+
+    // A6 (plan Phase 2b): each clip tier removes a real share. The graded
+    // margin gives each finer tier its own band of one diameter. With a
+    // uniform margin every clip tier eroded from the same keep-out by the
+    // same distance, so the finer tier could not enter the band of the
+    // coarser tier: on this fixture tier 1 of `[10, 5]` removed 0.7 % of
+    // the volume (uniform) against 25.9 % (graded); tier 0 removed 15.6 %
+    // (graded). The bound of 10 % sits between the two with room for
+    // either side.
+    for t in 0..base_index {
+        let share = r.stats[&t].removed_mm3 / total_removed.max(1e-9);
+        eprintln!(
+            "A6: clip tier {t} removed {:.1} % of the volume",
+            100.0 * share
+        );
+        assert!(
+            share >= 0.10,
+            "A6: clip tier {t} removed {:.1} % of the volume, less than 10 %\n{report}",
+            100.0 * share
+        );
+    }
 
     // A1: full coarse bites in the open floor, and no finer level cuts there.
     assert!(
@@ -676,22 +735,60 @@ fn assert_ladder_claims(label: &str, coarse: &[f64], dpp: f64, base_run: &Run) {
         !distances.is_empty(),
         "A4: no clip-tier cut to measure\n{report}"
     );
+    // The graded margin (plan Phase 2b): clip tier `k` of `n` stays
+    // `(n - k)` diameters from the keep-out of its level.
+    let margin_of = |tier: usize| (base_index - tier) as f64 * LINK_MARGIN;
     for (z, tier, d) in &distances {
-        eprintln!("A4: clip level Z {z:.2} tier {tier}: min keep-out distance {d:.3} mm");
+        eprintln!(
+            "A4: clip level Z {z:.2} tier {tier}: min keep-out distance {d:.3} mm (margin {} \
+             mm)",
+            margin_of(*tier)
+        );
         assert!(
-            *d >= LINK_MARGIN - 2.0 * CELL,
+            *d >= margin_of(*tier) - 2.0 * CELL,
             "A4: at Z {z:.2} a tier-{tier} tool centre came {d:.3} mm from the keep-out; the \
-             link margin is {LINK_MARGIN} mm\n{report}"
+             link margin of the tier is {} mm\n{report}",
+            margin_of(*tier)
         );
     }
-    // The next tier cuts the band as closed loops, not as slivers.
-    let next = &r.stats[&1];
-    let closed = next.closed_run_mm / next.run_mm.max(1e-9);
-    assert!(
-        next.run_mm > 0.0 && closed >= 0.9,
-        "A4: the tier after the coarse tier cut {:.0} % of its length in closed runs\n{report}",
-        100.0 * closed
-    );
+    // The band of each finer tier: at a level that two clip tiers both cut
+    // (`-10` is a tier-0 and a tier-1 level of `[10, 5]`), the coarser tier
+    // stays at least one diameter further from the keep-out than the finer
+    // tier comes. The finer tier thus cuts a band of at least one diameter
+    // there. Where the geometry leaves the finer tier no cut at such a
+    // level, there is no pair to compare.
+    let mut pairs = 0usize;
+    for (z, tier, d) in &distances {
+        for (z2, tier2, d2) in &distances {
+            if (z - z2).abs() < 1e-6 && *tier2 == tier + 1 {
+                pairs += 1;
+                eprintln!(
+                    "A4: band at Z {z:.2}: tier {tier} {d:.3} mm, tier {tier2} {d2:.3} mm, width \
+                     {:.3} mm",
+                    d - d2
+                );
+                assert!(
+                    d - d2 >= LINK_MARGIN - 2.0 * CELL,
+                    "A4: at Z {z:.2} the band of tier {tier2} is {:.3} mm wide, less than one \
+                     tool diameter\n{report}",
+                    d - d2
+                );
+            }
+        }
+    }
+    if base_index > 1 {
+        assert!(pairs > 0, "A4: no level with two clip tiers\n{report}");
+    }
+    // Each finer tier cuts its band as closed loops, not as slivers.
+    for t in 1..=base_index {
+        let next = &r.stats[&t];
+        let closed = next.closed_run_mm / next.run_mm.max(1e-9);
+        assert!(
+            next.run_mm > 0.0 && closed >= 0.9,
+            "A4: tier {t} cut {:.0} % of its length in closed runs\n{report}",
+            100.0 * closed
+        );
+    }
 
     // A5: the final stock matches the one-step plan. (a) No cell is cut
     // below the leave. (b) The material left above `surface + leave` is not
