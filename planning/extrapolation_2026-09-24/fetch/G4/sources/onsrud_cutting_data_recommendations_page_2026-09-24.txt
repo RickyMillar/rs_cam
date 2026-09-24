@@ -1,0 +1,1112 @@
+Cutting Data Recommendations | Feeds, Speeds, RPM, Chip Loads | LMT Onsrud
+Products
+Menu
+Metalworking
+Non-Ferrous Materials - Roughing
+2 Flute Chipbreaker
+ARS-2
+ARM-2
+ARNM-2
+2 Flute Chipbreaker Coolant Through
+ARCS-2
+ARCNS-2
+ARCNM-2
+3 Flute Chipbreaker
+ARS-3
+ARM-3
+ARNS-3
+ARNM-3
+ARNL-3
+3 Flute Chipbreaker Coolant Through
+ARCS-3
+ARCM-3
+ARCNS-3
+AUCM-3
+ARCNM-3
+ARCNL-3
+Non-Ferrous Materials - Slotting and Finishing
+2 Flute Slotting
+AFS-2
+AFNS-2
+AFM-2
+AFNM-2
+AFL-2
+AFNL-2
+AUM-2
+AUS-2
+AUNS-2
+AUNM-2
+AUL-2
+AUNL-2
+2 Flute Slotting Coolant Through
+AFCNS-2
+AFCM-2
+AFCNM-2
+AFCNL-2
+3 Flute Slotting
+AFS-3
+AFNS-3
+AFM-3
+AFNM-3
+AFL-3
+AFNL-3
+AFX-3
+AFNX-3
+AUS-3
+AUNS-3
+AUM-3
+AUNM-3
+AUL-3
+AUNL-3
+AUX-3
+3 Flute Slotting Coolant Through
+AFCNS-3
+AUCNS-3
+AFCM-3
+AUCL-3
+AFCNM-3
+AUCNM-3
+AFCNL-3
+AUCNL-3
+AHRNS-3
+AHRNM-3
+AHRNL-3
+Ferrous and Exotic Materials - Maximum Material Removal
+MXV 4 Flute
+MXVNS-4
+MXVS-4
+MXVM-4
+MXVNM-4
+MXVL-4
+MXVNL-4
+MXV 5 Flute
+MXVNS-5
+MXVS-5
+MXVM-5
+MXVNM-5
+MXVL-5
+MXVNL-5
+MXVXL-5
+TRX 5 Flute
+TRXM-5
+TRXS-5
+TRXL-5
+TRXXL-5
+TRXNS-5
+TRXNM-5
+TRXNL-5
+MXR 4 Flute
+MXRS-4
+MXRM-4
+MXR 5 Flute
+MXRS-5
+MXRM-5
+MXRL-5
+MaxQ 4 Flute
+MXPS-4
+MXQS-4
+MXQNS-4
+MXQM-4
+MXQNM-4
+MXQL-4
+MaxQ 4 Flute Ball Nose
+MXBS-4
+MXBNS-4
+MXBM-4
+MXBNM-4
+MXBL-4
+MXBNL-4
+MaxQ 5 Flute
+MXPM-5
+MXQNS-5
+MXQM-5
+MXQNM-5
+MXQL-5
+MXQS-5
+MXQNL-5
+MaxQ 5 Flute Ball Nose
+MXBS-5
+MXBM-5
+MXBNM-5
+MXBNL-5
+MXBXL-5
+SMC Premium
+SMCPM-4
+Ferrous and Exotic Materials - High-Speed Machining
+TRX 7 Flute
+TRXM-7
+TRXS-7
+TRXL-7
+TRXXL-7
+TRXNM-7
+TRXNL-7
+MDR Ball Nose
+MDR-2
+HXR
+HXRS
+HXRM
+HXRL
+7 Flute High Efficiency Machining
+TVS-7
+TVNS-7
+TVM-7
+TVNM-7
+TVL-7
+TVNL-7
+Ferrous and Exotic Materials - Slotting, Roughing and Semi-Finishing
+RXR 7 Flute
+RXRS-7
+RXRM-7
+RXRL-7
+4 Flute Multi-purpose
+TVS-4
+TVM-4
+TVNM-4
+5 Flute Multi-purpose
+TVM-5
+TVNM-5
+Ferrous and Exotic Materials - Finishing
+6-10 Flute Finisher
+TFS-6
+TFNM-6
+TFNL-6
+TFNL-10
+Radial Milling Cutters
+RMC-B
+RMC-CTA
+RMC-L
+RMC-CTB
+RMC-O
+Routing
+Aluminum
+Solid Carbide 1 Flute Upcut
+63-600
+63-300
+65-000
+63-900
+63-600ONX
+63-000
+63-400
+Solid Carbide 2 Flute Upcut
+52-200B
+52-000
+52-200BL
+66-300
+81-100
+Solid Carbide 1 Flute Downcut
+64-000
+62-600
+62-100
+62-300
+HSS 1-2 Flute Upcut and Downcut
+40-000
+40-100
+49-000
+81-000
+Solid Carbide 1 Flute Straight
+61-000
+Solid Carbide 2 Flute Downcut
+57-000
+Solid Carbide Tapered Ball Nose
+HSS 3 Flute Taper Pin
+80-000
+Engraving Tools
+Composites
+Solid Carbide Upcut and Downcut Tools
+54-200
+52-000
+63-000
+54-775
+Solid Carbide Multi-Flute Composite Router (Burr)
+66-900
+66-900
+67-000
+67-000
+67-500
+67-500
+67-400
+67-400
+Diamond Film Coated (DFC) Multi-Flute Composite Router
+66-500
+Diamond Film Coated (DFC) Spiral
+66-750
+66-775
+66-700
+Diamond Film Coated (DFC) Compression
+66-800
+66-600
+Solid Carbide Phenolic Cutters
+67-200
+Polycrystalline Diamond (PCD) Tools
+68-000
+68-300
+68-200
+68-400
+68-100
+68-500
+67-220
+68-900
+Diamond Grit Tools
+67-250
+Solid Carbide Straight Flute
+56-000P
+56-000
+53-000
+56-450
+Composite Drills
+67-800
+86-150
+85-800
+68-900
+Construction Materials
+HSS Drywall and Panel Bits
+20-10
+18-00
+20-00
+Door Lite Router Bits (Dor-Bits)
+15-50
+15-40
+15-75
+Honeycomb Cutting Tools
+Aircraft Panel Tools
+34-000
+34-100
+29-000
+Integral Shank Honeycomb Cutters
+29-100
+29-050
+30-300
+31-000
+29-050B
+66-400
+29-100B
+31-100
+Modular Honeycomb Cutters
+30-BLD
+32-000
+32-200
+30-700
+30-000
+30-SPP
+Plastics, Solid Surface and Foam
+Solid Carbide 1-2 Flute Upcut
+63-700
+52-700
+63-750
+65-000
+52-600
+63-100
+63-800
+52-200B
+63-850
+63-500
+65-100
+52-000
+52-200BL
+52-550
+Solid Carbide and Carbide Tipped 1-2 Flute Straight
+61-000P
+56-000P
+56-000
+56-600
+61-400
+56-450
+56-430
+48-000
+Solid Carbide 1-2 Flute Downcut - Plastics
+64-000
+62-700
+62-750
+57-600
+62-800
+62-850
+Solid Carbide Roughing Tools
+Solid Carbide Finishing Tools
+60-200
+65-200B
+75-100
+60-470
+65-300B
+Solid Carbide Tapered Ball Nose
+HSS 1-2 Flute Straight
+11-00
+10-00
+HSS 4 Flute Foam Cutter
+40-550
+HSS and Solid Carbide Drills
+67-800
+70-500
+Trim Tools for Plastics
+Edge Rounding and Beveling
+66-000
+40-50
+42-00
+37-60
+37-50
+66-200
+Engraving Tools
+Special Purpose
+Dibond and Alucobond Folding Tools
+37-70
+Spoilboard Cutters
+91-000
+91-100
+Stainless Steel Cutters
+83-300
+Trim Tools for Plastics
+27-00
+70-300
+70-200
+27-50
+28-20
+28-50
+70-100
+Engraving Tools
+Wood and Composite Wood
+Solid Carbide and Carbide Tipped Straight Flute
+61-000
+56-200
+61-200
+48-000
+Solid Carbide 1-4 Flute Upcut
+52-200
+52-700
+60-200
+65-000
+63-100
+52-200B
+52-200BL
+60-090
+52-400
+52-900
+63-200
+Solid Carbide 1-2 Flute Downcut - Wood
+57-200
+57-200MD
+64-000
+57-900
+57-400
+Solid Carbide and Polycrystalline Diamond (PCD) Compression
+60-100EC
+60-100MC
+60-100MW
+60-100C
+60-100PLR
+60-100UMC
+68-100
+PROMO60-100U
+60-600
+Solid Carbide Roughing Tools
+60-000
+66-775
+60-800
+60-900
+54-775
+Solid Carbide Chipbreaker
+60-300
+60-350
+60-700
+60-950
+Solid Carbide Tapered Ball Nose
+77-100
+Solid Carbide Boring Tools
+72-000
+HSS Straight and Spiral
+40-000
+10-00
+40-100
+Profile, T-Slot and Trim
+47-00
+27-00
+27-50
+40-50
+42-00
+28-50
+29-50
+37-60
+37-80
+37-50
+90-00
+Engraving Tools
+37-00
+37-20
+Cutting Tool Accessories
+Bearings
+28-75
+Cleaning Supplies
+33-60
+33-10
+33-21
+Collets
+33-50
+34-150
+34-200
+34-250
+34-300
+34-350
+34-400
+34-450
+34-500
+34-520
+34-550
+34-60
+34-650
+34-70
+34-90
+Collet Nuts and Accessories
+33-00
+34-700
+34-743
+34-50
+Tool Holders and Accessories
+33-100
+33-110
+33-120
+33-140
+33-30
+33-40
+33-70
+33-80
+33-90
+Wrenches
+34-750
+34-800
+34-820
+34-850
+1-800-234-1560
+Call
+Distributor
+Locator
+Login
+/Register
+Shopping
+Cart
+Cart
+0
+Your shopping cart is empty.
+View Cart
+|Or|searchlike~p.nm~
+|Or|searchlike~p.ds~
+|Or|searchlike~p.search_terms~
+|Or|searchlike~p.searchfield1~
+|Or|searchlike~p.searchfield5~
+|Or|searchlike~pa.sku_alias~
+|Or|searchlike~pa.nm_alias~
+|Or|searchlike~pa.ds_alias~
+)|Or|searchlike~p.child_rollup_search_terms~
+|Or|searchlike~p.search_terms~
+)&search_keyword=
+">Products
+|OR|searchlike~eosoh.order_number~
+|OR|searchlike~eosoh.status~
+|OR|searchlike~grand_total~
+|OR|searchlike~po_number~
+|OR|searchlike~expected_ship_date~
+)&s=
+&sfield=searchall">Orders
+&sfield=searchall&rpp=50&ddtloaded=1&pagesize=50&search2=((searchlike~p.nm~
+%7COR%7Csearchlike~p.sku~
+%7COR%7Csearchlike~eosoh.order_number~
+%7COR%7Csearchlike~eosoh.po_number~
+%7COR%7Csearchlike~eosod.qty_backordered~
+%7COR%7Csearchlike~eosod.unit_price~
+))&page=1&ddt=1">Backorders
+&sfield=searchall&rpp=50&ddtloaded=1&pagesize=50&search2=((searchlike~ship_date~
+%7COR%7Csearchlike~eos.ship_via~
+%7COR%7Csearchlike~eos.tracking_num~
+%7COR%7Csearchlike~eos.sales_order_number~
+%7COR%7Csearchlike~eoih.ref_id~
+%7COR%7Csearchlike~eosoh.po_number~
+%7COR%7Csearchlike~eos.notes~
+))&page=1&ddt=1">Shipments
+|OR|searchlike~eoih.status~
+|OR|searchlike~po_number~
+|OR|searchlike~eoih.sales_order_number~
+|OR|searchlike~invoice_due~
+)&s=
+&sfield=searchall">Invoices
+&sfield=searchall&rpp=50&ddtloaded=1&pagesize=50&search2=((searchlike~sha.nm~
+%7COR%7Csearchlike~sha.s_add1~
+%7COR%7Csearchlike~sha.s_city~
+%7COR%7Csearchlike~sha.s_state~
+%7COR%7Csearchlike~sha.s_zip~
+%7COR%7Csearchlike~sha.s_country~
+))&page=1&ddt=1">My Addresses
+&sfield=searchall&pagesize=100&search2=((searchlike~date_received~
+|OR|searchlike~eop.invoice_number~
+|OR|searchlike~amount~
+|OR|searchlike~payment_type~
+|OR|searchlike~reference_info~
+))">Payments
+&sfield=searchall&search2=((searchlike~p.nm~
+%7COR%7Csearchlike~p.sku~
+%7COR%7Csearchlike~p.retail_price~
+))">Price List
+&sfield=searchall&search2=((searchlike~fl.nm~
+))">Favorite Lists
+Company
+LMT Onsrud
+Company History
+News
+Tradeshows
+Announcements
+Careers
+Highlights
+TRX
+Downloads
+Forms
+Catalogs
+Cutting Tool Data
+Promotions
+Articles
+Products
+Menu
+Metalworking
+Non-Ferrous Materials - Roughing
+2 Flute Chipbreaker
+ARS-2
+ARM-2
+ARNM-2
+2 Flute Chipbreaker Coolant Through
+ARCS-2
+ARCNS-2
+ARCNM-2
+3 Flute Chipbreaker
+ARS-3
+ARM-3
+ARNS-3
+ARNM-3
+ARNL-3
+3 Flute Chipbreaker Coolant Through
+ARCS-3
+ARCM-3
+ARCNS-3
+AUCM-3
+ARCNM-3
+ARCNL-3
+Non-Ferrous Materials - Slotting and Finishing
+2 Flute Slotting
+AFS-2
+AFNS-2
+AFM-2
+AFNM-2
+AFL-2
+AFNL-2
+AUM-2
+AUS-2
+AUNS-2
+AUNM-2
+AUL-2
+AUNL-2
+2 Flute Slotting Coolant Through
+AFCNS-2
+AFCM-2
+AFCNM-2
+AFCNL-2
+3 Flute Slotting
+AFS-3
+AFNS-3
+AFM-3
+AFNM-3
+AFL-3
+AFNL-3
+AFX-3
+AFNX-3
+AUS-3
+AUNS-3
+AUM-3
+AUNM-3
+AUL-3
+AUNL-3
+AUX-3
+3 Flute Slotting Coolant Through
+AFCNS-3
+AUCNS-3
+AFCM-3
+AUCL-3
+AFCNM-3
+AUCNM-3
+AFCNL-3
+AUCNL-3
+AHRNS-3
+AHRNM-3
+AHRNL-3
+Ferrous and Exotic Materials - Maximum Material Removal
+MXV 4 Flute
+MXVNS-4
+MXVS-4
+MXVM-4
+MXVNM-4
+MXVL-4
+MXVNL-4
+MXV 5 Flute
+MXVNS-5
+MXVS-5
+MXVM-5
+MXVNM-5
+MXVL-5
+MXVNL-5
+MXVXL-5
+TRX 5 Flute
+TRXM-5
+TRXS-5
+TRXL-5
+TRXXL-5
+TRXNS-5
+TRXNM-5
+TRXNL-5
+MXR 4 Flute
+MXRS-4
+MXRM-4
+MXR 5 Flute
+MXRS-5
+MXRM-5
+MXRL-5
+MaxQ 4 Flute
+MXPS-4
+MXQS-4
+MXQNS-4
+MXQM-4
+MXQNM-4
+MXQL-4
+MaxQ 4 Flute Ball Nose
+MXBS-4
+MXBNS-4
+MXBM-4
+MXBNM-4
+MXBL-4
+MXBNL-4
+MaxQ 5 Flute
+MXPM-5
+MXQNS-5
+MXQM-5
+MXQNM-5
+MXQL-5
+MXQS-5
+MXQNL-5
+MaxQ 5 Flute Ball Nose
+MXBS-5
+MXBM-5
+MXBNM-5
+MXBNL-5
+MXBXL-5
+SMC Premium
+SMCPM-4
+Ferrous and Exotic Materials - High-Speed Machining
+TRX 7 Flute
+TRXM-7
+TRXS-7
+TRXL-7
+TRXXL-7
+TRXNM-7
+TRXNL-7
+MDR Ball Nose
+MDR-2
+HXR
+HXRS
+HXRM
+HXRL
+7 Flute High Efficiency Machining
+TVS-7
+TVNS-7
+TVM-7
+TVNM-7
+TVL-7
+TVNL-7
+Ferrous and Exotic Materials - Slotting, Roughing and Semi-Finishing
+RXR 7 Flute
+RXRS-7
+RXRM-7
+RXRL-7
+4 Flute Multi-purpose
+TVS-4
+TVM-4
+TVNM-4
+5 Flute Multi-purpose
+TVM-5
+TVNM-5
+Ferrous and Exotic Materials - Finishing
+6-10 Flute Finisher
+TFS-6
+TFNM-6
+TFNL-6
+TFNL-10
+Radial Milling Cutters
+RMC-B
+RMC-CTA
+RMC-L
+RMC-CTB
+RMC-O
+Routing
+Aluminum
+Solid Carbide 1 Flute Upcut
+63-600
+63-300
+65-000
+63-900
+63-600ONX
+63-000
+63-400
+Solid Carbide 2 Flute Upcut
+52-200B
+52-000
+52-200BL
+66-300
+81-100
+Solid Carbide 1 Flute Downcut
+64-000
+62-600
+62-100
+62-300
+HSS 1-2 Flute Upcut and Downcut
+40-000
+40-100
+49-000
+81-000
+Solid Carbide 1 Flute Straight
+61-000
+Solid Carbide 2 Flute Downcut
+57-000
+Solid Carbide Tapered Ball Nose
+HSS 3 Flute Taper Pin
+80-000
+Engraving Tools
+Composites
+Solid Carbide Upcut and Downcut Tools
+54-200
+52-000
+63-000
+54-775
+Solid Carbide Multi-Flute Composite Router (Burr)
+66-900
+66-900
+67-000
+67-000
+67-500
+67-500
+67-400
+67-400
+Diamond Film Coated (DFC) Multi-Flute Composite Router
+66-500
+Diamond Film Coated (DFC) Spiral
+66-750
+66-775
+66-700
+Diamond Film Coated (DFC) Compression
+66-800
+66-600
+Solid Carbide Phenolic Cutters
+67-200
+Polycrystalline Diamond (PCD) Tools
+68-000
+68-300
+68-200
+68-400
+68-100
+68-500
+67-220
+68-900
+Diamond Grit Tools
+67-250
+Solid Carbide Straight Flute
+56-000P
+56-000
+53-000
+56-450
+Composite Drills
+67-800
+86-150
+85-800
+68-900
+Construction Materials
+HSS Drywall and Panel Bits
+20-10
+18-00
+20-00
+Door Lite Router Bits (Dor-Bits)
+15-50
+15-40
+15-75
+Honeycomb Cutting Tools
+Aircraft Panel Tools
+34-000
+34-100
+29-000
+Integral Shank Honeycomb Cutters
+29-100
+29-050
+30-300
+31-000
+29-050B
+66-400
+29-100B
+31-100
+Modular Honeycomb Cutters
+30-BLD
+32-000
+32-200
+30-700
+30-000
+30-SPP
+Plastics, Solid Surface and Foam
+Solid Carbide 1-2 Flute Upcut
+63-700
+52-700
+63-750
+65-000
+52-600
+63-100
+63-800
+52-200B
+63-850
+63-500
+65-100
+52-000
+52-200BL
+52-550
+Solid Carbide and Carbide Tipped 1-2 Flute Straight
+61-000P
+56-000P
+56-000
+56-600
+61-400
+56-450
+56-430
+48-000
+Solid Carbide 1-2 Flute Downcut - Plastics
+64-000
+62-700
+62-750
+57-600
+62-800
+62-850
+Solid Carbide Roughing Tools
+Solid Carbide Finishing Tools
+60-200
+65-200B
+75-100
+60-470
+65-300B
+Solid Carbide Tapered Ball Nose
+HSS 1-2 Flute Straight
+11-00
+10-00
+HSS 4 Flute Foam Cutter
+40-550
+HSS and Solid Carbide Drills
+67-800
+70-500
+Trim Tools for Plastics
+Edge Rounding and Beveling
+66-000
+40-50
+42-00
+37-60
+37-50
+66-200
+Engraving Tools
+Special Purpose
+Dibond and Alucobond Folding Tools
+37-70
+Spoilboard Cutters
+91-000
+91-100
+Stainless Steel Cutters
+83-300
+Trim Tools for Plastics
+27-00
+70-300
+70-200
+27-50
+28-20
+28-50
+70-100
+Engraving Tools
+Wood and Composite Wood
+Solid Carbide and Carbide Tipped Straight Flute
+61-000
+56-200
+61-200
+48-000
+Solid Carbide 1-4 Flute Upcut
+52-200
+52-700
+60-200
+65-000
+63-100
+52-200B
+52-200BL
+60-090
+52-400
+52-900
+63-200
+Solid Carbide 1-2 Flute Downcut - Wood
+57-200
+57-200MD
+64-000
+57-900
+57-400
+Solid Carbide and Polycrystalline Diamond (PCD) Compression
+60-100EC
+60-100MC
+60-100MW
+60-100C
+60-100PLR
+60-100UMC
+68-100
+PROMO60-100U
+60-600
+Solid Carbide Roughing Tools
+60-000
+66-775
+60-800
+60-900
+54-775
+Solid Carbide Chipbreaker
+60-300
+60-350
+60-700
+60-950
+Solid Carbide Tapered Ball Nose
+77-100
+Solid Carbide Boring Tools
+72-000
+HSS Straight and Spiral
+40-000
+10-00
+40-100
+Profile, T-Slot and Trim
+47-00
+27-00
+27-50
+40-50
+42-00
+28-50
+29-50
+37-60
+37-80
+37-50
+90-00
+Engraving Tools
+37-00
+37-20
+Cutting Tool Accessories
+Bearings
+28-75
+Cleaning Supplies
+33-60
+33-10
+33-21
+Collets
+33-50
+34-150
+34-200
+34-250
+34-300
+34-350
+34-400
+34-450
+34-500
+34-520
+34-550
+34-60
+34-650
+34-70
+34-90
+Collet Nuts and Accessories
+33-00
+34-700
+34-743
+34-50
+Tool Holders and Accessories
+33-100
+33-110
+33-120
+33-140
+33-30
+33-40
+33-70
+33-80
+33-90
+Wrenches
+34-750
+34-800
+34-820
+34-850
+Home
+/
+Forms
+/
+Home
+/
+Forms & Resources
+/
+Cutting Data Recommendations
+Cutting Data Recommendations
+Download cutting data recommendations for common routing materials and applications.
+Looking for LMT Onsrud Catalogs?
+Browse current Metalworking and Production Cutting Tools catalogs.
+View Catalogs
+Routing Cutting Data
+Find recommended feeds, speeds, RPM and chip loads for common routing materials. Select a material below to view cutting data, recommended starting speeds and chip-load guidance.
+Aluminum
+Download PDF ›
+Composites
+Download PDF ›
+Drilling
+Download PDF ›
+Foam
+Download PDF ›
+Hard Plastics
+Download PDF ›
+Hard Plywood
+Download PDF ›
+Hard Wood
+Download PDF ›
+Honeycomb
+Download PDF ›
+Laminated Chipboard
+Download PDF ›
+Laminated Plywood
+Download PDF ›
+MDF
+Download PDF ›
+Soft Plastics
+Download PDF ›
+Soft Plywood
+Download PDF ›
+Solid Surface
+Download PDF ›
+Soft Wood
+Download PDF ›
+Additional Resources
+Catalogs
+Download current LMT Onsrud Metalworking and Production Cutting Tools catalogs.
+View Catalogs ›
+Technical Articles
+Explore technical guidance for routing, machining, tooling, and materials.
+View Articles ›
+Contact LMT Onsrud
+Contact our team for technical support, product information, or general questions.
+Contact Us ›
+Contact Us
+800-234-1560
+info@onsrud.com
+LMT Onsrud LP
+1081 S. Northpoint Blvd.
+Waukegan, IL USA 60085
+Toll Free 800-234-1560
+Customer Service
+Distributor Locator
+Career Opportunities
+Terms and Condition
+Company
+Contact Us
+News and Events
+Catalog Request
+©2026. LMT Onsrud LP.
+Ecommerce & ERP Integration
+by Website Pipeline
+×
+Estimate Shipping
+Close

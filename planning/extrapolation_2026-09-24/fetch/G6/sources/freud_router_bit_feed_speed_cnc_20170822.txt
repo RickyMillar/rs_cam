@@ -1,0 +1,110 @@
+Get the most out of your Freud bits by routing at ideal feed rates and speeds
+
+                    Read all safety warnings and all instructions provided with the router bit and in
+the machine manual. Failure to follow the warnings and instructions may result in electric shock, fire
+and/or serious injury.
+
+
+                   To reduce the risk of injury, always check to ensure the rated speed of the router
+bit is higher than or equal to the maximum speed marked on the CNC machine. Router bits running
+faster than their RATED SPEED can break and fly apart.
+
+
+To get the longest life and the best cut quality from your bits, you need to match the feed rate of your
+CNC and the speed (RPM) of your router spindle to the material you are routing and the bit you are
+using. Routing at the best combination of Feed Rate and RPM is critical to quality of your work and the
+durability of your Freud router bits.
+
+
+1) There is no hard-and-fast rule for precisely what Feed Rate and Speed will be best for your project
+   and your CNC. The formulas and chip load values in the chart below provide a good range of feeds
+   and speeds for you to start with, but you should always make some test cuts with your bits in scrap
+   material to be sure you get the best possible results. As you make your test cuts, observe the
+   following best practices:
+            a. Always consult your machine’s operation manual for bit capacities and recommended
+                feed rates.
+            b. Always start with shallow passes in your test cuts to reduce strain on your bit and your
+                CNC.
+            c. You should start your tests with the lower feed rates yielded by our formulas to reduce
+                the chance of bit breakage. (Freud’s chart contains recommended starting points, and
+                does not warranty against tool breakage)
+            d. Carbide tipped bits should not be used to drill directly into the work piece.
+
+
+2) Second, you need to consider the design of the bit you are using:
+
+       - Number of Flutes, or cutting edges: More flutes on a bit may produce a finer finish on the
+       workpiece than a bit with fewer cutting edges, but only if your feed and speed are set correctly.
+       Our formulas include a variable where you will enter the number of flutes of your bit so you can
+       consider this factor.
+
+         - Cutting Depth: This is the depth that will be routed in a single pass. Our feed and speed
+       recommendations are based on a depth of cut that is no greater than the bit diameter, such as a
+       ½” diameter bit routing a ½” deep pass. If you plan to rout deeper than this in a single pass, you
+       must reduce your feed rate.
+                 If Cut Depth is 2X the bit diameter, reduce the Chip Load by at least 25%
+                 If Cut Depth is 3X the bit diameter, reduce the Chip Load by at least 50%
+       Please see example #3 for more information. Never exceed the recommended cutting depth
+       listed on the router bit package or the bit’s safety instructions!
+3) Next, use the formulas below to calculate starting points for your test cuts. You will notice that our
+   formulas use values called “Chip Loads” to determine the feed rates and speeds. The Chip Load is
+   the size (thickness) of the chip produced as your bit cuts. Why does this matter? If your chip is very
+   small, or just sawdust, then it will not carry enough heat away from the edge of the bit. Excessive
+   heat will prematurely dull the edge of the solid carbide or carbide tipped router bit. If the chip is too
+   large, it will leave a rough surface or edge on your work piece.
+
+CHIP LOADS FOR FREUD SOLID CARBIDE ROUTER BITS ONLY:
+Recommended* Chip Loads, based on cut depth equal to bit diameter:
+                   MDF/     Laminated                                                 Solid
+    Tool          Particle    Particle                                 Acrylics/    Surface/
+  Diameter         Board       Board       Hardwood Softwood Soft Plastic Hard Plastic            Plywood      Aluminum
+     1/8"       .004"-.007"  003"-006"     .002"-.005" .004"-.006" .003"-.005"     .002"-.004"   .003"-.005"   .003"-.004"
+     1/4"       .013"-.017" .010"-.015" .008"-.011" .010"-.012" .006"-.009"        .005"-.008"    .006".009"   .005"-.007"
+     3/8"       .018"-.021" .014"-.018" .014"-.016" .016"-.019" .010"-.012"        .008"-.010"   .015"-.018"   .006"-,.008"
+     1/2"       .023"-.027" .022"-.026" .018"-.021" .020"-.023" .012"-.015"        .010"-.012"   .018"-.021"   .008"-.010"
+*This chart is a recommended starting point and does not warranty against tool breakage.
+Consult your machine's owners manual for bit capacities and recommended feed rates.
+Always make test cuts with shallow passes in scrap material to verify your feed & speed rates
+and cutting depths. Start your tests with the lower feed rates yielded by our formulas.
+
+RECOMMENDED* CHIP LOADS FOR FREUD CARBIDE TIPPED STRAIGHT AND PROFILE BITS ONLY:
+                   MDF/     Laminated                                                 Solid
+    Tool          Particle    Particle                                 Acrylics/    Surface/
+  Diameter         Board       Board       Hardwood Softwood Soft Plastic Hard Plastic            Plywood      Aluminum
+     1/8"       .002"-.004"  003"-006"     .002"-.004" .003"-.005"     003"-006"   .002"-.004"    003"-005"    N/A
+     1/4"       .004"-.006" .006"-.008" .005"-.007" .006"-.008" .006"-.008"        .004"-.006"   .005"-.006"   N/A
+     3/8"       .005"-.007" .007"-.009"     .006-.008" .008"-.010" .007"-.009"     .005"-.007"   .006"-.008"   N/A
+     1/2"       .006"-.007"  008"-.010"    .008"-.010" .008"-.012"     008"-.010"  .006"-.007"   .007"-.009"   N/A
+     5/8"       .006"-.007" .009"-.011" .008"-.012" .009"-.013" .009"-.011"        .006"-.007"   .008"-.010"   N/A
+     3/4"       .007"-.009" .010"-.012" .009"-.013" .010"-.012" .010"-.012"        .007"-.009"   .009"-.011"   N/A
+*This chart is a recommended starting point and does not warranty against tool breakage.
+Consult your machine's owners manual for bit capacities and recommended feed rates.
+Always make test cuts with shallow passes in scrap material to verify your feed & speed rates
+and cutting depths. Start your tests with the lower feed rates yielded by our formulas.
+Carbide tipped bits should not be used to drill directly into the work piece.
+
+
+Here are the formulas to make feed and speed calculations using these values:
+       Chip Load = Feed Rate ÷ (RPM x number of flutes)
+       Feed Rate = RPM x number of flutes x chip load
+       RPM = Feed Rate ÷ (number of flutes x chip load)
+       Note: Feed Rate will be expressed in Inches per Minute
+
+Here are some examples:
+   1. You decide to test a Chip Load of .019" for your cut. Your CNC spins the bit at 18,000 RPM, and
+       the bit has 2 flutes (cutting edges). To determine the feed rate:
+   Feed Rate = 18,000 x 2 x .019". Therefore, your Feed Rate should be 684 inches per minute.
+
+    2. You already know that you want to use a Feed Rate of 684 inches per minute, and a speed of
+        18,000 RPM. Your bit has 2 flutes. To verify that the chip load will be within the recommended
+        range:
+    Chip Load = 684 inches per minute ÷ (18,000 RPM x 2 flutes). Therefore, your Chip Load is .019".
+3. Adjusting Feed and Speed for Bit Diameter: The chip loads in the table above are based a cutting
+   depth that is equal to or less than the bit diameter. For deeper cuts, you need to adjust the Chip
+   Load as follows:
+   If Cut Depth is 2X the bit diameter, reduce the Chip Load by at least 25%
+   If Cut Depth is 3X the bit diameter, reduce the Chip Load by at least 50%
+   For example, let’s say that our chart calls for a chip load of .019” for your application, BUT you
+   decide to use a ½” diameter bit routing 1” deep. Since your cutting depth is now 2X the bit
+   diameter, you must reduce the chip load as follows: .019” x .75 = .014 Chip Load.
+

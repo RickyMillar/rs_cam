@@ -1,0 +1,111 @@
+     END MILLS     END MILL SPEED AND FEED RECOMMENDATIONS
+                   Maximizing Performance and Tool Life
+
+                                                                                                                       Feed per Tooth (FPT)
+DURA-CARB
+
+
+
+
+                                                                                         M
+                                              Materials
+
+
+
+
+                                                                                     d SF
+
+
+
+                                                                                               1/8”
+
+
+
+
+                                                                                                         1/4”
+
+
+
+
+                                                                                                                          1/2”
+
+
+
+
+                                                                                                                                              3/4”
+                                                                                 Spee
+
+
+
+
+                                                                                                                                                       1”
+                         Non-Ferrous          Aluminum / Aluminum Alloy       1000-2000      0.001      0.002           0.004           0.006        0.008
+                                              Aluminum Alloy +10%              700-1200      0.001      0.002           0.004           0.006        0.008
+                                              Brass                            300-450       0.001      0.002           0.003           0.004        0.005
+                                              Bronze                           250-350       0.001      0.002           0.003           0.004        0.005
+                                              Copper / Copper Alloys           500-900       0.001      0.002           0.003           0.005        0.007
+                                              Composites: Fiberglass           200-600       0.001      0.002           0.003           0.004        0.005
+                                                           Graphites           200-400       0.001      0.006           0.010           0.015        0.020
+                                                           Graphite / Epoxy    200-400       0.001      0.002           0.003           0.004        0.005
+                                              Magnesium                        1000 min      0.001      0.002           0.004           0.006        0.008
+                         Stainless Steel      Free Machine                     300-400       0.0005     0.001           0.002           0.004        0.006
+                                              Work Hardening                   150-300       0.0005     0.0005          0.001           0.003        0.005
+                         High Temp Alloys     Nickel Base                      200-300       0.0005     0.001           0.002           0.003        0.004
+                         Cast Iron            Ductile                          250-400       0.0005     0.0015          0.002           0.004        0.006
+                                              Gray                             350-500       0.0005     0.002           0.004           0.006        0.008
+                                              Malleable                        200-350       0.0005     0.002           0.004           0.006        0.008
+                         Steels               Low Alloy                        350-600       0.0005     0.001           0.002           0.004        0.006
+                                              Medium Alloy                     200-400       0.0005     0.001           0.002           0.004        0.006
+                                              High Alloy Mold-Die              175-250       0.0005     0.001           0.002           0.004        0.006
+                                              High Strength                     75-150       0.0005     0.0005          0.001           0.003        0.004
+                         Titanium             Soft                             150-300       0.0005     0.001           0.002           0.004        0.006
+                                              Hard                              50-150       0.0005     0.0005          0.001           0.002        0.004
+
+
+                 All speed and feed recommendations should be considered only as a starting point.      Formulas to determine speed, feed & chip load after the
+                 Start with conservative speeds and feeds while analyzing the rigidity of the pro-        type and diameter of the cutting tool is determined.
+                 cess. Then cautiously progress incrementally to achieve optimum performance.
+                                                                                                         US Customary Units
+                 Contact Fullerton Tool directly for any additional support.                             D = cutter diameter (in) | T = tooth count (flute)
+                                                                                                         IPT chip load (in/flute) = IPM ÷ RPM ÷ T
+                                                                                                         IPR feed per revolution (in/rev) = IPM ÷ RPM
+                                            General Recommendations                                      SFM surface speed (ft/min) = 0.2618 x RPM x D
+                                                                                                         RPM spindle speed (rev/min) = 3.82 x SFM ÷ D
+                 The above suggested parameters are recommended for uncoated tools only.                 IPM feed rate (in/min) = RPM x IPT x T
+                 When various coatings are applied, SFM may be increased accordingly. These
+                 general percentages are as follows under optimal conditions:                            SI Units
+                                                                                                         D = cutter diameter (mm) | T = tooth count (flute)
+                                    TiN = +15% • TiCN = +25% • TiAlN = +40%                              MMPT chip load (mm/flute)
+                 Rigidity                                                                                MMPR feed per revolution (mm/rev) = MMPM ÷ RPM
+                                                                                                         SMPM surface speed (m/min) = 0.00314 x RPM x D
+                 Maximize rigidity to reduce chatter and increase tool life. Ways to improve rigidity    RPM spindle speed (rev/min) = 318.3 x SMPM ÷ D
+                 include, choosing the largest diameter possible to perform your milling task, use       MMPM feed rate (mm/min) = RPM x MMPT x T
+                 the shortest LOC (Length of Cut) available, and always use the tool holder which
+                 offers the shortest gage line (Shortest Tool Holder Length).                            Feed Rate Conversion
+                                                                                                         MMPM (mm/min) = IPM (in/min) x 25.4 (mm/in)
+                 Chatter                                                                                 IPM (in/min) = MMPM (mm/min) x 0.0394 (in/mm)
+                 If chatter is present increase feed or reduce speed.
+                                                                                                         Surface Speed Conversion
+                 Extra Long End Mills                                                                    SMPM (m/min) = SFM (ft/min) x 0.3048 (m/ft)
+                 For extra long end mills the SFM should be reduced by 25%.                              SFM (ft/min) = SMPM (m/min) x 3.2808 (ft/m)
+                 Cutter Direction                                                                        Unit Conversion
+                 Cutter direction should be in a climb milling direction whenever possible. Con-         1 in = 25.4 mm          |     1 ft = 304.8 mm = 0.3048 m
+                 ventional tool paths may be employed when the tool is in use on older manual            1 mm = .03937 in        |     1 m = 3.2808 ft = 39.370 in
+                 equipment to minimize backlash or to remove scale to reach the softer parent
+                 material underneath.
+                                                                                                        For the very best selection of an end mill and how to apply it
+                 TIR or Total Indicator Runout                                                          for your particular application, we suggest that you call our
+                 This condition should be held to a minimum at all times. As this value increases,      technical support staff. They will advise you in what end mill
+                 the effectiveness of the tool’s performance decreases thus reducing tool life.         to use, the correct speeds and feeds and if a particular coating
+                                                                                                        would be beneficial. You may also visit our web site (http://www.
+                 Recutting Chips
+                                                                                                        fullertontool.com) for the latest information regarding particular
+                 Use a coolant or air blast to evacuate chips to avoid premature damage to your
+                                                                                                        tools.
+                 carbide cutting tool, which may occur if chips are recut.
+                                                                                                                             Call 1-800-248-8315
+                                                                                                                 Mark Donze - Ext. 204 • Steve Oszust - Ext. 232
+                                                                                                                          Tom McKimmy - Ext. 218
+
+ P. 12
+

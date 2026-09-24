@@ -1,0 +1,70 @@
+www.productivity.com
+154
+MN 763.476.4196 • IA 319.734.3403 • NE 402.330.2323
+Endmills
+Carbide
+Endmills
+-
+Technical
+Info - Technical Information
+XHP Variable 5-Flute Applications & Adjustments
+Ball Nose Endmills - DOC > 3/4 Diameter
+Reduce Chip Load by 25% from the
+recommended Roughing and Slotting
+Speeds & Feeds when axial DOC
+exceeds 75% of the cutter diameter.
+ap
+overhang
+Dc
+ap
+Dc
+Ball nose end mills
+Milling Long Reach or
+with Long Overhand
+Plunging Applications
+Ramp Milling
+Plunging Applications
+Reduce chipload by 80% of the chipload
+for slotting.
+Peck Milling is required if the axial depth
+of cut exceeds 50% of the cutter
+diameter.
+ap
+overhang
+Dc
+ap
+Dc
+Ball nose end mills
+Milling Long Reach or
+with Long Overhand
+Plunging Applications
+Ramp Milling
+Milling Long Reach or with Long Overhang
+Reduce speed and chipload
+by 10%
+ap
+overhang
+Dc
+ap
+Dc
+Ball nose end mills
+Milling Long Reach or
+with Long Overhand
+Plunging Applications
+Ramp Milling
+Ramp at 1.5 - 2.5 degree angle.
+Reduce chipload by 20% of the chipload
+for slotting.
+ap
+overhang
+Dc
+ap
+Dc
+Ball nose end mills
+Milling Long Reach or
+with Long Overhand
+Plunging Applications
+Ramp Milling
+XHP
+XHP Variable Index 5-Flute Tools Technical Information
+

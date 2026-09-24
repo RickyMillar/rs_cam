@@ -1,0 +1,87 @@
+# stored text for amana_spektra_3d_profiling_v6
+# made from amana_spektra_3d_profiling_v6.pdf with pdftotext -layout on 2026-09-24
+                                                                                                                                                                                          INDUSTRIAL
+
+
+                                 Spektra™ Extreme Tool Life Coated 2D/3D Carving CNC Solid Carbide Router Bits
+                                                                                                     Operating RPM: 18,000
+
+                                                                                                                         1/4" (0.250")                             Tool Reference #’s
+                                            2 Flute Ball Nose                                                  IPM*               Chip Load Per Tooth            46294-K      1/4" Dia.
+                                                                                                       (Based on 18,000 RPM)
+                                              Aluminum, Copper, Brass, Plastic, Acrylic, Plexglas®         140" - 210"               0.004" - 0.006"
+                                              Wood, MDF, Sign-Foam                                         250" - 320"               0.007" - 0.009"
+
+
+
+
+                                                                                                                         1/4" (0.250")                             Tool Reference #’s
+                                            2 Flute Flat Bottom                                                IPM*               Chip Load Per Tooth            46577-K      1/4" Dia.
+                                                                                                                                  (Based on 18,000 RPM)
+                                              Aluminum, Copper, Brass                                      180" - 250"               0.005" - 0.007"
+                                              Plastic, Acrylic, Plexglas®                                  180" - 250"               0.005" - 0.007"
+                                              Wood, MDF, Sign-Foam                                         215" - 290"               0.006" - 0.008"
+
+
+
+
+                                                                                       1/32" (0.031")                        1/8" (0.125")                  Tool Reference #’s
+                                            3 Flute Ball Nose                   IPM*      Chip Load Per Tooth         IPM*     Chip Load Per Tooth        46280-K 1/32" Dia.
+                                                                                          (Based on 18,000 RPM)                (Based on 18,000 RPM)      46284-K      1/8" Dia.
+                                              Aluminum, Copper, Brass,        27" - 81"    0.0005" - 0.0015"      50" - 100"    0.0009" - 0.0018"         46286-K      1/8" Dia.
+                                                                                                                                                          46288-K      1/8" Dia.
+                                              Plastic, Acrylic, Plexglas®                                                                                 46295-K      1/8" Dia.
+                                              Wood, MDF, Sign-Foam           40" - 108"    0.00075" - 0.002"      80" - 100"    0.0015" - 0.0025"
+
+
+
+
+Simple Machining Calculations:
+To find RPM = SFM x 3.82 ÷ diameter of tool
+To find SFM = 0.262 x diameter of tool x RPM
+To find Feed Rate IPM = RPM x # of flutes x chip load
+To find Chip Load = Feed Rate IPM
+                    RPM x # of Flutes
+Depth of Cut: 1 x D Use recommended chip load
+                 2 x D Reduce chip load by 25%
+                 3 x D Reduce chip load by 50%                                                                                                                                                                            Page 1 of 2
+Disclaimer: It is important to understand that these values are only recommendations.                                                                                                     © Copyright Amana Tool® All Rights Reserved
+                                                                                                                                                                                              INDUSTRIAL
+
+
+                                 Spektra™ Extreme Tool Life Coated 2D/3D Carving CNC Solid Carbide Router Bits
+                                                                                                    Operating RPM: 18,000
+
+
+
+
+                                    4 Flute Ball Nose                                     1/16" (0.0625")                             1/8" (0.125")                         Tool Reference #’s
+                                    & Flat Bottom                                IPM*           Chip Load Per Tooth          IPM*          Chip Load Per Tooth            46282-K 1/16" Dia.
+                                                                                               (Based on 18,000 RPM)                         (Based on 18,000 RPM)        46292-K      1/8" Dia.
+                                      Aluminum, Copper, Brass                 25" - 30"         0.00037" - 0.00045"       25" - 30"          0.00037" - 0.00045"
+                                      Plastic, Acrylic, Plexglas®             25" - 30"         0.00037" - 0.00045"       25" - 30"          0.00037" - 0.00045"
+                                      Wood, MDF, Sign-Foam                    35" - 45"         0.0005" - 0.00065"        35" - 45"          0.0005" - 0.00065"
+
+                                    3 Flute Extra Long
+                                    Ball Nose &                                                                 1/4" (0.250")                            Tool Reference #’s
+                                    Flat Bottom                                                      IPM*                Chip Load Per Tooth           46490-K      1/4" Dia.
+                                                                                                                        (Based on 18,000 RPM)
+                                      Aluminum, Copper, Brass, Plastic, Acrylic, Plexglas®        135" - 190"            0.0025" - 0.0035"
+                                      Wood, MDF, Sign-Foam                                        215" - 320"             0.004" - 0.006"
+
+                                    IPM* Inches per minute
+
+
+
+
+Simple Machining Calculations:
+To find RPM = SFM x 3.82 ÷ diameter of tool
+To find SFM = 0.262 x diameter of tool x RPM
+To find Feed Rate IPM = RPM x # of flutes x chip load
+To find Chip Load = Feed Rate IPM
+                    RPM x # of Flutes
+Depth of Cut: 1 x D Use recommended chip load
+                 2 x D Reduce chip load by 25%
+                 3 x D Reduce chip load by 50%                                                                                                                                                                                Page 2 of 2
+Disclaimer: It is important to understand that these values are only recommendations.                                                                                                         © Copyright Amana Tool® All Rights Reserved
+

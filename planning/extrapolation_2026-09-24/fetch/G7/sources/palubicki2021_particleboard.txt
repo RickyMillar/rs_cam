@@ -1,0 +1,241 @@
+
+## Cutting Forces in Peripheral Up-Milling of Particleboard
+An analysis of forces acting in the peripheral up-milling of particleboard is presented. First, a novel method of high-frequency piezoelectric force signal treatment is proposed and used to separate the original force signal from the vibrations of the previous cutting iteration. This allows for the analysis of single chip cutting force courses during industrial CNC (Computer Numerical Control) milling. The acting forces are compared with the theoretical, instantaneous, uncut chip thickness. The results show that, for a range of 40–60 m/s, the higher the cutting speed used, the higher the resultant and principal cutting forces. The method of cutting thrust force used was similar to that observed in solid wood milling, i.e., first using a pushing action, followed by a pulling action. The obtained average specific principal cutting forces for particleboard peripheral up-milling are equal to 32.0 N/mm2 for slow and 37.6 N/mm2 for fast milling. The specific cutting thrust force decreases with the increase in instantaneous uncut chip thickness.
+
+## 1. Introduction
+Peripheral milling is a common method for processing wood and wood-based materials utilized for planers, thicknessers, moulders, routers, etc. The process relies on cutting a single comma-shaped chip repetitively to create a surface with cut marks in the form of waves. The process itself is complex. It depends on the tool–workpiece interaction, which is related to the tool and workpiece properties, geometries and kinematic parameters such as cutting, feed speed, depth and width of cut, etc. The process produces a quality machined surface, as well as sawdust, noise and vibration. Energy is required to perform the process. The cutting energy distribution was carefully analyzed in [1], the most significant part being pure cutting, which can be analyzed in terms of cutting forces.
+The process of cutting wood and the subsequent forces have been widely studied for decades. Different aspects have been of interest: wood species [2,3], moisture content [4], grain angle [5,6], age [7]. Multiple machining types, processing parameters, tool geometries and wear have been utilized for experimental and modeling work. Cutting forces have been measured directly by means of strain gage dynamometers [8] or with the use of more advanced piezoelectric sensors, since they are more suitable for dynamic processes. Often, cutting forces are found indirectly by measuring electrical power in the machining process [4,9].
+Several cutting setups have been tested to determine cutting forces. A simple linear or quasi–linear (arc with a large radius) one-directional cutting movement allows for an easy and reliable investigation of the cutting process. Eyma et al. [10], as well as routing, took advantage of a pendulum to measure cutting forces. Since only one cut is performed at a time using this set-up, there is no impact from the vibration of the previous cut. The disadvantage of using a pendulum is a lower cutting speed, compared to industrial processes. This problem has been solved by Dvoracek et al. [11], who built a rotary 4 m diameter arm device, which is able to cut at a 100 m/s cutting speed and is also equipped with a force and strain measurement system. These methods are useful for obtaining basic knowledge of the material and process properties. Similarly, investigations on industrial machining processes such as rotary cutting peeling, band, sash gang, circular sawing, drilling, milling, etc., have been carried out [6,12,13,14].
+The cutting processes of particleboards (PB), despite their great popularity, have not been investigated as much as solid wood machining. PB is a wood-based material with a characteristic structure of multiple wood chips of different sizes, glued together to form a panel, which is usually finished on both sides with a melamine coating. Compared to solid wood, PB has better shape and dimension stability, and even in-plane mechanical properties (transversal isotropy) do not cause macro-defects (such as knots in solid wood). These properties make PB very useful for cabinet production. When PB is subjected to the impact of a cutting edge, its structure disintegrates differently than in the case of a solid wood cutting process. It was noticed [15] that in PB cutting, pulverization of the chip occurs, especially for tools with small rake angles, which increases the risk of air contamination with fine, inhalable dust [16,17]. PB, together with medium-density fiberboard (MDF), is very often used in machining experiments of tool wear behavior, due to their highly abrasive properties [18,19,20,21]. Wong [15] modeled PB as an aggregate of wood chips and resin to investigate the cutting process. Three possible actions of cutting, namely particle crushing, splitting and tearing-out from the structure, were observed. It was also indicated that PBs differ significantly between manufacturers, due to variations in particle size, resin type and content, all of which can change the action and forces of cutting. Wong modeled cutting forces by assessing pressures in different zones of blade–workpiece interaction. Wong investigated “slow cutting” of PB, with cutting speeds that were much lower than industrial cutting speeds. Boucher et al. [22] modeled the different helix angles of the cutting edge during the milling of MDF and PB, but did not provide information on the cutting speeds used, stating that the spindle speed was lowered to 1000 rpm, because of occurring vibrations. When closer to industrial PB cutting speeds were used (around 24 m/s) [23], the vibrations of the workpiece and holder forced researchers to apply low-pass filtering, which distorted and decreased the force signal. Cutting forces were also measured for a turning operation of PB; however, this operation is not used industrially [24]. Again, all cutting speeds utilized by the authors were below 30 m/s.
+A common problem for all investigations into industrial PB cutting, except for those which are model-based, is the presence of strong vibrations. High cutting speeds generate vibrations not only at the machining center [25] but also at the fixed workpiece, significantly disturbing the force measurement. For rough measurement of the feed force that is felt by an operator during PB sawing [26], these vibrations do not play an important role, since several teeth are working at the same time, and the impact frequency is too high to be felt by the operator. However, in high-frequency measurements of cutting forces, these vibrations can introduce a significant error. The goal of this research is therefore to analyze the cutting forces during PB milling at full industrial speed, by applying a novel force signal treatment which ensures high reliability.
+
+## 2. Materials and Methods
+
+## 2.1. Materials
+Wood based material in the form of one-layer PB was subjected to the CNC peripheral up-milling process. Pine wood core layer flakes with urea–formaldehyde resin with a 9% glue rate were used to produce four panels. A pressing temperature of 200 °C and a pressing time of 110 s were used.
+Four specimens of nominal dimensions 100 mm × 60 mm and thickness b = 17 mm were cut out, each from a different panel. They were kept in a conditioning room (temperature 21 °C and air humidity 65%) for a week to obtain their constant mass. Density of the specimens was equal to 542.5 ± 6.8 kg/m3.
+
+## 2.2. Machine Tool
+The Venture 115 M (Homag, Schopfloch, Germany) with a 10 kW spindle—a gate construction CNC machining center—was used as a machining tool. The workpieces were mounted with two M8 screws to an aluminum holder. The holder was fixed to an aluminum baseboard through a piezoelectric force sensor; the baseboard was mounted on the machine’s vacuum cups on the console table.
+
+## 2.3. Cutting Tool
+A special HSK63 mount milling head (Leitz, Riedau, Austria) of 165 mm diameter (cutting radius R = 82.5 mm) was used in the experiments (Figure 1). Originally, it was a double blade tool, but for the current use, one of the blades was shortened, so that it was excluded from the cutting process. Therefore, only one (Z = 1) new, sharp, tungsten carbide cutting insert was used in the experiment. The geometry parameters of the cutting knife were as follows: clearance angle 20°, sharpness angle 57° and rake angle 13°. The tool wear was assumed to be negligible during the experiment, due to small total kerf length. The cutting edge was situated parallel to the axis of rotation. The tool was dynamically balanced.
+
+## 2.4. Machining Process
+In the experiment, six up-milling operations (Figure 2) were performed, for two cases: slow and fast cutting. Cutting speeds v1 = 40 m/s and v2 = 60 m/s were achieved with two tool rotational speeds: n1 = 4630 min−1 and n2 = 6945 min−1. The constant feed per tooth fz = 1.5 mm, equal to the feed per revolution (since Z = 1), was obtained using two feed rates: f1 = 6.94 m/min and f2 = 10.41 m/min. The uncut chip geometry was identical for both cases. The depth of cut for both cases was H = 2 mm.
+Depending on the initial position of the blade and the workpiece, only the 12th or 13th blade pass achieved full depth of cut (2 mm) and therefore resulted in a full, regular cutting force response (Figure 3). The same number of cuts at the end of one pass does not have a full arc length (18.95 mm) contact. In the present case, only 41 or 42 cuts in the middle region of the specimen were regular cuts, with full contact angle 12°38′. Due to the imperfections in the geometry of the measurement system, it was decided to reject the first 14 passes which produced any force response, and take into account the 40 knife impacts of each milling process. This yielded 240 single cuts to analyze for both slow (v1) and fast (v2) cases.
+
+## 2.5. The Force Measurement System
+The force measurement system consisted of PCB Piezotronics 260A02 (PCB Piezotronics, New York, NY, USA) piezoelectric sensor, PCB Piezotronics 482C16 signal amplifier and 16-bit analog-digital converter NI 9215 with CompactDAQ acquisition platform (National Instruments, Austin, TX, USA). The equipment was used to acquire two perpendicular force values Fx and Fy in the perpendicular directions x and y (Figure 2). The force signal acquisition with sampling frequency fs= 100 kHz, as well its processing and analysis, were performed with LabView software (National Instrumens, Austin, TX, USA).
+
+## 2.6. Force Signal Processing
+Since the cutting process is highly dynamic, its measurement often poses a problem for researchers, because it requires not only a sensitive and high-speed force measurement system but also a trustworthy signal processing method. The signal recorded contains not only the direct instantaneous values of the forces exerted by the knife on the specimen, but also the dynamic response of the specimen–holder set mounted on the piezoelectric sensor. During experimentation, when the cutting edge hits the PB and the chip is cut, the set will start to vibrate at its natural frequency, which will be picked up by the sensor. When the next tool–specimen contact occurs, the force signal is combined with the remaining vibration signal, which makes it difficult to evaluate. Researchers have dealt with this problem in several ways. Palmqvist [27], in order to decrease the cutting speed and reduce the vibration disturbances on the force signal, used polypropylene specimens instead of wood. Maradpour et al. [28] neglected the problem and treated the raw data as unaffected by vibrations, by eliminating the first section of the signal. Goli et al. [5] applied Butterworth low-pass filtering to the raw signal and obtained force data that, as stated, were not exact, but easy to analyze. Additionally, Iskra and Hernandez [29] used an analog low-pass filter and no other post-processing of the force signal. Sommer et al. [30] noticed that low-pass filtering decreased the real force peak height, whilst also widening it. This meant that it was still suitable for calculating the mean cutting force applied to mean chip thickness in contact zones. A transfer function, based on the falling ball impulse, was successfully used by Krenke et al. [31,32] to convert the raw force signal into a clear-cutting force signal.
+In this study, it was decided to use a different approach. The original force signal was divided into smaller parts containing the cutting force peaks and preceding vibrations from previous tool impacts. The length of each signal portion was 25% of the tool impact period: 3.24 ms (m = 324 samples) for slow cutting (v1) and 2.16 ms (with m = 216 samples) for fast cutting (v2). Each portion of the force signal, after removing the part indicated by the tool–workpiece contact marker’s high value (Figure 4), was then decomposed with the use of the fast Fourier transformation algorithm into a discrete Fourier transform F^ in which any k-element is defined as a complex number: (1)F^k=∑j=0n−1Fje−i 2π jkn where F is the original input force signal; n is the number of elements of F.
+[formula] (1)F^k=∑j=0n−1Fje−i 2π jkn
+Next, the Fg signal was generated, imitating the original vibration signal F, but extended for all m elements (the entire portion of signal which also contained the cutting force peak). Each j-element of the newly generated signal was equal: (2)Fgj=2n∑k=0n−12|F^k|sin(kn fs j+φk) where φk=arctan(Im(F^k):Re(F^k)).
+[formula] (2)Fgj=2n∑k=0n−12|F^k|sin(kn fs j+φk)
+Finally, the force signal cleared from vibration was calculated as Fclear=F−Fg, with its non-zero portion corresponding to the tool–workpiece contact (blue marker in Figure 4), which was extracted for further analysis. As visible in Figure 4, after the contact is finished, the cleared signal does not return to zero—the free vibration equilibrium has been disturbed by cutting, and the clearing procedure applied is not valid anymore. A new one must be performed before the next cutting force extraction.
+The procedure described above has been applied to both Fx and Fy raw force signals. Then, the resultant force value Fr shown in Figure 5 and the angle of its vector α have been derived as: (3)Fr=Fx2+Fy2, α=arctan(FyFx)
+[formula] (3)Fr=Fx2+Fy2, α=arctan(FyFx)
+Finally, Fr was decomposed into a principal cutting force Fc working on the direction tangent to the cycloid curve (inclined by β) and a cutting thrust force Fct perpendicular to it: (4)Fc=Frcos(β−α), Fct=Frsin(β−α)
+[formula] (4)Fc=Frcos(β−α), Fct=Frsin(β−α)
+The Fc is positive (+) when it is pointed in the direction of cutting speed vector v. The Fct is positive (+) when the workpiece is repelled by the tool, as defined in previous research [2]. As positive Fx and Fy directions are shown in Figure 2, the β angle is negative only at the very beginning of the tool–workpiece contact for the current setup and α may be positive or negative depending on Fy.
+
+## 2.7. Vision Control of the Process
+During the tests, a high-speed camera, MotionXtra NX7 Speed 2 (Integrated Design Tools Inc., Pasadena, CA, USA), was used to observe the tool interaction with the workpiece. The camera and lighting were located above the workpiece and the tool. They captured frames at 15 kHz frequency, with an exposure time of 7 μs.
+
+## 3. Results and Discussion
+
+## 3.1. Resulting Cutting Force
+An example of a raw force Fx signal is shown in Figure 6. At the beginning, a small signal represents the first tool–workpiece contact, before the peak force amplitudes increase, along with the instantaneous depth of cut, whilst the cutting cycloid becomes more horizontal. After 13 impacts, the cutting process reaches full arc length and the force peaks stabilize. Some modulation of the signal was observed, due to the signal caused by vibration, which resulted in a phase shift of the signal, in relation to the force peaks.
+The resultant force Fr and angle α were calculated using Equation (3), and averaged. The slow cutting and fast cutting results are shown in Figure 7 and Figure 8, respectively. The maximal value of the resultant force was 153.9 N for slow cutting. In fast cutting, it was 182.7 N, which is 19% higher, where the cutting speed had been increased by 50%. In the slow cutting test, a more gradual flattening of the force curve is observed during the final stage of the tool–workpiece contact, as well as an increase in the standard deviation. The nature of this phenomenon is explained further by decomposing the resultant force into principal and thrust cutting forces.
+At the beginning of the cutting process, the average inclination between the Fr vector and the cycloid tangent direction (β−α) increases due to the pushing action of the clearance face onto the workpiece. Soon after, the tool tip plunges into the material, and the growing chip thickness causes an increased pulling action on the workpiece. This slows down the increase in the change of angle and, after 17.4% of the single contact time in the slow milling, the (β−α) angle reaches its maximum at 36°. For the fast process, a maximum angle of 34° is demonstrated after 15.6% of the total contact time.
+
+## 3.2. Instantaneous Uncut Chip Thickness
+To examine the cutting process, it is best to calculate the principal and thrust cutting forces, as previously defined. Additionally, in order to compare the forces that act during both slow and fast milling, it is best to consider them relative to the instantaneous uncut chip thickness (IUCT), instead of time (which is different for the fast and slow processes). Therefore, the IUCT should be derived as a function of the horizontal position x of the tool tip h(x). Many models of uncut chip thickness have been proposed so far: starting from simple circle-based paths, omitting the feed movement, through to more realistic models [33] and finishing with complex models that also take into consideration the tool run-out [34]. This, however, does not apply to the current case, since the tool is a large milling head. The theoretical model of IUCT h(x) for up-milling that is used in the present work was determined from the two following cycloid paths in the cutting zone, within the depth of cut. The origin of the coordinate system used is situated at the rotational axis of the tool at the moment in time when the y position, in the current cycloid, reaches its maximum R value.
+Each pass of the tool tip is a cycloid curve and may be presented as two parametric tool tip position functions of time (t), given in seconds:(5){xc(t)=R sin(2πn60t)+1000 f60t yc(t)=R cos(2πn60t) where all parameters are in units as defined above.
+[formula] (5){xc(t)=R sin(2πn60t)+1000 f60t yc(t)=R cos(2πn60t)
+Since, in peripheral milling, only a part of the curve is involved in chip cutting, the single cutting edge pass may be represented by a yc(x) function instead, defined for the tool–specimen contact zone x∈⟨−fz2, xout〉, where xout is located at the point of the tool tip exit from the workpiece. (6)yc(x)=R2−(x−fz2πarcsin(xR))2
+[formula] (6)yc(x)=R2−(x−fz2πarcsin(xR))2
+Its first derivative equals: (7)yc′(x)=(1−fz2πr1−(xr)2)(fz2πarcsin(xr)−x)r2−(x−fz2πarcsin(xr))2 and the precedent tooth pass function is:(8)yc−1(x)=R2−(x+fz−fz2πarcsin(x+fzR))2
+[formula] (7)yc′(x)=(1−fz2πr1−(xr)2)(fz2πarcsin(xr)−x)r2−(x−fz2πarcsin(xr))2
+[formula] (8)yc−1(x)=R2−(x+fz−fz2πarcsin(x+fzR))2
+For this case, the line covering the chip thickness direction is perpendicular to the tangent of the yc(x) curve at xi and contains (xi; yc(xi)) point. This intersects the previous iteration cycloid at point (xj; yc−1(xj)). The following equations must be solved: (9){xjyc'(xi)−yc−1(xj)−yc(xi)−xiyc'(xi)=0, |xi∈〈−fz2,0 )∪(0, xj out〉xj=0, |xi=0xjyc'(xi)−(R−h)−yc(xi)−xiyc'(xi)=0, |xi∈(xj out, xi out〉
+[formula] (9){xjyc'(xi)−yc−1(xj)−yc(xi)−xiyc'(xi)=0, |xi∈〈−fz2,0 )∪(0, xj out〉xj=0, |xi=0xjyc'(xi)−(R−h)−yc(xi)−xiyc'(xi)=0, |xi∈(xj out, xi out〉
+The IUCT was calculated iteratively, as in the work [35]. At a specific xi position, it is equal to: (10)h(xi)=(xi−xj)2+(yc(xi)−yc−1(xj))2
+[formula] (10)h(xi)=(xi−xj)2+(yc(xi)−yc−1(xj))2
+Figure 9 shows the shape of the uncut chip and its calculated instantaneous thickness. As visible (also from Equation (9)), near the end of the cutting processes, the chip thickness decreases because the blade is exiting from the board. To analyze cutting forces in relation to the increasing IUCT, it was decided to consider data sets from up to 0.29 ms for fast and 0.44 ms for slow milling. The maximal chip thickness was then shown to approximately equal 0.31 mm.
+
+## 3.3. Principal and Thrust Cutting Forces
+From the literature, the influence of the cutting speed on the cutting force is not clear. For pine wood, it was found [36] that for higher cutting speeds, from the range of 15–40 m/s, both principal and thrust cutting forces slightly increase. Previous research demonstrates an opposite relationship [37]. In addition, [38,39] point out a clear correlation.
+From the plot in Figure 10, it can be observed that the principal cutting force generally grows with the IUCT to achieve the maximum at 179 N in fast and 152 N in slow cutting. The principal cutting force curve flattens at the final stage of single cutting for slow milling. It occurs even when the thinner end-portion of the chip (the decreasing part of IUCT visible in Figure 9) is not taken into consideration. A similar phenomenon was observed earlier, for the maple wood cutting [26]. A hypothesis was formulated that this happens when the tensile strength of the workpiece is exceeded, before the knife reaches the theoretical maximum chip thickness position. In the case of PB up-milling, this idea also seems to be valid. This is shown at the top of Figure 11, where the PB workpiece shows an uncut edge on the right hand, with the cut arc on the left-hand side. The cut chip is not compact but is highly pulverized and is removed from the cutting zone in the form of a cloud. Within the cloud, one single particle, significantly bigger than the others, is visible near the cutting edge. Due to PB’s structure, at the final stage of cutting, single particles are observed to be ripped out from the workpiece, instead of being cut. This happens at the end phase of cutting, because no more material exists to support the chip being cut. This has two consequences: since a portion of the material is ripped out before the end of the theoretical cutting path, the increase in force may be stopped or even reduced. On the other hand, the portion ripped out leaves a void at the end of the next uncut chip, which will surely diminish forces on the next iteration. This phenomenon is less visible when a higher cutting speed is used, which may be caused by a better stress concentration [40]. An increase in standard deviation at the end phase of slow cutting due to the increased frequency of ripping out occurs.
+The cutting thrust force curves have both similar courses and are specific for the sharp tool [41]. From the beginning of cutting, up to around 0.075 mm of the uncut chip thickness, both fast and slow cutting processes reveal similar cutting force courses. In this range, the cutting thrust forces increase monotonically, pushing the workpiece away from the tooltip. This is because the rounded tool’s edge rubs the cut surface. On the clearance face of the knife, the chip formation invokes a pulling action on the workpiece. At some point, the pushing action is stabilized, while the pulling forces are increased with the IUCT. For the inspected cases, both actions equilibrate at around 0.24 mm of chip thickness (77% of its maximal value), demonstrating no thrust force. Afterwards, the pulling component of the force overrides pushing, and the workpiece is pulled in the direction of the tool.
+
+## 3.4. Specific Cutting Forces
+To compare the cutting forces obtained in this study to other materials and cutting processes, it is convenient to derive specific cutting forces, i.e., related to area of the chip cross–section. A principal specific cutting force kc and a specific cutting thrust force kct are given as: (11)kc=Fcbh, kct=Fctbh
+[formula] (11)kc=Fcbh, kct=Fctbh
+These are plotted in Figure 12. Since, at the first stage of cutting, the IUCT is very small and, in reality, the chip does not yet exist (just the rubbing phase), this stage is neither plotted nor taken into account for further consideration. Despite the specific principal cutting force, which was recognized to be nonlinear (at least for wood) [9], from current research, it seems that, to some extent, that the kc may be considered constant. For both cutting speeds, delicate fluctuations are shown from mean values of 32.0 N/mm2 for slow and 37.6 N/mm2 for fast cutting. The kc is less dependent on the IUCT for fast cutting than for the slow one. In general, 60 m/s speed increased the average value of 17.5% compared to 40 m/s. These values are of the same magnitude that was presented for MDF [42]. Only for a medium chip thickness (0.12–0.2 mm) does the specific principal cutting force in slow milling have a slightly higher value than that shown for a higher cutting speed. The specific cutting thrust forces in slow kct 1 and in fast kct 2 milling in the considered range of IUCT decrease linearly (12), without a noticeable difference between each other. (12)kct 1 =−103,3 h+24,5, kct 2=−105,6 h+25,5
+[formula] (12)kct 1 =−103,3 h+24,5, kct 2=−105,6 h+25,5
+
+## 4. Conclusions
+A novel, simple method of high-frequency piezoelectric force signal treatment was proposed and successfully used to separate the original force signal from the vibration that was caused by the previous cutting iteration. This allowed for the analysis of single chip cutting forces under industrial CNC milling conditions.
+The resultant forces increased in time for single cuts, together with an increase in chip thickness. For two cutting speeds, 40 and 60 m/s, the maximum resultant forces were 153.9 and 182.7 N, respectively. The resultant forces have been decomposed into the principal and thrust (normal) cutting forces and related to the instantaneous chip thickness. This revealed that, during the development of the chip formation process, these forces develop similarly for fast and slow cutting. The principal cutting force grows with increasing chip thickness, while the thrust force first shows the pushing action before representing the pulling action. This was also observed before for wood milling using a sharp knife.
+The average specific principal cutting force for PB peripheral up-milling is equal to 32.0 N/mm2 for slow and 37.6 N/mm2 for fast milling. The specific cutting thrust force, in turn, decreases linearly, whilst the instantaneous uncut chip thickness increases.
+
+## Acknowledgments
+The author wishes to thank Stephan Froemmel-Frybort and Daniel Lechowicz from Wood K plus Institute (Austria), and Jakub Sandak from the University of Primorska (Slovenia), for their support and fruitful discussions during the experiments and writing of this article.
+Publisher’s Note: MDPI stays neutral with regard to jurisdictional claims in published maps and institutional affiliations.
+
+## Funding
+The paper was financed within the framework of Ministry of Science and Higher Education program ‘Regional Initiative of Excellence’ in years 2019–2022, Project No. 005/RID/2018/19.
+
+## Institutional Review Board Statement
+Not applicable.
+
+## Informed Consent Statement
+Not applicable.
+
+## Data Availability Statement
+Data sharing is not applicable to this article.
+
+## Conflicts of Interest
+The author declares no conflict of interest.
+
+## Nomenclature
+[row] b | mm | Workpiece thickness
+[row] R | mm | Cutting radius
+[row] Z |  | Number of blades in the cutter head
+[row] v | m/s | Cutting speed
+[row] n | min−1 | Rotational speed of the tool
+[row] fz | mm | Feed per tooth
+[row] f | m/min | Feed speed
+[row] H | mm | Depth of cut
+[row] fs | Hz | Force signal sampling frequency
+[row] x, y | mm | Coordinates in perpendicular directions as shown in Figure 2, when they occur as indexes, denote properties in these directions
+[row] F | N | Force signal (directly measured)
+[row] F^ | N | Discrete Fourier transform of F signal
+[row] Fg | N | Signal (imitating the original vibrations) generated in order to clear the F signal
+[row] Fclear | N | Force F signal cleared from vibrations
+[row] Fr | N | Resultant force
+[row] α | °, rad | Angle between the resultant force and x direction (see Figure 5)
+[row] Fc | N | Principal cutting force
+[row] Fct | N | Cutting thrust force
+[row] t | ms, s | Time
+[row] yc(x) | mm | Function of tooth path in the workpiece
+[row] yc−1(x) | mm | Function of precedent tooth path function
+[row] β | °, rad | Angle between the cutting force and x direction (see Figure 5)
+[row] h | mm | Instantaneous uncut chip thickness (IUCT)
+[row] kc | N/mm2 | Principal specific cutting force
+[row] kct | N/mm2 | Specific cutting thrust force
+
+## Abbreviations
+[row] CNC | Computer numerical control
+[row] PB | Particleboard
+[row] MDF | Medium density fiberboard
+[row] IUCT | Instantaneous uncut chip thickness
+
+## References
+
+## Energy Balance of the Orthogonal Cutting Process
+
+## Sawtooth Forces in Cutting Tropical Hardwoods Native to South America
+
+## Machining Qualification of Solid Wood of Fagus Silvatica L. and Picea Excelsa L.: Cutting Forces, Power Requirements and Surface Roughness
+
+## The Influence of Wood Moisture Content on the Process of Circular Rip-Sawing. Part I: Power Requirements and Specific Cutting Forces
+
+## Up-Milling and down-Milling Wood with Different Grain Orientations—Theoretical Background and General Appearance of the Chips
+
+## Effect of Grain Direction on Cutting Forces and Chip Geometry during Green Beech Wood Machining
+
+## Orthogonal Cutting Forces in Juvenile and Mature Pinus Taeda Wood
+
+## Tool Forces and Chip Formation in Orthogonal Cutting of Loblolly Pine. US Department of Agriculture, Forest Service Research Paper SO–52
+
+## An Attempt at Modelling of Cutting Forces in Oak Peripheral Milling
+
+## Utilization of a Dynamometric Pendulum to Estimate Cutting Forces Involved during Routing. Comparison with Actual Calculated Values
+
+## Development of a Novel Device for Analysis of High-Speed Cutting Processes Considering the Influence of Dynamic Factors
+
+## Application of Fracture Mechanics for Energetic Effects Predictions While Wood Sawing
+
+## Sawing Processes as a Way of Determining Fracture Toughness and Shear Yield Stresses of Wood
+
+## Tool Wear Effect on Cutting Forces: In Routing Process of Aleppo Pine Wood
+
+## Particleboard Simulation Model to Improve Machined Surface Quality
+
+## Fine Particles Content in Dust Created in Cnc Milling of Selected Wood Composites
+
+## Influence of Feed Speed on the Content of Fine Dust during Cutting of Two-Side-Laminated Particleboards
+
+## Measurement of Tool Wear and Dulling in the Machining of Particleboard
+
+## A Method to Evaluate the Chemical Properties of Particleboard to Anticipate and Minimize Cutting Tool Wear
+
+## The Change of Laminated Particleboard Edge Quality While Sawing with Progressing Teeth Wear
+
+## Examination of Tools of Different Materials Edge Geometry for MDF Milling
+
+## Influence of Helix Angle and Density Variation on the Cutting Force in Wood-Based Products Machining
+
+## Influence of Tools Stage on Paricleboard Milling
+
+## Tool Temperature and Cutting Forces during the Machining of Particleboard and Solid Wood
+
+## Modal Analysis of the Dynamic Characteristics of a Numerically Controlled Woodworking Center
+
+## Feed Force and Sawdust Geometry in Particleboard Sawing
+
+## Parallel and Normal Cutting Forces in Peripheral Milling of Wood
+
+## Cutting Forces in Bandsaw Processing of Oak and Beech Wood as Affected by Wood Moisture Content and Cutting Directions
+
+## Analysis of Cutting Forces in Straight-Knife Peripheral Cutting of Wood
+
+## Medium Density Fiberboard Machining and Wear Behavior of Injection-Molded Ceramic Composite Wood Cutting Tools
+
+## Determining Cutting Force Parameters by Applying a System Function
+
+## Cutting Force Analysis of a Linear Cutting Process of Spruce
+
+## An Improved Model of the Chip Thickness in Milling
+
+## Modeling of Three-Dimensional Cutting Forces in Micro-End-Milling
+
+## Limits to Simplified Calculation of Uncut Chip Thickness in Milling
+
+## Main and Normal Cutting Forces by Machining Wood of Pinus Sylvestris
+
+## Fundamental Analysis of the Wood-Cutting Process
+
+## Effect of Tool Material on Tool Wear and Delamination during Machining of Particleboard
+
+## Dynamic Aspects Of Laminated Particleboard Cutting With Use Of Finite Element Method
+
+## Basics in Optimisation of Wood Cutting on the Example of Peripheral Milling
+[caption] Milling head used in experiment.
+Milling head used in experiment.
+[caption] Experimental setup. General view (right-hand side): a—base board, b—force sensor, c—workpiece holder, d—workpiece, e—milling head. f—cutting edge, g—electro spindle, h—high-speed camera. Scheme (left-hand side) showing the directions of movements, coordination system of the position and of the force measurement during the up-milling process.
+Experimental setup. General view (right-hand side): a—base board, b—force sensor, c—workpiece holder, d—workpiece, e—milling head. f—cutting edge, g—electro spindle, h—high-speed camera. Scheme (left-hand side) showing the directions of movements, coordination system of the position and of the force measurement during the up-milling process.
+[caption] Subsequent tool tip passes in the workpiece. The first 13 passes at the beginning of machining were omitted from analysis, and the next 40 single full arc length cuttings were taken into consideration for force analysis (red color).
+Subsequent tool tip passes in the workpiece. The first 13 passes at the beginning of machining were omitted from analysis, and the next 40 single full arc length cuttings were taken into consideration for force analysis (red color).
+[caption] An example of the clearing procedure of the force signal: original force signal—black dots, generated force signal—red line, tool–workpiece contact marker—green line and cleared force signal—blue line.
+An example of the clearing procedure of the force signal: original force signal—black dots, generated force signal—red line, tool–workpiece contact marker—green line and cleared force signal—blue line.
+[caption] Forces considered in the cutting process. In the presented case, all forces and angles are positive.
+Forces considered in the cutting process. In the presented case, all forces and angles are positive.
+[caption] Raw force Fx signal (black dots) and tool impact indicators (green lines).
+Raw force Fx signal (black dots) and tool impact indicators (green lines).
+[caption] Average resultant force value Fr (black) and its angle α (blue) in the function of time for slow cutting.
+Average resultant force value Fr (black) and its angle α (blue) in the function of time for slow cutting.
+[caption] Average resultant force value Fr (black) and its angle α (blue) in the function of time for fast cutting.
+Average resultant force value Fr (black) and its angle α (blue) in the function of time for fast cutting.
+[caption] Shape of the uncut chip (blue) given in two dimensions and its calculated instantaneous thickness (gray).
+Shape of the uncut chip (blue) given in two dimensions and its calculated instantaneous thickness (gray).
+[caption] Principal (green) and thrust (red) cutting forces in function of IUCT.
+Principal (green) and thrust (red) cutting forces in function of IUCT.
+[caption] An oversized particle ripped out from the PB structure at the final stage of chip formation is removed within the cloud of small pulverized particles coming from a single uncut chip.
+An oversized particle ripped out from the PB structure at the final stage of chip formation is removed within the cloud of small pulverized particles coming from a single uncut chip.
+[caption] Specific principal (green) and thrust (red) cutting forces in function of IUCT.
+Specific principal (green) and thrust (red) cutting forces in function of IUCT.

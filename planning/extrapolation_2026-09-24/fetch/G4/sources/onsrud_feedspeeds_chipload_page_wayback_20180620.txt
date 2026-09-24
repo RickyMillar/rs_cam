@@ -1,0 +1,114 @@
+Chiploads | Feeds and Speeds | Metal | Plastic | Composite | | Documents
+Welcome Guest!
+Login
+Register
+Forgot Password
+0
+Items
+$0.00
+SERIES
+CLEARANCE
+NEW ITEMS
+PROMOTIONS
+SEARCH
+(
+By Part #
+)
+*
+Search
+|
+Products
+|
+Store Front
+|
+Resources
+|
+About Us
+|
+Distributors
+|
+Site Map
+Chipload
+is simply defined as the thickness of a chip which is formed during the machining of a material.
+Chipload
+is critical because if the chip is the proper size, the chip will carry away the heat promoting long tool life. If the chip is too small, the heat is transferred to the cutting tool causing prematurely dulling. Too high of a
+chipload
+will cause an unsatisfactory edge finish, or part movement.
+.
+The formula to calculate your
+chipload
+is:
+Feedrate
+/ (RPM x # of flutes)
+.
+To increase your
+chipload
+you can:
+Increase the
+feedrate
+Decrease the RPM
+Use less flutes
+To decrease your
+chipload
+you can:
+Decrease the
+feedrate
+Increase the RPM
+Use more flute
+...
+WOOD
+Soft Wood Cutting Data
+Hard Wood Cutting Data
+MDF Cutting Data
+Soft Plywood Cutting Data
+Hard Plywood Cutting Data
+Laminated Chipboard Cutting Data
+Laminated Plywood Cutting Data
+PLASTICS
+Soft Plastic Cutting Data
+Hard Plastic Cutting Data
+Mechanical Plastic
+Chiploads
+Solid Surface Cutting Data
+COMPOSITES
+Composite Cutting Data
+METAL
+Aluminum Cutting Data
+MULTIPURPOSE
+Specialty Tool
+Chiploads
+Contact Us
+|
+Ordering Tracking
+|
+Request A Catalog
+|
+Site Map
+|
+FAQ's
+|
+Product Links
+PCD Cutting Tools
+|
+Diamond Drill Bits
+|
+CNC Plastic Cutting Tools
+|
+Metal Cutting Tools
+Plastic Drilling Tools
+|
+Composite Cutting Tools
+|
+Technical Articles
+|
+Press Releases
+Catalogs and Brochures
+|
+Return Policy
+|
+Dist. Training
+|
+Jobs
+ABOUT SSL CERTIFICATES
+Toll Free: 1-800-234-1560 | Main: 1-847-362-1560
+© Copyright 2010 LMT Onsrud All Rights Reserved. info@onsrud.com

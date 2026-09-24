@@ -1,0 +1,149 @@
+# stored text for sorotec_schnittwerte
+# made from sorotec_schnittwerte.pdf with pdftotext -layout on 2026-09-24
+                                                 Berechnungen
+n = Drehzahl des Fräsers in U/min
+vc = Schnittgeschwindigkeit in m/min
+d = Fräserdurchmesser in mm
+z = Zähnezahl
+fz = Zahnvorschub in mm/Zahn
+vf = Vorschubgeschwindigkeit (mm/min)
+
+Die Drehzahl des Fräsers wird über folgende Formel berechnet:
+          n [U/min] = (vc [m/min] *1000) / (3.14 * Ød1 [mm])
+Beispielberechnung:
+          vc = 500 m/min (gewählt aus Tabelle)
+          d = Ø 8 mm
+19904 U/min = (500 *1000) / (3.14 * 8)
+Liegt die maximale Drehzahl des Fräsmotors unterhalb des errechneten Wertes, muss die max.
+Drehzahl des Fräsmotors in der Formel zur Vorschub-Berechnung eingesetzt werden.
+
+
+Die Vorschubgeschwindigkeit des Fräsers wird über folgende Formel berechnet:
+          vf = n * z * fz
+Beispielberechnung für Aluminium (Knetlegierung) mit 8mm Fräser Zweischneider:
+          n = 19904 U/min aus obiger Formel
+          fz= 0,064 aus Tabelle
+          z=2
+          2547,77 mm/min = 19904 * 2 * 0,064
+
+                                     Richtwerte für Drehzahl und Vorschub
+                     Schnitt                                        Durchmesser Fräser
+                    Geschw. Ø 1mm          Ø 2mm      Ø 3mm      Ø 4mm      Ø 5mm      Ø 6mm      Ø 8mm     Ø 10mm Ø 12mm
+                     m/min.
+                                                          Zahnvorschub in mm / Zahn / Umdrehung
+
+Guss-Aluminium
+> 6% Si                200      0,010      0,010      0,010      0,015      0,015      0,025      0,030     0,038      0,050
+
+Aluminium
+Knetlegierung
+                       500      0,010      0,020      0,025      0,050      0,050      0,050      0,064     0,080      0,100
+
+Weichkunststoff        600      0,025      0,030      0,035      0,045      0,065      0,090      0,100     0,200      0,300
+
+Hartkunststoff         550      0,015      0,020      0,025      0,050      0,060      0,080      0,089     0,100      0,150
+
+Holz Hart              450      0,020      0,025      0,030      0,035      0,045      0,055      0,065     0,080      0,090
+
+Holz weich             500      0,025      0,030      0,035      0,040      0,050      0,060      0,070     0,085      0,100
+
+MDF                    450      0,050      0,070      0,100      0,150      0,200      0,300      0,400     0,500      0,600
+Messing,
+Kupfer, Bronze         365      0,015      0,020      0,025      0,025      0,030      0,050      0,056     0,065      0,080
+
+Stahl                   90      0,010      0,010      0,012      0,025      0,030      0,038      0,045     0,050      0,080
+Die aufgeführten Werte dienen der groben Orientierung und können je nach Maschine und Peripherie von der Tabelle abweichen .
+Praxistipps
+
+
+
+
+Eintauchtiefe:
+.
+Beim Fräsen einer Nut empfehlen wir
+folgende Eintauchtiefe:
+
+    •    NE Metalle: bis 0,5-facher
+         Durchmesser
+    •    Holz, Kunststoffe: bis 2-facher
+         Durchmesser
+    •    Hartschaum: bis 5-facher
+         Durchmesser
+
+Beim Fräsen von Konturen empfehlen
+wir eine seitliche Zustellung von ca.
+25% des Fräser-Durchmessers bei
+100% Eintauchtiefe.
+
+Auch hier sind die Angaben wieder stark vom Aufbau
+und der Stabilität der Maschine abhängig.
+                                                                             Zeichnung: ZenziWerken
+
+
+
+
+Längenwahl des Fräsers:                              Kühlen / Schmieren:
+
+                                                     Die Kühlung erfolgt bei NE Metallen im
+                                                     besten Fall mit einer
+                                                     Minimalmengenschmierung in Verbindung
+                                                     mit einem Schmierstoff. Des weiteren
+                                                     verbessert die Schmierung die
+                                                     Oberflächenbeschaffenheit und die Standzeit
+                                                     des Werkzeuges.
+                                                     Bei Acrylglas eignet sich die Schmierung mit
+                                                     Seifenlauge. Dies erzielt eine sehr gute
+Um Vibrationen und ein Aufschwingen des
+                                                     Oberfläche.
+Fräsers zu verhindern, empfehlen wir den
+Fräser immer so kurz wie möglich, bzw. so
+lange wie nötig zu wählen.
+                                                                             Zeichnung: ZenziWerken
+Gleichlauf / Gegenlauf-Fräsen:
+
+
+
+
+Gleichlauf-Fräsen
+                                                 Gegenlauf-Fräsen
+Beim Gleichlauffräsen zieht sich der Fräser in
+                                                 Beim Gegenlauffräsen drückt sich der Fräser
+das Werkstück, wodurch es bei größerer
+                                                 vom Werkstück weg, was bei sehr geringer
+Spanabnahme dazu kommen kann dass das
+                                                 Spanabnahme schnell dazu führt, dass sich
+Portal bzw. die Z-Achse unkontrolliert
+                                                 die Schneide aus dem Werkstück drückt,
+(Umkehrspiel der Spindel) in Richtung des
+                                                 dadurch entstehen dann Rattermarken, die
+Werkstücks gezogen wird. Das führt zu einem
+                                                 weder einer schönen Oberfläche noch der
+sehr unsauberen Fräsbild und kann sogar
+                                                 Standzeit des Fräsers dienlich sind.
+zum Bruch des Fräsers führen, wenn der
+Span in dem Moment zu groß wird.
+
+
+Sind spielfreie Kugelumlaufspindeln ohne         Der Gegenlauf wird bei Maschinen mit
+umkehrspiel verbaut, wird der Gleichlauf         Umkehrspiel in den Gewindespindeln
+gegenüber dem Gegenlauf bevorzugt.               favorisiert.
+
+
+
+
+                                                                         Zeichnung: ZenziWerken
+Hinterschliffene Fräser:
+
+
+
+
+Die max. mögliche Tiefenzustellung beschränkt sich normalerweise auf die Spirallänge des Fräsers da
+sonst der Schaft am Werkstück reibt.
+Durch den hinterschliffenen Schaft sind auch Frästiefen über mehrere Zustellungen bis hin zur max.
+Nutzlänge möglich welche die Spirallänge überschreiten.
+
+
+
+
+Stand: 30.7.2019                                                             Zeichnung: ZenziWerken
+

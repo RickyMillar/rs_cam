@@ -1,0 +1,101 @@
+[
+  {
+    "source_id": "g7_goli2018_round_shape_ks",
+    "source_vendor": "peer_reviewed",
+    "source_title": "Goli G., Curti R., Marcon B., Scippa A., Campatelli G., Furferi R., Denaud L. (2018). Specific Cutting Forces of Isotropic and Orthotropic Engineered Wood Products by Round Shape Machining. Materials 11(12):2575. doi:10.3390/ma11122575",
+    "source_url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC6315737/fullTextXML",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/pmc6315737_round_shape_ks.txt",
+    "pdf_sha256": "adf46b6a989d1269ebdf9e2065dd7a13bdf8aaade9f7e76129eaa7f55301d075",
+    "hashed_file": "pdf/PMC6315737.xml",
+    "coverage_notes": "Europe PMC JATS XML (hash is of the XML), converted by scripts/jats2txt.py. Tables 2-4 print the affine slope Ks (N/mm2) and intercept Int (N/mm) of the cutting force per mm of edge engaged, for PTFE, MDF, beech LVL and poplar LVL. Up-milling, one straight blade, D 80 mm, rake 25 deg, 3000 rpm, 2 m/min, ae 0.3-1.5 mm, hm 0.041-0.091 mm. Angle convention: 0 deg = across the grain, 90 deg = along the grain. The engine's SheetGood::Mdf Kc 31.4 is this paper's Ks. The authors call negative poplar Ks values possible measurement error (about +-5 N/mm2). No plywood, no solid softwood."
+  },
+  {
+    "source_id": "g7_palubicki2021_particleboard",
+    "source_vendor": "peer_reviewed",
+    "source_title": "Palubicki B. (2021). Cutting Forces in Peripheral Up-Milling of Particleboard. Materials 14(9):2208. doi:10.3390/ma14092208",
+    "source_url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC8123317/fullTextXML",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/palubicki2021_particleboard.txt",
+    "pdf_sha256": "6fd594bfb2bdd7a890c8e542b47f62c1a2db03e0d9681c5f4df6fa8e25db5bbf",
+    "hashed_file": "pdf/PMC8123317.xml",
+    "coverage_notes": "Europe PMC JATS XML. Prints the average principal specific cutting force kc = Fc/(b h) for particleboard (542.5 kg/m3, b 17 mm): 32.0 N/mm2 at 40 m/s and 37.6 N/mm2 at 60 m/s; one carbide knife, R 82.5 mm, rake 13 deg, fz 1.5 mm, H 2 mm, IUCT up to about 0.31 mm. It is a total kc, not an affine slope. It prints no grain-orientation spread (particleboard is isotropic); the engine's GRAIN_ANISOTROPY_FACTOR comment cites it for one."
+  },
+  {
+    "source_id": "g7_yang2022_hdpe",
+    "source_vendor": "peer_reviewed",
+    "source_title": "Yang B., Wang H., Fu K., Wang C. (2022). Prediction of Cutting Force and Chip Formation from the True Stress-Strain Relation Using an Explicit FEM for Polymer Machining. Polymers 14(1):189. doi:10.3390/polym14010189",
+    "source_url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC8747417/fullTextXML",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/yang2022_hdpe.txt",
+    "pdf_sha256": "b57849e27ee1ae8c1721dc9242aced74816c49d5bf70d533789ee8172002c400",
+    "hashed_file": "pdf/PMC8747417.xml",
+    "coverage_notes": "Europe PMC JATS XML. HDPE orthogonal cutting at very low speed (the text prints both 10 mm/min and 10 mm/s), rake 15 and 30 deg. Prints a yield stress derived from the cutting analysis (46.89 and 33.85 MPa) and a fracture toughness (1.173 and 1.368 kJ/m2). These are Atkins-model material parameters, not a milling specific cutting force. The engine's Plastic::Hdpe Kc 40.0 is the midpoint of the two yield stresses."
+  },
+  {
+    "source_id": "g7_kopecky2019_mdf_quasi_orthogonal",
+    "source_vendor": "peer_reviewed",
+    "source_title": "Kopecky Z., Hlaskova L., Solar A., Nesazal P. (2019). Cutting forces in quasi-orthogonal CNC milling. Wood Research 64(5):879-890",
+    "source_url": "https://www.woodresearch.sk/wr/201905/12.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/woodresearch_201905_12.txt",
+    "pdf_sha256": "f606dc7889b06ff92b84de3080a26ec9c67ba88a42dedff3512b6b5c98366e08",
+    "hashed_file": "pdf/woodresearch_201905_12.pdf",
+    "coverage_notes": "pdftotext -layout. MDF only (684 kg/m3, 18 mm board, MC 3 %). One-insert S12L cutter, D 12 mm, rake 19 deg, edge radius 11 um, 15000 rpm, fz 0.1-0.3 mm, e 2 mm. Prints the per-tooth cutting force lines Fc1z = 49.954 hm + 5.3047 (conventional) and 49.123 hm + 5.936 (climb), in N, and Table 1 (tau_gamma, R, Q, gamma, Phi). The text does not state the chip width that Fc1z covers. This is the fit that crates/rs_cam_core/src/feeds/force.rs uses as LIT_KS 49.95 and LIT_FEDGE 5.30 and attaches to GenericHardwood. A plain curl works; a 'Mozilla/5.0' user agent receives an 'Access Forbidden' HTML page with HTTP 200."
+  },
+  {
+    "source_id": "g7_durkovic2017_oak_peripheral",
+    "source_vendor": "peer_reviewed",
+    "source_title": "Durkovic M., Danon G. (2017). Comparison of measured and calculated values of cutting forces in oak wood peripheral milling. Wood Research 62(2):293-306",
+    "source_url": "https://www.woodresearch.sk/wr/201702/11.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/woodresearch_201702_11.txt",
+    "pdf_sha256": "35d6663cb5eed40787400c3882faf288af9f3e647e9c39ab47bd71c021494939",
+    "hashed_file": "pdf/woodresearch_201702_11.pdf",
+    "coverage_notes": "pdftotext -layout. Oak (Quercus robur), 745 kg/m3 measured, MC 7.3 %. Table-mounted spindle moulder, 4-blade cutterhead D 125 mm, rake 16/20/25 deg, 5860 rpm, vc 38.2 m/s, up milling along the grain, em 0.0216-0.1295 mm. Prints power-law fits of measured motor power P = 1890.7 em^0.477 W and of force per blade Fb = 243.6 em^0.4761 N (from motor power, so drive losses are inside). Prints the Krsljak textbook coefficient Ke1 = 14 N/mm2 (oak, longitudinal, e = 1 mm) and a table of Krsljak-model K = 57.99-140.63 N/mm2. Sample thickness 30 mm; the chip width is not printed as such."
+  },
+  {
+    "source_id": "g7_curti2021_generalized_wood_model",
+    "source_vendor": "peer_reviewed",
+    "source_title": "Curti R., Marcon B., Denaud L., Togni M., Furferi R., Goli G. (2021). Generalized cutting force model for peripheral milling of wood, based on the effect of density, uncut chip cross section, grain orientation and tool helix angle. European Journal of Wood and Wood Products (2021). doi:10.1007/s00107-021-01667-5",
+    "source_url": "https://sam.ensam.eu/bitstream/handle/10985/19997/LABOMAP_EJWWP_2021_MARCON.pdf?sequence=1&isAllowed=y",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/marcon2021_generalized_force_model.txt",
+    "pdf_sha256": "ee146707aa0188f5dc92a43535e5469ebb4847778460d6cd18a16ef36633f8b1",
+    "hashed_file": "pdf/marcon2021_generalized_force_model.pdf",
+    "coverage_notes": "Author-deposited version (SAM ENSAM handle 10985/19997), CC BY 4.0. pdftotext -layout. Five solid woods 287.1-1079.5 kg/m3 (paulownia, lime, maple, oak, azobe), 30 mm disks, 20 mm 2-flute carbide, rake 25 deg, helix 0/15/30 deg, 3000 rpm, 2000 mm/min, ae 0.5-2.5 mm, h about 0.040-0.100 mm. Table 5 prints a density-normalised quadratic model of Ks and Int against grain angle GA (deg) per milling mode and helix; Table 6 prints its NRMSE (8-38 %). Grain angle convention: angle between the edge velocity and the grain; 0 and 180 = along the grain. The per-species Ks values are in figures only."
+  },
+  {
+    "source_id": "g7_goli2023_iwms25_ewp",
+    "source_vendor": "peer_reviewed",
+    "source_title": "Goli G., Curti R., Todaro L., Marcon B. (2023). Specific cutting coefficients for the most common engineered wood products. 25th International Wood Machining Seminar, Nagoya, 2023-10-04 (HAL hal-04274766; SAM ENSAM handle 10985/24362)",
+    "source_url": "https://sam.ensam.eu/bitstream/handle/10985/24362/LABOMAP_IWMS25th_2023_GOLI.pdf?sequence=1&isAllowed=y",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/goli2023_iwms25_ewp_ks.txt",
+    "pdf_sha256": "fbe0b04a977ecb12a4087d551200d165a420285d68276d062b5cee2f6d4b12d3",
+    "hashed_file": "pdf/goli2023_iwms25_ewp_ks.pdf",
+    "coverage_notes": "Author-deposited conference paper. The HAL copy is behind the Anubis bot wall; the SAM ENSAM copy downloads with curl. pdftotext -layout. Particleboard 737.8, MDF 720.0, OSB 585.7, poplar plywood 430.0 kg/m3. 20 mm 2-flute carbide, rake 25 deg, helix 0 and 30 deg, 3000 rpm, 2000 mm/min, ae 0.5-2.5 mm, h 40-100 um; model Fc = (Ks h + Int) ap. The Ks and Int values are printed ONLY as scatter plots (Figures 3-6); the text prints no number. The only plywood force data this fetch found. Figure 5's y axis says N/mm^2 for an intercept (N/mm), and its caption says straight blade while panel (c) says 30 deg helix."
+  },
+  {
+    "source_id": "g7_porankiewicz2007_low_density",
+    "source_vendor": "peer_reviewed",
+    "source_title": "Porankiewicz B., Bermudez J.C., Tanaka C. (2007). Cutting forces by peripheral cutting of low density wood species. BioResources 2(4):671-681",
+    "source_url": "https://bioresources.cnr.ncsu.edu/BioRes_02/BioRes_02_4_671_681_Pornkiewicz_BT_CuttingForces_Peripheral_LowDenWood.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/porankiewicz2007_lowdensity.txt",
+    "pdf_sha256": "e0b6c7bf33bd04e6eea7ba48b5b4933efc835b8787d04cffdedcb74ac0fdcf4b",
+    "hashed_file": "pdf/porankiewicz2007_lowdensity.pdf",
+    "coverage_notes": "pdftotext -layout. Yellow poplar (400 kg/m3) routing, r 5 mm, fz 0.2 mm, gs 2 mm, ws 10 mm, vc 30 m/s; Cordia alliodora grooving. Prints only multi-factor non-linear regressions of Fc against edge wear, grain angle, vc, fz and MC, and the classical Fc = ap ws K C... form without a K value. No single specific cutting force at a stated chip thickness. Read; no candidate row."
+  },
+  {
+    "source_id": "g7_fpl_gtr190_wood_handbook_2010",
+    "source_vendor": "usda_fpl",
+    "source_title": "Forest Products Laboratory (2010). Wood Handbook: Wood as an Engineering Material. General Technical Report FPL-GTR-190 (mirror copy)",
+    "source_url": "https://ww2.arb.ca.gov/sites/default/files/cap-and-trade/protocols/usforest/2011/usfs_wood_handbook_2010.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/fpl_gtr190_wood_handbook_2010_excerpt.txt",
+    "pdf_sha256": "795fc26a8b361cb1b33bf3c067774ad7e8350046b09e2f3b8298c8da6eedc7b8",
+    "hashed_file": "pdf/fpl_gtr190_wood_handbook_2010.pdf",
+    "coverage_notes": "The FPL original (fpl.fs.usda.gov/documnts/fplgtr/fpl_gtr190.pdf) returns HTTP 403 to curl; this is the California Air Resources Board mirror, 11 MB. The stored text is an EXCERPT (table of contents and grep hits), because the full text is 3.2 MB. Chapters 1-20 contain no machining chapter. A search for 'specific cutting', 'cutting energy', 'cutting power' and 'cutting force' returns no line. 'Machinability' appears only as qualitative species ratings in Chapter 2 and the index. Result: the Wood Handbook prints no specific cutting energy or Kc; it is a refusal reason, not a source of a number. Its Table 5-3a shear strengths are the base of the engine's solid-wood Kc (already in the manifest as fpl_ch5_2010)."
+  }
+]

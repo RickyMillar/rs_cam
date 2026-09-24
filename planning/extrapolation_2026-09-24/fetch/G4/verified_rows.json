@@ -1,0 +1,20 @@
+{
+  "group": "G4",
+  "date": "2026-09-24",
+  "observations": [],
+  "verification": {
+    "candidate_rows_in": 0,
+    "confirmed": 0,
+    "dropped_wrong": 0,
+    "dropped_not_found": 0,
+    "grade_wrong_demoted": 0,
+    "note": "candidate_rows.json is empty. G4's fetch targets are statements (what a one-value cell means, how to use a band), not rows. The verifiers had no candidate row to judge. They checked existing LUT rows instead: 14 Freud solid-carbide rows (13 confirmed, 1 wrong), 6 Amana compression v8 rows (6 confirmed), and 100 Spektra v24 rows by script (86 equal the printed value; 14 are the repo-authored grade-c bands, D1). Those are LUT rows, not candidates, so this file carries none of them.",
+    "lut_row_defect_handoff": {
+      "observation_id": "freud-solid-carbide-quarter-hard-plastic",
+      "verdict": "wrong",
+      "scope": "non-wood, outside G4",
+      "note": "Labelled 'Acrylics/Hard Plastic'. The PDF prints two columns: 'Acrylics/ Soft Plastic' (.006\"-.009\") and 'Solid Surface/ Hard Plastic' (.005\"-.008\"). The row holds the Solid Surface/Hard Plastic value under an acrylic label. Hand to the LUT owner."
+    },
+    "unverified_sources": ["shopbot_feeds_and_speeds_2016"]
+  }
+}

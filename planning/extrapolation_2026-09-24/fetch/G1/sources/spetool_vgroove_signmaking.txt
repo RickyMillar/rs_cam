@@ -1,0 +1,95 @@
+# SpeTool WOODWORKING V-GROOVE & SIGNMAKING ROUTER BIT FEED&SPEED CHART
+# URL: https://cdn.shopify.com/s/files/1/0404/1582/1977/files/SpeTool_signmake_and_v_bit_b3225526-e109-43af-8d66-6338486f0cec.pdf?v=1676951817
+# Accessed 2026-09-24. The PDF is a scanned image with an OCR text layer.
+# Section A is the transcription of the table, read from the page image
+# (pdftoppm -r 110) by the G1 research agent and checked cell by cell
+# against the OCR layer in section B. Section A keeps the printed text,
+# column order and units exactly; the column separator " | " is added.
+# Section B is the raw output of "pdftotext -layout" (OCR errors kept).
+
+## A. Transcription from the page image
+SpeTool | WOODWORKING
+V-GROOVE & SIGNMAKING ROUTER BIT
+FEED&SPEED CHART
+Depth of cut: 1xCutting diameter
+TIP WIDTH (INCH) | MATERIAL | RPM | CHIPLOAD | FEED RATE (INCH/MIN) | STEP DOWN (INCH) | STEP OVER (INCH)
+0.005 | MDF/Laminate | 18,000 | 0.007 | 126 | 0.005 | 0.001 ~ 0.002
+0.005 | Softwood | 18,000 | 0.005 | 90 | 0.005 | 0.001 ~ 0.002
+0.005 | Hardwood | 18,000 | 0.003 | 54 | 0.005 | 0.001 ~ 0.002
+0.005 | Plastic | 18,000 | 0.006 | 108 | 0.005 | 0.001 ~ 0.002
+0.015 | MDF/Laminate | 18,000 | 0.007 | 126 | 0.015 | 0.003 ~ 0.006
+0.015 | Softwood | 18,000 | 0.005 | 90 | 0.015 | 0.003 ~ 0.006
+0.015 | Hardwood | 18,000 | 0.003 | 54 | 0.015 | 0.003 ~ 0.006
+0.015 | Plastic | 18,000 | 0.006 | 108 | 0.015 | 0.003 ~ 0.006
+CARBIDE V BIT | MATERIAL | RPM | CHIPLOAD | FEED RATE (INCH/MIN)
+CARBIDE V BIT | MDF/Laminate | 18,000 | 0.005 | 360
+CARBIDE V BIT | Softwood | 18,000 | 0.002 | 144
+CARBIDE V BIT | Hardwood | 18,000 | 0.002 | 144
+CARBIDE V BIT | Plastic | 18,000 | 0.002 | 144
+CARBIDE TIP V BIT | MDF/Laminate | 18,000 | 0.005 | 180
+CARBIDE TIP V BIT | Softwood | 18,000 | 0.002 | 72
+CARBIDE TIP V BIT | Hardwood | 18,000 | 0.002 | 72
+CARBIDE TIP V BIT | Plastic | 18,000 | 0.002 | 72
+
+## B. Raw OCR text layer (pdftotext -layout)
+       V-GROOVE &SIGNMAKING ROUTER BIT
+                                   FEED&SPEED CHART
+                                                                            Oep由 。，f c ut: 1xCutting diameter
+
+                                                                                                          .
+                    MDF/Laminate       18,000         0.007
+                                                              困甜
+                                                                  126
+                                                                            阿~                    －~~
+
+
+                     Softwood          18,000         0.005        90                           0.001
+       0.005          Ha『dwood         18,000         0.003        54
+                                                                              0.005                自
+
+
+
+
+                       Plastic         18,000         0.006       108                           0.002
+                    MDF/Laminate       18,000         0.007       126
+                     Softwood          18,000                                                   0.003
+                                                      0.005        90
+       0.015          Ha『dwood         18,000         0.003        54
+                                                                              0.015
+                        Plastic        18,000         0.006       108
+                                                                                                  -
+                                                                                                0.006
+
+
+                                                       ” w..u; FEED RATE
+                                                               (INCH/MIN)
+                    MDF/Laminate       18,000         0.005       360
+      CARBIDE        Softwood          18,000         0.002       144
+       VBIT           Ha『·dwood        18,000         0002        144
+                        Plastic        18,000         0.002       144
+
+                      MATERIAL          RPM      CHIPLOAD     FEED RATE
+                                                              (INCH/MIN)
+                    MDF/Laminate       18,000         0.005       180
+       CARBIDE       Softwood          18,000         0002         72
+       TIPVBIT       Hardwood          18,000         0.002        72
+                      Plastic          18,000         0.002        72
+
+
+• Adjusting Feed and Speed fo『 Bit Diamete『： The feed rate in the table above a『e based a cutting
+  depth that is equal to or less than the bit’s diameter.
+      1 x cutting diameter, Use recommended feed rate
+      2 x cutting diameter, Reduce feed rate by 30%
+      3 x cutting diameter, Reduce feed rate by 50%
+
+• Simple machining calculations:
+      Feed rate=RPM x # of flutes x chipload
+• Due to 伽e extremely small diameters involv时， bits are not guaranteed against breakage.
+• Please excercise 臼ution to the accurate calculations of all fe创 and speed 『ates
+• Always start test the bits with a lower feed rate
+• Make overhang of bits as short as possible in condition on non-interference
+
+
+                                                                                  service@spetools.com
+回 ＠Spetool             @) @spetool_cnc                                           www.spetools.com
+

@@ -1,0 +1,133 @@
+[
+  {
+    "source_id": "onsrud_drill_cutting_data",
+    "source_vendor": "onsrud",
+    "source_title": "LMT Onsrud Drill Cutting Data Recommendations (PCT-19 catalogue page 124)",
+    "source_url": "https://www.onsrud.com/images/Drill.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/onsrud_drill_cutting_data.txt",
+    "pdf_sha256": "b1e3821f79bc474e4d77f3b2539fea953777f41918011f7157f9f4900c55e658",
+    "coverage_notes": "One page, 756 398 bytes (the same size the 2026-08-04 audit recorded). Prints chip load per tooth by cutting diameter for series 72-000* Wood: 3 mm .009-.011, 5 mm .011-.013, 6 mm .013-.015, 8 mm .015-.017 in/tooth; footnote '* Gang drills run at 4,500 RPM and 150 IPM'. Also plastic (70-500) and composite drill series. No peck, hole-depth or depth-to-diameter guidance. No species or category split ('Wood' only). 4 candidate rows, derived grade b: the band is printed, the family assignment is not (R5 shared-column rule)."
+  },
+  {
+    "source_id": "onsrud_pct19_catalog",
+    "source_vendor": "onsrud",
+    "source_title": "LMT Onsrud Production Cutting Tools Catalog PCT-19",
+    "source_url": "https://onsrud.com/images/LMT%20Onsrud%20Product%20Cutting%20Tools%20Catalog%20PCT-19.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/onsrud_pct19_catalog.txt",
+    "pdf_sha256": "83dbf74242ca1f578df8a7ca7d8e093a66d8488a7d573d0294df40b2ed58144b",
+    "coverage_notes": "Full catalogue (20.9 MB). Used for two facts only: (1) page 90, the 72-000 Series Boring Bits product tables print Flutes = 2 for every brad-point and through-hole part at 3, 5, 6 and 8 mm (the column header says '(in)' but the values are millimetres), material icons SW HW CW LW; (2) page 32, the 34-100 potted-fastener tool (composite honeycomb panels, not wood) prints 'RPM 10,000 / Plunge Feed Rate 40 IPM / Feed Rate 80 IPM' - a plunge of one half of the feed, for composites only. The Technical Data pages (109-112) print no plunge, peck or drill guidance for wood. 0 candidate rows (supports the Onsrud rows)."
+  },
+  {
+    "source_id": "leitz_lexicon7_06_drilling",
+    "source_vendor": "leitz",
+    "source_title": "Leitz Lexicon Edition 7, chapter 06 Drilling (Version 2, 03/2026)",
+    "source_url": "https://www.leitz.org/fileadmin/Downloads/Lexicon/EN/Leitz_Lexicon_Edition_7_-_06_Drilling.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/leitz_lexicon7_06_drilling.txt",
+    "stored_text_extra": "sources/leitz_lexicon7_06_drilling_red_spans.txt (sha256 b31e2f728492ff2f21f8194d4bbfd4e4f5532358459ac6632705dcda84f56e90): the red worked-example values read from the PDF text layer with scripts/g6_leitz_red_points.py",
+    "pdf_sha256": "e8026f2573edf22f18ffde5e2f35e334f56645b696052967199dc50b7878490b",
+    "coverage_notes": "59 pages. PDF page = printed page + 2. Each tool page prints a diagram 'Feed speed vf depending on the spindle RPM n' (vf in m/min against n in 1/min) with one red worked example in the text layer, a base workpiece material, printed correction factors for other materials, Z (teeth) in the tool heading and an RPM range. The plotted bands are graphics and are not transcribed. Dowel drills (Z2, D 3-10 mm): 2 m/min at 4500 1/min on chipboard plastic coated, corrections MDF/solid wood 0.7, chipboard uncoated 1.3, veneered 0.8. Twist and Levin drills in softwood/solid wood: 1.2-4.5 m/min at 2500-4500 1/min. Printed depth guidance: 'When drilling holes with a depth greater than 4 x D interim clearance stroke is recommended!' (PDF p36); Levin drill 'Suitable for depths up to approx. 4 x D without interim clearance strokes' and 'Drilling depth > 4 x D = 0.8' (PDF p43-44); boring pins 'Infeed depth in hardwood and glulam maximum 2 x D' and 'Interim chip removal (return stroke) then is obligatory' (PDF p13). No chip load is printed anywhere; every chip load is derived vf*1000/(n*Z). 13 candidate rows (all derived grade b; three of them apply a printed correction factor: MDF 0.7, solid wood 0.7, chipboard uncoated 1.3) and 8 depth statements."
+  },
+  {
+    "source_id": "cmt_311_71_72_hwm_dowel_drill",
+    "source_vendor": "cmt",
+    "source_title": "CMT Solid Carbide Dowel Drills - LONG LIFE SHARPENING, S=10mm - L=70mm 311.71/72HWM (product page)",
+    "source_url": "https://www.cmtorangetools.com/eu-en/industrial-boring-bits/solid-carbide-dower-drill-hwm",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/cmt_311_71_72_hwm_dowel_drill.txt",
+    "pdf_sha256": "255a06347dd2fd8ac66ec4becac97937683bd16e05793e085f06f61108eb2f9e",
+    "coverage_notes": "HTML page; the hash is of the stored text file (raw HTML sha256 is in its header). Prints 'Recommended feed speed 1÷ 4m/minute – RPM 6000.', '2 cutting edges [Z2]', 'Ideal for chipboard, MDF, HDF and laminates.', diameters 5, 6, 7, 8, 10 mm. Vendor prose, no chart: grade b. The sibling CMT pages 311.41/42 HW, 314.21/22 HWM and 308 HW print no feed. 2 candidate rows (derived)."
+  },
+  {
+    "source_id": "amana_spektra_spiral_plunge_v24",
+    "source_vendor": "amana",
+    "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24",
+    "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/amana_spektra_spiral_plunge_v24.txt",
+    "pdf_sha256": "5b6fef854b2cf6b422e2eb5bbc86e29b4dcab5b19195b7ff228b70f99cf86d3a",
+    "coverage_notes": "Re-fetched 2026-09-24: the PDF hash and the pdftotext output are identical to the LUT manifest entry and crates/rs_cam_core/data/vendor_lut/sources/amana_spektra_spiral_plunge_v24.txt. New content for G6: the 'Ramp Down' column (IPM) in both the Wood/Plywood and MDF/Laminate groups for every 2- and 3-flute row, and the printed rule 'To find Ramp Down: Feed Rate IPM / # of flutes' at 'CNC Operating Spindle Speed: 18,000 RPM'. The chart does not print the word 'plunge' for this column. 8 candidate rows (the 1/8 in and 6 mm rows, derived axial advance per tooth)."
+  },
+  {
+    "source_id": "amana_ball_nose_v7",
+    "source_vendor": "amana",
+    "source_title": "Amana 2 Flute Solid Carbide CNC Spiral Ball Nose Router Bits speed chart v7",
+    "source_url": "https://www.amanatool.com/pub/media/productattachments/Spiral-Ball-Nose-Speed-Chart-v7.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/amana_ball_nose_v7.txt",
+    "pdf_sha256": "e851a270a9958a9affc17a24c8e6a8ef51d63a813f384b7043670d676cae3563",
+    "coverage_notes": "Re-fetched; hash identical to the LUT manifest. Prints the rule 'To find Ramp Down: Feed Rate IPM / # of flutes' but no Ramp Down column. 0 candidate rows (the rule is the same as the Spektra chart; it extends the rule to ball nose tools)."
+  },
+  {
+    "source_id": "precisebits_fret_plane",
+    "source_vendor": "precisebits",
+    "source_title": "PreciseBits Hardwood Fingerboard Planing and Radiusing - 3-flute up-cut end-mills (product page)",
+    "source_url": "https://www.precisebits.com/products/carbidebits/fret-plane.asp",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/precisebits_fret_plane.txt",
+    "pdf_sha256": "9777923942c674794672951b7811f353acb00c8cd131c6559c85797d7c46475d",
+    "coverage_notes": "HTML page; the hash is of the stored text file. One tool: radiused end mill D 0.125 in / 3.0 mm, tip radius 0.64 mm, 3 flutes. Prints plunge rate by wood hardness: softwood (Janka < 1,500) 75 in/min, medium hardwood (1,500-2,500) 50 in/min, high hardness (> 2,500) 40 in/min. No RPM printed ('use your maximum RPM'), so no plunge chip load follows. The only vendor plunge FEED RATE for a router end mill in wood found. 4 candidate rows (feed rate only, chipload null; the < 1,500 band is emitted for softwood 600 and hardwood 1450, the engine's Janka proxies)."
+  },
+  {
+    "source_id": "freud_router_bit_feed_speed_cnc_20170822",
+    "source_vendor": "freud",
+    "source_title": "Freud, Get the most out of your Freud bits by routing at ideal feed rates and speeds (CNC, 2017-08-22)",
+    "source_url": "https://www.freudtools.com/public/assets/freud/downloadables/freudtools-router-bit-feed-and-speed-for-cnc-20170822.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/freud_router_bit_feed_speed_cnc_20170822.txt",
+    "pdf_sha256": "ff1a29ea5a669e24c6ed18e2bd21e10321cee024c65a6b23a1197cbbfdc71976",
+    "coverage_notes": "No plunge rate and no drill data. Prints a refusal: 'Carbide tipped bits should not be used to drill directly into the work piece.' (twice). 0 candidate rows; a refusal reason for carbide-tipped router bits on a Drill operation."
+  },
+  {
+    "source_id": "whiteside_catalog_icstc",
+    "source_vendor": "whiteside",
+    "source_title": "Whiteside Machine Company catalogue (distributor copy, icstc.com)",
+    "source_url": "https://www.icstc.com/pdf/whiteside.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/whiteside_catalog_icstc.txt",
+    "pdf_sha256": "9ac0bd1c3158d9222d569393c5dea3e99a30a836dafba025f1f6289565d979aa",
+    "coverage_notes": "Catalogue page 32 lists brad-point dowel drills (3-16 mm), through-hole V-point drills and hinge boring bits with no feed, speed or peck data. Prints for the carbide-tipped boring bits (6100, 6140; not the DB dowel drills): '*** Use in drill press or boring machine. NOT for use in routers.' Undated distributor copy. 0 candidate rows; a refusal reason."
+  },
+  {
+    "source_id": "diablo_forstner_speed_chart",
+    "source_vendor": "diablo",
+    "source_title": "Recommended Diablo Forstner Bit Speed Chart",
+    "source_url": "https://images.thdstatic.com/catalog/pdfImages/96/968c8fe5-45f2-404f-8803-488781a11e57.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/diablo_forstner_speed_chart.txt",
+    "pdf_sha256": "b25ee8cb70adc3e31519618ee2e196e5ffe5da5ca7d35641c64a28e92272450c",
+    "coverage_notes": "Retailer-hosted (Home Depot CDN) copy. RPM only for Forstner bits 1/4 in to 2-1/8 in: softwood 800-3000 down to 900-1500, hardwood 600-1500 down to 700-1000. No feed, no chip load, no peck. Forstner bits are hand/drill-press tools, not CNC router tools. 0 candidate rows."
+  },
+  {
+    "source_id": "clebitco_speeds_and_feeds",
+    "source_vendor": "cle_bit_co",
+    "source_title": "CLE Bit Co. Speeds and Feeds (distributor guidance page)",
+    "source_url": "https://clebitco.com/speeds-and-feeds/",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/clebitco_speeds_and_feeds.txt",
+    "pdf_sha256": "e678480f10d38f1e291c5680e73f35278f23eadd204d27a00f070600e0aaf1bf",
+    "coverage_notes": "HTML page; the hash is of the stored text file. Tooling distributor prose, grade c. Prints 'Plunge the material at a 45 DEG angle over 2-4 inches if possible at ⅓ of the calculated feed rate.' That is a ramp entry at one third of the feed, not a straight plunge. 0 candidate rows (prose ratio, recorded in FETCH_NOTES)."
+  },
+  {
+    "source_id": "toolstoday_understanding_cnc_feeds_and_speeds",
+    "source_vendor": "toolstoday",
+    "source_title": "ToolsToday, Understanding CNC Feeds and Speeds",
+    "source_url": "https://toolstoday.com/learn/understanding-cnc-feeds-and-speeds",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/toolstoday_understanding_cnc_feeds_and_speeds.txt",
+    "pdf_sha256": "ec0845b0f51c23de49f2f655be3eb104f8d9ba6464eeb36a560c7abb71ade004",
+    "coverage_notes": "HTML page; the hash is of the stored text file. Retailer (Amana distributor) prose, grade c: 'As a general starting point, many CNC users reduce ramp or plunge feed to about half the main feed rate.' It names the ramp-down rate and the plunge feed together. 0 candidate rows."
+  },
+  {
+    "source_id": "adams_bits_feeds_and_speeds_guide",
+    "source_vendor": "adams_bits",
+    "source_title": "Adam's Bits, CNC Router Feeds and Speeds - The Adam's Guide (blog)",
+    "source_url": "https://www.endmill.com.au/blog/cnc-router-feeds-and-speeds-the-adams-guide/",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/adams_bits_feeds_and_speeds_guide.txt",
+    "pdf_sha256": "6664e95d14f95af6c7f704a8e4dc485577a8ce9a6021e182e4df65575847de24",
+    "coverage_notes": "HTML page; the hash is of the stored text file. Retailer blog, grade c: 'Plunge rates are not calculated' ... 'You can plunge at 800 mm/min for timber and plastic and 400 mm/min for aluminium. The smaller the bit, the lower the plunge rate.' 0 candidate rows."
+  }
+]

@@ -1,0 +1,275 @@
+Carbide 4 Flute Tapered 3D CNC Carving Tools 1/8 in. Shank
+-->
+Think
+&
+Tinker
+, Ltd. ™
+0 item(s) - $0.00
+Your shopping cart is empty!
+Menu
+Home
+Products
+Application Specific Tools
+3D Signs & Plaques
+Cutting Composites
+Engraving
+Jewelry
+Musical Instruments
+Pool Cues
+Printed Circuit Boards
+Steel Rule Dies
+3D Carving Tools
+Backing & Mounting
+Calibration Blanks
+Inch
+Metric
+Cleaners & Lubricants
+ColletCare
+Metal Cutting Fluid
+PCB Engraving Lubricant
+Collets & Toolholders
+Drill bits
+Number (wire gauge)
+Fractional inch
+Letter
+Metric
+Medical & Slotting
+Drill Bit Sets
+Drill Bit Diameter Chart
+Feeds/Speeds for FR-4 & Carbon-fiber
+End-mills
+Engraving Tools
+1/8in. shank
+Micro-engraving tools
+Tapered-stubs
+Engraving / Cut-out tools
+1/4in. shank
+Signage / Engraving tools
+Miscellaneous
+Depth Setting Rings
+FuzzBrush
+SecureBits
+Router Bits
+Chip breaker (CB)
+Diamond cut (DC)
+Feeds/Speeds
+CB feeds/speeds
+DC feeds/speeds
+Specialty Bits
+Acrylic/polycarbonate tools
+Antler / horn cutters
+Countersinks
+Extended-reach end-mills
+Fret slot cutters
+Fretboard planing/radiusing
+Shell cutters
+Steel Rule Die Tools
+Zero-helix cutters
+Substrates
+Backing material
+Copperclad
+Entry foil
+Tool Packs
+Single bit packs
+10-bit packs
+50-bits packs
+SecureBits
+Applications
+3D Signs & Plaques
+Cutting Composites
+Engraving
+Jewelry
+Musical Instruments
+Pool Cues
+Printed Circuit Boards
+Steel Rule Dies
+Resources
+FAQ
+Cutter terminology
+Depth Setting Rings
+Extended-reach Geometry
+Feeds & Speeds Calculator
+Glossary
+Point styles
+Reference library
+Sweet-spot Test
+Tutorials
+Charts/Tables
+Chipbreaker Feeds & Speeds
+Diamondcut Feeds & Speeds
+Drill Bit Diameter Chart
+Drill Bit Feeds & Speeds
+ER Torque Chart
+Metal Gauge Conversion Chart
+Relative Wood Hardness Table
+Support
+Contact us
+Limited Warranty
+Policies
+Sales Quotes
+Technical Support
+Distributors
+Domestic Distributors
+International Distributors
+Account
+My Account
+Order History
+Wish list
+Tapered Ball-Nose Carving tools (CM408) - 1/8 in. (0.1250 in.) Shank
+Overview
+Specifications
+Applications
+Application Data
+Materials
+Tutorials
+Tapered ball-nose end-mills are the most commonly used cutters for deep CNC carving in wood, plastic and metal. Their tapered profiles make them much stronger than equivalent straight-wall tools while providing more flute volume for efficient swarf removal in deep, single-pass machining operations.
+Of all the tapered ball-nose carving bits on the market, only PreciseBits cutters are:
+100% measured / optically inspected to insure that EVERY tool meets, or exceeds, our published specifications
+available with depth rings precisely positioned to ±0.0015 in. (0.038mm), virtually eliminating the need for resetting Z-axis zero between tool changes (with bits of same overall length)
+made from premium grade submicrograin tungsten carbide (HRa 92, HRc 80)
+Combining premium grade submicrograin tungsten-carbide, with guaranteed fidelity to industry leading specifications and our exclusive depth setting rings, produces tools uniquely designed for today's demanding CNC machining and CAD/CAM simulation environments. Combined with comprehensive customer support, our cutters have become the tools of choice for sign makers, model makers, artists and instrument builders around the world
+Geometry - 4 flute, tapered high-shear flutes, ball-nose tip, 1/8 in. (3.18 mm) shank
+Length - 1.5in. (38.1mm) ±0.010in.
+Tip diameter - nominal ±0.0005 in.
+Taper angle - nominal ±0.10°
+Runout (TIR) - max 0.0002 in.
+Max. depth of cut - nominal ±0.100 in.
+Depth ring position - 0.800 in. (40.64mm) ±0.0015 in (0.038mm)
+Anticipated Life - depends on material being cut
+Material - solid submicrograin carbide
+Operating RPM - CNC certified operation 1k RPM to 40k RPM
+Dimensional signage
+Precision 3D carving
+3D contouring and profiling
+Cabinetry and furniture making
+3D millwork
+Compatible with CarveWright and CompuCarve woodworking systems.
+Tool Type: Tapered Ball Nose
+Shank Diameter = 0.125"
+Half angle (side angle)
+0.0625in. (1/16in.) dia. tip: 3.8°
+Tip radius
+0.0625in. (1/16in.) dia. tip: radius = 0.0313in.
+Stepdown (pass depth, depth per pass)
+recommended - 1X tip dia.
+maximum - 2X tip dia.
+Stepover:
+finishing pass (stepover, cleanup pass) = 0.08 X tip diameter (8%)
+roughing pass (clearance stepover) = 0.40 X tip diameter (40%)
+Maximum Depth of Cut (DOC) = 0.500"
+Spindle RPM (SPEED) = 5 KRPM to 60 KRPM (optimum speed)
+Feedrate (IPM) = Depends on the material being cut. Do the Sweetspot Test before setting this parameter
+Plunge rate = depends on speed (RPM)
+High Density Urethane (HDU)
+Hardwood - walnut, redwood, maple, rosewood, ebony, epe ...
+Plastic - PVC, HDP, MDP, acrylic, polycarbonate ...
+Finding the best combination of feed and speed
+Save time cutting 3D bass relief carvings using Rest Machining
+MADE IN USA
+Tapered Ballnose - 1/8 in. shank
+4-flute tapered ball-nose
+Tapered Ballnose - 1/4 in. shank
+2-flute tapered ball-nose
+4-flute tapered ball-nose
+Hey! Where are the bit sets and multi-packs?
+No matter how hard we have tried, we have NEVER successfully configured a comprehensive set of cutting tools that anyone actually wanted.
+So. Since you are not excited by OUR toolsets, YOU CAN BUILD YOUR OWN!
+Select from our most popular tools (including the the tools on this page) and get:
+1 to 2 tools - retail
+3 tools - 2% savings
+4 tools - 3% savings
+5 tools - 4% savings
+6 tools - 5% savings
+7 tools - 6% savings
+8 tools - 7% savings
+9 tools - 8% savings
+10+ tools - 9% savings
+So there!
+See all of the tools that you can select to build your dream toolset!!
+Product Compare (0)
+Product Filter
+Tip Diameter MaxDiameter LOC Flutes Draft Angle Shank
+OAL
+Depth Rings Reviews Part Number
+Price
+0.0625" (1.59mm) 0.1250" (3.18mm) 0.500" 4 3.8° 1/8"
+1.75" (44.5mm)
+1.050" Only
+Add to wishlist
+Compare
+Product Page
+CM408-0625-050B
+$18.18
+×
+We will be closed September 7th for Labor Day.
+We will be closed September 7th for Labor Day.
+×
+Holiday Shipping
+Orders received by noon on the day before the beginning of the holiday should ship the same day.
+Normal operating hours resume on the first business day following the last day of the holiday.
+Close
+-->
+Support
+About us
+Contact us
+Educational Discount
+Limited Warranty
+No-fault Returns
+Policies
+Sales Quotes
+Tech Support
+Products
+Collets, Toolholders
+Composite Cutting
+Metal Machining
+Woodworking
+Plastic Cutting
+Applications
+3D Signs & Plaques
+Engraving
+Jewelry
+Musical Instruments
+Pool Cues
+Printed Circuit Boards
+Steel Rule Dies
+Calculators
+Resources
+FAQ
+Tool terms
+Glossary
+Point styles
+Reference library
+Sweet-spot Test
+Tutorials
+Support
+About us
+Contact us
+Educational Discount
+Limited Warranty
+No-fault Returns
+Policies
+Sales Quotes
+Tech Support
+Products
+Collets, Toolholders
+Composite Cutting
+Metal Machining
+Woodworking
+Plastic Cutting
+Applications
+3D Signs & Plaques
+Engraving
+Jewelry
+Musical Instruments
+Pool Cues
+Printed Circuit Boards
+Steel Rule Dies
+Resources
+FAQ
+Tool terms
+Glossary
+Point styles
+Reference library
+Sweet-spot Test
+Tutorials
+Feed and Speed Calculators

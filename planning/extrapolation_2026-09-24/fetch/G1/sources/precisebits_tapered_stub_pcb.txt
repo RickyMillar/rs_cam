@@ -1,0 +1,388 @@
+Carbide Tapered-stub Micro-engraving & PCB Trace Isolation tools
+-->
+Think
+&
+Tinker
+, Ltd. ™
+0 item(s) - $0.00
+Your shopping cart is empty!
+Menu
+Home
+Products
+Application Specific Tools
+3D Signs & Plaques
+Cutting Composites
+Engraving
+Jewelry
+Musical Instruments
+Pool Cues
+Printed Circuit Boards
+Steel Rule Dies
+3D Carving Tools
+Backing & Mounting
+Calibration Blanks
+Inch
+Metric
+Cleaners & Lubricants
+ColletCare
+Metal Cutting Fluid
+PCB Engraving Lubricant
+Collets & Toolholders
+Drill bits
+Number (wire gauge)
+Fractional inch
+Letter
+Metric
+Medical & Slotting
+Drill Bit Sets
+Drill Bit Diameter Chart
+Feeds/Speeds for FR-4 & Carbon-fiber
+End-mills
+Engraving Tools
+1/8in. shank
+Micro-engraving tools
+Tapered-stubs
+Engraving / Cut-out tools
+1/4in. shank
+Signage / Engraving tools
+Miscellaneous
+Depth Setting Rings
+FuzzBrush
+SecureBits
+Router Bits
+Chip breaker (CB)
+Diamond cut (DC)
+Feeds/Speeds
+CB feeds/speeds
+DC feeds/speeds
+Specialty Bits
+Acrylic/polycarbonate tools
+Antler / horn cutters
+Countersinks
+Extended-reach end-mills
+Fret slot cutters
+Fretboard planing/radiusing
+Shell cutters
+Steel Rule Die Tools
+Zero-helix cutters
+Substrates
+Backing material
+Copperclad
+Entry foil
+Tool Packs
+Single bit packs
+10-bit packs
+50-bits packs
+SecureBits
+Applications
+3D Signs & Plaques
+Cutting Composites
+Engraving
+Jewelry
+Musical Instruments
+Pool Cues
+Printed Circuit Boards
+Steel Rule Dies
+Resources
+FAQ
+Cutter terminology
+Depth Setting Rings
+Extended-reach Geometry
+Feeds & Speeds Calculator
+Glossary
+Point styles
+Reference library
+Sweet-spot Test
+Tutorials
+Charts/Tables
+Chipbreaker Feeds & Speeds
+Diamondcut Feeds & Speeds
+Drill Bit Diameter Chart
+Drill Bit Feeds & Speeds
+ER Torque Chart
+Metal Gauge Conversion Chart
+Relative Wood Hardness Table
+Support
+Contact us
+Limited Warranty
+Policies
+Sales Quotes
+Technical Support
+Distributors
+Domestic Distributors
+International Distributors
+Account
+My Account
+Order History
+Wish list
+Tapered-stub End-mills, PCB Traces-isolation Bits (EM2E8, EM3E8) - 1/8 in. (0.125 in. shank)
+Engraving / Metal Cutting
+Micro-Engraving (0.005 in. tip)
+Tapered-stub 3-Flute Fish-tail
+Engraving V-tip (0.015 in. tip)
+Signage V-tip (0.015 in. tip)
+Stub End-mills
+Overview
+Specifications
+Benefits
+Applications
+Tutorials
+Compatibility
+Application Data
+Feeds / Speeds
+2-flute and 3-flute tapered stub end-mills are designed around a 15° tapered core and flute profile. This geometry results in tools that are as stiff and durable as conventional V-tip cutters while offering superior copperclad substrates for printed circuit board (PCB) fabrication and engraving of both ferrous and nod-ferrous metals.
+Manufactured in the USA, every tool is:
+100% measured / optically inspected to insure that EVERY tool meets, or exceeds, our published specifications
+available with depth rings precisely positioned to ±0.004 in. (0.10mm), virtually eliminating the need for resetting Z-axis zero in many applications)
+made from premium grade submicrograin tungsten carbide (HRa: 93, TRS: 4.0GPa )
+This attention to detail and the use of top quality materials result in tools with dependable cutting characteristics and one of the longest tool lives in the market. Combined with comprehensive customer support, our cutters have become the tools of choice for sign makers, model makers, artists and instrument builders around the world.
+Geometry - 2 3-flute, 15° taper, P-stub tip
+Length - 1.42 in. (36mm) ±0.010 in
+Tip angle - 15° +0.0°, -2.0°
+Diameter Tolerance -± 0.0002" (0.005mm)
+Shank dia. - 0.1250 in. (3.18 mm) +0.00, -0.0002 in.
+Max runout (TIR) - < 0.0002 in.
+Max. depth of cut - varies with tip diameter
+Material - solid submicrograin carbide
+Ring Set - 0.800 in. ± 0.004 in. (custom depth available)
+Operating RPM - CNC certified operation 20k RPM to 100k RPM
+Optimized for trace isolation and copper rubout on printed circuit boards
+15° taper angle minimizes cut width variation due to poor substrate flatness
+Spiral geometry insures efficient debris removal
+Cutting edge geometry virtually eliminates chatter at high feed rates
+Print circuit trace isolation
+Copper rubout on printed circuit boards
+Engraving plaques, awards, medallions, and labels
+Custom jewelry fabrication and marking
+Mechanical Etching of Printed Circuit Boards (PCB)
+Finding the best combination of feed and speed
+Calculating engraving width and plunge depth
+PCB prototyping systems from AccurateCNC, LPKF, T-Tech, MITS, Sun & EverPrecision
+Engraving systems from Roland, GravoGraph, Vision, AliExpress & Datron.
+Tool Type: Tapered End-Mill
+Diameter (D) = tip diameter
+Included Angle (A, total angle) - 15°
+Stepdown = Depth per Pass, Pass Depth - 1 tip dia. max.
+Minimum plunge depth = 0.0025" (0.064mm)
+Depth of Cut (DOC):
+0.0039 in. dia. - 0.010 in. (0.25mm)
+0.0051 in. dia. - 0.010 in. (0.25mm)
+0.0071 in. dia. - 0.010 in. (0.25mm)
+0.0100 in. dia. - 0.020 in. (0.51mm)
+0.0150 in. dia. - 0.030 in. (0.76mm)
+0.0200 in. dia. - 0.030 in. (0.76mm)
+0.0250 in. dia. - 0.035 in. (0.89mm)
+Stepover (for final cleanup pass) = 10% tip dia.
+Stepover (for roughing, clearance pass) = 40% tip dia.
+Spindle RPM (SPEED) = 5 KRPM to 60 KRPM
+Feedrate (IPM) = Depends on the material being cut.
+Plunge rate = 5 IPM to 25 IPM (again depending on material being cut)
+0.0039" (0.10mm) dia - multiply your peak spindle RPM by 0.00012 (dry) or 0.00016 (with ME Lube ) with 5 IPM z-axis plunge rate
+0.0051" (0.13mm) dia - multiply your peak spindle RPM by 0.00069 (dry) or 0.00131 (with ME Lube ) with 10 IPM z-axis plunge rate
+0.0071" (0.18mm) dia - multiply your peak spindle RPM by 0.00180 (dry) or 0.00233 (with ME Lube ) with 10 IPM z-axis plunge rate
+0.0100" (0.25mm) dia - multiply your peak spindle RPM by 0.00254 (dry) or 0.00328 (with ME Lube ) with 20 IPM z-axis plunge rate
+0.0150" (0.38mm) dia - multiply your peak spindle RPM by 0.00381 (dry) or 0.00492 (with ME Lube ) with 20 IPM z-axis plunge rate
+0.0200" (0.51mm) dia - multiply your peak spindle RPM by 0.00508 (dry) or 0.00656 (with ME Lube ) with 20 IPM z-axis plunge rate
+0.0250" (0.63mm) dia - multiply your peak spindle RPM by 0.00634 (dry) or 0.00820 (with ME Lube ) with 20 IPM z-axis plunge rate
+For example. Using a 0.0051" dia bit at 24,000 RPM with ME Lube would allow a feed-rate as high as: (24,000 RPM X 0.00131) = 31.4 IPM
+MADE IN USA
+LPKF and T-Tech users must specify the make and model number of their CNC routers to insure that the rings are properly positioned!
+Product Compare (0)
+Product Filter
+Tip Diameter MaxDiameter LOC Flutes Angle Coating Shank
+OAL
+Depth Rings Reviews Part Number
+Price
+0.00145" (0.037mm) 0.00145" (0.037mm) 0.010" (0.25mm) 2 6° 1/8"
+1.50" (38.1mm)
+Available
+Leave the first review Add to wishlist
+Compare
+Product Page
+EM2E8-0015-06V
+$57.81
+0.0039" (0.10mm) 0.0065" (0.17mm) 0.010" (0.25mm) 2 15° 1/8"
+1.42" (36.1mm)
+Available
+Leave the first review Add to wishlist
+Compare
+Product Page
+EM2E8-0039-15V
+$26.94
+0.0051" (0.13mm) 0.0077" (0.20mm) 0.010" (0.25mm) 2 15° 1/8"
+1.42" (36.1mm)
+Available
+Leave the first review Add to wishlist
+Compare
+Product Page
+EM2E8-0051-15V
+$22.90
+0.0051" (0.13mm) 0.0077" (0.20mm) 0.010" (0.25mm) 2 15° ZrN 1/8"
+1.42" (36.1mm)
+Available
+Leave the first review Add to wishlist
+Compare
+Product Page
+EM2E8-0051-15VC
+$26.89
+0.0071" (0.18mm) 0.0097" (0.25mm) 0.010" (0.25mm) 3 15° 1/8"
+1.42" (36.1mm)
+Available
+Leave the first review Add to wishlist
+Compare
+Product Page
+EM3E8-0071-15V
+$21.69
+0.0071" (0.18mm) 0.0097" (0.25mm) 0.010" (0.25mm) 3 15° ZrN 1/8"
+1.42" (36.1mm)
+Available
+Add to wishlist
+Compare
+Product Page
+EM3E8-0071-15VC
+$25.68
+0.0100" (0.25mm) 0.0153" (0.39mm) 0.020" (0.51mm) 3 15° 1/8"
+1.42" (36.1mm)
+Available
+Add to wishlist
+Compare
+Product Page
+EM3E8-0100-15V
+$20.48
+0.0100" (0.25mm) 0.0153" (0.39mm) 0.020" (0.51mm) 3 15° ZrN 1/8"
+1.42" (36.1mm)
+Available
+Add to wishlist
+Compare
+Product Page
+EM3E8-0100-15VC
+$24.47
+0.0150" (0.38mm) 0.0229" (0.58mm) 0.030" (0.76mm) 3 15° 1/8"
+1.42" (36.1mm)
+Available
+Leave the first review Add to wishlist
+Compare
+Product Page
+EM3E8-0150-15V
+$19.51
+0.0150" (0.38mm) 0.0229" (0.58mm) 0.030" (0.76mm) 3 15° ZrN 1/8"
+1.42" (36.1mm)
+Available
+Add to wishlist
+Compare
+Product Page
+EM3E8-0150-15VC
+$23.50
+0.0200" (0.51mm) 0.0279" (0.71mm) 0.080" (2.03mm) 3 5° 1/8"
+1.50 (38.1mm)
+Available
+Leave the first review Add to wishlist
+Compare
+Product Page
+EM3E8-0200-05VB
+$20.16
+0.0200" (0.51mm) 0.0279" (0.71mm) 0.030" (0.76mm) 3 15° 1/8"
+1.42" (36.1mm)
+Available
+Leave the first review Add to wishlist
+Compare
+Product Page
+EM3E8-0200-15V
+$19.02
+0.0200" (0.51mm) 0.0279" (0.71mm) 0.030" (0.76mm) 3 15° ZrN 1/8"
+1.42" (36.1mm)
+Available
+Leave the first review Add to wishlist
+Compare
+Product Page
+EM3E8-0200-15VC
+$23.01
+0.0250" (0.64mm) 0.0342" (0.87mm) 0.035" (0.89mm) 3 15° 1/8"
+1.42" (36.1mm)
+Available
+Leave the first review Add to wishlist
+Compare
+Product Page
+EM3E8-0250-15V
+$19.02
+0.0250" (0.64mm) 0.0342" (0.87mm) 0.035" (0.89mm) 3 15° ZrN 1/8"
+1.42" (36.1mm)
+Available
+Leave the first review Add to wishlist
+Compare
+Product Page
+EM3E8-0250-15VC
+$23.01
+×
+We will be closed September 7th for Labor Day.
+We will be closed September 7th for Labor Day.
+×
+Holiday Shipping
+Orders received by noon on the day before the beginning of the holiday should ship the same day.
+Normal operating hours resume on the first business day following the last day of the holiday.
+Close
+-->
+Support
+About us
+Contact us
+Educational Discount
+Limited Warranty
+No-fault Returns
+Policies
+Sales Quotes
+Tech Support
+Products
+Collets, Toolholders
+Composite Cutting
+Metal Machining
+Woodworking
+Plastic Cutting
+Applications
+3D Signs & Plaques
+Engraving
+Jewelry
+Musical Instruments
+Pool Cues
+Printed Circuit Boards
+Steel Rule Dies
+Calculators
+Resources
+FAQ
+Tool terms
+Glossary
+Point styles
+Reference library
+Sweet-spot Test
+Tutorials
+Support
+About us
+Contact us
+Educational Discount
+Limited Warranty
+No-fault Returns
+Policies
+Sales Quotes
+Tech Support
+Products
+Collets, Toolholders
+Composite Cutting
+Metal Machining
+Woodworking
+Plastic Cutting
+Applications
+3D Signs & Plaques
+Engraving
+Jewelry
+Musical Instruments
+Pool Cues
+Printed Circuit Boards
+Steel Rule Dies
+Resources
+FAQ
+Tool terms
+Glossary
+Point styles
+Reference library
+Sweet-spot Test
+Tutorials
+Feed and Speed Calculators

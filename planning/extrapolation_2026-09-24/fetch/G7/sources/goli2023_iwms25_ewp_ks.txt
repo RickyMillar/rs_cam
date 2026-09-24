@@ -1,0 +1,253 @@
+                         Science Arts & Métiers (SAM)
+    is an open access repository that collects the work of Arts et Métiers Institute of
+  Technology researchers and makes it freely available over the web where possible.
+
+
+
+             This is an author-deposited version published in: https://sam.ensam.eu
+                          Handle ID: .http://hdl.handle.net/10985/24362
+
+
+
+To cite this version :
+
+Giacomo GOLI, Rémi CURTI, Luigi TODARO, Bertrand MARCON - Specific cutting coefficients
+for the most common engineered wood products - In: 25th International Wood Machining
+Seminar, Japon, 2023-10-04 - 25th International Wood Machining Seminar - 2023
+
+
+
+
+Any correspondence concerning this service should be sent to the repository
+                Administrator : scienceouverte@ensam.eu
+Specific cutting coefficients for the most common engineered
+                         wood products
+                                 G. Goli1, R. Curti2, L. Todaro3, B. Marcon4
+                                    1
+                                        DAGRI, University of Firenze, Italy
+                                   2
+                                        ICA, University Toulouse III, France
+                                    3
+                                        SAFE, University of Basilicata, Italy
+                       4
+                           LaBoMaP, Arts et Metiers Institute of Technology, France
+                                          e-mail: Giacomo.goli@unifi.it
+
+
+
+
+ABSTRACT
+The aim of the present work is to investigate the specific cutting coefficients for the assessment of cutting
+forces when peripheral milling different types of engineered wood products (EWPs). The approach comes
+from previous work aiming to investigate the specific cutting coefficients when cutting solid wood with
+different grain orientations. The model inputs are the uncut chip thickness and width, the machining
+configuration i.e. up- or down-milling, the type of EWP, and the tool helix angle. Thereby, different EWPs
+were round shaped (peripheral milling) machined after being fixed on a dynamometric platform in order to
+measure the cutting forces when up- or down-milling with different chip thicknesses and tool helical angles.
+The acquired forces were analysed and plotted against the respective chip thicknesses to calculate the
+specific cutting coefficients as well as the intercepts to serve as input to the model. The EWPs assessed
+were: particleboard, MDF (Medium Density Fiberboard), OSB (Oriented Strand Board), and plywood.
+While particleboard and MDF has shown a perfectly isotropic behaviour, plywood has shown to be
+moderately directional. OSB has exhibited very large and unpredictable variations associated to its very
+heterogeneous structure that makes the cutting forces of this material very difficult to be effectively
+modelled.
+Keywords: Engineered wood products, cutting forces, specific cutting coefficients.
+
+
+INTRODUCTION
+        An accurate model for predicting cutting forces and cutting powers in wood machining could be of
+great help for manufacturers for a correct machining set-up. The research on wood machining has seen
+different approaches to cutting forces and cutting power predictions on massive wood and Engineered Wood
+Products (EWPs). The strong anisotropy of massive wood results in a very complex interaction between the
+tool and the material, depending on the cutting direction compared to the grain orientation, and in very
+different cutting conditions. The relations between the grain orientation and the cutting forces have been
+explored by different authors and the principal works are gathered together by some review works published
+by Marchal et al. [1], Naylor and Hackney [2], and Nasir and Cool [3].
+        More recently the attention of the authors of this work went back to investigate how the cutting
+forces varies when milling at intermediate grain orientations. A new method for the assessment of wood
+machinability and cutting tool performance when machining solid wood at different grain orientations was
+proposed by Goli and Sandak [4], where a massive piece of wood was machined at round shape. The same
+principle was applied in order to develop a method to measure the cutting forces when peripheral milling
+massive wood at different grain orientations (see Figure 1), this first approach being described by Goli et.
+al. [5] and presented during the previous (24th) International Wood Machining seminar [6]. This last has
+shown to work very effectively and a generalized model for solid wood was hereby developed by Curti at.
+al. [7].
+
+
+
+
+   Figure 1. Milling operation schematized with the definition of the reference system and the cutting
+forces. The forces were measured on the thickened half disk both for up- and down-milling processes. The
+up-milling was used as reference and the down milling forces vector order was reversed in order to be the
+                                      same of the up-milling one.
+       Curti et al. work is here extended, with the same approach, to determine the specific cutting
+coefficients when machining EWPs such as particleboard, Medium Density Fiberboard (MDF), Oriented
+Strand Board (OSB), and plywood. Those EWPs are widely machined, and thus representative, for the
+secondary transformation sector, and for this reason, they are of interest to optimize the machining processes
+and eventually reducing the postprocessing interventions such as sanding to reach the desired final surface
+quality. Being MDF and particleboard isotropic materials, they are compared to plywood and OSB that are
+supposed to have two anisotropic orthotropic models superposed because produced by superposing layers
+with perpendicular grain orientations.
+
+
+MATERIALS AND METHODS
+       For massive wood, the method was conceived to machine a wood specimen into a round shape in
+order to cut, with a single operation, with every possible grain orientation compared to the cutting edge. The
+specimen is fixed on top of a dynamometric platform (Kistler, type 9255A) that allows to measure directly
+the global cutting forces, and the platform itself is clamped on the machine worktable, see Figure 2. The
+specimens are machined by peripheral milling. The method is deeply described in the research work [7],
+and the data analysis is detailed in [5].
+            Figure 2. Peripheral milling setup used for the measurement of the cutting forces.
+      Four different EWPs are studied for their major importance in the furniture sector: particleboard,
+Medium Density Fiberboard, Oriented Strand Board, and plywood, referenced here respectively as PB,
+MDF, OSB, and PW. Their characteristics are summarized in Table 1. The axial depth of cut (𝑎𝑝 ) used for
+the experiments is always equal to the whole thickness of the specimen and the routing bit during machining
+crossed over both panel’s surfaces.
+
+
+                           Table 1. Main physical properties of the machined EWPs.
+                                           Particle      Medium Density        Oriented Strand
+                                                                                                  Plywood
+                Type of EWP                 board         Fiberboard               Board
+                                                                                                   (PW)
+                                             (PB)           (MDF)                  (OSB)
+          Wood specie of the EWP             NA                NA                   NA             Poplar
+              Density (kg.m-3)              737.8              720.0               585.7           430.0
+            Moisture content (%)             11.2               9.7                  8.8            8.7
+
+
+
+       Two uncoated, freshly sharpened, tungsten carbide massive tools, 20 mm of diameter, 2 cutting edges,
+specially designed for the purpose of the experiment provided by G3 Fantacci Corp. (located at Poggibonsi,
+Italy) are tested, with a special interest in the effect of the helix angle (λ), as summarized in Table 2 and
+shown in Figures 2-5. Indeed, this parameter is commonly used to virtually increase the sharpness of the
+tool and to improve the cutting quality as well as to reduce the cutting forces on the machine XY plane.
+
+
+        Table 2. Geometrical characteristics of the 2 cutting tools. Rake, wedge and clearing angles are
+                        referred to the normal plane. WC is tungsten carbide.
+                                                       Rake            Wedge      Clearance
+                            Diameter     Number of
+         Blade type                                    angle           angle        angle        Material
+                             (mm)         teeth -z
+                                                        (°)             (°)          (°)
+       Straight blade                                                                            Uncoated
+                                 20          2           25             55           10
+          (λ = 0°)                                                                                 WC
+       Helical cutter                                                                            Uncoated
+                                 20          2           25             55           10
+         (λ = 30°)                                                                                 WC
+
+
+       Five depths of cut are tested: 0.5, 1.0, 1.5, 2.0, and 2.5 mm to machine with five different uncut chip
+thicknesses (ℎ). This results in an average uncut chip thicknesses varying from 40 μm (for the smallest depth
+of cut) to 100 μm (for the largest depth of cut). The data are analysed according to the method described in
+Goli et. al. [5] to compute the specific cutting coefficients (𝐾𝑠 ) and the intercepts (𝐼𝑛𝑡) as in the following
+equation:
+                                    𝐹𝐶 (𝜃) = (𝐾𝑠 (𝜃) × ℎ + 𝐼𝑛𝑡(𝜃)) × 𝑎𝑝
+
+
+       These two regression coefficients for each grain orientation (𝜃) will allow to estimate the cutting
+forces prior to machining EWPs in similar conditions (helix angle, cutting speed) whatever the machining
+direction.
+       The machining has been performed on a milling center designed for metal cutting produced by the
+Gambin Corp. type 120CR with a very stiff worktable than usual machining centers for wood; as a direct
+consequence, the forces signals are less polluted by dynamical effects due to the oscillation of the whole
+system. The machining conditions were all the same for every material: spindle speed 3,000 rpm; feed rate
+2,000 mm/min; axial depth of cut (the force value was normalized by sample thickness); radial depth of cut:
+0.5, 1.0, 1.5, 2.0, and 2.5 mm.
+
+
+RESULTS AND DISCUSSION
+       The forces are acquired and normalised over the chip width (board thickness) in order to get the forces
+per millimeter of blade length engaged in the cut. These normalized forces are plotted against chip thickness
+and the best linear regression is computed in order to determine both cutting forces model parameters: the
+intercept (Int.), and the specific cutting coefficient (Ks). The values of Int. and Ks are determined for the
+different EWPs with a span of 10° over the angular position over the half disk. In Figure 3 and 4 are reported
+the Int. and the Ks when up-milling or down-milling the different boards with a straight blade tool (λ = 0°).
+
+
+
+
+                        (a)                                               (b)                            (c)
+        Figure 3. Intercept (Int.) for a straight blade tool in up-milling condition (a) and in down-milling
+ condition (b) when machining OSB, MDF, particleboard (PC), Plywood (PW) with (c) the straight blade
+                                                  tool (λ = 0°)
+       As it can be observed the values of Int. are not negligible when machining with a straight blade tool
+and must be taken into account, while when machining with a 30° of axial angle becomes almost negligible.
+It can also be observed how machining semi anisotropic materials such as plywood or OSB, results in much
+more scattered values compared to quasi isotropic material such as MDF or particle boards. As a general
+rule the behaviour of Int. does not seem to be very influenced by the machining strategy (up- or down-
+milling).
+                       (a)                                              (b)                           (c)
+
+      Figure 4. Specific cutting coefficient (Ks) for a straight blade tool in up-milling condition (a) and
+ in down-milling condition (b) when machining OSB, MDF, particleboard (PC), Plywood (PW) with (c)
+                                     the straight blade tool (λ=0°)
+       By comparing Int. at λ = 0° and at λ = 30°, Figure 3 and 5, it is clear how these values are much lower
+and less scattered for λ = 30°. As a general behaviour, the machining with λ = 30°, compared to the λ = 0°,
+results in a much lower Ks (that means lower cutting forces when machining); and in a rather negligible Int.
+(Figures 3 and 5).
+
+
+
+
+                       (a)                                                (b)                           (c)
+       Figure 5. Intercept (Int.) for a straight blade tool in up-milling condition (a) and in down-milling
+  condition (b) when machining OSB, MDF, particleboard (PC), Plywood (PW) with (c) the 30° helical
+                                             angle tool (λ = 30°)
+
+
+      Looking at Ks (Figure 4 and 6), it can be observed how up-milling generally results in lower values
+compared to down-milling, how MDF results perfectly isotropic, how PB result non perfectly isotropic, how
+OSB generally produces a very scattered behavior on the angular position. and how plywood results in a
+mirrored behaviour between 0 to 90° and 90 to 180° (especially for λ = 30) showing a repeated pattern
+depending on its moderately anisotropic structure.
+                        (a)                                               (b)                           (c)
+      Figure 6. Specific cutting coefficient (Ks) for a straight blade tool in up-milling condition (a) and
+ in down-milling condition (b) when machining OSB, MDF, particleboard (PC), Plywood (PW) with (c)
+                                  the 30° helical angle tool (λ = 30°)
+
+
+CONCLUSIONS
+       The work allowed to identify the regression coefficients able to calculate the cutting forces when
+machining the principal engineered wood products. Intercepts and specific cutting coefficients were
+calculated for up-milling and down-milling cutting conditions as well as for two different helical angles
+being 0 and 30°. Isotropic materials have shown the same behaviour over the whole semi circumference
+machined while plywood, because of its compensated structure has shown a semi anisotropic behaviour.
+Conversely, OSB has shown a highly scattered behaviour over the semi circumference possibly because of
+its higher localized variability in density compared to the other products due to the presence of empty parts.
+Down-milling has generally shown higher Ks compared to up-milling. A higher helical angle allows a much
+lower Ks (less power is needed to cut the material) and almost negligible Int. (less energy is needed to create
+the chip) and a much less scattered signal for all the machined EWPs as expected.
+
+
+ACKNOWLEDGEMENTS
+       Giacomo Goli would like to acknowledge the Art et Metiers Institute of Technology (ENSAM, Cluny
+campus, France) for financing 2 visiting researcher period respectively of 1 and 2 months in LaBoMaP.
+Authors also want to acknowledge Gianluca Fantacci (G3 Fantacci Corp) for designing and providing the
+three cutting tools used during the core experimental campaign of this study.
+
+
+REFERENCES
+[1] R. Marchal, F. Mothe, L. E. Denaud, B. Thibaut, e L. Bleron, «Cutting forces in wood machining -
+    Basics and applications in industrial processes. A review. COST Action E35 2004-2008: Wood
+    machining - Micromechanics and fracture», Holzforschung, vol. 63, fasc. 2, pp. 157–167, 2009, doi:
+    10.1515/HF.2009.014.
+[2] A. Naylor e P. Hackney, «A Review of Wood Machining Literature with a Special Focus on Sawing»,
+    BioResources, vol. 8, fasc. 2, pp. 3122–3135, 2013.
+[3] V. Nasir e J. Cool, «A review on wood machining: characterization, optimization, and monitoring of
+    the sawing process», Wood Mater. Sci. Eng., vol. 15, fasc. 1, pp. 1–16, gen. 2020, doi:
+    10.1080/17480272.2018.1465465.
+[4] G. Goli e J. Sandak, «Proposal of a new method for the rapid assessment of wood machinability and
+    cutting tool performance in peripheral milling», Eur. J. Wood Wood Prod., vol. 74, fasc. 6, pp. 867–
+    874, nov. 2016, doi: 10.1007/s00107-016-1053-y.
+[5] G. Goli et al., «Specific Cutting Forces of Isotropic and Orthotropic Engineered Wood Products by
+    Round Shape Machining», Materials, vol. 11, fasc. 12, p. 2575, dic. 2018, doi: 10.3390/ma11122575.
+[6] R. Curti, B. Marcon, R. Furferi, L. Denaud, e G. Goli, «Specific cutting coefficients at different grain
+    orientations determined during real machining operations», in IWMS-24 Proceedings, Corvallis
+    (USA): Gary Schajer, 30/8 2019, pp. 53–62.
+[7] R. Curti, B. M. L. Denaud, e M. T. R. Furferi, «Generalized cutting force model for peripheral milling
+    of wood , based on the effect of density , uncut chip cross section , grain orientation and tool helix
+    angle», Eur. J. Wood Wood Prod., fasc. 2004, 2021, doi: 10.1007/s00107-021-01667-5.
+

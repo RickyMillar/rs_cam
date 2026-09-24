@@ -1,0 +1,324 @@
+# stored text for sienci_feeds_speeds_imperial
+# made from sienci_feeds_speeds_imperial.pdf with pdftotext -layout on 2026-09-24
+Softwood/Soft Plywood/MDF - Imperial Units
+
+
+
+
+                                                                                                                  Feed Rate    Plunge Rate     Stepover     Stepdown - Slotting   Stepdown - Pocketing   Router Speed   Makita Speed
+                                                                                     Cutting Tool
+                                                                                                                  (inch/min)    (inch/min)       (inch)           (inch)                 (inch)             (RPM)       Dial Setting
+                                                                                                                                              V-bits
+
+                  Carving/Detailing - Regular Speed
+                                                                90, 60 Degree V-bit - V-Carving                      88            30            0.07              0.42                   0.92              22000            4
+                                                                30, 90, 60 Degree V-bit - Fine Detail/Engraving      44            15            0.07              0.42                   0.92              22000            4
+                                                                                                                                     Tapered Ball End Mills
+                                                                1/4" - D1/16" Tapered Ball End Mill - Coarse         125           62            0.009             N/A                     1                28500            6
+                                                                1/4" - D1/16" Tapered Ball End Mill - Fine           150           50            0.003             N/A                     1                28500            6
+                                                                1/8" - D0.5mm Tapered Ball End Mill - Coarse         79            39            0.006             N/A                    0.5               28500            6
+                                                                1/8" - D0.5mm Tapered Ball End Mill - Fine           143           72           0.0016             N/A                    0.5               28500            6
+                                                                                                                                          Ball End Mills
+                                                                1/4" Ball End Mill - Finishing                       110           55            0.012             0.16                    1                22000            4
+                                                                1/8" Ball End Mill - Finishing                       81            41            0.006             0.21                    1                27000            5
+
+
+                                                                                                                                             End Mills
+                                                                1/4" Single Flute Flat End Mill UC                   64            32            0.11              0.11                   0.24              17000            3
+                                                                1/4" Flat End Mill UC                                65            33            0.11              0.11                   0.24              12000            2
+                  Reduced Speed - Finishing, or mild cutting
+
+
+
+
+                                                                1/4" Flat End Mill DC                                65            33            0.11              0.11                   0.24              12000            2
+                                                                1/4" Ball End Mill                                   65            33            0.11              0.11                   0.24              12000            2
+                                                                1/8" Single Flute Flat End Mill UC                   41            21            0.06              0.17                   0.37              22000            4
+                                                                1/8" Flat End Mill UC                                64            32            0.06              0.11                   0.24              17000            3
+                                                                1/8" Flat End Mill DC                                64            32            0.06              0.11                   0.24              17000            3
+                                                                1/8" Ball End Mill                                   64            32            0.06              0.11                   0.24              17000            3
+                                                                1/16" Flat End Mill UC                               34            17            0.03              0.10                   0.23              17000            3
+                                                                1/16" Flat End Mill DC                               34            17            0.03              0.10                   0.23              17000            3
+                                                                1/16" Corncob End Mill                               34            17            0.03              0.10                   0.23              17000            3
+                                                                22mm Surfacing Bit                                   61            31            0.35             0.016                   0.04              17000            3
+                                                                                                                                        Round Groove Bits
+                                                                1/2" Round Groove Bit                                34            17            0.22              0.13                   0.28              17000            3
+                                                                3/4" Round Groove Bit                                34            17            0.34              0.09                   0.19              17000            3
+                                                                1" Round Groove Bit                                  34            17            0.45              0.06                   0.14              17000            3
+
+
+                                                                                                                                             End Mills
+                                                                1/4" Single Flute Flat End Mill UC                   85            43            0.11              0.16                   0.36              17000            3
+                                                                1/4" Flat End Mill UC                                86            43            0.11              0.16                   0.36              12000            2
+                                                                1/4" Flat End Mill DC                                86            43            0.11              0.16                   0.36              12000            2
+                                                                1/4" Ball End Mill                                   86            43            0.11              0.16                   0.36              12000            2
+                                                                1/8" Single Flute Flat End Mill UC                   55            28            0.06              0.25                   0.55              22000            4
+                                                                1/8" Flat End Mill UC                                85            43            0.06              0.16                   0.36              17000            3
+                  Regular Speed
+
+
+
+
+                                                                1/8" Flat End Mill DC                                85            43            0.06              0.16                   0.36              17000            3
+                                                                1/8" Ball End Mill                                   85            43            0.06              0.16                   0.36              17000            3
+                                                                1/16" Flat End Mill UC                               43            21            0.03              0.16                   0.37              17000            3
+                                                                1/16" Flat End Mill DC                               43            21            0.03              0.16                   0.37              17000            3
+                                                                1/16" Corncob End Mill                               43            21            0.03              0.16                   0.37              17000            3
+                                                                22mm Surfacing Bit                                   81            41            0.35              0.02                   0.06              17000            3
+                                                                                                                                        Round Groove Bits
+                                                                1/2" Round Groove Bit                                41            20            0.22              0.35                   0.78              17000            3
+                                                                3/4" Round Groove Bit                                51            26            0.34              0.19                   0.42              17000            3
+                                                                1" Round Groove Bit                                  51            26            0.45              0.14                   0.31              17000            3
+
+
+                                                                                                                                             End Mills
+                                                                1/4" Single Flute Flat End Mill UC                   106           53            0.11              0.22                   0.48              17000            3
+                                                                1/4" Flat End Mill UC                                108           54            0.11              0.21                   0.48              12000            2
+                  Full Speed - Roughing or aggressive cutting
+
+
+
+
+                                                                1/4" Flat End Mill DC                                108           54            0.11              0.21                   0.48              12000            2
+                                                                1/4" Ball End Mill                                   108           54            0.11              0.21                   0.48              12000            2
+                                                                1/8" Single Flute Flat End Mill UC                   69            35            0.06              0.33                   0.73              22000            4
+                                                                1/8" Flat End Mill UC                                106           53            0.06              0.22                   0.48              17000            3
+                                                                1/8" Flat End Mill DC                                106           53            0.06              0.22                   0.48              17000            3
+                                                                1/8" Ball End Mill                                   106           53            0.06              0.22                   0.48              17000            3
+                                                                1/16" Flat End Mill UC                               53            27            0.03              0.22                   0.49              17000            3
+                                                                1/16" Flat End Mill DC                               53            27            0.03              0.22                   0.49              17000            3
+                                                                1/16" Corncob End Mill                               53            27            0.03              0.22                   0.49              17000            3
+                                                                22mm Surfacing Bit                                   102           51            0.35              0.03                   0.08              17000            3
+                                                                                                                                        Round Groove Bits
+                                                                1/2" Round Groove Bit                                51            26            0.22              0.28                   0.63              17000            3
+                                                                3/4" Round Groove Bit                                51            26            0.34              0.19                   0.42              17000            3
+                                                                1" Round Groove Bit                                  51            26            0.45              0.14                   0.31              17000            3
+Hardwood / Hard Plywood - Imperial Units
+
+
+
+
+                                                                                                                   Feed Rate    Plunge Rate     Stepover     Stepdown - Slotting   Stepdown - Pocketing   Router Speed   Makita Speed
+                                                                                      Cutting Tool
+                                                                                                                   (inch/min)    (inch/min)       (inch)           (inch)                 (inch)             (RPM)       Dial Setting
+                                                                                                                                               V-bits
+
+                   Carving/Detailing - Regular Speed
+                                                                 90, 60 Degree V-bit - V-Carving                      68            23            0.07              0.25                   0.56              17000            3
+                                                                 30, 90, 60 Degree V-bit - Fine Detail/Engraving      44            15            0.07              0.39                   0.86              22000            4
+                                                                                                                                      Tapered Ball End Mills
+                                                                 1/4" - D1/16" Tapered Ball End Mill - Roughing       125           62            0.009             N/A                     1                28500            5
+                                                                 1/4" - D1/16" Tapered Ball End Mill - Finishing      150           75            0.003             N/A                     1                28500            5
+                                                                 1/8" - D0.5mm Tapered Ball End Mill - Roughing       51            25            0.006             N/A                    0.5               28500            5
+                                                                 1/8" - D0.5mm Tapered Ball End Mill - Finishing      143           72           0.0016             N/A                    0.5               28500            5
+                                                                                                                                           Ball End Mills
+                                                                 1/4" Ball End Mill - Finishing                       110           55            0.012            0.075                   1.0               22000            4
+                                                                 1/8" Ball End Mill - Finishing                       81            41            0.006              0.1                   1.0               27000            5
+
+
+                                                                                                                                              End Mills
+                                                                 1/4" Single Flute Flat End Mill UC                   64            32            0.11              0.11                   0.24              17000            3
+                                                                 1/4" Flat End Mill UC                                65            33            0.11              0.11                   0.24              12000            2
+                   Reduced Speed - Finishing, or mild cutting
+
+
+
+
+                                                                 1/4" Flat End Mill DC                                65            33            0.11              0.11                   0.24              12000            2
+                                                                 1/4" Ball End Mill                                   65            33            0.11              0.11                   0.24              12000            2
+                                                                 1/8" Single Flute Flat End Mill UC                   41            21            0.06              0.17                   0.37              22000            4
+                                                                 1/8" Flat End Mill UC                                64            32            0.06              0.11                   0.24              17000            3
+                                                                 1/8" Flat End Mill DC                                64            32            0.06              0.11                   0.24              17000            3
+                                                                 1/8" Ball End Mill                                   64            32            0.06              0.11                   0.24              17000            3
+                                                                 1/16" Flat End Mill UC                               34            17            0.03              0.10                   0.24              17000            3
+                                                                 1/16" Flat End Mill DC                               34            17            0.03              0.10                   0.24              17000            3
+                                                                 1/16" Corncob End Mill                               34            17            0.03              0.10                   0.24              17000            3
+                                                                 22mm Surfacing Bit                                   61            31            0.35             0.016                   0.04              17000            3
+                                                                                                                                         Round Groove Bits
+                                                                 1/2" Round Groove Bit                                31            15            0.22              0.07                   0.15              17000            3
+                                                                 3/4" Round Groove Bit                                34            17            0.34              0.04                   0.09              17000            3
+                                                                 1" Round Groove Bit                                  31            15            0.45              0.03                   0.07              17000            3
+
+
+                                                                                                                                              End Mills
+                                                                 1/4" Single Flute Flat End Mill UC                   85            43            0.11              0.07                   0.17              17000            3
+                                                                 1/4" Flat End Mill UC                                86            43            0.11              0.07                   0.17              12000            2
+                                                                 1/4" Flat End Mill DC                                86            43            0.11              0.07                   0.17              12000            2
+                                                                 1/4" Ball End Mill                                   86            43            0.11              0.07                   0.17              12000            2
+                                                                 1/8" Single Flute Flat End Mill UC                   55            28            0.06              0.12                   0.26              22000            4
+                                                                 1/8" Flat End Mill UC                                85            43            0.06              0.07                   0.17              17000            3
+                   Regular Speed
+
+
+
+
+                                                                 1/8" Flat End Mill DC                                85            43            0.06              0.07                   0.17              17000            3
+                                                                 1/8" Ball End Mill                                   85            43            0.06              0.07                   0.17              17000            3
+                                                                 1/16" Flat End Mill UC                               43            21            0.03              0.07                   0.17              17000            3
+                                                                 1/16" Flat End Mill DC                               43            21            0.03              0.07                   0.17              17000            3
+                                                                 1/16" Corncob End Mill                               43            21            0.03              0.07                   0.17              17000            3
+                                                                 22mm Surfacing Bit                                   81            41            0.35             0.012                  0.028              17000            3
+                                                                                                                                         Round Groove Bits
+                                                                 1/2" Round Groove Bit                                41            20            0.22              0.17                   0.37              17000            3
+                                                                 3/4" Round Groove Bit                                51            26            0.34              0.09                   0.19              17000            3
+                                                                 1" Round Groove Bit                                  51            26            0.45              0.07                   0.15              17000            3
+
+
+                                                                                                                                              End Mills
+                                                                 1/4" Single Flute Flat End Mill UC                   106           53            0.11              0.10                   0.22              17000            3
+                                                                 1/4" Flat End Mill UC                                108           54            0.11              0.10                   0.22              12000            2
+                   Full Speed - Roughing or aggressive cutting
+
+
+
+
+                                                                 1/4" Flat End Mill DC                                108           54            0.11              0.10                   0.22              12000            2
+                                                                 1/4" Ball End Mill                                   108           54            0.11              0.10                   0.22              12000            2
+                                                                 1/8" Single Flute Flat End Mill UC                   69            35            0.06              0.15                   0.34              22000            4
+                                                                 1/8" Flat End Mill UC                                106           53            0.06              0.10                   0.22              17000            3
+                                                                 1/8" Flat End Mill DC                                106           53            0.06              0.10                   0.22              17000            3
+                                                                 1/8" Ball End Mill                                   106           53            0.06              0.10                   0.22              17000            3
+                                                                 1/16" Flat End Mill UC                               53            27            0.03              0.10                   0.23              17000            3
+                                                                 1/16" Flat End Mill DC                               53            27            0.03              0.10                   0.23              17000            3
+                                                                 1/16" Corncob End Mill                               53            27            0.03              0.10                   0.23              17000            3
+                                                                 22mm Surfacing Bit                                   102           51            0.35             0.016                   0.04              17000            3
+                                                                                                                                         Round Groove Bits
+                                                                 1/2" Round Groove Bit                                51            26            0.22              0.13                   0.29              17000            3
+                                                                 3/4" Round Groove Bit                                51            26            0.34              0.09                   0.19              17000            3
+                                                                 1" Round Groove Bit                                  51            26            0.45              0.07                   0.15              17000            3
+Plastics (Acrylic, PVC, HDPE, Acetal/Delrin) - Imperial Units
+
+
+
+
+                                                                                                                Feed Rate    Plunge Rate     Stepover   Stepdown - Slotting   Stepdown - Pocketing   Router Speed   Makita Speed
+                                                                                   Cutting Tool
+                                                                                                                (inch/min)    (inch/min)       (inch)         (inch)                 (inch)             (RPM)       Dial Setting
+                                                                                                                                            V-bits
+
+                          Carving/Detailing - Regular Speed
+                                                              90, 60 Degree V-bit - V-Carving                      68            23            0.07            0.03                   0.06              17000            3
+                                                              30, 90, 60 Degree V-bit - Fine Detail/Engraving      44            15            0.07            0.04                   0.09              22000            4
+                                                                                                                                   Tapered Ball End Mills
+                                                              1/4" - D1/16" Tapered Ball End Mill - Roughing       28            14            0.009           N/A                   0.016              10000            1
+                                                              1/4" - D1/16" Tapered Ball End Mill - Finishing      39            20            0.003           N/A                   0.016              10000            1
+                                                              1/8" - D0.5mm Tapered Ball End Mill - Roughing       79            39            0.006           N/A                    0.01              10000            1
+                                                              1/8" - D0.5mm Tapered Ball End Mill - Finishing      118           59           0.0016           N/A                    0.01              10000            1
+                                                                                                                                       Ball End Mills
+                                                              1/4" Ball End Mill - Finishing                       66            33            0.005          0.055                    1                22000            4
+                                                              1/8" Ball End Mill - Finishing                       41            20            0.005           0.09                    1                27000            5
+
+
+                                                                                                                                           End Mills
+                   Finishing, or mild cutting
+
+
+
+
+                                                              1/4" Single Flute Flat End Mill UC                   63            31            0.11           0.024                   0.05              12000            2
+                       Reduced Speed -
+
+
+
+
+                                                              1/4" Flat End Mill UC                                91            46            0.11           0.016                   0.04              10000            1
+                                                              1/4" Ball End Mill                                   91            46            0.11           0.016                   0.04              10000            1
+                                                              1/8" Single Flute Flat End Mill UC                   31            16            0.06           0.047                   0.10              12000            2
+                                                              1/8" Flat End Mill UC                                63            31            0.06            0.02                   0.05              12000            2
+                                                              1/8" Ball End Mill                                   63            31            0.06           0.024                   0.05              12000            2
+                                                              1/16" Flat End Mill UC                               44            22            0.03           0.016                  0.035              17000            3
+
+
+                                                                                                                                           End Mills
+                                                              1/4" Single Flute Flat End Mill UC                   72            36            0.11            0.04                   0.09              12000            2
+                          Regular Speed
+
+
+
+
+                                                              1/4" Flat End Mill UC                                104           52            0.11            0.03                   0.06              10000            1
+                                                              1/4" Ball End Mill                                   104           52            0.11            0.03                   0.06              10000            1
+                                                              1/8" Single Flute Flat End Mill UC                   36            18            0.06            0.08                   0.18              12000            2
+                                                              1/8" Flat End Mill UC                                72            36            0.06            0.04                   0.09              12000            2
+                                                              1/8" Ball End Mill                                   72            36            0.06            0.04                   0.09              12000            2
+                                                              1/16" Flat End Mill UC                               51            26            0.03            0.03                   0.06              17000            3
+
+
+                                                                                                                                           End Mills
+                   Full Speed - Roughing
+                   or aggressive cutting
+
+
+
+
+                                                              1/4" Single Flute Flat End Mill UC                   90            45            0.11            0.06                   0.12              12000            2
+                                                              1/4" Flat End Mill UC                                130           65            0.11            0.04                   0.08              10000            1
+                                                              1/4" Ball End Mill                                   130           65            0.11            0.04                   0.08              10000            1
+                                                              1/8" Single Flute Flat End Mill UC                   45            22            0.06            0.11                   0.23              12000            2
+                                                              1/8" Flat End Mill UC                                90            45            0.06            0.06                   0.12              12000            2
+                                                              1/8" Ball End Mill                                   90            45            0.06            0.06                   0.12              12000            2
+                                                              1/16" Flat End Mill UC                               64            32            0.03            0.04                   0.09              17000            3
+Aluminum - Imperial Units
+
+
+
+
+                                                                                                 Feed Rate    Plunge Rate     Stepover   Stepdown - Slotting   Stepdown - Pocketing   Router Speed   Makita Speed
+                                                                    Cutting Tool
+                                                                                                 (inch/min)    (inch/min)       (inch)         (inch)                 (inch)             (RPM)       Dial Setting
+                                                                                                                             V-bits
+
+                         Carving/Detailing
+                                               30, 90, 60 Degree V-bit - Fine Detail/Engraving      53            18            0.06           0.008                  0.020              17000            3
+                                                                                                                        Ball End Mills
+                                               1/4" Ball End Mill - Finishing                       44            22            0.012          0.016                    1                22000            4
+                                               1/8" Ball End Mill - Finishing                       27            14            0.006          0.028                    1                27000            5
+
+
+                                                                                                                            End Mills
+                  Finishing, or mild cutting
+
+
+
+
+                                               1/4" Single Flute Flat End Mill UC                   35            17            0.11           0.012                  0.024              17000            3
+                      Reduced Speed -
+
+
+
+
+                                               1/4" Flat End Mill UC                                49            24            0.11           0.008                  0.016              12000            2
+                                               1/4" Ball End Mill                                   49            24            0.11           0.008                  0.016              12000            2
+                                               1/8" Single Flute Flat End Mill UC                   17            9             0.06           0.016                  0.035              17000            3
+                                               1/8" Flat End Mill UC                                35            17            0.06           0.008                   0.02              17000            3
+                                               1/8" Ball End Mill                                   35            17            0.06           0.008                   0.02              17000            3
+
+
+                                                                                                                            End Mills
+                                               1/4" Single Flute Flat End Mill UC                   43            21            0.11           0.016                  0.035              17000            3
+                         Regular Speed
+
+
+
+
+                                               1/4" Flat End Mill UC                                60            30            0.11           0.012                  0.024              12000            2
+                                               1/4" Ball End Mill                                   60            30            0.11           0.012                  0.024              12000            2
+                                               1/8" Single Flute Flat End Mill UC                   21            11            0.06           0.024                  0.051              17000            3
+                                               1/8" Flat End Mill UC                                43            21            0.06           0.012                  0.028              17000            3
+                                               1/8" Ball End Mill                                   43            21            0.06           0.012                  0.028              17000            3
+
+
+                                                                                                                            End Mills
+                  Full Speed - Roughing
+                  or aggressive cutting
+
+
+
+
+                                               1/4" Single Flute Flat End Mill UC                   53            27            0.11           0.018                  0.039              17000            3
+                                               1/4" Flat End Mill UC                                75            38            0.11           0.012                  0.028              12000            2
+                                               1/4" Ball End Mill                                   75            38            0.11           0.012                  0.028              12000            2
+                                               1/8" Single Flute Flat End Mill UC                   26            13            0.06           0.028                  0.059              17000            3
+                                               1/8" Flat End Mill UC                                53            27            0.06           0.014                  0.031              17000            3
+                                               1/8" Ball End Mill                                   53            27            0.06           0.014                  0.031              17000            3
+

@@ -1,0 +1,36 @@
+# G4 band shape, DERIVED from the LUT (not printed by any vendor)
+# columns: tool_family source n grades | min/max ratio median [lo-hi] | width in in median [lo-hi]
+ball_nose          amana_ball_nose_v7                               n= 19 g=ac  | ratio 0.71 [0.50-0.78] | width 0.0020 [0.0004-0.0020]
+ball_nose          amana_zrn_3d_profiling                           n=  6 g=a   | ratio 0.38 [0.38-0.77] | width 0.0013 [0.0002-0.0013]
+ball_nose          amana_zrn_3d_profiling_v8                        n=  2 g=a   | ratio 0.76 [0.75-0.78] | width 0.0020 [0.0020-0.0020]
+bull_nose          onsrud_cutting_data_recommendations              n=  3 g=c   | ratio 0.54 [0.53-0.58] | width 0.0012 [0.0011-0.0016]
+chamfer_vbit       amana_ams159_vgroove_v2                          n=  6 g=a   | ratio 0.43 [0.43-0.43] | width 0.0040 [0.0040-0.0040]
+chamfer_vbit       amana_insert_v_groove_v16                        n=  5 g=a   | ratio 0.47 [0.46-0.55] | width 0.0014 [0.0012-0.0020]
+chamfer_vbit       amana_spektra_engraving_v4                       n=  7 g=a   | ratio 0.43 [0.33-0.43] | width 0.0040 [0.0040-0.0040]
+chamfer_vbit       whiteside_vgroove_collection                     n=  2 g=b   | ratio 0.51 [0.50-0.53] | width 0.0016 [0.0016-0.0016]
+facing_bit         amana_spoilboard_v8                              n=  6 g=a   | ratio 0.56 [0.54-0.57] | width 0.0026 [0.0026-0.0031]
+facing_bit         whiteside_6210_spoilboard                        n=  2 g=b   | ratio 0.56 [0.55-0.56] | width 0.0027 [0.0026-0.0028]
+flat_end           amana_spektra_spiral_plunge_v24                  n= 14 g=c   | ratio 0.58 [0.53-0.67] | width 0.0010 [0.0005-0.0018]
+flat_end           amana_zrn_3d_profiling_v8                        n=  4 g=a   | ratio 0.68 [0.60-0.78] | width 0.0020 [0.0020-0.0020]
+flat_end           freud_router_bit_feed_and_speed_for_cnc_20170822 n= 12 g=a   | ratio 0.80 [0.40-0.88] | width 0.0030 [0.0020-0.0040]
+flat_end           onsrud_hard_plywood_cutting_data                 n= 17 g=a   | ratio 0.89 [0.86-0.91] | width 0.0020 [0.0020-0.0030]
+flat_end           onsrud_hard_wood_cutting_data                    n= 15 g=b   | ratio 0.88 [0.71-0.89] | width 0.0020 [0.0020-0.0020]
+flat_end           onsrud_mdf_cutting_data                          n= 20 g=b   | ratio 0.88 [0.67-0.89] | width 0.0020 [0.0020-0.0020]
+flat_end           onsrud_soft_plywood_cutting_data                 n= 16 g=a   | ratio 0.90 [0.88-0.92] | width 0.0020 [0.0020-0.0020]
+flat_end           onsrud_soft_wood_cutting_data                    n= 12 g=b   | ratio 0.87 [0.71-0.89] | width 0.0020 [0.0020-0.0020]
+tapered_ball_nose  amana_zrn_3d_profiling                           n=  8 g=c   | ratio 0.55 [0.50-0.56] | width 0.0005 [0.0004-0.0007]
+tapered_ball_nose  onsrud_hard_plywood_cutting_data                 n=  8 g=a   | ratio 0.66 [0.60-0.71] | width 0.0020 [0.0020-0.0020]
+tapered_ball_nose  onsrud_hard_wood_cutting_data                    n=  8 g=a   | ratio 0.66 [0.60-0.71] | width 0.0020 [0.0020-0.0020]
+tapered_ball_nose  onsrud_mdf_cutting_data                          n=  8 g=a   | ratio 0.66 [0.60-0.71] | width 0.0020 [0.0020-0.0020]
+tapered_ball_nose  onsrud_soft_wood_cutting_data                    n=  8 g=a   | ratio 0.66 [0.60-0.71] | width 0.0020 [0.0020-0.0020]
+
+# one-value encodings per (tool_family, source)
+ball_nose          idcwoodcraft_chipload_csv_2026-05-30             min == max=3
+ball_nose          whiteside_fusion360_tools_2019-10-23             min absent=2
+chamfer_vbit       amana_ams159_vgroove_v2                          band=6, min == max=3
+facing_bit         idcwoodcraft_chipload_csv_2026-05-30             min == max=1
+flat_end           amana_compression_spirals_v8                     min == max=5
+flat_end           amana_spektra_spiral_plunge_v24                  band=14, min == max=26, min absent=60
+flat_end           idcwoodcraft_chipload_csv_2026-05-30             min == max=4
+flat_end           whiteside_fusion360_tools_2019-10-23             min absent=9
+tapered_ball_nose  whiteside_fusion360_tools_2019-10-23             min absent=2

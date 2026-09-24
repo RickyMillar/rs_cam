@@ -1,0 +1,484 @@
+# source_url: https://www.precisebits.com/applications/engravingtools.htm
+# accessed_on: 2026-09-24
+# raw_html_sha256: 21a01baee42248b00a8e6cbb1a60083b62ad0d23d251600009515d49b9c20856
+
+Think
+
+&
+
+Tinker
+, Ltd. ™
+
+0 item(s) - $0.00
+
+Your shopping cart is empty!
+
+Menu
+
+Home
+
+Products
+
+Application Specific Tools
+
+3D Signs & Plaques
+
+Cutting Composites
+
+Engraving
+
+Jewelry
+
+Musical Instruments
+
+Pool Cues
+
+Printed Circuit Boards
+
+Steel Rule Dies
+
+3D Carving Tools
+
+Backing & Mounting
+
+Calibration Blanks
+
+Inch
+
+Metric
+
+Cleaners & Lubricants
+
+ColletCare
+
+Metal Cutting Fluid
+
+PCB Engraving Lubricant
+
+Collets & Toolholders
+
+Drill bits
+
+Number (wire gauge)
+
+Fractional inch
+
+Letter
+
+Metric
+
+Medical & Slotting
+
+Drill Bit Sets
+
+Drill Bit Diameter Chart
+
+Feeds/Speeds for FR-4 & Carbon-fiber
+
+End-mills
+
+Engraving Tools
+
+1/8in. shank
+
+Micro-engraving tools
+
+Tapered-stubs
+
+Engraving / Cut-out tools
+
+1/4in. shank
+
+Signage / Engraving tools
+
+Miscellaneous
+
+Depth Setting Rings
+
+FuzzBrush
+
+SecureBits
+
+Router Bits
+
+Chip breaker (CB)
+
+Diamond cut (DC)
+
+Feeds/Speeds
+
+CB feeds/speeds
+
+DC feeds/speeds
+
+Specialty Bits
+
+Acrylic/polycarbonate tools
+
+Antler / horn cutters
+
+Countersinks
+
+Extended-reach end-mills
+
+Fret slot cutters
+
+Fretboard planing/radiusing
+
+Shell cutters
+
+Steel Rule Die Tools
+
+Zero-helix cutters
+
+Substrates
+
+Backing material
+
+Copperclad
+
+Entry foil
+
+Tool Packs
+
+Single bit packs
+
+10-bit packs
+
+50-bits packs
+
+SecureBits
+
+Applications
+
+3D Signs & Plaques
+
+Cutting Composites
+
+Engraving
+
+Jewelry
+
+Musical Instruments
+
+Pool Cues
+
+Printed Circuit Boards
+
+Steel Rule Dies
+
+Resources
+
+FAQ
+
+Cutter terminology
+
+Depth Setting Rings
+
+Extended-reach Geometry
+
+Feeds & Speeds Calculator
+
+Glossary
+
+Point styles
+
+Reference library
+
+Sweet-spot Test
+
+Tutorials
+
+Charts/Tables
+
+Chipbreaker Feeds & Speeds
+
+Diamondcut Feeds & Speeds
+
+Drill Bit Diameter Chart
+
+Drill Bit Feeds & Speeds
+
+ER Torque Chart
+
+Metal Gauge Conversion Chart
+
+Relative Wood Hardness Table
+
+Support
+
+Contact us
+
+Limited Warranty
+
+Policies
+
+Sales Quotes
+
+Technical Support
+
+Distributors
+
+Domestic Distributors
+
+International Distributors
+
+Account
+
+My Account
+
+Order History
+
+Wish list
+
+Tools for Engraving and 3D Carving
+
+Designed for engraving a wide variety of wood, plastic, brass and aluminum plaques, presentations and awards.
+
+Most of our 1/8" shank tools are available with and without depth setting rings.
+
+×
+What are depth rings?
+
+What are depth rings and what tools can have them?
+
+Depth setting rings are plastic collars that are securely pressed onto the 1/8 in. shank of a drill bit, end-mill, router bit, or similar rotary cutter. There is
+no charge to add the rings, but the user is cautioned to make sure that their equipment is compatible with their use.
+
+Most PreciseBits 1/8 in. shank bits are available with or without depth setting rings. Bits that can't have rings are:
+
+﻿End-mills smaller than 0.005" (0.127mm)
+
+Shanks longer than 1.50" OAL
+
+Cutting depths or necks longer than 0.50"
+
+SRD kerf cutters (MM5D8)
+
+How do they work and why would I want them?
+
+The shank side of the ring (top side in the picture to the right) is accurately positioned (d ±0.004 in.)
+relative to the tip of the tool. If the shank-side of the ring is pressed against the collet when the tool is loaded, the tip of the bit will be a known distance
+(d) from the face of the collet. Knowing this distance, the programmer can plunge the tool, confident that
+the depth of cut will be as expected and will remain the same no matter how many times the tool is changed. If all of the tools in the programmer's magazine have
+been fitted with depth setting rings, an automatic tool changer can load and unload tools with the tip of each one the same distance from the face of the collet.
+
+This is especially helpful with micro-tools where "touching-off" on some reference surface to calibrate the tool height can damage or break the tip of the tool. Rings
+also find widespread use in inlay pocket cutting where relatively large diameter cutters are used to "hog out" basic shapes, followed by much smaller diameter finishing
+bits that clean up the edges, sharpen the corners and add fine detail to the finished part.
+
+LPKF and T-Tech
+
+The most common value for d is 0.800 in. (industry standard). However, with the advent of mechanically
+etching printed circuit boards in the mid 1970s, a new standard was implemented for the special purpose tools developed for this application.
+
+Today, only machines made by LPKF and T-Tech adhere to this special standard. Systems from AccurateCNC, MITS, Sun and EverPrecision are compatible with the original
+industry standard depth of 0.800 in.
+
+Note: LPKF and T-Tech users must specify the make and model number of their CNC routers to insure that the rings are properly positioned!
+
+Tapered Ball-Nose
+
+§ 2-flute ball-nose
+
+§ 4-flute ball-nose
+
+The 1/4 in. shank and 1.00 in. depth of cut (DOC) in this tool family are designed for deep machining in large format dimensional signage as well as very detailed carving of architectural components, back-lit lithophanes and other decorative items.
+
+Although the geometry of these tools was optimized for cutting and shaping hardwoods, they are equally at home machining plastics, phenolic composites, unfired ceramics and aluminum.
+
+§ 2-flute ball-nose
+
+§ 4-flute ball-nose
+
+V-Tip Carving and Engraving Tools
+
+§ Micro-engraving
+0.0625 in. to 0.625 in. high letters1/8 in. shank, 0.005 in. tip
+
+§ Engraving / Cut-out
+0.200 in. to 1.25 in.high letters1/8 in. shank, 0.015 in. tip
+
+§ Engraving / Lettering
+0.200 in. to 2.50 in. high letters1/4 in. shank, 0.015 in. tip
+
+Designed specifically for the dimensional signage and egraving markets, our 2-flute solid-carbide "V" cutters feature polished, high-rake cutting edges capable of producing a surface finish suitable for edge-lit transparent signs and plaques.
+
+Edge finishes in HDU, hardwood (maple, walnut, mahogany, cherry...),softwoods, HDPE, POM (acetal) and phenolic composites are typically smooth and free of chatter. High flute volume and precisely shaped ejection paths support high chiploads in a wide variety of sign making substrates. Precise "V" angle formation (±0.2°) permits either single-pass or multi-pass cutting without fear of steps or streaks.
+
+§ Micro-engraving
+0.0625 in. to 0.625 in. high letters1/8 in. shank, 0.005 in. tip
+
+§ Engraving / Cut-out
+0.200 in. to 1.25 in.high letters1/8 in. shank, 0.015 in. tip
+
+§ Engraving / Lettering
+0.200 in. to 2.50 in. high letters1/4 in. shank, 0.015 in. tip
+
+micrO-flute 1-Flute
+
+Combining large flute volumes and high-shear flute geometries, these tools produce clean, flash-free cuts in a variety of thermoplastics. High feed-rates at moderate RPM (12K - 40K) offer significant productivity gains over conventional tooling.
+
+Designed specifically for high-speed cutting of thermoplastics. The fine finish produced by these tools make them the perfect choice for engraving edge-lit signs and contour cutting clear plastic appliques.
+
+Ball-nose (straight wall)
+
+§ 2-flute ball-nose
+
+§ 3-flute ball-nose
+
+The 1/8 in. dia. shank tools in this series have been optimized for single-pass and cleanup cutting in high resolution 3D carving applications where straight side walls are required.
+
+§ 2-flute ball-nose
+
+§ 3-flute ball-nose
+
+ColletCare® Spindle and Toolholder Cleaner / Lubricant
+
+Designed by a corrosion chemist to:
+
+· dissolve varnish and gummy deposits in the spindle bore
+
+· loosen rust
+
+· inhibit corrosion
+
+in spindle bores and on collets and toolholders.
+
+ME Lube® Mechanical Etching Coolant / Lubricant
+
+ME Lube significantly reduces the formation of potentially hazardous micron and sub-micron sized airborne particulates common when cutting features in PCBs or machining G-10, FR4, carbon fiber or phenolic substrates. The lubricants and surfactants provide cooling and reduce cutting resistance, yielding extended cutter life, reduced burr formation and the minimization of chips and shorts.
+
+FuzzBrush® Removes Fuzz and Hair from 3D Carvings and Engravings
+
+Tool Family: MI00-0050
+
+An effective solution for removing fuzz, fray, hair and splinters from 3D carvings and engravings in wood, composites and plastics. FuzzBrush is lightweight and comfortable to use.
+
+Support
+
+About us
+
+Contact us
+
+Educational Discount
+
+Limited Warranty
+
+No-fault Returns
+
+Policies
+
+Sales Quotes
+
+Tech Support
+
+Products
+
+Collets, Toolholders
+
+Composite Cutting
+
+Metal Machining
+
+Woodworking
+
+Plastic Cutting
+
+Applications
+
+3D Signs & Plaques
+
+Engraving
+
+Jewelry
+
+Musical Instruments
+
+Pool Cues
+
+Printed Circuit Boards
+
+Steel Rule Dies
+
+Calculators
+
+Resources
+
+FAQ
+
+Tool terms
+
+Glossary
+
+Point styles
+
+Reference library
+
+Sweet-spot Test
+
+Tutorials
+
+Support
+
+About us
+
+Contact us
+
+Educational Discount
+
+Limited Warranty
+
+No-fault Returns
+
+Policies
+
+Sales Quotes
+
+Tech Support
+
+Products
+
+Collets, Toolholders
+
+Composite Cutting
+
+Metal Machining
+
+Woodworking
+
+Plastic Cutting
+
+Applications
+
+3D Signs & Plaques
+
+Engraving
+
+Jewelry
+
+Musical Instruments
+
+Pool Cues
+
+Printed Circuit Boards
+
+Steel Rule Dies
+
+Resources
+
+FAQ
+
+Tool terms
+
+Glossary
+
+Point styles
+
+Reference library
+
+Sweet-spot Test
+
+Tutorials
+
+Feed and Speed Calculators

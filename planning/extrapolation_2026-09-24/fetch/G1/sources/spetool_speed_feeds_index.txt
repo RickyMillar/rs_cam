@@ -1,0 +1,36 @@
+# SpeTool Router Bits Speed and Feeds (index page)
+# URL: https://spetools.com/pages/spetool-router-bits-speed-and-feeds
+# Accessed 2026-09-24. Section list as printed (page text), then the PDF links in the page source.
+
+SpeTool Router Bits Speed and Feeds | SpeTool
+Skip to content
+🎁 New Customer Offer: Get 10% Off Your First Order | Code: SPE10
+Navigation
+Country/region
+Singapore (SGD
+$)
+Country/region
+Argentina (USD
+
+## PDF links in the page source
+https://cdn.shopify.com/s/files/1/0404/1582/1977/files/SpeTool_2D_3D_Tapered_router_bit_a51e0653-1672-4ba2-98bc-8852cde4fc0f.pdf?v=1676951061
+https://cdn.shopify.com/s/files/1/0404/1582/1977/files/SpeTool_Aluminum_metal_end_mill_70270bbc-c781-416f-8c98-142df90b1dce.pdf?v=1676950821
+https://cdn.shopify.com/s/files/1/0404/1582/1977/files/SpeTool_Flattening_planer_Router_bits_6c4a5fd5-05d8-41fc-99d9-d6b2dbe6eac3.pdf?v=1676951275
+https://cdn.shopify.com/s/files/1/0404/1582/1977/files/SpeTool_O_flute_Router_bits_6f6a307e-6cfc-4ac0-9e8c-a2f7333e49b1.pdf?v=1676951427
+https://cdn.shopify.com/s/files/1/0404/1582/1977/files/SpeTool_signmake_and_v_bit_b3225526-e109-43af-8d66-6338486f0cec.pdf?v=1676951817
+https://cdn.shopify.com/s/files/1/0404/1582/1977/files/SpeTool_spiral_Router_bits_8ae74723-4152-4436-82f7-8306b61437f3.pdf?v=1676951571
+https://cdn.shopify.com/s/files/1/0404/1582/1977/files/SpeTool_tray_and_cove_box_Router_bits_3c5b6b9d-1335-4468-9466-7f0c6e791070.pdf?v=1676951690
+
+## Section tiles as printed, each label paired with the PDF its anchor links (added 2026-09-24 by the G1 reconciler)
+# From a fresh copy of the live page (HTTP 200, 506188 bytes, raw HTML sha256
+# 35ca0492bbfade1253d3880670048db9a2d7b82fefe62f4a19eaa5fd45ffef45; Shopify output is
+# dynamic, so a later copy can differ in bytes). Anchor text inside the
+# 'list-collections list-collections--grid' block, with the linked file name:
+Spiral Router Bits -> SpeTool_spiral_Router_bits_8ae74723-4152-4436-82f7-8306b61437f3.pdf
+2D & 3D Tapered Router Bits -> SpeTool_2D_3D_Tapered_router_bit_a51e0653-1672-4ba2-98bc-8852cde4fc0f.pdf
+V Groove Bits -> SpeTool_signmake_and_v_bit_b3225526-e109-43af-8d66-6338486f0cec.pdf
+O Flute -> SpeTool_O_flute_Router_bits_6f6a307e-6cfc-4ac0-9e8c-a2f7333e49b1.pdf
+Surfacing Flattening Bits -> SpeTool_Flattening_planer_Router_bits_6c4a5fd5-05d8-41fc-99d9-d6b2dbe6eac3.pdf
+Bowl & Tray Router Bit -> SpeTool_tray_and_cove_box_Router_bits_3c5b6b9d-1335-4468-9466-7f0c6e791070.pdf
+Aluminum & Metal End Mill -> SpeTool_Aluminum_metal_end_mill_70270bbc-c781-416f-8c98-142df90b1dce.pdf
+# The tile image for '2D & 3D Tapered Router Bits' has alt text "SpeTool 3D tapered ball nose router bits".

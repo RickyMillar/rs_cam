@@ -1,0 +1,215 @@
+
+## Interaction between Thermal Modification Temperature of Spruce Wood and the Cutting and Fracture Parameters
+Correspondence: ludka.hlaskova@mendelu.cz
+
+## Abstract
+This work examines the effect of thermal modification temperatures in the production of thermally modified wood on the cutting and fracture parameters when cutting heat-treated spruce wood by a circular sawblade machine. The samples were thermally modified at 160, 180, 200, and 220 °C. One sample was unmodified and was used as a reference sample. On the basis of the performed experiments, the fracture parameters (fracture toughness and shear yield strength) were calculated for the axial–perpendicular direction of cutting. In comparison with the theoretical assumptions, the influence of temperature on the cutting and fracture parameters was confirmed. Thermally treated wood is characterized by increased fragility and susceptibility to crack formation, as well as reduced density, bending strength, and shear strength. These properties significantly affect the size of the cutting force and feed force, as well as the fracture parameters. As the temperature increases, the values of these parameters decrease. The mentioned material characteristics could be useful for the optimization of the cutting process, as well as for the issue of energy consumption during the machining of heat-treated wood.
+Keywords: thermal modification, machining, cutting force, fracture toughness, shear yield strength, spruce wood
+Received 2021 Sep 18; Accepted 2021 Oct 13; Collection date 2021 Oct.
+
+## 1. Introduction
+Wood has always been a material that humans use daily, and since it is an available renewable building material, there is a good chance that this will still be true in the future [1]. In civil engineering, wood is most often incorporated in timber structures and timber buildings [2]. Over the last twenty years, it has also been used for facades and terrace floors; however, its organic composition affects these uses rather negatively [3]. This is mainly due to the fact that untreated wood is subject to biological and weathering degradation, to which it is exposed when it is used as an unprotected exterior [4]. However, with advanced industrial methods, such as thermal modification, this situation has largely improved [5]. Since the beginning of the development of thermal modification, heat-treated timber has been a frequent subject of research investigations. Although this is one of many possible wood hydrothermal processing techniques, it is the most frequently used method after kiln drying [6]. By altering the wood structure, which varies depending on the temperature used [7], the thermally treated wood has properties different from those of untreated wood [8]. The most important change is the gradual breakdown of hemicelluloses and, partly, cellulose at the locations of its amorphous structure. This mainly results in a significant reduction in bending strength, with the modulus of elasticity in bending being disproportionately less reduced [9]. An interesting consequence, in terms of mechanical properties, is an increase in hardness [9,10], but this has not always been confirmed [8]. The reduction of density [11] and the esterification of cellulose mean that thermally treated wood has fewer free hydroxyl groups [12], leading to a rapid decrease in the equilibrium moisture content of the wood [13], which is, thus, less susceptible to biodegradation [14]. Changes in the mechanical properties strongly correlate with the increasing temperature used for the modification. Although the weakened thermally modified wood is not suitable for structural purposes [15], it is increasingly used in practice, for example, for facade paneling, terrace floors, and also various elements in the urban space, as its increased biological resistance finds its application there [16]. Unlike physical and mechanical properties, which are described very extensively in the literature, there is a lack of studies focused on the technological properties of heat-treated wood. However, changes in the mechanical and physical properties are reflected in the machining of thermally modified wood [17]. As the density of the thermally modified wood decreases, the cutting force is lowered during machining [18,19], which is also reflected in the reduction in energy consumption [20]. In the past, tests were conducted regarding the effect of thermal modification on the machining force, but they were mostly related to milling [18,21] or grinding [22]. On the other hand, the cutting process has not been given much attention in the area of thermally modified wood. Additionally, new findings have introduced a relatively new method to the machining process, which is based on the cutting-force determination using fracture mechanics. This method was first applied to homogeneous materials, in particular, to metal machining [23]. The method consists of the definition of the fracture toughness and the shear yield strength [24], i.e., unlike conventional methods of calculating the cutting force, this method is not based on the determination of the specific cutting resistance, kc [25], which is a function of many factors in the case of wood machining. The computational model also uses the application of the Ernst–Merchant theory in the conditions of sawblade timber cutting. The method was later applied to a wide range of materials [26], including wood [27,28,29,30,31], as it can take into account the effect of the altered material structure on the size of the cutting force. Thanks to new knowledge, it is possible to model the machining of different materials more precisely using a prediction that highly correlates with actual machining [32]. This paper calculates the cutting force by the computational model using the fracture methodology, based on the measured data of the feed force and the moment of force during the sawblade cutting of thermally modified spruce wood, under various thermal modifications. Furthermore, the fracture parameters (fracture toughness and shear yield strength) [24], and the methodology for their application to woodworking, were determined [27]. Thus, they loosely follow the previous measurements, in which these parameters were determined in the unmodified wood of beech (Fagus sylvatica L.) [28,33], in which beech wood modified in different ways was subjected to experiments. The aim of the research was to examine the effect of the thermal modification temperatures in the production of thermally treated wood on the cutting and feed force during circular saw cutting. Moreover, the fracture parameters (fracture toughness and shear yield strength) were determined directly from the machinability tests.
+
+## 2. Materials and Methods
+
+## 2.1. Materials
+Spruce wood (Picea abies) samples, taken from the Training Forest Enterprise Masaryk Forest Křtiny (TFE), an organizational part of the Mendel University in Brno (CZ), were used. The samples were oven-dried (at 103 ± 2 °C) before the thermal modification process and were cut from the defect-free boards with standard circular saws. Ten samples for each modification temperature were used for the experiment. The samples were 750 mm long, 20 mm thick, and 100 mm wide (Figure 1b).
+[caption] (a) (1) temperature 220 °C; (2) temperature 200 °C; (3) temperature 180 °C; (4) temperature 160 °C; (5) a reference sample without TM, (b) dimensions of the sample.
+(a) (1) temperature 220 °C; (2) temperature 200 °C; (3) temperature 180 °C; (4) temperature 160 °C; (5) a reference sample without TM, (b) dimensions of the sample.
+Thermal modification at 160 °C, 180 °C, 200 °C, and 220 °C (Figure 1a) was applied in a small-scale laboratory chamber, volume 0.7 m3 (KATRES spol. s r.o., Jihlava, Czech Republic), under atmospheric pressure and in a superheated steam environment. The modification phase (at 160 °C, 180 °C, 200 °C, and 220 °C) was maintained for 2 h.
+Figure 2a,b show the records of the thermal modification process (TM) to obtain thermally modified wood at 160 °C and at 200 °C. The intensity and the degree of the modification process were determined by mass loss (ML), based on the oven-dried mass before and after the thermal modification process.
+[caption] Technological parameters of the modification process of heat-treated wood at 160 °C (a), and at 200 °C (b).
+Technological parameters of the modification process of heat-treated wood at 160 °C (a), and at 200 °C (b).
+Table 1 presents the results of the weight before and after TM, the density before and after TM, mass loss, and the moisture content. Ten samples for each temperature were used and ten samples were not exposed to the effects of temperature (marked REF). Before and after thermal modification, all samples were conditioned at 20 °C and 65% relative humidity until the equilibrium moisture content was reached. The moisture content was measured by a humidity meter (HMB-WS25, Merlin Technology GmbH, Ried im Innkreis, Austria), which is used for quick nondestructive measurements.
+[caption] Characteristics of samples.
+Characteristics of samples.
+[row] Sample | Weight before TM [g] | Weight after TM [g] | Densitybefore TM [kg·m−3] | Density after TM [kg·m−3] | Mass Loss [%] | Moisture Content [%]
+[row] REF | 286.47 ± 35.12 | Same as before TM | 416.03 ± 50.95 | Same as before TM |  | 7.64
+[row] 160 °C | 285.26 ± 31.55 | 283.91 ± 30.71 | 413.85 ± 45.77 | 411.90 ± 44.55 | 0.47 ± 0.256 | 7.12
+[row] 180 °C | 288.77 ± 33.04 | 285.54 ± 32.44 | 418.94 ± 47.94 | 414.26 ± 47.06 | 1.12 ± 0.185 | 6.89
+[row] 200 °C | 286.78 ± 32.26 | 279.76 ± 31.34 | 416.06 ± 46.80 | 405.88 ± 45.47 | 2.45 ± 0.425 | 7.25
+[row] 220 °C | 283.04 ± 31.88 | 274.08 ± 28.90 | 411.63 ± 46.25 | 397.63 ± 41.93 | 3.17 ± 0.847 | 7.16
+
+## 2.2. Machinability Test
+The machinability tests were performed on a research device focused on cutting with circular sawblades. The test device was placed at the laboratory of the Department of Engineering, the Faculty of Forestry and Wood Technology, Mendel University, in Brno. The test device simulated the conditions of a circular sawing machine in actual operation [34]. During the machinability tests, the moment of force, Mc, and the rotational speed, n, were measured using the T34 FN-HBM (Hottinger Baldwin Messtechnik, Darmstadt, Germany) contactless sensor. The sensor was connected to the measuring control unit Spider8 (HBM, Darmstadt, Germany), which feeds and simultaneously processes the output moment of force, Mc, and the rotational speed n signals. Spider8 is an electronic measuring system designed for measuring mechanical quantities (force, pressure, travel, speed, relative elongation, etc.) via the connected sensors (active and passive). The control unit communicates with the computer, where the control software assesses the processed signals. The workpiece feed force is measured tensiometrically using the S2-HBM resistive dynamometer (HBM, Darmstadt, Germany), which is located between the ball screw nut and the infeed carriage in such a way that its torsional stress, which would cause measurement inaccuracies, may be avoided. The dynamometer senses tension and pressure up to 100 N or 200 N, with the accuracy class of 0.05.
+The circular sawblade for longitudinal wood cutting (Flury Systems AG, Arch, Switzerland), with carbide-tipped straight teeth, was used for the experiment. The parameters of the circular sawblade were as follows: the diameter was D = 350 mm; the teeth number was z = 28; and the sawblade thickness was s = 2.5 mm. The tool geometry was as follows: the clearance angle was αf = 15°; the rake angle was γf = 20°; and the cutting-edge radius was ρ0 = 8 μm.
+The machine settings were as follows: optimum operating rotational speed = 3800 min−1 (i.e., the cutting speed vc = 69.6 m·s−1); the feed rate, vf, varied from 2–22 m·min−1 with the steps presented in Table 2. This corresponded to the changing of the mean uncut chip thickness, hm, and the feed per tooth, fz. A series of ten measurements were performed for each type of machined material and the present cutting conditions. The values of the cutting forces were subjected to statistical evaluation using a one-factor analysis of variance ANOVA test and a Scheffé test (StatSoft, Hamburg, Germany). Statistical analyses were done for the significance level α = 0.05.
+[caption] Kinematic parameters and machine settings.
+Kinematic parameters and machine settings.
+[row] vf [m·min−1] | vf=fz·n·z | 2 | 6 | 10 | 16 | 22
+[row] fz [mm] | fz=vfn . z | 0.019 | 0.056 | 0.094 | 0.15 | 0.207
+[row] hm [mm] | hm=fz . sinφ2m | 0.011 | 0.033 | 0.055 | 0.089 | 0.123
+[row] vc [m·s−1] | vc=π·D·n | 69.6
+[row] φ2m [°] | φ2m=ψ1+ψ22 | 36.5
+[row] ψ1 [°] | ψ1=arccos(ae+eD/2) | 31.0
+[row] ψ2 [°] | ψ2=arccos(aeD/2) | 42.0
+For the following calculations, it was necessary to determine the cutting model, which is determined on the basis of the used technology by characterizing the individual angles between the wood fiber grain, the tool planes, and the motion vectors. In the case of the longitudinal cutting of wood with a circular sawblade, this is the axial-perpendicular cutting model. The calculation of the kinematic parameters of circular saw cutting is performed in accordance with the relations presented in Table 2. These variables (fz, hm, φ2m) are the input parameters for the calculation, and their values are also shown in Table 2.
+The circular sawing process scheme (Figure 3) indicates that the angle of fiber cutting varies. At the point of tooth contact with the workpiece, it is equal to the entry angle, ψ1 (at this point, the uncut chip thickness has the minimum value, hmin). At the point of circular sawblade teeth disengagement, it is equal to the exit angle, ψ2 (the maximum uncut chip thickness, hmax, is reached). The mean fiber cutting angle, φ2m, is then equal to the average value of both angles. When calculating, the mean uncut chip thickness, hm, is considered; it is determined at the point of the mean fiber cutting angle, φ2m.
+[caption] Circular sawing process scheme: e—workpiece height; ae—position of the workpiece; R—circular sawblade radius; ψ1—entry angle; ψ2—exit angle; φ2m—mean fiber cutting angle; hmin—minimum uncut chip thickness; hm—mean uncut chip thickness; hmax—maximum uncut chip thickness; Fc—cutting force; Ff—feed force; fz—feed per tooth.
+Circular sawing process scheme: e—workpiece height; ae—position of the workpiece; R—circular sawblade radius; ψ1—entry angle; ψ2—exit angle; φ2m—mean fiber cutting angle; hmin—minimum uncut chip thickness; hm—mean uncut chip thickness; hmax—maximum uncut chip thickness; Fc—cutting force; Ff—feed force; fz—feed per tooth.
+
+## 2.3. Methodology for the Determination of Fracture Properties from the Machinability Test
+The average total cutting power, Pc_T, during cutting with a circular sawblade can be calculated by the means of the cutting forces model presented by [23,24]. This model takes into account the elements of fracture mechanics (fracture toughness R) and shear yield strength, τγ. This methodology was elaborated for the cases of wood cutting with the frame saw machine by the authors [35,36,37], the band saw machine [29], the milling machine [38], and the circular sawing machine [33].
+Because of the material properties included in the model (fracture toughness, R, and shear yield strength, τγ), this model allows for the determination of the cutting power for wood machining processes, including the inclusion of the wood origin [39], or the type of wood modification [33,40], and its impact on the energy consumption. The model can be presented as Equation (1):
+[formula] (1)Pc_T=Pc+Pac+Pdull=za·τγ·b·γQshear·hm·vc+za·R·bQshear·vc+Pac+Pdull
+where za is the number of simultaneously cutting teeth; b is the kerf width; γ is the shear strain along the shear plane; and Qshear is the coefficient of friction correction.
+Total power consists of three components. The first component describes:
+The internal work of plasticity along the shear plane, where the shear strain along the shear plane, γ, is described as:
+[formula] (2)γ=cosγfcos(Φ−γf)sinΦ
+where γf is the rake angle, and φ is the shear plane angle.
+Cutting by circular sawblade machine is characterized by a small uncut chip thickness, so it was necessary to adjust the value of the angle of the cutting plane according to the relationship [41] and take into account the dependence of the ratio of the fracture toughness and the shear yield strength.
+The internal work required for the separation/formation of new surface, where fracture toughness, R, corresponds to the specific work of material separation.
+The coefficient of friction correction, Qshear, can be found in both parts of the first component. Qshear depends, in principle, on the orientation of the shear plane to the machined workpiece and represents an effect of the friction between the rake face and the separated material. Qshear is computed according to [23,24]:
+[formula] (3)Qshear=[1−(sinβμ·sinΦ/cos(β−γf)cos(Φ−γf))]
+where βμ = tan−1μ is the friction angle, and μ is the coefficient of friction.
+Using the measured moment of force, Mc, and the feed force, Ff, other components of the resulting active force were determined. The calculation was based on the Ernst–Merchant circle force diagram [42].
+The second component expresses the kinetic energy for chip removal by the circular sawblade (does not affect the value of cutting resistance). The acceleration power of chips, Pac, can be described as a function of mass flow and tool velocity [26,27,40]:
+[formula] (4)Pac=m˙·vc2
+[formula] (5)m˙=b·l·vf·ρw2
+where l is the cut length, and ρw is the wood density.
+All this work is provided externally from the cutting force components moving in parallel to the machined surface [27]. The effect of chip acceleration power, Pac, on the overall cutting power is negligible. Therefore, Pac was omitted from the analyses performed in this research.
+The last component, Pdull, is the power that considers the dulling of cutting edges. It explains the increase in the cutting forces observed throughout the tool life in the real processes [29]. It is important to note that this model assumes perfect cutting-edge sharpness; therefore, the component, Pdull, can be omitted. Moreover, it does not consider the effect of dulling and chip momentum due to the average values of the feed rates during wood cutting [33].
+The cutting force is expressed by the line slope in the form:
+[formula] (6)Fc1z = (k)∙hm + q
+In this case, k corresponds to the slope of the linear regression line, and q corresponds to the intercept of the linear regression line with the y axis. The independent variable of the regression is the mean uncut chip thickness, hm. It is possible, therefore, to determine the values of the fracture parameters (fracture toughness, R||⊥, and shear yield strength, τγ||⊥) by comparing the regression (Equation (8)) with the experimental data obtained from the machinability tests. The method of calculating the fracture toughness and shear yield strength is based on the cutting theory originally proposed by [43].
+The mathematical procedure for the computation of the shear yield strength and the fracture toughness is expressed in Equations (7) and (8), from the slope of the linear regression line and the intercept, respectively:
+[formula] (7)τγ∥⊥=k·Qshearb·γ
+[formula] (8)R∥⊥=q·Qshearb
+
+## 3. Results and Discussion
+
+## 3.1. Cutting Force and Feed Force
+The moment of force and the feed-force curves are shown in Figure 4a,b, where three cutting phases can be distinguished. At the beginning of the cutting process, the moment of force and the feed force rise steeply and reach a maximum value. Then, after a small peak, the signal stabilizes. For the calculation of the mean moment of force and the feed force values, only this so-called steady-state signal range was taken into consideration. This part of the record was further processed, and the results of the experiment and the calculation of the fracture parameters are based on it. The next phase is when the circular sawblade leaves the workpiece. This part of the measurements is accompanied by a steep decrease in forces because the circular sawblade is no longer pushed to overcome the cutting resistance of the workpiece. The forces are stabilized at the values of the so-called passive resistances, caused by friction in the bearings, aerodynamic losses, etc. The values of the passive resistances must be subtracted from the measured values of the moment of force and the feed force.
+[caption] (a)The moment of force for feed rate 10 m·min−1; (b) feed force for feed rate 10 m·min−1.
+(a)The moment of force for feed rate 10 m·min−1; (b) feed force for feed rate 10 m·min−1.
+Figure 5 presents the dependence of the average value of the measured cutting force per single tooth as a function of the mean uncut chip thickness. An almost linear increase in the cutting force occurred, along with an increasing uncut chip thickness. This finding confirms the theoretical assumptions (see Equation (6)). Figure 5 further presents the coefficients of determination, r2, and the regression equations of the cutting force per single tooth as a function of the uncut chip thickness, with cutting-modified and native spruce, respectively.
+[caption] Dependance of average values of cutting force per single tooth on uncut chip thickness.
+Dependance of average values of cutting force per single tooth on uncut chip thickness.
+The ANOVA analysis was performed for each feed rate separately and the results of the ANOVA test confirm the effect of temperature on the values of the cutting forces (see Table 3). Subsequently, a Scheffé test (a multiple comparison test) was performed at each feed rate. All tests showed statistically significant differences in the mean values of the cutting forces for each feed rate. Therefore, we were able to statistically prove the effect of temperature on the size of the cutting force when cutting spruce wood and thermally modified wood with a circular sawblade.
+[caption] ANOVA analysis: influence of temperature on the cutting force per single tooth.
+ANOVA analysis: influence of temperature on the cutting force per single tooth.
+[row] vf [m·min−1] | F | p Value | Fkrit | Evaluation of Statistical Tests
+[row] 2 | 146.74 | 0.00002 | 5.19 | F > Fkrit | Statistically significant differences
+[row] 6 | 19.25 | 0.00307 | 5.19 | F > Fkrit | Statistically significant differences
+[row] 10 | 38.78 | 0.00059 | 5.19 | F > Fkrit | Statistically significant differences
+[row] 16 | 16.48 | 0.00438 | 5.19 | F > Fkrit | Statistically significant differences
+[row] 22 | 24.09 | 0.00183 | 5.19 | F > Fkrit | Statistically significant differences
+The graph of the cutting forces per single tooth, dependent on the size of the mean uncut chip thickness (Figure 5), shows that the cutting force increases with an increasing mean uncut chip thickness. This dependence is linear, as confirmed by [44,45,46]. Moreover, the graph indicates the effect of the modification temperature on the value of the cutting force for individual thermally modified wood samples and for the unmodified spruce sample. Figure 5 clarifies that modified wood behaves differently from unmodified spruce samples during machining.
+The results show that the cutting force is the highest when the unmodified sample (REF) is machined. We also found that the higher the temperature when modifying wood, the lower the value of the cutting force. This corresponds with the results of the authors of [47], who confirmed a decrease in the cutting force during the milling of pine samples (Pinus contorta). They observed the highest decrease in cutting force for a modification temperature of 240 °C (26.9%). The authors of [18] also confirmed that, at temperatures above 160 °C, a lower cutting force is needed for milling thermally modified pine wood (Pinus sylvestris) than for the milling of unmodified pine wood. Finally, [48] confirmed that the cutting force for milling spruce decreases with higher temperatures of modification. The decrease in the cutting force is caused by the lower strength of the thermally modified wood [49,50,51,52,53,54,55].
+The authors of [56] conducted research into heat-treated birch wood and demonstrated a decrease in the modulus of rupture (MOR) with an increasing modification temperature (especially above 200 °C). The authors of [57] concluded that the MOR of spruce wood modified at 220 °C was, on average, 50% lower than that of unmodified wood. Wood treated with thermal modification becomes more fragile, and its bending strength and tensile strength decrease by up to 10–30%, based on the research of [58]. The decrease is related to the loss of chemicals in the wood [59,60,61,62]. This leads to a decrease in the wood weight and wood density [53,54,60,63,64]. Our samples showed a 3.17% decrease in the density of wood modified at 220 °C, compared to untreated wood. The mass loss is caused by the thermal degradation of the wood cell wall components (especially hemicelluloses) [63,64]. Hemicellulose plays an important role in reducing the physical and mechanical properties of thermally modified wood because it is less stable to heat than cellulose and lignin at higher temperatures [65,66]. The authors of [67] state that the physical properties of hemicellulose change under modification temperatures between 127 °C and 235 °C, the properties of lignin change from 167 °C to 217 °C, and those of cellulose change from 231 °C to 253 °C. It follows that the higher the modification temperature, the more the individual wood structure components will be degraded, accompanied by a decrease in the mechanical and technological properties of the wood. Thermal modification also causes an increased Young’s module, fragility, and a susceptibility to crack formation [67,68,69], as well as a decrease in the specific cutting resistance and the specific work of fracture [18,69,70,71]. The cutting force, at machining, of wood modified at 220 °C and a feed rate of 22 m·min−1 is 25% lower than that of the unmodified sample, and in wood treated at 200 °C, it is 21.6% lower. The decrease in the cutting force for wood modified at 160 °C and 180 °C was minimal, and the cutting force was 8% lower compared to the unmodified sample. The results of the research of [72] show that the milling of heat-treated wood is less energy-intensive, and also reveal that the cutting force decreased only slightly when the modification temperature increased from 160 °C to 180 °C. With a further increase in temperature, the cutting force decreased significantly, as in our measurement. Thanks to the altered physical and mechanical properties of heat-treated wood (e.g., higher fragility), chips are easier to break and crumble, which has a positive effect on reducing the cutting force.
+Figure 6 shows that the force required to feed the workpiece in the sawblade at a speed of 2–22 m·min−1 ranges from 5 N to 25 N for the experiments performed. In general, the feed force increases for all modified materials, as well as for the reference sample, with an increasing feed rate. The dependence is linear with a relatively high coefficient of determination. In the research of [73], a positive correlation was observed between the feed rate and the feed force during the cutting of particle-board panels using a circular saw.
+[caption] Dependance of average values of feed force on uncut chip thickness.
+Dependance of average values of feed force on uncut chip thickness.
+The graph also shows that, as the modification temperature increases, the feed force decreases. The most significant difference is obvious in the machining of wood thermally modified at 220 °C and the lowest feed rate (2 m·min−1); the decrease compared to the reference sample was almost 60%. The difference between the reference sample and the material modified at 160 °C and 180 °C was up to 10%. Due to the easier splitting and fragility of thermally modified wood, and thanks to its deteriorated mechanical properties, the feed mechanisms do not need such a large feed force, as is the case with untreated wood.
+
+## 3.2. Fracture Parameters: Fracture Toughness and Shear Yield Strength
+In Figure 5, linear regression lines are drawn and the coefficients of determination, r2, for each model, and the regression equations, are presented. On the basis of the experiments performed (from the regression parameters), the characteristic input parameters (φ, μ, βμ, γ, Qshear) entering the model for the axial-perpendicular model were calculated for cutting with the circular sawblade for the kerf width, b = 3.5 mm, and for a tooth position defined by the mean fiber cutting angle, φ2m = 36.5°. The characteristic data for all machined materials were estimated according to [24]. The input values are shown and compared in Table 4.
+[caption] Comparison of regression equation, coefficient of determination values, slope values, and intercept values.
+Comparison of regression equation, coefficient of determination values, slope values, and intercept values.
+[row]  | Regression Equation | Coefficient of Determination r2 | Slope Value k [N·m−1] | Intercept Value q [N]
+[row] REF | Fc1z = 307,268 hm + 4.8947 | 0.9985 | 307.268 | 4.8947
+[row] 160 °C | Fc1z = 259,907 hm + 4.7175 | 0.9966 | 259.907 | 4.7175
+[row] 180 °C | Fc1z = 261,589 hm + 4.6876 | 0.9963 | 261.589 | 4.6876
+[row] 200 °C | Fc1z = 225,952 hm + 4.0451 | 0.9867 | 225.952 | 4.0451
+[row] 220 °C | Fc1z = 217,595 hm + 3.1749 | 0.994 | 217.595 | 3.1749
+The determination of the main parameters of the model was performed on the basis of regression analysis. Fracture toughness, R||⊥, was determined from the intercept, and the shear yield strength, τγ||⊥, from its slope. The average values of fracture toughness, R||⊥, and shear yield strength, τγ||⊥, were calculated with their corresponding standard deviations (Table 5). The values of the shear yield strengths, τγ||⊥, were calculated for uncut chip thickness, hm > 0.13 mm, when the cutting resistance was practically constant [74]. The values of these fracture parameters are presented and compared in Table 5 and Figure 7a,b.
+[caption] Comparison of fracture parameters.
+Comparison of fracture parameters.
+[row]  | μ [-] | βμ [°] | φ [°] | γ [-] | Qshear [-] | τγ||⊥ [MPa] Mean Score ± SD | R [J·m−2] Mean Score ± SD
+[row] REF | 0.264 | 14.798 | 37.600 | 2.068 | 0.797 | 32.9 ± 0.543 | 1359.64 ± 57,208
+[row] 160 °C | 0.154 | 8.744 | 40.628 | 2.024 | 0.868 | 32.62 ± 0.644 | 1310.42 ± 79,349
+[row] 180 °C | 0.158 | 8.962 | 40.519 | 2.024 | 0.865 | 31.29 ± 0.613 | 1302.11 ± 90,881
+[row] 200 °C | 0.086 | 4.906 | 42.547 | 2.007 | 0.921 | 30.08 ± 0.536 | 1123.64 ± 56,797
+[row] 220 °C | 0.402 | 21.904 | 44.048 | 1.480 | 0.716 | 28.93 ± 0.487 | 881.92 ± 71,852
+[caption] (a) Fracture toughness, (b) shear yield strength.
+(a) Fracture toughness, (b) shear yield strength.
+Figure 7a,b summarize the fracture toughness and shear yield strength in boxplots to illustrate the influence of the modification temperature on these fracture parameters. The comparison of the results between the fracture properties, given in Table 5 and Figure 7a,b, shows that the fracture toughness and shear yield strength of the thermally modified wood is not only dependent on density, but also on the modification temperature and its influence on the changes in the internal structure and the degradation of cell wall components.
+Fracture toughness and shear yield strength are listed in the literature for individual load directions and for the main directions of cutting or crack propagation. However, our measured results represent a combination of these basic directions because the machining was performed in the axial-perpendicular direction of cutting. The values of the fracture parameters are relevant only for a given cutting edge direction, which is characterized by the mean fiber cutting angle, φ2m, and therefore cannot be considered as the material constants.
+With regard to wood modified at higher temperatures, a decrease in shear yield strength was observed, compared to unmodified wood (the decrease in shear yield strength at 160 °C is approximately 1%, at 180 °C it is 4.9%, at 200 °C it is 8.6%, and at 220 °C it is 12.1%, compared to REF). The same trend can be observed for the fracture toughness. As the modification temperature increases, the fracture toughness decreases (at 160 °C by 3.6%, at 180 °C by 4.2%, and at 200 °C by 17.4%). The wood modified at a temperature of 220 °C even shows up to 35% lower values of fracture toughness than unmodified wood. Thus, again, the higher the modification temperature, the higher the degradation of the mechanical properties of the wood.
+These results are in general agreement with the professional literature and confirm that thermal modification negatively affects the mechanical properties of wood. This claim can be explained by the loss of material within the cell lumen, and the degradation of hemicellulose by the effect of high temperatures during modification [64,74,75]. Some anatomical changes in the structure of modified wood may also contribute to the reduction in the mechanical properties. For example, [76] noticed cracks between the tracheids in heat-treated softwood species. The authors of [77] found cracks in the middle lamella and layer S1 in spruce wood modified at temperatures from 180 °C to 200 °C. Furthermore, deformations of the libriform fibers and collapsed vessels in the wood were observed. These changes in the wood structure can lead to significantly different load behavior.
+So far, only a few studies have been published on the fracture properties of modified wood. For example, [78] presents the fracture properties of unmodified spruce and spruce treated by thermal modification and acetylation; the authors note a 20% reduction in the fracture toughness of acetylated wood, and a 50–80% reduction in the heat-treated spruce wood. The authors of [33] published the fracture properties of modified beech wood. Their results show that the fracture properties of the modified materials depend not only on density, but also on the type of modification, cell wall degradation, and the internal structure. In the work of [79], the authors focus on the various drying techniques and their influence on the fracture parameters. On the basis of their research, they conclude that an increase in the wood drying temperature and, thus, its thermal modification, lead to higher fragmentation and graininess of the resulting sawdust during machining. This indicates a large change in the fracture properties of the wood thus treated. The results of [80] show reduced values of fracture toughness and fracture energy. The experiments of [81], conducted on heat-treated spruce, show that the fracture energy decreases linearly with an increasing mass loss, suggesting that the thermal degradation of wood affects the fracture energy. The microstructure and nanostructure within the cellular structure can, therefore, be changed by thermal modification [81]. The reduction in the fracture toughness of thermally modified wood can also be attributed to its lower plastic ductility. According to [82], the fracture energy is higher in the case of unmodified wood compared to thermally modified wood. Crack initiation is easier, and the crack propagation phase consumes less energy and takes place in heat-treated wood in a more fragile way. The authors of [83] observed the effects of thermal modification on the fragility of wood (Styrax tonkinensis) and state that the main factor influencing fragility was the loss of hemicellulose and the amorphous region of cellulose due to degradation. The authors of [13] also claim that the wood fragility increases with the deterioration of the fracture properties caused by the loss of amorphous polysaccharides. The results of these studies show that the fracture properties of thermally modified wood will be negatively affected, and this is supported by our results.
+Because of the fibrous structure, wood has different shear yield strengths in three perpendicular directions. Determining the conditions of clean shear in wood is very difficult. From the perspective of machining, our method of violating the workpiece is most closely approached by shear in the transverse plane, where the forces act perpendicularly to the fibers in the tangential or radial direction. This method of violation is often called "cutting fibers" or "shear strength" [53]. Table 5 and Figure 7b present the comparison of the shear yield strengths. The trend is similar to that of fracture toughness, although not to such an extent. An increasing temperature of modification leads to a reduced shear yield strength. Our results are in line with the study by [75], where a decrease in shear strength was found after thermal modification. The explanation lies in the (partial) transformation of polyoses into furfural polymers. Such degradation of the hemicelluloses probably has a negative effect on shear yield strength. On the other hand, lignin is the main component of the middle lamella, which plays an important role in shear strength [67]. Increased networking within the lignin polymer network could have a positive effect on shear yield strength. Therefore, the deterioration of shear yield strength observed is not as large as that of other mechanical properties.
+
+## 4. Conclusions
+The basic relationships for calculating the fracture characteristics of heat-treated spruce samples (fracture toughness and shear yield strength) were derived from the cutting tests without the need to perform complex fracture tests. The fracture parameter values are suitable only for the axial-perpendicular cutting model and, therefore, cannot be considered material constants.
+On the basis of the measurements, it can be concluded that thermal modification affects the mechanical, physical, and technological properties of wood. Thermally treated wood is characterized by increased hardness, fragility, and susceptibility to crack formation, as well as reduced density, bending strength, and shear strength. These properties significantly affect the size of the cutting force and feed force, as well as both parameters of the calculation model: fracture toughness, R||⊥, and shear yield strength, τγ||⊥. As the temperature increases, the values of these parameters decrease.
+Knowledge of these parameters is essential for the correct estimation of the size of cutting forces using a computational model based on fracture mechanics, since optimizing the cutting process, and the issue of energy consumption during the machining of heat-treated wood, are very important when considering the overall economy of production and the production process in the woodworking and other associated industries. This computational model differs from conventional methods for calculating the cutting force, especially by its possible application to a wide range of materials, including modified materials, which have a modified internal structure, or wood-based composite materials.
+Comparing the results of the fracture parameters with the literature is very difficult, since no similar work has been carried out to determine the fracture parameters based on cutting tests. In addition, the work of fracture calculated in this way consists, not only of the fracture energy (as determined in the splitting tests), but also the friction and compression properties of the cut material. The fracture energy achieved by the splitting tests is, therefore, lower than the work of fracture obtained by the cutting tests.
+
+## Nomenclature
+[row] α | significance level
+[row] αf | clearance angle
+[row] βμ | friction angle
+[row] γ | shear strain along the shear plane
+[row] γf | rake angle
+[row] μ | the coefficient of friction
+[row] ρ 0 | cutting-edge radius
+[row] ρω | wood density
+[row] τγ | shear yield strength
+[row] τγ||⊥ | shear yield strength for axial-perpendicular model
+[row] φ | shear plane angle
+[row] φ 2μ | mean fiber cutting angle
+[row] ψ 1 | entry angle
+[row] ψ 2 | exit angle
+[row] ae | position of the workpiece
+[row] b | kerf width
+[row] D | diameter
+[row] e | workpiece height
+[row] Fc | cutting force
+[row] Fc 1z | cutting force per single tooth on uncut chip thickness
+[row] Ff | feed force
+[row] fz | feed per tooth
+[row] hm | mean uncut chip thickness
+[row] hmax | maximum uncut chip thickness
+[row] hmin | minimum uncut chip thickness
+[row] k | slope of the linear regression line
+[row] kc | specific cutting resistance
+[row] l | cut length
+[row] Mc | moment of force
+[row] ML | mass loss
+[row] MOR | modulus of rupture
+[row] n | rotational speed
+[row] Pac | acceleration power of chips
+[row] Pc_T | average total cutting power
+[row] Pdull | power which considers the dulling of cutting edges
+[row] q | intercept of the linear regression line
+[row] Qshear | coefficient of friction correction
+[row] R | fracture toughness
+[row] R || ⊥ | fracture toughness for axial-perpendicular model
+[row] r 2 | coefficient of determination
+[row] REF | reference sample
+[row] s | sawblade thickness
+[row] SD | standard deviation
+[row] TM | thermal modification process
+[row] vc | cutting speed
+[row] vf | feed rate
+[row] z | teeth number
+[row] za | number of simultaneously cutting teeth
+
+## Author Contributions
+Conceptualization: L.H., J.P., and Z.K.; methodology: Z.K., L.H., and P.Č.; software: L.H.; validation: L.H.; formal analysis: L.H.; investigation: L.H., P.Č., Z.K., and J.P.; data curation: L.H., V.N., and P.Č.; writing—original draft preparation: L.H., and J.P.; writing—review & editing: L.H., and V.N.; visualization: L.H.; supervision: Z.K.; project administration: L.H.; funding: L.H. All authors have read and agreed to the published version of the manuscript.
+
+## Funding
+This research was funded by the Internal Grant Agency FFWT of Mendel University in Brno, project: “Analysis of cutting forces from point of view fracture mechanics in quasi-orthogonal CNC milling and cutting by circular saw-blade” (Grant IGA No. LDF_TP_2019008), and the CEEPUS network CIII-SK-0310-07 “Non traditional processes in production technologies and integration of the study and research in the eastern and central Europe universities”.
+
+## Institutional Review Board Statement
+Not applicable.
+
+## Informed Consent Statement
+Not applicable.
+
+## Data Availability Statement
+https://doi.org/10.6084/m9.figshare.16828507.v1 (accessed on 19 October 2021).
+
+## Conflicts of Interest
+The authors declare no conflict of interest.
+
+## Footnotes
+Publisher’s Note: MDPI stays neutral with regard to jurisdictional claims in published maps and institutional affiliations.
+
+## References
+
+## Associated Data
+
+## Data Availability Statement
+https://doi.org/10.6084/m9.figshare.16828507.v1 (accessed on 19 October 2021).

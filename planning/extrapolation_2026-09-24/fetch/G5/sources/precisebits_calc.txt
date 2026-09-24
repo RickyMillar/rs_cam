@@ -1,0 +1,673 @@
+# source_url: https://www.precisebits.com/calc
+# accessed_on: 2026-09-24
+# raw_html_sha256: 59e7afb897b9fb4a1a182b4f989e8147d57169f3d46ad50a9cccae79e0ee7f68
+
+Think
+
+&
+
+Tinker
+, Ltd. ™
+
+0 item(s) - $0.00
+
+Your shopping cart is empty!
+
+Menu
+
+Home
+
+Products
+
+Application Specific Tools
+
+3D Signs & Plaques
+
+Cutting Composites
+
+Engraving
+
+Jewelry
+
+Musical Instruments
+
+Pool Cues
+
+Printed Circuit Boards
+
+Steel Rule Dies
+
+3D Carving Tools
+
+Backing & Mounting
+
+Calibration Blanks
+
+Inch
+
+Metric
+
+Cleaners & Lubricants
+
+ColletCare
+
+Metal Cutting Fluid
+
+PCB Engraving Lubricant
+
+Collets & Toolholders
+
+Drill bits
+
+Number (wire gauge)
+
+Fractional inch
+
+Letter
+
+Metric
+
+Medical & Slotting
+
+Drill Bit Sets
+
+Drill Bit Diameter Chart
+
+Feeds/Speeds for FR-4 & Carbon-fiber
+
+End-mills
+
+Engraving Tools
+
+1/8in. shank
+
+Micro-engraving tools
+
+Tapered-stubs
+
+Engraving / Cut-out tools
+
+1/4in. shank
+
+Signage / Engraving tools
+
+Miscellaneous
+
+Depth Setting Rings
+
+FuzzBrush
+
+SecureBits
+
+Router Bits
+
+Chip breaker (CB)
+
+Diamond cut (DC)
+
+Feeds/Speeds
+
+CB feeds/speeds
+
+DC feeds/speeds
+
+Specialty Bits
+
+Acrylic/polycarbonate tools
+
+Antler / horn cutters
+
+Countersinks
+
+Extended-reach end-mills
+
+Fret slot cutters
+
+Fretboard planing/radiusing
+
+Shell cutters
+
+Steel Rule Die Tools
+
+Zero-helix cutters
+
+Substrates
+
+Backing material
+
+Copperclad
+
+Entry foil
+
+Tool Packs
+
+Single bit packs
+
+10-bit packs
+
+50-bits packs
+
+SecureBits
+
+Applications
+
+3D Signs & Plaques
+
+Cutting Composites
+
+Engraving
+
+Jewelry
+
+Musical Instruments
+
+Pool Cues
+
+Printed Circuit Boards
+
+Steel Rule Dies
+
+Resources
+
+FAQ
+
+Cutter terminology
+
+Depth Setting Rings
+
+Extended-reach Geometry
+
+Feeds & Speeds Calculator
+
+Glossary
+
+Point styles
+
+Reference library
+
+Sweet-spot Test
+
+Tutorials
+
+Charts/Tables
+
+Chipbreaker Feeds & Speeds
+
+Diamondcut Feeds & Speeds
+
+Drill Bit Diameter Chart
+
+Drill Bit Feeds & Speeds
+
+ER Torque Chart
+
+Metal Gauge Conversion Chart
+
+Relative Wood Hardness Table
+
+Support
+
+Contact us
+
+Limited Warranty
+
+Policies
+
+Sales Quotes
+
+Technical Support
+
+Distributors
+
+Domestic Distributors
+
+International Distributors
+
+Account
+
+My Account
+
+Order History
+
+Wish list
+
+Feed and Speed Calculators
+
+Feed Calculator
+
+"V" Width Calculator
+
+"V" Depth Calculator
+
+Chip Thinning Calculator
+
+SFM Calculator
+
+Janka Calculator
+
+Calculate in mm
+Calculate in inches
+
+RPM
+
+Flutes
+
+Diameter
+
+Chipload
+
+Percent of tool Diameter
+
+Runout
+
+Calculate Feed fields required.
+
+Feed
+
+View Calculation
+
+×
+Calculation
+
+RPM × Flutes × (Chipload − Runout) = Feed
+
+Close
+
+Calculate in mm
+Calculate in inches
+
+Tip Diameter
+
+Runout
+
+Included Angle
+
+Cutting Depth
+
+Tool Diameter
+
+Calculate Width fields required.
+
+Width of Cut
+
+View Calculation
+
+×
+Calculation
+
+(TAN(Half Angle) × 2 × Cutting Depth) + (Runout + Tip Diameter) = Cutting Width
+
+Close
+
+Calculate in mm
+Calculate in inches
+
+Tip Diameter
+
+Runout
+
+Included Angle
+
+Cutting Width
+
+Max Cutting Width
+
+Calculate Plunge fields required.
+
+Cutting Depth
+
+Calculate in mm
+Calculate in inches
+
+Tool Diameter
+
+Radial Width
+
+Radial Width in %
+
+Desired Chipload
+
+Runout
+
+Flutes
+
+RPM
+
+Calculate for Chip Thinning fields required.
+
+Corrected chipload
+
+Feed for desired
+chipload
+
+Tool Diameter in inches
+
+Tool Diameter in mm
+
+SFM
+
+Calculate RPM fields required.
+
+RPM
+
+View Calculation
+
+×
+Calculation
+
+(3.82 × SFM) ÷ Diameter = RPM
+
+Close
+
+Tested Janka
+
+New Janka
+
+Tested Feed
+
+RPM
+
+Flutes
+
+Calculate Feed fields required.
+
+Tested Chipload
+
+New Chipload
+
+New Feed
+
+Calculate in mm
+Calculate in inches
+
+RPM
+
+Flutes
+
+Diameter
+
+Chipload
+
+Percent of tool Diameter
+
+Runout
+
+Calculate Feed fields required.
+
+Feed
+
+View Calculation
+
+×
+Calculation
+
+RPM × Flutes × (Chipload − Runout) = Feed
+
+Close
+
+Calculate in mm
+Calculate in inches
+
+Tip Diameter
+
+Runout
+
+Included Angle
+
+Cutting Depth
+
+Tool Diameter
+
+Calculate Width fields required.
+
+Width of Cut
+
+View Calculation
+
+×
+Calculation
+
+(TAN(Half Angle) × 2 × Cutting Depth) + (Runout + Tip Diameter) = Cutting Width
+
+Close
+
+Calculate in mm
+Calculate in inches
+
+Tip Diameter
+
+Runout
+
+Included Angle
+
+Cutting Width
+
+Max Cutting Width
+
+Calculate Plunge fields required.
+
+Cutting Depth
+
+Calculate in mm
+Calculate in inches
+
+Tool Diameter
+
+Radial Width
+
+Radial Width in %
+
+Desired Chipload
+
+Runout
+
+Flutes
+
+RPM
+
+Calculate for Chip Thinning fields required.
+
+Corrected chipload
+
+Feed for desired
+chipload
+
+Tool Diameter in inches
+
+Tool Diameter in mm
+
+SFM
+
+Calculate RPM fields required.
+
+RPM
+
+View Calculation
+
+×
+Calculation
+
+(3.82 × SFM) ÷ Diameter = RPM
+
+Close
+
+Tested Janka
+
+New Janka
+
+Tested Feed
+
+RPM
+
+Flutes
+
+Calculate Feed fields required.
+
+Tested Chipload
+
+New Chipload
+
+New Feed
+
+Warning
+
+These calculators are currently BETA. Formatting, validations, and calculators may change. While we have done our best to check for errors and failures you might be more “lucky” than we were. If you run into a problem please let us know.
+
+These are calculators. They don’t know what you are cutting, your tooling, the physics of all the interactions, or the specifics of your machine / setup. The results are based on YOUR input. Bad input equals bad results (and possibly broken tools).
+
+By using these calculators you agree to the terms of use linked below
+
+Terms of use
+
+The information provided by Think & Tinker on precisebits.com (the "Site") and our web application is for general informational purposes only.
+
+All information and specifications on the Site and our web application are provided in good faith, and we endeavour to keep it as up to date as possible, however we make no representation or warranty of any kind, express or implied, regarding the accuracy, adequacy, validity, reliability, availability or completeness of any information and specifications on the Site or our web application. Your use of the Site and our web application and your reliance on any information and/or specifications on these platforms is solely at your own risk.
+
+Although every effort is made to keep the Site and our web application up and running smoothly, due to the nature of the Internet and the technology involved, Think & Tinker takes no responsibility for and will not be liable for the Site or our web application being temporarily unavailable due to technical issues (or otherwise) beyond its control or for any loss or damage suffered as a result of the use of or access to, or inability to use or access this Site or our web application whatsoever.
+
+To the extent not prohibited by law, in no circumstances shall Think & Tinker be liable to you or any other third parties for any loss or damage (including, without limitation, damage for loss of business or loss of profits) arising directly or indirectly from your use of or inability to use, the Site, our web application or any of the material contained in it.
+
+I understand and agree
+I don't understand or agree
+
+I understand and agree
+
+I don't understand or agree
+
+×
+Error
+
+Close
+
+×
+Error
+
+Close
+
+Support
+
+About us
+
+Contact us
+
+Educational Discount
+
+Limited Warranty
+
+No-fault Returns
+
+Policies
+
+Sales Quotes
+
+Tech Support
+
+Products
+
+Collets, Toolholders
+
+Composite Cutting
+
+Metal Machining
+
+Woodworking
+
+Plastic Cutting
+
+Applications
+
+3D Signs & Plaques
+
+Engraving
+
+Jewelry
+
+Musical Instruments
+
+Pool Cues
+
+Printed Circuit Boards
+
+Steel Rule Dies
+
+Calculators
+
+Resources
+
+FAQ
+
+Tool terms
+
+Glossary
+
+Point styles
+
+Reference library
+
+Sweet-spot Test
+
+Tutorials
+
+Support
+
+About us
+
+Contact us
+
+Educational Discount
+
+Limited Warranty
+
+No-fault Returns
+
+Policies
+
+Sales Quotes
+
+Tech Support
+
+Products
+
+Collets, Toolholders
+
+Composite Cutting
+
+Metal Machining
+
+Woodworking
+
+Plastic Cutting
+
+Applications
+
+3D Signs & Plaques
+
+Engraving
+
+Jewelry
+
+Musical Instruments
+
+Pool Cues
+
+Printed Circuit Boards
+
+Steel Rule Dies
+
+Resources
+
+FAQ
+
+Tool terms
+
+Glossary
+
+Point styles
+
+Reference library
+
+Sweet-spot Test
+
+Tutorials
+
+Feed and Speed Calculators

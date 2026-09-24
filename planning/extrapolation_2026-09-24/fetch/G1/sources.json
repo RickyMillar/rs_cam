@@ -1,0 +1,172 @@
+[
+ {
+  "source_id": "amana_zrn_3d_profiling_v8",
+  "source_vendor": "amana",
+  "source_title": "Amana ZrN-Coated and Uncoated 2D/3D Carving CNC Solid Carbide Router Bits chip load chart (v8)",
+  "source_url": "https://www.amanatool.com/pub/media/productattachments/ZrN-3D-Profiling-Feed-Chip-Load-Chart-v8.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "fetch/G1/sources/amana_zrn_3d_v8.txt",
+  "pdf_sha256": "5cdfb9c01ec218e9db992fee90855f005a02902f49a3897c448188cd7cd4479b",
+  "coverage_notes": "Current version of the chart the LUT cites as amana_zrn_3d_profiling_v8 (the manifest entry has no stored text or hash). One 'Wood, MDF, Sign-Foam' row per section; header 'Operating RPM: 18,000 / Depth of Cut: 1 x Tool Diameter'. The chart keys the chip load on the tool 'Dia.'; the tool numbers in each section are identified in amana_46xxx_identity: most ball tools here are TAPERED ball carving bits keyed on the tip. Tapered cells printed: 2 flute at 1 mm, 1/16\", 1/4\" (46256, 46252, 46283); 3 flute at 1/32\"-1mm, 1/8\"-3.2mm, 3/16\" (46280/46291/46580/46470, 46284/46286/46287/46288/46474, 46298); 4 flute at 1.5 mm, 1/16\", 1/8\" (46472, 46282/46293/46582, 46583; the 4 flute value is the same at every size). Differences from v1: v8 adds 46473 (0.5 mm tip) to the 3 flute list with no 0.5 mm column; v8 fixes the v1 3 flute extra-long typo 0.0004\" - 0.006\" to 0.004\" - 0.006\"; v8 adds a 3/16\"-1/4\" and a 3/8\" column to the 3 flute flat bottom; v8 says 'Reduce feed rate' where v1 says 'Reduce chip load'. Self-inconsistent cells (printed IPM vs chip load): 2 flute 1/16\" (IPM gives half), 3 flute 1/8\"-3.2mm top, 3/16\". 27 candidate rows (9 cells x softwood/hardwood/MDF)."
+ },
+ {
+  "source_id": "amana_zrn_3d_profiling",
+  "source_vendor": "amana",
+  "source_title": "Amana ZrN 3D Profiling Feed and Chip Load Chart (v1, the LUT copy)",
+  "source_url": "https://www.amanatool.com/pub/media/productattachments/ZrN-3D-Profiling-Feed-Chip-Load-Chart.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "fetch/G1/sources/amana_zrn_3d_v1.txt",
+  "pdf_sha256": "52465d1d774c8b37e18c96b439a028d23d8c5a4e6f770542b1cd430a60a5def2",
+  "coverage_notes": "Re-downloaded 2026-09-24: the sha256 and the pdftotext output equal the LUT's stored copy (sources/amana_zrn_3d_profiling.txt, manifest pdf_sha256 52465d1d...). Kept here only to show that the URL still serves the same file. No candidate rows (the v8 rows cite the same cells)."
+ },
+ {
+  "source_id": "amana_46xxx_tool_identity",
+  "source_vendor": "amana (via distributors fastoolnow.com, toolstoday.com, arrowtooling.com)",
+  "source_title": "Amana 46xxx carving bits: product spec per tool number listed on the ZrN 2D/3D carving chart",
+  "source_url": "https://fastoolnow.com/search.php?search_query=<tool number> (one product page per number; each URL and raw-page sha256 is in the stored text)",
+  "accessed_on": "2026-09-24",
+  "stored_text": "fetch/G1/sources/amana_46xxx_identity.txt",
+  "pdf_sha256": "0f4b08e1ed8c2dcde3b8a01671451ae68ad3fcd0723c4184a8c01c72b3f9e5f7",
+  "coverage_notes": "Built by scripts/g1_amana_identity.py. amanatool.com returns a Cloudflare challenge to curl, so the spec blocks come from distributor product pages (fastoolnow first, toolstoday or arrowtooling where the search is empty). Identified: 36 of 41 numbers. Not identified: 46285, 46289, 46496, 46593, 46596. Key facts: 46256 = 5.4 deg taper, 1mm D x 0.5mm R, 2 flutes; 46471 = 0.10 deg (straight) 1mm ball; 46280/46291/46580 = 6.2 deg taper 1/32\" D, 3 flutes; 46470 = 6.2 deg 0.8 D; 46473 = 6.2 deg 0.5 D; 46472 = 5.4 deg 1.5 D 4 flutes. The hash is of the stored text (HTML sources). Reconciler 2026-09-24 (verifier findings): the stored text has 40 blocks for 39 unique numbers (46471 twice); 34 of 39 are identified, not '36 of 41'; the v8 chart prints 54 distinct 46xxx numbers and the flat-bottom 4657x series is not covered. The 46280 page prints only 'Tapered ... 1/32\" D'; its 6.2 deg and 3 flutes are DERIVED from the chart section and the siblings 46291/46580. The stored titles of 46470 and 46472 are cut before 'Flute'; their flute counts read from the live page body only."
+ },
+ {
+  "source_id": "spetool_2d3d_tapered_router_bit_chart",
+  "source_vendor": "spetool",
+  "source_title": "SpeTool WOODWORKING 2D/3D ROUTER BIT FEED&SPEED CHART",
+  "source_url": "https://cdn.shopify.com/s/files/1/0404/1582/1977/files/SpeTool_2D_3D_Tapered_router_bit_a51e0653-1672-4ba2-98bc-8852cde4fc0f.pdf?v=1676951061",
+  "accessed_on": "2026-09-24",
+  "stored_text": "fetch/G1/sources/spetool_2d3d_tapered.txt",
+  "pdf_sha256": "0ae9e84094f9f0b31709a4534f26d8e9f525a6ba614349278dd8893ff8f98b63",
+  "coverage_notes": "One-page scanned chart (OCR layer; the stored text has a transcription from the page image plus the raw OCR). Keyed on 'Tip Diameter' at 0.5, 1.0, 1.5, 2.0, 3.0, 4.0 mm and 1/32, 1/16, 1/8 in: 9 sizes, one chip load each (no band), one 'Wood, MDF, Sign-Foam' row, 18,000 RPM, depth of cut 1 x cutting diameter, step down = 1 x tip, step over = 0.4 x tip. No unit and no flute count printed: feed / (RPM x chipload) = 2.00 on all 9 wood rows, so inch per tooth and 2 flutes are derived. Tapered identity from the file name and the index page (spetool_speed_feeds_index). The only printed 0.5 mm wood figure found. 27 candidate rows (9 sizes x softwood/hardwood/MDF)."
+ },
+ {
+  "source_id": "spetool_carbide_spiral_router_bit_chart",
+  "source_vendor": "spetool",
+  "source_title": "SpeTool WOODWORKING CARBIDE SPIRAL ROUTER BIT FEED&SPEED CHART",
+  "source_url": "https://cdn.shopify.com/s/files/1/0404/1582/1977/files/SpeTool_spiral_Router_bits_8ae74723-4152-4436-82f7-8306b61437f3.pdf?v=1676951571",
+  "accessed_on": "2026-09-24",
+  "stored_text": "fetch/G1/sources/spetool_spiral.txt",
+  "pdf_sha256": "375966a5722e43c6515a54b2b76163dccd92adeaf90881d0d515829e7889f0cb",
+  "coverage_notes": "Scanned chart, flat spiral bits 1/16, 1/8, 1/4, 3/8, 1/2 in; MDF Laminate, softwood and hardwood printed apart; up, down and compression (compression from 1/8 in). One value per cell, no band. Flute count derived as 2 from the feed identity (range 1.94-2.13; the chart rounds its feeds). Smallest size 1/16 in, so no sub-1.5 mm row. 42 candidate rows. Also useful to G2 (hardwood/softwood/MDF ratios) and G4 (no band)."
+ },
+ {
+  "source_id": "spetool_vgroove_signmaking_chart",
+  "source_vendor": "spetool",
+  "source_title": "SpeTool WOODWORKING V-GROOVE & SIGNMAKING ROUTER BIT FEED&SPEED CHART",
+  "source_url": "https://cdn.shopify.com/s/files/1/0404/1582/1977/files/SpeTool_signmake_and_v_bit_b3225526-e109-43af-8d66-6338486f0cec.pdf?v=1676951817",
+  "accessed_on": "2026-09-24",
+  "stored_text": "fetch/G1/sources/spetool_vgroove_signmaking.txt",
+  "pdf_sha256": "ee494044f47edc6ce649ce754d320d3f363f34679946f45732dba6dfe3dc0636",
+  "coverage_notes": "Engraving tips 0.005 and 0.015 in print the SAME chip load per material (hardwood 0.003, softwood 0.005, MDF 0.007); the V-bit rows print no size. Not a size series; no candidate rows. Recorded as a witness that this vendor does not scale engraving chip load with tip width."
+ },
+ {
+  "source_id": "spetool_speed_feeds_index",
+  "source_vendor": "spetool",
+  "source_title": "SpeTool Router Bits Speed and Feeds (index page)",
+  "source_url": "https://spetools.com/pages/spetool-router-bits-speed-and-feeds",
+  "accessed_on": "2026-09-24",
+  "stored_text": "fetch/G1/sources/spetool_speed_feeds_index.txt",
+  "pdf_sha256": "ebd51f43543f27dbe50f4573d1b486bd242230ad1c172cd87d449cce3aa3a7f0",
+  "coverage_notes": "The page lists the chart sections ('Spiral Router Bits', '2D & 3D Tapered Router Bits', 'V Groove Bits', ...) and links the PDFs. Evidence for the tool family of the 2D/3D chart. No rows. Hash of the stored text. Reconciler 2026-09-24: the first stored copy (sha256 3960721e924f84d61950a61174ef0e12a105120f54dd8f7ddba68686d769041c, the hash the verifier matched) held only navigation text and the PDF links, not the printed labels. The reconciler appended the seven tile labels, each paired with its linked PDF, from a fresh live copy (raw HTML sha256 35ca0492...ef45) and hashed the file again."
+ },
+ {
+  "source_id": "harvey_tapered_ball_SF_723300",
+  "source_vendor": "harvey",
+  "source_title": "Harvey Tool Speeds & Feeds, Miniature End Mills - Tapered - Ball, series 7233xx",
+  "source_url": "https://harveyperformance.widen.net/content/13tc30ycba/pdf/SF_723300.pdf?u=d9orjt",
+  "accessed_on": "2026-09-24",
+  "stored_text": "fetch/G1/sources/harvey_tapered_ball_SF_723300.txt",
+  "pdf_sha256": "39d1f75e7999de7b1b7ec7c4ee9142ed45b4f5a4406c6cdd4f2678b2d4f32c2b",
+  "coverage_notes": "Metals only (the 16 tapered-ball sheets linked from https://www.harveytool.com/products/miniature-end-mills---tapered---ball print no wood or plastic row). Frame witness only: 'Use the end diameter of the tool to select the correct Chip Load (IPT)'; chip load columns keyed on tip sizes .015 to .250 in. No candidate rows."
+ },
+ {
+  "source_id": "precisebits_sweetspot_test",
+  "source_vendor": "precisebits",
+  "source_title": "PreciseBits: Finding the Sweet Spot When Machining with Carbide Microtools",
+  "source_url": "https://www.precisebits.com/tutorials/calibrating_feeds_n_speeds.htm",
+  "accessed_on": "2026-09-24",
+  "stored_text": "fetch/G1/sources/precisebits_sweetspot_test.txt",
+  "pdf_sha256": "0759b8a9620137f63439b263202e678fc4661673fcb55ec93fd41267e3fb3a6c",
+  "coverage_notes": "No chart. Prints a starting rule for a feed test: 'Softwoods ... Hardwoods ... Extreme hardwoods: F = 0.03 x D x No. flutes x RPM (3% chipload per flute)', 'just below the sweetspot', then raise the feed until the cut fails and use 0.75 x Fmax. A D^1.0 start rule, the same for every wood hardness. Not a recommendation value; no candidate rows. Hash of the stored text."
+ },
+ {
+  "source_id": "precisebits_tapered_ball_carving_250_shank",
+  "source_vendor": "precisebits",
+  "source_title": "PreciseBits 2, 3-flute Carbide Tapered Ball-Nose Carving tools (CM204, CM304) - 1/4\" shank",
+  "source_url": "https://www.precisebits.com/products/carbidebits/taperedcarve250b2f.asp",
+  "accessed_on": "2026-09-24",
+  "stored_text": "fetch/G1/sources/precisebits_tapered_ball_250_shank.txt",
+  "pdf_sha256": "e363e07c6dfae5d9063783494e6d602ea549bad4469fdcdeabe35c0e10399ad5",
+  "coverage_notes": "No chip load. 'Feedrate (IPM) = Depends on the material being cut. Do the Sweetspot Test before setting this parameter'. Prints 'Stepdown ... recommended - 1X tip dia. maximum - 2X tip dia.' and stepover 8% finish / 40% rough of the tip. Smallest tip 1/16 in. No candidate rows. This page: tips 1/16, 1/8 and 1/4 in. Hash of the stored text."
+ },
+ {
+  "source_id": "precisebits_tapered_ball_carving_125_shank_4f",
+  "source_vendor": "precisebits",
+  "source_title": "PreciseBits 4-flute tapered ball-nose carving tools - 1/8\" shank",
+  "source_url": "https://www.precisebits.com/products/carbidebits/taperedcarve125b4f.asp",
+  "accessed_on": "2026-09-24",
+  "stored_text": "fetch/G1/sources/precisebits_tapered_ball_125_shank_4f.txt",
+  "pdf_sha256": "4ff6497c1f2af86dfc4abd79fca8318f4e877bf2d89cb6d97c53d3c1e8957992",
+  "coverage_notes": "No chip load. 'Feedrate (IPM) = Depends on the material being cut. Do the Sweetspot Test before setting this parameter'. Prints 'Stepdown ... recommended - 1X tip dia. maximum - 2X tip dia.' and stepover 8% finish / 40% rough of the tip. Smallest tip 1/16 in. No candidate rows. This page: 4 flute, tip 1/16 in. Hash of the stored text."
+ },
+ {
+  "source_id": "precisebits_tapered_stub_pcb",
+  "source_vendor": "precisebits",
+  "source_title": "PreciseBits tapered-stub end-mills EM2E8/EM3E8 (PCB trace isolation, metal engraving)",
+  "source_url": "https://www.precisebits.com/products/carbidebits/tapered_stub_125.asp",
+  "accessed_on": "2026-09-24",
+  "stored_text": "fetch/G1/sources/precisebits_tapered_stub_pcb.txt",
+  "pdf_sha256": "b7663451e86cb1845d57fc1cad5f3434a238e0c70c729e9c7eb293d6f35f2cce",
+  "coverage_notes": "Not wood (copperclad PCB and metal engraving); flat tapered tips. Prints feed per revolution per tip: '0.0100\" (0.25mm) dia - multiply your peak spindle RPM by 0.00254 (dry)' ... 0.0250\" 0.00634: linear in tip diameter (a D^1.0 series, 0.25-0.63 mm, 3 flutes). Frame witness (keyed on 'Diameter (D) = tip diameter'); no candidate rows."
+ },
+ {
+  "source_id": "onsrud_77100_series_list",
+  "source_vendor": "onsrud",
+  "source_title": "LMT Onsrud 77-100 Solid Carbide Tapered Ball Nose series list (product page JSON)",
+  "source_url": "https://onsrud.com/Products/77102.asp",
+  "accessed_on": "2026-09-24",
+  "stored_text": "fetch/G1/sources/onsrud_77100_series_list.txt",
+  "pdf_sha256": "724cdb5a35538344f5163cce55fd0e750d8af8cc70454bff3ffece7f5e3d58d4",
+  "coverage_notes": "13 tools 77-102 to 77-116(M): 77-102..77-108 '3 flute', 77-112..77-116 '2 flute'. Confirms the LUT flute counts. The Onsrud wood sheets print 77-100 at 1/8 and 1/4 in only; no smaller 77-100 tip exists in the series. No rows."
+ },
+ {
+  "source_id": "shopbot_feeds_speeds_2016",
+  "source_vendor": "shopbot",
+  "source_title": "ShopBot Feeds and Speeds Charts (July 21, 2016)",
+  "source_url": "https://shopbottools.com/wp-content/uploads/2024/01/FeedsandSpeeds.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "fetch/G1/sources/shopbot_feeds_speeds_2016.txt",
+  "pdf_sha256": "7ad6d74012fe2d5f52f25c2e7c75f199be6845d5e21e52a4147892ebe779f56e",
+  "coverage_notes": "Machine-vendor reprint of Onsrud values: '1/8\" Tapered Carbide ... 13636 77-102 1xD .003-.005 2'. Prints 2 flutes where Onsrud's own series list says 3 flute; the reprint is wrong, not the LUT. No rows."
+ },
+ {
+  "source_id": "whiteside_cnc_brochure_1-14-19",
+  "source_vendor": "whiteside",
+  "source_title": "Whiteside CNC brochure (1-14-19)",
+  "source_url": "https://cdn.shopify.com/s/files/1/1698/7023/files/CNC_Brochure_1-14-19.pdf?20",
+  "accessed_on": "2026-09-24",
+  "stored_text": "fetch/G1/sources/whiteside_cnc_brochure_1-14-19.txt",
+  "pdf_sha256": "00c71165ee906b3a8a844079f1de50ae83440daa09c0554d16858212dc82e46b",
+  "coverage_notes": "No chip load chart. Geometry: 'SC64 1/32” 1/16” 11° 2-1/2”' under 'Part # Radius Ball Dia. Included Angle Overall Length'. Used for LUT discrepancy D4. No rows."
+ },
+ {
+  "source_id": "whiteside_full_catalog_2027",
+  "source_vendor": "whiteside",
+  "source_title": "Whiteside full catalog 2027",
+  "source_url": "https://cdn.shopify.com/s/files/1/1698/7023/files/WM_Full_Catalog_2027.pdf?v=1787225834",
+  "accessed_on": "2026-09-24",
+  "stored_text": "fetch/G1/sources/whiteside_full_catalog_2027.txt",
+  "pdf_sha256": "081528977ddfe150648f7771668e874841565ef5552d6ad4feca364ad7d439d0",
+  "coverage_notes": "No chip load chart in the catalog. Heads the conical ball nose spirals (SC64, SC66) 'Four Flute'; the layout makes the tie probable, not proven. No rows."
+ },
+ {
+  "source_id": "idcwoodcraft_chipload_csv_2026-09-24",
+  "source_vendor": "idcwoodcraft",
+  "source_title": "IDC Woodcraft / Millmage community chipload CSV (re-download)",
+  "source_url": "https://feeds-speeds-chipload-api.fly.dev/download-csv",
+  "accessed_on": "2026-09-24",
+  "stored_text": "fetch/G1/sources/idc_chipload_csv_tapered_rows.txt",
+  "pdf_sha256": "2ac61cdd7c6fcc8fa54c58ca80cdb9262e211a2b44b367e898c67569b753c1c4",
+  "coverage_notes": "Grade c at best (community presets, no material column filled). Six tapered ball presets (tip = 2 x cornerradius, 0.76 to 3.18 mm); feedrate / (rpm x numflutes) gives 0.0016-0.0054 in/tooth (derived). The seventh row that matches \"aper\" is a V-bit. No candidate rows: the rows name no material."
+ }
+]

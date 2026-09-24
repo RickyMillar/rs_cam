@@ -1,0 +1,152 @@
+# source_url: https://www.cnccookbook.com/v-carve-chamfer-dovetail-corner-rounder-round-over-bit/
+# accessed_on: 2026-09-24
+# raw_html_sha256: b2ec7882703aeb54f72f939f5d6960b1eb43ee5e40a7f674aaae65d08d9a87f5
+
+CNC Cookbook
+
+Blog
+
+About
+
+Form Milling, V-Bits, Dovetails, Roundover Mills [ Easy Guide ]
+
+Last modified: May 13, 2024
+
+Table of Contents
+
+CNC Feeds and Speeds Cookbook
+Introduction to Form Milling and Form Milling Cutters
+V-Bit Feeds and Speeds for Engraving
+Corner Rounding End Mill Feeds and Speeds
+Dovetail Cutter Feeds and SpeedsMore Tips When Cutting Dovetails
+
+FAQsWhat is meant by form milling?
+What are the advantages of form milling?
+What is a Form Milling Cutter?
+What is the use of a Formed Cutter?
+
+CNC Feeds and Speeds Cookbook
+
+Introduction to Form Milling and Form Milling Cutters
+
+Form milling means milling out special contours composed of curves and/or straight lines with a single cut. This is done using a Form Milling Cutter, whose edge is shaped to create the desire contour in a single pass.
+
+Form Milling Cutters have special profiles and are used for special situations. V-Carve Bits for engraving, and Dovetail cutters are two good examples. When calculating feeds and speeds, it's a matter of dealing with at least two issues:
+
+Deciding what part of the cutter's geometry to use when calculating diameter and from that, surface speed.
+
+Deciding how much to derate the chip load from that of a standard endmill.
+
+Let's go through the G-Wizard support for a couple types of these cutters.
+
+V-Bit Feeds and Speeds for Engraving
+
+A V-Bit is a special purpose bit intended for engraving. They come in all shapes and sizes, but usually they look something like this:
+
+A V-Bit for Engraving...
+
+They do a very nice job engraving, but feeds and speeds can be a bit tricky for a couple of reasons. First, that sharp point is a bit delicate and the geometry is not nearly as optimized for plowing through tons of material as a helical endmill. The good news is they're best used with depths of cut of say 0.005 to 0.010" (0.1 - 0.2 mm). That at least means that chip clearing should be easy and the cutting forces shouldn't be too great.
+
+That brings me to the second issue, which is that the "diameter" of your cutter is, well, not the diameter in the cut!
+
+Because of that, G-Wizard needs to do compensation to figure the effective geometry just like it does for a ballnosed endmill. It turns out that since you're only down in the cut 0.005-0.010", you need to run a lot more rpms and treat things much differently, even though you may be running a 1/4" shank tool. Here is a diagram showing the effective diameter for a 90 degree V-Bit with a 0.010" depth of cut:
+
+The effective diameter in an 0.010" depth of cut is only 0.020"!
+
+To select a V-Bit in G-Wizard, treat it like an endmill. Choose either HSS or Carbide, depending on what material your V-Bit is made from. You'll use the geometry menu to tell G-Wizard that this is a V-Bit and not an ordinary endmill:
+
+Geometry menu for selecting ballnose or V-Bits...
+
+Once you select a V-Bit from the geometry menu, G-Wizard does several things:
+
+It starts figuring out the effective diameter based on the angle of the V-Bit (30, 45, 60, or 90 are the commonly available tip angles) and the diameter. That will cause it to figure out the rpm and feedrate differently.
+
+Equally as important, it will dial back the feedrate quite a lot to account for the fact that the pointed tip is more delicate than a typical endmill. If you're working with really nasty material (tough stainless or the like), you might consider using the gas pedal (Tortoise and Hare slider) to go a little more conservative.
+
+That's all there is to it. If you don't use G-Wizard, you can see that the trig needed to figure out the effective diameter is pretty simple.
+
+BTW, 2linc is a great manufacturer for all things engraving and is one seller of V-Bits. There's more there than engraving, but take a look for tips. I bring them up because one of the things they mention for CNC'ers is you can run a lot higher feedrates if you use one of their spring-loaded holders for your V-Bits. G-Wizard's Feeds and Speeds for V-Bits assume a rigid holder, but you can double the feedrate if you have a spring-loaded holder. I assume the spring-loaded holder helps cushion the V-Bit's delicate tip from undue shocks and lets it sort of find its own feedrate that works by backing off the depth if there is too much force involved. It also allows the engraving to follow a contour if you aren't engraving a flat surface.
+
+If you're not a registered G-Wizard user and you'd like to try our free 30-day trial, check it out on this page.
+
+Corner Rounding End Mill Feeds and Speeds
+
+Corner Rounding end mills are used to apply a radius instead of a chamfer to the edge:
+
+A corner rounding end mill...
+
+Chamfering is often preferred to corner rounding because it's harder to get a good finish without chatter marks with most corner rounding and gets worse the larger the radius. Chamfering cleans up the edge quickly without those complications.
+
+Dovetail Cutter Feeds and Speeds
+
+Our G-Wizard Feeds and Speeds calculator has support for Dovetail Cutters. It's simple to use, just pick the nearest angle to your dovetail (a lot of angles are available) from the dropdown Geometry Menu:
+
+To calculate feeds and speeds for a Dovetail, use the Geometry menu (circled in red) and select the closest angle to your dovetail's...
+
+For diameter, be sure to use the diameter of the dovetail, not the shank. You might also consider dialing the "Tortoise/Hare" slide all the way left if you're not in a great hurry-you'll get better surface finish, and since these cutters are delicate, and that will further minimize the stress on the cutter.
+
+If you haven't tried G-Wizard, sign up for the free 30-day trial.
+
+More Tips When Cutting Dovetails
+
+I came across a great thread on PM while researching Dovetail Cutter Feeds and Speeds. The concepts are applicable to any form cutter if you think about it. They're all delicate, but the dovetail is perhaps the most delicate of all.
+
+Some tips:
+
+Be sure to open a slot as wide as you can with a regular endmill that is also slightly deeper than the dovetail. You want to minimize the work your dovetail cutter has to do and they're not really designed to do the full slot.
+
+Having opened up the slot, you still want to baby the cutter through-don't expect to cut both sides in one pass at full depth.
+
+You can make partial passes running the cutter along the top and both lowering it and moving it laterally into the cut each pass, the way you would move the cutter along the thread "wall" when cutting threads. For each pass, go down say 10-15% and then feed laterally until you get to the edge. This is a typical step down you'd perform pocketing, it's just you're doing it with a dovetail and typically in a straight line.
+
+If you need the clearance, use a smaller dovetail cutter of the same angle so you can make those step passes and then move to a full-sized cutter for final finish.
+
+You can use a different and less delicate cutter to step profile and then clean it up with your dovetail in one or more passes:
+
+Step profiling the dovetail with a T-Slot cutter
+
+See also our article on Chamfer Mills.
+
+FAQs
+
+What is meant by form milling?
+
+Form milling means milling out special contours composed of curves and/or straight lines with a single cut. This is done using a Form Milling Cutter, whose edge is shaped to create the desired contour in a single pass.
+
+What are the advantages of form milling?
+
+Form milling offers several advantages in CNC Machining Operations:
+
+Form Milling eliminates the need for multiple milling processes, often saving time in production.
+
+It allows for precise shaping of irregular contours.
+
+It may provide additional cost savings by reducing or eliminating the need for additional post-processing operations.
+
+What is a Form Milling Cutter?
+
+A Form Milling Cutter is one that has special contours not handled by standard milling tools. They come in different configurations and sizes, and they can also be custom-made for application-specific tasks.
+
+What is the use of a Formed Cutter?
+
+Formed Cutters are ideal for creating complex features that require special shapes such as gears, splines, flutes, and other geometries that are challenging to achieve using standard cutters.
+
+You Might Also Like
+
+Cutter-Specific Guides
+
+G-Wizard Picks Up Dovetail Cutter Feeds and Speeds
+
+Button Cutter, Copy Mill, or Toroidal Cutter: Round Insert Milling Cutters
+
+Slitting Saw Speeds and Feeds Calculator, Arbor, & Blades [Easy Guide]
+
+Milling Surface Finish: Complete Guide [Tips & Secrets]
+
+Be the first to know about updates at CNC Cookbook
+
+Join our newsletter to get updates on what's next at CNC Cookbook.
+
+Subscribe
+
+© 2026 CNC Cookbook. All rights reserved.

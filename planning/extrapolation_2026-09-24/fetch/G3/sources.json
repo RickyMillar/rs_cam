@@ -1,0 +1,123 @@
+[
+ {
+  "source_id": "amana_corner_radius_spiral_plunge_2f",
+  "source_vendor": "amana",
+  "source_title": "Amana Tool 2 Flute Solid Carbide Spiral Plunge with Corner Radius Router Bit (speed chart)",
+  "source_url": "https://toolstoday.com/content/ProductFile/Attachments/Solid-Carbide-Spiral-Plunge-w-Corner-Radius.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "fetch/G3/sources/amana_corner_radius_spiral_plunge.txt",
+  "pdf_sha256": "a8fb36819675f9f9f3b864c7a10af82b0a6e107b10468ffaeec3ffd3261840a3",
+  "rows": 36,
+  "coverage_notes": "Printed wood chart for a bull nose (corner radius) tool: 46460 (1/16 R x 1/4 D) and 46462 (1/8 R x 1/2 D), 2 flute up-cut spiral plunge, 18,000 RPM, depth of cut 1 x D. Columns Soft Wood, Hard Wood, MDF, Plastics, Aluminum. No plywood column. No operation and no pass role printed. The copyright line is Amana Tool; the file is the Toolstoday product attachment (46462 and 46460-Z pages link it). amanatool.com returned HTTP 403 to WebFetch and to curl for the product page, so the Amana URL of this chart is not verified. 6 printed wood cells, copied into 6 engine families = 36 candidate rows."
+ },
+ {
+  "source_id": "amana_corner_radius_spiral_plunge_2f_zrn",
+  "source_vendor": "amana",
+  "source_title": "Amana Tool 2 Flute ZrN Coated Solid Carbide Spiral Plunge with Corner Radius Router Bit (speed chart)",
+  "source_url": "https://toolstoday.com/content/ProductFile/Attachments/ZrN-Coated-Solid-Carbide-Spiral-Plunge-w-Corner-Radius.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "fetch/G3/sources/amana_corner_radius_spiral_plunge_zrn.txt",
+  "pdf_sha256": "59545232358e7094364c0606f199978c2dfc59c033103b203a6e433d68db9e3b",
+  "rows": 0,
+  "coverage_notes": "46460-Z, 1/4 in only. Prints the same wood values as the uncoated chart at 1/4 in. Its footnote says 'Reduce feed rate' where the uncoated chart says 'Reduce chip load'. No rows: a confirmation only."
+ },
+ {
+  "source_id": "amana_corner_radius_spiral_plunge_2f_spektra",
+  "source_vendor": "amana",
+  "source_title": "Amana Tool 2 Flute Solid Carbide Spektra Extreme Tool Life Coated Spiral Plunge with Corner Radius Router Bit (speed chart)",
+  "source_url": "https://toolstoday.com/content/ProductFile/Attachments/Solid-Carbide-Spektra-Coated-Spiral-Plunge-w-Corner-Radius.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "fetch/G3/sources/amana_corner_radius_spiral_plunge_spektra.txt",
+  "pdf_sha256": "e2905211adb6902d0d48ba654fac0c3c668e66d3f0d197800b2ef999ecde358e",
+  "rows": 0,
+  "coverage_notes": "46460-K. Prints the same wood values as the uncoated chart at 1/4 in and 1/2 in. No aluminum column. No rows: a confirmation only."
+ },
+ {
+  "source_id": "amana_spektra_3d_profiling_v6",
+  "source_vendor": "amana",
+  "source_title": "Amana Tool Spektra Extreme Tool Life Coated 2D/3D Carving CNC Solid Carbide Router Bits (Spektra-Coated-3D-Profiling-Feed-Chip-Load-Chart-v6)",
+  "source_url": "https://www.amanatool.com/pub/media/productattachments/Spektra-Coated-3D-Profiling-Feed-Chip-Load-Chart-v6.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "fetch/G3/sources/amana_spektra_3d_profiling_v6.txt",
+  "pdf_sha256": "84feaace79e13a5bc12e652c58cf237f1a242a623e6fb8bc9d3f5883d5153497",
+  "rows": 0,
+  "coverage_notes": "Target 4 evidence. The chart title names '2D/3D Carving' and prints ONE chip load per tool and material (Wood, MDF, Sign-Foam) for 2D and 3D work together. The tool list includes 46280-K and 46286-K; Amana and Toolstoday product titles (seen in search results, not stored) name 46280 a 6.2 deg and 46286 a 3.6 deg tapered ball tip. No separate 2D (contour/trace) and 3D (parallel) value. The PDF download from amanatool.com worked (HTTP 200) although the HTML pages return 403. Its values for the 3 flute ball at 1/32 in and 1/8 in equal the ZrN 2D/3D chart the LUT already holds (amana_zrn_3d_profiling). No rows: the family question is a routing ruling, not a new number; size transfer is G1."
+ },
+ {
+  "source_id": "amana_ball_nose_v7",
+  "source_vendor": "amana",
+  "source_title": "Amana Spiral Ball Nose Speed Chart v7 (copy downloaded earlier into fetch/G3/pdf)",
+  "source_url": "https://www.amanatool.com/pub/media/productattachments/Spiral-Ball-Nose-Speed-Chart-v7.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "fetch/G3/sources/amana_ball_nose_v7.txt",
+  "pdf_sha256": "e851a270a9958a9affc17a24c8e6a8ef51d63a813f384b7043670d676cae3563",
+  "rows": 0,
+  "coverage_notes": "Already in the manifest. The PDF hash equals the manifest pdf_sha256 and the pdftotext output equals crates/rs_cam_core/data/vendor_lut/sources/amana_ball_nose_v7.txt byte for byte. Used here for two points: (1) the chart prints no pass role and no operation, so the LUT's amana_ball_nose_v7-cited finish rows are derived (they are marked derived/c; see lut_discrepancies.md); (2) its 1/4 in and 1/2 in wood bands equal the corner-radius chart bands (derived comparison)."
+ },
+ {
+  "source_id": "idcwoodcraft_feeds_speeds_pdf",
+  "source_vendor": "idcwoodcraft",
+  "source_title": "CNC Router Bit Feeds & Speeds, Imperial (Inch) & Metric, provided by IDC Woodcraft",
+  "source_url": "https://community.carbide3d.com/uploads/short-url/fwPIYiWQNjUx8eEwsA7qmYiLMxv.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "fetch/G3/sources/idcwoodcraft_feeds_speeds_pdf.txt",
+  "pdf_sha256": "87405efbd74696b0e105699274d39cb1eae67867acf4ad1e83ce03c13b413785",
+  "rows": 18,
+  "coverage_notes": "Retailer table for benchtop routers, a Carbide 3D forum upload (not idcwoodcraft.com). Grade c. Prints feed, plunge, RPM, flutes, depth per pass and stepover; no chip load. V-bits: one feed and one RPM per bit, with a clear-pass stepover (20 % or 30 %) and a final-pass stepover (0.005 in or 0.02 in). Tapered ball: one feed, stepover 5-8 %, no pass split. The starter-set table and the V-BITS table disagree on the 60 deg and 90 deg V-bit feeds (40 vs 60 and 50 vs 45 in/min). 3 V-bits x 2 woods x 3 families = 18 derived grade-c rows. Its 1/8 in and 1/4 in ball-nose feeds reproduce the LUT idcwoodcraft rows (0.0346 and 0.0468 mm)."
+ },
+ {
+  "source_id": "onsrud_oc06_catalog_2006",
+  "source_vendor": "onsrud",
+  "source_title": "Onsrud Cutter OC-06 Catalog (2006), Micro Fence download",
+  "source_url": "https://microfence.com/wp-content/uploads/2017/04/Onsrud.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "fetch/G3/sources/onsrud_oc06_catalog.txt",
+  "pdf_sha256": "ced6b24535b886c07cdf6a42cfe2880ced87b0d92ed254d11a6d788eec10a2e9",
+  "rows": 0,
+  "coverage_notes": "Dealer mirror of the 2006 catalogue (the file on disk came from an earlier run; a re-download on 2026-09-24 gave the same sha256). Pages 81-93 are the cutting-data sheets. Same layout as the current sheets: an APPLICATION table (Single Pass / Roughing / Finishing -> GOOD/BETTER/BEST series) and one chip-load row per series. No per-role chip load for one series, and no corner-radius or bull series. In the 2006 Soft Wood sheet, 52-200/57-200 is named for Single Pass BEST and Finishing BETTER; in the current Hard Wood sheet it is named for Single Pass GOOD and Roughing GOOD; each sheet prints one chip-load row for it. No rows."
+ },
+ {
+  "source_id": "sorotec_schnittwerte",
+  "source_vendor": "sorotec",
+  "source_title": "SOROTEC Fraesparameter: Berechnungen und Praxistipps, V 1.0.2",
+  "source_url": "https://www.sorotec.de/webshop/Datenblaetter/fraeser/schnittwerte.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "fetch/G3/sources/sorotec_schnittwerte.txt",
+  "pdf_sha256": "a7b9cd7bc68b3e1a10fc2299c692f23abf97991dcbd81bdcc65b3eabd51f55a6",
+  "rows": 0,
+  "coverage_notes": "Dead end for G3: one generic fz per diameter (1-12 mm) for Holz hart, Holz weich and MDF; no tool type, no pass role. Useful for G1 (a printed multi-size wood table from 1 mm) and G4. The sheet calls the values 'experimentell ermittelte Richtwerte zur groben Orientierung'."
+ },
+ {
+  "source_id": "precisebits_tapered_ball_2f",
+  "source_vendor": "precisebits",
+  "source_title": "PreciseBits Carbide 2-flute Tapered Ball-nose 3D Carving Tools (stored by G5)",
+  "source_url": "https://www.precisebits.com/products/carbidebits/taperedcarve250b2f.asp",
+  "accessed_on": "2026-09-24",
+  "stored_text": "fetch/G5/sources/precisebits_tapered_ball_2f.txt",
+  "pdf_sha256": "f131e5a712d2cc432861f3d8248559139c6bb6c75acb7b4e9c09e11624e4397d",
+  "rows": 0,
+  "coverage_notes": "HTML page, stored and hashed by G5 (the hash is of G5's text file; G5's header gives raw_html_sha256 4d1d6cc7...). Prints 'finishing pass (stepover, cleanup pass) = 0.08 X tip diameter (8%)' and 'roughing pass (clearance stepover) = 0.40 X tip diameter (40%)'. The feed comes from the vendor's Sweetspot test; no chip load per role. No rows."
+ },
+ {
+  "source_id": "precisebits_vtip_2500",
+  "source_vendor": "precisebits",
+  "source_title": "PreciseBits Think & Tinker V-groove scoring and engraving cutters (stored by G5)",
+  "source_url": "https://www.precisebits.com/products/carbidebits/2500_scoreengrave.asp",
+  "accessed_on": "2026-09-24",
+  "stored_text": "fetch/G5/sources/precisebits_vtip_2500.txt",
+  "pdf_sha256": "d8fbce48a11bbb7bc7084c6bf56ac38e068e06596b21b8a6b40a045c8b652cf4",
+  "rows": 0,
+  "coverage_notes": "HTML page, stored and hashed by G5. Prints 'Stepover (for final cleanup pass) = 0.006 in. (0.15mm)' and 'Stepover (for roughing, clearance pass) = 0.010 in. (0.25mm)'; feed 'Depends on the material being cut. Do the Sweetspot Test'. V-bit clearing is a stepover change, not a chip-load change. No rows."
+ },
+ {
+  "source_id": "freud_router_bit_feed_and_speed_for_cnc_20170822",
+  "source_vendor": "freud",
+  "source_title": "Freud: Get the most out of your Freud bits by routing at ideal feed rates and speeds (CNC chip load chart, 2017-08-22)",
+  "source_url": "https://www.freudtools.com/public/assets/freud/downloadables/freudtools-router-bit-feed-and-speed-for-cnc-20170822.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "fetch/G3/sources/freud_cnc_20170822.txt",
+  "pdf_sha256": "ff1a29ea5a669e24c6ed18e2bd21e10321cee024c65a6b23a1197cbbfdc71976",
+  "rows": 0,
+  "coverage_notes": "Already in the manifest (with an empty pdf_sha256); hashed here. Two tables (solid carbide; carbide-tipped straight and profile bits), one band per diameter (1/8-3/4 in) and material, 'based on cut depth equal to bit diameter'. No pass role, no operation, no ball-nose, bull-nose or V-bit rows. Dead end for G3. No rows."
+ }
+]

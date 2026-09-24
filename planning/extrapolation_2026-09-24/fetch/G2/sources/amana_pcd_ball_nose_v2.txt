@@ -1,0 +1,38 @@
+# stored text for amana_pcd_ball_nose_v2
+# made from amana_pcd_ball_nose_v2.pdf with pdftotext -layout on 2026-09-24
+                                                                                                                                                       INDUSTRIAL
+
+                                                              Polycrystalline Diamond (PCD) Ball Nose Router Bit
+
+
+                             Tool No. DRB-432                                            Chip Load Per Tooth                        RPM                    Feed Rate
+                Material                         Diameter               No. Teeth          From                To          From            To         From               To
+                                                   Inch/mm                              Inch (mm)/min     Inch (mm)/min                            Inch (mm)/min    Inch (mm)/min
+                CFRP                             1/4" (6.35mm)                2         .0012" (0.03mm)   .006" (0.15mm)   5,000          10,000    12" (301mm)     120" (3,009mm)
+                Plastics                         1/4" (6.35mm)                2         .002" (0.05mm)    .007" (0.17mm)   8,000          18,000    32" (802mm)     250" (6,350mm)
+                Wood                             1/4" (6.35mm)                2         .002" (0.05mm)    .007" (0.17mm)   15,000         18,000   60" (1,505mm)    250" (6,350mm)
+                MDF                              1/4" (6.35mm)                2         .0016" (.04mm)    .005" (0.13mm)   12,000         18,000   40" (1,016mm)    180" (4,572mm)
+                Chipboard Without Coating        1/4" (6.35mm)                2         .002" (0.05mm)    .007" (0.17mm)   16,500         18,000   65" (1,651mm)    250" (6,350mm)
+                Maximum RPM: 18,000
+
+                        Tool No. DRB-433                                                 Chip Load Per Tooth                        RPM                  Feed Rate
+                Material             Diameter                           No. Teeth         From         To                  From            To         From         To
+                                                   Inch/mm                              Inch (mm)/min     Inch (mm)/min                            Inch (mm)/min    Inch (mm)/min
+                CFRP                             3/8" (9.53mm)                2         .0012" (0.03mm)   .006" (0.15mm)   3,400          6,700     8" (201mm)      80" (2,006mm)
+                Plastics                         3/8" (9.53mm)                2         .002" (0.05mm)    .01" (0.25mm)    5,400          13,400    30" (749mm)     260" (6,684mm)
+                Wood                             3/8" (9.53mm)                2         .006" (0.15mm)    .01" (0.25mm)    16,700         18,000   200" (5,013mm)   360" (9,144mm)
+                MDF                              3/8" (9.53mm)                2         .005" (0.13mm)    .008" (0.2mm)    13,400         18,000   135" (3,429mm)   290" (7,366mm)
+                Chipboard Without Coating        3/8" (9.53mm)                2         .006" (0.15mm)    .01" (0.25mm)    18,000         18,000   215" (5,461mm)   360" (9,144mm)
+                Maximum RPM: 18,000
+
+Simple Machining Calculations:
+To find RPM: (SFM x 3.82) / diameter of tool
+To find SFM: 0.262 x diameter of tool x RPM
+To find Feed Rate: RPM x # of flutes x chip load
+To find Chip Load: IPM / (RPM x # of Flutes)
+Depth of Cut: 1 x D Use recommended feed rate
+                2 x D Reduce feed rate by 25%
+                3 x D Reduce feed rate by 50%
+
+Disclaimer: It is important to understand that these values are only recommendations.                                                                     © Copyright Amana Tool® All Rights Reserved
+

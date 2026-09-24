@@ -1,0 +1,2653 @@
+Helical
+MACHINING
+GUIDEBOOK
+Quick Reference eBook for CNC Milling Practices & Techniques
+
+
+1 | Machining Guidebook | © 2016 Helical Solutions, LLC        Helical
+                                                                                                                                                                        Contents
+Milling Techniques & Strategies                                                                                                                               Terminology & Common Calculations
+
+01 | Milling Techniques .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 3                                                     04 | End Mill Construction .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 37
+Types of Tool Entry  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 4                    Geometry Definitions .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 38
+Ramping  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 6     End Mill Construction .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 40
+Thin Wall Milling .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 8           End Mill Anatomy .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 42
+Deep Pocket Milling .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 10
+                                                                                                                                                              05 | Common Calculations . . . . . . . . . . . . . . . . . . . . . . 51
+Finishing .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 11
+                                                                                                                                                              Decimal Conversion Chart .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 52
+Ball Nose Strategy .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 13
+                                                                                                                                                              Common Milling Calculations .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 53
+Corner Engagement .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 17
+                                                                                                                                                              Speeds & Feeds .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 54
+Angle Engagement .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 19
+Conventional vs Climb Milling .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 20                                        06 | Tool Holding  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 55
+Chip Thinning  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 22                Tool Holding  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 56
+                                                                                                                                                              Preventing Tool Pull Out  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 58
+02 | High Efficiency Milling .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 23
+High Efficiency Milling  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 24
+HEM Tooling .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 25                Troubleshooting
+
+03 | Depth of Cut .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 26                                                 07 | Troubleshooting  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 60
+Depth of Cut .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 27            Troubleshooting Chart  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 61
+Depth of Cut - Peripheral .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 28                                   Tool Wear  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 65
+Depth of Cut - Slotting .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 34                            Tool Deflection  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 69
+
+
+Copyright © 2016 by Helical Solutions, LLC. All rights reserved. This book or any portion thereof may not be reproduced or used in any manner whatsoever without
+the express written permission of Helical Solutions.
+
+
+
+ 2 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                                                                                                                                                                      Helical
+                                                                                                                                01
+                                                                                                                           Milling
+                                                                                                                       Techniques
+Types of Tool Entry  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 4                        Ball Nose Strategy .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 13
+Ramping  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 6         Corner Engagement .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 17
+Thin Wall Milling .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 8               Angle Engagement .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 19
+Deep Pocket Milling .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 10                           Conventional vs Climb Milling .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 20
+Finishing .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 11    Chip Thinning  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 22
+
+
+ 3 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                                                                                              Helical
+Types of Tool Entry
+The type of part entry that is programmed has a lot of influence on the tool’s success and is one of the most punishing
+operations for a cutter. Below we have listed some common part entry methods and suggestions on how to perform them
+The type of part entry programmed is very influential in the tool’s success and one of the most
+successfully.
+punishing operations for a cutter. Below we have listed some common part entry methods and
+suggestions on making these most successful.
+The type of part entry programmed is very influential in the tool’s success and one of the most
+punishing operations for a cutter. Below we have listed some common part entry methods and
+                          Pre-Drilled
+suggestions on makingPre-Drilled             Hole Hole
+                          these most successful.
+                        Pre-drilling
+                          Pre-drilling
+The type of part entry programmed       a hole   to full
+                                           isavery
+                                                hole      pocket
+                                                         to        indepth
+                                                             full pocket
+                                                     influential               (and
+                                                                                 depth
+                                                                        the tool’s    5-10%
+                                                                                     success    larger
+                                                                                             (and and   thanofthe
+                                                                                                     5-10%
+                                                                                                       one       theend
+                                                                                                                largermostmill
+                                                                                                                          than the end mill diameter) is the safest practice
+                        diameter)     is the   safest   practice      of  dropping     your    end   mill into a  pocket.   This
+                          of  dropping
+punishing operations forPre-Drilled
+                           a cutter.    Below  your
+                                             Holewe    end
+                                                      have      mill
+                                                              listed   into
+                                                                        some  a   pocket.
+                                                                                 common         This
+                                                                                               part   method
+                                                                                                     entry   methods ensures
+                                                                                                                         and      the least amount of end work abuse and
+                        method ensures the least amount of end work abuse and premature tool
+suggestions on making premature
+                          these most successful.
+                                             tool
+                        Pre-drilling a hole
+                        wear.                    to wear.
+                                                     full pocket depth (and 5-10% larger than the end mill
+                        diameter) is the safest practice of dropping your end mill into a pocket. This
+                        method     ensures
+                         Pre-Drilled            the least amount of end work abuse and premature tool
+                                             Hole
+                         Helical Interpolation
+                        wear.
+                       Pre-drilling a hole to full pocket depth (and 5-10% larger than the end mill
+                        A very common and safe practice with ferrous materials. Employing corner
+                       diameter) is the safest practice of dropping your end mill into a pocket. This
+                        radius end mills during this operation will increase tool wear and lessen
+                         Helical
+                       method           Interpolation
+                                   ensures      the least amount of end work abuse and premature tool
+                          Helical
+                        corner
+                       wear.
+                        A very
+                                  breakdown.  Interpolation
+                                                    We recommend a programmed helix diameter >110-120%
+                                 common and safe practice with ferrous materials. Employing corner
+                        of  tool diameter.
+                          A very
+                        radius   endcommon
+                                        mills duringand       safe practice
+                                                         this operation                with ferrous
+                                                                              will increase     tool wearmaterials.
+                                                                                                             and lessen Employing corner radius end mills during this
+                        Our
+                        cornernew   speed & feed
+                                  breakdown.        We    app   “Milling Advisor”
+                                                          recommend           a         will give you
+                                                                                 programmed         helix specific
+                                                                                                           diameter cutting
+                                                                                                                      >110-120% We recommend a programmed helix
+                         Helical
+                          operation
+                        parameters
+                                        Interpolation
+                                           will
+                                         for
+                                                 decrease
+                                              operations      like
+                                                                    tool
+                                                                    this
+                                                                            wear
+                                                                           (see   pg.
+                                                                                     and
+                                                                                       47).
+                                                                                              lessen corner breakdown.
+                        of tool diameter.
+                       Adiameter
+                           very common    >110-120%           of toolwith
+                                               and safe practice            diameter.
+                                                                                 ferrous materials. Employing corner
+                        Our new
+                       radius   end  speed     & feedthis
+                                        mills during      appoperation
+                                                                “Milling Advisor”       will give
+                                                                              will increase     toolyou
+                                                                                                     wear specific  cutting
+                                                                                                             and lessen
+                         Ramping-In
+                        parameters
+                       corner            for operations
+                                  breakdown.                  like this (see
+                                                    We recommend                  pg. 47).
+                                                                             a programmed          helix diameter >110-120%
+                       This
+                       of     type
+                           tool      of operation can beDownload
+                                 diameter.                         very successful,the Helical       Millingmany
+                                                                                          but institutes       Advisor    ™
+                                                                                                                            at www.helicaltool.com to get
+                                                                                                                     different
+                       torsional forces the cutter must               withstand.      Finding    a tool
+                                                              real-time Helical Interpolation information with good   core    strength
+                                                                                                                                 for your specific application.
+                       OurRamping-In
+                       plus new
+                              roomspeed        & feed
+                                       for proper     chipapp   “Milling Advisor”
+                                                             evacuation        is key. will  give youcorner
+                                                                                        Employing         specific cutting
+                                                                                                                 radius  end mills
+                       parameters
+                        This type
+                       during            for operations
+                                 thisofoperation
+                                         operation     can
+                                                      will    likeimmensely.
+                                                              be
+                                                           help     this (see
+                                                                   very           pg. 47).but institutes many different
+                                                                           successful,
+                        torsional forces the cutter must withstand. Finding a tool with good core strength
+                       Below
+                        plus     are some
+                              room              suggested
+                                       for proper                starting ramp
+                                                      chip evacuation                angles:
+                                                                               is key.  Employing corner radius end mills
+                         Ramping-In
+                       •during
+                          Non-Ferrous        Materials:          3º
+                                 this operation will help immensely.  –  10º
+                       • Ramping-In
+                       This   type of
+                          Ferrous        operation can be1ºvery
+                                     Materials:                      – 3ºsuccessful, but institutes many different
+                       torsional
+                        Below are   forces
+                                       somethe      cutter must
+                                                suggested             withstand.
+                                                                 starting             Finding a tool with good core strength
+                                                                             ramp angles:
+                        • This
+                       Our
+                       plus   newtype
+                              room
+                          Non-Ferrous  forof
+                                    speed      operation
+                                               &
+                                           proper feedchip
+                                             Materials:   app    can
+                                                                “Milling
+                                                             evacuation
+                                                                  3º – 10ºbe   very
+                                                                                  key.successful,
+                                                                            Advisor”
+                                                                              is        will give youcorner
+                                                                                        Employing          but radius
+                                                                                                                 institutes
+                                                                                                          specific cutting      many different torsional forces the cutter must
+                                                                                                                         end mills
+                       parameters
+                        • withstand.
+                       during
+                          Ferrous        for  operations
+                                             Finding
+                                 thisMaterials:
+                                       operation      will a  like
+                                                             tool
+                                                           help     this
+                                                                     –with (see   pg.  47).
+                                                                         3º good core strength plus room for proper chip evacuation is key. Employing
+                                                                  immensely.
+                                                                  1º
+                       corner
+                     Our
+                    Below new     radius
+                              arespeed
+                                   some       end
+                                           &suggested
+                                              feed appmills“Milling
+                                                              during
+                                                            starting     this angles:
+                                                                      Advisor”
+                                                                       ramp    operation
+                                                                                 will give youwill help cutting
+                                                                                               specific  immensely.
+                      Straight        Plunge
+                     parameters      for  operations
+                    • Non-Ferrous Materials:             like  this
+                                                             3º – 10º(see  pg.  47).
+                    •The  least Materials:
+                       Below
+                       Ferrous   preferred
+                                 are    some     method
+                                                    suggestedand
+                                                             1º – one   that can ramp
+                                                                  3º starting      easily break  a tool. The tool must
+                                                                                            angles:
+                     be center cutting. End milling incorporates a flat entry point making chip
+                      Straight
+                    Our   new speed   Plunge
+                                          & feed     app “Milling     Advisor”  willsuccess
+                                                                                      give yourandom
+                                                                                               specificatcutting
+                     evacuation     tough,     tool pressure      very  high and                           best.
+                          •
+                    parameters Soft/Non-Ferrous
+                     The least preferred         method
+                                     for operations      like Materials:
+                                                             and  one
+                                                               this (seethat  3º
+                                                                             can
+                                                                           pg.    –easily
+                                                                               47).  10º break a tool. The tool• Hard/Ferrous
+                                                                                                                  must        Materials: 1º – 3º
+                     Please note: Drill bits are intended for straight plunging and we highly recommend this
+                     be center
+                     type  of tool cutting.   End milling incorporates a flat entry point making chip
+                                   for this operation.
+                     evacuation
+                      Straight tough,Plunge    tool pressure very high and success random at best.
+ 4 | Machining Guidebook
+                     Our new
+                     Please
+                     The
+                            | © speed
+                              note: Drill
+                          least preferred
+                                           & feed
+                                 2016 Helical
+                                          bits
+                                                     app “Milling
+                                                  Solutions,
+                                                are intended
+                                                method      and
+                                                                LLC Advisor” will give you specific cutting
+                                                                for straight
+                                                                  one   that plunging
+                                                                             can        and
+                                                                                   easily   we highly
+                                                                                          break       recommend
+                                                                                                 a tool.          this
+                                                                                                         The tool must
+                                                                                                                                                              Helical
+                     parameters      for  operations
+                     type of tool for this operation.     like this  (see  pg.  47).
+nd safe practice with ferrous materials.    Employing
+                                      plus room           corner
+                                                   for proper  chip evacuation is key. Employing corner radius end mills
+                                     torsional
+ ring this operation will increase tool wear    forces
+                                              and       the cutter must withstand. Finding a tool with good core strength
+                                                    lessen
+                                      during this operation will help immensely.
+n. We recommend a programmedplus          room
+                                      helix       for proper
+                                            diameter          chip evacuation is key. Employing corner radius end mills
+                                                        >110-120%
+                                     during  this operation
+                                      Below are some suggestedwill help starting
+                                                                        immensely.ramp angles:
+                                      • Non-Ferrous Materials:           3º – 10º
+ feed app “Milling Advisor” will giveBelow   are some
+                                      you specific        suggested starting ramp angles:
+                                                     cutting
+             Types of Tool Entry
+ erations like this (see pg. 47).
+                                      • Ferrous Materials:
+                                     • Non-Ferrous Materials:
+                                     •Our
+                                       Ferrous
+                                           new Materials:
+                                                                         1º – 3º
+                                                                       3º – 10º
+                                                                     (cont.)
+                                                                       1º – 3º Advisor” will give you specific cutting
+                                                 speed & feed app “Milling
+                                      parameters for operations like this (see pg. 47).
+                                     Our new speed & feed app “Milling Advisor” will give you specific cutting
+                                     parameters
+tion can be very successful, but institutes    many fordifferent
+                                                        operations like this (see pg. 47).
+                                         Straight Plunge
+e cutter must withstand. Finding a tool with good core strength
+per chip evacuation is key. Employing Straight
+                                      The
+                                       Straight
+                                         corner      Plunge
+                                           least preferred
+                                                   radius         method
+                                                             Plunge
+                                                             end   mills and one that can easily break a tool. The tool must
+on will help immensely.               be center cutting. End milling incorporates a flat entry point making chip
+                                     The least preferred method and one that can easily break a tool. The tool must
+                                     beThe   least
+                                      evacuation
+                                         center       preferred
+                                                     tough,
+                                                  cutting.              method
+                                                                 tool pressure
+                                                              End milling           and
+                                                                                 very     one
+                                                                                       high
+                                                                            incorporates
+                                                                                             andthat
+                                                                                             a flat     can
+                                                                                                   success
+                                                                                                    entry    easily
+                                                                                                            random
+                                                                                                          point makingbreak
+                                                                                                                      at best.a tool. The tool must be center cutting. End
+                                                                                                                         chip
+ uggested starting ramp angles:
+                                       milling
+                                      Please
+                                     evacuation incorporates
+                                              note:  Drill bitstool
+                                                    tough,              a flat for
+                                                                 are pressure
+                                                                     intended  entry    point
+                                                                                   straight
+                                                                                very  high  andmaking
+                                                                                            plunging       chip
+                                                                                                      and we
+                                                                                                  success    highlyevacuation
+                                                                                                           random   recommend
+                                                                                                                     at best.     tough, tool pressure very high and success
+                                                                                                                                 this
+ terials:    3º – 10º                 type of tool for this operation.
+s:           1º – 3º                 Please note: Drill bits are intended for straight plunging and we highly recommend thisplunging and we highly recommend this type
+                                       random       at best.       Please    note:    Drill bits  are  intended     for  straight
+                                      Our
+                                     type  new
+                                          of toolspeed
+                                       of tool    for this &
+                                                 for            feed app “Milling Advisor” will give you specific cutting
+                                                      thisoperation.
+                                                               operation.
+ feed app “Milling Advisor” will give you  specific for
+                                      parameters      cutting
+                                                           operations like this (see pg. 47).
+ erations like this (see pg. 47).    Our new speed & feed app “Milling Advisor” will give you specific cutting
+                                     parameters for operations like this (see pg. 47).
+                                         Side Entry (use tools with a corner radius for best results)
+ ge
+                                        Side Entry (use tools with a corner radius for best results)
+d method and one that can easily break a tool. The tool must
+                                   Straight Entry                                           Roll-In Entry
+End milling incorporates a flat entry point making chip
+ tool pressure very high and success    Straight
+                                  Straight
+                                   Straight      Entry
+                                              entry
+                                            random   into theEntry
+                                                              part
+                                                       at best.                            Roll-In    Entry
+                                                                                            Rolling into the cut ensures
+                                   takes a toll on the cutter. Until the                    a cutter to work its way to full
+                                  Straight
+ are intended for straight plunging     weentry
+                                             highlyinto
+                                    andStraight          the part this
+                                                     recommend                             Rolling into the cut ensures
+ peration.                         cutter             entry
+                                           is fully engaged, into
+                                                                thethe
+                                                                    feedpart takes a toll onenagagement
+                                                                                             the cutter. Until    the cutter is fully engaged, the feed rate upon
+                                                                                                             and naturally
+                                  takes a toll on the cutter. Until the                    a cutter to work its way to full
+                                   rate entry
+                                        upon entryisengaged,
+                                                     recommended
+                                                        must be reducedto be reduced byacquireat least   50%.
+                                                                                                     proper  chip thickness.
+                                  cutter
+feed app “Milling Advisor” will give   youis fully
+                                              specific        the feed                     enagagement      and naturally
+                                   by at least   50%. cutting                               The feed rate in this scenario
+erations like this (see pg. 47). rate upon entry must be reduced                           acquire proper chip thickness.
+                                                                                            should be reduced by 50%.
+                                  by at least 50%.                                         The feed rate in this scenario
+                                                                                           should be reduced by 50%.
+se tools with a corner radius for best results)
+
+
+                                    Roll-In Entry
+part                                     Roll-In
+                                     Rolling           Entry
+                                             into the cut ensures
+er. Until the                        a cutter to work its way to full
+, the feed                               Rolling into
+                                     enagagement     andthe cut ensures a cutter to work its way to full enagagement and naturally acquire proper chip
+                                                          naturally
+be reduced                               thickness.
+                                     acquire           Thethickness.
+                                              proper chip   feed rate in this scenario should be reduced by 50%.
+                                     The feed rate in this scenario
+                                     should
+                                         		  be reduced by 50%.
+
+
+
+
+                                         Side Entry
+                                         (use tools with a corner radius for best results)
+
+
+
+
+                5 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                                    Helical
+Ramping
+Poor tool life and premature tool failure are concerns in every machining application. While there can be complicated answers,
+something as simple as tool path selection can make all the difference.
+
+What Is Ramping?
+Ramping refers to the simultaneous radial and axial motion of a cutting tool, making an angular tool path. Often times, this
+method is used to approach a part when there is a need to create closed forms such as pockets, cavities, engravings
+and holes. This eliminates the need to plunge with an end mill or
+drill to create a starting point. Ramping is particularly important in                  Figure 1: Circular & Linear Ramping
+micromachining, where even the slightest imbalance in cutting forces
+                                                                                         CIRCULAR                     LINEAR
+will cause a tool to fail.
+
+Ramping Tool Paths
+There are two forms of ramping: Linear and Circular (see Figure 1).
+Linear ramping involves moving a cutting tool along two axes (the
+z-axis and one of the x,y axes). Circular ramping, or helical interpolation,
+has a spiral motion of the cutting tool that engages all three axes (x, y
+and z axes). End mills with either center cutting or non-center cutting
+geometry can be used for both forms of ramping, however the angle
+of descent will vary depending on end style.
+
+Circular ramping typically has less radial engagement on the cutting
+tool, with the cutting forces distributed across the 3 different axes.                                        © 2016 Helical Solutions, LLC
+Linear ramping has significantly more radial engagement with
+complementally increased cutting forces distributed across only
+2 axes. However, both forms of ramping have a better distribution of forces than plunging, where all the cutting force is
+concentrated along the z-axis of the cutting tool. Consequently, circular ramping is recommended whenever possible, as it
+ensures the longest tool life.
+
+
+
+
+6 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                     Helical
+Ramping (cont.)
+Benefits of Ramping
+                                                                                               Figure 2: Arcing
+Ramping gradually increases in depth, preventing any shock loading on end mills, which
+reduces costs resulting from unnecessary tool breakage. Again, this is particularly
+helpful in fussy micromachining applications. Additionally, it produces smaller chips when
+compared to plunging, which makes chip evacuation faster and easier. As a result, cycle
+time can be decreased by running the end mill at faster speed and feed rates. Ramping
+also creates an extra space in the tool changer that would otherwise be occupied by a drill
+purposed with machining a starter hole.
+
+Arcing
+Similar to ramping in both method and benefit, arcing is another technique of approaching
+a workpiece (see Figure 2). While ramping enters the part from the top, arcing enters
+from the side. The end mill follows a curved tool path (or arc) when milling, thus gradually
+increasing the load on the tool as the tool enters the part, as well as gradually decreasing
+the load as the tool exits the part. In this way, shock loading and possible tool breakage          © 2016 Helical Solutions, LLC
+are avoided.
+
+
+
+
+7 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                     Helical
+Thin Wall Milling
+Milling part features with thin wall characteristics while maintaining dimensional accuracy and straightness can be difficult at
+best. Although multiple factors contribute, some key components are discussed below and can help turn these types of
+applications around.
+
+Proper Tooling
+A long length tool, combined with a long length of cut, can spell trouble in situations like this due to deflection, chatter and
+breakage. It is essential to keep the tool as strong as possible while maintaining the ability to reach to the desired depth. It is
+essential to look at necked-down tooling when reaching >3x dia. depths.
+
+Axial Depth of Cut (ADOC)
+Keeping a wide cross-section behind the wall for support on the way down is vital. Below, we recommend producing a
+“stepped down” approach dividing the total wall height to manageable depths while working each side of the wall. The ADOC
+dimension can/will vary depending on the material (and its hardness) being cut.
+
+
+
+                                                    Start with
+                                                     stub/reg
+                                                  length tooling
+                Detail A                                                                     Relieved
+                                                                                             neck will
+                                                                                            not rub on
+                                                                                               wall
+
+
+               N              O                    O
+                                                                                                                      This is the
+               P              Q              P     Q                   Q                                                tool’s
+                                                                                                                      LBS length
+               R              S              R     S               R   S                   S
+               T              U              T     U               T   U         T         U                      U
+
+             © 2016 Helical Solutions, LLC
+
+
+
+
+8 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                  Helical
+Thin Wall Milling (cont.)
+RDOC
+A progressive radial depth of cut (RDOC) strategy is of equal importance as wall height is being established. Reducing tool
+pressure while support stock is disappearing is equally important to keep wall stable.
+
+  • Detail A represents a 5-step progressive radial approach. The number of passes will depend upon your particular
+    application, material/hardness & final wall thickness/height.
+  • This approach helps to keep the pressure off the wall as you make your
+    way towards it. Additionally, it is recommended to alternate sides when
+    using this depth of cut (RDOC) strategy.
+                                                                                              Detail A
+  • 4th/5th RDOC passes could turn out to be very light, keeping wall
+                                                                                      1st RDOC - Up to 50% cutter dia.
+    vibration to a minimum and part finish maximized.                                 2nd RDOC - 30% cutter dia.
+Other Ideas                                                                        3rd RDOC - 15% cutter dia.
+                                                                                 4th RDOC - 5% cutter dia.
+  • Climb milling will help to keep tool pressure to a minimum.
+  • Vibration dampening/wall stabilization can be achieved in “hard to fixture
+    thin wall situations” by using thermoplastic compounds or wax - which
+
+
+
+
+                                                                                                 t ^i i
+    can be removed (thermally).
+  • The use of ultra-high performance tool paths can optimize tool
+    performance, work with lighter depths of cut and offer less tool cutting
+    pressure.                                                                                                   © 2016 Helical Solutions, LLC
+
+
+
+
+9 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                          Helical
+                                                    Tool deflection                                    Tool engagement violations
+                                                    Recutting chips                                    Breakage
+
+                                                Some things to consider;
+                                                  Step down milling routine - this procedure (shown in fig. 1a,1b,1c) ensures that you are utilizing a
+Deep Pocket Milling                               controlled axial depth of cut (ADOC) at each level, thus optimizing speeds and feeds. It is
+                                                  imperative to start with a stub or standard length tool to get down to approximately 2-3 x dia. deep
+                                                  (depth 1-2), then employ necked down tooling.
+Deep pocket milling continues to be one of the  most
+                                            Necked      demanding
+                                                      down               milling
+                                                              tooling - once      operations.
+                                                                              depths  2 and 3 areDeep  pocket
+                                                                                                  reached          milling
+                                                                                                           (fig. 1b),      routines
+                                                                                                                      use our strongerusually
+                                                                                                                                        neckedinvolve
+                                                                                                                                                down
+long reach, poor chip evacuation, limited coolant
+                                            toolingdelivery,
+                                                    in order to deflection   issues
+                                                                  maintain tool       and
+                                                                                integrity   serious
+                                                                                          and        tool engagement
+                                                                                              respectable feed rates. Neckedviolations.    We
+                                                                                                                                 tooling has    have
+                                                                                                                                             a shorter
+                                            length
+illustrated some helpful techniques below (see      of cut 1,
+                                               Figures     (LOC),
+                                                               2, 3).ensuring a much stronger tool and a neck diameter smaller than the cut
+                                                    diameter allowing for plenty of wall clearance.
+Common Problems Experienced
+                        Volumill Toolpath - we have had tremendous success while using the VoluMill tool path with this
+   • Chatter					                                   pocketing strategy. This optimized tool path ensures tool engagement violations are alleviated and
+                                                    allows for maximum speeds & feeds in deep pocketing situations (see pg. 51).
+   • Wall taper			                                                                                                            Utilize stronger
+   • Tool deflection				                                                                                                      medium length
+                                                                                                                              necked- down
+   • Tool engagement violations                                                  Start machining                              tooling
+                                                                                 with short/regular
+   • Recutting chips                                                             length tool                                  Relieved neck
+                                                                                                                              will not rub on wall
+   • Breakage
+
+
+
+
+                                                                                                                                                                     © 2016 Helical Solutions, LLC
+                                                                                    Depth 1
+
+                                                                                    Depth 2                                      Depth 2
+
+                                                                                                                                 Depth 3
+
+                                                           [Figure
+                                                              fig. 1a 1]         (final floor depth)      [Figure
+                                                                                                              fig. 1b 2]     (final floor depth)     [Figure
+                                                                                                                                                        fig. 1c 3]
+
+
+                                                                                                       Tool Deflection
+                                                   Rigidity during a milling operation is key for optimum tool performance and desired part results.
+Some Things to Consider                            Keeping tool deflection to a minimum will help to increase success on a deep reach application.
+   • Step down milling routine: This procedure (shown in Figures  1, 2, 3) ensures
+                                                              A Deflection    “Rule ofthat you are utilizing a controlled axial depth of
+                                                                                        Thumb”
+                                                               • Tool
+     cut (ADOC) at each level, thus optimizing speeds and feeds.   It isoverhang length
+                                                                         imperative  todecreases
+                                                                                        start withrigidity
+                                                                                                    a stub as or
+                                                                                                              a third power (L
+                                                                                                                 standard
+                                                                                                                              3
+                                                                                                                                ), but even
+                                                                                                                            length     tool to
+                                                                 more importantly, tool diameter increases rigidity by the fourth power (D4).
+     get down to approximately 2-3 x dia. deep (depth 1-2), then employ necked down tooling.
+                                                                                 Common techniques to combat deflection
+   • Necked down tooling: Once depths 2 and 3 are reached (Figure       2),tools
+                                                                 • Ensure   use are
+                                                                                 oursharp
+                                                                                     stronger    necked
+                                                                                            • Climb mill in down     tooling in order
+                                                                                                            lieu of conventional  milling to
+     maintain tool integrity and respectable feed rates. Necked tooling  hastool
+                                                                 • Increase   a shorter
+                                                                                 diameterlength
+                                                                                            • Useofshorter
+                                                                                                    cut (LOC),      ensuring
+                                                                                                            tool and/or         a necked
+                                                                                                                           employ much tooling
+                                                       force
+     stronger tool and a neck diameter smaller than the cut diameter allowing for plenty of wall clearance.
+                                                                 • Decrease  depth  of cut  • Increase number     of  flutes
+                                                                                   • Decrease IPM                    • Re-evaluate SFM parameter
+
+
+                                                             Deflection Result
+
+
+
+
+10 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                                             Helical
+Finishing
+Finishing cuts are used to complete the part and achieve the final dimension, tolerances, and surface finish.
+The goal when finishing a component is to avoid or at least minimize the necessity for manual re-touching.
+
+                                                                                                     [Figure 1]
+
+Factors that Influence Finish
+  • Specific material and hardness                          • Tool projection/deflection
+  • Proper cutting tool speeds & feeds                      • Tool-to-workpiece orientation
+  • Tool holder accuracy                                    • Rigidity of work holding
+  • Proper tool design and deployment                       • Coolant/lubricity
+
+                                                                                                         When contacting wall and
+                                                                                                         floor, feed rate may need to
+Tips for Successful Finishing                                                                            be reduced.
+
+  • Using an increased helix angle will help to improve surface finish.
+    		      45º or higher for Aluminum
+
+
+
+
+                                                                                                                              © 2016 Helical Solutions, LLC
+    		      38º or higher for hard metal machining
+  • Increasing the number of flutes will help to improve surface finish.
+    		       3, 4 for Aluminum
+    		       5, 7+ for hard metal
+  • Utilize tools with corner radii.
+  • Tool runout of .0003 or less.
+  • Using precision tool holders that are in good condition, undamaged and run true.
+  • Climb milling vs. conventional produces a better surface finish.
+  • Variable pitch tooling helps to reduce chatter and increase part finish.
+                                                                                                                                                75%
+  • Proper radial depth of cut (RDOC) between 2-5% of tool diameter.                                                                             of
+                                                                                                                                                LOC
+
+                                                                                                                                                75%
+  • For long reach walls, consider using “necked down” tools which allow less deflection, with LOC                                               of
+                                                                                                                                                LOC
+
+    overlap a good step blending will occur (see Figure 2).                                                                                        75%
+                                                                                                                                                    of
+                                                                                                                                                   LOC
+  • Extreme contact finishing (> 3.0 x dia. deep) may require a 50% feed rate reduction.
+
+                                                                                                             [Figure 2]
+
+
+11 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                Helical
+Finishing (cont.)
+Surface finishing is an important step in the operations sequence for the production of any high quality part. Many times, this
+requirement is aesthetically driven but other times has to satisfy print specification.
+
+Below is some common surface finish nomenclature:
+
+  • Ra = Roughness Average
+                                                                                             32    Ra = µin = .000032 in.
+  • Rq = RMS (Root Mean Square) = Ra x 1.1
+  • Rz = Ra x 3.1                                                                     part
+
+
+
+
+                                                                   QUICK REFERENCE GUIDE
+
+
+                                      To improve                     Increase       Lower         Climb
+                                     surface finish                    RPM           IPT           Mill
+
+                                   © 2016 Helical Solutions, LLC
+
+
+
+
+12 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                    Helical
+Ball Nose Milling Strategy
+90°
+Ball nose end mills are ideal for machining 3-dimensional contour shapes typically found in the die and mold industry,
+manufacturing of turbine blades and establishing general part radius requirements.
+
+To properly employ a ball nose end mill (with no tilt angle) and gain the optimal tool life and part finish, is to follow the 2-step
+process on the following page.
+
+
+
+
+               [Detail A]                                                                           [Figure 1]
+
+
+
+
+                                                D
+
+                                                    Deff
+
+                                                                                                           ADOC
+
+
+
+                                        © 2016 Helical Solutions, LLC
+
+                                                                                                    Deff
+
+
+
+
+13 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                  Helical
+Ball Nose Milling Strategy (cont.)
+Step One
+Calculate Your Effective Cutting Diameter (Deff) – Implemented when using a ball nose end mill that is utilizing a ADOC that is
+less than the full radius of the ball. This can be done using the chart below (see Figure 2) that represents some common tool
+diameters and ADOC combinations or by using the traditional calculation (see Figure 3).
+
+[Figure 2]
+
+
+
+                                                                    AXIAL DEPTH OF CUT (ADOC)
+                          .010   .020   .030   .050   .070   .090      .120   .150    .180      .220   .260    .300   .350    .400     .450
+                                                                                                                                               [Figure 3]
+                    1/8   .068   .092   .107   .122   .124   .112      .049
+                    1/4   .098   .136   .162   .200   .224   .240      .250   .245    .224      .162
+                                                                                                                                                     Deff = 2 x √ADOC x (D-ADOC)
+ TOOL DIAMETER
+
+
+
+
+                    3/8   .121   .169   .203   .255   .292   .320      .350   .367    .375      .369   .346    .300   .187
+                    1/2   .140   .196   .237   .300   .347   .384      .427   .458    .480      .496   .500    .490   .458    .400     .300
+                    5/8   .157   .220   .267   .339   .394   .438      .492   .533    .565      .596   .615    .624   .620    .600     .561
+                    3/4   .172   .242   .294   .374   .436   .487      .550   .600    .641      .683   .714    .735   .748    .748     .735
+                     1    .199   .280   .341   .436   .510   .572      .650   .714    .768      .828   .877    .917   .954    .980     .995
+                                                                                                       © 2016 Helical Solutions, LLC
+
+
+
+
+Step Two                                                                                                                                      ADOC    =      Axial Depth of Cut
+Calculate Your New Velocity Adjustment (Vadj) - This new velocity adjustment                                                                  D       =      Cutting Diameter
+will be calculated using the new effective cutting diameter (Deff). If you are using                                                          Deff    =      Effective Cutting Diameter
+                                                                                                                                              R       =      Tool Radius (Dia./2)
+less than the cutter diameter, then its likely your RPM’s will need to be adjusted
+                                                                                                                                              RDOC    =      Radial Depth of Cut
+upward (see Figure 4).                                                                                                                        SFM     =      Surface Feet per Minute
+                                                                                                                                              Vadj    =      Adjusted Revolutions per Minute
+
+
+                 [Figure 4]
+
+                          Vadj = SFM x 3.82
+                                    Deff
+
+
+
+
+14 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                                                                      Helical
+Ball Nose Milling Strategy (cont.)
+At 15° Incline
+It is highly recommended to use ball nose end mills on an incline (ß) to avoid a “0” SFM condition at the center of the tool, thus
+increasing tool life and part finish. For ball nose optimization (and in addition to tilting the tool), it is highly recommended to feed
+the tool in the direction of the incline and utilize a climb milling technique.
+
+To properly employ a ball nose end mill (with a tool angle) and gain the most optimum tool life and part finish is to follow the
+2-step process on the following page.
+
+
+
+
+                                                                                              ß+
+
+
+
+                       [Detail A]                                             [Figure 1]
+
+
+
+                                                                                  Feed               Tool Tilt
+                                                                                  Direction          ß=+ 15º
+
+                                             Deff                 Tool Tilt
+                                                                  ß=+ 15º
+                                                                                                            ADOC
+
+
+
+
+                                  © 2016 Helical Solutions, LLC
+                                                                                              Deff
+
+
+
+
+15 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                 Helical
+Ball Nose Milling Strategy (cont.)
+Step One
+Calculate Your Effective Cutting Diameter (Deff) - To be implemented when using a ball nose end mill that is utilizing a ADOC that
+is less than the full radius of the ball. This can be done using the chart below (see Figure 2) that represents some common tool
+diameters & ADOC’s at 15º tilt angle or by using the traditional calculation
+(see Figure 3).
+
+[Figure 2]
+
+
+
+                                                                   AXIAL DEPTH OF CUT (ADOC)
+     15° Tilt
+                         .010   .020   .030   .050   .070   .090   .120   .150   .180   .220   .260   .300   .350   .400   .450   .500
+                 1/8     .093   .111   .120   .125   .116   .094   .018                                                                      [Figure 3]
+                 1/4     .154   .185   .206   .232   .245   .250   .244   .224   .188   .108
+                                                                                                                                                          [           (            )]
+ TOOL DIAMETER
+
+
+
+
+                 3/8     .209   .249   .278   .317   .343   .360   .373   .374   .366   .340   .297   .232   .097                            Deff = D x sine ß + arccos D-2 x ADOC
+                                                                                                                                             				 D
+                 1/2     .259   .308   .343   .393   .428   .454   .480   .494   .500   .495   .477   .447   .391   .309   .186
+                 5/8     .308   .364   .404   .463   .506   .539   .575   .600   .615   .625   .622   .610   .580   .534   .471   .386
+                 3/4     .355   .417   .463   .530   .579   .618   .663   .696   .720   .740   .749   .749   .736   710    .671   .618
+                 1       .446   .519   .573   .654   .715   .765   .824   .871   .908   .945   .972   .989   .999   .998   .987   .966
+                                                                                                         © 2016 Helical Solutions, LLC
+
+
+
+
+Step Two
+                                                                                                                                         Deff = Effective Cutting Diameter
+Calculate Your New Velocity Adjustment (Vadj) - This new velocity adjustment                                                             R = Tool Radius
+will be calculated using the new effective cutting diameter (Deff). If you are                                                           ADOC = Axial Depth of Cut
+using less than the cutter diameter, then its likely your RPM’s will need to be                                                          Deff = Effective Cutting Diameter (see Figure 2)
+                                                                                                                                         SFM = Mfg Recommended Surface Feet per Minute
+adjusted upward (see Figure 4).
+                                                                                                                                         Vadj = Adjusted RPM for lighter ADOC
+
+
+                 [Figure 4]
+
+                       Vadj = SFM x 3.82
+                                 Deff
+
+
+
+
+ 16 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                                                                    Helical
+Corner Engagement
+                                                                                                                      >90º
+Milling involves significant variations in cutting forces, resulting in ultra-conservative tool running parameters and premature tool
+wear. One difficult (and often suspect) area of this type of machining is when the cutting tool experiences an “inside corner”
+                                                                      >90º
+condition. This is where the tool’s engagement angle significantly increases and poor performance may be experienced.
+
+Evidence of this difficult to machine area is detected by:
+
+  • Chatter - visible in “poor” corner finish.
+  • Deflection - detected by unwanted “measured” wall taper.
+  • Cutting sound - tool squawking or chirping in the corners.
+  • Tool breakage/chipping - detrimental tool breakage or chipping, resulting in tool replacement.
+
+
+
+
+                            >90º                                     >90º
+
+
+
+
+                                                                                                                                    © 2016 Helical Solutions, LLC
+                                                                                                       <90º
+
+
+
+
+        Least Desirable                                    More Desirable                           Most Desirable
+
+
+17 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                              Helical
+Corner Engagement (cont.)                                                                                          >90º
+
+
+Least Desirable Condition
+Generating an inside part radius that matches the radius of the tool at a 90º                                      >90º
+direction change can make for a less than ideal machining condition. With the tool
+experiencing extra material to cut (light green), increased engagement angle and
+a direction change some of the common results will be chatter, tool deflection/                                    >90º
+breakage and poor surface finish.
+
+Feed rate may need to be lessened depending on the “tool radius-to-part radius ratio.”
+
+
+More Desirable Condition                                                                                           >90º
+Generating an inside part radius that matches the radius of the tool with a sweeping
+direction change creates a more acceptable machining condition. The smaller
+radial depths of cut in this example help to manage the angle of engagement, but
+at the final pass the tool will experience a very high engagement angle and again,
+a less than desirable machining condition. Some of the common results will be                                      >90º
+chatter, tool deflection/breakage and poor surface finish.
+
+Feed rate may need to be reduced by 30-50% depending on the “tool radius-to-part radius ratio.”                    >90º
+
+
+Most Desirable Condition
+Generating an inside part radius with a smaller tool and a sweeping action creates
+a very desireable machining condition. The manageable radial depths of cut and
+
+
+
+
+                                                                                                                             © 2016 Helical Solutions, LLC
+smaller tool diameter allow management of the tool engagement angle, higher
+feed rates and better surface finishes. As the cutter reaches full radial depth its
+engagement angle will increase, but feed reduction should be much less than the
+other conditions listed above.                                                                              <90º
+Feed rate may need to be heightened depending on the “tool-to-part ratio.” Utilize tools that are smaller
+than the corner you are machining.
+
+
+18 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                           Helical
+                                                                                                              º
+     Angle of Engagement
+     The Tool Engagement Angle (ae) is an angular measurement about the periphery of the cutter that is in contact with the
+     material being removed and directly related to the radial chip thickness.
+
+     An Increasing ae can result in:
+
+          • Higher horsepower requirement
+          • Increased tool deflection                                               ae
+          • Higher spindle load (wear/tear)		
+                                                                      tool
+          • Decreased feed rates
+                                                                             ae
+     A decreasing ae can result in:
+                                                                                                              tool
+          • Lower horsepower requirement
+     ae                                                                                                                                                           ae
+          • Decreased tool deflection                                                                              ae
+ol        • Lower spindle
+                                                                                                                                                 ae   tool
+                     tool load (wear/tear)                                                                                    tool
+          • Increased Feed Rates
+                                                                             ae                                                                              ae
+
+                        ae                                     tool                                                             ae
+
+                                                                                         ae
+                                                          ae
+                                                                             tool
+                                                                                                                  tool
+                                                                                                                                                             ae
+                                                                             ae
+                                                                                                                     ae                   tool
+                                                                                              © 2016 Helical Solutions, LLC
+                                                                                                                                     ae
+
+
+
+
+      19 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                       Helical
+                          Characteristics of climb milling;
+                        Climb Milling
+                                • Helps to prolong tool life
+Climb vs. Conventional Milling  •InImproved     surface
+                                    climb milling,    thefinishes
+                                                           cutter is revolving in the same direction as the table feed. The
+                        teeth meet      the workpiece
+                                • Downward        force onatwork
+                                                               maximum
+                                                                    piece chip thickness, producing the thickest part of
+There are two distinct the
+                        ways chip   first.
+                               to (minimizing
+                                   cut             part movement)
+                                        materials when    milling, conventional (up) milling and climb (down) milling. The difference
+between these two techniques is the relationship of the rotation of the cutter to the direction of feed.
+                                •Fundamentally,
+                                   Less rubbing &this material
+                                                           method work   hardening
+                                                                      is sound    and proven to work best in most cases. The
+In conventional milling,toolpath,    VoluMill
+                                • Higher
+                         the cutter
+                                               ®
+                                                 (see
+                                            initial
+                                      rotates         pg.51),
+                                                    load
+                                              against     and
+                                                        the      ensures
+                                                                 heightened
+                                                            direction      thatfeed
+                                                                       of the   ifatools
+                                                                                    cutter
+                                                                                     while experiences  this cut
+                                                                                           during climb milling, themethod   100% with the
+                                                                                                                     cutter rotates
+                        of the
+feed. Conventional milling       time.
+                            is the  traditional
+                                   are  gettingapproach
+                                                  dull. Keepwhen    cutting
+                                                                tools sharp!because the backlash, the play between the lead screw and
+the nut in the machine table, is eliminated.                                                                          table feed
+                              • Desired method for high performance
+                          Characteristics of climb milling;
+Recently, climb milling has beensolid carbideascutters
+                                 recognized     the preferred way to approach a
+workpiece due to the fact that• Helps  to prolong
+                                more and           tool lifecompensate for backlash or
+                                          more machines
+have a backlash eliminator. Below are some
+                             • Improved    key properties
+                                         surface finishes for both conventional and
+climb milling.
+                   • Downward force on work piece
+
+Conventional Milling    Conventional Milling
+                     (minimizing part movement)
+                   • Less rubbing & material work hardening
+  • Chip width starts from zero and increases which causes more heat to diffuse into the
+                             InHigher
+                                conventional    milling,
+                                                    and the cutter is revolving
+                                                                      if tools in the opposite direction as the table
+    workpiece and produces• work       initial load
+                                   hardening             heightened
+                        feed. Therefore, the dull.
+                                are getting  width  of the
+                                                   Keep    chip
+                                                        tools   theoretically starts at zero and increases to a
+                                                              sharp!
+  • Tool rubs more at the beginning of the cut causing faster tool wear and decreases
+                     maximum width at the end of the cut - accelerating tool wear.                                    table feed
+    tool life               • Desired method for high performance
+  • Chips are carried upward by solid
+                                  thecarbide  cutters
+                                      tooth and fall in front of cutter creating a marred
+    finish and re-cuttingCharacteristics
+                         of chips        of conventional milling;
+  • Upwards forces created •in Increases
+                               horizontal milling tend to lift the workpiece, more intricate
+                                          tool wear
+    and expansive work holdings are needed to lessen the lift created
+                               • Increases rubbing & work hardening
+Climb Milling           Conventional Milling
+                               • Produces upward force on part
+
+
+
+
+                                                                                                                                         © 2016 Helical Solutions, LLC
+                            • Tools with
+  • Chip width starts from maximum       higher level
+                                    and decreases     of toughness
+                                                  so heat  generatedlend
+                                                                       will more likely
+    transfer to the chip    In conventional milling, the  cutter is revolving  in the opposite direction as the table
+                              themselves to this method better than
+                     feed.plane
+  • Creates cleaner shear  Therefore,
+                                which the width
+                                      causes theof the
+                                                tool tochip theoretically
+                                                       rub less           starts
+                                                                and increases    atlife
+                                                                              tool   zero and increases to a
+                              solid carbide.
+                       maximum width at the end of the cut - accelerating tool wear.
+  • Chips are removed behind the cutter which reduces the chance of re-cutting
+                               • Preferred method (over climb milling) when
+ • Downwards forces in horizontal milling is created that helps hold the workpiece
+                                  removing or breaking through abrasive
+   down, less complexCharacteristics
+                           work holdings are      need   when coupled   with these forces
+                                  material of      conventional
+                                                scale             milling;
+                                                       or flame cut areas.                                            table feed
+
+
+                               • Increases tool wear
+20 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                     Helical
+                               • Increases rubbing & work hardening
+Climb vs. Conventional Milling (cont.)
+
+When to Choose Conventional or Climb Milling
+Climb milling is generally the best way to machine parts today since it reduces the load from the cutting edge, leaves a better
+surface finish, and improves tool life. During conventional milling, the cutter tends to dig into the workpiece and may cause the
+part to be cut out of tolerance.
+
+Even though climb milling is the preferred way to machine parts, there are times when conventional milling is the
+recommended choice. Backlash, which is typically found in older and manual machines, is a huge concern with climb milling. If
+the machine does not counteract backlash, conventional milling should be implemented. Conventional milling is also suggested
+for use on casting or forgings or when the part is case hardened since the cut begins under the surface of the material.
+
+
+
+
+21 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                            Helical
+                                                                                                                                       e
+
+
+
+
+Chip Thinning
+Milling with a light radial depth of cut (less than 50% of cutter diameter) causes the chip being formed to be much thinner than
+the programmed advance per tooth. This results in excessive tool “rubbing” and premature tool wear/life.
+
+
+                                   [Figure 1]                                                                           [Figure 2]
+                                                                  Figure 1                                                                  Figure 2
+                          Figure 1                                                                            Figure 2
+                                                                                             Inches per tooth (IPT)                                                           Inches per tooth (IPT) is equal to
+                                                Inches per tooth (IPT)                                                                     Inches per tooth (IPT) is equal to the maximum chip thickness when
+                                                                                                                                           the maximum chip thickness whenRDOC is 50% of the tool diameter
+                                                                                                                                           RDOC is 50% of the tool diameter
+
+                                                                                                                                                                                             Maximum chip
+   © 2016 Helical Solutions, LLC
+
+
+
+
+                                                                                                                                                                                             thickness (CT)
+                                                                                                                                                          Maximum chip
+                                                                                                                                                          thickness (CT)
+                                                                                 Feed
+                                                                                 Direction
+                                                                                                                      Radial depth                                                           Radial depth
+                                                                                                                      of cut (RDOC)                                                          of cut (RDOC)
+
+                                                                         Radial depth                                                                     Radial depth
+                                                                         of cut (RDOC)                                                                    of cut (RDOC)
+                                                                                                                      Maximum chip
+                                                             RDOC < 50% DIAMETER                                      thickness (CT)        RDOC ≥ 50% DIAMETER
+
+                                                                         Maximum chip
+ RDOC < 50% DIAMETER                                                     thickness (CT)                      RDOC ≥ 50% DIAMETER
+
+
+                                                                                                                                                                   Radial Chip Thinning Calculation
+When programming a radial depth of cut (RDOC) less than 1/2 the tool
+diameter (Figure 1), employ the chip thinning calculation (Figure 3). A chip-
+                                                                                                                                                                                   CT x D
+thinning adjustment will prolong tool life and help reduce cycle time.                           IPT =
+                                                                            Radial Chip Thinning Calculation
+                                                                                                                                                                          2 x √ (D x RDOC) - RDOC2
+This feed rate adjustment needs to consider drastic tool engagement and                               [Figure
+                                                                                                         Figure3]
+                                                                                                                3
+angle increases when milling into corners. Significant feed rate reductions in          CT x D
+                                                                        IPT =
+these areas still apply and will need attention.                               2 x √ (D x RDOC) - RDOC2
+
+                                                                                                                                                Figure 3
+
+
+
+22 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                                                                                                       Helical
+                                                         02
+                                            High Efficiency
+                                                    Milling
+                                                           High Efficiency Milling  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 24
+                                                           HEM Tooling .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 25
+
+
+
+
+23 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                                 Helical
+High Efficiency Milling
+High Efficiency Milling (HEM) has become a common term in machine shops worldwide, but what does it mean? Simply, HEM
+is a milling technique for roughing that utilizes the entire flute length, spreading the wear evenly across the cutting length of the
+tool.
+
+How It Works
+Machining technology has been advancing with the devlopment of faster, more powerful machines. In order to keep up, many CAM
+applications are generating more efficient HEM tool paths. These tool paths adjust parameters to maintain constant tool load throughout
+the entire roughing operation and allow more aggressive speeds and feeds.
+
+Advantages
+  • Increased metal removal rates
+  • Reduced cycle times
+  • Increased tool life
+
+
+
+          Standard                                                        High
+           Milling                                                     Efficiency
+                                                                        Milling
+                                                Lower
+               Work (and heat) is               ADOC
+
+
+
+
+                                                                                                   © 2016 Helical Solutions, LLC
+              concentrated along                                          Work (and heat) is
+                a smaller portion                                         spread over entire
+              of the cutting edge                                         cutting edge
+                                                                                                                                   Higher
+                                                                                                                                   ADOC
+
+
+                           Higher RDOC
+
+
+                                 More
+                                 Axial                                                                                                More
+                               Passes                                                                                                 Radial
+                                                                                               Lower RDOC
+                                                                                                                                      Passes
+
+
+
+
+24 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                                    Helical
+HEM Tooling
+High efficiency milling can only go so far with general tooling. That’s why Helical offers thousands of high performance tools
+specifically designed to withstand the rigors of HEM strategies. The following case studies illustrate the power of HEM using
+Helical end mills versus traditional roughing.
+
+
+
+
+                                                1/2” 5-Flute End Mill in 17-4ph (36 Rc) — (HEV-5)
+                                                                                       Cycle Time       Parts           Tool Cost
+                           RPM          IPM        RDOC         ADOC          MRR
+                                                                                        per Part       per Tool          per Part
+            Traditional
+                           2,200        20       .250 (50%)   .250 (50%)      1.25       11:20            15              14.66
+             Roughing
+               HEM         6,000        80       .062 (12%)   .500 (100%)     2.50       7:00             40               9.22
+
+              Results        -           -           -             -         +100%      -38.24%      +166.67%            -37.11%
+
+
+
+
+                                              1/2” 3-Flute Rougher in 6061 Aluminum — (H45AL-C-3)
+                                                                                       Cycle Time       Parts           Tool Cost
+                           RPM          IPM        RDOC         ADOC          MRR
+                                                                                        per Part       per Tool          per Part
+            Traditional
+                          12,000        350      .250 (50%)   .500 (100%)    43.75       11:00           350              14.66
+             Roughing
+               HEM        18,000        500      .200 (40%) 1.000 (200%)      100        3:00            900               3.33
+
+              Results        -           -           -             -        +128.57%    -72.73%      +157.14%            -77.29%
+                                                                                                    © 2016 Helical Solutions, LLC
+
+
+
+
+25 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                            Helical
+                                                                     04
+                                                           Depth of Cut
+                                                             Depth of Cut .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 27
+                                                             Depth of Cut - Peripheral .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 28
+                                                             Depth of Cut - Slotting .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 34
+
+
+
+
+26 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                                    Helical
+Depth of Cut
+Radial Depth of Cut (RDOC)
+  • The distance a tool is stepping over into the the material
+  • Stepover, Cut Width, XY
+
+
+Axial Depth of Cut (ADOC)
+  • The distance a tool is being sent into the cut along it’s centerline.
+  • Directly related to MRR
+
+
+
+
+                                                                            © 2016 Helical Solutions, LLC
+27 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                    Helical
+Depth of Cut - Peripheral
+Traditionally, it has been:                                New strategies include:
+
+  • Heavy RDOC                                               • Light RDOC
+  • Light ADOC                                               • Heavy ADOC
+  • Conservative IPM                                         • Increased IPM
+
+
+
+
+                                                                                     © 2016 Helical Solutions, LLC
+28 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                             Helical
+Depth of Cut - Peripheral (cont.)
+
+
+
+
+                                                                          © 2016 Helical Solutions, LLC
+                                                            Works with
+                                                             lower RDOC
+
+Necked down            
+tool style                                                                                                    Too long of a
+                                                                                                              LOC, leading to
+                                                                                                             deflection and
+                                                                                                              chatter
+
+
+
+
+29 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                              Helical
+Depth of Cut - Peripheral (cont.)
+
+
+
+
+                                                           © 2016 Helical Solutions, LLC
+
+
+
+
+30 | Machining Guidebook | © 2016 Helical Solutions, LLC                                   Helical
+Depth of Cut - Peripheral (cont.)
+High Efficiency RDOC Strategy
+  • Uniform cuts will increase tool life
+  • Climb Milling increases tool life
+  • Lowered RDOC = 7%-30% x D
+  • Increased IPM = chip thinning parameter must include “inside arc” feed reduction
+  • Multi-Fluted tools can be used
+  • Utilize HE type of tool paths for best results!
+
+
+
+
+                                                                     © 2016 Helical Solutions, LLC
+
+
+
+
+                                                                   RDOC
+
+
+
+
+31 | Machining Guidebook | © 2016 Helical Solutions, LLC                                             Helical
+Depth of Cut - Peripheral (cont.)
+High Efficiency ADOC Strategy
+  • Controlled slice milling
+  • Accommodates lower RDOC
+  • Up to 2 x dia. ADOC
+  • Utilizes majority of LOC
+  • Multi-fluted tooling allows larger core dia. = less deflection
+  • Tends to “stabilize cutter” by disbursing load for entire axial LOC length
+  • Increased ADOC = Increase in MRR
+  • Utilize HE type of Tool Paths for best results!
+
+
+
+
+                                                                       © 2016 Helical Solutions, LLC
+
+
+
+
+32 | Machining Guidebook | © 2016 Helical Solutions, LLC                                               Helical
+Depth of Cut - Peripheral (cont.)
+Light RDOC / Heavy ADOC Strategy
+  • Higher ADOC can help stabilize the cutter.
+  • Uniform cuts accommodate less “mechanical stress” and increase tool life
+  • Better heat/chip management
+  • Increased IPM (due to chip thinning)
+  • CAM applications with HP tool paths are good solutions for this type of strategy
+
+
+
+
+                                                           © 2016 Helical Solutions, LLC
+
+
+
+
+33 | Machining Guidebook | © 2016 Helical Solutions, LLC                                   Helical
+Depth of Cut - Slotting
+
+
+
+
+34 | Machining Guidebook | © 2016 Helical Solutions, LLC   © 2016 Helical Solutions, LLC   Helical
+Depth of Cut - Slotting (cont.)
+Controlled Slice Milling - RDOC Strategy
+  • Uniform cuts will increase tool life
+  • Lowered RDOC = 10-15% of tool diameter
+  • Increased IPM = chip thinning parameter must include “inside arc” feed reduction
+  • Max Cutter dia 55-65% of slot width
+  • Multi-Fluted tools can be used
+  • Must be able to evacuate the chip
+
+
+
+
+                                                                                   © 2016 Helical Solutions, LLC
+
+
+
+
+35 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                           Helical
+Depth of Cut - Slotting (cont.)
+Controlled Slice Milling - ADOC Strategy
+  • Allows for increased ADOC
+  • Up to 2 x dia. ADOC
+  • Utilizing entire LOC
+  • Multi-fluted tooling allows larger core dia. = less deflection
+  • Tends to “stabilize cutter” by disbursing load for entire axial LOC length
+  • Increased ADOC = Increase in MRR
+  • Utilize HE type of Tool Paths for best results!
+
+
+
+
+                                                                         © 2016 Helical Solutions, LLC
+
+
+
+
+36 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                 Helical
+                                                                     04
+                                                               End Mill
+                                                           Construction
+                                                             Geometry Definitions .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 38
+                                                             End Mill Construction .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 40
+                                                             End Mill Anatomy .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 42
+
+
+
+
+37 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                              Helical
+Geometry Definitions
+
+  Core Diameter               The diameter measured tangent from bottom of all flutes. This diameter dictates the strength of your end mill.
+
+
+
+  Cutting Diameter:           Measured from margin-to-margin on cutting end of tool. An even number of flutes can be measured 180º apart.
+
+
+
+  Dish Angle:                 Angle perpendicular to centerline of tool and allows proper end cut characteristics - reduces full diameter contact.
+
+
+
+  Flute Wash:                 Amount of non-cutting flute area past the length of cut.
+
+
+
+  Gash Angle:                 The diameter measured tangent from bottom of all flutes. This diameter dictates the strength of your end mill.
+
+
+
+  Helix Angle:                This is the angle formed by a line tangent to the angle of the flute grind and parallel to the centerline of the tool.
+
+
+  Length Below Shank
+                              A length measured from front of tool back to the shank, allowing extra room for deep pocketing conditions.
+  (LBS):
+
+
+  Length of Cut (LOC):        This is the actual cutting depth of the tool in the axial direction.
+
+
+
+  Overall Length (OAL):       A measurement taken from end-to-end of the tool.
+
+
+
+  Cylindrical Margin:         Portion of the “uncleared” area on the peripheral area of the tool, allowing for a small area of contact with the work iece.
+
+
+
+  Pitch:                      This is an equal angular measurement from flute-to-flute. If the tool is a variable pitch style then this spacing is unequal.
+
+
+
+
+38 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                                       Helical
+Geometry Definitions (cont.)
+
+ Radial Rake:                The angle of the rake face measured from center of the tool.
+
+
+                             Area where cutting face is relieved behind the cutting edge in order to avoid rubbing, while maintaining maximum cutting
+ Radial Relief:
+                             tool strength.
+
+
+     Cylindrical:            A very effective relief for non-ferrous alloys. Includes a primary and secondary relief angle.
+
+
+                             A powerful edge design for ferrous and tough material cutting. This design includes a primary relief measured radially
+     Eccentric:
+                             along its edge.
+
+
+     Standard:               A traditional grind allowing for moderate edge strength and high degree of primary and secondary radial relief.
+
+
+
+ Shank Diameter:             The end of the tool that is held in the holder and requires a high degree of accuracy and roundness.
+
+
+
+
+39 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                                 Helical
+End Mill Construction
+
+
+                                                Gash
+                                                Angle                                                                         Pitch with unequal
+                                                                      Dish Angle             Radial                         spacing is also known
+                                                                                             Rake                             as “variable pitch”
+                                                                                                                    Pitch
+
+
+
+                                C
+                                L
+                                                                         Cutting
+                                                                        Diameter
+                                                                                                                                                                       (
+                                                                                                                      Core
+                                                                                                                    Diameter
+                                             View A-A                                         View B-B
+                                                                                                                                              Part
+
+                                                                      Overall Length (OAL)
+                                                                                                                                                                   Length
+                                                                                              Length of Cut (LOC)                                                  Below
+                                                        Helix                                                                                                      Shank
+                                                        Angle                                                                  B                                   (LBS)
+
+                          Shank
+                         Diameter
+                                        C
+                                        L
+                                      © 2016 Helical Solutions, LLC
+                                                                                                              A-A              B
+                                                                         Flute Wash
+                                                                                                                                                               (LOC)
+
+
+
+
+40 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                                             Helical
+                                                                                                                                                Radial Relief Types
+     End
+      A-A
+          Mill
+           B
+               Construction(LOC)
+                             (cont.)
+
+
+
+
+                  Gash
+                                       Radial Relief Types                                 Pitch with unequal
+
+
+
+
+                                                                                                                  © 2016 Helical Solutions, LLC
+                  Angle                          Radial
+                                   Dish Angle                                            spacing is also known
+                                                  Rake                                     as “variable pitch”
+                                  Margin
+                                                                                 Pitch
+                                                            primary
+                                                                        secondary
+                                  Rake
+       C
+       L                          Face Cutting
+                                      Diameter
+                                                                                                                                                                (OAL)
+                                           Cylindrical                             Core
+                                                                                 Diameter
+                 View A-A                                  View B-B
+                                                                                                           Part
+                                                                   primary
+                                    Overall Length (OAL)          (measured
+                                  Rake                             radially)
+                                  Face
+                                                                                                                                                            Length
+                                                           Length of Cut (LOC)                                                                              Below
+                          Helix                                                                                                                             Shank
+                          Angle            Eccentric                                        B                                                                (LBS)
+
+ Shank
+Diameter
+             C
+             L
+                                                              primary
+                                  Rake                                  secondary
+                                                                             A-A            B
+                                  Face Flute Wash
+                                                                                                                                                     (LOC)
+
+
+                                           Standard
+
+
+                                                                                                             Radial Relief Types
+
+     41 | Machining Guidebook | © 2016 Helical Solutions, LLC                                          Margin                                                           Helical
+                                                                                                                                                  primary
+End Mill Anatomy
+
+Cutting Diameter
+Measurement taken from the “margin” on one flute – 180º- to the opposite margin/tooth in the first 10% of cutting diameter.
+
+
+
+
+       © 2016 Helical Solutions, LLC
+
+
+
+
+Helix Angle
+Angle formed between centerline of the tool and the edge of rake face.
+
+
+
+
+          © 2016 Helical Solutions, LLC
+
+
+
+
+42 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                         Helical
+End Mill Anatomy (cont.)
+
+Flutes
+Flutes are the spiraled cutting edges of the tool that allow for chip evacuation.
+
+
+
+
+        © 2016 Helical Solutions, LLC
+
+
+
+
+Flute Number
+The number of flutes can dictate chip evacuation, tool strength, and part finish, among other things. Lower flute counts are
+ideal for gummy materials and heavy radial depths of cut, while higher flute counts are ideal for harder materials and light radial
+depths of cut.
+
+
+
+
+            © 2016 Helical Solutions, LLC
+
+
+
+43 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                              Helical
+End Mill Anatomy (cont.)
+
+Variable Pitch
+While constant pitch tools are equally spaced tooling at a 90° angle, variable pitch designs have variable flute spacing. The helix
+angle is the same on all flutes, but the pitch varies to help break up harmonics and reduce chatter.
+
+
+
+
+           © 2016 Helical Solutions, LLC
+
+
+
+
+44 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                             Helical
+End Mill Anatomy (cont.)
+
+Neck Length
+Measurement taken from the “margin” on one flute – 180º- to the opposite margin/tooth in the first 10% of cutting diameter.
+
+
+
+
+                                                                      Stronger
+                                                                  Choice
+
+
+
+
+               © 2016 Helical Solutions, LLC
+
+
+
+
+45 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                         Helical
+End Mill Anatomy (cont.)
+
+Core Diameter
+Measurement taken from bottom of one flute to bottom of opposite flute.
+
+Smaller Core
+
+  • Max. chip room
+  • Smaller # flutes
+  • Decreased tool strength
+
+
+
+Larger Core
+
+  • Min. flute depth
+  • Larger # of flutes
+  • Increased tool strength
+
+
+
+
+                                                           © 2016 Helical Solutions, LLC
+
+
+
+
+46 | Machining Guidebook | © 2016 Helical Solutions, LLC                                   Helical
+End Mill Anatomy (cont.)
+
+Axial Relief
+The axial relief is the relief behind the cutting teeth of the tool. They allow for the highest tooth strength without rubbing.
+
+
+
+
+                                                                                   © 2016 Helical Solutions, LLC
+
+
+
+
+47 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                 Helical
+End Mill Anatomy (cont.)
+
+End Gash
+Establishes end clearance for center cutting operations and combines a specific width and angle for increased performance.
+The end gash is the traditional method of providing axial feed capabilities.
+
+
+
+
+                                                           © 2016 Helical Solutions, LLC
+
+
+
+
+48 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                      Helical
+End Mill Anatomy (cont.)
+
+Radial Relief
+Relief behind the cutting edge along the flute length. Common styles include cylindrical relief, eccentric relief, and standard
+relief.
+
+                                                              Cylindrical Relief
+                                                              A very effective relief for non-ferrous alloys. Includes a primary and
+                                                              secondary relief angle.
+
+                                                              Eccentric Relief
+                                                              A powerful edge design for ferrous and tough material cutting. This
+                                                              design includes a primary relief measured radially along its edge.
+
+                                                              Standard Relief
+                                                              A powerful edge design for ferrous and tough material cutting. This
+                                                              design includes a primary relief measured radially along its edge.
+
+
+
+
+                    © 2016 Helical Solutions, LLC
+
+
+
+
+49 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                              Helical
+End Mill Anatomy (cont.)
+
+Margin
+The hairline area along the cutting edge at the intersection of the flute and the radial relief.The margin keeps cutting surface
+contact to a minimum and allows for superior edge strength and preparedness.
+
+
+
+
+                                        © 2016 Helical Solutions, LLC
+
+
+
+
+50 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                              Helical
+                                                                     05
+                                                              Common
+                                                           Calculations
+                                                             Decimal Conversion Chart .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 52
+                                                             Common Milling Calculations .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 53
+                                                             Speeds & Feeds .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 54
+
+
+
+
+51 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                              Helical
+Decimal Conversion Chart
+Wire   mm     Inch   Decimal    Wire   mm    Inch   Decimal   Wire   mm    Inch    Decimal   Wire   mm     Inch    Decimal   Wire   mm     Inch    Decimal
+        0.1          0.0039                  1/16   0.0625     21                  0.1590                  9/32    0.2812                  37/64   0.5781
+
+        0.2          0.0079      52                 0.0635     20                  0.1610     L                    0.2900           15.0           0.5906
+
+        0.3          0.0118      51                 0.0670     19                  0.1660     M                    0.2950                  19/32   0.5937
+
+ 80                  0.0135      50                 0.0700     18                  0.1695                  19/64   0.2969                  39/64   0.6094
+
+ 79                  0.0145      49                 0.0730                 11/64   0.1719     N                    0.3020                   5/8    0.6250
+
+              1/64   0.0156      48                 0.0760     17                  0.1730                  5/16    0.3125           16.0           0.6299
+
+        0.4          0.0157                  5/64   0.0781     16                  0.1770           8.0            0.3150                  41/64   0.6406
+
+ 78                  0.0160      47                 0.0785     15                  0.1800     O                    0.3160                  21/32   0.6562
+
+ 77                  0.0180            2.0          0.0787     14                  0.1820     P                    0.3230           17.0           0.6693
+
+        0.5          0.0197      46                 0.0810     13                  0.1850                  21/64   0.3281                  43/64   0.6719
+
+ 76                  0.0200      45                 0.0820                 3/16    0.1875     Q                    0.3320                  11/16   0.6875
+
+ 75                  0.0210      44                 0.0860     12                  0.1890     R                    0.3390                  45/64   0.7031
+
+ 74                  0.0225      43                 0.0890     11                  0.1910                  11/32   0.3437           18.0           0.7087
+
+        0.6          0.0236      42                 0.0935     10                  0.1935     S                    0.3480                  23/32   0.7187
+
+ 73                  0.0240                  3/32   0.0937     9                   0.1960           9.0            0.3543                  47/64   0.7344
+
+ 72                  0.0250      41                 0.0960           5.0           0.1968     T                    0.3580           19.0           0.7480
+
+ 71                  0.0260      40                 0.0980     8                   0.1990                  23/64   0.3594                   3/4    0.7500
+
+        0.7          0.0276      39                 0.0995     7                   0.2010     U                    0.3680                  49/64   0.7656
+
+ 70                  0.0280      38                 0.1015                 13/64   0.2031                   3/8    0.3750                  25/32   0.7812
+
+ 69                  0.0292      37                 0.1040     6                   0.2040     V                    0.3770           20.0           0.7874
+
+ 68                  0.0310      36                 0.1065     5                   0.2055     W                    0.3860                  51/64   0.7969
+
+              1/32   0.0312                  7/64   0.1094     4                   0.2090                  25/64   0.3906                  13/16   0.8125
+
+        0.8          0.0315      35                 0.1100     3                   0.2130           10.0           0.3937           21.0           0.8268
+
+ 67                  0.0320      34                 0.1110                 7/32    0.2187     X                    0.3970                  53/64   0.8281
+
+ 66                  0.0330      33                 0.1130     2                   0.2210     Y                    0.4040                  27/32   0.8437
+
+ 65                  0.0350      32                 0.1160     1                   0.2280                  13/32   0.4062                  55/64   0.8594
+
+        0.9          0.0354            3.0          0.1181     A                   0.2340     Z                    0.4130           22.0           0.8661
+
+ 64                  0.0360      31                 0.1200                 15/64   0.2344                  27/64   0.4219                   7/8    0.8750
+
+ 63                  0.0370                  1/8    0.1250           6.0           0.2362           11.0           0.4331                  57/64   0.8906
+
+ 62                  0.0380      30                 0.1285     B                   0.2380                  7/16    0.4375           23.0           0.9055
+
+ 61                  0.0390      29                 0.1360     C                   0.2420                  29/64   0.4531                  29/32   0.9062
+
+        1.0          0.0394      28                 0.1405     D                   0.2460                  15/32   0.4687                  59/64   0.9219
+
+ 60                  0.0400                  9/64   0.1406                  1/4    0.2500           12.0           0.4724                  15/16   0.9375
+
+ 59                  0.0410      27                 0.1440     F                   0.2570                  31/64   0.4844           24.0           0.9449
+
+ 58                  0.0420      26                 0.1470     G                   0.2610                   1/2    0.5000                  61/64   0.9531
+
+ 57                  0.0430      25                 0.1495                 17/64   0.2656           13.0           0.5118                  31/32   0.9687
+
+ 56                  0.0465      24                 0.1520     H                   0.2660                  33/64   0.5156           25.0           0.9842
+
+              3/64   0.0469      23                 0.1540     I                   0.2720                  17/32   0.5312                  63/64   0.9844
+
+ 55                  0.0520                  5/32   0.1562           7.0           0.2756                  35/64   0.5469           25.4    1      1.0000
+
+ 54                  0.0550      22                 0.1570     J                   0.2770           14.0           0.5512
+
+ 53                  0.0595            4.0          0.1575     K                   0.2810                  9/16    0.5625
+
+
+
+52 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                             Helical
+Common Milling Calculations
+
+                                                                     SFM x 3.82
+  Revolutions Per Minute                         RPM =
+                                                                         D                                KEY
+                                                                                            D        Tool Cutting Diameter
+  Surface Feet Per Minute                        SFM =             RPM x D x .262
+                                                                                            Z        Number of Flutes
+                                                                                            RPM      Revolutions per Minute
+  Inches Per Minute                              IPM =              RPM x IPT x Z
+                                                                                            SFM      Surface Feet per MInute
+                                                                                            IPM      Inches per Minute
+                                                                        IPM
+  Inches Per Revolution                          IPR =
+                                                                        RPM                 IPR      Inches per Revolution
+                                                                                            IPT      Inches per Tooth
+                                                                         IPR
+  Inches Per Tooth                               IPT=                                       IPTadj   Inches per Tooth (adjusted)
+                                                                          Z
+                                                                                            CT       Chip Thickness
+                                                                        CT x D
+  Inches Per Tooth (Chip Thinning Adjustment)    IPTadj =                                   RDOC     Radial Depth of Cut
+                                                              2 x √(D x RDOC) - RDOC2
+                                                                                            ADOC     Axial Depth of Cut
+                                                            2 x IPT x √(D x RDOC) - RDOC2
+  Chip Thickness                                 CT=                                        MRR      Metal Removal Rate
+                                                                            D
+                                                                                            ri       Part Radius (inside arc)
+
+  Metal Removal Rate (cu. in./min.)              MRR =          RDOC x ADOC x IPM           ro       Part Radius (outside arc)
+
+
+                                                                    IPM x ( r0 + R)
+  Feed Rate Adjustment - Outside Arc             F0 =
+                                                                          r0
+
+                                                                    IPM x ( ri + R)
+  Feed Rate Adjustment - Inside Arc              Fi =
+                                                                          ri
+
+
+  Ball Nose “Effective Diameter”                 Deff =       2 x √ ADOC x (D - ADOC)
+
+
+                                                                     SFM x 3.82
+  Ball Nose Velocity Adjustment                  Vadj =
+                                                                        Deff
+
+
+
+
+53 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                            Helical
+MILLING
+                                     Helical
+                    TM                                                    TM
+
+   Speeds & Feeds
+ADVISOR
+                                     MILLING ADVISOR
+   Calculating Speeds & Feeds is easy with Helical Milling Advisor™. Designed to calculate optimal milling parameters, this free
+   downloadable app helps users get the most out of Helical end mills. With over 300 material grades and conditions, you get the
+   recommendations you need, all while working within the capability of your machine tool and set up. With easy to use feed and
+   speed adjustment sliders and an extensive tips and guidelines section, optimal cutting parameters have never been easier to
+   calculate.
+
+
+MILLING
+                                     Helical
+                    TM                                                    TM
+
+
+ADVISOR
+                                     MILLING ADVISOR
+                                                                                                          Over 300 material
+                                      1-866-543-5422 | www.1helical.com
+                                                                                                          grades/conditions
+                                                                                                          to work with
+
+
+
+                                                                                                          Generate a
+                                                                                                          PDF summary of
+                                                                                                          recommended
+                                                                                                          parameters
+
+
+
+
+                                     Helical
+                                     MILLING ADVISOR
+                                                                                                          Access technical
+                                                                                                          information related
+                                                                                                          to materials, Helical
+                                                                                                          endmills, and more
+
+
+
+                                                                                                          Quickly adjust Speeds &
+                                                                                                          Feeds to optimize your
+                                                                                                          machining conditions
+
+
+
+
+                                                                          © 2016 Helical Solutions, LLC
+
+    54 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                        Helical
+                                                                     06
+                                                           Tool Holding
+                                                             Tool Holding  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 56
+                                                             Preventing Tool Pull Out  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 58
+
+
+
+
+55 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                                     Helical
+Tool Holding
+Tool Holders
+ • Use the right holder
+ • Keep holders clean and in good shape
+ • Don’t maximize ER collets.
+ • Check for cracked collet nuts
+ • Correct pull studs
+
+
+
+
+                                                           © 2016 Helical Solutions, LLC
+
+
+
+
+56 | Machining Guidebook | © 2016 Helical Solutions, LLC                                   Helical
+Tool Holding (cont.)
+Run Out
+ • Lowers tool life
+ • Decreases part finishes
+ • Tool life decreases 10% for every .0001 TIR
+
+
+Usual Suspects
+ • Spindle/taper condition
+
+
+
+
+                                                               © 2016 Helical Solutions, LLC
+ • Drawbar/backlash
+ • Tool Holder (wrong pull stud, previous crash)                                                   Improved
+ • Short tool shank grip
+                                                                                                shank
+                                                                                                   contact
+
+
+
+                                       Not enough          
+                                      shank to grip
+
+
+                                                                                                    Necked
+                                                                                                    down tool
+                                                                                                   with longer
+                                                                                                    OAL
+                                    Increased tool         
+                                           run out
+
+
+
+
+57 | Machining Guidebook | © 2016 Helical Solutions, LLC                                        Helical
+Preventing Tool Pull Out
+Tool Pull Out
+  • Experiencing slow micro-creeping and/or full tool pullout.
+  • Cutting parameters, traditionally, are reduced to counter this effect.
+
+
+Helical’s ToughGRIP Shank
+Experience Helical Solutions’s ToughGRIP shank
+                                                                               ToughGRIP "Gripping Strength"
+and see for yourself the stronger tool-to-holder                                                                                       432% Improvement*
+
+
+
+
+                                                           Improved
+connection you may be looking for!
+
+
+
+
+                                                            Surface
+                                                                                                                 524% Improvement
+  • Provides increased friction for superior                                                                                                                       Tool Ø
+                                                                                                         456% Improvement
+    gripping strength
+                                                                                                                                                                       3/4
+  • Maintains shank concentricity a
+                                   nd h6 shrink-fit                                                                                                                   1/2
+    tolerance                                                                                               Traditional shanks usually have close                      3/8
+
+
+
+
+                                                           Polished
+                                                           Surface
+  • 30 +/- 3 Ra surface roughness,                                                                        to a mirror finish and do not always allow
+                                                                                                             enough friction for superior gripping
+    consistent within 2 Ra                                                                                          strength in any holder.
+
+
+                                                                      0    1000   2000    3000    4000       5000     6000      7000      8000         9000    10000     11000
+                                                                                                                Pounds of Force
+
+                                                                      Based on independent laboratory testing. All tests were completed utilizing Command Tooling
+                                                                      Systems’ line of HYDRO-GRIP® HD Hydraulic tool holders by ETP Transmission.
+                                                                      * Improved surface finish from the ToughGRIP exceeded laboratory testing equipment
+
+
+
+
+    © 2016 Helical Solutions, LLC
+
+
+
+
+58 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                                                      Helical
+Preventing Tool Pull Out (cont.)
+Haimer Safe-Lock™ System
+ • Drive keys in the chuck and grooves in the tool shank prevent pull-out
+ • Accurate clamping due to shrink fit technology
+ • Can be applied to our standard tools or special tools
+ • Can accommodate tools from 1/2” to 2” diameter
+
+
+
+
+          25
+
+          20
+                                                           22
+
+
+
+
+                                                                © 2016 Helical Solutions, LLC
+          15
+Hrs.
+          10                                                                                    Side lock (Weldon)
+
+                         2                                                                      Haimer Safe lock
+            5
+                                6                 4
+            0
+                       Roughing                  Finishing
+
+                             Milling Operation
+
+
+
+
+                                                                                                                                      LC
+                                                                                                                                       L
+                                                                                                                                    s,n
+                                                                                                                                  tio
+                                                                                                                              olu
+                                                                                                                             al S
+       Helical Solutions will modify the shank of
+
+
+
+
+                                                                                                                         elic
+                                                                                                                          H
+       any of our tools to meet the specifications
+
+
+
+
+                                                                                                                       16
+                                                                                                                     20
+       for the Haimer Safe-Lock™ System.
+
+
+59 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                             ©                     Helical
+                                             07
+                                Troubleshooting
+                                                           Troubleshooting Chart  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 61
+                                                           Tool Wear  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 65
+                                                           Tool Deflection  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  . 69
+
+
+
+
+60 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                                     Helical
+Troubleshooting Chart
+The Problem        Possible Causes                Possible Solution
+
+                   Work piece rigidity            Ensure work piece is secure and supported - a common issue
+                   Speed too low                  Increase the cutting speed (RPM’s)
+                   Feed rate too high             Reduce IPT
+                   Chip compaction                Reduce MRR
+                   Heavy depth of cut             Reduce RDOC & ADOC
+                   Part Entry                     Reduce IPT on entry - implement radius in or sweeping entrances - avoid 90º (perpendicular) entry
+   Breakage                                       Review tool path and ensure there are no arbitrary moves, extreme angle of engagement increases &
+                   Milling Strategy               undesirable situations for the tool.
+
+                   Tool Overhang                  Use shortest OAL, shortest LOC & reduce overhang from tool holder. Consider necked down tooling for
+                                                  long reach.
+
+                   Tool Runout                    Check tool runout in holder/spindle. Utilize collet, milling chuck or shrink fit holders if possible. Hand ground
+                                                  shank flats can be suspect and a common cause of run out. (<.0003 TIR desired)
+                   Built up edge (BUE)            See the BUE section to increase IPT, utilize tool coatings
+                   Reconditioning                 Improper regrind/reconditioning – try factory service
+
+                   Speed too high                 Reduce the cutting speed (RPM’s)
+                   Feed rate too low              Increase feed rate (IPT)
+                   RDOC too high                  Lessen RDOC as % of dia. - start with 10% reduction increments
+                   Chip Thinning                  Utilize chip thinning adjustment
+   Excessive       Tool Runout                    Check tool run out in holder/spindle. Utilize collet, milling chuck or shrink fit holders if possible. Hand
+     Wear                                         ground shank flats can be suspect and a common cause of runout. (<.0003 TIR desired)
+    (Flank)
+                   Recutting Chips                Re-adjust coolant flow, air blast or “op stop” to clear chip build up
+                                                  Ensure you are climb milling unless the material has hard/abrasive outer skin then convention milling
+                   Milling Strategy               technique is preferred for breakthrough.
+                   Tool Coating                   Ensure you have the appropriate coating for material being cut
+                   Hard Materials (> than 55Rc)   Try 90-100 SFM with multi-fluted tool (5 flutes +)
+
+61 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                                                    Helical
+Troubleshooting Chart (cont.)
+The Problem        Possible Causes                Possible Solution
+
+                   Work piece rigidity            Check work piece is secure and supported - a common issue
+                   Tool holder rigidity           Use shortest holder possible and investigate for no tool slippage
+                   Feed rate too high             Reduce IPT
+                   Tool Heavy of a RDOC           Reduce RDOC
+                   Part Entry                     Reduce IPT on entry – implement radius in or sweeping entrances - avoid 90º (perpendicular) entry
+
+                   Milling Strategy               Ensure you are climb milling unless the material has hard/abrasive outer skin - then conventional
+    Chipped                                       milling technique is preferred for breakthrough
+  Cutting Edge                                    Use shortest OAL, shortest LOC & reduce overhang from tool holder. Consider necked down tooling for
+                   Tool Overhang                  long reach.
+                                                  Check tool run out in holder/spindle. Utilize collet, milling chuck or shrink fit holders if possible. Hand
+                   Tool Run out                   ground shank flats can be suspect and a common cause of run out. (<.0003 TIR desired)
+                   Tool Coating                   Implement proper tool coating for material to be cut
+                   Edge prep                      Ensure tool has proper edge prep
+                   Built Up Edge (BUE)            See BUE section to increase IPT, utilize tool coatings
+
+                   No Corner Radius               Implement corner radius on tool - adds strength & tool life
+                   Speed too high                 Reduce RPM’s
+   Excessive                                      Check tool run out in holder/spindle. Utilize collet, milling chuck or shrink fit holders if possible. Hand
+  Corner Wear      Tool Run out                   ground shank flats can be suspect and a common cause of run out. (<.0003 TIR desired)
+
+                   Tool Overhang                  Ensure you are using the shortest OAL/LOC possible. Utilize necked tooling for longer reach.
+
+
+
+
+62 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                                                    Helical
+Troubleshooting Chart (cont.)
+
+The Problem        Possible Causes                 Possible Solution
+
+                   Insufficient chip room          Reduce number of flutes
+                   Feed rate too high              Reduce IPT and increase RPM
+     Chip          Heavy depth of cut              Reduce ADOC/RDOC in side milling & ADOC in Slotting
+  Compaction       Coolant flush                   Re-adjust coolant flow, air blast or “op stop” to clear chip build up
+                   Heavy depth of cut              Reduce RDOC & ADOC
+                   Large chip size                 Utilize chip breaker style tool to better manage chip size
+
+                   Chip welding                    Utilize proper tool coating for material being cut
+  Built up Edge    Feed rate too low               Increased IPT
+      (BUE)        Speed too low                   Increase RPM’s
+                   Coolant Strategy                Re-adjust coolant flow & check coolant mixture percentage
+
+                   Work piece rigidity             Check work piece is secure and supported
+                   Tool holder rigidity            Use shortest holder possible and investigate for no tool slippage
+
+                   Tool Overhang                   Use shortest length tool, shortest loc, and reduce overhang from tool holder. Consider necked down tooling
+                                                   for long reach.
+
+                   Tool Run out                    Check tool run out in holder/spindle. Utilize collet, milling chuck, or shrink fit holders if possible. Hand
+                                                   ground shank flats can be suspect and a common cause of run out. (<.0003 TIR desired)
+    Chatter/       Chip Thinning                   Utilize chip thinning adjustment
+    Vibration
+                   Speed too high                  Lower the RPM’s
+                   Feed rate too low               Increased IPT
+                   Angle of engagement violation   Use smaller tools generating corner radi in pockets - avoid tool diameters that match corner dia./radius.
+                   Too much surface contact        Try utilizing a lower flute count tool
+
+                   Milling Strategy                Ensure you are climb milling unless the material has hard/abrasive outer skin then convention milling tech-
+                                                   nique is preferred for breakthrough.
+
+
+63 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                                                      Helical
+Troubleshooting Chart (cont.)
+
+The Problem        Possible Causes                Possible Solution
+
+                   Feed rate too high             Reduce IPT
+                   Speed too low                  Increase RPM’s
+                   Too light of a RDOC            Increase RDOC to stabilize tool in cut.
+                                                  Check tool run out in holder/spindle. Utilize collet, milling chuck, or shrink fit holders if possible. Hand
+  Poor Surface     Tool Run out                   ground shank flats can be suspect and a common cause of run out. (<.0003 TIR desired)
+     Finish
+                   Helix Angle                    Change to tool with higher helix angle.
+                   Need more Flutes               Choose end mill with higher number of flutes
+                   Recutting Chips                Redirect/evaluate coolant flush – or use less number of flutes
+                   Built Up Edge                  Increase IPT - Increase RPM - Utilize tool coatings
+
+                   Tool Overhang                  Use shortest length tool, shortest loc, & reduce overhang from tool holder.
+                   Milling Strategy               Climb milling can help reduce the amount of deflection in some cases.
+                   Too heavy of a RDOC            Reduce ADOC/RDOC in side milling & ADOC in slotting
+   Deflection
+                   Feed rate too high             Decrease IPT
+                   End Mill Diameter              Increase diameter of end mill for higher strength-to-length ratio
+                   Increase Number of Flutes      Higher number of flutes = larger core diameter = increased strength
+
+                   Coolant Strategy               Re-adjust coolant flow & check coolant mixture percentage
+                   Deflection                     Refer to deflection section above
+   Dimension       Feed rate too high             Lower feed rate (IPT)
+    Accuracy
+ (Tapered Wall)    RDOC too high                  Reduce RDOC
+
+                   Tool Run out                   Check tool run out in holder/spindle. Utilize collet, milling chuck, or shrink fit holders if possible. Hand
+                                                  ground shank flats can be suspect and a common cause of run out. (<.0003 TIR desired)
+
+
+
+
+64 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                                                     Helical
+Tool Wear
+4 Types of Tool Wear
+Tool wear describes the gradual failure of cutting tools due to regular operation. There are 4 different types: Wear Land,
+Chipping, Thermal Cracking, and Fractures.
+
+
+
+    Wear Land
+    Recognition: The wear land is a pattern of uniform abrasion on the cutting
+    edge of the tool.
+
+
+
+
+                                                                                                                                                              © 2016 Helical Solutions, LLC
+    Causes: Mechanical abrasion and/or chemical wear from the work piece
+    material rubbing against the cutter. Chemical wear dominates at higher
+    speeds.
+
+    Remedies: If the wear land becomes excessive or causes a premature tool
+    failure, reduce cutting speed and/or optimize coolant usage.
+
+
+    Chipping
+    Recognition: Chipping can be identified by a nicked or flaked edge on
+    the cutting tool or by the surface finish of the part. Micro chipping promotes
+    irregular wear and bad surface finish. Micro chipping can lead to catastrophic
+    tool failure.
+
+    Causes: Chipping can be caused by excessive loads in the metal cutting
+    operation or thermal cracking.
+
+
+
+
+                                                                                                                              © 2016 Helical Solutions, LLC
+    Remedies: Ensure operation is rigid and free of vibration or chatter, Decrease
+    feed rates and/or increase speed to decrease mechanical load on cutting tool
+    which reduces chip load.
+
+
+
+
+65 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                            Helical
+Tool Wear (cont.)
+    Chipping
+    Recognition: In milling, cracks perpendicular to cutting edge are the
+    most common types of thermal cracks. These cracks propagate slowly
+
+
+
+
+                                                                                                                                 © 2016 Helical Solutions, LLC
+    and lead to accelerated wear and chipping.
+
+    Causes: Ineffective coolant application exaggerates temperature
+    fluctuations. Excessive feed rates aggravate thermal fluctuations.
+
+    Remedies: Add coating, reduce feed rate, remove coolant – run dry.
+
+
+
+    Fracture
+    Recognition: Fracture is the loss of the cutting edge due to sudden
+    breakage.
+
+    Causes: Improper selection of speed, feed, depth of cut, or coating. Loose
+    work holding or tool holder issues (pull stud, dirty taper, high run out, tool spun
+    in bore etc). Work material inconsistencies such as presence of hot spots,
+    inclusions, or voids in castings.
+
+
+
+
+                                                                                                 © 2016 Helical Solutions, LLC
+    Remedies: Reduce speed, feed, and/or depth of cut. Feed will be most
+    influential. Check the setup. Make sure it is as rigid as possible & also check
+    for source of chatter and vibration which can cause fracture. Optimize coolant
+    usage. If coolant is used, be sure it is effectively reaching the entire cutting zone
+    before and after the cut.
+
+
+
+
+66 | Machining Guidebook | © 2016 Helical Solutions, LLC                                    Helical
+Tool Wear (cont.)
+Thermal Stresses
+ • Workpiece inconsistencies, work hardening, heat resistant material advancements
+ • Rubbing, perhaps Under-Fed condition
+ • Work hardening changing SFM effectiveness
+
+
+Mechanical Stresses
+ • Extreme tangential cutting forces
+ • Abrasion, Chip Congestion, Built up Edge
+ • Suspect Tool Holding or Work Holding
+ • Unmanageable Metal Removal Rate (MRR)
+
+
+
+
+                                                                                     © 2016 Helical Solutions, LLC
+67 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                             Helical
+Tool Wear (cont.)
+Initial Wear Period
+
+
+
+
+                                                                                                       © 2016 Helical Solutions, LLC
+ • Completely normal and can vary on length. Usually only the first
+   few minutes of cutting and results in moderate and controlled
+   wear rate, breaking in the cutting edge.
+
+
+
+
+Intermediary wear period
+ • Usually entails about 70-80% of the cutting life under normal
+   conditions.
+
+
+
+
+                                                                                                       © 2016 Helical Solutions, LLC
+ • Tool monitoring program is of utmost importance.
+ • Machine load meter monitored for any tool wear increase.
+
+
+
+
+Completion Period
+ • If using proper tool change program, tool will be salvageable.
+ • Commonly determined by catastrophic failure.
+
+
+
+
+                                                                      © 2016 Helical Solutions, LLC
+
+
+68 | Machining Guidebook | © 2016 Helical Solutions, LLC                                              Helical
+                                                                                                                            length tool
+
+
+
+
+Tool Deflection                                                                                                                Depth 1
+
+                                                                                                                               Depth 2
+Tool Deflection
+Rigidity during a milling operation is key for optimal tool performance and desired results. Keeping tool deflection to a minimum
+will help increase success on a deep reach application.                                            fig. 1a         (final floor depth)
+A Deflection “Rule of Thumb”
+Tool overhang length decreases rigidity as a third power (L3), but even more importantly, tool diameter increases rigidity by the Tool D
+fourth power (D4).                                                                   Rigidity during a milling operation is key for optim
+                                                                                           Keeping tool deflection to a minimum will help t
+Common Techniques to Combat Deflection                                                  © 2016 Helical Solutions, LLC
+                                                                                                                            A Deflection “Rule of T
+  • Ensure tools are sharp
+                                                                                                                            • Tool overhang length d
+  • Increase tool diameter                                                                                                    more importantly, tool
+  • Decrease depth of cut
+  • Climb mill in lieu of conventional                                                                                      Common techniques t
+    milling                                                                                                                  • Ensure tools are shar
+  • Decrease IPM                                                                                                             • Increase tool diamete
+                                                                                                               force         • Decrease depth of c
+  • Use shorter tool and/or employ necked tooling
+                                                                                                                             • Decrease IPM
+  • Increase number of flutes
+  • Re-evaluate SFM parameter
+                                                                                                        Deflection Result
+
+
+
+
+69 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                                       Helical
+                                                           2016 Helical Product Catalog
+                                                           The 2016 catalog introduces two brand new product innovations: High
+                                                           Performance Chamfer Mills offered in 3 & 5 flutes with 60°, 90°, and 120°
+                                                           options and the new 3 Flute Variable Pitch End Mill for Steels. The new
+                                                           catalog’s sleek layout and product search features will make finding the
+                                                           right Helical tool for you easier than ever.
+
+                                                           Download our catalog or request a hard copy today!
+
+
+
+                                                            Download Catalog             Request Copy
+
+
+
+
+                                                           Contact Us
+                                                           Our technical support representatives and application engineers are
+                                                           always available to walk you through tool selection, application support,
+                                                           and troubleshooting.
+
+
+                                                               CALL 866-543-5422
+
+                                                               EMAIL orders8-5@1helical.com
+
+                                                               BROWSE www.helicaltool.com
+
+
+
+
+70 | Machining Guidebook | © 2016 Helical Solutions, LLC                                                             Helical
+

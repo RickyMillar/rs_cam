@@ -1,0 +1,222 @@
+[
+ {
+  "source_id": "onsrud_hard_wood_cutting_data",
+  "source_vendor": "onsrud",
+  "source_title": "LMT Onsrud Hard Wood Cutting Data Recommendations (catalog page 115)",
+  "source_url": "https://www.onsrud.com/images/Hard%20Wood.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "planning/extrapolation_2026-09-24/fetch/G2/sources/onsrud_hard_wood_cutting_data.txt",
+  "pdf_sha256": "f123d5f67c03b3760cfd300c36d480747b176e4d9cc06db7d1ea97ff9bda69dc",
+  "coverage_notes": "Same PDF as the LUT copy (pdf_sha256 and pdftotext text identical to crates/rs_cam_core/data/vendor_lut/sources/onsrud_hard_wood_cutting_data.txt). NEW for G2: the sheet prints V-bit series 37-50 (90 deg V bottom, solid carbide, 2F) at 3/16, 1/4, 3/8 in; 37-60 (90 deg V bottom, carbide tipped, 2F) at 3/8, 1/2, 3/4, 1 in; 37-80 (lettering, 2F) at 1, 1 1/4*, 2** in; 37-00/37-20 (engraving, 1F) under the 1/4 in (shank) column. The LUT holds none of these rows. Candidate rows from this source: 11."
+ },
+ {
+  "source_id": "onsrud_soft_wood_cutting_data",
+  "source_vendor": "onsrud",
+  "source_title": "LMT Onsrud Soft Wood Cutting Data Recommendations (catalog page 114)",
+  "source_url": "https://www.onsrud.com/images/Soft%20Wood.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "planning/extrapolation_2026-09-24/fetch/G2/sources/onsrud_soft_wood_cutting_data.txt",
+  "pdf_sha256": "a5b83da2433c64cb930dffe4a6de142124c894bd6aa982791a604b0048716c54",
+  "coverage_notes": "Same PDF as the LUT copy (identical sha and text). Prints the same 37-series V-bit rows as the other wood sheets, with the same values. Candidate rows from this source: 11."
+ },
+ {
+  "source_id": "onsrud_mdf_cutting_data",
+  "source_vendor": "onsrud",
+  "source_title": "LMT Onsrud MDF Cutting Data Recommendations (catalog page 116)",
+  "source_url": "https://www.onsrud.com/images/MDF.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "planning/extrapolation_2026-09-24/fetch/G2/sources/onsrud_mdf_cutting_data.txt",
+  "pdf_sha256": "94464ac393d93a6ad13e166f52aaf9cc9470860895ed97571dd4a07c710bdf4c",
+  "coverage_notes": "Same PDF as the LUT copy (identical sha and text). Prints the 37-series V-bit rows: the first printed V-bit chipload in MDF from Onsrud. Cell positions checked on a 200 dpi render. Candidate rows from this source: 11."
+ },
+ {
+  "source_id": "onsrud_hard_plywood_cutting_data",
+  "source_vendor": "onsrud",
+  "source_title": "LMT Onsrud Hard Plywood Cutting Data Recommendations (catalog page 118)",
+  "source_url": "https://www.onsrud.com/images/Hard%20Plywood.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "planning/extrapolation_2026-09-24/fetch/G2/sources/onsrud_hard_plywood_cutting_data.txt",
+  "pdf_sha256": "65874767572e1669fb39fcfb91c5a04a21f1eee16b1fa12f7f9bb30ed6775e24",
+  "coverage_notes": "Same PDF as the LUT copy (identical sha and text). Prints the 37-series V-bit rows (V-bit in hard plywood) and the 77-100 tapered ball row (already in the LUT). Candidate rows from this source: 11."
+ },
+ {
+  "source_id": "onsrud_soft_plywood_cutting_data",
+  "source_vendor": "onsrud",
+  "source_title": "LMT Onsrud Soft Plywood Cutting Data Recommendations (catalog page 117)",
+  "source_url": "https://www.onsrud.com/images/Soft%20Plywood.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "planning/extrapolation_2026-09-24/fetch/G2/sources/onsrud_soft_plywood_cutting_data.txt",
+  "pdf_sha256": "f1c369ed8c8c15c918574bef0e9dfdc89c9885f9d8aaf3126e0d35c5c8be1ca1",
+  "coverage_notes": "Same PDF as the LUT copy (identical sha and text). Prints the 37-series V-bit rows (V-bit in soft plywood). No 77-100 row, no ball nose. Candidate rows from this source: 11."
+ },
+ {
+  "source_id": "onsrud_laminated_chipboard_cutting_data",
+  "source_vendor": "onsrud",
+  "source_title": "LMT Onsrud Laminated Chipboard Cutting Data Recommendations (catalog page 119, upper table)",
+  "source_url": "https://www.onsrud.com/images/Laminated%20Chipboard.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "planning/extrapolation_2026-09-24/fetch/G2/sources/onsrud_laminated_chipboard_cutting_data.txt",
+  "pdf_sha256": "21f3c09aa076d5abd037382ea21efd1af9043cc5c3155e40fc1c07e195ab65e2",
+  "coverage_notes": "NEW source (linked from https://www.onsrud.com/Forms/Cutting-Data-Recommendations.asp). The PDF is the whole catalog page 119: its text layer holds BOTH the Laminated Chipboard and the Laminated Plywood tables (the Laminated Plywood PDF is the same page, another crop, another sha). Depth rule: 'Greater than 3 x D, reduce chip load by 25%'. Prints 37-00/37-20, 37-50, 37-60, 37-80 and flat series 48-000, 57-200, 57-200MD, 60-100MW/C/MC/PLR, 60-600, 68-100. The 37-60 row sits under 3/8, 9/16 and 7/8 in (render-checked), which matches no 37-60 catalog size: probable layout error, transcribed as printed. No ball nose, no tapered ball. Candidate rows from this source: 10."
+ },
+ {
+  "source_id": "onsrud_laminated_plywood_cutting_data",
+  "source_vendor": "onsrud",
+  "source_title": "LMT Onsrud Laminated Plywood Cutting Data Recommendations (catalog page 119, lower table)",
+  "source_url": "https://www.onsrud.com/images/Laminated%20Plywood.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "planning/extrapolation_2026-09-24/fetch/G2/sources/onsrud_laminated_plywood_cutting_data.txt",
+  "pdf_sha256": "7f271689c256c78d275f77265dbb04b34702f4aec80734acd104abf3d845816b",
+  "coverage_notes": "NEW source. Same catalog page 119 as the Laminated Chipboard PDF (both tables in one text layer; different crop and sha). Rows are read from the second (lower) table. Prints 37-series V-bits at the same positions and values as the wood sheets (37-80 at 1, 1 1/2, 2 in, no RPM marks). No ball nose, no tapered ball. Candidate rows from this source: 11."
+ },
+ {
+  "source_id": "onsrud_pct19_catalog",
+  "source_vendor": "onsrud",
+  "source_title": "LMT Onsrud Production Cutting Tools Catalog PCT-19 (Wood, Plastic, Composite, Honeycomb, Aluminum)",
+  "source_url": "https://onsrud.com/images/LMT%20Onsrud%20Product%20Cutting%20Tools%20Catalog%20PCT-19.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "planning/extrapolation_2026-09-24/fetch/G2/sources/onsrud_pct19_catalog.txt",
+  "pdf_sha256": "83dbf74242ca1f578df8a7ca7d8e093a66d8488a7d573d0294df40b2ed58144b",
+  "coverage_notes": "Tool definitions only (no candidate rows). Stored text is an EXCERPT: pdftotext pages 20-22 (37-00/37-20 engraving: 1 flute, 60/30 deg, tip 0.005-0.040 in, 1/4 in shank; 37-50: 2F solid carbide V bottom, CD 3/16, 1/4, 3/8 in; 37-60: 2F carbide tipped V bottom, CD 1/2, 3/4, 1 in, 'Designed for V grooving or beveling 90 deg'; 37-80 lettering: 37-82 1 in 60 deg, 37-87 1-1/2 in 90 deg, 37-92 2 in 120 deg, 37-97 2 in 140 deg, all 2F) and page 119 (laminated tables). The 132-page catalog also carries the same cutting-data pages as the per-material PDFs (identical 37-series values). 20.9 MB PDF; sha covers the whole file. Candidate rows from this source: 0."
+ },
+ {
+  "source_id": "amana_pcd_ball_nose_v2",
+  "source_vendor": "amana",
+  "source_title": "Amana Polycrystalline Diamond (PCD) Ball Nose Router Bit Speed Chart v2",
+  "source_url": "https://www.amanatool.com/pub/media/productattachments/PCD-Ball-Nose-Speed-Chart-v2.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "planning/extrapolation_2026-09-24/fetch/G2/sources/amana_pcd_ball_nose_v2.txt",
+  "pdf_sha256": "0dc5282a43b0a13a0256008a142d103b358469049dd1056d22a05b54e879d673",
+  "coverage_notes": "NEW source. PCD ball nose DRB-432 (1/4 in) and DRB-433 (3/8 in), 2 teeth, rows CFRP, Plastics, Wood, MDF, Chipboard Without Coating, with chipload and RPM ranges printed in inch and mm. The only printed ball-nose chart found with a chipboard (particleboard) row. MDF band is BELOW the Wood band on both sizes (1/4: MDF .0016-.005 vs Wood .002-.007; 3/8: MDF .005-.008 vs Wood .006-.01); Chipboard equals Wood. No plywood row. PCD, not carbide. Candidate rows from this source: 4."
+ },
+ {
+  "source_id": "amana_spektra_3d_profiling_v6",
+  "source_vendor": "amana",
+  "source_title": "Amana Spektra Extreme Tool Life Coated 2D/3D Carving CNC Solid Carbide Router Bits, Feed and Chip Load Chart v6",
+  "source_url": "https://www.amanatool.com/pub/media/productattachments/Spektra-Coated-3D-Profiling-Feed-Chip-Load-Chart-v6.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "planning/extrapolation_2026-09-24/fetch/G2/sources/amana_spektra_3d_profiling_v6.txt",
+  "pdf_sha256": "84feaace79e13a5bc12e652c58cf237f1a242a623e6fb8bc9d3f5883d5153497",
+  "coverage_notes": "NEW source. Ball nose 2F 1/4, 3F 1/32 and 1/8, 4F 1/16 and 1/8 (ball & flat bottom), 3F extra long 1/4 (ball & flat bottom), at 18,000 RPM. Every wood value is printed in ONE row 'Wood, MDF, Sign-Foam': the vendor makes no MDF / wood distinction on these tools. No plywood mention. Same layout and the SAME values as the ZrN 3D profiling chart the LUT holds (amana_zrn_3d_profiling) for the matching tools, so it is not an independent witness. The LUT emits the ZrN 'Wood, MDF, Sign-Foam' row as both mdf and softwood rows; this fetch emits mdf rows only. Candidate rows from this source: 6."
+ },
+ {
+  "source_id": "amana_ball_nose_v7",
+  "source_vendor": "amana",
+  "source_title": "Amana Spiral Ball Nose Speed Chart v7",
+  "source_url": "https://www.amanatool.com/pub/media/productattachments/Spiral-Ball-Nose-Speed-Chart-v7.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "planning/extrapolation_2026-09-24/fetch/G2/sources/amana_ball_nose_v7.txt",
+  "pdf_sha256": "e851a270a9958a9affc17a24c8e6a8ef51d63a813f384b7043670d676cae3563",
+  "coverage_notes": "Re-downloaded; pdf_sha256 and text identical to the LUT copy. Prints Softwood, Hardwood and MDF (and plastics, aluminum, sign foam) at 1/16 to 3/4 in; no plywood row. The LUT transcribes only the 1/8 and 1/4 in columns; the 15 candidate rows are the other printed wood/MDF sizes. MDF >= Hardwood at every size; MDF = Softwood at 1/16 and 1/8, MDF < Softwood from 1/4 up. Candidate rows from this source: 15."
+ },
+ {
+  "source_id": "amana_spiral_ball_nose_v6",
+  "source_vendor": "amana",
+  "source_title": "Amana Spiral Ball Nose Speed Chart v6",
+  "source_url": "https://www.amanatool.com/pub/media/productattachments/Spiral-Ball-Nose-Speed-Chart-v6.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "planning/extrapolation_2026-09-24/fetch/G2/sources/amana_spiral_ball_nose_v6.txt",
+  "pdf_sha256": "05f7558248e6950ea30b66a7c88115b958d5b53d83a7db30c93a4aa1ff3a19f2",
+  "coverage_notes": "Corroboration only (no rows). The Softwood, Hardwood and MDF lines are identical to v7. Candidate rows from this source: 0."
+ },
+ {
+  "source_id": "amana_spiral_ball_nose_2015",
+  "source_vendor": "amana",
+  "source_title": "Amana Solid Carbide CNC Spiral Ball Nose Router Bits Speed and Feed Chart (copyright 2015)",
+  "source_url": "https://toolstoday.com/content/ProductFile/Attachments/Spiral-Ball-Nose-Speed-Chart.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "planning/extrapolation_2026-09-24/fetch/G2/sources/amana_spiral_ball_nose_2015.txt",
+  "pdf_sha256": "70d4e9c3e273687a3448066a938200f4775f8c43357050bde9e0f00d3a131681",
+  "coverage_notes": "Corroboration only (no rows); reseller-hosted older edition. Softwood, Hardwood, MDF chiploads identical to v6/v7; no plywood row. Candidate rows from this source: 0."
+ },
+ {
+  "source_id": "freud_router_bit_feed_and_speed_for_cnc_20170822",
+  "source_vendor": "freud",
+  "source_title": "Freud: Get the most out of your Freud bits by routing at ideal feed rates and speeds (2017-08-22)",
+  "source_url": "https://www.freudtools.com/public/assets/freud/downloadables/freudtools-router-bit-feed-and-speed-for-cnc-20170822.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "planning/extrapolation_2026-09-24/fetch/G2/sources/freud_router_bit_feed_and_speed_for_cnc_20170822.txt",
+  "pdf_sha256": "ff1a29ea5a669e24c6ed18e2bd21e10321cee024c65a6b23a1197cbbfdc71976",
+  "coverage_notes": "The LUT cites this chart but stores no text or sha; this is the first stored copy. Two tables: solid carbide router bits and carbide tipped straight and profile bits, 1/8-1/2 in (CT 1/8-3/4 in), columns MDF/Particle Board, Laminated Particle Board, Hardwood, Softwood, Acrylics/Soft Plastic, Solid Surface/Hard Plastic, Plywood, Aluminum. Tool type is generic (no ball nose, no V-groove named). Useful for G2 as a flat-family category ratio across 6 wood-type columns. No new candidate rows (flat family is not a G2 gap); see lut_discrepancies.md. Candidate rows from this source: 0."
+ },
+ {
+  "source_id": "leitz_lexicon7_05_routing",
+  "source_vendor": "leitz",
+  "source_title": "Leitz Lexicon Edition 7, 05 Routing (Version 3, 05/2026)",
+  "source_url": "https://www.leitz.org/fileadmin/Downloads/Lexicon/EN/Leitz_Lexicon_Edition_7_-_05_Routing.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "planning/extrapolation_2026-09-24/fetch/G2/sources/leitz_lexicon7_05_routing.txt",
+  "pdf_sha256": "76cbbc2490174bba48819d840712c078fdf5aa7bb662065580011e7a8db07072",
+  "coverage_notes": "Target 2 statements, no rows. Stored text is an EXCERPT: only the pages that print 'Correction factor for vf'. Each vf diagram names a base 'Workpiece material' at a fixed speed n; the factor scales vf for another material. Base plastic-coated chipboard: 'MDF = 0.8' (most diagrams), 'MDF = 0.9' (jointing), 'MDF = 0.6' (one diagram), 'Uncoated chipboard = 1.1', 'Solid wood = 0.8' (grooving), 'Pre trimming MDF = 1.2'. Base softwood (sizing/jointing): 'Hardwood = 0.8; Chipboard = 1.3; Glulam = 0.9', 'Hardwood = 0.8; Chipboard = 1.2', 'Hardwood = 0.9; ... Chipboard = 1.1', 'Hardwood = 0.7; Glulam = 0.8'. NO plywood factor anywhere in the volume. Tools are industrial sizing/grooving/jointing cutters (straight, turnblade, diamond), not ball nose or V-bit. Reading a vf factor at fixed n and Z as an fz factor is an inference (derived). Candidate rows from this source: 0."
+ },
+ {
+  "source_id": "techno_cnc_chipload_rev2",
+  "source_vendor": "techno_cnc",
+  "source_title": "Techno CNC Chip Load Chart Rev 2",
+  "source_url": "https://technocnc.com/wp-content/uploads/2023/03/Techno-CNC_Chip-Load-Data_Rev-2-1.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "planning/extrapolation_2026-09-24/fetch/G2/sources/techno_cnc_chipload_rev2.txt",
+  "pdf_sha256": "d4f5c880f7c72f8e552a879b6f7b97d5a8c35cd7560ab1942342da8d7c27aae5",
+  "coverage_notes": "Machine builder and tool seller; tool type not stated (grade c at best, no rows). Category statement: the columns are 'Hard Wood', 'Softwood & Plywood', 'MDF & Particle Board'; plywood shares the softwood column and MDF shares with particleboard. MDF & Particle Board equals Softwood & Plywood at 1/4 in (.010-.013) and is within one band step elsewhere. Candidate rows from this source: 0."
+ },
+ {
+  "source_id": "sienci_feeds_speeds_imperial",
+  "source_vendor": "sienci",
+  "source_title": "Sienci Labs Feeds and Speeds (Imperial)",
+  "source_url": "https://resources.sienci.com/wp-content/uploads/2022/03/Feeds-and-Speeds-Imperial.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "planning/extrapolation_2026-09-24/fetch/G2/sources/sienci_feeds_speeds_imperial.txt",
+  "pdf_sha256": "5e37bea02b45348c4cb8c8ba1a454812850a8af14ccb8ed7406c39c0bf147e54",
+  "coverage_notes": "Hobby machine builder; feed rates and RPM only, no chipload, no flute count (grade c, no rows). Category statement: two tables, 'Softwood/Soft Plywood/MDF' and 'Hardwood / Hard Plywood'; the V-bit and ball end mill lines appear in both. Plywood is grouped with the solid wood of its face class; MDF is grouped with softwood. Candidate rows from this source: 0."
+ },
+ {
+  "source_id": "sorotec_schnittwerte",
+  "source_vendor": "sorotec",
+  "source_title": "Sorotec Schnittwerte / Richtwerte fuer Drehzahl und Vorschub",
+  "source_url": "https://webseite.sorotec.de/download/fraesparameter/schnittwerte.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "planning/extrapolation_2026-09-24/fetch/G2/sources/sorotec_schnittwerte.txt",
+  "pdf_sha256": "67300f95452931fc648ec89eedd8a1baa63439d7960418a61666699500ffc6d2",
+  "coverage_notes": "Reseller guide (grade c, no rows); tool type not stated; 'Die aufgefuehrten Werte dienen der groben Orientierung'. Rows 'Holz Hart', 'Holz weich', 'MDF' by diameter 1-12 mm. MDF is 2x to 6x the wood rows (e.g. 6 mm: Holz Hart 0,055, Holz weich 0,060, MDF 0,300 mm/Zahn). No plywood row. An outlier against every other source. Candidate rows from this source: 0."
+ },
+ {
+  "source_id": "shopbot_feedsandspeeds_2016",
+  "source_vendor": "shopbot",
+  "source_title": "ShopBot Tools Feeds and Speeds Charts (July 21, 2016)",
+  "source_url": "https://shopbottools.com/wp-content/uploads/2024/01/FeedsandSpeeds.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "planning/extrapolation_2026-09-24/fetch/G2/sources/shopbot_feedsandspeeds_2016.txt",
+  "pdf_sha256": "7ad6d74012fe2d5f52f25c2e7c75f199be6845d5e21e52a4147892ebe779f56e",
+  "coverage_notes": "Secondary copy of Onsrud numbers for the ShopBot bit kit (grade c, no rows): 'These charts have been taken from Onsrud's recommendations'. Tables for Soft wood, Hard wood, MDF, Soft Plywood, Laminated Chipboard, Laminated Plywood. The 1 in 60 degree Carbide V cutter (Onsrud 37-82) is .004-.006 in every table; the 1/8 in tapered ball (77-102) is .003-.005 in hard wood, soft wood, MDF and laminated plywood and n/a in soft plywood and laminated chipboard. Corroborates the Onsrud 37-80 1 in cell. Candidate rows from this source: 0."
+ },
+ {
+  "source_id": "ansi_a208_1_2016_particleboard",
+  "source_vendor": "cpa",
+  "source_title": "ANSI A208.1-2016 Particleboard (Composite Panel Association)",
+  "source_url": "https://res.cloudinary.com/hdi/image/upload/v1621251940/Suppliers/Guides/CPA_ANSI_Standard_A208_1_Particleboard_2016.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "planning/extrapolation_2026-09-24/fetch/G2/sources/ansi_a208_1_2016_particleboard.txt",
+  "pdf_sha256": "c459462c4952f08a46a486e261df5bb9f27ab5a7f63bc75b570cb76677293be6",
+  "coverage_notes": "Janka proxy source for particleboard (no rows). 4.3.7: hardness per ASTM D1037-12 Section 17. Table A (industrial grades H-1..M-3i, LD) prints NO hardness column in this edition. Table B (flooring / building-code grades PBU, D-2, D-3, M-3) prints Hardness 2225 N (500 lb) as a requirement (minimum), not a typical value. Reseller-hosted copy of the standard. Candidate rows from this source: 0."
+ },
+ {
+  "source_id": "wood_handbook_1999_ch10",
+  "source_vendor": "usda_fpl",
+  "source_title": "Wood Handbook (FPL-GTR-113, 1999), Chapter 10 Wood-based Composites and Panel Products (Youngquist); third-party mirror",
+  "source_url": "https://www.drjengineering.org/sites/default/files/uploads/attachments/field_collection/563/fpl_wood_handbook_ch10.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "planning/extrapolation_2026-09-24/fetch/G2/sources/wood_handbook_1999_ch10.txt",
+  "pdf_sha256": "040c02ca29b1a98eced2d5642825be33469e923856e676fc36a6017575709f99",
+  "coverage_notes": "Janka proxy source (no rows). Table 10-8 (from NPA 1993): particleboard hardness requirement H-1 2,225 N, H-2 4,450 N, H-3 6,675 N, M-1/M-S/M-2/M-3 2,225 N, LD NS. Table 10-9: PBU, D-2, D-3 2,225 N. Table 10-10 (MDF, ANSI A208.2, NPA 1994): NO hardness column. The fpl.fs.usda.gov originals (GTR-190, GTR-282 chapters) returned an HTML block page to curl; this mirror of the 1999 chapter was the reachable copy. Candidate rows from this source: 0."
+ },
+ {
+  "source_id": "weyerhaeuser_mdf_spec",
+  "source_vendor": "weyerhaeuser",
+  "source_title": "Weyerhaeuser Specifications for Standard MDF Products",
+  "source_url": "https://www.weyerhaeuser.com/application/files/1715/2631/5929/WEY-MDF-Standard-Product-Specifications.pdf",
+  "accessed_on": "2026-09-24",
+  "stored_text": "planning/extrapolation_2026-09-24/fetch/G2/sources/weyerhaeuser_mdf_spec.txt",
+  "pdf_sha256": "ef9db59ff4dd69ba508875def32644dfa15595d9f70fd8b2a4e51619ef897b72",
+  "coverage_notes": "Negative result for the MDF Janka proxy: the mill specification prints density (49.0 lb/ft3, 788 kg/m3 under 0.551 in) and ANSI A208.2 properties but no hardness. Candidate rows from this source: 0."
+ }
+]

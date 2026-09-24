@@ -1,0 +1,520 @@
+# trend_g1.py output (DERIVED; every slope and ratio is computed, no vendor prints it)
+
+Inputs: 389 LUT rows, 96 verified G1 rows; 363 printed wood points (grade a/b, not fallback) before the per-diameter dedupe.
+Series with >= 2 diameters: 63 (LUT only 42, G1 only 21).
+
+## A. Chipload against diameter, every series with >= 2 sizes (mm/tooth)
+Frame = the diameter the series keys on. 'copy of' = the same printed cell as the named
+material (a shared chart row); it is not a second witness.
+
+### tapered_ball_nose: 12 series
+| source | subfamily | material | fl | role | grade/kind | frame | d mm | min | max | mid |
+|---|---|---|---|---|---|---|---|---|---|---|
+| amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_tapered | hardwood | 2 | finish | b/derived | tip | 1 | 0.01905 | 0.0508 | 0.0349 |
+| | | | | | | | 1.5875 | 0.0762 | 0.127 | 0.1016 |
+| | | | | | | | 6.35 | 0.1778 | 0.2286 | 0.2032 |
+| amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_tapered | hardwood | 3 | finish | b/derived | tip | 0.7937 | 0.01905 | 0.0508 | 0.0349 |
+| | | | | | | | 3.175 | 0.0381 | 0.0635 | 0.0508 |
+| | | | | | | | 4.7625 | 0.0635 | 0.1016 | 0.0825 |
+| amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_tapered | hardwood | 4 | finish | b/derived | tip | 1.5 | 0.0127 | 0.01651 | 0.0146 |
+| | | | | | | | 1.5875 | 0.0127 | 0.01651 | 0.0146 |
+| | | | | | | | 3.175 | 0.0127 | 0.01651 | 0.0146 |
+| amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_tapered | mdf (copy of hardwood) | 2 | finish | a+b/exact | tip | 1 | 0.01905 | 0.0508 | 0.0349 |
+| | | | | | | | 1.5875 | 0.0762 | 0.127 | 0.1016 |
+| | | | | | | | 6.35 | 0.1778 | 0.2286 | 0.2032 |
+| amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_tapered | mdf (copy of hardwood) | 3 | finish | a/exact | tip | 0.7937 | 0.01905 | 0.0508 | 0.0349 |
+| | | | | | | | 3.175 | 0.0381 | 0.0635 | 0.0508 |
+| | | | | | | | 4.7625 | 0.0635 | 0.1016 | 0.0825 |
+| amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_tapered | mdf (copy of hardwood) | 4 | finish | a/exact | tip | 1.5 | 0.0127 | 0.01651 | 0.0146 |
+| | | | | | | | 1.5875 | 0.0127 | 0.01651 | 0.0146 |
+| | | | | | | | 3.175 | 0.0127 | 0.01651 | 0.0146 |
+| amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_tapered | softwood (copy of hardwood) | 2 | finish | b/derived | tip | 1 | 0.01905 | 0.0508 | 0.0349 |
+| | | | | | | | 1.5875 | 0.0762 | 0.127 | 0.1016 |
+| | | | | | | | 6.35 | 0.1778 | 0.2286 | 0.2032 |
+| amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_tapered | softwood (copy of hardwood) | 3 | finish | b/derived | tip | 0.7937 | 0.01905 | 0.0508 | 0.0349 |
+| | | | | | | | 3.175 | 0.0381 | 0.0635 | 0.0508 |
+| | | | | | | | 4.7625 | 0.0635 | 0.1016 | 0.0825 |
+| amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_tapered | softwood (copy of hardwood) | 4 | finish | b/derived | tip | 1.5 | 0.0127 | 0.01651 | 0.0146 |
+| | | | | | | | 1.5875 | 0.0127 | 0.01651 | 0.0146 |
+| | | | | | | | 3.175 | 0.0127 | 0.01651 | 0.0146 |
+| spetool_2d3d_tapered_router_bit_c~ | spetool_2d3d_tapered | hardwood | 2 | finish | b/derived | tip | 0.5 | - | 0.01778 | 0.0178 |
+| | | | | | | | 0.7937 | - | 0.02032 | 0.0203 |
+| | | | | | | | 1 | - | 0.0254 | 0.0254 |
+| | | | | | | | 1.5 | - | 0.0381 | 0.0381 |
+| | | | | | | | 1.5875 | - | 0.0381 | 0.0381 |
+| | | | | | | | 2 | - | 0.0762 | 0.0762 |
+| | | | | | | | 3 | - | 0.1016 | 0.1016 |
+| | | | | | | | 3.175 | - | 0.1016 | 0.1016 |
+| | | | | | | | 4 | - | 0.127 | 0.1270 |
+| spetool_2d3d_tapered_router_bit_c~ | spetool_2d3d_tapered | mdf (copy of hardwood) | 2 | finish | b/exact | tip | 0.5 | - | 0.01778 | 0.0178 |
+| | | | | | | | 0.7937 | - | 0.02032 | 0.0203 |
+| | | | | | | | 1 | - | 0.0254 | 0.0254 |
+| | | | | | | | 1.5 | - | 0.0381 | 0.0381 |
+| | | | | | | | 1.5875 | - | 0.0381 | 0.0381 |
+| | | | | | | | 2 | - | 0.0762 | 0.0762 |
+| | | | | | | | 3 | - | 0.1016 | 0.1016 |
+| | | | | | | | 3.175 | - | 0.1016 | 0.1016 |
+| | | | | | | | 4 | - | 0.127 | 0.1270 |
+| spetool_2d3d_tapered_router_bit_c~ | spetool_2d3d_tapered | softwood (copy of hardwood) | 2 | finish | b/derived | tip | 0.5 | - | 0.01778 | 0.0178 |
+| | | | | | | | 0.7937 | - | 0.02032 | 0.0203 |
+| | | | | | | | 1 | - | 0.0254 | 0.0254 |
+| | | | | | | | 1.5 | - | 0.0381 | 0.0381 |
+| | | | | | | | 1.5875 | - | 0.0381 | 0.0381 |
+| | | | | | | | 2 | - | 0.0762 | 0.0762 |
+| | | | | | | | 3 | - | 0.1016 | 0.1016 |
+| | | | | | | | 3.175 | - | 0.1016 | 0.1016 |
+| | | | | | | | 4 | - | 0.127 | 0.1270 |
+
+### ball_nose: 5 series
+| source | subfamily | material | fl | role | grade/kind | frame | d mm | min | max | mid |
+|---|---|---|---|---|---|---|---|---|---|---|
+| amana_ball_nose_v7 | solid_carbide | hardwood | 2 | roughing | a/exact | cutting D | 3.175 | 0.0762 | 0.127 | 0.1016 |
+| | | | | | | | 6.35 | 0.127 | 0.1778 | 0.1524 |
+| amana_ball_nose_v7 | solid_carbide | mdf | 2 | roughing | a/exact | cutting D | 3.175 | 0.127 | 0.1778 | 0.1524 |
+| | | | | | | | 6.35 | 0.1524 | 0.2032 | 0.1778 |
+| amana_ball_nose_v7 | solid_carbide | softwood | 2 | roughing | a/exact | cutting D | 3.175 | 0.127 | 0.1778 | 0.1524 |
+| | | | | | | | 6.35 | 0.1778 | 0.2286 | 0.2032 |
+| amana_zrn_3d_profiling | zrn | softwood | 2 | finish | a/derived+exact | tip (tapered tool, D1) | 1 | 0.01905 | 0.0508 | 0.0349 |
+| | | | | | | | 1.5875 | 0.0388 | 0.0635 | 0.0512 |
+| amana_zrn_3d_profiling_v8 | zrn | softwood | 3 | finish | a/exact | cutting D | 9.525 | 0.1524 | 0.2032 | 0.1778 |
+| | | | | | | | 12.7 | 0.1778 | 0.2286 | 0.2032 |
+
+### chamfer_vbit: 1 series
+| source | subfamily | material | fl | role | grade/kind | frame | d mm | min | max | mid |
+|---|---|---|---|---|---|---|---|---|---|---|
+| amana_ams159_vgroove_v2 | carbide_tipped_vgroove | softwood | 2 | finish | a/exact | body D | 9.525 | 0.0762 | 0.0762 | 0.0762 |
+| | | | | | | | 12.7 | 0.0762 | 0.0762 | 0.0762 |
+
+### flat_end: 45 series
+| source | subfamily | material | fl | role | grade/kind | frame | d mm | min | max | mid |
+|---|---|---|---|---|---|---|---|---|---|---|
+| amana_compression_spirals_v8 | compression | hardwood | 2 | roughing | a/exact | cutting D | 6.35 | 0.0787 | 0.0787 | 0.0787 |
+| | | | | | | | 12.7 | 0.1956 | 0.1956 | 0.1956 |
+| amana_compression_spirals_v8 | compression | mdf | 2 | roughing | a/exact | cutting D | 6.35 | 0.1549 | 0.1549 | 0.1549 |
+| | | | | | | | 12.7 | 0.2819 | 0.2819 | 0.2819 |
+| amana_spektra_spiral_plunge_v24 | spektra_spiral_plunge | hardwood | 2 | roughing | b/derived | cutting D | 3.175 | - | 0.1016 | 0.1016 |
+| | | | | | | | 6 | - | 0.127 | 0.1270 |
+| | | | | | | | 6.35 | - | 0.127 | 0.1270 |
+| amana_spektra_spiral_plunge_v24 | spektra_spiral_plunge | hardwood | 3 | roughing | b/derived | cutting D | 3.175 | - | 0.1016 | 0.1016 |
+| | | | | | | | 6 | - | 0.127 | 0.1270 |
+| | | | | | | | 6.35 | - | 0.127 | 0.1270 |
+| amana_spektra_spiral_plunge_v24 | spektra_spiral_plunge | mdf | 2 | roughing | a/exact | cutting D | 0.7937 | 0.0508 | 0.0508 | 0.0508 |
+| | | | | | | | 1.5 | 0.0762 | 0.0762 | 0.0762 |
+| | | | | | | | 1.5875 | 0.0762 | 0.0762 | 0.0762 |
+| | | | | | | | 2.3813 | 0.11684 | 0.11684 | 0.1168 |
+| | | | | | | | 3 | 0.127 | 0.127 | 0.1270 |
+| | | | | | | | 3.175 | - | 0.127 | 0.1270 |
+| | | | | | | | 4.7625 | 0.1524 | 0.1524 | 0.1524 |
+| | | | | | | | 5 | 0.1524 | 0.1524 | 0.1524 |
+| | | | | | | | 6 | - | 0.1524 | 0.1524 |
+| | | | | | | | 6.35 | - | 0.1524 | 0.1524 |
+| | | | | | | | 9.525 | 0.27432 | 0.27432 | 0.2743 |
+| | | | | | | | 12 | 0.24384 | 0.24384 | 0.2438 |
+| | | | | | | | 12.7 | 0.24384 | 0.24384 | 0.2438 |
+| amana_spektra_spiral_plunge_v24 | spektra_spiral_plunge | mdf | 3 | roughing | a/exact | cutting D | 3.175 | - | 0.127 | 0.1270 |
+| | | | | | | | 6 | - | 0.1524 | 0.1524 |
+| | | | | | | | 6.35 | - | 0.1524 | 0.1524 |
+| | | | | | | | 9.525 | 0.27432 | 0.27432 | 0.2743 |
+| | | | | | | | 12.7 | 0.24384 | 0.24384 | 0.2438 |
+| | | | | | | | 19.05 | 0.254 | 0.254 | 0.2540 |
+| amana_spektra_spiral_plunge_v24 | spektra_spiral_plunge | plywood_hardwood (copy of hardwood) | 2 | roughing | b/derived | cutting D | 3.175 | - | 0.1016 | 0.1016 |
+| | | | | | | | 6 | - | 0.127 | 0.1270 |
+| | | | | | | | 6.35 | - | 0.127 | 0.1270 |
+| amana_spektra_spiral_plunge_v24 | spektra_spiral_plunge | plywood_hardwood (copy of hardwood) | 3 | roughing | b/derived | cutting D | 3.175 | - | 0.1016 | 0.1016 |
+| | | | | | | | 6 | - | 0.127 | 0.1270 |
+| | | | | | | | 6.35 | - | 0.127 | 0.1270 |
+| amana_spektra_spiral_plunge_v24 | spektra_spiral_plunge | plywood_softwood (copy of hardwood) | 2 | roughing | b/derived | cutting D | 3.175 | - | 0.1016 | 0.1016 |
+| | | | | | | | 6 | - | 0.127 | 0.1270 |
+| | | | | | | | 6.35 | - | 0.127 | 0.1270 |
+| amana_spektra_spiral_plunge_v24 | spektra_spiral_plunge | plywood_softwood (copy of hardwood) | 3 | roughing | b/derived | cutting D | 3.175 | - | 0.1016 | 0.1016 |
+| | | | | | | | 6 | - | 0.127 | 0.1270 |
+| | | | | | | | 6.35 | - | 0.127 | 0.1270 |
+| amana_spektra_spiral_plunge_v24 | spektra_spiral_plunge | softwood | 2 | roughing | a+b/derived+exact | cutting D | 0.7937 | 0.0254 | 0.0254 | 0.0254 |
+| | | | | | | | 1.5 | 0.0508 | 0.0508 | 0.0508 |
+| | | | | | | | 1.5875 | 0.0508 | 0.0508 | 0.0508 |
+| | | | | | | | 2.3813 | 0.05842 | 0.05842 | 0.0584 |
+| | | | | | | | 3 | 0.1016 | 0.1016 | 0.1016 |
+| | | | | | | | 3.175 | - | 0.1016 | 0.1016 |
+| | | | | | | | 4.7625 | 0.127 | 0.127 | 0.1270 |
+| | | | | | | | 5 | 0.127 | 0.127 | 0.1270 |
+| | | | | | | | 6 | - | 0.127 | 0.1270 |
+| | | | | | | | 6.35 | - | 0.127 | 0.1270 |
+| | | | | | | | 9.525 | 0.16256 | 0.16256 | 0.1626 |
+| | | | | | | | 12 | 0.14478 | 0.14478 | 0.1448 |
+| | | | | | | | 12.7 | 0.14478 | 0.14478 | 0.1448 |
+| amana_spektra_spiral_plunge_v24 | spektra_spiral_plunge | softwood | 3 | roughing | a+b/derived+exact | cutting D | 3.175 | - | 0.1016 | 0.1016 |
+| | | | | | | | 6 | - | 0.127 | 0.1270 |
+| | | | | | | | 6.35 | - | 0.127 | 0.1270 |
+| | | | | | | | 9.525 | 0.16256 | 0.16256 | 0.1626 |
+| | | | | | | | 12.7 | 0.14478 | 0.14478 | 0.1448 |
+| | | | | | | | 19.05 | 0.2286 | 0.2286 | 0.2286 |
+| amana_zrn_3d_profiling_v8 | zrn_2d3d_carving | softwood | 2 | roughing | a/exact | cutting D | 3.175 | 0.0762 | 0.127 | 0.1016 |
+| | | | | | | | 6 | 0.1778 | 0.2286 | 0.2032 |
+| | | | | | | | 6.35 | 0.1524 | 0.2032 | 0.1778 |
+| freud_router_bit_feed_and_speed_f~ | solid_carbide | hardwood | 2 | finish | a/exact | cutting D | 3.175 | 0.0508 | 0.127 | 0.0889 |
+| | | | | | | | 6.35 | 0.2032 | 0.2794 | 0.2413 |
+| | | | | | | | 9.525 | 0.3556 | 0.4064 | 0.3810 |
+| | | | | | | | 12.7 | 0.4572 | 0.5334 | 0.4953 |
+| freud_router_bit_feed_and_speed_f~ | solid_carbide | mdf | 2 | roughing | a/exact | cutting D | 3.175 | 0.1016 | 0.1778 | 0.1397 |
+| | | | | | | | 6.35 | 0.3302 | 0.4318 | 0.3810 |
+| | | | | | | | 12.7 | 0.5842 | 0.6858 | 0.6350 |
+| freud_router_bit_feed_and_speed_f~ | solid_carbide | plywood_hardwood | 2 | finish | a/exact | cutting D | 6.35 | 0.1524 | 0.2286 | 0.1905 |
+| | | | | | | | 12.7 | 0.4572 | 0.5334 | 0.4953 |
+| freud_router_bit_feed_and_speed_f~ | solid_carbide | softwood | 2 | finish | a/exact | cutting D | 3.175 | 0.1016 | 0.1524 | 0.1270 |
+| | | | | | | | 6.35 | 0.254 | 0.3048 | 0.2794 |
+| | | | | | | | 12.7 | 0.508 | 0.5842 | 0.5461 |
+| onsrud_hard_plywood_cutting_data | 60_000hh_series | plywood_hardwood | 2 | roughing | a/exact | cutting D | 9.525 | 0.4318 | 0.4826 | 0.4572 |
+| | | | | | | | 12.7 | 0.4826 | 0.5334 | 0.5080 |
+| onsrud_hard_plywood_cutting_data | 60_000lh_series | plywood_hardwood | 2 | roughing | a/exact | cutting D | 9.525 | 0.3556 | 0.4064 | 0.3810 |
+| | | | | | | | 12.7 | 0.4064 | 0.4572 | 0.4318 |
+| | | | | | | | 15.875 | 0.4572 | 0.508 | 0.4826 |
+| | | | | | | | 19.05 | 0.508 | 0.5588 | 0.5334 |
+| onsrud_hard_plywood_cutting_data | 60_100mw_compression_sp~ | plywood_hardwood | 2 | finish | a/exact | cutting D | 3.175 | 0.3048 | 0.3556 | 0.3302 |
+| | | | | | | | 4.7625 | 0.3048 | 0.3556 | 0.3302 |
+| | | | | | | | 6.35 | 0.3556 | 0.4064 | 0.3810 |
+| | | | | | | | 9.525 | 0.4064 | 0.4572 | 0.4318 |
+| | | | | | | | 12.7 | 0.4572 | 0.508 | 0.4826 |
+| onsrud_hard_plywood_cutting_data | 60_350_series | plywood_hardwood | 2 | semi_finish | a/exact | cutting D | 9.525 | 0.4572 | 0.508 | 0.4826 |
+| | | | | | | | 12.7 | 0.508 | 0.5588 | 0.5334 |
+| | | | | | | | 15.875 | 0.5588 | 0.635 | 0.5969 |
+| onsrud_hard_wood_cutting_data | 60_000hh_series | hardwood | 2 | roughing | b/exact | cutting D | 9.525 | 0.381 | 0.4318 | 0.4064 |
+| | | | | | | | 12.7 | 0.4318 | 0.4826 | 0.4572 |
+| onsrud_hard_wood_cutting_data | 60_000lh_series | hardwood | 2 | roughing | b/exact | cutting D | 9.525 | 0.3302 | 0.381 | 0.3556 |
+| | | | | | | | 12.7 | 0.3556 | 0.4064 | 0.3810 |
+| | | | | | | | 15.875 | 0.4064 | 0.4572 | 0.4318 |
+| | | | | | | | 19.05 | 0.4318 | 0.4826 | 0.4572 |
+| onsrud_hard_wood_cutting_data | 60_100mw_compression_sp~ | hardwood | 2 | finish | b/exact | cutting D | 3.175 | 0.254 | 0.3048 | 0.2794 |
+| | | | | | | | 4.7625 | 0.3048 | 0.3556 | 0.3302 |
+| | | | | | | | 6.35 | 0.3556 | 0.4064 | 0.3810 |
+| | | | | | | | 9.525 | 0.4064 | 0.4572 | 0.4318 |
+| onsrud_hard_wood_cutting_data | 60_200_downcut | hardwood | 2 | finish | b/exact | cutting D | 6.35 | 0.127 | 0.1778 | 0.1524 |
+| | | | | | | | 9.525 | 0.1524 | 0.2032 | 0.1778 |
+| | | | | | | | 12.7 | 0.1778 | 0.2286 | 0.2032 |
+| | | | | | | | 19.05 | 0.2032 | 0.254 | 0.2286 |
+| onsrud_mdf_cutting_data | 60_000lh_series | mdf | 2 | roughing | b/exact | cutting D | 9.525 | 0.3048 | 0.3556 | 0.3302 |
+| | | | | | | | 12.7 | 0.3302 | 0.381 | 0.3556 |
+| | | | | | | | 15.875 | 0.3556 | 0.4064 | 0.3810 |
+| | | | | | | | 19.05 | 0.4064 | 0.4572 | 0.4318 |
+| onsrud_mdf_cutting_data | 60_100mw_compression_sp~ | mdf | 2 | finish | b/exact | cutting D | 3.175 | 0.254 | 0.3048 | 0.2794 |
+| | | | | | | | 4.7625 | 0.254 | 0.3048 | 0.2794 |
+| | | | | | | | 6.35 | 0.3302 | 0.381 | 0.3556 |
+| | | | | | | | 9.525 | 0.3556 | 0.4064 | 0.3810 |
+| | | | | | | | 12.7 | 0.4064 | 0.4572 | 0.4318 |
+| onsrud_mdf_cutting_data | 60_200_downcut | mdf | 2 | finish | b/exact | cutting D | 6.35 | 0.1016 | 0.1524 | 0.1270 |
+| | | | | | | | 9.525 | 0.127 | 0.1778 | 0.1524 |
+| | | | | | | | 12.7 | 0.127 | 0.1778 | 0.1524 |
+| | | | | | | | 19.05 | 0.1524 | 0.2032 | 0.1778 |
+| onsrud_mdf_cutting_data | 60_350_series | mdf | 2 | semi_finish | b/exact | cutting D | 9.525 | 0.3556 | 0.4064 | 0.3810 |
+| | | | | | | | 12.7 | 0.4064 | 0.4572 | 0.4318 |
+| | | | | | | | 15.875 | 0.4318 | 0.4826 | 0.4572 |
+| onsrud_soft_plywood_cutting_data | 60_000hh_series | plywood_softwood | 2 | roughing | a/exact | cutting D | 9.525 | 0.4318 | 0.4826 | 0.4572 |
+| | | | | | | | 12.7 | 0.4826 | 0.5334 | 0.5080 |
+| onsrud_soft_plywood_cutting_data | 60_000lh_series | plywood_softwood | 2 | roughing | a/exact | cutting D | 9.525 | 0.3556 | 0.4064 | 0.3810 |
+| | | | | | | | 12.7 | 0.4064 | 0.4572 | 0.4318 |
+| | | | | | | | 15.875 | 0.4572 | 0.508 | 0.4826 |
+| | | | | | | | 19.05 | 0.508 | 0.5588 | 0.5334 |
+| onsrud_soft_plywood_cutting_data | 60_100mw_compression_sp~ | plywood_softwood | 2 | finish | a/exact | cutting D | 4.7625 | 0.3556 | 0.4064 | 0.3810 |
+| | | | | | | | 6.35 | 0.4318 | 0.4826 | 0.4572 |
+| | | | | | | | 9.525 | 0.4826 | 0.5334 | 0.5080 |
+| | | | | | | | 12.7 | 0.5334 | 0.5842 | 0.5588 |
+| onsrud_soft_plywood_cutting_data | 60_350_series | plywood_softwood | 2 | semi_finish | a/exact | cutting D | 9.525 | 0.508 | 0.5588 | 0.5334 |
+| | | | | | | | 12.7 | 0.5588 | 0.6096 | 0.5842 |
+| | | | | | | | 15.875 | 0.6096 | 0.6604 | 0.6350 |
+| onsrud_soft_wood_cutting_data | 60_000lh_series | softwood | 2 | roughing | b/exact | cutting D | 9.525 | 0.3302 | 0.381 | 0.3556 |
+| | | | | | | | 12.7 | 0.381 | 0.4318 | 0.4064 |
+| | | | | | | | 15.875 | 0.4318 | 0.4826 | 0.4572 |
+| onsrud_soft_wood_cutting_data | 60_100mw_compression_sp~ | softwood | 2 | finish | b/exact | cutting D | 3.175 | 0.2794 | 0.3302 | 0.3048 |
+| | | | | | | | 4.7625 | 0.3302 | 0.381 | 0.3556 |
+| onsrud_soft_wood_cutting_data | 60_200_downcut | softwood | 2 | finish | b/exact | cutting D | 6.35 | 0.127 | 0.1778 | 0.1524 |
+| | | | | | | | 9.525 | 0.1524 | 0.2032 | 0.1778 |
+| | | | | | | | 12.7 | 0.1778 | 0.2286 | 0.2032 |
+| | | | | | | | 19.05 | 0.2032 | 0.254 | 0.2286 |
+| spetool_carbide_spiral_router_bit~ | spetool_compression_spi~ | hardwood | 2 | roughing | b/exact | cutting D | 3.175 | - | 0.0762 | 0.0762 |
+| | | | | | | | 6.35 | - | 0.127 | 0.1270 |
+| | | | | | | | 9.525 | - | 0.1524 | 0.1524 |
+| | | | | | | | 12.7 | - | 0.2286 | 0.2286 |
+| spetool_carbide_spiral_router_bit~ | spetool_compression_spi~ | mdf | 2 | roughing | b/exact | cutting D | 3.175 | - | 0.1016 | 0.1016 |
+| | | | | | | | 6.35 | - | 0.18288 | 0.1829 |
+| | | | | | | | 9.525 | - | 0.2286 | 0.2286 |
+| | | | | | | | 12.7 | - | 0.3556 | 0.3556 |
+| spetool_carbide_spiral_router_bit~ | spetool_compression_spi~ | softwood | 2 | roughing | b/exact | cutting D | 3.175 | - | 0.0889 | 0.0889 |
+| | | | | | | | 6.35 | - | 0.15748 | 0.1575 |
+| | | | | | | | 9.525 | - | 0.2032 | 0.2032 |
+| | | | | | | | 12.7 | - | 0.2794 | 0.2794 |
+| spetool_carbide_spiral_router_bit~ | spetool_downcut_spiral | hardwood | 2 | roughing | b/exact | cutting D | 1.5875 | - | 0.0254 | 0.0254 |
+| | | | | | | | 3.175 | - | 0.07112 | 0.0711 |
+| | | | | | | | 6.35 | - | 0.1016 | 0.1016 |
+| | | | | | | | 9.525 | - | 0.1524 | 0.1524 |
+| | | | | | | | 12.7 | - | 0.2032 | 0.2032 |
+| spetool_carbide_spiral_router_bit~ | spetool_downcut_spiral | mdf | 2 | roughing | b/exact | cutting D | 1.5875 | - | 0.0254 | 0.0254 |
+| | | | | | | | 3.175 | - | 0.09144 | 0.0914 |
+| | | | | | | | 6.35 | - | 0.1524 | 0.1524 |
+| | | | | | | | 9.525 | - | 0.2032 | 0.2032 |
+| | | | | | | | 12.7 | - | 0.3048 | 0.3048 |
+| spetool_carbide_spiral_router_bit~ | spetool_downcut_spiral | softwood | 2 | roughing | b/exact | cutting D | 1.5875 | - | 0.0254 | 0.0254 |
+| | | | | | | | 3.175 | - | 0.08128 | 0.0813 |
+| | | | | | | | 6.35 | - | 0.14224 | 0.1422 |
+| | | | | | | | 9.525 | - | 0.2032 | 0.2032 |
+| | | | | | | | 12.7 | - | 0.254 | 0.2540 |
+| spetool_carbide_spiral_router_bit~ | spetool_upcut_spiral | hardwood | 2 | roughing | b/exact | cutting D | 1.5875 | - | 0.0381 | 0.0381 |
+| | | | | | | | 3.175 | - | 0.0889 | 0.0889 |
+| | | | | | | | 6.35 | - | 0.1524 | 0.1524 |
+| | | | | | | | 9.525 | - | 0.1778 | 0.1778 |
+| | | | | | | | 12.7 | - | 0.254 | 0.2540 |
+| spetool_carbide_spiral_router_bit~ | spetool_upcut_spiral | mdf | 2 | roughing | b/exact | cutting D | 1.5875 | - | 0.0381 | 0.0381 |
+| | | | | | | | 3.175 | - | 0.1143 | 0.1143 |
+| | | | | | | | 6.35 | - | 0.2032 | 0.2032 |
+| | | | | | | | 9.525 | - | 0.254 | 0.2540 |
+| | | | | | | | 12.7 | - | 0.381 | 0.3810 |
+| spetool_carbide_spiral_router_bit~ | spetool_upcut_spiral | softwood | 2 | roughing | b/exact | cutting D | 1.5875 | - | 0.0381 | 0.0381 |
+| | | | | | | | 3.175 | - | 0.1016 | 0.1016 |
+| | | | | | | | 6.35 | - | 0.1778 | 0.1778 |
+| | | | | | | | 9.525 | - | 0.2286 | 0.2286 |
+| | | | | | | | 12.7 | - | 0.3048 | 0.3048 |
+
+## B. Log-log slope per series (on mid; min and max where both limits are printed)
+| family | source | subfamily | material | fl | role | n | span | slope mid | r2 | slope min | slope max | note |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| ball_nose | amana_ball_nose_v7 | solid_carbide | hardwood | 2 | roughing | 2 | 2.0x | +0.58 | - | +0.74 | +0.49 | 2 sizes: no residual |
+| ball_nose | amana_ball_nose_v7 | solid_carbide | mdf | 2 | roughing | 2 | 2.0x | +0.22 | - | +0.26 | +0.19 | 2 sizes: no residual |
+| ball_nose | amana_ball_nose_v7 | solid_carbide | softwood | 2 | roughing | 2 | 2.0x | +0.42 | - | +0.49 | +0.36 | 2 sizes: no residual |
+| ball_nose | amana_zrn_3d_profiling | zrn | softwood | 2 | finish | 2 | 1.6x | +0.83 | - | +1.54 | +0.48 | 2 sizes: no residual; D1 tapered cells filed as ball; D2: 1.5875 value from IPM |
+| ball_nose | amana_zrn_3d_profiling_v8 | zrn | softwood | 3 | finish | 2 | 1.3x | +0.46 | - | +0.54 | +0.41 | 2 sizes: no residual |
+| chamfer_vbit | amana_ams159_vgroove_v2 | carbide_tipped_vgro~ | softwood | 2 | finish | 2 | 1.3x | +0.00 | n/a | +0.00 | +0.00 | 2 sizes: no residual; constant |
+| flat_end | amana_compression_spirals_v8 | compression | hardwood | 2 | roughing | 2 | 2.0x | +1.31 | - | +1.31 | +1.31 | 2 sizes: no residual |
+| flat_end | amana_compression_spirals_v8 | compression | mdf | 2 | roughing | 2 | 2.0x | +0.86 | - | +0.86 | +0.86 | 2 sizes: no residual |
+| flat_end | amana_spektra_spiral_plunge_v~ | spektra_spiral_plun~ | hardwood | 2 | roughing | 3 | 2.0x | +0.33 | 0.99 | - | +0.33 |  |
+| flat_end | amana_spektra_spiral_plunge_v~ | spektra_spiral_plun~ | hardwood | 3 | roughing | 3 | 2.0x | +0.33 | 0.99 | - | +0.33 |  |
+| flat_end | amana_spektra_spiral_plunge_v~ | spektra_spiral_plun~ | mdf | 2 | roughing | 13 | 16.0x | +0.57 | 0.96 | - | +0.57 |  |
+| flat_end | amana_spektra_spiral_plunge_v~ | spektra_spiral_plun~ | mdf | 3 | roughing | 6 | 6.0x | +0.46 | 0.78 | - | +0.46 |  |
+| flat_end | amana_spektra_spiral_plunge_v~ | spektra_spiral_plun~ | plywood_hardwood | 2 | roughing | 3 | 2.0x | +0.33 | 0.99 | - | +0.33 | copy of hardwood |
+| flat_end | amana_spektra_spiral_plunge_v~ | spektra_spiral_plun~ | plywood_hardwood | 3 | roughing | 3 | 2.0x | +0.33 | 0.99 | - | +0.33 | copy of hardwood |
+| flat_end | amana_spektra_spiral_plunge_v~ | spektra_spiral_plun~ | plywood_softwood | 2 | roughing | 3 | 2.0x | +0.33 | 0.99 | - | +0.33 | copy of hardwood |
+| flat_end | amana_spektra_spiral_plunge_v~ | spektra_spiral_plun~ | plywood_softwood | 3 | roughing | 3 | 2.0x | +0.33 | 0.99 | - | +0.33 | copy of hardwood |
+| flat_end | amana_spektra_spiral_plunge_v~ | spektra_spiral_plun~ | softwood | 2 | roughing | 13 | 16.0x | +0.62 | 0.88 | - | +0.62 |  |
+| flat_end | amana_spektra_spiral_plunge_v~ | spektra_spiral_plun~ | softwood | 3 | roughing | 6 | 6.0x | +0.41 | 0.87 | - | +0.41 |  |
+| flat_end | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving | softwood | 2 | roughing | 3 | 2.0x | +0.92 | 0.94 | +1.14 | +0.78 |  |
+| flat_end | freud_router_bit_feed_and_spe~ | solid_carbide | hardwood | 2 | finish | 4 | 4.0x | +1.25 | 0.99 | +1.62 | +1.04 |  |
+| flat_end | freud_router_bit_feed_and_spe~ | solid_carbide | mdf | 2 | roughing | 3 | 4.0x | +1.09 | 0.97 | +1.26 | +0.97 |  |
+| flat_end | freud_router_bit_feed_and_spe~ | solid_carbide | plywood_hardwood | 2 | finish | 2 | 2.0x | +1.38 | - | +1.58 | +1.22 | 2 sizes: no residual |
+| flat_end | freud_router_bit_feed_and_spe~ | solid_carbide | softwood | 2 | finish | 3 | 4.0x | +1.05 | 1.00 | +1.16 | +0.97 |  |
+| flat_end | onsrud_hard_plywood_cutting_d~ | 60_000hh_series | plywood_hardwood | 2 | roughing | 2 | 1.3x | +0.37 | - | +0.39 | +0.35 | 2 sizes: no residual |
+| flat_end | onsrud_hard_plywood_cutting_d~ | 60_000lh_series | plywood_hardwood | 2 | roughing | 4 | 2.0x | +0.48 | 1.00 | +0.51 | +0.46 |  |
+| flat_end | onsrud_hard_plywood_cutting_d~ | 60_100mw_compressio~ | plywood_hardwood | 2 | finish | 5 | 4.0x | +0.29 | 0.93 | +0.31 | +0.28 |  |
+| flat_end | onsrud_hard_plywood_cutting_d~ | 60_350_series | plywood_hardwood | 2 | semi_finish | 3 | 1.7x | +0.41 | 0.99 | +0.39 | +0.43 |  |
+| flat_end | onsrud_hard_wood_cutting_data | 60_000hh_series | hardwood | 2 | roughing | 2 | 1.3x | +0.41 | - | +0.44 | +0.39 | 2 sizes: no residual |
+| flat_end | onsrud_hard_wood_cutting_data | 60_000lh_series | hardwood | 2 | roughing | 4 | 2.0x | +0.38 | 0.97 | +0.40 | +0.36 |  |
+| flat_end | onsrud_hard_wood_cutting_data | 60_100mw_compressio~ | hardwood | 2 | finish | 4 | 3.0x | +0.40 | 0.99 | +0.43 | +0.38 |  |
+| flat_end | onsrud_hard_wood_cutting_data | 60_200_downcut | hardwood | 2 | finish | 4 | 3.0x | +0.38 | 0.99 | +0.43 | +0.33 |  |
+| flat_end | onsrud_mdf_cutting_data | 60_000lh_series | mdf | 2 | roughing | 4 | 2.0x | +0.37 | 0.94 | +0.40 | +0.35 |  |
+| flat_end | onsrud_mdf_cutting_data | 60_100mw_compressio~ | mdf | 2 | finish | 5 | 4.0x | +0.34 | 0.91 | +0.36 | +0.31 |  |
+| flat_end | onsrud_mdf_cutting_data | 60_200_downcut | mdf | 2 | finish | 4 | 3.0x | +0.29 | 0.93 | +0.35 | +0.25 |  |
+| flat_end | onsrud_mdf_cutting_data | 60_350_series | mdf | 2 | semi_finish | 3 | 1.7x | +0.36 | 0.98 | +0.38 | +0.34 |  |
+| flat_end | onsrud_soft_plywood_cutting_d~ | 60_000hh_series | plywood_softwood | 2 | roughing | 2 | 1.3x | +0.37 | - | +0.39 | +0.35 | 2 sizes: no residual |
+| flat_end | onsrud_soft_plywood_cutting_d~ | 60_000lh_series | plywood_softwood | 2 | roughing | 4 | 2.0x | +0.48 | 1.00 | +0.51 | +0.46 |  |
+| flat_end | onsrud_soft_plywood_cutting_d~ | 60_100mw_compressio~ | plywood_softwood | 2 | finish | 4 | 2.7x | +0.37 | 0.96 | +0.39 | +0.35 |  |
+| flat_end | onsrud_soft_plywood_cutting_d~ | 60_350_series | plywood_softwood | 2 | semi_finish | 3 | 1.7x | +0.34 | 1.00 | +0.36 | +0.33 |  |
+| flat_end | onsrud_soft_wood_cutting_data | 60_000lh_series | softwood | 2 | roughing | 3 | 1.7x | +0.49 | 1.00 | +0.52 | +0.46 |  |
+| flat_end | onsrud_soft_wood_cutting_data | 60_100mw_compressio~ | softwood | 2 | finish | 2 | 1.5x | +0.38 | - | +0.41 | +0.35 | 2 sizes: no residual |
+| flat_end | onsrud_soft_wood_cutting_data | 60_200_downcut | softwood | 2 | finish | 4 | 3.0x | +0.38 | 0.99 | +0.43 | +0.33 |  |
+| flat_end | spetool_carbide_spiral_router~ | spetool_compression~ | hardwood | 2 | roughing | 4 | 4.0x | +0.75 | 0.97 | - | +0.75 |  |
+| flat_end | spetool_carbide_spiral_router~ | spetool_compression~ | mdf | 2 | roughing | 4 | 4.0x | +0.86 | 0.98 | - | +0.86 |  |
+| flat_end | spetool_carbide_spiral_router~ | spetool_compression~ | softwood | 2 | roughing | 4 | 4.0x | +0.80 | 0.99 | - | +0.80 |  |
+| flat_end | spetool_carbide_spiral_router~ | spetool_downcut_spi~ | hardwood | 2 | roughing | 5 | 8.0x | +0.94 | 0.97 | - | +0.94 |  |
+| flat_end | spetool_carbide_spiral_router~ | spetool_downcut_spi~ | mdf | 2 | roughing | 5 | 8.0x | +1.11 | 0.96 | - | +1.11 |  |
+| flat_end | spetool_carbide_spiral_router~ | spetool_downcut_spi~ | softwood | 2 | roughing | 5 | 8.0x | +1.07 | 0.97 | - | +1.07 |  |
+| flat_end | spetool_carbide_spiral_router~ | spetool_upcut_spiral | hardwood | 2 | roughing | 5 | 8.0x | +0.86 | 0.98 | - | +0.86 |  |
+| flat_end | spetool_carbide_spiral_router~ | spetool_upcut_spiral | mdf | 2 | roughing | 5 | 8.0x | +1.04 | 0.97 | - | +1.04 |  |
+| flat_end | spetool_carbide_spiral_router~ | spetool_upcut_spiral | softwood | 2 | roughing | 5 | 8.0x | +0.96 | 0.98 | - | +0.96 |  |
+| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | hardwood | 2 | finish | 3 | 6.3x | +0.85 | 0.85 | +1.07 | +0.72 |  |
+| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | hardwood | 3 | finish | 3 | 6.0x | +0.43 | 0.86 | +0.63 | +0.33 |  |
+| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | hardwood | 4 | finish | 3 | 2.1x | +0.00 | n/a | +0.00 | +0.00 | constant |
+| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | mdf | 2 | finish | 3 | 6.3x | +0.85 | 0.85 | +1.07 | +0.72 | copy of hardwood |
+| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | mdf | 3 | finish | 3 | 6.0x | +0.43 | 0.86 | +0.63 | +0.33 | copy of hardwood |
+| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | mdf | 4 | finish | 3 | 2.1x | +0.00 | n/a | +0.00 | +0.00 | constant; copy of hardwood |
+| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | softwood | 2 | finish | 3 | 6.3x | +0.85 | 0.85 | +1.07 | +0.72 | copy of hardwood |
+| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | softwood | 3 | finish | 3 | 6.0x | +0.43 | 0.86 | +0.63 | +0.33 | copy of hardwood |
+| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | softwood | 4 | finish | 3 | 2.1x | +0.00 | n/a | +0.00 | +0.00 | constant; copy of hardwood |
+| tapered_ball_nose | spetool_2d3d_tapered_router_b~ | spetool_2d3d_tapered | hardwood | 2 | finish | 9 | 8.0x | +1.06 | 0.95 | - | +1.06 |  |
+| tapered_ball_nose | spetool_2d3d_tapered_router_b~ | spetool_2d3d_tapered | mdf | 2 | finish | 9 | 8.0x | +1.06 | 0.95 | - | +1.06 | copy of hardwood |
+| tapered_ball_nose | spetool_2d3d_tapered_router_b~ | spetool_2d3d_tapered | softwood | 2 | finish | 9 | 8.0x | +1.06 | 0.95 | - | +1.06 | copy of hardwood |
+
+## C. Slopes grouped per tool family (distinct printed series only; copies left out)
+| family | series >=3 sizes | median | range | series 2 sizes | median | range | widest span |
+|---|---|---|---|---|---|---|---|
+| flat_end | 34 | +0.48 | +0.29 to +1.25 | 7 | +0.41 | +0.37 to +1.38 | 16.0x |
+| ball_nose | 0 | - | - | 5 | +0.46 | +0.22 to +0.83 | 2.0x |
+| tapered_ball_nose | 4 | +0.64 | +0.00 to +1.06 | 0 | - | - | 8.0x |
+| chamfer_vbit | 0 | - | - | 1 | +0.00 | +0.00 to +0.00 | 1.3x |
+| bull_nose | 0 | - | - | 0 | - | - | 0.0x |
+
+### C2. Slopes per source and family (distinct series, >= 3 sizes, then 2 sizes)
+| family | source | n series | slopes (>=3 sizes) | slopes (2 sizes) | frame |
+|---|---|---|---|---|---|
+| ball_nose | amana_ball_nose_v7 | 3 | - | +0.22, +0.42, +0.58 | cutting D |
+| ball_nose | amana_zrn_3d_profiling | 1 | - | +0.83 | tip (tapered tool, D1) |
+| ball_nose | amana_zrn_3d_profiling_v8 | 1 | - | +0.46 | cutting D |
+| chamfer_vbit | amana_ams159_vgroove_v2 | 1 | - | +0.00 | body D |
+| flat_end | amana_compression_spirals_v8 | 2 | - | +0.86, +1.31 | cutting D |
+| flat_end | amana_spektra_spiral_plunge_v24 | 6 | +0.33, +0.33, +0.41, +0.46, +0.57, +0.62 | - | cutting D |
+| flat_end | amana_zrn_3d_profiling_v8 | 1 | +0.92 | - | cutting D |
+| flat_end | freud_router_bit_feed_and_speed_for_cnc_20170822 | 4 | +1.05, +1.09, +1.25 | +1.38 | cutting D |
+| flat_end | onsrud_hard_plywood_cutting_data | 4 | +0.29, +0.41, +0.48 | +0.37 | cutting D |
+| flat_end | onsrud_hard_wood_cutting_data | 4 | +0.38, +0.38, +0.40 | +0.41 | cutting D |
+| flat_end | onsrud_mdf_cutting_data | 4 | +0.29, +0.34, +0.36, +0.37 | - | cutting D |
+| flat_end | onsrud_soft_plywood_cutting_data | 4 | +0.34, +0.37, +0.48 | +0.37 | cutting D |
+| flat_end | onsrud_soft_wood_cutting_data | 3 | +0.38, +0.49 | +0.38 | cutting D |
+| flat_end | spetool_carbide_spiral_router_bit_chart | 9 | +0.75, +0.80, +0.86, +0.86, +0.94, +0.96, +1.04, +1.07, +1.11 | - | cutting D |
+| tapered_ball_nose | amana_zrn_3d_profiling_v8 | 3 | +0.00, +0.43, +0.85 | - | tip |
+| tapered_ball_nose | spetool_2d3d_tapered_router_bit_chart | 1 | +1.06 | - | tip |
+
+## D. Against the shipped exponent 0.61 and CHIPLOAD_LITERATURE_VERDICT section 4.1
+
+### D1. Prior per-family exponents (section 4.1, 2026-08-04, quoted)
+| family | fits | range | median | span mm |
+|---|---|---|---|---|
+| Onsrud (own charts, both woods) | 50 fits | 0.20-0.66 | 0.37 | 1.6-50.8 |
+| Onsrud (LUT subset) | 9 fits | 0.29-0.49 | 0.375 | 3.2-19.1 |
+| Amana Spektra spiral plunge | 2 fits | 0.586-0.619 | 0.6 | 0.79-12.7 |
+| Amana ZrN 2D/3D carving | 2 fits | 0.488-0.924 | 0.71 | 3.2-6.4 |
+| Freud | 3 fits | 1.05-1.25 | 1.09 | 3.2-12.7 |
+| IDC Woodcraft (grade c) | 1 fit | 0.230 | 0.23 | 3.2-12.7 |
+| Whiteside Fusion360 (grade c) | - | 0.0 | 0.0 | 3.2-6.4 |
+
+### D2. The shipped law applied across each distinct series with >= 3 sizes
+Ratio = printed mid at the smallest size / (printed mid at the largest size x (dmin/dmax)^0.61).
+Under 1 = the law gives MORE than the chart prints at the small end (permissive).
+| family | source | subfamily | material | fl | dmin-dmax | slope | ratio at dmin |
+|---|---|---|---|---|---|---|---|
+| flat_end | amana_spektra_spiral_plunge_v~ | spektra_spiral_plun~ | hardwood | 2 | 3.175-6.35 | +0.33 | 1.22 |
+| flat_end | amana_spektra_spiral_plunge_v~ | spektra_spiral_plun~ | hardwood | 3 | 3.175-6.35 | +0.33 | 1.22 |
+| flat_end | amana_spektra_spiral_plunge_v~ | spektra_spiral_plun~ | mdf | 2 | 0.7937-12.7 | +0.57 | 1.13 |
+| flat_end | amana_spektra_spiral_plunge_v~ | spektra_spiral_plun~ | mdf | 3 | 3.175-19.05 | +0.46 | 1.49 |
+| flat_end | amana_spektra_spiral_plunge_v~ | spektra_spiral_plun~ | softwood | 2 | 0.7937-12.7 | +0.62 | 0.95 |
+| flat_end | amana_spektra_spiral_plunge_v~ | spektra_spiral_plun~ | softwood | 3 | 3.175-19.05 | +0.41 | 1.33 |
+| flat_end | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving | softwood | 2 | 3.175-6.35 | +0.92 | 0.87 |
+| flat_end | freud_router_bit_feed_and_spe~ | solid_carbide | hardwood | 2 | 3.175-12.7 | +1.25 | 0.42 |
+| flat_end | freud_router_bit_feed_and_spe~ | solid_carbide | mdf | 2 | 3.175-12.7 | +1.09 | 0.51 |
+| flat_end | freud_router_bit_feed_and_spe~ | solid_carbide | softwood | 2 | 3.175-12.7 | +1.05 | 0.54 |
+| flat_end | onsrud_hard_plywood_cutting_d~ | 60_000lh_series | plywood_hardwood | 2 | 9.525-19.05 | +0.48 | 1.09 |
+| flat_end | onsrud_hard_plywood_cutting_d~ | 60_100mw_compressio~ | plywood_hardwood | 2 | 3.175-12.7 | +0.29 | 1.59 |
+| flat_end | onsrud_hard_plywood_cutting_d~ | 60_350_series | plywood_hardwood | 2 | 9.525-15.875 | +0.41 | 1.10 |
+| flat_end | onsrud_hard_wood_cutting_data | 60_000lh_series | hardwood | 2 | 9.525-19.05 | +0.38 | 1.19 |
+| flat_end | onsrud_hard_wood_cutting_data | 60_100mw_compressio~ | hardwood | 2 | 3.175-9.525 | +0.40 | 1.26 |
+| flat_end | onsrud_hard_wood_cutting_data | 60_200_downcut | hardwood | 2 | 6.35-19.05 | +0.38 | 1.30 |
+| flat_end | onsrud_mdf_cutting_data | 60_000lh_series | mdf | 2 | 9.525-19.05 | +0.37 | 1.17 |
+| flat_end | onsrud_mdf_cutting_data | 60_100mw_compressio~ | mdf | 2 | 3.175-12.7 | +0.34 | 1.51 |
+| flat_end | onsrud_mdf_cutting_data | 60_200_downcut | mdf | 2 | 6.35-19.05 | +0.29 | 1.40 |
+| flat_end | onsrud_mdf_cutting_data | 60_350_series | mdf | 2 | 9.525-15.875 | +0.36 | 1.14 |
+| flat_end | onsrud_soft_plywood_cutting_d~ | 60_000lh_series | plywood_softwood | 2 | 9.525-19.05 | +0.48 | 1.09 |
+| flat_end | onsrud_soft_plywood_cutting_d~ | 60_100mw_compressio~ | plywood_softwood | 2 | 4.7625-12.7 | +0.37 | 1.24 |
+| flat_end | onsrud_soft_plywood_cutting_d~ | 60_350_series | plywood_softwood | 2 | 9.525-15.875 | +0.34 | 1.15 |
+| flat_end | onsrud_soft_wood_cutting_data | 60_000lh_series | softwood | 2 | 9.525-15.875 | +0.49 | 1.06 |
+| flat_end | onsrud_soft_wood_cutting_data | 60_200_downcut | softwood | 2 | 6.35-19.05 | +0.38 | 1.30 |
+| flat_end | spetool_carbide_spiral_router~ | spetool_compression~ | hardwood | 2 | 3.175-12.7 | +0.75 | 0.78 |
+| flat_end | spetool_carbide_spiral_router~ | spetool_compression~ | mdf | 2 | 3.175-12.7 | +0.86 | 0.67 |
+| flat_end | spetool_carbide_spiral_router~ | spetool_compression~ | softwood | 2 | 3.175-12.7 | +0.80 | 0.74 |
+| flat_end | spetool_carbide_spiral_router~ | spetool_downcut_spi~ | hardwood | 2 | 1.5875-12.7 | +0.94 | 0.44 |
+| flat_end | spetool_carbide_spiral_router~ | spetool_downcut_spi~ | mdf | 2 | 1.5875-12.7 | +1.11 | 0.30 |
+| flat_end | spetool_carbide_spiral_router~ | spetool_downcut_spi~ | softwood | 2 | 1.5875-12.7 | +1.07 | 0.36 |
+| flat_end | spetool_carbide_spiral_router~ | spetool_upcut_spiral | hardwood | 2 | 1.5875-12.7 | +0.86 | 0.53 |
+| flat_end | spetool_carbide_spiral_router~ | spetool_upcut_spiral | mdf | 2 | 1.5875-12.7 | +1.04 | 0.36 |
+| flat_end | spetool_carbide_spiral_router~ | spetool_upcut_spiral | softwood | 2 | 1.5875-12.7 | +0.96 | 0.44 |
+| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | hardwood | 2 | 1-6.35 | +0.85 | 0.53 |
+| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | hardwood | 3 | 0.7937-4.7625 | +0.43 | 1.26 |
+| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | hardwood | 4 | 1.5-3.175 | +0.00 | 1.58 |
+| tapered_ball_nose | spetool_2d3d_tapered_router_b~ | spetool_2d3d_tapered | hardwood | 2 | 0.5-4 | +1.06 | 0.50 |
+
+| family | n | median ratio | range |
+|---|---|---|---|
+| flat_end | 34 | 1.10 | 0.30-1.59 |
+| tapered_ball_nose | 4 | 0.90 | 0.50-1.58 |
+
+Distinct series with >= 3 sizes: slope above 0.61: 16; at or below: 22.
+
+## E. What the charts print at the micro sizes (d < 2.0 mm; the size rule acts below 1.5 mm)
+Every distinct printed cell (grade a/b, wood). % of D = chipload / diameter x 100 (derived).
+'law from 1/8" Onsrud' = the Onsrud 77-100 1/8" 3-flute hardwood band 0.0762-0.127 mm
+scaled by (d/3.175)^0.61: what the shipped law gives on the tapered row the lookup finds today.
+| family | source | subfamily | fl | d mm | frame | min | max | % of D (min-max) | law from 1/8" Onsrud (mm) | law % of D | printed mid / law mid | materials |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| ball_nose (D1: tapered) | amana_zrn_3d_profiling | zrn | 3 | 0.794 * | tip (tapered tool, D1) | 0.01905 | 0.0508 | 2.4-6.4 | 0.0327-0.0545 | 4.1-6.9 | 0.80 | mdf, softwood |
+| ball_nose (D1: tapered) | amana_zrn_3d_profiling | zrn | 2 | 1 * | tip (tapered tool, D1) | 0.01905 | 0.0508 | 1.9-5.1 | 0.0377-0.0628 | 3.8-6.3 | 0.70 | mdf, softwood |
+| ball_nose (D1: tapered) | amana_zrn_3d_profiling | zrn | 4 | 1.5 | tip (tapered tool, D1) | 0.0127 | 0.01651 | 0.8-1.1 | 0.0482-0.0804 | 3.2-5.4 | 0.23 | softwood |
+| ball_nose (D1: tapered) | amana_zrn_3d_profiling | zrn | 2 | 1.5875 | tip (tapered tool, D1) | 0.0388 | 0.0635 | 2.4-4.0 | 0.0499-0.0832 | 3.1-5.2 | 0.77 | softwood |
+| flat_end | amana_spektra_spiral_plunge_v24 | spektra_spiral_plun~ | 2 | 0.7937 * | cutting D | 0.0254 | 0.0254 | 3.2-3.2 | 0.0327-0.0545 | 4.1-6.9 | 0.58 | softwood |
+| flat_end | amana_spektra_spiral_plunge_v24 | spektra_spiral_plun~ | 2 | 0.7937 * | cutting D | 0.0508 | 0.0508 | 6.4-6.4 | 0.0327-0.0545 | 4.1-6.9 | 1.16 | mdf |
+| flat_end | amana_spektra_spiral_plunge_v24 | spektra_spiral_plun~ | 2 | 1.5 | cutting D | 0.0508 | 0.0508 | 3.4-3.4 | 0.0482-0.0804 | 3.2-5.4 | 0.79 | softwood |
+| flat_end | amana_spektra_spiral_plunge_v24 | spektra_spiral_plun~ | 2 | 1.5 | cutting D | 0.0762 | 0.0762 | 5.1-5.1 | 0.0482-0.0804 | 3.2-5.4 | 1.18 | mdf |
+| flat_end | amana_spektra_spiral_plunge_v24 | spektra_spiral_plun~ | 2 | 1.5875 | cutting D | 0.0508 | 0.0508 | 3.2-3.2 | 0.0499-0.0832 | 3.1-5.2 | 0.76 | softwood |
+| flat_end | amana_spektra_spiral_plunge_v24 | spektra_spiral_plun~ | 2 | 1.5875 | cutting D | 0.0762 | 0.0762 | 4.8-4.8 | 0.0499-0.0832 | 3.1-5.2 | 1.14 | mdf |
+| flat_end | spetool_carbide_spiral_router_b~ | spetool_downcut_spi~ | 2 | 1.5875 | cutting D | - | 0.0254 | 1.6 | 0.0499-0.0832 | 3.1-5.2 | 0.38 | hardwood, mdf, softwood |
+| flat_end | spetool_carbide_spiral_router_b~ | spetool_upcut_spiral | 2 | 1.5875 | cutting D | - | 0.0381 | 2.4 | 0.0499-0.0832 | 3.1-5.2 | 0.57 | hardwood, mdf, softwood |
+| tapered_ball_nose | spetool_2d3d_tapered_router_bit~ | spetool_2d3d_tapered | 2 | 0.5 * | tip | - | 0.01778 | 3.6 | 0.0247-0.0411 | 4.9-8.2 | 0.54 | hardwood, mdf, softwood |
+| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | 3 | 0.7937 * | tip | 0.01905 | 0.0508 | 2.4-6.4 | 0.0327-0.0545 | 4.1-6.9 | 0.80 | hardwood, mdf, softwood |
+| tapered_ball_nose | spetool_2d3d_tapered_router_bit~ | spetool_2d3d_tapered | 2 | 0.7937 * | tip | - | 0.02032 | 2.6 | 0.0327-0.0545 | 4.1-6.9 | 0.47 | hardwood, mdf, softwood |
+| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | 2 | 1 * | tip | 0.01905 | 0.0508 | 1.9-5.1 | 0.0377-0.0628 | 3.8-6.3 | 0.70 | hardwood, mdf, softwood |
+| tapered_ball_nose | spetool_2d3d_tapered_router_bit~ | spetool_2d3d_tapered | 2 | 1 * | tip | - | 0.0254 | 2.5 | 0.0377-0.0628 | 3.8-6.3 | 0.51 | hardwood, mdf, softwood |
+| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | 4 | 1.5 | tip | 0.0127 | 0.01651 | 0.8-1.1 | 0.0482-0.0804 | 3.2-5.4 | 0.23 | hardwood, mdf, softwood |
+| tapered_ball_nose | spetool_2d3d_tapered_router_bit~ | spetool_2d3d_tapered | 2 | 1.5 | tip | - | 0.0381 | 2.5 | 0.0482-0.0804 | 3.2-5.4 | 0.59 | hardwood, mdf, softwood |
+| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | 2 | 1.5875 | tip | 0.0762 | 0.127 | 4.8-8.0 | 0.0499-0.0832 | 3.1-5.2 | 1.53 | hardwood, mdf, softwood |
+| tapered_ball_nose | amana_zrn_3d_profiling_v8 | zrn_2d3d_carving_ta~ | 4 | 1.5875 | tip | 0.0127 | 0.01651 | 0.8-1.0 | 0.0499-0.0832 | 3.1-5.2 | 0.22 | hardwood, mdf, softwood |
+| tapered_ball_nose | spetool_2d3d_tapered_router_bit~ | spetool_2d3d_tapered | 2 | 1.5875 | tip | - | 0.0381 | 2.4 | 0.0499-0.0832 | 3.1-5.2 | 0.57 | hardwood, mdf, softwood |
+(* = under 1.5 mm, where support::micro_extrapolation_refusal acts.)
+
+## F. Diameter frame per tapered-ball series
+- amana_zrn_3d_profiling zrn softwood f2 finish: tip (tapered tool, D1)
+- amana_zrn_3d_profiling_v8 zrn_2d3d_carving_tapered hardwood f2 finish: tip
+- amana_zrn_3d_profiling_v8 zrn_2d3d_carving_tapered hardwood f3 finish: tip
+- amana_zrn_3d_profiling_v8 zrn_2d3d_carving_tapered hardwood f4 finish: tip
+- amana_zrn_3d_profiling_v8 zrn_2d3d_carving_tapered mdf f2 finish: tip
+- amana_zrn_3d_profiling_v8 zrn_2d3d_carving_tapered mdf f3 finish: tip
+- amana_zrn_3d_profiling_v8 zrn_2d3d_carving_tapered mdf f4 finish: tip
+- amana_zrn_3d_profiling_v8 zrn_2d3d_carving_tapered softwood f2 finish: tip
+- amana_zrn_3d_profiling_v8 zrn_2d3d_carving_tapered softwood f3 finish: tip
+- amana_zrn_3d_profiling_v8 zrn_2d3d_carving_tapered softwood f4 finish: tip
+- spetool_2d3d_tapered_router_bit_chart spetool_2d3d_tapered hardwood f2 finish: tip
+- spetool_2d3d_tapered_router_bit_chart spetool_2d3d_tapered mdf f2 finish: tip
+- spetool_2d3d_tapered_router_bit_chart spetool_2d3d_tapered softwood f2 finish: tip
+- onsrud 77_100_series: 1/8" is 3 flutes and 1/4" is 2 flutes, so no series forms under the
+  flute grouping. A cross-flute two-point slope (mid) is derived below for reference only.
+  hardwood 77-100 3.175->6.35: mid 0.1016->0.1524, slope +0.58 (3F against 2F; not a series)
+
+## H. Local slopes between adjacent printed sizes, tapered-ball series (distinct, mid)
+| source | fl | size pair mm | mid pair mm/tooth | local slope |
+|---|---|---|---|---|
+| amana_zrn_3d_profiling_v8 | 2 | 1-1.5875 | 0.0349-0.1016 | +2.31 |
+| amana_zrn_3d_profiling_v8 | 2 | 1.5875-6.35 | 0.1016-0.2032 | +0.50 |
+| amana_zrn_3d_profiling_v8 | 3 | 0.7937-3.175 | 0.0349-0.0508 | +0.27 |
+| amana_zrn_3d_profiling_v8 | 3 | 3.175-4.7625 | 0.0508-0.0825 | +1.20 |
+| amana_zrn_3d_profiling_v8 | 4 | 1.5-1.5875 | 0.0146-0.0146 | +0.00 |
+| amana_zrn_3d_profiling_v8 | 4 | 1.5875-3.175 | 0.0146-0.0146 | +0.00 |
+| spetool_2d3d_tapered_router_bit_c~ | 2 | 0.5-0.7937 | 0.0178-0.0203 | +0.29 |
+| spetool_2d3d_tapered_router_bit_c~ | 2 | 0.7937-1 | 0.0203-0.0254 | +0.97 |
+| spetool_2d3d_tapered_router_bit_c~ | 2 | 1-1.5 | 0.0254-0.0381 | +1.00 |
+| spetool_2d3d_tapered_router_bit_c~ | 2 | 1.5-1.5875 | 0.0381-0.0381 | +0.00 |
+| spetool_2d3d_tapered_router_bit_c~ | 2 | 1.5875-2 | 0.0381-0.0762 | +3.00 |
+| spetool_2d3d_tapered_router_bit_c~ | 2 | 2-3 | 0.0762-0.1016 | +0.71 |
+| spetool_2d3d_tapered_router_bit_c~ | 2 | 3-3.175 | 0.1016-0.1016 | +0.00 |
+| spetool_2d3d_tapered_router_bit_c~ | 2 | 3.175-4 | 0.1016-0.1270 | +0.97 |
+
+Sensitivity: Amana 2F tapered without the self-inconsistent 1/16" cell: 1->6.35 mm, mid 0.0349->0.2032, two-point slope +0.95 (with the cell, 3-point fit +0.85).
+
+## G. Grade c series with >= 2 sizes (presets, community, repo-authored; not fitted above)
+| family | source | subfamily | material | fl | role | d -> mid | slope |
+|---|---|---|---|---|---|---|---|
+| ball_nose | amana_ball_nose_v7 | solid_carbide | softwood | 2 | finish | 3.175->0.0240, 6->0.0400 | +0.80 |
+| ball_nose | amana_ball_nose_v7 | solid_carbide | hardwood | 2 | finish | 3.175->0.0180, 6->0.0310 | +0.85 |
+| ball_nose | amana_ball_nose_v7 | solid_carbide | mdf | 2 | finish | 3.175->0.0205, 6->0.0335 | +0.77 |
+| ball_nose | idcwoodcraft_chipload_csv_202~ | ball_nose_spiral | hardwood | 2 | finish | 3.175->0.0346, 6.35->0.0468, 12.7->0.0476 | +0.23 |
+| ball_nose | whiteside_fusion360_tools_201~ | ball_nose_spiral_so~ | hardwood | 2 | finish | 4.7625->0.1016, 6.35->0.1016 | +0.00 |
+| flat_end | amana_spektra_spiral_plunge_v~ | upcut | softwood | 2 | roughing | 3.175->0.0400, 6->0.0675 | +0.82 |
+| flat_end | amana_spektra_spiral_plunge_v~ | upcut | hardwood | 2 | roughing | 3.175->0.0300, 6->0.0435 | +0.58 |
+| flat_end | idcwoodcraft_chipload_csv_202~ | compression_spiral | plywood_hardwood | 2 | finish | 3.175->0.0397, 6.35->0.0635 | +0.68 |
+| flat_end | whiteside_fusion360_tools_201~ | upcut_spiral_solid_~ | hardwood | 2 | finish | 3.175->0.1016, 4.7625->0.1016, 6.35->0.1016, 12.7->0.2822 | +0.76 |
+| flat_end | whiteside_fusion360_tools_201~ | downcut_spiral_soli~ | hardwood | 2 | finish | 3.175->0.1016, 4.7625->0.1016, 6.35->0.1016 | +0.00 |
+| tapered_ball_nose | amana_zrn_3d_profiling | 3d_profiling | softwood | 2 | finish | 3.175->0.0200, 6->0.0310 | +0.69 |
+| tapered_ball_nose | amana_zrn_3d_profiling | 3d_profiling | hardwood | 2 | finish | 3.175->0.0150, 6->0.0250 | +0.80 |
+| tapered_ball_nose | amana_zrn_3d_profiling | 3d_profiling | mdf | 2 | finish | 3.175->0.0170, 6->0.0280 | +0.78 |
+| tapered_ball_nose | amana_zrn_3d_profiling | 3d_profiling | hardwood | 2 | semi_finish | 3.175->0.0180, 6->0.0250 | +0.52 |
+| tapered_ball_nose | whiteside_fusion360_tools_201~ | conical_ball_nose_s~ | hardwood | 2 | finish | 1.442->0.1016, 2.9867->0.1016 | +0.00 |

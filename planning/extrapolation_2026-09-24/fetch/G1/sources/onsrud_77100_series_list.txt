@@ -1,0 +1,18 @@
+# LMT Onsrud 77-100 series (Solid Carbide Tapered Ball Nose): tool list
+# URL: https://onsrud.com/Products/77102.asp (series list embedded as JSON in the page)
+# Accessed 2026-09-24. Each line copies the page's "sku" and "ds" fields verbatim.
+
+77-102	(the page's own product; page field "description") Solid Carbide router, 3 flute, ballnose, taper
+77-102M	Solid Carbide router, 3 flute, ballnose, taper
+77-104	Solid Carbide router, 3 flute, ballnose, taper
+77-104M	Solid Carbide router, 3 flute, ballnose, taper
+77-106	Solid Carbide router, 3 flute, ballnose, taper
+77-106M	Solid Carbide router, 3 flute, ballnose, taper
+77-108	Solid Carbide router, 3 flute, ballnose, taper
+77-108M	Solid Carbide router, 3 flute, ballnose, taper
+77-112	Solid Carbide router, 2 flute, ballnose, taper
+77-112M	Solid Carbide router, 2 flute, ballnose, taper
+77-114	Solid Carbide router, 2 flute, ballnose, taper
+77-114M	Solid Carbide router, 2 flute, ballnose, taper
+77-116	Solid Carbide router, 2 flute, ballnose, taper
+77-116M	Solid Carbide router, 2 flute, ballnose, taper

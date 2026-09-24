@@ -1,0 +1,482 @@
+# source_url: https://www.endmill.com.au/blog/cnc-router-feeds-and-speeds-the-adams-guide/
+# accessed_on: 2026-09-24
+# raw_html_sha256: 4ef5d518c0c97c98cfa67c90873e74908597f0f7fd3160c8fb68ce4fd7c07c52
+
+Skip to main content
+
+Toggle menu
+
+Currency: NZD
+
+AUD
+
+USD
+
+EUR
+
+NZD
+
+PLN
+
+Compare
+
+Search
+
+Sign in
+
+or
+
+Register
+
+Cart
+
+Search
+
+Search
+
+CNC Router Bits
+
+Collets
+
+WINSTAR End Mills
+
+XB - Industrial Panel Tools
+
+End Mills
+
+Router Bits
+
+ARDEN Router Tools
+
+Clearance
+
+Plasma Accessories
+
+CARBiTOOL Tools
+
+Accessories & CNC Parts
+
+BlueCarve CNC
+
+Catalogue
+
+Shipping & Policies
+
+Contact Adam
+
+Blog
+
+Currency: NZD
+
+AUD
+
+USD
+
+EUR
+
+NZD
+
+PLN
+
+Sign in
+
+or
+
+Register
+
+Home
+
+Blog
+
+CNC Router Feeds and Speeds - The Adam's Guide
+
+CNC Router Feeds and Speeds - The Adam's Guide
+
+Posted by Adam Malec on 12th Dec 2024
+
+Feeds and speeds, the deal-makers or breakers of CNC machining. I field weekly phone calls from customers asking for advice on the best feeds and speeds. This guide provides you with a head start or helps you adjust your technique.
+
+This guide has three parts:
+
+Explanation of the Adam’s Bits calculator
+
+Considerations and Limitations of the Calculator
+
+Frequently Asked Questions
+
+If I didn’t explain a value well, I’ll add more details in the Considerations and Limitations section or the FAQs.
+
+Let’s start with the Adam’s Bits Feeds and Speeds calculator:
+
+feeds.endmill.com.au
+
+For steel, V bits, and other situations not covered by this calculator, check out FSWizard.
+
+Start by selecting your materials.
+
+Choose the material that best represents what you are cutting.
+
+The materials listed are not limited to what you can cut, but it’s a great start. Do your best to match the type of material. Remember that even though balsa wood is regarded as a hardwood, it is better to select it as a softwood.
+
+Chip Load %
+
+The material selects the appropriate chip load %.
+
+Don’t get hung up on what the exact value is, but it’s important to the calculation for the correct feed rate. For example, hardwood has a chip load value of 2% and softwood 4%. That means that you will be able to cut softwood 2x faster than hardwood. Sounds about right!
+
+Diameter of the bit
+
+We measure the diameter of the bit at the tip in millimetres.
+
+This calculator can only calculate straight cutters, not V bits or tapered bits. When looking at the label of an Adam’s Bits, it’ll be the first set of numbers.
+
+Select a cutter profile
+
+The direction of the flute/s of the cutter defines the cutter profile.
+
+UP cut bits will pull material up and can leave a top edge burr. Down cut will push material down and if cutting through will leave a bottom edge burr. A COMPRESSION bit will have both up cut and down cut components. A straight cut will leave a slight burr to both top and bottom.
+
+Select a coating
+
+Is your bit coated with Diamond Like Carbon (DLC) or uncoated?
+
+Diamond Like Carbon (DLC) is the new kid on the block when it comes to coatings. DLC coatings offer hardness, lubricity, and abrasion resistance. These features are essential for CNC router bits. If there is no coating, choose “uncoated”.
+
+Flutes
+
+The number of cutting edges.
+
+You’d use a 1 flute for plastics and aluminium (soft metals) and a 2 flute for timbers. Remember to choose the correct 1 flute for soft metals. Bits made for soft metals have a different cobalt % and are thus harder, but not sharper. You can use one flute for soft metals on plastics. This is effective, particularly on DLC-coated surfaces. It delivers a nice finish and helps cutters last longer. If you are cutting plastics and soft metal with the same profile bit, use two sets and keep them separate. Any deposit of soft metals on a bit that is later used on plastics will result in a suboptimal finish.
+
+Cut length
+
+The length of the effective flute/cutting edge length.
+
+When looking at the label of an Adam’s Bits, it’ll be the third set of numbers.
+
+Cutter natural length
+
+The length in mm that if you just used chip load % x RPM x diameter fits perfectly
+
+This is a concept that makes the most sense to me but do not get hung up on it. Each bit has its sweet spot in cut length when feed rate = chip load % x RPM x diameter. We use the natural length as the baseline to calculate the final feed rate. In essence, if speed/feed is the key, the shorter the bit, the better. For every 5mm longer the natural length, you will have a feed rate reduction of 20% and times -20% for every 5mm. The opposite happens when you use a shorter bit than the natural length. To boost your CNC production, aim for the shortest and thickest diameter.
+
+Depth per pass
+
+Depth per pass is how deep your machine cuts down into your material at each pass
+
+There is no real “general rule” on setting depth per pass, contrary to many articles and YouTube videos. The only exception is a compression bit. Here, the up-cut part measures 1 X D. So, for the first pass, you need a depth greater than 1 X D at minimum. Depth per pass affects the Material Removal Rate (MRR). This can overload your stepper motors, which we'll explain later.
+
+Spindle speed (RPMs)
+
+The revolutions of your spindle/trimmer per minute
+
+A good start is to use
+
+12,000-16,000 RPM for plastics and timbers
+
+18,000 -24,000RPM for soft metals
+
+Lower / Middle / Upper
+
+Feed rate per mm/min
+
+Your results have arrived, and before you commit, it is best to sense-check the numbers. Try different settings and combinations to match your needs within your CNC's abilities. The considerations and limitations will provide more explanation.
+
+Check your Machine Capability
+
+If your CNC has a feed rate limit, adjust the depth per pass or RPMs. This will help keep the feed rate below the maximum allowed. Use this calculation addendum to set your CNC's maximum feed rate. It will also calculate the new RPM.
+
+Your Max Feed Rate
+
+If your feed rate is limited in the calculated result, input your machine's max feed rate.
+
+New RPM Value
+
+A new RPM value will be calculated that can be used to override the value that you used in the calculation.
+
+Considerations and limitations
+
+The calculator does not guarantee your desired results
+
+The calculator strikes a balance between cut quality and bit longevity. Operating at the right speed doesn't mean you'll get a perfect, burr-free finish. It also won't guarantee your bit will last. There’s a trade-off between cut quality and longevity. You’ll need to decide which one matters more to you.
+
+This calculator does not consider your machine's maximum MRR (Material Removal Rate).
+
+Calculated as:
+
+MRR = feed rate x diameter tip x depth per pass
+
+(Example 64 cm³/min = 4,000 mm/min x 2 mm diameter tip x 2 mm depth per pass)
+
+Each CNC will have a different MRR. This will determine the maximum diameter, feed rate, and total carve or cut time. I ask it as one of two questions when someone requests recommendations on bits. There is no point in suggesting a 6mm bit for a 3018 CNC, no matter how fast the customer would like to cut their project.
+
+My rough estimations on the following machines and their capability for softwoods.
+
+Small 3018 style CNCs – 2,000 mm/min x 2 mm x 2 mm = 8 cm³/min
+
+Belt driven – 4,000 x 4 x 4 = 64 cm³/min
+
+Lead screw and linear rails – 6,000 x 6 x 6 = 216 cm³/min
+
+Ball screw driven – 8 x 8 x 8 = 512 cm³/min
+
+Industrial CNC – 12.7 x 12.7 x 12.7 = 2048 cm³/min and up
+
+By asking what CNC the customer is using, I can at least set a ceiling to the bit diameter suggested. Going beyond the machine's maximum MRR will cause gantry chatter. This will lead to a less-than-ideal finish. If they are insistent on using the larger diameter bit, a lower feed rate or depth per cut would lower the MRR. It's funny that when you have chatter, forums often recommend lowering the feed rate or cut depth. They rarely mention using a smaller bit!
+
+The values stated are for softwoods and soft plastics with a value of 1. For hardwood and acrylic x 0.5 and soft metals x 0.1.
+
+A belt-driven CNC can have a maximum material removal rate (MRR) of 64 cm³/min for softwood. This limit drops to 32 cm³/min when working with hardwood. You would thus limit yourself to 3.175 mm/min with a 3.175 mm diameter bit at 3.175 mm depth per cut = 32 mm³/min.
+
+The calculator does not take into account hold-down strength
+
+Increasing the MRR can lift the material you're cutting or even rip it out of the holds. If you're concerned about your material hold-down method, lower the MRR. For example, you can reduce the bit size.
+
+You might reduce the diameter of your bit when cutting thin aluminium on a large sheet. The strongest vacuum is in the centre of the material. It weakens gradually towards the edges. A 6 mm cutter works well in the centre of the material. When it moves along the edges, the material can pull up and cause it to snap. This would happen regardless of the size of the vacuum system. Reducing the cutter diameter will lower the MRR. It also decreases the chance of your material lifting.
+
+If the numbers are much higher than usual or you're unsure how your CNC will cope, just lower the depth per pass! Knowing your limits is important. Increasing your depth per pass in small steps can help you figure that out. Keep the feed rate and RPMs the same as the calculator.
+
+Plunge rates are not calculated
+
+Plunge rate is a bit of a tricky one to determine. The rigidity of your spindle and Z axis determines your plunge rate. You can plunge at 800 mm/min for timber and plastic and 400 mm/min for aluminium. The smaller the bit, the lower the plunge rate. You do not want to go too slow with a plunge rate at high RPMs.
+
+Where possible and capable, use the ramp-in feature to minimise dwell in one spot. Where you cannot ramp in, reduce the RPMs, especially when cutting many holes or parts. This is especially true for compression bits. They can create high friction and burn out your bits.
+
+The calculator does not take into account your experience
+
+Another question I ask a customer is what their experience is in using a CNC router. In my head, I have presumed an MRR value, not of the machine but of what the customer has experience in using. There’s no need to suggest a 12.7mm 3 flute compression bit to a new CNC customer, even if their machine can handle it. The potential for the bit to break, burn, or give a suboptimal finish is high due to the sheer MRR needed. Starting with a 6 or 8mm diameter bit helps customers feel more comfortable with CNC. This approach builds their confidence as they begin. The chances of breaking or burning the bit are much lower and give a much better chance of a successful cut. I don’t know any other bit suppliers that do this. Many don’t consider the customer experience. I believe it’s simply good business ethics.
+
+Did you notice that there is no provision for shank diameter?
+
+That’s done on purpose because a shank diameter does not add strength to your bit. Place your bit about 3 mm above the start of the cutting edge or flute. The calculator includes this measurement. Any extra stick-out will decrease the calculated feed rate. It works the same way as a cut length that is 5 mm longer than the natural length, which cuts the feed rate by 20%. How are Youtubers getting away with such a long stick-out in their videos? The answer is that they speed up their videos and/or keep the depth per pass shallow.
+
+The shallower the depth per pass, the faster you can go
+
+You will need to balance depth per pass and feed rate to achieve your desired carve time. You will need to consider your CNC's rigidity (MRR) in setting the depth. Even though solid carbide will break before it bends, it will still flex while cutting. You can hear this when you are cutting by listening to see if your CNC is "struggling." The "struggling" sound is from your Z axis rattling and the bit vibrating. If your carving is very loud, the finish you are producing will be suboptimal. To save time in profile cutting, divide the full depth of cut by the number of passes. Then, check if you can reduce a pass or even out the passes without raising the MRR too much. If your material is 10mm, cut 3.4mm each pass. Avoid cutting 4 + 4 + 2. Calculate your feed rate based on the 4mm depth.
+
+Diamond Like Carbon DLC coating is the new kid on the block
+
+DLC coatings have hardness, lubricity, and abrasion resistance. These traits are essential for CNC router bits. A 1 flute DLC coated bit for aluminium has special qualities. It cuts harder in softer aluminium, such as 5005, and reduces the need for coolants. Coolants are still useful, but you might not need as much with malleable metals. You may also not need them for 5083. A bonus of a 1 flute DLC coated bit is that you can use the bit on plastics and get a great side finish.
+
+Low / ideal / high is just an arbitrary guide
+
+If you aim low, you'll get a better cut finish. But if you use high values, your bit will last longer.
+
+Calculating ball nose feeds and speeds for 3D carving
+
+You can use the calculator to determine the appropriate feed rate for ball nose bits. The calculator assumes that WOC (width of cut) is 100%. When programming a ball nose step over, you will usually use between 5% and 15%. The calculation to use:
+
+Choose 2 flutes up cut uncoated.
+
+Input the bit diameter (not radius) and cut length.
+
+Determine the max depth of cut.
+
+Choose 16,000 RPMs as a start for timbers.
+
+You will see that your feed rate is very low and that is ok. Divide 100% by your step over, multiply that by the calculated feed rate. The new value is the feed rate to use for carving and pocketing.
+
+If your carve starts with a deep initial plunge, you will need to adjust your feed rate to a WOC of 100%.
+
+The calculator assumes your bits are new and sharp
+
+Bits will stay sharp for a long time, but they can wear down because of these factors:
+
+Unsuitability of the bit to the material
+
+Low carbide quality with large carbide grain size
+
+No coating or poor-quality coatings
+
+Chipped tips and edges
+
+Worn or burnt bits
+
+The width of cut assumed in the calculator is 100%
+
+If you’re pocketing and only using part of the bit’s diameter, divide 100% by the step over percentage. This gives you a new feed rate.
+
+Using a Makita RT0700 and its variants, the following RPM values apply
+
+A Makita trimmer starts at 10,000 RPM at 1 and increases in increments of 4,000 RPM to a maximum of 30,000 RPM.
+
+1 – 10,000
+
+2 - 14,000
+
+3 – 18,000
+
+4 – 22,000
+
+5 – 26,000
+
+6 – 30,000
+
+Relationship of feed rate to RPM and how to maximise productivity and reduce cycle times
+
+So you have read the guide and determined that both you and your CNC are ready to up your game. If you increase your feed rate by 20%, you also need to raise the RPMs by 20%. To boost your feed rate, increase it while cutting. Pay attention to how the bit reacts. Once the bit sounds to be struggling, start increasing the feed rate and RPMs at the same rate. When you hit the maximum travel speed of your CNC or spindle speed, you can now start to increase the depth per cut.
+
+FAQ
+
+If you want to save yourself time and would like the TLDR (too long didn’t read) version, here it is.
+
+Pick the correct bit for the job
+
+Use optimal feeds for both bit and CNC
+
+Reduce the amount of time a bit dwells at high RPMs in a single spot
+
+Replace the bit once worn
+
+If you want my experiences and anecdotes, here they are in the form of a FAQ
+
+Why isn’t there any speeds and feeds for V bits, surfacing bits, router bits etc?
+
+I haven’t worked out an appropriate and accurate feed rate calculator for V bits yet. The issue is that it’s very hard to determine the tip strength and the effect on your material at certain depths.
+
+To get you started though, for bits 45 deg and below, start at 2 m/min and go shallow at about 1 mm at 12,000 RPM. If your CNC is running well and the cut quality is fine, then you can start to increase the depth and feed rate. For bits above 45 deg, try 3 m/min. A V bit with a small tip diameter and sharper angle will snap easier. If you're not happy with the finish or see any furries or step-over markers, rerun the job. Just lower the Z by a few 0.1 mm and go full depth. That will reduce sanding and post-processing.
+
+Why am I getting crazy numbers for a surfacing bit?
+
+That is the calculator doing its thing, but it does not mean that you should run it at those numbers. It assumes that you are running a 22 mm solid carbide bit with a 22 mm shank, not a 6.35 mm HSS shank.
+
+For a 22mm surfacing bit, start at 4m/min at 1mm depth at 12,000 RPM and either increase the feed rate or increase the depth.
+
+I am using a 6mm bit on my hobby CNC. I am getting burrs, my bit isn’t lasting and I’m getting heavy chattering, what am I doing wrong?
+
+The old adage applies here; "just because you can, doesn't mean you should." The feeds and speeds of a 6 mm bit would be well above the capability of a small DIY CNC. The bit needs to run at a high feed rate to ensure its longevity. If you are adamant on using a 6 mm bit, reduce the depth per cut to reduce your CNC chattering.
+
+My cuts start off great then start to degrade after a few minutes in. If I use a slower RPM, my cuts don’t come out perfect. What’s the go?
+
+Sounds like the RPMs are way too high for the feed rate. Your bit is burning up and wearing fast. Change to a better bit and use the calculator to find the best feeds and speeds. If you are still not achieving an acceptable result, it could be the material you are cutting. Soft materials will create furrier cuts and will chip out with ease.
+
+More flutes mean a better finish, right?
+
+No! It all comes down to chip evacuation, and sometimes using fewer flutes will produce a better cut. For example, a 1 flute up cut for plastics is excellent on hardwood timbers by producing a quieter cut. It is the go-to for people with smaller, less rigid CNCs. You should use only a 1 flute to profile cut plastics and aluminium. Using bits with many flutes can heat up the material. This can lead to gumming, sometimes immediately. The only time 3 flute router bits make sense is in high production where every second matters.
+
+Why is the colour of my bit black and can I clean it off?
+
+Black material forming on your cutter is a sign that you have burnt your bit. The material, often timber, builds up on the cutter. This causes it to wear down faster and become blunt. High RPMs and slow feed rates, or lots of 90-degree corners in the toolpath, can burn the timber and leave residue. Reducing the RPMs or the number of flutes used will reduce burning. A situation where there is a high chance of burning is a 3 flute compression cutter. The extra flute over a 2 flute means you have to run the feed rate 50% higher or reduce the RPMs by 33%. I have often suggested switching from a 3 flute to a 2 flute without changing the feed rate or RPMs.
+
+Can I sharpen/regrind my CNC router bits?
+
+Regrinding router bits only makes financial sense in a few situations. Larger diameter end mills work well for regrinding. This is because they feature a standard cutting tip. With CNC router bits, it’s not that easy, and the price of the regrinding would be half the full cost of a new bit.
+
+My feeds and speeds are correct, why am I breaking bits?
+
+Material and or waste-board is not levelled
+
+By far my favourite cause of all time! Just like with depth per cut, if you plunge into your material at an aggressive depth, it will break. Same goes when you are thinking that you are cutting at X, but now X + a millimetre or two.
+
+Level your board each time you install a new board. You would be surprised by the effect that moisture and humidity have on your boards' level. Also, using screws to hold your material down creates nice 0.5mm to 1mm craters. Use screws sparingly and if you do use them, level them out with a sander or chisel before the next carve. Using plywood as a waste-board is not advisable. They warp with little effort, so use a thick 18mm or thicker MDF board.
+
+Hitting something it shouldn’t
+
+We’ve all had this happen: hitting a screw, clamp, or cut piece of material. Avoiding the use of screws and clamps is one way to avoid a breakage. There are holding methods best described in this article holding it down. Allow for a higher safety height when travelling. There is a reason why Easel uses 3.8mm as a safety height. Going any lower is “tickling the dragon's tail” so maybe get some experience before you try. Holding your material down with tape or tabs is advised as it’ll stop the part you cut out from wanting to pop out. Using a down cut router bit mitigates this. Holding your material down sufficiently is another consideration. If there is even a slight vibration, this will lead to early deterioration of your bit
+
+Tool run out
+
+Now we are moving into the more obscure causes. Tool run out is where your bit is not rotating on its axis perfectly. If a bit is jiggling or not tightened correctly, it’ll start to cut it’s own path and make all sorts of mess. Using the right-sized collet sounds obvious but sometimes overlooked. Using a 6.35mm collet for example for a 6mm bit is not advisable, no matter how tempting. Placing the bit just above the flute cutting length helps you achieve a higher feed rate. It also makes the setup much more rigid. I aim for 3mm above where the flute stops. Collet maintenance is also another good practice to instill. Before and after each bit installation, check that the slits are clear and the collet is intact.
+
+Your machine has something loose or NQR.
+
+Checking to see that your CNC is in good shape is not only a good thing to do, but also another cause of breakages. If your CNC is vibrating, that is a sign that there is something loose. Check that the following are tightened:
+
+Wheels and eccentric spacers
+
+Belts
+
+Spindle holders
+
+Nuts and bolts
+
+One story that stands out is about a shop with a $400k CNC machine. They couldn't return the â…›” bit to the same hole and blamed it on the bit itself. The other was that they were breaking a 3mm 2 flute for aluminium constantly. I suggested a list of items, but ended up refunding their unused bits. Three months later, the owner called me. They said the spindle had broken bearings, which caused all their problems.
+
+Compromised material
+
+A less obvious one is foreign matter in your material. I’ve heard of customers buying cheap ply from overseas. Later, they discover staples and rocks scattered throughout the material. The same goes for recycled material like pallet boards regarding forgotten nails.
+
+#CNC Router Feeds and Speeds
+
+Facebook
+
+Email
+
+Print
+
+X
+
+Pinterest
+
+Close
+×
+
+!
+
+OK
+Cancel
+
+Footer Start
+
+Navigate
+
+Catalogue
+
+Shipping & Policies
+
+Contact Adam
+
+Blog
+
+Sitemap
+
+Categories
+
+CNC Router Bits
+
+Collets
+
+WINSTAR End Mills
+
+XB - Industrial Panel Tools
+
+End Mills
+
+Router Bits
+
+ARDEN Router Tools
+
+Clearance
+
+Plasma Accessories
+
+CARBiTOOL Tools
+
+Accessories & CNC Parts
+
+BlueCarve CNC
+
+Popular Brands
+
+CARBiTOOL
+
+View All
+
+Info
+
+Laverton North, 3026
+
+Victoria, Australia
+
+Trustee for Maltek Trust
+
+ABN: 91 102 463 322
+Call us at 0448431833
+
+Subscribe to our newsletter
+
+Get the latest updates on new products and upcoming sales
+
+Email Address
+
+© 2026 Adam's Bits

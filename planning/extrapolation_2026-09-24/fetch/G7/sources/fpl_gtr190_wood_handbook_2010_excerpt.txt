@@ -1,0 +1,171 @@
+EXCERPT of pdftotext -layout of pdf/fpl_gtr190_wood_handbook_2010.pdf (sha256 795fc26a8b361cb1b33bf3c067774ad7e8350046b09e2f3b8298c8da6eedc7b8).
+The full text is 3.2 MB; this file keeps the table of contents (lines 80-190) and every line that matches
+grep -n -i 'specific cutting|cutting energy|cutting power|cutting force|machinab'. The grep for the first four terms returns no line.
+
+== TABLE OF CONTENTS (text lines 80-190) ==
+Avenue, S.W., Washington, D.C. 20250–9410, or call (800) 795–3272
+(voice) or (202) 720–6382 (TDD). USDA is an equal opportunity provider
+and employer.
+                                                                               CONTENTS
+
+Chapter 1 Wood as a Sustainable                           Chapter 6 Commercial Lumber,
+Building Material                                         Round Timbers, and Ties
+  Wood as a Green Building Material 1–1                     Hardwood Lumber 6–2
+  Forest Certification Programs 1–3                         Softwood Lumber 6–6
+  Literature Cited 1–5                                      Purchase of Lumber 6–12
+                                                            Round Timbers and Ties 6–18
+Chapter 2 Characteristics and Availability                  Commonly Used Lumber, Round Timber, and Tie
+                                                            Abbreviations 6–23
+of Commercially Important Woods                             References 6–25
+  Timber Resources and Uses 2–2
+  Species Descriptions 2–3                                Chapter 7 Stress Grades and Design Prop-
+  Imported Woods 2–18
+  Scientific Name Index 2–41                              erties for Lumber, Round Timber, and Ties
+  Literature Cited 2–45                                     Lumber 7–1
+  Additional References 2–45                                Round Timbers and Ties 7–13
+                                                            Literature Cited 7–14
+Chapter 3 Structure and Function of Wood                    Additional References 7–15
+  Biological Structure of Wood at Decreasing Scales 3–2
+  Microscopic Structure of Softwoods and Hardwoods 3–9    Chapter 8 Fastenings
+  Wood Technology 3–12                                      Nails 8–1
+  Juvenile Wood and Reaction Wood 3–13                      Spikes 8–9
+  Appearance of Wood as Sawn Lumber 3–13                    Staples 8–9
+  Wood Identification 3–16                                  Drift Bolts 8–10
+  Literature Cited 3–16                                     Wood Screws 8–10
+                                                            Lag Screws 8–12
+Chapter 4 Moisture Relations and                            Bolts 8–14
+                                                            Connector Joints 8–19
+Physical Properties of Wood                                 Metal Plate Connectors 8–25
+  Wood–Moisture Relationships 4–1                           Joist Hangers 8–25
+  Thermal Properties 4–10                                   Fastener Head Embedment 8–26
+  Electrical Properties 4–15                                Literature Cited 8–27
+  Friction Properties 4–17                                  Additional References 8–27
+  Nuclear Radiation Properties 4–17
+  Literature Cited 4–18                                   Chapter 9 Structural Analysis Equations
+  Additional Reference 4–19
+                                                            Deformation Equations 9–1
+                                                            Stress Equations 9–4
+Chapter 5 Mechanical Properties of Wood                     Stability Equations 9–7
+  Orthotropic Nature of Wood 5–1                            Literature Cited 9–10
+  Elastic Properties 5–2                                    Additional References 9–10
+  Strength Properties 5–3
+  Vibration Properties 5–17                               Chapter 10 Adhesives with Wood Materials
+  Mechanical Properties of Clear Straight-Grained
+   Wood 5–21                                              Bond Formation and Performance
+  Natural Characteristics Affecting Mechanical              Surface Properties of Wood for Bonding 10–2
+   Properties 5–26                                          Physical Properties of Wood for Bonding 10–5
+  Literature Cited 5–44                                     Adhesives 10–8
+  Additional References 5–44                                Bonding Process 10–14
+                                                            Bonded Joints 10–18
+                                                            Testing and Performance 10–19
+                                                            Standards 10–22
+                                                            References 10–23
+
+
+
+
+                                                                                                           iii
+Chapter 11 Wood-Based Composite Ma-                         Chapter 16 Finishing of Wood
+terials Panel Products, Glued-Laminated                       Factors Affecting Finish Performance 16–2
+                                                              Exterior Wood Finishes 16–16
+Timber, Structural Composite Lumber, and                      Application of Finishes, Special Uses 16–24
+Wood–Nonwood Composite Materials                              Finish Failure or Discoloration 16–25
+     Scope 11–2                                               Finishing Interior Wood 16–32
+     Conventional Wood-Based Composite Panels 11–2            Wood Cleaners and Brighteners 16–34
+     Glulam Timber 11–17                                      Paint Strippers 16–35
+     Structural Composite Lumber 11–20                        Lead-Based Paint 16–36
+     Wood–Nonwood Composite Materials 11–22                   Literature Cited 16–37
+     Literature Cited 11–26                                   Additional References 16–37
+
+Chapter 12 Mechanical Properties of                         Chapter 17 Use of Wood in Buildings
+Wood-Based Composite Materials                              and Bridges
+     Elastic Properties 12–2                                  Light-Frame Buildings 17–1
+     Strength Properties 12–3                                 Post-Frame and Pole Buildings 17–4
+     Panel Products 12–3                                      Log Buildings 17–6
+     Timber Elements/Structural Composite Lumber 12–5         Heavy Timber Buildings 17–6
+     Wood–Nonwood Composites 12–7                             Considerations for Wood Buildings 17–9
+     Testing Standards 12–9                                   Literature Cited 17–12
+     Literature Cited 12–10
+                                                            Chapter 18 Fire Safety of Wood
+Chapter 13 Drying and Control of Moisture                   Construction
+Content and Dimensional Changes                               Fire Safety Design and Evaluation 18–1
+     Determination of Moisture Content 13–1                   Fire-Performance Characteristics of Wood 18–8
+     Recommended Moisture Content 13–3                        Fire-Retardant-Treated Wood 18–15
+     Drying of Wood 13–5                                      Literature Cited 18–18
+     Moisture Control during Transit and Storage 13–13        Additional References 18–18
+     Dimensional Changes in Wood 13–15
+     Design Factors Affecting Dimensional Change 13–17      Chapter 19 Specialty Treatments
+     Wood Care and Installation during Construction 13–18     Plasticizing Wood 19–1
+     Literature Cited 13–19                                   Modified Woods 19–4
+                                                              Paper-Based Plastic Laminates 19–12
+Chapter 14 Biodeterioration of Wood                           References 19–14
+     Fungus Damage and Control 14–1
+     Bacteria 14–9                                          Chapter 20 Heat Sterilization of Wood
+     Insect Damage and Control 14–9                           Heat Treatment Standards 20–1
+     Marine Borer Damage and Control 14–13                    Factors Affecting Heating Times 20–2
+     References 14–15                                         Methods for Estimating Heating Times 20–5
+                                                              American Lumber Standard Committee (ALSC)
+Chapter 15 Wood Preservation                                  Enforcement Regulations 20–9
+     Wood Preservatives 15–1                                  Quality Mark 20–11
+     Selecting Preservatives 15–13                            Other Considerations 20–11
+     Evaluating New Preservatives 15–13                       Literature Cited 20–13
+     Preservative Effectiveness 15–13
+     Effect of Species on Penetration 15–15                 Glossary
+     Preparation of Wood for Treatment 15–15
+     Application of Preservatives 15–18                     Index
+     Quality Assurance for Treated Wood 15–25
+
+== grep -n -i 'specific cutting|cutting energy|cutting power|cutting force' ==
+(no match)
+
+== grep -n -i 'machinab' ==
+987:and low in shock resistance. It is rated low on machinability                                     nea dentata) is also known
+28198:stiles of wood fire doors.                                           machinability, surface appearance, glueability, and
+28307:the treater or chemical supplier include machinability, glu-     and nonintumescent. The widely used intumescent coatings
+29104:Machinability           Cuts cleaner than normal wood,     Requires metalworking tools and                  Requires metalworking tools and
+32148:  decay resistance, 14-5t                         machinability, 2-4                            characteristics, 2-4 to 2-5
+32153:  machinability, 2-4                              tensile strength, 5-26t                       strength properties, 5-4t, 5-9t
+32222:  8-16fig                                         machinability, 2-5                           discussed, 14-13
+32257:  moisture content control, 10-14 to 10-16        machinability, 2-5                           characteristics, 2-16
+32306:  uses, 2-18                                 toughness values, 5-28t                      machinability, 2-5
+32435:  decay resistance, 14-5t                       machinability, 2-38                         Deformed shank nails, strength of, 8-8
+32438:  machinability, 2-23                                                                         locality of growth, 2-23
+32439:  mechanical properties, 5-18t, 5-22t         Dead trees, strength, 5-34                      machinability, 2-23
+32481:  machinability, 2-23                             dimensional change coefficient, 13-16t      Edge-grained lumber:
+32492:Dimensional changes in wood:                      tensile strength, 5-26t                       machinability, 2-23
+32700:   wood usage, 18-4                              cross section variation, 11-17                 machinability, 2-24
+32806:Hickory, pignut:                             machinability, 2-24                         13-19
+32812:Hickory, sand:                             Identification of wood, 3-16                     machinability, 2-25
+32819:  thermal conductivity, 4-13t                 machinability, 2-25                           characteristics, 2-25
+32845:  locality of growth, 2-7                     solubility, 15-6, 15-8                        machinability, 2-26
+32871:to 17-2                                         machinability, 2-27                           for flooring, 6-16
+32898:  machinability, 2-26                           dimensional change coefficient, 13-17t        shrinkage values, 4-8t
+32909:  machinability, 2-27                         Laminated members, glued. See Glued             use of elastomeric adhesives, 10-19 to
+32919:  machinability, 2-27                         Lapacho (See also Ipe):                         locality of growth, 2-28
+32938:  machinability, 2-28                       		 American Lumber Standards, 6-7                moisture content, 4-2t
+32955:Lodgepole pine, used for poles, 6-19        		 grading organizations, 6-9t                   machinability, 2-29
+32966:		 finished market products:                Macawood:                                        machinability, 2-29
+32988:			 casing and base, 6-17                     nomenclature, 6-5t                             machinability, 2-29
+33002:  shrinkage values, 4-6t                       locality of growth, 2-29 to 2-30               machinability, 2-30
+33008:  strength properties, 5-5t, 5-10t          to 14-15                                          machinability, 2-30
+33017:  nomenclature, 6-5t                        		 adhesion to metals, 10-5                       machinability, 2-31
+33137:  for casing and base, 6-17                        characteristics, 2-31                        machinability, 2-32
+33171:  dimensional change coefficient, 13-16t           machinability, 2-32                        Otie. See Ilomba
+33185:  uses, 2-8                                        machinability, 2-32                        Pacific yew, nomenclature, 6-14t
+33218:		 removal of, 16-36 to 16-37                   characteristics, 2-39                         machinability, 2-33
+33247:  performance standards, 11-3t                  machinability, 2-32                           knots, effect on strength, 5-26 to 5-28
+33281:   machinability, 2-39                        nomenclature, 6-13t                        for siding, 6-16
+33305:Pine, jack:                                   mechanical properties, 5-20t, 5-24t        machinability, 2-40
+33389:  characteristics, 2-15                            machinability, 2-34                      		 common hardwoods for, 19-3
+33539:  empty-cell processes:                        increase in density, 5-31                    machinability, 2-35
+33547:  pressures used, 15-18                        charring rate data, 18-14t                   machinability, 2-35
+33553:  machinability, 2-34                          erosion of planed surfaces, 16-12t           durability, 6-22
+33564:  characteristics, 2-34                        preservative pressure and temperature,       machinability, 2-36
+33568:  machinability, 2-34                          tensile strength, 5-26t                      uses, 2-36
+33574:Quartersawn lumber:                            equilibrium moisture content, 4-3            machinability, 2-36
+33583:to 17-4                                        uses, 10-11t to 10-13t                       machinability, 2-36
+33588:   ease of bonding, 10-7t                      machinability, 2-35                        Sapwood:
+33662:  machinability, 2-37                            toxicity, 18-10                                 shrinkage values, 4-8t
+33747:   axial load:                                    flame spread index, 18-4t                     machinability, 2-38
+33797:Suradan. See Pilon                                machinability, 2-10                           15-5t
+33817:Timber buildings:                               strength properties, 5-6t, 5-11t             machinability, 2-38

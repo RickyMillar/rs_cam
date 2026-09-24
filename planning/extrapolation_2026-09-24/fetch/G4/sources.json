@@ -1,0 +1,92 @@
+[
+  {
+    "source_id": "freud_router_bit_feed_and_speed_for_cnc_20170822",
+    "source_vendor": "freud",
+    "source_title": "Freud - Get the most out of your Freud bits by routing at ideal feed rates and speeds (Router Bit Feed and Speed for CNC, 2017-08-22)",
+    "source_url": "https://www.freudtools.com/public/assets/freud/downloadables/freudtools-router-bit-feed-and-speed-for-cnc-20170822.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "fetch/G4/sources/freud_router_bit_feed_and_speed_for_cnc_20170822.txt",
+    "pdf_sha256": "ff1a29ea5a669e24c6ed18e2bd21e10321cee024c65a6b23a1197cbbfdc71976",
+    "coverage_notes": "Grade a (vendor PDF). Already a LUT source (12 flat-end wood band rows, all checked equal to this text on 2026-09-24). G4 use: the only vendor-printed note found on how to use a band. Verbatim: 'You should start your tests with the lower feed rates yielded by our formulas to reduce the chance of bit breakage. (Freud’s chart contains recommended starting points, and does not warranty against tool breakage)' and '*This chart is a recommended starting point and does not warranty against tool breakage.' It also names both band edges: chip too small -> heat, premature dulling; chip too large -> rough surface. No number for the band width. The manifest has no pdf_sha256 for this source; this hash is new."
+  },
+  {
+    "source_id": "amana_spektra_spiral_plunge_v41",
+    "source_vendor": "amana",
+    "source_title": "Amana Solid Carbide Spektra Extreme Tool Life Coated Spiral Plunge Router Bits (2/3/4 Flute) chart v41",
+    "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v41.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "fetch/G4/sources/amana_spektra_spiral_plunge_v41.txt",
+    "pdf_sha256": "7b61543a12cb3dc9ed0716733e7e5c2822b6ebe4149a721e060e8a07cb1d7eb3",
+    "coverage_notes": "Grade a (vendor PDF). PDF CreationDate 2024-06-15. v41 is the highest version number that the URL pattern returned as a PDF on 2026-09-24 (v42-v60 and v34 return an HTML page). The product page that links the current chart was not reachable (Cloudflare 403), so 'v41 is current' is not confirmed. G4 use: like v24, it prints one chip load per tooth per diameter per column (Wood/Plywood, MDF/Laminate), no range, no 'start at', no +/-, no minimum or maximum word. Only notes: depth-of-cut derate and 'Disclaimer: It is important to understand that these values are only recommendations.' Differs from v24 (the LUT's source): 1.5mm row .0010\"/.0020\" (v24 .0020\"/.0030\"), 3mm row .0020\"/.0030\" (v24 .0040\"/.0050\"); new rows 4mm, 8mm, 10mm, 1/2\" (46210-K), 3/8\" 3F (46214-K) and a 4 Flute block. See lut_discrepancies.md."
+  },
+  {
+    "source_id": "amana_compression_spirals_v8",
+    "source_vendor": "amana",
+    "source_title": "Amana Solid Carbide Compression Spiral Router Bits v8",
+    "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Compression-Spirals-v8.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "fetch/G4/sources/amana_compression_spirals_v8.txt",
+    "pdf_sha256": "9a80df42506f8cd72540c795ec9272c2abb21d76e4ab0febba715c6678f59a0b",
+    "coverage_notes": "Grade a (vendor PDF). Already a LUT source (manifest has no stored text or hash; this fills both for G4's check). The 5 LUT wood rows (1/4\" and 1/2\" 2 flute; Wood, MDF/Laminate, Plywood) equal this text. G4 use: the second Amana chart that prints one value per cell; the same notes as Spektra ('these values are only recommendations', depth-of-cut derate); no range statement."
+  },
+  {
+    "source_id": "amana_spektra_spiral_plunge_v24",
+    "source_vendor": "amana",
+    "source_title": "Amana Solid Carbide Spektra Spiral Plunge 2/3 Flute Chart v24 (verification only)",
+    "source_url": "https://www.amanatool.com/pub/media/productattachments/Solid-Carbide-Spektra-Spiral-Plunge-2-3-Flute-v24.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "crates/rs_cam_core/data/vendor_lut/sources/amana_spektra_spiral_plunge_v24.txt",
+    "pdf_sha256": "5b6fef854b2cf6b422e2eb5bbc86e29b4dcab5b19195b7ff228b70f99cf86d3a",
+    "coverage_notes": "Re-downloaded 2026-09-24; the sha256 equals the manifest's. No new entry. Target 1 answer from the stored text: no range, 'start at', +/- or maximum statement. Only 'Disclaimer: It is important to understand that these values are only recommendations.' and the depth-of-cut derate. All 100 LUT rows that cite this source were checked: every printed value is transcribed correctly; 14 grade-c rows carry a repo-authored band (see lut_discrepancies.md)."
+  },
+  {
+    "source_id": "onsrud_feedspeeds_chipload_page_wayback_20180620",
+    "source_vendor": "onsrud",
+    "source_title": "LMT Onsrud 'Chiploads | Feeds and Speeds' page (xdoc/FeedSpeeds), Wayback snapshot 2018-06-20",
+    "source_url": "http://web.archive.org/web/20180620120318/http://www.onsrud.com:80/xdoc/feedspeeds",
+    "accessed_on": "2026-09-24",
+    "stored_text": "fetch/G4/sources/onsrud_feedspeeds_chipload_page_wayback_20180620.txt",
+    "pdf_sha256": "70cc4d5b4169251b8f6dc75b834e22c4c7634c510bcda86dc2695cf5f0827440",
+    "coverage_notes": "Grade b (vendor web page, archived copy; hash is of the stored text). Live URL http://www.onsrud.com/xdoc/FeedSpeeds now returns 404. G4 use: defines both band edges qualitatively ('If the chip is too small, the heat is transferred to the cutting tool causing prematurely dulling. Too high of a chipload will cause an unsatisfactory edge finish, or part movement.') and lists how to raise or lower chipload. It gives no instruction to start at the minimum, middle or maximum of the printed range and no band width."
+  },
+  {
+    "source_id": "onsrud_cutting_data_recommendations_page_2026-09-24",
+    "source_vendor": "onsrud",
+    "source_title": "LMT Onsrud Cutting Data Recommendations page (live, 2026-09-24)",
+    "source_url": "https://onsrud.com/Forms/Cutting-Data-Recommendations.asp",
+    "accessed_on": "2026-09-24",
+    "stored_text": "fetch/G4/sources/onsrud_cutting_data_recommendations_page_2026-09-24.txt",
+    "pdf_sha256": "155cfad83bb81b4d84ac877034216aa655cbd6f770e7dbeb2f97eb2bf31eddce",
+    "coverage_notes": "Grade b (vendor web page; hash is of the stored text). G4 use: the page says only 'Select a material below to view cutting data, recommended starting speeds and chip-load guidance.' It calls the data 'starting speeds'. No note on how to use the printed range. The per-material sheets (already in the LUT manifest) print only the depth-of-cut rule and formulas; the older image-only 'H Wood Cutting Data2.pdf' (https://onsrud.com/images/H%20Wood%20Cutting%20Data2.pdf, sha256 in FETCH_NOTES) was viewed as an image and carries the same notes and no band-use note."
+  },
+  {
+    "source_id": "amana_router_bit_technical_information_wayback_20240528",
+    "source_vendor": "amana",
+    "source_title": "Amana Tool 'Router Bit Technical Information' page, Wayback snapshot 2024-05-28",
+    "source_url": "http://web.archive.org/web/20240528071322/https://www.amanatool.com/router-bit-technical-information",
+    "accessed_on": "2026-09-24",
+    "stored_text": "fetch/G4/sources/amana_router_bit_technical_information_wayback_20240528.txt",
+    "pdf_sha256": "a1df6bb86bc6f15846f51125803d006a6b72d4c3f75398bb398a666a3b44c52e",
+    "coverage_notes": "Grade b (vendor web page, archived copy; live page returns Cloudflare 403; hash is of the stored text). Hand-router guidance, not CNC. G4 use (qualitative only): 'There is no set feed speed when using a router ... Some woodworkers may feed the workpiece too slow out of habit. This causes the bit to overheat and mar the workpiece. ... feeding too fast may leave a rough, washboard surface.' No number, no range statement."
+  },
+  {
+    "source_id": "toolstoday_how_to_calculate_feeds_and_speeds",
+    "source_vendor": "toolstoday",
+    "source_title": "ToolsToday 'How To Calculate CNC Feeds and Speeds' video page (transcript)",
+    "source_url": "https://toolstoday.com/t-video-how-to-calculate-feeds-and-speeds",
+    "accessed_on": "2026-09-24",
+    "stored_text": "fetch/G4/sources/toolstoday_how_to_calculate_feeds_and_speeds.txt",
+    "pdf_sha256": "839ab5468ffacc2252ef31843e9099de3c1d50bb0c0803122ea1114f975816d6",
+    "coverage_notes": "Grade c (Amana retailer, video transcript; hash is of the stored text). G4 use: 'It is really important to understand that these feed and speed charts are Amana's recommended starting calculations and each CNC machinist may want to adjust their inches per minute depending on the size, power and stability of their machine.' The worked example raises a 3/8\" Spektra compression bit in laminate from the chart's 0.0072\" to 0.020\" per tooth on a 7 HP machine. This is a retailer's statement, not an Amana chart; it contradicts reading the single printed value as a maximum."
+  },
+  {
+    "source_id": "shopbot_feeds_and_speeds_2016",
+    "source_vendor": "shopbot",
+    "source_title": "ShopBot Tools 'Feeds and Speeds Charts' (2016-07-21), built from Onsrud recommendations",
+    "source_url": "https://shopbottools.com/wp-content/uploads/2024/01/FeedsandSpeeds.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "fetch/G4/sources/shopbot_feeds_and_speeds_2016.txt",
+    "pdf_sha256": "7ad6d74012fe2d5f52f25c2e7c75f199be6845d5e21e52a4147892ebe779f56e",
+    "coverage_notes": "Grade c (machine maker's guide that restates Onsrud; not an Onsrud document). G4 use: 'Start with the middle of the range of recommended chip load provided on the chart ((.006+.004)/2=.005).' (ShopBot's worked example, arithmetic mean). It attributes an optimisation strategy to Onsrud: 'Increase the cutting speed (feed rate) until the quality of the part's finish starts to decrease or the part is starting to move from hold downs. Then decrease speed by 10%.' No Onsrud document found that prints either sentence."
+  }
+]

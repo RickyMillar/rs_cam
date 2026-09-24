@@ -1,0 +1,290 @@
+FAQ on CNCs, Materials, and Tooling
+-->
+Think
+&
+Tinker
+, Ltd. ™
+0 item(s) - $0.00
+Your shopping cart is empty!
+Menu
+Home
+Products
+Application Specific Tools
+3D Signs & Plaques
+Cutting Composites
+Engraving
+Jewelry
+Musical Instruments
+Pool Cues
+Printed Circuit Boards
+Steel Rule Dies
+3D Carving Tools
+Backing & Mounting
+Calibration Blanks
+Inch
+Metric
+Cleaners & Lubricants
+ColletCare
+Metal Cutting Fluid
+PCB Engraving Lubricant
+Collets & Toolholders
+Drill bits
+Number (wire gauge)
+Fractional inch
+Letter
+Metric
+Medical & Slotting
+Drill Bit Sets
+Drill Bit Diameter Chart
+Feeds/Speeds for FR-4 & Carbon-fiber
+End-mills
+Engraving Tools
+1/8in. shank
+Micro-engraving tools
+Tapered-stubs
+Engraving / Cut-out tools
+1/4in. shank
+Signage / Engraving tools
+Miscellaneous
+Depth Setting Rings
+FuzzBrush
+SecureBits
+Router Bits
+Chip breaker (CB)
+Diamond cut (DC)
+Feeds/Speeds
+CB feeds/speeds
+DC feeds/speeds
+Specialty Bits
+Acrylic/polycarbonate tools
+Antler / horn cutters
+Countersinks
+Extended-reach end-mills
+Fret slot cutters
+Fretboard planing/radiusing
+Shell cutters
+Steel Rule Die Tools
+Zero-helix cutters
+Substrates
+Backing material
+Copperclad
+Entry foil
+Tool Packs
+Single bit packs
+10-bit packs
+50-bits packs
+SecureBits
+Applications
+3D Signs & Plaques
+Cutting Composites
+Engraving
+Jewelry
+Musical Instruments
+Pool Cues
+Printed Circuit Boards
+Steel Rule Dies
+Resources
+FAQ
+Cutter terminology
+Depth Setting Rings
+Extended-reach Geometry
+Feeds & Speeds Calculator
+Glossary
+Point styles
+Reference library
+Sweet-spot Test
+Tutorials
+Charts/Tables
+Chipbreaker Feeds & Speeds
+Diamondcut Feeds & Speeds
+Drill Bit Diameter Chart
+Drill Bit Feeds & Speeds
+ER Torque Chart
+Metal Gauge Conversion Chart
+Relative Wood Hardness Table
+Support
+Contact us
+Limited Warranty
+Policies
+Sales Quotes
+Technical Support
+Distributors
+Domestic Distributors
+International Distributors
+Account
+My Account
+Order History
+Wish list
+Frequently Asked Questions
+If you do not find the answer to your question below, try our Reference Library
+or write to support@precisebits.com
+Select your area of interest below
+CNC Systems and Applications
+Material selection and Machining Parameters
+Standard and Custom Tools
+Feeds and Speeds
+Can I use PreciseBits solid carbide end mills on any milling machine?
+Carbide grade have improved substantially during that past decade. Higher transverse rupture strengths, more resistance to shattering and a greater understanding of the role of each chemical component in the mix have resulted in the introduction of solid carbide tools in applications that once demanded high speed steel with exotic surface treatments. Nonetheless, the stability of your machine and the way your have it set up are very important. Consider the following items (in order of importance):
+Spindle Runout (TIR) - should be less than or equal to 2% of the tool's diameter (absolute maximum).
+Spindle axis to table orthogonality- should be at 90° with no more than .1° variance.
+Spindle Peak RPM - most of our tools require a minimum of 15,000 RPM under maximum anticipated load.
+Collet Retention Force - the collet must not let the largest diameter tool you will use slip under maximum anticipated load.
+Appropriate Feed Rates - motor drivers should be capable of moving the bit (or the workpiece) fast enough to prevent burning and tool overheating.
+0 (Zero) Slip - 0 (Zero) backlash in x and y axes.
+Proper hold down of work piece.
+The above notwithstanding, a number of VERY skilled cuemakers successfully use our 0.010" tools on manual pantographs operating at 8,000 - 12,000 RPM. From their experience it is apparent that even our smallest diameter cutters are compatible with manual equipment if the the skill of the operator is sufficiently high.
+I am new to CNC woodworking. What do you recommend?
+Talk about a question that needs a entire book to answer. In lieu of a complete, useful answer, we can only offer a few pearls of advice.
+First. Go slowly. Give yourself time to learn the equipment and to become familiar with the vagaries of cutting wood before investing a lot of money in precision tools. Start with cutting a reasonably uniform wood like maple. It doesn't cost much, cuts beautifully and can be used to test every aspect of most CNC systems. Start with larger sized bits (0.0469" and above). They are cheaper and harder to break than the smaller bits. Once you get the hang of it (count on a month or so) get some smaller bits as needed. Some of our 1/32 in. bits are relatively cheap and are a popular size for new CNC users.
+Second. Take time to understand how the parameters that you set with your controller configuration affect bit life, cutting time and overall system performance. There are subtleties (like feeds, speed and acceleration ramps) that you need to master in order to be effective with your new equipment.
+Third. Take time to talk to the vendor that you anticipate buying your machine from. If they do not have time to help educate you now, it is unlikely that they will be very helpful after you have left you money with them. Shop around. There is a lot of new equipment out there, some of it very good, some of it not so good. Price is definitely not the final determinant of quality. A number of modestly priced systems appear to work as well as much more expensive equipment. The most important issue is to size the system to your needs. If you are going to be making pool cues, you do not need a US$50,000 CNC router with an 8 HP Colombo router and a 4' X 10' X 1' machining envelope.
+What should I know about routers?
+Compact CNC systems are often mounted with a low-cost shop router instead of a more expensive variable speed spindle. In spite of being quite noisy, a router can give years of reliable service in operations requiring modest cutting power and minimal speed control. There are two types of routers commonly in use on CNC machines: plunge routers and laminate trimmers. Plunge routers are designed for continuous use and are equipped with adequate cooling to prevent excessive heat build up. The shafts are typically mounted in high-quality, sealed ball (or roller) bearings and backed up with a thrust bearing to allow drilling and ramp milling. Typical units cost between US$90 and US$350. Laminate trimmers are much more compact and generally much cheaper (US$45 to US$100). They are intended for intermittent duty, but, with light loading, can provide reasonable service in a CNC environment.
+Spindle speed (RPM) is very important when you are cutting with microtools. If you are fitting a shop router to your CNC, we recommend that you use a variable speed plunge-style router. Plunge routers typically operate in the 25,000 to 30,000 RPM range, as opposed to 18,000 to 22,000 RPM for the single speed laminate trimmers. More importantly, they are usually built around a so-called universal AC/DC motors that, with external controllers, can be operated from a few hundred RPM up to 120% of the rated maximum. One disadvantage of plunge routers is that most of them vent all of the cooling air through the bottom. Unless you redirect this blast of air, it will render any vacuum removal of debris totally useless and your shop will slowly be buried in sawdust.
+No matter what type of router that you decide on, go out an buy a dial test indicator with 0.0001" (0.0025 mm) resolution. You will use this gage to periodically measure the runout of your "spindle" to determine when the bearings need to be replaced. Excessive spindle runout caused by worn out shaft bearings or a damaged collet adapter is one of the major causes of breakage with small rotary cutters. PreciseBits currently offers precision collets for a limited number of low-cost router / laminate trimmers.
+Can I use a Dremel® or compatible device with PreciseBits Tools?
+Are you using a Dremel mounted on a CNC stage or intending to use it by hand?
+If the unit will be mounted to a CNC system you should not use any tool with a diameter smaller than 1/32" (0.0313", 0.80mm) cutting diameter. We have found the runout (TIR) of most handheld, pencil-style grinders to be too high to accommodate microtools. High TIR almost always translates to poor cut quality and broken bits.
+CAUTION: We have measured a number of Dremel grinders and have yet to find a unit with less than 0.006 in. (0.15mm) TIR. If you plan to use bits smaller than 0.0469 in. (1.20mm) you will need to replace the collet adapter with a more precise component.
+If the Dremel will not be mounted to a CNC system, we highly recommend the use of one of their attachments: cutting kits, router attachment, shaper/router table or a drill press attachment. If you will be using the tool by hand, stick to the larger tools (0.0625" to 0.1250", 1.59 mm to 3.18 mm) to minimize breakage.
+Can I use a RotoZip® Rebel on my CNC router?
+I just recently purchased a CNC machine which utilizes a Rotozip Rebel. I'm going for the smallest diameter cut possible for very fine cutting/engraving into oak. The Rotozip tool utilizes 1/4 and 1/8 bits. Could any of the bits on the PreciseBits site be utilized for the Rotozip?
+The challenge with the Rotozip is that the runout (TIR) of the spindle increases rather rapidly with wear. We are not familiar with the Rebel model so the problem may have been fixed. In any case, if you are new to CNC woodworking, start with relatively large, robust cutters (0.0469" and above) to gain experience and to get a feel for the material that you are cutting. After you have made some sawdust and feel adventurous, move on to more detail oriented tools (0.03125" and below). You will find that clear maple (a medium density hardwood) cuts beautifully, with little fraying, accurate sidewalls, and no splintering to speak of. Assuming that your CNC is up to the task, tolerances of +/-0.002" are routinely achievable.
+No matter what type of spindle or router that you are using, go out an buy a dial test indicator with 0.0001" (0.0025 mm) resolution. You will use this gage to periodically measure the runout of your "spindle" to determine when the bearings need to be replaced. Excessive spindle runout caused by worn out shaft bearings is one of the major causes of breakage in small rotary cutters.
+Wood
+Horn
+Mother-of-Pearl / Shell
+Non-ferrous metals
+Plastics
+Composites
+When cutting, the wood appears to be burning. Should I reduce my spindle speed (RPMs)?
+You can either reduce your spindle RPM or increase the feed rate. Burning on the side walls during cutting is usually a sure sign that you are moving the cutter too slowly for the the RPMs of the spindle. If you are moving too slowly (feedrate too low) , the bit is taking such a small bite on each revolution that virtually no debris is coming up out of the kerf. Since this "sawdust" is the only thing cooling the tool, the cutter overheats and burns the wood. This overheating can significantly reduce tool life by weakening the tungsten - carbide - cobalt bond, leading to rapid tool erosion and edge deterioration. A good way to think of this is to imagine a tire spinning on the pavement. You don't get anywhere and your tires wear out in no time.
+How can I tell how hard a particular wood is?
+The most objective measure of wood hardness is found in the Janka Scale. The Janka (or side) hardness test measures the force required to embed a .444 inch steel ball to half its diameter in the wood being tested. This is one of the best measures of the ability of wood species to withstand denting and wear. It is also a good indicator of how hard a species is to saw, nail, or machine. The higher the assigned number, the harder the wood, and generally, the harder it is to cut. To determine a specific woods' hardness, go to our Relative Hardness Table.
+Should I use a 2 flute or a 3 flute cutter to machine horn?
+Almost without exception, a properly designed 2 flute cutter is superior to a 3 flute bit when cutting ivory or horn. Both ivory and horn products can be very oily which tends to make the cutting debris clump together and cake. To insure proper "chip" extraction, a large flute volume coupled with the proper helix angle is required to prevent caking and bit breakage. Our 1/32" horn cutter (MH2I8-0313-015F) has proven to be very effective, and popular, for both pocketing and part shaping in the custom pool cue industry.
+Which cutter should I use for shaping abalone or mother-of-pearl (MOP)?
+I am cutting abalone and MOP for pool cue inlays. What would you suggest in a 1/32 inch cutter: a 2 flute cutter or a 3 flute cutter?
+All shells are made of a natural composite of calcium carbonate in a protein matrix. When cutting shell of any thickness, we always use a 3 flute cutter designed specifically to break up the carbonate and cut the matrix. It's chip-breaker flute geometry pulverizes the composite as it cuts allowing the debris to be extracted from the kerf without packing. For a 1/32" cutter, we recommend our Shell cutter MS3I8-0313-013F.
+Also, would you plunge the full .125 inches (I am guessing not) or would you cut it in increments?
+First of all, we never cut natural pearl (or abalone) that is more than 0.080" think. The thickest
+laminated shell that we cut is 0.100". All of our tools are designed for full plunge cutting. With the variability of natural shell, it is always a good idea to run a few tests to determine the optimum feeds and speeds for the particular material you are cutting. In our shop, when cutting at 30,000 RPM we use a feed rate of 15 in./min. to cut 0.080" MOP. 0.100" thick laminated shell can be cut at 18 in./min.
+I am cutting gold, silver, and sterling. What kind of bits should I use?
+All three of the metals you are using machine well with cutters ground with a medium rake on the cutting edge. Both our stub mills and stub ball mills are designed to cut precious metals as well as aluminum, brass, and copper.
+How can I tell the difference between polymers and ceramics?
+The easiest test to perform is a "tap" test. Polymers (filled and un-filled) thud when tapped. Fired ceramics, being quasi-crystalline will ring or "clink" when tapped. Try gently tapping a piece of plastic against your front teeth. Then try tapping your teeth against the rim of a drinking glass. The difference is very apparent. Or at least it used to be. The introduction of reconstituted stone and stabilized minerals (ground up stone mixed with 3 - 10% polymer resin) has rendered this test almost worthless for selecting between the two. However, if a material "thuds" like a polymer, it will probably cut well using the same bits, feeds, and speeds that work for other plastics. If it "clinks" like a ceramic, you will probably need coated carbide or diamond cutting tools and reduced feeds and speeds. To prevent burning and accelerated bit wear, it may also be necessary to flood the tool with a liquid coolant while cutting.
+What is the best kind of bit for machining thermoplastics like polyethylene, polycarbonate and PVC?
+When machining thermoplastics, there can be a significant difference between cutting cast and extruded products. Cast materials which are usually a bit harder and have a higher melting point than their extruded counterparts, machine easier, with a cleaner edge and less deposition of melt on the cutting tool. In both cases, however, you need a VERY sharp tool designed specifically for cutting thermoplastics. Our MM208 PreciseBIT family of cutters has proven to work very well in these materials if you use tool diameters 0.0625" (1.59 mm) or greater.
+PVC presents an additional challenge in that it is much more abrasive than most of the other members of this family. Cutting both cast and extruded products will result in accelerated bit wear with an associated deterioration in the quality of machined edges and surfaces.
+The key to cutting all of these materials is to insure that you select a combination of RPM and feedrate that produces high enough chip loads. For example. If you are cutting cast polyethylene 0.25" (6.35 mm) thick in a single pass with a 0.125" (3.18 mm) diameter cutter at 27,000 RPM you will need a feedrate of AT LEAST 12 in./min. to prevent burning and melting. 25in./min. would give even better results. The challenge is that your spindle has to be able to produce the horsepower to support this kind of cutting. From our experience, small air turbines, laminate trimmers, and low horsepower DC motor based spindles simply do not produce enough torque to keep from slowing down when cutting this deep with a tool this big. Multi-pass cutting will be required.
+What kind of bit should I use to cut polymers?
+Glass filled composites are most effectively cut using a grinding action that breaks the glass and cuts the polymer binder without melting or caking. In terms of bit life and edge quality, chip-breaker and diamond cut router bits excel when machining glass filled polymers and phenolic. The limitation of this style of cutter is that they are very difficult to make to precise diameters. Typical tolerances run ±0.002". For more precise shaping, a 3 flute cutter will give acceptable performance and an excellent edge finish with somewhat reduced life (50 - 75%).
+General
+End mills
+Can I use PreciseBits solid carbide end mills on any milling machine?
+Carbide grade have improved substantially during that past decade. Higher transverse rupture strengths, more resistance to shattering and a greater understanding of the role of each chemical component in the mix have resulted in the introduction of solid carbide tools in applications that once demanded high speed steel with exotic surface treatments. Nonetheless, the stability of your machine and the way your have it set up are very important. Consider the following items (in order of importance):
+Spindle Runout (TIR) - should be less than or equal to 2% of the tool's diameter (absolute maximum).
+Spindle axis to table orthogonality- should be at 90° with no more than .1° variance.
+Spindle Peak RPM - most of our tools require a minimum of 15,000 RPM under maximum anticipated load.
+Collet Retention Force - the collet must not let the largest diameter tool you will use slip under maximum anticipated load.
+Appropriate Feed Rates - motor drivers should be capable of moving the bit (or the workpiece) fast enough to prevent burning and tool overheating.
+0 (Zero) Slip - 0 (Zero) backlash in x and y axes.
+Proper hold down of work piece.
+The above notwithstanding, a number of VERY skilled cuemakers successfully use our 0.010" tools on manual pantographs operating at 8,000 - 12,000 RPM. From their experience it is apparent that even our smallest diameter cutters are compatible with manual equipment if the the skill of the operator is sufficiently high.
+When should I discard a bit?
+Usually, a bit will break before it is worn out. For inlay cutting, you should discard a bit when the inlay pockets and the inlay parts inserted into the pockets become too tight. On some woods, the bit will tear the wood, look for ragged edge or bottom.
+Are diamond tipped bits worth the price?
+The jury is still out. We believe that our tungsten-carbide bits have performed at similar levels diamond tipped have achieved. If requested, we are able to provide diamond tipped bits for approximately $9.00 more than our regular bits. We will be undergoing testing of these bit types in our Certification Lab.
+Can I custom order bits?
+Yes. Please call us for details. We will not make custom bits available to our customer base until they have undergone our rigorous testing and analysis process.
+Can bits be re-sharpened?
+We do not recommend re-sharpening bits. If re-sharpening occurs, the bit size changes, leading to a whole new host of problems.
+How does PreciseBits certify a bit?
+PreciseBits does not release its cutting tools to the public without undergoing a extensive amount of testing. We send prototype bits to a select number of independent testers. Each tester is given precise instructions to record, materials cut, spindle RPMs tested at, cutting results (amount of inches cut), bit breakage, etc. The results of this feedback help to establish a go/no go decision.
+What are the different types of bit point styles?
+There are several including Drill point, Fish-tail, Mill, V point, and Y point. For more information, see Bit Point Styles.
+Is a 2 or 3 flute bit better?
+It depends upon your equipment and application. In general, 3 flute bits are better for materials that do not expand or do not pack (when cutting). 3 flute bits provide greater precision, less cutting damage, and greater cutting speeds when compared with 2 flute bits. An example of a material that does expand and pack is ivory. A 2 flute bit is recommended. Watch in the future for our Application Cutting Guides.
+Which is better, a down-cut or an up-cut style bit?
+We believe an Upcut style bit is the better of the two bit styles. An Upcut bit is designed to extract the cut material away from the cutting area as opposed to pushing it back into the area being cut.
+What is another name for an "end mill"?
+The word "end mill" actually refers to a milling machine. Nonetheless, in common usage a "milling cutter" or "mill bit" is often referred to as an "end mill".
+Which is the stronger end mill, the 2 flute or the 3 flute?
+A 3 flute is stronger but has less flute volume and can be more susceptible to packing and binding.
+Chipbreaker Router Bits Feeds and Speeds
+Diamondcut Router Bits Feeds and Speeds
+Drill Bit Feeds and Speeds
+Finding the Sweet Spot in Machining with Microtools
+×
+We will be closed September 7th for Labor Day.
+We will be closed September 7th for Labor Day.
+×
+Holiday Shipping
+Orders received by noon on the day before the beginning of the holiday should ship the same day.
+Normal operating hours resume on the first business day following the last day of the holiday.
+Close
+-->
+Support
+About us
+Contact us
+Educational Discount
+Limited Warranty
+No-fault Returns
+Policies
+Sales Quotes
+Tech Support
+Products
+Collets, Toolholders
+Composite Cutting
+Metal Machining
+Woodworking
+Plastic Cutting
+Applications
+3D Signs & Plaques
+Engraving
+Jewelry
+Musical Instruments
+Pool Cues
+Printed Circuit Boards
+Steel Rule Dies
+Calculators
+Resources
+FAQ
+Tool terms
+Glossary
+Point styles
+Reference library
+Sweet-spot Test
+Tutorials
+Support
+About us
+Contact us
+Educational Discount
+Limited Warranty
+No-fault Returns
+Policies
+Sales Quotes
+Tech Support
+Products
+Collets, Toolholders
+Composite Cutting
+Metal Machining
+Woodworking
+Plastic Cutting
+Applications
+3D Signs & Plaques
+Engraving
+Jewelry
+Musical Instruments
+Pool Cues
+Printed Circuit Boards
+Steel Rule Dies
+Resources
+FAQ
+Tool terms
+Glossary
+Point styles
+Reference library
+Sweet-spot Test
+Tutorials
+Feed and Speed Calculators

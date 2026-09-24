@@ -1,0 +1,10 @@
+# source_url: https://www.precisebits.com/scripts/calcv10.js
+# accessed_on: 2026-09-24
+# raw_js_sha256: 86285c4f637b68f671ddad5b275718aa4deca17641b034c7aa56b36c524ecd36
+# Verbatim excerpts of the calculator code (the chip-thinning, V-width and Janka handlers). Code, not a chart.
+
+$("#ctfeed").click(function(){var o=$("#ctdia").val(),a=$("#ctrad").val(),r=$("#ctchip").val(),l=$("#ctrunout").val()+0,e=$("#ctrpm").val(),t=$("#ctflutes").val(),c=parseFloat(o)*parseFloat(a)-parseFloat(a)*parseFloat(a),d=2*Math.sqrt(c),s=parseFloat(r)*o/d-parseFloat(l),m=(parseFloat(r),parseFloat(s)*parseInt(t)*parseInt(e)),i=Math.round(1e5*parseFloat(s))/1e5,n=Math.round(100*parseFloat(m))/100,p=Math.round(parseFloat(m)/60*100)/100,u=(parseFloat(r)-parseFloat(l))*parseInt(t)*parseFloat(e),h=Math.round(100*parseF
+
+$("#depthwidth").click(function(){var o=$("#angle").val(),a=$("#depth").val(),r=$("#tip").val(),l=$("#maxcut").val(),e=parseFloat(0+$("#vrunout").val()),t=$("#units").val(),c=o/2,d=c*(Math.PI/180),s=2*Math.tan(d)*a+parseFloat(r)+parseFloat(e),m=Math.round(1e4*parseFloat(s))/1e4,i="&lpar;TAN&lpar;"+c+"&rpar; &times; 2 &times;"+a+"&rpar; &plus; &lpar;"+e+" &plus; "+r+"&rpar; &equals; "+m+" "+t;$("#cutwidth").val(m+" "+t),$("#angleoutput").html(i),$("#angleerror").html(""),$("#depth").css("background-color",""),$("#ma
+
+$("#jcalc").click(function(){var o=$("#janka1").val(),a=$("#janka2").val(),r=$("#jofeed").val(),l=$("#jrpm").val(),e=$("#jflute").val(),t=parseFloat(o)/parseFloat(a)*parseFloat(r),c=parseFloat(r)/parseFloat(l)/parseInt(e),d=parseFloat(t)/parseFloat(l)/parseInt(e),s=Math.round(1e3*parseFloat(t))/1e3,m=Math.round(1e5*parseFloat(c))/1e4,i=Math.round(1e5*parseFloat(d))/1e4;$("#jnfeed").val(s),$("#jochip").val(m),$("#jnchip").val(i),$("#jankaerror").html(""),$("#jankaoutput").html(""),$("#janka1").css("background-color"

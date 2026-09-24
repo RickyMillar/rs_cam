@@ -1,0 +1,841 @@
+# stored text for ansi_a208_1_2016_particleboard
+# made from cpa_ansi_a208_1_2016.pdf with pdftotext -layout on 2026-09-24
+                                                        ANSI A208.1-2016 Particleboard
+                                                                  Approved May 12, 2016
+
+
+
+
+                   American National Standard
+
+                         Particleboard
+ANSI A208.1-2016
+
+
+
+
+                                                      Composite Panel Association
+                           19465 Deerfield Avenue, Suite 306, Leesburg, VA 20176
+                                           Tel (703) 724-1128, Fax (703) 724-1588
+                                                     Web www.compositepanel.org
+                                        ANSI A208.1-2016 Particleboard
+
+American                 Approval of an American National Standard requires verification by the American National
+                         Standards Institute (ANSI) that the requirements for due process, consensus, and other criteria
+National                 for approval have been met by the standard’s developer.
+Standard                 Consensus is established when, in the judgement of the ANSI Board of Standards Review,
+                         substantial agreement has been reached by directly and materially affected interests.
+                         Substantial agreement means much more than a simple majority, but not necessarily unanimity.
+                         Consensus requires that all views and objections be considered, and that a concerted effort be
+                         made toward their resolution.
+
+                         The use of American National Standards is completely voluntary; their existence does not
+                         in any respect preclude anyone, whether they have approved the standards or not, from
+                         manufacturing, marketing, purchasing, or using products, processes, or procedures not
+                         conforming to the standards.
+
+                         ANSI does not develop standards and will in no circumstance give an interpretation of any
+                         American National Standard. Moreover, no person shall have the right or authority to issue
+                         an interpretation of an American National Standard in the name of the ANSI. Requests for
+                         interpretations should be addressed to the secretariat or sponsor whose name appears on the
+                         title page of this standard.
+
+                         CAUTION NOTICE: This American National Standard may be revised or withdrawn at any time.
+                         The procedures of ANSI require that action be taken periodically to reaffirm, revise, or withdraw
+                         this standard. Purchasers of American National Standards may receive current information on
+                         all standards by calling or writing ANSI.
+
+
+
+Abstract                 This Standard sets forth requirements and test methods for dimensional tolerances, physical
+                         and mechanical properties and formaldehyde emissions for particleboard. Methods of identifying
+                         products conforming to the Standard are specified. Property requirements are described in
+                         metric and English units.
+
+
+
+
+Published by
+
+Composite Panel Association
+19465 Deerfield Avenue, Suite 306, Leesburg, VA 20176
+
+
+Copyright © 2016 by Composite Panel Association
+All rights reserved.
+
+No part of this publication may be reproduced in any form,
+in an electronic retrieval system or otherwise, without prior
+permission by CPA.
+
+Printed in the United States of America
+Contents.
+Foreword.
+1         Purpose and Scope..................................... 1
+1.1          Purpose.................................................. 1
+1.2          Scope..................................................... 1
+1.2.1            General.............................................. 1
+1.2.2            Suitability for certification................... 1
+2         References.................................................. 1
+3         Terms and Definitions.................................. 1
+3.1          Additive................................................... 1
+3.2          Bonding system...................................... 1
+3.3          Specified thickness................................. 1
+3.4          Panel...................................................... 1
+3.4.1            Panel average thickness.................... 1
+3.4.2            Panel average thickness
+                   from specified................................... 1
+3.5          Particleboard.......................................... 1
+3.6          Particles.................................................. 1
+3.7          Variance from panel average thickness.... 1
+3.8          Moisture resistance (MR)....................... 1
+4         Requirements.............................................. 2
+4.1          General................................................... 2
+4.2          Dimensional tolerances.......................... 2
+4.2.1            Width and length................................ 2
+4.2.2            Thickness........................................... 2
+4.2.3            Squareness........................................ 2
+4.2.4            Edge Straightness.............................. 2
+4.3          Physical and mechanical properties....... 2
+4.3.1            Moisture content................................. 2
+4.3.2            Linear expansion ............................... 2
+4.3.3            Thickness swell.................................. 2
+4.3.4            Durability of exterior glue
+                   bonding system................................ 3
+4.3.5            Internal bond (IB)............................... 3
+4.3.6            Modulus of rupture (MOR)
+                   and modulus of elasticity (MOE)...... 3
+4.3.7            Hardness............................................ 3
+4.3.8            Face screw-holding capacity.............. 3
+4.3.9            Edge screw-holding capacity............. 3
+4.3.10           Concentrated loading......................... 3
+4.3.10.1             Requirement.................................. 3
+4.3.10.2             Test specimens.............................. 3
+4.3.10.3             Test apparatus............................... 3
+4.3.10.4             Test procedure .............................. 3
+4.4          Formaldehyde emission provisions........ 3
+5         Identification................................................. 4
+5.1          Explanation of grades............................. 4
+5.1.1            Formaldehyde emission designation.... 4
+5.1.2            Moisture resistance designation......... 4
+5.2          Information to be provided...................... 4
+5.3          Methods of identification......................... 4
+6         Conformity Assessment............................... 4
+6.1          Manufacturers’ inspection and testing.... 4
+6.2          Sampling for acceptance........................ 4
+6.2.1            Dispute resolution.............................. 5
+
+
+
+
+                                                                              iii
+                                       ANSI A208.1-2016 Particleboard
+
+
+Foreword (This foreword is not part of ANSI A208.1-2016.)
+
+The first standard for particleboard—Commercial Standard CS236—was developed by the U.S. Department of
+Commerce in 1961. This standard covered particleboard for interior applications. The Department published a revised
+Standard, CS236-66, in 1966.
+
+The American National Standard for Mat-Formed Wood Particleboard, sponsored by the National Particleboard
+Association, was published as ANSI A208.1-1979. It was reaffirmed in 1986 as ANSI A208.1-1979(R1986). It was
+revised in 1987 as ANSI A208.1-1987, in 1989 as ANSI A208.1-1989, in 1993 as ANSI A208.1-1993, in 1999 as ANSI
+A208.1-1999 and in 2009 as ANSI A208.1-2009. In 1997 the National Particleboard Association and the Canadian
+Particleboard Association consolidated into the Composite Panel Association. The Standard was revised in 2009 in an
+effort to harmonize with other international product standards.
+
+Major changes in the Standard include the following:
+• moved Annex A References to the main text as Section 2 References and updated the listed standards (e.g. ASTM
+  D1037-12 and ISO 17007);
+• deleted the 0.18 ppm formaldehyde emission limit and -F18 designation in order to comply with CARB Phase 2
+  formaldehyde emission level for particleboard;
+• clarified the issue that a single panel average falls above or below the specification limits will mean non-compliance
+  to properties listed in Table A and B when using a sample size of 5 panels;
+• added Section 6.2.1 Dispute resolution;
+• added Annex E Bibliography (Informative).
+
+This Standard has four Annexes. Annex A is normative and is part of this Standard. Annexes B, C, D and E are informative
+and are not part of this Standard.
+
+
+
+
+                                                           iv
+                                       ANSI A208.1-2016 Particleboard
+
+
+Consensus for this Standard was achieved by use of a canvass body and ANSI Essential Requirements for due process.
+The following organizations, recognized as having an interest in the Standard, were contacted prior to the approval of
+this Standard. Inclusion in this list does not necessarily imply that the organization concurred with the submittal of the
+proposed Standard to ANSI.
+
+American Home Furnishings Alliance (AHFA)                       MASISA S.A. de C.V.
+APA—The Engineered Wood Association                             Masonite Corporation
+Arauco North America                                            Mississippi State University
+Architectural Woodwork Manufacturers Association                National Association of Home Builders (NAHB)
+  of Canada (AWMAC)                                             National Council for Air and Stream Improvement (NCASI)
+Architectural Woodwork Institute (AWI)                          Oregon State University
+BestBoard                                                       Panolam Industries
+Boise Cascade Company                                           Plummer Forest Products
+Business and Institutional Furniture Manufacturers              Roseburg
+  Association (BIFMA)                                           Sauder Woodworking
+California Air Resources Board (CARB)                           Tafisa
+Casey Industrial                                                Timber Products Co.
+Collins Products                                                Uniboard
+Georgia-Pacific Wood Products LLC                               Universite Laval
+Hardwood Plywood and Veneer Association (HPVA)                  U.S. Consumer Product and Safety Commission (CPSC)
+Hexion                                                          Virginia Tech
+Kimball International Inc.                                      Webb Furniture Enterprises, Inc.
+Kitchen Cabinet Manufacturers Association (KCMA)                Wilsonart
+Maderas Conglomeradas S.A. de C.V. (MACOSA)                     Window and Door Manufacturers Association (WDMA)
+Marshfield DoorSystems, Inc.                                    Woodwork Institute
+
+
+
+
+                                                            v
+                                       ANSI A208.1-2016 Particleboard
+
+
+American National Standard                                      ISO/IEC 17007:2009 Conformity assessment—Guidance
+                                                                for drafting normative documents suitable for use for
+for Particleboard                                               conformity assessment
+
+
+1       Purpose and scope
+                                                                3       Terms and Definitions
+1.1     Purpose
+The purpose of this Standard is to establish a nationally       3.1      Additive: Any material added during the
+recognized voluntary consensus standard for particleboard       particleboard manufacturing process, other than the
+which provides a common basis for understanding                 cellulosic material and a bonding system, which enhances
+throughout the particleboard industry and among and             the particleboard’s dimensional stability, fire retardance,
+between those specifying and using industry products.           resistance to fungi and insects, or imparts other desired
+                                                                properties into the particleboard.
+
+1.2     Scope
+                                                                3.2      Bonding system: Any system used to
+1.2.1 General                                                   bind particles of cellulosic material together to form
+This Standard covers particleboard which is made                particleboard.
+primarily from cellulosic materials (usually wood). This
+Standard includes references, terms and definitions,            3.3     Specified thickness: Thickness specified either
+dimensional tolerances, physical and mechanical                 by the manufacturer or by the purchaser.
+property requirements, and maximum formaldehyde
+emissions for different grades of particleboard. Also
+included are test methods, inspection practices, and            3.4      Panel: A substantial, flat, rectangular piece of
+methods of identification. Throughout this Standard,            particleboard.
+the metric values represent the standard and English
+values are offered in parentheses for informational             3.4.1 Panel average thickness: Average of the eight
+purposes. The mechanical property requirements are              measurements taken 25.4 mm (1.0 inch) in from the
+not engineering design values.                                  edge at each panel corner and at the mid-length of each
+                                                                panel edge.
+1.2.2 Suitability for certification
+This Standard was revised with reference to ISO/IEC
+17007 and is suitable for certification purposes.               3.4.2 Panel average thickness from specified: The
+                                                                difference between the panel average thickness and the
+                                                                specified thickness.
+
+2       References
+The following documents are references in this Standard         3.5     Particleboard: A generic term for a composite
+and are part of the Standard as applicable.                     panel primarily composed of cellulosic materials (usually
+                                                                wood), generally in the form of discrete pieces or particles,
+ASTM D1037-12 Standard Test Methods for Evaluating              as distinguished from fibers, bonded together with a
+Properties of Wood-Base Fiber and Particle Panel                bonding system, and which may contain additives.
+Materials
+
+ASTM D6007-02 Standard Test Method for Determining              3.6     Particles: Discrete, small pieces of cellulosic
+Formaldehyde Concentrations in Air from Wood Products           material (usually wood).
+Using a Small-Scale Chamber
+                                                                3.7      Variance from panel average thickness: The
+ASTM E1333-96(2002) Standard Test Method for                    difference between the panel average thickness and the
+Determining Formaldehyde Concentrations in Air and              individual thickness measurement that varies most from
+Emission Rates from Wood Products Using a Large                 that average.
+Chamber
+
+California Air Resource Board (CARB) Airborne Toxic             3.8      Moisture resistance (MR): The term moisture
+Control Measures (ATCM) to reduce formaldehyde                  resistance (MR) refers to the thickness swell and bond
+emissions from composite wood products. California              integrity characteristics of particleboard, used in interior
+Code of Regulation (CCR) 93120 (CARB ATCM 93120)                applications, when subjected to periodic exposure
+                                                            1
+                                        ANSI A208.1-2016 Particleboard
+
+
+to moisture. The moisture resistance categories of                maximum deviation from a straight line extending from
+particleboard are identified by the following designations:       corner to corner on the same trimmed panel edge.
+
+MR10	
+     Particleboard that meets the reduced                         4.3     Physical and mechanical properties
+     thickness swell criteria in Subsection 4.3.3.                Particleboard shall conform to the applicable physical
+                                                                  and mechanical property requirements in Tables A or B.
+MR30	Particleboard that meets the modulus of
+      rupture (MOR) criteria for advanced bond                    For Subsection 4.3.2, Table A values represent an upper
+      integrity in Subsection 4.3.4.                              specification limit. The upper 95th percentile value,
+                                                                  calculated in accordance with Annex A, shall be equal
+MR50	Particleboard that meets both the reduced                   to or less than the upper specification limit in the Table
+      thickness swell criteria in Subsection 4.3.3                (refer to Section 6.2 for sampling).
+      and the MOR criteria for advanced bond
+                                                                  For the properties in Subsections 4.3.4 through 4.3.9,
+      integrity in Subsection 4.3.4.
+                                                                  Table A values represent lower specification limits. The
+                                                                  lower 5th percentile values, calculated in accordance
+                                                                  with Annex A, shall be equal to or greater than the
+4       Requirements                                              lower specification limit in the Table (refer to Section
+                                                                  6.2 for sampling).
+4.1      General                                                  Property values in Table B represent 5 panel averages.
+Particleboard represented as conforming to any grade              However, for the properties in Subsections 4.3.2 and
+in this Standard shall meet, at the time of shipment from         4.3.3, no single panel average shall be more than 10%
+the manufacturer, the requirements specified for that             above the requirements shown for that grade. For the
+grade when tested in accordance with the provisions of            properties in subsections 4.3.4 to 4.3.10, no single panel
+this section.                                                     average shall be more than 10% below the requirements
+                                                                  shown for that grade.
+Panels represented as conforming to any grade in this
+Standard which, after shipment from the manufacturer,             4.3.1 Moisture content. The average moisture content
+have been subjected to varying conditions of environment,         at the time of shipment from the manufacturer for all grades
+storage, handling, or manufacture, may not continue to            except “D” grades in Table B shall not exceed 10 percent
+conform to the Standard when subsequently tested.                 (based on the oven dry weight of the board) except as
+                                                                  otherwise may be agreed upon by the manufacturer and
+4.2     Dimensional tolerances                                    purchaser. For “D” grades average moisture content
+                                                                  shall not exceed 9 percent or be less than 6 percent.
+4.2.1 Width and length. The trimmed width and length              The moisture content shall be determined in accordance
+of particleboard panels shall conform to the applicable           with Section 8.4 Moisture Content, including Note 5, of
+dimensional tolerance requirements specified in Tables A          ASTM D 1037-12. Three specimens shall be cut from
+and B. Width and length shall be determined in accordance         different representative locations in the panel and their
+with Section 8 Size, Physical and Appearance of Panels            test results averaged.
+of the ASTMD 1037-12.
+                                                                  4.3.2 Linear expansion. The linear expansion between
+4.2.2 Thickness. Thickness of panels shall conform                50 and 80 percent relative humidity shall be determined
+to the applicable tolerances specified in Tables A and B.         in accordance with Section 24 Linear Expansion with
+Thickness shall be measured to the nearest 0.025 mm               Change in Moisture Content and Notes 48 through 50 of
+(0.001 inch).                                                     ASTM D 1037-12. One specimen shall be cut parallel to
+                                                                  the length of each panel to be tested, and one shall be cut
+4.2.3 Squareness. The two diagonal measurements                   perpendicular to the length of the same panel. The results
+of a trimmed panel shall not deviate more than 3 mm per           of the two tests shall be averaged to determine the linear
+meter (0.036 inch per foot) of panel width when trimmed           expansion for each panel.
+to finished length and width.
+                                                                  4.3.3 Thickness swell. This section applies to the
+4.2.4 Edge straightness. Trimmed edges of panels                  grades listed in Table B as well as moisture resistant
+600 mm (2 feet) wide or wider shall not deviate more              categories MR10 and MR50. The particleboard thickness
+than 1 mm per 1.5 meters (0.016 inch per 2 feet) of panel         swell shall be determined in accordance with Section 23
+length or width. Edge straightness shall be determined            Water Absorption and Thickness Swelling of ASTM D
+by measuring to the nearest 0.5 mm (0.020 inch) the               1037-12 for 24-hour submersion. For grade PBU, one
+                                                              2
+                                          ANSI A208.1-2016 Particleboard
+
+
+specimen shall be cut from each panel. For “D” grades                a bit 3.2 mm (0.125 inch) in diameter: and (4) the speed
+and moisture resistance categories MR10 and MR50,                    of testing shall be 0.6 inch per minute. Four tests shall
+two specimens shall be cut from each panel and the test              be made on each panel to be tested. The results of the
+results averaged to determine the thickness swell for the            four tests shall be averaged to determine the edge screw-
+panel. Categories MR10 and MR50 shall not exceed 5.5                 holding capacity of the panel.
+percent thickness swell.
+
+4.3.4 Durability of exterior glue bonding system.                    4.3.10 Concentrated loading
+The average MOR after accelerated aging, when tested
+in accordance with Section 7 Accelerated Aging of ASTM               4.3.10.1 Requirement. This Subsection applies only
+D 1037-12, shall not be less than 50 percent of the MOR              to the “D” grades specified in Table B. The particleboard
+listed in Tables A and B for a particular grade. The MOR             shall (a) support a 2670 N (600 pound) force and (b) not
+shall be calculated based upon the thickness before the              deflect more than 3.2 mm (0.125 inch), relative to the
+bonding system durability test.                                      supports at an applied force of 890 N (200 pounds).
+
+4.3.5 Internal bond (IB). The IB shall be determined                 4.3.10.2 Test specimens. The test specimens shall
+in accordance with Section 11 Tension Perpendicular                  be 406 mm (16 inches) square by the thickness of the
+to Surface (Internal Bond) of ASTM D 1037-12. Three                  material. If Manufactured Home Decking is to be used
+specimens shall be cut from each panel to be tested and              with spans greater than 406 mm (16 inches) on center, the
+their test results averaged to determine the IB for the panel.       specimen size shall be increased so that the concentrated
+                                                                     loading test will be conducted using the actual spans. One
+4.3.6 Modulus of rupture (MOR) and modulus of
+                                                                     specimen shall be cut from each panel to be tested.
+elasticity (MOE). The values for MOR and MOE shall be
+determined in accordance with Section 9 Static Bending               4.3.10.3 Test apparatus. A frame shall be used to
+of ASTM D 1037-12. Six specimens shall be cut from each              support the test specimen along all four edges. The
+panel to be tested. Three specimens shall be cut parallel            distance between supports shall be 38.1 mm (1.5 inch)
+to the length of the panel and three specimens shall be cut          less than the rated span. A method of rigidly fixing the
+perpendicular to the length of the same panel. The results
+                                                                     specimen to the frame shall be provided. The test force
+of the six tests shall be averaged to determine the MOR
+                                                                     shall be applied in the center of the specimen using the
+and MOE of the panel.
+                                                                     end of a loading bar having a 25.4 mm (1.0 inch) diameter
+4.3.7 Hardness. The hardness shall be determined in                  with the end edges rounded to a radius of 1.25 mm (0.05
+accordance with Section 17 Hardness of ASTM D 1037-12.               inch). A means of applying a force of up to 2670 N (600
+Two specimens shall be cut from each panel and the test              pounds) to the bar shall be provided. The applied force
+results averaged to determine the hardness for the panel.            shall be measurable within one percent.
+
+4.3.8 Face screw-holding capacity. The face screw-                   A dial gauge for measuring specimen deflection relative
+holding capacity shall be determined in accordance with              to the supports shall be mounted across the frame
+Section 16 Direct Screw Withdrawal, and Notes 34 and 35              members immediately adjacent to the loading bar.
+of ASTM D 1037–12, except that: (1) Section 16.4 shall
+not apply: (2) if the panel is less than 19 mm (3/4 inch)            4.3.10.4 Test procedure. With the specimen firmly
+thick, the specimen shall be made up of 2 thicknesses                fixed in place, set the deflection gauge at zero. Apply
+bonded together with an adhesive. Panels less than 10                a force of 890 N (200 pounds). Maintain this force until
+mm (3/8 inch) thick shall not be tested; (3) lead holes shall        the deflection stabilizes and then record the deflection.
+be predrilled a minimum of 13 mm (0.5 inch) deep, using              Gradually increase the force until a 2670 N (600 pound)
+a bit 3.2 mm (0.125 inch) in diameter; and (4) the speed             force is reached or failure occurs.
+of testing shall be 0.6 inch per minute. Four tests shall
+be made on each panel to be tested. The results of the
+four tests shall be averaged to determine the face screw-            4.4     Formaldehyde emissions provisions
+holding capacity of the panel.                                       Formaldehyde emissions from particleboard shall be
+                                                                     tested in accordance with ASTM E1333-96 (2002).
+4.3.9 Edge screw-holding capacity. The average                       ASTM E1333-96(2002) shall be used when Sampling for
+edge screw-holding capacity shall be determined in                   Acceptance as required in Section 6.2.
+accordance with Section 16 Direct Screw Withdrawal, and
+Notes 34 through 36 of ASTM D 1037-12, except that: (1)              As an alternative to ASTM E1333-96(2002), the average
+Section 16.4 shall not apply; (2) panels less than 16 mm             of three test results using the ASTM D6007-02 can be
+(5/8 inch) thick shall not be tested; and (3) lead holes shall       used for on-going compliance testing as described in
+be predrilled a minimum of 13 mm (0.5 inch) deep, using              Section 93120.9 of the CARB ATCM 93120.
+                                                                 3
+                                        ANSI A208.1-2016 Particleboard
+
+
+Formaldehyde emissions shall not exceed the maximum               designation followed by a hyphen and a moisture
+level of 0.09 ppm and the product shall be labeled in             resistance designation set forth in Subsection 3.8.
+accordance to Section 5.1 Explanation of grades.
+                                                                  For products referenced in building code applications
+The loading ratios for grades H, M, D, and PBU shall be           requiring enhanced moisture resistance the special
+0.425 m2/m3 (0.13 ft2/ft3) and for grade LD shall be 0.13         suffix designation of “-Exterior Glue” shall be used.
+m2/m3 (0.04 ft2/ft3).                                             For instance, “M-3-Exterior Glue” indicates medium
+                                                                  density particleboard, Grade 3 from Table B, made with
+Note: The United States Department of Housing and                 exterior glue to comply with the durability requirements
+Urban Development’s Manufactured Home Construction                in Subsection 4.3.4.
+and Safety Standards, 24 C.F.R. Part 3280, exempts
+particleboard bonded with a phenol-formaldehyde resin
+system from formaldehyde emission testing, for end use            5.2      Information to be provided
+applications in manufactured homes.                               All particleboard which is represented as conforming to
+                                                                  this American National Standard shall be identified with
+                                                                  the following information:
+                                                                  a) Manufacturer’s name or trademark and mill identification
+5       Identification
+                                                                  b) “ANSI A208.1-2016”
+5.1      Explanation of grades                                    c) Grade
+The particleboard grades in this Standard are identified          d) Lot number or date of production
+by letter designation, followed by a hyphen and a digit
+                                                                  e) For D grade products only, the words
+or letter. Formaldehyde emission maximum level and
+                                                                     “MANUFACTURED HOME DECKING” and the
+special performance characteristics are identified by the
+                                                                     certified load span if greater than 406 mm (16 inches)
+use of a letter(s), number, or term located immediately
+                                                                     for compliance with Subsection 4.3.10 Concentrated
+following the grade designation.
+                                                                     loading “CONCENTRATED LOAD TESTED AT
+The first letter(s) designations have the following                  (INSERT SPAN IN INCHES)”
+meanings:                                                         f) For PBU grade products              only,   the   word
+                                                                     “UNDERLAYMENT”.
+H 	High density (generally above 800 kg/m3                       g) For products complying with Subsection 4.3.4 only,
+    (50 lb/ft3))                                                     the words “EXTERIOR GLUE”.
+
+M 	Medium density (generally between 640–
+    800 kg/m3 (40–50 lb/ft3))                                     5.3     Methods of identification
+                                                                  For grades in Table A, the information required by
+                                                                  Section 5.2 shall be provided either by (a) stamping it on
+LD 	Low density (generally less than 640 kg/m3
+                                                                  each panel or (b) providing a written statement thereof
+     (40 lb/ft3))
+                                                                  in a unit label, invoice or other document associated
+                                                                  with each panel. For grades in Table B the information
+D 	Manufactured Home Decking
+                                                                  required by Section 5.2 shall be stamped on each panel.
+
+PBU 	Underlayment
+
+The second digit or letter designation indicates the              6       Conformity Assessment
+grade identification within a particular density or product
+description. For instance, “M-2” indicates medium                 6.1    Manufacturers’ inspection and testing.
+density particleboard, Grade 2.                                   Each manufacturer who represents products as
+                                                                  conforming to this Standard shall utilize statistically
+5.1.1 Formaldehyde emission designation                           based sampling plans and appropriate quality control
+The maximum formaldehyde emission level is designated             procedures to assure compliance with this Standard.
+immediately after the grade with a hyphen and “-F09” for
+emission limit of 0.09 ppm.
+                                                                  6.2     Sampling for acceptance.
+5.1.2 Moisture resistance designation                             Should a buyer or third party desire to perform the
+Particleboard moisture resistant characteristics shall be         inspections and tests specified in this Standard, five
+identified by using a grade and formaldehyde emission             panels for physical and mechanical testing and three
+                                                              4
+                                       ANSI A208.1-2016 Particleboard
+
+
+panels for formaldehyde emission testing of each grade
+and thickness, selected at random from the shipment,
+shall be used as the sample. This Standard cannot
+be used to properly evaluate single panels, but as an
+approximation, the upper or lower specification limits
+may be taken as maximum or minimum values. In the
+five panels sampling applicable for Table A properties,
+note that statistically if any single panel average falls
+above or below the specification limits, the calculated
+U95% percentile of L5% percentile value will not be in
+compliance. Annex A provides the statistical equations
+required to perform the compliance calculation.
+
+ASTM E1333-96(2002) test method for formaldehyde
+emissions shall be used for Sampling for Acceptance.
+
+Panels which have been allowed to exceed the specified
+moisture content after shipment may not conform to the
+physical and mechanical property requirements of the
+Standard when subsequently tested.
+
+Should a dispute arise, the metric values, not the English
+unit values, shall be used as the standard.
+
+6.2.1 Dispute resolution
+If there is a dispute between the supplier and buyer
+regarding the lot acceptance, then an additional 15
+samples will be collected randomly from the entire lot
+and tested to approximate the L5% or U95% values for the
+lot. The acceptance will be based on the following:
+• No more than 1 panel of the 20 being outside the Table
+  A specifications.
+• The new 20-panel sample L5% or U95% shall meet the
+  Table A specification limits.
+
+
+
+
+                                                             5
+                                                ANSI A208.1-2016 Particleboard
+
+
+                                                                  Table A
+                                       Requirements for Grades of Particleboard1,2
+                          Dimensional Tolerances                                      Physical and Mechanical Properties4
+                                  Thickness Tolerance5                                                           Screw-holding
+                            Panel Average      Variance from                                                                            Linear
+            Length &        Thickness from     Panel Average      Modulus of     Modulus of       Internal                            Expansion
+             Width             Specified         Thickness         Rupture        Elasticity       Bond       Face          Edge      max. avg.
+                                                                   N/            N/               N/
+Grade3 mm        (inch)      mm      (inch)     mm       (inch)   mm2   (psi)   mm2      (psi)   mm2 (psi)   N     (lb)   N    (lb)      %
+ H-1       ±2.0 (±0.080) ±0.200     (±0.008)   ±0.100   (±0.004) 14.9 (2161) 2160 (313300) 0.81 (117) 1600 (360) 1200 (270)             NS6
+ H-2       ±2.0 (±0.080) ±0.200     (±0.008)   ±0.100   (±0.004) 18.5 (2683) 2160 (313300) 0.81 (117) 1700 (382) 1400 (315)              NS
+ H-3       ±2.0 (±0.080) ±0.200     (±0.008)   ±0.100   (±0.004) 21.1 (3060) 2475 (359000) 0.90 (131) 1800 (405) 1400 (315)              NS
+ M-0       ±2.0 (±0.080) ±0.200     (±0.008)   ±0.100   (±0.004) 7.6    (1102) 1380 (200200) 0.31 (45)           NS           NS         NS
+ M-1       ±2.0 (±0.080) ±0.200     (±0.008)   ±0.100   (±0.004) 10.0 (1450) 1550 (224800) 0.36 (52)             NS           NS        0.40
+ M-S       ±2.0 (±0.080) ±0.200     (±0.008)   ±0.100   (±0.004) 11.0 (1595) 1700 (246600) 0.36 (52) 800 (180) 700 (157)                0.40
+ M-2       ±2.0 (±0.080) ±0.200     (±0.008)   ±0.100   (±0.004) 13.0 (1885) 2000 (290100) 0.40 (58) 900 (202) 800 (180)                0.40
+M-3i   7
+           ±2.0 (±0.080) ±0.200     (±0.008)   ±0.100   (±0.004) 15.0 (2176) 2500 (362600) 0.50 (73) 1000 (225) 900 (202)               0.40
+LD-1       ±2.0 (±0.080) +0.125     (+0.005) ±0.125     (±0.005) 2.8    (406)   500     (72500) 0.10 (15) 360 (81)            NS        0.40
+                         +0.125     (-0.015)
+LD-2       ±2.0 (±0.080) +0.125     (+0.005) ±0.125     (±0.005) 2.8    (406)   500     (72500) 0.14 (20) 520 (117)           NS        0.40
+                         -0.375     (-0.015)
+
+
+
+ 1
+     Particleboard shall conform to requirements as specified in Section 4.4 Formaldehyde emissions provisions. Note:
+     The United States Department of Housing and Urban Development’s Manufactured Home Construction and Safety
+     Standards, 24 C.F.R. Part 3280, exempts particleboard bonded with a phenol-formaldehyde resin system from
+     formaldehyde emission testing, for end use applications in manufactured homes.
+ 2
+     Grades listed in this table shall also comply with the appropriate requirements listed in Section 4 of this Standard. Panels
+     designated as “Exterior Glue” must maintain 50% MOR after ASTM D 1037-12 accelerated aging (Subsection 4.3.4).
+ 3
+     Refer to Annex B for general use and grade information.
+ 4
+     Physical and mechanical property values represent a minimum or maximum value representing 5 (lower) or 95 (upper)
+     percentile expressions; respectively.
+ 5
+     Thickness tolerance values are only for sanded panels. Unsanded panels shall be in accordance with any thickness
+     tolerances specified by agreement between the manufacturer and the purchaser.
+ 6
+     NS—Not Specified
+ 7
+     Grade M-3i has an “i” for “Industrial” to differentiate it from Grade M-3 found on Table B that is commonly referenced to
+     in building codes for structural applications.
+
+
+
+
+                                                                        6
+                                                        ANSI A208.1-2016 Particleboard
+
+
+                                                                    Table B
+                    Requirements of Particleboard Flooring Products and Building Code Grades1,2
+                       Dimensional Tolerances                                          Physical and Mechanical Properties4
+                                 Thickness Tolerance5                                                                                                 Linear
+         Length & Width Panel Average Variance from Modulus of          Modulus of       Internal            Concentrated6   Thickness     Expansion
+           Tolerance    from Specified Panel Average Rupture             Elasticity       Bond      Hardness   Loading     Swell max. avg. max. avg.
+                                                           N/                            N/
+Grade3       mm    (inch)   mm      (inch)   mm     (inch) mm2 (psi) N/mm2     (psi)    mm2 (psi)   N     lb    N          lb   mm     (inch) %         %
+              +0    (+0) ±0.375 (±0.015) ±0.250 (±0.010) 11.0 (1595) 1725 (250200) 0.40 (58) 2225 (500)             NS7         1.6 (0.063) NS         0.35
+ PBU
+             -4.0 (-0.160)
+ D-2         ±2.0 (±0.080) ±0.375 (±0.015) ±0.250 (±0.010) 16.5 (2393) 2750   (398900) 0.55 (80) 2225 (500) 2670 (600)               NS          8     0.30
+ D-3         ±2.0 (±0.080) ±0.375 (±0.015) ±0.250 (±0.010) 19.5 (2828) 3100   (449600) 0.55 (80) 2225 (500) 2670 (600)               NS          8     0.30
+
+
+                                 Thickness Tolerance5                                                                  Screw-holding
+
+
+                                                                                                                                                       Linear
+                        Panel Average Variance from Modulus of          Modulus of       Internal                                                    Expansion
+         Length & Width from Specified Panel Average Rupture             Elasticity       Bond      Hardness        Face             Edge            max. avg.
+                                                            N/                           N/
+             mm    (inch)   mm      (inch)   mm     (inch) mm2 (psi) N/mm2     (psi)    mm2 (psi)   N     lb    N          lb    N          lb          %
+ M-3         ±2.0 (±0.080) ±0.200 (±0.008) ±0.100 (±0.004) 16.5 (2393) 2750   (398900) 0.55 (80) 2225 (500) 1100 (247)          1000      (225)        0.35
+
+
+
+         1
+             Particleboard shall conform to requirements as specified in Section 4.4 Formaldehyde emissions provisions.
+             Note: The United States Department of Housing and Urban Development’s Manufactured Home Construction and
+             Safety Standards, 24 C.F.R. Part 3280, exempts particleboard bonded with a phenol-formaldehyde resin system
+             from formaldehyde emission testing, for end use applications in manufactured homes.
+         2
+             Grades listed in this table shall also comply with the appropriate requirements listed in Section 4 of this Standard. Panels
+             designated as “Exterior Glue” must maintain 50% MOR after ASTM D 1037-12 Accelerated Aging (Subsection 4.3.4).
+         3
+             Refer to Annex B for general use and grade information.
+         4
+             Physical and mechanical property values represent a five panel average.
+         5
+             Thickness tolerance values are only for sanded panels. Unsanded panels shall be in accordance with any thickness
+             tolerances specified by agreement between the manufacturer and the purchaser.
+         6
+             In addition to supporting 2670 Newtons, “D” grades shall not deflect more than 3.2 mm (0.125 inch), relative to the
+             supports at an applied force of 890 N (200 pounds). See Subsection 4.3.10 Concentrated loading.
+         7
+             NS—Not Specified
+
+
+
+
+                                                                          7
+                                      ANSI A208.1-2016 Particleboard
+
+
+                                                     Annex A
+                 Calculation of Lower 5th Percentile (L5%) and Upper 95th Percentile (U95%) Values
+                                                  (Normative)
+
+A.1 Mean value of each individual panel (panel mean)
+
+
+
+
+  = panel mean (mean value of the n single test values)
+
+  = single test value
+
+ = number of test pieces cut from each individual panel
+
+
+A.2 Grand mean (mean of panel means)
+
+
+
+
+  = 5 or 20-panel average (grand mean of panel means)
+
+ = number of panels (i.e. 5 or 20)
+
+
+A.3 Standard deviation of panel means
+
+
+
+
+  = standard deviation between panel means
+
+
+A.4 Lower 5th Percentile (L5%) of a normally distributed panel property
+
+
+
+
+A.5 Upper 95th Percentile (U95%) of a normally distributed panel property
+
+
+
+ = single-sided 5% t-value of a normally distributed sample
+
+  = 2.13
+
+   = 1.73
+
+
+
+
+                                                          8
+                                             ANSI A208.1-2016 Particleboard
+
+
+                                                        Annex B
+                                                General Use and Grades
+                                                     (Informative)
+
+    Use                                          Grade or classification               Table
+    Commercial                                   M-0, M-1, M-S                           A
+    Industrial                                   M-2, M-3i                               A
+    High density industrial                      H-1, H-2, H-3                           A
+    Door core                                    LD-1, LD-2                              A
+    Interior Stair Tread   1
+                                                 M-3                                     B
+    Exterior construction                        M-1-Exterior glue
+                                                 M-S-Exterior glue
+                                                                                         A
+                                                 M-2-Exterior glue
+                                                 M-3i-Exterior glue
+    Exterior industrial                          M-1-Exterior glue
+                                                 M-S-Exterior glue
+                                                                                         A
+                                                 M-2-Exterior glue
+                                                 M-3i-Exterior glue
+    High density exterior industrial             H-1-Exterior glue
+                                                 H-2-Exterior glue                       A
+                                                 H-3-Exterior glue
+    Underlayment                                 PBU                                     B
+    Manufactured Home Decking                    D-2, D-3                                B
+    Interior applications of high humidity       -MR10, -MR30, -MR50
+                                                                                         A
+    or intermittent wetting
+    Manufactured HUD Homes                       -F09                                    A
+    CARB ATCM 93120                              -F09                                   A,B
+
+1
+    Product requirements for particleboard interior stair tread are specified in the U.S. Department of Housing and Urban
+    Development (HUD), Use of Materials Bulletin No. 70b that is available from the Composite Panel Association or HUD.
+
+
+
+
+                                                                 9
+                                       ANSI A208.1-2016 Particleboard
+
+
+                                                     Annex C
+                                                Conversion Values
+                                                  (Informative)
+The dimensional, physical and mechanical property requirements of this Standard are expressed in metric units with
+English units shown in parentheses for informational purposes. English values, in most circumstances, are rounded to
+a practical degree of precision.
+
+The conversion factors for the units found in this Standard are as follows:
+
+                    Dimensions
+                       1 inch                          = 0.0254 meter (m)
+                       1 inch                          = 25.4 millimeters (mm)
+                       1m                              = 39.370 inch
+                    Mass
+                       1 gram (g)                      = 0.0022046 pound (lb)
+                       1 lb                            = 453.5924 g
+                    Force
+                       1 newton (N)                    = 101.9716 g
+                       1N                              = 0.2248089 lb
+                       1g                              = 0.0098067 N
+                       1 lb                            = 4.448222 N
+                    Stress (Force/area)
+                       1 pascal (Pa)                   = 1 N/m2
+                       1 kilopascal (kPa)              = 0.001 N/mm2
+                       1 megapascal (MPa)              = 1 N/mm2
+                       1 N/mm2                         = 145.0377 pounds per square inch (psi)
+                       1 psi                           = 0.0068948 N/mm2
+
+
+
+
+Metric Values
+
+Conversions for:                                                              Rounded to:
+force (Newtons)                         less than 100 N                       nearest 1 N
+                                        greater than 100 N                    nearest 10 N
+
+stress (N/mm2)                          less than 2 N/mm2                     nearest 0.01 N/mm2
+                                        between 2 and 30 N/mm2                nearest 0.1 N/mm2
+                                        greater than 30 N/mm2                 nearest 1 N/mm2
+
+dimensions                              less than 50 mm                       nearest 0.025 mm
+                                        between 50 and 500 mm                 nearest 0.1 mm
+                                        greater than 500 mm                   nearest 1 mm
+
+
+
+
+                                                           10
+                                        ANSI A208.1-2016 Particleboard
+
+
+                                                      Annex D
+                                                  Cut-up Pattern
+                                                   (Informative)
+Sample cut-up pattern1
+H — Hardness
+I — Internal Bond
+L — Linear Expansion
+M — Modulus of Rupture/Modulus of Elasticity (MOR/MOE)2,3,4
+T — Thickness Swell (Required only for grades PBU, D-2 and D-3)
+C — Concentrated Load (Required only for grades D-2 and D-3)
+
+
+
+
+                                          C                                                              16”
+
+
+
+
+                                   M3                                        M5
+                                                  I3                    L1                I1
+
+                  H1
+
+                                                                  T2
+
+
+             M2                                                                                          24”
+                                                         M6                                         M4
+
+
+                                                                                               L2
+                       T1
+
+
+                                                                 I2
+                                   M1                                              H2
+
+
+
+                                 24”                                         24”
+
+
+
+1
+    Refer to the appropriate ASTM D 1037-12 test procedure for information on specimen size requirements.
+2
+    Screw-holding specimens may be cut from MOR specimens after breaking.
+3
+    The exact dimension of MOR/MOE specimens is dependent on specimen thickness.
+4
+    Moisture content samples may be cut from broken MOR specimens.
+
+
+
+
+                                                         11
+                                     ANSI A208.1-2016 Particleboard
+
+
+                                                    Annex E
+                                                 Bibliography
+                                                 (Informative)
+Composite Panel Association (CPA). 2016. Standard Method for Measurement of Warp in Composite Panels.
+
+CPA. 2000. Storage and Handling of Particleboard and MDF. Technical Bulletin.
+
+
+
+
+                                                       12
+              C O M P O S I T E PA N E L A S S O C I AT I O N
+Founded in 1960, the Composite Panel Association (CPA) is dedicated to advancing the North American
+wood–based panel and decorative surfacing industries. CPA represents both industries on technical,
+regulatory, quality assurance and product acceptance issues. CPA General Members include the leading
+manufacturers of particleboard, medium density fiberboard (MDF) and hardboard, representing about
+95% of North American manufacturing capacity.
+
+CPA Associate Members include manufacturers of decorative surfaces, furniture, cabinets, mouldings,
+doors and equipment, along with laminators, distributors, industry media and adhesive suppliers. All are
+committed to product advancement and industry competitiveness.
+

@@ -1,0 +1,31 @@
+                                                                                                                                                         INDUSTRIAL
+
+
+
+                    2 Flute Solid Carbide Spektra™ Extreme Tool Life Coated Spiral Plunge with Corner Radius Router Bit
+                                                                          CNC Operating Spindle Speed: 18,000 RPM / Depth of Cut: 1 x Tool Diameter †
+
+
+
+                                                                                                                           Hard / Soft                      Tool Reference #’s   Dia.
+                                                                                                                                                                  2 Flute
+                Diameter                 Soft Wood                       Hard Wood                  MDF                     Plastics                             46460-K         1/4"
+                2 Flute           Feed Rate Chip Load Feed Rate Chip Load Feed Rate Chip Load Feed Rate Chip Load
+                                    IPM*    Per Tooth   IPM*    Per Tooth   IPM*    Per Tooth   IPM*    Per Tooth
+                1/4" (0.25)       250" - 320" 0.007" - 0.009" 180" - 250" 0.005" - 0.007" 210" - 290" 0.006" - 0.008" 150" - 210" 0.004" - 0.006"
+                1/2" (0.50)       330" - 425" 0.009" - 0.011" 240" - 330" 0.007" - 0.009" 280" - 390" 0.008" - 0.010" 200" - 280" 0.006" - 0.008"
+
+              *IPM Inches per minute
+
+
+† Depth of Cut: 1 x D Use recommended feed rate
+                2 x D Reduce feed rate by 25%
+                3 x D Reduce feed rate by 50%
+ Simple Machining Calculations:
+ To find RPM: (SFM x 3.82) / diameter of tool
+ To find SFM: 0.262 x diameter of tool x RPM
+ To find Feed Rate IPM: RPM x # of flutes x chip load
+ To find Chip Load: Feed Rate IPM / (RPM x # of flutes)
+ To find Ramp Down: Feed Rate IPM / # of flutes
+ Disclaimer: It is important to understand that these values are only recommendations.                                                                  © Copyright Amana Tool® All Rights Reserved
+

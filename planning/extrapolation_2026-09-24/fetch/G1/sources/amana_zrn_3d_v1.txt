@@ -1,0 +1,126 @@
+                                                                                                                                                                                                               INDUSTRIAL
+                                                     ZrN-Coated and Uncoated 2D/3D Carving CNC Solid Carbide Router Bits
+                                                                                                                Operating RPM: 18,000
+                                                                            1mm (0.0394")                                              1/16" (0.0625")                                   6mm (0.2362") - 1/4" (0.250")                        Tool Reference #’s
+2 Flute Ball Nose                                                  IPM*             Chip Load Per Tooth                     IPM*                 Chip Load Per Tooth                   IPM*             Chip Load Per Tooth                  46252      1/16" Dia.
+                                                                                      (Based on 18,000 RPM)                                      (Based on 18,000 RPM)                                    (Based on 18,000 RPM)             46252-S 1/16" Dia.
+  Aluminum, Copper, Brass, Plastic, Acrylic, Plexglas®         20" - 35"                0.0005" - 0.0015"                 35" - 70"                0.001" - 0.002"              140" - 210"                  0.004" - 0.006"                 46256      1mm Dia.
+                                                                                                                                                                                                                                             46283       1/4" Dia.
+  Wood, MDF, Sign-Foam                                         30" - 70"                0.00075" - 0.002"                 55" - 90"                0.003" - 0.005"              250" - 320"                  0.007" - 0.009"                 46285       1/4" Dia.
+                                                                                                                                                                                                                                             46289       1/4" Dia.
+                                                                                                                                                                                                                                             46294       1/4" Dia.
+                                                                                                                                                                                                                                            46294-S      1/4" Dia.
+                                                                                                                                                                                                                                            46294-U      1/4" Dia.
+                                                                                                                                                                                                                                             46471      1mm Dia.
+                                                                                                                                                                                                                                             46479      6mm Dia.
+
+                                                                             1/8" (0.125")                                             6mm (0.2362")                                              1/4" (0.250")                               Tool Reference #’s
+2 Flute Flat Bottom                                                IPM*               Chip Load Per Tooth                   IPM*               Chip Load Per Tooth                     IPM*               Chip Load Per Tooth                46254       1/8" Dia.
+                                                                                      (Based on 18,000 RPM)                                      (Based on 18,000 RPM)                                    (Based on 18,000 RPM)              46577       1/4" Dia.
+  Aluminum, Copper, Brass                                     110" - 180"                0.003" - 0.005"                 140" - 210"               0.004" - 0.006"              180" - 250"                  0.005" - 0.007"                 46585      6mm Dia.
+  Plastic, Acrylic, Plexglas®                                  70" - 145"                0.002" - 0.004"                 140" - 210"               0.004" - 0.006"              180" - 250"                  0.005" - 0.007"
+  Wood, MDF, Sign-Foam                                        110" - 180"                0.003" - 0.005"                 250" - 320"               0.007" - 0.009"              215" - 290"                  0.006" - 0.008"
+
+3 Flute                          1/32" (0.031") - 1mm (0.0394")        1/8" (0.125") - 3.2mm (.126")                 3/16" (0.1875")                        6mm (0.2362")                          3/8" (0.375")                         1/2" (0.500")
+Ball Nose                          IPM*     Chip Load Per Tooth
+                                              (Based on 18,000 RPM)
+                                                                        IPM*      Chip Load Per Tooth
+                                                                                   (Based on 18,000 RPM)
+                                                                                                              IPM*       Chip Load Per Tooth
+                                                                                                                         (Based on 18,000 RPM)
+                                                                                                                                                     IPM*     Chip Load Per Tooth
+                                                                                                                                                               (Based on 18,000 RPM)
+                                                                                                                                                                                           IPM*       Chip Load Per Tooth
+                                                                                                                                                                                                      (Based on 18,000 RPM)
+                                                                                                                                                                                                                                  IPM*      Chip Load Per Tooth
+                                                                                                                                                                                                                                             (Based on 18,000 RPM)
+  Aluminum, Copper, Brass,        27" - 81"    0.0005" - 0.0015"      50" - 100"    0.0009" - 0.0018"      80" - 100"     0.0015" - 0.0025"      135" - 215"     0.0025" - 0.004"       215" - 320"     0.004" - 0.006"       320" - 430"       0.006" - 0.008"
+  Plastic, Acrylic, Plexglas®
+  Wood, MDF, Sign-Foam           40" - 108"    0.00075" - 0.002"      80" - 100"    0.0015" - 0.0025"      100" - 170"     0.0025" - 0.004"      215" - 320"     0.004" - 0.006"        320" - 430"     0.006" - 0.008"       375" - 490"       0.007" - 0.009"
+* IPM Inches per minute                                                                                                                                                                                                                       Tool Reference #’s
+                                                                                                                                                                                                                                             46280      1/32" Dia.
+                                                                                                                                                                                                                                            46280-S 1/32" Dia.
+                                                                                                                                                                                                                                            46280-U 1/32" Dia.
+                                                                                                                                                                                                                                             46281      1/16" Dia.
+                                                                                                                                                                                                                                             46284       1/8" Dia.
+                                                                                                                                                                                                                                            46284-U      1/8" Dia.
+                                                                                                                                                                                                                                             46286       1/8" Dia.
+ Simple Machining Calculations:                                                                                                                                                                                                             46286-S      1/8" Dia.
+ To find RPM = SFM x 3.82 ÷ diameter of tool                                                                                                                                                                                                46286-U      1/8" Dia.
+                                                                                                                                                                                                                                             46287       1/8" Dia.
+ To find SFM = 0.262 x diameter of tool x RPM                                                                                                                                                                                                46288       1/8" Dia.
+ To find Feed Rate = RPM x # of flutes x chip load                                                                                                                                                                                           46291      1/32" Dia.
+                                                                                                                                                                                                                                             46295       1/8" Dia.
+ To find Chip Load =        IPM                                                                                                                                                                                                              46298      3/16" Dia.
+                     RPM x # of Flutes                                                                                                                                                                                                       46470 0.8mm Dia.
+                                                                                                                                                                                                                                             46471 0.8mm Dia.
+ Depth of Cut: 1 x D Use recommended chip load                                                                                                                                                                                               46474 3.2mm Dia.
+                                                                                                                                                                                                                                             46494       3/8" Dia.
+                  2 x D Reduce chip load by 25%                                                                                                                                                                                              46495       1/2" Dia.
+                  3 x D Reduce chip load by 50%                                                                                                                                                                                              46580      1/32" Dia.
+ Disclaimer: These values are based on test results using 18,000 RPM. Your results may vary.                                                                                                                                                            Page 1 of 2
+             It is important to understand that these values are only recommendations.                                                                                                                         © Copyright Amana Tool® All Rights Reserved
+                                                                                                                                                                                                                      INDUSTRIAL
+                                                       ZrN-Coated and Uncoated 2D/3D Carving CNC Solid Carbide Router Bits
+                                                                                                                    Operating RPM: 18,000
+
+
+3 Flute                         1/32" (0.031") - 1mm (0.0394")                     1/16" (0.0625")                             1/8" (0.125")                            3/16 (0.1875")                            1/2" (0.500")               Tool Reference #’s
+Flat Bottom                      IPM*      Chip Load Per Tooth
+                                            (Based on 18,000 RPM)
+                                                                           IPM*       Chip Load Per Tooth
+                                                                                       (Based on 18,000 RPM)
+                                                                                                                    IPM*         Chip Load Per Tooth
+                                                                                                                                 (Based on 18,000 RPM)
+                                                                                                                                                             IPM*          Chip Load Per Tooth
+                                                                                                                                                                           (Based on 18,000 RPM)
+                                                                                                                                                                                                      IPM*          Chip Load Per Tooth
+                                                                                                                                                                                                                    (Based on 18,000 RPM)
+                                                                                                                                                                                                                                             46290      1/16" Dia.
+                                                                                                                                                                                                                                            46290-U 1/16" Dia.
+  Aluminum, Copper, Brass,     10" - 21"      0.0002" - 0.0004"       20" - 30"         0.0004" - 0.0006"         55" - 100"       0.001" - 0.002""        81" - 160"        0.0015" - 0.003"       215" - 320"        0.004" - 0.006"       46299       1/8" Dia.
+  Plastic, Acrylic, Plexglas
+                           ®
+                                                                                                                                                                                                                                             46570      1/32" Dia.
+  Wood, MDF, Sign-Foam         15" - 25"      0.0003" - 0.0005"       30" - 45"         0.0006" - 0.0008"         80" - 135"      0.0015" - 0.0025"        135" - 240"      0.0025" - 0.0045"       320" - 490"        0.006" - 0.008"       46571      1/32" Dia.
+                                                                                                                                                                                                                                             46573       1/8" Dia.
+                                                                                                                                                                                                                                             46574       1/8" Dia.
+                                                                                                                                                                                                                                             46576       1/8" Dia.
+                                                                                                                                                                                                                                             46575      3/16" Dia.
+                                                                                                                                                                                                                                             46579       1/2" Dia.
+                                                                                                                                                                                                                                             46581      1mm Dia.
+3 Flute Extra Long
+Ball Nose &                                                                       1/4" (0.250")                                            3/8" (0.375")                                               1/2" (0.500")                          Tool Reference #’s
+Flat Bottom                                                         IPM*                   Chip Load Per Tooth                   IPM*               Chip Load Per Tooth                    IPM*                Chip Load Per Tooth           46490       1/4" Dia.
+                                                                                          (Based on 18,000 RPM)                                       (Based on 18,000 RPM)                                       (Based on 18,000 RPM)
+                                                                                                                                                                                                                                             46491       3/8" Dia.
+  Aluminum, Copper, Brass, Plastic, Acrylic, Plexglas®         135" - 190"                 0.0025" - 0.0035"               160" - 270"                   0.003" - 0.005"                215" - 320"                 0.004" - 0.006"          46493       1/2" Dia.
+  Wood, MDF, Sign-Foam                                         215" - 320"                  0.0004" - 0.006"               270" - 370"                   0.005" - 0.007"                320" - 430"                 0.006" - 0.008"          46496       1/2" Dia.
+                                                                                                                                                                                                                                             46590       1/4" Dia.
+                                                                                                                                                                                                                                             46593       1/2" Dia.
+                                                                                                                                                                                                                                             46596       1/2" Dia.
+
+4 Flute Ball Nose                                      1.5mm (0.0591")                                  1/16" (0.0625")                                    1/8" (0.125")                                    1/4" (0.250")                     Tool Reference #’s
+& Flat Bottom                                IPM*           Chip Load Per Tooth                IPM*           Chip Load Per Tooth               IPM*            Chip Load Per Tooth                IPM*          Chip Load Per Tooth         46282      1/16" Dia.
+                                                             (Based on 18,000 RPM)                             (Based on 18,000 RPM)                            (Based on 18,000 RPM)                              (Based on 18,000 RPM)     46292       1/8" Dia.
+  Aluminum, Copper, Brass                  25" - 30"         0.00037" - 0.00045"            25" - 30"          0.00037" - 0.00045"            25" - 30"          0.00037" - 0.00045"            25" - 30"          0.00037" - 0.00045"       46293      1/16" Dia.
+  Plastic, Acrylic, Plexglas
+                           ®
+                                           30" - 45"          0.0004" - 0.0006"             25" - 30"          0.00037" - 0.00045"            25" - 30"          0.00037" - 0.00045"            25" - 30"          0.00037" - 0.00045"       46472 1.5mm Dia.
+                                                                                                                                                                                                                                             46572      1/16" Dia.
+  Wood, MDF, Sign-Foam                     35" - 45"         0.0005" - 0.00065"             35" - 45"          0.0005" - 0.00065"             35" - 45"          0.0005" - 0.00065"             35" - 45"           0.0005" - 0.00065"
+                                                                                                                                                                                                                                             46582      1/16" Dia.
+* IPM Inches per minute                                                                                                                                                                                                                      46583       1/8" Dia.
+                                                                                                                                                                                                                                             46584       1/4" Dia.
+ Simple Machining Calculations:
+ To find RPM = SFM x 3.82 ÷ diameter of tool
+ To find SFM = 0.262 x diameter of tool x RPM
+ To find Feed Rate = RPM x # of flutes x chip load
+ To find Chip Load =        IPM
+                     RPM x # of Flutes
+ Depth of Cut: 1 x D Use recommended chip load
+                  2 x D Reduce chip load by 25%
+                  3 x D Reduce chip load by 50%
+ Disclaimer: These values are based on test results using 18,000 RPM. Your results may vary.                                                                                                                                                             Page 2 of 2
+             It is important to understand that these values are only recommendations.                                                                                                                                 © Copyright Amana Tool® All Rights Reserved
+

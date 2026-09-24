@@ -1,0 +1,170 @@
+                                    Fräsparameter
+                        Berechnungen und Praxistipps
+
+
+
+
+SOROTEC GmbH         Tel.: +49 (0) 7227-994255-0
+Withig 12            Fax: +49 (0) 7227-994255-9
+77836 Rheinmünster   E-Mail: sorotec@sorotec.de
+                     Web: www.sorotec.de               Version 1.0.2
+Berechnungen
+und Praxistipps
+
+Berechnungen
+Grundlage für die Berechnung von Drehzahl und                      Zahlen sind experimentell ermittelte Richtwerte zur
+Vorschub ist die folgende Tabelle mit Angaben zu                   groben Orientierung, die je nach Maschine und Peri-
+Schnittgeschwindigkeiten und Zahnvorschub. Die                     pherie in der Praxis abweichen können.
+
+Richtwerte Fräsparameter
+                                                                     Durchmesser Fräser
+                  Schnitt-
+                  geschw.     Ø 1 mm       Ø 2 mm   Ø 3 mm      Ø 4 mm      Ø 5 mm    Ø 6 mm      Ø 8 mm    Ø 10 mm    Ø 12 mm
+                   m/min.
+                                                            Zahnvorschub in mm / Zahn / Umdrehung
+Guss-Aluminium
+                    500        0,010       0,010    0,010        0,015       0,015     0,025        0,030     0,038     0,050
+> 6% Si
+Aluminium
+                    500        0,010       0,020    0,025        0,050       0,050     0,050        0,064     0,080     0,100
+Knetlegierung
+
+Weichkunststoff     600        0,025       0,030    0,035        0,045       0,065     0,090        0,100     0,200     0,300
+
+Hartkunststoff      550        0,015       0,020    0,025        0,050       0,060     0,080        0,089     0,100     0,150
+
+Holz hart           450        0,020       0,025    0,030        0,035       0,045     0,055        0,065     0,080     0,090
+
+Holz weich          500        0,025       0,030    0,035        0,040       0,050     0,060        0,070     0,085     0,100
+
+MDF                 450        0,030       0,040    0,045        0,050       0,060     0,070        0,080     0,090     0,110
+
+Messing,
+                    365        0,015       0,020    0,025        0,025       0,030     0,050        0,056     0,065     0,080
+Kupfer, Bronze
+
+Stahl               90         0,010       0,010    0,012        0,025       0,030     0,038        0,045     0,050     0,080
+
+
+                                                                                          n = Drehzahl des Fräsers in U/min
+                                                                                          vc = Schnittgeschwindigkeit in m/min
+                                                                                          d = Fräserdurchmesser in mm
+                                                                                          z = Zähnezahl
+                                                                                          fz = Zahnvorschub
+Drehzahl                                                                                  vf = Vorschubgeschwindigkeit in mm/min
+
+Zur Ermittlung der Drehzahl dient die folgende                           Beispiel:
+Formel:
+                                                                         vc = 500 m/min (aus Tabelle)
+n [U/min] = (vc [m/min] × 1000) / (3,14 × Ø d1 [mm])                     d = Ø 8 mm
+
+                                                                             (500 × 1.000) / (3,14 × 8) = 19.904 U/min
+
+Vorschub
+Zur Ermittlung der Vorschubgeschwindigkeit dient                         Beispiel:
+die folgende Formel:                                                     Gegeben sind eine Aluminium-Knetlegierung als
+                                                                         Material und ein 8 mm Zweischneider als Fräser.
+                         vf = n × z × fz
+                                                                         n = 19.904 U/min (aus Drehzahlberechnung)
+                                                                         fz= 0,064 (aus Tabelle)
+                                                                         z=2
+
+                                                                             19.904 × 2 × 0,064 = 2.547,77 mm/min
+
+
+
+www.sorotec.de                                               Seite 1/3                                                  V 1.0.2
+Berechnungen
+und Praxistipps
+
+Praxistipps
+Eintauchtiefe
+Beim Fräsen einer Nut empfehlen wir folgende Ein-
+tauchtiefe:
+
+• NE Metalle: bis 0,5-facher Durchmesser
+• Holz, Kunststoffe: bis 2-facher Durchmesser
+• Hartschaum: bis 5-facher Durchmesser
+
+Beim Fräsen von Konturen empfehlen wir eine seit-
+liche Zustellung von ca. 25% des Fräser-Durchmes-
+sers bei 100% Eintauchtiefe.
+
+  Hinweis:
+Auch hier sind die Angaben wieder stark vom Aufbau
+und der Stabilität der Maschine abhängig.
+
+
+
+
+Längenwahl des Fräsers
+Um Vibrationen und ein Aufschwingen des Fräsers
+zu verhindern, empfehlen wir den Fräser immer so
+kurz wie möglich, bzw. nur so lange wie nötig zu
+wählen.
+
+
+
+
+                                                            Zeichnungen: ZenziWerken
+
+
+Kühlen / Schmieren
+Die Kühlung erfolgt bei NE-Metallen im besten
+Fall mit einer Minimalmengenschmierung in Ver-
+bindung mit einem Schmierstoff. Des weiteren
+verbessert die Schmierung die Oberflächenbe-
+schaffenheit und die Standzeit des Werkzeuges.
+Bei Acrylglas kann durch die Schmierung mit Sei-
+fenlauge eine sehr gute Oberfläche erzielt werden.
+
+
+
+
+www.sorotec.de                                  Seite 2/3                   V 1.0.2
+Berechnungen
+und Praxistipps
+
+Gleichlauf- / Gegenlauf-Fräsen
+Gleichlauffräsen
+Beim Gleichlauffräsen zieht sich der Fräser in das
+Werkstück, wodurch es bei größerer Spanabnahme
+dazu kommen kann, dass das Portal bzw. die Z-
+Achse durch Umkehrspiel der Spindel unkontrolliert
+in Richtung des Werkstücks gezogen wird. Das führt
+zu einem sehr unsauberen Fräsbild und kann sogar
+zum Bruch des Fräsers führen, wenn der Span in
+dem Moment zu groß wird.
+
+Sind spielfreie Kugelumlaufspindeln ohne Um-
+kehrspiel verbaut, wird der Gleichlauf gegenüber
+dem Gegenlauf bevorzugt.
+
+
+Gegenlauf-Fräsen
+Beim Gegenlauffräsen drückt sich der Fräser vom
+Werkstück weg, was bei sehr geringer Spanabnah-
+me schnell dazu führt, dass sich die Schneide aus
+dem Werkstück drückt. Dadurch entstehen Ratter-
+marken, die weder einer schönen Oberfläche noch
+der Standzeit des Fräsers dienlich sind.
+
+Der Gegenlauf wird bei Maschinen mit Umkehr-
+spiel in den Gewindespindeln favorisiert.
+
+
+
+
+                                                                                 Zeichnungen: ZenziWerken
+
+Hinterschliffene Fräser
+Die maximal mögliche Tiefenzustellung beschränkt     tiefen über mehrere Zustellungen bis hin zur maxi-
+sich normalerweise auf die Spirallänge des Frä-      malen Nutzlänge möglich, welche die Spirallänge
+sers, da sonst der Schaft am Werkstück reibt.        überschreiten.
+Durch den hinterschliffenen Schaft sind auch Fräs-
+
+
+
+
+www.sorotec.de                                 Seite 3/3                                         V 1.0.2
+

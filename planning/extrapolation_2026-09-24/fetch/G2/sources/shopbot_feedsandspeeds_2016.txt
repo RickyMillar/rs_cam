@@ -1,0 +1,366 @@
+# stored text for shopbot_feedsandspeeds_2016
+# made from shopbot_feedsandspeeds_2024.pdf with pdftotext -layout on 2026-09-24
+                                       888-680-4466 • ShopBotTools.com
+
+
+
+
+                        Feeds and Speeds Charts
+
+
+
+
+© Copyright 2016 ShopBot Tools, Inc.                                     page 1
+Feeds and Speeds Charts • July 21, 2016
+
+
+
+
+© Copyright 2016 ShopBot Tools, Inc.      page 2
+Feeds and Speeds Charts • July 21, 2016
+
+
+Table of Contents
+Introduction..............................................................................................................................................5
+Manufacturer settings for bits..................................................................................................................5
+Chip load calculator.................................................................................................................................6
+Feeds and speeds charts.........................................................................................................................9
+Soft wood.................................................................................................................................................9
+Hard wood..............................................................................................................................................10
+Medium Density Fiberboard (MDF)........................................................................................................10
+Soft plywood..........................................................................................................................................11
+Laminated chipboard.............................................................................................................................11
+Laminated plywood................................................................................................................................12
+
+
+
+
+© Copyright 2016 ShopBot Tools, Inc.                                                                                                                 page 3
+Feeds and Speeds Charts • July 21, 2016
+
+
+
+
+© Copyright 2016 ShopBot Tools, Inc.      page 4
+Feeds and Speeds Charts • July 21, 2016
+
+
+
+Introduction
+A challenge of getting a good CNC cut is in selecting the best cutting speed (feed rate) and router/
+spindle RPM (speed of rotation). Feeds and speeds are a critical part of machining and should be fully
+understood before deviating from recommended settings. A primary concern of machining is chip
+load, which is a representation of the size of the chips produced during cutting. The goal is to get the
+maximum chip load possible to increase productivity, reduce heat, and prevent premature dulling.
+When chip load is too small, bits will get too hot and dull quicker. When chip load is too high, the tool
+will deflect creating a bad surface finish and, in extreme cases, chip or break the bit.
+
+Chip load is a function of three different parameters: feed rate, RPM, and number of flutes on the tool.
+
+Chip load is the thickness of the chunk of material taken by a tooth of the cutter. This is determined
+by how fast the cutter is moving forward into the material and how fast it is turning (Chip load = Feed
+Rate / [RPM x number of flutes]). This formula provides a starting point for determining the most suit-
+able parameters for any cutting situation.
+
+A ShopBot tool has either a router or a spindle. The advantage of a spindle is that speed can be very
+precisely controlled. This allows for optimization of cuts. A router does not have a precise speed
+controller, so the actual speed of the router is directly correlated to the depth of cut, material, and feed
+rate. For routers, these numbers will be a starting point, but will have to be adjusted for real life con-
+ditions. This is necessary because routers tend to run lower than the setting on the router indicates;
+settings should be recorded as they will work for similar cuts in similar material. It is recommended to
+start with low numbers to ensure it is within an acceptable range for the tool.
+
+There is considerable overlap in the range of parameters; it will be necessary to test in this range for
+the best speed selection for a particular cutting or machining operation. Below is the strategy that bit
+manufacturer Onsrud suggests. This works particularly well for routers.
+
+Optimizing feed rates and speeds:
+1. Start off using an RPM derived for the chip load for the material being cut (see charts).
+2. Increase the cutting speed (feed rate) until the quality of the part’s finish starts to decrease or the
+   part is starting to move from hold downs. Then decrease speed by 10%.
+3. Decrease RPM until finish deteriorates, then bring RPM back up until finish is acceptable.
+4. This optimizes RPM and speed to remove the largest possible chips.
+
+To reduce the amount of work needed, a range of feeds and speeds is provided to start at (step 1
+above). To increase performance, optimize feeds and speeds as detailed above. If there are any sur-
+face finish problems, adjust until performance is acceptable. If there are a lot of work holding issues, it
+may be necessary to revisit the hold down method to ensure it is adequate.
+
+Manufacturer settings for bits
+Most manufacturers provide optimal speeds and feeds for their bits. There are numerous calculators
+available online that can provide rough numbers. These calculators should work fine, but may not be
+optimized for each particular bit. The manufacturer will still be the best resource, as most reputable
+companies have information and live support available to help users of their tools utilize them properly.
+ShopBot recommends Onsrud tools.
+
+If doing production work in a certain type of material, it would be best to purchase a bit made for that
+type of cutting. If performing a number of different materials, then a more general bit could be used.
+
+
+
+© Copyright 2016 ShopBot Tools, Inc.                                                                   page 5
+Feeds and Speeds Charts • July 21, 2016
+
+
+
+http://www.onsrud.com/xdoc/FeedSpeeds
+
+Chip Load = per cutting edge.
+IPS = Inches Per Second.
+IPM = Inches Per Minute.
+RPM = Revolutions Per Minute.
+# of cutting edges = # of flutes.*
+*typically true unless stated otherwise by manufacturer.
+
+Chip Load = Feed Rate (IPM) / (RPM x # of cutting edges)
+Feed Rate (IPM) = RPM x # of cutting edges x Chip Load
+Speed (RPM) = Feed Rate (IPM) / (# of cutting edges x Chip Load)
+IPM = IPS x 60
+
+Depth of cut: A function of cutting edge diameter set by manufacturer.
+
+Onsrud bits are typically allowed a cut depth per pass equal to the cutting edge diameter unless
+otherwise specified. For a deeper cut, it will be necessary to reduce the chip load. For twice the depth
+of cut, reduce the chip load per tooth by 25% and for triple the depth of cut, reduce the chip load by
+50%. If doing this, it will be necessary to calculate the feed rate and speed instead of using the chart.
+
+Example using a 1/4” or 0.125” bit – Straight V Carbide Tipped Endmill SB# 13642:
+
+This bit is used for soft wood, at a depth of 1/2” (two times the diameter). The chart cannot be used
+for this calculation. Start with the middle of the range of recommended chip load provided on the chart
+((.006+.004)/2=.005). Reduce that by 25% to allow for the deeper cutting depth (0.75x0.005=0.00375).
+Assuming that cutting will be performed at an RPM of 18,000 and that this tool only has one flute.
+Let’s use the ShopBot 3 “Chip Load Calculator” to decide what value to start with.
+
+Chip load calculator
+
+
+
+
+                                          The “Chip Load Calculator” comes included in the ShopBot
+                                          3 software. It can be accessed by going to Tools > Chip Load
+                                          Calculator (TL).
+
+
+
+
+© Copyright 2016 ShopBot Tools, Inc.                                                                page 6
+Feeds and Speeds Charts • July 21, 2016
+
+
+
+
+                                               In the previous example values were provided to calcu-
+                                               late the feed rate.
+
+
+
+                                               RPM: 18,000
+
+                                               Chip load: 0.00375, Depth of cut: 2 x Diameter = 1/2”
+                                               Flutes: 1
+
+                                               Enter these into the calculator and click “Calculate.”
+
+
+
+
+                                          This now provides the values needed to create an entry into
+                                          the tool database in VCarve Pro.
+
+
+
+                                          Diameter: 0.25”
+                                          Pass depth: 0.5”
+                                          Spindle speed: 18000 RPM
+                                          Feed rate: 1.125 inches/sec
+
+
+
+
+© Copyright 2016 ShopBot Tools, Inc.                                                               page 7
+Feeds and Speeds Charts • July 21, 2016
+
+
+
+
+                                          The data is now available to input into the CAM software.
+                                          The tool info sheet for VCarve Pro is shown.
+
+
+
+
+© Copyright 2016 ShopBot Tools, Inc.                                                            page 8
+Feeds and Speeds Charts • July 21, 2016
+
+
+
+Feeds and speeds charts
+These charts have been taken from Onsrud’s recommendations and calculated in order to save time
+for the bits provided in the ShopBot bit kit. For further information, Onsrud series numbers are provid-
+ed. ShopBot numbers are also provided for an easier, streamlined ordering experience. Onsrud pro-
+vided numbers are cut depths, chip loads, and flutes. The exception to this rule is the “Carbide Tipped
+Surfacing Cutter” which has all values provided by Onsrud. Any tools with no values provided are not
+listed by Onsrud, but if they are contacted about a specific use, they may provide some base numbers
+from which to calculate.
+
+The “Chip Load Calculator” in ShopBot 3 was utilized with a starting RPM of 18,000 on all tools to
+find the calculated feed rate. Any deviations from provided numbers should be verified and adjusted
+through recalculation in ShopBot 3 “Chip Load Calculator.”
+
+
+
+Soft wood
+            Name               SB#        Onsrud    Cut      Chip Load per Flutes     Feed       Feed rate    RPM      Max
+                                          Series             leading edge           Rate (ips)     (ipm)               Cut
+ 1” 60 degree Carbide V       13648       37-82     1xD        .004-.006     2       2.4-3.6                 18,000
+ cutter
+ 1/4” Straight V Carbide      13642       48-005    n/a           n/a        1         n/a          n/a        n/a
+ Tipped End Mill
+ 1/2” Straight V Carbide      13564       48-072    n/a           n/a        2         n/a          n/a        n/a
+ Tipped End Mill
+ 1/4” Upcut Carbide End       13528       52-910    1xD        .007-.009     2       4.2-5.4                 18,000
+ Mill
+ 1/4” Downcut Carbide         13507       57-910    1xD        .007-.009     2       4.2-5.4                 18,000
+ End Mill
+ 1/4” Upcut Carbide End        1108       65-025    1xD        .004-.006     1       1.2-1.8                 18,000
+ Mill
+ 1/8” Tapered Carbide         13636       77-102    1xD        .003-.005     2       1.8-3.0                 18,000
+ Upcut Ball End Mill
+ 1-1/4” Carbide Tipped        13555       91-000   1/2-3/4                   2                   200-600     12,000-   1/8"
+ Surfacing Cutter                                   xD                                                       16,000
+
+
+
+
+© Copyright 2016 ShopBot Tools, Inc.                                                                                   page 9
+Feeds and Speeds Charts • July 21, 2016
+
+
+
+Hard wood
+            Name               SB#        Onsrud    Cut      Chip Load per Flutes     Feed       Feed rate    RPM      Max
+                                          Series             leading edge           Rate (ips)     (ipm)               Cut
+ 1” 60 degree Carbide V       13648       37-82     1xD        .004-.006     2       2.4-3.6                 18,000
+ cutter
+ 1/4” Straight V Carbide      13642       48-005    1xD        .005-.007     1       1.5-2.1      90-126     18,000
+ Tipped End Mill
+ 1/2” Straight V Carbide      13564       48-072    1xD        .006-.008     2       3.6-4.8                 18,000
+ Tipped End Mill
+ 1/4” Upcut Carbide End       13528       52-910    1xD        .006-.008     2       3.6-4.8                 18,000
+ Mill
+ 1/4” Downcut Carbide         13507       57-910    1xD        .005-.007     2       3.0-4.2                 18,000
+ End Mill
+ 1/4” Upcut Carbide End        1108       65-025    1xD        .004-.006     1       1.2-1.8                 18,000
+ Mill
+ 1/8” Tapered Carbide         13636       77-102    1xD        .003-.005     2       1.8-3.0                 18,000
+ Upcut Ball End Mill
+ 1-1/4” Carbide Tipped        13555       91-000   1/2-3/4                   2                   200-600     12,000-   1/8"
+ Surfacing Cutter                                   xD                                                       16,000
+
+
+
+
+Medium Density Fiberboard (MDF)
+            Name               SB#        Onsrud    Cut      Chip Load per Flutes     Feed       Feed rate    RPM      Max
+                                          Series             leading edge           Rate (ips)     (ipm)               Cut
+ 1” 60 degree Carbide V       13648       37-82     1xD        .004-.006     2       2.4-3.6                 18,000
+ cutter
+ 1/4” Straight V Carbide      13642       48-005    1xD        .005-.007     1       1.5-2.1      90-126     18,000
+ Tipped End Mill
+ 1/2” Straight V Carbide      13564       48-072    1xD        .005-.007     2       3.0-4.2     180-252     18,000
+ Tipped End Mill
+ 1/4” Upcut Carbide End       13528       52-910    1xD        .006-.008     2       3.6-4.8                 18,000
+ Mill
+ 1/4” Downcut Carbide         13507       57-910    1xD        .006-.008     2       3.6-4.8                 18,000
+ End Mill
+ 1/4” Upcut Carbide End        1108       65-025    1xD        .004-.006     1       1.2-1.8                 18,000
+ Mill
+ 1/8” Tapered Carbide         13636       77-102    1xD        .003-.005     2       1.8-3.0                 18,000
+ Upcut Ball End Mill
+ 1-1/4” Carbide Tipped        13555       91-000   1/2-3/4                   2                   200-600     12,000-   1/8"
+ Surfacing Cutter                                   xD                                                       16,000
+
+
+
+
+© Copyright 2016 ShopBot Tools, Inc.                                                                                   page 10
+Feeds and Speeds Charts • July 21, 2016
+
+
+
+Soft Plywood
+            Name               SB#        Onsrud    Cut      Chip Load per Flutes     Feed       Feed rate    RPM      Max
+                                          Series             leading edge           Rate (ips)     (ipm)               Cut
+ 1” 60 degree Carbide V       13648       37-82     1xD        .004-.006     2       2.4-3.6                 18,000
+ cutter
+ 1/4” Straight V Carbide      13642       48-005    1xD        .005-.007     1       1.5-2.1      90-126     18,000
+ Tipped End Mill
+ 1/2” Straight V Carbide      13564       48-072    1xD        .007-.009     2       4.2-5.4                 18,000
+ Tipped End Mill
+ 1/4” Upcut Carbide End       13528       52-910    n/a           n/a        2         n/a          n/a        n/a     n/a
+ Mill
+ 1/4” Downcut Carbide         13507       57-910    n/a           n/a        2         n/a          n/a        n/a     n/a
+ End Mill
+ 1/4” Upcut Carbide End        1108       65-025    1xD        .004-.006     1       1.2-1.8                 18,000
+ Mill
+ 1/8” Tapered Carbide         13636       77-102    n/a           n/a        2         n/a          n/a        n/a     n/a
+ Upcut Ball End Mill
+ 1-1/4” Carbide Tipped        13555       91-000   1/2-3/4                   2                   200-600     12,000-   1/8"
+ Surfacing Cutter                                   xD                                                       16,000
+
+
+
+
+Laminated Chipboard
+            Name               SB#        Onsrud    Cut      Chip Load per Flutes     Feed       Feed rate    RPM      Max
+                                          Series             leading edge           Rate (ips)     (ipm)               Cut
+ 1” 60 degree Carbide V       13648       37-82     1xD        .004-.006     2       2.4-3.6                 18,000
+ cutter
+ 1/4” Straight V Carbide      13642       48-005    1xD        .006-.008     1       1.8-2.4                 18,000
+ Tipped End Mill
+ 1/2” Straight V Carbide      13564       48-072    1xD        .008-.010     2       4.8-6.0                 18,000
+ Tipped End Mill
+ 1/4” Upcut Carbide End       13528       52-910    n/a           n/a        2         n/a          n/a        n/a     n/a
+ Mill
+ 1/4” Downcut Carbide         13507       57-910    n/a           n/a        2         n/a          n/a        n/a     n/a
+ End Mill
+ 1/4” Upcut Carbide End        1108       65-025    n/a           n/a        1         n/a          n/a        n/a     n/a
+ Mill
+ 1/8” Tapered Carbide         13636       77-102    n/a           n/a        2         n/a          n/a        n/a     n/a
+ Upcut Ball End Mill
+ 1-1/4” Carbide Tipped        13555       91-000   1/2-3/4                   2                   200-600     12,000-   1/8"
+ Surfacing Cutter                                   xD                                                       16,000
+
+
+
+© Copyright 2016 ShopBot Tools, Inc.                                                                                   page 11
+Feeds and Speeds Charts • July 21, 2016
+
+
+
+Laminated Plywood
+            Name               SB#        Onsrud    Cut      Chip Load per Flutes     Feed       Feed rate    RPM      Max
+                                          Series             leading edge           Rate (ips)     (ipm)               Cut
+ 1” 60 degree Carbide V       13648       37-82     1xD        .004-.006     2       2.4-3.6                 18,000
+ cutter
+ 1/4” Straight V Carbide      13642       48-005    1xD        .005-.007     1       1.5-2.1                 18,000
+ Tipped End Mill
+ 1/2” Straight V Carbide      13564       48-072    1xD        .007-.009     2                               18,000
+ Tipped End Mill
+ 1/4” Upcut Carbide End       13528       52-910    n/a           n/a        2         n/a          n/a        n/a     n/a
+ Mill
+ 1/4” Downcut Carbide         13507       57-910    n/a           n/a        2         n/a          n/a        n/a     n/a
+ End Mill
+ 1/4” Upcut Carbide End        1108       65-025    n/a           n/a        1         n/a          n/a        n/a     n/a
+ Mill
+ 1/8” Tapered Carbide         13636       77-102    1xD        .003-.005     2       1.8-3.0                 18,000
+ Upcut Ball End Mill
+ 1-1/4” Carbide Tipped        13555       91-000   1/2-3/4                   2                   200-600     12,000-   1/8"
+ Surfacing Cutter                                   xD                                                       16,000
+
+
+
+
+© Copyright 2016 ShopBot Tools, Inc.                                                                                   page 12
+

@@ -1,0 +1,35 @@
+                                                                                                                                                     INDUSTRIAL
+
+                                                     2 Flute Solid Carbide V-Groove Engraving 15° & 60° Degree Router Bits
+                                                                          CNC Operating Spindle Speed: 18,000 RPM / Depth of Cut: 1 x Tool Diameter
+
+
+
+                                                                                                                                                      Tool Reference #’s
+                                                      Material                          15°                                  60°                       15°         60°
+                                                                                                                                                       —          40780
+                                                                                                                                                      45627         —
+                                                                           Feed Rate        Chip Load           Feed Rate        Chip Load
+                                                                                                                                                      45628         —
+                                                                             IPM*         Per Tooth IPR**         IPM*         Per Tooth IPR**        45780         —
+                                                      Soft Wood            50" - 125"         0.003" - 0.007"   50" - 125"         0.003" - 0.007"     —          45782
+                                                                                                                                                       —          59400
+                                                      Hard Wood            50" - 125"         0.003" - 0.007"   50" - 125"         0.003" - 0.007"
+                                                      Soft Plastic         50" - 125"         0.003" - 0.007"   50" - 125"         0.003" - 0.007"
+                                                      Hard Plastic         50" - 125"         0.003" - 0.007"   50" - 125"         0.003" - 0.007"
+                                                      Solid Surface        50" - 125"         0.003" - 0.007"   50" - 125"         0.003" - 0.007"
+
+                                                      IPM* Inches per minute
+                                                      IPR** Inches per revolution
+
+Depth of Cut: 1 x D Use recommended feed rate
+                2 x D Reduce feed rate by 25%
+                3 x D Reduce feed rate by 50%
+Simple Machining Calculations:
+To find RPM: (SFM x 3.82) / diameter of tool
+To find SFM: 0.262 x diameter of tool x RPM
+To find Feed Rate IPM: RPM x # of flutes x chip load
+To find Chip Load: Feed Rate IPM / (RPM x # of flutes)
+To find Ramp Down: Feed Rate IPM / # of flutes
+Disclaimer: It is important to understand that these values are only recommendations.                                                                                      © Copyright Amana Tool® All Rights Reserved
+

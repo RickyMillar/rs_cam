@@ -1,0 +1,113 @@
+How to Adjust Running Parameters for Miniature Tooling - In The Loupe
+How to Adjust Running Parameters for Miniature Tooling
+February 4, 2022/3 Comments/in Harvey Tool, Large Featured, Tool Information Guides/by Tara KelleherHigh precision machining is a subset of subtractive manufacturing that has grown in popularity over the years, especially as industries like medical, dental, mold tool and die, and semi-conductor manufacturing grow. Some jobs can call for extremely small diameters (down to even .001”) and ultra-precise tolerancing. With tooling this miniature, machinists must utilize different machining practices than they otherwise would, as common issues that would arise with larger end mills are magnified within miniature tooling applications.  Speeds and feeds become critical to ensure your tool survives the job.
+Where Breakage Occurs with Miniature Tooling
+When breakage happens with miniature tooling, it’s important to determine where on the tool the breakage is occurring. Breakage points are sometimes quite difficult to see with such small tooling. Finding the location, when possible, helps to diagnose the issue. For example, if the breakage occurs along the length of cut, there could be chip packing. If chip packing is the issue, it’s helpful to decrease the feed rate and lower the depth of cut per pass. If the tool breaks on the transition angle toward the shank, this could be due to a few things. The first instinct should be to check the runout of the tool. Runout should be measured at less than .0001”. In this case, check tool set up to ensure that the tool is stable within the tool holder. Another issue could be excess pressure on the tool caused by high pressure coolant or even deflection. Deflection occurs when the cutting pressure causes the tool to bend slightly – in this case, the tool will break at its weakest point. To minimize the opportunity for deflection, ensure the tool is the largest diameter and shortest length of cut possible for the job.
+Tips for Avoiding Future Breakage
+There are a few different points of interest to focus on to prevent tool breakage.
+The Right Tool
+Determining the correct end mill is the necessary first step toward preventing breakage. Choosing a material specific end mill is preferred, especially with the more difficult to machine materials. Harvey Tool’s material specific tools have different geometries and coatings for different materials. For example, our aluminum specific end mills have a variable helix of approximately 42 ° whereas the high temperature alloy specific end mills we offer have a variable helix of about 34°. A tool with an odd number of flutes or a variable helix or pitch also helps to avoid chatter that could lead to breakage in the machining process. Approaches also change depending on the application. With slotting for example, rigidity is critical for success, therefore a tool with the most flutes possible is recommended.
+Tool Set Up
+The smaller the tool, the more fragile it is. Therefore, proper handling before and during set up is critical. It is key to keep tooling in the original packaging if it is not in the machine and covering the tip when positioning the tool in the tool holder. Determining coolant for miniature tooling is also critical to ensure that high pressure from the coolant doesn’t cause damage of the tool. High pressure coolant directly to the tool almost always causes some form of breakage. For this reason, high pressure coolant is not recommended on the smaller end of the miniature tooling spectrum. In this case, flood coolant is the recommended approach.
+Miniature Tooling Running Parameters
+Running speed of an end mill is determined based on the tool diameter, so the smaller the tool, the faster the RPM. To ensure best tool life, it is crucial to run the smaller end mills at the recommended parameters.
+Harvey Tool speeds and feeds charts list recommendations for SFM, chip load and depth of cut based on the cutting material, tool diameter and cutting application. To calculate speeds and feeds using Harvey Tool speeds and feeds charts, follow the following formulas and our recommended parameters:
+Note*: There are often limitations with the machines used for these tools. One of the most asked questions about our speeds and feeds for miniature end mills is how to adjust for this quick speed. We recommend setting the RPM at something the machine can handle (or the fastest the customer feels comfortable with) and keep the feed rates and depth of cut the same.
+Choosing depth of cut parameters for miniature tooling is extremely important based on the application. For example, finishing parameters often have a much higher speed and feed rate than slotting or roughing parameters but the depth of cut passes are much smaller. This enables the tool to run such high parameters without breakage as there is less contact with the workpiece.
+Using miniature tooling can be a little bit intimidating if you’ve never used it before. Issues that arise with larger end mills tend to be amplified with smaller tools. It is very important to have the right end mill for the application. Speeds, feeds, and depth of cut are also essential in proper cutting. With smaller tooling comes higher speeds. Always follow manufacturer recommended speeds and feeds, lowering the speed when necessary to accommodate machine capabilities. Lastly, if breakage does occur, be sure to find where the break is to help diagnose the issue.
+print
+Tara Kelleher
+As a member of Harvey Performance Company’s technical team, Tara works with customers to answer questions regarding tool selection, speeds & feeds, custom tool design and tool applications. Tara earned her Bachelor’s degree in Chemical Engineering from UMass Amherst.
+Share this entry
+Share on Facebook
+Share on X
+Share on WhatsApp
+Share on Pinterest
+Share on LinkedIn
+Share on Reddit
+Share by Mail
+https://www.harveyperformance.com/wp-content/uploads/2022/02/Miniature-Tooling-Running-Parameters-Featured-Image.jpg 525 1400 Tara Kelleher http://www.harveyperformance.com/wp-content/uploads/2018/08/Logo_HarveyPerformanceCompany-4.png Tara Kelleher2022-02-04 09:16:112023-09-21 15:15:27How to Adjust Running Parameters for Miniature Tooling
+You might also like
+What to Know About Harvey Tool’s TiB2 Coating
+Circular Interpolation: Machining Circular Tool Paths
+Why Flute Count Matters
+How to Avoid Common Part Finish Problems
+Why You Should Stop Deburring by Hand
+Grappling With Graphite: A Machining Guide
+3 replies
+José Aldana says: January 19, 2024 at 11:37 pm
+Hi Tara, thank a lot for the information.
+Is there any article or information page you can point me to regarding how to set the z=0 axis on such miniature tooling? Would the paper method work?
+Reply
+Greg Schranze says: February 1, 2024 at 11:54 am
+Hi Jose,
+Traditionally, we would not recommend a paper method as there is a good chance you can break the tool while setting the z-axis. We always recommend using a pre-setter for miniature tools. If you do not have access to one then you can turn the spindle on and slowly crank it down to the top of the part. As soon as it makes the slightest contact with the top of the part you can set the z height there. It will cut a small amount of material but that’s better than crushing the tool on the top of the part. When you get into extremely small tooling (Reply
+José Aldana says: March 21, 2024 at 3:29 pm
+I really appreciate your support and the information provided.
+Reply
+Leave a Reply
+Want to join the discussion?
+Feel free to contribute!Leave a Reply Cancel reply
+Your email address will not be published. Required fields are marked *
+Name *
+Email *
+Website
+Comment *
+Δ
+BLOG HOME
+Search In the Loupe
+Search
+More results...
+Browse by Topic
+How-To’s
+Technical Tips
+Tools In Action
+Featured Customers
+Tool Guides
+Free Drilling Guidebook
+DOWNLOAD
+Recent Posts
+Machining a Complex Part with Harvey Tool
+Drill Substrate Guide: HSS vs Cobalt vs Carbide
+The Key Differences Between Helical’s Tool Coatings
+Stay In The Loupe!
+Sign up to receive a monthly recap of:
+– The latest machining solutions
+– Machining tips and tricks
+– A recap of our most popular posts
+SIGN UP
+Contact Us
+Address 428 Newburyport Turnpike Rowley, MA 01969 Website www.harveyperformance.com Phone Harvey Tool Tech: 1.800.645.5609 Helical Solutions Tech: 1.866.543.5422 Micro 100 Tech: 1.800.421.8065 Titan USA Tech: 1.888.482.6872 Email [email protected]
+[email protected]
+[email protected]
+[email protected]
+[email protected]
+CONTACT US
+428 Newburyport Turnpike
+Rowley, MA 01969-1729
+844-393-8665
+[email protected]
+HARVEY PERFORMANCE
+Company Overview
+Our Unique Strengths
+Industries Served
+Careers
+Sustainability
+Privacy Policy
+OUR BRANDS
+Harvey Tool
+Helical Solutions
+Micro 100
+Titan USA
+CoreHog
+Valor Holemaking
+OUR BRANDS
+ATA Air Tools
+ATA SGSPRO
+Garryson
+Industrial Tooling Corporation (ITC)
+Karnasch
+Van Hoorn Carbide
+Copyright © 2022 Harvey Performance Company, LLC Link to LinkedIn
+Link to Facebook
+Scroll to top Scroll to top Scroll to top

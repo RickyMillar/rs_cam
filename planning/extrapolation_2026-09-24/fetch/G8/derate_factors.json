@@ -1,0 +1,307 @@
+{
+  "extrapolation_group": "G8",
+  "entries": [
+    {
+      "source_id": "harvey_undercutting_sf23200",
+      "pdf_sha256": "a25ab09a70970734816db891fd1af3702faf258bae8af28159a911fbbca0cb41",
+      "verbatim": "3x 120%",
+      "kind": "chipload_multiplier",
+      "axis": "neck_length_over_neck_diameter",
+      "axis_value": 3,
+      "factor": 1.2,
+      "applies_to": "chip load (IPT)",
+      "material_scope": "metals (aluminium to high-temperature alloys)",
+      "tool_scope": "Harvey undercutting end mills 270 deg, 0.062-1.000 in",
+      "evidence_grade": "a",
+      "row_kind": "exact",
+      "frame_note": "Axis = neck length / NECK diameter of a lollipop undercutting end mill; base 100 % is 5x (3x is a boost to 120 %). The repo's long_tool_load_share uses stickout / CUTTER diameter with base 1.0 up to 4x. A comparison such as 'Harvey 8x = 80 % vs repo 6x = 0.75' is derived and crosses two frames; it is not a match. Metals only."
+    },
+    {
+      "source_id": "harvey_undercutting_sf23200",
+      "pdf_sha256": "a25ab09a70970734816db891fd1af3702faf258bae8af28159a911fbbca0cb41",
+      "verbatim": "5x 100%",
+      "kind": "chipload_multiplier",
+      "axis": "neck_length_over_neck_diameter",
+      "axis_value": 5,
+      "factor": 1.0,
+      "applies_to": "chip load (IPT)",
+      "material_scope": "metals (aluminium to high-temperature alloys)",
+      "tool_scope": "Harvey undercutting end mills 270 deg, 0.062-1.000 in",
+      "evidence_grade": "a",
+      "row_kind": "exact",
+      "frame_note": "Axis = neck length / NECK diameter of a lollipop undercutting end mill; base 100 % is 5x (3x is a boost to 120 %). The repo's long_tool_load_share uses stickout / CUTTER diameter with base 1.0 up to 4x. A comparison such as 'Harvey 8x = 80 % vs repo 6x = 0.75' is derived and crosses two frames; it is not a match. Metals only."
+    },
+    {
+      "source_id": "harvey_undercutting_sf23200",
+      "pdf_sha256": "a25ab09a70970734816db891fd1af3702faf258bae8af28159a911fbbca0cb41",
+      "verbatim": "8x 80%",
+      "kind": "chipload_multiplier",
+      "axis": "neck_length_over_neck_diameter",
+      "axis_value": 8,
+      "factor": 0.8,
+      "applies_to": "chip load (IPT)",
+      "material_scope": "metals (aluminium to high-temperature alloys)",
+      "tool_scope": "Harvey undercutting end mills 270 deg, 0.062-1.000 in",
+      "evidence_grade": "a",
+      "row_kind": "exact",
+      "frame_note": "Axis = neck length / NECK diameter of a lollipop undercutting end mill; base 100 % is 5x (3x is a boost to 120 %). The repo's long_tool_load_share uses stickout / CUTTER diameter with base 1.0 up to 4x. A comparison such as 'Harvey 8x = 80 % vs repo 6x = 0.75' is derived and crosses two frames; it is not a match. Metals only."
+    },
+    {
+      "source_id": "harvey_undercutting_sf23200",
+      "pdf_sha256": "a25ab09a70970734816db891fd1af3702faf258bae8af28159a911fbbca0cb41",
+      "verbatim": "12x 65%",
+      "kind": "chipload_multiplier",
+      "axis": "neck_length_over_neck_diameter",
+      "axis_value": 12,
+      "factor": 0.65,
+      "applies_to": "chip load (IPT)",
+      "material_scope": "metals (aluminium to high-temperature alloys)",
+      "tool_scope": "Harvey undercutting end mills 270 deg, 0.062-1.000 in",
+      "evidence_grade": "a",
+      "row_kind": "exact",
+      "frame_note": "Axis = neck length / NECK diameter of a lollipop undercutting end mill; base 100 % is 5x (3x is a boost to 120 %). The repo's long_tool_load_share uses stickout / CUTTER diameter with base 1.0 up to 4x. A comparison such as 'Harvey 8x = 80 % vs repo 6x = 0.75' is derived and crosses two frames; it is not a match. Metals only."
+    },
+    {
+      "source_id": "harvey_undercutting_sf23200",
+      "pdf_sha256": "a25ab09a70970734816db891fd1af3702faf258bae8af28159a911fbbca0cb41",
+      "verbatim": "15x 55%",
+      "kind": "chipload_multiplier",
+      "axis": "neck_length_over_neck_diameter",
+      "axis_value": 15,
+      "factor": 0.55,
+      "applies_to": "chip load (IPT)",
+      "material_scope": "metals (aluminium to high-temperature alloys)",
+      "tool_scope": "Harvey undercutting end mills 270 deg, 0.062-1.000 in",
+      "evidence_grade": "a",
+      "row_kind": "exact",
+      "frame_note": "Axis = neck length / NECK diameter of a lollipop undercutting end mill; base 100 % is 5x (3x is a boost to 120 %). The repo's long_tool_load_share uses stickout / CUTTER diameter with base 1.0 up to 4x. A comparison such as 'Harvey 8x = 80 % vs repo 6x = 0.75' is derived and crosses two frames; it is not a match. Metals only."
+    },
+    {
+      "source_id": "harvey_undercutting_sf23200",
+      "pdf_sha256": "a25ab09a70970734816db891fd1af3702faf258bae8af28159a911fbbca0cb41",
+      "verbatim": "Adjust Chip Load to account for neck length to cutter diameter ratio. (see Table 2)",
+      "kind": "method_statement",
+      "evidence_grade": "a",
+      "row_kind": "exact",
+      "frame_note": "The step text says 'cutter diameter'; the worked example divides by neck diameter (.500 / .076). The printed table is 'Table 1' (the step says Table 2). Record both as printed."
+    },
+    {
+      "source_id": "harvey_undercutting_sf23200",
+      "pdf_sha256": "a25ab09a70970734816db891fd1af3702faf258bae8af28159a911fbbca0cb41",
+      "verbatim": "Neck Length Ratio = (Neck Length / Neck Diameter)",
+      "kind": "axis_definition",
+      "evidence_grade": "a",
+      "row_kind": "exact",
+      "frame_note": "Axis = neck length / NECK diameter of a lollipop undercutting end mill; base 100 % is 5x (3x is a boost to 120 %). The repo's long_tool_load_share uses stickout / CUTTER diameter with base 1.0 up to 4x. A comparison such as 'Harvey 8x = 80 % vs repo 6x = 0.75' is derived and crosses two frames; it is not a match. Metals only."
+    },
+    {
+      "source_id": "niagara_hp_endmills_speeds_feeds",
+      "pdf_sha256": "ccc4e502f870650855e4cfd28e4073a6146a4e92f8d219d34d5864ef5d3d1c6c",
+      "verbatim": "For Long and Extra Carbide Reduce Feed by 50%.",
+      "kind": "feed_multiplier",
+      "axis": "catalog_length_class",
+      "axis_value": "Long, Extra (undefined L/D)",
+      "factor": 0.5,
+      "applies_to": "feed",
+      "material_scope": "metals",
+      "evidence_grade": "b",
+      "row_kind": "exact",
+      "frame_note": "Printed under 'PROFILING CUTTING DEPTH RECOMMENDATIONS AND ADJUSTMENTS'. The chart does not define Long or Extra as an L/D. Host is a forum mirror."
+    },
+    {
+      "source_id": "redline_gp_carbide_endmills_p216",
+      "pdf_sha256": "c32a1ec266a0658eb5000470975e6723be3ad354fb83a78fc7b28a696be298ac",
+      "verbatim": "(4) For extra long endmills, reduce SFM by 25%.",
+      "kind": "speed_multiplier",
+      "axis": "catalog_length_class",
+      "axis_value": "extra long (undefined L/D)",
+      "factor": 0.75,
+      "applies_to": "surface speed (SFM), not feed per tooth",
+      "material_scope": "metals",
+      "evidence_grade": "b",
+      "row_kind": "exact",
+      "frame_note": "A speed factor. At a fixed chip load it lowers the feed rate by the same 25 %, but the chip load per tooth is unchanged."
+    },
+    {
+      "source_id": "redline_endmill_tech_info",
+      "pdf_sha256": "c645ac894ab63c97991cd239e9b41f58613cdc35a8e9027f0d9ef1ca204676c7",
+      "verbatim": "Reduce feed rates by 20% when using long length tools.",
+      "kind": "feed_multiplier",
+      "axis": "catalog_length_class",
+      "axis_value": "long length (undefined L/D)",
+      "factor": 0.8,
+      "applies_to": "feed rate",
+      "material_scope": "metals",
+      "evidence_grade": "b",
+      "row_kind": "exact",
+      "frame_note": "Footnote under several HP/XHP tables in the same document."
+    },
+    {
+      "source_id": "redline_endmill_tech_info",
+      "pdf_sha256": "c645ac894ab63c97991cd239e9b41f58613cdc35a8e9027f0d9ef1ca204676c7",
+      "verbatim": "(4) The use of Long and Extra Long Endmills require a reduction in feed by up to 50%.",
+      "kind": "feed_multiplier_ceiling",
+      "axis": "catalog_length_class",
+      "axis_value": "Long, Extra Long (undefined L/D)",
+      "factor": 0.5,
+      "applies_to": "feed",
+      "material_scope": "metals",
+      "evidence_grade": "b",
+      "row_kind": "exact",
+      "frame_note": "'up to 50%': a ceiling on the reduction, not a value."
+    },
+    {
+      "source_id": "redline_endmill_tech_info",
+      "pdf_sha256": "c645ac894ab63c97991cd239e9b41f58613cdc35a8e9027f0d9ef1ca204676c7",
+      "verbatim": "Milling Long Reach or with Long Overhang / Reduce speed and chipload / by 10%",
+      "verbatim_file": "sources/redline_endmill_tech_info_p5_raw.txt (page 5, pdftotext -raw)",
+      "kind": "chipload_and_speed_multiplier",
+      "axis": "catalog_length_class",
+      "axis_value": "long reach or long overhang (undefined L/D)",
+      "factor": 0.9,
+      "applies_to": "speed and chip load",
+      "material_scope": "metals (XHP 5-flute)",
+      "evidence_grade": "b",
+      "row_kind": "exact",
+      "frame_note": "Page 5 is a diagram page; the layout text is garbled, the raw text is readable. Within one vendor document the long-tool rule varies from 10 % to 'up to 50 %'."
+    },
+    {
+      "source_id": "fullerton_endmill_speeds",
+      "pdf_sha256": "4b4233afe9ce1ad0b29ab22501189e1296cc756f5bce7dd0832a7cb76fdea316",
+      "verbatim": "For extra long end mills the SFM should be reduced by 25%.",
+      "kind": "speed_multiplier",
+      "axis": "catalog_length_class",
+      "axis_value": "extra long (undefined L/D)",
+      "factor": 0.75,
+      "applies_to": "surface speed (SFM)",
+      "material_scope": "metals",
+      "evidence_grade": "b",
+      "row_kind": "exact",
+      "frame_note": "Same wording family as RedLine p216. A speed factor, not a chip-load factor."
+    },
+    {
+      "source_id": "helical_machining_guidebook_2016",
+      "pdf_sha256": "6d6ca79db0b491368e0de925e840caed8a8492e376581665018226d26705e33d",
+      "verbatim": "Tool overhang length decreases rigidity as a third power (L3), but even more importantly, tool diameter increases rigidity by the",
+      "kind": "physics_rule",
+      "axis": "overhang_and_diameter",
+      "evidence_grade": "b",
+      "row_kind": "exact",
+      "frame_note": "Rigidity ~ D^4 / L^3 (the sentence ends 'fourth power (D4).' on the next layout line). This is the cantilever law that feeds::force / tool_load deflection already uses; it is a second witness for the model, not a factor."
+    },
+    {
+      "source_id": "helical_machining_guidebook_2016",
+      "pdf_sha256": "6d6ca79db0b491368e0de925e840caed8a8492e376581665018226d26705e33d",
+      "verbatim": "essential to look at necked-down tooling when reaching >3x dia. depths.",
+      "kind": "limit_statement",
+      "axis": "reach_depth_over_diameter",
+      "axis_value": 3,
+      "evidence_grade": "b",
+      "row_kind": "exact",
+      "frame_note": "A tooling choice threshold at 3x diameter, with no feed factor."
+    },
+    {
+      "source_id": "harvey_blog_optimize_miniature_end_mills",
+      "pdf_sha256": "5dbdae17189a3d47717a3f3657e67c23130e5da6a0c4ae97e3fad31fb6013ef4",
+      "verbatim": "In theory, doubling the length sticking out of the holder will result in 8 times more deflection. Doubling the diameter of an end mill it will result in 16 times less deflection.",
+      "kind": "physics_rule",
+      "axis": "stickout_and_diameter",
+      "evidence_grade": "c",
+      "row_kind": "exact",
+      "frame_note": "Same L^3 / D^4 law as Helical, from a vendor blog."
+    },
+    {
+      "source_id": "onsrud_cnc_production_routing_guide",
+      "pdf_sha256": "79dd5f6ef135ab94d90d7b67b7e8aef678a775fab970ff093943f215bfad4cd1",
+      "verbatim": "largest diameter possible, but the cutting edge length should be as short as possible and not more than three times the diameter",
+      "kind": "limit_statement",
+      "axis": "cutting_edge_length_over_diameter",
+      "axis_value": 3,
+      "evidence_grade": "b",
+      "row_kind": "exact",
+      "frame_note": "Router-bit vendor, wood. The sentence continues 'in a perfect world.' A selection rule for flute length, not a stickout de-rate and not a feed factor."
+    },
+    {
+      "source_id": "onsrud_cnc_production_routing_guide",
+      "pdf_sha256": "79dd5f6ef135ab94d90d7b67b7e8aef678a775fab970ff093943f215bfad4cd1",
+      "verbatim": "It is very critical that the 80% rule (at least 80% of the collet filled with tool shank) be followed",
+      "kind": "limit_statement",
+      "axis": "collet_grip",
+      "evidence_grade": "b",
+      "row_kind": "exact",
+      "frame_note": "A holding rule. It bounds how far a short-shank tool can be pulled out for reach."
+    },
+    {
+      "source_id": "onsrud_cnc_production_routing_guide",
+      "pdf_sha256": "79dd5f6ef135ab94d90d7b67b7e8aef678a775fab970ff093943f215bfad4cd1",
+      "verbatim": "Use shortest CEL to achieve depth of cut",
+      "kind": "limit_statement",
+      "axis": "cutting_edge_length",
+      "evidence_grade": "b",
+      "row_kind": "exact",
+      "frame_note": "Troubleshooting remedy for TOOL BREAKAGE / Excessive Cutting Edge Length."
+    },
+    {
+      "source_id": "amana_zrn_3d_profiling_v8",
+      "pdf_sha256": "5cdfb9c01ec218e9db992fee90855f005a02902f49a3897c448188cd7cd4479b",
+      "verbatim": "3 x D Reduce feed rate by 50%",
+      "kind": "doc_rule_not_stickout",
+      "axis": "axial_depth_over_diameter",
+      "axis_value": 3,
+      "factor": 0.5,
+      "evidence_grade": "a",
+      "row_kind": "exact",
+      "frame_note": "Depth of cut, not stickout. The LUT already carries it in ap_rule ('2xD reduce 25%; 3xD reduce 50%'). Searches for an Amana or Onsrud stickout de-rate returned only this depth rule."
+    },
+    {
+      "source_id": "amana_zrn_3d_profiling_v8",
+      "pdf_sha256": "5cdfb9c01ec218e9db992fee90855f005a02902f49a3897c448188cd7cd4479b",
+      "kind": "derived_ratio",
+      "row_kind": "derived",
+      "evidence_grade": "c",
+      "verbatim": "Wood, MDF, Sign-Foam 215\" - 320\" 0.004\" - 0.006\" 270\" - 370\" 0.005\" - 0.007\" 320\" - 430\" 0.006\" - 0.008\"",
+      "comparison": [
+        {
+          "diameter_in": "3/8",
+          "standard": [
+            0.006,
+            0.008
+          ],
+          "extra_long": [
+            0.005,
+            0.007
+          ],
+          "ratio_min": 0.833,
+          "ratio_max": 0.875
+        },
+        {
+          "diameter_in": "1/2",
+          "standard": [
+            0.007,
+            0.009
+          ],
+          "extra_long": [
+            0.006,
+            0.008
+          ],
+          "ratio_min": 0.857,
+          "ratio_max": 0.889
+        },
+        {
+          "diameter_in": "1/4 (standard read from the 6 mm column)",
+          "standard": [
+            0.004,
+            0.006
+          ],
+          "extra_long": [
+            0.004,
+            0.006
+          ],
+          "ratio_min": 1.0,
+          "ratio_max": 1.0
+        }
+      ],
+      "frame_note": "DERIVED. Ratio of the printed extra-long wood cell to the printed standard 3-flute ball wood cell in the same chart. Ratios of the maxima: 0.875 (3/8), 0.889 (1/2), 1.0 (1/4 against 6 mm). The extra-long tools have a relieved neck and a short flute; at 3/8 in both tools are 4 in OAL, so the ratio is not a stickout effect. It is the only wood-router evidence found that a vendor prints a lower chip load for a long-reach tool. It is NOT a source for the repo's 0.88 share (that share acts on the load target, not the chip load)."
+    }
+  ]
+}

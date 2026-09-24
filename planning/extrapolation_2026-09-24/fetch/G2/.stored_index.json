@@ -1,0 +1,104 @@
+{
+ "stored": {
+  "onsrud_hard_wood_cutting_data": [
+   "planning/extrapolation_2026-09-24/fetch/G2/sources/onsrud_hard_wood_cutting_data.txt",
+   "f123d5f67c03b3760cfd300c36d480747b176e4d9cc06db7d1ea97ff9bda69dc"
+  ],
+  "onsrud_soft_wood_cutting_data": [
+   "planning/extrapolation_2026-09-24/fetch/G2/sources/onsrud_soft_wood_cutting_data.txt",
+   "a5b83da2433c64cb930dffe4a6de142124c894bd6aa982791a604b0048716c54"
+  ],
+  "onsrud_mdf_cutting_data": [
+   "planning/extrapolation_2026-09-24/fetch/G2/sources/onsrud_mdf_cutting_data.txt",
+   "94464ac393d93a6ad13e166f52aaf9cc9470860895ed97571dd4a07c710bdf4c"
+  ],
+  "onsrud_hard_plywood_cutting_data": [
+   "planning/extrapolation_2026-09-24/fetch/G2/sources/onsrud_hard_plywood_cutting_data.txt",
+   "65874767572e1669fb39fcfb91c5a04a21f1eee16b1fa12f7f9bb30ed6775e24"
+  ],
+  "onsrud_soft_plywood_cutting_data": [
+   "planning/extrapolation_2026-09-24/fetch/G2/sources/onsrud_soft_plywood_cutting_data.txt",
+   "f1c369ed8c8c15c918574bef0e9dfdc89c9885f9d8aaf3126e0d35c5c8be1ca1"
+  ],
+  "onsrud_laminated_chipboard_cutting_data": [
+   "planning/extrapolation_2026-09-24/fetch/G2/sources/onsrud_laminated_chipboard_cutting_data.txt",
+   "21f3c09aa076d5abd037382ea21efd1af9043cc5c3155e40fc1c07e195ab65e2"
+  ],
+  "onsrud_laminated_plywood_cutting_data": [
+   "planning/extrapolation_2026-09-24/fetch/G2/sources/onsrud_laminated_plywood_cutting_data.txt",
+   "7f271689c256c78d275f77265dbb04b34702f4aec80734acd104abf3d845816b"
+  ],
+  "onsrud_pct19_catalog": [
+   "planning/extrapolation_2026-09-24/fetch/G2/sources/onsrud_pct19_catalog.txt",
+   "83dbf74242ca1f578df8a7ca7d8e093a66d8488a7d573d0294df40b2ed58144b"
+  ],
+  "amana_pcd_ball_nose_v2": [
+   "planning/extrapolation_2026-09-24/fetch/G2/sources/amana_pcd_ball_nose_v2.txt",
+   "0dc5282a43b0a13a0256008a142d103b358469049dd1056d22a05b54e879d673"
+  ],
+  "amana_spektra_3d_profiling_v6": [
+   "planning/extrapolation_2026-09-24/fetch/G2/sources/amana_spektra_3d_profiling_v6.txt",
+   "84feaace79e13a5bc12e652c58cf237f1a242a623e6fb8bc9d3f5883d5153497"
+  ],
+  "amana_ball_nose_v7": [
+   "planning/extrapolation_2026-09-24/fetch/G2/sources/amana_ball_nose_v7.txt",
+   "e851a270a9958a9affc17a24c8e6a8ef51d63a813f384b7043670d676cae3563"
+  ],
+  "amana_spiral_ball_nose_v6": [
+   "planning/extrapolation_2026-09-24/fetch/G2/sources/amana_spiral_ball_nose_v6.txt",
+   "05f7558248e6950ea30b66a7c88115b958d5b53d83a7db30c93a4aa1ff3a19f2"
+  ],
+  "amana_spiral_ball_nose_2015": [
+   "planning/extrapolation_2026-09-24/fetch/G2/sources/amana_spiral_ball_nose_2015.txt",
+   "70d4e9c3e273687a3448066a938200f4775f8c43357050bde9e0f00d3a131681"
+  ],
+  "freud_router_bit_feed_and_speed_for_cnc_20170822": [
+   "planning/extrapolation_2026-09-24/fetch/G2/sources/freud_router_bit_feed_and_speed_for_cnc_20170822.txt",
+   "ff1a29ea5a669e24c6ed18e2bd21e10321cee024c65a6b23a1197cbbfdc71976"
+  ],
+  "leitz_lexicon7_05_routing": [
+   "planning/extrapolation_2026-09-24/fetch/G2/sources/leitz_lexicon7_05_routing.txt",
+   "76cbbc2490174bba48819d840712c078fdf5aa7bb662065580011e7a8db07072"
+  ],
+  "techno_cnc_chipload_rev2": [
+   "planning/extrapolation_2026-09-24/fetch/G2/sources/techno_cnc_chipload_rev2.txt",
+   "d4f5c880f7c72f8e552a879b6f7b97d5a8c35cd7560ab1942342da8d7c27aae5"
+  ],
+  "sienci_feeds_speeds_imperial": [
+   "planning/extrapolation_2026-09-24/fetch/G2/sources/sienci_feeds_speeds_imperial.txt",
+   "5e37bea02b45348c4cb8c8ba1a454812850a8af14ccb8ed7406c39c0bf147e54"
+  ],
+  "sorotec_schnittwerte": [
+   "planning/extrapolation_2026-09-24/fetch/G2/sources/sorotec_schnittwerte.txt",
+   "67300f95452931fc648ec89eedd8a1baa63439d7960418a61666699500ffc6d2"
+  ],
+  "shopbot_feedsandspeeds_2016": [
+   "planning/extrapolation_2026-09-24/fetch/G2/sources/shopbot_feedsandspeeds_2016.txt",
+   "7ad6d74012fe2d5f52f25c2e7c75f199be6845d5e21e52a4147892ebe779f56e"
+  ],
+  "ansi_a208_1_2016_particleboard": [
+   "planning/extrapolation_2026-09-24/fetch/G2/sources/ansi_a208_1_2016_particleboard.txt",
+   "c459462c4952f08a46a486e261df5bb9f27ab5a7f63bc75b570cb76677293be6"
+  ],
+  "wood_handbook_1999_ch10": [
+   "planning/extrapolation_2026-09-24/fetch/G2/sources/wood_handbook_1999_ch10.txt",
+   "040c02ca29b1a98eced2d5642825be33469e923856e676fc36a6017575709f99"
+  ],
+  "weyerhaeuser_mdf_spec": [
+   "planning/extrapolation_2026-09-24/fetch/G2/sources/weyerhaeuser_mdf_spec.txt",
+   "ef9db59ff4dd69ba508875def32644dfa15595d9f70fd8b2a4e51619ef897b72"
+  ]
+ },
+ "rows_per_source": {
+  "onsrud_hard_wood_cutting_data": 11,
+  "onsrud_soft_wood_cutting_data": 11,
+  "onsrud_mdf_cutting_data": 11,
+  "onsrud_hard_plywood_cutting_data": 11,
+  "onsrud_soft_plywood_cutting_data": 11,
+  "onsrud_laminated_chipboard_cutting_data": 10,
+  "onsrud_laminated_plywood_cutting_data": 11,
+  "amana_pcd_ball_nose_v2": 4,
+  "amana_spektra_3d_profiling_v6": 6,
+  "amana_ball_nose_v7": 15
+ }
+}

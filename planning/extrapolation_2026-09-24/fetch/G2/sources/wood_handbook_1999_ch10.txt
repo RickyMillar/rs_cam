@@ -1,0 +1,1952 @@
+# stored text for wood_handbook_1999_ch10
+# made from drj_wood_handbook_ch10.pdf with pdftotext -layout on 2026-09-24
+                                                                                Chapter 10
+ Wood-based Composites
+ and Panel Products
+ John A. Youngquist
+
+
+
+
+Contents                                                    ecause wood properties vary among species,
+                                                            between trees of the same species, and between
+Scope 10–2                                                  pieces from the same tree, solid wood cannot match
+                                                 reconstituted wood in the range of properties that can be
+Types of Conventional Composite Materials 10–3   controlled in processing. When processing variables are
+Adhesive Considerations 10–3                     properly selected, the end result can sometimes surpass
+                                                 nature’s best effort. With solid wood, changes in properties
+Additives 10–4                                   are studied at the cellular level. With reconstituted wood
+General Manufacturing Issues 10–4                materials, changes in properties are studied at the fiber,
+                                                 particle, flake, or veneer level. Properties of such materials
+Standards for Wood–Based Panels 10–4             can be changed by combining, reorganizing, or stratifying
+                                                 these elements.
+  Product Standards 10–5
+  Performance Standards 10–5                     The basic element for composite wood products may be the
+                                                 fiber, as it is in paper, but it can also be larger wood particles
+Plywood 10–6                                     composed of many fibers and varying in size and geometry.
+  General Description 10–6                       These characteristics, along with control of their variations,
+                                                 provide the chief means by which materials can be fabricated
+  Types of Plywood 10–7                          with predetermined properties.
+  Processing Considerations 10–7
+                                                 In any discussion of the strength properties of wood-based
+  Specifications 10–8                            panels and other adhesive-bonded wood composites, the first
+                                                 consideration is the constituents from which these products
+  Grades and Classification 10–9                 are made (O’Halloran and Youngquist 1984; Youngquist
+  Specialty Panels 10–13                         1987, 1988). The basic wood elements that can be used in
+                                                 the production of wood-based panels are shown in
+Particle and Fiber Composites 10–13              Figure 10–1. The elements can be made in a great variety
+  General Processing Considerations 10–13        of sizes and shapes and can be used alone or in combination.
+                                                 The choice is almost unlimited.
+  Oriented Strandboard 10–13
+                                                 Currently, the term composite is being used to describe any
+  Particleboard 10–14
+                                                 wood material adhesive-bonded together. This product mix
+  Fiberboard 10–17                               ranges from fiberboard to laminated beams and components.
+                                                 Table 10–1 shows a logical basis for classifying wood com-
+  Specialty Composites 10–23                     posites proposed by Maloney (1986). For the purposes of
+Wood–Nonwood Composites 10–24                    this chapter, these classifications were slightly modified from
+                                                 those in the original version to reflect the latest product
+  Inorganic–Bonded Composites 10–24              developments. Composites are used for a number of struc-
+  Wood Fiber–Thermoplastic Composites 10–26      tural and nonstructural applications in product lines ranging
+                                                 from panels for interior covering purposes to panels for exte-
+References 10–30                                 rior uses and in furniture and support structures in many
+                                                 different types of buildings.
+
+
+
+
+                                                                                                             10–1
+Figure 10–1. Basic wood elements, from largest to smallest (Marra 1979).
+
+
+Table 10–1. Classification of wood-based                     Figure 10–2 provides a useful way to further classify wood-
+compositesa                                                  based composite materials. This figure presents an overview
+                                                             of the most common types of products discussed in this
+Veneer-based material
+                                                             chapter as well as a quick reference to how these composite
+    Plywood                                                  materials compare to solid wood from the standpoint of
+    Laminated veneer lumber (LVL)                            density and general processing considerations. The raw
+    Parallel-laminated veneer (PLV)                          material classifications of fibers, particles, and veneers are
+                                                             shown on the left y axis. Specific gravity and density are
+Laminates
+                                                             shown on the top and bottom horizontal axes (x axes). The
+  Laminated beams                                            right y axis, wet and dry processes, describes in general
+  Overlayed materials                                        terms the processing method used to produce a particular
+  Wood–nonwood compositesb                                   product. Note that both roundwood and chips can serve as
+Composite material                                           sources of fiber for wet-process hardboard. Roundwood or
+ Cellulosic fiberboard                                       wood in the form of a waste product from a lumber or plan-
+ Hardboard
+                                                             ing operation can be used for dry-processed products. For
+                                                             medium-density fiberboard (MDF), resin is usually applied
+ Particleboard
+                                                             to the fiber after the fiber is released from the pressurized
+ Waferboard                                                  refiner. The fiber is then dried, formed into a mat, and
+ Flakeboard                                                  pressed into the final product. For other dry-processed prod-
+ Oriented strandboard (OSB)                                  ucts, the material is fiberized and dried and then adhesive is
+ COM-PLYc                                                    added in a separate operation prior to hot pressing into the
+Edge-adhesive-bonded material                                final composite product. Figure 10–3 shows examples of
+  Lumber panels
+                                                             some composite materials that are represented in schematic
+                                                             form in Figure 10–2.
+Components
+  I-beams
+  T-beam panels
+                                                             Scope
+  Stress-skin panels                                         Although there is a broad range of wood composites and
+                                                             many applications for such products, for the purposes of this
+Wood–nonwood composites
+                                                             chapter, wood composites are grouped into three general
+ Wood fiber–plastic composites                               categories: plywood, particle and fiber composites, and
+ Inorganic-bonded composites                                 wood–nonwood composites. Books have been written about
+ Wood fiber–agricultural fiber composites                    each of these categories, and the constraints of this chapter
+                                                             necessitate that the discussion be general and brief. Refer-
+a
+  Maloney 1986.
+b
+  Panels or shaped materials combined with nonwood           ences are provided for more detailed information. Information
+  materials such as metal, plastic, and fiberglass.          on adhesive-bonded-laminated (glulam, timbers, and struc-
+c
+  Registered trademark of APA–The Engineered                 tural composite lumber, including laminated veneer lumber)
+  Wood Association.                                          and adhesive-bonded members for lumber and panel products
+
+
+
+10–2
+                Specific gravity                            Solid wood
+
+
+
+                           Veneer                            Plywood
+
+                                                               Wafer-
+                                                               board
+                             Particles
+
+
+                                                                   Oriented
+
+
+
+
+                                                                                                                   Dry
+            Raw material
+
+
+
+
+                                                                 strandboard
+
+
+
+
+                                                                                                                          Process
+                                                                        Particle-
+                                                                         board
+
+                                                                        MDF—Dry         Hardboard—Dry
+                             Fibers
+
+
+
+
+                                         Insulation board               MDF—Wet         Hardboard—Wet
+
+
+
+
+                                                                                                                    Wet
+                                                                                    Paper
+
+
+                                                            Density (kg/m3)
+
+            Figure 10–2. Classification of wood composite boards by particle size, density, and process
+            type (Suchsland and Woodson 1986).
+
+
+
+
+is presented in Chapter 11 of this handbook. Many compos-               particleboard, and fiberboard. These types of composites
+ite materials, like fiberboard, MDF, and particleboard, can be          undergo similar processing steps, which are discussed in
+made from wood alone or in combination with agricultural                general terms for all the products in the Particle and Fiber
+fibers (Youngquist and others 1993a, 1994; Rowell and                   Composites section. The first and second categories of com-
+others 1997).                                                           posite materials are further generally classified as conven-
+                                                                        tional composite materials. The third category, wood–
+The first category, plywood, is covered in some detail be-              nonwood composites, includes products made from combin-
+cause the process for manufacturing this kind of material is            ing wood fibers with agricultural fibers, with thermoplastics,
+quite different from that used for other composite materials            and with inorganic materials.
+and because there are many different classes and grades of
+                                                                        Types of Conventional
+plywood in the marketplace. The second category, com-
+posite materials, includes oriented strandboard (OSB),
+                                                                        Composite Materials
+                                                                        Conventional wood composite materials fall into five main
+                                                                        categories based on the physical configuration of the wood
+                                                                        used to make the products: plywood, oriented strandboard,
+                                                                        particleboard, hardboard, and cellulosic fiberboard. Within
+                                                                        limits, the performance of a conventional type of composite
+                                                                        can be tailored to the end-use application of the product.
+                                                                        Varying the physical configuration of the wood and adjusting
+                                                                        the density of the composites are just two ways to accom-
+                                                                        plish this. Other ways include varying the resin type and
+                                                                        amount and incorporating additives to increase water or fire
+                                                                        resistance or to resist specific environmental conditions.
+
+                                                                        Adhesive Considerations
+Figure 10–3. Examples of various composite products.                    The conventional wood-based composite products discussed
+From left to right: plywood, OSB, particleboard, MDF,                   in this chapter are typically made with a thermosetting or
+and hardboard.                                                          heat-curing resin or adhesive that holds the lignocellulosic
+
+
+                                                                                                                                    10–3
+(wood) fiber together. The physical and mechanical proper-       Except for two major uncertainties, UF and PF systems are
+ties of wood-based veneer, fiber, and particle panel materials   expected to continue to be the dominant wood adhesives for
+are determined by standard American Society for Testing and      lignocellulosic composites. The two uncertainties are the
+Materials (ASTM) test methods. Commonly used resin–              possibility of much more stringent regulation of formalde-
+binder systems include phenol-formaldehyde, urea-                hyde-containing products and the possibility of limitations
+formaldehyde, melamine-formaldehyde, and isocyanate.             to or interruptions in the supply of petrochemicals. One
+                                                                 result of these uncertainties is that considerable research has
+Phenol-formaldehyde (PF) resins are typically used in the        been conducted in developing new adhesive systems from
+manufacture of products requiring some degree of exterior        renewable resources.
+exposure durability, for example, OSB, softwood plywood,
+
+                                                                 Additives
+and siding. These resins require longer press times and
+higher press temperatures than do urea-formaldehyde resins,
+which results in higher energy consumption and lower line
+                                                                 A number of additives are used in the production of conven-
+speeds (productivity). Products using PF resins (often re-
+                                                                 tional composite products. One of the most notable additives
+ferred to as phenolics) may have lowered dimensional stabil-
+                                                                 is wax, which is used to provide finished products with
+ity because of lower moisture contents in the finished prod-
+                                                                 resistance to aqueous penetration. In particle- and fiberboard
+ucts. The inherently dark color of PF resins may render them
+                                                                 products, wax emulsion provides excellent water resistance
+unsuitable for decorative product applications such as panel-    and dimensional stability when the board is wetted. Even
+ing and furniture.                                               small amounts (0.5% to 1%) act to retard the rate of liquid
+Urea-formaldehyde (UF) resins are typically used in the          water pickup. These improved water penetration properties
+manufacture of products where dimensional uniformity and         are important for ensuring the success of subsequent secon-
+surface smoothness are of primary concern, for example,          dary gluing operations and for providing protection upon
+particleboard and MDF. Products manufactured with UF             accidental wetting to the product during and after construc-
+resins are designed for interior applications. They can be       tion. The water repellency provided by the wax has practi-
+formulated to cure anywhere from room temperature to 150°C       cally no effect upon dimensional changes or water adsorption
+(300°F); press times and temperatures can be moderated           of composites exposed to equilibrium conditions. Other
+accordingly. Urea-formaldehyde resins (often referred to as      additives used for specialty products include preservatives,
+urea resins) are more economical than PF resins and are the      fire retardants, and impregnating resins.
+most widely used adhesive for composite wood products.
+The inherently light color of UF resins make them quite          General Manufacturing Issues
+suitable for the manufacture of decorative products.
+                                                                 Successful manufacture of any composite wood product
+Melamine-formaldehyde (MF) resins are used primarily for         requires control over raw materials. Ideally, raw materials are
+decorative laminates, paper treating, and paper coating. They    uniform, consistent, and predictable. Wood does not offer
+are typically more expensive than PF resins. MF resins may       these qualities but instead varies widely between species. For
+be blended with UF resins for certain applications (melamine     the purpose of producing a composite product, uniformity,
+urea).                                                           consistency, and predictability are accomplished by reducing
+                                                                 separated portions of the wood into small, relatively uniform
+Isocyanate as diphenylmethane di-isocyanate (MDI) is             and consistent particles, flakes, or fibers where effects of
+commonly used in the manufacture of composite wood prod-         differences will average out. Size reduction is sometimes
+ucts; MDI is used primarily in the manufacture of OSB.           augmented by chemical treatments designed to weaken the
+Facilities that use MDI are required to take special precau-     bonds between the components. The degree of size reduction
+tionary protective measures.                                     and the shape of individual lignocellulosic components will
+                                                                 depend on the application. Different composites tolerate or
+These adhesives have been chosen based upon their suitabil-      demand different sizes and shapes. Generally speaking, all the
+ity for the particular product under consideration. Factors      conventional composite products discussed in this chapter
+taken into account include the materials to be bonded to-        are made to conform to product or performance standards
+gether, moisture content at time of bonding, mechanical          (English and others 1997).
+property and durability requirements of the resultant compos-
+ite products, and of course, resin system costs.
+                                                                 Standards for Wood–Based
+Some natural options may someday replace or supplement
+these synthetic resins. Tannins, which are natural phenols,      Panels
+can be modified and reacted with formaldehyde to produce a
+                                                                 The general types of standards for panel products are product
+satisfactory resin. Resins have also been developed by acidi-
+                                                                 standards and performance standards. Table 10–2 lists
+fying spent sulfite liquor, which is generated when wood is
+                                                                 standards for common conventional composite products. The
+pulped for paper. In the manufacture of wet-process fiber-
+                                                                 term adhesive, as used in the following descriptions of prod-
+board, lignin, which is inherent in lignocellulosic material,
+                                                                 uct and performance standards, is synonymous with glue.
+is frequently used as the resin (Suchsland and Woodson
+1986).
+
+
+10–4
+Table 10–2. Standards for frequently used panel products
+Product category              Applicable standard         Name of standard                                Source
+Plywood                       PS 1–95                     Voluntary product standard PS 1–95              NIST 1995
+                                                          Construction and industrial plywood
+                              PS 2–92                     Voluntary product standard PS 2–92              NIST 1992
+                                                          Performance standard for wood-based
+                                                          structural-use panels
+Oriented strandboard          PS 2–92                     Voluntary product standard PS 2–92              NIST 1992
+                                                          Performance standard for wood-based
+                                                          structural-use panels
+Particleboard                 ANSI A208.1–1993            Particleboard                                   NPA 1993
+Hardboard                     ANSI/AHA A135.4–1995        Basic hardboard                                 AHA 1995a
+                              ANSI/AHA A135.5–1995        Prefinished hardboard paneling                  AHA 1995b
+                              ANSI/AHA A135.6–1990        Hardboard siding                                AHA 1990
+Insulation board              ASTM C208–94                Standard specification for cellulosic fiber     ASTM current
+                                                          insulating board                                edition
+                              ANSI/AHA A194.1–1985        Cellulosic fiberboard                           AHA 1985
+Medium-density fiberboard     ANSI A208.2–1994            Medium-density fiberboard (MDF)                 NPA 1994
+
+
+
+Product Standards                                                  encourages the development of performance standards in
+                                                                   preference to commodity-type standards. The Voluntary
+Product standards may be further classified as manufacturing       Standards and Accreditation Act of 1977 states that “a per-
+method standards and laboratory test standards. Probably the       formance standard does not limit the manufacturer’s freedom
+best example of a manufacturing method standard is Volun-          to choose any method of design or any form of construction
+tary Product Standard PS 1–95 for construction and indus-          that achieves the desired level of performance” (Abourezk
+trial plywood (NIST 1995). This standard specifies such            1977)
+matters as what wood species and grades of veneer may be
+used, what repairs are permissible, and how repairs must be        The APA–The Engineered Wood Association (formerly
+made. For panels produced according to prescriptive manu-          American Plywood Association) was the leading proponent
+facturing requirements, a comparison of wood failure to            of performance-type standards for panel products, and their
+adhesive failure in small test specimens of plywood is the         early work formed the basis for the performance standards in
+performance test specified.                                        existence today (O’Halloran 1979, 1980; APA 1981).
+                                                                   Wood-based panels manufactured in conformance with per-
+A good example of a laboratory test product standard is the        formance standards (APA–The Engineered Wood Associa-
+American National Standard for mat-formed particleboard,           tion 1995a, TECO 1991) are approved by the three major
+ANSI A208.1 (NPA 1993). The American National Stan-                model codes by virtue of approval by the Council of Ameri-
+dards Institute (ANSI) product standards for both particle-        can Building Officials through the issuance of a national
+board and MDF are sponsored by the Composite Panel                 evaluation report. These wood-based panels can be used for
+Association (CPA) in Gaithersburg, Maryland. The CPA is            construction applications such as sheathing for roofs, sub-
+the association resulting from the 1997 consolidation of the       flooring, and walls.
+U.S.-based National Particleboard Association and the
+Canadian Particleboard Association. This standard states           Similarly, wood-based panels may be used in light-frame
+that in laboratory tests, specimens show certain minimally         construction for many single-layer floor applications.
+acceptable physical and mechanical properties, identified by       Plywood, OSB, and COM-PLY, a proprietary product, are
+numeric values. The test values give some indication of            all span-rated for particular end uses.
+product quality, but the tests on small specimens were not         Under PS 1–95 (NIST 1995), plywood panels intended for
+specifically developed to correlate with performance of whole      structural uses may be certified or rated using either prescrip-
+panels in specific end-uses.                                       tive or performance-based criteria. Standard PS 2–92 (NIST
+                                                                   1992) is strictly performance based because it applies to all
+Performance Standards                                              structural-use wood-based panels, including plywood, wafer-
+Performance standards are written for panels in specific           board, and OSB; OSB is a second generation panel, with
+end-uses. These standards focus on panel performance in            aligned fibers, that evolved from the original product called
+laboratory tests developed to indicate panel performance for       waferboard. The PS 2–92 standard is not a replacement for
+particular end-uses. Federal legislation (Abourezk 1977)           PS 1–95, which contains necessary veneer-grade and
+
+
+                                                                                                                              10–5
+                                                                     performance standards for sheathing are marked with grade
+                                                                     stamps such as those shown in Figure 10–4a,b. Structural
+                                                              ❺      flakeboards are usually marketed as conforming to a product
+                                    ❶                                standard for sheathing or single-layer subflooring or under-
+                                                              ➏      layment and are graded as a performance-rated product (PRP–
+                                                                     108) similar to the grading for construction plywood. Volun-
+❼                            ❷      ❷                                tary Product Standard PS 2–92 is the performance standard
+                             ❽                                ❼      for wood-based structural-use panels, which include such
+➏                                   ❸
+                             ❸      ❹                         ❽      products as plywood, OSB, and waferboard. Panels conform-
+❶                            ❹                                       ing to these performance standards for sheathing are marked
+                                                                     with grade stamps such as those shown in Figure 10–4c,d.
+             (a)                                 (b)                 As seen in Figure 10–4a,b, the grade stamps must show (1)
+                                                                     conformance to plywood product standards, (2) nominal
+                                                                     panel thickness, (3) grades of face and back veneers or grade
+                                                                     name based on panel use, (4) performance-rated panel stan-
+                                                              ❺      dard, (5) recognition as a quality assurance agency by the
+❼                                   ❶                                National Evaluation Service (NES), which is affiliated with
+                            ❷                                 ➏      the Council of American Building Officials, (6) exposure
+❽                                                                    durability classification, (7) span rating, which refers to
+                             ➏      ❷                                maximum allowable roof support spacing and maximum
+                                                              ❼
+                                    ❹                                floor joist spacing, and (8) panel sizing for spacing.
+❶
+                                                                     Plywood
+❺                           ❹
+             (c)                                 (d)
+                                                                     General Description
+❶ Product Standard that governs specifics of production for
+    construction and industrial plywood                              Plywood is a flat panel built up of sheets of veneer called
+❷ Nominal panel thickness subject to acceptable tolerances           plies, united under pressure by a bonding agent to create a
+                                                                     panel with an adhesive bond between plies. Plywood can be
+❸ Panel grade designation indicating minimum veneer grade            made from either softwoods or hardwoods. It is always con-
+                                                                     structed with an odd number of layers with the grain direc-
+    used for panel face and back, or grade name based on
+    panel use
+                                                                     tion of adjacent layers oriented perpendicular to one another.
+❹ Performance-rated panel standard indicating structural-use         Since layers can consist of a single ply or of two or more
+    panel test procedure recognized by National Evaluation
+                                                                     plies laminated such that their grain is parallel, a panel can
+                                                                     contain an odd or even number of plies but always an odd
+    Service (NES)
+
+❺ NES report number from Council of American Building                number of layers. The outside plies are called faces or face
+    Officials (CABO)                                                 and back plies; the inner plies are called cores or centers; and
+➏ Exposure durability classification: Exposure 1 indicates           the plies with grain perpendicular to that of the face and back
+    interior panel bonded with exterior glue suitable for uses       are called crossbands. The core may be veneer, lumber, or
+    not permanently exposed to weather                               particleboard, with the total panel thickness typically not
+❼ Span rating indicating maximum spacing of roof and floor           less than 1.6 mm (1/16 in.) or more than 76 mm (3 in.).
+    supports for ordinary residential construction applications;     The plies may vary in number, thickness, species, and grade
+    32/16 rating identifies a panel rated for use on roof supports   of wood. To distinguish the number of plies (individual
+    spaced up to 813 mm (32 in.) o.c., or floor supports spaced
+                                                                     sheets of veneer in a panel) from the number of layers
+                                                                     (number of times the grain orientation changes), panels are
+    up to 406 mm (16 in.) o.c.
+
+❽ Sized for spacing denotes panels that have been sized to           sometimes described as three-ply, three-layer or four-ply,
+    allow for spacing of panel edges during installation to reduce   three-layer. The outer layers (face and back) and all odd-
+                                                                     numbered layers (centers) generally have their grain direction
+    the possibility of buckling
+
+Figure 10–4. Typical grade stamps for plywood and OSB.               oriented parallel to the length or long dimension of the
+                                                                     panel. The grain of even-numbered layers (cores) is perpen-
+                                                                     dicular to the length of the panel.
+adhesive-bond requirements as well as prescriptive lay-up
+provisions and includes many plywood grades not covered              The alternation of grain direction in adjacent plies provides
+under PS 2–92.                                                       plywood panels with dimensional stability across their
+                                                                     width. It also results in fairly similar axial strength and
+A significant portion of the market for construction and             stiffness properties in perpendicular directions within the
+industrial plywood is in residential construction. This situa-       panel plane. The laminated construction distributes defects,
+tion has resulted in the development of performance standards        markedly reduces splitting when the plywood is penetrated
+for sheathing and single-layer subflooring or underlayment for       by fasteners (compared with splitting of solid wood), and
+residential construction. Plywood panels conforming to these         improves resistance to checking.
+
+
+10–6
+Compared with solid wood, the chief advantages of plywood         suitable for exterior service, such as in marine applications.
+are that the properties along the length of the panel are more    A significant portion of all hardwood plywood is available
+nearly equal to properties along the width, there is greater      completely finished.
+resistance to splitting, and the form permits many applica-
+tions where large sheets are desirable. The use of plywood        The adhesives used in the manufacture of the two classes of
+may result in improved utilization of wood. Plywood can           plywood are quite different, but each type is selected to
+cover large areas with a minimum amount of wood fiber             provide the necessary performance required by the appropriate
+because plywood that is thinner than sawn lumber can be           specifications.
+used in some applications. The properties of plywood de-
+pend on the quality of the different layers of veneer, order of   Construction and industrial plywood covered by Product
+layer placement, adhesive used, and control of bonding            Standard PS 1 is classified by exposure capability (type) and
+conditions. The grade of the panel depends upon the quality       grade. The two exposure capabilities are exterior and interior.
+of the veneers used, particularly of the face and back. The       Exterior plywood is bonded with exterior adhesive, and
+type of panel refers to the durability of the adhesive-to-wood    veneers used in manufacture cannot be less than “C” grade as
+bond and depends upon the adhesive-bonded joint, particu-         defined in PS 1. Interior-type plywood may be bonded with
+larly its water resistance, and upon veneer grades used. Gen-     interior, intermediate, or exterior (waterproof) adhesive. “D”
+erally, face veneers with figured grain that are used in panels   grade veneer is allowed as inner and back plies of certain
+where appearance is important have numerous short, or             interior-type plywoods. Adhesive bond performance require-
+otherwise deformed, wood fibers. These may significantly          ments are specified in PS 1.
+reduce strength and stiffness of the panels. On the other hand,
+                                                                  The four types of hardwood and decorative plywood in de-
+face veneers and other plies may contain certain sizes and
+                                                                  creasing order of resistance to water are Technical (Exterior),
+distributions of knots, splits, or growth characteristics that
+                                                                  Type I (Exterior), Type II (Interior), and Type III (Interior);
+have no undesirable effects on strength properties for specific
+                                                                  adhesive bond requirements for these are specified in
+uses, such as sheathing for walls, roofs, or floors.
+                                                                  ANSI/HPVA–1–1994 (HPVA 1994).
+The plywood industry continues to develop new products.
+Hence, the reader should always refer directly to current         Processing Considerations
+specifications on plywood and its use for specific details.
+                                                                  After trees are felled and bucked to length, the logs are graded
+                                                                  and sorted to make the most appropriate and efficient use of
+Types of Plywood                                                  the wood fiber. For softwood plywood, in the past, logs
+Broadly speaking, two classes of plywood are available,           graded as “peelers” were sent to veneer mills or plywood
+covered by separate standards: (a) construction and industrial,   plants and “sawlogs” were shipped to lumber mills. Because
+and (b) hardwood and decorative. Construction and industrial      of the dwindling availability of the clear, large-diameter
+plywood has traditionally been made from softwoods such as        peeler logs on which the plywood industry was founded, this
+Douglas-fir, Southern Pine, white fir, larch, western hem-        practice has changed. Today, the higher grades of softwood
+lock, and redwood. However, the current standard lists a          peeler logs are sent to sawmills, and with few exceptions,
+large number of hardwoods as qualifying for use. At the same      plywood is made from low-grade sawlogs or peeler logs.
+time, the standard for hardwood and decorative plywood            This change came about because of the increasing demand for
+covers certain decorative softwood species for nonconstruc-       clear sawn lumber, and it has been made possible by innova-
+tion use.                                                         tions in veneer and plywood manufacturing and testing
+                                                                  practices that ensure that panels are suitable for their intended
+Most construction and industrial plywood used in the United       use (McKay 1997).
+States is produced domestically, and U.S. manufacturers
+export some material. Generally speaking, the bulk of con-        Logs delivered to a veneer mill are sorted by grade and
+struction and industrial plywood is used where strength,          species, then debarked and crosscut into peeler blocks. Peeler
+stiffness, and construction convenience are more important        blocks are often heated or conditioned by steaming or im-
+than appearance. However, some grades of construction and         mersion in hot water prior to peeling, which makes them
+industrial plywood are made with faces selected primarily for     easier to peel, reduces veneer breakage, and results in
+appearance and are used either with clear natural finishes or     smoother, higher quality veneer. The heated blocks are then
+pigmented finishes.                                               conveyed to a veneer lathe. To maximize veneer yield, each
+                                                                  block is gripped on the ends at the block’s geometric center.
+Hardwood and decorative plywood is made of many different         While rotating at high speed, the block is fed against a
+species, both in the United States and overseas. Well over        stationary knife parallel to its length. Veneer is peeled from
+half of all such panels used in the United States are imported.   the block in a continuous, uniformly thin sheet, much like
+Hardwood plywood is normally used in such applications as         unwinding a roll of paper towels, but at a speed of up to
+decorative wall panels and for furniture and cabinet panels       4.1 m/s (13.3 linear ft/s).
+where appearance is more important than strength. Most of
+the production is intended for interior or protected uses,        Depending on its intended use, veneer may range in thick-
+although a very small proportion is made with adhesives           ness from 1.6 to 4.8 mm (1/16 to 3/16 in.) for softwood
+
+
+                                                                                                                             10–7
+plywood and much thinner for hardwood and decorative              Specifications
+plywood. After being peeled to a diameter from 127 to
+51 mm (5 to 2 in.), the peeler core is ejected from the lathe.    The two general classes of plywood—(a) construction and
+Peeler cores may be sawn into standard 38- by 89-mm               industrial plywood and (b) hardwood and decorative ply-
+(nominal 2- by 4-in.) lumber, used for fence posts, and land-     wood—are covered by separate standards. Construction and
+scape timbers, or chipped for use as pulp chips or fuel.          industrial plywood are covered by Product Standard PS 1–95
+                                                                  (NIST 1995), and hardwood and decorative plywood by
+The continuous sheet of veneer is then transported by con-        American National Standard ANSI/HPVA–1–1994 (HPVA
+veyor to a clipping station where it is clipped into usable       1994). Each standard recognizes different exposure durability
+widths and defects are removed. The wet veneer is then dried      classifications, which are primarily based on moisture resis-
+to an average moisture content that is compatible with the        tance of the adhesive and the grade of veneer used.
+adhesive system being used to bond the panels. Since it is
+critical that veneer moisture content be low at the time adhe-    Model building codes in the United States stipulate that
+sive is applied, each sheet is metered as it exits the dryer.     plywood used for structural applications like subflooring and
+Pieces that are too wet or dry are rerouted to be redried or      sheathing must meet the requirements of certain U.S.
+reconditioned, respectively. Properly dried veneer is then        Department of Commerce standards. Voluntary Product
+sorted into one of as many as 15 to 20 different grades ac-       Standard PS 1–95 for construction and industrial plywood
+cording to the size and number of knots and other natural and     (NIST 1995) and Performance Standard PS 2–92 for wood-
+processing defects. Each grade has a specific use; some veneer    based structural-use panels (NIST 1992) spell out the ground
+requires special processing before it is assembled into ply-      rules for manufacturing plywood and establishing plywood or
+wood. After grading and/or processing, the veneer is taken to     OSB properties, respectively. These standards have evolved
+the lay-up area.                                                  over time from earlier documents (O’Halloran 1979, 1980;
+                                                                  APA 1981) and represent a consensus opinion of the makers,
+Adhesive is applied to veneers in the lay-up area by spray,       sellers, and users of plywood products as well as other con-
+curtain coating, roller coating, extrusion, and recently, foam-   cerned parties. In addition, model building codes require that
+ing. Veneer is laid up into plywood by hand, machine, or a        plywood manufacturers be inspected and their products certi-
+combination of both. Hand lay-up is the oldest method, and        fied for conformance to PS 1–95, PS 2–92, APA PRP–108,
+it is still the only practical way of making plywood for some     or TECO PRP–133 by qualified independent third-party
+applications. With this method, the face, back, and center        agencies on a periodic unannounced basis.
+veneers are hand-placed by workers called sheet turners. After
+being coated on both sides with adhesive, the alternating         With PS 1–95, as long as a plywood panel is manufactured
+core plies are placed by hand or machine. The lay-up process      using the veneer grades, adhesive, and construction estab-
+is almost completely automated in newer plywood plants,           lished in the standard’s prescriptive requirements, the panel
+although the narrow strips used for cores may still be placed     is by definition acceptable. When plywood is assembled so
+manually. Before veneers are laid up, narrow strips are some-     that the proportion of wood with the grain perpendicular to
+times joined into full-width sheets with hot-melt adhesive-       the panel’s face grain is greater than 33% or more than 70%
+coated fiberglass thread so that they can be handled by ma-       of the panel’s thickness, the plywood automatically meets
+chine. Also, veneers may be upgraded by punching out knots        the span rating. In panels with four or more plies, the com-
+and other defects and replacing them with wood plugs or           bined thickness of the inner layers must equal 45% or more
+synthetic patches.                                                of the panel’s thickness. Generally speaking, for panels of the
+                                                                  same thickness and made with the face and back veneer of the
+Once assembled, panels are conveyed from the lay-up area          same species, stiffness and strength increase as the thickness
+to the pressing area. Panels are first subjected to cold pre-     of the face and back veneers increases. All other things being
+pressing to flatten the veneers and transfer the adhesive to      equal, the stiffness and strength of plywood also increase as
+uncoated sheets; panels are then hot pressed. After hot press-    panel thickness increases.
+ing, panels are solid-piled or hot-stacked to ensure complete
+curing of the adhesive, then sawn to size. Panels are then        All hardwood plywood represented as conforming to Ameri-
+graded with regard to the product standard under which they       can National Standard ANSI/HPVA–1–1994 (HPVA 1994)
+were manufactured. Knotholes and splits on the faces and          is identified by one of two methods: by marking each panel
+backs of some panels may be repaired with wood plugs or           with the Hardwood Plywood & Veneer Association (HPVA)
+with synthetic patches (by filling the holes and splits with      plywood grade stamp (Fig. 10–5) or by including a written
+what is essentially liquid plastic that quickly hardens).         statement with this information with the order or shipment.
+Those panels that do not meet the specification are down-         The HPVA grade stamp shows (1) HPVA trademark, (2)
+graded or rejected. Panels needing further processing are sent    standard that governs manufacture, (3) HPVA mill number,
+to the finishing area where, depending on their intended use,     (4) plywood adhesive bond type, (5) flame spread index
+they may be sanded to thickness, profiled with tongue and         class, (6) description of lay-up, (7) formaldehyde emission
+groove edges, surface textured, scarf- or finger-jointed, oiled   characteristics, (8) face species, and (9) veneer grade of face.
+and edge-sealed, or given other treatments. The panels are
+then ready for shipping (McKay 1997).
+
+
+
+
+10–8
+                                                                 Grades and Classification
+                                     ❽                           Plywood is classified by both exposure durability class and
+                                                                 grade. Exposure durability class refers to the ability of a
+                                                           ❺     panel to resist the damaging effects of exposure to the weather
+                                                                 or moisture. Panel grades are either names that describe the
+                   ❼                                             intended use of the panel, such as underlayment or concrete
+                                                                 form, or letters that identify the grades of the face and back
+                           ❶                                     veneers, such as A–B.
+                                    ❸                   ❹        Veneers for plywood are visually graded according to the
+                                                                 size, number, and location of natural and processing defects
+               ➏                    ❾                    ❷       that affect their strength and appearance. Knots, decay, splits,
+                                                                 insect holes, surface roughness, number of surface repairs, and
+                                                                 other defects are considered. More surface repairs, such as
+Explanation of numbering
+❶ HPVA trademark                                                 elliptical (boat-shaped) wood patches and bigger knots are
+                                                                 allowed in the lower veneer grades. Veneers are graded as N,
+❷ Standard governing manufacture                                 A, B, C, C-Plugged, and D. N-grade or natural finish ve-
+❸ HPVA mill number                                               neers are virtually blemish-free, and they contain only a few
+                                                                 minor surface repairs. A and B veneers have solid surfaces
+❹ Plywood bondline type                                          with neatly made repairs and small, tight knots. Knotholes
+❺ Flame spread index class as determined by testing in           up to 25 mm (1 in.) in diameter are allowed in C veneers,
+   accordance with ASTM E84, standard test method for            whereas D veneers may have knotholes as large as 51 mm
+   surface burning characteristics of building materials         (2 in.) across. Because their appearance is usually of secon-
+                                                                 dary importance, panels meant for sheathing and other struc-
+➏ Lay-up description references structural attributes of wall    tural uses are made mostly from C and D veneers. The N, A,
+   panels as described in HPMA design guide HP-SG-86,
+   Structural design Guide for Hardwood Plywood Wall Panels      and B veneers are reserved for panels where appearance is the
+   as published by the Hardwood Plywood & Veneer                 primary consideration in such uses as exterior trim and
+   Association
+                                                                 soffits, interior paneling, doors, and cabinets.
+❼ Formaldehyde emission characteristics to determine
+   compliance with U.S. Department of Housing and Urban          Construction Plywood Exposure Durability Class
+                                                                 The exposure durability classifications for construction and
+   Development requirements for building product use in
+                                                                 industrial plywood specified in PS–1 are as follows: exterior,
+   manufactured homes by testing in accordance with
+   ASTM E1333, Standard Test Method for Determining
+   Formaldehyde Levels From Wood Products Under Defined          exposure 1, intermediate adhesive, exposure 2, and interior.
+   Test Conditions Using a Large Chamber                         Exterior plywood is bonded with exterior (waterproof) adhe-
+❽ Face species (face species designation is not required for     sive and is composed of C-grade or better veneers through-
+   wall panels when the surface is a decorative simulation       out. Exposure 1 plywood is bonded with exterior adhesives,
+   such as that of a wood grain of another species or of a       but it may include D-grade veneers. Exposure 2 plywood is
+   pattern)                                                      made with adhesive of intermediate resistance to moisture.
+❾ Veneer grade of face (grade of veneer of back is shown         Interior-type plywood may be bonded with interior, interme-
+   following grade of face for industrial panels)                diate, or exterior (waterproof) adhesive. D-grade veneer is
+                                                                 allowed on inner and back plies of certain interior-type
+Figure 10–5. Grade stamp for hardwood plywood                    grades.
+conforming to ANSI/HPVA–1–1994.
+                                                                 The exposure durability classifications for hardwood and
+                                                                 decorative plywood specified in ANSI/HPVA HP–1–1994
+The span-rating system for plywood was established to            are as follow, in decreasing order of moisture resistance:
+simplify plywood specification without resorting to specific     technical (exterior), type I (exterior), type II (interior), and
+structural engineering design. This system indicates perform-    type III (interior). Hardwood and decorative plywood are not
+ance without the need to refer to species group or panel         typically used in applications where structural performance is
+thickness. It gives the allowable span when the face grain is    a prominent concern. Therefore, most of the remaining
+placed across supports with a minimum of three supports.         discussion of plywood performance will concern construction
+                                                                 and industrial plywood.
+If design calculations are desired, a design guide is provided
+by the APA–The Engineered Wood Association in Plywood            Plywood Grades
+Design Specification (PDS) and APA Technical Note                There are many plywood grade names (Tables 10–3 and
+N375B (APA–The Engineered Wood Association 1995a,b).             10–4). In addition to the 30 or so generic names listed in
+The design guide contains tables of grade stamp references,      PS 1–95, each agency that inspects plywood mills and
+section properties, and allowable stresses for plywood used      certifies their products has coined its own trademarked grade
+in construction of buildings and similar structures.             names. For example, panels intended for use as single-layer
+
+                                                                                                                           10–9
+        Table 10–3. Grade names for interior plywood gradesa
+                                                           Minimum       Veneer         Quality
+        Panel grade designation                              face         back        inner plies           Surface
+
+        N–N                                                   N            N             C            S2Sb
+        N–A                                                   N            A             C            S2S
+        N–B                                                   N            B             C            S2S
+        N–D                                                   N            D             D            S2S
+        A–A                                                   A            A             D            S2S
+        A–B                                                   A            B             D            S2S
+        A–D                                                   A            D             D            S2S
+        B–B                                                   B            B             D            S2S
+        B–D                                                   B            D             D            S2S
+        Underlayment                                      C plugged        D            C&D           Touch sanded
+        C–D plugged                                       C plugged        D             D            Touch sanded
+        Structural I C–D                                                                              Unsanded
+        Structural I C–D plugged, underlayment                                                        Touch sanded
+        C–D                                                     C          D              D           Unsanded
+        C–D with exterior adhesive                              C          D              D           Unsanded
+        a
+            NIST 1995.
+        b
+            Sanded on two sides.
+
+
+
+        Table 10–4. Grade names for exterior plywood gradesa
+                                                           Minimum       Veneer      Quality inner
+        Panel grade designation                              face         back          plies                Surface
+
+        Marine, A–A, A–B. B–B, HDO, MDO                                                               See regular grades
+        Special exterior, A–A, A–B, B–B, HDO, MDO                                                     See regular grades
+        A–A                                                     A          A               C          S2Sb
+        A–B                                                     A          B               C          S2S
+        A–C                                                     A          C               C          S2S
+        B–B (concrete form)
+        B–B                                                   B            B              C           S2S
+        B–C                                                   B            C              C           S2S
+        C–C plugged                                       C plugged        C              C           Touch sanded
+        C–C                                                   C            C              C           Unsanded
+        A–A high-density overlay                              A            A          C plugged               —
+        B–B high-density overlay                              B            B          C plugged               —
+        B–B high-density concrete form overlay                B            B          C plugged               —
+        B–B medium-density overlay                            B            B              C                   —
+        Special overlays                                      C            C              C                   —
+        a
+            NIST 1995.
+        b
+            Sanded on two sides.
+
+
+
+
+flooring (combined subfloor and underlayment) made by                Span Rating and General Property Values
+TECO-certified manufacturers are called Floorspan, while             The more than 70 species of wood used for making softwood
+those made by mills certified by the APA–The Engineered              plywood (including some hardwoods) are classified into five
+Wood Association are named Sturd-I-Floor. Although the               groups according to their stiffness and strength (Table 10–5).
+trade names may be different, the minimum stiffness and              The strongest woods are in Group 1; the weakest, in
+strength properties of the panels are not. With the exception        Group 5. Today, almost all plywood intended for structural
+of custom-order panels, plywood is strictly a commodity              use is marked with a two-number span rating (for example,
+product; panels of the same grade and thickness conforming           32/16) instead of a species group number (Fig. 10–4).
+to either PS 1–95 or PS 2–92 are interchangeable among               As with softwood lumber allowable design values, plywood
+manufacturers.                                                       span ratings were developed by breaking thousands of full-
+                                                                     size panels of varying construction and thickness. The left-
+                                                                     hand number of the rating represents the maximum
+
+
+
+10–10
+   Table 10–5. Softwood plywood species groups by stiffness and strengtha
+       Group 1                    Group 2                        Group 3                    Group 4                  Group 5
+
+   Apitong                     Cedar, Port Orford          Alder, red                      Aspen                     Basswood
+   Beech, American             Cypress                     Birch, paper                       Bigtooth               Poplar
+   Birch                       Douglas-firb                Cedar, yellow                      Quaking                Balsam
+      Sweet                    Fir                         Fir, subalpine                  Cativo
+      Yellow                       Balsam                  Hemlock, eastern                Cedar
+   Douglas-firc                    California red          Maple, bigleaf                     Incense
+   Kapur                           Grand                   Pine                               Western
+   Keruing                         Noble                       Jack                        Red
+   Larch, western                  Pacific silver             Lodgepole                    Cottonwood
+   Maple, sugar                    White                      Ponderosa                       Eastern
+   Pine                        Hemlock, western                Spruce                         Black
+      Caribbean                Lauan                       Redwood                         (Western Poplar)
+      Ocote                        Almon                   Spruce                          Pine, eastern
+   Pine, Southern                  Bagtikan                    Engelman                    White, sugar
+      Loblolly                     Mayapis                     White
+      Longleaf                     Red lauan
+      Shortleaf                    Tangile
+      Slash                        White lauan
+   Tanoak                      Maple, black
+                               Mengkulang
+                               Meranti, red
+                               Mersawa
+                               Pine
+                                   Pond
+                                   Red
+                                   Virginia
+                                   Western white
+                               Spruce
+                                   Black
+                                   Red
+                                   Sitka
+                               Sweetgum
+                               Tamarack
+                               Yellow poplar
+   a
+     From NIST 1995. Strongest species in Group 1; weakest in Group 5.
+   b
+     Trees grown in Nevada, Utah, Colorado, Arizona, and New Mexico.
+   c
+     Trees grown in Washington, Oregon, California, Idaho, Montana, Wyoming, and Canadian provinces
+     of Alberta and British Columbia.
+
+
+
+
+recommended on-center (OC) spacing for framing when the               Table 10–6 provides approximate properties of sheathing-
+panel is used as roof sheathing; the right-hand number is the         grade plywood. Plywood may be used under loading
+maximum recommended OC spacing for framing when the                   conditions that require the addition of stiffeners to prevent it
+panel is used as subflooring. Panels intended for single-layer        from buckling. It may also be used in the form of cylinders
+flooring (combined subfloor and underlayment) have only               or curved plates, which are beyond the scope of this hand-
+one span-rating number; for example, 24 OC. In all cases,             book but are discussed in U.S. Department of Defense
+the panels are meant to be installed with their length perpen-        Bulletin ANC–18.
+dicular to framing and across three or more supports. Again,
+panels of the same grade and span rating can be substituted           It is obvious from its construction that a strip of plywood
+for one another regardless of who made or certified them.             cannot be as strong in tension, compression, or bending as
+                                                                      a strip of solid wood of the same size. Those layers having
+
+
+                                                                                                                                10–11
+   Table 10–6. General property values for sheathing-grade plywooda
+                                                                                                        ASTM test methodb
+   Property                                        Value                                                (where applicable)
+
+   Linear hygroscopic expansion
+     (30%–90% RH)                                  0.15%
+   Linear thermal expansion                        6.1 × 10-6 cm/cm/°C (3.4 × 10-6 in/in/°F)
+   Flexure
+       Modulus of rupture                          20.7–48.3 MPa (3,000–7,000 lb/in2)                          D3043
+       Modulus of elasticity                       6.89–13.1 GPa (1–1.9 × 10 lb/in )
+                                                                              6       2
+
+
+   Tensile strength                                l0.3–27.6 MPa (1,500–4,000 lb/in2)                          D3500
+   Compressive strength                            20.7–34.5 MPa (3,000–5,000 lb/in )     2
+                                                                                                               D3501
+   Shear through thickness
+    (edgewise shear)
+       Shear strength                              4.1–7.6 MPa (600–1,100 lb/in2)                              D2719
+       Shear modulus                               0.47–0.761 GPa (68–110 × 10 lb/in )
+                                                                                  3           2                D3044
+
+   Shear in plane of plies (rolling shear)                                                                     D2718
+       Shear strength                              1.7–2.1 MPa (250–300 lb/in )
+                                                                              2
+
+
+       Shear modulus                               0.14–0.21 GPa (20–30 × 103 lb/in2)
+   a
+     All mechanical properties are based on gross section properties of plywood panels, with stress applied parallel to
+    grain direction of face plies where applicable. Note: Data are not to be used in developing allowable design values.
+    Information on engineering design methods for plywood courtesy of APA–The Engineered Wood Association,
+     Tacoma, WA.
+   b
+     Standard methods of testing strength and elastic properties of structural panels are given in ASTM standards
+     (see References).
+
+
+
+
+their grain direction oriented at 90° to the direction of stress    problem, such as in small pieces, plywood can be ordered
+can contribute only a fraction of the strength contributed by       with a solid core and face veneers.
+the corresponding areas of a solid strip because they are
+stressed perpendicular to the grain. Strength properties in the     Other Considerations
+length and width directions tend to be equalized in plywood         Plywood of thin, cross-laminated layers is very resistant to
+because adjacent layers are oriented at an angle of 90° to each     splitting. Therefore, nails and screws can be placed close
+other.                                                              together and close to the edges of panels. Of course, highly
+Characteristics                                                     efficient, rigid joints can be obtained by bonding plywood to
+                                                                    itself or to heavier wood members, such as those needed in
+Although plywood is an engineered wood product, it is also          prefabricated wood I-joists, box beams, and stressed-skin
+used as a component in other engineered wood products and           panels. Adhesive-bonded joints should not be designed to
+systems in applications such as prefabricated I-joists, box         transmit load in tension primarily normal to the plane of the
+beams, stressed-skin panels, and panelized roofs. Plywood           plywood sheet because of the rather low tensile strength of
+has high strength-to-weight and strength-to-thickness ratios,       wood perpendicular to grain. Adhesive-bonded joints should
+and its stiffness and strength are more equal in width and          be arranged to transmit loads through shear. It must be
+length than are stiffness and strength of solid wood. Plywood       recognized that shear strength across the grain of wood (often
+also has excellent dimensional stability along its length and       called rolling shear strength because of the tendency to roll
+across its width. Minimal edge-swelling makes plywood               the wood fibers) is only 20% to 30% of that parallel to the
+perhaps the best choice for adhesive-bonded tongue-and-             grain. Thus, sufficient area must be provided between ply-
+groove joints, even where some wetting is expected. Because         wood and flange members of box beams and between ply-
+the alternating grain direction of its layers significantly re-     wood and stringers of stressed-skin panels to avoid perpen-
+duces splitting, plywood is an excellent choice for uses that       dicular-to-grain shearing failure in the face veneer, in the
+call for fasteners to be placed very near the edges of a panel.     crossband veneer next to the face veneer, or in the wood
+In uses where internal knotholes and voids may pose a               member. Various details of design are given in Chapter 11.
+
+
+10–12
+Specialty Panels                                                   elements. The strands are dried, blended with resin and wax,
+                                                                   and formed into thick, loosely consolidated mats that are
+Some plywood panels are designed for special uses, includ-         pressed under heat and pressure into large panels.
+ing marine decorative underlayment and concrete form and           Figure 10–6 shows an OSB manufacturing process. Oriented
+special exterior applications. The treating of plywood with        strandboard is made from long, narrow strands, with the
+preservatives and fire retardants is done by manufacturers         strands of each layer aligned parallel to one another but
+outside of the plywood industry. Plywood is easily pressure-       perpendicular to strands in adjacent layers, like the cross-
+treated with waterborne preservatives and fire retardants, and     laminated veneers of plywood. It is this perpendicular orien-
+treated plywood is readily available for use where such pro-       tation of different layers of aligned strands that gives OSB its
+tection is needed.                                                 unique characteristics and allows it to be engineered to suit
+                                                                   different uses.
+Particle and Fiber Composites                                      Stranding Process
+Many wood-based composite materials have become popular.           Typically, logs are debarked and then sent to a soaking pond
+These composites are usually available in panel form and are       or directly to the stranding process. Long log disk or ring
+widely used in housing and furniture. Conventional compos-         stranders are commonly used to produce wood strands typi-
+ites are typically made with a heat-curing adhesive that holds     cally measuring 114 to 152 mm (4.5 to 6 in.) long,
+the wood fiber components together. The physical and me-           12.7 mm (0.5 in.) wide, and 0.6 to 0.7 mm (0.023 to
+chanical properties of wood-based fiber and particle panel         0.027 in.) thick.
+materials are determined by standard ASTM test methods.
+                                                                   Drying Process
+General Processing Considerations                                  Green strands are stored in wet bins and then dried in a
+All the products in the family of particle and fiber composite     traditional triple-pass dryer, a single-pass dryer, a combina-
+materials are processed in similar ways. Raw material for          tion triple-pass/single-pass dryer, or a three-section conveyor
+OSB, waferboard, and fiberboard is obtained by flaking or          dryer. A relatively recent development is a continuous chain
+chipping roundwood. For fiberboard, chips are reduced to           dryer, in which the strands are laid on a chain mat that is
+wood fiber using refiners that usually use steam to soften the     mated with an upper chain mat and the strands are held in
+wood. The comminuted wood is then dried, adhesive is               place as they move through the dryer. The introduction of
+applied, and a mat of wood particles, fibers, or strands is        new drying techniques allows the use of longer strands,
+formed; the mat is then pressed in a platen-type press under       reduces surface inactivation of strands, and lowers dryer
+heat and pressure until the adhesive is cured. The bonded          outfeed temperatures. Dried strands are screened and sent to
+product is allowed to cool and is further processed into           dry bins.
+specified width, length, and surface qualities.
+                                                                   Adhesive Application or Blending
+Oriented Strandboard                                               The blending of strands with adhesive and wax is a highly
+                                                                   controlled operation, with separate rotating blenders used for
+Oriented strandboard is an engineered structural-use panel         face and core strands. Typically, different resin formulations
+manufactured from thin wood strands bonded together with           are used for face and core layers. Face resins may be liquid or
+waterproof resin under heat and pressure, and it is used ex-       powdered phenolics, whereas core resins may be phenolics or
+tensively for roof, wall, and floor sheathing in residential and   isocyanates. Several different resin application systems are
+commercial construction. Orientation of wood strands with a        used; spinning disk resin applicators are frequently used.
+typical aspect ratio (that is, strand length divided by width)
+of at least 3 can produce a panel product with greater bending     Mat Formation
+strength and stiffness in the oriented or aligned direction.       Mat formers take on a number of configurations, ranging from
+                                                                   electrostatic equipment to mechanical devices containing
+Raw Materials                                                      spinning disks to align strands along the panel’s length and
+The raw material for the original waferboard product, which        star-type cross-orienters to position strands across the panel’s
+was made from square wafers, was aspen. As this industry           width. All formers use the long and narrow characteristic of
+expanded and OSB became the predominant product manu-              the strand to place it between the spinning disks or troughs
+factured, other species such as Southern Pine, white birch,        before it is ejected onto a moving screen or conveyor belt
+red maple, sweetgum, and yellow-poplar were found to be            below the forming heads. Oriented layers of strands within
+suitable raw materials as well. Small amounts of some other        the mat—face, core, face, for example—are dropped sequen-
+hardwoods can also be used for OSB.                                tially, each by a different forming head. Modern mat formers
+                                                                   either use wire screens laid over a moving conveyor belt to
+Manufacturing Process                                              carry the mat into the press or screenless systems in which
+In the general manufacturing process for OSB, debarked logs        the mat lies directly on the conveyor belt.
+are often heated in soaking ponds, then sliced into thin wood
+
+
+                                                                                                                            10–13
+Figure 10–6. Schematic of OSB manufacturing process. (Courtesy of Structural Board Association,
+Willowdale, Ontario, Canada.)
+
+
+
+Hot Pressing                                                     standard. The manufacturer must also maintain an in-plant
+In hot pressing, the loose layered mat of oriented strands is    quality control program in which panel properties are regu-
+compressed under heat and pressure to cure the resin. As         larly checked, backed by an independent third-party-
+many as sixteen 3.7- by 7.3-m (12- by 24-ft) panels may be       administered quality assurance program. The third-party
+formed simultaneously in a multiple-opening press. A more        agency must visit the mill on a regular unannounced basis.
+recent development is the continuous press for OSB. The          The agency must confirm that the in-plant quality control
+press compacts and consolidates the oriented and layered mat     program is being maintained and that panels meet the mini-
+of strands and heats it to 177°C to 204°C (350°F to 400°F)       mum requirements of the standard. Today, OSB manufac-
+to cure the resin in 3 to 5 min.                                 tured to standard PS 2–92 is quality-certified by the follow-
+                                                                 ing organizations: APA–The Engineered Wood Association,
+Design Capacities and Panel Certification                        Professional Services and Industries, Inc., Pittsburgh Testing
+                                                                 Laboratories, and PFS/TECO Corporations. Examples of
+Design capacities of performance-rated products, which in-       grade stamps for performance-rated panels are shown in
+clude OSB and waferboard, can be determined by using             Figure 10–4c,d.
+procedures outlined in Technical Note N375B (APA–The
+Engineered Wood Association 1995a). In this reference,
+allowable design strength and stiffness properties, as well as   Particleboard
+nominal thickness and section properties, are specified based    The wood particleboard industry grew out of a need to dis-
+on the span rating of the panel. Additional adjustment factors   pose of large quantities of sawdust, planer shavings, and to a
+based on panel grade and construction are also provided.         lesser extent, the use of mill residues and other relatively
+Table 10–7 provides general property values for sheathing-       homogeneous waste materials produced by other wood in-
+grade OSB.                                                       dustries. Simply put, particleboard is produced by mechani-
+                                                                 cally reducing the material into small particles, applying
+Under PS 2–92, a manufacturer is required to enter into an
+                                                                 adhesive to the particles, and consolidating a loose mat of
+agreement with an accredited testing agency to demonstrate
+that its panels conform with the requirements of the chosen
+
+
+10–14
+   Table 10–7. General property values for sheathing-grade OSBa
+                                                                                                        ASTM test methodb
+   Property                                                         Value                               (where applicable)
+   Linear hygroscopic expansion
+     (30%–90% RH)                                  0.15%
+   Linear thermal expansion                        6.1 × 10-6 cm/cm/°C (3.4 × 10-6 in/in/°F)
+   Flexure
+       Modulus of rupture                          20.7–27.6 MPa (3,000–4,000 lb/in2)                         D3043
+       Modulus of elasticity                       4.83–8.27 GPa (700–1,200 × 10 lb/in )3           2
+
+
+   Tensile strength                                6.9–l0.3 MPa (1,000–1,500 lb/in2)                          D3500
+   Compressive strength                            10.3–17.2 MPa (1,500–2,500 lb/in )       2
+                                                                                                              D3501
+   Shear through thickness
+    (edgewise shear)
+       Shear strength                              6.9–10.3 MPa (1,000–1,500 lb/in 2)                         D2719
+       Shear modulus                               1.24–2.00 GPa (180–290 × 10 lb/in )
+                                                                                    3           2             D3044
+
+   Shear in plane of plies (rolling shear)                                                                    D2718
+       Shear strength                              1.38–2.1 MPa (200–300 lb/in )2
+
+
+       Shear modulus                               0.14–0.34 GPa (20–50 × 103 lb/in2)
+   a
+     All mechanical properties are based on gross section properties of OSB panels, with stress applied parallel to panel
+    major axis where applicable. Note: Data are not to be used in developing allowable design values. Information
+     courtesy of APA–The Engineered Wood Association, Tacoma, WA.
+   b
+     Standard methods of testing strength and elastic properties of structural panels are given in ASTM standards
+   (see References).
+
+
+
+the particles with heat and pressure into a panel product
+(Fig. 10–7). All particleboard is currently made using a dry
+process, where air or mechanical formers are used to distrib-
+ute the particles prior to pressing.
+
+Particleboard is typically made in three layers. The faces of
+the board consists of fine wood particles, and the core is
+made of the coarser material. Producing a panel this way
+improves utilization of the material and the smooth face
+presents a better surface for laminating, overlaying, painting,
+or veneering. Particleboard is also readily made from a vari-
+ety of agricultural residues. Low-density insulating or sound-
+absorbing particleboard can be made from kenaf core or jute
+stick. Low-, medium-, and high-density panels can be pro-
+duced with cereal straw, which has begun to be used in
+North America. Rice husks are commercially manufactured
+into medium- and high-density products in the Middle East.          Figure 10–7. Particles, which are sometimes produced
+                                                                    by hammermilling, are used to produce composites
+All other things being equal, reducing lignocellulosic              such as particleboard.
+materials to particles requires less energy than reducing the
+same material into fibers. However, particleboard is generally
+not as strong as fiberboard because the fibrous nature of           particleboard is usually bonded with a UF resin, although
+lignocellulosics is not exploited as well. Particleboard is         PF and MF resins are sometimes used for applications
+used for furniture cores, where it is typically overlaid with       requiring more moisture resistance. The various steps
+other materials for decorative purposes. Particleboard can be       involved in particleboard manufacturing are described in
+used in flooring systems, in manufactured houses, for stair         the following text.
+treads, and as underlayment. Thin panels can be used as a
+paneling substrate. Since most applications are interior,
+
+                                                                                                                          10–15
+Particle Preparation                                                material is fed into the high end and discharged at the low
+Standard particleboard plants based on particulate material         end. A series of flights forces the furnish to flow from one end
+use combinations of hogs, chippers, hammermills, ring               to the other three times before being discharged. The rotary
+flakers, ring mills, and attrition mills. To obtain particle-       movement of the drum moves the material from input to
+boards with good strength, smooth surfaces, and equal swel-         output.
+ling, manufacturers ideally use a homogeneous material with
+a high degree of slenderness (long, thin particles), no over-       Addition of Resins and Wax
+size particles, no splinters, and no dust. Depending on the         Frequently used resins for particleboard include urea-
+manufacturing process, the specifications for the ideal particle    formaldehyde and, to a much lesser extent, phenol-
+size are different. For a graduated board, wider tolerances are     formaldehyde, melamine-formaldehyde, and isocyanates. The
+acceptable. For a three-layer board, the core particles should      type and amount of resin used for particleboard depend on the
+be longer and surface particles shorter, thinner, and smaller.      type of product desired. Based on the weight of dry resin
+For a five-layer or multi-layer board, the furnish for the in-      solids and ovendry weight of the particles, the resin content
+termediate layer between surface and core should have long          can range between 4% and 10%, but usually ranges between
+and thin particles for building a good carrier for the fine         6% and 9% for UF resins. The resin content of the outer face
+surface and to give the boards high bending strength and            layers is usually slightly higher than that of the core layer.
+stiffness.                                                          Urea-formaldehyde resin is usually introduced in water solu-
+                                                                    tions containing about 50% to 65% solids. Besides resin,
+Particle Classification and Conveying                               paraffin or microcrystalline wax emulsion is added to im-
+Very small particles increase furnish surface area and thus         prove short-term moisture resistance. The amount of wax
+increase resin requirements. Oversized particles can adversely      ranges from 0.3% to 1% based on the ovendry weight of the
+affect the quality of the final product because of internal flaws   particles.
+in the particles. While some particles are classified through
+the use of air streams, screen classification methods are the       Mat Formation
+most common. In screen classification, the particles are fed        After the particles have been prepared, they must be laid into
+over a vibrating flat screen or a series of screens. The screens    an even and consistent mat to be pressed into a panel. This
+may be wire cloth, plates with holes or slots, or plates set on     is typically accomplished in a batch mode or by continuous
+edge.                                                               formation. The batch system employs a caul or tray on
+                                                                    which a deckle frame is placed. The mat is formed by the
+The two basic methods of conveying particles are by me-             back-and-forth movement of the tray or hopper feeder. The
+chanical means and by air. The choice of conveying method           mat is usually cold pressed to reduce mat thickness prior to
+depends upon the size of the particles. In air conveying, care      hot pressing. The production of three-layer boards requires
+should be taken that the material does not pass through             three or more forming stations. The two outer layers consist
+many fans, which reduces the size of the particles. In some         of particles that differ in geometry from those in the core. The
+types of flakes, damp conditions are maintained to reduce           resin content of the outer layers is usually higher (about 8%
+break-up of particles during conveying.                             to 15%) than that of the core (about 4% to 8%).
+Particle Drying                                                     In continuous mat-forming systems, the particles are distrib-
+The furnish drying operation is a critical step in the process-     uted in one or several layers on traveling cauls or on a mov-
+ing of composite products. The raw materials for these prod-        ing belt. Mat thickness is controlled volumetrically. The
+ucts do not usually arrive at the plant at a low enough mois-       two outer face layers usually consist of particles that differ in
+ture content for immediate use. Furnish that arrives at the         geometry from those in the core. Continuous-formed mats are
+plant can range from 10% to 200% moisture content. For use          often pre-pressed, with either a single-opening platen or a
+with liquid resins, for example, the furnish must be reduced        continuous press. Pre-pressing reduces mat height and helps
+to about 2% to 7% moisture content.                                 to consolidate the mat for pressing.
+
+The moisture content of particles is critical during hot-           Hot Pressing
+pressing operations. Thus, it is essential to carefully select      After pre-pressing, the mats are hot-pressed into panels.
+proper dryers and control equipment. The moisture content           Presses can be divided into platen and continuous types.
+of the material depends on whether resin is to be added dry         Further development in the industry has made possible the
+or in the form of a solution or emulsion. The moisture con-         construction of presses for producing increasingly larger panel
+tent of materials leaving the dryers is usually in the range of     sizes in both single- and multi-opening presses. Both of
+4% to 8%. The main methods used to dry particles are                these types of presses can be as wide as 3.7 m (12 ft). Multi-
+rotary, disk, and suspension drying.                                opening presses can be as long as 10 m (33 ft) and single-
+                                                                    opening presses, up to 30.5 m (100 ft) long. Hot-press tem-
+A triple-pass rotary dryer consists of a large horizontal rotat-    peratures for UF resins usually range from 140°C to 165°C
+ing drum that is heated by either steam or direct heat. Oper-       (284°F to 325°F). Pressure depends on a number of factors,
+ating temperatures depend on the moisture content of the            but it is usually in the range of 1.37 to 3.43 MPa (199 to
+incoming furnish. The drum is set at a slight angle, and            498 lb/in ) for medium-density boards. Upon entering the
+                                                                              2
+
+
+
+
+10–16
+hot press, mats usually have a moisture content of 8% to         particleboard is used as core stock for a wide variety of furni-
+12%, but this is reduced to about 5% to 9% during pressing.      ture and cabinet applications. Floor underlayment and
+                                                                 manufactured home decking represent particleboard construc-
+Alternatively, some particleboards are made by the extrusion     tion products and approximately 10% of the market. Low-
+process. In this system, formation and pressing occur in one     density panels produced in thicknesses >27 mm
+operation. The particles are forced into a long, heated die      (>1-1/16 in.) are used for solid-core doors.
+(made of two sets of platens) by means of reciprocating pis-
+tons. The board is extruded between the platens. The parti-      Particleboard Grade Marks and Product
+cles are oriented in a plane perpendicular to the plane of the   Certification
+board, resulting in properties that differ from those obtained
+                                                                 Particleboard that has been grade marked ensures that the
+with flat pressing.
+                                                                 product has been periodically tested for compliance with
+                                                                 voluntary industry product performance standards. These
+Finishing                                                        inspection or certification programs also generally require
+After pressing, the board is trimmed to obtain the desired       that the quality control system of a production plant meets
+length and width and to square the edges. Trim losses usu-       strict criteria. Particleboard panels conforming to these prod-
+ally amount to 0.5% to 8%, depending on the size of the          uct performance standards are marked with grade stamps such
+board, the process employed, and the control exercised.          as those shown in Figure 10–8.
+Trimmers usually consist of saws with tungsten carbide tips.
+After trimming, the boards are sanded or planed prior to         Fiberboard
+packaging and shipping. Particleboards may also be veneered
+or overlaid with other materials to provide a decorative         The term fiberboard includes hardboard, medium-density
+surface, or they may be finished with lacquer or paint.          fiberboard (MDF), and insulation board. Several things
+Treatments with fire-resistant chemicals are also available.     differentiate fiberboard from particleboard, most notably the
+                                                                 physical configuration of the comminuted material
+Properties                                                       (Fig. 10–9). Because wood is fibrous by nature, fiberboard
+                                                                 exploits the inherent strength of wood to a greater extent than
+Tables 10–8 and 10–9 show requirements for grades of parti-
+                                                                 does particleboard.
+cleboard and particleboard flooring products, as specified by
+the American National Standard for Particleboard A208.1          To make fibers for composites, bonds between the wood
+(NPA 1993). This standard is typically updated at least          fibers must be broken. In its simplest form, this is
+every 5 years. Today, approximately 85% of interior-type
+
+
+
+           Table 10–8. Particleboard grade requirementsa,b,c
+                                                                   Linear                            Formaldehyde
+                                           Internal              expansion                             maximum
+                        MOR        MOE       bond     Hardness    max avg      Screw-holding (N)       emission
+            Graded     (MPa)      (MPa)     (MPa)        (N)         (%)        Face      Edge           (ppm)
+
+               H–1      16.5      2,400       0.90      2,225       NS         1,800      1,325           0.30
+               H–2      20.5      2,400       0.90      4,450       NS         1,900      1,550           0.30
+               H–3      23.5      2,750       1.00      6,675       NS         2,000      1,550           0.30
+               M–1      11.0      1,725       0.40      2,225      0.35          NS         NS            0.30
+               M–S      12.5      1,900       0.40      2,225      0.35          900        800           0.30
+               M–2      14.5      2,225       0.45      2,225      0.35        1,000        900           0.30
+               M–3      16.5      2,750       0.55      2,225      0.35        1,100      1,000           0.30
+               LD–1      3.0        550       0.10        NS       0.35          400        NS            0.30
+               LD–2      5.0      1,025       0.15        NS       0.35          550        NS            0.30
+           a
+             From NPA (1993). Particleboard made with phenol-formaldehyde-based resins does not emit signifi-
+             cant quantities of formaldehyde. Therefore, such products and other particleboard products made
+             with resin without formaldehyde are not subject to formaldehyde emission conformance testing.
+           b
+             Panels designated as “exterior adhesive” must maintain 50% MOR after ASTM D1037 accelerated
+             aging.
+           c
+             MOR = modulus of rupture; MOE = modulus of elasticity. NS = not specified. 1 MPa = 145 lb/in2;
+             1 N = 0.22 lb.
+           d
+             H = density > 800 kg/m3 (> 50 lb/ft3), M = density 640 to 800 kg/m3 (40 to 50 lb/ft3). LD = density
+             < 640 kg/m3 (< 40 lb/ft3). Grade M–S refers to medium density; “special” grade added to standard
+            after grades M–1, M–2, and M–3. Grade M–S falls between M–1 and M–2 in physical properties.
+
+                                                                                                                           10–17
+         Table 10–9. Particleboard flooring product grade requirementsa
+                                                                                                            Formaldehyde
+                                                       Internal                        Linear expansion       maximum
+                       MOR             MOE               bond         Hardness             max avg            emission
+         Gradeb        (MPa)          (MPa)             (MPa)           (N)                   (%)               (ppm)
+             PBU        11.0           1,725             0.40           2,225                 0.35                0.20
+             D–2        16.5           2,750             0.55           2,225                 0.30                0.20
+             D–3        19.5           3,100             0.55           2,225                 0.30                0.20
+         a
+           From NPA (1993). Particleboard made with phenol-formaldehyde-based resins does not emit significant
+          quantities of formaldehyde. Therefore, such products and other particleboard products made with resin without
+           formaldehyde are not subject to formaldehyde emission conformance testing. Grades listed here shall also
+          comply with appropriate requirements listed in section 3. Panels designated as “exterior adhesive” must
+          maintain 50% MOR after ASTM D1037 accelerated aging (3.3.3).
+         b
+           PBU = underlayment; D = manufactured home decking.
+
+
+
+
+    Figure 10–8. Examples of grade stamps for particleboard.
+
+
+
+
+accomplished by attrition milling. Attrition milling is an         reduce energy requirements, but they may reduce yield as
+age-old concept whereby material is fed between two disks,         well. Refiners are available with single- or double-rotating
+one rotating and the other stationary. As the material is          disks, as well as steam-pressurized and unpressurized con-
+forced through the preset gap between the disks, it is sheared,    figurations. For MDF, steam-pressurized refining is typical.
+cut, and abraded into fibers and fiber bundles. Grain has been
+ground in this way for centuries.                                  Fiberboard is normally classified by density and can be made
+                                                                   by either dry or wet processes (Fig. 10–2). Dry processes are
+Attrition milling, or refining as it is commonly called, can       applicable to boards with high density (hardboard) and me-
+be augmented by water soaking, steam cooking, or chemical          dium density (MDF). Wet processes are applicable to both
+treatments. Steaming the lignocellulosic weakens the lignin        high-density hardboard and low-density insulation board.
+bonds between the cellulosic fibers. As a result, the fibers are   The following subsections briefly describe the manufacturing
+more readily separated and usually are less damaged than           of high- and medium-density dry-process fiberboard, wet-
+fibers processed by dry processing methods. Chemical treat-        process hardboard, and wet-process low-density insulation
+ments, usually alkali, are also used to weaken the lignin          board. Suchsland and Woodson (1986) and Maloney (1993)
+bonds. All of these treatments help increase fiber quality and     provide more detailed information.
+
+
+
+10–18
+Figure 10–9. Fibers can be made from many                           Figure 10–11. Air-laid mat about to enter a
+lignocellulosics and form the raw materials for                     laboratory press.
+many composites, most notably fiberboard. Fibers
+are typically produced by the refining process.
+
+
+
+
+Figure 10–10. Laboratory-produced air-laid mat before               Figure 10–12. Example of MDF formaldehyde
+pressing. Approximate dimensions are 686 by 686 by                  emissions certification tag.
+152 mm (27 by 27 by 6 in.) thick. Resin was applied
+to fibers before mat production. This mat will be made
+into a high-density fiberboard approximately 3 mm
+(0.12 in.) thick.
+
+
+Dry-Process Fiberboard                                              (Fig. 10–11). All dry-formed boards are pressed in multi-
+                                                                    opening presses at approximately 140°C to 165°C (284°F to
+Dry-process fiberboard is made in a similar fashion to parti-       329°F) for UF-bonded products and 190°C (410°F) for PF-
+cleboard. Resin (UF, PF) and other additives may be applied         bonded products. Continuous pressing using large, high-
+to the fibers by spraying in short-retention blenders or intro-     pressure band presses is also gaining in popularity. Board
+duced as the wet fibers are fed from the refiner into a blow-       density is a basic property and an indicator of board quality.
+line dryer. Alternatively, some fiberboard plants add the resin     Since density is greatly influenced by moisture content, this
+in the refiner. The adhesive-coated fibers are then air-laid into   is constantly monitored by moisture sensors using infrared
+a mat for subsequent pressing, much the same as mat                 light. An example of an MDF formaldehyde emissions
+formation for particleboard.                                        certification tag is shown in Figure 10–12.
+Pressing procedures for dry-process fiberboard differ some-
+what from particleboard procedures. After the fiber mat is          Wet-Process Hardboard
+formed (Fig. 10–10), it is typically pre-pressed in a band          Wet-process hardboards differ from dry-process fiberboards in
+press. The densified mat is then trimmed by disk cutters and        several significant ways. First, water is used as the distribu-
+transferred to caul plates for the hardboard pressing operation;    tion medium for forming the fibers into a mat. As such, this
+for MDF, the trimmed mat is transferred directly to the press       technology is really an extension of paper manufacturing
+
+
+                                                                                                                            10–19
+technology. Secondly, some wet-process boards are made            Insulation Board
+without additional binders. If the lignocellulosic contains       Insulation boards are low-density, wet-laid panel products
+sufficient lignin and if lignin is retained during the refining   used for insulation, sound deadening, carpet underlayment,
+operation, lignin can serve as the binder. Under heat and         and similar applications. In the manufacture of insulation
+pressure, lignin will flow and act as a thermosetting adhe-       board, the need for refining and screening is a function of the
+sive, enhancing the naturally occurring hydrogen bonds.           raw material available, the equipment used, and the desired
+                                                                  end-product. Insulation boards typically do not use a binder,
+Refining is an important step for developing strength in wet-
+                                                                  and they rely on hydrogen bonds to hold the board compo-
+process hardboards. The refining operation must also yield a
+                                                                  nents together. Sizing agents are usually added to the furnish
+fiber of high “freeness;” that is, it must be easy to remove
+                                                                  (about 1%) to provide the finished board with a modest
+water from the fibrous mat. The mat is typically formed on a
+                                                                  degree of water resistance and dimensional stability. Sizing
+Fourdrinier wire, like papermaking, or on cylinder formers.
+                                                                  agents include rosin, starch, paraffin, cumarone, resin,
+The wet process employs a continuously traveling mesh
+                                                                  asphalt, and asphalt emulsions.
+screen, onto which the soupy pulp flows rapidly and
+smoothly. Water is drawn off through the screen and then          Like the manufacture of wet-process hardboard, insulation
+through a series of press rolls, which use a wringing action      board manufacture is a modification of papermaking. A thick
+to remove additional water.                                       fibrous sheet is made from a low-consistency pulp suspen-
+                                                                  sion in a process known as wet felting. Felting can be ac-
+Wet-process hardboards are pressed in multi-opening presses
+                                                                  complished through use of a deckle box, Fourdrinier screen,
+heated by steam. The press cycle consists of three phases and
+                                                                  or cylinder screen. A deckle box is a bottomless frame that is
+lasts 6 to 15 min. The first phase is conducted at high pres-
+                                                                  placed over a screen. A measured amount of stock is put in
+sure, and it removes most of the water while bringing the
+                                                                  the box to form one sheet; vacuum is then applied to remove
+board to the desired thickness. The primary purpose of the
+                                                                  most of the water. The use of Fourdrinier screen for felting is
+second phase is to remove water vapor. The final phase is
+                                                                  similar to that for papermaking, except that line speeds are
+relatively short and results in the final cure. A maximum
+                                                                  reduced to 1.5 to 15 m/min (5 to 49 ft/min).
+pressure of about 5 MPa (725 lb/in2) is used. Heat is essen-
+tial during pressing to induce fiber-to-fiber bond. A high        Insulation board is usually cold-pressed to remove most of
+temperature of up to 210°C (410°F) is used to increase pro-       the free water after the mat is formed. The wet mats are then
+duction by causing faster evaporation of the water. Lack of       dried to the final moisture content. Dryers may be a continu-
+sufficient moisture removal during pressing adversely affects     ous tunnel or a multi-deck arrangement. The board is gener-
+strength and may result in “springback” or blistering.            ally dried in stages at temperatures ranging from 120°C to
+                                                                  190°C (248°F to 374°F). Typically, about 2 to 4 h are
+Post-Treatment of Wet- and                                        required to reduce moisture content to about 1% to 3%.
+Dry-Process Hardboard
+Several treatments are used to increase the dimensional           After drying, some boards are treated for various applications.
+stability and mechanical performance of hardboard. Heat           Boards may be given tongue-and-groove or shiplap edges or
+treatment, tempering, and humidification may be done singu-       can be grooved to produce a plank effect. Other boards are
+larly or in conjunction with one another.                         laminated by means of asphalt to produce roof insulation.
+
+Heat treatment—exposure of pressed fiberboard to dry heat—        Properties and Applications
+improves dimensional stability and mechanical properties,
+                                                                  Medium-Density Fiberboard—Minimum property re-
+reduces water adsorption, and improves interfiber bonding.
+                                                                  quirements, as specified by the American National Standard
+Tempering is the heat treatment of pressed boards, preceded       for MDF, A208.2 (NPA 1994) are given in Table 10–10.
+by the addition of oil. Tempering improves board surface          This standard is typically updated every 5 years or less. The
+hardness and is sometimes done on various types of wet-           furniture industry is by far the dominant MDF market. Me-
+formed hardboards. It also improves resistance to abrasion,       dium-density fiberboard is frequently used in place of solid
+scratching, scarring, and water. The most common oils used        wood, plywood, and particleboard in many furniture applica-
+include linseed oil, tung oil, and tall oil.                      tions. It is also used for interior door skins, mouldings, and
+                                                                  interior trim components (Youngquist and others 1997).
+Humidification is the addition of water to bring the board
+moisture content into equilibrium with the air. Initially, a      Hardboard—Table 10–11 provides basic hardboard physi-
+pressed board has almost no moisture content. When the            cal properties (ANSI/AHA A135.4–1995 (AHA 1995a)) for
+board is exposed to air, it expands linearly by taking on 3%      selected products. The uses for hardboard can generally be
+to 7% moisture. Continuous or progressive humidifiers are         grouped as construction, furniture and furnishings, cabinet
+commonly used for this purpose. Air of high humidity is           and store work, appliances, and automotive and rolling
+forced through the stacks where it provides water vapor to the    stock. Typical hardboard products are prefinished paneling
+boards. The entire process is controlled by a dry-bulb-wet-       (ANSI/AHA A135.5–1995 (AHA 1995b)), house siding
+bulb controller. Another method involves spraying water on        (ANSI/AHA A135.6–1990 (AHA 1990)), floor underlay-
+the back side of the board.                                       ment, and concrete form board. Table 10–12 shows physical
+
+
+
+10–20
+Table 10–10. Medium-density fiberboard (MDF) property requirementsa
+                    Nominal                           Internal                        Formaldehyde
+                   thickness     MOR         MOE        bond      Screw-holding (N)     emissionc
+Product classb       (mm)       (MPa)       (MPa)      (MPa)       Face      Edge        (ppm)
+
+Interior MDF
+    HD                           34.5       3,450       0.75       1,555     1,335         0.30
+    MD                ≤21        24.0       2,400       0.60       1,445     1,110         0.30
+                      >21        24.0       2,400       0.55       1,335     1,000         0.30
+      LD                         14.0       1,400       0.30         780       670         0.30
+Exterior MDF
+   MD–Exterior        ≤21        34.5       3,450       0.90       1,445      1,110        0.30
+     adhesive         >21        31.0       3,100       0.70       1,335      1,000        0.30
+a
+  From NPA (1994). Metric property values shall be primary in determining product performance
+  requirements.
+b
+  MD–Exterior adhesive panels shall maintain at least 50% of listed MOR after ASTM D1037–1991,
+  accelerated aging (3.3.4). HD = density > 800 kg/m3 (> 50 lb/ft3), MD = density 640 to 800 kg/m3
+  (40 to 50 lb/ft3), LD = density < 640 kg/m3 (< 40 lb/ft3).
+c
+  Maximum emission when tested in accordance with ASTM E1333–1990, Standard test method
+  for determining formaldehyde levels from wood products under defined test conditions using
+ a larger chamber (ASTM).
+
+
+
+Table 10–11. Hardboard physical property requirementsa
+                                    Water resistance                           Tensile strength
+                                     (max avg/panel)                        (min avg/panel) (MPa)
+                                   Water                       MOR
+                     Normal      absorption   Thickness     (min avg/      Parallel   Perpendicular
+                    thickness     based on     swelling       panel)         to            to
+Product class         (mm)       weight (%)      (%)          (MPa)        surface       surface
+
+Tempered               2.1           30          25              41.4       20.7           0.90
+                       2.5           25          20              41.4       20.7           0.90
+                       3.2           25          20              41.4       20.7           0.90
+                       4.8           25          20              41.4       20.7           0.90
+                       6.4           20          15              41.4       20.7           0.90
+                       7.9           15          10              41.4       20.7           0.90
+                       9.5           10           9              41.4       20.7           0.90
+Standard               2.1           40          30              31.0       15.2           0.62
+                       2.5           35          25              31.0       15.2           0.62
+                       3.2           35          25              31.0       15.2           0.62
+                       4.8           35          25              31.0       15.2           0.62
+                       6.4           25          20              31.0       15.2           0.62
+                       7.9           20          15              31.0       15.2           0.62
+                       9.5           15          10              31.0       15.2           0.62
+Service-tempered       3.2           35          30              31.0        3.8           0.52
+                       4.8           30          30              31.0        3.8           0.52
+                       6.4           30          25              31.0        3.8           0.52
+                       9.5           20          15              31.0        3.8           0.52
+a
+    AHA 1995a.
+
+
+
+
+                                                                                                      10–21
+              Table 10–12. Physical and mechanical properties of hardboard sidinga
+              Propertyb                                                            Requirement
+              Water absorption (based on weight)                   12% (max avg/panel)
+              Thickness swelling                                   8% (max avg/panel)
+              Weatherability of substrate (max residual swell)     20%
+              Weatherability of primed substrate                   No checking, erosion, flaking, or objection-
+                                                                   able fiber raising; adhesion, less than
+                                                                   3.2 mm (0.125 in.) of coating picked up
+              Linear expansion 30% to 90% RH (max)                   Thickness range          Maximum linear
+                                                                           (cm)               expansion (%)
+                                                                       0.220–0.324                 0.36
+                                                                       0.325–0.375                 0.38
+                                                                       0.376–0.450                 0.40
+                                                                          >0.451                   0.40
+              Nail-head pull-through                               667 N (150 lb) (min avg/panel)
+              Lateral nail resistance                              667 N (150 lb) (min avg/panel)
+              Modulus of rupture                                   12.4 MPa (1,800 lb/in2) for 9.5, 11, and
+                                                                   12.7 mm (3/8, 7/16, and 1/2 in.) thick
+                                                                   (min avg/panel)
+                                                                   20.7 MPa (3,000 lb/in2) for 6.4 mm (1/4 in.)
+                                                                   thick (min avg/panel)
+              Hardness                                             2002 N (450 lb) (min avg/panel)
+              Impact                                               229 mm (9 in.) (min avg/panel)
+              Moisture content   c
+                                                                   4% to 9% included, and not more than 3%
+                                                                   variance between any two boards in any
+                                                                   one shipment or order
+              a
+                From Youngquist and others 1992.
+              b
+                Refer to ANSI/AHA A135.6 I–1990 for test method for determining information on properties.
+              c
+                Since hardboard is a wood-based material, its moisture content varies with environmental
+                humidity conditions. When the environmental humidity conditions in the area of intended use are
+                a critical factor, the purchaser should specify a moisture content range more restrictive than
+                4% to 9% so that fluctuation in the moisture content of the siding will be kept to a minimum.
+
+
+properties of hardboard siding. Hardboard siding products        example of a grade stamp for a siding product meeting this
+come in a great variety of finishes and textures (smooth or      standard.
+embossed) and in different sizes. For application purposes,
+the AHA siding classifies into three basic types:                Insulation Board—Physical and mechanical properties of
+                                                                 insulation board are published in the ASTM C208 standard
+Lap siding—boards applied horizontally, with each board          specification for cellulosic fiber insulation board. Physical
+overlapping the board below it
+
+Square edge panels—siding intended for vertical application       (a)                                 (b)
+in full sheets
+
+Shiplap edge panel siding—siding intended for vertical
+application, with the long edges incorporating shiplap joints
+
+The type of panel dictates the application method. The AHA
+administers a quality conformance program for hardboard for
+both panel and lap siding. Participation in this program is
+voluntary and is open to all (not restricted to AHA mem-         Figure 10–13. Examples of grade stamps: (a) grade
+bers). Under this program, hardboard siding products are         stamp for siding conforming to ANSI/AHA A135.6
+tested by an independent laboratory in accordance with prod-     standard, and (b) grade mark stamp for cellulosic
+uct standard ANSI/AHA A135.6. Figure 10–13a provides an          fiberboard products conforming to ANSI/AHA A194.1
+                                                                 standard.
+
+
+
+10–22
+properties are also included in the ANSI standard for              Surface treatment—Surface treatments improve the appear-
+cellulosic fiberboard, ANSI/AHA A194.1 (AHA 1985).                 ance and performance of boards. Boards are cleaned by
+Insulation board products can be divided into three categories     spraying with water and then dried at about 240°C (464°F)
+(Suchsland and Woodson 1986): exterior, interior, and              for 30 seconds. Board surfaces are then modified with paper
+industrial.                                                        overlay, paint, or stain or are printed directly on the panel.
+Exterior products                                                  Punching—Punching changes boards into the perforated
+                                                                   sheets used as peg board. Most punching machines punch
+• Sheathing—board used in exterior construction because of         three rows of holes simultaneously while the board advances.
+  its insulation and noise control qualities, bracing strength,
+  and low price                                                    Embossing—Embossing consists of pressing the unconsoli-
+                                                                   dated mat of fibers with a textured form. This process results
+• Roof decking—three-in-one component that provides roof           in a slightly contoured board surface that can enhance the
+  deck, insulation, and a finished interior ceiling surface; in-   resemblance of the board to that of sawn or weathered wood,
+  sulation board sheets are laminated together with water-         brick, and other materials.
+  proof adhesive Roof insulation—insulation board designed
+  for use on flat roof decks                                       Specialty Composites
+• Aluminum siding backer board—fabricated insulation               Special-purpose composites are produced to obtain desirable
+  board for improving insulation of aluminum-sided houses          properties like water resistance, mechanical strength, acidity
+                                                                   control, and decay and insect resistance. Overlays and ve-
+Interior products                                                  neers can also be added to enhance both structural properties
+• Building board—general purpose product for interior              and appearance (Fig. 10–14).
+  construction
+                                                                   Moisture-Resistant Composites
+• Ceiling tile—insulation board embossed and decorated for
+  interior use; valued for acoustical qualities; also decora-      Sizing agents, wax, and asphalt can be used to make com-
+  tive, nonacoustical tiles                                        posites resistant to moisture. Sizing agents cover the surface
+                                                                   of fibers, reduce surface energy, and render the fibers relatively
+• Sound-deadening board—special product designed to                hydrophobic. Sizing agents can be applied in two ways. In
+  control noise levels in buildings                                the first method, water is used as a medium to ensure thor-
+                                                                   ough mixing of sizing and fiber. The sizing is forced to
+Industrial products                                                precipitate from the water and is fixed to the fiber surface. In
+• Mobile home board                                                the second method, the sizing is applied directly to the
+                                                                   fibers. Rosin is a common sizing agent that is obtained from
+• Expansion joint strips                                           living pine trees, from pine stumps, and as a by-product of
+• Boards for automotive and furniture industries                   kraft pulping of pines. Rosin sizing is added in amounts of
+                                                                   less than 3% solids based on dry fiber weight.
+The AHA administers a quality conformance program for
+cellulosic fiberboard products including sound-deadening           Waxes are high molecular weight hydrocarbons derived from
+board, roof insulation boards, structural and nonstructural        crude oil. Wax sizing is used in dry-process fiberboard pro-
+sheathings, backer board, and roof decking in various thick-       duction; for wet processes, wax is added in solid form or as
+nesses. These products are tested by an independent labora-
+tory in accordance with product standard ANSI/AHA
+A194.1. An example of the grade mark stamp for these
+products is shown in Figure 10–13b.
+
+Finishing Techniques
+Several techniques are used to finish fiberboard: trimming,
+sanding, surface treatment, punching, and embossing.
+
+Trimming—Trimming consists of reducing products into
+standard sizes and shapes. Generally, double-saw trimmers
+are used to saw the boards. Trimmers consist of overhead-
+mounted saws or multiple saw drives. Trimmed boards are
+stacked in piles for future processing.
+Sanding—If thickness tolerance is critical, hardboard is
+sanded prior to finishing. S1S (smooth on one side) boards
+require this process. Sanding reduces thickness variation and      Figure 10–14. Medium-density fiberboard with veneer
+improves surface paintability. Single-head, wide-belt sanders      overlay. Edges can be shaped and finished as required
+are used with 24- to 36-grit abrasive.                             by end product.
+
+
+                                                                                                                             10–23
+an emulsion. Wax sizing tends to lower strength properties
+to a greater extent than does rosin.
+Asphalt is also used to increase water resistance, especially
+in low-density wet-process insulation board. Asphalt is a
+black–brown solid or semi-solid material that liquefies when
+heated. The predominant component of asphalt is bitumen.
+Asphalt is precipitated onto fiber by the addition of alum.
+Flame-Retardant Composites
+Two general application methods are available for improving
+the fire performance of composites with fire-retardant chemi-
+cals. One method consists of pressure impregnating the wood
+with waterborne or organic solventborne chemicals. The
+second method consists of applying fire-retardant chemical
+coatings to the wood surface. The impregnation method is
+usually more effective and longer lasting; however, this
+technique sometimes causes damage to the wood–adhesive              Figure 10–15. Laboratory-produced low-density,
+bonds in the composite and results in the degradation of            cement-bonded composite panel. Full-scale panels
+some physical and mechanical properties of the composite.           such as these are used in construction.
+For wood in existing constructions, surface application of
+fire-retardant paints or other finishes offers a practical method
+to reduce flame spread.                                               alone (for example, increased strength-to-weight ratio, im-
+                                                                      proved abrasion resistance)
+Preservative-Treated Composites
+Wood is highly susceptible to attack by fungi and insects;          Composites made from wood and other materials create
+thus, treatment is essential for maximum durability in ad-          enormous opportunities to match product performance to
+verse conditions.                                                   end-use requirements (Youngquist 1995).
+
+Composites can be protected from the attack of decay fungi
+and harmful insects by applying selected chemicals as wood
+                                                                    Inorganic–Bonded Composites
+preservatives. The degree of protection obtained depends on         Inorganic-bonded wood composites have a long and varied
+the kind of preservative used and the ability to achieve proper     history that started with commercial production in Austria in
+penetration and retention of the chemicals. Wood preserva-          1914. A plethora of building materials can be made using
+tive chemicals can be applied using pressure or nonpressure         inorganic binders and lignocellulosics, and they run the
+processes. As in the application of fire-retardant chemicals,       normal gamut of panel products, siding, roofing tiles, and
+the application of wood preservatives can sometimes cause           precast building members (Fig. 10–15).
+damage to wood–adhesive bonds, thus reducing physical and
+mechanical properties of the composite. Common preserva-            Inorganic-bonded wood composites are molded products or
+tive treatments include chromated copper arsenate (CCA) and         boards that contain between 10% and 70% by weight wood
+boron compounds.                                                    particles or fibers and conversely 90% to 30% inorganic
+                                                                    binder. Acceptable properties of an inorganic-bonded wood
+Wood–Nonwood Composites                                             composite can be obtained only when the wood particles are
+                                                                    fully encased with the binder to make a coherent material.
+Interest has burgeoned in combining wood and other raw              This differs considerably from the technique used to manufac-
+materials, such as plastics, gypsum, and concrete, into com-        ture thermosetting-resin-bonded boards where flakes or parti-
+posite products with unique properties and cost benefits            cles are “spot welded” by a binder applied as a finely dis-
+(Youngquist and others 1993a, 1993b, 1994; Rowell and               tributed spray or powder. Because of this difference and
+others 1997). The primary impetus for developing such               because hardened inorganic binders have a higher density
+products has come from one or more of the following research        than that of most thermosetting resins, the required amount
+and development goals:                                              of inorganic binder per unit volume of composite material is
+                                                                    much higher than that of resin-bonded wood composites.
+• Reduce material costs by combining a lower cost material          The properties of inorganic-bonded wood composites are
+  (acting as a filler or extender) with an expensive material       significantly influenced by the amount and nature of the
+• Develop products that can utilize recycled materials and be       inorganic binder and the woody material as well as the den-
+  recyclable in themselves                                          sity of the composites.
+• Produce composite products that exhibit specific proper-          Inorganic binders fall into three main categories: gypsum,
+  ties that are superior to those of the component materials        magnesia cement, and Portland cement. Gypsum and magne-
+                                                                    sia cement are sensitive to moisture, and their use is
+
+
+
+10–24
+generally restricted to interior applications. Composites          Magnesia-Cement-Bonded Composites
+bonded with Portland cement are more durable than those            Fewer boards bonded with magnesia cement have been pro-
+bonded with gypsum or magnesia cement and are used in              duced than cement- or gypsum-bonded panels, mainly be-
+both interior and exterior applications. Inorganic-bonded          cause of price. However, magnesia cement does offer some
+composites are made by blending proportionate amounts of           manufacturing advantages over Portland cement. First, the
+lignocellulosic fiber with inorganic materials in the presence     various sugars in lignocellulosics apparently do not have as
+of water and allowing the inorganic material to cure or “set       much effect on the curing and bonding of the binder. Second,
+up” to make a rigid composite. All inorganic-bonded com-           magnesia cement is reported to be more tolerant of high
+posites are very resistant to deterioration, particularly by       water content during production. This opens up possibilities
+insects, vermin, and fire.                                         to use lignocellulosics not amenable to Portland cement
+A unique feature of inorganic-bonded composites is that their      composites, without leaching or other modification, and to
+manufacture is adaptable to either end of the cost and tech-       use alternative manufacturing processes and products.
+nology spectrum. This is facilitated by the fact that no heat      Although composites bonded with magnesia cement are
+is required to cure the inorganic material. For example, in        considered water-sensitive, they are much less so than
+the Philippines, Portland cement-bonded composites are             gypsum-bonded composites.
+mostly fabricated using manual labor and are used in low-
+                                                                   One successful application of magnesia cement is a low-
+cost housing. In Japan, the fabrication of these composites is
+                                                                   density panel made for interior ceiling and wall applications.
+automated, and they are used in very expensive modular
+                                                                   In the production of this panel product, wood wool
+housing.
+                                                                   (excelsior) is laid out in a low-density mat. The mat is then
+The versatility of manufacture makes inorganic-bonded com-         sprayed with an aqueous solution of magnesia cement,
+posites ideally suited to a variety of lignocellulosic materi-     pressed, and cut into panels.
+als. With a very small capital investment and the most
+rudimentary of tools, satisfactory inorganic-bonded lignocel-      In Finland, magnesia-cement-bonded particleboard is manu-
+lulosic composite building materials can be produced on a          factured using a converted conventional particleboard plant.
+small scale using mostly unskilled labor. If the market for        Magnesia oxide is applied to the lignocellulosic particles in
+such composites increases, technology can be introduced to         a batch blender along with other chemicals and water.
+increase manufacturing throughput. The labor force can be          Depending on application and other factors, boards may
+trained concurrently with the gradual introduction of more         be cold- or hot-pressed.
+sophisticated technology.
+                                                                   Other processes have been suggested for manufacturing mag-
+                                                                   nesia-cement-bonded composites. One application may be to
+Gypsum-Bonded Composites                                           spray a slurry of magnesia cement, water, and lignocellulosic
+Gypsum can be derived by mining from natural sources or            fiber onto existing structures as fireproofing. Extrusion into a
+obtained as a byproduct of flue gas neutralization. Flue gas       pipe-type profile or other profiles is also possible.
+gypsum, now being produced in very large quantities in the
+United States because of Clean Air Act regulations, is the         Portland-Cement-Bonded Composites
+result of introducing lime into the combustion process to
+                                                                   The most apparent and widely used inorganic-bonded com-
+reduce sulfur dioxide emissions. In 1995, more than 100
+                                                                   posites are those bonded with Portland cement. Portland
+power plants throughout the United States were producing
+                                                                   cement, when combined with water, immediately reacts in a
+gypsum. Flue gas gypsum can be used in lieu of mined
+                                                                   process called hydration to eventually solidify into a solid
+gypsum.
+                                                                   stone-like mass. Successfully marketed Portland-cement-
+Gypsum panels are frequently used to finish interior wall and      bonded composites consist of both low-density products
+ceiling surfaces. In the United States, these products are         made with excelsior and high-density products made with
+generically called “dry wall” because they replace wet plaster     particles and fibers. General mechanical property values for a
+systems. To increase the bending strength and stiffness,           low density cement–wood excelsior product are given in
+gypsum panels are frequently wrapped in paper, which pro-          Table 10–13.
+vides a tension surface. An alternative to wrapping gypsum
+with fiber is to place the fiber within the panel, as several      The low-density products may be used as interior ceiling and
+U.S. and European firms are doing with recycled paper fiber.       wall panels in commercial buildings. In addition to the
+There is no technical reason that other lignocellulosics           advantages described for low-density magnesia-bonded com-
+cannot be used in this way. Gypsum is widely available and         posites, low-density composites bonded with Portland
+does not have the highly alkaline environment of cement.           cement offer sound control and can be quite decorative. In
+                                                                   some parts of the world, these panels function as complete
+Gypsum panels are normally made from a slurry of gypsum,           wall and roof decking systems. The exterior of the panels is
+water, and lignocellulosic fiber. In large-scale production, the   stuccoed, and the interior is plastered. High-density panels
+slurry is extruded onto a belt, which carries the slurry           can be used as flooring, roof sheathing, fire doors, load-
+through a drying oven to evaporate water and facilitate cure of    bearing walls, and cement forms. Fairly complex molded
+the gypsum. The panel is then cut to length and trimmed if         shapes can be molded or extruded, such as decorative roofing
+necessary.                                                         tiles or non-pressure pipes.
+
+                                                                                                                            10–25
+        Table 10–13. General properties of low-density cement–wood composites fabricated using an
+        excelsior-type particlea,b
+        Property                                          From                                          To
+
+        Bending strength                          1.7 MPa (250 lb/in2)                      5.5 MPa (800 lb/in2)
+        Modulus of elasticity                     621 MPa (0.9 × 105 lb/in2)                1,241 MPa (1.8 × 105 lb/in2)
+        Tensile strength                          0.69 MPa (100 lb/in2)                     4.1 MPa (600 lb/in2)
+        Compression strength                      0.69 MPa (100 lb/in )
+                                                                     2
+                                                                                            5.5 MPa (800 lb/in2)
+        Shearc                                    0.69 MPa (100 lb/in2)                     1.4 MPa (200 lb/in2)
+        E/Gd                                      40                                        100
+        a
+          Data represent compilation of raw data from variety of sources for range of board properties. Variables
+          include cement–wood mix, particle configuration, board density, and the forming and curing methods.
+        b
+          Specific gravity range, 0.5 to 1.0.
+        c
+          Shear strength data are limited to a small sample of excelsior boards having a specific gravity of 0.5 to 0.65.
+        d
+          E/G is ratio of bending modulus of elasticity to modulus of rigidity or shear modulus. For wood, this ratio is
+          often assumed to be around 16.
+
+
+
+Problems and Solutions                                              Carbon Dioxide Treatment—In the manufacture of a ce-
+Although the entire sphere of inorganic-bonded lignocellu-          ment-bonded lignocellulosic composite, the cement hydra-
+losic composites is attractive, and cement-bonded compos-           tion process normally requires from 8 to 24 h to develop
+ites are especially so, the use of cement involves limitations      sufficient board strength and cohesiveness to permit the
+and tradeoffs. Marked embrittlement of the lignocellulosic          release of consolidation pressure. By exposing the cement to
+component is known to occur and is caused by the alkaline           carbon dioxide, the initial hardening stage can be reduced to
+environment provided by the cement matrix. In addition,             less than 5 min. This phenomenon results from the chemical
+hemicellulose, starch, sugar, tannins, and lignin, all to a         reaction of carbon dioxide with calcium hydroxide to form
+varying degree, affect the cure rate and ultimate strength of       calcium carbonate and water.
+these composites. To make strong and durable composites,            Reduction of initial cure time of the cement-bonded lignocel-
+measures must be taken to ensure long-term stability of the         lulosic composite is not the only advantage of using carbon
+lignocellulosic in the cement matrix. To overcome these             dioxide injection. Certain species of wood have varying
+problems, various schemes have been developed. The most             amounts of sugars and tannins that interfere with the hydra-
+common is leaching, whereby the lignocellulosic is soaked           tion or setting of Portland cement. Research has shown that
+in water for 1 or 2 days to extract some of the detrimental         the use of carbon dioxide injection reduces the likelihood of
+components. However, in some parts of the world, the water          these compounds to inhibit the hydration process, thus
+containing the leachate is difficult to dispose of. Low water–      allowing the use of a wider range of species in these compos-
+cement ratios are helpful, as is the use of curing accelerators     ites. In addition, research has demonstrated that composites
+like calcium carbonate. Conversely, low alkali cements have         treated with carbon dioxide can be twice as stiff and strong as
+been developed, but they are not readily available throughout       untreated composites (Geimer and others 1992). Finally,
+the world. Two other strategies are natural pozzolans and           carbon-dioxide-treated composites do not experience efflores-
+carbon dioxide treatment.                                           cence (migration of calcium hydroxide to surface of material),
+Natural Pozzolans—Pozzolans are defined as siliceous or             so the appearance of the surface of the final product is not
+siliceous and aluminous materials that can react chemically         changed over time.
+with calcium hydroxide (lime) at normal temperatures in the
+presence of water to form cement compounds (ASTM 1988).             Wood Fiber–Thermoplastic
+Some common pozzolanic materials include volcanic ash, fly          Composites
+ash, rice husk ash, and condensed silica fume. All these
+materials can react with lime at normal temperatures to make        As described elsewhere in this chapter, the use of lignocellu-
+a natural water-resistant cement.                                   losic materials with thermosetting polymeric materials, like
+                                                                    phenol- or urea-formaldehyde, in the production of compos-
+In general, when pozzolans are blended with Portland ce-            ites has a long history. The use of lignocellulosics with
+ment, they increase the strength of the cement but slow the         thermoplastics, however, is a more recent innovation.
+cure time. More important, pozzolans decrease the alkalinity        Broadly defined, a thermoplastic softens when heated and
+of Portland cement, which indicates that adding lignocellu-         hardens when cooled. Thermoplastics selected for use
+losic-based material (rice husk ash) to cement-bonded ligno-        with lignocellulosics must melt or soften at or below the
+cellulosic composites may be advantageous.                          degradation point of the lignocellulosic component, normally
+                                                                    200°C to 220°C (392°F to 428°F). These thermoplastics
+
+
+10–26
+include polypropylene, polystyrene, vinyls, and low- and
+high-density polyethylenes.
+Wood flour is a readily available resource that can be used as
+a filler in thermoplastic composites. Wood flour is processed
+commercially, often from post-industrial materials such as
+planer shavings, chips, and sawdust. Several grades are
+available depending upon wood species and particle size.
+Wood fibers, although more difficult to process compared
+with wood flour, can lead to superior composite properties
+and act more as a reinforcement than as a filler. A wide vari-
+ety of wood fibers are available from both virgin and recycled
+resources.
+Other materials can be added to affect processing and product
+performance of wood–thermoplastic composites. These addi-
+                                                                  Figure 10–16. The use of lignocelulosics as reinforcing
+tives can improve bonding between the thermoplastic and           fillers allows thermoplastics to be molded into a wide
+wood component (for example, coupling agents), product            variety of shapes and forms.
+performance (impact modifiers, UV stabilizers, flame retar-
+dants), and processability (lubricants).
+                                                                  Thermoplastics in pellet form have bulk density in the range
+Several considerations must be kept in mind when process-         of 500 to 600 kg/m (31 to 37 lb/ft ). Lignocellulosics typi-
+                                                                                        3              3
+
+ing wood with thermoplastics. Moisture can disrupt many           cally have an uncompacted bulk density of 25 to 250 kg/m3
+thermoplastic processes, resulting in poor surface quality,       (1.6 to 16 lb/ft3). Wood fibers are at the low end of the lig-
+voids, and unacceptable parts. Materials must either be           nocellulosic bulk density continuum and wood flours at the
+predried or vented equipment must be used to remove mois-         high end. Although processing of wood flour in thermoplas-
+ture. The low degradation temperature of wood must also be        tics is relatively easy, the low bulk density and difficulty of
+considered. As a general rule, melt temperatures should be        dispersing fibrous materials make thermoplastics more diffi-
+kept below 200°C (392°F), except for short periods. Higher        cult to compound. More intensive mixing and the use of
+temperatures can result in the release of volatiles, discolora-   special feeding equipment may be necessary to handle longer
+tion, odor, and embrittlement of the wood component.              fibers.
+There are two main strategies for processing thermoplastics       The manufacture of thermoplastic composites is usually a
+in lignocellulosic composites (Youngquist and others              two-step process. The raw materials are first mixed together,
+1993b). In the first, the lignocellulosic component serves as     and the composite blend is then formed into a product. The
+a reinforcing agent or filler in a continuous thermoplastic       combination of these steps is called in-line processing, and
+matrix. In the second, the thermoplastic serves as a binder to    the result is a single processing step that converts raw
+the majority lignocellulosic component. The presence or           materials to end products. In-line processing can be very
+absence of a continuous thermoplastic matrix may also de-         difficult because of control demands and processing trade-offs.
+termine the processability of the composite material. In          As a result, it is often easier and more economical to separate
+general, if the matrix is continuous, conventional thermo-        the processing steps.
+plastic processing equipment may be used to process
+composites; however, if the matrix is not continuous, other       Compounding is the feeding and dispersing of the lignocellu-
+processes may be required. For the purpose of discussion, we      losic component in a molten thermoplastic to produce a
+present these two scenarios for composites with high and low      homogeneous material. Various additives are added and
+thermoplastic content.                                            moisture is removed during compounding. Compounding
+                                                                  may be accomplished using either batch mixers (for example,
+Composites With High Thermoplastic Content                        internal and thermokinetic mixers) or continuous mixers (for
+In composites with high thermoplastic content, the thermo-        example, extruders and kneaders). Batch systems allow
+plastic component is in a continuous matrix and the ligno-        closer control of residence time, shear, and temperature than
+cellulosic component serves as a reinforcement or filler          do continuous systems. Batch systems are also more
+(Fig. 10–16). In the great majority of reinforced thermoplas-     appropriate for operations consisting of short runs and fre-
+tic composites available commercially, inorganic materials        quent change of materials. On the other hand, continuous
+(for example, glass, clays, and minerals) are used as rein-       systems are less operator-dependent than are batch systems
+forcements or fillers. Lignocellulosic materials offer some       and have less batch-to-batch differences (Anon. 1997).
+advantages over inorganic materials; they are lighter, much       The compounded material can be immediately pressed or
+less abrasive, and renewable. As a reinforcement, lignocellu-     shaped into an end product while still in its molten state or
+losics can stiffen and strengthen the thermoplastic and can       pelletized into small, regular pellets for future reheating and
+improve thermal stability of the product compared with that       forming. The most common types of product-forming
+of unfilled material.                                             methods for wood–thermoplastic composites involve forcing
+
+
+                                                                                                                           10–27
+molten material through a die (sheet or profile extrusion) into    thermoplastic granules, flakes, or fibers and pressed into
+a cold mold (injection molding) or pressing in calenders           panel products.
+(calendering) or between mold halves (thermoforming and
+compression molding).                                              Because the thermoplastic component remains molten when
+                                                                   hot, different pressing strategies must be used than when
+Properties of wood–plastic composites can vary greatly             thermosetting binders are used. Two options have been
+depending upon such variables as type, form, and weight            developed to accommodate these types of composites. In the
+fractions of constituents, types of additives, and processing      first, the material is placed in the hot press at ambient tem-
+history. Table 10–14 shows some of the properties for              perature. The press then closes and consolidates the material,
+several unfilled polypropylene and wood–polypropylene              and heat is transferred through conduction to melt the ther-
+composites.                                                        moplastic component, which flows around the lignocellu-
+Composites with high thermoplastic content are not without         losic component. The press is then cooled, “freezing” the
+tradeoffs. Impact resistance of such composites decreases          thermoplastic so that the composite can be removed from the
+compared with that of unfilled thermoplastics, and these           press. Alternatively, the material can be first heated in an
+composites are also more sensitive to moisture than unfilled       oven or hot press. The hot material is then transferred to a
+material or composites filled with inorganic material. From a      cool press where it is quickly consolidated and cooled to
+practical standpoint, however, the thermoplastic component         make a rigid panel. Some commercial nonstructural lignocel-
+                                                                   lulosic–thermoplastic composites are made in this way.
+usually makes the temperature sensitivity of the composite
+more significant than any change in properties brought about
+                                                                   Nonwoven Textile-Type Composites
+by moisture absorption.
+                                                                   In contrast to high-thermoplastic-content and conventional
+Composites With Low Thermoplastic Content                          low-thermoplastic-content composites, nonwoven textile-
+Composites with low thermoplastic content can be made in a         type composites typically require long fibrous materials for
+variety of ways. In the simplest form, the thermoplastic           their manufacture. These fibers might be treated jute or kenaf,
+component acts much the same way as a thermosetting resin;         but more typically they are synthetic thermoplastic materials.
+that is, as a binder to the lignocellulosic component. An          Nonwoven processes allow and tolerate a wider range of
+alternative is to use the thermoplastic in the form of a textile   lignocellulosic materials and synthetic fibers, depending on
+fiber. The thermoplastic textile fiber enables a variety of        product applications. After fibers are dry-blended, they are
+lignocellulosics to be incorporated into a low-density, non-       air-laid into a continuous, loosely consolidated mat. The
+woven, textile-like mat. The mat may be a product in itself,       mat is then passed through a secondary operation in which
+or it may be consolidated into a high-density product.             the fibers are mechanically entangled or otherwise bonded
+                                                                   together. This low-density mat may be a product in itself, or
+Experimentally, low-thermoplastic-content composites have          the mat may be shaped and densified in a thermoforming step
+been made that are very similar to conventional lignocellu-        (Youngquist and others 1993b).
+losic composites in many performance characteristics
+(Youngquist and others 1993b). In their simplest form,             If left as low density and used without significant modifica-
+lignocellulosic particles or fibers can be dry-blended with        tion by post-processing, the mats have a bulk density of
+
+
+Table 10–14. Mechanical properties of wood–polypropylene compositesa,b
+                                            Tensile                      Flexural            Izod impact energy
+                                                                                                                              Heat
+                    Density     Strength    Modulus      Elonga-   Strength    Modulus      Notched       Unnotched        deflection
+                    (g/cm3       (MPa        (GPa          tion     (MPa        (GPa          (J/m            (J/m        temperature
+Compositec          (lb/ft3))   (lb/in2))   (lb/in2))      (%)     (lb/in2))   (lb/in2))   (ft-lbf/in))    (ft-lbf/in))     (°C (°F))
+
+Polypropylene         0.9         28.5        1.53          5.9     38.3         1.19         20.9            656              57
+                     (56.2)     (4,130)     (221,000)              (5,550)     (173,000)     (0.39)          (12.3)          (135)
+PP + 40%              1.05        25.4         3.87         1.9     44.2         3.03         22.2            73               89
+wood flour           (65.5)     (3,680)     (561,000)              (6,410)     (439,000)     (0.42)          (1.4)           (192)
+PP + 40%              1.03       28.2         4.20          2.0     47.9         3.25         26.2            91              100
+hardwood fiber       (64.3)     (4,090)     (609,000)              (6,950)     (471,000)     (0.49)          (1.7)           (212)
+PP + 40%              1.03       52.3         4.23          3.2      72.4        3.22         21.6            162             105
+hardwood fiber       (64.3)     (7,580)     (613,000)              (10,500)    (467,000)     (0.41)          (3.0)           (221)
++ 3% coupling
+agent
+a
+  Unpublished data.
+b
+  Properties measured according to ASTM standards for plastics.
+c
+  PP is polypropylene; percentages based on weight.
+
+
+
+10–28
+50 to 250 kg/m3 (3 to 16 lb/ft3). These products are particu-            Low-density nonwoven mats can also be used to replace dirt
+larly well known in the consumer products industry, where                or sod for grass seeding around new home sites or along
+nonwoven technology is used to make a variety of absorbent               highway embankments. Grass seed can be incorporated
+personal care products, wipes, and other disposable items.               directly into the mat. These mats promote seed germination
+The products are made from high-quality pulps in conjunc-                and good moisture retention. Low-density mats can also be
+tion with additives to increase absorptive properties. A much            used for filters. The density can be varied, depending on the
+wider variety of lignocellulosics can be used for other appli-           material being filtered and the volume of material that passes
+cations, as described in the following text.                             through the mat per unit of time.
+One interesting application for low-density nonwoven mats                High-density fiber mats can be defined as composites that are
+is for mulch around newly planted seedlings. The mats                    made using the nonwoven mat process and then formed into
+provide the benefits of natural mulch; in addition, controlled-          rigid shapes by heat and pressure. To ensure good bonding,
+release fertilizers, repellents, insecticides, and herbicides can        the lignocellulosic can be precoated with a thermosetting
+be added to the mats. The addition of such chemicals could               resin such as phenol–formaldehyde, or it can be blended with
+be based on silvicultural prescriptions to ensure seedling               synthetic fibers, thermoplastic granules, or any combination
+survival and early development on planting sites where                   of these materials. High-density fiber mats can typically be
+severe nutritional deficiencies, animal damage, insect attack,           pressed into products having a specific gravity of 0.60 to
+and weeds are anticipated.                                               1.40. Table 10–15 presents mechanical and physical property
+
+              Table 10–15. Properties of nonwoven web composite panels with specific gravity of 1.0a
+                                                                                     Formulationb
+              Property                                              90H/10PE            90H/10PP         80H/10PE/PR
+              Static bending MOR, MPa (lb/in )         2
+                                                                    23.3 (3,380)      25.5 (3,700)        49.3 (7,150)
+              Cantilever bending MOR, MPa (lb/in )         2
+                                                                    21.1 (3,060)      27.1 (3,930)        45.6 (6,610)
+              Static bending MOE, GPa (×10 lb/in ) 3       2
+                                                                    2.82 (409)         2.99 (434)          3.57 (518)
+
+
+              Dynamic MOE, GPa (×103 lb/in2)                        4.75 (689)         5.27 (764)          5.52 (800)
+              Tensile strength, MPa (lb/in2)                        13.5 (1,960)      12.5 (1,810)        27.7 (4,020)
+              Tensile MOE, GPa (×10 lb/in )
+                                       3       2
+                                                                    3.87 (561)          420 (609)          5.07 (735)
+              Internal bond, MPa (lb/in )  2
+                                                                     0.14 (20)          0.28 (41)          0.81 (120)
+              Impact energy, J (ft·lbf)                             26.7 (19.7)        21.5 (15.9)        34.3 (25.3)
+              Water-soak, 24 h
+                Thickness swell, %                                     60.8                40.3               21.8
+                 Water absorption, %                                   85.0                54.7               45.1
+              Water boil, 2 h
+                Thickness swell, %                                     260.1               77.5               28.2
+                 Water absorption, %                                   301.6               99.5               55.7
+              Linear expansionc
+                  Ovendry to
+                   30% RH, %                                           0.13                0.00               0.55
+                   65% RH, %                                           0.38                0.25               0.76
+                   90% RH, %                                           0.81                0.78               0.93
+                  Equilibrium MC at
+                   30% RH, %                                            3.4                3.4                3.4
+                    65% RH, %                                           6.4                6.2                6.3
+                    90% RH, %                                          15.6                14.9               14.1
+
+              a
+                From Youngquist and others 1992.
+              b
+                Values connected by solid line are not statistically different at 0.05 significance level.
+                90H/10PE, 90% hemlock and 10% polyester; 90H/10PP, 90% hemlock and 10% poly-
+                propylene; 80H/10PE/10PR, 80% hemlock, 10% polyester, and 10% phenolic resin.
+              c
+                RH = relative humidity.
+
+                                                                                                                                 10–29
+data for nonwoven web composite panels with a specific            ASTM D2718–90. Standard test method for structural
+gravity of 1.0 for three different formulations of wood, syn-     panels in planar shear (rolling shear).
+thetic fibers, and phenolic resin. After thermoforming, the
+products possess good temperature resistance. Because longer      ASTM D2719–89. Standard test methods for structural
+fibers are used, these products exhibit better mechanical         panels in shear through-the-thickness.
+properties than those obtained with high-thermoplastic-           ASTM D3043–87. Standard methods of testing structural
+content composites; however, the high lignocellulosic             panels in flexure.
+content leads to increased moisture sensitivity.
+                                                                  ASTM D3044–76. Standard test method for shear modu-
+References                                                        lus of plywood.
+                                                                  ASTM D3500–90. Standard test methods for structural
+Abourezk, J. 1977. Statements on introduced bills and joint       panels in tension.
+resolutions. Congressional Record–U.S. Senate Mar. 1
+S3156-S3179.                                                      ASTM D3501–76. Standard methods of testing plywood
+                                                                  in compression.
+AHA. 1985. Cellulosic fiberboard, ANSI/AHA A194.1–
+1985. Palatine, IL: American Hardboard Association.               ASTM E1333–90. Standard test method for determining
+                                                                  formaldehyde levels from wood products under defined test
+AHA. 1990. Hardboard siding, ANSI/AHA A135.6–1990.                conditions using a large chamber.
+Palatine, IL: American Hardboard Association.
+                                                                English, B.; Chow, P.; Bajwa, D.S. 1997. Processing into
+AHA. 1995a. Basic hardboard, ANSI/AHA A135.4–1995.              composites. In: Rowell, Roger M.; Young, Raymond A.;
+Palatine, IL: American Hardboard Association.                   Rowell, Judith K., eds. Paper and composites from agro-
+AHA. 1995b. Prefinished hardboard paneling, ANSI/AHA            based resources. Boca Raton, FL: CRC Lewis Publishers:
+A135.5–1995. Palatine, IL: American Hardboard Associa-          269–299. Chapter 8.
+tion.                                                           Geimer, R.L.; Souza, M.R.; Moslemi, A.A.; Simatupang,
+Anon. 1997. Machinery and equipment. Plastics Com-              M.H. 1992. Carbon dioxide application for rapid production
+pounding: 1996/97 Redbook. Advanstar Communications,            of cement particleboard. In: Proceedings, inorganic bonded
+Inc. 19: 58–70.                                                 wood and fiber composite materials conference; 1992
+                                                                September 27–30; Spokane, WA.
+APA. 1981. Performance standards and policies for APA
+structural use panels. Tacoma, WA: American Plywood             HPVA. 1994. American national standard for hardwood and
+Association.                                                    decorative plywood, ANSI/HPVA–1–1994. Reston, VA:
+                                                                Hardwood Plywood & Veneer Association.
+APA–The Engineered Wood Association. 1991. Perform-
+ance standards and policies for structural use panels. APA      Maloney, T.M. 1986. Terminology and products defini-
+PRP–108. Tacoma, WA: APA–The Engineered Wood                    tions—A suggested approach to uniformity worldwide.
+Association.                                                    In: Proceedings, 18th international union of forest research
+                                                                organization world congress; 1986 September; Ljubljana,
+APA–The Engineered Wood Association. 1995a. Design              Yugoslavia. IUFRO World Congress Organizing
+capacities of APA performance-rated structural-use panels.      Committee.
+Technical Note N375 B. Tacoma, WA: APA–The
+Engineered Wood Association.                                    Maloney, T.M. 1993. Modern particleboard and dry-process
+                                                                fiberboard manufacturing. San Francisco, CA: Miller
+APA–The Engineered Wood Association. 1995b. Ply-                Freeman Publications.
+wood design specification. Tacoma, WA: APA–The Engi-
+neered Wood Association.                                        Marra, G. 1979. Overview of wood as material. Journal of
+                                                                Educational Modules for Materials Science and Engineering.
+ASTM. 1988. Concrete and mineral aggregates. 1988.              1(4): 699–710.
+Annual Book of ASTM Standards, Sec. 4, Vol. 4.02, 4.03.
+Philadelphia, PA: American Society for Testing and              McKay, M. 1997. Plywood. In: Smulski, S., ed.. Engi-
+Materials.                                                      neered wood products—A guide for specifiers, designers and
+                                                                users. Madison, WI: PFS Research Foundation.
+ASTM. (Current edition). Annual Book of ASTM Stan-
+dards. Philadelphia, PA: American Society for Testing and       NIST. 1992. Voluntary product standard PS 2–92. Perform-
+Materials.                                                      ance standard for wood-base structural-use panels. National
+                                                                Institute of Standards and Technology. Gaithersburg, MD:
+  ASTM C208–94. Standard specification for cellulosic fiber     United States Department of Commerce.
+  insulating board.
+                                                                NIST. 1995. Voluntary product standard PS 1–95 Construc-
+  ASTM D1037–94. Standard test methods for evaluating           tion and industrial plywood. National Institute of Standards
+  the properties of wood-based fiber and particle panel mate-   and Technology. Gaithersburg, MD: United States Depart-
+  rials.                                                        ment of Commerce.
+
+
+
+10–30
+NPA. 1993. Particleboard, ANSI A208.1–1993. Gaithers-          Youngquist, J.A. 1988. Wood-based composites: The
+burg, MD: National Particleboard Association.                  panel and building components of the future. In: Proceed-
+                                                               ings, IUFRO Division 5, Forest Products subject group
+NPA. 1994. Medium density fiberboard (MDF), ANSI
+                                                               5.03: Wood protection; 1987 May 16–17; Honey Harbour,
+A208.2–1994. Gaithersburg, MD: National Particleboard
+                                                               Canada: 5–22.
+Association.
+O’Halloran, M.R. 1979. Development of performance              Youngquist, J,A. 1995. Unlikely partners? The
+specifications for structural panels in residential markets.   marriage of wood and nonwood materials. Forest Products
+Forest Products Journal. 29(12): 21–26.                        Journal. 45(10): 25–30.
+
+O’Halloran, M.R. 1980. The performance approach to             Youngquist, J.A.; Krzysik, A.M.; Muehl, J.H.; Carll, C.
+acceptance of building products. In: Proceedings, 14th         1992. Mechanical and physical properties of air-formed
+Washington State University international symposium on         wood-fiber/polymer–fiber composites. Forest Products
+particleboard. Pullman, WA: 77–84.                             Journal. 42(6): 42–48.
+
+O’Halloran, M.R.; Youngquist, J.A. 1984. An overview           Youngquist, J.A.; English, B.E.; Spelter, H.; Chow, P.
+of structural panels and structural composite products. In:    1993a. Agriculture fibers in composition panels, In: Ma-
+Rafik, Y. Itani; Faherty, Keith F., eds. Structural wood       loney, Thomas M., ed. Proceedings, 27th international
+research. State-of-the-art and research needs. Proceedings,    particleboard/composite materials symposium; 1993 March
+American Society of Civil Engineers; 1983 October 5–6;         30–April 1; Pullman, WA. Pullman, WA: Washington
+Milwaukee, WI. New York, NY: American Society of               State University: 133–152.
+Civil Engineers: 133–147.                                      Youngquist, J.A.; Myers, G.E.; Muehl, J.M. [and
+Rowell, R.M.; Young, R.A.; Rowell, J.K. eds. 1997.             others]. 1993b. Composites from recycled wood and
+Paper and composites from agro-based resources. Boca           plastics. Final Rep., U.S. Environmental Protection Agency,
+Raton, FL: CRC Lewis Publishers.                               Project IAG DW12934608–2. Madison, WI: U.S. Depart-
+                                                               ment of Agriculture, Forest Service, Forest Products
+Suchsland, O.; Woodson, G.E. 1986. Fiberboard manu-            Laboratory.
+facturing practices in the United States, Agric. Handb. 640.
+Washington, DC: U. S. Department of Agriculture.               Youngquist, J.A.; English, B.E.; Scharmer, R.C. [and
+                                                               others]. 1994. Literature review on use of non-wood plants
+TECO. 1991. TECO PRP–133 Performance standards and             fibers for building materials and panels. Gen. Tech. Rep.
+policies for structural-use panels. Madison, WI: TECO.         FPL–GTR–80. Madison, WI: U.S. Department of
+U.S. Department of Defense. 1951. Design of wood aircraft      Agriculture, Forest Service, Forest Products Laboratory.
+structures. ANC–18 Bull. (Issued by Subcommittee on Air        Youngquist, J.A.; Krzysik, A.M.; Chow, P.; Meimban,
+Force–Navy–Civil Aircraft Design Criteria. Aircraft Comm.)     R. 1997. Properties of composite panels. In: Rowell, Roger
+2d ed. Washington, DC: Munitions Board.                        M., Young, Raymond A.; Rowell, Judith K., eds. Paper and
+Youngquist, J.A. 1987. Wood-based panels, their                composites from agro-based resources. Boca Raton, FL:
+properties and uses—A review. In: Proceedings, Technical       CRC Lewis Publishers.
+consultation on wood-based panel. Expert Consultation,
+Food and Agriculture Organization of the United Nations;
+1987 September 28–October 1; Rome, Italy: 116–124.
+
+
+
+
+                                                                                                                    10–31
+From
+Forest Products Laboratory. 1999. Wood handbook—Wood as an engineering material.
+Gen. Tech. Rep. FPL–GTR–113. Madison, WI: U.S. Department of Agriculture, Forest Service,
+Forest Products Laboratory. 463 p.
+

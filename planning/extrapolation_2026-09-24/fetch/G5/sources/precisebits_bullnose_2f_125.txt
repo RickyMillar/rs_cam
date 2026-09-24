@@ -1,0 +1,505 @@
+# source_url: https://www.precisebits.com/products/carbidebits/2fltbullnose125.asp
+# accessed_on: 2026-09-24
+# raw_html_sha256: 7e347ba0b37a7b678628ef3ac217f5ae12f2ff602f054d191d6c415857842648
+
+Think
+
+&
+
+Tinker
+, Ltd. ™
+
+0 item(s) - $0.00
+
+Your shopping cart is empty!
+
+Menu
+
+Home
+
+Products
+
+Application Specific Tools
+
+3D Signs & Plaques
+
+Cutting Composites
+
+Engraving
+
+Jewelry
+
+Musical Instruments
+
+Pool Cues
+
+Printed Circuit Boards
+
+Steel Rule Dies
+
+3D Carving Tools
+
+Backing & Mounting
+
+Calibration Blanks
+
+Inch
+
+Metric
+
+Cleaners & Lubricants
+
+ColletCare
+
+Metal Cutting Fluid
+
+PCB Engraving Lubricant
+
+Collets & Toolholders
+
+Drill bits
+
+Number (wire gauge)
+
+Fractional inch
+
+Letter
+
+Metric
+
+Medical & Slotting
+
+Drill Bit Sets
+
+Drill Bit Diameter Chart
+
+Feeds/Speeds for FR-4 & Carbon-fiber
+
+End-mills
+
+Engraving Tools
+
+1/8in. shank
+
+Micro-engraving tools
+
+Tapered-stubs
+
+Engraving / Cut-out tools
+
+1/4in. shank
+
+Signage / Engraving tools
+
+Miscellaneous
+
+Depth Setting Rings
+
+FuzzBrush
+
+SecureBits
+
+Router Bits
+
+Chip breaker (CB)
+
+Diamond cut (DC)
+
+Feeds/Speeds
+
+CB feeds/speeds
+
+DC feeds/speeds
+
+Specialty Bits
+
+Acrylic/polycarbonate tools
+
+Antler / horn cutters
+
+Countersinks
+
+Extended-reach end-mills
+
+Fret slot cutters
+
+Fretboard planing/radiusing
+
+Shell cutters
+
+Steel Rule Die Tools
+
+Zero-helix cutters
+
+Substrates
+
+Backing material
+
+Copperclad
+
+Entry foil
+
+Tool Packs
+
+Single bit packs
+
+10-bit packs
+
+50-bits packs
+
+SecureBits
+
+Applications
+
+3D Signs & Plaques
+
+Cutting Composites
+
+Engraving
+
+Jewelry
+
+Musical Instruments
+
+Pool Cues
+
+Printed Circuit Boards
+
+Steel Rule Dies
+
+Resources
+
+FAQ
+
+Cutter terminology
+
+Depth Setting Rings
+
+Extended-reach Geometry
+
+Feeds & Speeds Calculator
+
+Glossary
+
+Point styles
+
+Reference library
+
+Sweet-spot Test
+
+Tutorials
+
+Charts/Tables
+
+Chipbreaker Feeds & Speeds
+
+Diamondcut Feeds & Speeds
+
+Drill Bit Diameter Chart
+
+Drill Bit Feeds & Speeds
+
+ER Torque Chart
+
+Metal Gauge Conversion Chart
+
+Relative Wood Hardness Table
+
+Support
+
+Contact us
+
+Limited Warranty
+
+Policies
+
+Sales Quotes
+
+Technical Support
+
+Distributors
+
+Domestic Distributors
+
+International Distributors
+
+Account
+
+My Account
+
+Order History
+
+Wish list
+
+2-flute Carbide Corner-radius (Bull-nose) End-mills (MM208) - 1/8" (0.1250 in.) Shank
+
+Wood / Plastic - 1/8 in. shank
+
+1-flute fish-tail
+
+1-flute corner-radius
+
+1-flute extended-reach fish-tail
+
+2-flute fish-tail
+
+2-flute extended-reach fish-tail
+
+2-flute ball-nose
+
+2-flute extended-reach ball-nose
+
+2-flute corner-radius
+
+3-flute fish-tail
+
+Wood / Plastic - 1/4 in. shank
+
+1-flute fish-tail
+
+1-flute corner-radius
+
+2-flute fish-tail
+
+2-flute extended-reach ball-nose
+
+2-flute extended-reach fish-tail
+
+2-flute corner-radius
+
+Wood / Plastic - 1/2 in. shank
+
+2-flute extended-reach fish-tail
+
+2-flute extended-reach ball-nose
+
+2-flute extended-reach corner-radius
+
+Overview
+
+Specifications
+
+Benefits
+
+Applications
+
+Tutorials
+
+Think & Tinker 2-flute miniature and micro end-mills feature a high axial rake plunging tip style enhanced with revisions to the cutting edges and flute profile. These changes result in bits with improved cutting properties in a wider range of materials. Corner-radius (bull-nose) tools are specifically designed to provide a very smooth bottom surface at higher chiploads than ball-nose cutters for pocketing. They excel in "pencil-line" outlining of raised letters and other image features.
+
+Manufactured in the USA, every tool is:
+
+100% measured / optically inspected to insure that EVERY tool meets, or exceeds, our published specifications
+
+available with depth rings precisely positioned to ±0.004 in. (0.10mm), virtually eliminating the need for resetting Z-axis zero in many applications)
+
+made from premium grade submicrograin tungsten carbide (HRa: 93, TRS: 4.0GPa )
+
+This attention to detail and the use of top quality materials result in tools with dependable cutting characteristics and one of the longest tool lives in the market. Combined with comprehensive customer support, our cutters have become the tools of choice for sign makers, model makers, artists and instrument builders around the world.
+
+MADE IN USA
+
+Geometry - 2 flute, 1/8 in. (3.18 mm) shank, bull-nose tip
+
+Length - 1.50 in. ±0.010 in.
+
+Diameter -
+
+0.0000 in. to 0.0625 in. = nominal ±0.0005 in.
+
+0.0630 in. to 0.1181 in. = nominal ±0.0010 in.
+
+0.1250 in. = 0.1248 in. +0.0000 in., -0.0020 in.
+
+Corner radius - nominal ±0.0005 in.
+
+Runout (TIR) - max 0.0005 in.
+
+Max. depth of cut - nominal ±0.005 in.
+
+Anticipated Life - depends on material being cut (min 10,000 in, western red cedar)
+
+Material - solid submicrograin carbide
+
+Operating RPM - CNC certified operation 1k RPM to 60k RPM
+
+Bull-nose tip cuts smooth 3D contours at higher chiploads than ball-nose cutters
+
+Specifically designed for "Rest Machining" cutting strategies (see Tutorials)
+
+High flute volume supports high feed rates / chip loads
+
+High aspect ratio for single pass deep-reach cutting
+
+Dimensional signage
+
+High detail 3D carving
+
+3D contouring and profiling
+
+Cabinetry and furniture making
+
+3D millwork
+
+Finding the best combination of feed and speed
+
+Save time cutting 3D bass relief carvings using Rest Machining
+
+Product Compare (0)
+
+Product Filter
+
+| Diameter | LOC | Flutes | Corner Radius | Shank |
+OAL |
+Depth Rings | Reviews | Part Number |
+Price |
+
+| 0.0625" (1.59mm) | 0.250" (6.35mm) | 2 | 0.011" (0.28mm) | 1/8" |
+1.50" (38.1mm) |
+Available |
+Leave the first review Add to wishlist
+Compare
+Product Page
+| MM208-0625-025FR |
+$19.49
+
+|
+
+| 0.1250" (3.18mm) | 0.500" (12.70mm) | 2 | 0.023" (0.58mm) | 1/8" |
+1.50" (38.1mm) |
+Available |
+Leave the first review Add to wishlist
+Compare
+Product Page
+| MM208-1250-050FR |
+$19.49
+
+|
+
+Support
+
+About us
+
+Contact us
+
+Educational Discount
+
+Limited Warranty
+
+No-fault Returns
+
+Policies
+
+Sales Quotes
+
+Tech Support
+
+Products
+
+Collets, Toolholders
+
+Composite Cutting
+
+Metal Machining
+
+Woodworking
+
+Plastic Cutting
+
+Applications
+
+3D Signs & Plaques
+
+Engraving
+
+Jewelry
+
+Musical Instruments
+
+Pool Cues
+
+Printed Circuit Boards
+
+Steel Rule Dies
+
+Calculators
+
+Resources
+
+FAQ
+
+Tool terms
+
+Glossary
+
+Point styles
+
+Reference library
+
+Sweet-spot Test
+
+Tutorials
+
+Support
+
+About us
+
+Contact us
+
+Educational Discount
+
+Limited Warranty
+
+No-fault Returns
+
+Policies
+
+Sales Quotes
+
+Tech Support
+
+Products
+
+Collets, Toolholders
+
+Composite Cutting
+
+Metal Machining
+
+Woodworking
+
+Plastic Cutting
+
+Applications
+
+3D Signs & Plaques
+
+Engraving
+
+Jewelry
+
+Musical Instruments
+
+Pool Cues
+
+Printed Circuit Boards
+
+Steel Rule Dies
+
+Resources
+
+FAQ
+
+Tool terms
+
+Glossary
+
+Point styles
+
+Reference library
+
+Sweet-spot Test
+
+Tutorials
+
+Feed and Speed Calculators

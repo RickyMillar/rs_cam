@@ -1,0 +1,222 @@
+[
+  {
+    "source_id": "harvey_undercutting_sf23200",
+    "source_vendor": "harvey",
+    "source_title": "Harvey Tool Speeds & Feeds, Undercutting End Mills - 270 deg (SF_23200), with the Undercutting Guide",
+    "source_url": "https://harveyperformance.widen.net/content/t3xctfqkjz/pdf/SF_23200.pdf?u=d9orjt",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/harvey_undercutting_sf23200.txt",
+    "pdf_sha256": "a25ab09a70970734816db891fd1af3702faf258bae8af28159a911fbbca0cb41",
+    "hashed_file": "pdf/harvey_SF_23200.pdf",
+    "coverage_notes": "Metal cutting only (aluminium to high-temperature alloys). Page 1 prints Table 1, a chip-load multiplier by neck length multiple (neck length / neck diameter): 3x 120 %, 5x 100 %, 8x 80 %, 12x 65 %, 15x 55 %. The base (100 %) is 5x, not 1x. Tool: lollipop undercutting end mill, 0.062-1.000 in. No wood, no router bit. Re-downloaded 2026-09-24; the hash matches the file a previous run left."
+  },
+  {
+    "source_id": "harvey_miniature_long_reach_sf846100",
+    "source_vendor": "harvey",
+    "source_title": "Harvey Tool Speeds & Feeds, Miniature End Mills - Square - Long Reach, Standard Flute (SF_846100)",
+    "source_url": "https://harveyperformance.widen.net/content/9gprk0fq3c/original/SF_846100.pdf?u=d9orjt&download=true",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/harvey_miniature_long_reach_sf846100.txt",
+    "pdf_sha256": "64cbfde52ac1573e062826e45399a675f4c7e5cb240cf005152ebb90c3bc125e",
+    "hashed_file": "pdf/harvey_SF_846100.pdf",
+    "coverage_notes": "Metal only, 0.015-0.500 in. A long-reach chart that prints NO reach or L/D factor. It prints Slotting / Roughing / Finishing chip loads with a radial and axial depth per row (for example slotting axial .07 x Dia for 0.015-0.047 in, .16 x Dia above). Evidence that Harvey handles reach in this series through the depth of cut, not a chip-load factor. Not a wood chart. 0 candidate rows."
+  },
+  {
+    "source_id": "helical_machining_guidebook_2016",
+    "source_vendor": "helical",
+    "source_title": "Helical Solutions Machining Guidebook (2016)",
+    "source_url": "https://web.mae.ufl.edu/designlab/Advanced%20Manufacturing/Helical_Machining_Guidebook.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/helical_machining_guidebook_2016.txt",
+    "pdf_sha256": "6d6ca79db0b491368e0de925e840caed8a8492e376581665018226d26705e33d",
+    "hashed_file": "pdf/helical_guidebook_2016.pdf",
+    "coverage_notes": "Same URL as the LUT manifest entry helical_machining_guidebook_2016 (the manifest has no pdf_sha256; the hash here is the first one recorded). Page 68: 'Tool overhang length decreases rigidity as a third power (L3), but even more importantly, tool diameter increases rigidity by the fourth power (D4).' Page 7: necked tooling 'when reaching >3x dia. depths'. Troubleshooting table: 'Tool Overhang ... reduce overhang from tool holder'. No numeric feed de-rate for overhang. Metal cutting."
+  },
+  {
+    "source_id": "onsrud_cnc_production_routing_guide",
+    "source_vendor": "onsrud",
+    "source_title": "LMT Onsrud CNC Production Routing Guide",
+    "source_url": "https://precisionboard.com/wp-content/uploads/2017/08/CNC-Prod-Routing-Guide-05.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/onsrud_cnc_production_routing_guide.txt",
+    "pdf_sha256": "79dd5f6ef135ab94d90d7b67b7e8aef678a775fab970ff093943f215bfad4cd1",
+    "hashed_file": "pdf/onsrud_cnc_prod_routing_guide.pdf",
+    "coverage_notes": "Router bits, wood and plastics. The vendor URL http://www.onsrud.com/files/pdf/LMT-Onsrud-CNC-Prod-Routing-Guide.pdf returned an HTML page on 2026-09-24; the precisionboard.com mirror returned a PDF whose hash matches the file a previous run left. Prints: cutting edge length 'not more than three times the diameter in a perfect world'; the collet '80% rule'; 'Use shortest CEL to achieve depth of cut'. Prints NO stickout or overhang feed de-rate."
+  },
+  {
+    "source_id": "niagara_hp_endmills_speeds_feeds",
+    "source_vendor": "niagara_cutter",
+    "source_title": "Niagara Cutter Speeds & Feeds, Solid Carbide High Performance End Mills (c 2016)",
+    "source_url": "https://community.carbide3d.com/uploads/default/original/2X/0/0415837bc64b13a4420124800fcf8d2ea07e548e.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/niagara_hp_endmills_speeds_feeds.txt",
+    "pdf_sha256": "ccc4e502f870650855e4cfd28e4073a6146a4e92f8d219d34d5864ef5d3d1c6c",
+    "hashed_file": "pdf/c3d_hp_endmills.pdf",
+    "coverage_notes": "Metal cutting chart; footer '(c) 2016 Niagara Cutter, LLC'. Hosted as a forum upload on community.carbide3d.com (not a vendor URL), so treat the host as a mirror. Prints 'For Long and Extra Carbide Reduce Feed by 50%.' with no L/D definition of 'Long' or 'Extra'. The niagaracutter.com speed/feed pages were not fetched as PDF."
+  },
+  {
+    "source_id": "redline_gp_carbide_endmills_p216",
+    "source_vendor": "redline",
+    "source_title": "RedLine Tools General Purpose Carbide Endmills Speeds & Feeds (catalog p216)",
+    "source_url": "https://www.redlinetools.com/customer/docs/skudocs/General-Purpose-Carbide-Endmills-Speeds-Feeds-p216.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/redline_gp_carbide_endmills_p216.txt",
+    "pdf_sha256": "c32a1ec266a0658eb5000470975e6723be3ad354fb83a78fc7b28a696be298ac",
+    "hashed_file": "pdf/redline_p216.pdf",
+    "coverage_notes": "Metal cutting. Prints '(4) For extra long endmills, reduce SFM by 25%.' (a speed, not a feed, factor) and 'Use the shortest LOC (Length of Cut) available'. Hash matches the file a previous run left."
+  },
+  {
+    "source_id": "redline_endmill_tech_info",
+    "source_vendor": "redline",
+    "source_title": "RedLine Tools Endmills - Technical Information",
+    "source_url": "https://www.redlinetools.com/customer/docs/redlinetoolsendmilltechinfo.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/redline_endmill_tech_info.txt",
+    "pdf_sha256": "c645ac894ab63c97991cd239e9b41f58613cdc35a8e9027f0d9ef1ca204676c7",
+    "hashed_file": "pdf/redline_endmill_tech_info.pdf",
+    "coverage_notes": "Metal cutting, 12 pages. Prints three different long-tool rules in one document: 'Reduce feed rates by 20% when using long length tools.' (under several HP/XHP tables), '(4) The use of Long and Extra Long Endmills require a reduction in feed by up to 50%.', and on page 5 (XHP 5-flute) 'Milling Long Reach or with Long Overhang / Reduce speed and chipload by 10%'. The page-5 layout text is garbled; sources/redline_endmill_tech_info_p5_raw.txt is the same page from 'pdftotext -raw' and carries the readable text. No L/D threshold is printed for 'long'."
+  },
+  {
+    "source_id": "fullerton_endmill_speeds",
+    "source_vendor": "fullerton",
+    "source_title": "Fullerton Tool End Mill Speed and Feed Recommendations",
+    "source_url": "https://cuttingtoolsales.com/wp-content/uploads/2015/11/FullertonTool_EndMill_Speeds.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/fullerton_endmill_speeds.txt",
+    "pdf_sha256": "4b4233afe9ce1ad0b29ab22501189e1296cc756f5bce7dd0832a7cb76fdea316",
+    "hashed_file": "pdf/fullerton_endmill_speeds.pdf",
+    "coverage_notes": "Metal cutting; distributor-hosted copy. Prints 'Extra Long End Mills / For extra long end mills the SFM should be reduced by 25%.' (a speed factor) and the shortest-LOC / shortest-gage-line advice."
+  },
+  {
+    "source_id": "amana_zrn_3d_profiling_v8",
+    "source_vendor": "amana",
+    "source_title": "Amana ZrN-Coated and Uncoated 2D/3D Carving CNC Solid Carbide Router Bits v8",
+    "source_url": "https://www.amanatool.com/pub/media/productattachments/ZrN-3D-Profiling-Feed-Chip-Load-Chart-v8.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/amana_zrn_3d_profiling_v8.txt",
+    "pdf_sha256": "5cdfb9c01ec218e9db992fee90855f005a02902f49a3897c448188cd7cd4479b",
+    "hashed_file": "pdf/amana_zrn_3d_profiling_v8.pdf",
+    "coverage_notes": "Wood router bits. The LUT manifest already lists this source (amana_zrn_3d_profiling_v8, no pdf_sha256, no stored text); the hash here is the first one recorded. Page 2 prints a '3 Flute Extra Long Ball Nose & Flat Bottom' block at 1/4, 3/8 and 1/2 in (tools 46490, 46491, 46493, 46496, 46590, 46593, 46596, 46597) that the LUT does not hold. The same chart prints the standard-length 3 Flute Ball Nose rows (LUT rows amana-zrn-ball-softwood-parallel-9525-3f and -12700-3f; the LUT copies match the chart). The older unversioned chart (LUT source amana_zrn_3d_profiling, sha 52465d1d..., same hash on 2026-09-24) prints the 1/4 in extra-long wood cell as '0.0004\" - 0.006\"'; v8 prints '0.004\" - 0.006\"', which the IPM column (215-320 IPM at 18,000 rpm, 3 flutes) supports. Depth statement: 1 x D; 2 x D reduce feed 25 %; 3 x D reduce 50 %."
+  },
+  {
+    "source_id": "amana_spektra_3d_profiling_v6",
+    "source_vendor": "amana",
+    "source_title": "Amana Spektra Extreme Tool Life Coated 2D/3D Carving CNC Solid Carbide Router Bits, Feed and Chip Load Chart v6",
+    "source_url": "https://www.amanatool.com/pub/media/productattachments/Spektra-Coated-3D-Profiling-Feed-Chip-Load-Chart-v6.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/amana_spektra_3d_profiling_v6.txt",
+    "pdf_sha256": "84feaace79e13a5bc12e652c58cf237f1a242a623e6fb8bc9d3f5883d5153497",
+    "hashed_file": "pdf/amana_spektra_3d_profiling_v6.pdf",
+    "coverage_notes": "Wood router bits, Spektra coating. Page 2 prints '3 Flute Extra Long Ball Nose & Flat Bottom' 1/4 in (46490-K) for 'Wood, MDF, Sign-Foam': 0.004-0.006 in/tooth. Not in the LUT manifest."
+  },
+  {
+    "source_id": "toolstoday_amana_4649x_specs",
+    "source_vendor": "toolstoday (Amana distributor)",
+    "source_title": "ToolsToday product pages for Amana 46490, 46491, 46496 (extra long) and 46494, 46495 (standard)",
+    "source_url": "https://www.toolstoday.com/v-12487-46491.html",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/toolstoday_amana_4649x_specs.txt",
+    "pdf_sha256": "f446a364715a2d1ca7323a144fdb36c75ee5e3e0bb44c1f963664845c46dde40",
+    "hashed_file": "sources/toolstoday_amana_4649x_specs.txt",
+    "coverage_notes": "Catalog geometry, not a chipload source. amanatool.com product pages returned a bot challenge ('Just a moment...'), so the geometry comes from the distributor pages (five URLs, each named in the stored text). The stored text keeps only the title line and the dimension table of each page. Extra-long tools carry a relieved neck D1 and reach L1: 46490 1/4 D, 1/2 CH, D1 .235, L1 1-1/4, OAL 4; 46491 3/8 D, 3/4 CH, D1 .352, L1 1-1/4, OAL 4; 46496 1/2 D, 1-1/4 CH, D1 .470, L1 2, OAL 7. Standard tools: 46494 3/8 D, 2-1/4 CH, OAL 4; 46495 1/2 D, 2-1/4 CH, OAL 4. 46493 (1/2 D, 1 CH, 6 in long, from search titles) was not stored."
+  },
+  {
+    "source_id": "precisebits_calibrating_feeds_speeds",
+    "source_vendor": "precisebits",
+    "source_title": "PreciseBits tutorial: Calibrating Feeds and Speeds When Using Carbide Microtools",
+    "source_url": "https://www.precisebits.com/tutorials/calibrating_feeds_n_speeds.htm",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/precisebits_calibrating_feeds_speeds.txt",
+    "pdf_sha256": "0759b8a9620137f63439b263202e678fc4661673fcb55ec93fd41267e3fb3a6c",
+    "hashed_file": "sources/precisebits_calibrating_feeds_speeds.txt",
+    "coverage_notes": "Micro tools in wood and plastics. A test procedure, not a chart: start feed 'F = 0.03 x D x No. flutes x RPM (3% chipload per flute)' for soft, hard and extreme hardwoods; plunge depth Z = 2 x D (Janka < 1,000), 1 x D (1,000-2,500), 0.5 x D (2,500-5,000); sweet spot = 0.75 x Fmax (the feed where the cut fails). Grade c at best for a number: it is a start point for a test, and the page says so."
+  },
+  {
+    "source_id": "precisebits_faq",
+    "source_vendor": "precisebits",
+    "source_title": "PreciseBits FAQ on CNCs, Materials, and Tooling",
+    "source_url": "https://www.precisebits.com/faq.htm",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/precisebits_faq.txt",
+    "pdf_sha256": "80eec42c2bab984b9fb392762fe7405eda743a125d540e1c69b44c975936f8a9",
+    "hashed_file": "sources/precisebits_faq.txt",
+    "coverage_notes": "Micro tools. 'Spindle Runout (TIR) - should be less than or equal to 2% of the tool's diameter (absolute maximum).' The 0.80 mm floor applies to a hand-held pencil grinder mounted on a CNC, not to every spindle."
+  },
+  {
+    "source_id": "harvey_blog_optimize_miniature_end_mills",
+    "source_vendor": "harvey",
+    "source_title": "Harvey Performance In The Loupe: How to Optimize Miniature End Mill Performance (2020-07-01)",
+    "source_url": "https://www.harveyperformance.com/in-the-loupe/how-to-optimize-results-while-machining-with-miniature-end-mills/",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/harvey_blog_optimize_miniature_end_mills.txt",
+    "pdf_sha256": "5dbdae17189a3d47717a3f3657e67c23130e5da6a0c4ae97e3fad31fb6013ef4",
+    "hashed_file": "sources/harvey_blog_optimize_miniature_end_mills.txt",
+    "coverage_notes": "Vendor blog (grade c). Runout 'should not exceed 2% of the tool diameter'; chip thickness vs edge radius (ploughing, no number); 'doubling the length sticking out of the holder will result in 8 times more deflection. Doubling the diameter ... 16 times less deflection.'"
+  },
+  {
+    "source_id": "harvey_blog_running_parameters_miniature",
+    "source_vendor": "harvey",
+    "source_title": "Harvey Performance In The Loupe: How to Adjust Running Parameters for Miniature Tooling",
+    "source_url": "https://www.harveyperformance.com/in-the-loupe/running-parameters-for-miniature-tooling/",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/harvey_blog_running_parameters_miniature.txt",
+    "pdf_sha256": "dad68ae3545a131f04bcab669c3235808c60e6eb30912955495c9ed1ae01a417",
+    "hashed_file": "sources/harvey_blog_running_parameters_miniature.txt",
+    "coverage_notes": "Vendor blog (grade c). 'Runout should be measured at less than .0001\"'; 'ensure the tool is the largest diameter and shortest length of cut possible'. No numeric chip-load rule for small tools."
+  },
+  {
+    "source_id": "micromachines_2020_hmin_effective_rake",
+    "source_vendor": "literature (Micromachines 11(10):924, doi 10.3390/mi11100924, PMC7600950)",
+    "source_title": "Experimental Study on the Minimum Undeformed Chip Thickness Based on Effective Rake Angle in Micro Milling",
+    "source_url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC7600950/fullTextXML",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/micromachines_2020_hmin_effective_rake.txt",
+    "pdf_sha256": "1e05efbde4fbea0b716d259eb4a300be3fe6543fe453739f77532b8d9c622af2",
+    "hashed_file": "raw/pmc7600950.xml",
+    "coverage_notes": "Micro milling of copper with a 1 mm 2-flute TiCN-coated carbide end mill; measured edge radius rn about 4.4 um; result hmin = 0.17 rn. The introduction cites other metals: 0.43-0.48 rn (KDP crystal), 0.15-0.49 rn (titanium alloy), about 0.3 rn (Al 6061), 14-21 % of rn (Al 6082), and 0.1-0.3 rn (copper). No wood."
+  },
+  {
+    "source_id": "materials_2019_mdf_drill_edge_radius",
+    "source_vendor": "literature (Materials 12(3):386, 2019, PMC6384622)",
+    "source_title": "Experimental Study on Drilling MDF with Tools Coated with TiAlN and ZrN",
+    "source_url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC6384622/fullTextXML",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/materials_2019_mdf_drill_edge_radius.txt",
+    "pdf_sha256": "b6e29bbc60e0532688a459b4fe860893a3f80994b60a126d6638eee858853bea",
+    "hashed_file": "raw/PMC6384622.xml",
+    "coverage_notes": "HW (cemented carbide) drills in MDF, coated and uncoated: cutting edge radius 5.91-5.95 um (selected to be equal). The only measured edge radius of a carbide tool used in a wood composite that I found."
+  },
+  {
+    "source_id": "materials_2021_spruce_saw_edge_radius",
+    "source_vendor": "literature (Materials 14(20), 2021, PMC8539808)",
+    "source_title": "Interaction between Thermal Modification Temperature of Spruce Wood and the Cutting and Fracture Parameters",
+    "source_url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC8539808/fullTextXML",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/materials_2021_spruce_saw_edge_radius.txt",
+    "pdf_sha256": "692d53b94c4af3970bb8d068335ebc72ca23eaada6b3204f8163f99b056088a2",
+    "hashed_file": "raw/PMC8539808.xml",
+    "coverage_notes": "Carbide-tipped circular sawblade for spruce: cutting-edge radius rho0 = 8 um."
+  },
+  {
+    "source_id": "materials_2020_hss_planer_knife_edge_radius",
+    "source_vendor": "literature (Materials 13(11), 2020, PMC7288033)",
+    "source_title": "Experimental Studies on Durability of PVD-Based CrCN/CrN-Coated Cutting Blade of Planer Knives Used in the Pine Wood Planing Process",
+    "source_url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC7288033/fullTextXML",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/materials_2020_hss_planer_knife_edge_radius.txt",
+    "pdf_sha256": "862e8037142152bf8e91f13e671f3419bc1a010b818d111830abb0179ae66251",
+    "hashed_file": "raw/PMC7288033.xml",
+    "coverage_notes": "HSS planer knives (not carbide) in pine: edge radius after sharpening 2.08 um (sigma 1.20) and 2.17 um; at end of life 13.42 um and 9.75 um. Shows the edge radius grows several times with wear."
+  },
+  {
+    "source_id": "materials_2025_wpc_pcd_edge_radius",
+    "source_vendor": "literature (Materials, 2025, PMC12565702)",
+    "source_title": "Investigation of Cutting Forces and Temperature in Face Milling of Wood-Plastic Composite Using Radial Basis Function Neural Network",
+    "source_url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC12565702/fullTextXML",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/materials_2025_wpc_pcd_edge_radius.txt",
+    "pdf_sha256": "1d3743693dac6c95ecd8b3072330cce98e127fa20fa9ea41a6f95f501adba621",
+    "hashed_file": "raw/PMC12565702.xml",
+    "coverage_notes": "PCD face-milling cutter, 10 mm, 8 teeth, in wood-plastic composite: 'The average edge radius measured about 10 um.' PCD, not carbide."
+  }
+]

@@ -1,0 +1,105 @@
+# SpeTool WOODWORKING 2D/3D ROUTER BIT FEED&SPEED CHART
+# URL: https://cdn.shopify.com/s/files/1/0404/1582/1977/files/SpeTool_2D_3D_Tapered_router_bit_a51e0653-1672-4ba2-98bc-8852cde4fc0f.pdf?v=1676951061
+# Accessed 2026-09-24. The PDF is a scanned image with an OCR text layer.
+# Section A is the transcription of the table, read from the page image
+# (pdftoppm -r 110) by the G1 research agent and checked cell by cell
+# against the OCR layer in section B. Section A keeps the printed text,
+# column order and units exactly; the column separator " | " is added.
+# Section B is the raw output of "pdftotext -layout" (OCR errors kept).
+
+## A. Transcription from the page image
+SpeTool | WOODWORKING
+2D/3D ROUTER BIT
+FEED&SPEED CHART
+Depth of cut: 1xCutting diameter
+Tip Diameter (MM) | MATERIAL | RPM | CHIPLOAD | FEED RATE (INCH/MIN) | STEP DOWN (MM) | STEP OVER (MM)
+0.5 | Aluminum, Copper, Brass, | 18,000 | 0.0003 | 10.8 | 0.5 | 0.2
+0.5 | Wood, MDF, Sign-Foam | 18,000 | 0.0007 | 25.2 | 0.5 | 0.2
+1.0 | Aluminum, Copper, Brass, | 18,000 | 0.0005 | 18 | 1.0 | 0.4
+1.0 | Wood, MDF, Sign-Foam | 18,000 | 0.001 | 36 | 1.0 | 0.4
+1.5 | Aluminum, Copper, Brass, | 18,000 | 0.001 | 36 | 1.5 | 0.6
+1.5 | Wood, MDF, Sign-Foam | 18,000 | 0.0015 | 54 | 1.5 | 0.6
+2.0 | Aluminum, Copper, Brass, | 18,000 | 0.0015 | 54 | 2.0 | 0.8
+2.0 | Wood, MDF, Sign-Foam | 18,000 | 0.003 | 108 | 2.0 | 0.8
+3.0 | Aluminum, Copper, Brass, | 18,000 | 0.002 | 72 | 3.0 | 1.2
+3.0 | Wood, MDF, Sign-Foam | 18,000 | 0.004 | 144 | 3.0 | 1.2
+4.0 | Aluminum, Copper, Brass, | 18,000 | 0.003 | 108 | 4.0 | 1.6
+4.0 | Wood, MDF, Sign-Foam | 18,000 | 0.005 | 180 | 4.0 | 1.6
+Tip Diameter (INCH) | MATERIAL | RPM | CHIPLOAD | FEED RATE (INCH/MIN) | STEP DOWN (INCH) | STEP OVER (INCH)
+1/32 | Aluminum, Copper, Brass, | 18,000 | 0.0004 | 14.4 | 0.03 | 0.0125
+1/32 | Wood, MDF, Sign-Foam | 18,000 | 0.0008 | 28.8 | 0.03 | 0.0125
+1/16 | Aluminum, Copper, Brass, | 18,000 | 0.001 | 36 | 0.06 | 0.025
+1/16 | Wood, MDF, Sign-Foam | 18,000 | 0.0015 | 54 | 0.06 | 0.025
+1/8 | Aluminum, Copper, Brass, | 18,000 | 0.002 | 72 | 0.125 | 0.05
+1/8 | Wood, MDF, Sign-Foam | 18,000 | 0.004 | 144 | 0.125 | 0.05
+- Adjusting Feed and Speed for Bit Diameter: The feed rate in the table above are based a cutting depth that is equal to or less than the bit's diameter.
+  1 x cutting diameter, Use recommended feed rate
+  2 x cutting diameter, Reduce feed rate by 30%
+  3 x cutting diameter, Reduce feed rate by 50%
+- Simple machining calculations:
+  Feed rate=RPM x # of flutes x chipload
+- Due to the extremely small diameters involved, bits are not guaranteed against breakage.
+- Please excercise caution to the accurate calculations of all feed and speed rates
+- Always start test the bits with a lower feed rate
+- Make overhang of bits as short as possible in condition on non-interference
+
+## B. Raw OCR text layer (pdftotext -layout)
+                 SpeT4。。』
+
+                                 20/30 ROUTER BIT
+                                            FEED&SPEED CHART
+                                                                                  Depth 。f cut: 1xCutUng diameter
+
+      ,111,.,   eter          MATERIAL                RPM       .....      .· .          ...
+                                                                                                  I     哩.，
+
+
+
+
+                       Aluminum. Copper, Brass,    18,000     0.0003       10.8
+         0.5            Wood, MOF, Sign-Foam       18.000     0.0007       25.2          0.5           0.2
+                       Aluminum, Copper, Brass,    18.000     0.0005         18
+         1.0            w。。d, MDF, Sign-F。am       18 000      0.001         36          1.0           0.4
+                       Aluminum. Copper, Brass,    18,000      0.001         36
+         1.5            Wood, MDF. Sign-Foam       18.000     0.001 5        54          1.5           0.6
+                       Aluminum, Copper, B『ass,    18.000     0.001 5        54
+         2.0            w。。d, MDF, Sign-F。am       18,000      0.003        108          2.0           0.8
+                       Aluminum. Copper, B『ass,    18,000      0.002         72
+         3.0            Wood, MDF. Sign-Foam       18.000      0.004        144          3.0           1.2
+                       Aluminum, Copper, B『ass,    18,000      0.003        108
+         4.0            w。。d, MDF, Sign-F。am       18,000      0.005        180          4.0           1.6
+       (INCH)
+                              MATERIAL                RPM    I CHI吼叫 FE…TE …川
+                                                                        (INCH/MIN)     (INCH)         (INCH)
+                       Aluminum. C。pper. Brass.    18.000     0.0004       14.4
+        1/32            w。。d, MOF, Sign-F。am       18,000     0.0008       28.8
+                                                                                       0.03         0.0125
+                       Aluminum. Copper, Brass,    18.000      0.001         36
+        1/16            Wood, MDF. Sion-Foam       18.000     0.0015         54
+                                                                                       0.06           0.025
+                       Aluminum, C。pper, B『ass,    18.000      0.002         72
+         1/8            w。od, MDF, Sign-F。am       18,000      0.004        144       0.125           0.05
+
+
+
+• Adj usting Feed and Speed for Bit Diamete『. The feed rate in the table above a re based a c叫ti ng
+  depth that is equal to or less than the bit ’s diameter.
+       1 x cutting diameter, Use recommended feed rate
+       2 x cutting diameter, Reduce feed rate by 30%
+       3 x cutting diam eter, Reduce feed rate by 50%
+
+• S imple machining calculations:
+       Feed rate=RPM x # of flutes x chipload
+
+• Due to the extremely small diameters involved, bits are not guaranteed against breakage.
+• Please excercise caution to the accurate calculations of all feed and speed rates
+• PJways sta『t test the bits with a lower feed rate
+
+• Make overhang of bits as short as possible in condition on non-interference
+
+
+
+
+                                                                                      service@spetools.com
+回 ＠Spetool                   ＠ ＠酬。ol_cnc                                              www.spetools.com
+

@@ -1,0 +1,405 @@
+# G4 trend, DERIVED from the LUT. No vendor prints these statistics.
+# wood rows with a max: 323; printed band rows kept: 176
+
+## 1. Band rows excluded from the trend (not a printed band)
+    7  ball_nose          amana_ball_nose_v7                       grade c
+    3  bull_nose          onsrud_cutting_data_recommendations      grade c
+   14  flat_end           amana_spektra_spiral_plunge_v24          grade c
+    8  tapered_ball_nose  amana_zrn_3d_profiling                   grade c
+
+## 1b. One-value wood rows (not in the trend; the G4 population)
+    3  ball_nose          idcwoodcraft_chipload_csv_2026-05-30     min == max
+    2  ball_nose          whiteside_fusion360_tools_2019-10-23     min absent
+    3  chamfer_vbit       amana_ams159_vgroove_v2                  min == max
+    1  facing_bit         idcwoodcraft_chipload_csv_2026-05-30     min == max
+    5  flat_end           amana_compression_spirals_v8             min == max
+   26  flat_end           amana_spektra_spiral_plunge_v24          min == max
+   60  flat_end           amana_spektra_spiral_plunge_v24          min absent
+    4  flat_end           idcwoodcraft_chipload_csv_2026-05-30     min == max
+    9  flat_end           whiteside_fusion360_tools_2019-10-23     min absent
+    2  tapered_ball_nose  whiteside_fusion360_tools_2019-10-23     min absent
+
+## 2. Printed band cells after de-duplication: 143 (from 176 rows)
+    6  ball_nose          amana_ball_nose_v7
+    6  ball_nose          amana_zrn_3d_profiling
+    2  ball_nose          amana_zrn_3d_profiling_v8
+    4  chamfer_vbit       amana_ams159_vgroove_v2
+    5  chamfer_vbit       amana_insert_v_groove_v16
+    6  chamfer_vbit       amana_spektra_engraving_v4
+    2  chamfer_vbit       whiteside_vgroove_collection
+    6  facing_bit         amana_spoilboard_v8
+    2  facing_bit         whiteside_6210_spoilboard
+    4  flat_end           amana_zrn_3d_profiling_v8
+   12  flat_end           freud_router_bit_feed_and_speed_for_cnc_20170822
+   17  flat_end           onsrud_hard_plywood_cutting_data
+   15  flat_end           onsrud_hard_wood_cutting_data
+   20  flat_end           onsrud_mdf_cutting_data
+   16  flat_end           onsrud_soft_plywood_cutting_data
+   12  flat_end           onsrud_soft_wood_cutting_data
+    2  tapered_ball_nose  onsrud_hard_plywood_cutting_data
+    2  tapered_ball_nose  onsrud_hard_wood_cutting_data
+    2  tapered_ball_nose  onsrud_mdf_cutting_data
+    2  tapered_ball_nose  onsrud_soft_wood_cutting_data
+
+## 3. min/max ratio
+
+### per tool family
+  ball_nose                                    n= 14  median 0.71  Q1-Q3 0.43-0.75  range 0.38-0.78
+  chamfer_vbit                                 n= 17  median 0.43  Q1-Q3 0.43-0.47  range 0.33-0.55
+  facing_bit                                   n=  8  median 0.56  Q1-Q3 0.55-0.56  range 0.54-0.57
+  flat_end                                     n= 96  median 0.88  Q1-Q3 0.83-0.89  range 0.40-0.92
+  tapered_ball_nose                            n=  8  median 0.66  Q1-Q3 0.60-0.71  range 0.60-0.71
+
+### per tool family / vendor
+  ball_nose / amana                            n= 14  median 0.71  Q1-Q3 0.43-0.75  range 0.38-0.78
+  chamfer_vbit / amana                         n= 15  median 0.43  Q1-Q3 0.43-0.46  range 0.33-0.55
+  chamfer_vbit / whiteside                     n=  2  median 0.51  Q1-Q3 0.51-0.52  range 0.50-0.53
+  facing_bit / amana                           n=  6  median 0.56  Q1-Q3 0.54-0.57  range 0.54-0.57
+  facing_bit / whiteside                       n=  2  median 0.56  Q1-Q3 0.55-0.56  range 0.55-0.56
+  flat_end / amana                             n=  4  median 0.68  Q1-Q3 0.60-0.76  range 0.60-0.78
+  flat_end / freud                             n= 12  median 0.80  Q1-Q3 0.67-0.86  range 0.40-0.88
+  flat_end / onsrud                            n= 80  median 0.89  Q1-Q3 0.86-0.89  range 0.67-0.92
+  tapered_ball_nose / onsrud                   n=  8  median 0.66  Q1-Q3 0.60-0.71  range 0.60-0.71
+
+### per tool family / source
+  ball_nose / amana_ball_nose_v7               n=  6  median 0.71  Q1-Q3 0.71-0.74  range 0.60-0.78
+  ball_nose / amana_zrn_3d_profiling           n=  6  median 0.38  Q1-Q3 0.38-0.55  range 0.38-0.77
+  ball_nose / amana_zrn_3d_profiling_v8        n=  2  median 0.76  Q1-Q3 0.76-0.77  range 0.75-0.78
+  chamfer_vbit / amana_ams159_vgroove_v2       n=  4  median 0.43  Q1-Q3 0.43-0.43  range 0.43-0.43
+  chamfer_vbit / amana_insert_v_groove_v16     n=  5  median 0.47  Q1-Q3 0.47-0.50  range 0.46-0.55
+  chamfer_vbit / amana_spektra_engraving_v4    n=  6  median 0.43  Q1-Q3 0.36-0.43  range 0.33-0.43
+  chamfer_vbit / whiteside_vgroove_collection  n=  2  median 0.51  Q1-Q3 0.51-0.52  range 0.50-0.53
+  facing_bit / amana_spoilboard_v8             n=  6  median 0.56  Q1-Q3 0.54-0.57  range 0.54-0.57
+  facing_bit / whiteside_6210_spoilboard       n=  2  median 0.56  Q1-Q3 0.55-0.56  range 0.55-0.56
+  flat_end / amana_zrn_3d_profiling_v8         n=  4  median 0.68  Q1-Q3 0.60-0.76  range 0.60-0.78
+  flat_end / freud_router_bit_feed_and_speed_for_cnc_20170822 n= 12  median 0.80  Q1-Q3 0.67-0.86  range 0.40-0.88
+  flat_end / onsrud_hard_plywood_cutting_data  n= 17  median 0.89  Q1-Q3 0.88-0.90  range 0.86-0.91
+  flat_end / onsrud_hard_wood_cutting_data     n= 15  median 0.88  Q1-Q3 0.82-0.89  range 0.71-0.89
+  flat_end / onsrud_mdf_cutting_data           n= 20  median 0.88  Q1-Q3 0.83-0.89  range 0.67-0.89
+  flat_end / onsrud_soft_plywood_cutting_data  n= 16  median 0.90  Q1-Q3 0.89-0.91  range 0.88-0.92
+  flat_end / onsrud_soft_wood_cutting_data     n= 12  median 0.87  Q1-Q3 0.79-0.89  range 0.71-0.89
+  tapered_ball_nose / onsrud_hard_plywood_cutting_data n=  2  median 0.66  Q1-Q3 0.63-0.69  range 0.60-0.71
+  tapered_ball_nose / onsrud_hard_wood_cutting_data n=  2  median 0.66  Q1-Q3 0.63-0.69  range 0.60-0.71
+  tapered_ball_nose / onsrud_mdf_cutting_data  n=  2  median 0.66  Q1-Q3 0.63-0.69  range 0.60-0.71
+  tapered_ball_nose / onsrud_soft_wood_cutting_data n=  2  median 0.66  Q1-Q3 0.63-0.69  range 0.60-0.71
+
+### per tool family / material category
+  ball_nose / sheet                            n=  4  median 0.54  Q1-Q3 0.38-0.72  range 0.38-0.75
+  ball_nose / solid                            n= 10  median 0.71  Q1-Q3 0.60-0.76  range 0.38-0.78
+  chamfer_vbit / plywood                       n=  1  median 0.50  Q1-Q3 0.50-0.50  range 0.50-0.50
+  chamfer_vbit / sheet                         n=  2  median 0.50  Q1-Q3 0.48-0.51  range 0.46-0.53
+  chamfer_vbit / solid                         n= 14  median 0.43  Q1-Q3 0.43-0.46  range 0.33-0.55
+  facing_bit / plywood                         n=  1  median 0.57  Q1-Q3 0.57-0.57  range 0.57-0.57
+  facing_bit / sheet                           n=  4  median 0.56  Q1-Q3 0.55-0.56  range 0.54-0.57
+  facing_bit / solid                           n=  3  median 0.56  Q1-Q3 0.55-0.56  range 0.54-0.56
+  flat_end / plywood                           n= 35  median 0.90  Q1-Q3 0.88-0.91  range 0.67-0.92
+  flat_end / sheet                             n= 24  median 0.87  Q1-Q3 0.76-0.89  range 0.57-0.89
+  flat_end / solid                             n= 37  median 0.86  Q1-Q3 0.78-0.88  range 0.40-0.89
+  tapered_ball_nose / plywood                  n=  2  median 0.66  Q1-Q3 0.63-0.69  range 0.60-0.71
+  tapered_ball_nose / sheet                    n=  2  median 0.66  Q1-Q3 0.63-0.69  range 0.60-0.71
+  tapered_ball_nose / solid                    n=  4  median 0.66  Q1-Q3 0.60-0.71  range 0.60-0.71
+
+### per tool family / size band (mm)
+  ball_nose / a:<3                             n=  6  median 0.38  Q1-Q3 0.38-0.55  range 0.38-0.77
+  ball_nose / b:3-6                            n=  3  median 0.71  Q1-Q3 0.66-0.71  range 0.60-0.71
+  ball_nose / c:6.35-9.5                       n=  4  median 0.75  Q1-Q3 0.74-0.76  range 0.71-0.78
+  ball_nose / d:>=12.7                         n=  1  median 0.78  Q1-Q3 0.78-0.78  range 0.78-0.78
+  chamfer_vbit / b:3-6                         n=  4  median 0.47  Q1-Q3 0.47-0.48  range 0.46-0.50
+  chamfer_vbit / c:6.35-9.5                    n=  8  median 0.43  Q1-Q3 0.40-0.43  range 0.33-0.43
+  chamfer_vbit / d:>=12.7                      n=  3  median 0.53  Q1-Q3 0.51-0.54  range 0.50-0.55
+  chamfer_vbit / n/a                           n=  2  median 0.43  Q1-Q3 0.43-0.43  range 0.43-0.43
+  facing_bit / d:>=12.7                        n=  8  median 0.56  Q1-Q3 0.55-0.56  range 0.54-0.57
+  flat_end / b:3-6                             n= 15  median 0.83  Q1-Q3 0.63-0.86  range 0.40-0.88
+  flat_end / c:6.35-9.5                        n= 45  median 0.88  Q1-Q3 0.86-0.89  range 0.67-0.92
+  flat_end / d:>=12.7                          n= 36  median 0.89  Q1-Q3 0.86-0.90  range 0.71-0.92
+  tapered_ball_nose / b:3-6                    n=  4  median 0.60  Q1-Q3 0.60-0.60  range 0.60-0.60
+  tapered_ball_nose / c:6.35-9.5               n=  4  median 0.71  Q1-Q3 0.71-0.71  range 0.71-0.71
+
+### flat_end per vendor / size band
+  amana / b:3-6                                n=  3  median 0.60  Q1-Q3 0.60-0.69  range 0.60-0.78
+  amana / c:6.35-9.5                           n=  1  median 0.75  Q1-Q3 0.75-0.75  range 0.75-0.75
+  freud / b:3-6                                n=  3  median 0.57  Q1-Q3 0.49-0.62  range 0.40-0.67
+  freud / c:6.35-9.5                           n=  5  median 0.76  Q1-Q3 0.73-0.83  range 0.67-0.88
+  freud / d:>=12.7                             n=  4  median 0.86  Q1-Q3 0.86-0.86  range 0.85-0.87
+  onsrud / b:3-6                               n=  9  median 0.86  Q1-Q3 0.83-0.86  range 0.83-0.88
+  onsrud / c:6.35-9.5                          n= 39  median 0.89  Q1-Q3 0.87-0.89  range 0.67-0.92
+  onsrud / d:>=12.7                            n= 32  median 0.89  Q1-Q3 0.88-0.90  range 0.71-0.92
+
+## 4. Absolute band width, inches (the charts' unit)
+
+### per tool family
+  ball_nose                                    n= 14  median 0.0020  Q1-Q3 0.0013-0.0020  range 0.0002-0.0020
+  chamfer_vbit                                 n= 17  median 0.0040  Q1-Q3 0.0016-0.0040  range 0.0012-0.0040
+  facing_bit                                   n=  8  median 0.0026  Q1-Q3 0.0026-0.0028  range 0.0026-0.0031
+  flat_end                                     n= 96  median 0.0020  Q1-Q3 0.0020-0.0020  range 0.0020-0.0040
+  tapered_ball_nose                            n=  8  median 0.0020  Q1-Q3 0.0020-0.0020  range 0.0020-0.0020
+
+### per tool family / vendor
+  ball_nose / amana                            n= 14  median 0.0020  Q1-Q3 0.0013-0.0020  range 0.0002-0.0020
+  chamfer_vbit / amana                         n= 15  median 0.0040  Q1-Q3 0.0019-0.0040  range 0.0012-0.0040
+  chamfer_vbit / whiteside                     n=  2  median 0.0016  Q1-Q3 0.0016-0.0016  range 0.0016-0.0016
+  facing_bit / amana                           n=  6  median 0.0026  Q1-Q3 0.0026-0.0027  range 0.0026-0.0031
+  facing_bit / whiteside                       n=  2  median 0.0027  Q1-Q3 0.0026-0.0027  range 0.0026-0.0028
+  flat_end / amana                             n=  4  median 0.0020  Q1-Q3 0.0020-0.0020  range 0.0020-0.0020
+  flat_end / freud                             n= 12  median 0.0030  Q1-Q3 0.0027-0.0030  range 0.0020-0.0040
+  flat_end / onsrud                            n= 80  median 0.0020  Q1-Q3 0.0020-0.0020  range 0.0020-0.0030
+  tapered_ball_nose / onsrud                   n=  8  median 0.0020  Q1-Q3 0.0020-0.0020  range 0.0020-0.0020
+
+### flat_end per size band
+  b:3-6                                        n= 15  median 0.0020  Q1-Q3 0.0020-0.0020  range 0.0020-0.0030
+  c:6.35-9.5                                   n= 45  median 0.0020  Q1-Q3 0.0020-0.0020  range 0.0020-0.0040
+  d:>=12.7                                     n= 36  median 0.0020  Q1-Q3 0.0020-0.0020  range 0.0020-0.0040
+
+### share of cells whose width is 0.002 in (+/- 0.00005 in)
+  ball_nose          amana        8 of  14
+  chamfer_vbit       amana        1 of  15
+  chamfer_vbit       whiteside    0 of   2
+  facing_bit         amana        0 of   6
+  facing_bit         whiteside    0 of   2
+  flat_end           amana        4 of   4
+  flat_end           freud        3 of  12
+  flat_end           onsrud      79 of  80
+  tapered_ball_nose  onsrud       8 of   8
+
+## 5. Ratio against diameter, flat_end (least-squares slope, per mm; derived)
+  amana      n=  4  d 3.17-6.35 mm  ratio slope +0.0537/mm  width slope -0.000000 in/mm
+  freud      n= 12  d 3.17-12.70 mm  ratio slope +0.0303/mm  width slope +0.000046 in/mm
+  onsrud     n= 80  d 3.17-19.05 mm  ratio slope +0.0022/mm  width slope +0.000004 in/mm
+
+## 6. The G4 cells: 83 cells on 16 LUT rows
+### counts by tool / operation / material
+  tool_type: BullNose 31, EndMill 44, VBit 8
+  operation: Adaptive 14, Adaptive3d 11, Chamfer 2, DropCutter 6, Face 11, Inlay 2, Pocket 11, Rest 11, Trace 2, VCarve 2, Zigzag 11
+  material: hardwood 28, mdf 26, plywood_hardwood 21, softwood 8
+  encoding of the anchor row (per cell): {'min absent': 75, 'min == max': 8}
+
+### candidate rules (all DERIVED; v = the printed value)
+  A  top reading, constant width w: band = [v - w, v]  w = family median width, in: ball_nose 0.0020, chamfer_vbit 0.0040, facing_bit 0.0026, flat_end 0.0020, tapered_ball_nose 0.0020
+  A2 top reading, width 0.002 in (shown where the family median width is not 0.002 in)
+  B  top reading, family median ratio: band = [r_med * v, v]  r_med: ball_nose 0.71, chamfer_vbit 0.43, facing_bit 0.56, flat_end 0.88, tapered_ball_nose 0.66
+  B- top reading, lowest printed ratio of the family: band = [r_min * v, v]  r_min: ball_nose 0.38, chamfer_vbit 0.33, facing_bit 0.54, flat_end 0.40, tapered_ball_nose 0.60
+  C  start reading, constant width w: band = [v, v + w]
+  C2 start reading, width 0.002 in (shown where the family median width is not 0.002 in)
+  R1 check: min/v >= 0.5 and max/v <= 2.0; floor check: min >= 0.025 mm
+
+  row | cells | family d fl mat grade enc | v mm (in) | A | B | B- | C
+
+  amana-flat-hardwood-adaptive-3175-2f-spektra  [2 cells]
+    flat_end d=3.175 f2 hardwood grade b derived enc=absent  v=0.1016 mm (0.0040 in)
+    A  0.0508-0.1016 (0.50-1.00v)
+    B  0.0889-0.1016 (0.88-1.00v)
+    B- 0.0406-0.1016 (0.40-1.00v) min<0.5v
+    C  0.1016-0.1524 (1.00-1.50v)
+    cells: BullNose:Adaptive:hardwood, EndMill:Adaptive:hardwood
+
+  amana-flat-hardwood-adaptive-6000-2f-spektra  [1 cells]
+    flat_end d=6.0 f2 hardwood grade b derived enc=absent  v=0.1270 mm (0.0050 in)
+    A  0.0762-0.1270 (0.60-1.00v)
+    B  0.1111-0.1270 (0.88-1.00v)
+    B- 0.0508-0.1270 (0.40-1.00v) min<0.5v
+    C  0.1270-0.1778 (1.00-1.40v)
+    cells: EndMill:Adaptive:hardwood
+
+  amana-flat-hardwood-pocket-3175-2f-spektra  [11 cells]
+    flat_end d=3.175 f2 hardwood grade b derived enc=absent  v=0.1016 mm (0.0040 in)
+    A  0.0508-0.1016 (0.50-1.00v)
+    B  0.0889-0.1016 (0.88-1.00v)
+    B- 0.0406-0.1016 (0.40-1.00v) min<0.5v
+    C  0.1016-0.1524 (1.00-1.50v)
+    cells: BullNose:Adaptive3d:hardwood, BullNose:Face:hardwood, BullNose:Pocket:hardwood, BullNose:Rest:hardwood, BullNose:Zigzag:hardwood, EndMill:Adaptive3d:hardwood, EndMill:DropCutter:hardwood, EndMill:Face:hardwood, EndMill:Pocket:hardwood, EndMill:Rest:hardwood, EndMill:Zigzag:hardwood
+
+  amana-flat-hardwood-pocket-6000-2f-spektra  [11 cells]
+    flat_end d=6.0 f2 hardwood grade b derived enc=absent  v=0.1270 mm (0.0050 in)
+    A  0.0762-0.1270 (0.60-1.00v)
+    B  0.1111-0.1270 (0.88-1.00v)
+    B- 0.0508-0.1270 (0.40-1.00v) min<0.5v
+    C  0.1270-0.1778 (1.00-1.40v)
+    cells: BullNose:Adaptive3d:hardwood, BullNose:Face:hardwood, BullNose:Pocket:hardwood, BullNose:Rest:hardwood, BullNose:Zigzag:hardwood, EndMill:Adaptive3d:hardwood, EndMill:DropCutter:hardwood, EndMill:Face:hardwood, EndMill:Pocket:hardwood, EndMill:Rest:hardwood, EndMill:Zigzag:hardwood
+
+  amana-flat-mdf-adaptive-3175-2f-spektra  [2 cells]
+    flat_end d=3.175 f2 mdf grade a exact enc=absent  v=0.1270 mm (0.0050 in)
+    A  0.0762-0.1270 (0.60-1.00v)
+    B  0.1111-0.1270 (0.88-1.00v)
+    B- 0.0508-0.1270 (0.40-1.00v) min<0.5v
+    C  0.1270-0.1778 (1.00-1.40v)
+    cells: BullNose:Adaptive:mdf, EndMill:Adaptive:mdf
+
+  amana-flat-mdf-adaptive-6000-2f-spektra  [2 cells]
+    flat_end d=6.0 f2 mdf grade a exact enc=absent  v=0.1524 mm (0.0060 in)
+    A  0.1016-0.1524 (0.67-1.00v)
+    B  0.1334-0.1524 (0.88-1.00v)
+    B- 0.0610-0.1524 (0.40-1.00v) min<0.5v
+    C  0.1524-0.2032 (1.00-1.33v)
+    cells: BullNose:Adaptive:mdf, EndMill:Adaptive:mdf
+
+  amana-flat-mdf-pocket-3175-2f-spektra  [11 cells]
+    flat_end d=3.175 f2 mdf grade a exact enc=absent  v=0.1270 mm (0.0050 in)
+    A  0.0762-0.1270 (0.60-1.00v)
+    B  0.1111-0.1270 (0.88-1.00v)
+    B- 0.0508-0.1270 (0.40-1.00v) min<0.5v
+    C  0.1270-0.1778 (1.00-1.40v)
+    cells: BullNose:Adaptive3d:mdf, BullNose:Face:mdf, BullNose:Pocket:mdf, BullNose:Rest:mdf, BullNose:Zigzag:mdf, EndMill:Adaptive3d:mdf, EndMill:DropCutter:mdf, EndMill:Face:mdf, EndMill:Pocket:mdf, EndMill:Rest:mdf, EndMill:Zigzag:mdf
+
+  amana-flat-mdf-pocket-6000-2f-spektra  [11 cells]
+    flat_end d=6.0 f2 mdf grade a exact enc=absent  v=0.1524 mm (0.0060 in)
+    A  0.1016-0.1524 (0.67-1.00v)
+    B  0.1334-0.1524 (0.88-1.00v)
+    B- 0.0610-0.1524 (0.40-1.00v) min<0.5v
+    C  0.1524-0.2032 (1.00-1.33v)
+    cells: BullNose:Adaptive3d:mdf, BullNose:Face:mdf, BullNose:Pocket:mdf, BullNose:Rest:mdf, BullNose:Zigzag:mdf, EndMill:Adaptive3d:mdf, EndMill:DropCutter:mdf, EndMill:Face:mdf, EndMill:Pocket:mdf, EndMill:Rest:mdf, EndMill:Zigzag:mdf
+
+  amana-flat-plywood-hardwood-adaptive-3175-2f-spektra  [2 cells]
+    flat_end d=3.175 f2 plywood_hardwood grade b derived enc=absent  v=0.1016 mm (0.0040 in)
+    A  0.0508-0.1016 (0.50-1.00v)
+    B  0.0889-0.1016 (0.88-1.00v)
+    B- 0.0406-0.1016 (0.40-1.00v) min<0.5v
+    C  0.1016-0.1524 (1.00-1.50v)
+    cells: BullNose:Adaptive:plywood_hardwood, EndMill:Adaptive:plywood_hardwood
+
+  amana-flat-plywood-hardwood-adaptive-6000-2f-spektra  [2 cells]
+    flat_end d=6.0 f2 plywood_hardwood grade b derived enc=absent  v=0.1270 mm (0.0050 in)
+    A  0.0762-0.1270 (0.60-1.00v)
+    B  0.1111-0.1270 (0.88-1.00v)
+    B- 0.0508-0.1270 (0.40-1.00v) min<0.5v
+    C  0.1270-0.1778 (1.00-1.40v)
+    cells: BullNose:Adaptive:plywood_hardwood, EndMill:Adaptive:plywood_hardwood
+
+  amana-flat-plywood-hardwood-pocket-3175-2f-spektra  [11 cells]
+    flat_end d=3.175 f2 plywood_hardwood grade b derived enc=absent  v=0.1016 mm (0.0040 in)
+    A  0.0508-0.1016 (0.50-1.00v)
+    B  0.0889-0.1016 (0.88-1.00v)
+    B- 0.0406-0.1016 (0.40-1.00v) min<0.5v
+    C  0.1016-0.1524 (1.00-1.50v)
+    cells: BullNose:Adaptive3d:plywood_hardwood, BullNose:Face:plywood_hardwood, BullNose:Pocket:plywood_hardwood, BullNose:Rest:plywood_hardwood, BullNose:Zigzag:plywood_hardwood, EndMill:Adaptive3d:plywood_hardwood, EndMill:DropCutter:plywood_hardwood, EndMill:Face:plywood_hardwood, EndMill:Pocket:plywood_hardwood, EndMill:Rest:plywood_hardwood, EndMill:Zigzag:plywood_hardwood
+
+  amana-flat-plywood-hardwood-pocket-6000-2f-spektra  [6 cells]
+    flat_end d=6.0 f2 plywood_hardwood grade b derived enc=absent  v=0.1270 mm (0.0050 in)
+    A  0.0762-0.1270 (0.60-1.00v)
+    B  0.1111-0.1270 (0.88-1.00v)
+    B- 0.0508-0.1270 (0.40-1.00v) min<0.5v
+    C  0.1270-0.1778 (1.00-1.40v)
+    cells: EndMill:Adaptive3d:plywood_hardwood, EndMill:DropCutter:plywood_hardwood, EndMill:Face:plywood_hardwood, EndMill:Pocket:plywood_hardwood, EndMill:Rest:plywood_hardwood, EndMill:Zigzag:plywood_hardwood
+
+  amana-flat-softwood-adaptive-3175-2f-spektra  [2 cells]
+    flat_end d=3.175 f2 softwood grade b derived enc=absent  v=0.1016 mm (0.0040 in)
+    A  0.0508-0.1016 (0.50-1.00v)
+    B  0.0889-0.1016 (0.88-1.00v)
+    B- 0.0406-0.1016 (0.40-1.00v) min<0.5v
+    C  0.1016-0.1524 (1.00-1.50v)
+    cells: BullNose:Adaptive:softwood, EndMill:Adaptive:softwood
+
+  amana-flat-softwood-adaptive-6000-2f-spektra  [1 cells]
+    flat_end d=6.0 f2 softwood grade b derived enc=absent  v=0.1270 mm (0.0050 in)
+    A  0.0762-0.1270 (0.60-1.00v)
+    B  0.1111-0.1270 (0.88-1.00v)
+    B- 0.0508-0.1270 (0.40-1.00v) min<0.5v
+    C  0.1270-0.1778 (1.00-1.40v)
+    cells: EndMill:Adaptive:softwood
+
+  amana-vgroove-hardwood-trace-60deg-2f  [3 cells]
+    chamfer_vbit d=12.7 f2 hardwood grade a exact enc=min=max  v=0.0762 mm (0.0030 in)
+    A  -0.0254-0.0762 (min <= 0) REFUSE
+    A2 0.0254-0.0762 (0.33-1.00v) min<0.5v
+    B  0.0327-0.0762 (0.43-1.00v) min<0.5v
+    B- 0.0254-0.0762 (0.33-1.00v) min<0.5v
+    C  0.0762-0.1778 (1.00-2.33v) max>2v
+    C2 0.0762-0.1270 (1.00-1.67v)
+    cells: VBit:Chamfer:hardwood, VBit:Inlay:hardwood, VBit:Trace:hardwood
+
+  amana-vgroove-softwood-trace-60deg-2f  [5 cells]
+    chamfer_vbit d=12.7 f2 softwood grade a exact enc=min=max  v=0.0762 mm (0.0030 in)
+    A  -0.0254-0.0762 (min <= 0) REFUSE
+    A2 0.0254-0.0762 (0.33-1.00v) min<0.5v
+    B  0.0327-0.0762 (0.43-1.00v) min<0.5v
+    B- 0.0254-0.0762 (0.33-1.00v) min<0.5v
+    C  0.0762-0.1778 (1.00-2.33v) max>2v
+    C2 0.0762-0.1270 (1.00-1.67v)
+    cells: VBit:Chamfer:softwood, VBit:Inlay:softwood, VBit:Trace:softwood, VBit:VCarve:softwood
+
+## 7. Rule A along every Spektra one-value printed value (the range edge)
+  v 0.0010 in  d [0.79375]  A min -0.0010 in  min/v -1.00  REFUSE (<0.5v)
+  v 0.0020 in  d [0.79375, 1.5, 1.5875]  A min +0.0000 in  min/v +0.00  REFUSE (<0.5v)
+  v 0.0023 in  d [2.38125]  A min +0.0003 in  min/v +0.13  REFUSE (<0.5v)
+  v 0.0030 in  d [1.5, 1.5875]  A min +0.0010 in  min/v +0.33  REFUSE (<0.5v)
+  v 0.0040 in  d [3.0, 3.175]  A min +0.0020 in  min/v +0.50
+  v 0.0046 in  d [2.38125]  A min +0.0026 in  min/v +0.57
+  v 0.0050 in  d [3.0, 3.175, 4.7625, 5.0, 6.0, 6.35]  A min +0.0030 in  min/v +0.60
+  v 0.0057 in  d [12.0, 12.7]  A min +0.0037 in  min/v +0.65
+  v 0.0060 in  d [4.7625, 5.0, 6.0, 6.35]  A min +0.0040 in  min/v +0.67
+  v 0.0064 in  d [9.525]  A min +0.0044 in  min/v +0.69
+  v 0.0090 in  d [19.05]  A min +0.0070 in  min/v +0.78
+  v 0.0096 in  d [12.0, 12.7]  A min +0.0076 in  min/v +0.79
+  v 0.0100 in  d [19.05]  A min +0.0080 in  min/v +0.80
+  v 0.0108 in  d [9.525]  A min +0.0088 in  min/v +0.81
+
+## 8. Each G4 anchor value against printed bands of other sources (same tool family, material family, diameter within 6 %)
+  amana-flat-hardwood-adaptive-3175-2f-spektra: v 0.0040 in
+      freud_router_bit_feed_and_speed_for_cnc_20170822 solid_carbide            d 3.175 band 0.0020-0.0050 in  v is inside  v/min 2.00  v/max 0.80
+      onsrud_hard_wood_cutting_data                    60_100mw_compression_spiral d 3.175 band 0.0100-0.0120 in  v is below min  v/min 0.40  v/max 0.33
+  amana-flat-hardwood-adaptive-6000-2f-spektra: v 0.0050 in
+      freud_router_bit_feed_and_speed_for_cnc_20170822 solid_carbide            d 6.350 band 0.0080-0.0110 in  v is below min  v/min 0.62  v/max 0.45
+      onsrud_hard_wood_cutting_data                    60_100mw_compression_spiral d 6.350 band 0.0140-0.0160 in  v is below min  v/min 0.36  v/max 0.31
+      onsrud_hard_wood_cutting_data                    60_200_downcut           d 6.350 band 0.0050-0.0070 in  v is = min  v/min 1.00  v/max 0.71
+  amana-flat-hardwood-pocket-3175-2f-spektra: v 0.0040 in
+      freud_router_bit_feed_and_speed_for_cnc_20170822 solid_carbide            d 3.175 band 0.0020-0.0050 in  v is inside  v/min 2.00  v/max 0.80
+      onsrud_hard_wood_cutting_data                    60_100mw_compression_spiral d 3.175 band 0.0100-0.0120 in  v is below min  v/min 0.40  v/max 0.33
+  amana-flat-hardwood-pocket-6000-2f-spektra: v 0.0050 in
+      freud_router_bit_feed_and_speed_for_cnc_20170822 solid_carbide            d 6.350 band 0.0080-0.0110 in  v is below min  v/min 0.62  v/max 0.45
+      onsrud_hard_wood_cutting_data                    60_100mw_compression_spiral d 6.350 band 0.0140-0.0160 in  v is below min  v/min 0.36  v/max 0.31
+      onsrud_hard_wood_cutting_data                    60_200_downcut           d 6.350 band 0.0050-0.0070 in  v is = min  v/min 1.00  v/max 0.71
+  amana-flat-mdf-adaptive-3175-2f-spektra: v 0.0050 in
+      amana_zrn_3d_profiling_v8                        zrn_2d3d_carving         d 3.175 band 0.0030-0.0050 in  v is = max  v/min 1.67  v/max 1.00
+      freud_router_bit_feed_and_speed_for_cnc_20170822 solid_carbide            d 3.175 band 0.0040-0.0070 in  v is inside  v/min 1.25  v/max 0.71
+      onsrud_mdf_cutting_data                          60_100mw_compression_spiral d 3.175 band 0.0100-0.0120 in  v is below min  v/min 0.50  v/max 0.42
+  amana-flat-mdf-adaptive-6000-2f-spektra: v 0.0060 in
+      freud_router_bit_feed_and_speed_for_cnc_20170822 solid_carbide            d 6.350 band 0.0130-0.0170 in  v is below min  v/min 0.46  v/max 0.35
+      onsrud_mdf_cutting_data                          60_100mw_compression_spiral d 6.350 band 0.0130-0.0150 in  v is below min  v/min 0.46  v/max 0.40
+      onsrud_mdf_cutting_data                          60_200_downcut           d 6.350 band 0.0040-0.0060 in  v is = max  v/min 1.50  v/max 1.00
+  amana-flat-mdf-pocket-3175-2f-spektra: v 0.0050 in
+      amana_zrn_3d_profiling_v8                        zrn_2d3d_carving         d 3.175 band 0.0030-0.0050 in  v is = max  v/min 1.67  v/max 1.00
+      freud_router_bit_feed_and_speed_for_cnc_20170822 solid_carbide            d 3.175 band 0.0040-0.0070 in  v is inside  v/min 1.25  v/max 0.71
+      onsrud_mdf_cutting_data                          60_100mw_compression_spiral d 3.175 band 0.0100-0.0120 in  v is below min  v/min 0.50  v/max 0.42
+  amana-flat-mdf-pocket-6000-2f-spektra: v 0.0060 in
+      freud_router_bit_feed_and_speed_for_cnc_20170822 solid_carbide            d 6.350 band 0.0130-0.0170 in  v is below min  v/min 0.46  v/max 0.35
+      onsrud_mdf_cutting_data                          60_100mw_compression_spiral d 6.350 band 0.0130-0.0150 in  v is below min  v/min 0.46  v/max 0.40
+      onsrud_mdf_cutting_data                          60_200_downcut           d 6.350 band 0.0040-0.0060 in  v is = max  v/min 1.50  v/max 1.00
+  amana-flat-plywood-hardwood-adaptive-3175-2f-spektra: v 0.0040 in
+      onsrud_hard_plywood_cutting_data                 60_100mw_compression_spiral d 3.175 band 0.0120-0.0140 in  v is below min  v/min 0.33  v/max 0.29
+  amana-flat-plywood-hardwood-adaptive-6000-2f-spektra: v 0.0050 in
+      freud_router_bit_feed_and_speed_for_cnc_20170822 solid_carbide            d 6.350 band 0.0060-0.0090 in  v is below min  v/min 0.83  v/max 0.56
+      onsrud_hard_plywood_cutting_data                 60_100mw_compression_spiral d 6.350 band 0.0140-0.0160 in  v is below min  v/min 0.36  v/max 0.31
+  amana-flat-plywood-hardwood-pocket-3175-2f-spektra: v 0.0040 in
+      onsrud_hard_plywood_cutting_data                 60_100mw_compression_spiral d 3.175 band 0.0120-0.0140 in  v is below min  v/min 0.33  v/max 0.29
+  amana-flat-plywood-hardwood-pocket-6000-2f-spektra: v 0.0050 in
+      freud_router_bit_feed_and_speed_for_cnc_20170822 solid_carbide            d 6.350 band 0.0060-0.0090 in  v is below min  v/min 0.83  v/max 0.56
+      onsrud_hard_plywood_cutting_data                 60_100mw_compression_spiral d 6.350 band 0.0140-0.0160 in  v is below min  v/min 0.36  v/max 0.31
+  amana-flat-softwood-adaptive-3175-2f-spektra: v 0.0040 in
+      amana_zrn_3d_profiling_v8                        zrn_2d3d_carving         d 3.175 band 0.0030-0.0050 in  v is inside  v/min 1.33  v/max 0.80
+      freud_router_bit_feed_and_speed_for_cnc_20170822 solid_carbide            d 3.175 band 0.0040-0.0060 in  v is = min  v/min 1.00  v/max 0.67
+      onsrud_soft_wood_cutting_data                    60_100mw_compression_spiral d 3.175 band 0.0110-0.0130 in  v is below min  v/min 0.36  v/max 0.31
+  amana-flat-softwood-adaptive-6000-2f-spektra: v 0.0050 in
+      amana_zrn_3d_profiling_v8                        zrn_2d3d_carving         d 6.000 band 0.0070-0.0090 in  v is below min  v/min 0.71  v/max 0.56
+      amana_zrn_3d_profiling_v8                        zrn_2d3d_carving         d 6.350 band 0.0060-0.0080 in  v is below min  v/min 0.83  v/max 0.62
+      freud_router_bit_feed_and_speed_for_cnc_20170822 solid_carbide            d 6.350 band 0.0100-0.0120 in  v is below min  v/min 0.50  v/max 0.42
+      onsrud_soft_wood_cutting_data                    60_200_downcut           d 6.350 band 0.0050-0.0070 in  v is = min  v/min 1.00  v/max 0.71
+  amana-vgroove-hardwood-trace-60deg-2f: v 0.0030 in
+      whiteside_vgroove_collection                     120_deg                  d 12.000 band 0.0016-0.0031 in  v is inside  v/min 1.91  v/max 0.95
+  amana-vgroove-softwood-trace-60deg-2f: v 0.0030 in
+      amana_insert_v_groove_v16                        insert_vgroove           d 12.000 band 0.0024-0.0043 in  v is inside  v/min 1.27  v/max 0.69
+  tally over unique (family, material, diameter) anchors:
+    chamfer_vbit   v is inside       2
+    flat_end       v is = max        2
+    flat_end       v is = min        3
+    flat_end       v is below min   13
+    flat_end       v is inside       3
+
+## 9. AMS-159 same sheet: 1-flute band against 2-flute one value (wood rows)
+  amana-vgroove-softwood-trace-18deg-1f    f1 0.0030-0.0070 in
+  amana-vgroove-hardwood-trace-18deg-1f    f1 0.0030-0.0070 in
+  amana-vgroove-softwood-trace-30deg-1f    f1 0.0030-0.0070 in
+  amana-vgroove-hardwood-trace-30deg-1f    f1 0.0030-0.0070 in
+  amana-vgroove-softwood-trace-45deg-1f    f1 0.0030-0.0070 in
+  amana-vgroove-hardwood-trace-45deg-1f    f1 0.0030-0.0070 in
+  amana-vgroove-softwood-trace-60deg-2f    f2 0.0030-0.0030 in
+  amana-vgroove-hardwood-trace-60deg-2f    f2 0.0030-0.0030 in
+  amana-vgroove-softwood-trace-90deg-2f    f2 0.0030-0.0030 in

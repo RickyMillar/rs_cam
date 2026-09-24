@@ -1,0 +1,116 @@
+                                                                                                 Hardness: ≤ 28 Rc (≤ 271 HBn)
+MATERIAL                                               Chip Load (IPT) By Cutter Dia       Depth of Cut                      Chip Load (IPT) By Cutter Dia                  Depth of Cut
+                                           SFM
+                                                             .015       .031      .047   Radial     Axial        .062     .078      .093      .125       .187    .250     Radial     Axial
+ALUMINUM ALLOYS
+
+Casting (2xx, 5xx, 7xx, 8xx)               750
+                                                  Finishing   .00005   .00010   .00015   .03 x Dia   10 x Dia   .00017   .00022    .00026    .00035    .00052   .00070   .06 x Dia   10 x Dia
+Wrought (1xxx, 2xxx, 3xxx, 5xxx, 6xxx,
+                                           1000                                                                                                                                                                           Speeds & Feeds
+7xxx, 8xxx)
+
+Casting - 3%-5% Si (3xx, A3xx, C3xx,
+                                           750
+                                                                                                                                                                                                                          Product Table: Miniature End Mills - Tapered - Ball
+4xx, A4xx, B4xx)                                                                                                                                                                                                          Characteristics: 11°-15° Angle per Side, 9x & 10x Length of Cut, 4 Flutes
+Casting - 5%-8% Si (3xx, A3xx, C3xx,                                                                                                                                                                                      Series: 7233xx
+                                           700
+4xx, A4xx, B4xx)
+
+Casting - 8%-12% Si (3xx, A3xx, C3xx,                         .00004   .00009   .00014   .03 x Dia   10 x Dia   .00016   .00020    .00023    .00032    .00047   .00063   .06 x Dia   10 x Dia
+                                           650    Finishing
+4xx, A4xx, B4xx)
+Casting - 12%-16% Si (3xx, A3xx, C3xx,
+                                           475
+4xx, A4xx, B4xx)
+Wrought - 5%-8% Si (4xxx)                  1000
+
+Wrought - 8%-12% Si (4xxx)                 800
+
+
+MAGNESIUM ALLOYS                           1500
+                                                                                                                                                                                                                    Product Notes:
+                                                  Finishing   .00005   .00010   .00015   .03 x Dia   10 x Dia   .00017   .00022    .00026    .00035    .00052   .00070   .06 x Dia   10 x Dia
+                                                                                                                                                                                                                     Use the end diameter of the tool to select the correct Chip Load (IPT)
+ZINC ALLOYS                                800
+
+COPPER ALLOYS                                                                                                                                                                                                       General Notes:
+High Coppers - 90%+ (C1xxxx)               225
+Brass (Copper Zinc alloys, C2xxxx,
+                                                                                                                                                                                                                     All posted speed and feed parameters are suggested starting values that may be
+                                           500                                                                                                                                                                       increased given optimal setup conditions. Chip loads reflect uncoated cutters and may be
+C3xxxx, C4xxxx, C66400-C69800)
+Phosphor Bronzes (Copper Tin alloys,
+                                           225                                                                                                                                                                       increased 10%-20% if coated. For ferrous materials with hardness ≤ 28 Rc, chip loads
+C5xxxx)
+Aluminum Bronzes (Copper Aluminum
+                                                                                                                                                                                                                     can be increased 10%-20%.
+                                           500    Finishing   .00004   .00008   .00012   .03 x Dia   10 x Dia   .00014   .00017    .00021    .00028    .00042   .00056   .06 x Dia   10 x Dia
+alloys, C60600-C64200)
+Silicon Bronzes (Copper Silicon alloys,
+                                           500                                                                                                                                                                        If you require additional information, Harvey Tool has a team of technical experts
+C64700-C66100)
+Copper Nickels, Nickel Silvers (Copper
+                                                                                                                                                                                                                      available to assist you through even the most challenging applications. Please contact us
+                                           225
+Nickel alloys, C7xxxx)                                                                                                                                                                                                at 800-645-5609 or Harveytech@harveyperformance.com
+Cast Copper Alloys (C83300-C86200,
+C86400-C87900, C92200-C95800,              550                                                                                                                                                                        WARNING: Cutting tools may shatter under improper use. Government regulations require use of safety glasses and
+C97300-C97800, C99400-C99700)                                                                                                                                                                                         other appropriate safety equipment in the vicinity of use.
+
+                                                                                              Hardness: 29-37 Rc (279-344 HBn)                                                                                                                          Hardness: 38-45 Rc (353-421 HBn)
+MATERIAL                                               Chip Load (IPT) By Cutter Dia       Depth of Cut                      Chip Load (IPT) By Cutter Dia                  Depth of Cut                      Chip Load (IPT) By Cutter Dia        Depth of Cut                     Chip Load (IPT) By Cutter Dia                  Depth of Cut
+                                           SFM                                                                                                                                                  SFM
+                                                             .015       .031      .047   Radial     Axial        .062     .078      .093      .125       .187    .250     Radial     Axial                          .015       .031      .047    Radial     Axial       .062     .078      .093      .125       .187    .250     Radial     Axial
+CARBON STEELS
+
+Free-Machining/Low Carbon steels, 10xx 600        Finishing   .00002   .00003   .00005   .03 x Dia   10 x Dia   .00005   .00007    .00008    .00011    .00016   .00022   .06 x Dia   10 x Dia    -        -           -         -         -         -          -         -        -         -          -         -       -          -          -
+- 1029 & all 10Lxx, 11xx - 1139 & all
+11Lxx, 12xx - 1215 & all 12Lxx
+
+1030 - 1095, 1140 - 1151, 13xx, 15xx,
+2xxx, 3xxx, 4xxx & 4xLxx, 5xxx & 5xLxx,
+                                           200    Finishing   .00001   .00003   .00004   .03 x Dia   10 x Dia   .00005   .00006    .00007    .00010    .00015   .00020   .06 x Dia   10 x Dia    -        -           -         -         -         -          -         -        -         -          -         -       -          -          -
+50xxx & 50Lxxx, 51xxx & 51Lxxx, 52xxx
+& 52Lxxx, 6xxx, 8xxx, 9xxx
+
+STAINLESS STEELS
+
+203 EZ, 303 (all types), 416, 416Se, 416          Finishing   .00002   .00003   .00005   .03 x Dia   10 x Dia   .00005   .00007    .00008    .00011    .00016   .00022   .06 x Dia   10 x Dia    -        -           -         -         -         -          -         -        -         -          -         -       -          -          -
+Plus X, 420F, 420FSe, 430F, 430FSe,        450
+440F, 440FSe
+201, 202, 203, 205, 301, 302, 304,
+304L, 308, 309, 310, 314, 316, 316L,
+317, 321, 329, 330, 347, 348, 385, 403,    200 Finishing      .00001   .00003   .00004   .03 x Dia   10 x Dia   .00005   .00006    .00007    .00010    .00015   .00020   .06 x Dia   10 x Dia   100 Finishing      .00001     .00001   .00002   .03 x Dia   10 x Dia   .00003   .00003    .00004    .00005    .00008   .00010   .06 x Dia   10 x Dia
+405, 409, 410, 413, 420, 429, 430, 434,
+436, 442, 446, 501, 502
+
+
+414, 431, 440A, 440B, 440C,
+                                           150 Finishing      .00001   .00002   .00003   .03 x Dia   10 x Dia   .00003   .00004    .00005    .00006    .00009   .00013   .06 x Dia   10 x Dia   90    Finishing    .00000     .00001   .00001   .03 x Dia   10 x Dia   .00002   .00002    .00002    .00003    .00005   .00006   .06 x Dia   10 x Dia
+13-8, 15-5, 15-7, 17-4, 17-7
+
+
+TOOL STEELS
+
+                                           200    Finishing   .00001   .00003   .00004   .03 x Dia   10 x Dia   .00005   .00006    .00007    .00010    .00015   .00020   .06 x Dia   10 x Dia   100   Finishing    .00001     .00001   .00002   .03 x Dia   10 x Dia   .00003   .00003    .00004    .00005    .00008   .00010   .06 x Dia   10 x Dia
+A, L, O, P, W series
+
+
+
+
+D, H, M, T, S series                       150 Finishing      .00001   .00002   .00003   .03 x Dia   10 x Dia   .00003   .00004    .00005    .00006    .00009   .00013   .06 x Dia   10 x Dia   90    Finishing    .00000     .00001   .00001   .03 x Dia   10 x Dia   .00002   .00002    .00002    .00003    .00005   .00006   .06 x Dia   10 x Dia
+
+
+
+
+TITANIUM ALLOYS                            150 Finishing      .00001   .00002   .00003   .03 x Dia   10 x Dia   .00003   .00004    .00005    .00006    .00009   .00013   .06 x Dia   10 x Dia   75    Finishing    .00000     .00001   .00001   .03 x Dia   10 x Dia   .00002   .00002    .00002    .00003    .00005   .00006   .06 x Dia   10 x Dia
+
+
+
+HIGH TEMP ALLOYS
+
+Inconel, Hastelloy, Waspalloy, Monel,      70     Finishing   .00001   .00002   .00003   .03 x Dia   10 x Dia   .00003   .00004    .00005    .00006    .00009   .00013   .06 x Dia   10 x Dia   50    Finishing    .00000     .00001   .00001   .03 x Dia   10 x Dia   .00002   .00002    .00002    .00003    .00005   .00006   .06 x Dia   10 x Dia
+Nimonic, Haynes, Discoloy, Incoloy
+

@@ -1,0 +1,530 @@
+WOOD RESEARCH
+          64 (5): 2019
+          879-890
+
+          CUTTING FORCES IN QUASI-ORTHOGONAL
+                                     CNC MILLING
+
+             Zdeněk Kopecký, Luďka Hlásková, Aleš Solař, Petr Nesázal
+                            Mendel University in Brno
+                     Faculty of Forestry and Wood Technology
+                               Brno, Czech Republic
+
+                                  (Received December 2018)
+
+
+ABSTRACT
+
+     The paper is focused on the analysis of cutting forces in milling of MDF on the CNC
+machine (SCM Tech 99 L, SCM Group, Italy). The measurement of the forces was realized by
+a three-axis piezoelectric dynamometer Kistler 9257B (Kistler Holding AG, Switzerland). The
+forces were examined and analysed during quasi-orthogonal milling with a single-edged blade.
+The resulting forces were compared to each other depending on the conventional and climb
+milling of the edge of the MDF at changing feed speeds from 1.5 to 4.5 m∙min-1 with steps of
+0.75 m∙min-1. The experimental values of cutting forces were also used for the first assessment
+of the fracture toughness and shear yield strength, main parameters of computational model
+based on Ernst-Merchant theory and on fracture mechanics. These values were input data for
+the calculation of the specific cutting resistance for CNC machining. The experimental data
+confirmed that the cutting force increases and the specific cutting resistance decreases with the
+increasing chip thickness.
+
+KEYWORDS: Cutting forces, Ernst-Merchant theory, CNC milling, MDF board, Kistler 9257 B.
+
+
+                                     INTRODUCTION
+
+     Milling of wood and agglomerated wood-based materials using CNC machines has been
+one of the most common operations in the production of furniture and construction joinery. The
+basic trend is to use CNC machines enabling the digitization and the associated automation of
+manufacturing processes within the fourth industrial revolution called Industry 4.0 (Basl 2017).
+A suitable design, equipment operating heads, power estimation of the machine unit and finally
+to choose the appropriate tool is often necessary in selection of a CNC woodworking centre. In
+this perspective, it is advantageous, among other things, to know the parameters of the theoretical
+model to determine the cutting forces and the power of the machining itself.
+     Analysis and modelling of cutting forces are the basis of machining theory. The cutting force
+of machining wood and wood-based materials is not constant in fact but it varies depending on
+
+                                                                                               879
+WOOD RESEARCH
+
+the chip cross-section, cutting speed, material removal, tool edge damping, fiber direction, etc.
+(Naylor et al. 2012). In wood and wood-based materials, there is another problem that they are
+actually composites proving different properties in different directions.
+     Quasi-orthogonal milling of the edge of a board is considered as a relatively simple technology
+on a CNC milling machine (Costes et al. 2004). McKenzie (1961) described three basic types of
+orthogonal cutting of greenwood using two numbers representing the angle between the cutting
+edge of the tool and the cellular grain direction and the angle between the direction of cutting and
+the grain direction. Moving from the endless tool radius (planning knife) to orthogonal cutting,
+a different chip formation and machined surface area are created on a particular cutter radius. The
+machined surface is not flat but formed by cycloid curl. In this context, we can speak of quasi-
+orthogonal cutting (Chen et al. 2018).
+     In the conventional and climb milling kinematics, it has been known that the cutter blade
+moves after the cycloid due to the folded rotational motion of the tool in the direction of cutting
+speed (vc) and the linear motion of the milling spindle in the direction of the feed speed (vf ),
+(Fig. 1). During climb milling, the tool´s axis of rotation is the same as the sample. The nominal
+chip thickness at the start of the cut is at its maximum and progressively decreases to zero. During
+conventional milling, the tool rotates against the direction of the sample feed. The cutting edge
+of every tooth begins to cut the chip at a minimum thickness (Siklienka et al. 2017).
+     Energetic effects can be theoretically calculated using conventional methods based on specific
+cutting resistance which is a function of many factors (Lisican 1996). Necessary coefficients are
+derived from the base of the experiments conducted in the 50s of the 20th century and currently
+therefore they are inaccurate (Porankiewicz et. al. 2007). On the other hand, the power of the
+cutting force can be judged according to the latest knowledge also from the point of view of
+fracture mechanics (Williams 1988, Atkins 2003, Laternser et al. 2003, Atkins 2009, Williams
+et al. 2010). With the application of the results based on fracture tests, further progress can be
+made by analyzing the cutting process. Based on the experiments, Atkins (2005) suggested that
+the forces involved in the cutting process depend not only on the geometry of the tool and on the
+basic properties of the material but to a large extent on the fracture-related processes. The main
+parameters of the theoretical calculation based on fracture mechanics are R - fracture toughness
+and τγ - shear yield strength (Atkins 2005).
+     Cutting forces can be used to determine fracture toughness and shear stress for a wide range
+of solids including metals, plastics and wood Orlowski and Palubicki (2009), furthermore fracture
+is an important parameter in all machining processes (Atkins 2003, Atkins 2005). Kowaluk
+(2007) applied the results obtained during longitudinal cutting and wood milling and also
+fracture mechanics to chipboard machining.
+
+Analysis of the issue
+     In the climb and conventional milling kinematics, the chip thickness is changing (Siklienka
+et al. 2017) therefore it is necessary to realize the calculation at the place of the half angle of
+engagement (ψ /2), in which the average thickness of the chip (hm) and the average power of the
+cutting forces can be expected.
+
+      The angle of engagement is calculated according to the Eq. 1:
+                      r−e      e
+      ψ = arccosψ =       = 1−          (°) 		                                                   (1)
+                       r       r
+where:     r - radius cutter, (m)
+           e - depth of cut (thickness of the milled surface), (m).
+
+880
+                                                                                     Vol. 64 (5): 2019
+
+     As already mentioned, the average chip thickness (hm) is operated in the calculation models:
+                      ψ
+     hm = f z ⋅ sin     		                 (m)		                                                  (2)
+                      2
+     The feed per tooth fz can be expressed according to the relationship:
+             vf
+      fz =          				(m)			                                                                    (3)
+             n⋅ z
+
+where:       vf - feed speed, (m∙min-1)
+             n - number of the rotation, (min-1)
+             z - number of teeth cutter, (-).
+
+
+
+
+Fig. 1: Scheme of milling and orientation of forces.
+
+     Dynamic analysis is based on the Ernst-Merchant force diagram (Fig. 1). In measuring of
+forces on the sample using a three-axis dynamometer, the axial component in the Z-direction
+reaches zero due to the used straight edge cutter. The total active force of the cutting process (Fa)
+(Csaba et al. 2019) can be calculated using the Pythagoras theorem from the measured forces in
+the X and Y direction (the Fx force is perpendicular to the feed direction and the Fy force is equal
+to the force in the direction of feed Fy ≡ Ff ):
+
+     Fa = F x2 + F y2 		                   (N)		                                                  (4)
+
+     The cutting force (Fc) in the direction of the main movement of the tool can be calculated
+by components of the (Fx) and (Fy) forces in the direction of the cutting force (Fc) and using the
+trigonometric functions of the (ψ/2) half angle of engagement (Fig. 1):
+                      ψ             ψ
+     Fc = F x ⋅ sin     + F y ⋅ cos        (N)			                                                 (5)
+                      2             2
+      The parameters of the calculation model based on the fracture properties of the sample
+material with the elaboration of the Ernst-Merchant theory can be determined from the
+knowledge of the course of cutting and feed forces depending on the chip thickness (Kopecky
+et al. 2014, Hlaskova 2017).
+      According to the latest theoretical findings with the use of fracture mechanics methods
+(Atkins 2003, 2009) and (Orlowski 2010, Orlowski et al. 2013), a mathematical model of power
+when cutting by saw blades can be expressed in the following form:
+
+                                                                                                 881
+WOOD RESEARCH
+
+                                    τγ ⋅ b⋅γ                    R⋅b          
+      Pcw = Fc ⋅ v c + Pac =  z a ⋅          ⋅ hm ⋅ v c + z a ⋅                   ⋅ v c2
+                                                                         ⋅ vc  + m          (W)    (6)
+                                     Q shear                    Q shear      
+where:        za - number of simultaneously cutting teeth, (-)
+              τ γ - shear yield strength, (MPa)
+              b - saw kerf width, (mm)
+              g - shear strain along the shear plane, (-)
+              hm - mean uncut chip thickness, (mm)
+              vc - cutting speed, (m∙s-1)
+              R - specific work of surface separation (fracture toughness), (J∙m-2)
+              Qshear - friction correction coefficient (-)
+              ṁ - mass flow of chips, (kg×s-1).
+
+     The first equation member expresses the power necessary for shearing and subsequent
+removal of the chip, the second member expresses the power for overcoming friction between
+the sample and the tool edge, including the formation of a new surface, and the third member
+expresses the power necessary for the chip acceleration and its sweep out of the point of cutting.
+However, the third member does not express force ratios at the chip separation (no effect on
+cutting resistance), but expresses kinetic energy for carrying chips (sawing) out of the cut by the
+saw blade. This means that it only affects the total consumed saw power (Orlowski et al. 2013).
+The following is applied for the mass flow of chips:
+             b⋅l ⋅vf ⋅ ρ
+      m =                    			(kg×s-1)		                                                         (7)
+                    2
+    Under the theory which uses fracture mechanics, the cutting force, related to one blade
+tooth, is expressed by the slope of the line in the form y=(k)×x+(q) (Orlowski and Palubicki 2009,
+Orlowski 2010):
+              τγ ⋅ b ⋅ γ            R⋅b 
+      Fc1z =             ⋅ hm +               (N)			                                        (8)
+               Qshear               Qshear 
+
+      Shearing strain along the shear plane is possible to obtain from the formula (Atkins 2003):
+                    cos γ f
+      γ =                           		(-)			                                                        (9)
+                (         )
+             cos Φ − γ f ⋅ sin Φ
+
+where:        γf - tooth rake angle, (°)
+              Ф - shear angle, (°).
+
+     For large uncut chip thicknesses, the Ernst-Merchant’s equation can serve as the basis (for
+large uncut chip thickness values, the shear plane angle (Ф) is constant):
+          π  1
+      Φ =   −  ⋅ βµ − γ f (        ) 		                        (°)		                           (10)
+           4   2
+where:        βµ - friction angle obtained from tan-1µ = βµ (μ is friction coefficient), (°)
+              π [rad] - 180°.
+
+     The Atkins’s model, which includes the fracture toughness (R) (see Eq. 6), can help to derive
+a relationship for the calculation of specific cutting resistance kc.
+
+882
+                                                                                                  Vol. 64 (5): 2019
+
+            τγ ⋅γ         R
+     kc =          +             		(Pa)			                                                                       (11)
+            Q shear Q shear ⋅ hm
+
+     The formula for the calculation of specific cutting resistance shows that the specific cutting
+resistance will increase sharply with a small chip thickness). The friction correction coefficient
+(Qshear) depends substantially on the orientation of the shear plane towards the worked surface
+(Atkins 2003, 2009). When shear angle (Ф) equals zero (the tool cuts off no chips), the friction
+correction coefficient (Qshear) equals one, see Eq. 12 (Orlowski and Palubicki 2009, Orlowski
+2010):
+
+              [                                                  ]
+     Qshear = 1 − sin β µ ⋅ sin Φ / cos(β µ − γ f )⋅ cos(Φ − γ f )    (-)			                                     (12)
+
+
+                                 MATERIALS AND METHODS
+
+Machine
+     The machining was performed by CNC milling machine (SCM Tech 99 L, SCM
+Group, Italy). The aim of the experiment was to accurately determine the cutting forces in the
+conventional and climb quasi-orthogonal milling of the MDF fibreboard.
+     During the experiment, the main cutting parameter was methodically changed: feed per
+tooth. The values of the cutting and feed forces were measured and calculated from the used
+cutters and milling methods by which the parameters of the calculation model were determined.
+
+Tool
+     Single-handed left-handed shank type cutter called S12L (Habilis Tools, s.r.o) with
+replaceable cutting insert of IGM N010 (HW 453)
+     -    diameter:			12 mm
+     -    length:			77 mm
+     -    max rotation speed:         24.000 rpm
+     -    blade geometry:		           a =35°, β = 36°, γ = 19°
+     -    cutting edge radius:        r = 11 µm.
+
+Sample and cutting conditions
+                                                           Sample: Medium density fibreboard (MDF)
+                                                           proportions –
+                                                           500 x 500 x 18mm (L x W x T),
+                                                           density - 684 kg×m-3,
+                                                           moisture - 3% at 25°C.
+
+                                                           Cutting conditions:
+
+                                                           rotation of cutter – n = 15.000 rpm,
+                                                           feed speed - v f = 1.5; 2.25; 3; 3,75, 4.5 m∙min-1,
+                                                           feed per tooth - fz = 0.1; 0.15; 0.2; 0.25; 0.3 mm,
+                                                           depth of cut – e = 2 mm,
+
+ Fig. 2: Milling scheme.                                   type of milling - conventional and climb milling.
+
+
+                                                                                                                 883
+WOOD RESEARCH
+
+Measuring equipment
+     The measurement of the forces was realized by a three-axis piezoelectric dynamometer
+(Kistler 9257B, Kistler Holding AG, Switzerland). The connection of the measuring device
+is schematically illustrated in Fig. 3. In the order from left to right, the notebook with the
+DynoWare evaluation software, the DAQ system-bus data type of 5697A DAQ , the 5070A
+multi-channel amplifier, and the Kistler 9257 B piezoelectric three-axis dynamometer were used.
+
+
+
+
+1 - CNC milling machine SCM Tech 99 L, 2 - spindle milling machine, 3 – milling cutter S12L, 4 – sample (MDF),
+5 – Fx, Fy, Fz dynamometer Kistler 9257B, 6 – multi-channel amplifier 5070A, 7 – DAQ system-bus 5697A,
+8 – notebook with the DynoWare software.
+
+Fig. 3: The scheme of the experimental device.
+
+     An important step was the setting of the measuring time or the recording time of data during
+the machining before the actual experiment. In this case, the time of recording was established up
+to 130 sec. This fact was due to sufficient time to record data for machining. Later, however, the
+time reserve for higher feed speeds proved to be superfluous and the measurement was terminated
+by a manual stop.
+     The sampling frequency of the measured data record was set to 4000 Hz because of the
+possibility of analysing the dynamic course of forces on the cutter blade. In the DynoWare
+and MS Excel programs, as the value of mean, variance, standard deviation and median from
+30.000 to 50.000 of data were subsequently processed and further statistically evaluated for each
+measurement.
+     The measurement was carried out first by milling the right edge of the MDF board by
+conventional milling, then the milling head was moved to the left edge of the sample and the
+climb milling was performed (Fig. 2). In the case of repeatability and statistical data evaluation,
+at least 10 measurements were carried out for individually modified cutting conditions.
+
+
+                               RESULTS AND DISCUSSIONS
+
+     Recording of measured data in DynoWare software (Kistler Holding AG, Switzerland) after
+the filtration and compensation drift is shown in Fig. 4. In the first half of the record, the values
+of Fx and Fy are for conventional milling, in which the Fy feed force acts against the intended feed
+rate of the sample and proves a positive value.
+     In climb milling, the feed force has the opposite direction and acts in the direction of the
+intended feed rate of the sample and shows a negative value. The output values are the time
+value and the corresponding measured value. The median and other statistical data can also be
+determined from the optional value range.
+
+
+884
+                                                                                     Vol. 64 (5): 2019
+
+     After exporting the data to the MS Excel and their statistical processing for each feed per
+tooth (chip thickness) and depth of cut (e = 2 mm), the graphs of the forces in the direction of feed
+Fy ≡ Ff and the Fx force in the direction perpendicular to the feed rate of the tool were assembled.
+
+
+
+
+Fig. 4: The record of data for feed per tooth of 0.2 mm.
+
+    The graph of Fig. 5 shows a different effect of delivery forces. The Fy ≡ Ff feed force in the
+climb milling is negative and therefore the resultant force that means the Fa active force (Fig. 1)
+works in the feed direction of the sample. This is a relatively familiar phenomenon in practice, and
+consequently the climb milling of the manual sample feed rate is inadmissible in terms of safety.
+
+
+
+
+Fig. 5: Measured forces depending on feed per tooth.
+
+     The Fc cutting force (Fig. 6) in the direction of the main feed rate of the tool was calculated
+as the vector sum of the force components in the direction of feed rate Fy ≡ Ff and the force
+perpendicular to the feed direction Fx (Eq. 5 and Fig. 1).
+     In the comparison of the experimentally measured forces, we can notice higher values of the
+resulting cutting forces in the climb milling process. The resultant cutting force is directed to
+"material" reducing clamping forces while decreasing machine susceptibility to vibrations, and it
+is possible to increase the feed per tooth (fz) while maintaining a good quality machined surface.
+
+
+
+
+                                                                                                 885
+WOOD RESEARCH
+
+
+
+
+Fig. 6: Cutting forces depending on the average chip thickness.
+
+     On the other hand, the cutter edges prove higher loading at the beginning of the engagement
+in cutting the chip of the largest thickness. This phenomenon is also applied to the increasing
+amount of feed per tooth (chip thickness). The cutting force is always increasing with increasing
+depth of cut (e).
+     The angle of the shear plane (Φ) (angle between the force vector of (Fs) shear plane and the
+vector of cutting force (Fc), the shear deformation of the chip (g), the coefficient of friction (µ)
+and the angle of friction (βµ) (angle between the active force of the Fa cutting process and the
+normal force in the F γN shear plane) was calculated with the elaboration of the Ernst-Merchant
+theory (Hlaskova 2017).
+     The cutting force (Fc) grows linearly with the increase in the chip thickness (hm), the linear
+course is characterized by the coefficient of determination (R 2 = 0.993) for the conventional
+milling and by the coefficient of determination (R 2 = 0.9904) for the climb milling. The average
+size of the cutting force relative to one tooth can be expressed in a straight line shape:
+
+     Conventional milling: Fc1z = 49.954 hm + 5.3047		
+     Climb milling: Fc1z = 49.123 hm + 5.936		
+     			
+     Fracture toughness R (for φ2 = 24.09º) was determined by the offset of the line (conventional
+milling: q= 5.3047 N; climb milling: q= 5.936 N) and shear yield strength τγ from its directive
+(conventional milling: k = 49.954 N∙m-1; climb milling: k = 49.123 N∙m-1).
+     On the basis of the performed experiments, the main parameters entering the newly designed
+model for the conventional and climb milling method (Tab. 1) were calculated. These values were
+input data for the calculation of the specific cutting resistance for CNC machining.
+
+Tab. 1: Main parameters entering the newly designed model.
+                     µ         βμ (°)      Φ (°)         γ          Q     τγ (MPa)    R (J∙m-2)
+      CONV         0.542      28.452      40.274       1.569      0.656    1.1757     294.706
+      CLIMB        0.628      32.145      38.428       1.613      0.630    1.0826     329.778
+
+     Fig. 7 shows modelling of the functional relationship of the specific cutting resistance and
+chip thickness. In evaluating the values of the specific cutting resistance, it is possible to notice
+the trend in which the value of the coefficient of specific cutting resistance decreases with
+increasing chip thickness.
+
+
+886
+                                                                                    Vol. 64 (5): 2019
+
+     According to Prokes (1978), the various authors agree that the cutting force increases and
+the specific cutting resistance decreases with the increasing chip thickness and at the same time
+increasing the feed per tooth. This statement is also applied to different geometry of the cutting
+edge. A higher increase can be from (hm < 0.1 mm) in the specific cutting resistance. Therefore,
+some computational models of cutting resistance and forces use a mathematical apparatus for
+a chip thickness of less than 0.1 mm and a chip thickness greater than 0.1 mm.
+     It can also be seen from the graph in Fig. 7 that the values of the specific cutting resistance
+of the climb milling are always slightly higher than the values of conventional milling.
+
+
+
+
+Fig. 7: Specific cutting resistance depending on the average chip thickness
+
+     The theory says that a significant force of resistance against feed rate can be in conventional
+milling. At the beginning of the process, the chip proves a zero value and increases toward the
+end of the cut. The cutting forces thus force apart the milling cutter and the sample. On the other
+hand, the feed resistance against feed rate is smaller in climb milling than that in conventional
+milling. In climb milling, the resistance gradually decreases in cutter circuit from the beginning
+of the chip thickness cut. At the end of the cut, the chip reaches zero.
+     To compare the experimental data with theory from available literature, a modified
+Technological-Statistical Method was used which was based on the research by Cukanov and
+Amalicky in Lisican (1996). It is important to note that there are currently not many publications
+dealing with milling (relatively new) wood-fibre materials. Most publications focus on wood or
+to a lesser extent on chipboard materials.
+     The comparatively large difference in the course of the specific cutting resistance between
+the newly designed model based on Ernst-Merchant theory (Hlaskova 2017) and the method of
+Cukanov and Amalicky according to Lisican (1996) is particularly caused in the difference in the
+determination and accuracy of the measurement of individual forces. In addition, the Cukanov
+and Amalicky method was primarily used in connection with the machining of DTD chipboards.
+
+
+                                         CONCLUSIONS
+
+ 1. The measurement of the force components in the X and Y directions using a Kistler
+    dynamometer made it possible to calculate exactly according to the proposed equation
+    using the Ernst-merchant circle diagram. The cutting force (Fc) in the direction of the
+    main movement of the tool was calculated by components of the (Fx) and (Fy) forces in the
+    direction of the cutting force (Fc) and using the trigonometric functions of the (ψ/2) half
+    angle of engagement (Eq. 5 and Fig. 6)
+
+                                                                                                887
+WOOD RESEARCH
+
+ 2. Measured and calculated data of cutting forces for conventional and climb milling has
+    allowed us to determine fracture toughness and shear yield strength of milling wood for
+    the axial-perpendicular model of milling by a cylindrical cutter with the elaboration of the
+    Ernst-Merchant theory (Hlaskova 2017).
+ 3. The Ernst-Merchant theory (Eq. 10) helped to calculate the orientation of the shear plane
+    in respect to the worked surface Φ = 40.274° for conventional milling and Φ = 38.428° for
+    climb milling, and the shearing strain along the shear plane γconv = 1.569 (γclimb = 1.613) for
+    MDF. These values are the input data when calculating the specific cutting resistance.
+ 4. When we compare of the specific cutting resistance (Fig. 7), we can state that in areas of
+    very low chip thickness there are large difference between the newly designed model, based
+    on Ernst-Merchant theory and the old modified Technologically-statistical method of
+    Cukanov and Amalicky, which was focused only on the determination of specific cutting
+    resistance in chipboard (DTD) machining.
+ 5. The presented methodology can be, after slight adaptations, applied for wide range of
+    materials (wood based materials and modified materials) during processing on other
+    machines with similar cutting kinematics, such as circular saw blades, circular cutter, etc.
+    The model is available not only for woodworking engineers dealing with woodworking
+    processes, but also for the designers when designing new cylindrical cutter or milling
+    machines.
+
+
+                                ACKNOWLEDGMENTS
+
+    This article is based on research sponsored by the Internal Grant Agency FFWT of
+Mendel University in Brno. The authors are grateful for the support of the project „IGA
+LDF_TP_2019008, „ Analysis of cutting forces from point of view fracture mechanics in quasi-
+orthogonal CNC milling and cutting by circular saw-blade“.
+
+
+                                       REFERENCES
+
+ 1. Atkins, A. G., 2003: Modelling metal cutting using modern ductile fracture mechanics:
+    quantitative explanations for some longstanding problems. International Journal of
+    Mechanical Sciences 45(2): 373-396.
+ 2. Atkins, A. G., 2005: Toughness and cutting: A new way of simultaneously determining
+    ductile fracture toughness and strength. Engineering Fracture Mechanics 72(6): 849-860.
+ 3. Atkins, A. G., 2009: The science and engineering of cutting. The mechanics and process of
+    separating, scratching and puncturing biomaterials. Metals and Non-Metals, Butterworth-
+    Heinemann, Oxford, UK, 432 pp.
+ 4. Basl, J. 2017: Pilot study of readiness of Czech companies to implement the principles of
+    Industry 4.0. Management and Production Engineering Review 8(2): 3-8.
+ 5. Costes, J. P., Ko, P. L., Ji T., Petit, C. D., Altintas, Y., 2004: Orthogonal cutting mechanics
+    of maple: modelling a solid wood-cutting process. Journal of Wood Science 50 (1): 28-34.
+ 6. Csaba N., Javorek L., Bodzás S., Palikans S., 2019: The measurement of the three
+    components of the cutting force during the turning process. International Journal of
+    Engineering and management Sciences 4(1): 139-145.
+ 7. Hlásková, L., 2017: Mechanics of saw blade cutting process. Dissertation Theses. Mendel
+    university of Brno, 231 pp.
+
+888
+                                                                                Vol. 64 (5): 2019
+
+8. Chen, Ch. A., Pham, Q. P., Li, I. T., Hsuch, Ch. T., 2018: Study on quasi-orthogonal
+    machining of elastomer pad by single-point diamond tool. Journal Advance Manufacuring
+    Technology 95: 2555-2565.
+9. Kopecký, Z., Hlásková, L., Orlowski, K., 2014: An innovative approach to prediction
+    energetic effects of wood cutting process with circular-saw blades. Wood Research 59(5):
+    827-834.
+10. Kowaluk, G., 2007: Application of the theory of work of cutting distribution in milling.
+    Electron Journal of Polish Agricultural Universities 10(3): 1-8.
+11. Kowaluk, G., Dziurka, D., Beer, P., Sinn, G., Stanzl-Tschegg, S.E., 2004: Influence of
+    ammonia on particleboard properties. In: Proceedings 2nd International Symposium on
+    Wood Machining, 5-7 July 2004, Vienna, Austria. Pp 459-465.
+12. Laternser, R., Gänser, H., P., Taenzer, L., Hartmaier, A., 2003. Chip formation in cellular
+    materials. Journal of Engineering Materials and Technology 125(1): 44-49.
+13. Lisičan J., 1996: Theory and wood technology. Zvolen: Matcentrum. 626 pp. ISBN
+    80-967315-6-4.
+14. McKenzie, W.M., 1961: Fundamental analysis of the wood cutting process. PhD thesis.
+    University of Michigan, Department of Wood Technology. 203 pp.
+15. Naylor, A., Hackney, P., Perera, N., Clahr, E., 2012: A predictive model for the cutting
+    force in wood machining developed using mechanical properties. Bioresources 7(3):
+    2883-2894.
+16. Orlowski, K. A., Pałubicki, B., 2009: Recent progress in research on the cutting process of
+    wood, A. Review. Holzforschung 63(2): 181-185.
+17. Orlowski, K. A., 2010: The fundamentals of narrow-kerf sawing: The mechanics and
+    quality of cutting. Publishing House of the Technical University in Zvolen. 123 pp.
+18. Orlowski, K., Ochrymiuk, T., Atkins, A., Chuchala, D., 2013: Application of fracture
+    mechanics for energetic effects predictions while wood sawing. Wood Science and
+    Technology 47(5): 949-963.
+19. Porankiewicz, B., Bermudez, J., C., Tanaka, C., 2007: Cutting force, low density wood.
+    BioResources 2(4): 671-681.
+20. Prokeš, S., 1978: Processing of wood and new wood materials. Praha: SNTL. 583 pp.
+21. Siklienka, M., Kminiak, R., Šustek, J., Jankech, A., 2017: Cutting and machining of wood.
+    1. ed., Technical University in Zvolen, 332 pp.
+22. Williams, J. G., 1998: Friction and plasticity effects in wedge splitting and cutting
+    fracture tests. Journal of Materials Science 33(22): 5351-5357.
+23. Williams J. G., Patel, Y., Blackman B. R. K., 2010: A fracture mechanics analysis of
+    cutting and machining. Engineering Fracture Mechanics 77(2): 293-308.
+
+
+
+           Zdeněk Kopecký*, Luďka Hlásková, Aleš Solař, Petr Nesázal
+                           Mendel University in Brno
+                   Faculty of Forestry and Wood Technology
+                             Zemedelská 3, Cz-613 00
+                              Brno, Czech Republic
+                 *Corresponding author: zdenek.kopecky@mendelu.cz
+
+
+
+
+                                                                                            889
+WOOD RESEARCH
+
+
+
+
+890
+

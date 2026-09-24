@@ -1,0 +1,43 @@
+# stored text for techno_cnc_chipload_rev2
+# made from techno_cnc_chipload_rev2.pdf with pdftotext -layout on 2026-09-24
+                                                         Chip Load Chart
+Chip loads are based on material thickness of average size for cutting edge length of tool. These recommendations do not apply to
+thicker material or Techno CNC tools with long cutting-edge lengths. These chip loads are only a recommended starting point and
+may not accommodate all circumstances. Therefore, tooling damage may still occur, and use of this chart does not warranty against
+tool breakage. We strongly encourage you to consult us directly on new tool applications. All parameters and settings are calculated
+with the intention of using inches per minute as the units for feed rate.
+
+   Tool Diameter            Hard Wood              Softwood &           MDF & Particle       High Pressure             Phenolic
+                                                      Plywood               Board               Laminate
+        1/8”                .003” – .005”          .004” - .006”         .004” - .007”        .003” - .005”              N/A
+        1/4”                .008” - .010”          .010” - .013”         .010” - .013”        .008” - .011”          .003” - .005”
+        3/8”                .014” - .018”          .016” - .019”         .014” - .017”        .015” - .018”          .006” - .008”
+     1/2” and up            .019” - .021”           .02” - .023”         .018” - .021”        .022” - .025”          .009” - .012”
+
+   Tool Diameter            Hard Plastic            Soft Plastic            Solid Surface        Acrylic              Aluminum
+        1/8”                .002” - .004”          .003” - .006”            .002” - .005”     .003” - .005”          .003” - .004”
+        1/4”                .006” - .009”          .007” - .010”            .006” - .009”     .007” - .010”          .005” - .007”
+        3/8”                .007” - .010”          .010” - .012”            .008” - .010”     .010” - .012”          .006” - .008”
+    1/2" and up              .010” .012”           .012” - .016”            .010” - .012”     .012” - .015”          .008” - .010”
+
+
+Calculating Feedrate:
+
+Feed Rate = RPM x number of flutes x chip load
+Depth Pass : The variable “D” represents the Diameter of the cutter.
+
+1 x D = Use Recommended Chip Load
+
+2 x D = Reduce Chip Load by 25%
+
+3 x D = Reduce Chip Load by 50%
+
+
+
+RPM Selection
+
+The general operating RPM for Techno CNC Tooling is between 12,000 – 24,000 RPM. Usually, the higher the spindle RPM, the
+better the edge finish becomes. However, the higher the spindle speed, the more heat is produced between the tool and the workpiece.
+In a production environment, your goal is to run as fast a feed rate as possible while still retaining good cut quality and tool longevity.
+Test cuts should be conducted on new materials prior to putting tools in a production setting.
+

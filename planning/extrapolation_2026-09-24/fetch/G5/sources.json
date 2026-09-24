@@ -1,0 +1,255 @@
+[
+  {
+    "source_id": "amana_insert_v_groove_v16",
+    "source_vendor": "amana",
+    "source_title": "Amana Insert V-Groove Speed Chart v16",
+    "source_url": "https://www.amanatool.com/pub/media/productattachments/Insert-V-Groove-Speed-Chart-v16.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/amana_insert_v_groove_v16.txt",
+    "pdf_sha256": "d3da2d5fd7b60aba024da22c1142898eeaf5879d2477a54752f6110943067029",
+    "coverage_notes": "Also stored as amana_insert_v_groove_v16_raw.txt (pdftotext -raw, one line per tool; the verbatim source). Prints per tool number: angle 40-160 deg, flutes 1 or 2, RPM, and Feed/Chip Load per tooth/Ramp for Hardwood, Softwood, Plywood/Chipboard, MDF, Plastic, Foam. Wood/plywood .0024 in; MDF .0047/.0048 in (about 2x wood). Prints NO tool diameter and NO depth of cut; keys only on angle and tool number. Column order checked on a rendered image. RC-1146 and RC-1101 (1 flute, 14,000 RPM, 90 IPM) print .0024 in, which disagrees with their own feed (90/14000 = .0064). 105 candidate rows. The manifest already lists this chart with no hash; the six amana_vbit.json rows that cite it do not match it (lut_discrepancies.md)."
+  },
+  {
+    "source_id": "amana_ams159_vgroove_v2",
+    "source_vendor": "amana",
+    "source_title": "Amana 18/30/45/60/90 Degree V-Groove Speed Chart v2 (AMS-159)",
+    "source_url": "https://www.amanatool.com/pub/media/productattachments/AMS-159-18-30-45-60-90-Degree-V-Groove-Speed-Chart-v2.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/amana_ams159_vgroove_v2.txt",
+    "pdf_sha256": "69628c747676f93080a011b93f3a5175d709c149adc7a13046e3eac9c6c5fa93",
+    "coverage_notes": "Header 'Operating RPM: 18,000 / Depth of Cut: 1 x Tool Diameter'. One chip load per angle for all wood/plastic rows: 18/30/45 deg 1 flute 0.003-0.007 in; 60/90 deg 2 flute 0.003 in. No diameter, no engaged width. LUT rows from it match the chart (no candidates). The chart prints 'IPR* Inches per revolution / IPM** Inches per minute' with the asterisks swapped against its column headings."
+  },
+  {
+    "source_id": "amana_spektra_engraving_v4",
+    "source_vendor": "amana",
+    "source_title": "Amana Spektra 15/30/45/120 Degree Engraving Speed Chart v4",
+    "source_url": "https://www.amanatool.com/pub/media/productattachments/Spektra-15-30-45-120-Degree-Engraving-Speed-Chart-v4.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/amana_spektra_engraving_v4.txt",
+    "pdf_sha256": "30e58f4d88e163f92bc8b95527cd96633390e79c7f7e9f839b0b608278490ec2",
+    "coverage_notes": "Header '18,000 RPM / Depth of Cut: 1 x Tool Diameter'. Prints a tip width per angle (15 deg 0.005 in, 30 deg 0.005-0.030 in, 45 deg 0.042 in, 120 deg 0.015 in) and one chip load band per angle (0.003-0.007 in; 120 deg 0.002-0.006 in), the same for every material. No tool diameter, no depth-dependent value. LUT rows match (no candidates)."
+  },
+  {
+    "source_id": "amana_15_60_90_vgroove_engraving_2f",
+    "source_vendor": "amana",
+    "source_title": "Amana 2 Flute Solid Carbide V-Groove Engraving 15, 60 & 90 Degree Router Bits speed chart",
+    "source_url": "https://www.amanatool.com/pub/media/productattachments/15-60-90_Degree-V-Groove-Engraving-Speed-Chart.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/amana_15_60_90_vgroove_engraving_2f.txt",
+    "pdf_sha256": "36f4a62673d287a593e120aa779e19b86e9270d806c1d673126a93aab91d8dec",
+    "coverage_notes": "New to the repo. 2 flute, 18,000 RPM, 'Depth of Cut: 1 x Tool Diameter'. Soft Wood, Hard Wood (and plastics, solid surface): feed 50-125 IPM, 'Chip Load Per Tooth IPR**' 0.003-0.007 in for 15, 60 and 90 deg. The printed feed gives 0.0028-0.0069 in per REVOLUTION, i.e. half the printed band per tooth on 2 flutes: the unit is ambiguous, rows are grade b. No diameter. 6 candidate rows."
+  },
+  {
+    "source_id": "amana_15_60_vgroove_engraving_2f",
+    "source_vendor": "amana",
+    "source_title": "Amana 2 Flute Solid Carbide V-Groove Engraving 15 & 60 Degree Router Bits speed chart",
+    "source_url": "https://www.amanatool.com/pub/media/productattachments/15-60-Degree-V-Groove-Engraving-Speed-Chart.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/amana_15_60_vgroove_engraving_2f.txt",
+    "pdf_sha256": "8e4281d620a802c22e1500a23bf59569d991826ae7fb9e61df96c3ae0d6aca73",
+    "coverage_notes": "Subset of the 15/60/90 chart with the same cells for 15 and 60 deg. Kept as a second copy; no rows of its own."
+  },
+  {
+    "source_id": "onsrud_hard_wood_cutting_data",
+    "source_vendor": "onsrud",
+    "source_title": "LMT Onsrud Hard Wood Cutting Data Recommendations",
+    "source_url": "https://www.onsrud.com/images/Hard%20Wood.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/onsrud_hard_wood_cutting_data.txt",
+    "pdf_sha256": "f123d5f67c03b3760cfd300c36d480747b176e4d9cc06db7d1ea97ff9bda69dc",
+    "coverage_notes": "Same file as the manifest entry (sha256 identical, text identical to the LUT copy). G5 use: the 37-series rows (37-00/37-20 engraving, 37-50 and 37-60 90 deg V bottom, 37-80 lettering bits) under 'Recommended Chip Load per Tooth by Cutting Diameter (in)', with a 'Cut' column of '1/2 CED' / '1/2 x D' (37-50, 37-60) or 'Varies' (37-00/37-20, 37-80). The chip load is keyed on the cutting diameter (the top of the V) and rises with it for 37-60 (.004-.006 at 3/8 and 1/2 in, .006-.008 at 3/4, .008-.010 at 1 in). Columns checked on a rendered image of every sheet. These rows are not in the LUT. 12 candidate rows."
+  },
+  {
+    "source_id": "onsrud_soft_wood_cutting_data",
+    "source_vendor": "onsrud",
+    "source_title": "LMT Onsrud Soft Wood Cutting Data Recommendations",
+    "source_url": "https://www.onsrud.com/images/Soft%20Wood.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/onsrud_soft_wood_cutting_data.txt",
+    "pdf_sha256": "a5b83da2433c64cb930dffe4a6de142124c894bd6aa982791a604b0048716c54",
+    "coverage_notes": "Same file as the manifest entry (sha256 identical, text identical to the LUT copy). G5 use: the 37-series rows (37-00/37-20 engraving, 37-50 and 37-60 90 deg V bottom, 37-80 lettering bits) under 'Recommended Chip Load per Tooth by Cutting Diameter (in)', with a 'Cut' column of '1/2 CED' / '1/2 x D' (37-50, 37-60) or 'Varies' (37-00/37-20, 37-80). The chip load is keyed on the cutting diameter (the top of the V) and rises with it for 37-60 (.004-.006 at 3/8 and 1/2 in, .006-.008 at 3/4, .008-.010 at 1 in). Columns checked on a rendered image of every sheet. These rows are not in the LUT. 12 candidate rows."
+  },
+  {
+    "source_id": "onsrud_mdf_cutting_data",
+    "source_vendor": "onsrud",
+    "source_title": "LMT Onsrud MDF Cutting Data Recommendations",
+    "source_url": "https://www.onsrud.com/images/MDF.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/onsrud_mdf_cutting_data.txt",
+    "pdf_sha256": "94464ac393d93a6ad13e166f52aaf9cc9470860895ed97571dd4a07c710bdf4c",
+    "coverage_notes": "Same file as the manifest entry (sha256 identical, text identical to the LUT copy). G5 use: the 37-series rows (37-00/37-20 engraving, 37-50 and 37-60 90 deg V bottom, 37-80 lettering bits) under 'Recommended Chip Load per Tooth by Cutting Diameter (in)', with a 'Cut' column of '1/2 CED' / '1/2 x D' (37-50, 37-60) or 'Varies' (37-00/37-20, 37-80). The chip load is keyed on the cutting diameter (the top of the V) and rises with it for 37-60 (.004-.006 at 3/8 and 1/2 in, .006-.008 at 3/4, .008-.010 at 1 in). Columns checked on a rendered image of every sheet. These rows are not in the LUT. 12 candidate rows."
+  },
+  {
+    "source_id": "onsrud_hard_plywood_cutting_data",
+    "source_vendor": "onsrud",
+    "source_title": "LMT Onsrud Hard Plywood Cutting Data Recommendations",
+    "source_url": "https://www.onsrud.com/images/Hard%20Plywood.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/onsrud_hard_plywood_cutting_data.txt",
+    "pdf_sha256": "65874767572e1669fb39fcfb91c5a04a21f1eee16b1fa12f7f9bb30ed6775e24",
+    "coverage_notes": "Same file as the manifest entry (sha256 identical, text identical to the LUT copy). G5 use: the 37-series rows (37-00/37-20 engraving, 37-50 and 37-60 90 deg V bottom, 37-80 lettering bits) under 'Recommended Chip Load per Tooth by Cutting Diameter (in)', with a 'Cut' column of '1/2 CED' / '1/2 x D' (37-50, 37-60) or 'Varies' (37-00/37-20, 37-80). The chip load is keyed on the cutting diameter (the top of the V) and rises with it for 37-60 (.004-.006 at 3/8 and 1/2 in, .006-.008 at 3/4, .008-.010 at 1 in). Columns checked on a rendered image of every sheet. These rows are not in the LUT. 12 candidate rows."
+  },
+  {
+    "source_id": "onsrud_soft_plywood_cutting_data",
+    "source_vendor": "onsrud",
+    "source_title": "LMT Onsrud Soft Plywood Cutting Data Recommendations",
+    "source_url": "https://www.onsrud.com/images/Soft%20Plywood.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/onsrud_soft_plywood_cutting_data.txt",
+    "pdf_sha256": "f1c369ed8c8c15c918574bef0e9dfdc89c9885f9d8aaf3126e0d35c5c8be1ca1",
+    "coverage_notes": "Same file as the manifest entry (sha256 identical, text identical to the LUT copy). G5 use: the 37-series rows (37-00/37-20 engraving, 37-50 and 37-60 90 deg V bottom, 37-80 lettering bits) under 'Recommended Chip Load per Tooth by Cutting Diameter (in)', with a 'Cut' column of '1/2 CED' / '1/2 x D' (37-50, 37-60) or 'Varies' (37-00/37-20, 37-80). The chip load is keyed on the cutting diameter (the top of the V) and rises with it for 37-60 (.004-.006 at 3/8 and 1/2 in, .006-.008 at 3/4, .008-.010 at 1 in). Columns checked on a rendered image of every sheet. These rows are not in the LUT. 12 candidate rows."
+  },
+  {
+    "source_id": "onsrud_pct19_catalog",
+    "source_vendor": "onsrud",
+    "source_title": "LMT Onsrud Production Cutting Tools Catalog PCT-19 (pages 20-22)",
+    "source_url": "https://onsrud.com/images/LMT%20Onsrud%20Product%20Cutting%20Tools%20Catalog%20PCT-19.pdf",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/onsrud_pct19_catalog_p20-22.txt",
+    "pdf_sha256": "83dbf74242ca1f578df8a7ca7d8e093a66d8488a7d573d0294df40b2ed58144b",
+    "coverage_notes": "132-page catalogue; stored text is PDF pages 20-22 only. Gives the 37-series geometry the cutting-data sheets omit: 37-00 60 deg and 37-20 30 deg single flute, 1/4 in shank, tips 0.005-0.090 in; 37-50 (3/16, 1/4, 3/8 in) and 37-60 (1/2, 3/4, 1 in) two flute 'Designed for V grooving or beveling 90°'; 37-80 two flute lettering bits 37-82 1 in 60 deg, 37-87 1-1/2 in 90 deg, 37-92 2 in 120 deg, 37-97 2 in 140 deg. No chip load on these pages."
+  },
+  {
+    "source_id": "precisebits_tapered_ball_2f",
+    "source_vendor": "precisebits",
+    "source_title": "PreciseBits 2, 3-flute Carbide Tapered Ball-Nose Carving tools (CM204, CM304)",
+    "source_url": "https://www.precisebits.com/products/carbidebits/taperedcarve250b2f.asp",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/precisebits_tapered_ball_2f.txt",
+    "pdf_sha256": "f131e5a712d2cc432861f3d8248559139c6bb6c75acb7b4e9c09e11624e4397d",
+    "coverage_notes": "pdf_sha256 is the sha256 of the stored text (html source); raw_download_sha256 is the downloaded file pdf/pb_taperedcarve250b2f_asp.html. Prints 'Stepdown (pass depth, depth per pass) recommended - 1X tip dia. / maximum - 2X tip dia.' and stepover 0.08 x tip (finish), 0.40 x tip (roughing). Feedrate: 'Depends on the material being cut. Do the Sweetspot Test'. NO chip load, and no chip load keyed on tip or engaged diameter.",
+    "raw_download_sha256": "4d1d6cc7a3f928da671739759faf15ee447f971d772e3802a4a9391f96465a1c"
+  },
+  {
+    "source_id": "precisebits_vtip_2500",
+    "source_vendor": "precisebits",
+    "source_title": "PreciseBits V-Groove Router Bits EM2E4 (1/4 in shank, 2-flute, V-tip)",
+    "source_url": "https://www.precisebits.com/products/carbidebits/2500_scoreengrave.asp",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/precisebits_vtip_2500.txt",
+    "pdf_sha256": "d8fbce48a11bbb7bc7084c6bf56ac38e068e06596b21b8a6b40a045c8b652cf4",
+    "coverage_notes": "pdf_sha256 is the sha256 of the stored text (html source); raw_download_sha256 is the downloaded file pdf/pb_2500_scoreengrave_asp.html. 0.015 in tip, 0.250 in max cutting diameter, 30/45/60/90 deg. Prints stepdown by material (Hardwood 0.118 in (3.0mm), Softwood 0.250 in (6.4mm), MDF '0.188 in. (3.0mm)' as printed, Plastic 0.118 in) and max DOC per angle. Feedrate by Sweetspot Test only. NO chip load.",
+    "raw_download_sha256": "94e0cc56e7da450d16d4de2a877dc2ce197753a0b7480680a70f0d87637337f9"
+  },
+  {
+    "source_id": "precisebits_vtip_scoreengrave",
+    "source_vendor": "precisebits",
+    "source_title": "PreciseBits 2-flute Micro-engraving V-tip bits EM2E8 (0.125 in shank)",
+    "source_url": "https://www.precisebits.com/products/carbidebits/scoreengrave.asp",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/precisebits_vtip_scoreengrave.txt",
+    "pdf_sha256": "5ec82145e96a7d3c2128fe6eb0887a7edc16dbe071b3d6331f7bd13178128c9e",
+    "coverage_notes": "pdf_sha256 is the sha256 of the stored text (html source); raw_download_sha256 is the downloaded file pdf/pb_scoreengrave_asp.html. 0.005 in tip. Prints stepdown by material (Hardwood 0.020 in, Softwood 0.030 in, MDF 0.020 in) and the 'Calculating engraving width and plunge depth' tutorial link. NO chip load.",
+    "raw_download_sha256": "11f3a118016546dc67916382e5898201fd34d59ae421c8a882433c2e02ca2995"
+  },
+  {
+    "source_id": "precisebits_engraving_application",
+    "source_vendor": "precisebits",
+    "source_title": "PreciseBits Tools for Engraving and 3D Carving",
+    "source_url": "https://www.precisebits.com/applications/engravingtools.htm",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/precisebits_engraving_application.txt",
+    "pdf_sha256": "fa9726d3c01dea5b0636adaf56668d53f6644056732241a6c1a49e3e0dadd107",
+    "coverage_notes": "pdf_sha256 is the sha256 of the stored text (html source); raw_download_sha256 is the downloaded file pdf/pb_engravingtools_htm.html. Application overview; V-tip families by letter height. 'High flute volume ... support high chiploads'. No figure.",
+    "raw_download_sha256": "21a01baee42248b00a8e6cbb1a60083b62ad0d23d251600009515d49b9c20856"
+  },
+  {
+    "source_id": "precisebits_feeds_and_speeds",
+    "source_vendor": "precisebits",
+    "source_title": "PreciseBits Feeds and Speeds for Woods, Thermoplastics, Composites",
+    "source_url": "https://www.precisebits.com/reference/precisefedsped.asp",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/precisebits_feeds_and_speeds.txt",
+    "pdf_sha256": "063dd038e28f876b53337151858bc9eb36bd628b3798b6157496729be75a1b6e",
+    "coverage_notes": "pdf_sha256 is the sha256 of the stored text (html source); raw_download_sha256 is the downloaded file pdf/pb_precisefedsped_asp.html. States (Aug. 31, 2009) that a database 'will publish ... as soon as we can'. No figure.",
+    "raw_download_sha256": "ba54a384b9c4f8ef56fa80c6d513d2dc1d7ee403096900888480b3a2010e9009"
+  },
+  {
+    "source_id": "precisebits_calibrating_feeds",
+    "source_vendor": "precisebits",
+    "source_title": "PreciseBits Finding the Sweet Spot When Machining with Carbide Microtools",
+    "source_url": "https://www.precisebits.com/tutorials/calibrating_feeds_n_speeds.htm",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/precisebits_calibrating_feeds.txt",
+    "pdf_sha256": "613df1dbb281eb80309a721435f8274f539786291faef9cfa6dc3725f22356bf",
+    "coverage_notes": "pdf_sha256 is the sha256 of the stored text (html source); raw_download_sha256 is the downloaded file pdf/pb_calibrating_feeds_n_speeds_htm.html. Test procedure, not a recommendation: plunge Z = 2 x D softwood, 1 x D hardwood; start feed 'F = 0.03 x D x No. flutes x RPM (3% chipload per flute)' for woods; sweet spot = 0.75 x Fmax. D is 'the diameter of the bit being tested' (straight bits). No V-bit or tapered rule.",
+    "raw_download_sha256": "ac705c5a01e750f14eceba5f357feaa96f8108c4858779583fada719917e2115"
+  },
+  {
+    "source_id": "precisebits_calc",
+    "source_vendor": "precisebits",
+    "source_title": "PreciseBits Feed and Speed Calculators (page)",
+    "source_url": "https://www.precisebits.com/calc",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/precisebits_calc.txt",
+    "pdf_sha256": "28b445b260ffc2d92250b7ca2b4737f28f918da07b7a384074657210e3581c92",
+    "coverage_notes": "pdf_sha256 is the sha256 of the stored text (html source); raw_download_sha256 is the downloaded file pdf/pb_calc.html. Prints the V width formula '(TAN(Half Angle) x 2 x Cutting Depth) + (Runout + Tip Diameter) = Cutting Width' and a chip-thinning calculator (Tool Diameter, Radial Width). Marked BETA.",
+    "raw_download_sha256": "59e7afb897b9fb4a1a182b4f989e8147d57169f3d46ad50a9cccae79e0ee7f68"
+  },
+  {
+    "source_id": "precisebits_calcv10_js",
+    "source_vendor": "precisebits",
+    "source_title": "PreciseBits calculator script calcv10.js (excerpts)",
+    "source_url": "https://www.precisebits.com/scripts/calcv10.js",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/precisebits_calcv10_excerpt.txt",
+    "pdf_sha256": "85a0590675a663e99105d320bd2bb3a4f2ef298874152b64d80bd6574f64502d",
+    "coverage_notes": "pdf_sha256 is the sha256 of the stored text (js source); raw_download_sha256 is the downloaded file pdf/pb_calcv10.js. Code, not a chart. Chip thinning: corrected = chip x D / (2 sqrt(D a - a^2)) - runout (radial only; the same algebra as feeds::geometry::radial_chip_thinning_factor). Janka: new feed = (J_tested / J_new) x tested feed (linear in Janka; the repo scales by a square root; note for G2h). No V-bit depth rule.",
+    "raw_download_sha256": "86285c4f637b68f671ddad5b275718aa4deca17641b034c7aa56b36c524ecd36"
+  },
+  {
+    "source_id": "precisebits_bullnose_2f_125",
+    "source_vendor": "precisebits",
+    "source_title": "PreciseBits 2-flute Carbide Corner-radius (Bull-nose) End-mills MM208",
+    "source_url": "https://www.precisebits.com/products/carbidebits/2fltbullnose125.asp",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/precisebits_bullnose_2f_125.txt",
+    "pdf_sha256": "90a672c9b45d42c508a5c92f3ce80e805d9a9f819f3b2b5f6f511326ba05e90b",
+    "coverage_notes": "pdf_sha256 is the sha256 of the stored text (html source); raw_download_sha256 is the downloaded file pdf/pb_2fltbullnose125.html. 1/16 in (r 0.011 in) and 1/8 in (r 0.023 in) bull-nose. 'smooth bottom surface at higher chiploads than ball-nose cutters'. NO chip load and no effective-diameter rule.",
+    "raw_download_sha256": "7e347ba0b37a7b678628ef3ac217f5ae12f2ff602f054d191d6c415857842648"
+  },
+  {
+    "source_id": "whiteside_120_vgroove_collection",
+    "source_vendor": "whiteside",
+    "source_title": "Whiteside 120 V-Groove Collection",
+    "source_url": "https://www.whitesiderouterbits.com/collections/120-v-groove",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/whiteside_120_vgroove_collection.txt",
+    "pdf_sha256": "069895ef9457ffd27ae759dc99b1d5dab8fff32bd7b08402321edf675270ff89",
+    "coverage_notes": "pdf_sha256 is the sha256 of the stored text (html source); raw_download_sha256 is the downloaded file pdf/whiteside_120-v-groove.html. Prints 'Recommended RPM: 14,000-16,000 (max 18,000)' and sizes 3/4 in CD and 1-1/2 in CD. NO chip load and no 12 mm size. The two LUT rows that cite this page with chip load bands are not on it (lut_discrepancies.md).",
+    "raw_download_sha256": "e7866a531df8363caf733cd1cfbed6e7e381e42fbc7e9b0fbb7a57871b4893c0"
+  },
+  {
+    "source_id": "whiteside_1550_product",
+    "source_vendor": "whiteside",
+    "source_title": "Whiteside 1550 60 deg V-Groove Bit",
+    "source_url": "https://www.whitesiderouterbits.com/products/1550",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/whiteside_1550_product.txt",
+    "pdf_sha256": "1f7ac0217d6b8e78744d63421a639bf26cdaf969e125d10d6dbed6c1e6c942d7",
+    "coverage_notes": "pdf_sha256 is the sha256 of the stored text (html source); raw_download_sha256 is the downloaded file pdf/whiteside_1550.html. Prints 'Recommended RPM: 16,000-20,000 (max 24,000)', 1/2 in CD, 7/16 in point length. No chip load.",
+    "raw_download_sha256": "ef278cb9cfdfe4a2eb40c7e6c5c9e5bbf31133010992680681489bd925be0e3e"
+  },
+  {
+    "source_id": "vectric_tool_database_v11",
+    "source_vendor": "vectric",
+    "source_title": "Vectric VCarve Pro V11 Help: Tool Database",
+    "source_url": "https://docs.vectric.com/docs/V11.0/VCarvePro/ENU/Help/form/Tool%20Database/index.html",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/vectric_tool_database_v11.txt",
+    "pdf_sha256": "71579a4d7b732dbff2f28f1453945f058782f744e293bb9e241c29a21a83c46a",
+    "coverage_notes": "pdf_sha256 is the sha256 of the stored text (html source); raw_download_sha256 is the downloaded file pdf/vectric_tooldb_v11.html. Grade c context. 'Chip Load ... calculated ... based on the entered values for the Number of Flutes, Spindle Speed and Feed Rate'; the V-bit 'Diameter' is the tool's own diameter. No engaged-width rule, no figure.",
+    "raw_download_sha256": "dc4881ed6115fdae8c43917f744245a91aff8586b7b8375adbf957b9d40668af"
+  },
+  {
+    "source_id": "cnccookbook_vbit_form_milling",
+    "source_vendor": "cnccookbook",
+    "source_title": "CNCCookbook: Form Milling, V-Bits, Dovetails, Roundover Mills",
+    "source_url": "https://www.cnccookbook.com/v-carve-chamfer-dovetail-corner-rounder-round-over-bit/",
+    "accessed_on": "2026-09-24",
+    "stored_text": "sources/cnccookbook_vbit_form_milling.txt",
+    "pdf_sha256": "5f237f5546d31999fa2b1644327ed286ee7bd11bbd1aaf1aa0080f47c91ac448",
+    "coverage_notes": "pdf_sha256 is the sha256 of the stored text (html source); raw_download_sha256 is the downloaded file pdf/cnccookbook_vbit.html. Grade c (a software vendor's blog). States 'the \"diameter\" of your cutter is, well, not the diameter in the cut!' and 'The effective diameter in an 0.010\" depth of cut is only 0.020\"' (90 deg V); it uses the effective diameter for surface speed/RPM in G-Wizard. No vendor figure.",
+    "raw_download_sha256": "b2ec7882703aeb54f72f939f5d6960b1eb43ee5e40a7f674aaae65d08d9a87f5"
+  }
+]

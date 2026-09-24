@@ -1,0 +1,35 @@
+# stored text for amana_spiral_ball_nose_2015
+# made from amana_spiral_ball_nose_2015.pdf with pdftotext -layout on 2026-09-24
+                                                                                                                                                    INDUSTRIAL
+
+
+                                                          Solid Carbide CNC Spiral Ball Nose Router Bits
+                                                                      Speed and Feed Chart
+
+
+ Material                                                                         Chip Load
+                             1/16"                 1/8"              1/4"              3/8"              1/2"              5/8"              3/4"
+
+ Aluminum                0.002" - 0.004"      0.003" - 0.005"   0.004" - 0.006"   0.006" - 0.008"   0.010" - 0.012"   0.012" - 0.014"   0.014" - 0.016"             Tool Reference #’s
+                                                                                                                                                                    46369      1/8" Dia.
+ Softwood                0.003" - 0.005"      0.005" - 0.007"   0.007" - 0.009"   0.008" - 0.010"   0.009" - 0.011"   0.010" - 0.012"   0.011" - 0.013"             46373 1/16" Dia.
+ Hardwood                0.002" - 0.004"      0.003" - 0.005"   0.005" - 0.007"   0.006" - 0.008"   0.007" - 0.009"   0.008" - 0.010"   0.009" - 0.011"             46374      1/4" Dia.
+                                                                                                                                                                    46375      1/8" Dia.
+ MDF                     0.003" - 0.005"      0.005" - 0.007"   0.006" - 0.008"   0.007" - 0.009"   0.008" - 0.010"   0.009" - 0.011"   0.010" - 0.012"
+                                                                                                                                                                    46376      1/4" Dia.
+ Soft Plastic            0.002"- 0.004"       0.002" - 0.004"   0.004"- 0.006"    0.004"- 0.006"    0.006"- 0.008"    0.010"- 0.012"    0.012"- 0.014"              46378      3/8" Dia.
+ Hard Plastic            0.002" - 0.004"      0.002" - 0.004"   0.004" - 0.006"   0.004" - 0.006"   0.006" - 0.008"   0.008" - 0.004"   0.010" - 0.012"             46380      1/2" Dia.
+                                                                                                                                                                    46384      1/2" Dia.
+ Sign Foam               0.003" - 0.005"      0.005" - 0.007"   0.006" - 0.008"   0.007" - 0.009"   0.008" - 0.010"   0.009" - 0.011"   0.010" - 0.012"             46386      5/8" Dia.
+                                                                                                                                                                    46387      3/4" Dia.
+Operating RPM: 18,000                                                                                                                                               46476      1/4" Dia.
+                                                                                                                                                                    46477      1/2" Dia.
+Simple Machining Calculations:
+To find RPM: SFM x 3.82 / diameter of tool
+To find SFM: 0.262 x diameter of tool x RPM
+To find Feed Rate: RPM x # of flutes x chip load
+
+Depth of Cut: 1 x D Use recommended chip load
+              2 x D Reduce chip load by 25%
+              3 x D Reduce chip load by 50%                                                                                                  © Copyright 2015 Amana Tool® All Rights Reserved
+

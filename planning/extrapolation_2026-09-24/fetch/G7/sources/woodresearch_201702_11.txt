@@ -1,0 +1,639 @@
+WOOD RESEARCH
+          62 (2): 2017
+          293-306
+
+      COMPARISON OF MEASURED AND CALCULATED
+                         VALUES OF CUTTING FORCES
+                IN OAK WOOD PERIPHERAL MILLING
+
+
+                       Marija Đurković, Gradimir Danon
+   University of Belgrade, Faculty of Forestry, Department of Wood Processing
+                                Belgrade, Serbia
+
+                                      (Received June 2016)
+
+
+ABSTRACT
+
+     The aim of investigations was to determine whether the tested models for calculating forces
+in wood cutting, set up under strictly controlled laboratory conditions, can yield sufficiently
+accurate results for predicting wood behavior in real cutting conditions. Tests were carried out
+on oak wood (Quercus robur). On the basis of measured values for the required cutting power,
+cutting forces were calculated and used for comparison by applying the method of coefficient
+(Kršljak’s model) and Axelsson’s model. The analysis indicated that there is not a result, but there
+is similarity in the curve shape, i.e. changes in measured values are followed by corresponding
+changes in calculated values. It can be inferred that analyzed models are not suitable for the
+cutting forces quantification, but could serve for comparing different cutting modes. More
+accurate modeling of the cutting process requires, besides physical, wood mechanical properties
+as well.
+
+KEY WORDS: Oak, peripheral milling, cutting power, cutting forces, wood properties.
+
+
+                                      INTRODUCTION
+
+      In the times of rapid development of new materials there is a growing need for better
+understanding of the interaction between work pieces and tools. Considering this fact, the analysis
+of material machinability represents one of the major interests of contemporary manufacturing.
+Since the cutting force is one of the basic criteria for machinability evaluation, no wonder that
+accurate prediction of the cutting force values is a necessity in manufacturing conditions. In the
+literature dealing with wood mechanical processing there is a volume of papers researching the
+cutting force issues (Axelsson et al. 1991, Cooz and Meyer 2006, Orlowski and Palubicki 2009,
+Marchal et al. 2009, Taşcioğlu et al. 2010, Naylor et al. 2013, Guo et al. 2014). Also, the literature
+offers an account of various methods (models) for the evaluation of the cutting forces, set up
+
+                                                                                                  293
+WOOD RESEARCH
+
+based on extensive experiments, for more important wood species and major types of machining
+by cutting. Using data on wood/wood-based materials that are machined and a chosen cutting
+mode, models predict the material behavior in the machining process, the result of machining,
+and primarily the quality of the machined surface. The methods of coefficients are the simplest
+methods (Orlicz 1982, Zubčević 1988, Goglia 1994, Kršljak 2013). The authors of these models
+start from the reference unit cutting resistance (K ref ) for a particular wood species measured
+under accurately defined and controlled (standard) conditions. The specific resistance for specific
+material and specific cutting conditions (K) is obtained when reference unit cutting resistances
+(K ref ) are multiplied by corresponding correction coefficients (Ci) calculated in advance and that
+can be found in the respective tables:
+
+                                  (N.mm-2)                                                           (1)
+
+     The magnitude of the main cutting resistance is obtained when the calculated coefficient K
+is multiplied by the cross-sectional surface of a separate particle/chip for a corresponding type of
+cutting As:
+
+                      (N)                                                                            (2)
+
+     The model is a simple tool to use because calculations of the cutting force require data on the
+measured unit cutting resistance, conditions of carried out cutting, minimum number of relatively
+readily available data on the material, tools and cutting conditions and respective tables. However,
+these models have certain weaknesses. When comparing measured and thus calculated cutting
+forces values, significant differences occur in some cases. This phenomenon can be explained
+by the fact that wood physical and mechanical properties are insufficiently and inadequately
+included in the models, i.e. these properties are most commonly represented only via correction
+coefficients for wood species Cvr, which need not be always sufficient. For example, two pieces
+manufactured from the same wood species (with the same Cvr) may have different physical and
+mechanical properties, and therefore may behave differently in the cutting process. Another
+reason is that the correction coefficients, provided by the tables, are not the result of multifactorial
+experiments, so that the model does not include interdependencies commonly existing between
+some factors. There is a range of other potential reasons, and it can be concluded that the control
+model for the cutting process control should include impact of other wood properties such as
+anatomical, physical and mechanical: mode of wood cutting (longitudinal, transverse, tangential,
+or combined), wood density and moisture content, bending strength, tensile strength and the like
+(Eyma 2004).
+     Somewhat more complex models for predicting the cutting forces are the models that include
+wood properties as well (Axelsson 1993, Naylor et al. 2012, Porankiewicz et al. 2011, Mandić
+et al. 2015). Empirical equation of the Axelsson model involves the following impact factors:
+wood density, wood moisture content, temperature of wood, the angle between the cutting speed
+vector and the wood grain orientation, cutting speed and mean chip thickness. Author has tested
+the obtained model by applying it to his results and found that the coefficient of determination
+for correlation between measurement results and calculated values amounted to R 2 = 0.81 in
+the entire domain of the model validity. When authors created the Naylor model (Naylor et al.
+2012), variables involved not only wood density and moisture content but also milling depth, as
+well as wood mechanical properties: bending strength and shear strength, modulus of elasticity
+and modulus of shear, and toughness. Testing was carried out for four different moisture contents
+
+294
+                                                                                    Vol. 62 (2): 2017
+
+and on eight different wood species. Considering that the samples were machined longitudinally
+and transversally against wood grain orientation, in the paper two separate equations were set
+up for the cutting force in longitudinal and transverse milling against wood grain orientation.
+The disadvantage of the mentioned model are cutting conditions that differed greatly compared
+to those in practice. The tool was moving in a straight line, at a very low speed, not higher than
+at 0.1 m.s-1. The Porankiewicz model is created and verified using the results of investigations
+performed on a specially built laboratory machine (Porankiewicz et al. 2011). The model
+involves physical and mechanical properties of samples, tool characteristics and cutting mode
+characteristics. The paper gives equations for peripheral and normal cutting force as a function
+of the angle between cutting direction and grain orientation, radius of cutter blade roundness/
+bluntness, the size of the cutter blade rake angle, mean chip thicknesses, cutting speeds, wood
+density at 8% moisture content, wood moisture content and temperature of wood.
+
+
+                             MATERIALS AND METHODS
+
+     Tests were conducted on oak wood (Quercus robur) at the Center for Wood Processing
+Machines and Tools, Faculty of Forestry, Belgrade, using a table-mounted milling cutter
+MiniMax CU410K equipped with a Maggi Engineering feeding device Vario Feed (speed
+3-24 m.min-1). Density and moisture content of procured planks were tested and thereafter used
+to make samples for testing density and moisture content, complying with current standards
+ISO 3131 – 1975 (E) and ISO 3130 – 1975 (E). The dimensions of samples intended for cutting
+power measurements in peripheral milling, as a function of different cutting conditions, were
+1000 x 30 x 200 mm (Fig. 1). Prior to the initiation of measurements, samples were conditioned
+at the temperature of 20±20°C and relative air humidity of 65±5%. The tool used consisted of
+three milling cutters with four blades equipped with plates made of hard metal, diameter D = 125
+mm, width B = 40 mm with different cutter angles. For milling cutter 1, the cutting angle was
+74° (clearance angle α = 15°, sharpening angle β = 59° and rake angle γ = 160°), for milling cutter
+2, the cutting angle was 70° (clearance angle α = 15°, sharpening angle β = 55° and rake angle
+γ = 20°), and for milling cutter 3, the cutting angle was 65° (clearance angle α = 15°, sharpening
+angle β = 50° and rake angle γ 25°). Appearance of the construction of one such milling cutter is
+represented in Fig. 1.
+
+
+
+
+Fig. 1: Representation of experimental setup.
+
+     Peripheral milling was performed parallel with wood grains, open, and up milling. Cutting
+powers required for milling were measured indirectly by measuring power input of the machine
+driving the electric motor using measurement-acquisition device SRD1 (Fig. 1) equipped with
+the Power Expert software that allows for the analysis, processing and storage of the results and
+their subsequent presentation (Mandić and Danon 2010, Mandić et al. 2015b).
+
+                                                                                                295
+WOOD RESEARCH
+
+                                 RESULTS AND DISCUSSION
+
+    Statistical analysis of measured values for elementary physical properties of tested oak
+wood samples is shown in Tab. 1. Mean value of measured samples’ oven dry densities was
+725 kg.m-3 and standard deviation was ±23 kg.m-3. Mean measured moisture content was 7.28 %
+and standard deviation 0.30 %, which confirms uniform distribution of moisture content in tested
+samples. The table also gives calculated values of densities for 8 % wood moisture content that are
+used in one of the considered models.
+
+Tab. 1: Statistical analysis of physical properties.
+                                                       Mean    Standard Maximum       Minimum
+            Physical property           Measure unit
+                                                       value   deviation value         value
+            Measured density               (kg.m-3)     745       24      780           690
+       Measured moisture content             (%)        7.28     0.30     7.96          6.67
+            Oven dry density               (kg.m-3)     725       23      760           670
+      Density at 8% moisture content       (kg.m-3)     749       24      785           692
+
+      Mean values of measured cutting powers, for different cutting modes in peripheral milling,
+i.e. for different mean depths of cut are shown in Fig. 2.
+
+
+
+
+Fig. 2: The dependence of the measured cutting power and mean chip thickness in peripheral milling.
+
+     Measured cutting powers range widely, from 274 to 942 W, depending on cutting conditions
+and physical properties of wood being machined. Dependency was established between achieved
+cutting powers and mean chip thickness as the most influential machining parameters, the
+determination degree being very high (R 2 = 0.73):
+      P = 1890.7 . em0,477       (W)                                                                  (3)
+where:     P - cutting power (W),
+           em - mean chip thickness (mm).
+     Mean values of measured powers were used to calculate mean values of the main cutting
+resistance by applying the formula as follows:
+
+                      (N)                                                                             (4)
+
+where:     Fm - mean value of the main cutting force for one cutter revolution,
+           Pm - mean cutting power (W),
+           v r - cutting speed (m.s-1).
+
+
+296
+                                                                                    Vol. 62 (2): 2017
+
+     Calculated value of the mean force Fm, based on Eq. 4, represents mean force for one cutter
+revolution, which means that it also includes idle feed between the blades (Fig. 3).
+
+
+
+
+Fig. 3: Change of the main cutting force for one cutter revolution.
+
+    Considering that the values of specific force Fm obtained via measured power represent
+mean specific cutting force for one cutter revolution, involving idle feed as well, correction is
+needed so as to obtain mean specific force for cutter Fb engagement, and it is done as follows:
+
+                                       (N)                                                       (5)
+
+where:    Ogl - circumference of the milling cutter (m),
+          lrl - engagement length of a single blade and work piece (m),
+          z - number of milling cutter blades,
+          R - milling cutter radius (m),
+          φ 0 - mean angle of blade engagement and work piece (work),
+          a - depth of cut (milling) (m).
+     Values of force per revolution and per a single cutter tooth were calculated for constant main
+cutting speed (n = 5860 RPM) and for the following values of angle and engagement length of
+blade and work piece:
+
+
+
+                                                                                                 (6)
+
+
+
+    Fig. 4 displays the dependence of calculated mean cutting forces per cutter blade of mean
+chip thickness in peripheral milling.
+
+
+
+
+Fig. 4: The dependence of mean cutting forces per cutter blade and mean chip thickness in peripheral
+milling.
+                                                                                                297
+WOOD RESEARCH
+
+    The calculated mean forces fall within the 44 – 102 N range, depending on cutting conditions
+and physical properties of wood being cut. Dependency was established between calculated forces
+and mean chip thickness with a high determination degree (R 2 = 0.88).
+      F b = 243.6 . em0,4761                                                                      (7)
+where:     F b - mean cutting force per tooth/blade of the milling cutter (N),
+           em - mean chip thickness (mm).
+     The paper analyzes two models such as: the method of coefficients (Kršljak, 2013) as a
+representative of the method of coefficients and the Axelsson model (Axelsson 1993) as the
+simplest and least demanding model based on wood properties and cutting conditions. Tests
+of other mentioned and available models could not be performed due to lack of data on wood
+properties.
+
+Method of coefficients
+     Specific cutting resistance, as above mentioned, is affected by numerous factors such as: wood
+species and structure, wood moisture content, elements of blade geometry, blade penetration
+angle against wood grain orientation, chip dimensions, cutting conditions etc. In his book,
+Kršljak (2013) analyzed each of those factors and their impact is represented by corresponding
+equations, while specific data for the coefficients are given in tabular form. The formula for
+calculating wood specific resistance, according to Kršljak, has the following form:
+
+      K = Kel . Cvr . Cu . Cδ . Cφ . Ce . Cv . Cρ                                                 (8)
+
+where:     K - wood specific resistance for specific cutting conditions,
+           Kel - wood specific resistance for e = 1 mm where e is (mean) chip thickness,
+           Cvr - correction factor for wood species,
+           Cu - correction factor for wood moisture content,
+           Cδ - correction factor for wood species,
+           Cφ - correction factor for penetration angle into the wood,
+           Ce - correction factor for chip thickness,
+           Cv - correction factor for cutting speed,
+           Cρ - correction factor for the dullness of a cutting edge.
+
+     The first step is to determine the value of wood specific resistance Kel corresponding to a
+1 mm 2 chip area, i.e. chip thickness of e=1 mm. For the needs of further calculations, the value
+of Ke1= 14 N.mm-2 for wood specific resistance was adopted that holds for longitudinal oak
+wood cutting. For the impact factors of wood moisture content, the adopted value is Cu = 1.1 that
+applies to wood moisture contents between 5 % and 8 %. Considering that cutting is performed
+longitudinally against wood grain orientation and that tests employed milling cutters with
+different rake angles, i.e. cutting angles, the following values were adopted for Cδ. For the cutting
+angle of 74° and rake angle of 16°, the value is 2, for the cutting angle of 70° and rake angle of
+20°, the value is 1.7, and for the cutting angle of 65° and rake angle of 25°, the tabular value is
+1.5. The impact of blade penetration angle into the wood φs, for all cutting modes, is taken via
+correction coefficient Cφ. Since the machining mode is longitudinal milling, the angle between
+the tool blade motion direction and wood grain orientation is varying and ranges from 0 to φ 0 that
+depends on the layer thickness, under removal, i.e. depth of cut. For the given case, the literature
+recommends to calculate φs in the following manner:
+
+298
+                                                                                      Vol. 62 (2): 2017
+
+
+                                                                                                   (9)
+
+where:    φm - mean angle between tool blade motion direction and wood grain orientation,
+          φs - angle of wood grain orientation against machined surface,
+          φ 0 - engagement angle of the cutter edge ,
+          a - milling depth, mm,
+          R - cutter radius, mm.
+     Our investigations deployed three milling cutters of identical radii and cutting was replicated
+at three different milling depths. Samples were cut from radial planks, and it was adopted that φs = 0
+and that φm1 = 5.1° (for a = 2 mm), φm2 = 6.3° (for a = 3 mm), φm3 = 7.7° (for a = 4.5 mm).
+Based on values of the angles (formula 6) and tabular values, it is possible to calculate the
+impact of blade penetration angle against wood grain orientation Cφ according to the following
+dependency derived from data given in (Kršljak 2013):
+
+    Cφ = 0.7 + 0.0178 . φm                                                                        (10)
+
+     For the angle of 5.1°, correction factor Cφ amounts to 0.79; for the angle of 6.3°, correction
+factor Cφ is 0.81 and for the angle of 7.7°, correction factor Cφ equals 0.83.
+     Chip elements also have high impact on wood specific resistance. According to the results
+shown in (Kršljak 2013), based on tabular values, an equation is set up for calculating the impact
+of chip thickness Ce on wood coefficient of resistance in cutting (coefficient of determination
+amounts to R 2 =0.99):
+
+    Ce = 0.9814 . em-0.3338                                                                       (11)
+
+    Mean chip thicknesses were calculated using the following formula:
+
+                                                                                                  (12)
+
+where:    em - mean chip thickness in peripheral milling,
+          sz - feed size for a single blade (mm),
+          a - milling depth (mm),
+          D - milling cutter diameter (mm),
+          u - feed speed (m.min-1),
+          n - number of cutter revolutions (o.min-1),
+          z - number of tool blades.
+
+
+
+
+                                                                                                  299
+WOOD RESEARCH
+
+      Tab. 2 gives correction coefficients for the observed cutting conditions.
+Tab. 2: Correction coefficients for chip thickness Ce.
+                                      u             a          em          Cе
+                                   (m.min-1)      (mm)        (mm)          -
+                                       4            2        0.0216       3.53
+                                       4            3        0.0264       3.30
+                                       4           4.5       0.0324       3.08
+                                       8            2        0.0432       2.80
+                                       8            3        0.0529       2.62
+                                       8           4.5       0.0648       2.45
+                                      16            2        0.0863       2.22
+                                      16            3        0.1057       2.08
+                                      16           4.5       0.1295       1.94
+                                  *Given coefficients were calculated for the following initial data: n = 5 860 o.min-1
+                                  and D = 125 min.
+
+
+     Cutting speed has a significant impact on the magnitude of wood specific resistance,
+primarily for higher cutting speeds. In our investigations, cutting speed was constant and
+amounted to 38.2 m.s-1 so that the coefficient of impact for all performed measurements is
+the same and amounts to Cv = 1.28 (Kršljak 2013). Prior to experiment initiation, tools were
+sharpened, so that it is adopted that the impact of the dullness of a blade on the size of wood
+coefficient of resistance is minimum, i.e. Cρ=1.
+     Tab. 3 presents the adopted values of coefficients and calculated specific resistances and
+cutting forces.
+
+Tab. 3: Calculated wood specific resistance and cutting forces – Kršljak model .
+                                                             Calculated specific          Calculated cutting
+          Кe1        Cu    Ce     Cv      Cρ       Cφ
+                                                            resistance of wood К               force F
+       (N.mm-2)       -      -      -      -        -              N.mm-2                         N
+          14        1.10   3.57   1.28   1.00     2.00              140.63                      91.06
+          14        1.10   3.57   1.28   1.00     2.00              140.63                      91.06
+          14        1.10   3.12   1.28   1.00     2.00             122.83                      119.31
+          14        1.10   3.12   1.28   1.00     2.00             122.83                      119.31
+          14        1.10   3.12   1.28   1.00     2.00             122.83                      119.31
+          14        1.10   2.25   1.28   1.00     2.00               88.53                     229.32
+          14        1.10   2.25   1.28   1.00     2.00               88.53                     229.32
+          14        1.10   1.96   1.28   1.00     2.00               77.32                     300.44
+          14        1.10   2.65   1.28   1.00     1.70              88.64                      140.60
+          14        1.10   2.65   1.28   1.00     1.70              88.64                      140.60
+          14        1.10   2.65   1.28   1.00     1.70              88.64                      140.60
+          14        1.10   2.65   1.28   1.00     1.70              88.64                      140.60
+          14        1.10   2.65   1.28   1.00     1.70              88.64                      140.60
+          14        1.10   2.65   1.28   1.00     1.70              88.64                      140.60
+          14        1.10   2.65   1.28   1.00     1.70              88.64                      140.60
+          14        1.10   2.65   1.28   1.00     1.70              88.64                      140.60
+
+300
+                                                                                         Vol. 62 (2): 2017
+
+          14      1.10   3.12   1.28 1.00       1.50             92.12                89.48
+          14      1.10   3.12   1.28 1.00       1.50             92.12                89.48
+          14      1.10   2.25   1.28 1.00       1.50             66.40               171.99
+          14      1.10   2.25   1.28 1.00       1.50             66.40               171.99
+          14      1.10   1.96   1.28 1.00       1.50             57.99               225.33
+          14      1.10   1.96   1.28 1.00       1.50             57.99               225.33
+
+     Calculated values range from 89.48 N to 225.33 N. It is evident from the table that specific
+resistance is most strongly affected by the change in mean chip thickness and blade penetration
+angle into the wood. Other factors are constant. Similar results were obtained by using other
+similar models (Goglia 1994, Zubčević 1988).
+
+Axelsson’s model
+     Axelsson (1993) has set up a model equation using a multifactorial experiment of
+woodcutting with a circular saw. The model encompasses impacts such as material properties,
+cutting conditions, sharpening angles and blade condition, environmental conditions, which has
+to contribute to obtaining more realistic results.
+
+                                                                                                     (13)
+
+where:    Fp - specific main cutting force (N.mm-1 ) ,
+          em – mean chip thickness (mm),
+          ρ8 – wood density at 8% moisture content (kg.m-3),
+          γ –rake angle (rad),
+          φs – the angle between cutting direction and wood grain orientation (work),
+          ρ – radius of cutter blade roundness (μm),
+          u – moisture content (%),
+          v r – cutting speed (m.s-1),
+          t – temperature (0C).
+
+     Tab. 4 gives input data for the Axelsson model such as: mean chip thickness, wood density at
+8% moisture content, cutter blade rake angle, cutting speed, wood moisture content, environment
+temperature and radius of the cutter tip roundness. The same table contains calculated cutting
+forces.
+
+Tab. 4: Calculated wood cutting forces –Axelsson model.
+             em    ρ8%           γ        φs      ρ         u         v         t       Fp*      F**
+   NO
+            (mm) (g.cm-3)       (°)     (rad)    μm)      (%)       (m.s-1)   (°C)   (N.mm-1)    (N)
+     1     0.0216 0.778         16    0.12683     2       6.86      38.20      20      1.20       36
+     2     0.0216 0.756         16    0.12683     2       7.05      38.20      20      1.16     34.8
+     3     0.0324 0.738         16    0.19089     2       6.79      38.20      20      1.67      50.1
+     4     0.0324 0.741         16    0.19089     2       7.83      38.20      20      1.68      50.4
+     5     0.0324 0.773         16    0.19089     2       7.55      38.20      20      1.77      53.1
+     6     0.0863 0.776         16    0.12683     2       7.06      38.20      20      4.73     141.9
+     7     0.0863 0.692         16    0.12683     2       7.70      38.20      20      4.08     122.4
+     8     0.1295 0.737         16    0.19089     2       6.86      38.20      20      6.64     199.2
+
+                                                                                                     301
+WOOD RESEARCH
+
+       9    0.0529      0.724      20   0.15555          2   7.31   38.20   20      2.46    73.8
+      10    0.0529      0.735      20   0.15555          2   7.22   38.20   20      2.51    75.3
+      11    0.0529      0.753      20   0.15555          2   7.51   38.20   20      2.60     78
+      12    0.0529      0.735      20   0.15555          2   7.14   38.20   20      2.52    75.6
+      13    0.0529      0.744      20   0.15555          2   7.31   38.20   20      2.56    76.8
+      14    0.0529      0.774      20   0.15555          2   7.39   38.20   20      2.70     81
+      15    0.0529      0.777      20   0.15555          2   6.94   38.20   20      2.71    81.3
+      16    0.0529      0.755      20   0.15555          2   7.25   38.20   20      2.61    78.3
+      17    0.0324      0.785      25   0.19089          2   7.25   38.20   20      1.54   46.2
+      18    0.0324      0.783      25   0.19089          2   7.48   38.20   20      1.54   46.2
+      19    0.0863      0.744      25   0.12683          2   7.41   38.20   20      3.77   113.1
+      20    0.0863      0.753      25   0.12683          2   7.46   38.20   20      3.84   115.2
+      21    0.1295      0.718      25   0.19089          2   6.67   38.20   20      5.35   160.5
+      22    0.1295      0.734      25   0.19089          2   7.31   38.20   20      5.53   165.9
+ *Force was calculated using Eq. 13.
+ **Force was calculated for work piece width of 30 mm.
+
+
+     It is obvious from Tab. 4 that three input quantities have a constant value for all observed
+cases. These are cutting force, rounded blades and environment temperature at the time of tests,
+whereas other quantities changed depending on physical properties of the samples, i.e. cutting
+mode, which resulted in a fairly wide range of calculated values for cutting forces. Comparison
+between results presented in Tabs. 3 and 4 shows that differences between forces calculated
+using these two models are relatively high and differ considerably from measured ones, with the
+comment to follow below.
+     Fig. 5 displays in parallel the values of measured and calculated values of mean cutting forces
+for all measurements carried out.
+
+
+
+
+Fig. 5: Measured and calculated mean cutting forces in peripheral milling of oak.
+
+     Fig. 5 indicates that the results do not coincide but that there is similarity in the shape of
+curves, i.e. changes in measured values are followed by corresponding changes in calculated
+values.
+     One possible way to establish the adequacy of some model is a comparison between the
+model and the calculated values obtained for the same input data. Statistical comparison between
+measured and calculated values is performed based on two parameters. The first is a ratio between
+mean values of the sets of measured and calculated values, i.e. systemic difference between
+measured and calculated values. The second is a ratio between variances of the sets of measured
+and calculated values (Tab. 5).
+
+
+
+
+302
+                                                                                          Vol. 62 (2): 2017
+
+Tab. 5: Statistical analysis of calculated and measured cutting forces.
+       Force (N)          Valid N Mean Minimum             Maximum        Variance   Std.Dev.   Coef.Var.
+ Coefficient methods       22.00 154.46 89.54               300.39        3084.42      55.54     35.96
+ Axelsson model            22.00  88.87 34.80               199.20        2055.19      45.33     51.01
+ Measured values           22.00  62.89 42.08               101.03         319.39      17.87     28.42
+
+    Fig. 6 displays in parallel data on mean cutting force per a single blade and force calculated
+using the method of coefficients (Kršljak’s model), i.e. the Axelsson’s model.
+
+
+
+
+Fig. 6: The ratio between measured and calculated values of cutting force for both models.
+
+     The linear regression equation for the method of coefficients has the form:
+     Fcoeff = 2.496 . Fmeasured                                                                       (14)
+     On the basis of the given equation and obtained coefficient of determination (R 2 = 0.91),
+it can be concluded that there is a strong correlation between measured and calculated values,
+but they do not coincide. The latter is indicated by the coefficient of direction in the regression
+equation equals 2.496, the ratio between mean measured and calculated values equals 2.45, and
+the ratio of variations equals 3.10 (obtained on the basis of data shown in Tab. 5). The picture
+would be slightly different if considerations involve, instead of mean calculated forces, maximum
+measured forces (calculated with the condition that change of the main cutting force during blade
+- wood contact has approximately the shape of a triangle (Fig. 4), i.e. that Fmax = 2∙Fm. In that
+case, the linear regression equation would have the form:
+     Fcoeff = 1.248 . Fmeasured                                                                       (15)
+and the coefficient of determination would remain the same. The ratio between measured and
+calculated values amounts to 1.23, and the ratio of variations is 1.55.
+     The linear regression equation for the Axelsson’s model has the form:
+     Faxelsson = 1.487 . Fmeasured                                                                    (16)
+     The coefficient of determination (R 2 = 0.77), in this case too, is very high and indicates a
+very strong correlation between variables. The problem points to a significant difference between
+measured and calculated values. The ratio between measured and calculated values amounts to
+1.41, whereas the ratio between variations equals 2.54 (obtained on the basis of data shown in
+Tab. 5). There is higher coincidence for lower values of chip thickness, where values of cutting
+forces differ by about 20%, while higher values of chip thickness are almost two times higher
+than measured ones.
+     If the calculated values for two considered models are compared, the situation is as follows
+(Fig. 7).
+
+
+
+                                                                                                      303
+WOOD RESEARCH
+
+
+
+
+Fig. 7: The ratio between values of cutting force calculated by coefficient methods and Axelsson's models.
+
+      The linear regression equation has the form:
+      Faxelsson = 0.5995 . Fcoeff.                                                                    (17)
+
+    From the above equation and obtained coefficient of determination (R 2 = 0.88) it can be
+deduced that there is a strong correlation between calculated values but that they do not coincide.
+This is also proved by the coefficient of direction of the regression line (0.599). The ratio between
+measured and calculated values amounts to 1.73 and the ratio of variations is 1.22.
+
+
+                                         CONCLUSIONS
+
+     Comparative analysis of calculated and measured values established similar behavior, i.e.
+similar response to change in the cutting parameters, primarily mean chip thickness and mean
+angle between cutting direction and wood grain orientation.
+     Between measured values of mean force in peripheral milling and those calculated by the
+method of coefficients (Kršljak’s model) for the same input data there is a very strong correlation
+(coefficient of determination is 0.91), but there is no coincidence. The coefficient of direction in
+the regression equation amounts to 2.496, whereas calculated values are, on average, by 2.45 times
+higher than those measured.
+     The Axelsson’s model proved to be somewhat better for the prediction of cutting forces in
+peripheral milling. The coefficient of determination (R 2 = 0.77) is very high in this case too
+and indicates a very strong correlation between measured and calculated values. However, the
+difference between measured and calculated values remains high. Coincidence is better for lower
+values of chip thickness, where values of cutting forces differ by about 20%, whereas for greater
+chip thickness the calculated values are almost by two times higher than those measured.
+     The final conclusion is that the given models are a simple tool to use and suitable for
+application if comparison is done between impact of some factors on the mechanics of cutting
+but they are not suitable for quantification of their impact, i.e. calculations of specific values of
+the cutting forces.
+
+
+                                     ACKNOWLEDGMENTS
+
+     This paper was realized as a part of the project "Studying climate change and its influence
+on the environment: impacts, adaptationand mitigation" (43007) financed by the Ministry
+of Education and Science of the Republic of Serbia within the framework of integrated and
+interdisciplinary research for the period 2011-2017
+
+
+304
+                                                                                Vol. 62 (2): 2017
+
+                                    REFERENCES
+
+1. Axelsoon, B., Grundberg, S., Gronlud, J., 1991: The use of gray scale images when
+    evaluating disturbances in cutting force due to changes in wood structure and tool shape,
+    European Journal of Wood and Wood Products 49: 491-494.
+2. Axelsson, B., Lundberg, Å., Grönlund, J., 1993: Studies of the main cutting force at and
+    near a cutting edge, Eur. J. Wood Wood Prod. 51(1): 43-48.
+3. Cooz, I., Meyer, R.W., 2006: Cutting forces for tension and normal wood of maple, Forest
+    Prod. J. 56(4): 26-34.
+4. Eyma, F., Méausoone, P, Martin, P., 2004: Study of the properties of thirteen tropical wood
+    species to improve the prediction of cutting forces in mode B, Annals of Forest Science,
+    Ann. 61: 55–64
+5. Goglia, V., 1994: Tools and machines for wood processing I. University of Zagreb – Faculty
+    of Forestry, Zagreb, Pp 40-78 (In Croatian).
+6. Guo, X., Li, R., Cao, P., Ekevad, M., Cristóvão, L., Marklund, B., Grönlund A., 2015:
+    Effect of average chip thickness and cutting speed on cutting forces and surface roughness
+    during peripheral up milling of wood flour/polyvinyl chloride composite, Wood research
+    60 (1): 147-156.
+7. ISO 3130:197: Wood – Determination of moisture content for physical and mechanical test.
+8. ISO 3131:1975: Wood – Determination of density for physical and mechanical tests.
+9. Kršljak, B., 2013: Tools and machines for wood processing I. University of Belgrade, Faculty
+    of Forestry, Belgrade, Pp 5-36 (In Serbian).
+10. Mandić, M., Danon, G., 2010: Measurements of cutting power in wood milling, Prerada
+    drveta 29: 34-41 (In Serbian).
+11. Mandić, M., Svrzić, S., Danon, G., 2015b: The comparative analysis of two methods for the
+    power consumption measurement in circular saw cutting of laminated particle board, Wood
+    research, ) 60 (1): 125-136.
+12. Mandić, M.; Porankiewicz, B.; Danon, G., 2015a: An attempt at modelling of cutting
+    forces in oak peripheral milling, BioResources 10(3): 5489-5502.
+13 Marchal, R., Mothe, F., Denaud, L., Thibaut, B. and Bleron, L., 2009: Cutting forces in
+    wood machining-Basics and applications in industrial processes. Holzforschung 63(2):
+    157-167.
+14. Naylor, A., Hackney, P., 2013: A review of wood machining literature with a special focus
+    on sawing, BioResources 8 (2): 3122-3135.
+15. Naylor, A., Hackney, P., Perera, N., Clahr, E., 2012: Mechanical cutting force model. A
+    predictive model for the cutting force in wood machining developed using mechanical
+    properties, BioResources 7 (3): 2833-2894.
+16. Orlicz, T., 1982: Obróbka drewna narzędziami tnącymi. (Machining of wood with use of
+    cutting tools). Study book SGGW-AR. Warsaw.
+17. Orlowski, K., Palubicki, B., 2009: Recent progress in research on the cutting processes of
+    wood, Holzforschung 63(2): 181-185.
+18. Porankiewicz, B., Axelsson, B., Grönlund, A., Marklund, B, 2011: Main and normal
+    cutting forces by machining wood of Pinus Sylvestris, BioResources 7(3): 2883-2894.
+19. Taşcıoğlu, Y., Jackson, M. R., 2010: Material removal aspects and cutting power
+    requirement of profile independent wood-moulding, Wood research 55 (4): 131-148.
+20. Zubčević, R. 1988: Wood processing machines, Part 1, the theory of cutting. Univerzitet
+    u Sarajevu – Mašinski fakultet, Sarajevo, Pp 4-7 (In Bosnian).
+
+                                                                                            305
+WOOD RESEARCH
+
+
+
+
+                    Marija Đurković*, Gradimir Danon
+                          University of Belgrade
+                            Faculty of Forestry
+                      Department of Wood Processing
+                              Kneza Višeslava 1
+                                  Belgrade
+                                    Serbia
+                Corresponding author: marija.mandic@sfb.bg.ac.rs
+                        Phone: +38163334424 (mobile)
+
+
+
+
+306
+

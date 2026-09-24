@@ -1,0 +1,119 @@
+                                                                                                                 Hardness: ≤ 28 Rc (≤ 271 HBn)
+MATERIAL                                                          Chip Load (IPT) by Dia        Depth of Cut                                Chip Load (IPT) by Cutter Dia                            Depth of Cut
+                                            SFM
+                                                                0.015     0.031      0.047   Radial      Axial        0.062    0.078    0.093      0.125     0.187      0.250    0.375    0.500   Radial      Axial
+ALUMINUM ALLOYS                                    Slotting    .00009    .00019     .00029   1 x Dia   .07 x Dia     .00033   .00042   .00050     .00067    .00100     .00134   .00201   .00268   1 x Dia   .16 x Dia
+Casting (2xx, 5xx, 7xx, 8xx)                750
+                                                   Roughing    .00012    .00024    .00036    .25 x Dia   .30 x Dia   .00042   .00052   .00062    .00084     .00125    .00168    .00252   .00336   .50 x Dia   .30 x Dia
+
+Wrought (1xxx, 2xxx, 3xxx, 5xxx, 6xxx,    1000                                                                                                                                                                                              Speeds & Feeds
+                                               Finishing       .00020    .00042    .00064    .05 x Dia   3 x Dia     .00073   .00092   .00110    .00148     .00221    .00295    .00443   .00591   .09 x Dia   3 x Dia
+7xxx, 8xxx)
+Casting - 3%-5% Si (3xx, A3xx, C3xx, 4xx,
+                                          750
+                                                                                                                                                                                                                                            Product Table: Miniature End Mills - Square - Long Reach, Standard Flute
+A4xx, B4xx)                                    Slotting        .00008    .00017    .00026    1 x Dia     .07 x Dia   .00030   .00038   .00045    .00060     .00090    .00121    .00181   .00242   1 x Dia     .16 x Dia                     Characteristics: 10x Reach Multiple, 4 Flutes
+Casting - 5%-8% Si (3xx, A3xx, C3xx, 4xx,
+                                            700                                                                                                                                                                                             Series: 8461xx, 8462xx
+A4xx, B4xx)
+Casting - 8%-12% Si (3xx, A3xx, C3xx,
+                                            650 Roughing       .00010    .00022    .00033    .25 x Dia   .30 x Dia   .00037   .00047   .00056    .00075     .00113    .00151    .00226   .00302   .50 x Dia   .30 x Dia
+4xx, A4xx, B4xx)
+Casting - 12%-16% Si (3xx, A3xx, C3xx,
+                                            475
+4xx, A4xx, B4xx)
+Wrought - 5%-8% Si (4xxx)                   1000 Finishing     .00018    .00038    .00057    .05 x Dia   3 x Dia     .00066   .00083   .00099    .00133     .00199    .00266    .00399   .00532   .09 x Dia   3 x Dia
+Wrought - 8%-12% Si (4xxx)                  800
+
+                                                   Slotting    .00009    .00019    .00029    1 x Dia     .07 x Dia   .00033   .00042   .00050    .00067     .00100    .00134    .00201   .00268   1 x Dia     .16 x Dia
+MAGNESIUM ALLOYS                            1500
+                                                   Roughing    .00012    .00024    .00036    .25 x Dia   .30 x Dia   .00042   .00052   .00062    .00084     .00125    .00168    .00252   .00336   .50 x Dia   .30 x Dia
+ZINC ALLOYS                                 800
+                                                   Finishing   .00020    .00042    .00064    .05 x Dia   3 x Dia     .00073   .00092   .00110    .00148     .00221    .00295    .00443   .00591   .09 x Dia   3 x Dia
+
+COPPER ALLOYS                                                                                                                                                                                                                                Please note:
+High Coppers - 90%+ (C1xxxx)                225
+                                                   Slotting
+                                                                                                                                                                                                                                              All posted speed and feed parameters are suggested starting values that may be increased given
+Brass (Copper Zinc alloys, C2xxxx,                             .00007    .00015    .00023    1 x Dia     .07 x Dia   .00027   .00033   .00040    .00054     .00080    .00107    .00161   .00215   1 x Dia     .16 x Dia
+C3xxxx, C4xxxx, C66400-C69800)
+                                            500                                                                                                                                                                                               optimal setup conditions. Chip loads reflect uncoated cutters and may be increased 10% -20% if
+Phosphor Bronzes (Copper Tin alloys,                                                                                                                                                                                                          coated. For ferrous materials with hardness ≤ 28 Rc, chip loads can be increased 10% -20%.
+                                            225
+C5xxxx)
+Aluminum Bronzes (Copper Aluminum
+                                            500                                                                                                                                                                                               If you require additional information, Harvey Tool has a team of technical experts available to
+alloys, C60600-C64200)                             Roughing    .00009    .00019    .00029    .25 x Dia   .30 x Dia   .00033   .00042   .00050    .00067     .00100    .00134    .00201   .00268   .50 x Dia   .30 x Dia                       assist you through even the most challenging applications. Please contact us at 800-645-5609
+Silicon Bronzes (Copper Silicon alloys,
+C64700-C66100)
+                                            500                                                                                                                                                                                               or Harveytech@harveyperformance.com.
+Copper Nickels, Nickel Silvers (Copper
+                                            225
+Nickel alloys, C7xxxx)                                                                                                                                                                                                                        WARNING: Cutting tools may shatter under improper use. Government regulations require use of safety glasses and other
+Cast Copper Alloys (C83300-C86200,                 Finishing
+                                                                                                                                                                                                                                              appropriate safety equipment in the vicinity of use.
+                                                               .00016    .00034    .00051    .05 x Dia   3 x Dia     .00059   .00074   .00088    .00118     .00177    .00236    .00355   .00473   .09 x Dia   3 x Dia
+C86400-C87900, C92200-C95800,               550
+C97300-C97800, C99400-C99700)
+
+                                                                                                             Hardness: 29-37 Rc (279-344 HBn)                                                                                                                                                 Hardness: 38-45 Rc (353-421 HBn)
+MATERIAL                                                         Chip Load (IPT) by Dia         Depth of Cut                               Chip Load (IPT) by Cutter Dia                             Depth of Cut                              Chip Load (IPT) by Dia        Depth of Cut                               Chip Load (IPT) by Cutter Dia                           Depth of Cut
+                                            SFM                                                                                                                                                                           SFM
+                                                               0.015     0.031      0.047     Radial     Axial       0.062    0.078    0.093     0.125      0.187     0.250     0.375    0.500     Radial     Axial                          0.015     0.031      0.047    Radial     Axial        0.062   0.078    0.093     0.125      0.187     0.250   0.375    0.500     Radial     Axial
+CARBON STEELS                                      Slotting    .00003    .00007    .00010    1 x Dia     .07 x Dia   .00011   .00014   .00017    .00023     .00034    .00046    .00069   .00092   1 x Dia     .16 x Dia             -          -         -          -         -           -          -       -        -         -         -          -       -        -          -           -
+
+Free-Machining/Low Carbon steels, 10xx - 600 Roughing          .00004    .00007    .00011    .25 x Dia   .30 x Dia   .00013   .00016   .00019    .00026     .00039    .00052    .00078   .00104   .50 x Dia   .30 x Dia             -          -         -          -         -           -          -       -        -         -         -          -       -        -          -           -
+1029 & all 10Lxx, 11xx - 1139 & all 11Lxx,                                                                                                                                                                                 -
+12xx - 1215 & all 12Lxx                      Finishing         .00006    .00013    .00020    .05 x Dia   3 x Dia     .00023   .00029   .00034    .00046     .00069    .00092    .00139   .00185   .09 x Dia   3 x Dia               -          -         -          -         -           -          -       -        -         -         -          -       -        -          -           -
+
+                                                   Slotting    .00003    .00006    .00009    1 x Dia     .07 x Dia   .00010   .00013   .00016    .00021     .00032    .00042    .00063   .00084   1 x Dia     .16 x Dia             -          -         -          -         -           -          -       -        -         -         -          -       -        -          -           -
+1030 - 1095, 1140 - 1151, 13xx, 15xx,
+2xxx, 3xxx, 4xxx & 4xLxx, 5xxx & 5xLxx,
+                                            200 Roughing       .00003    .00007    .00010    .25 x Dia   .30 x Dia   .00012   .00015   .00018    .00024     .00035    .00047    .00071   .00095   .50 x Dia   .30 x Dia    -        -          -         -          -         -           -          -       -        -         -         -          -       -        -          -           -
+50xxx & 50Lxxx, 51xxx & 51Lxxx, 52xxx &
+52Lxxx, 6xxx, 8xxx, 9xxx
+                                                   Finishing   .00006    .00012    .00018    .05 x Dia   3 x Dia     .00021   .00026   .00031    .00042     .00063    .00084    .00127   .00169   .09 x Dia   3 x Dia               -          -         -          -         -           -          -       -        -         -         -          -       -        -          -           -
+
+STAINLESS STEELS                                   Slotting    .00003    .00007    .00010    1 x Dia     .07 x Dia   .00011   .00014   .00017    .00023     .00034    .00046    .00069   .00092   1 x Dia     .16 x Dia             -          -         -          -         -           -          -       -        -         -         -          -       -        -          -           -
+
+203 EZ, 303 (all types), 416, 416Se, 416    450 Roughing       .00004    .00007    .00011    .25 x Dia   .30 x Dia   .00013   .00016   .00019    .00026     .00039    .00052    .00078   .00104   .50 x Dia   .30 x Dia             -          -         -          -         -           -          -       -        -         -         -          -       -        -          -           -
+Plus X, 420F, 420FSe, 430F, 430FSe,                                                                                                                                                                                        -
+440F, 440FSe                                       Finishing   .00006    .00013    .00020    .05 x Dia   3 x Dia     .00023   .00029   .00034    .00046     .00069    .00092    .00139   .00185   .09 x Dia   3 x Dia               -          -         -          -         -           -          -       -        -         -         -          -       -        -          -           -
+
+201, 202, 203, 205, 301, 302, 304, 304L,           Slotting    .00003    .00006    .00009    1 x Dia     .07 x Dia   .00010   .00013   .00016    .00021     .00032    .00042    .00063   .00084   1 x Dia     .16 x Dia         Slotting    .00001    .00003     .00005   1 x Dia     .07 x Dia   .00005   .00007   .00008   .00011     .00016    .00021   .00032   .00042   1 x Dia     .16 x Dia
+308, 309, 310, 314, 316, 316L, 317, 321,
+329, 330, 347, 348, 385, 403, 405, 409,     200 Roughing       .00003    .00007    .00010    .25 x Dia   .30 x Dia   .00012   .00015   .00018    .00024     .00035    .00047    .00071   .00095   .50 x Dia   .30 x Dia   100 Roughing      .00002    .00003     .00005   .25 x Dia   .30 x Dia   .00006   .00007   .00009   .00012     .00018    .00024   .00036   .00047   .50 x Dia   .30 x Dia
+410, 413, 420, 429, 430, 434, 436, 442,
+446, 501, 502                                      Finishing   .00006    .00012    .00018    .05 x Dia   3 x Dia     .00021   .00026   .00031    .00042     .00063    .00084    .00127   .00169   .09 x Dia   3 x Dia           Finishing   .00003    .00006     .00009   .05 x Dia   3 x Dia     .00011   .00013   .00016   .00021     .00032    .00043   .00064   .00085   .09 x Dia   3 x Dia
+
+                                                   Slotting    .00002    .00004    .00006    1 x Dia     .07 x Dia   .00007   .00008   .00010    .00013     .00020    .00026    .00040   .00053   1 x Dia     .16 x Dia         Slotting    .00001    .00002     .00003   1 x Dia     .07 x Dia   .00003   .00004   .00005   .00007     .00010    .00013   .00020   .00026   1 x Dia     .16 x Dia
+414, 431, 440A, 440B, 440C,
+                                            150 Roughing       .00002    .00004    .00006    .25 x Dia   .30 x Dia   .00007   .00009   .00011    .00015     .00022    .00030    .00044   .00059   .50 x Dia   .30 x Dia   90    Roughing    .00001    .00002     .00003   .25 x Dia   .30 x Dia   .00004   .00005   .00006   .00007     .00011    .00015   .00022   .00030   .50 x Dia   .30 x Dia
+13-8, 15-5, 15-7, 17-4, 17-7
+                                                   Finishing   .00004    .00008    .00011    .05 x Dia   3 x Dia     .00013   .00016   .00020    .00026     .00039    .00053    .00079   .00106   .09 x Dia   3 x Dia           Finishing   .00002    .00004     .00006   .05 x Dia   3 x Dia     .00007   .00008   .00010   .00013     .00020    .00027   .00040   .00053   .09 x Dia   3 x Dia
+
+TOOL STEELS                                        Slotting    .00003    .00006    .00009    1 x Dia     .07 x Dia   .00010   .00013   .00016    .00021     .00032    .00042    .00063   .00084   1 x Dia     .16 x Dia         Slotting    .00001    .00003     .00005   1 x Dia     .07 x Dia   .00005   .00007   .00008   .00011     .00016    .00021   .00032   .00042   1 x Dia     .16 x Dia
+
+                                            200 Roughing       .00003    .00007    .00010    .25 x Dia   .30 x Dia   .00012   .00015   .00018    .00024     .00035    .00047    .00071   .00095   .50 x Dia   .30 x Dia   100 Roughing      .00002    .00003     .00005   .25 x Dia   .30 x Dia   .00006   .00007   .00009   .00012     .00018    .00024   .00036   .00047   .50 x Dia   .30 x Dia
+A, L, O, P, W series
+                                                   Finishing   .00006    .00012    .00018    .05 x Dia   3 x Dia     .00021   .00026   .00031    .00042     .00063    .00084    .00127   .00169   .09 x Dia   3 x Dia           Finishing   .00003    .00006     .00009   .05 x Dia   3 x Dia     .00011   .00013   .00016   .00021     .00032    .00043   .00064   .00085   .09 x Dia   3 x Dia
+
+                                                   Slotting    .00002    .00004    .00006    1 x Dia     .07 x Dia   .00007   .00008   .00010    .00013     .00020    .00026    .00040   .00053   1 x Dia     .16 x Dia         Slotting    .00001    .00002     .00003   1 x Dia     .07 x Dia   .00003   .00004   .00005   .00007     .00010    .00013   .00020   .00026   1 x Dia     .16 x Dia
+
+D, H, M, T, S series                        150 Roughing       .00002    .00004    .00006    .25 x Dia   .30 x Dia   .00007   .00009   .00011    .00015     .00022    .00030    .00044   .00059   .50 x Dia   .30 x Dia   90    Roughing    .00001    .00002     .00003   .25 x Dia   .30 x Dia   .00004   .00005   .00006   .00007     .00011    .00015   .00022   .00030   .50 x Dia   .30 x Dia
+
+                                                   Finishing   .00004    .00008    .00011    .05 x Dia   3 x Dia     .00013   .00016   .00020    .00026     .00039    .00053    .00079   .00106   .09 x Dia   3 x Dia           Finishing   .00002    .00004     .00006   .05 x Dia   3 x Dia     .00007   .00008   .00010   .00013     .00020    .00027   .00040   .00053   .09 x Dia   3 x Dia
+
+                                                   Slotting    .00002    .00004    .00006    1 x Dia     .07 x Dia   .00007   .00008   .00010    .00013     .00020    .00026    .00040   .00053   1 x Dia     .16 x Dia         Slotting    .00001    .00002     .00003   1 x Dia     .07 x Dia   .00003   .00004   .00005   .00007     .00010    .00013   .00020   .00026   1 x Dia     .16 x Dia
+
+TITANIUM ALLOYS                             150 Roughing       .00002    .00004    .00006    .25 x Dia   .30 x Dia   .00007   .00009   .00011    .00015     .00022    .00030    .00044   .00059   .50 x Dia   .30 x Dia   75    Roughing    .00001    .00002     .00003   .25 x Dia   .30 x Dia   .00004   .00005   .00006   .00007     .00011    .00015   .00022   .00030   .50 x Dia   .30 x Dia
+
+                                                   Finishing   .00004    .00008    .00011    .05 x Dia   3 x Dia     .00013   .00016   .00020    .00026     .00039    .00053    .00079   .00106   .09 x Dia   3 x Dia           Finishing   .00002    .00004     .00006   .05 x Dia   3 x Dia     .00007   .00008   .00010   .00013     .00020    .00027   .00040   .00053   .09 x Dia   3 x Dia
+
+HIGH TEMP ALLOYS                                   Slotting    .00002    .00004    .00006    1 x Dia     .07 x Dia   .00007   .00008   .00010    .00013     .00020    .00026    .00040   .00053   1 x Dia     .16 x Dia         Slotting    .00001    .00002     .00003   1 x Dia     .07 x Dia   .00003   .00004   .00005   .00007     .00010    .00013   .00020   .00026   1 x Dia     .16 x Dia
+
+                                             70    Roughing    .00002    .00004    .00006    .25 x Dia   .30 x Dia   .00007   .00009   .00011    .00015     .00022    .00030    .00044   .00059   .50 x Dia   .30 x Dia   50    Roughing    .00001    .00002     .00003   .25 x Dia   .30 x Dia   .00004   .00005   .00006   .00007     .00011    .00015   .00022   .00030   .50 x Dia   .30 x Dia
+Inconel, Hastelloy, Waspalloy, Monel,
+Nimonic, Haynes, Discoloy, Incoloy
+                                                   Finishing   .00004    .00008    .00011    .05 x Dia   3 x Dia     .00013   .00016   .00020    .00026     .00039    .00053    .00079   .00106   .09 x Dia   3 x Dia           Finishing   .00002    .00004     .00006   .05 x Dia   3 x Dia     .00007   .00008   .00010   .00013     .00020    .00027   .00040   .00053   .09 x Dia   3 x Dia
+

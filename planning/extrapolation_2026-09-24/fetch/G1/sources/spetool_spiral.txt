@@ -1,0 +1,133 @@
+# SpeTool WOODWORKING CARBIDE SPIRAL ROUTER BIT FEED&SPEED CHART
+# URL: https://cdn.shopify.com/s/files/1/0404/1582/1977/files/SpeTool_spiral_Router_bits_8ae74723-4152-4436-82f7-8306b61437f3.pdf?v=1676951571
+# Accessed 2026-09-24. The PDF is a scanned image with an OCR text layer.
+# Section A is the transcription of the table, read from the page image
+# (pdftoppm -r 110) by the G1 research agent and checked cell by cell
+# against the OCR layer in section B. Section A keeps the printed text,
+# column order and units exactly; the column separator " | " is added.
+# Section B is the raw output of "pdftotext -layout" (OCR errors kept).
+
+## A. Transcription from the page image
+SpeTool | WOODWORKING
+CARBIDE SPIRAL ROUTER BIT
+FEED&SPEED CHART
+Depth of cut: 1xCutting diameter
+CUTTING DIAMETER | MATERIAL | CUTTING DIRECTION | RPM | CHIPLOAD | FEED RATE (INCH/MIN) | STEP DOWN (INCH) | STEP OVER (INCH)
+1/16 | MDF Laminate | up | 18,000 | 0.0015 | 54 | 0.06 | 0.025
+1/16 | MDF Laminate | down | 18,000 | 0.001 | 36 | 0.06 | 0.025
+1/16 | softwood | up | 18,000 | 0.0015 | 54 | 0.06 | 0.025
+1/16 | softwood | down | 18,000 | 0.001 | 36 | 0.06 | 0.025
+1/16 | hardwood | up | 18,000 | 0.0015 | 54 | 0.06 | 0.025
+1/16 | hardwood | down | 18,000 | 0.001 | 36 | 0.06 | 0.025
+1/8 | MDF Laminate | up | 18,000 | 0.0045 | 160 | 0.125 | 0.05
+1/8 | MDF Laminate | down | 18,000 | 0.0036 | 130 | 0.125 | 0.05
+1/8 | MDF Laminate | compression | 18,000 | 0.004 | 140 | 0.125 | 0.05
+1/8 | softwood | up | 18,000 | 0.004 | 140 | 0.125 | 0.05
+1/8 | softwood | down | 18,000 | 0.0032 | 115 | 0.125 | 0.05
+1/8 | softwood | compression | 18,000 | 0.0035 | 125 | 0.125 | 0.05
+1/8 | hardwood | up | 18,000 | 0.0035 | 125 | 0.125 | 0.05
+1/8 | hardwood | down | 18,000 | 0.0028 | 100 | 0.125 | 0.05
+1/8 | hardwood | compression | 18,000 | 0.003 | 110 | 0.125 | 0.05
+1/4 | MDF Laminate | up | 18,000 | 0.008 | 290 | 0.25 | 0.1
+1/4 | MDF Laminate | down | 18,000 | 0.006 | 230 | 0.25 | 0.1
+1/4 | MDF Laminate | compression | 18,000 | 0.0072 | 260 | 0.25 | 0.1
+1/4 | softwood | up | 18,000 | 0.007 | 250 | 0.25 | 0.1
+1/4 | softwood | down | 18,000 | 0.0056 | 200 | 0.25 | 0.1
+1/4 | softwood | compression | 18,000 | 0.0062 | 220 | 0.25 | 0.1
+1/4 | hardwood | up | 18,000 | 0.006 | 215 | 0.25 | 0.1
+1/4 | hardwood | down | 18,000 | 0.004 | 145 | 0.25 | 0.1
+1/4 | hardwood | compression | 18,000 | 0.005 | 180 | 0.25 | 0.1
+3/8 | MDF Laminate | up | 15,000 | 0.01 | 300 | 0.375 | 0.15
+3/8 | MDF Laminate | down | 15,000 | 0.008 | 240 | 0.375 | 0.15
+3/8 | MDF Laminate | compression | 15,000 | 0.009 | 270 | 0.375 | 0.15
+3/8 | softwood | up | 15,000 | 0.009 | 270 | 0.375 | 0.15
+3/8 | softwood | down | 15,000 | 0.008 | 240 | 0.375 | 0.15
+3/8 | softwood | compression | 15,000 | 0.008 | 240 | 0.375 | 0.15
+3/8 | hardwood | up | 15,000 | 0.007 | 210 | 0.375 | 0.15
+3/8 | hardwood | down | 15,000 | 0.006 | 180 | 0.375 | 0.15
+3/8 | hardwood | compression | 15,000 | 0.006 | 180 | 0.375 | 0.15
+1/2 | MDF Laminate | up | 15,000 | 0.015 | 450 | 0.375 | 0.15
+1/2 | MDF Laminate | down | 15,000 | 0.012 | 360 | 0.375 | 0.15
+1/2 | MDF Laminate | compression | 15,000 | 0.014 | 420 | 0.375 | 0.15
+1/2 | softwood | up | 15,000 | 0.012 | 360 | 0.375 | 0.15
+1/2 | softwood | down | 15,000 | 0.01 | 300 | 0.375 | 0.15
+1/2 | softwood | compression | 15,000 | 0.011 | 330 | 0.375 | 0.15
+1/2 | hardwood | up | 15,000 | 0.01 | 300 | 0.375 | 0.15
+1/2 | hardwood | down | 15,000 | 0.008 | 240 | 0.375 | 0.15
+1/2 | hardwood | compression | 15,000 | 0.009 | 270 | 0.375 | 0.15
+- Adjusting Feed and Speed for Bit Diameter: The feed rate in the table above are based a cutting depth that is equal to or less than the bit's diameter.
+  1 x cutting diameter, Use recommended feed rate
+  2 x cutting diameter, Reduce feed rate by 30%
+  3 x cutting diameter, Reduce feed rate by 50%
+- Simple machining calculations:
+  Feed rate=RPM x # of flutes x chipload
+
+## B. Raw OCR text layer (pdftotext -layout)
+                CARBIDE SPIRAL ROUTER BIT
+                                         FEED&SPEED CHART
+                                                                                  Depth of cut: 1xCutUng diameter
+
+
+
+                 MDF             up           18 000        0.0015          54          0.06          0.025
+               Laminate         down          18 000         0.001          36          0.06          0.025
+                                 up           18,000
+     1/16 ｜回阳创                                              0.0015          54          0.06          0.025
+                                down          18,000         0.001          36          0.06          0.025
+                                 up           18,000        0.0015          54          0.06          0.025
+               hardwood I       down                         0.001                      0.06          0.025
+                                              18 000                        36
+                                 up           18 000        0.0045         160         0.1 25          0.05
+                 MDF            down          18 000        0.0036         130         0.125           0.05
+               Laminate
+                              oompr喧嚣如毛       18 000         0.004         140         0.125           0.05
+                                 up           18 000         0.004         140         0.125           0.05
+      1/8      回仕响。d      I     down          18,000        0.0032         115         0.125           0.05
+                              。~mores臼臼3      18 000        0.0035         125         0.125           0.05
+                                 up           18 000        0.0035         125         0.125           。.05
+               hardw田划 l        down          18 000        0.0028         100         0.125           0.05
+                              oomp~球m         18 000         0.003         110         0.125           0.05
+                                 up           18,000         0.008         290          0.25            0.1
+                 MDF            down          18,000         0.006         230          0.25            0.1
+               Laminate I     oompr田部阳3       18 000        0.0072         260          0.25            。.1
+                                 up           18 000         0.007         250          0.25            0.1
+      1/4      s。由w。。d I        down          18,000        0.0056         200          0.25            0.1
+                              oomp~阳3         18 000        0.0062         220          0.25            。.1
+                                 up           18 000         0.006         215          0.25            0.1
+               hardwood I       down          18 000         0.004         145          0.25            0.1
+                              oompress,on     18 000         0.005         180          0.25            0.1
+                                 up           15 000           0.01        300         0.375           0.1 5
+                 MDF            down          15 000         0.008         240         0.375           0.15
+               Laminate
+                              oomp『'8SSion    15,000         0.009         270          。.375          0.15
+                                 up           15,000         0.009         270          0.375          0.15
+      3/8      四ftwo。d    I     down          15,000         0.008         240          0.375          0.1 5
+                              oompr回阳、        15 000         0.008         240          0.375          0.15
+                                  up          15 000         0.007         210          0.375          0.15
+               hardw回到d   I     down          15,000         0.006         180          0.375          0.15
+                              oom        ..   15 000         0.006         180          0.375          0.15
+                                  up          15 000         0.015         450          。.375          0.15
+                 MDF            down          15 000         0.012         360          。.375          0.15
+               Laminate ,     oompress刷亏      15,000         0.014         420          0.375          0.15
+                                 up           15 000         0.012         360          。.375          0.15
+      1/2      四世刑。d      I     down          15,000           0.01        300          0.375          0.15
+                              oompr回阳3        15,000         0.0 11        330          0.375          0.15
+                                  up          15,000           0.01        300          0.375          0.15
+               hardw由刘 I        down          15,000         0.008         240          0.375          0.15
+                              oompl'8SSIOrl   15,000         0.009         270          0.375          0.15
+
+   • Adjusting Feed and Speed fo『 Bit Diameter: The feed rate in the table above are based a c川ting
+     depth that is equal to or less than the bit’s diamete『，
+          1 x cutting diameter, Use recommended teed rate
+         2 x cutting diameter, Reduce feed rate by 30%
+         3 x cutting diameter, Reduce feed rate by 50%
+   • Simple machining calculations:
+         Feed rate=RPM x ＃。f flutes x chipload
+   • Due to the extremely small diameters involved, bits are not guaran怡ed against breakage.
+   • Please excercise caution to the accurate calculations of all feed and speed rates
+   • /!Jways sta叫 test the bi俗 with a lower feed rate
+   • Make overhang of bits as short as possible in condition on non-inte『fe『ence
+
+                                                                                     servi臼＠spetools.com
+回 ＠S阴阳｜             @) @spetool_cnc                                                  www.spetools.com
+

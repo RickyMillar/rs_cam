@@ -1,0 +1,163 @@
+         Undercutting Guide
+
+
+Undercutting end mills, often referred to as lollipop cutters, are extremely versatile tools. Harvey tool offers a variety of
+reach and wrap angles to provide an answer for even the most difficult of applications. Due to the varying neck lengths
+and the applications, specific machining parameters must be calculated to avoid breakage.
+
+
+
+
+Speeds & Feeds calculations:
+1. Determine the correct SFM and Base Chip Load (IPT) for the cutter, material and application (see application descriptions Figure
+1.)
+2. Adjust Chip Load to account for neck length to cutter diameter ratio. (see Table 2)
+3. Calculate the Speed (RPM) and Linear Feed (IPM)
+4. Determine correct number of passes
+
+Example: Tool #23208 to machine for a Deburring application in 4140 steel at 32 Rc.
+  1. Using Figure 1 (upper right), determine the type of application you will be performing.
+     From Speeds & Feeds chart (next page), SFM is 200 and Base Chip Load (IPT) for Deburring is .00033.
+  2. Calculate the neck length to neck diameter ratio for the tool. Calculate adjusted chipload based on values in Table 1.
+
+               Neck Length Ratio = (Neck Length / Neck Diameter)                                                                      Chip Loads are provided for the 3 applications illustrated above:
+                                 = (.500 / .076)                                                                                           Deburring involves applying a slight edge break to a part and
+                                 = 6.5                                                                                                              assumes an engagement around the ball of 20° or less.
+                                                                                                                                           Profiling assumes 90° engagement along the ball for generating
+               Adjusted Chip Load = Adjustment Factor x Base Chip Load                                                                              specialized shapes and contours.
+                                  = .8 x .00033                                                                                            Slotting assumes full engagement along 180° of the ball end.
+                                  = .00026
+
+  3. Calculate Speed (RPM) and Linear Feed (IPM)
+                                                                                                                                                                    Table 1
+               RPM = (SFM x 3.82) / Cutter Diameter
+                   = (200 x 3.82) / .125                                                                                                        Neck Length                          Chip
+                   = 6112
+                                                                                                                                                    Multiple                          Load
+               Linear Feed (IPM) = RPM x IPT x Number of Flutes
+                                 = 6112 x .00026 x 4                                                                                                    3x                           120%
+                                 = 6.35
+                                                                                                                                                        5x                           100%
+  4. From Speeds & Feeds chart (next page), the number of passes for a deburring operation in 4140 steel is 1 pass.
+                                                                                                                                                        8x                            80%
+  5. Conclusion                                                                                                                                         12x                           65%
+       In this example, the tool would run at 6112 RPM, 6.3 IPM and make 1 pass.
+                                                                                                                                                        15x                           55%
+                                                                                          Hardness: ≤ 28 Rc (≤ 271 HBn)                                                        Depth
+MATERIAL                                                                                     Chip Load (IPT) By Cutter Diameter                                                of Cut
+                                           SFM
+                                                              0.062    0.078    0.093      0.125    0.187      0.250      0.312   0.375    0.500    0.625    0.750    1.000    Passes
+ALUMINUM ALLOYS                                   Deburring   .00049   .00062   .00074    .00100    .00149    .00199    .00249    .00299   .00398   .00498   .00598   .00797     1
+                                           750
+Casting (2xx, 5xx, 7xx, 8xx)                      Profiling   .00043   .00054   .00064    .00087    .00130    .00173    .00216    .00260   .00347   .00433   .00520   .00693     2
+
+Wrought (1xxx, 2xxx, 3xxx, 5xxx, 6xxx,     1000
+                                                                                                                                                                                                          Speeds & Feeds
+                                                  Slotting    .00043   .00054   .00064    .00087    .00130    .00173    .00216    .00260   .00347   .00433   .00520   .00693     3
+7xxx, 8xxx)
+Casting - 3%-5% Si (3xx, A3xx, C3xx,
+                                           750
+                                                                                                                                                                                                         Product Table: Undercutting End Mills - 270°
+                                                  Deburring   .00044   .00056   .00067    .00090    .00134    .00179    .00224    .00269   .00359   .00448   .00538   .00717     1
+4xx, A4xx, B4xx)                                                                                                                                                                                         Characteristics: Standard Helix, 4 Flutes
+Casting - 5%-8% Si (3xx, A3xx, C3xx,
+4xx, A4xx, B4xx)
+                                           700                                                                                                                                                           Series: 231xx (4 FL), 232xx (4 FL), 295xx, 397xx (4 FL), 413xx, 529xx (4 FL), 552xx,
+Casting - 8%-12% Si (3xx, A3xx, C3xx,                                                                                                                                                                    7695xx, 7869xx, 7879xx, 7899xx, 8284xx, 8466xx, 9229xx, 9276xx, 9296xx, 9315xx,
+                                           650 Profiling      .00039   .00049   .00058    .00078    .00117    .00156    .00195    .00234   .00312   .00390   .00468   .00624     2
+4xx, A4xx, B4xx)                                                                                                                                                                                         9606xx, 9743xx
+Casting - 12%-16% Si (3xx, A3xx, C3xx,     475
+4xx, A4xx, B4xx)
+Wrought - 5%-8% Si (4xxx)                  1000 Slotting      .00039   .00049   .00058    .00078    .00117    .00156    .00195    .00234   .00312   .00390   .00468   .00624     3
+Wrought - 8%-12% Si (4xxx)                  800
+                                                  Deburring   .00049   .00062   .00074    .00100    .00149    .00199    .00249    .00299   .00398   .00498   .00598   .00797     1
+MAGNESIUM ALLOYS                           1500
+                                                  Profiling   .00043   .00054   .00064    .00087    .00130    .00173    .00216    .00260   .00347   .00433   .00520   .00693     2            Product notes:
+                                                                                                                                                                                                Posted values are Base Chip Loads and do not account for varying neck lengths. Use Table 1 (previous page) to determine
+ZINC ALLOYS                                800
+                                                  Slotting    .00043   .00054   .00064    .00087    .00130    .00173    .00216    .00260   .00347   .00433   .00520   .00693     3              the correct adjustment multiplier and calculate final adjusted chip loads.
+COPPER ALLOYS                              225
+High Coppers - 90%+ (C1xxxx)
+Brass (Copper Zinc alloys, C2xxxx,                Deburring   .00040   .00050   .00059    .00080    .00119    .00159    .00199    .00239   .00319   .00398   .00478   .00638     1
+                                           500
+C3xxxx, C4xxxx, C66400-C69800)
+Phosphor Bronzes (Copper Tin alloys,
+                                           225
+C5xxxx)
+Aluminum Bronzes (Copper Aluminum                                                                                                                                                             General notes:
+                                           500
+alloys, C60600-C64200)                                                                                                                                                                          All posted speed and feed parameters are suggested starting values that may be increased given optimal setup conditions. Chip loads
+                                                  Profiling   .00034   .00043   .00052    .00069    .00104    .00139    .00173    .00208   .00277   .00347   .00416   .00554     2
+Silicon Bronzes (Copper Silicon alloys,                                                                                                                                                         reflect uncoated cutters and may be increased 10%-20% if coated. For ferrous materials with hardness ≤ 28 Rc, chip loads can be
+                                           500
+C64700-C66100)                                                                                                                                                                                  increased 10%-20%.
+Copper Nickels, Nickel Silvers (Copper
+                                           225                                                                                                                                                  If you require additional information, Harvey Tool has a team of technical experts available to assist you through even the most
+Nickel alloys, C7xxxx)
+                                                                                                                                                                                                challenging applications. Please contact us at 800-645-5609 or Harveytech@harveyperformance.com.
+Cast Copper Alloys (C83300-C86200,                Slotting    .00034   .00043   .00052    .00069    .00104    .00139    .00173    .00208   .00277   .00347   .00416   .00554     3
+C86400-C87900, C92200-C95800,              550                                                                                                                                                  WARNING: Cutting tools may shatter under improper use. Government regulations require use of safety glasses and other appropriate
+C97300-C97800, C99400-C99700)                                                                                                                                                                   safety equipment in the vicinity of use.
+
+                                                                                         Hardness: 29-37 Rc (279-344 HBn)                                                      Depth                                                        Hardness: 38-45 Rc (353-421 HBn)                                                          Depth
+MATERIAL                                                                                     Chip Load (IPT) By Cutter Diameter                                                of Cut                                                           Chip Load (IPT) By Cutter Diameter                                                  of Cut
+                                           SFM                                                                                                                                          SFM
+                                                              0.062    0.078    0.093      0.125    0.187      0.250      0.312   0.375    0.500    0.625    0.750    1.000    Passes                            0.062    0.078     0.093     0.125    0.187      0.250      0.312   0.375    0.500     0.625     0.750     1.000   Passes
+CARBON STEELS                                     Deburring   .00018   .00023   .00027    .00036    .00054    .00073    .00091    .00109   .00145   .00182   .00218   .00291     1                        -        -        -         -         -         -         -         -        -         -        -         -         -         -
+
+Free-Machining/Low Carbon steels, 10xx     600 Profiling      .00016   .00020   .00024    .00032    .00047    .00063    .00079    .00095   .00127   .00158   .00190   .00253     3                        -        -        -         -         -         -         -         -        -         -        -         -         -         -
+- 1029 & all 10Lxx, 11xx - 1139 & all                                                                                                                                                    -
+11Lxx, 12xx - 1215 & all 12Lxx                    Slotting    .00016   .00020   .00024    .00032    .00047    .00063    .00079    .00095   .00127   .00158   .00190   .00253     4                        -        -        -         -         -         -         -         -        -         -        -         -         -         -
+
+                                                  Deburring   .00016   .00021   .00025    .00033    .00050    .00067    .00083    .00100   .00133   .00166   .00200   .00266     1                        -        -        -         -         -         -         -         -        -         -        -         -         -         -
+1030 - 1095, 1140 - 1151, 13xx, 15xx,
+2xxx, 3xxx, 4xxx & 4xLxx, 5xxx & 5xLxx,
+                                           200 Profiling      .00014   .00018   .00022    .00029    .00043    .00058    .00072    .00087   .00116   .00145   .00174   .00231     3       -                -        -        -         -         -         -         -         -        -         -        -         -         -         -
+50xxx & 50Lxxx, 51xxx & 51Lxxx, 52xxx
+& 52Lxxx, 6xxx, 8xxx, 9xxx
+                                                  Slotting    .00014   .00018   .00022    .00029    .00043    .00058    .00072    .00087   .00116   .00145   .00174   .00231     4                        -        -        -         -         -         -         -         -        -         -        -         -         -         -
+
+STAINLESS STEELS                                  Deburring   .00018   .00023   .00027    .00036    .00054    .00073    .00091    .00109   .00145   .00182   .00218   .00291     1                        -        -        -         -         -         -         -         -        -         -        -         -         -         -
+
+203 EZ, 303 (all types), 416, 416Se, 416   450 Profiling      .00016   .00020   .00024    .00032    .00047    .00063    .00079    .00095   .00127   .00158   .00190   .00253     3                        -        -        -         -         -         -         -         -        -         -        -         -         -         -
+Plus X, 420F, 420FSe, 430F, 430FSe,                                                                                                                                                      -
+440F, 440FSe                                      Slotting    .00016   .00020   .00024    .00032    .00047    .00063    .00079    .00095   .00127   .00158   .00190   .00253     4                        -        -        -         -         -         -         -         -        -         -        -         -         -         -
+
+201, 202, 203, 205, 301, 302, 304,                Deburring   .00016   .00021   .00025    .00033    .00050    .00067    .00083    .00100   .00133   .00166   .00200   .00266     1            Deburring         .00015    .00018   .00022    .00029    .00044    .00059    .00073    .00088   .00117    .00147   .00176    .00235       1
+304L, 308, 309, 310, 314, 316, 316L,
+317, 321, 329, 330, 347, 348, 385, 403,    200 Profiling      .00014   .00018   .00022    .00029    .00043    .00058    .00072    .00087   .00116   .00145   .00174   .00231     3      100 Profiling           .00013    .00016   .00019    .00026    .00038    .00051    .00064    .00077   .00102    .00128   .00153    .00204       4
+405, 409, 410, 413, 420, 429, 430, 434,
+436, 442, 446, 501, 502                           Slotting    .00014   .00018   .00022    .00029    .00043    .00058    .00072    .00087   .00116   .00145   .00174   .00231     4            Slotting          .00013    .00016   .00019    .00026    .00038    .00051    .00064    .00077   .00102    .00128   .00153    .00204       5
+
+                                                  Deburring   .00010   .00013   .00015    .00021    .00031    .00042    .00052    .00062   .00083   .00104   .00125   .00166     1            Deburring         .00009    .00011   .00014    .00018    .00027    .00037    .00046    .00055   .00073    .00092   .00110    .00147       1
+414, 431, 440A, 440B, 440C,
+                                           150 Profiling      .00009   .00011   .00013    .00018    .00027    .00036    .00045    .00054   .00072   .00090   .00108   .00145     3      90    Profiling         .00008    .00010   .00012    .00016    .00024    .00032    .00040    .00048   .00064    .00080   .00096    .00128       4
+13-8, 15-5, 15-7, 17-4, 17-7
+
+                                                  Slotting    .00009   .00011   .00013    .00018    .00027    .00036    .00045    .00054   .00072   .00090   .00108   .00145     4            Slotting          .00008    .00010   .00012    .00016    .00024    .00032    .00040    .00048   .00064    .00080   .00096    .00128       5
+
+TOOL STEELS                                       Deburring   .00016   .00021   .00025    .00033    .00050    .00067    .00083    .00100   .00133   .00166   .00200   .00266     1            Deburring         .00015    .00018   .00022    .00029    .00044    .00059    .00073    .00088   .00117    .00147   .00176    .00235       1
+
+                                           200 Profiling      .00014   .00018   .00022    .00029    .00043    .00058    .00072    .00087   .00116   .00145   .00174   .00231     3      100 Profiling           .00013    .00016   .00019    .00026    .00038    .00051    .00064    .00077   .00102    .00128   .00153    .00204       4
+A, L, O, P, W series
+                                                  Slotting    .00014   .00018   .00022    .00029    .00043    .00058    .00072    .00087   .00116   .00145   .00174   .00231     4            Slotting          .00013    .00016   .00019    .00026    .00038    .00051    .00064    .00077   .00102    .00128   .00153    .00204       5
+
+                                                  Deburring   .00010   .00013   .00015    .00021    .00031    .00042    .00052    .00062   .00083   .00104   .00125   .00166     1            Deburring         .00009    .00011   .00014    .00018    .00027    .00037    .00046    .00055   .00073    .00092   .00110    .00147       1
+
+D, H, M, T, S series                       150 Profiling      .00009   .00011   .00013    .00018    .00027    .00036    .00045    .00054   .00072   .00090   .00108   .00145     3      90    Profiling         .00008    .00010   .00012    .00016    .00024    .00032    .00040    .00048   .00064    .00080   .00096    .00128       4
+
+                                                  Slotting    .00009   .00011   .00013    .00018    .00027    .00036    .00045    .00054   .00072   .00090   .00108   .00145     4            Slotting          .00008    .00010   .00012    .00016    .00024    .00032    .00040    .00048   .00064    .00080   .00096    .00128       5
+
+                                                  Deburring   .00010   .00013   .00015    .00021    .00031    .00042    .00052    .00062   .00083   .00104   .00125   .00166     1            Deburring         .00009    .00011   .00014    .00018    .00027    .00037    .00046    .00055   .00073    .00092   .00110    .00147       1
+
+TITANIUM ALLOYS                            150 Profiling      .00009   .00011   .00013    .00018    .00027    .00036    .00045    .00054   .00072   .00090   .00108   .00145     3      75    Profiling         .00008    .00010   .00012    .00016    .00024    .00032    .00040    .00048   .00064    .00080   .00096    .00128       4
+
+                                                  Slotting    .00009   .00011   .00013    .00018    .00027    .00036    .00045    .00054   .00072   .00090   .00108   .00145     4            Slotting          .00008    .00010   .00012    .00016    .00024    .00032    .00040    .00048   .00064    .00080   .00096    .00128       5
+
+HIGH TEMP ALLOYS                                  Deburring   .00010   .00013   .00015    .00021    .00031    .00042    .00052    .00062   .00083   .00104   .00125   .00166     1            Deburring         .00009    .00011   .00014    .00018    .00027    .00037    .00046    .00055   .00073    .00092   .00110    .00147       1
+
+                                            70    Profiling   .00009   .00011   .00013    .00018    .00027    .00036    .00045    .00054   .00072   .00090   .00108   .00145     3      50    Profiling         .00008    .00010   .00012    .00016    .00024    .00032    .00040    .00048   .00064    .00080   .00096    .00128       4
+Inconel, Hastelloy, Waspalloy, Monel,
+Nimonic, Haynes, Discoloy, Incoloy
+                                                  Slotting    .00009   .00011   .00013    .00018    .00027    .00036    .00045    .00054   .00072   .00090   .00108   .00145     4            Slotting          .00008    .00010   .00012    .00016    .00024    .00032    .00040    .00048   .00064    .00080   .00096    .00128       5
+

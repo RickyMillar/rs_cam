@@ -1,0 +1,1658 @@
+CNC Production
+Routing Guide
+
+
+
+
+Leitz Metalworking Technology Group
+PRODUCTION ROUTING GUIDE
+TABLE OF CONTENTS
+
+  INTRODUCTION. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . page 3
+
+  CUTTING TOOL MATERIALS. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . page 4
+
+  CUTTING TOOL GEOMETRY . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . page 5
+
+  TOOL WEAR . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . page 6
+
+  FEEDS & SPEEDS . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . page 7
+
+  FEEDS & SPEEDS FORMULAS . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . page 8
+
+  COLLETING & MAINTENANCE . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . page 9-12
+
+  FIXTURING AND SPOILBOARD TECHNIQUES. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . page 13-15
+
+  PROGRAMMING TECHNIQUES. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . page 15-16
+
+  TOOL SELECTION . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . page 17
+
+  VALUE ANALYSIS . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . page 18
+
+  ROUTING WOOD. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . page 19
+
+  ROUTING PLASTIC. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . page 19-21
+
+  ROUTING ALUMINUM. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . page 22-24
+
+  TROUBLE SHOOTING/TOOL BREAKAGE. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . page 25-26
+
+  GLOSSARY . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . page 26-29
+
+
+
+
+                                                                                                                                                             2
+    MISSION
+    STATEMENT                     INTRODUCTION
+    The mission of Onsrud         Companies purchasing a CNC router act only after a thorough study of the
+
+                                  machines in the market place. Prospective router buyers assess individual
+    Cutter, LP is to provide
+                                  needs and scrutinize the appropriate machinery, configurations, and options
+    cutting tool solutions that
+                                  prior to actual purchase. This can be an intimidating experience because of
+    exceed our customers’
+                                  the scope and depth of the information involved in such a transaction.
+    expectations.
+                                  Unfortunately, many times this exhaustive process of selecting the correct
+
+                                  machine occurs without much regard to the tooling and the influence of
+
+    Our success is measured       application based tooling on the optimum performance of the machine.
+
+    by achieving outstanding      The purpose of the CNC Production Routing Guide by Onsrud Cutter LP is
+
+    customer productivity,        to enhance the tool selection process and educate the CNC user regarding
+
+    providing exceptional value   the proper techniques to maximize productivity.
+
+
+    and extraordinary service,
+
+    and attaining superior
+
+    financial results. Our
+
+    commitment to innovative
+                                  Acknowledgement
+    thought and investment        The body of work is the effort of many past and present employees of
+                                  Onsrud Cutter LP who are dedicated to serving the CNC router market
+    in technology drives our      by finding “The Right Tool for Your Job”.
+                                  All rights reserved. This book may not be reproduced in whole or in part in any form or by any means
+    organizational growth.        without written permission from the publisher.
+
+
+
+
+3
+CUTTING TOOL MATERIALS
+Tool materials utilized in the manufacture of router bits in the industrial market place involve high-speed steel, carbide tipped,
+solid carbide, and PCD diamond. The choice of tooling depends upon the relative characteristics of the material being
+machined and the equipment available for a specific application. High-speed steel and carbide tipped tools tend to fall into
+the category of manually fed router applications while solid carbide and PCD diamond is best applied to CNC operations.
+Basically, as hardness of tool material increases and toughness decreases, the tooling of the harder material functions better
+in the consistent feeding environment of CNC machinery.
+
+
+
+                 TOOL MATERIALS                                                 HARDNESS COMPARISON
+                                                                                                  OF TOOL BODIES
+      TOUGHER
+
+
+
+
+                                                                        PCD
+                                                                                80
+                                                                      DIAMOND
+                                                                                70
+                                                                                60
+                                                 SOLID                          50
+                                                CARBIDE
+                                                                                40
+                HARDER
+
+
+
+
+                                   CARBIDE
+                                   TIPPED                                       30
+                         HSS                                                    20
+                           INCREASING TOOL LIFE
+                                                                                10
+                                                                                 0           CARBIDE TIP   HSS              SOLID CARBIDE
+
+
+
+
+    HSS-HIGH SPEED STEEL                                                                  CARBIDE TIPPED
+    PROS:                                    CONS:
+    LOWER COST TOOLING                       CAN EXPERIENCE VIBRATION                PROS:                         CONS:
+                                             PROBLEMS DUE TO REDUCED RIGIDITY
+    TOUGH BODIES REDUCE                                                              LOWER COST                    REDUCED RIGIDITY
+    BREAKAGE IN OLDER SPINDLES               SHORTER TOOL LIFE DUE TO
+    AND HAND ROUTERS                         REDUCED ABRASION RESISTANCE             LONG LIFE WITH A              SLOW FEED RATES
+    SHARPER EDGES ALLOW                      SLOWER FEED RATES THAN                  TOUGH BODY
+                                                                                                                   LIMITED GEOMETRIES
+    EASIER HAND FEEDING                      OTHER TOOL MATERIALS
+                                                                                     GOOD FOR HAND                 AVAILABLE
+    DO NOT BIND AS MUCH IN                                                           ROUTING OF
+    "WARM" THERMOFORMED                                                                                            LONG CEL'S NOT
+    PLASTIC PARTS
+                                                                                     ABRASIVE MATERIALS
+                                                                                                                   USUALLY AVAILABLE
+    MANY GEOMETRIES AVAILABLE
+                                                                                                                   IN SMALL DIAMETERS
+
+    LONG CEL'S AVAILABLE
+                                                                                                                   POOR PLUNGING ABILITY
+
+
+
+
+                 SOLID CARBIDE                                                                PCD DIAMOND
+     PROS:                                       CONS:
+     BEST RIGIDITY - BEST FINISH                 HIGH INITIAL COST
+                                                                                PROS:                            CONS:
+     HIGH FEED RATES AND REDUCED                 INCREASED BREAKAGE             LONG TOOL LIFE IN                VERY HIGH INITIAL COST
+     CYCLE TIMES                                 IF NOT USED IN                 ABRASIVE MATERIALS
+                                                 WELL-MAINTAINED                                                 POOR PLASTIC, SOFT WOOD,
+     LARGEST VARIETY OF GEOMETRIES               MACHINERY                                                       AND ALUMINUM GEOMETRY
+
+     LONG TOOL LIFE                              ALUMINUM AND PLASTIC                                            TIPICALLY CANNOT PLUNGE
+                                                 TOOLINGIS FREQUENTLY
+     MULTIPLE RESHARPENINGS                      NOT RESHARPENABLE                                               LIMITED FEEDRATES DUE TO
+                                                                                                                 STEEL BODIES AND FLATFACE
+     BEST PLUNGING CAPABIITIES                                                                                   GEOMETRY
+
+
+
+
+                                                                                                                                             4
+    CUTTING TOOL
+    GEOMETRY
+    Cutting tool geometry influences many factors including the
+    type of chip produced, the flow of the chip, the finish, and the
+    actual force placed on the part. Consequently, it is important
+    to understand the basic terms associated with tool geometry
+    and how these influences effect the machining process.
+
+    OAL= overall length CEL= cutting edge length
+                                                                                                               OAL= overall length CEL= cutting edge length
+    CED = cutting edge dia.
+                                                                                                                         CED = cutting edge dia.
+
+      RAKE & CLEARANCE                                                                                       RAKE & CLEARANCE
+                                                                                                                                  Rake Variances
+
+
+                                                                                                                   Wo od
+
+
+                                                                                                                Aluminum
+
+
+                                                                                                                  Pla sti c
+
+                                                                                                                          10¡   15¡   20¡      25¡        30¡   35¡     40¡    45¡
+                                                                                                                                               Rak e Angle
+
+
+
+
+                                                                                                                                                            Clearance Variances
+
+
+                                                                                                                                            Wo od
+
+
+                                                                                                                                      Alum inum
+
+
+                                                                                                                                            Plasti c
+
+                                                                                                                                                     5¡          10¡          15¡           20¡   25¡
+                                                                                                                                                                        Cle arance An gle
+
+
+
+
+                                        HELIX                                                                                   TOOL TYPES
+                                                                                                                   • STRAIGHT "O" FLUTE - SOFT WOOD/SOFT PLASTIC
+                                                                                                                   • SPIRAL "O" FLUTES - PLASTICS/ALUMINUM
+                                                                                                                   • "V" FLUTES - HARDWOOD/HARD PLASTIC/COMPOSITES
+                                                                                                                   • FINISHERS - HARD PLASTICS/HARDWOODS
+                                                                                                                   • ROUGHERS - ALL WOODS/COMPOSITES
+     ROTATION                                                                                                      • CHIPBREAKER/FINISHERS - ALL WOODS
+                                                  ROTATION
+                                                                                                                   • COMPRESSION SPRIALS - LAMINATED WOODS
+
+      UPCUT HELIX                                  DOWNCUT HELIX                                                   • WOOD ROUTS - ALL WOODS
+     PRO: BEST FINISHES                            PRO: HELPS HOLD PARTS DOWN                                      • STANDARD SPIRIALS - ALUMINUM/COMPOSITES
+          GOOD CHIP EXTRACTION                     CON: SOMETIMES REWELDS CHIPS
+     CON: SOMETIMES LIFTS PARTS                         CHATTERS ON UNSUPPORTED PARTS
+
+
+
+
+               HOW GEOMETRY                                                                                   HOW GEOMETRY
+               WORKS IN WOOD                                                                                 WORKS IN PLASTICS
+         WOOD ROUTE
+                                                           CHIPBREAKER/FINISHER
+                                                           • PREVENTS LARGE CHIPS
+                                                                                                                WHY ARGUE WITH THE MATERIAL?
+     • BEST GP WOOD TOOL                                   • REDUCED CUTTING FORCE
+     • SLIGHT CHANCE OF FRAYING                            • FASTER FEED RATES
+     • SMOOTH FINISH                                       • SMOOTH FINISH
+                                  ROUGHER/HOGGER                                          FINISHER
+                                  • PREVENTS LARGE CHIPS                             • HIGH CUTTING FORCE
+                                  • LOWEST CUTTING FORCE                             • ULTRA SMOOTH FINISH
+                                  • FASTEST FEED RATES
+                                  • SCALLOPED FINISH
+
+
+
+
+                                                                                                             NATURAL CHIP FORMATION                                   NATURAL CHIP FORMATION
+                                                                                                             IN SOFT PLASTICS IS A CURL                               IN HARD PLASTICS IS A BLOCK
+                                                                                                                                                                      OR LOOSE CURL.
+
+
+
+
+5
+                                                                                  CARBIDE WEAR
+TOOL WEAR                                                                 • SOLID CARBIDE BITS ARE MADE OF
+                                                                             - 4%-16% COBALT (CO)
+                                                                             - 80%-96% TUNGSTEN CARBIDE (W)
+GENERAL TOOL WEAR DEFINITIONS                                                - TRACE AMOUNTS OF “SPECIAL SAUCE”
+                                                                          • COBALT ACTS AS A BINDER OR “GLUE” FOR
+                                                                            THE MATERIALS
+FLANK WEAR – Clearance or relief side of the edge is                      • COBALT IS VERY REACTIVE. IT WOULD
+wearing or rubbing. This is how most router bits wear.                      MUCH RATHER BOND WITH OTHER REACTIVE
+                                                                            SUBSTANCES THAN WITH CARBIDE,
+Clearance side of the cutting edge should rub a little for                  THIS IS CALLED ATOMIC TRANSFER OR
+controlling feed and vibrations during a cut.                               HOT CORROSION.
+
+
+
+
+                                                                                            PRIMARY
+                                                                                            CUTTING EDGE
+
+
+
+CRATER WEAR – Rake face side of the tools edge is wearing. Normally this is due to a very abrasive material flowing over
+the surface of the rake face. This is very rare in routing. However, with greater and greater chip loads, this may become more
+of a factor.
+
+EDGE RADIUS – Localized wear of the very tip of the tool edge. This is really a combination of both of above but
+concentrated on the very edge.
+
+CATASTROPHIC FAILURE – Chipping or breakage due to hitting something harder than the edge material or the tool and/or
+edge was too weak for the geometry or application of the tool.
+
+
+
+THE DULLING PROCESS OF CARBIDE
+                   NEW CUTTING EDGE                                             PARTIALLY DULL EDGE
+                   Producing Excellent                                          Cobalt Deterioration present, Cut
+                   Finish                                                       quality has diminished somewhat
+                                                                                and should be monitored to
+                                                                                determine when the tool should
+                                                                                be replaced
+
+
+
+
+                                                                        Edge deterioration is due to hot corrosion of atomic
+                                                                        transfer of the cobalt binder at the surface of the
+                                  TOTALLY DULL (“LOADED UP”)            cutting
+                                                                            EDGE edge. Heat generated during the process
+                                      Producing Poor Cut quality and/or burning.
+                                                                        causes this phenomenon. Hot corrosion can not be
+                                      Tool should have been replaced previously.
+                                                                        halted, but creating larger chips during the
+                                                                        machining
+Edge deterioration is due to hot corrosion of atomic transfer the machining           process
+                                                                                 process     maymay    substantially
+                                                                                                    substantially  slowslow   it. Since
+                                                                                                                         it. Since   the
+of the cobalt binder at the surface of the cutting edge. Heat formation the offormation
+                                                                                chips is aoffunction
+                                                                                                chips is ofa feeds
+                                                                                                              function
+                                                                                                                    andofspeeds,
+                                                                                                                            feeds and
+                                                                                                                                    it is
+generated during the process causes this phenomenon. Hot critical to    speeds,  it is critical
+                                                                           understand            to understand
+                                                                                         the concept             the conceptand
+                                                                                                        of chip formation        of how
+                                                                                                                                    chip
+corrosion can not be halted, but creating larger chips during it reducesformation
+                                                                            heat. and how it reduces heat.
+
+                                                                                                                                            6
+                                                                                                        CHIPLOAD
+                FEEDS & SPEEDS                                                       CHIPLOAD = THICKNESS OF CHIP REMOVED
+ To understand the concept of speeds and feeds, it is
+                                                                                                     FEED RATE
+ necessary to visualize what occurs at the cutting edge                                CHIPLOAD =
+                                                                                                    RPM * FLUTES       CHIPLOAD
+ of the tool. A chip or thickness of material is being
+ removed from the base part. The size and thickness
+ of the chip is controlled by the rotation speed of the                              TO INCREASE CHIPLOAD:
+ spindle and the forward movement of the tool into                                   • Increase FEED RATE
+                                                                                     • Decrease RPM
+ the material. In a single flute tool, the chip load is
+                                                                                     • Use less FLUTES
+ equal to the amount of material cut by one edge in
+ one revolution of the spindle. The actual chipload                                  TO DECREASE CHIPLOAD:
+ remains the same with multi-flute tools but the                                     • Decrease FEED RATE
+ chipload is spread over the number of flutes in the cut                             • Increase RPM
+ per revolution.                                                                     • Use more FLUTES
+
+            FINDING THE RIGHT
+                                                                               (i.e. two flutes provides two chips equal to one half the amount of travel
+             FEED AND SPEED                                                    in one revolution) Regardless, it is extremely important to produce chips
+    • START AT THE LOW END OF THE MANUFACTURER’S FEED AND
+     SPEED RECOMMENDATIONS.                                                    of adequate thickness, not dust, fines, or slivers.
+    • USE THE FEED RATE OVERRIDE TO INCREASE THE FEED
+      RATE UNTIL:
+      - THE EDGE FINISH DETERIORATES BECAUSE OF TOOL CHATTER
+                                                                               Most of the energy expended during these actions is released as heat.
+      - THE MACHINE DEFAULTS TO A SLOWER SPEED DUE TO TIGHT RADII.
+      - THE PART IS PUSHED OFF THE VACUUM.                                     Heat is one of the major factors in tool wear. The most effective way to
+    • ONCE THE MAX FEED RATE IS DISCOVERED, RUN 90% OF THE MAX
+      FEED RATE AND REDUCE THE SPINDLE RPM UNTIL THE EDGE FINISH               reduce the heat is to have it removed with the chip. This can be
+      ONCE AGAIN DETERIORATES.
+    • THIS IS THE POINT OF MAXIMUM PRODUCTIVITY AND BEST TOOL LIFE             accomplished by cutting the correct size of chips which will both dissipate
+                                                                               heat as well as yield a high quality part edge finish due to minimization
+                                                                               of re-cut chips. This is only possible when a tool possesses the proper
+    REDUCING TOOL WEAR                                                         geometry allowing for optimization of both speed and finish
+    • PICK THE RIGHT TOOL FOR THE JOB!                                         characteristics. Onsrud Cutter provides a complete guide to tool
+    • INCREASE CHIPLOAD
+        - INCREASE FEED RATES                                                  selection in their catalog as well as the two websites (www.onsrud.com
+        - DECREASE SPINDLE
+        - DECREASE FLUTES                                                      and www.plasticrouting.com). These sources also provide information
+    • WHY DOES INCREASED CHIP SIZE IMPROVE                                     on recommended feeds and speeds for a variety of materials.
+        TOOL WEAR?
+        - MORE WORK PER REVOLUTION
+        - LESS HEAT
+                                                                               Another indication of proper speed and feeds is the tool temperature. As
+                                                                               a standard procedure, run a “Cool Tool Test” by running a nest of parts
+         ACHIEVING MAXIMUM                                                     and checking the temperature of the tool after the spindles stop rotating.
+             FEED RATES                                                        If a proper speed and feed is utilized, the tool should be at or near room
+    • MATERIAL CONSISTENCY
+     -   Are materials multi-sourced or from a single vendor?
+                                                                               temperature. Remember, heat is what breaks down the cutting edge of
+     -
+     -
+         Do the wood laminates vary?
+         Different colors of the same plastic can machine very differently?    the tool.
+     -   Is the aluminum or plastic sheet stock flat or warped?
+     -   Are plastic thermoformed parts of a consistent temperature?
+                                                                               When chipload is inadequate, the first change is to adjust the feed speed.
+    • OPERATOR SKILLS AND ABILITY
+     -   Willingness to change methods of procedure, programming, fixturing.   This is the controlling factor in productivity. If the feed rate is maximized
+     -
+     -
+         Accountability to adequately measure tool life and edge finish.
+         If the tool life increase by 25% or the edge finish improves by       due to part configuration, hold down capabilities, software limits, or
+     -
+         15 pinches, do they know it? More importantly, do you know it?
+         Willingness and/or incentive to feed more parts across the machine    machine limitations, then the spindle speed should be lowered. This
+         to gain throughout.
+
+    • CONDITION OF THE MACHINE
+                                                                               does two things; 1) it increases the chip thickness and 2) it lowers the
+     -
+     -
+         Minimal Spindle Runout (Do you ever check this?)
+         Clean collets, collet nuts, tool holders, spindle taper.
+                                                                               number of times the cutting edge is presented to the material. The
+     -
+     -
+         Good dust collection. Can you clear gummy chips?
+         Servos and controller. Can the machine maintain high
+                                                                               second factor can be a major factor in increased tool life. This could
+         feed rates in a tight radius?.                                        increase tool life by 15 to 20%. It also reduces the spindle bearing
+    • FIXTURING
+     -   Must have the ability to hold prots ROCK SOLID                        temperatures by reducing heat transmitted into the spindle.
+     -   Properly made spoilboards that allow consistent
+         part holding raised spoilboards that allow non-stop
+         multi-pass machining.
+     -   Minimize unsupported edges during 5-axis machining.                   In the final analysis, the entire process of maximizing feeds and speeds
+                                                                               extends tool life and reduces part cost by significantly lowering cycle times.
+
+7
+     HEAT AND TOOL WEAR                                                                  REDUCING HEAT
+     • FACT:                                                                   FACT:  AS CHIP SIZE INCREASES,
+         - Heat accelerates chemical reactions?                                       THE VOLUME)/(SURFACE AREA)
+                                                                                      RATIO INCREASES.
+     • FACT:                                                                   FACT:  THE LARGER THAT RATIO, THE
+         - Hot corrosion is frequently the leading cause of tool wear?
+                                                                                      MORE HEAT A CHIP CAN STORE
+     • FACT:                                                                   FACT:  AS CHIPS ARE EJECTED, THEY
+         - Hot corrosion is a chemical reaction between Cobalt and
+                                                                                      CARRY AND RETAINED HEAT
+           the Material being machined?                                               WITH THEM.
+                                                                               RESULTS:        LARGER CHIPS CARRY MORE
+     • RESULT:                                                                 HEAT                   FROM THE CUT AND
+        - Less heat slows hot corrosion which reduces tool wear.               DO NOT ALLOW IT                       TO
+                                                                               BE TRANSFERRED TO THE CUTTER.
+
+
+
+     ADDITIONAL METHODS                                                              TYPICAL FEED RATES
+      OF HEAT REDUCTION                                                                   IN WOOD
+             • AVOID DEAD STOPS:                                                            • 1/4” CED - 1/4” DEPTH OF CUT:
+                  - SE Tools contact a part 300 times/sec?                                        - Wood Routs: 150ipm to 300ipm
+                  - DE Tools contact a part 600 times/sec?                                        - Finishers: 150ipm to 250ipm
+                  - 3E Tools contact a part 900 times/sec?
+                                                                                            • 1/2” CED - 1/2” DEPTH OF CUT:
+             • PLUNGING:                                                                          - Wood Routs: 200ipm to 400ipm
+                  - Get in and start making chips?                                                - Chipbreaker/Finishers: 350ipm to 1200ipm
+                                                                                                  - Roughers/Hoggers: 500ipm to 1500ipm
+             • COOLANT:                                                                           - Compression Spirals: 400ipm to 1500ipm
+                  - Water                                                                         - Finishers: 200ipm to 600ipm
+                  - Air
+                  - Ramped Plunging into the workpiece                                      ALL FEED RATES BASED ON 18,000RPM SPINDLE SPEED
+                  - Higher Plunge Speeds
+
+
+
+
+                                                                                     TYPICAL FEED RATES
+CNC FEED & SPEEDS                                                                        IN PLASTICS
+FORMULAS                                                                                   • 1/4” CED - 1/4” DEPTH OF CUT:
+                                                                                                 - Acrylics 125ipm to 250ipm
+                                                                                                 - Polypropylene: 150ipm to 300ipm
+                                                                                                 - Polyethylene or HDPE: 150ipm to 300ipm
+                                                                                                 - Polycarbonate: 100ipm to 200ipm
+Chip Load =              Feed Rate (IPM)                                                   • 1/2” CED - 1/2” DEPTH OF CUT:
+ (Inches)                RPM x No. Of Flutes                                                     - Acrylics 150ipm to 300ipm
+                                                                                                 - Polypropylene: 150ipm to 400ipm
+                                                                                                 - Polyethylene or HDPE: 200ipm to 500ipm
+Spindle Speed = Feed Rate                                                                        - Polycarbonate: 100ipm to 250ipm
+
+Feed (IPM) =    RPM x Number Of Flutes x Chip Load                                         ALL FEED RATES BASED ON 18,000RPM SPINDLE SPEED
+
+(RPM)           Number Of Flutes x Chip Load
+
+FOR TIME STUDIES AND TRUE AVERAGE                                                    TYPICAL FEED RATES
+CHIP LOADS USE THE FOLLOWING:
+                                                                                        IN ALUMINUM
+ACTUAL FEED RATE (IPM) =
+                                                                               • 1/8” CED - .060” DEPTH OF CUT (Single Sheet):
+INCHES ROUTED ÷ CUTTING TIME X 60                                                   - SC Spiral “O” Flutes: 150ipm to 300ipm
+                                                                                    - SC Standard Spirals: 60ipm to 125ipm
+BIT DIAMETER ADJUSTMENTS:                                                           - HSS Standard Spirals: 45ipm to 90ipm
+                                                                               • 1/4” CED - .25” DEPTH OF CUT (Stacked Sheet or Plate):
+1/4” CED = CHART FEED x .6 5/8” CED = CHART FEED x 1.2                              - SC Spiral “O” Flutes: 125ipm to 250ipm
+3/8” CED = CHART FEED x .8 3/4” CED = CHART FEED x 1.4                              - SC Standard Spirals: 90ipm to 175ipm
+                                                                                    - HSS Standard Spirals: 75ipm to 150ipm
+                                                                                    Stacked sheet will typically feed faster than plate
+
+DEPTH OF CUT ADJUSTMENTS BASED                                                 ALL FEED RATES BASED ON 18,000RPM SPINDLE SPEED AND MIST COOLANT CONDITIONS
+
+
+ON CUTTING EDGE DIAMETER
+3/8” AND BELOW SIZES:                                                    1/2” AND ABOVE SIZES:
+Normal Depth Of Cut = 2 x Cutting Edge Diameter                          Normal Depth Of Cut = 3 x Cutting Edge Diameter
+Feed Rate = .75 x Value Found In Bit Diameter Adjustments                Feed Rate = Full Chart Values
+                                                                         Feed Single Flutes Slightly Faster x 1.1
+Always remember make chips not dust!
+                                                                                                                                                             8
+    COLLETING AND MAINTENANCE
+    Many users select tools without regard to the importance of adequately holding them in the colleting system of the router.
+    This is often the case in routers ranging from simple air routers to the most complex CNC machines. All collets are of two
+    basic types; half grip or full grip. The attributes and peculiarities are important because of the way in which they secure the
+    tool. We like to think of the spindle/collet system as a chain. Just as a chain is only as strong as its weakest link, so is the
+    collet in relation to the tool. A high performance tool can only perform when the collet is properly maintained every time that
+    the tool is changed.
+
+    TYPES OF COLLETS
+    There are two basic types of collets, namely half grip and full grip. Both types are not always available with every spindle.
+
+
+
+
+    HALF GRIP COLLETS
+    Half grip collets are identified by slits running from the bottom or mouth of the collet toward the top for about 80% of the
+    collet length. This allows them to squeeze the tool with a force primarily directed at the mouth or bottom of the collet. These
+    collets are often counterbored at the top and the shank of the tool is not allowed to contact the entire length of the collet. This
+    type of collet is the simpler of the two types and is ideal where tools do not have a long enough shank to fill the entire collet.
+
+    FULL GRIP COLLETS
+    Full grip collets are identified by slits running from both ends, which create specific collet sections. This full grip type allows
+    squeezing over the entire length of the collet. Proper utilization requires the tool to fill a minimum of 80% of the depth of the
+    collet. This type of collet tends to have more flexibility and often comes in what is termed as “Range Collets”. These allow
+    gripping a range of shank sizes. Example: 12-13 mm is used for 1/2” shank tools. This increase in gripping range can have a
+    price in longevity of the collets. They are required to collapse more each time onto the tool thereby making the memory of
+    the collet very important. Often times the memory goes away much faster than an inch size collet. Another more annoying
+    habit of range collets is their inability to snugly hold onto the tool while it is not yet tightened down. Often when these
+    collets are used they will drop the tools onto the table causing potential damage. Consequently, specific size collets are
+    recommended for relative size shanks. (Even metric collets should be specific).
+
+    The most important portion of the collet is the mouth, which is located on the bottom end from where the tool extends. This
+    area is important because all the lateral pressure taken by the tool must be evenly distributed on all sections of the collet for
+    it to cut true or concentric. It is very critical that the 80% rule (at least 80% of the collet filled with tool shank) be followed
+    when using a full grip collet due to the ability of the collet to flare at the top. Not colleting at the 80% level will allow tool
+    movement in very minute amounts resulting in tool breakage. There are times that the 80% rule is not possible because of
+    inadequate shank lengths. It then becomes necessary to fill this void in the top of the collet with a filler or collet life plug the
+    same size as the shank. This is a practical way to solve the problems of short shanks and collapsing of the collet which may
+    occur by not following the 80% rule.
+
+9
+Equally as important is overcolleting. This occurs when the “flute fadeout” portion of the tool is allowed to extend inside the
+collet. This does not allow a firm equal grip by all sections of the collet at the mouth. This uneven support at the most
+critical area actually scars the inside of the collet. This causes permanent damage and is a common cause for tool breakage.
+It is necessary to visually inspect the collets for wear each time a tool is changed. Proper action will aid in avoiding tool
+breakage, which often results in permanent damage to the collet due to intense pressures exerted from either “burring” or
+“mushrooming” the mouth of the collet.
+
+
+PROPER TOOL COLLETING
+
+
+
+
+                                                                                                                              10
+     TYPES OF COLLET NUTS
+     There are two spindle or collet nut styles prevalent in the industry. They include the solid nut and the bearing style nut. Both
+     types are not always available depending on the spindle.
+
+     Bearing type nuts contain a thrust bearing allowing the collet to be tightened without the friction that normally is present when
+     the spindle nut is tightened directly onto the collet.
+
+     Solid nuts are tightened directly onto the spindle and often require greater tightening pressure than bearing type. The force
+     required to tighten them can sometimes be reduced with use of dry graphite film. But petroleum based lubricants should be
+     avoided due to their ability to act as a magnet for any dirt or dust.
+
+     A new style or process is the coated solid nut with special heat treating and coating properties which provide up to 100% more
+     clamping pressure. The coating negates the need for a thrust bearing.
+
+
+
+     COLLET MAINTENANCE
+     Heat is the biggest enemy of the tool and the initial transfer of heat is from the tool to the collet. Collets are manufactured
+     from spring steel and over a period of time, heat and usage causes them to lose elasticity. This hardening process makes
+     tightening of the collet more difficult thus causing uneven gripping and ultimately tool runout.
+
+     It is important to understand when hardened collets are not replaced; over tightening will eventually damage the internal
+     spindle taper resulting in costly repairs. This process occurs gradually over a period of time and is difficult to diagnose. A
+     practical recommendation for collet life is in the 400-600 run time hours. This is about 3 months in a normal two-shift
+     operation. If collets are not changed, they will eventually become brittle enough to crack or break and permanently damage
+     the spindle. Preventative maintenance is much cheaper than this costly alternative. Timely collet replacement is important,
+     but cleaning the collet, along with the collet nut, toolholder taper, and inside spindle taper each time the tools are changed is
+     equally important. Collets are in a dirty environment and are expected to perform a very accurate task while subjected to
+     extreme heat. As material is routed, whether it be wood, plastic, aluminum, or man-made board, the chips carry many resins
+     migrating up the slits in the collet and depositing onto the inside of the collet ears (usually nearest the mouth of the collet).
+     The resin acts as pressure points gripping the tool tighter at the mouth of the collet. These pressure points often distort the
+     grip on the tool creating runout. This resin heats up as the tool does and actually transfers onto the shank of the tool almost
+     adhering the tool into the collet. Many times the tell tale sign of this transfer is brown marks at the mouth of the
+     collet contact on the shank. These marks are a strong signal of collet neglect and the necessity to institute a collet
+     maintenance procedure.
+
+     To prevent this problem, the resin must be removed form all surfaces using a non-abrasive brass tube brush to clean inside
+     of the collet in combination with a cleaner such as Rust-Free. This nonflammable, biodegradable cleaner allows it to be
+     safely used on the shop floor. This cleaner will also do an excellent job of removing the “fretting” resin build up that occurs
+     at the base of the ISO 30 toolholder taper along with a light scrubbing with the brass brush. Make sure that all surfaces
+     including outside and inside collet and inside spindle taper are thoroughly clean and dry before reassembling. IF ISO 30
+     quick-change toolholders are used, make sure to clean all matching and mating surfaces as well. Also, the collet nut should
+     be cleaned of resin and chip buildup and regularly replaced to insure the integrity of the whole collet system. Do not allow
+     Rust-Free to soak on any surface for longer than 5 minutes. It is important to point out that simply blowing out the collets or
+     soaking them overnight in a thinner does not rid collets of resin buildup. In fact, the later procedure can prove to be
+     hazardous. Do not use a petroleum-based lubricant for cleaning, as it will only act as a magnet for all of the dirt and dust by
+     the residue it leaves behind. The Onsrud Cutter catalog provides availability of brass collet brushes, spindle taper wipes,
+     Rust-Free, and a waterproof lubricant called Boeshield T-9 for protecting parts from rust and corrosion.
+
+
+
+
+11
+COLLET EXAMPLES
+
+
+
+
+SPINDLE TYPES
+
+
+
+
+                  12
+     FIXTURING/SPOILBOARD TECHNIQUES
+     Many times CNC routers are set up almost perfectly with the right tools, elaborate vacuum systems, and somehow the method
+     of holding parts on the table receives little attention as the key element in the operation. If there is anything that can really
+     enhance the success of an application, it is the ability, to properly hold a part during the machining operation. There are many
+     machines utilizing dedicated spoilboards to hold parts. The proper way to build a dedicated spoilboard is often
+     misunderstood or cut short in the interest of time to construct them. Investing the time to do it correctly will pay dividends in
+     the form of productivity. Many consider a spoilboard as an adequate fixture if it is just a piece of MDF or particleboard with
+     self-stick weather-stripping and a few holes drilled inside the perimeter. While this type of fixture has worked a long time for
+     many people, it does not often satisfy the demands made in high performance routing. If the router is going to run at
+     production speed, the parts have to stay on the table or the tools are going to break!
+
+
+
+                                                           DEDICATED SPOILBOARDS
+           PROPER SPOILBOARD                               There are many problems associated with this shortcut method. First, as
+              TECHNIQUES                                   the workpiece is suspended on the tape above the spoilboard, the part
+                                                           may vibrate causing holding problems, poor part finish, and tool
+                                                           breakage. The use of weather-stripping is totally inadequate.
+
+                                                           Weather-stripping is an open cell construction and after a short period of
+                                                           time, the tape will collapse and limit the gasket’s effectiveness, especially
+                                                           with slightly warped parts. A quality closed cell gasket tape must be
+                                                           utilized to properly build a dedicated spoilboard. Closed cell does have
+                                                           a “memory” capability and is really important to avoid vacuum leaks and
+                                                           subsequent part movement. Some end-users go a step further by
+                                                           routing a groove to receive the vacuum tape. While this may allow the
+                                                           workpiece to contact the spoilboard, it also closes off the vacuum holes
+                                                           limiting the vacuum only to the area of these holes.
+
+                                                           Better production techniques include routing a channel to receive the
+                                                           gasket and grooving the interior area of the gasket perimeter. The
+                                                           channel for the gasket tape is typically 1/2 of the thickness of the gasket
+                                                           tape. This allows the tape to be above of the spoilboard initially to assist
+                                                           in creating the seal on the workpiece. When the vacuum is applied, the
+                                                           gasket tape is forced into the channel allowing the workpiece to make
+                                                           contact with the “plate” of the table which provides better part
+                                                           registration and better part holding. Grooving or sectional pocketing of
+                                                           the interior area of the gasket perimeter allows the vacuum to reach the
+     outermost portion of the part. This also allows a greater vacuum surface area. Without grooving, the interior of the vacuum
+     area is equal to the area of the diameter of the holes once the part is vacuumed down onto the table. Now with the part
+     contacting the “platen” providing surface adhesion and the vacuum area distributed throughout the part, you have the best
+     chance to secure the part at production routing speeds. The workpiece contacting the “platen” is especially valuable when
+     skin or tab cutting because of the consistent part registration.
+
+     Additional measures should be taken to seal the spoilboard material if porous material like MDF is used. By sealing the
+     spoilboard, you minimize the chance of leakage and direct all available vacuum to holding the workpiece. Sealers such as
+     polyurethane, sanding sealer, and rubberized coatings should be applied after the channeling and grooving is complete.
+     Sealing the spoilboard will also help stabilize the spoilboard so that it will remain flat throughout its life.
+
+13
+RAISED SPOILBOARDS
+Raised spoilboards are another type of fixturing that
+works quite well for routing parts such as circles from
+squares where the scrap or off-fall is of such a size to be
+potentially harmful to the tool and the operator when it
+is cut free. This is often encountered in parts where a
+two-pass operation is performed. Such is the
+case with a bar stool top where a first pass would
+rough out the part with a chipbreaker tool and a final
+pass would be taken with a 3-edge finisher or a shape
+tool if a shaped edge is required. A raised spoilboard
+would make sure that the off-fall would not interfere
+with the first or the second tool and that the off-fall
+would be free and clear of the tool path.
+
+
+
+FLOW THROUGH VACUUM
+Flow through, which is also referred to as high volume or suck through, is another technique gaining in popularity due to
+minimal set-up time. This method relies on LDF (Low Density Fiberboard) or MDF (Medium Density Fiberboard) porous
+enough to allow a large vacuum pump of 16-40 HP to actually draw through the board. This method is not effective on all
+machines due to special design of the vacuum plenum that distributes the volume throughout the surface of the table. This
+method is popular with cabinet and store fixture operations where short run parts of sheet goods materials are common. It
+is also used for sheet plastics machining. And lastly, it has become the staple operation of the upholstered furniture
+manufacturers and boat manufacturers allowing numerous parts to be cut and up to 80% yields from single sheets of
+plywood. This method can be successfully employed but can be problematic with small parts. Consequently, the cutting of
+wood parts utilize downcut spirals to intentionally pack the chips into the cut and minimize vacuum loss through the open
+table area created by routing. This strategy sustains more heat in the tool but allows the packed chips to minimize movement
+by acting as space fillers until the cutting cycle is completed. Many times smaller diameter tools such as 3/8” and 1/4” will
+allow reduction of open table, as well as minimized cutting pressure. For example, the open table and lateral pressure from
+a 1/2” tool is reduced by 25% when 3/8” tools are used. Additional methods of reducing part movement when dealing with
+small parts in a flow through operation is tab and skin cutting which will be further explained later in the Programming
+Techniques section. Basically in both processes a portion of the original material is left to aid in holding the parts together.
+
+When cutting parts using the flow through method, it is best to
+surface the top and bottom of the board with a large SURFACING SPOILBOARDS
+diameter spoilboard surfacing tool. This allows for increased
+porosity as well as equal registration over the entire surface area
+                                                                     • REASONS
+                                                                     Humidity swells MDF
+of the table. The resurfacing not only levels the board, but         making if difficult to
+also eliminates the routing grooves made during the process          machine thin sheet
+of machining parts. The more the board is surfaced the better        stock. Warped surfaces
+the porosity and flow, which is essential in this type of            reduce holding pressure
+spoilboard. Onsrud Cutter offers Spoilboard Surfacing Cutters        when using vacuum.
+                                                                     Unable to tab or
+(series90-000) for resurfacing the table at very high feed rates     skin cut parts on a
+covering a large 2-1/2” to 4” area in each pass. These tools utilize warped table
+indexable inserts that allow the tools to be easily renewed by
+turning the inserts. Finally, increased vacuum power to the work are can be attained by taping the edge of the spoilboard,
+sealing the edge with rubberized paint, and covering unused areas with scrap or thin plastic sheet. This aids in minimizing
+leakage, which is the enemy of the flow through system that thrives off high volume of vacuum.
+
+
+
+
+                                                                                                                               14
+     OTHER TYPES OF HOLDDOWN SYSTEMS                                                        POD SYSTEM
+     Within the realm of vacuum systems a fixturing process that is sometimes seen is
+     the Pod System which utilizes a raised approach to alleviate the aforementioned
+     problems with off-fall. Also, this system allows the operator to change the
+     configuration of the part setup by flipping pods on top or underneath the work
+     area to accommodate the travel of the cutter and duplicate the desired pattern.
+     The system is somewhat limited in terms of vacuum area and almost always
+     necessitates the use of downcut or neutral effect tools to avoid pushing parts off
+     the pod. These systems are commercially available, but some firms have
+     manufactured homemade versions to accommodate individual needs and save
+     cost. The Pod System is extremely prevalent in Point-to-Point machines.                                         ROLLER
+                                                                                                                  HOLD DOWN
+     In the area of mechanical holddown, the Roller Holddown is probably the most
+     predominately utilized in conjunction with CNC routing. This mechanism has
+     rollers, which travel the length of the work area holding down specific areas as
+     the individual part is machined. It may be assisted with flow through vacuum, but
+     most times the roller holddown is the sole agent to eliminate part movement.
+     This type of machine and holddown procedure is very prevalent in the
+     manufacturing of upholstered furniture and boat parts.
+
+       CONVENTIONAL VS CLIMB CUT
+
+                                                          PROGRAMMING TECHNIQUES
+       Conventional Cut              Climb Cut
+
+
+
+
+                                                          CLIMB AND CONVENTIONAL CUTTING
+                                                  In most cases, conventional cutting provides the best edge provided the right tool
+      Conventional   Climb        Climb
+                                                  geometry to cut a specific material has been selected. This applies mainly to
+                                           Conventional
+
+
+
+                                                  man-made board products. If you are cutting solid wood where multidirectional
+                                                  grain patterns have to be considered, it is often necessary to employ climb
+                                                  cutting thereby limiting the chip the tool can remove at one time and reducing
+ splintering. In CNC routing with right hand rotation tooling, climb cutting occurs as the perimeter of the workpiece is routed in
+ a clockwise direction. Routing the same workpiece in a counter clockwise direction represents conventional cutting. The
+ whole process is reversed when making internal cuts on the part. When workpiece finish is substandard, check the scrap as a
+ comparison. If the scrap finish is better, change the direction of feed.
+
+     OSCILLATING TO IMPROVE TOOL LIFE
+ When cutting laminated materials such as plywood, laminated MDF or particleboard with a decorative surface such as melamine,
+ glue lines represent the biggest threat to tool life. These glue lines are more abrasive than the surrounding material and tend to
+ cause focused wear at a single point on the tool thereby prematurely degrading one or more of the areas of the edge. The rem-
+ edy for this situation, provided a dedicated spoilboards or a pod system is in use, is to ramp the tool up and down through each
+ tangent of the part insuring the glue line is never focused on one spot of the tool for any length of time. This will increase the
+ life of the tool substantially while not actually reducing cycle times. The method of dropping the “Z” axis when the tool starts to
+ get dull is highly ineffective. By the time you realize the edge is chipped, it is already too late to recalibrate the “Z” axis and the
+ tool will leave lines in subsequent parts. Note that some software manufacturers offer the preferred approach in the form of
+ “automatic tool oscillation”.
+
+     SKIN CUTTING PARTS
+ Skin cutting is a method of cutting parts where the tool cuts most of the way through the part leaving a thin “skin” attached to
+ the larger sheet. Typically skin thickness is .020 - .030” requiring that the spoilboard must be surfaced flat before machining parts.
+ This method is commonly employed in small parts that cannot adequately be held individually by vacuum. Such is the case with
+ lettering or narrow parts where gasketing is impossible. This method also allows for faster loading and unloading of the machine
+ as parts come off in the same quantity as went on the machine. This method is often employed in solid wood where after the
+ parts come off the router they are passed through a wide belt sander to remove the “skin” and sand the parts free. Sometimes
+ the parts are just broken apart and then routed on a table router with a flush trim bit or sanded to eliminate the skin. On some
+ high accuracy routers routing plastic sheet on properly surfaced spoilboards, the skin may be limited to only the masking.
+
+15
+TAB CUTTING PARTS
+Tab or bridge cutting is another method similar to skin cutting. The material is cut through; however, tabbing leaves a
+ skeletal framing behind to hold the parts together. This is commonly used where many parts are cut from the same sheet
+of material while almost the entire table is opened up on a flow through vacuum system thereby minimizing holding power.
+The tabbing allows the skeleton to hold everything together until the cutting is completed. Tabbing usually leaves behind
+a 1/4 – 1/2” long x .020” thick tab, which can either be routed away in a final pass or sanded or trimmed away in a
+secondary operation.
+
+ROUGHING AND FINISHING
+The propensity of tool changers on CNC routers has made the                                     TAB CUTTING
+concept of roughing and finishing passes a productive technique to
+improve edge finish and part quality without sacrificing productivity.
+In this process, a rougher is used to remove the bulk of the material
+leaving and a finisher or profile tool is employed to achieve the
+finished edge. The material remaining for the execution of the finish            TAB CUTTING:
+                                                                                   • PARTS ARE SNAPPED OR CUT APART
+pass should be approximately 20% of the diameter of the tool used                         AFTER REMOVAL
+in the roughing portion of the application. In both roughing and                   • REDUCES PART MOVEMENT
+                                                                                   • ALLOWS FASTER FEED RATES
+finishing, the feed and speed should be appropriate to enhance                     • ALLOWS “ONE PART ON” & ‘ONE PART
+                                                                                          OFF” LOADING AND UNLOADING
+productivity without adversely effecting the part.
+
+MIRRORED OR NESTED PARTS                                                          ROUGHING/FINISHING/
+If possible, always attempt to make the tool run the edges of both                   SKIN CUTTING
+parts in one pass. This is a shared cut, which means one edge is
+climb cut and the other is conventional cut. This works extremely            Finish Pass                                       Rough Pass
+well for parts not requiring a high quality edge finish such as
+plywood panels for upholstered furniture industry. However, users
+should be careful not to utilize mirroring techniques when cutting
+circles. The climb cutting of one part followed by the conventional
+                                                                                                                     Remaining Material
+cut of the next part requiring a high quality finish will result in two                    Paper Masking
+                                                                                           (Plastics)
+                                                                                                                     • Mechanical holdown
+                                                                                                                     • No vacuum loss
+different edge finishes. This happens frequently with point-to-point
+machines where parts are repeatedly run on either end of the
+machine. It is much more practical to “copy” the program in order                      CORNER ROUTING
+to achieve similar part finish. Failure to maintain proper direction of                  TECHNIQUES
+cut will result in not only reduced edge quality but diminished feed          FEED RATE: ZERO      FEED RATE: 10-50ipm   FEED RATE: 75-150ipm
+
+rates and tool life as well.
+
+AVOID DEAD STOPS
+A router bit in a CNC environment was designed to run at high
+performance feeds and speeds. Unfortunately, parts many times
+                                                                               STANDARD CORNER   ROUNDED CORNER     LOOPED CORNER
+have corners, which necessitates the router bit to slow down or stop
+to change direction. Understanding the concept of chipload, it is
+easy to comprehend the devastating effect this has on the cutting
+edge of the tool. In other words, nothing good happens when the tool stops. Consequently, it is important to establish
+corner-rounding techniques that minimize the adverse condition created by stopping in the cut. There are two ways to
+ alleviate or lessen the severity of corner rounding. First, a very small radius of .001 applied on the corners will prevent dead
+stops, but at a very reduced feed rate. The most effective method is to do a looped corner where the tool travels beyond the
+corner and loops back and intersects the original path. This provides a cooling effect on the tool as it momentarily leaves the
+workpiece and assures a square corner.
+
+
+
+                                                                                                                                                16
+     TOOL SELECTION
+     Tool selection involves an evaluation of the circumstances regarding the application and asking questions or making a needs assessment.
+     The needs assessment is the logical order to follow in making a valid tool selection.
+     WHAT TYPE OF MATERIAL IS BEING MACHINED?
+     ‘This is the first and most basic question because it defines the type of tool material and geometry needed to perform the job. In terms of
+     wood, some are natural woods; others are man-made composites or combinations of both. Plastic and aluminum have characteristics of
+     hardness and softness, which dictates tool material and geometry. Consequently, the foremost question becomes how is the part
+     material going to effect the tool material and the life of the tool?
+     WHAT TYPE OF ROUTER IS BEING UTILIZED?
+     The use of a hand router or pin router dictates different tool choices than a CNC machine. The obvious difference is feed and speed
+     capabilities and how various tool materials react in the cutting environment. Hand fed operations tend to be best suited to steel bodied
+     router tools, which can better tolerate inconsistent feeds, while CNC machines enhance the toughness of solid carbide.
+     WHAT IS THE MATERIAL THICKNESS?
+     Quite simply, this question leads to the selection of tool diameter and cutting edge length. Always choose the tool with the shortest
+     possible cutting edge to cover the thickness of the part with a slight overlap. Since diameter of tool increases rigidity, it is best to select the
+     largest diameter possible, but the cutting edge length should be as short as possible and not more than three times the diameter
+     in a perfect world.
+     WHAT IS THE PART CONFIGURATION?
+     The size, contour and detail in a part play a huge role in tool selection and tool life. For instance, large parts can be machined extremely
+     fast and may react very well with multi-flute tools. Conversely, a smaller part with tight radii would operate ineffectively with multi-flute
+     tools by decreasing tool life because of slower feed and speed.
+     HOW IS THE PART BEING HELD?
+     In the section regarding vacuum systems and holddowns, the emphasis was on rigidity of part during the routing process. Tool selection
+     is almost a mute issue if the part is not held solidly.
+     WHAT INFLUENCE SHOULD THE TOOL HAVE ON THE PART?
+     Router tools come in straight, shear, spiral upcut, spiral downcut, and a combination of up and down cut. They come in single flute through
+     multi-flute in a wide range of diameters. All these characteristics have an influence on the part. For example, in a thermoformed part
+     which is set up on a formed fixture, it is important to have no or neutral influence on the part to alleviate problems of pulling the part off
+     the fixture. The larger diameter tools exert more lateral pressure on a part; smaller diameters do the opposite but provide less chip removal
+     because of smaller flute area. Spirals move chips up or down and influence the part in the same direction. Influencing the part by tool
+     selection is important and must be considered when selecting the right tool.
+     WHAT IS THE MOST IMPORTANT CONSIDERATION, SPEED OR FINISH?
+     The selection on feeds and speeds specifically details the theory behind chiploads and tool life. Once the right tool for a job is chosen, the
+     tool life is really a function of how the end-user fixtures the part and the speed and feed rate applied to the part. If chips are produced a
+     significant thickness to dissipate heat, then tool life will be extended.
+     In summary, following these basic principles will aid in the tool selection process:
+       • Match the tool with material and the application                         • Select tools on the way the part needs to be influenced
+       • Select a tool with the shortest cutting edge length to                   • Select multi-function tools i.e. compression spiral
+         cut through the part                                                       with mortise point
+       • Select the largest diameter possible to achieve rigidity                 • Select tools based on productivity rather than cost
+       • Keep cutting and shank diameter the same                                   (The final bullet point is best illustrated by the Value
+         whenever possible                                                          Analysis Report on the next page)
+       • Select tools that accomplish goal i.e. finish or speed
+
+     ROUTER SELECTION RESOURCES
+          • Onsrud Cutter Production Catalog
+          • Internet at www.onsrud.com and www.plasticrouting.com
+
+17
+VALUE ANALYSIS FOR COMPETITIVE TOOLING
+MATERIAL INFORMATION: HIGH PRESSURE LAMINATED CHIPCORE 1.25" X 30" X 60" DESK TOPS.
+
+CUTTER INFORMATION:
+     Tool Part Number:                                              60-170                                        Competitive
+       Tool Description:                                      SC DE Compression                                  CT DE Straight
+           CED x CEL:                                            1/2" x 1-3/8"                                    1/2" x 1-1/2"
+                 Flutes:                                               1                                                2
+MACHINING INFORMATION:
+          Router Type:                                                   CNC                                         CNC
+          Cut Direction:                                              Conventional                                Conventional
+TOTAL PARTS FOR JOB                                    500 PCS                                                500 PCS
+COSTS
+  Machine Costs / hour                                       100        $ / hour                                    100       $ / hour
+  Machine Costs / minute                                     1.67       $ / minute                                  1.67      $ / minute
+  Initial Tool Price                                        84.85       $                                             15      $
+  Regrind Price                                             24.50       $                                           6.00      $
+
+PART CYCLE TIME
+  Perimeter Inches Part                                       180       inches / part                                180      inches / part
+  Depth Cuts Part                                                1      depth cuts / part                               1     depth cuts / part
+  Cut Inches Part                                             180       total inches / part                          180      total inches / part
+  Feed Rate                                                   600       inches / minute                              200      inches / minute
+  Time / Part                                                  0.3      minutes / part                                0.9     minutes / part
+
+TOOL LIFE
+  Avg Parts / new edge                                        130       parts                                         56      parts
+  Avg Parts / regrind edge                                    109       parts                                         47      parts
+  # of regrinds available / tool                                2       regrinds                                       4      regrinds
+  Parts produced / tool                                       348       parts / tool                                 244      parts / tool
+
+TOOL CHANGE CYCLES
+  Tool Changes / Job                                              1     tool changes / job                              2 tool changes / job
+  Tool Change Time                                                5     minutes                                         5 minutes
+  Tool Change Time / Job                                          5     minutes / job                                  10 minutes / job
+
+MACHINE TIME COSTS
+ Cutting Time / Job                                         150         minutes / job                              450 minutes / job
+ Machine Time / Job                                         155         minutes / job                              460 minutes / job
+ Machine Cost / Job                                       258.33        $ / job                                  766.67 $ / job
+
+TOOLING COSTS *
+  New Tools / Job                                              2        Now Tools / Job                                3 New Tools / Job
+  Regrinds / Job                                               3        Regrinds / Job                                 8 Regrinds / Job
+  Tool Cost / Job                                         243.20        $ / job                                    93.00 $ / job
+
+   TOTAL COST / JOB                                       501.53        $ / JOB                                  859.67 $ / JOB
+
+
+* NOTE: Calculations assume no residual tool life after job is complete (i.e. cutter is discarded even if it has life left on it’s new or re-ground edge).
+
+
+
+
+                                                                                                                                                             18
+       CHIPLOAD & EDGE FINISH
+                                                                   ROUTING WOOD
+                                                                   Wood, unlike plastic and aluminum, has a wide variance of
+                                                                   chipload. The difference is varied because of the goal of each
+                                                                   user. The fine furniture manufacturer has a much different
+                                                                   concern for finish than the upholstered furniture manufacturer.
+                                                                   The former has many exposed surfaces requiring a deeper
+                            In     easing Chipload or Feedrate
+
+
+          A BROAD RANGE OF CHIPLOADS (FEED RATES) WILL ACHIEVE
+                                                                   concern for finish. While the upholstered manufacturer is
+               AN ACCEPTABLE EDGE FINISH. TYPICAL RANGES
+                      ARE FROM .002” TO OVER .030”
+                                                                   concerned about some finish requirements, the bulk of product
+                                                                   is covered with material and unexposed. Since feed rates
+                                                                   determine chipload and subsequently finish, the range of
+                                                                   acceptable edge finish is extremely wide in the wood industry.
+
+     In terms of types of wood, the field can be generally divided into natural wood, both hard and soft, man-made products, or
+     wood by-products. The tooling considerations and machining techniques are different in many aspects.
+     Natural wood has always posed a difficult set of circumstances. As mentioned, wood may be soft or hard and geometry in
+     the tool needs to be directed at those conditions. Basically, the rake angle is adjusted to higher angle of attack in soft than in
+     hard wood. Wood has grain structure, which can aggravate tearout during the routing process and necessitate employing
+     climb cutting as a technique to minimize part damage. Wood has moisture content and various natural oils, which can
+     effect tool life.
+     Man-made products include MDF, particleboard, plywood, and laminate stock. Tool life problems many times occur because
+     of glues and resins used to bind the materials. Laminated products and sometimes plywood can be problematic, not only
+     because of glue lines but also in terms of top and bottom finish requirements. Consequently, tooling becomes an important
+     factor in removing heat and how the direction of the chip is influenced.
+     Regardless of material, there are many tool selections available to promote finish and increase productivity.
+     Once again, log on the Internet at www.onsrud.com or contact OC On-Call at 800-234-1560.
+
+
+
+       CHIPLOAD & EDGE FINISH
+                                                                    ROUTING PLASTIC
+                                                                    Not so many years ago, the machining of plastics was more of
+                                                                    an art than a science. The typical sheet fabricator or vacuum
+                                                                    former utilized a variety of innovative techniques to perform
+                                                                    some very challenging secondary machining functions. Unique
+                                                                    fixturing of parts and positioning of machinery to attain the
+                                                                    necessary results was commonplace. The use of electric and air
+                            Incr     sing Chipload or Feedrate
+
+
+         ONLY A VERY NARROW RANGE OF CHIPLOADS (FEED RATES)
+         WILL ACHIEVE AN EXCELLENT EDGE FINISH. TYPICAL RANGES      driven routers and drills was the mode of operation with cutting
+                         ARE FROM .004” TO .012”
+                                                                    tool selection based on availability at the local supply house.
+                                                                    Metal and woodworking cutting tools were utilized without
+                                                                    regard to effectiveness or efficiency. Basically, the plastic
+                                                                    machining industry was accomplishing a great deal without the
+                                                                    benefit of much outside assistance.
+ The situation changed significantly with the advent of the CNC router in both the three-axis and five-axis mode. It became
+ evident almost from the beginning that the method of holding parts and cutting tool selections of the past would not perform
+ in the feed and speed environment associated with these new era machines. Plastic fabricators demanded and Onsrud Cutter
+ responded with application specific tooling and far more information on how these tools functioned.
+
+19
+In initial testing and development of router tools for plastic, the key issues
+                                                                                 FORMATION OF EDGE FINISH
+were chipload and edge finish and how they were interrelated. Through            • BEST EDGE FINISH IS
+                                                                                   FORMED THROUGH THE
+testing of a multitude of materials associated with the plastic industry,          CONTINUOUS GENERATION
+                                                                                   OF PROPERLY SIZED
+several factors held true. There are two basic plastic conditions                  CHIPS (THOUGH THEY
+                                                                                   MAY BREAK INTO SMALLER
+                                                                                   CHIPS AFTER REMOVAL)
+recognized including soft/flexible and hard/rigid. The soft plastic curled a
+                                                                                 • CORRECT CHIPLOAD MUST
+chip during machining while the harder plastic produced a splintered               BE MAINTAINED WITHIN A
+                                                                                   NARROW RANGE
+
+wedge, which is actually broken off during the machining process.                • INCORRECT CHIPLOAD
+                                                                                   CAN RESULT IN CRATERING
+Regardless of material type, the optimum chipload to achieve the best
+finish seems to be in the range of .004” to .012”. As the plastic router
+                                                                                               CRATERING
+tooling developed, it became evident that the router bits of choice for the
+soft/flexible material usually involved the use of an “O” flute tool. These
+types of material are extremely prone to leaving knife marks on the edge
+when adequate chiploads are not maintained. The “O” flute tools with
+high rake and low clearance, along with proper chiploads, aid in
+                                                                                 FORMATION OF EDGE FINISH
+eliminating the knife marks by slightly rubbing the part during the              • BEST EDGE FINISH IS
+machining process. The hard/rigid materials are best routed with double            FORMED THROUGH THE
+                                                                                   CONTINUOUS GENERATION
+                                                                                   OF PROPERLY SIZED
+edge “V” flute tools. When this style of tool is utilized with the proper          CURLED CHIPS
+
+chipload, the cratering effect at the edge finish can be avoided. This           • CORRECT CHIPLOAD MUST
+                                                                                   BE MAINTAINED WITHIN A
+cratering phenomenon occurs when the shear strength of the material is             NARROW RANGE
+
+                                                                                 • INCORRECT CHIPLOADS
+exceeded during the routing process.                                               CAN LEAD TO KNIFE
+                                                                                   MARKS
+
+With the aforementioned issues in mind, the correct tool is relatively
+simple in the initial stages. The flexible/soft plastics tend to involve the                   KNIFE MARKS
+
+use of single or double edge “O” flutes in straight or spiral edge
+ configurations. While hard/rigid plastic materials lean more toward
+double edge “V” flutes, spiral, “O” flutes with hard geometry, or two and
+three flute finishers. All styles are available in solid micro grain carbide
+to withstand the conditions of CNC routing. For specific tooling                      ROUGHING/FINISHING
+recommendations by plastic material type, log onto the Internet at                     PASSES IN PLASTIC
+www.plasticrouting.com.                                                           • AMOUNT TO LEAVE FOR A
+                                                                                     FINISH CUT
+SPECIALTY TOOLS FOR PLASTIC                                                                1/8” CED: .015” TO .030”
+For many years, the plastic routing industry used a variety of approaches                  1/4” CED: .030” TO .080”
+to solve difficult applications problems. Today, Onsrud Cutter has                         3/8” CED: .060” TO .125”
+developed a whole selection of new products to aid in the resolution of                    1/2” CED: .060” TO .125”
+                                                                                           NEVER LESS THAN .015”
+tedious application concerns.
+
+ARBOR MOUNTED SAW BLADES
+One such application involved the use of a three-axis CNC router to
+machine or trim formed parts. Since the router bit could only function in
+a three-axis mode, there was no way to adequately trim flashing from                    CNC ROUTER SAWS
+thermoformed parts without time consuming secondary operations. In               • FLUSH MOUNTS
+                                                                                    THERMOFORMED PIECE REMOVAL
+
+order to trim these parts by cutting on the horizontal from a vertical tool         TYPICALLY SMALL DIAMETERS
+                                                                                    (< 2”)
+                                                                                 • ARBOR MOUNTS
+position, a carbide tipped saw blade and arbor has been developed. The              TRIMMING, SLOTTING AND
+                                                                                    PIECE REMOVAL
+saw blades are available in various diameters with multi-tooth cutting              TYPICALLY LARGER
+                                                                                    DIAMETERS
+
+action. The geometry is specific in terms of soft and hard plastic and slow         (2”-4”)
+                                                                                 • HARD AND SOFT
+                                                                                    PLASTIC AVAILABLE
+and fast feedrate. The five-axis CNC router user has also embraced this             (BE CAREFUL1)
+
+tool because of the reversibility of the blade for left or right hand
+rotation spindles.
+
+
+
+
+                                                                                                                      20
+     SOLID CARBIDE FINISHING TOOLS
+     The refinements of plastic routing continues to be enhanced through the development of edge finishing, shape, and bottom
+     surfacing tools. Although the basic operation of these kinds of tools has been around in the metal and woodworking
+     industry, the tool geometry for plastic machining was lacking. Onsrud Cutter in tune with the plastic materials and the cutting
+     characteristics of these materials has developed a variety of tools to make the production of finished edges, shapes, and
+     bottom surfaces a routine occurrence.
+
+
+     EDGE ROUNDING BITS
+     Edge rounding router bits are available in “O” flute, “V” flute, or spiral “O” flute configurations with single or double edges.
+     Generally speaking, the user would select the “O” flute for soft plastic, the “V” flute for hard plastic, and the spiral “O” flute
+     when the user wants to influence the chip in an upward direction. The double edges provide a better finish and the single
+     edge promotes faster chip flow. The tools are best utilized on a raised spoilboard to center the radius and avoid unnecessary
+     plunging into the spoilboard.
+
+     SOLID CARBIDE ROUT AND CHAMFER
+     The solid carbide rout and chamfer bit was designed to provide up to 1/16” top face chamfer and a finished edge on plastic
+     sheets or parts. The multi-faceted design allows the CNC user to perform what was ordinarily a two-step process and
+     complete the task in one pass without a tool change.
+
+
+     SOLID CARBIDE DOUBLE EDGE BOTTOM SURFACING
+     The bottom surfacing router bit in solid carbide upcut geometry provides a swirl free bottom in pocketing or lettering
+     applications. The tool utilizes a near flat point with radiused corners to create a smooth bottom with aesthetically
+     pleasing results.
+
+
+     SOLID CARBIDE DOUBLE EDGE UPCUT
+     SPIRAL BALL NOSE
+     Solid carbide double edge ball nose tools are readily available for use in carving and modeling operations or as decorative
+     round bottoms in plastic parts. These tools are offered in most nominal sizes and with extended lengths for five-axis CNC
+     router where reach needs to be optimized.
+
+
+     PLASTIC DRILLS WITH SPECIAL POINT
+     The plastic machining industry has been at the mercy of inappropriately designed drills for years. The jobber drill and other
+     similar tools were inadequate in terms of providing clean holes in plastic. A new style drill designed by Onsrud Cutter is
+     available which allows fast plunge speeds with reduction of chip wrap in soft plastics and crazing in hard plastic. A 60° point
+     and flat face rake provide the best plunging point to date in a wide variety of plastics. The new point reduces the stresses
+     introduced into the hole walls and will provide a clean hole surface without clouding or crazing typical in standard drills.
+
+
+     TOOL EXTENDERS
+     Tool extenders are ideal for use with five-axis routers for trimming/routing of formed parts where extended reach is required.
+
+
+
+
+21
+ROUTING ALUMINUM
+There are many types of aluminum’s in two basic conditions.
+                                                                            ALUMINUM ALLOYS
+                                                                     • ALUMINUM HARDNESS
+The conditions have more effect on the routing cuts than the           CAN VERY WIDELY              ALLOY
+                                                                                                             BRINELL
+                                                                                                             TEMPER HARDNESS
+types. The conditions are treated, which is hard, and untreat-         BECAUSE OF                    3003       0      28
+                                                                                                     3003      H18     55
+ed/annealed, which is soft. The hard material forms chips              DIFFERENCES IN                5052       0      47
+                                                                       TEMPER.                       5052      H34     68
+which can be routed much easier than the soft material.                                              5052      H38     77
+                                                                     • HARDER IS EASIER              2024       0      47
+The condition is noted on all materials from the manufacturer         TO MACHINE.                    2024     T3, T4   120
+                                                                                                     6061       0      30
+i.e. 6061 T-6 or 2024 O. If this is missing from the raw                                             6061      T6      95
+material, a simple bend test will indicate the type. If the         GENERAL RULE OF THUMB:
+                                                                                                     6063      T0      25
+                                                                    0 = Fully Annealed (soft)        6063      T6      73
+material bends like solder, it is probably soft. If the material is Hxx = Strain Hardened (medium)   7075       0      60
+                                                                    Tx = Solution Treated (hard)     7075      T6      150
+difficult to form a bend and tends to spring back, it is
+likely hard. The common types and the difference in hardness
+are noted in the chart. Note the hardness can be two to three times the soft condition as compared to the hard in most of
+the types shown. A good comparison of the two conditions is that they are similar to wood and plastics. Wood has the soft
+pliable – popular, cedar, pine, cottonwoods, versus the much harder rigid – oak, maple, hickory, teaks. Plastics are split into
+the soft flexible – ABS, PVC, polyethylene, polypropylene, UMHW, versus the harder rigid – acrylic, nylon, delrins.
+Traditionally, high-speed steel (HSS) tools in spiral flutes have been used in routing aluminum for over 60 years. This tool
+material was used because it can carry a very sharp edge and is very tough. Most applications were hand fed or
+ hand controlled and the other materials such as solid carbide (SC) were too brittle to be used in these operations. The advent
+of more advanced CNC routers, which have very good control of the feed has created more uses for the more refined SC tools.
+The newer SC tools have sharper stronger edges and are more shock resistant than earlier SC types.
+As a general rule of thumb, most aluminum applications are covered by the use of HSS spirals in hand and older CNC
+applications, SC spirals in more advanced CNC applications, single edge tools for “O” condition aluminum and double edge
+tools for “T” condition aluminum.
+
+
+AIR HAND ROUTERS
+Most applications with these routers can be tied to material thickness. See the chart for typical loadings and selections. All
+the tools are downcut because upcut tools will pull the chips into the support bearing in the nose of the router guide and ruin
+it. Single edge tools are very aggressive and can be used with multiple flute SC tools in a secondary pass for part edge
+finishes that will be smoother than 125 rms. This can be a key issue for a part that will be formed after routing because the
+rough edge may propagate cracks during the forming process.
+                                                                             AIR ROUTER CHART
+Double edge tools will be more stable in the cut
+                                                                 PART           TOOL       SPINDLE   HORSEPOWER
+because there is always one flute in contact with the        THICKNESS, IN. DIAMETER, IN. SPEED, RPM     MIN.
+part. They will yield a smoother finish in a single pass.         .060              .125          30,000             .3
+Cutting speeds of the tools are directly related to the           .090              .188          23,000             .6
+tool diameter. A .125” tool will require about twice the          .188              .250          18,000             .9
+                                                                  .375              .375          14,000             1.5
+spindle speed for the cutting edge to be as effective in
+shearing the chip from the part as a .250” tool. Note       Note: Cutting material above .375 by hand is not recommended
+the spindle speeds in the chart.
+
+ELECTRIC HANDROUTERS
+The upcut is used to stabilize and force the part to bottom of the router. Since the chip has an exit path on the top of the part
+unlike the air router, it can clear itself from the cut path. See the chart under air routers for suggested parameters.
+
+                                                                                                                                    22
+  PINROUTERS
+ The pattern on pin routers is below the part. The downcut tool will push the part into the pattern, which is stabilized by
+ forcing it down to the table. The chips are directed away from the operator’s face and into a path used by the guide pin.
+ Single edge tools will cut easier and faster because they cut and release the part. Double edge tools will generate better
+ finishes and are more stable because one flute is always in contact with the part.
+
+
+  BROKEN ARM ROUTERS
+ Broken arm routers, also called master routers, were
+ used mainly in the aerospace industry. Since CNC
+ routers in most plants have replaced them, this
+ equipment has migrated to the other industries, such as
+ aluminum boats. A routing template, called a master,
+ covers the sheets of thin aluminum. The master is
+ screwed to the plywood tabletop that sandwiches the
+ parts. Since there is no path for the chips to flow down,
+ upcut tools must be used in this application. The stack
+ height of the parts should never be above 1/2” in height.
+ Single edge tools are used in “0” and double edge in “T”.
+ If a shop prefers to stock one tool, then use the single
+ edge tool. Normal sizes for most applications are 5/16”
+ CED on 1/2” shanks. This combination allows for small
+ cut paths with the added strength of the larger shank
+ because of the amount of tool required to extend from
+ the collet and into the guide.
+
+
+  CNC ROUTERS
+  CNC routers are used for aluminum routing in four modes: single sheet, vacuum held, stack sheet-screw held, stack
+  sheet-rivet held and stack sheet-pressure foot. In all operations conventional cut path is recommended. However, it is
+  suggested that the scrap be examined. If it is cleaner than the part, then use climb cutting.
+  If two passes are needed because of tool deflection, higher requirement for part finish, or it is faster, then leave at least .030”
+  (1/32”) of material on the part for the finish cut. Use climb cut direction. Both of these items will stabilize the tool and should
+  yield a better part finish. The single sheet applications run 14,000 to 24,000 RPM and up to 300 IPM feed. Stack sheets run
+  14,000 to 20,000 RPM and up to 160 IPM feed.
+
+
+  SINGLE SHEET
+  This operation has a composite wood table. The vacuum
+  draws the part to the table and eliminates the use of fasten-
+  ers to hold down the parts. Solid carbide tools are required
+  due to the abrasiveness of the table. Skip tabs are
+  recommended for smaller parts because they tend to move
+  after several parts are cut which opens up more area for
+  vacuum loss. Since most parts are less than .125” thickness,
+  1/8” and 3/16” tools can be used to help minimize vacuum
+  loss by cutting a smaller path. Use the shortest CEL
+  as possible.
+
+
+
+
+23
+STACKED SHEET SCREW
+In order to make a solid mounting for the screws, most
+tables are plywood. This allows the use of HSS spiral
+upcuts. Because the plies in the plywood are solid wood
+and not abrasive like the MDF or PB, the stack height
+should not exceed 1/2”. An upcut it required because there
+is no exit path for the chips. Single edge tools mostly 1/4”
+to 5/16” on 1/2” shanks provide the most stable cuts and
+allow chips to be cut and cleared from the path. There will
+be some tool deflection. A secondary pass can be used to
+eliminate the variance. If a second pass is used, it should
+be in a climb cut direction and a minimum of .030” left on
+the part for the final cut.
+
+
+STACKED SHEET-RIVET
+This application requires the use of these lo-helix upcut tools so the chips can be evacuated without putting undue force on
+the rivets. If too much force is applied to the rivets, the deflection top sheets will lift from the stack and be ruined. The HSS
+tools can be used in most applications. The deflection can occur but, the 81-100 series reduces deflection to a minimal level.
+Solid carbide is used in the more abrasive high silica aluminums and lithium base aluminums. These machines
+normally use flood coolant. So a TCN or ZRN coating can sometimes increase tool life by 1-1/2 to 2 times normal. Tool tests
+on the specific machine are the only way to confirm.
+
+
+
+STACKED SHEET PRESSURE FOOT
+In order to pull the chips from the cut and make a large enough chip to absorb the heat, a single flute tool is required.
+It is necessary to run test cuts to see which, conventional or climb cutting direction, works best on each material.
+
+                                                                                       COOLANTS FOR
+COOLANTS                                                                             ALUMINUM ROUTING
+Coolants should be used on all CNC applications. The synthetic or soluble        • ACTUALLY A LUBRICANT MORE THAN A COOLANT
+                                                                                 • CNC ROUTERS
+oil mists should be mixed at high water/coolant ratios to provide a greater                 FLOOD
+measure of cooling effect. Flood coolants run best in applications for stack                MIST
+                                                                                              - TYPICALLY WATER SOLUBLE AND
+routing where the cut paths are deep. In hand router applications, a                            ENVIRONMENTALLY FRIENDLY
+                                                                                              - RATIOS CAN VARY FROM 30:1 TO 50:1
+brushed on oil or dipping the tool in bee’s wax or bar soap will add                          - IMPROPER RATIO CAN DRAMATICALLY
+                                                                                                AFFECT THE USEFULNESS
+lubricity to the cutting action and extend tool life.                            • HAND ROUTERS
+                                                                                              STICK WAX OR WIPED WAX
+                                                                                              SOAP
+
+
+CHIP WELDING
+This can be caused by many different factors or a combination of them. Spindle run-out and the wrong tool type are the most
+common errors. Dull tools, poor chip loads, wrong feed direction, loss of coolant during the cut are other factors that
+ contribute to chip welding on the cutting edge. Chips welding back into the cut path occurs when the chip load is too light
+or the flute of the tool cannot eject it. This can happen when the CEL is not long enough to clear the top of the deep cuts.
+
+HEELING
+This is a common occurrence when there is excessive spindle run-out. It also happens when the feed rates are too slow on
+a CNC router and the chips are forced in to the back of the tool because they cannot be ejected for the cut path.
+
+
+
+
+                                                                                                                                    24
+     TROUBLE SHOOTING/TOOL BREAKAGE
+     The tool can be the weakest part of the routing system. When the router bit breaks, it becomes the first line of suspicion.
+     However, almost 80% of breakage problems can be attributed to the following factors: 1) poorly maintained for worn
+     equipment 2) improper tooling and fixturing. (Poorly maintained equipment includes: collets, collet nuts, spindle bearings,
+     spindles, and spindle housings, slides and head control items. These points and others have previously been discussed).
+
+     POORLY MAINTAINED OR WORN EQUIPMENT
+     When breakage occurs, the first line of defense is to make a thorough inspection of the tool holding system. Inspection should
+     include the cleanliness of the area and the condition of the collet and collet nut. Examine the shank of the tools for poor
+     collet contact or “collet burn”. This will show as brownish, burned marks on high speed steel and carbide tipped tools and
+     appears as shiny marks on solid carbide tools. If the collet is worn or damaged, replace the collet or merely clean the area
+     per the instructions in the Collet Maintenance section of this manual.
+     The following items require the machine to be turned off and the operating items shutdown for safety reasons. Grabbing the
+     spindle by hand and checking it for play or looseness can be a quick check of the slides, bearings, and head mountings. This
+     will point out most unacceptable conditions. If more accurate documentation is needed, the magnetic base indicator and test
+     bar or plug gauge. This process involves indicating the spindle as well as several spots on the test bar as it is engaged in the
+     collet. To further discuss this procedure, e-mail www.techsupport@onsrud.com.
+
+     IMPROPER TOOLING AND FIXTURING
+     The selection of inappropriate tooling for an application can lead to finish and breakage problems. Consult the Onsrud Cutter
+     catalog, website, area distributor, or Onsrud Cutter representative to determine proper tool selection. Review the Spoilboard
+     Techniques section to insure parts are being held rigidly in place and chip flow is enhanced by the spoilboard design. Poor
+     finish many times can be the early sign of breakage or life problems. Check the feed direction. It should be conventional
+     cutting for most applications. If the proper tool geometry is employed, climb cutting is not considered. Check for dull tools
+     Tool life is short in some materials. Check for burrs on the cutting edge. Some materials will run faster and cleaner by using
+     a roughing and finishing pass. Examples are expanded PVC and solid wood. Chipbreaker tools can be accompanied by a
+     finishing tool pass producing superior quality parts in about the same cycle time as with one tool. Multiple spindles or tool
+     changer is required.
+
+     TROUBLE SHOOTING POINTERS
+     PROBLEM                      CAUSE                           SOLUTION
+     TOOL BREAKAGE                Excessive Cutting Edge Length   Use shortest CEL to achieve depth of cut
+                                  Improper Colleting              Collet only on smooth surface of shank at the end of the flute fade out
+                                  Poor Maintenance of             Identify proper procedure for cleaning
+                                  Collet, Nut & Spindle           collet nut & spindle
+                                                                  Change collets on a regular basis
+                                  Cutting Edge Diameter           Go to straight through tool with CED
+                                  Less Than Shank Diameter        & shank the same
+                                  Use of Adapter Bushings         Utilize proper collet size
+                                  Machine Problems                Check collet & spindle runout-Check for play in slides,
+                                                                  bearings or head mountings
+                                  Part Movement                   Check vacuum hold down & clamping devices to insure part rigidity
+                                  New or Inexperienced            Part should be fed smoothly to allow router
+                                  Operator                        tool to cut freely
+                                  Poor Tool Selection             Match tool with material being machined
+
+25
+                               Breakage Problem                     Have manufacturer do quality check
+
+TOOL LIFE                      Poor Tool Selection                  Match tool with material being machined
+                               Speeds & Feeds                       Make proper changes to improve chipload & heat removal
+                               Poor Dust Collection                 Improve dust collection capability to remove chips & heat
+                               Part Movement                        Check vacuum hold down & clamping devices
+                               Machine Problems                     Check condition of collets, collet nuts, spindles, slides,
+                                                                    bearings and head mountings
+
+                               Material Being Machined              Select right tool for the job
+
+
+PART FINISH                    Dull Tools                           Check for edge deterioration & replace with new or resharpened tools
+                               Tool Selection                       Double edge or multi-edge tools provide better finish
+                                                                    Use shortest CEL available to make necessary depth of cut
+                                                                    Use keener edged HSS tools on natural wood & some plastics to improve finish
+                                                                    Use up/down compression spirals to improve top & bottom finishes
+                                                                    on veneered or laminated materials
+
+                               Feed Direction                       Should be conventional for most applications
+
+
+
+
+                                                      GLOSSARY
+ABRASIVE WEAR – THE WEAR THAT OCCURS WITH FRICTION AND                    FLUTES. THE MAXIMUM FLUTE DEPTH FROM FLUTE CENTER TO A LINE
+HEAT OF THE CUTTING ACTION THAT DULLS THE TOOL.                           PERPENDICULAR TO THE CUTTING EDGE. IF THE ARC IS CONTINUED
+                                                                          AROUND TO COMPLETE AN IMAGINARY CIRCLE OR BALL IT BECOMES
+ANGLE – THE AMOUNT OF DIVERGENCE BETWEEN TWO STRAIGHT                     THE BALL DIAMETER AND IS SOMETIMES DESCRIBED AS SUCH.
+LINES THAT MEET AT A VERTEX. MEASURED IN DEGREES
+AND MINUTES.                                                              BINDER – THE METALLIC CONSTITUENT IN CARBIDE WHICH HOLDS
+                                                                          THE GRAINS TOGETHER.
+ARBOR – A MACHINE TOOL SPINDLE SHAFT EXTENSION USED TO
+HOLD GRINDING WHEELS OR MILLING CUTTERS.                                  BODY – THE ACTIVE PORTION OF A ROUTER BIT WHICH INCLUDES
+                                                                          THE CUTTING EDGE AND ALL CLEARANCES NECESSARY TO ACHIEVE A
+AXIAL LOAD – THE VERTICAL DEPTH OF CUT PERPENDICULAR TO                   SPECIFIED CUTTING DIAMETER.
+THE CENTER LINE OF THE CUTTING TOOL, NORMALLY EXPRESSED IN A
+PERCENTAGE OF THE DIAMETER OF THE TOOL.                                   BRAZING – THE JOINING OF METALS BY HEATING A NON-FERROUS
+                                                                          METALLIC ALLOY, COMBINED WITH A SUITABLE FLUX, TO ITS LOWER
+AXIS – THE CENTER LINE (REAL OR IMAGINARY) PASSING THROUGH                MELTING POINT TO BECOME THE BINDING MEDIUM. ADVANTAGE,
+AN OBJECT ABOUT WHICH IT COULD ROTATE. A REFERENCE POINT OR               NEITHER METAL JOINED IS DEFORMED. ONSRUD TECHNIQUES
+LINE FOR A SYSTEM OF CNC MACHINE TOOL COORDINATES (I.E. X, Y, Z).         INVOLVE A COPPER-SILVER ALLOW COMBINED WITH A BORAX FLUX.
+
+BACK-OFF – A SHOP TERM MEANING TO PUT RELIEF OR                           BURNING – OVERHEATING OF THE TOOL AND RESULTANT SURFACE
+CLEARANCE LAND BACK OF THE CUTTING EDGE OR BEHIND THE                     DISCOLORATION CAUSED BY EXCESSIVE SPEEDS AND FEEDS.
+PRIMARY CLEARANCE.
+                                                                          CARBIDE TIPPED TOOLS (CT) – CUTTING TOOLS WITH
+BACKLASH – LOST MOTION (PLAY) IN MOVING PARTS, SUCH AS                    TUNGSTEN, TANTALUM, OR OTHER CEMENTED CARBIDE INSERTS
+THREAD IN A NUT OR THE TEETH OR MESHING GEARS CAN REEK                    BRAZED TO A SOFTER STEEL FLUTE FACE.
+HAVOC WITH SIZE CONTROL.
+                                                                          CENTERLESS GRINDING – A SPECIFIC GRINDING PROCESS
+BALLNOSE – A 180 ARC GROUND ON THE PLUNGE POINT OF THE TOOL               WHERE THE WORKPIECE IS SUPPORTED BY A BLADE REST AND NOT
+                                                                          HELD BETWEEN CENTERS. WORKPIECE FEED RATE IS CONTROLLED BY
+BALL RADIUS – USED IN THE DESCRIPTION OF “O” AND SPIRAL                   A REGULATING WHEEL.
+
+
+
+                                                                                                                                                   26
+ CERAMIC – A NEW MAN MADE COMPOSITE CUTTING MATERIAL                 CNC – COMPUTER NUMERIC CONTROL. CUTTING ACTION AND
+ CONTAINING TWO OR MORE ORGANIC, INORGANIC, OR METALLIC              WORKPIECE MOVEMENT CONTROLLED BY A COMPUTER PROGRAM. IT
+ MATERIALS. A POPULAR CERAMIC RECIPE IS A MIXTURE OF ALUMINUM        CAN BE PREPARED IN ADVANCE OR INPUT BY THE OPERATOR.
+ OXIDE WITH SILICON CARBIDE FIBERS FOR STRUCTURAL
+ ENHANCEMENT.                                                        COLLET – A STANDARD TRISECTED HOLLOW CLAMPING OR
+                                                                     CHUCKING DEVICE DESIGNED TO CLOSE TIGHTLY UPON A WORKPIECE
+ CHAMFER – THE BEVELED SURFACE USED TO ELIMINATE AN                  WHEN DRAWN BACK AGAINST A TAPERED SLEEVE BY A DRAW BAR OR
+ OTHERWISE SHARP CORNER (I.E. SHANKS). EXPRESSED IN LENGTH           TUBE.
+ AND ANGLE.
+                                                                     COMPARATOR – AN OPTICAL IMAGE MEASURING TOOL
+     CHATTER – PERIODIC DEFLECTION OF A WORKPIECE DURING             CAPABLE OF PRECISE CLEARANCE MEASUREMENTS AND GEOMETRY
+     A MACHINE TOOL OPERATION WHICH CAN LEAVE UNDESIRABLE            COMPARISONS THROUGH VISUAL MAGNIFICATION.
+     SURFACE CONFIGURATIONS.
+                                                                     CONCENTRICITY – HOLDING A CONSISTENT RADIUS ABOUT A
+     CHIPBREAKERS – NOTCHES, GROOVES, AND SIMILAR FEATURES           COMMON CENTER OR TOOL AXIS WITHIN A SPECIFIC TOTAL INDICATOR
+     DESIGNED TO BREAK UP CHIPS FOR FAST, CLEAN, AND EFFICIENT       RUNOUT (TIR).
+     REMOVAL. REDUCES OVERALL CHIP LOAD.
+                                                                     CONVENTIONAL CUT – IN CNC ROUTING WITH RIGHT HAND
+     CHIPBREAKER TOOLS - HOGGERS                                     ROTATIONAL TOOLING, ROUTING THE PERIMETER OF THE WORKPIECE
+                                                                     IN A COUNTER CLOCKWISE DIRECTION IS CONVENTIONAL CUTTING. ON
+     CHIP DRAG – THE CLOGGING, LOADING, AND PACKING DUE TO           INTERNAL CUTS CONVENTIONAL CUTTING IS CLOCKWISE.
+     IMPROPER CHIP EXTRACTION.
+                                                                     CORE (WEB) DIAMETER – THE DIAMETER OF A CIRCLE WHICH IS
+     CHIP LOAD – THE AMOUNT OF MATERIAL REMOVED BY ONE TOOTH         TANGENT TO THE BOTTOM OF THE FLUTES.
+     PER CUTTING REVOLUTION.
+                                                                     CORNER RADIUS – A RADIUS GROUND ON THE CORNER OF THE
+     CHIP LOAD = FEED RATE / (RPM X NUMBER OF CUTTING FLUTES).
+                                                                     PLUNGE OF THE ROUTER BIT.
+
+     CHIPS – THE PIECE OF WASTE LEFT AFTER CUTTING.                  CUTTING EDGE – THE SHARPENED, WORKING PORTION, OR
+                                                                     LEADING EDGE OF A CUTTER TOOTH.
+     CLEARANCE – AT ONSRUD, THE TERM CLEARANCE IS OFTEN USED
+ TO DESCRIBE RELIEF. THEREFORE, IN AN EFFORT TO CONFORM TO
+                                                                     CUTTING EDGE DIAMETER – THE DISTANCE FROM A CUTTING
+ ASME STANDARDS, THE PREFERRED TERM FOR PRIMARY CLEARANCE IS
+                                                                     EDGE TO A POINT IT WOULD OCCUPY UPON 180 ROTATION. THE
+ “RELIEF” AND FOR SECONDARY CLEARANCE IS “CLEARANCE”.
+                                                                     MAXIMUM WIDTH OF CUT POSSIBLE. THE DIAMETER OF A CUTTING
+                                                                     TOOL’S PERIPHERY.
+     CLEARANCE ANGLE – THE ANGLE FORMED BETWEEN THE
+     CLEARANCE SURFACE AND A PLANE TANGENT TO THE CUTTING EDGE.
+                                                                     CUTTING EDGE LENGTH (CEL) – AS APPLIED TO END MILLS, THE
+                                                                     EFFECTIVE AXIAL CUTTING EDGE NOT INCLUDING THE CUTTER SWEEP
+     CLEARANCE, OVERALL – THE TOTAL CLEARANCE DISPLACED              WHICH PERFORMS SIDE CUTTING ON THE WORKPIECE.
+     FROM THE CUTTING EDGE TO THE HEEL. IT IS EXPRESSED IN ANGLE
+     AND AMOUNT OF INDICATOR DROP.
+                                                                     CUTTING FEED – RATE AT WHICH THE TOOL PASSES THROUGH THE
+                                                                     WORK. CAN BE EXPRESSED IN TERMS OF TABLE TRAVEL, NORMALLY
+     CLEARANCE, SECONDARY – (SEE PREFERRED TERM CLEARANCE)           EXPRESSED IN INCHES PER MINUTE.
+     THAT CLEARANCE CONTAINED DIRECTLY BEHIND RELIEF
+     (PRIMARY CLEARANCE). IT IS USUALLY EXPRESSED IN ANGULAR TERMS
+                                                                     CUTTING SPEED – NORMALLY EXPRESSED IN REVOLUTIONS PER
+     AND CAN BE AXIAL OR RADIAL IN DIRECTION OF MEASURE.
+                                                                     MINUTE. FOLLOW MACHINE MANUFACTURER RECOMMENDATIONS.
+
+ CLEARANCE (OR RELIEF) SURFACES – ANGULAR OR CURVED                  CUTTING SWEEP – EXIT POINT OF GRINDING WHEEL WHEN TOOLS
+ SURFACES BEHIND THE RELIEF LAND. CONCAVE – THAT CLEARANCE
+                                                                     ARE INITIALLY FLUTED.
+ SURFACE THAT COMPRISES A CURVED DEPRESSION. ECCENTRIC – THAT
+ CLEARANCE SURFACE THAT IS CONVEX OR ROUNDED AND NOT ABOUT
+                                                                     DE COMPRESSION – UP DOWNS, OR 2+2 UP DOWNS
+ A COMMON CENTER TO THE CUTTING EDGE. FLAT – THAT CLEARANCE
+ SURFACE THAT IS ESSENTIALLY STRAIGHT OR FLAT.
+                                                                     DEFLECTION – OVERALL LOSS, OR UNEVEN WORKPIECE CONTACT
+                                                                     WITH THE GRINDING WHEEL OR MILLING CUTTER DURING A MACHINE
+     CLIMB CUT – IN CNC ROUTING WITH RIGHT HAND ROTATIONAL TOOL-     TOOL OPERATION. USUALLY A RESULT OF TOO HIGH A FEEDRATE, TOO
+     ING, ROUTING THE PERIMETER OF THE WORKPIECE IN A CLOCKWISE
+                                                                     MUCH STOCK REMOVAL OR IMPROPER REST POSITIONING.
+     DIRECTION IS CLIMB CUTTING. ON INTERNAL CUTS CLIMB CUTTING IS
+     COUNTER CLOCKWISE.
+
+
+
+27
+DEGREE AND MINUTES – UNITS OF MEASURE FOR ANGULAR               HALF GRIP – REFERS TO THE TYPES OF COLLETS WITH SLITS FROM
+ROTATION 360 DEGREES PER CIRCLE OR ONE COMPLETE REVOLUTION      ONE END ONLY. THESE COLLETS TYPICALLY GRIP THE SHANK FOR ONLY
+AND 60 MINUTES PER DEGREE.                                      50-60% OF THE OVERALL LENGTH OF THE COLLET.
+
+DOVETAIL – A CUTTING DIAMETER THAT PROGRESSIVELY                HAND OF MILLING CUTTERS & END MILLS – THE TERMS
+DECREASES FROM THE LEADING EDGE TO THE SHANK (ALSO CALLED       “RIGHT HAND” OR “LEFT HAND” ARE USED TO DESCRIBE HAND OF
+BACK TAPER) DELIVERING WHAT ARE COMMONLY CALLED “DOVETAIL       ROTATIONS OR HAND OF CUT, AND HAND OF FLUTE HELIX.
+ANGLED” CUTS.                                                          HAND OF ROTATION – OR (HAND OF CUT) – THE ROTATION OF
+                                                                       A CUTTING TOOL REVOLVING SO AS TO MAKE A CUT WHEN
+DOWNCUT – A CUTTING EDGE HELIX THAT SPIRALS OPPOSITE TOOL              REVIEWED FROM A POSITION IN FRONT OF A HORIZONTAL
+ROTATION. IT IS DESIGNED TO FORCE CHIP REMOVAL DOWN                    MILLING MACHINE AND FACING THE SPINDLE.
+WITH PLUNGE.                                                           RIGHT HAND ROTATION – COUNTERCLOCKWISE
+                                                                       ROTATION (OR WHEN TOOL IS VIEWED FROM SHANK, IT IS
+FACE – CUTTING EDGE FACE – THE AXIAL CUTTING LENGTH OF A               DESIGNED TO ROTATE TOWARDS THE RIGHT HAND).
+CUTTING TOOL                                                           LEFT HAND ROTATION – CLOCKWISE ROTATION (OR WHEN
+FLUTE FACE – FLAT PORTION OF A FLUTE PERPENDICULAR TO THE WEB          TOOL IS VIEWED FROM SHANK, IT IS DESIGNED TO ROTATE
+AND TERMINATED BY THE CUTTING EDGE.                                    TOWARDS THE LEFT HAND).
+GRINDING WHEEL FACE – THAT PART OF A GRINDING WHEEL WHICH              HAND OF FLUTE HELIX – THE DIRECTION THE FLUTE TWISTS
+ACTIVELY ENGAGES THE WORKPIECE.                                        AWAY FROM THE OBSERVER AROUND THE TOOL AXIS WHEN
+                                                                       VIEWED FROM EITHER END OF THE CUTTING TOOL.
+FADE OUT – (CUTTER SWEEP) – THAT PORTION OF THE FLUTE LEFT             RIGHT HAND HELIX – CLOCKWISE FLUTE TWIST (TO THE
+BY THE GRINDING WHEEL OF MILLING CUTTER AS IT RETRACTS OR              RIGHT HAND)
+WITHDRAWS FROM THE WORKPIECE. IT LIES IN THE TOOL NECK, AN             LEFT HAND HELIX – COUNTERCLOCKWISE FLUTE TWIST
+AREA BETWEEN THE CEL AND SHANK.                                         (TO THE LEFT HAND)
+                                                                       STRAIGHT FLUTES – TOOLS WITH THEIR CUTTING EDGES IN
+FEEDRATE – THE SPEEDS AND FEEDS A MACHINE TOOL USES TO                 PLANES PARALLEL TO THE TOOL AXIS (NO HELIX).
+PERFORM SAFE, RESULTANT WORK. RPM – REVOLUTIONS PER MINUTE
+IS APPLIED TO ANY ROTATIONAL MOVEMENT; IPM – INCHES PER         HEEL , HEELING – THE HEEL IS THE AREA DIRECTLY BEHIND THE
+MINUTE IS APPLIED TO ANY LINEAR MOVEMENT.                       CUTTING EDGE. HEELING IS CAUSED BY INSUFFICIENT RELIEF BEHIND
+                                                                THE CUTTING EDGE.
+FEED, CROSS – THE DISTANCE AND RATE OF HORIZONTAL FEED OF
+THE WHEEL ACROSS THE TABLE.                                     HELIX – THE PATH A POINT WILL GENERATE AS IT MOVES AT A FIXED
+      FEED IN (TRAVERSE) – THE DISTANCE AND RATE WHICH THE      RATE OF ADVANCE (SPIRALS) ALONG THE SURFACE OF A CYLINDER.
+      WHEEL IS FED INTO THE WORK.                               HELIX ANGLE – THE CUTTING EDGE ANGLE WHICH A HELICAL CUTTING
+      FEED ELEVATION– THE VERTICAL FEED ON A TOOL GRINDER       EDGE MAKES WITH A PLANE CONTAINING THE TOOL’S AXIS.
+      COLUMN WHICH WHEN LOWERED, LOWERS THE ENTIRE              HELICAL (SPIRAL) – A TERM DESCRIBING A CUTTING EDGE OR FLUTE
+      GRINDING HEAD; THE VERTICAL FEED OF A MILLING TABLE       WHICH PROGRESSES UNIFORMLY AROUND A CYLINDRICAL SURFACE IN
+      KNEE WHICH WHEN RAISED, RAISES THE ENTIRE WORKHEAD.       AN AXIAL DIRECTION.
+      FEED INDEX – MEASUREMENT INDICATED BY THE CROSS-
+      INDEX OF A MACHINE. THIS MEASUREMENT USUALLY REFERS       HOOK – SEE RAKE.
+      TO THE WORKPIECE DIAMETER, BUT SOMETIMES THE RADIUS
+      IS USED.                                                  IPM – INCHES PER MINUTE
+
+FLUTE – A STRAIGHT OR HELICAL GROOVE OF ANGULAR OR RADIAL       LAND – THE NARROW SURFACE OF A PROFILE SHARPENED CUTTING
+FORM MACHINED INTO A TOOL TO PROVIDE CUTTING EDGES, PERMIT      TOOL IMMEDIATELY BEHIND THE CUTTING EDGE.
+CHIP REMOVAL, AND ALLOW CUTTING FLUID CIRCULATION.                     CYLINDRICAL – A NARROW PORTION OF THE PERIPHERAL
+                                                                       LAND ADJACENT TO THE CUTTING EDGE, HAVING NO RADIAL
+FLUTE LENGTH – THE LENGTH OF THE FLUTES MEASURED IN A                  RELIEF (CLEARANCE).
+STRAIGHT LINE ALONG THE AXIS.                                          RELIEVED – A NARROW PORTION OF THE LAND, ADJACENT TO
+                                                                       THE CUTTING EDGE WHICH PROVIDES RELIEF (CLEARANCE).
+FORM CUTTER – ANY CUTTER SHAPED TO PRODUCE A SPECIFIED                 NOT RELIEVED – A NARROW PORTION OF THE LAND, ADJACENT
+FORM ON THE WORK (I.D. ROUND OVER)                                     TO THE CUTTING EDGE, HAVING NO RELIEF (CLEARANCE).
+
+FULL GRIP – REFERS TO THE TYPES OF COLLETS WITH SLITS FROM      LEFT HAND CUT – A TOOL WITH THE FLUTES AND CUTTING EDGES
+BOTH ENDS OF THE COLLET. THESE COLLETS TYPICALLY GRIP THE       SPIRALING LEFT. COUNTER-CLOCKWISE ROTATION.
+SHANK FOR 100% OF THE OVERALL LENGTH OF THE COLLET.
+                                                                LUBRICITY – THE PROPERTY THAT WILL ALLEVIATE FRICTION.
+GRADE – THE DESIGNATION GIVEN TO A PARTICULAR GRADE             SPECIAL COATINGS HAVE THE ABILITY TO MAKE THE TOOL VERY LUBRIS-
+OF CARBIDE.                                                     TIC (SLIPPERINESS).
+
+                                                                                                                                  28
+     OVERLOAD BREAKAGE – CHIP LOAD PER TOOTH IS                      SPIRAL – A TOOL WITH HELICAL CUTTING EDGES AND FLUTES.
+     OVERLOADING THE CUTTER, WHICH RESULTS IN TOOL BREAKAGE.
+                                                                     TANGENT OF AN ANGLE – IN A RIGHT TRIANGLE IT IS THE RATIO
+     PART NUMBER – THE NUMBER USED TO DESIGNATE A SPECIFIC           OF THE SIDE OPPOSITE THE ANGLE TO THE SIDE ADJACENT. A LINE THAT
+     TOOL DIAMETER AND DESIGN FOR PRINT, TRAVELER, CATALOG AND       TOUCHES A CIRCLE AT ONE SPECIFIC POINT ONLY ALONG ITS
+     WARRANTY FILING AND REFERENCE.                                  CIRCUMFERENCE.
+
+     RADIAL LOAD – THE HORIZONTAL DEPTH OF CUT PARALLEL TO THE       TAPER – THE UNIFORM INCREASE OR DECREASE OF A TOOLS
+     CENTER LINE OF THE CUTTING TOOL, NORMALLY EXPRESSED IN A        DIAMETER TO FORM A CONICAL OR WEDGE SHAPE – SPINDLES –
+     PERCENTAGE OF THE DIAMETER OF THE TOOL.                         TOOL HOLDER.
+
+     RAKE – THE ATTACK ANGLE OF THE TOOL.                            TRANSVERSE RUPTURE STRENGTH (TRS) – THE BREAKING
+     (SEE PAGE 5 RAKE AND CLEARANCE)                                 STRENGTH IN STANDARD BENDING TESTS (SIDE PRESSURE STRENGTH).
+
+     RELIEF – (SEE CLEARANCE) THE RESULT OF THE REMOVAL OF TOOL      UPCUT – A CUTTING EDGE HELIX THAT SPIRALS WITH TOOL
+     MATERIAL DIRECTLY BEHIND OR ADJACENT TO THE CUTTING EDGE TO     ROTATION. IT IS DESIGNED TO FORCE CHIP REMOVAL UP AND OUT OF
+     PROVIDE CLEARANCE AND PREVENT RUBBING (HEEL DRAG). IN THE       THE ACTIVE CUTTING AREA.
+     INTEREST OF CONFORMITY, RELIEF IS THE ASME PREFERRED TERM FOR
+     WHAT ONSRUD CUTTER REFERS TO AS “PRIMARY CLEARANCE”. IT         V-FLUTE – OFTEN CALLED Z-FLUTE WITH DE TOOLS
+     GENERALLY LIES WITHIN THE FIRST 1/16” DIRECTLY BEHIND THE
+     CUTTING EDGE AND IS EXPRESSED IN ANGLE AND LAND WIDTH.          WEAR LAND – THE AREA JUST BEHIND THE CUTTING EDGE RESULT-
+                                                                     ING FROM THE NORMAL DULLING REACTION. FORMS A BRIGHT SHINY
+     RIGHT HAND CUT – A TOOL WITH FLUTES AND CUTTING EDGES           FINISH BEHIND THE CUTTING EDGE AND IS A GOOD INDICATOR TO
+     SPIRALING RIGHT. CLOCKWISE ROTATION.                            CHANGE THE TOOL OUT.
+
+     SE COMPRESSION – UP DOWNS OR 1+1 UP DOWNS                       WEB – THE BODY MATERIAL ABOUT THE TOOL AXIS ON CENTER THAT
+                                                                     REMAINS AFTER FLUTING AND CONNECTS THE WINGS.
+     SHANK – THAT PROJECTING PORTION OF A ROUTER BIT OR OTHER
+     END MILL WHICH LOCATES AND DRIVES THE ROUTER BIT IN THE         WELDON SHANK – A STRAIGHT SHANK WITH SPECIAL FLATS FOR
+     MACHINE SPINDLE ON ADAPTER.                                     DRIVING AND LOCATING THE TOOL.
+
+     SPINBACK – A SECTION OF REDUCED DIAMETER FROM THE               WING – THE BODY MATERIAL THAT TERMINATES THE WEB AND
+     CUTTING EDGE AT THE FLUTE FADE OUT AND/OR A PORTION OF THE      CONTAINS THE FLUTE FACE, CUTTING EDGE, CLEARANCE LAND,
+     SHANK OF THE ROUTER BIT                                         AND HEEL.
+
+     SPINDLE – A PRECISION BEARING MOUNTED STEEL SHAFT
+     USED TO TRANSFER MOTOR POWER AND RETAIN ARBOR, COLLET AND
+     WORK PIECES.
+
+
+
+
+                          Onsrud
+                          Cutter
+29
+ONSRUD CUTTER LP
+800 Liberty Drive
+Libertyville, IL 60048 USA
+TOLL FREE: 800/234-1560
+www.onsrud.com
+www.plasticrouting.com
+
+ISO 9001 Certified
+
+
+
+
+                                    MEMBER
+                                             MEMBER
+
+
+
+
+    INTERNATIONAL ASSOCIATION OF PLASTICS DISTRIBUTORS
+
+
+
+
+ PROFIT THROUGH AMERICAN TECHNOLOGY
+              WOOD MACHINERY
+              MANUFACTURERS
+              OF AMERICA
+
+
+
+              ASMMA
+  American Supply & Machinery
+  Manufacturers' Association, Inc.
+
+
+
+
+Leitz Metalworking Technology Group
+
+
+Printed in USA / Catalog OCPRG-04
+

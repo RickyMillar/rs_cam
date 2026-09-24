@@ -1,0 +1,926 @@
+                         Science Arts & Métiers (SAM)
+    is an open access repository that collects the work of Arts et Métiers Institute of
+  Technology researchers and makes it freely available over the web where possible.
+
+
+
+             This is an author-deposited version published in: https://sam.ensam.eu
+                          Handle ID: .http://hdl.handle.net/10985/19997
+
+
+
+To cite this version :
+Rémi CURTI, Bertand MARCON, Marco TOGNI, Rocco FURFERI, Giacomo GOLI, Louis
+DENAUD - Generalized cutting force model for peripheral milling of wood, based on the effect of
+density, uncut chip cross section, grain orientation and tool helix angle - European Journal of
+Wood and Wood Products - Vol. -, n°-, p.- - 2021
+
+
+
+
+Any correspondence concerning this service should be sent to the repository
+                Administrator : scienceouverte@ensam.eu
+European Journal of Wood and Wood Products
+https://doi.org/10.1007/s00107-021-01667-5
+
+    ORIGINAL ARTICLE
+
+
+
+Generalized cutting force model for peripheral milling of wood, based
+on the effect of density, uncut chip cross section, grain orientation
+and tool helix angle
+R. Curti1,2    · B. Marcon3 · L. Denaud3 · M. Togni2 · R. Furferi4 · G. Goli2
+
+Received: 20 May 2020 / Accepted: 4 February 2021
+© The Author(s) 2021
+
+
+Abstract
+The influence of the grain angle on the cutting force when milling wood is not yet detailed, apart from particular cases
+(end-grain, parallel to the grain, or in some rare cases 45°-cut). Thus, setting-up wood machining operations with complex
+paths still relies mainly on the experience of the operators because of the lack of scientific knowledge easily transferable
+to the industry. The aim of the present work is to propose an empirical model based on specific cutting coefficients for the
+assessment of cutting force when peripheral milling of wood based on the following input: uncut chip thickness and width,
+grain angle (angle between the tool velocity vector and the grain direction of the wood), density and tool helix angle. The
+specific cutting coefficients were determined by peripheral milling with different depths of cut wood disks issued from dif-
+ferent wood species on a dynamometric platform to record the forces. Milling a sample into a round shape (a disk) allows
+to measure the cutting forces toward every grain angle into a sole basic diameter reduction operation. Force signals are then
+post-processed to carefully clean the natural vibrations of the system without impacting their magnitudes. The experiment
+is repeated on five species with a large range of densities, machining two disks per species for five depths of cut in up- and
+down milling conditions for three different tool helix angles. Finally, a simple cutting force model, based on the previously
+cited parameters, is proposed, and its robustness analysed.
+
+
+1 Introduction                                                     (2017). Moreover, from an engineering point of view, high
+                                                                   cutting forces are more likely to introduce tool deflection or
+The cutting forces on the workpiece observed during wood           vibrations and to increase the defects of the part. Therefore,
+machining are induced by three main components in the              prior to machining, modelling and simulating of the cutting
+cutting mechanisms: the required new surface generation            forces could be a great help for manufacturers in order to
+energy, the friction of the chip on the tool, and the mechani-     set the feed speed and the revolution per minute of the tool
+cal energy dissipation inside the chip, as clearly presented by    to stay within the machine spindle power range, verify their
+Atkins (2005). Marchal et al. (2009) explain how the cutting       fixture, optimize both the material and cycle time (linked
+forces are strongly related to the properties of the final part,   to the energy consumed during the process) as well as the
+for example its roughness as shown by Cyra and Tanaka              final quality of their production. Tools manufacturers also
+(2000), which is often very important for the end-user qual-       express their wish to use cutting forces models to run the
+ity appreciation of the product as suggested by the studies        right tools for the right applications as well as providing
+by Ramananantoandro et al. (2014) and Ramanakoto et al.            the optimized cutting parameters range depending on the
+                                                                   operation to perform.
+* R. Curti                                                            A first attempt to develop a predictive cutting force
+  remi.curti@iut-tarbes.fr                                         model for wood machining, the double-beam theory, was
+1
+                                                                   initiated by McKenzie (1962). Further contributions were
+     ICA, University Toulouse III, Toulouse, France                then achieved by developing models using as input wood
+2
+     DAGRI, University of Florence, Florence, Italy                mechanical properties determined with dynamic tests such
+3
+     LaBoMaP, Arts Et Metiers Institute of Technology, UBFC,       as by Eyma et al. (2004), or shear + bending (3-point flexural
+     HESAM, Cluny, France                                          device) characterization as by Naylor et al. (2012). Eyma
+4
+     DIEF, University of Florence, Florence, Italy                 tried to relate the specific density SG , the elastic modulus
+
+
+                                                                                                                      13
+                                                                                                                 Vol.:(0123456789)
+                                                                                        European Journal of Wood and Wood Products
+
+
+Ec , and the hardness Pfi to the cutting forces while Naylor     be extrapolated. In consequence, this gap still has to be
+used the modulus of elasticity MOE , the modulus of rup-         addressed.
+ture MOR , the shear strength 𝜏 , the moisture content MC ,         Accordingly, the aim of this study is to assess the influ-
+the toughness U , the density 𝜌 , and the shear modulus G        ences of usual cutting parameters (wood density, uncut chip
+all together to estimate accurately the cutting forces. The      section, milling mode and tool helix angle) for every grain
+model developed by Eyma was effective to predict cutting         angle. A preliminary work has been conducted to set up and
+forces when machining across the grain using a given mul-        test the method to acquire the cutting forces and calculate the
+tiplicative coefficient to adjust the results for a given wood   specific cutting coefficients for materials with well-known
+species. By using more parameters, the model developed by        properties such as polytetrafluoroethylene (known to be very
+Naylor managed to be independent from the wood species           isotropic) and beech LVL (known to be highly anisotropic)
+without additional coefficient, both only across and along the   as from Goli et al. (2018). In the present work, a further step
+grain. However, in both cases, the number of experiments to      is taken by systematizing this procedure for several wood
+determine the mechanical parameters to feed the model is         species and using the results computed to propose an empiri-
+large and the models are developed just for one or two cut-      cal cutting forces model based on specific cutting coeffi-
+ting directions. More specialized models are dedicated to a      cients. Given the strong influence of tool geometry on the
+single process (for instance, circular sawing), using either     cutting forces, this parameter is also studied and analysed
+analytical or more recently fracture mechanics approaches        through the use of three different tool types: straight blade,
+as from Orlowski et al. (2020). In the case of analytical mod-   and 2 different helix angles 𝜆 (15° and 30°).
+els, which are most common and easily found in profes-
+sional books (Wagenführ and Scholz 2012), many correction
+coefficients are needed to adapt the prediction to different     2 Materials and methods
+scenarios. In the case where the fracture mechanics is con-
+sidered, the difficulty comes once again from the empirical      The method consists in machining a wood specimen into
+determination of the mechanical parameters which can lead        a round shape in order to cut it with every possible grain
+to complex and specific experimentations.                        angle. The specimen is fixed on top of a dynamometric plat-
+    All the above-mentioned details illustrate the lack of       form (type Kistler 9255A) that allows the measurement of
+knowledge concerning the impact of the grain angle GA            the cutting forces, and the platform itself is fixed on the
+(i.e. the angle between the cutting tools edge velocity vec-     machine worktable. The specimens are machined by periph-
+tor and the grain direction of the wood) out of those “main      eral milling (without end-milling). The operation is schema-
+directions” such as parallel or perpendicular to the grain.      tized in Fig. 1.
+Although Costes et al. (2004) conducted a study of the cut-         The method is similar to the experiments imagined by
+ting forces over a 360° revolution while turning a wooden        Goli and Sandak (2016) and improved by Goli et al. (2018).
+sample, the configuration of turning is not directly exploit-    The main noticeable improvement from the method pre-
+able for peripheral milling purposes and results cannot          sented by Goli et al. (2018) comes from the use of a milling
+
+Fig. 1  Milling operation sche-
+matized and definition of the
+reference system and cutting
+forces according to Goli et al.
+(2018)
+
+
+
+
+13
+European Journal of Wood and Wood Products
+
+centre for the metal cutting model Alcera 120CR produced
+by Gambin Corp. The benefit of using a metal cutting
+machining centre, compared to a router for wood machin-
+ing as used previously is the stiffer structure that leads to
+vibrational excitations with a significantly lower amplitude.
+In addition, this machine is equipped with triggers controlled
+by a Numerical Control unit which, recorded together with
+the experimental force signals, allows for an easier synchro-
+nization between the tool position and the data acquired dur-
+ing the disk machining.
+    The main variables of the experiment are: the radial
+depth of cut, the grain angle, the milling mode (up-milling
+                                                                          Fig. 2  Mills used during the cutting experiments, from left to right:
+or down-milling), the type of tool (straight or helical blade),           straight blade, 15°-helical cutter, and 30°-helical cutter
+and the material to be cut. To develop a density-based
+model, 5 wood species ranging from 287.1 to 1079.5 kg ­m−3
+are tested and the details are shown in Table 1. Density was              and the diameter variation of the specimen after consecu-
+measured right after the experiments by weighing 10 control               tive experiments/peripheral milling. Five depths of cut ( ae)
+cubes per plank randomly extracted on their volume, while                 are tested: 0.5, 1.0, 1.5, 2.0, and 2.5 mm to machine with
+moisture content (MC) was determined by oven dry method                   five different uncut chip thicknesses. This results in average
+according to the standard EN 13183-1 (2002). At the scale of              uncut chip thicknesses h roughly varying from 40 µm (for
+the experiments, all wood species can be considered homo-                 the smallest depth of cut) to 100 µm (for the largest depth
+geneous except for paulownia whose growth rings are large                 of cut).
+enough in relation to the specimen thickness to present a                    Prior to the experiment, specimens are disks with a diam-
+varying ratio between early wood and late wood around the                 eter (ø) equal to 250 mm and a thickness equal to 30 mm;
+disk. Growth rings of paulownia measure around 10 mm in                   the diameter is progressively reduced after every machining
+the case of the specimens tested, which is not surprising in              down to a minimum value of 150 mm. Rough specimens
+regard of the literature (Perera et al. 2012). Since it is a fast-        machined into a beech slab and ready to be transferred to
+growing tree, even using 30-mm thick specimens did not                    the experimental setup are illustrated in Fig. 3.
+prevent this variation of ratio in the samples.                              The rough total forces recorded are the forces in the X-,
+    Three uncoated, freshly sharpened, tungsten carbide mas-              Y- and Z-directions (as in Fig. 1) which correspond to the
+sive tools specially designed for the purpose of the experi-              axes of the milling machine and the dynamometric plat-
+ment provided by G3 Fantacci Corp (Poggibonsi, Italy) are                 form. Because of the dynamic excitation of the system, the
+tested, with a special interest in the effect of the helix angle.         recorded signals contain undesired vibrations. To solve this
+Indeed, this parameter is commonly used to reduce the noise               problem, as described by Goli et al. (2018), the rough signals
+of cutting operations and is supposed to reduce the cutting               are post-processed with a mobile average based on a period
+forces by increasing slicing of the chip and increasing the               of 20 tool revolutions. This technique allows to remove the
+apparent sharpness of the tool edge as detailed by Atkins                 periodic component of the signal and results in the cutting
+(2009). To do so, every parameter is kept constant between                forces averaged on a tool revolution. The averaged signals
+the tools besides the helix angle. The tools, shown in Fig. 2,            are used to calculate the resultant force, which is then pro-
+are geometrically described in Table 2.                                   jected on the cutting frame (the cutting force being collinear
+    The machining parameters are gathered in Table 3; every               with the cutting direction at the mean uncut chip thickness
+parameter is kept constant during an experiment besides the               position; and the normal force, directly orthogonal to the
+cutting directions. The feed speed is given at the tool centre;           cutting force; as previously represented in Fig. 1). The aver-
+it is recalculated at the tool/material interface for each exper-         aged cutting force referred to the cutting period (instead of
+iment as it can vary quite a lot both with the tool diameter              the tool revolution) is finally calculated dividing the force
+
+
+Table 1  Main physical properties of the machined materials (SD in parentheses)
+Specimen material          Paulownia (Paulow-     Lime (Tilia europaea)        Maple (Acer pseu-    Oak (Quercus robur)         Azobe
+                           nia tomentosa)                                      doplatanus)                                      (Lophira alata)
+
+Density (kg/m3)            287.1 (3.1)            585.7 (7.2)                  623.9 (5.8)          737.8 (12.7)                1079.5 (6.4)
+Moisture content (%)       8.7 (0.2)              8.8 (0.1)                    9.7 (0.1)            11.2 (0.8)                  11.5 (0.9)
+
+
+
+                                                                                                                                    13
+                                                                                                       European Journal of Wood and Wood Products
+
+Table 2  Geometrical characteristics of the 3 cutting tools
+Blade type (helix angle 𝜆) Diam-      Number          Rake angle in    Wedge angle in        Clearance angle in   Material          Standard
+                           eter       of flutes/      the normal plane the normal plane      the normal plane                       application
+                           (mm)       teeth z         (°)              (°)                   (°)                                    group
+
+Straight blade              20        2               25                   55                10                   Tungsten Carbide O
+(0°)
+Helical cutter (15°)        20        2               25                   55                10                   Tungsten Carbide O
+Helical cutter (30°)        20        2               25                   55                10                   Tungsten Carbide O
+
+
+
+Table 3  Machining parameters                                                   the same purpose, Ks and Int were computed and averaged
+Parameter                   Symbol            Value
+                                                                                over a grain angle span of 1° but are only displayed every
+                                                                                10°-step.
+Spindle speed               Ω                 3000 rpm                             In the end, two simple models are proposed in order to
+Feed rate                   Vf                2000 mm/min                       estimate the cutting force of an operation.
+Axial depth of cut          ap                30 mm
+Radial depth of cut         ae                0.5, 1.0, 1.5, 2.0, 2.5 mm
+                                                                                3 Results and discussion
+
+                                                                                3.1 Cutting forces and specific cutting coefficients
+                                                                                     of wood with various densities
+
+                                                                                Cutting forces and specific cutting coefficients are strongly
+                                                                                affected either by the density of the machined wood, the
+                                                                                uncut chip thickness, or the grain angle between the grain
+                                                                                direction and the cutting speed. Figure 4 displays the evolu-
+                                                                                tion of the averaged cutting force normalized on the blade
+                                                                                length (1 mm-wide chip) toward the grain angle for 5 uncut
+                                                                                chip thicknesses when up-milling paulownia (a), lime (b),
+                                                                                maple (c), oak (d), and azobe (e) with the 15° helix angle.
+
+Fig. 3  Four specimens issued from a slab (GD is the grain direction)           3.2 Influence of the grain angle (GA)
+
+                                                                                The influence of the grain angle is clearly noticeable for
+by ( z × 𝜑) and multiplying by (2π), where z is the number                      every species. A way to represent it is to compute the ratio
+of blades and 𝜑 the work angle as the angle travelled by the                    between the maximum cutting force and the minimum cut-
+blade during the cutting of the chip. This method is dis-                       ting force calculated for each experiment and among the
+cussed by Wagenführ and Scholz (2012).                                          different grain angle. As summed-up in Fig. 5, this ratio
+   The specific cutting coefficient (Ks) is then determined by                  varies from 1.34 to 3.73 which depends on the depth of cut,
+linear regression over the corrected cutting force for 5 mean                   the milling mode, the tool used and the material tested. This
+uncut chip thicknesses. At the same time, the intercept of the                  ratio (which will be called the degree of anisotropy in the
+linear regression ( Int ) is recorded as well for its importance                following, not to be confused with a ratio of moduli of elas-
+based on the cutting theory by Atkins (2005) which states                       ticity as often used in the construction field) is displayed in
+that this intercept depends on the “toughness” of the mate-                     Fig. 5 for the five wood species and the two milling modes
+rial, but this peculiar issue is not subject of further analysis                tested as an average of the values obtained at 5 different
+in this particular study. Two replicates were performed for                     uncut chip thicknesses with the three different helical angles.
+each cutting condition, on two different specimens machined                     As shown from the low standard deviation, the uncut chip
+into different slabs; each one providing averaged cutting                       thickness and the tool used for the experiment resulted in
+forces to compute a corresponding specific cutting coeffi-                      negligible impact on the degree of anisotropy.
+cient Ks . Then, each pair of Ks per cutting condition was                          This ratio is the largest for azobe in up-milling and varies
+averaged to compute a global Ks at those cutting conditions.                    from 2.59 to 3.73 for this species. On the contrary, this effect
+The same process was applied to Int . Those averaged val-                       is the lowest for paulownia in down-milling (from 1.37 to
+ues are only named Ks and Int for readability purpose. For                      1.82). However, the average degree of anisotropy for each
+
+
+13
+European Journal of Wood and Wood Products
+
+
+                                              8                                                                                                                        8
+
+
+
+
+                                                                                                                                   Normalised averaged forces (N/mm)
+          Normalised averaged forces (N/mm)
+                                                   0.5 mm                                                      (a)                                                                0.5 mm                        (b)
+                                                   1.0 mm                                                   = 15°                                                                 1.0 mm                      = 15°
+                                              6    1.5 mm                                                                                                              6          1.5 mm
+                                                                                                         up-milling                                                                                        up-milling
+                                                   2.0 mm                                                                                                                         2.0 mm
+                                                                                                         Paulownia                                                                                           Lime
+                                                   2.5 mm                                                                                                                         2.5 mm
+                                              4                                                                                                                        4
+
+
+
+                                              2                                                                                                                        2
+
+
+
+                                              0                                                                                                                        0
+                                               0   45         90                                         135           180                                              0         45            90        135           180
+                                                        Grain angle (°)                                                                                                                 Grain angle (°)
+
+                                              8
+          Normalised averaged forces (N/mm)
+
+
+
+
+                                                                                                                                                                  8
+
+
+
+
+                                                                                                                             Normalised averaged forces (N/mm)
+                                                   0.5 mm                                                      (c)                                                                0.5 mm                        (d)
+                                                   1.0 mm                                                    = 15°                                                                1.0 mm                      = 15°
+                                              6    1.5 mm                                                                                                         6               1.5 mm
+                                                                                                          up-milling                                                                                       up-milling
+                                                   2.0 mm                                                                                                                         2.0 mm
+                                                                                                           Maple                                                                                             Oak
+                                                   2.5 mm                                                                                                                         2.5 mm
+                                              4                                                                                                                   4
+
+
+
+                                              2                                                                                                                   2
+
+
+
+                                              0                                                                                                                   0
+                                               0   45         90                                         135           180                                         0              45            90        135           180
+                                                        Grain angle (°)                                                                                                                 Grain angle (°)
+
+                                                                                                    8
+                                                                Normalised averaged forces (N/mm)
+
+
+
+
+                                                                                                               0.5 mm                                                             (e)
+                                                                                                               1.0 mm                                                           = 15°
+                                                                                                    6          1.5 mm                                                        up-milling
+                                                                                                               2.0 mm
+                                                                                                                                                                              Azobe
+                                                                                                               2.5 mm
+                                                                                                    4
+
+
+
+                                                                                                    2
+
+
+
+                                                                                                    0
+                                                                                                     0         45            90                                             135           180
+                                                                                                                     Grain angle (°)
+
+Fig. 4  Cutting forces referred to the grain angle for five radial engagements
+
+
+
+species remains slightly below the value of 2 (paulownia:                                                                               (2001). Note that during the cutting experiments the authors
+1.70, lime: 1.87, maple: 1.68, oak: 1.97) except for azobe                                                                              noticed that the chips were also extremely different depend-
+(its average being 3.38). This strong anisotropy in cutting                                                                             ing on the grain angle when cutting azobe. When cutting
+forces for azobe might not be attributed to the influence of                                                                            parallel to the grain only highly fragmented chips and a large
+the density but rather to other parameters already known                                                                                quantity of dust were produced while cutting perpendicular
+for impacting the wood anisotropy such as the wood mate-                                                                                to the grain produced continuous chips and a low amount of
+rial organization at every scale as shown by Thibaut et al.                                                                             dust (although not quantified).
+
+
+                                                                                                                                                                                                                         13
+                                                                                                                                                                 European Journal of Wood and Wood Products
+
+                                4                                       1200                                                                  110
+   Degree of anisotropy (N/N)                                                                                                                           Paulownia                            = 15 °
+                                           up-milling                                                                                         100
+                                                                                                                                                        Lime
+                                                                        1000                                                                                                              up-milling
+                                           down-milling
+
+
+
+
+                                                                                                     Specific cutting coefficient (N/mm 2 )
+                                                                                                                                              90        Maple
+                                3          density                                                                                                      Oak
+
+
+
+
+                                                                               Density (kg/m3 )
+                                                                                                                                              80        Azobe
+                                                                        800
+                                                                                                                                              70
+
+                                2                                       600                                                                   60
+
+                                                                                                                                              50
+                                                                        400                                                                   40
+                                1
+                                                                                                                                              30
+                                                                        200
+                                                                                                                                              20
+
+                                0                                       0                                                                     10
+                                 Paulownia Lime   Maple   Oak   Azobe
+                                                                                                                                               0
+                                             Wood species                                                                                           0       45              90          135            180
+                                                                                                                                                                      Grain angle (°)
+
+Fig. 5  Average degree of anisotropy of the cutting force according to
+wood species and the milling mode, over the five depths of cut and                                Fig. 6  Specific cutting coefficient ( K s) according to the grain angle
+three types of tool                                                                               when up-milling paulownia, lime, maple, oak, and azobe with the
+                                                                                                  15°-helical cutter
+
+   The global cutting force variation according to the grain
+angle displayed in Fig. 4 is comparable whatever the uncut
+chip thicknesses and wood species, except for paulownia                                           machining perpendicular to the grain. However, the maxi-
+which presents atypical features with two local maxima                                            mum force is never obtained while cutting strictly perpen-
+while only one is present for the 4 other species. However,                                       dicular to the grain but slightly against the grain, when
+this observation is likely due to the interaction of two param-                                   the rake face is parallel to the grain. This was already
+eters, in the case of paulownia, not only the grain angle var-                                    observed by Goli et al. (2009b), whose results have shown
+ies along the experiment but also the early/late wood ratio as                                    a strong dependency between the maximum cutting forces
+described in the materials and methods section. As stated by                                      recorded and the position where the tool rake face and the
+Porankiewicz et al. (2007), in cutting conditions presenting                                      grain are parallel. Then, the cutting force decreases much
+highly heterogeneous specimens at the mesoscopic scale,                                           faster, machining with the grain, until cutting parallel to
+accurate cutting force estimation should take into account                                        the grain again. Thus, the cutting force evolution is not
+the properties of wood locally encountered by the tool.                                           symmetrical from 0° to 90° and from 90° to 0°. Except for
+Although this statement is undeniable, the industrial end-                                        paulownia, it is noticeable that the cutting force increase
+user of the model being developed could not be so accurate                                        is not perfectly progressive from 0° to 90° and slows down
+to consider the local density map of the parts being cut.                                         around 50° before rising again.
+According to this, in the definition of the model, only the                                          In practice, the specific cutting coefficient ( Ks ) is the
+average density of the specimen will be considered. Note                                          easiest and most common parameter to be used to calculate
+that this phenomenon was also observed by the authors dur-                                        the cutting force for any machining scenario and uncut
+ing another experimental campaign with poplar wood (not                                           chip section. Thus, it was decided to build the current
+presented here) also for 30-mm-thick specimens and display-                                       model based on Ks . Ks has been calculated at every 10° of
+ing large growth rings as for the tested paulownia.                                               grain angle intervals for the whole experimental data. The
+   A linear interpolation, as in Curti et al. (2018) for orthog-                                  resulting specific cutting coefficients when up-milling the
+onal cutting, was applied to uncut chip thickness vs. cutting                                     different species with a 15°-helical cutter are gathered in
+forces plot and Ks and Int parameters determined according                                        Fig. 6. This specific cutting configuration has been chosen
+to Eq. (1). For all wood species, the coefficient of determina-                                   for the sake of brevity as it constitutes the centre of the
+tion ( R2 ) between the experimental dataset and this linear                                      whole experimental plan.
+interpolation is superior to 0.99 (except for paulownia wood                                         The higher the cutting forces the higher the specific
+due to its singularity where the average R2 was determined                                        cutting coefficient for the five species. Thus, every obser-
+to be 0.97).                                                                                      vation made for cutting forces remains similar for the
+                                                                                                  specific cutting coefficient. The maximum specific cut-
+                                                             (1)
+       (             )
+FC = Ks × h + Int × ap                                                                            ting coefficient tends to be located around 110° of grain
+                                                                                                  angle. It is also noticeable that oak and maple display very
+   In general, the cutting force is minimum when cut-
+                                                                                                  similar cutting forces and it is even more highlighted when
+ting parallel to the grain (grain angle = 0°) and rises until
+                                                                                                  looking at their specific cutting coefficient and intercept.
+
+
+13
+European Journal of Wood and Wood Products
+
+The intercepts ( Int ) corresponding to the previous specific                                                                       FC = Ks × h × ap                                                                 (2)
+cutting coefficient are displayed in Fig. 7.
+    The intercept below 0 is mathematically possible but
+physically surprising as it is supposed to represent the cut-                                                                       3.3 Effect of tool geometry
+ting toughness (Atkins 2005). This will be discussed later
+on after the description of the influence of the tool geom-                                                                         To investigate the influence of tool geometry, particular
+etry. The contribution of the intercept to the computed cut-                                                                        focus must be laid on back force ( Fp) addition to the cutting
+ting force becomes inferior to 10% (approximately, since                                                                            force ( Fc ). Figure 8 displays, for solid maple, the back force
+it depends once again on the species) of its value once the                                                                         (a) and the cutting force (b) using the three tools described
+uncut chip thickness reaches 100 µm. In this case, the use                                                                          in Table 2 for the 5 depths of cut experimented. Other spe-
+of the simplified and popular model (NF E66-520-4 1997),                                                                            cies are not represented to avoid overloading of figures, but
+assuming no intercept, could be considered as resumed                                                                               every qualitative observation remains valid for lime, oak,
+by Eq. (2):                                                                                                                         and azobe.
+                                                                                                                                       For helical tools, the back force and the cutting force fol-
+                                                                                                                                    low exactly the same trends; this is not true for the tool using
+                                                                                                                                    straight blades. The average back forces with this tool should
+                                                                                                                                    be null if the geometry of the experimental setup was per-
+                      0.4
+                                                                                                     = 15 °
+                                                                                                                                    fect but they appear slightly negative. However, it remains
+                      0.2                                                                         up-milling                        negligible compared to the cutting forces.
+                        0                                                                                                              The back forces are the highest for the maximum helix
+                                                                                                                                    angle (λ = 30°) whereas cutting forces are maximized when
+                      -0.2
+   Intercept (N/mm)
+
+
+
+
+                                                                                                                                    machining with the straight blade (λ = 0°). Thus, the ratio
+                      -0.4
+                                                                                                                                    between back force and cutting force Fp ∕Fc increases with
+                      -0.6                                                                                                          the helix angle, which reflects a change in the direction of
+                      -0.8
+                                                                                                                                    the resultant force according to the helix angle, and does not
+                                                                        Paulownia                                                   appear influenced by the uncut chip thickness in the range
+                       -1                                               Lime
+                                                                        Maple
+                                                                                                                                    studied. Table 4 displays, for the 5 wood species, the average
+                      -1.2                                              Oak                                                         ratio between back force and cutting force regardless of the
+                                                                        Azobe
+                      -1.4
+                                                                                                                                    depth of cut. The ratio seems to be mainly dependent on the
+                             0                                              45              90            135           180
+                                                                                                                                    type of tool and on the species itself with a lesser impact.
+                                                                                     Grain angle (°)
+                                                                                                                                       The specific cutting coefficient as well as the intercepts
+                                                                                                                                    are also modified by the helix angle. This is illustrated
+Fig. 7  Intercept ( Int ) values according to the grain angle when up-
+milling paulownia, lime, maple, oak, and azobe with the 15°-helical                                                                 in Fig. 9 which focuses separately on the specific cutting
+cutter
+                             Normalised averaged forces (N/mm)
+
+
+
+
+                                                                                                                                    Normalised averaged forces (N/mm)
+
+
+
+
+                                                                   1                                                                                                    10
+                                                                                    = 0°         (a)               Maple                                                     = 0°      (b)             Maple
+                                                                                    = 15°                         up-milling                                                 = 15°                    up-milling
+                                                                                    = 30°                                                                               8    = 30°
+                                                                 0.5
+
+                                                                                                                                                                        6
+                                                                   0
+                                                                                                                                                                        4
+
+                                                                 -0.5
+                                                                                                                                                                        2
+
+                                                                  -1                                                                                                    0
+                                                                    0               45           90             135           180                                        0   45         90          135        180
+                                                                                         Grain angle (°)                                                                          Grain angle (°)
+
+Fig. 8  Back (a) and cutting (b) forces when up-milling maple with                                                                  diamond: 1.5 mm radial depth of cut, triangle: 1.0 mm radial depth of
+different helix angles (λ = 0°, λ = 15°, and λ = 30°). Full circle:                                                                 cut, and crosses: 0.5 mm radial depth of cut
+2.5 mm radial depth of cut, empty circle: 2.0 mm radial depth of cut,
+
+
+                                                                                                                                                                                                                   13
+                                                                                                                                                   European Journal of Wood and Wood Products
+
+Table 4  Fp ∕Fc ratio averaged                                         Helix angle      Paulownia         Lime                             Maple             Oak                Azobe
+for the five depths of cut (SD in
+parentheses)                                                           𝜆=0  ◦
+                                                                                        2.3% (1.7%)       0.4% (2.2%)                      4.6% (2.5%)       0.0% (2.2%)        1.8% (1.2%)
+                                                                       𝜆 = 15◦          9.4% (2.0%)       17.2% (3.1%)                     13.2% (3.8%)      18.8% (2.5%)       20.6% (2.1%)
+                                                                       𝜆 = 30◦          25.3% (4.0%)      39.5% (4.6%)                     32.6% (6.0%)      39.7% (4.5%)       44.8% (4.1%)
+          Specific cutting coefficient (N/mm 2 )
+
+
+
+
+                                                   60                                                                          4
+                                                         (a)                                                                         (b)
+                                                   50                                                                          3
+
+
+
+
+                                                                                                            Intercept (N/mm)
+                                                   40                                                                          2
+                                                                                                                                             = 0°
+                                                                                                                                                      Maple
+                                                                                                                                             = 15°
+                                                   30                                                                          1
+                                                                                                                                             = 30°
+                                                                                                                                                     up-milling
+
+                                                   20                   = 0°                                                   0
+                                                                                  Maple
+                                                                        = 15°
+                                                                                 up-milling
+                                                                        = 30°
+                                                   10                                                                          -1
+                                                     0         45         90           135          180                          0         45           90         135         180
+                                                                    Grain angle (°)                                                             Grain angle (°)
+
+Fig. 9  Specific cutting coefficients (left) and intercepts (right) for maple machining computed for the 3 tools in up-milling configuration
+
+
+coefficients (a) and the intercepts (b) for the 3 helix angles                                             the cut has to be considered as very discontinuous compared
+(tool types).                                                                                              to the helical tools (it varies from 0.35 to 0.5 for 𝜆 = 15◦ and
+   The intercept is much lower in the case of helical blades                                               from 0.6 to 0.8 for 𝜆 = 30◦).
+for every grain angle and actually close to zero. Thus, the
+cutting force is directly proportional to the uncut chip thick-
+                                                                                                           3.4 Differences observed between up‑milling
+ness, whereas with a straight blade, a constant is present,
+                                                                                                                and down‑milling
+at least in the range tested. The fact that the intercept is
+slightly negative makes the empirical model very hazard-
+                                                                                                           Cutting forces in down-milling and up-milling follow the
+ous to extrapolate for thinner chips since the cutting forces
+                                                                                                           same trends. They are displayed in Fig. 10 in the case of a
+for uncut chip thickness tending to be null are necessarily
+                                                                                                           15° helical cutter for maple wood.
+positive. The model could then be applicable only above
+                                                                                                              The most consistent difference lies in the overall lower
+the minimal uncut chip thickness measured, which, for a
+                                                                                                           cutting forces in up-milling with respect to down-milling.
+machining operation, can be already considered as very thin.
+                                                                                                           Even if the curves in Fig. 10 relate only to the tool with 15°
+   The fact that the intercept values vary with a property of
+                                                                                                           helix angle, this is also true for 0 and 30° of helix angle. On
+the tool such as the helix angle could question the Atkins’
+                                                                                                           average over the 25 configurations tested, forces while up-
+theory (Atkins 2005) that attributes the intercept value to
+                                                                                                           milling are 9% lower than during down-milling with a stand-
+an intrinsic property of the material such as the toughness.
+                                                                                                           ard deviation of about 4%. This finds its explanation in the
+   Ks decreases with the helix angle of the tool. The differ-
+                                                                                                           fact that in the final part of the cut, the chip splits mainly by
+ences are the lowest when cutting parallel to the grain and
+                                                                                                           crack propagation in front of the cutting edge when up-mill-
+the largest when machining with the grain. Ks is also steadier
+                                                                                                           ing while it must be completely cut when down-milling as
+when using a helical cutter than when milling with a straight
+                                                                                                           previously reported by Koch (1972) and Goli et al. (2009a)
+blade. This observation can be due to the high dynamic exci-
+tation when machining with the straight blade tool. In the
+present machining set-up, the straight blade tool presents a                                               3.5 Empirical model
+cutting continuity coefficient (computed as the ratio between
+the angle during which one blade is actually machining                                                     Since in the case of a straight blade cutter or for small chips
+and the angle between two blades of the tool) which varies                                                 the intercept value is not negligible, the initial equation,
+between 0.1 and 0.2, depending on the specimen radius and                                                  before taking into account the density, is based on Eq. (1)
+the radial depth of cut. Being this value much lower than 1,
+
+
+13
+European Journal of Wood and Wood Products
+
+                                        5                                                            be the same between two wood species since mechanical
+                                       4.5
+                                              Up-milling
+                                              Down-milling
+                                                                                     Maple           properties are not solely impacted by density, as shown by
+   Normalised averaged forces (N/mm)
+                                                                                      = 15 °
+                                                                                                     Gonçalves et al. (1997), but it remains an efficient indicator
+                                        4
+                                                                                                     to use a simple model without in-depth knowledge of the
+                                       3.5                                                           material. Afterwards, Ks𝜆,norm (GA) and int𝜆,norm (GA) are rep-
+                                        3                                                            resented in Fig. 11, respectively (a) and (c) and (b) and (d)
+                                                                                                     for both up-milling and down-milling configurations and for
+                                       2.5
+                                                                                                     the three helix angles tested. To allow the calculation of both
+                                        2                                                            coefficients for any grain angle and wood density, a model
+                                       1.5                                                           based on a quadratic interpolation of those two parameters is
+                                                                                                     proposed based on the present results. Since the specific cut-
+                                        1
+                                                                                                     ting coefficient and intercept are not monotonic toward the
+                                       0.5
+                                          0       45               90          135             180
+                                                                                                     grain angle variation, and display one global maximum in
+                                                             Grain angle (°)                         all the experiments, a quadratic interpolation is a good equi-
+                                                                                                     librium between simplicity of the mathematical model and
+Fig. 10  Cutting force for maple machining computed for up-milling                                   its accuracy to report the global experimental evolutions.
+and down-milling using a 15° helical tool. Full circle: 2.5 mm radial                                    Both parameters, Ks𝜆,norm (GA) and int𝜆,norm (GA), can be
+depth of cut, empty circle: 2.0 mm radial depth of cut, diamond:
+1.5 mm radial depth of cut, triangle: 1.0 mm radial depth of cut, and
+                                                                                                     computed for every wood species and grain angle knowing
+crosses: 0.5 mm radial depth of cut                                                                  the density of the wood (between 287 and 1080 kg/m3 to
+                                                                                                     avoid extrapolation) and the grain angle (varying from 0° to
+                                                                                                     179°) during the operation combining formula (4) and the
+and is expressed for one wood species, one tool with a given                                         quadratic fitting equations in Table 5.
+helix angle 𝜆, and one grain angle GA as (3):                                                            To assess the quality of the model suggested, the normal-
+                                                                                                     ized root-mean-square error (NRMSE) between the force
+Fc𝜆 (GA) = Ks𝜆 (GA) ⋅ h + int𝜆 (GA) ⋅ Ap                  (3)
+           (                       )
+                                                                                                     predicted by the model Fcmodel (GA) and the experiments Fc is
+                                                                                                     computed as Eq. (5) for each experiment:
+ where Fc𝜆 (GA) is the cutting force for a given tool with a
+given helix angle (𝜆 ) for a given wood species and for a
+                                                                                                                  �
+                                                                                                                     ∑180 (Fcmodel (GA)−Fc (GA))
+given grain angle; Ks𝜆 (GA) is the specific cutting coefficient                                      NRMSE =
+                                                                                                                      GA=0             19                       (5)
+for the same configuration; and int𝜆 (GA) the intercept once                                                                 Fc (GA)
+again for the same configuration. This empirical model, even
+if very accurate, suffers from the need of the knowledge of                                             This results in 150 NRMSE, one for each experiment
+Ks𝜆 (GA) and int𝜆 (GA) for every wood species, tool used and                                         (that is to say a set of: one tool, one wood species, one depth
+grain angle which prevents it from being transferable to the                                         of cut and 19 grain angles). Since 5 depths of cut were tested
+industry. In consequence, it cannot be used, for instance, to                                        to determine Ks with five cutting force measurements, the
+predict cutting forces for beech wood. However, based on                                             five NRMSE computed are averaged to obtain only one aver-
+the hypothesis of a linear influence of the density over the                                         aged error for a couple (wood species—helix angle). It is
+cutting forces variation (often assumed in the literature), the                                      important to notice that this operation is done because the
+following expression (4) for the cutting force is proposed:                                          variation of NRMSE is very small from one depth of cut to
+                                                                                                     another for a same couple (wood species—helix angle). The
+Fc𝜆 (GA) = Ks𝜆,norm (GA) ⋅ h + int𝜆,norm (GA) ⋅ Ap × 𝜌      (4)
+            (                                )
+                                                                                                     averaged NRMSE obtained for the 30 couples is gathered
+                                                                                                     in Table 6.
+ where Ks𝜆,norm (GA) is the average specific cutting coefficient                                        The NRMSE cannot capture the fact that the model tends
+for a given angle and a given tool computed as the average of                                        to underestimate or overestimate the cutting force. Based on
+Ks determined for the different species after being normal-                                          the observations of the authors, no clear trend can be given,
+ised by the densities, int𝜆,norm (GA) the average intercept for                                      depending on the wood species and the grain angle, it can
+a given angle and a given tool computed as the average of Ks                                         either underestimate the forces measured or overestimate
+determined for the different species after being normalised                                          them. Those errors arise from several factors. The hypoth-
+by the densities and 𝜌 the density of material for which the                                         esis of a linear influence on the cutting force with respect to
+force must be predicted. It is acknowledged in the literature                                        the wood density, averaging the measured specific cutting
+that the density influence can be considered as linear for a                                         coefficients and intercept over several wood species, added
+given wood species but that it becomes incorrect when con-                                           the use of a quadratic interpolation to compute Ks𝜆,norm (GA)
+sidering several wood species at the same time. Indeed, it is                                        and Int𝜆,norm (GA), are three sources of approximations in
+impossible to affirm that for the same densities the effort will
+
+
+                                                                                                                                                         13
+                                                                                                                                   European Journal of Wood and Wood Products
+
+
+                                                                                                                 10-3
+                                                                                                             8
+                                                                            (a)                                                                                 (b)
+
+
+
+
+                                                                                           m3 /kg)
+         m3 /kg)
+                           0.08
+                                                                    up-milling                                                                          up-milling
+                                                                                                             6
+
+                           0.06                                                                                              = 0°
+                                                                                                             4               = 15°
+
+
+
+
+                                                                                           Int ,norm (N/mm
+         K s,norm (N/mm²
+
+
+
+                                                                                                                             = 30°
+                           0.04                        = 0°                                                                quad. fit    = 0°
+                                                       = 15°                                                 2
+                                                                                                                           quad. fit    = 15°
+                                                       = 30°                                                               quad. fit    = 30°
+                           0.02                      quad. fit   = 0°                                        0
+                                                     quad. fit   = 15°
+                                                     quad. fit   = 30°
+                              0
+                               0           45          90         135          180                           0            45             90            135           180
+                                                Grain angle (°)                                                                  Grain angle (°)
+                                                                                                                 10-3
+                                                                                                             8
+                                                                           (c)                                                                                  (d)
+
+
+
+
+                                                                                         m3 /kg)
+          m3 /kg)
+
+
+
+
+                            0.08
+                                                                  down-milling                                                                         down-milling
+                                                                                                             6
+
+                            0.06                                                                                             = 0°
+                                                                                                             4               = 15°
+          K s,norm (N/mm²
+
+
+
+
+                                                                                         Int ,norm (N/mm
+                                                                                                                             = 30°
+                            0.04                       = 0°                                                                quad. fit     = 0°
+                                                                                                             2
+                                                       = 15°                                                               quad. fit     = 15°
+                                                       = 30°                                                               quad. fit     = 30°
+                            0.02                     quad. fit   = 0°                                        0
+                                                     quad. fit   = 15°
+                                                     quad. fit   = 30°
+                              0                                                                            -2
+                               0           45          90          135           180                         0            45             90            135            180
+                                                Grain angle (°)                                                                  Grain angle (°)
+
+Fig. 11  Specific cutting coefficients and intercepts evolutions averaged for the five wood species machined and divided by the averaged density
+of the current five wood species in up-milling a and b and down-milling c and d
+
+
+
+
+Table 5  Quadratic model for K 𝝀,norm
+                               s      (GA) and int𝝀,norm (GA). GA must be expressed in degrees (°)
+Milling mode                       λ(◦ )           Ks𝜆,norm (GA) model                                                          int𝜆,norm (GA) model
+
+Up-milling                         0                0
+                                                   Kmodel = −5 ⋅ 10−6 GA2 + 1⋅10−3 GA + 26⋅10−3                                    0
+                                                                                                                                Intmodel = −1⋅10−7 GA2 + 1⋅10−5 GA + 55⋅10−4
+                                   15               15
+                                                   Kmodel = −4⋅10−6 GA2 + 7⋅10−4 GA + 32 ⋅ 10−3                                    15
+                                                                                                                                Intmodel = 8⋅10−8 GA2 − 2⋅10−5 GA + 2⋅10−4
+                                   30               30
+                                                   Kmodel = −3⋅10−6 GA2 + 5⋅10−4 GA + 21⋅10−3                                      30
+                                                                                                                                Intmodel = 7⋅10−8 GA2 − 1⋅10−5 GA − 6⋅10−5
+Down-milling                       0               Kmodel = −3⋅10−6 GA2 + 5 ⋅ 10−4 GA + 56⋅10−3
+                                                    0                                                                              0
+                                                                                                                                Intmodel = −3⋅10−7 GA2 + 4⋅10−5 A + 47⋅10−4
+                                   15               15
+                                                   Kmodel = −3⋅10−6 GA2 + 5⋅10−4 GA + 49⋅10−3                                      15
+                                                                                                                                Intmodel = 1⋅10−8 GA2 − 4⋅10−6 GA − 4⋅10−4
+                                   30              Kmodel = −2⋅10−6 GA2 + 4⋅10−4 GA + 30⋅10−3
+                                                    30                                                                             30
+                                                                                                                                Intmodel = 3⋅10−8 GA2 − 7⋅10−6 GA − 4⋅10−4
+
+
+
+Table 6  NRMSE obtained using                    Milling mode       Helix angle        Paulownia (%)                    Lime (%)        Maple (%)       Oak (%)        Azobe (%)
+the model for every species and
+tool tested                                      Up-milling         𝜆 = 0◦             22.34                            14.38            8.10           11.52          30.29
+                                                                    𝜆 = 15◦            33.80                            19.39           23.94           18.32          18.75
+                                                                    𝜆 = 30◦            19.74                             8.70            8.78            9.61          22.86
+                                                 Down-milling       𝜆 = 0◦             30.65                            15.29           17.58           15.46          37.82
+                                                                    𝜆 = 15◦            28.90                            12.52           16.01           14.30          30.85
+                                                                    𝜆 = 30◦            19.09                            18.19            9.39           10.15          29.38
+
+                                                 Errors larger than 25% are in italic font
+
+
+13
+European Journal of Wood and Wood Products
+
+
+the estimation of the proposed model. Since some of the               made possible thanks to the funding of the ANISOTROPEE project
+                                                                      from the University of Florence (IT) and the support of the Région
+specific cutting coefficients display a local minimum, or at          Bourgogne Franche-Comté (FR). Authors also want to acknowledge
+least a steady level, thus displaying 3 inflection points, a 4th-     Gianluca Fantacci (G3 Fantacci Corp) for designing and providing
+degree polynomial interpolation could lower the errors to the         the three cutting tools used during the core experimental campaign
+detriment of model simplicity. However, it is still possible to       of this study.
+notice that for the most commonly machined wood species
+                                                                      Funding Open access funding provided by Università degli Studi di
+of the current dataset, that is to say lime, maple and oak, the       Firenze within the CRUI-CARE Agreement.
+NRMSE remains fairly low. The error increases for wood
+species presenting a lower (paulownia) or higher (azobe)              Compliance with ethical standards
+anisotropy of the cutting forces.
+                                                                      Conflict of interest On behalf of all authors, the corresponding author
+                                                                      states that there is no conflict of interest.
+4 Conclusion
+                                                                      Open Access This article is licensed under a Creative Commons Attri-
+                                                                      bution 4.0 International License, which permits use, sharing, adapta-
+The present work studied the influence of several usual cut-          tion, distribution and reproduction in any medium or format, as long
+ting parameters for a whole 180° range of grain angles. The           as you give appropriate credit to the original author(s) and the source,
+milling method (up-milling, down-milling) did not influence           provide a link to the Creative Commons licence, and indicate if changes
+strongly the cutting forces, although they were consistently          were made. The images or other third party material in this article are
+                                                                      included in the article’s Creative Commons licence, unless indicated
+lower when up-milling. The tool geometry was investigated             otherwise in a credit line to the material. If material is not included in
+using three different tools equipped with straight, 15°-heli-         the article’s Creative Commons licence and your intended use is not
+cal, and 30°-helical blades. It appears that cutting and result-      permitted by statutory regulation or exceeds the permitted use, you will
+ant forces were lower with helical blades but back forces             need to obtain permission directly from the copyright holder. To view a
+                                                                      copy of this licence, visit http://creat​iveco​mmons​.org/licen​ses/by/4.0/.
+were higher. The cutting force was found to be directly
+proportional to the uncut chip thickness using helical blade
+whereas with the straight blade a non-negligible intercept
+was found. This phenomenon was not bound to the grain                 References
+angle and observed over 180°. The impact of the density
+                                                                      Atkins AG (2005) Toughness and cutting: a new way of simultane-
+was also studied. To do so, experiments were run over five                 ously determining ductile fracture toughness and strength. Eng
+wood species with five very different mean densities.. This                Fract Mech 72:849–860. https​://doi.org/10.1016/j.engfr​acmec​
+impact appeared to be noticeable on the averaged cutting                   h.2004.07.014
+forces as expected, and was comparable for all grain angles.          Atkins T (2009) The science and engineering of cutting: the mechanics
+                                                                           and processes of separating and puncturing biomaterials, metals
+An empirical model was suggested considering a linear                      and non-metals. Butterworth-Heinemann, Oxford. https​://doi.
+influence of the density, which generates important errors                 org/10.1016/C2009​-0-17178​-7
+in cutting force prediction but simplifies a lot the model            Costes JP, Ko PL, Ji T, Decès-Petit C, Altintas Y (2004) Orthogo-
+inputs, which is a criterion to be considered for practical                nal cutting mechanics of maple: modeling a solid wood-cutting
+                                                                           process. J Wood Sci 50:28–34. https​://doi.org/10.1007/s1008​
+applications. The proposed model allows the calculation                    6-003-0527-9
+of the specific cutting coefficient and intercept for a given         Curti R, Marcon B, Denaud L, Collet R (2018) Effect of grain direction
+machining set-up defined by: the density of the species to                 on cutting forces and chip geometry during green beech wood
+be machined, its grain angle and the helix angle of the tool.              machining. BioResources 13:5491–5503. https:​ //doi.org/10.15376​
+                                                                           /biore​s.13.3.5491-5503
+Once defined the width and the thickness of the chip (the             Cyra G, Tanaka C (2000) The effects of wood-fiber directions on acous-
+average uncut chip thickness in the case of peripheral mill-               tic emission in routing. Wood Sci Technol 34:237–252. https​://
+ing), the cutting force can be estimated using the specific                doi.org/10.1007/s0022​60000​043
+cutting coefficient and the intercept calculated previously.          EN 13183–1:2002 (2002) Moisture content of a piece of sawn tim-
+                                                                           ber determination by oven dry method. European Committee for
+The model has shown a good predictive accuracy with a                      Standardization (CEN), Brussels
+maximal NRMSE ranging from 34 or 38% for the higher                   Eyma F, Méausoone PJ, Martin P (2004) Study of the properties of
+and lower densities and with a maximum NRMSE of 24%                        thirteen tropical wood species to improve the prediction of cutting
+for the species with intermediate density.                                 forces in mode B. Ann For Sci 61:55–64. https​://doi.org/10.1051/
+                                                                           fores​t:20030​84
+                                                                      Goli G, Sandak J (2016) Proposal of a new method for the rapid
+Acknowledgements Giacomo Goli would like to acknowledge the
+                                                                           assessment of wood machinability and cutting tool performance
+Art et Metiers Institute of Technology (ENSAM, Cluny campus,
+                                                                           in peripheral milling. Eur J Wood Prod 74:867–874. https​://doi.
+France) for financing 2 months in the laboratory LaBoMaP as invited
+                                                                           org/10.1007/s0010​7-016-1053-y
+researcher. Rémi Curti would like to acknowledge the European COST
+                                                                      Goli G, Fioravanti M, Marchal R, Uzielli L (2009a) Up-milling and
+Action FP1407 for funding a Short Term Scientific Mission of 1 week
+                                                                           down-milling wood with different grain orientations « theoretical
+at DAGRI during his Ph.D to work with Giacomo Goli. This work was
+
+
+                                                                                                                                     13
+                                                                                                    European Journal of Wood and Wood Products
+
+     background and general appearance of the chips. Eur J Wood Prod            energetic methods while sawing soft and hard woods on the circu-
+     67:257–263. https​://doi.org/10.1007/s0010​7-009-0323-3                    lar sawing machine: a Central European case. Wood Sci Technol
+Goli G, Fioravanti M, Marchal R, Uzielli L, Busoni S (2009b) Up-mill-           54:457–477. https​://doi.org/10.1007/s0022​6-020-01162​-9
+     ing and down-milling wood with different grain orientations—the       Perera P, Amarasekera H, Weerawardena NDR (2012) Effect of growth
+     cutting forces behaviour. Eur J Wood Prod 68:385–395. https​://            rate on wood specific gravity of three alternative timber species
+     doi.org/10.1007/s0010​7-009-0374-5                                         in Sri Lanka, Swietenia macrophylla, Khaya senegalensis and
+Goli G, Curti R, Marcon B, Scippa A, Campatelli G, Furferi R, Denaud            Paulownia fortune. J Trop For Environ. https​://doi.org/10.31357​
+     L (2018) Specific cutting forces of isotropic and orthotropic              /jtfe.v2i1.567
+     engineered wood products by round shape machining. Materials          Porankiewicz B, Bermudez JC, Tanaka C (2007) Cutting forces by
+     11:2575. https​://doi.org/10.3390/ma111​22575​                             peripheral cutting of low density wood species. Bio Resour
+Gonçalves MTT, Rodrigues R, Takahashi JSI et al. (1997) An experi-              2:671–681
+     mental analysis of the influences of machining conditions on the      Ramanakoto MF, Andrianantenaina AN, Ramananantoandro T, Eyma
+     parallel cutting force in orthogonal cutting for ten Brazilian wood        F (2017) Visual and visuo-tactile preferences of Malagasy con-
+     species. In: Proceedings of the 13th International Wood Machin-            sumers for machined wood surfaces for furniture: acceptability
+     ing Seminar 491‑498                                                        thresholds for surface parameters. Eur J Wood Prod 75:825–837.
+Koch (1972) Utilization of the southern pines. Agriculture Handbook             https​://doi.org/10.1007/s0010​7-016-1098-y
+     no. 420, US Southern Forest Experiment Station                        Ramananantoandro T, Larricq P, Eterradossi O (2014) Relationships
+Marchal R, Mothe F, Denaud LE, Thibaut B, Bleron L (2009) Cut-                  between 3D roughness parameters and visuotactile perception of
+     ting forces in wood machining—basics and applications in                   surfaces of maritime pinewood and MDF. Holzforschung 68:93–
+     industrial processes. A review. COST Action E35 2004–2008:                 101. https​://doi.org/10.1515/hf-2012-0208
+     Wood machining - Micromechanics and fracture. Holzforschung           Thibaut B, Gril J, Fournier M (2001) Mechanics of wood and trees:
+     63:157–167. https​://doi.org/10.1515/HF.2009.014                           some new highlights for an old story. Comptes Rendus Académie
+McKenzie WM (1962) The relationship between the cutting properties              Sci Ser IIB Mech 329:701–716. https​://doi.org/10.1016/S1620​
+     of wood and its physical and mechanical properties. For Prod J             -7742(01)01380​-0
+     12:287–294                                                            Wagenführ A, Scholz F (2012) Taschenbuch der Holztechnik. (Pocket-
+Naylor A, Hackney P, Perera N, Clahr E (2012) A predictive model for            book of wood technology) (In German). Fachbuchverlag, Leipzig.
+     the cutting force in wood machining developed using mechanical             https​://doi.org/10.3139/97834​46431​799
+     properties. Bio Resour 7:2883–2894
+NF E66–520–4 (1997) Domaine de fonctionnement des outils coupants          Publisher’s Note Springer Nature remains neutral with regard to
+     couple outil-matière. Partie 4 : mode d’obtention du couple outil-    jurisdictional claims in published maps and institutional affiliations.
+     matière. AFNOR, Bobigny
+Orlowski KA, Ochrymiuk T, Hlaskova L, Chuchala D, Kopecky Z
+     (2020) Revisiting the estimation of cutting power with different
+
+
+
+
+13
+

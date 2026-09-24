@@ -1,0 +1,225 @@
+{
+  "extrapolation_group": "G8",
+  "entries": [
+    {
+      "source_id": "micromachines_2020_hmin_effective_rake",
+      "pdf_sha256": "1e05efbde4fbea0b716d259eb4a300be3fe6543fe453739f77532b8d9c622af2",
+      "verbatim": "The minimum undeformed chip thickness of copper is determined as 0.17 rn based on the effective rake angle curve.",
+      "quantity": "hmin_over_edge_radius",
+      "value": 0.17,
+      "material_scope": "copper",
+      "evidence_grade": "b",
+      "row_kind": "exact"
+    },
+    {
+      "source_id": "micromachines_2020_hmin_effective_rake",
+      "pdf_sha256": "1e05efbde4fbea0b716d259eb4a300be3fe6543fe453739f77532b8d9c622af2",
+      "verbatim": "the tool cutting edge radius rn was measured to be about 4.4 μm",
+      "quantity": "edge_radius_um",
+      "value": 4.4,
+      "tool_scope": "1 mm 2-flute TiCN-coated ultrafine carbide micro end mill (NS Tool MSE 230)",
+      "evidence_grade": "b",
+      "row_kind": "exact"
+    },
+    {
+      "source_id": "micromachines_2020_hmin_effective_rake",
+      "pdf_sha256": "1e05efbde4fbea0b716d259eb4a300be3fe6543fe453739f77532b8d9c622af2",
+      "verbatim": "Chen et al. [15] reported the minimum undeformed chip thickness to be 0.43–0.48 rn",
+      "quantity": "hmin_over_edge_radius",
+      "value": [
+        0.43,
+        0.48
+      ],
+      "material_scope": "KDP crystal (cited)",
+      "evidence_grade": "b",
+      "row_kind": "exact",
+      "note": "Cited by the paper, not measured in it. Metals and crystals; no wood value exists in this literature."
+    },
+    {
+      "source_id": "micromachines_2020_hmin_effective_rake",
+      "pdf_sha256": "1e05efbde4fbea0b716d259eb4a300be3fe6543fe453739f77532b8d9c622af2",
+      "verbatim": "Rezaei et al. [16] found that the minimum undeformed chip thickness varies between 0.15 rn and 0.49 rn",
+      "quantity": "hmin_over_edge_radius",
+      "value": [
+        0.15,
+        0.49
+      ],
+      "material_scope": "titanium alloy (cited)",
+      "evidence_grade": "b",
+      "row_kind": "exact",
+      "note": "Cited by the paper, not measured in it. Metals and crystals; no wood value exists in this literature."
+    },
+    {
+      "source_id": "micromachines_2020_hmin_effective_rake",
+      "pdf_sha256": "1e05efbde4fbea0b716d259eb4a300be3fe6543fe453739f77532b8d9c622af2",
+      "verbatim": "the minimum undeformed chip thickness is about 0.3 rn in micro milling of aluminum alloy 6061",
+      "quantity": "hmin_over_edge_radius",
+      "value": 0.3,
+      "material_scope": "Al 6061 (cited)",
+      "evidence_grade": "b",
+      "row_kind": "exact",
+      "note": "Cited by the paper, not measured in it. Metals and crystals; no wood value exists in this literature."
+    },
+    {
+      "source_id": "micromachines_2020_hmin_effective_rake",
+      "pdf_sha256": "1e05efbde4fbea0b716d259eb4a300be3fe6543fe453739f77532b8d9c622af2",
+      "verbatim": "which is about 14–21% of tool cutting edge radius",
+      "quantity": "hmin_over_edge_radius",
+      "value": [
+        0.14,
+        0.21
+      ],
+      "material_scope": "Al 6082-T2 (cited)",
+      "evidence_grade": "b",
+      "row_kind": "exact",
+      "note": "Cited by the paper, not measured in it. Metals and crystals; no wood value exists in this literature."
+    },
+    {
+      "source_id": "micromachines_2020_hmin_effective_rake",
+      "pdf_sha256": "1e05efbde4fbea0b716d259eb4a300be3fe6543fe453739f77532b8d9c622af2",
+      "verbatim": "the minimum undeformed chip thickness of copper material is about he/rn = 0.1–0.3",
+      "quantity": "hmin_over_edge_radius",
+      "value": [
+        0.1,
+        0.3
+      ],
+      "material_scope": "copper (literature summary)",
+      "evidence_grade": "b",
+      "row_kind": "exact",
+      "note": "Cited by the paper, not measured in it. Metals and crystals; no wood value exists in this literature."
+    },
+    {
+      "source_id": "materials_2019_mdf_drill_edge_radius",
+      "pdf_sha256": "b6e29bbc60e0532688a459b4fe860893a3f80994b60a126d6638eee858853bea",
+      "verbatim": "The variation of the the cutting edge radius εr of drills used varied between 5.91 and 5.95 μm.",
+      "quantity": "edge_radius_um",
+      "value": [
+        5.91,
+        5.95
+      ],
+      "tool_scope": "HW carbide drills (coated and uncoated) used in MDF",
+      "evidence_grade": "b",
+      "row_kind": "exact"
+    },
+    {
+      "source_id": "materials_2021_spruce_saw_edge_radius",
+      "pdf_sha256": "692d53b94c4af3970bb8d068335ebc72ca23eaada6b3204f8163f99b056088a2",
+      "verbatim": "the cutting-edge radius was ρ0 = 8 μm",
+      "quantity": "edge_radius_um",
+      "value": 8.0,
+      "tool_scope": "carbide-tipped circular sawblade, spruce",
+      "evidence_grade": "b",
+      "row_kind": "exact"
+    },
+    {
+      "source_id": "materials_2020_hss_planer_knife_edge_radius",
+      "pdf_sha256": "862e8037142152bf8e91f13e671f3419bc1a010b818d111830abb0179ae66251",
+      "verbatim": "rr(av) = 2.08 µm for unmodified knives",
+      "quantity": "edge_radius_um_new",
+      "value": 2.08,
+      "tool_scope": "HSS planer knives after sharpening (not carbide)",
+      "evidence_grade": "b",
+      "row_kind": "exact"
+    },
+    {
+      "source_id": "materials_2020_hss_planer_knife_edge_radius",
+      "pdf_sha256": "862e8037142152bf8e91f13e671f3419bc1a010b818d111830abb0179ae66251",
+      "verbatim": "unmodified knives (rap(av) = 13.42 µm)",
+      "quantity": "edge_radius_um_worn",
+      "value": 13.42,
+      "tool_scope": "HSS planer knives at end of life (not carbide)",
+      "evidence_grade": "b",
+      "row_kind": "exact"
+    },
+    {
+      "source_id": "materials_2025_wpc_pcd_edge_radius",
+      "pdf_sha256": "1d3743693dac6c95ecd8b3072330cce98e127fa20fa9ea41a6f95f501adba621",
+      "verbatim": "The average edge radius measured about 10 μm.",
+      "quantity": "edge_radius_um",
+      "value": 10.0,
+      "tool_scope": "PCD face-milling cutter, wood-plastic composite (not carbide)",
+      "evidence_grade": "b",
+      "row_kind": "exact"
+    },
+    {
+      "source_id": "precisebits_calibrating_feeds_speeds",
+      "pdf_sha256": "0759b8a9620137f63439b263202e678fc4661673fcb55ec93fd41267e3fb3a6c",
+      "verbatim": "Hardwoods like birch, cherry, maple or rosewood: F = 0.03 x D x No. flutes x RPM (3% chipload per flute)",
+      "quantity": "start_chipload_over_diameter",
+      "value": 0.03,
+      "material_scope": "softwood, hardwood and extreme hardwood (same 3 % in each line)",
+      "evidence_grade": "c",
+      "row_kind": "exact",
+      "note": "A START point for a feed test, 'just below the sweetspot'. Not a recommendation or a limit."
+    },
+    {
+      "source_id": "precisebits_calibrating_feeds_speeds",
+      "pdf_sha256": "0759b8a9620137f63439b263202e678fc4661673fcb55ec93fd41267e3fb3a6c",
+      "verbatim": "Multiply Fmax by 0.75 to get the sweet spot for these cutting conditions.",
+      "quantity": "sweet_spot_over_failure_feed",
+      "value": 0.75,
+      "evidence_grade": "c",
+      "row_kind": "exact"
+    },
+    {
+      "source_id": "precisebits_calibrating_feeds_speeds",
+      "pdf_sha256": "0759b8a9620137f63439b263202e678fc4661673fcb55ec93fd41267e3fb3a6c",
+      "verbatim": "Hardwoods like birch, cherry, maple or rosewood (1,000 < Janka < 2,500): Z = 1 x D",
+      "quantity": "test_plunge_depth_over_diameter",
+      "value": 1.0,
+      "material_scope": "hardwood; softwood (Janka < 1,000) Z = 2 x D; extreme hardwood Z = 0.5 x D",
+      "evidence_grade": "c",
+      "row_kind": "exact"
+    },
+    {
+      "source_id": "precisebits_faq",
+      "pdf_sha256": "80eec42c2bab984b9fb392762fe7405eda743a125d540e1c69b44c975936f8a9",
+      "verbatim": "Spindle Runout (TIR) - should be less than or equal to 2% of the tool's diameter (absolute maximum).",
+      "quantity": "runout_over_diameter_max",
+      "value": 0.02,
+      "evidence_grade": "b",
+      "row_kind": "exact"
+    },
+    {
+      "source_id": "harvey_blog_optimize_miniature_end_mills",
+      "pdf_sha256": "5dbdae17189a3d47717a3f3657e67c23130e5da6a0c4ae97e3fad31fb6013ef4",
+      "verbatim": "The runout of an operation should not exceed 2% of the tool diameter.",
+      "quantity": "runout_over_diameter_max",
+      "value": 0.02,
+      "evidence_grade": "c",
+      "row_kind": "exact",
+      "note": "Second vendor, same 2 % rule."
+    },
+    {
+      "source_id": "harvey_blog_running_parameters_miniature",
+      "pdf_sha256": "dad68ae3545a131f04bcab669c3235808c60e6eb30912955495c9ed1ae01a417",
+      "verbatim": "Runout should be measured at less than .0001”.",
+      "quantity": "runout_in_max",
+      "value": 0.0001,
+      "evidence_grade": "c",
+      "row_kind": "exact",
+      "note": "Context: breakage at the shank transition of a miniature tool."
+    },
+    {
+      "source_id": "precisebits_faq",
+      "pdf_sha256": "80eec42c2bab984b9fb392762fe7405eda743a125d540e1c69b44c975936f8a9",
+      "verbatim": "If you are fitting a shop router to your CNC, we recommend that you use a variable speed plunge-style router.",
+      "quantity": "context",
+      "evidence_grade": "c",
+      "row_kind": "exact",
+      "note": "PreciseBits addresses hobby router spindles as well as CNC spindles."
+    },
+    {
+      "kind": "derived_estimate",
+      "row_kind": "derived",
+      "evidence_grade": "c",
+      "quantity": "hmin_um_wood_carbide",
+      "value": [
+        0.83,
+        3.92
+      ],
+      "rule": "hmin = (0.14 to 0.49) x rn, with rn = 5.91 to 8 um (carbide drill in MDF, carbide saw tooth in spruce)",
+      "note": "DERIVED and cross-material: the hmin/rn ratios are from metals and crystals, the edge radii are from carbide wood tools that are not router bits. Result about 0.8 to 3.9 um per tooth for a sharp edge; a worn edge (the HSS knives grew about 6x) moves it up by the same factor. Compare: a 1 mm tool at PreciseBits' 3 % start point takes 30 um per tooth, and 2 % runout on the same tool is 20 um. On this estimate the edge-radius floor is not the binding micro-tool limit in wood; runout and breakage are. This is an inference, not a printed value."
+    }
+  ]
+}

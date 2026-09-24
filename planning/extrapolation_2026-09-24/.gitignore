@@ -1,1 +1,5 @@
 fetch/*/pdf/
+fetch/*/raw/
+fetch/*/html/
+__pycache__/
+*.pdf

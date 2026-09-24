@@ -1,0 +1,52 @@
+Technical Data
+
+
+
+
+         D
+                   Drill Cutting Data
+                   Recommendations
+
+
+                                                                  Recommended Chip Load per Tooth by Cutting Diameter (in)
+   Series                       SFM                3            1/8            3/16             5              6            1/4              5/16            8           3/8          7/16              1/2          5/8       3/4           7/8       1
+   67-800      Composites          230                        .001-.003      .001-.003                                    .002-.004     .002-.004                      .003-.005    .003-.005         .003-.005
+   68-900      Composites          230                          .001                                                        .0015                                       .0015                          .0015
+   70-500        Plastic           200                        .019-.021                                                   .021-.023                                    .023-.025                      .025-.027
+   72-000*        Wood                          .009-.011                                   .011-.013       .013-.015                                     .015-.017
+   85-800      Composites          230                         .0005           .0005                                        .001             .001                       .0015                           .001
+   86-150      Composites     150-250                           .001            .001                                        .0015                                       .0015                          .0015
+
+* Gang drills run at 4,500 RPM and 150 IPM
+
+
+ FORMULAS: RPM = (3.82 x SFM) / tool dia.                                                                                                                                                                          DEFINITIONS:
+		 Feedrate (IPM) = RPM x IPR                                                                                                                                                                                      IPM = Inches Per Minute
+			                                                                                                                                                                                                                IPR = Inches Per Revolution
+
+
+
+
+         F
+                   Foam Cutting Data
+                   Recommendations
+
+                                                                                                                                                                  DEPTH OF CUT: 1 x D Use recommended chip load
+                                                                                                                                                                  		 2 x D Reduce chip load by 25%
+                                                                                                                                                                  		 3 x D Reduce chip load by 50%
+
+
+                                                                  Recommended Chip Load per Tooth by Cutting Diameter (in)
+   Series        Cut        1/16         3/32          1/8     5/32        3/16          7/32       1/4       5/16        3/8         7/16          1/2       9/16      5/8        3/4          7/8            1    1 1/8   1 1/4    1 1/2     1 3/4       2
+   40-550       1xD                                                                                                                            .004-.006
+   48-000       1xD                               .002-.004               .002-.004             .003-.005 .003-.005 .004-.006                  .005-.007              .006-.008 .007-.009                  0.010
+   52-550       1xD                               .002-.004               .002-.004             .004-.006 .004-.006 .004-.006
+   52-700       1xD                               .002-.004               .002-.004             .004-.006 .004-.006 .004-.006                  .005-.007              .006-.008 .007-.009                  0.010
+  56-000P       1xD                               .002-.004               .002-.004             .004-.006               .004-.006              .005-.007
+   77-100       1xD                               .002-.004                                     .004-.006
+
+
+
+
+124           www.onsrud.com
+

@@ -1,0 +1,411 @@
+# source_url: https://www.precisebits.com/reference/precisefedsped.asp
+# accessed_on: 2026-09-24
+# raw_html_sha256: ba54a384b9c4f8ef56fa80c6d513d2dc1d7ee403096900888480b3a2010e9009
+
+Think
+
+&
+
+Tinker
+, Ltd. ™
+
+0 item(s) - $0.00
+
+Your shopping cart is empty!
+
+Menu
+
+Home
+
+Products
+
+Application Specific Tools
+
+3D Signs & Plaques
+
+Cutting Composites
+
+Engraving
+
+Jewelry
+
+Musical Instruments
+
+Pool Cues
+
+Printed Circuit Boards
+
+Steel Rule Dies
+
+3D Carving Tools
+
+Backing & Mounting
+
+Calibration Blanks
+
+Inch
+
+Metric
+
+Cleaners & Lubricants
+
+ColletCare
+
+Metal Cutting Fluid
+
+PCB Engraving Lubricant
+
+Collets & Toolholders
+
+Drill bits
+
+Number (wire gauge)
+
+Fractional inch
+
+Letter
+
+Metric
+
+Medical & Slotting
+
+Drill Bit Sets
+
+Drill Bit Diameter Chart
+
+Feeds/Speeds for FR-4 & Carbon-fiber
+
+End-mills
+
+Engraving Tools
+
+1/8in. shank
+
+Micro-engraving tools
+
+Tapered-stubs
+
+Engraving / Cut-out tools
+
+1/4in. shank
+
+Signage / Engraving tools
+
+Miscellaneous
+
+Depth Setting Rings
+
+FuzzBrush
+
+SecureBits
+
+Router Bits
+
+Chip breaker (CB)
+
+Diamond cut (DC)
+
+Feeds/Speeds
+
+CB feeds/speeds
+
+DC feeds/speeds
+
+Specialty Bits
+
+Acrylic/polycarbonate tools
+
+Antler / horn cutters
+
+Countersinks
+
+Extended-reach end-mills
+
+Fret slot cutters
+
+Fretboard planing/radiusing
+
+Shell cutters
+
+Steel Rule Die Tools
+
+Zero-helix cutters
+
+Substrates
+
+Backing material
+
+Copperclad
+
+Entry foil
+
+Tool Packs
+
+Single bit packs
+
+10-bit packs
+
+50-bits packs
+
+SecureBits
+
+Applications
+
+3D Signs & Plaques
+
+Cutting Composites
+
+Engraving
+
+Jewelry
+
+Musical Instruments
+
+Pool Cues
+
+Printed Circuit Boards
+
+Steel Rule Dies
+
+Resources
+
+FAQ
+
+Cutter terminology
+
+Depth Setting Rings
+
+Extended-reach Geometry
+
+Feeds & Speeds Calculator
+
+Glossary
+
+Point styles
+
+Reference library
+
+Sweet-spot Test
+
+Tutorials
+
+Charts/Tables
+
+Chipbreaker Feeds & Speeds
+
+Diamondcut Feeds & Speeds
+
+Drill Bit Diameter Chart
+
+Drill Bit Feeds & Speeds
+
+ER Torque Chart
+
+Metal Gauge Conversion Chart
+
+Relative Wood Hardness Table
+
+Support
+
+Contact us
+
+Limited Warranty
+
+Policies
+
+Sales Quotes
+
+Technical Support
+
+Distributors
+
+Domestic Distributors
+
+International Distributors
+
+Account
+
+My Account
+
+Order History
+
+Wish list
+
+Feeds and Speeds
+
+Feeds and Speeds for
+Woods, Thermoplastics, Composites and Other Stuff
+|
+
+Assigning precise values to feeds and
+speeds when cutting wood (soft or hard) with micro-tools is just about
+impossible. The incredible variability in grain structure,
+moisture content, and density, make any such assignment at best a
+rough guide. Ebony from the same tree can vary in hardness and
+density as much a 75% from point to point in a piece as small as 2" X
+6".
+
+Thermoplastics, although relatively isotropic and uniform in
+density, present their own set of problems, many of which stem from
+comparatively low melting points and poor chip formation. Many
+polymers (cast and extruded) are also very abrasive leading to poor
+cutter life and difficulty in removing debris from deep, narrow kerfs.
+
+The family of composite materials span the range from glass-loaded
+epoxy (fiberglass), to paper/phenolic, to natural mother of pearl. The
+hardness and density variations are so extreme that no one family of
+tools can be used to process them all. Each one must be handled as a
+"special case" with its own, unique cutter geometry and processing
+parameters.
+
+The "other stuff" means just about anything else that someone, in a
+fit of creativity (often alcohol induced), decides to cut with their
+long suffering CNC router.
+
+Adding to these difficulty are the variations in shop practice,
+spindle run-out, and equipment backlash.
+
+It is undoubtedly starting to dawn on you that there is not going to
+be any magical formula that will guide you in cutting any random
+material you might encounter. No "Grand Unification Theory Of Machining
+Everything (GUTOME?)". However, where theoretical reasoning might have
+failed us, empirical testing comes to our rescue.
+
+We are currently assembling a database of feeds and speeds for a
+fairly large family of materials. We will publish it as soon as we can
+put the data in a accessible form. In the meantime, the only help we can
+offer is to go to:
+
+http://www.precisebits.com/tutorials/calibrating_feeds_n_speeds.htm
+
+More on this later. (Aug. 31, 2009)
+
+|
+
+Support
+
+About us
+
+Contact us
+
+Educational Discount
+
+Limited Warranty
+
+No-fault Returns
+
+Policies
+
+Sales Quotes
+
+Tech Support
+
+Products
+
+Collets, Toolholders
+
+Composite Cutting
+
+Metal Machining
+
+Woodworking
+
+Plastic Cutting
+
+Applications
+
+3D Signs & Plaques
+
+Engraving
+
+Jewelry
+
+Musical Instruments
+
+Pool Cues
+
+Printed Circuit Boards
+
+Steel Rule Dies
+
+Calculators
+
+Resources
+
+FAQ
+
+Tool terms
+
+Glossary
+
+Point styles
+
+Reference library
+
+Sweet-spot Test
+
+Tutorials
+
+Support
+
+About us
+
+Contact us
+
+Educational Discount
+
+Limited Warranty
+
+No-fault Returns
+
+Policies
+
+Sales Quotes
+
+Tech Support
+
+Products
+
+Collets, Toolholders
+
+Composite Cutting
+
+Metal Machining
+
+Woodworking
+
+Plastic Cutting
+
+Applications
+
+3D Signs & Plaques
+
+Engraving
+
+Jewelry
+
+Musical Instruments
+
+Pool Cues
+
+Printed Circuit Boards
+
+Steel Rule Dies
+
+Resources
+
+FAQ
+
+Tool terms
+
+Glossary
+
+Point styles
+
+Reference library
+
+Sweet-spot Test
+
+Tutorials
+
+Feed and Speed Calculators

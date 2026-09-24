@@ -1,0 +1,311 @@
+                      SPEEDS & FEEDS
+                   SOLID CARBIDE HIGH PERFORMANCE END MILLS
+
+
+
+           Speed              Speed
+                                            Feed (Inch/Tooth)
+           S.F.M.             S.F.M.                                     Recommendation
+ Materials         Materials                End Mill Diameter
+           Under               Over                                           for
+So Grades         Hard Grades
+             32                 32 1/8" 3/16" 1/4" 3/8" 1/2" 5/8" 3/4" 1" Coated Tools
+            HRC                HRC
+                                NONFERROUS MATERIALS
+Aluminum +
+ Aluminum
+   Alloys
+2024-T4/T6, 800- 440, 356, 380, 500-                                    TiCN add 40% on
+                                     .001.002.002 .003 .004.005.006.007
+   2014,    2000    C61300      1000                                          SFM
+   6061-
+  T6/T651,
+  7075-T6
+   Copper
+                    Navel Brass,
+Yellow Brass,
+              800- High Silicon 800-
+ High Lead                            .001.001.002.0025.003.004.004.005
+              1500    Bronze,    1000
+    Brass,
+                   A-17, C-17200
+ Red Brass
+   Copper         Nickel Silver,
+   Alloys          Beryllium
+             800-                700-
+Alum/Bronze,        Copper,           .001.001.002.0025.003.004.004.005
+             1000                1000
+ Low Silicon      Oxygen-Free
+   Bronze            Copper                                              TiCN add 40% on
+
+                  Nickel Silver,                                                SFM
+
+                   Beryllium                                             TIAIN add 60% on
+ Magnesium
+             1000   Copper,      700-                                           SFM
+   De-CAt,                            .001.002.002 .003 .004.006.008.009
+             min Oxygen-Free 1000
+  Extruded
+                           Copper
+  Plastics,
+  Acrylics,     200-                       200-
+                        Polycarbonate             .001.002.003 .004 .006.008.010.015
+ Phenolics       600                       500
+Polysulfone
+  Carbon,       200-
+                                                  .004.004.006 .008 .010.010.015.020
+ Graphites       400
+
+
+                Speed               Speed
+                                                        Feed (Inch/Tooth)
+                S.F.M. Materials S.F.M.                                                Recommendation
+  Materials                                             End Mill Diameter
+            Under Hard              Over                                                    for
+ So Grades
+             32   Grades             32 1/8" 3/16" 1/4" 3/8" 1/2" 5/8" 3/4" 1"          Coated Tools
+                HRC                 HRC
+                                              STAINLESS STEEL
+                          17/4,
+                        17/7, AF-
+Precipitation              71,
+                 80-                 90-
+ 13/8, 15/5,             Custom             .0005.0005 .001 .001 .002 .002.004.006
+                 250                 150
+AM-350/355              450/636,
+                        15/7 Mo,
+                                                                                       TiCN add 40% on
+                         21-6-9
+                                                                                            SFM
+                        304, 310,
+  Austenic                                                                                TIAIN add
+                       314,
+ 200 Series,                                                                           60%-100% on SFM
+                100- 316, 321, 100-
+   302,                                     .0001 .0002 .0005 .001 .0015.002.003.004
+                 350      330,    150
+ 303, 304L,
+                        347, 348,
+   316L
+                         21-6-9
+Martensitic 100- 420, 430F, 100-
+                                 .0001 .0002 .0005.0005 .001 .001.003.004
+403, 410, 416 250 440C, 446 175
+
+
+            Speed            Speed
+                                             Feed (Inch/Tooth)
+            S.F.M. Materials S.F.M.                                      Recommendation
+  Materials                                  End Mill Diameter
+            Under    Hard     Over                                             for
+ So Grades
+              32    Grades     32 1/8" 3/16" 1/4" 3/8" 1/2" 5/8" 3/4" 1"   Coated Tools
+             HRC              HRC
+                                              HIGH TEMP ALLOYS
+                          Air-Resist
+ Cobalt Base             13/213/215,
+Stellite, HS-21, 60-      Haynes
+                                        40-80 .0004.0005 .001 .001 .001 .001 .0015.002
+HAYNES25/188, 100         21/36,
+  x-40, L-605            NASA CO-
+                          W-RE
+                         Hastalloy-
+ Nickel Base                                                                              TIAIN Coating is
+                          C/B/X,
+   INCONEL                                                                                 required
+                         INCONEL
+   600/625,                             50-90 .0005 .0005 .001 .001 .002.0025 .003 .004 add 50%-80% in
+                         718/X/W,
+Nickel 200-270,                                                                                  SFM
+                        Waspalloy,
+Monel 400-405
+                        Rene 41-95
+  Iron Base
+                          A-286,
+Incoly 600-802,
+                80-       Haynes         60-
+  Multimet N-                                  .0005 .0005 .001.0015.002.0025 .003 .004
+                130        556,          120
+     155,
+                        Discoly, V57
+Timkin 16-25-6
+
+
+          Speed            Speed
+                                                      Feed (Inch/Tooth)
+Materials S.F.M. Materials S.F.M.                                                  Recommendation
+                                                      End Mill Diameter
+   So        Under     Hard       Over                                                     for
+ Grades         32     Grades      32     1/8" 3/16" 1/4" 3/8" 1/2" 5/8" 3/4" 1"     Coated Tools
+             HRC                   HRC
+                                                  STEELS
+                                                                                   On Steels >45 HRC
+                                                                            on Roughing use
+High Steel        4340M, EDT-
+                                                                                Coolant
+Strength              150,
+                                                                            on Finishing Run
+   4340,           HP9-430,
+           50-250             80-180.0005.0005 .001 .001 .001 .0015.002.004        Dry
+   6150,             300M,
+                                                                            TiCN add 40% on
+  52100,           D6-Ac, 11-
+                                                                                  SFM
+H-11, H-13             10
+                                                                               TIAIN add
+                                                                            60%-100% n SFM
+High Alloy
+ Steels           Hy-Tugg,
+           100-
+A-2/6/10,       Stressproof, 80-180.0005.0005 .001 .001 .001 .0015.002.004
+           300
+ P-3/10,         AmorPlate
+01, 02, 06
+
+ Medium
+  Alloy      150-  Hy-Tugg, 80-180.0005.0005 .001 .002.0025.0035.004.005 TiCN add 40% on
+ Steels      350 Stressproof,                                                  SFM
+200, 250,         AmorPlate
+   300
+Low Alloy
+  Steels
+           100-            100-
+Maraging        23XX, 31XX      .0005 .001 .0015.002 .003 .004 .005.006
+           400             200
+  10XX,
+11XX, 13XX
+
+
+           Speed            Speed            Feed (Inch/Tooth)
+                  Materials                                               Recommendation
+ Materials S.F.M.            S.F.M.          End Mill Diameter
+                    Hard                                                       for
+So Grades Under              Over
+                   Grades           1/8" 3/16" 1/4" 3/8" 1/2" 5/8" 3/4" 1" Coated Tools
+           32 HRC           32 HRC
+                                               CAST IRON
+                                                                                     Always use
+                                                                                       coolant
+ Ductile               Ductile Cast                                                TiCN add 40% on
+             100-400                  80-140 .0005.001.0015.002.002.003.004.005
+Cast Iron                 Iron                                                           SFM
+                                                                                      TIAIN add
+                                                                                   60%-100% n SFM
+                                                                                   TiCN add 40% on
+Gray Cast         Malleable,                                                             SFM
+          100-400            90-160 .0005.001 .002 .003.004.005.006.008
+  Iron             Chilled                                                            TIAIN add
+                                                                                   60%-100% n SFM
+
+
+               Speed              Speed
+                                                     Feed Inch/Tooth)
+               S.F.M. Materials S.F.M.                                             Recommendation
+  Materials                                          End Mill Diameter
+               Under Hard       Over                                                    for
+ So Grades
+                 32      Grades        32 1/8" 3/16" 1/4" 3/8" 1/2" 5/8" 3/4" 1"    Coated Tools
+                HRC                   HRC
+                                               TITANIUM
+  Titanium
+    Alloys                                                                Always use
+                    5AL-
+Commercially,                                                               coolant
+    Pure,         2.5Sn-Eli                                            TiCN add 40% on
+              50-
+                  8Al-1 Mo- 90-160.0005.0005.0005.001.001.0015.002.004
+ 6AL-4V, Astm 250                                                             SFM
+                     1V
+    1/2/3,                                                                TIAIN add
+   6 AL-25N-4Zr-                                                                          60%-100% n SFM
+      2Mo-Si
+
+
+  SLOTTING CUTTING DEPTH
+  RECOMMENDATIONS AND ADJUSTMENTS
+  Axial Depth of Cut = AD
+  For Tool Diameters 1/8" and Under: AD = Dia. of Tool X 0.25 to 0.05.
+  For Diameters above 1/8" AD = Dia. X .05 to 1.5
+
+  SFM and Feed
+  For AD between 0.25 to 0.5 of Tool Dia. SFM = 0.8 Lowest Range Value. Feed at Suggested Value.
+  For AD equal and above Tool Dia.
+  SFM = 0.8 X Highest Speed Range. Feed should be 0.5 X Suggested Value.
+
+  PROFILING CUTTING DEPTH
+  RECOMMENDATIONS AND ADJUSTMENTS
+  Axial Depth of Cut = AD
+  Axial Depth of Cut = 1.5 X Tool Dia.
+
+  SFM and Feed
+  For Radial Depth of Cut use 0.25 X Tool Dia. Use Higher SFM Range.
+  For Long and Extra Carbide Reduce Feed by 50%.
+
+
+
+
+SUPPORT                                               PRODUCTS
+
+Customer Service                                      Solid Carbide (solid-carbide-index)
+Tel: 248.528.5220                                     Diamond Coated (diamond-coated-index)
+Fax: 248.528.5600
+                                                      High Speed Steel (high-speed-steel-index)
+customerservice@secotools.com
+                                                      Cobalt (cobalt-index)
+(mailto:customerservice@secotools.com)
+                                                      Thread Mills (thread-mills-index)
+Tec Team
+Tel: 800.832.8326                                     Universal Drills (drills-index)
+
+Fax: 248.528.5600
+tec-team.us@secotools.com (mailto:tec-
+team.us@secotools.com)
+TECHNICAL                                                      COMPANY
+
+Optimize Your Machining (techtips)                             About Niagara Cutter (about-index)
+
+Troubleshooting (literature/Niagara Cutter End Mill            FAQs (faq)
+Troubleshooting Guide.pdf)
+
+Cutting Data & Formulas (cut-data)
+
+Tool Recommendations (toolrec)
+
+Solid Carbide High Perf Speeds & Feeds (speedfeed)
+
+Solid Carbide End Mill Tolerances (solid-carbide-tolerances)
+
+HSS End Mill Tolerances (hss_tolerances)
+
+Cobalt End Mills Tolerances (cobalt_tolerances)
+
+Request Speed & Feed Slide (speed-feed-slide)
+
+Custom Tooling Request (endmill_rfq)
+
+Reconditioning flyer (literature/reconditioning-flyer-
+niagara-cutter.pdf)
+
+
+
+
+CONNECT                                                        MEDIA
+
+Contact Us (contact-index)                                     Product Literature (literature-index)
+
+Distributor Training (training-index)                          Product Videos (video-index)
+
+Tradeshows (tradeshows)                                        News (news)
+
+Careers                                                        Marketing On Demand (mod-index)
+(http://erecruit.secotools.com/psc/secotools/EMPLOYEE/HRMS/c/HRS_HRAM.HRS_CE.GBL?
+                                                             Branded Gi s (brandedgi s-index)
+Page=HRS_CE_HM_PRE&Action=A&SiteId=305&)
+
+
+
+
+          ­ (https://www.facebook.com/SecoToolsUS)                  ¬ (http://twitter.com/SecoToolsUS)
+
+          š (https://www.youtube.com/user/SecoToolsUS)                                     © 2016 Niagara Cutter, LLC
+

@@ -1,0 +1,472 @@
+PEER-REVIEWED ARTICLE                                         ncsu.edu/   bioresources
+
+CUTTING FORCES BY PERIPHERAL CUTTING OF LOW
+DENSITY WOOD SPECIES
+Bolesław Porankiewicz,1 Julio C. Bermudez E.,2 and Chiaki Tanaka3
+
+        In this paper multifactor non-linear dependencies of cutting forces from
+        several machining parameters for low density wood of Liriodendron
+        tulipifera Linn., known as Yellow Poplar, and Cordia alliodora Ruiz. &
+        Pav., known as laurel blanco wood or capa prieto, were evaluated from
+        experimental matrices. In the analyzed relations there was evidence for
+        several strong interactions, which have been graphically illustrated and
+        discussed.
+
+Keywords: Cutting Forces, Routing, Milling, Wood, Liriodendron tulipifera, Cordia alliodora
+
+Contact information: 1Emeritus, e-mail: poranek@amu.edu.pl; 2Facultad de Ciencias Agropecuarias,
+Univ. del Cauca, Colombia, e-mail: jcbermudez@unicauca.edu.co, 3Faculty of Agruculture Kagoshima
+University, Kagoshima, Japan, e-mail: tanakach@agri.kagoshima-u.ac.jp
+
+
+INTRODUCTION
+
+         The problem of cutting forces, especially for routing and milling of low density
+wood of Liriodendron tulipifera, and Cordia alliodora, have not been worked out yet. In
+the literature from the field of wood machining there exists a method for evaluation of the
+main (tangential) Fc and normal Fn cutting forces, in the form of formulas (1) and (2), for
+the ten most common European wood species. These formulas employ the relative
+cutting resistance K and correction coefficients (Afanasev 1961; Amalitskij and
+Lyubchenko 1977; Bershadskij 1967; Deshevoy 1939; Orlicz 1982). However, large
+differences, as high as 40% and more between values predicted from equations (1) and
+(2), relative to the observed forces, suggest that the problem of cutting forces, namely the
+wood cutting theory, has not yet been worked out completely.
+
+         Fc = a p ⋅ ws ⋅ K ⋅ Cr ⋅ Cδ ⋅ C ρ ⋅ Cap ⋅ Cvc ⋅ Cmc ⋅ CT                             (1)
+
+        Fn = Cn · Fc                                                                          (2)
+
+In Eqs. (1) and (2) the terms are defined as follows:
+
+        ap                         - Thickness of cutting layer (also known as chip thickness).
+        ws                         - Cutting width.
+        K = f(ϕr)                  - Specific cutting resistance [N/mm2, MPa].
+        Cr                         - Coefficient of wood species, Pinus silvestris wood Cr = 1.
+        Cδ = f(δf)                 - Coefficient of cutting angle δf.
+        Cρ = f(ρ or VB)            - Coefficient of cutting edge dullness ρ, VB.
+        ρ                          - Radius of cutting edge round up.
+
+
+Porankiewicz et al. (2007). “Cutting force, low density wood,” BioResources 2(4), 671-681. 671
+PEER-REVIEWED ARTICLE                                 ncsu.edu/   bioresources
+       VB                      - Recession of cutting edge.
+       Cap = f(ap)             - Coeff. of a thickness of a cutting layer (chip thickness) ap.
+       Cvc = f(vc)             - Coefficient of a cutting speed vc.
+       Cmc = f(mc)             - Coefficient of a moisture content mc.
+       CT = f(T)               - Coefficient of a temperature T.
+       Cn = f(ρ or VB)         - Coefficient of normal force Fn.
+
+        In the authors’ opinion there are several reasons for the lack of fit. The most
+important cause is not taking physical and mechanical properties into account in formula
+(1), instead of an arbitrarily assumed value or range of the correction coefficient Cr. The
+wood, even of the same wood species, may differ considerably in physical and
+mechanical properties, resulting in a large dispersion of predicted cutting forces in
+comparison to observed ones. Another reason is, in the authors’ opinion, a general
+assumption that there is a lack of dependence of the value of one correction coefficient
+from other cutting parameters, including wood species properties. The average specific
+cutting resistance K, evaluated without taking into account early and late wood of growth
+rings, cannot be used to calculate real maximum and minimum cutting resistances. It is
+already known from the literature that the normal force Fn does not follow the tangential
+force Fc proportionally to the change in cutting edge wear. An important disadvantage of
+the method based on equations (1) and (2) in most published works is also a tabular form
+of the correction coefficients. All assumptions above seem not to be supported by any
+multifactor experiment, making the method of evaluation of cutting forces based on
+formula (1) and (2) a rather rough approximation of the problem (Axelsson et al. 1993;
+Kivimaa 1950; Amalitskij and Lyubchenko 1977).
+        There are older and newer published works, describing the dependence of main Fc
+and normal Fn cutting forces on several cutting parameters for different kinds of
+machining in the form of multinomial or power type functions. However, the limited
+number of independent variables involved, as well as not having exactly the same and
+limited range of their variation, makes models difficult to compare (Axelsson et al. 1993).
+The models available in the literature for most machining methods, including routing and
+milling, were worked out and collected in the program Wood_Cutting (Porankiewicz
+2007).
+        The present study attempts to evaluate the dependence of main (tangential) Fc and
+normal (radial) Fn cutting forces from cutting edge dullness VB, average angle ϕr
+between wood grains and cutting plane, the cutting speed vc, feed per edge fz, and
+moisture content mc during peripheral cutting of low density wood of Liriodendron
+tulipifera and Cordia alliodora.
+
+
+MATERIALS AND METHODS
+
+       In the first experiment (Cyra 1997), the cutting forces were measured with use of
+a measuring system equipped with Hasegawa Tekko Type 4321 load cells, amplifier, and
+multi-pen recorder, as shown in Fig. 1.
+
+
+
+
+Porankiewicz et al. (2007). “Cutting force, low density wood,” BioResources 2(4), 671-681. 672
+PEER-REVIEWED ARTICLE                                    ncsu.edu/    bioresources
+
+
+
+
+Fig. 1. General scheme of measuring system used in first experiment; 1 - Router bit, 2 – Work-
+piece, 3,4 – Load cells, 5 – Amplifier, 6 – Multi-pen recorder, 7 – Motor, 8 – Workpiece feed table
+
+        In the second experiment (Bermudez 2005; Bermudez et al. 2005) cutting forces
+were measured with the use of a measuring system equipped with a Hasegawa Tekko
+Type 4321 load cell, an NEC Type AS1202 amplifier, and a National Instruments Type
+NI PCI-6034E A/D converter integrated with LabVIEW program software, as shown in
+Fig. 2. The sampling rate was 100 Hz.
+
+
+
+
+Fig. 2. General scheme of measuring system used in second experiment; 1 – Cutting tool, 2 –
+Load cell, 3 – Amplifier, 4 – A/D converter, 5 – Computer, 6 – Workpiece feed table, 7 –
+Workpiece, 8 – Motor
+
+
+        Experiments were performed on a CNC Shoda Fanuc NC-3 vertical router at
+Shimane University, Matsue, Japan. The X and Y cutting force components for the first
+experiment and the X component for the second experiment, measured in workpiece feed
+table coordinates were recalculated to average tangential Fc and normal Fn forces, accor-
+ding to minimum and maximum contact angle, defined by cutting radius rc and cutting
+depth gs. Parameters for the first experiment (Cyra 1997) performed by peripheral up
+routing (Fig. 3 a) were as follows:
+
+Mechanical and physical properties of wood of Liriodendron tulipifera:
+      Wood density D = 400 kg/m3.
+      Modulus of rupture by bending Rb = 69.6 MPa.
+      Modulus of rupture by compression parallel to grains Rc = 38.2 MPa.
+      Moisture content mc = 11 %.
+
+
+
+
+Porankiewicz et al. (2007). “Cutting force, low density wood,” BioResources 2(4), 671-681. 673
+PEER-REVIEWED ARTICLE                                     ncsu.edu/    bioresources
+
+
+
+
+Fig. 3. Scheme of: a – up routing, and, b – up milling, with tangential Fc and normal Fn cutting
+forces
+
+Machining parameters:
+      Cutting edge recession measured in bisector of a wedge angle VBw< 4; 27; 52; 65;
+      82 µm >.
+      Contour wedge angle βf = 37o.
+      By β f = 37o, the range of variation of the ρ is ρ<2; 38 µm >.
+      Contour rake angle γf = 33o.
+      Contour clearance angle αf = 20o.
+      Cutting edge inclination angle λp = 0o.
+      Cutting radius rc = 5 mm.
+      Spindle rotational speed RPM = 5000 min-1.
+      Cutting speed vc = 30 m/s.
+      Feed speed vf = 2 m/min.
+      Feed per edge fz = 0.2 mm.
+      Cutting depth gs = 2 mm.
+      Width of cut ws = 10 mm.
+      Number of cutting edges z = 2.
+      Average angle between cutting speed and cutting plain direction and wood grains
+      ϕr and ϕs <23.4; 38.4; 53.4; 68.4; 83.4; 98.4; 113.4; 120.4; 143.4; 158.4; 173.4;
+      188.4 o >.
+      The angle between cutting edge direction and wood grains ϕk = 90o.
+      Growth rings grains orientation towards cutting edge ϕrt = 0o .
+      Material of the cutting edge was the cemented carbide K05.
+
+       Parameters for the second experiment by peripheral up milling (grooving) with a
+one side contact (Bermudez 2005; Bermudez et al. 2005; Fig. 3 b) were as follows:
+
+Mechanical and physical properties of wood of Cordia alliodora in air dried state:
+      Wood density D = 456 kg/m3.
+      Modulus of rupture in bending Rb = 729.8 MPa.
+      Modulus of rupture in compression parallel to grains Rc = 324.8 MPa.
+
+
+Porankiewicz et al. (2007). “Cutting force, low density wood,” BioResources 2(4), 671-681. 674
+PEER-REVIEWED ARTICLE                                  ncsu.edu/   bioresources
+       Moisture content mc<11.5; 100 %>.
+
+Machining parameters:
+      Contour wedge angle βf = 45 o.
+      Contour rake angle γf = 25o,
+      Contour clearance angle α = 20o.
+      Cutting edge inclination angle λp = 0o.
+      Side angle in main plane κ'r = 1.8o.
+      Side angle in back plane τp = 4.3o.
+      Cutting radius rc = 100 mm.
+      Cutting speed vc<10; 20; 30; 40 m/s>.
+      Spindle rotational speed RPM<955; 1910; 2865; 3820 min-1>.
+      Feed speed vf< 0.5; 1; 1.5; 2 m/min>.
+      Cutting depth gs< 0.5; 1; 2; 3 mm>.
+      Average angle between cutting speed and wood grain direction ϕr<2; 7o>.
+      Width of cut ws = 1 mm.
+      Number of cutting edges z = 1.
+      The angle between cutting edge direction and wood grains ϕk = 90o.
+      The angle between cutting plain direction and wood grains ϕs = 0o.
+      Radial and tangential orientation of growth rings grains towards the cutting edge
+      were not taken into account.
+      Material of the cutting edge was the high speed steel SKH 51.
+      Cutting force was analyzed for sharp cutting edge.
+
+        In the second experiment, during cutting Cordia alliodora wood, the feed velocity
+vf was varied in the range of vf<0.5; 2 m/min>, instead of varying the feed per edge fz for
+different cutting speeds vC. This was achieved by increasing the spindle rotational speed
+RPM, without any increment in the feed velocity. As a result, the feed per edge fZ did not
+have the same set of values for the different cutting speeds vC that were considered.
+        In order to evaluate the relations Fc = f(ϕr, VBw), Fn = f(ϕr, VBw), and Fc = f(ϕr, fz,
+vc, mc), linear models and second order multinomial models, as well as power type
+functions without and with interactions were analyzed in preliminary calculations. The
+model should fit experimental matrix by the lowest summation of residuals square SK, by
+the lowest standard deviation SD, and by the highest correlation coefficient of predicted
+and observed values R. The experimental matrix can be fitted with more simple models,
+but this will result in decreasing approximation quality, which means that the SK and SD
+values will increase, and R will decrease. In this case all predicted values of dependent
+variable will have higher expected error. Many years of experience by the first author
+lead us to believe that efforts to fit such data with overly simple models can be expected
+to hurt the quality of the approximation of the influence of independent variables,
+especially in the case of variables with small importance, making such a model
+nonsensical. The proper influence of low importance variables can be only extracted from
+an experimental matrix when using a more complicating model. The most adequate
+formulas appeared to be the non-linear, multivariable equations with interactions (3)
+through (7).
+
+
+Porankiewicz et al. (2007). “Cutting force, low density wood,” BioResources 2(4), 671-681. 675
+PEER-REVIEWED ARTICLE                                                ncsu.edu/    bioresources
+
+                  a ⋅ sin(ϕ + a ) + a ⋅ VB + a ⋅ ϕ 2 ⋅ VB + a
+        Fc = a ⋅ e 2       r   3     4    w   5 r        w    6 +a
+                                                                   7 [N]                   (3)
+              1
+                  b ⋅ sin(ϕ + b ) + b ⋅ VB + b ⋅ ϕ 2 ⋅ VB + b
+        Fn = b ⋅ e 2        r   3     4    w   5 r         w    6 +b
+                                                                     7 [N]                 (4)
+              1
+
+        W = c 2 ⋅ ϕ r + c 3 ⋅ f z + c 4 ⋅ v c + c5 ⋅ ϕ r / mc + c 6 ⋅ ϕ r / f z            (5)
+         1
+
+        W = c 7 ⋅ f z ⋅ v c + c8 ⋅ ϕ r ⋅ v c + c9 ⋅ v c ⋅ mc + c10                         (6)
+         2
+
+                   W +W2
+        F = c1 ⋅ e 1       + c11 [N]                                                       (7)
+         c
+
+        For evaluation of estimators from experimental matrixes (containing 60 and 128
+measuring points, in case of the first and second experiments, respectively), a special
+optimization program was applied, based on a least squares method combined with
+gradient and Monte Carlo methods (Porankiewicz 1988) with further changes. Elimina-
+tion of the unimportant or low-importance estimators was carried out by use of the
+coefficient of relative importance, CRI, during evaluation of process models (3) through
+(7). CRI was defined by formula (8). It was assumed that CRI > 0.1.
+
+       CRI = ( SK – SKOK) / SK ⋅ 100 [%]                                                   (8)
+
+In Eq. (8) the new terms are:
+
+       SKOK = the summation of residuals square by cK = 0
+       cK = k estimator evaluated in statistical model
+
+        Calculations were performed at Poznań Networking and Supercomputing Center
+PCSS on an SGI Origin 3800 computer. For characterization of approximation quality, a
+summation of residuals square SK, standard deviation SD, and a square of correlation
+coefficient of the predicted and observed values R2 was used.
+        For comparison of results obtained in the present work with similar data from the
+literature, the main cutting force Fc was calculated for up routing and up milling, with
+application of the Wood_Cutting program (Porankiewicz 2007) for Tilia cordata low
+density wood, was used.
+
+
+RESULTS AND DISCUSSION
+
+       For formula (3), describing the relation between the main force Fc and the average
+angle ϕr between cutting speed direction, wood grains, and cutting edge dullness VBw for
+wood of Liriodendron tulipifera, the following estimators were evaluated: a1 = 0.091; a2
+= 0.9662; a3 = -0.7276; a4 = 0.2769; a5 = -0.0007; a6 = 2.7357; a7 = 9.0847, by range of
+
+
+Porankiewicz et al. (2007). “Cutting force, low density wood,” BioResources 2(4), 671-681. 676
+PEER-REVIEWED ARTICLE                                    ncsu.edu/    bioresources
+variation of independent variables: ϕr <23.4; 188.4o>; VBw<4; 82 µm>. The quality of the
+fit to the model (4) is shown by Fig. 4a and the values of the quantifiers: SK = 770.2; R2
+= 0.86; SD = 3.6 N.
+         The following estimators were evaluated for formula (4), describing the relation
+between the normal force Fn and the average angle between cutting speed direction and
+wood grains ϕr, as well as cutting edge dullness VBw for the wood of Liriodendron
+tulipifera: b1 = 0.0006; b2 = 2.8537; b3 = 0.3148; b4 = 0.5061; b5 = 0.0029; b6 = 3.5853;
+b7 = 8.5167, by variation of independent variables: ϕs<23.4; 188.4o>; VBw<4; 82 µm>.
+The quality of the model (4) fit is characterized by the quantifiers: SK = 853.8; R2 = 0.94;
+SD = 3.8 N, and is also illustrated in Fig. 4b.
+
+
+
+
+Fig. 4. Plots of main Fc and normal Fn cutting forces observed by routing Liriodendron tulipifera
+routing against predicted main Fcp and normal Fnp forces according to models: a - (3) and b - (4)
+
+        From Fig. 5a it can be seen that for maximum cutting edge dullness VBw, the Fc
+and the Fn increased with increasing average angle ϕR, and reached their maximum at
+average angles ϕr = 117.7o and ϕr = 87.3o, respectively. Such a relation was not
+evidenced for the sharp cutting edge. In the dependences Fc and Fn = f(VBw, ϕr), a strong
+interaction VBw · ϕr was evidenced. The Fn reaches it’s larger maximum by the ϕr angle
+as much as 30.4o lower than in case of the Fc. Different shapes of relations Fc = f(VBw, ϕr)
+and Fn = f(VBw, ϕr), as well as a presence of their maximum beside ϕr = 90o for sharp and
+dull cutting edge is a phenomenon that is in contradiction with equations (1) and (2).
+        For almost parallel cutting, by ϕr <30o and ϕr > 160o, enlargement of the cutting
+edge recession VBw caused rather small increases of the Fc and Fn values, slightly more
+for the Fc. This finding also contradicts information from the literature. In the analyzed
+range of the cutting edge recession VBw<4; 82 µm>, the ratio between the largest and the
+lowest value of the Fc was as high as 4.2 in this paper, while only 1.3 according to the
+literature (Amalitskij and Lyubchenko 1977, Orlicz 1982).
+
+
+
+
+Porankiewicz et al. (2007). “Cutting force, low density wood,” BioResources 2(4), 671-681. 677
+PEER-REVIEWED ARTICLE                                     ncsu.edu/    bioresources
+
+
+
+
+Fig. 5. Dependence between main force Fc and normal force Fn, the grain angle ϕS, and the
+cutting edge dullness VBw, according to models: a - (3) and b - (4)
+
+        For formulas (5) through (7) describing the relationship between the main force
+Fc and ϕr, fz, vc, and mc, for wood of Cordia alliodora, peripheral up-milling, the
+following estimators were evaluated: c1 = 1.1364; c2 = 1.3095; c3 = 1.2049; c4 = 1.2561;
+c5 = -0.2581; c6 = -7.36·10-2; c7 = 0.3623; c8 = 1.2681; c9 = 0.2485; c10 = 0.9209; c11 =
+1.1441; c12 = 2.1219; c13 = 0.1764; c14 = 0.603; c15 = 1.6861, by a range of variation of
+independent variables: ϕr<1.99 ; 6.96o >; fz<0.13; 2.09 mm>; vc<10; 40 m/s>; mc<11.5;
+30> %. The quality of the models (5) through (7) fit is characterized by the quantifiers:
+SK = 47.7; R2 = 0.93; SD = 0.61 N, and is also illustrated in Fig. 6.
+
+
+
+
+Fig. 6. Plot of main Fc cutting force observed by milling Cordia alliodora against predicted main
+Fcp force according to models (5) through (7)
+
+
+
+
+Porankiewicz et al. (2007). “Cutting force, low density wood,” BioResources 2(4), 671-681. 678
+PEER-REVIEWED ARTICLE                                   ncsu.edu/    bioresources
+        Graphical illustrations of the relations (5) through (7) are shown in Figs. 7 and 8.
+From Fig. 7 an increase in the main force Fc was observed with increasing feed per edge
+fz and the average angle ϕr between cutting speed direction vc and wood grain. This
+relation dropped down for the lowest values of analyzed independent variables. In the
+range of the feed per edge fz<0.13; 2,09 mm>, a ratio between the largest and the lowest
+value of the Fc was in similar range with values given in literature for lime tree wood.
+Fig. 8 shows that the Fc slightly declined with an increase in mc by the highest value of
+vc. This is in agreement with the literature. The interactions ϕ r / fz, fz · vc, and ϕ r· vc, and
+the much weaker interactions ϕ r / mc and vc · mc are new findings.
+
+
+
+
+Fig. 7. Dependence of the main force Fc from the average grain angle ϕr and the feed per edge fz,
+according to models (5) through (7) by the lowest value of vc and mc; region marked by broken
+line lay outside experimental matrix
+
+
+
+
+Fig. 8. Dependence of the main force Fc from the cutting speed vc and the moisture content mc
+according to models (5) through (7)
+
+
+
+
+Porankiewicz et al. (2007). “Cutting force, low density wood,” BioResources 2(4), 671-681. 679
+PEER-REVIEWED ARTICLE                                 ncsu.edu/   bioresources
+        From Fig. 8 it can be seen that the main force Fc increased with an increase of the
+vc over the whole analyzed range, slightly more for the lowest moisture content mc,
+which contradicts information from the literature. Figure 8 also shows that the moisture
+content mc had limited influence on the main force Fc, to the lowest analyzed value.
+Within the analyzed range of the moisture content mc<11.5; 100 %>, the ratio between
+the largest and the lowest values of the Fc was as high as 1.13 in the present paper, in
+comparison with 1.25 according to the literature (Kivimaa 1950; Amalitskij and
+Lyubchenko 1977; Orlicz 1982).
+        Analysis performed in the present study indicates that for an adequate description
+of wood cutting forces, including the dependence on machining parameters, more precise
+formulas have to be applied in place of the relations (1) and (2).
+
+
+CONCLUSIONS
+
+1. By peripheral up-routing of Liriodendron tulipifera wood, for the highest cutting edge
+dullness VBw = 82 µm, the main cutting force Fc, strongly increases with increasing
+average grain angle ϕr towards cutting speed vc up to ϕr = 117.7o. This is followed, for
+yet higher ϕr values, by rapid decreases in Fc.
+2. For the lowest cutting edge dullness VBw = 4 µm, the main cutting force Fc slightly
+increases with increasing ϕr, up to ϕr = 117.7o and afterwards for higher ϕr the Fc slowly
+decreases.
+3. The differentiated influence of the cutting edge dullness represented by the VBw on the
+main cutting force Fc has it’s source in very strong interaction VBw · ϕr.
+4. By peripheral up-routing of Liriodendron tulipifera wood, for the highest cutting edge
+dullness VBw = 82 µm, the normal cutting force Fn, strongly increases with increasing
+average grains angle ϕr towards cutting speed vc up to ϕr = 87.3o and afterwards for
+higher ϕr the Fn rapidly decreases.
+5. The normal force Fn does not follow the main cutting force Fc. Rather, the Fn reaches
+it’s maximum by the ϕr angle 30.7o lower than the Fc. force.
+6. For the lowest cutting edge dullness VBw = 4 µm, the normal cutting force Fn slightly
+increases with an increase of ϕr up to ϕr = 87.3o and afterwards for higher ϕr the Fn
+slowly decreases.
+8. A lack of the maximum cutting forces near average angle ϕr = 90o for a sharp tool by
+routing of Liriodendron tulipifera wood was evidenced.
+9. By up-milling of wood of Cordia alliodora, the main force Fc strongly increases with
+increasing rate per edge fz within the range fz<0.13; 2.09 mm>.
+10. The main force Fc increases with increasing average grain angle ϕr towards cutting
+speed vc within the range ϕr<1.99; 6.88o>, during up-milling of Cordia alliodora.
+11. During up-milling of Cordia alliodora, the main force Fc increases with an increase
+of cutting speed vc over the whole analyzed range vc<10; 40 m/s>.
+12. An increase of the moisture content mc reduces the main force Fc. This relation is
+important only at the lowest value of mc and the largest cutting speed vc.
+
+
+
+
+Porankiewicz et al. (2007). “Cutting force, low density wood,” BioResources 2(4), 671-681. 680
+PEER-REVIEWED ARTICLE                                 ncsu.edu/   bioresources
+REFERENCES CITED
+
+Afanasev, P., S. (1961). Derevoobrabatyvayuschie stanki (Woodworking machinery),
+    Moskva.
+Amalitskij, V. V., Lyubchenko, V. I. (1977). Stanki i instrumenty
+    derevoobrabatyvajuschih predpriyatij (Machinery and tools of woodworking
+    factories), Moskva.
+Axelsson, B., Lundberg, S., and Grönlund, A. (1993). “Studies of the main cutting force
+    at and near a cutting edge,” Holz als Roh u. Werkstoff 52, 43-48.
+Bermudez, E. J. C. (2005). The Machinibility of Cordia alliodora, Grown in Colombia,
+    Master Thesis, Shimane University, Matsue, Japan, manuscript, pp. 60.
+Bermudez, E. J. C, Ohtani, T., and Tanaka, C. (2005). “The machinability of Cordia
+    alliodora, grown in Colombia,” Journal of the Forest Biomass Utilization Society 1,
+    (1), 26 - 33.
+Bershadskij, А. L. (1967). Razchet rezhimov rezaniya drevesiny (Resolution of modes of
+    wood machining), Moskva.
+Cyra, G. (1997). Studies on Automatic Control of Wood Routing Using Acoustic
+    Emission, The United Graduate School of Agricultural Science, Tottori University,
+    Japan, pp. 119.
+Deshevoy, М. А. (1939). Mehanicheskaya tehnologya dereva (Mechanical technology of
+    wood), LTA.
+Bermudez Ecovar, J. (2005). The Machinability of Cordia alliodora, Grown in Colombia,
+    Master Thesis, Shimane University, Matsue, Japan, manuscript, pp. 60.
+Bermudez Ecovar, J., Ohtani, T., and Tanaka, C. (2005). “The machinability of Cordia
+    alliodora, grown in Colombia,” Journal of the Forest Biomass Utilization Society 1,
+    (1), 26 - 33.
+Kivimaa, E. (1950). “The cutting force in woodworking,” Rep. No. 18, The State Institute
+    for Technical Research, Helsinki.
+Orlicz, T. (1982). Obróbka drewna narzędziami tnącymi. (Machining of wood with use of
+    cutting tools), Study book SGGW-AR, Warsaw.
+Porankiewicz, B. (1988). “Mathematical model of edge dullness for prediction of wear of
+    wood cutting tool,” 9th Wood Machining Seminar, University of California, Forest
+    Products Laboratory, Richmond, USA, 169 – 170.
+Porankiewicz, B. (2007). Wood_Cutting, Program in Delphi Borland for calculation of
+    cutting forces. Not published
+
+Article submitted: September 16, 2007; First round of peer-review completed: Oct. 18,
+2007; Revision received: Oct. 20, 2007; Article accepted: Oct. 21, 2007; Article
+published: Oct 23, 2007.
+
+
+
+
+Porankiewicz et al. (2007). “Cutting force, low density wood,” BioResources 2(4), 671-681. 681
+
