@@ -115,6 +115,10 @@ instrument, 9699f0d5) on the rivmap100 demo copy.
   stock under-reads the sim by up to 0.29 mm there; rapid reorder is off,
   so suspect segment merge / arc fitting). Probe:
   planning/entry_stock_awareness_2026-09-24/probes/probe_rapid6497.rs.
+  G-WLENTRYDISC FIXED (waterline_cleanup reads the entry floor over the
+  helix sweep; sentry waterline_helix_entry_reads_its_floor_over_the_helix_turns,
+  red 2.83 mm before). rivmap100 Global 764.5 -> 778.4 s (helix takes the
+  flank), By Area unchanged 728.2 s.
   G-PLANSIMGAP MEASURED: the cause is segment merge
   (dressup::condition::merge_linear_runs, 0.3 mm) after the planner;
   stamp_emitted_segment does not mirror it. Sim above planner: 4016 cells
