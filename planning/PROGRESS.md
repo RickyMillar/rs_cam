@@ -38,6 +38,42 @@
 - bounded typed simulation triage plus per-metric measurability abstention, consumed by GUI, MCP, CLI and narration through one contract
 - machine kinematics as an analysis dimension: per-axis max rates (`$110/$111/$112`) in the machine model, a per-toolpath kinematic utilization instrument (utilization, feed-bound headroom, machine-bound share, plunge-class peak) on every simulation surface, and a geometric plunge guard in the feed modulator
 
+## Roughing speed, entries and rest-stock identity — 2026-09-24/25 (session rs-cam-e2)
+
+All on master, not pushed. Measured with `rs_cam_cli rough-score` (GUI-parity
+instrument, 9699f0d5) on the rivmap100 demo copy.
+
+- Step ladder (`planning/adaptive3d_step_ladder_roughing_2026-09-24/`): built,
+  measured, REMOVED by operator ruling (9aa0994a..54ca58f6). Each Z level
+  drapes to the surface, so a large plain Depth/Pass already cuts pockets in
+  one pass (rivmap100: 2 mm 1379 s → 8 mm 586 s, same finished part). Kept:
+  Fine Stepdown / Mill Shallow deleted; rest-stock roughs start at the real
+  stock top; `--set` lists; unknown `order_by` refused.
+- G-RESTRES / G-RESTSTALE / G-STALECARDS / G-MCPMODAL
+  (`planning/rest_stock_identity_2026-09-24/`, f06a11b0..65584991): one stored
+  project simulation resolution (Auto project-wide); each rest result records
+  the stock it read and is dropped when it no longer matches; metrics-on and
+  metrics-off carve the same stock; the simulation reads core results only;
+  freshness is per operation ("regenerate <op> first"). Rule: GUI, MCP and CLI
+  give identical numbers for the same project state.
+- By Area regions overlay (772ab043..4f74849a): viewport Inspect row + MCP
+  `inspect_spans.area_regions`. Finding: on terrain By Area finds ONE region.
+- Entries (`planning/entry_stock_awareness_2026-09-24/`, 04006014..8ff81472):
+  entries rapid to the planner's real stock top; keep-down link for all entry
+  styles with a stock corridor check (the 8 mm straight plunge into stock is
+  gone); helix/ramp take the full material depth and never helix air;
+  new `ramp_feed_rate` (22 op configs, None = plunge rate) and
+  `entry_clearance_mm` (default 0.5). dpp 8 helix: 1090 s default,
+  734 s at ramp feed 2400, 580 s with pitch 2; plunge style ~370 s.
+- Open, in order: (1) GUI build + operator look (overlay, resolution slider,
+  WAIT rows/hover, regenerate message, entries); (2) By Area merge-tree
+  measurement (priority flood in `surface/flow_accum.rs`, persistence h +
+  min area) then Phase 3 (By Area uses the tree); (3) ring-order entries (needs
+  a per-ring slope bite limit; trial 384 s); (4) 2.5D helix beside a pocket
+  wall has no containment check; dome-slope steep drops; G-MCPCUTROW; CLI job
+  `strategy` silent fallback. Feeds session owns: `ramp_feed_rate` value +
+  Suggest write, G10 (entry params per tool), optimize-resolution parity gap.
+
 ## Extrapolation programme — 2026-09-24 (ruled; P1 G1 and P2 G2 landed)
 
 `planning/extrapolation_2026-09-24/`: nine gap groups (size, material category,

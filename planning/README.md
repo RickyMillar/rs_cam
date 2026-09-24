@@ -41,7 +41,9 @@ is retrievable the same way.
 | [`gen_sim_rest_ux_2026-09-18/`](gen_sim_rest_ux_2026-09-18/) | Plan; seven rulings open (generate ↔ simulate ↔ rest, one path, one indicator) |
 | [`corne_case_analysis_2026-09-18/`](corne_case_analysis_2026-09-18/) | Analysis; eight rulings open (silhouette holes make the rough weave, waterline Auto ladder is one level, a diagram drag pinned Z −1.37) |
 | [`feeds_matrix_2026-09-23/`](feeds_matrix_2026-09-23/) | Plan; not started (every tool type on every operation: what fires, what ships, what backs it; a `FeedsSupport` declaration that refuses an unbacked suggestion) |
-| [`adaptive3d_step_ladder_roughing_2026-09-24/`](adaptive3d_step_ladder_roughing_2026-09-24/) | Plan; not started (one 3D Rough with a step ladder, e.g. 10/5 mm: the coarse step cuts only where it fits, finer steps take the wall bands in the same slab; replaces Fine Stepdown and Mill Shallow) |
+| [`adaptive3d_step_ladder_roughing_2026-09-24/`](adaptive3d_step_ladder_roughing_2026-09-24/) | REMOVED 2026-09-24 (drape makes a plain large Depth/Pass win); results + valley/entry probe kept |
+| [`rest_stock_identity_2026-09-24/`](rest_stock_identity_2026-09-24/) | Landed 2026-09-24 (G-RESTRES, G-RESTSTALE, G-STALECARDS, G-MCPMODAL); on-screen look open |
+| [`entry_stock_awareness_2026-09-24/`](entry_stock_awareness_2026-09-24/) | Landed 2026-09-25 (stock-aware entries, full-depth helix, ramp_feed_rate); open: ring order, 2.5D helix wall containment |
 
 ## Other packages held under this directory
 
