@@ -263,3 +263,17 @@ Each landing re-runs the FM1 matrix and commits the CSV.
   band at 6.35 mm, under the R1 0.5x threshold. The FORMULA_BACKING v1
   verdict used the Amana derived row and IDC. A strict re-judgement would
   refuse these cells. Not changed in P2; the operator decides.
+
+## Hand-off from the feeds/dial session (2026-09-24): step-ladder readers
+
+The adaptive3d step ladder adds `Adaptive3dConfig.coarse_steps` (coarsest
+first). The deepest axial bite of a 3D rough becomes
+`OperationConfig::deepest_axial_step()`, not `depth_per_pass`. These feeds
+readers still read `depth_per_pass` and must move to the helper after that
+change lands on master, decided per reader: suggest/axial_envelope.rs
+(reads and writes; which step it clamps is a design decision),
+predict.rs (two sites), operating_point.rs, suggest/aggressiveness.rs,
+cutter_constraints.rs (via Suggest), tool_load/optimize/axes.rs (the base
+step is probably right), viz pills.rs and feeds/compare.rs. Until then a
+coarse step is invisible to Suggest and to the axial envelope. Owner: the
+extrapolation session.
