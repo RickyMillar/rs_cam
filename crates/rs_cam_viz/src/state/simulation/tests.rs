@@ -581,7 +581,9 @@ fn evidence_movement_invalidates_the_cached_triage() {
 
     // (c) the simulated cell size, which enriches a measurability
     // abstention's reason — the field today's sole consumer renders.
-    sim.resolution *= 2.0;
+    if let Some(results) = sim.results.as_mut() {
+        results.column_grid_cell_mm *= 2.0;
+    }
     let _ = sim.cached_simulation_triage(&session, 3);
     assert_ne!(
         sim.debug.triage_cache.evidence_fp, after_rapids,

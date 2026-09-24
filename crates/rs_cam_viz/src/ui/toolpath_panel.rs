@@ -275,6 +275,10 @@ pub fn draw(
         .iter()
         .map(|tc| (tc.id, tc.name.clone()))
         .collect();
+    // G-RESTRES (ruling Q8): the Stock rail's hover names the stock the rest
+    // operation read — its cell — or why its snapshot is not current. The
+    // full record is on MCP and the CLI.
+    let stock_notes = stock_notes(&state.session);
     // Where each drawn card landed THIS frame. A local, so it cannot
     // outlive the layout it describes, and a second pass in the SAME frame,
     // because the panel sits in a scroll area and a lagged map is wrong by
@@ -396,7 +400,14 @@ pub fn draw(
     // W3 - the second pass, in the same frame as the cards it joins. A
     // cross-setup edge needs a rect recorded inside an EARLIER setup's drop
     // zone, which a per-zone pass cannot see.
-    draw_connectors(ui, &row_rects, &header_bands(&setup_frames), &names, events);
+    draw_connectors(
+        ui,
+        &row_rects,
+        &header_bands(&setup_frames),
+        &names,
+        &stock_notes,
+        events,
+    );
 
     // Single-setup: the add menu sits below the operation list.
     if !multi_setup && let Some(setup) = state.session.list_setups().first() {
@@ -1214,6 +1225,33 @@ pub fn edge_stroke(state: EdgeState) -> ConnectorStroke {
     }
 }
 
+/// One line per rest operation for its Stock rail's hover (G-RESTRES, Q8):
+/// the cell of the stock its result read, or why its snapshot is not
+/// current.
+fn stock_notes(session: &rs_cam_core::session::ProjectSession) -> HashMap<ToolpathId, String> {
+    use rs_cam_core::compute::config::StockSource;
+    use rs_cam_core::session::SnapshotMiss;
+
+    let mut notes = HashMap::new();
+    for (index, tc) in session.toolpath_configs().iter().enumerate() {
+        if !tc.enabled || tc.stock_source != StockSource::FromRemainingStock {
+            continue;
+        }
+        let read = session
+            .get_result(index)
+            .and_then(|result| result.stats.source_stock.as_ref())
+            .map(|source| format!("Stock read at {:.3} mm cells.", source.cell_mm));
+        let note = read.or_else(|| match session.snapshot_is_current(tc.id) {
+            Ok(()) | Err(SnapshotMiss::Missing) => None,
+            Err(miss) => Some(format!("Not current: {}.", miss.describe())),
+        });
+        if let Some(note) = note {
+            let _ = notes.insert(tc.id, note);
+        }
+    }
+    notes
+}
+
 /// What one connector says on hover.
 ///
 /// Pure, so the sentry drives all nine `(kind, state)` pairs. `selectable`
@@ -1415,6 +1453,7 @@ fn draw_connectors(
     row_rects: &[(ToolpathId, RowGeometry, Vec<EdgeRow>)],
     header_bands: &[(f32, f32)],
     names: &HashMap<ToolpathId, String>,
+    stock_notes: &HashMap<ToolpathId, String>,
     events: &mut Vec<AppEvent>,
 ) {
     // The card rects move while one is dragged, so a rail drawn now is
@@ -1506,6 +1545,12 @@ fn draw_connectors(
         );
         if edge.source.is_some() && source.is_none() {
             hover.push_str("\nIt is not in this list.");
+        }
+        if edge.kind == EdgeKind::Stock
+            && let Some(note) = stock_notes.get(row_id)
+        {
+            hover.push('\n');
+            hover.push_str(note);
         }
         // One hit strip per clear span. A crossed swatch keeps its own
         // clicks, because it is that row's drag grip.

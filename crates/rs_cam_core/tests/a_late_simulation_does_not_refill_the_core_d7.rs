@@ -168,6 +168,7 @@ fn a_simulation(session: &ProjectSession) -> SimulationResult {
         resolution_clamped: false,
         column_grid_cell_mm: 2.0,
         prior_stocks,
+        prior_stock_sources: std::collections::HashMap::new(),
     }
 }
 

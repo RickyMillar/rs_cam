@@ -150,6 +150,10 @@ pub enum AppEvent {
     ToggleToolpathEnabled(ToolpathId),
     GenerateToolpath(ToolpathId),
     GenerateAll,
+    /// Write the ONE stored simulation resolution (G-RESTRES) through
+    /// `Command::SetSimulationResolution`. The Simulation panel sends it once
+    /// per edit, not once per drag frame.
+    SetSimulationResolution(rs_cam_core::session::SimulationResolution),
     /// Make one setup current, and nothing else (operator, 2026-09-19).
     ///
     /// The DEFAULT route resolves whatever a scope depends on: Generate All

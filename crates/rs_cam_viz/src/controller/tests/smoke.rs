@@ -346,6 +346,7 @@ fn simulation_results_capture_setup_boundaries() {
                     column_grid_cell_mm: 0.5,
                     resolution_clamped: false,
                     prior_stocks: std::collections::HashMap::new(),
+                    prior_stock_sources: std::collections::HashMap::new(),
                 },
                 playback_data: Vec::new(),
                 cut_trace_path: None,

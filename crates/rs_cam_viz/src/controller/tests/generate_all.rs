@@ -241,7 +241,7 @@ fn diagnostics_separate_blocked_from_failed_and_exclude_disabled() {
 fn generate_all_drives_a_three_deep_rest_chain_in_one_call() {
     let mut controller = rest_chain_controller(3);
     let (tx, mut rx) = tokio::sync::oneshot::channel();
-    controller.mcp_start_generate_all(true, Some(1.0), tx, None);
+    controller.mcp_start_generate_all(true, Some(0.5), tx, None);
 
     let reply = pump_until_resolved(&mut controller, &mut rx);
 
@@ -289,7 +289,7 @@ fn the_plan_terminates_on_a_genuinely_failing_op() {
     controller.compute.poison = Some(poisoned);
 
     let (tx, mut rx) = tokio::sync::oneshot::channel();
-    controller.mcp_start_generate_all(true, Some(1.0), tx, None);
+    controller.mcp_start_generate_all(true, Some(0.5), tx, None);
     let reply = pump_until_resolved(&mut controller, &mut rx);
 
     assert_eq!(reply["ok"], false, "a hard failure must not report ok");
@@ -369,7 +369,12 @@ fn a_gui_simulation_reaches_the_session_so_start_sees_the_prior_stock_n12_item10
     );
 
     assert!(
-        controller.run_simulation_with_all(),
+        {
+            // G-RESTRES: only the metrics carve (the kernel the CLI and MCP
+            // use) leaves a snapshot a rest operation may read.
+            controller.state.simulation.set_metric_capture_enabled(true);
+            controller.run_simulation_with_all()
+        },
         "the simulation must submit, or this arm measures nothing"
     );
     controller.drain_compute_results();
@@ -460,7 +465,12 @@ fn a_save_keeps_the_simulation_so_a_rest_op_still_starts_wp17() {
     controller.submit_toolpath_compute(ids[0]);
     controller.drain_compute_results();
     assert!(
-        controller.run_simulation_with_all(),
+        {
+            // G-RESTRES: only the metrics carve (the kernel the CLI and MCP
+            // use) leaves a snapshot a rest operation may read.
+            controller.state.simulation.set_metric_capture_enabled(true);
+            controller.run_simulation_with_all()
+        },
         "the simulation must submit, or this arm measures nothing"
     );
     controller.drain_compute_results();
@@ -531,35 +541,124 @@ fn the_mcp_save_conversion_writes_no_session_state_wp17() {
     );
 }
 
-/// A/M10's rule, enforced: the loop never picks a simulation resolution for
-/// you. Omitting it on a project with rest ops is refused, with instructions.
+/// G-RESTRES (rulings Q3, Q4, 2026-09-24): with no `simulation_resolution_mm`
+/// the plan reads the ONE stored project value; it no longer refuses. The
+/// reply names the cell and says this call did not set it.
 #[cfg(feature = "mcp")]
 #[test]
-fn generate_all_refuses_to_guess_a_simulation_resolution() {
+fn generate_all_reads_the_stored_resolution_when_none_arrives() {
     let mut controller = rest_chain_controller(3);
+    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    controller.mcp_start_generate_all(true, None, tx, None);
+
+    let reply = pump_until_resolved(&mut controller, &mut rx);
+    assert_eq!(reply["ok"], true, "reply: {reply}");
+    let stored = controller.state.session.simulation_resolution_mm();
+    assert_eq!(
+        reply["simulation_resolution"]["mm"],
+        serde_json::json!(stored)
+    );
+    assert_eq!(reply["simulation_resolution"]["set_by_this_call"], false);
+    for resolution in &controller.compute.sim_resolutions {
+        assert!(
+            resolution.to_bits() == stored.to_bits(),
+            "every simulation reads the stored value: {resolution} != {stored}"
+        );
+    }
+}
+
+/// A passed value SETS the project value (Q3), and the reply says so.
+#[cfg(feature = "mcp")]
+#[test]
+fn a_passed_resolution_sets_the_project_value() {
+    let mut controller = rest_chain_controller(1);
+    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    controller.mcp_start_generate_all(true, Some(0.25), tx, None);
+
+    let reply = pump_until_resolved(&mut controller, &mut rx);
+    assert_eq!(
+        controller.state.session.simulation_resolution(),
+        rs_cam_core::session::SimulationResolution::Fixed(0.25)
+    );
+    assert_eq!(reply["simulation_resolution"]["set_by_this_call"], true);
+}
+
+/// Q4/Q5: a stored cell too coarse for the rest is refused at once, with the
+/// shared sentence, and no confirm modal waits on a click (G-MCPMODAL).
+#[cfg(feature = "mcp")]
+#[test]
+fn a_too_coarse_stored_resolution_refuses_without_a_modal() {
+    let mut controller = rest_chain_controller(3);
+    let _ = controller
+        .state
+        .session
+        .apply(Command::SetSimulationResolution(
+            rs_cam_core::session::SetSimulationResolutionArgs {
+                resolution: rs_cam_core::session::SimulationResolution::Fixed(2.0),
+            },
+        ))
+        .expect("a positive cell");
     let (tx, mut rx) = tokio::sync::oneshot::channel();
     controller.mcp_start_generate_all(true, None, tx, None);
 
     let resp = rx
         .try_recv()
-        .expect("the refusal is immediate — nothing is submitted");
-    let payload = resp.result.expect("Ok(json)");
-    let reply: serde_json::Value = serde_json::from_str(&payload).expect("json");
+        .expect("the refusal is immediate: nothing is submitted");
+    let reply: serde_json::Value =
+        serde_json::from_str(&resp.result.expect("Ok(json)")).expect("json");
     assert_eq!(reply["ok"], false);
     let err = reply["error"].as_str().expect("error text");
-    assert!(err.contains("simulation_resolution_mm"), "got: {err}");
+    assert!(err.contains("coarser than"), "got: {err}");
     assert!(
         err.contains("fixpoint: false"),
-        "the refusal must say how to opt out, got: {err}"
+        "the opt-out is named: {err}"
     );
-    assert!(
-        err.contains("NOT guessed"),
-        "the refusal must say why, got: {err}"
-    );
+    assert!(controller.pending_plan_confirm().is_none(), "no modal");
     assert!(
         controller.drain_events().is_empty(),
         "nothing was submitted"
     );
+}
+
+/// Q5 on the single-operation door: an MCP `generate_toolpath` never opens
+/// the confirm modal. A too-coarse stored cell fails the row at once, so the
+/// waiter resolves and nothing waits on a click.
+#[cfg(feature = "mcp")]
+#[test]
+fn an_mcp_generate_toolpath_never_opens_the_modal_g_mcpmodal() {
+    let mut controller = rest_chain_controller(1);
+    let _ = controller
+        .state
+        .session
+        .apply(Command::SetSimulationResolution(
+            rs_cam_core::session::SetSimulationResolutionArgs {
+                resolution: rs_cam_core::session::SimulationResolution::Fixed(2.0),
+            },
+        ))
+        .expect("a positive cell");
+    let rest = controller.state.session.toolpath_configs()[1].id;
+
+    controller.handle_generate_toolpath_mcp(rest);
+
+    assert!(controller.pending_plan_confirm().is_none(), "no modal");
+    assert!(!controller.plan_is_busy(), "nothing waits");
+    let status = controller
+        .state
+        .gui
+        .toolpath_rt
+        .get(&rest)
+        .map(|rt| rt.status.clone());
+    assert!(
+        matches!(
+            status,
+            Some(crate::state::toolpath::ComputeStatus::Error(ref m)) if m.contains("coarser than")
+        ),
+        "the row carries the refusal: {status:?}"
+    );
+
+    // The GUI door on the same state still asks (R1).
+    controller.handle_generate_toolpath(rest);
+    assert!(controller.pending_plan_confirm().is_some(), "the GUI asks");
 }
 
 /// `fixpoint: false` runs no simulation at all: no resolution is needed, the
@@ -608,7 +707,7 @@ fn a_disabled_rest_op_is_not_generated_blocked_or_failed() {
         .expect("the index comes from the session");
 
     let (tx, mut rx) = tokio::sync::oneshot::channel();
-    controller.mcp_start_generate_all(true, Some(1.0), tx, None);
+    controller.mcp_start_generate_all(true, Some(0.5), tx, None);
     let reply = pump_until_resolved(&mut controller, &mut rx);
 
     assert_eq!(reply["generated"], 3, "reply: {reply}");

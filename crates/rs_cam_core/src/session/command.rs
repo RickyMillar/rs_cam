@@ -457,6 +457,13 @@ macro_rules! for_each_command {
                  mcp: Reach::Reached,
                  cli: Reach::Reached,
              }),
+            (Command, SetSimulationResolution, "set_simulation_resolution",
+             SetSimulationResolutionArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Reached,
+                 cli: Reach::Reached,
+             }),
             (Query, ToolpathCycleTime, "toolpath_cycle_time", ToolpathCycleTimeArgs,
              ToolpathCycleTimeAnswer,
              Surfaces {
@@ -1603,6 +1610,17 @@ pub struct SetToolpathEnabledArgs {
     pub enabled: bool,
 }
 
+/// The arguments of the `set_simulation_resolution` command (G-RESTRES).
+///
+/// The one stored simulation cell size. A new value drops the simulation,
+/// and every rest result recorded at the old cell drops with it, so
+/// [`Effects`] reports those rows.
+#[derive(Debug, Clone)]
+pub struct SetSimulationResolutionArgs {
+    /// The new value.
+    pub resolution: super::SimulationResolution,
+}
+
 /// The arguments of the `toolpath_cycle_time` read.
 ///
 /// `trace` carries the simulation the caller measured this toolpath
@@ -2385,6 +2403,9 @@ impl ProjectSession {
             Command::SetToolpathEnabled(args) => {
                 self.set_toolpath_enabled(args.index, args.enabled)
             }
+            Command::SetSimulationResolution(args) => self.try_with_effects(None, move |session| {
+                session.set_simulation_resolution_impl(args.resolution)
+            }),
             // ── WP15a: the rows of the row-less setters ───────────
             //
             // §25 ruling 1. Every arm below delegates to the setter
@@ -2631,6 +2652,11 @@ impl ProjectSession {
         let simulation_before = self.simulation.is_some();
         let revisions_before = self.revision_snapshot();
         mutate(self)?;
+        // G-RESTRES / G-RESTSTALE: one stale rule after every command. A
+        // rest result whose recorded source stock no longer matches the
+        // project drops here, inside the measured window, so `stale`
+        // reports it. See `session/rest_stock.rs`.
+        self.drop_out_of_date_rest_results();
         Ok(Effects {
             stale: self.moved_revisions(&revisions_before),
             simulation_cleared: simulation_before && self.simulation.is_none(),

@@ -92,6 +92,10 @@ pub struct ToolpathDiagnostic {
     /// the wire at all: those regions emitted the pre-C2 undivided raster,
     /// and until now nothing on an operator surface said so. Report-only.
     pub monotone_cells: Option<crate::finish::unified_finish::MonotoneCellTotals>,
+    /// G-RESTRES: the stock a rest operation read — the simulation cell,
+    /// the snapshot digest, and the toolpaths carved before it. `None` for
+    /// an operation that read no simulated stock.
+    pub source_stock: Option<crate::compute::source_stock::SourceStockWire>,
 }
 
 /// Severity bucket for a [`Verdict`]. Ordered: `Critical < Important < Polish`

@@ -24,7 +24,7 @@ use rs_cam_core::toolpath::MoveType;
 /// (G-SIMDUMP: each dump can be multiple GB at fine resolutions).
 const SIM_CUT_ARTIFACT_RETAIN: usize = 5;
 
-pub(super) struct ComputeExecutionOutcome {
+pub(crate) struct ComputeExecutionOutcome {
     pub result: Result<ToolpathResult, ComputeError>,
     pub debug_trace: Option<Arc<rs_cam_core::trace::debug_trace::ToolpathDebugTrace>>,
     pub semantic_trace: Option<Arc<rs_cam_core::trace::semantic_trace::ToolpathSemanticTrace>>,
@@ -202,6 +202,13 @@ pub(super) fn run_compute_with_phase(
 }
 
 /// `pub(super)` so the worker's tests can drive it with no phase tracker.
+/// The toolpath lane's work with no phase tracker, for a controller test
+/// that drives the real worker code inline (G-RESTRES parity).
+#[cfg(test)]
+pub(crate) fn run_compute_inline(req: &ComputeRequest) -> ComputeExecutionOutcome {
+    run_compute_with_phase_tracker(req, None)
+}
+
 pub(super) fn run_compute_with_phase_tracker(
     req: &ComputeRequest,
     phase_tracker: Option<&ToolpathPhaseTracker>,

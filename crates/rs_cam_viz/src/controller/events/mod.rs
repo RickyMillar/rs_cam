@@ -248,6 +248,14 @@ impl<B: ComputeBackend> AppController<B> {
             // R6: one Generate makes the named operation current, which
             // means running its ancestors first.
             AppEvent::GenerateToolpath(tp_id) => self.handle_generate_toolpath(tp_id),
+            AppEvent::SetSimulationResolution(resolution) => {
+                if let Err(error) = self.set_simulation_resolution(resolution) {
+                    self.push_notification(
+                        format!("Could not set the simulation resolution: {error}"),
+                        super::Severity::Warning,
+                    );
+                }
+            }
             AppEvent::GenerateAll => self.handle_generate_all(),
             AppEvent::GenerateSetupOnly(setup_id) => self.handle_generate_setup_only(setup_id),
             AppEvent::CancelGeneration => self.cancel_generation_plan(),

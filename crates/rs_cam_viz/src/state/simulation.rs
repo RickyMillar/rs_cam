@@ -1038,10 +1038,15 @@ pub struct SimulationState {
     /// moves the epoch, so the row withdraws the claim through staleness
     /// instead of quietly re-scoping a verdict that never saw it.
     pub submitted_collision_scope: Option<HolderCheckScope>,
-    /// Heightmap cell size in mm (smaller = finer detail, more memory/time).
-    pub resolution: f64,
-    /// When true, resolution is auto-calculated from the smallest tool.
-    pub auto_resolution: bool,
+    /// The Simulation panel's slider value while a drag is in progress, in
+    /// mm. `None` when no drag is open.
+    ///
+    /// A draft only (UI-09): the value the project uses is the ONE stored
+    /// `ProjectSession::simulation_resolution` (G-RESTRES). The panel sends
+    /// one `Command::SetSimulationResolution` when the drag ends, not one
+    /// per frame, because each write drops the simulation and the rest
+    /// results.
+    pub resolution_draft: Option<f64>,
     /// Runtime-only capture options for simulation cutting metrics.
     pub metric_options: SimulationMetricOptions,
     /// Revision of runtime-only metric options.

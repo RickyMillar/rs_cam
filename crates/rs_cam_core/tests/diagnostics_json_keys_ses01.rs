@@ -79,6 +79,9 @@ fn populated() -> ProjectDiagnostics {
                 membership_fallbacks: 36,
                 empty_fallbacks: 37,
             }),
+            // G-RESTRES (2026-09-24): the rest source record joins the
+            // wire, after every older key.
+            source_stock: None,
         }],
         verdicts: vec![Verdict {
             severity: VerdictSeverity::Important,
@@ -121,7 +124,8 @@ const PINNED: &str = concat!(
     r#""tip_float_points":31,"#,
     r#""max_tip_float_mm":32.0,"#,
     r#""monotone_cells":{"regions":33,"regions_rotated":34,"cells_emitted":35,"#,
-    r#""membership_fallbacks":36,"empty_fallbacks":37}}],"#,
+    r#""membership_fallbacks":36,"empty_fallbacks":37},"#,
+    r#""source_stock":null}],"#,
     r#""verdicts":[{"severity":"important","#,
     r#""kind":"air_cut","#,
     r#""headline":"Air cut is high","#,

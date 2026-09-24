@@ -1,0 +1,83 @@
+# G-RESTRES parity fixture (2026-09-24). A two-row rest cascade: a pocket
+# on fresh stock, then a pocket on the remaining stock. The project stores
+# its simulation resolution, so the GUI, MCP and the CLI need no argument.
+# `expected.json` beside it holds the numbers all three must publish.
+format_version = 3
+
+[job]
+name = "Rest cascade G-RESTRES"
+
+[job.simulation]
+resolution_mm = 0.5
+
+[job.stock]
+x = 40.0
+y = 40.0
+z = 6.0
+origin_x = 0.0
+origin_y = 0.0
+origin_z = -6.0
+auto_from_model = false
+
+[[tools]]
+id = 0
+name = "6 mm End Mill"
+type = "end_mill"
+diameter = 6.0
+cutting_length = 20.0
+flute_count = 2
+tool_number = 1
+
+[[models]]
+id = 0
+path = "square.svg"
+name = "Square"
+kind = "svg"
+units = { kind = "millimeters" }
+
+[[setups]]
+name = "Setup 1"
+
+[[setups.toolpaths]]
+id = 0
+name = "Pocket"
+enabled = true
+tool_id = 0
+model_id = 0
+stock_source = "fresh"
+
+[setups.toolpaths.operation]
+kind = "pocket"
+
+[setups.toolpaths.operation.params]
+stepover = 2.0
+depth = 3.0
+depth_per_pass = 3.0
+feed_rate = 1000.0
+plunge_rate = 500.0
+climb = true
+pattern = "contour"
+angle = 0.0
+finishing_passes = 0
+
+[[setups.toolpaths]]
+id = 1
+name = "Rest pocket"
+enabled = true
+tool_id = 0
+model_id = 0
+stock_source = "from_remaining_stock"
+
+[setups.toolpaths.operation]
+kind = "pocket"
+
+[setups.toolpaths.operation.params]
+stepover = 1.5
+depth = 3.5
+depth_per_pass = 3.5
+feed_rate = 1000.0
+plunge_rate = 500.0
+climb = true
+pattern = "contour"
+angle = 0.0
+finishing_passes = 0

@@ -153,14 +153,13 @@ enum Commands {
         #[arg(long)]
         skip: Option<String>,
 
-        /// Simulation resolution in mm.
+        /// Override the project's stored simulation resolution, in mm.
         ///
-        /// W5 item (f): NOT defaulted. clap cannot see the project, so the
-        /// refusal lives in `run_project_command`: a project whose plan has
-        /// to simulate refuses without this flag, and refuses a cell size
-        /// coarser than the rest it machines needs (R1). A project that
-        /// plans no simulation still simulates once for the diagnostics, at
-        /// 0.5 mm.
+        /// G-RESTRES: the project file stores the ONE resolution every
+        /// simulation uses (`[job.simulation] resolution_mm`, auto when
+        /// absent), so a rest cascade needs no flag. A value here replaces it
+        /// for this run, and `summary.json` says `override`. A cell coarser
+        /// than the rest needs is refused.
         #[arg(long)]
         resolution: Option<f64>,
 
@@ -322,9 +321,9 @@ enum Commands {
         #[arg(long)]
         toolpath: Option<String>,
 
-        /// Simulation resolution in mm. NOT defaulted when the plan
-        /// simulates, the same rule as `project` (W5 item f). A plan that
-        /// does not simulate uses 0.5 mm.
+        /// Override the project's stored simulation resolution, in mm. The
+        /// same rule as `project` (G-RESTRES): omit it to use the project
+        /// file's value; the report says which one ran.
         #[arg(long)]
         resolution: Option<f64>,
 

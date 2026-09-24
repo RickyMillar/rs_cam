@@ -32,7 +32,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// this toolpath with the same error. If no MCP request is pending
     /// (GUI-initiated generate), `notify_mcp_toolpath_complete` is a no-op,
     /// matching existing behavior.
-    fn fail_toolpath_submit(&mut self, tp_id: ToolpathId, msg: impl Into<String>) {
+    pub(crate) fn fail_toolpath_submit(&mut self, tp_id: ToolpathId, msg: impl Into<String>) {
         let msg = msg.into();
         let rt = self.state.gui.toolpath_rt_or_default(tp_id);
         rt.status = ComputeStatus::Error(msg);
@@ -278,7 +278,7 @@ impl<B: ComputeBackend> AppController<B> {
         // whole dexel grid onto the request; the handle carries the session's
         // own `Arc`.
         if stock_source == StockSource::FromRemainingStock
-            && self.state.simulation.prior_stock_for(tp_id).is_none()
+            && self.state.session.snapshot_is_current(tp_id).is_err()
         {
             // W1: no toast. Blocked is a SEQUENCING state, not an error
             // (A/M11). The row already reads WAIT — `block_toolpath_submit`
@@ -959,8 +959,10 @@ impl<B: ComputeBackend> AppController<B> {
                     self.state.simulation.playback.playing = false;
                 }
 
-                let initial_stock =
-                    TriDexelStock::from_bounds(&stock_bbox, self.state.simulation.resolution);
+                let initial_stock = TriDexelStock::from_bounds(
+                    &stock_bbox,
+                    self.state.session.simulation_resolution_mm(),
+                );
                 self.state.simulation.playback.live_stock = Some(initial_stock);
                 self.state.simulation.playback.live_sim_move = 0;
                 // Unclaimed: this stock is in the global frame, and
@@ -1605,11 +1607,12 @@ impl<B: ComputeBackend> AppController<B> {
 
     /// Start a `generate_all` from the MCP tool.
     ///
-    /// `simulation_resolution_mm` is refused rather than defaulted when the
-    /// project needs it (A/M10): a silently chosen cell size changes
-    /// collision counts and engagement, so the plan must not pick one. Only
-    /// this surface refuses. The GUI reads the Simulation panel, which IS
-    /// the operator's standing choice (R1).
+    /// G-RESTRES (operator rulings 2026-09-24): every simulation runs at the
+    /// ONE stored project resolution. A `simulation_resolution_mm` SETS that
+    /// value (Q3) and the reply says so. A missing one is not refused (Q4):
+    /// the stored value is the project's recorded choice. The call refuses
+    /// only a stored `Fixed` value coarser than the rest needs, and it never
+    /// waits on the GUI confirm (Q5).
     #[cfg(feature = "mcp")]
     pub(crate) fn mcp_start_generate_all(
         &mut self,
@@ -1619,12 +1622,19 @@ impl<B: ComputeBackend> AppController<B> {
         progress_tx: Option<tokio::sync::mpsc::Sender<crate::mcp_bridge::ProgressUpdate>>,
     ) {
         use crate::controller::generate_all::{
-            GenerateAllSink, GenerationPlan, PlanResolution, PlanStep, generate_all_scope,
-            require_resolution,
+            GenerateAllSink, GenerationPlan, PlanStep, ResolutionReport, generate_all_scope,
         };
         use crate::mcp_bridge::McpResponse;
-        use rs_cam_core::compute::config::REST_NEEDS_RESOLUTION;
         use rs_cam_core::session::generation_plan::Scope;
+
+        let refuse = |response_tx: tokio::sync::oneshot::Sender<McpResponse>, error: String| {
+            let _ = response_tx.send(McpResponse {
+                result: Ok(rs_cam_mcp::server::json_str(serde_json::json!({
+                    "ok": false,
+                    "error": error,
+                }))),
+            });
+        };
 
         let scope = generate_all_scope(self.state.session.toolpath_configs());
 
@@ -1636,47 +1646,47 @@ impl<B: ComputeBackend> AppController<B> {
         }
 
         // Checked before the plan is built: a second plan would strand this
-        // caller's oneshot behind the first one's cursor, and a plan armed
-        // behind an unanswered resolution question would never start.
+        // caller's oneshot behind the first one's cursor.
         if self.plan_is_busy() {
-            let _ = response_tx.send(McpResponse {
-                result: Ok(rs_cam_mcp::server::json_str(serde_json::json!({
-                    "ok": false,
-                    "error": "a generation plan is already running. Poll \
-                              `generation_status` for its step, or call \
-                              `cancel_generation` and try again.",
-                }))),
-            });
+            refuse(
+                response_tx,
+                "a generation plan is already running. Poll `generation_status` for its \
+                 step, or call `cancel_generation` and try again."
+                    .to_owned(),
+            );
             return;
         }
 
-        let resolution =
-            match require_resolution(fixpoint, &scope.rest_op_indices, simulation_resolution_mm) {
-                Ok(resolution) => resolution,
-                Err(missing) => {
-                    let bad = missing.supplied_clause();
-                    let _ = response_tx.send(McpResponse {
-                        result: Ok(rs_cam_mcp::server::json_str(serde_json::json!({
-                            "ok": false,
-                            // W5 item (f): the middle sentence is
-                            // `REST_NEEDS_RESOLUTION`, the one the CLI
-                            // interpolates too. Two surfaces, one sentence,
-                            // no paraphrase.
-                            "error": format!(
-                                "generate_all needs `simulation_resolution_mm`, and {bad}. This \
-                                 project has {} enabled rest-machining operation(s) (indices {:?}) \
-                                 whose stock comes from a simulation, so reaching a fully \
-                                 generated state requires running simulations between generate \
-                                 steps. {REST_NEEDS_RESOLUTION} To skip the simulations and get a \
-                                 single pass, pass `fixpoint: false`.",
-                                missing.rest_op_indices.len(),
-                                missing.rest_op_indices,
-                            ),
-                        }))),
-                    });
-                    return;
-                }
-            };
+        // Q3: an explicit cell SETS the project value.
+        let set_by_this_call = if let Some(mm) = simulation_resolution_mm {
+            if let Err(error) = self
+                .set_simulation_resolution(rs_cam_core::session::SimulationResolution::Fixed(mm))
+            {
+                refuse(response_tx, error.to_string());
+                return;
+            }
+            true
+        } else {
+            false
+        };
+
+        // Q4/Q5: a stored cell too coarse for the rest is refused here, with
+        // the sentence the CLI prints. No modal: an MCP call never waits on a
+        // click.
+        if fixpoint
+            && !scope.rest_op_indices.is_empty()
+            && let Some(refusal) = self.state.session.rest_resolution_refusal()
+        {
+            refuse(
+                response_tx,
+                format!(
+                    "generate_all refused: {refusal} Pass `simulation_resolution_mm` to set \
+                     it, or `fixpoint: false` to skip the simulations."
+                ),
+            );
+            return;
+        }
+        let resolution_report = ResolutionReport::of(&self.state.session, set_by_this_call);
 
         // Checked before anything is queued: without the slot no individual
         // toolpath waiter can ever be resolved, so starting the run would
@@ -1721,23 +1731,21 @@ impl<B: ComputeBackend> AppController<B> {
                     ));
         }
 
-        let mut steps = self.plan_steps(Scope::Project, resolution.is_some());
-        // The closing simulation runs only with an explicit resolution. A
-        // no-rest `generate_all` passes `require_resolution` without
-        // supplying one, and simulating there would pick a cell size the
-        // agent never chose.
-        if resolution.is_some() && !steps.is_empty() {
+        let mut steps = self.plan_steps(Scope::Project, fixpoint);
+        // The closing simulation runs at the stored project value, the same
+        // one the GUI closes with (G-RESTRES). `fixpoint: false` runs none.
+        if fixpoint && !steps.is_empty() {
             steps.push(PlanStep::SimulateAll);
         }
 
-        let plan = GenerationPlan::new(
+        let mut plan = GenerationPlan::new(
             steps,
-            resolution.map(PlanResolution::Exactly),
             GenerateAllSink::Mcp {
                 response_tx,
                 progress_tx,
             },
         );
+        plan.resolution_report = Some(resolution_report);
         self.start_plan(plan);
     }
 
@@ -1910,10 +1918,9 @@ impl<B: ComputeBackend> AppController<B> {
                     ));
                     return;
                 };
-                let resolution = self.plan.as_ref().and_then(|plan| plan.resolution);
                 // S5: prefix simulations of one setup run back to back over a
                 // growing project, the case the memo was built for.
-                if self.run_simulation_prefix(position, true, resolution) {
+                if self.run_simulation_prefix(position, true) {
                     if let Some(plan) = self.plan.as_mut() {
                         plan.simulations += 1;
                     }
@@ -1933,9 +1940,8 @@ impl<B: ComputeBackend> AppController<B> {
                     ));
                     return;
                 }
-                let resolution = self.plan.as_ref().and_then(|plan| plan.resolution);
                 // The last simulation leaves no snapshot behind.
-                if self.run_simulation_all(false, resolution) {
+                if self.run_simulation_all(false, true) {
                     if let Some(plan) = self.plan.as_mut() {
                         plan.simulations += 1;
                     }
@@ -2308,7 +2314,20 @@ impl<B: ComputeBackend> AppController<B> {
         if let Some(ref mut pending) = self.pending_mcp
             && let Some(sender) = pending.simulation.take()
         {
-            let resp = self.build_mcp_diagnostics();
+            let set_by_this_call = std::mem::take(&mut pending.simulation_set_resolution);
+            let mut resp = self.build_mcp_diagnostics();
+            // G-RESTRES: the ONE stored cell this run used, and whether the
+            // call set it (ruling Q3).
+            if let Some(object) = resp.as_object_mut() {
+                let report = crate::controller::generate_all::ResolutionReport::of(
+                    &self.state.session,
+                    set_by_this_call,
+                );
+                let _ = object.insert(
+                    "simulation_resolution".to_owned(),
+                    serde_json::to_value(report).unwrap_or(serde_json::Value::Null),
+                );
+            }
             let _ = sender.send(McpResponse {
                 result: Ok(json_str(resp)),
             });

@@ -306,6 +306,9 @@ impl<'a> ToolpathNarrationContext<'a> {
             //    narration in front of them has nothing to compare it to.
             //    Read it off `ToolpathStats` directly.
             stock_snapshot: _,
+            //  - source_stock:      G-RESTRES provenance, the same rule as
+            //    `stock_snapshot`. The wires publish it.
+            source_stock: _,
             //  - region_cap (F3):   surfaced as a diagnostic notice
             //    (`geom.region_cap_truncated`), on the same rule as
             //    `deprecated_dial`. It is a statement about the rest-region

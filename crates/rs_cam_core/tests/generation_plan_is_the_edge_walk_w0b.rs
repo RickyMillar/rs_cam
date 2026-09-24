@@ -186,10 +186,43 @@ fn a_stock() -> Arc<TriDexelStock> {
 }
 
 /// Store a simulation whose `prior_stocks` cover exactly the named rows.
+///
+/// G-RESTRES: a snapshot counts only when it is CURRENT — every row carved
+/// before it holds a result, and the record matches. The fixture is cold, so
+/// the rows above the rest pair take an empty result first, and each
+/// snapshot takes the record the rule itself derives.
 fn adopt_simulation(session: &mut ProjectSession, covered: &[usize]) {
+    for index in [ROUGH, REST1] {
+        if session.get_result(index).is_none() {
+            let revision = session.toolpath_revision(index);
+            let _ = session
+                .apply(Command::AdoptResult(
+                    rs_cam_core::session::AdoptResultArgs {
+                        index,
+                        revision,
+                        result: Box::new(rs_cam_core::session::ToolpathComputeResult {
+                            op_data: rs_cam_core::ops::drill_op::OpData::Toolpath(Arc::new(
+                                rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
+                                    rs_cam_core::toolpath::Toolpath::new(),
+                                ),
+                            )),
+                            stats: Default::default(),
+                            debug_trace: None,
+                            semantic_trace: None,
+                        }),
+                    },
+                ))
+                .expect("the revision is current");
+        }
+    }
     let mut prior_stocks = HashMap::new();
+    let mut prior_stock_sources = HashMap::new();
     for &index in covered {
-        prior_stocks.insert(id_of(session, index), a_stock());
+        let id = id_of(session, index);
+        prior_stocks.insert(id, a_stock());
+        if let Some(source) = session.expected_source(id) {
+            prior_stock_sources.insert(id, source);
+        }
     }
     let _ = session
         .apply(Command::AdoptSimulation(AdoptSimulationArgs {
@@ -210,6 +243,7 @@ fn adopt_simulation(session: &mut ProjectSession, covered: &[usize]) {
                 resolution_clamped: false,
                 column_grid_cell_mm: 2.0,
                 prior_stocks,
+                prior_stock_sources,
             }),
             epoch: session.simulation_epoch(),
         }))

@@ -266,10 +266,9 @@ pub fn state(edge: &Edge, session: &ProjectSession) -> EdgeState {
         EdgeKind::Stock => {
             // A cross-setup source is as real as a same-setup one (R2).
             // The state is the same question either way: is the snapshot
-            // there, and has the source generated.
-            let snapshot = session
-                .simulation_result()
-                .is_some_and(|s| s.prior_stocks.contains_key(&edge.from));
+            // CURRENT (G-RESTRES: at the project's cell, over the results
+            // the project holds now), and has the source generated.
+            let snapshot = session.snapshot_is_current(edge.from).is_ok();
             if snapshot && session.get_result(source_index).is_some() {
                 EdgeState::Ready
             } else {

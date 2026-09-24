@@ -912,7 +912,7 @@ impl RsCamApp {
         // here would wait for a painted frame the MCP path cannot promise.
         // The waiter still resolves off `notify_mcp_toolpath_complete`, keyed
         // by id, so it reads this operation's own outcome and not the plan's.
-        self.controller.handle_generate_toolpath(tp_id);
+        self.controller.handle_generate_toolpath_mcp(tp_id);
     }
 
     pub(super) fn mcp_generate_all(

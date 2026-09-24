@@ -841,6 +841,9 @@ declare_core_requests! {
             => SetDressupField, None;
         SetToolpathEnabled(rs_cam_mcp::server::SetToolpathEnabledParam)
             => SetToolpathEnabled, None;
+        /// Row `SetSimulationResolution` (G-RESTRES).
+        SetSimulationResolution(rs_cam_mcp::server::SetSimulationResolutionParam)
+            => SetSimulationResolution, None;
     }
 }
 
@@ -1405,6 +1408,9 @@ pub struct PendingMcpCompute {
     pub jobs: HashMap<crate::compute::JobRequestId, PendingMcpJob>,
     /// Oneshot sender for when the simulation finishes.
     pub simulation: Option<tokio::sync::oneshot::Sender<McpResponse>>,
+    /// G-RESTRES: the in-flight `run_simulation` set the stored project
+    /// resolution (ruling Q3), so its reply must say so.
+    pub simulation_set_resolution: bool,
     /// Oneshot sender for when collision check finishes.
     pub collision: Option<tokio::sync::oneshot::Sender<McpResponse>>,
     /// For screenshot_gui: the in-flight full-window capture. The GUI
@@ -1569,6 +1575,9 @@ pub fn build_generate_all_response(summary: &GenerateAllSummary) -> String {
         // has steps, and `steps` is how many it held.
         "steps": summary.steps,
         "simulations": summary.simulations,
+        // G-RESTRES: the one stored cell every simulation of the plan used,
+        // and whether this call set it (ruling Q3).
+        "simulation_resolution": summary.resolution_report,
         "loop_error": summary.loop_error,
     }))
 }

@@ -387,6 +387,17 @@ pub struct ToolpathStats {
     /// Report-only: no gate consumes it, nothing branches on it, and
     /// generation is byte-identical whether or not it is populated.
     pub stock_snapshot: Option<StockSnapshotStamp>,
+    /// G-RESTRES: how the snapshot this generation read was made — the
+    /// cell the simulation was asked for and the toolpaths it carved
+    /// before this one. See [`crate::compute::source_stock`].
+    ///
+    /// `None` = this generation read no snapshot (a `Fresh` operation), or
+    /// a stats struct that never went through a real generation.
+    ///
+    /// **Not report-only.** The session compares it with the current
+    /// project state after every command, and drops a result whose record
+    /// no longer matches (`ProjectSession::rest_results_out_of_date`).
+    pub source_stock: Option<crate::compute::source_stock::SourceStock>,
     /// F3 (2026-08-23): what the
     /// [`crate::geometry::region_mask::MAX_REST_REGIONS`] cap did to this operation's
     /// rest-region extraction. See [`crate::geometry::region_mask::RegionCapReport`].

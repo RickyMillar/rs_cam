@@ -148,7 +148,12 @@ impl ProjectSession {
                     tc.stock_source,
                 );
                 if let Some(result) = result {
-                    if opts.skip_ids.contains(&tc.id) {
+                    // A disabled operation keeps its result for a later
+                    // re-enable, and cuts nothing. The GUI builder admits
+                    // enabled rows only; this one did not, so the two
+                    // simulations disagreed on a project with a disabled
+                    // generated row (G-RESTRES parity).
+                    if !tc.enabled || opts.skip_ids.contains(&tc.id) {
                         continue;
                     }
                     if !crate::compute::simulate::contributes_simulated_motion(

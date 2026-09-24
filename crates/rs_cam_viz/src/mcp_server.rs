@@ -33,11 +33,11 @@ use rs_cam_mcp::server::{
     RemoveAlignmentPinParam, RemoveToolParam, RemoveToolpathParam, SaveProjectParam,
     ScreenshotGuiParam, ScreenshotSimParam, ScreenshotToolpathParam, SetBoundaryConfigParam,
     SetDressupConfigParam, SetDressupFieldParam, SetMachineKinematicsParam,
-    SetRestAnalysisConfigParam, SetSetupRotationParam, SetSpindleStrategyParam,
-    SetStockConfigParam, SetStockSourceParam, SetToolParamInput, SetToolpathEnabledParam,
-    SetToolpathHeightsParam, SetToolpathModelParam, SetToolpathParamInput, SetToolpathToolParam,
-    SetUiViewParam, SimJumpToMoveParam, SimJumpToToolpathBoundaryParam, SimScrubToolpathParam,
-    SimulationParam, json_str,
+    SetRestAnalysisConfigParam, SetSetupRotationParam, SetSimulationResolutionParam,
+    SetSpindleStrategyParam, SetStockConfigParam, SetStockSourceParam, SetToolParamInput,
+    SetToolpathEnabledParam, SetToolpathHeightsParam, SetToolpathModelParam, SetToolpathParamInput,
+    SetToolpathToolParam, SetUiViewParam, SimJumpToMoveParam, SimJumpToToolpathBoundaryParam,
+    SimScrubToolpathParam, SimulationParam, json_str,
 };
 
 /// How long a cheap read waits for the GUI frame loop before falling back to
@@ -1182,6 +1182,22 @@ impl EmbeddedCamServer {
         Self::format_result(
             self.send_request(McpRequestKind::Core(CoreRequest::SetDressupField(param)))
                 .await,
+        )
+    }
+
+    #[tool(
+        name = "set_simulation_resolution",
+        description = "Set the project's ONE stored simulation resolution. Every simulation (run_simulation, the generate_all plan, the GUI) and every rest operation's stock uses it, and the project file saves it. Pass resolution_mm for a fixed cell in mm; omit it for auto (the finer of the smallest tool's radius / 5 and the rest tool's tip radius / 5, over the whole project). A new value drops the simulation and every rest result recorded at the old cell; the reply lists them under stale_toolpaths."
+    )]
+    async fn set_simulation_resolution(
+        &self,
+        Parameters(param): Parameters<SetSimulationResolutionParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::Core(CoreRequest::SetSimulationResolution(
+                param,
+            )))
+            .await,
         )
     }
 

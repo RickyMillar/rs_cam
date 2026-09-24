@@ -188,6 +188,16 @@ fn adopt_simulation(session: &mut ProjectSession) {
     let mut prior_stocks = HashMap::new();
     prior_stocks.insert(id_of(session, FINISH), a_stock());
     prior_stocks.insert(id_of(session, BACK_FINISH), a_stock());
+    // G-RESTRES: a snapshot is Ready only with a record that matches the
+    // project. A hand-built simulation takes the record the rule itself
+    // derives.
+    let prior_stock_sources: HashMap<_, _> = [FINISH, BACK_FINISH]
+        .into_iter()
+        .filter_map(|index| {
+            let id = id_of(session, index);
+            session.expected_source(id).map(|source| (id, source))
+        })
+        .collect();
     let _ = session
         .apply(Command::AdoptSimulation(AdoptSimulationArgs {
             result: Box::new(SimulationResult {
@@ -207,6 +217,7 @@ fn adopt_simulation(session: &mut ProjectSession) {
                 resolution_clamped: false,
                 column_grid_cell_mm: 2.0,
                 prior_stocks,
+                prior_stock_sources,
             }),
             epoch: session.simulation_epoch(),
         }))

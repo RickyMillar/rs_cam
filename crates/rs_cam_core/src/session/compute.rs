@@ -193,6 +193,10 @@ pub struct GenContext {
     /// the entry-descent split, but the dressup air-cut filter reads the
     /// same snapshot ungated. `None` means no machined stock at all.
     prior_stock: Option<Arc<crate::dexel_stock::TriDexelStock>>,
+    /// G-RESTRES: how `prior_stock` was made, for a `FromRemainingStock`
+    /// operation. The result records it, and the session compares it with
+    /// the project after every command. `None` for a `Fresh` operation.
+    source_stock: Option<crate::compute::source_stock::SourceStock>,
     /// The machine envelope the pencil family's emit-time link decision
     /// costs candidates against, built from `self.machine`.
     link_kinematics: Option<crate::machine::kinematics::LinkKinematics>,
@@ -946,6 +950,7 @@ impl JobPhases<'_, '_> {
                 .prior_stock
                 .as_deref()
                 .map(crate::compute::toolpath_stats::StockSnapshotStamp::of),
+            self.context.source_stock.clone(),
         );
 
         let mut debug_trace = debug_recorder.finish();
@@ -2102,20 +2107,21 @@ impl ProjectSession {
                 .toolpath_configs
                 .get(index)
                 .ok_or(SessionError::ToolpathNotFound(index))?;
+            // G-RESTRES / G-RESTSTALE: the snapshot must be CURRENT, not
+            // merely present — at the project's cell, over the results the
+            // project holds now. A present-but-stale snapshot is refused
+            // exactly as a missing one is.
             if tc.stock_source == crate::session::StockSource::FromRemainingStock
-                && self
-                    .simulation
-                    .as_ref()
-                    .and_then(|sim| sim.prior_stocks.get(&tc.id))
-                    .is_none()
+                && let Err(miss) = self.snapshot_is_current(tc.id)
             {
                 return Err(SessionError::OperationFailed(format!(
-                    "'{}' is set to use remaining stock (rest machining) but no simulated \
-                     remaining-stock snapshot is available. Run a simulation of the preceding \
-                     operations first, then regenerate — or set the stock source to Fresh if \
-                     this is the first operation. (Refusing to fall back to fresh stock: a \
-                     fine tool would clear the whole part instead of the leftover.)",
-                    tc.name
+                    "'{}' is set to use remaining stock (rest machining) but no current \
+                     simulated remaining-stock snapshot is available: {}. Run a simulation of \
+                     the preceding operations first, then regenerate — or set the stock source \
+                     to Fresh if this is the first operation. (Refusing to fall back to fresh \
+                     stock: a fine tool would clear the whole part instead of the leftover.)",
+                    tc.name,
+                    miss.describe()
                 )));
             }
         }
@@ -2154,10 +2160,22 @@ impl ProjectSession {
             .get(index)
             .ok_or(SessionError::ToolpathNotFound(index))?;
 
+        // G-RESTSTALE: a snapshot that is not current is not read at all,
+        // by the generator or by the air-cut filter.
+        let current_snapshot = self.snapshot_is_current(tc.id).is_ok();
         let prior_stock = self
             .simulation
             .as_ref()
+            .filter(|_| current_snapshot)
             .and_then(|sim| sim.prior_stocks.get(&tc.id).cloned());
+        let source_stock = self
+            .simulation
+            .as_ref()
+            .filter(|_| {
+                current_snapshot
+                    && tc.stock_source == crate::session::StockSource::FromRemainingStock
+            })
+            .and_then(|sim| sim.prior_stock_sources.get(&tc.id).cloned());
 
         // P1 W4a: the pencil family's emit-time surface-link-vs-retract
         // decision costs candidates against the real machine envelope —
@@ -2246,6 +2264,7 @@ impl ProjectSession {
             plunge_rate: tc.operation.plunge_rate(),
             transform_capabilities: tc.operation.transform_capabilities(),
             prior_stock,
+            source_stock,
             link_kinematics,
             material: self.stock.material.clone(),
             post_clip_regions,

@@ -13,8 +13,8 @@ The title names the scope. The entry is `compute::execute_operation_annotated`.
   `cutter.rs`, `transform.rs` — the configuration model.
 - `toolpath_stats.rs` — `ToolpathStats` and its finding types.
   `alignment_pins.rs` — the keyed-pin construction and the flip audit.
-- `simulate.rs`, `sim_prefix.rs`, `collision_check.rs` — simulation
-  orchestration, the `generate_all` prefix memo, the collision wrapper.
+- `simulate.rs`, `sim_prefix.rs`, `collision_check.rs`, `source_stock.rs` —
+  simulation, the prefix memo, collisions, the rest snapshot record.
 - `annotate.rs`, `spans.rs`, `stats.rs` — runtime annotation and spans.
   `validate.rs`, `generated_empty.rs` — stale defaults, the empty refusal.
 

@@ -53,7 +53,7 @@ pub struct GenerateAllScope {
     /// Every enabled toolpath, in project order.
     pub enabled: Vec<ToolpathId>,
     /// 0-based project indices of the enabled ops whose stock comes from a
-    /// simulation. What an MCP refusal names.
+    /// simulation.
     pub rest_op_indices: Vec<usize>,
 }
 
@@ -75,59 +75,34 @@ pub fn generate_all_scope(configs: &[ToolpathConfig]) -> GenerateAllScope {
     }
 }
 
-/// The plan must simulate and was handed no usable cell size.
+/// The simulation cell a plan ran at, as the MCP reply states it
+/// (G-RESTRES).
 ///
-/// MCP only since R1. The GUI reads the Simulation panel and, when the panel
-/// is coarser than the rest needs, asks the operator through the confirm
-/// ([`crate::controller::PlanResolutionConfirm`]).
-#[derive(Debug)]
-pub struct MissingResolution {
-    /// 0-based project indices of the enabled rest ops that force a simulation.
-    pub rest_op_indices: Vec<usize>,
-    /// What the caller supplied, when it supplied something unusable.
-    pub supplied: Option<f64>,
+/// Every simulation of the project runs at the ONE stored value. An MCP
+/// caller that passed `simulation_resolution_mm` SET that value (operator
+/// ruling 2026-09-24, Q3), and `set_by_this_call` says so.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct ResolutionReport {
+    /// The cell every simulation of the plan used, in mm.
+    pub mm: f64,
+    /// `"auto"` or `"fixed"`: the stored mode.
+    pub mode: &'static str,
+    /// This call wrote the project value.
+    pub set_by_this_call: bool,
 }
 
-impl MissingResolution {
-    /// The clause naming what was wrong with what arrived.
+impl ResolutionReport {
+    /// The report for the session as it stands.
     #[must_use]
-    pub fn supplied_clause(&self) -> String {
-        self.supplied.map_or_else(
-            || "it was not supplied".to_owned(),
-            |r| format!("{r} is not a positive cell size"),
-        )
-    }
-}
-
-/// Decide the cell size one MCP `generate_all` simulates at.
-///
-/// The resolution is **refused, never defaulted** (A/M10) whenever the
-/// project needs one: collision counts and engagement both move with cell
-/// size, so a silently chosen one hands back verdicts nobody asked for.
-///
-/// `Ok(None)` means "this plan runs no simulation of its own": the caller
-/// opted out, or nothing depends on simulated stock and no cell size arrived.
-/// The driver then drops every simulation step and appends no closing one.
-///
-/// # Errors
-/// [`MissingResolution`] when the project has enabled rest-machining ops and
-/// no positive cell size was supplied.
-pub fn require_resolution(
-    fixpoint: bool,
-    rest_op_indices: &[usize],
-    supplied: Option<f64>,
-) -> Result<Option<f64>, MissingResolution> {
-    let usable = supplied.filter(|r| r.is_finite() && *r > 0.0);
-    match (fixpoint, rest_op_indices.is_empty()) {
-        // An explicit opt-out runs no simulation, whatever arrived with it.
-        (false, _) => Ok(None),
-        // Nothing depends on simulated stock, so no simulation is forced. A
-        // cell size that did arrive is still honoured.
-        (true, true) => Ok(usable),
-        (true, false) => usable.map(Some).ok_or_else(|| MissingResolution {
-            rest_op_indices: rest_op_indices.to_vec(),
-            supplied,
-        }),
+    pub fn of(session: &rs_cam_core::session::ProjectSession, set_by_this_call: bool) -> Self {
+        Self {
+            mm: session.simulation_resolution_mm(),
+            mode: match session.simulation_resolution() {
+                rs_cam_core::session::SimulationResolution::Auto => "auto",
+                rs_cam_core::session::SimulationResolution::Fixed(_) => "fixed",
+            },
+            set_by_this_call,
+        }
     }
 }
 
@@ -172,8 +147,8 @@ pub enum PlanStep {
     /// (core's `generation_plan` module doc).
     SimulatePrefix { setup: SetupId, upto: ToolpathId },
     /// The closing full-project simulation, so the Simulation workspace
-    /// lands fresh. The GUI appends it; MCP appends it only with an explicit
-    /// resolution.
+    /// lands fresh. Every plan that simulates appends it, at the stored
+    /// project resolution (G-RESTRES).
     SimulateAll,
 }
 
@@ -201,31 +176,6 @@ pub enum PlanSimOutcome {
     Done,
     Cancelled,
     Failed(String),
-}
-
-/// The cell size a plan's simulations run at.
-///
-/// The two arms are two different promises. [`Self::AtMost`] is the GUI's:
-/// the Simulation panel's standing setting applies, and the plan only makes
-/// it finer when the rest it machines needs that (R1). [`Self::Exactly`] is
-/// the MCP caller's own argument, which nothing may move.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum PlanResolution {
-    /// Take the panel's effective cell size, but no coarser than this.
-    AtMost(f64),
-    /// This cell size, whatever the panel says.
-    Exactly(f64),
-}
-
-impl PlanResolution {
-    /// The cell size to put on the request, given the panel's effective one.
-    #[must_use]
-    pub fn resolve(self, panel_mm: f64) -> f64 {
-        match self {
-            Self::AtMost(mm) => panel_mm.min(mm),
-            Self::Exactly(mm) => mm,
-        }
-    }
 }
 
 /// What the step in flight is doing.
@@ -273,8 +223,8 @@ pub struct GenerationPlan {
     /// which re-enters the driver while `pump_plan` is on the stack.
     pub(crate) pumping: bool,
     pub cancelled: bool,
-    /// `None` runs no simulation at all.
-    pub resolution: Option<PlanResolution>,
+    /// The cell the plan simulates at, for the reply. `None` on a GUI plan.
+    pub resolution_report: Option<ResolutionReport>,
     pub loop_error: Option<String>,
     pub sink: GenerateAllSink,
     /// `GuiState::edit_counter` at `start_plan`. An operator edit moves it
@@ -303,11 +253,7 @@ pub struct GenerationPlan {
 impl GenerationPlan {
     /// Arm a plan that has submitted nothing yet.
     #[must_use]
-    pub fn new(
-        steps: Vec<PlanStep>,
-        resolution: Option<PlanResolution>,
-        sink: GenerateAllSink,
-    ) -> Self {
+    pub fn new(steps: Vec<PlanStep>, sink: GenerateAllSink) -> Self {
         let outcomes = vec![StepOutcome::Pending; steps.len()];
         Self {
             steps,
@@ -316,7 +262,7 @@ impl GenerationPlan {
             in_flight: false,
             pumping: false,
             cancelled: false,
-            resolution,
+            resolution_report: None,
             loop_error: None,
             sink,
             edit_counter: 0,
@@ -383,6 +329,7 @@ impl GenerationPlan {
             blocked: self.blocked.clone(),
             steps: self.steps.len(),
             simulations: self.simulations,
+            resolution_report: self.resolution_report.clone(),
             loop_error: self.loop_error.clone(),
         }
     }
@@ -402,6 +349,8 @@ pub struct GenerateAllSummary {
     pub steps: usize,
     /// How many simulations the plan ran on the caller's behalf.
     pub simulations: usize,
+    /// The cell the plan simulated at, and whether this call set it.
+    pub resolution_report: Option<ResolutionReport>,
     /// The plan itself stopped (not an individual toolpath).
     pub loop_error: Option<String>,
 }

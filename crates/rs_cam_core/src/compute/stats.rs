@@ -107,6 +107,8 @@ pub fn compute_stats_with_spans(tp: &Toolpath, spans: Option<&[Span]>) -> Toolpa
         // produced it. `None` here means "this helper was not told", which
         // is the same statement `ToolpathStats::stock_snapshot` documents.
         stock_snapshot: None,
+        // G-RESTRES: the same rule as `stock_snapshot`.
+        source_stock: None,
     }
 }
 
@@ -162,12 +164,15 @@ pub fn compute_stats_with_spans(tp: &Toolpath, spans: Option<&[Span]>) -> Toolpa
 ///
 /// Pass `Some(StockSnapshotStamp::of(stock))` when this generation was
 /// handed a machined-stock snapshot, `None` when it was not.
+/// `source_stock` follows the same rule, for the same reason: it is the
+/// record of how that snapshot was made (G-RESTRES).
 #[must_use]
 pub fn stats_with_findings(
     tp: &Toolpath,
     spans: Option<&[Span]>,
     findings: GenerationFindings,
     stock_snapshot: Option<crate::compute::toolpath_stats::StockSnapshotStamp>,
+    source_stock: Option<crate::compute::source_stock::SourceStock>,
 ) -> ToolpathStats {
     // Guard 2: the move-derived half. Bound fields are measured from the
     // move list; `_` fields are generation-owned, and the helper's honest
@@ -199,6 +204,7 @@ pub fn stats_with_findings(
         // S-4: caller-owned, like the findings — the helper's honest `None`
         // is about to be replaced by the parameter.
         stock_snapshot: _,
+        source_stock: _,
     } = compute_stats_with_spans(tp, spans);
 
     // Guard 1: the generation-owned half. No `..` — a new finding stops
@@ -254,6 +260,7 @@ pub fn stats_with_findings(
         pencil_link,
         monotone_cells,
         stock_snapshot,
+        source_stock,
     }
 }
 

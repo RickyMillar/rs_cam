@@ -92,6 +92,37 @@ impl<B: ComputeBackend> AppController<B> {
         }
     }
 
+    /// Write the ONE stored simulation resolution (G-RESTRES), through
+    /// `Command::SetSimulationResolution`.
+    ///
+    /// The Simulation panel, MCP `run_simulation` and MCP `generate_all`
+    /// all take this door. A new value is a project edit: the file carries
+    /// it, the rest rows it stales read WAIT, and a simulation at the old
+    /// cell is gone from the viewport too.
+    ///
+    /// # Errors
+    /// The session's refusal of a value that is not a positive cell size.
+    pub(crate) fn set_simulation_resolution(
+        &mut self,
+        resolution: rs_cam_core::session::SimulationResolution,
+    ) -> Result<rs_cam_core::session::Effects, rs_cam_core::session::SessionError> {
+        let changed = self.state.session.simulation_resolution() != resolution;
+        let effects =
+            self.state
+                .session
+                .apply(rs_cam_core::session::Command::SetSimulationResolution(
+                    rs_cam_core::session::SetSimulationResolutionArgs { resolution },
+                ))?;
+        crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
+        if effects.simulation_cleared {
+            self.invalidate_simulation();
+        }
+        if changed {
+            self.state.gui.mark_edited();
+        }
+        Ok(effects)
+    }
+
     /// Build per-setup simulation groups.
     pub(crate) fn build_simulation_groups(
         &self,
@@ -129,8 +160,13 @@ impl<B: ComputeBackend> AppController<B> {
                 let Some(tc) = self.state.session.toolpath_configs().get(tp_idx) else {
                     continue;
                 };
+                // G-RESTSTALE (M-C): the carve reads the CORE result, the
+                // one `start` and every rest record compare against. The GUI
+                // copy `rt.result` outlives a core drop on purpose (the
+                // viewport keeps drawing it), so carving it put a superseded
+                // toolpath into the rest snapshot while core held another.
                 let rt = self.state.gui.toolpath_rt.get(&tc.id);
-                let result = rt.and_then(|rt| rt.result.as_ref());
+                let result = self.state.session.get_result(tp_idx);
                 // G-STICKYEMPTY: `result.is_some()` is the RIGHT answer here
                 // and the wrong one in core's `ProjectSession::run_simulation`
                 // — the difference is that this builder pushes every
@@ -152,13 +188,19 @@ impl<B: ComputeBackend> AppController<B> {
                 if !include_toolpath(i, tc) {
                     continue;
                 }
-                // Re-derive `rt`/`result` together (rather than reusing the
-                // scan's `rt`/`result` locals above) so neither needs an
-                // `.unwrap()` to recover the other.
-                let Some(rt) = rt else { continue };
-                let Some(result) = rt.result.as_ref() else {
+                let Some(result) = result else {
                     continue;
                 };
+                // The semantic trace stays viz-side (the drain adopts
+                // `semantic_trace: None`), so it comes from `rt`, and only
+                // when `rt` holds the very toolpath core holds.
+                let semantic_trace = rt
+                    .filter(|rt| {
+                        rt.result
+                            .as_ref()
+                            .is_some_and(|held| Arc::ptr_eq(&held.annotated, result.annotated()))
+                    })
+                    .and_then(|rt| rt.semantic_trace.clone());
                 let Some(tool) = self
                     .state
                     .session
@@ -169,8 +211,8 @@ impl<B: ComputeBackend> AppController<B> {
                     continue;
                 };
                 let metrics_not_applicable = entry_metrics_not_applicable(
-                    result.drill_op.is_some(),
-                    &result.annotated.toolpath,
+                    result.is_drill_op(),
+                    &result.annotated().toolpath,
                     tc.operation.op_type(),
                 );
                 let (tool_def, flute_count, tool_summary) = entry_tool_fields(tool);
@@ -178,14 +220,14 @@ impl<B: ComputeBackend> AppController<B> {
                 toolpaths.push(SimToolpathEntry {
                     id: tc.id,
                     name: tc.name.clone(),
-                    annotated: Arc::clone(&result.annotated),
+                    annotated: Arc::clone(result.annotated()),
                     tool: tool_def,
                     flute_count,
                     tool_summary,
-                    semantic_trace: rt.semantic_trace.clone(),
+                    semantic_trace,
                     spindle_rpm: tc.operation.spindle_rpm(),
                     metrics_not_applicable,
-                    drill_op: result.drill_op.clone(),
+                    drill_op: result.drill_op().cloned(),
                     operation_config_hash: rs_cam_core::compute::simulate::hash_operation_config(
                         &tc.operation,
                     ),
@@ -246,22 +288,15 @@ impl<B: ComputeBackend> AppController<B> {
         stock_bbox: BoundingBox3,
         _model_setup_idx: Option<usize>,
         memoize_prefix: bool,
-        plan_resolution: Option<crate::controller::generate_all::PlanResolution>,
+        for_plan: bool,
     ) {
-        if self.state.simulation.auto_resolution {
-            self.state.simulation.resolution =
-                auto_resolution_for_tools(all_tools_flat, &stock_bbox);
-        }
-        // R1. The panel's setting IS the operator's standing choice, so it is
-        // what a plain Run Simulation and a GUI plan both use. A plan only
-        // narrows it, and only when the rest it machines needs a finer cell
-        // than the panel holds. An MCP plan carries its caller's own cell
-        // size, which nothing may move. Either way the panel is NOT written:
-        // the request carries the number, and the operator's dials stay
-        // theirs (G-RESNOTICE is deleted with the write that caused it).
-        let request_resolution = plan_resolution.map_or(self.state.simulation.resolution, |plan| {
-            plan.resolve(self.state.simulation.resolution)
-        });
+        let _ = all_tools_flat;
+        // G-RESTRES: ONE stored project value sets the cell of every
+        // simulation — a plain Run Simulation, a plan prefix, the closing
+        // run, MCP and the CLI (operator ruling 2026-09-24). `Auto` is
+        // worked out over the whole project in core, never from the tools
+        // of this request, so a prefix and a full run agree.
+        let request_resolution = self.state.session.simulation_resolution_mm();
 
         let model_mesh = self
             .state
@@ -272,6 +307,17 @@ impl<B: ComputeBackend> AppController<B> {
 
         if self.state.simulation.metric_options.enabled {
             self.state.simulation.metric_options.capture_arc_engagement = true;
+        }
+        // G-RESTRES: a plan's simulation feeds rest operations, so it carves
+        // with the cutting-metrics kernel whatever the panel's capture toggle
+        // says. The two kernels leave different stock, and the CLI and MCP
+        // always carve with metrics; a rest snapshot records which kernel
+        // made it, and only the metrics carve is current. The toggle stays a
+        // view choice for a plain Run Simulation.
+        let mut metric_options = self.state.simulation.metric_options;
+        if for_plan {
+            metric_options.enabled = true;
+            metric_options.capture_arc_engagement = true;
         }
 
         // G-LATESIM (F2.10): record the project's edit state as it is NOW,
@@ -308,7 +354,7 @@ impl<B: ComputeBackend> AppController<B> {
                 stock_bbox,
                 stock_top_z: stock_bbox.max.z,
                 resolution: request_resolution,
-                metric_options: self.state.simulation.metric_options,
+                metric_options,
                 spindle_rpm: self.state.gui.post.spindle_speed,
                 rapid_feed_mm_min: if self.state.gui.post.high_feedrate_mode {
                     self.state.gui.post.high_feedrate.max(1.0)
@@ -328,7 +374,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// submitted. A plan step must know that, or it would wait forever for a
     /// completion that will never drain.
     pub(crate) fn run_simulation_with_all(&mut self) -> bool {
-        self.run_simulation_all(false, None)
+        self.run_simulation_all(false, false)
     }
 
     /// [`Self::run_simulation_with_all`] with the S5 prefix memo and the
@@ -337,11 +383,10 @@ impl<B: ComputeBackend> AppController<B> {
     /// `memoize_prefix` is `false` for the plan's CLOSING simulation: it is
     /// the last one and leaves nothing behind. Only
     /// [`Self::run_simulation_prefix`] memoises.
-    pub(crate) fn run_simulation_all(
-        &mut self,
-        memoize_prefix: bool,
-        plan_resolution: Option<crate::controller::generate_all::PlanResolution>,
-    ) -> bool {
+    ///
+    /// `for_plan` is `true` for a plan's closing simulation: it carves with
+    /// the metrics kernel, so the rest snapshots it leaves stay current.
+    pub(crate) fn run_simulation_all(&mut self, memoize_prefix: bool, for_plan: bool) -> bool {
         let Some((groups, all_tools_flat, stock_bbox)) =
             self.build_simulation_groups(|_setup_idx, tc| tc.enabled, |_setup_idx| false)
         else {
@@ -358,7 +403,7 @@ impl<B: ComputeBackend> AppController<B> {
             stock_bbox,
             Some(0),
             memoize_prefix,
-            plan_resolution,
+            for_plan,
         );
         true
     }
@@ -374,12 +419,7 @@ impl<B: ComputeBackend> AppController<B> {
     ///
     /// Answers `false` when the builder produced no group, so the plan
     /// records `Skipped` instead of waiting for a result that never drains.
-    pub(crate) fn run_simulation_prefix(
-        &mut self,
-        setup_idx: usize,
-        memoize_prefix: bool,
-        plan_resolution: Option<crate::controller::generate_all::PlanResolution>,
-    ) -> bool {
+    pub(crate) fn run_simulation_prefix(&mut self, setup_idx: usize, memoize_prefix: bool) -> bool {
         let Some((groups, all_tools_flat, stock_bbox)) =
             self.build_simulation_groups(|i, tc| i <= setup_idx && tc.enabled, |i| i == setup_idx)
         else {
@@ -391,7 +431,7 @@ impl<B: ComputeBackend> AppController<B> {
             stock_bbox,
             Some(setup_idx),
             memoize_prefix,
-            plan_resolution,
+            true,
         );
         true
     }
@@ -435,7 +475,7 @@ impl<B: ComputeBackend> AppController<B> {
             stock_bbox,
             Some(target_setup_idx),
             false,
-            None,
+            false,
         );
     }
 
@@ -571,31 +611,4 @@ pub(crate) fn build_world_stock_bbox(
     session: &rs_cam_core::session::ProjectSession,
 ) -> BoundingBox3 {
     session.stock_bbox()
-}
-
-/// Auto-resolution calculation.
-fn auto_resolution_for_tools(tools: &[ToolConfig], stock_bbox: &BoundingBox3) -> f64 {
-    let min_radius = tools
-        .iter()
-        .map(|tool| tool.diameter / 2.0)
-        .fold(f64::INFINITY, f64::min);
-
-    let from_tool = (min_radius / 5.0).clamp(0.02, 0.5);
-
-    let max_cells: f64 = 8_000_000.0;
-    let sx = stock_bbox.max.x - stock_bbox.min.x;
-    let sy = stock_bbox.max.y - stock_bbox.min.y;
-    let from_grid = ((sx * sy) / max_cells).sqrt().max(0.02);
-
-    let resolution = from_tool.max(from_grid);
-
-    tracing::info!(
-        "Auto sim resolution: {:.3} mm (smallest tool \u{00D8}{:.2} mm, grid ~{}x{})",
-        resolution,
-        min_radius * 2.0,
-        (sx / resolution).ceil() as usize,
-        (sy / resolution).ceil() as usize,
-    );
-
-    resolution
 }

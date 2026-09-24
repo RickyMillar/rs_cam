@@ -146,6 +146,9 @@ pub(crate) struct TotalScore {
     pub feeds_basis: &'static str,
     /// The cell size of the simulations. `null` when no simulation ran.
     pub resolution_mm: Option<f64>,
+    /// G-RESTRES: the cell, its mode, and whether it is the project file's
+    /// value or `--resolution`.
+    pub simulation_resolution: crate::project::ResolutionUsed,
     pub closing_simulation: bool,
     pub set_overrides: Vec<String>,
     /// The core `ProjectDiagnostics`, as MCP `get_project_diagnostics`
@@ -325,7 +328,8 @@ pub(crate) fn score_session(
             kinematics_declared: session.machine().kinematics.is_some(),
         },
         feeds_basis,
-        resolution_mm: (walk.simulations > 0).then_some(walk.resolution),
+        resolution_mm: (walk.simulations > 0).then_some(walk.resolution.mm),
+        simulation_resolution: walk.resolution.clone(),
         closing_simulation: !opts.no_sim,
         set_overrides: opts.set.clone(),
         project_diagnostics,

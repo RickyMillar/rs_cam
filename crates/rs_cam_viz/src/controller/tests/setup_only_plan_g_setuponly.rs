@@ -99,7 +99,15 @@ fn two_setups_each_with_rest() -> (AppController<RestChainBackend>, Vec<Toolpath
             rs_cam_core::session::ForgetResultArgs { index },
         ));
     }
-    controller.state.simulation.auto_resolution = true;
+    let _ = controller
+        .state
+        .session
+        .apply(Command::SetSimulationResolution(
+            rs_cam_core::session::SetSimulationResolutionArgs {
+                resolution: rs_cam_core::session::SimulationResolution::Auto,
+            },
+        ))
+        .expect("auto is always accepted");
     (controller, ids, second)
 }
 

@@ -18,9 +18,11 @@ parameter-sweep entry points. Read root `CLAUDE.md` first and
   `awaiting_prior_stock`, never left absent.
 - Generation order is core's: walk `session::generation_plan::plan`. Do not
   hold a CLI ladder or a cap.
-- The simulation cell size is refused, never defaulted, when the plan
-  simulates. `compute::config::REST_NEEDS_RESOLUTION` is the one sentence
-  this command and the MCP refusal both say.
+- The simulation cell size is the project file's stored value
+  (G-RESTRES, ruling 2026-09-24); a rest cascade needs no `--resolution`.
+  `--resolution` overrides it through `SetSimulationResolution`, and
+  `summary.json` says `override`. A cell too coarse for the rest is refused
+  with `ProjectSession::rest_resolution_refusal`, the sentence MCP gives.
 - One vocabulary per concept across `job` TOML, `run` and MCP. A tool
   type is `ToolType`'s own serde token (`end_mill`, `ball_nose`,
   `bull_nose`, `v_bit`, `tapered_ball_nose`) on every surface; do not

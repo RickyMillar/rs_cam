@@ -113,37 +113,70 @@ fn draw_run_controls(
             {
                 events.push(AppEvent::SetGeneratorTraceCaptureAll(capture_trace_all));
             }
-            // Resolution: defines how detailed the dexel grid records material
-            // removal. Belongs with the capture toggles since it's a recording
-            // setting, not a display setting.
+            // Resolution: the ONE stored project value (G-RESTRES). Every
+            // simulation and every rest operation reads it, and the project
+            // file saves it. The slider keeps a draft in `state/` and sends
+            // ONE command when the edit ends: each write drops the
+            // simulation and the rest results recorded at the old cell.
+            const RESOLUTION_HOVER: &str = "The project's simulation cell size. Every \
+                simulation and every rest operation uses it, and the project file saves it. \
+                A change makes the rest operations wait for a new simulation.";
+            let stored = session.simulation_resolution();
+            let effective_mm = session.simulation_resolution_mm();
             ui.horizontal(|ui| {
-                ui.label("Resolution:");
-                if sim.auto_resolution {
-                    ui.label(format!("{:.3} mm (auto)", sim.resolution));
+                ui.label("Resolution:").on_hover_text(RESOLUTION_HOVER);
+                match stored {
+                    rs_cam_core::session::SimulationResolution::Auto => {
+                        ui.label(format!("{effective_mm:.3} mm (auto)"))
+                            .on_hover_text(RESOLUTION_HOVER);
+                    }
+                    rs_cam_core::session::SimulationResolution::Fixed(stored_mm) => {
+                        let mut value = sim.resolution_draft.unwrap_or(stored_mm);
+                        let response = ui
+                            .add(
+                                egui::Slider::new(&mut value, 0.02..=1.0)
+                                    .suffix(" mm")
+                                    .logarithmic(true)
+                                    .show_value(true),
+                            )
+                            .on_hover_text(RESOLUTION_HOVER);
+                        if response.changed() {
+                            sim.resolution_draft = Some(value);
+                        }
+                        let edit_ended = response.drag_stopped()
+                            || (response.changed() && !response.dragged());
+                        if edit_ended {
+                            sim.resolution_draft = None;
+                            if value.to_bits() != stored_mm.to_bits() {
+                                events.push(AppEvent::SetSimulationResolution(
+                                    rs_cam_core::session::SimulationResolution::Fixed(value),
+                                ));
+                            }
+                        }
+                    }
+                }
+            });
+            let mut auto = matches!(stored, rs_cam_core::session::SimulationResolution::Auto);
+            if ui
+                .checkbox(&mut auto, "Auto from tool size")
+                .on_hover_text(
+                    "Auto takes the finer of the smallest tool's radius / 5 and the rest \
+                     tool's tip radius / 5, over the whole project.",
+                )
+                .changed()
+            {
+                sim.resolution_draft = None;
+                events.push(AppEvent::SetSimulationResolution(if auto {
+                    rs_cam_core::session::SimulationResolution::Auto
                 } else {
-                    ui.add(
-                        egui::Slider::new(&mut sim.resolution, 0.02..=1.0)
-                            .suffix(" mm")
-                            .logarithmic(true)
-                            .show_value(true),
-                    );
-                }
-            });
-            ui.horizontal(|ui| {
-                ui.checkbox(&mut sim.auto_resolution, "Auto from tool size");
-                if !sim.auto_resolution {
-                    ui.label(
-                        egui::RichText::new("(re-run to apply)")
-                            .small()
-                            .color(theme::WARNING),
-                    );
-                }
-            });
+                    rs_cam_core::session::SimulationResolution::Fixed(effective_mm)
+                }));
+            }
             {
                 let sx = session.stock_config().x;
                 let sy = session.stock_config().y;
-                let res = sim.resolution;
-                if !sim.auto_resolution
+                let res = sim.resolution_draft.unwrap_or(effective_mm);
+                if !auto
                     && rs_cam_core::stock::dexel::DexelGrid::would_exceed_grid(res, sx, sy).is_some()
                 {
                     ui.label(

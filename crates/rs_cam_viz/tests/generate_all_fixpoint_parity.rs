@@ -5,9 +5,9 @@
 //! multi-tool planner emits a k-op coarse-to-fine chain from one action,
 //! which makes "loop it by hand k times" untenable.
 //!
-//! What is asserted here is the shared decision, not the walk: the cell size
-//! the two surfaces demand (`require_resolution`), and the GUI entry's two
-//! ends of it. W1 inverted one of those ends. A/M10's rule — the cell size is
+//! What is asserted here is the GUI entry, not the walk. G-RESTRES
+//! (2026-09-24) retired the MCP `require_resolution` decision: every surface
+//! reads the ONE stored project resolution now. W1 inverted one of those ends. A/M10's rule — the cell size is
 //! never chosen SILENTLY — is an MCP rule: an agent's cell size arrives as an
 //! argument or not at all. In the GUI the Simulation panel's setting IS the
 //! operator's standing choice, because Run Simulation uses it as it stands,
@@ -29,62 +29,8 @@ use rs_cam_viz::compute::{
     GenerationControl, LaneSnapshot, OptimizeRequest, SimulationRequest, ToolpathSubmitOutcome,
 };
 use rs_cam_viz::controller::AppController;
-use rs_cam_viz::controller::generate_all::require_resolution;
 use rs_cam_viz::state::toolpath::StockSource;
 use rs_cam_viz::ui::AppEvent;
-
-// ── the pure decision ──────────────────────────────────────────────────────
-
-/// `k` enabled rest ops plus a supplied resolution: the plan simulates, at
-/// exactly the cell size that arrived.
-#[test]
-fn rest_ops_with_a_resolution_are_accepted() {
-    for k in 1..=4 {
-        let rest_ops: Vec<usize> = (1..=k).collect();
-        let resolution = require_resolution(true, &rest_ops, Some(0.15))
-            .unwrap_or_else(|_| panic!("{k} rest ops + a resolution must be accepted"));
-        assert_eq!(resolution, Some(0.15), "k={k}");
-    }
-}
-
-/// Nothing depends on simulated stock, so no simulation is forced and no
-/// resolution is needed.
-#[test]
-fn no_rest_ops_needs_no_resolution() {
-    let resolution = require_resolution(true, &[], None).expect("no rest ops needs no resolution");
-    assert!(
-        resolution.is_none(),
-        "with no cell size the plan runs no simulation at all, so a no-rest          generate_all cannot simulate at a size the agent never chose"
-    );
-}
-
-/// An explicit opt-out runs no simulation even with a chain present.
-#[test]
-fn fixpoint_off_runs_no_simulation_even_with_a_chain() {
-    let resolution = require_resolution(false, &[1, 2, 3], None).expect("opting out never refuses");
-    assert!(resolution.is_none());
-}
-
-/// A/M10 — the refusal, and what it carries so each surface can render its own
-/// remedy. Zero and NaN are refusals too, not "close enough to a cell size".
-#[test]
-fn a_chain_without_a_resolution_refuses_and_names_the_blocking_ops() {
-    for supplied in [None, Some(0.0), Some(-0.1), Some(f64::NAN)] {
-        let refusal = require_resolution(true, &[2, 5], supplied)
-            .err()
-            .unwrap_or_else(|| panic!("{supplied:?} must not be accepted as a cell size"));
-        assert_eq!(refusal.rest_op_indices, vec![2, 5], "{supplied:?}");
-        assert!(!refusal.supplied_clause().is_empty(), "{supplied:?}");
-    }
-    assert!(
-        require_resolution(true, &[2], None)
-            .err()
-            .unwrap()
-            .supplied_clause()
-            .contains("not supplied"),
-        "an absent resolution must read differently from an unusable one"
-    );
-}
 
 // ── the GUI entry ──────────────────────────────────────────────────────────
 
@@ -175,8 +121,10 @@ fn summary(controller: &AppController<SilentBackend>) -> String {
 #[test]
 fn gui_generate_all_walks_a_plan_when_a_resolution_is_pinned() {
     let mut controller = controller_with_chain(2);
-    controller.state.simulation.auto_resolution = false;
-    controller.state.simulation.resolution = 0.02;
+    set_resolution(
+        &mut controller,
+        rs_cam_core::session::SimulationResolution::Fixed(0.02),
+    );
 
     controller.handle_internal_event(AppEvent::GenerateAll);
 
@@ -206,8 +154,10 @@ fn gui_generate_all_walks_a_plan_when_a_resolution_is_pinned() {
 #[test]
 fn gui_generate_all_reads_the_panel_resolution_r1() {
     let mut controller = controller_with_chain(2);
-    controller.state.simulation.auto_resolution = true;
-    let before = controller.state.simulation.resolution;
+    set_resolution(
+        &mut controller,
+        rs_cam_core::session::SimulationResolution::Auto,
+    );
 
     controller.handle_internal_event(AppEvent::GenerateAll);
 
@@ -225,14 +175,26 @@ fn gui_generate_all_reads_the_panel_resolution_r1() {
             .all(|n| !n.message.contains("resolution")),
         "the operator is asked for nothing"
     );
-    assert!(
-        (controller.state.simulation.resolution - before).abs() < f64::EPSILON,
-        "the plan does not write the panel unless the operator says so"
+    assert_eq!(
+        controller.state.session.simulation_resolution(),
+        rs_cam_core::session::SimulationResolution::Auto,
+        "the plan does not write the stored value unless the operator says so"
     );
-    assert!(
-        controller.state.simulation.auto_resolution,
-        "and it does not untick the operator's checkbox"
-    );
+}
+
+/// Write the ONE stored simulation resolution (G-RESTRES) through its
+/// command, the door the Simulation panel takes.
+fn set_resolution<B: ComputeBackend>(
+    controller: &mut AppController<B>,
+    resolution: rs_cam_core::session::SimulationResolution,
+) {
+    let _ = controller
+        .state
+        .session
+        .apply(rs_cam_core::session::Command::SetSimulationResolution(
+            rs_cam_core::session::SetSimulationResolutionArgs { resolution },
+        ))
+        .expect("a positive cell size");
 }
 
 /// The other inversion. A project with no rest ops used to take a bare submit

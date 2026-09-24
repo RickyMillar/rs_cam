@@ -201,7 +201,7 @@ impl RsCamApp {
             } else {
                 // Before any usable checkpoint — reset to fresh stock in the
                 // group's own frame, at the point that frame starts carving.
-                let res = self.controller.state().simulation.resolution;
+                let res = self.controller.state().session.simulation_resolution_mm();
                 let fresh = TriDexelStock::from_bounds(&active.stock_bbox, res);
                 let pb = &mut self.controller.state_mut().simulation.playback;
                 pb.live_stock = Some(fresh);

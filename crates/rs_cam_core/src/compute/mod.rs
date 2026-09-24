@@ -15,6 +15,7 @@ pub mod generated_empty;
 pub mod operation_configs;
 pub mod sim_prefix;
 pub mod simulate;
+pub mod source_stock;
 pub mod spans;
 pub mod stats;
 pub mod stock_config;

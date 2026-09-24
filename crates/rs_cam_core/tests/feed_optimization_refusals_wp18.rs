@@ -182,6 +182,7 @@ fn full_material_simulation(
         resolution_clamped: false,
         column_grid_cell_mm: SNAPSHOT_CELL_MM,
         prior_stocks,
+        prior_stock_sources: std::collections::HashMap::new(),
     }
 }
 
@@ -209,9 +210,11 @@ fn rest_chain_session(feed_optimization: bool) -> ProjectSession {
     let rest_id = session.toolpath_configs()[1].id;
     let bbox = session.stock_bbox();
     let snapshot = Arc::new(TriDexelStock::from_bounds(&bbox, SNAPSHOT_CELL_MM));
+    let mut simulation = full_material_simulation(rest_id, &snapshot);
+    make_snapshot_current(&mut session, &mut simulation, rest_id);
     let _ = session
         .apply(Command::AdoptSimulation(AdoptSimulationArgs {
-            result: Box::new(full_material_simulation(rest_id, &snapshot)),
+            result: Box::new(simulation),
             epoch: session.simulation_epoch(),
         }))
         .expect("the adopt stores the simulation");
@@ -446,4 +449,39 @@ fn a_remaining_stock_operation_generates_with_the_dial_inert() {
         cutting_move_count(without_dial.toolpath()),
         "the refusal skips one pass; it changes no geometry"
     );
+}
+
+/// G-RESTRES: a snapshot counts only when it is CURRENT — every row carved
+/// before the rest row holds a result, and the record matches the project.
+/// The fixture is cold, so row 0 takes an empty result first, and the
+/// snapshot takes the record the rule itself derives.
+fn make_snapshot_current(
+    session: &mut ProjectSession,
+    simulation: &mut SimulationResult,
+    rest_id: ToolpathId,
+) {
+    if session.get_result(0).is_none() {
+        let revision = session.toolpath_revision(0);
+        let _ = session
+            .apply(Command::AdoptResult(
+                rs_cam_core::session::AdoptResultArgs {
+                    index: 0,
+                    revision,
+                    result: Box::new(rs_cam_core::session::ToolpathComputeResult {
+                        op_data: rs_cam_core::ops::drill_op::OpData::Toolpath(Arc::new(
+                            rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
+                                rs_cam_core::toolpath::Toolpath::new(),
+                            ),
+                        )),
+                        stats: Default::default(),
+                        debug_trace: None,
+                        semantic_trace: None,
+                    }),
+                },
+            ))
+            .expect("the revision is current");
+    }
+    if let Some(source) = session.expected_source(rest_id) {
+        let _ = simulation.prior_stock_sources.insert(rest_id, source);
+    }
 }

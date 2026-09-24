@@ -10,11 +10,12 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use tracing::{debug, info, warn};
 
-use rs_cam_core::compute::config::{AwaitingPriorStock, REST_NEEDS_RESOLUTION};
+use rs_cam_core::compute::config::AwaitingPriorStock;
 use rs_cam_core::session::generation_plan::{self, Scope};
 use rs_cam_core::session::{
     Command, ProjectSession, ReplaceToolpathConfigArgs, SetMachineKinematicsArgs,
-    SetPostConfigArgs, SimulationOptions, dependencies,
+    SetPostConfigArgs, SetSimulationResolutionArgs, SimulationOptions, SimulationResolution,
+    dependencies,
 };
 use rs_cam_core::stock::simulation_cut::SimulationCutArtifact;
 
@@ -101,6 +102,11 @@ struct ToolpathDiagnostic<'a> {
     /// emits the pre-C2 undivided raster and increments
     /// `membership_fallbacks`, and nothing in this report said so.
     monotone_cells: Option<rs_cam_core::finish::unified_finish::MonotoneCellTotals>,
+    /// G-RESTRES: the stock a rest operation read — the simulation cell,
+    /// the snapshot digest, and the toolpaths carved before it. `null` for
+    /// an operation that read no simulated stock. The core record, as MCP
+    /// `get_diagnostics` publishes it.
+    source_stock: Option<&'a rs_cam_core::compute::source_stock::SourceStockWire>,
 }
 
 impl<'a> ToolpathDiagnostic<'a> {
@@ -139,6 +145,7 @@ impl<'a> ToolpathDiagnostic<'a> {
             tip_float_points,
             max_tip_float_mm,
             monotone_cells,
+            source_stock,
         } = core;
 
         Self {
@@ -162,6 +169,7 @@ impl<'a> ToolpathDiagnostic<'a> {
             tip_float_points: *tip_float_points,
             max_tip_float_mm: *max_tip_float_mm,
             monotone_cells: *monotone_cells,
+            source_stock: source_stock.as_ref(),
         }
     }
 }
@@ -247,52 +255,86 @@ fn blocked_entry(
     })
 }
 
-/// The cell size the run simulates at (W5 item f, R1).
+/// Where the cell size of a run came from (G-RESTRES).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ResolutionSource {
+    /// The project file's stored value: `[job.simulation] resolution_mm`,
+    /// or auto when the key is absent.
+    Project,
+    /// `--resolution` replaced the stored value for this run.
+    Override,
+}
+
+/// The cell size a run simulated at, as `summary.json` states it.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct ResolutionUsed {
+    /// The cell every simulation of the run used, in mm.
+    pub mm: f64,
+    /// `"auto"` or `"fixed"`: the mode the run used.
+    pub mode: &'static str,
+    /// Whether the value is the project's own or `--resolution`.
+    pub source: ResolutionSource,
+    /// The project file's value, in mm, before any override.
+    pub project_mm: f64,
+}
+
+/// Settle the cell size of a run on the session (G-RESTRES).
+///
+/// Operator ruling 2026-09-24: the project file stores the ONE simulation
+/// resolution, and the GUI, MCP and the CLI all read it, so a rest cascade
+/// needs no `--resolution`. An explicit `--resolution` still overrides: it
+/// SETS the in-memory session value through `SetSimulationResolution`, the
+/// door the GUI panel and MCP take, and the output says `override`.
 ///
 /// # Errors
-/// - when the plan has to simulate and no cell size arrived;
-/// - when what arrived is not a positive number;
-/// - when what arrived is coarser than the rest the plan machines needs.
-pub(crate) fn resolve_cell_size(
+/// - when `--resolution` is not a positive cell size;
+/// - when the plan simulates and the cell is coarser than the rest needs,
+///   with the sentence MCP and the GUI give
+///   (`ProjectSession::rest_resolution_refusal`).
+pub(crate) fn settle_cell_size(
+    session: &mut ProjectSession,
     supplied: Option<f64>,
     plans_a_simulation: bool,
-    required: Option<f64>,
-) -> Result<f64> {
-    /// The cell size a project that plans NO simulation still simulates at
-    /// for its diagnostics. It was the clap default before W5.
-    const FALLBACK_MM: f64 = 0.5;
-
-    let Some(cell) = supplied else {
-        if plans_a_simulation {
-            anyhow::bail!(
-                "--resolution is required: an enabled operation in this project starts from \
-                 remaining stock, so the plan simulates before it generates. \
-                 {REST_NEEDS_RESOLUTION}"
+) -> Result<ResolutionUsed> {
+    let project_mm = session.simulation_resolution_mm();
+    let source = match supplied {
+        None => ResolutionSource::Project,
+        Some(cell) => {
+            anyhow::ensure!(
+                cell.is_finite() && cell > 0.0,
+                "--resolution {cell} is not a positive cell size in mm"
             );
+            let _ = session
+                .apply(Command::SetSimulationResolution(
+                    SetSimulationResolutionArgs {
+                        resolution: SimulationResolution::Fixed(cell),
+                    },
+                ))
+                .map_err(|e| anyhow::anyhow!("--resolution {cell}: {e}"))?;
+            ResolutionSource::Override
         }
-        return Ok(FALLBACK_MM);
     };
-    anyhow::ensure!(
-        cell.is_finite() && cell > 0.0,
-        "--resolution {cell} is not a positive cell size. {REST_NEEDS_RESOLUTION}"
-    );
-    if let Some(needed) = required {
-        anyhow::ensure!(
-            cell <= needed,
-            "--resolution {cell} is coarser than the rest this project machines needs \
-             ({needed} mm). At that cell size the simulated stock cannot resolve the detail \
-             the rest operation's own cutter removes. {REST_NEEDS_RESOLUTION}"
-        );
+    if plans_a_simulation && let Some(refusal) = session.rest_resolution_refusal() {
+        anyhow::bail!("{refusal}");
     }
-    Ok(cell)
+    Ok(ResolutionUsed {
+        mm: session.simulation_resolution_mm(),
+        mode: match session.simulation_resolution() {
+            SimulationResolution::Auto => "auto",
+            SimulationResolution::Fixed(_) => "fixed",
+        },
+        source,
+        project_mm,
+    })
 }
 
 /// The options of one walk over the generation plan.
 pub(crate) struct PlanWalkOptions {
     /// The part of the project the walk makes current.
     pub scope: Scope,
-    /// The cell size the caller supplied. `None` is refused when the plan
-    /// simulates (W5 item f).
+    /// `--resolution`, when the caller passed it. `None` reads the stored
+    /// project value (G-RESTRES).
     pub resolution: Option<f64>,
     /// Toolpaths the walk does not generate and the simulation skips.
     pub skip_ids: Vec<rs_cam_core::ToolpathId>,
@@ -307,8 +349,8 @@ pub(crate) struct PlanWalkOptions {
 
 /// What one walk over the generation plan did.
 pub(crate) struct PlanWalk {
-    /// The cell size the walk simulated at.
-    pub resolution: f64,
+    /// The cell size the walk simulated at, and where it came from.
+    pub resolution: ResolutionUsed,
     /// The number of simulations the walk ran, the closing one included.
     pub simulations: usize,
     /// Operations that never generated because an upstream simulated stock
@@ -339,8 +381,7 @@ pub(crate) fn run_generation_plan(
     let plans_a_simulation = steps
         .iter()
         .any(|step| matches!(step, generation_plan::Step::Simulate { .. }));
-    let required = generation_plan::required_resolution_mm(session, opts.scope);
-    let resolution = resolve_cell_size(resolution, plans_a_simulation, required)?;
+    let resolution = settle_cell_size(session, resolution, plans_a_simulation)?;
 
     // 3. Walk the plan core owns. Setup order, then `toolpath_indices`, with
     // a Simulate step immediately before every operation that starts from
@@ -350,7 +391,7 @@ pub(crate) fn run_generation_plan(
     // means.
     let cancel = AtomicBool::new(false);
     let sim_opts = SimulationOptions {
-        resolution,
+        resolution: resolution.mm,
         skip_ids: combined_skip.clone(),
         metrics_enabled: true,
         auto_resolution: false,
@@ -484,6 +525,9 @@ struct ProjectSummary {
     /// W5 item (f): operations that never generated because an upstream
     /// simulated stock was missing. An EMPTY list means none were blocked.
     awaiting_prior_stock: Vec<BlockedEntry>,
+    /// G-RESTRES: the ONE cell every simulation of the run used, its mode,
+    /// and whether it is the project file's value or `--resolution`.
+    simulation_resolution: ResolutionUsed,
     per_toolpath: Vec<ToolpathSummaryEntry>,
     verdict: String,
     /// Checkpoint K (g2) — the operating point `verdict` and every
@@ -604,7 +648,8 @@ pub fn run_project_command(
             closing_simulation: true,
         },
     )?;
-    let resolution = walk.resolution;
+    let resolution_used = walk.resolution.clone();
+    let resolution = resolution_used.mm;
     let blocked = walk.blocked;
     let cancel = AtomicBool::new(false);
 
@@ -878,6 +923,7 @@ pub fn run_project_command(
         rapid_collision_count: diag.rapid_collision_count,
         default_findings,
         awaiting_prior_stock: blocked,
+        simulation_resolution: resolution_used,
         per_toolpath,
         verdict: verdict.clone(),
         adaptive_feed_modulation,
@@ -1308,6 +1354,16 @@ mod tests {
                 membership_fallbacks: 2,
                 empty_fallbacks: 1,
             }),
+            // G-RESTRES: a rest record, so its shape is pinned below.
+            source_stock: Some(rs_cam_core::compute::source_stock::SourceStockWire {
+                cell_mm: 0.25,
+                metrics: true,
+                stock_digest: Some("00000000000000ab".to_owned()),
+                after: vec![rs_cam_core::compute::source_stock::SourceEntryWire {
+                    id: rs_cam_core::ToolpathId(3),
+                    output: "00000000000000cd".to_owned(),
+                }],
+            }),
         }
     }
 
@@ -1354,6 +1410,17 @@ mod tests {
     "cells_emitted": 23,
     "membership_fallbacks": 2,
     "empty_fallbacks": 1
+  },
+  "source_stock": {
+    "cell_mm": 0.25,
+    "metrics": true,
+    "stock_digest": "00000000000000ab",
+    "after": [
+      {
+        "id": 3,
+        "output": "00000000000000cd"
+      }
+    ]
   }
 }"#;
         assert_eq!(json, expected, "CLI per-toolpath JSON wire changed");
@@ -1371,6 +1438,7 @@ mod tests {
             tip_float_points: None,
             max_tip_float_mm: None,
             monotone_cells: None,
+            source_stock: None,
             ..core_diagnostic()
         };
         let record = ToolpathDiagnostic::from_core(&core, None, None, 0, None);
@@ -1386,6 +1454,8 @@ mod tests {
             // C2 follow-up 2: `null` = the decomposition did not run. A
             // zeroed object would say it ran and fell back nowhere.
             "monotone_cells",
+            // G-RESTRES: `null` = the operation read no simulated stock.
+            "source_stock",
         ] {
             assert!(
                 json.contains(&format!("\"{key}\":null")),

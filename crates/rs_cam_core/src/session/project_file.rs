@@ -189,6 +189,46 @@ pub struct ProjectJobSection {
     pub post: crate::gcode::PostConfig,
     #[serde(default)]
     pub machine: crate::machine::MachineProfile,
+    /// G-RESTRES: the one stored simulation resolution. A file with no
+    /// `[job.simulation]` table, or no `resolution_mm` key, loads as `Auto`.
+    #[serde(default, skip_serializing_if = "ProjectSimulationSection::is_auto")]
+    pub simulation: ProjectSimulationSection,
+}
+
+/// `[job.simulation]`: the stored simulation resolution.
+///
+/// `resolution_mm` present = `SimulationResolution::Fixed`; absent =
+/// `SimulationResolution::Auto`, the documented default.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq)]
+pub struct ProjectSimulationSection {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolution_mm: Option<f64>,
+}
+
+impl ProjectSimulationSection {
+    /// The section as the session holds it.
+    #[must_use]
+    pub fn resolution(&self) -> super::SimulationResolution {
+        self.resolution_mm.map_or(
+            super::SimulationResolution::Auto,
+            super::SimulationResolution::Fixed,
+        )
+    }
+
+    /// The section for a session value.
+    #[must_use]
+    pub fn of(resolution: super::SimulationResolution) -> Self {
+        Self {
+            resolution_mm: match resolution {
+                super::SimulationResolution::Auto => None,
+                super::SimulationResolution::Fixed(mm) => Some(mm),
+            },
+        }
+    }
+
+    fn is_auto(&self) -> bool {
+        self.resolution_mm.is_none()
+    }
 }
 
 fn default_job_name() -> String {
@@ -1215,6 +1255,7 @@ pub(super) fn build_session_from_project(
         next_revision: 0,
         simulation_epoch: 0,
         simulation: None,
+        simulation_resolution: project.job.simulation.resolution(),
         next_toolpath_id,
         next_tool_id,
         next_setup_id,

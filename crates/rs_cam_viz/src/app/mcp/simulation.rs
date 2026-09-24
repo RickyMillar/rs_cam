@@ -204,10 +204,19 @@ impl RsCamApp {
         resolution: Option<f64>,
         response_tx: tokio::sync::oneshot::Sender<McpResponse>,
     ) {
-        // Set resolution if provided
-        if let Some(res) = resolution {
-            self.controller.state_mut().simulation.resolution = res;
-            self.controller.state_mut().simulation.auto_resolution = false;
+        // G-RESTRES, ruling Q3 (2026-09-24): a resolution SETS the ONE
+        // stored project value, which every simulation reads. The reply
+        // states the value it ran at and that this call set it.
+        let set_resolution = resolution.is_some();
+        if let Some(res) = resolution
+            && let Err(error) = self
+                .controller
+                .set_simulation_resolution(rs_cam_core::session::SimulationResolution::Fixed(res))
+        {
+            let _ = response_tx.send(McpResponse {
+                result: Ok(json_str(serde_json::json!({ "error": error.to_string() }))),
+            });
+            return;
         }
 
         // Always enable metrics when MCP triggers simulation — the standalone
@@ -227,6 +236,7 @@ impl RsCamApp {
         // Store the oneshot sender
         if let Some(ref mut pending) = self.controller.pending_mcp {
             pending.simulation = Some(response_tx);
+            pending.simulation_set_resolution = set_resolution;
         } else {
             let _ = response_tx.send(McpResponse {
                 result: Err("MCP compute tracking not initialized".to_owned()),

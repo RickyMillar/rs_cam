@@ -50,17 +50,6 @@ pub struct AwaitingPriorStock {
     pub message: String,
 }
 
-/// The middle of every "name the cell size" refusal (W5 item f).
-///
-/// The MCP `generate_all` and the CLI `project` command both refuse to guess
-/// a simulation resolution when the plan has to simulate. The reason is the
-/// same on both surfaces, so the words are the same on both surfaces: a
-/// paraphrase would let one of them drift into a softer claim.
-///
-/// The sentence is surface neutral. Each caller adds its own opening clause
-/// (which flag or which parameter it wanted) and its own escape clause.
-pub const REST_NEEDS_RESOLUTION: &str = "The resolution is NOT guessed: collision counts and engagement both move with cell size, so a silently chosen one would hand you verdicts you did not ask for. Pass the same resolution you will use for verification — well below the finishing tool's TIP radius (e.g. 0.1 for a 1 mm ball).";
-
 /// Where a toolpath stands. Consumed identically by the GUI badge, the MCP
 /// `list_toolpaths` / diagnostics surface, and the generate_all reporter —
 /// there is deliberately no second taxonomy.

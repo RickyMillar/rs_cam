@@ -91,8 +91,26 @@ fn two_setup_chain() -> (AppController<RestChainBackend>, Vec<ToolpathId>) {
             rs_cam_core::session::ForgetResultArgs { index },
         ));
     }
-    controller.state.simulation.auto_resolution = true;
+    set_resolution(
+        &mut controller,
+        rs_cam_core::session::SimulationResolution::Auto,
+    );
     (controller, ids)
+}
+
+/// Write the ONE stored simulation resolution through its command
+/// (G-RESTRES), the door the Simulation panel takes.
+fn set_resolution(
+    controller: &mut AppController<RestChainBackend>,
+    resolution: rs_cam_core::session::SimulationResolution,
+) {
+    let _ = controller
+        .state
+        .session
+        .apply(Command::SetSimulationResolution(
+            rs_cam_core::session::SetSimulationResolutionArgs { resolution },
+        ))
+        .expect("a positive cell size");
 }
 
 /// The step list the plan holds, as a comparable shape.
@@ -177,19 +195,20 @@ fn generate_all_walks_one_plan_over_the_rest_chain() {
         controller.compute.sim_requests
     );
 
-    // The plan narrows the REQUEST, never the panel. Every simulation it
-    // ran is at least as fine as the rest needs.
-    let required = rs_cam_core::session::generation_plan::required_resolution_mm(
-        &controller.state.session,
-        rs_cam_core::session::generation_plan::Scope::Project,
-    );
-    if let Some(required) = required {
-        for resolution in &controller.compute.sim_resolutions {
-            assert!(
-                *resolution <= required,
-                "the plan simulates at min(panel, required): {resolution} > {required}"
-            );
-        }
+    // G-RESTRES: every simulation runs at the ONE stored project value,
+    // and `Auto` is as fine as the rest needs.
+    let project_mm = controller.state.session.simulation_resolution_mm();
+    for resolution in &controller.compute.sim_resolutions {
+        assert!(
+            resolution.to_bits() == project_mm.to_bits(),
+            "every simulation reads the stored value: {resolution} != {project_mm}"
+        );
+    }
+    if let Some(required) = controller.state.session.rest_resolution_required_mm() {
+        assert!(
+            project_mm <= required,
+            "auto is fine enough: {project_mm} > {required}"
+        );
     }
 
     // 3. Zero warnings. Read the whole stack, not `active_notifications`.
@@ -410,8 +429,10 @@ fn an_edit_mid_plan_cancels_it() {
 #[test]
 fn a_coarse_pinned_resolution_asks_before_it_generates() {
     let (mut controller, _ids) = two_setup_chain();
-    controller.state.simulation.auto_resolution = false;
-    controller.state.simulation.resolution = 2.0;
+    set_resolution(
+        &mut controller,
+        rs_cam_core::session::SimulationResolution::Fixed(2.0),
+    );
 
     controller.handle_internal_event(crate::ui::AppEvent::GenerateAll);
 
@@ -451,13 +472,10 @@ fn a_coarse_pinned_resolution_asks_before_it_generates() {
             confirm.required_mm
         );
     }
-    assert!(
-        (controller.state.simulation.resolution - confirm.required_mm).abs() < f64::EPSILON,
-        "this is the ONE place a plan writes the panel"
-    );
-    assert!(
-        !controller.state.simulation.auto_resolution,
-        "the operator pinned a value; the answer is a different pinned value"
+    assert_eq!(
+        controller.state.session.simulation_resolution(),
+        rs_cam_core::session::SimulationResolution::Fixed(confirm.required_mm),
+        "the answer SETS the stored project value, and stays pinned"
     );
 }
 
@@ -465,15 +483,20 @@ fn a_coarse_pinned_resolution_asks_before_it_generates() {
 #[test]
 fn cancelling_the_resolution_question_starts_no_plan() {
     let (mut controller, _ids) = two_setup_chain();
-    controller.state.simulation.auto_resolution = false;
-    controller.state.simulation.resolution = 2.0;
+    set_resolution(
+        &mut controller,
+        rs_cam_core::session::SimulationResolution::Fixed(2.0),
+    );
 
     controller.handle_internal_event(crate::ui::AppEvent::GenerateAll);
     controller.cancel_plan_resolution();
 
     assert!(controller.pending_plan_confirm().is_none());
     assert!(!controller.awaiting_generate_all());
-    assert!((controller.state.simulation.resolution - 2.0).abs() < f64::EPSILON);
+    assert_eq!(
+        controller.state.session.simulation_resolution(),
+        rs_cam_core::session::SimulationResolution::Fixed(2.0)
+    );
 }
 
 /// A pinned value FINER than the rest needs is the operator's own choice and
@@ -481,16 +504,19 @@ fn cancelling_the_resolution_question_starts_no_plan() {
 #[test]
 fn a_fine_pinned_resolution_asks_nothing() {
     let (mut controller, _ids) = two_setup_chain();
-    controller.state.simulation.auto_resolution = false;
-    controller.state.simulation.resolution = 0.05;
+    set_resolution(
+        &mut controller,
+        rs_cam_core::session::SimulationResolution::Fixed(0.05),
+    );
 
     controller.handle_internal_event(crate::ui::AppEvent::GenerateAll);
 
     assert!(controller.pending_plan_confirm().is_none());
     assert!(controller.awaiting_generate_all());
     pump_until_idle(&mut controller);
-    assert!(
-        (controller.state.simulation.resolution - 0.05).abs() < f64::EPSILON,
+    assert_eq!(
+        controller.state.session.simulation_resolution(),
+        rs_cam_core::session::SimulationResolution::Fixed(0.05),
         "a plan that asks nothing writes nothing"
     );
 }
@@ -502,8 +528,10 @@ fn a_fine_pinned_resolution_asks_nothing() {
 #[test]
 fn a_waiter_is_refused_while_the_resolution_question_stands() {
     let (mut controller, _ids) = two_setup_chain();
-    controller.state.simulation.auto_resolution = false;
-    controller.state.simulation.resolution = 2.0;
+    set_resolution(
+        &mut controller,
+        rs_cam_core::session::SimulationResolution::Fixed(2.0),
+    );
 
     controller.handle_internal_event(crate::ui::AppEvent::GenerateAll);
 

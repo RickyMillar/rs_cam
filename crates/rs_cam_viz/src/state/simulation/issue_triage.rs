@@ -174,10 +174,10 @@ impl SimulationState {
             rapid_collision_move_indices: &self.checks.rapid_collision_move_indices,
             cut_trace: self.results.as_ref().and_then(|r| r.cut_trace.as_deref()),
             holder_collisions: self.holder_collision_counts_by_tp(),
-            // The cell the GUI last simulated at. Read only to enrich a
+            // The cell the accepted run simulated at. Read only to enrich a
             // measurability abstention's reason with the number the operator
             // would have to change; it never decides a verdict.
-            resolution_mm: Some(self.resolution),
+            resolution_mm: self.results.as_ref().map(|r| r.column_grid_cell_mm),
         }
     }
 
@@ -244,7 +244,10 @@ impl SimulationState {
             // exactly the transition this fingerprint exists to catch.
             None => u64::MAX.hash(&mut hasher),
         }
-        self.resolution.to_bits().hash(&mut hasher);
+        self.results
+            .as_ref()
+            .map(|r| r.column_grid_cell_mm.to_bits())
+            .hash(&mut hasher);
         hasher.finish()
     }
 

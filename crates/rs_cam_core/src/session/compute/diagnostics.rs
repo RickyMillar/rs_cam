@@ -863,6 +863,12 @@ impl ProjectSession {
                     // C2 follow-up 2 — the shallow band's decomposition
                     // telemetry, carried whole. `None` = not measured.
                     monotone_cells: result.stats.monotone_cells,
+                    source_stock: result.stats.source_stock.as_ref().map(|source| {
+                        crate::compute::source_stock::SourceStockWire::of(
+                            source,
+                            result.stats.stock_snapshot.as_ref(),
+                        )
+                    }),
                 });
             }
         }

@@ -245,6 +245,37 @@ fn the_gui_builder_reads_every_drill_signal_cmp19() {
             .annotated = Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
             tp,
         ));
+        // G-RESTSTALE (M-C): the GUI builder carves the CORE result, so the
+        // seed writes the same toolpath there too.
+        let (annotated, drill_op) = {
+            let held = controller
+                .state
+                .gui
+                .toolpath_rt
+                .get(&id)
+                .and_then(|rt| rt.result.as_ref())
+                .expect("the seed above wrote a result");
+            (Arc::clone(&held.annotated), held.drill_op.clone())
+        };
+        let op_data = match drill_op {
+            Some(drill) => rs_cam_core::ops::drill_op::OpData::DrillOp(drill, annotated),
+            None => rs_cam_core::ops::drill_op::OpData::Toolpath(annotated),
+        };
+        let revision = controller.state.session.toolpath_revision(0);
+        let _ = controller
+            .state
+            .session
+            .apply(Command::AdoptResult(AdoptResultArgs {
+                index: 0,
+                revision,
+                result: Box::new(rs_cam_core::session::ToolpathComputeResult {
+                    op_data,
+                    stats: Default::default(),
+                    debug_trace: None,
+                    semantic_trace: None,
+                }),
+            }))
+            .expect("the fixture revision is current");
     };
     let flag = |controller: &AppController<ScriptedBackend>| {
         let (groups, _, _) = controller

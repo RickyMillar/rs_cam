@@ -164,6 +164,9 @@ impl ProjectSession {
             stock,
             post,
             machine: self.machine.clone(),
+            simulation: super::project_file::ProjectSimulationSection::of(
+                self.simulation_resolution,
+            ),
         };
 
         // Tools

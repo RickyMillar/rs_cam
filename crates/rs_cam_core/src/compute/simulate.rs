@@ -515,6 +515,11 @@ pub struct SimulationResult {
     /// carves. Keyed by toolpath id. Used by the dressup air-cut filter and
     /// rest-machining-aware generators.
     pub prior_stocks: std::collections::HashMap<ToolpathId, Arc<TriDexelStock>>,
+    /// How each `prior_stocks` snapshot was made: the cell the request
+    /// asked for and the toolpaths carved before the consumer. Same keys
+    /// as `prior_stocks`. See [`crate::compute::source_stock`].
+    pub prior_stock_sources:
+        std::collections::HashMap<ToolpathId, crate::compute::source_stock::SourceStock>,
 }
 
 /// Error type for simulation failures.
@@ -1703,6 +1708,13 @@ where
         None
     };
 
+    // G-RESTRES: record how each snapshot was made, from the request that
+    // made it. A memo resume restores `prior_stocks` verbatim, and the
+    // request order is the carve order either way, so one derivation
+    // covers both paths.
+    let prior_stock_sources =
+        crate::compute::source_stock::snapshot_sources(request, &prior_stocks);
+
     Ok(SimulationResult {
         mesh,
         total_moves,
@@ -1716,6 +1728,7 @@ where
         resolution_clamped,
         column_grid_cell_mm,
         prior_stocks,
+        prior_stock_sources,
     })
 }
 

@@ -162,6 +162,7 @@ fn the_generate_all_reply_renders_the_one_row_shape() {
         }],
         steps: 4,
         simulations: 1,
+        resolution_report: None,
         loop_error: None,
     };
 

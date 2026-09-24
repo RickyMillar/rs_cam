@@ -462,6 +462,25 @@ impl<B: ComputeBackend> AppController<B> {
         let _ = self.start_gui_plan(Scope::Ancestors(tp_id), Some(tp_id));
     }
 
+    /// The MCP `generate_toolpath` door: the same ancestor plan, and NO
+    /// confirm modal (G-MCPMODAL, ruling Q5 of 2026-09-24).
+    ///
+    /// An MCP call cannot answer a GUI pop-up and must not wait on a click.
+    /// When the stored cell is too coarse for the rest, the call refuses
+    /// with the sentence the CLI prints, and the waiter resolves at once.
+    pub(crate) fn handle_generate_toolpath_mcp(&mut self, tp_id: ToolpathId) {
+        use rs_cam_core::session::generation_plan::{Scope, Step, plan};
+
+        let needs_simulation = plan(&self.state.session, Scope::Ancestors(tp_id))
+            .iter()
+            .any(|step| matches!(step, Step::Simulate { .. }));
+        if needs_simulation && let Some(refusal) = self.state.session.rest_resolution_refusal() {
+            self.fail_toolpath_submit(tp_id, format!("generate_toolpath refused: {refusal}"));
+            return;
+        }
+        let _ = self.start_gui_plan(Scope::Ancestors(tp_id), Some(tp_id));
+    }
+
     /// Make one setup current, and nothing else.
     ///
     /// `Scope::Setup` is NARROW: only this setup's operations get a Generate
@@ -478,7 +497,7 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     /// Arm a GUI plan over `scope`, asking about the cell size first when the
-    /// panel holds one that is too coarse for the rest (R1).
+    /// stored project value is too coarse for the rest (R1).
     ///
     /// `target` is the operation the operator named. It regenerates even when
     /// it already holds a result; its ancestors do not.
@@ -493,7 +512,8 @@ impl<B: ComputeBackend> AppController<B> {
         target: Option<ToolpathId>,
     ) -> bool {
         use crate::controller::generate_all::{GenerateAllSink, GenerationPlan, PlanStep};
-        use rs_cam_core::session::generation_plan::required_resolution_mm;
+        use rs_cam_core::session::SimulationResolution;
+        use rs_cam_core::session::generation_plan::{Step, plan};
 
         // A second plan would race the first one's cursor, and a plan armed
         // behind an unanswered question would submit at a cell size the
@@ -502,20 +522,22 @@ impl<B: ComputeBackend> AppController<B> {
             return false;
         }
 
-        let required = required_resolution_mm(&self.state.session, scope);
-
-        // R1. The Simulation panel's setting IS the operator's standing
-        // choice: Run Simulation uses it as it stands, so reading it is not a
-        // silent default. The plan only asks when the panel's PINNED value is
-        // coarser than the rest it machines needs, because at that cell size
-        // the snapshot cannot see what the coarse tool left.
-        if let Some(required) = required
-            && !self.state.simulation.auto_resolution
-            && self.state.simulation.resolution.is_finite()
-            && self.state.simulation.resolution > required
+        // R1, on the ONE stored value (G-RESTRES). The plan asks only when
+        // it simulates and the stored `Fixed` cell is coarser than the rest
+        // the project machines needs: at that cell the snapshot cannot see
+        // what the coarse tool left. `Auto` already takes the finer of the
+        // two, so it never asks.
+        let simulates = plan(&self.state.session, scope)
+            .iter()
+            .any(|step| matches!(step, Step::Simulate { .. }));
+        if simulates
+            && let SimulationResolution::Fixed(stored_mm) =
+                self.state.session.simulation_resolution()
+            && let Some(required) = self.state.session.rest_resolution_required_mm()
+            && stored_mm > required
         {
             self.pending_plan_confirm =
-                Some(self.build_resolution_confirm(scope, required, target));
+                Some(self.build_resolution_confirm(scope, required, stored_mm, target));
             return false;
         }
 
@@ -526,11 +548,7 @@ impl<B: ComputeBackend> AppController<B> {
             // generated, because then the stock did not move.
             steps.push(PlanStep::SimulateAll);
         }
-        let mut plan = GenerationPlan::new(
-            steps,
-            required.map(crate::controller::generate_all::PlanResolution::AtMost),
-            GenerateAllSink::Gui,
-        );
+        let mut plan = GenerationPlan::new(steps, GenerateAllSink::Gui);
         if let Some(target) = target {
             plan = plan.with_target(target);
         }
@@ -538,11 +556,12 @@ impl<B: ComputeBackend> AppController<B> {
         true
     }
 
-    /// The question the operator answers when the panel is too coarse.
+    /// The question the operator answers when the stored cell is too coarse.
     fn build_resolution_confirm(
         &self,
         scope: rs_cam_core::session::generation_plan::Scope,
         required_mm: f64,
+        panel_mm: f64,
         target: Option<ToolpathId>,
     ) -> crate::controller::PlanResolutionConfirm {
         use rs_cam_core::session::generation_plan::{Step, plan};
@@ -558,7 +577,6 @@ impl<B: ComputeBackend> AppController<B> {
                 Step::Generate { .. } => None,
             })
             .collect();
-        let panel_mm = self.state.simulation.resolution;
         let names = if operations.is_empty() {
             "the rest operations".to_owned()
         } else {
@@ -572,7 +590,7 @@ impl<B: ComputeBackend> AppController<B> {
             operations,
             message: format!(
                 "To generate rest for {names}, the simulation needs cells of \
-                 {required_mm:.3} mm. The panel is set to {panel_mm:.3} mm. A finer \
+                 {required_mm:.3} mm. The project resolution is {panel_mm:.3} mm. A finer \
                  simulation is slower."
             ),
             accept_label: format!("Use {required_mm:.3} mm"),
@@ -581,15 +599,23 @@ impl<B: ComputeBackend> AppController<B> {
 
     /// Take the finer cell size and start the plan.
     ///
-    /// This is the ONE place a plan writes the Simulation panel. "Auto from
-    /// tool size" stays off: the operator pinned a value, and the answer here
-    /// is a different pinned value, not a return to auto.
+    /// The answer SETS the stored project value (G-RESTRES): the plan, the
+    /// next Run Simulation, MCP and the CLI all read it. It stays `Fixed`:
+    /// the operator pinned a value, and the answer is a different pinned
+    /// value, not a return to auto.
     pub fn accept_plan_resolution(&mut self) {
         let Some(confirm) = self.pending_plan_confirm.take() else {
             return;
         };
-        self.state.simulation.resolution = confirm.required_mm;
-        self.state.simulation.auto_resolution = false;
+        if let Err(error) = self.set_simulation_resolution(
+            rs_cam_core::session::SimulationResolution::Fixed(confirm.required_mm),
+        ) {
+            self.push_notification(
+                format!("Could not set the simulation resolution: {error}"),
+                super::super::Severity::Warning,
+            );
+            return;
+        }
         let _ = self.start_gui_plan(confirm.scope, confirm.target);
     }
 

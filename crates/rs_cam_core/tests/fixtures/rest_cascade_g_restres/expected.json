@@ -1,0 +1,23 @@
+{
+  "simulation_resolution_mm": 0.5,
+  "toolpaths": {
+    "Pocket": {
+      "move_count": 48,
+      "source_stock": null
+    },
+    "Rest pocket": {
+      "move_count": 64,
+      "source_stock": {
+        "cell_mm": 0.5,
+        "metrics": true,
+        "stock_digest": "f458a84ed55e097f",
+        "after": [
+          {
+            "id": 0,
+            "output": "a41d23e148e21665"
+          }
+        ]
+      }
+    }
+  }
+}

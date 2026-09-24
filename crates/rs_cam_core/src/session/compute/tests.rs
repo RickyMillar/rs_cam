@@ -1011,6 +1011,7 @@ fn diagnostics_ranks_verdicts_by_severity() {
         resolution_clamped: false,
         column_grid_cell_mm: 0.5,
         prior_stocks: std::collections::HashMap::new(),
+        prior_stock_sources: std::collections::HashMap::new(),
     });
 
     let diag = s.diagnostics();
@@ -1087,6 +1088,7 @@ fn diagnostics_rapid_collision_verdict_carries_evidence() {
         resolution_clamped: false,
         column_grid_cell_mm: 0.5,
         prior_stocks: std::collections::HashMap::new(),
+        prior_stock_sources: std::collections::HashMap::new(),
     });
 
     let diag = s.diagnostics();
@@ -1866,6 +1868,7 @@ fn fake_result_with_regions(
             monotone_cells: None,
             // Nor did it consume any machined stock.
             stock_snapshot: None,
+            source_stock: None,
         },
         debug_trace: None,
         semantic_trace: None,

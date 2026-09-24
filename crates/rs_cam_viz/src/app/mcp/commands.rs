@@ -45,9 +45,9 @@ use rs_cam_core::session::{
     CommandId, Effects, MoveToolpathToSetupArgs, RemoveAlignmentPinArgs, RemoveToolArgs,
     RemoveToolpathArgs, SaveProjectArgs, SessionError, SetBoundaryConfigArgs, SetDressupConfigArgs,
     SetDressupFieldArgs, SetMachineArgs, SetMachineKinematicsArgs, SetPostConfigArgs,
-    SetRestAnalysisConfigArgs, SetSetupFaceArgs, SetSetupRotationArgs, SetStockConfigArgs,
-    SetStockSourceArgs, SetToolParamArgs, SetToolpathEnabledArgs, SetToolpathHeightsArgs,
-    SetToolpathModelArgs, SetToolpathParamArgs, SetToolpathToolArgs,
+    SetRestAnalysisConfigArgs, SetSetupFaceArgs, SetSetupRotationArgs, SetSimulationResolutionArgs,
+    SetStockConfigArgs, SetStockSourceArgs, SetToolParamArgs, SetToolpathEnabledArgs,
+    SetToolpathHeightsArgs, SetToolpathModelArgs, SetToolpathParamArgs, SetToolpathToolArgs,
 };
 
 use rs_cam_mcp::server::{
@@ -734,6 +734,15 @@ impl RsCamApp {
                     Box::new(before),
                 )
             }
+            CoreRequest::SetSimulationResolution(p) => CorePlan::Apply(
+                Command::SetSimulationResolution(SetSimulationResolutionArgs {
+                    resolution: p.resolution_mm.map_or(
+                        rs_cam_core::session::SimulationResolution::Auto,
+                        rs_cam_core::session::SimulationResolution::Fixed,
+                    ),
+                }),
+                Box::new(before),
+            ),
         }
     }
 }
@@ -1590,7 +1599,8 @@ impl RsCamApp {
             | CoreRequest::SetRestAnalysisConfig(_)
             | CoreRequest::SetDressupConfig(_)
             | CoreRequest::SetDressupField(_)
-            | CoreRequest::SetToolpathEnabled(_) => None,
+            | CoreRequest::SetToolpathEnabled(_)
+            | CoreRequest::SetSimulationResolution(_) => None,
         }
     }
 
@@ -1711,6 +1721,7 @@ impl RsCamApp {
             | CommandId::SetDressupConfig
             | CommandId::SetDressupField
             | CommandId::SetToolpathEnabled
+            | CommandId::SetSimulationResolution
             | CommandId::ReplaceTool
             | CommandId::ReplaceFixture
             | CommandId::ReplaceKeepOut
@@ -2503,6 +2514,26 @@ impl RsCamApp {
                 CoreReply::quiet(self.mcp_mutation_result(
                     format!("Dressup field '{key}' set on toolpath {index}. Regenerate to apply."),
                     applied,
+                    stale,
+                    &before.diagnostics,
+                ))
+            }
+            CommandId::SetSimulationResolution => {
+                self.controller.state_mut().gui.mark_edited();
+                if effects.simulation_cleared {
+                    self.controller.invalidate_simulation();
+                }
+                let stale = self.core_stale(&effects);
+                let report = crate::controller::generate_all::ResolutionReport::of(
+                    &self.controller.state().session,
+                    true,
+                );
+                CoreReply::quiet(self.mcp_mutation_result(
+                    format!(
+                        "Simulation resolution set to {:.3} mm ({})",
+                        report.mm, report.mode
+                    ),
+                    serde_json::json!({ "simulation_resolution": report }),
                     stale,
                     &before.diagnostics,
                 ))

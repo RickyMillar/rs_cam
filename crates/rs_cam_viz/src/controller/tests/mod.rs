@@ -23,7 +23,9 @@ mod model_relink;
 mod optimize;
 mod planner;
 mod post_mirror;
+mod rest_cascade_parity_g_restres;
 mod rest_dependency;
+mod rest_sim_reads_core_results_g_reststale;
 mod selection;
 mod setup_only_plan_g_setuponly;
 mod sim_stale_is_the_core_answer_g_freshnessdisagree;
@@ -407,6 +409,7 @@ fn inject_sim_results(controller: &mut AppController<ScriptedBackend>, num_setup
                 column_grid_cell_mm: 0.5,
                 resolution_clamped: false,
                 prior_stocks: std::collections::HashMap::new(),
+                prior_stock_sources: std::collections::HashMap::new(),
             },
             playback_data: Vec::new(),
             cut_trace_path: None,
@@ -703,6 +706,12 @@ impl ComputeBackend for RestChainBackend {
                     cut_trace: None,
                     column_grid_cell_mm: 0.5,
                     resolution_clamped: false,
+                    // G-RESTRES: the record the real simulator writes, from
+                    // the same request, so a snapshot of the fake is current.
+                    prior_stock_sources: rs_cam_core::compute::source_stock::snapshot_sources(
+                        &request.core,
+                        &prior_stocks,
+                    ),
                     prior_stocks,
                 },
                 playback_data: Vec::new(),

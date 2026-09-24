@@ -185,16 +185,11 @@ pub struct GenerateAllParam {
     ///
     /// Pass `false` for the old single-pass behaviour.
     pub fixpoint: Option<bool>,
-    /// Cell size in mm for the simulations the fixpoint loop runs on your
-    /// behalf.
-    ///
-    /// **Required** when the loop is on and the project contains any enabled
-    /// rest-machining operation; the call refuses rather than guessing. A
-    /// resolution is never a neutral default: collision counts and engagement
-    /// both move with cell size, so a silently chosen one produces verdicts
-    /// nobody asked for. Use the same value you intend for your verification
-    /// simulation — well below the finishing tool's TIP radius (e.g. 0.1 for
-    /// a 1 mm ball).
+    /// Optional. SETS the project's one stored simulation resolution, in
+    /// mm, before the plan runs; the reply says so under
+    /// `simulation_resolution`. Omit it to use the stored value (see
+    /// `set_simulation_resolution`). Every simulation of the project, and
+    /// every rest operation's stock, uses that one value.
     pub simulation_resolution_mm: Option<f64>,
 }
 
@@ -206,7 +201,8 @@ pub struct OperationSchemaParam {
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct SimulationParam {
-    /// Simulation resolution in mm (default 0.5)
+    /// Optional. SETS the project's one stored simulation resolution, in
+    /// mm, and the reply says so. Omit it to simulate at the stored value.
     pub resolution: Option<f64>,
 }
 
@@ -1012,6 +1008,19 @@ pub struct SetDressupFieldParam {
     /// when the existing field is numeric).
     #[schemars(schema_with = "any_json_value_schema")]
     pub value: serde_json::Value,
+}
+
+/// The one stored simulation resolution (G-RESTRES).
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct SetSimulationResolutionParam {
+    /// Cell size in mm for EVERY simulation of the project: plan prefixes,
+    /// the closing run, `run_simulation`, and the rest operations' stock.
+    /// Omit it (or pass null) to set auto: the finer of the smallest tool's
+    /// radius / 5 and the rest tool's tip radius / 5, over the whole
+    /// project. The project file saves the value. A new value drops the
+    /// simulation and every rest result recorded at the old cell.
+    #[serde(default)]
+    pub resolution_mm: Option<f64>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]

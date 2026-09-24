@@ -48,10 +48,17 @@
 //!
 //! # No trailing full simulation
 //!
-//! The walk emits no `SimulateAll` step. The GUI appends its own final
-//! full simulation so the Simulation workspace lands fresh, and an MCP plan
-//! appends one only with an explicit resolution, or a no-rest `generate_all`
-//! would simulate at a cell size the agent never chose. W1 owns both.
+//! The walk emits no `SimulateAll` step. The GUI and the MCP plan append
+//! their own final full simulation so the Simulation workspace lands fresh.
+//! Every simulation runs at the ONE stored project resolution
+//! (`ProjectSession::simulation_resolution_mm`, G-RESTRES), so no plan
+//! chooses a cell size of its own.
+//!
+//! # A snapshot must be CURRENT, not only present
+//!
+//! A Simulate step sits before a rest operation whose snapshot is missing OR
+//! stale: at another cell, or carved from toolpaths the project no longer
+//! holds (`ProjectSession::snapshot_is_current`, G-RESTSTALE).
 
 use std::collections::BTreeSet;
 
@@ -144,15 +151,15 @@ pub fn plan(session: &ProjectSession, scope: Scope) -> Vec<Step> {
     steps
 }
 
-/// Does the session hold the prior-stock snapshot this operation reads?
+/// Does the session hold a CURRENT prior-stock snapshot for this operation?
 ///
 /// The map is keyed by the CONSUMER, because it holds the stock before that
-/// operation carves. This is the same read `dependencies::state` makes for
-/// a Stock edge.
+/// operation carves. A key alone is not enough (G-RESTRES, G-RESTSTALE):
+/// the snapshot must be at the project's cell and carve the toolpaths the
+/// project holds now. `ProjectSession::snapshot_is_current` is the one
+/// answer; `dependencies::state` and `start` read it too.
 fn has_snapshot(session: &ProjectSession, id: ToolpathId) -> bool {
-    session
-        .simulation_result()
-        .is_some_and(|sim| sim.prior_stocks.contains_key(&id))
+    session.snapshot_is_current(id).is_ok()
 }
 
 /// Every toolpath id in one setup.
@@ -205,50 +212,3 @@ fn ancestors(session: &ProjectSession, toolpath_id: ToolpathId) -> BTreeSet<Tool
     }
     set
 }
-
-/// The coarsest cell size that still resolves the rest the plan machines, in
-/// mm, or `None` when the plan runs no simulation.
-///
-/// R1, 2026-09-18. A rest operation reads a simulated snapshot of the stock
-/// above it, so the snapshot has to resolve detail the operation's own cutter
-/// can cut. The rule is the tool's TIP radius divided by five, with a floor of
-/// [`RESOLUTION_FLOOR_MM`], taken over the operations the plan's
-/// [`Step::Simulate`] steps unlock, and the FINEST answer wins. That is the
-/// rule `auto_resolution_for_tools` already applies to the smallest tool in a
-/// simulation request, and the rule the old refusal text stated: "well below
-/// the finishing tool's TIP radius, e.g. 0.1 mm for a 1 mm ball".
-///
-/// The set is the `Step::Simulate` steps, not every `FromRemainingStock`
-/// operation in scope. A rest operation that already holds its snapshot plans
-/// no simulation, so it asks for no cell size, and a plan that runs no
-/// simulation answers `None`.
-///
-/// The grid ceiling `auto_resolution_for_tools` also applies is NOT mirrored
-/// here: it coarsens a request to fit the dexel budget, and this answers what
-/// the rest needs. The caller takes the finer of the two.
-#[must_use]
-pub fn required_resolution_mm(session: &ProjectSession, scope: Scope) -> Option<f64> {
-    let mut finest: Option<f64> = None;
-    for step in plan(session, scope) {
-        let Step::Simulate { upto, .. } = step else {
-            continue;
-        };
-        let Some((_, tc)) = session.find_toolpath_config_by_id(upto) else {
-            continue;
-        };
-        let Some(tool) = session.tools().iter().find(|t| t.id.0 == tc.tool_id) else {
-            continue;
-        };
-        // The same field `auto_resolution_for_tools` reads, so the two
-        // cannot answer different numbers for one tool.
-        let needed = ((tool.diameter / 2.0) / 5.0).max(RESOLUTION_FLOOR_MM);
-        finest = Some(finest.map_or(needed, |held: f64| held.min(needed)));
-    }
-    finest
-}
-
-/// The finest cell size a rest requirement may ask for, in mm.
-///
-/// The same floor `auto_resolution_for_tools` clamps to. Below it the dexel
-/// grid costs more than the rest it resolves.
-pub const RESOLUTION_FLOOR_MM: f64 = 0.02;

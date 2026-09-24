@@ -23,6 +23,7 @@ pub mod multitool;
 mod mutation;
 pub mod project_file;
 mod reach;
+mod rest_stock;
 mod save;
 
 pub use builder::ProjectSessionBuilder;
@@ -42,10 +43,10 @@ pub use command::{
     SetFaceSelectionArgs, SetFeedsProvenanceArgs, SetMachineArgs, SetMachineKinematicsArgs,
     SetPostConfigArgs, SetRestAnalysisConfigArgs, SetSetupDatumArgs, SetSetupFaceArgs,
     SetSetupModelsArgs, SetSetupNameArgs, SetSetupPauseMessageArgs, SetSetupRotationArgs,
-    SetStockConfigArgs, SetStockSourceArgs, SetToolParamArgs, SetToolpathDebugOptionsArgs,
-    SetToolpathEnabledArgs, SetToolpathHeightsArgs, SetToolpathModelArgs, SetToolpathOperationArgs,
-    SetToolpathParamArgs, SetToolpathToolArgs, Surfaces, ToolpathCycleTimeAnswer,
-    ToolpathCycleTimeArgs, UpdateStockFromBboxArgs,
+    SetSimulationResolutionArgs, SetStockConfigArgs, SetStockSourceArgs, SetToolParamArgs,
+    SetToolpathDebugOptionsArgs, SetToolpathEnabledArgs, SetToolpathHeightsArgs,
+    SetToolpathModelArgs, SetToolpathOperationArgs, SetToolpathParamArgs, SetToolpathToolArgs,
+    Surfaces, ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs, UpdateStockFromBboxArgs,
 };
 pub use compute::{
     GenContext, GenObserver, GenerateToolpathHandle, OptimizeToolpathHandle,
@@ -67,14 +68,15 @@ pub use multitool::{
     MultitoolPlanOutcome, MultitoolPlanSpec, MultitoolPreview, PreviewTierMapHandle, TierStrategy,
     equal_cusp_stepover_mm, execute_preview_tier_map,
 };
+pub use rest_stock::{RESOLUTION_FLOOR_MM, SimulationResolution, SnapshotMiss};
 
 pub use mutation::polygons_bbox;
 
 // Re-export all public project_file types so external crates see no path change.
 pub use project_file::{
     ProjectFile, ProjectFixtureSection, ProjectJobSection, ProjectKeepOutSection,
-    ProjectLoadWarning, ProjectModelSection, ProjectSetupSection, ProjectStockConfig,
-    ProjectToolSection, ProjectToolpathSection, SUPPORTED_FORMAT_VERSION,
+    ProjectLoadWarning, ProjectModelSection, ProjectSetupSection, ProjectSimulationSection,
+    ProjectStockConfig, ProjectToolSection, ProjectToolpathSection, SUPPORTED_FORMAT_VERSION,
 };
 
 use crate::ids::ToolpathId;
@@ -1308,6 +1310,10 @@ pub struct ProjectSession {
     /// edits move it twice. NOT persisted: a load builds a session with no
     /// simulation, and no in-flight run can outlive the process.
     pub(crate) simulation_epoch: u64,
+    /// The one stored simulation resolution (G-RESTRES). Every simulation
+    /// of the project runs at [`Self::simulation_resolution_mm`]. Saved as
+    /// `[job.simulation] resolution_mm`; see [`SimulationResolution`].
+    pub(crate) simulation_resolution: SimulationResolution,
 
     // ID generators (max existing ID + 1)
     pub(crate) next_toolpath_id: usize,
@@ -1346,6 +1352,7 @@ impl ProjectSession {
             next_revision: 0,
             simulation_epoch: 0,
             simulation: None,
+            simulation_resolution: SimulationResolution::Auto,
             next_toolpath_id: 0,
             next_tool_id: 0,
             next_setup_id: 1,
@@ -2561,6 +2568,7 @@ mod tests {
             resolution_clamped: false,
             column_grid_cell_mm: 0.5,
             prior_stocks: std::collections::HashMap::new(),
+            prior_stock_sources: std::collections::HashMap::new(),
         });
         assert!(
             session.simulation_result().is_some(),
