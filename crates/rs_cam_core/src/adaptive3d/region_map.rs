@@ -26,9 +26,8 @@ pub struct AreaRegion {
     /// The world XY box of the region cells: `[x_min, y_min, x_max, y_max]`.
     /// The box is cell-exact. It does not include the tool radius.
     ///
-    /// F4 (known limit): the planner filters a level by this box, not by
-    /// the label, so a cell of another region inside the box is cut with
-    /// this region.
+    /// The box is evidence only. The planner confines the region to its
+    /// labelled cells (`clearing.rs::AreaMask`), not to this box.
     pub bbox_xy: [f64; 4],
     /// The lowest and the highest surface Z under the region cells.
     pub surface_z_range: [f64; 2],

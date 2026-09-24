@@ -19,9 +19,7 @@ use std::time::Instant;
 use tracing::debug;
 
 use super::path::{Adaptive3dSegment, StayDownProof, drape_path_to_leave, drape_point};
-use super::search::{
-    blend_corners_3d, is_clear_path_3d, material_remaining_at_level, material_remaining_in_region,
-};
+use super::search::{blend_corners_3d, is_clear_path_3d, material_remaining_at_level};
 use super::{
     Adaptive3dRuntimeEvent, ClearingStrategy3d, ZLevelPlanMetrics, stock_has_material_above,
     stock_top_z_at,
@@ -214,6 +212,134 @@ pub(super) fn detect_material_regions_labeled(
     (regions, labels)
 }
 
+/// The cells that one By Area job owns (PLAN §3.2).
+///
+/// `owned` holds one flag per planner cell (row-major, `rows * cols`). The
+/// row/col bound encloses every owned cell, so a loop can skip the rest of
+/// the grid. The mask confines a job to its cells, not to its bounding box:
+/// a cell of another job inside the box is not owned.
+pub(super) struct AreaMask {
+    /// The job id: the 0-based index of the job in the planner order.
+    pub(super) job: usize,
+    pub(super) owned: Vec<bool>,
+    pub(super) cols: usize,
+    pub(super) row_min: usize,
+    pub(super) row_max: usize,
+    pub(super) col_min: usize,
+    pub(super) col_max: usize,
+    /// The number of owned cells.
+    pub(super) owned_count: usize,
+}
+
+impl AreaMask {
+    /// The mask of every cell whose flag in `owned` is true. `None` when
+    /// no cell is owned.
+    pub(super) fn from_owned(job: usize, owned: Vec<bool>, cols: usize) -> Option<Self> {
+        let mut bound: Option<(usize, usize, usize, usize)> = None;
+        let mut owned_count = 0usize;
+        for (i, _) in owned.iter().enumerate().filter(|(_, o)| **o) {
+            let (row, col) = (i / cols.max(1), i % cols.max(1));
+            owned_count += 1;
+            bound = Some(match bound {
+                None => (row, row, col, col),
+                Some((r0, r1, c0, c1)) => (r0.min(row), r1.max(row), c0.min(col), c1.max(col)),
+            });
+        }
+        let (row_min, row_max, col_min, col_max) = bound?;
+        Some(Self {
+            job,
+            owned,
+            cols,
+            row_min,
+            row_max,
+            col_min,
+            col_max,
+            owned_count,
+        })
+    }
+
+    /// True when the job owns the cell at `(row, col)`.
+    pub(super) fn owns(&self, row: usize, col: usize) -> bool {
+        self.owned
+            .get(row * self.cols + col)
+            .copied()
+            .unwrap_or(false)
+    }
+
+    /// The number of owned cells that have material above the effective
+    /// floor at `z_level`. This is the count of `true` cells in the grid of
+    /// [`build_material_bool_grid`] with this mask: the level gate reads
+    /// the same test that the rings read (PLAN §3.4).
+    pub(super) fn material_cells(
+        &self,
+        material_stock: &TriDexelStock,
+        surface_hm: &SurfaceHeightmap,
+        z_level: f64,
+        stock_to_leave: f64,
+    ) -> u64 {
+        let mut count = 0u64;
+        for row in self.row_min..=self.row_max {
+            for col in self.col_min..=self.col_max {
+                if self.owns(row, col)
+                    && cell_has_material(
+                        material_stock,
+                        surface_hm,
+                        row,
+                        col,
+                        z_level,
+                        stock_to_leave,
+                    )
+                {
+                    count += 1;
+                }
+            }
+        }
+        count
+    }
+}
+
+/// The per-cell material test of the level grid: material stands above
+/// `max(surface + stock_to_leave, z_level)`.
+fn cell_has_material(
+    material_stock: &TriDexelStock,
+    surface_hm: &SurfaceHeightmap,
+    row: usize,
+    col: usize,
+    z_level: f64,
+    stock_to_leave: f64,
+) -> bool {
+    let surf_z = surface_hm.z_or_bbox_floor_at(row, col);
+    let effective_floor = (surf_z + stock_to_leave).max(z_level);
+    stock_has_material_above(material_stock, row, col, effective_floor + 0.01)
+}
+
+/// The level gate: the number of cells with material to cut at
+/// `z_level`, and the fraction for the debug counters.
+///
+/// - With a mask, the count is [`AreaMask::material_cells`]: every owned
+///   cell with material above its effective floor. A job of high ground or
+///   a job whose floor is between two levels still has cells to cut.
+/// - Without a mask (Global), the count is `material_remaining_at_level`.
+fn level_gate(
+    material_stock: &TriDexelStock,
+    surface_hm: &SurfaceHeightmap,
+    z_level: f64,
+    stock_to_leave: f64,
+    mask: Option<&AreaMask>,
+) -> (u64, f64) {
+    match mask {
+        Some(m) => {
+            let cells = m.material_cells(material_stock, surface_hm, z_level, stock_to_leave);
+            (cells, cells as f64 / m.owned_count.max(1) as f64)
+        }
+        None => {
+            let r =
+                material_remaining_at_level(material_stock, surface_hm, z_level, stock_to_leave);
+            (r.cells_with_material, r.fraction())
+        }
+    }
+}
+
 // ── Z-level clearing helper ──────────────────────────────────────────
 
 /// Parameters for a single Z-level clearing pass, extracted to avoid
@@ -281,6 +407,7 @@ pub(super) struct ClearZLevelContext<'a> {
 /// A cell is `true` if the stock has material above the effective floor
 /// (max of surface_z + stock_to_leave, z_level). The grid is padded with
 /// a 1-cell false border so marching squares and EDT detect edge boundaries.
+/// With a mask, only the owned cells can be `true`.
 ///
 /// Returns `(padded_grid, padded_rows, padded_cols, origin_x, origin_y, cell_size)`.
 #[allow(clippy::indexing_slicing)] // SAFETY: padded grid indices bounded by loop ranges
@@ -289,7 +416,7 @@ fn build_material_bool_grid(
     surface_hm: &SurfaceHeightmap,
     z_level: f64,
     stock_to_leave: f64,
-    region: Option<&MaterialRegion>,
+    mask: Option<&AreaMask>,
 ) -> (Vec<bool>, usize, usize, f64, f64, f64) {
     let grid = &material_stock.z_grid;
     let rows = grid.rows;
@@ -306,17 +433,21 @@ fn build_material_bool_grid(
 
     for row in 0..rows {
         for col in 0..cols {
-            // Skip cells outside the region if one is specified.
-            if let Some(r) = region
-                && (row < r.row_min || row > r.row_max || col < r.col_min || col > r.col_max)
+            // Skip the cells that the job does not own.
+            if let Some(m) = mask
+                && !m.owns(row, col)
             {
                 continue;
             }
 
-            let surf_z = surface_hm.z_or_bbox_floor_at(row, col);
-            let effective_floor = (surf_z + stock_to_leave).max(z_level);
-
-            if stock_has_material_above(material_stock, row, col, effective_floor + 0.01) {
+            if cell_has_material(
+                material_stock,
+                surface_hm,
+                row,
+                col,
+                z_level,
+                stock_to_leave,
+            ) {
                 // +1 offset for the border padding
                 padded_grid[(row + 1) * padded_cols + (col + 1)] = true;
             }
@@ -761,21 +892,23 @@ pub(super) fn clear_z_level_contour_parallel(
     z_level: f64,
     segments: &mut Vec<Adaptive3dSegment>,
     last_pos: &mut Option<P3>,
-    region: Option<&MaterialRegion>,
+    area_mask: Option<&AreaMask>,
     cancel: &dyn CancelCheck,
 ) -> Result<(), Cancelled> {
     // Check material remaining — skip if negligible. Gate on absolute
     // cell count, not fraction: at small DPP a real island contributes
     // very few cells per level, and a fraction-based gate would skip it.
-    let remaining = if let Some(r) = region {
-        material_remaining_in_region(material_stock, surface_hm, z_level, ctx.stock_to_leave, r)
-    } else {
-        material_remaining_at_level(material_stock, surface_hm, z_level, ctx.stock_to_leave)
-    };
-    if remaining.cells_with_material < MIN_CELLS_TO_CLEAR {
+    let (remaining_cells, _) = level_gate(
+        material_stock,
+        surface_hm,
+        z_level,
+        ctx.stock_to_leave,
+        area_mask,
+    );
+    if remaining_cells < MIN_CELLS_TO_CLEAR {
         debug!(
             z = z_level,
-            cells = remaining.cells_with_material,
+            cells = remaining_cells,
             "CP: skipping — no material remaining"
         );
         return Ok(());
@@ -787,7 +920,7 @@ pub(super) fn clear_z_level_contour_parallel(
         surface_hm,
         z_level,
         ctx.stock_to_leave,
-        region,
+        area_mask,
     );
 
     let mat_count = material_grid.iter().filter(|&&b| b).count();
@@ -813,7 +946,7 @@ pub(super) fn clear_z_level_contour_parallel(
 
     debug!(
         z = z_level,
-        remaining_cells = remaining.cells_with_material,
+        remaining_cells,
         mat_count,
         rows,
         cols,
@@ -963,7 +1096,7 @@ pub(super) fn clear_z_level_contour_parallel(
         surface_hm,
         z_level,
         ctx.stock_to_leave,
-        region,
+        area_mask,
     );
     let cleanup_count = cleanup_grid.iter().filter(|&&b| b).count();
     if cleanup_count > 0 {
@@ -1135,17 +1268,19 @@ pub(super) fn clear_z_level_adaptive(
     z_level: f64,
     segments: &mut Vec<Adaptive3dSegment>,
     last_pos: &mut Option<P3>,
-    region: Option<&MaterialRegion>,
+    area_mask: Option<&AreaMask>,
     cancel: &dyn CancelCheck,
 ) -> Result<(), Cancelled> {
     // ── Material check ─────────────────────────────────────────────────
     // Absolute cell-count gate (not fraction) — see clear_z_level_concentric.
-    let remaining = if let Some(r) = region {
-        material_remaining_in_region(material_stock, surface_hm, z_level, ctx.stock_to_leave, r)
-    } else {
-        material_remaining_at_level(material_stock, surface_hm, z_level, ctx.stock_to_leave)
-    };
-    if remaining.cells_with_material < MIN_CELLS_TO_CLEAR {
+    let (remaining_cells, _) = level_gate(
+        material_stock,
+        surface_hm,
+        z_level,
+        ctx.stock_to_leave,
+        area_mask,
+    );
+    if remaining_cells < MIN_CELLS_TO_CLEAR {
         return Ok(());
     }
 
@@ -1155,7 +1290,7 @@ pub(super) fn clear_z_level_adaptive(
         surface_hm,
         z_level,
         ctx.stock_to_leave,
-        region,
+        area_mask,
     );
 
     if !material_grid.iter().any(|&b| b) {
@@ -1587,7 +1722,7 @@ fn detect_and_order_regions(
     material_stock: &TriDexelStock,
     surface_hm: &SurfaceHeightmap,
     z_level: f64,
-    region: Option<&MaterialRegion>,
+    area_mask: Option<&AreaMask>,
     last_pos: Option<P3>,
 ) -> Option<OrderedRegions> {
     // 1. Material boolean grid at this Z-level (includes 1-cell air padding).
@@ -1596,7 +1731,7 @@ fn detect_and_order_regions(
         surface_hm,
         z_level,
         ctx.stock_to_leave,
-        region,
+        area_mask,
     );
     if !material_grid.iter().any(|&b| b) {
         return None;
@@ -2547,24 +2682,28 @@ pub(super) fn clear_z_level_agent_2d_slice(
     // ContourSpiral strategy appends `(lifted_point, leading_arc_frac)` for
     // every emitted cut point; other strategies leave it untouched.
     planner_eng: &mut Vec<(P3, f64)>,
-    region: Option<&MaterialRegion>,
+    area_mask: Option<&AreaMask>,
     level_marker: Option<Adaptive3dRuntimeEvent>,
     cancel: &dyn CancelCheck,
 ) -> Result<(), Cancelled> {
-    let remaining = if let Some(r) = region {
-        material_remaining_in_region(material_stock, surface_hm, z_level, ctx.stock_to_leave, r)
-    } else {
-        material_remaining_at_level(material_stock, surface_hm, z_level, ctx.stock_to_leave)
-    };
-    if remaining.cells_with_material < MIN_CELLS_TO_CLEAR {
+    let (remaining_cells, remaining_fraction) = level_gate(
+        material_stock,
+        surface_hm,
+        z_level,
+        ctx.stock_to_leave,
+        area_mask,
+    );
+    if remaining_cells < MIN_CELLS_TO_CLEAR {
         return Ok(());
     }
 
     let level_scope = ctx.debug.as_ref().map(|debug_ctx| {
-        let label = if let Some(r) = region {
+        let label = if let Some(m) = area_mask {
             format!(
-                "Z {:.3} region rows {}..{} cols {}..{}",
-                z_level, r.row_min, r.row_max, r.col_min, r.col_max
+                "Z {:.3} job {} ({} cells)",
+                z_level,
+                m.job + 1,
+                m.owned_count
             )
         } else {
             format!("Z {:.3}", z_level)
@@ -2573,14 +2712,21 @@ pub(super) fn clear_z_level_agent_2d_slice(
     });
     if let Some(scope) = level_scope.as_ref() {
         scope.set_z_level(z_level);
-        scope.set_counter("remaining_before", remaining.fraction());
+        scope.set_counter("remaining_before", remaining_fraction);
     }
     let level_ctx = level_scope.as_ref().map(|scope| scope.context());
 
     let Some(OrderedRegions {
         regions,
         metrics: mut level_metrics,
-    }) = detect_and_order_regions(ctx, material_stock, surface_hm, z_level, region, *last_pos)
+    }) = detect_and_order_regions(
+        ctx,
+        material_stock,
+        surface_hm,
+        z_level,
+        area_mask,
+        *last_pos,
+    )
     else {
         return Ok(());
     };

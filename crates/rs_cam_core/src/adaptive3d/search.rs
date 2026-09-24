@@ -10,7 +10,6 @@ use crate::geo::{P2, P3};
 use crate::ops::adaptive_shared::blend_corners;
 use crate::surface::slope::SurfaceHeightmap;
 
-use super::clearing::MaterialRegion;
 use super::{stock_has_material_above, stock_top_z_at};
 
 // ── 3D engagement ─────────────────────────────────────────────────────
@@ -22,7 +21,7 @@ use super::{stock_has_material_above, stock_top_z_at};
 ///
 /// Cell-bucket semantics (matches the planner's `floor` calc
 /// `(surf_z + stock_to_leave).max(z_level)`):
-/// - `cells_total`: every cell in the grid (or region bbox).
+/// - `cells_total`: every cell in the grid.
 /// - `cells_at_z`: cells where the effective floor IS z_level — the
 ///   planner can cut down to z_level here.
 /// - `cells_surf_above`: cells where `surf+stock_to_leave > z_level` — the
@@ -82,8 +81,7 @@ pub(super) fn material_remaining_at_level_diag(
 }
 
 /// Compact result for the planner's per-level early-exit check.
-/// Returned by [`material_remaining_at_level`] and
-/// [`material_remaining_in_region`].
+/// Returned by [`material_remaining_at_level`].
 #[derive(Debug, Clone, Copy, Default)]
 pub(super) struct MaterialRemaining {
     pub cells_with_material: u64,
@@ -116,37 +114,6 @@ pub(super) fn material_remaining_at_level(
     let mut out = MaterialRemaining::default();
     for row in 0..grid.rows {
         for col in 0..grid.cols {
-            let i = row * grid.cols + col;
-            // Bbox-floor by intent (C2 audit): a cell with no mesh over it is
-            // stock beside the model, and clearing must take it to the floor —
-            // `z_or_bbox_floor_values` says so at the call site.
-            let surf_z = surface_hm.z_or_bbox_floor_values()[i];
-            let floor = (surf_z + stock_to_leave).max(z_level);
-            if surf_z + stock_to_leave <= z_level + 0.01 {
-                out.cells_at_z += 1;
-                if stock_has_material_above(material_stock, row, col, floor + 0.01) {
-                    out.cells_with_material += 1;
-                }
-            }
-        }
-    }
-    out
-}
-
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-/// Bbox-restricted version of `material_remaining_at_level()`.
-/// Only scans cells within the region's row/col bounding box.
-pub(super) fn material_remaining_in_region(
-    material_stock: &TriDexelStock,
-    surface_hm: &SurfaceHeightmap,
-    z_level: f64,
-    stock_to_leave: f64,
-    region: &MaterialRegion,
-) -> MaterialRemaining {
-    let grid = &material_stock.z_grid;
-    let mut out = MaterialRemaining::default();
-    for row in region.row_min..=region.row_max.min(grid.rows - 1) {
-        for col in region.col_min..=region.col_max.min(grid.cols - 1) {
             let i = row * grid.cols + col;
             // Bbox-floor by intent (C2 audit): a cell with no mesh over it is
             // stock beside the model, and clearing must take it to the floor —

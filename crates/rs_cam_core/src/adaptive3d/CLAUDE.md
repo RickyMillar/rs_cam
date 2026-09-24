@@ -6,7 +6,8 @@ Constant-engagement clearing on a mesh surface. The entry point is
 ## Files
 
 - `mod.rs` — the public facade and `ClearingStrategy3d`.
-- `clearing.rs` — the Z-level clearing engine and its region detection. The
+- `clearing.rs` — the Z-level clearing engine, its region detection and
+  `AreaMask` (By Area confines a job to its cells, not its box). The
   AgentSearch slice runs three stages (CUT-09): `detect_and_order_regions`,
   `clear_one_region` per region over a `LevelEmission`, then
   `coalesce_level_entries`. Put new per-region work in the middle stage.
@@ -30,11 +31,10 @@ Constant-engagement clearing on a mesh surface. The entry point is
   `level_anchor_z`, plus Detect Flat shelves). Every level drapes. The step
   ladder was removed 2026-09-24 (operator ruling); do not add it back.
 
-## Sentries
+## Sentries: `cargo test -p rs_cam_core -q --test <name>`
 
-- `cargo test -p rs_cam_core -q --test adaptive3d_boundary_clear_parity`
-- `cargo test -p rs_cam_core -q --test adaptive3d_keep_down_link_f038b`
-- `cargo test -p rs_cam_core -q --test adaptive3d_entry_stock_aware`
-- `cargo test -p rs_cam_core -q --test adaptive3d_entry_coalescing_f038`
-- `cargo test -p rs_cam_core -q --test agent_search_coverage`
-- `cargo test -p rs_cam_core -q --test adaptive3d_subtool_channel_gouge`
+- `adaptive3d_boundary_clear_parity`, `adaptive3d_keep_down_link_f038b`
+- `adaptive3d_entry_stock_aware`, `adaptive3d_entry_coalescing_f038`
+- `agent_search_coverage`, `adaptive3d_subtool_channel_gouge`
+- By Area: `adaptive3d_by_area_cells_confine_jobs`,
+  `adaptive3d_by_area_matches_global_stock`

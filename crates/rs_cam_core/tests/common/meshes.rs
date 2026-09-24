@@ -487,3 +487,35 @@ pub fn disconnected_hemispheres(
     }
     TriangleMesh::from_raw(vertices, triangles)
 }
+
+// ── By Area fixtures ────────────────────────────────────────────────────
+
+/// A pocket of [`l_and_basin_plate`]: the XY box `[x0, x1] x [y0, y1]` and
+/// its floor Z.
+pub const L_AND_BASIN_POCKETS: [(f64, f64, f64, f64, f64); 3] = [
+    // Pocket A, arm 1 (along X). Floor Z 0.
+    (5.0, 5.0, 70.0, 17.0, 0.0),
+    // Pocket A, arm 2 (along Y). Floor Z 0.
+    (5.0, 5.0, 17.0, 45.0, 0.0),
+    // Pocket B, in the inside corner of the L. Floor Z 3.
+    (30.0, 26.0, 62.0, 44.0, 3.0),
+];
+
+/// The top Z of the [`l_and_basin_plate`] plate.
+pub const L_AND_BASIN_TOP_Z: f64 = 10.0;
+
+/// A plate at Z 10 over `[0, 80] x [0, 50]` with two pockets that do not
+/// touch (see [`L_AND_BASIN_POCKETS`]). Pocket A is an L. Pocket B sits in
+/// the inside corner of the L, so the XY box of A contains all of B.
+///
+/// With stock top at Z 10, By Area finds two material regions. A planner
+/// that confines a region to its box cuts pocket B with region A. The floor
+/// of B (Z 3) is between two levels at Depth/Pass 4.
+pub fn l_and_basin_plate() -> TriangleMesh {
+    height_field_grid(0.0, 1.0, 81, 0.0, 1.0, 51, |x, y| {
+        L_AND_BASIN_POCKETS
+            .iter()
+            .find(|&&(x0, y0, x1, y1, _)| x >= x0 && x <= x1 && y >= y0 && y <= y1)
+            .map_or(L_AND_BASIN_TOP_Z, |p| p.4)
+    })
+}

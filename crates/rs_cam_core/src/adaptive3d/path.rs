@@ -83,8 +83,9 @@ use std::time::Instant;
 use tracing::{debug, info};
 
 use super::clearing::{
-    ClearZLevelContext, MaterialRegion, clear_z_level_adaptive, clear_z_level_agent_2d_slice,
-    clear_z_level_contour_parallel, detect_material_regions_labeled, waterline_cleanup,
+    AreaMask, ClearZLevelContext, MaterialRegion, clear_z_level_adaptive,
+    clear_z_level_agent_2d_slice, clear_z_level_contour_parallel, detect_material_regions_labeled,
+    waterline_cleanup,
 };
 use super::region_map::AreaRegionMap;
 use super::search::{blend_corners_3d, material_remaining_at_level_diag};
@@ -361,12 +362,12 @@ pub(super) fn step_levels(z_top: f64, z_bot: f64, step: f64) -> Vec<f64> {
 }
 
 /// Where a level sits in its run: its index and the run length for the
-/// runtime marker, and the region for By Area.
+/// runtime marker, and the cell mask of the job for By Area.
 #[derive(Clone, Copy)]
 struct LevelSlot<'r> {
     index: usize,
     total: usize,
-    region: Option<(usize, &'r MaterialRegion)>,
+    region: Option<&'r AreaMask>,
 }
 
 /// Clear one Z level. The ByArea and the Global branches both call this
@@ -385,8 +386,8 @@ fn clear_planned_level(
     cancel: &dyn CancelCheck,
 ) -> Result<(), Cancelled> {
     let level_event = match slot.region {
-        Some((region_idx, _)) => Adaptive3dRuntimeEvent::RegionZLevel {
-            region_index: region_idx + 1,
+        Some(mask) => Adaptive3dRuntimeEvent::RegionZLevel {
+            region_index: mask.job + 1,
             z_level,
             level_index: slot.index + 1,
             level_total: slot.total,
@@ -399,12 +400,12 @@ fn clear_planned_level(
             metrics: ZLevelPlanMetrics::default(),
         },
     };
-    let region = slot.region.map(|(_, r)| r);
+    let region = slot.region;
     let level_scope = ctx.debug.as_ref().map(|dctx| {
         let title = match slot.region {
-            Some((region_idx, _)) => format!(
+            Some(mask) => format!(
                 "Region {} Z {:.3} ({}/{})",
-                region_idx + 1,
+                mask.job + 1,
                 z_level,
                 slot.index + 1,
                 slot.total
@@ -413,8 +414,8 @@ fn clear_planned_level(
         };
         let scope = dctx.start_span("z_level_clear", title);
         scope.set_z_level(z_level);
-        if let Some((region_idx, _)) = slot.region {
-            scope.set_counter("region_index", (region_idx + 1) as f64);
+        if let Some(mask) = slot.region {
+            scope.set_counter("region_index", (mask.job + 1) as f64);
         }
         let diag = material_remaining_at_level_diag(
             material_stock,
@@ -493,6 +494,49 @@ fn clear_planned_level(
         scope.finish();
     }
     Ok(())
+}
+
+/// The levels of one By Area job, top down (PLAN §3.4, defect 2).
+///
+/// The job takes the global levels down to and including the first level at
+/// or below `floor_z` (the job's lowest surface plus stock-to-leave). That
+/// level drapes onto the floor, so a floor between two levels is cut. When
+/// no level is at or below `floor_z`, the job takes every level.
+fn job_levels(z_levels: &[f64], floor_z: f64) -> Vec<f64> {
+    let end = z_levels
+        .iter()
+        .position(|&z| z <= floor_z + 0.01)
+        .map_or(z_levels.len(), |i| i + 1);
+    z_levels.iter().take(end).copied().collect()
+}
+
+/// One cell mask per kept region, in the order of `regions`.
+///
+/// A region owns the cells with its flood-fill label. The detector drops a
+/// region with fewer than 4 cells, but those cells still hold material. The
+/// first (largest) region owns them, so every material cell has a job and
+/// By Area cuts the same cells as Global.
+fn region_masks(regions: &[MaterialRegion], bfs_labels: &[usize], cols: usize) -> Vec<AreaMask> {
+    let orphan =
+        |label: usize| label != usize::MAX && !regions.iter().any(|r| r.bfs_label == label);
+    let orphan_count = bfs_labels.iter().filter(|&&l| orphan(l)).count();
+    if orphan_count > 0 {
+        debug!(
+            cells = orphan_count,
+            "By Area: cells of dropped regions go to region 1"
+        );
+    }
+    regions
+        .iter()
+        .enumerate()
+        .filter_map(|(job, r)| {
+            let owned = bfs_labels
+                .iter()
+                .map(|&l| l == r.bfs_label || (job == 0 && orphan(l)))
+                .collect();
+            AreaMask::from_owned(job, owned, cols)
+        })
+        .collect()
 }
 
 // ── Main loop ─────────────────────────────────────────────────────────
@@ -907,6 +951,7 @@ pub(super) fn adaptive_3d_segments(
             // Record the detection for the overlay. No planner stage reads it.
             let mut region_map =
                 AreaRegionMap::from_detection(&material_stock, &bfs_labels, &regions);
+            let masks = region_masks(&regions, &bfs_labels, material_stock.z_grid.cols);
             drop(bfs_labels);
             info!(
                 regions = regions.len(),
@@ -924,8 +969,12 @@ pub(super) fn adaptive_3d_segments(
                 scope.set_counter("regions", regions.len() as f64);
             }
 
-            for (region_idx, region) in regions.iter().enumerate() {
+            for mask in &masks {
                 check_cancel(cancel)?;
+                let region_idx = mask.job;
+                let Some(region) = regions.get(region_idx) else {
+                    continue;
+                };
                 let bbox = region_map
                     .regions
                     .get(region_idx)
@@ -949,13 +998,10 @@ pub(super) fn adaptive_3d_segments(
                     },
                 ));
 
-                // The region's levels, top down. A level below the region's
-                // lowest surface has nothing to cut.
-                let region_levels: Vec<f64> = z_levels
-                    .iter()
-                    .copied()
-                    .filter(|&z| z >= region.surface_z_min + params.depth.stock_to_leave - 0.01)
-                    .collect();
+                let region_levels = job_levels(
+                    &z_levels,
+                    region.surface_z_min + params.depth.stock_to_leave,
+                );
                 region_map.set_levels(
                     u16::try_from(region_idx + 1).unwrap_or(u16::MAX),
                     &region_levels,
@@ -971,7 +1017,7 @@ pub(super) fn adaptive_3d_segments(
                         LevelSlot {
                             index: li,
                             total: region_levels.len(),
-                            region: Some((region_idx, region)),
+                            region: Some(mask),
                         },
                         &mut segments,
                         &mut last_pos,
@@ -987,9 +1033,8 @@ pub(super) fn adaptive_3d_segments(
             //
             // F9 (known limit, 2026-09-24): the cleanup does not run per
             // region. `waterline_cleanup` traces every mesh contour at the Z
-            // and has no region filter, and a region is only a bounding box
-            // (F4). A per-region run would cut the contours of regions that
-            // are not roughed yet, through their full stock.
+            // and has no cell mask. A per-region run would cut the contours
+            // of regions that are not roughed yet, through their full stock.
             if let Some(&bottom) = z_levels.last() {
                 segments.push(Adaptive3dSegment::Marker(
                     Adaptive3dRuntimeEvent::WaterlineCleanup,

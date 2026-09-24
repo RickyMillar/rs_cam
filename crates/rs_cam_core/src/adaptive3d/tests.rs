@@ -9,9 +9,8 @@
     clippy::print_stderr
 )]
 
-use super::clearing::{MaterialRegion, detect_material_regions};
+use super::clearing::detect_material_regions;
 use super::path::Adaptive3dSegment;
-use super::search::material_remaining_in_region;
 use super::*;
 use crate::dexel_stock::StockCutDirection;
 use crate::geo::P3;
@@ -765,52 +764,6 @@ fn test_detect_regions_small_filtered() {
         regions.is_empty(),
         "Tiny regions (< 4 cells) should be filtered out, got {} regions",
         regions.len()
-    );
-}
-
-#[test]
-fn test_material_remaining_in_region() {
-    let (mesh, si) = make_flat_mesh();
-    let cutter = flat_cutter();
-    let cell_size = 1.0;
-
-    let material_stock = make_stock(-30.0, -30.0, 30.0, 30.0, 20.0, cell_size);
-    let surface_hm = SurfaceHeightmap::from_mesh(
-        &mesh,
-        &si,
-        &cutter,
-        material_stock.z_grid.origin_u,
-        material_stock.z_grid.origin_v,
-        material_stock.z_grid.rows,
-        material_stock.z_grid.cols,
-        cell_size,
-        -10.0,
-    );
-
-    // A region covering a quarter of the grid
-    let region = MaterialRegion {
-        row_min: 0,
-        row_max: material_stock.z_grid.rows / 2,
-        col_min: 0,
-        col_max: material_stock.z_grid.cols / 2,
-        world_x_min: -30.0,
-        world_x_max: 0.0,
-        world_y_min: -30.0,
-        world_y_max: 0.0,
-        cell_count: (material_stock.z_grid.rows / 2) * (material_stock.z_grid.cols / 2),
-        surface_z_min: 0.0,
-        surface_z_max: 0.0,
-        bfs_label: 1,
-    };
-
-    let rem = material_remaining_in_region(&material_stock, &surface_hm, 10.0, 0.5, &region);
-    let frac = rem.fraction();
-    assert!(
-        frac > 0.5,
-        "Full material in region should show high remaining, got {:.2} ({} / {})",
-        frac,
-        rem.cells_with_material,
-        rem.cells_at_z,
     );
 }
 
