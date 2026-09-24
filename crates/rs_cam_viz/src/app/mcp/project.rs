@@ -38,6 +38,11 @@ impl RsCamApp {
             "toolpath_count": session.toolpath_count(),
             "tools": session.list_tools(),
             "default_findings": default_findings,
+            // G-RESTRES: the ONE stored simulation resolution, read-only.
+            // `set_simulation_resolution` writes it.
+            "simulation_resolution": crate::controller::generate_all::ResolutionReport::of(
+                session, false,
+            ),
             "build": rs_cam_mcp::server::build_info(),
         }))
     }

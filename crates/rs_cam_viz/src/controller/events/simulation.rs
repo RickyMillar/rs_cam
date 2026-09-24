@@ -193,12 +193,20 @@ impl<B: ComputeBackend> AppController<B> {
                 };
                 // The semantic trace stays viz-side (the drain adopts
                 // `semantic_trace: None`), so it comes from `rt`, and only
-                // when `rt` holds the very toolpath core holds.
+                // when `rt` holds the same GEOMETRY core holds. Not the same
+                // `Arc`: the feed modulation after each simulation swaps a
+                // new `Arc` into core and leaves `rt` at the old one, with
+                // the same moves.
                 let semantic_trace = rt
                     .filter(|rt| {
-                        rt.result
-                            .as_ref()
-                            .is_some_and(|held| Arc::ptr_eq(&held.annotated, result.annotated()))
+                        rt.result.as_ref().is_some_and(|held| {
+                            Arc::ptr_eq(&held.annotated, result.annotated())
+                                || rs_cam_core::compute::source_stock::carve_digest(
+                                    &held.annotated.toolpath,
+                                ) == rs_cam_core::compute::source_stock::carve_digest(
+                                    result.toolpath(),
+                                )
+                        })
                     })
                     .and_then(|rt| rt.semantic_trace.clone());
                 let Some(tool) = self
