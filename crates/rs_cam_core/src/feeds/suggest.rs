@@ -17,7 +17,6 @@ mod aggressiveness;
 mod apply;
 mod axial_envelope;
 mod invariants;
-mod ladder;
 
 pub use apply::{
     ApplicableRecommendation, ApplyContext, ApplyScope, FeedsPreview, FieldApplyPreview,
@@ -463,9 +462,7 @@ pub enum SuggestWarning {
     /// axial value sat above the cutter-axial-constraints `safe_max_doc_mm`,
     /// so the envelope clamped it down. Variant carries `param_name` so
     /// downstream renderers know whether `depth_per_pass` (Adaptive3d),
-    /// `"coarse step depth"` (one coarse step of the Adaptive3d step
-    /// ladder; `commanded_mm` names the step), `max_depth` (VCarve), or
-    /// another axial knob was rewritten.
+    /// `max_depth` (VCarve), or another axial knob was rewritten.
     AxialDocClampedByEnvelope {
         op_kind: &'static str,
         param_name: &'static str,

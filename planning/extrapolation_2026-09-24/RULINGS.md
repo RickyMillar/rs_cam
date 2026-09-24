@@ -309,3 +309,9 @@ feeds/dial session, relayed):
    panel's own formatter (ui/properties/operations/surface_3d.rs,
    5593803e); do not duplicate it.
 Owner: the extrapolation session; after A2 step 1 (the files overlap).
+
+**Superseded (operator ruling 2026-09-24, relayed by the feeds/dial
+session): the step ladder is removed entirely** ("its more complexity
+than needed when the drape performs better"). The ladder readers
+(d1a0c184) and "keep my steps, only cap" (1ba1d8eb) are reverted; the
+readers read `depth_per_pass` again. The ladder rulings above are void.

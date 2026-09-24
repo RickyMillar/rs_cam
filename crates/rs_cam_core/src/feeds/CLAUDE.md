@@ -6,7 +6,7 @@ The calculator for RPM, feed, plunge rate, DOC and WOC. The validated entry poin
 - `mod.rs`, `tests.rs` — the calculator and its unit tests.
 - `suggest.rs` + `suggest/` — the Suggest model and read doors; children `apply.rs` (write-back
   funnel, previews, defaults), `invariants.rs` (clamps, back-offs), `aggressiveness.rs` (pass 6b,
-  the dial), `axial_envelope.rs`, `adaptive_entry.rs`, `ladder.rs` (3D Rough step ladder writes), `tests.rs`.
+  the dial), `axial_envelope.rs`, `adaptive_entry.rs`, `tests.rs`.
 - `geometry.rs`, `geometry_class.rs`, `cutter_constraints.rs`, `force.rs`, `predict.rs`,
   `efficiency.rs`, `operating_point.rs` — effective diameter, chip thinning, the DOC scale, the axial
   envelope, force, deflection, efficiency, and spindle power at the shipped operating point.
@@ -36,5 +36,5 @@ Run one with `cargo test -p rs_cam_core -q --test <name>`: `lut_resolver_census_
 `the_dial_holds_the_load_and_never_cuts_the_feed_fm7`, `rpm_follows_the_feed_ceiling_fm8`, `micro_extrapolation_refuses_fm9`,
 `a_tapered_row_is_read_at_the_tip_a1`, `the_micro_tapered_finish_ships_the_printed_tip_row_g1`, `a_size_claim_states_its_rule_range_and_residual_g1`,
 `every_consumer_reads_one_claimed_band_g1`, `the_onsrud_vbit_rows_serve_mdf_and_plywood_g2`, `one_janka_table_for_row_and_query_g2`,
-`a_hardness_transfer_caps_at_the_printed_soft_hard_ratio_g2`, `a_coarse_step_is_seen_by_suggest_and_the_envelope_g_ladder`, `a_printed_value_is_held_as_a_point_a2`.
+`a_hardness_transfer_caps_at_the_printed_soft_hard_ratio_g2`, `a_printed_value_is_held_as_a_point_a2`.
 `feeds_matrix_instrument_fm1` is an `#[ignore]` instrument (`-- --ignored`) that writes planning/feeds_matrix_2026-09-23/. `wanaka_suggest_integration` takes minutes: ask first.

@@ -202,10 +202,6 @@ impl<'a> PillSuggestions<'a> {
     /// Depth-per-pass / DOC pill (also VCarve `Max Depth`, which the funnel
     /// does not write — that one falls back to the raw value, labelled).
     /// Rounds to the NEAREST, for the same reason as [`Self::stepover`].
-    ///
-    /// On a 3D Rough with a step ladder this is the BASE step, not
-    /// `deepest_axial_step` (D7): the pill sits on the Depth/Pass field and
-    /// writes that field only. The deepest step is on the feeds card.
     pub fn depth_per_pass(&self) -> PillSuggestion<'_> {
         self.suggestion(
             FeedsField::DepthPerPass,

@@ -55,7 +55,6 @@ pub(crate) fn read_current_values(
         plunge_rate_mm_min: tc.operation.plunge_rate(),
         spindle_rpm: tc.operation.spindle_rpm(),
         depth_per_pass: tc.operation.depth_per_pass(),
-        deepest_axial_step: tc.operation.deepest_axial_step(),
         stepover: tc.operation.stepover(),
         flute_count: tool.flute_count,
         scallop_height: tc.operation.scallop_height(),
@@ -86,7 +85,6 @@ pub(crate) fn current_values_for_operation(
         plunge_rate_mm_min: operation.plunge_rate(),
         spindle_rpm: operation.spindle_rpm().or(Some(project_default_rpm)),
         depth_per_pass: operation.depth_per_pass(),
-        deepest_axial_step: operation.deepest_axial_step(),
         stepover: operation.stepover(),
         flute_count: tool.flute_count,
         scallop_height: operation.scallop_height(),
@@ -411,25 +409,6 @@ fn draw_comparison_card(
             0.01,
             &why(why::RecipeRow::Doc),
         );
-        // The step ladder (D7): the DOC row is the base step, the field that
-        // `⚡ Apply all` writes. A coarse step bites deeper, and the power,
-        // the deflection and the envelope read that deeper step. Say so on
-        // the card, so the row does not read as the deepest bite.
-        if let (Some(deepest), Some(base)) = (current.deepest_axial_step, current.depth_per_pass)
-            && deepest > base
-        {
-            ui.add(
-                egui::Label::new(
-                    egui::RichText::new(format!(
-                        "Deepest step {deepest:.2} mm (step ladder). Power, deflection \
-                         and the depth envelope read this step."
-                    ))
-                    .small()
-                    .color(theme::TEXT_DIM),
-                )
-                .wrap(),
-            );
-        }
         woc_row(ui, current, explain, woc, &why(why::RecipeRow::Woc));
         rail_row(
             ui,

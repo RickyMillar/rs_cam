@@ -213,10 +213,6 @@ impl<'op> AxisView<'op> {
                     .map(f64::from)
                     .unwrap_or(f64::from(ctx.project_default_rpm)),
             ),
-            // The base step, not `deepest_axial_step` (D7), on purpose. The
-            // search writes this axis through `set_depth_per_pass`
-            // (`patches.rs`), so the read must be the field the write
-            // moves. A 3D Rough coarse step is not a search axis.
             SearchAxis::DepthPerPass => self.op.depth_per_pass(),
             SearchAxis::Stepover => self.op.stepover(),
             SearchAxis::ScallopHeight => self.op.scallop_height(),

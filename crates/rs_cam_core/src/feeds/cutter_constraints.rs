@@ -2,10 +2,7 @@
 //!
 //! Phase 2 of `planning/cutter_axial_constraints_2026-06-06.md`. Every
 //! Suggest pass that touches axial depth — V-carve `max_depth`, 3D Finish
-//! `stock_to_leave`, Adaptive3d `depth_per_pass` and each of its
-//! `coarse_steps` (the step ladder; the cap applies to every step, D7 of
-//! `planning/adaptive3d_step_ladder_roughing_2026-09-24/PLAN.md`),
-//! ProjectCurve `target_depth` —
+//! `stock_to_leave`, Adaptive3d `depth_per_pass`, ProjectCurve `target_depth` —
 //! queries [`cutter_axial_constraints`] once with op-specific engagement
 //! geometry, gets back four independently-computed bounds, and intersects
 //! with its own goal via [`CutterAxialConstraints::safe_max_doc_mm`] /
