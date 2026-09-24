@@ -129,7 +129,22 @@ fn apply_feeds_subset(
         Some(total) => crate::ops::depth::realised_step_down(total, depth_mm).unwrap_or(depth_mm),
         None => depth_mm,
     };
-    let depth_held = scratch.set_depth_per_pass(depth_mm);
+    // Operator ruling 1 of 2026-09-24 ("keep my steps, only cap"): on a 3D
+    // Rough with a step ladder the base step (Depth/Pass) and the coarse
+    // steps are the operator's. Suggest does not write the calculator's
+    // depth over them. The invariant passes below only lower a step that is
+    // over a cap, each with its own record, and a step that a cap removes
+    // gets a `CoarseStepRemoved` note. The feed, the RPM and the stepover
+    // are still written. With an empty ladder nothing changes here.
+    let keeps_ladder = super::ladder::has_ladder(&scratch);
+    let base_before = scratch.depth_per_pass();
+    // The field holds the operator's value, so a kept ladder is not a
+    // refused write.
+    let depth_held = if keeps_ladder {
+        true
+    } else {
+        scratch.set_depth_per_pass(depth_mm)
+    };
     // v3.0d (2026-06-04): also write the calculator's chosen RPM so the
     // rest of enforce_invariants reads a consistent operating point
     // instead of the operation's prior spindle_rpm value.
@@ -230,7 +245,7 @@ fn apply_feeds_subset(
         // The step ladder (D7): the invariant passes cap, scale and prune
         // the coarse steps on the scratch copy. The ladder that ships is
         // that one, or the operation keeps a coarse step that the envelope
-        // clamped, or one that is no longer above the new base step.
+        // clamped, or one that a cap removed (and the note named).
         if let (OperationConfig::Adaptive3d(written), OperationConfig::Adaptive3d(checked)) =
             (&mut *operation, &scratch)
         {
@@ -261,7 +276,13 @@ fn apply_feeds_subset(
     // (W2.1), gated to the subset we wrote. enforce_invariants may have
     // recalibrated feed/DPP, but the values remain suggest-derived, so the
     // source labels still hold.
+    // With a ladder the base step is the operator's value. Its stamp moves
+    // to Suggest only when a cap lowered it; else the old stamp stays.
+    let depth_stamp = provenance.depth_per_pass.clone();
     provenance.apply_suggested_subset(result, operation, rpm_written, write_speeds, write_geometry);
+    if keeps_ladder && write_geometry && operation.depth_per_pass() == base_before {
+        provenance.depth_per_pass = depth_stamp;
+    }
     warnings
 }
 

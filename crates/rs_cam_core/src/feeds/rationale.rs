@@ -158,6 +158,10 @@ pub enum RationaleReason {
     /// Ruling R4 Q10 (2026-09-24): the RPM came down to hold the chipload
     /// at the machine feed ceiling.
     RpmLoweredForFeedCeiling,
+    /// Operator ruling 1 (2026-09-24): a cap lowered a coarse step of the 3D
+    /// Rough step ladder to a value that is not above the next step, so
+    /// Suggest removed the step.
+    CoarseStepRemoved,
 }
 
 /// One row in the rationale tree the GUI / MCP renders alongside a
@@ -598,6 +602,32 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
                  {clamped_mm:.2} mm ({binding})"
             ),
             detail: Some(format!("Cutter axial envelope binding: {binding}")),
+        },
+        SuggestWarning::CoarseStepRemoved {
+            step_mm,
+            lowered_to_mm,
+            next_step_mm,
+            next_is_base,
+            cap,
+        } => RationaleEntry {
+            param: RationaleParam::Dpp,
+            reason: RationaleReason::CoarseStepRemoved,
+            from_value: Some(*step_mm),
+            // The step is gone, so no value was written for it.
+            to_value: None,
+            headline: crate::feeds::suggest::coarse_step_removed_text(
+                *step_mm,
+                *lowered_to_mm,
+                *next_step_mm,
+                *next_is_base,
+                cap,
+            ),
+            detail: Some(
+                "Suggest keeps the operator's steps and only lowers a step that is over a \
+                 cap. A lowered step that is not above the next step is not a step of its \
+                 own, so it goes (operator ruling 1, 2026-09-24)."
+                    .to_owned(),
+            ),
         },
         SuggestWarning::AxialDocBelowBurnFloor {
             op_kind,

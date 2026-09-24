@@ -137,7 +137,21 @@ pub(super) fn enforce_invariants(
     // result is unrounded and these are not; comparing like with like is what
     // keeps an untouched operation's feed byte-identical.
     let entry_stepover = operation.stepover();
-    let entry_dpp = operation.depth_per_pass();
+    // The step ladder (operator ruling 1, 2026-09-24): with a ladder the
+    // apply funnel keeps the operator's base step and does not write the
+    // calculator's depth. The feed was sized at the calculator's depth, so
+    // that depth is the entry value that pass 9 compares with. Else a ladder
+    // that loses every coarse step to a cap ships the operator's base step
+    // with a feed sized at a depth that it does not cut.
+    let had_ladder = super::ladder::has_ladder(operation);
+    let entry_dpp = if had_ladder {
+        context
+            .calculator_operating_point
+            .map(|c| c.axial_depth_mm)
+            .or_else(|| operation.depth_per_pass())
+    } else {
+        operation.depth_per_pass()
+    };
     let mut working_context = context;
     let (axial_envelope_warnings, dpp_mutated) =
         pick_axial_envelope(operation, tool, material, working_context);
@@ -146,9 +160,10 @@ pub(super) fn enforce_invariants(
     // The step ladder (D7): the band is derated at the DEEPEST step, because
     // one feed serves every level and the deepest level has the smallest
     // band. With no ladder the deepest step is `depth_per_pass`. With a
-    // ladder the calculator never saw the coarse steps, so the band is
-    // re-derived even when pass 0 moved no step.
-    if (dpp_mutated || super::ladder::has_ladder(operation))
+    // ladder the calculator never saw the coarse steps or the operator's
+    // base step, so the band is re-derived even when pass 0 moved no step,
+    // and also when pass 0 removed the last coarse step.
+    if (dpp_mutated || had_ladder)
         && let Some(new_dpp) = operation.deepest_axial_step()
     {
         let fresh_bounds = recompute_chipload_bounds_for_dpp(
@@ -408,11 +423,14 @@ fn clamp_dpp_to_rigidity(
     };
     if current > cap_at_current {
         let capped = deepest_depth_within_cap(cap_at_current, &cap_at);
-        super::ladder::cap_axial_steps(operation, capped);
+        let removed = super::ladder::cap_axial_steps(operation, capped);
         warnings.push(SuggestWarning::RoughingDepthClampedToRigidity {
             requested: current,
             capped,
         });
+        // A capped coarse step that is no longer above the next step goes,
+        // with its note (operator ruling 1, 2026-09-24).
+        warnings.extend(super::ladder::removal_notes(&removed, "rigidity cap"));
     }
     warnings
 }
@@ -459,11 +477,13 @@ fn clamp_dpp_to_cutting_length(
     if let Some(current) = operation.deepest_axial_step() {
         let cap = tool.cutting_length;
         if current.is_finite() && cap.is_finite() && cap > 0.0 && current > cap {
-            super::ladder::cap_axial_steps(operation, cap);
+            let removed = super::ladder::cap_axial_steps(operation, cap);
             warnings.push(SuggestWarning::DepthClampedToCuttingLength {
                 requested: current,
                 capped: cap,
             });
+            // Operator ruling 1 (2026-09-24): a removed step has a note.
+            warnings.extend(super::ladder::removal_notes(&removed, "flute length"));
         }
     }
     warnings
@@ -547,6 +567,12 @@ fn backoff_dpp_for_deflection(
         // The last DPP the model evaluated. The operation carries this
         // value whenever the loop is not mid-step.
         let mut dpp = current;
+        // The step ladder: the loop can remove a coarse step. The note names
+        // the step as it was before this pass, so `origin` keeps that value
+        // for each step that is still on the ladder (operator ruling 1,
+        // 2026-09-24).
+        let mut origin = super::ladder::coarse_steps(operation).to_vec();
+        let mut removed_steps = Vec::new();
 
         while predicted_um > DEFLECTION_BACKOFF_TARGET_UM
             && iterations < DEFLECTION_BACKOFF_MAX_ITERATIONS
@@ -554,7 +580,7 @@ fn backoff_dpp_for_deflection(
         {
             let next_dpp = (dpp * DEFLECTION_BACKOFF_FACTOR).max(DEFLECTION_BACKOFF_DPP_FLOOR_MM);
             let before_step = operation.clone();
-            super::ladder::cap_axial_steps(operation, next_dpp);
+            let removed = super::ladder::cap_axial_steps(operation, next_dpp);
             match crate::feeds::predict::predict_peak_deflection_um(
                 operation, tool, material, machine,
             ) {
@@ -562,6 +588,15 @@ fn backoff_dpp_for_deflection(
                     dpp = next_dpp;
                     predicted_um = next.predicted_um;
                     iterations = iterations.saturating_add(1);
+                    // Highest index first, so each `remove` leaves the
+                    // lower indices of `origin` in place.
+                    for step in removed.iter().rev() {
+                        let mut step = *step;
+                        if step.index < origin.len() {
+                            step.step_mm = origin.remove(step.index);
+                        }
+                        removed_steps.push(step);
+                    }
                 }
                 Err(reason) => {
                     // Not reachable on today's model: the initial call
@@ -571,6 +606,8 @@ fn backoff_dpp_for_deflection(
                     // assumed. Step back to the last DPP the model
                     // evaluated, so the warning below cannot quote a
                     // deflection at a depth the operation does not run.
+                    // The step back also puts back any coarse step that
+                    // this step removed, so it gets no note.
                     *operation = before_step;
                     warnings.push(SuggestWarning::DeflectionBackoffUnmodeled {
                         dpp_mm: dpp,
@@ -598,6 +635,13 @@ fn backoff_dpp_for_deflection(
                 iterations,
             });
         }
+        // Operator ruling 1 (2026-09-24): a removed step has a note,
+        // coarsest first.
+        removed_steps.sort_by(|a, b| b.step_mm.total_cmp(&a.step_mm));
+        warnings.extend(super::ladder::removal_notes(
+            &removed_steps,
+            "deflection back-off",
+        ));
     }
     warnings
 }

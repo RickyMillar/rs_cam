@@ -376,8 +376,9 @@ pub(super) fn rescale_feed_to_final_geometry(
         .filter(|v| usable(*v))
         .unwrap_or(calc.radial_width_mm);
     // The step ladder (D7): one feed serves every level, so the feed is
-    // re-derived at the deepest step. `entry_dpp` stays the base step that
-    // the apply funnel wrote (the calculator's depth), so a ladder always
+    // re-derived at the deepest step. With a ladder `entry_dpp` is the
+    // calculator's depth (`enforce_invariants` sets it so; the apply funnel
+    // keeps the operator's steps, ruling 1 of 2026-09-24), so a ladder
     // reads as a moved depth and the depth-tier factor of the deepest step
     // applies. With no ladder the deepest step is `depth_per_pass`.
     let final_ap = operation

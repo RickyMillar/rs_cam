@@ -475,6 +475,30 @@ pub enum SuggestWarning {
         /// through `AxialEnvelopeSafeBandEmpty` instead.
         binding: &'static str,
     },
+    /// Operator ruling 1 of 2026-09-24 ("keep my steps, only cap"): a cap
+    /// lowered a coarse step of the 3D Rough step ladder
+    /// (`Adaptive3dConfig::coarse_steps`) to a value that is not above the
+    /// next step, so Suggest removed the step. The ladder that ships has one
+    /// step fewer. This record is the note that says so; a ladder never
+    /// loses a step, or goes empty, with no note.
+    ///
+    /// The card text is [`coarse_step_removed_text`].
+    CoarseStepRemoved {
+        /// The coarse step before the write that removed it (mm).
+        step_mm: f64,
+        /// The value that the cap gave the step (mm). It equals `step_mm`
+        /// when no cap moved the step and the operator's ladder already
+        /// broke the rule.
+        lowered_to_mm: f64,
+        /// The step that it is no longer above (mm).
+        next_step_mm: f64,
+        /// `true` when the next step is the base step (Depth/Pass).
+        next_is_base: bool,
+        /// The limit that lowered the step, in the words of the card:
+        /// `"axial envelope"`, `"rigidity cap"`, `"flute length"`,
+        /// `"deflection back-off"`, `"aggressiveness dial"` or `"ladder rule"`.
+        cap: &'static str,
+    },
     /// Phase 3 envelope policy-C lower-band warning: the user-set axial
     /// value sat *below* the LUT's chipload-burn floor. Per planning
     /// §5.4 policy C the envelope does NOT clamp upward — operators
@@ -729,6 +753,31 @@ pub enum SuggestWarning {
         /// Why the dial did not act.
         reason: AggressivenessSkip,
     },
+}
+
+/// The card text of [`SuggestWarning::CoarseStepRemoved`], one sentence.
+/// Every surface prints this. The numbers have two decimals.
+#[must_use]
+pub fn coarse_step_removed_text(
+    step_mm: f64,
+    lowered_to_mm: f64,
+    next_step_mm: f64,
+    next_is_base: bool,
+    cap: &str,
+) -> String {
+    let next = if next_is_base {
+        format!("Depth/Pass {next_step_mm:.2} mm")
+    } else {
+        format!("the coarse step {next_step_mm:.2} mm")
+    };
+    if (step_mm - lowered_to_mm).abs() <= 1e-9 {
+        format!("Coarse step {step_mm:.2} mm removed: it is not above {next}.")
+    } else {
+        format!(
+            "Coarse step {step_mm:.2} mm removed: the {cap} lowered it to \
+             {lowered_to_mm:.2} mm, which is not above {next}."
+        )
+    }
 }
 
 /// Why the aggressiveness dial did not act (ruling R4, 2026-09-24).

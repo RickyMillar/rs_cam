@@ -516,12 +516,28 @@ fn project_rows(state: &AppState) -> Vec<ProjectFeedsRow> {
             Some(ProjectFeedsRow {
                 id: tc.id,
                 name: tc.name.clone(),
+                doc_text: doc_column_text(&tc.operation),
                 current,
                 explain: preview.explain().clone(),
                 refusal,
             })
         })
         .collect()
+}
+
+/// The DOC column text of one row. A 3D Rough with a step ladder shows the
+/// whole ladder, for example "10 → 5 mm", with the text of the 3D Rough
+/// panel's ladder line (operator ruling 4, 2026-09-24). Every other row
+/// shows Depth/Pass as before.
+fn doc_column_text(operation: &rs_cam_core::compute::catalog::OperationConfig) -> String {
+    match operation {
+        rs_cam_core::compute::catalog::OperationConfig::Adaptive3d(cfg)
+            if !cfg.coarse_steps.is_empty() =>
+        {
+            crate::ui::properties::operations::ladder_line(cfg)
+        }
+        _ => compare::format_optional(operation.depth_per_pass(), "", 0.01),
+    }
 }
 
 fn draw_project_rollup(
@@ -694,7 +710,7 @@ fn draw_project_rollup(
                         Some(r.current.feed_rate_mm_min),
                         Some(r.explain.recommended.feed_rate_mm_min),
                     ));
-                    ui.label(compare::format_optional(r.current.depth_per_pass, "", 0.01));
+                    ui.label(&r.doc_text);
                     ui.label(format!("{:.2}", r.explain.recommended.axial_depth_mm));
                     ui.label(compare::format_optional(r.current.stepover, "", 0.01));
                     match &r.refusal {
@@ -893,6 +909,8 @@ fn draw_project_scatter(ui: &mut egui::Ui, rows: &[ProjectFeedsRow]) {
 struct ProjectFeedsRow {
     id: rs_cam_core::ToolpathId,
     name: String,
+    /// The DOC column text: [`doc_column_text`] of the row's operation.
+    doc_text: String,
     current: CurrentValues,
     explain: FeedsExplain,
     /// `Some` when `validate_tool_for_operation` refuses this row's tool ×
@@ -905,8 +923,51 @@ struct ProjectFeedsRow {
 
 #[cfg(test)]
 mod tests {
-    use super::{FirstUnmetAction, first_unmet_action};
+    use super::{FirstUnmetAction, doc_column_text, first_unmet_action};
     use crate::ui::readiness::CheckStatus::{Fail, Pass, Warning};
+    use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
+    use rs_cam_core::compute::operation_configs::Adaptive3dConfig;
+
+    /// Ruling 4 (2026-09-24): the DOC column shows the whole ladder, with
+    /// the same text as the 3D Rough panel's ladder line.
+    #[test]
+    fn the_doc_column_shows_the_whole_ladder() {
+        let cfg = Adaptive3dConfig {
+            depth_per_pass: 5.0,
+            coarse_steps: vec![10.0],
+            ..Adaptive3dConfig::default()
+        };
+        let text = doc_column_text(&OperationConfig::Adaptive3d(cfg.clone()));
+        assert_eq!(text, crate::ui::properties::operations::ladder_line(&cfg));
+        assert_eq!(text, "10 \u{2192} 5 mm");
+
+        // Two coarse steps: every step shows, coarsest first.
+        let two = Adaptive3dConfig {
+            depth_per_pass: 2.5,
+            coarse_steps: vec![12.0, 6.0],
+            ..Adaptive3dConfig::default()
+        };
+        assert_eq!(
+            doc_column_text(&OperationConfig::Adaptive3d(two)),
+            "12 \u{2192} 6 \u{2192} 2.5 mm"
+        );
+    }
+
+    /// With no ladder the DOC column is Depth/Pass as before.
+    #[test]
+    fn the_doc_column_without_a_ladder_is_unchanged() {
+        let cfg = Adaptive3dConfig {
+            depth_per_pass: 5.0,
+            coarse_steps: Vec::new(),
+            ..Adaptive3dConfig::default()
+        };
+        assert_eq!(doc_column_text(&OperationConfig::Adaptive3d(cfg)), "5.00");
+        let pocket = OperationConfig::new_default(OperationType::Pocket);
+        assert_eq!(
+            doc_column_text(&pocket),
+            crate::ui::components::compare::format_optional(pocket.depth_per_pass(), "", 0.01)
+        );
+    }
 
     #[test]
     fn first_unmet_action_uses_readiness_order() {
