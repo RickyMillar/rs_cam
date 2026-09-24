@@ -571,9 +571,24 @@ impl OperationType {
                 OperationTransformCapabilities::new(false, false, false, true)
             }
             // Trace: multi-pass depth stepping; depth order is the constraint, not continuity.
-            Pocket | Profile | Adaptive | Rest | Zigzag | Adaptive3d | Waterline | Trace => {
+            Pocket | Profile | Adaptive | Rest | Zigzag | Waterline | Trace => {
                 OperationTransformCapabilities::new(false, true, false, false)
             }
+            // Adaptive3d plans every run against its own dexel stock, in the
+            // order it emits them. Each entry's rapid floor and helix start,
+            // each keep-down proof and each ring's engagement assume that the
+            // runs before it have cut. A rapid-order permutation breaks all
+            // of these, also inside one depth pass. The rapid-order pass also
+            // rebuilds the framing rapids, so it drops each planner rapid
+            // floor. Measured on rivmap100 (2026-09-25, helix entry at
+            // (9.5, 41.5)): the planner read the column at 7.47 mm after a
+            // ring at x = 9.75 had cut it, but the reorder put that ring
+            // 2 700 moves later. The tool fed straight down from 14.0 to
+            // 7.78 mm through standing stock (to 12.0), and 448 entry
+            // samples took more than twice the median bite (peak 6.08 mm).
+            // With the order kept: 0 samples, peak 1.61 mm.
+            Adaptive3d => OperationTransformCapabilities::new(false, true, false, false)
+                .without_rapid_reorder(),
             // UnifiedFinish is stitched from independently generated region
             // nodes, not one continuous trace. `generate_unified_finish`
             // emits a `RapidOrderBarrier` at every node start (plus per-Z

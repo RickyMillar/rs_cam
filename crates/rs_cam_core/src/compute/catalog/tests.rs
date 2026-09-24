@@ -629,6 +629,18 @@ fn operation_transform_capabilities_are_explicit() {
     assert!(!face.continuous_path_required);
     assert!(!face.allows_link_moves);
 
+    // Adaptive3d plans each run against the stock its earlier runs left.
+    // A rapid-order permutation breaks its entries (rivmap100, 2026-09-25).
+    let a3d = OperationType::Adaptive3d.transform_capabilities();
+    assert!(
+        !a3d.allows_barriered_rapid_reorder(),
+        "Adaptive3d must veto barriered rapid-order permutation"
+    );
+    assert!(
+        !a3d.allows_unbarriered_rapid_reorder(),
+        "Adaptive3d must veto unbarriered rapid-order permutation"
+    );
+
     // Face's veto is narrower than the shared non-link capability: Inlay
     // remains eligible for barriered reordering while retaining no links.
     let inlay = OperationType::Inlay.transform_capabilities();

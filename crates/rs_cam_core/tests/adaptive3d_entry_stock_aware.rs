@@ -668,3 +668,117 @@ fn pocket_helix_and_ramp_take_the_full_depth_within_their_bounds() {
         check_safe(&format!("pocket, {style:?}"), &audit, style, POCKET_DPP);
     }
 }
+
+// ── The session door: the planner order survives the dressups ─────────
+
+/// Terrain half-width of the session fixture.
+const TERRAIN_HALF: f64 = 20.0;
+
+/// A rolling terrain under 16 mm of stock: hills and valleys give many
+/// rings and many retract-separated runs in one depth pass, as on
+/// rivmap100.
+fn terrain_mesh() -> TriangleMesh {
+    common::meshes::height_field(TERRAIN_HALF, 1.0, |x, y| {
+        2.0 + 11.0 * ((x / 3.5).sin() * (y / 3.5).sin()).max(0.0)
+    })
+}
+
+/// Generate the terrain rough through `ProjectSession::generate_toolpath`,
+/// so the dressup pipeline runs as in the GUI, with the rapid-order
+/// optimisation ON (the project-file default).
+fn session_terrain_rough(style: Style) -> Toolpath {
+    use rs_cam_core::compute::operation_configs::{
+        Adaptive3dConfig, Adaptive3dEntryStyle, ClearingStrategy, RegionOrdering as CfgOrdering,
+    };
+    let entry_style = match style {
+        Style::Plunge => Adaptive3dEntryStyle::Plunge,
+        Style::Helix => Adaptive3dEntryStyle::Helix,
+        Style::Ramp => Adaptive3dEntryStyle::Ramp,
+    };
+    let cfg = Adaptive3dConfig {
+        stepover: 1.2,
+        depth_per_pass: DPP,
+        stock_to_leave_axial: 0.5,
+        feed_rate: 2400.0,
+        entry_style,
+        helix_radius_factor: HELIX_RADIUS / 6.0,
+        helix_pitch: HELIX_PITCH,
+        ramp_angle_deg: RAMP_ANGLE_DEG,
+        entry_clearance_mm: ENTRY_CLEARANCE_MM,
+        region_ordering: CfgOrdering::ByArea,
+        clearing_strategy: ClearingStrategy::ContourParallel,
+        // Keep-down off: every run starts after a retract, so the
+        // rapid-order pass has many runs to permute.
+        max_stay_down_distance_mm: Some(0.0),
+        ..Adaptive3dConfig::default()
+    };
+    let mut session = common::session::single_op_session_with(
+        common::session::stock_over(TERRAIN_HALF, STOCK_TOP_Z),
+        make_endmill_6mm(),
+        common::session::mesh_model(terrain_mesh(), "terrain"),
+        "3D Rough",
+        OperationConfig::Adaptive3d(cfg),
+        |tc| {
+            tc.dressups.optimize_rapid_order = true;
+            tc.dressups.arc_fitting = None;
+        },
+    );
+    common::session::generate(&mut session, 0);
+    session
+        .get_result(0)
+        .expect("terrain rough result")
+        .toolpath()
+        .clone()
+}
+
+/// The adaptive3d planner reads each entry's rapid floor and helix start
+/// from its own stock, in the order it emits the runs. A later rapid-order
+/// permutation put a run that cut an entry column AFTER that entry, so
+/// the tool fed straight down through standing stock above the planned
+/// helix start (rivmap100, 2026-09-25: 448 entry samples over twice the
+/// median bite, peak 6.08 mm). Replay the SESSION output on the stock: no
+/// straight `EntryPlunge` of a helix or ramp entry may go into material.
+///
+/// Before the fix, this fixture fed a helix entry 4.26 mm straight down
+/// into stock. The replay also reads one rapid retract at the stock edge
+/// 0.76 mm into material, with and without the fix. That reading is not an
+/// entry, so this test does not assert rapids.
+#[test]
+fn session_rough_keeps_the_planner_order_for_its_entries() {
+    for style in [Style::Helix, Style::Ramp] {
+        let tp = session_terrain_rough(style);
+        let safe_z = tp
+            .moves
+            .iter()
+            .map(|m| m.target.z)
+            .fold(f64::NEG_INFINITY, f64::max);
+        let tool = FlatEndmill::new(6.0, 25.0);
+        let h = TERRAIN_HALF + 2.0;
+        let mut stock = prism(-h, -h, h, h, 0.0, STOCK_TOP_Z);
+        let audit = replay_on(&tp, &tool, &mut stock, safe_z);
+        // The fixture must give the rapid-order pass runs to permute.
+        assert!(
+            audit.retracts_to_safe >= 10,
+            "{style:?}: only {} retracts, so the fixture tests no reorder",
+            audit.retracts_to_safe
+        );
+        let worst = audit
+            .descents
+            .iter()
+            .filter(|d| d.steep() && d.intent == MoveIntent::EntryPlunge)
+            .max_by(|a, b| a.depth.total_cmp(&b.depth));
+        eprintln!(
+            "terrain session, {style:?}: retracts {}, deepest straight EntryPlunge {:?}",
+            audit.retracts_to_safe,
+            worst.map(|d| (d.move_index, d.depth))
+        );
+        if let Some(d) = worst {
+            assert!(
+                d.depth <= DEPTH_TOL,
+                "{style:?}: an EntryPlunge at move {} goes {:.2} mm straight into stock",
+                d.move_index,
+                d.depth
+            );
+        }
+    }
+}
