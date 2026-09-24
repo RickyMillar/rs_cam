@@ -41,6 +41,7 @@ is retrievable the same way.
 | [`gen_sim_rest_ux_2026-09-18/`](gen_sim_rest_ux_2026-09-18/) | Plan; seven rulings open (generate ↔ simulate ↔ rest, one path, one indicator) |
 | [`corne_case_analysis_2026-09-18/`](corne_case_analysis_2026-09-18/) | Analysis; eight rulings open (silhouette holes make the rough weave, waterline Auto ladder is one level, a diagram drag pinned Z −1.37) |
 | [`feeds_matrix_2026-09-23/`](feeds_matrix_2026-09-23/) | Plan; not started (every tool type on every operation: what fires, what ships, what backs it; a `FeedsSupport` declaration that refuses an unbacked suggestion) |
+| [`adaptive3d_step_ladder_roughing_2026-09-24/`](adaptive3d_step_ladder_roughing_2026-09-24/) | Plan; not started (one 3D Rough with a step ladder, e.g. 10/5 mm: the coarse step cuts only where it fits, finer steps take the wall bands in the same slab; replaces Fine Stepdown and Mill Shallow) |
 
 ## Other packages held under this directory
 
