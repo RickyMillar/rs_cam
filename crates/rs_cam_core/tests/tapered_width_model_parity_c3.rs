@@ -188,12 +188,15 @@ fn tapered_finish_input<'a>(
 /// flat `1.000000` at every depth against the ball's exact chord.
 ///
 /// The FEED still differs between them, and that is a SEPARATE, pre-existing
-/// policy this wave deliberately did not touch:
-/// [`ToolGeometryHint::engaged_diameter_at_doc`] selects the vendor-LUT
+/// policy this wave deliberately did not touch. When C3 landed,
+/// [`ToolGeometryHint::engaged_diameter_at_doc`] selected the vendor-LUT
 /// chipload row at the ENGAGED diameter for tapered/V geometries but at
-/// NOMINAL for flat/ball/bull, so the two tools legitimately land on
-/// different chipload rows. Measured here so the residual gap is attributed
-/// rather than assumed to be the same defect.
+/// NOMINAL for flat/ball/bull. Since ruling A1 (2026-09-24) the tapered row
+/// is looked up at the tip (`feeds::geometry::lut_key_diameter_mm`), and
+/// only a V-bit is keyed at its engaged width. This test runs with no LUT
+/// (`vendor_lut: None`), so no row and no lookup key enter its numbers.
+/// Measured here so the residual gap is attributed rather than assumed to be
+/// the same defect.
 #[test]
 fn the_tapered_ball_feed_recipe_matches_its_ball_twin_below_tangency() {
     let material = Material::SolidWood {

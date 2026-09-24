@@ -338,14 +338,15 @@ pub fn chipload_envelope_for_toolpath(
                 .fold(0.0_f64, f64::max)
         })
         .unwrap_or(0.0);
-    // F3.4 — same canonical resolver as the gate / optimizer.
+    // F3.4 — same canonical resolver as the gate / optimizer, at the same
+    // lookup key (ruling A1: the tip of a tapered ball).
     let matched = chipload::matched_chip_envelope(
         &tool_def,
         material,
         operation.op_type(),
         lut_op_family,
         lut_pass_role,
-        tool_def.lookup_diameter_at(axial_doc),
+        crate::feeds::geometry::lut_key_diameter_for_cutter(&tool_def, axial_doc),
     )?;
     // Keep envelope rows where both bounds exist and are sane,
     // DOC-derated exactly like the gate's trip bounds so the
@@ -355,6 +356,8 @@ pub fn chipload_envelope_for_toolpath(
     // `geometry::derate_chipload_bounds` helper (S.8, single home
     // for this wrapper across Suggest and both `tool_load` gate
     // sites; see `planning/finishing_stack_review_2026-07.md`).
+    // The de-rate divides by the engaged (cone) diameter at the peak DOC,
+    // not by the lookup key: the depth half of R2 stands (ruling A1).
     let lookup_diameter = tool_def.lookup_diameter_at(axial_doc).max(1e-9);
     let doc_ratio = axial_doc / lookup_diameter;
     crate::feeds::geometry::derate_chipload_bounds(

@@ -129,28 +129,29 @@ fn wrap_cutter(cutter: Box<dyn crate::tool::MillingCutter>) -> crate::tool::Tool
 }
 
 #[test]
-fn diameter_for_lut_lookup_tapered_ball_uses_engaged_at_doc() {
+fn diameter_for_lut_lookup_tapered_ball_reads_the_tip_a1() {
     // Tapered ball nose: ball_dia 2 mm, half-angle 10°, shaft 8 mm,
-    // cutting length 30 mm. At a shallow DOC of 0.1 mm we're in
-    // the ball region — engaged diameter is much less than the
-    // 8 mm shaft.
+    // cutting length 30 mm. Ruling A1 (2026-09-24): the LUT row is
+    // looked up at the ball tip at every depth, not at the engaged cone
+    // diameter and not at the shaft.
     let cutter = Box::new(crate::tool::TaperedBallEndmill::new(2.0, 10.0, 8.0, 30.0));
     let tool = wrap_cutter(cutter);
 
-    // Sanity: nominal "diameter" is the shaft (max) — the bug we're
-    // fixing is the optimizer matching LUT rows against this value.
+    // Sanity: nominal "diameter" is the shaft (max). The optimizer must
+    // not match LUT rows against this value.
     assert!((tool.diameter() - 8.0).abs() < 1e-9);
 
-    let engaged = diameter_for_lut_lookup(&tool, Some(0.1));
-    assert!(
-        engaged < 1.0,
-        "expected engaged diameter <1 mm at DOC=0.1 mm on a 2 mm \
-         ball-tip taper, got {engaged}"
-    );
-    assert!(
-        engaged > 0.0,
-        "engaged diameter should be positive at DOC>0"
-    );
+    // At a shallow DOC of 0.1 mm the engaged diameter is under 1 mm, and
+    // deep in the cone it is over the tip. The key is the tip at both.
+    assert!(tool.lookup_diameter_at(0.1) < 1.0);
+    assert!(tool.lookup_diameter_at(10.0) > 2.5);
+    for doc in [0.1, 1.0, 10.0] {
+        let key = diameter_for_lut_lookup(&tool, Some(doc));
+        assert!(
+            (key - 2.0).abs() < 1e-9,
+            "expected the 2 mm tip as the LUT key at DOC={doc} mm, got {key}"
+        );
+    }
 }
 
 #[test]
@@ -168,15 +169,21 @@ fn diameter_for_lut_lookup_endmill_returns_nominal_diameter() {
 fn diameter_for_lut_lookup_falls_back_to_nominal_when_doc_missing() {
     // Drilling, V-carve, scallop don't carry depth_per_pass; the
     // helper should still produce a usable diameter rather than
-    // refusing the lookup.
+    // refusing the lookup. Ruling A1 (2026-09-24): a tapered ball's key
+    // is its 2 mm tip with or without a DOC, never the 8 mm shaft.
     let cutter = Box::new(crate::tool::TaperedBallEndmill::new(2.0, 10.0, 8.0, 30.0));
     let tool = wrap_cutter(cutter);
 
-    assert!((diameter_for_lut_lookup(&tool, None) - 8.0).abs() < 1e-9);
+    assert!((diameter_for_lut_lookup(&tool, None) - 2.0).abs() < 1e-9);
     // Defensive: zero / negative DOC also falls back.
-    assert!((diameter_for_lut_lookup(&tool, Some(0.0)) - 8.0).abs() < 1e-9);
-    assert!((diameter_for_lut_lookup(&tool, Some(-1.0)) - 8.0).abs() < 1e-9);
+    assert!((diameter_for_lut_lookup(&tool, Some(0.0)) - 2.0).abs() < 1e-9);
+    assert!((diameter_for_lut_lookup(&tool, Some(-1.0)) - 2.0).abs() < 1e-9);
     // NaN / infinite likewise.
-    assert!((diameter_for_lut_lookup(&tool, Some(f64::NAN)) - 8.0).abs() < 1e-9);
-    assert!((diameter_for_lut_lookup(&tool, Some(f64::INFINITY)) - 8.0).abs() < 1e-9);
+    assert!((diameter_for_lut_lookup(&tool, Some(f64::NAN)) - 2.0).abs() < 1e-9);
+    assert!((diameter_for_lut_lookup(&tool, Some(f64::INFINITY)) - 2.0).abs() < 1e-9);
+
+    // A V-bit with no DOC falls back to its nominal diameter: its
+    // engaged width at zero depth is zero.
+    let vbit = wrap_cutter(Box::new(crate::tool::VBitEndmill::new(6.35, 60.0, 12.0)));
+    assert!((diameter_for_lut_lookup(&vbit, None) - vbit.diameter()).abs() < 1e-9);
 }

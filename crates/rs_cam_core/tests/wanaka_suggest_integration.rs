@@ -31,8 +31,11 @@
 //!   `cap_hit == Some(MaxFeed)`. Suggest pass 8 is retired; the feed now
 //!   stays at the calculator's own value and neither chipload-lift
 //!   warning fires.
-//! - **3D Finish 6**: REFUSED since 2026-09-24 by the micro-tool size rule
-//!   (ruling R1 applied to size); the text below is its history.
+//! - **3D Finish 6**: REFUSED on 2026-09-24 by the micro-tool size rule
+//!   (ruling R1 applied to size), and VENDOR-BACKED again the same day by
+//!   ruling A1 (the row is read at the 1.0 mm tip) and the printed Amana
+//!   ZrN v8 1.0 mm tip row (extrapolation P1). The text below is its
+//!   history before the refusal.
 //! - **3D Finish 6** (DropCutter, 2 mm-tip tapered ball): scallop-height
 //!   target resolves to ~0.03 mm stepover (~4.6 M moves on the Wanaka
 //!   stock envelope) — `StepoverRaisedForRuntime` must fire raising
@@ -260,32 +263,22 @@ fn wanaka_suggest_baseline() {
         "Expected ≥1 enabled toolpath in wanaka.toml, got 0 — project shape regression"
     );
     // Ruling R1 (2026-09-23): the two drill toolpaths refuse, with the
-    // judgement's drill reason. Ruling R1 applied to size (2026-09-24): tp 11
-    // "3D Finish 6", a 1.0 mm-tip tapered ball DropCutter in hardwood, refuses
-    // too, because its nearest chart row is 3.175 mm or larger, more than 2x
-    // its engaged diameter. That is the ruled outcome on the operator's
-    // project; the size-law phase (a published micro-tool figure or a
-    // sourced size law) is what gives tp 11 a recipe again. Any other
-    // refusal is a regression.
+    // judgement's drill reason. Any other refusal is a regression.
+    //
+    // History: ruling R1 applied to size (2026-09-24) refused tp 11 "3D
+    // Finish 6" too, a 1.0 mm-tip tapered ball DropCutter in hardwood. Its
+    // nearest chart row was 3.175 mm or larger, more than 2x its engaged
+    // diameter. The same day, ruling A1 moved the lookup key to the tip and
+    // extrapolation P1 loaded the printed 1.0 mm tip rows, so tp 11 ships
+    // again (its arm is below).
     let mut refused_ids: Vec<ToolpathId> = refused.iter().map(|(id, _, _)| *id).collect();
     refused_ids.sort_by_key(|id| id.0);
     assert_eq!(
         refused_ids,
-        vec![ToolpathId(7), ToolpathId(11), ToolpathId(14)],
-        "the Unbacked refusals must be the two drill toolpaths (Holes, Pin Drill) and the \
-         micro tapered finish (3D Finish 6): {refused:?}"
+        vec![ToolpathId(7), ToolpathId(14)],
+        "the Unbacked refusals must be the two drill toolpaths (Holes, Pin Drill): {refused:?}"
     );
     for (id, name, text) in &refused {
-        if *id == ToolpathId(11) {
-            assert!(
-                text.contains("no published figure for a ")
-                    && text.contains("tapered ball nose")
-                    && text.contains("the nearest chart row is ")
-                    && !text.contains('{'),
-                "tp {id} ({name}): the refusal must be the size rule and name both sizes: {text}"
-            );
-            continue;
-        }
         assert!(
             text.contains("plunge drill") && text.contains("2.5") && !text.contains('{'),
             "tp {id} ({name}): the refusal must carry the drill reason as a sentence: {text}"
@@ -729,13 +722,75 @@ fn wanaka_suggest_baseline() {
 
     // ── Toolpath 11: 3D Finish 6 (DropCutter, 1.0 mm-tip tapered ball)
     //
-    // Refused since 2026-09-24 (ruling R1 applied to size, asserted above),
-    // so no recipe arm reads it. Until then this block pinned the runtime
-    // stepover back-off (0.03 -> 0.22781 mm) and the absence of a feed lift.
-    assert!(
-        cases.iter().all(|(tid, _, _)| *tid != ToolpathId(11)),
-        "tp 11: a size-refused toolpath must not also ship a recipe"
-    );
+    // Extrapolation P1 acceptance (rulings A1 and B1, 2026-09-24). The
+    // DropCutter routes to Parallel / Finish. Ruling A1 keys the lookup at
+    // the 1.0 mm tip, not at the engaged cone diameter. Two printed rows
+    // score 1825 at that key: `amana-tapered-hardwood-parallel-1000-2f-zrn-v8`
+    // (Amana ZrN v8 "Wood" column, derived b for hardwood, ruling A4) and
+    // `spetool-tapered-hardwood-parallel-1000-2f`. The tie goes to the
+    // smaller id (`vendor_lookup::beats`), so the Amana row answers.
+    //
+    // Score: 1000 base + 220 family + 70 derived + 30 grade b + 80 flutes
+    // + 200 diameter (ratio 1.0) + 80 hardness (Janka 1450 on 1450) + 45
+    // pass role + 100 material = 1825.
+    //
+    // The band is the row's printed 0.00075-0.002 in/tooth, 0.01905-0.0508
+    // mm/tooth. The diameter ratio is 1.0 and the hardness ratio is 1450 /
+    // 1450, so both scales are 1.0 and `matched_lut_row` carries the printed
+    // band unchanged. That is the band before the depth de-rate, which
+    // `chipload_bounds` applies later.
+    //
+    // Before the size refusal this block also pinned the runtime stepover
+    // back-off (0.03 -> 0.22781 mm). That number was measured on the old
+    // row and is not re-pinned here; `StepoverRaisedForRuntime` stays an
+    // allowed variant in the catch-all below.
+    {
+        let (_id, name, suggested) = find_case(&cases, ToolpathId(11));
+        let ctx = format!("3D Finish 6 (tp {_id} / {name})");
+        assert_eq!(
+            suggested.feeds_result.support,
+            rs_cam_core::feeds::FeedsSupport::VendorBacked,
+            "{ctx}: the printed 1.0 mm tip row answers, so the cell is vendor-backed"
+        );
+        let matched = suggested
+            .feeds_result
+            .matched_lut_row
+            .as_ref()
+            .unwrap_or_else(|| panic!("{ctx}: Suggest matched no vendor LUT row"));
+        assert_eq!(
+            matched.observation_id, "amana-tapered-hardwood-parallel-1000-2f-zrn-v8",
+            "{ctx}: ruling A1 reads the row at the 1.0 mm tip; the Amana v8 row wins the \
+             1825 tie with SpeTool on the id"
+        );
+        assert!(
+            (matched.row_diameter_mm - 1.0).abs() < 1e-12,
+            "{ctx}: the row is printed at the 1.0 mm tip, got {}",
+            matched.row_diameter_mm
+        );
+        assert!(
+            (matched.chipload_diameter_ratio_raw - 1.0).abs() < 1e-12
+                && (matched.chipload_diameter_scale - 1.0).abs() < 1e-12
+                && (matched.chipload_hardness_scale - 1.0).abs() < 1e-12,
+            "{ctx}: the key is the tip and the hardness is the row's own, so no scale \
+             applies: raw {} d-scale {} h-scale {}",
+            matched.chipload_diameter_ratio_raw,
+            matched.chipload_diameter_scale,
+            matched.chipload_hardness_scale
+        );
+        assert!(
+            matched
+                .chip_load_min_mm
+                .is_some_and(|v| (v - 0.01905).abs() < 1e-12)
+                && matched
+                    .chip_load_max_mm
+                    .is_some_and(|v| (v - 0.0508).abs() < 1e-12),
+            "{ctx}: the band before any de-rate must be the printed 0.01905-0.0508 \
+             mm/tooth, got {:?}-{:?}",
+            matched.chip_load_min_mm,
+            matched.chip_load_max_mm
+        );
+        assert_no_feed_raised(&suggested.warnings, &ctx);
+    }
 
     // ── Toolpath 14: Pin Drill and toolpath 7: Holes (drill family)
     //
@@ -800,7 +855,7 @@ fn wanaka_suggest_baseline() {
                 //   tp 14 (Pin Drill)         AlignmentPinDrill depth + stepover
                 //   tp 5  (Rivers)            ProjectCurve      depth + stepover
                 //   tp 6  (Lakes)             ProjectCurve      depth + stepover
-                //   tp 11 (3D Finish 6)       DropCutter        depth only (refused since 2026-09-24)
+                //   tp 11 (3D Finish 6)       DropCutter        depth only
                 //
                 // A drill's depth IS the hole and it has no stepover. A
                 // ProjectCurve follows the curve. A DropCutter takes its

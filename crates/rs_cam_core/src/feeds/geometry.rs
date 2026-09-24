@@ -366,6 +366,80 @@ pub fn depth_cap_diameter_mm(cutter: &dyn crate::tool::MillingCutter, depth_mm: 
     }
 }
 
+/// **The diameter at which the vendor LUT row is looked up and scaled,
+/// at axial depth `ap`.** Ruling A1 (operator, 2026-09-24,
+/// `planning/extrapolation_2026-09-24/RULINGS.md`).
+///
+/// - Tapered ball: the nominal diameter, which is the ball tip. Every
+///   tapered chart (Onsrud, Amana, SpeTool, Whiteside) prints the
+///   chipload against the tip, so the row is read at the tip at every
+///   depth. A1 reopens the lookup half of feeds matrix R2 only. The depth
+///   half of R2 stands: the depth ladder ([`feed_ladder_diameter_mm`]),
+///   the depth cap ([`depth_cap_diameter_mm`]), the band de-rate and the
+///   deflection gate still use the engaged cone diameter at the depth.
+/// - V-bit: the engaged width at `ap`
+///   ([`crate::feeds::ToolGeometryHint::engaged_diameter_at_doc`]),
+///   unchanged. No ruling moves the V-bit key yet (G5 / B4).
+/// - Flat, ball, bull: the nominal diameter, unchanged.
+///
+/// `nominal_d` is the tool diameter that Suggest carries
+/// (`ToolConfig::diameter`, the tip of a tapered ball). Suggest calls
+/// this function; the gate, the viewport and the optimizer call the
+/// cutter twin [`lut_key_diameter_for_cutter`]. The two give one key for
+/// one tool, so all four consumers read the same row.
+#[must_use]
+pub fn lut_key_diameter_mm(
+    geom: crate::feeds::ToolGeometryHint,
+    ap: f64,
+    nominal_d: f64,
+    shank_d: f64,
+) -> f64 {
+    match geom {
+        crate::feeds::ToolGeometryHint::TaperedBall { .. } => nominal_d,
+        crate::feeds::ToolGeometryHint::VBit { .. } => {
+            geom.engaged_diameter_at_doc(ap.max(0.0), nominal_d, shank_d)
+        }
+        crate::feeds::ToolGeometryHint::Flat
+        | crate::feeds::ToolGeometryHint::Ball
+        | crate::feeds::ToolGeometryHint::Bull { .. } => nominal_d,
+    }
+}
+
+/// **The LUT lookup key of a cutter, at axial depth `ap`.** The cutter
+/// twin of [`lut_key_diameter_mm`] (ruling A1, 2026-09-24,
+/// `planning/extrapolation_2026-09-24/RULINGS.md`).
+///
+/// - Tapered ball: the ball tip, `2 × tip_radius` from the geometry hint.
+///   Do not use `cutter.diameter()` here: on a tapered ball it is the
+///   shaft diameter, not the tip. A hint with no tip radius falls back to
+///   `cutter.diameter()`.
+/// - V-bit: [`crate::tool::MillingCutter::lookup_diameter_at`], the
+///   engaged width at `ap`, unchanged.
+/// - Flat, ball, bull: the nominal diameter.
+///
+/// The depth half of R2 stands. The depth ladder, the depth cap, the
+/// band de-rate and the deflection gate read the engaged cone diameter
+/// (`lookup_diameter_at`), not this key.
+#[must_use]
+pub fn lut_key_diameter_for_cutter(cutter: &dyn crate::tool::MillingCutter, ap: f64) -> f64 {
+    match cutter.geometry_hint() {
+        crate::feeds::ToolGeometryHint::TaperedBall { tip_radius, .. } => {
+            if tip_radius.is_finite() && tip_radius > 0.0 {
+                2.0 * tip_radius
+            } else {
+                cutter.diameter()
+            }
+        }
+        crate::feeds::ToolGeometryHint::VBit { .. } => {
+            let depth = if ap.is_finite() { ap.max(0.0) } else { 0.0 };
+            cutter.lookup_diameter_at(depth)
+        }
+        crate::feeds::ToolGeometryHint::Flat
+        | crate::feeds::ToolGeometryHint::Ball
+        | crate::feeds::ToolGeometryHint::Bull { .. } => cutter.diameter(),
+    }
+}
+
 /// V-bit cut width at a given depth.
 ///
 /// `included_angle` — full V angle in degrees

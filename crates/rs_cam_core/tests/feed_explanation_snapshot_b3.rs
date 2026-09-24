@@ -81,6 +81,11 @@
 //! it queries a **Ø0.954 mm** lookup diameter against a **Ø3.175 mm**
 //! row, the largest down-transfer any committed fixture makes.
 //!
+//! **Ruling A1 (2026-09-24) moved the key.** A tapered-ball row is now
+//! looked up at the tip, so the gate queries **Ø1.0 mm**, not the Ø0.954 mm
+//! engaged diameter at the 0.35 mm sample depth. The tables here are the
+//! record of the Ø0.954 key and are not re-derived.
+//!
 //! | | pre-conversion | post-conversion | post-law |
 //! |---|---:|---:|---:|
 //! | gate observed | 0.000737 | **0.009153** | 0.009153 *(unchanged)* |
@@ -492,9 +497,12 @@ fn explain(sample_arc_rad: f64, with_predicted_feeds: bool) -> FeedExplanation {
         },
     );
 
-    // The gate's own lookup diameter: the engaged diameter at the peak
-    // steady-state axial DOC.
-    let lookup_diameter = tool.lookup_diameter_at(SAMPLE_AXIAL_DOC_MM);
+    // The gate's own lookup key at the peak steady-state axial DOC. Since
+    // ruling A1 (2026-09-24) that is the 1.0 mm tip of the tapered ball
+    // (`lut_key_diameter_for_cutter`), not the 0.954 mm engaged diameter
+    // that the tables in the module header record.
+    let lookup_diameter =
+        rs_cam_core::feeds::geometry::lut_key_diameter_for_cutter(&tool, SAMPLE_AXIAL_DOC_MM);
     let row = matched_row(&tool, lookup_diameter);
     let lut_arc = lut_nominal_arc_rad(&row);
 

@@ -27,9 +27,10 @@ pub type MatchedRow = LookupResult;
 
 /// Result of a successful LUT lookup.
 ///
-/// Chipload fields are **scaled** to the query's diameter and hardness so the
-/// engaged-edge geometry remains the truth (we don't lie about engaged
-/// diameter to fit the LUT). When `is_extrapolated` is true the scaling
+/// Chipload fields are **scaled** to the query's diameter and hardness. The
+/// query diameter is the lookup key (`feeds::geometry::lut_key_diameter_mm`):
+/// the tip of a tapered ball (ruling A1, 2026-09-24), the engaged width of a
+/// V-bit, and the nominal diameter otherwise. When `is_extrapolated` is true the scaling
 /// factors diverge from 1.0 by more than ±40 %, and downstream consumers
 /// must demote verdict confidence to `Approximate` with a detail describing
 /// the scaling.
@@ -667,8 +668,9 @@ fn passes_must_match(query: &LookupQuery, obs: &VendorObservation) -> bool {
         return false;
     }
     // Diameter ratio gate intentionally relaxed to a sanity floor only.
-    // Engaged-edge geometry is the truth (`tool.lookup_diameter_at(doc)`);
-    // chipload bounds get scaled to the query's diameter in `build_result`
+    // The query diameter is the lookup key (`lut_key_diameter_mm`; the tip
+    // of a tapered ball since ruling A1). Chipload bounds get scaled to
+    // the query's diameter in `build_result`
     // and the verdict is downgraded to `Approximate` past ±40 % divergence.
     // Without the relax a 1 mm tapered-ball tip can never reach a 3.175 mm
     // calibrated row even though the LUT trends are well-behaved.
@@ -1019,6 +1021,15 @@ mod tests {
         // Item E coverage gain: a 1mm tapered ball + parallel + finish + softwood
         // must match at least one row after sub-1mm coverage was added (2026-05-02).
         // Source: Amana ZrN 3D Profiling chart sub-1mm rows.
+        //
+        // Extrapolation P1 step 1 (2026-09-24) files the Amana ZrN v8 cells
+        // as `tapered_ball_nose` rows (amana_zrn_tapered_v8.json). The chart
+        // keys these cells on the tip, and 46256 in this cell is a 5.4 deg
+        // tapered ball. The v8 softwood row is derived/b (ruling A4: the
+        // shared "Wood" column). It scores 1825. The kept ball_nose row
+        // (for the straight ball 46471) is exact/a but reaches a tapered
+        // query only on the family fallback, so it scores 1795. The SpeTool
+        // 1.0 mm row also scores 1825, and the smaller id wins the tie.
         let lut = embedded_lut();
         let query = LookupQuery {
             tool_family: ToolFamily::TaperedBallNose,
@@ -1032,20 +1043,21 @@ mod tests {
             pass_role: LutPassRole::Finish,
         };
         let result = lookup_best(&lut, &query).expect(
-            "1mm tapered ball + softwood + parallel/finish should match a sub-1mm ball-nose row",
+            "1mm tapered ball + softwood + parallel/finish should match a sub-1mm tapered-ball row",
         );
-        // Should match one of the new ZrN sub-1mm rows.
+        // Should match one of the ZrN sub-1mm rows.
         assert!(
             result.observation_id.contains("zrn"),
             "expected match against ZrN sub-1mm row, got {}",
             result.observation_id
         );
-        // The 2-flute 1mm ball-nose row should win on the (TaperedBallNose -> BallNose)
-        // family fallback at exact diameter and exact flute count.
+        // The 2-flute 1mm v8 tapered row wins at exact family, diameter and
+        // flute count. It must sort before the SpeTool row of the same cell.
         assert_eq!(
-            result.observation_id, "amana-ball-softwood-parallel-1000-2f-zrn",
-            "expected the 1mm 2-flute ZrN row to win for a 1mm 2-flute query"
+            result.observation_id, "amana-tapered-softwood-parallel-1000-2f-zrn-v8",
+            "expected the 1mm 2-flute ZrN v8 tapered row to win for a 1mm 2-flute query"
         );
+        assert_eq!(result.score, 1825);
         // Chipload midpoint should match the published values: midpoint(0.01905, 0.0508).
         let expected_mid = (0.01905 + 0.0508) / 2.0;
         assert!(
@@ -1161,18 +1173,16 @@ mod tests {
     }
 
     #[test]
-    fn test_sub_1mm_tapered_ball_hardwood_finish_extrapolates() {
-        // Used to be a "documented gap" — pre-G5/G6/G7 (2026-05-08) the
-        // [0.5, 2.0] hard ratio gate refused on the larger rows and the
-        // lookup returned None. With engaged-edge scaling the lookup
-        // now matches the closest hardwood tapered-ball row, scales
-        // chipload bounds by the diameter ratio, and flags the result
-        // as extrapolated so verdicts derived from it carry `Approximate`
-        // confidence.
+    fn test_sub_1mm_tapered_ball_hardwood_finish_matches_the_printed_tip_row() {
+        // History. Before 2026-05-08 a [0.5, 2.0] ratio gate refused this
+        // query. From 2026-05-08 the lookup scaled a >= 1 mm hardwood row
+        // down to 0.5 mm and set `is_extrapolated`.
         //
-        // Asserts the spirit (extrapolation + scaling), not a specific
-        // row id — Phase 4+ LUT promotions can legitimately introduce
-        // closer matches without invalidating the property.
+        // Extrapolation P1 step 1 (2026-09-24) loads the SpeTool 2D/3D
+        // tapered chart. It prints a 0.5 mm tip row, and ruling A4 serves
+        // hardwood from its shared "Wood" row (derived, grade b). A 0.5 mm
+        // query now matches that row at a ratio of 1.0, so the lookup does
+        // not scale and does not extrapolate.
         let lut = embedded_lut();
         let query = LookupQuery {
             tool_family: ToolFamily::TaperedBallNose,
@@ -1185,27 +1195,65 @@ mod tests {
             operation_family: LutOperationFamily::Parallel,
             pass_role: LutPassRole::Finish,
         };
-        let result = lookup_best(&lut, &query).expect(
-            "0.5mm hardwood tapered ball should extrapolate from the closest available row",
+        let result = lookup_best(&lut, &query)
+            .expect("0.5mm hardwood tapered ball should match the SpeTool 0.5 mm tip row");
+        assert_eq!(
+            result.observation_id,
+            "spetool-tapered-hardwood-parallel-0500-2f"
+        );
+        assert!(
+            (result.row_diameter_mm - 0.5).abs() < 1e-9,
+            "expected the exact 0.5 mm row, got {} mm",
+            result.row_diameter_mm
+        );
+        assert!(!result.is_extrapolated);
+        assert!((result.chipload_diameter_ratio_raw - 1.0).abs() < 1e-12);
+        assert!((result.chipload_diameter_scale - 1.0).abs() < 1e-12);
+        // Same hardness anchor (natural-wood Janka 1450), so hardness scale is unity.
+        assert!((result.chipload_hardness_scale - 1.0).abs() < 1e-6);
+        // The chart prints one value (0.0007 in), so the row has no minimum.
+        assert!(result.chip_load_min_mm.is_none());
+        assert!((result.chip_load_mm - 0.01778).abs() < 1e-9);
+        assert!(
+            result
+                .chip_load_max_mm
+                .is_some_and(|max| (max - 0.01778).abs() < 1e-9)
+        );
+    }
+
+    /// The raw ratio and the applied scale are two fields (RE-PINNED
+    /// 2026-08-06). While the diameter law was linear, one field could stand
+    /// for both. This test keeps that guard on a query that still
+    /// extrapolates: a 0.3 mm tip against the SpeTool 0.5 mm row (ratio
+    /// 0.6). This is a raw lookup test. The lookup itself does not refuse a
+    /// tip under 0.5 mm; only the Suggest support arm does
+    /// (`support::TAPERED_MIN_TIP_MM`, ruling B1, extrapolation P1 step 2).
+    /// Step 3 puts the size claim into `build_result` and must re-check
+    /// this test.
+    #[test]
+    fn test_tapered_ball_below_the_smallest_tip_row_scales_on_the_raw_ratio() {
+        let lut = embedded_lut();
+        let query = LookupQuery {
+            tool_family: ToolFamily::TaperedBallNose,
+            tool_subfamily: None,
+            diameter_mm: 0.3,
+            flute_count: 2,
+            material_family: MaterialFamily::Hardwood,
+            hardness_kind: Some(HardnessKind::Janka),
+            hardness_value: Some(1450.0),
+            operation_family: LutOperationFamily::Parallel,
+            pass_role: LutPassRole::Finish,
+        };
+        let result = lookup_best(&lut, &query).expect("0.3mm hardwood tapered ball row");
+        assert_eq!(
+            result.observation_id,
+            "spetool-tapered-hardwood-parallel-0500-2f"
         );
         assert!(
             result.is_extrapolated,
-            "0.5mm against any tapered-ball hardwood row in the LUT must trip extrapolation"
+            "0.3 mm against the 0.5 mm row must trip extrapolation"
         );
-        assert!(
-            result.row_diameter_mm >= 1.0,
-            "expected to scale up from a >=1mm row (no sub-1mm tapered hardwood row \
-             exists), got row diameter {}",
-            result.row_diameter_mm
-        );
-        // RE-PINNED 2026-08-06. This read
-        //     let expected_scale = 0.5 / result.row_diameter_mm;
-        //     assert!((result.chipload_diameter_scale - expected_scale).abs() < 1e-6);
-        // which was true only while the diameter law was linear. It now
-        // asserts the same thing on the two fields that exist for
-        // exactly this reason: the RAW ratio is still `query / row`, and
-        // the APPLIED scale is that ratio under the shipped law.
-        let expected_raw = 0.5 / result.row_diameter_mm;
+        let expected_raw = 0.3 / result.row_diameter_mm;
         assert!(
             (result.chipload_diameter_ratio_raw - expected_raw).abs() < 1e-6,
             "raw transfer ratio should be query/row = {expected_raw}, got {}",
@@ -1222,15 +1270,7 @@ mod tests {
             "sanity: softening the exponent must RAISE the band on a down-transfer \
              ({expected_raw} → {expected_scale})"
         );
-        // Same hardness anchor (natural-wood Janka 1450), so hardness scale is unity.
         assert!((result.chipload_hardness_scale - 1.0).abs() < 1e-6);
-        // Scaled chipload must be strictly less than the row's raw min.
-        if let Some(scaled) = result.chip_load_min_mm {
-            assert!(
-                scaled < 0.1,
-                "scaled chipload {scaled} must be sub-0.1 mm/tooth at 0.5 mm tool",
-            );
-        }
     }
 
     /// F3.1 (defect class C1) — A1's score replay: the Whiteside

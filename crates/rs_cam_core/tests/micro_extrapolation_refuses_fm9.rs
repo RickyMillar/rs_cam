@@ -13,10 +13,20 @@
 //! refuses with a reason that names both sizes, and
 //! `validate_tool_for_operation` raises `FeedsError::Unbacked`.
 //!
+//! Ruling A1 (2026-09-24): the lookup key of a tapered ball is its tip,
+//! not the engaged cone diameter. So a tapered refusal names the tip only,
+//! with no "(engaged ...)" note. Ruling B1: a tapered tip under
+//! `TAPERED_MIN_TIP_MM` (0.5 mm) refuses before the size rule runs.
+//!
 //! The arms:
 //!
 //! - a 0.5 mm tapered ball Scallop in hardwood refuses, and the text names
 //!   0.5 mm and the row's 3.175 mm;
+//! - a 0.3 mm tapered ball Parallel (DropCutter) in hardwood refuses on the
+//!   tip floor (ruling B1), though the 0.5 mm SpeTool row is inside the 2x
+//!   window; a 0.3 mm tapered Scallop, which matches no row at all (every
+//!   Scallop row is more than 10x the tip), refuses on the same floor and
+//!   does not fall to the formula;
 //! - a 1.0 mm tapered ball Scallop in hardwood refuses;
 //! - a 1.0 mm ball nose Scallop in hardwood refuses: the only ball Scallop
 //!   rows are the Ø6 hardwood rows (6x); the 1 mm ball rows are Parallel
@@ -38,7 +48,8 @@ use rs_cam_core::feeds::suggest::{
     StockContext, SuggestContext, SuggestParamsInput, SuggestedParams, suggest_params,
 };
 use rs_cam_core::feeds::support::{
-    MICRO_ROW_RATIO_MAX, MICRO_ROW_RATIO_MIN, MICRO_TOOL_DIAMETER_MM, micro_extrapolation_refusal,
+    MICRO_ROW_RATIO_MAX, MICRO_ROW_RATIO_MIN, MICRO_TOOL_DIAMETER_MM, TAPERED_MIN_TIP_MM,
+    micro_extrapolation_refusal, tapered_tip_floor_refusal,
 };
 use rs_cam_core::feeds::vendor_lut::ToolFamily;
 use rs_cam_core::feeds::{EMBEDDED_LUT, FeedsError, FeedsSupport, SpindleStrategy};
@@ -114,9 +125,12 @@ fn the_rule_by_hand_fm9() {
     assert_eq!(MICRO_ROW_RATIO_MAX, 2.0);
     assert_eq!(MICRO_ROW_RATIO_MIN, 0.5);
     // 3.175 / 0.5 = 6.35x: refuse, and the text names both sizes.
-    // Nominal tip 0.5 mm, engaged 0.5651 mm at the cut depth: 3.175 / 0.5651
-    // = 5.6x, so refuse, and the text names the tip, the engaged diameter
-    // and the row.
+    // The function reads the key that it is given. Nominal 0.5 mm, key
+    // 0.5651 mm: 3.175 / 0.5651 = 5.6x, so refuse, and the text names the
+    // nominal diameter, the engaged key and the row. Since ruling A1 a
+    // tapered caller passes its tip as the key, so this pair of diameters
+    // now comes only from a V-bit caller (key = engaged width). The raw
+    // call keeps the text format under test.
     let r = micro_extrapolation_refusal(ToolFamily::TaperedBallNose, 0.5, 0.5651, 3.175)
         .expect("5.6x off a 0.57 mm engaged diameter refuses");
     assert!(
@@ -134,11 +148,25 @@ fn the_rule_by_hand_fm9() {
     // 2.0x exactly is inside; just over is not.
     assert!(micro_extrapolation_refusal(ToolFamily::FlatEnd, 1.0, 1.0, 2.0).is_none());
     assert!(micro_extrapolation_refusal(ToolFamily::FlatEnd, 1.0, 1.0, 2.01).is_some());
-    // The rule reads the LOOKUP diameter: a 1.4 mm tip engaged at 1.6 mm is
-    // not a micro tool.
+    // The rule reads the LOOKUP diameter: a key of 1.6 mm is not a micro
+    // tool, whatever the nominal diameter. (Since ruling A1 a tapered caller
+    // passes its tip as the key; a V-bit caller passes its engaged width.)
     assert!(micro_extrapolation_refusal(ToolFamily::TaperedBallNose, 1.4, 1.6, 6.35).is_none());
     // A 1.5 mm tool is not a micro tool.
     assert!(micro_extrapolation_refusal(ToolFamily::FlatEnd, 1.5, 1.5, 6.0).is_none());
+
+    // Ruling B1: the tapered tip floor. Under 0.5 mm refuses; 0.5 mm exactly
+    // passes to the size rule; other families are not judged by it.
+    assert_eq!(TAPERED_MIN_TIP_MM, 0.5);
+    assert_eq!(
+        tapered_tip_floor_refusal(ToolFamily::TaperedBallNose, 0.3).as_deref(),
+        Some(
+            "no published figure for a 0.30 mm tapered ball nose: no wood chart prints a tip \
+             under 0.5 mm (ruling B1)"
+        )
+    );
+    assert!(tapered_tip_floor_refusal(ToolFamily::TaperedBallNose, 0.5).is_none());
+    assert!(tapered_tip_floor_refusal(ToolFamily::BallNose, 0.3).is_none());
 }
 
 #[test]
@@ -148,13 +176,34 @@ fn a_half_millimetre_tapered_scallop_refuses_with_both_sizes_fm9() {
         &tool_of(ToolType::TaperedBallNose, 0.5),
         &hardwood(),
     )
-    .expect_err("a 0.5 mm tapered ball has no chart row near its size");
+    .expect_err("a 0.5 mm tapered ball has no Scallop chart row near its size");
     let reason = size_reason(&err);
+    // Ruling A1: the key is the 0.5 mm tip, so the text carries no
+    // "(engaged ...)" note. The tip is not under 0.5 mm, so the size rule,
+    // not the B1 tip floor, refuses: the nearest Scallop row is 3.175 mm,
+    // 6.35x the tip.
     assert!(
-        reason.starts_with("no published figure for a 0.50 mm tapered ball nose (engaged ")
-            && reason.contains("the nearest chart row is 3.175 mm"),
-        "the reason must name the tool size and the nearest row size: {reason:?}"
+        reason.starts_with("no published figure for a 0.50 mm tapered ball nose; ")
+            && reason.contains("the nearest chart row is 3.175 mm")
+            && !reason.contains("engaged"),
+        "the reason must name the tip and the nearest row size: {reason:?}"
     );
+}
+
+#[test]
+fn a_tip_under_half_a_millimetre_refuses_on_the_tip_floor_b1() {
+    // DropCutter routes to Parallel / Finish, where the 0.5 mm SpeTool row
+    // matches (ratio 0.6); Scallop matches no row. Both refuse on the floor.
+    for op in [OperationType::DropCutter, OperationType::Scallop] {
+        let err = suggest(op, &tool_of(ToolType::TaperedBallNose, 0.3), &hardwood())
+            .expect_err("no wood chart prints a tapered tip under 0.5 mm");
+        assert_eq!(
+            size_reason(&err),
+            "no published figure for a 0.30 mm tapered ball nose: no wood chart prints a tip \
+             under 0.5 mm (ruling B1)",
+            "{op:?}"
+        );
+    }
 }
 
 #[test]

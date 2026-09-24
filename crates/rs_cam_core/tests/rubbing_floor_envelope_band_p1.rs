@@ -292,6 +292,12 @@ fn floor_falls_back_to_the_envelope_band_not_the_bare_constant() {
 /// Ø3.175 and Janka 1450. Scaled to Ø1 by `D^0.61` it is about
 /// 0.020 x (1 / 3.175)^0.61 = 0.020 x 0.494 = 0.0099 mm/tooth at the top,
 /// under the 0.025 floor.
+///
+/// Extrapolation P1 (2026-09-24): on the embedded LUT the printed Amana ZrN
+/// v8 1.0 mm tip row now wins this query. The fixture keeps its one-row LUT,
+/// so the premise stands. Ruling A1 keys the lookup at the 1.0 mm tip (it was
+/// the 0.92 mm engaged ball chord at the 0.3 mm depth), so the "Ø1" in the
+/// scale above is now the exact key.
 fn tapered_ball_sub_floor_lut() -> VendorLut {
     let row = VendorLut::embedded()
         .observations

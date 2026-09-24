@@ -196,9 +196,13 @@ pub fn to_lookup_query_unrouted(input: &FeedsInput) -> LookupQuery {
     }
 }
 
+/// The LUT lookup key for this input: [`super::geometry::lut_key_diameter_mm`]
+/// at the operation's axial depth. A tapered ball is keyed at its tip
+/// (ruling A1, 2026-09-24); a V-bit at its engaged width.
 fn lookup_diameter_for_input(input: &FeedsInput<'_>) -> f64 {
     let axial_doc = input.axial_depth_mm.unwrap_or(input.tool_diameter).max(0.0);
-    input.tool_geometry.engaged_diameter_at_doc(
+    super::geometry::lut_key_diameter_mm(
+        input.tool_geometry,
         axial_doc,
         input.tool_diameter,
         input.shank_diameter.unwrap_or(input.tool_diameter),

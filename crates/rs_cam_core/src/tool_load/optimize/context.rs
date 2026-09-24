@@ -90,21 +90,37 @@ pub(crate) fn baseline_rpm_from_trace(
 }
 
 /// Pick the diameter to feed into the LUT lookup for a given
-/// commanded DOC. For tools whose engaged diameter varies with axial
-/// engagement (tapered ball nose, V-bit), `lookup_diameter_at(doc)`
-/// returns the actual engaged diameter; for cylindrical tools (end
-/// mill, bull nose, drill, plain ball nose) it equals the nominal
-/// diameter. When the operation has no commanded DOC (drilling per
-/// peck, V-carve, scallop, ...) or the value is non-positive, fall
-/// back to the nominal diameter — matching the LUT row to the shank
-/// is still better than rejecting the lookup.
+/// commanded DOC: [`crate::feeds::geometry::lut_key_diameter_for_cutter`],
+/// the key that the gate and Suggest also use.
+///
+/// - Tapered ball: the ball tip at every depth (ruling A1, 2026-09-24).
+///   Not `tool.diameter()`, which is the shaft of a tapered ball.
+/// - V-bit: the engaged width at the commanded DOC.
+/// - Cylindrical tools (end mill, bull nose, drill, plain ball nose):
+///   the nominal diameter.
+///
+/// When the operation has no commanded DOC (drilling per peck, V-carve,
+/// scallop, ...) or the value is not positive and finite, a V-bit falls
+/// back to its nominal diameter. Its engaged width at zero depth is
+/// zero, and a nominal key is still better than no lookup. The other
+/// shapes do not depend on the DOC.
 pub(crate) fn diameter_for_lut_lookup(
     tool: &crate::tool::ToolDefinition,
     commanded_doc_mm: Option<f64>,
 ) -> f64 {
     match commanded_doc_mm {
-        Some(doc) if doc.is_finite() && doc > 0.0 => tool.lookup_diameter_at(doc),
-        _ => tool.diameter(),
+        Some(doc) if doc.is_finite() && doc > 0.0 => {
+            crate::feeds::geometry::lut_key_diameter_for_cutter(tool, doc)
+        }
+        _ => match tool.to_geometry_hint() {
+            crate::feeds::ToolGeometryHint::VBit { .. } => tool.diameter(),
+            crate::feeds::ToolGeometryHint::Flat
+            | crate::feeds::ToolGeometryHint::Ball
+            | crate::feeds::ToolGeometryHint::Bull { .. }
+            | crate::feeds::ToolGeometryHint::TaperedBall { .. } => {
+                crate::feeds::geometry::lut_key_diameter_for_cutter(tool, 0.0)
+            }
+        },
     }
 }
 

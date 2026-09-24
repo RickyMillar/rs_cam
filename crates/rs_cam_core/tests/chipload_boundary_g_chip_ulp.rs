@@ -541,14 +541,19 @@ fn rider2_the_gate_flips_to_exceeds_on_a_feed_parked_on_its_own_ceiling() {
 /// band and the fine read was `Exceeds`.
 ///
 /// The mechanism is structural and reproducible without a simulator: the
-/// gate queries the LUT at `tool.lookup_diameter_at(peak steady-state
-/// axial DOC)` (`chipload.rs:521-536`) and derates by
-/// `peak_doc / that diameter`. **Peak axial DOC is a dexel measurement**,
-/// so the cell size moves it, and on any non-cylindrical cutter it moves
-/// the queried diameter with it. Two independent terms then move the
-/// band: the `D^0.61` diameter law and the piecewise DOC derate — and
-/// they pull in OPPOSITE directions, so the net is small, signed, and
-/// not predictable from either law alone.
+/// gate derates the band by `peak_doc / tool.lookup_diameter_at(peak_doc)`.
+/// **Peak axial DOC is a dexel measurement**, so the cell size moves it,
+/// and on any non-cylindrical cutter it moves that engaged diameter with
+/// it. When W10-LV was recorded the gate also looked the row up at that
+/// engaged diameter, so two terms moved the band in OPPOSITE directions:
+/// the `D^0.61` diameter law and the piecewise DOC derate.
+///
+/// Ruling A1 (2026-09-24) keys a tapered-ball row at its tip
+/// (`lut_key_diameter_for_cutter`), so on this tapered cutter the
+/// diameter law no longer moves with the DOC. The DOC derate alone still
+/// moves the band, and it still crosses the verdict below. The "engaged Ø"
+/// column prints the diameter that the derate divides by, not the lookup
+/// key.
 #[test]
 fn rider2b_the_band_moves_with_the_simulation_cell_that_measured_the_doc() {
     let (rpm, flutes) = (18_000u32, 2u32);
@@ -556,7 +561,7 @@ fn rider2b_the_band_moves_with_the_simulation_cell_that_measured_the_doc() {
     // this cutter: d(doc) = 1.0 + 2·doc·tan(5.26°).
     let tool = b3_tool(flutes);
     println!(
-        "| peak axial DOC (mm) | queried Ø (mm) | band min | band max | Δ band max vs first |"
+        "| peak axial DOC (mm) | engaged Ø (mm) | band min | band max | Δ band max vs first |"
     );
     println!("|---:|---:|---:|---:|---:|");
     let mut first_max: Option<f64> = None;

@@ -300,10 +300,9 @@ fn optimize_toolpath_inner(
 
     // 5. Look up the matched LUT row. Used by Stage 0's `k_lut` bound
     //    and Stage 1's DOC-grid endpoint clamping. The commanded DOC
-    //    drives engaged-diameter selection for tapered tools — at
-    //    shallow DOC a tapered ball engages a much smaller diameter
-    //    than its shank, and the LUT row that fits the engaged tool is
-    //    not the same row that fits the shank.
+    //    drives engaged-width selection for a V-bit. A tapered ball is
+    //    keyed at its tip at every DOC (ruling A1, 2026-09-24), never at
+    //    its shank (`diameter_for_lut_lookup`).
     let matched_lut_row =
         find_matched_lut_row(&ctx.tool, &ctx.material, &ctx, baseline_op.depth_per_pass());
 

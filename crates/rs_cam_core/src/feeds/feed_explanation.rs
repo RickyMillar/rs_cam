@@ -132,7 +132,12 @@ pub struct LutBandStage {
     pub bounds_source: ChipBoundsSource,
     /// Diameter the row is calibrated at (mm); `0.0` = no anchor.
     pub row_diameter_mm: f64,
-    /// Engaged diameter the gate queried with (mm).
+    /// The LUT lookup key the gate queried with (mm):
+    /// [`crate::feeds::geometry::lut_key_diameter_for_cutter`] at the peak
+    /// DOC. That is the tip of a tapered ball (ruling A1, 2026-09-24), the
+    /// engaged width of a V-bit, and the nominal diameter otherwise. The
+    /// depth de-rate in `min_mm_per_tooth` / `max_mm_per_tooth` divides by
+    /// the engaged diameter, not by this key.
     pub queried_diameter_mm: f64,
     /// `queried / row` diameter scaling applied to the chipload bounds.
     pub diameter_scale: f64,

@@ -123,17 +123,45 @@ pub const MICRO_ROW_RATIO_MAX: f64 = 2.0;
 /// from (a row under half the tool).
 pub const MICRO_ROW_RATIO_MIN: f64 = 0.5;
 
+/// Ruling B1 (operator, 2026-09-24): the smallest tapered-ball tip (mm) that
+/// a wood chart prints. No wood chart prints a tip under this value, so
+/// Suggest refuses a tapered ball whose lookup key (its tip, ruling A1) is
+/// under it ([`tapered_tip_floor_refusal`]).
+pub const TAPERED_MIN_TIP_MM: f64 = 0.5;
+
+/// The tip floor on a tapered ball: `Some(reason)` when the tool is a
+/// tapered ball nose and its lookup key is under [`TAPERED_MIN_TIP_MM`].
+/// The key of a tapered ball is its tip (ruling A1), so the text names the
+/// tip. A tip of exactly 0.5 mm passes to the size rule
+/// ([`micro_extrapolation_refusal`]).
+#[must_use]
+pub fn tapered_tip_floor_refusal(tool: ToolFamily, lookup_diameter_mm: f64) -> Option<String> {
+    if tool != ToolFamily::TaperedBallNose
+        || !lookup_diameter_mm.is_finite()
+        || lookup_diameter_mm >= TAPERED_MIN_TIP_MM
+    {
+        return None;
+    }
+    Some(format!(
+        "no published figure for a {lookup_diameter_mm:.2} mm tapered ball nose: no wood chart \
+         prints a tip under {TAPERED_MIN_TIP_MM} mm (ruling B1)"
+    ))
+}
+
 /// The size rule on a matched row: `Some(reason)` when the tool is a micro
 /// tool and the row is outside the ratio window. Rows with no diameter
 /// (V-bit, diameter-window articles) are not judged by size.
 ///
-/// The rule is keyed on the LOOKUP diameter (`lookup_diameter_mm`, the
-/// engaged diameter at the cut depth that the row lookup scales by), because
-/// that is the diameter the row's chipload is transferred to. The text names
-/// the tool's nominal (tip) diameter with two decimals, adds the engaged
+/// The rule is keyed on the LOOKUP diameter (`lookup_diameter_mm`, the key
+/// that the row lookup scales by), because that is the diameter the row's
+/// chipload is transferred to. Since ruling A1 (2026-09-24) the key of a
+/// tapered ball is its tip, so for a tapered ball the two diameters agree
+/// and the text names no engaged diameter. A V-bit is keyed at its engaged
+/// width at the cut depth, so for a V-bit the two can differ. The text
+/// names the tool's nominal diameter with two decimals, adds the engaged
 /// diameter when it differs, and names the row's diameter and the ratio:
-/// "no published figure for a 0.50 mm tapered ball nose (engaged 0.57 mm at
-/// the cut depth); the nearest chart row is 3.175 mm, 5.6x the tool, ...".
+/// "no published figure for a 0.50 mm tapered ball nose; the nearest chart
+/// row is 3.175 mm, 6.3x the tool, ...".
 #[must_use]
 pub fn micro_extrapolation_refusal(
     tool: ToolFamily,
@@ -359,6 +387,8 @@ pub fn formula_source_for_input(input: &FeedsInput) -> Option<&'static str> {
 
 /// The support arm for the cell this input describes.
 ///
+/// - A tapered ball whose tip is under [`TAPERED_MIN_TIP_MM`]: `Refuse`
+///   ([`tapered_tip_floor_refusal`], ruling B1), with or without a row.
 /// - The recipe row lookup finds a row: `VendorBacked`, unless the size
 ///   rule refuses it ([`micro_extrapolation_refusal`]).
 /// - No row, and no formula source: `Refuse`.
@@ -377,8 +407,26 @@ pub fn feeds_support(input: &FeedsInput) -> FeedsSupport {
 /// The arm for a lookup that the caller already did. `calculate` uses
 /// this so that it does the lookup one time.
 pub(crate) fn support_for_lookup(input: &FeedsInput, lookup: &RecipeRowLookup) -> FeedsSupport {
+    // Ruling B1: the tapered tip floor runs first, whether a row matched or
+    // not. With a row, a 0.3 mm tip against the 0.5 mm row is 1.67x, inside
+    // the size rule's window, so the size rule alone lets it through. With
+    // no row (a 0.3 mm Scallop is under 0.1x of every Scallop row), the
+    // formula judgement would otherwise ship a formula number. The lookup
+    // key of a tapered ball is its tip (`geometry::lut_key_diameter_mm`,
+    // ruling A1), which is `input.tool_diameter`.
+    let tool = input.tool_geometry.cutter_kind().lut_family();
+    let key = super::geometry::lut_key_diameter_mm(
+        input.tool_geometry,
+        input.axial_depth_mm.unwrap_or(input.tool_diameter),
+        input.tool_diameter,
+        input.shank_diameter.unwrap_or(input.tool_diameter),
+    );
+    if let Some(reason) = tapered_tip_floor_refusal(tool, key) {
+        return FeedsSupport::Refuse {
+            reason: Cow::Owned(reason),
+        };
+    }
     if let RecipeRowLookup::Row { query, row, .. } = lookup {
-        let tool = input.tool_geometry.cutter_kind().lut_family();
         if let Some(reason) = micro_extrapolation_refusal(
             tool,
             input.tool_diameter,
@@ -403,7 +451,6 @@ pub(crate) fn support_for_lookup(input: &FeedsInput, lookup: &RecipeRowLookup) -
     if !is_judged_wood(material) {
         return FeedsSupport::FormulaOnly { source };
     }
-    let tool = input.tool_geometry.cutter_kind().lut_family();
     match formula_backing(tool, input.operation, input.pass_role, material) {
         FormulaBacking::Backed => FeedsSupport::FormulaOnly { source },
         FormulaBacking::Clueless { reason } => FeedsSupport::Refuse {

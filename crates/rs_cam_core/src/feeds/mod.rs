@@ -123,9 +123,11 @@ impl ToolGeometryHint {
     ///
     /// `tool_diameter_mm` is the nominal (tip, for tapered/V) diameter;
     /// `shank_diameter_mm` caps the tapered-ball growth at the shank.
-    /// This is the same calculation the vendor-LUT lookup uses to pick
-    /// the chipload row, so the band shown in the UI applies to the
-    /// returned diameter — not the tool tip.
+    /// Since ruling A1 (2026-09-24) the vendor-LUT lookup does not use
+    /// this diameter for a tapered ball: the row is read at the tip
+    /// ([`geometry::lut_key_diameter_mm`]). The depth ladder, the band
+    /// de-rate and the depth cap still use this engaged diameter. A V-bit
+    /// row is still looked up at this engaged width.
     ///
     /// This is a **second, hand-maintained implementation** of the
     /// same geometry as [`crate::tool::MillingCutter::lookup_diameter_at`]
@@ -1434,17 +1436,21 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // tools engage at nominal D regardless of DOC, so `effective_d == d`
     // there.
     //
-    // This mirrors `vendor_normalize::lookup_diameter_for_input` so the
-    // SFM/RPM derivation and formula-chipload fallback below stay
-    // symmetric with the vendor-LUT query path. Pre-2026-06-02 the
+    // Before ruling A1 (2026-09-24) this mirrored
+    // `vendor_normalize::lookup_diameter_for_input`. It does not now for a
+    // tapered ball: the LUT key is the tip (`geometry::lut_key_diameter_mm`),
+    // and this binding stays the engaged cone diameter for the SFM, the
+    // RPM and the formula chipload. For a V-bit the two are still the same
+    // engaged width. Pre-2026-06-02 the
     // formula path used nominal D, producing wrong-low RPM for V-bits
     // (e.g. a 5.5 mm-tip 20° V-bit at DOC=0.5 saw SFM derived from
     // 5.5 mm instead of the ~0.18 mm engaged tip) — audit finding
     // "nominal-D leakage through formula path".
     //
     // NAMING WARNING (census F-3, T1.4). This binding is the
-    // **LUT-semantics** engaged diameter — "which vendor row applies"
-    // — the chipload band's depth de-rate uses the same kind of diameter,
+    // **LUT-semantics** engaged diameter — before A1 it was "which vendor
+    // row applies"; since A1 that is the tip for a tapered ball — and
+    // the chipload band's depth de-rate uses the same kind of diameter,
     // taken again at the shipped depth after the power ladder.
     // Step 5 rebinds the same name `effective_d` to the **chip-thinning**
     // diameter (`feeds::effective_diameter`, "what actually touches

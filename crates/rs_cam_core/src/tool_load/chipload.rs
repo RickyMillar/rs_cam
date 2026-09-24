@@ -102,10 +102,12 @@ use super::locality::SpanLookup;
 /// - `Custom` material → `None` (no validated LUT category).
 /// - Operation routing via [`routed_lookup_family`] (ProjectCurve /
 ///   Adaptive3d reroutes).
-/// - `lookup_diameter_mm` is the caller's engaged-diameter choice —
-///   the gate uses `lookup_diameter_at(peak steady-state DOC)`, the
-///   optimizer `diameter_for_lut_lookup(tool, commanded DOC)` (nominal
-///   fallback when no DOC is commanded).
+/// - `lookup_diameter_mm` is the LUT lookup key. Every caller computes
+///   it with [`crate::feeds::geometry::lut_key_diameter_for_cutter`]: the
+///   gate at the peak steady-state DOC, the viewport at its peak DOC, and
+///   the optimizer through `diameter_for_lut_lookup(tool, commanded DOC)`.
+///   A tapered ball is keyed at its tip at every depth (ruling A1,
+///   2026-09-24); a V-bit at its engaged width.
 /// - Angle-aware dispatch for V-bit / chamfer geometry.
 /// - Only chipload-bearing rows compete
 ///   ([`find_best_chip_envelope_row`]) — RPM-only rows are feeds-
@@ -479,7 +481,7 @@ fn evaluate_inner(
     };
 
     // 2. Build the steady-state sample set before LUT lookup. The same
-    // set gives us the operation's engaged lookup diameter.
+    // set gives us the peak DOC for the lookup key and the depth de-rate.
     //
     // Skip rapids (`!is_cutting`) and air-cut samples (`radial_engagement
     // < 0.02` — same threshold as `SimulationCutIssueKind::AirCut` per
@@ -538,16 +540,21 @@ fn evaluate_inner(
         .map(|(_, s)| s.axial_doc_mm.max(0.0))
         .fold(0.0_f64, f64::max);
     // F3.4 — resolve through the canonical chipload-envelope helper
-    // (angle-aware dispatch, ProjectCurve/Adaptive3d routing, engaged
-    // diameter at peak DOC, RPM-only rows excluded) so the gate, the
-    // optimizer, and the viewport read the SAME row.
+    // (angle-aware dispatch, ProjectCurve/Adaptive3d routing, RPM-only
+    // rows excluded) so the gate, the optimizer, and the viewport read
+    // the SAME row. Ruling A1 (2026-09-24): the lookup key is
+    // `lut_key_diameter_for_cutter`, the tip of a tapered ball. The key
+    // that Suggest uses (`vendor_normalize::lookup_diameter_for_input`)
+    // is the same, so Suggest and the gate read one row.
+    let lookup_key_mm =
+        crate::feeds::geometry::lut_key_diameter_for_cutter(tool, lookup_axial_doc_mm);
     let result = matched_chip_envelope(
         tool,
         material,
         operation_kind,
         operation_family,
         pass_role,
-        tool.lookup_diameter_at(lookup_axial_doc_mm),
+        lookup_key_mm,
     );
     let Some(result) = result else {
         tracing::debug!(
@@ -576,6 +583,10 @@ fn evaluate_inner(
     // `geometry::derate_chipload_bounds` (S.8 — see
     // `planning/finishing_stack_review_2026-07.md`), the single home
     // for this wrapper across Suggest and both `tool_load` gate sites.
+    //
+    // The de-rate divides by the engaged diameter at the peak DOC (the
+    // cone of a tapered ball), not by the lookup key. Ruling A1 moved
+    // only the key; the depth half of R2 stands.
     let lookup_diameter_at_peak = tool.lookup_diameter_at(lookup_axial_doc_mm).max(1e-9);
     let doc_ratio = lookup_axial_doc_mm / lookup_diameter_at_peak;
     let Some(band) = crate::feeds::geometry::derate_chipload_bounds(
@@ -845,7 +856,7 @@ fn evaluate_inner(
             observation_id: result.observation_id.clone(),
             bounds_source: source,
             row_diameter_mm: result.row_diameter_mm,
-            queried_diameter_mm: lookup_diameter_at_peak,
+            queried_diameter_mm: lookup_key_mm,
             diameter_scale: result.chipload_diameter_scale,
             hardness_scale: result.chipload_hardness_scale,
             is_extrapolated: result.is_extrapolated,
@@ -1521,6 +1532,17 @@ mod tests {
     /// structured `burn_advisory` carrying the same MedianLow metric
     /// the trip would have reported. The breakage side stays hard for
     /// every provenance.
+    ///
+    /// RE-PREMISED 2026-09-24 (extrapolation P1, ruling A1). This test
+    /// ran a Parallel finish. Extrapolation P1 loaded the printed SpeTool
+    /// tapered tip rows (0.5 mm and 0.794 mm), and ruling A1 keys the
+    /// lookup at the 0.5 mm tip. The Parallel query now matches
+    /// `spetool-tapered-hardwood-parallel-0500-2f` at its own size: not
+    /// extrapolated, and with no printed minimum, so no low side exists
+    /// to demote. The Scallop family has no row under 3.175 mm, so a
+    /// Scallop query at the 0.5 mm tip still matches the Onsrud 77-100
+    /// 1/8 in row (0.0762-0.127 mm/tooth) at a raw ratio of 0.157. That
+    /// is the extrapolated, banded row this test needs.
     #[test]
     fn weak_provenance_low_trip_demotes_to_burn_advisory() {
         use crate::tool::TaperedBallEndmill;
@@ -1544,10 +1566,10 @@ mod tests {
             },
             Some(&t),
             None,
-            LutOperationFamily::Parallel,
+            LutOperationFamily::Scallop,
             LutPassRole::Finish,
             1000.0,
-            OperationType::DropCutter,
+            OperationType::Scallop,
             &crate::tool_load::ToleranceBands::default(),
         );
         match v {

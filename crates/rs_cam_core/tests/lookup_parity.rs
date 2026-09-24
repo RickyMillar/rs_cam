@@ -16,6 +16,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use rs_cam_core::compute::tool_config::ToolMaterial;
+use rs_cam_core::feeds::geometry::lut_key_diameter_for_cutter;
 use rs_cam_core::feeds::vendor_lookup::{LookupQuery, find_best_row};
 use rs_cam_core::feeds::vendor_lut::{
     HardnessKind, LutOperationFamily, LutPassRole, MaterialFamily, ToolFamily, VendorLut,
@@ -24,7 +25,9 @@ use rs_cam_core::feeds::{FeedsInput, OperationFamily, PassRole, SetupContext, To
 use rs_cam_core::feeds::{vendor_lookup, vendor_normalize};
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
-use rs_cam_core::tool::{BallEndmill, FlatEndmill, MillingCutter, ToolDefinition};
+use rs_cam_core::tool::{
+    BallEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill, ToolDefinition,
+};
 
 struct Case {
     name: &'static str,
@@ -103,6 +106,25 @@ fn cases() -> Vec<Case> {
             gate_op_family: LutOperationFamily::Scallop,
             gate_pass_role: LutPassRole::Finish,
         },
+        // Ruling A1 (2026-09-24): a tapered ball is keyed at its tip. At
+        // the 1.0 mm axial DOC below, the engaged cone diameter is about
+        // 1.13 mm, so a gate that keyed at the cone would query a different
+        // diameter from Suggest (which keys at the 1.0 mm tip).
+        Case {
+            name: "hardwood-tapered-1mm-parallel-finish",
+            diameter_mm: 1.0,
+            flute_count: 2,
+            tool_geometry: ToolGeometryHint::TaperedBall {
+                tip_radius: 0.5,
+                taper_angle_deg: 7.0,
+            },
+            cutter: Box::new(TaperedBallEndmill::new(1.0, 7.0, 6.0, 25.0)),
+            species: WoodSpecies::HardMaple,
+            operation: OperationFamily::Parallel,
+            pass_role: PassRole::Finish,
+            gate_op_family: LutOperationFamily::Parallel,
+            gate_pass_role: LutPassRole::Finish,
+        },
     ]
 }
 
@@ -138,7 +160,7 @@ fn calculator_and_gate_match_same_observation_id() {
             spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
         };
         // Checkpoint K (a4) — `to_lookup_query` can refuse now. None of
-        // this file's five cases is a rerouted operation (its header says
+        // this file's six cases is a rerouted operation (its header says
         // so, and that exclusion is what made it blind to the second
         // axis), so a refusal here would be a real finding.
         let calc_query = vendor_normalize::to_lookup_query(&input)
@@ -156,15 +178,17 @@ fn calculator_and_gate_match_same_observation_id() {
             ToolMaterial::Carbide,
         );
         let (material_family, hardness_kind, hardness_value) = material_to_lut_for_test(&material);
-        // Mirror the gate's construction: lookup_diameter_at(axial_doc).
-        // For Flat/Ball tools axial_doc doesn't change the diameter, so any
-        // representative value works. Use the diameter as the axial DOC —
-        // matches the calculator's `lookup_diameter_for_input` default.
+        // Mirror the gate's construction: the LUT key
+        // `lut_key_diameter_for_cutter(tool, axial_doc)` (ruling A1). For
+        // Flat/Ball tools axial_doc doesn't change the diameter, and a
+        // tapered ball is keyed at its tip at every depth. Use the diameter
+        // as the axial DOC — matches the calculator's
+        // `lookup_diameter_for_input` default.
         let axial_doc = case.diameter_mm;
         let gate_query = LookupQuery {
             tool_family: case.tool_geometry.cutter_kind().lut_family(),
             tool_subfamily: None,
-            diameter_mm: tool.lookup_diameter_at(axial_doc),
+            diameter_mm: lut_key_diameter_for_cutter(&tool, axial_doc),
             flute_count: case.flute_count,
             material_family,
             hardness_kind: Some(hardness_kind),
