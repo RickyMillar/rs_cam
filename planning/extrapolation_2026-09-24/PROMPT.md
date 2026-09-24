@@ -25,9 +25,8 @@ Rules for the session:
 - Editors get "no cargo"; the orchestrator verifies. In zsh, split a path
   list with `${=LIST}`. Stage by explicit path; `git diff --cached
   --name-only` before every commit. Do not touch `.mcp.json` or `.pi/`.
-- Simplified Technical English in prose; commits end with
-  `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`. Nothing is
-  pushed until the operator says so.
+- Simplified Technical English in prose. Nothing is pushed until the
+  operator says so.
 - No fix lands before Phase 4's rulings. A fit is a document until then.
 - Every claim that ships is on the Feeds card with its rule, range and
   residual (the operator's rule: no invisible calculation or de-rate).
