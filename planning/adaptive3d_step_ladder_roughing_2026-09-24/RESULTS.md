@@ -372,3 +372,62 @@ State: the step ladder is on every surface. The work is on branch
 - `strategy` in the job file still maps an unknown value to
   `contour_parallel` in silence (the same defect as F7).
 - The graded per-tier margin (Phase 2 design finding) is not decided.
+
+## Phase 2b result (2026-09-24)
+
+State: the graded link margin is in core, on branch
+`worktree-agent-a3ba5cbdb757c5148` (`cf5c4690`), not merged.
+
+### The change
+
+Clip tier `k` of `n` clip tiers erodes its eligible area by `(n - k)`
+tool diameters from its keep-out (`path.rs::link_margin_diameters`). The
+unit stays the named constant `LINK_MARGIN_TOOL_DIAMETERS` (1.0), not a
+dial. The rule that drops a coarse-fit area smaller than one tool diameter
+stays. The drape and `stamp_emitted_segment` do not change.
+
+With one clip tier the margin is one diameter, as before. Proof: the
+emission digest of `[10]` + dpp 5 is `ac70b98c457d49f7` before and after
+on the Phase 2 fixture, and `bbbcfbf6ddcdb5a4` with the uniform and the
+graded margin on the new fixture.
+
+### Fixture change
+
+The graded margin keeps the tool centre of tier 0 of `[10, 5]`
+`R + 2 D = 15 mm` from each wall. The Phase 2 pocket A (30 mm square)
+thus had no tier-0 area: tier 0 fell to 6 530 mm³ and A1 failed. The
+sentry now uses a pocket A of 45 mm square, and the fixture is
+105 × 100 mm (pocket B and the C pockets move to make space).
+
+Finding: with `n` clip tiers the coarsest tier enters only a pocket wider
+than `2 (R + n D)`. Before, the limit was `2 (R + D)`. This matters for
+the narrow pockets of rivmap100 (Phase 5).
+
+### Per-tier volumes, `[10, 5]` + dpp 1, By Area (mm³)
+
+| Fixture, margin | Tier 0 (10, clip) | Tier 1 (5, clip) | Base (1, drape) | Waterline |
+|---|---|---|---|---|
+| Phase 2 fixture, uniform (before) | 27 715 | 892 | 59 578 | — |
+| Phase 2 fixture, graded | 6 530 | 22 871 | 58 786 | — |
+| New fixture, uniform | 48 096 | 892 | 67 318 | 3 817 |
+| New fixture, graded (after) | 18 686 | 31 096 | 66 526 | 3 817 |
+
+On the new fixture tier 1 removes 25.9 % of the volume (graded) against
+0.7 % (uniform). Tier 0 removes 15.6 %. The clip tiers together remove
+41.4 % (graded) against 40.8 % (uniform): the graded margin moves volume
+from tier 0 to tier 1. It does not add much clip volume.
+
+### Tests
+
+- `adaptive3d_step_ladder` 7/7. New claims: A4 per tier (tier `k` stays
+  `(n - k)` diameters from the keep-out; measured 12.000 mm for tier 0
+  and 5.772–6.250 mm for tier 1), the A4 band (at Z -25.5, -20 and -10
+  the tier-1 band is 6.000–6.228 mm wide), closed runs for each finer
+  tier, and A6 (each clip tier removes at least 10 %).
+- With the margin forced back to uniform, A6 fails: "clip tier 1 removed
+  0.7 % of the volume, less than 10 %".
+- `adaptive3d_emission_byte_parity` 5/5, `adaptive3d_commanded_ladder`
+  1/1, the five folder sentries, `--lib adaptive3d` 65/65 (a new unit
+  test checks the margins of `[10, 5]`, `[10, 5, 1]` and
+  `[12, 6, 3, 1]`).
+- The full clippy line and `fmt --check` are clean.
