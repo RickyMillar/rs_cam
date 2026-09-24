@@ -1128,6 +1128,18 @@ impl OperationConfig {
         self.as_params().depth_per_pass()
     }
 
+    /// The deepest axial bite the operation commands. It is
+    /// [`Self::depth_per_pass`] for every operation except a 3D Rough with
+    /// a step ladder, where a coarse step bites deeper than
+    /// `depth_per_pass` (D7 in the step-ladder plan). A check or a
+    /// narration that compares a bite against "the pass depth" reads this.
+    pub fn deepest_axial_step(&self) -> Option<f64> {
+        match self {
+            Self::Adaptive3d(cfg) => Some(cfg.deepest_step()),
+            _ => self.depth_per_pass(),
+        }
+    }
+
     pub fn total_depth(&self) -> Option<f64> {
         self.as_params().total_depth()
     }

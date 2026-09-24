@@ -120,7 +120,9 @@ pub fn diagnose_toolpath_inputs(inputs: &ToolpathDiagnoseInputs<'_>) -> Vec<Diag
             inputs.toolpath_id,
             inputs.operation.feed_rate(),
             inputs.operation.stepover(),
-            inputs.operation.depth_per_pass(),
+            // The deepest commanded bite (a step-ladder coarse step), which
+            // is what the recommended axial depth bounds.
+            inputs.operation.deepest_axial_step(),
             feeds,
         ));
     }

@@ -607,7 +607,10 @@ fn step_ladder_nests_each_slab_and_steps_down() {
     ];
     assert_eq!(got.len(), want.len(), "schedule {got:?}");
     for (g, w) in got.iter().zip(&want) {
-        assert!((g.0 - w.0).abs() < 1e-9 && g.1 == w.1 && g.2 == w.2, "schedule {got:?}");
+        assert!(
+            (g.0 - w.0).abs() < 1e-9 && g.1 == w.1 && g.2 == w.2,
+            "schedule {got:?}"
+        );
     }
     for l in &plan {
         assert_eq!(l.step, steps[l.tier]);

@@ -83,8 +83,9 @@ use std::time::Instant;
 use tracing::{debug, info};
 
 use super::clearing::{
-    ClearZLevelContext, LevelRule, MaterialRegion, clear_z_level_adaptive, clear_z_level_agent_2d_slice,
-    clear_z_level_contour_parallel, detect_material_regions, waterline_cleanup,
+    ClearZLevelContext, LevelRule, MaterialRegion, clear_z_level_adaptive,
+    clear_z_level_agent_2d_slice, clear_z_level_contour_parallel, detect_material_regions,
+    waterline_cleanup,
 };
 use super::search::{blend_corners_3d, material_remaining_at_level_diag};
 
@@ -220,17 +221,17 @@ pub(super) enum Adaptive3dSegment {
 /// not, so a large `rapid_segs` value next to a small
 /// `material_remaining_post` is a hint the planner's accounting is
 /// missing real material removal happening at entry/transit moves.
-struct ZLevelSegmentTally {
-    cut_segs: u64,
-    rapid_segs: u64,
-    link_segs: u64,
-    cut_mm: f64,
-    cut_path_points: u64,
+pub(super) struct ZLevelSegmentTally {
+    pub(super) cut_segs: u64,
+    pub(super) rapid_segs: u64,
+    pub(super) link_segs: u64,
+    pub(super) cut_mm: f64,
+    pub(super) cut_path_points: u64,
 }
 
 /// Tally Cut/Rapid/Link counts and Cut path length+points for a slice
 /// of segments emitted by one Z-level's clearing dispatch.
-fn tally_segments_for_z_level(segments: &[Adaptive3dSegment]) -> ZLevelSegmentTally {
+pub(super) fn tally_segments_for_z_level(segments: &[Adaptive3dSegment]) -> ZLevelSegmentTally {
     let mut tally = ZLevelSegmentTally {
         cut_segs: 0,
         rapid_segs: 0,
@@ -396,6 +397,57 @@ struct LevelSlot<'r> {
     region: Option<(usize, &'r MaterialRegion)>,
 }
 
+/// What one level cut, for the per-tier totals of the debug trace (plan
+/// Phase 0, item 2).
+#[derive(Debug, Clone, Copy, Default)]
+struct LevelTally {
+    cut_mm: f64,
+    /// Each planner `Rapid` is one entry, and one retract before it unless
+    /// `segments_to_toolpath` turns it into a stay-down link.
+    entries: u64,
+    links: u64,
+    /// The planner stock volume the level removed (mm³). Measured only
+    /// with a debug context, from a stock-top snapshot.
+    removed_mm3: f64,
+    /// The largest drop of one planner cell's stock top in the level (mm):
+    /// the level's deepest axial bite on the planner stock.
+    max_bite_mm: f64,
+}
+
+/// The per-tier totals of a run: one `ladder_tier` debug span per tier.
+#[derive(Debug, Clone, Default)]
+struct TierTotals {
+    step: f64,
+    clip: bool,
+    levels: u64,
+    tally: LevelTally,
+}
+
+impl TierTotals {
+    fn add(&mut self, level: &PlannedLevel, t: &LevelTally) {
+        self.step = level.step;
+        self.clip = level.clip;
+        self.levels += 1;
+        self.tally.cut_mm += t.cut_mm;
+        self.tally.entries += t.entries;
+        self.tally.links += t.links;
+        self.tally.removed_mm3 += t.removed_mm3;
+        self.tally.max_bite_mm = self.tally.max_bite_mm.max(t.max_bite_mm);
+    }
+}
+
+/// The stock top of every planner cell, row-major.
+fn stock_tops(material_stock: &TriDexelStock) -> Vec<f64> {
+    let grid = &material_stock.z_grid;
+    let mut tops = Vec::with_capacity(grid.rows * grid.cols);
+    for row in 0..grid.rows {
+        for col in 0..grid.cols {
+            tops.push(super::stock_top_z_at(material_stock, row, col));
+        }
+    }
+    tops
+}
+
 /// Clear one planned level. The ByArea and the Global branches both call
 /// this function; it pushes the level marker, runs the clearing strategy
 /// and fills the `z_level_clear` debug span.
@@ -413,7 +465,7 @@ fn clear_planned_level(
     last_pos: &mut Option<P3>,
     planner_eng: &mut Vec<(P3, f64)>,
     cancel: &dyn CancelCheck,
-) -> Result<(), Cancelled> {
+) -> Result<LevelTally, Cancelled> {
     let z_level = level.z;
     let tier = LadderTier {
         index: level.tier,
@@ -465,8 +517,12 @@ fn clear_planned_level(
         scope.set_counter("tier_index", level.tier as f64);
         scope.set_counter("tier_clip", if level.clip { 1.0 } else { 0.0 });
         scope.set_counter("tier_step_mm", level.step);
-        let diag =
-            material_remaining_at_level_diag(material_stock, surface_hm, z_level, ctx.stock_to_leave);
+        let diag = material_remaining_at_level_diag(
+            material_stock,
+            surface_hm,
+            z_level,
+            ctx.stock_to_leave,
+        );
         scope.set_counter("material_remaining_pre", diag.fraction);
         scope.set_counter("floor_cells_total", diag.cells_total as f64);
         scope.set_counter("floor_cells_at_z", diag.cells_at_z as f64);
@@ -474,6 +530,9 @@ fn clear_planned_level(
         scope.set_counter("floor_cells_with_material", diag.cells_with_material as f64);
         scope
     });
+    // The stock-top snapshot for the level's own volume and bite. Only
+    // with a debug context: it costs one pass over the planner grid.
+    let tops_before = level_scope.as_ref().map(|_| stock_tops(material_stock));
     let segs_before = segments.len();
     match ctx.clearing_strategy {
         ClearingStrategy3d::ContourParallel => {
@@ -517,15 +576,38 @@ fn clear_planned_level(
             )?;
         }
     }
+    let seg_tally = tally_segments_for_z_level(&segments[segs_before..]);
+    let mut level_tally = LevelTally {
+        cut_mm: seg_tally.cut_mm,
+        entries: seg_tally.rapid_segs,
+        links: seg_tally.link_segs,
+        ..LevelTally::default()
+    };
+    if let Some(before) = tops_before {
+        let cell_area = material_stock.z_grid.cell_size * material_stock.z_grid.cell_size;
+        for (b, a) in before.iter().zip(stock_tops(material_stock)) {
+            let drop = b - a;
+            if drop > 0.0 {
+                level_tally.removed_mm3 += drop * cell_area;
+                level_tally.max_bite_mm = level_tally.max_bite_mm.max(drop);
+            }
+        }
+    }
     if let Some(scope) = level_scope {
-        let tally = tally_segments_for_z_level(&segments[segs_before..]);
+        let tally = seg_tally;
+        scope.set_counter("planner_removed_mm3", level_tally.removed_mm3);
+        scope.set_counter("planner_max_bite_mm", level_tally.max_bite_mm);
         scope.set_counter("planner_cut_segments", tally.cut_segs as f64);
         scope.set_counter("planner_rapid_segments", tally.rapid_segs as f64);
         scope.set_counter("planner_link_segments", tally.link_segs as f64);
         scope.set_counter("planner_cut_mm", tally.cut_mm);
         scope.set_counter("planner_cut_path_points", tally.cut_path_points as f64);
-        let diag_post =
-            material_remaining_at_level_diag(material_stock, surface_hm, z_level, ctx.stock_to_leave);
+        let diag_post = material_remaining_at_level_diag(
+            material_stock,
+            surface_hm,
+            z_level,
+            ctx.stock_to_leave,
+        );
         scope.set_counter("material_remaining_post", diag_post.fraction);
         scope.set_counter(
             "floor_cells_with_material_post",
@@ -533,7 +615,40 @@ fn clear_planned_level(
         );
         scope.finish();
     }
-    Ok(())
+    Ok(level_tally)
+}
+
+/// One `ladder_tier` debug span per tier: the per-tier totals of the run.
+fn record_tier_totals(debug_ctx: Option<&ToolpathDebugContext>, totals: &[TierTotals]) {
+    let Some(dctx) = debug_ctx else {
+        return;
+    };
+    for (index, t) in totals.iter().enumerate() {
+        if t.levels == 0 {
+            continue;
+        }
+        let scope = dctx.start_span(
+            "ladder_tier",
+            format!(
+                "Tier {}/{} {} {:.1} mm",
+                index + 1,
+                totals.len(),
+                if t.clip { "clip" } else { "drape" },
+                t.step
+            ),
+        );
+        scope.set_counter("tier_index", index as f64);
+        scope.set_counter("tier_clip", if t.clip { 1.0 } else { 0.0 });
+        scope.set_counter("tier_step_mm", t.step);
+        scope.set_counter("levels", t.levels as f64);
+        scope.set_counter("planner_cut_mm", t.tally.cut_mm);
+        scope.set_counter("planner_entries", t.tally.entries as f64);
+        scope.set_counter("planner_retracts", t.tally.entries as f64);
+        scope.set_counter("planner_link_segments", t.tally.links as f64);
+        scope.set_counter("planner_removed_mm3", t.tally.removed_mm3);
+        scope.set_counter("planner_max_bite_mm", t.tally.max_bite_mm);
+        scope.finish();
+    }
 }
 
 // ── Main loop ─────────────────────────────────────────────────────────
@@ -930,6 +1045,7 @@ pub(super) fn adaptive_3d_segments(
     // returned for the feed modulator's positional lookup.
     let mut planner_eng: Vec<(P3, f64)> = Vec::new();
     let mut last_pos: Option<P3> = None;
+    let mut tier_totals = vec![TierTotals::default(); steps.len()];
 
     match params.linking.region_ordering {
         RegionOrdering::ByArea => {
@@ -986,7 +1102,7 @@ pub(super) fn adaptive_3d_segments(
                     check_cancel(cancel)?;
                     ctx.depth_per_pass = level.step;
                     ctx.level_rule = level.rule();
-                    clear_planned_level(
+                    let tally = clear_planned_level(
                         &ctx,
                         &mut material_stock,
                         &surface_hm,
@@ -1002,6 +1118,9 @@ pub(super) fn adaptive_3d_segments(
                         &mut planner_eng,
                         cancel,
                     )?;
+                    if let Some(t) = tier_totals.get_mut(level.tier) {
+                        t.add(level, &tally);
+                    }
                 }
             }
 
@@ -1044,7 +1163,7 @@ pub(super) fn adaptive_3d_segments(
                 check_cancel(cancel)?;
                 ctx.depth_per_pass = level.step;
                 ctx.level_rule = level.rule();
-                clear_planned_level(
+                let tally = clear_planned_level(
                     &ctx,
                     &mut material_stock,
                     &surface_hm,
@@ -1060,6 +1179,9 @@ pub(super) fn adaptive_3d_segments(
                     &mut planner_eng,
                     cancel,
                 )?;
+                if let Some(t) = tier_totals.get_mut(level.tier) {
+                    t.add(level, &tally);
+                }
 
                 // Waterline cleanup after every base-tier level. Historically
                 // this only ran on `is_last_level`, which meant adaptive
@@ -1101,6 +1223,8 @@ pub(super) fn adaptive_3d_segments(
             }
         }
     }
+
+    record_tier_totals(debug_ctx, &tier_totals);
 
     Ok(Adaptive3dSegmentsResult {
         segments,

@@ -354,8 +354,8 @@ fn run(coarse_steps: &[f64], dpp: f64, ordering: RegionOrdering) -> Run {
     // The open run of cutting feeds: (tier key, start, length).
     let mut open_run: Option<(usize, (f64, f64), f64)> = None;
     let close_run = |stats: &mut BTreeMap<usize, TierStats>,
-                         run: Option<(usize, (f64, f64), f64)>,
-                         end: (f64, f64)| {
+                     run: Option<(usize, (f64, f64), f64)>,
+                     end: (f64, f64)| {
         if let Some((key, start, len)) = run {
             let s = stats.entry(key).or_default();
             s.run_mm += len;
@@ -583,12 +583,18 @@ fn assert_ladder_claims(label: &str, coarse: &[f64], dpp: f64, base_run: &Run) {
 
     // Non-vacuity: every tier ran and the coarse tier removed material.
     for t in 0..=base_index {
-        let s = r.stats.get(&t).unwrap_or_else(|| panic!("tier {t} never ran\n{report}"));
+        let s = r
+            .stats
+            .get(&t)
+            .unwrap_or_else(|| panic!("tier {t} never ran\n{report}"));
         assert!(s.levels > 0, "tier {t} has no level\n{report}");
     }
     let coarse_stats = &r.stats[&0];
     assert!(coarse_stats.clip, "tier 0 must clip\n{report}");
-    assert!(!r.stats[&base_index].clip, "the base tier must drape\n{report}");
+    assert!(
+        !r.stats[&base_index].clip,
+        "the base tier must drape\n{report}"
+    );
     assert!(
         coarse_stats.removed_mm3 > 0.3 * r.stats.values().map(|s| s.removed_mm3).sum::<f64>(),
         "the coarse tier removed too little to matter\n{report}"
@@ -666,7 +672,10 @@ fn assert_ladder_claims(label: &str, coarse: &[f64], dpp: f64, base_run: &Run) {
     let (mesh, index) = fixture_mesh();
     let rest = rest_heights(&mesh, &index, &r.replay);
     let distances = min_keep_out_distance(&r, &rest);
-    assert!(!distances.is_empty(), "A4: no clip-tier cut to measure\n{report}");
+    assert!(
+        !distances.is_empty(),
+        "A4: no clip-tier cut to measure\n{report}"
+    );
     for (z, tier, d) in &distances {
         eprintln!("A4: clip level Z {z:.2} tier {tier}: min keep-out distance {d:.3} mm");
         assert!(
@@ -831,4 +840,131 @@ fn a_pinned_project_with_the_deleted_keys_loads() {
         })
         .expect("test_job.toml holds a 3D Rough");
     assert!(rough.coarse_steps.is_empty());
+}
+
+// ── Observability (plan Phase 0, items 1-2) ─────────────────────────────
+
+/// A debug trace shows each level with its tier and its own volume, and
+/// one `ladder_tier` span per tier carries the tier totals.
+#[test]
+fn debug_trace_shows_each_level_with_its_tier_and_volume() {
+    use rs_cam_core::trace::debug_trace::ToolpathDebugRecorder;
+    let (mesh, index) = fixture_mesh();
+    let cutter = cutter();
+    let p = params(&[10.0], 5.0, RegionOrdering::Global);
+    let recorder = ToolpathDebugRecorder::new("ladder", "3D Rough");
+    let ctx = recorder.root_context();
+    let (_tp, annotations, _) = adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
+        &mesh,
+        &index,
+        &cutter,
+        &p,
+        &(|| false),
+        Some(&ctx),
+    )
+    .expect("generation is not cancelled");
+    let trace = recorder.finish();
+
+    let levels: Vec<_> = trace
+        .spans
+        .iter()
+        .filter(|s| s.kind == "z_level_clear")
+        .collect();
+    let markers = annotations
+        .iter()
+        .filter(|a| matches!(a.event, Adaptive3dRuntimeEvent::GlobalZLevel { .. }))
+        .count();
+    assert!(!levels.is_empty(), "no z_level_clear span");
+    assert_eq!(levels.len(), markers, "one span per level marker");
+    for s in &levels {
+        for key in [
+            "tier_index",
+            "tier_clip",
+            "tier_step_mm",
+            "planner_removed_mm3",
+            "planner_max_bite_mm",
+            "planner_cut_mm",
+            "planner_rapid_segments",
+        ] {
+            assert!(s.counters.contains_key(key), "{} has no `{key}`", s.label);
+        }
+    }
+    let clip_volume: f64 = levels
+        .iter()
+        .filter(|s| s.counters["tier_clip"] == 1.0)
+        .map(|s| s.counters["planner_removed_mm3"])
+        .sum();
+    assert!(
+        clip_volume > 0.0,
+        "the clip levels report no removed volume"
+    );
+    for s in levels.iter().filter(|s| s.counters["tier_clip"] == 1.0) {
+        assert!(
+            s.counters["planner_max_bite_mm"] <= 10.0 + CELL,
+            "{}: planner bite {} above the coarse step",
+            s.label,
+            s.counters["planner_max_bite_mm"]
+        );
+    }
+
+    let tiers: Vec<_> = trace
+        .spans
+        .iter()
+        .filter(|s| s.kind == "ladder_tier")
+        .collect();
+    assert_eq!(tiers.len(), 2, "one ladder_tier span per tier");
+    for t in &tiers {
+        for key in [
+            "levels",
+            "planner_cut_mm",
+            "planner_entries",
+            "planner_retracts",
+            "planner_removed_mm3",
+        ] {
+            assert!(t.counters.contains_key(key), "{} has no `{key}`", t.label);
+        }
+    }
+    let waterline = trace
+        .spans
+        .iter()
+        .find(|s| s.kind == "waterline_cleanup")
+        .expect("Global runs the waterline cleanup");
+    assert!(waterline.counters.contains_key("planner_cut_mm"));
+}
+
+// ── D7: the deepest step reaches the static checks ──────────────────────
+
+/// A coarse step deeper than the cutting length must trip the shank check,
+/// although `depth_per_pass` itself is inside it. Before D7 the check read
+/// `depth_per_pass` and saw nothing.
+#[test]
+fn the_shank_check_reads_the_deepest_step() {
+    use rs_cam_core::compute::catalog::OperationConfig;
+    use rs_cam_core::compute::operation_configs::Adaptive3dConfig;
+    use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+    use rs_cam_core::diagnostics::adapters::from_static_checks::diagnostics_from_static_checks;
+    use rs_cam_core::diagnostics::ids;
+    use rs_cam_core::ids::ToolpathId;
+
+    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    tool.diameter = 6.0;
+    tool.cutting_length = 12.0;
+    let cfg = Adaptive3dConfig {
+        depth_per_pass: 5.0,
+        coarse_steps: vec![15.0],
+        ..Adaptive3dConfig::default()
+    };
+    let op = OperationConfig::Adaptive3d(cfg);
+    assert_eq!(op.depth_per_pass(), Some(5.0));
+    assert_eq!(op.deepest_axial_step(), Some(15.0));
+    let found = diagnostics_from_static_checks(ToolpathId(1), &op, &tool, None);
+    let hit = found
+        .iter()
+        .find(|d| d.id.as_str() == ids::GEOM_DPP_EXCEEDS_CUTTING_LENGTH)
+        .unwrap_or_else(|| panic!("no shank finding for a 15 mm coarse step: {found:#?}"));
+    assert!(
+        hit.message.contains("deepest step"),
+        "the message must name the ladder step: {}",
+        hit.message
+    );
 }

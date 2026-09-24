@@ -104,7 +104,8 @@ impl RsCamApp {
             toolpath_name: Some(tc.name.as_str()),
             operation_label: Some(tc.operation.label()),
             operation_kind: Some(tc.operation.op_type()),
-            depth_per_pass_mm: tc.operation.depth_per_pass(),
+            // The deepest commanded bite (a step-ladder coarse step).
+            depth_per_pass_mm: tc.operation.deepest_axial_step(),
             stepover_mm: tc.operation.stepover(),
             tool_diameter_mm: Some(tool_config.diameter),
             feed_rate_mm_min: Some(tc.operation.feed_rate()),

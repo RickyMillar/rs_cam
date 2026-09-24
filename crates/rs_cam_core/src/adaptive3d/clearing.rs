@@ -18,7 +18,9 @@ use std::collections::VecDeque;
 use std::time::Instant;
 use tracing::debug;
 
-use super::path::{Adaptive3dSegment, drape_path_to_leave, drape_point};
+use super::path::{
+    Adaptive3dSegment, drape_path_to_leave, drape_point, tally_segments_for_z_level,
+};
 use super::search::{
     blend_corners_3d, is_clear_path_3d, material_remaining_at_level, material_remaining_in_region,
 };
@@ -803,8 +805,7 @@ pub(super) fn clear_z_level_contour_parallel(
             )
         }
         Some(keep_out) => {
-            let margin_cells =
-                2.0 * ctx.tool_radius * LINK_MARGIN_TOOL_DIAMETERS / cell_size;
+            let margin_cells = 2.0 * ctx.tool_radius * LINK_MARGIN_TOOL_DIAMETERS / cell_size;
             let (field, eligible) = clip_offset_field(
                 &material_grid,
                 keep_out,
@@ -1381,6 +1382,7 @@ pub(super) fn waterline_cleanup(
             format!("Waterline cleanup Z {:.3}", z_level),
         )
     });
+    let segs_before = segments.len();
     let sampling = tool_radius.max(cell_size * 4.0);
     let contours = waterline_contours_with_cancel(mesh, index, cutter, z_level, sampling, cancel)?;
 
@@ -1474,6 +1476,11 @@ pub(super) fn waterline_cleanup(
         scope.set_z_level(z_level);
         scope.set_counter("contours", contours.len() as f64);
         scope.set_counter("traced", traced as f64);
+        // The same planner counters as a `z_level_clear` span (plan Phase 0,
+        // item 2): the cleanup's own cut length and entries.
+        let tally = tally_segments_for_z_level(segments.get(segs_before..).unwrap_or(&[]));
+        scope.set_counter("planner_cut_mm", tally.cut_mm);
+        scope.set_counter("planner_rapid_segments", tally.rapid_segs as f64);
     }
 
     Ok(())
