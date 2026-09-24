@@ -335,3 +335,14 @@ is its area). Not started.
   bull literature cells (banded on flat charts). Not started: B4 (V-bit
   key), B7 (long-tool share -> deflection model), B6 (Kc), the Optimize
   resolution parity gap.
+
+## Open proposal (2026-09-25): a sourced helix / ramp entry feed
+
+The feeds/dial session asks: full-depth helix entries run at the plunge
+rate, so helix roughs are 80-160 % slower. `FeedsResult::ramp_feed_mm_min`
+exists (clamp(0.5 x feed, plunge .. 1.5 x plunge), an unsourced repo rule)
+but no op field holds it. Proposal: ramp feed = min(cutting feed,
+axial_chip x rpm x Z / tan(ramp angle)), where the axial chip is the G6
+printed plunge chip (flat end mill, 3.175-6 mm); elsewhere the plunge rate
+as today, on the card. A new op field `ramp_feed_rate` (Option; compute
+session) that Suggest's apply writes (this session). Waits for the operator.
