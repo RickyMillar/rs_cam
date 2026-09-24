@@ -86,7 +86,11 @@ instrument, 9699f0d5) on the rivmap100 demo copy.
   by the operator 2026-09-25 (GUI 984dec55): "looking very good"; MCP
   shows entry_load gone. The operator also saw a more logical cut order
   with no thin walls left standing: the reorder had split the planned
-  ring sequence. Open: does 2D
+  ring sequence. Queue from the feeds session (043cece1, ramp-feed Suggest
+  write): G-ENTRYREWRITE (pick_adaptive3d_entry_style writes entry_style
+  on a scratch op that apply_feeds_subset never copies back, so the
+  StrategyRewrote warning names a change that never ships); G-RAMPCLAMP
+  (a hand-lowered feed can leave ramp_feed_rate above the feed). Open: does 2D
   Adaptive have the same defect (it still allows the reorder)?
 - 2026-09-25: By Area pocket tree measured
   (`planning/by_area_merge_tree_2026-09-25/`, 6f52d7a3): 3 valleys at
