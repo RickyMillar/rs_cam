@@ -641,8 +641,10 @@ pub struct Adaptive3dConfig {
     pub helix_pitch: f64,
     /// The coarser steps of the step ladder, coarsest first (mm). Each
     /// entry is larger than the next one and larger than `depth_per_pass`,
-    /// which stays the base step. A coarse step cuts only where its whole
-    /// slab fits above the part; the base step drapes as before. Empty =
+    /// which stays the base step. A coarse step cuts its slab where the
+    /// floor is below it, and cuts a gentle floor inside the slab in one
+    /// pass (fit rule v2); steep walls go to the finer steps. The base step
+    /// drapes as before. Empty =
     /// the single-step plan. Only `contour_parallel` runs a ladder; the
     /// adapter refuses one on another strategy. The GUI edits this key
     /// in the 3D Rough panel ("Coarse steps"); MCP reads an empty list

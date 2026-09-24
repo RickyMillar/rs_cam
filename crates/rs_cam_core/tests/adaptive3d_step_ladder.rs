@@ -1,9 +1,9 @@
-//! The adaptive3d step ladder — a sim-free fixture sentry for Phase 2 of
-//! `planning/adaptive3d_step_ladder_roughing_2026-09-24/PLAN.md`.
+//! The adaptive3d step ladder — a sim-free fixture sentry for Phases 2, 2b
+//! and 2c of `planning/adaptive3d_step_ladder_roughing_2026-09-24/PLAN.md`.
 //!
 //! # The fixture
 //!
-//! One synthetic height field, 105 × 100 mm, top at Z 0 (= the stock top),
+//! One synthetic height field, 155 × 100 mm, top at Z 0 (= the stock top),
 //! 26 mm deep at its lowest point:
 //!
 //! - (a) pocket A: a deep flat-floor pocket, the "plunge deep" case. It is
@@ -13,8 +13,10 @@
 //! - (b) pocket B: a 20° floor that rises into a 60° wall;
 //! - (c) pockets C1 and C2: two L-shaped pockets whose bounding boxes
 //!   overlap. A shelf at Z -12 joins them above their dividing walls.
+//! - (d) pocket D: a shallow flat pocket, 50 mm square and 6 mm deep, less
+//!   than one coarse step (plan Phase 2c, fit rule v2).
 //!
-//! # The claims (plan Phase 2, A1–A5)
+//! # The claims (plan Phase 2, A1–A6, and Phase 2c, A7)
 //!
 //! The cut is read from the emitted toolpath with an independent top-height
 //! replay of a flat end mill (no simulator). Each move takes the step-ladder
@@ -22,8 +24,11 @@
 //!
 //! - A1: in the open floor of pocket A the coarse tier takes full coarse
 //!   bites, and no finer level removes material there.
-//! - A2: a clip-tier cut point sits at its level Z; the drape does not lift
-//!   it by more than one planner cell.
+//! - A2 (fit rule v2): a clip-tier cut point is never below its level Z.
+//!   Where the drape lifts it by more than one planner cell, it sits on a
+//!   gentle floor inside its slab: at the rest height of the cutter plus
+//!   the leave, where the slope is below the wall angle. It never rises
+//!   onto a wall.
 //! - A3: the axial bite of each tier is at most its step plus one cell. The
 //!   coarse bound uses the DEEPEST step on the raw bite. The base bound uses
 //!   `depth_per_pass` on the area bite, or the one-step plan's own bite where
@@ -35,6 +40,9 @@
 //!   each finer tier cuts in closed runs.
 //! - A6 (plan Phase 2b): with `[10, 5]` + 1 each clip tier removes a real
 //!   share of the volume. With a uniform margin tier 1 removed 0.7 %.
+//! - A7 (plan Phase 2c): in the interior of the shallow pocket D, tier 0
+//!   cuts the whole depth in one pass to the floor, and no other level
+//!   removes material there.
 //! - A5: the final stock matches the one-step plan at the base step: no cut
 //!   below the leave that the one-step plan does not make, no more material
 //!   left above the leave, and pointwise
@@ -81,7 +89,7 @@ const CELL: f64 = TOOL_RADIUS / 6.0;
 /// One tool diameter: the unit `LINK_MARGIN_TOOL_DIAMETERS` × the diameter.
 /// Clip tier `k` of `n` clip tiers uses `(n - k)` units (plan Phase 2b).
 const LINK_MARGIN: f64 = 2.0 * TOOL_RADIUS;
-const X_MAX: f64 = 105.0;
+const X_MAX: f64 = 155.0;
 const Y_MAX: f64 = 100.0;
 /// The replay grid step. Finer than the planner cell, so the replay does
 /// not share the planner's cell rounding.
@@ -103,12 +111,21 @@ fn in_rect(x: f64, y: f64, x0: f64, x1: f64, y0: f64, y1: f64) -> bool {
 /// Pocket A, the deep flat floor.
 const A: (f64, f64, f64, f64) = (5.0, 50.0, 5.0, 50.0);
 const FLOOR: f64 = -26.0;
+/// Pocket D, the shallow flat floor: 6 mm deep, less than the coarse step.
+const D: (f64, f64, f64, f64) = (100.0, 150.0, 5.0, 55.0);
+const SHALLOW: f64 = -6.0;
+/// The wall angle of the fit rule v2 (`FIT_WALL_SLOPE_DEG` in core).
+const WALL_SLOPE_DEG: f64 = 30.0;
 const SHELF: f64 = -12.0;
 
 fn surface_z(x: f64, y: f64) -> f64 {
     // (a) the deep flat-floor pocket.
     if in_rect(x, y, A.0, A.1, A.2, A.3) {
         return FLOOR;
+    }
+    // (d) the shallow flat pocket.
+    if in_rect(x, y, D.0, D.1, D.2, D.3) {
+        return SHALLOW;
     }
     // (b) a 20° floor from x = 60 up to x = 80, then a 60° wall up to Z 0.
     if in_rect(x, y, 60.0, 100.0, 5.0, 35.0) {
@@ -244,6 +261,10 @@ impl Replay {
                         out.floor_bite = out.floor_bite.max(e);
                         out.floor_vol += e * REPLAY_CELL * REPLAY_CELL;
                     }
+                    if in_shallow_floor(cx, cy) {
+                        out.shallow_bite = out.shallow_bite.max(e);
+                        out.shallow_vol += e * REPLAY_CELL * REPLAY_CELL;
+                    }
                     self.top[i] = z;
                 }
             }
@@ -267,6 +288,9 @@ struct Stamp {
     /// The same two numbers over the cells of the open floor of pocket A.
     floor_bite: f64,
     floor_vol: f64,
+    /// The same two numbers over the interior of pocket D.
+    shallow_bite: f64,
+    shallow_vol: f64,
 }
 
 /// What the replay measured for one tier (or for the waterline cleanup).
@@ -291,6 +315,9 @@ struct TierStats {
     /// the largest axial excess removed there.
     removed_in_open_floor_mm3: f64,
     max_bite_in_open_floor: f64,
+    /// The same two numbers over the interior of pocket D.
+    removed_in_shallow_mm3: f64,
+    max_bite_in_shallow: f64,
     /// The largest `emitted z - level z` of a clip-tier cutting feed.
     max_lift: f64,
     min_below: f64,
@@ -304,6 +331,12 @@ struct Run {
     /// Keyed by tier index; `usize::MAX` is the waterline cleanup.
     stats: BTreeMap<usize, TierStats>,
     replay: Replay,
+    /// The volume each level removed in the interior of pocket D, keyed by
+    /// (tier, level Z in µm).
+    shallow_by_level: BTreeMap<(usize, i64), f64>,
+    /// Each clip-tier cutting point that the drape lifted by more than one
+    /// planner cell: (x, y, z, level z, tier step).
+    lifted: Vec<(f64, f64, f64, f64, f64)>,
 }
 
 /// The most clip tiers of a ladder in this file (`[10, 5]`).
@@ -316,6 +349,12 @@ const MAX_CLIP_TIERS: f64 = 2.0;
 fn in_open_floor(x: f64, y: f64) -> bool {
     let inset = MAX_CLIP_TIERS * LINK_MARGIN + 2.0 * TOOL_RADIUS + 1.0;
     in_rect(x, y, A.0 + inset, A.1 - inset, A.2 + inset, A.3 - inset)
+}
+
+/// The interior of pocket D, with the same inset as the open floor of A.
+fn in_shallow_floor(x: f64, y: f64) -> bool {
+    let inset = MAX_CLIP_TIERS * LINK_MARGIN + 2.0 * TOOL_RADIUS + 1.0;
+    in_rect(x, y, D.0 + inset, D.1 - inset, D.2 + inset, D.3 - inset)
 }
 
 fn tag_moves(tp: &Toolpath, annotations: &[Adaptive3dRuntimeAnnotation]) -> Vec<Option<Tag>> {
@@ -361,6 +400,8 @@ fn run(coarse_steps: &[f64], dpp: f64, ordering: RegionOrdering) -> Run {
 
     let mut replay = Replay::new();
     let mut stats: BTreeMap<usize, TierStats> = BTreeMap::new();
+    let mut shallow_by_level: BTreeMap<(usize, i64), f64> = BTreeMap::new();
+    let mut lifted = Vec::new();
     let mut excess = Vec::new();
     let mut prev = None;
     // The open run of cutting feeds: (tier key, start, length).
@@ -412,6 +453,9 @@ fn run(coarse_steps: &[f64], dpp: f64, ordering: RegionOrdering) -> Run {
             if tier.clip && m.intent == MoveIntent::ClearingCut {
                 s.max_lift = s.max_lift.max(m.target.z - z);
                 s.min_below = s.min_below.min(m.target.z - z);
+                if m.target.z - z > CELL {
+                    lifted.push((m.target.x, m.target.y, m.target.z, *z, tier.step_mm));
+                }
             }
         }
         let dx = m.target.x - from.x;
@@ -430,6 +474,15 @@ fn run(coarse_steps: &[f64], dpp: f64, ordering: RegionOrdering) -> Run {
             s.removed_mm3 += st.vol;
             s.removed_in_open_floor_mm3 += st.floor_vol;
             s.max_bite_in_open_floor = s.max_bite_in_open_floor.max(st.floor_bite);
+            s.removed_in_shallow_mm3 += st.shallow_vol;
+            s.max_bite_in_shallow = s.max_bite_in_shallow.max(st.shallow_bite);
+            if st.shallow_vol > 0.0 {
+                let level_key = match tag {
+                    Some(Tag::Level { z, .. }) => (z * 1000.0).round() as i64,
+                    _ => i64::MIN,
+                };
+                *shallow_by_level.entry((key, level_key)).or_default() += st.shallow_vol;
+            }
             match m.intent {
                 MoveIntent::EntryPlunge | MoveIntent::EntryHelix | MoveIntent::EntryRamp => {
                     s.max_entry_bite = s.max_entry_bite.max(bite);
@@ -466,6 +519,8 @@ fn run(coarse_steps: &[f64], dpp: f64, ordering: RegionOrdering) -> Run {
         tags,
         stats,
         replay,
+        shallow_by_level,
+        lifted,
     }
 }
 
@@ -561,12 +616,44 @@ fn surface_heights(mesh: &TriangleMesh, index: &SpatialIndex, grid: &Replay) -> 
         .collect()
 }
 
+/// The keep-out of a clip level at `z` with step `step` under the fit rule
+/// v2: a cell whose floor is above the level, and whose floor is at or
+/// above the slab top or whose slope is at least the wall angle.
+///
+/// The slab top is read as `min(z + step, stock top)`. For the short last
+/// slab of a tier the real slab top is lower, so this mask can miss a few
+/// gentle cells that the planner keeps out. The distance to it is then
+/// larger, never smaller: the check stays sound for every other level.
+fn keep_out_mask(rest: &[f64], grid: &Replay, z: f64, step: f64) -> Vec<bool> {
+    let slab_top = (z + step).min(STOCK_TOP);
+    let wall_tan = WALL_SLOPE_DEG.to_radians().tan();
+    let at = |row: usize, col: usize| rest[row * grid.nx + col];
+    (0..grid.nx * grid.ny)
+        .map(|i| {
+            let floor = rest[i] + LEAVE;
+            if floor <= z {
+                return false;
+            }
+            if floor >= slab_top {
+                return true;
+            }
+            let (row, col) = (i / grid.nx, i % grid.nx);
+            let k = ((CELL / REPLAY_CELL).round() as usize).max(1);
+            let (c0, c1) = (col.saturating_sub(k), (col + k).min(grid.nx - 1));
+            let (r0, r1) = (row.saturating_sub(k), (row + k).min(grid.ny - 1));
+            let gx = (at(row, c1) - at(row, c0)).abs() / ((c1 - c0).max(1) as f64 * REPLAY_CELL);
+            let gy = (at(r1, col) - at(r0, col)).abs() / ((r1 - r0).max(1) as f64 * REPLAY_CELL);
+            gx.hypot(gy) >= wall_tan
+        })
+        .collect()
+}
+
 /// For each clip level: the smallest distance from a clip-tier cutting tool
 /// centre to a keep-out cell of that level.
 fn min_keep_out_distance(r: &Run, rest: &[f64]) -> Vec<(f64, usize, f64)> {
     let grid = &r.replay;
     let mut per_level: BTreeMap<(i64, usize), f64> = BTreeMap::new();
-    let mut fields: BTreeMap<i64, Vec<f64>> = BTreeMap::new();
+    let mut fields: BTreeMap<(i64, usize), Vec<f64>> = BTreeMap::new();
     let mut prev = None;
     for (m, tag) in r.tp.moves.iter().zip(&r.tags) {
         let from = prev.unwrap_or(m.target);
@@ -578,8 +665,8 @@ fn min_keep_out_distance(r: &Run, rest: &[f64]) -> Vec<(f64, usize, f64)> {
             continue;
         }
         let key = (z * 1000.0).round() as i64;
-        let field = fields.entry(key).or_insert_with(|| {
-            let keep_out: Vec<bool> = rest.iter().map(|&h| h + LEAVE > *z).collect();
+        let field = fields.entry((key, tier.index)).or_insert_with(|| {
+            let keep_out = keep_out_mask(rest, grid, *z, tier.step_mm);
             distance_transform_2d(&keep_out, grid.ny, grid.nx)
                 .into_iter()
                 .map(|d| d * REPLAY_CELL)
@@ -673,17 +760,96 @@ fn assert_ladder_claims(label: &str, coarse: &[f64], dpp: f64, base_run: &Run) {
         );
     }
 
-    // A2: a clip-tier cut point sits at its level; the drape does not ride
-    // the wall.
+    // A2 (fit rule v2): a clip-tier cut point is never below its level. A
+    // point that the drape lifts sits on a gentle floor inside its slab, at
+    // the cutter rest height plus the leave; it never rises onto a wall.
+    let (mesh, index) = fixture_mesh();
+    let rest = rest_heights(&mesh, &index, &r.replay);
     for t in 0..base_index {
         let s = &r.stats[&t];
         assert!(
-            s.max_lift <= CELL + 1e-9 && s.min_below >= -1e-6,
-            "A2: tier {t} cut points left their level by [{:.4}, {:.4}] mm\n{report}",
-            s.min_below,
-            s.max_lift
+            s.min_below >= -1e-6,
+            "A2: tier {t} cut {:.4} mm below its level\n{report}",
+            s.min_below
         );
     }
+    let rest_at = |x: f64, y: f64| -> f64 {
+        let col = (x / REPLAY_CELL)
+            .round()
+            .clamp(0.0, (r.replay.nx - 1) as f64) as usize;
+        let row = (y / REPLAY_CELL)
+            .round()
+            .clamp(0.0, (r.replay.ny - 1) as f64) as usize;
+        rest[row * r.replay.nx + col]
+    };
+    // The slope bound has 5° of room: the replay reads the exact drop
+    // cutter, the planner a cell grid.
+    let wall_tan = (WALL_SLOPE_DEG + 5.0).to_radians().tan();
+    let (mut worst_floor, mut worst_slope) = (0.0f64, 0.0f64);
+    for &(x, y, z, lz, step) in &r.lifted {
+        assert!(
+            z <= lz + step + 1e-6,
+            "A2: a clip point at ({x:.2}, {y:.2}) sits at Z {z:.3}, above the slab top {:.3}\n\
+             {report}",
+            lz + step
+        );
+        let floor = rest_at(x, y) + LEAVE;
+        worst_floor = worst_floor.max((z - floor).abs());
+        assert!(
+            (z - floor).abs() <= CELL * wall_tan + 0.05,
+            "A2: a lifted clip point at ({x:.2}, {y:.2}, {z:.3}) is not on its floor {floor:.3}\n\
+             {report}"
+        );
+        let slope = [(CELL, 0.0), (0.0, CELL)]
+            .iter()
+            .map(|(dx, dy)| {
+                (rest_at(x + dx, y + dy) - rest_at(x - dx, y - dy)).abs() / (2.0 * CELL)
+            })
+            .fold(0.0f64, f64::max);
+        worst_slope = worst_slope.max(slope);
+        assert!(
+            slope <= wall_tan,
+            "A2: a lifted clip point at ({x:.2}, {y:.2}, {z:.3}) rides a wall (slope {:.1}°)\n\
+             {report}",
+            slope.atan().to_degrees()
+        );
+    }
+    eprintln!(
+        "A2: {} lifted clip points; worst distance to the floor {worst_floor:.3} mm, worst slope \
+         {:.1}°",
+        r.lifted.len(),
+        worst_slope.atan().to_degrees()
+    );
+
+    // A7 (plan Phase 2c): the shallow pocket D gets one coarse pass to its
+    // floor, and no other level cuts its interior.
+    let cutting_levels: Vec<_> = r
+        .shallow_by_level
+        .iter()
+        .filter(|(_, v)| **v > 1.0)
+        .collect();
+    eprintln!("A7: levels that cut the interior of pocket D: {cutting_levels:?}");
+    assert!(
+        cutting_levels.len() == 1 && cutting_levels[0].0.0 == 0,
+        "A7: the interior of pocket D was cut by {cutting_levels:?}, not by one tier-0 level\n\
+         {report}"
+    );
+    assert!(
+        r.stats[&0].max_bite_in_shallow >= -SHALLOW - LEAVE - CELL,
+        "A7: tier 0 took a bite of {:.3} mm in pocket D, not its whole depth\n{report}",
+        r.stats[&0].max_bite_in_shallow
+    );
+    let mut off_floor = 0.0f64;
+    for (i, top) in r.replay.top.iter().enumerate() {
+        let (x, y) = r.replay.xy(i);
+        if in_shallow_floor(x, y) {
+            off_floor = off_floor.max((top - (SHALLOW + LEAVE)).abs());
+        }
+    }
+    assert!(
+        off_floor <= 0.05,
+        "A7: the interior of pocket D ends {off_floor:.3} mm off its floor\n{report}"
+    );
 
     // A3: the bite of each coarse tier is bounded by its own step, and so by
     // the DEEPEST step. The coarse bound holds on the RAW bite, the strict
@@ -728,8 +894,6 @@ fn assert_ladder_claims(label: &str, coarse: &[f64], dpp: f64, base_run: &Run) {
     );
 
     // A4: the band next to a wall is at least the link margin wide.
-    let (mesh, index) = fixture_mesh();
-    let rest = rest_heights(&mesh, &index, &r.replay);
     let distances = min_keep_out_distance(&r, &rest);
     assert!(
         !distances.is_empty(),

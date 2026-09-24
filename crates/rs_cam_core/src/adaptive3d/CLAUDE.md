@@ -24,11 +24,11 @@ Constant-engagement clearing on a mesh surface. The entry point is
   tag alone misses them; see `../dressup/CLAUDE.md`.
 - `max_stay_down_distance_mm` is the ONE stay-down distance dial (CUT-05). The
   unset case takes `path.rs::default_max_link_dist`. Add no second name.
-- `Adaptive3dParams` carries three groups (CUT-04): `geometry` (the cutter and
-  the XY frame), `depth` (the Z plan) and `linking` (order, entry floor,
-  stay-down). A new dial joins the group it belongs to, not the top level.
-- The Z plan is ONE step ladder (`path.rs::plan_step_ladder`). Add no second
-  level source. "The deepest bite" is `deepest_step()`, not `depth_per_pass`.
+- `Adaptive3dParams` has three groups (CUT-04): `geometry`, `depth` (the Z
+  plan), `linking`. A new dial joins its group, not the top level.
+- The Z plan is ONE step ladder (`path.rs::plan_step_ladder`, top from
+  `ladder_anchor_z`, coarse tiers by the fit rule v2 `LevelRule::Clip`). Add
+  no second level source. The deepest bite is `deepest_step()`, not dpp.
 
 ## Sentries
 

@@ -167,8 +167,10 @@ pub struct Adaptive3dDepth {
     /// 1.0. Each entry is larger than the next entry and larger than
     /// `depth_per_pass`. An empty list gives the single-step plan.
     ///
-    /// A coarse step cuts only where its whole slab fits above the part
-    /// (the fit rule). `depth_per_pass` is the base step: it drapes to the
+    /// A coarse step cuts its slab where the floor is below the slab, and
+    /// cuts a gentle floor inside the slab down to the floor in one pass
+    /// (the fit rule v2). A steep wall is a keep-out for it; the finer
+    /// steps cut the wall band. `depth_per_pass` is the base step: it drapes to the
     /// surface as before. The adapter refuses a list that is not strictly
     /// descending; the planner trusts it. See
     /// `planning/adaptive3d_step_ladder_roughing_2026-09-24/PLAN.md` §3.
@@ -313,7 +315,8 @@ pub struct ZLevelPlanMetrics {
 ///
 /// `index` 0 is the coarsest tier. The last tier (`index == total - 1`) is
 /// the base tier: it drapes to the surface. Every other tier clips to the
-/// cells where its whole slab fits above the part. A single-step plan has
+/// cells that the fit rule v2 admits: the slab fits, or a gentle floor lies
+/// inside the slab. A single-step plan has
 /// one tier, and its levels are base-tier levels.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LadderTier {

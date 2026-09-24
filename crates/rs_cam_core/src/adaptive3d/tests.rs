@@ -2538,3 +2538,46 @@ fn planner_sim_dexel_parity_contour_parallel_world_stock_declared() {
         "ContourParallel hemisphere / world stock declared",
     );
 }
+
+/// G-LADDERANCHOR (plan Phase 2c): on prior stock the ladder starts at the
+/// top of the material that the operation can still cut, not at the stock
+/// box top. On fresh stock it stays at `stock_top_z`.
+#[test]
+fn ladder_anchor_reads_the_top_of_the_prior_stock() {
+    let (mesh, si) = make_flat_mesh(); // 50x50mm flat at z=0
+    let cutter = flat_cutter();
+    let cell_size = 0.5;
+    let mut stock = TriDexelStock::from_stock(-20.0, -20.0, 20.0, 20.0, -1.0, 14.0, cell_size);
+    let hm = SurfaceHeightmap::from_mesh(
+        &mesh,
+        &si,
+        &cutter,
+        stock.z_grid.origin_u,
+        stock.z_grid.origin_v,
+        stock.z_grid.rows,
+        stock.z_grid.cols,
+        cell_size,
+        -1.0,
+    );
+    let anchor = |stock: &TriDexelStock, prior: bool| {
+        super::path::ladder_anchor_z(stock, &hm, 0.5, 14.0, prior)
+    };
+    // Fresh stock: the box top, whatever the stock holds.
+    assert_eq!(anchor(&stock, false), 14.0);
+    assert_eq!(anchor(&stock, true), 14.0);
+    // A Face took the stock to Z 12: the ladder starts at Z 12.
+    for row in 0..stock.z_grid.rows {
+        for col in 0..stock.z_grid.cols {
+            crate::stock::dexel::ray_subtract_above(stock.z_grid.ray_mut(row, col), 12.0);
+        }
+    }
+    assert!((anchor(&stock, true) - 12.0).abs() < 1e-6);
+    assert_eq!(anchor(&stock, false), 14.0);
+    // Nothing left above the leave: the anchor falls back to the box top.
+    for row in 0..stock.z_grid.rows {
+        for col in 0..stock.z_grid.cols {
+            crate::stock::dexel::ray_subtract_above(stock.z_grid.ray_mut(row, col), 0.5);
+        }
+    }
+    assert_eq!(anchor(&stock, true), 14.0);
+}

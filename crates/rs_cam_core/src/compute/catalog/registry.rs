@@ -301,9 +301,10 @@ const ADAPTIVE3D_PARAMS: &[ParamDef] = &[
         .with_help("Vertical drop per revolution of the helical entry move."),
     ParamDef::optional("coarse_steps", "vec<f64>").with_help(
         "The step ladder: Z steps larger than Depth/Pass, coarsest first, in \
-         mm (for example [10] or [10, 5]). The coarse step cuts only where \
-         the whole slab fits above the part. The finer steps then cut the \
-         wall bands in the same slab, and they step down. Depth/Pass is the \
+         mm (for example [10] or [10, 5]). The coarse step cuts the whole \
+         slab where the floor is below it. A pocket whose floor is less \
+         than one coarse step down gets one pass to its floor. Steep walls \
+         get the finer steps, which step down in the same slab. Depth/Pass is the \
          last step and follows the surface. An empty list gives one step. \
          Only the Contour Parallel strategy runs a ladder.",
     ),

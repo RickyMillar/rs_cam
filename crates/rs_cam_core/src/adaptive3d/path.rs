@@ -279,8 +279,11 @@ pub(super) struct PlannedLevel {
     /// The step of the tier. The clearing engine bounds the bite of the
     /// level with it (the link check and the F-029 raster clamp).
     pub(super) step: f64,
-    /// True on a coarse tier: the level cuts only the cells where the whole
-    /// slab fits above the part (the fit rule). False on the base tier: the
+    /// The top of the slab whose bottom this level is. A coarse level cuts
+    /// the slab `(slab_top, z)` with the fit rule v2.
+    pub(super) slab_top: f64,
+    /// True on a coarse tier: the level cuts only the cells that the fit
+    /// rule v2 admits ([`LevelRule::Clip`]). False on the base tier: the
     /// level drapes to `surface + stock_to_leave`.
     pub(super) clip: bool,
     /// The link margin of a clip level, in tool diameters: see
@@ -311,10 +314,53 @@ impl PlannedLevel {
     /// The clearing rule of this level.
     pub(super) fn rule(&self) -> LevelRule {
         if self.clip {
-            LevelRule::Clip
+            LevelRule::Clip {
+                slab_top_z: self.slab_top,
+            }
         } else {
             LevelRule::Drape
         }
+    }
+}
+
+/// The Z where the step ladder starts (G-LADDERANCHOR, plan Phase 2c).
+///
+/// On fresh stock (`reads_prior_stock` false) it is `stock_top_z`, the top
+/// of the stock box, as before. On prior stock it is the highest stock top
+/// over the planner cells that still have material above
+/// `surface + stock_to_leave` (the test of the material grid). The border
+/// and the boundary clears run first, so a cell outside the mesh footprint
+/// or outside the machining boundary does not count. The anchor is never
+/// above `stock_top_z`. When no cell has material left, it is
+/// `stock_top_z`.
+///
+/// Why: after a Face that took the stock from Z 14 to Z 12, a ladder from
+/// the box top put the first 8 mm level at Z 6, not at Z 4, and the
+/// first slab held 2 mm of air.
+pub(super) fn ladder_anchor_z(
+    material_stock: &TriDexelStock,
+    surface_hm: &SurfaceHeightmap,
+    stock_to_leave: f64,
+    stock_top_z: f64,
+    reads_prior_stock: bool,
+) -> f64 {
+    if !reads_prior_stock {
+        return stock_top_z;
+    }
+    let grid = &material_stock.z_grid;
+    let mut top = f64::NEG_INFINITY;
+    for row in 0..grid.rows {
+        for col in 0..grid.cols {
+            let floor = surface_hm.z_or_bbox_floor_at(row, col) + stock_to_leave;
+            if super::stock_has_material_above(material_stock, row, col, floor + 0.01) {
+                top = top.max(super::stock_top_z_at(material_stock, row, col));
+            }
+        }
+    }
+    if top.is_finite() {
+        top.min(stock_top_z)
+    } else {
+        stock_top_z
     }
 }
 
@@ -393,6 +439,7 @@ fn push_slab(steps: &[f64], tier: usize, z_top: f64, z_bot: f64, out: &mut Vec<P
     let is_base = tier + 1 >= steps.len();
     out.push(PlannedLevel {
         z: z_bot,
+        slab_top: z_top,
         tier,
         step,
         clip: !is_base,
@@ -978,7 +1025,19 @@ pub(super) fn adaptive_3d_segments(
         .first()
         .copied()
         .unwrap_or(params.depth.depth_per_pass);
-    let mut z_levels = tier_levels(params.depth.stock_top_z, z_bottom, coarsest, 0.0);
+    // G-LADDERANCHOR: an operation on prior stock starts the ladder at the
+    // top of the material it can still cut, not at the stock box top.
+    let ladder_top = ladder_anchor_z(
+        &material_stock,
+        &surface_hm,
+        params.depth.stock_to_leave,
+        params.depth.stock_top_z,
+        params.initial_stock.is_some(),
+    );
+    if let Some(scope) = z_plan_scope.as_ref() {
+        scope.set_counter("ladder_top", ladder_top);
+    }
+    let mut z_levels = tier_levels(ladder_top, z_bottom, coarsest, 0.0);
 
     // Fix 5: Flat area detection — histogram surface Z, insert levels at
     // shelves. A shelf level is a boundary of the coarsest tier, so every
@@ -987,7 +1046,7 @@ pub(super) fn adaptive_3d_segments(
         let flat_levels = flat_shelf_levels(
             &surface_hm,
             surface_bottom,
-            params.depth.stock_top_z,
+            ladder_top,
             params.geometry.tolerance,
             params.depth.stock_to_leave,
             z_bottom,
@@ -1001,7 +1060,7 @@ pub(super) fn adaptive_3d_segments(
         }
     }
 
-    let schedule = plan_step_ladder(&steps, params.depth.stock_top_z, &z_levels);
+    let schedule = plan_step_ladder(&steps, ladder_top, &z_levels);
 
     info!(
         count = schedule.len(),
@@ -1120,7 +1179,17 @@ pub(super) fn adaptive_3d_segments(
                 let region_levels: Vec<PlannedLevel> = schedule
                     .iter()
                     .copied()
-                    .filter(|l| l.z >= region.surface_z_min + params.depth.stock_to_leave - 0.01)
+                    .filter(|l| {
+                        let floor = region.surface_z_min + params.depth.stock_to_leave;
+                        // A clip level also serves a region whose floor is
+                        // inside its slab: the fit rule v2 cuts a gentle
+                        // floor there in one pass.
+                        if l.clip {
+                            l.slab_top > floor + 0.01
+                        } else {
+                            l.z >= floor - 0.01
+                        }
+                    })
                     .collect();
 
                 for (li, level) in region_levels.iter().enumerate() {
