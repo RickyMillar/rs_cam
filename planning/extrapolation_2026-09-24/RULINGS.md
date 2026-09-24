@@ -369,3 +369,18 @@ the helix start clearance above material becomes a setting (default
 Plan: a G10 group in the programme's shape (inventory -> fetch vendor
 ramp / helix guidance per tool family -> trend -> ruling -> claim with the
 card line), after B4 and the ramp-feed wiring.
+
+## Operator rulings, 2026-09-25 (the three open questions)
+
+1. **B3 simulation witness: approved.** The orchestrator may run the
+   simulation witness (over three minutes) on ROUGHED stock
+   (`claims_reference` = the machined stock). The 42 ball-nose finish cells
+   on repo-derived rows and the 6 ball-nose MDF cells move only if the
+   witness agrees. Run it as its own lane job, after the ramp-feed write.
+2. **The bull literature cells: re-band from Amana.** The cells
+   `bull_6mm_adaptive2d_oak`, `bull_6mm_pocket_oak` and
+   `bull_12mm_pocket_oak` take their band from the printed Amana
+   corner-radius chart (A3 rows), not from the flat-end charts.
+3. **Hardwood V-bit formula-only cells: refuse.** Face, Pocket, Profile,
+   Rest, Zigzag and ProjectCurve on a V-bit in hardwood refuse. The formula
+   gives less than 0.5x of the only printed witness (the Onsrud band).
