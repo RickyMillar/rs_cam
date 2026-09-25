@@ -29,16 +29,21 @@ G6 drill range 3.0-12.7 mm; EXTRAPOLATION_G6 §5.7), `4bee59ab` /
 `ddb2b478` B6 one force line per material (EXTRAPOLATION_G7 §5),
 `f1ec6283` the published power ceiling reads the final RPM.
 
-**Known red on master:** `pill_writes_clamped_value_g_pillclamp`
-(4 tests) was already red before the three commits above (it fails at
-9d547298 plus B6). Symptoms: "the funnel wrote 0.75, the demo pocket is
-0.20 x 6.0 = 1.2" (the R4 dial scales the depth), "VCarve on VBit is
-refused" (ruling B4 / 0fdab085 hardwood V-bit refusal), "valid tool x
-operation pairing". Fix the fixtures from their cause first.
+**Fixed 2026-09-26 (cloud session):** `pill_writes_clamped_value_g_pillclamp`
+is green (6/6). It was red from 2026-09-23 with three causes, each fixed
+in the fixture: `0007528` (R1: Inlay allows only a V-bit; the Inlay
+fixture takes the V-bit), `8702706` (R4 dial: the demo pocket funnel
+writes 1.2 capped, then 0.85 x 0.75 load share, 0.825 snapped to
+3.0 / 4 = 0.75 mm; ratio 5.6x; the test reads both stages from the
+funnel warnings), `d5b7e34` (B4 key: the default 12.7 mm 90 degree V-bit
+is 2.1x the 6 mm row and refuses; the fixture V-bit is 6.0 mm 90 degrees,
+the printed key of `amana-vbit-softwood-trace-6000-2f`). Open question
+for the operator: the GUI default V-bit (12.7 mm, 90 degrees) refuses on
+VCarve in softwood since B4; 12.0 mm serves.
 
 ### Feeds / extrapolation stream (`planning/extrapolation_2026-09-24/`)
 
-1. The pillclamp red above.
+1. ~~The pillclamp red above.~~ Done 2026-09-26.
 2. G10 Part A (`G10_PLAN.md`, operator decisions D1-D4 in f1612102):
    plunge claims, ramp notes on the card, remove the Suggest entry-style
    rewrite (Q11, G-ENTRYREWRITE).

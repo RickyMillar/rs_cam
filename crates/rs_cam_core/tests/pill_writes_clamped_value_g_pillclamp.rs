@@ -20,6 +20,27 @@
 //! Note the funnel's value is the clamp output, NOT on the 0.001 grid: the
 //! pill must write the preview verbatim, or it is off by 2e-16 from Apply.
 //!
+//! **Fixture moves (2026-09-26).** The file was red from 2026-09-23. Each
+//! cause, and what the fixture does now:
+//!
+//! - `0007528` (feeds ruling R1): Suggest refuses a tool that the
+//!   operation's registry row refuses. Inlay allows only a V-bit, so the
+//!   Inlay fixture takes the fixture V-bit, not an end mill.
+//! - `8702706` (ruling R4): the machine aggressiveness dial acts after the
+//!   rigidity cap. The demo pocket funnel now writes **0.75 mm**, not 1.2:
+//!   the rigidity cap gives 0.20 x 6.0 = 1.2; the dial target is
+//!   k x ld = 0.85 x 0.75 = 0.6375 of the base load (`DEFAULT_AGGRESSIVENESS`
+//!   0.85; the stick-out 45 / 6.0 = 7.5 is over the L/D 6 threshold, so the
+//!   long-tool share is 0.75); the solve scale 0.688 gives 0.825 mm, which
+//!   snaps to 3.0 / 4 passes = 0.75 mm (`realised_step_down`). The pre-fix
+//!   pill ratio is 4.2 / 0.75 = 5.6x, not 3.5x. The test reads both stages
+//!   from the funnel's own warnings, so the next move names its stage.
+//! - `d5b7e34` (ruling B4): a V-bit row is read at its printed key, the
+//!   nominal diameter. The default V-bit (12.7 mm, 90 degrees) is 2.1x the
+//!   nearest printed row (6 mm), outside the 0.5x-2x window of the size
+//!   law, so it refuses. The fixture V-bit is 6.0 mm, 90 degrees: the
+//!   printed key of `amana-vbit-softwood-trace-6000-2f`.
+//!
 //! The pill now reads its value from
 //! `feeds::suggest::preview_field_applies` — a dry run of the funnel on a
 //! scratch clone, read back per field — so the clamp chain is never
@@ -34,12 +55,14 @@
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::feeds::suggest::SuggestWarning;
 use rs_cam_core::feeds::suggest::{
     ApplyScope, FieldApplyPreviews, SuggestContext, apply_cut_geometry_to_op,
     apply_feeds_result_to_op, apply_speeds_to_op, feeds_result_for_operation,
     preview_field_applies, preview_field_apply, round_suggestion_value,
 };
 use rs_cam_core::feeds::{FeedsField, FeedsProvenance, FeedsResult};
+use rs_cam_core::machine::DEFAULT_AGGRESSIVENESS;
 use rs_cam_core::session::ProjectSession;
 
 const FIELDS: [FeedsField; 5] = [
@@ -88,11 +111,19 @@ fn try_recipe(
     .ok()
 }
 
-/// The tool of a fixture: the type's default, except on a drill. Ruling B5
-/// (G6, 2026-09-24; range widened 2026-09-25): a drill ships only through
-/// the drill claim (a 2- or 3-flute flat end mill at 3.0-12.7 mm); a drill
-/// fixture takes a 6.0 mm end mill. Before B5 every drill cell in softwood
-/// refused (ruling R1).
+/// The fixture V-bit: 6.0 mm, 90 degrees, the printed key of the Amana
+/// softwood V-bit row `amana-vbit-softwood-trace-6000-2f`. Ruling B4
+/// (`d5b7e34`, 2026-09-25) reads a V-bit row at its nominal diameter; the
+/// default V-bit (12.7 mm) is 2.1x the 6 mm row and refuses.
+const FIXTURE_VBIT_DIAMETER_MM: f64 = 6.0;
+const FIXTURE_VBIT_ANGLE_DEG: f64 = 90.0;
+
+/// The tool of a fixture: the type's default, except on a drill and on a
+/// V-bit. Ruling B5 (G6, 2026-09-24; range widened 2026-09-25): a drill
+/// ships only through the drill claim (a 2- or 3-flute flat end mill at
+/// 3.0-12.7 mm); a drill fixture takes a 6.0 mm end mill. Before B5 every
+/// drill cell in softwood refused (ruling R1). A V-bit fixture takes the
+/// fixture V-bit (ruling B4).
 fn fixture_tool(op_type: OperationType, tool_type: ToolType) -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId(1), tool_type);
     if matches!(
@@ -101,6 +132,10 @@ fn fixture_tool(op_type: OperationType, tool_type: ToolType) -> ToolConfig {
     ) && tool_type == ToolType::EndMill
     {
         tool.diameter = 6.0;
+    }
+    if tool_type == ToolType::VBit {
+        tool.diameter = FIXTURE_VBIT_DIAMETER_MM;
+        tool.included_angle = FIXTURE_VBIT_ANGLE_DEG;
     }
     tool
 }
@@ -133,9 +168,10 @@ fn pill_write_pre_fix(result: &FeedsResult) -> f64 {
 
 // ── the finding ─────────────────────────────────────────────────────────────
 
-/// UX-R03-014 acceptance: on the demo pocket the Depth/Pass pill offers 1.2,
-/// not 4.2, and what it offers is bit-identical to what Apply cut geometry
-/// writes.
+/// UX-R03-014 acceptance: on the demo pocket the Depth/Pass pill offers the
+/// funnel's 0.75, not 4.2, and what it offers is bit-identical to what Apply
+/// cut geometry writes. The funnel's chain is read from its own warnings:
+/// the rigidity cap (1.2), then the R4 dial (0.75).
 #[test]
 fn depth_per_pass_pill_offers_the_funnel_value_not_the_calculator_value() {
     let (session, tool, op) = demo_pocket();
@@ -143,7 +179,7 @@ fn depth_per_pass_pill_offers_the_funnel_value_not_the_calculator_value() {
 
     let mut funnel_op = op.clone();
     let mut prov = FeedsProvenance::default();
-    apply_cut_geometry_to_op(
+    let warnings = apply_cut_geometry_to_op(
         &mut funnel_op,
         &mut prov,
         &result,
@@ -154,9 +190,51 @@ fn depth_per_pass_pill_offers_the_funnel_value_not_the_calculator_value() {
         SuggestContext::default(),
     );
     let funnel_dpp = funnel_op.depth_per_pass().expect("pocket carries DOC");
+    // Stage 1: the rigidity cap, 0.20 × 6.0 = 1.2.
+    let rigidity_cap = warnings
+        .iter()
+        .find_map(|w| match w {
+            SuggestWarning::RoughingDepthClampedToRigidity { capped, .. } => Some(*capped),
+            _ => None,
+        })
+        .expect("fixture drift: the rigidity cap no longer acts on the demo pocket");
     assert!(
-        (funnel_dpp - 1.2).abs() < 1e-9,
-        "fixture drift: the funnel wrote {funnel_dpp}, the demo pocket is 0.20 × 6.0 = 1.2"
+        (rigidity_cap - 1.2).abs() < 1e-9,
+        "fixture drift: the rigidity cap wrote {rigidity_cap}, the demo pocket is 0.20 × 6.0 = 1.2"
+    );
+    // Stage 2: the R4 dial (8702706) scales the capped depth. Target
+    // 0.85 × 0.75 = 0.6375 (default dial × long-tool share at L/D 7.5).
+    let (k, ld, dial_from, dial_to) = warnings
+        .iter()
+        .find_map(|w| match w {
+            SuggestWarning::EngagementReducedForAggressiveness {
+                aggressiveness,
+                ld_factor,
+                dpp_from,
+                dpp_to,
+                ..
+            } => Some((*aggressiveness, *ld_factor, *dpp_from, *dpp_to)),
+            _ => None,
+        })
+        .expect("fixture drift: the R4 dial no longer acts on the demo pocket");
+    assert!(
+        (k - DEFAULT_AGGRESSIVENESS).abs() < 1e-12 && (ld - 0.75).abs() < 1e-12,
+        "fixture drift: dial k {k}, long-tool share {ld}; expected {DEFAULT_AGGRESSIVENESS} and 0.75 (stick-out 45 / 6.0 = 7.5 > 6)"
+    );
+    assert_eq!(
+        dial_from.map(f64::to_bits),
+        Some(rigidity_cap.to_bits()),
+        "the dial must start from the rigidity cap"
+    );
+    assert_eq!(
+        dial_to.map(f64::to_bits),
+        Some(funnel_dpp.to_bits()),
+        "the dial's write must be the funnel's write"
+    );
+    // 1.2 × scale 0.688 = 0.825 mm, snapped to 3.0 / 4 passes = 0.75 mm.
+    assert!(
+        (funnel_dpp - 0.75).abs() < 1e-9,
+        "fixture drift: the funnel wrote {funnel_dpp}; the demo pocket is 1.2 capped, then the R4 dial to 3.0 / 4 = 0.75"
     );
     assert!(
         (result.axial_depth_mm - 4.2).abs() < 1e-9,
@@ -201,7 +279,9 @@ fn depth_per_pass_pill_offers_the_funnel_value_not_the_calculator_value() {
 
 /// The pre-fix reproduction, kept live: the raw write and the funnel write
 /// must keep disagreeing on this fixture, or the fixture no longer proves
-/// anything and needs rebasing.
+/// anything and needs rebasing. The finding measured 4.2 / 1.2 = 3.50×
+/// (2026-09-10); since the R4 dial (`8702706`) the funnel writes 0.75, so
+/// the ratio is 4.2 / 0.75 = 5.60×.
 #[test]
 fn the_fixture_still_shows_the_clamp() {
     let (session, tool, op) = demo_pocket();
@@ -210,8 +290,8 @@ fn the_fixture_still_shows_the_clamp() {
     let dpp = p.depth_per_pass.expect("pocket DOC");
     let ratio = pill_write_pre_fix(&result) / dpp.value;
     assert!(
-        (ratio - 3.5).abs() < 1e-6,
-        "pre-fix pill ÷ funnel = {ratio:.3}×; the finding measured 3.50×"
+        (ratio - 5.6).abs() < 1e-6,
+        "pre-fix pill ÷ funnel = {ratio:.3}×; 4.2 / 0.75 = 5.60× (the finding measured 3.50× before the R4 dial)"
     );
 }
 
@@ -228,7 +308,8 @@ fn pill_fixtures() -> Vec<(OperationType, ToolType)> {
         (OperationType::Adaptive, ToolType::EndMill),
         (OperationType::VCarve, ToolType::VBit),
         (OperationType::Rest, ToolType::EndMill),
-        (OperationType::Inlay, ToolType::EndMill),
+        // Inlay allows only a V-bit (registry tool rule, R1 `0007528`).
+        (OperationType::Inlay, ToolType::VBit),
         (OperationType::Zigzag, ToolType::EndMill),
         (OperationType::DropCutter, ToolType::EndMill),
         (OperationType::Adaptive3d, ToolType::EndMill),
@@ -362,7 +443,7 @@ fn pill_site_classification_is_pinned() {
         ("VCarve Stepover", O::VCarve, T::VBit, Stepover, true),
         ("Rest Stepover", O::Rest, T::EndMill, Stepover, true),
         ("Rest Depth/Pass", O::Rest, T::EndMill, DepthPerPass, true),
-        ("Inlay Stepover", O::Inlay, T::EndMill, Stepover, true),
+        ("Inlay Stepover", O::Inlay, T::VBit, Stepover, true),
         ("Zigzag Stepover", O::Zigzag, T::EndMill, Stepover, true),
         (
             "Zigzag Depth/Pass",
