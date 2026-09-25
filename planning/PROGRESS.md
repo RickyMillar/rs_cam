@@ -130,6 +130,24 @@ VCarve in softwood since B4; 12.0 mm serves.
    pins the 1.0 mm set. OPEN (queued with S2's sub-cell-aware clearance
    query): lower `conservative_top` once partial stamps together cover a
    cell.
+2b. **G-PECKSPLIT (2026-09-25): true rapid strike on Wanaka Back Rough
+   (1.47 mm into stock) from optimize_entry_descents; fixed.** Move 3448,
+   Rapid 11.000 -> 9.033 at (111.000, 30.732) inside a peck ladder cut
+   only to 10.5 (0.5 / 0.25 / 0.125 mm cells). Two causes:
+   `session/compute.rs` passed `heights.top_z` (pinned model top 7.03) as
+   the fresh-stock ceiling, and the pass split the ladder's inter-peck
+   retract as if it were an approach. Now the ceiling is the emission-frame
+   stock top (`max` with a pinned top above it), and only a rapid whose
+   column has no cutting move in its trailing same-XY run is split or
+   ramped (`dressup::column_already_cut`). Sentry
+   `a_peck_ladder_is_never_split_into_a_rapid_into_stock_g_pecksplit`
+   (5 tests; 5 red with the fix reverted, 1 collision at move 232).
+   Wanaka airrun harness (release, 0.5 mm): rapid_collisions 1 (triage
+   had 2: this one and 3D Rough 6; the pre-fix count was not re-run);
+   the one left is move 1406 (Z 30 -> 21.07 at 89.64, 78.87), the
+   separate 3D Rough 6 package. `isoclip_entry_ramp_g_isoclipentry` test c
+   fails at HEAD b8983f5d as well (ramp ends at x 8, expects 9): not this
+   change, not yet triaged.
 3. By Area WP2 (the pocket tree: valleys are their own jobs, the high
    ground is one rest job; `planning/by_area_merge_tree_2026-09-25/`),
    WP3 (pocket minimum depth / area settings, after G10 Part B),

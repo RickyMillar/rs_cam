@@ -833,10 +833,23 @@ impl JobPhases<'_, '_> {
                     feed_rate: self.context.feed_rate,
                     plunge_rate: self.context.plunge_rate,
                 });
+        // G-PECKSPLIT: the fresh-stock ceiling is the STOCK top in the
+        // emission frame — the top the adaptive3d rough anchors on
+        // (`finish_3d.rs`, Heights audit 2026-06-12) — never a user-pinned
+        // `heights.top_z`. Wanaka Back Rough pins `top_z` at the model top
+        // (7.03) under a 25 mm stock top, and the split rapided to
+        // 7.03 + 2 = 9.033, 1.47 mm into a column cut only to 10.5. A pinned
+        // top ABOVE the stock top is kept (`max`): the fallback errs high.
+        let fresh_stock_top_z = self
+            .inputs
+            .emission_stock_bbox
+            .max
+            .z
+            .max(self.inputs.heights.top_z);
         let (transformed, _split_count) = crate::dressup::optimize_entry_descents_annotated(
             annotated,
             self.gen_initial_stock,
-            self.inputs.heights.top_z,
+            fresh_stock_top_z,
             self.inputs.tool_def.radius(),
             &self.inputs.tool_def,
             rest_entry_ramp.as_ref(),

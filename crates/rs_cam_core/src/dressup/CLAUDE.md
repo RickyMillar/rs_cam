@@ -28,13 +28,13 @@ order. Three run outside it: `apply_tabs`, in the per-level closure of
   `finish/surface_link.rs`. Do not add a second linking implementation.
 - A helix or ramp starts `entry_clearance_mm` over the material and takes the
   full depth at `ramp_feed_rate`; air is a straight move (rulings 09-24/25).
-- The feed modulator skips a plunge by geometry, not by intent tag.
+- The feed modulator skips a plunge by geometry, not by intent tag. The descent
+  pass splits only an approach, never a retract inside an entry (G-PECKSPLIT).
 
 ## Sentries
 
-- `cargo test -p rs_cam_core -q --test capability_link_moves_safety`
-- `cargo test -p rs_cam_core -q --test dressup_span_invariants`
+- `cargo test -p rs_cam_core -q --test capability_link_moves_safety --test dressup_span_invariants`
 - `cargo test -p rs_cam_core -q --test constrained_max_modulation_f039`
 - `cargo test -p rs_cam_core -q --test entry_moves_stock_aware_g_rampterrain --test finishing_defaults_have_no_ramp_entry_r10 --test adaptive3d_entry_stock_aware`
-- `cargo test -p rs_cam_core -q --test lead_in_out_feed_rates_f040`
-- `cargo test -p rs_cam_core -q --test plunge_guard_p3`
+- `cargo test -p rs_cam_core -q --test lead_in_out_feed_rates_f040 --test plunge_guard_p3`
+- `cargo test -p rs_cam_core -q --test a_peck_ladder_is_never_split_into_a_rapid_into_stock_g_pecksplit`

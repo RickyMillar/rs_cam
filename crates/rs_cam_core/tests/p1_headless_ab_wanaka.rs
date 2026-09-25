@@ -127,6 +127,14 @@ fn p1_headless_ab_full_chain_intent_decomposition() {
         "rapid_collisions={} (baseline {BASELINE_RAPID_COLLISIONS})",
         sim.rapid_collisions.len()
     );
+    // Name each strike, so a count that holds still cannot hide a swap
+    // (G-PECKSPLIT: Back Rough's was move 3448 at (111.000, 30.732)).
+    for c in &sim.rapid_collisions {
+        eprintln!(
+            "rapid_collision move={} start={:?} end={:?}",
+            c.move_index, c.start, c.end
+        );
+    }
     for tp in &trace.toolpath_summaries {
         let name = (0..n)
             .filter_map(|i| s.get_toolpath_config(i))

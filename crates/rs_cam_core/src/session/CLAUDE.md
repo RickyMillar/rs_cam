@@ -4,9 +4,8 @@ The one door for project state and compute is `ProjectSession::apply(Command)`.
 
 ## Files
 
-- `mod.rs` — the `ProjectSession` type and the facade.
-- `command.rs` — the command registry, and the door that returns `Effects`.
-- `dependencies.rs`, `generation_plan.rs` — the edges, and the plan order.
+- `mod.rs` — `ProjectSession` and the facade. `command.rs` — the registry and
+  the `Effects` door. `dependencies.rs`, `generation_plan.rs` — edges, order.
 - `mutation.rs`, `mutation/` (CRUD); `compute.rs`, `compute/` (generation,
   simulation, export, diagnostics); `builder.rs`, `project_file.rs`, `save.rs`.
 - `diagnostics_types.rs` — the diagnostic types. Keep the `mod.rs` re-export.
@@ -28,7 +27,8 @@ The one door for project state and compute is `ProjectSession::apply(Command)`.
   drops a rest result whose `SourceStock` no longer matches (G-RESTRES).
 - There are no public `*_mut` hatches. `setups_mut` stays `#[cfg(test)]`.
   Read `ProjectSession::simulation_triage`, not a raw issue count.
-- Generation passes `entry_feed_rate()`, not the raw ramp feed (G10 B4).
+- Generation passes `entry_feed_rate()`, not the raw ramp feed (G10 B4), and
+  the STOCK top, never `heights.top_z`, as the descent ceiling (G-PECKSPLIT).
 - Do not add a setter without a command row. The registry test fails on it.
 
 ## Sentries

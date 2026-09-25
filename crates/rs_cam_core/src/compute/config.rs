@@ -302,10 +302,12 @@ impl HeightsConfig {
     /// same resolver, so display and generation agree.
     ///
     /// The Auto TOP stays at the stock top for every depth. The session's
-    /// entry-descent pass reads `heights.top_z` as the fresh-stock ceiling
-    /// (`session/compute.rs`, `optimize_entry_descents_annotated`), so an
-    /// Auto top at the model top would rapid a fresh-stock rough into the
-    /// overhead above the model.
+    /// entry-descent pass reads the emission-frame STOCK top as its
+    /// fresh-stock ceiling, raised to `heights.top_z` only when a pinned top
+    /// sits above it (`session/compute.rs`, `optimize_entry_descents_annotated`;
+    /// G-PECKSPLIT). It used to read `heights.top_z` alone, and a top pinned
+    /// at the model top rapided a fresh-stock rough into the overhead above
+    /// the model (Wanaka Back Rough, 1.47 mm).
     pub fn resolve(&self, ctx: &HeightContext) -> ResolvedHeights {
         let retract = self.retract_z.resolve_value(ctx.safe_z, ctx);
         let top_z = self.top_z.resolve_value(ctx.stock_top_z, ctx);

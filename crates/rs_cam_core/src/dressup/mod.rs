@@ -523,6 +523,32 @@ pub struct RestEntryRamp {
 /// whose XY differs from the preceding rapid (not a vertical entry) or
 /// whose intent is not `EntryPlunge`.
 ///
+/// # Only an approach is split, never a retract inside an entry (G-PECKSPLIT)
+///
+/// The pattern above also matches the inside of a peck ladder: the adaptive3d
+/// planner's inter-peck `Retract` rapid is followed by the next
+/// `EntryPlunge` at the same XY. That rapid starts IN the column the ladder
+/// has just fed down, and everything below the ladder's last floor is
+/// standing material. Splitting it rapids the tool below that floor. On the
+/// Wanaka airrun Back Rough it rapided 1.47 mm into stock (move 3448,
+/// 11.000 -> 9.033 over a column cut only to 10.5).
+///
+/// So the pass acts only on a genuine approach: a rapid whose column has not
+/// been cut on the way in. The predicate is geometric, not an intent tag:
+/// walk back over the emitted moves that end at the rapid's XY; if any of
+/// them is a cutting move, the tool is already inside an entry or a cut at
+/// this column, and the rapid is left alone ([`column_already_cut`]). A
+/// rapid that arrives from another XY, or a vertical rapid from safe Z whose
+/// run at this XY is only rapids, is an approach. The rule errs towards
+/// feeding through air: a same-XY retract-then-replunge after a cut is not
+/// split either. The same gate holds the G-ISOCLIPENTRY ramp arm below.
+///
+/// With no stock snapshot the ceiling is `fresh_stock_top_z`, which the
+/// session passes as the REAL stock top in the emission frame (the frame the
+/// adaptive3d rough anchors on), never a user-pinned `top_z`: Back Rough
+/// pins `top_z` at the model top, 18 mm under the stock top, and that was
+/// the other half of the strike.
+///
 /// # Descent target — profile-aware (B2)
 ///
 /// `tool_radius` is a SEARCH BOUND, not the tool's shape: it is the furthest
@@ -711,7 +737,11 @@ pub fn optimize_entry_descents_with_provenance(
 
         let rapid_xy = (rapid.target.x, rapid.target.y);
         let rapid_z = rapid.target.z;
-        let is_rapid = rapid.move_type == MoveType::Rapid;
+        // G-PECKSPLIT: only a genuine approach is split or ramped. A rapid
+        // inside an entry sequence (a peck ladder's retract) starts in a
+        // column this op has already fed down; see the doc above.
+        let is_rapid = rapid.move_type == MoveType::Rapid
+            && !column_already_cut(&new_moves, rapid_xy.0, rapid_xy.1, XY_EPS_MM);
 
         let split_z = is_rapid
             .then(|| iter.peek())
@@ -893,6 +923,25 @@ pub fn optimize_entry_descents_with_provenance(
     }
     tp.moves = new_moves;
     (splits, mapping)
+}
+
+/// G-PECKSPLIT: whether the emitted moves have already cut at `(x, y)` on
+/// the way to the move being considered.
+///
+/// Walks back over the trailing run of `emitted` moves whose target sits at
+/// `(x, y)` (within `xy_eps`). A cutting move in that run means the tool is
+/// inside an entry sequence or a cut at this column (a peck ladder's
+/// inter-peck retract, a retract straight up after a cut), so a rapid from
+/// here starts over a column whose floor is standing material. Only rapids in
+/// the run (a vertical descent from safe Z, or none at all) is an approach.
+/// The run is the moves AT this column only, so the walk is bounded by the
+/// ladder's length, not the toolpath's.
+fn column_already_cut(emitted: &[Move], x: f64, y: f64, xy_eps: f64) -> bool {
+    emitted
+        .iter()
+        .rev()
+        .take_while(|m| (m.target.x - x).abs() < xy_eps && (m.target.y - y).abs() < xy_eps)
+        .any(|m| m.move_type.is_cutting())
 }
 
 fn is_plunge(prev: &Move, current: &Move) -> bool {
