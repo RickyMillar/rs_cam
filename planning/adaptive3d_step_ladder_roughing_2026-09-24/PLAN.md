@@ -363,7 +363,7 @@ Record today's numbers for: Fine Stepdown on, Mill Shallow on, both off.
 The numbers are: level count, main-role volume fraction, entries, retracts,
 cut length, estimated time.
 
-Then run the zero-code arms on rivmap100 (`~/Downloads/aspiring/rivmap100/rivmap100.toml`),
+Then run the zero-code arms on rivmap100 (`planning/fixtures/rivmap100/rivmap100.toml`; it was `~/Downloads/aspiring/rivmap100/rivmap100.toml`),
 scored by section 4:
 
 - **Arm A:** the current 3D Rough as it is (Depth/Pass 2.0).

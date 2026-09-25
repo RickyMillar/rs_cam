@@ -31,7 +31,8 @@
 //!
 //! `cargo test -p rs_cam_core -q --test pocket_merge_tree_census_by_area
 //! -- --ignored`. Set `MERGE_TREE_PROJECT` and `MERGE_TREE_OUT` to change
-//! the project and the output folder. The probe asserts nothing about the
+//! the project (default: `planning/fixtures/rivmap100/rivmap100_ladder_demo.toml`)
+//! and the output folder (default: `<temp dir>/merge_tree`). The probe asserts nothing about the
 //! counts: it is an instrument, not a gate.
 
 #![allow(
@@ -58,8 +59,11 @@ use rs_cam_core::surface::merge_tree::{MergeTreeParams, PocketTree, build_pocket
 use rs_cam_core::surface::slope::SurfaceHeightmap;
 use rs_cam_core::tool::MillingCutter;
 
-const DEFAULT_PROJECT: &str = "/tmp/claude-1001/-home-ricky-personal-repos-rs-cam/61c87c01-64ec-4b8d-a255-a09cc23316a1/scratchpad/demo/rivmap100_ladder_demo.toml";
-const DEFAULT_OUT: &str = "/tmp/claude-1001/-home-ricky-personal-repos-rs-cam/61c87c01-64ec-4b8d-a255-a09cc23316a1/scratchpad/merge_tree";
+/// The rivmap100 fixture (moved from a session scratchpad on 2026-09-25).
+const DEFAULT_PROJECT: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../planning/fixtures/rivmap100/rivmap100_ladder_demo.toml"
+);
 /// The simulation cell of the plan walk (the rough-score default).
 const SIM_CELL_MM: f64 = 0.5;
 const H_MM: [f64; 4] = [1.0, 2.0, 4.0, 8.0];
@@ -209,13 +213,13 @@ fn pocket_csv(tree: &PocketTree, nx: usize, ny: usize) -> String {
 }
 
 #[test]
-#[ignore = "research probe; reads the rivmap100 copy in the scratchpad"]
+#[ignore = "research probe; reads planning/fixtures/rivmap100"]
 fn pocket_merge_tree_census_on_the_rough() {
     let project = PathBuf::from(
         std::env::var("MERGE_TREE_PROJECT").unwrap_or_else(|_| DEFAULT_PROJECT.to_owned()),
     );
-    let out =
-        PathBuf::from(std::env::var("MERGE_TREE_OUT").unwrap_or_else(|_| DEFAULT_OUT.to_owned()));
+    let out = std::env::var("MERGE_TREE_OUT")
+        .map_or_else(|_| std::env::temp_dir().join("merge_tree"), PathBuf::from);
     std::fs::create_dir_all(&out).expect("output folder");
     let mut notes = String::new();
 

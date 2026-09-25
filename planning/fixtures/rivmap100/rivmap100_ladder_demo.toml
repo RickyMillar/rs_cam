@@ -1,0 +1,515 @@
+format_version = 3
+
+[job]
+name = "rivmap100 ladder demo"
+
+[job.stock]
+x = 110.0
+y = 110.0
+z = 25.0
+origin_x = -5.0
+origin_y = -5.0
+origin_z = -11.0
+padding = 5.0
+auto_from_model = false
+alignment_pins = []
+
+[job.stock.material.SolidWood]
+species = "WhiteOak"
+
+[job.post]
+format = "grbl"
+spindle_speed = 18000
+safe_z = 10.0
+high_feedrate_mode = false
+high_feedrate = 5000.0
+spindle_strategy = "match_chart"
+
+[job.machine]
+name = "Shapeoko Pro XXL"
+max_feed_mm_min = 10000.0
+max_shank_mm = 6.35
+aggressiveness = 0.85
+
+[job.machine.spindle.Variable]
+min_rpm = 8000.0
+max_rpm = 24000.0
+
+[job.machine.power.VfdConstantTorque]
+rated_power_kw = 1.5
+rated_rpm = 24000.0
+
+[job.machine.chip_load]
+k0 = 0.024
+p = 0.61
+q = 1.26
+
+[job.machine.rigidity]
+doc_roughing_factor = 0.2
+doc_finishing_factor = 0.08
+woc_roughing_factor = 0.7
+woc_roughing_max_mm = 5.0
+woc_finishing_mm = 0.5
+adaptive_doc_factor = 1.5
+adaptive_woc_factor = 0.2
+
+[job.machine.kinematics]
+acceleration_mm_s2 = 423.3333333333333
+acceleration_xyz_mm_s2 = [
+    500.0,
+    500.0,
+    270.0,
+]
+junction_deviation_mm = 0.02
+
+[[tools]]
+id = 3
+name = "End Mill"
+type = "end_mill"
+diameter = 6.0
+cutting_length = 25.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 2.0
+included_angle = 90.0
+taper_half_angle = 15.0
+shaft_diameter = 6.35
+holder_diameter = 25.0
+shank_diameter = 6.35
+shank_length = 20.0
+stickout = 45.0
+flute_count = 2
+tool_number = 1
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[tools]]
+id = 6
+name = "R1.0mm x 6mm x 20mm 2F Tapered Ball"
+type = "tapered_ball_nose"
+diameter = 2.0
+cutting_length = 20.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 90.0
+taper_half_angle = 5.7
+shaft_diameter = 6.0
+holder_diameter = 25.0
+shank_diameter = 6.0
+shank_length = 20.0
+stickout = 35.0
+flute_count = 2
+tool_number = 8
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = "endmill.com.au"
+product_id = "TBN-R1.0-6-20"
+
+[[tools]]
+id = 11
+name = "20° V-bit"
+type = "v_bit"
+diameter = 5.5
+cutting_length = 15.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 20.0
+taper_half_angle = 10.0
+shaft_diameter = 6.0
+holder_diameter = 25.0
+shank_diameter = 6.0
+shank_length = 20.0
+stickout = 30.0
+flute_count = 2
+tool_number = 10
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[models]]
+id = 1
+path = "rivmap_export/terrain.stl"
+name = "terrain.stl"
+kind = "stl"
+
+[models.units]
+kind = "millimeters"
+
+[[models]]
+id = 2
+path = "rivmap_export/rivers_aligned.dxf"
+name = "rivers_aligned.dxf"
+kind = "dxf"
+
+[models.units]
+kind = "millimeters"
+
+[[setups]]
+id = 0
+name = "Setup 1"
+face_up = "top"
+z_rotation = "0"
+fixtures = []
+keep_out_zones = []
+
+[[setups.toolpaths]]
+id = 7
+name = "Face 5"
+type = "face"
+enabled = true
+tool_id = 3
+model_id = 1
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "face"
+
+[setups.toolpaths.operation.params]
+stepover = 1.422
+depth = 0.0
+depth_per_pass = 0.812
+feed_rate = 2200.0
+plunge_rate = 500.0
+stock_offset = 5.0
+direction = "one_way"
+spindle_rpm = 18000
+
+[setups.toolpaths.dressups]
+entry_style = "ramp"
+ramp_angle = 3.0
+helix_radius = 2.0
+helix_pitch = 1.0
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = true
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = true
+arc_tolerance = 0.05
+segment_merge = true
+segment_merge_tolerance = 0.3
+feed_optimization = true
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+air_bridge_policy = "always"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "manual"
+value = 20.0
+
+[setups.toolpaths.heights.feed_z]
+mode = "manual"
+value = 19.0
+
+[setups.toolpaths.heights.top_z]
+mode = "manual"
+value = 12.0
+
+[setups.toolpaths.heights.bottom_z]
+mode = "manual"
+value = -13.1
+
+[setups.toolpaths.boundary]
+enabled = true
+source = "stock"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = true
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "manual"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "manual"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.stepover]
+source = "formula"
+
+[setups.toolpaths.feeds_provenance.depth_per_pass]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
+
+[[setups.toolpaths]]
+id = 1
+name = "3D Rough ladder 8 > 2"
+type = "adaptive3d"
+enabled = true
+tool_id = 3
+model_id = 1
+boundary_inherit = true
+stock_source = "from_remaining_stock"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "adaptive3d"
+
+[setups.toolpaths.operation.params]
+stepover = 1.2000000000000002
+depth_per_pass = 2.0
+stock_to_leave_axial = 0.5
+feed_rate = 2400.0
+plunge_rate = 500.0
+tolerance = 0.1
+min_cutting_radius = 0.0
+entry_style = "helix"
+ramp_angle_deg = 10.0
+helix_radius_factor = 0.3
+helix_pitch = 1.0
+coarse_steps = [8.0]
+detect_flat_areas = false
+region_ordering = "by_area"
+clearing_strategy = "contour_parallel"
+trochoid_cap_mult = 1.6
+engagement_measure = "DiskArea"
+z_blend = false
+spindle_rpm = 18000
+min_region_cut_length_mm = 15.0
+stay_down_clearance_mm = 0.5
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_radius = 2.0
+helix_pitch = 1.0
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = true
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = true
+arc_tolerance = 0.05
+segment_merge = true
+segment_merge_tolerance = 0.3
+feed_optimization = true
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+air_bridge_policy = "always"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = true
+source = "model_silhouette"
+containment = "center"
+offset = 1.0
+
+[setups.toolpaths.debug_options]
+enabled = true
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "manual"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "manual"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.stepover]
+source = "auto_correct"
+
+[setups.toolpaths.feeds_provenance.depth_per_pass]
+source = "manual"
+
+[[setups.toolpaths]]
+id = 2
+name = "Scallop Finish"
+type = "scallop"
+enabled = false
+tool_id = 6
+model_id = 1
+boundary_inherit = true
+stock_source = "from_remaining_stock"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "scallop"
+
+[setups.toolpaths.operation.params]
+scallop_height = 0.01
+tolerance = 0.01
+direction = "outside_in"
+continuous = false
+slope_from = 0.0
+slope_to = 90.0
+feed_rate = 1000.0
+plunge_rate = 240.0
+stock_to_leave = 0.0
+spindle_rpm = 24000
+intra_pass_hookup_mm = 3.0
+iso_field = true
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_radius = 2.0
+helix_pitch = 1.0
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = true
+lead_radius = 2.0
+link_moves = true
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = true
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = true
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+air_bridge_policy = "always"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = true
+source = "model_silhouette"
+containment = "center"
+offset = 1.0
+
+[setups.toolpaths.debug_options]
+enabled = true
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "manual"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "vendor_lut"
+reference = "onsrud-hardwood-77-100-1_8-scallop"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "formula"
+
+[setups.toolpaths.feeds_provenance.scallop_height]
+source = "manual"
+
+[[setups.toolpaths]]
+id = 3
+name = "Project Curve"
+type = "project_curve"
+enabled = false
+tool_id = 11
+model_id = 2
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "project_curve"
+
+[setups.toolpaths.operation.params]
+depth = 1.0
+point_spacing = 0.5
+feed_rate = 1000.0
+plunge_rate = 300.0
+surface_model_id = 1
+direction = "from_above"
+side = "center"
+spindle_rpm = 24000
+chain_distance_mm = 0.0
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_radius = 2.0
+helix_pitch = 1.0
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = true
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = true
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+air_bridge_policy = "always"
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = true
+source = "model_silhouette"
+containment = "center"
+offset = 1.0
+
+[setups.toolpaths.debug_options]
+enabled = true
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "manual"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "manual"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "formula"

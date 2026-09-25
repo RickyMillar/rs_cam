@@ -55,6 +55,19 @@ folder's file map, invariants, sentries and traps.
 - A `planning/…` path that no longer exists was deleted on 2026-09-17;
   `planning/CLAUDE.md` gives the retrieval tag and the index.
 
+## Working preferences (operator)
+
+- Constants are derived by math or printed in a source that is in the repo.
+  No bench rig exists; never type a number from memory.
+- Explain a model as an interactive HTML page plus a script that asserts
+  each claim the page makes, not as prose alone.
+- Before you trust a GUI or MCP number, check that the running
+  `rs_cam_gui` binary was built from HEAD; a stale GUI fails silently.
+- The lead session decides and verifies; agents implement and never commit.
+  Review agent work by path.
+- Benchmark projects live in `planning/fixtures/` (rivmap100: the roughing
+  benchmark). Do not measure on a copy in a scratchpad.
+
 ## Codebase discovery
 
 This project is indexed by SocratiCode. Start exploration with broad
