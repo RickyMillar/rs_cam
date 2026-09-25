@@ -14,6 +14,87 @@
 > with `git show planning-pre-purge-2026-09-17:<path>`, and read
 > `planning/DELETED_INDEX.md` for what each package decided and why it went.
 
+## Where to carry on — hand-off 2026-09-25 (read this first)
+
+The sessions that drove the work below (rs-cam-2f feeds, rs-cam-e2
+roughing) ran out of tokens. Session rs-cam-13 landed what was in flight
+and tidied the tree. **Master is at the head of this work; every
+worktree except `.claude/worktrees/demo-build` (a GUI build, detached)
+is merged and removed; nothing is pushed.** Old Claude sessions may
+still be open in terminals, set to auto-continue on 2026-09-30: close
+them before a new session works on master, or they act on stale state.
+
+Landed 2026-09-25 (rs-cam-13): `851e8dfe` the Spektra sizes (24 rows,
+G6 drill range 3.0-12.7 mm; EXTRAPOLATION_G6 §5.7), `4bee59ab` /
+`ddb2b478` B6 one force line per material (EXTRAPOLATION_G7 §5),
+`f1ec6283` the published power ceiling reads the final RPM.
+
+**Known red on master:** `pill_writes_clamped_value_g_pillclamp`
+(4 tests) was already red before the three commits above (it fails at
+9d547298 plus B6). Symptoms: "the funnel wrote 0.75, the demo pocket is
+0.20 x 6.0 = 1.2" (the R4 dial scales the depth), "VCarve on VBit is
+refused" (ruling B4 / 0fdab085 hardwood V-bit refusal), "valid tool x
+operation pairing". Fix the fixtures from their cause first.
+
+### Feeds / extrapolation stream (`planning/extrapolation_2026-09-24/`)
+
+1. The pillclamp red above.
+2. G10 Part A (`G10_PLAN.md`, operator decisions D1-D4 in f1612102):
+   plunge claims, ramp notes on the card, remove the Suggest entry-style
+   rewrite (Q11, G-ENTRYREWRITE).
+3. G10 Part B: helix radius cap (Q6), pitch and ramp-angle rules (Q8,
+   Q9), G-RAMPCLAMP. By Area WP3 waits for it.
+4. B7 (RULINGS §B7): extend the deflection envelope to the 2D
+   operations, then retire the 0.88 / 0.75 long-tool share.
+5. The Optimize resolution parity gap
+   (`tool_load/optimize/outcome.rs`, per-request auto resolution;
+   ce6642be).
+6. Operator owes: the B3 sim witness run, the bull literature cells,
+   the hardwood V-bit 0.37x question, B5 open question 1 (Amana's
+   printed 18 000 rpm against the 14 000 drill cap),
+   `wanaka_suggest_integration` (ask before running; not run for B6).
+7. B6 follow-ups (EXTRAPOLATION_G7 §5.4): a typed tool helix that
+   selects the printed Curti helix row; a user line for Custom; a
+   Kienzle form for aluminium; a printed line for plywood,
+   particleboard, HDF. Check the FM1 sim DropCutter timing (about 15 %
+   slower in the B6 runs on a loaded machine) HEAD against B6 on a
+   quiet machine. The hardwood/plywood Spektra rows at 1/32, 1/16 and
+   3/32 in are printed but not loaded (not in the ruling).
+
+### Roughing / adaptive3d stream (rs-cam-e2's queue, block below)
+
+1. **G-PLANSIMGAP fix** (most important): 3D Rough applies the segment
+   merge to each cut before the planner stamps it. The agent for it
+   died on the rate limit and wrote nothing. Evidence and options:
+   `planning/entry_stock_awareness_2026-09-24/plansimgap/`. Prove it
+   with a test that fails today; do not turn segment merge off and do
+   not raise entry clearance (operator decisions).
+2. G-RAPIDPLUNGETOL: the rapid check misses a tip up to 2.207 cells
+   into material under the whole footprint (safety).
+3. By Area WP2 (the pocket tree: valleys are their own jobs, the high
+   ground is one rest job; `planning/by_area_merge_tree_2026-09-25/`),
+   WP3 (pocket minimum depth / area settings, after G10 Part B),
+   WP5 / WP6 (measure Global against By Area; keep the faster order; if
+   By Area is not faster for the same part, stop and report).
+4. A GUI build for the operator after 1-3.
+5. Smaller: does 2D Adaptive have the rapid-reorder defect; Global 36 s
+   slower than By Area on one region; the sim cuts deeper than the
+   planner stamps in 699 cells (safe direction); ring-order entries;
+   2.5D helix beside a pocket wall has no containment check;
+   G-MCPCUTROW; CLI job `strategy` silent fallback; the loader ignores
+   the old `coarse_steps` key.
+6. Operator owes: the By Area defaults (proposed 2 mm minimum depth,
+   400 mm² minimum area: 3 valleys on rivmap100); segment merge off
+   for 3D Rough if the planner cannot mirror it.
+
+### Operator on-screen checks still open
+
+- Rest stock identity (`planning/rest_stock_identity_2026-09-24/PLAN.md`
+  "To check on screen"): resolution slider, WAIT rows, connector hover,
+  confirm dialog, MCP too-coarse error, "regenerate <op> first".
+- B6: the Feeds card force-line lines and hover, the stock panel
+  "Force line:" row, plywood jobs now show no power figure.
+
 ## Current snapshot
 
 `rs_cam` is now a desktop CAM application plus shared engine, not just an algorithm sandbox.
@@ -143,7 +224,7 @@ instrument, 9699f0d5) on the rivmap100 demo copy.
   h 2 mm / 400 mm² where By Area finds 1. Phase 3 blocker: the planner
   cuts a region by its box, not its cells. Operator has not chosen h/area.
 
-## Extrapolation programme — 2026-09-24/25 (ruled; G1, G2, G3, G4, G5, G6 landed)
+## Extrapolation programme — 2026-09-24/25 (ruled; G1-G6 and B6 landed)
 
 `planning/extrapolation_2026-09-24/`: ten gap groups. Phase 0 INVENTORY; Phases
 1-2 fetch + trend (`EXTRAPOLATION_G1..G9`, verified rows in `fetch/<G>/`);
@@ -155,10 +236,11 @@ for MDF/plywood, one Janka table, soft/hard cap), A2 G4 point mode (gate,
 modulator, advisor), A3 G3 family transfer (tapered + bull), B5 G6 drill (the
 2.5 multiplier deleted; flat end-mill plunge = side chip / Z), B4 G5 V-bit key
 (printed key, Amana 18 000 rpm transcribed). Refusals on the FM1 matrix 512 ->
-418. Visible: the Feeds card states every claim, cap, transfer and key. Next:
-the ramp-feed Suggest write (field landed 9887735d), G10 entry parameters (its
-Phases 0-2 run in another account's session, `PROMPT_G10.md`), B7, B6, the
-Optimize resolution gap. The operator owes: the B3 sim run, the bull literature
+426. Visible: the Feeds card states every claim, cap, transfer and key.
+2026-09-25: the Spektra sizes (G6 drill range 3.0-12.7 mm, 851e8dfe) and B6
+(one printed force line per material: Curti 2021 for solid wood with FPL
+densities, Goli 2018 for MDF, every other material refuses; EXTRAPOLATION_G7
+§5) landed. Next: see the hand-off section at the top of this file. The operator owes: the B3 sim run, the bull literature
 cells, the hardwood V-bit 0.37x question. Next-session prompt:
 `planning/extrapolation_2026-09-24/PROMPT_NEXT.md`. Not pushed.
 
