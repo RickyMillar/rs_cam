@@ -910,6 +910,7 @@ pub(super) fn adaptive_3d_segments(
         stock_to_leave: params.depth.stock_to_leave,
         depth_per_pass: params.depth.depth_per_pass,
         tolerance: params.geometry.tolerance,
+        cut_tolerance: params.geometry.cut_simplify_tolerance(),
         feed_rate: params.feed_rate,
         plunge_rate: params.plunge_rate,
         target_frac,
@@ -1051,7 +1052,7 @@ pub(super) fn adaptive_3d_segments(
                     entry_floor_radius(params, tool_radius),
                     cell_size,
                     params.safe_z,
-                    params.geometry.tolerance,
+                    params.geometry.cut_simplify_tolerance(),
                     params.geometry.min_cutting_radius,
                     params.depth.stock_to_leave,
                     &mut segments,
@@ -1100,7 +1101,7 @@ pub(super) fn adaptive_3d_segments(
                     entry_floor_radius(params, tool_radius),
                     cell_size,
                     params.safe_z,
-                    params.geometry.tolerance,
+                    params.geometry.cut_simplify_tolerance(),
                     params.geometry.min_cutting_radius,
                     params.depth.stock_to_leave,
                     &mut segments,
@@ -1651,7 +1652,11 @@ pub(super) fn segments_to_toolpath(
                     params.depth.stock_to_leave,
                     cutter.radius(),
                 );
-                let simplified = simplify_path_3d(&draped, params.geometry.tolerance);
+                // G-PLANSIMGAP: the same tolerance the planner stamp reads
+                // (`cut_simplify_tolerance`), so the segment merge happens
+                // here, before the stamp, and not after it.
+                let simplified =
+                    simplify_path_3d(&draped, params.geometry.cut_simplify_tolerance());
                 let blended = blend_corners_3d(&simplified, params.geometry.min_cutting_radius);
                 for pt in blended.iter().skip(1) {
                     tp.feed_to_with_intent(
@@ -1767,6 +1772,7 @@ mod tests {
                 envelope_radius: 3.175,
                 stepover: 2.0,
                 tolerance: 0.1,
+                segment_merge_tolerance: None,
                 min_cutting_radius: 0.0,
                 boundary: None,
                 world_stock_xy_bbox: None,

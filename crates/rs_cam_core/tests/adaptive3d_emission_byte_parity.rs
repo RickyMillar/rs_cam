@@ -86,6 +86,7 @@ fn base_params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
             envelope_radius: TOOL_RADIUS,
             stepover: 1.5,
             tolerance: 0.5,
+            segment_merge_tolerance: None,
             min_cutting_radius: 0.0,
             boundary: None,
             world_stock_xy_bbox: Some((-13.0, -13.0, 13.0, 13.0)),

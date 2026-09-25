@@ -1508,6 +1508,7 @@ fn default_adaptive3d_params() -> Adaptive3dParams {
             envelope_radius: 3.175,
             stepover: 2.0,
             tolerance: 0.1,
+            segment_merge_tolerance: None,
             min_cutting_radius: 0.0,
             boundary: None,
             world_stock_xy_bbox: None,

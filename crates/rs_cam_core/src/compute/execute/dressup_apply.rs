@@ -757,8 +757,16 @@ pub fn apply_dressups(
     // 5b. Segment merge (accel-friendly) — collapse dense same-feed linear cut
     // runs so a low-acceleration controller can ramp to feed. Runs after
     // arc-fitting (curves are already G2/G3; this cleans up residual linears).
+    //
+    // G-PLANSIMGAP (2026-09-26): an operation whose planner applies the
+    // merge (the 3D Rough) already cut its path at this tolerance before
+    // it stamped each cut into its own stock. A second merge here would move
+    // cuts the planner stock already holds, and the entries read that
+    // stock. The stage stays in the trace with its tolerance and the kind
+    // "applied_by_planner", and moves nothing.
     if let Some(merge) = cfg.segment_merge {
         let merge_tol = merge.tolerance;
+        let by_planner = transform_capabilities.planner_applies_segment_merge;
         current = apply_dressup_traced(
             current,
             debug_ctx,
@@ -767,8 +775,17 @@ pub fn apply_dressups(
             DressupStage::SEGMENT_MERGE,
             |scope| {
                 scope.set_param(SemanticKey::Tolerance, merge_tol);
+                if by_planner {
+                    scope.set_param(SemanticKey::Kind, "applied_by_planner");
+                }
             },
-            |at| crate::dressup::condition::merge_linear_runs(at, merge_tol),
+            |at| {
+                if by_planner {
+                    Transformed::index_preserving(at)
+                } else {
+                    crate::dressup::condition::merge_linear_runs(at, merge_tol)
+                }
+            },
         );
     }
 

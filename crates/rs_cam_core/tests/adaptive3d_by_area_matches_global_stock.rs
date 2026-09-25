@@ -82,6 +82,7 @@ fn params(strategy: ClearingStrategy3d, ordering: RegionOrdering) -> Adaptive3dP
             envelope_radius: TOOL_RADIUS,
             stepover: 1.5,
             tolerance: 0.5,
+            segment_merge_tolerance: None,
             min_cutting_radius: 0.0,
             boundary: None,
             world_stock_xy_bbox: None,

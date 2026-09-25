@@ -1048,6 +1048,7 @@ pub fn execute_generation(
         boundary_regions: regions.as_ref(),
         link_kinematics: context.link_kinematics.clone(),
         rest_analysis: Some(&context.rest_analysis),
+        segment_merge_tolerance: context.dressups.segment_merge.map(|m| m.tolerance),
         ..crate::compute::execute::ExecutionContext::new(
             &findings,
             &inputs.tool_def,

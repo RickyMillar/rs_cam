@@ -69,7 +69,7 @@
 )]
 
 use rs_cam_core::{
-    compute::catalog::OperationType,
+    compute::catalog::{OperationTransformCapabilities, OperationType},
     compute::config::{
         ArcFitParams, DogboneParams, DressupConfig, DressupEntryStyle, LeadParams,
         LinkDressupParams, SegmentMergeParams,
@@ -163,6 +163,20 @@ fn three_pass() -> AnnotatedToolpath {
 /// Serpentine raster whose rows are dense polylines around a circular arc —
 /// gives `fit_arcs` and `merge_linear_runs` something to actually collapse,
 /// so the N-to-1 provenance path is exercised (not just insertions).
+/// The 3D Rough's transform capabilities with the dressup segment merge
+/// kept. These fixtures are synthetic paths, not planner output, and they
+/// pin the full dressup chain, the merge stage included. Since G-PLANSIMGAP
+/// (2026-09-26) the 3D Rough planner applies the merge itself, and the chain
+/// skips the stage for that operation (`planner_applies_segment_merge`).
+/// With the stage skipped, `arc_raster_full_dressups_fingerprint` read
+/// (148, ...) in place of (72, ...): the merge no longer ran.
+fn full_chain_capabilities() -> OperationTransformCapabilities {
+    OperationTransformCapabilities {
+        planner_applies_segment_merge: false,
+        ..OperationType::Adaptive3d.transform_capabilities()
+    }
+}
+
 fn arc_raster() -> AnnotatedToolpath {
     let mut tp = Toolpath::new();
     let mut region_starts = Vec::new();
@@ -287,7 +301,7 @@ fn three_pass_full_dressups_fingerprint() {
             feed_opt_stock: None,
             cutter: None,
             entry_surface: None,
-            transform_capabilities: OperationType::Adaptive3d.transform_capabilities(),
+            transform_capabilities: full_chain_capabilities(),
             debug_ctx: None,
             semantic_ctx: None,
         },
@@ -350,7 +364,7 @@ fn arc_raster_full_dressups_fingerprint() {
             feed_opt_stock: None,
             cutter: None,
             entry_surface: None,
-            transform_capabilities: OperationType::Adaptive3d.transform_capabilities(),
+            transform_capabilities: full_chain_capabilities(),
             debug_ctx: None,
             semantic_ctx: None,
         },

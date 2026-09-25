@@ -162,6 +162,7 @@ fn make_params(
             envelope_radius: tool_radius,
             stepover: tool_radius * 0.6,
             tolerance: 0.1,
+            segment_merge_tolerance: None,
             min_cutting_radius: 0.0,
             boundary: None,
             world_stock_xy_bbox: None,

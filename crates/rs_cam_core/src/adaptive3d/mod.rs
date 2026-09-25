@@ -112,6 +112,18 @@ pub struct Adaptive3dGeometry {
     pub envelope_radius: f64,
     pub stepover: f64,
     pub tolerance: f64,
+    /// The operation's segment merge tolerance (mm) when its segment merge
+    /// is on (`SegmentMergeParams::tolerance`), else `None`.
+    ///
+    /// G-PLANSIMGAP (2026-09-26): the planner simplifies each cut at
+    /// [`Self::cut_simplify_tolerance`] BEFORE it stamps the cut, so it
+    /// stamps the path that ships. The dressup pipeline then does not merge
+    /// the 3D Rough again
+    /// (`OperationTransformCapabilities::planner_applies_segment_merge`).
+    /// Before, the merge ran after the planner: the shipped path left up to
+    /// 2.34 mm of material that the planner stock showed as cut (rivmap100),
+    /// and entries read that stock.
+    pub segment_merge_tolerance: Option<f64>,
     pub min_cutting_radius: f64,
     /// Optional 2D boundary polygon (e.g. model silhouette) the cutter
     /// center must stay inside. Cells outside this boundary are pre-cleared
@@ -138,6 +150,16 @@ pub struct Adaptive3dGeometry {
     /// `None` falls back to the mesh-bbox-only initialization for tests
     /// and call sites that do not have a world stock bbox handy.
     pub world_stock_xy_bbox: Option<(f64, f64, f64, f64)>,
+}
+
+impl Adaptive3dGeometry {
+    /// The RDP tolerance the emitter and the planner stamp both apply to a
+    /// cut: the larger of the operation tolerance and the segment merge
+    /// tolerance. One value for both, so the planner stamps what ships.
+    pub fn cut_simplify_tolerance(&self) -> f64 {
+        self.segment_merge_tolerance
+            .map_or(self.tolerance, |m| self.tolerance.max(m))
+    }
 }
 
 /// The Z plan: how deep each pass goes and which extra levels join the

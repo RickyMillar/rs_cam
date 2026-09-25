@@ -990,7 +990,7 @@ impl DressupConfig {
         },
         DressupFieldDef {
             name: "segment_merge",
-            description: "merge dense cut runs into longer moves; default on for roughing",
+            description: "merge dense cut runs into longer moves; default on for roughing; a 3D Rough planner applies it before it records each cut",
         },
         DressupFieldDef {
             name: "segment_merge_tolerance",

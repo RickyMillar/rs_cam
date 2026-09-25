@@ -271,3 +271,40 @@ clearance. The MCP wire snapshot did not change.
 OPEN (by geometry, not measured): a 2.5D helix circle at a ring start
 reaches the helix radius past the tool into the part wall; the
 entry has no containment test for the helix (the ramp has G-RAMPCONTAIN).
+
+## RESULTS 4 — G-PLANSIMGAP fixed: the planner applies the segment merge (2026-09-26)
+
+Cause (measured 2026-09-25, `plansimgap/`): the segment merge dressup
+(`merge_linear_runs`, RDP at 0.3 mm) ran after the planner and moved cuts
+that the planner stock already held. On rivmap100 the simulated stock
+stood up to 2.34 mm above the planner stock (4016 cells > 0.25 mm), and
+two in-stock entries went into material (min clearance -2.19 mm).
+
+Fix (structural, the "planner mirrors the merge" option): the session
+passes the toolpath's merge tolerance to the generator
+(`ExecutionContext::segment_merge_tolerance` ->
+`Adaptive3dGeometry::segment_merge_tolerance`). The planner simplifies
+each cut at `cut_simplify_tolerance` = max(op tolerance, merge tolerance)
+before it stamps it; the emitter uses the same value. The 3D Rough has the
+capability `planner_applies_segment_merge`, so the dressup merge stage
+moves nothing; the trace keeps the stage with its tolerance and the kind
+"applied_by_planner". The segment merge stays ON (operator setting) and the
+entry clearance stays 0.5 mm.
+
+Sentry: `adaptive3d_plan_matches_merged_path_g_plansimgap` (terrain,
+Global, helix, Depth/Pass 4, stepover 2.4). Red before the fix: 1382 cells
+over 0.25 mm, max 2.812 mm. After: 0 cells.
+
+What moves (same fixture):
+
+| Arm | Clearing-cut moves | Helix-entry moves (mm) | Fed length |
+|---|---|---|---|
+| no merge | 2141 | 73110 (21065) | 27762 mm |
+| old: merge after the planner | 1265 | 73110 (21065) | 27708 mm |
+| new: merge in the planner | 1275 | 77487 (22296) | 29093 mm |
+
+The merge cuts the clearing moves as before. The helix entries grow: the
+planner now sees the material the merged cuts leave, so a helix starts
+over the real top (before, it started under it). Fed length +5.0 % against
+the old merge. Not measured on rivmap100 (the project is not in the repo);
+the operator's GUI build will show it.

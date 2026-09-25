@@ -139,6 +139,7 @@ fn params(style: EntryStyle3d, stay_down: Option<f64>, dpp: f64) -> Adaptive3dPa
             envelope_radius: 3.0,
             stepover: 1.8,
             tolerance: 0.1,
+            segment_merge_tolerance: None,
             min_cutting_radius: 0.0,
             boundary: None,
             world_stock_xy_bbox: None,

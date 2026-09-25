@@ -151,6 +151,7 @@ fn make_params(tool_radius: f64, min_region_cut_length_mm: f64) -> Adaptive3dPar
             envelope_radius: tool_radius,
             stepover: tool_radius * 0.5,
             tolerance: 0.1,
+            segment_merge_tolerance: None,
             min_cutting_radius: 0.0,
             boundary: None,
             world_stock_xy_bbox: None,

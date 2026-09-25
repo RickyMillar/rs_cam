@@ -94,6 +94,7 @@ fn agent_search_axial_doc_diag() {
             envelope_radius: 3.0,
             stepover: 0.84,
             tolerance: 0.1,
+            segment_merge_tolerance: None,
             min_cutting_radius: 0.0,
             boundary: None,
             world_stock_xy_bbox: None,

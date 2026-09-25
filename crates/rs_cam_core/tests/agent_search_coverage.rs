@@ -223,6 +223,7 @@ fn agent_search_clears_concave_interior_at_every_z_level() {
             envelope_radius: cutter.radius(),
             stepover: cutter.radius() * 0.28,
             tolerance: 0.25,
+            segment_merge_tolerance: None,
             min_cutting_radius: 0.0,
             boundary: None,
             world_stock_xy_bbox: None,

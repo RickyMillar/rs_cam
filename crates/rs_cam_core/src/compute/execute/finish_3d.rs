@@ -105,6 +105,7 @@ pub(crate) fn generate_adaptive3d(
             envelope_radius: ctx.tool_def.envelope_radius_mm(),
             stepover: cfg.stepover,
             tolerance: cfg.tolerance,
+            segment_merge_tolerance: ctx.segment_merge_tolerance,
             min_cutting_radius: cfg.min_cutting_radius,
             boundary: ctx.boundary.cloned(), // F-027: forward the world stock XY bounds so the planner's
             // internal `material_stock` extends to cover every cell the

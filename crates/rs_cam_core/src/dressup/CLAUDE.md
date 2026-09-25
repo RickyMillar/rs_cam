@@ -14,8 +14,8 @@ order. Three run outside it: `apply_tabs`, in the per-level closure of
   the ramp and helix emitters. `entry_audit.rs` — the burial audit of a fed
   move against the surface.
 - `link.rs` — link against retract. `arcfit.rs` — lines to arcs.
-  `condition.rs` — segment merge (default-on for roughing; a spiral alarm is
-  usually an accel problem, not a syntax problem).
+  `condition.rs` — segment merge (default-on for roughing; skipped where
+  `planner_applies_segment_merge`, the 3D Rough, G-PLANSIMGAP).
 - `feedopt.rs`, `feed_modulation.rs` — feed-rate optimisation and the
   per-move adaptive modulation. `air_cut.rs` — air-cut classification.
   `tsp.rs` — rapid order. `tests.rs` — the unit tests.

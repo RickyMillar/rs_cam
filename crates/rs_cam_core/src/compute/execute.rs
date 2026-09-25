@@ -323,6 +323,13 @@ pub struct ExecutionContext<'a> {
     /// byte-identical no-op for every other family, same shape as
     /// `link_kinematics`.
     pub rest_analysis: Option<&'a crate::compute::config::RestAnalysisConfig>,
+    /// The toolpath's segment merge tolerance (mm) when its segment merge
+    /// dressup is on, else `None`. Only a generator whose planner applies
+    /// the merge itself reads it
+    /// (`OperationTransformCapabilities::planner_applies_segment_merge`;
+    /// today the 3D Rough, G-PLANSIMGAP). `None` for a caller that applies
+    /// no dressups.
+    pub segment_merge_tolerance: Option<f64>,
 }
 
 impl<'a> ExecutionContext<'a> {
@@ -376,6 +383,7 @@ impl<'a> ExecutionContext<'a> {
             boundary_regions: None,
             link_kinematics: None,
             rest_analysis: None,
+            segment_merge_tolerance: None,
         }
     }
 }

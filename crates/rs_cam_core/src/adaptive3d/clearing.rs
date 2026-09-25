@@ -373,6 +373,10 @@ pub(super) struct ClearZLevelContext<'a> {
     pub(super) stock_to_leave: f64,
     pub(super) depth_per_pass: f64,
     pub(super) tolerance: f64,
+    /// The RDP tolerance of a cut, for the stamp
+    /// (`Adaptive3dGeometry::cut_simplify_tolerance`, G-PLANSIMGAP). Every
+    /// `push_segment_with_stamp` reads this, never `tolerance`.
+    pub(super) cut_tolerance: f64,
     /// Op cutting feed (mm/min) — used for the feed-vs-rapid air-run
     /// crossover, not for emission (segments carry no feeds here).
     pub(super) feed_rate: f64,
@@ -571,7 +575,9 @@ impl<'a> ClearZLevelContext<'a> {
 /// 1. `drape_path_to_leave` / `drape_point` — the `fad3a56` gouge guard,
 ///    which densifies to `<= cutter.radius()` and raises every point to
 ///    `drop_cutter(x, y) + stock_to_leave`;
-/// 2. `simplify_path_3d` (RDP at `tolerance`);
+/// 2. `simplify_path_3d` (RDP at `tolerance`, which callers pass as
+///    `Adaptive3dGeometry::cut_simplify_tolerance`: the segment merge
+///    happens here, not after the planner — G-PLANSIMGAP);
 /// 3. `blend_corners_3d` (at `min_cutting_radius`).
 ///
 /// If a fourth is ever added to the emitter it must be added here in the
@@ -1082,7 +1088,7 @@ pub(super) fn clear_z_level_contour_parallel(
                     last_pos,
                     entry_seg,
                     ctx.safe_z,
-                    ctx.tolerance,
+                    ctx.cut_tolerance,
                     ctx.min_cutting_radius,
                     &ctx.stamp_drape(),
                 );
@@ -1094,7 +1100,7 @@ pub(super) fn clear_z_level_contour_parallel(
                     last_pos,
                     Adaptive3dSegment::Cut(path_3d),
                     ctx.safe_z,
-                    ctx.tolerance,
+                    ctx.cut_tolerance,
                     ctx.min_cutting_radius,
                     &ctx.stamp_drape(),
                 );
@@ -1230,7 +1236,7 @@ pub(super) fn clear_z_level_contour_parallel(
                     last_pos,
                     entry_seg,
                     ctx.safe_z,
-                    ctx.tolerance,
+                    ctx.cut_tolerance,
                     ctx.min_cutting_radius,
                     &ctx.stamp_drape(),
                 );
@@ -1243,7 +1249,7 @@ pub(super) fn clear_z_level_contour_parallel(
                         last_pos,
                         Adaptive3dSegment::Cut(path.clone()),
                         ctx.safe_z,
-                        ctx.tolerance,
+                        ctx.cut_tolerance,
                         ctx.min_cutting_radius,
                         &ctx.stamp_drape(),
                     );
@@ -1258,7 +1264,7 @@ pub(super) fn clear_z_level_contour_parallel(
                         last_pos,
                         Adaptive3dSegment::Cut(vec![*first, end]),
                         ctx.safe_z,
-                        ctx.tolerance,
+                        ctx.cut_tolerance,
                         ctx.min_cutting_radius,
                         &ctx.stamp_drape(),
                     );
@@ -1416,7 +1422,7 @@ pub(super) fn clear_z_level_adaptive(
                     last_pos,
                     entry_seg,
                     ctx.safe_z,
-                    ctx.tolerance,
+                    ctx.cut_tolerance,
                     ctx.min_cutting_radius,
                     &ctx.stamp_drape(),
                 );
@@ -1428,7 +1434,7 @@ pub(super) fn clear_z_level_adaptive(
                     last_pos,
                     Adaptive3dSegment::Cut(path_3d),
                     ctx.safe_z,
-                    ctx.tolerance,
+                    ctx.cut_tolerance,
                     ctx.min_cutting_radius,
                     &ctx.stamp_drape(),
                 );
@@ -2101,7 +2107,7 @@ fn clear_one_region(
                     last_pos,
                     entry_seg,
                     ctx.safe_z,
-                    ctx.tolerance,
+                    ctx.cut_tolerance,
                     ctx.min_cutting_radius,
                     &ctx.stamp_drape(),
                 );
@@ -2116,7 +2122,7 @@ fn clear_one_region(
                     last_pos,
                     Adaptive3dSegment::Cut(path_3d),
                     ctx.safe_z,
-                    ctx.tolerance,
+                    ctx.cut_tolerance,
                     ctx.min_cutting_radius,
                     &ctx.stamp_drape(),
                 );
@@ -2150,7 +2156,7 @@ fn clear_one_region(
                     last_pos,
                     entry_seg,
                     ctx.safe_z,
-                    ctx.tolerance,
+                    ctx.cut_tolerance,
                     ctx.min_cutting_radius,
                     &ctx.stamp_drape(),
                 );
@@ -2165,7 +2171,7 @@ fn clear_one_region(
                     last_pos,
                     Adaptive3dSegment::Cut(path_3d),
                     ctx.safe_z,
-                    ctx.tolerance,
+                    ctx.cut_tolerance,
                     ctx.min_cutting_radius,
                     &ctx.stamp_drape(),
                 );
@@ -2502,7 +2508,7 @@ fn clear_one_region(
                                         last_pos,
                                         Adaptive3dSegment::Cut(path_3d[sub_start..i].to_vec()),
                                         ctx.safe_z,
-                                        ctx.tolerance,
+                                        ctx.cut_tolerance,
                                         ctx.min_cutting_radius,
                                         &ctx.stamp_drape(),
                                     );
@@ -2524,7 +2530,7 @@ fn clear_one_region(
                                     last_pos,
                                     entry_seg,
                                     ctx.safe_z,
-                                    ctx.tolerance,
+                                    ctx.cut_tolerance,
                                     ctx.min_cutting_radius,
                                     &ctx.stamp_drape(),
                                 );
@@ -2545,7 +2551,7 @@ fn clear_one_region(
                                 last_pos,
                                 entry_seg,
                                 ctx.safe_z,
-                                ctx.tolerance,
+                                ctx.cut_tolerance,
                                 ctx.min_cutting_radius,
                                 &ctx.stamp_drape(),
                             );
@@ -2567,7 +2573,7 @@ fn clear_one_region(
                                 last_pos,
                                 Adaptive3dSegment::Cut(path_3d[sub_start..].to_vec()),
                                 ctx.safe_z,
-                                ctx.tolerance,
+                                ctx.cut_tolerance,
                                 ctx.min_cutting_radius,
                                 &ctx.stamp_drape(),
                             );
@@ -2584,7 +2590,7 @@ fn clear_one_region(
                             last_pos,
                             entry_seg,
                             ctx.safe_z,
-                            ctx.tolerance,
+                            ctx.cut_tolerance,
                             ctx.min_cutting_radius,
                             &ctx.stamp_drape(),
                         );
@@ -2609,7 +2615,7 @@ fn clear_one_region(
                     last_pos,
                     entry_seg,
                     ctx.safe_z,
-                    ctx.tolerance,
+                    ctx.cut_tolerance,
                     ctx.min_cutting_radius,
                     &ctx.stamp_drape(),
                 );
@@ -2633,7 +2639,7 @@ fn clear_one_region(
                     last_pos,
                     entry_seg,
                     ctx.safe_z,
-                    ctx.tolerance,
+                    ctx.cut_tolerance,
                     ctx.min_cutting_radius,
                     &ctx.stamp_drape(),
                 );

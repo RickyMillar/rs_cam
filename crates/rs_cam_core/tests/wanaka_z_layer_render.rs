@@ -208,6 +208,7 @@ fn wanaka_back_rough_first_and_last_z_layers() {
             envelope_radius: cutter.radius(),
             stepover: 2.53,
             tolerance: 0.1,
+            segment_merge_tolerance: None,
             min_cutting_radius: 0.0,
             boundary: None,
             world_stock_xy_bbox: None,

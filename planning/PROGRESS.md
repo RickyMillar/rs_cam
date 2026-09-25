@@ -29,6 +29,14 @@ G6 drill range 3.0-12.7 mm; EXTRAPOLATION_G6 §5.7), `4bee59ab` /
 `ddb2b478` B6 one force line per material (EXTRAPOLATION_G7 §5),
 `f1ec6283` the published power ceiling reads the final RPM.
 
+**Known red on master (found 2026-09-26, red at bfde909 before any
+package-2 change; not yet diagnosed):**
+`rest_stock_identity_g_restres::a_repeat_simulation_or_an_equal_regenerate_stales_nothing`
+("an equal regenerate keeps the rest result") and
+`suggest_feed_matches_final_geometry::a_raised_stepover_does_not_move_the_feed_at_all`
+(the 3D Finish 6 tapered-ball fixture no longer fires the stepover
+back-off, so the sentry proves nothing).
+
 **Fixed 2026-09-26 (cloud session):** `pill_writes_clamped_value_g_pillclamp`
 is green (6/6). It was red from 2026-09-23 with three causes, each fixed
 in the fixture: `0007528` (R1: Inlay allows only a V-bit; the Inlay
@@ -68,12 +76,17 @@ VCarve in softwood since B4; 12.0 mm serves.
 
 ### Roughing / adaptive3d stream (rs-cam-e2's queue, block below)
 
-1. **G-PLANSIMGAP fix** (most important): 3D Rough applies the segment
-   merge to each cut before the planner stamps it. The agent for it
-   died on the rate limit and wrote nothing. Evidence and options:
-   `planning/entry_stock_awareness_2026-09-24/plansimgap/`. Prove it
-   with a test that fails today; do not turn segment merge off and do
-   not raise entry clearance (operator decisions).
+1. ~~**G-PLANSIMGAP fix**~~ Done 2026-09-26: the 3D Rough planner applies
+   the segment merge to each cut before it stamps it (RDP at max(op
+   tolerance, merge tolerance)); the dressup merge stage moves nothing on
+   a 3D Rough and the trace says "applied_by_planner". Merge stays on;
+   entry clearance stays 0.5 mm. Sentry
+   `adaptive3d_plan_matches_merged_path_g_plansimgap` (red before: 1382
+   cells over 0.25 mm, max 2.812 mm; after: 0). Cost on the fixture: helix
+   entries +6 % moves (they now start over the real top), fed length
+   +5.0 % against the old merge. Landing record:
+   `planning/entry_stock_awareness_2026-09-24/PLAN.md` RESULTS 4. The
+   operator should see the rivmap100 time in the next GUI build.
 2. G-RAPIDPLUNGETOL: the rapid check misses a tip up to 2.207 cells
    into material under the whole footprint (safety).
 3. By Area WP2 (the pocket tree: valleys are their own jobs, the high

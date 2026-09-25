@@ -134,6 +134,12 @@ pub struct OperationTransformCapabilities {
     /// the finishing roles get [`crate::dressup::RAMP_FOLD_MAX_LAPS`], a
     /// rough keeps folding. `new` leaves it `None`.
     pub ramp_fold_lap_cap: Option<u32>,
+    /// G-PLANSIMGAP (2026-09-26): the planner applies the segment merge to
+    /// each cut before it stamps the cut into its own stock
+    /// (`Adaptive3dGeometry::segment_merge_tolerance`), so the dressup
+    /// pipeline does not merge again. A merge after the planner moves cuts
+    /// the planner stock already holds. `new` leaves it `false`.
+    pub planner_applies_segment_merge: bool,
 }
 
 impl OperationTransformCapabilities {
@@ -150,6 +156,15 @@ impl OperationTransformCapabilities {
             continuous_path_required,
             allows_link_moves,
             ramp_fold_lap_cap: None,
+            planner_applies_segment_merge: false,
+        }
+    }
+
+    /// The planner applies the segment merge itself (G-PLANSIMGAP).
+    pub const fn with_planner_segment_merge(self) -> Self {
+        Self {
+            planner_applies_segment_merge: true,
+            ..self
         }
     }
 
@@ -587,8 +602,13 @@ impl OperationType {
             // 7.78 mm through standing stock (to 12.0), and 448 entry
             // samples took more than twice the median bite (peak 6.08 mm).
             // With the order kept: 0 samples, peak 1.61 mm.
+            // The planner also applies the segment merge before it stamps
+            // each cut (G-PLANSIMGAP): the merge after the planner left up
+            // to 2.34 mm of material that the planner stock held as cut
+            // (rivmap100, 2026-09-25).
             Adaptive3d => OperationTransformCapabilities::new(false, true, false, false)
-                .without_rapid_reorder(),
+                .without_rapid_reorder()
+                .with_planner_segment_merge(),
             // UnifiedFinish is stitched from independently generated region
             // nodes, not one continuous trace. `generate_unified_finish`
             // emits a `RapidOrderBarrier` at every node start (plus per-Z

@@ -523,6 +523,7 @@ fn test_adaptive3d_rapids_lift_before_xy_traverse() {
             envelope_radius: tool.radius(),
             stepover: 2.0,
             tolerance: 0.1,
+            segment_merge_tolerance: None,
             min_cutting_radius: 0.0,
             boundary: None,
             world_stock_xy_bbox: None,
