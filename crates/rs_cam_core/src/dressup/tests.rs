@@ -1192,6 +1192,42 @@ fn filter_air_cuts_removes_air_moves() {
     );
 }
 
+/// A ramp or helix entry leg entirely above the stock stays fed; a plain
+/// cut along the same leg still becomes air (G-RESTRES).
+#[test]
+fn filter_air_cuts_keeps_ramp_and_helix_entries_fed() {
+    let stock = half_cleared_stock(); // top Z 5
+    let leg = |intent: MoveIntent| {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(20.0, 50.0, 8.0));
+        tp.feed_to_with_intent(P3::new(40.0, 50.0, 6.0), 300.0, intent);
+        tp.rapid_to(P3::new(40.0, 50.0, 10.0));
+        without_provenance(filter_air_cuts(
+            AnnotatedToolpath::new(tp),
+            &stock,
+            &probe_cutter(),
+            10.0,
+            0.1,
+            AirBridgePolicy::Always,
+        ))
+        .toolpath
+    };
+    let fed_leg = |tp: &Toolpath| {
+        tp.moves.iter().any(|m| {
+            matches!(m.move_type, MoveType::Linear { .. })
+                && (m.target.x - 40.0).abs() < 1e-9
+                && (m.target.z - 6.0).abs() < 1e-9
+        })
+    };
+    for intent in [MoveIntent::EntryRamp, MoveIntent::EntryHelix] {
+        assert!(fed_leg(&leg(intent)), "{intent:?} leg must stay fed");
+    }
+    assert!(
+        !fed_leg(&leg(MoveIntent::ClearingCut)),
+        "a plain cut on the same all-air leg must still become air"
+    );
+}
+
 #[test]
 fn filter_air_cuts_preserves_cutting_moves() {
     // All moves are in material — nothing should be removed.

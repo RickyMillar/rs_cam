@@ -2146,6 +2146,17 @@ pub enum AirBridgePolicy {
 /// whole length. `session::compute`'s `optimize_entry_descents` then re-splits
 /// the airborne top of such a plunge against its own envelope-disc ceiling.
 ///
+/// # Ramp and helix entries are never air
+///
+/// A fed `EntryRamp` or `EntryHelix` move keeps its feed whatever the prior
+/// stock says. `entry_descent` already chose where the run starts, and its
+/// air part is at most `entry_clearance_mm`. Filtering it made the same op
+/// generate different moves before and after a simulation (a fresh pocket's
+/// first ramp leg over the board top became a round trip to `safe_z`), which
+/// dropped the rest result on an equal regenerate (G-RESTRES). This arm only
+/// keeps a move fed, so it cannot put a rapid into material. `EntryPlunge`
+/// is not exempt: `optimize_entry_descents` handles its airborne top.
+///
 /// Span behavior: dropped air moves remap to `None`. Each inserted
 /// retract/rapid/plunge that bridges across a dropped run is tagged with
 /// [`SpanKind::LinkBridge`] (these inserts serve the same role as link
@@ -2192,7 +2203,13 @@ pub fn filter_air_cuts(
 
     let mut arc_buf: Vec<P3> = Vec::new();
     for (i, m) in moves.iter().enumerate() {
-        if m.move_type == MoveType::Rapid {
+        // A ramp or helix entry is never air: its emitter chose the start.
+        if m.move_type == MoveType::Rapid
+            || matches!(
+                m.intent,
+                crate::toolpath::MoveIntent::EntryRamp | crate::toolpath::MoveIntent::EntryHelix
+            )
+        {
             air_flags.push(false);
             continue;
         }
