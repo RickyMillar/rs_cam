@@ -27,7 +27,14 @@
 #                       converted from the published Newton value
 #                       (`lbf = N / 4.448`, rounded to 1 decimal); a Wood
 #                       Database row is quoted in lbf directly.
-# * `source_id`       — the per-row provenance column. It matches an entry in
+# * `specific_gravity_12` — FPL Table 5-3a specific gravity at 12% MC
+#                       (footnote b: "based on weight when ovendry and
+#                       volume at 12% moisture content"), transcribed from
+#                       the SG column of `fpl_ch5_extract.md`. Only FPL rows
+#                       carry it. Omit the key where FPL prints "—". The
+#                       Curti 2021 force line reads it (ruling B6); a row
+#                       without it has no force line.
+# * `source_id`      — the per-row provenance column. It matches an entry in
 #                       `data/vendor_lut/source_manifest.json`, and
 #                       `wood_species_library_provenance` refuses a row whose
 #                       `source_id` is not there.
@@ -36,144 +43,168 @@
 display_name = "Alder, red"
 scientific_name = "Alnus rubra"
 janka_lbf = 584.5
+specific_gravity_12 = 0.41
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Ash, black"
 scientific_name = "Fraxinus nigra"
 janka_lbf = 854.3
+specific_gravity_12 = 0.49
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Ash, green"
 scientific_name = "Fraxinus pennsylvanica"
 janka_lbf = 1191.5
+specific_gravity_12 = 0.56
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Ash, Oregon"
 scientific_name = "Fraxinus latifolia"
 janka_lbf = 1169.1
+specific_gravity_12 = 0.55
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Ash, white"
 scientific_name = "Fraxinus americana"
 janka_lbf = 1326.4
+specific_gravity_12 = 0.60
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Aspen, quaking"
 scientific_name = "Populus tremuloides"
 janka_lbf = 359.7
+specific_gravity_12 = 0.38
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Basswood, American"
 scientific_name = "Tilia americana"
 janka_lbf = 404.7
+specific_gravity_12 = 0.37
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Beech, American"
 scientific_name = "Fagus grandifolia"
 janka_lbf = 1304.0
+specific_gravity_12 = 0.64
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Birch, paper"
 scientific_name = "Betula papyrifera"
 janka_lbf = 899.3
+specific_gravity_12 = 0.55
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Birch, sweet"
 scientific_name = "Betula lenta"
 janka_lbf = 1461.3
+specific_gravity_12 = 0.65
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Birch, yellow"
 scientific_name = "Betula alleghaniensis"
 janka_lbf = 1259.0
+specific_gravity_12 = 0.62
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Butternut"
 scientific_name = "Juglans cinerea"
 janka_lbf = 494.6
+specific_gravity_12 = 0.38
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Cherry, black"
 scientific_name = "Prunus serotina"
 janka_lbf = 944.2
+specific_gravity_12 = 0.50
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Chestnut, American"
 scientific_name = "Castanea dentata"
 janka_lbf = 539.6
+specific_gravity_12 = 0.43
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Cottonwood, black"
 scientific_name = "Populus trichocarpa"
 janka_lbf = 359.7
+specific_gravity_12 = 0.35
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Cottonwood, eastern"
 scientific_name = "Populus deltoides"
 janka_lbf = 427.2
+specific_gravity_12 = 0.40
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Elm, American"
 scientific_name = "Ulmus americana"
 janka_lbf = 831.8
+specific_gravity_12 = 0.50
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Elm, slippery"
 scientific_name = "Ulmus rubra"
 janka_lbf = 854.3
+specific_gravity_12 = 0.53
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Hackberry"
 scientific_name = "Celtis occidentalis"
 janka_lbf = 876.8
+specific_gravity_12 = 0.53
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Hickory (pecan), pecan"
 scientific_name = "Carya illinoinensis"
 janka_lbf = 1821.0
+specific_gravity_12 = 0.66
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Hickory (true), mockernut"
 scientific_name = "Carya tomentosa"
 janka_lbf = 1978.4
+specific_gravity_12 = 0.72
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Hickory (true), pignut"
 scientific_name = "Carya glabra"
 janka_lbf = 2135.8
+specific_gravity_12 = 0.75
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Hickory (true), shagbark"
 scientific_name = "Carya ovata"
 janka_lbf = 1888.5
+specific_gravity_12 = 0.72
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Hickory (true), shellbark"
 scientific_name = "Carya laciniosa"
 janka_lbf = 1821.0
+specific_gravity_12 = 0.69
 source_id = "fpl_ch5_2010"
 
 [[species]]
@@ -186,438 +217,511 @@ source_id = "fpl_ch5_2010"
 display_name = "Locust, black"
 scientific_name = "Robinia pseudoacacia"
 janka_lbf = 1708.6
+specific_gravity_12 = 0.69
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Magnolia, cucumbertree"
 scientific_name = "Magnolia acuminata"
 janka_lbf = 696.9
+specific_gravity_12 = 0.48
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Magnolia, southern"
 scientific_name = "Magnolia grandiflora"
 janka_lbf = 1011.7
+specific_gravity_12 = 0.50
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Maple, bigleaf"
 scientific_name = "Acer macrophyllum"
 janka_lbf = 854.3
+specific_gravity_12 = 0.48
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Maple, black"
 scientific_name = "Acer nigrum"
 janka_lbf = 1169.1
+specific_gravity_12 = 0.57
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Maple, red"
 scientific_name = "Acer rubrum"
 janka_lbf = 944.2
+specific_gravity_12 = 0.54
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Maple, silver"
 scientific_name = "Acer saccharinum"
 janka_lbf = 696.9
+specific_gravity_12 = 0.47
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Maple, sugar"
 scientific_name = "Acer saccharum"
 janka_lbf = 1438.8
+specific_gravity_12 = 0.63
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Oak, black (red oak group)"
 scientific_name = "Quercus velutina"
 janka_lbf = 1214.0
+specific_gravity_12 = 0.61
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Oak, cherrybark (red oak group)"
 scientific_name = "Quercus pagoda"
 janka_lbf = 1483.8
+specific_gravity_12 = 0.68
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Oak, laurel (red oak group)"
 scientific_name = "Quercus laurifolia"
 janka_lbf = 1214.0
+specific_gravity_12 = 0.63
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Oak, northern red"
 scientific_name = "Quercus rubra"
 janka_lbf = 1281.5
+specific_gravity_12 = 0.63
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Oak, pin (red oak group)"
 scientific_name = "Quercus palustris"
 janka_lbf = 1506.3
+specific_gravity_12 = 0.63
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Oak, scarlet (red oak group)"
 scientific_name = "Quercus coccinea"
 janka_lbf = 1393.9
+specific_gravity_12 = 0.67
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Oak, southern red"
 scientific_name = "Quercus falcata"
 janka_lbf = 1056.7
+specific_gravity_12 = 0.59
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Oak, water (red oak group)"
 scientific_name = "Quercus nigra"
 janka_lbf = 1191.5
+specific_gravity_12 = 0.63
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Oak, willow (red oak group)"
 scientific_name = "Quercus phellos"
 janka_lbf = 1461.3
+specific_gravity_12 = 0.69
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Oak, bur (white oak group)"
 scientific_name = "Quercus macrocarpa"
 janka_lbf = 1371.4
+specific_gravity_12 = 0.64
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Oak, chestnut (white oak group)"
 scientific_name = "Quercus prinus"
 janka_lbf = 1124.1
+specific_gravity_12 = 0.66
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Oak, overcup (white oak group)"
 scientific_name = "Quercus lyrata"
 janka_lbf = 1191.5
+specific_gravity_12 = 0.63
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Oak, post (white oak group)"
 scientific_name = "Quercus stellata"
 janka_lbf = 1348.9
+specific_gravity_12 = 0.67
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Oak, swamp chestnut (white oak group)"
 scientific_name = "Quercus michauxii"
 janka_lbf = 1236.5
+specific_gravity_12 = 0.67
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Oak, swamp white"
 scientific_name = "Quercus bicolor"
 janka_lbf = 1618.7
+specific_gravity_12 = 0.72
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Oak, white"
 scientific_name = "Quercus alba"
 janka_lbf = 1348.9
+specific_gravity_12 = 0.68
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Sweetgum"
 scientific_name = "Liquidambar styraciflua"
 janka_lbf = 854.3
+specific_gravity_12 = 0.52
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Sycamore, American"
 scientific_name = "Platanus occidentalis"
 janka_lbf = 764.4
+specific_gravity_12 = 0.49
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Tupelo, black"
 scientific_name = "Nyssa sylvatica"
 janka_lbf = 809.4
+specific_gravity_12 = 0.50
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Tupelo, water"
 scientific_name = "Nyssa aquatica"
 janka_lbf = 876.8
+specific_gravity_12 = 0.50
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Walnut, black"
 scientific_name = "Juglans nigra"
 janka_lbf = 1011.7
+specific_gravity_12 = 0.55
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Yellow-poplar"
 scientific_name = "Liriodendron tulipifera"
 janka_lbf = 539.6
+specific_gravity_12 = 0.42
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Baldcypress"
 scientific_name = "Taxodium distichum"
 janka_lbf = 517.1
+specific_gravity_12 = 0.46
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Cedar, Atlantic white"
 scientific_name = "Chamaecyparis thyoides"
 janka_lbf = 359.7
+specific_gravity_12 = 0.32
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Cedar, eastern redcedar"
 scientific_name = "Juniperus virginiana"
 janka_lbf = 899.3
+specific_gravity_12 = 0.47
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Cedar, incense"
 scientific_name = "Calocedrus decurrens"
 janka_lbf = 472.1
+specific_gravity_12 = 0.37
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Cedar, northern white"
 scientific_name = "Thuja occidentalis"
 janka_lbf = 314.7
+specific_gravity_12 = 0.31
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Cedar, Port-Orford"
 scientific_name = "Chamaecyparis lawsoniana"
 janka_lbf = 629.5
+specific_gravity_12 = 0.43
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Cedar, western redcedar"
 scientific_name = "Thuja plicata"
 janka_lbf = 359.7
+specific_gravity_12 = 0.32
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Cedar, yellow"
 scientific_name = "Cupressus nootkatensis"
 janka_lbf = 584.5
+specific_gravity_12 = 0.44
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Douglas-fir, coast"
 scientific_name = "Pseudotsuga menziesii"
 janka_lbf = 719.4
+specific_gravity_12 = 0.48
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Douglas-fir, Interior West"
 scientific_name = "Pseudotsuga menziesii"
 janka_lbf = 652.0
+specific_gravity_12 = 0.50
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Douglas-fir, Interior North"
 scientific_name = "Pseudotsuga menziesii"
 janka_lbf = 607.0
+specific_gravity_12 = 0.48
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Douglas-fir, Interior South"
 scientific_name = "Pseudotsuga menziesii"
 janka_lbf = 517.1
+specific_gravity_12 = 0.46
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Fir, balsam"
 scientific_name = "Abies balsamea"
 janka_lbf = 382.2
+specific_gravity_12 = 0.35
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Fir, California red"
 scientific_name = "Abies magnifica"
 janka_lbf = 494.6
+specific_gravity_12 = 0.38
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Fir, grand"
 scientific_name = "Abies grandis"
 janka_lbf = 494.6
+specific_gravity_12 = 0.37
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Fir, noble"
 scientific_name = "Abies procera"
 janka_lbf = 404.7
+specific_gravity_12 = 0.39
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Fir, Pacific silver"
 scientific_name = "Abies amabilis"
 janka_lbf = 427.2
+specific_gravity_12 = 0.43
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Fir, subalpine"
 scientific_name = "Abies lasiocarpa"
 janka_lbf = 359.7
+specific_gravity_12 = 0.32
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Fir, white"
 scientific_name = "Abies concolor"
 janka_lbf = 472.1
+specific_gravity_12 = 0.39
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Hemlock, eastern"
 scientific_name = "Tsuga canadensis"
 janka_lbf = 494.6
+specific_gravity_12 = 0.40
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Hemlock, mountain"
 scientific_name = "Tsuga mertensiana"
 janka_lbf = 674.5
+specific_gravity_12 = 0.45
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Hemlock, western"
 scientific_name = "Tsuga heterophylla"
 janka_lbf = 539.6
+specific_gravity_12 = 0.45
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Larch, western"
 scientific_name = "Larix occidentalis"
 janka_lbf = 831.8
+specific_gravity_12 = 0.52
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Pine, eastern white"
 scientific_name = "Pinus strobus"
 janka_lbf = 382.2
+specific_gravity_12 = 0.35
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Pine, jack"
 scientific_name = "Pinus banksiana"
 janka_lbf = 562.1
+specific_gravity_12 = 0.43
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Pine, loblolly"
 scientific_name = "Pinus taeda"
 janka_lbf = 696.9
+specific_gravity_12 = 0.51
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Pine, lodgepole"
 scientific_name = "Pinus contorta"
 janka_lbf = 472.1
+specific_gravity_12 = 0.41
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Pine, longleaf"
 scientific_name = "Pinus palustris"
 janka_lbf = 876.8
+specific_gravity_12 = 0.59
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Pine, ponderosa"
 scientific_name = "Pinus ponderosa"
 janka_lbf = 449.6
+specific_gravity_12 = 0.40
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Pine, red"
 scientific_name = "Pinus resinosa"
 janka_lbf = 562.1
+specific_gravity_12 = 0.46
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Pine, shortleaf"
 scientific_name = "Pinus echinata"
 janka_lbf = 696.9
+specific_gravity_12 = 0.51
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Pine, spruce"
 scientific_name = "Pinus glabra"
 janka_lbf = 652.0
+specific_gravity_12 = 0.44
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Pine, sugar"
 scientific_name = "Pinus lambertiana"
 janka_lbf = 382.2
+specific_gravity_12 = 0.36
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Pine, Virginia"
 scientific_name = "Pinus virginiana"
 janka_lbf = 741.9
+specific_gravity_12 = 0.48
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Pine, western white"
 scientific_name = "Pinus monticola"
 janka_lbf = 427.2
+specific_gravity_12 = 0.35
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Redwood, old-growth"
 scientific_name = "Sequoia sempervirens"
 janka_lbf = 472.1
+specific_gravity_12 = 0.40
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Redwood, young-growth"
 scientific_name = "Sequoia sempervirens"
 janka_lbf = 427.2
+specific_gravity_12 = 0.35
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Spruce, black"
 scientific_name = "Picea mariana"
 janka_lbf = 539.6
+specific_gravity_12 = 0.42
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Spruce, Engelmann"
 scientific_name = "Picea engelmannii"
 janka_lbf = 393.4
+specific_gravity_12 = 0.35
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Spruce, red"
 scientific_name = "Picea rubens"
 janka_lbf = 494.6
+specific_gravity_12 = 0.40
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Spruce, Sitka"
 scientific_name = "Picea sitchensis"
 janka_lbf = 517.1
+specific_gravity_12 = 0.40
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Spruce, white"
 scientific_name = "Picea glauca"
 janka_lbf = 404.7
+specific_gravity_12 = 0.36
 source_id = "fpl_ch5_2010"
 
 [[species]]
 display_name = "Tamarack"
 scientific_name = "Larix laricina"
 janka_lbf = 584.5
+specific_gravity_12 = 0.53
 source_id = "fpl_ch5_2010"
 
 [[species]]

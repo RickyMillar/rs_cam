@@ -160,8 +160,9 @@ pub enum UnmodeledReason {
     /// chipload-vs-LUT comparison is calibrated for steady-state cutting,
     /// so we refuse rather than flag transient feeds against it.
     SteadyStateSamplesNotPresent,
-    /// The material is `Custom` without an explicitly-validated `kc`.
-    /// We refuse to compute a force-derived envelope from a guessed Kc.
+    /// The material has no measured force line (`Material::force_line`
+    /// refuses; ruling B6). `Custom` is one case. We refuse to compute a
+    /// force-derived envelope from a guessed constant.
     MaterialUnvalidated,
     /// The cutter shape cannot model the engagement mode in this region
     /// (e.g. V-bit at the tip, ball nose past the hemisphere pole).

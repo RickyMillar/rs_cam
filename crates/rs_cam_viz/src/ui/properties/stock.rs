@@ -104,21 +104,30 @@ pub fn draw(
             ui.end_row();
 
             ui.label(
-                egui::RichText::new("Kc:")
+                egui::RichText::new("Force line:")
                     .small()
                     .color(crate::ui::tokens::TEXT_MUTED),
             ).on_hover_text(
-                "Specific cutting force (N/mm\u{00B2}). Used to calculate spindle load and recommended feed rates. Higher Kc = harder to cut."
+                "The material's cutting-force line Fc/ap = Ks \u{00B7} h + F_edge (ruling B6). The force and power models read it. A material with no measured line shows \u{2014}."
             );
-            let kc_text = match stock.material.kc_n_per_mm2() {
-                Some(kc) => format!("{kc:.1} N/mm\u{00B2}"),
-                None => "—".to_owned(),
+            // One line per material: the Curti 2021 density law, the Goli
+            // 2018 MDF line, or a named refusal (ruling B6).
+            let force_line = stock.material.force_line();
+            let (_, force_hover) = rs_cam_core::material::force_line::card_lines(&force_line);
+            let force_text = match &force_line {
+                Ok(line) => format!(
+                    "Ks {:.1} N/mm\u{00B2}, F_edge {:.2} N/mm",
+                    line.ks_n_per_mm2(),
+                    line.f_edge_n_per_mm()
+                ),
+                Err(_) => "\u{2014}".to_owned(),
             };
             ui.label(
-                egui::RichText::new(kc_text)
+                egui::RichText::new(force_text)
                     .small()
                     .color(crate::ui::tokens::TEXT_MUTED),
-            );
+            )
+            .on_hover_text(force_hover);
             ui.end_row();
         });
 

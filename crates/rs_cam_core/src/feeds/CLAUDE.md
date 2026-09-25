@@ -13,8 +13,7 @@ The calculator for RPM, feed, plunge rate, DOC and WOC. The validated entry poin
 - `vendor_lut.rs`, `vendor_lookup.rs`, `vendor_normalize.rs` — vendor table, lookup, type mapping. `ramp.rs` — G6 ramp: `RampBasis`, the entry θ, `resolve_ramp_feed`.
 - `extrapolation.rs` + `extrapolation/{size,hardness,family,drill}.rs` — `SizeLaw` (G1 size claim, form A/B/C or refusal),
   `hardness_basis` (G2 Janka + soft/hard cap), `family_basis` (G3 `FAMILY_RULES`), `drill_basis` (G6 `DRILL_RULES`) run in `build_result`.
-- `profile.rs`, `quantities.rs`, `provenance.rs`, `support.rs` — the pre-sim profile, the boundary newtypes, the per-value provenance, the `FeedsSupport` arm.
-- `rationale.rs`, `feed_explanation.rs`, `explain_payload.rs` — rationale tree, stage record, UI contract.
+- `profile.rs`, `quantities.rs`, `provenance.rs`, `support.rs` — the pre-sim profile, the boundary newtypes, the per-value provenance, the `FeedsSupport` arm. `rationale.rs`, `feed_explanation.rs`, `explain_payload.rs` — rationale tree, stage record, UI contract.
 
 ## Invariants
 - `ChiploadBounds` in Suggest mirrors the gate's piecewise-linear DOC derating (canonical scale: `feeds::geometry`). A V-bit row is read, and its band de-rated, at its printed key (the cutting diameter, or the included angle when the chart prints none), never the engaged width (ruling B4).
@@ -24,6 +23,7 @@ The calculator for RPM, feed, plunge rate, DOC and WOC. The validated entry poin
 - R4: the rubbing floor `min(0.025, band min)` warns, never lifts; no machine or L/D feed factor. The
   dial `MachineProfile::aggressiveness` (0.85) scales depth and stepover to hold load at
   `k × L/D share`; it never cuts the feed. Power ceiling = `power_at_rpm`, no fraction.
+- B6: force, power, efficiency and the deflection predictor read one line, `Material::force_line()`; power is `line × grain_factor` (1.0 on every line), deflection the line alone. No `Kc`, no anchor. A refusal is `MaterialUnvalidated`; a chip outside the printed range extends the line and `PowerFigure::force` names the `ChipRegime`.
 - G3 (A3): a chart that names no operation gives one row per printed cell under (Pocket, Roughing); `FAMILY_RULES` (tapered: Onsrud 77-100; bull: Amana corner radius) serve adaptive, contour, parallel, scallop and trace at x1.00. No copy rows, no ball rule (B3). `ProjectCurve` routes ball, tapered and bull to (Parallel, Finish), and a V-bit to (Trace, Finish) (operator ruling 2026-09-25); a facing bit still refuses.
 - One claimed band: every consumer reads `LookupResult::size_basis`; a `Refused` row has no band anywhere. A2: one printed value is a point (`printed_chipload()`); no band is derived; the modulator caps at it with no floor; the gate is hard above it and advisory below it.
 
@@ -37,4 +37,4 @@ Run one with `cargo test -p rs_cam_core -q --test <name>`: `lut_resolver_census_
 `a_tapered_row_is_read_at_the_tip_a1`, `the_micro_tapered_finish_ships_the_printed_tip_row_g1`, `a_size_claim_states_its_rule_range_and_residual_g1`,
 `every_consumer_reads_one_claimed_band_g1`, `the_onsrud_vbit_rows_serve_mdf_and_plywood_g2`, `one_janka_table_for_row_and_query_g2`,
 `a_hardness_transfer_caps_at_the_printed_soft_hard_ratio_g2`, `a_printed_value_is_held_as_a_point_a2`, `a_printed_cell_serves_every_family_through_one_claim_g3`,
-`a_flat_end_plunge_is_the_side_chip_over_z_g6`, `a_ramp_feed_is_the_g6_chip_over_the_entry_slope_g6ramp`, `a_vbit_row_is_read_at_its_printed_key_b4`. `feeds_matrix_instrument_fm1` is an `#[ignore]` instrument (`-- --ignored`) that writes planning/feeds_matrix_2026-09-23/. `wanaka_suggest_integration` takes minutes: ask first.
+`a_flat_end_plunge_is_the_side_chip_over_z_g6`, `a_ramp_feed_is_the_g6_chip_over_the_entry_slope_g6ramp`, `a_vbit_row_is_read_at_its_printed_key_b4`, `the_force_line_is_printed_per_family_b6`. `feeds_matrix_instrument_fm1` is an `#[ignore]` instrument (`-- --ignored`) that writes planning/feeds_matrix_2026-09-23/. `wanaka_suggest_integration` takes minutes: ask first.

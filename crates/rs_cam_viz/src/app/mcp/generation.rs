@@ -16,6 +16,69 @@ use crate::state::selection::Selection;
 use super::simulation::build_per_depth_pass_summary;
 use super::{MultitoolDials, parse_tier_strategies};
 
+/// The mean chip of the cut Suggest ships, through
+/// `feeds::operating_point::force_at_operating_point` (the door the Feeds
+/// card reads). `None` when the material has no force line or the cut
+/// resolves no point.
+fn shipped_force_point(
+    operation: &rs_cam_core::compute::catalog::OperationConfig,
+    tool: &rs_cam_core::compute::tool_config::ToolConfig,
+    material: &rs_cam_core::material::Material,
+    feeds: &rs_cam_core::feeds::FeedsResult,
+) -> Option<rs_cam_core::material::force_line::ForceAtPoint> {
+    rs_cam_core::feeds::operating_point::force_at_operating_point(
+        operation,
+        tool,
+        material,
+        Some(rs_cam_core::feeds::suggest::CalculatorOperatingPoint {
+            radial_width_mm: feeds.radial_width_mm,
+            axial_depth_mm: feeds.axial_depth_mm,
+            feed_rate_mm_min: feeds.feed_rate_mm_min,
+            rpm: feeds.rpm,
+        }),
+    )
+    .ok()
+}
+
+/// The `basis.force_line` object of `get_suggest_rationale` (plan B6 §6).
+///
+/// The line comes from `Material::force_line`; `point` is the line at the
+/// mean chip of the shipped cut ([`shipped_force_point`]). On a refusal every
+/// number is null and `refused` names the variant. `basic_specific_gravity`
+/// is the printed FPL Table 5-5a `Gb` of a species with no Table 5-3a row;
+/// it is null otherwise.
+pub(super) fn force_line_json(
+    material: &rs_cam_core::material::Material,
+    point: Option<rs_cam_core::material::force_line::ForceAtPoint>,
+) -> serde_json::Value {
+    let result = material.force_line();
+    let (headline, detail) = rs_cam_core::material::force_line::card_lines(&result);
+    let line = result.as_ref().ok();
+    let point = point.filter(|_| line.is_some());
+    serde_json::json!({
+        "headline": headline,
+        "detail": detail,
+        "source_id": line.map(|l| l.source_id()),
+        "form": line.map(|l| l.form_id()),
+        "ks_n_per_mm2": line.map(|l| l.ks_n_per_mm2()),
+        "f_edge_n_per_mm": line.map(|l| l.f_edge_n_per_mm()),
+        "grain_factor": line.map(|l| l.grain_factor()),
+        "chip_range_mm": line.map(|l| {
+            let (lo, hi) = l.chip_range_mm();
+            [lo, hi]
+        }),
+        "specific_gravity": line.and_then(|l| l.specific_gravity()),
+        "basic_specific_gravity": line.and_then(|l| l.basic_specific_gravity()),
+        "density_kg_m3": line.and_then(|l| l.density_kg_m3()),
+        "density_source": line.and_then(|l| l.density_source_text()),
+        "evaluated_at": point.map(|p| serde_json::json!({
+            "mean_chip_mm": p.mean_chip_mm,
+            "chip_regime": p.chip_regime.wire_id(),
+        })),
+        "refused": result.as_ref().err().map(|r| r.variant_id()),
+    })
+}
+
 impl RsCamApp {
     /// v3.2 (2026-06-04): Combined-Suggest rationale for the toolpath
     /// at `index`. Returns a [`rs_cam_core::feeds::rationale::SuggestRationale`]
@@ -60,6 +123,10 @@ impl RsCamApp {
                 // `headline`, `detail` and `value_mm_min` come from the
                 // `RampFeed` record of the funnel, which holds the number,
                 // the arm and θ. A drill files no record, so they are null.
+                // B6: `force_line` is the material's one force line (plan
+                // §6), evaluated at the mean chip of the cut Suggest ships;
+                // on a refusal every number is null and `refused` names the
+                // variant.
                 let ramp_record = profile.warnings.iter().find_map(|w| match w {
                     rs_cam_core::feeds::suggest::SuggestWarning::RampFeed { record, .. } => {
                         Some(record)
@@ -78,10 +145,23 @@ impl RsCamApp {
                     let (ramp_source_headline, ramp_source_detail) = feeds.ramp.card_text();
                     let (ramp_headline, ramp_detail) =
                         ramp_record.map(|record| record.card_text()).unzip();
+                    // The cut Suggest ships, else the input operation.
+                    let shipped_operation = profile
+                        .suggested_operation
+                        .as_ref()
+                        .unwrap_or(profile.operation);
+                    let force_point = shipped_force_point(
+                        shipped_operation,
+                        profile.tool_cfg,
+                        profile.material,
+                        feeds,
+                    );
+                    let force_line = force_line_json(profile.material, force_point);
                     serde_json::json!({
                         "headline": headline,
                         "detail": detail,
                         "hardness": hardness,
+                        "force_line": force_line,
                         "ramp": {
                             "source": {
                                 "headline": ramp_source_headline,

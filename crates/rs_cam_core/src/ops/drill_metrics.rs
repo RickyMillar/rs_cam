@@ -158,7 +158,7 @@ pub struct DrillToolpathSummary {
 /// Thin convenience wrapper around
 /// [`Material::drill_chip_welding_threshold_dtd`]. The canonical
 /// dispatch lives on `Material` to match the rest of the per-material
-/// accessor pattern (`kc_n_per_mm2`, `hardness_index`, etc.); this
+/// accessor pattern (`force_line`, `feed_scale_factor`, etc.); this
 /// free function exists for the established call-sites in this module
 /// and `tool_load::drill_gates`. New code should call the method
 /// directly.

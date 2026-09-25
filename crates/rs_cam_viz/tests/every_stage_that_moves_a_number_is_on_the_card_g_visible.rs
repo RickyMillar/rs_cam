@@ -41,8 +41,9 @@
 //!   the roughing ramp of 3° gives a sourced G6 ramp: it raises `RampFeed`.
 //! - `slow_gantry`: the `inspector_width_is_tab_independent_up4` cell on a
 //!   cutting-feed ceiling of 200 mm/min. Raises `FeedRateClamped`.
-//! - `weak_spindle`: the adaptive cell on a 0.05 kW constant-power spindle.
-//!   Raises `PowerLadderReducedCut`.
+//! - `weak_spindle`: the adaptive cell in generic hardwood on a 0.02 kW
+//!   constant-power spindle. Raises `PowerLadderReducedCut`. It was Baltic
+//!   birch until ruling B6: plywood has no force line, so no power.
 //! - `short_flute`: the adaptive cell on a tool with 2 mm of flute. Raises
 //!   `DocExceedsFlute`.
 //! - `finish`: the first Finish-role operation and tool type that ships a
@@ -678,8 +679,26 @@ fn cases() -> Vec<Case> {
     let mut slow_gantry = MachineProfile::generic_wood_router();
     slow_gantry.max_cutting_feed_mm_min = Some(200.0);
 
+    // Ruling B6: the cell moved from Baltic birch (no force line now) to
+    // generic hardwood, and the budget from 0.05 to 0.02 kW.
+    //
+    // The arithmetic. Hardwood's power is now about 0.43x the old hardwood
+    // value: the old line was (Ks 49.95, F_edge 5.30) x 2.0 grain factor;
+    // the Curti line is (51.92, 4.077) x 1.0, so the edge term, which
+    // carries most of a wood cut, is 4.077 / 10.60 = 0.38x and the shear
+    // term 51.92 / 99.9 = 0.52x. Against the old Baltic birch line (Kc 13:
+    // (18.50, 1.963) x 2.0 = (37.0, 3.93)) the new hardwood cut draws 1.04x
+    // (edge) to 1.40x (shear) the power the fixture drew before, so a
+    // budget that fired then fires now. The ladder files
+    // `PowerLadderReducedCut` whenever the recipe is over budget and a rung
+    // moves: `largest_fitting` returns the 0.5 mm floor even when the floor
+    // is still over budget. The edge term alone at this cell (Ø6, 2F,
+    // 18 000 rpm, ae 1.2 mm, ψ 0.93 rad) is 4.077 x π·6·18 000 x 0.295 /
+    // 60e6 = 0.0068 kW per mm of depth, so any depth over 3 mm is over
+    // 0.02 kW before the shear term. 0.02 kW keeps a margin of 2.5x below
+    // the old 0.05 kW, and a rung always has room to move.
     let mut weak_spindle = MachineProfile::generic_wood_router();
-    weak_spindle.power = PowerModel::ConstantPower { power_kw: 0.05 };
+    weak_spindle.power = PowerModel::ConstantPower { power_kw: 0.02 };
 
     let mut short_flute = adaptive_tool();
     short_flute.cutting_length = 2.0;
@@ -745,7 +764,7 @@ fn cases() -> Vec<Case> {
         Case {
             name: "weak_spindle",
             tool: adaptive_tool(),
-            material: baltic_birch(),
+            material: hardwood(),
             operation: adaptive_operation(),
             machine: Some(weak_spindle),
             must_raise: &["PowerLadderReducedCut"],

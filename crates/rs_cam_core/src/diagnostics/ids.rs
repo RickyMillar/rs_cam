@@ -30,8 +30,18 @@ pub const LOAD_CHIPLOAD_UNMODELED: &str = "load.chipload.unmodeled";
 pub const LOAD_CHIPLOAD_COMMANDED_ABOVE_BAND: &str = "load.chipload.commanded_above_band";
 pub const LOAD_POWER_EXCEEDS: &str = "load.power.exceeds";
 pub const LOAD_POWER_WITHIN: &str = "load.power.within";
+/// The power gate did not measure (`PowerVerdict::Unmodeled`: no
+/// simulation, no machine power, or a material with no force line, ruling
+/// B6). Its own id, so a reader of ids alone never reads "within" for a
+/// gate that measured nothing (as [`LOAD_DEPTH_UNMODELED`]).
+pub const LOAD_POWER_UNMODELED: &str = "load.power.unmodeled";
 pub const LOAD_DEFLECTION_EXCEEDS: &str = "load.deflection.exceeds";
 pub const LOAD_DEFLECTION_WITHIN: &str = "load.deflection.within";
+/// The deflection gate did not measure (`DeflectionVerdict::Unmodeled`:
+/// for example a material with no force line, ruling B6). Its own id, so a
+/// reader of ids alone never reads "within" for a gate that measured
+/// nothing (as [`LOAD_DEPTH_UNMODELED`]).
+pub const LOAD_DEFLECTION_UNMODELED: &str = "load.deflection.unmodeled";
 /// The measured depth of cut is inside the machine rigidity cap
 /// (`tool_load::depth`, a roughing pass). Feeds matrix R2 (2026-09-23).
 pub const LOAD_DEPTH_WITHIN: &str = "load.depth.within";
@@ -351,8 +361,10 @@ pub const ALL: &[&str] = &[
     LOAD_CHIPLOAD_COMMANDED_ABOVE_BAND,
     LOAD_POWER_EXCEEDS,
     LOAD_POWER_WITHIN,
+    LOAD_POWER_UNMODELED,
     LOAD_DEFLECTION_EXCEEDS,
     LOAD_DEFLECTION_WITHIN,
+    LOAD_DEFLECTION_UNMODELED,
     LOAD_DEPTH_WITHIN,
     LOAD_DEPTH_EXCEEDS,
     LOAD_DEPTH_REPORTED,

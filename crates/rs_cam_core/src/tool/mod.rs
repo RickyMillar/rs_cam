@@ -1264,14 +1264,16 @@ mod tests {
         // sees (`feeds::predict::tip_deflection_from_engagement`) must equal
         // an independent hand calculation built from two published formulas
         // and nothing from the model internals:
-        //   1. Wood force (woodresearch.sk): F = ap·(49.95·h + 5.30),
-        //      h = fz·sin(θ_peak). At full immersion θ_peak = π/2 ⇒ h = fz.
+        //   1. Wood force (Curti 2021 Table 5, helix 0, ruling B6):
+        //      F = ap·(Ks_n·ρ·h + Int_n·ρ), h = fz·sin(θ_peak). At full
+        //      immersion θ_peak = π/2 ⇒ h = fz. Ks_n and Int_n are the
+        //      down-milling vertices of the printed quadratics, the upper
+        //      envelope: c + b²/(4|a|).
         //   2. Textbook cantilever, point load at distance a from the clamp,
         //      tip deflection: δ = F·a²·(3L − a)/(6·E·I), a = L − ap/2.
         // Material/E are shared inputs (documented properties, not the thing
-        // under test); the FORMULAS are what this pins. GenericHardwood is
-        // the literature anchor wood, so its coefficients are the raw
-        // 49.95 / 5.30 published values.
+        // under test); the FORMULAS are what this pins. GenericHardwood reads
+        // ρ = mean FPL SG (0.64, 0.54, 0.63) × 1000 × 1.12 at 12 % MC.
         use crate::material::{Material, WoodSpecies};
         let d = 6.0_f64;
         let l = 45.0_f64;
@@ -1296,7 +1298,10 @@ mod tests {
 
         // (1) hand force from the published wood equation.
         let h = fz; // sin(π/2) = 1
-        let force_hand = ap * (49.95 * h + 5.30);
+        let ks_n = 56e-3 + 5e-4_f64.powi(2) / (4.0 * 3e-6);
+        let int_n = 47e-4 + 4e-5_f64.powi(2) / (4.0 * 3e-7);
+        let rho = (0.64 + 0.54 + 0.63) / 3.0 * 1000.0 * 1.12;
+        let force_hand = ap * (ks_n * rho * h + int_n * rho);
         // (2) hand beam from the textbook cantilever formula. The section is
         // the EQUIVALENT bending diameter, not the cutting diameter: an end
         // mill bends on its flute-relieved section (T-17). The published

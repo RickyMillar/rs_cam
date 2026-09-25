@@ -720,6 +720,13 @@ fn panel_cut_geometry_apply_goes_through_the_invariant_funnel() {
 /// not move; the stepover re-solves at the new RPM to 1.515 (measured; the
 /// dial's power term reads the spindle at 11248 rpm).
 ///
+/// **The stepover moved once more, with its cause: 1.515 → 1.525, ruling
+/// B6 (2026-09-25).** The dial reads the force line. The Curti line for
+/// generic softwood has Ks / F_edge = 12.73 per mm (the retired anchor line
+/// had 9.42), so the slope term weighs more against the edge term and the
+/// dial's solve lands 0.66 % wider (measured). Feed, plunge, RPM and depth
+/// do not move.
+///
 /// This pins all five through the validated panel path, which is the path
 /// whose numbers the census recorded.
 #[test]
@@ -761,10 +768,10 @@ fn pocket_fixture_recipe_fingerprint_is_unmoved() {
     // figure is re-derived from the cause; it is not a widened tolerance.
     assert_eq!(op.plunge_rate(), 1058.0, "plunge");
     assert_eq!(op.spindle_rpm(), Some(11_248), "rpm");
-    // 1.515 arrives as 1.5150000000000001 from the dial's solve; the pin
+    // 1.525 arrives as 1.5250000000000001 from the dial's solve; the pin
     // is the value, not the bit pattern.
     let woc = op.stepover().expect("woc");
-    assert!((woc - 1.515).abs() < 1e-9, "woc {woc}");
+    assert!((woc - 1.525).abs() < 1e-9, "woc {woc}");
     assert_eq!(op.depth_per_pass(), Some(0.75), "doc");
 }
 

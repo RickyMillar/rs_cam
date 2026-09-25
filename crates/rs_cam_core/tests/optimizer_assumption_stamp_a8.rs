@@ -102,7 +102,6 @@ fn session_with(op: OperationConfig, tool: ToolType, machine: MachineProfile) ->
     stock.material = rs_cam_core::material::Material::Custom {
         name: "a8 refusal lever".to_owned(),
         feed_scale_factor: 1.0,
-        kc: 10.0,
     };
     builder = builder.stock(stock);
     builder = builder.machine(machine);

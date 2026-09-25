@@ -371,6 +371,49 @@ Their measured cost across the shipped LUT (11 712 query/row pairs) is in
 `planning/review_2026-08-04/LAW_MAGNITUDE_TABLES.md`, and the harness that
 produced it is `crates/rs_cam_core/tests/law_magnitude_measurement.rs`.
 
+### One force line per material (ruling B6, 2026-09-25)
+
+`crates/rs_cam_core/src/material/force_line.rs` holds the one cutting-force
+line every consumer reads (`Material::force_line`): the deflection force, the
+power model, the cut efficiency and the deflection predictor. It replaced the
+scalar `Kc`, the woodresearch.sk anchor and the 2.0 grain factor. Plan:
+`planning/extrapolation_2026-09-24/B6_PLAN.md`; fetched rows:
+`planning/extrapolation_2026-09-24/fetch/G7/`.
+
+- **Solid wood: Curti 2021.** Curti R., Marcon B., Denaud L., Togni M.,
+  Furferi R., Goli G., "Generalized cutting force model for peripheral milling
+  of wood, based on the effect of density, uncut chip cross section, grain
+  orientation and tool helix angle", *Eur. J. Wood Wood Prod.* 2021,
+  doi:10.1007/s00107-021-01667-5.
+  Table 5, helix 0: the eight printed quadratics in grain angle for `Ks/ρ` and
+  `Int/ρ`, up- and down-milling. The engine takes the upper envelope per term
+  (derived: 0.0768333 and 0.0060333, both from down-milling) and multiplies by
+  ρ. Valid range as printed: ρ 287-1080 kg/m³, mean chip 0.04-0.10 mm, rake
+  25°. Source id `g7_curti2021_generalized_wood_model`.
+- **MDF: Goli 2018.** Goli G., Curti R., Marcon B., Scippa A., Campatelli G.,
+  Furferi R., Denaud L., "Specific Cutting Forces of Isotropic and Orthotropic
+  Engineered Wood Products by Round Shape Machining", *Materials*
+  11(12):2575, 2018, doi:10.3390/ma11122575 (PMC6315737). Table 3, MDF,
+  up-milling: Ks 31.44 N/mm² (SD 2.68), Int 3.36 N/mm (SD 0.27), mean chip
+  0.041-0.091 mm. Source id `g7_goli2018_round_shape_ks`.
+- **Density basis: Forest Products Laboratory, Wood Handbook: Wood as an
+  Engineering Material, FPL-GTR-190 (2010).** Chapter 5 Table 5-3a
+  SG at 12 % MC ("based on weight when ovendry and volume at 12% moisture
+  content"), so ρ = SG × 1000 × 1.12 (source id `fpl_ch5_2010`). For the
+  species with no Table 5-3a row (radiata pine, jarrah, ipe), Chapter 5 Table
+  5-5a prints the basic SG `Gb` on the "Green" line (source id
+  `g7_fpl_gtr190_ch5_table5_5a`), and Chapter 4 Eq. (4-11), `G12 = Gb / [1 −
+  0.265 Gb (1 − 12/MCfs)]` with MCfs 30 %, converts it to the 12 % MC basis
+  (source id `g7_fpl_gtr190_ch4_sg_conversion`). Radiata pine 504.1 kg/m³,
+  jarrah 839.9 kg/m³; ipe 1207.0 kg/m³ is above the Curti range and refuses.
+
+Retired from the force model by ruling B6: the woodresearch.sk 2019 anchor
+(`Fc1z = 49.95·h_m + 5.30`, below) and the Pałubicki 2021 particleboard value
+(doi:10.3390/ma14092208, a total kc at 40-60 m/s, a different quantity). The
+Yang 2022 HDPE figure (doi:10.3390/polym14010189) is a yield stress, not a
+cutting force, so HDPE has no line either. The historical entries below stay
+as the record of what the engine read before B6.
+
 ### Feed-aware lateral cutting-force model (deflection)
 
 `crates/rs_cam_core/src/feeds/force.rs` (the canonical force the tip-deflection
@@ -380,9 +423,10 @@ replaced the feed-blind `F = Kc · ap · ae` with the feed-aware affine model
 (deep-research verification 2026-06-18, see
 `planning/UNIFIED_LOAD_MODEL_2026-06-18.md` §11):
 
-- **Wood affine coefficients (primary anchor):** woodresearch.sk 2019, vol. 64
+- **Wood affine coefficients (primary anchor; RETIRED by ruling B6,
+  2026-09-25 — see the section above):** woodresearch.sk 2019, vol. 64
   no. 5, art. 12 — quasi-orthogonal CNC wood milling, `Fc1z = 49.95·h_m + 5.30`
-  (conventional), R² ≈ 0.99; `h_m = fz·sin(ψ/2)`, `cos ψ = 1 − e/r`. These are
+  (conventional), R² ≈ 0.99; `h_m = fz·sin(ψ/2)`, `cos ψ = 1 − e/r`. These were
   the literature-absolute `Ks`/`F_edge` values, attached to `GenericHardwood`
   and scaled per-material by Kc.
 - **Mechanistic milling force (chip-thickness + arc):** ScienceDirect
@@ -391,7 +435,8 @@ replaced the feed-blind `F = Kc · ap · ae` with the feed-aware affine model
   instantaneous chip thickness).
 - **MDF / feed-per-tooth dominance:** MDPI *Coatings* `2079-6412/14/9/1085`.
 - **Affine intercept = edge/fracture-toughness term:** Springer *Eur. J. Wood
-  Prod.* `s00107-021-01667-5`.
+  Prod.* `s00107-021-01667-5` (Curti 2021; since ruling B6 also the source of
+  the solid-wood line itself).
 - **Kienzle size-effect reference (not used for the final form — wood `mc`
   unconfirmed):** Machining Doctor specific-cutting-force chart / Kc glossary;
   ctemag "Understanding tangential cutting force when milling" (radial WOC via

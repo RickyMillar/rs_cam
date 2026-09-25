@@ -30,8 +30,8 @@
 //!    divides by, so it must be the bound the verdict will use.
 //! 3. [`the_recommended_feed_never_implies_power_above_the_gate_ceiling`]
 //!    — direction check over presets × 10 species × Ø3/Ø6/Ø12.
-//! 4. [`the_power_ceiling_binds_on_three_shipped_fixtures`] — the
-//!    measurement, **re-taken for R1** (below).
+//! 4. [`the_power_ceiling_binds_on_no_shipped_fixture_b6`] — the
+//!    measurement, **re-taken for R1 and for B6** (below).
 //! 5. [`a_power_limited_feed_lands_exactly_on_the_gate_ceiling`] — the
 //!    no-double-count guard, on a synthetic under-powered spindle so the
 //!    clamp arithmetic is exercised on a cut that has a feed answer.
@@ -102,6 +102,18 @@
 //! power-limited set of test 4 can only shrink. Measured: 3 -> 2 fixtures
 //! (VFD / Jarrah / Ø12 left). A power-limited fixture now sits ON the rated curve (100 %), so
 //! the peak-utilisation band is `(0.5, 1.0]`.
+//!
+//! ## Ruling B6 (2026-09-25): one force line per material
+//!
+//! Ruling B6 replaced the scalar `Kc`, the woodresearch.sk anchor and the
+//! 2.0 grain factor with one typed force line per material. Solid-wood
+//! power falls to about 0.33-0.55x of the old figure, and Ipe (1207 kg/m³,
+//! above the Curti 2021 range) has no force line and no power model. The
+//! parity claims (tests 1, 2, 3, 6) do not read a coefficient and hold as
+//! before. Test 4 is a record: the two Ipe fixtures leave the power-limited
+//! set, and the B6 plan (§8) predicts that no other shipped fixture joins
+//! it. Tests 5 and 6 keep their shape on a spindle re-tuned for the new
+//! maple line.
 
 #![allow(
     clippy::unwrap_used,
@@ -278,7 +290,7 @@ fn the_recommended_feed_never_implies_power_above_the_gate_ceiling() {
 }
 
 #[test]
-fn the_power_ceiling_binds_on_three_shipped_fixtures() {
+fn the_power_ceiling_binds_on_no_shipped_fixture_b6() {
     // MEASUREMENT, pinned so it cannot silently move.
     //
     // R1 (2026-09-16) RE-BASELINE. This arm used to assert that the power
@@ -336,22 +348,27 @@ fn the_power_ceiling_binds_on_three_shipped_fixtures() {
     // 1 / 0.75 times against the budget (`edge + shear <= P` instead of
     // `edge / 0.75 + shear <= P`), so it fits. The peak is now 100.0 % on
     // VFD / Ipe / Ø12: a power-limited recipe lands ON the rated curve.
+    // RE-PINNED 2026-09-25, ruling B6 (measured): both Ipe fixtures left
+    // the set, and the arm was renamed from
+    // `the_power_ceiling_binds_on_three_shipped_fixtures`. Ipe has no force
+    // line (1207 kg/m³ is above the Curti 2021 range), so Step 6 has no
+    // power model for it. The Curti line carries no 2.0 grain factor, so
+    // the dense woods draw about 0.45x the old power. The peak is now
+    // 34.9 % on VFD / WhiteOak / Ø12, and no shipped fixture is
+    // power-limited. The operator ruled (2026-09-25) that a peak under half
+    // scale is correct for a wood router.
     assert_eq!(
         limited,
-        [
-            "Shapeoko (1.5kW VFD) / Ipe / Ø12",
-            "Shapeoko (Makita RT0701C) / Ipe / Ø12",
-        ],
+        Vec::<String>::new(),
         "the power-limited set moved (peak {:.1}% at {worst_label}). Re-take the \
          record rather than widening this assertion.",
         100.0 * worst
     );
-    // Non-vacuity in the other direction: the branch must still be the
-    // exception, not the rule. 2 of 90 fixtures since ruling R4, and the
-    // peak sits at or under the rated ceiling.
+    // Non-vacuity: the sweep still measures a real load (the Ø12 slots in
+    // the dense woods). The peak is pinned to the measured 34.9 %.
     assert!(
-        worst > 0.5 && worst <= 1.0 + 1e-9,
-        "peak utilisation {worst} left the band this record describes"
+        (worst - 0.349).abs() < 0.005,
+        "peak utilisation {worst} left the record (34.9 %); re-take it"
     );
 }
 
@@ -369,10 +386,17 @@ fn the_power_ceiling_binds_on_three_shipped_fixtures() {
 /// puts the gate ceiling at 0.270 kW, between the 0.197 kW edge floor
 /// and the 0.355 kW the unclamped cut would draw, so the clamp binds
 /// and has a feed answer.
+///
+/// Ruling B6 (2026-09-25) re-tune: 0.36 kW → 0.12 kW. The maple line is
+/// now Ks 54.21 N/mm², F_edge 4.257 N/mm, grain factor 1.0 (old: 2 x
+/// (61.48, 6.523)). On the 3 mm slot at 8 000 rev/min the edge floor is
+/// 4.257 · 3 · π·12·8000 / 60e6 = 0.064 kW, and the unclamped cut draws
+/// about 0.16 kW. 0.12 kW sits between them, so the clamp binds and has a
+/// feed answer.
 fn underpowered_machine() -> MachineProfile {
     let mut machine = MachineProfile::generic_wood_router();
-    machine.name = "SYNTHETIC 0.36 kW (test only)".to_owned();
-    machine.power = rs_cam_core::machine::PowerModel::ConstantPower { power_kw: 0.36 };
+    machine.name = "SYNTHETIC 0.12 kW (test only)".to_owned();
+    machine.power = rs_cam_core::machine::PowerModel::ConstantPower { power_kw: 0.12 };
     machine
 }
 

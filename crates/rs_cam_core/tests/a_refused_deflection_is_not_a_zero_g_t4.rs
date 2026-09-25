@@ -20,9 +20,9 @@
 //! the loop body never ran, `iterations` stayed at 0, and no warning, no
 //! rationale entry and no trace event followed. A pass-through and a
 //! clearance were the same event. The sharp case: an unvalidated plastic
-//! on a roughing operation. Nine of the ten shipped plastics carry no
-//! measured `Kc`, the stock picker names all ten, and the operator had no
-//! way to know which one the model covers.
+//! on a roughing operation. No shipped plastic carries a force line
+//! (ruling B6), the stock picker names all of them, and the operator had
+//! no way to know that the model covers none.
 //!
 //! ## What changed
 //!
@@ -48,14 +48,15 @@
 //!    grid of valid operating points, none of which may return an `Ok`
 //!    carrying the old sentinel.
 //! 3. `every_refusal_names_itself` — the drill case, the unvalidated
-//!    material case and the `Material::Custom`-with-a-positive-`kc` case,
-//!    each asserting its exact variant.
+//!    material case and the `Material::Custom` case, each asserting its
+//!    exact variant. Ruling B6 removed `Custom.kc`, so a custom material
+//!    refuses at the early force-line guard with `MaterialUnvalidated`.
 //! 4. `a_v_bit_is_modelled_and_says_what_is_missing` — `Ok`, positive, and
 //!    `Some(FluteReliefUnmodeled)`.
 //! 5. `the_two_vocabularies_agree` — every variant maps to an
 //!    `UnmodeledReason`, and every `clause()` is non-empty and unique. The
 //!    fixture list is checked against an exhaustive match with no wildcard,
-//!    so a tenth variant fails to compile rather than passing silently.
+//!    so a ninth variant fails to compile rather than passing silently.
 //! 6. `the_backoff_states_its_abstention` — Suggest on an unvalidated
 //!    plastic roughing pocket emits `DeflectionBackoffUnmodeled` carrying
 //!    the reason, and the same operation in hard maple never emits it.
@@ -80,6 +81,7 @@ use rs_cam_core::feeds::suggest::{
 };
 use rs_cam_core::feeds::{SpindleStrategy, embedded_vendor_lut};
 use rs_cam_core::machine::MachineProfile;
+use rs_cam_core::material::force_line::ForceLineRefusal;
 use rs_cam_core::material::{Material, PlasticFamily, WoodSpecies};
 use rs_cam_core::tool_load::verdict::UnmodeledReason;
 
@@ -132,21 +134,19 @@ fn hard_maple() -> Material {
     }
 }
 
-/// Acrylic. One of the nine shipped plastics with no measured `Kc`.
+/// Acrylic. Every shipped plastic has no force line (ruling B6).
 fn acrylic() -> Material {
     Material::Plastic {
         family: PlasticFamily::Acrylic,
     }
 }
 
-/// A custom material carrying a POSITIVE `kc`. It clears the early `Kc`
-/// guard and then abstains at the delegate — the exit the module header
-/// used to leave out.
-fn custom_with_a_real_kc() -> Material {
+/// A custom material. Ruling B6 removed the typed `kc`, so a custom
+/// material has no force line and refuses at the early guard.
+fn custom_material() -> Material {
     Material::Custom {
         name: "operator entry".to_owned(),
         feed_scale_factor: 1.0,
-        kc: 30.0,
     }
 }
 
@@ -237,9 +237,10 @@ fn every_refusal_names_itself() {
 
     // An unvalidated material. The highest-frequency unsafe case: the
     // stock picker offers ten plastics and nine of them refuse.
-    assert!(
-        acrylic().kc_n_per_mm2().is_none(),
-        "fixture premise: Acrylic must carry no measured Kc"
+    assert_eq!(
+        acrylic().force_line(),
+        Err(ForceLineRefusal::Plastic),
+        "fixture premise: Acrylic must carry no force line"
     );
     assert_eq!(
         predict_peak_deflection_um(&roughing_pocket(3.0), &tool, &acrylic(), &machine)
@@ -247,20 +248,20 @@ fn every_refusal_names_itself() {
         DeflectionUnmodeled::MaterialUnvalidated
     );
 
-    // A custom material with a POSITIVE kc. It clears the early Kc guard
-    // and the delegate refuses it anyway. Before T-4 this exit hid inside
-    // a `.map_or(0.0, …)` and the module header did not list it.
-    let custom = custom_with_a_real_kc();
+    // A custom material. Before T-4 its exit hid inside a
+    // `.map_or(0.0, …)`. Ruling B6 removed `Custom.kc`, so the custom
+    // material now refuses at the same early guard as the plastic, and
+    // the force line names the reason.
+    let custom = custom_material();
     assert_eq!(
-        custom.kc_n_per_mm2(),
-        Some(30.0),
-        "fixture premise: this custom material must PASS the early Kc guard, \
-         otherwise the arm proves nothing about the hidden exit"
+        custom.force_line(),
+        Err(ForceLineRefusal::Custom),
+        "fixture premise: a custom material must carry no force line (ruling B6)"
     );
     assert_eq!(
         predict_peak_deflection_um(&roughing_pocket(3.0), &tool, &custom, &machine)
             .expect_err("a custom material carries no validated force model"),
-        DeflectionUnmodeled::MaterialCustom
+        DeflectionUnmodeled::MaterialUnvalidated
     );
 }
 
@@ -302,13 +303,12 @@ fn a_v_bit_is_modelled_and_says_what_is_missing() {
 
 /// Every `DeflectionUnmodeled` variant, as a fixture list.
 ///
-/// The exhaustive match below carries no wildcard arm, so a tenth variant
+/// The exhaustive match below carries no wildcard arm, so a ninth variant
 /// fails to compile here rather than slipping past the list.
 fn every_variant() -> Vec<DeflectionUnmodeled> {
     let all = vec![
         DeflectionUnmodeled::NotApplicableForOp(OperationType::Drill),
         DeflectionUnmodeled::MaterialUnvalidated,
-        DeflectionUnmodeled::MaterialCustom,
         DeflectionUnmodeled::NoDiameter,
         DeflectionUnmodeled::NoDepthPerPass,
         DeflectionUnmodeled::NoRadialEngagement,
@@ -320,7 +320,6 @@ fn every_variant() -> Vec<DeflectionUnmodeled> {
         match variant {
             DeflectionUnmodeled::NotApplicableForOp(_)
             | DeflectionUnmodeled::MaterialUnvalidated
-            | DeflectionUnmodeled::MaterialCustom
             | DeflectionUnmodeled::NoDiameter
             | DeflectionUnmodeled::NoDepthPerPass
             | DeflectionUnmodeled::NoRadialEngagement
@@ -337,7 +336,7 @@ fn the_two_vocabularies_agree() {
     let variants = every_variant();
     assert_eq!(
         variants.len(),
-        9,
+        8,
         "the fixture list must cover every variant; the match in every_variant() \
          forces a new one to be visited, and this count forces it to be LISTED"
     );
@@ -367,11 +366,7 @@ fn the_two_vocabularies_agree() {
             }
             UnmodeledReason::MaterialUnvalidated => {
                 assert!(
-                    matches!(
-                        variant,
-                        DeflectionUnmodeled::MaterialUnvalidated
-                            | DeflectionUnmodeled::MaterialCustom
-                    ),
+                    matches!(variant, DeflectionUnmodeled::MaterialUnvalidated),
                     "{variant:?} must not claim a material refusal"
                 );
             }
@@ -439,6 +434,6 @@ fn the_backoff_states_its_abstention() {
         !modelled
             .iter()
             .any(|w| matches!(w, SuggestWarning::DeflectionBackoffUnmodeled { .. })),
-        "hard maple carries a measured Kc, so the back-off must run; got warnings: {modelled:?}"
+        "hard maple carries a force line, so the back-off must run; got warnings: {modelled:?}"
     );
 }

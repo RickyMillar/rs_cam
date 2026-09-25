@@ -505,7 +505,7 @@ fn power_to_diagnostic(tp_id: ToolpathId, v: &PowerVerdict) -> Option<Diagnostic
             suppressed_diagnostics: vec![],
         }),
         PowerVerdict::Unmodeled { reason } => {
-            unmodeled_to_diagnostic(tp_id, ids::LOAD_POWER_WITHIN, "Power", reason, Vec::new)
+            unmodeled_to_diagnostic(tp_id, ids::LOAD_POWER_UNMODELED, "Power", reason, Vec::new)
         }
     }
 }
@@ -589,7 +589,7 @@ fn deflection_to_diagnostic(tp_id: ToolpathId, v: &DeflectionVerdict) -> Option<
         }),
         DeflectionVerdict::Unmodeled { reason } => unmodeled_to_diagnostic(
             tp_id,
-            ids::LOAD_DEFLECTION_WITHIN,
+            ids::LOAD_DEFLECTION_UNMODELED,
             "Deflection",
             reason,
             deflection_supersedes,
@@ -988,8 +988,8 @@ fn unmodeled_to_diagnostic(
         UnmodeledReason::MaterialUnvalidated => (
             DiagnosticState::NeedsSimulation,
             format!(
-                "{label}: material has no validated Kc — set a validated material \
-                 on the stock to model this"
+                "{label}: material has no measured force line (ruling B6) — set a validated \
+                 material on the stock to model this"
             ),
         ),
         UnmodeledReason::CutterModeUnsupported(detail) => (

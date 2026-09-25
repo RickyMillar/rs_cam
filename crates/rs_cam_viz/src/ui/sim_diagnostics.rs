@@ -1359,7 +1359,7 @@ fn unmodeled_text(reason: Option<&UnmodeledReason>) -> String {
             "Unmodeled: no steady-state cutting samples — toolpath runs entirely on transient (plunge/ramp) feeds".to_owned()
         }
         Some(UnmodeledReason::MaterialUnvalidated) => {
-            "Unmodeled: material is Custom without a validated Kc value".to_owned()
+            "Unmodeled: this material has no measured force line (ruling B6)".to_owned()
         }
         Some(UnmodeledReason::CutterModeUnsupported(why)) => {
             format!("Unmodeled: cutter mode unsupported — {why}")

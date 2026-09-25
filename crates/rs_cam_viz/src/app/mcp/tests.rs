@@ -745,3 +745,91 @@ fn inspect_spans_area_regions_field_is_present() {
     assert!(v["regions"][1]["level_z_range"].is_null());
     assert!(v["note"].as_str().unwrap().contains("bbox_xy"));
 }
+
+// ── B6: basis.force_line (plan §6) ──────────────────────────────────
+
+/// Generic hardwood: the Curti 2021 density law, with every §6 field filled.
+#[test]
+fn force_line_json_names_the_curti_line_for_hardwood() {
+    let material = rs_cam_core::material::Material::SolidWood {
+        species: rs_cam_core::material::WoodSpecies::GenericHardwood,
+    };
+    let line = material.force_line().expect("hardwood has a force line");
+    let v = super::generation::force_line_json(&material, Some(line.at_mean_chip(0.05)));
+    assert_eq!(v["form"], "curti2021_density_law_helix0_envelope");
+    assert_eq!(v["source_id"], "g7_curti2021_generalized_wood_model");
+    assert!((v["ks_n_per_mm2"].as_f64().unwrap() - 51.92).abs() < 0.01);
+    assert!((v["f_edge_n_per_mm"].as_f64().unwrap() - 4.077).abs() < 0.001);
+    assert_eq!(v["grain_factor"], 1.0);
+    assert_eq!(v["chip_range_mm"], serde_json::json!([0.04, 0.10]));
+    assert!((v["specific_gravity"].as_f64().unwrap() - 0.6033).abs() < 1e-4);
+    assert!(v["basic_specific_gravity"].is_null());
+    assert!((v["density_kg_m3"].as_f64().unwrap() - 675.7).abs() < 0.1);
+    assert!(
+        v["density_source"]
+            .as_str()
+            .unwrap()
+            .starts_with("FPL Table 5-3a")
+    );
+    assert_eq!(v["evaluated_at"]["chip_regime"], "measured");
+    assert!((v["evaluated_at"]["mean_chip_mm"].as_f64().unwrap() - 0.05).abs() < 1e-12);
+    assert!(v["refused"].is_null());
+    assert!(
+        v["headline"]
+            .as_str()
+            .unwrap()
+            .starts_with("Force line: Curti 2021 density law"),
+        "headline {}",
+        v["headline"]
+    );
+}
+
+/// MDF: the Goli 2018 printed line, with no density.
+#[test]
+fn force_line_json_names_the_goli_line_for_mdf() {
+    let material = rs_cam_core::material::Material::SheetGood {
+        kind: rs_cam_core::material::SheetGoodKind::Mdf,
+    };
+    let line = material.force_line().expect("MDF has a force line");
+    let v = super::generation::force_line_json(&material, Some(line.at_mean_chip(0.03)));
+    assert_eq!(v["form"], "goli2018_mdf_affine");
+    assert_eq!(v["source_id"], "g7_goli2018_round_shape_ks");
+    assert_eq!(v["ks_n_per_mm2"], 31.44);
+    assert_eq!(v["f_edge_n_per_mm"], 3.36);
+    assert_eq!(v["chip_range_mm"], serde_json::json!([0.041, 0.091]));
+    assert!(v["density_kg_m3"].is_null() && v["specific_gravity"].is_null());
+    assert_eq!(v["evaluated_at"]["chip_regime"], "below_measured_range");
+    assert_eq!(v["headline"], "Force line: Goli 2018 MDF, printed");
+    assert!(v["refused"].is_null());
+}
+
+/// Plywood refuses: the §3 headline, every number null, `refused` named.
+#[test]
+fn force_line_json_refuses_plywood() {
+    let material = rs_cam_core::material::Material::Plywood {
+        grade: rs_cam_core::material::PlywoodGrade::BalticBirch,
+    };
+    let v = super::generation::force_line_json(&material, None);
+    assert_eq!(v["refused"], "Plywood");
+    assert_eq!(v["headline"], "No force line: plywood (ruling B6)");
+    assert!(v["detail"].as_str().unwrap().contains("Goli 2023"));
+    for key in [
+        "source_id",
+        "form",
+        "ks_n_per_mm2",
+        "f_edge_n_per_mm",
+        "grain_factor",
+        "chip_range_mm",
+        "specific_gravity",
+        "basic_specific_gravity",
+        "density_kg_m3",
+        "density_source",
+        "evaluated_at",
+    ] {
+        assert!(
+            v[key].is_null(),
+            "{key} must be null on a refusal, got {}",
+            v[key]
+        );
+    }
+}

@@ -671,7 +671,7 @@ fn invariants_clamp_and_warn() {
     });
     let mut tool = tool(6.0);
     tool.cutting_length = 1.0;
-    // Milling-Kc calibration (2026-06-17, MILLING_KC_FACTOR = 2.7):
+    // Milling-Kc calibration (2026-06-17, milling factor 2.7):
     // at the new_default 45 mm stickout the deflection back-off now
     // clamps DOC to 0.512, below the cutting-length clamp (1.0) this
     // invariant test asserts. Stiffen the tool (stickout 45 → 10 mm;
@@ -1025,7 +1025,7 @@ fn adaptive_op_uses_adaptive_doc_factor_not_doc_roughing_factor() {
     let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
-    // Milling-Kc calibration (2026-06-17, MILLING_KC_FACTOR = 2.7):
+    // Milling-Kc calibration (2026-06-17, milling factor 2.7):
     // at the new_default 45 mm stickout the deflection back-off now
     // binds and clamps DOC=6 → 3.84, masking the DOC-factor logic this
     // test isolates. Stiffen the tool (stickout 45 → 12 mm; δ ∝
@@ -1098,7 +1098,7 @@ fn plunge_entry_unstable_warning_fires_when_dpp_exceeds_half_diameter() {
         let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
         tool.diameter = 6.0;
         tool.cutting_length = 25.0;
-        // Milling-Kc calibration (2026-06-17, MILLING_KC_FACTOR = 2.7):
+        // Milling-Kc calibration (2026-06-17, milling factor 2.7):
         // at the new_default 45 mm stickout the deflection back-off
         // now rewrites DPP, but this test asserts the v1.3 warning-only
         // contract (DPP must NOT be auto-rewritten — the warning fires
@@ -1251,7 +1251,7 @@ fn conventional_op_still_clamps_by_doc_roughing_factor() {
     let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
-    // Milling-Kc calibration (2026-06-17, MILLING_KC_FACTOR = 2.7):
+    // Milling-Kc calibration (2026-06-17, milling factor 2.7):
     // at the new_default 45 mm stickout the deflection back-off now
     // clamps DOC to 0.96, masking the doc_roughing_factor clamp (1.2)
     // this counter-test isolates. Stiffen the tool (stickout 45 →
@@ -1432,7 +1432,7 @@ fn deflection_back_off_skipped_for_finish_pass() {
     let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
-    // Milling-Kc calibration (2026-06-17, MILLING_KC_FACTOR = 2.7):
+    // Milling-Kc calibration (2026-06-17, milling factor 2.7):
     // the deflection force is now ~2.7× higher. At the original 45 mm
     // stickout a 9 mm DPP exceeds the *role-agnostic* axial-envelope
     // deflection ceiling (pick_axial_envelope, runs for all roles)
@@ -2037,7 +2037,11 @@ fn retired_lift_fires_no_cap_on_a_deflection_bound_fixture() {
         // this 2-flute tool 1.60× more compliant, so 100.0 mm read 200.7 µm
         // and broke the upper edge of the window. The window is the fixture's
         // premise, not the claim under test.
-        tool.stickout = 99.0;
+        //
+        // Retuned 99.0 → 111.0 for B6. The Curti line for hard maple is
+        // 0.69× the old anchor line, so 99.0 mm read 137.1 µm.
+        // 99 × (195 / 137.1)^(1/3) = 111.3.
+        tool.stickout = 111.0;
         tool.flute_count = 2;
         let mut machine = MachineProfile::default();
         machine.rigidity.doc_roughing_factor = 0.20;

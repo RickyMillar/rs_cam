@@ -203,7 +203,6 @@ fn refusal_session() -> ProjectSession {
     stock.material = rs_cam_core::material::Material::Custom {
         name: "wp14b refusal lever".to_owned(),
         feed_scale_factor: 1.0,
-        kc: 10.0,
     };
     let _ = session
         .apply(Command::SetStockConfig(SetStockConfigArgs {

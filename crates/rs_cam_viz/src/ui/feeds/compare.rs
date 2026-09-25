@@ -15,6 +15,7 @@
 use rs_cam_core::feeds::efficiency::{ChipVerdict, CutEfficiency, cut_efficiency};
 use rs_cam_core::feeds::suggest::FeedsPreview;
 use rs_cam_core::feeds::{FeedsExplain, FeedsField, PowerFigure, PowerUnmodeled};
+use rs_cam_core::material::force_line::{ForceAtPoint, ForceLine, ForceLineRefusal};
 use rs_cam_core::tool_load::deflection::EXCEEDS_BOUND_MM;
 use rs_cam_core::tool_load::verdict::BoundSource;
 
@@ -429,6 +430,7 @@ fn draw_comparison_card(
         rail_efficiency_row(ui, efficiency, efficiency_note, advance);
         ui.add_space(2.0);
         rail_power_row(ui, power);
+        rail_force_line_rows(ui, power);
         ui.add_space(2.0);
         // MRR = DOC × WOC × feed, the calculator's own product (Step 5),
         // on the values Apply writes.
@@ -543,7 +545,7 @@ fn verdict_row_label(ui: &mut egui::Ui, label: &str, hover: &str) {
 /// # Every number here can be absent, and absence is said out loud
 ///
 /// `cut_efficiency` refuses as a whole when the material has no
-/// primary-source `Kc`, and each ratio refuses on its own when its input is
+/// force line (ruling B6), and each ratio refuses on its own when its input is
 /// missing. A `None` renders as a stated abstention — never as a zero, a
 /// blank, a bare dash or a 100 %. The ratios go on the face because "1.6×
 /// tool wear" is actionable; `u` in J/mm³ and the ploughing share go on the
@@ -788,8 +790,8 @@ fn efficiency_hover(efficiency: &CutEfficiency) -> String {
     }
     out.push_str(
         "\nu = Ks + (F_edge \u{00B7} D \u{00B7} \u{03C8}) / (2 \u{00B7} ae \
-         \u{00B7} fz), the affine wood-force fit in feeds::force scaled to \
-         this material's Kc. Neither RPM nor depth of cut moves it; only the \
+         \u{00B7} fz), from this material's force line (ruling B6). Neither \
+         RPM nor depth of cut moves it; only the \
          chipload and the radial engagement do. Approximate — verify on a \
          test cut.",
     );
@@ -798,15 +800,16 @@ fn efficiency_hover(efficiency: &CutEfficiency) -> String {
 
 /// The hover for the refusal state.
 ///
-/// The material carries no primary-source `Kc`, so there is no force fit to
+/// The material has no force line (ruling B6), so there is no force fit to
 /// read and no efficiency number to publish. This says which input is
 /// missing and names the refusal the engine already makes, so the empty row
 /// cannot be read as a clean bill of health.
 fn unmodelled_hover(advance_mm: Option<f64>) -> String {
     let mut out = String::from(
         "Efficiency is not modelled for this material.\n\n\
-         The energy-per-mm\u{00B3} model needs a primary-source Kc, and this \
-         material has none, so there is no cutting-force fit to read. Nothing \
+         The energy-per-mm\u{00B3} model needs a force line, and this \
+         material has no measured force line (ruling B6), so there is no \
+         cutting-force fit to read. Nothing \
          is shown rather than a fabricated number — the same refusal the load \
          gate makes through MaterialUnvalidated. No wear ratio, no time ratio \
          and no force headroom exist for this cut.\n\n",
@@ -847,6 +850,12 @@ struct PowerReading {
     /// The sentence on the calculator's cut, when it draws a different
     /// percent (G-RECOMAPPLIED).
     calculator_note: Option<String>,
+    /// The material's force line, or its named refusal (ruling B6).
+    force_line: Result<ForceLine, ForceLineRefusal>,
+    /// The force line at the mean chip of this cut: the power figure's own
+    /// point, else `force_at_operating_point` (the door the MCP reads).
+    /// `None` when the cut resolves no point.
+    force_point: Option<ForceAtPoint>,
 }
 
 impl PowerReading {
@@ -867,26 +876,31 @@ impl PowerReading {
         machine: &rs_cam_core::machine::MachineProfile,
         recommended: &rs_cam_core::feeds::FeedsResult,
     ) -> Self {
+        let fallback = Some(rs_cam_core::feeds::suggest::CalculatorOperatingPoint {
+            radial_width_mm: recommended.radial_width_mm,
+            axial_depth_mm: recommended.axial_depth_mm,
+            feed_rate_mm_min: recommended.feed_rate_mm_min,
+            rpm: recommended.rpm,
+        });
         let figure = rs_cam_core::feeds::power_at_operating_point(
-            operation,
-            tool,
-            material,
-            machine,
-            Some(rs_cam_core::feeds::suggest::CalculatorOperatingPoint {
-                radial_width_mm: recommended.radial_width_mm,
-                axial_depth_mm: recommended.axial_depth_mm,
-                feed_rate_mm_min: recommended.feed_rate_mm_min,
-                rpm: recommended.rpm,
-            }),
+            operation, tool, material, machine, fallback,
         );
         let source = figure
             .as_ref()
             .ok()
             .map(|figure| BoundSource::MachinePowerCurve { rpm: figure.rpm });
+        let force_point = figure.as_ref().ok().map(|figure| figure.force).or_else(|| {
+            rs_cam_core::feeds::operating_point::force_at_operating_point(
+                operation, tool, material, fallback,
+            )
+            .ok()
+        });
         Self {
             figure,
             source,
             calculator_note: None,
+            force_line: material.force_line(),
+            force_point,
         }
     }
 }
@@ -984,6 +998,32 @@ fn rail_power_row(ui: &mut egui::Ui, power: &PowerReading) {
             }
         }
     });
+}
+
+/// The force-line lines under the power row (plan B6 §6), dim.
+///
+/// - The line's card text, or the refusal headline.
+/// - Only when the mean chip of this cut is outside the printed range: the
+///   extrapolation line. A measured chip adds no line.
+///
+/// The hover of each line is the line's detail, or the refusal detail.
+fn rail_force_line_rows(ui: &mut egui::Ui, power: &PowerReading) {
+    let (face, hover) = rs_cam_core::material::force_line::card_lines(&power.force_line);
+    dim_wrapped_line(ui, &face, &hover);
+    if power.force_line.is_ok()
+        && let Some(extrapolation) = power
+            .force_point
+            .as_ref()
+            .and_then(ForceAtPoint::extrapolation_text)
+    {
+        dim_wrapped_line(ui, &extrapolation, &hover);
+    }
+}
+
+/// One dim, wrapped line with a hover.
+fn dim_wrapped_line(ui: &mut egui::Ui, text: &str, hover: &str) {
+    ui.add(egui::Label::new(egui::RichText::new(text).small().color(theme::TEXT_DIM)).wrap())
+        .on_hover_text(hover.to_owned());
 }
 
 /// The face: the percent of the limit, formatted from the two figures it

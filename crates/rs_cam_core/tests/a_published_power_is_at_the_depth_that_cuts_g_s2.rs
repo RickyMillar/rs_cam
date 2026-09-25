@@ -61,7 +61,7 @@
 //! - [`the_door_and_pass_ten_are_one_evaluation`] — on the T-15 sentry's own
 //!   fixture, the door's `available_kw` and its `required_kw_at_feed`
 //!   reproduce what `PowerRecheckedAfterRescale` reported, bit for bit.
-//! - [`every_refusal_names_itself`] — a drill, a material with no `Kc` and a
+//! - [`every_refusal_names_itself`] — a drill, a material with no force line and a
 //!   zero feed each refuse with a distinct, non-empty clause.
 //! - [`the_anchor_cut_is_modelled_not_refused`] — non-vacuity for the
 //!   refusals: the anchor returns `Ok` with `available_kw > required_kw > 0`.
@@ -401,7 +401,7 @@ fn the_published_power_describes_a_depth_that_will_not_be_cut() {
 ///
 /// The fixture is the T-15 refusal one, restated rather than shared: a 2D
 /// Adaptive rough on a Ø12 two-flute end mill, an operator depth of 30 mm
-/// (2.5 x D, scale 0.625) and a synthetic 0.6 kW constant-power spindle
+/// (2.5 x D, scale 0.625) and a synthetic 0.23 kW constant-power spindle
 /// whose `adaptive_doc_factor` of 2.0 caps the depth at exactly 24.000 mm
 /// (scale 0.75). Pass 9 raises the feed 1.2x. Feeds matrix R3 (2026-09-23)
 /// put the feed on the continuous published scale, under which a depth
@@ -420,8 +420,12 @@ fn the_door_and_pass_ten_are_one_evaluation() {
     // measured feed-free edge term 0.6975 kW sits UNDER it, so the fixture
     // lost its refusal shape. A 0.6 kW spindle restores the 0.6 kW ceiling:
     // 0.6975 > 0.6, no feed fits.
-    machine.name = "SYNTHETIC 0.60 kW (test only)".to_owned();
-    machine.power = rs_cam_core::machine::PowerModel::ConstantPower { power_kw: 0.6 };
+    // RE-TUNED 0.6 -> 0.23 kW for ruling B6 (2026-09-25), the same re-tune
+    // as the T-15 refusal arm. The generic-hardwood force line puts the
+    // edge term at x0.3846 of the old one (4.077 / 10.6 N/mm), 0.6975 ->
+    // 0.268 kW. 0.23 kW keeps the old 0.86 ratio under it: no feed fits.
+    machine.name = "SYNTHETIC 0.23 kW (test only)".to_owned();
+    machine.power = rs_cam_core::machine::PowerModel::ConstantPower { power_kw: 0.23 };
     machine.rigidity.adaptive_doc_factor = 2.0;
     // Ruling R4 (2026-09-24): this fixture tests the Step 6 / pass 9 / pass 10
     // power interaction, not the aggressiveness dial. The dial at 1.0 keeps
@@ -560,15 +564,16 @@ fn every_refusal_names_itself() {
         .expect_err("a drill has no radial engagement, so there is no power model");
     assert_eq!(drill_refusal, PowerUnmodeled::NoRadialEngagement);
 
-    // Acrylic publishes no primary-source Kc. `material/mod.rs` refuses it
-    // rather than predicting force from a fabricated constant.
+    // Acrylic has no force line (ruling B6: no plastic does).
+    // `Material::force_line` refuses it rather than predicting force from a
+    // fabricated constant.
     let acrylic = Material::Plastic {
         family: PlasticFamily::Acrylic,
     };
     let mut modelled_op = pocket_op(RIGIDITY_CAP_MM);
     modelled_op.set_feed_rate(1000.0);
     let material_refusal = power_at_operating_point(&modelled_op, &tool, &acrylic, &machine, None)
-        .expect_err("acrylic publishes no Kc, so there is no power model");
+        .expect_err("acrylic has no force line, so there is no power model");
     assert_eq!(material_refusal, PowerUnmodeled::MaterialUnvalidated);
 
     // A zero feed is not a zero-power cut. It is an operation with no feed.

@@ -535,7 +535,9 @@ fn unmodeled_reason_label(reason: &rs_cam_core::tool_load::UnmodeledReason) -> &
         UnmodeledReason::ArcEngagementNotCaptured => "enable Cut Metrics and re-run",
         UnmodeledReason::NoVendorData => "no vendor data",
         UnmodeledReason::SteadyStateSamplesNotPresent => "no steady-state cutting samples",
-        UnmodeledReason::MaterialUnvalidated => "material not validated",
+        UnmodeledReason::MaterialUnvalidated => {
+            "this material has no measured force line (ruling B6)"
+        }
         UnmodeledReason::CutterModeUnsupported(_) => "cutter mode unsupported",
         UnmodeledReason::NotImplemented(_) => "not implemented",
         // Roadmap F.8 — gate genuinely doesn't apply (drill cycles).

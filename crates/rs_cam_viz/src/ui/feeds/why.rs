@@ -978,7 +978,7 @@ fn suggest_line(warning: &SuggestWarning) -> Option<(String, bool)> {
             }
             if let (Some(a), Some(b)) = (section_mm2_before, section_mm2_after) {
                 load.push(format!(
-                    "chip section {a:.2} → {b:.2} mm² (proxy, no primary-source Kc)"
+                    "chip section {a:.2} → {b:.2} mm² (proxy, no measured force line)"
                 ));
             }
             let mut line = head;

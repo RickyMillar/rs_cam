@@ -11,12 +11,11 @@
 //!
 //! ## Physics
 //!
-//! `F = Kc · axial_doc · radial_woc` (N) — same form as the canonical
-//! sample-level force in
-//! [`crate::tool_load::deflection::sample_tip_deflection_mm`]. No
-//! grain-anisotropy factor: deflection responds to sustained mean force,
-//! not transient grain spikes (the 2.0× factor in
-//! [`crate::tool_load::power::GRAIN_ANISOTROPY_FACTOR`] is power-scoped).
+//! `F = ap · (Ks · fz·sin θ_peak + F_edge)` (N) — the material's one force
+//! line ([`Material::force_line`], ruling B6), the same form as the
+//! canonical sample-level force in
+//! [`crate::tool_load::deflection::sample_tip_deflection_mm`]. Deflection
+//! reads the line alone; the grain factor is power-scoped.
 //!
 //! The cantilever displacement under that force is **delegated to the
 //! shared integrated model** [`tip_deflection_from_engagement`] →
@@ -48,17 +47,15 @@
 //! `Result<DeflectionPrediction, DeflectionUnmodeled>`, and the `Ok` branch
 //! always carries a modelled figure.
 //!
-//! **Eleven exits refuse, and they map onto nine
+//! **Ten exits refuse, and they map onto eight
 //! [`DeflectionUnmodeled`] variants:**
 //!
 //! - Drill operation family — Z-only kinematics, no continuous engagement
 //!   ([`DeflectionUnmodeled::NotApplicableForOp`]).
-//! - Material has no primary-source `kc_n_per_mm2()` — out-of-band
-//!   `SolidWoodByJanka`, fiberglass, nine of the ten shipped plastics
+//! - Material has no force line — `Material::force_line()` refuses:
+//!   plywood, HDF, particleboard, every plastic, aluminium, foam,
+//!   fiberglass, `Custom`, and a species with no printed density
 //!   ([`DeflectionUnmodeled::MaterialUnvalidated`]).
-//! - `Material::Custom`, **including one carrying a positive `kc`** that
-//!   the `Kc` guard above lets through. The delegate refuses every custom
-//!   material ([`DeflectionUnmodeled::MaterialCustom`]).
 //! - A tool diameter that is zero, negative or not a number
 //!   ([`DeflectionUnmodeled::NoDiameter`]).
 //! - No depth per pass, or one that is not positive and finite
@@ -104,12 +101,9 @@ use crate::tool_load::verdict::UnmodeledReason;
 pub enum DeflectionUnmodeled {
     /// Drill family — Z-only kinematics, no continuous radial engagement.
     NotApplicableForOp(OperationType),
-    /// The material carries no primary-source `Kc`.
+    /// The material has no force line (`Material::force_line` refuses;
+    /// `Material::Custom` included).
     MaterialUnvalidated,
-    /// `Material::Custom`. The delegate refuses every custom material,
-    /// including one carrying a positive `kc` — a case the early `Kc`
-    /// guard lets through.
-    MaterialCustom,
     /// The tool diameter is zero, negative or not a number.
     NoDiameter,
     /// The operation carries no depth per pass.
@@ -134,9 +128,7 @@ impl DeflectionUnmodeled {
                 "{} — no continuous radial engagement",
                 op.spec().label
             )),
-            Self::MaterialUnvalidated | Self::MaterialCustom => {
-                UnmodeledReason::MaterialUnvalidated
-            }
+            Self::MaterialUnvalidated => UnmodeledReason::MaterialUnvalidated,
             Self::NoDiameter
             | Self::NoDepthPerPass
             | Self::NoRadialEngagement
@@ -155,8 +147,7 @@ impl DeflectionUnmodeled {
     pub fn clause(&self) -> &'static str {
         match self {
             Self::NotApplicableForOp(_) => "the deflection model does not apply to this operation",
-            Self::MaterialUnvalidated => "this material has no measured cutting coefficient",
-            Self::MaterialCustom => "a custom material carries no validated force model",
+            Self::MaterialUnvalidated => "this material has no measured force line (ruling B6)",
             Self::NoDiameter => "the tool has no usable diameter",
             Self::NoDepthPerPass => "the operation has no depth per pass",
             Self::NoRadialEngagement => "the operation has no radial width of cut",
@@ -333,33 +324,21 @@ pub fn predict_peak_deflection_um(
     // remaining gap is the flute relief, not the cone, and it rides out
     // on `DeflectionCaveat::FluteReliefUnmodeled`. See T-4.
 
-    // Material: only primary-source Kc materials get a numeric
-    // prediction. Out-of-band SolidWoodByJanka, fiberglass and nine of
-    // the ten shipped plastics return None — matches the
+    // Material: only a material with a force line gets a numeric
+    // prediction (ruling B6). `Material::force_line` refuses plywood,
+    // HDF, particleboard, every plastic, aluminium, foam, fiberglass,
+    // `Custom` and a species with no printed density — matches the
     // `MaterialUnvalidated` refusal in the post-sim gate. The force
     // magnitude itself is recomputed inside
     // `feeds::force::lateral_cutting_force`; here we only need the
     // existence check for the early refusal.
-    if material.kc_n_per_mm2().is_none() {
+    if material.force_line().is_err() {
         tracing::debug!(
             reason = "material_unvalidated",
             material = %material.label(),
-            "predictor abstains — no primary-source Kc"
+            "predictor abstains — no force line"
         );
         return Err(DeflectionUnmodeled::MaterialUnvalidated);
-    }
-
-    // `Material::Custom` refuses even when `kc_n_per_mm2()` returned
-    // `Some` for a positive `kc`, because the delegate
-    // `tip_deflection_from_engagement` refuses every custom material.
-    // Before T-4 this exit hid inside the delegate's `None` and the
-    // module header did not list it. State it here instead.
-    if matches!(material, Material::Custom { .. }) {
-        tracing::debug!(
-            reason = "material_custom",
-            "predictor abstains — a custom material carries no validated force model"
-        );
-        return Err(DeflectionUnmodeled::MaterialCustom);
     }
 
     // --- Engagement geometry ---
@@ -619,7 +598,8 @@ pub fn bending_diameter_mm(tool: &ToolConfig) -> f64 {
 /// and feed genuinely moves deflection.
 ///
 /// Returns `None` on the cases the gate would refuse:
-/// - `material.kc_n_per_mm2()` is `None` (Custom, unvalidated species).
+/// - `material.force_line()` refuses (Custom, plywood, a species with no
+///   printed density, and the other §3 materials of ruling B6).
 /// - Tool has zero stickout.
 /// - Inputs are non-positive.
 pub fn tip_deflection_from_engagement(
@@ -630,9 +610,6 @@ pub fn tip_deflection_from_engagement(
     fz_mm: f64,
 ) -> Option<f64> {
     if axial_mm <= 0.0 || immersion_rad <= 0.0 || fz_mm <= 0.0 || tool.stickout <= 0.0 {
-        return None;
-    }
-    if matches!(material, Material::Custom { .. }) {
         return None;
     }
     let force_n =

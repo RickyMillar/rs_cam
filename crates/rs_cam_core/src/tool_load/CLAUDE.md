@@ -1,17 +1,15 @@
 # `tool_load/` — the cutting-load guardrails
 
-Independent gates over a simulated cut. The entry point is
-`tool_load::evaluate_toolpath`.
+Independent gates over a simulated cut. Entry: `tool_load::evaluate_toolpath`.
 
 ## Files
 
 - `mod.rs` — the monitor and the report entry point.
 - `chipload.rs`, `power.rs`, `deflection.rs`, `depth.rs`, `plunge_stress.rs` —
   the milling gates; `drill_gates.rs` — chip welding, peck, plunge feed.
-- `locality.rs`, `boundary.rs`, `verdict.rs`, `display.rs` — the steady-state
-  predicate, the boundary contract, the verdict types, the display quantities.
-- `distribution.rs`, `metric_guide.rs` — histograms of each gate's own
-  population (call the gate filters; never copy them), and the hover copy.
+- `locality.rs`, `boundary.rs`, `verdict.rs`, `display.rs`, `distribution.rs`,
+  `metric_guide.rs` — steady-state predicate, boundary contract, verdicts,
+  display, histograms (call the gate filters; never copy them), hover copy.
 - `optimize/` — the optimiser: search space, candidates and ranking,
   strategies, retargeters, the pre-flight gate, the outcome narrative.
 
@@ -23,6 +21,8 @@ Independent gates over a simulated cut. The entry point is
   flutes)`. It is not the dexel chip thickness.
 - A gate with no population proved nothing. Check the sample count before you
   read `Within` as evidence.
+- B6: power and deflection read `Material::force_line()`. Power is `line ×
+  grain_factor` (1.0 on every line); no line is `MaterialUnvalidated`.
 - The drill gates model the R-plane-rooted emitted schedule and read cutting
   geometry, not fed distance. On a tapered drill they use the envelope
   diameter; do not exonerate a tapered drill on these gates alone.
@@ -37,4 +37,4 @@ a prompt), `a_criterion_carries_its_own_bound_g_s4bound` and `a_weak_bound_canno
 (a finishing depth is `Reported`, no bound), `histogram_population_is_the_gate_population_g_cuthist` (histogram max and count match the gate).
 
 ## Do not
-- A Kc or factor change needs the slow `--test` sims, not `--lib` alone.
+- A force-line or grain-factor change needs the slow `--test` sims, not `--lib` alone.

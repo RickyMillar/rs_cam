@@ -36,8 +36,9 @@
 //! `u` is a wear proxy. Energy that is not removing wood heats the edge,
 //! so `ploughing_share = (u − Ks) / u` is the fraction of the cutting
 //! power spent rubbing rather than cutting. Typical wood-routing
-//! chiploads (0.03–0.09 mm/tooth) all sit below the crossover chip
-//! thickness `F_edge/Ks ≈ 0.106 mm`, so that share is routinely 70–85 %.
+//! chiploads (0.03–0.09 mm/tooth) sit near or below the crossover chip
+//! thickness `F_edge/Ks` (0.079 mm on the Curti 2021 solid-wood line,
+//! 0.107 mm on the Goli 2018 MDF line), so that share is routinely large.
 //!
 //! Derivation, measured fixture values and the reasoning behind each
 //! recommendation: `planning/load_model_2026-09-16/ADVICE.md` §2.
@@ -45,7 +46,7 @@
 //! ## Absence is not zero
 //!
 //! Every field refuses independently, and a refusal is `None`. A material
-//! with no primary-source `Kc` has no force model at all, so
+//! with no force line ([`Material::force_line`]) has no force model at all, so
 //! [`cut_efficiency`] itself returns `None` — the same refusal the engine
 //! already makes through `UnmodeledReason::MaterialUnvalidated`. No band
 //! means no ratios. A deflection model that refuses means no ceiling and
@@ -123,7 +124,7 @@ pub struct CutEfficiency {
     pub time_ratio_vs_band_mid: Option<f64>,
     /// `1 − predicted_δ / EXCEEDS_BOUND`. `None` when
     /// [`crate::feeds::predict::predict_peak_deflection_um`] refuses —
-    /// a drill, no `Kc`, a custom material, no DPP or no stickout, each
+    /// a drill, no force line, a custom material, no DPP or no stickout, each
     /// of which the predictor now names through
     /// [`crate::feeds::predict::DeflectionUnmodeled`]. Also `None` for a
     /// V-bit, whose figure is a modelled floor rather than a bound.
@@ -146,8 +147,8 @@ pub struct CutEfficiency {
 ///
 /// Returns `None` when:
 ///
-/// - the material has no primary-source `Kc`, so
-///   [`force::affine_coefficients`] refuses;
+/// - the material has no force line, so [`Material::force_line`]
+///   refuses;
 /// - the tool diameter, the flute count or the RPM is not positive, so
 ///   there is no advance per tooth;
 /// - the radial width of cut is not positive, so the edge term has no
@@ -163,7 +164,8 @@ pub fn cut_efficiency(
     machine: &MachineProfile,
     result: &FeedsResult,
 ) -> Option<CutEfficiency> {
-    let (ks_n_per_mm2, f_edge_n_per_mm) = force::affine_coefficients(material)?;
+    let line = material.force_line().ok()?;
+    let (ks_n_per_mm2, f_edge_n_per_mm) = (line.ks_n_per_mm2(), line.f_edge_n_per_mm());
 
     let diameter_mm = tool.diameter;
     if !(diameter_mm.is_finite() && diameter_mm > 0.0) {

@@ -145,20 +145,32 @@ const UNTOUCHED_DPP_MM: f64 = 12.0;
 /// P = A · ( Ks · cross_section · feed  +  F_edge · ap · π·D·n · z·ψ/2π ) / 60e6
 /// ```
 ///
-/// with `A = GRAIN_ANISOTROPY_FACTOR = 2.0`, `(Ks, F_edge) = (49.95, 5.30) ·
-/// kc/35.1` — the woodresearch.sk 201905/12 fit `feeds::force` owns — and
-/// `cos ψ = 1 − ae/r`. Returns the two terms apart, because the whole
-/// mechanism turns on which of them carries the feed.
-fn power_terms_kw(kc: f64, ap_mm: f64, ae_mm: f64, feed_mm_min: f64, rpm: f64) -> (f64, f64) {
-    const ANISOTROPY: f64 = 2.0;
-    let scale = kc / 35.1;
-    let (ks, f_edge) = (49.95 * scale, 5.30 * scale);
+/// with `(Ks, F_edge)` and the grain factor `A` from the material's force
+/// line (`Material::force_line`, ruling B6; `A = 1.0` on every shipped
+/// line), and `cos ψ = 1 − ae/r`. The test reads the two coefficients from
+/// the line and restates the expression. Returns the two terms apart,
+/// because the whole mechanism turns on which of them carries the feed.
+fn power_terms_kw(
+    material: &Material,
+    ap_mm: f64,
+    ae_mm: f64,
+    feed_mm_min: f64,
+    rpm: f64,
+) -> (f64, f64) {
+    let line = material
+        .force_line()
+        .expect("fixture species has a force line");
+    let (ks, f_edge, a) = (
+        line.ks_n_per_mm2(),
+        line.f_edge_n_per_mm(),
+        line.grain_factor(),
+    );
     let cross_section = ToolGeometryHint::Flat.mrr_cross_section_mm2(ap_mm, ae_mm);
     let psi = (1.0 - ae_mm / (DIAMETER_MM / 2.0)).clamp(-1.0, 1.0).acos();
     let duty = f64::from(FLUTES) * psi / std::f64::consts::TAU;
     let vc = std::f64::consts::PI * DIAMETER_MM * rpm;
-    let shear = ANISOTROPY * ks * cross_section * feed_mm_min / 60_000_000.0;
-    let edge = ANISOTROPY * f_edge * ap_mm * vc * duty / 60_000_000.0;
+    let shear = a * ks * cross_section * feed_mm_min / 60_000_000.0;
+    let edge = a * f_edge * ap_mm * vc * duty / 60_000_000.0;
     (shear, edge)
 }
 
@@ -199,6 +211,13 @@ fn tool() -> ToolConfig {
 /// 2.0 -> 1.5, 1.6 -> 1.2 (the crossing arm) and 0.8 -> 0.6 kW (the refusal
 /// arm: the measured edge term 0.6975 kW must exceed the ceiling). The
 /// un-clamped arm is re-tuned on its own measurement, see there.
+///
+/// Ruling B6 RE-TUNE (2026-09-25). The force line replaced the scaled
+/// woodresearch.sk anchor and the 2.0 grain factor. On `GenericHardwood`
+/// the shear term is x0.5197 (51.92 / 99.9 N/mm²) and the edge term is
+/// x0.3846 (4.077 / 10.6 N/mm) of the old one. Each arm's ceiling is the
+/// old ceiling re-evaluated at the old operating point with the new line,
+/// so each recipe keeps its old feed and its old clamp state.
 fn machine_at(power_kw: f64) -> MachineProfile {
     let mut m = MachineProfile::generic_wood_router();
     m.name = format!("SYNTHETIC {power_kw:.2} kW (test only)");
@@ -266,11 +285,8 @@ impl Shipped {
     /// the ceiling is the rated curve. Since ruling R4 neither carries a
     /// factor.
     fn shipped_utilisation(&self, machine: &MachineProfile, material: &Material) -> f64 {
-        let kc = material
-            .kc_n_per_mm2()
-            .expect("fixture species publishes a Kc");
         let (shear, edge) = power_terms_kw(
-            kc,
+            material,
             self.ap_mm,
             self.ae_mm,
             self.feed_mm_min,
@@ -281,11 +297,8 @@ impl Shipped {
 
     /// The same, at the point the CALCULATOR derived its feed at.
     fn calculator_utilisation(&self, machine: &MachineProfile, material: &Material) -> f64 {
-        let kc = material
-            .kc_n_per_mm2()
-            .expect("fixture species publishes a Kc");
         let (shear, edge) = power_terms_kw(
-            kc,
+            material,
             self.recommended.axial_depth_mm,
             self.recommended.radial_width_mm,
             self.recommended.feed_rate_mm_min,
@@ -296,11 +309,8 @@ impl Shipped {
 
     /// Fraction of the calculator-point load that the feed carries.
     fn calculator_shear_share(&self, material: &Material) -> f64 {
-        let kc = material
-            .kc_n_per_mm2()
-            .expect("fixture species publishes a Kc");
         let (shear, edge) = power_terms_kw(
-            kc,
+            material,
             self.recommended.axial_depth_mm,
             self.recommended.radial_width_mm,
             self.recommended.feed_rate_mm_min,
@@ -382,7 +392,12 @@ fn run_funnel(machine: &MachineProfile, material: &Material, requested_ap: f64) 
 #[test]
 fn pass_nine_raises_the_feed_across_the_tier_boundary() {
     // R4 re-tune: 1.6 -> 1.2 kW (the old 1.6 x 0.75 ceiling).
-    let machine = machine_at(1.2);
+    // B6 re-tune: 1.2 -> 0.5 kW. At the old point (30 mm, the edge term
+    // about 1.17 kW and the shear term about 0.27 kW at 544 mm/min) the new
+    // line draws 0.3846 x 1.17 + 0.5197 x 0.27 = 0.59 kW. A ceiling under
+    // that keeps Step 6 on the feed, so the calculator's feed stays far
+    // below the 4 000 mm/min cap and the 1.2x lift is not truncated.
+    let machine = machine_at(0.5);
     let material = Material::SolidWood {
         species: WoodSpecies::GenericHardwood,
     };
@@ -458,11 +473,13 @@ fn pass_nine_raises_the_feed_across_the_tier_boundary() {
 /// ceiling and files no warning; that silence is the pin.
 #[test]
 fn the_shipped_feed_fits_the_spindle_after_a_tier_crossing_rescale() {
-    // A 1.5 kW ceiling: at the 30 mm entry the feed-free edge term is about
-    // 1.17 kW, so a 1.2 kW ceiling would leave no shear budget above the
-    // rubbing floor and Step 6 could not land the recipe on the ceiling.
     // R4 re-tune: 2.0 -> 1.5 kW spindle (the old 2.0 x 0.75 ceiling).
-    let machine = machine_at(1.5);
+    // B6 re-tune: 1.5 -> 0.65 kW. At the 30 mm entry the feed-free edge
+    // term is now about 0.45 kW (0.3846 x the old 1.17 kW). The old 1.5 kW
+    // point (shear about 0.33 kW) re-evaluates to 0.45 + 0.5197 x 0.33 =
+    // 0.62 kW. 0.65 kW leaves a shear budget above the rubbing floor, so
+    // Step 6 still lands the recipe on the ceiling.
+    let machine = machine_at(0.65);
     let material = Material::SolidWood {
         species: WoodSpecies::GenericHardwood,
     };
@@ -555,11 +572,12 @@ fn the_shipped_feed_fits_the_spindle_after_a_tier_crossing_rescale() {
 /// touch. Pass 9 holds the same contract and
 /// `suggest_feed_matches_final_geometry` pins it from the other side.
 ///
-/// The machine here is a 1.6 kW spindle, so the power branch is live:
-/// the arm proves the gate, not an inactive ceiling.
+/// The machine here is a 0.7 kW spindle, so the power branch is live:
+/// the arm proves the gate, not an inactive ceiling. B6 re-tune: 1.6 ->
+/// 0.7 kW, about the x0.45 that the new line puts on hardwood power.
 #[test]
 fn an_untouched_operation_keeps_its_feed_byte_identical() {
-    let machine = machine_at(1.6);
+    let machine = machine_at(0.7);
     let material = Material::SolidWood {
         species: WoodSpecies::GenericHardwood,
     };
@@ -594,14 +612,16 @@ fn an_untouched_operation_keeps_its_feed_byte_identical() {
 /// value pass 9 started from, which Step 6 validated at the calculator's
 /// geometry, and says that no feed fits.
 ///
-/// The same 0.6 kW ceiling makes Step 6 refuse for the same reason, so the
+/// The same 0.23 kW ceiling makes Step 6 refuse for the same reason, so the
 /// calculator ships its unclamped feed with a `PowerLimited` warning and no
 /// derate. That is the shape this arm needs.
 #[test]
 fn no_feed_fits_when_the_edge_term_alone_is_over_budget() {
     // R4 re-tune: 0.8 -> 0.6 kW (the old 0.8 x 0.75 ceiling), under the
     // measured 0.6975 kW edge term, so no feed fits.
-    let mut machine = machine_at(0.6);
+    // B6 re-tune: 0.6 -> 0.23 kW. The edge term is x0.3846 of the old one,
+    // 0.6975 -> 0.268 kW, and 0.23 kW keeps the old 0.86 ratio under it.
+    let mut machine = machine_at(0.23);
     // Step 6 ships this recipe unclamped (no feed fits), and at the 30 mm
     // entry the unclamped feed reaches the default 4 000 cutting-feed ceiling
     // (4 000 x 0.75 before ruling R4), which would hide pass 9's lift behind the cap. A higher
@@ -612,9 +632,8 @@ fn no_feed_fits_when_the_edge_term_alone_is_over_budget() {
     };
     let shipped = run_funnel(&machine, &material, ENTRY_DPP_MM);
 
-    let kc = material.kc_n_per_mm2().unwrap();
     let (_, edge) = power_terms_kw(
-        kc,
+        &material,
         shipped.ap_mm,
         shipped.ae_mm,
         0.0,
@@ -680,7 +699,15 @@ fn an_unclamped_recipe_is_not_lifted_over_the_ceiling() {
     // Extrapolation P2 re-tune (a32ea149, one Janka table): the row's
     // softwood default moved 500 -> 600 lbf, so the band rose x1.061 and the
     // point drew 90.14 % at 1.53 kW. 1.53 x 0.9014 / 1.62 = 85.13 %.
-    let machine = machine_at(1.62);
+    // B6 re-tune: 1.62 -> 1.2 kW. Radiata pine now reads the Curti line at
+    // 504.1 kg/m³ (FPL Table 5-5a Gb 0.42 by Eq. 4-11): Ks 38.73, F_edge
+    // 3.041, grain factor 1.0, against the old 2 x (23.05, 2.446). The
+    // shear term is x0.840 and the edge term x0.622 of the old one. At the
+    // old 1.379 kW point (8 000 rev/min: edge 0.54 kW, shear 0.84 kW) the
+    // new line draws about 1.04 kW, 86.7 % of 1.2 kW. A higher spindle
+    // speed moves more of the load to the edge term; at 12 000 rev/min the
+    // point is about 81.8 %. Both are inside the 80-90 % band.
+    let machine = machine_at(1.2);
     let material = Material::SolidWood {
         species: WoodSpecies::RadiataPine,
     };

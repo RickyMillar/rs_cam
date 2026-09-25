@@ -30,15 +30,15 @@
 //! Refusal cases (mirrored with `power::evaluate`):
 //! - No simulation trace → `Unmodeled(SimulationRequired)`
 //! - Trace lacks `arc_engagement_radians` → `Unmodeled(ArcEngagementNotCaptured)`
-//! - `Material::Custom` without explicit Kc handling → `Unmodeled(MaterialUnvalidated)`
+//! - A material with no force line (`Material::force_line` refuses;
+//!   `Custom` included) → `Unmodeled(MaterialUnvalidated)`
 //! - Zero stickout → `Unmodeled(NotImplemented)`
 //!
 //! ## Modeling assumptions
 //!
-//! - **Raw `Kc(material)`**, no grain-anisotropy factor. Static
-//!   deflection responds to sustained mean force, not the transient
-//!   grain spikes the power-safety 2.0× factor (Pałubicki 2021,
-//!   `tool_load::power::GRAIN_ANISOTROPY_FACTOR`) is scoped to.
+//! - **The force line alone** (`Material::force_line`, ruling B6). The
+//!   line's grain factor is power-scoped, and deflection does not read
+//!   it. It is 1.0 on every shipped line.
 //! - Force is treated as a point load at the midpoint of axial
 //!   engagement. Distributing along the engaged depth would refine the
 //!   moment integral by under 10 % for fully-engaged flat endmills,
@@ -181,23 +181,15 @@ pub fn evaluate(
         };
     };
 
-    if let Material::Custom { .. } = material {
-        tracing::debug!(
-            reason = "MaterialUnvalidated",
-            material = "Custom",
-            "deflection gate refuses: Custom material has no validated Kc"
-        );
-        return DeflectionVerdict::Unmodeled {
-            reason: UnmodeledReason::MaterialUnvalidated,
-        };
-    }
-    // Materials without a primary-source Kc refuse here. See power.rs
-    // for the same pattern.
-    if material.kc_n_per_mm2().is_none() {
+    // One refusal through the force line (ruling B6). `Custom` and every
+    // other material with no line refuse here. See power.rs for the same
+    // pattern.
+    if let Err(refusal) = material.force_line() {
         tracing::debug!(
             reason = "MaterialUnvalidated",
             material = %material.label(),
-            "deflection gate refuses: material has no primary-source Kc"
+            refusal = refusal.variant_id(),
+            "deflection gate refuses: material has no force line"
         );
         return DeflectionVerdict::Unmodeled {
             reason: UnmodeledReason::MaterialUnvalidated,
@@ -626,7 +618,8 @@ mod tests {
 
         // The optimizer's deflection-safe feed (affine inverse, full slot
         // ⇒ sinθ_peak = 1), with a small margin so we land clearly Within.
-        let (ks, f_edge) = crate::feeds::force::affine_coefficients(&mat).expect("coeffs");
+        let line = mat.force_line().expect("force line");
+        let (ks, f_edge) = (line.ks_n_per_mm2(), line.f_edge_n_per_mm());
         let e = tool.tool_material.youngs_modulus_n_per_mm2();
         let compliance = tool.tip_deflection_mm(1.0, ap, e);
         let budget_force = EXCEEDS_BOUND_MM / compliance;
@@ -1002,8 +995,8 @@ mod tests {
         use crate::trace::toolpath_spans::Span;
         use std::borrow::Cow;
 
-        // Milling-Kc calibration (2026-06-17, MILLING_KC_FACTOR = 2.7)
-        // lifts the deflection force ~2.7×; the original 45 mm-stickout
+        // Milling-Kc calibration (2026-06-17, milling factor 2.7, removed
+        // by ruling B6) lifted the deflection force ~2.7×; the original 45 mm-stickout
         // steady sample now reads ~399 µm and Exceeds. This test is about
         // phantom-sample FILTERING (entry_spike must stay None), not the
         // deflection magnitude — so shorten stickout 45 → 30 mm (δ ∝

@@ -83,133 +83,151 @@ fn find_by_display_name_is_case_insensitive() {
     assert_eq!(lower, mixed);
 }
 
-// ── Per-arm Kc provenance (EDG-01, 2026-09-17) ──────────────────────────
+// ── Per-arm density provenance (ruling B6, 2026-09-25) ──────────────────
 //
-// `Material::kc_n_per_mm2` hands every solid-wood species the same
-// `Some(value)` shape. Three of the ten arms are folklore, not a citation.
-// `WoodSpecies::kc_provenance` is the only thing that says which, so these
-// cases pin the tag per arm. They do not pin a Kc value.
+// Ruling B6 replaced the scalar `Kc` and its folklore tags
+// (`KcProvenance`, EDG-01) with one force line per material. A solid-wood
+// line reads a density, so the provenance question is now: which FPL row
+// gives the density. `WoodSpecies::fpl_density` answers it per arm, and
+// these cases pin the source kind per arm. The density values are pinned
+// in `the_force_line_is_printed_per_family_b6.rs`.
 
-use rs_cam_core::material::{KcProvenance, Material, WoodSpecies};
+use rs_cam_core::material::force_line::{DensitySource, ForceLineRefusal};
+use rs_cam_core::material::{Material, WoodSpecies};
 
-/// The three species absent from FPL Chapter 5.
-const FOLKLORE_SPECIES: [WoodSpecies; 3] = [
+/// The three species with no FPL Table 5-3a row. They read the Table 5-5a
+/// basic SG, converted to 12 % MC by FPL Ch.4 Eq. (4-11).
+const TABLE_5_5A_SPECIES: [WoodSpecies; 3] = [
     WoodSpecies::RadiataPine,
     WoodSpecies::Jarrah,
     WoodSpecies::Ipe,
 ];
 
 #[test]
-fn every_species_reports_a_kc_provenance() {
+fn every_species_reports_a_density_source() {
     assert_eq!(
         WoodSpecies::ALL.len(),
         10,
         "WoodSpecies::ALL must list every species; a new arm needs a \
-         provenance tag too"
+         density row or a refusal too"
     );
     for species in WoodSpecies::ALL {
-        let tag = species.kc_provenance();
+        let density = species
+            .fpl_density()
+            .unwrap_or_else(|| panic!("{} must carry an FPL density", species.label()));
         assert!(
-            KcProvenance::ALL.contains(&tag),
-            "{} reports a provenance outside KcProvenance::ALL",
+            density.rho_kg_m3().is_finite() && density.rho_kg_m3() > 0.0,
+            "{} reports a density that is not a positive number",
             species.label()
         );
         assert!(
-            Material::SolidWood { species }.kc_n_per_mm2().is_some(),
-            "{} must still carry a Kc value; EDG-01 changes the tag, not \
-             the number",
+            !density.source().row_names().is_empty(),
+            "{} must name the FPL row(s) its density comes from",
             species.label()
         );
     }
 }
 
 #[test]
-fn only_the_three_uncited_species_report_folklore() {
+fn only_the_three_table_5_3a_absent_species_read_table_5_5a() {
     for species in WoodSpecies::ALL {
-        let is_folklore = species.kc_provenance().is_folklore();
-        let expected = FOLKLORE_SPECIES.contains(&species);
+        let density = species.fpl_density().expect("asserted in the arm above");
+        let reads_5_5a = matches!(density.source(), DensitySource::FplBasicRow(_));
+        let expected = TABLE_5_5A_SPECIES.contains(&species);
         assert_eq!(
-            is_folklore,
+            reads_5_5a,
             expected,
-            "{} reports provenance {} — expected folklore: {expected}. \
-             RadiataPine, Jarrah and Ipe have no FPL Ch.5 row; every other \
-             species does. Source the value before you retag it.",
+            "{} reads density source {} — expected a Table 5-5a row: {expected}. \
+             RadiataPine, Jarrah and Ipe have no FPL Table 5-3a row; every other \
+             species does.",
             species.label(),
-            species.kc_provenance().label()
+            density.source().kind_id()
+        );
+        if reads_5_5a {
+            assert!(
+                density.basic_specific_gravity().is_some(),
+                "{} must keep the printed basic SG next to the converted G12",
+                species.label()
+            );
+        }
+    }
+    // Ipe's converted density (1207 kg/m³) is above the Curti range, so the
+    // row exists and the force line still refuses.
+    assert!(matches!(
+        Material::SolidWood {
+            species: WoodSpecies::Ipe
+        }
+        .force_line(),
+        Err(ForceLineRefusal::DensityOutOfRange { .. })
+    ));
+}
+
+#[test]
+fn a_generic_species_is_a_mean_of_rows_not_a_row() {
+    // The two generic stand-ins average the rows their old `Kc` comment
+    // named. Reporting them as one FPL row would claim a citation that
+    // does not exist.
+    for species in [WoodSpecies::GenericSoftwood, WoodSpecies::GenericHardwood] {
+        let source = species.fpl_density().expect("generic species").source();
+        assert!(
+            matches!(source, DensitySource::FplMean(rows) if rows.len() == 3),
+            "{} must be the mean of three FPL rows, got {}",
+            species.label(),
+            source.kind_id()
         );
     }
+    let white_oak = WoodSpecies::WhiteOak
+        .fpl_density()
+        .expect("white oak")
+        .source();
+    assert!(
+        matches!(white_oak, DensitySource::FplRow(row) if row.row == "Oak, white"),
+        "White oak is the Quercus alba row of FPL Table 5-3a, got {}",
+        white_oak.row_names()
+    );
 }
 
 #[test]
-fn a_generic_species_is_a_band_midpoint_not_a_row() {
-    // The two generic stand-ins average several cited rows. Reporting them
-    // as one FPL row would claim a citation that does not exist.
-    assert_eq!(
-        WoodSpecies::GenericSoftwood.kc_provenance(),
-        KcProvenance::FplBandMidpoint
-    );
-    assert_eq!(
-        WoodSpecies::GenericHardwood.kc_provenance(),
-        KcProvenance::FplBandMidpoint
-    );
-    assert_eq!(
-        WoodSpecies::WhiteOak.kc_provenance(),
-        KcProvenance::FplTableRow,
-        "White oak is the Quercus alba row of FPL Table 5-3a"
-    );
-}
-
-// ── The library is data, not code (EDG-02, 2026-09-17) ──────────────────
-//
-// The library moved out of an 841-line Rust const array into
-// `data/wood_species.toml`, embedded with `include_str!`. This case pins
-// the whole library to one hash so the move proves byte-identical: the
-// hash below was captured from the const array before the move, and the
-// parsed file must reproduce it exactly.
-//
-// The canonical form is row order, then per row the display name, the
-// scientific name, the RAW IEEE-754 BITS of `janka_lbf` and the source id.
-// Raw bits, not a decimal rendering: a TOML parse that lands one ULP away
-// from the Rust literal must fail here, which is the whole promise.
-
-/// FNV-1a 64. Spelled out because `DefaultHasher` is not stable across
-/// toolchains and a pinned hash must outlive a compiler upgrade.
-fn fnv1a64(bytes: &[u8]) -> u64 {
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for byte in bytes {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    hash
-}
-
-fn library_canonical_bytes() -> Vec<u8> {
-    let mut out = String::new();
+fn only_an_fpl_row_carries_a_specific_gravity() {
+    // `specific_gravity_12` is the FPL Table 5-3a SG. A Wood Database row
+    // carries Janka only, so it must not carry an SG, and its force line
+    // refuses. Every FPL row that carries an SG has a force line.
+    let mut fpl_with_sg = 0_usize;
+    let mut refused = 0_usize;
     for entry in wood_species_library() {
-        out.push_str(&entry.display_name);
-        out.push('\u{1f}');
-        out.push_str(entry.scientific_name.as_deref().unwrap_or(""));
-        out.push('\u{1f}');
-        out.push_str(&entry.janka_lbf.to_bits().to_string());
-        out.push('\u{1f}');
-        out.push_str(&entry.source_id);
-        out.push('\u{1e}');
+        let material = Material::SolidWoodByJanka {
+            janka_lbf: entry.janka_lbf,
+            label: entry.display_name.clone(),
+            source_id: entry.source_id.clone(),
+        };
+        match entry.specific_gravity_12 {
+            Some(sg) => {
+                assert_eq!(
+                    entry.source_id, "fpl_ch5_2010",
+                    "{} carries an SG but is not an FPL row",
+                    entry.display_name
+                );
+                assert!(
+                    material.force_line().is_ok(),
+                    "{} (FPL SG {sg}) must have a force line",
+                    entry.display_name
+                );
+                fpl_with_sg += 1;
+            }
+            None => {
+                assert_eq!(
+                    material.force_line(),
+                    Err(ForceLineRefusal::NoDensity),
+                    "{} carries no SG, so its force line must refuse",
+                    entry.display_name
+                );
+                refused += 1;
+            }
+        }
     }
-    out.into_bytes()
-}
-
-/// Captured 2026-09-17 from the `pub const WOOD_SPECIES_LIBRARY` Rust
-/// array, before EDG-02 moved the rows into `data/wood_species.toml`.
-const LIBRARY_CANONICAL_HASH: u64 = 0x4455_4d89_a8f2_f8ac;
-
-#[test]
-fn the_library_is_byte_identical_to_the_const_it_replaced() {
-    let got = fnv1a64(&library_canonical_bytes());
-    assert_eq!(
-        got, LIBRARY_CANONICAL_HASH,
-        "the wood species library changed: 132 rows of \
-         display_name/scientific_name/janka_lbf bits/source_id hash to \
-         {got:#018x}, not {LIBRARY_CANONICAL_HASH:#018x}. A deliberate data \
-         edit re-pins this constant; an accidental one does not."
+    assert!(
+        fpl_with_sg > 0 && refused > 0,
+        "the population must hold both kinds: {fpl_with_sg} FPL rows with an SG, \
+         {refused} rows without"
     );
 }

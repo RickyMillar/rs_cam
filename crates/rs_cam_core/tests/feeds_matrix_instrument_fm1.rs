@@ -316,6 +316,8 @@ const MATRIX_HEADER: &[&str] = &[
     "cap_role",
     "cap_factor",
     "cap_mm",
+    "force_line",
+    "chip_regime",
 ];
 
 fn support_columns(s: &FeedsSupport) -> (String, String) {
@@ -467,6 +469,34 @@ fn cap_columns(machine: &MachineProfile, op: &OperationConfig, tool: &ToolConfig
     ]
 }
 
+/// The two B6 force-line columns of a cell (ruling B6, 2026-09-25):
+///
+/// - `force_line`: the form id of the material's force line, or
+///   `refused:<variant_id>` when `Material::force_line` refuses;
+/// - `chip_regime`: the MCP wire id of the chip regime at the shipped
+///   point (`feeds::operating_point::force_at_operating_point`), or empty
+///   when the door gives no point (no recipe, or a refusal).
+///
+/// A refused recipe has no shipped operation, so `operation` is `None`.
+fn force_line_columns(
+    material: &Material,
+    operation: Option<&OperationConfig>,
+    tool: &ToolConfig,
+) -> [String; 2] {
+    let line = match material.force_line() {
+        Ok(line) => line.form_id().to_owned(),
+        Err(refusal) => format!("refused:{}", refusal.variant_id()),
+    };
+    let regime = operation
+        .and_then(|op| {
+            rs_cam_core::feeds::operating_point::force_at_operating_point(op, tool, material, None)
+                .ok()
+        })
+        .map(|point| point.chip_regime.wire_id().to_owned())
+        .unwrap_or_default();
+    [line, regime]
+}
+
 fn walk_matrix(
     machine: &MachineProfile,
     rows_by_id: &HashMap<&str, &VendorObservation>,
@@ -515,6 +545,7 @@ fn walk_matrix(
                                 &OperationConfig::new_default(op),
                                 &tool,
                             ));
+                            fields.extend(force_line_columns(material, None, &tool));
                             cells.push(Cell {
                                 kind,
                                 op,
@@ -628,6 +659,7 @@ fn walk_matrix(
                             fields.push(fw.join(";"));
                             fields.push(sw.join(";"));
                             fields.extend(cap_columns(machine, &s.operation, &tool));
+                            fields.extend(force_line_columns(material, Some(&s.operation), &tool));
                             cells.push(Cell {
                                 kind,
                                 op,
@@ -1310,6 +1342,14 @@ fn summary(machine: &MachineProfile, cells: &[Cell], sim: &SimOutcome) -> String
         w,
         "- A refused cell has no recipe, so its recipe, row and diagnostic columns are empty; \
          its cap columns come from the registry default of the operation."
+    )
+    .expect("write");
+    writeln!(
+        w,
+        "- `force_line` is the form id of the material's force line, or \
+         `refused:<variant>` (ruling B6). `chip_regime` is the chip regime at the shipped \
+         point from `force_at_operating_point`; it is empty on a refused cell and where the \
+         door gives no point."
     )
     .expect("write");
     md

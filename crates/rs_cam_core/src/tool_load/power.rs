@@ -5,9 +5,9 @@
 //!
 //! Power is tangential force × cutting velocity, and the tangential
 //! force this engine models is **affine** in chip thickness
-//! (`feeds::force`: `Fc/ap = Ks·h + F_edge`, woodresearch.sk 201905/12,
-//! R² ≈ 0.99). Splitting that force gives two power terms that behave
-//! completely differently:
+//! (`feeds::force`: `Fc/ap = Ks·h + F_edge`, the material's one force
+//! line, ruling B6). Splitting that force gives two power terms that
+//! behave completely differently:
 //!
 //! ```text
 //! P_kW = A · ( Ks · MRR  +  F_edge · ap · Vc · z·ψ/2π ) / 60_000_000
@@ -17,15 +17,16 @@
 //!
 //! with `Vc = π·D·n` (mm/min), `ψ` the engagement arc
 //! ([`crate::feeds::force::immersion_angle`]), `z` the flute count and
-//! `A = GRAIN_ANISOTROPY_FACTOR`.
+//! `A` the line's grain factor ([`ForceLine::grain_factor`]).
 //!
 //! **The edge term contains no feed.** Halving the feed at constant RPM
 //! halves the shear term and leaves the edge term untouched, so power
 //! falls toward a floor rather than to zero.
 //!
 //! This matters because the crossover chip thickness `F_edge/Ks` is
-//! 0.106 mm and wood routing runs at 0.03–0.09 mm/tooth — entirely
-//! below it. Routing wood is edge-dominated, and the pre-R1 model
+//! 0.079 mm on the solid-wood line (0.107 mm on MDF) and wood routing
+//! runs at 0.03–0.09 mm/tooth — mostly below it. Routing wood is
+//! edge-dominated, and the pre-R1 model
 //! (`P = A·Kc·ap·ae·feed/60e6`, constant specific energy, linear in
 //! MRR, no chip-thickness term) was blind to the dominant term. On the
 //! reference fixture it understated cutting power by ~8.6× at the
@@ -41,23 +42,15 @@
 //! `feeds::force`, `feed_modulation` and `dexel_stock::stamping` all
 //! use.
 //!
-//! ## Why the anisotropy factor stays
+//! ## The grain factor (ruling B6)
 //!
-//! - `Kc_eff = GRAIN_ANISOTROPY_FACTOR × material.kc_n_per_mm2()`.
-//!   `GRAIN_ANISOTROPY_FACTOR = 2.0` is the measured directional spread
-//!   of specific cutting force for wood-class materials per Pałubicki
-//!   2021 (DOI 10.3390/ma14092208, particleboard peripheral up-milling
-//!   across grain orientations). Pre-Phase-2 the factor was 2.5 — a
-//!   magic number chosen to absorb under-modeled `Kc`. Phase 2B paired
-//!   the rename + value change with literature-anchored sheet-good Kc
-//!   so the product `Kc × factor` reflects physics rather than the old
-//!   absorption split.
-//!   The factor is NOT shared with `feeds::force` / `tool_load::
-//!   deflection`, and that split is deliberate, not a defect:
-//!   deflection responds to sustained mean force and takes raw `Kc`
-//!   (see `deflection.rs` module docs), while power carries a safety
-//!   allowance for the transient grain spikes Pałubicki 2021 measured.
-//!   R1 changed the SHAPE of this model, not its safety scoping.
+//! - `P` reads `line × grain_factor`, with the line from
+//!   `Material::force_line()`. Every shipped line has `grain_factor =
+//!   1.0`: the Curti 2021 solid-wood line is the upper envelope over the
+//!   grain angle and the milling mode, so it already holds the grain
+//!   spread; MDF is isotropic in plane. The old 2.0 anisotropy factor
+//!   (Pałubicki 2021, a particleboard spread applied to every wood) is
+//!   gone. Deflection reads the line alone.
 //! - `radial_width = (arc_engagement_radians / π) × engagement_radius × 2`
 //!   is an arc-length-equivalent slab width. Honest within isotropy
 //!   bounds because Phase 2's arc engagement replaced the old cylinder-
@@ -67,46 +60,31 @@
 //! - No simulation trace → `Unmodeled(SimulationRequired)`
 //! - Trace lacks `arc_engagement_radians` (capture flag was off) →
 //!   `Unmodeled(ArcEngagementNotCaptured)`
-//! - `Material::Custom` without explicit Kc handling → `Unmodeled(MaterialUnvalidated)`
+//! - A material with no force line (`Material::force_line` refuses;
+//!   `Custom` included) → `Unmodeled(MaterialUnvalidated)`
 //!
 //! Slot engagement (`arc >= π`) annotates the result with
 //! `Approximate(SlotEngagement)` because chip-distribution between climb
 //! and conventional sides differs there and we don't decompose.
 
-use crate::material::Material;
+use crate::material::force_line::ForceLine;
 use crate::tool::MillingCutter;
 
 use super::locality::SpanLookup;
 use super::verdict::{Confidence, EntrySpike, PowerVerdict, SampleEvidence, UnmodeledReason};
-
-/// Wood grain anisotropy factor on Kc — Pałubicki 2021 (DOI
-/// 10.3390/ma14092208) measured the directional spread of specific
-/// cutting force for particleboard peripheral up-milling across grain
-/// orientations. The rename from `ANISOTROPY_MULTIPLIER` (pre-Phase-2,
-/// value 2.5) reflects that this is a documented physical factor, not
-/// a knob to tune around under-modeled Kc.
-///
-/// Exposed as `pub(crate)` so every Kc-consuming path
-/// (`session::compute` building `PowerLimitInputs`, the Suggest path
-/// in `feeds::mod`, the constrained-max solver in `feed_modulation`)
-/// references the single source of truth rather than re-encoding the
-/// numeric literal. Bumping this constant should produce one diff
-/// site, not five.
-pub(crate) const GRAIN_ANISOTROPY_FACTOR: f64 = 2.0;
 
 /// The feed-independent half of a power prediction: material, engaged
 /// geometry and spindle speed. Feed is supplied separately because the
 /// whole point of the two-term model is that only one term moves with
 /// it — see [`PowerTerms`].
 ///
-/// `kc_n_per_mm2` is the RAW material `Kc` from
-/// `Material::kc_n_per_mm2()`. [`PowerTerms::of`] applies
-/// [`GRAIN_ANISOTROPY_FACTOR`], so callers never pre-multiply and a
-/// change to the factor stays one diff.
+/// `line` is the material's force line from `Material::force_line()`.
+/// [`PowerTerms::of`] applies its grain factor, so callers never
+/// pre-multiply.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct PowerModelInputs {
-    /// Raw material `Kc` (N/mm²).
-    pub kc_n_per_mm2: f64,
+    /// The material's force line.
+    pub line: ForceLine,
     /// Shape-correct engaged chip cross-section (mm²) at this DOC + WOC
     /// — `MillingCutter::mrr_cross_section_mm2` / the geometry hint's
     /// equivalent. Rectangular slab for endmills, triangular for
@@ -144,7 +122,7 @@ pub(crate) struct PowerModelInputs {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct PowerTerms {
     /// kW per mm/min of linear feed — the shear term's slope,
-    /// `A·Ks·cross_section/60e6`.
+    /// `A·Ks·cross_section/60e6`, `A` the grain factor.
     pub shear_kw_per_mm_min: f64,
     /// kW at zero feed — the edge/ploughing floor,
     /// `A·F_edge·ap·Vc·(z·ψ/2π)/60e6`.
@@ -154,13 +132,12 @@ pub(crate) struct PowerTerms {
 impl PowerTerms {
     /// Build the two terms from the material and the engaged geometry.
     ///
-    /// The coefficients come from
-    /// [`crate::feeds::force::affine_coefficients_for_kc`] — the same
-    /// `(Ks, F_edge)` pair the deflection gate and the feed-modulation
-    /// solver read — so power and deflection cannot disagree about what
-    /// a thin chip costs. [`GRAIN_ANISOTROPY_FACTOR`] rides on both
-    /// terms: it is a power-safety allowance, and it is scoped to the
-    /// whole power prediction rather than to one of its halves.
+    /// The coefficients come from the force line — the same `(Ks,
+    /// F_edge)` pair the deflection gate and the feed-modulation solver
+    /// read — so power and deflection cannot disagree about what a thin
+    /// chip costs. The line's grain factor rides on both terms: it is
+    /// scoped to the whole power prediction rather than to one of its
+    /// halves. It is 1.0 on every shipped line.
     ///
     /// An edge input that is not finite and positive (no rotation, no
     /// engagement arc, no diameter) contributes **zero** edge power
@@ -170,7 +147,7 @@ impl PowerTerms {
     /// inputs.
     pub(crate) fn of(inputs: PowerModelInputs) -> Self {
         let PowerModelInputs {
-            kc_n_per_mm2,
+            line,
             cross_section_mm2,
             axial_doc_mm,
             immersion_rad,
@@ -178,10 +155,10 @@ impl PowerTerms {
             spindle_rpm,
             flute_count,
         } = inputs;
-        let (ks, f_edge) = crate::feeds::force::affine_coefficients_for_kc(kc_n_per_mm2);
+        let (ks, f_edge) = (line.ks_n_per_mm2(), line.f_edge_n_per_mm());
+        let grain_factor = line.grain_factor();
 
-        let shear_kw_per_mm_min =
-            GRAIN_ANISOTROPY_FACTOR * ks * cross_section_mm2.max(0.0) / 60_000_000.0;
+        let shear_kw_per_mm_min = grain_factor * ks * cross_section_mm2.max(0.0) / 60_000_000.0;
 
         // Duty cycle `z·ψ/2π` — the average number of teeth in cut.
         // ψ is clamped to a full slot; beyond π the arc is not a
@@ -201,7 +178,7 @@ impl PowerTerms {
             // Vc in mm/min, so the /60e6 that turns N·mm/min into kW is
             // the same divisor the shear term uses.
             let vc_mm_min = std::f64::consts::PI * engagement_diameter_mm * spindle_rpm;
-            GRAIN_ANISOTROPY_FACTOR * f_edge * axial_doc_mm * vc_mm_min * duty / 60_000_000.0
+            grain_factor * f_edge * axial_doc_mm * vc_mm_min * duty / 60_000_000.0
         } else {
             0.0
         };
@@ -264,9 +241,8 @@ pub(crate) fn predicted_power_kw(inputs: PowerModelInputs, feed_mm_min: f64) -> 
 /// cut-metrics distribution ([`super::distribution`]) calls it too. Thus
 /// the histogram and the gate read one number.
 ///
-/// - `kc_n_per_mm2` is the RAW material `Kc` from
-///   `Material::kc_n_per_mm2()`. Do not multiply it by the anisotropy
-///   factor; [`PowerTerms::of`] applies that factor.
+/// - `line` is the material's force line from `Material::force_line()`.
+///   [`PowerTerms::of`] applies its grain factor.
 /// - `feed_mm_min` is the effective feed that
 ///   [`super::effective_feed_for_sample`] resolves for the sample.
 ///
@@ -279,7 +255,7 @@ pub(crate) fn predicted_power_kw(inputs: PowerModelInputs, feed_mm_min: f64) -> 
 #[must_use]
 pub fn sample_power_kw(
     tool: &crate::tool::ToolDefinition,
-    kc_n_per_mm2: f64,
+    line: &ForceLine,
     sample: &crate::stock::simulation_cut::SimulationCutSample,
     feed_mm_min: f64,
 ) -> Option<f64> {
@@ -310,7 +286,7 @@ pub fn sample_power_kw(
     let cross_section_mm2 = tool.mrr_cross_section_mm2(sample.axial_doc_mm, radial_width);
     Some(predicted_power_kw(
         PowerModelInputs {
-            kc_n_per_mm2,
+            line: *line,
             cross_section_mm2,
             axial_doc_mm: sample.axial_doc_mm,
             immersion_rad: arc,
@@ -382,34 +358,24 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
         };
     };
 
-    // Material::Custom without an explicitly-validated Kc: refuse. The
-    // `kc_n_per_mm2` accessor on Custom returns whatever the user typed;
-    // unless a project-level "validated" flag exists, the safest default
-    // is to refuse rather than predict force from an unvetted constant.
-    if let Material::Custom { .. } = material {
-        tracing::debug!(
-            reason = "MaterialUnvalidated",
-            material = "Custom",
-            "power gate refuses: Custom material has no validated Kc"
-        );
-        return PowerVerdict::Unmodeled {
-            reason: UnmodeledReason::MaterialUnvalidated,
-        };
-    }
-
-    // Materials without a primary-source Kc (e.g. most plastics, aluminum
-    // pre Phase 3 beat F) return None and refuse here. The type-level
-    // Option encodes "no validated cutting-force model" — no fabricated
-    // constant ever drives a force prediction.
-    let Some(kc) = material.kc_n_per_mm2() else {
-        tracing::debug!(
-            reason = "MaterialUnvalidated",
-            material = %material.label(),
-            "power gate refuses: material has no primary-source Kc"
-        );
-        return PowerVerdict::Unmodeled {
-            reason: UnmodeledReason::MaterialUnvalidated,
-        };
+    // One refusal through the force line (ruling B6). A material with no
+    // line — `Custom`, plywood, HDF, particleboard, every plastic,
+    // aluminium, foam, fiberglass, a species with no printed density —
+    // refuses here. No fabricated constant ever drives a force
+    // prediction.
+    let line = match material.force_line() {
+        Ok(line) => line,
+        Err(refusal) => {
+            tracing::debug!(
+                reason = "MaterialUnvalidated",
+                material = %material.label(),
+                refusal = refusal.variant_id(),
+                "power gate refuses: material has no force line"
+            );
+            return PowerVerdict::Unmodeled {
+                reason: UnmodeledReason::MaterialUnvalidated,
+            };
+        }
     };
 
     // Walk samples for this toolpath.
@@ -475,7 +441,7 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
         // The per-sample prediction lives in `sample_power_kw`, so the
         // cut-metrics distribution (`super::distribution`) reads the
         // same number this gate compares.
-        let Some(p_kw) = sample_power_kw(tool, kc, s, feed_for_power) else {
+        let Some(p_kw) = sample_power_kw(tool, &line, s, feed_for_power) else {
             continue;
         };
         // Ruling R4 Q2 (2026-09-24): the ceiling is the rated spindle curve,
@@ -533,9 +499,7 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
             "slot engagement (arc >= π) — climb/conventional split not modeled".to_owned(),
         )
     } else {
-        Confidence::Approximate(
-            "isotropic Kc with 2.0× grain anisotropy factor (Pałubicki 2021); no helix/grain decomposition".to_owned(),
-        )
+        Confidence::Approximate(line.power_confidence_text())
     };
 
     // X-VAC: state the population on BOTH arms — `Exceeds` needs it too,
@@ -650,7 +614,7 @@ mod tests {
     use crate::compute::catalog::OperationType;
     use crate::ids::ToolpathId;
     use crate::machine::MachineProfile;
-    use crate::material::WoodSpecies;
+    use crate::material::{Material, WoodSpecies};
     use crate::stock::simulation_cut::{
         CutKinematics, SimulationCutSample, SimulationCutSummary, SimulationCutTrace,
     };
@@ -817,7 +781,7 @@ mod tests {
     }
 
     #[test]
-    fn plastic_without_validated_kc_refuses_material_unvalidated() {
+    fn plastic_without_a_force_line_refuses_material_unvalidated() {
         // Acrylic has no fetched primary force study; the gate must
         // refuse rather than predict force from a fabricated constant.
         let trace = trace_with(vec![cutting_sample(
@@ -875,21 +839,20 @@ mod tests {
     #[test]
     fn light_cut_is_within_with_available_kw() {
         // 6.35mm flat in hard maple, half-engagement (arc=π/2), 1mm DOC,
-        // 1000 mm/min feed, 18 000 RPM, 2 flutes, HardMaple (Kc = 43.2):
+        // 1000 mm/min feed, 18 000 RPM, 2 flutes, HardMaple (Curti 2021
+        // line at ρ 705.6 kg/m³, grain factor 1.0; ruling B6):
         //   engagement_radius = 3.175
         //   radial_width = (π/2 / π) × 3.175 × 2 = 3.175
         //   cross_section   = 1.0 × 3.175 = 3.175 mm²
-        //   (Ks, F_edge)    = (49.95, 5.30) × 43.2/35.1 = (61.48, 6.523)
-        //   shear = 2.0 × 61.48 × 3.175 × 1000 / 60e6   = 0.00651 kW
-        //   edge  = 2.0 × 6.523 × 1.0 × (π×6.35×18000) × (2×(π/2)/2π) / 60e6
-        //                                                = 0.03904 kW
-        //   P_kW  = 0.04554 kW
-        // R1 (2026-09-16) re-baseline: the pre-R1 linear model read
-        // 0.00229 kW here (Kc_eff 86.4 × 3.175 × 1000 / 60e6). The edge
-        // term is 86 % of the honest answer at this thin chip — it is
-        // the term the old model could not see. Bound widened from
-        // 0.01 to 0.1 kW; still well under the ~0.71 kW ceiling,
-        // so "light cut" still means light.
+        //   (Ks, F_edge)    = (54.21, 4.257)
+        //   shear = 54.21 × 3.175 × 1000 / 60e6                 = 0.00287 kW
+        //   edge  = 4.257 × 1.0 × (π×6.35×18000) × (2×(π/2)/2π) / 60e6
+        //                                                        = 0.01274 kW
+        //   P_kW  = 0.01561 kW
+        // The edge term is 82 % of the answer at this thin chip — it is
+        // the term the pre-R1 model could not see. The bound stays at
+        // 0.1 kW, well under the 0.71 kW ceiling, so "light cut" still
+        // means light.
         // Shapeoko Makita ≈ 0.71 kW rated (R4 Q2: no fraction). Within, and the
         // verdict must surface the available headroom for UI rendering.
         let trace = trace_with(vec![cutting_sample(
@@ -928,15 +891,16 @@ mod tests {
 
     #[test]
     fn heavy_cut_exceeds_machine_with_available_kw() {
-        // Slot at 20mm DOC, 6000 mm/min in Ipe (Kc=28) → P ≈ 0.889 kW
-        // vs the rated ≈ 0.71 kW. Exceeds, and the verdict
-        // must carry both peak_kw and available_kw.
+        // Slot at 20mm DOC, 6000 mm/min in white oak (Curti 2021 line at
+        // ρ 761.6 kg/m³: Ks 58.52, F_edge 4.595) → P ≈ 1.29 kW vs the
+        // rated 0.71 kW. Exceeds, and the verdict must carry both peak_kw
+        // and available_kw. (Ipe is above the Curti density range since ruling B6.)
         let trace = trace_with(vec![cutting_sample(0, 20.0, std::f64::consts::PI, 6000.0)]);
         let v = evaluate_args(
             0,
             &tool(),
             &Material::SolidWood {
-                species: WoodSpecies::Ipe,
+                species: WoodSpecies::WhiteOak,
             },
             &shapeoko_makita(),
             Some(&trace),
@@ -995,18 +959,20 @@ mod tests {
         };
         // Hand compute: engagement_radius(1.0) for 90° V-bit = 1.0 mm;
         // radial_width = (arc/π)·2·1.0 = 1.0; triangular area = 0.5·1·1 =
-        // 0.5 mm²; engaged diameter = 2.0 mm. HardMaple MILLING Kc =
-        // 16 × 2.7 = 43.2 (FPL shear lifted by MILLING_KC_FACTOR,
-        // KC_MILLING_CALIBRATION_2026-06-17) ⇒ (Ks, F_edge) =
-        // (61.48, 6.523). A = GRAIN_ANISOTROPY_FACTOR = 2.0.
-        //   shear = 2.0 · 61.48 · 0.5 · 1000 / 60e6         = 0.001025 kW
-        //   edge  = 2.0 · 6.523 · 1.0 · (π·2·18000) · 0.5 / 60e6
-        //                                                   = 0.012296 kW
-        // Pre-R1 this fixture read 86.4 · 0.5 · 1000 / 60e6 = 0.00072 kW.
-        let (ks, f_edge) = crate::feeds::force::affine_coefficients_for_kc(43.2);
-        let shear = GRAIN_ANISOTROPY_FACTOR * ks * 0.5 * feed / 60_000_000.0;
+        // 0.5 mm²; engaged diameter = 2.0 mm. HardMaple Curti 2021 line
+        // (ruling B6) ⇒ (Ks, F_edge) = (54.21, 4.257), grain factor A = 1.0.
+        //   shear = 1.0 · 54.21 · 0.5 · 1000 / 60e6         = 0.000452 kW
+        //   edge  = 1.0 · 4.257 · 1.0 · (π·2·18000) · 0.5 / 60e6
+        //                                                   = 0.004012 kW
+        let line = mat.force_line().unwrap();
+        let (ks, f_edge, a) = (
+            line.ks_n_per_mm2(),
+            line.f_edge_n_per_mm(),
+            line.grain_factor(),
+        );
+        let shear = a * ks * 0.5 * feed / 60_000_000.0;
         let vc = std::f64::consts::PI * 2.0 * 18_000.0;
-        let edge = GRAIN_ANISOTROPY_FACTOR * f_edge * doc * vc * 0.5 / 60_000_000.0;
+        let edge = a * f_edge * doc * vc * 0.5 / 60_000_000.0;
         let expected = shear + edge;
         assert!(
             (peak - expected).abs() / expected < 0.02,
@@ -1015,7 +981,7 @@ mod tests {
         // The cross-section model is what this test exists to check: the
         // triangular groove must still halve the SHEAR term against a
         // rectangular slab of the same DOC × radial width.
-        let slab_shear = GRAIN_ANISOTROPY_FACTOR * ks * 1.0 * feed / 60_000_000.0;
+        let slab_shear = a * ks * 1.0 * feed / 60_000_000.0;
         assert!(
             (shear - 0.5 * slab_shear).abs() < 1e-12,
             "the triangular cross-section must halve the shear term"
@@ -1051,26 +1017,19 @@ mod tests {
     /// tolerance band actually widens the gate trigger; the default
     /// preserves today's strict ceiling.
     ///
-    /// Milling-Kc calibration (2026-06-17, MILLING_KC_FACTOR = 2.7): the
-    /// old fixture (Ipe full slot, 20 mm DOC, 6000 mm/min) predicted
-    /// ~1.92 kW — beyond reach even with power_breach = 1.0 (which admits
-    /// up to 2× the 0.568 kW available). The test's intent is "the band
-    /// admits a *borderline* cut", not "Ipe full slot is fine". It was
-    /// retuned then to HardMaple at 14 mm DOC ≈ 0.77 kW.
+    /// The test's intent is "the band admits a *borderline* cut". The
+    /// fixture has moved with each model change; the assertion has not.
     ///
-    /// R1 (2026-09-16) re-baseline: the two-term model reads that same
-    /// 14 mm / 6000 mm/min fixture as 2.19 kW, so the probe left the band
-    /// again — the fixture moved, the assertion did not. A full slot runs
-    /// the edge term at its maximum duty cycle (ψ = π ⇒ z·ψ/2π = 1.0),
-    /// and at 18 000 RPM that term alone is 0.078 kW per mm of DOC.
-    /// Retuned to 7 mm DOC at 3000 mm/min ≈ 0.82 kW (edge 0.547 + shear
-    /// 0.273): above the 0.568 kW strict ceiling, under the 1.136 kW
-    /// widened one. Ruling R4 Q2 (2026-09-24) raised the strict ceiling to
-    /// the rated 0.71 kW (widened 1.42 kW); 0.82 kW is still between them. Both halves of "borderline" are asserted now, so a
-    /// future drift cannot leave this passing vacuously.
+    /// Ruling B6 (2026-09-25) re-baseline: the Curti 2021 line with grain
+    /// factor 1.0 reads the old 7 mm / 3000 mm/min slot as 0.30 kW, under
+    /// the strict ceiling, so the probe left the band. Retuned to a 14 mm
+    /// slot at 6000 mm/min in hard maple ≈ 0.84 kW (shear 0.482 + edge
+    /// 0.357): above the rated 0.71 kW strict ceiling (ruling R4 Q2), under
+    /// the 1.42 kW widened one. Both halves of "borderline" are asserted,
+    /// so a future drift cannot leave this passing vacuously.
     #[test]
     fn heavy_cut_within_with_power_breach_tolerance() {
-        let trace = trace_with(vec![cutting_sample(0, 7.0, std::f64::consts::PI, 3000.0)]);
+        let trace = trace_with(vec![cutting_sample(0, 14.0, std::f64::consts::PI, 6000.0)]);
         let material = Material::SolidWood {
             species: WoodSpecies::HardMaple,
         };
@@ -1122,7 +1081,7 @@ mod tests {
             0,
             &tool(),
             &Material::SolidWood {
-                species: WoodSpecies::Ipe,
+                species: WoodSpecies::WhiteOak,
             },
             &shapeoko_makita(),
             Some(&trace),
@@ -1188,16 +1147,16 @@ mod r1_two_term_model {
 
     /// 6 mm 2-flute flat, 17 000 RPM, DOC 4.20, WOC 2.10, generic
     /// softwood — the fixture ADVICE.md §1 measured.
-    fn fixture() -> (PowerModelInputs, f64) {
-        let kc = Material::SolidWood {
+    fn fixture() -> (PowerModelInputs, ForceLine) {
+        let line = Material::SolidWood {
             species: WoodSpecies::GenericSoftwood,
         }
-        .kc_n_per_mm2()
+        .force_line()
         .unwrap();
         let (d, ap, ae) = (6.0_f64, 4.20_f64, 2.10_f64);
         (
             PowerModelInputs {
-                kc_n_per_mm2: kc,
+                line,
                 cross_section_mm2: ap * ae,
                 axial_doc_mm: ap,
                 immersion_rad: crate::feeds::force::immersion_angle(ae, d / 2.0),
@@ -1205,45 +1164,45 @@ mod r1_two_term_model {
                 spindle_rpm: 17_000.0,
                 flute_count: 2.0,
             },
-            kc,
+            line,
         )
     }
 
-    /// The PRE-R1 model, written out so the before/after ratio below is
-    /// a measurement against a stated baseline rather than a memory.
-    fn linear_power_kw(kc: f64, cross_section_mm2: f64, feed_mm_min: f64) -> f64 {
-        GRAIN_ANISOTROPY_FACTOR * kc * cross_section_mm2 * feed_mm_min / 60_000_000.0
+    /// The PRE-R1 shape — linear in MRR, no edge term — written out with
+    /// the line's own slope, so the before/after ratio below is a
+    /// measurement against a stated baseline rather than a memory. (The
+    /// pre-R1 constant was a scalar `Kc`; ruling B6 removed it, so the
+    /// baseline now isolates the shape: the shear term alone.)
+    fn linear_power_kw(line: ForceLine, cross_section_mm2: f64, feed_mm_min: f64) -> f64 {
+        line.grain_factor() * line.ks_n_per_mm2() * cross_section_mm2 * feed_mm_min / 60_000_000.0
     }
 
-    /// R1's headline measurement, re-taken from live code.
+    /// R1's headline measurement, re-taken from live code on the Curti
+    /// 2021 softwood line (ruling B6: ρ 403.2 kg/m³, Ks 30.98, F_edge
+    /// 2.433, grain factor 1.0).
     ///
-    /// | fz (mm/tooth) | pre-R1 kW | R1 kW | ratio | edge share |
+    /// | fz (mm/tooth) | shear-only kW | R1 kW | ratio | edge share |
     /// |---|---|---|---|---|
-    /// | 0.0380 (running) | 0.006666 | 0.057399 | **8.61×** | 83.5 % |
-    /// | 0.0675 (vendor mid) | 0.011842 | 0.064763 | 5.47× | 74.0 % |
-    /// | 0.0850 (vendor max) | 0.014912 | 0.069132 | 4.64× | 69.3 % |
-    ///
-    /// ADVICE.md §1's table quoted 4.3× / 2.7× / 2.3× because it
-    /// computed the two-term column WITHOUT `GRAIN_ANISOTROPY_FACTOR`;
-    /// §6 corrects that — the factor stays on power and rides both
-    /// terms, so the change is twice §1's number.
+    /// | 0.0380 (running) | 0.005884 | 0.027875 | **4.74×** | 78.9 % |
+    /// | 0.0675 (vendor mid) | 0.010451 | 0.032442 | 3.10× | 67.8 % |
+    /// | 0.0850 (vendor max) | 0.013161 | 0.035152 | 2.67× | 62.6 % |
     #[test]
     fn the_understatement_grows_as_the_chip_thins() {
-        let (inputs, kc) = fixture();
+        let (inputs, line) = fixture();
         let terms = PowerTerms::of(inputs);
         let expected = [
-            (0.0380_f64, 0.006_666_f64, 0.057_399_f64, 8.61_f64),
-            (0.0675, 0.011_842, 0.064_763, 5.47),
-            (0.0850, 0.014_912, 0.069_132, 4.64),
+            (0.0380_f64, 0.005_884_f64, 0.027_875_f64, 4.74_f64),
+            (0.0675, 0.010_451, 0.032_442, 3.10),
+            (0.0850, 0.013_161, 0.035_152, 2.67),
         ];
         let mut previous_ratio = f64::INFINITY;
         for (fz, want_old, want_new, want_ratio) in expected {
             let feed = fz * inputs.spindle_rpm * inputs.flute_count;
-            let old = linear_power_kw(kc, inputs.cross_section_mm2, feed);
+            let old = linear_power_kw(line, inputs.cross_section_mm2, feed);
             let new = terms.kw_at_feed(feed);
             assert!(
                 (old - want_old).abs() < 1e-5,
-                "pre-R1 baseline moved at fz {fz}: {old} vs {want_old}"
+                "shear-only baseline moved at fz {fz}: {old} vs {want_old}"
             );
             assert!(
                 (new - want_new).abs() < 1e-5,
@@ -1271,7 +1230,7 @@ mod r1_two_term_model {
     /// linearly to zero.
     #[test]
     fn halving_the_feed_does_not_halve_the_power() {
-        let (inputs, kc) = fixture();
+        let (inputs, line) = fixture();
         let terms = PowerTerms::of(inputs);
         let feed = 0.0675 * inputs.spindle_rpm * inputs.flute_count;
 
@@ -1279,7 +1238,8 @@ mod r1_two_term_model {
         let half = terms.kw_at_feed(feed / 2.0);
         assert!(
             half > 0.6 * full,
-            "power at half feed ({half}) collapsed like the linear model would;              the edge floor is {} kW",
+            "power at half feed ({half}) collapsed like the linear model would; the edge floor is \
+             {} kW",
             terms.edge_kw
         );
         // At zero feed the shear term is gone and the edge floor stands.
@@ -1289,9 +1249,9 @@ mod r1_two_term_model {
         );
         assert!(terms.edge_kw > 0.0, "the fixture must have an edge term");
 
-        // Non-vacuity against the baseline: the pre-R1 model DID halve.
-        let old_full = linear_power_kw(kc, inputs.cross_section_mm2, feed);
-        let old_half = linear_power_kw(kc, inputs.cross_section_mm2, feed / 2.0);
+        // Non-vacuity against the baseline: the pre-R1 shape DID halve.
+        let old_full = linear_power_kw(line, inputs.cross_section_mm2, feed);
+        let old_half = linear_power_kw(line, inputs.cross_section_mm2, feed / 2.0);
         assert!(
             (old_half / old_full - 0.5).abs() < 1e-12,
             "the stated baseline must be linear in feed, else the contrast is empty"
@@ -1349,11 +1309,11 @@ mod r1_two_term_model {
 
     /// The model degrades to the shear term rather than fabricating an
     /// edge term when the engagement inputs are absent — and the
-    /// degraded answer is exactly the pre-R1 number, so the fallback is
-    /// identifiable rather than merely small.
+    /// degraded answer is exactly the shear-only baseline, so the
+    /// fallback is identifiable rather than merely small.
     #[test]
     fn missing_engagement_inputs_drop_the_edge_term_rather_than_invent_one() {
-        let (inputs, kc) = fixture();
+        let (inputs, line) = fixture();
         let feed = 2000.0;
         for broken in [
             PowerModelInputs {
@@ -1375,13 +1335,7 @@ mod r1_two_term_model {
         ] {
             let terms = PowerTerms::of(broken);
             assert!(terms.edge_kw.abs() < 1e-18, "edge term must be zero");
-            // Ks is the affine slope, not Kc, so the degraded answer is
-            // the pre-R1 formula with Ks in Kc's place — NOT equal to
-            // the old number. Stated explicitly so nobody reads this
-            // fallback as "R1 off".
-            let (ks, _) = crate::feeds::force::affine_coefficients_for_kc(kc);
-            let want =
-                GRAIN_ANISOTROPY_FACTOR * ks * inputs.cross_section_mm2 * feed / 60_000_000.0;
+            let want = linear_power_kw(line, inputs.cross_section_mm2, feed);
             assert!((terms.kw_at_feed(feed) - want).abs() < 1e-12);
         }
     }

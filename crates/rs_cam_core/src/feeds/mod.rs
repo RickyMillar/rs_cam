@@ -1380,7 +1380,7 @@ fn milling_rpm_ceiling_for_diameter(d_mm: f64) -> f64 {
 /// diameter this function's callers shadowed earlier.
 fn power_model_terms(
     input: &FeedsInput,
-    kc: f64,
+    line: crate::material::force_line::ForceLine,
     cross_section_mm2: f64,
     ap: f64,
     ae: f64,
@@ -1388,7 +1388,7 @@ fn power_model_terms(
     rpm: f64,
 ) -> crate::tool_load::power::PowerTerms {
     crate::tool_load::power::PowerTerms::of(crate::tool_load::power::PowerModelInputs {
-        kc_n_per_mm2: kc,
+        line,
         cross_section_mm2,
         axial_doc_mm: ap,
         // One immersion-angle definition for the whole engine: the same
@@ -2143,11 +2143,11 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     let mut ladder_ae_from: Option<f64> = None;
     let mut ladder_feed_factor: Option<f64> = None;
 
-    if let Some(kc) = material.kc_n_per_mm2()
+    if let Ok(line) = material.force_line()
         && available_power > 0.0
     {
         let cross_section = input.tool_geometry.mrr_cross_section_mm2(ap, ae);
-        let terms = power_model_terms(input, kc, cross_section, ap, ae, effective_d, rpm);
+        let terms = power_model_terms(input, line, cross_section, ap, ae, effective_d, rpm);
         // The power the recipe draws at the feed it ships.
         let required_at_commanded = terms.kw_at_feed(raw_feed);
         if required_at_commanded > gate_available_power {
@@ -2212,7 +2212,8 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
             // Required kW at a candidate operating point.
             let required_at = |rpm_c: f64, ap_c: f64, ae_c: f64, feed_c: f64| -> f64 {
                 let cs = input.tool_geometry.mrr_cross_section_mm2(ap_c, ae_c);
-                power_model_terms(input, kc, cs, ap_c, ae_c, effective_d, rpm_c).kw_at_feed(feed_c)
+                power_model_terms(input, line, cs, ap_c, ae_c, effective_d, rpm_c)
+                    .kw_at_feed(feed_c)
             };
             let budget_at = |rpm_c: f64| machine.power_at_rpm(rpm_c).max(0.0);
 
@@ -2364,7 +2365,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
             if still_required > still_available {
                 let terms_now = power_model_terms(
                     input,
-                    kc,
+                    line,
                     input.tool_geometry.mrr_cross_section_mm2(ap, ae),
                     ap,
                     ae,
@@ -2458,7 +2459,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         };
         let chip_per_rev = feed / rpm;
         let fits_power = |rpm_c: f64, feed_c: f64| -> bool {
-            let Some(kc) = material.kc_n_per_mm2() else {
+            let Ok(line) = material.force_line() else {
                 return true;
             };
             let available = machine.power_at_rpm(rpm_c);
@@ -2466,7 +2467,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
                 return false;
             }
             let cs = input.tool_geometry.mrr_cross_section_mm2(ap, ae);
-            power_model_terms(input, kc, cs, ap, ae, effective_d, rpm_c).kw_at_feed(feed_c)
+            power_model_terms(input, line, cs, ap, ae, effective_d, rpm_c).kw_at_feed(feed_c)
                 <= available
         };
         let feed_at = |rpm_c: f64| (chip_per_rev * rpm_c).min(machine_cut_ceiling);
@@ -2744,17 +2745,17 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         plunge_rate = feed;
     }
 
-    // Final power at actual feed. Materials without a primary-source Kc
+    // Final power at actual feed. Materials without a force line
     // report 0.0 — the consumers that need a numeric headroom (charts /
     // diagnostics) treat this as "unmodeled" rather than zero load.
     // Same canonical helper as Step 6 above so Suggest's reported
     // power matches the Sim verdict's prediction.
-    let actual_power = match material.kc_n_per_mm2() {
-        Some(kc) => {
+    let actual_power = match material.force_line() {
+        Ok(line) => {
             let cross_section = input.tool_geometry.mrr_cross_section_mm2(ap, ae);
-            power_model_terms(input, kc, cross_section, ap, ae, effective_d, rpm).kw_at_feed(feed)
+            power_model_terms(input, line, cross_section, ap, ae, effective_d, rpm).kw_at_feed(feed)
         }
-        None => 0.0,
+        Err(_) => 0.0,
     };
     let mrr = ap * ae * feed;
 

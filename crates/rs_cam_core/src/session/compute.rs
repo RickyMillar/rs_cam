@@ -1830,11 +1830,11 @@ fn modulate_annotated_against_trace(
     // machine's rated `power_at_rpm` gives the available power
     // (ruling R4 Q2, 2026-09-24: no fraction).
     let material = context.material;
-    // Materials without a primary-source Kc disable both the
+    // Materials without a force line disable both the
     // deflection and power constraints in the constrained-max
     // solver; the solver falls through to chipload + machine +
-    // kinematics caps. See `Material::kc_n_per_mm2`.
-    let kc_opt = material.kc_n_per_mm2();
+    // kinematics caps. See `Material::force_line`.
+    let line_opt = material.force_line().ok();
     let tool_def = crate::compute::cutter::build_cutter(tool_cfg);
     // Use the per-toolpath max axial DOC from the cut trace
     // as the deflection / power reference; falls back to
@@ -1856,7 +1856,7 @@ fn modulate_annotated_against_trace(
     // agree on a cut. Compliance is δ-per-newton at the toolpath's
     // peak axial DOC; deflection is linear in force so one scalar
     // suffices.
-    let deflection_inputs = match crate::feeds::force::affine_coefficients(material) {
+    let deflection_inputs = match line_opt.map(|l| (l.ks_n_per_mm2(), l.f_edge_n_per_mm())) {
         Some((ks, f_edge)) if stickout > 0.0 && youngs > 0.0 => {
             let compliance = tool_def.tip_deflection_mm(1.0, max_axial.max(0.0), youngs);
             if compliance.is_finite() && compliance > 0.0 {
@@ -1874,12 +1874,12 @@ fn modulate_annotated_against_trace(
     };
     let machine_profile = context.machine;
     let available_kw = machine_profile.power_at_rpm(spindle_rpm as f64);
-    let power_inputs = match kc_opt {
-        Some(kc) if available_kw > 0.0 => Some(PowerLimitInputs {
-            // S2-9 (2026-05-31): pass raw Kc; the solver applies
-            // GRAIN_ANISOTROPY_FACTOR internally so this site
-            // doesn't re-encode the multiplier literal.
-            kc_n_per_mm2: kc,
+    let power_inputs = match line_opt {
+        Some(line) if available_kw > 0.0 => Some(PowerLimitInputs {
+            // S2-9 (2026-05-31): pass the force line; the solver applies
+            // its grain factor internally so this site doesn't
+            // re-encode the multiplier.
+            line,
             engagement_diameter_mm: engagement_dia,
             available_kw,
         }),

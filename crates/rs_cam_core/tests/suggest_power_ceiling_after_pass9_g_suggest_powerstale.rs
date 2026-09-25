@@ -2,7 +2,7 @@
 //!
 //! `feeds::calculate` Step 6 clamps the feed so the predicted spindle
 //! power stays inside the machine envelope. It computes that against the
-//! CALCULATOR's operating point: `required = predicted_power_kw(kc,
+//! CALCULATOR's operating point: `required = predicted_power_kw(line,
 //! mrr_cross_section(ap_calc, ae_calc), raw_feed)`.
 //!
 //! `enforce_invariants` then runs, and pass 9
@@ -42,8 +42,9 @@
 //!
 //! Reachability itself moved:
 //! `power_ceiling_parity_f2::the_power_ceiling_binds_on_three_shipped_fixtures`
-//! now measures peak utilisation at 80 % with three shipped fixtures
-//! reaching the branch, against 23.6 % and none before R1. So the "real
+//! measured peak utilisation at 80 % with three shipped fixtures
+//! reaching the branch, against 23.6 % and none before R1. (B6 renamed it
+//! `the_power_ceiling_binds_on_no_shipped_fixture_b6`: 34.9 %, none.) So the "real
 //! but unreachable on shipped hardware" framing below no longer holds —
 //! the branch is reachable. What did NOT change is the structural
 //! verdict: the pass-9 rescale still does not outrun the clamp.
@@ -106,6 +107,22 @@
 //! The general rule the register draws from this stands: **a sweep that does
 //! not fire is evidence about the sweep.**
 //!
+//! ## B6 (2026-09-25) — the fixture moves from Ipe to white oak
+//!
+//! Ruling B6 replaced the scalar `Kc` with one force line per material.
+//! Ipe reads FPL Table 5-5a basic SG 0.92, which gives 1207 kg/m³ by FPL
+//! Ch.4 Eq. (4-11). That is above the Curti 2021 range (287-1080 kg/m³),
+//! so Ipe refuses (`DensityOutOfRange`) and has no power model. The three
+//! single-species arms therefore move to white oak (FPL SG 0.68, 761.6
+//! kg/m³: Ks 58.52 N/mm², F_edge 4.595 N/mm, grain factor 1.0).
+//!
+//! The synthetic spindle moves 0.58 → 0.10 kW. On the 3 mm full slot at
+//! 8 000 rev/min the white-oak edge term is about 0.069 kW, and the
+//! unclamped cut draws about 0.14-0.16 kW. 0.10 kW sits between them, so
+//! the clamp binds and has a feed answer, the same shape R1 set up. The
+//! preset sweep keeps all ten species; Ipe now gives no utilisation and
+//! drops out of the population.
+//!
 //! NON-VACUITY IS LOAD-BEARING HERE. This project has already measured
 //! three gates returning `Within` on `sample_range 0..0` — a bar written
 //! as a verdict comparison is worthless until its population is checked.
@@ -134,6 +151,7 @@ use rs_cam_core::feeds::{
     SpindleStrategy, ToolGeometryHint, calculate, embedded_vendor_lut,
 };
 use rs_cam_core::machine::MachineProfile;
+use rs_cam_core::material::force_line::ForceLine;
 use rs_cam_core::material::{Material, WoodSpecies};
 
 /// Every shipped wood species — the sweep population, same list the
@@ -167,7 +185,6 @@ const DIAMETER_MM: f64 = 12.0;
 /// `tool_load::power::PowerTerms` is `pub(crate)`, and the sibling
 /// instrument makes the same call deliberately: a test that imports the
 /// expression it checks can only prove the expression equals itself.
-/// `GRAIN_ANISOTROPY_FACTOR` is 2.0.
 ///
 /// R1 (2026-09-16) re-baseline. This was
 /// `2.0 · kc · cross_section · feed / 60e6` — the pre-R1 linear model.
@@ -177,13 +194,15 @@ const DIAMETER_MM: f64 = 12.0;
 /// P = A · ( Ks · cross_section · feed  +  F_edge · ap · π·D·n · z·ψ/2π ) / 60e6
 /// ```
 ///
-/// with `(Ks, F_edge) = (49.95, 5.30) · kc/35.1` — the woodresearch.sk
-/// 201905/12 fit `feeds::force` owns — and `cos ψ = 1 − ae/r`. Leaving
-/// the old expression here would have kept this instrument green while
-/// measuring a power the engine no longer predicts.
+/// with `(Ks, F_edge)` and the grain factor `A` read from the material's
+/// force line (`Material::force_line`, ruling B6; `A = 1.0` on every
+/// shipped line) and `cos ψ = 1 − ae/r`. Until ruling B6 the pair was
+/// `(49.95, 5.30) · kc/35.1` (the woodresearch.sk anchor) with `A = 2.0`.
+/// Leaving the old expression here would have kept this instrument green
+/// while measuring a power the engine no longer predicts.
 #[allow(clippy::too_many_arguments)]
 fn predicted_power_kw(
-    kc: f64,
+    line: &ForceLine,
     cross_section_mm2: f64,
     feed_mm_min: f64,
     ap_mm: f64,
@@ -192,13 +211,15 @@ fn predicted_power_kw(
     rpm: f64,
     flutes: f64,
 ) -> f64 {
-    const ANISOTROPY: f64 = 2.0;
-    let scale = kc / 35.1;
-    let (ks, f_edge) = (49.95 * scale, 5.30 * scale);
+    let (ks, f_edge, a) = (
+        line.ks_n_per_mm2(),
+        line.f_edge_n_per_mm(),
+        line.grain_factor(),
+    );
     let psi = (1.0 - ae_mm / (diameter_mm / 2.0)).clamp(-1.0, 1.0).acos();
     let duty = flutes * psi / std::f64::consts::TAU;
     let vc = std::f64::consts::PI * diameter_mm * rpm;
-    ANISOTROPY * (ks * cross_section_mm2 * feed_mm_min + f_edge * ap_mm * vc * duty) / 60_000_000.0
+    a * (ks * cross_section_mm2 * feed_mm_min + f_edge * ap_mm * vc * duty) / 60_000_000.0
 }
 
 /// The gate's ceiling — the rated curve `power_at_rpm`, the axis every
@@ -212,11 +233,12 @@ fn gate_power_ceiling_kw(machine: &MachineProfile, rpm: f64) -> f64 {
 /// recommendation — it exists to put the Step 6 / pass 9 interaction
 /// under a clamp that actually binds, on a cut the clamp can solve.
 /// See the R1 note in the module header for why 0.05 kW stopped doing
-/// that.
+/// that, and the B6 note there for why the fixture is white oak at
+/// 0.10 kW.
 fn underpowered_machine() -> MachineProfile {
     let mut machine = MachineProfile::generic_wood_router();
-    machine.name = "SYNTHETIC 0.58 kW (test only)".to_owned();
-    machine.power = rs_cam_core::machine::PowerModel::ConstantPower { power_kw: 0.58 };
+    machine.name = "SYNTHETIC 0.10 kW (test only)".to_owned();
+    machine.power = rs_cam_core::machine::PowerModel::ConstantPower { power_kw: 0.10 };
     // Ruling R4 (2026-09-24): this fixture tests the Step 6 / pass 9 / pass 10
     // power interaction, not the aggressiveness dial. The dial at 1.0 keeps
     // pass 6b out of the geometry (it would scale the depth and the stepover
@@ -331,10 +353,10 @@ fn run_funnel_at(machine: &MachineProfile, material: &Material, requested_ap: f6
 /// point. 1.0 means exactly at the ceiling; above 1.0 means the funnel
 /// commanded a cut the spindle cannot deliver.
 fn shipped_utilisation(machine: &MachineProfile, material: &Material, s: &Shipped) -> Option<f64> {
-    let kc = material.kc_n_per_mm2()?;
+    let line = material.force_line().ok()?;
     let cross_section = ToolGeometryHint::Flat.mrr_cross_section_mm2(s.ap_mm, s.ae_mm);
     let required = predicted_power_kw(
-        kc,
+        &line,
         cross_section,
         s.feed_mm_min,
         s.ap_mm,
@@ -368,7 +390,7 @@ fn shipped_utilisation(machine: &MachineProfile, material: &Material, s: &Shippe
 fn the_fixture_actually_reaches_the_power_branch() {
     let machine = underpowered_machine();
     let material = Material::SolidWood {
-        species: WoodSpecies::Ipe,
+        species: WoodSpecies::WhiteOak,
     };
     let input = feeds_input(&machine, &material, 2.0 * DIAMETER_MM, DIAMETER_MM);
     let result = calculate(&input);
@@ -392,7 +414,7 @@ fn the_fixture_actually_reaches_the_power_branch() {
 fn pass_nine_actually_moves_the_geometry() {
     let machine = underpowered_machine();
     let material = Material::SolidWood {
-        species: WoodSpecies::Ipe,
+        species: WoodSpecies::WhiteOak,
     };
     let shipped = run_funnel(&machine, &material);
 
@@ -415,14 +437,14 @@ fn pass_nine_actually_moves_the_geometry() {
 fn the_shipped_feed_respects_the_power_ceiling_after_the_rescale() {
     let machine = underpowered_machine();
     let material = Material::SolidWood {
-        species: WoodSpecies::Ipe,
+        species: WoodSpecies::WhiteOak,
     };
     let shipped = run_funnel(&machine, &material);
     let utilisation =
-        shipped_utilisation(&machine, &material, &shipped).expect("Ipe publishes a Kc");
+        shipped_utilisation(&machine, &material, &shipped).expect("white oak has a force line");
 
     eprintln!(
-        "  G-SUGGEST-POWERSTALE | {} / Ipe Ø{DIAMETER_MM}: calculator {:.1} mm/min \
+        "  G-SUGGEST-POWERSTALE | {} / white oak Ø{DIAMETER_MM}: calculator {:.1} mm/min \
          @ ap {:.3} ae {:.3} -> shipped {:.1} mm/min @ ap {:.3} ae {:.3}; \
          shipped load = {:.1}% of the gate ceiling",
         machine.name,
@@ -548,7 +570,7 @@ fn shipped_presets_stay_clear_of_the_ceiling_after_the_rescale() {
 fn no_requested_depth_lets_the_rescale_outrun_the_ceiling() {
     let machine = underpowered_machine();
     let material = Material::SolidWood {
-        species: WoodSpecies::Ipe,
+        species: WoodSpecies::WhiteOak,
     };
 
     let mut worst = 0.0_f64;

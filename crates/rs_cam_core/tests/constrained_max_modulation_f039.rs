@@ -41,6 +41,7 @@ use rs_cam_core::dressup::feed_modulation::{
 };
 use rs_cam_core::geo::P3;
 use rs_cam_core::machine::kinematics::MachineKinematics;
+use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
 
 fn shapeoko() -> MachineKinematics {
@@ -237,14 +238,18 @@ fn constrained_max_binds_on_power_for_low_rpm() {
     let k = shapeoko();
     let mut ctx = ctx_basic(&k, band(0.02, 0.08));
     // Very low available power (10 W) with a 6 mm cutter in
-    // hardwood → power binds hard. Pre-S2-9 (2026-05-31) this fixture
-    // passed a pre-multiplied `kc_eff_n_per_mm2: 60.0` (= 2.0 × 30).
-    // Post-S2-9 the field is raw Kc and the solver applies
-    // GRAIN_ANISOTROPY_FACTOR internally — same effective product
-    // (2.0 × 30 = 60), one less literal to keep in sync with future
-    // anisotropy-factor changes.
+    // hardwood → power binds hard. Ruling B6 (2026-09-25): the field is
+    // the material's force line, and the solver applies the line's grain
+    // factor internally. The hardwood line (Ks 51.9 N/mm², F_edge 4.08
+    // N/mm) puts the feed-free edge term alone at about 46 W on this slot,
+    // so no feed fits 10 W and the solver pins to the floor with a
+    // `PowerMax` tag.
     ctx.power_inputs = Some(PowerLimitInputs {
-        kc_n_per_mm2: 30.0,
+        line: Material::SolidWood {
+            species: WoodSpecies::GenericHardwood,
+        }
+        .force_line()
+        .expect("generic hardwood has a force line"),
         engagement_diameter_mm: 6.0,
         available_kw: 0.01,
     });

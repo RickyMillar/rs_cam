@@ -35,6 +35,15 @@
 //! both sides carried a `safety_factor`; the factor is gone (Q2), and the
 //! margin is the aggressiveness dial in Suggest pass 6b.
 //!
+//! ## The force line
+//!
+//! [`PowerFigure::force`] carries the line the figure was built from and
+//! the mean chip it was evaluated at ([`ForceAtPoint`]). A mean chip
+//! outside the printed range does not refuse; the point names its
+//! [`crate::material::force_line::ChipRegime`], and the card states the
+//! extrapolation. [`force_at_operating_point`] gives the same point
+//! without a machine.
+//!
 //! ## Refusal
 //!
 //! Every absence is an [`Err`]. The `Ok` branch always carries a finite,
@@ -48,6 +57,7 @@ use crate::compute::tool_config::ToolConfig;
 use crate::feeds::suggest::CalculatorOperatingPoint;
 use crate::machine::MachineProfile;
 use crate::material::Material;
+use crate::material::force_line::{ForceAtPoint, mean_chip_mm};
 use crate::tool_load::power::{PowerModelInputs, PowerTerms};
 
 /// Why [`power_at_operating_point`] produced no power figure.
@@ -57,9 +67,9 @@ use crate::tool_load::power::{PowerModelInputs, PowerTerms};
 /// cannot word the same absence three ways.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PowerUnmodeled {
-    /// The material publishes no primary-source `Kc`. There is no power
-    /// model without one, and `feeds::calculate` Step 6 applied no ceiling
-    /// either.
+    /// The material has no force line (`Material::force_line` refuses).
+    /// There is no power model without one, and `feeds::calculate` Step 6
+    /// applied no ceiling either.
     MaterialUnvalidated,
     /// The operation carries no positive, finite feed rate.
     NoFeed,
@@ -84,7 +94,7 @@ impl PowerUnmodeled {
     /// One operator-facing clause, identical on every surface.
     pub fn clause(&self) -> &'static str {
         match self {
-            Self::MaterialUnvalidated => "this material has no measured cutting coefficient",
+            Self::MaterialUnvalidated => "this material has no measured force line (ruling B6)",
             Self::NoFeed => "the operation has no feed rate",
             Self::NoRadialEngagement => "the operation has no radial width of cut",
             Self::NoDepthPerPass => "the operation has no depth per pass",
@@ -123,6 +133,9 @@ pub struct PowerFigure {
     pub rpm: f64,
     /// The feed (mm/min) the figure was evaluated at.
     pub feed_mm_min: f64,
+    /// The force line the figure was built from, at the mean chip of this
+    /// operating point.
+    pub force: ForceAtPoint,
     /// The model this figure was built from. Private on purpose — see the
     /// type doc.
     terms: PowerTerms,
@@ -197,9 +210,81 @@ pub fn power_at_operating_point(
     machine: &MachineProfile,
     fallback: Option<CalculatorOperatingPoint>,
 ) -> Result<PowerFigure, PowerUnmodeled> {
+    let point = resolve_operating_point(operation, tool, material, Some(machine), fallback)?;
+
+    let terms = PowerTerms::of(PowerModelInputs {
+        line: point.force.line,
+        cross_section_mm2: point.cross_section_mm2,
+        axial_doc_mm: point.ap_mm,
+        immersion_rad: point.immersion_rad,
+        engagement_diameter_mm: point.effective_d,
+        spindle_rpm: point.rpm,
+        flute_count: point.flute_count,
+    });
+
+    Ok(PowerFigure {
+        required_kw: terms.kw_at_feed(point.feed_mm_min),
+        available_kw: point.available_kw,
+        ap_mm: point.ap_mm,
+        ae_mm: point.ae_mm,
+        rpm: point.rpm,
+        feed_mm_min: point.feed_mm_min,
+        force: point.force,
+        terms,
+    })
+}
+
+/// The force line of `material` at the mean chip of the point `operation`
+/// ships, with no machine.
+///
+/// It reads the operating point the same way [`power_at_operating_point`]
+/// does (the same fallbacks and the same effective diameter), so the card
+/// and the power figure name one chip. The mean chip is
+/// `fz · (1 − cos ψ) / ψ` with `fz = feed / (rpm · Z)` and ψ from
+/// [`crate::feeds::force::immersion_angle`].
+///
+/// # Errors
+///
+/// The same [`PowerUnmodeled`] variants as [`power_at_operating_point`],
+/// less [`PowerUnmodeled::NoAvailablePower`]. For the named reason of a
+/// [`PowerUnmodeled::MaterialUnvalidated`], read
+/// [`Material::force_line`].
+pub fn force_at_operating_point(
+    operation: &OperationConfig,
+    tool: &ToolConfig,
+    material: &Material,
+    fallback: Option<CalculatorOperatingPoint>,
+) -> Result<ForceAtPoint, PowerUnmodeled> {
+    resolve_operating_point(operation, tool, material, None, fallback).map(|p| p.force)
+}
+
+/// The resolved inputs of one operating point.
+struct ResolvedPoint {
+    force: ForceAtPoint,
+    feed_mm_min: f64,
+    ae_mm: f64,
+    ap_mm: f64,
+    rpm: f64,
+    /// `power_at_rpm(rpm)`; 0.0 when no machine was given.
+    available_kw: f64,
+    effective_d: f64,
+    immersion_rad: f64,
+    cross_section_mm2: f64,
+    flute_count: f64,
+}
+
+/// Resolve the operating point. With `machine` it also checks the ceiling,
+/// in the order [`power_at_operating_point`] has always refused.
+fn resolve_operating_point(
+    operation: &OperationConfig,
+    tool: &ToolConfig,
+    material: &Material,
+    machine: Option<&MachineProfile>,
+    fallback: Option<CalculatorOperatingPoint>,
+) -> Result<ResolvedPoint, PowerUnmodeled> {
     let usable = |v: f64| v.is_finite() && v > 0.0;
 
-    let Some(kc) = material.kc_n_per_mm2() else {
+    let Ok(line) = material.force_line() else {
         return Err(PowerUnmodeled::MaterialUnvalidated);
     };
 
@@ -234,10 +319,16 @@ pub fn power_at_operating_point(
         return Err(PowerUnmodeled::NoSpindleSpeed);
     };
 
-    let available_kw = machine.power_at_rpm(rpm);
-    if !usable(available_kw) {
-        return Err(PowerUnmodeled::NoAvailablePower);
-    }
+    let available_kw = match machine {
+        Some(machine) => {
+            let available_kw = machine.power_at_rpm(rpm);
+            if !usable(available_kw) {
+                return Err(PowerUnmodeled::NoAvailablePower);
+            }
+            available_kw
+        }
+        None => 0.0,
+    };
 
     let geom = build_cutter(tool).to_geometry_hint();
     let shank = if usable(tool.shank_diameter) {
@@ -250,23 +341,23 @@ pub fn power_at_operating_point(
         return Err(PowerUnmodeled::NoEngagementDiameter);
     }
 
-    let terms = PowerTerms::of(PowerModelInputs {
-        kc_n_per_mm2: kc,
-        cross_section_mm2: geom.mrr_cross_section_mm2(ap_mm, ae_mm),
-        axial_doc_mm: ap_mm,
-        immersion_rad: crate::feeds::force::immersion_angle(ae_mm, effective_d / 2.0),
-        engagement_diameter_mm: effective_d,
-        spindle_rpm: rpm,
-        flute_count: f64::from(tool.flute_count.max(1)),
-    });
+    let flute_count = f64::from(tool.flute_count.max(1));
+    let immersion_rad = crate::feeds::force::immersion_angle(ae_mm, effective_d / 2.0);
+    // Every input above is finite and positive, so the mean chip exists;
+    // a degenerate arc reads as a zero chip, which is below any range.
+    let fz_mm = feed_mm_min / (rpm * flute_count);
+    let chip = mean_chip_mm(fz_mm, immersion_rad).unwrap_or(0.0);
 
-    Ok(PowerFigure {
-        required_kw: terms.kw_at_feed(feed_mm_min),
-        available_kw,
-        ap_mm,
-        ae_mm,
-        rpm,
+    Ok(ResolvedPoint {
+        force: line.at_mean_chip(chip),
         feed_mm_min,
-        terms,
+        ae_mm,
+        ap_mm,
+        rpm,
+        available_kw,
+        effective_d,
+        immersion_rad,
+        cross_section_mm2: geom.mrr_cross_section_mm2(ap_mm, ae_mm),
+        flute_count,
     })
 }

@@ -98,21 +98,36 @@ fn machine_with(power: PowerModel) -> MachineProfile {
     m
 }
 
-/// Measured band for this cut: at and above 0.8 kW nothing binds; between
-/// about 0.35 and 0.6 kW the traverse alone closes the gap; below about
-/// 0.3 kW it cannot and the depth rung takes over.
+/// Measured band for this cut, before ruling B6: at and above 0.8 kW
+/// nothing binds; between about 0.35 and 0.6 kW the traverse alone closes
+/// the gap; below about 0.3 kW it cannot and the depth rung takes over.
+///
+/// Ruling B6 (2026-09-25) re-tune. The white-oak line is now Ks 58.52
+/// N/mm², F_edge 4.595 N/mm, grain factor 1.0, against the old 2 x
+/// (53.03, 5.626). The shear term is x0.552 and the edge term x0.408 of
+/// the old one. At a constant chipload both terms scale with the RPM, and
+/// a smaller depth scales both with `ap`, so each band edge moves by one
+/// factor between 0.408 and 0.552 (about 0.44 at this cut's chip). The
+/// traverse band becomes about 0.16-0.27 kW and the depth rung acts below
+/// about 0.13 kW.
 fn router(power_kw: f64) -> MachineProfile {
     machine_with(PowerModel::ConstantPower { power_kw })
 }
 
-/// Enough power that the traverse alone closes the gap.
-const ROUTER_TRAVERSE_KW: f64 = 0.5;
-/// Little enough that the traverse cannot, so the depth rung must act.
-const ROUTER_DEPTH_KW: f64 = 0.25;
+/// Enough power that the traverse alone closes the gap (B6: 0.5 -> 0.22).
+const ROUTER_TRAVERSE_KW: f64 = 0.22;
+/// Little enough that the traverse cannot, so the depth rung must act
+/// (B6: 0.25 -> 0.10).
+const ROUTER_DEPTH_KW: f64 = 0.10;
 
+/// A constant-torque VFD. Before ruling B6 the 1.5 kW rating put this cut
+/// at about 120 % utilisation below the rated speed. The new line draws
+/// about 0.44x the old power, so the rating moves 1.5 -> 0.7 kW: 1.2 x
+/// 0.44 x 1.5 / 0.7 = 1.14, still over the ceiling at every RPM below
+/// rated.
 fn vfd() -> MachineProfile {
     machine_with(PowerModel::VfdConstantTorque {
-        rated_power_kw: 1.5,
+        rated_power_kw: 0.7,
         rated_rpm: 24_000.0,
     })
 }
@@ -148,7 +163,7 @@ fn a_constant_power_spindle_slows_down_g_ladder() {
     let r = recipe(&router(ROUTER_TRAVERSE_KW), None);
     assert!(
         ladder_fired(&r),
-        "the cut was not power limited on a 0.8 kW router, so this fixture \
+        "the cut was not power limited on a 0.22 kW router, so this fixture \
          proves nothing. Make the cut heavier."
     );
     assert!(

@@ -497,3 +497,62 @@ fn an_unmodeled_depth_gate_is_not_reported_as_within_fm6() {
     assert_eq!(depth_ids, vec![ids::LOAD_DEPTH_UNMODELED]);
     assert!(!ids::LOAD_DEPTH_UNMODELED.ends_with(".within"));
 }
+
+/// Ruling B6: plywood has no force line, so the power and deflection gates
+/// are `Unmodeled` on a simulated plywood cut. Each finding has its own
+/// `*.unmodeled` id, as the depth gate above. Before B6 both reported under
+/// `load.power.within` and `load.deflection.within`, and a reader of ids
+/// alone read "within" for a gate that measured nothing.
+#[test]
+fn an_unmodeled_power_or_deflection_gate_is_not_reported_as_within_b6() {
+    use rs_cam_core::material::PlywoodGrade;
+    let tool = flat6();
+    let plywood = Material::Plywood {
+        grade: PlywoodGrade::BalticBirch,
+    };
+    // The power and deflection gates read the swept arc; the depth
+    // helper's samples carry none, so this trace sets it.
+    let mut t = trace(&[1.0, 1.0]);
+    for s in &mut t.samples {
+        s.arc_engagement_radians = Some(std::f64::consts::FRAC_PI_2);
+    }
+    let v = rs_cam_core::tool_load::evaluate_toolpath(
+        &ctx(&tool, &plywood, OperationType::Pocket),
+        Some(&t),
+        Some(&machine()),
+        &ToleranceBands::default(),
+    );
+    // The cause is the material, not a missing input.
+    for (gate, reason) in [
+        ("power", format!("{:?}", v.power)),
+        ("deflection", format!("{:?}", v.deflection)),
+    ] {
+        assert!(
+            reason.contains("Unmodeled") && reason.contains("MaterialUnvalidated"),
+            "the plywood {gate} gate: {reason}"
+        );
+    }
+    let diags = diagnostics_from_load_verdict(&v);
+    let ids_of = |prefix: &str| -> Vec<&str> {
+        diags
+            .iter()
+            .map(|d| d.id.as_str())
+            .filter(|id| id.starts_with(prefix))
+            .collect()
+    };
+    assert_eq!(ids_of("load.power."), vec![ids::LOAD_POWER_UNMODELED]);
+    assert_eq!(
+        ids_of("load.deflection."),
+        vec![ids::LOAD_DEFLECTION_UNMODELED]
+    );
+    // Non-vacuity: the same cut in softwood measures both gates.
+    let wood = load_verdict(OperationType::Pocket, Some(&t));
+    assert!(!wood.power.is_unmodeled(), "softwood: {:?}", wood.power);
+    let wood_diags = diagnostics_from_load_verdict(&wood);
+    assert!(
+        wood_diags
+            .iter()
+            .any(|d| d.id.as_str() == ids::LOAD_POWER_WITHIN),
+        "softwood power finding: {wood_diags:?}"
+    );
+}

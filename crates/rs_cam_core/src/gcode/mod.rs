@@ -855,7 +855,7 @@ fn unmodeled_clause(status: &crate::tool_load::verdict::CriterionStatus<'_>) -> 
                 .to_owned()
         }
         Some(UnmodeledReason::MaterialUnvalidated) => {
-            "the material is Custom without a validated Kc value".to_owned()
+            "the material has no measured force line (ruling B6)".to_owned()
         }
         Some(UnmodeledReason::CutterModeUnsupported(why)) => {
             format!("cutter mode unsupported — {why}")

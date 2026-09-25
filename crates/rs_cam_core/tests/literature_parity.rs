@@ -4,17 +4,21 @@
 //! 2026-05-30 Wood Database extension at
 //! `planning/data_ingest_2026-05-30/wood_database_species.md`).
 //!
-//! Why bother? The Phase 1+2B ingest moved several constants (sheet-
-//! good Kc, Janka 870 / 710 corrections, GRAIN_ANISOTROPY_FACTOR 2.5
-//! → 2.0). Future bumps that drift from the citations would slip past
-//! every other test. These tests catch a drift on the very next
-//! `cargo test`, and the failure message includes the citation so
-//! whoever broke them sees what they fought.
+//! Why bother? The Phase 1+2B ingest moved several constants (Janka
+//! 870 / 710 corrections among them). Future bumps that drift from the
+//! citations would slip past every other test. These tests catch a
+//! drift on the very next `cargo test`, and the failure message
+//! includes the citation so whoever broke them sees what they fought.
+//!
+//! Ruling B6 (2026-09-24) replaced the scalar `Kc` with one typed force
+//! line per material (`Material::force_line`). The force arms now pin
+//! the Goli 2018 MDF line and the named refusals. The solid-wood lines
+//! are pinned in `the_force_line_is_printed_per_family_b6.rs`.
 //!
 //! Tolerance: the literature has measurement spread, and the live
 //! constants are midpoints / point estimates. A 5% band is generous
-//! enough for an MDF Kc range of 25.81–35.58 vs the live 31.4, tight
-//! enough to catch a slow drift before it compounds.
+//! enough for the MDF Ks range 25.81–35.58 around the printed 31.44,
+//! tight enough to catch a slow drift before it compounds.
 
 #![allow(
     clippy::unwrap_used,
@@ -23,6 +27,7 @@
     clippy::indexing_slicing
 )]
 
+use rs_cam_core::material::force_line::ForceLineRefusal;
 use rs_cam_core::material::{
     AluminumAlloy, Material, PlasticFamily, PlasticHardness, PlywoodGrade, SheetGoodKind,
     WoodSpecies,
@@ -31,7 +36,7 @@ use rs_cam_core::material::{
 /// Generous tolerance band for "live value matches literature midpoint".
 /// Tight enough to catch a >5 % drift, loose enough to absorb the
 /// natural spread in measured wood properties.
-const KC_TOLERANCE_PCT: f64 = 0.05;
+const FORCE_TOLERANCE_PCT: f64 = 0.05;
 const JANKA_TOLERANCE_LBF: f64 = 50.0;
 
 fn within_pct(observed: f64, expected: f64, tolerance_pct: f64, cite: &str) {
@@ -45,66 +50,73 @@ fn within_pct(observed: f64, expected: f64, tolerance_pct: f64, cite: &str) {
     );
 }
 
-// ─── Kc (specific cutting force) ────────────────────────────────────
+// ─── The force line (ruling B6) ─────────────────────────────────────
+//
+// Ruling B6 (2026-09-24) replaced the scalar `Kc` with one typed force
+// line per material (`Material::force_line`). The sheet-good, HDPE and
+// aluminium `Kc` literals are gone. These arms pin the one printed line
+// that stays (MDF, Goli 2018) and the refusals that replace the others.
 
 #[test]
-fn sheet_good_kc_matches_palubicki_pmc6315737() {
-    // Particleboard 35.0 N/mm² — Pałubicki 2021 midpoint of
-    // peripheral-up-milling 32.0 (slow) and 37.6 (fast) at vc 40/60 m/s.
-    // DOI: 10.3390/ma14092208.
-    let pb = Material::SheetGood {
-        kind: SheetGoodKind::Particleboard,
-    };
-    within_pct(
-        pb.kc_n_per_mm2().expect("Particleboard Kc must be Some"),
-        35.0,
-        KC_TOLERANCE_PCT,
-        "Pałubicki 2021, DOI 10.3390/ma14092208, midpoint of 32.0–37.6 N/mm² verbatim from kc.md",
-    );
-
-    // MDF 31.44 N/mm² — PMC6315737 round-shape Ks average (SD 2.68;
-    // range 25.81–35.58).
+fn mdf_force_line_is_goli_2018_and_other_sheet_goods_refuse() {
+    // MDF: Goli 2018 Table 3, up-milling: "Ks [N mm−2] | 31.44 (2.68)" and
+    // "Int [N mm−1] | 3.36 (0.27)". doi:10.3390/ma11122575 (PMC6315737).
     let mdf = Material::SheetGood {
         kind: SheetGoodKind::Mdf,
-    };
+    }
+    .force_line()
+    .expect("MDF must carry the Goli 2018 line");
     within_pct(
-        mdf.kc_n_per_mm2().expect("MDF Kc must be Some"),
-        31.4,
-        KC_TOLERANCE_PCT,
-        "PMC6315737 round-shape Ks: MDF avg 31.44 (SD 2.68; range 25.81–35.58) — kc.md",
+        mdf.ks_n_per_mm2(),
+        31.44,
+        FORCE_TOLERANCE_PCT,
+        "Goli 2018 Table 3, MDF Ks 31.44 (SD 2.68; range 25.81–35.58)",
+    );
+    within_pct(
+        mdf.f_edge_n_per_mm(),
+        3.36,
+        FORCE_TOLERANCE_PCT,
+        "Goli 2018 Table 3, MDF Int 3.36 (SD 0.27; range 2.96–3.83)",
+    );
+    assert_eq!(
+        mdf.chip_range_mm(),
+        (0.041, 0.091),
+        "Goli 2018 mean chip range"
+    );
+    assert!(
+        (mdf.grain_factor() - 1.0).abs() < 1e-12,
+        "MDF is isotropic in plane, so its grain factor is 1.0"
+    );
+
+    // Particleboard: Pałubicki 2021 prints a total kc at 40-60 m/s, which
+    // is a different quantity from the per-edge line. HDF: no source.
+    assert_eq!(
+        Material::SheetGood {
+            kind: SheetGoodKind::Particleboard,
+        }
+        .force_line(),
+        Err(ForceLineRefusal::Particleboard),
+        "ruling B6 retired the Pałubicki 2021 particleboard value from the force model"
+    );
+    assert_eq!(
+        Material::SheetGood {
+            kind: SheetGoodKind::Hdf,
+        }
+        .force_line(),
+        Err(ForceLineRefusal::Hdf),
+        "no fetched source measures HDF"
     );
 }
 
 #[test]
-fn hdpe_kc_matches_yang_2022_midpoint() {
-    // HDPE Kc 40.0 N/mm² — Yang 2022 midpoint of measured cutting yield
-    // stress 46.89 (15° rake) and 33.85 (30° rake). DOI 10.3390/polym14010189.
-    let hdpe = Material::Plastic {
-        family: PlasticFamily::Hdpe,
-    };
-    within_pct(
-        hdpe.kc_n_per_mm2().expect("HDPE Kc must be Some"),
-        40.0,
-        KC_TOLERANCE_PCT,
-        "Yang 2022, DOI 10.3390/polym14010189, midpoint of 33.85–46.89 N/mm² verbatim from kc.md",
-    );
-}
-
-#[test]
-fn plastics_without_primary_source_refuse_kc() {
-    // The honesty contract: only HDPE has a fetched primary Kc.
-    // Every other plastic family must return `None` so the gates
-    // refuse with MaterialUnvalidated rather than predict force from
-    // a fabricated constant. Drift from this contract — e.g. someone
-    // bumping Acrylic to Some(...) without a citation — fires this test.
-    //
-    // Phase D 2026-05-31 — six new families joined the refusal set
-    // (UHMW-PE / PP / Nylon 6/6 / ABS / PETG / Rigid PVC). PMMA Round-2
-    // recorded a 276.5 N/mm² nanoscale value (kc_extra.md) with an
-    // explicit "do NOT promote — size-effect inflated" caveat. POM/PC
-    // remain genuine gaps. None of the new families have any primary
-    // milling-regime measurement, so they all refuse.
+fn every_plastic_refuses_a_force_line() {
+    // The honesty contract: no plastic has a printed cutting-force line.
+    // HDPE joined the refusal set in ruling B6: Yang 2022
+    // (doi:10.3390/polym14010189) prints a cutting yield stress, not a
+    // cutting force. Every other family had no primary force study
+    // (kc.md / kc_extra.md / kc_gaps.md).
     for family in [
+        PlasticFamily::Hdpe,
         PlasticFamily::Polycarbonate,
         PlasticFamily::Acrylic,
         PlasticFamily::Delrin,
@@ -116,43 +128,34 @@ fn plastics_without_primary_source_refuse_kc() {
         PlasticFamily::Petg,
         PlasticFamily::RigidPvc,
     ] {
-        let m = Material::Plastic { family };
         assert_eq!(
-            m.kc_n_per_mm2(),
-            None,
-            "{family:?}: no primary force study fetched (kc.md / kc_extra.md / \
-             kc_gaps.md). Until one lands, kc_n_per_mm2() must return None and \
-             the gates must refuse via UnmodeledReason::MaterialUnvalidated."
+            Material::Plastic { family }.force_line(),
+            Err(ForceLineRefusal::Plastic),
+            "{family:?}: no source prints a cutting-force line for a plastic, so the \
+             gates must refuse via UnmodeledReason::MaterialUnvalidated"
         );
     }
 }
 
 #[test]
-fn aluminum_kc_matches_vdi_3323_group_22_kienzle_pair() {
-    // Phase 4 promoted the Phase 3-F Kienzle pair into
-    // `Material::Aluminum::kc_n_per_mm2()`:
-    //   kc1.1 = 800 N/mm², mc = 0.25 (VDI 3323 group 22).
-    // Evaluated at the representative chip thickness h = 0.1 mm,
-    //   Kc = 800 · 0.1^(-0.25) ≈ 1422.8 N/mm²
-    // Both alloys share the VDI group anchor until per-alloy data
-    // lands.
-    let expected = 800.0 * 0.1_f64.powf(-0.25);
-    for alloy in [AluminumAlloy::Alloy6061T6, AluminumAlloy::Alloy7075T6] {
-        let m = Material::Aluminum { alloy };
-        let kc = m
-            .kc_n_per_mm2()
-            .expect("Phase 4 enables aluminum Kc — Material::Aluminum::kc_n_per_mm2 must be Some");
-        within_pct(
-            kc,
-            expected,
-            0.01,
-            "Machining Doctor VDI 3323 group-22 (Wayback 2024-08-13) — \
-             planning/data_ingest_2026-05-30/aluminum_kc.md",
-        );
-        assert!(
-            kc > 1000.0 && kc < 2000.0,
-            "{alloy:?} Kc {kc} must land in the Sandvik aluminium-specific \
-             order-of-magnitude band (350–700 raw, ~1000–2000 once h^-mc scaled)"
+fn aluminum_refuses_a_force_line() {
+    // The only pair is a Kienzle kc1.1 800 / mc 0.25 from an aggregator
+    // (VDI 3323 group 22, planning/data_ingest_2026-05-30/aluminum_kc.md).
+    // It is a power law with no printed chip range, not an affine
+    // per-edge line, so ruling B6 refuses it.
+    for alloy in [
+        AluminumAlloy::Alloy6061T6,
+        AluminumAlloy::Alloy7075T6,
+        AluminumAlloy::Alloy2024T3,
+        AluminumAlloy::Alloy5052H32,
+        AluminumAlloy::Alloy3003H14,
+        AluminumAlloy::Alloy1100O,
+        AluminumAlloy::Alloy7050T7651,
+    ] {
+        assert_eq!(
+            Material::Aluminum { alloy }.force_line(),
+            Err(ForceLineRefusal::Aluminum),
+            "{alloy:?}: the Kienzle pair is not a per-edge line (ruling B6)"
         );
     }
 }
@@ -462,63 +465,59 @@ fn aluminum_brinell_7050_t7651_matches_asm_anchor() {
     );
 }
 
-// ─── Parametric solid-wood Janka → Kc helper ────────────────────────
+// ─── Parametric solid wood: the library row's FPL density ───────────
 
 #[test]
-fn solid_wood_by_janka_helper_aligns_with_enum_anchors_within_folklore_band() {
-    // Phase E 2026-05-31. The shared `janka_to_kc_n_per_mm2` helper
-    // is the source of truth for `Material::SolidWoodByJanka`. The 10
-    // first-class `WoodSpecies` enum variants keep their per-species
-    // hand-tuned `Kc` constants (folklore-grade, not derived). This
-    // sentry pins the helper's output for the 10 species' Janka
-    // anchors against their hardcoded `Kc` values within a generous
-    // tolerance, documenting the divergence — a future helper-formula
-    // change that drifts past the band fires this test.
-    //
-    // Anchor: LongleafPine — Janka 870 lbf, hardcoded Kc 7.0.
-    // Helper(870) = 8.7 (janka / 100). Divergence ~24 %, within the
-    // ±30 % folklore tolerance.
-    let parametric = Material::SolidWoodByJanka {
-        janka_lbf: 870.0,
-        label: "Longleaf Pine (parametric anchor)".to_owned(),
-        source_id: "wood_database_2026-05-30".to_owned(),
+fn solid_wood_by_janka_reads_the_fpl_row_density() {
+    // Ruling B6 removed the `janka_to_kc_n_per_mm2` helper. The force line
+    // of `Material::SolidWoodByJanka` reads the FPL Table 5-3a SG of its
+    // library row (`specific_gravity_12`), and never the Janka value.
+    // FPL: "Cherry, black 12% 0.50 85,000 ..." gives ρ = 0.50 × 1120 = 560
+    // kg/m³. The two Janka values below differ, and the line must not.
+    let cherry = |janka_lbf: f64| Material::SolidWoodByJanka {
+        janka_lbf,
+        label: "Cherry, black".to_owned(),
+        source_id: "fpl_ch5_2010".to_owned(),
     };
-    let parametric_kc = parametric
-        .kc_n_per_mm2()
-        .expect("parametric Kc at Janka 870 (well inside [200, 4000]) must be Some");
-    let enum_kc = Material::SolidWood {
-        species: WoodSpecies::LongleafPine,
-    }
-    .kc_n_per_mm2()
-    .expect("LongleafPine Kc must remain Some");
-    let drift_pct = ((parametric_kc - enum_kc) / enum_kc).abs();
+    let line = cherry(950.0)
+        .force_line()
+        .expect("an FPL library row with an SG has a force line");
+    let rho = 0.50 * 1000.0 * 1.12;
     assert!(
-        drift_pct < 0.30,
-        "helper(870) = {parametric_kc} vs LongleafPine hardcoded Kc {enum_kc} \
-         (drift {:.1}%) — folklore-grade band is ±30%. Citation: \
-         planning/feeds_data_ingest_phaseE_2026-05-31.md",
-        drift_pct * 100.0
+        line.density_kg_m3().is_some_and(|d| (d - rho).abs() < 1e-9),
+        "black cherry ρ {:?}, want {rho} (FPL Table 5-3a SG 0.50 × 1120)",
+        line.density_kg_m3()
+    );
+    assert_eq!(
+        cherry(3000.0).force_line(),
+        Ok(line),
+        "the force line must not read the Janka value"
     );
 }
 
 #[test]
-fn solid_wood_by_janka_helper_refuses_outside_calibrated_band() {
-    // Below 200 lbf (balsa-class softwoods below the calibration band)
-    // and above 4000 lbf (well above Ipe 3510 — the existing per-species
-    // ceiling) the helper has no citation backing, so Kc must be None
-    // and gates must refuse via MaterialUnvalidated.
-    let too_soft = Material::SolidWoodByJanka {
-        janka_lbf: 100.0,
-        label: "Balsa-class (out of band)".to_owned(),
+fn solid_wood_by_janka_refuses_without_a_printed_density() {
+    // A Wood Database row carries Janka only, and an FPL row where FPL
+    // prints "—" for the SG carries no density. Both refuse with
+    // `NoDensity`, and the gates refuse via MaterialUnvalidated.
+    let wood_database_row = Material::SolidWoodByJanka {
+        janka_lbf: 950.0,
+        label: "Cherry, black".to_owned(),
         source_id: "wood_database_2026-05-30".to_owned(),
     };
-    let too_hard = Material::SolidWoodByJanka {
-        janka_lbf: 5000.0,
-        label: "Theoretical superhard (out of band)".to_owned(),
-        source_id: "wood_database_2026-05-30".to_owned(),
+    let fpl_row_with_no_sg = Material::SolidWoodByJanka {
+        janka_lbf: 1580.0,
+        label: "Honeylocust".to_owned(),
+        source_id: "fpl_ch5_2010".to_owned(),
     };
-    assert_eq!(too_soft.kc_n_per_mm2(), None);
-    assert_eq!(too_hard.kc_n_per_mm2(), None);
+    assert_eq!(
+        wood_database_row.force_line(),
+        Err(ForceLineRefusal::NoDensity)
+    );
+    assert_eq!(
+        fpl_row_with_no_sg.force_line(),
+        Err(ForceLineRefusal::NoDensity)
+    );
 }
 
 // ─── Plywood / sheet-good Janka anchors used by vendor_normalize ─────

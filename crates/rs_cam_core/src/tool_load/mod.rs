@@ -114,8 +114,8 @@ pub enum RefuseReason {
     /// The simulation lacks per-sample arc engagement; without it
     /// we can't compute the power-cap or steady-state engagement.
     ArcEngagementNotCaptured,
-    /// `Material::Custom` without a validated Kc — the optimizer
-    /// refuses rather than scoring against an unknown stiffness.
+    /// The stock material has no measured force line (ruling B6) — the
+    /// optimizer refuses rather than scoring against an unknown load.
     MaterialUnvalidated,
     /// No vendor LUT row matches this (tool family, material family,
     /// operation family, pass role) tuple at the toolpath's
@@ -178,7 +178,7 @@ impl RefuseReason {
                 "simulation trace lacks per-sample arc engagement — re-run sim with metrics enabled"
             }
             Self::MaterialUnvalidated => {
-                "stock material has no validated Kc — Optimize cannot model power against an unknown material"
+                "stock material has no measured force line — Optimize cannot model power against an unknown material"
             }
             Self::NoVendorData => {
                 "no vendor LUT row matches this tool, material, and operation — no calibrated chipload envelope to optimise against"

@@ -60,6 +60,7 @@ use rs_cam_core::dressup::feed_modulation::{
 };
 use rs_cam_core::geo::P3;
 use rs_cam_core::machine::kinematics::MachineKinematics;
+use rs_cam_core::material::{Material, WoodSpecies};
 use rs_cam_core::toolpath::{MoveIntent, Toolpath};
 
 const RPM: f64 = 18_000.0;
@@ -83,8 +84,17 @@ fn ctx<'a>(k: &'a MachineKinematics, available_kw: f64) -> ModulationContext<'a>
         strategy: ModulationStrategy::ConstrainedMax,
         feed_scale: 1.0,
         deflection_inputs: None,
+        // Ruling B6: the power cap reads the material's force line. The
+        // hardwood line (Ks 51.9 N/mm², F_edge 4.08 N/mm) puts the edge
+        // term at about 11.5 W per mm of depth on this cut, so at 50 W a
+        // 1, 2 and 4 mm cut all stay power-bound or feed-capped, and the
+        // feed falls as the depth rises.
         power_inputs: Some(PowerLimitInputs {
-            kc_n_per_mm2: 30.0,
+            line: Material::SolidWood {
+                species: WoodSpecies::GenericHardwood,
+            }
+            .force_line()
+            .expect("generic hardwood has a force line"),
             engagement_diameter_mm: 6.0,
             available_kw,
         }),

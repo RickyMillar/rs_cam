@@ -1,59 +1,82 @@
 //! Material definitions for feeds & speeds calculation.
 //!
-//! Provides material hardness index and specific cutting force (Kc) values
-//! used by the feeds calculator to determine chip load, feed rate, and power.
+//! Provides the material hardness index for the feeds calculator, and one
+//! typed cutting-force line per material ([`Material::force_line`], ruling
+//! B6) for the force and power models.
 //! Ported from reference/shapeoko_feeds_and_speeds/src/params/mod.rs.
 
+pub mod force_line;
 pub mod wood_species_library;
 
 use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
 
-/// Where the `Kc` base of a [`WoodSpecies`] comes from.
+use force_line::{ForceLine, ForceLineRefusal, FplSgRow, WoodDensity};
+
+// FPL Table 5-3a (metric, 12 % MC) rows for the first-class species. Each
+// comment quotes the 12 % MC line from
+// `planning/data_ingest_2026-05-30/fpl_ch5_extract.md`; the third token is
+// the SG. `WoodSpecies::fpl_density` reads these.
+
+/// "Longleaf 12% 0.59 100,000 13,700 81 860 58,400 6,600 10,400 3,200 3,900"
+const FPL_ROW_PINE_LONGLEAF: FplSgRow = FplSgRow::new("Pine, longleaf", 0.59);
+/// "Sugar 12% 0.63 109,000 12,600 114 990 54,000 10,100 16,100 — 6,400"
+const FPL_ROW_MAPLE_SUGAR: FplSgRow = FplSgRow::new("Maple, sugar", 0.63);
+/// "Walnut, black 12% 0.55 101,000 11,600 74 860 52,300 7,000 9,400 4,800 4,500"
+const FPL_ROW_WALNUT_BLACK: FplSgRow = FplSgRow::new("Walnut, black", 0.55);
+/// "Yellow 12% 0.62 114,000 13,900 143 1,400 56,300 6,700 13,000 6,300 5,600"
+const FPL_ROW_BIRCH_YELLOW: FplSgRow = FplSgRow::new("Birch, yellow", 0.62);
+/// "White 12% 0.68 105,000 12,300 102 940 51,300 7,400 13,800 5,500 6,000"
+/// (Quercus alba, the white-oak row the old `Kc` comment named).
+const FPL_ROW_OAK_WHITE: FplSgRow = FplSgRow::new("Oak, white", 0.68);
+
+/// `GenericSoftwood`: the three rows the old `Kc` comment named.
+/// - "Ponderosa 12% 0.40 65,000 8,900 49 480 36,700 4,000 7,800 2,900 2,000"
+/// - "White 12% 0.36 65,000 9,600 53 510 35,700 3,000 6,700 2,500 1,800"
+///   (spruce)
+/// - "Western redcedar 12% 0.32 51,700 7,700 40 430 31,400 3,200 6,800 1,500
+///   1,600"
 ///
-/// [`Material::kc_n_per_mm2`] returns the same `Some(value)` shape for every
-/// solid-wood species, so the number alone cannot tell a citation from a
-/// guess. A gate, a diagnostic row or an operator reads this tag to learn
-/// which one it holds. The tag names the source. It does not change a value
-/// and it does not scale one.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum KcProvenance {
-    /// One named row of the primary source: USDA Forest Service Wood
-    /// Handbook FPL-GTR-190 (2010), Chapter 5, Table 5-3a.
-    FplTableRow,
-    /// The mid-band of several named rows of that same primary source. The
-    /// species is a generic stand-in, not one botanical species.
-    FplBandMidpoint,
-    /// No primary source. The value is shop folklore, kept because the
-    /// species has no published shear row yet. A gate that needs a citation
-    /// must treat this as unmeasured.
-    Folklore,
-}
+/// Mean SG 0.3600, ρ 403.2 kg/m³.
+const FPL_ROWS_GENERIC_SOFTWOOD: [FplSgRow; 3] = [
+    FplSgRow::new("Pine, ponderosa", 0.40),
+    FplSgRow::new("Spruce, white", 0.36),
+    FplSgRow::new("Cedar, western redcedar", 0.32),
+];
 
-impl KcProvenance {
-    /// Every variant, so a reader covers the set without a match.
-    pub const ALL: [KcProvenance; 3] = [
-        KcProvenance::FplTableRow,
-        KcProvenance::FplBandMidpoint,
-        KcProvenance::Folklore,
-    ];
+/// `GenericHardwood`: the three rows the old `Kc` comment named.
+/// - "Beech, American 12% 0.64 103,000 11,900 104 1,040 50,300 7,000 13,900
+///   7,000 5,800"
+/// - "Red 12% 0.54 92,000 11,300 86 810 45,100 6,900 12,800 — 4,200" (maple)
+/// - "Northern red 12% 0.63 99,000 12,500 100 1,090 46,600 7,000 12,300 5,500
+///   5,700" (oak)
+///
+/// Mean SG 0.6033, ρ 675.7 kg/m³.
+const FPL_ROWS_GENERIC_HARDWOOD: [FplSgRow; 3] = [
+    FplSgRow::new("Beech, American", 0.64),
+    FplSgRow::new("Maple, red", 0.54),
+    FplSgRow::new("Oak, northern red", 0.63),
+];
 
-    /// `true` when no primary source backs the value.
-    #[must_use]
-    pub const fn is_folklore(self) -> bool {
-        matches!(self, KcProvenance::Folklore)
-    }
+// FPL Table 5-5a (metric) rows for the species with no Table 5-3a row. The
+// "Green" line prints the basic SG `Gb` (ovendry mass, green volume; FPL
+// Ch.4: "Some specific gravity data are reported in Tables 5–3, 5–4, and
+// 5–5 (Chap. 5) on both the green (basic) and 12% MC volume basis").
+// `WoodDensity::fpl_basic_row` converts `Gb` to G12 by FPL Ch.4 Eq. (4-11).
+// Source: `planning/extrapolation_2026-09-24/fetch/G7/density_rows.json`,
+// `sources/fpl_gtr190_ch5_table5_5a_excerpt.txt`.
 
-    /// Short label for a diagnostic row or an operator report.
-    #[must_use]
-    pub const fn label(self) -> &'static str {
-        match self {
-            KcProvenance::FplTableRow => "FPL Table 5-3a row",
-            KcProvenance::FplBandMidpoint => "FPL Table 5-3a band mid-point",
-            KcProvenance::Folklore => "folklore (no primary source)",
-        }
-    }
-}
+/// "Pine, radiata (Pinus radiata)    Green    0.42     42,100    8,100
+/// —        19,200       5,200    2,100     AS" → G12 0.4501, ρ 504.1 kg/m³.
+const FPL_BASIC_ROW_PINE_RADIATA: FplSgRow = FplSgRow::new("Pine, radiata", 0.42);
+/// "Jarrah (Eucalyptus marginata)      Green    0.67     68,300 10,200
+/// —      35,800      9,100      5,700     AS" → G12 0.7499, ρ 839.9 kg/m³.
+const FPL_BASIC_ROW_JARRAH: FplSgRow = FplSgRow::new("Jarrah", 0.67);
+/// "Ipe (Tabebuia spp.,                Green    0.92    155,800 20,100
+/// 190     71,400     14,600     13,600    AM" (lapacho group) → G12
+/// 1.0776, ρ 1207.0 kg/m³: above the Curti 2021 range, so the force line
+/// refuses with `DensityOutOfRange`.
+const FPL_BASIC_ROW_IPE: FplSgRow = FplSgRow::new("Ipe", 0.92);
 
 /// Wood species with Janka hardness data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -71,8 +94,8 @@ pub enum WoodSpecies {
 }
 
 impl WoodSpecies {
-    /// Every species, so a gate or a test covers each arm of the `Kc` and
-    /// Janka tables. A new species must be added here.
+    /// Every species, so a gate or a test covers each arm of the density
+    /// and Janka tables. A new species must be added here.
     pub const ALL: [WoodSpecies; 10] = [
         WoodSpecies::GenericSoftwood,
         WoodSpecies::RadiataPine,
@@ -86,27 +109,34 @@ impl WoodSpecies {
         WoodSpecies::Ipe,
     ];
 
-    /// Where this species' `Kc` base comes from. See [`KcProvenance`].
+    /// The density this species reads for its force line: an FPL Table
+    /// 5-3a SG at 12 % MC (plan B6 §2.3). See [`force_line`].
     ///
-    /// Three species carry folklore: `RadiataPine`, `Jarrah` and `Ipe`. They
-    /// are absent from FPL Chapter 5 and their literals are named
-    /// `KC_FOLKLORE_*` in [`Material::kc_n_per_mm2`].
+    /// A generic species takes the mean SG of the FPL rows that its old
+    /// `Kc` comment named. `RadiataPine`, `Jarrah` and `Ipe` have no Table
+    /// 5-3a row; they read the Table 5-5a basic SG, converted to 12 % MC by
+    /// FPL Ch.4 Eq. (4-11) ([`WoodDensity::fpl_basic_row`]). Ipe's density
+    /// (1207 kg/m³) is above the Curti range, so [`Material::force_line`]
+    /// refuses it with [`ForceLineRefusal::DensityOutOfRange`]. Every new
+    /// species arm needs a row or a `None`.
     #[must_use]
-    pub const fn kc_provenance(self) -> KcProvenance {
+    pub fn fpl_density(self) -> Option<WoodDensity> {
+        // Every arm returns a density today. The `Option` stays for a new
+        // arm with no printed density.
         match self {
-            // No FPL Chapter 5 row for these three species.
-            WoodSpecies::RadiataPine | WoodSpecies::Jarrah | WoodSpecies::Ipe => {
-                KcProvenance::Folklore
+            WoodSpecies::GenericSoftwood => Some(WoodDensity::fpl_mean(&FPL_ROWS_GENERIC_SOFTWOOD)),
+            WoodSpecies::GenericHardwood => Some(WoodDensity::fpl_mean(&FPL_ROWS_GENERIC_HARDWOOD)),
+            WoodSpecies::LongleafPine => Some(WoodDensity::fpl_row(FPL_ROW_PINE_LONGLEAF)),
+            WoodSpecies::HardMaple => Some(WoodDensity::fpl_row(FPL_ROW_MAPLE_SUGAR)),
+            WoodSpecies::Walnut => Some(WoodDensity::fpl_row(FPL_ROW_WALNUT_BLACK)),
+            WoodSpecies::Birch => Some(WoodDensity::fpl_row(FPL_ROW_BIRCH_YELLOW)),
+            WoodSpecies::WhiteOak => Some(WoodDensity::fpl_row(FPL_ROW_OAK_WHITE)),
+            // No Table 5-3a row: the Table 5-5a basic SG, by Eq. (4-11).
+            WoodSpecies::RadiataPine => {
+                Some(WoodDensity::fpl_basic_row(FPL_BASIC_ROW_PINE_RADIATA))
             }
-            // A mid-band over several cited rows, not one species row.
-            WoodSpecies::GenericSoftwood | WoodSpecies::GenericHardwood => {
-                KcProvenance::FplBandMidpoint
-            }
-            WoodSpecies::LongleafPine
-            | WoodSpecies::HardMaple
-            | WoodSpecies::Walnut
-            | WoodSpecies::Birch
-            | WoodSpecies::WhiteOak => KcProvenance::FplTableRow,
+            WoodSpecies::Jarrah => Some(WoodDensity::fpl_basic_row(FPL_BASIC_ROW_JARRAH)),
+            WoodSpecies::Ipe => Some(WoodDensity::fpl_basic_row(FPL_BASIC_ROW_IPE)),
         }
     }
 
@@ -195,8 +225,8 @@ impl SheetGoodKind {
     /// Effective Janka hardness (lbf) for the engineered-wood sheet
     /// good. `feed_scale_factor()` (the formula path) and
     /// `literature_parity` use it. These values are the substrate density
-    /// proxy; the actual cutting-force `Kc` lives on
-    /// `Material::kc_n_per_mm2()` and is independent. The only sourced
+    /// proxy; the cutting-force line lives on `Material::force_line()` and
+    /// is independent. The only sourced
     /// figure is the particleboard minimum of 500 lbf (ANSI A208.1).
     /// `material_to_lut` puts the value on the LUT query, but the lookup
     /// applies no hardness scale to a sheet-good query
@@ -335,11 +365,11 @@ impl PlasticFamily {
 /// Aluminum alloy variants. The two listed are the common machining
 /// targets; per-alloy Brinell hardness is anchored to ASM/MatWeb.
 ///
-/// Power and deflection gates refuse on aluminum until Phase 3 beat F
-/// (Aluminum Kienzle `kc1.1 / mc` archival hunt) lands a primary-source
-/// `kc1.1 + mc` pair — see `Material::kc_n_per_mm2`. The chipload gate
-/// is independent of Kc and operates as soon as the vendor LUT carries
-/// aluminum rows.
+/// Power and deflection gates refuse on aluminum: the only fetched pair
+/// is a Kienzle power law with no chip range, not an affine per-edge line
+/// (ruling B6) — see `Material::force_line`. The chipload gate is
+/// independent of the force line and operates as soon as the vendor LUT
+/// carries aluminum rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AluminumAlloy {
     /// 6061-T6 — general-purpose alloy. Brinell 95 (ASM, MatWeb).
@@ -528,20 +558,24 @@ pub enum Material {
     /// Added Phase E (completion plan 2026-05-31).
     ///
     /// - `janka_lbf` — Janka hardness in lbf at 12% MC. Must satisfy
-    ///   [`JANKA_CALIBRATED_BAND`] (`200.0..=4000.0`) for the helper
-    ///   `Kc` and `feed_scale_factor` lookups to return finite values;
-    ///   outside the band, `kc_n_per_mm2()` returns `None` and
-    ///   `feed_scale_factor()` falls back to `1.0`.
+    ///   [`JANKA_CALIBRATED_BAND_LOW_LBF`]`..=`[`JANKA_CALIBRATED_BAND_HIGH_LBF`]
+    ///   for the `feed_scale_factor` lookup; outside the band
+    ///   `feed_scale_factor()` falls back to `1.0`. The force line does not
+    ///   read the Janka value.
     /// - `label` — human-readable species name for GUI display
     ///   (`"Red Oak (Northern)"`, `"Black Cherry"`).
     /// - `source_id` — citation key matching an entry in
     ///   `data/vendor_lut/source_manifest.json` (e.g.
     ///   `"wood_database_2026-05-30"` or `"fpl_ch5_2010"`).
     ///
+    /// The force line finds the library row by `(label, source_id)` and
+    /// reads its `specific_gravity_12`. Only an `fpl_ch5_2010` row carries
+    /// one; every other row refuses with [`ForceLineRefusal::NoDensity`].
+    ///
     /// First-class [`WoodSpecies`] enum variants stay the source of
     /// truth for the 10 most-tested species (HardMaple, Walnut, Ipe,
-    /// etc.) — they keep their hand-tuned `Kc` values and `Janka`
-    /// anchors. The parametric variant is for the long tail.
+    /// etc.) — they keep their FPL rows and `Janka` anchors. The
+    /// parametric variant is for the long tail.
     SolidWoodByJanka {
         janka_lbf: f64,
         label: String,
@@ -570,9 +604,9 @@ pub enum Material {
     /// fiber-reinforced — tool wear and delamination considerations
     /// don't map onto polymers.
     ///
-    /// Refuses Kc — no fetched primary measurement available yet; the
-    /// gate refuses via `MaterialUnvalidated` rather than predicting
-    /// force from a fabricated constant. Plunge / drill / feed
+    /// Refuses a force line — no fetched primary measurement available
+    /// yet; the gate refuses via `MaterialUnvalidated` rather than
+    /// predicting force from a fabricated constant. Plunge / drill / feed
     /// envelopes are conservative carbide-tool placeholders pending
     /// bench validation.
     Fiberglass {
@@ -594,20 +628,19 @@ pub enum Material {
         /// non-positive values fall through to the softwood baseline
         /// (1.0) in [`Material::feed_scale_factor`].
         feed_scale_factor: f64,
-        kc: f64,
+        // Ruling B6 removed the typed `kc` field. A custom material has no
+        // force line. An old project file that carries `kc` still loads:
+        // serde ignores the unknown key.
     },
 }
 
 /// Calibrated Janka band for the parametric [`Material::SolidWoodByJanka`]
-/// `Kc` helper. Outside this band the `Kc` regression has no
-/// citation-backed validity; the helper returns `None` and gates
-/// refuse via `UnmodeledReason::MaterialUnvalidated`.
+/// feed-scale lookup. Outside this band `feed_scale_factor` falls back
+/// to the softwood baseline and `wood_hardness_lbf` returns `None`.
 ///
 /// The lower bound 200 lbf is well below balsa-class softwoods
 /// (Generic softwood baseline = 600 lbf); the upper bound 4000 lbf
-/// is above Ipe (3510 lbf, the existing per-species ceiling). Both
-/// extremes are well outside the workshop-stock range that informed
-/// the folklore-grade per-species `Kc` table.
+/// is above Ipe (3510 lbf, the existing per-species ceiling).
 pub const JANKA_CALIBRATED_BAND_LOW_LBF: f64 = 200.0;
 pub const JANKA_CALIBRATED_BAND_HIGH_LBF: f64 = 4000.0;
 
@@ -634,37 +667,6 @@ pub const DRILL_PLUNGE_FLOOR_WOOD_PER_MM: f64 = 50.0;
 /// The drill plunge-feed floor in plywood and sheet goods (mm/min per mm).
 /// Repo rule, unsourced (W6 audit 2026-08-04, item R-10).
 pub const DRILL_PLUNGE_FLOOR_BOARD_PER_MM: f64 = 40.0;
-
-/// Shared Janka → Kc fallback for parametric wood species.
-///
-/// **Formula:** `Kc = janka_lbf / 100.0`. Folklore-grade — the
-/// existing 10 per-species hardcoded `Kc` values in
-/// [`Material::kc_n_per_mm2`] sit roughly on this line (the table
-/// fits within ±25 % of `janka/100` except for the
-/// `GenericHardwood` and `Walnut` hand-tuned anchors). The literature
-/// has no clean Janka → Kc regression at workshop fidelity; this
-/// formula exists so the parametric variant can supply *something*
-/// finite to the Kc-consuming gates rather than refusing every
-/// library species.
-///
-/// **Returns `None`** outside [`JANKA_CALIBRATED_BAND_LOW_LBF`,
-/// `JANKA_CALIBRATED_BAND_HIGH_LBF`] or for non-finite input. The
-/// 10 first-class [`WoodSpecies`] variants do NOT route through this
-/// helper — their per-species `Kc` constants are the source of truth
-/// for those species.
-///
-/// TODO Phase 3+: replace with a per-species derivation backbone
-/// (FPL Ch.5 shear-parallel-to-grain × edge-radius size-effect, per
-/// the `kc.md` TODO trail).
-pub(crate) fn janka_to_kc_n_per_mm2(janka_lbf: f64) -> Option<f64> {
-    if !janka_lbf.is_finite() {
-        return None;
-    }
-    if !(JANKA_CALIBRATED_BAND_LOW_LBF..=JANKA_CALIBRATED_BAND_HIGH_LBF).contains(&janka_lbf) {
-        return None;
-    }
-    Some(janka_lbf / 100.0)
-}
 
 /// Shared Janka → drill chip-welding D/d threshold band lookup.
 ///
@@ -820,7 +822,7 @@ impl Material {
     /// - Foam: per-density hardcode (0.15 / 0.25 / 0.40).
     ///
     /// The safety-critical force-prediction path
-    /// (`Material::kc_n_per_mm2`) is independent of this and refuses
+    /// (`Material::force_line`) is independent of this and refuses
     /// cleanly for unmeasured materials.
     ///
     /// `Material::Custom { feed_scale_factor, .. }` ignores invalid
@@ -914,222 +916,44 @@ impl Material {
         }
     }
 
-    /// Shear→milling size-effect multiplier for **solid wood**. The FPL
-    /// Table 5-3a literals in `kc_n_per_mm2` are shear-parallel-to-grain
-    /// strength (~6–16 N/mm² hardwood); measured peripheral-milling Kc is
-    /// ~2.5–4× higher (Sydor et al. particleboard 32–38 N/mm² vs ~9–13
-    /// shear, PMC8123317). This lifts the shear base into the milling
-    /// regime — exactly what Phase 2B did for sheet goods, which dropped
-    /// raw shear for measured milling Kc and kept
-    /// `tool_load::power::GRAIN_ANISOTROPY_FACTOR = 2.0`. 2.7 lands
-    /// GenericHardwood at ~35 N/mm² (particleboard parity); sentry-pinned
-    /// and tunable. Sheet goods + plastics are already milling-calibrated
-    /// and do NOT use this factor; plywood stays on shear pending its own
-    /// Phase 3 derivation. See planning/KC_MILLING_CALIBRATION_2026-06-17.md.
-    pub(crate) const MILLING_KC_FACTOR: f64 = 2.7;
-
-    /// Radiata pine shear-parallel base, N/mm². Folklore: the species has
-    /// no FPL Chapter 5 row. TODO: source from CSIRO or FRI publications.
-    /// [`WoodSpecies::kc_provenance`] reports it as
-    /// [`KcProvenance::Folklore`].
-    const KC_FOLKLORE_RADIATA_PINE: f64 = 6.0;
-
-    /// Jarrah shear-parallel base, N/mm². Folklore: the AU species has no
-    /// FPL Chapter 5 row. TODO: source from CSIRO publications.
-    /// [`WoodSpecies::kc_provenance`] reports it as
-    /// [`KcProvenance::Folklore`].
-    const KC_FOLKLORE_JARRAH: f64 = 19.0;
-
-    /// Ipe shear-parallel base, N/mm². Folklore: the Brazilian species has
-    /// no FPL Chapter 5 row. TODO: source from EMBRAPA / IPT.
-    /// [`WoodSpecies::kc_provenance`] reports it as
-    /// [`KcProvenance::Folklore`].
-    const KC_FOLKLORE_IPE: f64 = 28.0;
-
-    /// Specific cutting force in N/mm² (**peripheral-milling regime**).
-    /// Used for power and deflection force predictions.
+    /// The cutting-force line of this material (ruling B6, plan
+    /// `planning/extrapolation_2026-09-24/B6_PLAN.md`). One line for
+    /// every consumer: the deflection force, the power model, the cut
+    /// efficiency and the deflection predictor. See [`force_line`].
     ///
-    /// Solid-wood values are the FPL Table 5-3a shear-parallel rows lifted
-    /// to milling by [`Material::MILLING_KC_FACTOR`]; sheet goods already
-    /// carry measured milling Kc (Phase 2B). Both arms therefore hand the
-    /// gates the same physical force base, so deflection and power cannot
-    /// diverge on which regime they model.
+    /// - Solid wood: the Curti 2021 density law at the FPL Table 5-3a
+    ///   density ([`WoodSpecies::fpl_density`], or the library row's
+    ///   `specific_gravity_12`).
+    /// - MDF: the Goli 2018 printed line.
+    /// - Every other material refuses with a named reason. The tool-load
+    ///   gates then refuse with `UnmodeledReason::MaterialUnvalidated`.
+    ///   They do not predict force from a fabricated constant.
     ///
-    /// `None` for materials whose Kc has no primary measurement — the
-    /// tool-load gates refuse via `UnmodeledReason::MaterialUnvalidated`
-    /// rather than predicting force from a fabricated constant. This
-    /// keeps the type system honest about which materials carry a
-    /// validated cutting-force model.
+    /// # Errors
     ///
-    /// `Some(value)` does not mean "cited". Three solid-wood species return
-    /// a folklore base, named `KC_FOLKLORE_*` beside
-    /// [`Material::MILLING_KC_FACTOR`]. Read
-    /// [`WoodSpecies::kc_provenance`] to tell a citation from a guess; the
-    /// number alone cannot say.
-    pub fn kc_n_per_mm2(&self) -> Option<f64> {
+    /// A [`ForceLineRefusal`] names the reason. Plan §3 holds the texts.
+    pub fn force_line(&self) -> Result<ForceLine, ForceLineRefusal> {
         match self {
-            // Phase 5 Step 5.4 (2026-06-01): per-species values now
-            // pinned to FPL Ch.5 Table 5-3a shear-parallel-to-grain
-            // (12% MC) rows. Source: USDA Forest Service Wood
-            // Handbook FPL-GTR-190 (2010), Chapter 5 (Kretschmann),
-            // Table 5-3a. Per-species rationale + Δ-from-folklore
-            // table at planning/data_ingest_2026-05-30/
-            // wood_kc_derivation.md.
-            //
-            // The per-species literals below are the FPL Table 5-3a
-            // shear-parallel-to-grain rows (~6–16 N/mm² N.American, 28
-            // Ipe), except the three named `KC_FOLKLORE_*`, which no FPL
-            // row backs. `WoodSpecies::kc_provenance` reports which is
-            // which. `MILLING_KC_FACTOR` lifts them to the peripheral-
-            // milling regime (the "3–5× size-effect" the old Phase-6
-            // TODO deferred), paralleling Phase 2B for sheet goods, which
-            // swapped raw shear for measured milling Kc and kept
-            // GRAIN_ANISOTROPY_FACTOR = 2.0. Literature-anchored (Sydor
-            // particleboard 32–38 N/mm²), sentry-pinned, not bench-
-            // validated. See planning/KC_MILLING_CALIBRATION_2026-06-17.md.
-            Material::SolidWood { species } => Some(
-                Self::MILLING_KC_FACTOR
-                    * match species {
-                        // Mid-band of common low-density softwoods (Pondersa
-                        // pine 7.8, white spruce 6.7, western redcedar 6.8).
-                        WoodSpecies::GenericSoftwood => 6.5,
-                        WoodSpecies::RadiataPine => Self::KC_FOLKLORE_RADIATA_PINE,
-                        // FPL: "Longleaf 12% ... 10,400" (kPa shear ∥).
-                        WoodSpecies::LongleafPine => 10.4,
-                        // Mid-band of common North American hardwoods (Beech
-                        // American 13.9, Red Maple 12.8, Northern Red Oak
-                        // 12.3).
-                        WoodSpecies::GenericHardwood => 13.0,
-                        // FPL: "Sugar 12% ... 16,100" (kPa shear ∥).
-                        WoodSpecies::HardMaple => 16.0,
-                        // FPL: "Walnut, black 12% ... 9,400" (kPa shear ∥).
-                        WoodSpecies::Walnut => 9.5,
-                        // FPL: "Yellow 12% ... 13,000" (kPa shear ∥).
-                        WoodSpecies::Birch => 13.0,
-                        // FPL: "White 12% 0.68 ... 13,800" (kPa shear ∥;
-                        // Quercus alba primary row in the white-oak group).
-                        WoodSpecies::WhiteOak => 13.8,
-                        WoodSpecies::Jarrah => Self::KC_FOLKLORE_JARRAH,
-                        WoodSpecies::Ipe => Self::KC_FOLKLORE_IPE,
-                    },
-            ),
-            // Parametric variant — `janka_to_kc_n_per_mm2` returns
-            // `None` outside the calibrated band, propagating to the
-            // gate which refuses via `MaterialUnvalidated` (right
-            // behavior: out-of-band Janka has no citation backing).
-            Material::SolidWoodByJanka { janka_lbf, .. } => {
-                janka_to_kc_n_per_mm2(*janka_lbf).map(|k| Self::MILLING_KC_FACTOR * k)
-            }
-            // TODO Phase 3 — per-grade plywood Kc has no fetched
-            // primary measurement; current values track shear-parallel
-            // shear strength of the dominant veneer rather than peripheral
-            // milling specific cutting force. Phase 3 beat C (FPL Ch.5
-            // systematic extract) will inform a per-species derivation.
-            Material::Plywood { grade } => Some(match grade {
-                PlywoodGrade::Softwood => 8.0,
-                PlywoodGrade::BalticBirch => 13.0,
-                PlywoodGrade::HardwoodFaced => 11.0,
-            }),
-            // Sheet-good Kc (Phase 2B, 2026-05-30): measured-literature
-            // values from `planning/data_ingest_2026-05-29/kc.md`. The
-            // pre-Phase-2B values (Mdf=10, Hdf=12, Particleboard=9)
-            // tracked shear-parallel-to-grain strength of the substrate
-            // rather than peripheral-milling specific cutting force,
-            // under-predicting force by 3–4× and being absorbed by the
-            // old 2.5× ANISOTROPY_MULTIPLIER. Paired with the
-            // GRAIN_ANISOTROPY_FACTOR drop 2.5 → 2.0 to keep the
-            // physically-meaningful product `Kc × factor` honest.
-            Material::SheetGood { kind } => Some(match kind {
-                // PMC6315737 round-shape Ks for MDF: average 31.44
-                // (SD 2.68; range 25.81–35.58). Isotropic in plane.
-                SheetGoodKind::Mdf => 31.4,
-                // No direct HDF Kc measurement; derived as MDF scaled
-                // by the HDF/MDF density ratio (~880/750 ≈ 1.17×).
-                // TODO Phase 3: replace with fetched HDF cutting-force
-                // measurement.
-                SheetGoodKind::Hdf => 36.8,
-                // Pałubicki 2021 (DOI 10.3390/ma14092208) average of
-                // slow (32.0) and fast (37.6) peripheral up-milling
-                // principal cutting force for particleboard at
-                // vc=40/60 m/s, rake 13°, h up to ~0.31 mm.
-                SheetGoodKind::Particleboard => 35.0,
-            }),
-            // Per-family plastics — only families with a fetched primary
-            // measurement return Some. Others refuse via the gate's
-            // `MaterialUnvalidated` arm rather than predicting force
-            // from a fabricated constant. See `kc.md` in the
-            // 2026-05-29 data-ingest for the citations.
-            Material::Plastic { family } => match family {
-                // Yang 2022 measured cutting-yield-stress midpoint of
-                // 33.85–46.89 N/mm² for HDPE (DOI 10.3390/polym14010189).
-                PlasticFamily::Hdpe => Some(40.0),
-                // No fetched primary force study exists for PC, PMMA, or
-                // POM — the historical generic 4.0 was a fabricated
-                // baseline. Until a measurement lands, the gate refuses.
-                // Phase D 2026-05-31 — six new plastic families added
-                // alongside the existing PC/PMMA/POM gap. None have a
-                // fetched milling-regime Kc value (kc_extra.md / Round-2
-                // recorded a PMMA 276.5 N/mm² value but with an explicit
-                // "do NOT promote — size-effect inflated" caveat;
-                // UHMW/PP/Nylon/ABS/PETG/PVC have no primary milling
-                // measurements at all). Refuse-first stays the rule —
-                // the gate refuses via `MaterialUnvalidated` rather
-                // than predicting force from a fabricated constant.
-                PlasticFamily::Polycarbonate
-                | PlasticFamily::Acrylic
-                | PlasticFamily::Delrin
-                | PlasticFamily::Generic
-                | PlasticFamily::UhmwPe
-                | PlasticFamily::Polypropylene
-                | PlasticFamily::Nylon66
-                | PlasticFamily::Abs
-                | PlasticFamily::Petg
-                | PlasticFamily::RigidPvc => None,
+            Material::SolidWood { species } => species
+                .fpl_density()
+                .ok_or(ForceLineRefusal::NoDensity)
+                .and_then(ForceLine::curti_density_law),
+            Material::SolidWoodByJanka {
+                label, source_id, ..
+            } => wood_species_library::fpl_density(label, source_id)
+                .ok_or(ForceLineRefusal::NoDensity)
+                .and_then(ForceLine::curti_density_law),
+            Material::Plywood { .. } => Err(ForceLineRefusal::Plywood),
+            Material::SheetGood { kind } => match kind {
+                SheetGoodKind::Mdf => Ok(ForceLine::goli_2018_mdf()),
+                SheetGoodKind::Hdf => Err(ForceLineRefusal::Hdf),
+                SheetGoodKind::Particleboard => Err(ForceLineRefusal::Particleboard),
             },
-            // Aluminum Kienzle pair from Machining Doctor's VDI 3323
-            // table (Wayback 2024-08-13 snapshot of
-            // `machiningdoctor.com/specific-cutting-force-chart`),
-            // cross-checked against Sandvik's 2017 EN-GB aluminium
-            // ISO-N page bound of 350–700 N/mm². Both 6061-T6 and
-            // 7075-T6 sit at the same VDI group-22 anchor:
-            //   kc1.1 = 800 N/mm², mc = 0.25
-            // Evaluated at a representative chip thickness h = 0.1 mm:
-            //   Kc = 800 · 0.1^(-0.25) ≈ 1422.8 N/mm²
-            // Citation: planning/data_ingest_2026-05-30/aluminum_kc.md
-            // (Phase 3 beat F result, "Grade A-secondary").
-            //
-            // Per-alloy specialisation: 7075-T6 reads slightly higher
-            // in the Sandvik aluminium-specific band (350–700) than
-            // 6061-T6; until a per-alloy Kienzle pair lands, we use
-            // the shared VDI group-22 value for both. The
-            // documented "Grade A-secondary" qualification is on the
-            // citation in aluminum_kc.md, not on the type.
-            Material::Aluminum { .. } => {
-                const KC11: f64 = 800.0;
-                const MC: f64 = 0.25;
-                const REPRESENTATIVE_H_MM: f64 = 0.1;
-                Some(KC11 * REPRESENTATIVE_H_MM.powf(-MC))
-            }
-            Material::Foam { density } => Some(match density {
-                FoamDensity::Low => 1.0,
-                FoamDensity::Medium => 2.0,
-                FoamDensity::High => 3.0,
-            }),
-            // Fiberglass Kc — no fetched primary measurement available
-            // (Phase 5 Step 5.3, 2026-06-01). Refuse-first: the gate
-            // refuses via `MaterialUnvalidated` rather than fabricating
-            // a constant. Bench validation is needed to seed a real
-            // value; G10/FR4 typical machining-handbook quotes range
-            // 100–150 N/mm² but none are workshop-fidelity peripheral
-            // milling measurements.
-            Material::Fiberglass { .. } => None,
-            Material::Custom { kc, .. } => {
-                if kc.is_finite() && *kc > 0.0 {
-                    Some(*kc)
-                } else {
-                    None
-                }
-            }
+            Material::Plastic { .. } => Err(ForceLineRefusal::Plastic),
+            Material::Aluminum { .. } => Err(ForceLineRefusal::Aluminum),
+            Material::Foam { .. } => Err(ForceLineRefusal::Foam),
+            Material::Fiberglass { .. } => Err(ForceLineRefusal::Fiberglass),
+            Material::Custom { .. } => Err(ForceLineRefusal::Custom),
         }
     }
 
@@ -1644,10 +1468,8 @@ impl Material {
     /// Dedup policy: when a library species shares a Janka anchor
     /// (within ±2 lbf) with a first-class `WoodSpecies` catalog entry,
     /// the catalog entry wins and the library duplicate is dropped —
-    /// the curated species has the hand-tuned per-species `Kc` constant,
-    /// the library would only give the folklore-grade `janka/100`
-    /// approximation. This replaces the brittle alias-string dedup the
-    /// initial GUI implementation used.
+    /// the curated species is the one the tests pin. This replaces the
+    /// brittle alias-string dedup the initial GUI implementation used.
     ///
     /// Sort order within each category:
     /// - Softwood / Hardwood: by Janka ascending (softest first)
@@ -1843,15 +1665,15 @@ impl Material {
     }
 
     /// Test-fixture constructor for `Material::Custom { name,
-    /// feed_scale_factor, kc }` with audit-defaulted scalars (S3-13
+    /// feed_scale_factor }` with an audit-defaulted scalar (S3-13
     /// from `planning/tool_kinematics_chipload_audit_2026-05-31.md`).
     ///
-    /// `feed_scale_factor = 1.0` (softwood baseline), `kc = 10.0`
-    /// (mid-MDF band) — the same triplet that `tool_load/power.rs:470`,
-    /// `tool_load/deflection.rs:456`, `tool_load/optimize/mod.rs:859`,
-    /// and `compute/validate.rs:538` constructed ad hoc before this
-    /// helper landed. Tests that want different defaults should
-    /// construct `Material::Custom { ... }` directly.
+    /// `feed_scale_factor = 1.0` (softwood baseline) — the value that
+    /// `tool_load/power.rs:470`, `tool_load/deflection.rs:456`,
+    /// `tool_load/optimize/mod.rs:859`, and `compute/validate.rs:538`
+    /// constructed ad hoc before this helper landed. Tests that want
+    /// different defaults should construct `Material::Custom { ... }`
+    /// directly.
     ///
     /// Only compiled under `#[cfg(test)]` so production code can't depend
     /// on the test helper. Integration tests in `crates/rs_cam_core/tests/`
@@ -1863,7 +1685,6 @@ impl Material {
         Material::Custom {
             name: name.to_owned(),
             feed_scale_factor: 1.0,
-            kc: 10.0,
         }
     }
 
@@ -2048,78 +1869,108 @@ mod tests {
     }
 
     #[test]
-    fn test_kc_progression() {
-        let soft = Material::SolidWood {
-            species: WoodSpecies::GenericSoftwood,
+    fn test_force_line_rises_with_density() {
+        let line = |species| {
+            Material::SolidWood { species }
+                .force_line()
+                .expect("an FPL species has a force line")
+        };
+        let soft = line(WoodSpecies::GenericSoftwood);
+        let hard = line(WoodSpecies::HardMaple);
+        let oak = line(WoodSpecies::WhiteOak);
+        assert!(soft.ks_n_per_mm2() < hard.ks_n_per_mm2());
+        assert!(hard.ks_n_per_mm2() < oak.ks_n_per_mm2());
+        assert!(soft.f_edge_n_per_mm() < hard.f_edge_n_per_mm());
+    }
+
+    /// Plan B6 §2.3: the SG and the density of each FPL species.
+    #[test]
+    fn fpl_density_matches_the_plan_table() {
+        for (species, sg, rho) in [
+            (WoodSpecies::GenericSoftwood, 0.3600, 403.2),
+            (WoodSpecies::GenericHardwood, 0.6033, 675.7),
+            (WoodSpecies::LongleafPine, 0.59, 660.8),
+            (WoodSpecies::HardMaple, 0.63, 705.6),
+            (WoodSpecies::Walnut, 0.55, 616.0),
+            (WoodSpecies::Birch, 0.62, 694.4),
+            (WoodSpecies::WhiteOak, 0.68, 761.6),
+        ] {
+            let d = species.fpl_density().expect("an FPL species has a density");
+            assert!(
+                (d.specific_gravity() - sg).abs() < 1e-4,
+                "{species:?} SG {}",
+                d.specific_gravity()
+            );
+            assert!(
+                (d.rho_kg_m3() - rho).abs() < 0.1,
+                "{species:?} ρ {}",
+                d.rho_kg_m3()
+            );
         }
-        .kc_n_per_mm2()
-        .unwrap();
-        let hard = Material::SolidWood {
-            species: WoodSpecies::HardMaple,
+        // No Table 5-3a row: the Table 5-5a basic SG, by Eq. (4-11).
+        for (species, gb, rho) in [
+            (WoodSpecies::RadiataPine, 0.42, 504.1),
+            (WoodSpecies::Jarrah, 0.67, 839.9),
+            (WoodSpecies::Ipe, 0.92, 1207.0),
+        ] {
+            let d = species.fpl_density().expect("a 5-5a species has a density");
+            assert_eq!(d.basic_specific_gravity(), Some(gb), "{species:?}");
+            assert!(
+                (d.rho_kg_m3() - rho).abs() < 0.1,
+                "{species:?} ρ {}",
+                d.rho_kg_m3()
+            );
         }
-        .kc_n_per_mm2()
-        .unwrap();
-        let ipe = Material::SolidWood {
+        for species in [WoodSpecies::RadiataPine, WoodSpecies::Jarrah] {
+            assert!(
+                Material::SolidWood { species }.force_line().is_ok(),
+                "{species:?}"
+            );
+        }
+        match (Material::SolidWood {
             species: WoodSpecies::Ipe,
+        })
+        .force_line()
+        {
+            Err(ForceLineRefusal::DensityOutOfRange { rho_kg_m3 }) => {
+                assert!((rho_kg_m3 - 1207.0).abs() < 0.1, "ipe ρ {rho_kg_m3}");
+            }
+            other => panic!("Ipe must refuse DensityOutOfRange, got {other:?}"),
         }
-        .kc_n_per_mm2()
-        .unwrap();
-        assert!(soft < hard);
-        assert!(hard < ipe);
     }
 
     #[test]
-    fn test_sheet_good_kc_in_measured_literature_band() {
-        // Phase 2B replaced the shear-strength-derived Kc constants
-        // (mdf=10 / hdf=12 / particle=9 — pre-Phase-2B) with measured
-        // literature values from peripheral-milling studies
-        // (planning/data_ingest_2026-05-29/kc.md). The post-Phase-2B
-        // ordering (HDF 36.8 > Particleboard 35.0 > MDF 31.4) does NOT
-        // match the old density-derived intuition — Pałubicki 2021's
-        // particleboard measurements run a touch above the PMC6315737
-        // round-shape MDF measurement. The right invariants are:
-        //   - all three sheet-good Kc sit in the literature band
-        //     (~31–37 N/mm² for peripheral milling at low rake)
-        //   - HDF is densest, sits at the top
+    fn sheet_goods_only_mdf_has_a_force_line() {
         let mdf = Material::SheetGood {
             kind: SheetGoodKind::Mdf,
         }
-        .kc_n_per_mm2()
-        .unwrap();
-        let hdf = Material::SheetGood {
-            kind: SheetGoodKind::Hdf,
-        }
-        .kc_n_per_mm2()
-        .unwrap();
-        let particle = Material::SheetGood {
-            kind: SheetGoodKind::Particleboard,
-        }
-        .kc_n_per_mm2()
-        .unwrap();
-        for (label, kc) in [("Mdf", mdf), ("Hdf", hdf), ("Particleboard", particle)] {
-            assert!(
-                (30.0..=40.0).contains(&kc),
-                "{label} Kc {kc} N/mm² must sit in the measured literature band 30–40 N/mm²"
-            );
-        }
-        assert!(hdf >= mdf, "HDF (denser) must not be below MDF");
-        assert!(
-            hdf >= particle,
-            "HDF (densest engineered wood) must top sheet goods"
+        .force_line()
+        .expect("MDF has the Goli 2018 line");
+        assert!((mdf.ks_n_per_mm2() - 31.44).abs() < 1e-12);
+        assert!((mdf.f_edge_n_per_mm() - 3.36).abs() < 1e-12);
+        assert_eq!(mdf.chip_range_mm(), (0.041, 0.091));
+        assert!((mdf.grain_factor() - 1.0).abs() < 1e-12);
+        assert_eq!(
+            Material::SheetGood {
+                kind: SheetGoodKind::Hdf,
+            }
+            .force_line(),
+            Err(ForceLineRefusal::Hdf)
+        );
+        assert_eq!(
+            Material::SheetGood {
+                kind: SheetGoodKind::Particleboard,
+            }
+            .force_line(),
+            Err(ForceLineRefusal::Particleboard)
         );
     }
 
     #[test]
-    fn plastic_kc_only_some_when_validated() {
-        let hdpe = Material::Plastic {
-            family: PlasticFamily::Hdpe,
-        };
-        assert!(matches!(hdpe.kc_n_per_mm2(), Some(v) if (v - 40.0).abs() < 1e-6));
-        // Phase D 2026-05-31 — 6 new families joined the refusal set.
-        // All UHMW/PP/Nylon/ABS/PETG/PVC have NO fetched milling-regime
-        // Kc; refusal-first stays the rule. Updating this list when a
-        // primary Kc value lands is the per-family promotion checklist.
+    fn every_plastic_refuses_a_force_line() {
+        // HDPE included: the Yang 2022 figure is a yield stress (plan B6 §3).
         for family in [
+            PlasticFamily::Hdpe,
             PlasticFamily::Polycarbonate,
             PlasticFamily::Acrylic,
             PlasticFamily::Delrin,
@@ -2131,11 +1982,10 @@ mod tests {
             PlasticFamily::Petg,
             PlasticFamily::RigidPvc,
         ] {
-            let m = Material::Plastic { family };
             assert_eq!(
-                m.kc_n_per_mm2(),
-                None,
-                "{family:?} must refuse Kc until a fetched primary lands"
+                Material::Plastic { family }.force_line(),
+                Err(ForceLineRefusal::Plastic),
+                "{family:?} must refuse a force line"
             );
         }
     }
@@ -2201,75 +2051,83 @@ mod tests {
         let nan = Material::Custom {
             name: "NaN-factor".into(),
             feed_scale_factor: f64::NAN,
-            kc: 10.0,
         };
         assert!((nan.feed_scale_factor() - 1.0).abs() < 1e-9);
         let neg = Material::Custom {
             name: "negative-factor".into(),
             feed_scale_factor: -1.0,
-            kc: 10.0,
         };
         assert!((neg.feed_scale_factor() - 1.0).abs() < 1e-9);
         let zero = Material::Custom {
             name: "zero-factor".into(),
             feed_scale_factor: 0.0,
-            kc: 10.0,
         };
         assert!((zero.feed_scale_factor() - 1.0).abs() < 1e-9);
         // Valid value passes through unchanged.
         let good = Material::Custom {
             name: "valid".into(),
             feed_scale_factor: 1.4,
-            kc: 10.0,
         };
         assert!((good.feed_scale_factor() - 1.4).abs() < 1e-9);
     }
 
     #[test]
-    fn custom_with_invalid_kc_returns_none() {
-        let bad = Material::Custom {
-            name: "Bad".into(),
-            feed_scale_factor: 1.0,
-            kc: -1.0,
-        };
-        assert_eq!(bad.kc_n_per_mm2(), None);
-        let nan = Material::Custom {
-            name: "NaN".into(),
-            feed_scale_factor: 1.0,
-            kc: f64::NAN,
-        };
-        assert_eq!(nan.kc_n_per_mm2(), None);
-        let good = Material::Custom {
-            name: "OK".into(),
-            feed_scale_factor: 1.0,
-            kc: 15.0,
-        };
-        assert_eq!(good.kc_n_per_mm2(), Some(15.0));
+    fn custom_refuses_a_force_line() {
+        assert_eq!(
+            Material::test_fixture_custom("custom").force_line(),
+            Err(ForceLineRefusal::Custom)
+        );
     }
 
-    /// Sentry (KC_MILLING_CALIBRATION_2026-06-17): solid-wood Kc must sit
-    /// in the peripheral-MILLING regime (Sydor particleboard 32–38 N/mm²),
-    /// not the FPL shear-parallel base (~13). Guards against
-    /// `MILLING_KC_FACTOR` silently reverting and the deflection gate
-    /// quietly going 2.7× too soft again.
+    /// A library row reads its `specific_gravity_12`; a Wood Database row
+    /// and an FPL row with no SG refuse.
     #[test]
-    fn solid_wood_kc_is_milling_calibrated_not_shear() {
-        let hardwood = Material::SolidWood {
-            species: WoodSpecies::GenericHardwood,
+    fn a_library_row_reads_its_fpl_sg() {
+        let by_janka = |label: &str, source_id: &str| Material::SolidWoodByJanka {
+            janka_lbf: 1000.0,
+            label: label.to_owned(),
+            source_id: source_id.to_owned(),
         };
-        let kc = hardwood
-            .kc_n_per_mm2()
-            .expect("GenericHardwood has a validated Kc");
+        // FPL: "Cherry, black 12% 0.50 85,000 ...".
+        let cherry = by_janka("Cherry, black", "fpl_ch5_2010")
+            .force_line()
+            .expect("an FPL row with an SG has a force line");
         assert!(
-            (30.0..=45.0).contains(&kc),
-            "GenericHardwood milling Kc should land in the measured band (~35 N/mm²), \
-             got {kc} — has the milling calibration reverted to shear?"
+            cherry
+                .density_kg_m3()
+                .is_some_and(|rho| (rho - 560.0).abs() < 1e-9)
         );
-        // Derives from the raw FPL shear value (13.0) × MILLING_KC_FACTOR.
+        // FPL prints "—" for honeylocust's SG.
+        assert_eq!(
+            by_janka("Honeylocust", "fpl_ch5_2010").force_line(),
+            Err(ForceLineRefusal::NoDensity)
+        );
+        // A row of another source never reads an FPL SG.
+        assert_eq!(
+            by_janka("Cherry, black", "wood_database_2026-05-30").force_line(),
+            Err(ForceLineRefusal::NoDensity)
+        );
+    }
+
+    /// Plan B6 §2.4: the generic hardwood line.
+    #[test]
+    fn generic_hardwood_line_is_the_density_law() {
+        let line = Material::SolidWood {
+            species: WoodSpecies::GenericHardwood,
+        }
+        .force_line()
+        .expect("GenericHardwood has a force line");
         assert!(
-            (kc - Material::MILLING_KC_FACTOR * 13.0).abs() < 1e-9,
-            "expected MILLING_KC_FACTOR × 13.0, got {kc}"
+            (line.ks_n_per_mm2() - 51.92).abs() < 0.01,
+            "Ks {}",
+            line.ks_n_per_mm2()
         );
+        assert!(
+            (line.f_edge_n_per_mm() - 4.077).abs() < 0.001,
+            "F_edge {}",
+            line.f_edge_n_per_mm()
+        );
+        assert_eq!(line.form_id(), force_line::CURTI_2021_FORM_ID);
     }
 
     #[test]
@@ -2304,7 +2162,7 @@ mod tests {
             .is_some()
         );
         // Out-of-band parametric Janka returns None (matches the
-        // calibrated-band policy in feed_scale_factor / kc_n_per_mm2).
+        // calibrated-band policy in feed_scale_factor).
         assert_eq!(
             Material::SolidWoodByJanka {
                 janka_lbf: 100.0,
@@ -2424,14 +2282,9 @@ mod tests {
     }
 
     #[test]
-    fn aluminum_kc_computes_from_kienzle_pair() {
-        // Phase 4 enabled the Kienzle pair (kc1.1=800, mc=0.25) for
-        // all aluminum alloys, evaluated at h=0.1 mm:
-        //   Kc = 800 · 0.1^(-0.25) ≈ 1422.8 N/mm²
-        // Per D3 of the completion plan, Kc remains the single shared
-        // Kienzle pair across all alloys (vendor sources don't
-        // differentiate Kc by alloy at our fidelity).
-        let expected = 800.0 * 0.1_f64.powf(-0.25);
+    fn aluminum_refuses_a_force_line() {
+        // The only pair is a Kienzle power law with no chip range (plan
+        // B6 §3), so every alloy refuses.
         for alloy in [
             AluminumAlloy::Alloy6061T6,
             AluminumAlloy::Alloy7075T6,
@@ -2441,13 +2294,10 @@ mod tests {
             AluminumAlloy::Alloy1100O,
             AluminumAlloy::Alloy7050T7651,
         ] {
-            let m = Material::Aluminum { alloy };
-            let kc = m
-                .kc_n_per_mm2()
-                .expect("aluminum Kc must be Some after Phase 4 promoted the Kienzle pair");
-            assert!(
-                (kc - expected).abs() < 1.0,
-                "{alloy:?} Kc {kc} must match VDI 3323 group-22 kc1.1·h^-mc ({expected})"
+            assert_eq!(
+                Material::Aluminum { alloy }.force_line(),
+                Err(ForceLineRefusal::Aluminum),
+                "{alloy:?}"
             );
         }
     }

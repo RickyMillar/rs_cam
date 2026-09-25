@@ -25,7 +25,8 @@
 //! ## The measured fixture
 //!
 //! 6 mm 2-flute flat, DOC 4.20, WOC 2.10, generic softwood. Measured in
-//! `planning/load_model_2026-09-16/ADVICE.md` §1:
+//! `planning/load_model_2026-09-16/ADVICE.md` §1 on the pre-B6 line (the
+//! woodresearch.sk anchor scaled by `Kc`):
 //!
 //! | fz (mm/tooth) | u (J/mm³) | ploughing share |
 //! |---|---:|---:|
@@ -33,10 +34,22 @@
 //! | 0.0675 (vendor mid) |  96 | 74 % |
 //! | 0.0850 (vendor max) |  81 | 69 % |
 //!
+//! ## Ruling B6 (2026-09-25): the Curti 2021 line
+//!
+//! The softwood line is now the Curti 2021 density law at the FPL mean
+//! density of the three rows the generic softwood names: Ks 30.98 N/mm²,
+//! F_edge 2.433 N/mm (was 24.98 / 2.65). The same closed form gives:
+//!
+//! | fz (mm/tooth) | u (J/mm³) | ploughing share |
+//! |---|---:|---:|
+//! | 0.0380 (running)    | 146.8 | 78.9 % |
+//! | 0.0675 (vendor mid) |  96.2 | 67.8 % |
+//! | 0.0850 (vendor max) |  82.7 | 62.6 % |
+//!
 //! Those three rows are pinned here against values this file derives
-//! itself, from locally re-declared literature constants. A
-//! literature-matrix cell must pin the published number independently of
-//! whatever the crate currently believes it is.
+//! itself, from locally re-declared printed constants. A literature-matrix
+//! cell must pin the published number independently of whatever the crate
+//! currently believes it is.
 
 #![allow(
     clippy::unwrap_used,
@@ -75,15 +88,29 @@ const BAND_MAX_MM: f64 = 0.0850;
 
 // --- The literature constants, re-declared locally -------------------
 
-/// Affine slope `Ks` (N/mm²) for generic softwood: the woodresearch.sk
-/// 201905/12 anchor `49.95` scaled by this material's `Kc / 35.1`, i.e.
-/// `(2.7 × 6.5) / (2.7 × 13.0) = 0.5`. Declared here so the expected `u`
-/// below is derived from the published fit, not from the crate.
-const SOFTWOOD_KS_N_PER_MM2: f64 = 49.95 * 0.5;
+/// The generic-softwood density (kg/m³): the mean FPL Table 5-3a SG of
+/// ponderosa pine 0.40, white spruce 0.36 and western redcedar 0.32, at
+/// 12 % MC (`SG × 1000 × 1.12`). 0.3600 × 1120 = 403.2.
+const SOFTWOOD_RHO_KG_M3: f64 = (0.40 + 0.36 + 0.32) / 3.0 * 1000.0 * 1.12;
+
+/// Curti 2021 Table 5, down-milling, helix 0: `Ks_n = −3·10⁻⁶ GA² +
+/// 5·10⁻⁴ GA + 56·10⁻³`. Its vertex `c − b²/4a` is the envelope,
+/// 0.0768333 N/mm² per kg/m³.
+const CURTI_KS_N_ENVELOPE: f64 = 56e-3 - (5e-4 * 5e-4) / (4.0 * -3e-6);
+
+/// Curti 2021 Table 5, down-milling, helix 0: `Int_n = −3·10⁻⁷ GA² +
+/// 4·10⁻⁵ GA + 47·10⁻⁴`. Its vertex is the envelope, 0.0060333 N/mm per
+/// kg/m³.
+const CURTI_INT_N_ENVELOPE: f64 = 47e-4 - (4e-5 * 4e-5) / (4.0 * -3e-7);
+
+/// Affine slope `Ks` (N/mm²) for generic softwood (ruling B6): the Curti
+/// 2021 envelope times the density, 30.98. Declared here so the expected
+/// `u` below is derived from the printed coefficients, not from the crate.
+const SOFTWOOD_KS_N_PER_MM2: f64 = CURTI_KS_N_ENVELOPE * SOFTWOOD_RHO_KG_M3;
 
 /// Affine edge intercept `F_edge` (N per mm of axial engagement) for the
-/// same material — the `+5.30` term of the same fit, same scale.
-const SOFTWOOD_F_EDGE_N_PER_MM: f64 = 5.30 * 0.5;
+/// same material, 2.433.
+const SOFTWOOD_F_EDGE_N_PER_MM: f64 = CURTI_INT_N_ENVELOPE * SOFTWOOD_RHO_KG_M3;
 
 /// Relative tolerance for "the same number". The invariance arms vary
 /// the spindle speed and the axial DOC, which reach the closed form
@@ -210,7 +237,7 @@ fn u_at(rpm: f64, advance_per_tooth_mm: f64, axial_doc_mm: f64, radial_woc_mm: f
         &MachineProfile::default(),
         &result,
     )
-    .expect("softwood carries a primary-source Kc, so the model answers")
+    .expect("softwood carries a force line, so the model answers")
     .specific_energy_j_per_mm3
 }
 
@@ -232,11 +259,12 @@ fn specific_energy_matches_the_closed_form_at_three_chiploads() {
 
 #[test]
 fn specific_energy_reproduces_the_advice_table() {
-    // ADVICE.md §1's measured column, to the precision it publishes.
+    // The B6 table of the module header (ADVICE.md §1's rows on the Curti
+    // 2021 line), to the precision it prints.
     for (fz, published_u, published_ploughing) in [
-        (FZ_RUNNING, 151.0, 0.83),
-        (FZ_VENDOR_MID, 96.0, 0.74),
-        (FZ_VENDOR_MAX, 81.0, 0.69),
+        (FZ_RUNNING, 146.8, 0.789),
+        (FZ_VENDOR_MID, 96.2, 0.678),
+        (FZ_VENDOR_MAX, 82.7, 0.626),
     ] {
         let eff = cut_efficiency(
             &pocket_op(),
@@ -245,15 +273,15 @@ fn specific_energy_reproduces_the_advice_table() {
             &MachineProfile::default(),
             &operating_point(17_000.0, fz, AXIAL_DOC_MM, RADIAL_WOC_MM, vendor_band()),
         )
-        .expect("softwood carries a primary-source Kc");
+        .expect("softwood carries a force line");
         let u = eff.specific_energy_j_per_mm3;
         assert!(
             (u - published_u).abs() < 0.5,
-            "fz {fz}: ADVICE.md publishes u = {published_u} J/mm^3, got {u:.2}"
+            "fz {fz}: the B6 table gives u = {published_u} J/mm^3, got {u:.2}"
         );
         assert!(
             (eff.ploughing_share - published_ploughing).abs() < 0.005,
-            "fz {fz}: ADVICE.md publishes a {published_ploughing} ploughing share, got {:.4}",
+            "fz {fz}: the B6 table gives a {published_ploughing} ploughing share, got {:.4}",
             eff.ploughing_share
         );
         // The share is the closed form's own decomposition, not a second
@@ -299,7 +327,7 @@ fn specific_energy_moves_with_chipload_and_with_radial_width() {
     assert!(
         thin / heavy > 1.5,
         "the fixture spends {:.2}x more energy per mm^3 at fz {FZ_RUNNING} than at fz \
-         {FZ_VENDOR_MAX}; ADVICE.md measures 1.86x",
+         {FZ_VENDOR_MAX}; the B6 line gives 1.77x (ADVICE.md measured 1.86x on the old line)",
         thin / heavy
     );
 
@@ -313,7 +341,9 @@ fn specific_energy_moves_with_chipload_and_with_radial_width() {
 
 /// The two ratios are the operator-facing form of the same closed form,
 /// both measured against the band midpoint. ADVICE.md's running point
-/// reads "1.6x tool wear, 1.8x the time" against this band.
+/// read "1.6x tool wear, 1.8x the time" against this band on the old
+/// line. On the B6 line the wear ratio is 146.8 / 96.2 = 1.53x; the time
+/// ratio does not read the line and stays 1.78x.
 #[test]
 fn the_ratios_compare_the_operating_point_with_the_band_midpoint() {
     let eff = cut_efficiency(
@@ -329,7 +359,7 @@ fn the_ratios_compare_the_operating_point_with_the_band_midpoint() {
             vendor_band(),
         ),
     )
-    .expect("softwood carries a primary-source Kc");
+    .expect("softwood carries a force line");
 
     let band_mid = (BAND_MIN_MM + BAND_MAX_MM) / 2.0;
     let wear = eff
@@ -346,8 +376,8 @@ fn the_ratios_compare_the_operating_point_with_the_band_midpoint() {
     );
     assert_same("time ratio", time, band_mid / FZ_RUNNING);
     assert!(
-        (wear - 1.6).abs() < 0.05 && (time - 1.8).abs() < 0.05,
-        "the Phase A row reads 1.6x wear and 1.8x time; got {wear:.2}x and {time:.2}x"
+        (wear - 1.53).abs() < 0.05 && (time - 1.8).abs() < 0.05,
+        "the B6 row reads 1.53x wear and 1.8x time; got {wear:.2}x and {time:.2}x"
     );
     assert_eq!(eff.verdict, ChipVerdict::Thin);
     assert_same("advance per tooth", eff.advance_per_tooth_mm, FZ_RUNNING);
@@ -368,7 +398,7 @@ fn the_verdict_places_the_chipload_against_the_band() {
             &MachineProfile::default(),
             &operating_point(17_000.0, fz, AXIAL_DOC_MM, RADIAL_WOC_MM, vendor_band()),
         )
-        .expect("softwood carries a primary-source Kc");
+        .expect("softwood carries a force line");
         assert_eq!(eff.verdict, want, "fz {fz}");
     }
 }

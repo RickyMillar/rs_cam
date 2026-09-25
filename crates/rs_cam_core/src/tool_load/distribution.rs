@@ -534,17 +534,14 @@ pub fn gate_population(
             chipload_population(trace, ctx, lookup)
         }
         DistributionMetric::Criterion(CriterionKind::Power) => {
-            // The power gate refuses a `Custom` material and a material
-            // with no primary-source Kc; so does this population.
-            if matches!(ctx.material, crate::material::Material::Custom { .. }) {
-                return Vec::new();
-            }
-            let Some(kc) = ctx.material.kc_n_per_mm2() else {
+            // The power gate refuses a material with no force line
+            // (`Custom` included); so does this population.
+            let Ok(line) = ctx.material.force_line() else {
                 return Vec::new();
             };
             collect(trace, ctx, lookup, |s| {
                 let feed = super::effective_feed_for_sample(s, &trace.predicted_feeds);
-                super::power::sample_power_kw(ctx.tool, kc, s, feed)
+                super::power::sample_power_kw(ctx.tool, &line, s, feed)
             })
         }
         DistributionMetric::Criterion(CriterionKind::Deflection) => {

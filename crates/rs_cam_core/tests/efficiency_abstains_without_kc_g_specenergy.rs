@@ -1,10 +1,12 @@
 //! G-SPECENERGY — `feeds::efficiency` abstains rather than fabricates.
 //!
 //! The specific-energy model is built entirely on `Ks` and `F_edge`, and
-//! those two coefficients exist only for a material with a primary-source
-//! `Kc`. Where the `Kc` is absent there is no force model, so there is no
-//! answer — `cut_efficiency` returns `None`, the same refusal the engine
-//! already makes through `UnmodeledReason::MaterialUnvalidated`.
+//! those two coefficients exist only for a material with a printed force
+//! line (`Material::force_line`, ruling B6). Where the line is absent
+//! there is no force model, so there is no answer — `cut_efficiency`
+//! returns `None`, the same refusal the engine already makes through
+//! `UnmodeledReason::MaterialUnvalidated`. The file name keeps the old
+//! `kc` word; the claim is unchanged.
 //!
 //! ## Why this file exists
 //!
@@ -36,7 +38,8 @@ use rs_cam_core::feeds::{
     ChiploadBounds, ChiploadSource, FeedsDerates, FeedsResult, RampBasis, RampFallback,
 };
 use rs_cam_core::machine::MachineProfile;
-use rs_cam_core::material::{Material, PlasticFamily};
+use rs_cam_core::material::force_line::ForceLineRefusal;
+use rs_cam_core::material::{Material, PlasticFamily, SheetGoodKind};
 
 const DIAMETER_MM: f64 = 6.0;
 const FLUTES: u32 = 2;
@@ -45,21 +48,30 @@ const RADIAL_WOC_MM: f64 = 2.10;
 const RPM: f64 = 17_000.0;
 const FZ: f64 = 0.0380;
 
-/// Acrylic has no fetched primary milling-regime force study, so
-/// `Material::kc_n_per_mm2` returns `None`. See `material.rs` — the
-/// historical generic 4.0 was a fabricated baseline and was removed.
+/// Particleboard has no force line (ruling B6): the router-rig line is a
+/// figure read, and Pałubicki 2021 prints a total kc, a different
+/// quantity. `Material::force_line` refuses it.
 fn material_without_kc() -> Material {
+    Material::SheetGood {
+        kind: SheetGoodKind::Particleboard,
+    }
+}
+
+/// Acrylic has no force line either: no source prints a cutting-force line
+/// for a plastic. A second refusal from another family.
+fn plastic_without_kc() -> Material {
     Material::Plastic {
         family: PlasticFamily::Acrylic,
     }
 }
 
-/// HDPE carries a measured yield-stress midpoint (Yang 2022), so it has a
-/// `Kc`. Same enum variant as the refusing material — only the primary
-/// source differs, which is exactly the distinction under test.
+/// MDF carries the Goli 2018 printed line. Same enum variant as the
+/// refusing material — only the primary source differs, which is exactly
+/// the distinction under test. (Until ruling B6 this pair was acrylic and
+/// HDPE; HDPE lost its line because Yang 2022 prints a yield stress.)
 fn material_with_kc() -> Material {
-    Material::Plastic {
-        family: PlasticFamily::Hdpe,
+    Material::SheetGood {
+        kind: SheetGoodKind::Mdf,
     }
 }
 
@@ -140,20 +152,33 @@ fn vendor_band() -> Option<ChiploadBounds> {
 
 #[test]
 fn a_material_without_a_primary_source_kc_gets_no_efficiency_answer() {
-    let answer = cut_efficiency(
-        &pocket_op(),
-        &endmill(30.0),
-        &material_without_kc(),
-        &MachineProfile::default(),
-        &operating_point(AXIAL_DOC_MM, vendor_band()),
-    );
-    assert!(
-        answer.is_none(),
-        "acrylic has no Kc, so it has no Ks and no F_edge; a number here would be fabricated"
-    );
+    for (material, refusal) in [
+        (material_without_kc(), ForceLineRefusal::Particleboard),
+        (plastic_without_kc(), ForceLineRefusal::Plastic),
+    ] {
+        assert_eq!(
+            material.force_line(),
+            Err(refusal),
+            "fixture premise: {} must carry no force line",
+            material.label()
+        );
+        let answer = cut_efficiency(
+            &pocket_op(),
+            &endmill(30.0),
+            &material,
+            &MachineProfile::default(),
+            &operating_point(AXIAL_DOC_MM, vendor_band()),
+        );
+        assert!(
+            answer.is_none(),
+            "{} has no force line, so it has no Ks and no F_edge; a number here would be \
+             fabricated",
+            material.label()
+        );
+    }
 }
 
-/// Non-vacuity. The same call on a material that *does* carry a `Kc`
+/// Non-vacuity. The same call on a material that *does* carry a line
 /// answers, and answers with a usable number — so the arm above is not
 /// passing because `cut_efficiency` refuses everything.
 #[test]
@@ -165,7 +190,7 @@ fn a_material_with_a_primary_source_kc_gets_an_answer() {
         &MachineProfile::default(),
         &operating_point(AXIAL_DOC_MM, vendor_band()),
     )
-    .expect("HDPE carries a measured Kc, so the affine model applies");
+    .expect("MDF carries the Goli 2018 line, so the affine model applies");
     assert!(
         eff.specific_energy_j_per_mm3.is_finite() && eff.specific_energy_j_per_mm3 > 0.0,
         "u must be a real positive energy density, got {}",
@@ -190,7 +215,7 @@ fn without_a_band_the_ratios_abstain_and_the_verdict_says_so() {
         &MachineProfile::default(),
         &operating_point(AXIAL_DOC_MM, None),
     )
-    .expect("the material still carries a Kc; only the band is missing");
+    .expect("the material still carries a force line; only the band is missing");
     assert_eq!(eff.verdict, ChipVerdict::NoBand);
     assert!(eff.band.is_none());
     assert!(
@@ -216,7 +241,7 @@ fn with_a_band_both_ratios_are_answerable() {
         &MachineProfile::default(),
         &operating_point(AXIAL_DOC_MM, vendor_band()),
     )
-    .expect("HDPE carries a measured Kc");
+    .expect("MDF carries the Goli 2018 line");
     assert!(eff.band.is_some());
     assert!(eff.wear_ratio_vs_band_mid.is_some());
     assert!(eff.time_ratio_vs_band_mid.is_some());
@@ -266,7 +291,7 @@ fn the_deflection_ceiling_is_a_number_when_the_model_applies() {
         &MachineProfile::default(),
         &operating_point(AXIAL_DOC_MM, vendor_band()),
     )
-    .expect("HDPE carries a measured Kc");
+    .expect("MDF carries the Goli 2018 line");
     let ceiling = eff
         .deflection_ceiling_mm
         .expect("a 6 mm carbide endmill at 30 mm stickout has a solvable deflection budget");

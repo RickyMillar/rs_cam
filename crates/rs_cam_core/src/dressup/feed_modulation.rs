@@ -233,12 +233,12 @@ pub struct PerMoveEngagement {
 /// `F = ap·(Ks·fz·sin θ_peak + F_edge)` and tip deflection is linear in
 /// force `δ = compliance · F`, so the solver inverts `δ ≤ bound` for the
 /// feed cap in closed form. `Ks`/`F_edge` come from
-/// [`crate::feeds::force::affine_coefficients`]; `compliance` is evaluated
+/// [`crate::material::Material::force_line`]; `compliance` is evaluated
 /// once at the toolpath's peak axial DOC from the integrated two-section
 /// cantilever ([`crate::tool::ToolDefinition::tip_deflection_mm`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DeflectionLimitInputs {
-    /// Affine force slope `Ks` (N/mm²) — feeds::force literature-absolute.
+    /// Affine force slope `Ks` (N/mm²) — the material's force line.
     pub ks_n_per_mm2: f64,
     /// Affine edge intercept `F_edge` (N per mm of axial engagement) — the
     /// feed-independent force floor.
@@ -256,15 +256,13 @@ pub struct DeflectionLimitInputs {
 /// disables the power constraint.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PowerLimitInputs {
-    /// Raw material `Kc` in `N/mm²` — the value
-    /// [`crate::material::Material::kc_n_per_mm2`] returns directly.
-    /// The constrained-max solver applies
-    /// [`crate::tool_load::power::GRAIN_ANISOTROPY_FACTOR`] internally
-    /// so callers don't pre-multiply — see S2-9 in
-    /// `planning/tool_kinematics_chipload_audit_2026-05-31.md` for
-    /// the rationale (pre-S2-9 callers passed `2.0 × kc` and any
-    /// future change to the anisotropy factor required N diffs).
-    pub kc_n_per_mm2: f64,
+    /// The material's force line — the value
+    /// [`crate::material::Material::force_line`] returns. The
+    /// constrained-max solver applies the line's grain factor internally
+    /// (through `tool_load::power::PowerTerms`), so callers don't
+    /// pre-multiply (S2-9 in
+    /// `planning/tool_kinematics_chipload_audit_2026-05-31.md`).
+    pub line: crate::material::force_line::ForceLine,
     /// Effective diameter at the engagement depth (mm).
     pub engagement_diameter_mm: f64,
     /// Available spindle power × safety factor at the running RPM
@@ -568,15 +566,14 @@ fn max_safe_feed_for_move(
         if axial_mm > 0.0 && woc_eff > 0.0 {
             let radial_width = woc_eff * pow.engagement_diameter_mm.max(0.0);
             if radial_width > 0.0 {
-                // Callers pass raw Kc; `PowerTerms::of` applies the
-                // canonical anisotropy factor (S2-9) so any future
-                // change to GRAIN_ANISOTROPY_FACTOR is one diff, not N.
+                // Callers pass the force line; `PowerTerms::of` applies
+                // its grain factor (S2-9), so the factor is one diff.
                 //
                 // ψ from the same `cos ψ = 1 − 2·woc_fraction` the
                 // deflection cap uses — the modulator has one
                 // engagement definition, not two.
                 let terms = crate::tool_load::power::PowerTerms::of(PowerModelInputs {
-                    kc_n_per_mm2: pow.kc_n_per_mm2,
+                    line: pow.line,
                     cross_section_mm2: axial_mm * radial_width,
                     axial_doc_mm: axial_mm,
                     immersion_rad: crate::feeds::force::immersion_angle(
@@ -1584,7 +1581,7 @@ mod tests {
         let mut ctx = make_ctx(&k, ChiploadBand::point(0.05).unwrap());
         ctx.strategy = ModulationStrategy::ConstrainedMax;
         ctx.power_inputs = Some(PowerLimitInputs {
-            kc_n_per_mm2: 20.0,
+            line: crate::material::force_line::ForceLine::goli_2018_mdf(),
             engagement_diameter_mm: 6.0,
             available_kw: 0.001,
         });

@@ -220,9 +220,9 @@ fn no_band() -> Fixture {
     }
 }
 
-/// Acrylic. `material::kc_n_per_mm2` refuses — no primary-source Kc has been
-/// fetched for PMMA — so `force::affine_coefficients` refuses and
-/// `cut_efficiency` returns `None` outright.
+/// Acrylic. `Material::force_line` refuses — no source prints a
+/// cutting-force line for a plastic (ruling B6) — so `cut_efficiency`
+/// returns `None` outright.
 fn no_kc() -> Fixture {
     Fixture {
         tool_type: ToolType::EndMill,
@@ -770,7 +770,7 @@ fn the_power_row_states_a_real_reading_g_chipverdict() {
 }
 
 /// A refusal is stated, never drawn as a zero or an empty bar. Acrylic has no
-/// primary-source Kc, so `power_at_operating_point` returns
+/// force line (ruling B6), so `power_at_operating_point` returns
 /// `PowerUnmodeled::MaterialUnvalidated`.
 #[test]
 fn the_power_row_states_its_refusal_g_chipverdict() {
@@ -792,8 +792,20 @@ fn the_power_row_states_its_refusal_g_chipverdict() {
         "the no-Kc fixture painted a percent of a limit it cannot read: \
          {face:?}. A refusal is never a zero and never an empty bar."
     );
+    // Ruling B6: the refusal clause and the force-line headline name the
+    // ruling ("B6"), which is not a figure. Strip those two stated texts
+    // before the digit check, so a fabricated number still fails it.
+    let refusal_headline = no_kc()
+        .material
+        .force_line()
+        .err()
+        .map(|refusal| refusal.headline())
+        .unwrap_or_default();
+    let figures = face
+        .replace(reason.clause(), "")
+        .replace(&refusal_headline, "");
     assert!(
-        !face.chars().any(|c| c.is_ascii_digit()),
+        !figures.chars().any(|c| c.is_ascii_digit()),
         "the no-Kc power face carries a number: {face:?}."
     );
 
@@ -918,24 +930,22 @@ fn shipped_recipe(
 /// **The reason the ban expired, under test.**
 ///
 /// The ban's evidence was a spread that could not separate a good cut from a
-/// bad one: peak 23.6 % across the whole shipped matrix. The reinstatement
-/// condition the review stated is the opposite reading — *"a quarter of
-/// recipes pass half scale"* — so this arm holds the bar to it: at least one
-/// shipped recipe reads over half its ceiling, and the median sits below the
-/// peak, so the readout is not pinned to one value either.
+/// bad one: peak 23.6 % across the whole shipped matrix. This arm holds the
+/// bar to a spread: the median sits below the peak and the minimum below the
+/// median, so the readout is not pinned to one value, and the card paints
+/// the value the door reads.
+///
+/// **Operator ruling 2026-09-25 (B6): no half-scale threshold.** The arm
+/// also required one shipped recipe over 50 % of its ceiling. That figure
+/// came from the retired force anchor with its 2.0 grain factor. On the B6
+/// force line the population reads min 0.2 %, median 3.2 %, p90 14.6 %,
+/// peak 31.5 % (measured). The operator ruled that a peak under half scale
+/// is correct: a wood router is seldom power-bound.
 ///
 /// The population is the review's, widened to every shipped species: three
 /// machine presets × ten species × Ø3/Ø6/Ø12 × three milling families.
 #[test]
 fn the_power_bar_is_informative_g_chipverdict() {
-    /// The review's own stated reinstatement condition (`SURVEY_UI.md`, "The
-    /// ban on a predicted power bar rests on stale evidence"): a quarter of
-    /// recipes pass half scale. This arm holds the bar to the weaker half of
-    /// that reading — that half scale is reachable at all — because the
-    /// fraction above it is a property of the population, and the population
-    /// here is widened past the review's.
-    const HALF_SCALE_PERCENT: f64 = 50.0;
-
     let mut recipes = Vec::new();
     for (_preset, machine) in MachineProfile::presets() {
         for species in WoodSpecies::ALL {
@@ -957,27 +967,14 @@ fn the_power_bar_is_informative_g_chipverdict() {
     recipes.sort_by(|a, b| a.utilisation_pct.partial_cmp(&b.utilisation_pct).unwrap());
     let at = |q: f64| recipes[((recipes.len() - 1) as f64 * q).round() as usize].utilisation_pct;
     let (min, median, p90, max) = (at(0.0), at(0.5), at(0.9), at(1.0));
-    let over_half = recipes
-        .iter()
-        .filter(|r| r.utilisation_pct > HALF_SCALE_PERCENT)
-        .count();
     let peak = recipes.last().unwrap();
     eprintln!(
         "G-CHIPVERDICT power spread | {} recipes: min {min:.1} %, median \
-         {median:.1} %, p90 {p90:.1} %, peak {max:.1} %; {over_half} over \
-         {HALF_SCALE_PERCENT:.0} %. Peak recipe: {}",
+         {median:.1} %, p90 {p90:.1} %, peak {max:.1} %. Peak recipe: {}",
         recipes.len(),
         peak.name,
     );
 
-    assert!(
-        max > HALF_SCALE_PERCENT,
-        "the heaviest shipped recipe reads {max:.1} % of its ceiling. The ban \
-         this arm replaces was right when no recipe passed half scale: a bar \
-         that never leaves its left half cannot separate a good cut from a \
-         bad one. Put the measurement to the operator before changing this \
-         threshold."
-    );
     assert!(
         median < max,
         "every shipped recipe reads {median:.1} % of its ceiling. A readout \
@@ -990,10 +987,11 @@ fn the_power_bar_is_informative_g_chipverdict() {
          move across the range, not step between two values."
     );
 
-    // The three assertions above measure the door. This one measures the
+    // The two assertions above measure the door. This one measures the
     // BAR: the heaviest shipped recipe, rendered on the card it ships on,
-    // must paint past half scale. Without it the arm would stay green with
-    // no bar on the card at all, which is the state the ban left behind.
+    // must paint the percent the door reads. Without it the arm would stay
+    // green with no bar on the card at all, which is the state the ban left
+    // behind.
     let texts = painted_text_of(state_for_recipe(
         Some(peak.machine.clone()),
         peak.tool.clone(),
@@ -1003,7 +1001,7 @@ fn the_power_bar_is_informative_g_chipverdict() {
     let face = power_row(&texts).join(" ");
     let painted = painted_percent(&face);
     assert!(
-        painted > HALF_SCALE_PERCENT,
+        painted > 0.0 && (painted - max).abs() <= 1.0,
         "the heaviest shipped recipe ({}) reads {max:.1} % of its ceiling \
          through feeds::power_at_operating_point, but the card paints \
          {painted} %: {face:?}. The row must show what the door reads.",
@@ -1013,7 +1011,7 @@ fn the_power_bar_is_informative_g_chipverdict() {
 
 // ── arm 4 — a refusal is stated, never drawn as a number ───────────────────
 
-/// Acrylic has no primary-source Kc, so `cut_efficiency` refuses outright.
+/// Acrylic has no measured force line (ruling B6), so `cut_efficiency` refuses outright.
 /// The row must say so. Its partner below proves the suite is not passing by
 /// abstaining everywhere.
 #[test]
@@ -1049,7 +1047,7 @@ fn no_fabricated_number_survives_a_refusal_g_chipverdict() {
 
     let hover = verdict_hover(&texts);
     assert!(
-        hover.contains("primary-source Kc") && hover.contains("MaterialUnvalidated"),
+        hover.contains("no measured force line") && hover.contains("MaterialUnvalidated"),
         "the no-Kc hover does not name the missing input or the engine's own \
          refusal: {hover:?}. A blank row reads as a clean bill of health."
     );

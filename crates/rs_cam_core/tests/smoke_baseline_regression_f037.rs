@@ -30,6 +30,10 @@ fn baseline_path() -> PathBuf {
     //   AS013/AS015 — all stay Within. Derivation:
     //   planning/data_ingest_2026-05-30/wood_kc_derivation.md.
     //
+    // Ruling B6 (2026-09-25) removed `kc_n_per_mm2`: every material now has
+    // one force line (`Material::force_line`). This test reads the checked-in
+    // CSV only and runs no model, so the baseline file does not move here.
+    //
     // FIN-06: read from `tests/fixtures/`, not from `planning/`. The file is
     // a byte-identical copy of
     // `planning/toolpath_acceptance/baselines/2026-06-04.csv` (sha256 prefix
