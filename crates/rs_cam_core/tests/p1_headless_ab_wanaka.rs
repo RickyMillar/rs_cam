@@ -61,6 +61,19 @@ fn p1_headless_ab_full_chain_intent_decomposition() {
     let mut s = ProjectSession::load(&path).expect("load wanaka.toml");
     let cancel = AtomicBool::new(false);
 
+    // Every simulation below runs at `SimulationOptions::default()`'s cell,
+    // and the P0 baseline was measured there. The project stores 0.1 mm, and
+    // since G-RESTRES a rest op refuses a snapshot at another cell, so the
+    // ladder unlocked nothing. Store the harness's cell as the project's.
+    let cell_mm = SimulationOptions::default().resolution;
+    let _ = s
+        .apply(rs_cam_core::session::Command::SetSimulationResolution(
+            rs_cam_core::session::SetSimulationResolutionArgs {
+                resolution: rs_cam_core::session::SimulationResolution::Fixed(cell_mm),
+            },
+        ))
+        .expect("a positive cell");
+
     let n = s.toolpath_count();
     let enabled: Vec<usize> = (0..n)
         .filter(|&i| s.get_toolpath_config(i).is_some_and(|tc| tc.enabled))
