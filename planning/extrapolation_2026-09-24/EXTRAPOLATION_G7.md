@@ -1,6 +1,6 @@
 # G7: Material physics (no Kc for MDF, plywood, plastics)
 
-Status: Phase 2 (trend) done 2026-09-24; Phase 3 (fit, witness) not started; nothing lands before the Phase 4 rulings.
+Status: Phase 2 (trend) done 2026-09-24; ruled B6 2026-09-24; **landed 2026-09-25 (§5)**.
 
 Inputs: the LUT at 67e98529 (`crates/rs_cam_core/data/vendor_lut/observations/*.json`),
 `fetch/G7/` (Phase 1 fetch, verifier verdicts, `verified_rows.json`),
@@ -492,3 +492,125 @@ forms. It is an MDF fit with an unknown chip width, attached to hardwood
 The biggest open gap is not a Kc. It is the 252 finish cells with no power
 (§0.1) and the chip thickness below 0.04 mm where most of those finish
 cuts run. No source here measures either.
+
+## 5. The landing (B6, 2026-09-25)
+
+Plan: `B6_PLAN.md`. Branch `b6-force-line` (work tree `../rs_cam_b6`, from
+9d547298). A separate tree keeps this FM1 diff free of the uncommitted work
+of the other sessions.
+
+### 5.1 What changed
+
+- `Material::force_line() -> Result<ForceLine, ForceLineRefusal>`
+  (`material/force_line.rs`) replaces the scalar `Kc`. Every consumer reads
+  the one line: `feeds::force` (deflection), `feeds::efficiency`,
+  `feeds::predict`, `tool_load::power`, `tool_load::deflection`, the
+  distribution, the Suggest power ladder (step 6, step 7) and the modulator.
+- Removed (breaking, no shim): `kc_n_per_mm2`, `affine_coefficients`,
+  `affine_coefficients_for_kc`, the `LIT_*` anchor (49.95 / 5.30 / 35.1),
+  `MILLING_KC_FACTOR` (2.7), `janka_to_kc_n_per_mm2`, `KC_FOLKLORE_*`,
+  `KcProvenance`, `GRAIN_ANISOTROPY_FACTOR` (2.0),
+  `DeflectionUnmodeled::MaterialCustom` and `Material::Custom.kc`.
+- **Solid wood:** the Curti 2021 density law, helix 0, the upper envelope
+  over grain angle 0-180° and up/down milling, per term: Ks_n 0.0768333,
+  Int_n 0.0060333 (computed from the printed quadratics). `Ks = Ks_n · ρ`,
+  `F_edge = Int_n · ρ`, grain factor 1.0 (the envelope holds the grain
+  spread). Valid ρ 287-1080 kg/m³; outside, the line refuses.
+- **Density:** `ρ = SG × 1000 × 1.12` from FPL Table 5-3a (12 % MC). The
+  library rows carry `specific_gravity_12` (97 FPL rows; Honeylocust prints
+  "—" and refuses). By the operator's ruling of 2026-09-25 the three
+  species with no 5-3a row were fetched inside B6
+  (`fetch/G7/density_rows.json`, `scripts/g7_density_check.py`): FPL
+  Table 5-5a prints basic SG (ovendry weight, green volume), and FPL Ch.4
+  Eq. (4-11) `Gx = Gb / [1 − 0.265 Gb (1 − x/MCfs)]`, MCfs 30 %, converts
+  it to 12 % MC in code:
+
+  | Species | Gb (5-5a) | G12 | ρ12 kg/m³ | Wood Database (grade c) | Result |
+  |---|---|---|---|---|---|
+  | Radiata pine | 0.42 | 0.4501 | 504.1 | 510 (0.99) | ships |
+  | Jarrah | 0.67 | 0.7499 | 839.9 | 840 (1.00) | ships |
+  | Ipe | 0.92 | 1.0776 | 1207.0 | 1050 (1.15) | refuses: above 1080 |
+
+  Eq. (4-11) reproduces FPL's own white-ash example (0.55 → 0.603 against
+  the printed 0.605).
+- **MDF:** the Goli 2018 line direct, Ks 31.44, F_edge 3.36, grain 1.0.
+- **Refused with a named reason:** plywood (all grades), particleboard,
+  HDF, every plastic (HDPE included), aluminium, foam, fiberglass, Custom,
+  Ipe, and the Wood Database library rows (no SG).
+- **Chip range:** a mean chip outside the printed range does not refuse.
+  `ForceAtPoint.chip_regime` says `below_measured_range` or
+  `above_measured_range`, and the card states the extrapolation.
+- **Card and MCP:** the power row paints `Force line: …` (or the refusal
+  headline) and the extrapolation line; the hover gives every constant.
+  The stock panel "Kc:" row is now "Force line:". MCP `basis.force_line`
+  carries the form, the source, Ks, F_edge, the density and its source,
+  and `evaluated_at`.
+- **Diagnostics:** an Unmodeled power or deflection gate now reports
+  `load.power.unmodeled` / `load.deflection.unmodeled`, not the `*.within`
+  id (as the chipload and depth gates already did). B6 made every
+  plywood job hit this; before, a reader of ids alone read "within".
+
+### 5.2 FM1 moves (960 cells; HEAD CSV against the B6 run)
+
+No cell moves between ok and refused (534 ok, 426 refused). Ratios are new
+/ old, median (range).
+
+| Column | softwood | hardwood | mdf | plywood_hardwood |
+|---|---|---|---|---|
+| `force_n` (534 cells) | 1.04 (0.94-1.36) | 0.85 (0.78-1.13) | 0.71 | 95 cells empty |
+| `power_kw` (188 cells) | 0.53 (0.49-0.66) | 0.43 (0.41-0.56) | 0.35 (0.33-0.36) | 36 cells empty |
+| `stepover_mm` | 48 cells, ±1 % | 48 cells, ±1 % | 4 cells, −0.1 % | 36 cells, 1.17 (1.11-1.28) |
+| `depth_per_pass_mm` | 19 cells | 17 cells | 6 cells, ≤ 0.1 % | 36 cells, 1.21 (1.03-1.50) |
+| `feed_mm_min` | none | none | none | 2 cells, −0.4 % and −1.2 % |
+| `force_line` (new) | curti2021 (240) | curti2021 (240) | goli2018 (240) | refused:Plywood (240) |
+
+- The solid-wood depth moves are small (adaptive and Adaptive3d < 1.5 %;
+  a small-tool pass staircase snap such as 0.375 → 0.4286), except the
+  tapered Ø3.175 Adaptive cell, 2.25 → 3.0 mm, where the axial envelope cap
+  widens 5.04 → 5.32 mm. Profile and Waterline depths fall 0.3-4 %: the
+  Curti Ks is above the old slope (hardwood 51.9 against 50.0), so the
+  force rises at a thick chip.
+- Plywood: with no force line the dial uses its section proxy, so depth
+  and stepover rise (decision 7), and Suggest adds
+  `DeflectionBackoffUnmodeled` (37 cells).
+- No cell is power-limited before or after. The power ceiling binds on no
+  shipped fixture (`power_ceiling_parity_f2`, renamed
+  `the_power_ceiling_binds_on_no_shipped_fixture_b6`: peak 34.9 %, VFD /
+  WhiteOak / Ø12). The card's power-bar spread is min 0.2 %, median 3.2 %,
+  peak 31.5 %. The operator ruled (2026-09-25) that a peak under half
+  scale is correct; the half-scale assert in
+  `the_power_bar_is_informative_g_chipverdict` is gone.
+- Sim CSV (38 rows): `power_peak_kw` ×0.35-0.6; `deflection_peak_mm` MDF
+  ×0.71, hardwood about ×0.9, softwood about ×1.1. The 6 plywood rows go
+  from `Within` to `Unmodeled` (MaterialUnvalidated) on power and
+  deflection. The BullNose plywood pocket chipload goes `Unmodeled` →
+  `Within` at its new 1.0 mm depth.
+- **The sim budget skips one more row.** The TaperedBallNose DropCutter
+  softwood row is skipped on the 150 s wall-clock budget of the sim subset
+  (the hardwood row was already skipped at HEAD). The DropCutter rows ran
+  about 15 % slower in all three B6 runs, on a machine at load average
+  8-11. The force line adds a closed-form evaluation per sample, not a
+  loop, but this record does not separate load from code: a HEAD-against-B6
+  timing run on a quiet machine does that.
+
+### 5.3 Tests
+
+- New sentries: `the_force_line_is_printed_per_family_b6` (core),
+  `the_power_row_names_its_force_line_b6` (viz), and
+  `an_unmodeled_power_or_deflection_gate_is_not_reported_as_within_b6`
+  (in `finish_depth_is_reported_not_capped_fm6`).
+- Re-pinned with the cause in the test: the power-ceiling fixtures (T15,
+  S2, powerstale, ladder, f2, f039, axialunits), the specific-energy table
+  (`cut_efficiency_is_closed_form_g_specenergy`: 146.8 / 96.2 / 82.7
+  J/mm³ on the B6 line; ADVICE.md §1 was measured on the retired anchor),
+  the hard-maple deflection fixture in `feeds/suggest/tests.rs` (stickout
+  99 → 111 mm), the A3 pocket fingerprint (stepover 1.515 → 1.525), and the
+  g_visible weak-spindle case (Baltic birch → hardwood).
+- Not run (ask first): `wanaka_suggest_integration`.
+
+### 5.4 Open
+
+- A typed tool helix that selects the printed Curti helix row (0/15/30).
+  Today the engine has no helix input, and helix 0 is the largest force.
+- A user-typed line for Custom; a Kienzle form for aluminium.
+- Plywood, particleboard, HDF: a printed per-edge line (none fetched).

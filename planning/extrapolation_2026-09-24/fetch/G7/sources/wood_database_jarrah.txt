@@ -1,0 +1,27 @@
+Wood Database (wood-database.com), species page "Jarrah".
+URL: https://www.wood-database.com/jarrah/
+Accessed: 2026-09-25. SHA-256 of the fetched HTML file (html/jarrah.html):
+bd540297bd27b258d416207c228e0561a976910731a5678ed05cbb9f436d9dd0
+
+Printed line (stats block, tags stripped, whitespace collapsed):
+
+Average Dried Weight: 52 lbs/ft3 (835 kg/m3)
+Specific Gravity (Basic, 12% MC): .66, .84
+
+Tooltip text on the "Specific Gravity" term (the site's own definition of
+its two printed numbers; the same tooltip text appears on every species
+page):
+
+"Technically, specific gravity is a measure of the ratio of a wood's
+density as compared to water. (So if a wood is of the same density as
+water, the specific gravity would be 1.00.) The first number is the basic
+specific gravity, based on the botanical standard of ovendry weight and
+green volume. The second number is meant for woodworkers, and is simply a
+snapshot of the wood's specific gravity at 12% MC, (that is, both 12% MC
+weight and volume)."
+
+Grade c (aggregator, not a primary or institutional source). Used here
+only because Table 5-5a of the FPL Wood Handbook (the preferred source)
+does not itself state whether its printed Jarrah specific gravity (0.67,
+printed on the "Green" line) is ovendry weight over green volume or over
+12%-MC volume.

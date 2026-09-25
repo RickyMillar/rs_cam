@@ -1,0 +1,138 @@
+FPL Wood Handbook, General Technical Report FPL-GTR-190 (2010), Chapter 4
+"Moisture Relations and Physical Properties of Wood" (Samuel V. Glass and
+Samuel L. Zelinka), section "Converting between Different Specific Gravity
+Bases", page 4-9.
+
+Fetched: https://ww2.arb.ca.gov/sites/default/files/cap-and-trade/protocols/usforest/2011/usfs_wood_handbook_2010.pdf
+(California Air Resources Board mirror of the full Wood Handbook, 509
+pages, 11,031,226 bytes; the FPL original and the FPL per-chapter URL
+both return HTTP 403 to curl, same as prior fetches). SHA-256:
+795fc26a8b361cb1b33bf3c067774ad7e8350046b09e2f3b8298c8da6eedc7b8
+(matches the hash already on file from the 2026-09-24 G7 run, source_id
+g7_fpl_gtr190_wood_handbook_2010; this is the same download, re-verified).
+Accessed: 2026-09-25.
+
+pdftotext -layout does not extract the equations themselves (they are set
+as inline images/glyphs in the PDF and pdftotext prints only their
+trailing "(4-8)" through "(4-11)" tags with blank equation bodies); the
+equations below are transcribed by reading the rendered page (PDF page 88
+= printed page 4-9, pdftoppm -r 250) directly. Every other line in this
+file is machine-extracted text (pdftotext -layout), not a transcription.
+
+=== Table 4-5 (verbatim, pdftotext) ===
+
+Table 4–5. Expressions for specific gravity and                as estimating structural loads or shipping weights. Several
+density of wooda                                               methods can be used for determining ρx, as discussed in the
+Symbol                             Mass basis   Volume basis   following sections.
+G0                                 Ovendry      Ovendry
+Gb (basic specific gravity)        Ovendry      Green
+G12                                Ovendry      12% MC
+Gx                                 Ovendry      x% MC
+ρ0                                 Ovendry      Ovendry
+ρ12                                12% MC       12% MC
+ρx                                 x% MC        x% MC
+a
+    x is any chosen moisture content.
+
+=== Fiber saturation point default (page 4-1 area, pdftotext) ===
+
+"...is called the fiber saturation point, MCfs. Operationally, the
+fiber saturation point is considered as that moisture content
+above which the physical and mechanical properties of
+wood do not change as a function of moisture content. The
+fiber saturation point of wood averages about 30% moisture
+content, but in individual species and individual pieces of
+wood it can vary by several percentage points from that [average]."
+
+=== Prose bridging Table 4-5 to the conversion equations (verbatim, pdftotext, page 4-9 left+right columns) ===
+
+"To make comparisons between species or products, a standard reference
+basis is desirable. Several valid choices are possible for wood,
+including ovendry density ρ0 and specific gravity G referenced to a
+particular volume basis. As shown in Table 4–5, the specific gravity of
+wood may be referenced to its volume at any moisture content, but in all
+cases G is based on ovendry mass. Commonly used bases for volume are (a)
+ovendry, (b) green, and (c) 12% moisture content. The combination of
+ovendry mass and ovendry volume is used in design specifications for
+wood, such as contained in the National Design Specification for Wood
+Construction (AF&PA 2005). The combination of ovendry mass and green
+volume is referred to as basic specific gravity Gb. Some specific gravity
+data are reported in Tables 5–3, 5–4, and 5–5 (Chap. 5) on both the green
+(basic) and 12% MC volume basis."
+
+This is the passage that answers the coordinator's second question: Ch.4
+explicitly classifies the single specific-gravity figure printed in
+Tables 5-3, 5-4 AND 5-5 (Chap. 5) as reported "on ... the green (basic)
+... volume basis" -- i.e., Table 5-5a's "Green"-line SG for Ipe, Jarrah
+and Pine, radiata is basic specific gravity Gb (ovendry mass / green
+volume), the same basis Table 5-4a's own footnote states outright for its
+identically laid-out single-SG-per-species rows. Table 5-5a's own
+footnote does not repeat this statement (see
+sources/fpl_gtr190_ch5_table5_5a_excerpt.txt), but Chapter 4 does, for all
+three tables together.
+
+=== Equations (4-8) through (4-11), transcribed from the rendered page image (PDF page 88, printed page 4-9) ===
+
+"In general, we use the symbol Gx to denote specific gravity based on the
+volume at a given moisture content x. If the value of Gx is known for a
+particular moisture content, the value at any other moisture content can
+be approximated using expressions for volumetric shrinkage. Explicitly,
+if the specific gravity is known at moisture content x', the value at x''
+is
+
+    Gx'' = Gx' ( (100 - Sx') / (100 - Sx'') )                       (4-8)
+
+where Sx is the percent volumetric shrinkage from the green condition to
+moisture content x. In the case where basic specific gravity Gb is known,
+the value at any moisture content x below the fiber saturation point is
+
+    Gx = Gb / (1 - Sx/100)                                          (4-9)
+
+The shrinkage-moisture content relationship can be reasonably
+approximated using Table 4-3 or 4-4 and Equation (4-7). However, if the
+total volumetric shrinkage S0 is not known for the species of interest,
+it can be estimated from the basic specific gravity (Stamm 1964):
+
+    S0 = 26.5 Gb                                                    (4-10)
+
+Using this relation, Equation (4-9) then becomes
+
+    Gx = Gb / [1 - 0.265 Gb (1 - x/MCfs)]                           (4-11)"
+
+Equation (4-11) is the printed form the coordinator asked about. It is
+NOT literally "Gm = Gb / (1 - 0.265 a Gb), a = (30 - M)/30" -- the printed
+equation carries the symbol MCfs (fiber saturation point), not a literal
+constant 30, and there is no separate named variable "a" in the source.
+The FPL text does state elsewhere (see the fiber-saturation paragraph
+above, and Figure 4-6's caption, "assumed to be 30% MC") that MCfs
+averages 30% and that is the value used when no species-specific MCfs is
+available. Substituting MCfs = 30 into (4-11) gives
+Gx = Gb / [1 - 0.265 Gb (1 - x/30)] = Gb / [1 - 0.265 Gb ((30-x)/30)],
+which is algebraically identical to the coordinator's proposed form with
+a = (30 - x)/30. So: same equation, confirmed verbatim as (4-11), on the
+assumption MCfs = 30% (the source's own stated average/default, not a
+species-specific fiber saturation point for radiata pine, jarrah or ipe,
+which this Ch.4 excerpt does not print).
+
+=== Worked example given immediately after Eq. (4-11) (verbatim, pdftotext, continues onto page 4-10/89) ===
+
+"For example, to estimate the density of white ash at 12% moisture
+content, consult Table 5–3a in Chapter 5. The average basic specific
+gravity Gb for this species is 0.55 (volume when green). Using Figure
+4–6, the dashed curve for Gb = 0.55 is found to intersect with the
+vertical 12% moisture content dashed line at a point corresponding to
+G12 = 0.605. The density of wood (including water) at this moisture
+content can then be obtained from Table 4–6 (these values are based on
+Eq. (4–12)). By interpolation, the specific gravity of 0.605 corresponds
+to a density at 12% MC of 678 kg m–3 (42.2 lb ft–3)."
+
+Cross-check of Eq. (4-11) against this worked example: Gb = 0.55, x = 12,
+MCfs = 30 (default) -> a = (30-12)/30 = 0.6 -> G12 = 0.55 / (1 - 0.265 x
+0.55 x 0.6) = 0.55 / (1 - 0.08745) = 0.55 / 0.91255 = 0.6027. FPL's own
+figure-read value is 0.605 (a graphical read of Figure 4-6, so agreement
+to 3 significant figures is expected, not exact identity). Density check:
+0.6027 x 1000 x 1.12 = 675.0 kg/m3 vs. FPL's stated 678 kg/m3 (0.4%
+difference, consistent with Figure 4-6 being a hand-read chart rather
+than the equation itself). This confirms Eq. (4-11) with MCfs=30 and the
+rho12 = Gx x 1000 x 1.12 step reproduce FPL's own worked example to
+within the expected graph-reading tolerance.

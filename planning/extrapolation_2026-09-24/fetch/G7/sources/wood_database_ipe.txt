@@ -1,0 +1,27 @@
+Wood Database (wood-database.com), species page "Ipe".
+URL: https://www.wood-database.com/ipe/
+Accessed: 2026-09-25. SHA-256 of the fetched HTML file (html/ipe.html):
+103a2ad352fc55ff07a319d6a4ae25da4f240d49ffd208564ab8a90f63f7c45b
+
+Printed line (stats block, tags stripped, whitespace collapsed):
+
+Average Dried Weight: 65.5 lbs/ft3 (1,050 kg/m3)
+Specific Gravity (Basic, 12% MC): 0.91, 1.05
+
+Tooltip text on the "Specific Gravity" term (the site's own definition of
+its two printed numbers; the same tooltip text appears on every species
+page):
+
+"Technically, specific gravity is a measure of the ratio of a wood's
+density as compared to water. (So if a wood is of the same density as
+water, the specific gravity would be 1.00.) The first number is the basic
+specific gravity, based on the botanical standard of ovendry weight and
+green volume. The second number is meant for woodworkers, and is simply a
+snapshot of the wood's specific gravity at 12% MC, (that is, both 12% MC
+weight and volume)."
+
+Grade c (aggregator, not a primary or institutional source). Used here
+only because Table 5-5a of the FPL Wood Handbook (the preferred source)
+does not itself state whether its printed Ipe specific gravity (0.92,
+printed on the "Green" line) is ovendry weight over green volume or over
+12%-MC volume.

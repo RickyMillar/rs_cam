@@ -97,5 +97,60 @@
     "pdf_sha256": "795fc26a8b361cb1b33bf3c067774ad7e8350046b09e2f3b8298c8da6eedc7b8",
     "hashed_file": "pdf/fpl_gtr190_wood_handbook_2010.pdf",
     "coverage_notes": "The FPL original (fpl.fs.usda.gov/documnts/fplgtr/fpl_gtr190.pdf) returns HTTP 403 to curl; this is the California Air Resources Board mirror, 11 MB. The stored text is an EXCERPT (table of contents and grep hits), because the full text is 3.2 MB. Chapters 1-20 contain no machining chapter. A search for 'specific cutting', 'cutting energy', 'cutting power' and 'cutting force' returns no line. 'Machinability' appears only as qualitative species ratings in Chapter 2 and the index. Result: the Wood Handbook prints no specific cutting energy or Kc; it is a refusal reason, not a source of a number. Its Table 5-3a shear strengths are the base of the engine's solid-wood Kc (already in the manifest as fpl_ch5_2010)."
+  },
+  {
+    "source_id": "g7_fpl_gtr190_ch5_table5_5a",
+    "source_vendor": "usda_fpl",
+    "source_title": "Forest Products Laboratory (2010). Wood Handbook: Wood as an Engineering Material. General Technical Report FPL-GTR-190, Chapter 5, Table 5-5a (mechanical properties of woods imported into the United States other than Canadian imports, metric)",
+    "source_url": "https://www.precisebits.com/PDF/USFS_mechanical_properties_of_wood.pdf",
+    "accessed_on": "2026-09-25",
+    "stored_text": "sources/fpl_gtr190_ch5_table5_5a_excerpt.txt",
+    "pdf_sha256": "8014031cf51970c446484d52d67ef374fbccf6412f5b0555437278672371eec9",
+    "hashed_file": "pdf/fpl_ch5_precisebits.pdf",
+    "coverage_notes": "pdftotext -layout (full text stored separately as sources/fpl_ch5_full.txt, not committed; the excerpt file is the committed record). Table 5-5a lists Ipe (Tabebuia spp., lapacho group) SG 0.92, Jarrah (Eucalyptus marginata) SG 0.67, and Pine, radiata (Pinus radiata) SG 0.42, each printed once on the species' 'Green' moisture-content line; the '12%' line for the same species leaves the Specific gravity column blank. Unlike Table 5-3a (footnote b: weight ovendry, volume when green or at 12% MC, matching the row's own MC label) and Table 5-4a (footnote a: weight ovendry, volume when green, stated outright), Table 5-5a's own footnote (quoted in the excerpt) does not state which volume convention its single SG figure uses. This is a genuine gap in the source, not a value this fetch invented; see density_rows.json for how each row handles it and sources/wood_database_*.txt for a secondary cross-check."
+  },
+  {
+    "source_id": "g7_wood_database_ipe",
+    "source_vendor": "aggregator",
+    "source_title": "Wood Database (wood-database.com), species page \"Ipe\"",
+    "source_url": "https://www.wood-database.com/ipe/",
+    "accessed_on": "2026-09-25",
+    "stored_text": "sources/wood_database_ipe.txt",
+    "pdf_sha256": "103a2ad352fc55ff07a319d6a4ae25da4f240d49ffd208564ab8a90f63f7c45b",
+    "hashed_file": "html/ipe.html",
+    "coverage_notes": "Grade c aggregator, used only as a secondary cross-check for the FPL Table 5-5a specific-gravity basis question (see g7_fpl_gtr190_ch5_table5_5a). Prints 'Average Dried Weight: 65.5 lbs/ft3 (1,050 kg/m3)' and 'Specific Gravity (Basic, 12% MC): 0.91, 1.05'; its own tooltip defines the second SG number as both weight and volume at 12% MC."
+  },
+  {
+    "source_id": "g7_wood_database_jarrah",
+    "source_vendor": "aggregator",
+    "source_title": "Wood Database (wood-database.com), species page \"Jarrah\"",
+    "source_url": "https://www.wood-database.com/jarrah/",
+    "accessed_on": "2026-09-25",
+    "stored_text": "sources/wood_database_jarrah.txt",
+    "pdf_sha256": "bd540297bd27b258d416207c228e0561a976910731a5678ed05cbb9f436d9dd0",
+    "hashed_file": "html/jarrah.html",
+    "coverage_notes": "Grade c aggregator, used only as a secondary cross-check for the FPL Table 5-5a specific-gravity basis question (see g7_fpl_gtr190_ch5_table5_5a). Prints 'Average Dried Weight: 52 lbs/ft3 (835 kg/m3)' and 'Specific Gravity (Basic, 12% MC): .66, .84'; its own tooltip defines the second SG number as both weight and volume at 12% MC."
+  },
+  {
+    "source_id": "g7_wood_database_radiata_pine",
+    "source_vendor": "aggregator",
+    "source_title": "Wood Database (wood-database.com), species page \"Radiata Pine\"",
+    "source_url": "https://www.wood-database.com/radiata-pine/",
+    "accessed_on": "2026-09-25",
+    "stored_text": "sources/wood_database_radiata_pine.txt",
+    "pdf_sha256": "63ad410c3113fef22cfe97f5aa43312b3ed940e2ef8c75f8443213f47cf3bf3f",
+    "hashed_file": "html/radiata-pine.html",
+    "coverage_notes": "Grade c aggregator. FPL Table 5-5a does print a Pine, radiata row, so this is a supplementary cross-check, not a fallback for a missing FPL row. Prints 'Average Dried Weight: 32 lbs/ft3 (515 kg/m3)' and 'Specific Gravity (Basic, 12% MC): .41, .51'; its own tooltip defines the second SG number as both weight and volume at 12% MC."
+  },
+  {
+    "source_id": "g7_fpl_gtr190_ch4_sg_conversion",
+    "source_vendor": "usda_fpl",
+    "source_title": "Forest Products Laboratory (2010). Wood Handbook: Wood as an Engineering Material. General Technical Report FPL-GTR-190, Chapter 4 \"Moisture Relations and Physical Properties of Wood\" (Glass & Zelinka), section \"Converting between Different Specific Gravity Bases\", Table 4-5 and Eq. (4-8)-(4-11)",
+    "source_url": "https://ww2.arb.ca.gov/sites/default/files/cap-and-trade/protocols/usforest/2011/usfs_wood_handbook_2010.pdf",
+    "accessed_on": "2026-09-25",
+    "stored_text": "sources/fpl_gtr190_ch4_sg_conversion_excerpt.txt",
+    "pdf_sha256": "795fc26a8b361cb1b33bf3c067774ad7e8350046b09e2f3b8298c8da6eedc7b8",
+    "hashed_file": "pdf/fpl_gtr190_wood_handbook_2010.pdf",
+    "coverage_notes": "Same CARB mirror file and hash already on file as g7_fpl_gtr190_wood_handbook_2010 (re-downloaded and re-verified 2026-09-25; the earlier G7 run only stored a machining-chapter grep excerpt of it, not Chapter 4). PDF page 88 = printed page 4-9. pdftotext -layout does not extract the equation bodies (image-set glyphs, only the '(4-n)' tags print as text); Eq. (4-8)-(4-11) are transcribed from a 250dpi render of that page. Printed Eq. (4-11): Gx = Gb / [1 - 0.265 Gb (1 - x/MCfs)], with MCfs the fiber saturation point, stated elsewhere as averaging 30% MC (the value used here, since no species-specific MCfs is printed for radiata pine, jarrah or ipe). Also carries the passage confirming Table 5-5's single printed SG per species is basic specific gravity Gb (ovendry mass / green volume): 'Some specific gravity data are reported in Tables 5-3, 5-4, and 5-5 (Chap. 5) on both the green (basic) and 12% MC volume basis.' Cross-checked against FPL's own worked white-ash example (Gb 0.55 -> G12 0.605, rho12 678 kg/m3 by their Figure 4-6 graph read) to within 0.4%."
   }
 ]

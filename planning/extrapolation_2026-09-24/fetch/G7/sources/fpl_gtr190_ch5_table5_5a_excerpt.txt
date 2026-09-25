@@ -1,0 +1,90 @@
+FPL Wood Handbook, General Technical Report FPL-GTR-190 (2010), Chapter 5
+"Mechanical Properties of Wood" (David E. Kretschmann).
+
+Fetched: https://www.precisebits.com/PDF/USFS_mechanical_properties_of_wood.pdf
+(46-page Ch.5-only PDF, 2,226,339 bytes). SHA-256:
+8014031cf51970c446484d52d67ef374fbccf6412f5b0555437278672371eec9
+Accessed: 2026-09-25. Extraction: pdftotext -layout.
+
+This file holds the Table 5-5a header, the rows this task uses (Ipe,
+Jarrah, Pine radiata), the table's own footnote, and the general prose on
+specific gravity that applies to Table 5-5. Layout spacing is approximate
+(pdftotext column drift); the numbers are unambiguous.
+
+=== Table 5-5a header (metric), first page ===
+
+Table 5–5a. Mechanical properties of some woods imported into the United States other than Canadian imports
+(metric)a
+                                                        Static bending
+                                                                                  Com-
+                                                Modulus Modulus      Work to     pression    Shear       Side
+Common and                                         of       of       maximum     parallel   parallel    hard-
+botanical names               Moisture Specific rupture elasticity      load     to grain   to grain     ness   Sample
+of species                    content gravity    (kPa)   (MPa)        (kJ m–3)    (kPa)       (kPa)      (N)    originb
+
+=== Row: Ipe ===
+
+Ipe (Tabebuia spp.,                Green    0.92    155,800 20,100          190     71,400     14,600     13,600    AM
+   lapacho group)                  12%              175,100 21,600          152     89,700     14,200     16,400
+
+=== Row: Jarrah ===
+
+Jarrah (Eucalyptus marginata)      Green    0.67     68,300 10,200           —      35,800      9,100      5,700     AS
+                                   12%       —      111,700 13,000           —      61,200     14,700      8,500
+
+=== Row: Pine, radiata ===
+
+Pine, radiata (Pinus radiata)    Green    0.42     42,100    8,100       —        19,200       5,200    2,100     AS
+                                 12%       —       80,700   10,200       —        41,900     11,000     3,300
+
+=== Table 5-5a footnote (final page of the metric table, after the Wallaba row) ===
+
+a
+  Results of tests on clear, straight-grained specimens. Property values were taken from world literature (not obtained from experiments conducted at the
+Forest Products Laboratory). Other species may be reported in the world literature, as well as additional data on many of these species. Some property
+values have been adjusted to 12% moisture content.
+b
+  AF is Africa; AM, America; AS, Asia.
+
+Note: this footnote does not define the ovendry-weight/volume basis of the
+"Specific gravity" column (contrast Table 5-3a's footnote b: "Specific
+gravity is based on weight when ovendry and volume when green or at 12%
+moisture content", and Table 5-4a's footnote a, which ends "Specific
+gravity is based on weight when ovendry and volume when green."). Table
+5-5a prints Specific gravity only once per species, on the "Green"
+moisture-content line; the "12%" line for the same species leaves that
+column blank, exactly as Table 5-4a does. No footnote in this Ch.5 PDF
+states which volume convention Table 5-5a's single SG figure uses.
+
+=== General prose on specific gravity across Chapter 5's tables (page 5-26 area) ===
+
+Values reported in Table 5–5 were collected from the world
+literature; thus, the appropriateness of these properties to
+represent a species is not known. The properties reported
+in Tables 5–1, 5–2, 5–5, and 5–7 to 5–10 may not necessarily
+represent average species characteristics because of
+inadequate sampling; however, they do suggest the relative
+influence of species and other specimen parameters on the
+mechanical behavior recorded.
+
+Specific gravity is reported in many tables because this
+property is used as an index of clear wood mechanical
+properties. The specific gravity values given in Tables 5–3
+and 5–4 represent the estimated average clear wood specific
+gravity of the species. In the other tables, specific gravity
+values represent only the specimens tested. The variability
+of specific gravity, represented by the coefficient of varia-
+tion derived from tests on 50 species, is included in Table
+5–6.
+
+This passage speaks to sampling breadth (species average vs.
+specimens tested), not to the weight/volume basis of the SG number; it
+does not resolve the Table 5-5a basis question above.
+
+=== For contrast: Table 5-4a footnote (Canada-grown/imported species, same single-SG-per-species layout as 5-5a) ===
+
+a
+ Results of tests on clear, straight-grained specimens. Property values based on ASTM Standard D 2555–88. Information on additional
+properties can be obtained from Department of Forestry, Canada, Publication No. 1104. For each species, values in the first line are from tests
+of green material; those in the second line are adjusted from the green condition to 12% moisture content using dry to green clear wood
+property ratios as reported in ASTM D 2555–88. Specific gravity is based on weight when ovendry and volume when green.

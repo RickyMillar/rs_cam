@@ -1,0 +1,28 @@
+Wood Database (wood-database.com), species page "Radiata Pine".
+URL: https://www.wood-database.com/radiata-pine/
+Accessed: 2026-09-25. SHA-256 of the fetched HTML file
+(html/radiata-pine.html):
+63ad410c3113fef22cfe97f5aa43312b3ed940e2ef8c75f8443213f47cf3bf3f
+
+Printed line (stats block, tags stripped, whitespace collapsed):
+
+Average Dried Weight: 32 lbs/ft3 (515 kg/m3)
+Specific Gravity (Basic, 12% MC): .41, .51
+
+Tooltip text on the "Specific Gravity" term (the site's own definition of
+its two printed numbers; the same tooltip text appears on every species
+page):
+
+"Technically, specific gravity is a measure of the ratio of a wood's
+density as compared to water. (So if a wood is of the same density as
+water, the specific gravity would be 1.00.) The first number is the basic
+specific gravity, based on the botanical standard of ovendry weight and
+green volume. The second number is meant for woodworkers, and is simply a
+snapshot of the wood's specific gravity at 12% MC, (that is, both 12% MC
+weight and volume)."
+
+Grade c (aggregator, not a primary or institutional source). FPL Table
+5-5a does print a Pine, radiata row (SG 0.42 on the "Green" line), so this
+source is a supplementary cross-check, not a fallback for a missing FPL
+row; it resolves the same weight/volume-basis ambiguity noted for Jarrah
+and Ipe above.
