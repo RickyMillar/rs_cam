@@ -55,7 +55,7 @@ pub use whole_path::{StampDispatch, StampDispatchStats};
 use stamping::{stamp_point_on_grid, stamp_segment_on_grid};
 
 use crate::geo::{BoundingBox3, P3};
-use crate::stock::dexel::{DexelAxis, DexelGrid};
+use crate::stock::dexel::{DexelAxis, DexelGrid, ray_top};
 use crate::stock::radial_profile::RadialProfileLUT;
 
 /// What one [`TriDexelStock::apply_drill_op`] call actually removed.
@@ -491,6 +491,59 @@ impl TriDexelStock {
         radius: f64,
         cutter: &dyn crate::tool::MillingCutter,
     ) -> Option<f64> {
+        self.clearance_scan(cx, cy, radius, cutter, None)
+            .map(|(_, high)| high)
+    }
+
+    /// **Two-sided clearance** at `(cx, cy)` for the live rapid check
+    /// (G-RAPIDPLUNGETOL): `(low, high)`.
+    ///
+    /// `high` is [`Self::max_clearance_tip_z_for_profile`], byte for byte —
+    /// the same cells, the same arithmetic, the same `None`. It errs HIGH.
+    ///
+    /// `low` errs LOW. It reads only the cells whose WHOLE square lies inside
+    /// the footprint — centre distance `d` plus the half-diagonal at or under
+    /// `min(radius, lut radius)` — and charges each one its centre ray's
+    /// `ray_top` against the tool height at the square's far corner,
+    /// `h_lut(d + half_diagonal)`. `ray_top` is an area-weighted mean over the
+    /// cell (`ray_blend_above`), and a mean is at most the maximum, so material
+    /// stands at `ray_top` or higher somewhere in the square; every point of
+    /// the square is inside the footprint and at most `d + half_diagonal`
+    /// from the axis, where the cutter is at most `h_lut(d + half_diagonal)`
+    /// above its tip. A tip below `low` is therefore below material under the
+    /// footprint — up to the coverage-union residue the plan names (several
+    /// partial stamps clearing one cell leave its mean above the truth).
+    ///
+    /// `lut` must be the table the stamps were cut with, so a cell a stamp
+    /// left at `z' + h_lut(d')` and re-entered on the same axis reads at most
+    /// `z'` (the table is non-decreasing in radius). `low` is `None` when no
+    /// inside cell holds material.
+    ///
+    /// Returns `None` exactly when [`Self::max_clearance_tip_z_for_profile`]
+    /// does.
+    pub fn clearance_bounds_for_profile(
+        &self,
+        cx: f64,
+        cy: f64,
+        radius: f64,
+        cutter: &dyn crate::tool::MillingCutter,
+        lut: &RadialProfileLUT,
+    ) -> Option<(Option<f64>, f64)> {
+        self.clearance_scan(cx, cy, radius, cutter, Some(lut))
+    }
+
+    /// The ONE cell loop behind [`Self::max_clearance_tip_z_for_profile`]
+    /// (`high`) and [`Self::clearance_bounds_for_profile`] (`low`, only when a
+    /// `lut` is given). `high` never reads `lut`, so both callers get the
+    /// same `high`.
+    fn clearance_scan(
+        &self,
+        cx: f64,
+        cy: f64,
+        radius: f64,
+        cutter: &dyn crate::tool::MillingCutter,
+        lut: Option<&RadialProfileLUT>,
+    ) -> Option<(Option<f64>, f64)> {
         let grid = &self.z_grid;
         let cs = grid.cell_size;
         // Same dilation, same `ceil`, same cell set as the flat-disc query —
@@ -514,7 +567,11 @@ impl TriDexelStock {
         // Half the diagonal of one cell: how far inside its own square a
         // cell's material may sit toward the tool axis.
         let half_diag = cs * std::f64::consts::FRAC_1_SQRT_2;
+        // `low` reads a cell only when its far corner is inside both the probe
+        // radius and the table the stamps were cut with.
+        let inner_r = lut.map(|lut| radius.min(lut.radius_sq().sqrt()));
         let mut max_tip_z: Option<f64> = None;
+        let mut low: Option<f64> = None;
 
         for row in row_min..=row_max {
             let cell_y = grid.origin_v + row as f64 * cs;
@@ -530,7 +587,18 @@ impl TriDexelStock {
                 if dist_sq > reach_sq {
                     continue;
                 }
-                let r_near = (dist_sq.sqrt() - half_diag).max(0.0);
+                let dist = dist_sq.sqrt();
+                if let (Some(lut), Some(inner_r)) = (lut, inner_r) {
+                    let far = dist + half_diag;
+                    if far <= inner_r
+                        && let Some(top) = grid.rays.get(row * grid.cols + col).and_then(ray_top)
+                        && let Some(h) = lut.height_at_dist_sq((far * far).min(lut.radius_sq()))
+                    {
+                        let floor = f64::from(top) - h;
+                        low = Some(low.map_or(floor, |m: f64| m.max(floor)));
+                    }
+                }
+                let r_near = (dist - half_diag).max(0.0);
                 // `None` = past the whole envelope: no cutter over this cell,
                 // so nothing in it can contact. Skip, never clamp.
                 let Some(h) = cutter.height_at_radius(r_near) else {
@@ -541,7 +609,7 @@ impl TriDexelStock {
                 max_tip_z = Some(max_tip_z.map_or(need, |m: f64| m.max(need)));
             }
         }
-        max_tip_z
+        max_tip_z.map(|high| (low, high))
     }
 
     #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code

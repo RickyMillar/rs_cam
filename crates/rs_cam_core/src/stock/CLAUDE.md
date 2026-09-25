@@ -1,8 +1,7 @@
 # `stock/` — the stock data model and the cut record
 
-The stock types beside the simulation engine, the cut trace and the triage
-that reads it. The entry point for an operator answer is
-`stock::sim_triage::SimulationTriage`.
+The stock types beside the simulation engine, the cut trace and its triage.
+The entry point for an operator answer: `stock::sim_triage::SimulationTriage`.
 
 ## Files
 
@@ -37,4 +36,5 @@ that reads it. The entry point for an operator answer is
 - `cargo test -p rs_cam_core -q --test narration_denominator_and_hints_d7`
 - `cargo test -p rs_cam_core -q --test engagement_denominator_m3`
 - `cargo test -p rs_cam_core -q --test rapid_check_catches_real_side_strikes_g_rapid6497`
-  — the rapid strike classes a change to the rapid check must keep.
+  and `--test rapid_check_catches_shallow_plunges_g_rapidplungetol` — the
+  strike classes (side, sliver, rim wall, shallow plunge) the check must keep.

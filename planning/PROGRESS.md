@@ -108,8 +108,13 @@ VCarve in softwood since B4; 12.0 mm serves.
    time; volume unchanged. Accepted (operator delegated the call): a safe
    entry is not traded back; G10 Part B (helix radius, pitch and ramp
    rules) is the lever for the time.
-2. G-RAPIDPLUNGETOL: the rapid check misses a tip up to 2.207 cells
-   into material under the whole footprint (safety).
+2. ~~**G-RAPIDPLUNGETOL**~~ Landed 2026-09-25 (Option A, two-channel
+   check): a low channel over the cells wholly inside the footprint, with
+   only a float epsilon, ORed with the old high channel. Sentry
+   `rapid_check_catches_shallow_plunges_g_rapidplungetol` (items 1-3 red
+   before). rivmap100 0.5 / 0.25 mm: 0 rapid collisions before and after;
+   no true strikes, no residue flags. Record:
+   `planning/rapid_safety_2026-08-28/RAPIDPLUNGETOL_PLAN.md` RESULTS.
 3. By Area WP2 (the pocket tree: valleys are their own jobs, the high
    ground is one rest job; `planning/by_area_merge_tree_2026-09-25/`),
    WP3 (pocket minimum depth / area settings, after G10 Part B),

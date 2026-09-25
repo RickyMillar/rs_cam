@@ -21,9 +21,12 @@
 //! sub-cell phases of the axis, so the verdict does not depend on grid
 //! alignment. (b) also runs through the production metric walk.
 //!
-//! Known limit, not pinned here: the check subtracts a Z tolerance of
-//! 2.207 cells (1.10 mm at 0.5 mm cells). A tip that goes less than that
-//! into material with the whole footprint over it is not flagged.
+//! Former known limit, closed by G-RAPIDPLUNGETOL: the check subtracts a Z
+//! tolerance of 2.207 cells (1.10 mm at 0.5 mm cells) on its high channel,
+//! so a tip less than that into material under the whole footprint went
+//! unflagged. A second, low channel now reads the cells wholly inside the
+//! footprint with only a float epsilon; its sentries are in
+//! `rapid_check_catches_shallow_plunges_g_rapidplungetol.rs`.
 //!
 //! ```text
 //! cargo test -p rs_cam_core --test rapid_check_catches_real_side_strikes_g_rapid6497

@@ -10,6 +10,7 @@
 use crate::geo::{BoundingBox3, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::stock::radial_profile::{LUT_SAMPLES, RadialProfileLUT};
 use crate::surface::dropcutter::point_drop_cutter;
 use crate::tool::FlatEndmill;
 use crate::toolpath::{MoveType, Toolpath};
@@ -641,11 +642,12 @@ pub fn check_rapid_collisions_against_stock(
     collisions
 }
 
-/// Clearance slack the live rapid check allows, expressed in dexel cells.
+/// Clearance slack the live rapid check allows on its HIGH channel, expressed
+/// in dexel cells.
 ///
 /// [`crate::dexel_stock::TriDexelStock::max_clearance_tip_z_for_profile`] errs
 /// HIGH by construction, and its own docs name the three over-reaches that
-/// stack into that error. Each is a fixed multiple of the cell size:
+/// stack into that error:
 ///
 /// * the cell **half-diagonal** (`FRAC_1_SQRT_2`), because the profile is
 ///   evaluated at the closest point the cell's material could occupy;
@@ -655,9 +657,15 @@ pub fn check_rapid_collisions_against_stock(
 ///   cell the cutter grazed reads at its pre-cut height until it is covered
 ///   completely.
 ///
-/// Total ≈ 2.207 cells. The measured strike class this check exists to see
-/// (Phase S1: −0.5 to −4 mm at 0.3 mm cells) sits far above it; benign
-/// own-kerf rides and discretisation residue sit below.
+/// Total ≈ 2.207 cells. These are counted in cells, but none of them is a Z
+/// error proportional to the cell (G-RAPIDPLUNGETOL plan §1): for a flat tool
+/// the half-diagonal costs 0 in Z, and the dilation and the over-read cost
+/// either 0 or a FULL wall height at the rim. What the constant does suppress
+/// is the rim / own-kerf class — material in partly covered cells at or just
+/// past the rim. It also blinded the check to a tip up to 2.207 cells into
+/// material under the whole footprint, so it applies to the high channel
+/// only. The low channel ([`RapidClearanceCheck::strikes`]) reads the cells
+/// wholly inside the footprint, errs low, and needs only a float epsilon.
 ///
 /// It scales with the grid, so it is never hardcoded to one resolution —
 /// see [`rapid_clearance_tolerance_mm`].
@@ -688,7 +696,22 @@ pub(crate) fn rapid_clearance_tolerance_mm(cell_size: f64) -> f64 {
 /// points.
 pub struct RapidClearanceCheck<'a> {
     cutter: &'a dyn crate::tool::MillingCutter,
+    /// The table the stamps are cut with — the same two arguments as
+    /// `compute/simulate.rs` — so the low channel reads the heights the
+    /// stamps wrote.
+    lut: RadialProfileLUT,
     hits: Vec<RapidCollision>,
+}
+
+/// Float slack of the low channel at a clearance of `low` mm.
+///
+/// `ray_top` is stored as `f32`, so a cell stamped at `z' + h` reads back
+/// within half an `f32` ULP of it (`f32::EPSILON / 2` relative); two
+/// `f32::EPSILON` relative covers that rounding four times over, with room
+/// for the `f64` arithmetic on top. `max(|low|, 1)` keeps the slack from
+/// vanishing near zero Z.
+fn low_channel_epsilon_mm(low: f64) -> f64 {
+    2.0 * f64::from(f32::EPSILON) * low.abs().max(1.0)
 }
 
 impl<'a> RapidClearanceCheck<'a> {
@@ -696,6 +719,7 @@ impl<'a> RapidClearanceCheck<'a> {
     pub fn new(cutter: &'a dyn crate::tool::MillingCutter) -> Self {
         Self {
             cutter,
+            lut: RadialProfileLUT::from_cutter(cutter, LUT_SAMPLES),
             hits: Vec::new(),
         }
     }
@@ -740,9 +764,14 @@ impl<'a> RapidClearanceCheck<'a> {
             let px = start.x + t * dx;
             let py = start.y + t * dy;
             let pz = start.z + t * dz;
-            if stock
-                .max_clearance_tip_z_for_profile(px, py, radius, self.cutter)
-                .is_some_and(|clearance| pz < clearance - tolerance)
+            // Two channels (G-RAPIDPLUNGETOL). LOW: the cells wholly inside
+            // the footprint, erring low — below it the tip is in material,
+            // however shallow. HIGH: every visited cell, erring high, less
+            // the rim tolerance — the side strikes low cannot see.
+            if let Some((low, high)) =
+                stock.clearance_bounds_for_profile(px, py, radius, self.cutter, &self.lut)
+                && (low.is_some_and(|low| pz < low - low_channel_epsilon_mm(low))
+                    || pz < high - tolerance)
             {
                 return true;
             }

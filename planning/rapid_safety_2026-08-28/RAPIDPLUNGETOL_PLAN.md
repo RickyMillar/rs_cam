@@ -1,4 +1,4 @@
-# G-RAPIDPLUNGETOL — design (2026-09-25, not implemented)
+# G-RAPIDPLUNGETOL — design (2026-09-25; Option A implemented, see RESULTS)
 
 Decision (lead, operator delegated 2026-09-25): **Option A**. Implement
 after G10 Part B lands (one cargo build at a time; the disk is tight).
@@ -150,3 +150,48 @@ header "Known limit" paragraph and the collision.rs:644-663 doc.
   engagement, Linking samples in material), then veto as Adaptive3d does
   (`.without_rapid_reorder()`) with a sentry modelled on
   `session_rough_keeps_the_planner_order_for_its_entries`. Check Rest too.
+
+## RESULTS (2026-09-25, Option A, uncommitted working tree on 07777325)
+
+Code: `TriDexelStock::clearance_bounds_for_profile` and the private
+`clearance_scan` (dexel_stock/mod.rs) — one loop; `max_clearance_tip_z_for_profile`
+now returns its `high`. `RapidClearanceCheck` builds the LUT in `new` and
+flags `z < low − ε || z < high − τ` (stock/collision.rs).
+
+Every file:line claim in §1–§4 checked against 07777325: correct.
+
+Sentries, `tests/rapid_check_catches_shallow_plunges_g_rapidplungetol.rs`
+(7 tests). With the low channel switched off (the pre-fix verdict) items 1, 2
+and 3 fail (first failing case of each: cs 0.5, phase 0, e 0.3; the walk
+returns `[]`); items 4–7 pass. With both channels: 7/7 pass.
+
+Kept green: g_rapid6497 4/4, rapid_live_check_crest_s2 4/4,
+air_filter_tool_aware_s3 4/4, entry_descent_profile_b2 4/4,
+profile_link_ceiling 4/4.
+
+§4 pinned-count tests:
+
+| Test | Result | Rapid count, high only → both |
+|---|---|---|
+| adaptive3d_lift_bridge_b1 | pass | 0 → 0 |
+| pocket_lift_bridge_b1 | FAIL, pre-existing | 3 → 3 (moves 114, 268, 423, all high-channel) |
+| adaptive_feed_modulation_pipeline_f036b | pass | 0 → 0 |
+| face_stock_top_frame_f028 | pass | 0 → 0 |
+| perf_golden_sim_metrics | FAIL, pre-existing | 59 fields moved (entry/helix metrics), the same 59 with the low channel off; no rapid field among them |
+| classification_columns_ab_m3 (`--release --ignored`) | pass | A 0 → 0, B 0 → 0 |
+| ramp_contained_in_region_g_rampcontain | pass | unchanged |
+| p1_headless_ab_wanaka (`--ignored`) | FAIL, pre-existing | not reached: "ladder made no progress at round 1; still pending: [4, 5, 6, 8]", identical with the low channel off |
+
+rivmap100 (`rivmap100_live_0925.toml`, release CLI `rough-score`, no
+`--toolpath`; Scallop and Project Curve are disabled in the file, so two
+toolpaths are simulated). `rapid_collision_count`:
+
+| Toolpath | 0.5 before | 0.5 after | 0.25 before | 0.25 after |
+|---|---|---|---|---|
+| Face 5 (id 7) | 0 | 0 | 0 | 0 |
+| 3D Rough ladder 8 > 2 (id 1) | 0 | 0 | 0 | 0 |
+
+New flags to triage: none (the low-channel-only diagnostic printed no
+record on any run). The residue classes (i) and (ii) of §2 A did not appear
+on this fixture.
+
