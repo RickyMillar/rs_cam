@@ -195,3 +195,8 @@ New flags to triage: none (the low-channel-only diagnostic printed no
 record on any run). The residue classes (i) and (ii) of §2 A did not appear
 on this fixture.
 
+G-ENTRYORDER (2026-09-25): `pocket_lift_bridge_b1`'s 3 flags at 1.0 mm
+cells are the first measured instance of the high-channel residue class: a
+union-cleared cell held at the pre-cut height, 4 mm (one level) > tau 2.2 mm;
+0 flags at 0.5 / 0.25 / 0.1 mm (PROGRESS.md roughing stream 2a).
+

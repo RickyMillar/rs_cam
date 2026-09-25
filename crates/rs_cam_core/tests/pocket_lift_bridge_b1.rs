@@ -157,8 +157,29 @@ fn build_pocket_session() -> ProjectSession {
     builder.build()
 }
 
-#[test]
-fn pocket_default_skeleton_emits_no_rapid_collisions() {
+/// The simulation cell this test runs at: 0.5 mm, which is also what the
+/// session's Auto resolution picks for this fixture (the 6 mm tool's radius
+/// / 5 = 0.6 mm, clamped to the 0.5 mm tool-rule ceiling in
+/// `session/rest_stock.rs`; the 100 x 100 mm stock is far under the 8M-column
+/// budget).
+///
+/// G-ENTRYORDER (2026-09-25): 1.0 mm cannot resolve this pocket. Each
+/// 4 mm level is cleared by several partial passes, and `conservative_top`
+/// only drops when ONE stamp covers a whole cell, so a 1 mm cell cleared by
+/// the union of several stamps keeps its pre-cut height, one full level
+/// (4 mm) above the floor. That residue exceeds the live rapid check's
+/// high-channel slack, tau = 2.207 cells = 2.2 mm at 1 mm, so the 0.5 mm
+/// rapid floor over the cleared level is flagged. Measured: at 1.0 mm three
+/// flags, moves 114 / 268 / 423, Z-only rapids to -3.5 / -7.5 / -11.5 at
+/// (59.97, 18.60); at 0.5, 0.25 and 0.1 mm none. The stock under the tool
+/// there reads -4 / -8 / -12 at 0.5 mm and finer (0.05 mm too), so the
+/// rapids stop 0.5 mm over cleared material. The 1.0 mm limit is pinned by
+/// `one_mm_cells_flag_only_the_known_coverage_union_residue` below.
+const SIM_CELL_MM: f64 = 0.5;
+
+/// Generate the pocket and simulate it at `resolution` mm; the rapid
+/// collisions the live check reports.
+fn rapid_collisions_at(resolution: f64) -> Vec<rs_cam_core::stock::collision::RapidCollision> {
     let mut session = build_pocket_session();
     let cancel = AtomicBool::new(false);
     session
@@ -166,7 +187,7 @@ fn pocket_default_skeleton_emits_no_rapid_collisions() {
         .expect("generate pocket toolpath");
 
     let opts = SimulationOptions {
-        resolution: 1.0,
+        resolution,
         skip_ids: Vec::new(),
         metrics_enabled: true,
         auto_resolution: false,
@@ -180,12 +201,21 @@ fn pocket_default_skeleton_emits_no_rapid_collisions() {
         .run_simulation(&opts, &cancel)
         .expect("simulation completes");
 
-    let sim = session.simulation_result().expect("simulation result");
-    let count = sim.rapid_collisions.len();
+    session
+        .simulation_result()
+        .expect("simulation result")
+        .rapid_collisions
+        .clone()
+}
+
+#[test]
+fn pocket_default_skeleton_emits_no_rapid_collisions() {
+    let collisions = rapid_collisions_at(SIM_CELL_MM);
+    let count = collisions.len();
 
     if count > 0 {
         eprintln!("B1 pocket repro: {count} rapid collisions");
-        for c in sim.rapid_collisions.iter().take(8) {
+        for c in collisions.iter().take(8) {
             eprintln!(
                 "  collision @ move {} : start ({:.2},{:.2},{:.3}) -> end ({:.2},{:.2},{:.3})",
                 c.move_index, c.start.x, c.start.y, c.start.z, c.end.x, c.end.y, c.end.z,
@@ -198,4 +228,30 @@ fn pocket_default_skeleton_emits_no_rapid_collisions() {
         "pocket on default 12 mm hardwood stock with safe_z=10 should not generate \
          rapid-through-stock collisions; got {count}",
     );
+}
+
+/// G-ENTRYORDER: at 1.0 mm cells the live check flags exactly the three
+/// known coverage-union residue rapids (see [`SIM_CELL_MM`]), and the same
+/// moves are clear at 0.5 mm. When `conservative_top` learns that partial
+/// stamps together cover a cell (queued, RAPIDPLUNGETOL option A), the
+/// 1.0 mm set empties and this test fails on purpose: re-pin it then.
+#[test]
+fn one_mm_cells_flag_only_the_known_coverage_union_residue() {
+    let coarse: Vec<usize> = rapid_collisions_at(1.0)
+        .iter()
+        .map(|c| c.move_index)
+        .collect();
+    assert_eq!(
+        coarse,
+        vec![114, 268, 423],
+        "the 1.0 mm residue set moved; if conservative_top now resolves \
+         union-cleared cells, re-pin this test"
+    );
+    let fine = rapid_collisions_at(SIM_CELL_MM);
+    for m in &coarse {
+        assert!(
+            fine.iter().all(|c| c.move_index != *m),
+            "move {m} is flagged at {SIM_CELL_MM} mm too: not residue"
+        );
+    }
 }

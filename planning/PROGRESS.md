@@ -115,6 +115,21 @@ VCarve in softwood since B4; 12.0 mm serves.
    before). rivmap100 0.5 / 0.25 mm: 0 rapid collisions before and after;
    no true strikes, no residue flags. Record:
    `planning/rapid_safety_2026-08-28/RAPIDPLUNGETOL_PLAN.md` RESULTS.
+2a. **G-ENTRYORDER (2026-09-25): not a defect.** `pocket_lift_bridge_b1`'s
+   3 rapid collisions at 1.0 mm cells (moves 114 / 268 / 423, Z-only rapids
+   to -3.5 / -7.5 / -11.5 at (59.97, 18.60)) are coverage-union residue of
+   `conservative_top`: the 1 mm high channel reads 0 / -4 / -8, one 4 mm
+   level over the floor, and 4 mm > tau 2.207 cells = 2.2 mm. The stock
+   there reads -4 / -8 / -12 at 0.5, 0.25, 0.1 and 0.05 mm, so the rapid
+   floor is +0.5 over cleared material; 0 flags at 0.5 / 0.25 / 0.1 mm. The
+   2.5D entry replay reads only moves emitted before each entry, and no op
+   with an entry dressup is reordered after it. Bisected to 9887735 only
+   because the measured floor went +2 -> +0.5 (the +2 floor cleared
+   high - tau by 0.21 mm). Test now simulates at 0.5 mm (= Auto for its
+   6 mm tool); new test `one_mm_cells_flag_only_the_known_coverage_union_residue`
+   pins the 1.0 mm set. OPEN (queued with S2's sub-cell-aware clearance
+   query): lower `conservative_top` once partial stamps together cover a
+   cell.
 3. By Area WP2 (the pocket tree: valleys are their own jobs, the high
    ground is one rest job; `planning/by_area_merge_tree_2026-09-25/`),
    WP3 (pocket minimum depth / area settings, after G10 Part B),
