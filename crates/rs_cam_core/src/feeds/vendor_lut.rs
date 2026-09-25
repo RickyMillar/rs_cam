@@ -704,8 +704,8 @@ mod tests {
         let lut = VendorLut::embedded();
         assert_eq!(
             lut.observations.len(),
-            476,
-            "expected 476 embedded observations: 252 before feeds matrix R5 \
+            498,
+            "expected 498 embedded observations: 252 before feeds matrix R5 \
              (2026-09-23), + 12 printed Amana ball v7 rows (1/8 and 1/4 in, \
              hardwood / softwood / MDF, pocket and adaptive), + 60 printed \
              Amana Spektra v24 rows (2F and 3F at 1/8 in, 6 mm and 1/4 in; \
@@ -728,7 +728,8 @@ mod tests {
              the other families = 472; then A3 step 4 (2026-09-24, G3): - 2 \
              derived onsrud-bull softwood and hardwood adaptive rows, + 6 \
              printed Amana corner-radius bull rows (1/4 and 1/2 in x softwood \
-             / hardwood / MDF, pocket only) = 476"
+             / hardwood / MDF, pocket only) = 476; \
+             then the G6 Spektra load (2026-09-25): + 24 printed Spektra rows (hardwood, soft and hard plywood; 2F 1.5-12.7 mm, 3F 9.525 and 12.7 mm), - 2 long-tail 3F 19.05 mm rows (the printed feed disagrees with the 18 000 RPM header) = 498"
         );
     }
 
@@ -839,7 +840,6 @@ mod tests {
         "amana-flat-mdf-pocket-12700-3f-spektra",
         "amana-flat-mdf-pocket-1500-2f-spektra",
         "amana-flat-mdf-pocket-1587-2f-spektra",
-        "amana-flat-mdf-pocket-19050-3f-spektra",
         "amana-flat-mdf-pocket-2381-2f-spektra",
         "amana-flat-mdf-pocket-3000-2f-spektra",
         "amana-flat-mdf-pocket-4763-2f-spektra",
@@ -852,7 +852,6 @@ mod tests {
         "amana-flat-softwood-pocket-12700-3f-spektra",
         "amana-flat-softwood-pocket-1500-2f-spektra",
         "amana-flat-softwood-pocket-1587-2f-spektra",
-        "amana-flat-softwood-pocket-19050-3f-spektra",
         "amana-flat-softwood-pocket-2381-2f-spektra",
         "amana-flat-softwood-pocket-3000-2f-spektra",
         "amana-flat-softwood-pocket-4763-2f-spektra",

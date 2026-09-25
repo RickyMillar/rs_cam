@@ -394,16 +394,25 @@ fn the_gate_holds_the_form_a_point_with_no_minimum_g1() {
     assert_eq!(advisory.bounds.burn_reference_label(), "printed point");
 }
 
+/// Form B: 1.2 mm is inside one printed step (1.5 mm) below the 1.5 mm end
+/// of the Spektra hardwood 2-flute series. The series has 9 printed sizes
+/// (1.5-12.7 mm, the G6 Spektra load of 2026-09-25); the OLS slope of
+/// ln(point) on ln(d) over them is 0.445115 (python over
+/// observations/*.json), so the scale is (1.2 / 1.5)^0.445115 and the
+/// point is 0.0508 × that scale. (At 13 mm, one step above the series,
+/// the Amana compression-spiral 12.7 mm row answers by form C.) Before that load the fixture was 2.5 mm,
+/// one step below a 3.175-6.35 mm series; 2.5 mm is now form A between
+/// the printed 1.5 and 3.0 mm rows.
 #[test]
 fn a_form_b_cell_has_one_band_g1() {
     assert_one_claimed_band(
         OperationType::Pocket,
-        &tool_of(ToolType::EndMill, 2.5),
+        &tool_of(ToolType::EndMill, 1.2),
         &hardwood(),
-        "amana-flat-hardwood-pocket-3175-2f-spektra",
+        "amana-flat-hardwood-pocket-1500-2f-spektra",
         "B",
-        0.923_308_309_938,
-        (None, 0.093_808_124_290),
+        0.905448790581,
+        (None, 0.045996798562),
     );
 }
 

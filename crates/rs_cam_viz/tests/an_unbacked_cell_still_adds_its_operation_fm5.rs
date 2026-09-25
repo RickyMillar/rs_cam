@@ -9,10 +9,10 @@
 //! (`FeedsError::WrongToolForOperation`) still stops the add, as before.
 //!
 //! Fixture: a flat end mill, the generic wood router, the default stock
-//! material. `AlignmentPinDrill` is stock-based (no model needed), and the
-//! default 6.35 mm end mill is outside the G6 drill claim (3.175-6.0 mm,
-//! ruling B5), so the drill cell refuses. `Scallop` with the same tool is
-//! the tool-rule control.
+//! material. `AlignmentPinDrill` is stock-based (no model needed); the tool
+//! is set to 15.875 mm so it sits outside the G6 drill claim (3.0-12.7 mm,
+//! ruling B5, widened 2026-09-25), and the drill cell refuses. `Scallop`
+//! with the same tool is the tool-rule control.
 
 #![allow(
     clippy::unwrap_used,
@@ -54,9 +54,12 @@ impl ComputeBackend for SilentBackend {
 
 fn controller_with_end_mill() -> AppController<SilentBackend> {
     let mut controller = AppController::with_backend(SilentBackend);
-    controller.state.session = ProjectSessionBuilder::new()
-        .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
-        .build();
+    // 15.875 mm sits outside the G6 drill claim's 3.0-12.7 mm range, so
+    // AlignmentPinDrill still refuses (the default 6.35 mm end mill no
+    // longer does, since the range widened 2026-09-25).
+    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    tool.diameter = 15.875;
+    controller.state.session = ProjectSessionBuilder::new().tool(tool).build();
     controller
 }
 

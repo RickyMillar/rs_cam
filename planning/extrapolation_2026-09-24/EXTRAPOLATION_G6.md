@@ -511,3 +511,35 @@ and the restored drill no-lift assertions.
 - Open question 1 stays open: whether Amana's printed 18 000 RPM may win
   over the 14 000 cap on a claimed row. If it wins, the 3.175 mm MDF cell
   lands at exactly 720 mm/min per mm, the new ceiling.
+
+### 5.7 The Spektra sizes (2026-09-25)
+
+Rulings: RULINGS.md "Operator rulings, 2026-09-25: the Spektra sizes";
+transcription and check: `fetch/G6/SPEKTRA_SIZES.md`.
+
+- 24 printed Spektra rows load into `amana_flat_end.json` (hardwood,
+  plywood_softwood, plywood_hardwood; 2F 1.5 / 3 / 5 / 9.525 / 12 / 12.7
+  mm, 3F 9.525 / 12.7 mm; derived / b, the Wood/Plywood column).
+- `DRILL_RULES` `range_mm` widens from (3.175, 6.0) to (3.0, 12.7).
+- `amana_long_tail.json`: the 13 softwood rows are re-graded exact / a ->
+  derived / b (R5), and every row carries `hardness_kind` /
+  `hardness_value` (G2h). The two 3F 19.05 mm rows are **removed**:
+  ruling 2 says they stop serving cells, and the LUT has no withheld
+  state. Their printed values stay in
+  `fetch/G6/candidate_rows_spektra_all.json`. The LUT holds 498 rows.
+- Literature cells: `flat_3mm_drill_oak`, `flat_3mm_drill_softwood` and
+  `flat_12mm_drill_oak_big` now ship and are re-banded from the printed
+  chart (both printed figures, Ramp Down / (RPM x Z) and chip / Z, +/-2 %).
+  `flat_1mm_pocket_oak_micro` now ships 0.0508 x (1 / 1.5)^0.445 x 1.033
+  from the printed 1.5 mm hardwood row (G1 form B, inside the R1 micro
+  window); by operator ruling 2026-09-25 its band and alarm are re-banded
+  from the printed chart (1/32-1/16 in: 0.0262-0.0525 mm/tooth). The 12 mm
+  drill plunge (about 100 mm/min per mm) is inside 50-580 but within the
+  harness's 10 % edge of the unsourced floor; by operator ruling that
+  invariant is "major" on this cell, so the edge reads "minor".
+- Test fixtures moved: the a2 one-value count (148 -> 170), the LUT total
+  pins (476 -> 498) and the legacy allowlist (the two removed rows), the
+  g6ramp "outside the range" flat (6.35 -> 15.875 mm), the G1 form B cell
+  (2.5 -> 1.2 mm; 2.5 mm is now form A between 1.5 and 3.0 mm).
+- FM1: no cell moves (the matrix drill cells are 3.175 and 6.0 mm, already
+  inside the claim). Only `support_detail` restates the range on 16 cells.

@@ -22,9 +22,11 @@
 //! A printed point stays a point.
 //!
 //! The recipe holds the chip per tooth. Step 2c of `feeds::calculate`
-//! clamps the chart's 18 000 RPM to the engine drill RPM cap (14 000 at
-//! D <= 6 mm, a repo rule), so the feed comes out at about 0.78x the
-//! printed Ramp Down. The card states it (orchestrator decision 1).
+//! clamps the chart's 18 000 RPM to the engine drill RPM cap (a repo rule,
+//! tiered by diameter: 8 000-14 000 at D <= 6 mm, 6 000-10 000 at D <= 10 mm,
+//! 4 000-8 000 above that), so the feed comes out at about 0.78x, 0.56x or
+//! 0.44x the printed Ramp Down, by tier. The card states it (orchestrator
+//! decision 1).
 
 use std::ops::RangeInclusive;
 
@@ -71,23 +73,27 @@ pub struct DrillRule {
 /// The Amana Spektra chart (2 and 3 flutes).
 const AMANA_SPEKTRA_SOURCES: &[&str] = &["amana_spektra_spiral_plunge_v24"];
 
-/// The drill rules (ruling B5). One rule: the Amana Spektra flat end mill.
+/// The drill rules (ruling B5; range widened 2026-09-25, the Spektra sizes
+/// ruling, `fetch/G6/SPEKTRA_SIZES.md` §5-6).
 ///
-/// The range is 3.175-6.0 mm, where the 8 verified Ramp Down rows sit
-/// (`fetch/G6/verified_rows.json`). The chart prints the same rule for
-/// every size; the sizes from 1/4 in up are a later transcription job
-/// (orchestrator decision 2). Amana prints 2 and 3 flutes only, so a 1- or
-/// 4-flute end mill refuses (decision 6).
+/// The range is 3.0-12.7 mm: the Ramp Down identity (Feed Rate / flutes)
+/// holds at every printed size in it, both flute counts, both columns (28
+/// cells; the worst case is +0.9 %, 3 Flute 3/8 in MDF). Below 3.0 mm every
+/// printed row carries the chart's breakage warning. The only printed row
+/// above 12.7 mm (3 Flute 3/4 in) does not agree with the chart's 18 000 RPM
+/// header (its feed implies about 12 000 RPM) and is held out. Amana prints
+/// 2 and 3 flutes only, so a 1- or 4-flute end mill refuses (decision 6).
 pub const DRILL_RULES: &[DrillRule] = &[DrillRule {
     tool_family: ToolFamily::FlatEnd,
     source_ids: AMANA_SPEKTRA_SOURCES,
     tool_subfamily: "spektra_spiral_plunge",
     home: (LutOperationFamily::Pocket, LutPassRole::Roughing),
-    range_mm: (3.175, 6.0),
+    range_mm: (3.0, 12.7),
     flutes: &[2, 3],
     witness: "Amana Spektra Spiral Plunge chart v24 prints Ramp Down = Feed Rate IPM / # of \
-              flutes at 18,000 RPM; 8 Ramp Down cells verified at 1/8 in and 6 mm, 2 and 3 \
-              flutes, Wood/Plywood and MDF/Laminate",
+              flutes at 18,000 RPM; the identity holds at every printed size from 3.0 mm to \
+              1/2 in (12.7 mm), 2 and 3 flutes, Wood/Plywood and MDF/Laminate (28 cells; worst \
+              case +0.9%, 3 Flute 3/8 in MDF)",
 }];
 
 /// True when `d` (mm) is inside the rule's range, with
@@ -153,6 +159,10 @@ pub struct DrillClaim {
     pub home: (LutOperationFamily, LutPassRole),
     /// The row's printed material label (the chart column).
     pub material_label: String,
+    /// The query's diameter (mm). The rule's range now spans three RPM
+    /// tiers (`drill_rpm_envelope_for_diameter`), so the card reads the
+    /// cap at the query's own diameter, not at the range's upper end.
+    pub diameter_mm: f64,
     /// The diameters (mm) where the rule is valid.
     pub range_mm: RangeInclusive<f64>,
     /// The RPM the chart prints (the row's `rpm_nominal`).
@@ -196,21 +206,30 @@ impl DrillClaim {
         } else {
             format!("the chart's \"{}\" column", self.material_label)
         };
-        // The engine drill RPM cap at the top of the range is the cap every
-        // claimed cell reads (Step 2c of `feeds::calculate`).
-        let (cap_lo, cap_hi) = crate::feeds::drill_rpm_envelope_for_diameter(hi);
+        // The engine drill RPM cap is tiered by diameter
+        // (`drill_rpm_envelope_for_diameter`); the range now spans three
+        // tiers (<=6 mm, <=10 mm, >10 mm), so the card reads the cap at the
+        // query's own diameter, not at the range's upper end.
+        let (cap_lo, cap_hi) = crate::feeds::drill_rpm_envelope_for_diameter(self.diameter_mm);
+        let tier_hi = if self.diameter_mm <= 6.0 {
+            6.0
+        } else if self.diameter_mm <= 10.0 {
+            10.0
+        } else {
+            self.diameter_mm
+        };
         let rpm = match self.printed_rpm {
             Some(printed) if printed > 0.0 => {
                 let ratio = cap_hi.min(printed) / printed;
                 format!(
                     "the chart's {printed:.0} RPM is replaced by the engine drill RPM cap \
-                     ({cap_lo:.0}-{cap_hi:.0} RPM at D <= {hi:?} mm, a repo rule), and the feed \
-                     follows (about x{ratio:.2} of the printed Ramp Down)"
+                     ({cap_lo:.0}-{cap_hi:.0} RPM at D <= {tier_hi:?} mm, a repo rule), and the \
+                     feed follows (about x{ratio:.2} of the printed Ramp Down)"
                 )
             }
             _ => format!(
                 "the chart prints no RPM; the engine drill RPM cap ({cap_lo:.0}-{cap_hi:.0} RPM \
-                 at D <= {hi:?} mm, a repo rule) sets it"
+                 at D <= {tier_hi:?} mm, a repo rule) sets it"
             ),
         };
         let detail = format!(
@@ -280,6 +299,7 @@ pub fn drill_basis(query: &LookupQuery, obs: &VendorObservation) -> DrillBasis {
         source_id: obs.source_id.clone(),
         home: rule.home,
         material_label: obs.material_label.clone(),
+        diameter_mm: query.diameter_mm,
         range_mm: rule.range_mm.0..=rule.range_mm.1,
         printed_rpm: obs.rpm_nominal,
         witness: rule.witness,
@@ -318,18 +338,27 @@ mod tests {
     const HOME_6: &str = "amana-flat-hardwood-pocket-6000-2f-spektra";
 
     /// The rule reads the Spektra pocket row for a 2- or 3-flute flat
-    /// plunge inside 3.175-6.0 mm, and for no other query.
+    /// plunge inside 3.0-12.7 mm, and for no other query.
     #[test]
     fn the_rule_reads_only_a_flat_plunge_inside_its_range() {
         let lut = VendorLut::embedded();
         let home = row(&lut, HOME_6);
-        for (d, z) in [(6.0, 2), (6.0, 3), (3.175, 2), (4.0, 3)] {
+        for (d, z) in [
+            (6.0, 2),
+            (6.0, 3),
+            (3.175, 2),
+            (4.0, 3),
+            (3.0, 2),
+            (6.35, 2),
+            (9.525, 3),
+            (12.7, 3),
+        ] {
             assert!(
                 drill_rule(&query(ToolFamily::FlatEnd, d, z), &home).is_some(),
                 "{d} mm {z}F"
             );
         }
-        for (d, z) in [(3.0, 2), (6.35, 2), (6.0, 1), (6.0, 4)] {
+        for (d, z) in [(2.0, 2), (15.875, 2), (6.0, 1), (6.0, 4)] {
             assert!(
                 drill_rule(&query(ToolFamily::FlatEnd, d, z), &home).is_none(),
                 "{d} mm {z}F"
@@ -350,9 +379,11 @@ mod tests {
         let mut pocket = query(ToolFamily::FlatEnd, 6.0, 2);
         pocket.operation_family = LutOperationFamily::Pocket;
         assert!(drill_rule(&pocket, &home).is_none());
-        // The 6.35 mm row and the adaptive copy are not read.
-        let wide = row(&lut, "amana-flat-hardwood-pocket-6350-2f-spektra");
-        assert!(drill_rule(&query(ToolFamily::FlatEnd, 6.0, 2), &wide).is_none());
+        // The 1.5 mm row (below the range; ruling item 1: "the 1.5 mm rows
+        // are side rows only") is not read, even though the query is
+        // in range.
+        let too_small = row(&lut, "amana-flat-hardwood-pocket-1500-2f-spektra");
+        assert!(drill_rule(&query(ToolFamily::FlatEnd, 6.0, 2), &too_small).is_none());
         let mut adaptive = home;
         adaptive.operation_family = LutOperationFamily::Adaptive;
         assert!(drill_rule(&query(ToolFamily::FlatEnd, 6.0, 2), &adaptive).is_none());

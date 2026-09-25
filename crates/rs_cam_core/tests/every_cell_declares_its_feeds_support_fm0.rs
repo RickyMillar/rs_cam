@@ -24,9 +24,10 @@
 //!   and a cell whose lookup found a row is `VendorBacked`, `Extrapolated`
 //!   (a G1 size claim, extrapolation P1), `FamilyTransferred` (a G3 family
 //!   claim, A3), `DrillTransferred` (the G6 drill claim, ruling B5) or a
-//!   size refusal. The default 6.35 mm end mill is outside the G6 range
-//!   (3.175-6.0 mm), so this grid holds no `DrillTransferred` cell; the arm
-//!   is checked where it occurs.
+//!   size refusal. The default 6.35 mm end mill is inside the G6 range
+//!   (3.0-12.7 mm, widened 2026-09-25), so a Drill and AlignmentPinDrill
+//!   cell with a wood row lands on `DrillTransferred` here; the arm is
+//!   checked below.
 //! - [`no_cell_refuses_today`] (c) — the set of `Refuse` cells is empty.
 //! - [`the_unbacked_refusal_names_its_cell`] (d) — the `Display` text of
 //!   `FeedsError::Unbacked` names the operation, the tool family and the

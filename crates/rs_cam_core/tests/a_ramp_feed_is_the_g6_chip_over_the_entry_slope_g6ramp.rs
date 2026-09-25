@@ -438,7 +438,9 @@ fn every_fallback_writes_none_and_says_why_g6ramp() {
     for (name, tool, material) in [
         ("bull 6 mm", tool_of(ToolType::BullNose, 6.0, 2), softwood()),
         ("ball 6 mm", tool_of(ToolType::BallNose, 6.0, 2), softwood()),
-        ("flat 6.35 mm", flat(6.35, 2), softwood()),
+        // 15.875 mm (5/8 in): above the widened 3.0-12.7 mm range (the G6
+        // Spektra load, 2026-09-25); 6.35 mm is inside it now.
+        ("flat 15.875 mm", flat(15.875, 2), softwood()),
         ("flat 6 mm 4F", flat(6.0, 4), softwood()),
         ("flat 6 mm acrylic", flat(6.0, 2), acrylic),
     ] {

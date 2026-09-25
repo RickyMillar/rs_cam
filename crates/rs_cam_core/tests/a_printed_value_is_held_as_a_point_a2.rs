@@ -23,8 +23,8 @@
 //! `data/vendor_lut/observations/*.json`, the 26 files the embedded LUT
 //! includes):
 //!
-//! - 496 rows; 344 print two limits with `min < max`; 148 print one value
-//!   (100 a maximum only, 48 two equal limits, 0 a minimum only); 4 print no
+//! - 518 rows; 344 print two limits with `min < max`; 170 print one value
+//!   (124 a maximum only, 46 two equal limits, 0 a minimum only); 4 print no
 //!   chipload. Every one-value row carries a `diameter_mm` except the three
 //!   AMS-159 60 and 90 deg rows: since ruling B4 (2026-09-25) they carry
 //!   none, because the chart prints none, and they are keyed at their angle
@@ -83,7 +83,9 @@ const TOL: f64 = 1e-9;
 
 /// The one-value rows in the 26 embedded observation files (see the module
 /// doc for the derivation).
-const ONE_VALUE_ROWS: usize = 148;
+// 148 before the G6 Spektra load of 2026-09-25: it added 24 maximum-only
+// rows and removed the two equal-limit 19.05 mm 3-flute rows (ruling 2).
+const ONE_VALUE_ROWS: usize = 170;
 
 /// `true` when the raw row prints one value: a maximum only, a minimum
 /// only, or two equal limits.

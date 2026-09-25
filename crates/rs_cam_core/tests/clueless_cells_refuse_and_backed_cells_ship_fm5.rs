@@ -10,9 +10,9 @@
 //!
 //! The sentry pins four named cells and the door behaviour they imply:
 //!
-//! - (a) Drill with a 6.35 mm flat end mill in hardwood refuses: the G6
-//!   drill claim (ruling B5) covers 3.175-6.0 mm only, and the text names
-//!   the group;
+//! - (a) Drill with a 15.875 mm flat end mill in hardwood refuses: the G6
+//!   drill claim (ruling B5) covers 3.0-12.7 mm only (widened 2026-09-25),
+//!   and the text names the group;
 //! - (b) Waterline with a ball nose in plywood refuses (no ball plywood row);
 //! - (c) Trace with a flat end mill in hardwood ships FormulaOnly (Onsrud
 //!   and Amana 1 x D charts back it);
@@ -74,19 +74,7 @@ fn suggest(
     kind: ToolType,
     material: &Material,
 ) -> Result<SuggestedParams, FeedsError> {
-    let tool = tool_of(kind);
-    let machine = MachineProfile::default();
-    let stock = stock_ctx();
-    suggest_params(SuggestParamsInput {
-        op_type: op,
-        tool: &tool,
-        machine: &machine,
-        material,
-        lut: &EMBEDDED_LUT,
-        stock_ctx: &stock,
-        spindle_strategy: SpindleStrategy::default(),
-        context: SuggestContext::default(),
-    })
+    suggest_tool(op, &tool_of(kind), material)
 }
 
 fn hardwood() -> Material {
@@ -98,8 +86,14 @@ fn hardwood() -> Material {
 /// (a) and (b): two CLUELESS cells refuse, with the judgement's reason.
 #[test]
 fn clueless_cells_refuse_with_the_judgement_reason_fm5() {
-    let drill = suggest(OperationType::Drill, ToolType::EndMill, &hardwood())
-        .expect_err("a 6.35 mm flat plunge is outside the G6 claim's 3.175-6.0 mm");
+    let mut drill_tool = tool_of(ToolType::EndMill);
+    drill_tool.diameter = 15.875;
+    drill_tool.cutting_length = 38.0;
+    drill_tool.shank_diameter = 15.875;
+    drill_tool.shaft_diameter = 15.875;
+    drill_tool.stickout = drill_tool.cutting_length + 8.0;
+    let drill = suggest_tool(OperationType::Drill, &drill_tool, &hardwood())
+        .expect_err("a 15.875 mm flat plunge is outside the G6 claim's 3.0-12.7 mm");
     match &drill {
         FeedsError::Unbacked {
             operation, reason, ..

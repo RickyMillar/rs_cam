@@ -89,10 +89,10 @@ fn try_recipe(
 }
 
 /// The tool of a fixture: the type's default, except on a drill. Ruling B5
-/// (G6, 2026-09-24): a drill ships only through the drill claim (a 2- or
-/// 3-flute flat end mill at 3.175-6.0 mm), and the default end mill is
-/// 6.35 mm, so a drill fixture takes a 6.0 mm end mill. Before B5 every
-/// drill cell in softwood refused (ruling R1).
+/// (G6, 2026-09-24; range widened 2026-09-25): a drill ships only through
+/// the drill claim (a 2- or 3-flute flat end mill at 3.0-12.7 mm); a drill
+/// fixture takes a 6.0 mm end mill. Before B5 every drill cell in softwood
+/// refused (ruling R1).
 fn fixture_tool(op_type: OperationType, tool_type: ToolType) -> ToolConfig {
     let mut tool = ToolConfig::new_default(ToolId(1), tool_type);
     if matches!(

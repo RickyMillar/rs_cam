@@ -111,10 +111,11 @@ const VBIT_HARDWOOD: &str = "No published figure backs the formula for a V-bit o
      the Onsrud V-bit band, the only printed witness, and no printed hardwood row serves this \
      operation (operator ruling 2026-09-25).";
 /// The refusal of a flat end mill plunge that the G6 drill claim does not
-/// serve (ruling B5): a diameter outside 3.175-6.0 mm, a flute count other
-/// than 2 or 3, or a material with no Spektra row.
+/// serve (ruling B5, range widened 2026-09-25): a diameter outside
+/// 3.0-12.7 mm, a flute count other than 2 or 3, or a material with no
+/// Spektra row.
 pub const DRILL_FLAT: &str = "No published figure for this flat end mill plunge: the Amana \
-     Spektra Ramp Down claim covers 3.175-6.0 mm, 2 or 3 flutes, in wood, plywood and MDF (G6 \
+     Spektra Ramp Down claim covers 3.0-12.7 mm, 2 or 3 flutes, in wood, plywood and MDF (G6 \
      drill, ruling B5).";
 const DRILL_BALL: &str = "No published figure exists for a plunge drill with a ball-nose cutter \
      (G6 drill, ruling B5).";
@@ -253,7 +254,7 @@ pub fn formula_backing(
     match (tool, family, role) {
         // Drill (G6, ruling B5): no row is filed under the drill family. The
         // drill claim (`extrapolation::drill`) serves a 2- or 3-flute flat
-        // end mill at 3.175-6.0 mm from its Spektra side row; every other
+        // end mill at 3.0-12.7 mm from its Spektra side row; every other
         // drill cell reaches this table and refuses, in every material
         // (`support_for_lookup`).
         (ToolFamily::FlatEnd, Drill, _) => Clueless { reason: DRILL_FLAT },

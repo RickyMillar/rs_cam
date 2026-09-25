@@ -149,7 +149,7 @@ impl RampFallback {
                 flutes,
             } => format!(
                 "No G6 drill claim covers a {diameter_mm} mm {flutes}-flute {} (the claim covers \
-                 the Amana Spektra flat end mill, 3.175-6.0 mm, 2 or 3 flutes, in wood, plywood \
+                 the Amana Spektra flat end mill, 3.0-12.7 mm, 2 or 3 flutes, in wood, plywood \
                  and MDF); the entry uses the plunge rate.",
                 family_label(*tool_family)
             ),
@@ -557,7 +557,8 @@ mod tests {
             source_id: "amana_spektra_spiral_plunge_v24".to_owned(),
             home: (LutOperationFamily::Pocket, LutPassRole::Roughing),
             material_label: "Wood/Plywood".to_owned(),
-            range_mm: 3.175..=6.0,
+            diameter_mm: 6.0,
+            range_mm: 3.0..=12.7,
             printed_rpm: Some(18_000.0),
             witness: "test witness",
             confidence: ClaimConfidence::OneWitness,

@@ -375,7 +375,7 @@ fn the_gate_reads_the_same_scaled_point_g6() {
 /// (c) A flat plunge outside the claim refuses, and the text names G6.
 #[test]
 fn a_flat_plunge_outside_the_claim_refuses_with_g6() {
-    for (d, z) in [(3.0, 2), (6.35, 2), (6.0, 1), (6.0, 4)] {
+    for (d, z) in [(2.0, 2), (15.875, 2), (6.0, 1), (6.0, 4)] {
         let cell = format!("Drill {d} mm {z}F hardwood");
         let reason = refusal(
             suggest(
