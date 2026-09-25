@@ -30,7 +30,10 @@ use rs_cam_core::session::{ProjectSession, SimulationOptions};
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
-const WANAKA_TOML: &str = "/home/ricky/Downloads/wanaka100/wanaka_full_tuned.toml";
+const WANAKA_TOML: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/wanaka100/wanaka_full_tuned.toml"
+);
 
 #[test]
 #[ignore = "expensive WANAKA end-to-end stamping revalidation; run with `cargo test --test wanaka_step4_fa_revalidation -- --ignored`"]

@@ -9,7 +9,7 @@
 //! wanaka project with no manual feed/RPM/stepover input from the user.
 //! This test is the bar.
 //!
-//! Requires `/home/ricky/Downloads/wanaka100/wanaka_full_tuned.toml`.
+//! Requires `tests/fixtures/wanaka100/wanaka_full_tuned.toml`.
 //! On machines that don't have that file the test is a no-op (early
 //! return with a `skip:` log line) so CI stays green.
 
@@ -27,7 +27,10 @@ use std::sync::atomic::AtomicBool;
 
 use rs_cam_core::session::{ProjectSession, SimulationOptions};
 
-const WANAKA_TOML: &str = "/home/ricky/Downloads/wanaka100/wanaka_full_tuned.toml";
+const WANAKA_TOML: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/wanaka100/wanaka_full_tuned.toml"
+);
 
 /// Wanaka Back Rough commanded depth-per-pass (from the TOML).
 const BACK_ROUGH_DEPTH_PER_PASS_MM: f64 = 3.0;

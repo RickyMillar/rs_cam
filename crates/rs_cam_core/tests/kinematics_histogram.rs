@@ -22,7 +22,10 @@ use rs_cam_core::trace::toolpath_spans::SpanKind;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
-const WANAKA_FIXTURE: &str = "/home/ricky/Downloads/wanaka100/wanaka_full_tuned.toml";
+const WANAKA_FIXTURE: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/wanaka100/wanaka_full_tuned.toml"
+);
 
 #[test]
 #[ignore = "expensive WANAKA histogram diagnostic; run with `cargo test --test kinematics_histogram -- --ignored`"]

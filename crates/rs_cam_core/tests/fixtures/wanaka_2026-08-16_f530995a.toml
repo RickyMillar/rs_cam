@@ -342,7 +342,7 @@ product_id = ""
 
 [[models]]
 id = 1
-path = "/home/ricky/Downloads/wanaka100/rivmap_export/terrain.stl"
+path = "wanaka100/rivmap_export/terrain.stl"
 name = "terrain.stl"
 kind = "stl"
 
@@ -351,7 +351,7 @@ kind = "millimeters"
 
 [[models]]
 id = 2
-path = "/home/ricky/Downloads/wanaka100/lakes.dxf"
+path = "wanaka100/lakes.dxf"
 name = "lakes.dxf"
 kind = "dxf"
 
@@ -360,7 +360,7 @@ kind = "millimeters"
 
 [[models]]
 id = 3
-path = "/home/ricky/Downloads/wanaka100/rivmap_export/holes.dxf"
+path = "wanaka100/rivmap_export/holes.dxf"
 name = "holes.dxf"
 kind = "dxf"
 
@@ -369,7 +369,7 @@ kind = "millimeters"
 
 [[models]]
 id = 5
-path = "/home/ricky/Downloads/wanaka100/rivmap_export/rivers.dxf"
+path = "wanaka100/rivmap_export/rivers.dxf"
 name = "rivers.dxf"
 kind = "dxf"
 

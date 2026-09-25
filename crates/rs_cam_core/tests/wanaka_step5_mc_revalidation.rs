@@ -27,7 +27,10 @@ use rs_cam_core::session::{ProjectSession, SimulationOptions};
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
-const WANAKA_TOML: &str = "/home/ricky/Downloads/wanaka100/wanaka_full_tuned.toml";
+const WANAKA_TOML: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/wanaka100/wanaka_full_tuned.toml"
+);
 
 fn assert_mesh_well_formed(label: &str, mesh: &rs_cam_core::stock::stock_mesh::StockMesh) {
     assert!(!mesh.vertices.is_empty(), "{label}: mesh has no vertices");
