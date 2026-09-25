@@ -57,7 +57,10 @@ use std::sync::atomic::AtomicBool;
 use rs_cam_core::machine::kinematics::MachineKinematics;
 use rs_cam_core::session::{Command, ProjectSession, SetMachineArgs, SimulationOptions};
 
-const WANAKA_TOML: &str = "/home/ricky/Downloads/wanaka100/wanaka_full_tuned.toml";
+const WANAKA_TOML: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/wanaka100/wanaka_full_tuned.toml"
+);
 
 /// Setup-1 toolpath IDs other than Back Rough (id 4) — skipped so we
 /// time only that one toolpath. Setup 2 toolpaths (10, 11) too.

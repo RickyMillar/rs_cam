@@ -28,7 +28,10 @@ use std::path::Path;
 #[ignore = "expensive AgentSearch axial-DOC diagnostic; run with `cargo test --test agent_search_axial_doc -- --ignored`"]
 fn agent_search_axial_doc_diag() {
     // Prefer the actual wanaka mesh if present; fallback to fixture.
-    let wanaka = Path::new("/home/ricky/Downloads/wanaka100/rivmap_export/terrain.stl");
+    let wanaka = Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/wanaka100/rivmap_export/terrain.stl"
+    ));
     let stl_path = if wanaka.exists() {
         wanaka.to_path_buf()
     } else {

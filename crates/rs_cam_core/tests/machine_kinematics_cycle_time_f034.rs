@@ -241,7 +241,7 @@ fn cycle_time_matches_naive_for_pure_straight_line() {
 /// Back Rough is a real 4000+ move adaptive3d toolpath that exercises
 /// the integrator's accel + corner-decel logic end-to-end.
 ///
-/// The test loads `/home/ricky/Downloads/wanaka100/wanaka_full_tuned.toml`
+/// The test loads `tests/fixtures/wanaka100/wanaka_full_tuned.toml`
 /// — a user-local file. On any machine that doesn't have it (CI / other
 /// devs) the test logs `skip:` and returns Ok, matching the pattern
 /// `wanaka_e2e_chipload_gate.rs` uses.
@@ -254,7 +254,10 @@ fn cycle_time_matches_naive_for_pure_straight_line() {
 #[test]
 fn cycle_time_calibrated_against_shapeoko_reference() {
     use std::path::Path;
-    const WANAKA_TOML: &str = "/home/ricky/Downloads/wanaka100/wanaka_full_tuned.toml";
+    const WANAKA_TOML: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/wanaka100/wanaka_full_tuned.toml"
+    );
     /// Wall-clock seconds Back Rough (id 4, Setup 1) takes on the
     /// user's tuned Shapeoko XXL — measured 13:47 (modulation off).
     const BACK_ROUGH_MEASURED_S: f64 = 827.0;

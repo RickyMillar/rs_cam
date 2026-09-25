@@ -36,7 +36,10 @@ use rs_cam_core::{
     toolpath::{MoveType, Toolpath},
 };
 
-const STL_PATH: &str = "/home/ricky/Downloads/wanaka100/rivmap_export/terrain.stl";
+const STL_PATH: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/wanaka100/rivmap_export/terrain.stl"
+);
 
 fn parse_z_level_label(label: &str) -> Option<f64> {
     if let Some(rest) = label.strip_prefix("Adaptive Z ") {

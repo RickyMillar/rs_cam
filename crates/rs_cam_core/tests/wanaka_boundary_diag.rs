@@ -21,7 +21,10 @@ use rs_cam_core::toolpath::MoveType;
 #[ignore = "wanaka boundary diagnostic — run with --ignored"]
 #[test]
 fn wanaka_back_rough_cuts_outside_silhouette() {
-    let toml = "/home/ricky/Downloads/wanaka100/wanaka_full_tuned.toml";
+    let toml = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/wanaka100/wanaka_full_tuned.toml"
+    );
     if !Path::new(toml).exists() {
         eprintln!("skip: {toml} not present");
         return;

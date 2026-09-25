@@ -35,7 +35,10 @@ fn wanaka_deep_region_localization() {
     use rs_cam_core::tool::FlatEndmill;
     use rs_cam_core::toolpath::MoveType;
 
-    let toml_path = Path::new("/home/ricky/Downloads/wanaka100/wanaka_full_tuned.toml");
+    let toml_path = Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/wanaka100/wanaka_full_tuned.toml"
+    ));
     if !toml_path.exists() {
         eprintln!("skip: wanaka.toml not found");
         return;
@@ -230,7 +233,10 @@ fn wanaka_final_surface_vs_mesh() {
     use rs_cam_core::mesh::SpatialIndex;
     use rs_cam_core::tool::FlatEndmill;
 
-    let toml_path = Path::new("/home/ricky/Downloads/wanaka100/wanaka_full_tuned.toml");
+    let toml_path = Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/wanaka100/wanaka_full_tuned.toml"
+    ));
     if !toml_path.exists() {
         eprintln!("skip: wanaka.toml not found");
         return;
@@ -420,7 +426,10 @@ fn wanaka_final_surface_vs_mesh() {
 #[test]
 #[ignore = "expensive WANAKA diagnostic; run with `cargo test --test wanaka_axial_doc -- --ignored`"]
 fn wanaka_back_rough_axial_doc() {
-    let toml_path = Path::new("/home/ricky/Downloads/wanaka100/wanaka_full_tuned.toml");
+    let toml_path = Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/wanaka100/wanaka_full_tuned.toml"
+    ));
     if !toml_path.exists() {
         eprintln!("skip: wanaka.toml not found");
         return;
