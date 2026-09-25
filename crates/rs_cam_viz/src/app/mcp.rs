@@ -9,6 +9,8 @@ mod project;
 mod simulation;
 mod view;
 
+pub use generation::suggest_basis_json;
+
 use std::path::Path;
 
 use crate::controller::Severity;

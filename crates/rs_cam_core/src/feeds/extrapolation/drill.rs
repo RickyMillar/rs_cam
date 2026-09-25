@@ -83,7 +83,12 @@ const AMANA_SPEKTRA_SOURCES: &[&str] = &["amana_spektra_spiral_plunge_v24"];
 /// above 12.7 mm (3 Flute 3/4 in) does not agree with the chart's 18 000 RPM
 /// header (its feed implies about 12 000 RPM) and is held out. Amana prints
 /// 2 and 3 flutes only, so a 1- or 4-flute end mill refuses (decision 6).
-pub const DRILL_RULES: &[DrillRule] = &[DrillRule {
+pub const DRILL_RULES: &[DrillRule] = &[SPEKTRA_DRILL_RULE];
+
+/// The one drill rule: the Amana Spektra flat end mill. It is a named
+/// constant so that the G10 flat plunge rule (`plunge::PLUNGE_RULES`) reads
+/// its range and its flute counts, and does not copy them.
+pub const SPEKTRA_DRILL_RULE: DrillRule = DrillRule {
     tool_family: ToolFamily::FlatEnd,
     source_ids: AMANA_SPEKTRA_SOURCES,
     tool_subfamily: "spektra_spiral_plunge",
@@ -94,7 +99,7 @@ pub const DRILL_RULES: &[DrillRule] = &[DrillRule {
               flutes at 18,000 RPM; the identity holds at every printed size from 3.0 mm to \
               1/2 in (12.7 mm), 2 and 3 flutes, Wood/Plywood and MDF/Laminate (28 cells; worst \
               case +0.9%, 3 Flute 3/8 in MDF)",
-}];
+};
 
 /// True when `d` (mm) is inside the rule's range, with
 /// [`EXACT_DIAMETER_TOLERANCE`] (relative) at each end.
@@ -234,8 +239,9 @@ impl DrillClaim {
         };
         let detail = format!(
             "{}; row {} ({}), {column}; valid {lo:?}-{hi:?} mm, 2 or 3 flutes; Amana names the \
-             column \"Ramp Down\" and ruling B5 reads it as a straight plunge; the chip is held \
-             per tooth; {rpm}; {DRILL_PECK_TEXT}; one witness ({})",
+             column \"Ramp Down\" and rulings B5 and Q3 read it as the vertical (Z) rate: a \
+             straight plunge, and the vertical limit of a ramp; the chip is held per tooth; {rpm}; \
+             {DRILL_PECK_TEXT}; one witness ({})",
             self.rule, self.side_row, self.source_id, self.witness
         );
         (headline, detail)
@@ -420,6 +426,7 @@ mod tests {
             "about x0.78 of the printed Ramp Down",
             "derived grade b",
             "straight plunge",
+            "vertical (Z) rate",
             DRILL_PECK_TEXT,
         ] {
             assert!(detail.contains(needle), "{needle:?} missing from {detail}");

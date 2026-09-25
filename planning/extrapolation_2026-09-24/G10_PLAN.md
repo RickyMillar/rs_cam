@@ -1,6 +1,6 @@
 # G10_PLAN: entry parameters, Phases 3-5 (the claims and the card)
 
-Date: 2026-09-25. Status: plan. Nothing in this plan is built yet.
+Date: 2026-09-25. Status: Part A built (working tree, for review; RESULTS at the end). Part B not started.
 
 Input: RULINGS.md §"Operator rulings, 2026-09-25: G10" (Q1-Q12 accepted), EXTRAPOLATION_G10.md, INVENTORY_G10.md, g10_inventory_cells.csv, RAMP_PLAN.md, and the ramp code that landed in `043cece1`.
 
@@ -499,3 +499,41 @@ Paths start at `crates/`.
 Also ruled (2026-09-25): a ProjectCurve on a V-bit routes to the printed
 V-bit Trace rows (the wanaka Rivers and Lakes toolpaths). That landed with
 the hardwood V-bit refusal package, not here.
+
+---
+
+## RESULTS (Part A, 2026-09-25)
+
+Measured with `scripts/cargo_lane.sh test -p rs_cam_core -q --test
+feeds_matrix_instrument_fm1 -- --ignored` (one run), against the committed
+`matrix_2026-09-23.csv` (f1ec6283; no feeds commit after it). 534 ok cells,
+518 not drill; no cell changed status, feed or RPM. Columns that moved:
+`plunge_mm_min` 233 cells, `suggest_warnings` 51, `support_detail` 16 (the
+A7 drill text).
+
+| Family (ok cells) | New plunge basis | Plunge moved | Ratio new / CSV | vs §4 |
+|---|---|---|---|---|
+| EndMill (120) | Claimed `g10_plunge_flat` 120, binding Rule 120 | 120 (104 up, 16 down) | 3.175: ×1.29-5.56 (Pocket ×3.46-5.36); 6.0: ×0.67-2.93 (Pocket ×2.00-2.93) | as §4. 3.175 mm plunge 150-630 mm/min per mm |
+| BallNose (98) | Claimed `g10_plunge_ball` 98; TipCap 54, Rule 44 | 73 (37 up, 36 down) | ×0.69-1.28 (3.175: ×0.92-1.28; 6.0: ×0.69-1.28) | as §4 (cap binds 54 of 98) |
+| TaperedBallNose (152) | MaterialBase 152 (tips 3.175 and 6.0 outside 0.5-1.5875, D1 strict); TipCap 38, Rule 114 | 0 | ×1.00 | as §4 (a) |
+| VBit (40) | Claimed `g10_plunge_vbit60` 40 | 40 (5 up, 35 down) | 12.7: ×0.33-0.61; 6.35: ×0.47-1.23 | §4 counted 48 cells and 6.35 ×0.43; the CSV has 40 ok V-bit cells |
+| BullNose (108) | MaterialBase 108 | 0 | ×1.00 | as §4 |
+| Drill (16) | DrillCycle 16 | 0 | ×1.00 | as §4 |
+
+Other moves:
+
+- `PlungeClampedToFeed`: 13 -> 0 cells (all V-bit; §4 said 18).
+- Q11: `StrategyRewrote` 30 -> 0; `PlungeEntryUnstableAtDpp` 0 -> 30.
+- `PlungeReDerived`: 16 cells. `FeedRescaledToFinalGeometry` stays 60.
+- Q2 ramp: `ramp_arm` PlungeSlope on 140 cells (Bull 48, Ball 34, Tapered
+  48, VBit 10; §4 said 150 with VBit 20), all `PlungeSlope/CutFeed`: the
+  ramp ships floor(F) on each (lowest ramp / F 0.9997). `PlungeTerm` binds
+  on 0 cells. `Sourced/CutFeed` (G6) on the 48 flat cells, unchanged.
+  `NoEntryFeed` on the rest.
+- `entry_notes` on 218 cells: the clearance line 188, the ramp angle 158,
+  the Q12 straight-plunge caution 30, the helix line 30, core or pip lines
+  30 (core cautions 11).
+- The simulation subset: 35 cells run, 3 skipped on the 150 s budget
+  (BallNose DropCutter hardwood, TaperedBallNose DropCutter softwood and
+  hardwood; 38 run before). One run cell moved: EndMill Adaptive3d
+  hardwood `power_peak_kw` 0.0771 -> 0.0781.

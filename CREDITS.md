@@ -823,6 +823,37 @@ Ruling B5 (G6 drill, 2026-09-24; `planning/extrapolation_2026-09-24/B5_PLAN.md`)
   documentation portal, not a retrievable drill-defaults table. The row is
   community-tier and represents community CAM practice, not a cited document.
 
+### Milling plunge and entry claims (G10, rulings Q4 and Q5, 2026-09-25)
+
+`feeds::extrapolation::PLUNGE_RULES` gives the milling plunge as a printed
+fraction of the side feed (flat end mill feed / Z, ball and tapered ball
+0.50, 60° V-bit 1/3). The statement ids and the source records are in
+`planning/extrapolation_2026-09-24/fetch/G10/statements.json` and
+`sources.json`; each stored text below is under
+`planning/extrapolation_2026-09-24/fetch/G10/sources/`. Retrieved
+2026-09-25.
+
+- Sienci Labs *Feeds & Speeds chart, metric* (`FeedsSpeedsMetric.pdf`) —
+  <https://raw.githubusercontent.com/Sienci-Labs/Resources/main/_downloads/FeedsSpeedsMetric.pdf>
+  (`sienci_feeds_speeds_metric.txt`). Feed and plunge per tool: flat, ball,
+  tapered ball and V-bit rows.
+- IDC Woodcraft *CNC Router Bit Feeds & Speeds, Imperial & Metric* —
+  <https://community.carbide3d.com/uploads/short-url/fwPIYiWQNjUx8eEwsA7qmYiLMxv.pdf>
+  (`wood_idc_feeds_speeds.txt`). A plunge column next to the feed for
+  down-cut, up-cut, ball, V-bit and tapered ball bits.
+- Carbide 3D *Shapeoko 3 Feeds & Speeds chart, .25 in* (`S3_feeds_250.pdf`,
+  Wayback copy) —
+  <https://web.archive.org/web/20211118030340/https://docs.carbide3d.com/support/supportfiles/S3_feeds_250.pdf>
+  (`carbide3d_s3_feeds_250.txt`). Feed and plunge per material.
+- The Amana ball nose v7 and corner-radius charts listed under the vendor
+  LUT manifest above print the rule "To find Ramp Down: Feed Rate IPM / # of
+  flutes" (stored again as `wood_amana_ball_nose_v7.txt` and
+  `wood_amana_corner_radius_plunge.txt`). The ball rule uses it; the bull
+  nose names it as the nearest printed figure and keeps the repo rule.
+
+The tip cap (150 mm/min per mm of tip) and the material plunge base are
+named repo rules with no stored source; the card says so.
+
 ### Literature-matrix source registry refresh (2026-08-13)
 
 `crates/rs_cam_core/tests/literature_matrix/sources.toml` was refreshed under

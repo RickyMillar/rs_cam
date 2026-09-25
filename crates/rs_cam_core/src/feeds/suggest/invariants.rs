@@ -13,8 +13,8 @@ use crate::machine::MachineProfile;
 use crate::material::Material;
 
 use super::adaptive_entry::{
-    check_plunge_entry_stability, pick_adaptive3d_clearing_strategy, pick_adaptive3d_entry_style,
-    recheck_power_after_rescale, rescale_feed_to_final_geometry,
+    check_plunge_entry_stability, pick_adaptive3d_clearing_strategy, recheck_power_after_rescale,
+    rescale_feed_to_final_geometry,
 };
 use super::axial_envelope::{pick_axial_envelope, recompute_chipload_bounds_for_dpp};
 use super::{SuggestContext, SuggestWarning};
@@ -114,11 +114,11 @@ pub(super) fn enforce_invariants(
     pass_role: PassRole,
     context: SuggestContext<'_>,
 ) -> Vec<SuggestWarning> {
-    // NOTE: order matters and must mirror the historical monolithic
-    // implementation exactly. In particular the stepover runtime
-    // back-off runs *before* the DPP-block, and the plunge-entry
-    // stability warning fires *after* the deflection back-off has
-    // mutated DPP — both intentional.
+    // NOTE: order matters. The stepover runtime back-off runs before the
+    // DPP block. The plunge-entry stability warning runs after the
+    // deflection back-off and the dial have moved the DPP, so it reads the
+    // DPP that ships. Suggest does not rewrite the entry style (ruling
+    // Q11, G10): the warning always reaches the operator.
     //
     // Pass 0 (Phase 3 — `planning/cutter_axial_constraints_2026-06-06.md`
     // §5.3): unified axial-DOC envelope runs FIRST so downstream passes
@@ -169,14 +169,9 @@ pub(super) fn enforce_invariants(
         operation, tool, material, machine, pass_role, context, &warnings,
     );
     warnings.extend(dial_warnings);
-    // v3.3b: strategy-aware entry-style rewrite must run BEFORE the
-    // plunge-entry-stability warning — when scope = StrategyAndFeeds the
-    // rewrite changes Plunge → Ramp and the downstream warning then
-    // finds nothing to flag. Under scope = FeedsWithGates the rewrite
-    // short-circuits and the warning still fires for the operator.
-    warnings.extend(pick_adaptive3d_entry_style(
-        operation, tool, pass_role, context,
-    ));
+    // Ruling Q11 (G10, 2026-09-25): no entry-style rewrite. The entry
+    // style is the operator's. The stability warning below names a deep
+    // plunge entry.
     // v3.3c: clearing-strategy recommendation is warn-only (auto-rewrite
     // deferred to v4 pending classifier calibration) — reads, never writes.
     warnings.extend(pick_adaptive3d_clearing_strategy(

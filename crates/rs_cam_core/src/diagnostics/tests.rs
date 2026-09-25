@@ -653,7 +653,8 @@ fn feeds_hint_emits_high_feed_ratio() {
         chip_load_mm: 0.02,
         feed_rate_mm_min: 1000.0,
         plunge_rate_mm_min: 400.0,
-        ramp: crate::feeds::RampBasis::PlungeRate {
+        plunge: crate::feeds::PlungeBasis::DrillCycle,
+        ramp: crate::feeds::RampBasis::NoChip {
             reason: crate::feeds::RampFallback::NoLut,
         },
         axial_depth_mm: 4.0,

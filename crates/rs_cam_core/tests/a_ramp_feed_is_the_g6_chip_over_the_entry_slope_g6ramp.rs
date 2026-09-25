@@ -9,8 +9,10 @@
 //! (`feeds::extrapolation::drill`): the tool's Amana Spektra side row / Z.
 //! θ is the entry slope of the operation that ships: `tan(angle)` for a
 //! ramp, `pitch / (2π r)` for a helix. The RPM and the cut feed are the
-//! shipped values. Every other cell writes `None`, and the entry uses the
-//! plunge rate.
+//! shipped values. With no G6 chip the ramp holds its vertical rate at the
+//! plunge (G10 Q2, `a_ramp_off_the_g6_claim_holds_its_vertical_rate_at_the_plunge_g10`).
+//! A straight plunge or an unknown entry writes `None`, and the entry uses
+//! the plunge rate.
 //!
 //! The rows the claim reads (`data/vendor_lut/observations/amana_flat_end.json`,
 //! all `amana_spektra_spiral_plunge_v24`, filed under (Pocket, Roughing),
@@ -43,7 +45,8 @@
 //! - (c) the 60° ramp: the chip term wins, at the shipped RPM;
 //! - (d) Adaptive3d reads its own helix (0.3 x D, pitch 2): θ 10.03°;
 //! - (e) the chip table above;
-//! - (f) every fallback writes `None` and states its reason;
+//! - (f) every entry fallback writes `None` and states its reason, and a
+//!   cell with no G6 claim states why;
 //! - (g) a drill cycle files no record and has no field;
 //! - (h) a cut-geometry apply does not write the ramp, a speeds apply does;
 //! - (i) Suggest and the apply funnel give one number;
@@ -190,6 +193,7 @@ fn records(warnings: &[SuggestWarning]) -> Vec<(Option<f64>, &RampFeed)> {
             SuggestWarning::RampFeed {
                 from_mm_min,
                 record,
+                ..
             } => Some((*from_mm_min, record)),
             _ => None,
         })
@@ -205,14 +209,16 @@ fn record(s: &SuggestedParams) -> &RampFeed {
 fn sourced(r: &RampFeed) -> &SourcedRamp {
     match r {
         RampFeed::Sourced(s) => s,
-        RampFeed::PlungeRate { reason, .. } => panic!("expected a sourced ramp, got {reason:?}"),
+        RampFeed::PlungeSlope(s) => panic!("expected a sourced ramp, got {s:?}"),
+        RampFeed::NoEntryFeed { reason, .. } => panic!("expected a sourced ramp, got {reason:?}"),
     }
 }
 
 fn fallback(r: &RampFeed) -> RampFallback {
     match r {
-        RampFeed::PlungeRate { reason, .. } => *reason,
+        RampFeed::NoEntryFeed { reason, .. } => *reason,
         RampFeed::Sourced(s) => panic!("expected the plunge rate, got {s:?}"),
+        RampFeed::PlungeSlope(s) => panic!("expected the plunge rate, got {s:?}"),
     }
 }
 
@@ -407,14 +413,15 @@ fn the_chip_is_the_side_row_over_z_g6ramp() {
                 );
                 assert_eq!(drill.side_row, row, "{name} {d} mm");
             }
-            RampBasis::PlungeRate { reason } => {
+            RampBasis::NoChip { reason } => {
                 panic!("{name} {d} mm: expected a G6 chip, got {reason:?}")
             }
         }
     }
 }
 
-/// (f) Every fallback writes `None` and states its reason.
+/// (f) Every entry fallback writes `None` and states its reason. A cell
+/// with no G6 claim states why (its ramp is the G10 Q2 plunge slope).
 #[test]
 fn every_fallback_writes_none_and_says_why_g6ramp() {
     let machine = open_router();
@@ -445,7 +452,7 @@ fn every_fallback_writes_none_and_says_why_g6ramp() {
         ("flat 6 mm acrylic", flat(6.0, 2), acrylic),
     ] {
         let b = basis(&tool, &material);
-        let RampBasis::PlungeRate { reason } = &b else {
+        let RampBasis::NoChip { reason } = &b else {
             panic!("{name}: expected no G6 claim, got {b:?}");
         };
         assert!(

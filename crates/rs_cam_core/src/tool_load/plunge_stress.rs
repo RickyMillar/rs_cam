@@ -1,10 +1,11 @@
 //! Plunge-stress gate: warns when configured plunge rate would damage
 //! the cutter tip on a ball / tapered-ball tool.
 //!
-//! The cap formula matches `feeds/mod.rs` Fix 2 (Wanaka audit):
-//! `150 mm/min × effective tip diameter (mm)` for ball and tapered-ball
-//! geometries; no cap for flat / bull / V-bit (those plunge at the
-//! material plunge_rate floor without flute-tip risk).
+//! [`safe_plunge_cap_mm_min`] is the one producer of the tip cap (G10,
+//! 2026-09-25): `150 mm/min × effective tip diameter (mm)` for ball and
+//! tapered-ball geometries; no cap for flat / bull / V-bit. The feeds
+//! plunge resolver (`feeds::plunge::TipCap`) reads it and does not copy the
+//! constant. The cap is a repo rule with no stored source.
 //!
 //! The LUT cap protects fresh toolpaths, but pre-Fix-2 projects carry
 //! static-default plunge rates. This module surfaces those mismatches at
@@ -19,24 +20,31 @@ use serde::{Deserialize, Serialize};
 /// ball / tapered-ball in wood (100–300 mm/min for sub-2 mm tools).
 const PLUNGE_CAP_PER_MM_TIP_DIAMETER: f64 = 150.0;
 
-/// Smallest tapered-ball tip diameter we'll treat as a real cutter.
-/// Matches the `(tip_radius * 2).max(0.5)` floor in `feeds/mod.rs`.
+/// Smallest tapered-ball tip diameter we'll treat as a real cutter. The
+/// G10 tapered plunge claim keys the tip with the same floor.
 const MIN_TAPERED_TIP_DIAMETER_MM: f64 = 0.5;
+
+/// The effective tip diameter (mm) that the cap reads: the diameter of a
+/// ball, and `max(2 × tip radius, 0.5)` for a tapered ball. `None` for a
+/// geometry with no flute-tip plunge risk (flat, bull, V-bit).
+pub fn effective_tip_diameter_mm(geometry: ToolGeometryHint, diameter_mm: f64) -> Option<f64> {
+    match geometry {
+        ToolGeometryHint::Ball => Some(diameter_mm),
+        ToolGeometryHint::TaperedBall { tip_radius, .. } => {
+            Some((tip_radius * 2.0).max(MIN_TAPERED_TIP_DIAMETER_MM))
+        }
+        ToolGeometryHint::Flat | ToolGeometryHint::Bull { .. } | ToolGeometryHint::VBit { .. } => {
+            None
+        }
+    }
+}
 
 /// Maximum safe plunge rate for the given tool geometry. Returns
 /// `None` when the geometry has no flute-tip plunge risk (flat, bull,
-/// V-bit). Mirrors the Fix 2 cap in `feeds::compute_feeds`.
+/// V-bit). The feeds calculator reads it through `feeds::plunge::TipCap`.
 pub fn safe_plunge_cap_mm_min(geometry: ToolGeometryHint, diameter_mm: f64) -> Option<f64> {
-    let tip_d = match geometry {
-        ToolGeometryHint::Ball => diameter_mm,
-        ToolGeometryHint::TaperedBall { tip_radius, .. } => {
-            (tip_radius * 2.0).max(MIN_TAPERED_TIP_DIAMETER_MM)
-        }
-        ToolGeometryHint::Flat | ToolGeometryHint::Bull { .. } | ToolGeometryHint::VBit { .. } => {
-            return None;
-        }
-    };
-    Some(PLUNGE_CAP_PER_MM_TIP_DIAMETER * tip_d)
+    effective_tip_diameter_mm(geometry, diameter_mm)
+        .map(|tip_d| PLUNGE_CAP_PER_MM_TIP_DIAMETER * tip_d)
 }
 
 /// A plunge-stress warning surfaced at diagnostics time.
@@ -62,13 +70,7 @@ pub fn check_plunge_stress(
     // Checkpoint K (b1) — same boundary contract as the load gates; this
     // one has no tolerance dial and never had an epsilon.
     if crate::tool_load::boundary::exceeds_high(plunge_rate_mm_min, cap, 0.0) {
-        let tip_d = match geometry {
-            ToolGeometryHint::Ball => diameter_mm,
-            ToolGeometryHint::TaperedBall { tip_radius, .. } => {
-                (tip_radius * 2.0).max(MIN_TAPERED_TIP_DIAMETER_MM)
-            }
-            _ => return None,
-        };
+        let tip_d = effective_tip_diameter_mm(geometry, diameter_mm)?;
         Some(PlungeStressWarning {
             plunge_rate_mm_min,
             safe_cap_mm_min: cap,

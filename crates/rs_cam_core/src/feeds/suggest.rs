@@ -74,9 +74,9 @@ pub enum SuggestScope {
     /// [`SuggestWarning::PlungeEntryUnstableAtDpp`]) when they look
     /// risky. Pre-v3.3 / v3.0d behaviour.
     FeedsWithGates,
-    /// Above + strategy-field auto-rewrite when the field equals its
-    /// `Default::default()` value (treated as unpinned). User-set
-    /// non-default values are left alone. v3 default per the
+    /// Above + strategy advice. The clearing-strategy pass is warn-only.
+    /// Suggest never writes the entry style (ruling Q11, G10,
+    /// 2026-09-25): the operator owns it. v3 default per the
     /// "strategy-aware Suggest" directive.
     #[default]
     StrategyAndFeeds,
@@ -405,40 +405,18 @@ pub enum SuggestWarning {
         /// The binding constraint that stopped the loop.
         blocking_cap: FeedRecalibrationCap,
     },
-    /// v3.3b (2026-06-04): the strategy-aware orchestrator rewrote a
-    /// strategy field (entry_style, clearing_strategy, or one of the
-    /// stock-to-leave dimensions) because the field was at its
-    /// `Default::default()` value (treated as unpinned) and an
-    /// orchestrator-side heuristic prefers a different choice.
-    ///
-    /// Wanaka motivating case: Back Rough's `entry_style = Plunge` at
-    /// the post-back-off DPP of 3.69 mm on a 6 mm tool (ratio 0.62)
-    /// produces a 362 µm entry transient — above the 200 µm deflection
-    /// gate. The `pick_adaptive3d_entry_style` pass rewrites Plunge →
-    /// Ramp when DPP / D > 0.5 and the field equals `Default`. v3.4
-    /// will additionally promote to Helix when the geometry classifier
-    /// reports interior pocket headroom.
-    ///
-    /// `param` is the snake-case field name — "entry_style" and
-    /// "clearing_strategy" are the two values shipped today. `from` and
-    /// `to` are the value labels (e.g. "plunge", "ramp"). `reason` is
-    /// the short heuristic key that fired (e.g. "deflection_predict_at_dpp").
-    StrategyRewrote {
-        param: &'static str,
-        from: String,
-        to: String,
-        reason: &'static str,
-    },
-    /// v3.3c (2026-06-05): warn-only sibling of [`Self::StrategyRewrote`]
-    /// — the geometry classifier prefers a different value for a
-    /// strategy field, but the orchestrator does NOT auto-apply it.
+    /// v3.3c (2026-06-05): the geometry classifier prefers a different
+    /// value for a strategy field, but the orchestrator does NOT
+    /// auto-apply it. (Its write-back sibling `StrategyRewrote` went with
+    /// ruling Q11, G10, 2026-09-25.)
     /// Shipped for `clearing_strategy`, where auto-selection is
     /// deferred to v4 until the classifier is calibrated (the
     /// `ContourParallel` → `Adaptive` promotion on mixed terrain needs
     /// uncut-band evidence, not just a bbox heuristic).
     ///
-    /// `param` / value-label / `reason` conventions match
-    /// `StrategyRewrote`. `current` is left untouched on the operation.
+    /// `param` is the snake-case field name, the values are labels, and
+    /// `reason` is the short heuristic key. `current` is left untouched on
+    /// the operation.
     StrategyRecommendedNotApplied {
         param: &'static str,
         current: String,
@@ -739,6 +717,22 @@ pub enum SuggestWarning {
         from_mm_min: Option<f64>,
         /// What Suggest wrote, and why.
         record: crate::feeds::RampFeed,
+        /// The entry rules of the operation that ships (G10 Q6-Q10, Q12):
+        /// the angle, the helix, the pip or the core, the clearance, and the
+        /// straight-plunge caution. Each note is one card line.
+        notes: crate::feeds::ramp::EntryNotes,
+    },
+    /// G10 (2026-09-25): the funnel ran the plunge rule again at the feed
+    /// that ships. Pass 9, pass 10 or an explored feed moved the feed after
+    /// the calculator, so the plunge moved too. Filed only when the plunge
+    /// moved by 1 mm/min or more.
+    PlungeReDerived {
+        /// The plunge (mm/min) before the funnel ran the rule again.
+        from_mm_min: f64,
+        /// The plunge (mm/min) that ships.
+        to_mm_min: f64,
+        /// The term that sets the plunge that ships.
+        binding: crate::feeds::plunge::PlungeBinding,
     },
 }
 
@@ -749,7 +743,7 @@ pub enum AggressivenessSkip {
     /// the finish width is the scallop target. The deflection check decides.
     FinishRole,
     /// A drill cycle (ruling Q5). A plunge is full-width axial; there is no
-    /// engagement lever. The plunge ships the material base with no factor.
+    /// engagement lever. The plunge rule sets the plunge (G10).
     Drill,
 }
 
@@ -759,7 +753,7 @@ impl AggressivenessSkip {
     pub const fn card_text(self) -> &'static str {
         match self {
             Self::FinishRole => "Finish: no dial action; deflection decides.",
-            Self::Drill => "Plunge: material base, no factor; the dial does not act.",
+            Self::Drill => "Plunge: the plunge rule; the dial does not act.",
         }
     }
 }

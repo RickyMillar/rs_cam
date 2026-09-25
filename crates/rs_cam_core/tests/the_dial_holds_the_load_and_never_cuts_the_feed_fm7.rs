@@ -524,8 +524,7 @@ fn suggest_warning_defect(w: &SuggestWarning) -> Option<&'static str> {
             ..
         } => finite(&[*requested_mm_per_min, *raised_mm_per_min]),
         SuggestWarning::ChiploadStillLowAfterRecalibration { .. } => true,
-        SuggestWarning::StrategyRewrote { .. }
-        | SuggestWarning::StrategyRecommendedNotApplied { .. } => true,
+        SuggestWarning::StrategyRecommendedNotApplied { .. } => true,
         SuggestWarning::AxialEnvelopeSafeBandEmpty { .. } => true,
         SuggestWarning::AxialDocClampedByEnvelope {
             commanded_mm,
@@ -612,7 +611,13 @@ fn suggest_warning_defect(w: &SuggestWarning) -> Option<&'static str> {
         SuggestWarning::RampFeed {
             from_mm_min,
             record,
+            ..
         } => from_mm_min.is_none_or(f64::is_finite) && record.value().is_none_or(f64::is_finite),
+        SuggestWarning::PlungeReDerived {
+            from_mm_min,
+            to_mm_min,
+            ..
+        } => finite(&[*from_mm_min, *to_mm_min]),
     };
     (!ok).then_some("a SuggestWarning pair or factor is missing or not finite")
 }

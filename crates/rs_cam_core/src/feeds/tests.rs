@@ -273,9 +273,11 @@ fn test_small_tapered_ball_plunge_derated() {
     );
 }
 
-/// Counter-test: flat end-mills are unaffected by Fix 2.
+/// G10 (2026-09-25): a 6 mm 2F flat in hardwood plunges at feed / 2, the
+/// flat end mill claim (ruling Q4). The Fix 2 tip cap is not in the value:
+/// a flat has no tip cap.
 #[test]
-fn test_flat_endmill_plunge_unchanged_by_fix2() {
+fn test_flat_endmill_plunge_is_the_g10_flat_claim() {
     let material = Material::SolidWood {
         species: WoodSpecies::GenericHardwood,
     };
@@ -300,12 +302,19 @@ fn test_flat_endmill_plunge_unchanged_by_fix2() {
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
     });
 
-    // 6mm flat in hardwood: material_base/hardness ≈ 1000/1.42 ≈ 704 mm/min
-    // (no factor since ruling R4 Q5; was × 0.75 ≈ 528). Should NOT be capped.
-    assert!(
-        result.plunge_rate_mm_min > 400.0,
-        "6mm flat plunge {} should not be derated by Fix 2 tool-geometry cap",
-        result.plunge_rate_mm_min
+    // The G10 flat claim: plunge = floor(F / Z) at Z 2; no tip cap.
+    let claim = result
+        .plunge
+        .claim()
+        .unwrap_or_else(|| panic!("6mm 2F flat: basis {:?}", result.plunge));
+    assert_eq!(claim.rule.id, "g10_plunge_flat");
+    assert_eq!(result.plunge.tip_cap(), None);
+    assert_eq!(
+        result.plunge_rate_mm_min,
+        (result.feed_rate_mm_min / 2.0).floor(),
+        "6mm 2F flat plunge {} should be floor(feed {} / 2)",
+        result.plunge_rate_mm_min,
+        result.feed_rate_mm_min
     );
 }
 

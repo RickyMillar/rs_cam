@@ -52,9 +52,14 @@ VCarve in softwood since B4; 12.0 mm serves.
 ### Feeds / extrapolation stream (`planning/extrapolation_2026-09-24/`)
 
 1. ~~The pillclamp red above.~~ Done 2026-09-26.
-2. G10 Part A (`G10_PLAN.md`, operator decisions D1-D4 in f1612102):
-   plunge claims, ramp notes on the card, remove the Suggest entry-style
-   rewrite (Q11, G-ENTRYREWRITE).
+2. ~~G10 Part A~~ landed 2026-09-25 (`G10_PLAN.md` §3; RESULTS at its
+   end). The
+   plunge is a named fraction of the shipped side feed (`PLUNGE_RULES`),
+   else the named material base; a ramp off the G6 claim holds its
+   vertical rate at the plunge (Q2); the entry notes and the plunge basis
+   are card lines and MCP `basis` keys. G-ENTRYREWRITE is closed: Suggest
+   never writes the entry style (Q11). Sentries: the three `*_g10` core
+   files and `the_card_names_every_entry_rule_g10`.
 3. G10 Part B: helix radius cap (Q6), pitch and ramp-angle rules (Q8,
    Q9), G-RAMPCLAMP. By Area WP3 waits for it.
 4. B7 (RULINGS §B7): extend the deflection envelope to the 2D

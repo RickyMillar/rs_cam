@@ -727,6 +727,10 @@ fn panel_cut_geometry_apply_goes_through_the_invariant_funnel() {
 /// dial's solve lands 0.66 % wider (measured). Feed, plunge, RPM and depth
 /// do not move.
 ///
+/// **The plunge moved 1058 → 1999, ruling Q4 (G10, 2026-09-25).** The
+/// Ø6.35 2F flat is inside the G10 flat claim (3.0-12.7 mm, 2-3 flutes), so
+/// the plunge is floor(feed / 2) = floor(3999 / 2) = 1999.
+///
 /// This pins all five through the validated panel path, which is the path
 /// whose numbers the census recorded.
 #[test]
@@ -766,7 +770,7 @@ fn pocket_fixture_recipe_fingerprint_is_unmoved() {
     // T-9 (`6a9330dc`) floors the plunge instead of rounding it to the
     // nearest, so this fixture's unrounded 793.75 ships as 793, not 794. The
     // figure is re-derived from the cause; it is not a widened tolerance.
-    assert_eq!(op.plunge_rate(), 1058.0, "plunge");
+    assert_eq!(op.plunge_rate(), 1999.0, "plunge");
     assert_eq!(op.spindle_rpm(), Some(11_248), "rpm");
     // 1.525 arrives as 1.5250000000000001 from the dial's solve; the pin
     // is the value, not the bit pattern.
@@ -867,11 +871,19 @@ fn explore_apply_takes_the_clamps_but_keeps_the_dragged_point() {
 
     assert_eq!(after.feed_rate(), 120.0, "the dragged feed was re-solved");
     assert_eq!(after.spindle_rpm(), Some(14_000), "the dragged RPM moved");
+    // G10 (2026-09-25): the funnel runs the plunge rule again at the
+    // dragged feed. The Ø6.35 2F flat claim gives floor(120 / 2) = 60.
     assert_eq!(
         after.plunge_rate(),
-        120.0,
-        "plunge was not clamped down to the dragged feed — pre-fix this left plunge at \
-         900 mm/min under a 120 mm/min cut"
+        60.0,
+        "plunge is not the G10 flat claim at the dragged feed (floor(120 / 2)) — pre-fix \
+         this left plunge at 900 mm/min under a 120 mm/min cut"
+    );
+    assert!(
+        after.plunge_rate() <= after.feed_rate(),
+        "the plunge {} is above the dragged feed {}",
+        after.plunge_rate(),
+        after.feed_rate()
     );
     assert_eq!(
         (after.stepover(), after.depth_per_pass()),

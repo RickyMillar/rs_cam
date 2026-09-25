@@ -165,6 +165,9 @@ pub enum RationaleReason {
     /// axial chip and the entry slope, or `None` with the plunge-rate
     /// fallback reason.
     RampFeed,
+    /// G10 (2026-09-25): the funnel ran the plunge rule again at the feed
+    /// that ships, and the plunge moved.
+    PlungeReDerived,
 }
 
 /// One row in the rationale tree the GUI / MCP renders alongside a
@@ -234,10 +237,6 @@ fn entries_for_warning(w: &SuggestWarning) -> Vec<RationaleEntry> {
 pub const AGGRESSIVENESS_ABOVE_BASE_TEXT: &str =
     "above 1.0: the load target exceeds the full-engagement base";
 
-/// The card text of the plunge (ruling R4 Q5). The ramp has its own record
-/// since G6 ramp (`SuggestWarning::RampFeed`).
-pub const PLUNGE_AT_MATERIAL_BASE_TEXT: &str = "Plunge: material base, no factor.";
-
 /// The rows of the aggressiveness record: the depth-per-pass row first, then
 /// the stepover row when that lever exists. `None` for every other warning.
 fn aggressiveness_rows(w: &SuggestWarning) -> Option<(RationaleEntry, Option<RationaleEntry>)> {
@@ -291,8 +290,8 @@ fn aggressiveness_rows(w: &SuggestWarning) -> Option<(RationaleEntry, Option<Rat
     };
     let mut detail = format!(
         "{target} of the base engagement (common scale {scale:.3}, before the depth snaps \
-         to a step the generator cuts); {loads}. The chipload does not change. \
-         {PLUNGE_AT_MATERIAL_BASE_TEXT}"
+         to a step the generator cuts); {loads}. The chipload does not change. The plunge \
+         does not take the dial: the plunge rule sets it."
     );
     if *target_share > 1.0 {
         detail.push_str(&format!(" Caution, {AGGRESSIVENESS_ABOVE_BASE_TEXT}."));
@@ -545,29 +544,6 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
                 )),
             }
         }
-        SuggestWarning::StrategyRewrote {
-            param,
-            from,
-            to,
-            reason,
-        } => {
-            let rationale_param = match *param {
-                "entry_style" => RationaleParam::EntryStyle,
-                "clearing_strategy" => RationaleParam::ClearingStrategy,
-                // Future strategy fields: fall back to EntryStyle as a
-                // safe sentinel rather than crash. The headline still
-                // names the field literally.
-                _ => RationaleParam::EntryStyle,
-            };
-            RationaleEntry {
-                param: rationale_param,
-                reason: RationaleReason::GeometryClassifier,
-                from_value: None,
-                to_value: None,
-                headline: format!("{param} rewritten: {from} → {to}"),
-                detail: Some(format!("Heuristic: {reason}")),
-            }
-        }
         SuggestWarning::AxialEnvelopeSafeBandEmpty {
             op_kind,
             max_safe_doc_mm,
@@ -672,8 +648,8 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
             let rationale_param = match *param {
                 "entry_style" => RationaleParam::EntryStyle,
                 "clearing_strategy" => RationaleParam::ClearingStrategy,
-                // Future strategy fields: same safe sentinel as the
-                // StrategyRewrote arm — headline names the field.
+                // Future strategy fields: a safe sentinel rather than a
+                // crash. The headline names the field.
                 _ => RationaleParam::EntryStyle,
             };
             RationaleEntry {
@@ -832,15 +808,23 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
             to_value: None,
             headline: reason.card_text().to_owned(),
             detail: Some(format!(
-                "Machine aggressiveness {aggressiveness:.2} did not change this operation. \
-                 {PLUNGE_AT_MATERIAL_BASE_TEXT}"
+                "Machine aggressiveness {aggressiveness:.2} did not change this operation. The \
+                 plunge does not take the dial: the plunge rule sets it."
             )),
         },
         SuggestWarning::RampFeed {
             from_mm_min,
             record,
+            notes,
         } => {
-            let (headline, detail) = record.card_text();
+            let (headline, mut detail) = record.card_text();
+            // G10: the entry rules ride on the ramp record. Each note is
+            // one sentence of the detail here; the card paints each as a
+            // face line.
+            for note in notes.as_slice() {
+                let mark = if note.caution { "Caution: " } else { "" };
+                detail.push_str(&format!("; {mark}{}", note.headline));
+            }
             RationaleEntry {
                 param: RationaleParam::RampFeed,
                 reason: RationaleReason::RampFeed,
@@ -850,6 +834,26 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
                 detail: Some(detail),
             }
         }
+        SuggestWarning::PlungeReDerived {
+            from_mm_min,
+            to_mm_min,
+            binding,
+        } => RationaleEntry {
+            param: RationaleParam::Plunge,
+            reason: RationaleReason::PlungeReDerived,
+            from_value: Some(*from_mm_min),
+            to_value: Some(*to_mm_min),
+            headline: format!(
+                "Plunge {from_mm_min:.0} -> {to_mm_min:.0} mm/min: the plunge rule at the feed \
+                 that ships"
+            ),
+            detail: Some(format!(
+                "The feed moved after the calculator (pass 9, pass 10 or an explored feed), so \
+                 the funnel ran the plunge rule again at the feed that ships (G10). The plunge \
+                 is set by {}.",
+                binding.label()
+            )),
+        },
     }
 }
 
@@ -1070,38 +1074,6 @@ mod tests {
             blocking_cap: FeedRecalibrationCap::DeflectionThreshold,
         });
         assert!(e.headline.contains("deflection budget"));
-    }
-
-    #[test]
-    fn strategy_rewrote_entry_style_round_trips() {
-        let e = rt(SuggestWarning::StrategyRewrote {
-            param: "entry_style",
-            from: "plunge".to_owned(),
-            to: "ramp".to_owned(),
-            reason: "deflection_predict_at_dpp",
-        });
-        assert_eq!(e.param, RationaleParam::EntryStyle);
-        assert_eq!(e.reason, RationaleReason::GeometryClassifier);
-        assert!(e.headline.contains("plunge"));
-        assert!(e.headline.contains("ramp"));
-        assert!(
-            e.detail
-                .as_deref()
-                .unwrap_or_default()
-                .contains("deflection_predict_at_dpp")
-        );
-    }
-
-    #[test]
-    fn strategy_rewrote_clearing_strategy_round_trips() {
-        let e = rt(SuggestWarning::StrategyRewrote {
-            param: "clearing_strategy",
-            from: "agent_search".to_owned(),
-            to: "contour_parallel".to_owned(),
-            reason: "default_for_mixed_terrain",
-        });
-        assert_eq!(e.param, RationaleParam::ClearingStrategy);
-        assert_eq!(e.reason, RationaleReason::GeometryClassifier);
     }
 
     #[test]

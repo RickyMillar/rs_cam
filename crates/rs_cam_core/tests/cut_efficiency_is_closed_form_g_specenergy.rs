@@ -191,7 +191,8 @@ fn operating_point(
         chip_load_mm: advance_per_tooth_mm,
         feed_rate_mm_min: feed,
         plunge_rate_mm_min: feed * 0.4,
-        ramp: RampBasis::PlungeRate {
+        plunge: rs_cam_core::feeds::PlungeBasis::DrillCycle,
+        ramp: RampBasis::NoChip {
             reason: RampFallback::NoLut,
         },
         axial_depth_mm: axial_doc_mm,

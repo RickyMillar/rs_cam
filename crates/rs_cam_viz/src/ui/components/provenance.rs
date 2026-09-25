@@ -25,7 +25,7 @@ use crate::ui::theme;
 
 /// How a displayed value came to be — the viz display vocabulary.
 ///
-/// Variants 1–6 map 1:1 to core [`ProvenanceSource`]. `Inherited` is
+/// Variants 1–8 map 1:1 to core [`ProvenanceSource`]. `Inherited` is
 /// display-only: it marks a value shown as a mirror / project default
 /// (`〈 value 〉`) rather than one stored on the operation.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -36,6 +36,12 @@ pub enum ProvKind {
     Manual,
     Optimizer,
     AutoCorrect,
+    /// A published rule (G10): a vendor rule with witnesses, not a printed
+    /// cell. The reference is the rule id.
+    PublishedRule,
+    /// A named repo rule with no source (G10). The reference is the rule
+    /// name.
+    RepoRule,
     /// Display-only: shown as an inherited / mirrored value, not stored here.
     Inherited,
 }
@@ -57,17 +63,21 @@ impl ProvKind {
             Self::Manual => "\u{270E}",            // ✎
             Self::Optimizer => "\u{25C6}",         // ◆
             Self::AutoCorrect => "\u{27F2}",       // ⟲
+            Self::PublishedRule => "\u{25A1}",     // □
+            Self::RepoRule => "\u{25B3}",          // △
             Self::Inherited => "\u{2329}\u{232A}", // 〈〉
         }
     }
 
-    /// The single canonical RGB per source. Both fallback kinds share the
-    /// "verify against vendor data" amber (`theme::WARNING`) — same colour as
-    /// the pre-component pills, distinguished only by glyph.
+    /// The single canonical RGB per source. The fallback kinds (and the G10
+    /// repo rule, which has no source) share the "verify against vendor
+    /// data" amber (`theme::WARNING`) — same colour as the pre-component
+    /// pills, distinguished only by glyph. A published rule is sourced, so it
+    /// shares the vendor green and differs by glyph.
     pub fn color(self) -> Color32 {
         match self {
-            Self::VendorLut => theme::SUCCESS_BRIGHT,
-            Self::Formula | Self::EdgeRadiusFloor => theme::WARNING,
+            Self::VendorLut | Self::PublishedRule => theme::SUCCESS_BRIGHT,
+            Self::Formula | Self::EdgeRadiusFloor | Self::RepoRule => theme::WARNING,
             Self::Manual => theme::TEXT_MUTED,
             Self::Optimizer => OPTIMIZER_BLUE,
             Self::AutoCorrect => theme::INFO,
@@ -85,6 +95,8 @@ impl ProvKind {
             Self::Manual => "manual",
             Self::Optimizer => "sim-optimized",
             Self::AutoCorrect => "auto-corrected",
+            Self::PublishedRule => "published rule",
+            Self::RepoRule => "repo rule, no source",
             Self::Inherited => "inherited",
         }
     }
@@ -107,6 +119,8 @@ impl From<ProvenanceSource> for ProvKind {
             ProvenanceSource::Manual => Self::Manual,
             ProvenanceSource::Optimizer => Self::Optimizer,
             ProvenanceSource::AutoCorrect => Self::AutoCorrect,
+            ProvenanceSource::PublishedRule => Self::PublishedRule,
+            ProvenanceSource::RepoRule => Self::RepoRule,
         }
     }
 }

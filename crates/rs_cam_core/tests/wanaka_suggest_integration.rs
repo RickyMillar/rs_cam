@@ -494,33 +494,27 @@ fn wanaka_suggest_baseline() {
             suggested.operation.feed_rate()
         );
 
-        // v3.3c (StrategyAndFeeds default): the strategy-aware
-        // orchestrator rewrites entry_style plunge → helix on this
-        // case (reason "deflection_predict_at_dpp_with_helix_headroom"),
-        // replacing the v1.3 PlungeEntryUnstableAtDpp warning with a
-        // positive StrategyRewrote rewrite. This is deterministic on
-        // Wanaka's geometry regardless of which axial constraint binds
-        // the DPP.
-        let rewrote = suggested.warnings.iter().any(|w| {
-            matches!(
-                w,
-                SuggestWarning::StrategyRewrote {
-                    param: "entry_style",
-                    ..
-                }
-            )
-        });
+        // INVERTED by ruling Q11 (G10, 2026-09-25). Until then the
+        // strategy-aware orchestrator rewrote entry_style plunge → helix on
+        // this case and filed `StrategyRewrote`. Suggest no longer writes
+        // the entry style: the operator's Plunge ships, and the v1.3
+        // warning names the deep plunge entry (DPP / D above 0.5).
         assert!(
-            rewrote,
-            "{ctx}: StrategyRewrote(entry_style) must fire under v3.3c default, got {:?}",
-            suggested.warnings
+            matches!(
+                &suggested.operation,
+                rs_cam_core::compute::catalog::OperationConfig::Adaptive3d(cfg)
+                    if cfg.entry_style
+                        == rs_cam_core::compute::operation_configs::Adaptive3dEntryStyle::Plunge
+            ),
+            "{ctx}: Suggest must keep the operator's Plunge entry (ruling Q11), got {:?}",
+            suggested.operation
         );
         assert!(
-            !suggested
+            suggested
                 .warnings
                 .iter()
                 .any(|w| matches!(w, SuggestWarning::PlungeEntryUnstableAtDpp { .. })),
-            "{ctx}: PlungeEntryUnstableAtDpp must NOT fire — the rewrite handled it, got {:?}",
+            "{ctx}: PlungeEntryUnstableAtDpp must fire on the deep plunge entry, got {:?}",
             suggested.warnings
         );
 
@@ -579,7 +573,6 @@ fn wanaka_suggest_baseline() {
                 | SuggestWarning::RoughingDepthClampedToRigidity { .. }
                 | SuggestWarning::DepthClampedToCuttingLength { .. }
                 | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
-                | SuggestWarning::StrategyRewrote { .. }
                 | SuggestWarning::AxialDocClampedByEnvelope { .. }
                 | SuggestWarning::FeedRescaledToFinalGeometry { .. }
                 | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
@@ -591,7 +584,10 @@ fn wanaka_suggest_baseline() {
                 | SuggestWarning::AggressivenessNotApplied { .. }
                 // G6 ramp (2026-09-25): one record per apply that writes
                 // the speeds, on an operation with the field.
-                | SuggestWarning::RampFeed { .. } => {}
+                | SuggestWarning::RampFeed { .. }
+                // G10 (2026-09-25): pass 9 moved the feed, so the funnel
+                // ran the plunge rule again at the feed that ships.
+                | SuggestWarning::PlungeReDerived { .. } => {}
                 other => {
                     panic!("{ctx}: unexpected SuggestWarning variant slipped through: {other:?}")
                 }
@@ -898,8 +894,7 @@ fn wanaka_suggest_baseline() {
                 | SuggestWarning::DppCappedByDeflection { .. }
                 | SuggestWarning::StepoverRaisedForRuntime { .. }
                 | SuggestWarning::FeedRaisedForChipload { .. }
-                | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
-                | SuggestWarning::StrategyRewrote { .. } => {}
+                | SuggestWarning::ChiploadStillLowAfterRecalibration { .. } => {}
                 // T-12 (2026-09-16): the forcing arm fired, and this is the
                 // deliberate answer it demanded. ALLOWED on Wanaka.
                 //
@@ -939,7 +934,10 @@ fn wanaka_suggest_baseline() {
                 | SuggestWarning::RpmLoweredForFeedCeiling { .. }
                 // G6 ramp (2026-09-25): the entry feed record, EXPECTED on
                 // every speeds apply of an operation with the field.
-                | SuggestWarning::RampFeed { .. } => {}
+                | SuggestWarning::RampFeed { .. }
+                // G10 (2026-09-25): the plunge rule ran again at the feed
+                // that ships. ALLOWED where pass 9 or pass 10 moved the feed.
+                | SuggestWarning::PlungeReDerived { .. } => {}
                 // v3.3c: must NOT fire on Wanaka — both 3D-rough
                 // toolpaths pin `clearing_strategy = "agent_search"`,
                 // and heuristic-B pinning suppresses the warn-only

@@ -57,12 +57,14 @@ use rs_cam_core::diagnostics::adapters::from_feeds::{
     heuristic_hints_from_recommendation,
 };
 use rs_cam_core::diagnostics::adapters::from_static_checks::diagnostics_from_static_checks;
+use rs_cam_core::feeds::plunge::resolve_plunge;
 use rs_cam_core::feeds::suggest::{
-    StockContext, SuggestContext, SuggestParamsInput, SuggestedParams, suggest_params,
+    StockContext, SuggestContext, SuggestParamsInput, SuggestWarning, SuggestedParams,
+    suggest_params,
 };
 use rs_cam_core::feeds::vendor_lookup::vbit_key_text;
 use rs_cam_core::feeds::vendor_lut::{MaterialFamily, VendorObservation};
-use rs_cam_core::feeds::{EMBEDDED_LUT, FeedsSupport, SpindleStrategy};
+use rs_cam_core::feeds::{EMBEDDED_LUT, FeedsSupport, PlungeBasis, SpindleStrategy};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, PlywoodGrade, SheetGoodKind, WoodSpecies};
@@ -252,6 +254,48 @@ fn row(fields: &[String]) -> String {
     fields.iter().map(|f| q(f)).collect::<Vec<_>>().join(",")
 }
 
+/// The six G10 entry columns of a cell (`G10_PLAN.md` §3 A9): the plunge
+/// basis name, its rule id or refusal, the term that sets the shipped
+/// plunge, the ramp feed that ships, the arm of the funnel's `RampFeed`
+/// record, and the entry-note headlines (a caution note prints "⚠").
+fn entry_columns(s: &SuggestedParams) -> [String; 6] {
+    let r = &s.feeds_result;
+    let rule = match &r.plunge {
+        PlungeBasis::Claimed { claim, .. } => claim.rule.id.to_owned(),
+        PlungeBasis::MaterialBase { reason, .. } => reason.short(),
+        PlungeBasis::DrillCycle => String::new(),
+    };
+    let binding = resolve_plunge(&r.plunge, s.operation.feed_rate())
+        .map_or_else(String::new, |(_, b)| format!("{b:?}"));
+    let record = s.warnings.iter().find_map(|w| match w {
+        SuggestWarning::RampFeed { record, notes, .. } => Some((record, notes)),
+        _ => None,
+    });
+    let arm = record.map_or_else(String::new, |(record, _)| record.arm_name().to_owned());
+    let notes = record.map_or_else(String::new, |(_, notes)| {
+        notes
+            .as_slice()
+            .iter()
+            .map(|n| {
+                if n.caution {
+                    format!("⚠ {}", n.headline)
+                } else {
+                    n.headline.clone()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" | ")
+    });
+    [
+        r.plunge.name().to_owned(),
+        rule,
+        binding,
+        num(s.operation.ramp_feed_rate()),
+        arm,
+        notes,
+    ]
+}
+
 // ── Pre-simulation matrix ───────────────────────────────────────────────
 
 /// One recorded cell of the pre-simulation matrix.
@@ -318,6 +362,12 @@ const MATRIX_HEADER: &[&str] = &[
     "cap_mm",
     "force_line",
     "chip_regime",
+    "plunge_basis",
+    "plunge_rule",
+    "plunge_binding",
+    "ramp_feed_mm_min",
+    "ramp_arm",
+    "entry_notes",
 ];
 
 fn support_columns(s: &FeedsSupport) -> (String, String) {
@@ -546,6 +596,7 @@ fn walk_matrix(
                                 &tool,
                             ));
                             fields.extend(force_line_columns(material, None, &tool));
+                            fields.extend(std::iter::repeat_n(String::new(), 6));
                             cells.push(Cell {
                                 kind,
                                 op,
@@ -660,6 +711,7 @@ fn walk_matrix(
                             fields.push(sw.join(";"));
                             fields.extend(cap_columns(machine, &s.operation, &tool));
                             fields.extend(force_line_columns(material, Some(&s.operation), &tool));
+                            fields.extend(entry_columns(&s));
                             cells.push(Cell {
                                 kind,
                                 op,

@@ -5,6 +5,10 @@ mod gpu_upload;
 mod input;
 #[cfg(feature = "mcp")]
 pub(crate) mod mcp;
+/// The `basis` object of the MCP `get_suggest_rationale` tool, as a pure
+/// function of the Suggest profile (G10: a test reads it).
+#[cfg(feature = "mcp")]
+pub use mcp::suggest_basis_json;
 mod simulation;
 mod viewport;
 

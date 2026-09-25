@@ -24,6 +24,7 @@ pub mod force;
 pub mod geometry;
 pub mod geometry_class;
 pub mod operating_point;
+pub mod plunge;
 pub mod predict;
 pub mod profile;
 pub mod provenance;
@@ -42,6 +43,7 @@ pub use feed_explanation::{
     LutBandStage, ObservedStatistic,
 };
 pub use operating_point::{PowerFigure, PowerUnmodeled, power_at_operating_point};
+pub use plunge::{PlungeBasis, PlungeBinding};
 pub use predict::{
     DeflectionBreakdown, DeflectionCaveat, DeflectionPrediction, DeflectionUnmodeled,
     predict_peak_deflection_um,
@@ -465,6 +467,10 @@ pub struct FeedsResult {
     pub chip_load_mm: f64,
     pub feed_rate_mm_min: f64,
     pub plunge_rate_mm_min: f64,
+    /// The part of the plunge that does not use F (G10): the claim, or the
+    /// named repo rule, and the tip cap. The apply funnel runs it again at
+    /// the shipped feed ([`plunge::resolve_plunge`]).
+    pub plunge: plunge::PlungeBasis,
     /// The sourced half of the ramp feed (G6 ramp): the axial chip of the
     /// drill claim, or why there is none. The number needs θ and the
     /// shipped feed and RPM, so `suggest::apply` resolves it
@@ -2527,12 +2533,17 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         feed = machine_cut_ceiling;
     }
 
-    // --- Step 8: Plunge rate ---
-    // Diameter-aware plunge baseline (fix #7) — a 3 mm bit no longer
-    // gets the same plunge envelope as a 12 mm bit. The 6 mm baseline
-    // is preserved, other diameters scale linearly with the audit
-    // rule-of-thumb (150-300 mm/min per mm of diameter for wood).
+    // --- Step 8: Plunge rate (G10) ---
+    // The plunge is `min(rule, tip cap, F)` at the final feed of Step 7
+    // (`feeds::plunge`). The rule is the G10 claim, a printed fraction of
+    // the side feed (flat end mill F / Z, ball and tapered ball 0.50 F, 60°
+    // V-bit F / 3; rulings Q4 and Q5). When no claim covers the tool, the
+    // rule is the named repo rule: the material base below, scaled by the
+    // diameter. The tip cap of a ball or a tapered ball is a named repo rule
+    // too (`tool_load::plunge_stress`, the one producer). The apply funnel
+    // runs the rule again at the feed that ships.
     let plunge = material.plunge_rate_base(d);
+    let plunge_basis = plunge::plunge_basis(input, plunge);
 
     // --- Step 8b: the sourced half of the ramp feed (G6 ramp) ---
     // The G6 drill claim gives the axial chip of a helix or ramp entry, or
@@ -2546,32 +2557,12 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     // `machine.safety_factor` (0.75), the "hidden 25 %". The factor is gone.
     // The feed ships the band chipload times the published depth ladder; the
     // aggressiveness dial holds the LOAD through the engagement (Suggest pass
-    // 6b). The plunge ships the material base with no factor (ruling Q5): a
-    // plunge is full-width axial, so the dial has no engagement lever on it.
-    // The ramp is sourced by G6 (Step 8b), or it falls back to the plunge.
-    // The ball-tip cap below still applies.
-    let mut plunge_rate = plunge;
-
-    // Fix 2 (Wanaka audit): tool-geometry-aware plunge cap.
-    // Material::plunge_rate_base returns one value per material with
-    // no tool-geometry awareness, so a 1 mm tapered ball gets the
-    // same plunge as a 12 mm end-mill. Published FSWizard / GWizard
-    // ranges are 100–300 mm/min for sub-2 mm tapered/ball tools in
-    // wood — derate accordingly. Cap at 150 mm/min per mm of
-    // effective tip diameter for ball/tapered-ball geometries; larger
-    // tools and flat/bull tools are unchanged. See
-    // `planning/PRE_OPTIMIZE_DEFAULTS_AUDIT.md` Fix 2.
-    let plunge_cap = match input.tool_geometry {
-        ToolGeometryHint::Ball => Some(d),
-        ToolGeometryHint::TaperedBall { tip_radius, .. } => Some((tip_radius * 2.0).max(0.5)),
-        _ => None,
-    };
-    if let Some(tip_d) = plunge_cap {
-        let cap = 150.0 * tip_d;
-        if plunge_rate > cap {
-            plunge_rate = cap;
-        }
-    }
+    // 6b). The plunge takes no factor either (ruling Q5): a plunge is
+    // full-width axial, so the dial has no engagement lever on it. The plunge
+    // is the G10 rule of Step 8 at this feed. A drill cycle gives no value
+    // here; Step 9c sets its plunge to the drill feed.
+    let mut plunge_rate =
+        plunge::resolve_plunge(&plunge_basis, feed).map_or(plunge, |(value, _)| value);
 
     // --- Step 9b: Rubbing-floor warning on the final feed ---
     //
@@ -2794,6 +2785,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         chip_load_mm: chip_load,
         feed_rate_mm_min: feed,
         plunge_rate_mm_min: plunge_rate,
+        plunge: plunge_basis,
         ramp,
         axial_depth_mm: ap,
         radial_width_mm: ae,

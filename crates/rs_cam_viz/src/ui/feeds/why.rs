@@ -21,16 +21,19 @@
 //! Four things deliberately stay on the page rather than moving to a hover:
 //!
 //! - **Warnings.** A warning behind a hover is a warning that was deleted.
-//! - **The ramp record** (G6 ramp, 2026-09-25): one face line from the
-//!   funnel's `SuggestWarning::RampFeed`. The card has no ramp row, so the
-//!   line names the ramp feed, the arm that set it and θ
+//! - **The ramp record and the entry notes** (G6 ramp and G10,
+//!   2026-09-25): one face line from the funnel's `SuggestWarning::RampFeed`.
+//!   The card has no ramp row, so the line names the ramp feed, the arm
+//!   that set it (the G6 chip, the plunge slope, or no entry feed) and θ.
+//!   Under it, one face line per entry note: the ramp angle or the helix,
+//!   the core or the pip, the clearance and the straight-plunge caution
 //!   ([`draw_suggest_lines`]).
 //! - **The engaged-diameter row**, for tapered and V tools, where the
 //!   published tip size understates what is actually cutting.
-//! - **The row basis** ([`draw_row_basis_lines`]): the V-bit lookup key
-//!   (ruling B4), the G1 size claim of an off-size row, the G2 soft/hard
-//!   cap of a capped hardness transfer, and the printed material label of
-//!   a derived row.
+//! - **The row basis** ([`draw_row_basis_lines`]): the G10 plunge basis
+//!   (the claim or the named repo rule), the V-bit lookup key (ruling B4),
+//!   the G1 size claim of an off-size row, the G2 soft/hard cap of a capped
+//!   hardness transfer, and the printed material label of a derived row.
 //!
 //! Every quantity here is a **commanded** advance per tooth,
 //! `feed / (rpm · flutes)`. This surface runs before a simulation and has no
@@ -38,13 +41,13 @@
 //! panel's operating-point card, after a sim (Checkpoint H2, 2026-08-08).
 
 use rs_cam_core::feeds::extrapolation::{Claim, HardnessBasis};
-use rs_cam_core::feeds::rationale::{
-    AGGRESSIVENESS_ABOVE_BASE_TEXT, PLUNGE_AT_MATERIAL_BASE_TEXT, SuggestRationale,
-};
+use rs_cam_core::feeds::rationale::{AGGRESSIVENESS_ABOVE_BASE_TEXT, SuggestRationale};
 use rs_cam_core::feeds::suggest::{AggressivenessShortfall, FeedRecalibrationCap, SuggestWarning};
 use rs_cam_core::feeds::vendor_lookup::vbit_key_text;
 use rs_cam_core::feeds::vendor_lut::ObservationKind;
-use rs_cam_core::feeds::{FeedsExplain, FeedsField, SpindleScaleReason, ToolGeometryHint};
+use rs_cam_core::feeds::{
+    FeedsExplain, FeedsField, PlungeBasis, SpindleScaleReason, ToolGeometryHint,
+};
 
 use super::shared::{
     AppliedRecipe, CurrentValues, engaged_diameter_context, material_family_label, vendor_band,
@@ -272,12 +275,12 @@ fn explain_plunge(out: &mut String, explain: &FeedsExplain, applied: &AppliedRec
         " mm/min",
         0,
     );
-    out.push_str(
-        "The plunge is the material's base rate for the tool diameter: a \
-         small cutter plunges slower than a large one.\n",
-    );
-    // Ruling R4 Q5 (2026-09-24): the dial has no lever on a plunge.
-    out.push_str(PLUNGE_AT_MATERIAL_BASE_TEXT);
+    // G10 (2026-09-25): the plunge basis states its claim or its named
+    // rule. Ruling R4 Q5: the dial has no lever on a plunge.
+    let (headline, detail) = explain.recommended.plunge.card_text();
+    out.push_str(&headline);
+    out.push('\n');
+    out.push_str(&detail);
     out.push('\n');
 }
 
@@ -544,7 +547,10 @@ fn engaged_diameter_hover(geometry: ToolGeometryHint, kind: &str, tip_dia: f64) 
 /// The basis of the matched row, on the page (extrapolation P1 step 4,
 /// P2 step 4).
 ///
-/// Operator rule: no invisible calculation. On a V-bit query the row's key
+/// Operator rule: no invisible calculation. The G10 plunge basis
+/// (`FeedsResult::plunge`) is the first line: the claim headline in the
+/// claim tone, or the named repo rule dimmed; the rule, the witnesses and
+/// the Q12 sentence are on its hover. On a V-bit query the row's key
 /// (`vendor_lookup::vbit_key_text`, ruling B4) is a visible line: the
 /// printed cutting diameter, or the printed included angle when the chart
 /// prints no diameter. When the row is off-size, the G1 size claim
@@ -566,6 +572,20 @@ fn engaged_diameter_hover(geometry: ToolGeometryHint, kind: &str, tip_dia: f64) 
 /// 2026-09-25), the row is a printed Trace row reached by a route, not the
 /// operation's own declared family — that route is a visible line too.
 pub(crate) fn draw_row_basis_lines(ui: &mut egui::Ui, explain: &FeedsExplain) {
+    // G10 (2026-09-25): the plunge states its claim or its named repo rule.
+    // It reads the plunge basis, not the matched row: the named rule serves
+    // a tool with no row too. A drill cycle has no plunge rule (the plunge is
+    // the drill feed), so it paints no line.
+    let plunge = &explain.recommended.plunge;
+    let plunge_tone = match plunge {
+        PlungeBasis::Claimed { .. } => Some(theme::WARNING_MILD),
+        PlungeBasis::MaterialBase { .. } => Some(theme::TEXT_DIM),
+        PlungeBasis::DrillCycle => None,
+    };
+    if let Some(tone) = plunge_tone {
+        let (headline, detail) = plunge.card_text();
+        detail_line(ui, headline, tone, &detail);
+    }
     let Some(row) = explain.matched_row.as_ref() else {
         return;
     };
@@ -924,15 +944,34 @@ pub(crate) fn draw_warnings(ui: &mut egui::Ui, explain: &FeedsExplain) {
 
 // ── The Suggest stages that move a number ────────────────────────────
 
-/// The face line of one Suggest record, and whether it is a Caution.
+/// The face lines of one Suggest record, each with whether it is a
+/// Caution.
 ///
 /// The operator's standing rule (ruling R4, 2026-09-24): every stage that
 /// moves a number is one line on the card, with its source status. The
 /// match is exhaustive, so a new record must choose here. A record that
-/// returns `None` either moves no number, or its row hover carries it (the
+/// gives no line either moves no number, or its row hover carries it (the
 /// declutter ruling of 2026-09-15); the sentry
 /// `every_stage_that_moves_a_number_is_on_the_card_g_visible` holds the
-/// list.
+/// list. Only the ramp record gives more than one line: the record, then
+/// one line per entry note (G10).
+fn suggest_lines(warning: &SuggestWarning) -> Vec<(String, bool)> {
+    suggest_line(warning).map_or_else(Vec::new, |line| {
+        let mut lines = vec![line];
+        if let SuggestWarning::RampFeed { notes, .. } = warning {
+            lines.extend(
+                notes
+                    .as_slice()
+                    .iter()
+                    .map(|note| (note.headline.clone(), note.caution)),
+            );
+        }
+        lines
+    })
+}
+
+/// The first face line of one Suggest record, and whether it is a Caution
+/// (see [`suggest_lines`]).
 fn suggest_line(warning: &SuggestWarning) -> Option<(String, bool)> {
     match warning {
         SuggestWarning::EngagementReducedForAggressiveness {
@@ -1048,10 +1087,13 @@ fn suggest_line(warning: &SuggestWarning) -> Option<(String, bool)> {
         SuggestWarning::RpmLoweredForFeedCeiling { .. } => None,
         // G6 ramp (2026-09-25): the card has no ramp row, so the record is a
         // face line. It names the arm and θ, and the value the operation
-        // holds now.
+        // holds now. The three arms (the G6 chip, the G10 plunge slope, no
+        // entry feed) share the line. The entry notes follow it as their own
+        // lines (`suggest_lines`).
         SuggestWarning::RampFeed {
             from_mm_min,
             record,
+            ..
         } => {
             let (line, _) = record.card_text();
             let now = match from_mm_min {
@@ -1069,7 +1111,8 @@ fn suggest_line(warning: &SuggestWarning) -> Option<(String, bool)> {
         }
         // These records reach the card through the rationale rows, on the
         // hover of the row whose number they move (`append_rationale`), or
-        // they move no number.
+        // they move no number. `PlungeReDerived` (G10) is on the plunge row
+        // hover.
         SuggestWarning::PlungeClampedToFeed { .. }
         | SuggestWarning::StepoverClampedToToolDiameter { .. }
         | SuggestWarning::RoughingDepthClampedToRigidity { .. }
@@ -1081,8 +1124,8 @@ fn suggest_line(warning: &SuggestWarning) -> Option<(String, bool)> {
         | SuggestWarning::StepoverRaisedForRuntime { .. }
         | SuggestWarning::FeedRaisedForChipload { .. }
         | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
-        | SuggestWarning::StrategyRewrote { .. }
         | SuggestWarning::StrategyRecommendedNotApplied { .. }
+        | SuggestWarning::PlungeReDerived { .. }
         | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
         | SuggestWarning::AxialDocClampedByEnvelope { .. }
         | SuggestWarning::AxialDocBelowBurnFloor { .. }
@@ -1101,10 +1144,7 @@ fn suggest_line(warning: &SuggestWarning) -> Option<(String, bool)> {
 /// A line that states a Caution (a target above the base, or a target not
 /// met) carries the warning mark and the Caution tone.
 pub(crate) fn draw_suggest_lines(ui: &mut egui::Ui, warnings: &[SuggestWarning]) {
-    for warning in warnings {
-        let Some((line, caution)) = suggest_line(warning) else {
-            continue;
-        };
+    for (line, caution) in warnings.iter().flat_map(suggest_lines) {
         if caution {
             plain_line(ui, format!("⚠ {line}"), theme::WARNING_MILD);
         } else {

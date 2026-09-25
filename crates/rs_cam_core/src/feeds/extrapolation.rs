@@ -32,15 +32,26 @@
 //! ([`DRILL_RULES`]) serves from the tool's printed side row. The rule
 //! widens the must-match filter as a family rule does, and it moves one
 //! number: the chip is the side chip / Z (ruling B5).
+//!
+//! G10 (plunge) is not an [`Extrapolation`] impl either: [`plunge_rule`] in
+//! [`plunge`] gives the milling plunge as a printed fraction of the shipped
+//! side feed ([`PLUNGE_RULES`], rulings Q4 and Q5). It reads no LUT row;
+//! `feeds::plunge` resolves the number.
 
 pub mod drill;
 pub mod family;
 pub mod hardness;
+pub mod plunge;
 pub mod size;
 
 pub use drill::{
-    DRILL_PECK_TEXT, DRILL_RULE_TEXT, DRILL_RULES, DrillBasis, DrillClaim, DrillRule, drill_basis,
-    drill_rule,
+    DRILL_PECK_TEXT, DRILL_RULE_TEXT, DRILL_RULES, DrillBasis, DrillClaim, DrillRule,
+    SPEKTRA_DRILL_RULE, drill_basis, drill_rule,
+};
+
+pub use plunge::{
+    PLUNGE_RULE_TEXT, PLUNGE_RULES, PlungeClaim, PlungeFraction, PlungeKey, PlungeRefusal,
+    PlungeRule, plunge_rule, tool_family_label,
 };
 
 pub use family::{
@@ -76,6 +87,10 @@ pub enum Gap {
     /// reads the tool's printed side row through the drill rule (`drill`,
     /// ruling B5).
     Drill,
+    /// G10: no chart pairs this tool's plunge with its feed at this key;
+    /// the plunge rule (`plunge`) gives the plunge as a printed fraction of
+    /// the side feed (rulings Q4 and Q5).
+    Plunge,
 }
 
 impl Gap {
@@ -87,6 +102,7 @@ impl Gap {
             Self::Hardness => "G2",
             Self::Family => "G3",
             Self::Drill => "G6",
+            Self::Plunge => "G10",
         }
     }
 
@@ -98,6 +114,7 @@ impl Gap {
             Self::Hardness => "hardness",
             Self::Family => "family",
             Self::Drill => "drill",
+            Self::Plunge => "plunge",
         }
     }
 }

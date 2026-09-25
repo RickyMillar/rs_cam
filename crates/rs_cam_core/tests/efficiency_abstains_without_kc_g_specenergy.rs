@@ -120,7 +120,8 @@ fn operating_point(axial_doc_mm: f64, band: Option<ChiploadBounds>) -> FeedsResu
         chip_load_mm: FZ,
         feed_rate_mm_min: feed,
         plunge_rate_mm_min: feed * 0.4,
-        ramp: RampBasis::PlungeRate {
+        plunge: rs_cam_core::feeds::PlungeBasis::DrillCycle,
+        ramp: RampBasis::NoChip {
             reason: RampFallback::NoLut,
         },
         axial_depth_mm: axial_doc_mm,

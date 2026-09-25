@@ -1,10 +1,14 @@
-//! Adaptive3d strategy picking and final-geometry feed rescaling: the entry
-//! style and clearing strategy auto-picks, the plunge-entry stability check,
-//! and the geometry factor that rescales a feed after the invariant clamps
-//! rewrite stepover or DPP.
+//! Adaptive3d strategy advice and final-geometry feed rescaling: the
+//! warn-only clearing-strategy recommendation, the plunge-entry stability
+//! check, and the geometry factor that rescales a feed after the invariant
+//! clamps rewrite stepover or DPP.
 //!
-//! Split out of `feeds/suggest.rs` by P4; every item is unchanged apart from
-//! its visibility and the `use` lines.
+//! Suggest does not write the entry style (ruling Q11, G10, 2026-09-25).
+//! The operator owns it. The entry-style rewrite
+//! (`pick_adaptive3d_entry_style`) is deleted. The stability check below
+//! still warns when a plunge entry is deep.
+//!
+//! Split out of `feeds/suggest.rs` by P4.
 
 use crate::compute::catalog::OperationConfig;
 use crate::compute::cutter::build_cutter;
@@ -25,128 +29,6 @@ use super::{FeedRecalibrationCap, SuggestContext, SuggestScope, SuggestWarning};
 /// ratio of ~0.5 is enough for the transient to breach the 200 µm
 /// gate, so we flag at-or-above 0.5×D.
 const PLUNGE_ENTRY_UNSTABLE_DPP_OVER_D: f64 = 0.5;
-
-/// Pass 7: v3.3b combined-Suggest strategy-aware entry-style auto-pick.
-///
-/// When `policy.scope == StrategyAndFeeds`, rewrites
-/// `Adaptive3dConfig::entry_style` from `Plunge` to either `Helix` or
-/// `Ramp` when the post-back-off DPP / D ratio exceeds
-/// [`PLUNGE_ENTRY_UNSTABLE_DPP_OVER_D`] (today's v1.3 warning threshold)
-/// and the field is at its `Default::default()` value (treated as
-/// unpinned per the v3 design doc's "B" pinning heuristic).
-///
-/// **v3.4 Helix promotion**: When the v3.4 geometry classifier in
-/// [`crate::feeds::geometry_class`] reports `MixedTerrain` /
-/// `ShallowTerrain` and the model bbox has headroom for the
-/// configured `helix_radius_factor` (see
-/// [`crate::feeds::geometry_class::helix_feasible_in_bbox`]), the
-/// rewrite picks **Helix** — the cleanest adaptive3d engagement.
-/// Falls back to Ramp when the classifier can't confirm headroom or
-/// returns `Unknown`. Ramp works on any geometry that fits the
-/// cutter at all, so it's the safe baseline.
-///
-/// Pinning: only rewrites when the live value equals the default
-/// (`Plunge`). A user who set Helix or Ramp explicitly keeps their
-/// choice. The false-positive case ("user explicitly chose the
-/// default") is accepted — the chooser would have picked the same
-/// thing anyway in the common case, and the
-/// [`SuggestWarning::StrategyRewrote`] entry surfaces what changed so
-/// the operator can revert with one click.
-///
-/// Wanaka motivating case: Back Rough / 3D Rough 6 at DPP=3.69 mm on a
-/// 6 mm tool with `entry_style=Plunge` (== default) ships a 362 µm
-/// plunge-entry transient — above the 200 µm deflection gate. With
-/// the v3.4 classifier the rewrite picks Helix (Wanaka's 140 × 150 mm
-/// bbox easily clears the 15.6 mm helix-headroom requirement), giving
-/// the gold-standard adaptive3d entry.
-pub(super) fn pick_adaptive3d_entry_style(
-    operation: &mut OperationConfig,
-    tool: &ToolConfig,
-    pass_role: PassRole,
-    context: SuggestContext<'_>,
-) -> Vec<SuggestWarning> {
-    use crate::compute::operation_configs::Adaptive3dEntryStyle;
-    use crate::feeds::geometry_class::{self, GeometryClass};
-    let mut warnings = Vec::new();
-    if !matches!(context.policy.scope, SuggestScope::StrategyAndFeeds) {
-        return warnings;
-    }
-    if !matches!(pass_role, PassRole::Roughing) {
-        return warnings;
-    }
-    if !tool.diameter.is_finite() || tool.diameter <= 0.0 {
-        return warnings;
-    }
-    let Some(dpp) = operation.depth_per_pass() else {
-        return warnings;
-    };
-    if !dpp.is_finite() || dpp <= PLUNGE_ENTRY_UNSTABLE_DPP_OVER_D * tool.diameter {
-        return warnings;
-    }
-
-    // Only Adaptive3d carries an Adaptive3dEntryStyle field today.
-    let op_type = operation.op_type();
-    let OperationConfig::Adaptive3d(cfg) = operation else {
-        return warnings;
-    };
-
-    // v3 design "B" pinning heuristic: only rewrite when the field
-    // equals its default. The default for Adaptive3dEntryStyle is
-    // `Plunge` (see `Adaptive3dConfig::default()` in
-    // `operation_configs.rs`), so the rewrite gate IS "currently set
-    // to Plunge". A user who set Helix or Ramp explicitly keeps their
-    // choice.
-    let from = cfg.entry_style;
-    if !matches!(from, Adaptive3dEntryStyle::Plunge) {
-        return warnings;
-    }
-
-    // v3.4: Helix is the gold-standard adaptive3d entry. Pick it when
-    // the classifier reports terrain that supports it AND the bbox
-    // has headroom for the configured `helix_radius_factor`. Otherwise
-    // fall back to Ramp (safe on any cutter-fitting geometry).
-    let class = geometry_class::classify(op_type, context.model_bbox);
-    let helix_terrain_ok = matches!(
-        class,
-        GeometryClass::MixedTerrain | GeometryClass::ShallowTerrain
-    );
-    let helix_room_ok = geometry_class::helix_feasible_in_bbox(
-        context.model_bbox,
-        tool.diameter,
-        cfg.helix_radius_factor,
-    );
-    let (to, to_label, reason): (Adaptive3dEntryStyle, &'static str, &'static str) =
-        if helix_terrain_ok && helix_room_ok {
-            (
-                Adaptive3dEntryStyle::Helix,
-                "helix",
-                "deflection_predict_at_dpp_with_helix_headroom",
-            )
-        } else {
-            (
-                Adaptive3dEntryStyle::Ramp,
-                "ramp",
-                "deflection_predict_at_dpp",
-            )
-        };
-    cfg.entry_style = to;
-    tracing::debug!(
-        dpp_mm = dpp,
-        diameter_mm = tool.diameter,
-        from = ?from,
-        to = ?to,
-        ?class,
-        helix_room_ok,
-        "Suggest strategy-rewrote entry_style"
-    );
-    warnings.push(SuggestWarning::StrategyRewrote {
-        param: "entry_style",
-        from: "plunge".to_owned(),
-        to: to_label.to_owned(),
-        reason,
-    });
-    warnings
-}
 
 /// Pass 7b: v3.3c strategy-aware clearing-strategy recommendation —
 /// **warn-only**, never rewrites.
@@ -221,7 +103,7 @@ pub(super) fn pick_adaptive3d_clearing_strategy(
 /// (Wanaka 3D Rough 6, 2026-06-03). Threshold: dpp > 0.5×D, calibrated
 /// against Wanaka plunge-entry spike data — DPP=3.69 mm on a 6 mm
 /// tool produced a 362 µm entry transient (steady-state 162 µm).
-/// Warning-only: strategy auto-rewrite is v2.
+/// Warning-only: Suggest never rewrites the entry style (ruling Q11).
 ///
 /// Reads the post-deflection-back-off DPP — this is the intentional
 /// ordering inherited from the monolithic enforce_invariants and only

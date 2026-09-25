@@ -652,7 +652,8 @@ fn operating_point(ap: f64, ae: f64, fz: f64, rpm: f64) -> FeedsResult {
         chip_load_mm: fz,
         feed_rate_mm_min: feed,
         plunge_rate_mm_min: feed * 0.4,
-        ramp: RampBasis::PlungeRate {
+        plunge: rs_cam_core::feeds::PlungeBasis::DrillCycle,
+        ramp: RampBasis::NoChip {
             reason: RampFallback::NoLut,
         },
         axial_depth_mm: ap,

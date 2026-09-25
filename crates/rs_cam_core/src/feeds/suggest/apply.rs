@@ -178,6 +178,28 @@ fn apply_feeds_subset(
 
     let write_speeds = matches!(subset, ApplyScope::Speeds | ApplyScope::Both);
     let write_geometry = matches!(subset, ApplyScope::CutGeometry | ApplyScope::Both);
+    // G10 (2026-09-25): the plunge is a rule of the feed that ships. Pass 9,
+    // pass 10 and an explored feed can move the feed after the calculator,
+    // so the funnel runs the rule again at the final feed. It writes the
+    // plunge only when the value moved by 1 mm/min or more, and files the
+    // move. A drill cycle gives no value: its plunge is its feed. The ramp
+    // below reads this plunge, so the plunge comes first.
+    let plunge_binding = if write_speeds {
+        crate::feeds::plunge::resolve_plunge(&result.plunge, scratch.feed_rate())
+    } else {
+        None
+    };
+    if let Some((to_mm_min, binding)) = plunge_binding {
+        let from_mm_min = scratch.plunge_rate();
+        if (to_mm_min - from_mm_min).abs() >= 1.0 {
+            scratch.set_plunge_rate(to_mm_min);
+            warnings.push(SuggestWarning::PlungeReDerived {
+                from_mm_min,
+                to_mm_min,
+                binding,
+            });
+        }
+    }
     // Ruling R4 Q10 (2026-09-24): the calculator lowered the RPM to hold the
     // chip at the feed ceiling. When this apply writes that RPM, the card
     // gets a rationale row on the RPM entry.
@@ -225,6 +247,10 @@ fn apply_feeds_subset(
     // the entry that ships (a strategy rewrite on the scratch does not
     // reach the operation). An operation with no ramp field (a drill cycle)
     // refuses the write, and then no record is filed.
+    //
+    // G10 (2026-09-25): with no G6 chip the ramp holds its vertical rate at
+    // the plunge that ships (Q2), and the record carries the entry notes
+    // (Q6-Q10, Q12) of the operation that ships.
     let mut ramp_record = None;
     if write_speeds {
         let from_mm_min = operation.ramp_feed_rate();
@@ -239,9 +265,12 @@ fn apply_feeds_subset(
         );
         if operation.as_params_mut().set_ramp_feed_rate(record.value()) {
             ramp_record = Some(record.clone());
+            let notes =
+                crate::feeds::ramp::entry_notes(operation, context.dressups, tool, pass_role);
             warnings.push(SuggestWarning::RampFeed {
                 from_mm_min,
                 record,
+                notes,
             });
         }
     }
@@ -278,6 +307,13 @@ fn apply_feeds_subset(
     // recalibrated feed/DPP, but the values remain suggest-derived, so the
     // source labels still hold.
     provenance.apply_suggested_subset(result, operation, rpm_written, write_speeds, write_geometry);
+    // G10: the plunge stamp names the term that binds at the feed that
+    // ships, which can differ from the calculator's feed.
+    if let Some((_, binding)) = plunge_binding
+        && let Some(feed_stamp) = provenance.feed_rate.clone()
+    {
+        provenance.plunge_rate = Some(result.plunge.provenance(binding, feed_stamp));
+    }
     if let Some(record) = &ramp_record {
         provenance.stamp_ramp(record);
     }

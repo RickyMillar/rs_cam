@@ -79,6 +79,120 @@ pub(super) fn force_line_json(
     })
 }
 
+/// The `basis` object of `get_suggest_rationale`: the support of the recipe
+/// the profile ships, as the Feeds card states it. `Null` when Suggest
+/// refused (no calculator result).
+///
+/// - Extrapolation P1 step 4: the support arm's card text. An off-size row
+///   states its G1 claim (the scale, the rule, the range and the spread) in
+///   `detail`, as the Feeds card does.
+/// - Extrapolation P2 step 4: a capped hardness transfer lives on the
+///   matched row, not on the support arm; `hardness` carries its card text,
+///   so MCP states the cap as the card does.
+/// - A3 (G3): a family transfer is a support arm (`FamilyTransferred`), so
+///   its claim is in `headline` and `detail` too, joined with the size claim
+///   when there is one. B5 (G6): a drill claim is a support arm
+///   (`DrillTransferred`) in the same way.
+/// - G6 ramp: `ramp.source` is the claim that does not use θ; `headline`,
+///   `detail`, `arm` and `value_mm_min` come from the `RampFeed` record of
+///   the funnel, which holds the number, the arm (the G6 chip, the G10
+///   plunge slope, or no entry feed) and θ. A drill files no record, so
+///   they are null.
+/// - G10: `plunge.source` is the plunge basis (the claim or the named repo
+///   rule); `plunge.value_mm_min` is the plunge that ships;
+///   `plunge.re_derived` is the funnel's `PlungeReDerived` record
+///   ({from_mm_min, to_mm_min, binding}), or null when the plunge did not
+///   move. `entry` is one {headline, detail, caution} per entry note of the
+///   `RampFeed` record, in card order (empty when there is no record).
+/// - B6: `force_line` is the material's one force line (plan §6), evaluated
+///   at the mean chip of the cut Suggest ships; on a refusal every number is
+///   null and `refused` names the variant.
+pub fn suggest_basis_json(
+    profile: &rs_cam_core::feeds::profile::CutterOpProfile<'_>,
+) -> serde_json::Value {
+    use rs_cam_core::feeds::suggest::SuggestWarning;
+
+    let Some(feeds) = profile.feeds.as_ref() else {
+        return serde_json::Value::Null;
+    };
+    let ramp_warning = profile.warnings.iter().find_map(|w| match w {
+        SuggestWarning::RampFeed { record, notes, .. } => Some((record, notes)),
+        _ => None,
+    });
+    let ramp_record = ramp_warning.map(|(record, _)| record);
+    let re_derived = profile.warnings.iter().find_map(|w| match w {
+        SuggestWarning::PlungeReDerived {
+            from_mm_min,
+            to_mm_min,
+            binding,
+        } => Some(serde_json::json!({
+            "from_mm_min": from_mm_min,
+            "to_mm_min": to_mm_min,
+            // The variant name, as the FM1 `plunge_binding` column prints
+            // it: "Rule", "TipCap" or "Feed".
+            "binding": format!("{binding:?}"),
+        })),
+        _ => None,
+    });
+    let entry: Vec<serde_json::Value> = ramp_warning
+        .map(|(_, notes)| {
+            notes
+                .as_slice()
+                .iter()
+                .map(|note| {
+                    serde_json::json!({
+                        "headline": note.headline,
+                        "detail": note.detail,
+                        "caution": note.caution,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let (headline, detail) = feeds.support.card_text();
+    let hardness = feeds
+        .matched_lut_row
+        .as_ref()
+        .and_then(|row| row.hardness_basis.card_text())
+        .map(|(headline, detail)| serde_json::json!({ "headline": headline, "detail": detail }));
+    let (ramp_source_headline, ramp_source_detail) = feeds.ramp.card_text();
+    let (ramp_headline, ramp_detail) = ramp_record.map(|record| record.card_text()).unzip();
+    let (plunge_headline, plunge_detail) = feeds.plunge.card_text();
+    // The cut Suggest ships, else the input operation.
+    let shipped_operation = profile
+        .suggested_operation
+        .as_ref()
+        .unwrap_or(profile.operation);
+    let force_point =
+        shipped_force_point(shipped_operation, profile.tool_cfg, profile.material, feeds);
+    let force_line = force_line_json(profile.material, force_point);
+    serde_json::json!({
+        "headline": headline,
+        "detail": detail,
+        "hardness": hardness,
+        "force_line": force_line,
+        "plunge": {
+            "source": {
+                "headline": plunge_headline,
+                "detail": plunge_detail,
+            },
+            "value_mm_min": shipped_operation.plunge_rate(),
+            "re_derived": re_derived,
+        },
+        "entry": entry,
+        "ramp": {
+            "source": {
+                "headline": ramp_source_headline,
+                "detail": ramp_source_detail,
+            },
+            "headline": ramp_headline,
+            "detail": ramp_detail,
+            "arm": ramp_record.map(|record| record.arm_name()),
+            "value_mm_min": ramp_record.and_then(|record| record.value()),
+        },
+    })
+}
+
 impl RsCamApp {
     /// v3.2 (2026-06-04): Combined-Suggest rationale for the toolpath
     /// at `index`. Returns a [`rs_cam_core::feeds::rationale::SuggestRationale`]
@@ -108,71 +222,7 @@ impl RsCamApp {
                 let rationale = rs_cam_core::feeds::rationale::SuggestRationale::from_warnings(
                     &profile.warnings,
                 );
-                // Extrapolation P1 step 4: the support arm's card text. An
-                // off-size row states its G1 claim (the scale, the rule, the
-                // range and the spread) in `detail`, as the Feeds card does.
-                // Extrapolation P2 step 4: a capped hardness transfer lives on
-                // the matched row, not on the support arm; `hardness` carries
-                // its card text, so MCP states the cap as the card does.
-                // A3 (G3): a family transfer is a support arm
-                // (`FamilyTransferred`), so its claim is in `headline` and
-                // `detail` too, joined with the size claim when there is one.
-                // B5 (G6): a drill claim is a support arm (`DrillTransferred`)
-                // in the same way.
-                // G6 ramp: `ramp.source` is the claim that does not use θ;
-                // `headline`, `detail` and `value_mm_min` come from the
-                // `RampFeed` record of the funnel, which holds the number,
-                // the arm and θ. A drill files no record, so they are null.
-                // B6: `force_line` is the material's one force line (plan
-                // §6), evaluated at the mean chip of the cut Suggest ships;
-                // on a refusal every number is null and `refused` names the
-                // variant.
-                let ramp_record = profile.warnings.iter().find_map(|w| match w {
-                    rs_cam_core::feeds::suggest::SuggestWarning::RampFeed { record, .. } => {
-                        Some(record)
-                    }
-                    _ => None,
-                });
-                let basis = profile.feeds.as_ref().map(|feeds| {
-                    let (headline, detail) = feeds.support.card_text();
-                    let hardness = feeds
-                        .matched_lut_row
-                        .as_ref()
-                        .and_then(|row| row.hardness_basis.card_text())
-                        .map(|(headline, detail)| {
-                            serde_json::json!({ "headline": headline, "detail": detail })
-                        });
-                    let (ramp_source_headline, ramp_source_detail) = feeds.ramp.card_text();
-                    let (ramp_headline, ramp_detail) =
-                        ramp_record.map(|record| record.card_text()).unzip();
-                    // The cut Suggest ships, else the input operation.
-                    let shipped_operation = profile
-                        .suggested_operation
-                        .as_ref()
-                        .unwrap_or(profile.operation);
-                    let force_point = shipped_force_point(
-                        shipped_operation,
-                        profile.tool_cfg,
-                        profile.material,
-                        feeds,
-                    );
-                    let force_line = force_line_json(profile.material, force_point);
-                    serde_json::json!({
-                        "headline": headline,
-                        "detail": detail,
-                        "hardness": hardness,
-                        "force_line": force_line,
-                        "ramp": {
-                            "source": {
-                                "headline": ramp_source_headline,
-                                "detail": ramp_source_detail,
-                            },
-                            "headline": ramp_headline,
-                            "detail": ramp_detail,
-                            "value_mm_min": ramp_record.and_then(|record| record.value()),
-                        },
-                    })
-                });
+                let basis = suggest_basis_json(&profile);
                 json_str(serde_json::json!({
                     "toolpath_id": tc.id,
                     "toolpath_name": tc.name,

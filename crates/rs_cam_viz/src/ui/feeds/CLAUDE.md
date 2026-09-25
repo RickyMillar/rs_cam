@@ -14,7 +14,9 @@
 - The recommended column is what `⚡ Apply all` writes; the hover has the raw value.
 - Every stage that moves a number is one line on the card, with its source
   status (ruling R4). `why::draw_suggest_lines` paints the Suggest stages (the
-  G6 ramp record is one face line); `why::draw_row_basis_lines` paints the G1 size claim, the G2 soft/hard cap and the A4 row label.
+  G6 ramp record is one face line; the G10 entry notes are face lines under
+  it); `why::draw_row_basis_lines` paints the G10 plunge basis (one face
+  line), the G1 size claim, the G2 soft/hard cap and the A4 row label.
 - A nomogram readout outside the band abstains; the window fits the screen.
 - A chart draws one line at the suggested value, and band lines only where the
   row publishes both limits; no shading.
@@ -24,16 +26,14 @@
 
 ## Sentries
 
-- `cargo test -p rs_cam_viz -q --test the_feeds_modal_holds_one_scope_dc5a`
-- `cargo test -p rs_cam_viz -q --test the_feeds_window_fits_the_screen_g_feedsfit`
-- `cargo test -p rs_cam_viz -q --test the_recommendation_explains_each_row_g_whyrow`
-- `cargo test -p rs_cam_viz -q --test the_nomogram_readout_abstains_g_hoverbound`
-- `cargo test -p rs_cam_viz -q --test the_speeds_apply_holds_the_cut_g_speedsonly`
-- `cargo test -p rs_cam_viz -q --test the_chipload_verdict_is_one_row_g_chipverdict`
-- `cargo test -p rs_cam_viz -q --test feeds_charts_draw_lines_not_shading_g_chartlines`
-- `cargo test -p rs_cam_viz -q --test every_stage_that_moves_a_number_is_on_the_card_g_visible`
-- `cargo test -p rs_cam_viz -q --test the_recommended_column_is_what_apply_writes_g_recomapplied`
-- `cargo test -p rs_cam_viz -q --test a_claimed_row_states_its_claim_on_the_card_g_claimcard`
+Run each with `cargo test -p rs_cam_viz -q --test <name>`:
+`the_feeds_modal_holds_one_scope_dc5a`, `the_feeds_window_fits_the_screen_g_feedsfit`,
+`the_recommendation_explains_each_row_g_whyrow`, `the_nomogram_readout_abstains_g_hoverbound`,
+`the_speeds_apply_holds_the_cut_g_speedsonly`, `the_chipload_verdict_is_one_row_g_chipverdict`,
+`feeds_charts_draw_lines_not_shading_g_chartlines`,
+`every_stage_that_moves_a_number_is_on_the_card_g_visible`,
+`the_recommended_column_is_what_apply_writes_g_recomapplied`,
+`a_claimed_row_states_its_claim_on_the_card_g_claimcard`, `the_card_names_every_entry_rule_g10`.
 
 ## Do not
 

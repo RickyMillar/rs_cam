@@ -578,16 +578,30 @@ fn explored_speeds_survive_the_funnel_but_still_get_clamped() {
     );
     assert_eq!(op.feed_rate(), 120.0, "the explored feed was re-solved");
     assert_eq!(op.spindle_rpm(), Some(14_000), "the explored RPM moved");
-    assert_eq!(
-        op.plunge_rate(),
-        120.0,
-        "plunge was not clamped to the explored feed — the funnel's clamps did not run"
-    );
     assert!(
         warnings
             .iter()
             .any(|w| matches!(w, SuggestWarning::PlungeClampedToFeed { .. })),
         "the clamp ran silently: {warnings:?}"
+    );
+    // Re-pinned by G10 (2026-09-25), cause: ruling Q4. The 6.35 mm 2-flute
+    // flat is inside the G10 flat plunge claim (3.0-12.7 mm, feed / Z), so
+    // the funnel runs the rule again at the explored feed: 120 / 2 = 60.
+    // Before G10 the plunge stopped at the clamp, 120.
+    assert_eq!(
+        op.plunge_rate(),
+        60.0,
+        "the plunge is not feed / Z at the explored feed"
+    );
+    assert!(
+        warnings.iter().any(|w| matches!(
+            w,
+            SuggestWarning::PlungeReDerived {
+                binding: crate::feeds::PlungeBinding::Rule,
+                ..
+            }
+        )),
+        "the funnel did not file the plunge move: {warnings:?}"
     );
     // Cut geometry untouched by a Speeds-scoped apply.
     assert_eq!(op.as_params().stepover(), base.as_params().stepover());
@@ -2251,185 +2265,73 @@ fn feed_recalibration_skipped_when_already_in_band() {
     );
 }
 
-/// v3.3b: strategy-aware orchestrator rewrites Adaptive3d
-/// `entry_style` from Plunge to Ramp on Roughing ops when:
-///   * `policy.scope == StrategyAndFeeds`
-///   * `DPP / D > 0.5` (i.e. the same threshold v1.3's plunge-entry
-///     warning fires on)
-///   * `entry_style == Default::default() == Plunge` (the v3 design
-///     doc's "B" pinning heuristic — only rewrite unpinned values)
+/// Ruling Q11 (G10, 2026-09-25): Suggest never writes the entry style.
 ///
-/// and DOES NOT fire under the v3.3a default `FeedsWithGates`
-/// scope. Wanaka Back Rough scaffold: 6 mm carbide endmill, DPP
-/// 3.69 mm (ratio 0.62), entry_style=Plunge.
+/// The Wanaka Back Rough scaffold: a 6 mm 2-flute end mill at DPP 3.69 mm
+/// (DPP / D = 0.615, above the 0.5 threshold). Every entry style stays as
+/// the operator set it, in every scope, with and without a model bbox. A
+/// Plunge entry at this depth files `PlungeEntryUnstableAtDpp`.
 #[test]
-fn strategy_aware_rewrites_plunge_to_ramp_under_default_scope() {
+fn suggest_never_writes_entry_style() {
     use crate::compute::operation_configs::{Adaptive3dConfig, Adaptive3dEntryStyle};
-    let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
-        depth_per_pass: 3.69,
-        stepover: 1.2,
-        feed_rate: 911.0,
-        spindle_rpm: Some(16_000),
-        entry_style: Adaptive3dEntryStyle::Plunge,
-        ..Adaptive3dConfig::default()
-    });
+    let bbox = crate::geo::BoundingBox3 {
+        min: crate::geo::P3::new(0.0, 0.0, -50.0),
+        max: crate::geo::P3::new(140.0, 150.0, 0.0),
+    };
     let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
-    // Short stickout keeps the closed-form deflection predictor
-    // below the 200 µm back-off threshold at DPP 3.69 mm, so
-    // pass 6 doesn't lower DPP and pass 7's DPP/D = 0.615 stays
-    // above the 0.5 rewrite threshold.
+    // A short stickout keeps the deflection back-off off at DPP 3.69 mm,
+    // so DPP / D stays above 0.5.
     tool.stickout = 30.0;
     tool.flute_count = 2;
     let machine = MachineProfile::default();
     let material = Material::SolidWood {
         species: crate::material::WoodSpecies::HardMaple,
     };
-
-    // Scope = StrategyAndFeeds → rewrite fires.
-    let warnings = enforce_invariants(
-        &mut op,
-        &tool,
-        &machine,
-        &material,
-        PassRole::Roughing,
-        SuggestContext {
-            policy: SuggestPolicy {
-                scope: SuggestScope::StrategyAndFeeds,
-            },
-            ..SuggestContext::default()
-        },
-    );
-    let OperationConfig::Adaptive3d(cfg) = &op else {
-        panic!("op must remain Adaptive3d after enforce_invariants")
-    };
-    assert_eq!(
-        cfg.entry_style,
-        Adaptive3dEntryStyle::Ramp,
-        "StrategyAndFeeds must rewrite Plunge → Ramp at DPP/D > 0.5"
-    );
-    assert!(
-        warnings.iter().any(|w| matches!(
-            w,
-            SuggestWarning::StrategyRewrote {
-                param: "entry_style",
-                ..
-            }
-        )),
-        "StrategyRewrote warning must fire, got {warnings:?}"
-    );
-    // v1.3 PlungeEntryUnstableAtDpp must NOT fire — the rewrite
-    // already handled it.
-    assert!(
-        !warnings
-            .iter()
-            .any(|w| matches!(w, SuggestWarning::PlungeEntryUnstableAtDpp { .. })),
-        "PlungeEntryUnstableAtDpp must not fire after auto-rewrite, got {warnings:?}"
-    );
-
-    // Scope = FeedsWithGates → no rewrite, v1.3 warning fires.
-    let mut op2 = OperationConfig::Adaptive3d(Adaptive3dConfig {
-        depth_per_pass: 3.69,
-        stepover: 1.2,
-        feed_rate: 911.0,
-        spindle_rpm: Some(16_000),
-        entry_style: Adaptive3dEntryStyle::Plunge,
-        ..Adaptive3dConfig::default()
-    });
-    let warnings2 = enforce_invariants(
-        &mut op2,
-        &tool,
-        &machine,
-        &material,
-        PassRole::Roughing,
-        SuggestContext {
-            policy: SuggestPolicy {
-                scope: SuggestScope::FeedsWithGates,
-            },
-            ..SuggestContext::default()
-        },
-    );
-    let OperationConfig::Adaptive3d(cfg2) = &op2 else {
-        panic!("op2 must remain Adaptive3d")
-    };
-    assert_eq!(
-        cfg2.entry_style,
+    for style in [
         Adaptive3dEntryStyle::Plunge,
-        "FeedsWithGates must leave Plunge untouched"
-    );
-    assert!(
-        warnings2
-            .iter()
-            .any(|w| matches!(w, SuggestWarning::PlungeEntryUnstableAtDpp { .. })),
-        "PlungeEntryUnstableAtDpp must fire under FeedsWithGates, got {warnings2:?}"
-    );
-}
-
-/// v3.3b pinning sentry (design-doc `strategy_pinning_respected`):
-/// when the user has explicitly set `entry_style` to a non-default
-/// value (Helix or Ramp), the strategy auto-pick must NOT stomp it
-/// even under StrategyAndFeeds — including the plan's exact
-/// scenario of Ramp pinned on an op where the chooser would
-/// otherwise pick Helix/Ramp itself (heuristic B: any value ≠
-/// `Default::default()` is treated as pinned).
-#[test]
-fn strategy_aware_leaves_non_default_entry_style_alone() {
-    use crate::compute::operation_configs::{Adaptive3dConfig, Adaptive3dEntryStyle};
-
-    for pinned in [Adaptive3dEntryStyle::Helix, Adaptive3dEntryStyle::Ramp] {
-        let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
-            depth_per_pass: 3.69,
-            stepover: 1.2,
-            feed_rate: 911.0,
-            spindle_rpm: Some(16_000),
-            entry_style: pinned,
-            ..Adaptive3dConfig::default()
-        });
-        let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
-        tool.diameter = 6.0;
-        tool.cutting_length = 25.0;
-        // Short stickout keeps the closed-form deflection predictor
-        // below the 200 µm back-off threshold at DPP 3.69 mm, so
-        // pass 6 doesn't lower DPP and pass 7's DPP/D = 0.615 stays
-        // above the 0.5 rewrite threshold.
-        tool.stickout = 30.0;
-        tool.flute_count = 2;
-        let machine = MachineProfile::default();
-        let material = Material::SolidWood {
-            species: crate::material::WoodSpecies::HardMaple,
-        };
-
-        let warnings = enforce_invariants(
-            &mut op,
-            &tool,
-            &machine,
-            &material,
-            PassRole::Roughing,
-            SuggestContext {
-                policy: SuggestPolicy {
-                    scope: SuggestScope::StrategyAndFeeds,
-                },
-                ..SuggestContext::default()
-            },
-        );
-        let OperationConfig::Adaptive3d(cfg) = &op else {
-            panic!("op must remain Adaptive3d")
-        };
-        assert_eq!(
-            cfg.entry_style, pinned,
-            "user-set {pinned:?} must not be stomped"
-        );
-        assert!(
-            !warnings.iter().any(|w| matches!(
-                w,
-                SuggestWarning::StrategyRewrote {
-                    param: "entry_style",
-                    ..
-                }
-            )),
-            "no StrategyRewrote for entry_style when user-pinned {pinned:?}, got {warnings:?}"
-        );
+        Adaptive3dEntryStyle::Ramp,
+        Adaptive3dEntryStyle::Helix,
+    ] {
+        for scope in [SuggestScope::StrategyAndFeeds, SuggestScope::FeedsWithGates] {
+            for model_bbox in [Some(&bbox), None] {
+                let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
+                    depth_per_pass: 3.69,
+                    stepover: 1.2,
+                    feed_rate: 911.0,
+                    spindle_rpm: Some(16_000),
+                    entry_style: style,
+                    ..Adaptive3dConfig::default()
+                });
+                let warnings = enforce_invariants(
+                    &mut op,
+                    &tool,
+                    &machine,
+                    &material,
+                    PassRole::Roughing,
+                    SuggestContext {
+                        model_bbox,
+                        policy: SuggestPolicy { scope },
+                        ..SuggestContext::default()
+                    },
+                );
+                let OperationConfig::Adaptive3d(cfg) = &op else {
+                    panic!("the op must stay Adaptive3d")
+                };
+                let case = format!("{style:?} {scope:?} bbox {}", model_bbox.is_some());
+                assert_eq!(cfg.entry_style, style, "{case}: the entry style moved");
+                let unstable = warnings
+                    .iter()
+                    .any(|w| matches!(w, SuggestWarning::PlungeEntryUnstableAtDpp { .. }));
+                assert_eq!(
+                    unstable,
+                    style == Adaptive3dEntryStyle::Plunge,
+                    "{case}: PlungeEntryUnstableAtDpp must fire on a deep plunge only, got \
+                     {warnings:?}"
+                );
+            }
+        }
     }
 }
 

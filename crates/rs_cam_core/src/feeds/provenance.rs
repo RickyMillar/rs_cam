@@ -41,12 +41,20 @@ pub enum ProvenanceSource {
     Optimizer,
     /// Set by automatic stale-default / defect correction.
     AutoCorrect,
+    /// Set by a published rule with evidence (G10): the reference is the
+    /// rule id, for example `g10_plunge_flat`.
+    PublishedRule,
+    /// Set by a named repo rule with no source (G10): the reference is the
+    /// rule name, for example `material_plunge_base` or `ball_tip_cap`.
+    RepoRule,
 }
 
 /// Provenance of one stored feeds value.
 ///
 /// `reference` carries a source-specific pointer — for [`ProvenanceSource::VendorLut`]
-/// this is the matched observation id. It is `None` for every other source.
+/// this is the matched observation id, for [`ProvenanceSource::PublishedRule`] the
+/// rule id, and for [`ProvenanceSource::RepoRule`] the rule name. It is `None` for
+/// every other source.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ValueProvenance {
     pub source: ProvenanceSource,
@@ -89,6 +97,22 @@ impl ValueProvenance {
 
     pub fn auto_correct() -> Self {
         Self::bare(ProvenanceSource::AutoCorrect)
+    }
+
+    /// A published rule with evidence (G10), with the rule id.
+    pub fn published_rule(rule_id: impl Into<String>) -> Self {
+        Self {
+            source: ProvenanceSource::PublishedRule,
+            reference: Some(rule_id.into()),
+        }
+    }
+
+    /// A named repo rule with no source (G10), with the rule name.
+    pub fn repo_rule(rule_name: impl Into<String>) -> Self {
+        Self {
+            source: ProvenanceSource::RepoRule,
+            reference: Some(rule_name.into()),
+        }
     }
 
     /// Map the chipload's own origin onto the value(s) it derives (feed, plunge,
@@ -181,15 +205,22 @@ impl FeedsProvenance {
     ///
     /// - a chip term that sets the feed stamps the G6 side row (`VendorLut`);
     /// - the cut feed that sets it copies the feed's stamp;
-    /// - the plunge-rate fallback copies the plunge's stamp, because the
-    ///   entry then runs at the plunge rate.
+    /// - the plunge term of a plunge-slope ramp (G10 Q2) copies the plunge's
+    ///   stamp, because the ramp then holds its vertical rate at the plunge;
+    /// - the no-entry fallback copies the plunge's stamp, because the entry
+    ///   then runs at the plunge rate.
     pub fn stamp_ramp(&mut self, ramp: &RampFeed) {
         self.ramp_feed_rate = match ramp {
             RampFeed::Sourced(s) => match s.arm {
                 RampArm::ChipTerm => Some(ValueProvenance::vendor_lut(s.drill.side_row.clone())),
                 RampArm::CutFeed => self.feed_rate.clone(),
+                RampArm::PlungeTerm => self.plunge_rate.clone(),
             },
-            RampFeed::PlungeRate { .. } => self.plunge_rate.clone(),
+            RampFeed::PlungeSlope(s) => match s.arm {
+                RampArm::PlungeTerm | RampArm::ChipTerm => self.plunge_rate.clone(),
+                RampArm::CutFeed => self.feed_rate.clone(),
+            },
+            RampFeed::NoEntryFeed { .. } => self.plunge_rate.clone(),
         };
     }
 
@@ -327,8 +358,12 @@ pub enum FeedsField {
 impl FeedsResult {
     /// Per-field provenance for every value a suggest pass produces.
     ///
-    /// Full per-field independence (W2.1): feed / plunge / chipload inherit the
-    /// [`ChiploadSource`]; RPM, axial DOC, and radial WOC are each labelled
+    /// Full per-field independence (W2.1): feed / chipload inherit the
+    /// [`ChiploadSource`]; the plunge is stamped by its G10 basis and the term
+    /// that binds at this result's feed (`PlungeBasis::provenance`: a claim
+    /// stamps `PublishedRule`, the material base and the tip cap stamp
+    /// `RepoRule`, the feed and a drill cycle copy the feed stamp); RPM,
+    /// axial DOC, and radial WOC are each labelled
     /// `VendorLut` only when the matched row actually published that quantity
     /// (`rpm_*`, `ap_*`, `ae_*` respectively), otherwise `Formula`. `scallop_height`
     /// is an operator input, never suggested, so it is left `None` here.
@@ -362,9 +397,14 @@ impl FeedsResult {
                 .is_some_and(|r| r.ae_min_mm.is_some() || r.ae_max_mm.is_some()),
         );
 
+        let plunge = match super::plunge::resolve_plunge(&self.plunge, self.feed_rate_mm_min) {
+            Some((_, binding)) => self.plunge.provenance(binding, chip.clone()),
+            None => chip.clone(),
+        };
+
         FeedsProvenance {
-            feed_rate: Some(chip.clone()),
-            plunge_rate: Some(chip),
+            feed_rate: Some(chip),
+            plunge_rate: Some(plunge),
             spindle_rpm: Some(rpm),
             stepover: Some(woc),
             depth_per_pass: Some(doc),
@@ -428,7 +468,14 @@ mod tests {
             chip_load_mm: 0.02,
             feed_rate_mm_min: 1000.0,
             plunge_rate_mm_min: 400.0,
-            ramp: crate::feeds::RampBasis::PlungeRate {
+            plunge: crate::feeds::PlungeBasis::MaterialBase {
+                reason: crate::feeds::extrapolation::PlungeRefusal::NoRuleForFamily(
+                    crate::feeds::vendor_lut::ToolFamily::BullNose,
+                ),
+                base_mm_min: 400.0,
+                tip_cap: None,
+            },
+            ramp: crate::feeds::RampBasis::NoChip {
                 reason: crate::feeds::RampFallback::NoLut,
             },
             axial_depth_mm: 4.0,
@@ -466,7 +513,13 @@ mod tests {
         let p = result.provenance();
 
         assert_eq!(p.feed_rate.unwrap().source, ProvenanceSource::Formula);
-        assert_eq!(p.plunge_rate.unwrap().source, ProvenanceSource::Formula);
+        // G10: the plunge is stamped by its own basis, not by the chip. The
+        // fixture's material base (400) is under the feed (1000), so the
+        // named repo rule binds.
+        assert_eq!(
+            p.plunge_rate.unwrap(),
+            ValueProvenance::repo_rule("material_plunge_base")
+        );
         let rpm = p.spindle_rpm.unwrap();
         assert_eq!(rpm.source, ProvenanceSource::VendorLut);
         assert_eq!(rpm.reference.as_deref(), Some("obs-123"));

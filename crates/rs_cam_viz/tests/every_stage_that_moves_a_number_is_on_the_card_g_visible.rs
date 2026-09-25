@@ -196,7 +196,9 @@ fn classify_suggest(w: &SuggestWarning) -> (&'static str, Class) {
             ("StepoverRaisedForRuntime", Class::RowHover)
         }
         SuggestWarning::FeedRaisedForChipload { .. } => ("FeedRaisedForChipload", Class::RowHover),
-        SuggestWarning::StrategyRewrote { .. } => ("StrategyRewrote", Class::RowHover),
+        // G10 (2026-09-25): the plunge rule ran again at the shipped feed.
+        // The rationale row carries it on the plunge row hover.
+        SuggestWarning::PlungeReDerived { .. } => ("PlungeReDerived", Class::RowHover),
         SuggestWarning::AxialDocClampedByEnvelope { .. } => {
             ("AxialDocClampedByEnvelope", Class::RowHover)
         }
@@ -378,7 +380,11 @@ fn suggest_numbers(w: &SuggestWarning) -> Vec<String> {
                 out.push(at(ramp.value_mm_min, 0));
                 out.push(at(ramp.theta_deg, 2));
             }
-            RampFeed::PlungeRate { plunge_mm_min, .. } => out.push(at(*plunge_mm_min, 0)),
+            RampFeed::PlungeSlope(ramp) => {
+                out.push(at(ramp.value_mm_min, 0));
+                out.push(at(ramp.theta_deg, 2));
+            }
+            RampFeed::NoEntryFeed { plunge_mm_min, .. } => out.push(at(*plunge_mm_min, 0)),
         },
         _ => {}
     }
