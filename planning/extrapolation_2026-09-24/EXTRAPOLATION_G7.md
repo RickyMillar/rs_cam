@@ -576,7 +576,9 @@ No cell moves between ok and refused (534 ok, 426 refused). Ratios are new
 - No cell is power-limited before or after. The power ceiling binds on no
   shipped fixture (`power_ceiling_parity_f2`, renamed
   `the_power_ceiling_binds_on_no_shipped_fixture_b6`: peak 34.9 %, VFD /
-  WhiteOak / Ø12). The card's power-bar spread is min 0.2 %, median 3.2 %,
+  WhiteOak / Ø12, on B6 alone; 41.8 %, Makita / HardMaple / Ø12, after the
+  rebase onto the G6 Spektra load, whose printed 12 mm row the Ø12 slots
+  now read). The card's power-bar spread is min 0.2 %, median 3.2 %,
   peak 31.5 %. The operator ruled (2026-09-25) that a peak under half
   scale is correct; the half-scale assert in
   `the_power_bar_is_informative_g_chipverdict` is gone.

@@ -357,6 +357,10 @@ fn the_power_ceiling_binds_on_no_shipped_fixture_b6() {
     // 34.9 % on VFD / WhiteOak / Ø12, and no shipped fixture is
     // power-limited. The operator ruled (2026-09-25) that a peak under half
     // scale is correct for a wood router.
+    // RE-PINNED 2026-09-25, the G6 Spektra load (measured): the Ø12 slots
+    // now read the printed 12 mm Spektra row (0.1448 mm/tooth at 18 000
+    // rpm), so the peak is 41.8 % on Makita RT0701C / HardMaple / Ø12. Still
+    // no shipped fixture is power-limited.
     assert_eq!(
         limited,
         Vec::<String>::new(),
@@ -365,10 +369,10 @@ fn the_power_ceiling_binds_on_no_shipped_fixture_b6() {
         100.0 * worst
     );
     // Non-vacuity: the sweep still measures a real load (the Ø12 slots in
-    // the dense woods). The peak is pinned to the measured 34.9 %.
+    // the dense woods). The peak is pinned to the measured 41.8 %.
     assert!(
-        (worst - 0.349).abs() < 0.005,
-        "peak utilisation {worst} left the record (34.9 %); re-take it"
+        (worst - 0.418).abs() < 0.005,
+        "peak utilisation {worst} left the record (41.8 %); re-take it"
     );
 }
 
@@ -389,14 +393,20 @@ fn the_power_ceiling_binds_on_no_shipped_fixture_b6() {
 ///
 /// Ruling B6 (2026-09-25) re-tune: 0.36 kW → 0.12 kW. The maple line is
 /// now Ks 54.21 N/mm², F_edge 4.257 N/mm, grain factor 1.0 (old: 2 x
-/// (61.48, 6.523)). On the 3 mm slot at 8 000 rev/min the edge floor is
-/// 4.257 · 3 · π·12·8000 / 60e6 = 0.064 kW, and the unclamped cut draws
-/// about 0.16 kW. 0.12 kW sits between them, so the clamp binds and has a
-/// feed answer.
+/// (61.48, 6.523)).
+///
+/// G6 Spektra load (2026-09-25) re-tune: 0.12 kW → 0.20 kW. The Ø12 slot
+/// now reads the printed 12 mm Spektra row (0.1448 mm/tooth at 18 000
+/// rpm), so the unclamped cut draws 0.314 kW at 18 000 rpm (measured). On
+/// this constant-power spindle the required power falls in proportion to
+/// the RPM, to 0.140 kW at the 8 000 rpm floor, so at 0.12 kW no rung of
+/// the ladder has an answer and the cut is left alone (rung 4). 0.20 kW
+/// sits between 0.140 and 0.314 kW, so the RPM rung binds and lands on the
+/// ceiling.
 fn underpowered_machine() -> MachineProfile {
     let mut machine = MachineProfile::generic_wood_router();
-    machine.name = "SYNTHETIC 0.12 kW (test only)".to_owned();
-    machine.power = rs_cam_core::machine::PowerModel::ConstantPower { power_kw: 0.12 };
+    machine.name = "SYNTHETIC 0.20 kW (test only)".to_owned();
+    machine.power = rs_cam_core::machine::PowerModel::ConstantPower { power_kw: 0.20 };
     machine
 }
 

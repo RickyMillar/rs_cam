@@ -2800,8 +2800,13 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         power_kw: actual_power,
         // F-2: the gate's ceiling, not the raw spindle curve — this is
         // the denominator `power_kw` (evaluated at the FINAL feed) is
-        // rendered against. See the Step 6 axis note above.
-        available_power_kw: gate_available_power,
+        // rendered against. See the Step 6 axis note above. It is read at
+        // the FINAL RPM: Step 7 (R4 Q10) can lower the RPM after Step 6,
+        // and a VFD's rated power falls with it, so the Step 6 value would
+        // overstate the headroom (G6 Spektra load, 2026-09-25: Ø12 slot on
+        // the Shapeoko VFD, 1.125 kW at 18 000 rpm against 1.079 kW at the
+        // shipped 17 265 rpm).
+        available_power_kw: machine.power_at_rpm(rpm),
         power_limited,
         mrr_mm3_min: mrr,
         warnings,

@@ -123,6 +123,15 @@
 //! preset sweep keeps all ten species; Ipe now gives no utilisation and
 //! drops out of the population.
 //!
+//! The G6 Spektra load (2026-09-25) moves the spindle 0.10 → 0.22 kW. The
+//! Ø12 slot now reads the printed 12 mm Spektra row at 18 000 rpm, and the
+//! white-oak cut draws about 0.34 kW there (0.314 kW measured on maple in
+//! `power_ceiling_parity_f2`, x1.08 for the white-oak line). On this
+//! constant-power spindle that falls with the RPM to about 0.15 kW at the
+//! 8 000 rpm floor, so at 0.10 kW no rung of the Step 6 ladder has an
+//! answer and the cut is left alone (237 % shipped, measured). 0.22 kW
+//! sits between 0.15 and 0.34 kW, so the clamp binds and has an answer.
+//!
 //! NON-VACUITY IS LOAD-BEARING HERE. This project has already measured
 //! three gates returning `Within` on `sample_range 0..0` — a bar written
 //! as a verdict comparison is worthless until its population is checked.
@@ -233,12 +242,12 @@ fn gate_power_ceiling_kw(machine: &MachineProfile, rpm: f64) -> f64 {
 /// recommendation — it exists to put the Step 6 / pass 9 interaction
 /// under a clamp that actually binds, on a cut the clamp can solve.
 /// See the R1 note in the module header for why 0.05 kW stopped doing
-/// that, and the B6 note there for why the fixture is white oak at
-/// 0.10 kW.
+/// that, and the B6 and Spektra notes there for why the fixture is white
+/// oak at 0.22 kW.
 fn underpowered_machine() -> MachineProfile {
     let mut machine = MachineProfile::generic_wood_router();
-    machine.name = "SYNTHETIC 0.10 kW (test only)".to_owned();
-    machine.power = rs_cam_core::machine::PowerModel::ConstantPower { power_kw: 0.10 };
+    machine.name = "SYNTHETIC 0.22 kW (test only)".to_owned();
+    machine.power = rs_cam_core::machine::PowerModel::ConstantPower { power_kw: 0.22 };
     // Ruling R4 (2026-09-24): this fixture tests the Step 6 / pass 9 / pass 10
     // power interaction, not the aggressiveness dial. The dial at 1.0 keeps
     // pass 6b out of the geometry (it would scale the depth and the stepover
