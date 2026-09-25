@@ -7,7 +7,8 @@
 # (planning/fixtures/rivmap100/plansimgap_arms/).
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(git -C "$HERE" rev-parse --show-toplevel)"
-D="${PSG_OUT:-$HERE}"
+# psg_probe.rs reads {PSG_OUT}/{arm}.toml, so the default is the arms folder.
+D="${PSG_OUT:-$ROOT/planning/fixtures/rivmap100/plansimgap_arms}"
 BIN="${BIN:?set BIN to the psg_probe test binary}"
 cd "$ROOT/crates/rs_cam_core"
 export PSG=1 PSG_ARMS="$1" PSG_OUT=$D

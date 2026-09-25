@@ -598,12 +598,14 @@ fn wanaka_suggest_baseline() {
             }
         }
 
-        // The dial's Wanaka baseline (ruling R4 WP3, measured 2026-09-24).
+        // The dial's Wanaka baseline (ruling R4 WP3, measured 2026-09-24;
+        // re-measured 2026-09-25 for B6's force line, 4bee59a, which moved
+        // the base force 58.44 -> 52.15 N and power 0.1541 -> 0.0658 kW).
         // Default dial 0.85 x long-tool share 0.75 (45 mm stickout on Ø6,
-        // 7.5 x D) = load target 0.6375. One common scale 0.68167 on the
-        // base the clamps left: depth 6.0 -> 4.09 mm, stepover 1.2 ->
-        // 0.818 mm. Force 58.44 -> 37.26 N (0.638 x) and power 0.1541 ->
-        // 0.0813 kW (0.528 x), both at or under 0.6375 x, so the target is
+        // 7.5 x D) = load target 0.6375. One common scale 0.68818 on the
+        // base the clamps left: depth 6.0 -> 4.129 mm, stepover 1.2 ->
+        // 0.825 mm. Force 52.15 -> 33.24 N (0.637 x) and power 0.0658 ->
+        // 0.0348 kW (0.529 x), both at or under 0.6375 x, so the target is
         // met. The chipload does not change.
         let dial = suggested
             .warnings
@@ -645,21 +647,21 @@ fn wanaka_suggest_baseline() {
             "{ctx}: {dial:?}"
         );
         assert!((share - 0.6375).abs() < 1e-12, "{ctx}: {dial:?}");
-        assert!((scale - 0.68167).abs() < 1e-4, "{ctx}: {dial:?}");
+        assert!((scale - 0.68818).abs() < 1e-4, "{ctx}: {dial:?}");
         assert!(
-            near(dpp.0, 6.0, 1e-9) && near(dpp.1, 4.09, 1e-6),
+            near(dpp.0, 6.0, 1e-9) && near(dpp.1, 4.129, 1e-6),
             "{ctx}: {dial:?}"
         );
         assert!(
-            near(so.0, 1.2, 1e-9) && near(so.1, 0.818, 1e-6),
+            near(so.0, 1.2, 1e-9) && near(so.1, 0.825, 1e-6),
             "{ctx}: {dial:?}"
         );
         assert!(
-            near(force.0, 58.44, 0.05) && near(force.1, 37.26, 0.05),
+            near(force.0, 52.15, 0.05) && near(force.1, 33.24, 0.05),
             "{ctx}: {dial:?}"
         );
         assert!(
-            near(power.0, 0.1541, 5e-4) && near(power.1, 0.0813, 5e-4),
+            near(power.0, 0.0658, 5e-4) && near(power.1, 0.0348, 5e-4),
             "{ctx}: {dial:?}"
         );
         assert!(met, "{ctx}: the Back Rough target must be met: {dial:?}");
