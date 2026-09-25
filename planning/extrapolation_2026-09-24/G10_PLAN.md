@@ -1,6 +1,6 @@
 # G10_PLAN: entry parameters, Phases 3-5 (the claims and the card)
 
-Date: 2026-09-25. Status: Part A built (working tree, for review; RESULTS at the end). Part B not started.
+Date: 2026-09-25. Status: Part A landed (d68a1c59). Part B built (working tree, for review; RESULTS (Part B) at the end).
 
 Input: RULINGS.md §"Operator rulings, 2026-09-25: G10" (Q1-Q12 accepted), EXTRAPOLATION_G10.md, INVENTORY_G10.md, g10_inventory_cells.csv, RAMP_PLAN.md, and the ramp code that landed in `043cece1`.
 
@@ -537,3 +537,58 @@ Other moves:
   (BallNose DropCutter hardwood, TaperedBallNose DropCutter softwood and
   hardwood; 38 run before). One run cell moved: EndMill Adaptive3d
   hardwood `power_peak_kw` 0.0771 -> 0.0781.
+
+---
+
+## RESULTS (Part B, 2026-09-25)
+
+Measured with `scripts/cargo_lane.sh test -p rs_cam_core -q --test
+feeds_matrix_instrument_fm1 -- --ignored` against the Part A CSV
+(d68a1c59). 534 ok cells, status unchanged. Columns that moved:
+`entry_notes` 30 cells, `ramp_feed_mm_min` and `ramp_arm` 11 cells. No
+feed, plunge, RPM or geometry column moved. The simulation subset moved
+in `elapsed_s` only (35 run, 3 skipped, as before).
+
+The 30 cells are the ok 2D Adaptive cells (E2, dressup Helix, pitch 1).
+The helix radius is now the rule 0.3 x D. D is the nominal cutting
+diameter, `ToolConfig::diameter` (lead decision 2026-09-25), read in one
+place, `compute::config::helix_entry_diameter_mm`: the cutter's
+`diameter()`, except the tip ball on a tapered ball (whose `diameter()` is
+the shaft). The Adaptive3d factor reads the same D.
+
+| Cells (E2) | r, θ | Ramp | Geometry note | vs §4 "After Part B" |
+|---|---|---|---|---|
+| EndMill 3.175 (4) | 0.95 mm, 9.49° | unchanged (G6 `Sourced/CutFeed`, 3657-4000) | no core (0.95 <= 1.59) | as §4 |
+| BallNose 3.175 (3) | 0.95 mm, 9.49° | `PlungeSlope/PlungeTerm` 2848 (was F 3657-4000) | pip 0.32 mm | as §4 (ball 3) |
+| BullNose 3.175 (4) | 0.95 mm, 9.49° | `PlungeSlope/PlungeTerm` 2154-3165 (was F 3657-4000) | no core (0.95 <= 1.11) | as §4 (bull 4) |
+| TaperedBallNose 3.175 (4) | 0.95 mm, 9.49° | `PlungeSlope/PlungeTerm` 2154-2848 (was F 3064-3604) | pip 0.32 mm | as §4 (tapered 4) |
+| EndMill, BallNose, BullNose 6.0 (11) | 1.80 mm, 5.05° | unchanged (F) | no core / pip 0.60 mm | as §4 |
+| TaperedBallNose 6.0 (4) | 1.80 mm, 5.05° | unchanged (F) | pip 0.60 mm | as §4 (every 6 mm cell ships F) |
+
+- `PlungeTerm` binds on 11 E2 cells: bull 4, ball 3, tapered 4, as §4.
+- The D decision, measured: a first run read the shaft on the tapered
+  ball (3.175 tip, 6.17 shaft: r 1.85 mm, 4.91°, pip 3.65 mm, the ramp
+  at F; 6.0 tip: r 2.70 mm, 3.37°, pip 1.69 mm). Part A (r 2.0 for every
+  tool) printed pips of 4.85 mm and 0.76 mm on the same cells. With the
+  nominal D only those 8 tapered rows moved between the two Part B runs;
+  every flat, ball and bull row is byte-identical.
+- Core cautions: 11 -> 0 (no flat or bull helix leaves a core). Caution
+  marks in `entry_notes`: 41 -> 30 (the 30 are the Q12 straight-plunge
+  cautions). No cell is capped: the rule r 0.3 x D sits inside every flat
+  bottom in the matrix, so the cap line fires only on an operator value.
+- Sentry `a_helix_leaves_no_core_and_a_ramp_never_outruns_the_feed_g10`
+  (8 tests; the eighth, the 3.175 tapered ball emitting r 0.9525 with a
+  0.3175 mm tip pip, is red when D reads the shaft: r 1.905). Red with the Part B arms reverted in the working tree
+  (emitted r = requested r, `ramp_feed_rate()` in place of
+  `entry_feed_rate()`, `DefaultHelix` rewriting Ramp in
+  `normalize_for_op`): 4 of 7 red: 3.175 flat emitted at r 2.000 (want
+  1.5875); Pocket and Adaptive3d helix entries at 4000 mm/min (want <=
+  1500); the operator Ramp rewritten to Helix; with only the feed clamp
+  restored, the Adaptive3d 6 mm flat factor 0.8 emitted at r 4.800 (want
+  3.0).
+- `entry_moves_stock_aware_g_rampterrain`: the Ø1 flat capped the 2 mm
+  helix to 0.5 mm (4 helix moves, 0 lifted by the ridge). The helix
+  fixture is now a Ø4 flat (flat bottom 2.0 mm) entering at x = 5.5 (was
+  x = 7, derived for the same CL 4.935): 39 helix moves, 17 lifted, max r
+  2.000, burial 0, the same numbers the Ø1 fixture gave at r 2.0 before
+  the cap (measured at a0e85029). The ramp fixture is unchanged.

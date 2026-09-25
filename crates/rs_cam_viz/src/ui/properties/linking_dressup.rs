@@ -255,6 +255,7 @@ pub(super) fn dressup_active_count(cfg: &DressupConfig) -> (usize, usize) {
 pub(super) fn draw_linking_params(
     ui: &mut egui::Ui,
     entry: &mut ToolpathEntry,
+    tool: Option<&rs_cam_core::compute::tool_config::ToolConfig>,
     height_ctx: Option<&HeightContext>,
 ) {
     // Some dressups are geometrically incompatible with specific operations
@@ -287,6 +288,9 @@ pub(super) fn draw_linking_params(
         .operation
         .transform_capabilities()
         .allows_rapid_reorder;
+    // G10 Q6 and D2: the helix radius resolves against the tool (the rule
+    // 0.3 x D, or the operator value, capped at the flat bottom).
+    let cutter = tool.map(rs_cam_core::compute::cutter::build_cutter);
     let cfg = &mut entry.dressups;
 
     // ── Entry & Exit ──────────────────────────────────────────
@@ -338,16 +342,59 @@ pub(super) fn draw_linking_params(
             });
         }
         DressupEntryStyle::Helix => {
-            ui.param_grid("helix_p", |ui| {
-                dv_dressup(
-                    ui,
-                    "helix_radius",
-                    "  Radius:",
-                    &mut cfg.helix_radius,
-                    " mm",
-                    0.1,
-                    0.5..=20.0,
+            // G10 D2: `None` is the rule 0.3 x D; `Some` is an operator
+            // value. Unticking the rule starts the value at the radius the
+            // rule gives this tool.
+            let resolved = cutter.as_ref().map(|c| cfg.helix_radius_for(c));
+            let radius_range = 0.5..=20.0;
+            let mut rule = cfg.helix_radius.is_none();
+            let resp = ui
+                .checkbox(
+                    &mut rule,
+                    format!(
+                        "Helix radius {} x D (rule)",
+                        rs_cam_core::compute::config::HELIX_RADIUS_OVER_D
+                    ),
+                )
+                .on_hover_text(
+                    "Repo rule, no source (G10): the helix radius is 0.3 x the tool \
+                     diameter. Untick to set an operator value. Either way the engine caps \
+                     the radius at the flat bottom, so the helix leaves no core.",
                 );
+            if resp.changed() {
+                cfg.helix_radius = if rule {
+                    None
+                } else {
+                    Some(resolved.map_or(*radius_range.start(), |h| h.requested_mm))
+                };
+            }
+            if let Some(h) = resolved {
+                let text = if h.capped() {
+                    format!(
+                        "  Emits r {:.2} mm: capped {:.2} → {:.2} mm (no-core rule, geometry)",
+                        h.emitted_mm, h.requested_mm, h.emitted_mm
+                    )
+                } else {
+                    format!("  Emits r {:.2} mm", h.emitted_mm)
+                };
+                ui.label(
+                    egui::RichText::new(text)
+                        .small()
+                        .color(crate::ui::tokens::TEXT_MUTED),
+                );
+            }
+            ui.param_grid("helix_p", |ui| {
+                if let Some(radius) = cfg.helix_radius.as_mut() {
+                    dv_dressup(
+                        ui,
+                        "helix_radius",
+                        "  Radius:",
+                        radius,
+                        " mm",
+                        0.1,
+                        radius_range,
+                    );
+                }
                 dv_dressup(
                     ui,
                     "helix_pitch",
@@ -374,7 +421,8 @@ pub(super) fn draw_linking_params(
         let fallback_ctx = HeightContext::simple(10.0, 5.0);
         let ctx = height_ctx.unwrap_or(&fallback_ctx);
         ui.add_space(4.0);
-        draw_entry_preview_diagram(ui, cfg, ctx, &entry.heights);
+        let helix_radius_mm = cutter.as_ref().map(|c| cfg.helix_radius_for(c).emitted_mm);
+        draw_entry_preview_diagram(ui, cfg, helix_radius_mm, ctx, &entry.heights);
     }
 
     ui.add_enabled_ui(op_incompatible_msg.is_none(), |ui| {

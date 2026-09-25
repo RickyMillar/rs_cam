@@ -63,8 +63,16 @@ VCarve in softwood since B4; 12.0 mm serves.
    are card lines and MCP `basis` keys. G-ENTRYREWRITE is closed: Suggest
    never writes the entry style (Q11). Sentries: the three `*_g10` core
    files and `the_card_names_every_entry_rule_g10`.
-3. G10 Part B: helix radius cap (Q6), pitch and ramp-angle rules (Q8,
-   Q9), G-RAMPCLAMP. By Area WP3 waits for it.
+3. ~~G10 Part B~~ landed 2026-09-25 (`G10_PLAN.md` §6; RESULTS (Part B)
+   at its end). A dressup `helix_radius` of None is the rule 0.3 x D
+   (a saved 2.0 loads as an operator value, no format bump); every helix
+   radius is capped at the flat bottom (Q6); the ramp angle, pitch and
+   0.3 x D are named repo rules, one Adaptive3d rule for GUI and CLI
+   (D4); a new 2D Adaptive starts Helix and an operator Ramp stays (D3);
+   an entry never runs above the cut feed (`entry_feed_rate()`,
+   G-RAMPCLAMP). Sentry
+   `a_helix_leaves_no_core_and_a_ramp_never_outruns_the_feed_g10`.
+   By Area WP3 can rebase.
 4. B7 (RULINGS §B7): extend the deflection envelope to the 2D
    operations, then retire the 0.88 / 0.75 long-tool share.
 5. The Optimize resolution parity gap

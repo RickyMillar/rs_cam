@@ -723,7 +723,15 @@ fn semantic_trace_records_entry_params_and_boundary_clip() {
         helix
             .params
             .get(rs_cam_core::trace::semantic_trace::SemanticKey::Radius),
-        Some(&serde_json::json!(DressupConfig::default().helix_radius))
+        // G10 Q6 and D2: the trace records the radius the engine emits, the
+        // rule 0.3 x D on `pocket_spec`'s tool, capped at the flat bottom.
+        Some(&serde_json::json!(
+            DressupConfig::default()
+                .helix_radius_for(&rs_cam_core::compute::cutter::build_cutter(
+                    &ToolConfig::new_default(ToolId(1), ToolType::EndMill)
+                ))
+                .emitted_mm
+        ))
     );
     assert_eq!(
         helix

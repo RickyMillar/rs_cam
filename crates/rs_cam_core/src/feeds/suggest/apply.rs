@@ -254,7 +254,7 @@ fn apply_feeds_subset(
     let mut ramp_record = None;
     if write_speeds {
         let from_mm_min = operation.ramp_feed_rate();
-        let entry = crate::feeds::ramp::entry_geometry(operation, context.dressups, tool.diameter);
+        let entry = crate::feeds::ramp::entry_geometry(operation, context.dressups, tool);
         let record = crate::feeds::ramp::resolve_ramp_feed(
             &result.ramp,
             entry,

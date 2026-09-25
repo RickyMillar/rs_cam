@@ -4,19 +4,15 @@ The title names the scope. The entry is `compute::execute_operation_annotated`.
 
 ## Files
 
-- `execute.rs` and its `execute/` children — the dispatch for all operations,
-  grouped by family (2.5D clearing, drilling, curve and V-bit engraving, 3D
-  finishing, raster finishing, the dressup pipeline, the findings writers).
-- `catalog.rs` and its `catalog/` children — `OperationType`,
-  `OperationConfig`, the parameter registry and its schema.
+- `execute.rs` + `execute/` — the dispatch for all operations, by family
+  (2.5D, drilling, engraving, 3D and raster finishing, dressups, findings).
+- `catalog.rs` + `catalog/` — `OperationType`, `OperationConfig`, registry.
 - `operation_configs.rs`, `config.rs`, `stock_config.rs`, `tool_config.rs`,
   `cutter.rs`, `transform.rs` — the configuration model.
-- `toolpath_stats.rs` — `ToolpathStats` and its finding types.
-  `alignment_pins.rs` — the keyed-pin construction and the flip audit.
 - `simulate.rs`, `sim_prefix.rs`, `collision_check.rs`, `source_stock.rs` —
   simulation, the prefix memo, collisions, the rest snapshot record.
-- `annotate.rs`, `spans.rs`, `stats.rs` — runtime annotation and spans.
-  `validate.rs`, `generated_empty.rs` — stale defaults, the empty refusal.
+- `toolpath_stats.rs`, `alignment_pins.rs`, `annotate.rs`, `spans.rs`,
+  `stats.rs`, `validate.rs`, `generated_empty.rs`.
 
 ## Invariants
 
@@ -30,6 +26,9 @@ The title names the scope. The entry is `compute::execute_operation_annotated`.
 - A dressup's parameters live INSIDE its `Option` on `DressupConfig`
   (CUT-13). Add no value field beside an enable bool. `DressupConfigWire`
   holds the flat wire keys; the project file and MCP read that, not the type.
+- G10: a helix radius is `helix_radius_for` (None = `HELIX_RADIUS_OVER_D`
+  x D), capped at the flat bottom; an entry feed is `entry_feed_rate()`
+  (<= the cut feed). `DefaultHelix` is read by `for_op` only (D3).
 
 ## Sentries
 
@@ -38,3 +37,4 @@ The title names the scope. The entry is `compute::execute_operation_annotated`.
 - `cargo test -p rs_cam_core -q --test sim_prefix_memo_s5`
 - `cargo test -p rs_cam_core -q --test set_param_refuses_absent_field_n5`
 - `cargo test -p rs_cam_core -q --test generated_empty_refusal_g_entryempty`
+- `cargo test -p rs_cam_core -q --test a_helix_leaves_no_core_and_a_ramp_never_outruns_the_feed_g10`

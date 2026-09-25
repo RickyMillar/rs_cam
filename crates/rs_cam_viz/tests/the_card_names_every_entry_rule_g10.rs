@@ -81,7 +81,7 @@ fn softwood() -> Material {
 fn helix(radius_mm: f64, pitch_mm: f64) -> DressupConfig {
     DressupConfig {
         entry_style: DressupEntryStyle::Helix,
-        helix_radius: radius_mm,
+        helix_radius: Some(radius_mm),
         helix_pitch: pitch_mm,
         ..DressupConfig::default()
     }

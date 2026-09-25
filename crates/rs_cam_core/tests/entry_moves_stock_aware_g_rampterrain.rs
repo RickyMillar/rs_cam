@@ -84,20 +84,37 @@ struct Dressed {
     cutter: FlatEndmill,
 }
 
+/// The helix radius of the helix fixture (mm).
+const HELIX_RADIUS_MM: f64 = 2.0;
+
+/// The flat end mill of the helix fixture (mm). G10 Part B caps a helix
+/// radius at the flat bottom, `width_at_height(0.0)`: on the Ø1 tool the
+/// 2 mm helix became a 0.5 mm one that no longer met the ridge flank (4
+/// helix moves, 0 floor lifts, against 39 moves and 17 lifts at r 2.0).
+/// A Ø4 flat has a 2.0 mm flat bottom, so r 2.0 is emitted uncapped.
+const HELIX_TOOL_DIAMETER_MM: f64 = 4.0;
+
+/// The helix entry X (mm). The Ø4 tool's CL at x reads the ridge 2 mm
+/// uphill, h(x + 2); the Ø1 fixture entered at x = 7 with its CL at 4.935.
+/// h(x + 2) = 4.935 gives (x + 2 - 10)² = -32 ln(4.935 / 6), x + 2 = 7.50,
+/// x = 5.5: the same entry depth, and the r 2.0 circle reaches x = 7.5,
+/// up the flank.
+const HELIX_ENTRY_X_MM: f64 = 5.5;
+
 /// Run the plunging toolpath through `apply_dressups` with the given
 /// entry style and the surface probe, on the ridge mesh.
-fn dress_on_ridge(entry_x: f64, style: DressupEntryStyle) -> Dressed {
+fn dress_on_ridge(entry_x: f64, style: DressupEntryStyle, tool_diameter_mm: f64) -> Dressed {
     let mesh = ridge_mesh();
     let index = SpatialIndex::build_auto(&mesh);
-    // Ø1 flat endmill: the CL surface tracks the terrain closely, so
-    // the fixture's burial numbers are terrain numbers, not
-    // footprint-radius artifacts.
-    let cutter = FlatEndmill::new(1.0, 25.0);
+    // Ø1 flat endmill for the ramp: the CL surface tracks the terrain
+    // closely, so the fixture's burial numbers are terrain numbers, not
+    // footprint-radius artifacts. The helix takes the Ø4 (see above).
+    let cutter = FlatEndmill::new(tool_diameter_mm, 25.0);
     let tp = plunging_toolpath(entry_x, 0.0, &mesh, &index, &cutter);
     let cfg = DressupConfig {
         entry_style: style,
         ramp_angle: 3.0,
-        helix_radius: 2.0,
+        helix_radius: Some(HELIX_RADIUS_MM),
         helix_pitch: 1.0,
         // Finish-role default: arc fitting on. The sentry audits the
         // FINAL dressed path, so post-entry transforms must run.
@@ -180,7 +197,7 @@ fn count_intent(tp: &Toolpath, intent: MoveIntent) -> usize {
 /// crest. Pre-fix the legs buried ~4 mm.
 #[test]
 fn ramp_entry_never_cuts_below_surface() {
-    let d = dress_on_ridge(0.0, DressupEntryStyle::Ramp);
+    let d = dress_on_ridge(0.0, DressupEntryStyle::Ramp, 1.0);
     assert!(
         count_intent(&d.toolpath, MoveIntent::EntryRamp) > 0,
         "fixture must still produce a ramp entry (a silent fallback to \
@@ -191,15 +208,46 @@ fn ramp_entry_never_cuts_below_surface() {
 
 /// S1, helix arm: a 2 mm-radius helix on the ridge flank. The circle's
 /// uphill side meets the surface near the bottom turns; pre-fix it
-/// buried ~1.4 mm.
+/// buried ~1.4 mm. Since G10 Part B the fixture is a Ø4 flat entering at
+/// x = 5.5 (was Ø1 at x = 7): same entry depth (CL 4.935), and the same
+/// emitted helix, 39 moves with 17 lifted by the flank.
 #[test]
 fn helix_entry_never_cuts_below_surface() {
-    let d = dress_on_ridge(7.0, DressupEntryStyle::Helix);
+    let d = dress_on_ridge(
+        HELIX_ENTRY_X_MM,
+        DressupEntryStyle::Helix,
+        HELIX_TOOL_DIAMETER_MM,
+    );
     assert!(
         count_intent(&d.toolpath, MoveIntent::EntryHelix) > 0,
         "fixture must still produce a helix entry (a silent fallback to \
          plunge would fake a green)"
     );
+    // Non-vacuity: the helix is emitted at the full 2 mm (the flat bottom
+    // holds it), and the ridge flank lifts some of its turns (the floor
+    // clip this test exists for is exercised).
+    assert!(d.cutter.width_at_height(0.0) >= HELIX_RADIUS_MM);
+    let helix: Vec<P3> = d
+        .toolpath
+        .moves
+        .iter()
+        .filter(|m| m.intent == MoveIntent::EntryHelix)
+        .map(|m| m.target)
+        .collect();
+    let max_r = helix
+        .iter()
+        .map(|p| (p.x - HELIX_ENTRY_X_MM).hypot(p.y))
+        .fold(0.0, f64::max);
+    assert!(
+        (max_r - HELIX_RADIUS_MM).abs() < 1e-6,
+        "the helix must be emitted at r {HELIX_RADIUS_MM}, got {max_r}"
+    );
+    let lifts = helix
+        .iter()
+        .zip(helix.iter().skip(1))
+        .filter(|(a, b)| b.z > a.z + 1e-9)
+        .count();
+    assert!(lifts > 0, "the ridge flank must lift some helix turns");
     assert_no_buried_entries(&d, "helix on ridge");
 }
 

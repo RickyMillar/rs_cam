@@ -620,7 +620,15 @@ pub enum DressupEntryStyle {
 impl DressupEntryStyle {
     /// Convert to core `EntryStyle` using parameters from the dressup config.
     /// Returns `None` for `DressupEntryStyle::None` (no entry transformation).
-    pub fn to_core(self, cfg: &DressupConfig) -> Option<crate::dressup::EntryStyle> {
+    ///
+    /// The helix radius is the one [`DressupConfig::helix_radius_for`]
+    /// resolves for `cutter`: the rule or the operator value, capped at the
+    /// flat bottom (G10 Q6).
+    pub fn to_core(
+        self,
+        cfg: &DressupConfig,
+        cutter: &dyn crate::tool::MillingCutter,
+    ) -> Option<crate::dressup::EntryStyle> {
         use crate::dressup::EntryStyle;
         match self {
             Self::None => None,
@@ -628,10 +636,93 @@ impl DressupEntryStyle {
                 max_angle_deg: cfg.ramp_angle,
             }),
             Self::Helix => Some(EntryStyle::Helix {
-                radius: cfg.helix_radius,
+                radius: cfg.helix_radius_for(cutter).emitted_mm,
                 pitch: cfg.helix_pitch,
             }),
         }
+    }
+}
+
+/// The dressup ramp entry angle (degrees) a new toolpath starts with.
+///
+/// Repo rule, no source (G10). No wood or router source prints a ramp
+/// angle (ruling Q9); the card says so.
+pub const DRESSUP_RAMP_ANGLE_DEG: f64 = 3.0;
+
+/// The dressup helix entry pitch (mm per turn) a new toolpath starts with.
+///
+/// Repo rule, no source (G10). No wood source prints a helix pitch
+/// (ruling Q8); the card says so.
+pub const DRESSUP_HELIX_PITCH_MM: f64 = 1.0;
+
+/// The helix entry radius as a fraction of the tool diameter, when the
+/// operator has not set one: r = 0.3 x D.
+///
+/// Repo rule, no source (G10). No wood source prints a helix radius
+/// (rulings Q6 and Q8). The dressup and the Adaptive3d entry both read it.
+pub const HELIX_RADIUS_OVER_D: f64 = 0.3;
+
+/// The diameter D (mm) that the helix rule [`HELIX_RADIUS_OVER_D`] and the
+/// Adaptive3d `helix_radius_factor` scale: the tool's nominal cutting
+/// diameter, `ToolConfig::diameter`, the one the operator enters.
+///
+/// For every cutter but a tapered ball this is `diameter()`. A tapered
+/// ball's `diameter()` is its shaft (the envelope); a helix scaled by the
+/// shaft runs past the tip and left a 3.65 mm centre pip on the 3.175 mm
+/// matrix tool, so it reads the tip ball diameter (lead decision
+/// 2026-09-25, G10 Part B). Every entry-radius reader goes through here.
+#[must_use]
+pub fn helix_entry_diameter_mm(cutter: &dyn crate::tool::MillingCutter) -> f64 {
+    match cutter.geometry_hint() {
+        crate::feeds::ToolGeometryHint::TaperedBall { tip_radius, .. } => 2.0 * tip_radius,
+        _ => cutter.diameter(),
+    }
+}
+
+/// A helix entry radius after the G10 rules (ruling Q6).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HelixRadius {
+    /// The radius asked for (mm): the operator value, or
+    /// [`HELIX_RADIUS_OVER_D`] x D.
+    pub requested_mm: f64,
+    /// The radius the engine emits (mm): the request capped at the flat
+    /// bottom.
+    pub emitted_mm: f64,
+    /// The flat bottom radius (mm) of the tool, `width_at_height(0.0)`.
+    /// `None` when the tool has no flat bottom (ball, tapered ball, V-bit):
+    /// then a helix leaves a centre pip, and nothing caps r.
+    pub flat_bottom_mm: Option<f64>,
+    /// True when the request is the rule, not an operator value.
+    pub from_rule: bool,
+}
+
+impl HelixRadius {
+    /// Resolve a requested helix radius against a tool.
+    ///
+    /// Ruling Q6 (geometry): a helix radius larger than the flat bottom
+    /// leaves a post of stock at the centre (IMCO, Sandvik and Fusion print
+    /// the same limit). On a tool with a flat bottom, r is capped there.
+    #[must_use]
+    pub fn resolve(
+        requested_mm: f64,
+        from_rule: bool,
+        cutter: &dyn crate::tool::MillingCutter,
+    ) -> Self {
+        let flat = cutter.width_at_height(0.0);
+        let flat_bottom_mm = (flat > 1e-9).then_some(flat);
+        let emitted_mm = flat_bottom_mm.map_or(requested_mm, |cap| requested_mm.min(cap));
+        Self {
+            requested_mm,
+            emitted_mm,
+            flat_bottom_mm,
+            from_rule,
+        }
+    }
+
+    /// True when the flat bottom cut the request.
+    #[must_use]
+    pub fn capped(&self) -> bool {
+        self.emitted_mm < self.requested_mm - 1e-9
     }
 }
 
@@ -756,7 +847,11 @@ impl Default for SegmentMergeParams {
 pub struct DressupConfig {
     pub entry_style: DressupEntryStyle,
     pub ramp_angle: f64,
-    pub helix_radius: f64,
+    /// The helix entry radius (mm). `None` is the rule
+    /// [`HELIX_RADIUS_OVER_D`] x D, applied where the tool is known;
+    /// `Some(r)` is an operator value (G10 D2). Either way the engine emits
+    /// the radius capped at the flat bottom: [`Self::helix_radius_for`].
+    pub helix_radius: Option<f64>,
     pub helix_pitch: f64,
     /// The height (mm) above the material top where a helix or ramp entry
     /// starts. The air above it is a straight move (operator ruling
@@ -803,7 +898,10 @@ pub struct DressupConfig {
 struct DressupConfigWire {
     entry_style: DressupEntryStyle,
     ramp_angle: f64,
-    helix_radius: f64,
+    /// G10 D2: absent (or null) is the rule 0.3 x D. A saved project's
+    /// `helix_radius = 2.0` loads as the operator value `Some(2.0)`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    helix_radius: Option<f64>,
     helix_pitch: f64,
     #[serde(default = "default_entry_clearance_mm")]
     entry_clearance_mm: f64,
@@ -934,7 +1032,7 @@ impl DressupConfig {
         },
         DressupFieldDef {
             name: "helix_radius",
-            description: "helix entry radius (mm)",
+            description: "helix entry radius (mm); null = 0.3 x tool diameter (repo rule), capped at the flat bottom",
         },
         DressupFieldDef {
             name: "helix_pitch",
@@ -1033,9 +1131,9 @@ impl Default for DressupConfig {
         // `normalize_for_op` (which `for_op` now also calls on construct).
         Self {
             entry_style: DressupEntryStyle::None,
-            ramp_angle: 3.0,
-            helix_radius: 2.0,
-            helix_pitch: 1.0,
+            ramp_angle: DRESSUP_RAMP_ANGLE_DEG,
+            helix_radius: None,
+            helix_pitch: DRESSUP_HELIX_PITCH_MM,
             entry_clearance_mm: default_entry_clearance_mm(),
             dogbone: None,
             lead_in_out: None,
@@ -1070,6 +1168,20 @@ impl DressupConfig {
         }
     }
 
+    /// The helix radius this config emits on `cutter`: the operator value,
+    /// or [`HELIX_RADIUS_OVER_D`] x D, capped at the flat bottom (G10 Q6).
+    #[must_use]
+    pub fn helix_radius_for(&self, cutter: &dyn crate::tool::MillingCutter) -> HelixRadius {
+        match self.helix_radius {
+            Some(r) => HelixRadius::resolve(r, false, cutter),
+            None => HelixRadius::resolve(
+                HELIX_RADIUS_OVER_D * helix_entry_diameter_mm(cutter),
+                true,
+                cutter,
+            ),
+        }
+    }
+
     /// Whether the named dressup is on. Only the five keys
     /// [`Self::owner_of_value_field`] returns are answered; anything else
     /// reads `false`.
@@ -1092,9 +1204,9 @@ impl DressupConfig {
         match role {
             // Roadmap B.5 — Roughing operations get a Ramp entry by
             // default (was None, which gave every Pocket / Profile /
-            // Adaptive / Face / Adaptive3d a vertical plunge). The
-            // op-type override below promotes Adaptive/Adaptive3d to
-            // Helix and strips back to None for Drill/Trace.
+            // Adaptive / Face / Adaptive3d a vertical plunge). `for_op`
+            // starts Adaptive with Helix (G10 D3) and strips back to None
+            // for Drill/Trace.
             UiProcessRole::Roughing => Self {
                 entry_style: DressupEntryStyle::Ramp,
                 arc_fitting: Some(ArcFitParams::default()),
@@ -1134,7 +1246,14 @@ impl DressupConfig {
     /// Smart defaults based on the operation type: the role-level base,
     /// then the registry's own per-op policy. No op is named here.
     pub fn for_op(op: super::catalog::OperationType) -> Self {
+        use super::catalog::EntryStylePolicy;
         let mut cfg = Self::for_role(op.spec().ui_process_role);
+        // G10 D3 (operator decision 2026-09-25): a `DefaultHelix` op starts
+        // a NEW toolpath with Helix. This is the only reader of the policy;
+        // `normalize_for_op` never rewrites the operator's style afterwards.
+        if op.registry_entry().dressup_policy.entry == EntryStylePolicy::DefaultHelix {
+            cfg.entry_style = DressupEntryStyle::Helix;
+        }
         // CMP-26: the hand-written ProjectCurve strip that stood here was
         // a no-op. `normalize_for_op` below reads
         // `op.registry_entry().dressup_policy`, and ProjectCurve's row is
@@ -1190,13 +1309,9 @@ impl DressupConfig {
                     changed = true;
                 }
             }
-            EntryStylePolicy::PreferHelix => {
-                if self.entry_style == DressupEntryStyle::Ramp {
-                    self.entry_style = DressupEntryStyle::Helix;
-                    changed = true;
-                }
-            }
-            EntryStylePolicy::AnyEntry => {}
+            // G10 D3: `DefaultHelix` is a construction default, read by
+            // `for_op` only. An operator Ramp stays Ramp.
+            EntryStylePolicy::DefaultHelix | EntryStylePolicy::AnyEntry => {}
         }
         changed
     }
@@ -1315,6 +1430,9 @@ mod tests {
                 in_feed_rate: Some(300.0),
                 out_feed_rate: Some(900.0),
             }),
+            // G10 D2: the rule (`None`) is not written, so an operator value
+            // puts the key on the wire.
+            helix_radius: Some(2.0),
             ..DressupConfig::default()
         };
         let value = serde_json::to_value(&full).unwrap();
@@ -1545,7 +1663,7 @@ mod tests {
                 }
                 OperationType::Adaptive => {
                     assert!(policy.strip_all_reason.is_none());
-                    assert_eq!(policy.entry, EntryStylePolicy::PreferHelix);
+                    assert_eq!(policy.entry, EntryStylePolicy::DefaultHelix);
                 }
                 _ => {
                     // Pre-registry these fell through the predicate
@@ -1558,6 +1676,66 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// G10 D3: a new 2D Adaptive toolpath starts with Helix, and
+    /// `normalize_for_op` keeps an operator Ramp (it used to upgrade it).
+    #[test]
+    fn a_new_adaptive_is_helix_and_an_operator_ramp_stays_ramp() {
+        use super::super::catalog::OperationType;
+        let fresh = DressupConfig::for_op(OperationType::Adaptive);
+        assert_eq!(fresh.entry_style, DressupEntryStyle::Helix);
+        let mut ramp = DressupConfig {
+            entry_style: DressupEntryStyle::Ramp,
+            ..fresh
+        };
+        assert!(!ramp.normalize_for_op(OperationType::Adaptive));
+        assert_eq!(ramp.entry_style, DressupEntryStyle::Ramp);
+        // A Pocket keeps the role default Ramp.
+        assert_eq!(
+            DressupConfig::for_op(OperationType::Pocket).entry_style,
+            DressupEntryStyle::Ramp
+        );
+    }
+
+    /// G10 D2: `helix_radius` is `None` (the rule) by default and is not
+    /// written; a saved `2.0` loads as the operator value `Some(2.0)`.
+    #[test]
+    fn a_saved_helix_radius_loads_as_an_operator_value() {
+        let default = DressupConfig::default();
+        assert_eq!(default.helix_radius, None);
+        let mut json = serde_json::to_value(&default).unwrap();
+        assert!(
+            json.get("helix_radius").is_none(),
+            "the rule is not written"
+        );
+        json["helix_radius"] = serde_json::json!(2.0);
+        let loaded: DressupConfig = serde_json::from_value(json).unwrap();
+        assert_eq!(loaded.helix_radius, Some(2.0));
+        let back = serde_json::to_value(&loaded).unwrap();
+        assert_eq!(back["helix_radius"].as_f64(), Some(2.0));
+    }
+
+    /// G10 Q6: the rule is 0.3 x D; a radius above the flat bottom is
+    /// capped there; a tool with no flat bottom is not capped.
+    #[test]
+    fn the_helix_radius_is_the_rule_capped_at_the_flat_bottom() {
+        use crate::tool::{BallEndmill, FlatEndmill};
+        let flat = FlatEndmill::new(3.175, 20.0);
+        let rule = DressupConfig::default().helix_radius_for(&flat);
+        assert!(rule.from_rule && !rule.capped());
+        assert!((rule.emitted_mm - HELIX_RADIUS_OVER_D * 3.175).abs() < 1e-12);
+        let op = DressupConfig {
+            helix_radius: Some(2.0),
+            ..DressupConfig::default()
+        };
+        let capped = op.helix_radius_for(&flat);
+        assert!(!capped.from_rule && capped.capped());
+        assert!((capped.emitted_mm - 3.175 / 2.0).abs() < 1e-12);
+        let ball = BallEndmill::new(6.0, 20.0);
+        let free = op.helix_radius_for(&ball);
+        assert_eq!(free.flat_bottom_mm, None);
+        assert!((free.emitted_mm - 2.0).abs() < 1e-12);
     }
 
     /// CMP-16: the config's rest defaults ARE the detector's, not a copy
@@ -1656,10 +1834,12 @@ mod tests {
             assert!(cfg.link_moves.is_some(), "{op:?}: link moves must survive");
         }
 
-        // Prefer-helix: Ramp upgrades, Helix and None pass through.
+        // Default-helix (G10 D3): a construction default only. An operator
+        // Ramp, a Helix and None all pass through.
         let mut cfg = dirty();
-        assert!(cfg.normalize_for_op(OperationType::Adaptive));
-        assert_eq!(cfg.entry_style, DressupEntryStyle::Helix);
+        assert!(!cfg.normalize_for_op(OperationType::Adaptive));
+        assert_eq!(cfg.entry_style, DressupEntryStyle::Ramp);
+        cfg.entry_style = DressupEntryStyle::Helix;
         assert!(!cfg.normalize_for_op(OperationType::Adaptive));
         cfg.entry_style = DressupEntryStyle::None;
         assert!(!cfg.normalize_for_op(OperationType::Adaptive));

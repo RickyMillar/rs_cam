@@ -821,8 +821,9 @@ pub(super) static REG_ADAPTIVE: OpRegistryEntry = OpRegistryEntry {
     param_defs: ADAPTIVE_PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     // Roadmap B.5 — 2D adaptive pocketing has natural circular
-    // boundaries, so Ramp upgrades to Helix.
-    dressup_policy: DressupPolicy::PREFER_HELIX,
+    // boundaries, so a new toolpath starts with Helix. G10 D3: an
+    // operator Ramp is never upgraded afterwards.
+    dressup_policy: DressupPolicy::DEFAULT_HELIX,
     policy: OpPolicy::MILLING,
     generate: crate::compute::execute::generate_adaptive,
 };

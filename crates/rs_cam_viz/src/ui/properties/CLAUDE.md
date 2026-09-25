@@ -15,15 +15,15 @@ The tabs that edit a setup, a tool, the stock, the post and an operation.
 
 ## Invariants
 
-- Every edit writes through the core command path.
+- Every edit writes through the core command path. Helix r: None = rule.
 - The inspector nests ONCE. A tab does not open a second scroll area.
 - The toolpath panel takes `ToolpathPanelSnapshot` and
-  `ToolpathPanelInputs`. Add a field there, not a parameter.
-- The inspector width does not depend on the selected tab.
+  `ToolpathPanelInputs`. Add a field there, not a parameter. The inspector
+  width does not depend on the selected tab.
 - A panel door marks the project edited on success; `app.rs` guards on it.
-- A pinned Bottom Z note names the ops `honors_pinned_bottom_z()` lists.
-- A draw never writes `rest_analysis.enabled`; `apply_auto_enable` is the door.
-- Do not draw a raw egui widget where `ui/components/` has the renderer.
+  A pinned Bottom Z note names the ops `honors_pinned_bottom_z()` lists.
+- A draw never writes `rest_analysis.enabled`; `apply_auto_enable` is the
+  door. Do not draw a raw egui widget where `ui/components/` has one.
 - A tooltip keys on the registry parameter NAME, never the label.
 - One `OpUiRow` per operation carries the editor, the diagram decision
   and the validation arm. A blank diagram states its reason.

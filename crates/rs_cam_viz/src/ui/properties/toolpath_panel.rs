@@ -283,7 +283,7 @@ pub(super) fn draw_toolpath_panel(
         // strategy (W3.2 — lifted out of the old Dressups tab). This arm is
         // already one call: `draw_linking_params` IS the Linking tab, and it
         // lives in `linking_dressup.rs` beside the Dressup rows it shares.
-        ToolpathTab::Linking => draw_linking_params(ui, entry, height_ctx),
+        ToolpathTab::Linking => draw_linking_params(ui, entry, tool_for_diags, height_ctx),
 
         ToolpathTab::Heights => draw_heights_tab(ui, entry, height_ctx),
 

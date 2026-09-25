@@ -1111,14 +1111,16 @@ fn execute_op_via_session(
     {
         match entry {
             "plunge" => {}
+            // G10: the named repo rules the GUI default reads; the helix
+            // radius is the rule 0.3 x D (`None`), capped at the flat bottom.
             "ramp" => {
                 dressups.entry_style = DressupEntryStyle::Ramp;
-                dressups.ramp_angle = 3.0;
+                dressups.ramp_angle = rs_cam_core::compute::config::DRESSUP_RAMP_ANGLE_DEG;
             }
             "helix" => {
                 dressups.entry_style = DressupEntryStyle::Helix;
-                dressups.helix_radius = 2.0;
-                dressups.helix_pitch = 1.0;
+                dressups.helix_radius = None;
+                dressups.helix_pitch = rs_cam_core::compute::config::DRESSUP_HELIX_PITCH_MM;
             }
             other => bail!("Unknown entry style '{other}'. Supported: plunge, ramp, helix"),
         }
@@ -1344,16 +1346,25 @@ fn job_params_for(
                 .or(op.entry.as_deref())
                 .unwrap_or("plunge");
             match entry {
+                // G10 D4 (operator decision 2026-09-25): one Adaptive3d
+                // entry rule, the GUI's, read from the named repo rules.
                 "helix" => {
                     p.push(("entry_style", json!("helix")));
-                    // Pre-T9: radius = 0.8 \u{d7} tool radius = 0.4 \u{d7} envelope
-                    // diameter (the config factor is diameter-relative).
-                    p.push(("helix_radius_factor", json!(0.4)));
-                    p.push(("helix_pitch", json!(1.0)));
+                    p.push((
+                        "helix_radius_factor",
+                        json!(rs_cam_core::compute::config::HELIX_RADIUS_OVER_D),
+                    ));
+                    p.push((
+                        "helix_pitch",
+                        json!(rs_cam_core::compute::operation_configs::ADAPTIVE3D_HELIX_PITCH_MM),
+                    ));
                 }
                 "ramp" => {
                     p.push(("entry_style", json!("ramp")));
-                    p.push(("ramp_angle_deg", json!(3.0)));
+                    p.push((
+                        "ramp_angle_deg",
+                        json!(rs_cam_core::compute::operation_configs::ADAPTIVE3D_RAMP_ANGLE_DEG),
+                    ));
                 }
                 _ => p.push(("entry_style", json!("plunge"))),
             }
@@ -1585,6 +1596,37 @@ mod tests {
                 .any(|(k, _)| *k == "max_stay_down_distance_mm"),
             "the deleted key still sets the param; the coalesce survived"
         );
+    }
+
+    /// G10 D4 (operator decision 2026-09-25): one Adaptive3d entry rule, the
+    /// GUI's. `entry_3d = "ramp"` writes the 10° repo rule and `"helix"`
+    /// writes 0.3 x D at pitch 2 mm (it was 3°, 0.4 x D and pitch 1).
+    #[test]
+    fn the_adaptive3d_entry_is_the_gui_rule_g10() {
+        use rs_cam_core::compute::operation_configs::Adaptive3dConfig;
+        let gui = Adaptive3dConfig::default();
+        let value = |params: &[(&'static str, serde_json::Value)], key: &str| {
+            params
+                .iter()
+                .find(|(k, _)| *k == key)
+                .and_then(|(_, v)| v.as_f64())
+                .unwrap_or_else(|| panic!("no {key}"))
+        };
+        let ramp: OperationDef = toml::from_str(
+            "type = \"adaptive3d\"\ninput = \"m.stl\"\ntool = \"a\"\nentry_3d = \"ramp\"\n",
+        )
+        .unwrap();
+        let params = job_params_for(&ramp, OperationType::Adaptive3d, None, None).unwrap();
+        assert!((value(&params, "ramp_angle_deg") - 10.0).abs() < 1e-12);
+        assert!((value(&params, "ramp_angle_deg") - gui.ramp_angle_deg).abs() < 1e-12);
+
+        let helix: OperationDef = toml::from_str(
+            "type = \"adaptive3d\"\ninput = \"m.stl\"\ntool = \"a\"\nentry_3d = \"helix\"\n",
+        )
+        .unwrap();
+        let params = job_params_for(&helix, OperationType::Adaptive3d, None, None).unwrap();
+        assert!((value(&params, "helix_radius_factor") - gui.helix_radius_factor).abs() < 1e-12);
+        assert!((value(&params, "helix_pitch") - gui.helix_pitch).abs() < 1e-12);
     }
 
     /// The step ladder was removed on 2026-09-24 (operator ruling). A job

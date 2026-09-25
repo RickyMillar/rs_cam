@@ -17,8 +17,7 @@ The one door for project state and compute is `ProjectSession::apply(Command)`.
 
 - A command returns `Effects`. `Effects.stale` is the stale set.
 - A parameter, tool, model, stock or setup edit invalidates the affected
-  cached result chain, to fixpoint. One walker answers:
-  `invalidate_output_dependents_of_set`.
+  cached result chain, to fixpoint: `invalidate_output_dependents_of_set`.
 - `dependencies::edges` states that walker's rules and `generation_plan` the
   order; no surface re-derives either. The pure `walk_output_dependents`
   touches no simulation.
@@ -28,7 +27,8 @@ The one door for project state and compute is `ProjectSession::apply(Command)`.
 - ONE stored `simulation_resolution` sets every cell. `try_with_effects`
   drops a rest result whose `SourceStock` no longer matches (G-RESTRES).
 - There are no public `*_mut` hatches. `setups_mut` stays `#[cfg(test)]`.
-- Read `ProjectSession::simulation_triage`, not a raw issue count.
+  Read `ProjectSession::simulation_triage`, not a raw issue count.
+- Generation passes `entry_feed_rate()`, not the raw ramp feed (G10 B4).
 - Do not add a setter without a command row. The registry test fails on it.
 
 ## Sentries

@@ -1589,6 +1589,14 @@ pub fn build_info() -> serde_json::Value {
             // carries `basis` {headline, detail}, the support arm's card
             // text. An off-size vendor row states its G1 size claim there.
             "suggest_rationale_basis",
+            // G10 Part A (2026-09-25): `get_suggest_rationale` `basis`
+            // carries `plunge` {source, value_mm_min, re_derived}, `entry`
+            // (the entry notes) and `ramp.arm`.
+            "suggest_rationale_plunge_entry",
+            // G10 Part B (2026-09-25): a dressup `helix_radius` of null is
+            // the rule 0.3 x D, and the engine caps every helix radius at
+            // the flat bottom (no core).
+            "dressup_helix_radius_rule",
         ],
     })
 }
@@ -1665,6 +1673,8 @@ mod tests {
             "generation_plan_progress",
             "default_findings",
             "suggest_rationale_basis",
+            "suggest_rationale_plunge_entry",
+            "dressup_helix_radius_rule",
         ] {
             assert!(
                 features.contains(&flag),

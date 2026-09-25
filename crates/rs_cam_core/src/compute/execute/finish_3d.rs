@@ -63,8 +63,10 @@ pub(crate) fn generate_adaptive3d(
             }
         }
         crate::compute::operation_configs::Adaptive3dEntryStyle::Helix => {
+            // G10 Q6: D x factor, capped at the flat bottom so the helix
+            // leaves no core.
             crate::adaptive3d::EntryStyle3d::Helix {
-                radius: ctx.tool_def.diameter() * cfg.helix_radius_factor,
+                radius: cfg.helix_radius_for(ctx.tool_def).emitted_mm,
                 pitch: cfg.helix_pitch,
             }
         }
@@ -157,7 +159,8 @@ pub(crate) fn generate_adaptive3d(
         },
         feed_rate: op.feed_rate(),
         plunge_rate: op.plunge_rate(),
-        ramp_feed_rate: op.ramp_feed_rate(),
+        // G-RAMPCLAMP: the entry never runs faster than the cut feed.
+        ramp_feed_rate: op.entry_feed_rate(),
         entry_clearance_mm: cfg.entry_clearance_mm,
         entry_style,
         initial_stock: ctx.initial_stock.cloned(),

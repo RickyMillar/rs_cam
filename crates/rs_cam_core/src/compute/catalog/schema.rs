@@ -464,8 +464,9 @@ impl OpPolicy {
     };
 }
 
-/// Entry-style coercion applied by `DressupConfig::normalize_for_op`
-/// (and mirrored by the viz dressup panel) for one operation.
+/// Entry-style policy for one operation: the coercion
+/// `DressupConfig::normalize_for_op` applies (mirrored by the viz dressup
+/// panel), and the style `DressupConfig::for_op` starts a new toolpath with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntryStylePolicy {
     /// Any configured entry style is accepted as-is.
@@ -473,9 +474,11 @@ pub enum EntryStylePolicy {
     /// Entry styles are meaningless or harmful for this op (stock-based /
     /// single-pass / planner-emitted entries) — always coerce to `None`.
     ForceNone,
-    /// `Ramp` is upgraded to `Helix` (the op's pocketing geometry has
-    /// natural circular boundaries); other styles pass through.
-    PreferHelix,
+    /// A new toolpath starts with `Helix` (the op's pocketing geometry has
+    /// natural circular boundaries). Only `DressupConfig::for_op` reads it;
+    /// `normalize_for_op` never rewrites an operator's style (G10 D3,
+    /// operator decision 2026-09-25).
+    DefaultHelix,
 }
 
 /// Per-op dressup policy (Phase 1 registry field). ONE source for both
@@ -503,10 +506,10 @@ impl DressupPolicy {
         strip_all_reason: None,
         entry: EntryStylePolicy::ForceNone,
     };
-    /// `Ramp` upgraded to `Helix`; everything else untouched.
-    pub(crate) const PREFER_HELIX: Self = Self {
+    /// A new toolpath starts with `Helix`; everything else untouched.
+    pub(crate) const DEFAULT_HELIX: Self = Self {
         strip_all_reason: None,
-        entry: EntryStylePolicy::PreferHelix,
+        entry: EntryStylePolicy::DefaultHelix,
     };
     /// All topology-altering dressups stripped, with the user-facing reason.
     pub const fn strip_all(reason: &'static str) -> Self {

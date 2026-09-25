@@ -624,7 +624,17 @@ pub fn apply_dressups(
             );
         }
         DressupEntryStyle::Helix => {
-            let helix_radius = cfg.helix_radius;
+            // G10 Q6 and D2: the radius is the operator value or the rule
+            // 0.3 x D, capped at the flat bottom so the helix leaves no
+            // core. The trace records the radius that is emitted. With no
+            // cutter (a test context) the flat bottom and the nominal D are
+            // unknown, so the request (or 0.3 x the context's D) is emitted.
+            let helix_radius = match cutter {
+                Some(cutter) => cfg.helix_radius_for(cutter).emitted_mm,
+                None => cfg
+                    .helix_radius
+                    .unwrap_or(crate::compute::config::HELIX_RADIUS_OVER_D * tool_diameter),
+            };
             let helix_pitch = cfg.helix_pitch;
             current = apply_dressup_traced(
                 current,

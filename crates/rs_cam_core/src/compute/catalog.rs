@@ -1166,6 +1166,18 @@ impl OperationConfig {
         self.as_params().ramp_feed_rate()
     }
 
+    /// The feed a helix or ramp entry runs at: the ramp feed, held at or
+    /// below the cut feed (G-RAMPCLAMP). `None` uses the plunge feed.
+    ///
+    /// Suggest writes a ramp feed at or below the feed it ships, but an
+    /// operator can lower the feed afterwards; the entry follows it down.
+    /// The clamp sits here, where the operation's feed is in scope, not in
+    /// the entry emitter, whose `feed_rate` is the dressup caller's feed
+    /// (G10 F3).
+    pub fn entry_feed_rate(&self) -> Option<f64> {
+        self.ramp_feed_rate().map(|r| r.min(self.feed_rate()))
+    }
+
     pub fn stepover(&self) -> Option<f64> {
         self.as_params().stepover()
     }

@@ -719,9 +719,14 @@ pub(super) fn draw_vendor_lut_viewer(
 // ── Entry style preview diagram ─────────────────────────────────────────
 
 /// Draw a 2D side-view of the entry style geometry (ramp or helix).
+///
+/// `helix_radius_mm` is the radius the engine emits (G10 Q6 and D2: the
+/// operator value or 0.3 x D, capped at the flat bottom); `None` when no
+/// tool is bound and the rule has no D, and then no helix is drawn.
 pub(super) fn draw_entry_preview_diagram(
     ui: &mut egui::Ui,
     dressups: &DressupConfig,
+    helix_radius_mm: Option<f64>,
     height_ctx: &HeightContext,
     heights: &HeightsConfig,
 ) {
@@ -867,7 +872,9 @@ pub(super) fn draw_entry_preview_diagram(
             let _ = v_height;
         }
         DressupEntryStyle::Helix => {
-            let radius = dressups.helix_radius;
+            let Some(radius) = helix_radius_mm else {
+                return;
+            };
             let pitch = dressups.helix_pitch;
             let turns = z_drop / pitch.max(0.01);
 

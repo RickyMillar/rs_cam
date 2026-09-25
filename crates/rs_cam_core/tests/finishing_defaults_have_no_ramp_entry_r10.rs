@@ -132,8 +132,19 @@ fn the_roughing_family_is_unmoved() {
     assert_eq!(
         DressupConfig::for_op(OperationType::Adaptive).entry_style,
         DressupEntryStyle::Helix,
-        "Adaptive is Roughing with PreferHelix: Ramp promotes to Helix"
+        "Adaptive is Roughing with DefaultHelix: a new toolpath is Helix (G10 D3)"
     );
+    // G10 D3 (operator decision 2026-09-25): the policy is a construction
+    // default. An operator Ramp on an Adaptive stays Ramp.
+    let mut operator_ramp = DressupConfig {
+        entry_style: DressupEntryStyle::Ramp,
+        ..DressupConfig::for_op(OperationType::Adaptive)
+    };
+    assert!(
+        !operator_ramp.normalize_for_op(OperationType::Adaptive),
+        "normalize_for_op must not rewrite an operator Ramp"
+    );
+    assert_eq!(operator_ramp.entry_style, DressupEntryStyle::Ramp);
     assert_eq!(
         DressupConfig::for_op(OperationType::Profile).entry_style,
         DressupEntryStyle::Ramp,

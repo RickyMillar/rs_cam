@@ -75,7 +75,7 @@ fn ramp_dressup(angle_deg: f64) -> DressupConfig {
 fn helix_dressup(radius_mm: f64, pitch_mm: f64) -> DressupConfig {
     DressupConfig {
         entry_style: DressupEntryStyle::Helix,
-        helix_radius: radius_mm,
+        helix_radius: Some(radius_mm),
         helix_pitch: pitch_mm,
         ..DressupConfig::default()
     }
@@ -219,7 +219,9 @@ fn a_plunge_or_unknown_entry_writes_none_g10() {
 /// The helix notes come from the tool profile: a 6 mm ball at r 1.8 leaves
 /// a pip 3 - sqrt(3² - 1.8²) = 0.60 mm high (the ball profile height at r;
 /// the plan's 0.29 does not follow from the profile); a 3.175 mm flat at r
-/// 2.0 leaves a core 2 x (2.0 - 1.5875) = 0.825 mm wide, a caution.
+/// 2.0 would leave a core 2 x (2.0 - 1.5875) = 0.825 mm wide, so since G10
+/// Part B the engine caps r at the flat bottom 1.5875 mm and the card says
+/// so (plan R8).
 #[test]
 fn the_helix_notes_read_the_tool_profile_g10() {
     let helix = helix_dressup(1.8, 1.0);
@@ -244,22 +246,38 @@ fn the_helix_notes_read_the_tool_profile_g10() {
         &tool_of(ToolType::EndMill, 3.175, 2),
         PassRole::Roughing,
     );
-    let core = notes
+    let cap = notes
         .as_slice()
         .iter()
-        .find(|n| n.headline.contains("core Ø"))
-        .unwrap_or_else(|| panic!("no core note: {notes:?}"));
-    // 2 x (2.0 - 3.175 / 2) = 0.825; the card prints two decimals.
+        .find(|n| n.headline.contains("capped r"))
+        .unwrap_or_else(|| panic!("no cap note: {notes:?}"));
+    // r 2.0 capped at 3.175 / 2 = 1.5875; the card prints two decimals.
     assert!(
-        core.headline.contains("core Ø 0.83 mm") || core.headline.contains("core Ø 0.82 mm"),
+        cap.headline
+            .contains("capped r 2.00 → 1.59 mm (no-core rule, geometry)"),
         "{}",
-        core.headline
+        cap.headline
     );
-    assert!(core.caution, "a core is a caution");
+    // The core it would have left: 2 x (2.0 - 3.175 / 2) = 0.825.
+    assert!(
+        cap.detail.contains("core Ø 0.83 mm") || cap.detail.contains("core Ø 0.82 mm"),
+        "{}",
+        cap.detail
+    );
+    assert!(!cap.caution, "the engine leaves no core");
+    assert!(
+        !notes
+            .as_slice()
+            .iter()
+            .any(|n| n.headline.contains("core Ø")),
+        "no core line after the cap: {notes:?}"
+    );
+    // The helix line states the radius the engine emits: 1.5875 / 3.175 =
+    // 0.50 x D.
     assert!(
         notes.as_slice()[0]
             .headline
-            .starts_with("Helix r 2.00 mm (0.63 x D), pitch 1.00 mm"),
+            .starts_with("Helix r 1.59 mm (0.50 x D), pitch 1.00 mm"),
         "{notes:?}"
     );
 }

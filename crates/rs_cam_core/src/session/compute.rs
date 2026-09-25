@@ -2267,7 +2267,8 @@ impl ProjectSession {
             entry_probe_leave: tc.operation.entry_probe_leave(),
             feed_rate: tc.operation.feed_rate(),
             plunge_rate: tc.operation.plunge_rate(),
-            ramp_feed_rate: tc.operation.ramp_feed_rate(),
+            // G-RAMPCLAMP: the entry never runs faster than the cut feed.
+            ramp_feed_rate: tc.operation.entry_feed_rate(),
             transform_capabilities: tc.operation.transform_capabilities(),
             prior_stock,
             source_stock,

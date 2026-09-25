@@ -1134,7 +1134,20 @@ impl RsCamApp {
                         toolpath_render::EntryPreviewConfig {
                             entry_style,
                             ramp_angle_deg: tc.dressups.ramp_angle,
-                            helix_radius: tc.dressups.helix_radius,
+                            // G10 Q6 and D2: the radius the engine emits
+                            // (the operator value or 0.3 x D, capped at the
+                            // flat bottom). With no tool bound, the rule has
+                            // no D and the preview draws no helix.
+                            helix_radius: session
+                                .tools()
+                                .iter()
+                                .find(|t| t.id.0 == tc.tool_id)
+                                .map(|t| {
+                                    let cutter = rs_cam_core::compute::cutter::build_cutter(t);
+                                    tc.dressups.helix_radius_for(&cutter).emitted_mm
+                                })
+                                .or(tc.dressups.helix_radius)
+                                .unwrap_or(0.0),
                             helix_pitch: tc.dressups.helix_pitch,
                             lead_in_out: tc.dressups.lead_in_out.is_some(),
                             lead_radius: tc.dressups.lead_in_out.map_or(0.0, |l| l.radius),

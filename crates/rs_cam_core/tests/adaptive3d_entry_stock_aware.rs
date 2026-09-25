@@ -605,7 +605,7 @@ fn pocket_toolpath(style: Style) -> Toolpath {
         Style::Helix => DressupEntryStyle::Helix,
         Style::Ramp => DressupEntryStyle::Ramp,
     };
-    dressups.helix_radius = HELIX_RADIUS;
+    dressups.helix_radius = Some(HELIX_RADIUS);
     dressups.helix_pitch = HELIX_PITCH;
     dressups.ramp_angle = RAMP_ANGLE_DEG;
     dressups.arc_fitting = None;

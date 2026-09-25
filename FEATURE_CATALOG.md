@@ -71,7 +71,7 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
 ## Toolpath modifiers and control layers
 
 - heights system: clearance, retract, feed, top, bottom
-- entry dressups: plunge replacement via ramp or helix
+- entry dressups: plunge replacement via ramp or helix. The helix radius is the repo rule 0.3 x D or an operator value, capped at the tool's flat bottom so the helix leaves no core; a helix or ramp entry never runs above the cut feed (G10 Part B)
 - dogbone overcuts
 - lead-in / lead-out arcs
 - link moves / keep-tool-down linking

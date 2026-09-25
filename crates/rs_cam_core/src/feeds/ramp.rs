@@ -42,7 +42,9 @@ use super::extrapolation::{Claim, DrillClaim, tool_family_label};
 use super::vendor_lut::ToolFamily;
 use super::{FeedsInput, OperationFamily, PassRole};
 use crate::compute::catalog::OperationConfig;
-use crate::compute::config::{DressupConfig, DressupEntryStyle, default_entry_clearance_mm};
+use crate::compute::config::{
+    DressupConfig, DressupEntryStyle, HELIX_RADIUS_OVER_D, HelixRadius, default_entry_clearance_mm,
+};
 use crate::compute::operation_configs::{Adaptive3dConfig, Adaptive3dEntryStyle};
 use crate::compute::tool_config::ToolConfig;
 use crate::tool::MillingCutter;
@@ -290,12 +292,17 @@ pub struct Entry {
 ///
 /// - Adaptive3d reads its own `entry_style`. Plunge gives `EntryOff`. Ramp
 ///   gives `ramp_angle_deg`. Helix gives the radius
-///   `tool_diameter_mm x helix_radius_factor` and `helix_pitch`. This is the
-///   mapping of `compute::execute::finish_3d::generate_adaptive3d`.
+///   `Adaptive3dConfig::helix_radius_for` emits (D x `helix_radius_factor`,
+///   capped at the flat bottom) and `helix_pitch`. This is the mapping of
+///   `compute::execute::finish_3d::generate_adaptive3d`.
 /// - Every other operation reads `dressups`. `None` gives `EntryUnknown`.
 ///   `DressupEntryStyle::None` gives `EntryOff`. Ramp gives `ramp_angle`,
-///   and Helix gives `helix_radius` and `helix_pitch`. This is the mapping
-///   of `compute::execute::dressup_apply`.
+///   and Helix gives the radius `DressupConfig::helix_radius_for` emits
+///   (the operator value or 0.3 x D, capped at the flat bottom) and
+///   `helix_pitch`. This is the mapping of `compute::execute::dressup_apply`.
+///
+/// θ is the slope of the helix the engine emits, so the ramp feed and the
+/// card read the capped radius (G10 Q6).
 ///
 /// # Errors
 ///
@@ -303,8 +310,9 @@ pub struct Entry {
 pub fn entry_geometry(
     op: &OperationConfig,
     dressups: Option<&DressupConfig>,
-    tool_diameter_mm: f64,
+    tool: &ToolConfig,
 ) -> Result<Entry, RampFallback> {
+    let cutter = crate::compute::cutter::build_cutter(tool);
     if let OperationConfig::Adaptive3d(cfg) = op {
         let geometry = match cfg.entry_style {
             Adaptive3dEntryStyle::Plunge => return Err(RampFallback::EntryOff),
@@ -312,7 +320,7 @@ pub fn entry_geometry(
                 angle_deg: cfg.ramp_angle_deg,
             },
             Adaptive3dEntryStyle::Helix => EntryGeometry::Helix {
-                radius_mm: tool_diameter_mm * cfg.helix_radius_factor,
+                radius_mm: cfg.helix_radius_for(&cutter).emitted_mm,
                 pitch_mm: cfg.helix_pitch,
             },
         };
@@ -331,7 +339,7 @@ pub fn entry_geometry(
             angle_deg: cfg.ramp_angle,
         },
         DressupEntryStyle::Helix => EntryGeometry::Helix {
-            radius_mm: cfg.helix_radius,
+            radius_mm: cfg.helix_radius_for(&cutter).emitted_mm,
             pitch_mm: cfg.helix_pitch,
         },
     };
@@ -753,6 +761,21 @@ fn rule_or_operator(value: f64, default: f64, unit: &str) -> String {
     }
 }
 
+/// "a repo rule (0.3 x D = 0.95 mm)" or "an operator value 2.00 mm (repo
+/// rule 0.3 x D = 0.95 mm)". `diameter_mm` is the cutter's `diameter()`.
+fn radius_rule_or_operator(helix: &HelixRadius, diameter_mm: f64) -> String {
+    let rule_mm = HELIX_RADIUS_OVER_D * diameter_mm;
+    let rule = format!("{HELIX_RADIUS_OVER_D} x D = {rule_mm:.2} mm");
+    if helix.from_rule {
+        format!("a repo rule ({rule})")
+    } else {
+        format!(
+            "an operator value {:.2} mm (repo rule {rule})",
+            helix.requested_mm
+        )
+    }
+}
+
 /// The ruling Q12 caution on a straight plunge entry.
 fn straight_plunge_note() -> EntryNote {
     EntryNote {
@@ -766,34 +789,37 @@ fn straight_plunge_note() -> EntryNote {
     }
 }
 
-/// The geometry note of a helix (rulings Q6 and Q7): no core, a core, or a
-/// centre pip. The numbers come from the tool profile.
-fn helix_geometry_note(tool: &ToolConfig, radius_mm: f64) -> EntryNote {
-    let cutter = crate::compute::cutter::build_cutter(tool);
-    let flat_mm = cutter.width_at_height(0.0);
-    if flat_mm > 1e-9 {
-        if radius_mm <= flat_mm + 1e-9 {
+/// The geometry note of a helix (rulings Q6 and Q7): no core, the cap, or a
+/// centre pip. The numbers come from the tool profile. The engine caps r at
+/// the flat bottom, so a flat or bull helix never leaves a core.
+fn helix_geometry_note(cutter: &dyn MillingCutter, helix: &HelixRadius) -> EntryNote {
+    let radius_mm = helix.emitted_mm;
+    if let Some(flat_mm) = helix.flat_bottom_mm {
+        if helix.capped() {
+            let requested_mm = helix.requested_mm;
             return EntryNote {
                 headline: format!(
-                    "Helix leaves no core: r {radius_mm:.2} mm <= {flat_mm:.2} mm, the flat bottom"
+                    "Helix leaves no core: capped r {requested_mm:.2} → {flat_mm:.2} mm (no-core \
+                     rule, geometry)"
                 ),
-                detail: "Geometry: a helix radius at or inside the flat bottom cuts the centre \
-                         (IMCO, Sandvik and Fusion print the same limit; ruling Q6)."
-                    .to_owned(),
+                detail: format!(
+                    "Geometry: r {requested_mm:.2} mm is larger than the flat bottom \
+                     {flat_mm:.2} mm and would leave a core Ø {:.2} mm, so the engine emits the \
+                     helix at the flat bottom (IMCO, Sandvik and Fusion print the limit r <= \
+                     the flat bottom; ruling Q6).",
+                    2.0 * (requested_mm - flat_mm)
+                ),
                 caution: false,
             };
         }
-        let core_mm = 2.0 * (radius_mm - flat_mm);
         return EntryNote {
             headline: format!(
-                "The helix leaves a core Ø {core_mm:.2} mm: r {radius_mm:.2} mm > {flat_mm:.2} \
-                 mm, the flat bottom"
+                "Helix leaves no core: r {radius_mm:.2} mm <= {flat_mm:.2} mm, the flat bottom"
             ),
-            detail: "Geometry: the helix radius is larger than the flat bottom, so a post of \
-                     stock stays at the centre (IMCO, Sandvik and Fusion print the limit r <= \
-                     the flat bottom; ruling Q6). The engine does not cap r yet (G10 Q6)."
+            detail: "Geometry: a helix radius at or inside the flat bottom cuts the centre \
+                     (IMCO, Sandvik and Fusion print the same limit; ruling Q6)."
                 .to_owned(),
-            caution: true,
+            caution: false,
         };
     }
     match cutter.height_at_radius(radius_mm) {
@@ -840,7 +866,7 @@ pub fn entry_notes(
     pass_role: PassRole,
 ) -> EntryNotes {
     let mut notes = Vec::new();
-    let entry = match entry_geometry(op, dressups, tool.diameter) {
+    let entry = match entry_geometry(op, dressups, tool) {
         Ok(entry) => entry,
         Err(RampFallback::EntryOff) => {
             if matches!(pass_role, PassRole::Roughing) {
@@ -876,19 +902,28 @@ pub fn entry_notes(
             radius_mm,
             pitch_mm,
         } => {
-            let (radius_default, pitch_default) = match entry.source {
-                EntrySource::Dressup => (dressup_default.helix_radius, dressup_default.helix_pitch),
-                EntrySource::Adaptive3d => (
-                    tool.diameter * adaptive3d_default.helix_radius_factor,
+            let cutter = crate::compute::cutter::build_cutter(tool);
+            let (helix, pitch_default) = match (op, dressups) {
+                (OperationConfig::Adaptive3d(cfg), _) => (
+                    cfg.helix_radius_for(&cutter),
                     adaptive3d_default.helix_pitch,
+                ),
+                (_, Some(cfg)) => (cfg.helix_radius_for(&cutter), dressup_default.helix_pitch),
+                // `entry_geometry` gave a helix, so one of the two holds it.
+                (_, None) => (
+                    HelixRadius::resolve(radius_mm, false, &cutter),
+                    dressup_default.helix_pitch,
                 ),
             };
             let theta = entry
                 .geometry
                 .theta_deg()
                 .map_or_else(|| "no valid slope".to_owned(), |t| format!("{t:.2}°"));
-            let over_d = if tool.diameter > 0.0 {
-                format!("{:.2} x D", radius_mm / tool.diameter)
+            // D is the one the engine scales the rule by: the nominal
+            // cutting diameter (the tip ball on a tapered ball).
+            let diameter_mm = crate::compute::config::helix_entry_diameter_mm(&cutter);
+            let over_d = if diameter_mm > 0.0 {
+                format!("{:.2} x D", radius_mm / diameter_mm)
             } else {
                 "no D".to_owned()
             };
@@ -899,12 +934,12 @@ pub fn entry_notes(
                 detail: format!(
                     "The helix radius is {}; the pitch is {} (rulings Q6 and Q8). No wood source \
                      prints a helix radius or pitch (metal context: IMCO 0.5-5°, grade c).",
-                    rule_or_operator(radius_mm, radius_default, " mm"),
+                    radius_rule_or_operator(&helix, diameter_mm),
                     rule_or_operator(pitch_mm, pitch_default, " mm")
                 ),
                 caution: false,
             });
-            notes.push(helix_geometry_note(tool, radius_mm));
+            notes.push(helix_geometry_note(&cutter, &helix));
         }
     }
     let clearance_default = default_entry_clearance_mm();
@@ -1211,8 +1246,9 @@ mod tests {
     #[test]
     fn the_entry_reads_the_dressup_or_the_adaptive3d_config() {
         let pocket = OperationConfig::new_default(OperationType::Pocket);
+        let flat = tool(ToolType::EndMill, 6.0);
         assert_eq!(
-            entry_geometry(&pocket, None, 6.0),
+            entry_geometry(&pocket, None, &flat),
             Err(RampFallback::EntryUnknown)
         );
         let off = DressupConfig {
@@ -1220,18 +1256,18 @@ mod tests {
             ..DressupConfig::default()
         };
         assert_eq!(
-            entry_geometry(&pocket, Some(&off), 6.0),
+            entry_geometry(&pocket, Some(&off), &flat),
             Err(RampFallback::EntryOff)
         );
         let helix = DressupConfig {
             entry_style: DressupEntryStyle::Helix,
-            helix_radius: 2.0,
+            helix_radius: Some(2.0),
             helix_pitch: 1.0,
             entry_clearance_mm: 0.8,
             ..DressupConfig::default()
         };
         assert_eq!(
-            entry_geometry(&pocket, Some(&helix), 6.0),
+            entry_geometry(&pocket, Some(&helix), &flat),
             Ok(Entry {
                 geometry: HELIX,
                 source: EntrySource::Dressup,
@@ -1245,7 +1281,7 @@ mod tests {
             cfg.helix_radius_factor = 0.3;
             cfg.helix_pitch = 2.0;
         }
-        let e = entry_geometry(&a3d, None, 6.0).unwrap();
+        let e = entry_geometry(&a3d, None, &flat).unwrap();
         assert_eq!(e.source, EntrySource::Adaptive3d);
         assert!((e.geometry.theta_deg().unwrap() - 10.03).abs() < 0.01);
         assert!((e.clearance_mm - default_entry_clearance_mm()).abs() < 1e-12);
@@ -1253,7 +1289,7 @@ mod tests {
             cfg.entry_style = Adaptive3dEntryStyle::Plunge;
         }
         assert_eq!(
-            entry_geometry(&a3d, Some(&helix), 6.0),
+            entry_geometry(&a3d, Some(&helix), &flat),
             Err(RampFallback::EntryOff)
         );
     }
@@ -1272,7 +1308,7 @@ mod tests {
         let pocket = OperationConfig::new_default(OperationType::Pocket);
         let dressups = DressupConfig {
             entry_style: DressupEntryStyle::Helix,
-            helix_radius: radius_mm,
+            helix_radius: Some(radius_mm),
             helix_pitch: 1.0,
             ..DressupConfig::default()
         };
@@ -1286,10 +1322,11 @@ mod tests {
             .unwrap_or_else(|| panic!("a helix gives its geometry note second: {notes:?}"))
     }
 
-    /// The pip and the core come from the tool profile (rulings Q6, Q7):
+    /// The pip and the cap come from the tool profile (rulings Q6, Q7):
     /// a 6 mm ball at r 1.8 leaves a pip of 3 - sqrt(9 - 1.8²) = 0.60 mm; a
-    /// 3.175 mm flat at r 2.0 leaves a core of 2 x (2.0 - 1.5875) = 0.83 mm;
-    /// a 60° V-bit at r 1.8 leaves a pip of 1.8 / tan 30° = 3.12 mm.
+    /// 3.175 mm flat at r 2.0 would leave a core of 2 x (2.0 - 1.5875) =
+    /// 0.83 mm, so the engine caps r at the flat bottom 1.5875 mm (G10 Part
+    /// B); a 60° V-bit at r 1.8 leaves a pip of 1.8 / tan 30° = 3.12 mm.
     #[test]
     fn the_pip_and_the_core_come_from_the_tool_profile() {
         let ball = helix_notes(&tool(ToolType::BallNose, 6.0), 1.8);
@@ -1299,9 +1336,24 @@ mod tests {
 
         let flat = helix_notes(&tool(ToolType::EndMill, 3.175), 2.0);
         let note = geometry_note(&flat);
-        assert!(note.caution, "{note:?}");
-        assert!(note.headline.contains("core Ø 0.83 mm"), "{note:?}");
-        assert!(note.detail.contains("does not cap r yet"), "{note:?}");
+        assert!(!note.caution, "{note:?}");
+        assert!(
+            note.headline
+                .contains("capped r 2.00 → 1.59 mm (no-core rule, geometry)"),
+            "{note:?}"
+        );
+        assert!(note.detail.contains("core Ø 0.83 mm"), "{note:?}");
+        let helix_line = flat.as_slice().first().unwrap();
+        assert!(
+            helix_line
+                .headline
+                .starts_with("Helix r 1.59 mm (0.50 x D)"),
+            "the helix line states the emitted radius: {flat:?}"
+        );
+        assert!(
+            helix_line.detail.contains("an operator value 2.00 mm"),
+            "{flat:?}"
+        );
 
         let inside = helix_notes(&tool(ToolType::EndMill, 6.0), 1.8);
         let note = geometry_note(&inside);

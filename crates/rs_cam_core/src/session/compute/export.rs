@@ -373,6 +373,10 @@ impl ProjectSession {
                     ProvenanceSource::VendorLut
                         | ProvenanceSource::Formula
                         | ProvenanceSource::EdgeRadiusFloor
+                        // G10 (R7): the plunge and the ramp now stamp the
+                        // rule that set them; both are Suggest's own.
+                        | ProvenanceSource::PublishedRule
+                        | ProvenanceSource::RepoRule
                 )
             })
         };

@@ -16,9 +16,10 @@
 //! per-segment stamping mechanics (`stamp_segment_on_grid`) are identical
 //! to the planner's. The divergence is in **what segments are stamped**:
 //!
-//! `DressupConfig::for_op(Adaptive3d)` returns `entry_style =
-//! DressupEntryStyle::Helix` by default (via the `prefer_helix` override
-//! in `normalize_for_op`). The dressup pass (`apply_dressups` →
+//! `DressupConfig::for_op(Adaptive3d)` returned `entry_style =
+//! DressupEntryStyle::Helix` by default (then via a `prefer_helix`
+//! override in `normalize_for_op`; since G10 D3 only 2D Adaptive starts
+//! with Helix, in `for_op`, and Adaptive3d is `ForceNone`). The dressup pass (`apply_dressups` →
 //! `apply_entry`) walks the planner-emitted toolpath, detects each
 //! plunge (Linear + downward + no XY change), and **replaces it with a
 //! helix** at radius ≈ `helix_radius` around the entry XY.

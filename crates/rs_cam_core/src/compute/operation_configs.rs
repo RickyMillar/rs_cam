@@ -703,8 +703,10 @@ pub struct Adaptive3dConfig {
     /// `entry_style == Ramp`.
     #[serde(default = "default_adaptive3d_ramp_angle")]
     pub ramp_angle_deg: f64,
-    /// Helix entry: helix radius as a fraction of the tool's envelope
-    /// diameter. Only honored when `entry_style == Helix`.
+    /// Helix entry: helix radius as a fraction of the tool's nominal cutting
+    /// diameter (`compute::config::helix_entry_diameter_mm`; the tip ball on
+    /// a tapered ball, not the shaft). Only honored when `entry_style == Helix`. The engine caps
+    /// the radius at the flat bottom (G10 Q6): [`Self::helix_radius_for`].
     #[serde(default = "default_adaptive3d_helix_radius_factor")]
     pub helix_radius_factor: f64,
     /// Helix entry: vertical pitch in mm. Only honored when `entry_style == Helix`.
@@ -828,16 +830,49 @@ fn default_clearing_strategy() -> ClearingStrategy {
     ClearingStrategy::ContourParallel
 }
 
+/// The Adaptive3d ramp entry angle (degrees) a new toolpath starts with.
+///
+/// Repo rule, no source (G10). No wood or router source prints a ramp
+/// angle (ruling Q9). Operator decision D4 (2026-09-25): one Adaptive3d
+/// entry rule for the GUI and the CLI.
+pub const ADAPTIVE3D_RAMP_ANGLE_DEG: f64 = 10.0;
+
+/// The Adaptive3d helix entry pitch (mm per turn) a new toolpath starts
+/// with.
+///
+/// Repo rule, no source (G10). No wood source prints a helix pitch (ruling
+/// Q8). Operator decision D4: the GUI and the CLI read this one value.
+pub const ADAPTIVE3D_HELIX_PITCH_MM: f64 = 2.0;
+
 fn default_adaptive3d_ramp_angle() -> f64 {
-    10.0
+    ADAPTIVE3D_RAMP_ANGLE_DEG
 }
 
 fn default_adaptive3d_helix_radius_factor() -> f64 {
-    0.3
+    crate::compute::config::HELIX_RADIUS_OVER_D
 }
 
 fn default_adaptive3d_helix_pitch() -> f64 {
-    2.0
+    ADAPTIVE3D_HELIX_PITCH_MM
+}
+
+impl Adaptive3dConfig {
+    /// The helix radius this config emits on `cutter`: D x
+    /// `helix_radius_factor`, capped at the flat bottom (G10 Q6). The
+    /// request is the rule when the factor is
+    /// [`crate::compute::config::HELIX_RADIUS_OVER_D`].
+    #[must_use]
+    pub fn helix_radius_for(
+        &self,
+        cutter: &dyn crate::tool::MillingCutter,
+    ) -> crate::compute::config::HelixRadius {
+        let rule = crate::compute::config::HELIX_RADIUS_OVER_D;
+        crate::compute::config::HelixRadius::resolve(
+            crate::compute::config::helix_entry_diameter_mm(cutter) * self.helix_radius_factor,
+            (self.helix_radius_factor - rule).abs() <= 1e-9,
+            cutter,
+        )
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
