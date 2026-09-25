@@ -1,6 +1,16 @@
+import os
 import re
-d = "/tmp/claude-1001/-home-ricky-personal-repos-rs-cam/61c87c01-64ec-4b8d-a255-a09cc23316a1/scratchpad/"
-src = open(d + "demo/rivmap100_live_0925.toml").read()
+
+# The rivmap100 project is in planning/fixtures/rivmap100/ (moved from a
+# session scratchpad on 2026-09-25). The arms are written to
+# planning/fixtures/rivmap100/plansimgap_arms/, one level below the
+# fixture, so their model paths get a "../" prefix.
+HERE = os.path.dirname(os.path.abspath(__file__))
+FIX = os.path.normpath(os.path.join(HERE, "..", "..", "fixtures", "rivmap100"))
+OUT = os.path.join(FIX, "plansimgap_arms")
+os.makedirs(OUT, exist_ok=True)
+src = open(os.path.join(FIX, "rivmap100_live_0925.toml")).read()
+src = src.replace('path = "rivmap_export/', 'path = "../rivmap_export/')
 # toolpath 1 block: from '[[setups.toolpaths]]\nid = 1' to the next '[[setups.toolpaths]]'
 start = src.index("[[setups.toolpaths]]\nid = 1\n")
 end = src.index("[[setups.toolpaths]]", start + 10)
@@ -34,5 +44,5 @@ for k in ["link_moves", "feed_optimization", "optimize_rapid_order"]:
     all_off = sub(all_off, k, "false")
 arms["all_off"] = all_off
 for name, b in arms.items():
-    open(d + f"plansimgap/{name}.toml", "w").write(head + b + tail)
+    open(os.path.join(OUT, f"{name}.toml"), "w").write(head + b + tail)
 print(list(arms))

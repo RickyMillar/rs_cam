@@ -1,0 +1,115 @@
+version = 1
+current_tab = "export"
+output_dir = "/home/ricky/Downloads/aspiring"
+physical_width_mm = 100.0
+
+[bounds]
+west = "168.510361"
+south = "-44.552803"
+east = "169.032211"
+north = "-44.179742"
+lock_aspect = true
+aspect_w = 1.0
+aspect_h = 1.0
+selected_preset = 0
+
+[generate]
+elevation = true
+natural_water = true
+island_mask = true
+rivers = true
+zoom = 12
+
+[rivers]
+merge_tolerance = 2.0
+min_length = 8.199999809265137
+simplify_tolerance = 0.17000000178813934
+algorithm = "visvalingam"
+view_zoom = 1.0
+pan_x = 0.0
+pan_y = 0.0
+
+[lakes]
+min_length = 100.0
+simplify_tolerance = 10.0
+algorithm = "visvalingam"
+stitch_tolerance = 20.0
+close_tolerance = 16.0
+force_close = false
+colored_loops = true
+
+[holes]
+shape = "circle"
+pattern = "offset_grid"
+size = 16.0
+spacing = 53.0
+density = 0.6700000166893005
+seed = 42
+use_coastal_buffer = true
+coastal_buffer = 50
+
+[mesh]
+land_peak_mm = 12.0
+base_height_mm = 0.0
+max_error = 0.029999999329447746
+max_triangles = 1500000
+max_pixels_per_mm = 10.0
+coastline_weight = 14.5
+terrain_detail = 3.0
+ocean_detail = 1.0
+enclose_mesh = false
+river_through_cut = false
+water_as_holes = false
+flip_x = false
+flip_y = true
+edge_profile = 3
+edge_wall_deg = 38.0
+edge_top_offset_mm = 0.0
+clip_features_to_edge = true
+output_path = "terrain.stl"
+generate_html_preview = false
+
+[mesh.waves]
+offset = 0.8999999761581421
+depth = 2.0
+scale = 11.0
+jitter = 1.0
+distance_fn = 3
+return_type = 3
+seed = 1333
+
+[mesh.view]
+color_scheme = 0
+show_wireframe = false
+show_vertices = false
+show_dxf_overlay = true
+show_lakes_overlay = true
+show_holes_overlay = true
+camera_yaw = -3.391521453857422
+camera_pitch = -0.5982489585876465
+camera_zoom = 1.2871249914169312
+camera_pan_x = -62.015625
+camera_pan_y = 6.328125
+show_rivers_in_traces = true
+show_lakes_in_traces = true
+
+[export]
+elevation_png = false
+water_shapes_png = true
+island_mask_png = false
+river_lines_dxf = false
+river_lines_aligned = true
+river_lines_svg = false
+lake_shapes_dxf = true
+holes_dxf = false
+stl = true
+project_toml = true
+edge_band_dxf = true
+
+[files]
+elevation = "/home/ricky/Downloads/aspiring/elevation.png"
+island = "/home/ricky/Downloads/aspiring/island_mask.png"
+water = "/home/ricky/Downloads/aspiring/natural_water.png"
+natural_water = ""
+rivers = ""
+holes_mask = "/home/ricky/Downloads/aspiring/island_mask.png"
