@@ -49,6 +49,26 @@
 //! The zigzag "stopping cutting" is therefore the fix working, not a
 //! regression: it was never supposed to be cutting.
 //!
+//! **2026-09-25, full-depth entries** (`1e17c3a`, operator ruling
+//! 2026-09-24; bisected). A helix or ramp entry now rapids to the material
+//! top + the entry clearance and takes the whole depth at the helix pitch,
+//! where before it fed a straight plunge down to the last 2 mm. Plunge time
+//! becomes helix time on all three ops:
+//!
+//! | field | was | now |
+//! |---|---:|---:|
+//! | `[Pocket].per_kinematics[Plunge].cutting_runtime_s` | 10.80 | 0.39 |
+//! | `[Pocket].per_kinematics[Helix].cutting_runtime_s` | 36.69 | 64.48 |
+//! | `[Pocket].total_runtime_s` | 180.94 | 199.00 |
+//! | `[Zigzag].per_kinematics[Helix].cutting_runtime_s` | 54.58 | 95.77 |
+//! | `[Profile].total_runtime_s` | 37.45 | 40.41 |
+//!
+//! Removed volume does not move. The zigzag is a `Fresh` op on a rectangle
+//! the pocket already cut, so its entry reads the stock top and its longer
+//! helix is all air (`[Zigzag].air_cut_time_s` = its cutting time, as
+//! before): the honest reading for a `Fresh` op, which does not know the
+//! pocket ran.
+//!
 //! # Why the aggregates and not a trace hash
 //!
 //! A hash over the whole trace would fail on any change at all, including
