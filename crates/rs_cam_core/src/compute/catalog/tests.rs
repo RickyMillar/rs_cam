@@ -641,6 +641,24 @@ fn operation_transform_capabilities_are_explicit() {
         "Adaptive3d must veto unbarriered rapid-order permutation"
     );
 
+    // The 2D adaptive planner admits a long keep-down link only through a
+    // corridor its earlier runs cleared (G-ADAPTORDER, 2026-09-26).
+    let adaptive = OperationType::Adaptive.transform_capabilities();
+    assert!(
+        !adaptive.allows_barriered_rapid_reorder(),
+        "2D Adaptive must veto barriered rapid-order permutation"
+    );
+    assert!(
+        !adaptive.allows_unbarriered_rapid_reorder(),
+        "2D Adaptive must veto unbarriered rapid-order permutation"
+    );
+    // Rest frames every scan segment with its own rapids: no order veto.
+    assert!(
+        OperationType::Rest
+            .transform_capabilities()
+            .allows_barriered_rapid_reorder()
+    );
+
     // Face's veto is narrower than the shared non-link capability: Inlay
     // remains eligible for barriered reordering while retaining no links.
     let inlay = OperationType::Inlay.transform_capabilities();

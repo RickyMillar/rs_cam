@@ -150,6 +150,19 @@ header "Known limit" paragraph and the collision.rs:644-663 doc.
   engagement, Linking samples in material), then veto as Adaptive3d does
   (`.without_rapid_reorder()`) with a sentry modelled on
   `session_rough_keeps_the_planner_order_for_its_entries`. Check Rest too.
+- RESULTS (2026-09-26, on 73af1a2c): the defect is real. Fixture (in
+  `tests/adaptive_keeps_its_planner_order_g_adaptorder.rs`, instrument
+  `measure_reorder_on_against_off`): 120 x 80 pocket, six r 8 islands, 6 mm
+  end mill, Depth/Pass 3 over 6, sim 0.5 mm. Reorder off / on: cut order
+  changed; links over 6 x R (admitted only through a clear corridor) cut
+  61.7 / 349.3 mm^3 in 18 / 122 samples, peak radial 0.30 / 0.64; all 22
+  links: 1056 / 1162 mm^3, 172 / 268 samples; ClearingCut peak radial 0.93 /
+  0.93; straight EntryPlunge in material 0 / 2 (a 1.8 mm^3 sliver at the
+  wall); cycle 263.3 / 253.4 s. The planner order is not link-clean: 20 of
+  22 links cut material by design (a link under 6 x R may cross material).
+  Adaptive split out of the shared catalog row with `.without_rapid_reorder()`.
+  Rest: each scan segment is framed by its own rapids (`ops/rest.rs`
+  `emit_rest_segment`), no keep-down link, no planner stock: not vetoed.
 
 ## RESULTS (2026-09-25, Option A, uncommitted working tree on 07777325)
 

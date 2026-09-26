@@ -586,9 +586,23 @@ impl OperationType {
                 OperationTransformCapabilities::new(false, false, false, true)
             }
             // Trace: multi-pass depth stepping; depth order is the constraint, not continuity.
-            Pocket | Profile | Adaptive | Rest | Zigzag | Waterline | Trace => {
+            // Rest emits each scan segment framed by its own rapids, with no
+            // keep-down link and no planner stock, so any order holds.
+            Pocket | Profile | Rest | Zigzag | Waterline | Trace => {
                 OperationTransformCapabilities::new(false, true, false, false)
             }
+            // The 2D adaptive planner clears one material grid per level, in
+            // the order it emits its runs, and admits a keep-down link longer
+            // than 6 x R only through a corridor that EARLIER runs cleared
+            // (`adaptive/path.rs`, `is_clear_path`). The rapid-order pass
+            // splits only at rapids, so it moves whole keep-down chains and
+            // can put a chain before the run that cleared its link corridor.
+            // Measured (G-ADAPTORDER, 2026-09-26, 120 x 80 pocket with six
+            // islands, 6 mm, 2 levels): the six links over 6 x R cut
+            // 61.7 mm^3 in the planner order and 349.3 mm^3 reordered
+            // (18 -> 122 samples in material, peak radial 0.30 -> 0.64).
+            Adaptive => OperationTransformCapabilities::new(false, true, false, false)
+                .without_rapid_reorder(),
             // Adaptive3d plans every run against its own dexel stock, in the
             // order it emits them. Each entry's rapid floor and helix start,
             // each keep-down proof and each ring's engagement assume that the

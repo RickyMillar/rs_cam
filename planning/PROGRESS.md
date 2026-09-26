@@ -176,7 +176,12 @@ VCarve in softwood since B4; 12.0 mm serves.
    WP5 / WP6 (measure Global against By Area; keep the faster order; if
    By Area is not faster for the same part, stop and report).
 4. A GUI build for the operator after 1-3.
-5. Smaller: does 2D Adaptive have the rapid-reorder defect; Global 36 s
+5. Smaller: does 2D Adaptive have the rapid-reorder defect (ANSWERED
+   2026-09-26: yes. 120 x 80 pocket, six islands, 2 levels: the six keep-down
+   links over 6 x R cut 61.7 mm^3 / 18 samples / peak radial 0.30 in the
+   planner order, 349.3 mm^3 / 122 / 0.64 reordered; cycle 263.3 s -> 253.4 s.
+   Vetoed like Adaptive3d; Rest has no links, not vetoed; sentry
+   `adaptive_keeps_its_planner_order_g_adaptorder`); Global 36 s
    slower than By Area on one region; the sim cuts deeper than the
    planner stamps in 699 cells (safe direction); ring-order entries;
    2.5D helix beside a pocket wall has no containment check;

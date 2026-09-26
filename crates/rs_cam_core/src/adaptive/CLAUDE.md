@@ -16,11 +16,14 @@ The 2D constant-engagement clearing engine. The entry point is
 - The engine clears a 2D region. A 3D mesh clear belongs in `adaptive3d/`.
 - The contour spiral and the trochoid arm share one material grid. Keep the
   grid update in one place when you change either arm.
+- The run order is part of the plan: a long keep-down link crosses only
+  cells earlier runs cleared. The catalog row vetoes the rapid-order pass.
 
 ## Sentries
 
 - `cargo test -p rs_cam_core -q --test adaptive_property_harness`
 - `cargo test -p rs_cam_core -q --test contour_spiral_gcode_validity_phase0`
+- `cargo test -p rs_cam_core -q --test adaptive_keeps_its_planner_order_g_adaptorder`
 
 ## Do not
 
