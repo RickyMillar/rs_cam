@@ -14,6 +14,20 @@
 //! a5916499): 22 fed links, 20 in material, 172 samples, 1056 mm^3, peak
 //! radial 0.90, 32 retracts.
 //!
+//! Mop chain hops (the second arm). The residue mop used to walk tool-down
+//! across cleared gaps of up to 6 R to the next residue INSIDE its `Cut`
+//! (intent `ClearingCut`), so this sentry never saw them. A hop is now a
+//! keep-down link under the same rule: the traverse through cleared cells
+//! to the last pass-step position short of the next material is a fed
+//! `Link` (intent `Linking`), admitted by the same pass-load walk, and a
+//! refused hop ends the chain for a retract and re-entry. The bite that
+//! follows is the mop's ordinary step. Measured at 91bb006a with the hops
+//! labelled by a throw-away probe: 48 hops, every one ending in material,
+//! peak radial 0.493 (within limit + tolerance; 12 over the bare limit),
+//! 255 mm^3 including the bite. After: 14 -> 82 fed links, the 68 added
+//! being the hops; every `Linking` sample, hops included, is held by the
+//! assertion below.
+//!
 //! The fixture is the six-island pocket of G-ADAPTORDER
 //! (`common::adaptive_islands`). The oracle is the session simulation of the
 //! emitted path (dexel stock, sim cell 0.5 mm), not the planner.
@@ -40,6 +54,10 @@ use rs_cam_core::toolpath::{MoveIntent, MoveType};
 /// Retracts (rapids that climb in Z) in the emitted path before the ruling,
 /// measured by the G-ADAPTORDER instrument at a5916499.
 const PRE_RULING_RETRACTS: usize = 32;
+
+/// Fed keep-down links in the emitted path at 91bb006a, before the mop's
+/// chain hops were emitted as links (measured by this file's `measure`).
+const PRE_HOP_FED_LINKS: usize = 14;
 
 /// The planner's material-grid cell: `max(R / 6, tolerance)`
 /// (`adaptive/path.rs`, `adaptive_segments_with_debug`).
@@ -117,8 +135,9 @@ fn measure(session: &rs_cam_core::session::ProjectSession) -> Links {
     out
 }
 
-/// Every link the simulator sees stays within the pass load; the planner
-/// still links keep-down where it can, and retracts where it ploughed.
+/// Every link the simulator sees, mop hops included, stays within the pass
+/// load; the planner still links keep-down where it can, and retracts where
+/// it ploughed.
 #[test]
 fn a_link_feeds_only_within_the_pass_load() {
     let session = adaptive_session(false);
@@ -139,6 +158,12 @@ fn a_link_feeds_only_within_the_pass_load() {
          {tol:.4}",
         links.worst_move,
         links.peak_radial
+    );
+    assert!(
+        links.fed > PRE_HOP_FED_LINKS,
+        "{} fed links, {PRE_HOP_FED_LINKS} before the mop hops became links: a mop hop is \
+         still hidden inside a ClearingCut, out of reach of the load check above",
+        links.fed
     );
     assert!(
         links.retracts > PRE_RULING_RETRACTS,

@@ -19,7 +19,9 @@ The 2D constant-engagement clearing engine. The entry point is
 - The run order is part of the plan: a keep-down link is decided on the
   grid earlier runs left. The catalog row vetoes the rapid-order pass.
 - A keep-down link feeds only within the pass ceiling (target x 1.05, the
-  pass measure) and is stamped; else it retracts (`KeepDownLinks`).
+  pass measure) and is stamped; else it retracts (`KeepDownLinks`). A mop
+  chain hop is such a link, never part of a `Cut`.
+- A `Rapid` retracts Z-only (`Toolpath::final_retract`) before XY travel.
 
 ## Sentries
 
@@ -27,6 +29,7 @@ The 2D constant-engagement clearing engine. The entry point is
 - `cargo test -p rs_cam_core -q --test contour_spiral_gcode_validity_phase0`
 - `cargo test -p rs_cam_core -q --test adaptive_keeps_its_planner_order_g_adaptorder`
 - `cargo test -p rs_cam_core -q --test a_link_feeds_only_within_the_pass_load_g_adaptlinkload`
+- `cargo test -p rs_cam_core -q --test a_rapid_leaves_cut_depth_straight_up_g_adaptrapidlift`
 
 ## Do not
 

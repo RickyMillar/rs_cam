@@ -191,7 +191,22 @@ VCarve in softwood since B4; 12.0 mm serves.
    172 -> 34 samples, 1056 -> 89 mm^3, peak link radial 0.90 -> 0.42
    (limit 0.36 + 0.18 discretisation), retracts 32 -> 40, cycle 263.3 ->
    277.7 s (+5.4 %); sentry
-   `a_link_feeds_only_within_the_pass_load_g_adaptlinkload`); Global 36 s
+   `a_link_feeds_only_within_the_pass_load_g_adaptlinkload`. Its two open
+   points RESOLVED 2026-09-26: (a) mop chain hops (a walk of up to 6 x R
+   across cleared cells inside a `ClearingCut`) measured 48, all ending in
+   material, peak radial 0.49 (inside limit + tolerance, 12 over the bare
+   0.36), 255 mm^3 with the bite; the traverse is now a keep-down `Link`
+   under the same rule, ending one pass step short of the material (60
+   hops, 4 refused and re-entered): fed links 14 -> 82, peak link radial
+   0.42 -> 0.51 (limit 0.54), retracts 40; (b) a `Rapid` left cut depth
+   on a diagonal to safe Z: 38 did, and the live rapid check found 34
+   strikes, every one on such a rapid; it now retracts Z-only first
+   (`Toolpath::final_retract`): 0 strikes, sentry
+   `a_rapid_leaves_cut_depth_straight_up_g_adaptrapidlift`. Cycle 277.7 ->
+   287.8 s (hops 281.7, lift +6.1). New open point: the mop walk's own
+   step heads straight at the nearest residue by a full pass step, unheld
+   by any load rule: 1362 samples over limit + tolerance, peak radial 0.92,
+   17 cm^3 on this fixture); Global 36 s
    slower than By Area on one region; the sim cuts deeper than the
    planner stamps in 699 cells (safe direction); ring-order entries;
    2.5D helix beside a pocket wall has no containment check;

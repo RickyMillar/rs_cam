@@ -1188,6 +1188,9 @@ pub(crate) fn mop_residue_into_segments(
 
         let mut path: Vec<P2> = vec![start];
         let mut cur = start;
+        // True once this patch has emitted a hop link, so its approach
+        // is no longer the last segment.
+        let mut hopped = false;
         grid.clear_circle(cur.x, cur.y, tool_radius);
 
         for _ in 0..MAX_STEPS_PER_PATCH {
@@ -1197,13 +1200,49 @@ pub(crate) fn mop_residue_into_segments(
             let dx = mx - cur.x;
             let dy = my - cur.y;
             let dist = (dx * dx + dy * dy).sqrt();
+            // A chain hop (G-ADAPTLINKLOAD, operator ruling 2026-09-26):
+            // the next material is more than one pass step beyond the
+            // cutter, so the walk first crosses cleared cells. That
+            // traverse is a reposition, not a cut: it ends at the last
+            // pass-step position short of the material (the historical
+            // chain's own positions), is admitted only under the keep-down
+            // link rule, and is emitted as a `Link` so traces and the load
+            // checks see it as one. The bite that follows is the walk's
+            // ordinary step. A refused hop ends the chain; the next patch
+            // retracts or links under the same rule.
+            if link_load.rule == KeepDownLinks::WithinPassLoad
+                && dist > tool_radius + step_len
+                && dist <= max_link_dist
+            {
+                let k = ((dist - tool_radius - step_len) / step_len).ceil();
+                let target = P2::new(
+                    cur.x + k * step_len * dx / dist,
+                    cur.y + k * step_len * dy / dist,
+                );
+                if !feed_link_within_pass_load(grid, machinable_mask, cur, target, link_load) {
+                    break;
+                }
+                if path.len() >= 2 {
+                    segments.push(AdaptiveSegment::Cut(std::mem::replace(
+                        &mut path,
+                        vec![target],
+                    )));
+                } else {
+                    path = vec![target];
+                }
+                segments.push(AdaptiveSegment::Link(target));
+                hopped = true;
+                cur = target;
+                continue;
+            }
             // Chain across short cleared gaps: stay tool-down and
             // walk to the next material as part of the same Cut,
             // rather than ending this Cut and starting a new one
             // with its own approach. Each Rapid costs a retract +
             // plunge cycle, which dominates over the cheap overlap
-            // of walking through cleared cells.
-            if dist > tool_radius * 6.0 {
+            // of walking through cleared cells. (Adaptive3d slices,
+            // `RetractedByCaller`, keep this historical chain.)
+            if dist > max_link_dist {
                 break;
             }
             // Refuse the chain hop if it would cross outside the
@@ -1239,6 +1278,14 @@ pub(crate) fn mop_residue_into_segments(
 
         if path.len() >= 2 {
             segments.push(AdaptiveSegment::Cut(path));
+            last_pos = Some(cur);
+        } else if hopped {
+            last_pos = Some(cur);
+        } else if link_load.rule == KeepDownLinks::WithinPassLoad
+            && matches!(segments.last(), Some(AdaptiveSegment::Link(_)))
+        {
+            // The approach link is stamped on the grid: keep it, so the
+            // planner stock stays the emitted path.
             last_pos = Some(cur);
         } else {
             segments.pop();
@@ -1694,6 +1741,10 @@ pub(super) fn segments_to_toolpath(
                 });
             }
             AdaptiveSegment::Rapid(entry) => {
+                // Retract straight up before any XY travel: a rapid that
+                // left cut depth on a diagonal dragged the cutter through
+                // the walls and islands standing beside it.
+                tp.final_retract(params.safe_z);
                 tp.rapid_to_with_intent(
                     crate::geo::P3::new(entry.x, entry.y, params.safe_z),
                     crate::toolpath::MoveIntent::Linking,
@@ -1800,7 +1851,8 @@ impl crate::compute::spans::RuntimeLabel for AdaptiveRuntimeAnnotation {
 )]
 mod link_load_tests {
     //! G-ADAPTLINKLOAD: a keep-down link is a pass-load cut or nothing.
-    use super::{LinkLoad, feed_link_within_pass_load};
+    use super::{AdaptiveSegment, LinkLoad, feed_link_within_pass_load, mop_residue_into_segments};
+    use crate::adaptive::search::compute_engagement;
     use crate::adaptive::{KeepDownLinks, MaterialGrid};
     use crate::geo::P2;
     use crate::polygon::{Polygon2, offset_polygon};
@@ -1882,6 +1934,76 @@ mod link_load_tests {
         assert!(
             !grid.is_material(0.0, 4.0),
             "the admitted link must be stamped on the grid"
+        );
+    }
+
+    /// A mop chain hop is a `Link`, never part of a `Cut` (G-ADAPTLINKLOAD,
+    /// operator ruling 2026-09-26). Two 2 mm residue spots stand 10 mm
+    /// apart on a cleared floor; the mop walks the first and must reach the
+    /// second. Replaying the emitted segments on the starting grid, every
+    /// `Cut` step lands on material (it is a cut), and every `Link` ends
+    /// with the cutter disc on cleared cells only (it is a reposition, not
+    /// a cut). The historical chain walked the 10 mm gap inside the `Cut`.
+    #[test]
+    fn a_mop_hop_is_a_link_not_a_cut() {
+        let (mut grid, mask, load) = scene();
+        let mut all = Vec::new();
+        for i in -15..=15 {
+            for j in -15..=15 {
+                grid.clear_circle_logged(f64::from(i) * 2.0, f64::from(j) * 2.0, R, &mut all);
+            }
+        }
+        let spot = |x0: f64, i: usize| {
+            let col = i % grid.cols;
+            let row = i / grid.cols;
+            let x = grid.origin_x + col as f64 * grid.cell_size;
+            let y = grid.origin_y + row as f64 * grid.cell_size;
+            (x0..=x0 + 2.0).contains(&x) && (0.0..=2.0).contains(&y)
+        };
+        let residue: Vec<usize> = all
+            .iter()
+            .copied()
+            .filter(|&i| spot(-12.0, i) || spot(0.0, i))
+            .collect();
+        grid.restore_cleared(&residue);
+        let start = grid.clone();
+
+        let segments = mop_residue_into_segments(&mut grid, &mask, R, load.step_len, None, &load);
+
+        let mut replay = start;
+        let mut links = 0;
+        for seg in &segments {
+            match seg {
+                AdaptiveSegment::Cut(path) => {
+                    for (k, p) in path.iter().enumerate() {
+                        if k > 0 {
+                            assert!(
+                                compute_engagement(&replay, p.x, p.y, R) > 0.0,
+                                "a Cut step to ({:.2}, {:.2}) lands on no material: a hop \
+                                 inside a Cut",
+                                p.x,
+                                p.y
+                            );
+                        }
+                        replay.clear_circle(p.x, p.y, R);
+                    }
+                }
+                AdaptiveSegment::Link(p) => {
+                    links += 1;
+                    assert_eq!(
+                        compute_engagement(&replay, p.x, p.y, R),
+                        0.0,
+                        "a hop Link must end short of the material"
+                    );
+                }
+                AdaptiveSegment::Rapid(p) => replay.clear_circle(p.x, p.y, R),
+                AdaptiveSegment::Marker(_) => {}
+            }
+        }
+        assert!(links >= 1, "the 10 mm gap must be crossed by a Link");
+        assert!(
+            !replay.is_material(-11.0, 1.0) && !replay.is_material(1.0, 1.0),
+            "both spots are mopped"
         );
     }
 }
