@@ -13,7 +13,8 @@
 //! `cargo test -p rs_cam_core --test p1_headless_ab_wanaka -- --ignored --nocapture`
 //!
 //! The one hard assertion is the P1 safety gate: rapid collisions must
-//! not exceed the pre-P1 baseline (4 on the full chain, 2026-07-07).
+//! not exceed the ceiling (4 on the pre-P1 chain 2026-07-07; 0 since
+//! G-PHANTOMSTAMP, 2026-09-26).
 
 #![allow(
     clippy::unwrap_used,
@@ -27,9 +28,11 @@ use std::sync::atomic::AtomicBool;
 
 use rs_cam_core::session::{ProjectSession, SimulationOptions};
 
-/// Baseline rapid-collision count measured on the pre-P1 chain
-/// (P0 probe, 2026-07-07). New collisions above this fail the gate.
-const BASELINE_RAPID_COLLISIONS: usize = 4;
+/// Ceiling on the chain's rapid collisions. 4 on the pre-P1 chain (P0
+/// probe, 2026-07-07); lowered to the measured 0 after G-PECKSPLIT (Back
+/// Rough) and G-PHANTOMSTAMP (3D Rough 6) removed the last two
+/// (2026-09-26, release, 0.5 mm). New collisions above this fail the gate.
+const BASELINE_RAPID_COLLISIONS: usize = 0;
 
 /// The pinned wanaka play-file this A/B measures against.
 ///
@@ -172,8 +175,13 @@ fn p1_headless_ab_full_chain_intent_decomposition() {
     }
 
     // P1 safety gate: the descent/link work must not add collisions.
+    // (`saturating_sub`, not `<=`: at a ceiling of 0 clippy reads `<=` as
+    // an absurd comparison.)
     assert!(
-        sim.rapid_collisions.len() <= BASELINE_RAPID_COLLISIONS,
+        sim.rapid_collisions
+            .len()
+            .saturating_sub(BASELINE_RAPID_COLLISIONS)
+            == 0,
         "P1 SAFETY GATE FAILED: {} rapid collisions vs baseline {}",
         sim.rapid_collisions.len(),
         BASELINE_RAPID_COLLISIONS

@@ -83,7 +83,7 @@ use std::time::Instant;
 use tracing::{debug, info};
 
 use super::clearing::{
-    AreaMask, ClearZLevelContext, MaterialRegion, clear_z_level_adaptive,
+    AreaMask, ClearZLevelContext, MaterialRegion, PlannerCursor, clear_z_level_adaptive,
     clear_z_level_agent_2d_slice, clear_z_level_contour_parallel, detect_material_regions_labeled,
     waterline_cleanup,
 };
@@ -199,8 +199,10 @@ fn emit_peck_plunge(tp: &mut Toolpath, entry: &P3, start_z: f64, params: &Adapti
 #[derive(Debug, Clone, Copy)]
 pub(super) struct StayDownProof {
     /// The planner tool position the corridor starts at. The emitter uses
-    /// the proof only when its own previous position has this XY; an entry
-    /// that coalescing removed leaves a proof for a different corridor.
+    /// the proof only when its own previous position has this XY. (Before
+    /// G-PHANTOMSTAMP an entry that coalescing removed had moved the planner
+    /// position, which left a proof for a different corridor; the check
+    /// stays as the guard.)
     pub(super) from: P3,
     /// The highest conservative stock top on the swept tool disc from
     /// `from` to the entry, both ends included. A link above this Z plus
@@ -381,7 +383,7 @@ fn clear_planned_level(
     z_level: f64,
     slot: LevelSlot<'_>,
     segments: &mut Vec<Adaptive3dSegment>,
-    last_pos: &mut Option<P3>,
+    cursor: &mut PlannerCursor,
     planner_eng: &mut Vec<(P3, f64)>,
     cancel: &dyn CancelCheck,
 ) -> Result<(), Cancelled> {
@@ -440,7 +442,7 @@ fn clear_planned_level(
                 surface_hm,
                 z_level,
                 segments,
-                last_pos,
+                cursor,
                 region,
                 cancel,
             )?;
@@ -453,7 +455,7 @@ fn clear_planned_level(
                 surface_hm,
                 z_level,
                 segments,
-                last_pos,
+                cursor,
                 region,
                 cancel,
             )?;
@@ -465,7 +467,7 @@ fn clear_planned_level(
                 surface_hm,
                 z_level,
                 segments,
-                last_pos,
+                cursor,
                 planner_eng,
                 region,
                 Some(level_event),
@@ -936,7 +938,7 @@ pub(super) fn adaptive_3d_segments(
     // `(cut_point, α/2π)`, accumulated across all spiral slices and
     // returned for the feed modulator's positional lookup.
     let mut planner_eng: Vec<(P3, f64)> = Vec::new();
-    let mut last_pos: Option<P3> = None;
+    let mut cursor = PlannerCursor::default();
     let mut area_regions: Option<AreaRegionMap> = None;
 
     match params.linking.region_ordering {
@@ -1021,7 +1023,7 @@ pub(super) fn adaptive_3d_segments(
                             region: Some(mask),
                         },
                         &mut segments,
-                        &mut last_pos,
+                        &mut cursor,
                         &mut planner_eng,
                         cancel,
                     )?;
@@ -1056,7 +1058,7 @@ pub(super) fn adaptive_3d_segments(
                     params.geometry.min_cutting_radius,
                     params.depth.stock_to_leave,
                     &mut segments,
-                    &mut last_pos,
+                    &mut cursor,
                     debug_ctx,
                     cancel,
                 )?;
@@ -1076,7 +1078,7 @@ pub(super) fn adaptive_3d_segments(
                         region: None,
                     },
                     &mut segments,
-                    &mut last_pos,
+                    &mut cursor,
                     &mut planner_eng,
                     cancel,
                 )?;
@@ -1105,7 +1107,7 @@ pub(super) fn adaptive_3d_segments(
                     params.geometry.min_cutting_radius,
                     params.depth.stock_to_leave,
                     &mut segments,
-                    &mut last_pos,
+                    &mut cursor,
                     debug_ctx,
                     cancel,
                 )?;
@@ -1615,7 +1617,8 @@ pub(super) fn segments_to_toolpath(
             Adaptive3dSegment::Link(target) => {
                 // Gouge guard: a link is a feed at depth, so it holds the leave
                 // as a cut does (`drape_path_to_leave`). The planner mirror in
-                // `clearing.rs::stamp_emitted_segment` drapes it the same way.
+                // `clearing.rs::stamp_emitted_segment` drapes it the same way,
+                // from the same tool position (G-PHANTOMSTAMP).
                 let from = tp.moves.last().map_or(*target, |m| m.target);
                 let draped = drape_path_to_leave(
                     &[from, *target],
@@ -1634,6 +1637,9 @@ pub(super) fn segments_to_toolpath(
                 }
             }
             Adaptive3dSegment::Cut(path) => {
+                // G-PHANTOMSTAMP: no move for a cut of fewer than two points;
+                // the planner mirror (`clearing.rs::stamp_emitted_segment`)
+                // stamps nothing for it and does not move its cursor.
                 if path.len() < 2 {
                     continue;
                 }
@@ -1658,6 +1664,9 @@ pub(super) fn segments_to_toolpath(
                 let simplified =
                     simplify_path_3d(&draped, params.geometry.cut_simplify_tolerance());
                 let blended = blend_corners_3d(&simplified, params.geometry.min_cutting_radius);
+                // G-PHANTOMSTAMP: the first feed runs from where the tool
+                // stands to `blended[1]`; the planner mirror stamps the same
+                // polyline from its `PlannerCursor::tool_pos`.
                 for pt in blended.iter().skip(1) {
                     tp.feed_to_with_intent(
                         *pt,

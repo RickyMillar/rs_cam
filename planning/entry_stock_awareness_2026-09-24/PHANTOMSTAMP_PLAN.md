@@ -1,7 +1,8 @@
 # G-PHANTOMSTAMP — the adaptive3d planner stamps entries it later drops (2026-09-25)
 
-Status: root cause found by reading code at b8983f5d (no cargo run); fix
-chosen (A, stamp on commit), not yet implemented.
+Status: root cause found by reading code at b8983f5d; fix A (stamp on
+commit) implemented 2026-09-26 in the working tree (uncommitted). See
+RESULTS at the end.
 
 ## The strike (true; triaged at 0.5 / 0.25 / 0.125 mm cells)
 
@@ -102,3 +103,43 @@ keeps its bound; re-run `agent_search_coverage`, the F-029/F-031 heavy tests,
 3. Pre-fix instrumentation check: log each coalesced entry's (x, y, z); at
    level 3 of 3D Rough 6 expect one within ~2.65 mm of (90.0, 76.0), ~0.75 mm
    from B, z ≈ 20.57.
+
+## RESULTS (2026-09-26, fix A landed in the working tree, not committed)
+
+Measured only; each line names its command or test.
+
+- Pre-fix instrumentation (§Sentries 3; temporary `eprintln!` in
+  `coalesce_redundant_entries`, removed): Wanaka "3D Rough 6" level 3
+  (Z 19.800) coalesced 77 entries; one at (89.245, 77.427), raw z 19.800
+  (the level Z; the draped z the column was stamped to was not logged),
+  1.614 mm from (90.0, 76.0) and 1.500 mm from B (89.640, 78.874).
+- Wanaka sentry `adaptive3d_wanaka_rough6_no_phantom_rapid_g_phantomstamp`
+  (release, `--ignored`): pre-fix RED, rapids at the strike XY
+  `[(1405, 30.0), (1406, 21.070)]` below 22.9. Post-fix green: no rapid
+  ends at the strike XY (the entry is no longer emitted there); "3D Rough
+  6" rapid_collisions at 0.25 mm = 0 (0 in the chain up to it). 420 s.
+- `p1_headless_ab_wanaka` (release, 0.5 mm): rapid_collisions = 0 (was 1,
+  move 1406). `BASELINE_RAPID_COLLISIONS` lowered 4 -> 0. 3D Rough 6
+  total 278.9 s (cutting 152.7, entry 25.1, linking 17.4, rapid 83.8).
+- Boss sentry `adaptive3d_planner_never_ahead_of_emitted_path`: pre-fix
+  RED (pre-fix `clearing.rs`/`path.rs` put back): plan stopped at Z 9.8,
+  1 cell 1.219 mm below the replay at (-16.50, -25.50); whole plan 2
+  cells, 0.252 mm at (20.00, -20.50); 94 entries coalesced. Post-fix: 0
+  cells at every stop (Z 12.4 / 9.8 / 7.2 / 4.6 / whole), 87 entries
+  replaced unstamped. Its rapid half (0 collisions at 0.25 / 0.125 mm) was
+  green before and after.
+- `adaptive3d_emission_byte_parity`: only `agent_search` moved (358 -> 352
+  moves; retracts 51 -> 45, linking rapids 32 -> 20, 1500 mm/min feeds
+  198 -> 210). First change at move 35: a retract + rapid + plunge became a
+  keep-down feed link. Re-blessed. `contour_parallel`, `adaptive`,
+  `contour_spiral` unchanged.
+- rivmap100 (`arm.sh`, 0.5 mm, dpp 8; its 3D Rough is ContourParallel, so
+  only the cut/link mirror changes reach it): Global 839 s (moves 9279,
+  entry 417, rapid 98) and By Area 789 s (moves 8707, entry 389, rapid 85),
+  identical to master.
+- rivmap100 with `--set 1.clearing_strategy=agent_search` (the arm the fix
+  changes), master -> fix: Global 920 -> 980 s (+6.5 %; moves 8721 ->
+  9343, entry 582 -> 616, rapid 232 -> 222, vol 42883 -> 43287 mm³); By
+  Area 862 -> 913 s (+5.9 %; moves 8048 -> 8551, entry 547 -> 571, rapid
+  221 -> 209, vol 42144 -> 42594 mm³). Not the ±1 % the plan expected: the
+  planner now plans the material the phantom columns hid (+400-450 mm³).

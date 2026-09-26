@@ -2275,11 +2275,12 @@ fn planner_sim_parity_cut_only_contour_parallel_hemisphere() {
 /// straddling a subsegment boundary see compound `(1-f₁)(1-f₂)`
 /// blends that under-saturate versus the single whole-segment `f`
 /// (DEXEL_Z_ONLY_INVESTIGATION.md §6.F / §8 Step 4 predicts exactly
-/// this); (b) `Cut` segments whose first emitted feed sweeps from the
-/// emitter's true tool position rather than from the planner's raw
-/// `last_pos` (documented as NOT FIXED in the drape-mirror commit).
-/// Neither is directional, which is why the skew bar can be tight
-/// while the count bar cannot.
+/// this); (b) was: `Cut` segments whose first emitted feed sweeps from
+/// the emitter's true tool position rather than from the planner's raw
+/// `last_pos`. G-PHANTOMSTAMP (2026-09-25) fixed (b): the mirror now
+/// stamps the first feed from `PlannerCursor::tool_pos`. (a) is not
+/// directional, which is why the skew bar can be tight while the count
+/// bar cannot.
 ///
 /// W5B-F1, 2026-08-21: (b) was the standing candidate for the
 /// boundary-ring over-claim and it is **not** the cause — the

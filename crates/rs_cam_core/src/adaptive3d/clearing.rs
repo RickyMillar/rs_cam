@@ -558,13 +558,28 @@ impl<'a> ClearZLevelContext<'a> {
     }
 }
 
+/// Where the planner stands between two segments.
+///
+/// G-PHANTOMSTAMP: two positions, because the emitter moves the tool to a
+/// point the raw segment does not name. `last_pos` is the raw end of the
+/// last stamped segment: the keep-down proof's `from`, the link gates and
+/// the region order read it, as before. `tool_pos` is where
+/// `segments_to_toolpath` leaves the tool after that same segment (a draped
+/// entry, the last blended cut point, the draped link end); the `Cut` and
+/// `Link` mirrors stamp their first feed from it, as the emitter feeds it.
+#[derive(Debug, Clone, Copy, Default)]
+pub(super) struct PlannerCursor {
+    pub(super) last_pos: Option<P3>,
+    pub(super) tool_pos: Option<P3>,
+}
+
 /// Mirror in the planner's `material_stock` the swept-tube stamps that
 /// the simulator will produce when it replays the toolpath emitted by
-/// `segments_to_toolpath` for `segment`.
+/// `segments_to_toolpath` for `segment`, and return where the emitter
+/// leaves the tool after it (`None`: the emitter emits no move for it).
 ///
-/// Call this AFTER updating `last_pos` for the previous segment but
-/// BEFORE updating it for `segment` (we need the pre-segment XY/Z to
-/// know where a `Link` feed starts from).
+/// `tool_pos` is where the emitter's tool stands BEFORE `segment`
+/// ([`PlannerCursor::tool_pos`]): a `Link` and a `Cut` feed from it.
 ///
 /// `safe_z` / `tolerance` / `min_cutting_radius` match
 /// `Adaptive3dParams`. The invariant this function exists to hold is
@@ -590,36 +605,46 @@ fn stamp_emitted_segment(
     material_stock: &mut TriDexelStock,
     lut: &RadialProfileLUT,
     tool_radius: f64,
-    last_pos: &Option<P3>,
+    tool_pos: Option<P3>,
     segment: &Adaptive3dSegment,
     safe_z: f64,
     tolerance: f64,
     min_cutting_radius: f64,
     drape: &StampDrape<'_>,
-) {
+) -> Option<P3> {
     match segment {
         Adaptive3dSegment::Cut(path) => {
+            // G-PHANTOMSTAMP: the emitter skips a cut of fewer than two
+            // points (`if path.len() < 2 { continue; }`), so its mirror
+            // stamps nothing and the tool does not move.
+            if path.len() < 2 {
+                return None;
+            }
             // Mirror segments_to_toolpath's path transformation —
             // drape_path_to_leave, then simplify_path_3d (RDP), then
             // blend_corners_3d — so the planner's swept stamps cover
             // the SAME tubes the simulator will stamp from the emitted
             // feeds. Order matters: the emitter drapes BEFORE
             // simplifying, so the RDP sees the densified, lifted path.
-            if path.len() >= 2 {
-                let draped = drape_path_to_leave(
-                    path,
-                    drape.mesh,
-                    drape.index,
-                    drape.cutter,
-                    drape.stock_to_leave,
-                    drape.cutter.radius(),
-                );
-                let simplified = simplify_path_3d(&draped, tolerance);
-                let blended = blend_corners_3d(&simplified, min_cutting_radius);
-                stamp_along_path(material_stock, lut, tool_radius, &blended);
-            } else {
-                stamp_along_path(material_stock, lut, tool_radius, path);
-            }
+            let draped = drape_path_to_leave(
+                path,
+                drape.mesh,
+                drape.index,
+                drape.cutter,
+                drape.stock_to_leave,
+                drape.cutter.radius(),
+            );
+            let simplified = simplify_path_3d(&draped, tolerance);
+            let blended = blend_corners_3d(&simplified, min_cutting_radius);
+            // G-PHANTOMSTAMP: the emitter feeds `blended.iter().skip(1)`
+            // from where the tool stands, not from `blended[0]`. Stamp the
+            // same polyline: the tool position, then `blended[1..]`. With
+            // no tool position (nothing emitted yet) `blended[0]` stands in.
+            let mut fed: Vec<P3> = Vec::with_capacity(blended.len());
+            fed.extend(tool_pos.or_else(|| blended.first().copied()));
+            fed.extend(blended.iter().skip(1).copied());
+            stamp_along_path(material_stock, lut, tool_radius, &fed);
+            blended.last().copied()
         }
         Adaptive3dSegment::Rapid(entry) => {
             // Toolpath: rapid lift to safe_z, rapid XY at safe_z,
@@ -647,6 +672,7 @@ fn stamp_emitted_segment(
                 entry,
                 StockCutDirection::FromTop,
             );
+            Some(emitted_entry_end(entry, safe_z))
         }
         Adaptive3dSegment::RapidWithFloor {
             entry,
@@ -682,23 +708,39 @@ fn stamp_emitted_segment(
                 *entry,
                 StockCutDirection::FromTop,
             );
+            Some(emitted_entry_end(*entry, descent_floor))
         }
         Adaptive3dSegment::Link(target) => {
-            // Toolpath: feed from last_pos to target, draped to hold the
-            // leave as the emitter drapes it.
-            if let Some(prev) = last_pos {
-                let draped = drape_path_to_leave(
-                    &[*prev, *target],
-                    drape.mesh,
-                    drape.index,
-                    drape.cutter,
-                    drape.stock_to_leave,
-                    drape.cutter.radius(),
-                );
-                stamp_along_path(material_stock, lut, tool_radius, &draped);
-            }
+            // Toolpath: feed from the tool position to target, draped to
+            // hold the leave as the emitter drapes it. G-PHANTOMSTAMP: the
+            // emitter's `from` is its tool position (`tp.moves.last()`),
+            // falling back to the target itself when nothing was emitted.
+            let from = tool_pos.unwrap_or(*target);
+            let draped = drape_path_to_leave(
+                &[from, *target],
+                drape.mesh,
+                drape.index,
+                drape.cutter,
+                drape.stock_to_leave,
+                drape.cutter.radius(),
+            );
+            stamp_along_path(material_stock, lut, tool_radius, &draped);
+            draped.last().copied()
         }
-        Adaptive3dSegment::Marker(_) => {}
+        Adaptive3dSegment::Marker(_) => None,
+    }
+}
+
+/// Where `segments_to_toolpath` leaves the tool after an entry: at the
+/// draped `entry` when the style emitter ran (`descent_floor > entry.z +
+/// 1e-6`: the peck, helix and ramp all end with a feed to `entry`), else at
+/// the descent floor over the entry XY, where the rapid (or the keep-down
+/// link) stopped.
+fn emitted_entry_end(entry: P3, descent_floor: f64) -> P3 {
+    if descent_floor > entry.z + 1e-6 {
+        entry
+    } else {
+        P3::new(entry.x, entry.y, descent_floor)
     }
 }
 
@@ -850,48 +892,82 @@ fn push_segment_with_stamp(
     material_stock: &mut TriDexelStock,
     lut: &RadialProfileLUT,
     tool_radius: f64,
-    last_pos: &mut Option<P3>,
+    cursor: &mut PlannerCursor,
     segment: Adaptive3dSegment,
     safe_z: f64,
     tolerance: f64,
     min_cutting_radius: f64,
     drape: &StampDrape<'_>,
 ) {
+    let segment = stamp_and_advance(
+        material_stock,
+        lut,
+        tool_radius,
+        cursor,
+        segment,
+        safe_z,
+        tolerance,
+        min_cutting_radius,
+        drape,
+    );
+    segments.push(segment);
+}
+
+/// Plan an entry (its floor and keep-down proof), stamp the segment into the
+/// planner stock and move the cursor past it. Returns the segment to emit.
+#[allow(clippy::too_many_arguments)]
+fn stamp_and_advance(
+    material_stock: &mut TriDexelStock,
+    lut: &RadialProfileLUT,
+    tool_radius: f64,
+    cursor: &mut PlannerCursor,
+    segment: Adaptive3dSegment,
+    safe_z: f64,
+    tolerance: f64,
+    min_cutting_radius: f64,
+    drape: &StampDrape<'_>,
+) -> Adaptive3dSegment {
     // Every entry the planner emits passes this door, so every entry gets
     // its floor and its keep-down proof from the same stock read.
     let segment = match segment {
         Adaptive3dSegment::Rapid(entry) | Adaptive3dSegment::RapidWithFloor { entry, .. } => {
-            plan_entry(material_stock, tool_radius, *last_pos, entry, drape)
+            plan_entry(material_stock, tool_radius, cursor.last_pos, entry, drape)
         }
         other => other,
     };
-    stamp_emitted_segment(
+    let emitted_end = stamp_emitted_segment(
         material_stock,
         lut,
         tool_radius,
-        last_pos,
+        cursor.tool_pos,
         &segment,
         safe_z,
         tolerance,
         min_cutting_radius,
         drape,
     );
-    // Update last_pos based on segment's terminal XYZ before pushing.
+    // Move the cursor to the segment's terminal XYZ. G-PHANTOMSTAMP: a cut
+    // the emitter skips (fewer than two points) moves neither position.
     match &segment {
         Adaptive3dSegment::Cut(path) => {
-            if let Some(p) = path.last() {
-                *last_pos = Some(*p);
+            if path.len() >= 2
+                && let Some(p) = path.last()
+            {
+                cursor.last_pos = Some(*p);
             }
         }
         Adaptive3dSegment::Rapid(entry) | Adaptive3dSegment::RapidWithFloor { entry, .. } => {
-            *last_pos = Some(*entry);
+            cursor.last_pos = Some(*entry);
         }
         Adaptive3dSegment::Link(target) => {
-            *last_pos = Some(*target);
+            cursor.last_pos = Some(*target);
         }
         Adaptive3dSegment::Marker(_) => {}
     }
-    segments.push(segment);
+    if emitted_end.is_some() {
+        cursor.tool_pos = emitted_end;
+    }
+    segment
 }
 
 /// Clear a Z level using EDT-based contour-parallel strategy.
@@ -913,7 +989,7 @@ pub(super) fn clear_z_level_contour_parallel(
     surface_hm: &SurfaceHeightmap,
     z_level: f64,
     segments: &mut Vec<Adaptive3dSegment>,
-    last_pos: &mut Option<P3>,
+    cursor: &mut PlannerCursor,
     area_mask: Option<&AreaMask>,
     cancel: &dyn CancelCheck,
 ) -> Result<(), Cancelled> {
@@ -1073,7 +1149,8 @@ pub(super) fn clear_z_level_contour_parallel(
                 // uncut terrain between rings at different Z heights
                 // (F-5 in planning/adaptive_review_2026-04.md). The gate
                 // matches the one in clear_z_level (the AgentSearch path).
-                let should_link = last_pos
+                let should_link = cursor
+                    .last_pos
                     .is_some_and(|lp| side_link_ok(ctx, material_stock, surface_hm, lp, *first));
                 let entry_seg = if should_link {
                     Adaptive3dSegment::Link(*first)
@@ -1085,7 +1162,7 @@ pub(super) fn clear_z_level_contour_parallel(
                     material_stock,
                     ctx.lut,
                     ctx.tool_radius,
-                    last_pos,
+                    cursor,
                     entry_seg,
                     ctx.safe_z,
                     ctx.cut_tolerance,
@@ -1097,7 +1174,7 @@ pub(super) fn clear_z_level_contour_parallel(
                     material_stock,
                     ctx.lut,
                     ctx.tool_radius,
-                    last_pos,
+                    cursor,
                     Adaptive3dSegment::Cut(path_3d),
                     ctx.safe_z,
                     ctx.cut_tolerance,
@@ -1214,14 +1291,15 @@ pub(super) fn clear_z_level_contour_parallel(
             // Start the run at the end nearer to the tool, so the link gate
             // below sees the short hop from the run before.
             let mut path = run.clone();
-            if let (Some(lp), Some(a), Some(b)) = (*last_pos, path.first(), path.last()) {
+            if let (Some(lp), Some(a), Some(b)) = (cursor.last_pos, path.first(), path.last()) {
                 let d = |p: &P3| (p.x - lp.x).powi(2) + (p.y - lp.y).powi(2);
                 if d(b) < d(a) {
                     path.reverse();
                 }
             }
             if let Some(first) = path.first() {
-                let should_link = last_pos
+                let should_link = cursor
+                    .last_pos
                     .is_some_and(|lp| side_link_ok(ctx, material_stock, surface_hm, lp, *first));
                 let entry_seg = if should_link {
                     Adaptive3dSegment::Link(*first)
@@ -1233,7 +1311,7 @@ pub(super) fn clear_z_level_contour_parallel(
                     material_stock,
                     ctx.lut,
                     ctx.tool_radius,
-                    last_pos,
+                    cursor,
                     entry_seg,
                     ctx.safe_z,
                     ctx.cut_tolerance,
@@ -1246,7 +1324,7 @@ pub(super) fn clear_z_level_contour_parallel(
                         material_stock,
                         ctx.lut,
                         ctx.tool_radius,
-                        last_pos,
+                        cursor,
                         Adaptive3dSegment::Cut(path.clone()),
                         ctx.safe_z,
                         ctx.cut_tolerance,
@@ -1261,7 +1339,7 @@ pub(super) fn clear_z_level_contour_parallel(
                         material_stock,
                         ctx.lut,
                         ctx.tool_radius,
-                        last_pos,
+                        cursor,
                         Adaptive3dSegment::Cut(vec![*first, end]),
                         ctx.safe_z,
                         ctx.cut_tolerance,
@@ -1289,7 +1367,7 @@ pub(super) fn clear_z_level_adaptive(
     surface_hm: &SurfaceHeightmap,
     z_level: f64,
     segments: &mut Vec<Adaptive3dSegment>,
-    last_pos: &mut Option<P3>,
+    cursor: &mut PlannerCursor,
     area_mask: Option<&AreaMask>,
     cancel: &dyn CancelCheck,
 ) -> Result<(), Cancelled> {
@@ -1407,7 +1485,8 @@ pub(super) fn clear_z_level_adaptive(
             // Entry (link or rapid) + cut segment. Matches the gate in
             // clear_z_level_contour_parallel — see F-5 rationale there.
             if let Some(first) = path_3d.first() {
-                let should_link = last_pos
+                let should_link = cursor
+                    .last_pos
                     .is_some_and(|lp| side_link_ok(ctx, material_stock, surface_hm, lp, *first));
                 let entry_seg = if should_link {
                     Adaptive3dSegment::Link(*first)
@@ -1419,7 +1498,7 @@ pub(super) fn clear_z_level_adaptive(
                     material_stock,
                     ctx.lut,
                     ctx.tool_radius,
-                    last_pos,
+                    cursor,
                     entry_seg,
                     ctx.safe_z,
                     ctx.cut_tolerance,
@@ -1431,7 +1510,7 @@ pub(super) fn clear_z_level_adaptive(
                     material_stock,
                     ctx.lut,
                     ctx.tool_radius,
-                    last_pos,
+                    cursor,
                     Adaptive3dSegment::Cut(path_3d),
                     ctx.safe_z,
                     ctx.cut_tolerance,
@@ -1470,7 +1549,7 @@ pub(super) fn waterline_cleanup(
     min_cutting_radius: f64,
     stock_to_leave: f64,
     segments: &mut Vec<Adaptive3dSegment>,
-    last_pos: &mut Option<P3>,
+    cursor: &mut PlannerCursor,
     debug_ctx: Option<&ToolpathDebugContext>,
     cancel: &dyn CancelCheck,
 ) -> Result<(), Cancelled> {
@@ -1534,7 +1613,7 @@ pub(super) fn waterline_cleanup(
             material_stock,
             lut,
             tool_radius,
-            last_pos,
+            cursor,
             Adaptive3dSegment::Rapid(contour[0]),
             safe_z,
             tolerance,
@@ -1564,7 +1643,7 @@ pub(super) fn waterline_cleanup(
             material_stock,
             lut,
             tool_radius,
-            last_pos,
+            cursor,
             Adaptive3dSegment::Cut(cleanup_path),
             safe_z,
             tolerance,
@@ -1894,13 +1973,119 @@ fn detect_and_order_regions(
 /// separate `&mut` parameters, which is what made it need
 /// `clippy::too_many_arguments`.
 struct LevelEmission<'a> {
-    segments: &'a mut Vec<Adaptive3dSegment>,
-    material_stock: &'a mut TriDexelStock,
-    last_pos: &'a mut Option<P3>,
+    sink: LevelSink<'a>,
     planner_eng: &'a mut Vec<(P3, f64)>,
     level_metrics: &'a mut ZLevelPlanMetrics,
     cut_count: &'a mut u32,
     dropped_short_regions: &'a mut usize,
+}
+
+/// The one door every segment of an AgentSearch / ContourSpiral level goes
+/// through into the plan and the planner stock.
+///
+/// G-PHANTOMSTAMP: with the F-038 gate on (`min_region_cut_length_mm > 0`)
+/// an entry is stamped on COMMIT, not on push. The sink pushes an entry
+/// unplanned and holds it pending. The next cut or link commits it: the
+/// sink plans it (`plan_entry`), stamps it and moves the cursor, then
+/// stamps the cut. The next entry instead REPLACES it: the pending entry
+/// leaves the plan, never stamped, and the cursor does not move. So the
+/// planner stock holds exactly the segments the emitter will emit, in
+/// order. (Before, every entry was stamped at push and the level-end
+/// coalescing pass deleted some of them afterwards; their columns stayed in
+/// the planner stock, and a later entry's rapid floor read that phantom
+/// cut — a rapid into stock on Wanaka "3D Rough 6".) Nothing is stamped
+/// between the push and the commit, so the commit reads the stock the push
+/// would have read.
+struct LevelSink<'a> {
+    segments: &'a mut Vec<Adaptive3dSegment>,
+    material_stock: &'a mut TriDexelStock,
+    cursor: &'a mut PlannerCursor,
+    /// Index in `segments` of the entry pushed but not yet committed.
+    pending_entry: Option<usize>,
+    /// Entries a later entry replaced before a cut or link committed them
+    /// (the F-038 `coalesced_entries_f038` counter).
+    replaced_entries: usize,
+    /// The F-038 gate. Off, every segment is stamped at push, as before.
+    defer_entries: bool,
+}
+
+impl LevelSink<'_> {
+    fn emit(&mut self, ctx: &ClearZLevelContext<'_>, segment: Adaptive3dSegment) {
+        if !self.defer_entries {
+            push_segment_with_stamp(
+                self.segments,
+                self.material_stock,
+                ctx.lut,
+                ctx.tool_radius,
+                self.cursor,
+                segment,
+                ctx.safe_z,
+                ctx.cut_tolerance,
+                ctx.min_cutting_radius,
+                &ctx.stamp_drape(),
+            );
+            return;
+        }
+        match segment {
+            Adaptive3dSegment::Rapid(_) | Adaptive3dSegment::RapidWithFloor { .. } => {
+                if let Some(i) = self.pending_entry.take() {
+                    // Only markers stand after the pending entry, so the
+                    // removal keeps every other segment in order.
+                    self.segments.remove(i);
+                    self.replaced_entries += 1;
+                }
+                self.pending_entry = Some(self.segments.len());
+                self.segments.push(segment);
+            }
+            // The emitter emits no move for a marker or for a cut of fewer
+            // than two points: they neither commit nor replace an entry.
+            Adaptive3dSegment::Marker(_) => self.segments.push(segment),
+            Adaptive3dSegment::Cut(ref path) if path.len() < 2 => self.segments.push(segment),
+            Adaptive3dSegment::Cut(_) | Adaptive3dSegment::Link(_) => {
+                self.commit_pending(ctx);
+                push_segment_with_stamp(
+                    self.segments,
+                    self.material_stock,
+                    ctx.lut,
+                    ctx.tool_radius,
+                    self.cursor,
+                    segment,
+                    ctx.safe_z,
+                    ctx.cut_tolerance,
+                    ctx.min_cutting_radius,
+                    &ctx.stamp_drape(),
+                );
+            }
+        }
+    }
+
+    /// Plan, stamp and keep the pending entry in its place. The level end
+    /// calls this too: a trailing entry stays in the plan, as it did.
+    fn commit_pending(&mut self, ctx: &ClearZLevelContext<'_>) {
+        let Some(i) = self.pending_entry.take() else {
+            return;
+        };
+        let Some(slot) = self.segments.get_mut(i) else {
+            return;
+        };
+        let entry = match slot {
+            Adaptive3dSegment::Rapid(entry) | Adaptive3dSegment::RapidWithFloor { entry, .. } => {
+                *entry
+            }
+            _ => return,
+        };
+        *slot = stamp_and_advance(
+            self.material_stock,
+            ctx.lut,
+            ctx.tool_radius,
+            self.cursor,
+            Adaptive3dSegment::Rapid(entry),
+            ctx.safe_z,
+            ctx.cut_tolerance,
+            ctx.min_cutting_radius,
+            &ctx.stamp_drape(),
+        );
+    }
 }
 
 /// What every region of one Z level reads and none of them changes.
@@ -1931,9 +2116,7 @@ fn clear_one_region(
     region_idx: usize,
     cancel: &dyn CancelCheck,
 ) -> Result<(), Cancelled> {
-    let segments = &mut *emission.segments;
-    let material_stock = &mut *emission.material_stock;
-    let last_pos = &mut *emission.last_pos;
+    let sink = &mut emission.sink;
     let planner_eng = &mut *emission.planner_eng;
     let level_metrics = &mut *emission.level_metrics;
     let cut_count = &mut *emission.cut_count;
@@ -2095,37 +2278,15 @@ fn clear_one_region(
             }
             let path_3d: Vec<P3> = path_2d.iter().map(|&p| lift(p)).collect();
             if let Some(first) = path_3d.first().copied() {
-                // `push_segment_with_stamp` reads the rapid floor
-                // (`plan_entry`) BEFORE it stamps the entry, so the floor
-                // reflects material state from prior passes only.
+                // `LevelSink::emit` plans the entry (`plan_entry`) when a
+                // cut commits it, BEFORE it stamps it, so the floor
+                // reflects material state from committed segments only.
                 let entry_seg = Adaptive3dSegment::Rapid(first);
-                push_segment_with_stamp(
-                    segments,
-                    material_stock,
-                    ctx.lut,
-                    ctx.tool_radius,
-                    last_pos,
-                    entry_seg,
-                    ctx.safe_z,
-                    ctx.cut_tolerance,
-                    ctx.min_cutting_radius,
-                    &ctx.stamp_drape(),
-                );
+                sink.emit(ctx, entry_seg);
             }
             if path_3d.len() >= 2 {
                 level_metrics.perimeter_sweep_length_mm += crate::geo::polyline_length(&path_3d);
-                push_segment_with_stamp(
-                    segments,
-                    material_stock,
-                    ctx.lut,
-                    ctx.tool_radius,
-                    last_pos,
-                    Adaptive3dSegment::Cut(path_3d),
-                    ctx.safe_z,
-                    ctx.cut_tolerance,
-                    ctx.min_cutting_radius,
-                    &ctx.stamp_drape(),
-                );
+                sink.emit(ctx, Adaptive3dSegment::Cut(path_3d));
                 *cut_count += 1;
             }
         }
@@ -2146,35 +2307,13 @@ fn clear_one_region(
             }
             let path_3d: Vec<P3> = path_2d.iter().map(|&p| lift(p)).collect();
             if let Some(first) = path_3d.first().copied() {
-                // `push_segment_with_stamp` reads the rapid floor (`plan_entry`).
+                // `LevelSink::emit` plans the entry (`plan_entry`) on commit.
                 let entry_seg = Adaptive3dSegment::Rapid(first);
-                push_segment_with_stamp(
-                    segments,
-                    material_stock,
-                    ctx.lut,
-                    ctx.tool_radius,
-                    last_pos,
-                    entry_seg,
-                    ctx.safe_z,
-                    ctx.cut_tolerance,
-                    ctx.min_cutting_radius,
-                    &ctx.stamp_drape(),
-                );
+                sink.emit(ctx, entry_seg);
             }
             if path_3d.len() >= 2 {
                 level_metrics.perimeter_sweep_length_mm += crate::geo::polyline_length(&path_3d);
-                push_segment_with_stamp(
-                    segments,
-                    material_stock,
-                    ctx.lut,
-                    ctx.tool_radius,
-                    last_pos,
-                    Adaptive3dSegment::Cut(path_3d),
-                    ctx.safe_z,
-                    ctx.cut_tolerance,
-                    ctx.min_cutting_radius,
-                    &ctx.stamp_drape(),
-                );
+                sink.emit(ctx, Adaptive3dSegment::Cut(path_3d));
                 *cut_count += 1;
             }
         }
@@ -2386,10 +2525,12 @@ fn clear_one_region(
                 const AIR_THRESHOLD_MM: f64 = 0.2;
                 let mut engaged: Vec<bool> = path_3d
                     .iter()
-                    .map(|p| match sample_stock_top_at(material_stock, p.x, p.y) {
-                        Some(top) => top > p.z + AIR_THRESHOLD_MM,
-                        None => false,
-                    })
+                    .map(
+                        |p| match sample_stock_top_at(sink.material_stock, p.x, p.y) {
+                            Some(top) => top > p.z + AIR_THRESHOLD_MM,
+                            None => false,
+                        },
+                    )
                     .collect();
                 // Re-promote short air runs back to engaged: rapid-mode
                 // is only faster than feed-mode above a crossover
@@ -2456,9 +2597,10 @@ fn clear_one_region(
                 // into one rapid. Two opposite-direction filters that
                 // together select for "long engaged runs separated by
                 // long air runs".
-                if let Some(last) = path_3d.last().copied() {
-                    *last_pos = Some(last);
-                }
+                // G-PHANTOMSTAMP: no cursor write here. The planner position
+                // moves only when a segment is stamped; setting it to the
+                // path end gave an air-first path's entry a keep-down proof
+                // from a point the tool never reached.
                 // Split the lifted path at:
                 //   - large Z transitions (existing safety: peak→valley
                 //     bridges that drag the cutter diagonally through
@@ -2500,17 +2642,9 @@ fn clear_one_region(
                         if run_len >= 1 {
                             if sub_engaged {
                                 if run_len >= 2 {
-                                    push_segment_with_stamp(
-                                        segments,
-                                        material_stock,
-                                        ctx.lut,
-                                        ctx.tool_radius,
-                                        last_pos,
+                                    sink.emit(
+                                        ctx,
                                         Adaptive3dSegment::Cut(path_3d[sub_start..i].to_vec()),
-                                        ctx.safe_z,
-                                        ctx.cut_tolerance,
-                                        ctx.min_cutting_radius,
-                                        &ctx.stamp_drape(),
                                     );
                                     *cut_count += 1;
                                 }
@@ -2520,20 +2654,9 @@ fn clear_one_region(
                                 // traverses cleared territory). No
                                 // stamping (rapids don't cut).
                                 let end_pt = path_3d[i.saturating_sub(1)];
-                                // `push_segment_with_stamp` reads the rapid floor (`plan_entry`).
+                                // `LevelSink::emit` plans the entry (`plan_entry`) on commit.
                                 let entry_seg = Adaptive3dSegment::Rapid(end_pt);
-                                push_segment_with_stamp(
-                                    segments,
-                                    material_stock,
-                                    ctx.lut,
-                                    ctx.tool_radius,
-                                    last_pos,
-                                    entry_seg,
-                                    ctx.safe_z,
-                                    ctx.cut_tolerance,
-                                    ctx.min_cutting_radius,
-                                    &ctx.stamp_drape(),
-                                );
+                                sink.emit(ctx, entry_seg);
                             }
                         }
                         // After a large_z split, also rapid-position
@@ -2541,20 +2664,9 @@ fn clear_one_region(
                         // before continuing.
                         if large_z {
                             let p3 = path_3d[i];
-                            // `push_segment_with_stamp` reads the rapid floor (`plan_entry`).
+                            // `LevelSink::emit` plans the entry (`plan_entry`) on commit.
                             let entry_seg = Adaptive3dSegment::Rapid(p3);
-                            push_segment_with_stamp(
-                                segments,
-                                material_stock,
-                                ctx.lut,
-                                ctx.tool_radius,
-                                last_pos,
-                                entry_seg,
-                                ctx.safe_z,
-                                ctx.cut_tolerance,
-                                ctx.min_cutting_radius,
-                                &ctx.stamp_drape(),
-                            );
+                            sink.emit(ctx, entry_seg);
                         }
                         sub_start = i;
                         sub_engaged = engaged[i];
@@ -2565,35 +2677,13 @@ fn clear_one_region(
                 if run_len >= 1 {
                     if sub_engaged {
                         if run_len >= 2 {
-                            push_segment_with_stamp(
-                                segments,
-                                material_stock,
-                                ctx.lut,
-                                ctx.tool_radius,
-                                last_pos,
-                                Adaptive3dSegment::Cut(path_3d[sub_start..].to_vec()),
-                                ctx.safe_z,
-                                ctx.cut_tolerance,
-                                ctx.min_cutting_radius,
-                                &ctx.stamp_drape(),
-                            );
+                            sink.emit(ctx, Adaptive3dSegment::Cut(path_3d[sub_start..].to_vec()));
                             *cut_count += 1;
                         }
                     } else if let Some(end_pt) = path_3d.last().copied() {
-                        // `push_segment_with_stamp` reads the rapid floor (`plan_entry`).
+                        // `LevelSink::emit` plans the entry (`plan_entry`) on commit.
                         let entry_seg = Adaptive3dSegment::Rapid(end_pt);
-                        push_segment_with_stamp(
-                            segments,
-                            material_stock,
-                            ctx.lut,
-                            ctx.tool_radius,
-                            last_pos,
-                            entry_seg,
-                            ctx.safe_z,
-                            ctx.cut_tolerance,
-                            ctx.min_cutting_radius,
-                            &ctx.stamp_drape(),
-                        );
+                        sink.emit(ctx, entry_seg);
                     }
                 }
             }
@@ -2605,20 +2695,9 @@ fn clear_one_region(
                 // safe_z down would burn time feeding through air.
                 // Pass the sampled top to the path emitter so it
                 // can rapid through the air gap before pecking.
-                // `push_segment_with_stamp` reads the rapid floor (`plan_entry`).
+                // `LevelSink::emit` plans the entry (`plan_entry`) on commit.
                 let entry_seg = Adaptive3dSegment::Rapid(p3);
-                push_segment_with_stamp(
-                    segments,
-                    material_stock,
-                    ctx.lut,
-                    ctx.tool_radius,
-                    last_pos,
-                    entry_seg,
-                    ctx.safe_z,
-                    ctx.cut_tolerance,
-                    ctx.min_cutting_radius,
-                    &ctx.stamp_drape(),
-                );
+                sink.emit(ctx, entry_seg);
             }
             crate::adaptive::AdaptiveSegment::Link(p) => {
                 // 2D Link = feed at cut depth assuming the path is
@@ -2629,20 +2708,9 @@ fn clear_one_region(
                 // safe_z) to guarantee no material collision. Same
                 // rapid-floor optimisation as the Rapid case.
                 let p3 = lift(p);
-                // `push_segment_with_stamp` reads the rapid floor (`plan_entry`).
+                // `LevelSink::emit` plans the entry (`plan_entry`) on commit.
                 let entry_seg = Adaptive3dSegment::Rapid(p3);
-                push_segment_with_stamp(
-                    segments,
-                    material_stock,
-                    ctx.lut,
-                    ctx.tool_radius,
-                    last_pos,
-                    entry_seg,
-                    ctx.safe_z,
-                    ctx.cut_tolerance,
-                    ctx.min_cutting_radius,
-                    &ctx.stamp_drape(),
-                );
+                sink.emit(ctx, entry_seg);
             }
             crate::adaptive::AdaptiveSegment::Marker(_) => {
                 // 2D runtime events don't translate cleanly to 3D; swallow.
@@ -2654,46 +2722,43 @@ fn clear_one_region(
     Ok(())
 }
 
-/// Stage 3 — drop the degenerate back-to-back entries the region loop left
-/// behind, and report how many went.
+/// Stage 3 — report the entries the level replaced, and check that no
+/// back-to-back entry is left.
+///
+/// F-038: the region loop above yields one entry per 2D-adaptive entry plus
+/// one for each engagement transition the lifter detects, and some of them
+/// are followed by another entry with no cut between (the engagement
+/// subdivider demoted the whole following cut to air, a wall climb split
+/// every step, or the entry landed on cleared stock). Each would cost a
+/// full retract + rapid + peck-plunge that cuts nothing.
+///
+/// G-PHANTOMSTAMP: `LevelSink` now drops such an entry before it is
+/// stamped (`replaced_entries`), so nothing is left to coalesce here. This
+/// used to delete them from the finished level, after the planner had
+/// stamped them. The check stays as a `debug_assert`.
 fn coalesce_level_entries(
-    segments: &mut Vec<Adaptive3dSegment>,
+    segments: &[Adaptive3dSegment],
     level_marker_index: Option<usize>,
     min_region_cut_length_mm: f64,
     z_level: f64,
+    replaced_entries: usize,
 ) -> usize {
-    // F-038: post-emission coalescing pass.
-    //
-    // The per-region loop above pushes one `Rapid`/`RapidWithFloor` per
-    // 2D-adaptive entry plus one for each engagement transition the lifter
-    // detects. A subset of those entries reach the .nc as full peck-plunges
-    // that cut zero material before the next entry — either because the
-    // engagement subdivider demoted the entire following `Cut` to air (no
-    // engaged sub-runs) or because the entry simply landed on already-
-    // cleared dexel territory.
-    //
-    // Walk the level-marker range and drop any entry-style segment that's
-    // immediately followed by another entry-style segment (no `Cut` or
-    // `Link` in between). The downstream `segments_to_toolpath` would emit
-    // a full retract+rapid+peck-plunge for both — pure overhead on the
-    // first one because its plunge gets re-stamped at the second's XY
-    // before any cutting happens.
-    //
-    // This complements the in-loop group filter: that one drops short-cut
-    // *passes*, this one drops degenerate zero-cut *entries* the lifter
-    // produces after engagement subdivision.
-    let coalesced_entries = if min_region_cut_length_mm > 0.0 {
-        coalesce_redundant_entries(segments, level_marker_index)
-    } else {
-        0
-    };
-    if coalesced_entries > 0 {
+    if min_region_cut_length_mm <= 0.0 {
+        return 0;
+    }
+    debug_assert_eq!(
+        redundant_entry_count(segments, level_marker_index),
+        0,
+        "G-PHANTOMSTAMP: a level left an entry followed by another entry"
+    );
+    if replaced_entries > 0 {
         debug!(
             z = z_level,
-            coalesced_entries, "F-038: coalesced redundant back-to-back entries"
+            coalesced_entries = replaced_entries,
+            "F-038: coalesced redundant back-to-back entries"
         );
     }
-    coalesced_entries
+    replaced_entries
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2703,7 +2768,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
     surface_hm: &SurfaceHeightmap,
     z_level: f64,
     segments: &mut Vec<Adaptive3dSegment>,
-    last_pos: &mut Option<P3>,
+    cursor: &mut PlannerCursor,
     // Stage 4 — per-toolpath planner-engagement sampler accumulator. The
     // ContourSpiral strategy appends `(lifted_point, leading_arc_frac)` for
     // every emitted cut point; other strategies leave it untouched.
@@ -2751,7 +2816,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
         surface_hm,
         z_level,
         area_mask,
-        *last_pos,
+        cursor.last_pos,
     )
     else {
         return Ok(());
@@ -2810,9 +2875,14 @@ pub(super) fn clear_z_level_agent_2d_slice(
     let mut dropped_short_regions = 0usize;
     let region_total = regions.len();
     let mut emission = LevelEmission {
-        segments,
-        material_stock,
-        last_pos,
+        sink: LevelSink {
+            segments,
+            material_stock,
+            cursor,
+            pending_entry: None,
+            replaced_entries: 0,
+            defer_entries: ctx.min_region_cut_length_mm > 0.0,
+        },
         planner_eng,
         level_metrics: &mut level_metrics,
         cut_count: &mut cut_count,
@@ -2836,11 +2906,15 @@ pub(super) fn clear_z_level_agent_2d_slice(
         )?;
     }
 
+    // The level end commits a trailing entry, as the coalescing pass kept it.
+    emission.sink.commit_pending(ctx);
+    let replaced_entries = emission.sink.replaced_entries;
     let coalesced_entries = coalesce_level_entries(
         segments,
         level_marker_index,
         ctx.min_region_cut_length_mm,
         z_level,
+        replaced_entries,
     );
     level_metrics.dropped_short_region_count = dropped_short_regions + coalesced_entries;
     if let Some(scope) = level_scope.as_ref() {
@@ -2861,62 +2935,36 @@ pub(super) fn clear_z_level_agent_2d_slice(
     Ok(())
 }
 
-/// F-038 helper. Walk `segments[start..]` and drop `Rapid`/`RapidWithFloor`
-/// segments whose only successors before the next entry are `Marker` events.
-/// I.e. collapse `[Rapid, (Marker)*, Rapid, ...]` to `[Rapid, ...]` so the
-/// downstream emitter doesn't burn a full retract+plunge cycle on the first
-/// rapid only to immediately retract again for the second.
-///
-/// Returns the number of redundant entries removed.
-fn coalesce_redundant_entries(
-    segments: &mut Vec<Adaptive3dSegment>,
+/// F-038 check. Count the `Rapid`/`RapidWithFloor` segments in
+/// `segments[start..]` whose only successors before the next entry are
+/// `Marker` events, i.e. each `[Rapid, (Marker)*, Rapid]` pair. The
+/// emitter would spend a retract + plunge on the first rapid only to
+/// retract again for the second. Since G-PHANTOMSTAMP `LevelSink` never
+/// leaves one, so this returns 0 on every level the sink planned.
+fn redundant_entry_count(
+    segments: &[Adaptive3dSegment],
     level_marker_index: Option<usize>,
 ) -> usize {
-    let start = level_marker_index.map(|i| i + 1).unwrap_or(0);
-    if start >= segments.len() {
-        return 0;
-    }
-    let mut removed = 0usize;
-    let mut i = start;
-    while i < segments.len() {
-        let Some(seg_i) = segments.get(i) else {
-            break;
-        };
-        let is_entry_i = matches!(
-            seg_i,
+    let start = level_marker_index.map_or(0, |i| i + 1);
+    let is_entry = |s: &Adaptive3dSegment| {
+        matches!(
+            s,
             Adaptive3dSegment::Rapid(_) | Adaptive3dSegment::RapidWithFloor { .. }
-        );
-        if !is_entry_i {
-            i += 1;
+        )
+    };
+    let mut count = 0usize;
+    let mut previous_was_entry = false;
+    for seg in segments.iter().skip(start) {
+        if matches!(seg, Adaptive3dSegment::Marker(_)) {
             continue;
         }
-        // Scan forward, skipping markers, looking for the next non-marker.
-        let mut j = i + 1;
-        while let Some(seg_j) = segments.get(j) {
-            if matches!(seg_j, Adaptive3dSegment::Marker(_)) {
-                j += 1;
-            } else {
-                break;
-            }
+        let entry = is_entry(seg);
+        if entry && previous_was_entry {
+            count += 1;
         }
-        let Some(seg_j) = segments.get(j) else {
-            break;
-        };
-        let next_is_entry = matches!(
-            seg_j,
-            Adaptive3dSegment::Rapid(_) | Adaptive3dSegment::RapidWithFloor { .. }
-        );
-        if next_is_entry {
-            // Drop segment[i]; keep markers (they have annotation value)
-            // and the following entry.
-            segments.remove(i);
-            removed += 1;
-            // Stay at i — the new occupant may itself be a redundant entry.
-            continue;
-        }
-        i += 1;
+        previous_was_entry = entry;
     }
-    removed
+    count
 }
 
 fn update_level_marker_metrics(

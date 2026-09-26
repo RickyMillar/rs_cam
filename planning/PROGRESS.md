@@ -148,6 +148,23 @@ VCarve in softwood since B4; 12.0 mm serves.
    separate 3D Rough 6 package. `isoclip_entry_ramp_g_isoclipentry` test c
    fails at HEAD b8983f5d as well (ramp ends at x 8, expects 9): not this
    change, not yet triaged.
+2c. **G-PHANTOMSTAMP (2026-09-26): 3D Rough 6 rapid into stock on Wanaka;
+   fixed** (working tree, uncommitted). The AgentSearch planner stamped
+   entries that the F-038 coalescing pass then deleted; a later entry's
+   rapid floor read the phantom column (move 1406, Z 30 -> 21.07 at
+   89.64, 78.87, 1.33 mm into stock). Now an entry is stamped only when a
+   cut commits it (`clearing.rs::LevelSink`); cut and link mirrors stamp
+   from the emitted tool position; the coalescer is a debug check. Sentries
+   `adaptive3d_planner_never_ahead_of_emitted_path` (red before: 1.219 mm
+   ahead at the Z 9.8 stop) and ignored
+   `adaptive3d_wanaka_rough6_no_phantom_rapid_g_phantomstamp` (red before
+   at move 1406). Wanaka p1 harness: rapid_collisions 1 -> 0; ceiling
+   lowered 4 -> 0. rivmap100 (ContourParallel) unchanged: Global 839 s,
+   By Area 789 s. rivmap100 forced to AgentSearch: Global 920 -> 980 s,
+   By Area 862 -> 913 s (+6 %, entry time, +~430 mm³ cut). Byte parity:
+   `agent_search` re-blessed (6 retracts became keep-down links). Record:
+   `planning/entry_stock_awareness_2026-09-24/PHANTOMSTAMP_PLAN.md`
+   RESULTS.
 3. By Area WP2 (the pocket tree: valleys are their own jobs, the high
    ground is one rest job; `planning/by_area_merge_tree_2026-09-25/`),
    WP3 (pocket minimum depth / area settings, after G10 Part B),
