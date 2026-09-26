@@ -197,9 +197,14 @@ VCarve in softwood since B4; 12.0 mm serves.
    2.5D helix beside a pocket wall has no containment check;
    G-MCPCUTROW; CLI job `strategy` silent fallback; the loader ignores
    the old `coarse_steps` key.
-6. Operator owes: the By Area defaults (proposed 2 mm minimum depth,
-   400 mm² minimum area: 3 valleys on rivmap100); segment merge off
-   for 3D Rough if the planner cannot mirror it.
+6. By Area defaults, operator ruling 2026-09-26: the plan is approved;
+   the minimum depth is a PERCENTAGE OF TOOL DIAMETER, not a fixed
+   2 mm. There is no printed source for the percentage, so it is a named
+   repo rule: 1/3 x D (it gives the proposed 2 mm on the Ø6 reference
+   tool). The operator may set the value. Proposal, same principle: the
+   minimum area as a multiple of the tool disc area, not a fixed 400 mm²
+   (400 mm² = 14.1 tool discs at Ø6); confirm with the operator. Segment
+   merge: resolved, the planner mirrors it (G-PLANSIMGAP).
 
 ### Operator on-screen checks still open
 
