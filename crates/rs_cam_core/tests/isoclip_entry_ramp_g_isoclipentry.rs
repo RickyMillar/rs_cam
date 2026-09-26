@@ -42,7 +42,9 @@
 //!   fixture with `ramp: None` reproduces the full-depth vertical bite, so the
 //!   green arm cannot pass by measuring nothing.
 //! * `c_the_ramp_hands_the_tool_back_where_the_plunge_would_have` — the
-//!   `end_at_start` contract the no-drop provenance rule depends on.
+//!   `end_at_start` contract the no-drop provenance rule depends on. Since
+//!   1aa7907e the clip re-enters at the boundary crossing (x = `ISLAND_MIN`),
+//!   not the crossing move's own target; the arm reads the no-ramp plunge.
 //! * `e_the_dressup_ramp_is_bite_budgeted_over_rest` — the SECOND emitter of
 //!   the same defect, found when the fix above moved the wanaka peak by
 //!   nothing: with `entry_style = ramp` the generator's plunge never reaches
@@ -398,8 +400,32 @@ fn c_the_ramp_hands_the_tool_back_where_the_plunge_would_have() {
     // which is the plunge's own target. The body pass that follows is
     // untouched, which is what lets the pass insert the manoeuvre under a
     // provenance contract in which no input move may be dropped.
+    //
+    // The re-entry point is read from the pass's own no-ramp emission, not
+    // pinned to a fixture constant. Until 1aa7907e ("clip fed moves to every
+    // inside interval of the boundary") the clip plunged at the crossing
+    // move's own target, (`ENTRY_X`, `ENTRY_Y`); since then it keeps the
+    // inside interval and plunges at the interpolated boundary crossing, the
+    // island edge at x = `ISLAND_MIN`. The contract is unchanged: the ramp
+    // ends where that plunge would have.
     let stock = rest_stock(true);
     let tp = clipped_and_optimised(&stock, true);
+    let plain = clipped_and_optimised(&stock, false);
+
+    let plunge = plain
+        .moves
+        .iter()
+        .rposition(|m| m.intent == MoveIntent::EntryPlunge)
+        .expect("the no-ramp run has no plunge");
+    let target = plain.moves[plunge].target;
+    // The clip still re-enters where the fixture's run crosses into the
+    // island: on its edge, on the run's own line.
+    assert!(
+        (target.x - ISLAND_MIN).abs() < 1e-6 && (target.y - ENTRY_Y).abs() < 1e-6,
+        "the clip re-entered at ({:.3}, {:.3}), not the island edge",
+        target.x,
+        target.y
+    );
 
     let last_ramp = tp
         .moves
@@ -408,20 +434,34 @@ fn c_the_ramp_hands_the_tool_back_where_the_plunge_would_have() {
         .expect("no ramp emitted");
     let end = tp.moves[last_ramp].target;
     assert!(
-        (end.x - ENTRY_X).abs() < 1e-6 && (end.y - ENTRY_Y).abs() < 1e-6,
-        "the ramp ended at ({:.3}, {:.3}), not the re-entry point",
+        (end.x - target.x).abs() < 1e-6 && (end.y - target.y).abs() < 1e-6,
+        "the ramp ended at ({:.3}, {:.3}), not the re-entry point ({:.3}, {:.3})",
         end.x,
-        end.y
+        end.y,
+        target.x,
+        target.y
     );
     assert!(
         (end.z - FLOOR_Z).abs() < 1e-6,
         "the ramp ended at Z {:.4}, not the finished surface",
         end.z
     );
-    // The body pass resumes immediately, at the finished Z.
+    // The body pass resumes immediately, at the finished Z, and is the
+    // no-ramp run's body move for move.
     let next = &tp.moves[last_ramp + 1];
     assert_eq!(next.intent, MoveIntent::FinishingCut);
     assert!((next.target.z - FLOOR_Z).abs() < 1e-6);
+    let body = &tp.moves[last_ramp + 1..];
+    let plain_body = &plain.moves[plunge + 1..];
+    assert_eq!(body.len(), plain_body.len(), "the ramp changed the body");
+    for (a, b) in body.iter().zip(plain_body) {
+        assert_eq!(a.intent, b.intent);
+        assert_eq!(a.move_type, b.move_type);
+        assert!(
+            (a.target - b.target).norm() < 1e-9,
+            "the ramp moved the body"
+        );
+    }
 }
 
 #[test]

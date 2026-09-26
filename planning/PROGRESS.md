@@ -146,8 +146,13 @@ VCarve in softwood since B4; 12.0 mm serves.
    had 2: this one and 3D Rough 6; the pre-fix count was not re-run);
    the one left is move 1406 (Z 30 -> 21.07 at 89.64, 78.87), the
    separate 3D Rough 6 package. `isoclip_entry_ramp_g_isoclipentry` test c
-   fails at HEAD b8983f5d as well (ramp ends at x 8, expects 9): not this
-   change, not yet triaged.
+   (ramp ends at x 8, expected 9) was a stale pin, triaged 2026-09-26:
+   first bad commit 1aa7907e (the clip keeps a fed move's inside interval
+   and plunges at the interpolated boundary crossing, x 8 = island edge,
+   not the move's own target x 9; 1aa7907e~1 green). The ramp still ends on
+   the plunge target, so the `end_at_start` contract holds; the arm now
+   reads the re-entry point from the no-ramp run and also pins the body
+   move for move (working tree, test only).
 2c. **G-PHANTOMSTAMP (2026-09-26): 3D Rough 6 rapid into stock on Wanaka;
    fixed** (working tree, uncommitted). The AgentSearch planner stamped
    entries that the F-038 coalescing pass then deleted; a later entry's
