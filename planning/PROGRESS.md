@@ -181,7 +181,17 @@ VCarve in softwood since B4; 12.0 mm serves.
    links over 6 x R cut 61.7 mm^3 / 18 samples / peak radial 0.30 in the
    planner order, 349.3 mm^3 / 122 / 0.64 reordered; cycle 263.3 s -> 253.4 s.
    Vetoed like Adaptive3d; Rest has no links, not vetoed; sentry
-   `adaptive_keeps_its_planner_order_g_adaptorder`); Global 36 s
+   `adaptive_keeps_its_planner_order_g_adaptorder`. Its open point, 20 of
+   22 links ploughing material in planner order, RESOLVED 2026-09-26 by the
+   operator ruling "don't plough unless the link can genuinely do a legit
+   cutting move with defined load" (G-ADAPTLINKLOAD): a keep-down link now
+   feeds only if every pass step along it reads within the pass ceiling
+   `target_engagement_fraction x 1.05` on the planner grid, and is stamped;
+   else it retracts. Same fixture: fed links 22 -> 14, in material 20 -> 12,
+   172 -> 34 samples, 1056 -> 89 mm^3, peak link radial 0.90 -> 0.42
+   (limit 0.36 + 0.18 discretisation), retracts 32 -> 40, cycle 263.3 ->
+   277.7 s (+5.4 %); sentry
+   `a_link_feeds_only_within_the_pass_load_g_adaptlinkload`); Global 36 s
    slower than By Area on one region; the sim cuts deeper than the
    planner stamps in 699 cells (safe direction); ring-order entries;
    2.5D helix beside a pocket wall has no containment check;

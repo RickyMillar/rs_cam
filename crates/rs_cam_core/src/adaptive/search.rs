@@ -218,6 +218,34 @@ mod engagement_measure_tests {
     }
 }
 
+/// The band a pass step is accepted in: `target × (1 ± this)` (matches the
+/// libactp reference).
+pub(crate) const PASS_ENGAGEMENT_TOLERANCE: f64 = 0.05;
+
+/// The highest engagement the direction search accepts for a pass step,
+/// `target × (1 + PASS_ENGAGEMENT_TOLERANCE)`. A keep-down link is held to
+/// the same ceiling (`path.rs`, `feed_link_within_pass_load`).
+pub(crate) fn pass_engagement_ceiling(target_frac: f64) -> f64 {
+    target_frac * (1.0 + PASS_ENGAGEMENT_TOLERANCE)
+}
+
+/// The engagement a step to `(nx, ny)` heading `angle` takes on `grid`, in
+/// the measure the planner is set to. The one reading both a pass step and
+/// a link step are held to.
+pub(super) fn measure_engagement(
+    grid: &MaterialGrid,
+    nx: f64,
+    ny: f64,
+    tool_radius: f64,
+    angle: f64,
+    measure: EngagementMeasure,
+) -> f64 {
+    match measure {
+        EngagementMeasure::DiskArea => compute_engagement(grid, nx, ny, tool_radius),
+        EngagementMeasure::LeadingArc => compute_engagement_arc(grid, nx, ny, tool_radius, angle),
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(super) struct SearchDirectionResult {
     pub(super) angle: f64,
@@ -336,9 +364,8 @@ pub(super) fn search_direction_with_metrics(
     boundary_distances: &[f64],
     measure: EngagementMeasure,
 ) -> Option<SearchDirectionResult> {
-    let tolerance = 0.05; // allow ±5% of target (matches libactp reference)
-    let min_frac = (target_frac * (1.0 - tolerance)).max(0.005);
-    let max_frac = target_frac * (1.0 + tolerance);
+    let min_frac = (target_frac * (1.0 - PASS_ENGAGEMENT_TOLERANCE)).max(0.005);
+    let max_frac = pass_engagement_ceiling(target_frac);
 
     let wall_threshold = 2.0 * tool_radius;
     let mut evaluations = 0u32;
@@ -353,12 +380,7 @@ pub(super) fn search_direction_with_metrics(
             return None;
         }
 
-        let engagement = match measure {
-            EngagementMeasure::DiskArea => compute_engagement(grid, nx, ny, tool_radius),
-            EngagementMeasure::LeadingArc => {
-                compute_engagement_arc(grid, nx, ny, tool_radius, angle)
-            }
-        };
+        let engagement = measure_engagement(grid, nx, ny, tool_radius, angle, measure);
         if engagement < 0.005 {
             return None;
         }

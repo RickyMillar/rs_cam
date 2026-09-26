@@ -592,9 +592,9 @@ impl OperationType {
                 OperationTransformCapabilities::new(false, true, false, false)
             }
             // The 2D adaptive planner clears one material grid per level, in
-            // the order it emits its runs, and admits a keep-down link longer
-            // than 6 x R only through a corridor that EARLIER runs cleared
-            // (`adaptive/path.rs`, `is_clear_path`). The rapid-order pass
+            // the order it emits its runs, and admits a keep-down link only
+            // when the grid EARLIER runs left holds it to the pass load
+            // (`adaptive/path.rs`, `feed_link_within_pass_load`). The rapid-order pass
             // splits only at rapids, so it moves whole keep-down chains and
             // can put a chain before the run that cleared its link corridor.
             // Measured (G-ADAPTORDER, 2026-09-26, 120 x 80 pocket with six

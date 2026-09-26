@@ -26,6 +26,7 @@
 //!
 //! | module | what it holds |
 //! |---|---|
+//! | [`adaptive_islands`] | the six-island 2D Adaptive pocket, generated and simulated (G-ADAPTORDER, G-ADAPTLINKLOAD) |
 //! | [`adversarial2d`] | R2's hostile 2D fixtures, their non-vacuity measures, the wall-clock/RSS watchdog, the cancellation seam, and the SVG renderers |
 //! | [`bandmap`] | the finish-planner band-territory `BandMap` + deviation-histogram instrument (stock-mesh-vertex-deviation lineage — see its module doc for why this is NOT the `column_deviations`/COLUMNS lineage h4 uses) |
 //! | [`chain`] | the F.4 generate/simulate fixpoint ladder + measurement-resolution re-sim, shared by wanaka-chain harnesses |
@@ -55,6 +56,7 @@
     clippy::indexing_slicing
 )]
 
+pub mod adaptive_islands;
 pub mod adversarial2d;
 pub mod bandmap;
 pub mod chain;

@@ -25,116 +25,13 @@
 
 mod common;
 
-use std::f64::consts::TAU;
-use std::sync::atomic::AtomicBool;
+use common::adaptive_islands::{adaptive_session, toolpath_of, trace_of};
 
-use common::make_endmill_6mm;
-use common::session::{polygon_model, single_op_session_with};
-
-use rs_cam_core::compute::StockConfig;
-use rs_cam_core::compute::catalog::OperationConfig;
-use rs_cam_core::compute::operation_configs::AdaptiveConfig;
-use rs_cam_core::geo::P2;
-use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::session::{ProjectSession, SimulationOptions};
-use rs_cam_core::stock::simulation_cut::SimulationCutTrace;
+use rs_cam_core::session::ProjectSession;
 use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
 
 /// A sample removes material when its volume estimate exceeds this, in mm^3.
 const CUT_VOLUME_EPS: f64 = 1e-3;
-
-fn circle(cx: f64, cy: f64, r: f64) -> Vec<P2> {
-    let n = 48;
-    (0..n)
-        .map(|i| {
-            let t = -(i as f64) * TAU / f64::from(n);
-            P2::new(cx + r * t.cos(), cy + r * t.sin())
-        })
-        .collect()
-}
-
-/// A 120 x 80 pocket with six round islands of radius 8 on a 3 x 2 grid.
-fn islands_pocket() -> Polygon2 {
-    let exterior = vec![
-        P2::new(-60.0, -40.0),
-        P2::new(60.0, -40.0),
-        P2::new(60.0, 40.0),
-        P2::new(-60.0, 40.0),
-    ];
-    let mut holes = Vec::new();
-    for &x in &[-32.0, 0.0, 32.0] {
-        for &y in &[-16.0, 16.0] {
-            holes.push(circle(x, y, 8.0));
-        }
-    }
-    Polygon2::with_holes(exterior, holes)
-}
-
-fn stock() -> StockConfig {
-    StockConfig {
-        x: 130.0,
-        y: 90.0,
-        z: 12.0,
-        origin_x: -65.0,
-        origin_y: -45.0,
-        origin_z: -12.0,
-        auto_from_model: false,
-        ..StockConfig::default()
-    }
-}
-
-fn adaptive_session(reorder: bool) -> ProjectSession {
-    let cfg = AdaptiveConfig {
-        stepover: 2.0,
-        depth: 6.0,
-        depth_per_pass: 3.0,
-        feed_rate: 1500.0,
-        plunge_rate: 500.0,
-        ..AdaptiveConfig::default()
-    };
-    let mut session = single_op_session_with(
-        stock(),
-        make_endmill_6mm(),
-        polygon_model(vec![islands_pocket()], "islands_pocket"),
-        "Adaptive",
-        OperationConfig::Adaptive(cfg),
-        |tc| tc.dressups.optimize_rapid_order = reorder,
-    );
-    let cancel = AtomicBool::new(false);
-    session
-        .generate_toolpath(0, &cancel)
-        .expect("adaptive generation");
-    let opts = SimulationOptions {
-        resolution: 0.5,
-        skip_ids: Vec::new(),
-        metrics_enabled: true,
-        auto_resolution: false,
-        use_predicted_feed_in_gates: false,
-        adaptive_feed_modulation: false,
-        modulation_strategy:
-            rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
-        modulation_feed_scale: 1.0,
-    };
-    session
-        .run_simulation(&opts, &cancel)
-        .expect("simulation completes");
-    session
-}
-
-fn toolpath_of(session: &ProjectSession) -> Toolpath {
-    session
-        .get_result(0)
-        .expect("adaptive result")
-        .toolpath()
-        .clone()
-}
-
-fn trace_of(session: &ProjectSession) -> &SimulationCutTrace {
-    session
-        .simulation_result()
-        .and_then(|s| s.cut_trace.as_deref())
-        .expect("metrics-on simulation carries a cut trace")
-}
 
 /// The cutting targets in emitted order: the run order made visible.
 fn cut_targets(tp: &Toolpath) -> Vec<[i64; 2]> {
@@ -150,10 +47,12 @@ fn cut_targets(tp: &Toolpath) -> Vec<[i64; 2]> {
         .collect()
 }
 
-/// The planner links at any distance through a corridor that reads clear on
-/// its grid, and through material only below this length (six tool radii,
-/// `adaptive/path.rs` `max_link_dist`). A longer keep-down link is one the
-/// planner admitted ONLY because earlier runs had cleared its corridor.
+/// Before G-ADAPTLINKLOAD the planner linked at any distance through a
+/// corridor that read clear on its grid, and through material only below
+/// this length (six tool radii, `adaptive/path.rs` `max_link_dist`), so a
+/// longer keep-down link was one admitted ONLY because earlier runs had
+/// cleared its corridor. Every keep-down link is now held to the pass load;
+/// the split stays as this file's measure.
 const CLEAR_ONLY_LINK_MM: f64 = 6.0 * 3.0;
 
 /// One arm of the measurement.
@@ -176,6 +75,8 @@ struct Arm {
     clearing_peak_radial: f64,
     /// Straight `EntryPlunge` moves that remove material.
     entry_plunges_in_material: usize,
+    /// Rapid moves that climb in Z: one per retract-and-re-enter.
+    retracts: usize,
     cycle_s: f64,
 }
 
@@ -200,6 +101,11 @@ fn measure(session: &ProjectSession) -> Arm {
         }
     }
     arm.entry_plunges_in_material = plunges.len();
+    arm.retracts = tp
+        .moves
+        .windows(2)
+        .filter(|w| matches!(w[1].move_type, MoveType::Rapid) && w[1].target.z > w[0].target.z)
+        .count();
     for (i, mv) in tp.moves.iter().enumerate() {
         if mv.intent != MoveIntent::Linking || matches!(mv.move_type, MoveType::Rapid) || i == 0 {
             continue;
@@ -268,9 +174,10 @@ fn move_bits(tp: &Toolpath) -> Vec<String> {
 /// emitted a different cut order, and the six links over 6 x R removed
 /// 349.3 mm^3 in 122 samples (peak radial 0.64) against 61.7 mm^3 in 18
 /// samples (peak 0.30) in the planner order. The planner order is not
-/// link-clean: it links through material below 6 x R by design, and the
-/// grid-to-dexel difference leaves the 61.7 mm^3; this test holds the
-/// reordered path to the planner's own, not to zero.
+/// link-clean: the grid-to-dexel difference leaves the 61.7 mm^3, and a link
+/// may cut within the pass load (G-ADAPTLINKLOAD, which since 2026-09-26
+/// holds every keep-down link to that load); this test holds the reordered
+/// path to the planner's own, not to zero.
 #[test]
 fn adaptive_keeps_the_planner_order_with_rapid_order_on() {
     let off = adaptive_session(false);

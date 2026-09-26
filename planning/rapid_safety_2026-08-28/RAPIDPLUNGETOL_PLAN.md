@@ -163,6 +163,19 @@ header "Known limit" paragraph and the collision.rs:644-663 doc.
   Adaptive split out of the shared catalog row with `.without_rapid_reorder()`.
   Rest: each scan segment is framed by its own rapids (`ops/rest.rs`
   `emit_rest_segment`), no keep-down link, no planner stock: not vetoed.
+- G-ADAPTLINKLOAD (2026-09-26, operator ruling "don't plough unless the
+  link can genuinely do a legit cutting move with defined load"): every
+  keep-down link of the 2D Adaptive operation is walked in pass steps on the
+  planner grid and admitted only when no step reads above the pass ceiling
+  (`adaptive/search.rs` `pass_engagement_ceiling`, target x 1.05, in the
+  planner's engagement measure); an admitted link is stamped, a refused one
+  retracts and re-enters. The cleanup replay decides every kept link again.
+  adaptive3d slices keep the old rule (`KeepDownLinks::RetractedByCaller`:
+  they lift every 2D link to a retract). Same fixture, planner order, before
+  / after: fed links 22 / 14, in material 20 / 12, samples 172 / 34, volume
+  1056 / 89 mm^3, peak link radial 0.90 / 0.42, links over 6 x R unchanged
+  (6, 18 samples, 61.7 mm^3, 0.30), retracts 32 / 40, cycle 263.3 / 277.7 s.
+  Sentry `tests/a_link_feeds_only_within_the_pass_load_g_adaptlinkload.rs`.
 
 ## RESULTS (2026-09-25, Option A, uncommitted working tree on 07777325)
 

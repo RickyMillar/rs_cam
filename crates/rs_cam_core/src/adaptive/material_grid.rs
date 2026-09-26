@@ -121,9 +121,43 @@ impl MaterialGrid {
         self.get_at(x, y) == CELL_MATERIAL
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Clear a circle of material (mark as CELL_CLEARED).
     pub fn clear_circle(&mut self, cx: f64, cy: f64, radius: f64) {
+        self.clear_circle_inner(cx, cy, radius, None);
+    }
+
+    /// [`Self::clear_circle`], recording every cell it clears in `log` so
+    /// [`Self::restore_cleared`] can undo a trial cut.
+    pub(super) fn clear_circle_logged(
+        &mut self,
+        cx: f64,
+        cy: f64,
+        radius: f64,
+        log: &mut Vec<usize>,
+    ) {
+        self.clear_circle_inner(cx, cy, radius, Some(log));
+    }
+
+    /// Put back the material a logged trial cut cleared.
+    pub(super) fn restore_cleared(&mut self, log: &[usize]) {
+        for &idx in log {
+            if let Some(cell) = self.cells.get_mut(idx)
+                && *cell == CELL_CLEARED
+            {
+                *cell = CELL_MATERIAL;
+                self.material_count += 1;
+            }
+        }
+    }
+
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    fn clear_circle_inner(
+        &mut self,
+        cx: f64,
+        cy: f64,
+        radius: f64,
+        mut log: Option<&mut Vec<usize>>,
+    ) {
         let r_sq = radius * radius;
         let col_min = ((cx - radius - self.origin_x) / self.cell_size)
             .floor()
@@ -152,6 +186,9 @@ impl MaterialGrid {
                     if self.cells[idx] == CELL_MATERIAL {
                         self.cells[idx] = CELL_CLEARED;
                         self.material_count -= 1;
+                        if let Some(log) = log.as_deref_mut() {
+                            log.push(idx);
+                        }
                     }
                 }
             }

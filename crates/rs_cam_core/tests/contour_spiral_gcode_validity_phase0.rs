@@ -82,6 +82,7 @@ fn spiral_params() -> AdaptiveParams {
         engagement_measure: EngagementMeasure::LeadingArc,
         path_strategy: PathStrategy2d::ContourSpiral,
         trochoid_cap_mult: 1.6,
+        keep_down_links: rs_cam_core::adaptive::KeepDownLinks::WithinPassLoad,
     }
 }
 

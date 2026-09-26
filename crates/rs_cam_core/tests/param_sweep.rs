@@ -20,7 +20,7 @@
 )]
 
 use rs_cam_core::{
-    adaptive::AdaptiveParams,
+    adaptive::{AdaptiveParams, KeepDownLinks},
     adaptive3d::{
         Adaptive3dDepth, Adaptive3dGeometry, Adaptive3dLinking, Adaptive3dParams,
         ClearingStrategy3d, RegionOrdering,
@@ -320,6 +320,7 @@ fn default_adaptive_params() -> AdaptiveParams {
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
         path_strategy: rs_cam_core::adaptive::PathStrategy2d::Agent,
         trochoid_cap_mult: 1.2,
+        keep_down_links: KeepDownLinks::WithinPassLoad,
         tool_radius: 3.175,
         stepover: 2.0,
         cut_depth: -3.0,

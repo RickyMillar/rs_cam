@@ -7,12 +7,13 @@
 
 use super::material_grid::polygon_bbox;
 use super::search::{
-    find_entry_point, find_entry_via_distance_transform, path_bounds, search_direction_gradient,
-    search_direction_with_metrics,
+    find_entry_point, find_entry_via_distance_transform, measure_engagement,
+    pass_engagement_ceiling, path_bounds, search_direction_gradient, search_direction_with_metrics,
 };
 use super::{
-    AdaptiveParams, AdaptiveRuntimeAnnotation, AdaptiveRuntimeEvent, CleanupStrategy, MaterialGrid,
-    average_angles, blend_corners_to_moves, target_engagement_fraction,
+    AdaptiveParams, AdaptiveRuntimeAnnotation, AdaptiveRuntimeEvent, CleanupStrategy,
+    EngagementMeasure, KeepDownLinks, MaterialGrid, average_angles, blend_corners_to_moves,
+    target_engagement_fraction,
 };
 use crate::geo::P2;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
@@ -66,6 +67,126 @@ pub(super) fn is_clear_path(
     total > 0 && (material_hits as f64 / total as f64) <= 0.2
 }
 
+/// How one planning call decides its keep-down links (G-ADAPTLINKLOAD).
+#[derive(Clone, Copy)]
+pub(crate) struct LinkLoad {
+    rule: KeepDownLinks,
+    tool_radius: f64,
+    /// The pass step length, `cell_size × 3`.
+    step_len: f64,
+    /// The pass ceiling, `pass_engagement_ceiling(target)`.
+    ceiling: f64,
+    measure: EngagementMeasure,
+}
+
+impl LinkLoad {
+    pub(crate) fn new(params: &AdaptiveParams, cell_size: f64) -> Self {
+        Self {
+            rule: params.keep_down_links,
+            tool_radius: params.tool_radius,
+            step_len: cell_size * 3.0,
+            ceiling: pass_engagement_ceiling(target_engagement_fraction(
+                params.stepover,
+                params.tool_radius,
+            )),
+            measure: params.engagement_measure,
+        }
+    }
+}
+
+/// Operator ruling 2026-09-26: a keep-down link feeds through material only
+/// as a legitimate cutting move with a defined load. Walk the straight link
+/// from `from` to `to` in steps no longer than a pass step, reading at each
+/// step the engagement a pass step reads there (`measure_engagement`, the
+/// planner's measure, on the grid as cut up to the previous step) and
+/// clearing the cutter disc as a pass does. Admit the link when the path
+/// stays machinable (the `is_clear_path` sampling) and no step exceeds the
+/// pass ceiling; the grid then keeps the stamp, so planner stock is the
+/// emitted geometry. Otherwise restore the grid and return false: the
+/// caller retracts and re-enters. A link through cleared cells reads 0.
+fn feed_link_within_pass_load(
+    grid: &mut MaterialGrid,
+    mask: &[bool],
+    from: P2,
+    to: P2,
+    load: &LinkLoad,
+) -> bool {
+    let dx = to.x - from.x;
+    let dy = to.y - from.y;
+    let len = dx.hypot(dy);
+    if len < 1e-10 {
+        return true;
+    }
+    let n_mask = (len / (grid.cell_size * 2.0)).ceil() as usize;
+    for i in 0..=n_mask {
+        let t = i as f64 / n_mask.max(1) as f64;
+        if !grid.is_machinable(mask, from.x + t * dx, from.y + t * dy) {
+            return false;
+        }
+    }
+    let angle = dy.atan2(dx);
+    let n_steps = ((len / load.step_len).ceil() as usize).max(1);
+    let mut log = Vec::new();
+    grid.clear_circle_logged(from.x, from.y, load.tool_radius, &mut log);
+    for k in 1..=n_steps {
+        let t = k as f64 / n_steps as f64;
+        let (x, y) = (from.x + t * dx, from.y + t * dy);
+        let engagement = measure_engagement(grid, x, y, load.tool_radius, angle, load.measure);
+        if engagement > load.ceiling {
+            grid.restore_cleared(&log);
+            return false;
+        }
+        grid.clear_circle_logged(x, y, load.tool_radius, &mut log);
+    }
+    true
+}
+
+/// Replay kept segments on `grid` in emitted order, the way the cleanup
+/// strategies rebuild the planner stock after the short-cut filter. Under
+/// [`KeepDownLinks::WithinPassLoad`] every `Link` is decided again on the
+/// grid of that moment (the filter can join two runs with a link the main
+/// loop never checked) and an admitted link is stamped; a refused one
+/// becomes a `Rapid`. Returns the replayed segments and the last cutter
+/// position of the last `Cut`.
+fn replay_kept_segments(
+    segments: Vec<AdaptiveSegment>,
+    grid: &mut MaterialGrid,
+    mask: &[bool],
+    load: &LinkLoad,
+) -> (Vec<AdaptiveSegment>, Option<P2>) {
+    let mut out = Vec::with_capacity(segments.len());
+    let mut last_cut: Option<P2> = None;
+    let mut here: Option<P2> = None;
+    for seg in segments {
+        match seg {
+            AdaptiveSegment::Cut(ref path) => {
+                for p in path {
+                    grid.clear_circle(p.x, p.y, load.tool_radius);
+                    last_cut = Some(*p);
+                    here = Some(*p);
+                }
+                out.push(seg);
+            }
+            AdaptiveSegment::Link(p) if load.rule == KeepDownLinks::WithinPassLoad => {
+                let feeds =
+                    here.is_some_and(|from| feed_link_within_pass_load(grid, mask, from, p, load));
+                out.push(if feeds {
+                    AdaptiveSegment::Link(p)
+                } else {
+                    AdaptiveSegment::Rapid(p)
+                });
+                here = Some(p);
+            }
+            AdaptiveSegment::Link(p) | AdaptiveSegment::Rapid(p) => {
+                here = Some(p);
+                out.push(seg);
+            }
+            AdaptiveSegment::Marker(_) => out.push(seg),
+        }
+    }
+    (out, last_cut)
+}
+
 // ── Main adaptive path generation ──────────────────────────────────────
 
 /// A segment of the adaptive path: cutting, rapid reposition, or link (tool-down reposition).
@@ -106,6 +227,7 @@ pub(super) fn adaptive_segments(
         engagement_measure: crate::adaptive::EngagementMeasure::DiskArea,
         path_strategy: crate::adaptive::PathStrategy2d::Agent,
         trochoid_cap_mult: 1.2,
+        keep_down_links: crate::adaptive::KeepDownLinks::WithinPassLoad,
     };
     adaptive_segments_with_debug(polygon, &params, cancel, None, None)
 }
@@ -176,9 +298,9 @@ pub(crate) fn adaptive_segments_with_debug(
             machinable,
             &mut grid,
             &machinable_mask,
-            tool_radius,
             stepover,
             cell_size,
+            &LinkLoad::new(params, cell_size),
             cancel,
             None,
         );
@@ -186,6 +308,7 @@ pub(crate) fn adaptive_segments_with_debug(
 
     let target_frac = target_engagement_fraction(stepover, tool_radius);
     let step_len = cell_size * 3.0;
+    let link_load = LinkLoad::new(params, cell_size);
     let mut segments = Vec::new();
     let mut last_pos: Option<P2> = None;
     let mut pass_endpoints = super::search::EndpointGrid::new(tool_radius * 3.0);
@@ -398,9 +521,20 @@ pub(crate) fn adaptive_segments_with_debug(
             let dx = entry.x - last.x;
             let dy = entry.y - last.y;
             let dist = (dx * dx + dy * dy).sqrt();
-            if dist < max_link_dist
-                && is_clear_path(&grid, &machinable_mask, last, entry, tool_radius)
-            {
+            let keep_down = dist < max_link_dist
+                && match params.keep_down_links {
+                    KeepDownLinks::WithinPassLoad => feed_link_within_pass_load(
+                        &mut grid,
+                        &machinable_mask,
+                        last,
+                        entry,
+                        &link_load,
+                    ),
+                    KeepDownLinks::RetractedByCaller => {
+                        is_clear_path(&grid, &machinable_mask, last, entry, tool_radius)
+                    }
+                };
+            if keep_down {
                 segments.push(AdaptiveSegment::Link(entry));
             } else {
                 segments.push(AdaptiveSegment::Rapid(entry));
@@ -839,22 +973,12 @@ pub(crate) fn apply_residue_mop_cleanup(
         out.push(seg.clone());
     }
 
-    // Step 3 — replay grid state and last cutter position.
+    // Step 3 — replay grid state and last cutter position, deciding each
+    // kept link again on the replayed grid.
     let mut grid = MaterialGrid::from_polygon(polygon, cell_size);
     if let Some(stock) = &params.initial_stock {
         grid.apply_initial_stock(stock, params.cut_depth);
     }
-    let mut last_pos: Option<P2> = None;
-    for seg in &out {
-        if let AdaptiveSegment::Cut(path) = seg {
-            for p in path {
-                grid.clear_circle(p.x, p.y, tool_radius);
-                last_pos = Some(*p);
-            }
-        }
-    }
-
-    // Step 4 — mop remaining residue.
     let machinable_vec = crate::polygon::offset_polygon(polygon, tool_radius);
     if machinable_vec.is_empty() {
         return out;
@@ -868,8 +992,18 @@ pub(crate) fn apply_residue_mop_cleanup(
         grid.cols,
         grid.cell_size,
     );
-    let mop_segments =
-        mop_residue_into_segments(&mut grid, &machinable_mask, tool_radius, step_len, last_pos);
+    let link_load = LinkLoad::new(params, cell_size);
+    let (mut out, last_pos) = replay_kept_segments(out, &mut grid, &machinable_mask, &link_load);
+
+    // Step 4 — mop remaining residue.
+    let mop_segments = mop_residue_into_segments(
+        &mut grid,
+        &machinable_mask,
+        tool_radius,
+        step_len,
+        last_pos,
+        &link_load,
+    );
     out.extend(mop_segments);
     out
 }
@@ -924,23 +1058,12 @@ pub(crate) fn apply_contour_parallel_residue_cleanup(
         out.push(seg.clone());
     }
 
-    // Step 3 — replay grid state and last cutter position.
+    // Step 3 — replay grid state and last cutter position, deciding each
+    // kept link again on the replayed grid.
     let mut grid = MaterialGrid::from_polygon(polygon, cell_size);
     if let Some(stock) = &params.initial_stock {
         grid.apply_initial_stock(stock, params.cut_depth);
     }
-    let mut last_pos: Option<P2> = None;
-    for seg in &out {
-        if let AdaptiveSegment::Cut(path) = seg {
-            for p in path {
-                grid.clear_circle(p.x, p.y, tool_radius);
-                last_pos = Some(*p);
-            }
-        }
-    }
-
-    // Step 4 — contour-parallel sweep of residue (filtered by material
-    // presence; sweeps only the offsets that actually cross residue).
     let machinable_vec = crate::polygon::offset_polygon(polygon, tool_radius);
     if machinable_vec.is_empty() {
         return out;
@@ -955,14 +1078,20 @@ pub(crate) fn apply_contour_parallel_residue_cleanup(
         grid.cols,
         grid.cell_size,
     );
+    let link_load = LinkLoad::new(params, cell_size);
+    let (mut out, mut last_pos) =
+        replay_kept_segments(out, &mut grid, &machinable_mask, &link_load);
+
+    // Step 4 — contour-parallel sweep of residue (filtered by material
+    // presence; sweeps only the offsets that actually cross residue).
     let never_cancel: &dyn CancelCheck = &|| false;
     if let Ok(contour_segments) = contour_parallel_segments(
         machinable,
         &mut grid,
         &machinable_mask,
-        tool_radius,
         stepover,
         cell_size,
+        &link_load,
         never_cancel,
         last_pos,
     ) {
@@ -978,8 +1107,14 @@ pub(crate) fn apply_contour_parallel_residue_cleanup(
     // Step 5 — tiny-patch fallback. Anything the contour walks missed
     // (sub-stepover slivers, far-off-axis residue) gets cleaned by the
     // cell-walking mop.
-    let mop_segments =
-        mop_residue_into_segments(&mut grid, &machinable_mask, tool_radius, step_len, last_pos);
+    let mop_segments = mop_residue_into_segments(
+        &mut grid,
+        &machinable_mask,
+        tool_radius,
+        step_len,
+        last_pos,
+        &link_load,
+    );
     out.extend(mop_segments);
     out
 }
@@ -993,6 +1128,7 @@ pub(crate) fn mop_residue_into_segments(
     tool_radius: f64,
     step_len: f64,
     start_pos: Option<P2>,
+    link_load: &LinkLoad,
 ) -> Vec<AdaptiveSegment> {
     const MAX_PATCHES: usize = 400;
     const MAX_STEPS_PER_PATCH: usize = 600;
@@ -1026,6 +1162,14 @@ pub(crate) fn mop_residue_into_segments(
                 let dist = (dx * dx + dy * dy).sqrt();
                 if dist < 1e-6 {
                     None
+                } else if link_load.rule == KeepDownLinks::WithinPassLoad {
+                    // G-ADAPTLINKLOAD: feed only within the pass load, at
+                    // any distance; otherwise retract and re-enter.
+                    if feed_link_within_pass_load(grid, machinable_mask, prev, start, link_load) {
+                        Some(AdaptiveSegment::Link(start))
+                    } else {
+                        Some(AdaptiveSegment::Rapid(start))
+                    }
                 } else if is_clear_path(grid, machinable_mask, prev, start, tool_radius) {
                     // Path is over already-cleared cells — tool-down
                     // traverse is safe regardless of distance. Saves
@@ -1210,9 +1354,9 @@ fn contour_parallel_segments(
     machinable: &Polygon2,
     grid: &mut MaterialGrid,
     machinable_mask: &[bool],
-    tool_radius: f64,
     stepover: f64,
     cell_size: f64,
+    link_load: &LinkLoad,
     cancel: &dyn CancelCheck,
     start_pos: Option<P2>,
 ) -> Result<Vec<AdaptiveSegment>, Cancelled> {
@@ -1222,6 +1366,7 @@ fn contour_parallel_segments(
     // thin rings between the spiral's outermost reach and the boundary
     // band don't survive as uncleared islands. 0.85 → 15% overlap.
     const OFFSET_OVERLAP: f64 = 0.85;
+    let tool_radius = link_load.tool_radius;
     let max_link_dist = tool_radius * 6.0;
     let mut segments: Vec<AdaptiveSegment> = Vec::new();
     let mut last_pos: Option<P2> = start_pos;
@@ -1270,7 +1415,16 @@ fn contour_parallel_segments(
                     }
                     None => contour,
                 };
-                let path = walk_contour_clearing(walk, cell_size, grid, tool_radius);
+                // G-ADAPTLINKLOAD decides the link on the grid BEFORE the
+                // loop cuts, so the loop is stamped after the decision. The
+                // historical rule read the corridor after the loop's own
+                // clearing; `RetractedByCaller` keeps that order.
+                let within_load = link_load.rule == KeepDownLinks::WithinPassLoad;
+                let path = if within_load {
+                    contour_walk_points(walk, cell_size)
+                } else {
+                    walk_contour_clearing(walk, cell_size, grid, tool_radius)
+                };
                 if path.len() < 2 {
                     continue;
                 }
@@ -1287,6 +1441,20 @@ fn contour_parallel_segments(
                         let d = (dx * dx + dy * dy).sqrt();
                         if d < 1e-6 {
                             // already at entry — no approach needed
+                        } else if within_load {
+                            // Feed only within the pass load, at any
+                            // distance; otherwise retract and re-enter.
+                            if feed_link_within_pass_load(
+                                grid,
+                                machinable_mask,
+                                prev,
+                                entry,
+                                link_load,
+                            ) {
+                                segments.push(AdaptiveSegment::Link(entry));
+                            } else {
+                                segments.push(AdaptiveSegment::Rapid(entry));
+                            }
                         } else if is_clear_path(grid, machinable_mask, prev, entry, tool_radius) {
                             // Cleared-cell traverse — Link at any
                             // distance, saving the retract + plunge
@@ -1297,6 +1465,11 @@ fn contour_parallel_segments(
                         } else {
                             segments.push(AdaptiveSegment::Rapid(entry));
                         }
+                    }
+                }
+                if within_load {
+                    for p in &path {
+                        grid.clear_circle(p.x, p.y, tool_radius);
                     }
                 }
                 segments.push(AdaptiveSegment::Cut(path));
@@ -1397,6 +1570,15 @@ fn walk_contour_clearing(
     grid: &mut MaterialGrid,
     tool_radius: f64,
 ) -> Vec<P2> {
+    let path = contour_walk_points(contour, cell_size);
+    for p in &path {
+        grid.clear_circle(p.x, p.y, tool_radius);
+    }
+    path
+}
+
+/// The points [`walk_contour_clearing`] visits, without touching a grid.
+fn contour_walk_points(contour: &[P2], cell_size: f64) -> Vec<P2> {
     let mut path = Vec::new();
     if contour.len() < 2 {
         return path;
@@ -1404,7 +1586,6 @@ fn walk_contour_clearing(
     #[allow(clippy::indexing_slicing)] // contour.len() >= 2 checked above
     let start = contour[0];
     path.push(start);
-    grid.clear_circle(start.x, start.y, tool_radius);
 
     let n = contour.len();
     for i in 0..n {
@@ -1421,7 +1602,6 @@ fn walk_contour_clearing(
             let t = j as f64 / steps as f64;
             let x = a.x + t * dx;
             let y = a.y + t * dy;
-            grid.clear_circle(x, y, tool_radius);
             path.push(P2::new(x, y));
         }
     }
@@ -1608,5 +1788,100 @@ impl crate::compute::spans::RuntimeLabel for AdaptiveRuntimeAnnotation {
 
     fn label(&self) -> String {
         self.event.label()
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod link_load_tests {
+    //! G-ADAPTLINKLOAD: a keep-down link is a pass-load cut or nothing.
+    use super::{LinkLoad, feed_link_within_pass_load};
+    use crate::adaptive::{KeepDownLinks, MaterialGrid};
+    use crate::geo::P2;
+    use crate::polygon::{Polygon2, offset_polygon};
+
+    const R: f64 = 3.0;
+
+    fn scene() -> (MaterialGrid, Vec<bool>, LinkLoad) {
+        let square = Polygon2::rectangle(-30.0, -30.0, 30.0, 30.0);
+        let grid = MaterialGrid::from_polygon(&square, R / 6.0);
+        let machinable = offset_polygon(&square, R);
+        let mask = MaterialGrid::build_machinable_mask(
+            &machinable[0],
+            grid.origin_x,
+            grid.origin_y,
+            grid.rows,
+            grid.cols,
+            grid.cell_size,
+        );
+        let load = LinkLoad {
+            rule: KeepDownLinks::WithinPassLoad,
+            tool_radius: R,
+            step_len: grid.cell_size * 3.0,
+            ceiling: crate::adaptive::pass_engagement_limit(2.0, R),
+            measure: crate::adaptive::EngagementMeasure::DiskArea,
+        };
+        (grid, mask, load)
+    }
+
+    /// A link through standing stock is a slot: refused, and the grid is
+    /// left exactly as it was.
+    #[test]
+    fn a_slot_through_stock_is_refused_and_leaves_the_grid() {
+        let (mut grid, mask, load) = scene();
+        grid.clear_circle(-10.0, 0.0, R);
+        let before = grid.cells.clone();
+        let count = grid.material_count;
+        assert!(!feed_link_within_pass_load(
+            &mut grid,
+            &mask,
+            P2::new(-10.0, 0.0),
+            P2::new(10.0, 0.0),
+            &load
+        ));
+        assert_eq!(grid.cells, before);
+        assert_eq!(grid.material_count, count);
+    }
+
+    /// A link along a cleared corridor reads no engagement and is admitted.
+    #[test]
+    fn a_link_through_a_cleared_corridor_is_admitted() {
+        let (mut grid, mask, load) = scene();
+        for i in -40..=40 {
+            grid.clear_circle(f64::from(i) * 0.5, 0.0, R);
+        }
+        assert!(feed_link_within_pass_load(
+            &mut grid,
+            &mask,
+            P2::new(-15.0, 0.0),
+            P2::new(15.0, 0.0),
+            &load
+        ));
+    }
+
+    /// A link that skims a wall below the pass stepover is a legitimate
+    /// cut: admitted, and stamped so the next pass sees it cut.
+    #[test]
+    fn a_link_below_the_pass_stepover_is_admitted_and_stamped() {
+        let (mut grid, mask, load) = scene();
+        // A corridor cleared to |y| <= R; the link runs 1.5 mm above its
+        // axis, so it takes 1.5 mm (< the 2 mm stepover) of the wall.
+        for i in -40..=40 {
+            grid.clear_circle(f64::from(i) * 0.5, 0.0, R);
+        }
+        let (from, to) = (P2::new(-15.0, 1.5), P2::new(15.0, 1.5));
+        assert!(grid.is_material(0.0, 4.0));
+        assert!(feed_link_within_pass_load(
+            &mut grid, &mask, from, to, &load
+        ));
+        assert!(
+            !grid.is_material(0.0, 4.0),
+            "the admitted link must be stamped on the grid"
+        );
     }
 }

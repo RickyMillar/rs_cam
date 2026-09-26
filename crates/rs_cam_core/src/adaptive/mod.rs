@@ -107,6 +107,31 @@ pub enum PathStrategy2d {
     ContourSpiral,
 }
 
+/// What a keep-down `Link` segment may do (operator ruling 2026-09-26,
+/// G-ADAPTLINKLOAD: "don't plough unless the link can genuinely do a legit
+/// cutting move with defined load to get there").
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeepDownLinks {
+    /// The link is emitted as a feed at cut depth. It is admitted only when
+    /// every step along it takes an engagement within the pass ceiling
+    /// ([`pass_engagement_limit`], in the planner's measure) on the grid of
+    /// that moment, and the admitted link is stamped on the grid as a pass
+    /// would be. Otherwise the planner retracts and re-enters.
+    WithinPassLoad,
+    /// The caller lifts every `Link` to a retract (the adaptive3d slices),
+    /// so the link never cuts: the historical corridor heuristic picks Link
+    /// or Rapid, and nothing is stamped.
+    RetractedByCaller,
+}
+
+/// The highest engagement the 2D planner holds a pass step to, as the
+/// contact fraction α/2π: `target_engagement_fraction(stepover, R) × 1.05`
+/// (`search.rs`, `PASS_ENGAGEMENT_TOLERANCE`). A keep-down link is held to
+/// the same ceiling under [`KeepDownLinks::WithinPassLoad`].
+pub fn pass_engagement_limit(stepover: f64, tool_radius: f64) -> f64 {
+    search::pass_engagement_ceiling(target_engagement_fraction(stepover, tool_radius))
+}
+
 /// Parameters for adaptive clearing.
 pub struct AdaptiveParams {
     pub tool_radius: f64,
@@ -140,6 +165,8 @@ pub struct AdaptiveParams {
     /// (faster) at the cost of higher peak load. Stage 4 lever for trading
     /// load-constancy against wall-clock. Ignored by the agent path.
     pub trochoid_cap_mult: f64,
+    /// What a keep-down link may do. See `KeepDownLinks`.
+    pub keep_down_links: KeepDownLinks,
 }
 
 /// A segment of the adaptive path: cutting, rapid reposition, or link (tool-down reposition).
@@ -315,6 +342,7 @@ mod tests {
             engagement_measure: EngagementMeasure::DiskArea,
             path_strategy: PathStrategy2d::Agent,
             trochoid_cap_mult: 1.2,
+            keep_down_links: KeepDownLinks::WithinPassLoad,
         }
     }
 
