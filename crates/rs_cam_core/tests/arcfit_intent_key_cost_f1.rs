@@ -40,7 +40,7 @@
 )]
 
 use rs_cam_core::{
-    compute::catalog::{OperationType, UiProcessRole},
+    compute::catalog::{OperationTransformCapabilities, OperationType, UiProcessRole},
     compute::config::{
         ArcFitParams, DogboneParams, DressupConfig, DressupEntryStyle, LeadParams,
         LinkDressupParams, SegmentMergeParams,
@@ -141,6 +141,24 @@ fn full_dressups() -> DressupConfig {
         segment_merge: Some(SegmentMergeParams { tolerance: 0.02 }),
         optimize_rapid_order: true,
         ..DressupConfig::default()
+    }
+}
+
+/// The 3D Rough capabilities with the dressup segment merge left ON.
+///
+/// These fixtures are synthetic paths, not planner output, and the file
+/// prices the intent run key against the full shipped chain, the merge
+/// included. Since `8477c1d8` (G-PLANSIMGAP) the 3D Rough planner applies
+/// the merge itself and the chain skips the stage for that operation
+/// (`planner_applies_segment_merge`). On a synthetic path nothing then
+/// merges: `arc_raster` read (148, 21) in place of (72, 21), its 4 x 20
+/// collinear tail segments left unmerged, while arcs, the seam census and
+/// `unknown_strict` stayed put. Same override as
+/// `transform_provenance_fingerprints::full_chain_capabilities`.
+fn adaptive3d_full_chain() -> OperationTransformCapabilities {
+    OperationTransformCapabilities {
+        planner_applies_segment_merge: false,
+        ..OperationType::Adaptive3d.transform_capabilities()
     }
 }
 
@@ -262,7 +280,7 @@ fn run(
     input: AnnotatedToolpath,
     cfg: &DressupConfig,
     feed: f64,
-    op: OperationType,
+    caps: OperationTransformCapabilities,
     expect: &Expect,
 ) {
     // Chain with arcfit + merge OFF = exactly the toolpath handed to fit_arcs.
@@ -285,7 +303,7 @@ fn run(
             feed_opt_stock: None,
             cutter: None,
             entry_surface: None,
-            transform_capabilities: op.transform_capabilities(),
+            transform_capabilities: caps,
             debug_ctx: None,
             semantic_ctx: None,
             entry_containment: None,
@@ -308,7 +326,7 @@ fn run(
             feed_opt_stock: None,
             cutter: None,
             entry_surface: None,
-            transform_capabilities: op.transform_capabilities(),
+            transform_capabilities: caps,
             debug_ctx: None,
             semantic_ctx: None,
             entry_containment: None,
@@ -380,7 +398,7 @@ fn pr6_measure_arcfit_intent_key_cost() {
         three_pass(),
         &full_dressups(),
         1000.0,
-        OperationType::Adaptive3d,
+        adaptive3d_full_chain(),
         &Expect {
             out: (27, 4),
             census: (36, 3, 3, 0),
@@ -392,12 +410,19 @@ fn pr6_measure_arcfit_intent_key_cost() {
     // curved and `fit_arcs` collapses it: EntryRamp 8 -> 16 and arcs 8 -> 16,
     // i.e. exactly one arc per folded entry. `intent_breaks_unknown_strict`
     // stays 4, so the Q3 quantity did not move.
+    //
+    // KEPT at (72, 21) on 2026-09-27 (stale since `8477c1d8`, G-PLANSIMGAP):
+    // that commit made the chain skip the segment merge for the 3D Rough,
+    // whose planner now merges, so this synthetic raster read (148, 21) —
+    // the four 20-segment straight tails unmerged — with arcs, census and
+    // fingerprint otherwise as before. `adaptive3d_full_chain` keeps the
+    // merge ON so the pin prices the run key against the full chain again.
     run(
         "arc_raster",
         arc_raster(),
         &full_dressups(),
         1200.0,
-        OperationType::Adaptive3d,
+        adaptive3d_full_chain(),
         &Expect {
             out: (72, 21),
             census: (270, 7, 4, 0),
@@ -421,7 +446,7 @@ fn pr6_measure_arcfit_intent_key_cost() {
         face_fixture(),
         &full_dressups(),
         1500.0,
-        OperationType::Face,
+        OperationType::Face.transform_capabilities(),
         &Expect {
             out: (80, 13),
             census: (118, 20, 0, 0),
@@ -435,7 +460,7 @@ fn pr6_measure_arcfit_intent_key_cost() {
         finish_passes([8.0, 9.0, 10.0, 11.0]),
         &DressupConfig::for_role(UiProcessRole::Finish),
         1000.0,
-        OperationType::Scallop,
+        OperationType::Scallop.transform_capabilities(),
         &Expect {
             // RE-PINNED 2026-09-10 (J2, G-RAMPCONTAIN): arcs 8 -> 16, census
             // joins 180 -> 362. The move COUNT is unchanged at 32: these
@@ -462,7 +487,7 @@ fn pr6_measure_arcfit_intent_key_cost() {
         finish_passes([2.0, 2.0, 2.0, 2.0]),
         &DressupConfig::for_role(UiProcessRole::Finish),
         1000.0,
-        OperationType::Scallop,
+        OperationType::Scallop.transform_capabilities(),
         &Expect {
             // RE-PINNED 2026-09-10 (J2, G-RAMPCONTAIN): (32, 8) -> (76, 44),
             // census (180, 8, 0, 0) -> (1084, 12, 0, 0). The largest move on

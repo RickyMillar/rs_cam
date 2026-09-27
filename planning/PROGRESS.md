@@ -241,6 +241,17 @@ VCarve in softwood since B4; 12.0 mm serves.
    retracts 152, cycle 705 s (2.45x). Open: the rapid-lift sentry reads one
    simulation-blend strike (exact geometry clear, gone at a 0.25 mm sim
    cell); `arcfit_intent_key_cost_f1` red at a59b246b already.
+   Triaged 2026-09-27: a stale pin, not a regression. The first bad commit
+   is `8477c1d8` (G-PLANSIMGAP; the parent `bfde909a` is green). The chain
+   now skips the segment merge for the 3D Rough, so the synthetic
+   `arc_raster` read (148, 21) where (72, 21) was pinned: its 4 x 20
+   straight tails were no longer merged. Arcs, the seam census and
+   `unknown_strict` did not move. The test now keeps the merge on, as
+   `transform_provenance_fingerprints` does, and all five fingerprints
+   equal the `bfde909a` reading. A separate red, not triaged here:
+   `heatmap_two_arc_divergence_a1::the_retired_measure_still_reproduces_the_defect`
+   (a feeds chipload-band fixture; the retired measure now reads Within on
+   both arms).
    Round 4 (2026-09-27): the strike is the high channel's rim over-read
    (0.317 mm clear of an island; not union residue, COVERAGE_UNION_PLAN
    not triggered); the rapid-lift sentry now judges rapids on exact
