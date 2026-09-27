@@ -83,6 +83,7 @@ fn spiral_params() -> AdaptiveParams {
         path_strategy: PathStrategy2d::ContourSpiral,
         trochoid_cap_mult: 1.6,
         keep_down_links: rs_cam_core::adaptive::KeepDownLinks::WithinPassLoad,
+        entry_helix_radius: 0.0,
     }
 }
 

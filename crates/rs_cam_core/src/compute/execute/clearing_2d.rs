@@ -489,6 +489,8 @@ pub(crate) fn generate_adaptive(
                 path_strategy: cfg.path_strategy,
                 trochoid_cap_mult: 1.2,
                 keep_down_links: crate::adaptive::KeepDownLinks::WithinPassLoad,
+                // G-ADAPTPASSLOAD: the hole the entry dressup's helix cuts.
+                entry_helix_radius: ctx.entry_helix_radius.unwrap_or(0.0),
             };
             let (level_tp, mut annotations) =
                 crate::adaptive::adaptive_toolpath_structured_annotated_traced_with_cancel(

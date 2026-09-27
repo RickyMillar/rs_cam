@@ -687,6 +687,21 @@ impl JobPhases<'_, '_> {
             .records_dressup_items()
             .then(|| self.debug_root.start_span("dressups", "Apply dressups"));
         let dressup_debug_ctx = dressup_scope.as_ref().map(|scope| scope.context());
+        // G-ADAPTPASSLOAD round 3: 2D Adaptive's helix entries stay inside
+        // the machinable region (the same region its planner stamps from).
+        let entry_containment: Option<Vec<crate::polygon::Polygon2>> = self
+            .context
+            .transform_capabilities
+            .helix_floor_lap
+            .then_some(self.inputs.polygons.as_deref())
+            .flatten()
+            .map(|polys| {
+                let r = self.inputs.tool_def.radius();
+                polys
+                    .iter()
+                    .flat_map(|p| crate::adaptive::tool_centre_pieces(p, r))
+                    .collect()
+            });
         crate::compute::execute::apply_dressups(
             annotated,
             crate::compute::execute::DressupContext {
@@ -707,6 +722,7 @@ impl JobPhases<'_, '_> {
                     .observer
                     .records_dressup_items()
                     .then_some(self.semantic_root),
+                entry_containment: entry_containment.as_deref(),
             },
             channels,
         )
@@ -1062,6 +1078,14 @@ pub fn execute_generation(
         link_kinematics: context.link_kinematics.clone(),
         rest_analysis: Some(&context.rest_analysis),
         segment_merge_tolerance: context.dressups.segment_merge.map(|m| m.tolerance),
+        entry_helix_radius: (context.dressups.entry_style
+            == crate::compute::config::DressupEntryStyle::Helix)
+            .then(|| {
+                context
+                    .dressups
+                    .helix_radius_for(&inputs.tool_def)
+                    .emitted_mm
+            }),
         ..crate::compute::execute::ExecutionContext::new(
             &findings,
             &inputs.tool_def,

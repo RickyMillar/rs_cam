@@ -325,7 +325,13 @@ pub(in crate::ui::properties) fn draw_adaptive_params(
             0.01..=1.0,
         );
         ui.label("Slot Clearing:");
-        ui.checkbox(&mut cfg.slot_clearing, "");
+        ui.checkbox(&mut cfg.slot_clearing, "").on_hover_text(
+            "Cut full-width seeding slots before the adaptive passes. A slot \
+             line runs at full radial immersion, the one 2D Adaptive cut \
+             outside the pass load (every other cut holds the stepover as \
+             radial width). Off by default; a project saved with it on keeps \
+             it.",
+        );
         ui.end_row();
         dv(
             ui,

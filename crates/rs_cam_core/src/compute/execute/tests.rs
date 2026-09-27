@@ -1487,6 +1487,7 @@ fn feed_optimization_uses_configured_nominal_feed_not_entry_plunge() {
             transform_capabilities: OperationType::Pocket.transform_capabilities(),
             debug_ctx: None,
             semantic_ctx: Some(&semantic_root),
+            entry_containment: None,
         },
         &mut ReconcileSet::empty(),
     );
@@ -1532,6 +1533,7 @@ fn apply_dressups_preserves_moves() {
             transform_capabilities: OperationType::DropCutter.transform_capabilities(),
             debug_ctx: None,
             semantic_ctx: None,
+            entry_containment: None,
         },
         &mut ReconcileSet::empty(),
     );

@@ -2,16 +2,22 @@
 //! algorithm review, `planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md`
 //! §3). Constructive alternative to the reactive per-step agent in
 //! `path.rs`: derive the global structure of the region first (EDT offset
-//! family), then emit a single stay-down pass whose radial engagement is
-//! bounded *by construction* (wrap spacing = stepover).
+//! family), then emit a pass whose radial engagement is bounded *by
+//! construction* (wrap spacing = stepover).
 //!
 //! Shape of the output: after the shared helical starter pocket opens a
 //! 2 × R disc at the EDT maximum, wraps are iso-contours of the
-//! machinable-region EDT at stepover increments, traced inside-out as ONE
-//! continuous `Cut` — each wrap cuts with the cleared region on its inner
-//! side (radial WOC = stepover), and the only discontinuities are short
-//! radial seam steps (≤ ~stepover) between consecutive wraps. One plunge
-//! per region instead of per-ring restarts.
+//! machinable-region EDT at stepover increments, traced inside-out as one
+//! `Cut` — each wrap cuts with the cleared region on its inner side
+//! (radial WOC = stepover), joined by short radial seam steps (≤ ~stepover)
+//! between consecutive wraps.
+//!
+//! G-ADAPTPASSLOAD (2026-09-26): 2D Adaptive replays every cut under the
+//! swept-width pass load, and a trochoid insert meets the frontier across
+//! a chord wider than the ceiling, so the replay splits the spiral and it
+//! re-enters (56-119 entries on the harness shapes). The former claim of
+//! one plunge per region (at most 3, rapids at most 5 % of the cut) is
+//! retired; `contour_spiral_travel_contract` records it, ignored.
 //!
 //! Stage 2 (same review, §5): trochoidal inserts. Where the predicted
 //! leading-arc engagement along a wrap exceeds the cap — concave-corner
@@ -61,6 +67,11 @@ pub(super) fn spiral_passes(
     // Trochoid trigger multiplier: loops fire above `target × cap_mult`
     // (clamped 0.45). Higher → fewer loops → less distance, higher peak load.
     cap_mult: f64,
+    // G-ADAPTPASSLOAD: under the 2D rule, the wrap point is held to the
+    // pass load (swept width, `step_within_pass_load`) instead of the
+    // leading-arc cap, and a wrap point over it takes a trochoid. `None`
+    // for the Adaptive3d slices (the historical trigger).
+    pass_load: Option<&super::search::PassLoad>,
     segments: &mut Vec<AdaptiveSegment>,
     last_pos: &mut Option<P2>,
     // Stage 4 — when `Some`, the predicted leading-arc engagement (α/2π)
@@ -183,7 +194,13 @@ pub(super) fn spiral_passes(
             };
             let dir = (p.y - prev_p.y).atan2(p.x - prev_p.x);
             let eng = super::search::compute_engagement_arc(grid, p.x, p.y, tool_radius, dir);
-            if eng <= troch.cap {
+            let holds = match pass_load {
+                Some(load) => {
+                    super::search::step_within_pass_load(grid, p.x, p.y, tool_radius, dir, load)
+                }
+                None => eng <= troch.cap,
+            };
+            if holds {
                 path.push(p);
                 if collect_eng {
                     path_engs.push(eng);

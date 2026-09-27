@@ -1461,6 +1461,9 @@ pub(super) fn segments_to_toolpath(
             ramp_feed: params.ramp_feed_rate,
             // The planner floor is already each entry's `stock_top`.
             own_stock: None,
+            // Byte parity: the adaptive3d helix keeps its historical end.
+            helix_floor_lap: false,
+            helix_containment: None,
         }
     };
 

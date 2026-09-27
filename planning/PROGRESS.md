@@ -206,7 +206,51 @@ VCarve in softwood since B4; 12.0 mm serves.
    287.8 s (hops 281.7, lift +6.1). New open point: the mop walk's own
    step heads straight at the nearest residue by a full pass step, unheld
    by any load rule: 1362 samples over limit + tolerance, peak radial 0.92,
-   17 cm^3 on this fixture); Global 36 s
+   17 cm^3 on this fixture; RESOLVED 2026-09-26 with the whole load
+   definition, G-ADAPTPASSLOAD, operator option B: 2D Adaptive holds the
+   commanded stepover as radial immersion. One predicate
+   `step_within_pass_load` (swept width = sideways stock extent / D <=
+   0.3626 at s 2, R 3) holds the agent (no out-of-band fallback), gradient,
+   starter pocket (now a spiral), contour and wall loops (over-load spans
+   split), the mop walk (capped direction search) and every link. Planner
+   stock = emitted path: forced clear and the mop's unseen disc wipes are
+   gone, a re-entry stamps its helix hole and the Adaptive helix ends on a
+   flat lap, 2D Adaptive declines the dressup merge. Slot clearing off by
+   default. Six-island ClearingCut samples over 0.546: 4254 of 8614 ->
+   0 of 18778, peak 0.927 -> 0.496, median 0.503 -> 0.097; removed
+   51.6 -> 50.0 cm^3; retracts 40 -> 310; cycle 287.8 -> 614.4 s (2.13x);
+   helix entries cutting a wall 72 (to 1.81 mm) -> 0. Sentries
+   `a_clearing_cut_holds_the_pass_load_g_adaptpassload` and the S2 unit
+   tests in `adaptive/search.rs`. Round 2 (lead review): the agent now does
+   the bulk (98 % of the volume, per-move peak radial median 0.27, p90
+   0.36, planner in band on 93 % of steps; frontier hops instead of pass
+   ends), retracts 142, cycle 612 s (2.13x; the cutting alone at a 2 mm
+   stepover is 336 s). Open: `adaptive_property_harness` coverage red on
+   the two stars (0.969-0.974 < 0.975: tips narrower than a helix-safe
+   entry), the spiral's travel contract (ignored, 44-70 plunges),
+   straight-plunge entries (14 samples over in the None-entry instrument).
+   Round 3 (2026-09-27): helix entries shrink to fit the machinable region
+   (2D Adaptive only; planner stamps the same hole); a move is legal only
+   as a whole segment inside the region, emission is the walked path, arc
+   fits stay inside it: wall cuts 0.081 mm -> 0 (deepest 0.006, under the
+   region's 10 um flattening). The planner reads stock slivers the lattice
+   hid (fringe sub-points; sliver ceiling = ceiling + cell/D): the
+   straight-plunge case is a sentry at 0 over (was 14). Harness coverage
+   reachability fixed (it read the band round the unreachable cells);
+   every shape >= 0.994. Spiral travel claim retired. Helix fixture 0 over,
+   retracts 152, cycle 705 s (2.45x). Open: the rapid-lift sentry reads one
+   simulation-blend strike (exact geometry clear, gone at a 0.25 mm sim
+   cell); `arcfit_intent_key_cost_f1` red at a59b246b already.
+   Round 4 (2026-09-27): the strike is the high channel's rim over-read
+   (0.317 mm clear of an island; not union residue, COVERAGE_UNION_PLAN
+   not triggered); the rapid-lift sentry now judges rapids on exact
+   geometry and pins the sim-only flags (1). Entry style None: a plunge
+   rapids through air to 0.5 mm over the op's own stock first (2D Adaptive,
+   `stock_aware_plunge`), None-entry cycle 992.8 -> 882.0 s. Re-entry
+   placement dropped (a full helix costs 2.0 s against 0.42 s squeezed);
+   air links already get `feed_max_rate` from feed optimisation.
+   Record:
+   `planning/adaptive_load_2026-09-26/PASSLOAD_PLAN.md` RESULTS); Global 36 s
    slower than By Area on one region; the sim cuts deeper than the
    planner stamps in 699 cells (safe direction); ring-order entries;
    2.5D helix beside a pocket wall has no containment check;
@@ -220,6 +264,16 @@ VCarve in softwood since B4; 12.0 mm serves.
    minimum area as a multiple of the tool disc area, not a fixed 400 mm²
    (400 mm² = 14.1 tool discs at Ø6); confirm with the operator. Segment
    merge: resolved, the planner mirrors it (G-PLANSIMGAP).
+
+- **Open UX (2026-09-27, G-ADAPTPASSLOAD round 4):** a correct path
+  passing within about half a cell diagonal plus the half-cell dilation of
+  a wall can get a false rapid-collision error at Auto. First measured:
+  six-island move 4514, a descent 0.317 mm clear of island (0, 16) at
+  0.5 mm cells (high channel only; not coverage-union residue, Step 0 of
+  `planning/rapid_safety_2026-08-28/COVERAGE_UNION_PLAN.md`). Fix: the
+  sub-cell-exact clearance query (`RAPIDPLUNGETOL_PLAN.md` Option C). The
+  sentry `a_rapid_leaves_cut_depth_straight_up_g_adaptrapidlift` now judges
+  rapids on exact geometry and pins the sim-only flag count (1).
 
 ### Operator on-screen checks still open
 

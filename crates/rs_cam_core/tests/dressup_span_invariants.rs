@@ -146,6 +146,7 @@ fn run_full_pipeline(
             transform_capabilities: op.transform_capabilities(),
             debug_ctx: None,
             semantic_ctx: None,
+            entry_containment: None,
         },
         &mut ReconcileSet::empty(),
     )
@@ -207,6 +208,7 @@ fn synthetic_three_pass_preserves_invariants_across_all_combos() {
                 transform_capabilities: cap,
                 debug_ctx: None,
                 semantic_ctx: None,
+                entry_containment: None,
             },
             &mut ReconcileSet::empty(),
         );
@@ -253,6 +255,7 @@ fn synthetic_three_pass_link_moves_never_straddles_barrier() {
             transform_capabilities: cap,
             debug_ctx: None,
             semantic_ctx: None,
+            entry_containment: None,
         },
         &mut ReconcileSet::empty(),
     );
@@ -315,6 +318,7 @@ fn synthetic_with_invalid_input_spans_stays_invalid() {
             transform_capabilities: cap,
             debug_ctx: None,
             semantic_ctx: None,
+            entry_containment: None,
         },
         &mut ReconcileSet::empty(),
     );
@@ -438,6 +442,7 @@ fn one_way_face_vetoes_rapid_order_but_runs_other_dressups() {
             transform_capabilities: OperationType::Face.transform_capabilities(),
             debug_ctx: Some(&root),
             semantic_ctx: None,
+            entry_containment: None,
         },
         &mut ReconcileSet::empty(),
     );
@@ -513,6 +518,7 @@ fn dressup_stages_run_in_the_order_the_pipeline_lists() {
             transform_capabilities: OperationType::Pocket.transform_capabilities(),
             debug_ctx: Some(&root),
             semantic_ctx: None,
+            entry_containment: None,
         },
         &mut ReconcileSet::empty(),
     );

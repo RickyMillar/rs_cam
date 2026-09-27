@@ -520,6 +520,24 @@ pub(super) fn annotate_adaptive2d(
                 scope.bind_to_toolpath(toolpath, ann.move_index, end);
                 scope.finish();
             }
+            AdaptiveRuntimeEvent::StarterPocket { center_x, center_y } => {
+                let scope = op_context.start_item(ToolpathSemanticKind::Entry, ann.event.label());
+                scope.set_param(SemanticKey::CenterX, *center_x);
+                scope.set_param(SemanticKey::CenterY, *center_y);
+                scope.bind_to_toolpath(toolpath, ann.move_index, end);
+                scope.finish();
+            }
+            AdaptiveRuntimeEvent::ResidueContour { offset_index } => {
+                let scope = op_context.start_item(ToolpathSemanticKind::Contour, ann.event.label());
+                scope.set_param(SemanticKey::ContourIndex, *offset_index);
+                scope.bind_to_toolpath(toolpath, ann.move_index, end);
+                scope.finish();
+            }
+            AdaptiveRuntimeEvent::ResidueMop { .. } => {
+                let scope = op_context.start_item(ToolpathSemanticKind::Cleanup, ann.event.label());
+                scope.bind_to_toolpath(toolpath, ann.move_index, end);
+                scope.finish();
+            }
         }
     }
 }

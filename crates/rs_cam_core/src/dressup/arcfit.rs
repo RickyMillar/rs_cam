@@ -62,8 +62,23 @@ use crate::trace::transform_provenance::Transformed;
 ///
 /// Hands back the N-to-1 collapse under the C1 provenance contract, so
 /// channels other than the spans can follow it.
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 pub fn fit_arcs(annotated: AnnotatedToolpath, tolerance: f64, tool_radius: f64) -> Transformed {
+    fit_arcs_within(annotated, tolerance, tool_radius, None)
+}
+
+/// [`fit_arcs`] with the arcs held inside `containment` when one is given:
+/// a fitted arc bulges up to `tolerance` off the points it replaces, so a
+/// run that hugs a wall of the tool-centre region would bulge into the
+/// wall (G-ADAPTPASSLOAD round 3: 0.041 mm on a 2D Adaptive link). An arc
+/// is kept only when every point along it lies inside a containment piece;
+/// else the run is shortened, as for an arc out of tolerance.
+#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+pub(crate) fn fit_arcs_within(
+    annotated: AnnotatedToolpath,
+    tolerance: f64,
+    tool_radius: f64,
+    containment: Option<&[crate::polygon::Polygon2]>,
+) -> Transformed {
     // Barriers we must not collapse across. A barrier at index `b` sits before
     // moves[b]; we treat it as cutting the arc-eligible run so any candidate
     // window [start, end) must satisfy: no barrier in (start, end) — i.e. a
@@ -204,7 +219,12 @@ pub fn fit_arcs(annotated: AnnotatedToolpath, tolerance: f64, tool_radius: f64) 
                 .chain((i..run_end).map(|j| &moves[j].target))
                 .collect();
 
-            if let Some(arc) = try_fit_arc(&points, tolerance, tool_radius) {
+            if let Some(arc) = try_fit_arc(&points, tolerance, tool_radius).filter(|arc| {
+                containment.is_none_or(|pieces| {
+                    let end = &moves[run_end - 1].target;
+                    arc_inside(pieces, start, end, arc)
+                })
+            }) {
                 best_arc_end = run_end;
                 best_arc = Some(arc);
                 run_end += 1;
@@ -294,6 +314,39 @@ pub fn fit_arcs(annotated: AnnotatedToolpath, tolerance: f64, tool_radius: f64) 
         },
         remap,
     )
+}
+
+/// Largest gap (mm) between an arc and the chords between the points
+/// [`arc_inside`] reads on it: the shortest move the toolpath emits
+/// (`toolpath::MIN_EMITTED_SEGMENT_MM`), below which the controller cannot
+/// express the difference.
+const ARC_CONTAINMENT_SAGITTA_MM: f64 = crate::toolpath::MIN_EMITTED_SEGMENT_MM;
+
+/// True when the arc from `start` to `end` about the fitted centre lies
+/// inside a piece of `pieces` at every point read, the points close enough
+/// that the arc leaves each chord between them by at most
+/// [`ARC_CONTAINMENT_SAGITTA_MM`].
+fn arc_inside(pieces: &[crate::polygon::Polygon2], start: &P3, end: &P3, arc: &ArcParams) -> bool {
+    let r = (start.x - arc.cx).hypot(start.y - arc.cy);
+    if !r.is_finite() || r <= 0.0 {
+        return false;
+    }
+    let a0 = (start.y - arc.cy).atan2(start.x - arc.cx);
+    let a1 = (end.y - arc.cy).atan2(end.x - arc.cx);
+    let tau = std::f64::consts::TAU;
+    let sweep = if arc.clockwise {
+        -((a0 - a1).rem_euclid(tau))
+    } else {
+        (a1 - a0).rem_euclid(tau)
+    };
+    // Chord sagitta r·(1 − cos(Δ/2)) ≤ s  ⇔  Δ ≤ 2·acos(1 − s/r).
+    let max_step = 2.0 * (1.0 - (ARC_CONTAINMENT_SAGITTA_MM / r).min(1.0)).acos();
+    let n = ((sweep.abs() / max_step).ceil() as usize).max(1);
+    (0..=n).all(|k| {
+        let a = a0 + sweep * k as f64 / n as f64;
+        let p = crate::geo::P2::new(arc.cx + r * a.cos(), arc.cy + r * a.sin());
+        pieces.iter().any(|piece| piece.contains_point(&p))
+    })
 }
 
 struct ArcParams {

@@ -413,6 +413,23 @@ fn rapid_to_entry_top(
     if air { None } else { Some(z) }
 }
 
+/// A straight plunge from `start` to `end` (the same XY) that goes down
+/// through air by rapid ([`rapid_to_entry_top`], the shared first half of
+/// a helix or ramp entry), then feeds the rest straight down at
+/// `feed_rate` (G-ADAPTPASSLOAD round 4).
+pub(crate) fn emit_stock_aware_plunge(
+    tp: &mut Toolpath,
+    start: &P3,
+    end: &P3,
+    feed_rate: f64,
+    safety: &EntrySafety<'_>,
+) {
+    use crate::toolpath::MoveIntent;
+    if rapid_to_entry_top(tp, start, end, safety, feed_rate).is_some() {
+        tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryPlunge);
+    }
+}
+
 // SAFETY: eight parameters, one over clippy's threshold. The eighth is
 // `fold`, and grouping the rest into a struct would move the emitter's
 // existing contract for one added argument.
@@ -659,6 +676,44 @@ fn clip_polyline_to_floor(planned: &[P3], probe: &EntrySurfaceProbe<'_>) -> Opti
     Some(out)
 }
 
+/// One full lap of radius `radius` around `centre` at its Z, as part of a
+/// helix entry (`EntryHelix`). `from_centre` first feeds out from the
+/// centre to the lap start; otherwise the cutter already stands on the lap
+/// at `start_angle`. The caller returns to the centre after it.
+fn emit_floor_lap(
+    tp: &mut Toolpath,
+    centre: &P3,
+    radius: f64,
+    feed: f64,
+    start_angle: f64,
+    from_centre: bool,
+) {
+    use crate::toolpath::MoveIntent;
+    const STEPS_PER_REV: usize = 36;
+    let at = |angle: f64| {
+        let (sin_a, cos_a) = angle.sin_cos();
+        P3::new(
+            centre.x + radius * cos_a,
+            centre.y + radius * sin_a,
+            centre.z,
+        )
+    };
+    if from_centre {
+        tp.feed_to_with_intent(at(start_angle), feed, MoveIntent::EntryHelix);
+    }
+    let step = std::f64::consts::TAU / STEPS_PER_REV as f64;
+    for k in 1..=STEPS_PER_REV {
+        tp.feed_to_with_intent(
+            at(start_angle + step * k as f64),
+            feed,
+            MoveIntent::EntryHelix,
+        );
+    }
+    if from_centre {
+        tp.feed_to_with_intent(*centre, feed, MoveIntent::EntryHelix);
+    }
+}
+
 pub(crate) fn emit_helix(
     tp: &mut Toolpath,
     start: &P3,
@@ -684,6 +739,12 @@ pub(crate) fn emit_helix(
     let dz = helix_top - end.z;
     if dz < 0.01 || pitch < 0.01 || radius <= 0.0 {
         tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryPlunge);
+        // G-ADAPTPASSLOAD: with the floor lap asked for, the entry leaves
+        // the same `radius + R` hole whether it helixed or fed down through
+        // air, so a planner that stamps that hole is never ahead of it.
+        if safety.helix_floor_lap && radius > 0.0 {
+            emit_floor_lap(tp, end, radius, ramp_feed, 0.0, true);
+        }
         return;
     }
 
@@ -773,8 +834,16 @@ pub(crate) fn emit_helix(
             z = zq;
         }
     }
+    let reached_floor = z <= end.z + 1e-9;
+    let last_angle = step_angle * turns.len() as f64;
     for q in turns {
         tp.feed_to_with_intent(q, ramp_feed, MoveIntent::EntryHelix);
+    }
+    // G-ADAPTPASSLOAD: one more full lap at the target Z, so the floor of
+    // the hole is flat out to `radius + R` (no helical step for the first
+    // cut out of it to read as fresh stock).
+    if safety.helix_floor_lap && reached_floor {
+        emit_floor_lap(tp, end, radius, ramp_feed, last_angle, false);
     }
 
     // Return to center at final Z

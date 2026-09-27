@@ -205,6 +205,12 @@ impl DressupStage {
         kind: ToolpathSemanticKind::Entry,
         semantic_label: "Helix entry",
     };
+    pub const PLUNGE_ENTRY: Self = Self {
+        debug_key: "entry_style",
+        debug_label: "Stock-aware plunge entry",
+        kind: ToolpathSemanticKind::Entry,
+        semantic_label: "Stock-aware plunge entry",
+    };
     pub const DOGBONES: Self = Self {
         debug_key: "dogbones",
         debug_label: "Apply dogbones",
@@ -257,7 +263,9 @@ impl DressupStage {
 /// moves. `RAPID_ORDER` appears twice for that reason — the barriered arm
 /// and the unbarriered fallback are the same stage under two gates, and
 /// exactly one of them fires. `RAMP_ENTRY` stands for the entry slot; a
-/// helix entry runs [`DressupStage::HELIX_ENTRY`] in the same position.
+/// helix entry runs [`DressupStage::HELIX_ENTRY`] and an op with
+/// `stock_aware_plunge` under entry style None runs
+/// [`DressupStage::PLUNGE_ENTRY`] in the same position.
 ///
 /// Every stage is GATED. A run emits a subsequence of this list, never a
 /// different order and never a key that is not here.
@@ -466,6 +474,10 @@ pub struct DressupContext<'a> {
     pub transform_capabilities: OperationTransformCapabilities,
     pub debug_ctx: Option<&'a ToolpathDebugContext>,
     pub semantic_ctx: Option<&'a ToolpathSemanticContext>,
+    /// The region every helix entry circle must stay inside (the part
+    /// inset by the tool radius), or `None`. Set for 2D Adaptive only
+    /// (G-ADAPTPASSLOAD round 3; the other ops keep their entries).
+    pub entry_containment: Option<&'a [crate::polygon::Polygon2]>,
 }
 
 pub fn apply_dressups(
@@ -492,6 +504,7 @@ pub fn apply_dressups(
         transform_capabilities,
         debug_ctx,
         semantic_ctx,
+        entry_containment,
     } = ctx;
 
     // Capability gate: barriered TSP only fires when the input has barriers.
@@ -586,6 +599,8 @@ pub fn apply_dressups(
         stock_top,
         surface: entry_surface,
         fold_lap_cap: transform_capabilities.ramp_fold_lap_cap,
+        helix_floor_lap: transform_capabilities.helix_floor_lap,
+        helix_containment: entry_containment,
         ramp_feed: ramp_feed_rate_mm_min,
         stock_top_measured: false,
         contact_clearance: cfg.entry_clearance_mm,
@@ -654,6 +669,29 @@ pub fn apply_dressups(
                             radius: helix_radius,
                             pitch: helix_pitch,
                         },
+                        plunge_rate,
+                        entry_safety,
+                        tool_radius,
+                    )
+                },
+            );
+        }
+        // G-ADAPTPASSLOAD round 4: a plunge on an op that asks for it goes
+        // down through air by rapid, as a helix's first half does.
+        DressupEntryStyle::None if transform_capabilities.stock_aware_plunge => {
+            current = apply_dressup_traced(
+                current,
+                debug_ctx,
+                semantic_ctx,
+                channels,
+                DressupStage::PLUNGE_ENTRY,
+                |scope| {
+                    scope.set_param(SemanticKey::Kind, "plunge");
+                },
+                |at| {
+                    apply_entry(
+                        at,
+                        EntryStyle::Plunge,
                         plunge_rate,
                         entry_safety,
                         tool_radius,
@@ -760,7 +798,14 @@ pub fn apply_dressups(
             |scope| {
                 scope.set_param(SemanticKey::Tolerance, tolerance);
             },
-            |at| crate::dressup::arcfit::fit_arcs(at, tolerance, tool_radius),
+            |at| {
+                crate::dressup::arcfit::fit_arcs_within(
+                    at,
+                    tolerance,
+                    tool_radius,
+                    entry_containment,
+                )
+            },
         );
     }
 

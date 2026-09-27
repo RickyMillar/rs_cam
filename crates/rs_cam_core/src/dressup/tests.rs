@@ -1043,6 +1043,8 @@ fn no_probe(stock_top: f64) -> EntrySafety<'static> {
         stock_top_measured: false,
         contact_clearance: 0.5,
         contact_top: None,
+        helix_floor_lap: false,
+        helix_containment: None,
     }
 }
 
@@ -1323,6 +1325,8 @@ fn a_rough_keeps_folding_over_a_short_run_r10() {
         stock_top_measured: false,
         contact_clearance: 0.5,
         contact_top: None,
+        helix_floor_lap: false,
+        helix_containment: None,
     };
     let result = without_provenance(apply_entry(
         AnnotatedToolpath::new(plunge_then_run(2.0)),

@@ -17,6 +17,9 @@
 mod material_grid;
 pub(crate) mod path;
 mod search;
+/// The one tool-centre region builder the planner and the entry dressup's
+/// helix containment share.
+pub(crate) use search::tool_centre_pieces;
 mod spiral;
 
 pub(crate) use material_grid::MaterialGrid;
@@ -83,6 +86,11 @@ pub enum CleanupStrategy {
 /// the commanded one (algorithm review 2026-06-12, finding F1).
 /// `LeadingArc` samples the leading half of the flute circle and reads
 /// α/2π directly, matching the target's units.
+///
+/// G-ADAPTPASSLOAD (2026-09-26): 2D Adaptive ([`KeepDownLinks::WithinPassLoad`])
+/// reads neither. It holds every step to its swept width (sideways
+/// material extent / D) against the commanded radial fraction, whatever a
+/// project saved here; the field only steers the Adaptive3d slices.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum EngagementMeasure {
     #[default]
@@ -96,8 +104,10 @@ pub enum EngagementMeasure {
 /// `Agent` is the historical reactive per-step engagement search.
 /// `ContourSpiral` is constructive: iso-contours of the machinable-region
 /// EDT at stepover increments, traced inside-out from the helical starter
-/// pocket as one continuous stay-down pass — engagement bounded by wrap
-/// spacing, one plunge per region. Shares the narrow gate, starter
+/// pocket, engagement bounded by wrap spacing. Under the 2D pass load its
+/// cuts are replayed like the agent's and split where a trochoid insert is
+/// over the ceiling, so it re-enters; it makes no travel claim (the former
+/// one plunge per region is retired, G-ADAPTPASSLOAD). Shares the narrow gate, starter
 /// pocket, residue cleanup and toolpath emission with the agent path;
 /// falls back to the agent when no starter-pocket position exists.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
@@ -109,14 +119,17 @@ pub enum PathStrategy2d {
 
 /// What a keep-down `Link` segment may do (operator ruling 2026-09-26,
 /// G-ADAPTLINKLOAD: "don't plough unless the link can genuinely do a legit
-/// cutting move with defined load to get there").
+/// cutting move with defined load to get there"), and with it which load
+/// rule the planning call runs under.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeepDownLinks {
-    /// The link is emitted as a feed at cut depth. It is admitted only when
-    /// every step along it takes an engagement within the pass ceiling
-    /// ([`pass_engagement_limit`], in the planner's measure) on the grid of
-    /// that moment, and the admitted link is stamped on the grid as a pass
-    /// would be. Otherwise the planner retracts and re-enters.
+    /// The 2D rule. Every cutting step (agent, gradient, starter pocket,
+    /// contour and wall loops, mop walk) and every step of a keep-down link
+    /// holds the pass load: its swept width (sideways material extent / D)
+    /// on the grid of that moment is at most
+    /// `radial_woc_fraction_from_leading_arc(pass_engagement_limit(s, R))`
+    /// (G-ADAPTPASSLOAD). An admitted link is stamped on the grid as a pass
+    /// would be; otherwise the planner retracts and re-enters.
     WithinPassLoad,
     /// The caller lifts every `Link` to a retract (the adaptive3d slices),
     /// so the link never cuts: the historical corridor heuristic picks Link
@@ -124,10 +137,12 @@ pub enum KeepDownLinks {
     RetractedByCaller,
 }
 
-/// The highest engagement the 2D planner holds a pass step to, as the
-/// contact fraction α/2π: `target_engagement_fraction(stepover, R) × 1.05`
-/// (`search.rs`, `PASS_ENGAGEMENT_TOLERANCE`). A keep-down link is held to
-/// the same ceiling under [`KeepDownLinks::WithinPassLoad`].
+/// The highest engagement a pass step is held to, as the contact fraction
+/// α/2π: `target_engagement_fraction(stepover, R) × 1.05` (`search.rs`,
+/// `PASS_ENGAGEMENT_TOLERANCE`). Under [`KeepDownLinks::WithinPassLoad`]
+/// the 2D planner holds every step and link to it expressed as a radial
+/// fraction, `radial_woc_fraction_from_leading_arc` of this (0.3626 at
+/// s 2, R 3).
 pub fn pass_engagement_limit(stepover: f64, tool_radius: f64) -> f64 {
     search::pass_engagement_ceiling(target_engagement_fraction(stepover, tool_radius))
 }
@@ -167,6 +182,13 @@ pub struct AdaptiveParams {
     pub trochoid_cap_mult: f64,
     /// What a keep-down link may do. See `KeepDownLinks`.
     pub keep_down_links: KeepDownLinks,
+    /// Radius (mm) of the helix the entry dressup cuts at each plunge, 0
+    /// for a straight plunge or a ramp. Under
+    /// [`KeepDownLinks::WithinPassLoad`] the 2D planner stamps the hole the
+    /// helix cuts, `R + this`, at every re-entry: planner stock is the
+    /// emitted geometry, and the first step out of an entry is read against
+    /// the real hole (G-ADAPTPASSLOAD). Ignored by the Adaptive3d slices.
+    pub entry_helix_radius: f64,
 }
 
 /// A segment of the adaptive path: cutting, rapid reposition, or link (tool-down reposition).
@@ -198,6 +220,13 @@ pub enum AdaptiveRuntimeEvent {
         contour_index: usize,
         contour_total: usize,
     },
+    /// The helical starter pocket at the medial-axis maximum.
+    StarterPocket { center_x: f64, center_y: f64 },
+    /// One contour-parallel residue loop (the inward offset `offset_index`
+    /// of the machinable region; 0 is the region boundary itself).
+    ResidueContour { offset_index: usize },
+    /// One residue-mop patch.
+    ResidueMop { patch_index: usize },
 }
 
 impl AdaptiveRuntimeEvent {
@@ -233,6 +262,11 @@ impl AdaptiveRuntimeEvent {
                 contour_index,
                 contour_total,
             } => format!("Boundary cleanup {contour_index}/{contour_total}"),
+            Self::StarterPocket { center_x, center_y } => {
+                format!("Starter pocket at ({center_x:.1}, {center_y:.1})")
+            }
+            Self::ResidueContour { offset_index } => format!("Residue contour {offset_index}"),
+            Self::ResidueMop { patch_index } => format!("Residue mop {patch_index}"),
         }
     }
 }
@@ -294,7 +328,11 @@ pub fn adaptive_toolpath_structured_annotated_traced_with_cancel(
             path::apply_contour_parallel_residue_cleanup(polygon, params, &segments)
         }
     };
-    let (tp, annotations) = segments_to_toolpath(&segments, params);
+    // Under the 2D rule a simplified chord stays inside the region the
+    // planner read.
+    let region = (params.keep_down_links == KeepDownLinks::WithinPassLoad)
+        .then(|| search::ToolCentreRegion::new(polygon, params.tool_radius));
+    let (tp, annotations) = segments_to_toolpath(&segments, params, region.as_ref());
     if let Some(debug_ctx) = debug {
         for annotation in &annotations {
             debug_ctx.add_annotation(annotation.move_index, annotation.event.label());
@@ -343,6 +381,7 @@ mod tests {
             path_strategy: PathStrategy2d::Agent,
             trochoid_cap_mult: 1.2,
             keep_down_links: KeepDownLinks::WithinPassLoad,
+            entry_helix_radius: 0.0,
         }
     }
 
@@ -1582,7 +1621,10 @@ mod tests {
                     } => {
                         pass_entries.push((*pass_index, *entry_x, *entry_y));
                     }
-                    AdaptiveRuntimeEvent::SlotClearing { .. } => {}
+                    AdaptiveRuntimeEvent::SlotClearing { .. }
+                    | AdaptiveRuntimeEvent::StarterPocket { .. }
+                    | AdaptiveRuntimeEvent::ResidueContour { .. }
+                    | AdaptiveRuntimeEvent::ResidueMop { .. } => {}
                 },
             }
         }

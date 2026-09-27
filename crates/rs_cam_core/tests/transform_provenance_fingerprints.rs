@@ -304,6 +304,7 @@ fn three_pass_full_dressups_fingerprint() {
             transform_capabilities: full_chain_capabilities(),
             debug_ctx: None,
             semantic_ctx: None,
+            entry_containment: None,
         },
         &mut ReconcileSet::new(Some(&recorder), None),
     );
@@ -367,6 +368,7 @@ fn arc_raster_full_dressups_fingerprint() {
             transform_capabilities: full_chain_capabilities(),
             debug_ctx: None,
             semantic_ctx: None,
+            entry_containment: None,
         },
         &mut ReconcileSet::new(Some(&recorder), None),
     );
@@ -471,6 +473,7 @@ fn face_full_chain_fingerprint() {
             transform_capabilities: OperationType::Face.transform_capabilities(),
             debug_ctx: None,
             semantic_ctx: None,
+            entry_containment: None,
         },
         &mut ReconcileSet::new(Some(&recorder), None),
     );

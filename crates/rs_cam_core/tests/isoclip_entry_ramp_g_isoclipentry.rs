@@ -559,6 +559,7 @@ fn dressed_entry(stock: &TriDexelStock, carry_rest_stock: bool) -> Toolpath {
             transform_capabilities: OperationType::Scallop.transform_capabilities(),
             debug_ctx: None,
             semantic_ctx: None,
+            entry_containment: None,
         },
         &mut ReconcileSet::empty(),
     )
@@ -690,6 +691,7 @@ fn dressed_entry_wide(stock: &TriDexelStock) -> Toolpath {
             transform_capabilities: OperationType::Scallop.transform_capabilities(),
             debug_ctx: None,
             semantic_ctx: None,
+            entry_containment: None,
         },
         &mut ReconcileSet::empty(),
     )

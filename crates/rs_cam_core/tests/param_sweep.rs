@@ -321,6 +321,7 @@ fn default_adaptive_params() -> AdaptiveParams {
         path_strategy: rs_cam_core::adaptive::PathStrategy2d::Agent,
         trochoid_cap_mult: 1.2,
         keep_down_links: KeepDownLinks::WithinPassLoad,
+        entry_helix_radius: 0.0,
         tool_radius: 3.175,
         stepover: 2.0,
         cut_depth: -3.0,

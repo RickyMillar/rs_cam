@@ -344,6 +344,7 @@ fn c_no_rapid_crosses_the_rest_stock() {
             transform_capabilities: OperationType::Scallop.transform_capabilities(),
             debug_ctx: None,
             semantic_ctx: None,
+            entry_containment: None,
         },
         &mut ReconcileSet::empty(),
     );

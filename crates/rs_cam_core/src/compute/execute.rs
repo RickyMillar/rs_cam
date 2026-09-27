@@ -330,6 +330,11 @@ pub struct ExecutionContext<'a> {
     /// today the 3D Rough, G-PLANSIMGAP). `None` for a caller that applies
     /// no dressups.
     pub segment_merge_tolerance: Option<f64>,
+    /// The radius of the helix the entry dressup will cut at each plunge,
+    /// when the entry style is Helix, else `None`. The 2D Adaptive planner
+    /// stamps that hole at every re-entry (G-ADAPTPASSLOAD). Only a
+    /// generator whose planner models its entries reads it.
+    pub entry_helix_radius: Option<f64>,
 }
 
 impl<'a> ExecutionContext<'a> {
@@ -384,6 +389,7 @@ impl<'a> ExecutionContext<'a> {
             link_kinematics: None,
             rest_analysis: None,
             segment_merge_tolerance: None,
+            entry_helix_radius: None,
         }
     }
 }

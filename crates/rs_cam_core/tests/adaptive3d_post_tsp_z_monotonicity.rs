@@ -86,6 +86,7 @@ mod tests {
                 transform_capabilities: OperationType::Adaptive3d.transform_capabilities(),
                 debug_ctx: None,
                 semantic_ctx: None,
+                entry_containment: None,
             },
             &mut ReconcileSet::empty(),
         );
@@ -135,6 +136,7 @@ mod tests {
                 transform_capabilities: OperationType::Adaptive3d.transform_capabilities(),
                 debug_ctx: None,
                 semantic_ctx: None,
+                entry_containment: None,
             },
             &mut ReconcileSet::empty(),
         );

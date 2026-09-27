@@ -440,6 +440,12 @@ pub struct AdaptiveConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ramp_feed_rate: Option<f64>,
     pub tolerance: f64,
+    /// Cut full-width seeding slots before the adaptive passes. Off by
+    /// default since G-ADAPTPASSLOAD (2026-09-26): a slot line runs at full
+    /// radial immersion, the one 2D Adaptive cut outside the pass load. The
+    /// field stays required in a saved file (no serde default), so a project
+    /// that saved `true` keeps its slot lines; only a new operation starts
+    /// with them off.
     pub slot_clearing: bool,
     pub min_cutting_radius: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -450,9 +456,10 @@ pub struct AdaptiveConfig {
     /// behaviour can be restored by setting this to `Legacy`.
     #[serde(default)]
     pub cleanup_strategy: crate::adaptive::CleanupStrategy,
-    /// Engagement quantity the direction search measures against the
-    /// α/2π target. Defaults to the historical `DiskArea`; `LeadingArc`
-    /// is the units-correct measure (algorithm review 2026-06-12, F1).
+    /// Retired for 2D Adaptive (G-ADAPTPASSLOAD, 2026-09-26): the 2D
+    /// planner holds every step to its swept width, the commanded stepover
+    /// as radial immersion, whatever this says. Kept so saved projects load
+    /// and round-trip unchanged; Adaptive 3D still reads its own field.
     #[serde(default)]
     pub engagement_measure: crate::adaptive::EngagementMeasure,
     /// How the main clearing passes are generated: the historical
@@ -471,7 +478,9 @@ impl Default for AdaptiveConfig {
             plunge_rate: 500.0,
             ramp_feed_rate: None,
             tolerance: 0.1,
-            slot_clearing: true,
+            // G-ADAPTPASSLOAD (operator decision 2026-09-26): slot lines are
+            // full-width slots, outside the pass load; opt-in only.
+            slot_clearing: false,
             min_cutting_radius: 0.0,
             spindle_rpm: None,
             cleanup_strategy: crate::adaptive::CleanupStrategy::ContourParallelHybrid,

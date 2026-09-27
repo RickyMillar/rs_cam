@@ -31,6 +31,12 @@ use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::toolpath::{MoveType, Toolpath};
 
 const R: f64 = 3.175;
+
+/// The default helix entry radius the product's dressup cuts for 2D
+/// Adaptive: `HELIX_RADIUS_OVER_D` x D.
+fn helix_radius() -> f64 {
+    rs_cam_core::compute::config::HELIX_RADIUS_OVER_D * 2.0 * R
+}
 const STEPOVER: f64 = 2.0;
 
 // ── Deterministic PRNG (no rand dep, fixed seeds) ──────────────────────
@@ -112,6 +118,11 @@ fn annulus() -> Polygon2 {
         P2::new(38.0, 38.0),
         P2::new(22.0, 38.0),
     ]);
+    // `Polygon2` holds holes clockwise. This hole was written
+    // counter-clockwise, and the offset then read the island as machinable:
+    // the planner entered inside it (found 2026-09-26 when the oracle began
+    // to read each entry's wall distance). Normalised here.
+    poly.ensure_winding();
     poly
 }
 
@@ -129,6 +140,8 @@ fn narrow_slot() -> Polygon2 {
 struct Oracle {
     cells: Vec<bool>, // true = uncut material (inside polygon)
     inside: Vec<bool>,
+    /// Exact distance from each inside lattice point to the walls.
+    wall: Vec<f64>,
     rows: usize,
     cols: usize,
     origin_x: f64,
@@ -157,9 +170,24 @@ impl Oracle {
             let p = P2::new(origin_x + col as f64 * cell, origin_y + row as f64 * cell);
             *slot = polygon.contains_point(&p);
         }
+        let wall = inside
+            .iter()
+            .enumerate()
+            .map(|(idx, &inside)| {
+                if !inside {
+                    return 0.0;
+                }
+                let p = P2::new(
+                    origin_x + (idx % cols) as f64 * cell,
+                    origin_y + (idx / cols) as f64 * cell,
+                );
+                wall_distance(polygon, p)
+            })
+            .collect();
         Self {
             cells: inside.clone(),
             inside,
+            wall,
             rows,
             cols,
             origin_x,
@@ -221,18 +249,54 @@ impl Oracle {
         0.5 * hits as f64 / n as f64
     }
 
-    /// Fraction of *reachable* material cells cleared. Reachable = within
-    /// half a cell of the tool-disc sweep over legal cutter centers
-    /// (centers ≥ R inside the polygon).
-    fn coverage(&self) -> f64 {
-        let outside: Vec<bool> = self.inside.iter().map(|&i| !i).collect();
-        let mut din = distance_transform_2d(&outside, self.rows, self.cols);
-        for d in &mut din {
-            *d *= self.cell;
+    /// Radial immersion at the cutter position moving in `dir`: the
+    /// sideways extent (perpendicular to `dir`) of the material cells in the
+    /// cutter disc, over D. Independent reimplementation of the product's
+    /// load measure (G-ADAPTPASSLOAD, `step_within_pass_load`), the
+    /// simulator's radial model.
+    fn swept_width(&self, cx: f64, cy: f64, dir: f64) -> f64 {
+        let (sx, sy) = (-dir.sin(), dir.cos());
+        let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
+        let c0 = (((cx - R - self.origin_x) / self.cell).floor()).max(0.0) as usize;
+        let c1 = ((((cx + R - self.origin_x) / self.cell).ceil()) as usize)
+            .min(self.cols.saturating_sub(1));
+        let r0 = (((cy - R - self.origin_y) / self.cell).floor()).max(0.0) as usize;
+        let r1 = ((((cy + R - self.origin_y) / self.cell).ceil()) as usize)
+            .min(self.rows.saturating_sub(1));
+        for row in r0..=r1 {
+            let dy = self.origin_y + row as f64 * self.cell - cy;
+            for col in c0..=c1 {
+                let dx = self.origin_x + col as f64 * self.cell - cx;
+                if dx * dx + dy * dy <= R * R && self.cells[row * self.cols + col] {
+                    let u = dx * sx + dy * sy;
+                    lo = lo.min(u);
+                    hi = hi.max(u);
+                }
+            }
         }
-        let machinable: Vec<bool> = din.iter().map(|&d| d >= R - self.cell * 0.5).collect();
-        let not_machinable: Vec<bool> = machinable.iter().map(|&m| !m).collect();
-        let mut dmach = distance_transform_2d(&not_machinable, self.rows, self.cols);
+        if hi < lo { 0.0 } else { (hi - lo) / (2.0 * R) }
+    }
+
+    /// Fraction of *reachable* material cells cleared. Reachable = within R
+    /// of a legal cutter centre, legal = a lattice point whose exact
+    /// distance to the walls (`wall_distance`, this file's own) is at least
+    /// R. A cell reachable only from an off-lattice centre is left out (the
+    /// reading is lenient by under one oracle cell at the edge of reach).
+    ///
+    /// Before 2026-09-26 (round 3) this read the distance transform of the
+    /// NON-machinable cells (`distance_transform_2d` measures the distance
+    /// to the nearest `true` cell), so "reachable" was the band within R of
+    /// the unreachable set, including the unreachable star tips themselves
+    /// (43 of 110 uncut cells on `star_a` lay over R from any legal
+    /// centre, up to 4.6 mm), and the interior was not read at all.
+    fn coverage(&self) -> f64 {
+        let legal: Vec<bool> = self
+            .inside
+            .iter()
+            .zip(&self.wall)
+            .map(|(&inside, &w)| inside && w >= R)
+            .collect();
+        let mut dmach = distance_transform_2d(&legal, self.rows, self.cols);
         for d in &mut dmach {
             *d *= self.cell;
         }
@@ -242,9 +306,8 @@ impl Oracle {
             if !inside {
                 continue;
             }
-            // Cell distance to nearest machinable center must be < R
-            // (with half-cell tolerance) for any legal pass to reach it.
-            if dist > R - self.cell * 0.5 {
+            // A legal centre within R reaches the cell.
+            if dist > R {
                 continue;
             }
             reachable += 1;
@@ -261,6 +324,12 @@ impl Oracle {
 
 #[derive(Debug)]
 struct Metrics {
+    /// Swept width (radial immersion) over the cut samples that meet
+    /// stock: p99, max, and the fraction over the pass ceiling plus one
+    /// oracle cell over D.
+    p99_width: f64,
+    max_width: f64,
+    over_ceiling_fraction: f64,
     p99_engagement: f64,
     max_engagement: f64,
     coverage: f64,
@@ -274,6 +343,7 @@ fn replay(polygon: &Polygon2, tp: &Toolpath) -> Metrics {
     let cell = (R / 6.0).min(0.5);
     let mut oracle = Oracle::new(polygon, cell);
     let mut engagements: Vec<f64> = Vec::new();
+    let mut widths: Vec<f64> = Vec::new();
     let target = ((1.0 - STEPOVER / R).clamp(-1.0, 1.0)).acos() / std::f64::consts::TAU;
 
     let mut prev: Option<P2> = None;
@@ -298,6 +368,17 @@ fn replay(polygon: &Polygon2, tp: &Toolpath) -> Metrics {
                     in_rapid = false;
                 }
                 cut_mm += len;
+                // A vertical feed is an entry. The product's default entry
+                // for 2D Adaptive is the helix dressup (radius 0.3 x D,
+                // ending on a flat lap, shrunk to stay off the walls since
+                // G-ADAPTPASSLOAD round 3), which cuts a disc of R + that
+                // radius; the planner stamps the same hole. This harness
+                // calls the planner without dressups, so it cuts the hole
+                // here, with its own wall distance.
+                if len <= 1e-9 && m.target.z < -1e-9 {
+                    let fit = (wall_distance(polygon, to) - R).clamp(0.0, helix_radius());
+                    oracle.clear_circle(to.x, to.y, R + fit);
+                }
                 if len > 1e-9 {
                     let dir = dy.atan2(dx);
                     let n = (len / (cell * 1.0)).ceil() as usize;
@@ -306,6 +387,10 @@ fn replay(polygon: &Polygon2, tp: &Toolpath) -> Metrics {
                         let x = from.x + t * dx;
                         let y = from.y + t * dy;
                         engagements.push(oracle.leading_arc(x, y, dir));
+                        let w = oracle.swept_width(x, y, dir);
+                        if w > 0.0 {
+                            widths.push(w);
+                        }
                         oracle.clear_circle(x, y, R);
                     }
                 }
@@ -331,7 +416,22 @@ fn replay(polygon: &Polygon2, tp: &Toolpath) -> Metrics {
         engagements.iter().filter(|&&e| e > target * 1.3).count() as f64 / engagements.len() as f64
     };
 
+    widths.sort_by(f64::total_cmp);
+    let p99_width = widths
+        .get(((widths.len() as f64) * 0.99) as usize)
+        .copied()
+        .unwrap_or(0.0);
+    let max_width = widths.last().copied().unwrap_or(0.0);
+    let bar = pass_ceiling_radial() + cell / (2.0 * R);
+    let over_ceiling_fraction = if widths.is_empty() {
+        0.0
+    } else {
+        widths.iter().filter(|&&w| w > bar).count() as f64 / widths.len() as f64
+    };
     Metrics {
+        p99_width,
+        max_width,
+        over_ceiling_fraction,
         p99_engagement: p99,
         max_engagement: max,
         coverage: oracle.coverage(),
@@ -363,6 +463,7 @@ fn run_strategy_capped(polygon: &Polygon2, strategy: PathStrategy2d, cap_mult: f
         path_strategy: strategy,
         trochoid_cap_mult: cap_mult,
         keep_down_links: rs_cam_core::adaptive::KeepDownLinks::WithinPassLoad,
+        entry_helix_radius: helix_radius(),
     };
     let tp = adaptive_toolpath(polygon, &params);
     replay(polygon, &tp)
@@ -380,58 +481,145 @@ fn shapes() -> Vec<(&'static str, Polygon2)> {
     ]
 }
 
+/// Distance from `p` to the nearest edge of `polygon` (exterior or hole).
+fn wall_distance(polygon: &Polygon2, p: P2) -> f64 {
+    let mut d = f64::INFINITY;
+    for ring in std::iter::once(&polygon.exterior).chain(polygon.holes.iter()) {
+        for i in 0..ring.len() {
+            let a = ring[i];
+            let b = ring[(i + 1) % ring.len()];
+            let (dx, dy) = (b.x - a.x, b.y - a.y);
+            let l2 = dx * dx + dy * dy;
+            let t = if l2 > 0.0 {
+                (((p.x - a.x) * dx + (p.y - a.y) * dy) / l2).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            d = d.min((p.x - a.x - t * dx).hypot(p.y - a.y - t * dy));
+        }
+    }
+    d
+}
+
+/// The product's pass ceiling as a radial fraction (G-ADAPTPASSLOAD).
+fn pass_ceiling_radial() -> f64 {
+    rs_cam_core::ops::adaptive_shared::radial_woc_fraction_from_leading_arc(
+        rs_cam_core::adaptive::pass_engagement_limit(STEPOVER, R),
+    )
+}
+
 /// The target α/2π for the harness tool/stepover, for context in output.
 fn target() -> f64 {
     ((1.0 - STEPOVER / R).clamp(-1.0, 1.0)).acos() / std::f64::consts::TAU
 }
 
-/// Stage 1+2 contract for the contour spiral, asserted shape-by-shape
-/// against the agent on identical geometry:
+/// The load both 2D strategies are held to, on identical geometry, under
+/// the product's one load definition (G-ADAPTPASSLOAD, operator decision
+/// 2026-09-26): radial immersion = swept width (sideways stock extent / D),
+/// read here by this file's own oracle.
 ///
-/// - **travel**: spiral plunges ≤ 3 and rapid distance ≤ 5% of cutting
-///   distance (the agent restarts from walls; the spiral stays down);
-/// - **coverage**: ≥ 0.975 absolute (the oracle's boundary rasterisation
-///   keeps a thin ring of "reachable" corner cells no strategy clears —
-///   the production agent reads 0.977–0.995 on these shapes), and never
-///   more than 1.5 % below the agent on the same shape;
-/// - **load, comparative**: p99 engagement and over-1.3×target fraction
-///   never worse than the agent's;
-/// - **load, absolute (Stage 2 trochoids)**: ≥ 95% of cut samples within
-///   1.3× target, p99 ≤ 2× target. The strict 1.3×-target p99 is NOT
-///   asserted: a structural ~1% of samples at trochoid loop-tangent
-///   instants reads ~0.28–0.35 regardless of pitch — true cycloid
-///   advance and/or feed modulation territory, tracked in the review
-///   doc. Slot-class shapes (machinable width below the narrow gate) are
-///   exempt from load bars: both strategies route to contour-parallel
-///   there and near-slot engagement is inherent to slotting.
+/// Until 2026-09-26 this test was `contour_spiral_dominates_agent` and read
+/// the leading-arc fraction alpha/2pi, the quantity the spiral's trochoid
+/// trigger used. Under the operator's rule both strategies are held to the
+/// same swept-width ceiling, so the load comparison is made in that measure:
+///
+/// - **load, absolute**: p99 swept width <= the pass ceiling plus the
+///   discretisation between the planner and this oracle, (planner cell +
+///   oracle cell + tolerance) / D (the derivation of the six-island
+///   sentry's tolerance, `common::adaptive_islands`), for both strategies;
+/// - **load, comparative**: the spiral's p99 is not worse than the agent's
+///   by more than one oracle cell over D (the reading resolution);
+/// - **coverage**: >= 0.975 absolute for both, and the spiral never more
+///   than 1.5 % below the agent. Reachable is read exactly since round 3
+///   (`Oracle::coverage`); before, it read the band within R of the
+///   unreachable cells, star tips included.
+///
+/// Slot-class shapes (machinable width below the narrow gate) are exempt
+/// from the load bars: no helix fits them, so their entries are straight
+/// plunges whose first steps are exempt (`PassLoad::departing`).
+///
+/// The spiral's former travel contract (at most 3 plunges, rapids at most
+/// 5 % of the cut) is retired: see `contour_spiral_travel_contract`.
 #[test]
-fn contour_spiral_dominates_agent() {
+fn both_strategies_hold_the_pass_load() {
     let mut failures: Vec<String> = Vec::new();
+    let cell = (R / 6.0).min(0.5);
+    let planner_cell = (R / 6.0).max(0.2);
+    let absolute = pass_ceiling_radial() + (planner_cell + cell + 0.2) / (2.0 * R);
+    let resolution = cell / (2.0 * R);
     for (name, poly) in shapes() {
         let s = run_strategy(&poly, PathStrategy2d::ContourSpiral);
         let a = run_strategy(&poly, PathStrategy2d::Agent);
         println!(
-            "spiral {name}: cov {:.4} p99 {:.3} max {:.3} over {:.3} plunges {} rapid {:.0} cut {:.0} (target {:.3})",
-            s.coverage,
-            s.p99_engagement,
-            s.max_engagement,
-            s.over_target_fraction,
-            s.plunges,
-            s.rapid_mm,
-            s.cut_mm,
-            target()
+            "width  {name}: spiral p99 {:.3} max {:.3} over {:.4} | agent p99 {:.3} max {:.3} over {:.4} (ceiling {:.3}, bar {absolute:.3})",
+            s.p99_width,
+            s.max_width,
+            s.over_ceiling_fraction,
+            a.p99_width,
+            a.max_width,
+            a.over_ceiling_fraction,
+            pass_ceiling_radial()
         );
         println!(
-            "agent  {name}: cov {:.4} p99 {:.3} max {:.3} over {:.3} plunges {} rapid {:.0} cut {:.0}",
-            a.coverage,
-            a.p99_engagement,
-            a.max_engagement,
-            a.over_target_fraction,
-            a.plunges,
-            a.rapid_mm,
-            a.cut_mm,
+            "spiral {name}: cov {:.4} plunges {} rapid {:.0} cut {:.0} (alpha/2pi p99 {:.3} max {:.3})",
+            s.coverage, s.plunges, s.rapid_mm, s.cut_mm, s.p99_engagement, s.max_engagement
         );
+        println!(
+            "agent  {name}: cov {:.4} plunges {} rapid {:.0} cut {:.0} (alpha/2pi p99 {:.3} max {:.3})",
+            a.coverage, a.plunges, a.rapid_mm, a.cut_mm, a.p99_engagement, a.max_engagement
+        );
+        let slot_class = name == "narrow_slot";
+        if !slot_class {
+            for (who, m) in [("spiral", &s), ("agent", &a)] {
+                if m.p99_width > absolute {
+                    failures.push(format!(
+                        "{name}: {who} p99 swept width {:.3} > {absolute:.3}",
+                        m.p99_width
+                    ));
+                }
+            }
+            if s.p99_width > a.p99_width + resolution {
+                failures.push(format!(
+                    "{name}: spiral p99 swept width {:.3} worse than agent {:.3}",
+                    s.p99_width, a.p99_width
+                ));
+            }
+        }
+        for (who, m) in [("spiral", &s), ("agent", &a)] {
+            if m.coverage < 0.975 {
+                failures.push(format!("{name}: {who} coverage {:.4} < 0.975", m.coverage));
+            }
+        }
+        if s.coverage < a.coverage - 0.015 {
+            failures.push(format!(
+                "{name}: spiral coverage {:.4} more than 1.5% below agent {:.4}",
+                s.coverage, a.coverage
+            ));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "pass-load property violations:\n{}",
+        failures.join("\n")
+    );
+}
 
+/// The spiral's Stage 1 travel contract: one continuous stay-down pass, at
+/// most 3 plunges, rapids at most 5 % of the cut. It held under the
+/// leading-arc trigger (cap 1.2 x target). Under the swept-width pass load
+/// (G-ADAPTPASSLOAD) the spiral's trochoid inserts do not bound the swept
+/// width (a loop meets the frontier across a chord of the pitch-deep cap,
+/// 0.8 of D at pitch 0.6 s), so the replay splits them and the spiral
+/// re-enters: 56-119 plunges on the harness shapes (2026-09-26, round 3).
+/// The claim is RETIRED (lead decision, G-ADAPTPASSLOAD round 3): no doc
+/// or help text states it; this test is kept, ignored, as the record of
+/// what the spiral once held and why it no longer does.
+#[test]
+#[ignore = "retired claim: under G-ADAPTPASSLOAD the spiral's trochoids exceed the swept-width ceiling and it re-enters"]
+fn contour_spiral_travel_contract() {
+    let mut failures: Vec<String> = Vec::new();
+    for (name, poly) in shapes() {
+        let s = run_strategy(&poly, PathStrategy2d::ContourSpiral);
         if s.plunges > 3 {
             failures.push(format!("{name}: {} plunges (cap 3)", s.plunges));
         }
@@ -441,64 +629,14 @@ fn contour_spiral_dominates_agent() {
                 s.rapid_mm, s.cut_mm
             ));
         }
-        if s.coverage < 0.975 {
-            failures.push(format!("{name}: coverage {:.4} < 0.975", s.coverage));
-        }
-        if s.coverage < a.coverage - 0.015 {
-            failures.push(format!(
-                "{name}: coverage {:.4} more than 1.5% below agent {:.4}",
-                s.coverage, a.coverage
-            ));
-        }
-        if s.p99_engagement > a.p99_engagement + 0.01 {
-            failures.push(format!(
-                "{name}: p99 {:.3} worse than agent {:.3}",
-                s.p99_engagement, a.p99_engagement
-            ));
-        }
-        if s.over_target_fraction > a.over_target_fraction + 0.02 {
-            failures.push(format!(
-                "{name}: over-fraction {:.3} worse than agent {:.3}",
-                s.over_target_fraction, a.over_target_fraction
-            ));
-        }
-        // Absolute load bars (Stage 2 trochoids). Slot-class shapes are
-        // exempt — see the test doc comment.
-        let slot_class = name == "narrow_slot";
-        if !slot_class && s.over_target_fraction > 0.05 {
-            failures.push(format!(
-                "{name}: {:.1}% of samples over 1.3×target (absolute cap 5%)",
-                s.over_target_fraction * 100.0
-            ));
-        }
-        if !slot_class && s.p99_engagement > target() * 2.0 {
-            failures.push(format!(
-                "{name}: p99 {:.3} > 2×target {:.3}",
-                s.p99_engagement,
-                target() * 2.0
-            ));
-        }
-        if a.coverage < 0.975 {
-            failures.push(format!(
-                "{name}: AGENT baseline coverage {:.4} < 0.975 (regression in shared machinery?)",
-                a.coverage
-            ));
-        }
     }
     assert!(
         failures.is_empty(),
-        "stage-1 property violations:\n{}",
+        "travel contract:\n{}",
         failures.join("\n")
     );
 }
 
-/// Stage 4 trochoid-distance lever (exploratory, `#[ignore]`d — run with
-/// `cargo test -p rs_cam_core --test adaptive_property_harness -- --ignored
-/// --nocapture trochoid_cap`). Maps cutting distance vs load as the
-/// trochoid trigger cap is relaxed: higher `cap_mult` fires fewer loops →
-/// less distance (faster on the machine) but higher peak engagement. The
-/// agent row is the distance/​load reference. Use it to find the knee
-/// where distance drops without load blowing past the gate bars.
 #[test]
 #[ignore]
 fn trochoid_cap_distance_load_tradeoff() {

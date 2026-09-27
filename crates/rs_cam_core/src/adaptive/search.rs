@@ -3,13 +3,99 @@
 //! Shared by the adaptive main loop in `path.rs` (via `pub(super)` free
 //! functions) and by `mod.rs` tests.
 
-use super::material_grid::CELL_MATERIAL;
-use super::{EngagementMeasure, MaterialGrid, angle_diff, refine_angle_bracket};
+use super::material_grid::{CELL_FRINGE, CELL_MATERIAL, SUB, sub_offset};
+use super::{
+    EngagementMeasure, MaterialGrid, angle_diff, refine_angle_bracket, target_engagement_fraction,
+};
 use crate::geo::P2;
+use crate::ops::adaptive_shared::radial_woc_fraction_from_leading_arc;
 use crate::polygon::Polygon2;
 use crate::trace::debug_trace::ToolpathDebugBounds2;
 
 use std::f64::consts::{PI, TAU};
+
+// ── The tool-centre region (2D rule) ───────────────────────────────────
+
+/// Where the cutter centre may stand under the 2D rule: the part inset by
+/// the tool radius, every piece of it, its arc joins flattened once at
+/// [`crate::polygon::FlattenPolicy::untoleranced`] (10 µm, points on the
+/// true arc). The planner reads it exactly, and a straight move is legal
+/// only when the whole segment stays inside it: two legal ends on either
+/// side of an island's inset arc have a chord that cuts the island
+/// (G-ADAPTPASSLOAD round 3, measured 0.026 mm per 1.5 mm step on the
+/// six-island pocket).
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ToolCentreRegion {
+    pieces: Vec<Polygon2>,
+}
+
+impl ToolCentreRegion {
+    /// The region of `polygon` for a cutter of radius `tool_radius`. The
+    /// helix-containment dressup reads the same pieces
+    /// ([`tool_centre_pieces`]).
+    pub(crate) fn new(polygon: &Polygon2, tool_radius: f64) -> Self {
+        Self {
+            pieces: tool_centre_pieces(polygon, tool_radius),
+        }
+    }
+
+    pub(crate) fn pieces(&self) -> &[Polygon2] {
+        &self.pieces
+    }
+
+    /// True when `p` lies inside a piece.
+    pub(crate) fn contains(&self, p: &P2) -> bool {
+        self.pieces.iter().any(|q| q.contains_point(p))
+    }
+
+    /// True when the straight move `a → b` stays inside the region: its end
+    /// and midpoint inside, and no edge of any ring crossed. `a` is where
+    /// the cutter stands already; it may sit on the boundary (a wall pass),
+    /// which the crossing test reads as touching, not crossing.
+    pub(crate) fn contains_segment(&self, a: P2, b: P2) -> bool {
+        self.contains(&b)
+            && self.contains(&P2::new(0.5 * (a.x + b.x), 0.5 * (a.y + b.y)))
+            && !self.crossed_by(a, b)
+    }
+
+    /// True when the segment `a → b` properly crosses an edge of a ring.
+    pub(crate) fn crossed_by(&self, a: P2, b: P2) -> bool {
+        let orient = |p: P2, q: P2, r: P2| (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+        let (lo_x, hi_x) = (a.x.min(b.x), a.x.max(b.x));
+        let (lo_y, hi_y) = (a.y.min(b.y), a.y.max(b.y));
+        self.pieces.iter().any(|piece| {
+            std::iter::once(&piece.exterior)
+                .chain(piece.holes.iter())
+                .any(|ring| {
+                    let n = ring.len();
+                    (0..n).any(|i| {
+                        let (Some(&c), Some(&d)) = (ring.get(i), ring.get((i + 1) % n)) else {
+                            return false;
+                        };
+                        if c.x.max(d.x) < lo_x
+                            || c.x.min(d.x) > hi_x
+                            || c.y.max(d.y) < lo_y
+                            || c.y.min(d.y) > hi_y
+                        {
+                            return false;
+                        }
+                        let (o1, o2) = (orient(a, b, c), orient(a, b, d));
+                        let (o3, o4) = (orient(c, d, a), orient(c, d, b));
+                        o1 * o2 < 0.0 && o3 * o4 < 0.0
+                    })
+                })
+        })
+    }
+}
+
+/// The pieces of [`ToolCentreRegion`]: `polygon` offset inward by
+/// `tool_radius` on the arc-carrying cascade and flattened once. The one
+/// builder the planner and the entry dressup's helix containment share.
+pub(crate) fn tool_centre_pieces(polygon: &Polygon2, tool_radius: f64) -> Vec<Polygon2> {
+    crate::polygon::OffsetRingSet::from_polygon(polygon)
+        .offset(tool_radius)
+        .to_polygons(crate::polygon::FlattenPolicy::untoleranced())
+}
 
 // ── Engagement computation ─────────────────────────────────────────────
 
@@ -128,7 +214,10 @@ mod engagement_measure_tests {
     //! read `α/2π` at the next position.
 
     use super::super::material_grid::{CELL_CLEARED, MaterialGrid};
-    use super::{compute_engagement, compute_engagement_arc};
+    use super::{
+        EngagementMeasure, PassLoad, compute_engagement, compute_engagement_arc,
+        compute_swept_width, search_direction_with_metrics,
+    };
     use crate::geo::P2;
     use crate::ops::adaptive_shared::target_engagement_fraction;
     use crate::polygon::Polygon2;
@@ -216,40 +305,525 @@ mod engagement_measure_tests {
              target {target:.4}, got {arc:.4}"
         );
     }
+
+    // ── G-ADAPTPASSLOAD (plan §1 and sentry S2) ────────────────────────
+
+    /// One planner cell as a fraction of D: the lattice resolution of every
+    /// swept-width reading.
+    const CELL_OVER_D: f64 = CELL / (2.0 * R);
+
+    /// Oracle: the swept width of a steady side cut at stepover `s` is
+    /// `s / D` to within one cell over D (the material edge falls between
+    /// two lattice rows), from a sliver to a full slot.
+    #[test]
+    fn swept_width_reads_the_stepover_over_the_diameter() {
+        for stepover in [0.5, 1.5, 3.0, 6.0] {
+            let (grid, nx, ny) = steady_state_grid(stepover);
+            let got = compute_swept_width(&grid, nx, ny, R, 0.0);
+            let want = stepover / (2.0 * R);
+            assert!(
+                (got - want).abs() <= CELL_OVER_D + 1e-9,
+                "stepover {stepover}: swept width {got:.4}, s/D {want:.4}, allowed \
+                 +- {CELL_OVER_D:.4}"
+            );
+        }
+    }
+
+    /// The fine lattice the plan's quadrature claims are checked on: the
+    /// disk-area reading at R / 60 is the continuous area fraction to a few
+    /// thousandths; the production lattice (R / 6) moves it by up to half a
+    /// column of the disc, depending on where the material edge falls.
+    const FINE: f64 = R / 60.0;
+
+    /// A steady side cut on a lattice of `cell`: the cutter at `(cx, cy)`
+    /// moving +x has swept everything within R of its path up to `cx` (the
+    /// swath ends in the round cap of its own disc), beside an earlier pass
+    /// that cleared `y >= cy - R + stepover`. Returns the grid and the next
+    /// position, one pass step (R / 2) ahead.
+    fn side_cut_grid(stepover: f64, cell: f64) -> (MaterialGrid, f64, f64) {
+        let size = 30.0;
+        let square = Polygon2::new(vec![
+            P2::new(0.0, 0.0),
+            P2::new(size, 0.0),
+            P2::new(size, size),
+            P2::new(0.0, size),
+        ]);
+        let mut grid = MaterialGrid::from_polygon(&square, cell);
+        let (cx, cy) = (size / 2.0, size / 2.0);
+        let y_edge = cy - R + stepover;
+        for row in 0..grid.rows {
+            let y = grid.origin_y + row as f64 * grid.cell_size;
+            for col in 0..grid.cols {
+                let x = grid.origin_x + col as f64 * grid.cell_size;
+                let swath = (x <= cx && (y - cy).abs() <= R) || (x - cx).hypot(y - cy) <= R;
+                let idx = row * grid.cols + col;
+                if (y >= y_edge || swath) && grid.cells[idx] != CELL_CLEARED {
+                    grid.cells[idx] = CELL_CLEARED;
+                }
+            }
+        }
+        (grid, cx + R / 2.0, cy)
+    }
+
+    /// Plan §1, the quadrature behind finding F1: the disk-area reading of
+    /// a steady side cut with step R/2 is about (w/pi) x fill, far under the
+    /// alpha/2pi target, so the historical band [0.186, 0.206] (s 2, R 3) is
+    /// met only at a stepover of 3.6-3.9 mm (the plan's scratch figure was
+    /// 3.7-3.9; this fine lattice reads 0.188 at 3.6), 1.8-1.95x the
+    /// commanded 2 mm.
+    #[test]
+    fn disk_area_meets_the_band_only_near_twice_the_stepover() {
+        for (stepover, quadrature) in [
+            (1.0, 0.051),
+            (2.0, 0.104),
+            (3.0, 0.158),
+            (4.0, 0.211),
+            (6.0, 0.315),
+        ] {
+            let (grid, nx, ny) = side_cut_grid(stepover, FINE);
+            let got = compute_engagement(&grid, nx, ny, R);
+            assert!(
+                (got - quadrature).abs() < 0.005,
+                "stepover {stepover}: disk area {got:.4}, plan quadrature {quadrature:.3}"
+            );
+        }
+        let target = target_engagement_fraction(2.0, R);
+        let (floor, ceiling) = (target * 0.95, super::pass_engagement_ceiling(target));
+        let read = |s: f64| {
+            let (grid, nx, ny) = side_cut_grid(s, FINE);
+            compute_engagement(&grid, nx, ny, R)
+        };
+        for (s, inside) in [(3.5, false), (3.6, true), (3.9, true), (4.0, false)] {
+            let got = read(s);
+            assert_eq!(
+                (floor..=ceiling).contains(&got),
+                inside,
+                "stepover {s}: disk area {got:.4} against the band [{floor:.4}, {ceiling:.4}]"
+            );
+        }
+    }
+
+    /// A head-on bite into a flat wall: the cutter at `(cx, cy)` has its
+    /// disc touching the wall `x >= cx + R`; the next position, one pass
+    /// step ahead, bites `STEP` = 1.5 mm into it. Returns the grid, the
+    /// machinable mask (all true) and the current position.
+    fn head_on_wall(cell: f64) -> (MaterialGrid, Vec<bool>, f64, f64) {
+        let size = 30.0;
+        let square = Polygon2::new(vec![
+            P2::new(0.0, 0.0),
+            P2::new(size, 0.0),
+            P2::new(size, size),
+            P2::new(0.0, size),
+        ]);
+        let mut grid = MaterialGrid::from_polygon(&square, cell);
+        let (cx, cy) = (size / 2.0, size / 2.0);
+        let wall = cx + R;
+        for row in 0..grid.rows {
+            for col in 0..grid.cols {
+                let x = grid.origin_x + col as f64 * grid.cell_size;
+                let idx = row * grid.cols + col;
+                if x < wall - 1e-9 && grid.cells[idx] != CELL_CLEARED {
+                    grid.cells[idx] = CELL_CLEARED;
+                }
+            }
+        }
+        let mask = vec![true; grid.rows * grid.cols];
+        (grid, mask, cx, cy)
+    }
+
+    /// Plan §1: a head-on bite of p = 1.5 mm reads 0.1955 on the disk-area
+    /// measure (the circular segment over the disc), inside the historical
+    /// band, while its sideways spread is the chord, 2 sqrt(2Rp - p^2) / D
+    /// = 0.866: the disk area admits a near-full slot.
+    #[test]
+    fn a_head_on_bite_reads_in_band_on_disk_area_and_near_a_slot_in_width() {
+        let (grid, _mask, cx, cy) = head_on_wall(FINE);
+        let (nx, ny) = (cx + STEP, cy);
+        let target = target_engagement_fraction(2.0, R);
+        let (floor, ceiling) = (target * 0.95, super::pass_engagement_ceiling(target));
+        let area = compute_engagement(&grid, nx, ny, R);
+        let segment =
+            R * R * (1.0 - STEP / R).acos() - (R - STEP) * (2.0 * R * STEP - STEP * STEP).sqrt();
+        let quadrature = segment / (std::f64::consts::PI * R * R);
+        assert!(
+            (quadrature - 0.1955).abs() < 5e-4,
+            "closed form {quadrature:.4}"
+        );
+        assert!(
+            (area - quadrature).abs() < 0.005 && area >= floor && area <= ceiling,
+            "disk area {area:.4} (closed form {quadrature:.4}) should sit in the band \
+             [{floor:.4}, {ceiling:.4}]"
+        );
+        let chord = (2.0 * R * STEP - STEP * STEP).sqrt() / R;
+        let width = compute_swept_width(&grid, nx, ny, R, 0.0);
+        assert!((chord - 0.866).abs() < 5e-4, "closed form {chord:.4}");
+        // Both ends of the chord fall between lattice points: two cells.
+        assert!(
+            (width - chord).abs() <= 2.0 * FINE / (2.0 * R) + 1e-9,
+            "swept width {width:.4}, chord {chord:.4}"
+        );
+    }
+
+    /// Sentry S2: facing the head-on wall, the 2D rule never takes a step
+    /// wider than the pass ceiling (0.3626 at s 2, R 3) plus one cell over
+    /// D. The historical disk-area search (the red-before rule) takes a
+    /// step 35.6 deg off the wall normal whose swept width is 0.61; it is
+    /// pinned below as the documented defect.
+    #[test]
+    fn no_accepted_step_is_wider_than_the_pass_ceiling() {
+        let (grid, mask, cx, cy) = head_on_wall(CELL);
+        let distances = vec![100.0; grid.rows * grid.cols];
+        let width_of = |angle: f64| {
+            compute_swept_width(
+                &grid,
+                cx + STEP * angle.cos(),
+                cy + STEP * angle.sin(),
+                R,
+                angle,
+            )
+        };
+
+        let capped = PassLoad::swept_width(2.0, R, CELL);
+        assert!(
+            (capped.ceiling - 0.3626).abs() < 5e-5,
+            "ceiling {}",
+            capped.ceiling
+        );
+        if let Ok(step) = search_direction_with_metrics(
+            &grid, &mask, cx, cy, R, STEP, &capped, 0.0, &distances, None,
+        ) {
+            let width = width_of(step.angle);
+            assert!(
+                width <= capped.ceiling + CELL_OVER_D,
+                "the 2D rule took a step {:.1} deg wide {width:.4}, over {:.4} + {CELL_OVER_D:.4}",
+                step.angle.to_degrees(),
+                capped.ceiling
+            );
+        }
+
+        let historical = PassLoad::historical(2.0, R, EngagementMeasure::DiskArea);
+        let step = search_direction_with_metrics(
+            &grid,
+            &mask,
+            cx,
+            cy,
+            R,
+            STEP,
+            &historical,
+            0.0,
+            &distances,
+            None,
+        )
+        .expect("the historical search finds a step");
+        let width = width_of(step.angle);
+        assert!(
+            width > capped.ceiling + CELL_OVER_D,
+            "the historical disk-area search took a step {width:.4} wide; if this no \
+             longer exceeds the ceiling, re-evaluate the documented defect"
+        );
+    }
 }
+
+/// Score weight per half turn of heading change in the direction search
+/// (historical; the 2D mop walk scores its headings with the same weight).
+pub(crate) const HEADING_CHANGE_WEIGHT: f64 = 0.03;
 
 /// The band a pass step is accepted in: `target × (1 ± this)` (matches the
 /// libactp reference).
 pub(crate) const PASS_ENGAGEMENT_TOLERANCE: f64 = 0.05;
 
 /// The highest engagement the direction search accepts for a pass step,
-/// `target × (1 + PASS_ENGAGEMENT_TOLERANCE)`. A keep-down link is held to
-/// the same ceiling (`path.rs`, `feed_link_within_pass_load`).
+/// `target × (1 + PASS_ENGAGEMENT_TOLERANCE)`, as the contact fraction α/2π.
 pub(crate) fn pass_engagement_ceiling(target_frac: f64) -> f64 {
     target_frac * (1.0 + PASS_ENGAGEMENT_TOLERANCE)
 }
 
-/// The engagement a step to `(nx, ny)` heading `angle` takes on `grid`, in
-/// the measure the planner is set to. The one reading both a pass step and
-/// a link step are held to.
+/// A swept-width reading of a disc that holds material but no sideways
+/// extent (one material cell): positive, so "any material" tests see it,
+/// and far below any band.
+const SWEPT_WIDTH_PRESENT: f64 = 1e-6;
+
+/// Radial immersion of a step to `(cx, cy)` heading `dir_angle`: the
+/// sideways extent (perpendicular to the heading) of the material cells in
+/// the cutter disc there, divided by the diameter (G-ADAPTPASSLOAD, operator
+/// decision 2026-09-26). This is the simulator's radial width-of-cut model
+/// (`dexel_stock/stamping.rs`: `perp_max − perp_min` of fresh cells in the
+/// midpoint disc ÷ D) on the planner grid, read at the same lattice points
+/// [`compute_engagement`] reads. Mean tangential force and MRR scale with
+/// this extent (`planning/UNIFIED_LOAD_MODEL_2026-06-18.md` §4), so it is
+/// the load the commanded stepover names: a steady side cut at stepover `s`
+/// reads `s / D` to within one cell over D.
+///
+/// Returns 0 on no material, and at least [`SWEPT_WIDTH_PRESENT`] when the
+/// disc holds any material.
+// SAFETY: rows and columns are clamped to the grid before indexing.
+#[allow(clippy::indexing_slicing)]
+pub(crate) fn compute_swept_width(
+    grid: &MaterialGrid,
+    cx: f64,
+    cy: f64,
+    radius: f64,
+    dir_angle: f64,
+) -> f64 {
+    swept_width_on(grid, cx, cy, radius, dir_angle, false)
+}
+
+/// [`compute_swept_width`] with the fringe's standing sub-points read too
+/// ([`super::material_grid::CELL_FRINGE`]): the slivers the centre lattice
+/// misses. Two such slivers either side of a disc are one wide step on the
+/// stock (G-ADAPTPASSLOAD round 3, measured 0.75 of D in the simulation
+/// on a step the centre lattice read in the band).
+pub(crate) fn compute_swept_width_with_slivers(
+    grid: &MaterialGrid,
+    cx: f64,
+    cy: f64,
+    radius: f64,
+    dir_angle: f64,
+) -> f64 {
+    swept_width_on(grid, cx, cy, radius, dir_angle, true)
+}
+
+// SAFETY: rows and columns are clamped to the grid before indexing.
+#[allow(clippy::indexing_slicing)]
+fn swept_width_on(
+    grid: &MaterialGrid,
+    cx: f64,
+    cy: f64,
+    radius: f64,
+    dir_angle: f64,
+    slivers: bool,
+) -> f64 {
+    let r_sq = radius * radius;
+    let col_min = ((cx - radius - grid.origin_x) / grid.cell_size)
+        .floor()
+        .max(0.0) as usize;
+    let col_max = (((cx + radius - grid.origin_x) / grid.cell_size).ceil() as usize)
+        .min(grid.cols.saturating_sub(1));
+    let row_min = ((cy - radius - grid.origin_y) / grid.cell_size)
+        .floor()
+        .max(0.0) as usize;
+    let row_max = (((cy + radius - grid.origin_y) / grid.cell_size).ceil() as usize)
+        .min(grid.rows.saturating_sub(1));
+    // Unit vector perpendicular to the heading (the sideways axis).
+    let (sx, sy) = (-dir_angle.sin(), dir_angle.cos());
+    let mut lo = f64::INFINITY;
+    let mut hi = f64::NEG_INFINITY;
+    let mut take = |dx: f64, dy: f64| {
+        let u = dx * sx + dy * sy;
+        lo = lo.min(u);
+        hi = hi.max(u);
+    };
+    for row in row_min..=row_max {
+        let dy = grid.origin_y + row as f64 * grid.cell_size - cy;
+        for col in col_min..=col_max {
+            let dx = grid.origin_x + col as f64 * grid.cell_size - cx;
+            let idx = row * grid.cols + col;
+            match grid.cells[idx] {
+                CELL_MATERIAL if dx * dx + dy * dy <= r_sq => take(dx, dy),
+                // A fringe cell's centre is cut; its standing sub-points
+                // are the sliver the centre lattice misses.
+                CELL_FRINGE if slivers => {
+                    let bits = grid.fringe_bits(idx);
+                    for j in 0..SUB {
+                        let py = dy + sub_offset(j) * grid.cell_size;
+                        for i in 0..SUB {
+                            let px = dx + sub_offset(i) * grid.cell_size;
+                            if bits & (1 << (j * SUB + i)) != 0 && px * px + py * py <= r_sq {
+                                take(px, py);
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    if hi < lo {
+        return 0.0;
+    }
+    ((hi - lo) / (2.0 * radius)).max(SWEPT_WIDTH_PRESENT)
+}
+
+/// Which quantity a step is measured in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StepMeasure {
+    /// The historical measures, compared against the contact fraction α/2π
+    /// (Adaptive3d slices, `KeepDownLinks::RetractedByCaller`).
+    Historical(EngagementMeasure),
+    /// [`compute_swept_width`], compared against the radial fraction a_e/D
+    /// (2D Adaptive, whatever `engagement_measure` a project saved).
+    SweptWidth,
+}
+
+/// The load a planning call holds a step to: the measure, the band the
+/// direction search aims for, and the ceiling no step may exceed.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PassLoad {
+    pub(crate) measure: StepMeasure,
+    /// The reading the search aims for.
+    pub(crate) target: f64,
+    /// Band floor, `target × (1 − PASS_ENGAGEMENT_TOLERANCE)`.
+    pub(crate) band_floor: f64,
+    /// The pass ceiling. Under [`StepMeasure::SweptWidth`] a step above it
+    /// is refused everywhere; the historical search may still fall back to
+    /// the best out-of-band step.
+    pub(crate) ceiling: f64,
+    /// The ceiling on the sliver reading
+    /// ([`compute_swept_width_with_slivers`]), under the 2D rule the pass
+    /// ceiling plus one planner cell over D: the centre lattice reads an
+    /// edge it sees up to one cell short (the band floor's own quantum),
+    /// so a sliver reading more than a cell over the ceiling is stock the
+    /// lattice hid, not the edge of the cut. Infinite where no sliver is
+    /// read (the historical rule, a departure).
+    pub(crate) sliver_ceiling: f64,
+    /// The smallest reading that counts as "the step cuts material".
+    pub(crate) presence: f64,
+}
+
+impl PassLoad {
+    /// The historical rule: `measure` against the α/2π target, with the
+    /// out-of-band fallback.
+    pub(crate) fn historical(stepover: f64, tool_radius: f64, measure: EngagementMeasure) -> Self {
+        let target = target_engagement_fraction(stepover, tool_radius);
+        Self {
+            measure: StepMeasure::Historical(measure),
+            target,
+            band_floor: (target * (1.0 - PASS_ENGAGEMENT_TOLERANCE)).max(0.005),
+            ceiling: pass_engagement_ceiling(target),
+            sliver_ceiling: f64::INFINITY,
+            presence: 0.005,
+        }
+    }
+
+    /// The 2D rule (G-ADAPTPASSLOAD): swept width against the commanded
+    /// radial fraction `s / D`, capped at the pass ceiling expressed as a
+    /// radial fraction, `radial_woc_fraction_from_leading_arc(
+    /// pass_engagement_ceiling(α*/2π))` (0.3626 at s 2, R 3).
+    ///
+    /// The band floor is one planner cell under the target: the lattice
+    /// reads a true side cut of width `s` anywhere in `[s - cell, s]` (the
+    /// stock edge falls between two lattice rows; `swept_width_reads_the_
+    /// stepover_over_the_diameter` pins it), so a step reading down to
+    /// `(s - cell) / D` may be a cut at the full stepover. The historical
+    /// `target x 0.95` floor is 0.017 of D under the target, a fifth of one
+    /// lattice quantum (cell / D = 0.083 at R 3): an axis-aligned side cut
+    /// could read in the band only at one exact lattice phase.
+    pub(crate) fn swept_width(stepover: f64, tool_radius: f64, cell: f64) -> Self {
+        let diameter = 2.0 * tool_radius;
+        let target = stepover.min(diameter) / diameter;
+        let ceiling = radial_woc_fraction_from_leading_arc(pass_engagement_ceiling(
+            target_engagement_fraction(stepover, tool_radius),
+        ));
+        Self {
+            measure: StepMeasure::SweptWidth,
+            target,
+            band_floor: (target - cell / diameter).max(SWEPT_WIDTH_PRESENT),
+            ceiling,
+            sliver_ceiling: ceiling + cell / diameter,
+            presence: SWEPT_WIDTH_PRESENT * 0.5,
+        }
+    }
+
+    /// The same load with no ceiling, for the steps out of a straight
+    /// plunge (G-ADAPTPASSLOAD). Leaving a hole of the cutter's own size
+    /// reads at least half the diameter whatever the heading, so a plunge
+    /// entry could never be left under the ceiling; those steps still aim
+    /// at the band. A helix entry leaves a wider hole and needs no
+    /// exemption.
+    pub(crate) fn departing(self) -> Self {
+        Self {
+            ceiling: f64::INFINITY,
+            sliver_ceiling: f64::INFINITY,
+            ..self
+        }
+    }
+
+    /// True when a step above the ceiling is refused (no fallback).
+    pub(crate) fn caps(&self) -> bool {
+        self.measure == StepMeasure::SweptWidth
+    }
+}
+
+/// The reading of a step to `(nx, ny)` heading `angle` on `grid`, in the
+/// measure `measure`. The one reading every pass step and link step is held
+/// to.
 pub(super) fn measure_engagement(
     grid: &MaterialGrid,
     nx: f64,
     ny: f64,
     tool_radius: f64,
     angle: f64,
-    measure: EngagementMeasure,
+    measure: StepMeasure,
 ) -> f64 {
     match measure {
-        EngagementMeasure::DiskArea => compute_engagement(grid, nx, ny, tool_radius),
-        EngagementMeasure::LeadingArc => compute_engagement_arc(grid, nx, ny, tool_radius, angle),
+        StepMeasure::Historical(EngagementMeasure::DiskArea) => {
+            compute_engagement(grid, nx, ny, tool_radius)
+        }
+        StepMeasure::Historical(EngagementMeasure::LeadingArc) => {
+            compute_engagement_arc(grid, nx, ny, tool_radius, angle)
+        }
+        StepMeasure::SweptWidth => compute_swept_width(grid, nx, ny, tool_radius, angle),
     }
+}
+
+/// The reading a step is held to `load` on: [`measure_engagement`], or,
+/// under the swept-width measure where the sliver reading
+/// ([`compute_swept_width_with_slivers`]) exceeds `load.sliver_ceiling`,
+/// that reading (over the ceiling, so the step is refused).
+pub(crate) fn measure_step(
+    grid: &MaterialGrid,
+    nx: f64,
+    ny: f64,
+    tool_radius: f64,
+    angle: f64,
+    load: &PassLoad,
+) -> f64 {
+    let reading = measure_engagement(grid, nx, ny, tool_radius, angle, load.measure);
+    if load.measure != StepMeasure::SweptWidth
+        || reading > load.ceiling
+        || !load.sliver_ceiling.is_finite()
+    {
+        return reading;
+    }
+    let slivers = compute_swept_width_with_slivers(grid, nx, ny, tool_radius, angle);
+    if slivers > load.sliver_ceiling {
+        slivers
+    } else {
+        reading
+    }
+}
+
+/// G-ADAPTPASSLOAD: the one predicate every 2D producer of a cutting step
+/// and every keep-down link step is held to. A step to `(nx, ny)` heading
+/// `angle`, read on `grid` as cut so far, is within the pass load when its
+/// reading does not exceed `load.ceiling`.
+pub(crate) fn step_within_pass_load(
+    grid: &MaterialGrid,
+    nx: f64,
+    ny: f64,
+    tool_radius: f64,
+    angle: f64,
+    load: &PassLoad,
+) -> bool {
+    measure_step(grid, nx, ny, tool_radius, angle, load) <= load.ceiling
 }
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct SearchDirectionResult {
     pub(super) angle: f64,
     pub(super) evaluations: u32,
+    /// False when the step was taken outside the band (the fallback).
+    pub(super) in_band: bool,
+}
+
+/// Why the direction search found no step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum NoStep {
+    /// No candidate cuts material.
+    NoMaterial,
+    /// Every candidate that cuts material is over the pass ceiling
+    /// (G-ADAPTPASSLOAD: the pass ends).
+    OverPassLoad,
 }
 
 pub(super) fn path_bounds(path: &[P2]) -> Option<ToolpathDebugBounds2> {
@@ -288,6 +862,10 @@ pub(crate) fn search_direction(
     prev_angle: f64,
     boundary_distances: &[f64],
 ) -> Option<f64> {
+    let mut load = PassLoad::historical(1.0, tool_radius, EngagementMeasure::DiskArea);
+    load.target = target_frac;
+    load.band_floor = (target_frac * (1.0 - PASS_ENGAGEMENT_TOLERANCE)).max(0.005);
+    load.ceiling = pass_engagement_ceiling(target_frac);
     search_direction_with_metrics(
         grid,
         machinable_mask,
@@ -295,11 +873,12 @@ pub(crate) fn search_direction(
         cy,
         tool_radius,
         step_len,
-        target_frac,
+        &load,
         prev_angle,
         boundary_distances,
-        EngagementMeasure::DiskArea,
+        None,
     )
+    .ok()
     .map(|result| result.angle)
 }
 
@@ -348,6 +927,7 @@ pub(super) fn search_direction_gradient(
     Some(SearchDirectionResult {
         angle,
         evaluations: 1,
+        in_band: true,
     })
 }
 
@@ -359,13 +939,15 @@ pub(super) fn search_direction_with_metrics(
     cy: f64,
     tool_radius: f64,
     step_len: f64,
-    target_frac: f64,
+    load: &PassLoad,
     prev_angle: f64,
     boundary_distances: &[f64],
-    measure: EngagementMeasure,
-) -> Option<SearchDirectionResult> {
-    let min_frac = (target_frac * (1.0 - PASS_ENGAGEMENT_TOLERANCE)).max(0.005);
-    let max_frac = pass_engagement_ceiling(target_frac);
+    region: Option<&ToolCentreRegion>,
+) -> Result<SearchDirectionResult, NoStep> {
+    let target_frac = load.target;
+    let min_frac = load.band_floor;
+    let max_frac = load.ceiling;
+    let mut over_ceiling = false;
 
     let wall_threshold = 2.0 * tool_radius;
     let mut evaluations = 0u32;
@@ -376,13 +958,25 @@ pub(super) fn search_direction_with_metrics(
         let nx = cx + step_len * angle.cos();
         let ny = cy + step_len * angle.sin();
 
-        if !grid.is_machinable(machinable_mask, nx, ny) {
+        // G-ADAPTPASSLOAD: the 2D rule reads the machinable region itself;
+        // the lattice read admits a centre up to a cell diagonal outside it
+        // (0.43 mm into an island on the six-island pocket).
+        let machinable = match region {
+            Some(region) => region.contains_segment(P2::new(cx, cy), P2::new(nx, ny)),
+            None => grid.is_machinable(machinable_mask, nx, ny),
+        };
+        if !machinable {
             return None;
         }
 
-        let engagement = measure_engagement(grid, nx, ny, tool_radius, angle, measure);
-        if engagement < 0.005 {
+        let engagement = measure_step(grid, nx, ny, tool_radius, angle, load);
+        if engagement < load.presence {
             return None;
+        }
+        if load.caps() && engagement > max_frac {
+            // G-ADAPTPASSLOAD: a step over the pass ceiling is not a
+            // candidate at all (it may still bracket the target).
+            over_ceiling = true;
         }
 
         let error = (engagement - target_frac).abs();
@@ -406,7 +1000,7 @@ pub(super) fn search_direction_with_metrics(
             }
         };
 
-        let score = error + angle_penalty * 0.03 + wall_bias;
+        let score = error + angle_penalty * HEADING_CHANGE_WEIGHT + wall_bias;
         Some((angle, engagement, score))
     };
 
@@ -455,7 +1049,11 @@ pub(super) fn search_direction_with_metrics(
         }
 
         if let Some((_, angle)) = best_good {
-            return Some(SearchDirectionResult { angle, evaluations });
+            return Ok(SearchDirectionResult {
+                angle,
+                evaluations,
+                in_band: true,
+            });
         }
     }
 
@@ -475,7 +1073,9 @@ pub(super) fn search_direction_with_metrics(
                 if eng >= min_frac && eng <= max_frac && best_good.is_none_or(|b| score < b.0) {
                     best_good = Some((score, angle));
                 }
-                if best_any.is_none_or(|b| score < b.0) {
+                // The historical fallback takes any step; under the 2D cap
+                // only a step within the ceiling (a lighter cut).
+                if (!load.caps() || eng <= max_frac) && best_any.is_none_or(|b| score < b.0) {
                     best_any = Some((score, angle));
                 }
                 if eng < target_frac {
@@ -503,10 +1103,25 @@ pub(super) fn search_direction_with_metrics(
         }
 
         if let Some((_, angle)) = best_good {
-            return Some(SearchDirectionResult { angle, evaluations });
+            return Ok(SearchDirectionResult {
+                angle,
+                evaluations,
+                in_band: true,
+            });
         }
-        best_any.map(|(_, angle)| SearchDirectionResult { angle, evaluations })
+        if let Some((_, angle)) = best_any {
+            return Ok(SearchDirectionResult {
+                angle,
+                evaluations,
+                in_band: false,
+            });
+        }
     }
+    Err(if over_ceiling {
+        NoStep::OverPassLoad
+    } else {
+        NoStep::NoMaterial
+    })
 }
 
 // ── Entry point finding ────────────────────────────────────────────────

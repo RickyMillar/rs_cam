@@ -148,6 +148,7 @@ fn dress_on_ridge(entry_x: f64, style: DressupEntryStyle, tool_diameter_mm: f64)
             transform_capabilities: OperationType::Scallop.transform_capabilities(),
             debug_ctx: None,
             semantic_ctx: None,
+            entry_containment: None,
         },
         &mut ReconcileSet::empty(),
     );
@@ -306,6 +307,7 @@ fn unclipped_ramp_keeps_its_planned_legs() {
             transform_capabilities: OperationType::Scallop.transform_capabilities(),
             debug_ctx: None,
             semantic_ctx: None,
+            entry_containment: None,
         },
         &mut ReconcileSet::empty(),
     );

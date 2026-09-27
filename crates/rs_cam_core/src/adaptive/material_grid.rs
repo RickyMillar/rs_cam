@@ -19,11 +19,34 @@ pub(crate) struct MaterialGrid {
     pub(super) material_count: usize,
     /// Total number of non-air cells.
     total_solid: usize,
+    /// G-ADAPTPASSLOAD round 3: per cell, which of its [`SUB`] x [`SUB`]
+    /// sub-points still hold stock, when the grid keeps a fringe
+    /// ([`Self::keep_fringe`]). `None`: the historical grid (a cell is cut
+    /// when its centre is).
+    sub: Option<Vec<u16>>,
 }
+
+/// Sub-points per cell side under a fringe: 4 x 4, a quarter-cell pitch
+/// (0.125 mm on a 6 mm cutter's 0.5 mm cell). A sliver thinner than the
+/// cell that the centre lattice misses is held on these.
+pub(super) const SUB: usize = 4;
+
+/// Offset of sub-point `i` (0..SUB) from its cell centre, in cells.
+pub(super) fn sub_offset(i: usize) -> f64 {
+    (i as f64 + 0.5) / SUB as f64 - 0.5
+}
+
+/// One logged cell change: index, state before, sub-points before.
+pub(super) type CellChange = (usize, u8, u16);
 
 const CELL_AIR: u8 = 0;
 pub(super) const CELL_MATERIAL: u8 = 1;
 pub(super) const CELL_CLEARED: u8 = 2;
+/// A cell whose centre a cut has reached while some of its sub-points
+/// still hold stock (a sliver thinner than the lattice). Not material for
+/// residue targets or the material count; the swept width reads its
+/// standing sub-points ([`super::search::compute_swept_width`]).
+pub(super) const CELL_FRINGE: u8 = 3;
 
 impl MaterialGrid {
     #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
@@ -62,7 +85,52 @@ impl MaterialGrid {
             cell_size,
             material_count,
             total_solid,
+            sub: None,
         }
+    }
+
+    /// Keep a fringe from now on (the 2D pass-load rule): each cell carries
+    /// [`SUB`] x [`SUB`] sub-points, those inside `polygon` holding stock.
+    /// A cut clears the sub-points its disc covers; a cell whose centre is
+    /// cut becomes [`CELL_FRINGE`] while any sub-point stands and
+    /// [`CELL_CLEARED`] when none does. Sub-points outside the part are
+    /// never stock, so a cell straddling a wall clears when the cutter
+    /// reaches the wall.
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    pub(super) fn keep_fringe(&mut self, polygon: &Polygon2) {
+        let mut sub = vec![0u16; self.cells.len()];
+        for row in 0..self.rows {
+            let y = self.origin_y + row as f64 * self.cell_size;
+            for col in 0..self.cols {
+                let idx = row * self.cols + col;
+                if self.cells[idx] == CELL_AIR {
+                    continue;
+                }
+                let x = self.origin_x + col as f64 * self.cell_size;
+                let mut bits = 0u16;
+                for j in 0..SUB {
+                    for i in 0..SUB {
+                        let p = P2::new(
+                            x + sub_offset(i) * self.cell_size,
+                            y + sub_offset(j) * self.cell_size,
+                        );
+                        if polygon.contains_point(&p) {
+                            bits |= 1 << (j * SUB + i);
+                        }
+                    }
+                }
+                sub[idx] = bits;
+            }
+        }
+        self.sub = Some(sub);
+    }
+
+    /// The standing sub-points of the cell at `idx` under a fringe.
+    pub(super) fn fringe_bits(&self, idx: usize) -> u16 {
+        self.sub
+            .as_ref()
+            .and_then(|sub| sub.get(idx).copied())
+            .unwrap_or(0)
     }
 
     #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
@@ -133,19 +201,130 @@ impl MaterialGrid {
         cx: f64,
         cy: f64,
         radius: f64,
-        log: &mut Vec<usize>,
+        log: &mut Vec<CellChange>,
     ) {
         self.clear_circle_inner(cx, cy, radius, Some(log));
     }
 
-    /// Put back the material a logged trial cut cleared.
-    pub(super) fn restore_cleared(&mut self, log: &[usize]) {
-        for &idx in log {
-            if let Some(cell) = self.cells.get_mut(idx)
-                && *cell == CELL_CLEARED
-            {
-                *cell = CELL_MATERIAL;
-                self.material_count += 1;
+    /// Cut the straight move `a → b` (the capsule the cutter sweeps). Under
+    /// a fringe the sweep is read whole, so the stock between two stamps a
+    /// step apart is cut as the machine cuts it (a disc per step would
+    /// leave scallops a sub-point can hold: 0.094 mm deep between 1.5 mm
+    /// steps of a 3 mm radius). The historical grid stamps the disc at `b`.
+    pub(super) fn clear_segment(&mut self, a: P2, b: P2, radius: f64) {
+        if self.sub.is_some() {
+            self.clear_capsule_inner(a, b, radius, None);
+        } else {
+            self.clear_circle_inner(b.x, b.y, radius, None);
+        }
+    }
+
+    /// [`Self::clear_segment`], logged for [`Self::restore_cleared`].
+    pub(super) fn clear_segment_logged(
+        &mut self,
+        a: P2,
+        b: P2,
+        radius: f64,
+        log: &mut Vec<CellChange>,
+    ) {
+        if self.sub.is_some() {
+            self.clear_capsule_inner(a, b, radius, Some(log));
+        } else {
+            self.clear_circle_inner(b.x, b.y, radius, Some(log));
+        }
+    }
+
+    /// Put back what a logged trial cut changed, newest change first.
+    pub(super) fn restore_cleared(&mut self, log: &[CellChange]) {
+        for &(idx, was, was_bits) in log.iter().rev() {
+            if let Some(cell) = self.cells.get_mut(idx) {
+                if was == CELL_MATERIAL && *cell != CELL_MATERIAL {
+                    self.material_count += 1;
+                }
+                *cell = was;
+            }
+            if let Some(bits) = self.sub.as_mut().and_then(|sub| sub.get_mut(idx)) {
+                *bits = was_bits;
+            }
+        }
+    }
+
+    /// The capsule stamp behind [`Self::clear_segment`] (fringe grids).
+    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    fn clear_capsule_inner(
+        &mut self,
+        a: P2,
+        b: P2,
+        radius: f64,
+        mut log: Option<&mut Vec<CellChange>>,
+    ) {
+        let Some(sub) = self.sub.as_mut() else {
+            return;
+        };
+        let r_sq = radius * radius;
+        let reach = radius + 0.5 * std::f64::consts::SQRT_2 * self.cell_size;
+        let (ux, uy) = (b.x - a.x, b.y - a.y);
+        let len_sq = ux * ux + uy * uy;
+        let dist_sq = |x: f64, y: f64| {
+            let t = if len_sq > 1e-20 {
+                (((x - a.x) * ux + (y - a.y) * uy) / len_sq).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let (dx, dy) = (x - a.x - t * ux, y - a.y - t * uy);
+            dx * dx + dy * dy
+        };
+        let col_min = ((a.x.min(b.x) - reach - self.origin_x) / self.cell_size)
+            .floor()
+            .max(0.0) as usize;
+        let col_max = (((a.x.max(b.x) + reach - self.origin_x) / self.cell_size).ceil() as usize)
+            .min(self.cols - 1);
+        let row_min = ((a.y.min(b.y) - reach - self.origin_y) / self.cell_size)
+            .floor()
+            .max(0.0) as usize;
+        let row_max = (((a.y.max(b.y) + reach - self.origin_y) / self.cell_size).ceil() as usize)
+            .min(self.rows - 1);
+        for row in row_min..=row_max {
+            let y = self.origin_y + row as f64 * self.cell_size;
+            for col in col_min..=col_max {
+                let idx = row * self.cols + col;
+                let was = self.cells[idx];
+                if was != CELL_MATERIAL && was != CELL_FRINGE {
+                    continue;
+                }
+                let x = self.origin_x + col as f64 * self.cell_size;
+                let d_sq = dist_sq(x, y);
+                if d_sq > reach * reach {
+                    continue;
+                }
+                let centre_cut = d_sq <= r_sq;
+                let was_bits = sub[idx];
+                let mut bits = was_bits;
+                for j in 0..SUB {
+                    let sy = y + sub_offset(j) * self.cell_size;
+                    for i in 0..SUB {
+                        let sx = x + sub_offset(i) * self.cell_size;
+                        if dist_sq(sx, sy) <= r_sq {
+                            bits &= !(1 << (j * SUB + i));
+                        }
+                    }
+                }
+                let now = if was == CELL_FRINGE || centre_cut {
+                    if bits == 0 { CELL_CLEARED } else { CELL_FRINGE }
+                } else {
+                    CELL_MATERIAL
+                };
+                if now == was && bits == was_bits {
+                    continue;
+                }
+                sub[idx] = bits;
+                self.cells[idx] = now;
+                if was == CELL_MATERIAL && now != CELL_MATERIAL {
+                    self.material_count -= 1;
+                }
+                if let Some(log) = log.as_deref_mut() {
+                    log.push((idx, was, was_bits));
+                }
             }
         }
     }
@@ -156,17 +335,25 @@ impl MaterialGrid {
         cx: f64,
         cy: f64,
         radius: f64,
-        mut log: Option<&mut Vec<usize>>,
+        mut log: Option<&mut Vec<CellChange>>,
     ) {
         let r_sq = radius * radius;
-        let col_min = ((cx - radius - self.origin_x) / self.cell_size)
+        // Under a fringe a disc reaches the sub-points of cells whose centre
+        // lies up to half a cell diagonal outside it.
+        let reach = if self.sub.is_some() {
+            radius + 0.5 * std::f64::consts::SQRT_2 * self.cell_size
+        } else {
+            radius
+        };
+        let reach_sq = reach * reach;
+        let col_min = ((cx - reach - self.origin_x) / self.cell_size)
             .floor()
             .max(0.0) as usize;
-        let col_max = ((cx + radius - self.origin_x) / self.cell_size).ceil() as usize;
-        let row_min = ((cy - radius - self.origin_y) / self.cell_size)
+        let col_max = ((cx + reach - self.origin_x) / self.cell_size).ceil() as usize;
+        let row_min = ((cy - reach - self.origin_y) / self.cell_size)
             .floor()
             .max(0.0) as usize;
-        let row_max = ((cy + radius - self.origin_y) / self.cell_size).ceil() as usize;
+        let row_max = ((cy + reach - self.origin_y) / self.cell_size).ceil() as usize;
 
         let col_max = col_max.min(self.cols - 1);
         let row_max = row_max.min(self.rows - 1);
@@ -175,21 +362,58 @@ impl MaterialGrid {
             let cell_y = self.origin_y + row as f64 * self.cell_size;
             let dy = cell_y - cy;
             let dy_sq = dy * dy;
-            if dy_sq > r_sq {
+            if dy_sq > reach_sq {
                 continue;
             }
             for col in col_min..=col_max {
                 let cell_x = self.origin_x + col as f64 * self.cell_size;
                 let dx = cell_x - cx;
-                if dx * dx + dy_sq <= r_sq {
-                    let idx = row * self.cols + col;
-                    if self.cells[idx] == CELL_MATERIAL {
+                let d_sq = dx * dx + dy_sq;
+                if d_sq > reach_sq {
+                    continue;
+                }
+                let idx = row * self.cols + col;
+                let was = self.cells[idx];
+                if was != CELL_MATERIAL && was != CELL_FRINGE {
+                    continue;
+                }
+                let centre_cut = d_sq <= r_sq;
+                let Some(sub) = self.sub.as_mut() else {
+                    if centre_cut {
                         self.cells[idx] = CELL_CLEARED;
                         self.material_count -= 1;
                         if let Some(log) = log.as_deref_mut() {
-                            log.push(idx);
+                            log.push((idx, was, 0));
                         }
                     }
+                    continue;
+                };
+                let was_bits = sub[idx];
+                let mut bits = was_bits;
+                for j in 0..SUB {
+                    let sy = dy + sub_offset(j) * self.cell_size;
+                    for i in 0..SUB {
+                        let sx = dx + sub_offset(i) * self.cell_size;
+                        if sx * sx + sy * sy <= r_sq {
+                            bits &= !(1 << (j * SUB + i));
+                        }
+                    }
+                }
+                let now = if was == CELL_FRINGE || centre_cut {
+                    if bits == 0 { CELL_CLEARED } else { CELL_FRINGE }
+                } else {
+                    CELL_MATERIAL
+                };
+                if now == was && bits == was_bits {
+                    continue;
+                }
+                sub[idx] = bits;
+                self.cells[idx] = now;
+                if was == CELL_MATERIAL && now != CELL_MATERIAL {
+                    self.material_count -= 1;
+                }
+                if let Some(log) = log.as_deref_mut() {
+                    log.push((idx, was, was_bits));
                 }
             }
         }
@@ -259,28 +483,89 @@ impl MaterialGrid {
         }
     }
 
+    /// The machinable lattice point nearest `(x, y)` within `radius`, if
+    /// any: where a cutter of that radius can stand to touch `(x, y)`.
+    // SAFETY: rows and columns are clamped to the grid before indexing.
+    #[allow(clippy::indexing_slicing)]
+    pub(super) fn nearest_machinable_within(
+        &self,
+        mask: &[bool],
+        x: f64,
+        y: f64,
+        radius: f64,
+    ) -> Option<P2> {
+        let col_min = ((x - radius - self.origin_x) / self.cell_size)
+            .floor()
+            .max(0.0) as usize;
+        let col_max = (((x + radius - self.origin_x) / self.cell_size).ceil() as usize)
+            .min(self.cols.saturating_sub(1));
+        let row_min = ((y - radius - self.origin_y) / self.cell_size)
+            .floor()
+            .max(0.0) as usize;
+        let row_max = (((y + radius - self.origin_y) / self.cell_size).ceil() as usize)
+            .min(self.rows.saturating_sub(1));
+        let mut best: Option<(f64, P2)> = None;
+        for row in row_min..=row_max {
+            let cy = self.origin_y + row as f64 * self.cell_size;
+            for col in col_min..=col_max {
+                if !mask[row * self.cols + col] {
+                    continue;
+                }
+                let cx = self.origin_x + col as f64 * self.cell_size;
+                let d_sq = (cx - x) * (cx - x) + (cy - y) * (cy - y);
+                if d_sq <= radius * radius && best.is_none_or(|(b, _)| d_sq < b) {
+                    best = Some((d_sq, P2::new(cx, cy)));
+                }
+            }
+        }
+        best.map(|(_, p)| p)
+    }
+
     /// Find the nearest cell with uncut material to the given position.
     /// Uses growing-radius search: starts small, doubles until found.
     /// Returns the world coordinates of the cell center, or None if no material remains.
     pub fn find_nearest_material(&self, x: f64, y: f64) -> Option<(f64, f64)> {
+        self.find_nearest_material_where(x, y, |_| true)
+    }
+
+    /// [`Self::find_nearest_material`] over the material cells whose index
+    /// `keep` accepts.
+    pub(super) fn find_nearest_material_where(
+        &self,
+        x: f64,
+        y: f64,
+        keep: impl Fn(usize) -> bool,
+    ) -> Option<(f64, f64)> {
         let initial_radius = self.cell_size * 8.0;
         let max_radius =
             (self.cols as f64 * self.cell_size).max(self.rows as f64 * self.cell_size) * 1.5;
 
         let mut radius = initial_radius;
         while radius <= max_radius {
-            if let Some(result) = self.find_nearest_material_in_radius(x, y, radius) {
+            if let Some(result) = self.find_nearest_material_in_radius(x, y, radius, &keep) {
                 return Some(result);
             }
             radius *= 2.0;
         }
         // Final full scan as fallback
-        self.find_nearest_material_in_radius(x, y, max_radius)
+        self.find_nearest_material_in_radius(x, y, max_radius, &keep)
+    }
+
+    /// The cell index of the lattice point at world `(x, y)`, if on the grid.
+    pub(super) fn cell_index(&self, x: f64, y: f64) -> Option<usize> {
+        self.world_to_cell(x + 1e-9, y + 1e-9)
+            .map(|(r, c)| r * self.cols + c)
     }
 
     #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Search for nearest material within a given radius from (x, y).
-    fn find_nearest_material_in_radius(&self, x: f64, y: f64, radius: f64) -> Option<(f64, f64)> {
+    fn find_nearest_material_in_radius(
+        &self,
+        x: f64,
+        y: f64,
+        radius: f64,
+        keep: &impl Fn(usize) -> bool,
+    ) -> Option<(f64, f64)> {
         let col_min = ((x - radius - self.origin_x) / self.cell_size)
             .floor()
             .max(0.0) as usize;
@@ -300,7 +585,8 @@ impl MaterialGrid {
         for row in row_min..=row_max {
             let cy = self.origin_y + row as f64 * self.cell_size;
             for col in col_min..=col_max {
-                if self.cells[row * self.cols + col] != CELL_MATERIAL {
+                let idx = row * self.cols + col;
+                if self.cells[idx] != CELL_MATERIAL || !keep(idx) {
                     continue;
                 }
                 let cx = self.origin_x + col as f64 * self.cell_size;

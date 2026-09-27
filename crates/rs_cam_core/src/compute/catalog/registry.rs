@@ -104,7 +104,11 @@ const ADAPTIVE_PARAMS: &[ParamDef] = &[
         "Geometric tolerance for path approximation. Smaller = more accurate, \
          slower.",
     ),
-    ParamDef::required("slot_clearing", "bool"),
+    ParamDef::required("slot_clearing", "bool").with_help(
+        "Cut full-width seeding slots before the adaptive passes. A slot line \
+         runs at full radial immersion, outside the pass load every other \
+         2D Adaptive cut holds. Off by default.",
+    ),
     ParamDef::required("min_cutting_radius", "f64")
         .with_help("Blend sharp corners with arcs of at least this radius."),
     ParamDef::optional("spindle_rpm", "option<u32>"),
@@ -113,8 +117,13 @@ const ADAPTIVE_PARAMS: &[ParamDef] = &[
         "enum:Legacy|ResidueMop|ContourParallelNarrow|ContourParallelHybrid",
     ),
     // F1 (algorithm review 2026-06-12): which engagement quantity the
-    // direction search compares against the α/2π target.
-    ParamDef::required("engagement_measure", "enum:DiskArea|LeadingArc"),
+    // direction search compares against the α/2π target. Retired for 2D
+    // Adaptive by G-ADAPTPASSLOAD (2026-09-26); kept so saved projects load.
+    ParamDef::required("engagement_measure", "enum:DiskArea|LeadingArc").with_help(
+        "Not read by 2D Adaptive: every step holds the stepover as radial \
+         immersion (sideways width of cut / tool diameter). Kept so saved \
+         projects load unchanged.",
+    ),
     // Stage 1: reactive agent vs constructive contour spiral.
     ParamDef::required("path_strategy", "enum:Agent|ContourSpiral"),
 ];

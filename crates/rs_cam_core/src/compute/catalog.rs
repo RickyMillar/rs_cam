@@ -139,7 +139,28 @@ pub struct OperationTransformCapabilities {
     /// (`Adaptive3dGeometry::segment_merge_tolerance`), so the dressup
     /// pipeline does not merge again. A merge after the planner moves cuts
     /// the planner stock already holds. `new` leaves it `false`.
+    ///
+    /// 2D Adaptive sets it too (G-ADAPTPASSLOAD, 2026-09-26): its planner
+    /// emits the path it walked (it drops only collinear points) and holds
+    /// every step to the pass load on its own stock, so a 0.3 mm merge
+    /// after it moves cuts off that stock (the six-island mop read 0.65
+    /// where a merged run crossed a sliver the planner had left).
     pub planner_applies_segment_merge: bool,
+    /// G-ADAPTPASSLOAD (2026-09-26): a helix entry ends with one full lap
+    /// at the target Z, so the hole it leaves has a flat floor of radius
+    /// `R + helix radius`. Without it the last turn leaves a helical step
+    /// up to one pitch high across the ring, and the first cut out of the
+    /// hole reads that step as fresh stock on both sides (sim radial 0.58
+    /// on the six-island starter). The 2D Adaptive planner stamps the hole
+    /// as cut, so its entries need the lap. `new` leaves it `false`.
+    pub helix_floor_lap: bool,
+    /// G-ADAPTPASSLOAD round 4 (2026-09-27): with entry style None, a
+    /// plunge goes down through air by rapid to the clearance over the
+    /// op's own replayed stock (the helix's first half) and feeds only the
+    /// rest (`dressup::EntryStyle::Plunge`). The 2D Adaptive planner
+    /// models a plunge as its own disc, which the XY-unchanged plunge
+    /// keeps. `new` leaves it `false`.
+    pub stock_aware_plunge: bool,
 }
 
 impl OperationTransformCapabilities {
@@ -157,6 +178,25 @@ impl OperationTransformCapabilities {
             allows_link_moves,
             ramp_fold_lap_cap: None,
             planner_applies_segment_merge: false,
+            helix_floor_lap: false,
+            stock_aware_plunge: false,
+        }
+    }
+
+    /// With entry style None a plunge rapids through air first
+    /// (G-ADAPTPASSLOAD round 4).
+    pub const fn with_stock_aware_plunge(self) -> Self {
+        Self {
+            stock_aware_plunge: true,
+            ..self
+        }
+    }
+
+    /// A helix entry ends with a flat lap at the target Z (G-ADAPTPASSLOAD).
+    pub const fn with_helix_floor_lap(self) -> Self {
+        Self {
+            helix_floor_lap: true,
+            ..self
         }
     }
 
@@ -601,8 +641,15 @@ impl OperationType {
             // islands, 6 mm, 2 levels): the six links over 6 x R cut
             // 61.7 mm^3 in the planner order and 349.3 mm^3 reordered
             // (18 -> 122 samples in material, peak radial 0.30 -> 0.64).
+            // The 2D planner stamps each re-entry's helix hole as cut
+            // (G-ADAPTPASSLOAD), so the helix finishes its floor flat; it
+            // emits the path it walked, so the dressup merge does not move its
+            // cuts (see `planner_applies_segment_merge`).
             Adaptive => OperationTransformCapabilities::new(false, true, false, false)
-                .without_rapid_reorder(),
+                .without_rapid_reorder()
+                .with_helix_floor_lap()
+                .with_stock_aware_plunge()
+                .with_planner_segment_merge(),
             // Adaptive3d plans every run against its own dexel stock, in the
             // order it emits them. Each entry's rapid floor and helix start,
             // each keep-down proof and each ring's engagement assume that the

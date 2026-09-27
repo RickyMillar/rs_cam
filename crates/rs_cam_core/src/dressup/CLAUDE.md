@@ -15,21 +15,21 @@ order. Three run outside it: `apply_tabs`, in the per-level closure of
   move against the surface.
 - `link.rs` — link against retract. `arcfit.rs` — lines to arcs.
   `condition.rs` — segment merge (default-on for roughing; skipped where
-  `planner_applies_segment_merge`, the 3D Rough, G-PLANSIMGAP).
-- `feedopt.rs`, `feed_modulation.rs` — feed-rate optimisation and the
-  per-move adaptive modulation. `air_cut.rs` — air-cut classification.
-  `tsp.rs` — rapid order. `tests.rs` — the unit tests.
+  `planner_applies_segment_merge`: 3D Rough, 2D Adaptive; G-PLANSIMGAP).
+- `feedopt.rs`, `feed_modulation.rs` — feeds; `air_cut.rs`; `tsp.rs`.
 
 ## Invariants
 
-- G-RETRACTDIAL is closed: `RetractStrategy` went on 2026-09-17 (CUT-03).
-  The retract COUNT is the lever. Do not add a retract-strategy dial again.
+- G-RETRACTDIAL is closed (CUT-03): the retract COUNT is the lever.
 - Every linking arm calls the shared `relink_fragments` kernel in
   `finish/surface_link.rs`. Do not add a second linking implementation.
-- A helix or ramp starts `entry_clearance_mm` over the material and takes the
-  full depth at `ramp_feed_rate`; air is a straight move (rulings 09-24/25).
-- The feed modulator skips a plunge by geometry, not by intent tag. The descent
-  pass splits only an approach, never a retract inside an entry (G-PECKSPLIT).
+- A helix or ramp starts `entry_clearance_mm` over the material and takes
+  the full depth at `ramp_feed_rate`; air is straight (rulings 09-24/25). A
+  `helix_floor_lap` helix (2D Adaptive) ends on a flat lap and shrinks to
+  fit `entry_containment`, arc fit inside it; under entry None a
+  `stock_aware_plunge` op rapids through air first (G-ADAPTPASSLOAD).
+- The modulator skips a plunge by geometry; the descent pass splits no
+  entry retract (G-PECKSPLIT).
 
 ## Sentries
 

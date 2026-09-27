@@ -247,6 +247,13 @@ fn pinning_top_z_to_the_model_top_changes_nothing_on_a_fresh_rough() {
 /// Z at every entry. With `top_z` pinned 10 mm under a fresh stock top, the
 /// split target must be the stock top + clearance (22), never the pinned
 /// top + clearance (12), which is 8 mm inside the fresh stock.
+///
+/// Since G-ADAPTPASSLOAD round 4 (2026-09-27) the 2D Adaptive plunge under
+/// entry style None is split first by the entry dressup
+/// (`EntryStyle::Plunge`, the helix's first half): its rapid stops
+/// `ENTRY_CONTACT_CLEARANCE` over the op's own replayed stock top, the rule
+/// a helix entry on the same op keeps. So a rapid may stop at the stock top
+/// + either clearance, and never under the real stock top + the smaller.
 #[test]
 fn the_fresh_split_target_is_the_stock_top_not_a_pinned_top() {
     const TOP: f64 = 20.0;
@@ -271,16 +278,22 @@ fn the_fresh_split_target_is_the_stock_top_not_a_pinned_top() {
     );
     common::session::generate(&mut s, 0);
     let tp = s.get_result(0).expect("result").toolpath();
-    let target = TOP + PLUNGE_CLEARANCE_MM;
+    let targets = [
+        TOP + PLUNGE_CLEARANCE_MM,
+        TOP + rs_cam_core::dressup::ENTRY_CONTACT_CLEARANCE,
+    ];
+    let floor = TOP + PLUNGE_CLEARANCE_MM.min(rs_cam_core::dressup::ENTRY_CONTACT_CLEARANCE);
     let splits = tp
         .moves
         .iter()
-        .filter(|m| m.move_type == MoveType::Rapid && (m.target.z - target).abs() < 1e-9)
+        .filter(|m| {
+            m.move_type == MoveType::Rapid && targets.iter().any(|t| (m.target.z - t).abs() < 1e-9)
+        })
         .count();
     for (i, m) in tp.moves.iter().enumerate() {
         assert!(
-            m.move_type != MoveType::Rapid || m.target.z >= target - 1e-9,
-            "move {i}: rapid to Z {:.3}, inside the fresh stock (top {TOP})",
+            m.move_type != MoveType::Rapid || m.target.z >= floor - 1e-9,
+            "move {i}: rapid to Z {:.3}, under the fresh stock top {TOP} + clearance",
             m.target.z
         );
     }

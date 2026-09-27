@@ -23,7 +23,7 @@ mod entry_descent;
 mod link;
 
 pub use entry_descent::ENTRY_CONTACT_CLEARANCE;
-pub(crate) use entry_descent::{ENTRY_CLEARANCE, emit_helix, emit_ramp};
+pub(crate) use entry_descent::{ENTRY_CLEARANCE, emit_helix, emit_ramp, emit_stock_aware_plunge};
 
 use crate::dexel_stock::TriDexelStock;
 use crate::geo::P3;
@@ -91,6 +91,12 @@ pub enum EntryStyle {
     /// Helical entry: spiral down at the plunge point.
     /// `radius` is the helix radius (mm), `pitch` is Z drop per revolution (mm).
     Helix { radius: f64, pitch: f64 },
+    /// A straight plunge that goes down through air by rapid: the shared
+    /// first half of a helix or ramp entry (`rapid_to_entry_top`, the op's
+    /// own replayed stock under the entry), then one straight feed to the
+    /// target at the plunge rate. The XY is the plunge's own, so the hole
+    /// is the one the operation emitted (G-ADAPTPASSLOAD round 4).
+    Plunge,
 }
 
 /// Drop-cutter surface context for stock-aware entry moves
@@ -200,6 +206,52 @@ pub struct EntrySafety<'a> {
     /// height above the cut, which started entries up to one level high.
     /// `None` uses `stock_top` for both.
     pub contact_top: Option<f64>,
+    /// End a helix with one full lap at the target Z, for a flat floor
+    /// (`OperationTransformCapabilities::helix_floor_lap`). The dressup door
+    /// reads the capability; the adaptive3d door passes `false`.
+    pub helix_floor_lap: bool,
+    /// The region a helix circle must stay inside (the part inset by the
+    /// tool radius), or `None` for no containment. 2D Adaptive only
+    /// (G-ADAPTPASSLOAD round 3): its planner stamps the same fitted hole.
+    pub helix_containment: Option<&'a [crate::polygon::Polygon2]>,
+}
+
+/// A contained helix whose fitted radius is at most this is a ramp (mm):
+/// the circle has no room at all (the entry is on the region boundary).
+pub(crate) const HELIX_MIN_FIT_MM: f64 = 1e-6;
+
+/// The largest helix radius, at most `radius`, whose circle about `(x, y)`
+/// stays inside `region`: the distance from the point to the boundary of
+/// the region polygon that contains it (every edge, holes included). 0
+/// when no polygon contains the point.
+pub(crate) fn contained_helix_radius(
+    region: &[crate::polygon::Polygon2],
+    x: f64,
+    y: f64,
+    radius: f64,
+) -> f64 {
+    let p = crate::geo::P2::new(x, y);
+    let Some(poly) = region.iter().find(|poly| poly.contains_point(&p)) else {
+        return 0.0;
+    };
+    let mut d = f64::INFINITY;
+    for ring in std::iter::once(&poly.exterior).chain(poly.holes.iter()) {
+        let n = ring.len();
+        for i in 0..n {
+            let (Some(a), Some(b)) = (ring.get(i), ring.get((i + 1) % n)) else {
+                continue;
+            };
+            let (dx, dy) = (b.x - a.x, b.y - a.y);
+            let len_sq = dx * dx + dy * dy;
+            let t = if len_sq > 1e-20 {
+                (((x - a.x) * dx + (y - a.y) * dy) / len_sq).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            d = d.min((x - (a.x + t * dx)).hypot(y - (a.y + t * dy)));
+        }
+    }
+    radius.min(d)
 }
 
 /// What `apply_entry` needs to replay an op's own moves on a stock.
@@ -382,6 +434,26 @@ pub fn apply_entry(
                 ..safety
             };
             let entry_start = result.moves.len();
+            // G-ADAPTPASSLOAD round 3: a contained helix shrinks to the
+            // largest radius that keeps its circle inside the machinable
+            // region (`contained_helix_radius`); where none fits it becomes
+            // a ramp at the G10 ramp angle, folded along the cut it enters.
+            let style = match style {
+                EntryStyle::Helix { radius, pitch } => match safety.helix_containment {
+                    Some(region) => {
+                        let fit = contained_helix_radius(region, m.target.x, m.target.y, radius);
+                        if fit > HELIX_MIN_FIT_MM {
+                            EntryStyle::Helix { radius: fit, pitch }
+                        } else {
+                            EntryStyle::Ramp {
+                                max_angle_deg: crate::compute::config::DRESSUP_RAMP_ANGLE_DEG,
+                            }
+                        }
+                    }
+                    None => style,
+                },
+                EntryStyle::Ramp { .. } | EntryStyle::Plunge => style,
+            };
             match style {
                 EntryStyle::Ramp { max_angle_deg } => {
                     // Look ahead for the next XY move to determine ramp direction
@@ -412,6 +484,15 @@ pub fn apply_entry(
                         feed_rate.min(plunge_rate),
                         &safety,
                         Some(&fold),
+                    );
+                }
+                EntryStyle::Plunge => {
+                    emit_stock_aware_plunge(
+                        &mut result,
+                        &toolpath.moves[i - 1].target,
+                        &m.target,
+                        feed_rate.min(plunge_rate),
+                        &safety,
                     );
                 }
                 EntryStyle::Helix { radius, pitch } => {

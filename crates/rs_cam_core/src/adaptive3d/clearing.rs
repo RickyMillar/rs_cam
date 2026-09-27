@@ -2862,6 +2862,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
         // Every 2D Link is lifted to a 3D retract below, so a link never
         // cuts here: keep the corridor heuristic and stamp nothing.
         keep_down_links: crate::adaptive::KeepDownLinks::RetractedByCaller,
+        entry_helix_radius: 0.0,
     };
 
     if let Some(scope) = level_scope.as_ref() {
