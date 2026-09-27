@@ -35,3 +35,8 @@ crates/*/target/
 
 # Operator screenshots dropped at the root by the GUI tooling.
 /screenshot_*.png
+
+# Images and summaries that core tests write on every run
+# (reference_plate_contract -> e_impl/, the D16 run-off test -> w8/).
+/planning/review_2026-08-04/artifacts/e_impl/
+/planning/review_2026-08-04/artifacts/w8/
