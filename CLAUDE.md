@@ -91,8 +91,11 @@ workspace's denied clippy lints and `unsafe_code`.
 | Core full gate (CI) | `cargo test -p rs_cam_core --features heavy-tests,research,test-support --no-fail-fast -- -q` |
 
 Local loop: the folder sentries for the folders you touched, the focused
-crate tests, then clippy. CI runs the core full gate; do not run it locally
-without asking, and ask before any test run over about three minutes.
+crate tests, then clippy. On the operator's PC, do not run the core full
+gate without asking, and ask before any test run over about three minutes.
+In the cloud environment (Claude Code on the web) run any test, the full
+gate included, whenever it is needed (operator, 2026-09-27). GitHub CI has
+not run a job since at least 2026-04: do not count on it.
 Do not use workspace-wide `cargo test`; it can loop in this repository.
 
 On a shared machine run every cargo command through `scripts/cargo_lane.sh
