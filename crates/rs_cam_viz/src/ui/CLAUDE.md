@@ -24,7 +24,7 @@ Every panel, modal and workspace. `ui::mod` runs once per frame from `../app.rs`
 - The Simulation workspace has ONE visible full-run primary. No surface may
   add a second run route.
 - Every Run Simulation affordance uses `simulation_request_is_buildable`.
-- Declutter removes a control; it does not hide a duplicate route.
+- Declutter removes a control; it does not hide a duplicate route. An empty queue keeps its "Add toolpath" (g_emptyadd).
 - A dependency between operations is ONE line in the card gutter, read from
   `dependencies::primary_edges`. No surface draws a second badge for it.
 - The crate is on egui 0.36 with `egui_plot` 0.37; the two differ on purpose.
