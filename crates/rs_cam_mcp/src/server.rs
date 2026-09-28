@@ -818,6 +818,11 @@ pub struct SetBoundaryConfigParam {
     /// toolpath. It can name a model other than the toolpath's own. Holes
     /// in the shapes stay uncut.
     pub model_id: Option<usize>,
+    /// Used only when `source` is "model_outline". When true, the toolpath
+    /// cuts inside the HOLES of the shapes and stays off the shapes, for
+    /// example the area inside an edge band. Generation refuses when the
+    /// shapes have no hole. When absent, the value is false.
+    pub outline_holes: Option<bool>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]

@@ -409,7 +409,19 @@ pub enum BoundarySource {
     /// Like [`Self::DerivedRestRegions`] this resolves to a SET of
     /// polygons, one per disjoint outline, through the same
     /// `RegionSet` path.
-    ModelOutline { model_id: usize },
+    ///
+    /// `holes` selects the opposite regions. When it is true, the regions
+    /// are the HOLES of the union: one region per hole ring. A shape of the
+    /// model inside a hole (an island) is cut out of that region. An
+    /// edge-band model then gives the area inside the band, and the
+    /// toolpath stays off the band. Generation refuses when the
+    /// union has no hole. An old project file has no `holes` key and reads
+    /// it as false.
+    ModelOutline {
+        model_id: usize,
+        #[serde(default)]
+        holes: bool,
+    },
     /// Selected STEP/CAD faces projected to XY.
     FaceSelection,
     /// Rest regions derived from another toolpath's rest-depth analysis

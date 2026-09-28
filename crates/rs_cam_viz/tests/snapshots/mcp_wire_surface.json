@@ -1638,6 +1638,13 @@
             "null"
           ]
         },
+        "outline_holes": {
+          "description": "Used only when `source` is \"model_outline\". When true, the toolpath\ncuts inside the HOLES of the shapes and stays off the shapes, for\nexample the area inside an edge band. Generation refuses when the\nshapes have no hole. When absent, the value is false.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "source": {
           "description": "Boundary source: \"stock\", \"model_silhouette\", \"model_outline\" or\n\"derived_rest_regions\"",
           "type": [

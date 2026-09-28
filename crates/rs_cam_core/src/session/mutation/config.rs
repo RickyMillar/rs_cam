@@ -405,7 +405,7 @@ impl ProjectSession {
                 tc.model_id == model_id
                     || matches!(
                         &tc.boundary.source,
-                        BoundarySource::ModelOutline { model_id: outline_id }
+                        BoundarySource::ModelOutline { model_id: outline_id, .. }
                             if tc.boundary.enabled && *outline_id == model_id
                     )
             })

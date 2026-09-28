@@ -2192,10 +2192,10 @@ impl ProjectSession {
             // outline with no closed polygon refuses before geometry work,
             // and the message names the model.
             if tc.boundary.enabled
-                && let crate::compute::config::BoundarySource::ModelOutline { model_id } =
+                && let crate::compute::config::BoundarySource::ModelOutline { model_id, holes } =
                     &tc.boundary.source
             {
-                self.resolve_model_outline_polys(index, *model_id)?;
+                self.resolve_model_outline_polys(index, *model_id, *holes)?;
             }
         }
 
@@ -2300,10 +2300,10 @@ impl ProjectSession {
                         // rather than `#[allow(clippy::unwrap_used)]`.
                         Some(self.resolve_derived_rest_region_polys(index, *source_toolpath_id)?)
                     }
-                    crate::compute::config::BoundarySource::ModelOutline { model_id } => {
+                    crate::compute::config::BoundarySource::ModelOutline { model_id, holes } => {
                         // The same resolution as the pre-boundary, so the
                         // two clips bound the same set.
-                        Some(self.resolve_model_outline_polys(index, *model_id)?)
+                        Some(self.resolve_model_outline_polys(index, *model_id, *holes)?)
                     }
                     crate::compute::config::BoundarySource::Stock
                     | crate::compute::config::BoundarySource::ModelSilhouette

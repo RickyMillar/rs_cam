@@ -1124,7 +1124,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "set_boundary_config",
-        description = "Set the machining boundary for a toolpath. Sources: 'stock', 'model_silhouette', 'model_outline' (requires model_id — a project model whose closed 2D shapes bound the toolpath, holes kept; it can be a model other than the toolpath's own), 'derived_rest_regions' (requires source_toolpath_id — the id of another toolpath whose REST ANALYSIS supplies the regions; any operation attaches them when its rest analysis is enabled and the project carries a mesh). Containment: 'center', 'inside', 'outside'. Invalidates cached result."
+        description = "Set the machining boundary for a toolpath. Sources: 'stock', 'model_silhouette', 'model_outline' (requires model_id — a project model whose closed 2D shapes bound the toolpath, holes kept; it can be a model other than the toolpath's own; outline_holes=true inverts it: the toolpath cuts inside the holes of the shapes, for example the area inside an edge band, and stays off the shapes, and generation refuses when the shapes have no hole), 'derived_rest_regions' (requires source_toolpath_id — the id of another toolpath whose REST ANALYSIS supplies the regions; any operation attaches them when its rest analysis is enabled and the project carries a mesh). Containment: 'center', 'inside', 'outside'. Invalidates cached result."
     )]
     async fn set_boundary_config(
         &self,

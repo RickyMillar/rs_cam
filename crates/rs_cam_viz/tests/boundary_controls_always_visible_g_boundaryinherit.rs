@@ -123,7 +123,10 @@ fn summary_line_names_the_stored_source() {
     let models = [(ModelId(3), "machinable_edge_band".to_owned())];
     assert_eq!(
         boundary_summary_line(
-            &with(BoundarySource::ModelOutline { model_id: 3 }),
+            &with(BoundarySource::ModelOutline {
+                model_id: 3,
+                holes: false,
+            }),
             false,
             &models
         ),
@@ -131,11 +134,37 @@ fn summary_line_names_the_stored_source() {
     );
     assert_eq!(
         boundary_summary_line(
-            &with(BoundarySource::ModelOutline { model_id: 9 }),
+            &with(BoundarySource::ModelOutline {
+                model_id: 9,
+                holes: false,
+            }),
             false,
             &models
         ),
         "Boundary: outline of model id 9 (not in this project)"
+    );
+    // The holes option says "outline holes" in both forms.
+    assert_eq!(
+        boundary_summary_line(
+            &with(BoundarySource::ModelOutline {
+                model_id: 3,
+                holes: true,
+            }),
+            false,
+            &models
+        ),
+        "Boundary: outline holes of model 'machinable_edge_band'"
+    );
+    assert_eq!(
+        boundary_summary_line(
+            &with(BoundarySource::ModelOutline {
+                model_id: 9,
+                holes: true,
+            }),
+            false,
+            &models
+        ),
+        "Boundary: outline holes of model id 9 (not in this project)"
     );
     // The panel cannot prove auto provenance today, so it must never say so
     // for the same config it prints without the flag.

@@ -29,6 +29,12 @@
 //! 4. A model with no closed polygon refuses, and the message names the
 //!    model. Two arms: a mesh (no 2D geometry) and a drawing with only an
 //!    open path.
+//! 5. The holes option (`holes: true`) on the same ring: every cutting
+//!    move lies inside the ring's HOLE, and none lies in the ring or
+//!    outside it. This is the edge-band case: the toolpath machines the
+//!    area inside the band and stays off the band.
+//! 6. The holes option on a model with closed shapes but no hole refuses,
+//!    and the message names the model.
 
 #![allow(
     clippy::unwrap_used,
@@ -77,12 +83,23 @@ struct Fixture {
     mesh_id: usize,
     ring_id: usize,
     open_id: usize,
+    solid_id: usize,
+}
+
+/// The ids of the four fixture models, in the order the fixture adds them.
+#[derive(Clone, Copy)]
+struct Ids {
+    mesh: usize,
+    ring: usize,
+    open: usize,
+    solid: usize,
 }
 
 /// One session: the plate mesh, the ring drawing, a drawing with only an
-/// open path, and one drop-cutter toolpath on the plate. `source` is the
-/// boundary; `None` disables it.
-fn fixture(source: impl FnOnce(usize, usize, usize) -> Option<BoundarySource>) -> Fixture {
+/// open path, a drawing with one closed square and no hole, and one
+/// drop-cutter toolpath on the plate. `source` is the boundary; `None`
+/// disables it.
+fn fixture(source: impl FnOnce(Ids) -> Option<BoundarySource>) -> Fixture {
     let mut builder = ProjectSessionBuilder::new().stock(stock_over(PLATE_HALF, 5.0));
     let tool_idx = builder.add_tool(ball_tool_config(3.0));
     let tool_id = builder.tools()[tool_idx].id.0;
@@ -97,13 +114,23 @@ fn fixture(source: impl FnOnce(usize, usize, usize) -> Option<BoundarySource>) -
         false,
     );
     let open_id = builder.add_model(polygon_model(vec![open_path], "rivers"));
+    let solid_id = builder.add_model(polygon_model(
+        vec![square_polygon(RING_OUTER_HALF)],
+        "solid_board",
+    ));
 
     let op = OperationConfig::DropCutter(DropCutterConfig {
         stepover: 1.0,
         ..DropCutterConfig::default()
     });
     let mut cfg = toolpath_config("Rough", op, tool_id, mesh_id);
-    if let Some(source) = source(mesh_id, ring_id, open_id) {
+    let ids = Ids {
+        mesh: mesh_id,
+        ring: ring_id,
+        open: open_id,
+        solid: solid_id,
+    };
+    if let Some(source) = source(ids) {
         cfg.boundary = BoundaryConfig {
             enabled: true,
             source,
@@ -119,6 +146,7 @@ fn fixture(source: impl FnOnce(usize, usize, usize) -> Option<BoundarySource>) -
         mesh_id,
         ring_id,
         open_id,
+        solid_id,
     }
 }
 
@@ -162,7 +190,12 @@ fn generate(session: &mut ProjectSession) -> Result<(), String> {
 
 #[test]
 fn every_cutting_move_lies_inside_the_ring_g_modeloutline() {
-    let mut fx = fixture(|_, ring_id, _| Some(BoundarySource::ModelOutline { model_id: ring_id }));
+    let mut fx = fixture(|ids| {
+        Some(BoundarySource::ModelOutline {
+            model_id: ids.ring,
+            holes: false,
+        })
+    });
     generate(&mut fx.session).expect("a ring outline boundary must generate");
 
     let ring = ring();
@@ -189,7 +222,7 @@ fn every_cutting_move_lies_inside_the_ring_g_modeloutline() {
 /// in the hole AND outside the ring.
 #[test]
 fn without_the_boundary_the_op_cuts_the_hole_and_the_margin_g_modeloutline() {
-    let mut fx = fixture(|_, _, _| None);
+    let mut fx = fixture(|_| None);
     generate(&mut fx.session).expect("the unbounded op must generate");
 
     let samples = cutting_samples(&fx.session);
@@ -207,7 +240,12 @@ fn without_the_boundary_the_op_cuts_the_hole_and_the_margin_g_modeloutline() {
 
 #[test]
 fn a_missing_model_refuses_and_names_the_id_g_modeloutline() {
-    let mut fx = fixture(|_, _, _| Some(BoundarySource::ModelOutline { model_id: 999 }));
+    let mut fx = fixture(|_| {
+        Some(BoundarySource::ModelOutline {
+            model_id: 999,
+            holes: false,
+        })
+    });
     let err = generate(&mut fx.session).expect_err("a missing outline model must refuse");
     assert!(
         err.contains("999"),
@@ -227,7 +265,12 @@ fn a_missing_model_refuses_and_names_the_id_g_modeloutline() {
 #[test]
 fn a_model_with_no_closed_polygon_refuses_and_names_it_g_modeloutline() {
     // A mesh has no 2D geometry at all.
-    let mut fx = fixture(|mesh_id, _, _| Some(BoundarySource::ModelOutline { model_id: mesh_id }));
+    let mut fx = fixture(|ids| {
+        Some(BoundarySource::ModelOutline {
+            model_id: ids.mesh,
+            holes: false,
+        })
+    });
     let err = generate(&mut fx.session).expect_err("a mesh outline must refuse");
     assert!(
         err.contains("terrain") && err.contains(&fx.mesh_id.to_string()),
@@ -236,11 +279,96 @@ fn a_model_with_no_closed_polygon_refuses_and_names_it_g_modeloutline() {
     assert!(fx.session.get_result(0).is_none());
 
     // A drawing with only an open path has no closed polygon.
-    let mut fx = fixture(|_, _, open_id| Some(BoundarySource::ModelOutline { model_id: open_id }));
+    let mut fx = fixture(|ids| {
+        Some(BoundarySource::ModelOutline {
+            model_id: ids.open,
+            holes: false,
+        })
+    });
     let err = generate(&mut fx.session).expect_err("an open-path outline must refuse");
     assert!(
         err.contains("rivers") && err.contains(&fx.open_id.to_string()),
         "the refusal must name the model: {err}"
     );
     assert!(fx.session.get_result(0).is_none());
+}
+
+/// The edge-band case: `holes: true` on the ring. Every cutting sample
+/// lies inside the ring's hole. None lies in the ring or outside it.
+#[test]
+fn the_holes_option_cuts_only_inside_the_hole_g_modeloutline() {
+    let mut fx = fixture(|ids| {
+        Some(BoundarySource::ModelOutline {
+            model_id: ids.ring,
+            holes: true,
+        })
+    });
+    generate(&mut fx.session).expect("a ring-holes boundary must generate");
+
+    let hole = square_polygon(RING_HOLE_HALF);
+    let ring = ring();
+    let samples = cutting_samples(&fx.session);
+    // The hole is a 16.6 mm square at a 1 mm stepover: about 16 rows.
+    assert!(
+        samples.len() > 20,
+        "a confined op that emits almost no cutting motion proves nothing: {} samples",
+        samples.len()
+    );
+    let outside_hole: Vec<&P2> = samples
+        .iter()
+        .filter(|p| !hole.contains_point_eps(p, EPS_MM))
+        .collect();
+    assert!(
+        outside_hole.is_empty(),
+        "{} of {} cutting samples lie outside the ring's hole. First: {:?}",
+        outside_hole.len(),
+        samples.len(),
+        outside_hole.first()
+    );
+    // The same claim from the ring's side: no sample lies in the ring's
+    // area more than EPS_MM from its edge, and none lies outside the ring.
+    let on_the_band: Vec<&P2> = samples
+        .iter()
+        .filter(|p| ring.contains_point(p) && ring.distance_to_boundary(p) > EPS_MM)
+        .collect();
+    assert!(
+        on_the_band.is_empty(),
+        "{} of {} cutting samples lie in the ring (the band). First: {:?}",
+        on_the_band.len(),
+        samples.len(),
+        on_the_band.first()
+    );
+    let outside_ring = samples
+        .iter()
+        .filter(|p| p.x.abs() > RING_OUTER_HALF + EPS_MM || p.y.abs() > RING_OUTER_HALF + EPS_MM)
+        .count();
+    assert_eq!(
+        outside_ring, 0,
+        "no cutting sample may lie outside the ring"
+    );
+}
+
+/// `holes: true` on a model whose closed shapes have no hole refuses, and
+/// the message names the model.
+#[test]
+fn the_holes_option_on_a_model_with_no_hole_refuses_and_names_it_g_modeloutline() {
+    let mut fx = fixture(|ids| {
+        Some(BoundarySource::ModelOutline {
+            model_id: ids.solid,
+            holes: true,
+        })
+    });
+    let err = generate(&mut fx.session).expect_err("a holes boundary with no hole must refuse");
+    assert!(
+        err.contains("solid_board") && err.contains(&fx.solid_id.to_string()),
+        "the refusal must name the model: {err}"
+    );
+    assert!(
+        err.contains("no hole"),
+        "the refusal must say that the shapes have no hole: {err}"
+    );
+    assert!(
+        fx.session.get_result(0).is_none(),
+        "a refused generation must cache no result"
+    );
 }

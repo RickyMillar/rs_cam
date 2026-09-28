@@ -1395,7 +1395,10 @@ impl RsCamApp {
                         Some("model_id"),
                     ));
                 }
-                BoundarySource::ModelOutline { model_id }
+                BoundarySource::ModelOutline {
+                    model_id,
+                    holes: p.outline_holes.unwrap_or(false),
+                }
             }
             Some("derived_rest_regions") => {
                 let Some(raw_id) = p.source_toolpath_id else {

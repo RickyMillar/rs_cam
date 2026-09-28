@@ -434,13 +434,13 @@ impl ProjectSession {
                 let single = processed_set.single_union();
                 pre_boundary_regions = Some(processed_set.as_slice().to_vec());
                 single
-            } else if let crate::compute::config::BoundarySource::ModelOutline { model_id } =
+            } else if let crate::compute::config::BoundarySource::ModelOutline { model_id, holes } =
                 &boundary_config.source
             {
                 // A failure is PROPAGATED, as in the tier arm above. The
                 // operator named a model; a missing or empty outline must
                 // stop the generation, not widen it to the stock.
-                let regions = self.resolve_model_outline_polys(index, *model_id)?;
+                let regions = self.resolve_model_outline_polys(index, *model_id, *holes)?;
                 let processed_set = crate::geometry::region_set::RegionSet::from_slice(&regions)
                     .processed(&keep_out_footprints, boundary_config.offset);
                 let single = processed_set.single_union();
@@ -605,6 +605,10 @@ impl ProjectSession {
     /// first model, and a boundary on the wrong model is the silent
     /// fallback this source refuses.
     ///
+    /// When `holes` is true, the set is the HOLES of that union instead:
+    /// one outer polygon per hole ring, minus any other shape of the model
+    /// inside that hole. The function refuses when the union has no hole.
+    ///
     /// Shared by the precondition in [`Self::generate_toolpath`], the
     /// pre-boundary in [`Self::resolve_generation_inputs`] and the
     /// post-generation clip, so the three agree on the set.
@@ -612,6 +616,7 @@ impl ProjectSession {
         &self,
         this_index: usize,
         model_id: usize,
+        holes: bool,
     ) -> Result<Arc<Vec<crate::polygon::Polygon2>>, SessionError> {
         let Some(model) = self.models.iter().find(|m| m.id == model_id) else {
             let known: Vec<String> = self
@@ -661,6 +666,58 @@ impl ProjectSession {
                 count = closed.len(),
             )));
         }
+
+        // The holes option: each hole ring of the union becomes one region.
+        // A ring in `holes` is CW; `ensure_winding` makes the new exterior
+        // CCW. A ring with fewer than 3 points has no area and is dropped.
+        // An island in a hole is a separate polygon of the union. The code
+        // subtracts every OTHER union polygon from the region, so the
+        // toolpath also stays off an island. The parent polygon is not
+        // subtracted: it touches the region only along the hole ring.
+        let union = if holes {
+            let hole_count: usize = union
+                .iter()
+                .flat_map(|poly| poly.holes.iter())
+                .filter(|ring| ring.len() >= 3)
+                .count();
+            let mut hole_regions: Vec<crate::polygon::Polygon2> = Vec::new();
+            for (parent_index, parent) in union.iter().enumerate() {
+                for ring in parent.holes.iter().filter(|ring| ring.len() >= 3) {
+                    let mut region = crate::polygon::Polygon2::new(ring.clone());
+                    region.ensure_winding();
+                    let mut pieces = vec![region];
+                    for (other_index, other) in union.iter().enumerate() {
+                        if other_index == parent_index {
+                            continue;
+                        }
+                        pieces = pieces
+                            .iter()
+                            .flat_map(|piece| piece.difference(other))
+                            .collect();
+                    }
+                    hole_regions.extend(pieces);
+                }
+            }
+            if hole_count == 0 {
+                return Err(SessionError::OperationFailed(format!(
+                    "The machining boundary uses the outline holes of model '{name}' (id \
+                     {model_id}), but the union of its {count} closed polygons has no hole. \
+                     Clear \"Machine the holes\" to machine inside the shapes, pick a model \
+                     with holes, or disable the boundary.",
+                    count = closed.len(),
+                )));
+            }
+            if hole_regions.is_empty() {
+                return Err(SessionError::OperationFailed(format!(
+                    "The machining boundary uses the outline holes of model '{name}' (id \
+                     {model_id}), but other shapes of the model fill all {hole_count} holes. \
+                     Clear \"Machine the holes\", or disable the boundary.",
+                )));
+            }
+            hole_regions
+        } else {
+            union
+        };
 
         let setup = self.find_setup_for_toolpath_index(this_index);
         let ctx = super::SetupEvalContext::build_for_setup(self, setup);

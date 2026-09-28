@@ -727,6 +727,7 @@ fn draw_geometry_tab(
                         {
                             entry.boundary.source = BoundarySource::ModelOutline {
                                 model_id: first_id.0,
+                                holes: false,
                             };
                         }
                     }
@@ -768,7 +769,7 @@ fn draw_geometry_tab(
         // `ModelOutline`. It lists the models with a closed 2D shape.
         // A stored id that names no such model shows as "not found";
         // generation then refuses and names the id.
-        if let BoundarySource::ModelOutline { model_id } = &mut entry.boundary.source {
+        if let BoundarySource::ModelOutline { model_id, holes } = &mut entry.boundary.source {
             ui.horizontal(|ui| {
                 ui.label("Outline model:");
                 let current_label = outline_models
@@ -794,6 +795,12 @@ fn draw_geometry_tab(
                          the outline.",
                     );
             });
+            // The holes option inverts the regions: the toolpath cuts
+            // inside the holes of the shapes and stays off the shapes.
+            ui.checkbox(holes, "Machine the holes").on_hover_text(
+                "The toolpath cuts inside the holes of the shapes, for example \
+                 the area inside an edge band, and stays off the shapes.",
+            );
         }
 
         // Rest-regions source-toolpath picker (P2.2) — only shown

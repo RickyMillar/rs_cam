@@ -620,10 +620,11 @@ pub fn boundary_summary_line(
     let source = match &boundary.source {
         BoundarySource::Stock => "stock rectangle".to_owned(),
         BoundarySource::ModelSilhouette => "model silhouette".to_owned(),
-        BoundarySource::ModelOutline { model_id } => {
+        BoundarySource::ModelOutline { model_id, holes } => {
+            let what = if *holes { "outline holes" } else { "outline" };
             match models.iter().find(|(id, _)| id.0 == *model_id) {
-                Some((_, name)) => format!("outline of model '{name}'"),
-                None => format!("outline of model id {model_id} (not in this project)"),
+                Some((_, name)) => format!("{what} of model '{name}'"),
+                None => format!("{what} of model id {model_id} (not in this project)"),
             }
         }
         BoundarySource::FaceSelection => "face selection".to_owned(),
