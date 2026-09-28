@@ -392,12 +392,23 @@ impl ProjectSession {
     /// generated against the stock the OLD geometry left, so it is stale
     /// too. This door seeds the same chain walk, through
     /// [`Self::drop_results_and_their_dependents`].
+    ///
+    /// A toolpath reads a model through two doors: its own `model_id`, and
+    /// a `ModelOutline` boundary that names the model. A reload of the
+    /// outline model moves the boundary, so the second door drops too.
     fn drop_results_for_model(&mut self, model_id: usize) {
         let affected: Vec<usize> = self
             .toolpath_configs
             .iter()
             .enumerate()
-            .filter(|(_, tc)| tc.model_id == model_id)
+            .filter(|(_, tc)| {
+                tc.model_id == model_id
+                    || matches!(
+                        &tc.boundary.source,
+                        BoundarySource::ModelOutline { model_id: outline_id }
+                            if tc.boundary.enabled && *outline_id == model_id
+                    )
+            })
             .map(|(idx, _)| idx)
             .collect();
         self.drop_results_and_their_dependents(&affected);

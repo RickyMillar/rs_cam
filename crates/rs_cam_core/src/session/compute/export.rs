@@ -263,6 +263,9 @@ impl ProjectSession {
             target_model,
             any_loaded_model_has_mesh,
             tool_diameters,
+            // The generator drills the live stock pins (see
+            // `generate_toolpath`), so the check counts them here.
+            stock_alignment_pin_count: self.stock.alignment_pins.len(),
         }
     }
 

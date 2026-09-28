@@ -1,6 +1,4 @@
-use rs_cam_core::compute::alignment_pins::{
-    PIN_MATCH_TOL_MM, PIN_WALL_MM, PinPlacementError, PinPlacementRequest, place_keyed_pins,
-};
+use rs_cam_core::compute::alignment_pins::{PIN_MATCH_TOL_MM, PinPlacementError};
 
 use rs_cam_core::geo::BoundingBox3;
 
@@ -64,11 +62,16 @@ pub fn reconcile_auto_from_model(
 /// `has_model` says whether a model with geometry is loaded. It gates
 /// the caption under the checkbox, because "refit to the model" is not
 /// an offer the panel can keep without one.
+///
+/// `pin_inputs` holds the model bbox and the pin-drill tool diameter. The
+/// "Auto-place keyed pair" button plans from them, as the "Two-sided setup"
+/// route does.
 pub fn draw(
     ui: &mut egui::Ui,
     stock: &mut StockConfig,
     has_flipped_setup: bool,
     has_model: bool,
+    pin_inputs: &KeyedPinInputs,
     events: &mut Vec<AppEvent>,
 ) -> PanelEdit {
     ui.heading("Stock Setup");
@@ -197,7 +200,13 @@ pub fn draw(
     }
 
     ui.add_space(12.0);
-    edit.merge(draw_alignment_pins(ui, stock, has_flipped_setup, events));
+    edit.merge(draw_alignment_pins(
+        ui,
+        stock,
+        has_flipped_setup,
+        pin_inputs,
+        events,
+    ));
     edit
 }
 
@@ -206,6 +215,7 @@ fn draw_alignment_pins(
     ui: &mut egui::Ui,
     stock: &mut StockConfig,
     has_flipped_setup: bool,
+    pin_inputs: &KeyedPinInputs,
     events: &mut Vec<AppEvent>,
 ) -> PanelEdit {
     let header = egui::RichText::new("Alignment Pins")
@@ -412,7 +422,7 @@ fn draw_alignment_pins(
             // under x -> W - x — so "+ Add Pin" is deliberately dumb and
             // "Auto-place" no longer takes a count.
             ui.add_space(4.0);
-            let plan = panel_pin_plan(stock, derived_axis);
+            let plan = keyed_pin_plan(stock, panel_face_up(derived_axis), pin_inputs);
             ui.horizontal(|ui| {
                 let can_place = plan.is_ok();
                 if ui
@@ -422,9 +432,8 @@ fn draw_alignment_pins(
                     )
                     .on_hover_text(
                         "Two pins on the flip's mirror line, offset so the part cannot seat 180 \
-                         deg out. Clear strips are taken from the stock padding — the \
-                         'Two-sided setup' button uses the real model bbox and the pin-drill \
-                         tool's diameter instead.",
+                         deg out. The clear strips are the stock beside the bbox of all models, \
+                         and the pin diameter is the pin-drill tool's diameter.",
                     )
                     .clicked()
                     && let Ok(pins) = plan.as_ref()
@@ -452,7 +461,7 @@ fn draw_alignment_pins(
                     )
                     .clicked()
                 {
-                    let diameter = panel_pin_diameter(stock);
+                    let diameter = panel_pin_diameter(stock, pin_inputs);
                     stock
                         .alignment_pins
                         .push(AlignmentPin::new(centre.0, centre.1, diameter));
@@ -506,50 +515,105 @@ fn draw_alignment_pins(
         .unwrap_or_default()
 }
 
-/// Pin diameter the panel plans against.
+/// Diameter of a pin that "+ Add Pin" adds.
 ///
-/// The panel cannot see the tool list, so it can only honour a diameter
-/// the operator already chose. When there are no pins yet it falls back
-/// to a nominal dowel — the "Two-sided setup" button, which runs in the
-/// controller, sizes from the pin-drill tool instead and is the door to
-/// use when the drill matters.
-fn panel_pin_diameter(stock: &StockConfig) -> f64 {
+/// The diameter of the first stored pin, so the pins stay one size. With
+/// no pins, the pin-drill tool's diameter. With no tool either, a nominal
+/// dowel.
+fn panel_pin_diameter(stock: &StockConfig, pin_inputs: &KeyedPinInputs) -> f64 {
     const NOMINAL_DOWEL_MM: f64 = 6.0;
     stock
         .alignment_pins
         .first()
         .map(|p| p.diameter)
+        .or(pin_inputs.pin_diameter)
         .unwrap_or(NOMINAL_DOWEL_MM)
 }
 
-/// The keyed pair for this blank, as far as the panel can see it.
+/// Stated reason when the pin diameter cannot be sized from a tool.
 ///
-/// **Known limitation.** `ui::properties::stock::draw` is handed only the
-/// `StockConfig`, so the clear strips are taken from `padding` rather
-/// than from the model bbox. When the stock is auto-sized that is exact;
-/// when it was sized by hand (140x150 around a 100x100 model) padding
-/// under-reports the free strip and this refuses a placement that is in
-/// fact available. A conservative refusal is the safe side of that error,
-/// and the controller's two-sided path uses the real bbox. Widening
-/// `draw`'s signature to carry the bbox is the follow-up.
-fn panel_pin_plan(
-    stock: &StockConfig,
-    derived_axis: Option<FlipAxis>,
-) -> Result<[AlignmentPin; 2], PinPlacementError> {
-    let face_up = match derived_axis {
+/// The hole has to match the dowel the keying geometry assumed, and the
+/// hole is whatever the pin-drill cutter makes. With no tool in the
+/// project there is no honest diameter — and a guess is exactly what the
+/// old hardcoded `AlignmentPin::new(.., 6.0)` was.
+pub const NO_PIN_TOOL_MESSAGE: &str = "Cannot place registration pins: no tool is defined, so \
+     the pin diameter would be a guess. Add the drill you will use for the dowel holes, \
+     then try again.";
+
+/// The session values the keyed-pin planner reads.
+///
+/// ONE constructor for both doors: the stock panel's "Auto-place keyed
+/// pair" and the controller's "Two-sided setup". Before G-PINPANEL the
+/// panel took its clear strips from `padding` and a pin diameter from the
+/// stored pins. A hand-sized stock (380 mm wide, origin x -15, model x
+/// 0..350, padding 5) then read a 5 mm strip where the real strip is
+/// 15 mm, and the panel refused a pair that the other door placed.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct KeyedPinInputs {
+    /// The world-frame bbox of all models
+    /// ([`rs_cam_core::session::ProjectSession::models_union_bbox`]).
+    pub model_bbox: Option<BoundingBox3>,
+    /// The pin-drill tool diameter
+    /// ([`rs_cam_core::session::ProjectSession::pin_drill_tool_diameter`]).
+    pub pin_diameter: Option<f64>,
+}
+
+impl KeyedPinInputs {
+    #[must_use]
+    pub fn from_session(session: &rs_cam_core::session::ProjectSession) -> Self {
+        Self {
+            model_bbox: session.models_union_bbox(),
+            pin_diameter: session.pin_drill_tool_diameter(),
+        }
+    }
+}
+
+/// Why no keyed pair is placed.
+#[derive(Debug, Clone, PartialEq)]
+pub enum KeyedPinRefusal {
+    /// No tool resolves, so the pin diameter would be a guess.
+    NoPinTool,
+    /// The core placer refused the geometry.
+    Placement(PinPlacementError),
+}
+
+impl std::fmt::Display for KeyedPinRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            KeyedPinRefusal::NoPinTool => f.write_str(NO_PIN_TOOL_MESSAGE),
+            KeyedPinRefusal::Placement(e) => e.fmt(f),
+        }
+    }
+}
+
+/// The flip the panel keys the pins to.
+///
+/// No flipped setup, or a legacy Vertical axis no `FaceUp` performs: there
+/// is no in-plane flip to key, and the placer refuses `Top`.
+fn panel_face_up(derived_axis: Option<FlipAxis>) -> FaceUp {
+    match derived_axis {
         Some(FlipAxis::Horizontal) => FaceUp::Bottom,
-        // No flipped setup, or a legacy Vertical axis no `FaceUp`
-        // performs: there is no in-plane flip to key.
         _ => FaceUp::Top,
-    };
-    place_keyed_pins(PinPlacementRequest {
-        stock_w: stock.x,
-        stock_d: stock.y,
-        model_x_range: Some((stock.padding, stock.x - stock.padding)),
-        face_up,
-        pin_diameter: panel_pin_diameter(stock),
-        wall_mm: PIN_WALL_MM,
-    })
+    }
+}
+
+/// The keyed pair for `stock` under `face_up`.
+///
+/// Both doors call this function with [`KeyedPinInputs::from_session`], so
+/// they cannot disagree about a placement. The clear strips come from the
+/// real stock extent and the model bbox through
+/// [`StockConfig::plan_keyed_pins`], never from `padding`.
+pub fn keyed_pin_plan(
+    stock: &StockConfig,
+    face_up: FaceUp,
+    inputs: &KeyedPinInputs,
+) -> Result<[AlignmentPin; 2], KeyedPinRefusal> {
+    // Sizing the pin from the tool is the point: with no tool there is no
+    // honest diameter.
+    let pin_diameter = inputs.pin_diameter.ok_or(KeyedPinRefusal::NoPinTool)?;
+    stock
+        .plan_keyed_pins(face_up, inputs.model_bbox.as_ref(), pin_diameter)
+        .map_err(KeyedPinRefusal::Placement)
 }
 
 /// Create the mirror of a pin about the flip axis.
@@ -726,34 +790,42 @@ fn draw_wood_subcategory(
 #[allow(clippy::indexing_slicing, clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+    use rs_cam_core::geo::P3;
 
-    fn stock(x: f64, y: f64, padding: f64, pin_diameter: f64) -> StockConfig {
-        let mut s = StockConfig {
+    fn stock(x: f64, y: f64) -> StockConfig {
+        StockConfig {
             x,
             y,
-            padding,
             ..StockConfig::default()
-        };
-        // Seed a pin so the panel picks up the diameter it plans against.
-        s.alignment_pins
-            .push(AlignmentPin::new(0.0, 0.0, pin_diameter));
-        s
+        }
     }
 
-    /// The live wanaka geometry. A 5 mm padding ring cannot hold a 6 mm
+    /// The pin-drill inputs for a model at `x_min..x_max` and a tool of
+    /// `pin_diameter`.
+    fn inputs(x_min: f64, x_max: f64, y: f64, pin_diameter: f64) -> KeyedPinInputs {
+        KeyedPinInputs {
+            model_bbox: Some(BoundingBox3 {
+                min: P3::new(x_min, 0.0, 0.0),
+                max: P3::new(x_max, y, 10.0),
+            }),
+            pin_diameter: Some(pin_diameter),
+        }
+    }
+
+    /// The live wanaka geometry. A 5 mm clear ring cannot hold a 6 mm
     /// dowel at ANY offset — 6 mm of pin plus 2 mm of wall each side
     /// needs 10 mm — so the only correct answer is a refusal. The
     /// pre-2026-08-22 controller placed the pin at x = 2.5, spanning
     /// -0.5..5.5 relative to the stock edge: hanging off the blank.
     #[test]
-    fn panel_refuses_o6_pin_in_a_5mm_padding_ring() {
-        let s = stock(140.0, 150.0, 5.0, 6.0);
-        match panel_pin_plan(&s, Some(FlipAxis::Horizontal)) {
-            Err(PinPlacementError::StripTooNarrow {
+    fn panel_refuses_o6_pin_in_a_5mm_clear_ring() {
+        let s = stock(140.0, 150.0);
+        match keyed_pin_plan(&s, FaceUp::Bottom, &inputs(5.0, 135.0, 150.0, 6.0)) {
+            Err(KeyedPinRefusal::Placement(PinPlacementError::StripTooNarrow {
                 strip_mm,
                 required_mm,
                 ..
-            }) => {
+            })) => {
                 assert!((strip_mm - 5.0).abs() < 1e-9);
                 assert!((required_mm - 10.0).abs() < 1e-9);
             }
@@ -765,8 +837,8 @@ mod tests {
     /// keyed: it survives the flip and blocks the other three seatings.
     #[test]
     fn panel_plan_seats_the_flip_and_keys_it() {
-        let s = stock(140.0, 150.0, 20.0, 6.0);
-        let pins = panel_pin_plan(&s, Some(FlipAxis::Horizontal)).unwrap();
+        let s = stock(140.0, 150.0);
+        let pins = keyed_pin_plan(&s, FaceUp::Bottom, &inputs(20.0, 120.0, 150.0, 6.0)).unwrap();
         for p in &pins {
             assert!(
                 (p.y - s.y * 0.5).abs() < 1e-9,
@@ -786,10 +858,26 @@ mod tests {
     /// rather than inventing a pattern.
     #[test]
     fn panel_refuses_when_no_flip_is_programmed() {
-        let s = stock(140.0, 150.0, 20.0, 6.0);
+        let s = stock(140.0, 150.0);
         assert!(matches!(
-            panel_pin_plan(&s, None),
-            Err(PinPlacementError::UnsupportedFlip { .. })
+            keyed_pin_plan(&s, panel_face_up(None), &inputs(20.0, 120.0, 150.0, 6.0)),
+            Err(KeyedPinRefusal::Placement(
+                PinPlacementError::UnsupportedFlip { .. }
+            ))
         ));
+    }
+
+    /// No tool means no honest pin diameter. The panel refuses with the
+    /// sentence the "Two-sided setup" route prints.
+    #[test]
+    fn panel_refuses_without_a_pin_tool() {
+        let s = stock(140.0, 150.0);
+        let no_tool = KeyedPinInputs {
+            pin_diameter: None,
+            ..inputs(20.0, 120.0, 150.0, 6.0)
+        };
+        let refusal = keyed_pin_plan(&s, FaceUp::Bottom, &no_tool).unwrap_err();
+        assert_eq!(refusal, KeyedPinRefusal::NoPinTool);
+        assert_eq!(refusal.to_string(), NO_PIN_TOOL_MESSAGE);
     }
 }

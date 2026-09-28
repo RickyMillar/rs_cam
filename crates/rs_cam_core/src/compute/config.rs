@@ -396,9 +396,20 @@ pub enum BoundarySource {
     Stock,
     /// 2D silhouette of the 3D model projected along the tool axis (Z-down).
     ModelSilhouette,
-    /// Imported 2D geometry (DXF/SVG closed chains) — indices into the
-    /// toolpath's polygon list.
-    Geometry { polygon_indices: Vec<usize> },
+    /// The 2D outline of ANOTHER model (DXF/SVG): the union of that
+    /// model's closed polygons, holes kept. A ring model gives a ring
+    /// boundary, so the toolpath does not cut in the hole.
+    ///
+    /// `model_id` is the project model id (`LoadedModel::id`), the same
+    /// number `ToolpathConfig::model_id` stores. It need not be the
+    /// toolpath's own model: a 3D rough on a terrain STL can take its
+    /// boundary from a DXF. Generation refuses when the model is missing
+    /// or has no closed polygon; it never falls back to the stock.
+    ///
+    /// Like [`Self::DerivedRestRegions`] this resolves to a SET of
+    /// polygons, one per disjoint outline, through the same
+    /// `RegionSet` path.
+    ModelOutline { model_id: usize },
     /// Selected STEP/CAD faces projected to XY.
     FaceSelection,
     /// Rest regions derived from another toolpath's rest-depth analysis
@@ -461,7 +472,7 @@ impl BoundarySource {
         match self {
             BoundarySource::Stock => "Stock",
             BoundarySource::ModelSilhouette => "Model Silhouette",
-            BoundarySource::Geometry { .. } => "Imported Geometry",
+            BoundarySource::ModelOutline { .. } => "Model Outline",
             BoundarySource::FaceSelection => "Face Selection",
             BoundarySource::DerivedRestRegions { .. } => "Rest Regions",
             BoundarySource::PlannedTierRegions { .. } => "Planned Tier Regions",

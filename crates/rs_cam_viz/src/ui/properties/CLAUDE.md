@@ -37,4 +37,4 @@ The tabs that edit a setup, a tool, the stock, the post and an operation.
 - `cargo test -p rs_cam_viz -q --test depth_beyond_stock_cautions_g_depthstock`
 - `cargo test -p rs_cam_viz -q --test the_help_key_is_the_param_name_ui04`
 - `cargo test -p rs_cam_viz -q --test operations_registry_ui05`
-- `cargo test -p rs_cam_viz -q --test one_start_from_row_g_startfrom`
+- `cargo test -p rs_cam_viz -q --test one_start_from_row_g_startfrom --test keyed_pin_panel_reads_the_real_strips_g_pinpanel`

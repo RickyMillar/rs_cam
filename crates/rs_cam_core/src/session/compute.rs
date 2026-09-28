@@ -89,7 +89,8 @@ pub struct ResolvedGenInputs {
     /// offset applied, but NOT yet tool-radius inset). Resolved once here
     /// alongside `pre_boundary`'s union attempt and shared with the
     /// mesh-finish family's pre-clip via `ExecutionContext::boundary_regions`
-    /// — never re-derived just for this field. `None` for every other
+    /// — never re-derived just for this field. `PlannedTierRegions` and
+    /// `ModelOutline` fill it the same way. `None` for every other
     /// boundary source (or when the boundary is disabled).
     pre_boundary_regions: Option<Vec<crate::polygon::Polygon2>>,
     /// G-DRILLPICK-FRAME: the setup's local<->global transform, hoisted off
@@ -207,7 +208,8 @@ pub struct GenContext {
     /// hardness (F-016).
     material: crate::material::Material,
     /// The RAW region set the POST-generation boundary clip walks, for
-    /// the two sources that resolve to a set of disjoint regions.
+    /// the three sources that resolve to a set of disjoint regions
+    /// (`PlannedTierRegions`, `DerivedRestRegions`, `ModelOutline`).
     ///
     /// `None` means the boundary is disabled or names another source,
     /// and the single-polygon clip answers instead. It never means "the
@@ -763,10 +765,11 @@ impl JobPhases<'_, '_> {
                 self.inputs.boundary_config.source,
                 crate::compute::config::BoundarySource::PlannedTierRegions { .. }
                     | crate::compute::config::BoundarySource::DerivedRestRegions { .. }
+                    | crate::compute::config::BoundarySource::ModelOutline { .. }
             );
             annotated = if resolves_to_a_region_set {
                 // The submit step resolved this set, for exactly
-                // these two sources. It re-read the SAME memoised
+                // these three sources. It re-read the SAME memoised
                 // tier map `pre_boundary` came off, so agreement
                 // between the two clips stays structural — the P2.3
                 // rule that made `DerivedRestRegions` safe.
@@ -2185,6 +2188,15 @@ impl ProjectSession {
             {
                 self.resolve_derived_rest_region_polys(index, *source_toolpath_id)?;
             }
+            // ModelOutline: the same fail-fast rule. A missing model or an
+            // outline with no closed polygon refuses before geometry work,
+            // and the message names the model.
+            if tc.boundary.enabled
+                && let crate::compute::config::BoundarySource::ModelOutline { model_id } =
+                    &tc.boundary.source
+            {
+                self.resolve_model_outline_polys(index, *model_id)?;
+            }
         }
 
         let inputs = self.resolve_generation_inputs(index, cancel)?;
@@ -2230,7 +2242,7 @@ impl ProjectSession {
             rapid_feed_mm_min: self.machine.max_feed_mm_min.max(1.0),
         });
 
-        // The POST-generation clip's own region set, for the two sources
+        // The POST-generation clip's own region set, for the three sources
         // that resolve to a set of disjoint regions. The monolith resolved
         // it after the generator ran; the handle carries it instead, so
         // the executor holds no session.
@@ -2288,7 +2300,14 @@ impl ProjectSession {
                         // rather than `#[allow(clippy::unwrap_used)]`.
                         Some(self.resolve_derived_rest_region_polys(index, *source_toolpath_id)?)
                     }
-                    _ => None,
+                    crate::compute::config::BoundarySource::ModelOutline { model_id } => {
+                        // The same resolution as the pre-boundary, so the
+                        // two clips bound the same set.
+                        Some(self.resolve_model_outline_polys(index, *model_id)?)
+                    }
+                    crate::compute::config::BoundarySource::Stock
+                    | crate::compute::config::BoundarySource::ModelSilhouette
+                    | crate::compute::config::BoundarySource::FaceSelection => None,
                 }
             } else {
                 None

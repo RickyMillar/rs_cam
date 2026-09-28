@@ -802,7 +802,8 @@ pub struct SetBoundaryConfigParam {
     pub index: usize,
     /// Enable or disable boundary
     pub enabled: bool,
-    /// Boundary source: "stock", "model_silhouette", or "derived_rest_regions"
+    /// Boundary source: "stock", "model_silhouette", "model_outline" or
+    /// "derived_rest_regions"
     pub source: Option<String>,
     /// Containment mode: "center", "inside", or "outside"
     pub containment: Option<String>,
@@ -812,6 +813,11 @@ pub struct SetBoundaryConfigParam {
     /// (from `get_toolpath_params`'s `id` field, not an index) of the
     /// toolpath whose pencil rest-depth result supplies the boundary.
     pub source_toolpath_id: Option<usize>,
+    /// Required when `source` is "model_outline": the project model id
+    /// (from `inspect_model`) whose closed 2D shapes bound the
+    /// toolpath. It can name a model other than the toolpath's own. Holes
+    /// in the shapes stay uncut.
+    pub model_id: Option<usize>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]

@@ -434,6 +434,18 @@ impl ProjectSession {
                 let single = processed_set.single_union();
                 pre_boundary_regions = Some(processed_set.as_slice().to_vec());
                 single
+            } else if let crate::compute::config::BoundarySource::ModelOutline { model_id } =
+                &boundary_config.source
+            {
+                // A failure is PROPAGATED, as in the tier arm above. The
+                // operator named a model; a missing or empty outline must
+                // stop the generation, not widen it to the stock.
+                let regions = self.resolve_model_outline_polys(index, *model_id)?;
+                let processed_set = crate::geometry::region_set::RegionSet::from_slice(&regions)
+                    .processed(&keep_out_footprints, boundary_config.offset);
+                let single = processed_set.single_union();
+                pre_boundary_regions = Some(processed_set.as_slice().to_vec());
+                single
             } else if let crate::compute::config::BoundarySource::DerivedRestRegions {
                 source_toolpath_id,
             } = &boundary_config.source
@@ -579,6 +591,87 @@ impl ProjectSession {
         }
     }
 
+    /// Resolve the polygon set for `BoundarySource::ModelOutline`, or a
+    /// `SessionError::OperationFailed` that names the model and the reason.
+    ///
+    /// The set is the union of the model's CLOSED polygons, holes kept, in
+    /// the emission frame of toolpath `this_index`. The model polygons are
+    /// drawing geometry, so a non-identity setup moves them through the
+    /// same door as the toolpath's own polygons
+    /// (`transform_drawing_polygons_to_setup`). A Bottom setup mirrors Y
+    /// here exactly as it mirrors the toolpath's drawing.
+    ///
+    /// The lookup is by EXACT id. `find_model_by_raw_id` falls back to the
+    /// first model, and a boundary on the wrong model is the silent
+    /// fallback this source refuses.
+    ///
+    /// Shared by the precondition in [`Self::generate_toolpath`], the
+    /// pre-boundary in [`Self::resolve_generation_inputs`] and the
+    /// post-generation clip, so the three agree on the set.
+    pub(crate) fn resolve_model_outline_polys(
+        &self,
+        this_index: usize,
+        model_id: usize,
+    ) -> Result<Arc<Vec<crate::polygon::Polygon2>>, SessionError> {
+        let Some(model) = self.models.iter().find(|m| m.id == model_id) else {
+            let known: Vec<String> = self
+                .models
+                .iter()
+                .map(|m| format!("{} ('{}')", m.id, m.name))
+                .collect();
+            return Err(SessionError::OperationFailed(format!(
+                "The machining boundary uses the outline of model id {model_id}, but no \
+                 model with that id exists. Project models: [{}]. Pick a different \
+                 boundary model, or disable the boundary.",
+                known.join(", "),
+            )));
+        };
+        let name = &model.name;
+
+        let closed: Vec<crate::polygon::Polygon2> = model
+            .polygons
+            .as_deref()
+            .map(|polys| {
+                polys
+                    .iter()
+                    .filter(|p| p.closed && p.exterior.len() >= 3)
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
+        if closed.is_empty() {
+            let reason = match (&model.load_error, model.polygons.as_deref()) {
+                (Some(error), _) => format!("the model did not load ({error})"),
+                (None, None) => "the model has no 2D geometry (it is not a DXF or SVG)".to_owned(),
+                (None, Some(polys)) if polys.is_empty() => "the model has no 2D shapes".to_owned(),
+                (None, Some(_)) => "the model has no closed polygon, only open paths".to_owned(),
+            };
+            return Err(SessionError::OperationFailed(format!(
+                "The machining boundary uses the outline of model '{name}' (id {model_id}), \
+                 but {reason}. Pick a model with closed 2D shapes, or disable the boundary.",
+            )));
+        }
+
+        let union = crate::polygon::Polygon2::union_all(&closed);
+        if union.is_empty() {
+            return Err(SessionError::OperationFailed(format!(
+                "The machining boundary uses the outline of model '{name}' (id {model_id}), \
+                 but the union of its {count} closed polygons has no area. Repair the \
+                 drawing, or disable the boundary.",
+                count = closed.len(),
+            )));
+        }
+
+        let setup = self.find_setup_for_toolpath_index(this_index);
+        let ctx = super::SetupEvalContext::build_for_setup(self, setup);
+        let regions = if ctx.needs_transform() {
+            self.transform_drawing_polygons_to_setup(&union, ctx.face_up, ctx.z_rotation)
+        } else {
+            union
+        };
+        Ok(Arc::new(regions))
+    }
+
     /// Resolve the boundary "containment polygon" — the polygon the cutter's
     /// footprint must stay inside (Containment=Inside) or outside (Outside).
     /// For ModelSilhouette source this returns the OUTER LOOP of the
@@ -595,9 +688,11 @@ impl ProjectSession {
     /// (when its center is at silhouette - tool_radius) reaches the
     /// silhouette boundary and validly stamps cells in that band.
     ///
-    /// Not used for `BoundarySource::DerivedRestRegions` — that source can
-    /// resolve to multiple disjoint polygons, which this single-polygon
-    /// signature can't represent. See
+    /// Not used for `BoundarySource::DerivedRestRegions`,
+    /// `PlannedTierRegions` or `ModelOutline` — those sources can resolve
+    /// to multiple disjoint polygons, which this single-polygon signature
+    /// can't represent. They refuse here with an internal error rather
+    /// than take the stock rectangle. See
     /// [`Self::resolve_derived_rest_region_polys`] +
     /// [`crate::geometry::region_set::RegionSet::processed`] for that source's path,
     /// wired in by the two call sites below (`resolve_generation_inputs`'s
@@ -623,31 +718,49 @@ impl ProjectSession {
             UserOffsetOutcome, apply_user_boundary_offset, subtract_keepouts,
         };
 
-        let mut stock_poly = match (&boundary_config.source, mesh, face_boundary) {
-            (BoundarySource::FaceSelection, _, Some(face)) => face.clone(),
-            (BoundarySource::ModelSilhouette, Some(m), _) => {
-                // G8: memoised per mesh identity. This ran twice per toolpath
-                // (pre-boundary resolution + the post-generation enforcement
-                // clip), each time rasterising every face of the mesh.
-                let silhouettes = crate::maps::geom_cache::cached_silhouette(m);
-                // R1: the outer loop only. The raw silhouette keeps a
-                // through-hole as a hole; the boundary treats it as material.
-                crate::geometry::boundary::silhouette_machining_outline(&silhouettes)
-                    .unwrap_or_else(|| {
-                        crate::polygon::Polygon2::rectangle(
-                            stock_bbox.min.x,
-                            stock_bbox.min.y,
-                            stock_bbox.max.x,
-                            stock_bbox.max.y,
-                        )
-                    })
-            }
-            _ => crate::polygon::Polygon2::rectangle(
+        let stock_rectangle = || {
+            crate::polygon::Polygon2::rectangle(
                 stock_bbox.min.x,
                 stock_bbox.min.y,
                 stock_bbox.max.x,
                 stock_bbox.max.y,
-            ),
+            )
+        };
+        // Every source is named. A new source must choose its arm here; it
+        // cannot fall to the stock rectangle through a wildcard.
+        let mut stock_poly = match &boundary_config.source {
+            BoundarySource::Stock => stock_rectangle(),
+            BoundarySource::FaceSelection => face_boundary.cloned().unwrap_or_else(stock_rectangle),
+            BoundarySource::ModelSilhouette => match mesh {
+                Some(m) => {
+                    // G8: memoised per mesh identity. This ran twice per
+                    // toolpath (pre-boundary resolution + the post-generation
+                    // enforcement clip), each time rasterising every face of
+                    // the mesh.
+                    let silhouettes = crate::maps::geom_cache::cached_silhouette(m);
+                    // R1: the outer loop only. The raw silhouette keeps a
+                    // through-hole as a hole; the boundary treats it as
+                    // material.
+                    crate::geometry::boundary::silhouette_machining_outline(&silhouettes)
+                        .unwrap_or_else(stock_rectangle)
+                }
+                None => stock_rectangle(),
+            },
+            // These three resolve to a SET of regions through
+            // `RegionSet::processed` and `apply_boundary_clip_multi`. The
+            // callers route them there first, so this arm is a wiring
+            // defect. It refuses: the stock rectangle would widen the
+            // boundary the operator asked for.
+            BoundarySource::ModelOutline { .. }
+            | BoundarySource::DerivedRestRegions { .. }
+            | BoundarySource::PlannedTierRegions { .. } => {
+                return Err(crate::compute::execute::OperationError::Other(format!(
+                    "internal error: the '{}' boundary resolves to a region set, but it \
+                     reached the single-polygon boundary path. Refusing rather than \
+                     clipping to the stock rectangle.",
+                    boundary_config.source.label(),
+                )));
+            }
         };
         if !keep_out_footprints.is_empty() {
             stock_poly = subtract_keepouts(&stock_poly, keep_out_footprints);

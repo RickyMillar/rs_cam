@@ -32,6 +32,7 @@ use std::path::{Path, PathBuf};
 
 use rs_cam_core::ToolpathId;
 use rs_cam_core::compute::config::{BoundaryConfig, BoundaryContainment, BoundarySource};
+use rs_cam_core::ids::ModelId;
 use rs_cam_core::session::ProjectToolpathSection;
 use rs_cam_viz::ui::properties::boundary_summary_line;
 
@@ -93,19 +94,19 @@ fn summary_line_names_the_stored_source() {
         offset: 0.0,
     };
     assert_eq!(
-        boundary_summary_line(&with(BoundarySource::Stock), false),
+        boundary_summary_line(&with(BoundarySource::Stock), false, &[]),
         "Boundary: stock rectangle"
     );
     assert_eq!(
-        boundary_summary_line(&with(BoundarySource::ModelSilhouette), false),
+        boundary_summary_line(&with(BoundarySource::ModelSilhouette), false, &[]),
         "Boundary: model silhouette"
     );
     assert_eq!(
-        boundary_summary_line(&with(BoundarySource::ModelSilhouette), true),
+        boundary_summary_line(&with(BoundarySource::ModelSilhouette), true, &[]),
         "Boundary: model silhouette (auto)"
     );
     assert_eq!(
-        boundary_summary_line(&with(BoundarySource::FaceSelection), false),
+        boundary_summary_line(&with(BoundarySource::FaceSelection), false, &[]),
         "Boundary: face selection"
     );
     assert_eq!(
@@ -113,13 +114,32 @@ fn summary_line_names_the_stored_source() {
             &with(BoundarySource::DerivedRestRegions {
                 source_toolpath_id: ToolpathId(7),
             }),
-            false
+            false,
+            &[]
         ),
         "Boundary: rest regions of toolpath 7"
     );
+    // A model outline names its model, or says the id names none.
+    let models = [(ModelId(3), "machinable_edge_band".to_owned())];
+    assert_eq!(
+        boundary_summary_line(
+            &with(BoundarySource::ModelOutline { model_id: 3 }),
+            false,
+            &models
+        ),
+        "Boundary: outline of model 'machinable_edge_band'"
+    );
+    assert_eq!(
+        boundary_summary_line(
+            &with(BoundarySource::ModelOutline { model_id: 9 }),
+            false,
+            &models
+        ),
+        "Boundary: outline of model id 9 (not in this project)"
+    );
     // The panel cannot prove auto provenance today, so it must never say so
     // for the same config it prints without the flag.
-    assert!(!boundary_summary_line(&with(BoundarySource::Stock), false).contains("(auto)"));
+    assert!(!boundary_summary_line(&with(BoundarySource::Stock), false, &[]).contains("(auto)"));
 }
 
 const LEGACY_SECTION: &str = r#"

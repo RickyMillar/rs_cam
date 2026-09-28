@@ -9,18 +9,9 @@ use rs_cam_core::session::{
 use crate::compute::ComputeBackend;
 use crate::state::job::{FlipAxis, ModelId, SetupId, ToolConfig};
 use crate::state::selection::Selection;
+use crate::ui::properties::stock::{KeyedPinInputs, keyed_pin_plan};
 
 use super::super::AppController;
-
-/// Stated reason when the pin diameter cannot be sized from a tool.
-///
-/// The hole has to match the dowel the keying geometry assumed, and the
-/// hole is whatever the pin-drill cutter makes. With no tool in the
-/// project there is no honest diameter — and a guess is exactly what the
-/// old hardcoded `AlignmentPin::new(.., 6.0)` was.
-const NO_PIN_TOOL_MESSAGE: &str = "Cannot place registration pins: no tool is defined, so \
-     the pin diameter would be a guess. Add the drill you will use for the dowel holes, \
-     then try again.";
 
 impl<B: ComputeBackend> AppController<B> {
     // ── Tree / selection helpers ─────────────────────────────────────────
@@ -414,51 +405,6 @@ impl<B: ComputeBackend> AppController<B> {
         self.state.gui.mark_edited();
     }
 
-    /// Diameter of the tool the pin-drill operation will actually run.
-    ///
-    /// The pin geometry is planned against the dowel, the dowel is the
-    /// hole, and the hole is whatever this cutter makes. Before
-    /// G-PINAUTO the placer hardcoded 6.0: against a Ø3 cutter that is a
-    /// hole no 6 mm dowel ever sees, and against a large cutter it is a
-    /// wall clearance computed for the wrong pin.
-    ///
-    /// The tool choice mirrors [`Self::sync_alignment_pin_drill`]: the
-    /// existing pin-drill op's tool if there is one, else the first tool.
-    /// If those two ever diverge, the hole stops matching the plan.
-    fn pin_drill_tool_diameter(&self) -> Option<f64> {
-        use crate::state::toolpath::OperationConfig;
-
-        let tool_id = self
-            .state
-            .session
-            .toolpath_configs()
-            .iter()
-            .find(|tc| matches!(tc.operation, OperationConfig::AlignmentPinDrill(_)))
-            .map(|tc| tc.tool_id)
-            .or_else(|| self.state.session.tools().first().map(|t| t.id.0))?;
-        self.state
-            .session
-            .tools()
-            .iter()
-            .find(|t| t.id.0 == tool_id)
-            .map(|t| t.diameter)
-            .filter(|d| *d > 0.0)
-    }
-
-    /// World-frame bbox of the first model that has one.
-    ///
-    /// Prefers the mesh bbox for 3D models and falls back to the 2D
-    /// polygon bbox for SVG/DXF — see F-13 in the April review.
-    fn first_model_bbox(&self) -> Option<rs_cam_core::geo::BoundingBox3> {
-        self.state.session.models().iter().find_map(|m| {
-            m.mesh.as_ref().map(|mesh| mesh.bbox).or_else(|| {
-                m.polygons
-                    .as_deref()
-                    .and_then(|polys| rs_cam_core::session::polygons_bbox(polys))
-            })
-        })
-    }
-
     pub(crate) fn handle_setup_two_sided(&mut self) {
         let has_flipped = self
             .state
@@ -489,20 +435,12 @@ impl<B: ComputeBackend> AppController<B> {
             .find(|f| *f != FaceUp::Top)
             .unwrap_or(FaceUp::Bottom);
 
-        let pin_diameter = self.pin_drill_tool_diameter();
-        let model_bbox = self.first_model_bbox();
-        let plan = match pin_diameter {
-            Some(d) => self
-                .state
-                .session
-                .stock_config()
-                .plan_keyed_pins(flip_face, model_bbox.as_ref(), d)
-                .map_err(|e| e.to_string()),
-            // Sizing the pin from the tool is the point: with no tool
-            // there is no honest diameter, and a guess is exactly what
-            // the hardcoded 6.0 was.
-            None => Err(NO_PIN_TOOL_MESSAGE.to_owned()),
-        };
+        // The stock panel's "Auto-place keyed pair" calls the same planner
+        // with the same inputs: the bbox of all models and the pin-drill
+        // tool diameter (G-PINPANEL). The two doors cannot disagree.
+        let pin_inputs = KeyedPinInputs::from_session(&self.state.session);
+        let plan = keyed_pin_plan(self.state.session.stock_config(), flip_face, &pin_inputs)
+            .map_err(|e| e.to_string());
 
         // One DRAFT of the stock, and one `SetStockConfig`. The pin
         // placement and the `flip_axis` cache write must stay in one

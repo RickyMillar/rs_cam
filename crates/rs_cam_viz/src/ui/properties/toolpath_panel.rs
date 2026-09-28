@@ -458,6 +458,7 @@ fn draw_geometry_tab(
 ) {
     let tools = inputs.tools.as_slice();
     let models = inputs.models.as_slice();
+    let outline_models = inputs.outline_models.as_slice();
     let tool_configs = inputs.tool_configs.as_slice();
     let boundary_source_candidates = inputs.boundary_source_candidates.as_slice();
     let rest_region_consumers = inputs.rest_region_consumers.as_slice();
@@ -653,7 +654,7 @@ fn draw_geometry_tab(
         // silhouette on add for 3D ops on a mesh; that provenance is
         // not stored, so the line never claims "(auto)".
         ui.label(
-            egui::RichText::new(boundary_summary_line(&entry.boundary, false))
+            egui::RichText::new(boundary_summary_line(&entry.boundary, false, models))
                 .small()
                 .color(crate::ui::tokens::TEXT_MUTED),
         );
@@ -696,6 +697,39 @@ fn draw_geometry_tab(
                     {
                         entry.boundary.source = BoundarySource::FaceSelection;
                     }
+                    let has_outline_models = !outline_models.is_empty();
+                    if ui
+                        .add_enabled(
+                            has_outline_models,
+                            egui::Button::selectable(
+                                matches!(
+                                    entry.boundary.source,
+                                    BoundarySource::ModelOutline { .. }
+                                ),
+                                "Model Outline",
+                            ),
+                        )
+                        .on_hover_text(if has_outline_models {
+                            "Use the closed 2D shapes of a DXF or SVG model as the \
+                             boundary. The model can be a different model from the \
+                             one this toolpath cuts. Holes in the shapes stay \
+                             uncut. Pick the model below."
+                        } else {
+                            "No model in this project has a closed 2D shape. \
+                             Import a DXF or SVG with closed shapes to use this source."
+                        })
+                        .clicked()
+                    {
+                        // Keep the current pick when the source is already
+                        // an outline; else take the first candidate.
+                        if !matches!(entry.boundary.source, BoundarySource::ModelOutline { .. })
+                            && let Some((first_id, _)) = outline_models.first()
+                        {
+                            entry.boundary.source = BoundarySource::ModelOutline {
+                                model_id: first_id.0,
+                            };
+                        }
+                    }
                     let has_rest_candidates = !boundary_source_candidates.is_empty();
                     if ui
                         .add_enabled(
@@ -729,6 +763,38 @@ fn draw_geometry_tab(
                     }
                 });
         });
+
+        // Outline model picker — only shown when `Source` above is
+        // `ModelOutline`. It lists the models with a closed 2D shape.
+        // A stored id that names no such model shows as "not found";
+        // generation then refuses and names the id.
+        if let BoundarySource::ModelOutline { model_id } = &mut entry.boundary.source {
+            ui.horizontal(|ui| {
+                ui.label("Outline model:");
+                let current_label = outline_models
+                    .iter()
+                    .find(|(candidate_id, _)| candidate_id.0 == *model_id)
+                    .map(|(_, name)| name.clone())
+                    .unwrap_or_else(|| format!("(model id {model_id} not found)"));
+                egui::ComboBox::from_id_salt("boundary_outline_model")
+                    .selected_text(current_label)
+                    .show_ui(ui, |ui| {
+                        for (candidate_id, name) in outline_models {
+                            let selected = *model_id == candidate_id.0;
+                            if ui.selectable_label(selected, name.as_str()).clicked() {
+                                *model_id = candidate_id.0;
+                            }
+                        }
+                    })
+                    .response
+                    .on_hover_text(
+                        "The model whose closed shapes bound this toolpath. \
+                         The toolpath cuts only inside the shapes and not in \
+                         their holes. Containment and offset below apply to \
+                         the outline.",
+                    );
+            });
+        }
 
         // Rest-regions source-toolpath picker (P2.2) — only shown
         // when `Source` above is set to `DerivedRestRegions`.

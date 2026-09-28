@@ -324,6 +324,10 @@ pub fn toolpath_panel_snapshot(
 pub(crate) struct ToolpathPanelInputs {
     pub tools: Vec<(crate::state::job::ToolId, String, f64)>,
     pub models: Vec<(crate::state::job::ModelId, String)>,
+    /// The models a `ModelOutline` boundary can name: every model with
+    /// at least one closed 2D polygon. Any model qualifies, not only the
+    /// toolpath's own.
+    pub outline_models: Vec<(crate::state::job::ModelId, String)>,
     pub tool_configs: Vec<(crate::state::job::ToolId, crate::state::job::ToolConfig)>,
     pub boundary_source_candidates: Vec<BoundaryRestCandidate>,
     /// Names of toolpaths currently consuming THIS one's rest-depth analysis
@@ -387,6 +391,16 @@ pub(crate) fn toolpath_panel_inputs(
     let models: Vec<_> = session
         .models()
         .iter()
+        .map(|m| (crate::state::job::ModelId(m.id), m.name.clone()))
+        .collect();
+    let outline_models: Vec<_> = session
+        .models()
+        .iter()
+        .filter(|m| {
+            m.polygons
+                .as_deref()
+                .is_some_and(|polys| polys.iter().any(|p| p.closed && p.exterior.len() >= 3))
+        })
         .map(|m| (crate::state::job::ModelId(m.id), m.name.clone()))
         .collect();
     // Snapshot tool configs for feeds calculation
@@ -557,6 +571,7 @@ pub(crate) fn toolpath_panel_inputs(
     ToolpathPanelInputs {
         tools,
         models,
+        outline_models,
         tool_configs,
         boundary_source_candidates,
         rest_region_consumers: rest_region_consumer_names,
@@ -594,15 +609,22 @@ pub(crate) fn build_entry_from_session_and_gui(
 /// which is the boundary generation clips to. `auto` appends "(auto)" when
 /// the caller can prove the controller assigned the source on add; the
 /// panel cannot today (no provenance is stored), so it passes `false`.
+///
+/// `models` is the project model list. A `ModelOutline` source names its
+/// model from it, or says that the id names no model.
 pub fn boundary_summary_line(
     boundary: &crate::state::toolpath::BoundaryConfig,
     auto: bool,
+    models: &[(crate::state::job::ModelId, String)],
 ) -> String {
     let source = match &boundary.source {
         BoundarySource::Stock => "stock rectangle".to_owned(),
         BoundarySource::ModelSilhouette => "model silhouette".to_owned(),
-        BoundarySource::Geometry { polygon_indices } => {
-            format!("imported geometry ({} polygons)", polygon_indices.len())
+        BoundarySource::ModelOutline { model_id } => {
+            match models.iter().find(|(id, _)| id.0 == *model_id) {
+                Some((_, name)) => format!("outline of model '{name}'"),
+                None => format!("outline of model id {model_id} (not in this project)"),
+            }
         }
         BoundarySource::FaceSelection => "face selection".to_owned(),
         BoundarySource::DerivedRestRegions { source_toolpath_id } => {
@@ -879,7 +901,15 @@ fn draw_stock_selection(ui: &mut egui::Ui, state: &mut AppState, events: &mut Ve
         .models()
         .iter()
         .any(|model| model.mesh.is_some() || model.polygons.is_some());
-    let edit = stock::draw(ui, &mut draft, has_flipped_setup, has_model, events);
+    let pin_inputs = stock::KeyedPinInputs::from_session(&state.session);
+    let edit = stock::draw(
+        ui,
+        &mut draft,
+        has_flipped_setup,
+        has_model,
+        &pin_inputs,
+        events,
+    );
     if edit.committed {
         apply_stock_draft(state, draft.clone());
         // The undo compare runs AFTER the command, so the

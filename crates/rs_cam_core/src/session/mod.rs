@@ -1579,6 +1579,46 @@ impl ProjectSession {
         self.models.iter().find(|m| m.id == model_id)?.bbox()
     }
 
+    /// The union of the bboxes of all models, in the world frame.
+    ///
+    /// The keyed-pin planner reads this as the keep-out for the pins. It
+    /// takes the union, not the first model, because a pin in the strip
+    /// beside one model can land inside a second model. `None` means no
+    /// model carries finite geometry.
+    #[must_use]
+    pub fn models_union_bbox(&self) -> Option<BoundingBox3> {
+        let mut union: Option<BoundingBox3> = None;
+        for bbox in self.models.iter().filter_map(LoadedModel::bbox) {
+            let merged = union.get_or_insert(bbox);
+            merged.expand_to(bbox.min);
+            merged.expand_to(bbox.max);
+        }
+        union
+    }
+
+    /// The diameter of the tool that drills the alignment pin holes.
+    ///
+    /// The tool of the first `AlignmentPinDrill` toolpath, or the first
+    /// tool when no such toolpath exists yet. That is the tool the GUI's
+    /// pin-drill auto-create picks, so the plan and the hole agree. The
+    /// pin hole is what this cutter makes, so the keyed-pin planner sizes
+    /// the pin from it. Before G-PINAUTO the placer hardcoded 6.0.
+    /// `None` means no tool with a positive diameter resolves.
+    #[must_use]
+    pub fn pin_drill_tool_diameter(&self) -> Option<f64> {
+        let tool_id = self
+            .toolpath_configs
+            .iter()
+            .find(|tc| matches!(tc.operation, OperationConfig::AlignmentPinDrill(_)))
+            .map(|tc| tc.tool_id)
+            .or_else(|| self.tools.first().map(|t| t.id.0))?;
+        self.tools
+            .iter()
+            .find(|t| t.id.0 == tool_id)
+            .map(|t| t.diameter)
+            .filter(|d| *d > 0.0)
+    }
+
     /// All toolpath configurations.
     pub fn toolpath_configs(&self) -> &[ToolpathConfig] {
         &self.toolpath_configs

@@ -33,8 +33,8 @@ module is reached through `compute::execute_operation_annotated`.
 
 ## Sentries
 
-- `cargo test -p rs_cam_core -q --test drill_op_step3`
-- `cargo test -p rs_cam_core -q --test drill_flip_removal_g_drillflip`
+- `cargo test -p rs_cam_core -q --test drill_op_step3 --test drill_flip_removal_g_drillflip`
+- `cargo test -p rs_cam_core -q --test a_drill_hole_is_cut_once_g_drilltwice`
 - `cargo test -p rs_cam_core -q --test depth_beyond_stock_core_g_depthstockcore`
 - `cargo test -p rs_cam_core -q --test project_curve_depth_sign`
 - `cargo test -p rs_cam_core -q --test waterline_auto_ladder_is_model_top_to_bottom_r3 --test waterline_respects_a_vertical_wall_r9`

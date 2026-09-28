@@ -1621,6 +1621,15 @@
           "minimum": 0,
           "type": "integer"
         },
+        "model_id": {
+          "description": "Required when `source` is \"model_outline\": the project model id\n(from `inspect_model`) whose closed 2D shapes bound the\ntoolpath. It can name a model other than the toolpath's own. Holes\nin the shapes stay uncut.",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "offset": {
           "description": "Additional offset in mm (positive = expand, negative = shrink)",
           "format": "double",
@@ -1630,7 +1639,7 @@
           ]
         },
         "source": {
-          "description": "Boundary source: \"stock\", \"model_silhouette\", or \"derived_rest_regions\"",
+          "description": "Boundary source: \"stock\", \"model_silhouette\", \"model_outline\" or\n\"derived_rest_regions\"",
           "type": [
             "string",
             "null"

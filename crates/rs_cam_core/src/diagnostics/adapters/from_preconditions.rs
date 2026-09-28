@@ -16,7 +16,8 @@
 //! - **Drill / AlignmentPinDrill** — needs at least one hole position
 //!   (for Drill an explicit pick or one of the model's drill targets —
 //!   DXF points and circle/arc centres, G-DRILLCENTROID; for
-//!   AlignmentPinDrill the snapshotted `holes` array).
+//!   AlignmentPinDrill a pin on the live stock or a picked target — the
+//!   two sources the generator drills).
 //! - **ProjectCurve** — needs both a source curve (the toolpath's
 //!   `model_id` must point at a polygon-bearing model) AND a target
 //!   surface mesh (either the same model or any other loaded model).
@@ -60,6 +61,11 @@ pub struct PreconditionContext {
     /// Used to validate the rest-machining "prev tool must be larger"
     /// precondition without re-passing the full tool list.
     pub tool_diameters: Vec<ToolDiameterEntry>,
+    /// How many alignment pins the live stock carries. The
+    /// `AlignmentPinDrill` check reads this, never the op's `holes`
+    /// snapshot: the generator replaces `holes` with the live stock pins
+    /// before it drills, so the snapshot can be empty or stale.
+    pub stock_alignment_pin_count: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -103,7 +109,11 @@ pub fn diagnostics_from_preconditions(
             out.extend(drill_checks(&scope, cfg, ctx));
         }
         OperationConfig::AlignmentPinDrill(cfg) => {
-            if cfg.holes.is_empty() {
+            // The generator drills the live stock pins plus the picked
+            // targets. `cfg.holes` is only a snapshot of the pins, and the
+            // generator overwrites it, so this check does not read it.
+            let has_picks = cfg.selected_holes.as_ref().is_some_and(|p| !p.is_empty());
+            if ctx.stock_alignment_pin_count == 0 && !has_picks {
                 out.push(Diagnostic {
                     id: DiagnosticId::from(ids::PRECOND_ALIGNMENT_PIN_DRILL_NO_HOLES),
                     scope,
@@ -557,7 +567,7 @@ mod tests {
     }
 
     #[test]
-    fn alignment_pin_drill_no_holes_fires_when_holes_empty() {
+    fn alignment_pin_drill_no_holes_fires_without_stock_pins_or_picks() {
         let ctx = PreconditionContext::default();
         let diags =
             diagnostics_from_preconditions(ToolpathId(0), &alignment_pin_drill_op(vec![]), 0, &ctx);
@@ -566,14 +576,45 @@ mod tests {
             diags[0].id.as_str(),
             ids::PRECOND_ALIGNMENT_PIN_DRILL_NO_HOLES
         );
+        assert_eq!(diags[0].severity, Severity::Blocking);
     }
 
+    /// The live case: two pins on the stock and an empty `holes` snapshot.
+    /// The generator drills the two stock pins, so the check stays silent.
     #[test]
-    fn alignment_pin_drill_silent_when_holes_present() {
+    fn alignment_pin_drill_silent_with_stock_pins_and_empty_holes() {
+        let ctx = PreconditionContext {
+            stock_alignment_pin_count: 2,
+            ..Default::default()
+        };
+        let diags =
+            diagnostics_from_preconditions(ToolpathId(0), &alignment_pin_drill_op(vec![]), 0, &ctx);
+        assert!(diags.is_empty(), "got {diags:?}");
+    }
+
+    /// A stale `holes` snapshot does not count. The generator replaces it
+    /// with the live stock pins, and the stock has none.
+    #[test]
+    fn alignment_pin_drill_fires_on_a_stale_snapshot_without_stock_pins() {
         let ctx = PreconditionContext::default();
         let op = alignment_pin_drill_op(vec![[0.0, 0.0], [10.0, 10.0]]);
         let diags = diagnostics_from_preconditions(ToolpathId(0), &op, 0, &ctx);
-        assert!(diags.is_empty());
+        assert_eq!(diags.len(), 1);
+        assert_eq!(
+            diags[0].id.as_str(),
+            ids::PRECOND_ALIGNMENT_PIN_DRILL_NO_HOLES
+        );
+    }
+
+    #[test]
+    fn alignment_pin_drill_silent_with_picks_and_no_stock_pins() {
+        let ctx = PreconditionContext::default();
+        let op = OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig {
+            selected_holes: Some(vec![[5.0, 5.0]]),
+            ..AlignmentPinDrillConfig::default()
+        });
+        let diags = diagnostics_from_preconditions(ToolpathId(0), &op, 0, &ctx);
+        assert!(diags.is_empty(), "got {diags:?}");
     }
 
     #[test]

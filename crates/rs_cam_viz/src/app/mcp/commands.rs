@@ -1340,6 +1340,63 @@ impl RsCamApp {
         let boundary_source = match p.source.as_deref() {
             Some("stock") | None => BoundarySource::Stock,
             Some("model_silhouette") => BoundarySource::ModelSilhouette,
+            Some("model_outline") => {
+                // The valid ids are the models with a closed 2D shape —
+                // the same list the GUI picker offers.
+                let session = &self.controller.state().session;
+                let valid: Vec<String> = session
+                    .models()
+                    .iter()
+                    .filter(|m| {
+                        m.polygons.as_deref().is_some_and(|polys| {
+                            polys
+                                .iter()
+                                .any(|poly| poly.closed && poly.exterior.len() >= 3)
+                        })
+                    })
+                    .map(|m| format!("{} ('{}')", m.id, m.name))
+                    .collect();
+                let valid_list = if valid.is_empty() {
+                    "none: no model in this project has a closed 2D shape".to_owned()
+                } else {
+                    valid.join(", ")
+                };
+                let Some(model_id) = p.model_id else {
+                    return CorePlan::Answered(mutation_error_json(
+                        &format!(
+                            "Error: 'model_outline' requires model_id — the id of the \
+                             model whose closed 2D shapes bound the toolpath (see \
+                             inspect_model's 'id' field). Valid model ids: [{valid_list}]."
+                        ),
+                        Some("model_id"),
+                    ));
+                };
+                let Some(model) = session.models().iter().find(|m| m.id == model_id) else {
+                    return CorePlan::Answered(mutation_error_json(
+                        &format!(
+                            "Error: model_id {model_id} does not match any model in this \
+                             project. Valid model ids: [{valid_list}]."
+                        ),
+                        Some("model_id"),
+                    ));
+                };
+                let has_closed = model.polygons.as_deref().is_some_and(|polys| {
+                    polys
+                        .iter()
+                        .any(|poly| poly.closed && poly.exterior.len() >= 3)
+                });
+                if !has_closed {
+                    return CorePlan::Answered(mutation_error_json(
+                        &format!(
+                            "Error: model {model_id} ('{}') has no closed 2D shape, so its \
+                             outline cannot bound a toolpath. Valid model ids: [{valid_list}].",
+                            model.name
+                        ),
+                        Some("model_id"),
+                    ));
+                }
+                BoundarySource::ModelOutline { model_id }
+            }
             Some("derived_rest_regions") => {
                 let Some(raw_id) = p.source_toolpath_id else {
                     return CorePlan::Answered(mutation_error_json(
@@ -1375,7 +1432,7 @@ impl RsCamApp {
                 return CorePlan::Answered(mutation_error_json(
                     &format!(
                         "Error: Unknown boundary source '{other}'. Use 'stock', \
-                         'model_silhouette', or 'derived_rest_regions'."
+                         'model_silhouette', 'model_outline', or 'derived_rest_regions'."
                     ),
                     Some("source"),
                 ));

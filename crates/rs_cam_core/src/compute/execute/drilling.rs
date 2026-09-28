@@ -215,7 +215,48 @@ fn pin_holes_in_emission_frame(
                 .map(|xy| pick_to_emission_frame(xy, setup_transform)),
         );
     }
-    Ok(holes)
+    // A pick on a stock pin names the same hole twice.
+    Ok(unique_holes(holes))
+}
+
+/// Drop every hole that repeats an earlier one, and keep the first order.
+///
+/// G-DRILLTWICE: a hole is an XY position, and a drill cycle drills it once.
+/// Two sources can name one position twice:
+///
+/// - a drawing with two circles on one centre (a counterbore drawn as two
+///   rings, or a CAD export that writes an entity twice). The DXF door
+///   gives one [`DrillTarget`] per circle, and both are real targets to
+///   pick, because their diameters can differ;
+/// - a pick that lands on a stock alignment pin.
+///
+/// Without this, `drill_toolpath` ran the whole peck cycle once per copy,
+/// and the rapid-order pass put the copies side by side, so the machine
+/// drilled each hole two times.
+///
+/// The tolerance is [`DRILL_PICK_MATCH_EPS_MM`], the distance at which a
+/// pick and a target are one point. It is also the distance at which
+/// `spans::drill_hole_sections` groups moves into one hole.
+fn unique_holes(holes: Vec<[f64; 2]>) -> Vec<[f64; 2]> {
+    let total = holes.len();
+    let mut out: Vec<[f64; 2]> = Vec::with_capacity(total);
+    for xy in holes {
+        let repeat = out.iter().any(|h| {
+            (h[0] - xy[0]).abs() < DRILL_PICK_MATCH_EPS_MM
+                && (h[1] - xy[1]).abs() < DRILL_PICK_MATCH_EPS_MM
+        });
+        if !repeat {
+            out.push(xy);
+        }
+    }
+    if out.len() < total {
+        tracing::info!(
+            holes = out.len(),
+            repeats = total - out.len(),
+            "drill: dropped hole positions that repeat an earlier hole"
+        );
+    }
+    out
 }
 
 /// The refusal a `Drill` op gives when the model exposes no
@@ -395,15 +436,20 @@ pub(super) fn drill_holes_for_config(
             return Err(OperationError::MissingGeometry(msg));
         }
         let resolved = resolve_drill_picks(selected, drill_targets);
-        return Ok(resolved
-            .into_iter()
-            .map(|xy| pick_to_emission_frame(xy, setup_transform))
-            .collect());
+        return Ok(unique_holes(
+            resolved
+                .into_iter()
+                .map(|xy| pick_to_emission_frame(xy, setup_transform))
+                .collect(),
+        ));
     }
-    Ok(drill_targets
-        .iter()
-        .map(|t| pick_to_emission_frame([t.x, t.y], setup_transform))
-        .collect())
+    // G-DRILLTWICE: two circles on one centre are two targets and one hole.
+    Ok(unique_holes(
+        drill_targets
+            .iter()
+            .map(|t| pick_to_emission_frame([t.x, t.y], setup_transform))
+            .collect(),
+    ))
 }
 
 /// Drill family adapter (holes from the model's drill targets or picks).
