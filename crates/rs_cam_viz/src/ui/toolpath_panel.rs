@@ -323,6 +323,13 @@ pub fn draw(
                 crate::ui::components::EmptyState::new("No toolpaths")
                     .detail("Add an operation to begin.")
                     .show(ui);
+                // The empty state's one action (§4.8). It opens the same
+                // menu as `+`: with no row in the list, a lone `+` under
+                // the empty state is the only way in, and the operator did
+                // not find it (2026-09-28).
+                ui.vertical_centered(|ui| {
+                    add_toolpath_empty_action(ui, setup_id, state, events);
+                });
             }
 
             for (local_idx, &tp_idx) in toolpath_indices.iter().enumerate() {
@@ -409,8 +416,13 @@ pub fn draw(
         events,
     );
 
-    // Single-setup: the add menu sits below the operation list.
-    if !multi_setup && let Some(setup) = state.session.list_setups().first() {
+    // Single-setup: the add menu sits below the operation list. An empty
+    // list draws its own action in the empty state instead, so the panel
+    // offers one way in, not two.
+    if !multi_setup
+        && let Some(setup) = state.session.list_setups().first()
+        && !setup.toolpath_indices.is_empty()
+    {
         let sid = SetupId(setup.id);
         ui.add_space(tokens::SPACE_2);
         add_toolpath_menu(ui, sid, state, events);
@@ -1108,22 +1120,45 @@ fn add_toolpath_menu(
     state: &AppState,
     events: &mut Vec<AppEvent>,
 ) {
-    let has_mesh = state.session.models().iter().any(|m| m.mesh.is_some());
-    let has_polygons = state.session.models().iter().any(|m| m.polygons.is_some());
-
     // DC2 — the label is one character. The menu's own items say what
     // each one adds, so the word "Add" repeated it.
     ui.menu_button("+", |ui| {
-        ui.label(egui::RichText::new("2.5D (from SVG)").strong());
-        for &op in OperationType::ALL_2D {
-            add_op_menu_item(ui, op, setup_id, has_mesh, has_polygons, events);
-        }
-        ui.separator();
-        ui.label(egui::RichText::new("3D (from STL)").strong());
-        for &op in OperationType::ALL_3D {
-            add_op_menu_item(ui, op, setup_id, has_mesh, has_polygons, events);
-        }
+        add_menu_items(ui, setup_id, state, events);
     });
+}
+
+/// The empty state's action: a primary "Add toolpath" button that opens
+/// the same menu as [`add_toolpath_menu`].
+fn add_toolpath_empty_action(
+    ui: &mut egui::Ui,
+    setup_id: SetupId,
+    state: &AppState,
+    events: &mut Vec<AppEvent>,
+) {
+    let response = ui.add(crate::ui::components::Button::primary("Add toolpath"));
+    egui::Popup::menu(&response).show(|ui| {
+        add_menu_items(ui, setup_id, state, events);
+    });
+}
+
+/// The add menu's items, grouped 2.5D then 3D. One list for both triggers.
+fn add_menu_items(
+    ui: &mut egui::Ui,
+    setup_id: SetupId,
+    state: &AppState,
+    events: &mut Vec<AppEvent>,
+) {
+    let has_mesh = state.session.models().iter().any(|m| m.mesh.is_some());
+    let has_polygons = state.session.models().iter().any(|m| m.polygons.is_some());
+    ui.label(egui::RichText::new("2.5D (from SVG)").strong());
+    for &op in OperationType::ALL_2D {
+        add_op_menu_item(ui, op, setup_id, has_mesh, has_polygons, events);
+    }
+    ui.separator();
+    ui.label(egui::RichText::new("3D (from STL)").strong());
+    for &op in OperationType::ALL_3D {
+        add_op_menu_item(ui, op, setup_id, has_mesh, has_polygons, events);
+    }
 }
 
 fn add_op_menu_item(
