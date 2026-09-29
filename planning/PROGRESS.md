@@ -14,6 +14,52 @@
 > with `git show planning-pre-purge-2026-09-17:<path>`, and read
 > `planning/DELETED_INDEX.md` for what each package decided and why it went.
 
+## Update 2026-09-29/30 (session rs-cam-13, local) — read before the 2026-09-25 hand-off
+
+**First priority, a safety defect: the simulation of a large project takes
+more than 20 GB.** The operator's project (a 350 x 500 mm terrain,
+`rivmap350.toml`, 380 x 510 x 26 mm stock, 8 toolpaths in two setups,
+one of them an R1.0 tapered-ball scallop of about 8 h) went from 2.3 GB
+to 19.4 GB in 30 s at 0.5 mm cells (760 x 1020 columns), and to 22.8 GB
+three minutes later. It took the operator's desktop down twice through
+the OOM killer (2026-09-29, 13:56 and before). A 0.5 mm grid on this
+board is under a million columns per grid, so 20 GB is out of
+proportion; suspects: a per-operation stock snapshot, or the per-sample
+cut trace of the long scallop. The project is not in the repo (the
+operator's models); reproduce with `planning/fixtures/rivmap100/` scaled
+or with a long scallop, ALWAYS inside a hard cap:
+`systemd-run --user --scope -p MemoryMax=10G -p MemorySwapMax=0 /usr/bin/time -v target/release/rs_cam_cli project <toml> --resolution 0.5`
+(a killed run exits 137). Find what grows, fix it, and pin peak memory
+with a test. Do not simulate a large project in the GUI until then.
+
+Landed 2026-09-29 (`2a6c5f62`, `ffbed923`, `08f193dd`):
+- An empty toolpath queue offers "Add toolpath" (G-EMPTYADD).
+- `BoundarySource::ModelOutline { model_id, holes }`: a machining boundary
+  from another model's closed 2D shapes (holes kept), or with `holes` the
+  shapes' holes (the area inside an edge band). Replaces the dead
+  `Geometry` source, which fell silently to the stock rectangle. GUI
+  Source "Model Outline" + "Machine the holes"; MCP set_boundary_config
+  `model_outline` + `model_id` + `outline_holes`.
+- Pin drill: the blocking "no hole positions" read the op's own list,
+  not the stock pins (fixed). Auto-place keyed pair planned from the
+  stock padding, not the real strips (fixed; one `keyed_pin_plan`).
+- Drill holes de-duplicated before emission (a live project drilled each
+  hole twice on the 2026-09-25 build; not reproduced on master).
+
+Open from the operator's session (after the memory fix):
+- Tiered finishing on large terrains: the operator sees many links and
+  bumps/gouges in walls that should be smooth. Measured 2026-09-28 on a
+  500 x 500 board: the tier map's 24-island cap merges thousands of
+  specks into blobs (a close radius up to 1.69 mm) and the overlap band
+  closes the coarse tool's slivers, so the fine tool's territory is
+  about 2.8x its real need (33k against 90k mm2 at tolerance 0.15).
+  Fix candidate: drop or leave small specks to the coarse tier instead
+  of merging ever wider, and hold the overlap band to its 1.5x bound.
+  The tier map ignores the fine tool's flute length (a 15 mm tapered
+  ball on 17.8 mm of relief).
+- Suspected gouge source (metrology FINDINGS "stock-blind approach
+  family"): arc-fit chords across small knolls; test with arc_fitting off.
+
 ## Where to carry on — hand-off 2026-09-25 (read this first)
 
 The sessions that drove the work below (rs-cam-2f feeds, rs-cam-e2
