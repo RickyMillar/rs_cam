@@ -83,7 +83,7 @@ Result (get_diagnostics after the GUI simulation):
 - collision_count 0; verdict "WARNING: rapid collisions detected".
 - total_runtime_s 0.0, air % 0.0, samples_total 0: the MCP diagnostics do not
   see the GUI-button simulation's cycle time (looks like G-MCPSIMMIRROR).
-  Cycle time to follow from Ricky's screen.
+  Cycle time from Ricky's screen: 8:13:19 (cutting only, no accel).
 
 Peak 14.84 GiB is 1.2 GiB under the cap. The MCP run_simulation path went
 past 16 GiB from the same 8.1 GiB start, so the two paths differ by at least ~1.2 GiB.
