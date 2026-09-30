@@ -78,3 +78,17 @@ failed push up to 4 times (2 s, 4 s, 8 s, 16 s).
 - The runner asks Ricky before a job with `needs_ricky_ok: true`.
 - The runner reports only. It does not fix code, and it does not commit
   outside this branch.
+
+## Agreed amendments (job 002, 2026-09-30)
+
+1. A result file gives the numbers first: counts, failing names, the first
+   panic line per failure, wall time. Then it gives the log path on the
+   runner's PC. It does not paste full logs.
+2. The runner sends a `send_message` only for a state change. A file
+   update alone does not wake the lead. For a job over 30 minutes, the
+   runner writes one extra `state: running` update with an estimated
+   finish time.
+3. If a job fails to build or cannot start, the runner sets
+   `state: failed` and names the first error. The runner does not retry.
+4. Job numbers: 001 core gate on master, 002 this ack, 003 the core gate
+   on the kernel-fix commit when that package is pushed.
