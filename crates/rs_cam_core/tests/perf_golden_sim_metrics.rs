@@ -69,6 +69,30 @@
 //! before): the honest reading for a `Fresh` op, which does not know the
 //! pocket ran.
 //!
+//! **2026-09-30, G-SIMMEM** (`planning/sim_memory_2026-09-30/RESULTS.md`).
+//! The cut trace no longer carries one sample per 0.02 mm Z-drop stamping
+//! slice: a Z-subdivided move keeps `⌈len/step⌉` samples
+//! (`dexel_stock/sample_coalesce.rs`). The stamps and the stock are
+//! unchanged. Sums (removed volume, runtimes) and the time-weighted averages
+//! the modulator reads (`average_radial_woc_fraction`, engagement) move only
+//! in the last bits; the counts and the per-sample classifications move:
+//!
+//! | field | was | now |
+//! |---|---:|---:|
+//! | 2D `total_sample_count` | 12921 | 7421 |
+//! | 3D `total_sample_count` | 8065 | 1754 |
+//! | 2D `project_air_cut_pct_of_total_runtime` | 44.87 | 44.58 |
+//! | 3D `project_air_cut_pct_of_total_runtime` | 34.51 | 32.25 |
+//! | `[Pocket].per_kinematics[Plunge].peak_radial_woc_fraction` | 1.0 | 0.136 |
+//! | `[DropCutter].per_kinematics[Helix].average_arc_radians` | 1.312 | 1.486 |
+//!
+//! Air cut falls because a coalesced sample is air only when its step's
+//! time-weighted radial engagement is under the 2 % threshold, not when one
+//! 0.02 mm slice of it is. A plunge's radial reading is binary per slice
+//! (1.0 = the slice removed material), so its per-sample peak is now the
+//! engaged fraction of the step. The arc takes the step's maximum, the
+//! reading the power and deflection gates peak on.
+//!
 //! # Why the aggregates and not a trace hash
 //!
 //! A hash over the whole trace would fail on any change at all, including

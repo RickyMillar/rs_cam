@@ -35,6 +35,7 @@ mod band;
 mod band_batch;
 mod cut_direction;
 mod playback;
+mod sample_coalesce;
 mod simulation;
 mod stamping;
 mod swept;

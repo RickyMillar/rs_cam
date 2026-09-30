@@ -34,3 +34,5 @@ is `export::mod`, which re-exports the four surfaces.
 
 - Do not write an artifact from another module. Route it through
   `artifact_io.rs`.
+- Do not build an artifact in memory (`to_vec_pretty`, `to_string_pretty`):
+  a cut trace is GBs of JSON. `artifact_io` streams (G-SIMMEM).

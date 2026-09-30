@@ -588,6 +588,19 @@ impl PrefixState {
     /// stocks are counted at pointer cost because the result they came from
     /// already owns them.
     fn estimated_bytes(&self) -> usize {
+        self.estimated_bytes_with(None)
+    }
+
+    /// The estimate of the snapshot the loop WOULD take from this running
+    /// state and the group stock it holds outside it — computed BEFORE the
+    /// clone (G-SIMMEM). The loop's `run` has `group_stock: None` and the
+    /// full `prior_stocks` map, a superset of the snapshot's restricted one,
+    /// so this never under-estimates what [`SimPrefixCache::store`] would see.
+    pub(crate) fn estimated_snapshot_bytes(&self, group_stock: &TriDexelStock) -> usize {
+        self.estimated_bytes_with(Some(group_stock))
+    }
+
+    fn estimated_bytes_with(&self, loop_group_stock: Option<&TriDexelStock>) -> usize {
         let grid = |stock: &TriDexelStock| stock.z_grid.rays.len() * 32;
         self.cut_samples.len() * std::mem::size_of::<SimulationCutSample>()
             + self.cut_samples.len() * 16
@@ -596,7 +609,11 @@ impl PrefixState {
             + self.composite_mesh.vertices.len() * 4
             + self.composite_mesh.indices.len() * 4
             + grid(&self.global_stock)
-            + self.group_stock.as_ref().map_or(0, grid)
+            + self
+                .group_stock
+                .as_ref()
+                .or(loop_group_stock)
+                .map_or(0, grid)
             + self.checkpoints.len() * std::mem::size_of::<usize>()
             + self.prior_stocks.len() * std::mem::size_of::<usize>()
             + self.rapid_collision_move_indices.len() * std::mem::size_of::<usize>()
@@ -733,6 +750,29 @@ impl SimPrefixCache {
             resume_entry: snapshot.resume_entry,
             state: snapshot.state,
         })
+    }
+
+    /// Would a snapshot of `est_bytes` be kept? Counts a size refusal when
+    /// not.
+    ///
+    /// G-SIMMEM (2026-09-30). The loop used to clone the whole running state
+    /// — every cut sample so far — and only THEN offer it to [`Self::store`],
+    /// which refused anything over the ceiling. A refused snapshot was
+    /// therefore still built: a full second copy of the cut trace at the
+    /// simulation's peak, which is exactly the project the ceiling exists to
+    /// protect. The loop now asks first and clones only what will be kept.
+    pub(crate) fn admits(&mut self, est_bytes: usize) -> bool {
+        if est_bytes > self.max_bytes {
+            self.stats.size_refusals += 1;
+            tracing::debug!(
+                target: "rs_cam_core::sim_prefix",
+                est_bytes,
+                max_bytes = self.max_bytes,
+                "sim prefix snapshot refused before capture: over size ceiling"
+            );
+            return false;
+        }
+        true
     }
 
     /// Offer a freshly captured prefix. Rejected (and dropped) when it exceeds

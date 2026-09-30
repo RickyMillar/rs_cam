@@ -13,6 +13,8 @@ cloud, reads the same file.
 | `rivmap100_live_0925_notsp.toml` | The same, one setting changed for an A/B arm (diff it against the live copy). |
 | `rivmap100_ladder_demo.toml` | The step-ladder demo (the ladder is removed; the census probe still reads this file). |
 | `rivmap100_single_step.toml` | The single-step arm of the ladder measurement. |
+| `rivmap100_memory_small.toml` | G-SIMMEM baseline (2026-09-30): the live copy with the Scallop on and fresh stock, Face heights auto. 2.0 M cut samples before the fix. |
+| `rivmap100_memory_repro.toml` | G-SIMMEM repro: the terrain scaled x3.5 (`units = custom 3.5`, 350 x 350 x 42 mm), stock 380 x 510 x 46 mm (760 x 1020 columns at 0.5 mm). Before the fix it aborts under an 8 GiB cap on a 9.5 GB allocation. Run it ONLY under a cap (`planning/sim_memory_2026-09-30/RESULTS.md`). |
 | `rivmap_export/terrain.stl`, `rivers_aligned.dxf`, `machinable_edge_band.dxf` | The models the projects import (relative paths). |
 | `rivmap_export/rivmap_data.toml` | Metadata from the terrain generator. rs_cam does not read it; its image paths point at the operator's machine. |
 | `arm.sh`, `fmt.py` | One-line `rough-score` summary of toolpath 1. |

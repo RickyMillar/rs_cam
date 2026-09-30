@@ -31,6 +31,13 @@ or with a long scallop, ALWAYS inside a hard cap:
 `systemd-run --user --scope -p MemoryMax=10G -p MemorySwapMax=0 /usr/bin/time -v target/release/rs_cam_cli project <toml> --resolution 0.5`
 (a killed run exits 137). Find what grows, fix it, and pin peak memory
 with a test. Do not simulate a large project in the GUI until then.
+**Fixed in the working tree 2026-09-30 (G-SIMMEM, uncommitted, for review):**
+the cut trace carried one sample per 0.02 mm Z-drop stamping slice (34 M
+samples, one 9.5 GB allocation, on the scaled repro), and the memo clone,
+`Vec::append` and the in-memory artifact JSON multiplied it. Now a move keeps
+`⌈len/step⌉` samples, the memo checks before cloning, the artifact shares and
+streams: repro 4.6 GB peak (was abort under 8 GiB). Air-cut % moves slightly;
+volume, runtime, collisions do not. `planning/sim_memory_2026-09-30/RESULTS.md`.
 
 Landed 2026-09-29 (`2a6c5f62`, `ffbed923`, `08f193dd`):
 - An empty toolpath queue offers "Add toolpath" (G-EMPTYADD).

@@ -6,6 +6,7 @@
 
 use super::band;
 use super::playback::{PlaybackBandDispatch, PlaybackJob};
+use super::sample_coalesce::{SampleCoalescer, coalesce_group, cutting_subdivision};
 use super::stamping::StampPartial;
 use super::stamping::{
     CuttingCaptureParams, SegmentSampleParams, build_move_semantic_lookup, chipload_mm_per_tooth,
@@ -483,9 +484,33 @@ impl TriDexelStock {
         self.last_stamp_dispatch = super::StampDispatchStats::default();
         let from_high = direction.cuts_from_high_side();
         let flute_length = cutter.length().max(1e-9);
+        // G-SIMMEM: the Z-subdivided moves' samples are coalesced to the
+        // declared sample step (`sample_coalesce`), whenever the raw excess
+        // reaches one grid's worth of bytes and once more at the end.
+        let mut coalescer = SampleCoalescer::new(self.ensure_grid(direction));
 
         for move_index in 1..toolpath.moves.len() {
             check_cancel(cancel)?;
+            if coalescer.is_due() {
+                // Coalescing needs final metrics: drain the queues first. A
+                // flush only splits a batch earlier (see
+                // `flush_pending_stamps`), so the stock and every metric are
+                // the same as without it.
+                self.flush_pending_stamps(
+                    lut,
+                    radius,
+                    direction,
+                    capture_arc_engagement,
+                    &mut air_mip,
+                    &mut dispatch,
+                    &mut swept,
+                    &mut samples,
+                    cutter,
+                    flute_length,
+                    cancel,
+                )?;
+                next_sample_index = coalescer.compact(&mut samples);
+            }
             let start = toolpath.moves[move_index - 1].target;
             let end = toolpath.moves[move_index].target;
             let semantic_item_id = semantic_lookup.get(move_index).copied().flatten();
@@ -585,6 +610,7 @@ impl TriDexelStock {
                     );
                 }
                 MoveType::Linear { feed_rate } => {
+                    let first = samples.len();
                     self.capture_cutting_segment(
                         lut,
                         cutter,
@@ -616,11 +642,13 @@ impl TriDexelStock {
                         &mut swept,
                         flute_length,
                     )?;
+                    record_segment(&mut coalescer, &samples, first, start, end, sample_step_mm);
                 }
                 MoveType::ArcCW { i, j, feed_rate } => {
                     linearize_arc_into(&mut arc_buf, start, end, i, j, true, self.z_grid.cell_size);
                     for window in arc_buf.windows(2) {
                         check_cancel(cancel)?;
+                        let first = samples.len();
                         self.capture_cutting_segment(
                             lut,
                             cutter,
@@ -652,6 +680,14 @@ impl TriDexelStock {
                             &mut swept,
                             flute_length,
                         )?;
+                        record_segment(
+                            &mut coalescer,
+                            &samples,
+                            first,
+                            window[0],
+                            window[1],
+                            sample_step_mm,
+                        );
                     }
                 }
                 MoveType::ArcCCW { i, j, feed_rate } => {
@@ -666,6 +702,7 @@ impl TriDexelStock {
                     );
                     for window in arc_buf.windows(2) {
                         check_cancel(cancel)?;
+                        let first = samples.len();
                         self.capture_cutting_segment(
                             lut,
                             cutter,
@@ -697,6 +734,14 @@ impl TriDexelStock {
                             &mut swept,
                             flute_length,
                         )?;
+                        record_segment(
+                            &mut coalescer,
+                            &samples,
+                            first,
+                            window[0],
+                            window[1],
+                            sample_step_mm,
+                        );
                     }
                 }
             }
@@ -747,6 +792,8 @@ impl TriDexelStock {
         if let Some(queue) = swept.as_ref() {
             self.last_stamp_dispatch = queue.stats();
         }
+        // Every queue is drained: every sample is final.
+        coalescer.compact(&mut samples);
 
         Ok(samples)
     }
@@ -921,11 +968,10 @@ impl TriDexelStock {
         // descending segments — the false fine-tier matrix verdict). Flat
         // segments (dz ≈ 0) keep the pure length-based count, so roughing
         // cost is unchanged where it dominates.
-        const MAX_SUBSEGMENT_Z_DROP_MM: f64 = 0.02;
-        let z_drop = (end.z - start.z).abs();
-        let by_length = (segment_length / params.sample_step_mm).ceil() as usize;
-        let by_z = (z_drop / MAX_SUBSEGMENT_Z_DROP_MM).ceil() as usize;
-        let subsegments = by_length.max(by_z).max(1);
+        // The 0.02 mm cap is `sample_coalesce::MAX_SUBSEGMENT_Z_DROP_MM`; the
+        // arithmetic is shared with the coalescer (G-SIMMEM).
+        let (subsegments, _) =
+            cutting_subdivision(start, end, segment_length, params.sample_step_mm);
         for subsegment in 0..subsegments {
             check_cancel(cancel)?;
             let t0 = subsegment as f64 / subsegments as f64;
@@ -1062,6 +1108,26 @@ fn push_cutting_sample(
     });
     *next_sample_index += 1;
     slot
+}
+
+/// Tell the coalescer which samples one cutting segment pushed
+/// (`samples[first..]`) and how it was subdivided. The subdivision is
+/// recomputed from the same endpoints and the same `cutting_subdivision` the
+/// capture route stamped with.
+fn record_segment(
+    coalescer: &mut SampleCoalescer,
+    samples: &[SimulationCutSample],
+    first: usize,
+    start: P3,
+    end: P3,
+    sample_step_mm: f64,
+) {
+    let segment_length = (end - start).norm();
+    if segment_length <= 1e-9 {
+        return;
+    }
+    let (subsegments, by_length) = cutting_subdivision(start, end, segment_length, sample_step_mm);
+    coalescer.record(first, samples.len() - first, subsegments, by_length);
 }
 
 /// Write one subsegment's four published stamp metrics, and everything derived
@@ -1243,11 +1309,10 @@ impl TriDexelStock {
         // the SAMPLE rate — S1 changes how the geometry is stamped, not how
         // many samples a move emits, so the two dispatch shapes stay
         // comparable sample-for-sample.
-        const MAX_SUBSEGMENT_Z_DROP_MM: f64 = 0.02;
-        let z_drop = (end.z - start.z).abs();
-        let by_length = (segment_length / params.sample_step_mm).ceil() as usize;
-        let by_z = (z_drop / MAX_SUBSEGMENT_Z_DROP_MM).ceil() as usize;
-        let subsegments = by_length.max(by_z).max(1);
+        // The 0.02 mm cap is `sample_coalesce::MAX_SUBSEGMENT_Z_DROP_MM`; the
+        // arithmetic is shared with the coalescer (G-SIMMEM).
+        let (subsegments, _) =
+            cutting_subdivision(start, end, segment_length, params.sample_step_mm);
 
         let m_start = direction.decompose(start.x, start.y, start.z);
         let m_end = direction.decompose(end.x, end.y, end.z);
@@ -1571,12 +1636,6 @@ pub fn chip_thickness_stats(
         })
 }
 
-/// Per-subsegment Z-drop cap. Kept in lockstep with the constant of the same
-/// name inside [`TriDexelStock::capture_cutting_segment`] — see the reasoning
-/// there. Duplicated rather than shared because the two live at different
-/// scopes and the estimator must not be able to change the stamp.
-const ESTIMATOR_MAX_SUBSEGMENT_Z_DROP_MM: f64 = 0.02;
-
 /// How many `SimulationCutSample`s a toolpath will emit, near enough to
 /// reserve for (PERF_REVIEW S6).
 ///
@@ -1599,6 +1658,13 @@ const ESTIMATOR_MAX_SUBSEGMENT_Z_DROP_MM: f64 = 0.02;
 ///
 /// Never an over-estimate by construction, so no cap is needed: the Vec cannot
 /// be asked to reserve more than the run will actually push.
+///
+/// G-SIMMEM: a Z-subdivided move keeps `⌈subsegments / g⌉` samples after
+/// coalescing (`sample_coalesce`), and this reserves that count, not the raw
+/// subsegment count. On the 350 mm terrain repro the raw count asked for ONE
+/// 9.5 GB allocation before the scallop's first stamp. The raw samples above
+/// the kept count never exceed `sample_coalesce::staging_budget`, so the
+/// doublings they can cost are bounded by the grid.
 #[allow(clippy::indexing_slicing)] // bounded by the loop range
 fn estimate_sample_count(toolpath: &Toolpath, sample_step_mm: f64) -> usize {
     let step = sample_step_mm.max(1e-3);
@@ -1620,9 +1686,8 @@ fn estimate_sample_count(toolpath: &Toolpath, sample_step_mm: f64) -> usize {
         let n = if length_only {
             by_length
         } else {
-            let by_z =
-                ((end.z - start.z).abs() / ESTIMATOR_MAX_SUBSEGMENT_Z_DROP_MM).ceil() as usize;
-            by_length.max(by_z)
+            let (subsegments, by_len) = cutting_subdivision(start, end, length, step);
+            subsegments.div_ceil(coalesce_group(subsegments, by_len))
         };
         total = total.saturating_add(n.max(1));
     }

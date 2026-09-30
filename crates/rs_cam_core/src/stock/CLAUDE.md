@@ -6,12 +6,10 @@ The entry point for an operator answer: `stock::sim_triage::SimulationTriage`.
 ## Files
 
 - `mod.rs`, `dexel.rs` — the facade and the core tri-dexel data types.
-- `simulation_cut.rs` and `simulation_cut/` — the cut trace: sample
-  accumulation, trace assembly, reporting and the summaries.
+- `simulation_cut.rs` + `simulation_cut/` — the cut trace, assembly, reports.
 - `sim_triage.rs` — one typed answer to "what should I act on?".
 - `sim_measurability.rs` — can this run measure the metric you will gate on?
-- `collision.rs` — holder and shank collision detection, and the three-state
-  `HolderCollisionCheck` the triage reads.
+- `collision.rs` — holder/shank collisions, three-state `HolderCollisionCheck`.
 - `stock_mesh.rs`, `dexel_mesh.rs`, `dexel_mesh_mc.rs` — mesh extraction. The
   `StockMesh` container only; ribbons and colour ramps are `export/ribbon.rs`.
 - `radial_profile.rs` — the precomputed radial profile lookup table.
@@ -28,6 +26,8 @@ The entry point for an operator answer: `stock::sim_triage::SimulationTriage`.
   pass or fail. On a non-flat tool it uses the engaged radius.
 - In a cascade, `claims_reference` must be `machined_stock`. Re-simulating
   does not stale a toolpath; regenerate the rest operations afterwards.
+- `SimulationCutArtifact.trace` is an `Arc` SHARED with the result: pass
+  `Arc::clone`, never a deep copy of the trace (G-SIMMEM).
 
 ## Sentries
 

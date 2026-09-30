@@ -143,7 +143,9 @@ where
 
     // Write cut-trace artifact to disk (viz-only filesystem concern).
     let cut_trace_path = if let Some(trace) = core_result.cut_trace.as_ref() {
-        let artifact = build_simulation_cut_artifact(&req.core, (**trace).clone());
+        // G-SIMMEM: share the trace, never deep-copy it (the artifact only
+        // reads it); the writer streams, so no in-memory JSON either.
+        let artifact = build_simulation_cut_artifact(&req.core, Arc::clone(trace));
         match rs_cam_core::stock::simulation_cut::write_simulation_cut_artifact(
             &simulation_metric_artifact_dir(),
             "simulation_metrics",

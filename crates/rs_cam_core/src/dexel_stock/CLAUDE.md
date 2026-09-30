@@ -8,9 +8,9 @@ Stamps a tool along a toolpath into a tri-dexel stock. Entry point:
 - `mod.rs`, `simulation.rs` — the stock type, the facade, `simulate_*`.
 - `stamping.rs`, `swept.rs` — the stamping helpers and swept-volume stamping.
 - `band.rs`, `band_batch.rs`, `tile_mip.rs` — row bands, the ONE batch
-  dispatcher, the coarse mip.
+  dispatcher, the coarse mip. `cut_direction.rs` — `StockCutDirection`.
 - `whole_path.rs`, `playback.rs` — each route's caps, job shape and serial tail.
-- `cut_direction.rs` — `StockCutDirection`, the side the tool approaches from.
+- `sample_coalesce.rs` — the cut trace keeps the sample step (G-SIMMEM).
 
 ## Invariants
 
@@ -24,6 +24,9 @@ Stamps a tool along a toolpath into a tri-dexel stock. Entry point:
   them: a global stock that shows every face needs them (STK-13).
 - One axis permutation table, `DexelAxis::decompose` (STK-02), and one
   cell-scan driver, `for_each_covered_cell` (STK-01). Nothing copies either.
+- The 0.02 mm Z subdivision serves the STAMP. A move keeps at most
+  `⌈len/step⌉` samples (`sample_coalesce`); a sample per stamp was 20 GB.
+- `playback.rs` is the NON-metric replay route. Do not read a metric from it.
 
 ## Sentries
 
@@ -32,9 +35,6 @@ Stamps a tool along a toolpath into a tri-dexel stock. Entry point:
 - `cargo test -p rs_cam_core -q --test swept_stamping_s1`
 - `cargo test -p rs_cam_core -q --test band_stamping_determinism_s3`
 - `cargo test -p rs_cam_core -q --test sub_cell_stamping_fa`
+- `cargo test -p rs_cam_core -q --test sim_trace_sample_rate_g_simmem`
 - `cargo test -p rs_cam_core -q --lib -- the_six_cell_loops` — the STK-01 bit
   net. It runs ONLY under `--lib`.
-
-## Do not
-
-- `playback.rs` is the NON-metric replay route. Do not read a metric from it.

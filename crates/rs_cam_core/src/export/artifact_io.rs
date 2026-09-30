@@ -69,9 +69,37 @@ pub(crate) fn write_json_artifact(
         sanitize_filename_component(file_stem, fallback)
     );
     let path = dir.join(file_name);
-    let payload = serde_json::to_vec_pretty(artifact)?;
-    std::fs::write(&path, payload)?;
+    write_pretty_json_file(&path, artifact)?;
     Ok(path)
+}
+
+/// Stream `value` into the file at `path` as pretty JSON.
+///
+/// G-SIMMEM (2026-09-30). This used to be `serde_json::to_vec_pretty`
+/// followed by one `fs::write`: the WHOLE document was built in memory
+/// first. A cut-trace artifact is about 1.2 kB of pretty JSON per cut
+/// sample against about 0.3 kB for the sample itself, so the buffer was
+/// four times the trace it serialised; on the operator's 350 x 500 mm
+/// project it grew the GUI by more than 17 GB in 30 s and the OOM killer
+/// took the desktop (`planning/sim_memory_2026-09-30/RESULTS.md`).
+/// `to_writer_pretty` emits the same bytes as `to_vec_pretty` (the same
+/// `PrettyFormatter`), through one `BufWriter` block at a time, so the
+/// peak no longer depends on the document's size.
+pub(crate) fn write_pretty_json_file(path: &Path, value: &impl Serialize) -> std::io::Result<()> {
+    let file = std::fs::File::create(path)?;
+    write_pretty_json(std::io::BufWriter::new(file), value)
+}
+
+/// Stream `value` into `writer` as pretty JSON, then flush it.
+///
+/// The one serialiser [`write_pretty_json_file`] runs; public inside the
+/// crate so a test can hand it a counting writer.
+pub(crate) fn write_pretty_json<W: std::io::Write>(
+    mut writer: W,
+    value: &impl Serialize,
+) -> std::io::Result<()> {
+    serde_json::to_writer_pretty(&mut writer, value)?;
+    writer.flush()
 }
 
 #[cfg(test)]

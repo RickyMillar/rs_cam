@@ -100,7 +100,7 @@ pub(super) fn build_trace_artifact(
 
 pub(super) fn build_simulation_cut_artifact(
     req: &rs_cam_core::compute::simulate::SimulationRequest,
-    trace: rs_cam_core::stock::simulation_cut::SimulationCutTrace,
+    trace: std::sync::Arc<rs_cam_core::stock::simulation_cut::SimulationCutTrace>,
 ) -> rs_cam_core::stock::simulation_cut::SimulationCutArtifact {
     let included_toolpath_ids: Vec<_> = req
         .groups

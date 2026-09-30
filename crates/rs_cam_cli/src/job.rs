@@ -638,9 +638,11 @@ pub fn run_job_command(
                 serde_json::json!({"source": "cli_diagnostics"}),
                 trace,
             );
-            let json = serde_json::to_string_pretty(&artifact)
-                .context("Failed to serialize diagnostics artifact")?;
-            std::fs::write(&json_out, &json).context("Failed to write diagnostics JSON")?;
+            // G-SIMMEM: streamed, not built as one in-memory string.
+            rs_cam_core::stock::simulation_cut::write_simulation_cut_artifact_to(
+                &json_out, &artifact,
+            )
+            .context("Failed to write diagnostics JSON")?;
             info!(path = %json_out.display(), "Wrote diagnostics JSON");
         }
     } else if job_file.job.diagnostics && !job_file.job.simulate {

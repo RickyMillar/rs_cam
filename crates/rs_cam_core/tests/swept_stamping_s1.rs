@@ -254,8 +254,14 @@ fn pure_vertical_chunks_are_bit_identical_to_per_stamp() {
             let what = format!("{label}/cs{cell_size}");
             let per_stamp = simulate_with(&tp, cutter.as_ref(), cell_size, StampDispatch::PerStamp);
             let swept = simulate_with(&tp, cutter.as_ref(), cell_size, StampDispatch::Swept);
+            // G-SIMMEM (2026-09-30): the trace keeps the 0.25 mm sample step,
+            // so the 24 moves of 3 mm (12 plunges, 12 lifts) carry
+            // 24 · ⌈3 / 0.25⌉ = 288 cutting samples, where the 3600 stamped
+            // 0.02 mm slices used to be one sample each. The slices are still
+            // all stamped, and the grid comparison below covers every one;
+            // each sample now aggregates 12-13 slices bit for bit.
             assert!(
-                swept.1.iter().filter(|s| s.is_cutting).count() > 500,
+                swept.1.iter().filter(|s| s.is_cutting).count() >= 288,
                 "{what}: fixture is vacuous — {} cutting samples",
                 swept.1.iter().filter(|s| s.is_cutting).count()
             );

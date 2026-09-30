@@ -777,14 +777,17 @@ pub fn run_project_command(
             [stock_bbox.max.x, stock_bbox.max.y, stock_bbox.max.z],
             included_ids,
             serde_json::json!({ "project": session.name() }),
-            trace.as_ref().clone(),
+            // G-SIMMEM: share the trace (no deep copy) and stream the
+            // JSON (no multi-GB string); the bytes are unchanged.
+            std::sync::Arc::clone(trace),
         );
 
         let sim_path = output_dir.join("simulation.json");
-        let sim_json = serde_json::to_string_pretty(&sim_artifact)
-            .context("Failed to serialize simulation")?;
-        std::fs::write(&sim_path, sim_json)
-            .context(format!("Failed to write {}", sim_path.display()))?;
+        rs_cam_core::stock::simulation_cut::write_simulation_cut_artifact_to(
+            &sim_path,
+            &sim_artifact,
+        )
+        .context(format!("Failed to write {}", sim_path.display()))?;
         info!(path = %sim_path.display(), "Wrote simulation artifact");
     }
 

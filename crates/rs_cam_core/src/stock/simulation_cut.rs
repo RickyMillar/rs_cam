@@ -15,6 +15,7 @@ pub use accumulate::accumulate_by_span;
 pub(crate) use reporting::publish_cycle_times;
 pub use reporting::{
     prune_simulation_cut_artifacts, rebase_cutting_times, write_simulation_cut_artifact,
+    write_simulation_cut_artifact_to,
 };
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -785,10 +786,34 @@ pub struct SimulationCutArtifact {
     pub stock_bbox_max: [f64; 3],
     pub included_toolpath_ids: Vec<ToolpathId>,
     pub request_snapshot: Value,
-    pub trace: SimulationCutTrace,
+    /// The trace, SHARED with the simulation result it came from.
+    ///
+    /// G-SIMMEM (2026-09-30): this was an owned `SimulationCutTrace`, so
+    /// every writer (the GUI worker, `cli project`) deep-copied the whole
+    /// per-sample trace just to serialise it — one full extra trace at the
+    /// simulation's peak. An `Arc` serialises to the same bytes.
+    #[serde(serialize_with = "serialize_shared_trace")]
+    #[serde(deserialize_with = "deserialize_shared_trace")]
+    pub trace: std::sync::Arc<SimulationCutTrace>,
+}
+
+fn serialize_shared_trace<S: serde::Serializer>(
+    trace: &std::sync::Arc<SimulationCutTrace>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    trace.as_ref().serialize(serializer)
+}
+
+fn deserialize_shared_trace<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<std::sync::Arc<SimulationCutTrace>, D::Error> {
+    SimulationCutTrace::deserialize(deserializer).map(std::sync::Arc::new)
 }
 
 impl SimulationCutArtifact {
+    /// `trace` takes an owned trace or an `Arc` to one. Pass the
+    /// simulation result's `Arc` (`Arc::clone`), never a deep `clone()` of
+    /// the trace: the artifact only reads it.
     pub fn new(
         resolution_mm: f64,
         sample_step_mm: f64,
@@ -796,7 +821,7 @@ impl SimulationCutArtifact {
         stock_bbox_max: [f64; 3],
         included_toolpath_ids: Vec<ToolpathId>,
         request_snapshot: Value,
-        trace: SimulationCutTrace,
+        trace: impl Into<std::sync::Arc<SimulationCutTrace>>,
     ) -> Self {
         Self {
             schema_version: TOOLPATH_DEBUG_SCHEMA_VERSION,
@@ -806,7 +831,7 @@ impl SimulationCutArtifact {
             stock_bbox_max,
             included_toolpath_ids,
             request_snapshot,
-            trace,
+            trace: trace.into(),
         }
     }
 }

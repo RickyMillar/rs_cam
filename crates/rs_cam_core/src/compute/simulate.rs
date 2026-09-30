@@ -1271,7 +1271,7 @@ fn carve_entry(
             )
         };
         let mut rapid_check = RapidClearanceCheck::new(entry.tool.as_ref());
-        let mut samples = group_stock
+        let samples = group_stock
             .simulate_toolpath_with_lut_metrics_rapid_checked(
                 entry_toolpath,
                 env.lut,
@@ -1294,7 +1294,7 @@ fn carve_entry(
         // Metrics observe: with capture off the carve is the same, and the
         // samples go nowhere.
         if env.request.metric_options.enabled {
-            run.cut_samples.append(&mut samples);
+            append_samples(&mut run.cut_samples, samples);
         }
         collect_rapid_hits(
             rapid_check,
@@ -1304,6 +1304,24 @@ fn carve_entry(
         );
     }
     Ok(())
+}
+
+/// Append one entry's samples to the run's, copying the SMALLER of the two.
+///
+/// G-SIMMEM: `Vec::append` copies `src` into `dst` even when `dst` is empty,
+/// so the entry that carries most of a project's samples (the long finish)
+/// briefly existed twice. Moving the larger buffer and copying the smaller
+/// one keeps the same order and caps that transient at the smaller side.
+fn append_samples(
+    dst: &mut Vec<crate::stock::simulation_cut::SimulationCutSample>,
+    mut src: Vec<crate::stock::simulation_cut::SimulationCutSample>,
+) {
+    if dst.len() >= src.len() {
+        dst.append(&mut src);
+    } else {
+        src.splice(0..0, dst.drain(..));
+        *dst = src;
+    }
 }
 
 /// CMP-18 seam: the bookkeeping one entry needs BEFORE it carves.
@@ -1399,7 +1417,7 @@ where
     // cache ends here: what to resume from, and where a fresh snapshot goes.
     // `take_match` removes the held snapshot either way — a miss means it is
     // stale, and a stale snapshot is pure memory.
-    let (resumed, store_into) = match memo {
+    let (resumed, mut store_into) = match memo {
         Some(SimMemo { cache, store }) => {
             let resumed = cache.take_match(request);
             (resumed, if store { Some(cache) } else { None })
@@ -1593,7 +1611,15 @@ where
             // — after the entry has fully carved and BEFORE the group's
             // end-of-group work, so a resume redoes that work against the
             // restored `group_stock` exactly as a full replay would.
-            if snapshot_at == Some((group_ordinal, k)) {
+            //
+            // G-SIMMEM: the size ceiling is checked BEFORE the clone. A
+            // snapshot the memo would refuse is never built — building it
+            // copied every cut sample so far at the run's peak.
+            let snapshot_admitted = snapshot_at == Some((group_ordinal, k))
+                && store_into
+                    .as_deref_mut()
+                    .is_some_and(|cache| cache.admits(run.estimated_snapshot_bytes(&group_stock)));
+            if snapshot_admitted {
                 // CMP-18: the snapshot used to restate all sixteen
                 // accumulators by hand. Only the three the group loop owns
                 // differ from `run`; the rest come from one `clone`.

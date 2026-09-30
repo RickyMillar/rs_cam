@@ -217,6 +217,18 @@ pub fn write_simulation_cut_artifact(
     )
 }
 
+/// Write one simulation cut-trace artifact to the exact `path` given (the
+/// `cli project` `simulation.json`).
+///
+/// Streams through the same writer as [`write_simulation_cut_artifact`]
+/// (G-SIMMEM): no in-memory copy of the document.
+pub fn write_simulation_cut_artifact_to(
+    path: &Path,
+    artifact: &SimulationCutArtifact,
+) -> std::io::Result<()> {
+    crate::export::artifact_io::write_pretty_json_file(path, artifact)
+}
+
 /// Dumps younger than this are never pruned, whatever the count: concurrent
 /// writers (parallel test runs, a second session) share one directory, and a
 /// prune racing a write must not delete an artifact its writer is about to
