@@ -21,6 +21,6 @@ know (001 was 5b34e710: scallop_trace_survives_relink and
 crease_own_region_pr6b are known pre-existing).
 
 ## Notes
-Also useful but lower priority, after the gate:
- and
- on the same commit.
+Also useful but lower priority, after the gate, on the same commit:
+`scripts/cargo_lane.sh test -p rs_cam_viz --no-fail-fast` and
+`scripts/cargo_lane.sh test -p rs_cam_cli`.
