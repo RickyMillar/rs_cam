@@ -68,3 +68,22 @@ verified in code): the MCP path keeps the plan's own 0.2 mm simulation,
 or the generation data, alive while run_simulation builds a new one.
 
 Log on the runner's PC: /tmp/claude-1001/-home-ricky-personal-repos-rs-cam/065a14e8-82c6-476f-9331-96d953a0dcb4/scratchpad/job006b_rss.log
+
+## Addendum 2: generate via MCP, simulate by the GUI button (2026-09-30 UTC)
+
+Same binary and 16G cap. Fresh GUI (PID 1136082).
+
+| Step (UTC) | RSS (GiB) | Notes |
+|---|---|---|
+| load + generate_all 0.2 (21:25-21:26) | 8.20, flat | ok: 7 generated (the first MCP run reported 5 for the same call; cause unknown), 0 errors, 8 steps, 1 simulation |
+| Ricky clicks Simulate, 0.2 (21:27:3x) | 8.79 -> 12.63 -> peak 14.84 -> 9.10 | survived; no drop to ~1.5 GB at sim start, as in Ricky's 09-30 run |
+
+Result (get_diagnostics after the GUI simulation):
+- rapid_collision_count 8, all in "3D Rough 8" (index 4, adaptive3d). Every other toolpath 0.
+- collision_count 0; verdict "WARNING: rapid collisions detected".
+- total_runtime_s 0.0, air % 0.0, samples_total 0: the MCP diagnostics do not
+  see the GUI-button simulation's cycle time (looks like G-MCPSIMMIRROR).
+  Cycle time to follow from Ricky's screen.
+
+Peak 14.84 GiB is 1.2 GiB under the cap. The MCP run_simulation path went
+past 16 GiB from the same 8.1 GiB start, so the two paths differ by at least ~1.2 GiB.
