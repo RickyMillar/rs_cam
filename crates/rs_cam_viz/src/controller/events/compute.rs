@@ -2490,10 +2490,19 @@ impl<B: ComputeBackend> AppController<B> {
         // `narrate_toolpath` prints for the same seconds - ships beside it
         // under its own name. L10 retired the unnamed `air_cut_percentage`.
         // See `MEASUREMENT_DOMAINS.md` LH-1.
-        let (total_runtime_s, air_cut_pct, air_cut_pct_of_cutting, avg_engagement) =
-            if let Some(ref sim_results) = self.state.simulation.results
-                && let Some(ref ct) = sim_results.cut_trace
-            {
+        //
+        // U2 (2026-10-01): with no cut trace the four figures are `null`, not
+        // 0.0. `null` means NOT MEASURED and 0.0 means measured and clean
+        // (the `get_diagnostics` contract). A trace-less run published 0 %
+        // air cut and 0 s runtime, which reads as a clean measurement.
+        // `cut_metrics_not_measured` names the reason beside them.
+        let trace_summary = self
+            .state
+            .simulation
+            .results
+            .as_ref()
+            .and_then(|sim_results| sim_results.cut_trace.as_ref())
+            .map(|ct| {
                 use rs_cam_core::stock::simulation_cut::AirCutRatios;
                 let s = &ct.summary;
                 (
@@ -2502,9 +2511,19 @@ impl<B: ComputeBackend> AppController<B> {
                     s.air_cut_pct_of_cutting_time(),
                     s.average_engagement,
                 )
-            } else {
-                (0.0, 0.0, 0.0, 0.0)
-            };
+            });
+        let total_runtime_s = trace_summary.map(|t| t.0);
+        let air_cut_pct = trace_summary.map(|t| t.1);
+        let air_cut_pct_of_cutting = trace_summary.map(|t| t.2);
+        let avg_engagement = trace_summary.map(|t| t.3);
+        let cut_metrics_not_measured = match (&self.state.simulation.results, trace_summary) {
+            (_, Some(_)) => None,
+            (None, None) => Some("no simulation has run"),
+            (Some(_), None) => Some(
+                "the simulation ran without cutting metrics, so it kept no cut trace; \
+                 run_simulation captures them",
+            ),
+        };
 
         let rapid_collision_count = self.state.simulation.checks.rapid_collisions.len();
 
@@ -2534,7 +2553,7 @@ impl<B: ComputeBackend> AppController<B> {
             unknown_verdict.as_str()
         } else if rapid_collision_count > 0 {
             "WARNING: rapid collisions detected"
-        } else if air_cut_pct > 40.0 {
+        } else if air_cut_pct.is_some_and(|pct| pct > 40.0) {
             "WARNING: high air cutting (>40% of total runtime)"
         } else {
             "OK"
@@ -2545,6 +2564,7 @@ impl<B: ComputeBackend> AppController<B> {
             "air_cut_pct_of_total_runtime": air_cut_pct,
             "air_cut_pct_of_cutting_time": air_cut_pct_of_cutting,
             "average_engagement": avg_engagement,
+            "cut_metrics_not_measured": cut_metrics_not_measured,
             // B-5: the holder-collision total, from the same evidence the
             // per-toolpath rows and the triage read. It was a literal `0`
             // here — a number that had never been measured, printed on the
@@ -2595,6 +2615,18 @@ impl<B: ComputeBackend> AppController<B> {
             // `Value::Null` is a constant, so the lazy form is the
             // `unnecessary_lazy_evaluations` lint.
             resp["triage"] = serde_json::to_value(&triage).unwrap_or(serde_json::Value::Null);
+            // U2: every class-D tally counts cut-trace samples. With no
+            // trace the core type holds its `Default` zeros, so each tally
+            // goes on the wire as `null` (NOT MEASURED), not 0.
+            if trace_summary.is_none()
+                && let Some(counts) = resp["triage"]
+                    .get_mut("counts")
+                    .and_then(serde_json::Value::as_object_mut)
+            {
+                for value in counts.values_mut() {
+                    *value = serde_json::Value::Null;
+                }
+            }
         }
 
         resp

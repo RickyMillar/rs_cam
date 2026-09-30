@@ -1,6 +1,6 @@
 use super::AppEvent;
 use super::components::{CountPill, FreshnessGate};
-use super::readiness::{self, CycleTimeBasisExt};
+use super::readiness;
 use super::sim_debug::semantic_kind_color;
 use super::sim_diagnostics::CutMetricSpec;
 use crate::render::toolpath_render::palette_color;
@@ -1059,13 +1059,12 @@ fn draw_transport_and_scrubber(
             // Name the basis next to the clock (G-TIMEEST). The readout drives
             // the speed baseline below, so an operator who mistrusts one has to
             // be able to see why the other moved.
+            // U3: the tag names each missing input ("metrics not captured",
+            // "no machine kinematics"); the hover carries each remedy.
             let (basis_tag, basis_tip, basis_color) = match cycle.basis {
                 Some(basis) => (
-                    basis.qualifier(),
-                    match basis.remedy() {
-                        Some(remedy) => format!("{}\n\n{remedy}", basis.caveat()),
-                        None => basis.caveat().to_owned(),
-                    },
+                    cycle.label(),
+                    readiness::cycle_time_hover(&cycle),
                     if basis == readiness::CycleTimeBasis::MachineModel {
                         super::theme::TEXT_MUTED
                     } else {
@@ -1073,7 +1072,7 @@ fn draw_transport_and_scrubber(
                     },
                 ),
                 None => (
-                    "no estimate",
+                    "no estimate".to_owned(),
                     "No computed toolpath in this simulation carries a time estimate.".to_owned(),
                     super::theme::WARNING,
                 ),

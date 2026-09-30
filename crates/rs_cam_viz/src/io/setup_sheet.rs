@@ -54,7 +54,7 @@ fn days_to_ymd(days_since_epoch: u64) -> (u64, u64, u64) {
 use std::sync::Arc;
 
 use crate::state::runtime::GuiState;
-use crate::ui::readiness::{self, CycleTimeBasis, CycleTimeBasisExt};
+use crate::ui::readiness::{self, CycleTimeBasis};
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::stock::simulation_cut::SimulationCutTrace;
 
@@ -124,9 +124,10 @@ tr:nth-child(even) {{ background: #24242e; }}
     // parenthetical is not decoration, it is the difference between a
     // wall-clock prediction and a cutting-only figure measured 7x optimistic.
     let (time_str, basis_str) = match cycle.basis {
-        Some(basis) => (
+        // U3: the label names each missing input.
+        Some(_) => (
             readiness::format_cycle_time(cycle.seconds),
-            format!(" ({})", basis.qualifier()),
+            format!(" ({})", cycle.label()),
         ),
         None => ("\u{2014}".to_owned(), " (no estimate)".to_owned()),
     };
@@ -148,10 +149,10 @@ tr:nth-child(even) {{ background: #24242e; }}
     if let Some(basis) = cycle.basis
         && basis != CycleTimeBasis::MachineModel
     {
-        let remedy = basis
-            .remedy()
+        let remedy: String = readiness::cycle_time_remedies(&cycle)
+            .into_iter()
             .map(|r| format!(" <span class=\"remedy\">{}</span>", escape_html(r)))
-            .unwrap_or_default();
+            .collect();
         let _ = std::fmt::Write::write_fmt(
             &mut html,
             format_args!(

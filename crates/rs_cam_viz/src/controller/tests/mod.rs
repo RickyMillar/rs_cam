@@ -13,6 +13,7 @@
 //! `use super::*;`.
 
 mod crud;
+mod diagnostics_null_without_trace_u2;
 mod drain_results;
 mod freshness;
 mod generate_all;
