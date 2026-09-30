@@ -87,3 +87,62 @@ Result (get_diagnostics after the GUI simulation):
 
 Peak 14.84 GiB is 1.2 GiB under the cap. The MCP run_simulation path went
 past 16 GiB from the same 8.1 GiB start, so the two paths differ by at least ~1.2 GiB.
+
+## Addendum 3: CORRECTION, and a UX finding from Ricky
+
+### Correction to addendum 1 and 2
+
+The GUI "Capture cutting metrics" checkbox (Simulation > Setup & run)
+defaults OFF on every launch: `SimulationMetricOptions` derives `Default`
+(`enabled: false`), and `playback_state.rs:63` uses that default. The
+session/MCP default is ON (`SimulationOptions::default`,
+`metrics_enabled: true`, `session/mod.rs:1226`).
+
+So the runs in this job measured two different things:
+- Every GUI-button simulation (09-30: 0.5/0.2/0.1; addendum 2) ran
+  WITHOUT a cut trace. Its peaks (2.53, 9.17, 14.84 GiB) are stock only,
+  and they do NOT exercise the G-SIMMEM fix.
+- The MCP run_simulation (addendum 1) ran WITH the trace, and it went
+  past 16 GiB from an 8.13 GiB start.
+The addendum-1 hypothesis "generate_all's plan memory is not released" is
+WITHDRAWN: the gap between the two paths is the trace. rivmap350 at
+0.2 mm WITH the trace does not fit under 16 GiB at 5b34e710 after an MCP
+generate_all.
+
+Proof that the GUI run had no trace: its cycle time 8:13:19 equals
+sum(cutting_distance / feed_rate) over the 7 enabled toolpaths (29 599 s),
+so all 7 fell back to CycleTimeBasis::CuttingOnly; get_diagnostics shows
+samples_total 0 and total_runtime_s 0.0. The rapid-collision count (8, all
+in "3D Rough 8") is still valid: it does not come from the trace.
+
+Also done: the repo's 2026-05-26 Shapeoko XXL `$$` (the
+from_grbl_settings_parses_real_shapeoko_xxl_dump fixture) was imported by
+MCP import_machine_settings (not saved to the project file). It had no
+effect because no trace existed. The library entry shapeoko_pro_xxl is out
+of date (scalar 350, $11 0.010, no per-axis values).
+
+### UX finding (Ricky: "not ideal. I've been clueless.")
+
+Ricky ran simulations for two sessions and saw a "cutting only, no accel"
+time, an empty chipload check and 0 % air, with no hint that one
+default-off checkbox caused all of it. Runner's read of the defects:
+
+1. Surface parity: the same project gives a trace on MCP and none in the
+   GUI (violates the GUI/MCP/CLI number-parity rule).
+2. Silent empty state: without a trace, surfaces show 0.0 (air %,
+   runtime) where the code's own rule says null = NOT MEASURED.
+3. Wrong remedy: CuttingOnly's remedy says "Run a simulation", which the
+   operator had just done. It never names the checkbox, and it hides
+   the second cause (no machine kinematics) because `worse()` folds both
+   into one label.
+4. The remedy text lives in panels (readiness, preflight, export wizard),
+   not beside the time where the operator reads it.
+5. The toggle exists to save memory, and it hides the memory problem it
+   was added for: a 0.2 mm run "works" only because it measures nothing.
+
+Suggested direction (the lead decides): delete the toggle and always
+capture (breaking changes are ruled OK), and bound the trace instead; or,
+at minimum, make the GUI default match the session default, and have
+every trace-dependent surface say "not measured: cutting metrics were
+not captured" with the control's name. Name each cause separately in the
+cycle-time label ("no trace", "no machine kinematics").
