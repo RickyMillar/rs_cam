@@ -24,19 +24,6 @@ Failing targets:
 - tapered_width_model_parity_c3
 - the_test_doors_are_gated_fld0405
 - vendor_sidebyside_chipload
-- chipload_formula_calibration
-- crease_own_region_pr6b
-- cut_direction_matches_transform_g_lateralsign
-- feed_explanation_snapshot_b3
-- heatmap_two_arc_divergence_a1
-- machine_kinematics_cycle_time_f034
-- scallop_trace_survives_relink_g_linktrace
-- setters_are_crate_private_wp15b
-- setters_have_rows_wp15a
-- simulation_issue_channel_m1
-- tapered_width_model_parity_c3
-- the_test_doors_are_gated_fld0405
-- vendor_sidebyside_chipload
 
 Log on the runner's PC: /tmp/claude-1001/-home-ricky-personal-repos-rs-cam--claude-worktrees-bridge-cse-01X9bPqEnCfUkrbNprBjUs3d/84f1aa02-8de5-5da0-aff8-1fa9722b654e/scratchpad/core_gate_5b34e710.log
 
