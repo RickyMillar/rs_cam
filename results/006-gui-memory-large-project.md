@@ -146,3 +146,13 @@ at minimum, make the GUI default match the session default, and have
 every trace-dependent surface say "not measured: cutting metrics were
 not captured" with the control's name. Name each cause separately in the
 cycle-time label ("no trace", "no machine kinematics").
+
+### Confirmation (22:04 UTC)
+
+Ricky ticked "Capture cutting metrics" and clicked Simulate at 0.2 mm
+(same GUI, MCP-generated state, 2026-05-26 kinematics imported). RSS
+9.15 -> 10.55 -> 11.93 -> 14.09 GiB in 15 s, then OOM-killed at 22:04:48
+("16.0G memory peak, 0B memory swap peak"). So with the trace ON, the GUI
+path fails exactly as the MCP path did. rivmap350 at 0.2 mm with a cut
+trace needs more than 16 GiB at 5b34e710 after a generate_all: the
+G-SIMMEM fix is not enough for this project.
