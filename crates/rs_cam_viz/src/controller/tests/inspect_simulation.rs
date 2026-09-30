@@ -7,11 +7,11 @@ use super::*;
 fn inspect_toolpath_in_simulation_queues_workspace_switch_and_jump_when_results_exist() {
     let mut controller = sample_controller();
     controller.state.simulation.results = Some(crate::state::simulation::SimulationResults {
-        mesh: rs_cam_core::stock::stock_mesh::StockMesh {
+        mesh: std::sync::Arc::new(rs_cam_core::stock::stock_mesh::StockMesh {
             vertices: Vec::new(),
             indices: Vec::new(),
             colors: Vec::new(),
-        },
+        }),
         total_moves: 12,
         boundaries: vec![crate::state::simulation::ToolpathBoundary {
             id: ToolpathId(0),
@@ -100,11 +100,11 @@ fn simulation_results_land_on_pending_inspect_toolpath_start() {
         .drained
         .push(ComputeMessage::Simulation(Ok(Box::new(SimulationResult {
             core: rs_cam_core::compute::simulate::SimulationResult {
-                mesh: rs_cam_core::stock::stock_mesh::StockMesh {
+                mesh: std::sync::Arc::new(rs_cam_core::stock::stock_mesh::StockMesh {
                     vertices: Vec::new(),
                     indices: Vec::new(),
                     colors: Vec::new(),
-                },
+                }),
                 total_moves: 8,
                 deviations: None,
                 column_deviations: None,

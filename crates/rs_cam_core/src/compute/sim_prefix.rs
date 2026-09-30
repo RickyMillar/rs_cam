@@ -875,7 +875,10 @@ mod tests {
         let mut with_cp = state;
         with_cp.checkpoints = vec![Arc::new(SimCheckpointMesh {
             boundary_index: 0,
-            mesh: StockMesh::empty(),
+            mesh_stock: Arc::new(stock.clone()),
+            mesh_drill_ops: Vec::new(),
+            mesh_frame: None,
+            mesh_stock_min: bbox.min,
             stock,
             stock_local_to_global: None,
         })];

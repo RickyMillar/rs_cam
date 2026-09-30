@@ -199,7 +199,9 @@ fn fingerprint(result: &SimulationResult) -> u64 {
     result.checkpoints.len().hash(&mut h);
     for cp in &result.checkpoints {
         cp.boundary_index.hash(&mut h);
-        hash_mesh(&mut h, &cp.mesh);
+        // M2: the checkpoint keeps its mesh inputs; the mesh is built here.
+        hash_mesh(&mut h, &cp.build_mesh());
+        hash_stock(&mut h, &cp.mesh_stock);
         hash_stock(&mut h, &cp.stock);
     }
 
@@ -562,8 +564,8 @@ fn the_size_ceiling_refuses_rather_than_growing() {
 /// The memory claim, tested rather than asserted in prose: a held snapshot
 /// SHARES the result's checkpoints instead of copying them.
 ///
-/// A checkpoint is a marching-cubes mesh plus a full dexel-grid clone, one per
-/// toolpath — the heaviest artifact a simulation produces. `strong_count == 2`
+/// A checkpoint is two full dexel grids (the playback stock and the local
+/// stock its mesh is built from, M2), one per toolpath — the heaviest artifact a simulation produces. `strong_count == 2`
 /// while the snapshot is held (the result and the snapshot), falling to 1 when
 /// it is cleared, is exactly what says the snapshot added a refcount and not a
 /// second copy. The `held_bytes` bound is the same claim in the size estimate:
@@ -588,10 +590,9 @@ fn the_snapshot_shares_checkpoints_rather_than_copying_them() {
         .checkpoints
         .iter()
         .map(|cp| {
-            cp.mesh.vertices.len() * 4
-                + cp.mesh.indices.len() * 4
-                + cp.mesh.colors.len() * 4
-                + cp.stock.z_grid.rays.len() * 32
+            // M2: a checkpoint holds no mesh. It holds two grids: the playback
+            // stock and the local stock its mesh is built from.
+            cp.mesh_stock.z_grid.rays.len() * 32 + cp.stock.z_grid.rays.len() * 32
         })
         .sum();
     let held = cache.stats().held_bytes;

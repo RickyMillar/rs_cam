@@ -313,11 +313,11 @@ fn simulation_results_capture_setup_boundaries() {
         .push(ComputeMessage::Simulation(Ok(Box::new(
             crate::compute::SimulationResult {
                 core: rs_cam_core::compute::simulate::SimulationResult {
-                    mesh: rs_cam_core::stock::stock_mesh::StockMesh {
+                    mesh: std::sync::Arc::new(rs_cam_core::stock::stock_mesh::StockMesh {
                         vertices: Vec::new(),
                         indices: Vec::new(),
                         colors: Vec::new(),
-                    },
+                    }),
                     total_moves: 20,
                     deviations: None,
                     column_deviations: None,

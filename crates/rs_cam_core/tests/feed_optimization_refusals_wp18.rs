@@ -166,11 +166,11 @@ fn full_material_simulation(
     let mut prior_stocks = HashMap::new();
     prior_stocks.insert(for_toolpath, Arc::clone(snapshot));
     SimulationResult {
-        mesh: StockMesh {
+        mesh: std::sync::Arc::new(StockMesh {
             vertices: Vec::new(),
             indices: Vec::new(),
             colors: Vec::new(),
-        },
+        }),
         total_moves: 0,
         deviations: None,
         column_deviations: None,

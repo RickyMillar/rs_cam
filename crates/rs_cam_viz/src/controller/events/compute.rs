@@ -694,7 +694,7 @@ impl<B: ComputeBackend> AppController<B> {
         result: Result<Box<crate::compute::SimulationResult>, ComputeError>,
     ) {
         match result {
-            Ok(simulation) => {
+            Ok(mut simulation) => {
                 // WP28 against G-LATESIM. Two different conditions, two
                 // different answers:
                 //
@@ -752,7 +752,7 @@ impl<B: ComputeBackend> AppController<B> {
                 // HERE, before the view state consumes the fields;
                 // the cut trace is attached below, after the
                 // modulation post-pass rewrites it.
-                let mut adopted = core_simulation_from_lane(&simulation);
+                let mut adopted = core_simulation_from_lane(&mut simulation);
                 if simulation.core.resolution_clamped {
                     self.push_notification(
                         "Sim resolution was coarsened to fit grid limits — \
@@ -802,9 +802,11 @@ impl<B: ComputeBackend> AppController<B> {
                     .core
                     .checkpoints
                     .into_iter()
-                    .map(|checkpoint| crate::state::simulation::SimCheckpoint {
-                        boundary_index: checkpoint.boundary_index,
-                        core: checkpoint,
+                    .map(|checkpoint| {
+                        crate::state::simulation::SimCheckpoint::new(
+                            checkpoint.boundary_index,
+                            checkpoint,
+                        )
                     })
                     .collect();
 
@@ -2655,11 +2657,14 @@ impl<B: ComputeBackend> AppController<B> {
 /// This used to copy twelve fields by hand (D11); it is now a clone of
 /// core's record with the trace slot cleared.
 ///
-/// What the copy SHARES, each behind an `Arc`: the per-toolpath
-/// checkpoints and the prior stocks. What it COPIES: the display mesh,
-/// the two deviation vectors, the boundary list and the rapid-collision
-/// list. The mesh copy is the price of one simulation state, and it is
-/// one mesh beside a per-toolpath checkpoint list the two already share.
+/// What the copy SHARES, each behind an `Arc`: the display mesh (M4,
+/// memory programme 2026-10-01), the per-toolpath checkpoints and the prior
+/// stocks. The view state takes the SAME mesh `Arc` from the lane's answer,
+/// so the session and the viewport hold one mesh. What it MOVES: the
+/// per-column deviations, which no view field reads. What it COPIES: the
+/// per-vertex deviations, the boundary list and the rapid-collision list.
+/// The per-vertex copy stays until the view's `display_deviations` is an
+/// `Arc` too.
 ///
 /// The `cut_trace` slot is the one field this function does not fill. The
 /// caller attaches the trace AFTER the feed-modulation post-pass runs,
@@ -2667,9 +2672,14 @@ impl<B: ComputeBackend> AppController<B> {
 /// `Arc` held at that moment makes `make_mut` copy the trace, and the two
 /// surfaces then publish two different traces.
 fn core_simulation_from_lane(
-    simulation: &crate::compute::SimulationResult,
+    simulation: &mut crate::compute::SimulationResult,
 ) -> rs_cam_core::compute::simulate::SimulationResult {
+    // M4: take the per-column deviations out BEFORE the clone. The view
+    // never reads them, so a clone would copy them only to drop the lane's
+    // copy a moment later, at the adopt's peak.
+    let column_deviations = simulation.core.column_deviations.take();
     let mut adopted = simulation.core.clone();
+    adopted.column_deviations = column_deviations;
     adopted.cut_trace = None;
     adopted
 }

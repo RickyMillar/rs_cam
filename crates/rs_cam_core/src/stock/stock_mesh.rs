@@ -40,6 +40,15 @@ impl StockMesh {
     {
         let base_vertex = self.vertex_count() as u32;
 
+        // M6 (memory programme 2026-10-01): reserve the growth once. A push
+        // loop into an empty `Vec` doubles its capacity as it grows, so a mesh
+        // of N floats could hold up to 2N floats. `reserve` on an empty `Vec`
+        // allocates the exact amount, and it stays amortised when a caller
+        // appends many meshes in a loop.
+        self.vertices.reserve(other.vertices.len());
+        self.indices.reserve(other.indices.len());
+        self.colors.reserve(other.colors.len());
+
         // Transform and append vertices
         let mut i = 0;
         while i + 2 < other.vertices.len() {

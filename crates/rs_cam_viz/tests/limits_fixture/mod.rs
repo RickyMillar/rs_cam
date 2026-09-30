@@ -234,11 +234,11 @@ pub fn simulated_state(cut: Cut) -> AppState {
 
     let mut simulation = SimulationState::new();
     simulation.results = Some(SimulationResults {
-        mesh: rs_cam_core::stock::stock_mesh::StockMesh {
+        mesh: std::sync::Arc::new(rs_cam_core::stock::stock_mesh::StockMesh {
             vertices: Vec::new(),
             indices: Vec::new(),
             colors: Vec::new(),
-        },
+        }),
         total_moves,
         boundaries,
         setup_boundaries: Vec::new(),
