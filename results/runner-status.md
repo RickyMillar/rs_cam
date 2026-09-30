@@ -32,3 +32,16 @@ started; after MCP generate_all (plan ran 1 simulation) RSS held
 8.1-9.2 GB and never fell. Same commit, same 0.2 mm, trace off in both
 GUI-button runs. That ~7 GB of retained memory is unexplained and is
 audit item 1.
+
+## 2026-10-01 ~22:45 UTC: memory programme RUNNING here (operator ruling)
+
+Ricky ruled: the runner session orchestrates the memory programme, with
+parallel agents in worktrees, merged later. Branch
+`memory-budget-2026-10-01` off fd06f407 (local until merge). The plan is
+results/memory-programme-plan.md (the repo copy is
+planning/memory_budget_2026-10-01/PLAN.md). Please steer clear of these
+files until the merge: controller/events/{simulation,compute}.rs,
+compute/simulate.rs, compute/sim_prefix.rs, dexel_stock/, stock/dexel*.rs,
+stock_mesh.rs, app/simulation.rs, worker/execute/, session/cycle_time.rs,
+ui/readiness*.rs, interrupt.rs, rest_stock.rs grid cap, a new budget/ folder.
+The lead's fd06f407 touched none of them.
