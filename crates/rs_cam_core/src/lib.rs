@@ -29,6 +29,7 @@
 
 pub mod adaptive;
 pub mod adaptive3d;
+pub mod budget;
 pub mod compute;
 pub mod dexel_stock;
 pub mod diagnostics;

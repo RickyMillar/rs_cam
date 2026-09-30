@@ -60,6 +60,12 @@ truck-meshalgo = { version = "0.4", optional = true }
 truck-geometry = { version = "0.5", optional = true }
 truck-polymesh = { version = "0.6", optional = true }
 image = { version = "0.25", default-features = false, features = ["png"] }
+# The memory budget (`src/budget/`). `memory-stats` reads the process
+# resident size (`memory_stats::memory_stats()`); `sysinfo` reads the total
+# system memory (`System::new`, `refresh_memory`, `total_memory`), and only
+# its `system` feature is needed.
+memory-stats = "1.2.0"
+sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
 
 [lints]
 workspace = true

@@ -276,8 +276,9 @@ struct OwnStockReplay {
 impl OwnStockReplay {
     /// Most Z-grid cells the fresh prism may hold. A larger box gets
     /// coarser cells; the conservative read only errs high, so a coarse
-    /// cell costs air time, never a collision.
-    const MAX_CELLS: f64 = 4.0e6;
+    /// cell costs air time, never a collision. B2: the value comes from
+    /// the one grid-cap source, [`crate::budget::GridCapRole::EntryReplay`].
+    const MAX_CELLS: usize = crate::budget::GridCapRole::EntryReplay.cell_cap();
 
     fn new(replay: EntryStockReplay<'_>, toolpath: &Toolpath, stock_top: f64) -> Option<Self> {
         let radius = replay.cutter.radius();
@@ -302,7 +303,7 @@ impl OwnStockReplay {
                 let (w, h) = (x1 - x0 + 2.0 * margin, y1 - y0 + 2.0 * margin);
                 let cell = (radius / 6.0)
                     .clamp(0.1, 0.25)
-                    .max((w * h / Self::MAX_CELLS).sqrt());
+                    .max(crate::budget::grid::cell_for_cap(w, h, Self::MAX_CELLS));
                 TriDexelStock::from_bounds(
                     &crate::geo::BoundingBox3 {
                         min: P3::new(x0 - margin, y0 - margin, z0 - 1.0),
