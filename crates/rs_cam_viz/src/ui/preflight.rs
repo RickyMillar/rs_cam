@@ -174,8 +174,9 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
             let cycle = readiness::estimate_total_time(state);
             let tool_changes = readiness::count_tool_changes(state);
             let (title, detail, status) = match cycle.basis {
+                // U3: the label names each missing input.
                 Some(basis) => (
-                    format!("Est. cycle time ({})", basis.qualifier()),
+                    format!("Est. cycle time ({})", cycle.label()),
                     format!(
                         "{}  ({tool_changes} tool changes)",
                         readiness::format_cycle_time(cycle.seconds)
@@ -211,7 +212,7 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
                     ui.add_space(18.0);
                     ui.add(egui::Label::new(caveat).wrap());
                 });
-                if let Some(remedy) = basis.remedy() {
+                for remedy in readiness::cycle_time_remedies(&cycle) {
                     let remedy = egui::RichText::new(remedy).small().color(theme::TEXT_MUTED);
                     ui.horizontal(|ui| {
                         ui.add_space(18.0);
@@ -532,7 +533,9 @@ fn unmodeled_reason_label(reason: &rs_cam_core::tool_load::UnmodeledReason) -> &
     match reason {
         UnmodeledReason::SimulationRequired => "run simulation first",
         UnmodeledReason::StaleSimulation => "re-run stale simulation",
-        UnmodeledReason::ArcEngagementNotCaptured => "enable Cut Metrics and re-run",
+        UnmodeledReason::ArcEngagementNotCaptured => {
+            "turn on \"Capture cutting metrics\" and re-run the simulation"
+        }
         UnmodeledReason::NoVendorData => "no vendor data",
         UnmodeledReason::SteadyStateSamplesNotPresent => "no steady-state cutting samples",
         UnmodeledReason::MaterialUnvalidated => {

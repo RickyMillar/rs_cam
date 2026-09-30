@@ -213,8 +213,10 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             let cycle = readiness::estimate_total_time(state);
             let changes = readiness::count_tool_changes(state);
             let (title, detail, status) = match cycle.basis {
+                // U3: the label names each missing input, not only the
+                // weakest basis.
                 Some(basis) => (
-                    format!("Est. cycle time ({})", basis.qualifier()),
+                    format!("Est. cycle time ({})", cycle.label()),
                     format!(
                         "{}  ({changes} tool changes)",
                         readiness::format_cycle_time(cycle.seconds)
@@ -235,7 +237,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 // Inline, not a hover: an operator planning a shift around
                 // this number must not have to discover the caveat.
                 caveat_line(ui, basis.caveat(), theme::WARNING);
-                if let Some(remedy) = basis.remedy() {
+                for remedy in readiness::cycle_time_remedies(&cycle) {
                     caveat_line(ui, remedy, theme::TEXT_MUTED);
                 }
             }

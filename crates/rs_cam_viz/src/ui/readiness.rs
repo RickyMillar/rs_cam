@@ -40,7 +40,7 @@ use rs_cam_core::session::{ProjectSession, Query, QueryAnswer, ToolpathCycleTime
 use rs_cam_core::stock::simulation_cut::SimulationCutTrace;
 use rs_cam_core::tool_load::ToolLoadReport;
 
-pub use rs_cam_core::session::{CycleTime, CycleTimeBasis};
+pub use rs_cam_core::session::{CycleTime, CycleTimeBasis, CycleTimeEvidence, MissingInput};
 
 /// Pass/warn/fail tier shared by every readiness check and both surfaces.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -403,6 +403,94 @@ impl CycleTimeBasisExt for CycleTimeBasis {
     }
 }
 
+/// The GUI remedy for one [`MissingInput`] cause (U3, 2026-10-01).
+///
+/// Each remedy names the control as the GUI shows it. A surface reads the
+/// remedies through [`cycle_time_remedies`], not through
+/// [`CycleTimeBasisExt::remedy`]: the basis alone cannot tell "never
+/// simulated" from "simulated with no cut trace", and the old
+/// `CuttingOnly` remedy said "Run a simulation" directly after a run.
+pub trait MissingInputExt {
+    /// One or two sentences: the cause, then the step that removes it.
+    fn remedy(self) -> &'static str;
+}
+
+impl MissingInputExt for MissingInput {
+    fn remedy(self) -> &'static str {
+        match self {
+            MissingInput::NoSimulation => {
+                "No current simulation covers this project. Run the simulation \
+                 (Simulation \u{25B8} Run Simulation) to get a modelled estimate."
+            }
+            MissingInput::NotInSimulation => {
+                "The simulation does not include every enabled toolpath. Re-run the \
+                 simulation (Simulation \u{25B8} Re-run Simulation) to measure them."
+            }
+            MissingInput::NoCutTrace => {
+                "The simulation ran without cutting metrics, so it measured no time. \
+                 Turn on Simulation \u{25B8} Setup & run \u{25B8} \"Capture cutting \
+                 metrics\", then re-run the simulation."
+            }
+            MissingInput::KinematicsNotApplied => {
+                "The machine profile has kinematics, but the simulation ran before they \
+                 were set. Re-run the simulation to get a wall-clock estimate."
+            }
+            MissingInput::NoMachineKinematics => {
+                "No machine kinematics set \u{2014} Machine properties \u{25B8} Kinematics \
+                 \u{25B8} \"Import GRBL $$\" (paste your controller's settings) turns this \
+                 into a wall-clock estimate."
+            }
+        }
+    }
+}
+
+/// The remedies for every cause on `cycle`, in display order.
+///
+/// Empty for a `MachineModel` estimate and for no estimate. When a weak
+/// estimate carries no cause (the caller supplied no evidence), this falls
+/// back to the basis remedy.
+pub fn cycle_time_remedies(cycle: &CycleTime) -> Vec<&'static str> {
+    if cycle.missing.is_empty() {
+        return cycle
+            .basis
+            .and_then(CycleTimeBasisExt::remedy)
+            .into_iter()
+            .collect();
+    }
+    cycle.missing.iter().map(MissingInputExt::remedy).collect()
+}
+
+/// The hover text for a cycle-time row: the basis caveat, then each
+/// remedy on its own paragraph.
+pub fn cycle_time_hover(cycle: &CycleTime) -> String {
+    let Some(basis) = cycle.basis else {
+        return "No estimate: no enabled toolpath has a computed result.".to_owned();
+    };
+    let mut text = basis.caveat().to_owned();
+    for remedy in cycle_time_remedies(cycle) {
+        text.push_str("\n\n");
+        text.push_str(remedy);
+    }
+    text
+}
+
+/// The project facts that name the causes of a weak estimate.
+///
+/// `trace` is the cut trace the caller measures against. The session slot
+/// says whether a simulation ran at all: the GUI drain adopts every run
+/// into the session, with or without a trace (`Command::AdoptSimulation`),
+/// and an edit that drops the run clears the slot.
+pub fn cycle_time_evidence(
+    session: &ProjectSession,
+    trace: Option<&Arc<SimulationCutTrace>>,
+) -> CycleTimeEvidence {
+    CycleTimeEvidence {
+        simulation_present: session.simulation_result().is_some(),
+        cut_trace_present: trace.is_some(),
+        machine_kinematics_present: session.machine().kinematics.is_some(),
+    }
+}
+
 /// **The** cycle-time decision, for one toolpath. Every operator-facing
 /// surface routes through here, so the four re-implementations G-TIMEEST found
 /// cannot come back: a caller that wants a different population sums this
@@ -424,6 +512,10 @@ impl CycleTimeBasisExt for CycleTimeBasis {
 /// (`Command::AdoptSimulation`). `simulation_result()` therefore holds
 /// the same run and shares this `Arc`, from the drain's adopt until a
 /// session mutation clears the slot.
+///
+/// U3 (2026-10-01): the answer also carries its causes
+/// ([`CycleTime::missing`]), from [`cycle_time_evidence`]. Every fold site
+/// calls this wrapper, so every project total names each cause.
 pub fn toolpath_cycle_time(
     session: &ProjectSession,
     trace: Option<&Arc<SimulationCutTrace>>,
@@ -441,7 +533,9 @@ pub fn toolpath_cycle_time(
         nominal_feed_mm_min: Some(nominal_feed_mm_min),
     });
     match session.query(query) {
-        Ok(QueryAnswer::ToolpathCycleTime(answer)) => answer.cycle_time,
+        Ok(QueryAnswer::ToolpathCycleTime(answer)) => answer
+            .cycle_time
+            .with_evidence(cycle_time_evidence(session, trace)),
         // WP13 added a second `Query` row. A different answer to this
         // read is not a measurement, so it reads NOT MEASURED.
         Ok(_) | Err(_) => CycleTime::NONE,

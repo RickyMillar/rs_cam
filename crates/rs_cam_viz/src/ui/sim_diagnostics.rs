@@ -1,7 +1,7 @@
 use super::AppEvent;
 use super::components::histogram;
 use super::components::{CountPill, DistributionChart, FreshnessGate, NotMeasured, text};
-use super::readiness;
+use super::readiness::{self, MissingInput, MissingInputExt};
 use super::sim_debug::{
     debug_span_math_summary, format_json_value, semantic_kind_color, semantic_kind_label,
 };
@@ -131,9 +131,10 @@ fn verdict_line(
                 tokens::GLYPH_UNKNOWN
             ),
             color: tokens::UNKNOWN,
-            hover: "Turn on cutting-metric capture in the timeline panel and run \
-                    the simulation again."
-                .to_owned(),
+            // U2: the hover names the control as the GUI shows it. The
+            // old text sent the operator to "the timeline panel", which
+            // holds no capture control.
+            hover: MissingInput::NoCutTrace.remedy().to_owned(),
         };
     }
 
@@ -488,10 +489,9 @@ fn draw_project_section(
     // Summary-first header line: cycle + the within/exceeding glance. The
     // cycle carries its basis — this header sits a panel away from the
     // timeline's readout, and the two must not look like different numbers.
-    let basis_tag = match cycle.basis {
-        Some(basis) => format!(" ({})", basis.qualifier()),
-        None => " (no estimate)".to_owned(),
-    };
+    // U3: the tag names each missing input, and reads "no estimate" when
+    // there is none.
+    let basis_tag = format!(" ({})", cycle.label());
     let header =
         format!("Project — {cycle_str}{basis_tag} · \u{2713}{ok} within · \u{2715}{bad} exceeding");
     // DC6 / Rule A — the section header IS the summary, so the body starts
@@ -829,6 +829,31 @@ fn draw_project_section(
                                  by 43x).{denominator_note}",
                             count_for(kind)
                         ));
+                        ui.end_row();
+                    }
+                });
+            } else if sim.results.is_some() {
+                // U2: a run with no cut trace measured no air cut and no
+                // engagement. The rows stay, with the abstention mark, so
+                // an absent figure cannot read as a clean 0 %.
+                ui.add_space(2.0);
+                ui.label(
+                    egui::RichText::new("Informational")
+                        .small()
+                        .color(theme::TEXT_MUTED),
+                );
+                let reason = MissingInput::NoCutTrace.remedy();
+                ui.param_grid("cut_overview_informational_not_measured", |ui| {
+                    for kind in [
+                        SimulationIssueKind::AirCut,
+                        SimulationIssueKind::LowEngagement,
+                    ] {
+                        ui.label(
+                            egui::RichText::new(issue_kind_label(kind))
+                                .small()
+                                .color(theme::TEXT_MUTED),
+                        );
+                        ui.add(NotMeasured::new().reason(reason));
                         ui.end_row();
                     }
                 });
@@ -1349,7 +1374,8 @@ fn unmodeled_text(reason: Option<&UnmodeledReason>) -> String {
             "Unmodeled: simulation trace is stale — re-run simulation".to_owned()
         }
         Some(UnmodeledReason::ArcEngagementNotCaptured) => {
-            "Unmodeled: arc-engagement metric not captured — enable Cut Metrics and re-run"
+            "Unmodeled: arc-engagement metric not captured — turn on Simulation ▸ Setup & run ▸ \
+             \"Capture cutting metrics\" and re-run the simulation"
                 .to_owned()
         }
         Some(UnmodeledReason::NoVendorData) => {
@@ -1591,10 +1617,9 @@ fn cut_metrics_view(
         .as_ref()
         .is_some_and(|results| results.cut_trace.is_some());
     if !has_trace {
-        return CutMetricsView::Empty(
-            "The accepted simulation result contains no cut trace. Turn on \
-             \"Capture cutting metrics\" and run the simulation again.",
-        );
+        // U2: one remedy text for every no-trace surface, with the control
+        // path (Simulation ▸ Setup & run ▸ "Capture cutting metrics").
+        return CutMetricsView::Empty(MissingInput::NoCutTrace.remedy());
     }
     if simulation_freshness(session, sim).is_stale() {
         return CutMetricsView::Empty(
@@ -2604,7 +2629,8 @@ mod tests {
             burn_risk: false,
             source: None,
         });
-        assert!(tooltip.contains("Cut Metrics"));
+        // U2: the tooltip names the control exactly as the GUI shows it.
+        assert!(tooltip.contains("\"Capture cutting metrics\""), "{tooltip}");
     }
 
     /// A toolpath whose every criterion says "does not apply" — the optimizer

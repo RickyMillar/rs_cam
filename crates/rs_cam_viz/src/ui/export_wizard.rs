@@ -18,7 +18,7 @@ use rs_cam_core::export::gcode_validator::{Finding, Severity, validate};
 use rs_cam_core::gcode::{CoolantMode, PostDefinition, PostFormat, Units, WcsCode};
 
 use super::AppEvent;
-use super::readiness::{self, CycleTimeBasisExt};
+use super::readiness;
 use crate::state::AppState;
 use crate::state::wizard::OutputLayout;
 use crate::ui::components::UiExt as _;
@@ -963,10 +963,12 @@ fn step_save(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
         ui.end_row();
 
         match cycle.basis {
-            Some(basis) => {
-                ui.label(format!("Estimated cycle time ({}):", basis.qualifier()));
+            // U3: the label names each missing input; the hover carries the
+            // caveat and each remedy.
+            Some(_) => {
+                ui.label(format!("Estimated cycle time ({}):", cycle.label()));
                 ui.label(readiness::format_cycle_time(cycle.seconds))
-                    .on_hover_text(basis.caveat());
+                    .on_hover_text(readiness::cycle_time_hover(&cycle));
             }
             // No estimate is a dash, never a plausible-looking 0.0 min.
             None => {
@@ -1009,7 +1011,7 @@ fn step_save(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             )
             .wrap(),
         );
-        if let Some(remedy) = basis.remedy() {
+        for remedy in readiness::cycle_time_remedies(&cycle) {
             ui.add(
                 egui::Label::new(egui::RichText::new(remedy).small().color(theme::TEXT_MUTED))
                     .wrap(),
