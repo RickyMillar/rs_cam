@@ -15,14 +15,35 @@
 //! generates and simulates a small subset of cells and reads the
 //! post-simulation load verdicts.
 //!
-//! The instrument adds no arithmetic, no threshold and no verdict. It
-//! asserts only that the walk completed and that the files were written.
+//! The instrument adds no arithmetic, no threshold and no verdict.
 //!
-//! Run it by name:
+//! # The golden gate (2026-09-30)
+//!
+//! The committed CSVs are the golden files. Each test compares the walk
+//! with its file and fails on any cell that differs. The failure prints one
+//! line per cell: operation, tool, diameter, material, column, and
+//! `committed -> now`. Every column is compared as the text the CSV
+//! prints (4 decimals on a number), with no extra tolerance.
+//!
+//! - `the_feeds_matrix_is_the_committed_csv_fm1`: the 960 pre-simulation
+//!   cells, `matrix_2026-09-23.csv`. The walk takes under a second. It runs
+//!   in every run of this binary.
+//! - `the_sim_subset_is_the_committed_csv_fm1`: the simulation subset,
+//!   `matrix_2026-09-23_sim.csv` (about 150 s in a test build). It runs
+//!   with the `heavy-tests` feature (the core full gate), else it is
+//!   ignored. The subset has no wall-clock column and no wall-clock budget:
+//!   [`sim_left_out`] names the cells it does not simulate.
+//!
+//! A feeds change re-blesses the files in the same commit, and its commit
+//! message names the moved cells. Re-bless (both tests write, then fail on
+//! purpose; read the diff, then re-run without the variable):
 //!
 //! ```text
-//! scripts/cargo_lane.sh test -p rs_cam_core -q --test feeds_matrix_instrument_fm1 -- --ignored --nocapture
+//! RS_CAM_UPDATE_FEEDS_MATRIX=1 scripts/cargo_lane.sh test -p rs_cam_core -q --features heavy-tests --test feeds_matrix_instrument_fm1
 //! ```
+//!
+//! The simulation test also rewrites `MATRIX_SUMMARY.md`. The summary is
+//! not compared: it prints the wall-clock of the subset.
 //!
 //! Outputs, under `planning/feeds_matrix_2026-09-23/`:
 //! `matrix_2026-09-23.csv`, `matrix_2026-09-23_sim.csv`, `MATRIX_SUMMARY.md`.
@@ -80,13 +101,19 @@ const DATE: &str = "2026-09-23";
 /// The planning folder of the programme, relative to the repository root.
 const OUT_DIR: &str = "planning/feeds_matrix_2026-09-23";
 
-/// The run command, printed into the summary.
-const RUN_COMMAND: &str = "scripts/cargo_lane.sh test -p rs_cam_core -q --test \
-                           feeds_matrix_instrument_fm1 -- --ignored --nocapture";
+/// The re-bless command, printed into the summary and the failure text.
+const RUN_COMMAND: &str = "RS_CAM_UPDATE_FEEDS_MATRIX=1 scripts/cargo_lane.sh test -p \
+                           rs_cam_core -q --features heavy-tests --test \
+                           feeds_matrix_instrument_fm1";
 
-/// The wall-clock budget of the simulation subset. When the subset passes
-/// it, the remaining cells are recorded as skipped, not dropped.
-const SIM_BUDGET: Duration = Duration::from_secs(150);
+/// The variable that rewrites the golden files.
+const UPDATE_VAR: &str = "RS_CAM_UPDATE_FEEDS_MATRIX";
+
+/// The columns that name a matrix cell, in the order of the diff line.
+const MATRIX_KEY: &[&str] = &["operation", "tool_type", "diameter_mm", "material"];
+
+/// The columns that name a simulation cell.
+const SIM_KEY: &[&str] = &["operation", "tool_type", "diameter_mm", "material"];
 
 /// Flute count for every tool. The V-bit LUT rows are mixed: the 13
 /// single-flute rows are 15°-45° and 120° engraving and V-groove cutters;
@@ -762,8 +789,24 @@ const SIM_HEADER: &[&str] = &[
     "depth_detail",
     "diagnostic_ids_after_sim",
     "diagnostic_severities_after_sim",
-    "elapsed_s",
 ];
+
+/// The simulation cells the subset does not run, and why. A fixed list, so
+/// the CSV does not depend on the speed of the machine. Until 2026-09-30 a
+/// 150 s wall-clock budget chose them: these three cells come last, and the
+/// budget skipped them on every run since the G10 Part A re-take.
+fn sim_left_out(cell: &SimCell) -> Option<&'static str> {
+    let slow = matches!(
+        (cell.op, cell.kind, cell.mat_label),
+        (OperationType::DropCutter, ToolType::BallNose, "hardwood")
+            | (
+                OperationType::DropCutter,
+                ToolType::TaperedBallNose,
+                "softwood" | "hardwood"
+            )
+    );
+    slow.then_some("not simulated: a slow 3D DropCutter cell left out of the gated subset")
+}
 
 struct SimCell {
     op: OperationType,
@@ -1032,9 +1075,9 @@ fn walk_sim(machine: &MachineProfile) -> SimOutcome {
             },
         ];
         let label = format!("{:?} / {:?} / {}", cell.op, cell.kind, cell.mat_label);
-        if started.elapsed() > SIM_BUDGET {
+        if let Some(reason) = sim_left_out(&cell) {
             fields.push("skipped".to_owned());
-            fields.push("time budget of the subset passed".to_owned());
+            fields.push(reason.to_owned());
             fields.extend(std::iter::repeat_n(String::new(), SIM_HEADER.len() - 7));
             skipped += 1;
             writeln!(csv, "{}", row(&fields)).expect("write");
@@ -1059,11 +1102,10 @@ fn walk_sim(machine: &MachineProfile) -> SimOutcome {
             Err(e) => {
                 fields.push("error".to_owned());
                 fields.push(e.clone());
-                fields.extend(std::iter::repeat_n(String::new(), SIM_HEADER.len() - 8));
+                fields.extend(std::iter::repeat_n(String::new(), SIM_HEADER.len() - 7));
                 errors.push(format!("{label}: {e}"));
             }
         }
-        fields.push(format!("{:.1}", dt.as_secs_f64()));
         assert_eq!(fields.len(), SIM_HEADER.len(), "sim column count");
         writeln!(csv, "{}", row(&fields)).expect("write");
         println!(
@@ -1137,7 +1179,12 @@ fn summary(machine: &MachineProfile, cells: &[Cell], sim: &SimOutcome) -> String
     )
     .expect("write");
     writeln!(w).expect("write");
-    writeln!(w, "Run command:").expect("write");
+    writeln!(
+        w,
+        "The two tests compare the CSVs with the walk. This command rewrites the CSVs and \
+         this file:"
+    )
+    .expect("write");
     writeln!(w).expect("write");
     writeln!(w, "```text\n{RUN_COMMAND}\n```").expect("write");
     writeln!(w).expect("write");
@@ -1358,10 +1405,10 @@ fn summary(machine: &MachineProfile, cells: &[Cell], sim: &SimOutcome) -> String
     .expect("write");
     writeln!(
         w,
-        "- Cells run: {}; errors: {}; skipped on the {} s budget: {}; wall-clock of the subset: {:.1} s.",
+        "- Cells run: {}; errors: {}; left out (a fixed list, `sim_left_out`): {}; \
+         wall-clock of the subset: {:.1} s.",
         sim.ran,
         sim.errors.len(),
-        SIM_BUDGET.as_secs(),
         sim.skipped,
         sim.elapsed.as_secs_f64()
     )
@@ -1407,55 +1454,206 @@ fn summary(machine: &MachineProfile, cells: &[Cell], sim: &SimOutcome) -> String
     md
 }
 
-// ── The instrument ──────────────────────────────────────────────────────
+// ── The golden gate ─────────────────────────────────────────────────────
 
-#[test]
-#[ignore = "FM1 instrument: writes planning/feeds_matrix_2026-09-23/matrix_<date>.csv; run with -- --ignored --nocapture"]
-fn feeds_matrix_instrument_fm1() {
-    let machine = MachineProfile::default();
-    let rows_by_id: HashMap<&str, &VendorObservation> = EMBEDDED_LUT
+/// One parsed CSV: the header and the rows, each field as the text the
+/// file prints.
+struct Table {
+    header: Vec<String>,
+    rows: Vec<Vec<String>>,
+}
+
+fn parse_csv(text: &str, what: &str) -> Table {
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(text.as_bytes());
+    let header = reader
+        .headers()
+        .unwrap_or_else(|e| panic!("{what}: read the header: {e}"))
+        .iter()
+        .map(str::to_owned)
+        .collect();
+    let rows = reader
+        .records()
+        .map(|r| {
+            r.unwrap_or_else(|e| panic!("{what}: read a row: {e}"))
+                .iter()
+                .map(str::to_owned)
+                .collect()
+        })
+        .collect();
+    Table { header, rows }
+}
+
+/// The cell name of a row, from the key columns, in the diff line's order.
+fn cell_key(header: &[String], row: &[String], key: &[&str]) -> String {
+    key.iter()
+        .map(|k| {
+            let i = header
+                .iter()
+                .position(|h| h == k)
+                .unwrap_or_else(|| panic!("key column `{k}` is not in the header"));
+            row[i].as_str()
+        })
+        .collect::<Vec<_>>()
+        .join(" / ")
+}
+
+/// Compare the walk with the committed text. Every column is compared as
+/// printed. Returns the report, or `None` when every cell is equal.
+/// The number of differing cells a failure prints in full.
+const SHOWN: usize = 200;
+
+fn diff_tables(committed: &Table, now: &Table, key: &[&str]) -> Option<String> {
+    let mut lines = Vec::new();
+    if committed.header != now.header {
+        lines.push(format!(
+            "the header differs:\n  committed: {}\n  now:       {}",
+            committed.header.join(","),
+            now.header.join(",")
+        ));
+        return Some(lines.join("\n"));
+    }
+    let index = |t: &Table| -> BTreeMap<String, Vec<String>> {
+        let mut m = BTreeMap::new();
+        for r in &t.rows {
+            let k = cell_key(&t.header, r, key);
+            assert!(
+                m.insert(k.clone(), r.clone()).is_none(),
+                "two rows name the cell `{k}`"
+            );
+        }
+        m
+    };
+    let old = index(committed);
+    let new = index(now);
+    for k in old.keys().filter(|k| !new.contains_key(*k)) {
+        lines.push(format!("{k}: row in the committed file, not in the walk"));
+    }
+    for k in new.keys().filter(|k| !old.contains_key(*k)) {
+        lines.push(format!("{k}: row in the walk, not in the committed file"));
+    }
+    let mut per_column: BTreeMap<&str, usize> = BTreeMap::new();
+    for (k, a) in &old {
+        let Some(b) = new.get(k) else { continue };
+        for (i, col) in now.header.iter().enumerate() {
+            if a[i] != b[i] {
+                *per_column.entry(col.as_str()).or_default() += 1;
+                lines.push(format!("{k}: {col}: {:?} -> {:?}", a[i], b[i]));
+            }
+        }
+    }
+    if lines.is_empty() {
+        return None;
+    }
+    let mut report = format!("differences: {} (committed -> now).\n", lines.len());
+    if !per_column.is_empty() {
+        report.push_str("per column: ");
+        report.push_str(
+            &per_column
+                .iter()
+                .map(|(c, n)| format!("{c} {n}"))
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
+        report.push('\n');
+    }
+    for l in lines.iter().take(SHOWN) {
+        report.push_str(l);
+        report.push('\n');
+    }
+    if lines.len() > SHOWN {
+        report.push_str(&format!("... and {} more\n", lines.len() - SHOWN));
+    }
+    Some(report)
+}
+
+/// Compare `now` with the committed file at `path`, or rewrite the file
+/// when [`UPDATE_VAR`] is set. Both arms that do not match fail.
+fn gate(path: &std::path::Path, now: &str, key: &[&str]) {
+    if std::env::var_os(UPDATE_VAR).is_some() {
+        std::fs::write(path, now).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+        panic!(
+            "wrote {}. Read the diff, name the moved cells in the commit message, \
+             then re-run without {UPDATE_VAR}.",
+            path.display()
+        );
+    }
+    let text = std::fs::read_to_string(path).unwrap_or_else(|e| {
+        panic!(
+            "read {}: {e}. Write it with `{RUN_COMMAND}`.",
+            path.display()
+        )
+    });
+    let what = path.display().to_string();
+    let committed = parse_csv(&text, &what);
+    let walked = parse_csv(now, "the walk");
+    assert!(
+        !committed.rows.is_empty(),
+        "{what} holds no row, so the gate compares nothing"
+    );
+    if let Some(report) = diff_tables(&committed, &walked, key) {
+        panic!(
+            "the FM1 walk differs from {what}.\n{report}\nA feeds change re-blesses the \
+             files in the same commit and names these cells in its commit message: \
+             `{RUN_COMMAND}`."
+        );
+    }
+}
+
+fn rows_by_id() -> HashMap<&'static str, &'static VendorObservation> {
+    EMBEDDED_LUT
         .observations
         .iter()
         .map(|o| (o.observation_id.as_str(), o))
-        .collect();
-    let out_dir = common::repo_root().join(OUT_DIR);
-    std::fs::create_dir_all(&out_dir).expect("create the output folder");
+        .collect()
+}
 
+/// The 960 pre-simulation cells equal `matrix_2026-09-23.csv`.
+#[test]
+fn the_feeds_matrix_is_the_committed_csv_fm1() {
+    let machine = MachineProfile::default();
     let t0 = Instant::now();
-    let (matrix_csv, cells) = walk_matrix(&machine, &rows_by_id);
+    let (matrix_csv, cells) = walk_matrix(&machine, &rows_by_id());
     let expected = ToolType::ALL.len() * 2 * OperationType::ALL.len() * 4;
     assert_eq!(cells.len(), expected, "the walk did not visit every cell");
-    let matrix_path = out_dir.join(format!("matrix_{DATE}.csv"));
-    // Write the matrix before the simulation subset starts, so a failure
-    // there cannot lose it.
-    std::fs::write(&matrix_path, &matrix_csv).expect("write the matrix CSV");
     println!(
-        "FM1: {} cells walked in {:.1} s -> {}",
+        "FM1: {} cells walked in {:.1} s",
         cells.len(),
-        t0.elapsed().as_secs_f64(),
-        matrix_path.display()
+        t0.elapsed().as_secs_f64()
     );
+    let path = common::repo_root()
+        .join(OUT_DIR)
+        .join(format!("matrix_{DATE}.csv"));
+    gate(&path, &matrix_csv, MATRIX_KEY);
+}
 
+/// The simulation subset equals `matrix_2026-09-23_sim.csv`. About 150 s in
+/// a test build, so it runs with `heavy-tests` (the core full gate).
+#[test]
+#[cfg_attr(
+    not(feature = "heavy-tests"),
+    ignore = "FM1 simulation gate, about 150 s: runs with --features heavy-tests"
+)]
+fn the_sim_subset_is_the_committed_csv_fm1() {
+    let machine = MachineProfile::default();
+    let out_dir = common::repo_root().join(OUT_DIR);
     let sim = walk_sim(&machine);
-    let sim_path = out_dir.join(format!("matrix_{DATE}_sim.csv"));
-    std::fs::write(&sim_path, &sim.csv).expect("write the simulation CSV");
     println!(
-        "FM1: simulation subset {} run, {} error, {} skipped in {:.1} s -> {}",
+        "FM1: simulation subset {} run, {} error, {} left out in {:.1} s",
         sim.ran,
         sim.errors.len(),
         sim.skipped,
-        sim.elapsed.as_secs_f64(),
-        sim_path.display()
+        sim.elapsed.as_secs_f64()
     );
-
-    let md = summary(&machine, &cells, &sim);
-    let md_path = out_dir.join("MATRIX_SUMMARY.md");
-    std::fs::write(&md_path, &md).expect("write the summary");
-    println!("FM1: summary -> {}", md_path.display());
-    println!("{md}");
-
-    for p in [&matrix_path, &sim_path, &md_path] {
-        let len = std::fs::metadata(p).expect("output exists").len();
-        assert!(len > 0, "{} is empty", p.display());
+    if std::env::var_os(UPDATE_VAR).is_some() {
+        let (_, cells) = walk_matrix(&machine, &rows_by_id());
+        let md = summary(&machine, &cells, &sim);
+        let md_path = out_dir.join("MATRIX_SUMMARY.md");
+        std::fs::write(&md_path, &md)
+            .unwrap_or_else(|e| panic!("write {}: {e}", md_path.display()));
+        println!("FM1: summary -> {}", md_path.display());
     }
+    let path = out_dir.join(format!("matrix_{DATE}_sim.csv"));
+    gate(&path, &sim.csv, SIM_KEY);
 }

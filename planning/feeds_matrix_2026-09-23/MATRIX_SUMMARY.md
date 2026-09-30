@@ -2,10 +2,10 @@
 
 The test `crates/rs_cam_core/tests/feeds_matrix_instrument_fm1.rs` writes this file. It records what the product doors answer. It adds no arithmetic and no verdict.
 
-Run command:
+The two tests compare the CSVs with the walk. This command rewrites the CSVs and this file:
 
 ```text
-scripts/cargo_lane.sh test -p rs_cam_core -q --test feeds_matrix_instrument_fm1 -- --ignored --nocapture
+RS_CAM_UPDATE_FEEDS_MATRIX=1 scripts/cargo_lane.sh test -p rs_cam_core -q --features heavy-tests --test feeds_matrix_instrument_fm1
 ```
 
 ## Walk
@@ -126,7 +126,7 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 - 2D: Pocket, Profile, Adaptive on a 40 mm square polygon, stock 44 × 44 × 18 below z = 0; end_mill and bull_nose at 6 mm; the four materials.
 - 3D: a dome height field (top z = 0, flat base z = -8, 46 mm footprint) in the same stock; heights pinned to top 0 and bottom -8 on all 3D cells (`bottom_z: Auto` collapses a waterline band). Waterline, DropCutter, Adaptive3d with end_mill; Scallop and DropCutter with ball_nose and tapered_ball_nose; 6 mm; softwood and hardwood.
 - Simulation: resolution 1.0, metrics on, auto resolution off, other fields from `SimulationOptions::default()`. That default has `adaptive_feed_modulation: true`, so the post-simulation verdicts read the modulated feed, as the GUI default does.
-- Cells run: 35; errors: 0; skipped on the 150 s budget: 3; wall-clock of the subset: 167.1 s.
+- Cells run: 35; errors: 0; left out (a fixed list, `sim_left_out`): 3; wall-clock of the subset: 146.1 s.
 
 ## Post-simulation diagnostic ids (cells that fire each id)
 
