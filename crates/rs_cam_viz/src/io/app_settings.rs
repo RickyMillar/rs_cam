@@ -118,10 +118,9 @@ pub fn settings_path_from(env: impl Fn(&str) -> Option<String>) -> Option<PathBu
         PathBuf::from(home).join(".config").join("rs_cam")
     } else if let Some(appdata) = var("APPDATA") {
         PathBuf::from(appdata).join("rs_cam")
-    } else if let Some(profile) = var("USERPROFILE") {
-        PathBuf::from(profile).join(".config").join("rs_cam")
     } else {
-        return None;
+        let profile = var("USERPROFILE")?;
+        PathBuf::from(profile).join(".config").join("rs_cam")
     };
     Some(config_dir.join(SETTINGS_FILE))
 }
