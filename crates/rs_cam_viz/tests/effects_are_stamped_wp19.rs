@@ -80,19 +80,8 @@ struct Justified {
     reason: &'static str,
 }
 
-/// The six viz sites that discard an answer for a stated reason.
+/// The four viz sites that discard an answer for a stated reason.
 const JUSTIFIED: &[Justified] = &[
-    Justified {
-        path: "src/app/mcp/generation.rs",
-        needle: "Command::SetToolpathDebugOptions(",
-        reason: "a debug capture is an output of a generation, never an input to one, \
-                 so the row moves no revision and `stale` is empty",
-    },
-    Justified {
-        path: "src/controller/events/compute.rs",
-        needle: "Command::SetToolpathDebugOptions(",
-        reason: "the same row from the controller, with the same empty `stale`",
-    },
     Justified {
         path: "src/controller/events/compute.rs",
         needle: "Command::ForgetResult(",

@@ -50,8 +50,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// The call posts nothing when the view holds a result, or when the core
     /// holds no simulation (then no previous run was released).
     pub(crate) fn note_simulation_did_not_land(&mut self, outcome: &str) {
-        if self.state.simulation.has_results() || self.state.session.simulation_result().is_none()
-        {
+        if self.state.simulation.has_results() || self.state.session.simulation_result().is_none() {
             return;
         }
         self.push_notification(
@@ -725,7 +724,7 @@ mod release_for_new_run_m1 {
         let mut prior_stocks = HashMap::new();
         let _ = prior_stocks.insert(REST_OP, Arc::clone(&prior));
         let core = rs_cam_core::compute::simulate::SimulationResult {
-            mesh: mesh(),
+            mesh: std::sync::Arc::new(mesh()),
             total_moves: 10,
             deviations: None,
             column_deviations: None,
@@ -751,7 +750,7 @@ mod release_for_new_run_m1 {
 
         let sim = &mut controller.state.simulation;
         sim.results = Some(SimulationResults {
-            mesh: mesh(),
+            mesh: std::sync::Arc::new(mesh()),
             total_moves: 10,
             boundaries: Vec::new(),
             setup_boundaries: Vec::new(),

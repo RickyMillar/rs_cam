@@ -1620,7 +1620,14 @@ where
                 continue;
             }
             let entry_toolpath = &entry.annotated.toolpath;
-            record_pre_carve(&mut run, &group_stock, carried_stock.take(), entry, group, k);
+            record_pre_carve(
+                &mut run,
+                &group_stock,
+                carried_stock.take(),
+                entry,
+                group,
+                k,
+            );
 
             set_phase(&format!("Simulate {}", entry.name));
             let lut = RadialProfileLUT::from_cutter(
@@ -1734,7 +1741,9 @@ where
         if let Some((phantom_k, phantom_id)) = group.phantom_prior_stock
             && phantom_k == group.toolpaths.len()
         {
-            let tail = carried_stock.take().unwrap_or_else(|| Arc::new(group_stock.clone()));
+            let tail = carried_stock
+                .take()
+                .unwrap_or_else(|| Arc::new(group_stock.clone()));
             run.prior_stocks.insert(phantom_id, tail);
         }
 

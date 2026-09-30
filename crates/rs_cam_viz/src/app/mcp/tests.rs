@@ -916,11 +916,7 @@ fn mcp_generate_all_leaves_the_saved_debug_options_unchanged_u4() {
     // where the old write sat.
     if let Ok(reply) = rx.try_recv() {
         let payload = reply.result.unwrap_or_else(|error| error);
-        for early in [
-            "No enabled toolpaths",
-            "already running",
-            "not initialized",
-        ] {
+        for early in ["No enabled toolpaths", "already running", "not initialized"] {
             assert!(
                 !payload.contains(early),
                 "the call refused early ({early}), so it proves nothing: {payload}"

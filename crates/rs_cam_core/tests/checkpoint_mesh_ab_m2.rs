@@ -138,7 +138,10 @@ fn the_on_demand_checkpoint_mesh_equals_the_eager_mesh_m2() {
         cp.boundary_index.hash(&mut h);
         // The one token the A/B swaps: `cp.mesh.clone()` on fd06f407.
         let mesh = cp.build_mesh();
-        assert!(!mesh.indices.is_empty(), "a checkpoint mesh must not be empty");
+        assert!(
+            !mesh.indices.is_empty(),
+            "a checkpoint mesh must not be empty"
+        );
         hash_mesh(&mut h, &mesh);
     }
     let got = format!("{:016x}", h.finish());

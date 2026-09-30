@@ -19,11 +19,11 @@ use super::*;
 /// capture off leaves in the view state.
 fn trace_less_results() -> crate::state::simulation::SimulationResults {
     crate::state::simulation::SimulationResults {
-        mesh: rs_cam_core::stock::stock_mesh::StockMesh {
+        mesh: std::sync::Arc::new(rs_cam_core::stock::stock_mesh::StockMesh {
             vertices: Vec::new(),
             indices: Vec::new(),
             colors: Vec::new(),
-        },
+        }),
         total_moves: 12,
         boundaries: Vec::new(),
         setup_boundaries: Vec::new(),
