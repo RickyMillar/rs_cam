@@ -139,7 +139,8 @@ Arcs at 0.05 add about 3 100 samples buried deeper than 0.05 mm; at
 0.015 they add none. A second finding, larger than the arcs: with arcs off
 the fine tier's own `FinishingCut` lines sit up to **0.836 mm** below the
 taper's drop surface (1 595 samples deeper than 0.1 mm), and other fed
-moves up to 0.356 mm. The source is not measured yet.
+moves up to 0.356 mm. The source is measured in "Fine-tier burial"
+below.
 
 The sentry `an_arc_fit_buries_no_deeper_than_the_source_path_plus_its_tolerance`
 (burial(on at t) ≤ burial(off) + t + 1e-6, t ∈ {0.05, 0.015}) holds, so it
@@ -148,6 +149,94 @@ knolls): arcs off 0.0513 mm, arcs 0.05 → 0.0882 mm (450 arcs), arcs 0.015 →
 0.0513 mm. On the 40 mm fixture it reads 0.0882 ≤ 0.1031 and
 0.0531 ≤ 0.0681. The bound holds while the defect is present, so the bound
 alone does not name it.
+
+## Fine-tier burial (G-TIERBURIAL) — source found, one cause fixed
+
+Instrument `tests/tier_fine_burial_sources_g_tierburial.rs` (release-fast,
+about 3 minutes per arm). rivmap100 fine tier, stock Fresh, arcs off. Every
+fed linear move is sampled every 0.05 mm against the tier tool's
+drop-cutter floor. A penetration estimate per sample is min(vertical depth,
+the shortest horizontal shift that clears the floor): at a near-vertical
+step of the drop-cutter surface the vertical depth overstates the gouge.
+Simulation: the tier alone, 0.1 mm cells, `column_deviations`.
+
+**The audit floor is correct.** It is built from the op's own tool (id 6,
+R1.0 / 5.7° / Ø6 taper). At the 40 deepest samples the taper floor equals
+a plain R1.0 ball floor: the ball tip is the contact. Not a false alarm:
+the simulation cuts 0.679 mm (48.3, 24.6) and 0.662 mm (65.8, 7.3) below
+the model at the two deepest sites.
+
+**Stage.** The burial is the same with the relink off
+(`intra_region_hookup_mm` 0) and with the dressups off (rapid order, feed
+optimisation): 711 long-chord samples, max 0.836, in each arm. The
+generator emits them. The deepest sit in the MidSteep band (the scallop
+rings); after the fix no MidSteep long chord is deeper than 0.1 mm (the
+500 left are Shallow 445, VerySteep 55).
+
+**Mechanism.** The MidSteep band runs the scallop with `continuous: true`
+(`finish/unified_finish.rs:1969`). The continuous branch joins ring i to
+ring i + 1 with a "helical" connector: one straight 3D feed from the tool's
+position to the next ring's nearest kept point, allowed up to 3 x cusp_r =
+3.0 mm (`finish/scallop/research.rs:552` at `c85c12e7`). Ring chords are
+refined against the drop-cutter surface (`refine_ring_chords`); the
+connector was not. The two deepest are 2.560 mm and 2.143 mm long. Where a
+ring set splits into loops, the connector can also jump from one loop to
+the next across the ground between them (the sentry fixture below); which
+case each rivmap100 connector is was not measured.
+
+**Fix** (no default change). `ring_generation::refine_connector` refines
+the connector with the ring chord's own `refine_chord` and
+`RingLiftCtx` (`RingLiftCtx::new`, same probe step and tolerance as the
+rings). `refine_chord` now reports whether every piece met the tolerance.
+A connector that does not, that crosses a coverage gap, or whose inserted
+points fail the keep predicate, retracts instead
+(`finish/scallop/research.rs:564-590`).
+
+| rivmap100 fine tier, arcs off | before | after |
+|---|---:|---:|
+| fed samples > 0.1 mm deep | 2 078 | 1 866 |
+| max vertical depth, all fed | 0.836 | 0.516 |
+| cut chords > 0.25 mm: samples > 0.1 / max / max estimate | 711 / 0.836 / 0.791 | 500 / 0.325 / 0.162 |
+| cut chords ≤ 0.25 mm: samples > 0.1 / max / max estimate | 884 / 0.516 / 0.060 | 886 / 0.516 / 0.060 |
+| other fed (links): samples > 0.1 / max / max estimate | 483 / 0.356 / 0.147 | 480 / 0.356 / 0.147 |
+| sim, min dev within 0.5 mm of (48.3, 24.6) / (65.75, 7.3) | −0.679 / −0.662 | −0.028 / −0.193 |
+| sim, min dev near long-chord samples | −0.679 | −0.334 |
+| sim, columns below −0.1 mm (of 847 k) | 24 016 | 23 726 |
+| moves | 77 375 | 77 459 |
+
+Sentry `tests/a_scallop_ring_connector_rides_the_surface_g_tierburial.rs`:
+a dumbbell region (two 8 mm lobes, 1.0 x 0.6 mm neck) over a Gaussian ridge
+(1.5 mm, half-width 0.8) splits the rings across the ridge. Straight
+connector 2.526 mm long, 0.821 mm under the surface (non-vacuity). With
+the straight connector injected back the sentry is red (move 219, 0.8210 mm
+against the tolerance 0.05); with the fix the deepest fed sample is
+0.0320 mm.
+
+**Open, measured, not fixed here:**
+
+1. Short cut chords (≤ 0.25 mm, 886 samples, vertical to 0.516 mm): the
+   penetration estimate is at most 0.060 mm (84 samples over 0.03). They
+   cross near-vertical steps of the drop-cutter surface; the vertical depth
+   is mostly the metric, not the gouge.
+2. Shallow-band raster rows (445 samples, max 0.325, estimate to 0.162):
+   `raster_toolpath_from_grid` feeds straight between lattice points and
+   across row turnarounds, with no chord check. VerySteep waterline chords:
+   55 samples, max 0.158.
+3. Relink surface links (479 `Linking` samples, max 0.356, estimate to
+   0.147): `build_surface_link` samples at `sampling` (0.5 mm) and feeds
+   straight between samples. It is the shared kernel; a change moves every
+   linking arm.
+4. With `intra_region_hookup_mm` 0 the op emits a 29.36 mm `Linking`
+   feed 3.453 mm under the surface, right after an `EntryPlunge`. With
+   rapid order and feed optimisation off it is gone (other fed max
+   0.142). Feed optimisation moves no XY, so the rapid-order pass is the
+   suspect; not isolated further. Not the fixture's setting (25 mm), but
+   an operator dial.
+5. The simulation still reads 23 726 columns below −0.1 mm; 1 194 have no
+   buried sample within about 0.5–1 mm. The deepest (−0.612 mm) run along
+   the board edge at y = 0.0–0.1. Normal-direction overcut (vertical dev x
+   cos slope, after the fix): 14 086 columns over 0.1 mm, max 0.364 mm on
+   that edge row. Not attributed yet.
 
 ## Changes that wait for approval, with the measured effect
 

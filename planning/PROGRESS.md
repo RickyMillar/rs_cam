@@ -69,6 +69,11 @@ Open from the operator's session (after the memory fix):
   the F3c flute-reach advisory, the F4 arc A/B.
   `planning/tiered_finish_2026-09-30/RESULTS.md`; the default changes
   there wait for the operator.
+  G-TIERBURIAL, working tree: the 0.836 mm fine-tier burial is real (sim
+  −0.68 mm) and came from the continuous scallop's straight ring-to-ring
+  connector; it now rides the surface (max 0.836 → 0.516 mm, the rest a
+  vertical-step artifact under 0.06 mm). Raster rows, relink links and a
+  hookup-0 rapid-order link still bury; RESULTS "Fine-tier burial".
 - Suspected gouge source (metrology FINDINGS "stock-blind approach
   family"): arc-fit chords across small knolls; test with arc_fitting off.
 

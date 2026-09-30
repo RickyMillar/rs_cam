@@ -18,7 +18,8 @@ use crate::trace::debug_trace::ToolpathDebugContext;
 use tracing::info;
 
 use super::ring_generation::{
-    closest_kept_point_idx, generate_scallop_rings_with_cancel, rotate_ring,
+    RingLiftCtx, closest_kept_point_idx, generate_scallop_rings_with_cancel, refine_connector,
+    rotate_ring,
 };
 use super::{
     RingSource, ScallopDirection, ScallopParams, ScallopReport, ScallopRuntimeAnnotation,
@@ -507,6 +508,17 @@ pub(crate) fn scallop_toolpath_research_with_stage(
         #[allow(clippy::indexing_slicing)]
         let mut anchor: P3 = rings[0].last().map_or(rings[0][0].0, |&(p, _)| p);
         let mut tool_down = false;
+        // The rings' own lift context (`generate_scallop_rings_with_cancel`),
+        // so a connector is refined exactly as a ring chord is.
+        let connector_ctx = RingLiftCtx::new(
+            mesh,
+            index,
+            cutter,
+            params.stock_to_leave,
+            bbox.min.z,
+            params.tolerance,
+            surface_hm.cell_size,
+        );
 
         for (i, ring) in rings.iter().enumerate() {
             check_cancel(cancel)?;
@@ -550,8 +562,22 @@ pub(crate) fn scallop_toolpath_research_with_stage(
                 // the previous ring's cut, and only when the tool is down
                 // and the hop is within one ring spacing.
                 let helical_link = run_idx == 0 && s == 0 && tool_down && hop <= link_threshold;
+                // G-TIERBURIAL: the connector rides the drop-cutter surface
+                // like a ring chord (`refine_connector`). A straight feed
+                // here passed up to 0.836 mm under the surface on the
+                // rivmap100 fine tier. A connector that cannot track the
+                // surface, or that leaves the keep predicate, retracts.
+                let connector = if helical_link {
+                    refine_connector(anchor, run_first, &connector_ctx)
+                        .filter(|pts| pts.iter().all(|&p| keep_point(&(p, true))))
+                } else {
+                    None
+                };
                 let mut iter = run.iter();
-                if helical_link {
+                if let Some(connector) = connector {
+                    for p in connector {
+                        tp.feed_to_with_intent(p, params.feed_rate, MoveIntent::FinishingCut);
+                    }
                     if let Some(&(p, _)) = iter.next() {
                         tp.feed_to_with_intent(p, params.feed_rate, MoveIntent::FinishingCut);
                     }

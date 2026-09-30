@@ -129,6 +129,46 @@ pub(super) struct RingLiftCtx<'a> {
     pub(super) probe_step: f64,
 }
 
+impl<'a> RingLiftCtx<'a> {
+    /// The context [`generate_scallop_rings_with_cancel`] lifts rings with:
+    /// the probe step comes from the generation grid's `cell_size`.
+    pub(super) fn new(
+        mesh: &'a TriangleMesh,
+        index: &'a SpatialIndex,
+        cutter: &'a dyn MillingCutter,
+        stock_to_leave: f64,
+        min_z: f64,
+        chord_tolerance: f64,
+        cell_size: f64,
+    ) -> Self {
+        Self {
+            mesh,
+            index,
+            cutter,
+            stock_to_leave,
+            min_z,
+            chord_tolerance,
+            probe_step: (cell_size * 0.5).max(CHORD_REFINE_MIN_SEG_MM),
+        }
+    }
+}
+
+/// The interior points of a continuous-mode ring-to-ring connector from `a`
+/// to `b` (both exact drop-cutter points), refined against the drop-cutter
+/// surface exactly as a ring chord is. `None` when the connector cannot
+/// track the surface within the chord tolerance (a coverage gap, or a piece
+/// the depth cap left failing): the caller then retracts instead.
+///
+/// G-TIERBURIAL (`planning/tiered_finish_2026-09-30/RESULTS.md`): the
+/// connector was one straight feed up to `3 x cusp_r` long, never probed.
+/// On the rivmap100 fine tier it sat up to 0.836 mm below the drop-cutter
+/// surface.
+pub(super) fn refine_connector(a: P3, b: P3, ctx: &RingLiftCtx<'_>) -> Option<Vec<P3>> {
+    let mut out = Vec::new();
+    let tracks = refine_chord(a, b, ctx, CHORD_REFINE_MAX_DEPTH, &mut out);
+    (tracks && out.iter().all(|&(_, kept)| kept)).then(|| out.into_iter().map(|(p, _)| p).collect())
+}
+
 /// Floor (mm) on chord-refinement probe/segment spacing. Refinement must
 /// not fragment paths into segments the junction/accel integrator pays
 /// dearly for (P0 probe: sub-0.3 mm segment junctions dominate finishing
@@ -230,21 +270,32 @@ fn refine_ring_chords(ring: Vec<(P3, bool)>, ctx: &RingLiftCtx<'_>) -> Vec<(P3, 
 /// INTERIOR points (in order); the caller owns the endpoints. A coverage
 /// gap under the chord (hole / mesh edge) pushes one excluded point so the
 /// emission run-splitter retracts around it instead of feeding across.
-fn refine_chord(a: P3, b: P3, ctx: &RingLiftCtx<'_>, depth: usize, out: &mut Vec<(P3, bool)>) {
+///
+/// Returns `true` when every piece of the chord was accepted (or is too
+/// short to split), `false` when a coverage gap was found or the depth cap
+/// stopped a piece that still failed. The ring lift ignores it;
+/// [`refine_connector`] refuses a connector on `false`.
+fn refine_chord(
+    a: P3,
+    b: P3,
+    ctx: &RingLiftCtx<'_>,
+    depth: usize,
+    out: &mut Vec<(P3, bool)>,
+) -> bool {
     if depth == 0 {
-        return;
+        return false;
     }
     let dx = b.x - a.x;
     let dy = b.y - a.y;
     let len = (dx * dx + dy * dy).sqrt();
     if !len.is_finite() {
-        return;
+        return false;
     }
     if len <= 2.0 * CHORD_REFINE_MIN_SPLIT_MM {
         // Too short to split without emitting sub-floor segments, so probing
         // it could only ever discover an error refinement is not allowed to
         // correct. This is the ONLY length at which refinement declines.
-        return;
+        return true;
     }
     // At least one interior probe, ALWAYS.
     //
@@ -304,7 +355,7 @@ fn refine_chord(a: P3, b: P3, ctx: &RingLiftCtx<'_>, depth: usize, out: &mut Vec
         let cl = point_drop_cutter(x, y, ctx.mesh, ctx.index, ctx.cutter);
         if !cl.z.is_finite() || !point_is_covered(ctx, x, y) {
             out.push((P3::new(x, y, ctx.min_z + ctx.stock_to_leave), false));
-            return;
+            return false;
         }
         let surface_z = cl.z + ctx.stock_to_leave;
         let chord_z = a.z + (b.z - a.z) * t;
@@ -314,7 +365,7 @@ fn refine_chord(a: P3, b: P3, ctx: &RingLiftCtx<'_>, depth: usize, out: &mut Vec
         }
     }
     let Some((t, surface_z, err)) = worst else {
-        return;
+        return true;
     };
     // Accept with a margin, because `err` is the worst PROBE, not the worst
     // point: a finite probe set on a convex rim always understates, and
@@ -323,7 +374,7 @@ fn refine_chord(a: P3, b: P3, ctx: &RingLiftCtx<'_>, depth: usize, out: &mut Vec
     // 97.8 µm, true worst 131.7 µm. The margin buys the difference back and
     // costs points only on chords that were already failing.
     if err <= ctx.chord_tolerance * CHORD_REFINE_ACCEPT_FRACTION {
-        return;
+        return true;
     }
     // The split point must not orphan a sub-floor segment on either side, so
     // it is CLAMPED into the admissible band rather than abandoned.
@@ -354,14 +405,15 @@ fn refine_chord(a: P3, b: P3, ctx: &RingLiftCtx<'_>, depth: usize, out: &mut Vec
         let cl = point_drop_cutter(wx, wy, ctx.mesh, ctx.index, ctx.cutter);
         if !cl.z.is_finite() || !point_is_covered(ctx, wx, wy) {
             out.push((P3::new(wx, wy, ctx.min_z + ctx.stock_to_leave), false));
-            return;
+            return false;
         }
         cl.z + ctx.stock_to_leave
     };
     let w = P3::new(wx, wy, split_z);
-    refine_chord(a, w, ctx, depth - 1, out);
+    let head = refine_chord(a, w, ctx, depth - 1, out);
     out.push((w, true));
-    refine_chord(w, b, ctx, depth - 1, out);
+    let tail = refine_chord(w, b, ctx, depth - 1, out);
+    head && tail
 }
 
 /// Sum, over one lifted ring, of the XY perimeter length "owned" by points
@@ -477,15 +529,15 @@ pub(super) fn generate_scallop_rings_with_cancel(
     mut trace: Option<&mut ScallopStepoverTrace>,
     cancel: &dyn CancelCheck,
 ) -> Result<RingCascade, Cancelled> {
-    let lift_ctx = RingLiftCtx {
+    let lift_ctx = RingLiftCtx::new(
         mesh,
         index,
         cutter,
         stock_to_leave,
         min_z,
         chord_tolerance,
-        probe_step: (heightmap.cell_size * 0.5).max(CHORD_REFINE_MIN_SEG_MM),
-    };
+        heightmap.cell_size,
+    );
     let mut rings_3d: Vec<Vec<(P3, bool)>> = Vec::new();
 
     // First ring: the boundary itself, lifted to 3D
