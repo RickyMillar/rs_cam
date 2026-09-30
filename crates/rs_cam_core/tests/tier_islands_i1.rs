@@ -357,9 +357,13 @@ fn cap_backstop_raises_close_radius_then_truncates_and_reports_it() {
     }
     ring_uncovered(&mut map, 2);
 
+    // The raise bound is set explicitly: this sentry is about the bounded
+    // loop at the ceiling, and must not move when the default does
+    // (tiered-finish plan F1).
     let params = TierIslandParams {
         max_regions_per_tier: 12,
         overlap_mm: 0.0,
+        max_close_raises: MAX_CLOSE_RAISES,
         ..TierIslandParams::default()
     };
     // Cusp radius 0.3 → derived close radius 0.15 mm, well under a cell: the
@@ -389,6 +393,10 @@ fn cap_backstop_raises_close_radius_then_truncates_and_reports_it() {
         "the loop is BOUNDED: {} raises",
         set.cap.close_raises
     );
+    assert_eq!(
+        set.cap.max_close_raises, MAX_CLOSE_RAISES,
+        "the report carries the bound in force"
+    );
     assert!(
         set.cap.truncated(),
         "3 raises of 1.5x cannot bridge a 6-cell gap, so the truncation is what \
@@ -401,6 +409,15 @@ fn cap_backstop_raises_close_radius_then_truncates_and_reports_it() {
         "nothing was under the floor"
     );
     assert_eq!(set.cap.kept, set.islands);
+    // Every island is a full block (the raises bridge no gap), so the
+    // dropped territory is the dropped count times one block's cells.
+    let block_area_mm2 = (block * block) as f64 * cell * cell;
+    assert!(
+        (set.cap.dropped_area_mm2 - set.cap.dropped() as f64 * block_area_mm2).abs() < 1e-9,
+        "dropped area {} must be {} blocks of {block_area_mm2} mm2",
+        set.cap.dropped_area_mm2,
+        set.cap.dropped()
+    );
 
     // The reported final radius is the one actually used, and the set agrees.
     let raises = i32::try_from(set.cap.close_raises).unwrap();

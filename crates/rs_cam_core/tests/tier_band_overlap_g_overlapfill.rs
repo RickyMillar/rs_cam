@@ -42,7 +42,7 @@
 
 use rs_cam_core::maps::grid::GridSpec;
 use rs_cam_core::maps::tier_islands::{
-    BAND_RATIO_ADVISORY_BOUND, TierIslandParams, extract_tier_islands,
+    BAND_RATIO_ADVISORY_BOUND, MAX_CLOSE_RAISES, TierIslandParams, extract_tier_islands,
 };
 use rs_cam_core::maps::tier_map::{ResidualTreatment, TierMap};
 
@@ -133,6 +133,9 @@ fn band_only_params(overlap_mm: f64) -> TierIslandParams {
         overlap_mm,
         max_regions_per_tier: 24,
         rim_erosion_mm: 0.0,
+        // The morphology is off (close radius 0), so no raise can merge
+        // anything; the bound is the default only to keep the struct exact.
+        max_close_raises: MAX_CLOSE_RAISES,
     }
 }
 
@@ -465,4 +468,419 @@ fn wanaka_owned_versus_machining_area_at_three_tolerances() {
             }
         }
     }
+}
+
+// ── Tiered-finish Step 0 instrument (rivmap100, tolerance 0.15) ─────────
+
+/// The rivmap100 tiered-finish benchmark project. `planning/fixtures/` holds
+/// the benchmark projects (root `CLAUDE.md`); the README there says how this
+/// one was built.
+fn rivmap100_tiered_path() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../planning/fixtures/rivmap100/rivmap100_tiered_finish.toml")
+}
+
+/// The ladder the fixture plans: the R2.0 taper (tool 12, copied from the
+/// wanaka library in `tests/fixtures/t3b_r10_scallop_islands_*.toml`) over
+/// the project's R1.0 taper (tool 6). The operator's own 500 x 500 ladder is
+/// not in the repo; this is the proxy the plan names.
+const RIVMAP_LADDER: [usize; 2] = [12, 6];
+/// The operator's plan tolerance (2026-09-28 symptom).
+const RIVMAP_TOLERANCE_MM: f64 = 0.15;
+
+/// Writes the tier chain into the fixture: `plan_multitool_finishing` at the
+/// planner's own dials, tolerance 0.15, then `save`. Run once to (re)build
+/// the fixture; the Step 0 instrument below reads it.
+#[test]
+#[ignore = "rewrites planning/fixtures/rivmap100/rivmap100_tiered_finish.toml"]
+fn write_rivmap100_tiered_finish_fixture() {
+    use rs_cam_core::session::{MultitoolPlanSpec, ProjectSession};
+
+    let path = rivmap100_tiered_path();
+    let mut session = ProjectSession::load(&path).expect("load the rivmap100 tiered project");
+    let spec = MultitoolPlanSpec {
+        setup_index: 0,
+        model_id: 1,
+        tool_ids: RIVMAP_LADDER.to_vec(),
+        tolerance_mm: RIVMAP_TOLERANCE_MM,
+        ..MultitoolPlanSpec::default()
+    };
+    let outcome = session
+        .plan_multitool_finishing(&spec)
+        .expect("the ladder plans");
+    eprintln!(
+        "planned {} tier op(s), replaced {}",
+        outcome.toolpath_ids.len(),
+        outcome.replaced.len()
+    );
+    session.save(&path).expect("save the fixture");
+}
+
+/// Step 0 of the tiered-finish plan: per tier raw / owned / machining area,
+/// the cap report, hole counts, the F3c flute-reach reading, then the
+/// holder/shank check on the generated fine-tier op.
+///
+/// Measurement only. Prints; asserts nothing but that the pieces ran.
+#[test]
+#[ignore = "walks the rivmap100 tier map and generates the fine tier; run with --ignored --nocapture"]
+fn rivmap100_tiered_finish_step0() {
+    use std::sync::atomic::AtomicBool;
+
+    use rs_cam_core::compute::config::{BoundarySource, StockSource};
+    use rs_cam_core::compute::cutter::build_cutter;
+    use rs_cam_core::mesh::SpatialIndex;
+    use rs_cam_core::session::{Command, MultitoolPlanSpec, ProjectSession, SetStockSourceArgs};
+    use rs_cam_core::stock::collision::{
+        AssemblySegment, BODY_STRIKE_THRESHOLD_MM, body_segment_penetration_mm, check_collisions,
+    };
+    use rs_cam_core::toolpath::MoveType;
+
+    let mut session =
+        ProjectSession::load(&rivmap100_tiered_path()).expect("load the rivmap100 tiered project");
+    let cancel = AtomicBool::new(false);
+
+    // The recipe as stored on the fine tier's boundary — the preview reads
+    // the same dials the generation will.
+    let (fine_index, recipe) = session
+        .toolpath_configs()
+        .iter()
+        .enumerate()
+        .find_map(|(i, tc)| match (&tc.planner_origin, &tc.boundary.source) {
+            (Some(o), BoundarySource::PlannedTierRegions { .. }) if o.tier == 1 => {
+                Some((i, tc.boundary.source.clone()))
+            }
+            _ => None,
+        })
+        .expect("the fixture carries a planned fine tier; run the writer first");
+    let BoundarySource::PlannedTierRegions {
+        tool_ids,
+        cell_mm,
+        tolerance_mm,
+        margin_mm,
+        treatment,
+        islands,
+        ..
+    } = recipe
+    else {
+        unreachable!("matched above")
+    };
+    let spec = |islands| MultitoolPlanSpec {
+        setup_index: 0,
+        model_id: 1,
+        tool_ids: tool_ids.clone(),
+        cell_mm,
+        tolerance_mm,
+        margin_mm,
+        treatment,
+        islands,
+        ..MultitoolPlanSpec::default()
+    };
+
+    let stored = session
+        .preview_multitool_plan(&spec(islands), &cancel)
+        .expect("the stored recipe previews");
+    print_step0_preview("stored recipe (current default raise bound)", &stored);
+    let dial0 = session
+        .preview_multitool_plan(
+            &spec(TierIslandParams {
+                max_close_raises: 0,
+                ..islands
+            }),
+            &cancel,
+        )
+        .expect("the tier map is cached; only the morphology re-runs");
+    print_step0_preview("F1 arm: max_close_raises 0", &dial0);
+    let no_close = session
+        .preview_multitool_plan(
+            &spec(TierIslandParams {
+                close_radius_mm: Some(0.0),
+                max_close_raises: 0,
+                ..islands
+            }),
+            &cancel,
+        )
+        .expect("the tier map is cached; only the morphology re-runs");
+    print_step0_preview("reference: close off, no raise", &no_close);
+
+    // ── The holder/shank check on the generated fine tier ────────────────
+    // Stock source Fresh: the remaining-stock chain needs the rough and
+    // tier 0 simulated first. A finishing path follows the mesh either way;
+    // Fresh changes which air moves the air-cut filter trims.
+    let _ = session
+        .apply(Command::SetStockSource(SetStockSourceArgs {
+            index: fine_index,
+            source: StockSource::Fresh,
+        }))
+        .expect("set the fine tier's stock source");
+    let t0 = std::time::Instant::now();
+    session
+        .generate_toolpath(fine_index, &cancel)
+        .expect("the fine tier generates");
+    eprintln!(
+        "── fine tier generated in {:.1} s ──",
+        t0.elapsed().as_secs_f64()
+    );
+    let tp = session.get_result(fine_index).unwrap().toolpath().clone();
+    let tc = session.get_toolpath_config(fine_index).unwrap().clone();
+    let tool = session
+        .tools()
+        .iter()
+        .find(|t| t.id.0 == tc.tool_id)
+        .unwrap()
+        .clone();
+    let def = build_cutter(&tool);
+    let assembly = def.to_assembly();
+    let mesh = session
+        .models()
+        .iter()
+        .find(|m| m.id == tc.model_id)
+        .and_then(|m| m.mesh.clone())
+        .expect("the terrain mesh");
+    let index = SpatialIndex::build_auto(&mesh);
+
+    let cutting: Vec<usize> = tp
+        .moves
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| !matches!(m.move_type, MoveType::Rapid))
+        .map(|(i, _)| i)
+        .collect();
+    eprintln!(
+        "  moves {}, cutting moves {}, tool '{}' L_c {} mm, shank r {} mm, holder r {} mm, \
+         cutter envelope r {} mm",
+        tp.moves.len(),
+        cutting.len(),
+        tool.name,
+        assembly.cutter_length,
+        assembly.shank_diameter / 2.0,
+        assembly.holder_diameter / 2.0,
+        assembly.cutter_radius,
+    );
+
+    let report = check_collisions(&tp, &assembly, &mesh, &index);
+    let shank = report
+        .collisions
+        .iter()
+        .filter(|c| c.segment == AssemblySegment::Shank)
+        .count();
+    let holder = report.collisions.len() - shank;
+    eprintln!(
+        "  check_collisions (endpoints): {} strikes — shank {shank}, holder {holder}; \
+         min safe stickout {:.2} mm",
+        report.collisions.len(),
+        report.min_safe_stickout,
+    );
+    let session_check = session
+        .collision_check(fine_index, &cancel)
+        .expect("the session check runs");
+    eprintln!(
+        "  session collision_check (1 mm samples): {} strikes",
+        session_check.collision_report.collisions.len()
+    );
+
+    // The same rule with no envelope skip: the body directly above the
+    // flutes, at every cutting-move endpoint.
+    let (z_off, body_r) = assembly.non_fluted_body().expect("a body above the flutes");
+    let mut body_strikes = 0usize;
+    let mut worst = 0.0f64;
+    for &i in &cutting {
+        let tip = tp.moves[i].target;
+        if let Some(p) = body_segment_penetration_mm(tip, z_off, body_r, &mesh, &index)
+            && p > BODY_STRIKE_THRESHOLD_MM
+        {
+            body_strikes += 1;
+            worst = worst.max(p);
+        }
+    }
+    eprintln!(
+        "  body above the flutes (r {body_r} mm at {z_off} mm, no envelope skip): \
+         {body_strikes} of {} cutting endpoints strike, worst {worst:.3} mm",
+        cutting.len()
+    );
+}
+
+/// The overlap the islands were grown by, read off the first fine tier.
+fn islands_overlap(p: &rs_cam_core::session::MultitoolPreview) -> f64 {
+    p.islands.per_tier.first().map_or(0.0, |s| s.overlap_mm)
+}
+
+/// One Step 0 preview, printed: per tier raw / owned / machining area, the
+/// cap report, the holes and the F3c flute-reach reading.
+fn print_step0_preview(label: &str, p: &rs_cam_core::session::MultitoolPreview) {
+    eprintln!("── {label} ──");
+    eprintln!(
+        "  ladder {:?} cusp radii {:?}, cell {} mm, tolerance {} mm, overlap {} mm, \
+         raise bound {}",
+        p.tool_names,
+        p.cusp_radii_mm,
+        p.map.grid.cell_mm,
+        p.map.tolerance_mm,
+        islands_overlap(p),
+        p.islands
+            .per_tier
+            .first()
+            .map_or(0, |s| s.cap.max_close_raises),
+    );
+    for k in 0..p.map.tier_count {
+        eprintln!(
+            "  tier {k}: raw (labelled) area {:.0} mm2",
+            p.map.tier_area_mm2(k)
+        );
+    }
+    for set in &p.islands.per_tier {
+        let raw = p.map.tier_area_mm2(usize::from(set.tier));
+        eprintln!(
+            "  tier {}: raw islands {}, raw {:.0} mm2 -> owned {:.0} mm2 ({:.2}x raw) -> \
+             machining {:.0} mm2 ({:.2}x owned, {:.2}x raw)",
+            set.tier,
+            set.raw_island_count,
+            raw,
+            set.owned_area_mm2,
+            set.owned_area_mm2 / raw,
+            set.machining_area_mm2,
+            set.machining_to_owned_ratio().unwrap_or(f64::NAN),
+            set.machining_area_mm2 / raw,
+        );
+        eprintln!(
+            "    cap: after close {}, after min area {}, kept {} (cap {}), raises {} of {}, \
+             radius {:.4} -> {:.4} mm, dropped {} ({:.1} mm2), min island {:.1} mm2",
+            set.cap.islands_after_close,
+            set.cap.islands_after_min_area,
+            set.cap.kept,
+            set.cap.cap,
+            set.cap.close_raises,
+            set.cap.max_close_raises,
+            set.cap.first_close_radius_mm,
+            set.cap.final_close_radius_mm,
+            set.cap.dropped(),
+            set.cap.dropped_area_mm2,
+            set.min_region_area_mm2,
+        );
+        eprintln!(
+            "    holes: owned {}, machining {}, median owned hole {}",
+            set.owned_hole_count,
+            set.machining_hole_count,
+            set.median_owned_hole_area_mm2
+                .map_or_else(|| "-".to_owned(), |m| format!("{m:.2} mm2")),
+        );
+    }
+    for r in &p.flute_reach {
+        eprintln!(
+            "  flute reach tier {}: {} of {} checked owned cells bind ({:.1} mm2), body r {:?} \
+             at {:?} mm",
+            r.tier,
+            r.binding_cells,
+            r.checked_cells,
+            r.binding_area_mm2,
+            r.body_radius_mm,
+            r.body_z_offset_mm,
+        );
+    }
+    for a in p.islands.band_advisories() {
+        eprintln!("  ADVISORY {a}");
+    }
+}
+
+/// Step 0 on the ×3.5 terrain (`rivmap100_memory_repro.toml`: 350 x 350 x
+/// 42 mm, the board nearest the operator's 500 x 500 in the repo), preview
+/// only: the same ladder, tolerance and dials as the rivmap100 fixture. The
+/// R2.0 taper is added in memory from the tiered fixture. No toolpath is
+/// generated: at this size the fine tier takes too long in a debug build,
+/// and the F3c flute-reach pass is the per-cell reading of the same rule.
+#[test]
+#[ignore = "walks a 350 x 350 mm tier map; run with --ignored --nocapture"]
+fn rivmap350_tiered_finish_step0_preview() {
+    use std::sync::atomic::AtomicBool;
+
+    use rs_cam_core::session::{AddToolArgs, Command, MultitoolPlanSpec, ProjectSession};
+
+    let donor =
+        ProjectSession::load(&rivmap100_tiered_path()).expect("load the rivmap100 tiered project");
+    let coarse = donor
+        .tools()
+        .iter()
+        .find(|t| t.id.0 == RIVMAP_LADDER[0])
+        .expect("the R2.0 taper")
+        .clone();
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../planning/fixtures/rivmap100/rivmap100_memory_repro.toml");
+    let mut session = ProjectSession::load(&path).expect("load the x3.5 project");
+    let created = session
+        .apply(Command::AddTool(AddToolArgs {
+            tool: Box::new(coarse),
+        }))
+        .expect("add the R2.0 taper")
+        .created
+        .expect("add_tool reports the new index");
+    let coarse_id = session.tools()[created].id.0;
+
+    let cancel = AtomicBool::new(false);
+    let spec = |islands: TierIslandParams| MultitoolPlanSpec {
+        setup_index: 0,
+        model_id: 1,
+        tool_ids: vec![coarse_id, RIVMAP_LADDER[1]],
+        tolerance_mm: RIVMAP_TOLERANCE_MM,
+        islands,
+        ..MultitoolPlanSpec::default()
+    };
+    let t0 = std::time::Instant::now();
+    let stored = session
+        .preview_multitool_plan(&spec(TierIslandParams::default()), &cancel)
+        .expect("the x3.5 terrain previews");
+    eprintln!(
+        "── walk + islands + flute reach {:.1} s ──",
+        t0.elapsed().as_secs_f64()
+    );
+    print_step0_preview("x3.5: planner defaults (raise bound 3)", &stored);
+    let dial0 = session
+        .preview_multitool_plan(
+            &spec(TierIslandParams {
+                max_close_raises: 0,
+                ..TierIslandParams::default()
+            }),
+            &cancel,
+        )
+        .expect("cached map");
+    print_step0_preview("x3.5: F1 arm, max_close_raises 0", &dial0);
+    let no_close = session
+        .preview_multitool_plan(
+            &spec(TierIslandParams {
+                close_radius_mm: Some(0.0),
+                max_close_raises: 0,
+                ..TierIslandParams::default()
+            }),
+            &cancel,
+        )
+        .expect("cached map");
+    print_step0_preview("x3.5: reference, close off, no raise", &no_close);
+
+    // F3 at the operator's flute length: the operator's R1.0 taper has
+    // 15 mm of flute (PROGRESS 2026-09-29/30), the library copy here 20 mm.
+    // A clone of tool 6 with 15 mm of flute; nothing else changes.
+    let mut short = session
+        .tools()
+        .iter()
+        .find(|t| t.id.0 == RIVMAP_LADDER[1])
+        .expect("the R1.0 taper")
+        .clone();
+    short.cutting_length = 15.0;
+    short.name = format!("{} (L_c 15)", short.name);
+    let created = session
+        .apply(Command::AddTool(AddToolArgs {
+            tool: Box::new(short),
+        }))
+        .expect("add the 15 mm flute copy")
+        .created
+        .expect("add_tool reports the new index");
+    let short_id = session.tools()[created].id.0;
+    let lc15 = session
+        .preview_multitool_plan(
+            &MultitoolPlanSpec {
+                tool_ids: vec![coarse_id, short_id],
+                ..spec(TierIslandParams::default())
+            },
+            &cancel,
+        )
+        .expect("the x3.5 terrain previews with the 15 mm flute copy");
+    print_step0_preview("x3.5: F3 arm, fine tool with 15 mm of flute", &lc15);
 }

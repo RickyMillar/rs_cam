@@ -30,7 +30,7 @@
 //! rim demotion = fine-tier cells within rim_erosion_mm of uncovered -> tier 0
 //! for k = finest .. 1:                       (finest FIRST — see Ownership)
 //!     allowed  = covered AND NOT owned-by-any-finer-tier
-//!     loop i in 0 ..= MAX_CLOSE_RAISES:
+//!     loop i in 0 ..= min(max_close_raises, MAX_CLOSE_RAISES):
 //!         r     = close_radius * CAP_CLOSE_RAISE_FACTOR^i
 //!         mask  = close(raw_tier_mask, r) AND allowed
 //!         comps = 8-connected components of mask
@@ -126,11 +126,19 @@ pub const DEFAULT_MAX_REGIONS_PER_TIER: usize = 24;
 /// tier still has more islands than its cap.
 pub const CAP_CLOSE_RAISE_FACTOR: f64 = 1.5;
 
-/// How many auto-raise passes the cap loop may take. Bounded because closing
+/// The CEILING on the auto-raise passes the cap loop may take, and the
+/// default of [`TierIslandParams::max_close_raises`]. Bounded because closing
 /// is a *lossy* merge: at some radius the islands stop being the operator's
 /// features and start being one blob covering the board. Three passes at 1.5×
-/// is a 3.375× radius ceiling — enough to bridge cusp-scale fragmentation,
-/// not enough to weld a terrain.
+/// is a 3.375× radius ceiling.
+///
+/// **Known defect at this default (tiered-finish plan F1, 2026-09-30).** A
+/// raise re-closes the RAW mask, so specks under the minimum island area,
+/// which pass 0 drops, come back welded into one blob once the raised radius
+/// bridges their gaps, and "keep the largest" then prefers the blob. The
+/// sentry `tests/tier_islands_speck_weld.rs` pins the weld at this value and
+/// its absence at `max_close_raises: 0`. The default stays 3 until the
+/// operator approves the change.
 pub const MAX_CLOSE_RAISES: usize = 3;
 
 /// `close_radius_mm = cusp_radius · CLOSE_RADIUS_PER_CUSP_RADIUS`, the same
@@ -299,6 +307,18 @@ pub struct TierIslandParams {
     /// 3×. A caller that knows the ladder's tools should pass the coarsest
     /// tool's envelope radius here.
     pub rim_erosion_mm: f64,
+    /// How many auto-raise passes of the close radius the cap loop may take
+    /// before it truncates. Clamped to [`MAX_CLOSE_RAISES`]: the dial can
+    /// lower the bound, never raise it.
+    ///
+    /// `0` keeps the islands at the configured close radius and gives the
+    /// smallest islands over the cap back to the coarser tool;
+    /// [`TierCapReport::dropped_area_mm2`] states how much. A raise only
+    /// MERGES, it never adds a raw cell, so with `0` the owned cells are a
+    /// subset of `close(raw, first radius)`. The default is
+    /// [`MAX_CLOSE_RAISES`], the behaviour before the dial existed; read that
+    /// constant's doc for the defect it carries.
+    pub max_close_raises: usize,
 }
 
 impl Default for TierIslandParams {
@@ -310,6 +330,7 @@ impl Default for TierIslandParams {
             overlap_mm: DEFAULT_OVERLAP_MM,
             max_regions_per_tier: DEFAULT_MAX_REGIONS_PER_TIER,
             rim_erosion_mm: 0.0,
+            max_close_raises: MAX_CLOSE_RAISES,
         }
     }
 }
@@ -352,6 +373,17 @@ impl TierIslandParams {
             |v| v.max(0.0),
         )
     }
+
+    /// The raise bound in force: [`Self::max_close_raises`] clamped to
+    /// [`MAX_CLOSE_RAISES`].
+    #[must_use]
+    pub const fn effective_max_close_raises(&self) -> usize {
+        if self.max_close_raises < MAX_CLOSE_RAISES {
+            self.max_close_raises
+        } else {
+            MAX_CLOSE_RAISES
+        }
+    }
 }
 
 fn clamp_coarseness(coarseness: f64) -> f64 {
@@ -387,8 +419,12 @@ pub struct TierCapReport {
     /// so a renderer never has to re-derive it.
     pub cap: usize,
     /// How many auto-raise passes the close radius took. `0` on a healthy
-    /// tier; never more than [`MAX_CLOSE_RAISES`].
+    /// tier; never more than [`Self::max_close_raises`].
     pub close_raises: usize,
+    /// The raise bound in force
+    /// ([`TierIslandParams::effective_max_close_raises`]), carried so a
+    /// renderer never has to re-derive it.
+    pub max_close_raises: usize,
     /// The close radius (mm) the tier started at — the dial as configured.
     pub first_close_radius_mm: f64,
     /// The close radius (mm) actually in force after the raises:
@@ -398,9 +434,15 @@ pub struct TierCapReport {
     /// **A zero first radius cannot be raised** (`0 · 1.5ⁿ = 0`). A tier
     /// configured with `close_radius_mm: Some(0.0)`, or one whose tool reports
     /// a zero cusp radius, therefore has the truncation as its only backstop —
-    /// [`Self::close_raises`] will still read [`MAX_CLOSE_RAISES`] because the
-    /// loop ran, and [`Self::truncated`] is what actually held the cap.
+    /// [`Self::close_raises`] will still read [`Self::max_close_raises`]
+    /// because the loop ran, and [`Self::truncated`] is what actually held
+    /// the cap.
     pub final_close_radius_mm: f64,
+    /// Territory (mm²) of the islands the truncation dropped: their cell count
+    /// × cell area on the closed mask. `0.0` unless [`Self::truncated`]. That
+    /// territory goes back to the coarser tool, so it is the cost of the cap
+    /// in fine-tool coverage.
+    pub dropped_area_mm2: f64,
 }
 
 impl TierCapReport {
@@ -849,11 +891,12 @@ pub fn extract_tier_islands(
         // under a growing radius, and compounding it would merge by a
         // different (and unstateable) amount than the radius the report
         // publishes.
+        let max_close_raises = params.effective_max_close_raises();
         let mut close_raises = 0usize;
         let mut close_radius_mm = first_close_radius_mm;
         let mut kept: Vec<Vec<usize>> = Vec::new();
         let mut islands_after_close = 0usize;
-        for pass in 0..=MAX_CLOSE_RAISES {
+        for pass in 0..=max_close_raises {
             close_raises = pass;
             let exponent = i32::try_from(pass).unwrap_or(0);
             close_radius_mm = first_close_radius_mm * CAP_CLOSE_RAISE_FACTOR.powi(exponent);
@@ -889,6 +932,11 @@ pub fn extract_tier_islands(
         });
 
         let islands_after_min_area = kept.len();
+        let dropped_cells: usize = kept
+            .iter()
+            .skip(params.max_regions_per_tier)
+            .map(Vec::len)
+            .sum();
         if kept.len() > params.max_regions_per_tier {
             warn!(
                 tier = k,
@@ -909,8 +957,10 @@ pub fn extract_tier_islands(
             kept: kept.len(),
             cap: params.max_regions_per_tier,
             close_raises,
+            max_close_raises,
             first_close_radius_mm,
             final_close_radius_mm: close_radius_mm,
+            dropped_area_mm2: dropped_cells as f64 * cell_area,
         };
 
         // ── Ownership, then polygons ────────────────────────────────────
@@ -1487,8 +1537,10 @@ mod tests {
             kept: 3,
             cap: 24,
             close_raises: 0,
+            max_close_raises: MAX_CLOSE_RAISES,
             first_close_radius_mm: 0.5,
             final_close_radius_mm: 0.5,
+            dropped_area_mm2: 0.0,
         };
         assert!(!report.acted());
         assert!(!report.truncated());
@@ -1504,8 +1556,10 @@ mod tests {
             kept: 24,
             cap: 24,
             close_raises: 3,
+            max_close_raises: MAX_CLOSE_RAISES,
             first_close_radius_mm: 0.5,
             final_close_radius_mm: 0.5 * CAP_CLOSE_RAISE_FACTOR.powi(3),
+            dropped_area_mm2: 56.0 * 16.0,
         };
         assert!(report.acted());
         assert!(report.truncated());

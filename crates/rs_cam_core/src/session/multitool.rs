@@ -288,6 +288,11 @@ pub struct MultitoolPreview {
     /// [`ProjectSession::plan_multitool_finishing`] will emit with, already
     /// sorted, so a caller that applies this preview gets the tiers it saw.
     pub tool_ids: Vec<usize>,
+    /// Tiered-finish F3c: per fine tier, the owned territory the tier's tool
+    /// reaches only with the body above its flutes. Same order as
+    /// [`TierIslands::per_tier`]. ADVISORY: the territory is unchanged. See
+    /// [`crate::maps::tier_flute_reach`].
+    pub flute_reach: Vec<crate::maps::tier_flute_reach::TierFluteReach>,
 }
 
 /// Everything one multi-tool plan resolves ONCE, before it writes anything
@@ -1436,12 +1441,49 @@ pub fn execute_preview_tier_map(
         false,
         cancel,
     )?;
+    let flute_reach = preview_flute_reach(handle, &resolved, cancel)?;
     Ok(MultitoolPreview {
         map: resolved.map.as_ref().clone(),
         islands: resolved.islands,
         cusp_radii_mm: resolved.cusp_radii_mm,
         tool_names: resolved.tools.iter().map(|t| t.name.clone()).collect(),
         tool_ids: resolved.tools.iter().map(|t| t.id.0).collect(),
+        flute_reach,
+    })
+}
+
+/// The F3c flute-reach pass over a resolved preview: one reading per fine
+/// tier, from the same mesh and index the walk used.
+fn preview_flute_reach(
+    handle: &PreviewTierMapHandle,
+    resolved: &TierPlanResolution,
+    cancel: &AtomicBool,
+) -> Result<Vec<crate::maps::tier_flute_reach::TierFluteReach>, SessionError> {
+    use crate::maps::tier_flute_reach::{TierTool, tier_flute_reach};
+    // `resolve_tier_plan_with_tools` refused already when either is absent.
+    let (Some(mesh), Some(index)) = (handle.mesh.as_ref(), handle.index.as_ref()) else {
+        return Ok(Vec::new());
+    };
+    let defs: Vec<ToolDefinition> = resolved.tools.iter().map(build_cutter).collect();
+    let tools: Vec<TierTool<'_>> = defs
+        .iter()
+        .map(|d| TierTool {
+            cutter: d as &dyn MillingCutter,
+            assembly: d.to_assembly(),
+        })
+        .collect();
+    tier_flute_reach(
+        resolved.map.as_ref(),
+        &resolved.islands,
+        &tools,
+        mesh,
+        index,
+        &(|| cancel.load(std::sync::atomic::Ordering::SeqCst)),
+    )
+    .map_err(|_cancelled| {
+        SessionError::OperationFailed(format!(
+            "'{PREVIEW_OP_NAME}': the flute-reach pass was cancelled"
+        ))
     })
 }
 

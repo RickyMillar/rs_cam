@@ -73,6 +73,21 @@ impl ToolAssembly {
         }
     }
 
+    /// The body directly above the flutes, as `(z_offset, radius)`: the
+    /// shank when the assembly has one, else the holder. `None` when the
+    /// assembly models neither.
+    ///
+    /// This is the part a wall taller than the flutes meets first. Its
+    /// radius is taken as is, with no comparison against the cutter's
+    /// envelope radius: on a tapered ball whose shank diameter equals its
+    /// shaft diameter the two are equal, and the skip in
+    /// [`check_collisions`] then tests no shank at all.
+    pub fn non_fluted_body(&self) -> Option<(f64, f64)> {
+        self.segments()
+            .first()
+            .map(|&(z_offset, radius, _length)| (z_offset, radius))
+    }
+
     /// Segments of the assembly from tip upward, as (z_offset, max_radius, length).
     fn segments(&self) -> Vec<(f64, f64, f64)> {
         let mut segs = Vec::new();
@@ -263,6 +278,33 @@ impl HolderCollisionCheck {
     }
 }
 
+/// The penetration (mm) above which a body segment counts as a strike.
+pub const BODY_STRIKE_THRESHOLD_MM: f64 = 0.01;
+
+/// How far one body segment of the assembly sinks into the mesh with the
+/// tool tip at `tip`: the one rule every holder/shank check applies.
+///
+/// The segment is a flat cylinder of `seg_radius` whose bottom sits
+/// `z_offset` above the tip. Its drop-cutter height over the tip's XY,
+/// minus that bottom, is the penetration. `None` when no triangle is under
+/// the cylinder. A penetration above [`BODY_STRIKE_THRESHOLD_MM`] is a
+/// strike.
+///
+/// [`check_collisions`] calls this per sample and per segment, and
+/// [`crate::maps::tier_flute_reach`] calls it per tier-map cell, so the
+/// two cannot disagree about what a strike is.
+pub fn body_segment_penetration_mm(
+    tip: P3,
+    z_offset: f64,
+    seg_radius: f64,
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+) -> Option<f64> {
+    let virtual_cutter = FlatEndmill::new(seg_radius * 2.0, 1.0);
+    let cl = point_drop_cutter(tip.x, tip.y, mesh, index, &virtual_cutter);
+    cl.contacted.then_some(cl.z - (tip.z + z_offset))
+}
+
 /// Check a toolpath for holder/shank collisions against the mesh.
 ///
 /// For each cutting move, checks whether the shank or holder cylinder
@@ -350,17 +392,12 @@ pub fn check_collisions_interpolated_with_cancel(
                     continue;
                 }
 
-                let seg_bottom_z = tip.z + z_offset;
-
-                let virtual_cutter = FlatEndmill::new(seg_radius * 2.0, 1.0);
-                let cl = point_drop_cutter(tip.x, tip.y, mesh, index, &virtual_cutter);
-
-                if !cl.contacted {
+                let Some(penetration) =
+                    body_segment_penetration_mm(*tip, z_offset, seg_radius, mesh, index)
+                else {
                     continue;
-                }
-
-                let penetration = cl.z - seg_bottom_z;
-                if penetration > 0.01 {
+                };
+                if penetration > BODY_STRIKE_THRESHOLD_MM {
                     collisions.push(CollisionEvent {
                         move_index: move_idx,
                         position: *tip,

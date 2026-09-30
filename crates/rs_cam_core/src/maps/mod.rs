@@ -13,6 +13,7 @@ mod memo;
 pub mod reach_map;
 pub mod reach_map_cache;
 pub mod rest_heatmap_mesh;
+pub mod tier_flute_reach;
 pub mod tier_islands;
 pub mod tier_map;
 pub mod tier_map_cache;

@@ -1342,8 +1342,32 @@ fn render_tier_map_preview(
                     // `owned_area_mm2` then measures the slabs: 2 261 ->
                     // 17 812 mm2 on wanaka at tolerance 0.146.
                     "close_raises": set.cap.close_raises,
+                    "max_close_raises": set.cap.max_close_raises,
                     "first_close_radius_mm": set.cap.first_close_radius_mm,
+                    // Tiered-finish F1: what the truncation gave back to
+                    // the coarser tool, as a count and as territory.
+                    "dropped": set.cap.dropped(),
+                    "dropped_area_mm2": set.cap.dropped_area_mm2,
                 },
+            })
+        })
+        .collect();
+
+    // Tiered-finish F3c, ADVISORY: per fine tier, the owned territory the
+    // tool reaches only with the body above its flutes. Every tier is
+    // listed; a zero area is a measured zero.
+    let flute_reach: Vec<serde_json::Value> = preview
+        .flute_reach
+        .iter()
+        .map(|r| {
+            serde_json::json!({
+                "tier": r.tier,
+                "cutting_length_mm": r.cutting_length_mm,
+                "body_z_offset_mm": r.body_z_offset_mm,
+                "body_radius_mm": r.body_radius_mm,
+                "checked_cells": r.checked_cells,
+                "binding_cells": r.binding_cells,
+                "binding_area_mm2": r.binding_area_mm2,
             })
         })
         .collect();
@@ -1379,6 +1403,7 @@ fn render_tier_map_preview(
         "ladder": ladder,
         "per_tier": per_tier,
         "band_advisories": band_advisories,
+        "flute_reach": flute_reach,
         "total_owned_area_mm2": preview.islands.total_owned_area_mm2(),
         "total_machining_area_mm2": preview.islands.total_machining_area_mm2(),
         "map": {

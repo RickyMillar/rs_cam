@@ -619,6 +619,17 @@ fn draw_ready(ui: &mut egui::Ui, planner: &MultitoolPlannerState, preview: &Mult
         );
     }
 
+    // Tiered-finish F3c, ADVISORY: owned territory the fine tool reaches
+    // only with the body above its flutes. The territory is unchanged.
+    for reach in preview.flute_reach.iter().filter(|r| r.binds()) {
+        ui.add_space(4.0);
+        ui.label(
+            egui::RichText::new(reach.to_string())
+                .small()
+                .color(theme::WARNING),
+        );
+    }
+
     if preview.islands.is_empty() {
         ui.add_space(4.0);
         ui.label(
@@ -782,8 +793,10 @@ fn cap_warning_text(set: &TierIslandSet) -> String {
     }
     if cap.truncated() {
         parts.push(format!(
-            "and {} island(s) were still DROPPED — the {} largest of {} were kept",
+            "and {} island(s) were still DROPPED ({:.0} mm2 back to the coarser tool) — \
+             the {} largest of {} were kept",
             cap.dropped(),
+            cap.dropped_area_mm2,
             cap.kept,
             cap.islands_after_min_area
         ));
@@ -904,13 +917,19 @@ mod tests {
                 kept: 24,
                 cap: 24,
                 close_raises: 3,
+                max_close_raises: 3,
                 first_close_radius_mm: 0.5,
                 final_close_radius_mm: 1.6875,
+                dropped_area_mm2: 1_512.0,
             },
             16.0,
         ));
         assert!(text.contains("DROPPED"), "got: {text}");
         assert!(text.contains("56 island(s)"), "the count, got: {text}");
+        assert!(
+            text.contains("1512 mm2 back to the coarser tool"),
+            "the dropped territory, got: {text}"
+        );
         assert!(text.contains("raised 3x"), "the merge raise, got: {text}");
         assert!(text.contains("486 island(s)"), "absorbed, got: {text}");
     }
@@ -927,8 +946,10 @@ mod tests {
                 kept: 20,
                 cap: 24,
                 close_raises: 1,
+                max_close_raises: 3,
                 first_close_radius_mm: 0.5,
                 final_close_radius_mm: 0.75,
+                dropped_area_mm2: 0.0,
             },
             16.0,
         ));
@@ -944,8 +965,10 @@ mod tests {
                 kept: 10,
                 cap: 24,
                 close_raises: 0,
+                max_close_raises: 3,
                 first_close_radius_mm: 0.5,
                 final_close_radius_mm: 0.5,
+                dropped_area_mm2: 0.0,
             },
             16.0,
         );

@@ -64,6 +64,11 @@ Open from the operator's session (after the memory fix):
   of merging ever wider, and hold the overlap band to its 1.5x bound.
   The tier map ignores the fine tool's flute length (a 15 mm tapered
   ball on 17.8 mm of relief).
+  2026-09-30, working tree (not committed): plan items 1–4 without a
+  default change — Step 0 measured, the F1 raise-bound dial (default 3),
+  the F3c flute-reach advisory, the F4 arc A/B.
+  `planning/tiered_finish_2026-09-30/RESULTS.md`; the default changes
+  there wait for the operator.
 - Suspected gouge source (metrology FINDINGS "stock-blind approach
   family"): arc-fit chords across small knolls; test with arc_fitting off.
 

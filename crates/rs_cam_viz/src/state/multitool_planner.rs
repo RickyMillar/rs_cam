@@ -331,6 +331,9 @@ impl MultitoolPlannerState {
                 overlap_mm: self.overlap_mm.max(0.0),
                 max_regions_per_tier: self.max_regions_per_tier,
                 rim_erosion_mm: self.rim_erosion_mm.max(0.0),
+                // The dialog carries no raise dial: the core default is in
+                // force (tiered-finish plan F1, pending operator approval).
+                max_close_raises: TierIslandParams::default().max_close_raises,
             },
             cusp_height_mm: self.cusp_height_mm,
             coarse_skips_fine_islands: self.coarse_skips_fine_islands,

@@ -86,6 +86,7 @@ fn recipe(tool_ids: Vec<usize>) -> BoundarySource {
             overlap_mm: 2.5,
             max_regions_per_tier: 13,
             rim_erosion_mm: 3.25,
+            max_close_raises: 1,
         },
     }
 }
