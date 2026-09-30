@@ -59,9 +59,6 @@ pub const RESOLUTION_FLOOR_MM: f64 = 0.02;
 /// The coarsest cell the tool rule may give, in mm.
 const TOOL_RULE_CEILING_MM: f64 = 0.5;
 
-/// The dexel column budget the tool rule keeps the grid under.
-const MAX_GRID_CELLS: f64 = 8_000_000.0;
-
 /// Why a snapshot cannot seed a rest operation.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SnapshotMiss {
@@ -102,6 +99,39 @@ impl SnapshotMiss {
     }
 }
 
+/// The `Auto` tool rule for a smallest tool radius over a stock box, in mm.
+///
+/// The ONE copy of the rule (B2). `ProjectSession::simulation_resolution_mm`
+/// calls it with the radius over every enabled operation;
+/// `session::compute::auto_resolution_for_groups` calls it with the radius
+/// over the simulated groups. The rule:
+///
+/// - 5 cells across the smallest tool radius, clamped to
+///   [`RESOLUTION_FLOOR_MM`] ..= `TOOL_RULE_CEILING_MM`; no finite radius
+///   gives the ceiling;
+/// - no finer than the grid cap of
+///   [`crate::budget::GridCapRole::AutoResolution`] allows over the stock
+///   XY footprint, floor [`RESOLUTION_FLOOR_MM`].
+pub(crate) fn auto_tool_rule_for_radius(
+    min_radius: f64,
+    stock_bbox: &crate::geo::BoundingBox3,
+) -> f64 {
+    let from_tool = if min_radius.is_finite() {
+        (min_radius / 5.0).clamp(RESOLUTION_FLOOR_MM, TOOL_RULE_CEILING_MM)
+    } else {
+        TOOL_RULE_CEILING_MM
+    };
+    let sx = stock_bbox.max.x - stock_bbox.min.x;
+    let sy = stock_bbox.max.y - stock_bbox.min.y;
+    let from_grid = crate::budget::grid::cell_for_cap(
+        sx,
+        sy,
+        crate::budget::GridCapRole::AutoResolution.cell_cap(),
+    )
+    .max(RESOLUTION_FLOOR_MM);
+    from_tool.max(from_grid)
+}
+
 impl ProjectSession {
     /// The stored simulation resolution.
     #[must_use]
@@ -116,7 +146,7 @@ impl ProjectSession {
     ///
     /// - the tool rule: the smallest tool radius over enabled operations
     ///   (generated or not) / 5, clamped to [0.02, 0.5] mm, then made no
-    ///   finer than the ~8M-column grid budget allows;
+    ///   finer than the `AutoResolution` grid cap allows;
     /// - the rest rule ([`Self::rest_resolution_required_mm`]).
     ///
     /// The answer depends on no plan scope and no request, so the GUI, MCP
@@ -159,7 +189,8 @@ impl ProjectSession {
         finest
     }
 
-    /// The tool rule of [`Self::simulation_resolution_mm`].
+    /// The tool rule of [`Self::simulation_resolution_mm`], over the tools
+    /// of every enabled operation.
     fn auto_tool_rule_mm(&self) -> f64 {
         let used: HashSet<usize> = self
             .toolpath_configs
@@ -173,16 +204,7 @@ impl ProjectSession {
             .filter(|t| used.contains(&t.id.0))
             .map(|t| t.diameter / 2.0)
             .fold(f64::INFINITY, f64::min);
-        let from_tool = if min_radius.is_finite() {
-            (min_radius / 5.0).clamp(RESOLUTION_FLOOR_MM, TOOL_RULE_CEILING_MM)
-        } else {
-            TOOL_RULE_CEILING_MM
-        };
-        let bbox = self.stock_bbox();
-        let sx = bbox.max.x - bbox.min.x;
-        let sy = bbox.max.y - bbox.min.y;
-        let from_grid = ((sx * sy) / MAX_GRID_CELLS).sqrt().max(RESOLUTION_FLOOR_MM);
-        from_tool.max(from_grid)
+        auto_tool_rule_for_radius(min_radius, &self.stock_bbox())
     }
 
     /// Is the session's `prior_stocks` snapshot for `id` the one the
@@ -467,5 +489,65 @@ impl ProjectSession {
             self.drop_simulation();
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{RESOLUTION_FLOOR_MM, TOOL_RULE_CEILING_MM, auto_tool_rule_for_radius};
+    use crate::geo::{BoundingBox3, P3};
+
+    /// `ProjectSession::auto_tool_rule_mm` before B2, with its literal 8 M.
+    fn legacy_session_rule(min_radius: f64, bbox: &BoundingBox3) -> f64 {
+        let from_tool = if min_radius.is_finite() {
+            (min_radius / 5.0).clamp(RESOLUTION_FLOOR_MM, TOOL_RULE_CEILING_MM)
+        } else {
+            TOOL_RULE_CEILING_MM
+        };
+        let sx = bbox.max.x - bbox.min.x;
+        let sy = bbox.max.y - bbox.min.y;
+        let from_grid = ((sx * sy) / 8_000_000.0).sqrt().max(RESOLUTION_FLOOR_MM);
+        from_tool.max(from_grid)
+    }
+
+    /// `session::compute::auto_resolution_for_groups` before B2.
+    fn legacy_groups_rule(min_radius: f64, bbox: &BoundingBox3) -> f64 {
+        let from_tool = (min_radius / 5.0).clamp(0.02, 0.5);
+        let max_cells: f64 = 8_000_000.0;
+        let sx = bbox.max.x - bbox.min.x;
+        let sy = bbox.max.y - bbox.min.y;
+        let from_grid = ((sx * sy) / max_cells).sqrt().max(0.02);
+        from_tool.max(from_grid)
+    }
+
+    #[test]
+    fn the_one_auto_rule_gives_both_legacy_cells_bit_for_bit() {
+        let footprints = [
+            (100.0, 100.0),
+            (380.0, 510.0),
+            (1220.0, 2440.0),
+            (5000.0, 5000.0),
+            (0.0, 0.0),
+        ];
+        let radii = [0.05, 0.1, 0.5, 1.5, 3.175, 6.0, 12.7, f64::INFINITY];
+        for (w, d) in footprints {
+            let bbox = BoundingBox3 {
+                min: P3::new(-10.0, -20.0, -30.0),
+                max: P3::new(-10.0 + w, -20.0 + d, 0.0),
+            };
+            for r in radii {
+                let now = auto_tool_rule_for_radius(r, &bbox);
+                assert_eq!(
+                    now.to_bits(),
+                    legacy_session_rule(r, &bbox).to_bits(),
+                    "session rule r={r} {w}x{d}"
+                );
+                assert_eq!(
+                    now.to_bits(),
+                    legacy_groups_rule(r, &bbox).to_bits(),
+                    "groups rule r={r} {w}x{d}"
+                );
+            }
+        }
     }
 }

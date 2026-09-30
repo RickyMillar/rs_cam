@@ -323,29 +323,16 @@ impl Clone for DexelGrid {
 }
 
 impl DexelGrid {
-    /// Minimum allowed cell size to avoid division-by-zero and degenerate grids.
-    const MIN_CELL_SIZE: f64 = 1e-6;
-
-    /// Maximum total cells per grid (~128 MB at ~8 bytes/ray).
-    /// Prevents OOM from pathologically small cell sizes on large stock.
-    const MAX_GRID_CELLS: usize = 16_000_000;
+    /// Maximum total cells per grid. Prevents OOM from pathologically small
+    /// cell sizes on large stock. B2: the value lives in
+    /// [`crate::budget::grid::GRID_CELL_CEILING`], the one source of every
+    /// grid cap. One column costs [`crate::budget::estimate::dexel_cell_bytes`].
+    const MAX_GRID_CELLS: usize = crate::budget::grid::GRID_CELL_CEILING;
 
     /// Check whether the given cell size would exceed the grid cap for the given extents.
     /// Returns `Some(coarsened_size)` if clamping would occur, `None` if it fits.
     pub fn would_exceed_grid(cell_size: f64, extent_u: f64, extent_v: f64) -> Option<f64> {
-        let cs = if cell_size < Self::MIN_CELL_SIZE {
-            Self::MIN_CELL_SIZE
-        } else {
-            cell_size
-        };
-        let cols = (extent_u / cs).ceil() as usize + 1;
-        let rows = (extent_v / cs).ceil() as usize + 1;
-        if rows * cols > Self::MAX_GRID_CELLS {
-            let area = extent_u * extent_v;
-            Some((area / Self::MAX_GRID_CELLS as f64).sqrt())
-        } else {
-            None
-        }
+        crate::budget::grid::ceiling_clamp(cell_size, extent_u, extent_v)
     }
 
     /// The cell size a grid over this extent will ACTUALLY use: the request
@@ -357,30 +344,23 @@ impl DexelGrid {
     /// column_grid_cell_mm` — before it, `resolution_clamped` said *that* the
     /// cell changed and no field said *to what*).
     pub fn effective_cell_size(cell_size: f64, extent_u: f64, extent_v: f64) -> f64 {
-        Self::would_exceed_grid(cell_size, extent_u, extent_v)
-            .unwrap_or_else(|| cell_size.max(Self::MIN_CELL_SIZE))
+        crate::budget::grid::effective_cell(cell_size, extent_u, extent_v)
     }
 
     /// Adjust cell_size upward if `rows * cols` would exceed [`Self::MAX_GRID_CELLS`].
-    fn clamp_cell_size(mut cell_size: f64, extent_u: f64, extent_v: f64) -> f64 {
-        if cell_size < Self::MIN_CELL_SIZE {
-            cell_size = Self::MIN_CELL_SIZE;
-        }
-        let cols = (extent_u / cell_size).ceil() as usize + 1;
-        let rows = (extent_v / cell_size).ceil() as usize + 1;
-        if rows * cols > Self::MAX_GRID_CELLS {
-            // Increase cell_size so total cells fit within the cap.
-            let area = extent_u * extent_v;
-            let new_cs = (area / Self::MAX_GRID_CELLS as f64).sqrt();
-            tracing::warn!(
-                requested_cell_size = cell_size,
-                clamped_cell_size = new_cs,
-                "Dexel grid would exceed {}M cells — coarsening resolution",
-                Self::MAX_GRID_CELLS / 1_000_000
-            );
-            new_cs
-        } else {
-            cell_size
+    fn clamp_cell_size(cell_size: f64, extent_u: f64, extent_v: f64) -> f64 {
+        let floored = crate::budget::grid::floor_cell(cell_size);
+        match crate::budget::grid::ceiling_clamp(floored, extent_u, extent_v) {
+            Some(new_cs) => {
+                tracing::warn!(
+                    requested_cell_size = floored,
+                    clamped_cell_size = new_cs,
+                    "Dexel grid would exceed {}M cells — coarsening resolution",
+                    Self::MAX_GRID_CELLS / 1_000_000
+                );
+                new_cs
+            }
+            None => floored,
         }
     }
 
@@ -983,7 +963,7 @@ mod tests {
 
     #[test]
     fn zero_cell_size_clamped_z_grid() {
-        // cell_size=0 should be clamped to MIN_CELL_SIZE, not cause division by zero.
+        // cell_size=0 should be clamped to budget::grid::MIN_CELL_MM, not cause division by zero.
         // Use a tiny bbox so the clamped cell_size doesn't create a huge grid.
         let bbox = BoundingBox3 {
             min: P3::new(0.0, 0.0, 0.0),

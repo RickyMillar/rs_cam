@@ -1,4 +1,5 @@
 use std::fmt;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Shared cancellation predicate used by cancellable core algorithms.
 pub trait CancelCheck {
@@ -39,6 +40,23 @@ pub struct NeverCancel;
 impl CancelCheck for NeverCancel {
     fn cancelled(&self) -> bool {
         false
+    }
+}
+
+/// A [`CancelCheck`] over a borrowed `AtomicBool`.
+///
+/// Many algorithms and lanes hold a `&AtomicBool` and wrote their own
+/// `|| flag.load(Ordering::SeqCst)` closure to reach a `&dyn CancelCheck`.
+/// This type is that adapter. A [`crate::budget::BudgetGuard`] sets the same
+/// flag when the memory budget trips, so a caller that passes
+/// `FlagCancel(guard.flag())` stops for the budget too, with no signature
+/// change.
+#[derive(Debug, Clone, Copy)]
+pub struct FlagCancel<'a>(pub &'a AtomicBool);
+
+impl CancelCheck for FlagCancel<'_> {
+    fn cancelled(&self) -> bool {
+        self.0.load(Ordering::SeqCst)
     }
 }
 

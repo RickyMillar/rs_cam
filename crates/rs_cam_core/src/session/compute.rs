@@ -2431,10 +2431,10 @@ impl ProjectSession {
 
 /// Compute auto-resolution from simulation groups and stock bbox.
 ///
-/// Mirrors the GUI's `auto_resolution_for_tools` heuristic:
-/// - 5 cells across the smallest tool radius for decent curve resolution
-/// - Clamped to [0.02, 0.5] mm
-/// - Further limited so the grid stays under ~8M cells
+/// The smallest tool radius over the simulated groups goes into the ONE
+/// `Auto` tool rule, `rest_stock::auto_tool_rule_for_radius` (B2). This
+/// function only chooses the radius set: the tools of the groups, not of
+/// every enabled operation.
 fn auto_resolution_for_groups(groups: &[SimGroupEntry], stock_bbox: &BoundingBox3) -> f64 {
     use crate::tool::MillingCutter as _;
 
@@ -2444,16 +2444,7 @@ fn auto_resolution_for_groups(groups: &[SimGroupEntry], stock_bbox: &BoundingBox
         .map(|entry| entry.tool.radius())
         .fold(f64::INFINITY, f64::min);
 
-    // 5 cells across the radius gives decent curve resolution
-    let from_tool = (min_radius / 5.0).clamp(0.02, 0.5);
-
-    // Cap so grid stays under ~8M cells (reasonable memory / mesh size)
-    let max_cells: f64 = 8_000_000.0;
-    let sx = stock_bbox.max.x - stock_bbox.min.x;
-    let sy = stock_bbox.max.y - stock_bbox.min.y;
-    let from_grid = ((sx * sy) / max_cells).sqrt().max(0.02);
-
-    from_tool.max(from_grid)
+    super::rest_stock::auto_tool_rule_for_radius(min_radius, stock_bbox)
 }
 
 #[cfg(test)]
