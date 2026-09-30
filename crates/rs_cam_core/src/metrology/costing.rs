@@ -181,6 +181,7 @@ pub fn relink_and_cost_under(
         rapid_feed_mm_min: ctx.feeds.rapid_feed_mm_min,
     });
     let params = crate::finish::surface_link::RelinkParams {
+        link_tolerance: None,
         hookup_distance: 25.0,
         stock_to_leave: 0.0,
         sampling: 0.5,

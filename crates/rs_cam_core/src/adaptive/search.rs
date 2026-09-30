@@ -312,6 +312,70 @@ mod engagement_measure_tests {
     /// swept-width reading.
     const CELL_OVER_D: f64 = CELL / (2.0 * R);
 
+    /// G-ADAPTPASSLOAD, 2026-09-30: a step is held to the pass load along
+    /// its length, not at its end alone. A +x step of 3 mm (two walk steps;
+    /// on one 1.5 mm step the band a point must sit in is 0.1 mm wide, off
+    /// the 0.5 mm lattice) with two points of stock 2.75 mm either side of
+    /// its middle: 3.13 mm from its start (out of the disc cut there) and
+    /// from its end, 2.93 mm from the first point along it. The end reads no
+    /// stock, so the end-only predicate admitted the step; the cutter
+    /// crosses both, 5.5 mm apart, 0.92 of D. On the six-island pocket the
+    /// same blind spot let a 1.5 mm step cut 0.70 of D whose end read 0.24.
+    #[test]
+    fn a_step_is_held_along_its_length_not_at_its_end() {
+        use super::super::material_grid::CELL_MATERIAL;
+        use super::{measure_step, step_within_pass_load};
+        let size = 60.0;
+        let square = Polygon2::new(vec![
+            P2::new(0.0, 0.0),
+            P2::new(size, 0.0),
+            P2::new(size, size),
+            P2::new(0.0, size),
+        ]);
+        let mut grid = MaterialGrid::from_polygon(&square, CELL);
+        grid.cells.fill(CELL_CLEARED);
+        // The two stock points on lattice rows 11 cells apart; the step's
+        // axis between them, its middle on their column.
+        let col = grid.cols / 2;
+        let row = grid.rows / 2;
+        let x_mid = grid.origin_x + col as f64 * grid.cell_size;
+        let y_lo = grid.origin_y + row as f64 * grid.cell_size;
+        let y_hi = y_lo + 11.0 * grid.cell_size;
+        for r in [row, row + 11] {
+            let idx = r * grid.cols + col;
+            grid.cells[idx] = CELL_MATERIAL;
+        }
+        let axis_y = 0.5 * (y_lo + y_hi);
+        let len = 2.0 * STEP;
+        let from = P2::new(x_mid - 0.5 * len, axis_y);
+        let (nx, ny) = (x_mid + 0.5 * len, axis_y);
+        let stock_from = (x_mid - from.x).hypot(y_hi - axis_y);
+        assert!(
+            stock_from > R,
+            "the start disc must not hold the stock ({stock_from:.3})"
+        );
+        let load = PassLoad::swept_width(2.0, R, CELL);
+
+        // Non-vacuity: the step's end reads no stock, so the end-only
+        // predicate (the reading at the end) admitted this step.
+        let end_only = compute_swept_width(&grid, nx, ny, R, 0.0);
+        assert!(
+            end_only <= load.ceiling,
+            "the scene must be admitted by the end reading alone ({end_only:.4})"
+        );
+        // The step is held along its length.
+        let along = measure_step(&grid, from, nx, ny, R, 0.0, &load);
+        assert!(
+            along > 0.9,
+            "the step crosses both points of stock, 5.5 mm apart: {along:.4} of D"
+        );
+        assert!(
+            !step_within_pass_load(&grid, from, nx, ny, R, 0.0, &load),
+            "a step that cuts {along:.4} of D mid-way must be refused (ceiling {:.4})",
+            load.ceiling
+        );
+    }
+
     /// Oracle: the swept width of a steady side cut at stepover `s` is
     /// `s / D` to within one cell over D (the material edge falls between
     /// two lattice rows), from a sliver to a full slot.
@@ -565,7 +629,7 @@ pub(crate) fn compute_swept_width(
     radius: f64,
     dir_angle: f64,
 ) -> f64 {
-    swept_width_on(grid, cx, cy, radius, dir_angle, false)
+    swept_width_on(grid, cx, cy, radius, dir_angle, false, None)
 }
 
 /// [`compute_swept_width`] with the fringe's standing sub-points read too
@@ -580,7 +644,7 @@ pub(crate) fn compute_swept_width_with_slivers(
     radius: f64,
     dir_angle: f64,
 ) -> f64 {
-    swept_width_on(grid, cx, cy, radius, dir_angle, true)
+    swept_width_on(grid, cx, cy, radius, dir_angle, true, None)
 }
 
 // SAFETY: rows and columns are clamped to the grid before indexing.
@@ -592,8 +656,13 @@ fn swept_width_on(
     radius: f64,
     dir_angle: f64,
     slivers: bool,
+    // A capsule (segment and the same radius) whose points are read as cut:
+    // the stretch of a step the tool has already swept (`measure_step`).
+    swept: Option<(P2, P2)>,
 ) -> f64 {
     let r_sq = radius * radius;
+    let is_swept =
+        |px: f64, py: f64| swept.is_some_and(|(a, b)| segment_distance_sq(a, b, px, py) <= r_sq);
     let col_min = ((cx - radius - grid.origin_x) / grid.cell_size)
         .floor()
         .max(0.0) as usize;
@@ -619,7 +688,9 @@ fn swept_width_on(
             let dx = grid.origin_x + col as f64 * grid.cell_size - cx;
             let idx = row * grid.cols + col;
             match grid.cells[idx] {
-                CELL_MATERIAL if dx * dx + dy * dy <= r_sq => take(dx, dy),
+                CELL_MATERIAL if dx * dx + dy * dy <= r_sq && !is_swept(cx + dx, cy + dy) => {
+                    take(dx, dy);
+                }
                 // A fringe cell's centre is cut; its standing sub-points
                 // are the sliver the centre lattice misses.
                 CELL_FRINGE if slivers => {
@@ -628,7 +699,10 @@ fn swept_width_on(
                         let py = dy + sub_offset(j) * grid.cell_size;
                         for i in 0..SUB {
                             let px = dx + sub_offset(i) * grid.cell_size;
-                            if bits & (1 << (j * SUB + i)) != 0 && px * px + py * py <= r_sq {
+                            if bits & (1 << (j * SUB + i)) != 0
+                                && px * px + py * py <= r_sq
+                                && !is_swept(cx + px, cy + py)
+                            {
                                 take(px, py);
                             }
                         }
@@ -766,12 +840,63 @@ pub(super) fn measure_engagement(
     }
 }
 
-/// The reading a step is held to `load` on: [`measure_engagement`], or,
-/// under the swept-width measure where the sliver reading
-/// ([`compute_swept_width_with_slivers`]) exceeds `load.sliver_ceiling`,
-/// that reading (over the ceiling, so the step is refused).
+/// Squared distance from `(px, py)` to the segment `a -> b`.
+fn segment_distance_sq(a: P2, b: P2, px: f64, py: f64) -> f64 {
+    let (dx, dy) = (b.x - a.x, b.y - a.y);
+    let len_sq = dx * dx + dy * dy;
+    let t = if len_sq > 1e-20 {
+        (((px - a.x) * dx + (py - a.y) * dy) / len_sq).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let (qx, qy) = (a.x + t * dx - px, a.y + t * dy - py);
+    qx * qx + qy * qy
+}
+
+/// The reading of the disc at `(nx, ny)` heading `angle`, with the points
+/// inside `swept` read as cut: the plain lattice reading, or the sliver
+/// reading where that exceeds `load.sliver_ceiling` (and the plain one is
+/// within the ceiling).
+fn swept_reading(
+    grid: &MaterialGrid,
+    nx: f64,
+    ny: f64,
+    tool_radius: f64,
+    angle: f64,
+    load: &PassLoad,
+    swept: Option<(P2, P2)>,
+) -> f64 {
+    let reading = swept_width_on(grid, nx, ny, tool_radius, angle, false, swept);
+    if reading > load.ceiling || !load.sliver_ceiling.is_finite() {
+        return reading;
+    }
+    let slivers = swept_width_on(grid, nx, ny, tool_radius, angle, true, swept);
+    if slivers > load.sliver_ceiling {
+        slivers
+    } else {
+        reading
+    }
+}
+
+/// The reading a step from `from` to `(nx, ny)` is held to `load` on:
+/// [`measure_engagement`] at its end, or, under the swept-width measure
+/// where the sliver reading ([`compute_swept_width_with_slivers`]) exceeds
+/// `load.sliver_ceiling`, that reading (over the ceiling, so the step is
+/// refused).
+///
+/// Under the swept-width measure with a ceiling the step is also read
+/// ALONG its length (G-ADAPTPASSLOAD, 2026-09-30): at every planner cell
+/// between its ends, the disc there with the stretch already swept (the
+/// capsule from `from` to the previous point) read as cut, which is how
+/// the simulator reads a move sample by sample. The reading is the largest.
+/// A 2D walk step is three cells (R / 2 at R 3): read at its end alone, a
+/// step whose disc has left a lump of stock behind its middle cut it at
+/// 0.70 of D (the six-island pocket, measured on the exact geometry) while
+/// its end read 0.24. The end reading is unchanged, so no step the end
+/// alone refused is admitted.
 pub(crate) fn measure_step(
     grid: &MaterialGrid,
+    from: P2,
     nx: f64,
     ny: f64,
     tool_radius: f64,
@@ -787,25 +912,51 @@ pub(crate) fn measure_step(
     }
     let slivers = compute_swept_width_with_slivers(grid, nx, ny, tool_radius, angle);
     if slivers > load.sliver_ceiling {
-        slivers
-    } else {
-        reading
+        return slivers;
     }
+    let (dx, dy) = (nx - from.x, ny - from.y);
+    let n = (dx.hypot(dy) / grid.cell_size).ceil();
+    // `n` is a small positive count of cells (a step is a few cells long).
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let n = n.max(1.0) as usize;
+    let mut worst = reading;
+    let mut prev = from;
+    for k in 1..n {
+        let t = k as f64 / n as f64;
+        let at = P2::new(from.x + t * dx, from.y + t * dy);
+        let r = swept_reading(
+            grid,
+            at.x,
+            at.y,
+            tool_radius,
+            angle,
+            load,
+            Some((from, prev)),
+        );
+        if r > load.ceiling {
+            return r;
+        }
+        worst = worst.max(r);
+        prev = at;
+    }
+    worst
 }
 
 /// G-ADAPTPASSLOAD: the one predicate every 2D producer of a cutting step
-/// and every keep-down link step is held to. A step to `(nx, ny)` heading
-/// `angle`, read on `grid` as cut so far, is within the pass load when its
-/// reading does not exceed `load.ceiling`.
+/// and every keep-down link step is held to. A step from `from` to
+/// `(nx, ny)` heading `angle`, read on `grid` as cut so far, is within the
+/// pass load when its reading ([`measure_step`], along the step) does not
+/// exceed `load.ceiling`.
 pub(crate) fn step_within_pass_load(
     grid: &MaterialGrid,
+    from: P2,
     nx: f64,
     ny: f64,
     tool_radius: f64,
     angle: f64,
     load: &PassLoad,
 ) -> bool {
-    measure_step(grid, nx, ny, tool_radius, angle, load) <= load.ceiling
+    measure_step(grid, from, nx, ny, tool_radius, angle, load) <= load.ceiling
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -969,7 +1120,7 @@ pub(super) fn search_direction_with_metrics(
             return None;
         }
 
-        let engagement = measure_step(grid, nx, ny, tool_radius, angle, load);
+        let engagement = measure_step(grid, P2::new(cx, cy), nx, ny, tool_radius, angle, load);
         if engagement < load.presence {
             return None;
         }

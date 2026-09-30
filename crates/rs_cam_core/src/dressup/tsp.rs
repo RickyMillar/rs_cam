@@ -181,9 +181,15 @@ fn total_rapid_distance(order: &[usize], segments: &[Segment]) -> f64 {
 /// 1. Derive barriers from the input spans (if any) and slice the toolpath
 ///    into barrier-delimited groups.
 /// 2. Within each group: split into cutting segments, apply nearest-neighbor
-///    + 2-opt, then reassemble with retract/rapid/plunge between segments.
-/// 3. Build a `MoveRemap` describing where each old move ended up.
-/// 4. Remap input spans through the permutation; drop any non-`Operation`
+///    and 2-opt, then reassemble with retract/rapid/plunge between segments.
+///    The reassembly replaces the group only when its rapid travel is
+///    strictly shorter than the group's own, from where the tool is;
+///    otherwise the group is copied as it is.
+/// 3. The no-regression guard: when the output's total rapid travel is not
+///    strictly shorter than the input's, the input is returned unchanged
+///    (an index-preserving transform). The pass never lengthens rapids.
+/// 4. Build a `MoveRemap` describing where each old move ended up.
+/// 5. Remap input spans through the permutation; drop any non-`Operation`
 ///    span that fragmented across barriers / segments (F2.2).
 ///
 /// Hands back the permutation under the C1 provenance contract, so every
@@ -275,6 +281,24 @@ pub fn optimize_rapid_order(
         );
     }
 
+    // The pass-level half of the no-regression guard. Each group already
+    // keeps the planner's order unless its rebuild is shorter from where
+    // the tool is, but a group kept as it is ends where the input ended,
+    // which moves the next group's entry. So the pass as a whole: when the
+    // output's rapid travel is not strictly shorter than the input's, the
+    // input comes out unchanged, move for move.
+    if result.total_rapid_distance() >= toolpath.total_rapid_distance() - RAPID_GAIN_EPS_MM {
+        return Transformed::index_preserving(AnnotatedToolpath {
+            toolpath,
+            spans,
+            spans_valid: input_valid,
+            planner_engagement,
+            rest_grid,
+            rest_regions,
+            area_regions,
+        });
+    }
+
     let new_n = result.moves.len();
     let remap = MoveRemap { old_to_new };
 
@@ -332,19 +356,135 @@ fn optimize_one_group(
         return;
     }
 
+    let here = result.moves.last().map(|m| m.target);
+    let verbatim = verbatim_group(toolpath, group.clone(), safe_z, here);
     if segments.len() == 1 {
         // Single segment: no reordering. Append the moves as-is, including
         // any framing rapids from the input range.
-        for idx in group {
-            let dst = result.moves.len();
-            result.moves.push(toolpath.moves[idx].clone());
-            old_to_new[idx] = Some(dst..dst + 1);
-        }
+        append_verbatim(verbatim, group, result, old_to_new);
         return;
     }
 
+    // No-regression guard: the rebuilt group (the TSP order, every segment
+    // re-framed at `safe_z`) replaces the planner's own order only when it
+    // is strictly shorter in rapid travel, measured from where the tool
+    // actually is. Otherwise the group keeps its segment order AND its
+    // original framing, move for move. The planner often frames its
+    // segments below `safe_z`, and a re-framed group already in its best
+    // order is longer by every lift to `safe_z` it adds.
     let order = run_tsp(&segments);
-    rebuild_group(&segments, &order, safe_z, result, old_to_new);
+    let mut rebuilt = Toolpath::new();
+    let placed = rebuild_group(&segments, &order, safe_z, here, &mut rebuilt);
+    if rapid_length_from(here, &rebuilt.moves)
+        < rapid_length_from(here, &verbatim.moves) - RAPID_GAIN_EPS_MM
+    {
+        let base = result.moves.len();
+        result.moves.extend(rebuilt.moves);
+        for (src, local) in placed {
+            old_to_new[src] = Some(base + local..base + local + 1);
+        }
+    } else {
+        append_verbatim(verbatim, group, result, old_to_new);
+    }
+}
+
+/// A rapid-travel gain below this is not a gain: the guard keeps the
+/// planner's order. It only has to absorb `f64` noise in two sums of the
+/// same lengths.
+const RAPID_GAIN_EPS_MM: f64 = 1e-9;
+
+/// Rapid travel (3D length, the measure of [`Toolpath::total_rapid_distance`])
+/// of `moves` appended after a tool at `here`. With no `here` the first
+/// move has no start and is not counted, as in `total_rapid_distance`.
+fn rapid_length_from(here: Option<P3>, moves: &[Move]) -> f64 {
+    let mut prev = here;
+    let mut dist = 0.0;
+    for m in moves {
+        if let (Some(p), MoveType::Rapid) = (prev, m.move_type) {
+            dist += (m.target - p).norm();
+        }
+        prev = Some(m.target);
+    }
+    dist
+}
+
+/// The group `[group]` of the input as it is, preceded by the rejoin of
+/// [`rejoin_displaced_fed_start`] when its fed first move would otherwise
+/// be fed from elsewhere. The input moves follow in order, so input move
+/// `group.start + k` sits at `len - group.len() + k`.
+// SAFETY: `group` is an in-bounds input move range.
+#[allow(clippy::indexing_slicing)]
+fn verbatim_group(
+    toolpath: &Toolpath,
+    group: Range<usize>,
+    safe_z: f64,
+    here: Option<P3>,
+) -> Toolpath {
+    let mut out = Toolpath::new();
+    rejoin_displaced_fed_start(toolpath, group.start, safe_z, here, &mut out);
+    out.moves.extend_from_slice(&toolpath.moves[group]);
+    out
+}
+
+/// Append a [`verbatim_group`] to `result`, each input move of `group` to its
+/// own slot.
+// SAFETY: `group` is the in-bounds input range `verbatim` was built from.
+#[allow(clippy::indexing_slicing)]
+fn append_verbatim(
+    verbatim: Toolpath,
+    group: Range<usize>,
+    result: &mut Toolpath,
+    old_to_new: &mut [Option<Range<usize>>],
+) {
+    let first = result.moves.len() + verbatim.moves.len() - group.len();
+    result.moves.extend(verbatim.moves);
+    for (k, idx) in group.enumerate() {
+        old_to_new[idx] = Some(first + k..first + k + 1);
+    }
+}
+
+/// Before a group is appended verbatim: when its first move is a FED move
+/// and the tool is no longer where that move started in the input, retract
+/// and rapid over the move's target first, so the fed move becomes a
+/// vertical descent (the shape [`rebuild_group`] gives every segment start).
+///
+/// G-TIERBURIAL (`planning/tiered_finish_2026-09-30/RESULTS.md`): a region
+/// span starts at the first move of the router's surface link INTO that
+/// region, so a barrier cuts the fed chain "cut, link, next region" between
+/// the cut and the link. When the group before the barrier is reordered it
+/// ends at another segment's end, retracted; the next group, copied as it
+/// is, then fed its link from there. On the rivmap100 fine tier with
+/// `intra_region_hookup_mm` 0 that was a 29.36 mm `Linking` feed 3.453 mm
+/// under the surface. A group whose predecessor is still in place is
+/// copied byte-identically.
+// SAFETY: `start` is an in-bounds input index (a group start), and `start -
+// 1` is read only when `start > 0`.
+#[allow(clippy::indexing_slicing)]
+fn rejoin_displaced_fed_start(
+    toolpath: &Toolpath,
+    start: usize,
+    safe_z: f64,
+    here: Option<P3>,
+    out: &mut Toolpath,
+) {
+    const SAME_POSITION_MM: f64 = 1e-9;
+    if start == 0 || matches!(toolpath.moves[start].move_type, MoveType::Rapid) {
+        return;
+    }
+    let (Some(here), planned_from) = (here, toolpath.moves[start - 1].target) else {
+        return;
+    };
+    let displaced = (here.x - planned_from.x).abs() > SAME_POSITION_MM
+        || (here.y - planned_from.y).abs() > SAME_POSITION_MM
+        || (here.z - planned_from.z).abs() > SAME_POSITION_MM;
+    if !displaced {
+        return;
+    }
+    let target = toolpath.moves[start].target;
+    if here.z < safe_z {
+        out.rapid_to_with_intent(P3::new(here.x, here.y, safe_z), MoveIntent::Retract);
+    }
+    out.rapid_to_with_intent(P3::new(target.x, target.y, safe_z), MoveIntent::Linking);
 }
 
 /// Nearest-neighbor seed order over `segments`.
@@ -451,8 +591,8 @@ fn run_tsp(segments: &[Segment]) -> Vec<usize> {
 }
 
 /// Append the segments in `order` (with retract/rapid/plunge interstitial
-/// rapids) to `result`, recording each input cutting move's new slot in
-/// `old_to_new`.
+/// rapids) to `out`, a tool at `here` before it, and return each input
+/// cutting move's slot in `out` as `(input index, slot)`.
 ///
 /// # Intents on the synthesized rapids
 ///
@@ -477,16 +617,16 @@ fn run_tsp(segments: &[Segment]) -> Vec<usize> {
 /// `LeadIn`, `EntryPlunge` and `FinishingCut` survive the pass untouched,
 /// which is the invariant the session's drill entry-strip predicate
 /// depends on.
-// SAFETY: `order` is a permutation of `segments` indices, and `src_range`
-// values were derived from the bounded input group used to size `old_to_new`.
+// SAFETY: `order` is a permutation of `segments` indices.
 #[allow(clippy::indexing_slicing)]
 fn rebuild_group(
     segments: &[Segment],
     order: &[usize],
     safe_z: f64,
-    result: &mut Toolpath,
-    old_to_new: &mut [Option<Range<usize>>],
-) {
+    here: Option<P3>,
+    out: &mut Toolpath,
+) -> Vec<(usize, usize)> {
+    let mut placed = Vec::new();
     for (idx, &seg_idx) in order.iter().enumerate() {
         let seg = &segments[seg_idx];
 
@@ -499,25 +639,22 @@ fn rebuild_group(
             // (current low Z → seg.start.xy, safe_z) — slicing through stock.
             // Mirror the (idx > 0) branch: vertical retract first, then
             // horizontal traverse at safe_z.
-            if let Some(last) = result.moves.last()
-                && last.target.z < safe_z
+            if let Some(last) = here
+                && last.z < safe_z
             {
-                result.rapid_to_with_intent(
-                    P3::new(last.target.x, last.target.y, safe_z),
-                    MoveIntent::Retract,
-                );
+                out.rapid_to_with_intent(P3::new(last.x, last.y, safe_z), MoveIntent::Retract);
             }
-            result.rapid_to_with_intent(
+            out.rapid_to_with_intent(
                 P3::new(seg.start.x, seg.start.y, safe_z),
                 MoveIntent::Linking,
             );
         } else {
             let prev_seg = &segments[order[idx - 1]];
-            result.rapid_to_with_intent(
+            out.rapid_to_with_intent(
                 P3::new(prev_seg.end.x, prev_seg.end.y, safe_z),
                 MoveIntent::Retract,
             );
-            result.rapid_to_with_intent(
+            out.rapid_to_with_intent(
                 P3::new(seg.start.x, seg.start.y, safe_z),
                 MoveIntent::Linking,
             );
@@ -525,19 +662,19 @@ fn rebuild_group(
 
         let src_start = seg.src_range.start;
         for (k, m) in seg.moves.iter().enumerate() {
-            let new_idx = result.moves.len();
-            result.moves.push(m.clone());
-            old_to_new[src_start + k] = Some(new_idx..new_idx + 1);
+            placed.push((src_start + k, out.moves.len()));
+            out.moves.push(m.clone());
         }
     }
 
     if let Some(last_seg_idx) = order.last() {
         let last_seg = &segments[*last_seg_idx];
-        result.rapid_to_with_intent(
+        out.rapid_to_with_intent(
             P3::new(last_seg.end.x, last_seg.end.y, safe_z),
             MoveIntent::Retract,
         );
     }
+    placed
 }
 
 /// Fill `None` slots within a group's input range with zero-width markers at
@@ -772,6 +909,106 @@ mod tests {
             .filter(|m| matches!(m.move_type, MoveType::Linear { .. }))
             .count();
         assert_eq!(cutting_count, 8, "All cutting moves must be preserved");
+    }
+
+    /// Move for move, bit for bit: target bits, move type and intent.
+    fn assert_same_moves(a: &Toolpath, b: &Toolpath) {
+        assert_eq!(a.moves.len(), b.moves.len(), "move count changed");
+        for (k, (x, y)) in a.moves.iter().zip(&b.moves).enumerate() {
+            let bits = |p: &P3| (p.x.to_bits(), p.y.to_bits(), p.z.to_bits());
+            assert_eq!(bits(&x.target), bits(&y.target), "move {k} target");
+            assert_eq!(x.move_type, y.move_type, "move {k} type");
+            assert_eq!(x.intent, y.intent, "move {k} intent");
+        }
+    }
+
+    /// Four segments along a line, framed the way a planner frames them:
+    /// lift to `clear_z`, cross, descend. Already in nearest-first order.
+    fn in_order_row(clear_z: f64) -> Toolpath {
+        let mut tp = Toolpath::new();
+        for k in 0..4 {
+            let x0 = 10.0 * f64::from(k);
+            tp.rapid_to(P3::new(x0, 0.0, clear_z));
+            tp.feed_to(P3::new(x0, 0.0, -1.0), 500.0);
+            tp.feed_to(P3::new(x0 + 5.0, 0.0, -1.0), 1000.0);
+            tp.rapid_to(P3::new(x0 + 5.0, 0.0, clear_z));
+        }
+        tp
+    }
+
+    /// The no-regression guard (lead decision 2026-09-30): a toolpath
+    /// already in its best order comes out unchanged, whether its planner
+    /// framed the segments at `safe_z` (the rebuild is the same length) or
+    /// below it (the rebuild is longer by every lift to `safe_z`).
+    #[test]
+    fn a_toolpath_already_in_its_best_order_comes_out_unchanged() {
+        let safe_z = 10.0;
+        for clear_z in [safe_z, 2.0] {
+            let tp = in_order_row(clear_z);
+            let out = opt_unannotated(&tp, safe_z);
+            assert_same_moves(&tp, &out);
+        }
+        // Non-vacuity: the rebuild of the low-framed row is longer, so the
+        // guard is what kept it. Every segment re-framed at `safe_z`.
+        let low = in_order_row(2.0);
+        let segments = split_into_segments(&low, None);
+        let order = run_tsp(&segments);
+        assert_eq!(order, vec![0, 1, 2, 3], "the row is in its best order");
+        let mut rebuilt = Toolpath::new();
+        let _ = rebuild_group(&segments, &order, safe_z, None, &mut rebuilt);
+        assert!(
+            rapid_length_from(None, &rebuilt.moves) > low.total_rapid_distance() + 1.0,
+            "the rebuilt row must be longer, or this test does not reach the guard"
+        );
+    }
+
+    /// Per group: a barrier group already in order keeps its own framing
+    /// while the group beside it is still reordered.
+    #[test]
+    fn the_guard_keeps_an_ordered_group_and_still_reorders_its_neighbour() {
+        let safe_z = 10.0;
+        let feed = 1000.0;
+        let mut tp = Toolpath::new();
+        // Group 1: out of order (0, 100, 12, 100 on a row at y 0).
+        for (x0, x1) in [(0.0, 10.0), (100.0, 110.0), (12.0, 20.0), (120.0, 130.0)] {
+            tp.moves.extend(make_segment_toolpath(
+                &[P3::new(x0, 0.0, -1.0), P3::new(x1, 0.0, -1.0)],
+                safe_z,
+                feed,
+            ));
+        }
+        let group_2_start = tp.moves.len();
+        // Group 2: in order, framed low. Its first move is a rapid, so no
+        // rejoin applies: after the barrier it must come out as it went in.
+        for k in 0..3 {
+            let x0 = 10.0 * f64::from(k);
+            tp.rapid_to(P3::new(x0, 50.0, 2.0));
+            tp.feed_to(P3::new(x0, 50.0, -1.0), feed);
+            tp.feed_to(P3::new(x0 + 5.0, 50.0, -1.0), feed);
+            tp.rapid_to(P3::new(x0 + 5.0, 50.0, 2.0));
+        }
+        let n = tp.moves.len();
+        let spans = vec![
+            Span::new(0, group_2_start, SpanKind::RapidOrderBarrier),
+            Span::new(group_2_start, n, SpanKind::RapidOrderBarrier),
+        ];
+        let out = without_provenance(optimize_rapid_order(
+            AnnotatedToolpath::with_spans(tp.clone(), spans),
+            safe_z,
+            None,
+        ))
+        .toolpath;
+        assert!(
+            out.total_rapid_distance() < tp.total_rapid_distance(),
+            "group 1 must still be reordered"
+        );
+        let tail = Toolpath {
+            moves: out.moves[out.moves.len() - (n - group_2_start)..].to_vec(),
+        };
+        let group_2 = Toolpath {
+            moves: tp.moves[group_2_start..].to_vec(),
+        };
+        assert_same_moves(&group_2, &tail);
     }
 
     #[test]

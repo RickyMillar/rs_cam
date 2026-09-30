@@ -19,6 +19,8 @@ principal type is `MachineProfile` in `mod.rs`.
 - The cycle time and the predicted feed come from ONE pass: `digest_moves`
   then `walk_junctions`, over the one physics site `solve_move`. Do not add a
   second digest loop or a second junction walk (EDG-07).
+- A junction reads each move's end tangent (`move_end_tangents`; an arc's
+  own tangent, a helix's with its slope), never an arc's chord.
 
 ## Sentries
 

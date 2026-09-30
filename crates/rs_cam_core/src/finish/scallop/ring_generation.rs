@@ -9,8 +9,16 @@ use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::{Polygon2, offset_polygon};
+use crate::surface::chord_refine::{CHORD_REFINE_MAX_DEPTH, refine_chord};
 use crate::surface::dropcutter::point_drop_cutter;
 use crate::tool::MillingCutter;
+
+/// The scallop's name for the shared chord-refinement context: the rings,
+/// the ring connectors and their probe step (`ChordRefineCtx::from_cell`).
+pub(super) use crate::surface::chord_refine::ChordRefineCtx as RingLiftCtx;
+/// A continuous-mode ring-to-ring connector, refined like a ring chord
+/// (G-TIERBURIAL). The shared name is `refine_track`.
+pub(super) use crate::surface::chord_refine::refine_track as refine_connector;
 
 use super::{
     PolygonReduce, RingCascade, RingCascadeMetrics, RingSource, RingStepoverDecision,
@@ -40,8 +48,11 @@ use super::{
 /// longer decides where a ring is allowed to cut — only where it is *sampled*
 /// (`RingLiftCtx::probe_step`, ring decimation spacing), which is what that
 /// grid is actually for.
+///
+/// The predicate itself lives in [`crate::surface::chord_refine`] with the
+/// chord refinement that shares it (G-TIERBURIAL).
 fn point_is_covered(ctx: &RingLiftCtx<'_>, x: f64, y: f64) -> bool {
-    crate::surface::dropcutter::point_is_over_mesh_xy(x, y, ctx.mesh, ctx.index)
+    crate::surface::chord_refine::point_is_covered(ctx, x, y)
 }
 
 /// Lift a 2D polygon ring to 3D by drop-cutter Z queries, pairing each point
@@ -113,105 +124,6 @@ fn decimate_closed_ring(ring: &[P2], min_spacing: f64) -> Option<Vec<P2>> {
     (out.len() >= 3).then_some(out)
 }
 
-/// Everything a ring lift + chord refinement needs, bundled so the
-/// per-ring call sites don't each thread eight loose arguments.
-pub(super) struct RingLiftCtx<'a> {
-    pub(super) mesh: &'a TriangleMesh,
-    pub(super) index: &'a SpatialIndex,
-    pub(super) cutter: &'a dyn MillingCutter,
-    pub(super) stock_to_leave: f64,
-    pub(super) min_z: f64,
-    /// Max allowed gap between a straight feed chord and the true
-    /// drop-cutter surface under it (the op's path tolerance).
-    pub(super) chord_tolerance: f64,
-    /// Spacing at which chords are probed against the surface:
-    /// `max(cell_size / 2, CHORD_REFINE_MIN_SEG_MM)`.
-    pub(super) probe_step: f64,
-}
-
-impl<'a> RingLiftCtx<'a> {
-    /// The context [`generate_scallop_rings_with_cancel`] lifts rings with:
-    /// the probe step comes from the generation grid's `cell_size`.
-    pub(super) fn new(
-        mesh: &'a TriangleMesh,
-        index: &'a SpatialIndex,
-        cutter: &'a dyn MillingCutter,
-        stock_to_leave: f64,
-        min_z: f64,
-        chord_tolerance: f64,
-        cell_size: f64,
-    ) -> Self {
-        Self {
-            mesh,
-            index,
-            cutter,
-            stock_to_leave,
-            min_z,
-            chord_tolerance,
-            probe_step: (cell_size * 0.5).max(CHORD_REFINE_MIN_SEG_MM),
-        }
-    }
-}
-
-/// The interior points of a continuous-mode ring-to-ring connector from `a`
-/// to `b` (both exact drop-cutter points), refined against the drop-cutter
-/// surface exactly as a ring chord is. `None` when the connector cannot
-/// track the surface within the chord tolerance (a coverage gap, or a piece
-/// the depth cap left failing): the caller then retracts instead.
-///
-/// G-TIERBURIAL (`planning/tiered_finish_2026-09-30/RESULTS.md`): the
-/// connector was one straight feed up to `3 x cusp_r` long, never probed.
-/// On the rivmap100 fine tier it sat up to 0.836 mm below the drop-cutter
-/// surface.
-pub(super) fn refine_connector(a: P3, b: P3, ctx: &RingLiftCtx<'_>) -> Option<Vec<P3>> {
-    let mut out = Vec::new();
-    let tracks = refine_chord(a, b, ctx, CHORD_REFINE_MAX_DEPTH, &mut out);
-    (tracks && out.iter().all(|&(_, kept)| kept)).then(|| out.into_iter().map(|(p, _)| p).collect())
-}
-
-/// Floor (mm) on chord-refinement probe/segment spacing. Refinement must
-/// not fragment paths into segments the junction/accel integrator pays
-/// dearly for (P0 probe: sub-0.3 mm segment junctions dominate finishing
-/// runtime) — 0.15 mm is half the wanaka raster reference pitch, i.e.
-/// refined scallop is never more finely segmented than 2× the quality
-/// reference it is chasing.
-const CHORD_REFINE_MIN_SEG_MM: f64 = 0.15;
-
-/// The shortest chord chord-refinement will SPLIT, and so half the shortest
-/// segment it can create (mm).
-///
-/// Distinct from [`CHORD_REFINE_MIN_SEG_MM`], which floors how densely a
-/// chord is *probed*: this floors what refinement is allowed to *emit*. The
-/// two were the same number until M4 phase C, and conflating them is what
-/// let a chord shorter than the probe step escape refinement entirely — the
-/// mechanism behind the iso-field's −995 µm localised gouge and the shipped
-/// cascade's −108.6 µm one (`CHECKPOINT_C_EVIDENCE.md` §3.8).
-///
-/// 50 µm: fifty times [`crate::toolpath::MIN_EMITTED_SEGMENT_MM`] (the
-/// coarsest shipped post's coordinate quantum, PR-8d), and five times the
-/// 10 µm junction-cost bar M4's segment-length gate is written in — so
-/// refinement can never manufacture a segment either the post or the
-/// accel integrator would object to. Refinement only ever splits a chord
-/// that FAILS `chord_tolerance`, so on smooth ground this floor is never
-/// reached and nothing is inserted at all.
-const CHORD_REFINE_MIN_SPLIT_MM: f64 = 0.050;
-
-/// Fraction of the op's chord tolerance at which refinement stops splitting.
-///
-/// Refinement measures a chord's deviation at a finite set of probes and
-/// compares that to the tolerance — but the worst PROBE is not the worst
-/// POINT, and on a convex feature the two differ by a third (measured, M4
-/// phase C grooved block: worst probe 97.8 µm, true worst 131.7 µm at a
-/// 100 µm tolerance). Accepting at `1.0` therefore emits chords that violate
-/// the tolerance the operator set. The margin makes the sampling error
-/// explicit rather than letting it show up as an over-cut.
-const CHORD_REFINE_ACCEPT_FRACTION: f64 = 0.70;
-
-/// Depth cap on recursive chord splitting. Combined with the probe-step
-/// floor this bounds worst-case insertion on cliff edges, where the chord
-/// error never converges and every level would otherwise split.
-const CHORD_REFINE_MAX_DEPTH: usize = 5;
-
 pub(super) fn ring_to_3d(ring: &[P2], ctx: &RingLiftCtx<'_>) -> Vec<(P3, bool)> {
     let lifted: Vec<(P3, bool)> = ring
         .iter()
@@ -262,158 +174,6 @@ fn refine_ring_chords(ring: Vec<(P3, bool)>, ctx: &RingLiftCtx<'_>) -> Vec<(P3, 
         }
     }
     out
-}
-
-/// Probe the open interval between `a` and `b`; if the worst deviation
-/// between chord and drop-cutter surface exceeds tolerance, insert the
-/// exact surface point there and recurse into both halves. Pushes only
-/// INTERIOR points (in order); the caller owns the endpoints. A coverage
-/// gap under the chord (hole / mesh edge) pushes one excluded point so the
-/// emission run-splitter retracts around it instead of feeding across.
-///
-/// Returns `true` when every piece of the chord was accepted (or is too
-/// short to split), `false` when a coverage gap was found or the depth cap
-/// stopped a piece that still failed. The ring lift ignores it;
-/// [`refine_connector`] refuses a connector on `false`.
-fn refine_chord(
-    a: P3,
-    b: P3,
-    ctx: &RingLiftCtx<'_>,
-    depth: usize,
-    out: &mut Vec<(P3, bool)>,
-) -> bool {
-    if depth == 0 {
-        return false;
-    }
-    let dx = b.x - a.x;
-    let dy = b.y - a.y;
-    let len = (dx * dx + dy * dy).sqrt();
-    if !len.is_finite() {
-        return false;
-    }
-    if len <= 2.0 * CHORD_REFINE_MIN_SPLIT_MM {
-        // Too short to split without emitting sub-floor segments, so probing
-        // it could only ever discover an error refinement is not allowed to
-        // correct. This is the ONLY length at which refinement declines.
-        return true;
-    }
-    // At least one interior probe, ALWAYS.
-    //
-    // M4 phase C: this used to `return` when `ceil(len / probe_step) < 2`,
-    // i.e. whenever a chord was shorter than the probe step — "nothing to
-    // probe at this scale". That reasoning holds for a surface sampled on a
-    // grid; it is false for a drop-cutter query, which is exact at any XY.
-    // At a convex rim the tool-contact height is strongly convex over a
-    // fraction of a cell, so a 0.27 mm chord can pass 0.7 mm under the
-    // surface — and the old guard skipped it in silence.
-    //
-    // The exemption was invisible while every chord came from a decimated
-    // offset ring (floored at `0.75 x cell`, always above `probe_step`).
-    // Refinement's OWN halves are not: splitting a 0.56 mm chord yields two
-    // 0.28 mm ones, which is how the shipped cascade reached a −108.6 µm
-    // gouge and the undecimated iso-field reached −995 µm on the grooved
-    // block (`CHECKPOINT_C_EVIDENCE.md` §3.8).
-    //
-    // And at least EIGHT intervals, so the check cannot alias past the worst
-    // point. `probe_step` is sized from the generation grid (`cell / 2`),
-    // which on a 0.75 mm cell affords a 0.7 mm chord exactly one interior
-    // probe — at its midpoint. A chord crossing a groove wall has its worst
-    // deviation nowhere near the middle: measured 131.7 µm at t = 0.296 on
-    // the iso-field and 97.8 µm at t = 0.684 on the shipped cascade, both
-    // invisible to a midpoint probe, the latter squeaking under a 100 µm
-    // tolerance it was in fact violating. The grid sizes ring PLACEMENT; it
-    // has no business sizing a tolerance check, which is an exact
-    // drop-cutter query at any XY.
-    //
-    // M4 phase C set that minimum at FOUR and called it enough to stop the
-    // aliasing. Wave 14 falsified that on the mixed-slope ribbon: a 0.374 mm
-    // chord probed at t = 0.25/0.50/0.75 read under the 70 µm accept
-    // threshold while its true worst sat at t = 0.316, 142.4 µm under the
-    // surface — a probe-to-truth ratio of over 2.0 against the 1.35 the
-    // accept margin was calibrated for. Four intervals did not survive a
-    // change of endpoint PHASE, which means it was never bounding anything;
-    // it was passing by luck of where the ring vertices happened to land.
-    // Sampling error on a smooth surface falls with the square of the probe
-    // spacing, so eight intervals buys back a factor of four — enough that
-    // the accept margin is doing the job it is documented to do rather than
-    // covering for the probe set. It costs one extra drop-cutter query per
-    // three on chords that are probed at all.
-    let step = ctx
-        .probe_step
-        .min(len * 0.125)
-        .max(CHORD_REFINE_MIN_SPLIT_MM);
-    let segments = (len / step).ceil().max(2.0);
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let segments = segments as usize;
-
-    // (t, surface_z, |err|) of the worst interior probe.
-    let mut worst: Option<(f64, f64, f64)> = None;
-    for i in 1..segments {
-        let t = i as f64 / segments as f64;
-        let x = a.x + dx * t;
-        let y = a.y + dy * t;
-        let cl = point_drop_cutter(x, y, ctx.mesh, ctx.index, ctx.cutter);
-        if !cl.z.is_finite() || !point_is_covered(ctx, x, y) {
-            out.push((P3::new(x, y, ctx.min_z + ctx.stock_to_leave), false));
-            return false;
-        }
-        let surface_z = cl.z + ctx.stock_to_leave;
-        let chord_z = a.z + (b.z - a.z) * t;
-        let err = (surface_z - chord_z).abs();
-        if worst.is_none_or(|(_, _, we)| err > we) {
-            worst = Some((t, surface_z, err));
-        }
-    }
-    let Some((t, surface_z, err)) = worst else {
-        return true;
-    };
-    // Accept with a margin, because `err` is the worst PROBE, not the worst
-    // point: a finite probe set on a convex rim always understates, and
-    // accepting at exactly the tolerance therefore ships chords that violate
-    // it. Measured on the M4 grooved block at a 100 µm tolerance: worst probe
-    // 97.8 µm, true worst 131.7 µm. The margin buys the difference back and
-    // costs points only on chords that were already failing.
-    if err <= ctx.chord_tolerance * CHORD_REFINE_ACCEPT_FRACTION {
-        return true;
-    }
-    // The split point must not orphan a sub-floor segment on either side, so
-    // it is CLAMPED into the admissible band rather than abandoned.
-    //
-    // Wave 14: this used to `return` whenever the worst probe sat within
-    // `CHORD_REFINE_MIN_SPLIT_MM` of either end — i.e. a chord whose worst
-    // deviation is near an endpoint was left *entirely* unrefined, tolerance
-    // violation and all. Denser probing made that worse rather than better,
-    // which is how it surfaced: on the narrow ridge a 0.363 mm chord whose
-    // true worst sits at t = 0.158 read its worst probe at t = 0.125, whose
-    // head (45 µm) is under the 50 µm floor, so refinement declined and
-    // shipped a 216.9 µm violation of a 100 µm tolerance. With four probes
-    // the same chord split at t = 0.25 and passed — the guard was rewarding
-    // a coarser check, which is exactly backwards.
-    //
-    // Clamping keeps the floor's promise (no sub-50 µm segment is emitted)
-    // while still cutting the chord in two, and the offending stretch lands
-    // in the longer half where recursion can reach it. `len > 2 ×
-    // MIN_SPLIT` is guaranteed above, so the band is never empty.
-    let t_floor = CHORD_REFINE_MIN_SPLIT_MM / len;
-    let t_split = t.clamp(t_floor, 1.0 - t_floor);
-    let (wx, wy) = (a.x + dx * t_split, a.y + dy * t_split);
-    let split_z = if (t_split - t).abs() < f64::EPSILON {
-        surface_z
-    } else {
-        // The clamp moved the point, so the surface height there is a
-        // different query — never re-use the probe's answer for it.
-        let cl = point_drop_cutter(wx, wy, ctx.mesh, ctx.index, ctx.cutter);
-        if !cl.z.is_finite() || !point_is_covered(ctx, wx, wy) {
-            out.push((P3::new(wx, wy, ctx.min_z + ctx.stock_to_leave), false));
-            return false;
-        }
-        cl.z + ctx.stock_to_leave
-    };
-    let w = P3::new(wx, wy, split_z);
-    let head = refine_chord(a, w, ctx, depth - 1, out);
-    out.push((w, true));
-    let tail = refine_chord(w, b, ctx, depth - 1, out);
-    head && tail
 }
 
 /// Sum, over one lifted ring, of the XY perimeter length "owned" by points
@@ -529,7 +289,7 @@ pub(super) fn generate_scallop_rings_with_cancel(
     mut trace: Option<&mut ScallopStepoverTrace>,
     cancel: &dyn CancelCheck,
 ) -> Result<RingCascade, Cancelled> {
-    let lift_ctx = RingLiftCtx::new(
+    let lift_ctx = RingLiftCtx::from_cell(
         mesh,
         index,
         cutter,

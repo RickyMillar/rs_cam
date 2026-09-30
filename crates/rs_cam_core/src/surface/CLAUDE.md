@@ -6,7 +6,8 @@ The two cutter walks and the derived surface fields. The entry point is
 ## Files
 
 - `mod.rs` — the facade.
-- `dropcutter.rs` — the drop-cutter walk for 3D finishing.
+- `dropcutter.rs` — the drop-cutter walk for 3D finishing. `chord_refine.rs`
+  — split a straight feed that leaves the drop-cutter surface (G-TIERBURIAL).
 - `pushcutter.rs` — the horizontal push along a fiber at constant Z.
 - `slope.rs` — surface slope analysis and the heightmap infrastructure.
 - `rest_field.rs` — the rest-depth-field pencil detector, in tool-offset

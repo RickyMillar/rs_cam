@@ -405,8 +405,19 @@ fn tile_raster_true_surface_tracks_the_analytic_surface() {
 /// Where it does go negative, the drop-cutter's contact profile and the
 /// oracle's stamp profile disagree — which is exactly what must be known
 /// before a floor is quoted as a limit.
+///
+/// G-TIERBURIAL (`planning/tiered_finish_2026-09-30/RESULTS.md`, part 3):
+/// this test was `tool_reach_floor_error_is_mesh_faceting_and_shrinks_with_it`
+/// and asserted that the negative error shrinks as the mesh is refined
+/// (worst -22.93 / -5.56 / -0.00 µm at mesh steps 0.20 / 0.10 / 0.05 mm).
+/// The error was not faceting. `BallEndmill::edge_drop` placed the contact
+/// on a sloped edge at the mirrored, downhill point, so the drop was low at
+/// every facet-edge contact; a finer mesh has shorter edges and a smaller
+/// error. With the contact at the tangent point the worst is 0 to rounding
+/// at every step (about -1e-12 µm), so the claim is now the true one: the
+/// floor has no negative error at all.
 #[test]
-fn tool_reach_floor_error_is_mesh_faceting_and_shrinks_with_it() {
+fn tool_reach_floor_has_no_negative_error_at_any_mesh_step() {
     let ball = probe_ball();
     let cell = 0.05;
     println!("\n| mesh step mm | worst µm | p50 µm | p99 µm |");
@@ -436,18 +447,14 @@ fn tool_reach_floor_error_is_mesh_faceting_and_shrinks_with_it() {
 
     // A Ø1 ball reaches every point of an R12 dome, so the TRUE floor is
     // zero everywhere and every micron below it is instrument error. The
-    // error is the mesh's own faceting — the drop-cutter contacts facet
-    // edges while the tile-raster reference samples facet planes at cell
-    // centres — so refining the mesh must shrink it.
+    // drop-cutter places the ball tangent to a facet, an edge or a vertex,
+    // so the swept envelope never dips below the mesh: at every mesh step
+    // the worst is zero to rounding. 1e-6 µm (1 pm) is six orders above the
+    // measured -1e-12 µm and far below any mesh error.
     assert!(
-        worsts[2] > worsts[0],
-        "refining the mesh must shrink the floor's negative error: {worsts:?}"
-    );
-    assert!(
-        worsts[2] > -15.0,
-        "the floor must be good to well under a dial on a 0.05 mm mesh; \
-         worst = {:.2} µm",
-        worsts[2]
+        worsts.iter().all(|&w| w > -1e-6),
+        "the tool-reach floor dips below the model at some mesh step \
+         (worst µm per step 0.20 / 0.10 / 0.05): {worsts:?}"
     );
 }
 

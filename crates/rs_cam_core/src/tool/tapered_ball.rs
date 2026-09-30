@@ -31,7 +31,6 @@ pub struct TaperedBallEndmill {
     pub cutting_length: f64,
     pub helix_deg: f64,
     // Precomputed trig values
-    alpha_rad: f64,
     tan_alpha: f64,
     sin_alpha: f64,
     cos_alpha: f64,
@@ -64,7 +63,6 @@ impl TaperedBallEndmill {
             taper_half_angle_deg,
             cutting_length,
             helix_deg: 30.0,
-            alpha_rad,
             tan_alpha,
             sin_alpha,
             cos_alpha,
@@ -79,8 +77,9 @@ impl TaperedBallEndmill {
         self.shaft_diameter / 2.0
     }
 
+    #[cfg(test)]
     fn alpha(&self) -> f64 {
-        self.alpha_rad
+        self.taper_half_angle_deg.to_radians()
     }
 
     /// Radius where ball meets cone tangentially.
@@ -273,127 +272,58 @@ impl MillingCutter for TaperedBallEndmill {
             }
         }
 
-        // Region 2 also: Tip contact on horizontal surfaces (cone tip is the ball tip)
+        // The facet point under the axis: the tip can never sit lower than
+        // it, so it is a valid lower bound. It is NOT a tangency on a sloped
+        // facet, so it does not set `found`: `drop_cutter` skips a
+        // triangle's edges and vertices when `found` is set, and at a mesh
+        // boundary nothing else tests that edge. G-TIERBURIAL
+        // (`planning/tiered_finish_2026-09-30/RESULTS.md`): on the rivmap100
+        // board edge the tool sat 0.61 mm under the true floor. A level
+        // facet is found by the ball-region test above (its contact is on
+        // the axis).
         if tri.contains_point_xy(cl.x, cl.y)
             && let Some(cc_z) = tri.z_at_xy(cl.x, cl.y)
         {
             cl.update_z(cc_z);
-            found = true;
         }
 
         found
     }
 
     fn edge_drop(&self, cl: &mut CLPoint, p1: &P3, p2: &P3) {
+        // G-TIERBURIAL: the exact contact of the ball-and-cone profile
+        // (`super::edge_drop_by_profile`). The ball part's argmax is the
+        // tangent point of the sphere section, `w = m s / sqrt(1 + m^2)`,
+        // valid while its radius is inside the ball region (`r_contact`).
+        // Past it the cone's height rises `1 / tan(alpha)` per mm of radius,
+        // and `d/dw [m w - rho / tan(alpha)] = 0` gives `w / rho = m tan(alpha)`,
+        // `w = q d / sqrt(1 - q^2)` with `q = m tan(alpha)`; for `|q| >= 1`
+        // the edge climbs faster than the cone and the contact is at the
+        // shank rim (the clamp to `reach`).
         let r_ball = self.ball_radius();
-        let r_shaft = self.shaft_radius();
         let rc = self.r_contact();
-        let alpha = self.alpha();
-        let tan_a = alpha.tan();
-
-        let dx = p2.x - p1.x;
-        let dy = p2.y - p1.y;
-        let dz = p2.z - p1.z;
-        let edge_len_xy_sq = dx * dx + dy * dy;
-
-        if edge_len_xy_sq < 1e-20 {
-            return;
-        }
-
-        let edge_len_xy = edge_len_xy_sq.sqrt();
-        let t_closest = ((cl.x - p1.x) * dx + (cl.y - p1.y) * dy) / edge_len_xy_sq;
-
-        let px = p1.x + t_closest * dx;
-        let py = p1.y + t_closest * dy;
-        let d_sq = (cl.x - px) * (cl.x - px) + (cl.y - py) * (cl.y - py);
-
-        if d_sq > r_shaft * r_shaft {
-            return;
-        }
-
-        let d = d_sq.sqrt();
-        let slope = dz / edge_len_xy;
-
-        // === Ball region edge contact ===
-        // Same as BallEndmill but only valid when contact radius <= r_contact
-        if d < r_ball + 1e-10 {
-            let s_sq = (r_ball * r_ball - d_sq).max(0.0);
-            let s = s_sq.sqrt();
-
-            let denom = (1.0 + slope * slope).sqrt();
-            for sign in &[1.0, -1.0] {
-                let sin_a = sign / denom;
-                let cos_a = -sign * slope / denom;
-
-                let dt = s * cos_a / edge_len_xy;
-                let t = t_closest + dt;
-
-                if !(-1e-8..=1.0 + 1e-8).contains(&t) {
-                    continue;
-                }
-
-                // Validate contact is in ball region
-                // Contact point on edge at parameter t, distance from CL axis
-                let edge_x = p1.x + t * dx;
-                let edge_y = p1.y + t * dy;
-                let _rdx = edge_x - cl.x;
-                let _rdy = edge_y - cl.y;
-                let _contact_r_from_cl = (_rdx * _rdx + _rdy * _rdy).sqrt();
-
-                // The CC point on the ball at this contact should be within r_contact
-                // For ball: CC is at the point on the sphere closest to the edge
-                // The XY distance from CL to CC ≈ d (perpendicular distance to edge)
-                if d <= rc + 1e-8 {
-                    let cc_z = p1.z + t * dz;
-                    let tip_z = cc_z + s * sin_a - r_ball;
-                    if sin_a >= -1e-10 {
-                        cl.update_z(tip_z);
+        let tan_a = self.tan_alpha;
+        super::edge_drop_by_profile(
+            cl,
+            p1,
+            p2,
+            self.shaft_radius(),
+            |rho| self.height_at_radius(rho).unwrap_or(f64::INFINITY),
+            |d, m| {
+                if d <= r_ball {
+                    let s = (r_ball * r_ball - d * d).sqrt();
+                    let w = m * s / (1.0 + m * m).sqrt();
+                    if (d * d + w * w).sqrt() <= rc {
+                        return w;
                     }
                 }
-            }
-        }
-
-        // === Cone region edge contact ===
-        // Similar to VBit edge_drop but with cone_offset
-        if d > rc - 1e-8 && d <= r_shaft + 1e-10 {
-            let cone_ch = r_shaft / tan_a + self.cone_offset();
-            let xu = (r_shaft * r_shaft - d_sq).max(0.0).sqrt();
-
-            // Rim contact at shaft edge
-            for &sign in &[1.0, -1.0] {
-                let u = sign * xu;
-                let dt = u / edge_len_xy;
-                let t = t_closest + dt;
-                if (-1e-8..=1.0 + 1e-8).contains(&t) {
-                    let cc_z = p1.z + t * dz;
-                    let tip_z = cc_z - cone_ch;
-                    cl.update_z(tip_z);
+                let q = m * tan_a;
+                if q.abs() >= 1.0 {
+                    return q.signum() * f64::INFINITY;
                 }
-            }
-
-            // Conical surface contact
-            let l_sq = cone_ch * cone_ch;
-            let denom_cone = l_sq - r_shaft * r_shaft * slope * slope;
-            if denom_cone > 1e-15 {
-                let ccu_sq = r_shaft * r_shaft * slope * slope * d_sq / denom_cone;
-                let ccu = ccu_sq.max(0.0).sqrt();
-
-                for &ccu_signed in &[ccu, -ccu] {
-                    let dt = ccu_signed / edge_len_xy;
-                    let t = t_closest + dt;
-                    if (-1e-8..=1.0 + 1e-8).contains(&t) {
-                        let cc_z = p1.z + t * dz;
-                        let r_contact_edge = (ccu_signed * ccu_signed + d_sq).sqrt();
-                        // Must be in cone region
-                        if r_contact_edge >= rc - 1e-8 {
-                            let h_at_r = r_contact_edge / tan_a + self.cone_offset();
-                            let tip_z = cc_z - h_at_r;
-                            cl.update_z(tip_z);
-                        }
-                    }
-                }
-            }
-        }
+                q * d / (1.0 - q * q).sqrt()
+            },
+        );
     }
 }
 

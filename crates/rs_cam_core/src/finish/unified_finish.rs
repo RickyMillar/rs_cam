@@ -211,6 +211,51 @@ pub struct UnifiedFinishParams {
     pub monotone_cell_decomposition: bool,
 }
 
+/// The raster and waterline bands' gouge check (G-TIERBURIAL,
+/// `planning/tiered_finish_2026-09-30/RESULTS.md`): every fed
+/// `FinishingCut` chord that passes more than the op tolerance below the
+/// drop-cutter surface is split, with the scallop rings' own chord
+/// refinement ([`crate::surface::chord_refine`]). The raster splits at
+/// surface points.
+///
+/// `level: true` is the waterline: its feeds keep one Z, so a failing chord
+/// is split at a point pushed sideways at that Z
+/// ([`crate::surface::chord_refine::ChordRefineCtx::level_check`]), never
+/// lifted onto the wall above it.
+fn refine_band_chords(
+    tp: Toolpath,
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    params: &UnifiedFinishParams,
+    level: bool,
+) -> Toolpath {
+    use crate::surface::chord_refine::{ChordCoverage, ChordRefineCtx};
+    let min_z = mesh.bbox.min.z;
+    let (stl, tol) = (params.stock_to_leave, params.tolerance);
+    let ctx = if level {
+        ChordRefineCtx::level_check(mesh, index, cutter, stl, min_z, tol)
+    } else {
+        // Over-mesh coverage: the raster lattice's own guard against
+        // riding the mesh rim.
+        ChordRefineCtx::gouge_check(
+            mesh,
+            index,
+            cutter,
+            stl,
+            min_z,
+            tol,
+            ChordCoverage::OverMesh,
+        )
+    };
+    let (tp, stats) = crate::surface::chord_refine::refine_fed_cut_chords(tp, &ctx);
+    tracing::debug!(
+        ?stats,
+        "unified_finish: band chords refined against the surface"
+    );
+    tp
+}
+
 impl Default for UnifiedFinishParams {
     /// Mirrors the standalone ops' own defaults (`ScallopConfig` /
     /// `WaterlineConfig` / `DropCutterConfig` in
@@ -1957,7 +2002,13 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
                     Some(&region_set),
                     cancel,
                 )?;
-                (tp, Vec::new())
+                // G-TIERBURIAL: a contour chord between two fiber crossings is
+                // straight; where it cuts below the drop-cutter surface it is split
+                // at a point pushed off the wall at the contour's own Z.
+                (
+                    refine_band_chords(tp, mesh, index, cutter, params, true),
+                    Vec::new(),
+                )
             }
             FinishBand::MidSteep => {
                 let sp = ScallopParams {
@@ -2220,7 +2271,13 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
                         }
                     }
                 };
-                (tp, Vec::new())
+                // G-TIERBURIAL: a raster chord between two lattice points (and a
+                // row turnaround) is straight; where it cuts below the drop-cutter
+                // surface it is split at exact surface points.
+                (
+                    refine_band_chords(tp, mesh, index, cutter, params, false),
+                    Vec::new(),
+                )
             }
         };
 
@@ -2232,6 +2289,9 @@ pub fn unified_finish_toolpath_with_cancel_and_ceiling(
         // (previously airborne) junctions change.
         let (tp, anns) = if params.intra_region_hookup_mm > 0.0 {
             let rp = crate::finish::surface_link::RelinkParams {
+                // G-TIERBURIAL: a link feed between two samples is refined
+                // against the surface within the op tolerance, or refused.
+                link_tolerance: Some(params.tolerance),
                 hookup_distance: params.intra_region_hookup_mm,
                 stock_to_leave: params.stock_to_leave,
                 sampling: params.sampling,

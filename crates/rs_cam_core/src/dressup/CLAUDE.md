@@ -1,22 +1,20 @@
 # `dressup/` — post-generation transforms
 
-The passes that run after an operation generates a toolpath.
-`apply_dressups` in `compute/execute/dressup_apply.rs` drives them; it takes
-a `DressupContext`, and `DRESSUP_PIPELINE` there lists every stage in run
-order. Three run outside it: `apply_tabs`, in the per-level closure of
-`compute/execute/clearing_2d.rs` (it needs that level's cut depth), and
-`optimize_entry_descents_annotated` and `adaptive_feed_modulate`, in
-`session/compute.rs` (they need prior stock and engagement). Add no fourth.
+The passes run after an op generates a toolpath. `apply_dressups` in
+`compute/execute/dressup_apply.rs` drives them from a `DressupContext`;
+`DRESSUP_PIPELINE` there lists every stage in run order. Three run outside
+it: `apply_tabs`, in the per-level closure of `compute/execute/clearing_2d.rs`
+(it needs that level's cut depth), and `optimize_entry_descents_annotated` and
+`adaptive_feed_modulate`, in `session/compute.rs` (prior stock, engagement). Add no fourth.
 
 ## Files
 
-- `mod.rs` — the dressup configuration and the facade. `entry_descent.rs` —
-  the ramp and helix emitters. `entry_audit.rs` — the burial audit of a fed
-  move against the surface.
-- `link.rs` — link against retract. `arcfit.rs` — lines to arcs.
-  `condition.rs` — segment merge (default-on for roughing; skipped where
+- `mod.rs` — the configuration and the facade. `entry_descent.rs` — the ramp
+  and helix emitters. `entry_audit.rs` — a fed move's burial audit.
+- `link.rs` — link against retract. `arcfit.rs` — lines to arcs, within the
+  tolerance in 3D (G-TIERBURIAL). `feedopt.rs`, `feed_modulation.rs`,
+  `air_cut.rs`, `tsp.rs`. `condition.rs` — segment merge (roughing; off where
   `planner_applies_segment_merge`: 3D Rough, 2D Adaptive; G-PLANSIMGAP).
-- `feedopt.rs`, `feed_modulation.rs` — feeds; `air_cut.rs`; `tsp.rs`.
 
 ## Invariants
 
@@ -30,11 +28,13 @@ order. Three run outside it: `apply_tabs`, in the per-level closure of
   `stock_aware_plunge` op rapids through air first (G-ADAPTPASSLOAD).
 - The modulator skips a plunge by geometry; the descent pass splits no
   entry retract (G-PECKSPLIT).
+- `tsp.rs`: a reordered group's fed first move is never fed from elsewhere
+  (G-TIERBURIAL); rapid travel never grows: a group keeps its order and
+  framing unless its rebuild is shorter, else the input comes out as is.
 
 ## Sentries
 
 - `cargo test -p rs_cam_core -q --test capability_link_moves_safety --test dressup_span_invariants`
-- `cargo test -p rs_cam_core -q --test constrained_max_modulation_f039`
-- `cargo test -p rs_cam_core -q --test entry_moves_stock_aware_g_rampterrain --test finishing_defaults_have_no_ramp_entry_r10 --test adaptive3d_entry_stock_aware`
+- `... --test constrained_max_modulation_f039 --test entry_moves_stock_aware_g_rampterrain --test finishing_defaults_have_no_ramp_entry_r10 --test adaptive3d_entry_stock_aware`
 - `cargo test -p rs_cam_core -q --test lead_in_out_feed_rates_f040 --test plunge_guard_p3`
-- `cargo test -p rs_cam_core -q --test a_peck_ladder_is_never_split_into_a_rapid_into_stock_g_pecksplit`
+- `... --test a_peck_ladder_is_never_split_into_a_rapid_into_stock_g_pecksplit --test fed_chords_ride_the_surface_g_tierburial`

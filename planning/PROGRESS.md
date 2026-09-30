@@ -69,11 +69,23 @@ Open from the operator's session (after the memory fix):
   the F3c flute-reach advisory, the F4 arc A/B.
   `planning/tiered_finish_2026-09-30/RESULTS.md`; the default changes
   there wait for the operator.
-  G-TIERBURIAL, working tree: the 0.836 mm fine-tier burial is real (sim
-  −0.68 mm) and came from the continuous scallop's straight ring-to-ring
-  connector; it now rides the surface (max 0.836 → 0.516 mm, the rest a
-  vertical-step artifact under 0.06 mm). Raster rows, relink links and a
-  hookup-0 rapid-order link still bury; RESULTS "Fine-tier burial".
+  G-TIERBURIAL: the 0.836 mm fine-tier burial is real (sim −0.68 mm) and
+  came from the continuous scallop's straight ring-to-ring connector; it
+  now rides the surface (`5b34e710`). Working tree: raster, waterline and
+  link feeds are refined against the surface (`surface/chord_refine.rs`);
+  rapid order no longer feeds a moved group's link from elsewhere; the
+  drop-cutter edge contact is exact for the ball, bull nose and taper
+  (it used the mirrored, downhill point, up to 1.8 mm low, and the taper
+  skipped boundary edges); the arc fitter holds its tolerance in 3D and no
+  longer emits a mirrored half circle. rivmap100 fine tier: sim columns
+  below −0.1 mm 23 726 → 6, deepest fed sample 0.516 → 0.112 mm, cycle
+  2 989.5 → 2 659.1 s. Moved pins re-blessed with causes; the TSP never
+  lengthens rapid travel (no-regression guard, part 4). Part 5: the 2D
+  Adaptive planner reads each step along its length (six-island peak
+  0.674 → 0.415, cycle +9.5 %); the cycle-time model reads an arc's own
+  end tangent at a junction. The roughing benchmark's +13 % is mostly the
+  model costing an arc at its chord length; arc length is the next
+  change (lead decision). RESULTS "Fine-tier burial, part 2–5".
 - Suspected gouge source (metrology FINDINGS "stock-blind approach
   family"): arc-fit chords across small knolls; test with arc_fitting off.
 

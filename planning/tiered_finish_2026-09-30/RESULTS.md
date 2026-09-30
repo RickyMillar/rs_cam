@@ -212,7 +212,8 @@ the straight connector injected back the sentry is red (move 219, 0.8210 mm
 against the tolerance 0.05); with the fix the deepest fed sample is
 0.0320 mm.
 
-**Open, measured, not fixed here:**
+**Open at `5b34e710`** (the next section closes 2–4 and attributes 1
+and 5):
 
 1. Short cut chords (≤ 0.25 mm, 886 samples, vertical to 0.516 mm): the
    penetration estimate is at most 0.060 mm (84 samples over 0.03). They
@@ -238,6 +239,422 @@ against the tolerance 0.05); with the fix the deepest fed sample is
    cos slope, after the fix): 14 086 columns over 0.1 mm, max 0.364 mm on
    that edge row. Not attributed yet.
 
+## Fine-tier burial, part 2 (G-TIERBURIAL) — the open sources
+
+Same instrument (`tier_fine_burial_sources_g_tierburial`, arms `sim` and
+`nohookup`; it now also prints the fine tier's cycle time,
+`compute_cycle_time` with the machine's kinematics and rapid = max feed,
+and attributes the deepest simulation columns to a move). Working tree over
+`5b34e710`, release-fast.
+
+**Shared refinement.** The scallop's chord refinement moved to
+`surface/chord_refine.rs` (`ChordRefineCtx`, `refine_chord`, the constants,
+unchanged for the rings). Two options were added for the new callers:
+`ChordSide::Below` (split a chord only where it is below the surface; a
+chord above it over a concave stretch leaves a cusp, not a gouge) and
+`ChordInsert::Push` (a waterline). The probe step of a gouge check is
+`probe_step_for_tool`: `sqrt(8 r t)`, the chord whose sagitta over the tip
+sphere (`r` = `cusp_radius_mm`) is the accept threshold `t` = 0.7 x
+tolerance; for the R1.0 tip at 0.05 it is 0.529 mm. A chord is still probed
+at eight intervals or more.
+
+| source | real? | mechanism | fix |
+|---|---|---|---|
+| 1 raster rows | yes | `raster_toolpath_from_grid` (`toolpath.rs:715`) feeds straight between lattice points and across row turnarounds | `unified_finish::refine_band_chords` refines every fed `FinishingCut` chord of the Shallow band (`refine_fed_cut_chords`, over-mesh coverage) |
+| 2 waterline chords | yes | a contour feeds straight between fiber crossings at one Z; a dropped split point would climb the wall | the VerySteep band uses `ChordRefineCtx::level_check`: the split point is pushed off the wall at the contour's Z (`push_to_level`, both sides, at most half the chord away) |
+| 3 surface links | yes | `build_surface_link` feeds straight between its `sampling` (0.5 mm) samples | `build_surface_link(.., tolerance: Some(t))` refines each feed (`refine_track`, contact coverage) or refuses the link; `RelinkParams`/`LinkGeometry::link_tolerance` carry `t`. Some(op tolerance): the unified finish (relink and router) and the scallop relink. None (unchanged): pencil, curve engrave, project curve, standalone raster and waterline, costing, the research rigs |
+| 4 hookup-0 link | yes | a region span starts at the router's link into that region, so a rapid-order barrier splits "cut, link, next region" before the link. The group before is reordered and ends retracted over another segment; the next group (one segment) was copied as it is (`dressup/tsp.rs:336` at `5b34e710`), so its first move, the link, was fed from there: 29.36 mm, 3.453 mm under the surface | `tsp::rejoin_displaced_fed_start`: when a copied group's first move is fed and the tool is not where the input had it, retract and rapid over the move's target first (the shape `rebuild_group` gives every segment). A group whose predecessor is in place is copied byte-identically |
+| 5 sim overcut | yes, a real cut | see below: the drop-cutter floor is wrong | applied in part 3 (lead decision) |
+
+Sentry `tests/fed_chords_ride_the_surface_g_tierburial.rs`, four tests.
+Each was red with its fix removed and is green with it:
+
+| test | fixture | straight (non-vacuity) | fix removed | fix |
+|---|---|---:|---:|---:|
+| raster | terrace 1.5 mm, all Shallow | 0.7067 | 0.1439 | 0.0375 |
+| waterline | 80° mesa, all VerySteep | 0.2194 | 0.2194 | 0.0250 |
+| link | 75° ridge, 10 sample phases | 0.2416 | 0.2416 | 0.0366 |
+| rapid order | 5 + 1 segments behind a barrier | — | link fed from (43, 5, 10) | vertical descent |
+
+(mm under the drop-cutter surface, tolerance 0.05.)
+
+**rivmap100 fine tier** (arcs off, stock Fresh):
+
+| | `5b34e710` | working tree |
+|---|---:|---:|
+| fed samples > 0.1 mm deep | 1 866 | 913 |
+| long cut chords > 0.1 (Shallow / VerySteep), max | 445 / 55, 0.325 | 0 |
+| links > 0.1: samples, max vertical, max estimate | 480, 0.356, 0.147 | 6, 0.174, 0.025 |
+| short cut chords > 0.1: samples, max estimate | 886, 0.060 | 907, 0.112 |
+| sim columns below −0.1 mm (min) | 23 726 (−0.612) | 23 694 (−0.612) |
+| moves | 77 459 | 79 788 |
+| cycle time (s) | 2 989.5 | 3 061.9 (+2.4 %) |
+| `nohookup`: max depth, links > 0.1 | 3.453, 288 | 0.516, 0 |
+| `nohookup`: cycle time (s) | 4 773.6 | 4 805.5 |
+
+The short-chord estimate 0.112 is one waterline vertex (68.500, 88.036,
+z 8.252), 0.112 under the drop-cutter floor: a push-cutter vertex, not a
+chord. It was in the long-chord class at `5b34e710` (its chord is now
+split). Open.
+
+**Source 5 is a drop-cutter defect.** The simulation hardly moved, so the
+overcut is not the chords. The instrument now takes the deepest columns
+and finds the move whose tool reaches lowest over each:
+
+- (15.7–16.4, 0.0), −0.612: MidSteep ring 2, move at y = 0.763, z 11.034.
+  The tool's ball reaches 0.612 below the model at the board edge. The
+  drop-cutter floor at y = 0.75 is 11.05; a plain R1.0 ball reads 11.66
+  there. `TaperedBallEndmill::facet_drop` (`tool/tapered_ball.rs:276-282`)
+  sets the tip on the facet under the axis and reports `found` for a
+  sloped facet, which is not a tangency. `MillingCutter::drop_cutter`
+  (`tool/mod.rs:548`) then skips that triangle's edges and vertices. In the
+  interior a neighbour triangle supplies the edge; at the mesh boundary
+  (the board edge here, a 100 mm triangle) nothing does. On a 0.5 mm grid
+  over the board the floor of tool 6 (the tier's R1.0 taper) is below the
+  plain R1.0 ball's at 681 of
+  40 401 points, all but one within 1 mm of the edge, by up to 0.499 mm.
+- (61.5, 3.8), −0.562: MidSteep ring 5; the floor has a 0.02 mm wide,
+  0.56 mm deep notch at x = 61.53. It is not geometry. `edge_drop` of the
+  ball (`tool/ball.rs:168`), the bull nose (`tool/bullnose.rs:261`) and
+  the taper's ball region (`tool/tapered_ball.rs:328`) places the contact
+  at `t_closest + s cos_a` with `cos_a = −slope / sqrt(1 + slope²)` for the
+  upper solution. The tangent point of a circle resting on a line of slope
+  m is at `+ s m / sqrt(1 + m²)`: the code takes the mirrored point, which
+  is downhill, so the floor is low on every sloped edge (exact on a
+  horizontal one). Against a 200 000-point sampled truth on a single edge:
+  slope 0.5, 0.27–0.45 mm low; slope 1.174, 1.07–1.79 mm low; slope 0, exact.
+  The burial audit (`EntrySurfaceProbe::floor_z`) calls the same
+  drop-cutter, so it cannot see these gouges; that is why the columns had
+  no buried sample near them, and why the "short chords over near-vertical
+  steps" of part 1 existed: the steps are this error.
+
+Measured with both kernel fixes applied temporarily (`dt = −s cos_a /
+edge_len_xy` in the three `edge_drop`s, and the taper's tip branch no
+longer `found`), then reverted:
+
+| rivmap100 fine tier | `5b34e710` + kernel | working tree + kernel |
+|---|---:|---:|
+| fed samples > 0.1 mm deep | 348 | 1 |
+| long cut chords > 0.1: raster / waterline, max | 81 / 93, 0.189 | 0 |
+| links > 0.1: samples, max, max estimate | 174, 0.164, 0.105 | 0 |
+| sim columns below −0.1 mm (min) | 10 (−0.133) | 6 (−0.111) |
+| moves | 67 558 | 68 946 |
+| cycle time (s) | 2 640.9 | 2 663.5 (+0.9 %) |
+
+So the kernel error is the bulk of the simulated overcut, and the chord
+fixes of this section are still needed once it is fixed. (With the kernel
+fixed at `5b34e710`, `nohookup` reads max 0.189 and no long link: the
+29.36 mm link needs the barrier and reorder of the unfixed geometry. The
+rapid-order mechanism stands on its own; the sentry shows it.) The kernel fix is
+not a default change, but it moves every drop-cutter path of a ball, bull
+or tapered tool. The lead decided to apply it: part 3.
+
+**Moved by this change.** Every test in the requested set passes except
+two. `scallop_trace_survives_relink_g_linktrace` is red identically at
+`5b34e710` (digest `0xb5906eb187c207c6` on both; checked on an extracted
+HEAD tree). `tier_arcfit_burial_f4`'s sentry is red: arcs off 0.0513 →
+0.0358 mm (the waterline chord fix removed the source path's sag), arcs at
+0.05 still 0.0882, bound 0.0858. Its doc foresaw this: the 0.05 arc
+excess (0.052 mm now) is the F4 mechanism, which the source sag used to
+hide. At 0.015 (F4a) the same fixture reads 0.0358 (204 arcs, arc moves
+0.0134), inside its bound. The assert is not changed; F4a is below.
+
+## Fine-tier burial, part 3 (G-TIERBURIAL) — the kernel and the arc fitter
+
+Lead decision: both are correctness fixes, not default changes. Working
+tree over `5b34e710` with part 2.
+
+**Drop-cutter kernel.** The ball (`tool/ball.rs:168`) keeps its closed
+form with the sign fixed: the tangent point of a circle resting on a line of
+slope `m` is at `u = + s m / sqrt(1 + m^2)`, the centre at `z_c + s sqrt(1
++ m^2)`. The bull nose and the tapered ball did their own closed forms with
+the same sign error, and the bull nose's torus form ("simplified approach")
+was also off by up to 1.15 mm after the sign fix; the taper's cone part by
+up to 0.033 mm. Both now call one exact helper,
+`tool/mod.rs::edge_drop_by_profile`: the touch height `z(w) - height(rho)`
+along the edge is concave in `w` (convex profile), so its maximum is the
+unconstrained argmax clamped to the edge and the reach. The taper's argmax
+is closed-form (ball part `w = m s / sqrt(1 + m^2)`; cone part `w = q d /
+sqrt(1 - q^2)`, `q = m tan(alpha)`; the shank rim for `|q| >= 1`); the bull
+nose's is a bisection on the slope of the touch height (the torus contact
+is a quartic). `TaperedBallEndmill::facet_drop` no longer reports `found`
+for the tip-on-facet point of a sloped facet, so `drop_cutter` tests that
+triangle's edges.
+
+Sentry `tests/edge_drop_matches_the_sampled_profile_g_tierburial.rs`: each
+tool against a profile truth (dense scan plus ternary search over the edge,
+for edges of slope 0, 0.5, 1.174 and CL offsets across the ball, torus,
+flat and cone parts), and the taper on a sloped boundary triangle through
+`drop_cutter`. Before: worst error ball 1.787 mm, bull nose 2.897 mm, taper
+1.787 mm; boundary triangle 11.0508 against 11.6614. After: 6.2e-15, 5.3e-15,
+7.1e-15 mm; boundary triangle exact.
+
+**Arc fitter** (`dressup/arcfit.rs::try_fit_arc`). Two defects past the
+three one-axis tests:
+
+- The budgets add: a vertex `tolerance` off the circle beside a chord
+  whose sagitta is `tolerance`. Now every source segment is matched to the
+  arc span between its vertices' swept angles and the 3D distance (XY and
+  helix Z together) must hold `tolerance` at 9 points per segment.
+- A half circle's direction is decided by rounding (both halves have the
+  same length). The `arc_raster` fixture's rows at y0 = 8 and 12 were
+  emitted as the MIRRORED half circle, 11.3 mm off the path. Now the
+  source's own sweep (`cum`) must equal the emitted sweep to 1e-6 rad.
+
+Sentry `tests/an_arc_fit_holds_its_source_in_3d_g_tierburial.rs`: the
+`arc_raster` half circles (red at `5b34e710`: 11.3137 mm; now 0.0171 mm) and
+a circle with vertices ±0.035 mm off it in blocks (red: 0.0679 mm; now
+0.0485 mm). `tier_arcfit_burial_f4` is green without touching its assert:
+arcs off 0.0348, arcs at 0.05 → 0.0560 (bound 0.0848; 0.0878 with the 3D
+check removed), arcs at 0.015 → 0.0348.
+
+**rivmap100 fine tier** (`tier_fine_burial_sources_g_tierburial`, arcs off
+as before, so the fitter does not act here):
+
+| | `5b34e710` | part 2 | part 2 + 3 |
+|---|---:|---:|---:|
+| fed samples > 0.1 mm deep (max vertical) | 1 866 (0.516) | 913 (0.516) | 1 (0.112) |
+| sim columns below −0.1 mm (min) | 23 726 (−0.612) | 23 694 (−0.612) | 6 (−0.111) |
+| moves | 77 459 | 79 788 | 68 945 |
+| cycle time (s) | 2 989.5 | 3 061.9 | 2 663.5 |
+| `nohookup`: max depth, cycle time (s) | 3.453, 4 773.6 | 0.516, 4 805.5 | 0.112, 4 496.5 |
+
+The one sample left is the waterline vertex at (68.500, 88.036, z 8.252),
+0.112 mm under the floor; the six columns are around it. A push-cutter
+contour point the drop-cutter reads as buried. Open.
+
+**Tests that moved, and why.** Of 118 binaries in the kernel's reach (`ls
+tests | grep -iE "drop|raster|waterline|scallop|pencil|unified|finish|adaptive3d|rest|tier|arcfit|link|surface|wanaka|arc"`,
+all features, plus the ones named by the lead), these moved; each was
+attributed by re-running with the kernel fix or the fitter change held
+back:
+
+| test | cause | action |
+|---|---|---|
+| `finish_resolution_policy_pr3` scallop / ramp / steep_shallow fingerprints | kernel (the ridge crest is a sloped convex edge under the taper) | re-pinned with history: scallop 2820 → 2583 moves; ramp and steep_shallow keep their counts (277, 913), Z moved |
+| `perf_golden_sim_metrics` 3D arm (31 fields) | kernel (hemisphere facet edges); the fitter does not move it | re-baselined, logged in its doc: DropCutter removed 1365.26 → 1352.68 mm³, Waterline 2016.10 → 2027.38 mm³ |
+| `scallop_oracle_validation_m4::tool_reach_floor_error_is_mesh_faceting_and_shrinks_with_it` | kernel: the "faceting" error (−22.93 / −5.56 / −0.00 µm at mesh steps 0.20 / 0.10 / 0.05) was the edge sign; now 0 to rounding at every step | renamed `tool_reach_floor_has_no_negative_error_at_any_mesh_step`; asserts every step > −1e-6 µm (stronger than before) |
+| `feeds_matrix_instrument_fm1` sim subset, 4 cells | Adaptive EndMill / BullNose plywood_hardwood `depth_peak_mm` 4.5000 → 4.2188, 4.4255 → 4.1996: the fitter (the old peak came from mis-fitted arcs: with arc fitting off the same cells read 4.2188 / 4.2015; the old fitter emitted a half-turn entry helix of R 1.8 whose source sweep read 110 rad against an emitted pi, three R 0.1 half turns alike, and arcs up to 0.061 mm off their source). Scallop TaperedBallNose hardwood / softwood `power_peak_kw` 0.1238 → 0.1240, 0.0739 → 0.0740: kernel | re-blessed; the 960-cell pre-simulation CSV did not move |
+| `transform_provenance_fingerprints::arc_raster_full_dressups_fingerprint`, `arcfit_intent_key_cost_f1` (arc_raster) | fitter: the mirrored half circles (rows y0 = 8, 12) now fit `ArcCW` over 23 chords plus one linear chord | re-pinned 72 → 74 moves, arcs 21 unchanged |
+| `capability_link_moves_safety::unified_finish_node_barriers_allow_intra_region_reorder_and_pin_depth` | kernel: the hemisphere finish now emits 1 879 moves (was 2 277, cut 1 992.6 → 1 575.8 mm) and its three multi-segment groups are already in nearest-first order (TSP rapid 562.4 → 562.4). The sentry's "TSP must reduce rapids" has nothing to reduce | part 4: fixture re-derived (boss on a plate), green |
+| `capability_link_moves_safety::steep_shallow_split_barriers_allow_intra_half_reorder_and_pin_depth` | kernel: the TSP still reorders (5 groups of 4, one of 50 segments) but the rapid total rises 2 850.4 → 2 860.7 (old 2 784.0 → 2 745.7). The TSP minimises XY hops inside a group and ignores the hop to the next group's first segment; the new geometry puts the fixture on the losing side of that margin | part 4: the TSP no-regression guard, green on the same fixture |
+| `heatmap_two_arc_divergence_a1::the_retired_measure_still_reproduces_the_defect` | not this change: red identically on an extracted `5b34e710` tree (feeds and tool-load only) | none |
+| `scallop_trace_survives_relink_g_linktrace` | not this change: red identically at `5b34e710` (digest `0xb5906eb187c207c6`) | none |
+
+**Roughing benchmark** (`planning/fixtures/rivmap100/arm.sh`, 3D Rough,
+flat end mill, so only the fitter acts; release CLI, `5b34e710` →
+working tree):
+
+| arm | moves | total s | cut | entry | rapid | vol mm³ |
+|---|---:|---:|---:|---:|---:|---:|
+| by_area | 14 268 → 14 877 | 1 915 → 2 173 | 542 → 542 | 1 122 → 1 380 | 130 → 130 | 49 339 → 49 338 |
+| global | 17 108 → 17 834 | 2 345 → 2 655 | 614 → 614 | 1 424 → 1 735 | 187 → 187 | 49 782 → 49 781 |
+
+The +609 moves are all `EntryHelix` (+596 arcs): helix arcs whose flat lap
+and descent the old fitter bridged within 0.05 on each axis but not in 3D
+are now two arcs. The helix path length is unchanged (20 174.2 → 20 175.2
+mm). The +258 s is the cycle-time model, not the path: the integrator
+treats an arc as a straight move and takes "the chord tangent for
+junction-velocity geometry" (`machine/kinematics.rs` module doc), so each
+new arc-to-arc junction on a tangent-continuous helix reads as a corner at
+the junction-deviation limit. With feed modulation off the step is the
+same (entry 1 367 → 1 664 s). A tangent-aware arc junction in the
+integrator is the fix for the reading; not done here.
+
+**wanaka** (`p1_headless_ab_wanaka`, release): `rapid_collisions=0
+(baseline 0)`, project 14 066.4 s.
+
+## Fine-tier burial, part 4 — the TSP no-regression guard
+
+Lead decision: the barriered TSP must never make rapid travel longer than
+the planner's own order.
+
+**Guard** (`dressup/tsp.rs`). Per group, the rebuilt group (TSP order,
+every segment re-framed at `safe_z`) replaces the input group only when its
+rapid travel, measured from where the tool is, is strictly shorter;
+otherwise the group is copied as it is, order and framing, move for move
+(with the part 2 rejoin when its fed first move was displaced). A group
+kept as it is ends where the input ended, which moves the next group's
+entry, so the pass also compares totals: an output whose rapid travel is
+not strictly shorter than the input's is discarded and the input returned
+unchanged (index-preserving). Unit tests: `a_toolpath_already_in_its_best_order_comes_out_unchanged`
+(framed at `safe_z` and at 2 mm; bit-identical) and
+`the_guard_keeps_an_ordered_group_and_still_reorders_its_neighbour`; both
+red with the guard removed.
+
+| sentry | before the guard | after |
+|---|---:|---:|
+| SteepShallow rapid, planner -> TSP (mm) | 2 850.4 -> 2 860.7 | 2 850.4 -> 2 725.3 |
+| UnifiedFinish, bare hemisphere (mm) | 562.4 -> 562.4 | 562.4 -> 562.4 (unchanged input) |
+| UnifiedFinish, boss on a plate (mm) | — | 1 225.2 -> 1 144.6 (-6.6 %) |
+
+The UnifiedFinish sentry's fixture is now a 10 mm hemisphere boss on a
+50 mm plate: the plate is a Shallow node of seven cut runs around the boss,
+and that node's rapid goes 312.8 -> 256.8 mm (every other node unchanged).
+The assertion stays strict. SteepShallow keeps its four islands.
+
+Two other fixtures met the guard: each was in its best order, or its
+reorder cost more than it saved, so the guarded pass returned it unchanged: `fed_chords_ride_the_surface_g_tierburial`'s rapid-order test
+(3 + 1 segments; the rejoin back to the link cost more than the reorder
+saved: 108 -> 120 mm), and `tsp_synthesized_rapid_intents` (two segments in
+order). Both fixtures were re-derived so the reorder wins (5 + 1
+interleaved segments; three segments at x 0, 100, 10). Both are green and
+the rejoin sentry is red with the rejoin removed.
+
+**Release instruments after the guard.** rivmap100 fine tier
+(`tier_fine_burial_sources_g_tierburial`, release-fast): arm `sim` 68 945
+-> 68 935 moves, cycle time 2 663.5 -> 2 659.1 s, still 1 fed sample over
+0.1 mm (0.112, the waterline vertex) and 6 sim columns below -0.1 mm (min
+-0.111); arm `nohookup` 4 496.5 -> 4 495.7 s, max depth 0.112. wanaka
+(`p1_headless_ab_wanaka`, release): `rapid_collisions=0 (baseline 0)`;
+Unified Finish 11 998.9 -> 11 982.3 s (linking 1 377.2 -> 1 362.2, rapid
+2 699.1 -> 2 697.5), every other op unchanged.
+
+**Full core gate after the guard** (418 binaries, all features, debug):
+1 816 passed, 24 failed. 18 of the 24 were red at the 2026-09-27 gate
+(feeds, session scans, calibration; of these only the heatmap and
+linktrace tests were re-checked at `5b34e710`, both red there, and both
+queued for the full-gate triage). The other six:
+
+| test | at `5b34e710` | cause | state |
+|---|---|---|---|
+| `tsp_synthesized_rapid_intents` | green | the guard (fixture in order) | fixture re-derived, green |
+| `crease_own_region_pr6b` byte identity | red (952 / 660 moves vs pinned 951 / 659) | pre-existing; this change moves the taper to 957 | open, not re-pinned |
+| `checkpoint_b_resolution_ab::ramp_finish_geo_mean_policy_halves_the_descent_chords` | green | kernel (green with the `5b34e710` tool files) | red: narrow ridge, a cutting point 0.0258 mm under the reference tool-centre surface. Open |
+| `ramp_reach_clamp_pr8b::a_truncated_descent_is_reported_with_its_magnitudes` | green | kernel | red: pinned "4.231" mm, now 4.235. Open |
+| `steep_shallow_min_segment_pr8d::the_floor_is_inert_where_nothing_was_degenerate` | green | kernel | red: narrow valley cutting length 3 625.5 -> 3 624.11 mm. Open |
+| `a_clearing_cut_holds_the_pass_load_g_adaptpassload` | green | not the guard, not the kernel (red with either held back): the arc fitter is the remaining suspect | red: peak 0.674 vs limit 0.363 + 0.183, 2 samples over. Open |
+
+## Fine-tier burial, part 5 — the 2D Adaptive overload, two re-pins, the arc junction
+
+Working tree over `5b34e710` with parts 2–4.
+
+**2D Adaptive overload** (`a_clearing_cut_holds_the_pass_load_g_adaptpassload`,
+red in part 4). Move 2586, (14.63, 2.25) -> (15.60, 1.10) at z -3 (move
+6093 at z -6), is one 1.5 mm Agent step. On the exact geometry of the
+emitted path (`print_exact_width_along_move`) it cuts 0.278 / 0.678 /
+0.698 / 0.174 of D at its four samples; the simulation reads 0.674. The
+planner read a step at its end disc only, and the lump of stock behind the
+step's middle is outside both end discs. Not a link stamped differently
+from what was emitted, not stale state: the new read sees that stock on
+the planner grid and refuses the step. Fix (`adaptive/search.rs::measure_step`):
+under the swept-width measure a step is also read at each planner cell
+along it, the disc there with the stretch already swept (the capsule from
+the start to the previous point) read as cut; the reading is the largest.
+The end reading is unchanged, so no step the end refused is admitted. Unit
+sentry `a_step_is_held_along_its_length_not_at_its_end` (two stock points
+5.5 mm apart either side of a 3 mm step, out of both end discs): red with
+the along-step loop removed (end reading 0), green now (0.92 of D).
+
+| six-island fixture | before | after |
+|---|---:|---:|
+| S1 samples over 0.546 | 2 | 0 |
+| S1 peak radial | 0.674 | 0.415 |
+| S1 cycle (s) | 687.1 | 752.5 |
+| plunge-entry arm: sim samples over 0.546 | 0 | 2 (sim only) |
+| plunge-entry arm: cycle (s) | 881.5 | 815.7 |
+
+On the plunge-entry arm (`a_straight_plunge_entry_is_exempt_only_leaving_its_hole`)
+two samples read 0.558, on move 1682 (-28.82, 4.93) -> (-30.31, 4.75) and
+its z -6 twin 4885. The exact width of that move is 0.396 / 0.363 / 0.278
+(0.407 on move 1681): in bound. The simulation lumps the move's removal
+into one sample (0.016, 0.096, then 7.407 mm^3) and reads the extent of
+that sample's disc. Lead decision: the test now clears each sim sample
+over the bound by the exact width at every sample of its move (bound plus
+the polygon flattening, 10 um, over D), fails on a sample the exact
+geometry also reads over, and pins the sim-only count at 2. Both S1 tests
+are green with the load asserts unchanged.
+
+**Two re-pins, kernel** (each green with the four `tool/` files of
+`5b34e710`, red with the kernel fix): `ramp_reach_clamp_pr8b::a_truncated_descent_is_reported_with_its_magnitudes`,
+max lift "4.231" -> "4.235" and holdable bottom "-2.407" -> "-2.352" (the
+corrected edge contact wedges the taper 0.055 mm higher in the cone);
+`steep_shallow_min_segment_pr8d::the_floor_is_inert_where_nothing_was_degenerate`,
+narrow valley cutting length 3 625.5 -> 3 624.1 mm (shortest segment
+unchanged). `crease_own_region_pr6b` stays red (red at `5b34e710`).
+
+**Fault injection, `checkpoint_b_resolution_ab`** (temporary edit,
+reverted): the highest narrow-ridge cutting point, move 43 at (0.0274,
+8.3896, 3.8122), exact drop 3.8122, lowered 0.05 mm:
+`deepest_below_exact_drop` 0.000000 -> -0.050000 and the gate fails. The
+exact reference sees a 0.05 mm gouge at one point.
+
+**Cycle-time model, arc junctions** (`machine/kinematics.rs`). The
+integrator took an arc's chord direction for the junction geometry. On the
+roughing benchmark's G-code (`rivmap100_ladder_demo.toml`, the arm the
+part 3 numbers came from: no `--set`, depth per pass 2) the 5 537
+arc-to-arc junctions read:
+
+| junction angle (deg) | <= 0.1 | <= 1 | <= 5 | <= 20 | <= 90 | <= 180 |
+|---|---:|---:|---:|---:|---:|---:|
+| chord directions | 0 | 0 | 18 | 29 | 2 659 | 5 537 |
+| 3D end tangents | 451 | 921 | 1 948 | 3 678 | 5 537 | 5 537 |
+| XY end tangents | 4 559 | 4 797 | 5 338 | 5 506 | 5 537 | 5 537 |
+
+(cumulative). The XY tangents are continuous; the 3D angles come from the
+Z slope, which changes where the terrain-clamped helix changes slope (an
+arc's Z is linear; the source polyline has the same corners). So the
+junctions are not a fitter defect. Fix: `move_end_tangents` gives each
+move's unit tangent at its start and end (an arc's own tangent, a helix's
+with its slope; a line's chord), and the integrator and
+`kinematic_utilization` read them at every junction. No angle threshold:
+the junction-deviation rule reads the true angle; at 500 mm/s^2, delta
+0.02 mm and 40 mm/s it runs a junction at feed up to 12.8 degrees. Unit
+tests `a_tangent_arc_junction_runs_at_the_commanded_feed` and
+`a_helix_slope_change_is_read_as_its_3d_angle`, both red with chord
+junctions. Re-pinned: `kinematics_per_axis_rate_p1` EDG-07 bits (the
+fixture's `ArcCW` (40, 5) -> (45, 10) about (40, 10) is a 270 degree
+arc: `cutting_s` 1.272391 -> 1.315781 s, move 9 feed 775.84 -> 653.39
+mm/min).
+
+| rivmap100 roughing, total s (moves) | old fitter, chord model | new fitter, chord model | old fitter, tangent | new fitter, tangent |
+|---|---:|---:|---:|---:|
+| ladder demo, by_area, dpp 2 | 1 915 (14 268) | 2 173 (14 877) | 1 852 | 2 106 |
+| ladder demo, global, dpp 2 | 2 345 (17 108) | 2 655 (17 834) | 2 274 | 2 582 |
+| ladder demo, by_area, dpp 8 | — | 1 799 (11 799) | 1 497 (11 205) | 1 716 |
+| ladder demo, global, dpp 8 | — | 1 904 (12 521) | — | 1 818 |
+| live_0925, by_area, dpp 8 | — | 809 (8 935) | 690 (8 707) | 696 |
+| live_0925, global, dpp 8 | — | 860 (9 510) | — | 739 |
+
+The tangent read removes 67 s of the 258 s; the fitter's step stays
++254 s. The rest is the integrator costing an arc at its CHORD length
+(`chord_length` ignores I/J; the module doc said "equal arc length"). Arc
+chord against arc length on the ladder-demo G-code: old fitter 9 935 /
+19 062 mm, new fitter 12 418 / 19 059 mm. Splitting a long arc made the
+reading less wrong, not the path longer. An experiment with arc length
+(reverted): old fitter 2 525 s, new fitter 2 617 s (+3.6 %); dpp 8
+2 182 -> 2 229 s; live_0925 840 -> 799 s. Lead decision: arc length is the
+next change, committed on its own.
+
+**FM1 re-bless** (`feeds_matrix_instrument_fm1`, sim subset; each cell
+attributed by holding the 2D Adaptive change or the kinematics change
+back; the 960-cell pre-simulation CSV did not move):
+
+| cell | column | before -> after | cause |
+|---|---|---|---|
+| EndMill Adaptive mdf | power, deflection, depth | 0.0264 -> 0.0239, 0.0042 -> 0.0043, 4.5000 -> 4.2188 | planner (depth, power); deflection both |
+| EndMill Adaptive plywood_hardwood | depth | 4.2188 -> 4.5000 | planner |
+| BullNose Adaptive softwood | power, deflection, depth | 0.0252 -> 0.0283, 0.0053 -> 0.0056, 4.1432 -> 4.4424 | planner |
+| BullNose Adaptive hardwood | power, deflection, depth | 0.0467 -> 0.0455, 0.0071 -> 0.0075, 3.8666 -> 4.4154 | planner |
+| BullNose Adaptive mdf | power, deflection, depth | 0.0266 -> 0.0361, 0.0053 -> 0.0060, 4.0881 -> 4.1631 | planner |
+| BullNose Adaptive plywood_hardwood | depth | 4.1996 -> 4.4910 | planner |
+| EndMill Adaptive softwood | power, deflection | 0.0162 -> 0.0210, 0.0025 -> 0.0035 | both (kinematics alone 0.0171, planner alone 0.0161): the junctions no longer slow the predicted feed the gates read |
+| EndMill Adaptive hardwood | power, deflection | 0.0271 -> 0.0352, 0.0042 -> 0.0059 | both (0.0286 / 0.0269) |
+| EndMill Waterline softwood | power, deflection | 0.0534 -> 0.0552, 0.0059 -> 0.0064 | kinematics |
+
+Every verdict state is unchanged.
+
+**Verification** (cloud, gate features `heavy-tests,research,test-support`
+unless noted): 88 binaries (every `tests/` file matching
+tier|arcfit|link|raster|waterline|scallop|drop|adaptive|tsp|capability|checkpoint|ramp_reach|steep_shallow,
+plus `transform_provenance_fingerprints`, `perf_golden_sim_metrics`, FM1,
+the machine sentries and `crease_own_region_pr6b`): all green except
+`scallop_trace_survives_relink_g_linktrace` and `crease_own_region_pr6b`,
+both red at `5b34e710`. `cargo test -p rs_cam_core --lib`: 2 640 passed;
+`rs_cam_cli`: 58 passed; `rs_cam_viz --no-fail-fast`: 1 036 passed, 0
+failed; `cargo fmt --check` clean; the full clippy line of `CLAUDE.md`
+clean (one lint in the new unit test fixed: a manual slice fill).
+
 ## Changes that wait for approval, with the measured effect
 
 1. F1: `TierIslandParams::max_close_raises` default 3 → 0. 350 mm proxy:
@@ -253,3 +670,7 @@ against the tolerance 0.05); with the fix the deepest fed sample is
    this terrain.
 4. F2 (band): not decided here. With F1 at 0 the band ratio is 3.26x on the
    350 mm proxy.
+5. (Applied, part 3.) G-TIERBURIAL kernel: the `edge_drop` contact and the
+   taper's tip branch.
+6. (Resolved without F4a, part 3.) `tier_arcfit_burial_f4` is green at 0.05
+   and 0.015: the arc fitter now holds its tolerance in 3D.

@@ -9,9 +9,11 @@
 //! min(vertical depth, the shortest horizontal shift that clears it): at a
 //! near-vertical step in the drop-cutter surface the vertical depth
 //! overstates the gouge. The `sim` arm simulates the tier alone at 0.1 mm
-//! cells and reads `column_deviations`. Arms `nohookup`,
-//! `nohookup_nodressups` and `nodressups` bisect the relink and the
-//! dressups (`ARMS=sim,nohookup`, comma-separated).
+//! cells and reads `column_deviations`. Other arms are `_`-separated flags
+//! that bisect the relink and the dressups: `nohookup`, `norapid`,
+//! `nofeedopt`, `nodressups` (`ARMS=sim,nohookup_norapid`,
+//! comma-separated). `FIND=x,y` prints the moves around the move nearest
+//! (x, y) in each arm.
 //!
 //! `ARMS=sim cargo test --profile release-fast -p rs_cam_core --test
 //! tier_fine_burial_sources_g_tierburial -- --ignored --nocapture` (about
@@ -39,6 +41,7 @@ use rs_cam_core::session::{
     Command, ProjectSession, SetDressupConfigArgs, SetStockSourceArgs, SetToolpathOperationArgs,
     SimulationOptions,
 };
+use rs_cam_core::tool::MillingCutter;
 use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
 
 const SAMPLE_MM: f64 = 0.05;
@@ -149,6 +152,23 @@ fn report(label: &str, s: &[Sample], probe: &EntrySurfaceProbe<'_>) -> Vec<(P3, 
     for (k, (n, v, e)) in &other {
         eprintln!("    other: {k}: {n} samples, max vertical {v:.3}, max est {e:.3}");
     }
+    // The deepest samples by penetration estimate, one per move.
+    let mut by_est: Vec<(f64, &Sample)> = s
+        .iter()
+        .map(|x| (x.depth.min(lateral_escape(x.p, probe)), x))
+        .collect();
+    by_est.sort_by(|a, b| b.0.total_cmp(&a.0));
+    let mut seen = std::collections::HashSet::new();
+    for (est, x) in by_est
+        .iter()
+        .filter(|(_, x)| seen.insert(x.move_index))
+        .take(4)
+    {
+        eprintln!(
+            "    by estimate: #{} {:?} chord {:.3}: est {est:.3}, vertical {:.3} at ({:.3},{:.3},{:.3})",
+            x.move_index, x.intent, x.chord, x.depth, x.p.x, x.p.y, x.p.z
+        );
+    }
     for (c, name) in ["cut chord > 0.25", "cut chord <= 0.25", "other fed"]
         .iter()
         .enumerate()
@@ -223,6 +243,35 @@ fn burial_classes_stages_and_sim_on_the_rivmap100_fine_tier() {
         rest_stock: None,
     };
     let cancel = AtomicBool::new(false);
+    // `PROFILE=x`: the model height (0.02 mm probe ball) and the tier
+    // tool's drop-cutter floor across the board edge y = 0 at that x.
+    if let Some(px) = std::env::var("PROFILE")
+        .ok()
+        .and_then(|v| v.parse::<f64>().ok())
+    {
+        let probe_ball = rs_cam_core::tool::BallEndmill::new(0.02, 10.0);
+        eprintln!(
+            "PROFILE x = {px}: mesh bbox y {:.3}..{:.3}, z {:.3}..{:.3}",
+            mesh.bbox.min.y, mesh.bbox.max.y, mesh.bbox.min.z, mesh.bbox.max.z
+        );
+        for k in 0..=24 {
+            let y = -0.1 + k as f64 * 0.05;
+            let cl = rs_cam_core::surface::dropcutter::point_drop_cutter(
+                px,
+                y,
+                &mesh,
+                &idx,
+                &probe_ball,
+            );
+            let over = rs_cam_core::surface::dropcutter::point_is_over_mesh_xy(px, y, &mesh, &idx);
+            eprintln!(
+                "  y {y:.2}: model {:.3} (contact {}, over mesh {over}), tool floor {:?}",
+                cl.z,
+                cl.contacted,
+                probe.floor_z(px, y)
+            );
+        }
+    }
     for arm in arms.split(',') {
         let (mut s2, i2) = load();
         let s = if arm == "base" || arm == "sim" {
@@ -236,10 +285,19 @@ fn burial_classes_stages_and_sim_on_the_rivmap100_fine_tier() {
             i2
         };
         let tc = s.get_toolpath_config(index).unwrap().clone();
-        if arm == "nohookup_nodressups" {
+        // An arm is `_`-separated flags: `nohookup` (intra_region_hookup_mm
+        // 0), `norapid` (rapid order off), `nofeedopt` (feed optimisation
+        // off), `nodressups` (both).
+        let flags: Vec<&str> = arm.split('_').collect();
+        let has = |f: &str| flags.contains(&f);
+        if has("nodressups") || has("norapid") || has("nofeedopt") {
             let mut d = tc.dressups.clone();
-            d.optimize_rapid_order = false;
-            d.feed_optimization = false;
+            if has("nodressups") || has("norapid") {
+                d.optimize_rapid_order = false;
+            }
+            if has("nodressups") || has("nofeedopt") {
+                d.feed_optimization = false;
+            }
             let _ = s
                 .apply(Command::SetDressupConfig(SetDressupConfigArgs {
                     index,
@@ -247,39 +305,33 @@ fn burial_classes_stages_and_sim_on_the_rivmap100_fine_tier() {
                 }))
                 .unwrap();
         }
-        match arm.trim_end_matches("_nodressups") {
-            "nohookup" => {
-                let OperationConfig::UnifiedFinish(mut cfg) = tc.operation.clone() else {
-                    panic!()
-                };
-                cfg.intra_region_hookup_mm = 0.0;
-                let _ = s
-                    .apply(Command::SetToolpathOperation(SetToolpathOperationArgs {
-                        index,
-                        operation: Box::new(OperationConfig::UnifiedFinish(cfg)),
-                    }))
-                    .unwrap();
-            }
-            "nodressups" => {
-                let mut d = tc.dressups.clone();
-                d.optimize_rapid_order = false;
-                d.feed_optimization = false;
-                let _ = s
-                    .apply(Command::SetDressupConfig(SetDressupConfigArgs {
-                        index,
-                        dressups: Box::new(d),
-                    }))
-                    .unwrap();
-            }
-            _ => {}
+        if has("nohookup") {
+            let OperationConfig::UnifiedFinish(mut cfg) = tc.operation.clone() else {
+                panic!()
+            };
+            cfg.intra_region_hookup_mm = 0.0;
+            let _ = s
+                .apply(Command::SetToolpathOperation(SetToolpathOperationArgs {
+                    index,
+                    operation: Box::new(OperationConfig::UnifiedFinish(cfg)),
+                }))
+                .unwrap();
         }
         let t0 = std::time::Instant::now();
         s.generate_toolpath(index, &cancel).unwrap();
         let tp = s.get_result(index).unwrap().toolpath().clone();
         let samples = buried_samples(&tp, &probe, 0.1);
         let max = samples.iter().map(|x| x.depth).fold(0.0, f64::max);
+        let machine = s.machine();
+        let cycle_s = rs_cam_core::machine::kinematics::compute_cycle_time(
+            &tp,
+            &machine.kinematics.unwrap_or_default(),
+            machine.max_feed_mm_min,
+            machine.max_feed_mm_min.max(1.0),
+        );
         eprintln!(
-            "arm {arm}: {} moves, {} samples > 0.1 mm deep, max {max:.3} ({:.0} s)",
+            "arm {arm}: {} moves, {} samples > 0.1 mm deep, max {max:.3}; \
+             cycle time {cycle_s:.1} s (machine kinematics, rapid = max feed) ({:.0} s)",
             tp.moves.len(),
             samples.len(),
             t0.elapsed().as_secs_f64()
@@ -302,6 +354,32 @@ fn burial_classes_stages_and_sim_on_the_rivmap100_fine_tier() {
             );
         }
         let pen = report(arm, &samples, &probe);
+        // The move with the deepest penetration estimate, in context.
+        if let Some(x) = samples.iter().max_by(|a, b| {
+            a.depth
+                .min(lateral_escape(a.p, &probe))
+                .total_cmp(&b.depth.min(lateral_escape(b.p, &probe)))
+        }) {
+            let m = x.move_index;
+            let region = s
+                .get_result(index)
+                .unwrap()
+                .annotated()
+                .spans_at(m)
+                .filter(|sp| sp.kind == rs_cam_core::trace::toolpath_spans::SpanKind::Region)
+                .map(|sp| sp.label.to_string())
+                .collect::<Vec<_>>()
+                .join("|");
+            eprintln!("    deepest estimate: move #{m} in [{region}]");
+            for j in m.saturating_sub(3)..(m + 3).min(tp.moves.len()) {
+                let mv = &tp.moves[j];
+                let f = probe.floor_z(mv.target.x, mv.target.y).unwrap_or(f64::NAN);
+                eprintln!(
+                    "      [{j}] {:?} {:?} -> ({:.3},{:.3},{:.3}), floor {f:.3}",
+                    mv.intent, mv.move_type, mv.target.x, mv.target.y, mv.target.z
+                );
+            }
+        }
         {
             let ann = std::sync::Arc::clone(s.get_result(index).unwrap().annotated());
             let mut by: std::collections::BTreeMap<String, (usize, f64)> = Default::default();
@@ -331,6 +409,32 @@ fn burial_classes_stages_and_sim_on_the_rivmap100_fine_tier() {
         {
             let m = w.move_index;
             for j in m.saturating_sub(6)..(m + 4).min(tp.moves.len()) {
+                let mv = &tp.moves[j];
+                eprintln!(
+                    "      [{j}] {:?} {:?} -> ({:.3},{:.3},{:.3})",
+                    mv.intent, mv.move_type, mv.target.x, mv.target.y, mv.target.z
+                );
+            }
+        }
+        // `FIND=x,y`: the moves around the move whose target is nearest
+        // (x, y), to follow one move through the arms.
+        if let Some((fx, fy)) = std::env::var("FIND").ok().and_then(|v| {
+            let (a, b) = v.split_once(',')?;
+            Some((a.parse::<f64>().ok()?, b.parse::<f64>().ok()?))
+        }) {
+            let near = tp
+                .moves
+                .iter()
+                .enumerate()
+                .min_by(|a, b| {
+                    let da = (a.1.target.x - fx).hypot(a.1.target.y - fy);
+                    let db = (b.1.target.x - fx).hypot(b.1.target.y - fy);
+                    da.total_cmp(&db)
+                })
+                .map(|(i, _)| i)
+                .unwrap();
+            eprintln!("  FIND ({fx},{fy}): nearest move {near}");
+            for j in near.saturating_sub(8)..(near + 4).min(tp.moves.len()) {
                 let mv = &tp.moves[j];
                 eprintln!(
                     "      [{j}] {:?} {:?} -> ({:.3},{:.3},{:.3})",
@@ -492,6 +596,67 @@ fn burial_classes_stages_and_sim_on_the_rivmap100_fine_tier() {
                 v.0, v.1, v.2, v.3
             );
         }
+        let mut worst_cols: Vec<_> = cols.iter().collect();
+        worst_cols.sort_by(|a, b| a.dev.total_cmp(&b.dev));
+        // Which move cuts a column: for each column, the lowest the tool's
+        // profile reaches over the column centre along every move, against
+        // the model height there (0.02 mm probe ball). A move that reaches
+        // below the model is a real cut; none is a simulation reading.
+        let mut probe_cols: Vec<(f64, f64, f32)> =
+            orphans.iter().take(3).map(|c| (c.x, c.y, c.dev)).collect();
+        probe_cols.extend(worst_cols.iter().take(2).map(|c| (c.x, c.y, c.dev)));
+        let reach = cutter.radius();
+        for &(qx, qy, dev) in &probe_cols {
+            let Some(mz) = model_z(qx, qy) else {
+                eprintln!("  column ({qx:.2},{qy:.2}) dev {dev:.3}: off the mesh");
+                continue;
+            };
+            let mut best = (f64::INFINITY, 0usize);
+            for i in 1..tp.moves.len() {
+                let (a, b) = (tp.moves[i - 1].target, tp.moves[i].target);
+                let len = (b.x - a.x).hypot(b.y - a.y);
+                let n = (len / 0.02).ceil().max(1.0) as usize;
+                for k in 0..=n {
+                    let t = k as f64 / n as f64;
+                    let (x, y, z) = (
+                        a.x + (b.x - a.x) * t,
+                        a.y + (b.y - a.y) * t,
+                        a.z + (b.z - a.z) * t,
+                    );
+                    let d = (x - qx).hypot(y - qy);
+                    if d > reach {
+                        continue;
+                    }
+                    if let Some(h) = cutter.height_at_radius(d) {
+                        let gap = z + h - mz;
+                        if gap < best.0 {
+                            best = (gap, i);
+                        }
+                    }
+                }
+            }
+            let i = best.1;
+            let m = &tp.moves[i];
+            eprintln!(
+                "  column ({qx:.2},{qy:.2}) dev {dev:.3}, model z {mz:.3}: lowest tool point over it \
+                 {:.3} mm from the model, move #{i} {:?} {:?} {:?} -> {:?}",
+                best.0,
+                m.intent,
+                m.move_type,
+                tp.moves[i - 1].target,
+                m.target
+            );
+            let region = s
+                .get_result(index)
+                .unwrap()
+                .annotated()
+                .spans_at(i)
+                .filter(|sp| sp.kind == rs_cam_core::trace::toolpath_spans::SpanKind::Region)
+                .map(|sp| sp.label.to_string())
+                .collect::<Vec<_>>()
+                .join("|");
+            eprintln!("    in region span [{region}]");
+        }
         for (x, y) in [(48.3, 24.6), (65.75, 7.3)] {
             let m = cols
                 .iter()
@@ -500,8 +665,6 @@ fn burial_classes_stages_and_sim_on_the_rivmap100_fine_tier() {
                 .fold(f64::INFINITY, f64::min);
             eprintln!("  connector site ({x},{y}): min dev within 0.5 mm {m:.3}");
         }
-        let mut worst_cols: Vec<_> = cols.iter().collect();
-        worst_cols.sort_by(|a, b| a.dev.total_cmp(&b.dev));
         for c in worst_cols.iter().take(8) {
             let nearest = samples
                 .iter()

@@ -4,6 +4,7 @@
 //! Every module here depends downward only. A surface analyser that reads a
 //! finishing module lives in `finish/` instead.
 
+pub(crate) mod chord_refine;
 pub mod dropcutter;
 pub mod flow_accum;
 pub mod merge_tree;

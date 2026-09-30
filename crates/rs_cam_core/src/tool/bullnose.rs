@@ -132,151 +132,63 @@ impl MillingCutter for BullNoseEndmill {
     }
 
     fn edge_drop(&self, cl: &mut CLPoint, p1: &P3, p2: &P3) {
+        // G-TIERBURIAL: the exact contact of the flat-and-torus profile
+        // (`super::edge_drop_by_profile`). The torus has no closed-form
+        // edge contact (a quartic), so the argmax is found on the slope of
+        // the touch height, `g(a) = |m| - height'(rho) a / rho`, which is
+        // positive at `a = 0` and falls monotonically (the height is
+        // convex): bisection to the float floor. In the flat part
+        // `height' = 0`, so a sloped edge's contact is always on the torus
+        // or at the rim.
         let r1 = self.r1();
         let r2 = self.r2();
-
-        // Edge vector
-        let dx = p2.x - p1.x;
-        let dy = p2.y - p1.y;
-        let dz = p2.z - p1.z;
-        let edge_len_xy_sq = dx * dx + dy * dy;
-
-        if edge_len_xy_sq < 1e-20 {
-            return; // vertical edge
-        }
-
-        let edge_len_xy = edge_len_xy_sq.sqrt();
-
-        // Parameter t for closest XY approach of CL to the edge line
-        let t_closest = ((cl.x - p1.x) * dx + (cl.y - p1.y) * dy) / edge_len_xy_sq;
-
-        // Perpendicular XY distance from CL to edge line
-        let px = p1.x + t_closest * dx;
-        let py = p1.y + t_closest * dy;
-        let d_sq = (cl.x - px) * (cl.x - px) + (cl.y - py) * (cl.y - py);
-
         let big_r = self.radius();
-        if d_sq > big_r * big_r {
-            return; // edge too far
-        }
-
-        let d = d_sq.sqrt();
-
-        // For the bull nose, edge contact has two regions:
-        // 1. Flat region contact (like flat endmill) when d <= r1
-        // 2. Torus region contact (offset-ellipse) when d > r1 or edge is sloped
-
-        // === Flat region contact (same as FlatEndmill) ===
-        if d < r1 + 1e-10 {
-            let s = ((r1 * r1 - d_sq).max(0.0)).sqrt() / edge_len_xy;
-            for &t in &[t_closest - s, t_closest + s] {
-                if (-1e-8..=1.0 + 1e-8).contains(&t) {
-                    let z = p1.z + t * dz;
-                    cl.update_z(z);
+        let slope_at = |rho: f64| {
+            if rho <= r1 {
+                return 0.0;
+            }
+            let e = rho - r1;
+            let den = r2 * r2 - e * e;
+            if den <= 0.0 {
+                f64::INFINITY
+            } else {
+                e / den.sqrt()
+            }
+        };
+        super::edge_drop_by_profile(
+            cl,
+            p1,
+            p2,
+            big_r,
+            |rho| self.height_at_radius(rho).unwrap_or(f64::INFINITY),
+            |d, m| {
+                if m == 0.0 {
+                    return 0.0;
                 }
-            }
-        }
-
-        // === Torus region contact ===
-        // When the tool's toroidal corner contacts the edge, the cross-section
-        // of a torus at distance d from its axis is an ellipse.
-        //
-        // The torus center circle has radius r1 and height r2 above the tip.
-        // At XY distance d from CL, the torus tube center is at:
-        //   XY distance from CL to torus center = r1
-        //   So the "local" distance from torus tube center to edge = d - r1 (signed)
-        // But we project into the plane perpendicular to the edge containing CL.
-        //
-        // Following OpenCAMLib's approach: in the plane perpendicular to the edge,
-        // the torus cross-section at perpendicular distance d from the CL axis
-        // is a circle of radius r2, centered at (r1, r2) relative to the tool tip
-        // (where r1 is the XY offset, r2 is the Z offset = center_height).
-        //
-        // When the edge has a slope, the cross-section circle appears as an ellipse
-        // in the edge's local coordinate system.
-
-        // Edge slope
-        let slope = dz / edge_len_xy;
-
-        // The torus contact is found by considering the circle of radius r2
-        // centered at distance r1 from the CL axis, at height r2 (center_height).
-        //
-        // In the plane perpendicular to the edge:
-        //   horizontal distance from CL to torus center = r1
-        //   horizontal distance from CL to edge = d
-        //   so torus center is at signed distance (d - r1) from the edge (in perp plane)
-        //
-        // The tube cross-section is a circle of radius r2.
-        // This circle, sliced by the edge's XZ plane, yields an ellipse with:
-        //   b_axis = r2 (short axis, in the perp direction)
-        //   a_axis = r2 / sin(theta) where theta = atan(slope) -- but simplified below
-
-        // Use the approach: parameterize the contact on the torus tube circle
-        // and find where it matches the edge line.
-
-        // Perpendicular distance from torus tube center to edge
-        let d_torus = d - r1; // signed distance
-
-        if d_torus.abs() > r2 + 1e-10 {
-            // Torus tube can't reach the edge
-            // (but flat region already handled above)
-            return;
-        }
-
-        // For a torus with tube radius r2, tube center at (r1, r2) from tip,
-        // contacting an edge with slope `slope` at perpendicular distance `d`:
-        //
-        // The contact equation in the cross-section perpendicular to the edge:
-        // Tube circle: (y - 0)^2 + (z - 0)^2 = r2^2
-        //   where y is distance from torus center in the perp direction
-        //   and z is height relative to torus center
-        //
-        // The tube touches the edge where:
-        //   y = d_torus (the perpendicular distance to the edge)
-        //   z = sqrt(r2^2 - d_torus^2) (two solutions, upper/lower)
-        //
-        // But with a sloped edge, the effective cross-section is an ellipse.
-        // The half-width along the edge at perpendicular distance d_torus is:
-        //   s = sqrt(r2^2 - d_torus^2)
-        //
-        // The contact point parameter along the edge:
-        //   For each solution of the tube-edge contact, the slope changes
-        //   the effective Z position.
-
-        // Simplified approach (proven to work for most cases):
-        // s = half-width of tube circle at distance d_torus
-        let s_sq = (r2 * r2 - d_torus * d_torus).max(0.0);
-        let s = s_sq.sqrt();
-
-        // Similar to ball endmill but for the torus tube:
-        // The tube center traces along the edge at height r2 above tip.
-        // Contact normal on the tube must match the edge slope.
-
-        let denom = (1.0 + slope * slope).sqrt();
-        for sign in &[1.0, -1.0] {
-            let sin_a = sign / denom;
-            let cos_a = -sign * slope / denom;
-
-            // Contact offset along edge (in edge parameter units)
-            let dt = s * cos_a / edge_len_xy;
-            let t = t_closest + dt;
-
-            if !(-1e-8..=1.0 + 1e-8).contains(&t) {
-                continue;
-            }
-
-            // Z of contact on edge
-            let cc_z = p1.z + t * dz;
-
-            // Tube center Z = cc_z + s * sin_a
-            // Tool tip Z = tube center Z - center_height = cc_z + s * sin_a - r2
-            let tip_z = cc_z + s * sin_a - r2;
-
-            // Contact must be on the lower half of the tube (sin_a >= 0)
-            if sin_a >= -1e-10 {
-                cl.update_z(tip_z);
-            }
-        }
+                let w_reach = (big_r * big_r - d * d).max(0.0).sqrt();
+                let g = |a: f64| {
+                    let rho = (d * d + a * a).sqrt();
+                    if rho <= 0.0 {
+                        m.abs()
+                    } else {
+                        m.abs() - slope_at(rho) * a / rho
+                    }
+                };
+                if g(w_reach) >= 0.0 {
+                    return m.signum() * w_reach;
+                }
+                let (mut lo, mut hi) = (0.0, w_reach);
+                for _ in 0..100 {
+                    let mid = 0.5 * (lo + hi);
+                    if g(mid) > 0.0 {
+                        lo = mid;
+                    } else {
+                        hi = mid;
+                    }
+                }
+                m.signum() * 0.5 * (lo + hi)
+            },
+        );
     }
 }
 

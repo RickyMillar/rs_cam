@@ -456,6 +456,9 @@ fn choose_link(
             cutter,
             params.stock_to_leave,
             params.sampling,
+            // G-TIERBURIAL: refined against the surface within the op
+            // tolerance, or refused (the router then retracts).
+            Some(params.tolerance),
         )?;
         // Inside the machining boundary only — a surface feed across an
         // excluded island is exactly the gouge class the boundary exists

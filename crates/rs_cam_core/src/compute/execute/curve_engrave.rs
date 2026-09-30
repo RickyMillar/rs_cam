@@ -257,6 +257,7 @@ fn chain_project_curve(
         return tp;
     }
     let rp = crate::finish::surface_link::RelinkParams {
+        link_tolerance: None,
         hookup_distance: cfg.chain_distance_mm,
         // The link does not ride the surface at all — see `link_ceiling`
         // below — so there is no crest to stand off from here.

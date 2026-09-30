@@ -417,6 +417,13 @@ fn pr6_measure_arcfit_intent_key_cost() {
     // the four 20-segment straight tails unmerged — with arcs, census and
     // fingerprint otherwise as before. `adaptive3d_full_chain` keeps the
     // merge ON so the pin prices the run key against the full chain again.
+    //
+    // RE-PINNED 2026-09-30 (G-TIERBURIAL, the arc fitter holds its tolerance
+    // in 3D): (72, 21) -> (74, 21), census unchanged. The half-circle turns
+    // of rows y0 = 8 and 12 were emitted as the MIRRORED half circle
+    // (`ArcCCW`, 11.3 mm off the path); they now fit `ArcCW` over 23 chords
+    // plus one linear chord each. The run key did not move; the sibling pin
+    // in `transform_provenance_fingerprints` names the moves.
     run(
         "arc_raster",
         arc_raster(),
@@ -424,7 +431,7 @@ fn pr6_measure_arcfit_intent_key_cost() {
         1200.0,
         adaptive3d_full_chain(),
         &Expect {
-            out: (72, 21),
+            out: (74, 21),
             census: (270, 7, 4, 0),
         },
     );

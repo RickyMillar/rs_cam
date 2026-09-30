@@ -164,8 +164,14 @@ impl MillingCutter for BallEndmill {
             let sin_a = sign / denom;
             let cos_a = -sign * slope / denom;
 
-            // Contact point along edge parameter (relative to t_closest)
-            let dt = s * cos_a / edge_len_xy;
+            // Contact point along edge parameter (relative to t_closest).
+            // The centre is the contact plus `s (cos_a, sin_a)` (the tip Z
+            // below adds `s sin_a`), so the contact is the centre's foot
+            // MINUS `s cos_a`. G-TIERBURIAL
+            // (`planning/tiered_finish_2026-09-30/RESULTS.md`): this was
+            // `+ s cos_a`, the mirrored, downhill point, and the drop was
+            // low on every sloped edge (1.79 mm on a 49.6 degree edge).
+            let dt = -s * cos_a / edge_len_xy;
             let t = t_closest + dt;
 
             // Check if within edge segment

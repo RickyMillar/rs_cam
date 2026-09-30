@@ -720,6 +720,9 @@ pub(crate) fn emit_paths_with_entry_stock_reported(
                     cutter,
                     params.stock_to_leave,
                     params.sampling,
+                    // `PencilParams` has no path tolerance: the link is not
+                    // refined (G-TIERBURIAL, open).
+                    None,
                 ) else {
                     report.off_surface += 1;
                     return None;

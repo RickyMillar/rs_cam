@@ -21,6 +21,18 @@ use crate::trace::transform_provenance::Transformed;
 /// (the caller is already at `from` and feeds to `to` itself). Returns `None` if
 /// the tool loses surface contact anywhere along the link (over a hole / off the
 /// mesh) — the caller then falls back to a clean retract-and-replunge.
+///
+/// `tolerance: Some(t)` (G-TIERBURIAL, `planning/tiered_finish_2026-09-30/
+/// RESULTS.md`): the link feeds straight between samples, and a straight
+/// feed between two surface points can pass under a convex surface. Each
+/// feed between consecutive samples is refined against the drop-cutter
+/// surface with the scallop rings' own chord refinement
+/// ([`crate::surface::chord_refine::refine_track`], gouge side only, probe
+/// step from the tool and `t`); a feed that cannot track the surface within
+/// `t` refuses the link (`None`, the caller retracts). Unrefined, the
+/// rivmap100 fine tier's links went 0.356 mm under the surface. `None` keeps
+/// the unrefined link for the callers that have no path tolerance.
+#[allow(clippy::too_many_arguments)] // SAFETY: the link's geometry dials, each named at the call site
 pub fn build_surface_link(
     from: P3,
     to: P3,
@@ -29,6 +41,7 @@ pub fn build_surface_link(
     cutter: &dyn MillingCutter,
     stock_to_leave: f64,
     spacing: f64,
+    tolerance: Option<f64>,
 ) -> Option<Vec<P3>> {
     let dx = to.x - from.x;
     let dy = to.y - from.y;
@@ -48,7 +61,28 @@ pub fn build_surface_link(
         }
         pts.push(P3::new(x, y, cl.z + stock_to_leave));
     }
-    Some(pts)
+    let Some(tolerance) = tolerance else {
+        return Some(pts);
+    };
+    let ctx = crate::surface::chord_refine::ChordRefineCtx::gouge_check(
+        mesh,
+        index,
+        cutter,
+        stock_to_leave,
+        mesh.bbox.min.z,
+        tolerance,
+        crate::surface::chord_refine::ChordCoverage::Contact,
+    );
+    let mut refined = Vec::with_capacity(pts.len());
+    let mut a = from;
+    for &b in pts.iter().chain(std::iter::once(&to)) {
+        refined.extend(crate::surface::chord_refine::refine_track(a, b, &ctx)?);
+        if b != to {
+            refined.push(b);
+        }
+        a = b;
+    }
+    Some(refined)
 }
 
 // ── Fragment relinking ───────────────────────────────────────────────────
@@ -239,6 +273,9 @@ pub struct LinkGeometry {
     pub feed_rate: f64,
     pub plunge_rate: f64,
     pub safe_z: f64,
+    /// The op's path tolerance, when it has one: see
+    /// [`RelinkParams::link_tolerance`].
+    pub link_tolerance: Option<f64>,
 }
 
 /// The one FINISHING configuration of [`relink_fragments`], built once and
@@ -300,6 +337,7 @@ impl<'a> FinishingLinkStage<'a> {
             feed_rate: geom.feed_rate,
             plunge_rate: geom.plunge_rate,
             safe_z: geom.safe_z,
+            link_tolerance: geom.link_tolerance,
             link_kinematics: self.link_kinematics,
             reorder: true,
             boundary: self.boundary,
@@ -451,6 +489,12 @@ pub struct RelinkParams<'a> {
     pub feed_rate: f64,
     pub plunge_rate: f64,
     pub safe_z: f64,
+    /// `Some(t)`: every feed between two link samples is refined against
+    /// the drop-cutter surface within `t`, or the link is refused
+    /// ([`build_surface_link`], G-TIERBURIAL). `None`: the unrefined link,
+    /// for an op with no path tolerance (the engraving passes, the
+    /// standalone raster and waterline, the pencil, the research rigs).
+    pub link_tolerance: Option<f64>,
     /// When `Some`, a candidate link is additionally costed against the
     /// retract it would replace with the F-034 integrator and only kept
     /// when it is actually faster — the same decision
@@ -890,6 +934,7 @@ pub fn relink_fragments_with_kinds(
                 cutter,
                 params.stock_to_leave,
                 params.sampling,
+                params.link_tolerance,
             ) else {
                 report.off_surface += 1;
                 return None;
@@ -1328,6 +1373,7 @@ mod tests {
         let tp = fragmented_valley_path(6, 4.0, 1.5, safe_z);
 
         let params = RelinkParams {
+            link_tolerance: None,
             hookup_distance: 3.0,
             stock_to_leave: 0.0,
             sampling: 0.5,
@@ -1384,6 +1430,7 @@ mod tests {
         let n_in = tp.moves.len();
 
         let params = RelinkParams {
+            link_tolerance: None,
             hookup_distance: 3.0,
             stock_to_leave: 0.0,
             sampling: 0.5,
@@ -1423,6 +1470,7 @@ mod tests {
         let tp = fragmented_valley_path(6, 4.0, 1.5, safe_z);
 
         let params = RelinkParams {
+            link_tolerance: None,
             hookup_distance: 3.0,
             stock_to_leave: 0.0,
             sampling: 0.5,
@@ -1485,6 +1533,7 @@ mod tests {
         let tp = fragmented_valley_path(4, 4.0, 5.0, safe_z);
 
         let params = RelinkParams {
+            link_tolerance: None,
             hookup_distance: 3.0,
             stock_to_leave: 0.0,
             sampling: 0.5,
@@ -1539,6 +1588,7 @@ mod tests {
         let tp = fragmented_valley_path(6, 4.0, 1.5, safe_z);
 
         let base = RelinkParams {
+            link_tolerance: None,
             hookup_distance: 3.0,
             stock_to_leave: 0.0,
             sampling: 0.5,
@@ -1627,6 +1677,7 @@ mod tests {
         }
         let region = RegionSet::new(rings);
         let params = RelinkParams {
+            link_tolerance: None,
             hookup_distance: 3.0,
             stock_to_leave: 0.0,
             sampling: 0.5,
@@ -1718,6 +1769,7 @@ mod tests {
         }
         let region = RegionSet::new(rings);
         let params = RelinkParams {
+            link_tolerance: None,
             hookup_distance: 3.0,
             stock_to_leave: 0.0,
             sampling: 0.5,
@@ -1782,6 +1834,7 @@ mod tests {
             fallback_top_z: -50.0,
         };
         let base = RelinkParams {
+            link_tolerance: None,
             hookup_distance: 3.0,
             stock_to_leave: 0.0,
             sampling: 0.5,
@@ -1866,6 +1919,7 @@ mod tests {
         }
 
         let base = RelinkParams {
+            link_tolerance: None,
             hookup_distance: 0.0, // linking off: isolate the ordering
             stock_to_leave: 0.0,
             sampling: 0.5,
@@ -1909,6 +1963,7 @@ mod tests {
             &tool,
             0.0,
             0.5,
+            None,
         );
         let pts = on.unwrap();
         assert!(
@@ -1927,6 +1982,7 @@ mod tests {
             &tool,
             0.0,
             0.5,
+            None,
         );
         assert!(off.is_none(), "a link entirely off the mesh must be None");
     }

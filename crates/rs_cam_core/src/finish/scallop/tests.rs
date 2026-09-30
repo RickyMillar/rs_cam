@@ -546,6 +546,9 @@ fn lift_ctx_for<'a>(
         min_z: mesh.bbox.min.z,
         chord_tolerance: 0.05,
         probe_step,
+        coverage: crate::surface::chord_refine::ChordCoverage::OverMesh,
+        side: crate::surface::chord_refine::ChordSide::Both,
+        insert: crate::surface::chord_refine::ChordInsert::Drop,
     }
 }
 

@@ -182,6 +182,7 @@ fn emit_ring(tp: &mut Toolpath, pts: &[P3]) {
 
 fn base_params<'a>() -> RelinkParams<'a> {
     RelinkParams {
+        link_tolerance: None,
         hookup_distance: 8.0,
         stock_to_leave: 0.0,
         sampling: 0.25,

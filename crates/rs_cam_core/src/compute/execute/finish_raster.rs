@@ -389,6 +389,9 @@ pub(crate) fn generate_drop_cutter(
                     feed_rate,
                     plunge_rate,
                     safe_z,
+                    // `DropCutterConfig` has no path tolerance: the link
+                    // is not refined (G-TIERBURIAL, open).
+                    link_tolerance: None,
                 },
                 m,
                 idx,
@@ -490,6 +493,9 @@ pub(crate) fn generate_waterline(
                     feed_rate: params.feed_rate,
                     plunge_rate: params.plunge_rate,
                     safe_z: params.safe_z,
+                    // `WaterlineConfig` has no path tolerance: the link is
+                    // not refined (G-TIERBURIAL, open).
+                    link_tolerance: None,
                 },
                 m,
                 idx,

@@ -146,6 +146,7 @@ fn relink_and_cost_under(
         rapid_feed_mm_min: RAPID_FEED_MM_MIN,
     };
     let params = rs_cam_core::finish::surface_link::RelinkParams {
+        link_tolerance: None,
         hookup_distance: 25.0,
         stock_to_leave: 0.0,
         sampling: 0.5,

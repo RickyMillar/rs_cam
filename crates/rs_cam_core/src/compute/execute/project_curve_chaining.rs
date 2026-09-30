@@ -712,6 +712,7 @@ fn a_link_may_not_leave_the_machining_boundary() {
     let tool_cfg = endmill_tool_config(TOOL_DIAMETER_MM);
     let tool_def = build_cutter(&tool_cfg);
     let params = crate::finish::surface_link::RelinkParams {
+        link_tolerance: None,
         hookup_distance: CANDIDATE_CHAIN_MM,
         stock_to_leave: 0.0,
         sampling: POINT_SPACING_MM,

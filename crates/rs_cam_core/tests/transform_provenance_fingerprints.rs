@@ -414,9 +414,21 @@ fn arc_raster_full_dressups_fingerprint() {
     // `arcfit_intent_key_cost_f1` carries the same fingerprint and the seam
     // census beside it. The two fixtures in that file whose following cut is
     // STRAIGHT are byte-identical under the same change.
+    //
+    // FOURTH RE-PIN, 2026-09-30 (G-TIERBURIAL, the arc fitter holds its
+    // tolerance in 3D, `tests/an_arc_fit_holds_its_source_in_3d_g_tierburial.rs`):
+    // (72, 16066745990077881327) -> (74, 16089843138892888458). The rows at
+    // y0 = 8 and y0 = 12 turn on a 24-chord half circle whose fitted centre
+    // sat a hair off the chord, and the fitter emitted it as
+    // `ArcCCW { i: 8, j: ~1e-13 }` to (18, y0): the MIRRORED half circle,
+    // 11.3 mm off the path at its far side. The fitter now requires the
+    // source's own sweep to equal the emitted one, so each of those rows
+    // fits `ArcCW` over the first 23 chords and keeps the last chord
+    // linear: +1 move per row, arcs unchanged (21). Rows 0 and 4 are
+    // byte-identical.
     assert_eq!(
         fingerprint(&out.toolpath),
-        (72, 16_066_745_990_077_881_327),
+        (74, 16_089_843_138_892_888_458),
         "arc_raster geometry moved; re-pinned 2026-09-25 for the full-depth entry helix and ramp (operator ruling 2026-09-24), re-pinned 2026-09-10 for the G-RAMPCONTAIN \
          ramp fold, 2026-08-14 for the lead-out retract lift (f86a38c), before \
          that by PR-6 (arcfit intent key), originally captured at HEAD 4787421 \
@@ -435,15 +447,25 @@ fn arc_raster_full_dressups_fingerprint() {
     // carry the spans after it forward by K - 1, and this arithmetic is the
     // provenance remap being right. A shift that did NOT accumulate in
     // entry order would be the defect.
+    //
+    // RE-PINNED 2026-09-30 (G-TIERBURIAL, the fourth fingerprint re-pin
+    // above). The rows at y0 = 8 and y0 = 12 each gain one move (the last
+    // chord of the half circle stays linear); rows 0 and 4 do not. The
+    // sites shift by the moves added before each end:
+    //
+    //     head   (0, 30) -> (0, 30)     +0 start, +0 end   (rows 0 and 4)
+    //     body  (30, 51) -> (30, 52)    +0 start, +1 end   (the y0 = 8 row)
+    //     tail  (51, 71) -> (52, 73)    +1 start, +2 end   (the y0 = 12 row)
+    //     whole  (0, 71) -> (0, 73)     +0 start, +2 end   (both)
     assert_eq!(
         link_sites(&recorder.finish()),
         expect_sites(&[
             ("head", Some((0, 30))),
-            ("body", Some((30, 51))),
-            ("tail", Some((51, 71))),
-            ("whole", Some((0, 71))),
+            ("body", Some((30, 52))),
+            ("tail", Some((52, 73))),
+            ("whole", Some((0, 73))),
         ]),
-        "arc_raster semantic link landing sites moved; re-pinned 2026-09-25 for the full-depth entry helix and ramp (operator ruling 2026-09-24), captured at HEAD 4787421 before C1"
+        "arc_raster semantic link landing sites moved; re-pinned 2026-09-30 for the 3D arc-fit sweep check (G-TIERBURIAL), 2026-09-25 for the full-depth entry helix and ramp (operator ruling 2026-09-24), captured at HEAD 4787421 before C1"
     );
 }
 

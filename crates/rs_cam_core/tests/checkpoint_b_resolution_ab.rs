@@ -875,6 +875,32 @@ fn arms_are_distinct_grids_with_honest_provenance() {
     );
 }
 
+/// Deepest cutting point below the EXACT tool-centre surface at its own XY
+/// (`point_drop_cutter`, the same query the reach clamp holds endpoints to),
+/// and how many points were scored. Negative = gouge. 0.0 when none is below.
+fn deepest_below_exact_drop(
+    tp: &Toolpath,
+    fixture: &Fixture,
+    cutter: &dyn MillingCutter,
+) -> (f64, usize) {
+    let mut deepest = 0.0_f64;
+    let mut scored = 0usize;
+    for mv in tp.moves.iter().filter(|m| m.move_type.is_cutting()) {
+        let exact = rs_cam_core::surface::dropcutter::point_drop_cutter(
+            mv.target.x,
+            mv.target.y,
+            &fixture.mesh,
+            &fixture.index,
+            cutter,
+        );
+        if exact.contacted {
+            scored += 1;
+            deepest = deepest.min(mv.target.z - exact.z);
+        }
+    }
+    (deepest, scored)
+}
+
 /// **PR-8a's quality gate, restated by PR-8b.**
 ///
 /// As landed, this gate asserted that the legacy cell reproduced
@@ -955,16 +981,30 @@ fn ramp_finish_geo_mean_policy_halves_the_descent_chords() {
             after_m.residual_samples > 0,
             "{name}: nothing was scored on the shipped arm"
         );
+        // Against the EXACT tool-centre surface at each point's own XY, not
+        // the bilinear sample of the 0.05 mm reference grid. Re-derived
+        // 2026-09-30 (G-TIERBURIAL kernel fix): the grid's nodes are exact
+        // drops, but between nodes bilinear interpolation reads ABOVE a
+        // convex kink of the tool-centre surface. At the narrow ridge's foot
+        // (1.384, -7.862) the four nodes read 0.157 / 0 / 0.161 / 0 across
+        // one cell; the sample there is 0.0504, the exact drop 0.0190, and
+        // the path point 0.0246, 0.0056 mm ABOVE the surface, which the grid
+        // metric scored as a -0.0258 mm gouge. The corrected edge contact
+        // moved that kink; the old kernel's surface happened to interpolate
+        // below the path. Same bound, exact reference.
+        let (exact_deepest, exact_scored) = deepest_below_exact_drop(&after.toolpath, &fixture, &t);
+        assert!(exact_scored > 0, "{name}: no cutting point met the mesh");
         assert_eq!(
-            after_m.deepest_gouge_mm, 0.0,
+            exact_deepest, 0.0,
             "{name}: the shipped policy must leave NO cutting point below the \
-             reference tool-centre surface; deepest {:.4} mm",
+             exact tool-centre surface; deepest {exact_deepest:.6} mm (the \
+             reference-grid sample reads {:.4} mm)",
             after_m.deepest_gouge_mm
         );
         assert_eq!(after_m.gouge_over_50um, 0, "{name}");
         println!(
             "{name}: shortest cutting chord {:.4} -> {:.4} mm \
-             ({chord_ratio:.2}x, cell {cell_ratio:.2}x); shipped-arm deepest \
+             ({chord_ratio:.2}x, cell {cell_ratio:.2}x); shipped-arm grid-sample deepest \
              gouge {:.4} mm over {} scored points",
             before_m.min_segment_mm,
             after_m.min_segment_mm,

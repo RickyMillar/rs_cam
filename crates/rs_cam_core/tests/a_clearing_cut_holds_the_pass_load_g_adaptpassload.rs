@@ -25,6 +25,16 @@
 //! over 0.546, peak 0.927, median 0.503; per producer (over, peak): residue
 //! contour 1868 / 0.927, residue mop 1362 / 0.920, slot line 807 / 0.833,
 //! agent 205 / 0.891, starter pocket 12 / 0.834. After: 0 over, peak 0.519.
+//!
+//! 2026-09-30: red again at 2 over (peak 0.674, cycle 687.1 s) on move 2586
+//! (14.63, 2.25) -> (15.60, 1.10), a 1.5 mm Agent step whose exact width is
+//! 0.698 of D mid-step and 0.174 at its end: the planner read a step at its
+//! end disc only. It now reads each step along its length
+//! (`adaptive/search.rs::measure_step`): 0 over, peak 0.415, cycle 752.5 s.
+//! On the plunge-entry fixture a sim sample can read over the bound where
+//! the exact geometry does not (the simulation lumps a move's removal into
+//! one sample); that test clears such samples by exact geometry and pins
+//! their count (`a_straight_plunge_entry_is_exempt_only_leaving_its_hole`).
 
 #![allow(
     clippy::unwrap_used,
@@ -132,6 +142,8 @@ struct Load {
     /// Share of the ClearingCut volume by producer.
     volume_share: BTreeMap<String, f64>,
     worst_move: usize,
+    /// Each non-exempt sample over the bound: (move index, sim radial).
+    over_samples: Vec<(usize, f64)>,
     /// Per producer: (samples over the bound, peak radial, cutting time s).
     by_producer: BTreeMap<String, (usize, f64, f64)>,
     retracts: usize,
@@ -241,6 +253,7 @@ fn measure(session: &ProjectSession, plunge_entries: bool) -> Load {
         if r > bound {
             out.over += 1;
             entry.0 += 1;
+            out.over_samples.push((s.move_index, r));
         }
         if r > out.peak {
             out.peak = r;
@@ -639,6 +652,19 @@ fn print_time_by_intent() {
 /// chord left where the planner had stamped its walked steps. The planner
 /// now reads the slivers on sub-points (`compute_swept_width_with_slivers`)
 /// and emits the path it walked.
+///
+/// The oracle for a sample over the bound is exact geometry (lead decision
+/// 2026-09-30, the pattern of `a_rapid_leaves_cut_depth_straight_up_g_adaptrapidlift`).
+/// The simulation can lump the removal of a whole move into one sample and
+/// read the extent of that sample's midpoint disc over it: on move 1682
+/// ((-28.82, 4.93) -> (-30.31, 4.75), z -3; move 4885 at z -6) the three
+/// samples remove 0.016, 0.096 and 7.407 mm^3 and read 0.000, 0.000 and
+/// 0.558, where the exact width is 0.396, 0.363 and 0.278 (0.407 on move
+/// 1681 before it). Each sim sample over the bound must be cleared by
+/// [`exact_width_at`] at every sample of its move (the move's exact peak);
+/// a sample whose move the oracle also reads over the bound fails. The
+/// count of sim-only flags is pinned ([`PLUNGE_SIM_ONLY_FLAGS`]) so a new
+/// flag of either kind shows.
 #[test]
 fn a_straight_plunge_entry_is_exempt_only_leaving_its_hole() {
     let session = common::adaptive_islands::adaptive_session_with(
@@ -651,15 +677,57 @@ fn a_straight_plunge_entry_is_exempt_only_leaving_its_hole() {
         "G-ADAPTPASSLOAD plunge entries: exempt {} (peak {:.4}), over {} of {} (peak {:.4}), cycle {:.1} s",
         load.exempt, load.exempt_peak, load.over, load.samples, load.peak, load.cycle_s
     );
+    let tp = toolpath_of(&session);
+    let trace = trace_of(&session);
+    let oracle_bound =
+        bound + PLUNGE_ORACLE_EPS_MM / (2.0 * common::adaptive_islands::TOOL_RADIUS_MM);
+    // (move, sim radial, exact peak of the move).
+    let mut sim_only = Vec::new();
+    let mut real = Vec::new();
+    for &(m, sim) in &load.over_samples {
+        let mut last = (tp.moves[m - 1].target.x, tp.moves[m - 1].target.y);
+        let mut exact_peak = 0.0_f64;
+        for s in trace.samples.iter().filter(|s| s.move_index == m) {
+            let at = (s.position[0], s.position[1]);
+            exact_peak = exact_peak.max(exact_width_at(&tp, m, last, at));
+            last = at;
+        }
+        eprintln!(
+            "sim sample over the bound: move {m}, sim {sim:.4}, exact peak of the move {exact_peak:.4}"
+        );
+        if exact_peak > oracle_bound {
+            real.push((m, sim, exact_peak));
+        } else {
+            sim_only.push((m, sim, exact_peak));
+        }
+    }
+    assert!(
+        real.is_empty(),
+        "non-exempt ClearingCut samples over {bound:.4} that the exact oracle also reads over \
+         (move, sim, exact): {real:?}; per producer: {:?}",
+        load.by_producer
+    );
     assert_eq!(
-        load.over, 0,
-        "{} non-exempt ClearingCut samples over {bound:.4} (peak {:.4} on move {}): {:?}",
-        load.over, load.peak, load.worst_move, load.by_producer
+        sim_only.len(),
+        PLUNGE_SIM_ONLY_FLAGS,
+        "sim-only samples over {bound:.4} moved (move, sim, exact): {sim_only:?}"
     );
     assert!(load.samples > 1000, "too few samples: {}", load.samples);
     let walls = wall_cuts(&session);
     assert!(walls.is_empty(), "moves cut a wall of the part: {walls:?}");
 }
+
+/// Sim samples over the bound on the plunge-entry fixture that the exact
+/// oracle clears: moves 1682 and 4885 (exact peak 0.396), measured
+/// 2026-09-30 after the planner started to hold each step along its length
+/// (`adaptive/search.rs::measure_step`). 0 before that change, on a
+/// different path.
+const PLUNGE_SIM_ONLY_FLAGS: usize = 2;
+
+/// The slack of the exact oracle, mm: the flattening of the tool-centre
+/// region only (`FlattenPolicy::UNTOLERANCED_MM`), as in the rapid-lift
+/// sentry.
+const PLUNGE_ORACLE_EPS_MM: f64 = rs_cam_core::polygon::FlattenPolicy::UNTOLERANCED_MM;
 
 /// The points along move `mv` from `from`, every `pitch` / 2 mm (arcs
 /// followed).

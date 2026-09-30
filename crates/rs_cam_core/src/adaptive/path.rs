@@ -347,7 +347,7 @@ fn feed_link_checked(
     for k in 1..=n_steps {
         let t = k as f64 / n_steps as f64;
         let (x, y) = (from.x + t * dx, from.y + t * dy);
-        if !step_within_pass_load(grid, x, y, load.tool_radius, angle, &load.pass) {
+        if !step_within_pass_load(grid, at, x, y, load.tool_radius, angle, &load.pass) {
             grid.restore_cleared(&log);
             return false;
         }
@@ -463,7 +463,7 @@ fn emit_capped_walk_with(
         } else {
             load.pass
         };
-        let reading = super::search::measure_step(grid, b.x, b.y, r, angle, &step_pass);
+        let reading = super::search::measure_step(grid, a, b.x, b.y, r, angle, &step_pass);
         if was_departing && !departing && span.len() >= 2 {
             // The exempt departure stays its own cut (as generation made it).
             let last = span.last().copied();
@@ -1169,6 +1169,7 @@ pub(crate) fn adaptive_segments_with_debug(
                                 w >= step_load.presence
                                     && super::search::step_within_pass_load(
                                         &grid,
+                                        P2::new(cx, cy),
                                         cx + step_len * r.angle.cos(),
                                         cy + step_len * r.angle.sin(),
                                         tool_radius,
@@ -2416,6 +2417,7 @@ fn mop_capped_step_of(
         if w < pass.presence
             || !super::search::step_within_pass_load(
                 grid,
+                cur,
                 next.x,
                 next.y,
                 load.tool_radius,
@@ -2581,7 +2583,7 @@ fn emit_spiral_starter_pocket(
             } else {
                 *load
             };
-            if !step_within_pass_load(grid, b.x, b.y, tool_radius, angle, &step_load) {
+            if !step_within_pass_load(grid, a, b.x, b.y, tool_radius, angle, &step_load) {
                 holds = false;
                 break;
             }

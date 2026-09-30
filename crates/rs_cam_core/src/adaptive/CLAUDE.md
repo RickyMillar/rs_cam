@@ -13,9 +13,9 @@ The 2D clearing engine; the entry point is `adaptive_toolpath` (`mod.rs`).
 
 - 2D (`KeepDownLinks::WithinPassLoad`): every step of every producer and
   every link step holds `step_within_pass_load`: swept width <= the ceiling
-  (0.3626 at s 2, R 3), and the sub-point sliver reading <= ceiling + cell/D
-  (`measure_step`). No out-of-band fallback. A move is legal only when the
-  whole segment is inside `ToolCentreRegion` (every piece).
+  (0.3626 at s 2, R 3), sub-point slivers <= ceiling + cell/D, at the end and
+  at each cell along the step (`measure_step`). No fallback. A move is legal
+  only when the whole segment is inside `ToolCentreRegion` (every piece).
 - Planner stock is the emitted path: a step stamps its capsule, a re-entry
   R + the contained helix radius (flat lap), emission drops only collinear
   points, no dressup merge; arcs are held inside the region.

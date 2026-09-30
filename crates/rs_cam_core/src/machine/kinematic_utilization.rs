@@ -466,6 +466,11 @@ struct Digest {
     length: f64,
     dz: f64,
     dir: [f64; 3],
+    /// Unit tangent at the start and at the end, for the junction
+    /// geometry, as the integrator reads it
+    /// (`crate::machine::kinematics::move_end_tangents`).
+    dir_start: [f64; 3],
+    dir_end: [f64; 3],
     end_point: [f64; 3],
     /// The raw commanded feed (mm/min); for a rapid, the effective
     /// travel rate.
@@ -521,7 +526,8 @@ pub fn analyse_toolpath(
     let rapid_eff_mm_min = rapid_feed_mm_min.max(max_feed_mm_min);
 
     // Stage 1 — the integrator's digest list: skip the seed move, skip
-    // every degenerate move, take an arc on its chord.
+    // every degenerate move, take an arc on its chord (its junctions on
+    // its own end tangents).
     let mut digests: Vec<Digest> = Vec::with_capacity(moves_total);
     for (offset, pair) in toolpath.moves.windows(2).enumerate() {
         let (Some(prev), Some(curr)) = (pair.first(), pair.get(1)) else {
@@ -553,11 +559,19 @@ pub fn analyse_toolpath(
             }
             None => v_cmd_mm_s,
         };
+        let (dir_start, dir_end) = crate::machine::kinematics::move_end_tangents(
+            &prev.target,
+            &curr.target,
+            curr.move_type,
+            dir,
+        );
         digests.push(Digest {
             source_index: offset + 1,
             length,
             dz,
             dir,
+            dir_start,
+            dir_end,
             end_point: [curr.target.x, curr.target.y, curr.target.z],
             commanded_mm_min,
             feed_ceiling_mm_min,
@@ -591,8 +605,8 @@ pub fn analyse_toolpath(
     for (i, d) in digests.iter().enumerate() {
         let v_out_mm_s = match digests.get(i + 1) {
             Some(next) => junction_velocity(
-                &d.dir,
-                &next.dir,
+                &d.dir_end,
+                &next.dir_start,
                 d.v_ceiling_mm_s,
                 next.v_ceiling_mm_s,
                 d.accel.min(next.accel),

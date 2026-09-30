@@ -195,9 +195,15 @@ pub(super) fn spiral_passes(
             let dir = (p.y - prev_p.y).atan2(p.x - prev_p.x);
             let eng = super::search::compute_engagement_arc(grid, p.x, p.y, tool_radius, dir);
             let holds = match pass_load {
-                Some(load) => {
-                    super::search::step_within_pass_load(grid, p.x, p.y, tool_radius, dir, load)
-                }
+                Some(load) => super::search::step_within_pass_load(
+                    grid,
+                    prev_p,
+                    p.x,
+                    p.y,
+                    tool_radius,
+                    dir,
+                    load,
+                ),
                 None => eng <= troch.cap,
             };
             if holds {

@@ -122,6 +122,7 @@ fn scattered_fragments(f: usize, safe_z: f64) -> Toolpath {
 
 fn relink_params(safe_z: f64, reorder: bool) -> RelinkParams<'static> {
     RelinkParams {
+        link_tolerance: None,
         hookup_distance: 2.0,
         stock_to_leave: 0.0,
         sampling: 0.5,

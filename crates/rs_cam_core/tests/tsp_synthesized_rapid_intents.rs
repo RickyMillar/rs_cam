@@ -66,27 +66,28 @@ use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 
 // ── Unit level: the pass itself ─────────────────────────────────────────
 
-/// Two cutting segments at distinct XY, framed by safe-Z rapids — the
-/// smallest input that reaches `rebuild_group` (`optimize_one_group` runs
-/// verbatim fast paths at zero and one segment).
-fn two_segment_toolpath() -> Toolpath {
+/// Three cutting segments at distinct XY, framed by safe-Z rapids, visited
+/// out of nearest order (x 0, 100, 10) — the smallest input that reaches
+/// `rebuild_group` AND keeps its result (`optimize_one_group` runs verbatim
+/// fast paths at zero and one segment, and since 2026-09-30 keeps a group
+/// whose rebuild does not shorten its rapid travel as it is: two segments
+/// already in order come out unchanged, with the input's own intents).
+fn out_of_order_toolpath() -> Toolpath {
     let safe_z = 10.0;
     let mut tp = Toolpath::new();
-    tp.rapid_to(P3::new(0.0, 0.0, safe_z));
-    tp.feed_to(P3::new(0.0, 0.0, -1.0), 500.0);
-    tp.feed_to(P3::new(5.0, 0.0, -1.0), 1000.0);
-    tp.rapid_to(P3::new(5.0, 0.0, safe_z));
-    tp.rapid_to(P3::new(20.0, 0.0, safe_z));
-    tp.feed_to(P3::new(20.0, 0.0, -1.0), 500.0);
-    tp.feed_to(P3::new(25.0, 0.0, -1.0), 1000.0);
-    tp.rapid_to(P3::new(25.0, 0.0, safe_z));
+    for x0 in [0.0, 100.0, 10.0] {
+        tp.rapid_to(P3::new(x0, 0.0, safe_z));
+        tp.feed_to(P3::new(x0, 0.0, -1.0), 500.0);
+        tp.feed_to(P3::new(x0 + 5.0, 0.0, -1.0), 1000.0);
+        tp.rapid_to(P3::new(x0 + 5.0, 0.0, safe_z));
+    }
     tp
 }
 
 #[test]
 fn synthesized_rapids_are_tagged_retract_or_linking() {
     let out = without_provenance(rs_cam_core::dressup::tsp::optimize_rapid_order(
-        AnnotatedToolpath::new(two_segment_toolpath()),
+        AnnotatedToolpath::new(out_of_order_toolpath()),
         10.0,
         None,
     ))
@@ -121,7 +122,7 @@ fn synthesized_rapids_are_tagged_retract_or_linking() {
 
 #[test]
 fn the_reorder_never_invents_a_drilling_move() {
-    let input = two_segment_toolpath();
+    let input = out_of_order_toolpath();
     assert!(
         !input.moves.iter().any(|m| m.intent == MoveIntent::Drilling),
         "precondition: the input carries no Drilling move"

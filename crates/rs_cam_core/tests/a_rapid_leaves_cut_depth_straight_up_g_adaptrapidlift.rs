@@ -54,9 +54,13 @@ use rs_cam_core::geo::P2;
 use rs_cam_core::toolpath::MoveType;
 
 /// Rapids the simulation's live check flags although the exact oracle
-/// clears them: move 4514, 0.317 mm clear of island (0, 16), measured
-/// 2026-09-27 (see the header).
-const SIM_ONLY_FLAGS: usize = 1;
+/// clears them. Was 1 (move 4514, 0.317 mm clear of island (0, 16),
+/// measured 2026-09-27; see the header). 0 since 2026-09-30: the planner
+/// holds each step to the pass load along its length
+/// (`adaptive/search.rs::measure_step`), the path moved, and that descent
+/// beside the island is no longer emitted. The exact oracle still clears
+/// every rapid.
+const SIM_ONLY_FLAGS: usize = 0;
 
 /// The slack of the exact oracle, mm: the flattening of the tool-centre
 /// region (see the header).

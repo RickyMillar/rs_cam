@@ -27,10 +27,17 @@ use crate::trace::narrate::LARGE_ARC_RADIUS_MULTIPLIER;
 use crate::trace::toolpath_spans::{AnnotatedToolpath, MoveRemap, Span, SpanKind};
 use crate::trace::transform_provenance::Transformed;
 
+/// Sub-intervals per source segment at which [`try_fit_arc`] compares the
+/// arc with the segment it replaces. The deviation along one span is smooth
+/// (a sagitta plus the linear endpoint errors), with its interior maximum
+/// near the middle, which the even count samples exactly.
+const ARC_DEVIATION_SAMPLES: usize = 8;
+
 /// Fit arcs to a toolpath, replacing linear segments with G2/G3 where possible.
 ///
 /// `tolerance` is the maximum allowed deviation (mm) between the original linear
-/// path and the fitted arc. Typical values: 0.001 to 0.01 mm.
+/// path and the fitted arc, measured in 3D (G-TIERBURIAL: the radial, sagitta
+/// and Z tests each held it on one axis only). Typical values: 0.001 to 0.01 mm.
 ///
 /// Only fits arcs in the XY plane (constant Z within tolerance).
 ///
@@ -596,6 +603,70 @@ fn try_fit_arc(points: &[&P3], tolerance: f64, tool_radius: f64) -> Option<ArcPa
                 let expected_z = z_start + (z_end - z_start) * frac;
                 if (pt.z - expected_z).abs() > tolerance {
                     return None;
+                }
+            }
+            // The combined 3D deviation from the source polyline.
+            //
+            // G-TIERBURIAL / plan F4 (`planning/tiered_finish_2026-09-30/
+            // RESULTS.md`): the radial test, the chord sagitta test and the Z
+            // test above each hold `tolerance` on their own axis, so a vertex
+            // `tolerance` off the circle next to a chord whose sagitta is
+            // `tolerance` puts the arc up to twice the tolerance off the cut
+            // it replaces, and a Z error adds to that in 3D. Here each source
+            // segment is matched to the arc span between its two vertices'
+            // swept angles (arc point and chord point at the same fraction
+            // of the span, helix Z against chord Z), and the 3D distance
+            // between them must hold `tolerance` along the whole span. That
+            // distance bounds the arc's distance from the polyline, so the
+            // fitted arc is within `tolerance` of the source in 3D. The three
+            // tests above stay as cheap early rejects; each is implied by
+            // this one.
+            let dir = if clockwise { -1.0 } else { 1.0 };
+            let a0 = (points[0].y - cy).atan2(points[0].x - cx);
+            // The emitted G2/G3 sweeps from the start angle to the end angle
+            // in `clockwise`'s direction, less than one turn. The source's
+            // own sweep in that direction (`cum`, the sum of its steps) must
+            // be the same angle: otherwise the path turns back, or goes round
+            // more than once, and the arc is not the path. Measured on the
+            // `arc_raster` fingerprint fixture: a 16 mm semicircular row
+            // turn whose fitted centre sat a hair off the chord, so the
+            // direction test above preferred the other half circle by
+            // floating-point noise and emitted the MIRRORED semicircle (8 mm
+            // off the path at its apex); every step read as a near-full turn
+            // backwards (`cum` 147.7 rad against a sweep of pi). Held to
+            // 1e-6 rad: a path that turns the same way throughout makes the
+            // two sums of the same angles, equal to rounding.
+            let emitted = {
+                let a1 = (p_last.y - cy).atan2(p_last.x - cx);
+                let mut sweep = dir * (a1 - a0);
+                while sweep <= 0.0 {
+                    sweep += std::f64::consts::TAU;
+                }
+                sweep
+            };
+            if (cum - emitted).abs() > 1e-6 {
+                return None;
+            }
+            for (i, seg) in points.windows(2).enumerate() {
+                // SAFETY: `windows(2)` yields two elements; `swept` has one
+                // entry per point, so `i + 1 < swept.len()`.
+                #[allow(clippy::indexing_slicing)]
+                let (p, q, s0, s1) = (seg[0], seg[1], swept[i], swept[i + 1]);
+                for k in 0..=ARC_DEVIATION_SAMPLES {
+                    let lambda = k as f64 / ARC_DEVIATION_SAMPLES as f64;
+                    let s = s0 + (s1 - s0) * lambda;
+                    let ang = a0 + dir * s;
+                    let (ax, ay) = (cx + radius * ang.cos(), cy + radius * ang.sin());
+                    let az = z_start + (z_end - z_start) * (s / cum);
+                    let (qx, qy, qz) = (
+                        p.x + (q.x - p.x) * lambda,
+                        p.y + (q.y - p.y) * lambda,
+                        p.z + (q.z - p.z) * lambda,
+                    );
+                    let dev = ((ax - qx).powi(2) + (ay - qy).powi(2) + (az - qz).powi(2)).sqrt();
+                    if dev > tolerance {
+                        return None;
+                    }
                 }
             }
         }

@@ -450,10 +450,17 @@ fn fixture_every_branch() -> Toolpath {
 }
 
 /// Captured 2026-09-17 from the two-pass code, before EDG-07 merged them.
+/// Re-captured 2026-09-30 for one cause: a junction reads each arc's own end
+/// tangent, not its chord (`machine/kinematics.rs::move_end_tangents`). The
+/// fixture's `ArcCW` from (40, 5) about (40, 10) to (45, 10) is a 270 degree
+/// arc: the +x cut meets its start tangent (-x) as a reversal (full stop;
+/// the chord read 45 degrees), and its end tangent (-y) meets the 0.2 mm +x
+/// line at 90 degrees (the chord read 45). Only `cutting_s` moves,
+/// 1.272391 -> 1.315781 s (total 6.442798 -> 6.486188 s).
 const EDG07_BREAKDOWN_BITS: [(&str, u64); 7] = [
-    ("total_s", 0x4019_c56c_e815_d179),
+    ("total_s", 0x4019_f1db_59c5_44a7),
     ("rapid_s", 0x3ff4_5c5a_7580_5555),
-    ("cutting_s", 0x3ff4_5bb7_1a62_e3d6),
+    ("cutting_s", 0x3ff5_0d70_e120_b090),
     ("entry_s", 0x3ff8_ecdd_2f9e_d6a9),
     ("linking_s", 0x3fe8_32e2_ac8d_e28d),
     ("retract_s", 0x3fe6_039a_ae4a_5da5),
@@ -461,6 +468,9 @@ const EDG07_BREAKDOWN_BITS: [(&str, u64); 7] = [
 ];
 
 /// Captured 2026-09-17 from the two-pass code, before EDG-07 merged them.
+/// Re-captured 2026-09-30 for the arc end tangent (see
+/// [`EDG07_BREAKDOWN_BITS`]): only move 9, the 0.2 mm line after the arc,
+/// moves, 775.84 -> 653.39 mm/min (it enters at a 90 degree corner, not 45).
 const EDG07_FEED_BITS: [(usize, u64); 14] = [
     (2, 0x40b0_92a4_0412_304c),
     (3, 0x4082_c000_0000_0000),
@@ -469,7 +479,7 @@ const EDG07_FEED_BITS: [(usize, u64); 14] = [
     (6, 0x4097_7000_0000_0000),
     (7, 0x40a2_c000_0000_0000),
     (8, 0x40a2_c000_0000_0000),
-    (9, 0x4088_3ebf_e283_ac58),
+    (9, 0x4084_6b24_37af_ee77),
     (10, 0x408f_4000_0000_0001),
     (11, 0x408f_4000_0000_0001),
     (12, 0x40a7_7000_0000_0000),

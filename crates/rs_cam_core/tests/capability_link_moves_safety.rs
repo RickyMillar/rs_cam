@@ -166,6 +166,41 @@ fn hemisphere_mesh() -> (TriangleMesh, SpatialIndex) {
     (mesh, index)
 }
 
+/// A 10 mm hemisphere boss standing on a flat 50 x 50 mm plate (two
+/// triangles at Z 0; the boss's base ring sits on it).
+///
+/// The UnifiedFinish reorder sentry's fixture since 2026-09-30. The bare
+/// hemisphere stopped giving the barriered TSP anything to reorder once the
+/// drop-cutter edge contact was corrected (G-TIERBURIAL): every group of
+/// its finish came out already in nearest-first order (rapid 562.4 ->
+/// 562.4 mm). Here the plate around the boss is a Shallow node whose raster
+/// the boss interrupts, so the node is seven cut runs around it, and the
+/// planner's order over those runs is not nearest-first (measured: that
+/// node 312.8 -> 256.8 mm of rapid, every other node unchanged; the whole
+/// toolpath 1225.2 -> 1144.6 mm). The boss's flanks still give the
+/// VerySteep waterline node the depth-order half of the test needs.
+fn boss_on_plate_mesh() -> (TriangleMesh, SpatialIndex) {
+    const HALF: f64 = 25.0;
+    let mut vertices = vec![
+        P3::new(-HALF, -HALF, 0.0),
+        P3::new(HALF, -HALF, 0.0),
+        P3::new(HALF, HALF, 0.0),
+        P3::new(-HALF, HALF, 0.0),
+    ];
+    let mut triangles = vec![[0u32, 1, 2], [0, 2, 3]];
+    let boss = make_test_hemisphere(10.0, 16);
+    let base = vertices.len() as u32;
+    vertices.extend(boss.vertices.iter().copied());
+    triangles.extend(
+        boss.triangles
+            .iter()
+            .map(|t| [t[0] + base, t[1] + base, t[2] + base]),
+    );
+    let mesh = TriangleMesh::from_raw(vertices, triangles);
+    let index = SpatialIndex::build_auto(&mesh);
+    (mesh, index)
+}
+
 /// `link_moves: false` baseline. Also pins `optimize_rapid_order: false`
 /// so the baseline genuinely lacks TSP reordering (Roadmap B.6 flipped
 /// the Default for `optimize_rapid_order` to `true`, so an unmodified
@@ -1609,7 +1644,7 @@ fn unified_finish_node_barriers_allow_intra_region_reorder_and_pin_depth() {
     };
     use rs_cam_core::trace::toolpath_spans::{AnnotatedToolpath, SpanKind};
 
-    let (mesh, index) = hemisphere_mesh();
+    let (mesh, index) = boss_on_plate_mesh();
     let cutter = BallEndmill::new(3.0, 25.0);
     let params = UnifiedFinishParams {
         tolerance: 0.5,
@@ -1675,7 +1710,7 @@ fn unified_finish_node_barriers_allow_intra_region_reorder_and_pin_depth() {
     );
     assert!(
         very_steep_nodes >= 1,
-        "hemisphere fixture must produce at least one VerySteep (waterline) \
+        "the boss fixture must produce at least one VerySteep (waterline) \
          node — the per-Z barrier half of this test is vacuous without one"
     );
 
@@ -1975,6 +2010,15 @@ fn steep_shallow_split_barriers_allow_intra_half_reorder_and_pin_depth() {
         cutting_distance(&baseline.toolpath),
         cutting_distance(&optimized.toolpath),
     );
+    // Reorder room, re-measured 2026-09-30 under the corrected drop-cutter
+    // edge contact (G-TIERBURIAL): the four islands leave every Z level and
+    // the shallow half several disconnected runs, so the fixture still has
+    // groups the planner does not visit nearest-first. What changed is that
+    // it also has groups where re-framing every run at `safe_z` costs more
+    // than the reorder saves: without the pass's no-regression guard
+    // (`dressup/tsp.rs`) the total read 2850.4 -> 2860.7 mm. With it those
+    // groups keep their own order and framing, and the rest reorder:
+    // 2850.4 -> 2725.3 mm. Kept strict.
     assert!(
         rapid_distance(&optimized.toolpath) < rapid_distance(&baseline.toolpath),
         "the barriered TSP must reduce rapid travel, or this sentry is vacuous"

@@ -22,9 +22,13 @@
 //!   capped by the smaller commanded feed and optionally clamped by
 //!   `MachineKinematics::max_junction_velocity_mm_min`. Straight-through
 //!   runs at the commanded feed; direction reversals full-stop.
-//! * Arc moves are treated as straight moves of equal arc length
-//!   with the commanded feed. The cornering at the endpoints uses
-//!   the chord tangent for junction-velocity geometry.
+//! * Arc moves are treated as straight moves along their chord with
+//!   the commanded feed (length, accel and rate ceiling read the chord).
+//!   The cornering at a junction reads each arc's own tangent at that
+//!   end ([`move_end_tangents`]; a helix's tangent carries its Z slope),
+//!   not the chord: two arcs that meet tangent-continuous in 3D run
+//!   through at the commanded feed (2026-09-30; before, the chord read
+//!   each such junction as a corner of up to half the two sweeps).
 //! * Jerk is ignored unless `jerk_mm_s3` is `Some` — even then it
 //!   only smooths the accel ramp by adding a small fixed time
 //!   penalty per accel/decel ramp (the asymmetry between trapezoidal
@@ -760,6 +764,11 @@ struct MoveDigest {
     source_index: usize,
     length: f64,
     dir: [f64; 3],
+    /// Unit tangent at the start and at the end of the move, for the
+    /// junction geometry ([`move_end_tangents`]). Equal to `dir` for a
+    /// line.
+    dir_start: [f64; 3],
+    dir_end: [f64; 3],
     v_cmd_mm_s: f64,
     /// Cruise ceiling: `v_cmd_mm_s` throttled by the direction-aware
     /// per-axis rate. Equals `v_cmd_mm_s` when the machine carries no
@@ -809,10 +818,13 @@ fn digest_moves(
         };
         let accel = kinematics.effective_accel(&dir);
         let (v_ceiling_mm_s, _) = cruise_ceiling(v_cmd_mm_s, &dir, kinematics);
+        let (dir_start, dir_end) = move_end_tangents(p0, p1, toolpath.moves[i].move_type, dir);
         digests.push(MoveDigest {
             source_index: i,
             length,
             dir,
+            dir_start,
+            dir_end,
             v_cmd_mm_s,
             v_ceiling_mm_s,
             accel,
@@ -849,8 +861,8 @@ fn walk_junctions(
         // Junction with the next move. Last move ends at rest.
         let v_out = if i + 1 < n {
             junction_velocity(
-                &digests[i].dir,
-                &digests[i + 1].dir,
+                &digests[i].dir_end,
+                &digests[i + 1].dir_start,
                 digests[i].v_ceiling_mm_s,
                 digests[i + 1].v_ceiling_mm_s,
                 digests[i].accel.min(digests[i + 1].accel),
@@ -1096,6 +1108,64 @@ fn unit_vec(p0: &P3, p1: &P3) -> [f64; 3] {
     [dx / len, dy / len, dz / len]
 }
 
+/// The unit tangent of a move at its start and at its end: the directions
+/// the junction geometry ([`junction_velocity`]) reads. `chord_dir` is the
+/// unit chord from `p0` to `p1`, the answer for a line and for a
+/// degenerate arc (radius below 1e-9 mm).
+///
+/// An arc (`ArcCW` / `ArcCCW`, centre `p0 + (i, j)`) turns its XY tangent
+/// with it; a helix (Z changes along it) rises or falls at the constant
+/// slope `dz / (r * sweep)`. The 3D tangent at an end is the XY tangent
+/// (the radius there turned a quarter turn in the arc's sense) scaled by
+/// the XY length `r * sweep`, with `dz` as its Z part, normalised. The
+/// sweep follows the G-code convention the emitter uses: coincident XY
+/// ends are a full turn.
+///
+/// No angle threshold decides "tangent": the junction-deviation rule
+/// reads the true angle, and a junction whose angle the rule allows at
+/// the commanded feed runs at the commanded feed.
+pub(crate) fn move_end_tangents(
+    p0: &P3,
+    p1: &P3,
+    move_type: MoveType,
+    chord_dir: [f64; 3],
+) -> ([f64; 3], [f64; 3]) {
+    let (i, j, ccw) = match move_type {
+        MoveType::ArcCW { i, j, .. } => (i, j, false),
+        MoveType::ArcCCW { i, j, .. } => (i, j, true),
+        MoveType::Rapid | MoveType::Linear { .. } => return (chord_dir, chord_dir),
+    };
+    let (cx, cy) = (p0.x + i, p0.y + j);
+    let (r0x, r0y) = (p0.x - cx, p0.y - cy);
+    let (r1x, r1y) = (p1.x - cx, p1.y - cy);
+    let radius = r0x.hypot(r0y);
+    let radius_end = r1x.hypot(r1y);
+    if radius <= 1e-9 || radius_end <= 1e-9 {
+        return (chord_dir, chord_dir);
+    }
+    let a0 = r0y.atan2(r0x);
+    let a1 = r1y.atan2(r1x);
+    let raw = if ccw { a1 - a0 } else { a0 - a1 };
+    let mut sweep = raw.rem_euclid(std::f64::consts::TAU);
+    if sweep <= 1e-12 {
+        sweep = std::f64::consts::TAU;
+    }
+    let xy_len = radius * sweep;
+    let dz = p1.z - p0.z;
+    // The XY unit tangent at a radius vector (rx, ry) of length `len`.
+    let tangent = |rx: f64, ry: f64, len: f64| -> [f64; 3] {
+        let (tx, ty) = if ccw {
+            (-ry / len, rx / len)
+        } else {
+            (ry / len, -rx / len)
+        };
+        let v = [tx * xy_len, ty * xy_len, dz];
+        let n = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt().max(1e-12);
+        [v[0] / n, v[1] / n, v[2] / n]
+    };
+    (tangent(r0x, r0y, radius), tangent(r1x, r1y, radius_end))
+}
+
 /// Estimate the junction velocity (mm/s) between two moves using GRBL's
 /// **junction-deviation** cornering model — the same one the Shapeoko's GRBL
 /// planner runs, so the predicted feeds and cycle time match what the machine
@@ -1271,6 +1341,104 @@ mod tests {
         assert_eq!(
             junction_velocity(&x, &x, big, big, accel, delta, None, true),
             0.0
+        );
+    }
+
+    /// The junction speed out of each digested move (mm/s), and each
+    /// move's cruise ceiling.
+    fn junction_speeds(tp: &Toolpath, k: &MachineKinematics) -> Vec<(f64, f64)> {
+        let digests = digest_moves(tp, k, 4000.0 / 60.0, 5000.0 / 60.0);
+        let mut out = Vec::new();
+        walk_junctions(&digests, k, |d, _, _, v_out| {
+            out.push((v_out, d.v_ceiling_mm_s));
+        });
+        out
+    }
+
+    /// 2026-09-30: a circle of four CCW quarter arcs after a tangent lead is
+    /// tangent-continuous at every junction, so every junction runs at the
+    /// commanded feed. The chord geometry read each arc-to-arc junction as
+    /// a 90 degree corner (sqrt(250 * 0.01 * 2.414) = 2.46 mm/s against
+    /// 20 mm/s commanded) and the lead-to-arc junction as 45 degrees.
+    #[test]
+    fn a_tangent_arc_junction_runs_at_the_commanded_feed() {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(10.0, -20.0, 0.0));
+        tp.feed_to(P3::new(10.0, 0.0, 0.0), 1200.0);
+        let quarter = [
+            (P3::new(0.0, 10.0, 0.0), -10.0, 0.0),
+            (P3::new(-10.0, 0.0, 0.0), 0.0, -10.0),
+            (P3::new(0.0, -10.0, 0.0), 10.0, 0.0),
+            (P3::new(10.0, 0.0, 0.0), 0.0, 10.0),
+        ];
+        for (to, i, j) in quarter {
+            tp.arc_ccw_to_with_intent(to, i, j, 1200.0, crate::toolpath::MoveIntent::ClearingCut);
+        }
+        let speeds = junction_speeds(&tp, &shapeoko());
+        // The lead and four arcs (the seed rapid is not digested); the
+        // last move ends at rest.
+        assert_eq!(speeds.len(), 5);
+        for (k, &(v_out, ceiling)) in speeds.iter().enumerate().take(4) {
+            assert!(
+                (v_out - ceiling).abs() < 1e-9,
+                "junction after move {k}: {v_out:.4} mm/s, commanded {ceiling:.4} mm/s"
+            );
+        }
+    }
+
+    /// A helix that changes slope where two arcs meet is a real 3D corner:
+    /// the XY tangent is continuous, the Z slope is not, and the junction
+    /// reads the angle between the two 3D tangents, not zero and not the
+    /// chord angle.
+    #[test]
+    fn a_helix_slope_change_is_read_as_its_3d_angle() {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(10.0, 0.0, 0.0));
+        // Quarter turn descending 8 mm (27 degrees against the flat turn
+        // after it; a 2 mm descent, 7 degrees, the rule allows at the
+        // commanded feed), then a flat quarter turn.
+        tp.arc_ccw_to_with_intent(
+            P3::new(0.0, 10.0, -8.0),
+            -10.0,
+            0.0,
+            1200.0,
+            crate::toolpath::MoveIntent::EntryHelix,
+        );
+        tp.arc_ccw_to_with_intent(
+            P3::new(-10.0, 0.0, -8.0),
+            0.0,
+            -10.0,
+            1200.0,
+            crate::toolpath::MoveIntent::EntryHelix,
+        );
+        let k = shapeoko();
+        let speeds = junction_speeds(&tp, &k);
+        assert_eq!(speeds.len(), 2);
+        // At (0, 10) both XY tangents are -x. The descent's slope is
+        // -8 / (10 * pi / 2).
+        let xy_len = 10.0 * std::f64::consts::FRAC_PI_2;
+        let n = (xy_len * xy_len + 64.0_f64).sqrt();
+        let helix_end = [-xy_len / n, 0.0, -8.0 / n];
+        let flat_start = [-1.0, 0.0, 0.0];
+        let want = junction_velocity(
+            &helix_end,
+            &flat_start,
+            speeds[0].1,
+            speeds[1].1,
+            k.acceleration_mm_s2,
+            k.junction_deviation_mm,
+            k.max_junction_velocity_mm_min,
+            false,
+        );
+        let got = speeds[0].0;
+        assert!(
+            (got - want).abs() < 1e-9,
+            "slope-change junction {got:.6} mm/s, the 3D tangent angle gives {want:.6}"
+        );
+        assert!(
+            got < speeds[0].1,
+            "a slope change is a corner: {got:.4} must be under {:.4}",
+            speeds[0].1
         );
     }
 

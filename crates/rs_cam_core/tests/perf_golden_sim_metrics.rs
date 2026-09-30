@@ -93,6 +93,28 @@
 //! engaged fraction of the step. The arc takes the step's maximum, the
 //! reading the power and deflection gates peak on.
 //!
+//! **2026-09-30, G-TIERBURIAL** (`planning/tiered_finish_2026-09-30/RESULTS.md`,
+//! part 3). The 3D arm only; the 2D golden did not move. `BallEndmill::
+//! edge_drop` placed the contact on a sloped mesh edge at the mirrored,
+//! downhill point, so the drop-cutter floor read low wherever a facet edge of
+//! the tessellated hemisphere was the contact, and the drop-cutter path cut
+//! below the model there. With the contact at the tangent point
+//! (`tests/edge_drop_matches_the_sampled_profile_g_tierburial.rs`) the path
+//! rides higher on those edges: the drop-cutter op removes less, and the
+//! waterline op after it meets that material and removes more. The arc-fit
+//! change of the same programme does not move this arm (measured with the
+//! kernel fix held back). 31 fields moved; the ones that carry the cause:
+//!
+//! | field | was | now |
+//! |---|---:|---:|
+//! | `[DropCutter].total_removed_volume_est_mm3` | 1365.26 | 1352.68 |
+//! | `[DropCutter].cutting_distance_mm` | 244.42 | 243.72 |
+//! | `[DropCutter].low_engagement_time_s` | 0.0808 | 0.0543 |
+//! | `[Waterline].total_removed_volume_est_mm3` | 2016.10 | 2027.38 |
+//! | `[Waterline].air_cut_pct_of_total_runtime` | 33.63 | 32.97 |
+//! | 3D `total_sample_count` | 1754 | 1755 |
+//! | 3D `project_air_cut_pct_of_total_runtime` | 32.25 | 31.85 |
+//!
 //! # Why the aggregates and not a trace hash
 //!
 //! A hash over the whole trace would fail on any change at all, including

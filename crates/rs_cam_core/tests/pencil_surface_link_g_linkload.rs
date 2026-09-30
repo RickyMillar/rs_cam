@@ -488,6 +488,8 @@ fn g_linkload_without_material_above_it_the_link_is_unchanged() {
             &cutter,
             p.stock_to_leave,
             p.sampling,
+            // The pencil passes no link tolerance (`emission.rs`).
+            None,
         )
         .expect("the emitted link proves this segment is gouge-safe");
         assert_eq!(

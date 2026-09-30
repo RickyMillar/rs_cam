@@ -26,14 +26,14 @@ Every 3D finishing strategy and the unified planner. The entry point is
   spine; see `../surface/CLAUDE.md`.
 - The iso-scallop `iso_field` dial is live; it beats raster at a matched finish.
 - Never gate on an aggregate without rendering the surface.
-- A continuous scallop's ring connector is refined against the drop-cutter
-  surface like a ring chord, or retracts (G-TIERBURIAL). Raster rows and
-  relink links are not refined yet (tiered_finish RESULTS, open items).
+- Every straight feed tracks the drop-cutter surface (G-TIERBURIAL,
+  `surface/chord_refine.rs`): ring chords and connectors, the raster and
+  waterline bands (`refine_band_chords`), a link with a tolerance.
 
 ## Sentries
 
-- `cargo test -p rs_cam_core -q --test finish_resolution_policy_pr3 --test
-  classification_strategy_m3 --test a_scallop_ring_connector_rides_the_surface_g_tierburial`
+- `cargo test -p rs_cam_core -q --test finish_resolution_policy_pr3 --test classification_strategy_m3
+  --test a_scallop_ring_connector_rides_the_surface_g_tierburial --test fed_chords_ride_the_surface_g_tierburial`
 - `... --test scallop_iso_field_config --test the_research_arms_are_feature_gated_fin01`
 - `wanaka_decomposes_to_order_ten_regions` (`#[ignore]`; long) in `--test
   finish_planner_wanaka_decompose`; its tables: `..._wanaka_diagnostics`.

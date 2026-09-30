@@ -766,6 +766,7 @@ fn stage_d(
             rapid_feed_mm_min: RAPID_FEED_MM_MIN,
         };
         let rp = rs_cam_core::finish::surface_link::RelinkParams {
+            link_tolerance: None,
             hookup_distance: 25.0,
             stock_to_leave: 0.0,
             sampling: 0.5,
@@ -956,6 +957,7 @@ fn stage_e(
                 Some(&region),
             );
             let rp = rs_cam_core::finish::surface_link::RelinkParams {
+                link_tolerance: None,
                 hookup_distance: 25.0,
                 stock_to_leave: 0.0,
                 sampling: 0.5,
@@ -1192,6 +1194,7 @@ fn stage_f(
                 Some(&region),
             );
             let rp = rs_cam_core::finish::surface_link::RelinkParams {
+                link_tolerance: None,
                 hookup_distance: 25.0,
                 stock_to_leave: 0.0,
                 sampling: 0.5,
@@ -1342,6 +1345,7 @@ fn stage_g(
                 fallback_top_z: top,
             });
             let rp = rs_cam_core::finish::surface_link::RelinkParams {
+                link_tolerance: None,
                 hookup_distance: 25.0,
                 stock_to_leave: 0.0,
                 sampling: 0.5,

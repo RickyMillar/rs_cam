@@ -307,7 +307,10 @@ fn the_floor_is_inert_where_nothing_was_degenerate() {
     let valley = height_field(|x, _y| 4.0 - 4.0 * (1.0 - x.abs()).max(0.0));
     for (name, mesh, recorded_min, recorded_total) in [
         ("narrow ridge", ridge, 0.122_003, 3795.2),
-        ("narrow valley", valley, 0.500_000, 3625.5),
+        // Valley total 3625.5 -> 3624.1 (2026-09-30, G-TIERBURIAL): the
+        // taper's drop-cutter edge contact is exact now; the shortest
+        // segment did not move.
+        ("narrow valley", valley, 0.500_000, 3624.1),
     ] {
         let segs = cutting_segments(&run(&mesh, &taper()));
         let min = segs.iter().copied().fold(f64::INFINITY, f64::min);

@@ -159,9 +159,9 @@ fn scallop_fingerprint() {
     let tp = scallop_toolpath(&mesh, &index, &t, &params);
     assert_eq!(
         fingerprint(&tp),
-        (2820, 9136261611286019458),
-        "scallop output moved; re-pinned at F2 (2026-08-06) when the ring \
-         coverage guard became exact — see the history table below"
+        (2583, 7115819038317497865),
+        "scallop output moved; re-pinned at G-TIERBURIAL (2026-09-30) when the \
+         drop-cutter edge contact became exact — see the history table below"
     );
 }
 
@@ -174,6 +174,19 @@ fn scallop_fingerprint() {
 // | `(1423, 11432160290294522021)` | M4 phase C, `0ece700` | +105 moves (+8.0%) |
 // | `(2674, 7524232187494395883)` | wave 14, arc-carrying cascade | **+1251 moves (+87.9%)** |
 // | `(2820, 9136261611286019458)` | F2 (D-16.1), 2026-08-06 | +146 moves (+5.5%) — the ring-lift coverage guard became EXACT |
+// | `(2583, 7115819038317497865)` | G-TIERBURIAL, 2026-09-30 | -237 moves (-8.4%) — the drop-cutter edge contact became exact |
+//
+// ## The G-TIERBURIAL move
+//
+// `TaperedBallEndmill::edge_drop` (and the ball's, and the bull nose's) put
+// the contact on a sloped edge at the mirrored, downhill point, so the
+// drop-cutter floor read low wherever an edge was the contact: along this
+// ridge's crest, a sloped convex edge under the ripple. Chord refinement
+// then split chords toward that wrong floor. With the contact at the tangent
+// point (`tests/edge_drop_matches_the_sampled_profile_g_tierburial.rs`, exact
+// against the profile) the ring vertices sit on the true floor and fewer
+// chords fail the tolerance. `planning/tiered_finish_2026-09-30/RESULTS.md`,
+// part 3.
 //
 // ## The F2 move, in one paragraph
 //
@@ -304,7 +317,12 @@ fn ramp_finish_fingerprint() {
 // contact window of an edge and the waterline grid carries one cell of
 // pad, so the contour points move by a hair. The move count is unchanged.
 // Was `(277, 18_231_352_062_362_901_444)`.
-const RAMP_FINISH_GEO_MEAN_FINGERPRINT: (usize, u64) = (277, 10_508_855_153_191_199_570);
+///
+/// Re-pinned for G-TIERBURIAL (2026-09-30): the taper's edge contact on this
+/// ridge's sloped crest is now exact (the drop-cutter used the mirrored,
+/// downhill point), so the ramp points over the crest rose. The move count
+/// is unchanged. Was `(277, 10_508_855_153_191_199_570)`.
+const RAMP_FINISH_GEO_MEAN_FINGERPRINT: (usize, u64) = (277, 9_451_927_284_413_260_786);
 
 /// PR-8a control: the geo-mean of two EQUAL numbers is that number, so a
 /// cutter whose cusp radius is its envelope radius must not move at all.
@@ -415,9 +433,13 @@ fn steep_shallow_fingerprint() {
     // the contact window of an edge and the waterline grid carries one
     // cell of pad. The move count is unchanged. Was
     // `(913, 14129959905444107510)`.
+    // Re-pinned 2026-09-30 for G-TIERBURIAL: the taper's edge contact on
+    // the ridge's sloped crest is exact (the drop-cutter used the mirrored,
+    // downhill point), so the raster Z over the crest rose. The move count
+    // is unchanged. Was `(913, 17934662407811726553)`.
     assert_eq!(
         fingerprint(&tp),
-        (913, 17934662407811726553),
+        (913, 12043875751410126668),
         "steep_shallow output moved; captured at HEAD 5fc2411 before the H3 policy refactor"
     );
 }

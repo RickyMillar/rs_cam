@@ -82,6 +82,60 @@ impl CLPoint {
 /// measurable against a mm-scale cutter radius or Z step.
 const DROP_CONTACT_SLACK_MM: f64 = 1e-4;
 
+/// The exact drop of a cutter of revolution onto the edge `p1 -> p2`:
+/// the largest tip height at which the tool surface `height(rho)` touches a
+/// point of the edge within `reach` of the tool axis.
+///
+/// Along the edge, with `w` the XY distance from the foot of the
+/// perpendicular from the axis, `d` the perpendicular distance and `m` the
+/// edge slope, a point touches the tool at tip height `z(w) - height(rho)`,
+/// `rho = sqrt(d^2 + w^2)`. For a profile whose height is convex in `rho`
+/// this is concave in `w`, so its maximum over an interval is at the
+/// unconstrained maximum `argmax_w(d, m)` clamped into the interval (the
+/// edge, and `|w| <= sqrt(reach^2 - d^2)`). The caller supplies both the
+/// height and the argmax of its own profile.
+///
+/// G-TIERBURIAL (`planning/tiered_finish_2026-09-30/RESULTS.md`): the bull
+/// nose and the tapered ball each solved this contact in their own closed
+/// form, and both placed it at the mirrored, downhill point of a sloped
+/// edge (`t_closest + s cos_a` where the tangent point is at `- s cos_a`).
+/// The drop was low by up to 1.8 mm on a 49.6 degree edge.
+pub(crate) fn edge_drop_by_profile(
+    cl: &mut CLPoint,
+    p1: &P3,
+    p2: &P3,
+    reach: f64,
+    height: impl Fn(f64) -> f64,
+    argmax_w: impl Fn(f64, f64) -> f64,
+) {
+    let dx = p2.x - p1.x;
+    let dy = p2.y - p1.y;
+    let len_sq = dx * dx + dy * dy;
+    if len_sq < 1e-20 {
+        return; // a vertical edge: the vertex tests hold it
+    }
+    let len = len_sq.sqrt();
+    let t_closest = ((cl.x - p1.x) * dx + (cl.y - p1.y) * dy) / len_sq;
+    let (px, py) = (p1.x + t_closest * dx, p1.y + t_closest * dy);
+    let d_sq = (cl.x - px) * (cl.x - px) + (cl.y - py) * (cl.y - py);
+    if d_sq > reach * reach {
+        return;
+    }
+    let d = d_sq.sqrt();
+    let m = (p2.z - p1.z) / len;
+    let w_reach = (reach * reach - d_sq).max(0.0).sqrt();
+    let u_c = t_closest * len;
+    let lo = (-u_c).max(-w_reach);
+    let hi = (len - u_c).min(w_reach);
+    if lo > hi {
+        return;
+    }
+    let w = argmax_w(d, m).clamp(lo, hi);
+    let rho = (d_sq + w * w).sqrt().min(reach);
+    let z = p1.z + m * (u_c + w);
+    cl.update_z(z - height(rho));
+}
+
 /// Can `tri` possibly raise `cl`? Two exact rejections, no contact math.
 ///
 /// This is the G3 early-out from `planning/perf_review_2026-08-19/PERF_REVIEW.md`.

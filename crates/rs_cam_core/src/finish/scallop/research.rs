@@ -510,7 +510,7 @@ pub(crate) fn scallop_toolpath_research_with_stage(
         let mut tool_down = false;
         // The rings' own lift context (`generate_scallop_rings_with_cancel`),
         // so a connector is refined exactly as a ring chord is.
-        let connector_ctx = RingLiftCtx::new(
+        let connector_ctx = RingLiftCtx::from_cell(
             mesh,
             index,
             cutter,
@@ -742,8 +742,11 @@ pub(crate) fn scallop_toolpath_research_with_stage(
             feed_rate: params.feed_rate,
             plunge_rate: params.plunge_rate,
             safe_z: params.safe_z,
+            // G-TIERBURIAL: the rings' own tolerance.
+            link_tolerance: Some(params.tolerance),
         };
         let legacy = crate::finish::surface_link::RelinkParams {
+            link_tolerance: geom.link_tolerance,
             hookup_distance: params.intra_pass_hookup_mm,
             stock_to_leave: geom.stock_to_leave,
             sampling: geom.sampling,

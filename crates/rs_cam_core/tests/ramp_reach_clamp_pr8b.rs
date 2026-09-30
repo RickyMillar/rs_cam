@@ -16,7 +16,8 @@
 //!    grid is padded by one envelope radius per side, so uncovered cells
 //!    carrying the `min_z` clamp are always present. The ladder bottom was
 //!    therefore the MESH BBOX FLOOR on essentially every ramp-finish run. On
-//!    this fixture: −3.000 requested, −2.407 holdable.
+//!    this fixture: −3.000 requested, −2.352 holdable (−2.407 before the
+//!    2026-09-30 drop-cutter edge-contact fix).
 //!    [`the_canonical_reach_policy_refuses_the_requested_depth_in_the_cone`]
 //!    corroborates that independently through `rs_cam_core::surface::reach`.
 //! 2. **The per-point blend.** `ramp_between_contours` pairs two contours by
@@ -313,7 +314,10 @@ fn a_truncated_descent_is_reported_with_its_magnitudes() {
     let d = &out[0];
     assert_eq!(d.id.as_str(), ids::GEOM_RAMP_REACH_CLAMP);
     assert_eq!(d.severity, Severity::Caution);
-    for needle in ["4.231", "LEFT", "-3.000", "-2.407"] {
+    // Max lift 4.231 -> 4.235 and holdable bottom -2.407 -> -2.352
+    // (2026-09-30, G-TIERBURIAL): the drop-cutter edge contact of the taper
+    // is exact now (`tool/mod.rs::edge_drop_by_profile`).
+    for needle in ["4.235", "LEFT", "-3.000", "-2.352"] {
         assert!(
             d.message.contains(needle),
             "message must carry {needle:?}: {}",
