@@ -7,6 +7,12 @@ use super::RsCamApp;
 
 impl RsCamApp {
     /// Load the nearest checkpoint mesh for backward scrubbing.
+    ///
+    /// M2 (memory programme 2026-10-01): a checkpoint builds its display mesh
+    /// on the first read, from the local stock the simulator kept for it. The
+    /// build is the one the simulator ran eagerly before, so the picture is
+    /// the same. This path keeps ONE checkpoint mesh in the cache: it releases
+    /// every other checkpoint's mesh before it reads the one it shows.
     pub(super) fn load_checkpoint_for_move(&mut self, move_idx: usize, frame: &mut eframe::Frame) {
         if let Some(cp_idx) = self
             .controller
@@ -14,7 +20,15 @@ impl RsCamApp {
             .simulation
             .checkpoint_for_move(move_idx)
         {
-            let mut mesh = match self.controller.state().simulation.checkpoints().get(cp_idx) {
+            let Some(results) = self.controller.state_mut().simulation.results.as_mut() else {
+                return;
+            };
+            for (i, checkpoint) in results.checkpoints.iter_mut().enumerate() {
+                if i != cp_idx {
+                    checkpoint.release_mesh();
+                }
+            }
+            let mut mesh = match results.checkpoints.get(cp_idx) {
                 Some(c) => c.mesh().clone(),
                 None => return,
             };

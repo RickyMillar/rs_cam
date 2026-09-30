@@ -701,23 +701,55 @@ pub struct SetupBoundary {
 /// Checkpoint: a snapshot of the stock at a toolpath boundary.
 ///
 /// **Shared with the core simulation result, not owned** (S5,
-/// `rs_cam_core::compute::sim_prefix`). A checkpoint carries a marching-cubes
-/// mesh plus a full dexel-grid clone, so it is the heaviest per-toolpath
-/// artifact a simulation produces; deep-copying it here would put a second
-/// copy of every checkpoint in GUI state while the fixpoint prefix memo holds
-/// the first. Read through [`Self::mesh`] / [`Self::stock`].
+/// `rs_cam_core::compute::sim_prefix`). A checkpoint carries full dexel-grid
+/// clones, so it is the heaviest per-toolpath artifact a simulation produces;
+/// deep-copying it here would put a second copy of every checkpoint in GUI
+/// state while the fixpoint prefix memo holds the first. Read through
+/// [`Self::mesh`] / [`Self::stock`].
+///
+/// **The display mesh is built on demand** (M2, memory programme 2026-10-01).
+/// The core checkpoint keeps the inputs of its mesh, not the mesh.
+/// [`Self::mesh`] builds it on the first read and keeps it in a one-slot
+/// cache. [`Self::release_mesh`] empties the slot; the scrub path releases
+/// every checkpoint but the one it shows, so the view holds at most one
+/// checkpoint mesh.
 pub struct SimCheckpoint {
     pub boundary_index: usize,
-    /// The core checkpoint: composited display mesh + the tri-dexel stock at
-    /// this boundary (the latter for resuming incremental sim).
+    /// The core checkpoint: the inputs of the display mesh + the tri-dexel
+    /// stock at this boundary (the latter for resuming incremental sim).
     pub core: Arc<rs_cam_core::compute::simulate::SimCheckpointMesh>,
+    /// The display mesh after the first [`Self::mesh`] read. Empty until then.
+    mesh_cache: std::sync::OnceLock<StockMesh>,
 }
 
 impl SimCheckpoint {
+    /// Wrap a core checkpoint. The display mesh is not built here.
+    #[must_use]
+    pub fn new(
+        boundary_index: usize,
+        core: Arc<rs_cam_core::compute::simulate::SimCheckpointMesh>,
+    ) -> Self {
+        Self {
+            boundary_index,
+            core,
+            mesh_cache: std::sync::OnceLock::new(),
+        }
+    }
+
     /// Composited stock mesh at this boundary, in the global stock frame.
+    ///
+    /// The first read builds the mesh (one marching-cubes pass,
+    /// `SimCheckpointMesh::build_mesh`) and caches it. Later reads return the
+    /// cached mesh until [`Self::release_mesh`].
     #[must_use]
     pub fn mesh(&self) -> &StockMesh {
-        &self.core.mesh
+        self.mesh_cache.get_or_init(|| self.core.build_mesh())
+    }
+
+    /// Drop the cached display mesh, if any. The next [`Self::mesh`] read
+    /// builds it again, with the same result.
+    pub fn release_mesh(&mut self) {
+        let _ = self.mesh_cache.take();
     }
 
     /// Tri-dexel stock at this boundary, for resuming incremental simulation.
@@ -746,7 +778,11 @@ impl SimCheckpoint {
 /// across workspace switches until the user explicitly resets.
 pub struct SimulationResults {
     /// The fully-simulated stock mesh (at end of all toolpaths).
-    pub mesh: StockMesh,
+    ///
+    /// The SAME `Arc` as the `mesh` of the simulation the session adopted
+    /// (M4, memory programme 2026-10-01): the view and the session hold one
+    /// mesh, not two.
+    pub mesh: Arc<StockMesh>,
     /// Total move count across all simulated toolpaths.
     pub total_moves: usize,
     /// Per-toolpath boundaries for progress tracking and checkpoint lookup.

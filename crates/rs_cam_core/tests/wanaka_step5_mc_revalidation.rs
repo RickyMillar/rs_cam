@@ -118,7 +118,7 @@ fn wanaka_step5_final_mesh_is_well_formed() {
     // Each per-toolpath checkpoint mesh must also be well-formed.
     for cp in &result.checkpoints {
         let label = format!("checkpoint @ boundary {}", cp.boundary_index);
-        assert_mesh_well_formed(&label, &cp.mesh);
+        assert_mesh_well_formed(&label, &cp.build_mesh());
     }
     eprintln!(
         "WANAKA Step 5: {} per-toolpath checkpoint meshes all well-formed",

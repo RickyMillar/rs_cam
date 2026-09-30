@@ -375,11 +375,11 @@ fn mcp_get_diagnostics_collision_count_comes_from_evidence() {
     // Holder evidence exactly as the GUI holds it: a stored collision report
     // plus the simulation boundary that attributes each event to a toolpath.
     controller.state.simulation.results = Some(crate::state::simulation::SimulationResults {
-        mesh: rs_cam_core::stock::stock_mesh::StockMesh {
+        mesh: std::sync::Arc::new(rs_cam_core::stock::stock_mesh::StockMesh {
             vertices: Vec::new(),
             indices: Vec::new(),
             colors: Vec::new(),
-        },
+        }),
         total_moves: 3,
         boundaries: vec![crate::state::simulation::ToolpathBoundary {
             id: ToolpathId(0),

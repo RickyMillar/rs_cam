@@ -27,6 +27,7 @@ mod rest_cascade_parity_g_restres;
 mod rest_dependency;
 mod rest_sim_reads_core_results_g_reststale;
 mod selection;
+mod session_and_view_share_one_mesh_m4;
 mod setup_only_plan_g_setuponly;
 mod sim_stale_is_the_core_answer_g_freshnessdisagree;
 mod simulation_state;
@@ -374,11 +375,11 @@ fn render_snapshot(
 fn inject_sim_results(controller: &mut AppController<ScriptedBackend>, num_setups: usize) {
     use rs_cam_core::stock::stock_mesh::StockMesh;
 
-    let mesh = StockMesh {
+    let mesh = std::sync::Arc::new(StockMesh {
         vertices: vec![0.0; 9],
         indices: vec![0, 1, 2],
         colors: vec![0.5; 9],
-    };
+    });
 
     let total_moves = 10 * num_setups;
     let mut boundaries = Vec::new();
@@ -692,11 +693,11 @@ impl ComputeBackend for RestChainBackend {
                     // A real mesh: `adopt_simulation_result` pushes a Warning
                     // toast for an empty one, and the plan sentry asserts
                     // zero Warnings.
-                    mesh: rs_cam_core::stock::stock_mesh::StockMesh {
+                    mesh: std::sync::Arc::new(rs_cam_core::stock::stock_mesh::StockMesh {
                         vertices: vec![0.0; 9],
                         indices: vec![0, 1, 2],
                         colors: vec![0.5; 9],
-                    },
+                    }),
                     total_moves: 0,
                     deviations: None,
                     column_deviations: None,

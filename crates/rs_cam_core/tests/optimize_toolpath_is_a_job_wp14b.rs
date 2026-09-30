@@ -176,7 +176,7 @@ fn base_session() -> ProjectSession {
 /// put a trace on the session is to build the record around it.
 fn result_carrying(trace: SimulationCutTrace) -> SimulationResult {
     SimulationResult {
-        mesh: StockMesh::empty(),
+        mesh: std::sync::Arc::new(StockMesh::empty()),
         total_moves: 0,
         deviations: None,
         column_deviations: None,

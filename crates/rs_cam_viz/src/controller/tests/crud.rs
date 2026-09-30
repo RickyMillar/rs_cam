@@ -290,11 +290,11 @@ fn queued_simulation_naming(ids: &[ToolpathId]) -> ComputeMessage {
         .collect();
     ComputeMessage::Simulation(Ok(Box::new(SimulationResult {
         core: rs_cam_core::compute::simulate::SimulationResult {
-            mesh: rs_cam_core::stock::stock_mesh::StockMesh {
+            mesh: std::sync::Arc::new(rs_cam_core::stock::stock_mesh::StockMesh {
                 vertices: vec![0.0; 9],
                 indices: vec![0, 1, 2],
                 colors: vec![0.5; 9],
-            },
+            }),
             total_moves: 10 * ids.len(),
             deviations: None,
             column_deviations: None,
@@ -496,11 +496,11 @@ fn add_toolpath_requires_geometry_for_polygon_operations() {
 fn reset_simulation_cancels_analysis_lane() {
     let mut controller = AppController::with_backend(ScriptedBackend::new());
     controller.state.simulation.results = Some(crate::state::simulation::SimulationResults {
-        mesh: rs_cam_core::stock::stock_mesh::StockMesh {
+        mesh: std::sync::Arc::new(rs_cam_core::stock::stock_mesh::StockMesh {
             vertices: Vec::new(),
             indices: Vec::new(),
             colors: Vec::new(),
-        },
+        }),
         total_moves: 1,
         boundaries: Vec::new(),
         setup_boundaries: Vec::new(),

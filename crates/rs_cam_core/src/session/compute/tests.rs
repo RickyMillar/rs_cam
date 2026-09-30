@@ -984,11 +984,11 @@ fn diagnostics_ranks_verdicts_by_severity() {
     // collision on TP0 → triggers a Critical RapidCollision verdict.
     let pocket_tp_id = s.toolpath_configs[0].id;
     s.simulation = Some(SimulationResult {
-        mesh: StockMesh {
+        mesh: std::sync::Arc::new(StockMesh {
             vertices: Vec::new(),
             indices: Vec::new(),
             colors: Vec::new(),
-        },
+        }),
         total_moves: 5,
         deviations: None,
         column_deviations: None,
@@ -1053,11 +1053,11 @@ fn diagnostics_rapid_collision_verdict_carries_evidence() {
 
     let tp_id = s.toolpath_configs[0].id;
     s.simulation = Some(SimulationResult {
-        mesh: StockMesh {
+        mesh: std::sync::Arc::new(StockMesh {
             vertices: Vec::new(),
             indices: Vec::new(),
             colors: Vec::new(),
-        },
+        }),
         total_moves: 10,
         deviations: None,
         column_deviations: None,

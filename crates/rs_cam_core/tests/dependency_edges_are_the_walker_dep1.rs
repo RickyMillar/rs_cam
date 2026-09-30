@@ -201,11 +201,11 @@ fn adopt_simulation(session: &mut ProjectSession) {
     let _ = session
         .apply(Command::AdoptSimulation(AdoptSimulationArgs {
             result: Box::new(SimulationResult {
-                mesh: StockMesh {
+                mesh: std::sync::Arc::new(StockMesh {
                     vertices: Vec::new(),
                     indices: Vec::new(),
                     colors: Vec::new(),
-                },
+                }),
                 total_moves: 0,
                 deviations: None,
                 column_deviations: None,

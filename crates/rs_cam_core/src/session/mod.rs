@@ -1254,11 +1254,11 @@ impl Default for SimulationOptions {
 /// **A clone is cheaper than the field list suggests.** Every geometry
 /// field is behind an `Arc` and costs a refcount: the model meshes and
 /// polygons ([`LoadedModel`]), the annotated toolpath of each cached
-/// result ([`ToolpathComputeResult`]), and the simulation's checkpoints,
-/// cut trace and prior stocks
+/// result ([`ToolpathComputeResult`]), and the simulation's display mesh,
+/// checkpoints, cut trace and prior stocks
 /// ([`SimulationResult`](crate::compute::simulate::SimulationResult)).
-/// The copied weight is the simulation's display mesh and its two
-/// deviation vectors, which scale with the dexel column population.
+/// The copied weight is the simulation's two deviation vectors, which
+/// scale with the dexel column population.
 ///
 /// The type derives no `Debug`: `SimulationResult` publishes none, by
 /// design.
@@ -2600,11 +2600,11 @@ mod tests {
 
         // Manually set a fake simulation result
         session.simulation = Some(SimulationResult {
-            mesh: StockMesh {
+            mesh: std::sync::Arc::new(StockMesh {
                 vertices: Vec::new(),
                 indices: Vec::new(),
                 colors: Vec::new(),
-            },
+            }),
             total_moves: 0,
             deviations: None,
             column_deviations: None,

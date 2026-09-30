@@ -130,11 +130,11 @@ fn gui_with_traces() -> GuiState {
 fn simulation_for_toolpath() -> SimulationState {
     let mut sim = SimulationState::new();
     sim.results = Some(SimulationResults {
-        mesh: StockMesh {
+        mesh: std::sync::Arc::new(StockMesh {
             vertices: Vec::new(),
             indices: Vec::new(),
             colors: Vec::new(),
-        },
+        }),
         total_moves: 9,
         boundaries: vec![ToolpathBoundary {
             id: ToolpathId(1),

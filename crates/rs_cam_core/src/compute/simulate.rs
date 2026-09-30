@@ -374,13 +374,39 @@ pub struct SimBoundary {
 }
 
 /// A per-toolpath checkpoint capturing the stock state after simulation.
+///
+/// # The display mesh is built on demand (M2, memory programme 2026-10-01)
+///
+/// The checkpoint keeps the INPUTS of its display mesh, not the mesh. A
+/// marching-cubes mesh costs about 96 B per grid cell, and the simulator made
+/// one for every toolpath. [`Self::build_mesh`] runs the same three calls on
+/// the same inputs as the eager build did, so its mesh is bit-identical to the
+/// mesh this type used to store.
+///
+/// [`Self::mesh_stock`] is the per-setup LOCAL stock after this toolpath. It is
+/// the same `Arc` as the `prior_stocks` entry of the next toolpath in the same
+/// group (M3), because nothing changes the group stock between the two. The
+/// last toolpath of a group has no next toolpath: its snapshot is shared only
+/// with the group's tail phantom, if there is one, and is otherwise the one
+/// unshared clone per group.
 #[derive(Clone)]
 pub struct SimCheckpointMesh {
     pub boundary_index: usize,
-    /// Display mesh, always in the ZERO-ROOTED stock-relative global frame:
-    /// extracted from the per-setup **local** stock and then mapped by
-    /// [`transform_stock_mesh_to_global`].
-    pub mesh: StockMesh,
+    /// The per-setup **local** stock after this toolpath carved: the source
+    /// of the display mesh. Frame: setup-local (world for an identity group,
+    /// F-024). It is NOT [`Self::stock`], which for a Z-axis group is the
+    /// zero-rooted global playback stock.
+    pub mesh_stock: Arc<TriDexelStock>,
+    /// The group's analytic drill operations up to and including this
+    /// toolpath, in the frame of [`Self::mesh_stock`]. The mesh build appends
+    /// them as cylinders.
+    pub mesh_drill_ops: Vec<Arc<crate::ops::drill_op::DrillOp>>,
+    /// The group's `local_to_global`, which [`transform_stock_mesh_to_global`]
+    /// reads to put the mesh in the zero-rooted global frame.
+    pub mesh_frame: Option<SetupTransformInfo>,
+    /// The request's `stock_bbox.min`, which the identity arm of
+    /// [`transform_stock_mesh_to_global`] subtracts.
+    pub mesh_stock_min: P3,
     /// The stock the live-scrub viewport resets to and replays forward from.
     ///
     /// Read it together with [`Self::stock_local_to_global`], which names the
@@ -405,10 +431,38 @@ pub struct SimCheckpointMesh {
     /// an operator could see, and the live-scrub mesh disagreed with the
     /// checkpoint mesh (which has always come from the local stock). Rather
     /// than teach the side grids to boolean, a lateral group's checkpoint
-    /// carries its **local** stock — the same object [`Self::mesh`] is
-    /// extracted from — and playback replays that group's setup-local
-    /// toolpaths into it with `StockCutDirection::FromTop`.
+    /// carries its **local** stock — the same state [`Self::mesh_stock`]
+    /// holds — and playback replays that group's setup-local toolpaths into
+    /// it with `StockCutDirection::FromTop`.
     pub stock_local_to_global: Option<SetupTransformInfo>,
+}
+
+impl SimCheckpointMesh {
+    /// Build the display mesh of this checkpoint, in the ZERO-ROOTED
+    /// stock-relative global frame.
+    ///
+    /// The mesh is extracted from the per-setup **local** stock, the analytic
+    /// drill cylinders are appended, and [`transform_stock_mesh_to_global`]
+    /// maps the result. This is the call sequence the simulator ran eagerly
+    /// for every checkpoint before M2, on the same inputs, so the result is
+    /// the same mesh bit for bit.
+    ///
+    /// The cost is one marching-cubes pass over the grid. A caller that
+    /// shows the mesh keeps it; do not call this once per frame.
+    #[must_use]
+    pub fn build_mesh(&self) -> StockMesh {
+        let mut local_mesh = dexel_stock_to_mesh(&self.mesh_stock);
+        // §6.E append analytic drill cylinders so checkpoint frames show
+        // clean circular hole walls even at low dexel resolution. The
+        // cylinders are in local-frame coordinates; the transform below
+        // re-frames them with the stock.
+        if !self.mesh_drill_ops.is_empty() {
+            let refs: Vec<&crate::ops::drill_op::DrillOp> =
+                self.mesh_drill_ops.iter().map(|d| d.as_ref()).collect();
+            crate::stock::dexel_mesh::append_drill_cylinders(&mut local_mesh, &refs);
+        }
+        transform_stock_mesh_to_global(&local_mesh, &self.mesh_frame, self.mesh_stock_min)
+    }
 }
 
 /// Per-dexel-column deviation: a column's material top vs the model
@@ -461,17 +515,24 @@ pub struct ColumnDeviation {
 /// derives it, and `AdoptSimulation` carries this type. Since WP14b
 /// [`ProjectSession`](crate::session::ProjectSession) derives `Clone` too,
 /// so the `optimize_toolpath` job copies this record into its handle's
-/// private session. A clone copies the display mesh and the two deviation
-/// vectors and shares the checkpoints, the cut trace and the prior stocks,
-/// which are each behind an `Arc`. That copied weight IS the session
-/// clone's cost, and the job sentry records it
+/// private session. A clone copies the two deviation vectors and shares the
+/// display mesh, the checkpoints, the cut trace and the prior stocks, which
+/// are each behind an `Arc`. That copied weight IS the session clone's cost,
+/// and the job sentry records it
 /// (`crates/rs_cam_core/tests/optimize_toolpath_is_a_job_wp14b.rs`).
 ///
 /// The type publishes no `Debug`: three of its field types are display
 /// meshes that carry none.
 #[derive(Clone)]
 pub struct SimulationResult {
-    pub mesh: StockMesh,
+    /// The composite display mesh of every setup group, in the zero-rooted
+    /// stock-relative global frame.
+    ///
+    /// **`Arc`-shared** (M4, memory programme 2026-10-01). The GUI keeps the
+    /// same mesh in its view state and in the session it adopts the run
+    /// into. A plain `StockMesh` made that adopt a deep copy of about
+    /// 96 B per grid cell per group.
+    pub mesh: Arc<StockMesh>,
     pub total_moves: usize,
     pub deviations: Option<Vec<f32>>,
     /// Pointwise per-dexel-column deviations (see [`ColumnDeviation`]).
@@ -482,8 +543,9 @@ pub struct SimulationResult {
     /// Per-toolpath checkpoints, in boundary order.
     ///
     /// **`Arc`-shared, not owned** (S5, `sim_prefix.rs`): a checkpoint is a
-    /// marching-cubes mesh plus a full dexel-grid clone, so it is the heaviest
-    /// per-toolpath artifact the simulation produces. The prefix memo holds the
+    /// full dexel-grid clone plus a share of the local stock its mesh is
+    /// built from (M2), so it is the heaviest per-toolpath artifact the
+    /// simulation produces. The prefix memo holds the
     /// prefix's checkpoints across fixpoint rounds, and sharing them with the
     /// result they came from is what keeps that memo from doubling the
     /// simulator's peak footprint. Consumers read through the `Arc`; nothing in
@@ -514,6 +576,15 @@ pub struct SimulationResult {
     /// Per-toolpath snapshots of the material stock *before* that toolpath
     /// carves. Keyed by toolpath id. Used by the dressup air-cut filter and
     /// rest-machining-aware generators.
+    ///
+    /// The entry of toolpath k+1 is the SAME `Arc` as
+    /// `SimCheckpointMesh::mesh_stock` of toolpath k in the same group (M3).
+    ///
+    /// Every generated toolpath keeps an entry, not only a rest consumer.
+    /// `ProjectSession`'s generation reads `prior_stocks[id]` for every
+    /// toolpath, ungated by its stock source, because the dressup air-cut
+    /// filter and the entry stock replay read it for a `Fresh` operation too.
+    /// A pruned entry would change the moves a regeneration emits.
     pub prior_stocks: std::collections::HashMap<ToolpathId, Arc<TriDexelStock>>,
     /// How each `prior_stocks` snapshot was made: the cell the request
     /// asked for and the toolpaths carved before the consumer. Same keys
@@ -1135,10 +1206,17 @@ fn stamp_playback_stock(
 
 /// CMP-18 seam: publish one playback checkpoint.
 ///
-/// The composited display mesh plus the stock a scrub resumes from. A
+/// The inputs of the display mesh plus the stock a scrub resumes from. A
 /// lateral group publishes its LOCAL stock and the transform that frames
 /// it; every other group publishes the global stock, as it always has —
 /// see `SimCheckpointMesh::stock_local_to_global`.
+///
+/// M2: the checkpoint no longer holds a marching-cubes mesh.
+/// `SimCheckpointMesh::build_mesh` builds it from the inputs stored here.
+///
+/// Returns the `Arc` of the local stock snapshot. The caller gives it to the
+/// next toolpath of the same group as that toolpath's prior stock (M3), so
+/// the one state is held once.
 fn push_checkpoint(
     run: &mut PrefixState,
     group_stock: &TriDexelStock,
@@ -1147,19 +1225,8 @@ fn push_checkpoint(
     request: &SimulationRequest,
     lateral_playback: bool,
     checkpoint_frame: Option<SetupTransformInfo>,
-) {
-    let mut local_mesh = dexel_stock_to_mesh(group_stock);
-    // §6.E append analytic drill cylinders so checkpoint frames
-    // show clean circular hole walls even at low dexel resolution.
-    // Cylinders are emitted in local-frame coords; the
-    // transform_stock_mesh_to_global call below handles re-framing.
-    if !group_drill_ops.is_empty() {
-        let refs: Vec<&crate::ops::drill_op::DrillOp> =
-            group_drill_ops.iter().map(|d| d.as_ref()).collect();
-        crate::stock::dexel_mesh::append_drill_cylinders(&mut local_mesh, &refs);
-    }
-    let checkpoint_mesh =
-        transform_stock_mesh_to_global(&local_mesh, &group.local_to_global, request.stock_bbox.min);
+) -> Arc<TriDexelStock> {
+    let mesh_stock = Arc::new(group_stock.clone());
     let checkpoint_stock = if lateral_playback {
         group_stock.checkpoint()
     } else {
@@ -1167,11 +1234,15 @@ fn push_checkpoint(
     };
     run.checkpoints.push(Arc::new(SimCheckpointMesh {
         boundary_index: run.boundary_index,
-        mesh: checkpoint_mesh,
+        mesh_stock: Arc::clone(&mesh_stock),
+        mesh_drill_ops: group_drill_ops.to_vec(),
+        mesh_frame: group.local_to_global.clone(),
+        mesh_stock_min: request.stock_bbox.min,
         stock: checkpoint_stock,
         stock_local_to_global: checkpoint_frame,
     }));
     run.boundary_index += 1;
+    mesh_stock
 }
 
 /// The per-generation constants one entry's carve needs, so
@@ -1333,6 +1404,7 @@ fn append_samples(
 fn record_pre_carve(
     run: &mut PrefixState,
     group_stock: &TriDexelStock,
+    carried: Option<Arc<TriDexelStock>>,
     entry: &SimToolpathEntry,
     group: &SimGroupEntry,
     k: usize,
@@ -1340,13 +1412,20 @@ fn record_pre_carve(
     // Snapshot the stock *before* this toolpath carves so the dressup
     // air-cut filter and rest-machining-aware generators can use it.
     //
+    // M3: `carried` is the previous checkpoint's local stock snapshot of the
+    // same group (`push_checkpoint`). Nothing changes `group_stock` between
+    // that checkpoint and this pre-carve point, so it IS this snapshot, and
+    // the two share one `Arc` instead of two clones of one grid. `None` (the
+    // first entry of a group, or the first entry after an S5 resume) takes a
+    // fresh clone, as before.
+    //
     // F.4: when this position is also this group's phantom-prior-
     // stock slot (the first pending FromRemainingStock op, recorded
     // by the request builder), the pending op's snapshot is taken at
     // this exact same sequence point — share the one stock clone via
     // `Arc::clone` rather than cloning the (potentially large) dexel
     // stock twice.
-    let pre_carve_stock = Arc::new(group_stock.clone());
+    let pre_carve_stock = carried.unwrap_or_else(|| Arc::new(group_stock.clone()));
     if let Some((phantom_k, phantom_id)) = group.phantom_prior_stock
         && phantom_k == k
     {
@@ -1528,6 +1607,12 @@ where
             None
         };
 
+        // M3: the local stock snapshot the last checkpoint of THIS group took.
+        // It is the pre-carve stock of the next entry, and the tail phantom's
+        // stock after the last entry. A loop local, reset per group, never a
+        // `PrefixState` field: an S5 snapshot must not carry it.
+        let mut carried_stock: Option<Arc<TriDexelStock>> = None;
+
         for (k, entry) in group.toolpaths.iter().enumerate() {
             // Already carved, and its whole contribution is in the restored
             // state (S5).
@@ -1535,7 +1620,7 @@ where
                 continue;
             }
             let entry_toolpath = &entry.annotated.toolpath;
-            record_pre_carve(&mut run, &group_stock, entry, group, k);
+            record_pre_carve(&mut run, &group_stock, carried_stock.take(), entry, group, k);
 
             set_phase(&format!("Simulate {}", entry.name));
             let lut = RadialProfileLUT::from_cutter(
@@ -1597,7 +1682,7 @@ where
                 );
             }
 
-            push_checkpoint(
+            carried_stock = Some(push_checkpoint(
                 &mut run,
                 &group_stock,
                 &group_drill_ops,
@@ -1605,7 +1690,7 @@ where
                 request,
                 lateral_playback,
                 checkpoint_frame.clone(),
-            );
+            ));
 
             // S5: the snapshot point is this request's last entry, taken here
             // — after the entry has fully carved and BEFORE the group's
@@ -1640,11 +1725,17 @@ where
         // F.4: phantom slot at the tail of the group — the first pending
         // FromRemainingStock op sits after every already-generated toolpath
         // in this group, so its snapshot is the fully-carved group stock.
+        //
+        // M3: after the last entry, `carried_stock` is that entry's checkpoint
+        // snapshot, taken from this same fully carved stock. Share it. It is
+        // `None` only when this run carved no entry of the group (an empty
+        // group, or an S5 resume at the group's end), and then the tail takes
+        // a fresh clone, as before.
         if let Some((phantom_k, phantom_id)) = group.phantom_prior_stock
             && phantom_k == group.toolpaths.len()
         {
-            run.prior_stocks
-                .insert(phantom_id, Arc::new(group_stock.clone()));
+            let tail = carried_stock.take().unwrap_or_else(|| Arc::new(group_stock.clone()));
+            run.prior_stocks.insert(phantom_id, tail);
         }
 
         finish_group(
@@ -1709,7 +1800,7 @@ where
     };
 
     set_phase("Build simulation mesh");
-    let mesh = composite_mesh;
+    let mesh = Arc::new(composite_mesh);
 
     // Compute per-vertex deviation (sim_z - model_z) if a reference model is available.
     let deviations = if request.model_mesh.is_some() {
