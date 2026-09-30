@@ -775,13 +775,13 @@ pub struct SimulationResults {
     /// carves, keyed by toolpath id (F.4). Mirrors core's
     /// `rs_cam_core::compute::simulate::SimulationResult::prior_stocks` —
     /// includes real per-toolpath snapshots AND any phantom snapshot for
-    /// the first pending `FromRemainingStock` toolpath in each group. The
-    /// submit-time rest-machining gate in
-    /// `controller::events::compute::submit_toolpath_compute` reads this
-    /// map directly via [`SimulationState::prior_stock_for`] instead of
-    /// re-deriving a "previous checkpoint" from `boundaries()` position
-    /// arithmetic (which could never see a toolpath that had no boundary
-    /// of its own, i.e. one that had never been generated).
+    /// the first pending `FromRemainingStock` toolpath in each group.
+    ///
+    /// This is a VIEW copy (the `Arc`s are shared). Rest generation does
+    /// not read it: `ProjectSession::snapshot_is_current` and the generate
+    /// path read the session's own `SimulationResult::prior_stocks`. That
+    /// is why [`SimulationState::release_for_new_run`] can drop this map
+    /// and a rest cascade still starts.
     pub prior_stocks: HashMap<ToolpathId, Arc<TriDexelStock>>,
 }
 
@@ -1212,6 +1212,66 @@ impl SimulationSemanticIndex {
         }
         ancestry.reverse();
         ancestry
+    }
+}
+
+impl SimulationPlayback {
+    /// Drop the live scrub stock and leave it unclaimed.
+    ///
+    /// The live stock is LAZY (M5, memory programme 2026-10-01). The first
+    /// scrub or playback frame (`app::simulation::update_live_sim`) reads
+    /// `live_stock_group == None` and allocates a stock in the frame of the
+    /// group under the playhead. A run that nobody scrubs holds no live grid.
+    pub fn release_live_stock(&mut self) {
+        self.live_stock = None;
+        self.live_stock_group = None;
+        self.live_sim_move = 0;
+    }
+}
+
+impl SimulationState {
+    /// Release the view artifacts of the previous run before a new run
+    /// starts (M1, memory programme 2026-10-01).
+    ///
+    /// Before M1 the old result stayed in memory for the whole new run. The
+    /// drain replaced it only when it adopted the new result, so old and new
+    /// existed together: 8.1 + 6.7 = 14.8 GB peak on rivmap350 at 0.2 mm.
+    ///
+    /// This call drops every artifact that the view owns for the old run:
+    /// the composite mesh, the checkpoint handles, the playback stream, the
+    /// view copy of the prior stocks, the live stock, the display mesh, the
+    /// display deviations and the rapid collisions of that run. It keeps the
+    /// holder-clearance verdict, because a different lane owns it and it
+    /// carries its own epoch. It keeps `last_run`, so the metric-capture
+    /// rule in `state/CLAUDE.md` holds. It does NOT touch the session: the
+    /// core `SimulationResult` keeps the prior stocks that rest generation
+    /// reads, so a rest cascade still starts.
+    ///
+    /// What the operator sees:
+    /// - While the new run works, [`crate::state::freshness::SimFreshness`]
+    ///   reads `Running` and the viewport shows no simulated stock.
+    /// - When the run lands, the drain adopts it as before.
+    /// - When the run is cancelled or fails, the view holds no result and
+    ///   reads `NoRun` ("Not run"). The drain posts a notification that
+    ///   names the release, so the old result does not vanish silently.
+    ///   The core still holds the old simulation, so rest operations still
+    ///   generate and export still reads its trace.
+    pub fn release_for_new_run(&mut self) {
+        self.results = None;
+        let playback = &mut self.playback;
+        playback.release_live_stock();
+        playback.playing = false;
+        playback.current_move = 0;
+        playback.partial_move = 0.0;
+        playback.tool_position = None;
+        playback.display_mesh = None;
+        playback.display_mesh_move = None;
+        playback.display_mesh_preview = false;
+        playback.display_deviations = None;
+        playback.last_mesh_upload_at = None;
+        playback.tool_gpu_move = None;
+        self.checks.rapid_collisions = Vec::new();
+        self.checks.rapid_collision_move_indices = Vec::new();
     }
 }
 

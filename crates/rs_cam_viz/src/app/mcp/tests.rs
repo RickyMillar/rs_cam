@@ -833,3 +833,107 @@ fn force_line_json_refuses_plywood() {
         );
     }
 }
+
+// ── U4: an MCP generate_all leaves the saved debug options alone ────
+
+/// A backend that accepts every submission and returns nothing. The U4
+/// test reads what the MCP entry writes into the session, not what a lane
+/// does with a job.
+struct U4SilentBackend;
+
+impl crate::compute::ComputeBackend for U4SilentBackend {
+    fn submit_toolpath(
+        &mut self,
+        _request: crate::compute::ComputeRequest,
+    ) -> crate::compute::ToolpathSubmitOutcome {
+        crate::compute::ToolpathSubmitOutcome::Queued
+    }
+    fn submit_simulation(&mut self, _request: crate::compute::SimulationRequest) {}
+    fn submit_collision(&mut self, _request: crate::compute::CollisionRequest) {}
+    fn submit_optimize(&mut self, _request: crate::compute::OptimizeRequest) {}
+    fn cancel_lane(&mut self, _lane: crate::compute::ComputeLane) {}
+    fn drain_results(&mut self) -> Vec<crate::compute::ComputeMessage> {
+        Vec::new()
+    }
+    fn lane_snapshot(&self, lane: crate::compute::ComputeLane) -> crate::compute::LaneSnapshot {
+        crate::compute::LaneSnapshot::idle(lane)
+    }
+    fn generation_control(&self) -> crate::compute::GenerationControl {
+        crate::compute::GenerationControl::detached()
+    }
+}
+
+/// U4 (memory programme 2026-10-01). The MCP `generate_all` entry set
+/// `debug_options.enabled = true` on every enabled toolpath, and the
+/// project file saved it. An MCP call must not change a saved project
+/// setting as a side effect.
+#[test]
+fn mcp_generate_all_leaves_the_saved_debug_options_unchanged_u4() {
+    let mut controller = crate::controller::AppController::with_backend(U4SilentBackend);
+    let operation = crate::state::toolpath::OperationConfig::new_default(
+        rs_cam_core::compute::catalog::OperationType::Pocket,
+    );
+    let op_type = operation.op_type();
+    let config = rs_cam_core::session::ToolpathConfig {
+        id: rs_cam_core::ToolpathId(0),
+        name: "Pocket".to_owned(),
+        enabled: true,
+        operation,
+        dressups: crate::state::toolpath::DressupConfig::for_op(op_type),
+        heights: crate::state::toolpath::HeightsConfig::default(),
+        tool_id: 0,
+        model_id: 0,
+        pre_gcode: None,
+        post_gcode: None,
+        boundary: crate::state::toolpath::BoundaryConfig::default(),
+        boundary_inherit: true,
+        stock_source: crate::state::toolpath::StockSource::default(),
+        coolant: rs_cam_core::gcode::CoolantMode::Off,
+        face_selection: None,
+        debug_options: rs_cam_core::trace::debug_trace::ToolpathDebugOptions::default(),
+        feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
+        rest_analysis: crate::state::toolpath::RestAnalysisConfig::default(),
+        planner_origin: None,
+    };
+    let index = controller
+        .state
+        .session
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(config),
+        }))
+        .expect("setup 0 exists on a default session")
+        .created
+        .expect("the AddToolpath row reports the new toolpath index");
+    // Without the tracking slot the entry refuses before the old write,
+    // and the test would pass on the defect.
+    controller.pending_mcp = Some(crate::mcp_bridge::PendingMcpCompute::new());
+
+    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    controller.mcp_start_generate_all(false, None, tx, None);
+
+    // Non-vacuity: the call must reach past every early refusal, which is
+    // where the old write sat.
+    if let Ok(reply) = rx.try_recv() {
+        let payload = reply.result.unwrap_or_else(|error| error);
+        for early in [
+            "No enabled toolpaths",
+            "already running",
+            "not initialized",
+        ] {
+            assert!(
+                !payload.contains(early),
+                "the call refused early ({early}), so it proves nothing: {payload}"
+            );
+        }
+    }
+    let tc = controller
+        .state
+        .session
+        .get_toolpath_config(index)
+        .expect("the toolpath is still there");
+    assert!(
+        !tc.debug_options.enabled,
+        "an MCP generate_all must not switch on the saved generator-trace option"
+    );
+}
