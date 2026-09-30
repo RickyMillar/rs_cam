@@ -42,3 +42,29 @@ the GUI. The runner adds them to this file if Ricky reads them.
 
 Logs on the runner's PC: /tmp/claude-1001/-home-ricky-personal-repos-rs-cam--claude-worktrees-bridge-cse-01X9bPqEnCfUkrbNprBjUs3d/84f1aa02-8de5-5da0-aff8-1fa9722b654e/scratchpad/job006_rss.log (5 s samples),
 /tmp/claude-1001/-home-ricky-personal-repos-rs-cam--claude-worktrees-bridge-cse-01X9bPqEnCfUkrbNprBjUs3d/84f1aa02-8de5-5da0-aff8-1fa9722b654e/scratchpad/job006_marks.log (Ricky's step times)
+
+## Addendum 2026-10-01: 0.2 mm through the MCP is OOM-killed
+
+Ricky asked for the collision count and cycle time at 0.2 mm, so the
+runner drove the same project through the MCP. Binary: release
+rs_cam_gui at origin/master 5b34e710 (rebuilt 2026-10-01 10:12 NZDT),
+under systemd-run MemoryMax=16G MemorySwapMax=0.
+
+| Step (UTC, 2026-09-30) | RSS (GiB) | Notes |
+|---|---|---|
+| load_project rivmap350.toml (21:15) | 0.1 -> 0.8 | 2 setups, 8 toolpaths |
+| generate_all simulation_resolution_mm=0.2 (21:16-21:21) | 8.13, flat | ok: 5 generated, 0 errors, 8 steps, 1 simulation |
+| run_simulation at stored 0.2 (21:22) | 8.13 -> 12.9 in 15 s | OOM-killed at 21:22:19 |
+
+Journal: run-rf3757d2....scope: "A process of this unit has been killed
+by the OOM killer"; 16.0G memory peak, 0B swap peak. The MCP connection
+closed. No collision count or cycle time was produced.
+
+Difference from Ricky's GUI run on 2026-09-30 (same commit): there, RSS
+fell from 8.78 to 1.48 GB when the simulation started, then peaked at
+9.17 GB. Here, the 8.13 GiB that generate_all holds is NOT released, and
+the closing simulation stacks on top of it. Runner hypothesis only (not
+verified in code): the MCP path keeps the plan's own 0.2 mm simulation,
+or the generation data, alive while run_simulation builds a new one.
+
+Log on the runner's PC: /tmp/claude-1001/-home-ricky-personal-repos-rs-cam/065a14e8-82c6-476f-9331-96d953a0dcb4/scratchpad/job006b_rss.log
