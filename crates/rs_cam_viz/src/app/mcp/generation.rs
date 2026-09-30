@@ -1008,29 +1008,14 @@ impl RsCamApp {
         };
         let tp_id = tc.id;
 
-        // MCP diagnostics depend on generation debug + semantic traces; enable
-        // capture before queuing compute so get_generation_debug_trace and
-        // narrate_toolpath have structured planner data.
-        //
-        // WP11b (§16 ruling 7): through the COMMAND surface, not
-        // `toolpath_configs_mut()`. The write reached past every rule the
-        // surface enforces, and the submit step reads the flag off the
-        // config, so the two have to be the same door. The row moves no
-        // revision and drops no result, which is why it can run immediately
-        // before the generate.
-        //
-        // WP19 `let _ =`: `Effects::stale` is therefore empty and
-        // `simulation_cleared` is false. There is nothing to mirror.
-        let _ = self.controller.state_mut().session.apply(
-            rs_cam_core::session::Command::SetToolpathDebugOptions(
-                rs_cam_core::session::SetToolpathDebugOptionsArgs {
-                    index,
-                    debug_options: rs_cam_core::trace::debug_trace::ToolpathDebugOptions {
-                        enabled: true,
-                    },
-                },
-            ),
-        );
+        // U4 (2026-10-01): this call does NOT write `debug_options`. It set
+        // `enabled = true` before, and the project file saved that change. An
+        // MCP call must not change a saved project setting as a side effect.
+        // The generation records the debug and semantic traces anyway
+        // (`session::compute::execute_job` builds both recorders
+        // unconditionally), so `get_generation_debug_trace` and
+        // `narrate_toolpath` still answer. Only the per-dressup items and the
+        // trace artifact file need the operator's own toggle.
 
         // Checked before the waiter is stored: a plan already running would
         // refuse this one, and nothing would ever resolve the oneshot. That

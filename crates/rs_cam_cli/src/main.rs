@@ -141,8 +141,14 @@ enum Commands {
         /// Path to the project .toml file (GUI format, format_version=3)
         input: PathBuf,
 
-        /// Output directory for diagnostic artifacts
-        #[arg(long, default_value = "diagnostics")]
+        /// Output directory for diagnostic artifacts. Required.
+        ///
+        /// U5 (memory programme 2026-10-01): the command wrote into
+        /// `./diagnostics` by default. `simulation.json` holds the full cut
+        /// trace, and on a large project it is gigabytes (8 GB on
+        /// rivmap350). The caller now names the directory, so the command
+        /// never fills the current directory without a request.
+        #[arg(long)]
         output_dir: PathBuf,
 
         /// Run only this setup (by name or ID)

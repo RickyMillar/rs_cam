@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use rs_cam_core::dexel_stock::TriDexelStock;
 use rs_cam_core::session::{AdoptSimulationArgs, Command, ForgetResultArgs};
 
 use crate::compute::{ComputeBackend, ComputeError, ComputeMessage, ComputeRequest};
@@ -961,21 +960,22 @@ impl<B: ComputeBackend> AppController<B> {
                     self.state.simulation.playback.playing = false;
                 }
 
-                let initial_stock = TriDexelStock::from_bounds(
-                    &stock_bbox,
-                    self.state.session.simulation_resolution_mm(),
-                );
-                self.state.simulation.playback.live_stock = Some(initial_stock);
-                self.state.simulation.playback.live_sim_move = 0;
-                // Unclaimed: this stock is in the global frame, and
-                // whether that is the right frame for the group the
-                // playhead lands in is a question only the new
-                // `playback_data` can answer (G-LATERALSCRUB). Leaving
-                // a previous run's group id here would let a lateral
-                // group inherit a global-frame stock unchallenged,
-                // because the group ORDINAL can match across runs
-                // while the frame does not.
-                self.state.simulation.playback.live_stock_group = None;
+                // M5 (memory programme 2026-10-01): the live stock is
+                // LAZY. The adopt does not allocate a dexel grid. The
+                // first scrub or playback frame in the Simulation
+                // workspace (`app::simulation::update_live_sim`) reads
+                // `live_stock_group == None` and allocates the stock in
+                // the frame of the group under the playhead: a
+                // checkpoint clone or a fresh grid. Before, the adopt
+                // allocated a full grid here that that first frame
+                // always replaced, and a run that nobody scrubbed kept
+                // it for nothing.
+                //
+                // Unclaimed: a previous run's group id would let a
+                // lateral group inherit a global-frame stock
+                // unchallenged, because the group ORDINAL can match
+                // across runs while the frame does not (G-LATERALSCRUB).
+                self.state.simulation.playback.release_live_stock();
 
                 // G-LATESIM (F2.10): the counter as it stood at
                 // SUBMIT, not now. Stamping the live counter here
@@ -1031,6 +1031,8 @@ impl<B: ComputeBackend> AppController<B> {
                         .submitted_metric_options_revision
                         .take(),
                 );
+                // M1: the submit released the previous run's view.
+                self.note_simulation_did_not_land("cancelled");
                 #[cfg(feature = "mcp")]
                 self.notify_mcp_simulation_error("Simulation cancelled");
                 self.plan_simulation_landed(
@@ -1051,6 +1053,8 @@ impl<B: ComputeBackend> AppController<B> {
                     format!("Simulation failed: {error}"),
                     super::super::Severity::Error,
                 );
+                // M1: the submit released the previous run's view.
+                self.note_simulation_did_not_land("failed");
                 #[cfg(feature = "mcp")]
                 self.notify_mcp_simulation_error(&error);
                 self.plan_simulation_landed(
@@ -1700,38 +1704,14 @@ impl<B: ComputeBackend> AppController<B> {
             return;
         }
 
-        // MCP-only: `get_generation_debug_trace` needs the generator's
-        // step-by-step output, and an agent has no other way to turn it on
-        // mid-call. The GUI plan leaves the operator's own "capture generator
-        // trace" toggle alone.
-        //
-        // WP7: one `SetToolpathDebugOptions` per index, the same row
-        // `mcp_generate_toolpath` and the GUI's own capture toggle take. The
-        // row moves no revision and drops no result, because a debug trace is
-        // an OUTPUT of a generation and never an input to one.
-        //
-        // WP19 `let _ =`: `Effects::stale` is therefore empty and
-        // `simulation_cleared` is false. There is nothing to mirror.
-        let count = self.state.session.toolpath_count();
-        for index in 0..count {
-            let Some(tc) = self.state.session.get_toolpath_config(index) else {
-                continue;
-            };
-            if !tc.enabled || tc.debug_options.enabled {
-                continue;
-            }
-            let mut debug_options = tc.debug_options;
-            debug_options.enabled = true;
-            let _ =
-                self.state
-                    .session
-                    .apply(rs_cam_core::session::Command::SetToolpathDebugOptions(
-                        rs_cam_core::session::SetToolpathDebugOptionsArgs {
-                            index,
-                            debug_options,
-                        },
-                    ));
-        }
+        // U4 (2026-10-01): this call does NOT write `debug_options`. It set
+        // `enabled = true` on every enabled toolpath before, and the project
+        // file saved that change. An MCP call must not change a saved project
+        // setting as a side effect. The generation records the debug and
+        // semantic traces anyway (`session::compute::execute_job` builds both
+        // recorders unconditionally), so `get_generation_debug_trace` still
+        // answers. Only the per-dressup items and the trace artifact file need
+        // the operator's own toggle.
 
         let mut steps = self.plan_steps(Scope::Project, fixpoint);
         // The closing simulation runs at the stored project value, the same

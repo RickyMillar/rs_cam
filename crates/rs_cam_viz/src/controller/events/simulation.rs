@@ -37,6 +37,33 @@ impl<B: ComputeBackend> AppController<B> {
         self.pending_upload = true;
     }
 
+    /// Tell the operator that a run which did not land left the view empty
+    /// (M1, memory programme 2026-10-01).
+    ///
+    /// The submit door released the view artifacts of the previous run
+    /// (`SimulationState::release_for_new_run`). A cancelled or failed run
+    /// has nothing to put back, so the view reads `NoRun`. The core still
+    /// holds the previous simulation. This notification names that state, so
+    /// the old result does not vanish silently. `outcome` is the past
+    /// participle the message uses: "cancelled" or "failed".
+    ///
+    /// The call posts nothing when the view holds a result, or when the core
+    /// holds no simulation (then no previous run was released).
+    pub(crate) fn note_simulation_did_not_land(&mut self, outcome: &str) {
+        if self.state.simulation.has_results() || self.state.session.simulation_result().is_none()
+        {
+            return;
+        }
+        self.push_notification(
+            format!(
+                "Simulation {outcome}. The viewport released the previous simulation when \
+                 this run started, so it shows no simulated stock. Rest operations still \
+                 use the previous simulation. Run the simulation again to see the stock."
+            ),
+            super::super::Severity::Warning,
+        );
+    }
+
     pub(crate) fn handle_sim_jump_to_move(&mut self, move_idx: usize) {
         if self.state.simulation.has_results() {
             let total = self.state.simulation.total_moves();
@@ -298,6 +325,20 @@ impl<B: ComputeBackend> AppController<B> {
         memoize_prefix: bool,
     ) {
         let _ = all_tools_flat;
+        // M1 (memory programme 2026-10-01): release the view artifacts of
+        // the previous run BEFORE the new run starts, so the old and the new
+        // result never exist together. The core simulation stays: rest
+        // generation reads its prior stocks. See
+        // `SimulationState::release_for_new_run` for what the operator sees
+        // while the run works and after a cancel or a failure.
+        //
+        // The analysis lane is not cancelled here: `submit_simulation`
+        // replaces the queued job itself. `invalidate_simulation` is not
+        // used, because it also clears the holder-clearance verdict, and a
+        // re-run does not change that verdict.
+        self.state.simulation.release_for_new_run();
+        self.pending_upload = true;
+
         // G-RESTRES: ONE stored project value sets the cell of every
         // simulation — a plain Run Simulation, a plan prefix, the closing
         // run, MCP and the CLI (operator ruling 2026-09-24). `Auto` is
@@ -601,4 +642,257 @@ pub(crate) fn build_world_stock_bbox(
     session: &rs_cam_core::session::ProjectSession,
 ) -> BoundingBox3 {
     session.stock_bbox()
+}
+
+/// M1 (memory programme 2026-10-01): a new run releases the view of the
+/// previous run before it starts, and a run that does not land says so.
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod release_for_new_run_m1 {
+    use std::collections::HashMap;
+
+    use rs_cam_core::dexel_stock::TriDexelStock;
+    use rs_cam_core::geo::P3;
+    use rs_cam_core::session::{AdoptSimulationArgs, Command};
+    use rs_cam_core::stock::stock_mesh::StockMesh;
+
+    use super::*;
+    use crate::compute::{
+        ComputeError, ComputeMessage, ComputeRequest, GenerationControl, LaneSnapshot,
+        OptimizeRequest, ToolpathSubmitOutcome,
+    };
+    use crate::state::freshness::SimFreshness;
+    use crate::state::simulation::{SimulationResults, SimulationRunMeta};
+
+    /// The id of the one prior stock the core simulation holds.
+    const REST_OP: ToolpathId = ToolpathId(7);
+
+    /// A backend that counts simulation submits and hands back the
+    /// messages a test queues.
+    #[derive(Default)]
+    struct QueueBackend {
+        simulations: usize,
+        queued: Vec<ComputeMessage>,
+    }
+
+    impl ComputeBackend for QueueBackend {
+        fn submit_toolpath(&mut self, _request: ComputeRequest) -> ToolpathSubmitOutcome {
+            ToolpathSubmitOutcome::Queued
+        }
+        fn submit_simulation(&mut self, _request: SimulationRequest) {
+            self.simulations += 1;
+        }
+        fn submit_collision(&mut self, _request: CollisionRequest) {}
+        fn submit_optimize(&mut self, _request: OptimizeRequest) {}
+        fn cancel_lane(&mut self, _lane: ComputeLane) {}
+        fn drain_results(&mut self) -> Vec<ComputeMessage> {
+            std::mem::take(&mut self.queued)
+        }
+        fn lane_snapshot(&self, lane: ComputeLane) -> LaneSnapshot {
+            LaneSnapshot::idle(lane)
+        }
+        fn generation_control(&self) -> GenerationControl {
+            GenerationControl::detached()
+        }
+    }
+
+    fn bbox() -> BoundingBox3 {
+        BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(20.0, 20.0, 10.0),
+        }
+    }
+
+    fn mesh() -> StockMesh {
+        StockMesh {
+            vertices: vec![0.0; 9],
+            indices: vec![0, 1, 2],
+            colors: vec![0.5; 9],
+        }
+    }
+
+    /// A controller that holds a landed run on BOTH sides: the core
+    /// simulation with one prior stock (what rest generation reads), and
+    /// the view with its heavy artifacts.
+    fn controller_holding_a_run() -> AppController<QueueBackend> {
+        let mut controller = AppController::with_backend(QueueBackend::default());
+        let prior = Arc::new(TriDexelStock::from_bounds(&bbox(), 1.0));
+        let mut prior_stocks = HashMap::new();
+        let _ = prior_stocks.insert(REST_OP, Arc::clone(&prior));
+        let core = rs_cam_core::compute::simulate::SimulationResult {
+            mesh: mesh(),
+            total_moves: 10,
+            deviations: None,
+            column_deviations: None,
+            boundaries: Vec::new(),
+            checkpoints: Vec::new(),
+            rapid_collisions: Vec::new(),
+            rapid_collision_move_indices: Vec::new(),
+            cut_trace: None,
+            column_grid_cell_mm: 1.0,
+            resolution_clamped: false,
+            prior_stocks: prior_stocks.clone(),
+            prior_stock_sources: HashMap::new(),
+        };
+        let epoch = controller.state.session.simulation_epoch();
+        let _ = controller
+            .state
+            .session
+            .apply(Command::AdoptSimulation(AdoptSimulationArgs {
+                result: Box::new(core),
+                epoch,
+            }))
+            .expect("the fixture epoch is the live epoch");
+
+        let sim = &mut controller.state.simulation;
+        sim.results = Some(SimulationResults {
+            mesh: mesh(),
+            total_moves: 10,
+            boundaries: Vec::new(),
+            setup_boundaries: Vec::new(),
+            checkpoints: Vec::new(),
+            selected_toolpaths: None,
+            playback_data: Vec::new(),
+            stock_bbox: bbox(),
+            cut_trace: None,
+            cut_trace_path: None,
+            column_grid_cell_mm: 1.0,
+            prior_stocks,
+        });
+        sim.last_run = Some(SimulationRunMeta {
+            accepted_metric_options_revision: Some(sim.metric_options_revision),
+        });
+        sim.playback.live_stock = Some(TriDexelStock::from_bounds(&bbox(), 1.0));
+        sim.playback.live_stock_group = Some(0);
+        sim.playback.live_sim_move = 4;
+        sim.playback.current_move = 4;
+        sim.playback.display_mesh = Some(mesh());
+        sim.playback.display_mesh_move = Some(4);
+        sim.playback.display_deviations = Some(vec![0.0; 3]);
+        sim.checks.rapid_collision_move_indices = vec![3];
+        assert_eq!(
+            controller.state.simulation_freshness(),
+            SimFreshness::Current,
+            "the control: the fixture holds a current run"
+        );
+        controller
+    }
+
+    fn submit(controller: &mut AppController<QueueBackend>) {
+        controller.submit_simulation_for_groups(Vec::new(), &[], bbox(), None, false);
+        assert_eq!(controller.compute.simulations, 1, "the run must submit");
+    }
+
+    fn release_notice(controller: &AppController<QueueBackend>) -> Option<String> {
+        controller
+            .notifications()
+            .iter()
+            .map(|n| n.message.clone())
+            .find(|m| m.contains("released the previous simulation"))
+    }
+
+    #[test]
+    fn a_new_run_releases_the_previous_view_before_it_starts_m1() {
+        let mut controller = controller_holding_a_run();
+        submit(&mut controller);
+
+        let sim = &controller.state.simulation;
+        assert!(sim.results.is_none(), "the old view result must be gone");
+        assert!(
+            sim.playback.live_stock.is_none(),
+            "the live stock must be gone"
+        );
+        assert_eq!(sim.playback.live_stock_group, None);
+        assert_eq!(sim.playback.live_sim_move, 0);
+        assert_eq!(sim.playback.current_move, 0);
+        assert!(sim.playback.display_mesh.is_none());
+        assert_eq!(sim.playback.display_mesh_move, None);
+        assert!(sim.playback.display_deviations.is_none());
+        assert!(sim.checks.rapid_collision_move_indices.is_empty());
+        assert!(controller.pending_upload, "the viewport must drop its mesh");
+        assert_eq!(
+            controller.state.simulation_freshness(),
+            SimFreshness::Running,
+            "a run in flight reads Running, not the released result"
+        );
+    }
+
+    #[test]
+    fn a_new_run_keeps_the_core_prior_stocks_for_rest_generation_m1() {
+        let mut controller = controller_holding_a_run();
+        submit(&mut controller);
+
+        let core = controller
+            .state
+            .session
+            .simulation_result()
+            .expect("the core simulation stays while the new run works");
+        assert!(
+            core.prior_stocks.contains_key(&REST_OP),
+            "rest generation reads this snapshot; the release must not touch it"
+        );
+    }
+
+    #[test]
+    fn a_cancelled_run_reads_no_run_and_names_the_release_m1() {
+        let mut controller = controller_holding_a_run();
+        submit(&mut controller);
+        controller
+            .compute
+            .queued
+            .push(ComputeMessage::Simulation(Err(ComputeError::Cancelled)));
+        controller.drain_compute_results();
+
+        assert_eq!(
+            controller.state.simulation_freshness(),
+            SimFreshness::NoRun,
+            "nothing came back to show"
+        );
+        assert!(
+            controller.state.session.simulation_result().is_some(),
+            "the core still holds the previous simulation"
+        );
+        let notice = release_notice(&controller)
+            .expect("a cancelled run must say that the view released the old result");
+        assert!(notice.starts_with("Simulation cancelled."), "{notice}");
+    }
+
+    #[test]
+    fn a_failed_run_reads_no_run_and_names_the_release_m1() {
+        let mut controller = controller_holding_a_run();
+        submit(&mut controller);
+        controller
+            .compute
+            .queued
+            .push(ComputeMessage::Simulation(Err(ComputeError::Message(
+                "fixture failure".to_owned(),
+            ))));
+        controller.drain_compute_results();
+
+        assert_eq!(controller.state.simulation_freshness(), SimFreshness::NoRun);
+        let notice = release_notice(&controller)
+            .expect("a failed run must say that the view released the old result");
+        assert!(notice.starts_with("Simulation failed."), "{notice}");
+    }
+
+    /// The control for the two tests above: with no previous simulation
+    /// nothing was released, and the notice would be false.
+    #[test]
+    fn a_first_run_that_is_cancelled_posts_no_release_notice_m1() {
+        let mut controller = AppController::with_backend(QueueBackend::default());
+        submit(&mut controller);
+        controller
+            .compute
+            .queued
+            .push(ComputeMessage::Simulation(Err(ComputeError::Cancelled)));
+        controller.drain_compute_results();
+
+        assert_eq!(controller.state.simulation_freshness(), SimFreshness::NoRun);
+        assert_eq!(release_notice(&controller), None);
+    }
 }
