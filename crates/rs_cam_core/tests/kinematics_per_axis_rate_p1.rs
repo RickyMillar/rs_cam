@@ -457,10 +457,14 @@ fn fixture_every_branch() -> Toolpath {
 /// the chord read 45 degrees), and its end tangent (-y) meets the 0.2 mm +x
 /// line at 90 degrees (the chord read 45). Only `cutting_s` moves,
 /// 1.272391 -> 1.315781 s (total 6.442798 -> 6.486188 s).
+/// Re-captured 2026-10-01 for one cause: an arc is timed at its arc length,
+/// not its chord. The 270 degree arc is 23.562 mm, its chord 7.071 mm; the
+/// extra 16.491 mm at its 40 mm/s cruise adds 0.412 s to `cutting_s`,
+/// 1.315781 -> 1.728053 s (total 6.486188 -> 6.898460 s).
 const EDG07_BREAKDOWN_BITS: [(&str, u64); 7] = [
-    ("total_s", 0x4019_f1db_59c5_44a7),
+    ("total_s", 0x401b_9805_f677_af04),
     ("rapid_s", 0x3ff4_5c5a_7580_5555),
-    ("cutting_s", 0x3ff5_0d70_e120_b090),
+    ("cutting_s", 0x3ffb_a61b_53ea_59fe),
     ("entry_s", 0x3ff8_ecdd_2f9e_d6a9),
     ("linking_s", 0x3fe8_32e2_ac8d_e28d),
     ("retract_s", 0x3fe6_039a_ae4a_5da5),
