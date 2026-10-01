@@ -139,8 +139,11 @@ fn colour_literals_outside_the_token_module_stay_within_budget_up1() {
         .map(|(f, n)| format!("{f} {n}"))
         .collect();
 
-    assert!(
-        total <= LITERAL_BUDGET,
+    // The budget reached zero (2026-10-02), so "at most the budget" is
+    // "exactly the budget"; clippy rejects `<=` against a zero `usize`.
+    assert_eq!(
+        total,
+        LITERAL_BUDGET,
         "colour literals outside the token module rose to {total}, over the \
          budget of {LITERAL_BUDGET}. Every colour is a token or it does not \
          ship (DESIGN_SPEC.md 2.10). Worst files: {}",
