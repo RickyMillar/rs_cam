@@ -85,3 +85,52 @@ height, or a different finishing direction on steep walls.
 Files on the runner's PC: setup-2 G-code
 /tmp/claude-1001/-home-ricky-personal-repos-rs-cam/065a14e8-82c6-476f-9331-96d953a0dcb4/scratchpad/j009_gcode/rivmap350_2_Setup_2.nc ;
 logs .../scratchpad/job009a.log
+
+## Addendum: read-only root-cause trace of the 8 collisions (runner, 2026-10-02)
+
+No code was changed. Trace from code on master 6013b583, plus a G-code check.
+
+**Emitter (proven):** `adaptive3d/path.rs:1545-1556` lifts to safe_z, rapids
+across, then G0s down to `descent_floor = rapid_floor_z + 0.5`
+(path.rs:1509-1514). `rapid_floor_z` comes from `plan_entry`
+(`adaptive3d/clearing.rs:762-797`), the max conservative top in a tool-radius
+disc of the PLANNER'S OWN stock (path.rs:647-674, pre-cleared outside the
+boundary at path.rs:803-830, stamped by every planned segment). No dressup
+lowers this rapid. TSP is ruled out for these: a reordered group re-frames at
+safe_z with a fed first move (dressup/tsp.rs:622-686); a G0 to depth can only
+survive in planner order (fits "existed before fd06f407").
+
+**Cause (mechanism proven, application to rivmap350 confirmed by the G-code
+shape):** the planner's pre-clear uses `processed_set.single_union()`
+(session/compute/generation.rs:432-442), NOT inset by the tool radius; the
+post-generation clip insets each region by r for containment "inside"
+(generation.rs:1105-1143) and turns removed cuts into safe-z rapids
+(geometry/boundary.rs:455-503). So a band ~r wide along every boundary edge
+(holes included) is "cut" in the planner stock but still standing. If the
+outline has more than one polygon (model_outline with holes=true can), 
+`single_union` returns None and the planner pre-clears NOTHING.
+`tests/adaptive3d_boundary_clear_parity.rs:14-40` already measures this
+over-claim (~27 % of cells) but rates it "Safety LOW / no consumer outside
+adaptive3d" — it misses `plan_entry`, which reads that stock for every rapid
+floor.
+
+**G-code check (runner):** every one of the 8 is a tiny boundary crumb:
+G0 down, a ~1 mm G1 plunge at F843, a 0.4-4 mm lateral cut, then retract to
+Z5 — and all 8 sit at the board edges (Y~23, X~34-46, X~337-346, Y~486 on a
+380 x 510 stock): the r-wide band case. "3D Rough 8": stock_source fresh;
+boundary model_outline (model 5) holes=true, containment inside, offset 0.
+
+**Why no sentry catches it:** adaptive3d_entry_stock_aware asserts "no rapid
+enters material" but with `boundary: None` (line 144);
+adaptive3d_planner_never_ahead_of_emitted_path and the wanaka phantom-rapid
+test use no boundary; the parity test counts cells, not rapids, and its D4
+arm is #[ignore] (line 736).
+
+**Recommended fix layer (the lead's decision, D4):** pre-clear the planner
+stock against the SAME processed, r-inset region set the clip uses, passed as
+a set (not single_union); plus D4's waterline_cleanup boundary half. Not a
+patch to descent_floor. Sentry without a fixture file: the synthetic plate of
+adaptive3d_entry_stock_aware + an "inside" boundary (a rectangle with a hole,
+and a two-polygon case to force single_union = None), run through the session
+door so the clip runs, replay on fresh dexels, assert zero rapid collisions at
+0.25 mm; optionally un-ignore the D4 parity arm.
