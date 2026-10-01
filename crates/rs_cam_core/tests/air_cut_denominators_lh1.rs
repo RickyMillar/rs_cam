@@ -147,9 +147,11 @@ fn project_diagnostics_wire_names_both_denominators() {
     );
     // 9 since CMP-14 added `collision_checks_failed`: a collision count is
     // a partial sum unless the reader knows how many checks did not answer.
+    // 10 since U2 (memory programme 2026-10-01) added
+    // `cut_metrics_not_measured`: a null trace figure names its reason.
     assert_eq!(
         obj.len(),
-        9,
+        10,
         "serialize_struct arity must match the field count, or serde formats \
          that count fields (bincode, MessagePack) truncate: {obj:?}"
     );
