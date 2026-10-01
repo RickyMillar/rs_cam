@@ -131,3 +131,15 @@ inter-region rapid moves not lifting to safe-Z" — for these 8 that is wrong
 Also pushed: budget in MCP generation_status; test artifacts default to a temp
 dir; BREAKING CLI: `project` writes simulation.json only with --sim-artifact.
 The runner restarts its own GUI via the proxy (3 unattended restarts OK).
+
+## 2026-10-02 ~11:40 UTC: collision move-frame consistency pushed (origin/master b04aa203)
+
+One attribution for every collision surface: compute::simulate::locate_global_move
+(half-open [start_move, end_move)). Fixed: the triage/Inspector line named no
+toolpath and gave a local index as a bare move; HOLDER collision indices are
+local but several GUI sites read them as run moves (a holder hit could land on
+the wrong toolpath); the viewport marker pick read the rapid list for a
+holder marker; the "Likely cause ... increase retract_z" hint is replaced by
+what was measured. Verified on master incl. your 7a7c867d: clippy clean, core
+lib stock/session/diagnostics/adaptive3d 469/0, adaptive3d_boundary_clear_parity
+3/0, perf_golden 5/0, viz 1110/0, cli 68/0.
