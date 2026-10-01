@@ -97,3 +97,15 @@ core; cut-trace files off by default (~/.cache/rs_cam/artifacts when on);
 cut-metric cards flip to a sparkline (median over a band, cutting-only, air =
 gap) and open a zoomable trace modal; SimulationCutSample::is_air() names the
 gates' air rule (no gate result changes).
+
+## 2026-10-02 ~09:40 UTC: Ricky is away (overnight) — runner policy
+
+Ricky: "you can keep driving these projects while I am gone". So the runner
+RUNS jobs marked needs_ricky_ok (he approved 001/003/008/009 the same way)
+and says so in each result. Limits: no G-code for the machine; no heavy test
+gate beyond what a job names; UI changes wait on a branch for his look.
+origin/master = 38cf0677 (adds crates/rs_cam_mcp_proxy: the runner now
+restarts its own GUI via gui_status / gui_restart, no /mcp).
+Open defect found (runner fixing first): MCP get_project_diagnostics returns
+[] on master while inspect_collisions / get_diagnostics report the 8 real
+rapid collisions in rivmap350 "3D Rough 8".
