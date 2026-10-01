@@ -40,20 +40,45 @@
 //! compresses the line; the operator accepted that to keep the limits in
 //! view. The histogram keeps its own x-axis rule (`histogram.rs`).
 //!
-//! # Decimation
+//! # Decimation: a median line over a faint min-to-max band
 //!
-//! [`columns`] keeps the minimum, the maximum, the first and the last value
-//! of each pixel column. The line draws the min-to-max range of each column
-//! as a vertical piece, so a one-sample spike or dip is never lost. A
-//! max-only decimation would hide every dip below the chipload floor.
+//! [`columns`] puts the samples into pixel columns. Each column keeps the
+//! MEDIAN of its finite samples, and its minimum and maximum.
+//!
+//! - The line joins the column medians. It is the trend. Round 1 drew the
+//!   full min-to-max range of each column as the line; on a toolpath of
+//!   40 000 short moves a column held about 140 moves, and the line became
+//!   a solid zigzag band with no visible trend (operator, 2026-10-02). The
+//!   data does vary from move to move (acceleration ramps, feed
+//!   modulation), so the band is true; it is not the trend.
+//! - The median, not a mean: one spike in a column does not move it. The
+//!   card series holds `(move, value)` only, with no time weight, so a
+//!   time-weighted mean is not available here. An even count takes the
+//!   mean of the two middle values.
+//! - The min-to-max range is a faint band behind the line, in the band
+//!   colours, split at each bound, so a spike above the ceiling inside a
+//!   column with an in-band median still shows red. A column of
+//!   [`BAND_MIN_SAMPLES`] samples or fewer draws no band: zoomed in that
+//!   far, the line is the per-move signal.
+//! - A max-only decimation would hide every dip below the chipload floor;
+//!   the band keeps both ends.
 
 use rs_cam_core::tool_load::Histogram;
 
 use crate::ui::components::histogram::{self, BinSide};
 use crate::ui::tokens;
 
-/// The width of the line, in points.
+/// The width of an icon stroke, in points.
 pub const LINE_WIDTH: f32 = 1.5;
+
+/// The width of the median line, in points.
+pub const MEDIAN_WIDTH: f32 = 1.75;
+
+/// The alpha factor of the min-to-max band behind the line.
+pub const BAND_ALPHA: f32 = 0.3;
+
+/// A column of this many samples or fewer draws no band.
+pub const BAND_MIN_SAMPLES: usize = 2;
 
 /// The side of the square icon buttons (flip and open), in points.
 pub const FLIP_SIZE: f32 = tokens::SPACE_5;
@@ -73,10 +98,10 @@ const EDGE_PAD: f32 = tokens::SPACE_1;
 pub struct Column {
     pub min: f64,
     pub max: f64,
-    /// The first finite value in trace order.
-    pub first: f64,
-    /// The last finite value in trace order.
-    pub last: f64,
+    /// The median of the column's finite samples: the line's value.
+    pub median: f64,
+    /// The number of finite samples in the column.
+    pub count: usize,
     /// The toolpath-local move of the first finite sample.
     pub first_move: usize,
     /// True when the line joins the previous column to this one: the
@@ -152,6 +177,7 @@ pub fn columns_in(
         first_move,
         last_move,
     };
+    let mut values: Vec<Vec<f64>> = vec![Vec::new(); count];
     let mut after_gap = true;
     let mut last_column: Option<usize> = None;
     for &(local_move, value) in series {
@@ -168,24 +194,53 @@ pub fn columns_in(
                 Some(column) => {
                     column.min = column.min.min(value);
                     column.max = column.max.max(value);
-                    column.last = value;
                 }
                 None => {
                     *slot = Some(Column {
                         min: value,
                         max: value,
-                        first: value,
-                        last: value,
+                        median: value,
+                        count: 0,
                         first_move: local_move,
                         joined,
                     });
                 }
             }
         }
+        if let Some(bucket) = values.get_mut(index) {
+            bucket.push(value);
+        }
         after_gap = false;
         last_column = Some(index);
     }
+    for (slot, mut bucket) in out.columns.iter_mut().zip(values) {
+        if let Some(column) = slot {
+            column.count = bucket.len();
+            if let Some(median) = median(&mut bucket) {
+                column.median = median;
+            }
+        }
+    }
     Some(out)
+}
+
+/// The median of `values`, which must be finite. An even count takes the
+/// mean of the two middle values. The order of `values` changes. Returns
+/// `None` when `values` is empty.
+#[must_use]
+pub fn median(values: &mut [f64]) -> Option<f64> {
+    let n = values.len();
+    if n == 0 {
+        return None;
+    }
+    let mid = n / 2;
+    let (below, upper, _) = values.select_nth_unstable_by(mid, f64::total_cmp);
+    let upper = *upper;
+    if n % 2 == 1 {
+        return Some(upper);
+    }
+    let lower = below.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    Some(0.5 * (lower + upper))
 }
 
 /// The y range of a line, in core's unit. See "The y scale" above.
@@ -300,7 +355,9 @@ pub fn split_at_bounds(
         .collect()
 }
 
-/// The words for a column's side of the bounds: the worst side it reaches.
+/// The worst side of the bounds a column's band reaches: above when its
+/// maximum is over the ceiling, else below when its minimum is under the
+/// floor. The line takes the side of the median instead.
 #[must_use]
 pub fn column_side(column: &Column, floor: Option<f64>, ceiling: Option<f64>) -> BinSide {
     if histogram::value_side(floor, ceiling, column.max) == BinSide::Above {
@@ -585,7 +642,16 @@ impl<'a> Sparkline<'a> {
                         egui::Stroke::new(1.0, tokens::TEXT_MUTED),
                     );
                 }
-                paint_line(&painter, columns, &y_scale, floor, ceiling, &column_x);
+                let column_width = area.width() / column_count as f32;
+                paint_line(
+                    &painter,
+                    columns,
+                    &y_scale,
+                    floor,
+                    ceiling,
+                    &column_x,
+                    column_width,
+                );
                 if let Some(index) = hovered_index
                     && hovered_column.is_some()
                 {
@@ -615,16 +681,14 @@ impl<'a> Sparkline<'a> {
         }
 
         let hover_text = hovered_index.map(|_| match hovered_column {
-            Some(column) => {
-                let side = column_side(&column, floor, ceiling);
-                column_hover_text(
-                    &column,
-                    column.first_move + self.move_offset,
-                    side,
-                    self.scale,
-                    self.unit,
-                )
-            }
+            Some(column) => column_hover_text(
+                &column,
+                column.first_move + self.move_offset,
+                floor,
+                ceiling,
+                self.scale,
+                self.unit,
+            ),
             None => "Not measured here.".to_owned(),
         });
         let response = match hover_text {
@@ -692,8 +756,9 @@ fn paint_zones(
     }
 }
 
-/// Paint the line: the joins between columns and the min-to-max piece of
-/// each column.
+/// Paint the faint min-to-max band of each column, then the median line
+/// that joins the columns. Both take the band colours and split at each
+/// bound. A column of [`BAND_MIN_SAMPLES`] samples or fewer draws no band.
 fn paint_line(
     painter: &egui::Painter,
     columns: &Columns,
@@ -701,7 +766,31 @@ fn paint_line(
     floor: Option<f64>,
     ceiling: Option<f64>,
     column_x: &dyn Fn(usize) -> f32,
+    column_width: f32,
 ) {
+    let half = (0.5 * column_width).max(0.5);
+    for (index, slot) in columns.columns.iter().enumerate() {
+        let Some(column) = slot else {
+            continue;
+        };
+        if column.count <= BAND_MIN_SAMPLES || column.max <= column.min {
+            continue;
+        }
+        let x = column_x(index);
+        for (t0, t1, side) in split_at_bounds(column.min, column.max, floor, ceiling) {
+            let value = |t: f64| column.min + (column.max - column.min) * t;
+            let (y0, y1) = (y_scale.y(value(t0)), y_scale.y(value(t1)));
+            painter.rect_filled(
+                egui::Rect::from_min_max(
+                    egui::pos2(x - half, y0.min(y1)),
+                    egui::pos2(x + half, y0.max(y1).max(y0.min(y1) + 1.0)),
+                ),
+                0.0,
+                histogram::side_colour(side).gamma_multiply(BAND_ALPHA),
+            );
+        }
+    }
+
     let piece = |x0: f32, v0: f64, x1: f32, v1: f64| {
         for (t0, t1, side) in split_at_bounds(v0, v1, floor, ceiling) {
             let at = |t: f64| {
@@ -710,7 +799,7 @@ fn paint_line(
             };
             painter.line_segment(
                 [at(t0), at(t1)],
-                egui::Stroke::new(LINE_WIDTH, histogram::side_colour(side)),
+                egui::Stroke::new(MEDIAN_WIDTH, histogram::side_colour(side)),
             );
         }
     };
@@ -721,22 +810,27 @@ fn paint_line(
             continue;
         };
         let x = column_x(index);
-        if column.joined
-            && let Some(before) = previous
-        {
-            piece(
-                column_x(index.saturating_sub(1)),
-                before.last,
-                x,
-                column.first,
-            );
-        }
-        if column.max > column.min {
-            piece(x, column.min, x, column.max);
-        } else {
-            // One value: a short flat piece, so a single sample with no
-            // neighbour stays visible.
-            piece(x - LINE_WIDTH, column.min, x + LINE_WIDTH, column.max);
+        let next_joined = columns
+            .columns
+            .get(index + 1)
+            .copied()
+            .flatten()
+            .is_some_and(|next| next.joined);
+        match previous {
+            Some(before) if column.joined => {
+                piece(
+                    column_x(index.saturating_sub(1)),
+                    before.median,
+                    x,
+                    column.median,
+                );
+            }
+            _ if !next_joined => {
+                // A column with no joined neighbour: a short flat piece, so
+                // a single point stays visible.
+                piece(x - half, column.median, x + half, column.median);
+            }
+            _ => {}
         }
         previous = Some(*column);
     }
@@ -752,30 +846,44 @@ pub fn side_words(side: BinSide) -> &'static str {
     }
 }
 
-/// The hover line of one column:
-/// `Move 1234 · 0.031 mm/tooth · within the limits`, with a value range
-/// when the column holds more than one value.
+/// The hover line of one column.
+///
+/// - One sample: `Move 1234 · 0.031 mm/tooth · within the limits`.
+/// - More samples: `Move 1234 · median 0.031 mm/tooth (min 0.020, max
+///   0.090) · within the limits`. The side is the median's. When the band
+///   reaches a worse side, a second clause names it.
 #[must_use]
 pub fn column_hover_text(
     column: &Column,
     shown_move: usize,
-    side: BinSide,
+    floor: Option<f64>,
+    ceiling: Option<f64>,
     scale: f64,
     unit: &str,
 ) -> String {
-    let value = if column.max > column.min {
+    let number = |value: f64| histogram::format_value(value * scale);
+    let side = histogram::value_side(floor, ceiling, column.median);
+    let mut text = if column.count > 1 {
         format!(
-            "{}\u{2013}{} {unit}",
-            histogram::format_value(column.min * scale),
-            histogram::format_value(column.max * scale),
+            "Move {shown_move} \u{00b7} median {} {unit} (min {}, max {}) \u{00b7} {}",
+            number(column.median),
+            number(column.min),
+            number(column.max),
+            side_words(side),
         )
     } else {
-        format!("{} {unit}", histogram::format_value(column.min * scale))
+        format!(
+            "Move {shown_move} \u{00b7} {} {unit} \u{00b7} {}",
+            number(column.median),
+            side_words(side),
+        )
     };
-    format!(
-        "Move {shown_move} \u{00b7} {value} \u{00b7} {}\nClick to go to this move.",
-        side_words(side)
-    )
+    let worst = column_side(column, floor, ceiling);
+    if worst != side {
+        text.push_str(&format!("; a sample is {}", side_words(worst)));
+    }
+    text.push_str("\nClick to go to this move.");
+    text
 }
 
 /// The two faces of a cut-metric card.

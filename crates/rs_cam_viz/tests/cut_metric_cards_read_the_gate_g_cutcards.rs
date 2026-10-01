@@ -835,27 +835,129 @@ fn the_open_button_opens_the_trace_modal_g_cutcards() {
     assert_eq!(sparkline::OPEN_HOVER, "Open this trace");
 }
 
-/// The hover names the move, the value and the side of the bounds.
+/// The hover names the move, the median, the range and the side.
 #[test]
-fn the_line_hover_names_move_value_and_side_g_cutcards() {
+fn the_line_hover_names_move_median_range_and_side_g_cutcards() {
     let column = sparkline::Column {
         min: 0.05,
         max: 0.09,
-        first: 0.05,
-        last: 0.09,
+        median: 0.06,
+        count: 7,
         first_move: 12,
         joined: false,
     };
-    let side = sparkline::column_side(&column, Some(0.02), Some(0.08));
-    assert_eq!(side, BinSide::Above);
-    let text = sparkline::column_hover_text(&column, 1012, side, 1.0, "mm/tooth");
+    let text = sparkline::column_hover_text(&column, 1012, Some(0.02), Some(0.08), 1.0, "mm/tooth");
     for part in [
         "Move 1012",
-        "0.050\u{2013}0.090 mm/tooth",
-        "above the ceiling",
+        "median 0.060 mm/tooth (min 0.050, max 0.090)",
+        "within the limits",
+        "a sample is above the ceiling",
     ] {
         assert!(text.contains(part), "{text:?} has no {part:?}");
     }
+    let single = sparkline::Column {
+        min: 0.09,
+        max: 0.09,
+        median: 0.09,
+        count: 1,
+        ..column
+    };
+    let text = sparkline::column_hover_text(&single, 1012, Some(0.02), Some(0.08), 1.0, "mm/tooth");
+    assert!(
+        text.contains("Move 1012 \u{00b7} 0.090 mm/tooth \u{00b7} above the ceiling")
+            && !text.contains("median"),
+        "one sample reads as its own value: {text:?}"
+    );
+}
+
+/// Round 3 (operator, 2026-10-02): "all the time series graphs are super
+/// fuzzy". The line is the column MEDIAN; the min-to-max range is a faint
+/// band behind it.
+#[test]
+fn the_line_is_the_column_median_g_cutcards() {
+    assert_eq!(
+        sparkline::median(&mut [3.0, 1.0, 2.0]),
+        Some(2.0),
+        "odd count"
+    );
+    assert_eq!(
+        sparkline::median(&mut [4.0, 1.0, 3.0, 2.0]),
+        Some(2.5),
+        "an even count takes the mean of the two middle values"
+    );
+    assert_eq!(sparkline::median(&mut []), None);
+
+    // One column: 0.03, NaN, 0.01, 0.5, 0.02. The NaN is skipped, the spike
+    // does not move the median.
+    let series = vec![(0, 0.03), (0, f64::NAN), (0, 0.01), (0, 0.5), (0, 0.02)];
+    let columns = sparkline::columns(&series, 10).unwrap();
+    let column = columns.columns[0].unwrap();
+    assert_eq!(column.count, 4, "the NaN is not a sample");
+    assert!((column.median - 0.025).abs() < 1e-12, "{column:?}");
+    assert_eq!((column.min, column.max), (0.01, 0.5));
+
+    // An out-of-range maximum over an in-band median: the band is tinted
+    // red at its top, and the line stays in band.
+    let (floor, ceiling) = (Some(0.005), Some(0.08));
+    assert_eq!(
+        histogram::value_side(floor, ceiling, column.median),
+        BinSide::InBand,
+        "the line takes the median's side"
+    );
+    assert_eq!(
+        sparkline::column_side(&column, floor, ceiling),
+        BinSide::Above
+    );
+    let band = sparkline::split_at_bounds(column.min, column.max, floor, ceiling);
+    assert_eq!(
+        band.iter().map(|piece| piece.2).collect::<Vec<_>>(),
+        vec![BinSide::InBand, BinSide::Above],
+        "the band is split at the ceiling and tinted above it"
+    );
+
+    let line = code_only(&read(LINE));
+    let paint = function_source(&line, "fn paint_line(");
+    for part in [
+        "split_at_bounds(column.min, column.max",
+        "BAND_ALPHA",
+        "count <= BAND_MIN_SAMPLES",
+        "before.median",
+        "column.median",
+    ] {
+        assert!(
+            paint.contains(part),
+            "paint_line must hold `{part}`: a faint min-to-max band split at \
+             the bounds, and a median line"
+        );
+    }
+}
+
+/// Zoomed in until a column holds two samples or fewer, the band goes and
+/// the line is the per-move signal.
+#[test]
+fn the_band_collapses_when_zoomed_in_g_cutcards() {
+    // Two samples per move, 1000 moves.
+    let series: Vec<(usize, f64)> = (0..2000)
+        .map(|i| (i / 2, 0.03 + 0.001 * f64::from((i % 7) as u32)))
+        .collect();
+    let wide = sparkline::columns(&series, 100).unwrap();
+    assert!(
+        wide.columns
+            .iter()
+            .flatten()
+            .all(|column| column.count > sparkline::BAND_MIN_SAMPLES),
+        "a column of ten moves draws a band"
+    );
+    let zoomed = sparkline::columns_in(&series, 400, (100, 199)).unwrap();
+    assert_eq!(zoomed.columns.len(), 100, "one column per move");
+    assert!(
+        zoomed
+            .columns
+            .iter()
+            .flatten()
+            .all(|column| column.count <= sparkline::BAND_MIN_SAMPLES),
+        "zoomed to one move per column, no column draws a band"
+    );
 }
 
 /// The modal draws the same component at its own height.
