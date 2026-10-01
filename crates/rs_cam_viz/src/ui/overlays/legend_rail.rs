@@ -1158,12 +1158,15 @@ fn scale_caveats(state: &AppState, legend: Legend, caveats: &mut Caveats) {
                 );
                 // The grid, always, and on its own line: two percentages are
                 // comparable only on one grid (F5, 2026-09-08). It also
-                // carries the "the bar is under the floor" sentence, which is
-                // what the wanaka red terrain needed said.
+                // carries the "the bar is UNDER the floor" marker, which is
+                // what the wanaka red terrain needed said. `grid_line` holds
+                // neither the area base (on the line above) nor the
+                // over-statement sentence (on the line below), so each
+                // sentence shows once (audit WRONG #2, 2026-10-02).
                 if measured {
                     let below = map.tolerance_below_floor();
                     caveats.push(
-                        map.grid_note(),
+                        map.grid_line(),
                         if below {
                             tokens::CAUTION
                         } else {

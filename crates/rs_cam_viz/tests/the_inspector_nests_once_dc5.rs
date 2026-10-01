@@ -216,12 +216,17 @@ fn requested_width(ctx: &egui::Context, build: impl Fn(&mut egui::Ui)) -> f32 {
 /// The Feeds tab's worst row, verbatim.
 ///
 /// `advance_gate_verdict_text` in `ui/properties/feeds_speeds.rs` returns this
-/// string for a low-side chipload exceedance, and
+/// string for a chipload gate that has no steady-state samples, and
 /// `draw_advance_per_tooth_card` draws it beside its label in a two-column
 /// grid. A grid cell and a horizontal row share one default wrap mode,
 /// `Extend`, so this row reproduces the grid cell's constraint.
+///
+/// The row was "EXCEEDS — below band (burn/rubbing)" until the UI text
+/// audit (WRONG #7, 2026-10-02) changed it to "BELOW BAND (burn/rubbing)".
+/// That string no longer overflows the panel, so the unmodelled arm, with
+/// its longest reason, is now the worst row.
 const VERDICT_LABEL: &str = "Gate verdict:";
-const VERDICT_VALUE: &str = "EXCEEDS \u{2014} below band (burn/rubbing)";
+const VERDICT_VALUE: &str = "not modelled (SteadyStateSamplesNotPresent)";
 
 fn verdict_row(ui: &mut egui::Ui, wrap: bool) {
     ui.horizontal(|ui| {

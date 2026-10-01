@@ -126,3 +126,59 @@ fn the_setup_transform_preserves_vertex_order() {
          test would pass on an identity transform"
     );
 }
+
+/// Audit WRONG #2 (2026-10-02): the legend's reach caveats print the area
+/// base and the over-statement sentence once each.
+///
+/// The grid line used to be `ReachMap::grid_note`, which already holds both
+/// sentences, and the legend printed each of them on its own line too. So
+/// the hover detail said the area base twice and the over-statement twice.
+/// The legend now prints `ReachMap::grid_line`. The bar here is far under
+/// the floor, so the over-statement arm runs.
+#[test]
+fn the_legend_states_each_reach_sentence_once() {
+    use std::sync::Arc;
+
+    use rs_cam_viz::state::AppState;
+    use rs_cam_viz::state::runtime::ReachStatus;
+    use rs_cam_viz::ui::overlays::legend_rail::{self, RailLine};
+    use rs_cam_viz::ui::overlays::registry::Legend;
+
+    let mesh = make_test_hemisphere(10.0, 12);
+    let cutter = BallEndmill::new(6.0, 25.0);
+    let map = reach_map_for_mesh(&mesh, &cutter, 0.0001, 0.5);
+    assert!(map.is_measured(), "the fixture must produce a population");
+    assert!(
+        map.tolerance_below_floor(),
+        "the fixture must put the bar under the floor, or the over-statement \
+         arm never runs: tol {:.4} against floor {:.4}",
+        map.tolerance_mm,
+        map.discretisation_floor_mm
+    );
+    let area = map.area_basis_note();
+    let over = map.over_statement_note();
+    let line = RailLine::Scale(Legend::Reach(map.ramp()));
+
+    let mut state = AppState::new();
+    state.gui.reach_overlay.status = ReachStatus::Ready(Arc::new(map));
+    let text = legend_rail::caveat_lines(&state, &line)
+        .into_iter()
+        .map(|(text, _)| text)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert_eq!(
+        text.matches(&area).count(),
+        1,
+        "the area base must show once in the legend:\n{text}"
+    );
+    assert_eq!(
+        text.matches(&over).count(),
+        1,
+        "the over-statement sentence must show once in the legend:\n{text}"
+    );
+    assert!(
+        text.contains("UNDER the floor"),
+        "the legend must still mark the bar under the floor:\n{text}"
+    );
+}

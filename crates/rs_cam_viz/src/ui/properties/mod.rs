@@ -562,7 +562,7 @@ pub(crate) fn toolpath_panel_inputs(
                         ReachPanelSummary::Measured {
                             unreachable_pct: map.unreachable_pct(),
                             max_gap_mm: map.max_gap_mm,
-                            grid_note: map.grid_note(),
+                            grid_line: map.grid_line(),
                             area_basis_note: map.area_basis_note(),
                             over_statement_note: map.over_statement_note(),
                             tolerance_below_floor: map.tolerance_below_floor(),
@@ -822,12 +822,14 @@ pub(crate) enum ReachPanelSummary {
     Measured {
         unreachable_pct: f64,
         max_gap_mm: f64,
-        /// [`rs_cam_core::maps::reach_map::ReachMap::grid_note`] — the cell, the
-        /// floor and the bar, plus the "the bar is under the floor" sentence
+        /// [`rs_cam_core::maps::reach_map::ReachMap::grid_line`] — the cell, the
+        /// floor and the bar, plus the "the bar is UNDER the floor" marker
         /// where that applies. Printed under the percentage, because a
         /// percentage without its grid is not comparable with the next one
-        /// (F1 / F5, 2026-09-08).
-        grid_note: String,
+        /// (F1 / F5, 2026-09-08). It holds neither the area base nor the
+        /// over-statement sentence: the panel prints those on their own
+        /// lines (audit WRONG #2, 2026-10-02).
+        grid_line: String,
         /// [`rs_cam_core::maps::reach_map::ReachMap::area_basis_note`] - the base
         /// every percentage on every surface owes beside it. Carried rather
         /// than rebuilt: this line printed "of MEASURED area" of its own

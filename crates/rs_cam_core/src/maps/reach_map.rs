@@ -569,15 +569,36 @@ impl ReachMap {
         )
     }
 
-    /// One line naming the grid and what it can resolve, for the panel
-    /// legend, the MCP reply and the CLI to share — so three surfaces cannot
-    /// describe one grid three ways.
-    #[must_use]
-    pub fn grid_note(&self) -> String {
-        let mut note = format!(
+    /// The cell, the floor and the bar, as one phrase.
+    fn grid_cells(&self) -> String {
+        format!(
             "cell {:.3} mm \u{00B7} floor {:.3} mm \u{00B7} tol {:.3} mm",
             self.grid.cell_mm, self.discretisation_floor_mm, self.tolerance_mm
-        );
+        )
+    }
+
+    /// The grid alone: the cell, the floor and the bar, and the "UNDER the
+    /// floor" marker when the bar is below the floor. It holds neither
+    /// [`Self::area_basis_note`] nor [`Self::over_statement_note`]. A panel
+    /// that prints those two on their own lines prints this line between
+    /// them, so each sentence shows once (audit WRONG #2, 2026-10-02).
+    #[must_use]
+    pub fn grid_line(&self) -> String {
+        let mut line = self.grid_cells();
+        if self.tolerance_below_floor() {
+            line.push_str(" \u{2014} the bar is UNDER the floor");
+        }
+        line
+    }
+
+    /// One line naming the grid, its area base and, when the bar is under
+    /// the floor, the over-statement sentence. A surface that prints one
+    /// string (the MCP reply, the CLI) uses this. A panel that prints the
+    /// area base and the over-statement on their own lines uses
+    /// [`Self::grid_line`], or it prints both sentences twice.
+    #[must_use]
+    pub fn grid_note(&self) -> String {
+        let mut note = self.grid_cells();
         note.push_str(&format!(" \u{00B7} {}", self.area_basis_note()));
         if self.tolerance_below_floor() {
             note.push_str(&format!(

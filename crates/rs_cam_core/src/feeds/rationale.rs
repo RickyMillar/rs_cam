@@ -194,6 +194,21 @@ pub struct RationaleEntry {
     pub detail: Option<String>,
 }
 
+impl RationaleEntry {
+    /// The headline and the detail as one paragraph, for a surface that
+    /// prints one string (the diagnostic ribbon, the MCP and the CLI). This
+    /// is the one place that joins the two into one string. The Feeds row
+    /// hover prints them on two lines. The builders keep each clause in
+    /// one of the two parts, so the joined text states each clause once.
+    #[must_use]
+    pub fn message(&self) -> String {
+        match &self.detail {
+            Some(detail) => format!("{} {detail}", self.headline),
+            None => self.headline.clone(),
+        }
+    }
+}
+
 /// Vector of rationale entries — one per emitted warning, in emission
 /// order. Renderers should preserve the order so a top-to-bottom read
 /// follows the same sequence the orchestrator passes ran in.
@@ -288,16 +303,19 @@ fn aggressiveness_rows(w: &SuggestWarning) -> Option<(RationaleEntry, Option<Rat
     } else {
         format!("aggressiveness {aggressiveness:.2}: load target {pct:.1} %")
     };
-    let mut detail = format!(
-        "{target} of the base engagement (common scale {scale:.3}, before the depth snaps \
-         to a step the generator cuts); {loads}. The chipload does not change. The plunge \
-         does not take the dial: the plunge rule sets it."
+    // The detail tail after the load-target clause. Each row picks its own
+    // opener below: a headline that already states `{target}` must not get
+    // it again in its detail (audit WRONG #1, 2026-10-02).
+    let mut tail = format!(
+        "of the base engagement (common scale {scale:.3}, before the depth snaps to a step \
+         the generator cuts); {loads}. The chipload does not change. The plunge does not \
+         take the dial: the plunge rule sets it."
     );
     if *target_share > 1.0 {
-        detail.push_str(&format!(" Caution, {AGGRESSIVENESS_ABOVE_BASE_TEXT}."));
+        tail.push_str(&format!(" Caution, {AGGRESSIVENESS_ABOVE_BASE_TEXT}."));
     }
     if !*target_met {
-        detail.push_str(match shortfall {
+        tail.push_str(match shortfall {
             Some(AggressivenessShortfall::LeverFloor) | None => {
                 " Target not met: the depth and the stepover are at their floors. The feed is \
                  not cut to close the gap."
@@ -312,24 +330,33 @@ fn aggressiveness_rows(w: &SuggestWarning) -> Option<(RationaleEntry, Option<Rat
             }
         });
     }
-    let row =
-        |param: RationaleParam, name: &str, from: Option<f64>, to: Option<f64>| RationaleEntry {
+    let row = |param: RationaleParam, name: &str, from: Option<f64>, to: Option<f64>| {
+        let headline = match (from, to, *applied) {
+            (Some(f), Some(t), true) => {
+                format!("{name} {f:.3} -> {t:.3} mm: {target}")
+            }
+            (Some(_), Some(t), false) => {
+                format!("{name}: apply the cut geometry ({t:.3} mm) to hold the load at {pct:.0} %")
+            }
+            _ => format!("{name}: no change; {target}"),
+        };
+        // The detail must read alone (a hover line, an MCP field), so it
+        // keeps a full sentence when the headline already has the formula.
+        let detail = if headline.contains(&target) {
+            format!("The load target is a share {tail}")
+        } else {
+            format!("{target} {tail}")
+        };
+        RationaleEntry {
             param,
             reason: RationaleReason::Aggressiveness,
             from_value: from,
             // Nothing was written under a speeds-only apply.
             to_value: to.filter(|_| *applied),
-            headline: match (from, to, *applied) {
-                (Some(f), Some(t), true) => {
-                    format!("{name} {f:.3} -> {t:.3} mm: {target}")
-                }
-                (Some(_), Some(t), false) => format!(
-                    "{name}: apply the cut geometry ({t:.3} mm) to hold the load at {pct:.0} %"
-                ),
-                _ => format!("{name}: no change; {target}"),
-            },
-            detail: Some(detail.clone()),
-        };
+            headline,
+            detail: Some(detail),
+        }
+    };
     let width_row = stepover_from.is_some().then(|| {
         row(
             RationaleParam::Stepover,
@@ -1139,5 +1166,112 @@ mod tests {
         let json = serde_json::to_string(&r).expect("serialize");
         let back: SuggestRationale = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(r, back);
+    }
+
+    /// The clauses of a text, split at `;`, `:` and `.`, trimmed. A clause
+    /// under 16 characters ("mm", "Caution") is too short to count as a
+    /// repeat.
+    fn long_clauses(text: &str) -> Vec<String> {
+        text.split([';', ':', '.'])
+            .map(|c| c.trim().to_owned())
+            .filter(|c| c.len() >= 16)
+            .collect()
+    }
+
+    /// Panic when one clause occurs twice in `text`.
+    fn assert_no_repeated_clause(text: &str) {
+        let clauses = long_clauses(text);
+        for (i, clause) in clauses.iter().enumerate() {
+            assert!(
+                !clauses[i + 1..].contains(clause),
+                "the clause {clause:?} occurs twice in: {text}"
+            );
+        }
+    }
+
+    fn aggressiveness_warning(ld_factor: f64, applied: bool, dpp_to: f64) -> SuggestWarning {
+        SuggestWarning::EngagementReducedForAggressiveness {
+            aggressiveness: 0.85,
+            ld_factor,
+            target_share: 0.85 * ld_factor,
+            scale: 0.681,
+            dpp_from: Some(6.35),
+            dpp_to: Some(dpp_to),
+            stepover_from: Some(3.0),
+            stepover_to: Some(2.1),
+            force_n_before: Some(120.0),
+            force_n_after: Some(80.0),
+            power_kw_before: Some(0.9),
+            power_kw_after: Some(0.6),
+            section_mm2_before: None,
+            section_mm2_after: None,
+            target_met: true,
+            shortfall: None,
+            applied,
+        }
+    }
+
+    /// Audit WRONG #1 (2026-10-02). The ribbon printed "load target 63.7 %
+    /// aggressiveness 0.85 x long-tool share 0.75 = load target 63.7 %": the
+    /// headline ended with the load-target formula and the detail began with
+    /// it. Every aggressiveness row now states the formula once in
+    /// `message()`, and each detail still carries a full sentence.
+    #[test]
+    fn the_aggressiveness_message_states_the_load_target_once() {
+        let formula = "aggressiveness 0.85 x long-tool share 0.75 = load target 63.7 %";
+        for (tag, w) in [
+            ("applied", aggressiveness_warning(0.75, true, 4.325)),
+            ("speeds-only", aggressiveness_warning(0.75, false, 4.325)),
+            ("no change", aggressiveness_warning(0.75, true, 6.35)),
+        ] {
+            let entries = SuggestRationale::from_warnings(&[w]).entries;
+            assert_eq!(entries.len(), 2, "{tag}: a depth row and a stepover row");
+            for entry in &entries {
+                let message = entry.message();
+                assert_eq!(
+                    message.matches(formula).count(),
+                    1,
+                    "{tag}: the load-target formula must occur once: {message}"
+                );
+                assert_no_repeated_clause(&message);
+                let detail = entry.detail.as_deref().unwrap_or_default();
+                assert!(
+                    detail.contains("of the base engagement"),
+                    "{tag}: the detail must still name the base: {detail}"
+                );
+            }
+        }
+        // The ld = 1 wording ("aggressiveness 0.85: load target 85.0 %").
+        let w = aggressiveness_warning(1.0, true, 4.325);
+        for entry in SuggestRationale::from_warnings(&[w]).entries {
+            let message = entry.message();
+            assert_eq!(
+                message.matches("load target 85.0 %").count(),
+                1,
+                "the load target must occur once: {message}"
+            );
+            assert_no_repeated_clause(&message);
+        }
+    }
+
+    /// The joined text of every round-trip fixture in this module states
+    /// each clause once.
+    #[test]
+    fn no_rationale_message_repeats_a_clause() {
+        let warnings = [
+            SuggestWarning::PlungeClampedToFeed {
+                requested: 800.0,
+                capped: 600.0,
+            },
+            SuggestWarning::StepoverClampedToToolDiameter {
+                requested: 8.0,
+                capped: 6.0,
+            },
+            aggressiveness_warning(0.75, true, 4.325),
+            aggressiveness_warning(0.75, false, 4.325),
+        ];
+        for entry in SuggestRationale::from_warnings(&warnings).entries {
+            assert_no_repeated_clause(&entry.message());
+        }
     }
 }

@@ -379,7 +379,7 @@ fn draw_operating_point(ui: &mut egui::Ui, verdict: &rs_cam_core::tool_load::Too
 ///
 /// F-3, and `AUDIT.md` D-16 before it. A grid cell's default wrap mode is
 /// `Extend`, which sets an INFINITE max width. One long value — "0.1313
-/// mm/tooth (clamped)", or "EXCEEDS \u{2014} below band (burn/rubbing)"
+/// mm/tooth (clamped)", or "BELOW BAND (burn/rubbing)"
 /// beside its label — then grows the inspector past its 280 point panel. The
 /// panel clamps to its own maximum and draws the over-wide content
 /// right-aligned, which puts the left end outside the clip rect and slides
@@ -497,8 +497,8 @@ fn advance_gate_verdict_text(
         },
         ChiploadVerdict::Exceeds { side, .. } => (
             match side {
-                ChipSide::Low => "EXCEEDS \u{2014} below band (burn/rubbing)".to_owned(),
-                ChipSide::High => "EXCEEDS \u{2014} above band (breakage)".to_owned(),
+                ChipSide::Low => "BELOW BAND (burn/rubbing)".to_owned(),
+                ChipSide::High => "ABOVE BAND (breakage)".to_owned(),
             },
             theme::ERROR,
         ),

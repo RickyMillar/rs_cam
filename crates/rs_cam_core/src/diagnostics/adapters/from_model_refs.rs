@@ -69,8 +69,9 @@ pub fn diagnostics_from_model_refs(
             source: Source::StaticValidation,
             message: format!(
                 "Selected model is missing — toolpath references model_id {} but no loaded \
-                 model has that id. Call `inspect_model` and set the toolpath's model to a \
-                 valid `id` from the response.",
+                 model has that id. Add the toolpath again on a loaded model. An MCP agent \
+                 can call `inspect_model` and set the toolpath's model to a valid `id` from \
+                 the response.",
                 ctx.model_id
             ),
             evidence: None,

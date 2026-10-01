@@ -1261,14 +1261,13 @@ fn verdict_badge(ui: &mut egui::Ui, row: &LimitRow<'_>) {
 fn verdict_tooltip(row: &LimitRow<'_>) -> String {
     let status = &row.status;
     // X-VAC: the clause comes from core so GUI, CLI, MCP and the
-    // diagnostics list cannot word it differently.
+    // diagnostics list cannot word it differently. The join is the one
+    // `sim_op_list` uses: "Power — VACUOUS: …". The old join gave "Power
+    // reports Within but — VACUOUS: …" with a Rust `Debug` value in it
+    // (audit WRONG #4, 2026-10-02).
     let vacuity = status.vacuity_clause();
     if !vacuity.is_empty() {
-        return format!(
-            "{} reports {:?} but{vacuity}",
-            status.kind.label(),
-            status.state
-        );
+        return format!("{}{vacuity}.", status.kind.label());
     }
     // For burn-risk chipload, the bound the reading sits against is the LUT
     // FLOOR — render as "peak / floor" so the relationship reads correctly
