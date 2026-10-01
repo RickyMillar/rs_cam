@@ -332,7 +332,10 @@ impl RsCamApp {
                     cutting_dist,
                     tool_changes,
                     crate::ui::readiness::format_cycle_time(cycle.seconds),
-                    cycle.basis.map_or("no estimate", |b| b.qualifier()),
+                    // U3: the label names each cause of a weak estimate
+                    // ("cutting only: metrics not captured"), not the basis
+                    // alone.
+                    cycle.label(),
                 );
 
                 if let Some(path) = rfd::FileDialog::new()

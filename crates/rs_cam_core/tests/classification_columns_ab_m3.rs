@@ -376,7 +376,10 @@ fn run_branch(
     // Project runtime, kinematics-integrated where the profile carries it.
     // Reported beside the quality verdict, never gated on: M3's speed claim
     // is about the CLASSIFIER (§4), not about the toolpath it plans.
-    let cutting_s = session.diagnostics().total_runtime_s;
+    let cutting_s = session
+        .diagnostics()
+        .total_runtime_s
+        .expect("U2: a simulation with a cut trace measures the runtime");
 
     Branch {
         label,

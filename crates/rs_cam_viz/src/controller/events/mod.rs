@@ -1522,10 +1522,11 @@ impl<B: ComputeBackend> AppController<B> {
             .as_ref()
             .and_then(|r| r.cut_trace.clone());
         let Some(trace) = trace_clone else {
-            self.push_notification(
-                "Run a simulation first — Optimize needs a baseline trace.".to_owned(),
-                crate::controller::Severity::Warning,
-            );
+            // U3: a run with no cut trace names that cause and its control,
+            // not "Run a simulation first". The menu reads the same text.
+            let reason = crate::ui::menu_bar::optimize_baseline_missing(&self.state)
+                .unwrap_or(crate::ui::menu_bar::OPTIMIZE_NEEDS_SIMULATION);
+            self.push_notification(reason.to_owned(), crate::controller::Severity::Warning);
             return;
         };
 

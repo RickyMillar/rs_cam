@@ -452,24 +452,32 @@ fn swept_wanaka_ab_s1() {
         t_diag.elapsed().as_secs_f64(),
     );
 
-    num(mode, "project", "total_runtime_s", diag.total_runtime_s);
+    // U2: the four trace figures are `None` without a cut trace. This A/B
+    // always captures one, so a `None` here is a harness defect.
+    let measured = |value: Option<f64>| value.expect("U2: the A/B run captures a cut trace");
+    num(
+        mode,
+        "project",
+        "total_runtime_s",
+        measured(diag.total_runtime_s),
+    );
     num(
         mode,
         "project",
         "air_cut_pct_of_total_runtime",
-        diag.air_cut_pct_of_total_runtime,
+        measured(diag.air_cut_pct_of_total_runtime),
     );
     num(
         mode,
         "project",
         "air_cut_pct_of_cutting_time",
-        diag.air_cut_pct_of_cutting_time,
+        measured(diag.air_cut_pct_of_cutting_time),
     );
     num(
         mode,
         "project",
         "average_engagement",
-        diag.average_engagement,
+        measured(diag.average_engagement),
     );
     int(mode, "project", "collision_count", diag.collision_count);
     int(

@@ -14,6 +14,9 @@ use crate::compute::collision_check::{
 use crate::compute::cutter::build_cutter;
 use crate::compute::tool_config::ToolId;
 use crate::ids::ToolpathId;
+use crate::session::diagnostics_types::{
+    CUT_METRICS_NOT_MEASURED_NO_SIMULATION, CUT_METRICS_NOT_MEASURED_NO_TRACE,
+};
 use crate::session::{
     ProjectDiagnostics, ProjectEvidence, ProjectSession, SessionError, ToolpathDiagnostic, Verdict,
     VerdictEvidence, VerdictKind, VerdictSeverity,
@@ -879,12 +882,14 @@ impl ProjectSession {
         // Every threshold in this file and in the GUI is tuned against the
         // total-runtime reading. The cutting-time reading (what the MCP
         // narration reports) travels beside it under its own name.
-        let (
-            total_runtime_s,
-            air_cut_pct_of_total_runtime,
-            air_cut_pct_of_cutting_time,
-            average_engagement,
-        ) = if let Some(trace) = evidence.cut_trace {
+        //
+        // U2 (2026-10-01): with no cut trace the four figures are `None`
+        // (NOT MEASURED), not 0.0. A run with "Capture cutting metrics" off
+        // published 0 s runtime and 0 % air cut, which reads as a measured,
+        // clean run. The reason travels beside them. A simulation exists
+        // when the session holds one, or when the caller's evidence carries
+        // toolpath boundaries (the GUI builds evidence from its own run).
+        let trace_figures = evidence.cut_trace.map(|trace| {
             use crate::stock::simulation_cut::AirCutRatios;
             let summary = &trace.summary;
             (
@@ -893,8 +898,17 @@ impl ProjectSession {
                 summary.air_cut_pct_of_cutting_time(),
                 summary.average_engagement,
             )
+        });
+        let total_runtime_s = trace_figures.map(|f| f.0);
+        let air_cut_pct_of_total_runtime = trace_figures.map(|f| f.1);
+        let air_cut_pct_of_cutting_time = trace_figures.map(|f| f.2);
+        let average_engagement = trace_figures.map(|f| f.3);
+        let cut_metrics_not_measured = if trace_figures.is_some() {
+            None
+        } else if self.simulation.is_some() || !evidence.boundaries.is_empty() {
+            Some(CUT_METRICS_NOT_MEASURED_NO_TRACE)
         } else {
-            (0.0, 0.0, 0.0, 0.0)
+            Some(CUT_METRICS_NOT_MEASURED_NO_SIMULATION)
         };
 
         // Per-TP op-kind-aware air-cut warnings. A blanket project-wide
@@ -1181,6 +1195,7 @@ impl ProjectSession {
             air_cut_pct_of_total_runtime,
             air_cut_pct_of_cutting_time,
             average_engagement,
+            cut_metrics_not_measured,
             collision_count: total_collision_count,
             collision_checks_failed,
             rapid_collision_count: total_rapid_collision_count,

@@ -491,13 +491,19 @@ struct ProjectSummary {
     toolpath_count: usize,
     total_cutting_distance_mm: f64,
     total_rapid_distance_mm: f64,
-    total_runtime_s: f64,
+    /// U2 (2026-10-01): this figure and the three below come from the cut
+    /// trace. Without a trace each one is `null` (NOT MEASURED), never 0.0,
+    /// and `cut_metrics_not_measured` names the reason.
+    total_runtime_s: Option<f64>,
     /// LH-1: air cut over TOTAL runtime (cutting + rapids) - the measure
     /// every threshold in the codebase uses. The cutting-time reading of the
     /// same seconds ships beside it so neither travels unnamed.
-    air_cut_pct_of_total_runtime: f64,
-    air_cut_pct_of_cutting_time: f64,
-    average_engagement: f64,
+    air_cut_pct_of_total_runtime: Option<f64>,
+    air_cut_pct_of_cutting_time: Option<f64>,
+    average_engagement: Option<f64>,
+    /// Why the four cut-trace figures above are `null`. `null` when they
+    /// are measured. The text is core's `ProjectDiagnostics` reason.
+    cut_metrics_not_measured: Option<&'static str>,
     /// Holder/shank collisions summed over the toolpaths whose check RAN.
     /// Read it with `collision_checks_failed` — a zero here means nothing on
     /// its own if some checks did not complete.
@@ -839,7 +845,7 @@ pub fn run_project_command(
     // reader sees the classes — safety, then actions, then a bounded
     // advisory list that says how much it withheld — rather than a single
     // string plus an unbounded pile of runs.
-    print_triage_report(&session.triage());
+    print_triage_report(&session.triage(), diag.cut_metrics_not_measured);
 
     // **Checkpoint K (g2), 2026-08-13 — every verdict this command
     // reports names the operating point it was taken at.**
@@ -882,13 +888,11 @@ pub fn run_project_command(
             "WARNING: {} rapid-through-stock collisions",
             diag.rapid_collision_count
         )
-    } else if diag.air_cut_pct_of_total_runtime > 40.0 {
+    } else if let Some(air_pct) = diag.air_cut_pct_of_total_runtime.filter(|pct| *pct > 40.0) {
         // LH-1: the 40% band is on the TOTAL-runtime measure; the verdict
         // string says so rather than shipping a bare "air cutting %".
-        format!(
-            "WARNING: {:.1}% air cutting of total runtime",
-            diag.air_cut_pct_of_total_runtime
-        )
+        // U2: an air cut that was not measured gives no verdict here.
+        format!("WARNING: {air_pct:.1}% air cutting of total runtime")
     } else {
         "OK".to_owned()
     };
@@ -919,6 +923,7 @@ pub fn run_project_command(
         air_cut_pct_of_total_runtime: diag.air_cut_pct_of_total_runtime,
         air_cut_pct_of_cutting_time: diag.air_cut_pct_of_cutting_time,
         average_engagement: diag.average_engagement,
+        cut_metrics_not_measured: diag.cut_metrics_not_measured,
         collision_count: total_collision_count,
         // The denominator for `collision_count`. Non-zero means that count is
         // a sum over SOME toolpaths, not all of them.
@@ -965,13 +970,21 @@ pub fn run_project_command(
     // 11. Print human-readable summary
     if summary {
         eprintln!("\n=== Project Diagnostics: {} ===", session.name());
+        // U2: the time comes from the cut trace. Without a trace it is NOT
+        // MEASURED, and the line says why rather than "Time: 0s".
+        let time = diag.total_runtime_s.map_or_else(
+            || "NOT MEASURED".to_owned(),
+            |seconds| format!("{seconds:.0}s"),
+        );
         eprintln!(
-            "Toolpaths: {}  |  Cutting: {:.0}mm  |  Rapid: {:.0}mm  |  Time: {:.0}s",
+            "Toolpaths: {}  |  Cutting: {:.0}mm  |  Rapid: {:.0}mm  |  Time: {time}",
             diag.per_toolpath.len(),
             total_cutting,
             total_rapid,
-            diag.total_runtime_s,
         );
+        if let Some(reason) = diag.cut_metrics_not_measured {
+            eprintln!("Cut metrics NOT MEASURED: {reason}");
+        }
 
         // Print engagement + peak COMMANDED advance/tooth from the sim trace.
         // `peak_chipload_mm_per_tooth` is a per-sample peak of the commanded
@@ -981,10 +994,10 @@ pub fn run_project_command(
             && let Some(trace) = &sim_result.cut_trace
         {
             eprintln!(
-                "Air cutting: {:.1}% of total runtime  |  Avg engagement: {:.2}  |  \
+                "Air cutting: {}% of total runtime  |  Avg engagement: {}  |  \
                  Peak commanded advance/tooth: {:.3} mm/tooth",
-                diag.air_cut_pct_of_total_runtime,
-                diag.average_engagement,
+                fmt_opt(diag.air_cut_pct_of_total_runtime, 1),
+                fmt_opt(diag.average_engagement, 2),
                 trace.summary.peak_chipload_mm_per_tooth,
             );
         }
@@ -1256,7 +1269,13 @@ fn kinematics_report_line(
 /// adds nothing of its own — including the truncation notice, which comes
 /// from `Bounded` rather than from a local `.take(10)` that forgets to say
 /// so (R-6's defect, one layer up).
-fn print_triage_report(triage: &rs_cam_core::stock::sim_triage::SimulationTriage) {
+///
+/// `cut_metrics_not_measured` is core's reason when the run kept no cut
+/// trace. The triage is then empty, so its counts are NOT MEASURED, not 0.
+fn print_triage_report(
+    triage: &rs_cam_core::stock::sim_triage::SimulationTriage,
+    cut_metrics_not_measured: Option<&str>,
+) {
     use rs_cam_core::stock::sim_measurability::Measurability;
 
     // Measurability first: it qualifies everything below it.
@@ -1318,6 +1337,14 @@ fn print_triage_report(triage: &rs_cam_core::stock::sim_triage::SimulationTriage
     // The class-D tallies, demoted to a footer and each named for the
     // population it counts — the 43x gap the census measured is visible here
     // instead of inferable.
+    //
+    // U2 (2026-10-01): without a cut trace the triage is the empty default,
+    // and "0 samples" reads as a measured, clean run. Print the reason.
+    if let Some(reason) = cut_metrics_not_measured {
+        eprintln!("Counts: NOT MEASURED ({reason})");
+        eprintln!();
+        return;
+    }
     let c = &triage.counts;
     eprintln!(
         "Counts: {} samples | {} flagged-air + {} flagged-low (per SAMPLE) | \
