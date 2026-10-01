@@ -219,6 +219,22 @@ mod pre_fix {
     pub const CHIP_RATIO: f64 = 4.497;
     /// The gate's observation, bit-equal on both arms.
     pub const GATE_OBSERVED_MM: f64 = 0.043_400;
+    /// The band the shipped heat-map coloured against, as the record
+    /// above prints it: `Some(0.032) .. 0.055000` mm/tooth.
+    ///
+    /// 7271f3d4 (2026-09-23, feeds matrix ruling R5) added the printed
+    /// Amana Spektra v24 rows. Since then this fixture (Ø6 flat 2F, hard
+    /// maple, pocket rough) matches the printed one-value row, a point at
+    /// 0.127 mm/tooth with no minimum, so the live band has no floor and
+    /// cannot paint `BelowBand`. The defect is a colour against a band, so
+    /// the retired measure is classified against the band it was painted
+    /// against, with the production classifier.
+    pub const BAND_MIN_MM: f64 = 0.032;
+    /// The upper edge of the same recorded band.
+    pub const BAND_MAX_MM: f64 = 0.055;
+    /// The live band since 7271f3d4: the printed Spektra v24 value for a
+    /// 2F 6 mm tool in wood, .0050 in = 0.127 mm/tooth, held as a point.
+    pub const LIVE_POINT_MAX_MM: f64 = 0.127;
 }
 
 struct Arm {
@@ -503,8 +519,19 @@ fn the_retired_measure_still_reproduces_the_defect() {
 
     // 2. The retired measure — reconstructed by hand — still splits one
     //    recipe across two colour classes. This is the defect, preserved.
-    let retired_a = a.band().classify(AdvancePerToothMm::new(a.chip.mm()));
-    let retired_b = b.band().classify(AdvancePerToothMm::new(b.chip.mm()));
+    //
+    //    Since 7271f3d4 the live band is the printed Spektra point, which
+    //    has no floor (asserted here, so a later row change shows up as a
+    //    named move). The split is therefore read against the recorded
+    //    pre-fix band, through the same production classifier.
+    assert_eq!(a.bounds.min_mm_per_tooth, None);
+    assert!((a.bounds.max_mm_per_tooth - pre_fix::LIVE_POINT_MAX_MM).abs() < 1e-9);
+    let recorded = VendorChiploadBand::new(
+        AdvancePerToothMm::new(pre_fix::BAND_MIN_MM),
+        AdvancePerToothMm::new(pre_fix::BAND_MAX_MM),
+    );
+    let retired_a = recorded.classify(AdvancePerToothMm::new(a.chip.mm()));
+    let retired_b = recorded.classify(AdvancePerToothMm::new(b.chip.mm()));
     assert_ne!(
         retired_a, retired_b,
         "the retired measure must keep reproducing F-HEATMAP; if it stops, the \

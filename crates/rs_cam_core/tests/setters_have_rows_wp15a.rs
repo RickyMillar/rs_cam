@@ -22,7 +22,7 @@
 //! allowlists carry the exceptions, and each one says what it exempts:
 //!
 //! - [`DOORS`] — the three doors themselves. A door is not a setter.
-//! - [`COMPUTE_DOORS`] — the five compute entry points. They are the
+//! - [`COMPUTE_DOORS`] — the six compute entry points. They are the
 //!   `Job` programme's second write surface (§25 ruling 4), not
 //!   WP15a's.
 //! - [`WRAPPERS_OVER_APPLY`] — a setter whose own body calls
@@ -82,7 +82,7 @@ use std::path::{Path, PathBuf};
 /// listed anyway, so the allowlist names the door set the plan names.
 const DOORS: &[&str] = &["apply", "query", "start"];
 
-/// The five compute entry points.
+/// The six compute entry points.
 ///
 /// Each one runs a generation, a simulation or a plan rather than
 /// writing a field. They carry roughly 230 external callers and §25
@@ -121,7 +121,8 @@ const WRAPPERS_OVER_APPLY: &[&str] = &["set_toolpath_param"];
 ///   the reader from seeing it today.
 /// - the result-cache internals: `insert_result`, the four `drop_*`
 ///   methods, `bump_all_revisions`, `invalidate_result_chain` and
-///   `invalidate_output_dependents`.
+///   `invalidate_output_dependents`, and the rest-result sweep
+///   `drop_out_of_date_rest_results` (424411da).
 /// - the three `*_mut` hatches, which `hatches_are_crate_private_wp7`
 ///   owns.
 /// - `start_generate_toolpath`, the raw half of the `start` door.
@@ -143,6 +144,10 @@ const CRATE_PRIVATE_HELPERS: &[&str] = &[
     "apply_toolpath_param_snapshot_narrow",
     "bump_all_revisions",
     "drop_all_results",
+    // 424411da (G-RESTSTALE): the rest-result sweep that
+    // `try_with_effects` runs after every command. It drops results and
+    // walks their dependents, as the other `drop_*` internals do.
+    "drop_out_of_date_rest_results",
     "drop_result",
     "drop_results_and_their_dependents",
     "drop_setup_results",

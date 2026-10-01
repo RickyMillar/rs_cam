@@ -75,7 +75,7 @@ use rs_cam_core::session::{
     AddToolpathArgs, Command, ProjectSession, SetToolpathEnabledArgs, SimulationOptions,
     ToolpathConfig,
 };
-use rs_cam_core::stock::simulation_cut::{AirCutRatios, SimulationCutIssueKind};
+use rs_cam_core::stock::simulation_cut::{AirCutRatios, CutKinematics, SimulationCutIssueKind};
 use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 /// `dexel_stock::stamping::FRESH_MATERIAL_THRESHOLD_MM`, restated here so
@@ -388,10 +388,17 @@ fn engagement_is_unmeasurable_below_the_fresh_material_floor() {
             .filter(|x| x.toolpath_id == id && x.is_cutting)
             .map(|x| x.axial_engagement_mm)
             .fold(0.0, f64::max);
+        // Lateral samples only. A vertical plunge sub-segment has no
+        // perpendicular extent, so the stamp takes its `degenerate` branch
+        // and reads full immersion whenever it removes any volume, with no
+        // fresh-material floor (`stamping.rs`, `finish`). That branch is not
+        // the floor this test measures.
         let peak_radial = ct
             .samples
             .iter()
-            .filter(|x| x.toolpath_id == id && x.is_cutting)
+            .filter(|x| {
+                x.toolpath_id == id && x.is_cutting && x.cut_kinematics != CutKinematics::Plunge
+            })
             .map(|x| x.engagement.radial_woc_fraction)
             .fold(0.0, f64::max);
         (
@@ -403,6 +410,30 @@ fn engagement_is_unmeasurable_below_the_fresh_material_floor() {
         )
     };
 
+    // Since 9887735d (2026-09-25: a helix or ramp starts 0.5 mm over the
+    // material, and the air between is a straight feed) the shallow arm
+    // enters its 0.02 mm of material with one vertical plunge. That plunge
+    // is the only shallow sample that reads a radial engagement: one
+    // degenerate sub-segment at full immersion, time-averaged into its
+    // coalesced sample. Pinned, so a second engaged sample shows up.
+    let shallow_engaged: Vec<_> = ct
+        .samples
+        .iter()
+        .filter(|x| {
+            x.toolpath_id == ToolpathId(0) && x.is_cutting && x.engagement.radial_woc_fraction > 0.0
+        })
+        .collect();
+    assert_eq!(
+        shallow_engaged.len(),
+        1,
+        "the shallow arm must read engagement on exactly one sample, its entry plunge"
+    );
+    assert!(
+        shallow_engaged
+            .iter()
+            .all(|x| x.cut_kinematics == CutKinematics::Plunge && x.axial_engagement_mm == 0.0),
+        "the one engaged shallow sample must be the vertical entry plunge"
+    );
     let (sh_air, sh_avg, sh_peak, sh_removed, sh_vol) = arm(0);
     let (dp_air, dp_avg, dp_peak, dp_removed, dp_vol) = arm(1);
 
