@@ -6,7 +6,7 @@ diagnostics, session state and G-code export. Keep it GUI-free. Read the root
 
 ## The folder map
 
-`src/` holds 8 files and 25 folders. The 8 root files are the crate spine —
+`src/` holds 8 files and 26 folders. The 8 root files are the crate spine —
 the vocabulary every layer names: `lib.rs`, `geo.rs`, `polygon.rs`, `mesh.rs`,
 `toolpath.rs`, `ids.rs`, `interrupt.rs` and `measurement.rs`. Everything else
 sits in a folder. Most folders carry their own `CLAUDE.md`; read that file
@@ -36,7 +36,8 @@ sentries and traps, which this file does not repeat.
 | `session/` | `ProjectSession`, commands and effects | `session/CLAUDE.md` |
 | `diagnostics/` | Diagnostic findings and their adapters | `diagnostics/CLAUDE.md` |
 | `metrology/` | Measurement instruments | `metrology/CLAUDE.md` |
-| `budget/` | The memory budget, the job guard, the estimators, the grid caps, the settings file loader | `budget/CLAUDE.md` |
+| `budget/` | The memory budget, the job guard, the estimators, the grid caps, the memory-limit text | `budget/CLAUDE.md` |
+| `settings/` | The app settings file (`settings.toml`): loader, writer, the library and artifact folders | `settings/CLAUDE.md` |
 | `util/` | Panic classification and crate build identity | — |
 
 ## Core contracts

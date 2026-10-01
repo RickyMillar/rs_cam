@@ -1,7 +1,4 @@
-use super::helpers::{
-    build_simulation_cut_artifact, build_trace_artifact, debug_artifact_dir,
-    simulation_metric_artifact_dir,
-};
+use super::helpers::{build_simulation_cut_artifact, build_trace_artifact};
 #[cfg(test)]
 use super::test_fixture::{RequestSpec, board, no_dressups, request, retract_z, stock_bbox};
 use super::{
@@ -19,10 +16,6 @@ use crate::state::toolpath::{
 use rs_cam_core::polygon::Polygon2;
 #[cfg(test)]
 use rs_cam_core::toolpath::MoveType;
-
-/// How many simulation cut artifacts to retain in `target/simulation_metrics`
-/// (G-SIMDUMP: each dump can be multiple GB at fine resolutions).
-const SIM_CUT_ARTIFACT_RETAIN: usize = 5;
 
 pub(crate) struct ComputeExecutionOutcome {
     pub result: Result<ToolpathResult, ComputeError>,
@@ -143,35 +136,15 @@ where
     // Build viz-only playback data (global-frame toolpaths for viewport replay).
     let playback_data = build_playback_data(&req.core);
 
-    // Write cut-trace artifact to disk (viz-only filesystem concern).
-    let cut_trace_path = if let Some(trace) = core_result.cut_trace.as_ref() {
-        // G-SIMMEM: share the trace, never deep-copy it (the artifact only
-        // reads it); the writer streams, so no in-memory JSON either.
-        let artifact = build_simulation_cut_artifact(&req.core, Arc::clone(trace));
-        match rs_cam_core::stock::simulation_cut::write_simulation_cut_artifact(
-            &simulation_metric_artifact_dir(),
-            "simulation_metrics",
-            &artifact,
-        ) {
-            Ok(p) => {
-                // G-SIMDUMP: unbounded dumps filled the disk (96 GB observed);
-                // keep only the newest few — each can be multiple GB.
-                let pruned = rs_cam_core::stock::simulation_cut::prune_simulation_cut_artifacts(
-                    &simulation_metric_artifact_dir(),
-                    SIM_CUT_ARTIFACT_RETAIN,
-                );
-                if pruned > 0 {
-                    tracing::info!("Pruned {pruned} old simulation cut artifact(s)");
-                }
-                Some(p)
-            }
-            Err(error) => {
-                tracing::warn!("Failed to write simulation cut artifact: {error}");
-                None
-            }
+    // Write the cut-trace file to disk (a viz-only file system concern),
+    // only when `[diagnostics] save_cut_trace` is on (default off: operator
+    // ruling 2026-10-02). Nothing in the product reads the file back; the
+    // in-memory trace in `core_result` does not depend on it.
+    let cut_trace_path = match (core_result.cut_trace.as_ref(), req.artifacts.cut_trace_dir()) {
+        (Some(trace), Some(dir)) => {
+            write_cut_trace_file(&req.core, trace, &dir, req.artifacts.cut_trace_retain)
         }
-    } else {
-        None
+        _ => None,
     };
 
     Ok(SimulationResult {
@@ -290,6 +263,39 @@ fn map_session_error(
     }
 }
 
+/// Write one simulation cut-trace file into `dir` and keep the newest
+/// `retain` files. `None` means NOT WRITTEN; the warning says why.
+fn write_cut_trace_file(
+    core: &rs_cam_core::compute::simulate::SimulationRequest,
+    trace: &Arc<rs_cam_core::stock::simulation_cut::SimulationCutTrace>,
+    dir: &std::path::Path,
+    retain: usize,
+) -> Option<std::path::PathBuf> {
+    // G-SIMMEM: share the trace, never deep-copy it (the artifact only
+    // reads it); the writer streams, so no in-memory JSON either.
+    let artifact = build_simulation_cut_artifact(core, Arc::clone(trace));
+    match rs_cam_core::stock::simulation_cut::write_simulation_cut_artifact(
+        dir,
+        "simulation_metrics",
+        &artifact,
+    ) {
+        Ok(path) => {
+            // G-SIMDUMP: unbounded dumps filled the disk (96 GB observed);
+            // keep only the newest few — each can be multiple GB.
+            let pruned =
+                rs_cam_core::stock::simulation_cut::prune_simulation_cut_artifacts(dir, retain);
+            if pruned > 0 {
+                tracing::info!("Pruned {pruned} old simulation cut artifact(s)");
+            }
+            Some(path)
+        }
+        Err(error) => {
+            tracing::warn!("Failed to write simulation cut artifact: {error}");
+            None
+        }
+    }
+}
+
 /// Write this generation's trace artifact and answer its path.
 ///
 /// `None` means NOT WRITTEN — the write failed, and the warning says why.
@@ -298,10 +304,20 @@ fn write_trace_artifact(
     debug_trace: Option<&rs_cam_core::trace::debug_trace::ToolpathDebugTrace>,
     semantic_trace: Option<&rs_cam_core::trace::semantic_trace::ToolpathSemanticTrace>,
 ) -> Option<std::path::PathBuf> {
+    // `[diagnostics] artifact_dir`, else the per-user cache folder. No
+    // folder resolves: no file.
+    let Some(dir) = req.viz.artifacts.toolpath_debug_dir() else {
+        tracing::warn!(
+            "No artifact folder resolves for the toolpath debug trace of {}; \
+             set one in File > Preferences > Diagnostics",
+            req.viz.toolpath_id.0
+        );
+        return None;
+    };
     let artifact = build_trace_artifact(req, debug_trace.cloned(), semantic_trace.cloned());
     let file_stem = format!("{}-{}", req.viz.toolpath_id.0, req.handle.toolpath_name());
     match rs_cam_core::trace::semantic_trace::write_toolpath_trace_artifact(
-        &debug_artifact_dir(),
+        &dir,
         &file_stem,
         &artifact,
     ) {

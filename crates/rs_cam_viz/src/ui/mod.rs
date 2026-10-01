@@ -102,10 +102,11 @@ pub enum AppEvent {
     /// File ▸ Preferences: open the settings window. The controller reads
     /// the settings file and the backend budget once, on open.
     OpenPreferences,
-    /// File ▸ Preferences ▸ Apply: write `[memory] limit` to the settings
-    /// file and give the new budget to the running compute backend. The
-    /// window validated the limit (`ui::preferences::validate_custom_size`).
-    ApplyPreferences(rs_cam_core::budget::MemoryLimit),
+    /// File ▸ Preferences ▸ Apply: write the draft to the settings file and
+    /// apply the live values (the memory budget, the undo depth, the
+    /// library folders and the rest). The controller reads the draft from
+    /// `AppState::preferences` (`ui::preferences::PreferencesState::chosen_settings`).
+    ApplyPreferences,
     /// Toggle generator-trace capture on every toolpath (sets
     /// `debug_options.enabled` across the whole project).
     SetGeneratorTraceCaptureAll(bool),

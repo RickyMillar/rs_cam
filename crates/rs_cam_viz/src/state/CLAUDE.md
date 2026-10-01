@@ -18,13 +18,13 @@ project. The entry point is `state::AppState` in `mod.rs`.
   and the viewport dock and catalogue state.
 - `history.rs`, `wizard.rs`, `multitool_planner.rs`, `rest_dependency.rs` —
   undo, the export wizard, the planner and the Rest predecessor rule.
-- `panels.rs` — the panel drafts that outlive a frame.
+- `panels.rs`, `app_settings.rs` — panel drafts; `settings.toml` values.
 
 ## Invariants
 
 - `last_run` marks the last accepted run; it pairs with `has_results()`
   except in `SimFreshness::Released`. A cancel or a failure keeps it.
-- Every run captures the cut trace (ruling 2026-10-02): add no capture option.
+- Every run captures the cut trace (ruling 2026-10-02). `save_cut_trace` decides the FILE only.
 - Freshness is derived. A stored freshness flag drifts from the core answer.
 - `AppState::simulation_is_stale` is the ONE door onto simulation freshness.
   The core answers project inputs. Never the counter.

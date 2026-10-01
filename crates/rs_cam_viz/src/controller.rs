@@ -78,16 +78,36 @@ pub struct Notification {
     pub message: String,
     pub severity: Severity,
     pub created_at: Instant,
+    /// How long the toast stays. The controller sets it from
+    /// `[general] toast_*_seconds` when it pushes the toast
+    /// ([`toast_ttl`]), so a change in File ▸ Preferences applies to the
+    /// next toast and not to a toast on screen.
+    pub ttl: std::time::Duration,
+}
+
+/// The time a toast of `severity` stays on screen under `general`.
+///
+/// A value that is not a valid duration gives the default of its severity
+/// (`rs_cam_core::settings::DEFAULT_TOAST_SECONDS`).
+pub fn toast_ttl(
+    general: &rs_cam_core::settings::GeneralSettings,
+    severity: Severity,
+) -> std::time::Duration {
+    let [info, warning, error] = rs_cam_core::settings::DEFAULT_TOAST_SECONDS;
+    let (seconds, default) = match severity {
+        Severity::Info => (general.toast_info_seconds, info),
+        Severity::Warning => (general.toast_warning_seconds, warning),
+        Severity::Error => (general.toast_error_seconds, error),
+    };
+    std::time::Duration::try_from_secs_f64(seconds)
+        .or_else(|_| std::time::Duration::try_from_secs_f64(default))
+        .unwrap_or_default()
 }
 
 impl Notification {
-    /// Auto-dismiss duration based on severity.
+    /// Auto-dismiss duration, fixed when the toast was pushed.
     pub fn ttl(&self) -> std::time::Duration {
-        match self.severity {
-            Severity::Info => std::time::Duration::from_secs(4),
-            Severity::Warning => std::time::Duration::from_secs(6),
-            Severity::Error => std::time::Duration::from_secs(8),
-        }
+        self.ttl
     }
 
     pub fn is_expired(&self) -> bool {
@@ -490,6 +510,7 @@ impl<B: ComputeBackend> AppController<B> {
             message: error.user_message(),
             severity: Severity::Error,
             created_at: Instant::now(),
+            ttl: toast_ttl(&self.state.app_settings.general, Severity::Error),
         });
     }
 
@@ -497,6 +518,7 @@ impl<B: ComputeBackend> AppController<B> {
     pub fn push_notification(&mut self, message: String, severity: Severity) {
         self.notifications.push(Notification {
             message,
+            ttl: toast_ttl(&self.state.app_settings.general, severity),
             severity,
             created_at: Instant::now(),
         });

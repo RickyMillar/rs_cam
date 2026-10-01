@@ -348,6 +348,9 @@ impl<B: ComputeBackend> AppController<B> {
             viz: crate::compute::VizExtras {
                 toolpath_id: tp_id,
                 cancel,
+                artifacts: crate::compute::ArtifactPolicy::from_settings(
+                    &self.state.app_settings.diagnostics,
+                ),
             },
         });
         // G-REGEN-RACE: if this submit replaced the lane's active job for

@@ -435,7 +435,7 @@ impl<B: ComputeBackend> AppController<B> {
 
             // --- File ▸ Preferences ---
             AppEvent::OpenPreferences => self.open_preferences(),
-            AppEvent::ApplyPreferences(limit) => self.apply_preferences(limit),
+            AppEvent::ApplyPreferences => self.apply_preferences(),
 
             // --- Pass-through events handled elsewhere ---
             AppEvent::ExportCombinedGcode

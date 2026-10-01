@@ -428,6 +428,10 @@ impl<B: ComputeBackend> AppController<B> {
         self.compute.submit_simulation(SimulationRequest {
             core,
             memoize_prefix,
+            // `[diagnostics]`: the cut-trace file is off by default.
+            artifacts: crate::compute::ArtifactPolicy::from_settings(
+                &self.state.app_settings.diagnostics,
+            ),
         });
         true
     }

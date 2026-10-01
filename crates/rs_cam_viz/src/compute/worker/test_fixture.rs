@@ -308,6 +308,12 @@ pub(super) fn request(spec: RequestSpec) -> ComputeRequest {
         viz: VizExtras {
             toolpath_id: id,
             cancel,
+            // A scratch folder: no test writes the operator's cache folder.
+            artifacts: super::ArtifactPolicy {
+                save_cut_trace: false,
+                cut_trace_retain: rs_cam_core::settings::DEFAULT_CUT_TRACE_RETAIN,
+                dir: Some(std::env::temp_dir().join("rs_cam_viz_test_artifacts")),
+            },
         },
     }
 }

@@ -1579,6 +1579,68 @@ pub fn apply_overlays(state: &mut AppState, requested: &BTreeMap<String, bool>) 
     report
 }
 
+/// The overlays whose default File ▸ Preferences ▸ Display can set
+/// (`[display.overlays]` of the settings file), in the order the window
+/// lists them.
+///
+/// Each is a plain flag: one surface of its own (`OverlaySurface::None`), no
+/// radio group, a renderer. A value from the file replaces the row's
+/// per-workspace default in every viewport workspace. A scalar-field
+/// surface (the colour rows) and the analyses that need a compute are not
+/// here: their defaults belong to the workspace table, and a colour has its
+/// own preference (`[display] toolpath_colour_mode`).
+pub const PREFERENCE_OVERLAYS: &[&str] = &[
+    "grid",
+    "model",
+    "stock_box",
+    "origin_axes",
+    "datum",
+    "fixtures",
+    "keep_outs",
+    "alignment_pins",
+    "flip_axis",
+    "curves",
+    "orientation_gizmo",
+    "cutting_moves",
+    "rapids",
+    "entry_markers",
+    "height_planes",
+    "tool_profile_ghost",
+];
+
+/// Whether File ▸ Preferences can set the default of `row`.
+#[must_use]
+pub fn is_preference_overlay(row: &OverlayRow) -> bool {
+    PREFERENCE_OVERLAYS.contains(&row.id)
+        && !row.radio
+        && row.surface == OverlaySurface::None
+        && row.flag.is_some()
+}
+
+/// The default of `row` in `workspace`: the settings file's value when it
+/// names one (`[display.overlays]`, File ▸ Preferences ▸ Display), else the
+/// row's own per-workspace default.
+///
+/// THE one answer for every reader: [`apply_workspace_defaults`], the
+/// "changed" count of the dock ([`non_default_count`]) and the catalogue's
+/// Changed filter. Two readers with two answers would make the count lie.
+/// A workspace without a viewport (Readiness) names no default, so the
+/// file's value does not reach it either.
+#[must_use]
+pub fn effective_default(state: &AppState, row: &OverlayRow, workspace: Workspace) -> Option<bool> {
+    let row_default = (row.default_for)(workspace);
+    if workspace == Workspace::Readiness || !is_preference_overlay(row) {
+        return row_default;
+    }
+    state
+        .app_settings
+        .display
+        .overlays
+        .get(row.id)
+        .copied()
+        .or(row_default)
+}
+
 /// Switch workspace and apply that workspace's overlay defaults, in that
 /// order.
 ///
@@ -1614,7 +1676,7 @@ pub(crate) fn apply_workspace_defaults(state: &mut AppState, target: Workspace) 
     }
     let mut newly_displaced = Vec::new();
     for row in ROWS {
-        let Some(default) = (row.default_for)(target) else {
+        let Some(default) = effective_default(state, row, target) else {
             continue;
         };
         let current = (row.get)(state);
@@ -1678,7 +1740,7 @@ pub const PERIOD_SURFACE: OverlaySurface = OverlaySurface::Stock;
 /// something is switched on.
 pub fn non_default_count(state: &AppState) -> usize {
     ROWS.iter()
-        .filter(|row| match (row.default_for)(state.workspace) {
+        .filter(|row| match effective_default(state, row, state.workspace) {
             Some(default) => (row.get)(state) != default,
             None => false,
         })

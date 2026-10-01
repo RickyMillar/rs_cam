@@ -211,14 +211,44 @@ half of the system RAM.
 
 ## Settings file
 
-`settings.toml` holds the memory budget that the GUI and the CLI share
-(memory programme B5, 2026-10-01). One loader in core
-(`rs_cam_core::budget::settings`) reads it for both surfaces:
+`settings.toml` holds the app settings that the GUI and the CLI share
+(memory programme B5, 2026-10-01; File ▸ Preferences, 2026-10-02). One
+loader and one writer in core (`rs_cam_core::settings`) read and write it
+for both surfaces. A missing key is the default, which is the behaviour
+before the key existed. The writer removes a key whose value is the
+default, except `[memory] limit`.
 
 ```toml
 [memory]
-limit = "12GiB"   # a binary size (B, KiB, MiB, GiB, TiB), a byte count,
-                  # "unlimited", or "default" (half of the system RAM)
+limit = "12GiB"            # a binary size (B, KiB, MiB, GiB, TiB), a byte
+                           # count, "unlimited", or "default" (half of RAM)
+[general]
+window_width = 1400.0      # points; read at start
+window_height = 900.0      # points; read at start
+undo_depth = 100
+toast_info_seconds = 4.0
+toast_warning_seconds = 6.0
+toast_error_seconds = 8.0
+confirm_unsaved_quit = true
+[display]
+show_all_toolpaths = false         # WP27: the selected toolpath only
+toolpath_colour_mode = "normal"    # "engagement", "advance_per_tooth"
+[display.overlays]                 # an overlay id = true or false in
+grid = true                        # every viewport workspace
+[simulation]
+playback_speed = 500.0     # moves per second
+stock_view = "solid"       # "deviation", "by_height"
+stock_opacity = 1.0
+[paths]
+tool_library = "/path"     # RS_CAM_TOOL_DIR wins over it
+machine_library = "/path"  # RS_CAM_MACHINE_DIR wins over it
+screenshots = "/path"      # else the current folder
+[diagnostics]
+save_cut_trace = false     # operator ruling 2026-10-02: off
+cut_trace_retain = 5
+artifact_dir = "/path"     # else <user cache>/rs_cam/artifacts
+log_level = "info"         # RUST_LOG wins over it; read at start
+present_mode = "fifo"      # RS_CAM_PRESENT_MODE wins over it; read at start
 ```
 
 - The path: `$RS_CAM_SETTINGS` (a file), else
@@ -227,16 +257,36 @@ limit = "12GiB"   # a binary size (B, KiB, MiB, GiB, TiB), a byte count,
   `%APPDATA%\rs_cam\settings.toml`, else
   `%USERPROFILE%\.config\rs_cam\settings.toml`.
 - A missing file, a missing `limit`, or `limit = "default"` gives the
-  default: half of the system RAM (operator ruling 2026-10-02). When the
-  platform does not give the system memory, the default has no limit.
-- A file that does not read or parse gives the default and a warning: a
-  toast in the GUI, a log line in the CLI.
-- The GUI reads the file at start. **File ▸ Preferences** shows the system
-  memory, the budget now and its source, and sets the limit: Default (half
-  of RAM), Custom (a binary size) or Unlimited. Apply writes `[memory]
-  limit` to this file and gives the new budget to the compute lanes at
-  once. A job that runs keeps its old limit; the next job uses the new
-  one. The writer keeps the other keys of the file, but not its comments.
+  default memory limit: half of the system RAM (operator ruling
+  2026-10-02). When the platform does not give the system memory, the
+  default has no limit.
+- A file that is not TOML gives the defaults and a warning: a toast in the
+  GUI, a log line in the CLI. A key with a bad value gives the default for
+  that key and a warning; the other keys stay.
+- The library folders resolve in this order for the GUI, MCP and the CLI:
+  the environment variable (`RS_CAM_TOOL_DIR`, `RS_CAM_MACHINE_DIR`), then
+  `[paths]`, then `tools` or `machines` in the config folder (the folder of
+  the default settings file, with the same Windows fallback).
+- The simulation cut-trace file is OFF by default (operator ruling
+  2026-10-02). The app keeps the cut trace in memory either way; nothing
+  in the product reads the file back. When it is on, the file and the
+  toolpath debug trace go to `[diagnostics] artifact_dir`, else
+  `$XDG_CACHE_HOME/rs_cam/artifacts`, else `~/.cache/rs_cam/artifacts`
+  (`%LOCALAPPDATA%\rs_cam\artifacts` on Windows). Before 2026-10-02 they
+  went to the build tree's `target/`.
+- **File ▸ Preferences** has a category bar on the left: General, Memory,
+  Display, Simulation, Files and libraries, Diagnostics (advanced) and
+  Automation (MCP, read-only status). Apply writes the file and applies
+  the values at once where it can: the memory budget (the next job), the
+  undo depth, the quit question, the library and screenshot folders, the
+  toast durations (the next toast), the overlay defaults (the next
+  workspace switch), the diagnostics files (the next job). The simulation
+  defaults apply at the next start or project open. The window size, the
+  start colour mode and "All toolpaths", the log level and the present mode
+  apply at the next start; the window says so. Cancel discards the draft.
+- The window does not offer a value that changes a computed number or an
+  instrument switch (`RS_CAM_STAMP_DISPATCH`, `RS_CAM_PLAYBACK_DISPATCH`,
+  the feed-modulation switches, timing constants, test and bench variables).
 - The precedence in the CLI, highest first: `--memory-limit`, then
   `[memory] limit` in the file, then the default. The CLI flag does not
   apply to the GUI.

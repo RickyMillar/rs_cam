@@ -39,7 +39,13 @@ pub mod ui_command;
 /// a counter instead of a real event loop.
 pub type GuiWaker = std::sync::Arc<dyn Fn() + Send + Sync>;
 
-pub fn run(mcp_mode: bool) -> eframe::Result {
+/// Run the GUI.
+///
+/// `settings` is the settings file, read ONCE by the caller before the log
+/// subscriber starts (`bin/main.rs`), because `[diagnostics] log_level`
+/// decides the subscriber. The window size and the present mode read it
+/// here; the app reads the rest (`app::RsCamApp::new`).
+pub fn run(mcp_mode: bool, settings: io::app_settings::LoadedSettings) -> eframe::Result {
     #[cfg(not(feature = "mcp"))]
     if mcp_mode {
         return Err(eframe::Error::AppCreation(Box::from(
@@ -52,7 +58,12 @@ pub fn run(mcp_mode: bool) -> eframe::Result {
     let title = format!("rs_cam — {}", rs_cam_core::util::build_info::GIT_DESC);
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1400.0, 900.0])
+            // `[general] window_width` and `window_height`; the defaults
+            // are the size before the setting existed.
+            .with_inner_size([
+                settings.settings.general.window_width,
+                settings.settings.general.window_height,
+            ])
             .with_title(&title),
         wgpu_options: egui_wgpu::WgpuConfiguration {
             // Checkpoint O-1: `--mcp` asks for AutoNoVsync, a plain launch keeps
@@ -67,7 +78,10 @@ pub fn run(mcp_mode: bool) -> eframe::Result {
             // `HIGH_THROUGHPUT` states that 2 outright. The surface behaves as
             // it did.
             surface: egui_wgpu::SurfaceConfig {
-                present_mode: present_mode::decide_and_record(mcp_mode),
+                present_mode: present_mode::decide_and_record(
+                    mcp_mode,
+                    settings.settings.diagnostics.present_mode,
+                ),
                 ..egui_wgpu::SurfaceConfig::HIGH_THROUGHPUT
             },
             ..Default::default()
@@ -150,10 +164,13 @@ pub fn run(mcp_mode: bool) -> eframe::Result {
             let app = std::rc::Rc::new(std::cell::RefCell::new(app::RsCamApp::new(
                 cc,
                 mcp_mode,
+                settings,
                 app_mcp_exit.as_ref(),
             )));
             #[cfg(not(feature = "mcp"))]
-            let app = std::rc::Rc::new(std::cell::RefCell::new(app::RsCamApp::new(cc, mcp_mode)));
+            let app = std::rc::Rc::new(std::cell::RefCell::new(app::RsCamApp::new(
+                cc, mcp_mode, settings,
+            )));
             match creator_latch.try_borrow_mut() {
                 Ok(mut slot) => *slot = Some(std::rc::Rc::clone(&app)),
                 // Unreachable: the latch is touched here and in

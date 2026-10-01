@@ -1,6 +1,5 @@
 use super::{AtomicBool, CollisionRequest, CollisionResult, ComputeError, ComputeRequest};
 use serde_json::json;
-use std::path::PathBuf;
 
 // Re-export from core so existing callers (`simulation.rs`, `properties/`) keep working.
 pub use rs_cam_core::compute::build_cutter;
@@ -55,25 +54,6 @@ where
         report: core_result.collision_report,
         positions,
     })
-}
-
-// SAFETY: CARGO_MANIFEST_DIR always has two parent directories in a workspace layout
-#[allow(clippy::expect_used)]
-pub(super) fn workspace_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("crate dir has workspace parent")
-        .parent()
-        .expect("workspace root available")
-        .to_path_buf()
-}
-
-pub(super) fn debug_artifact_dir() -> PathBuf {
-    workspace_root().join("target").join("toolpath_debug")
-}
-
-pub(super) fn simulation_metric_artifact_dir() -> PathBuf {
-    workspace_root().join("target").join("simulation_metrics")
 }
 
 /// The debug artifact for one generation.

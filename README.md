@@ -42,6 +42,10 @@ the GUI and the CLI is half of the system RAM by default. To change it, use
 **File ▸ Preferences** in the GUI, or set `[memory] limit` in
 `~/.config/rs_cam/settings.toml` (`"24GiB"`, `"unlimited"` or `"default"`).
 The CLI flag `--memory-limit` overrides the file for one CLI run.
+**File ▸ Preferences** also sets the other app settings in the same file:
+the window, undo and toast values, the viewport and simulation defaults,
+the tool, machine and screenshot folders (the CLI reads the same folders),
+and the diagnostics files. The simulation cut-trace file is off by default.
 See [`FEATURE_CATALOG.md`](FEATURE_CATALOG.md#settings-file).
 
 Run the test suite:

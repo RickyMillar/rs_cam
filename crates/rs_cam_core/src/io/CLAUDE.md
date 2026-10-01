@@ -10,8 +10,8 @@ Every door that reads a file. The entry point is `io::load_model_file`.
   centres for drill targets.
 - `svg_input.rs` — closed SVG paths to `Polygon2`.
 - `step_input.rs` — STEP import through the `truck` crate.
-- `tool_library.rs`, `machine_library.rs` — the two on-disk TOML catalogues
-  you import from.
+- `tool_library.rs`, `machine_library.rs` — the two TOML catalogues; the
+  folder comes from `crate::settings::paths` (env > file > default).
 - `named_toml_library.rs` — the directory mechanics both libraries share.
 
 ## Invariants
