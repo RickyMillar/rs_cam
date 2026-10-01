@@ -486,7 +486,7 @@ impl ProjectSession {
         let before = self.simulation_resolution_mm();
         self.simulation_resolution = resolution;
         if self.simulation_resolution_mm().to_bits() != before.to_bits() {
-            self.drop_simulation();
+            self.drop_simulation(crate::session::SimulationDropCause::Resolution);
         }
         Ok(())
     }

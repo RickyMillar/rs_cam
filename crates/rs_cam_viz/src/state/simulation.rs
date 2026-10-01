@@ -1113,7 +1113,13 @@ impl SimulationChecks {
 /// until an edit or a Reset clears it. A re-run releases the view result
 /// and keeps the marker, so `SimFreshness::Released` can tell a released
 /// run from no run.
-pub struct SimulationRunMeta;
+pub struct SimulationRunMeta {
+    /// `ProjectSession::simulation_epoch` as it stood when the run was
+    /// submitted, or `None` for a result with no submit stamp. The
+    /// freshness read compares it with the core's drop record to name why
+    /// a stale run is stale.
+    pub epoch: Option<u64>,
+}
 
 // ---------------------------------------------------------------------------
 // Top-level simulation state

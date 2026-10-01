@@ -101,7 +101,6 @@ fn first_unmet_action(
 
 pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     let sim = &state.simulation;
-    let stale = state.simulation_is_stale();
 
     // Compute every check up front (cheap reads of existing producers) so the
     // headline verdict is the worst of them.
@@ -141,7 +140,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
 
         // Detail rows gated by freshness: a stale sim dims + banners the whole
         // readout rather than asserting fresh verdicts on stale evidence.
-        FreshnessGate::new(stale).show(ui, |ui| {
+        FreshnessGate::new(state.simulation_stale_reason()).show(ui, |ui| {
             // F2.2 — "current", not "computed". An operation edited after
             // generation WAS computed; what it is not is the answer to the
             // configuration now in the project, and the count here is the
@@ -157,17 +156,14 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             };
             check_row(ui, ops_status, "Operations", &ops_detail);
 
-            let sim_detail = if !sim.has_results() {
-                "Not run"
-            } else if stale {
-                "Stale — parameters changed"
-            } else {
-                "Up to date"
-            };
+            // The pre-flight card's text, one per `SimFreshness` arm. This
+            // row read "Stale — parameters changed" for every stale cause,
+            // also for a machine import, and "Not run" during a run.
+            let sim_detail = crate::ui::preflight::simulation_detail(state);
             let sim_detail = if sim_status == CheckStatus::Pass {
                 format!("{sim_detail} · {computed}/{enabled} operations")
             } else {
-                sim_detail.to_owned()
+                sim_detail
             };
             check_row(ui, sim_status, "Simulation", &sim_detail);
 

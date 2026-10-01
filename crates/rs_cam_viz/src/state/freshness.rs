@@ -13,7 +13,7 @@
 
 use crate::state::toolpath::ToolpathId;
 use rs_cam_core::compute::config::{AwaitingPriorStock, ComputeStatus};
-use rs_cam_core::session::{ProjectSession, ToolpathConfig};
+use rs_cam_core::session::{ProjectSession, SimulationDropCauses, ToolpathConfig};
 
 use super::runtime::{GuiState, ToolpathRuntime};
 
@@ -154,7 +154,11 @@ pub enum SimFreshness {
     /// The core holds the simulation these inputs produce.
     Current,
     /// The core dropped the simulation; the view still draws the trace.
-    EditedSince,
+    ///
+    /// The set names the edits that dropped it after the run was submitted
+    /// (`ProjectSession::simulation_drop_causes_since`). It is empty when
+    /// the view cannot say when its run was submitted.
+    EditedSince(SimulationDropCauses),
     /// An enabled operation holds no core result (G-STALECARDS). An edit
     /// dropped it and nothing regenerated it, so no simulation can carve it:
     /// a re-run does not help, a regenerate of this operation does. The id
@@ -171,7 +175,7 @@ impl SimFreshness {
             Self::Released { in_flight: true } => "released_running",
             Self::Released { in_flight: false } => "released",
             Self::Current => "current",
-            Self::EditedSince => "edited_since",
+            Self::EditedSince(_) => "edited_since",
             Self::Ungenerated(_) => "operation_not_generated",
         }
     }
@@ -188,8 +192,33 @@ impl SimFreshness {
     pub fn is_stale(self) -> bool {
         matches!(
             self,
-            Self::Released { .. } | Self::EditedSince | Self::Ungenerated(_)
+            Self::Released { .. } | Self::EditedSince(_) | Self::Ungenerated(_)
         )
+    }
+
+    /// Why the result is stale, as a short phrase, or `None` when the arm
+    /// is not stale ([`Self::is_stale`] is false).
+    ///
+    /// Every stale label reads this, so a machine import does not read as
+    /// "parameters changed". Examples: "machine settings changed after
+    /// this run", "previous result released", "regenerate Rough first".
+    pub fn stale_reason(self, session: &ProjectSession) -> Option<String> {
+        match self {
+            Self::NoRun | Self::Running | Self::Current => None,
+            Self::Released { .. } => Some("previous result released".to_owned()),
+            Self::EditedSince(causes) => Some(format!(
+                "{} after this run",
+                causes
+                    .short_label()
+                    .unwrap_or_else(|| "the project changed".to_owned())
+            )),
+            Self::Ungenerated(id) => Some(format!(
+                "regenerate {} first",
+                session
+                    .find_toolpath_config_by_id(id)
+                    .map_or("an operation", |(_, tc)| tc.name.as_str())
+            )),
+        }
     }
 
     /// True while a simulation run is in flight: [`Self::Running`], and
@@ -230,7 +259,16 @@ pub fn simulation_freshness(
         return SimFreshness::NoRun;
     }
     if session.simulation_result().is_none() {
-        return SimFreshness::EditedSince;
+        // The causes of the drops after the run on screen was submitted.
+        // A run with no submit stamp cannot name them.
+        let causes = sim
+            .last_run
+            .as_ref()
+            .and_then(|run| run.epoch)
+            .map_or(SimulationDropCauses::EMPTY, |epoch| {
+                session.simulation_drop_causes_since(epoch)
+            });
+        return SimFreshness::EditedSince(causes);
     }
     // G-STALECARDS: the builder carves core results only, so an enabled
     // operation without one is missing from the run. The core's per-row
@@ -249,4 +287,17 @@ fn first_ungenerated(session: &ProjectSession) -> Option<ToolpathId> {
             (tc.enabled && session.get_result(index).is_none()).then_some(tc.id)
         })
     })
+}
+
+/// The text for a simulation run in flight.
+///
+/// A run reads as running whatever the core holds. When the view released
+/// a previous run for it (`SimulationState::last_run` names one), the text
+/// says so, also when an edit dropped the core copy of that run.
+pub fn running_label(sim: &crate::state::simulation::SimulationState) -> &'static str {
+    if sim.last_run.is_some() {
+        "Running \u{2014} previous result released"
+    } else {
+        "Running"
+    }
 }

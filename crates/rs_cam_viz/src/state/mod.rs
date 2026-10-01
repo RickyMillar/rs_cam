@@ -691,6 +691,15 @@ impl AppState {
         self.simulation_freshness().is_stale()
     }
 
+    /// Why the simulation is stale, or `None` when it is not.
+    ///
+    /// A thin read over [`Self::simulation_freshness`]. Every stale label
+    /// reads it, so the label names the real cause.
+    #[must_use]
+    pub fn simulation_stale_reason(&self) -> Option<String> {
+        self.simulation_freshness().stale_reason(&self.session)
+    }
+
     /// Is an Optimize run in flight?
     ///
     /// The policy question (§28 ruling 8): one Optimize run at a time. The
